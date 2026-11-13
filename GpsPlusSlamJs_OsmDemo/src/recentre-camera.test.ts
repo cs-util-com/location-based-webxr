@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Opts into jsdom for the same reason `header-collapse.test.ts` does: the thing
+ * Opts into jsdom for the same reason `hud-panels.test.ts` does: the thing
  * worth pinning is the interaction between the camera and the controls, and a
  * "pure vector maths" extraction would test the one part that cannot be wrong.
  * `MapControls` needs a DOM element but NOT a WebGL context, so the real

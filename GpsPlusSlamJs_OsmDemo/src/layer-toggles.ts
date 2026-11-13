@@ -1,5 +1,6 @@
 /**
- * The layer switches in the header, built from the registry rather than by hand.
+ * The layer switches of the settings drawer (and the one switch the command
+ * bar keeps), built from the registry rather than by hand.
  *
  * WHY IT IS GENERATED FROM `ALL_LAYERS`. A hand-written row of checkboxes is a
  * second list of layers, and the two drift the moment a builder is added — leaving a
@@ -37,9 +38,7 @@ import {
 // knip is right that a second public name earns nothing.
 //
 // `look` is the fourth: the city-look settings (furniture, and the colour
-// scheme, invented roofs and zebras the caller hands in). They are long-term
-// choices nobody switches often, so that group renders FOLDED (see
-// `FOLDED_GROUPS`).
+// scheme, invented roofs and zebras the caller hands in).
 type LayerGroup = "overlays" | "world" | "diagnostics" | "look";
 
 /**
@@ -67,36 +66,50 @@ function groupOf(layer: LayerKind): LayerGroup {
   return GROUP_OF[layer];
 }
 
-/** Group captions, in the order the groups appear. */
+/**
+ * Section captions, in the order the drawer shows them.
+ *
+ * EVERY GROUP IS A NATIVE `<details>` WITHOUT `open`: a drawer section, folded
+ * until asked for, and the browser does the folding. Folded state is view
+ * state, never stored, so every page load starts with every section closed.
+ */
 const GROUP_LABELS: readonly (readonly [LayerGroup, string])[] = [
-  ["overlays", "Category"],
-  ["world", "world"],
-  ["diagnostics", "debug"],
+  ["overlays", "Analysis"],
+  ["world", "World"],
   ["look", "City look"],
+  ["diagnostics", "View and debug"],
 ];
 
 /**
- * Groups that render as a native `<details>` without `open`, so they start
- * folded and the browser does the folding.
- *
- * WHY. Spread through the header, the city-look switches made the world group
- * wrap onto a second row at 1280 px, which took height from the canvas. Folded,
- * the group is one caption wide. Not remembered across reloads, like the
- * header's own collapse.
+ * The switches that live in the command bar rather than in a drawer section
+ * when the caller gives a `bar`: the cell layer is the analysis everybody
+ * turns on, so it stays one tap away, beside the category picker it draws.
  */
-const FOLDED_GROUPS: ReadonlySet<LayerGroup> = new Set(["look"]);
+const BAR_LAYERS: ReadonlySet<LayerKind> = new Set(["cells"]);
 
 export interface LayerTogglesOptions {
+  /** Where the sections go: the settings drawer. */
   readonly container: HTMLElement;
+  /**
+   * The command bar's mount for the bar switches (`cells`). Without it every
+   * switch stays in its section. The bar switch keeps its id, its label and
+   * its busy state; it has no group box around it.
+   */
+  readonly bar?: HTMLElement;
+  /**
+   * Whole sections the caller owns, placed BEFORE a group's section. The sun
+   * section is the live case: it is not a layer group, and it sits between the
+   * city look and the view settings.
+   */
+  readonly sectionsBefore?: Partial<Record<LayerGroup, readonly HTMLElement[]>>;
   /** Called with the complete next set whenever a switch changes. */
   readonly onChange: (layers: LayerSet) => void;
   /**
    * Controls that belong in a group but are not layers, placed ABOVE the
    * group's generated switches — between the caption and the first one.
    *
-   * The category picker is the live case: the overlays group is captioned
-   * `Category`, so the control that names it belongs at the top of it rather
-   * than under the switches describing what to draw for it.
+   * The colour-scheme picker is the live case: it heads the city-look section,
+   * above the switches that refine the look it picks.
    *
    * WHY THE POSITION IS PART OF THE OPTION NAME (round three, G2/F7). There
    * used to be one `extras` record that always appended, while `main.ts`
@@ -109,8 +122,8 @@ export interface LayerTogglesOptions {
    * Controls that belong in a group but are not layers, placed BELOW the
    * group's generated switches.
    *
-   * The perf panel is the live case: it is a diagnostic and belongs beside the
-   * height ramp, but it draws nothing in the scene so it is deliberately not in
+   * The perf panel is the live case: it is a diagnostic and belongs with the
+   * other view settings, but it draws nothing in the scene so it is deliberately not in
    * `ALL_LAYERS` (DEC-R3-18). Passing the element in is what puts it in the right
    * group without inventing a second registry or moving DOM around after the
    * fact. `show-below` joins the overlays group the same way — it modifies what
@@ -221,13 +234,16 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
     onChange(toggleLayer(current, layer, input.checked));
   };
 
+  const bar = options.bar;
   for (const [group, caption] of GROUP_LABELS) {
-    const folded = FOLDED_GROUPS.has(group);
-    const box = document.createElement(folded ? "details" : "div");
+    for (const section of options.sectionsBefore?.[group] ?? []) {
+      container.append(section);
+    }
+    const box = document.createElement("details");
     box.className = "layer-group";
     box.id = `layer-group-${group}`;
-    // A folded group's caption is its `<summary>`, the element that unfolds it.
-    const title = document.createElement(folded ? "summary" : "span");
+    // The caption is the `<summary>`, the element that unfolds the section.
+    const title = document.createElement("summary");
     title.className = "layer-group-label";
     title.textContent = caption;
     box.append(title);
@@ -253,7 +269,8 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
       // the only place a user meets it.
       const note = sideEffectOf(layer);
       if (note !== undefined) label.title = note;
-      box.append(label);
+      if (bar !== undefined && BAR_LAYERS.has(layer)) bar.append(label);
+      else box.append(label);
       inputs.set(layer, input);
     }
 
@@ -261,8 +278,10 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
     container.append(box);
   }
 
-  // ONE delegated listener rather than seven, and held so `dispose` can remove it.
+  // ONE delegated listener per mount rather than one per switch, held so
+  // `dispose` can remove them.
   container.addEventListener("change", onInput);
+  bar?.addEventListener("change", onInput);
 
   return {
     render(layers) {
@@ -287,6 +306,7 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
     },
     dispose() {
       container.removeEventListener("change", onInput);
+      bar?.removeEventListener("change", onInput);
     },
   };
 }

@@ -117,6 +117,45 @@ describe("createLightDialog", () => {
     expect(dialog.open).toBe(false);
   });
 
+  // WHY: the dialog stacks over the settings drawer, whose own Escape
+  // listener sits on `window` and skips a key already handled. If the
+  // dialog did not mark its Escape handled, one press would close both
+  // layers and focus would go back to a button in a hidden drawer.
+  it("marks its Escape handled, so the panel under it stays open", () => {
+    const { dialog } = setup();
+    dialog.toggle();
+    const key = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(key);
+    expect(dialog.open).toBe(false);
+    expect(key.defaultPrevented).toBe(true);
+    // Closed, the key is not the dialog's to take.
+    const later = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(later);
+    expect(later.defaultPrevented).toBe(false);
+  });
+
+  // WHY: the back arrow is how a touch user leaves the dialog for the
+  // drawer it covers; it must close the dialog and hand focus back.
+  it("closes from its back arrow and returns focus to the opener", () => {
+    const { dialog, opener, $ } = setup();
+    opener.focus();
+    dialog.toggle();
+    const back = $<HTMLButtonElement>("light-back");
+    expect(back.getAttribute("aria-label")).toBe("Back to settings");
+    back.focus();
+    back.click();
+    expect(dialog.open).toBe(false);
+    expect(document.activeElement).toBe(opener);
+  });
+
   // WHY: the brightness on a slider release is a readback of its own; the
   // margin's second render is only for the check (review finding 13).
   it("measures the brightness alone on release, and the margin only on the check", () => {

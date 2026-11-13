@@ -4,12 +4,12 @@
  * timing, and is tested on a fake clock because that is the part where the
  * mistakes live.
  *
- * WHY THE STATUS LINE IS NOT ENOUGH. `index.html` hides `#status` and its whole
- * block under `header[data-collapsed="true"]`, and collapsing the header is
- * precisely what a user does to give the 3D view the screen. A res-7 tile takes
- * tens of seconds, so the app can look frozen for half a minute with nothing on
- * screen to say otherwise. The toast is the channel that survives a collapsed
- * header; this module decides when it is allowed to appear.
+ * WHY THE STATUS LINE IS NOT ENOUGH. `#status` lives in the command bar's info
+ * panel, which starts closed and stays closed while the user looks at the 3D
+ * view. A res-7 tile takes tens of seconds, so the app can look frozen for half
+ * a minute with nothing on screen to say otherwise. The toast is the channel
+ * that is on screen with every panel closed; this module decides when it is
+ * allowed to appear.
  *
  * THE THREE THINGS THAT MAKE THAT DECISION NON-TRIVIAL:
  *

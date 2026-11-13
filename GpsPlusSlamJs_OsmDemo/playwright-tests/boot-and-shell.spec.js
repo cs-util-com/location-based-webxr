@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * The app shell: booting, the worker, the header, the control bar and the
+ * The app shell: booting, the worker, the command bar, its panels and the
  * location controls. Everything here is about the page being alive and its
  * chrome behaving — not about what is drawn in either view.
  *
@@ -24,7 +24,9 @@ import {
   diffFromStash,
   installFrameProbe,
   stashStableFrame,
-  openCityLook,
+  setting,
+  expectNoPanelOpen,
+  focusPageForHotkeys,
 } from "./fixtures.js";
 
 /**
@@ -233,7 +235,12 @@ test.describe("the demo boots", () => {
       // deleted. It survives verbatim as the strip's accessible text, which is
       // what the `title` assertion below pins — a legend that dropped it would
       // pass a "there are swatches" test while losing the answer.
+      // THE PLATE SHOWS WITH THE CELLS whose colours it explains, as the
+      // chosen command-bar design has it; at rest the bar's category picker
+      // names the category. Both directions, so neither half is assumed.
       const legend = page.locator("#legend");
+      await expect(page.locator("#legend-plate")).toBeHidden();
+      await enableCellLayer(page);
       await expect(legend).toBeVisible();
       await expect(legend.locator(".legend-swatch")).not.toHaveCount(0);
       await expect(legend.locator(".legend-strip")).toHaveAttribute(
@@ -257,6 +264,8 @@ test.describe("the demo boots", () => {
         "max here",
       );
       await expect(legend.locator(".legend-observed")).toContainText("above");
+      await page.locator("#layer-cells").uncheck();
+      await expect(page.locator("#legend-plate")).toBeHidden();
     });
 
     await test.step("says it is still widening, and then stops saying it", async () => {
@@ -544,7 +553,7 @@ test.describe("the location picker", () => {
       // would miss by hundreds.
       expect(Math.abs(shown.x - scene.x)).toBeLessThan(4);
       expect(Math.abs(shown.y - scene.y)).toBeLessThan(4);
-      // THE SECOND CHANNEL, and the one that survives a collapsed header only
+      // THE SECOND CHANNEL, and the one that survives a closed info panel only
       // because it is a class on an element whose text is rewritten constantly -
       // a child element would be deleted by the next `writeStatus`.
       await expect(page.locator("#status")).toHaveClass(/is-loading/, REPAINT);
@@ -798,9 +807,9 @@ test.describe("the location picker", () => {
 test.describe("the phone layout", () => {
   /**
    * ONE BOOT FOR EVERY PHONE-LAYOUT CHECK, at 390 x 780. The steps that measure
-   * the page at rest run
-   * first, the ones that change it (the sheet drag, the header toggles, the
-   * resizes) after them, and the caret step resizes to 1920 px, so it runs last.
+   * the page at rest run first, the ones that change it (the sheet drag, the
+   * failed locate) after them. The command bar and its panels are measured in
+   * `hud-layout.spec.js`.
    *
    * AT DPR 2, so the canvas-size check runs at the ratio its bug needs (it is
    * identically zero at dpr 1). Every other step measures CSS pixels, which a
@@ -808,7 +817,7 @@ test.describe("the phone layout", () => {
    */
   test.use({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 2 });
 
-  test("lays out the canvas, the map buttons, the locate pin, the sheet and the floating header, collapses it, and sizes the caret", async ({
+  test("lays out the canvas, the map buttons, the locate pin and the sheet, toasts an error without opening a panel, and keeps the credits visible", async ({
     page,
     context,
   }) => {
@@ -823,24 +832,6 @@ test.describe("the phone layout", () => {
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
-
-    /**
-     * Puts the bar in a known state before each step.
-     *
-     * NECESSARY BECAUSE `#header-toggle` TOGGLES. Each of these behaviours was
-     * written against a fresh boot, where the bar starts expanded, and each does
-     * its own `click()` to collapse. Sharing one boot means a step can inherit a
-     * collapsed bar from the step before and have its click EXPAND instead —
-     * which would not fail loudly, it would assert the opposite of the intent.
-     * Restoring the boot state is the exact translation.
-     */
-    const expandHeader = async () => {
-      const bar = page.locator("#header-bar");
-      if ((await bar.getAttribute("data-collapsed")) === "true") {
-        await page.locator("#header-toggle").click();
-      }
-      await expect(bar).toHaveAttribute("data-collapsed", "false");
-    };
 
     await test.step("lays out the 3D canvas at its container's size, not at its drawing buffer's (dpr 2)", async () => {
       // W1 / finding R3-2. Without the fix the canvas element is 780x1560 CSS
@@ -986,218 +977,6 @@ test.describe("the phone layout", () => {
       ).toBeVisible();
     });
 
-    await test.step("the header floats over the 3D view, and keeps its controls tappable where they overlap the canvas (Q11)", async () => {
-      // Q11 — the header floats over the views instead of taking a row from them.
-      //
-      // WHY THIS IS A GEOMETRY TEST AND NOT A DOM TEST. The field report is that the
-      // 3D view has too little height on a phone, and `header-collapse.ts` records why
-      // that is literally true: `body` is `grid-template-rows: auto 1fr`, so the header
-      // is a ROW whose height is taken out of `main` rather than covering it. A test on
-      // class names or DOM order cannot tell the two layouts apart — both have the same
-      // markup — so every assertion here is on measured boxes.
-      //
-      // That same docblock recorded overlay-versus-collapse as a deliberate either/or
-      // and took collapse. This milestone takes the other one, on the owner's request,
-      // which is why the collapse tests still exist and still pass: the header can
-      // float AND collapse, it just no longer hands viewport back when it does.
-      ///
-      //
-      // The failure mode a floating bar introduces: the canvas is a pointer target
-      // too, and an overlay that let events through — or swallowed them across its
-      // whole width — would break either the header or the scene. Both directions
-      // are checked, because fixing one by breaking the other is the easy mistake.
-      // THE OVERLAY ITSELF, measured on the same boot before anything is pressed.
-      {
-        const box = async (selector) => {
-          const measured = await page.locator(selector).boundingBox();
-          if (measured === null) throw new Error(`no box for ${selector}`);
-          return measured;
-        };
-
-        const header = await box("header");
-        const scene = await box("#scene");
-
-        // THE MILESTONE, in one line: the canvas begins at the top of the viewport
-        // rather than beneath the header. A small tolerance because a border or a
-        // sub-pixel layout rounding is not the failure being guarded against.
-        expect(
-          scene.y,
-          "the 3D view still starts below the header, so it is not an overlay",
-        ).toBeLessThanOrEqual(1);
-
-        // AND THE HEADER IS ON TOP OF IT, not merely coincidentally at y=0. Without
-        // this, a header collapsed to zero height would satisfy the assertion above
-        // while nothing had been made to float.
-        expect(header.height).toBeGreaterThan(0);
-        expect(header.y).toBeLessThanOrEqual(1);
-        expect(
-          header.y + header.height,
-          "the header does not actually overlap the scene",
-        ).toBeGreaterThan(scene.y);
-      }
-
-      // The control still works while floating.
-      await page.locator("#header-toggle").click();
-      await expect(page.locator("header")).toHaveAttribute(
-        "data-collapsed",
-        "true",
-      );
-
-      // AND THE VIEWS BELOW STILL RECEIVE CLICKS — asserted by actually clicking,
-      // which is the whole lesson of this test's first version.
-      //
-      // That version merely fetched an element handle and asserted it was not
-      // null, which is true of any element that exists whether or not anything can
-      // reach it. The real implementation shipped without `pointer-events: none`
-      // and broke TEN specs across four files — the map click, the 3D hotkeys, the
-      // location picker's URL write — every one reported by Playwright as
-      // `locator.click` timing out on an element that was "visible, enabled and
-      // stable". A guard that cannot fail for the failure it names is worse than
-      // no guard, because it is counted as coverage.
-      //
-      // `timeout` is short on purpose: an intercepted click does not error, it
-      // HANGS until the suite's 180 s ceiling, so the default would turn this
-      // assertion into a three-minute wait per run.
-      await page.locator("#header-toggle").click();
-      await expect(page.locator("header")).toHaveAttribute(
-        "data-collapsed",
-        "false",
-      );
-
-      // CLICKED WHERE THE HEADER ACTUALLY IS, which the second version still got
-      // wrong. It clicked `#map` — a bottom sheet at `align-self: end`, whose
-      // centre on 390×780 sits near y≈604 while the header ends around y≈100. No
-      // amount of `pointer-events` on the bar could ever have made that click
-      // fail, so the assertion named pass-through and tested nothing about it.
-      // Third time: aim INSIDE the header's own box, at a gap between its
-      // controls, and require the press to reach the canvas underneath.
-      const header = await page.locator("header").boundingBox();
-      if (header === null) throw new Error("no box for header");
-
-      const reached = await page.evaluate(
-        ({ x, y }) => {
-          const el = document.elementFromPoint(x, y);
-          return {
-            tag: el?.tagName ?? "none",
-            id: el instanceof HTMLElement ? el.id : "",
-            insideHeader:
-              el?.closest("header") !== null &&
-              el?.closest("header") !== undefined,
-          };
-        },
-        // The far right of the header's own strip: inside its box, past the last
-        // control, so anything hit there is the BAR rather than a button.
-        { x: header.x + header.width - 4, y: header.y + header.height / 2 },
-      );
-
-      // SOMETHING must be hit: `elementFromPoint` returning null (a point off
-      // the viewport, a zero-height header, a moved bar) would make
-      // `insideHeader` false and pass the assertion below with nothing tested
-      // at all (PR #333 review). The message promises the press reaches "the
-      // view beneath", so an actual element beneath is part of the claim.
-      expect(
-        reached.tag,
-        "elementFromPoint hit nothing — the probe point is outside the layout",
-      ).not.toBe("none");
-      expect(
-        reached.insideHeader,
-        `a press on the header's empty area hit ${reached.tag}#${reached.id} instead of passing through to the view beneath`,
-      ).toBe(false);
-    });
-
-    await test.step("puts every header control in a block over a fully transparent bar", async () => {
-      /**
-       * WHY THIS TEST MATTERS (J2/J3/J4, DEC-J5..DEC-J7).
-       *
-       * "Ich möchte, dass du diesen Hintergrund komplett 100 % transparent machst
-       * und stattdessen noch mehr von diesen Boxen benutzt ... so sorgt man dafür,
-       * dass noch mehr vom Hintergrund, von der 3D-Szene, sichtbar ist."
-       *
-       * AT 390 px, because that is where the change is real. Above 860 px the
-       * header is a layout ROW whose background already matches `body`, so
-       * "transparent" is invisible there; below it, the bar floats over the 3D
-       * view and the 82 % scrim is what the report is about.
-       *
-       * THE BLOCK MEMBERSHIP IS ASSERTED AS A SHARED ANCESTOR, not as a class on
-       * each control. What the owner asked for is that these controls read as one
-       * group; an assertion per element passes just as well when each sits in a
-       * block of its own, which is the opposite arrangement.
-       *
-       * `#status-block`'s membership would otherwise be UNGUARDED: `#legend` is a
-       * `<div>`, so if `.header-block` ever loses its `display: flex` the status
-       * line and the legend stack silently, with the header simply growing taller
-       * and no assertion noticing. The nav block has three existing centre-
-       * alignment assertions that would fail; this one has none.
-       */
-      await page.setViewportSize({ width: 390, height: 844 });
-      const measured = await page.evaluate(() => {
-        const el = (selector) => {
-          const found = document.querySelector(selector);
-          if (found === null) throw new Error(`no ${selector}`);
-          return found;
-        };
-        const blockOf = (selector) => {
-          const block = el(selector).closest(".header-block");
-          return block === null ? null : block.id || "(unnamed block)";
-        };
-        const rect = (selector) => {
-          const r = el(selector).getBoundingClientRect();
-          return { top: r.top, bottom: r.bottom, height: r.height };
-        };
-        return {
-          headerBackground: getComputedStyle(el("header")).backgroundColor,
-          blocks: {
-            caret: blockOf("#header-toggle"),
-            site: blockOf("#site"),
-            quests: blockOf("#geo-event"),
-            questReadout: blockOf("#quest-readout"),
-            status: blockOf("#status"),
-            legend: blockOf("#legend"),
-          },
-          groundModeInWorld:
-            el("#ground-mode-label").closest("#layer-group-world") !== null,
-          radii: [...document.querySelectorAll(".header-block")].map((b) =>
-            Number.parseFloat(getComputedStyle(b).borderTopLeftRadius),
-          ),
-          navBlock: rect("#nav-block"),
-          categoryBlock: rect("#layer-group-overlays"),
-        };
-      });
-
-      // FULLY TRANSPARENT, not merely more transparent. `rgba(0, 0, 0, 0)` is what
-      // a computed `background: transparent` reports.
-      expect(measured.headerBackground).toBe("rgba(0, 0, 0, 0)");
-
-      // ONE block for the navigation row, ONE for the readouts underneath.
-      expect(measured.blocks.caret).toBe("nav-block");
-      expect(measured.blocks.site).toBe("nav-block");
-      expect(measured.blocks.quests).toBe("nav-block");
-      expect(measured.blocks.questReadout).toBe("nav-block");
-      expect(measured.blocks.status).toBe("status-block");
-      expect(measured.blocks.legend).toBe("status-block");
-
-      // THE ONE CONTROL THE REPORT DID NOT MENTION. Left loose it would be the
-      // only bare thing on a transparent bar, which is the next session's finding.
-      expect(measured.groundModeInWorld).toBe(true);
-
-      // J3: "die Ecken nicht ganz so rund". `999px` is a full pill and was the
-      // outlier in this codebase -- everything else rounds between 3 and 10 px.
-      // A ceiling rather than an exact value, so ordinary tuning does not trip it.
-      expect(measured.radii.length).toBeGreaterThan(0);
-      for (const radius of measured.radii)
-        expect(radius).toBeLessThanOrEqual(12);
-
-      // J4: "die haben gerade so einen seltsamen Abstand zueinander." Expressed as
-      // the MEASUREMENT rather than as a CSS value, because the row break's
-      // negative margin is gap arithmetic -- change `row-gap` without changing
-      // that margin and the distance doubles while the declaration still reads
-      // 0.3rem.
-      const gap = measured.categoryBlock.top - measured.navBlock.bottom;
-      expect(gap).toBeGreaterThanOrEqual(0);
-      expect(gap).toBeLessThanOrEqual(6);
-      await page.setViewportSize({ width: 390, height: 780 });
-    });
-
     // THE LAYOUT STEP RUNS FIRST because it asserts the sheet's RESTING
     // position, and the step after it drags the sheet somewhere else.
     await test.step("puts the 3D view behind a draggable map sheet", async () => {
@@ -1313,112 +1092,16 @@ test.describe("the phone layout", () => {
       await expect.poll(painted, REPAINT).toBeGreaterThan(500);
     });
 
-    await test.step("collapses to give its height back to the 3D view", async () => {
-      // WHY THIS TEST MATTERS, and why it asserts HEIGHT rather than visibility.
-      // The feedback assumed the header already floats over the 3D view. It does
-      // not — it is a grid row, so on a phone its wrapped lines are taken OUT of
-      // the 3D view's height. That makes collapsing a real win rather than a
-      // cosmetic one, and "the bar got shorter" is the only assertion that shows it.
-      await expandHeader();
-      const header = page.locator("#header-bar");
-      const scene = page.locator("#scene");
-      const before = await header.boundingBox();
-      const sceneBefore = await scene.boundingBox();
-      if (before === null || sceneBefore === null) throw new Error("no boxes");
-      // THE CATEGORY LABEL IS SHOWN WHILE EXPANDED. Dropping it is about the
-      // COLLAPSED bar, asserted below, so deleting the element outright would
-      // overshoot and take the legend's heading with it.
-      await expect(page.locator("#legend .legend-category")).toBeVisible();
-
-      await page.locator("#header-toggle").click();
-
-      await expect(header).toHaveAttribute("data-collapsed", "true");
-      await expect(page.locator("#header-toggle")).toHaveAttribute(
-        "aria-expanded",
-        "false",
-      );
-
-      const after = await header.boundingBox();
-      const sceneAfter = await scene.boundingBox();
-      if (after === null || sceneAfter === null) throw new Error("no boxes");
-      expect(after.height).toBeLessThan(before.height);
-      // WHAT COLLAPSING MEANS CHANGED WITH Q11, and this assertion said the old
-      // thing. It was "the height went to the 3D view rather than nowhere",
-      // asserting the scene grew — true while the header was a `body` grid ROW,
-      // because hiding it handed real height back.
-      //
-      // At this viewport the header now FLOATS over the views, so the scene is
-      // already the full 780 px before the tap and collapsing uncovers pixels
-      // rather than returning height. The old assertion could only fail, and it
-      // failed with `Received: 780` against a 780 px viewport — i.e. it broke
-      // BECAUSE the milestone succeeded.
-      //
-      // Updated rather than deleted: the property still worth pinning is that
-      // collapsing never COSTS the 3D view height, which is what would happen if
-      // the header were ever put back in flow while the rest of this layout
-      // assumed otherwise.
-      expect(sceneAfter.height).toBeGreaterThanOrEqual(sceneBefore.height);
-      const viewport = page.viewportSize();
-      if (viewport === null) throw new Error("no viewport");
-      expect(
-        sceneAfter.height,
-        "the scene should span the viewport once the header floats (Q11)",
-      ).toBeGreaterThanOrEqual(viewport.height - 1);
-
-      // THE CONTROLS THAT STEER THE DEMO STAY REACHABLE (DEC-R2-4, narrowed by
-      // DEC-R6b-5). Collapsing the category picker away would put a primary
-      // input two taps from reach. The GROUND picker is no longer on this list
-      // — see the dedicated collapse step below for why.
-      await expect(page.locator("#category")).toBeVisible();
-
-      // AND THE LEGEND NOW GOES WITH IT (round three, G3, DEC-W4). This line
-      // asserted the opposite until the thirteenth session, on DEC-1's rule
-      // that SOMETHING on screen must name the active category — the legend was
-      // added for exactly that. What changed is not the rule but who satisfies
-      // it: the category `<select>` asserted one line above moved into the
-      // collapsed bar under its own caption, so it names the category AND can
-      // change it. The legend's last collapsed survivor was the word beside it,
-      // which is why the owner read it as a random "Battle Area".
-      //
-      // `#legend` goes hidden rather than empty-but-present because that word
-      // was its only visible child once DEC-U7 hid the ramp and the numbers.
-      // The expanded legend is untouched — see the dedicated step for it.
-      await expect(page.locator("#legend")).toBeHidden();
-      // The sun controls collapse with the header like WORLD and DEBUG (the
-      // owner, 2026-09-24: the sun is not important enough to stay).
-      await expect(page.locator("#sun-group")).toBeHidden();
-
-      await page.locator("#header-toggle").click();
-      await expect(header).toHaveAttribute("data-collapsed", "false");
-      await expect(page.locator("#sun-group")).toBeVisible();
-    });
-
-    await test.step("STAYS collapsed when an error occurs, and toasts it instead", async () => {
-      // INVERTED 2026-08-19 (DEC-U10). This step used to assert the opposite —
-      // that an error EXPANDS the header — which was DEC-R2-15, and which
-      // existed only because the status line inside the header was the sole
-      // channel a failure could reach. A message written into a collapsed
-      // header is a message nobody sees.
-      //
-      // The owner reported that self-expanding behaviour as a bug in the
-      // twelfth testing session; it was the demo telling the truth about
-      // failures they were independently investigating. Errors now go to a
-      // toast that is visible whether or not the header is collapsed, and
-      // `writeStatus` no longer renders the error phase at all — both halves
-      // together, because retiring only the expand would leave the message in a
-      // collapsed header AND in a toast, which is the two-channel state
-      // DEC-R2-15 rejected a toast in order to avoid.
+    await test.step("toasts an error and opens no panel to show it", async () => {
+      // AN ERROR NEVER TAKES OVER THE SCREEN (DEC-U10). The demo once expanded
+      // its header to show a failure, which the owner reported as a bug: the
+      // message now goes to a toast, visible whatever is open, and no panel
+      // opens on its own to deliver it.
       //
       // Still driven through a REAL failure rather than a hand-dispatched one:
       // the wiring from reporter to surface is the part that can be missing.
       await context.clearPermissions();
-      await expandHeader();
-
-      await page.locator("#header-toggle").click();
-      await expect(page.locator("#header-bar")).toHaveAttribute(
-        "data-collapsed",
-        "true",
-      );
+      await expectNoPanelOpen(page);
 
       await page.locator(".locate-button").click();
 
@@ -1438,17 +1121,14 @@ test.describe("the phone layout", () => {
         /denied|unavailable|timed out/,
         { timeout: 15000 },
       );
-      // ...and the panel did not take over the screen to deliver it.
-      await expect(page.locator("#header-bar")).toHaveAttribute(
-        "data-collapsed",
-        "true",
-      );
+      // ...and no panel opened to deliver it.
+      await expectNoPanelOpen(page);
     });
 
-    await test.step("keeps every credit VISIBLE, collapsed bar or not", async () => {
+    await test.step("keeps every credit VISIBLE", async () => {
       // Attribution is required wherever the data is shown, so it may not be
-      // collapsed away. It lives outside the header (DEC-R2-4) in a line that
-      // is always on screen.
+      // folded away. It lives in the map's own line (DEC-R2-4), which is always
+      // on screen.
       //
       // MIGRATED FROM `toContainText` TO VISIBILITY (round three, G5/F10), and
       // this is the most important line in the step. `toContainText` matches on
@@ -1459,7 +1139,6 @@ test.describe("the phone layout", () => {
       //
       // Verified by construction: these locators resolve to the short names in
       // the resting line, and the expanded panel is asserted separately below.
-      await expandHeader();
       const shortNames = page.locator("#map .map-attribution-short");
       await expect(shortNames).toHaveText([
         "OpenStreetMap",
@@ -1518,264 +1197,18 @@ test.describe("the phone layout", () => {
       await expect(
         page.locator("#map .leaflet-control-attribution a[href*='leafletjs']"),
       ).toHaveCount(0);
-
-      await page.locator("#header-toggle").click();
-      await expect(page.locator("#header-bar")).toHaveAttribute(
-        "data-collapsed",
-        "true",
-      );
-      // Still VISIBLE with the bar collapsed — the whole point.
-      for (const name of ["OpenStreetMap", "Mapterhorn", "Mapzen/AWS"]) {
-        await expect(shortNames.filter({ hasText: name })).toBeVisible();
-      }
-    });
-
-    await test.step("shows a caret big enough to see, on the row the feedback asked for", async () => {
-      await expandHeader();
-      /**
-       * WHY THIS TEST MATTERS, and why both halves are GEOMETRY.
-       *
-       * G1 is a repeat. The twelfth session's review raised the caret as a WCAG
-       * 2.2 SC 2.5.8 target-size problem and the fix gave `#header-toggle` a
-       * 2.75 rem box — measurable, correct, and invisible to the complaint. The
-       * owner reported the same thing again the next day: a 0.8 em glyph floating
-       * in a 44 px transparent square is reachable and still looks like a speck.
-       * A test written against the tap target would have passed then too, so the
-       * only assertion worth having is one on what is actually painted.
-       *
-       * The row half is the same trap one control over. The header is a single
-       * `flex-wrap: wrap` row, so which items share a line is decided by width —
-       * a unit test on DOM order passes identically on a one-row desktop layout
-       * and a three-row phone layout, and G2 is a complaint about the phone.
-       *
-       * Reverting `.header-caret` to `font-size: 0.8em` fails the first
-       * assertion; deleting `.header-row-break` or the `#site` width cap fails
-       * the second.
-       */
-      const box = async (selector) => {
-        const measured = await page.locator(selector).boundingBox();
-        if (measured === null) throw new Error(`no box for ${selector}`);
-        return measured;
-      };
-
-      // AN SVG WHOSE BOX IS ITS INK, which is what makes this line mean the thing
-      // the plan pinned ("rendered glyph height >= 24 CSS px").
-      //
-      // Two attempts got here. The caret was `h1::before`, and a pseudo-element
-      // is not a DOM node, so `boundingBox()` could not address it at all. The
-      // first fix made it a <span> holding "▾" -- addressable, but the box was
-      // `font-size` x `line-height` regardless of content, and ▾ is U+25BE BLACK
-      // DOWN-POINTING *SMALL* TRIANGLE, whose ink is ~0.4-0.5 em. So this
-      // assertion passed at 25.6 px while the owner was shown a ~12 px triangle:
-      // a measurable proxy standing in for the visible thing, in the test written
-      // to stop that happening a third time. The path now fills the element edge
-      // to edge, so the box IS the triangle.
-      const caret = await box(".header-caret");
-      // H2, r541 -- REPORTED TOO BIG A SECOND TIME, and the fix is to put this
-      // floor on the element it was always about.
-      //
-      // The 24 came from WCAG 2.2 SC 2.5.8, which governs the POINTER TARGET.
-      // `#header-toggle` satisfies that on its own at 2.75rem (44 px), asserted
-      // directly below -- so applying 24 to the painted INK held the caret at
-      // 25.6 px for a reason that had already been met elsewhere. That is why
-      // three fixes each passed a measurement and left the owner still saying it
-      // was wrong: every assertion was on the wrong thing.
-      //
-      // The ink keeps a floor, because a caret can genuinely become a speck --
-      // that was the sixth and thirteenth sessions complaint -- but the floor is
-      // now about legibility rather than about reachability, and is set well
-      // below the shipped 1.6 rem (25.6 px) so ordinary tuning does not trip it.
-      expect(caret.height).toBeGreaterThanOrEqual(11);
-      // AND SMALLER THAN THE TAP TARGET, which is the relationship the last three
-      // sessions kept collapsing. If these two are ever equal again, the ink has
-      // been sized by an accessibility rule a second time.
-      expect(caret.height).toBeLessThan(40);
-
-      // H1, FOURTEENTH SESSION -- the same control, now too BIG. "Der ist jetzt
-      // zu groß ... sollte so hoch sein wie das 'Jump to City'-Dropdown ...
-      // ungefähr doppelt so groß wie der 'Show Quests'-Button."
-      //
-      // THE HEIGHT WAS ALREADY RIGHT: 25.6 px against Show Quests' ~26.4. So an
-      // assertion on height cannot express this complaint -- it passes unchanged,
-      // and strict equality would demand making the caret BIGGER. What reads as
-      // double is the WIDTH of a solid filled triangle, 33.6 px, wider than it is
-      // tall, sitting beside a bordered box of thin text. Equal height, very
-      // unequal ink.
-      //
-      // Hence a width assertion, and a RATIO rather than a pixel count: pinning
-      // "no wider than tall" survives the next time the height moves, which it
-      // has done three times in three sessions.
-      expect(caret.width).toBeLessThanOrEqual(caret.height);
-
-      const centre = (b) => b.y + b.height / 2;
-      const toggle = await box("#header-toggle");
-      // THE TARGET FLOOR, on the element WCAG 2.2 SC 2.5.8 is actually about.
-      // Moved here from the caret in r541 (H2): the caret is what you SEE, this is
-      // what you HIT, and conflating them is what made three consecutive fixes
-      // measure the wrong quantity. Shrinking the ink must never shrink this.
-      expect(toggle.width).toBeGreaterThanOrEqual(24);
-      expect(toggle.height).toBeGreaterThanOrEqual(24);
-      const site = await box("#site");
-      const quests = await box("#geo-event");
-
-      // DEC-W6 FIRST, because it is the assertion that cannot be marginal, and
-      // therefore the one that should report the breakage.
-      //
-      // The layout consequence below is a real guard on this machine -- removing
-      // the cap does push Show Quests off row 1 -- but the uncapped picker is
-      // ~165-180 px against ~361 px of content width, so whether it survives
-      // depends on the user agent's default select font, which differs between a
-      // Windows dev machine and a Linux CI container. Ordered the other way round
-      // the marginal assertion failed first and this one never ran.
-      //
-      // (It also replaced `quests.x + quests.width <= 390`, which could not fail
-      // at all: a WRAPPED button starts at the header's left padding and ends
-      // around 134 px, satisfying the bound in exactly the state it was written
-      // to catch.)
-      expect(site.width).toBeLessThanOrEqual(136);
-
-      // ROW 1: the caret, the city picker, and Show Quests. Compared by the
-      // vertical centre rather than `y`, because the three have different heights
-      // and `align-items: baseline` does not line their tops up.
-      expect(Math.abs(centre(site) - centre(toggle))).toBeLessThan(12);
-      expect(Math.abs(centre(quests) - centre(toggle))).toBeLessThan(12);
-
-      // SIZED TO THE DROPDOWN TEXT, AND LEVEL WITH IT (r543 field report).
-      //
-      // THIS REPLACES THE OWNER PIN THAT SAID THE OPPOSITE, and the supersession
-      // is the point rather than a detail. The fourteenth session asked for the
-      // caret "so hoch wie das Jump to City-Dropdown" and this line held
-      // |caret.height - site.height| <= 4, which is exactly what blocked the
-      // shrink when it was attempted at r541 and reverted. The same owner has
-      // since decided the caret should match the dropdown TEXT instead. A later
-      // explicit decision replaces an earlier one; the test is not weakened to
-      // let a change through.
-      //
-      // MEASURED AGAINST THE LIVE FONT SIZE, not a rem constant, so the caret
-      // cannot drift the next time the dropdown is restyled -- which is the
-      // property the old relationship pin was written for and is worth keeping.
-      const siteFontPx = await page.evaluate(() => {
-        const el = document.querySelector("#site");
-        if (el === null) throw new Error("no #site");
-        return Number.parseFloat(getComputedStyle(el).fontSize);
-      });
-      // One notch above the text, deliberately: the caret is a FILLED triangle
-      // and the label is thin strokes, so equal sizes make the caret read
-      // heavier. The window is tight enough that a return to 1.6 rem (25.6 px)
-      // fails it by a wide margin.
-      expect(caret.height).toBeGreaterThanOrEqual(siteFontPx);
-      expect(caret.height).toBeLessThanOrEqual(siteFontPx + 4);
-
-      // AND LEVEL WITH THE DROPDOWN -- "immer noch nicht auf einer Hoehe mit dem
-      // Jump To City Dropdown". The header used `align-items: baseline`, and a
-      // flex button whose only child is an SVG has no text baseline, so the
-      // browser synthesised one from its bottom margin edge: the 44 px toggle
-      // hung its BOTTOM on the row's text baseline and the caret sat well above
-      // the dropdown's centre. 2 px, because centred means centred -- the 12 px
-      // slack used above is for controls of genuinely different heights.
-      //
-      // THIS ASSERTION DOES NOT PROVE THE FIX, and says so rather than implying
-      // otherwise: a mutation run passes it with the header back on `baseline`,
-      // at 1280 px and at 390 px alike. Chromium cannot reproduce the reported
-      // misalignment; the reporter is on a native Android `<select>`, which is
-      // taller than the headless one and moves the synthesised baseline. What
-      // this assertion DOES do is stop the caret from being knocked off centre by
-      // some later change, which is worth having on its own.
-      expect(Math.abs(centre(caret) - centre(site))).toBeLessThanOrEqual(2);
-
-      // ROW 2 STARTS BELOW: the layer groups are on a lower line, not beside the
-      // button.
-      //
-      // ON A PHONE THIS IS NOT EVIDENCE FOR `.header-row-break`, and saying so is
-      // the point. Mutation testing showed this line passing with the break
-      // deleted: at 390 px the layer groups are far too wide to share a row
-      // whatever the markup says, so the assertion holds for a reason that has
-      // nothing to do with the fix. It is kept because it is what G2 asks for at
-      // the width G2 was reported at — and the step below is what actually holds
-      // the break to account.
-      const layers = await box("#layers");
-      expect(layers.y).toBeGreaterThan(quests.y + quests.height - 1);
-
-      // WITHIN row 2, the category picker comes FIRST — under the caption that
-      // names it, above the switches that describe what to draw for it. The unit
-      // half of this lives in `layer-toggles.test.ts`; what the browser adds is
-      // that it survives real layout.
-      // THE X-ORDER IS THE ASSERTION; the centre comparison only rules out the
-      // picker having been pushed onto a line BELOW the switches, and on its own
-      // would pass with it on a line above them.
-      const category = await box("#category");
-      const cells = await box("#layer-cells");
-      expect(category.x).toBeLessThan(cells.x);
-      expect(centre(category)).toBeLessThanOrEqual(centre(cells) + 1);
-
-      // AND ROW 1 SURVIVES A QUEST BEING FOUND -- the state it was described for,
-      // and the one the first version of this test never entered.
-      //
-      // `#quest-readout` is `hidden` until then, so it is not a flex item and
-      // costs nothing at boot; with "340 m SW" in it the row goes about 30 px over
-      // a 390 px phone and the LAST item wraps. It used to sit before the button,
-      // which meant the control the row exists for was the one that disappeared
-      // the moment the feature was used. The readout now takes its own line
-      // instead, and the three controls stay together.
-      // THE READOUT IS POPULATED DIRECTLY, not by running a quest search, and
-      // that is the right call for a LAYOUT test rather than a shortcut.
-      //
-      // Two earlier versions pressed Show Quests and waited for the real thing.
-      // Both were flaky, for two different reasons, and the second reason is the
-      // one that settles it: the readout is written only when a quest is actually
-      // FOUND, so the step's precondition depends on the search finding something
-      // — and when it reports "No quest nearby" the readout stays empty and the
-      // geometry below silently measures the boot state again. A layout assertion
-      // whose setup can quietly not happen is worse than no assertion.
-      //
-      // What this step is about is what the header does when that span has text
-      // in it. The text's provenance is `event-label.ts`'s business, covered by
-      // its own unit tests and by `map-and-cells.spec.js` end to end. The string
-      // used here is the exact shape those produce.
-      await page.evaluate(() => {
-        const readout = document.querySelector("#quest-readout");
-        if (readout === null) throw new Error("no #quest-readout");
-        readout.textContent = "340 m SW";
-        readout.removeAttribute("hidden");
-      });
-      await expect(page.locator("#quest-readout")).toBeVisible();
-      const withReadout = await box("#geo-event");
-      const toggleAgain = await box("#header-toggle");
-      const siteAgain = await box("#site");
-      expect(Math.abs(centre(siteAgain) - centre(toggleAgain))).toBeLessThan(
-        12,
-      );
-      expect(Math.abs(centre(withReadout) - centre(toggleAgain))).toBeLessThan(
-        12,
-      );
-
-      // AND THE SPLIT SURVIVES A WIDE WINDOW, which is the assertion
-      // `.header-row-break` actually earns. On a desktop everything in this bar
-      // fits one line, so without the break the requested two rows collapse into
-      // one and G2 is silently unimplemented on every machine that is not a
-      // phone. Deleting `flex-basis: 100%` fails here and nowhere else.
-      //
-      // 1920 rather than 1280: at 1280 the margin was about 30 px, so one more
-      // switch or a wider font stack would have made it vacuous the way the
-      // 390 px version already was.
-      await page.setViewportSize({ width: 1920, height: 900 });
-      const wideQuests = await box("#geo-event");
-      const wideLayers = await box("#layers");
-      expect(wideLayers.y).toBeGreaterThan(
-        wideQuests.y + wideQuests.height - 1,
-      );
     });
   });
 });
 
 test.describe("my location", () => {
   test.describe("at a desktop width", () => {
-    // The phone-layout test measures the pin, the credit and the header at
-    // 390 px. These are the same claims at 1280 x 720, where the map is a side
-    // pane rather than a sheet and the header is a full row: one boot for all.
+    // The phone-layout test measures the pin and the credit at 390 px. These
+    // are the same claims at 1280 x 720, where the map is a side pane rather
+    // than a sheet: one boot for all.
     test.use({ viewport: { width: 1280, height: 720 } });
 
-    test("the pin sits bottom-right above the credit, the credit inside the map, and a denied locate toasts with the header collapsed", async ({
+    test("the pin sits bottom-right above the credit, the credit inside the map, and a denied locate toasts with no panel open", async ({
       page,
     }) => {
       await page.addInitScript(() => {
@@ -1828,29 +1261,22 @@ test.describe("my location", () => {
         ).toBeLessThanOrEqual(mapBox.y + mapBox.height + 1);
       });
 
-      await test.step("a denied locate toasts, and the header stays collapsed", async () => {
-        // If the toast wiring is ever lost nothing else fails: the header stays
-        // put and errors become invisible. COLLAPSED FIRST, because expanded,
-        // an old status line would pass for a build with no toast at all.
-        await page.locator("#header-toggle").click();
-        await expect(page.locator("#header-bar")).toHaveAttribute(
-          "data-collapsed",
-          "true",
-        );
+      await test.step("a denied locate toasts, and opens no panel", async () => {
+        // If the toast wiring is ever lost nothing else fails: errors become
+        // invisible. With every panel closed, so the info panel's status line
+        // cannot pass for a build with no toast at all.
+        await expectNoPanelOpen(page);
 
         await page.locator(".locate-button").click();
 
         // The wording is the locate control's; the claim is that SOMETHING
-        // reached a surface the user can see while collapsed.
+        // reached a surface the user can see with every panel closed.
         const toast = page.locator("#toast-root .toast");
         await expect(toast).toHaveText(/./, { timeout: 15000 });
 
-        // AND THE HEADER DID NOT MOVE, which a build that expanded it to show
-        // the error would otherwise pass.
-        await expect(page.locator("#header-bar")).toHaveAttribute(
-          "data-collapsed",
-          "true",
-        );
+        // AND NO PANEL OPENED, which a build that opened one to show the error
+        // would otherwise pass.
+        await expectNoPanelOpen(page);
       });
     });
   });
@@ -1946,7 +1372,7 @@ test.describe("my location", () => {
  * because it ends at a phone width.
  */
 test.describe("the desktop controls", () => {
-  test("print the click breakdown, mount the perf overlay, move the sun and the render distance, and give every layer a switch that collapses", async ({
+  test("print the click breakdown, mount the perf overlay, move the sun and the render distance, and give every layer a visible switch", async ({
     page,
   }) => {
     // Installed before the page loads: the lines are printed during the boot.
@@ -2037,7 +1463,7 @@ test.describe("the desktop controls", () => {
         });
 
       const before = await painted();
-      await page.locator("#perf-stats").check();
+      await setting(page, "#perf-stats", (c) => c.check());
 
       // The panels are DOM over the canvas, so the rendered scene must not
       // move: an overlay that changed the picture would corrupt the very
@@ -2045,7 +1471,7 @@ test.describe("the desktop controls", () => {
       await expect(panels).toHaveCount(1);
       expect(Math.abs((await painted()) - before)).toBeLessThan(before * 0.02);
 
-      await page.locator("#perf-stats").uncheck();
+      await setting(page, "#perf-stats", (c) => c.uncheck());
       await expect(panels).toHaveCount(0);
     });
 
@@ -2066,7 +1492,8 @@ test.describe("the desktop controls", () => {
       await stashStableFrame(page);
       // Focus the body rather than a field: the registry deliberately ignores
       // keys typed into inputs, and the site picker is a `<select>`.
-      await page.locator("#scene").click({ position: { x: 5, y: 5 } });
+      await expectNoPanelOpen(page);
+      await focusPageForHotkeys(page);
       for (let k = 0; k < 4; k++) await page.keyboard.press("t");
       await expect
         .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
@@ -2082,33 +1509,37 @@ test.describe("the desktop controls", () => {
       // "change" fires per edited segment, so a field that blurred on it lost
       // focus after the first edit. It must then give focus back on Enter, or
       // "t" would be swallowed as typing.
-      const input = page.locator("#sun-date");
-      await input.fill("2026-12-21");
-      await expect(input).toHaveValue("2026-12-21");
-      // The boot's phase (20° in the afternoon) does not exist on 21 Dec at the
-      // fixture (15.6° at noon), so the sun lands on that day's noon.
-      await expect(page.locator("#sun-readout")).toHaveText("12:00 solar time");
-      await expect(input).toBeFocused();
-      await input.press("Enter");
-      await expect(input).not.toBeFocused();
-      const before = await page.locator("#sun-readout").textContent();
-      await page.keyboard.press("t");
-      await expect(page.locator("#sun-readout")).not.toHaveText(before ?? "");
+      await setting(page, "#sun-date", async (input) => {
+        await input.fill("2026-12-21");
+        await expect(input).toHaveValue("2026-12-21");
+        // The boot's phase (20° in the afternoon) does not exist on 21 Dec at
+        // the fixture (15.6° at noon), so the sun lands on that day's noon.
+        await expect(page.locator("#sun-readout")).toHaveText(
+          "12:00 solar time",
+        );
+        await expect(input).toBeFocused();
+        await input.press("Enter");
+        await expect(input).not.toBeFocused();
+        const before = await page.locator("#sun-readout").textContent();
+        await page.keyboard.press("t");
+        await expect(page.locator("#sun-readout")).not.toHaveText(before ?? "");
+      });
     });
 
     await test.step("the time slider moves the sun, and the keys still work after it", async () => {
       // A range input takes no typed text, so "t" must still step the sun while
       // it has focus (the hotkey registry exempts non-text inputs).
-      const slider = page.locator("#sun-time");
       const readout = page.locator("#sun-readout");
-      const before = await readout.textContent();
-      await slider.fill("150");
-      await expect(readout).not.toHaveText(before ?? "");
-      const afterSlider = await readout.textContent();
-      await slider.focus();
-      await page.keyboard.press("t");
-      await expect(readout).not.toHaveText(afterSlider ?? "");
-      await expect(slider).not.toHaveValue("150");
+      await setting(page, "#sun-time", async (slider) => {
+        const before = await readout.textContent();
+        await slider.fill("150");
+        await expect(readout).not.toHaveText(before ?? "");
+        const afterSlider = await readout.textContent();
+        await slider.focus();
+        await page.keyboard.press("t");
+        await expect(readout).not.toHaveText(afterSlider ?? "");
+        await expect(slider).not.toHaveValue("150");
+      });
     });
 
     await test.step("the shortcut list is discoverable and matches the bindings", async () => {
@@ -2140,19 +1571,20 @@ test.describe("the desktop controls", () => {
       const readout = page.locator("#render-distance-value");
       await expect(readout).toHaveText("draw 4800 m · haze 3168 m");
 
-      const slider = page.locator("#render-distance");
-      await slider.fill("10");
-      await slider.dispatchEvent("input");
+      await setting(page, "#render-distance", async (slider) => {
+        await slider.fill("10");
+        await slider.dispatchEvent("input");
 
-      // Both moved, by the same factor: 10x is 24000, and the haze keeps its
-      // 0.66 ratio. A far plane that moved alone would read haze 1584 m.
-      await expect(readout).toHaveText("draw 24000 m · haze 15840 m");
+        // Both moved, by the same factor: 10x is 24000, and the haze keeps its
+        // 0.66 ratio. A far plane that moved alone would read haze 1584 m.
+        await expect(readout).toHaveText("draw 24000 m · haze 15840 m");
 
-      // And back. This asserts the 1x baseline after an explicit `fill("1")`,
-      // not the boot default, which is why it reads 2400.
-      await slider.fill("1");
-      await slider.dispatchEvent("input");
-      await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+        // And back. This asserts the 1x baseline after an explicit
+        // `fill("1")`, not the boot default, which is why it reads 2400.
+        await slider.fill("1");
+        await slider.dispatchEvent("input");
+        await expect(readout).toHaveText("draw 2400 m · haze 1584 m");
+      });
     });
 
     await test.step("every layer has a VISIBLE switch", async () => {
@@ -2160,11 +1592,23 @@ test.describe("the desktop controls", () => {
       // `layer-toggles.test.ts`; visibility is CSS resolving against real
       // layout, which jsdom does not do.
       //
-      // The furniture switch sits in the "City look" section, which starts
-      // folded, so the claim is "visible once its section is unfolded"; the
-      // section is folded again afterwards so the steps below see the boot
+      // `cells` is in the command bar, always on screen. Every other switch
+      // is in the settings drawer, in sections that start folded, so the claim
+      // is "visible once the drawer is open and its section unfolded"; the
+      // drawer is closed again afterwards so the steps below see the boot
       // layout.
-      await openCityLook(page);
+      await expect(page.locator("#layer-cells")).toBeVisible();
+      await page.locator("#settings-open").click();
+      const sections = page.locator("#settings-drawer details");
+      const sectionCount = await sections.count();
+      expect(sectionCount).toBeGreaterThan(0);
+      const fold = (open) =>
+        sections.evaluateAll((els, o) => {
+          for (const el of els) {
+            if (el instanceof HTMLDetailsElement) el.open = o;
+          }
+        }, open);
+      await fold(true);
       const switches = page.locator("#layers input[type=checkbox][data-layer]");
       const count = await switches.count();
       expect(count).toBeGreaterThan(0);
@@ -2179,49 +1623,9 @@ test.describe("the desktop controls", () => {
       await expect(
         page.locator("#layer-group-diagnostics #perf-stats"),
       ).toBeVisible();
-      await page.locator("#layer-group-look > summary").click();
-      await expect(page.locator("#layer-group-look")).not.toHaveAttribute(
-        "open",
-        "",
-      );
-    });
-
-    await test.step("the bar collapses to the title, the category picker and the affordance block", async () => {
-      // Collapsed keeps the category picker and the whole affordance block
-      // including `show-below`. Collapsed hides the hint, the status string,
-      // World, Debug, Ground and the legend, whose category the picker one line
-      // below now names with a control rather than a label.
-      //
-      // The narrow viewport is set HERE, so everything above runs at the
-      // desktop width it was written for. A resize is a repaint, not a reload.
-      await page.setViewportSize({ width: 390, height: 780 });
-      await page.locator("#header-toggle").click();
-
-      await expect(page.locator("#category")).toBeVisible();
-      await expect(page.locator("#legend")).toBeHidden();
-      await expect(page.locator("#layer-cells")).toBeVisible();
-      // HIDDEN because `cells` is off by default: this control has nothing to be
-      // below the threshold OF while the cells are not drawn. An older form of
-      // this line asserted the opposite and was green because the default state
-      // was never painted. With `cells` on, the checkbox collapses with its
-      // block, which map-and-cells.spec.js asserts.
-      await expect(page.locator("#show-below")).toBeHidden();
-
-      await expect(page.locator("#status")).toBeHidden();
-      await expect(page.locator("#layer-group-world")).toBeHidden();
-      await expect(page.locator("#layer-group-diagnostics")).toBeHidden();
-      await expect(page.locator("#layer-group-look")).toBeHidden();
-      // The ground picker goes too: it changes what is drawn, and still counts
-      // as an expert control.
-      await expect(page.locator("#ground-mode-label")).toBeHidden();
-
-      // And expanding brings all three back, so this is a collapse rather than
-      // a removal.
-      await page.locator("#header-toggle").click();
-      await expect(page.locator("#layer-group-world")).toBeVisible();
-      await expect(page.locator("#layer-group-diagnostics")).toBeVisible();
-      await expect(page.locator("#layer-group-look")).toBeVisible();
-      await expect(page.locator("#ground-mode-label")).toBeVisible();
+      await fold(false);
+      await page.locator("#settings-open").click();
+      await expectNoPanelOpen(page);
     });
 
     await test.step("show-below sits inside the affordance group, not beside it", async () => {

@@ -3,7 +3,7 @@
  *
  * The keyboard shortcut registry (§1.4 step 5 / §3.4).
  *
- * OPTS INTO jsdom, like `header-collapse.test.ts` and for the same reason: the
+ * OPTS INTO jsdom, like `hud-panels.test.ts` and for the same reason: the
  * behaviour worth pinning IS the DOM wiring. "Does a keypress reach the handler
  * while the user is typing in a field" cannot be asked of a pure function,
  * because the answer lives entirely in how the listener is attached.

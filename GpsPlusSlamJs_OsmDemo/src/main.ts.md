@@ -76,9 +76,9 @@ None. Entry point only, loaded by `index.html`.
   view exists (`BuildingView`'s `initialSun`, so the sky is built once):
   the viewer's today (DEC-SUN-14) at the 20° afternoon sun (DEC-SUN-13), or
   the read-only `?date=` / `?time=` test pins, never written back
-  (DEC-R12-5). The controls are the `#sun-group` header block (plan
-  2026-09-24-0706): it collapses with the header like WORLD and DEBUG, and
-  holds the date, the `#sun-time` slider (civil dawn to civil dusk, linear
+  (DEC-R12-5). The controls are the `#sun-group` section of the settings
+  drawer ("Sun and time", before "View and debug"; it was a header block
+  until the command bar), and holds the date, the `#sun-time` slider (civil dawn to civil dusk, linear
   in time, 0…1000, DEC-SUN-15; sampled with `throttle` to one sun move per
   50 ms while dragged, because each move re-renders and reads back the sky)
   and the readout. Keys: t/T step the day's
@@ -139,7 +139,7 @@ None. Entry point only, loaded by `index.html`.
   centre must follow the user, which is the counterweight that stops "nothing
   moved" passing for "nothing is sampled where you are". `data-*` rather than a
   `window` global, matching `data-state` on the locate button and
-  `data-collapsed` on the header.
+  `data-busy` on the bar's settings button.
   - **The e2e that reads these must not pin a map pixel** (J2, 2026-08-22).
     Both scene-frame tests walked the user by clicking `#map` at a hard-coded
     `(60, 60)`, which only works while that pixel is bare map. Leaflet holds the
@@ -211,6 +211,21 @@ None. Entry point only, loaded by `index.html`.
     query, which is why `cameraQuery` updates its keys in place rather than
     deleting and re-appending them.
 
+- **The command bar and its panels** (`hud-panels.ts`). The header is gone:
+  `#command-bar` floats over both panes with the place, the category, the
+  `cells` switch, the quests, the sun chip, the info button and the settings
+  button. `attachHudPanels` owns three panels (`settings` = `#settings-drawer`,
+  `info` = `#info-panel` holding `#status`, `sun` = `#sun-pop` with the quick
+  sun slider); at most one is open, none at boot, none stored. Escape closes
+  the open one and focus returns to its opener; the light dialog stacks over
+  the drawer and answers its own Escape first. `attachBusyMark` keeps
+  `data-busy` on `#settings-open` while a drawer switch is applying, so the
+  wait is visible with the drawer closed. Errors toast; nothing here opens a
+  panel on its own.
+- **`#sun-time` is the canonical sun slider.** `#sun-time-quick` in the sun
+  popover mirrors it: `showSunControl` paints both and the chip's
+  `#sun-chip-time`, and the quick slider's input copies its value into
+  `#sun-time` before moving the sun, so there is one source of truth.
 - **The city-look controls are folded.** The colour scheme (with its
   status), the furniture switch, the invented roofs and the zebras (each with
   its status) sit in the "City look" section of `layer-toggles.ts`, which

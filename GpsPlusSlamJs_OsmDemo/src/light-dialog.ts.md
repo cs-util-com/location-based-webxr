@@ -51,7 +51,8 @@ WebGL.
     range from `LIGHT_SETTING_RANGES`;
   - `#light-ao`, the ambient occlusion checkbox (only when offered);
   - `#light-readout`;
-  - `#light-check`, `#light-copy`, `#light-reset` and `#light-close`.
+  - `#light-back`, `#light-check`, `#light-copy`, `#light-reset` and
+    `#light-close`.
 - **The gain ramp always rises.** A start dragged past the end moves the
   end, and the other way round, so the view never receives a ramp that
   `surfaceGainAt` refuses.
@@ -76,14 +77,19 @@ WebGL.
   e2e sweep in `scene-3d.spec.js` runs with the `woods` layer off for that
   reason. The bound itself is unchanged.
 - **Escape closes it from anywhere while it is open.** The listener is on
-  the document and only while open. Focus returns to the opener only when it
-  was inside the panel.
+  the document and only while open, and it calls `preventDefault`: the dialog
+  opens over the settings drawer, whose own Escape listener (`hud-panels.ts`,
+  on `window`, so later) leaves a handled key alone. One Escape closes one
+  layer. Focus returns to the opener only when it was inside the panel.
+- **The back arrow** (`#light-back`, "Back to settings") closes it like Close
+  does: it opens from the drawer's sun section, in the drawer's slot, so going
+  back is the expected way out.
 - **What the dialog does not do:**
   - On the fallback sky there is no scene environment, so "Sky light on
     buildings" has no effect there (`applyBuildingSkyLight` keeps three's
     own path).
-  - On a phone the open panel covers the floating header, including its own
-    opener. Close and Escape still close it; tuning is meant for desktop.
+  - On a phone it takes the drawer's slot over the map sheet. Tuning is
+    meant for desktop.
 
 ## Example
 
@@ -107,7 +113,8 @@ dialog.toggle();
 ## Tests
 
 - `light-dialog.test.ts` (jsdom) covers:
-  - opening with the brightness; Escape from inside and from anywhere;
+  - opening with the brightness; Escape from inside and from anywhere,
+    marked handled; the back arrow closing it with focus back on the opener;
     focus in on open and back to the opener; `aria-expanded`;
   - a slider reaching `onChange` and showing its value;
   - the ramp kept rising in both directions;

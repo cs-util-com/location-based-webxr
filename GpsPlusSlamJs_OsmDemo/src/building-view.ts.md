@@ -164,7 +164,7 @@ map scored.
   thing that did was the user dragging the camera — which is how the bug was
   reported: the picture returns the moment you touch it. **Any new caller that
   changes the canvas size must schedule a frame**; the callers are the container
-  `ResizeObserver`, the mobile sheet drag and the header collapse, and the sheet
+  `ResizeObserver` and the mobile sheet drag, and the sheet
   drag is the harsh one because it calls `resize()` on every pointer move
   (coalescing in `requestFrame` is what keeps that to one frame per animation
   frame).
@@ -178,12 +178,16 @@ map scored.
   stays green. Passing `updateStyle: true` as well would write an inline style
   that beats the stylesheet, so the rule would silently stop being the mechanism.
 - **The size trigger is a `ResizeObserver` on the CONTAINER, not a `window`
-  listener.** The container is the `1fr` row of a `auto 1fr` grid, so it shrinks
-  when the header grows — and the header grows with no window resize at all, as
+  listener.** Since the command bar the container no longer shares the window
+  with a header row: the bar and its panels float over both panes, so opening a
+  panel or turning the cells on never resizes the canvas (asserted by
+  `playwright-tests/hud-layout.spec.js`). History: the container was the `1fr`
+  row of a `auto 1fr` grid, so it shrank
+  when the header grew — and the header grows with no window resize at all, as
   soon as the status line fills in and wraps. Measured at 1280x800: the drawing
   buffer sat **109 px taller than its container** for the whole session, on a
   stale camera aspect. The observer covers window resize, rotation, the sheet
-  drag and the header collapse in one place.
+  drag and (then) the header collapse in one place.
 - **The sky is the framework's physical atmosphere, through
   [`atmosphere-rig.ts`](atmosphere-rig.ts.md)** (plan 2026-09-23-0048, M3). It
   owns the visible sky, `scene.environment` (a PMREM bake of the sky), the sun
@@ -649,7 +653,8 @@ field ask that raised the default was literally about zooming further out.
 - **Options:** `woodsAuto` (absent: off) lets the library's woods governor
   thin the invented woods; `perfReadout` (absent: hidden) mounts the frame
   readout, a `data-testid="perf-readout"` line over the pane's top-left
-  corner, removed by `dispose()`. `main.ts` reads both from the link
+  corner, removed by `dispose()`. It and the `?stats` panel start just below
+  the command bar (`--hud-bar-h`), because the bar covers the pane's top strip. `main.ts` reads both from the link
   (`woods-readout.ts` `readWoodsKnobs`).
 - **Chained frames only.** This view draws on demand, so `requestFrame`
   records whether it was called from within the frame callback (a drag's

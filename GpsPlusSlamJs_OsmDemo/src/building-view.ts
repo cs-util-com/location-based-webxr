@@ -1246,6 +1246,9 @@ export class BuildingView {
       return;
     }
     this.perfStats = createPerfStatsOverlay(this.container);
+    // The overlay pins itself to the window's top-right corner, which the
+    // command bar covers; it moves down by the bar's height.
+    this.perfStats.dom.style.top = "var(--hud-bar-h, 0px)";
     // One frame immediately, or the panels sit empty until the camera moves —
     // which reads as "the overlay is broken" rather than "the scene is static".
     this.requestFrame();
@@ -2815,7 +2818,8 @@ function installGroundDisplacement(
  */
 
 /**
- * The `?perf=1` line over the 3D pane's top-left corner: a plain text node
+ * The `?perf=1` line at the 3D pane's top-left corner, below the command
+ * bar that covers the pane's top strip (`--hud-bar-h`): a plain text node
  * the frame callback rewrites, never a pick target (`pointer-events: none`).
  * `#scene` is positioned, so the corner is the pane's.
  */
@@ -2823,7 +2827,8 @@ function mountPerfReadout(container: HTMLElement): HTMLElement {
   const readout = document.createElement("div");
   readout.dataset["testid"] = "perf-readout";
   readout.style.cssText =
-    "position:absolute;top:4px;left:4px;z-index:5;pointer-events:none;" +
+    "position:absolute;top:calc(var(--hud-bar-h, 0px) + 4px);left:4px;" +
+    "z-index:5;pointer-events:none;" +
     "padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.6);" +
     "color:#fff;font:11px/1.4 ui-monospace,monospace;white-space:nowrap;";
   readout.textContent = "frame - ms";

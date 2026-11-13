@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Opts into jsdom for the same reason `header-collapse.test.ts` does: the
+ * Opts into jsdom for the same reason `hud-panels.test.ts` does: the
  * behaviour worth pinning here IS the wiring. Extracting a "pure option list"
  * and testing that alone would assert the one part that cannot drift, while
  * leaving the part that can — that the DOM the user actually touches is built

@@ -26,6 +26,8 @@ import {
   walkByMapClick,
   REPAINT,
   pinQuestClock,
+  expectNoPanelOpen,
+  setting,
 } from "./fixtures.js";
 
 /**
@@ -353,7 +355,7 @@ test.describe("explaining one cell", () => {
       const cells = shared.locator("#map path.affordance-cell");
       const before = await cells.count();
 
-      await shared.locator("#show-below").check();
+      await setting(shared, "#show-below", (c) => c.check());
 
       // More cells, and specifically the two the old single skip made
       // indistinguishable: a hard veto and "no rule said anything here". Being
@@ -393,7 +395,7 @@ test.describe("explaining one cell", () => {
       // this step needs — it is checked again rather than assumed, because a step
       // that silently depends on its predecessor is the coupling fusion has to
       // avoid.
-      await shared.locator("#show-below").check();
+      await setting(shared, "#show-below", (c) => c.check());
       const vetoed = shared.locator("#map path.affordance-cell-veto").first();
       await expect(vetoed).toBeVisible();
       await vetoed.click();
@@ -434,7 +436,7 @@ test.describe("explaining one cell", () => {
 
       // Back to the boot state: the reveal off, and nothing selected.
       await panel.locator(".panel-close").click();
-      await shared.locator("#show-below").uncheck();
+      await setting(shared, "#show-below", (c) => c.uncheck());
     });
 
     await test.step("the selection follows a category switch and is dropped when the user moves", async () => {
@@ -567,7 +569,7 @@ test.describe("revealing the sub-threshold cells", () => {
       const before2d = await cells.count();
       const before3d = await shot();
 
-      await shared.locator("#show-below").check();
+      await setting(shared, "#show-below", (c) => c.check());
 
       // 2D: more cells on screen. 3D: a different picture. Both halves, because
       // the reported symptom was that nothing appeared to happen at all.
@@ -575,7 +577,7 @@ test.describe("revealing the sub-threshold cells", () => {
       await expect.poll(shot, REPAINT).not.toBe(before3d);
 
       // AND BACK, which is the half that catches a redraw that only ever adds.
-      await shared.locator("#show-below").uncheck();
+      await setting(shared, "#show-below", (c) => c.uncheck());
       await expect.poll(() => cells.count()).toBe(before2d);
     });
 
@@ -591,7 +593,7 @@ test.describe("revealing the sub-threshold cells", () => {
       //
       // The switch is checked again here rather than inherited: the step above
       // ends by unchecking it, because "and back" is half of ITS claim.
-      await shared.locator("#show-below").check();
+      await setting(shared, "#show-below", (c) => c.check());
       // THE CELL NEAREST THE MAP CENTRE, not the first in DOM order.
       //
       // Leaflet puts its controls in the CORNERS — zoom top-left, attribution
@@ -783,11 +785,12 @@ test.describe("selecting a region", () => {
     // all. `building-view.ts` keeps a hidden ground plane out of the raycast
     // set, so with the "none" ground mode the slab genuinely is the thing under
     // the pointer and this route to `regionSelected` still exists.
-    await page.locator("#ground-mode").selectOption("none");
+    await setting(page, "#ground-mode", (c) => c.selectOption("none"));
 
     const canvas = page.locator("#scene canvas");
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("no canvas box");
+    await expectNoPanelOpen(page);
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 
     const panel = page.locator("#details");
@@ -925,7 +928,7 @@ test.describe("the geo-event", () => {
     // And nothing failed. ASSERTED ON THE CAPTURED STRING, for the reason
     // given above — watching the live locator could not fail once the toast
     // had lingered out. Watched on the toast rather than the status line:
-    // errors stopped being written to `#status` when the header's
+    // errors stopped being written to `#status` when the old header's
     // self-expanding rule was retired (DEC-U10), so `geo-event failed` can
     // never appear there and this assertion held for a broken app too. Its
     // sibling in boot-and-shell.spec.js was repointed at the time; this one
@@ -1333,8 +1336,11 @@ test.describe("the cell layer toggle", () => {
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
+    // Judged with its drawer section OPEN: the drawer starts closed, so the
+    // switch is out of sight either way, and only an open section shows
+    // whether the layer hides it.
     const showBelow = page.locator("#show-below-label");
-    await expect(showBelow).toBeHidden();
+    await setting(page, "#show-below", () => expect(showBelow).toBeHidden());
 
     const toggle = page.locator("#layer-cells");
     const row = page.locator("label.layer-toggle", { has: toggle });
@@ -1396,11 +1402,13 @@ test.describe("the cell layer toggle", () => {
       "never saw the row busy AND the input disabled at the same moment",
     ).toBe(true);
 
-    // THE CHECKBOX FOLLOWS THE LAYER, in both directions.
-    await expect(showBelow).toBeVisible();
-
-    await page.locator("#layer-cells").uncheck();
-    await expect(showBelow).toBeHidden();
+    // THE CHECKBOX FOLLOWS THE LAYER, in both directions, seen in its open
+    // drawer section (the bar's `cells` switch stays on top of the drawer).
+    await setting(page, "#show-below", async () => {
+      await expect(showBelow).toBeVisible();
+      await page.locator("#layer-cells").uncheck();
+      await expect(showBelow).toBeHidden();
+    });
   });
 
   test("leaves the switch usable when the refresh fails, draws no cell, and takes both loading channels down", async ({

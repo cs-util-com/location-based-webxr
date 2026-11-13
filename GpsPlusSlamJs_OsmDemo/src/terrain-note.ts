@@ -17,7 +17,11 @@
  * nothing, and that is now the correct outcome rather than a defect). So this
  * string is the ONLY remaining signal separating flat-and-loaded from not-loaded.
  *
- * AND IT IS HIDDEN WHILE THE HEADER IS COLLAPSED. An earlier revision of this
+ * AND IT IS OUT OF SIGHT BY DEFAULT. `#status` now sits in the command bar's
+ * info panel, which starts closed, so the gap below holds with every panel
+ * closed rather than only with the old header collapsed. The history:
+ *
+ * IT WAS HIDDEN WHILE THE HEADER WAS COLLAPSED. An earlier revision of this
  * comment claimed the opposite — "it must not be dropped by the collapsible header"
  * — which the same PR contradicted: DEC-R2-4 hides `#status`, and
  * `header-collapse.ts` lists the status string among what it hides. Caught in

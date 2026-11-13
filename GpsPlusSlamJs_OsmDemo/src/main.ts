@@ -163,7 +163,7 @@ import { renderDistanceFor } from "./render-distance.js";
 import { createMapDragLatch } from "./map-drag-latch.js";
 import { cameraDistanceForZoom } from "./map-zoom-to-camera.js";
 import { throttle } from "./throttle.js";
-import { attachHeaderCollapse } from "./header-collapse.js";
+import { attachBusyMark, attachHudPanels } from "./hud-panels.js";
 import { createAgentCycle } from "./agent-cycle.js";
 import { createExplainCycle } from "./explain-cycle.js";
 import { ROUTE_LIFT_M } from "./layer-order.js";
@@ -611,13 +611,20 @@ async function main(): Promise<void> {
   const sunTimeInput = el<HTMLInputElement>("sun-time");
   const SUN_SLIDER_STEPS = 1000;
   const sunReadout = el("sun-readout");
+  // THE BAR'S SUN CHIP shows the solar time, and its quick slider mirrors
+  // the canonical `#sun-time`: both are painted here and both move the sun
+  // through `moveSunToSlider`, so they cannot disagree.
+  const sunTimeQuick = el<HTMLInputElement>("sun-time-quick");
+  const sunChipTime = el("sun-chip-time");
   const showSunControl = () => {
     const d = sunDateOf(sunInstant, sunPlace);
     sunDateInput.value = `${d.year}-${pad2(d.month)}-${pad2(d.day)}`;
     sunTimeInput.value = String(
       Math.round(instantToSlider(sunInstant, sunPlace) * SUN_SLIDER_STEPS),
     );
+    sunTimeQuick.value = sunTimeInput.value;
     sunReadout.textContent = formatSunReadout(sunInstant, sunPlace);
+    sunChipTime.textContent = formatSolarClock(sunInstant, sunPlace);
   };
   // THE LIGHT DIALOG (plan 2026-09-24-2140): the owner tunes the noon
   // lighting live and pastes the result back. The settings travel in the URL
@@ -707,6 +714,10 @@ async function main(): Promise<void> {
     );
   }, 50);
   sunTimeInput.addEventListener("input", () => moveSunToSlider());
+  sunTimeQuick.addEventListener("input", () => {
+    sunTimeInput.value = sunTimeQuick.value;
+    moveSunToSlider();
+  });
   hotkeys.add({
     key: "t",
     description: "step the sun forward (skips the night)",
@@ -723,6 +734,26 @@ async function main(): Promise<void> {
     description: "open or close the light settings",
     handler: () => lightDialog.toggle(),
   });
+  // THE COMMAND BAR'S PANELS: the settings drawer, the status and the quick
+  // sun slider share one place, so at most one is open; open/closed is view
+  // state and every load starts with all of them closed. Escape closes the
+  // open one; the light dialog stacked over the drawer answers its own
+  // Escape first (see `hud-panels.ts`).
+  const settingsDrawer = el("settings-drawer");
+  const settingsOpen = el("settings-open");
+  const hudPanels = attachHudPanels({
+    panels: {
+      settings: { element: settingsDrawer, opener: settingsOpen },
+      info: { element: el("info-panel"), opener: el("info-open") },
+      sun: { element: el("sun-pop"), opener: el("sun-chip") },
+    },
+  });
+  el("settings-hide").addEventListener("click", () =>
+    hudPanels.hide("settings"),
+  );
+  // A drawer control still applying shows on the bar's settings button, so
+  // the state stays visible with the drawer closed.
+  attachBusyMark({ root: settingsDrawer, mark: settingsOpen });
   // THE LOOK PRESETS (§3, DEC-R6-9/10). One key cycles whole looks rather than
   // four keys toggling four axes: sixteen combinations means no combination is
   // tested, the e2e suite can only pin one, and these axes interact — opacity
@@ -1130,22 +1161,6 @@ async function main(): Promise<void> {
     onResize: () => {
       // Both canvases size themselves from their container, and neither notices
       // a container that changed without a window resize.
-      mapView.map.invalidateSize();
-      buildingView.resize();
-    },
-  });
-
-  // Collapsing hands the header's height back to the 3D view (it is a grid ROW,
-  // not an overlay — see `header-collapse.ts`), so both canvases have to be
-  // resized and the 3D one repainted. `BuildingView.resize()` schedules its own
-  // frame since finding R2-3, so calling it is enough.
-  // NOT BOUND TO A NAME ANY MORE. The only thing that held it was
-  // `revealForError`, retired with DEC-R2-15 (DEC-U10) now that errors have a
-  // toast; the collapse behaviour itself is entirely user-driven from here on.
-  attachHeaderCollapse({
-    header: el("header-bar"),
-    toggle: el("header-toggle"),
-    onToggle: () => {
       mapView.map.invalidateSize();
       buildingView.resize();
     },
@@ -2516,6 +2531,9 @@ async function main(): Promise<void> {
   // replaces the set rather than patching one layer).
   const layerToggles = attachLayerToggles({
     container: el("layers"),
+    // THE CELL LAYER STAYS IN THE BAR, beside the category picker it draws;
+    // every other switch is in a drawer section.
+    bar: el("bar-analysis"),
     onChange: (next) => store.dispatch(actions.layersChanged(next)),
     // The perf panel is a diagnostic and belongs beside the height ramp, but it
     // draws nothing in the scene so it is deliberately not a layer (W15,
@@ -2529,20 +2547,14 @@ async function main(): Promise<void> {
     // sibling styled to look adjacent is what makes it collapse and expand with
     // that block, which is the behaviour the sixth session asked for.
     //
-    // THE CATEGORY PICKER FIRST (F3d) — and as of round three that is true
-    // rather than merely claimed. The group is captioned `Category`, so the
-    // control it names belongs at the top of it rather than below the switches
-    // that describe what to draw for it. This comment sat here for a day over a
-    // seam that could only append, so the bar rendered
-    // `Category · cells · areas · ‹select›`; the seam now takes a position and
-    // `layer-toggles.test.ts` holds the order to the screen.
+    // THE SUN SECTION sits between the city look and the view settings; it
+    // is not a layer group, so it is handed over whole.
+    sectionsBefore: { diagnostics: [el("sun-group")] },
     extrasBefore: {
-      overlays: [el("category")],
-      // THE CITY LOOK, FOLDED. The colour scheme, invented roofs and zebras are
-      // build choices nobody switches often, so they sit with the furniture
-      // switch in a section that starts folded; spread through the header they
-      // wrapped the world group onto a second row at 1280 px. The scheme first,
-      // since it changes the whole picture; each status stays beside its control.
+      // THE CITY LOOK. The colour scheme, invented roofs and zebras are build
+      // choices nobody switches often, so they sit with the furniture switch
+      // in their own section. The scheme first, since it changes the whole
+      // picture; each status stays beside its control.
       look: [el("colour-scheme-label"), el("colour-scheme-status")],
     },
     extrasAfter: {
@@ -2550,10 +2562,7 @@ async function main(): Promise<void> {
       // LAST, after the two switches: it changes which cells `cells` draws, so
       // it reads as a qualifier on the switch above it rather than a third peer.
       overlays: [showBelowLabel],
-      // THE GROUND PICKER JOINS `world` (J2, DEC-J5). It was a loose `<label>`
-      // sitting as a direct header child, and J2 puts every control in a block —
-      // so left alone it would be the ONE bare thing on a now-transparent bar,
-      // i.e. the next session's finding.
+      // THE GROUND PICKER JOINS `world` (J2, DEC-J5).
       //
       // `world` rather than a block of its own: the group answers "what is in
       // the world", and the ground mode chooses which surface is drawn as the
@@ -2700,7 +2709,7 @@ async function main(): Promise<void> {
    *
    * Attributes rather than a `window` global: this app already uses `data-*` to
    * expose state the e2e asserts on (`data-state` on the locate button,
-   * `data-collapsed` on the header), and an attribute cannot be read before it
+   * `data-busy` on the bar's settings button), and an attribute cannot be read before it
    * is written by mistake.
    */
   const publishFrameState = (
