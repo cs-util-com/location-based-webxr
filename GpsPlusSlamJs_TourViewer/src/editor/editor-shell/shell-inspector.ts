@@ -77,11 +77,7 @@ import {
   typed,
 } from "./inspector-fields.js";
 import type { KindPanelDraw } from "../kind-panels/kind-panel.js";
-import {
-  contentsBody,
-  contentsSummary,
-  entriesList,
-} from "./inspector-contents.js";
+import { contentsBody, contentsSummary } from "./inspector-contents.js";
 import type { StoryCard, StoryCardJump } from "./story-cards.js";
 import { radiusRange } from "./radius-slider.js";
 import { wirePinTextCounter, wireTextCounter } from "../../pin-text.js";

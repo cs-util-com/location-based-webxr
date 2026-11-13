@@ -31,7 +31,7 @@ export interface StoryCardJump {
 }
 
 /** One line under a card: an answer, or a quiz's "After the answer". */
-export interface StoryCardAnswer {
+interface StoryCardAnswer {
   readonly label: string;
   /** A quiz's answer: whether it is the right one; null otherwise. */
   readonly right: boolean | null;
@@ -60,7 +60,7 @@ export interface StoryCard {
 }
 
 /** How a block moves on, as its chip says it. */
-export function advanceChip(advance: TourStepAdvance): string {
+function advanceChip(advance: TourStepAdvance): string {
   if (advance.mode === "auto") return `After ${String(advance.afterS)} s`;
   return advance.mode === "lineEnd" ? "When the line ends" : "On a tap";
 }

@@ -31,8 +31,8 @@ draws them; `inspector-model.ts` puts them on the story's inspector.
 - `StoryCardJump { text, type, to }`: the chip's words (`stepJumpText`),
   its kind (`next`, `jump`, `back`, `end`, `missing`) and the id of the
   step it leads to (null for the end or a gone step).
-- `advanceChip(advance)`: "After <s> s", "On a tap", "When the line
-  ends".
+- `advanceChip(advance)` (module-private): "After <s> s", "On a tap",
+  "When the line ends".
 
 ## Invariants and assumptions
 
