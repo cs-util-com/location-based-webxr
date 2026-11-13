@@ -1843,6 +1843,14 @@ describe("the crumb and the way up", () => {
     expect(
       dock.head.querySelector('[data-act="back"]')?.getAttribute("aria-label"),
     ).toBe("Back to 1 The old gate");
+    // The tree's select-mode tick is `.cb`, hidden outside select mode:
+    // a crumb carrying that class vanished on a desktop.
+    expect(parts.every((b) => b.classList.contains("crumb"))).toBe(true);
+    expect(parts.some((b) => b.classList.contains("cb"))).toBe(false);
+    // Back up to a level, not to the list: a docked layout shows it too.
+    expect(
+      dock.head.querySelector('[data-act="back"]')?.classList.contains("up"),
+    ).toBe(true);
   });
 });
 
@@ -1854,6 +1862,9 @@ describe("the head's way back", () => {
       const first = dock.head.firstElementChild as HTMLElement;
       expect(first.dataset["act"]).toBe("back");
       expect(first.getAttribute("aria-label")).toBe("Back to the list");
+      // Back to the list only repeats Deselect where the list stays in
+      // view, so it is a phone's alone.
+      expect(first.classList.contains("up")).toBe(false);
     }
   });
 });

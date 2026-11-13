@@ -408,6 +408,12 @@ body {
   display: none;
 }
 
+/* Back up to a level (a step to its story, an item to its station) is
+ * every layout's; Back to the list only repeats Deselect. */
+#inspector-head [data-act="back"].up {
+  display: inline-flex;
+}
+
 #inspector-head [data-act="back"] svg {
   transform: rotate(180deg);
 }
@@ -1360,7 +1366,7 @@ body {
   scrollbar-width: none;
 }
 
-.crumbs .cb {
+.crumbs .crumb {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 240px;
@@ -1378,14 +1384,14 @@ body {
   cursor: pointer;
 }
 
-.crumbs .cb:hover:not([aria-current]) {
+.crumbs .crumb:hover:not([aria-current]) {
   background: var(--s-bg3);
   color: var(--s-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.crumbs .cb[aria-current] {
+.crumbs .crumb[aria-current] {
   color: var(--s-text);
   font-weight: 600;
   cursor: default;
@@ -1397,7 +1403,7 @@ body {
 }
 
 @media (max-width: 700px) {
-  .crumbs .cb {
+  .crumbs .crumb {
     flex: none;
     min-height: 36px;
     max-width: 60vw;

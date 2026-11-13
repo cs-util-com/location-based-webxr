@@ -1389,7 +1389,7 @@ function crumbNav(crumb: readonly InspectorCrumb[]): HTMLElement {
       sep.setAttribute("aria-hidden", "true");
       nav.append(sep);
     }
-    const b = el("button", "cb", part.label);
+    const b = el("button", "crumb", part.label);
     b.type = "button";
     if (k === crumb.length - 1) {
       b.setAttribute("aria-current", "page");
@@ -1400,6 +1400,12 @@ function crumbNav(crumb: readonly InspectorCrumb[]): HTMLElement {
     nav.append(b);
   });
   return nav;
+}
+
+/** Whether Back goes up to a level rather than to the list. */
+function backGoesUp(crumb: readonly InspectorCrumb[] | undefined): boolean {
+  const up = crumb?.at(-2);
+  return up !== undefined && up.select !== null;
 }
 
 /** The Back button's name: the level it goes up to. */
@@ -1644,8 +1650,12 @@ function drawDock(
   icon.append(shellIcon(drawn));
   const head = headTitle(model, panel);
   const count = pinCount(model, head);
+  const back = iconButton("right", backLabel(state.crumb), "back");
+  // Up to a level (not to the list, which Deselect already is): shown on
+  // every layout, where Back to the list is a phone's alone.
+  back.classList.toggle("up", backGoesUp(state.crumb));
   dock.head.replaceChildren(
-    iconButton("right", backLabel(state.crumb), "back"),
+    back,
     icon,
     head,
     ...(panel?.head() ?? []),

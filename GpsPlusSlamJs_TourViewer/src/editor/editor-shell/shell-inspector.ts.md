@@ -41,15 +41,19 @@ tabbed)` puts the focus on the control drawn under `name` (none, a
   one-line field's text, as Tab does in a field no draw replaced. The shell uses the two for the control the
   focus was moving to when a commit drew the dock again: Chromium drops
   a focus whose target a draw removed during `focusout` to the page.
-  - Every head starts with the Back button (`data-act="back"`), shown
-    only on a phone (`editor-shell.css`): it goes one level up, and its
-    name says where to - "Back to <level>" by the crumb's last-but-one
-    part, "Back to the list" when that is the whole tour or no crumb is
-    given.
+  - Every head starts with the Back button (`data-act="back"`): it goes
+    one level up, and its name says where to - "Back to <level>" by the
+    crumb's last-but-one part, "Back to the list" when that is the whole
+    tour or no crumb is given. Up to a level it carries the class `up`
+    and shows on every layout; Back to the list only repeats Deselect
+    where the list stays in view, so it shows on a phone alone
+    (`editor-shell.css`).
   - `state.crumb` (`inspectorCrumb`), when given, is drawn over the
     details as `nav.crumbs` ("Where you are"): each level above a button
     (`data-act="nav:<selection>"`, `nav:` for the whole tour), the
     selection itself the current part (`aria-current="page"`, no act).
+    Its buttons are `.crumb`, never `.cb`: that is the list's
+    select-mode tick, hidden outside select mode.
   - The head's icon (`headLook`, one case per kind of selection, none
     by default): a block's is its kind's look in the editor's list of
     kinds (`../../kinds/edit-kinds.ts`), and so are the words of its

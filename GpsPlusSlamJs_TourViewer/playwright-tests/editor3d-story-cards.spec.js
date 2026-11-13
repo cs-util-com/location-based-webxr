@@ -67,6 +67,11 @@ for (const size of SIZES) {
     await inspector.locator('[data-act="add-entry"]').click();
     await menu.locator('[data-kind="longText"]').click();
     await expect(inspector.locator(".sub")).toHaveText("Long text, entry 1");
+    // The way up shows on every size: Back, and the crumb's levels.
+    await expect(back).toBeVisible();
+    await expect(
+      inspector.locator(".crumbs button", { hasText: "The legend" }),
+    ).toBeVisible();
     await back.click();
     await expect(inspector.locator(".scard")).toHaveCount(1);
 
