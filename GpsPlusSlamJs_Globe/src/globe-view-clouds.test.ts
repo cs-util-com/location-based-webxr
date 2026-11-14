@@ -182,8 +182,8 @@ const reliefTiles = () => ({
 });
 
 describe("createGlobeViewClouds without the near clouds", () => {
-  // Why this test matters: `clouds=old` must be the old path, with the
-  // cover it always had.
+  // Why this test matters: the old clouds are the editor's default and must
+  // stay the old path, with the cover they always had.
   it("does not lift the shell's cover", () => {
     const fakes = fakeParts();
     const clouds = createGlobeViewClouds(fakeView(60_000), fakes.parts);
