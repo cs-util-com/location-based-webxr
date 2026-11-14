@@ -65,7 +65,7 @@ describe("barActions for what stands nowhere", () => {
   it("offers a story Duplicate alone, an entry or a free block nothing", () => {
     const base = { id: "x", stationId: "s", title: "T", sub: "" };
     expect(
-      barActions({ ...base, kind: "story", storyId: "x", entries: [] }).map(
+      barActions({ ...base, kind: "story", storyId: "x", cards: [] }).map(
         (a) => a.action,
       ),
     ).toEqual(["duplicate"]);

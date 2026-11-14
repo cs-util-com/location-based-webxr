@@ -225,6 +225,18 @@ describe("placeFileItem", () => {
     expect(i.place).not.toHaveBeenCalled();
   });
 
+  // Why: "Insert step" between two cards adds a file's entry there, so
+  // the target's place must reach the session.
+  it("puts a story's entry at the target's place", () => {
+    const i = input("model", { kind: "story", storyId: "t", at: 0 });
+    expect(placeFileItem(i)).toEqual({ kind: "added", id: "new" });
+    expect(i.addEntryToStory).toHaveBeenCalledWith(
+      "t",
+      expect.objectContaining({ id: "new", kind: "model" }),
+      0,
+    );
+  });
+
   // Why: a story's entry stands at its station's free spot, so the
   // story's station must be found; a story gone meanwhile adds nothing.
   it("refuses a story that is gone, adding nothing", () => {

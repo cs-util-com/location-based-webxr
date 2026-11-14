@@ -232,6 +232,7 @@ import {
   type FileAddTarget,
 } from "./add-file-item.js";
 import { createFilePicker } from "./file-picker.js";
+import { createStoryPreview } from "./story-preview.js";
 import {
   dragHasFiles,
   FILE_FIELD_ATTR,
@@ -1921,12 +1922,17 @@ function addStoryTo(stationId: string): void {
   tourChanged();
 }
 
-/** The story menu's Choice or Quiz: a new step at the story's end,
- *  selected, its inspector open on its fields. */
-function addStepToStoryEntry(storyId: string, kind: StepKind): void {
+/** The story menu's Choice or Quiz: a new step at the story's end (or
+ *  before its child at `at`), selected, its inspector open on its
+ *  fields. */
+function addStepToStoryEntry(
+  storyId: string,
+  kind: StepKind,
+  at?: number,
+): void {
   if (editor === null) return;
   endUndo();
-  const outcome = editor.addStepToStory(storyId, kind);
+  const outcome = editor.addStepToStory(storyId, kind, at);
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
@@ -1937,16 +1943,17 @@ function addStepToStoryEntry(storyId: string, kind: StepKind): void {
   tourChanged();
 }
 
-/** The tree's add into the story `storyId`: a new entry of `kind`,
- *  selected, said once it was made; one step. */
-function addToStoryEntry(storyId: string, kind: AddKind): void {
+/** The tree's add into the story `storyId`: a new entry of `kind` (at
+ *  its end, or before its child at `at`), selected, said once it was
+ *  made; one step. */
+function addToStoryEntry(storyId: string, kind: AddKind, at?: number): void {
   if (editor === null) return;
   if (isFileAddKind(kind)) {
-    void addFromFile(kind, { kind: "story", storyId });
+    void addFromFile(kind, { kind: "story", storyId, at });
     return;
   }
   endUndo();
-  const outcome = editor.addToStory(storyId, kind);
+  const outcome = editor.addToStory(storyId, kind, at);
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
@@ -1961,6 +1968,14 @@ function addToStoryEntry(storyId: string, kind: AddKind): void {
 
 /** The file picker the add menu's file kinds open. */
 const filePicker = createFilePicker(document.body);
+
+/** A story played as a visitor meets it (`story-preview.ts`), from the
+ *  tour as it is now, unsaved edits included. */
+const storyPreview = createStoryPreview({
+  doc: document,
+  tour: () => manifestToWrite(store.getState().tourDocument),
+  loadAsset: readContent,
+});
 
 /** The asset shelf's panel of the open tour (`asset-shelf/shelf-panel.ts`). */
 let shelfPanel: ShelfPanel | null = null;
@@ -2188,7 +2203,8 @@ function placeFrom(
     nowIso: new Date().toISOString(),
     groundAt: (place) => shown3d?.groundAt(place) ?? null,
     place: (object) => open.place(object),
-    addEntryToStory: (storyId, child) => open.addEntryToStory(storyId, child),
+    addEntryToStory: (storyId, child, at) =>
+      open.addEntryToStory(storyId, child, at),
   });
   refresh();
   return placed;
@@ -2645,6 +2661,7 @@ tourName.addEventListener("click", openDetails);
 function dialogOpen(): boolean {
   return (
     !modal.hidden ||
+    storyPreview.isOpen() ||
     details.isOpen() ||
     done.isOpen() ||
     characters.dialogOpen()
@@ -4891,6 +4908,10 @@ const shell = createEditorShell({
   fileNameOf: (id) => store.getState().assetShelf.entries[id]?.name,
   loadPicture: readContent,
   dialogOpen,
+  previewStory: (storyId, opener) => {
+    const refused = storyPreview.open(storyId, opener);
+    if (refused !== null) toast(refused);
+  },
   stations: {
     add: addStationAt,
     reorder: reorderStations,

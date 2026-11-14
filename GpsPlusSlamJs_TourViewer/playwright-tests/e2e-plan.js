@@ -120,6 +120,11 @@ export const SPECS = {
     area: "editor",
     lane: 3,
   },
+  "editor3d-story-cards.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 3,
+  },
   "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d-world-marks.spec.js": {
     project: "webgl",

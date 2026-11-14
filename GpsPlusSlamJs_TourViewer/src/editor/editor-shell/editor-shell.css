@@ -408,6 +408,12 @@ body {
   display: none;
 }
 
+/* Back up to a level (a step to its story, an item to its station) is
+ * every layout's; Back to the list only repeats Deselect. */
+#inspector-head [data-act="back"].up {
+  display: inline-flex;
+}
+
 #inspector-head [data-act="back"] svg {
   transform: rotate(180deg);
 }
@@ -1362,7 +1368,7 @@ body {
   scrollbar-width: none;
 }
 
-.crumbs .cb {
+.crumbs .crumb {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 240px;
@@ -1380,14 +1386,14 @@ body {
   cursor: pointer;
 }
 
-.crumbs .cb:hover:not([aria-current]) {
+.crumbs .crumb:hover:not([aria-current]) {
   background: var(--s-bg3);
   color: var(--s-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.crumbs .cb[aria-current] {
+.crumbs .crumb[aria-current] {
   color: var(--s-text);
   font-weight: 600;
   cursor: default;
@@ -1399,7 +1405,7 @@ body {
 }
 
 @media (max-width: 700px) {
-  .crumbs .cb {
+  .crumbs .crumb {
     flex: none;
     min-height: 36px;
     max-width: 60vw;
@@ -3579,6 +3585,508 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
+/* A story's steps as cards (the step cards prototype): a head to open the
+   card in place (on a phone, to go to the step), the answers with where
+   each leads as a chip, the loop warning with its fix, and the open
+   card's fields under them. */
+.scards {
+  padding: 0 10px;
+}
+
+.scards > .note {
+  margin: 2px 0 10px;
+}
+
+.scard {
+  margin: 0 0 8px;
+  border: 1px solid var(--s-line2);
+  border-radius: 8px;
+  background: var(--s-bg2);
+}
+
+.scard:hover {
+  border-color: #4a4e56;
+}
+
+.scard.open {
+  border-color: #5a5e66;
+  background: #2a2c31;
+}
+
+.scard.bad {
+  border-color: rgb(229 115 109 / 60%);
+}
+
+.scard .chead {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scard .num {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: #3a3d44;
+  color: #eef0f3;
+  font: 600 11px var(--s-mono);
+}
+
+.scard .chead > .ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--s-bg0);
+}
+
+.scard .sum {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.scard .kindtag {
+  color: var(--s-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scard .ttl {
+  padding: 0;
+  overflow: hidden;
+  color: #f0f1f3;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scard .ttl.empty {
+  color: var(--s-danger);
+  font-style: italic;
+}
+
+.scard .l2 {
+  color: var(--s-muted);
+  line-height: 1.38;
+}
+
+.scard .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.scard .chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--s-line2);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 5%);
+  color: #c9ccd3;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.scard .chev {
+  flex: none;
+  margin-top: 4px;
+  color: var(--s-dim);
+  transition: transform 0.15s;
+}
+
+.scard.open .chev {
+  transform: rotate(180deg);
+}
+
+.scard ul.answers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -2px 8px 8px 39px;
+  padding: 0;
+  list-style: none;
+}
+
+.scard .ans {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid var(--s-line);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 18%);
+}
+
+.scard .albl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scard .albl.empty {
+  color: var(--s-danger);
+  font-style: italic;
+}
+
+.scard .albl.quiet {
+  color: var(--s-muted);
+}
+
+.scard .mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--s-dim);
+  border-radius: 50%;
+}
+
+.scard .mark.right {
+  border-color: var(--s-ok);
+  background: var(--s-ok);
+  color: #10301c;
+}
+
+.scard .mark .i {
+  width: 11px;
+  height: 11px;
+}
+
+.scard .jump {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--s-text);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.scard button.jump {
+  cursor: pointer;
+}
+
+.scard button.jump:hover {
+  background: rgb(255 255 255 / 6%);
+}
+
+.scard .jump.next {
+  border-color: var(--s-line2);
+  color: var(--s-muted);
+  font-weight: 400;
+}
+
+.scard .jump.end {
+  border-color: #6a6e77;
+  color: #d6d8dd;
+}
+
+.scard .jump.back {
+  border-style: dashed;
+}
+
+.scard .jump.missing {
+  border-style: dashed;
+  color: var(--s-danger);
+}
+
+.scard .issue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 8px 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgb(229 115 109 / 12%);
+  color: #f0b3ae;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.scard .issue > span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.scard .issue .fix {
+  flex: none;
+  max-width: 100%;
+  margin-left: auto;
+  white-space: normal;
+  text-align: left;
+}
+
+.scard .cbody {
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--s-line);
+}
+
+/* A story's preview (story-preview.ts): the visitor's panel in a dialog
+   over the view; the whole screen on a phone. */
+/* Over the top bar and the bottom bar (900), under nothing it opens. */
+.spv {
+  position: fixed;
+  z-index: 950;
+  inset: 48px auto 24px 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 72px);
+  padding: 10px 14px 14px;
+  overflow-y: auto;
+  border: 1px solid var(--s-line2);
+  border-radius: 10px;
+  background: var(--s-bg1);
+  color: var(--s-text);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+  transform: translateX(-50%);
+}
+
+.spv[hidden] {
+  display: none;
+}
+
+.spv .spvbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.spv .spvbar .where {
+  flex: 1;
+  min-width: 120px;
+}
+
+.spv .spvbar .where b {
+  display: block;
+}
+
+.spv .spvbar .where span,
+.spv .spvworld,
+.spv .spvnote,
+.spv .status,
+.spv .desc {
+  color: var(--s-muted);
+  font-size: 12px;
+}
+
+.spv .spvpanel {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--s-bg2);
+}
+
+.spv .spvpanel[hidden],
+.spv .spvpanel [hidden],
+.spv .spvacts [hidden] {
+  display: none;
+}
+
+.spv .spvpanel h3,
+.spv .spvpanel p {
+  margin: 0;
+}
+
+.spv .stitle {
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Its buttons are the dialog's own, not the inspector's full-width rows. */
+.spv .act {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: auto;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+  background: var(--s-bg3);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.spv .act:hover {
+  border-color: var(--s-muted);
+}
+
+.spv .spvacts .act[data-spv="continue"] {
+  border-color: var(--s-accent);
+}
+
+.spv .speaker {
+  font-weight: 600;
+}
+
+.spv .text {
+  min-height: 3em;
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+.spv .image,
+.spv .simg,
+.spv .video {
+  max-width: 100%;
+  max-height: 30vh;
+  object-fit: contain;
+}
+
+.spv .portrait {
+  float: left;
+  width: 56px;
+  height: 56px;
+  margin: 2px 10px 4px 0;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.spv .surface:empty,
+.spv .status:empty,
+.spv .choices:empty {
+  display: none;
+}
+
+.spv .choices,
+.spv .spvacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.spv .spvend {
+  margin: 0;
+  font-weight: 600;
+}
+
+@media (max-width: 700px), (max-height: 500px) {
+  .spv {
+    inset: 0;
+    width: auto;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    transform: none;
+  }
+}
+
+/* The gap above a card (a desktop's): "Insert step", seen on hover or
+   focus. */
+.scards .gap {
+  position: relative;
+  height: 0;
+  margin: -4px 0 4px;
+}
+
+.scards .gap .insert {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 10px;
+  border: 1px dashed var(--s-line2);
+  border-radius: 999px;
+  background: var(--s-bg1);
+  color: var(--s-muted);
+  font-size: 11px;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 0.12s;
+}
+
+.scards .gap:hover .insert,
+.scards .gap .insert:focus-visible {
+  opacity: 1;
+}
+
+.scards .gap .insert:hover {
+  border-color: var(--s-accent-line);
+  color: var(--s-accent-text);
+}
+
+.scards .endmark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 10px;
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
+.scards .endmark::before,
+.scards .endmark::after {
+  flex: 1;
+  height: 1px;
+  background: var(--s-line2);
+  content: "";
+}
+
+@media (max-width: 700px) {
+  .scard .chead {
+    padding: 10px 8px;
+  }
+
+  .scard ul.answers {
+    margin-right: 10px;
+    margin-left: 10px;
+  }
+
+  .scard .ans {
+    min-height: 40px;
+  }
+
+  .scard .jump {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+}
 /* A model's own parts in the inspector (the station blocks prototype's
  * editor mode): its view as chips, its clip, its notes and sections as
  * cards with a numbered badge, and the small buttons that wait for a click

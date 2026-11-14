@@ -75,7 +75,9 @@ function key(target: Element, k: string): KeyboardEvent {
 describe("the menu for a story", () => {
   function forStory() {
     const chooseForStory =
-      vi.fn<(id: string, kind: Exclude<TreeAddChoice, "story">) => void>();
+      vi.fn<
+        (id: string, kind: Exclude<TreeAddChoice, "story">, at?: number) => void
+      >();
     const menu = createTreeAddMenu({
       body,
       host: document.body,
@@ -118,6 +120,22 @@ describe("the menu for a story", () => {
     expect((document.activeElement as HTMLElement).dataset["kind"]).toBe(
       "shortText",
     );
+  });
+
+  // Why: "Insert step" opens the story's menu for a place in the story:
+  // the head says which step the new one becomes, and the place reaches
+  // the add; without one the add is called as before, with no place.
+  it("carries a place in the story to the add, and says it", () => {
+    const { menu, root, plus, chooseForStory } = forStory();
+    menu.openForStory(plus, "legend", "The legend", 1);
+    expect(root.querySelector(".mhead")?.textContent).toBe(
+      'Add to the story "The legend" as step 2',
+    );
+    root.querySelector<HTMLElement>('[data-kind="choice"]')?.click();
+    expect(chooseForStory).toHaveBeenLastCalledWith("legend", "choice", 1);
+    menu.openForStory(plus, "legend", "The legend");
+    root.querySelector<HTMLElement>('[data-kind="quiz"]')?.click();
+    expect(chooseForStory.mock.lastCall).toEqual(["legend", "quiz"]);
   });
 
   // Why: a video plays only in a story, so a story's menu is where it is

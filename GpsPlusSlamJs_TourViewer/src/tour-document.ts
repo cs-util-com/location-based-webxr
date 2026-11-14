@@ -3223,10 +3223,16 @@ function storyDelete(
   return next === null ? before : frameReplaced(before, next, payload.what);
 }
 
-/** A child at the end of a story (`storyChildAdded`), as one step. */
+/** A child in a story, at its end or before the child at `at`
+ *  (`storyChildAdded`), as one step. */
 function storyChildAdd(
   before: TourDocumentState,
-  payload: { story: string; child: TourStoryChild; what: string },
+  payload: {
+    story: string;
+    child: TourStoryChild;
+    what: string;
+    at?: number | undefined;
+  },
 ): TourDocumentState {
   const frame = frameOfStory(before, payload.story);
   if (
@@ -3236,7 +3242,7 @@ function storyChildAdd(
   ) {
     return before;
   }
-  const next = withStoryChild(frame, payload.story, payload.child);
+  const next = withStoryChild(frame, payload.story, payload.child, payload.at);
   return next === null ? before : frameReplaced(before, next, payload.what);
 }
 
@@ -5103,14 +5109,16 @@ const tourDocumentSlice = createSlice({
     ) {
       return storyDelete(plain(state), action.payload);
     },
-    /** A child at the end of a story: one step; its id is minted outside
-     *  the reducer, and a taken id changes nothing. */
+    /** A child at the end of a story, or before its child at `at`: one
+     *  step; its id is minted outside the reducer, and a taken id changes
+     *  nothing. */
     storyChildAdded(
       state,
       action: PayloadAction<{
         story: string;
         child: TourStoryChild;
         what: string;
+        at?: number | undefined;
       }>,
     ) {
       return storyChildAdd(plain(state), action.payload);

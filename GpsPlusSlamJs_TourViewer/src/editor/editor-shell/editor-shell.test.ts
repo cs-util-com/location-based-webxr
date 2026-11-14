@@ -1248,14 +1248,14 @@ describe("a story character's chips", () => {
 // another's job (a + that added to the station, a name that folded a
 // selected station) puts a creator's work in the wrong place.
 describe("a story's folder in the tree", () => {
-  function withStory() {
+  function withStory(steps?: readonly unknown[]) {
     const set = setUp();
     const gate = {
       ...station("c", 0.0008),
       ...stationContent([
         storyOf(
           "legend",
-          [
+          (steps as Parameters<typeof storyOf>[1] | undefined) ?? [
             {
               id: "l1",
               kind: "longText",
@@ -1402,12 +1402,139 @@ describe("a story's folder in the tree", () => {
     shell.hide();
   });
 
-  it("goes from a story's entry row to the entry, unfolding its folder", () => {
+  // Why: the story's preview is the page's (the visitor's panel in a
+  // dialog): the inspector's button hands it the story and the button the
+  // focus goes back to.
+  it("hands a story's preview to the page", () => {
+    const { deps, select, shell } = withStory();
+    const previewStory = vi.fn();
+    Object.assign(deps, { previewStory });
+    select("story:legend");
+    const button = inspectorAct("preview-story");
+    button.click();
+    expect(previewStory).toHaveBeenCalledWith("legend", button);
+    shell.hide();
+  });
+
+  // Why: a step can go between two others: the gap before a card opens
+  // the story's menu for that place, and its add carries the place.
+  it("inserts a step before a card from the gap above it", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    const { edits, select, shell } = withStory();
+    select("story:legend");
+    inspectorAct("insert:1").click();
+    expect(
+      document.querySelector("#tree-add-menu .mhead")?.textContent,
+    ).toContain("as step 2");
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="quiz"]')
+      ?.click();
+    expect(edits.addStepToStory).toHaveBeenLastCalledWith("legend", "quiz", 1);
+    inspectorAct("insert:0").click();
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="longText"]')
+      ?.click();
+    expect(edits.addToStory).toHaveBeenLastCalledWith("legend", "longText", 0);
+    shell.hide();
+  });
+
+  // Why: on a phone (700 px or less) a step's card is the way into its
+  // step, as the entries' rows were: a press selects the step, unfolding
+  // its folder, and Back comes up to the story again.
+  it("goes from a story's card to its step on a phone, unfolding its folder", () => {
+    vi.stubGlobal("innerWidth", 390);
     const { store, select, shell } = withStory();
     select("story:legend");
-    inspectorAct("goto:l1").click();
+    inspectorAct("card:l1").click();
     expect(store.getState().editorView.selected).toBe("l1");
     expect(store.getState().editorView.openStories).toEqual(["legend"]);
+    select("story:legend");
+    inspectorAct("card-show:l1").click();
+    expect(store.getState().editorView.selected).toBe("l1");
+    shell.hide();
+  });
+
+  // Why: on a desktop a card opens in place, the story staying selected,
+  // and every control inside it is its step's: a typed question writes
+  // that step, its Delete deletes that step. A jump chip opens the step it
+  // names beside it, and a second press on a head closes its card.
+  it("opens a card in place on a desktop, its controls its step's", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    const { store, edits, deps, select, shell } = withStory();
+    select("story:legend");
+    inspectorAct("card:c1").click();
+    expect(store.getState().editorView.selected).toBe("story:legend");
+    const question = document.querySelector<HTMLTextAreaElement>(
+      '#shell-inspector [data-card="c1"] [data-field="step:prompt"]',
+    );
+    if (question === null) throw new Error("no question");
+    question.focus();
+    question.value = "Up or down?";
+    question.blur();
+    expect(edits.storyStep).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "c1", prompt: "Up or down?" }),
+    );
+    inspectorAct("card-show:l1").click();
+    const open = () =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          "#shell-inspector .scard.open",
+        ),
+      ].map((c) => c.dataset["card"]);
+    expect(open()).toEqual(["l1", "c1"]);
+    document
+      .querySelector<HTMLElement>(
+        '#shell-inspector [data-card="c1"] [data-act="delete"]',
+      )
+      ?.click();
+    expect(deps.stations.remove).toHaveBeenCalledWith("c1");
+    expect(store.getState().editorView.selected).toBe("story:legend");
+    inspectorAct("card:c1").click();
+    expect(open()).toEqual(["l1"]);
+    shell.hide();
+  });
+
+  // Why: a loop no answer can leave is warned on its cards, and its fix
+  // is one click: the loop's last choice's last answer ends the story,
+  // written as the whole step (one undo step).
+  it("lets a loop's last answer end the story in one click", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    const { edits, select, shell } = withStory([
+      {
+        id: "l1",
+        kind: "longText",
+        view: "card",
+        title: "The siege",
+        body: "In 1632",
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        advance: { mode: "tap" },
+      },
+      {
+        id: "c1",
+        kind: "choice",
+        prompt: "Again?",
+        options: [
+          { id: "o1", label: "Yes", goto: "l1" },
+          { id: "o2", label: "Sure", goto: "l1" },
+        ],
+      },
+    ]);
+    select("story:legend");
+    expect(
+      document.querySelectorAll("#shell-inspector .scard.bad"),
+    ).toHaveLength(2);
+    const fix = inspectorAct("card-fix:c1");
+    expect(fix.textContent).toBe('Let "Sure" end the story');
+    fix.click();
+    expect(edits.storyStep).toHaveBeenLastCalledWith({
+      id: "c1",
+      kind: "choice",
+      prompt: "Again?",
+      options: [
+        { id: "o1", label: "Yes", goto: "l1" },
+        { id: "o2", label: "Sure", end: true },
+      ],
+    });
     shell.hide();
   });
 

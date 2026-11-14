@@ -41,15 +41,19 @@ tabbed)` puts the focus on the control drawn under `name` (none, a
   one-line field's text, as Tab does in a field no draw replaced. The shell uses the two for the control the
   focus was moving to when a commit drew the dock again: Chromium drops
   a focus whose target a draw removed during `focusout` to the page.
-  - Every head starts with the Back button (`data-act="back"`), shown
-    only on a phone (`editor-shell.css`): it goes one level up, and its
-    name says where to - "Back to <level>" by the crumb's last-but-one
-    part, "Back to the list" when that is the whole tour or no crumb is
-    given.
+  - Every head starts with the Back button (`data-act="back"`): it goes
+    one level up, and its name says where to - "Back to <level>" by the
+    crumb's last-but-one part, "Back to the list" when that is the whole
+    tour or no crumb is given. Up to a level it carries the class `up`
+    and shows on every layout; Back to the list only repeats Deselect
+    where the list stays in view, so it shows on a phone alone
+    (`editor-shell.css`).
   - `state.crumb` (`inspectorCrumb`), when given, is drawn over the
     details as `nav.crumbs` ("Where you are"): each level above a button
     (`data-act="nav:<selection>"`, `nav:` for the whole tour), the
     selection itself the current part (`aria-current="page"`, no act).
+    Its buttons are `.crumb`, never `.cb`: that is the list's
+    select-mode tick, hidden outside select mode.
   - The head's icon (`headLook`, one case per kind of selection, none
     by default): a block's is its kind's look in the editor's list of
     kinds (`../../kinds/edit-kinds.ts`), and so are the words of its
@@ -93,9 +97,22 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     (`select-items`, disabled for an empty folder) and a note on how its
     items move with it. Its items follow every typed field.
   - A story: its name to type in the head (`data-field="story-title"`, its
-    count under it), its "Entries" fold ("<n>, played in order"), a numbered
-    `.kids` row each, `goto:<id>`), "Add entry..." (`add-entry`) and
-    "Delete story" (with an entry count and "..." when it holds any).
+    count under it), its steps as cards (`.scards`, `story-cards.ts`),
+    "Add step..." (`add-entry`), "Preview the story" (`preview-story`,
+    once it has a step) and "Delete story" (with an entry count
+    and "..." when it holds any). A card (`article.scard`, `data-card`
+    its step's id) has a head (`card:<id>`: its number, kind icon, tag,
+    title, a choice's or quiz's line and a block's moves-on chip; on a
+    desktop with `aria-expanded`, with `InspectorState.drill` none, as it
+    goes to the step), its answers each with a jump chip (a button
+    `card-show:<id>` for a step, words for the end or a gone step; a
+    quiz's right mark and "After the answer"), the loop warning with,
+    on the loop's last choice, its fix (`card-fix:<id>`), and, open in
+    place (`opened`), the step's own parts in `.cbody`. On a desktop a
+    gap above each card holds "Insert step" (`insert:<n>`, shown on hover
+    or focus, labelled "Insert a step before step <n + 1>"). `controlName`
+    prefixes a control inside a card with its card, as open cards draw
+    the same fields.
   - A story's block: its texts and, unless a character's, "Moves on" chips
     (`entry-advance:<id>:tap`, `:auto`; `:lineEnd` shown only while it is
     the block's), "After" in seconds (`data-field="entry-after:<id>"`) while
@@ -246,8 +263,10 @@ opened again, and the fields' layout at four window sizes).
 `shell-inspector.test.ts` also covers a plain folder's pivot fields in
 their order, its item rows and its two commands (off for an empty folder), the ground changing under a drawn station (only its ground button updated, the typed field and its focus kept), the lock button's place, state and words, and its absence for a station without a position; Earlier and Later beside a station's place, off at the ends; and the commands in words per kind (a station's Delete with its key, an item's two, none for a code).
 
-It also covers a story (its name, its numbered Entries, its Add entry and
-its Delete, an empty one), a choice's and a quiz's summary, an item with
+It also covers a story (its name, its step cards, its Add step and its
+Delete, an empty one; the jump chips, a phone's cards without
+aria-expanded, the loop warning with its fix on the last choice only, an
+open card's controls inside it), a choice's and a quiz's summary, an item with
 no place in the world (its texts and Delete only), a
 story block's moves-on chips and seconds, a story
 character's view and advance chips (the one in use pressed, each group

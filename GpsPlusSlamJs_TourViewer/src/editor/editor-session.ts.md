@@ -213,12 +213,14 @@ never state). Design:
       `editor-session-files.test.ts` pins it), `deleteStory(id)` (says how
       many children went and `stationGone` when its untitled automatic
       station, kept by nothing else, went with it),
-      `addToStory(storyId, kind)` (a kind made from words), `addEntryToStory(storyId,
-child)` (an entry made elsewhere - a file's, `new-file-item.ts` -
-      added at the story's end, refused for a story that is gone or an id
+      `addToStory(storyId, kind, at?)` (a kind made from words),
+      `addEntryToStory(storyId, child, at?)` (an entry made elsewhere - a
+      file's, `new-file-item.ts` - added at the story's end, or before its
+      child at `at`, 0-based, as the cards' "Insert step" asks, refused for a story that is gone or an id
       the tour holds), `deleteStoryChild(id)` (says how many
-      answers no longer lead anywhere), `addStepToStory(storyId, kind)` (a
-      new choice or quiz, `newStoryStep`, at the story's end),
+      answers no longer lead anywhere), `addStepToStory(storyId, kind, at?)`
+      (a new choice or quiz, `newStoryStep`, at the story's end or at
+      `at`),
       `setStoryStep(step)` (a choice or quiz rewritten whole by its
       inspector; refused in words when the format would refuse it - a jump
       to a gone step, a blank text, points below 0),

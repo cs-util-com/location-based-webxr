@@ -22,7 +22,8 @@ tree's add menu, the Ctrl+K palette and a dropped file all go through it.
 addEntryToStory })` - makes the item (`new-file-item.ts`) and places
   it: through `place` (the tour's own checks) at a station, through
   `addEntryToStory` in a story (the entry at the free spot of the
-  story's station; a story gone meanwhile is refused with
+  story's station, at the story's end or, with the target's `at`, before
+  its child there; a story gone meanwhile is refused with
   `FILE_STORY_GONE`).
 - `FILE_ADD_FAILED` ("That file could not be added."), `FILE_STATION_GONE`
   ("That station is no longer in this tour - nothing was added."),

@@ -204,7 +204,12 @@ type Command =
   | { kind: "rename"; at: number; title: string }
   | { kind: "delete"; at: number }
   | { kind: "duplicate"; at: number }
-  | { kind: "addChild"; at: number; make: "shortText" | "longText" }
+  | {
+      kind: "addChild";
+      at: number;
+      make: "shortText" | "longText";
+      place: number | undefined;
+    }
   | { kind: "deleteChild"; at: number }
   | { kind: "move"; at: number; to: number }
   | { kind: "voice"; at: number }
@@ -225,6 +230,7 @@ const command: fc.Arbitrary<Command> = fc.oneof(
     kind: fc.constant("addChild" as const),
     at,
     make: fc.constantFrom("shortText" as const, "longText" as const),
+    place: fc.option(fc.integer({ min: -1, max: 9 }), { nil: undefined }),
   }),
   fc.record({ kind: fc.constant("deleteChild" as const), at }),
   fc.record({ kind: fc.constant("move" as const), at, to: at }),
@@ -367,7 +373,18 @@ function commandsKeepTheTour(
           const story = round(stories, c.at);
           if (story !== undefined) {
             mustStep = true;
-            editor.addToStory(story.id, c.make);
+            const added = editor.addToStory(story.id, c.make, c.place);
+            // The child lands at its place, held to the story's ends.
+            if (added.kind === "added") {
+              const n = story.children.length;
+              const place =
+                c.place === undefined ? n : Math.min(n, Math.max(0, c.place));
+              expect(
+                storiesIn(tour())
+                  .find((s) => s.id === story.id)
+                  ?.children.findIndex((child) => child.id === added.id),
+              ).toBe(place);
+            }
           }
           break;
         }

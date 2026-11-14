@@ -286,7 +286,8 @@ largeTour?, cannotSave? })`.
     jumps going to the copies, a picture naming the same image file as
     the original on purpose: a save keeps every file a block names, so
     deleting either story leaves the other's picture; refused whole for
-    a missing, taken or shared new id), `storyDeleted`, `storyChildAdded`,
+    a missing, taken or shared new id), `storyDeleted`, `storyChildAdded`
+    (at the story's end, or before its child at `at`),
     `storyChildDeleted` (which prunes the `goto`s that led to the child) - one
     history entry each and a draft write; the maths is `tour-story-edit.ts`,
     and `story-commands.property.test.ts` holds that after any sequence and
