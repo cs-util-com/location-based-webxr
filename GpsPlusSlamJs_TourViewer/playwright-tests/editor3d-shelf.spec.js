@@ -350,7 +350,9 @@ test("a file in use is deleted from the shelf with its item and comes back whole
   expect(await audioOf()).toBe(old);
   await expect(card).toHaveCount(1);
   // The delete's undo line gone first, so the replace's below is the one
-  // "Undone" on the page (it lingers 6 s; 15 s leaves a slow run room).
+  // "Undone" on the page (the editor's toasts hold 8 s, `UNDO_MS` in
+  // `edit-main.ts`, which exports nothing a spec can import; 15 s leaves a
+  // slow run room).
   await expect(page.locator(".toast", { hasText: "Undone" })).toHaveCount(0, {
     timeout: 15_000,
   });

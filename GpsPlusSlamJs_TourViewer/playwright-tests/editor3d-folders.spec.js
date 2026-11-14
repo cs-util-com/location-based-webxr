@@ -1043,19 +1043,27 @@ for (const view of TOAST_VIEWS) {
       await expect.poll(() => revision(page)).toBe(steps + 1);
       const moved = await wholeTour(page);
       // The undo and the redo make the two toasts afresh before each check
-      // below, so neither rests on their linger outlasting a slow run. At
-      // least two: the pair made for the first check may still show.
-      const twoToasts = async () => {
+      // below, so neither rests on their linger outlasting a slow run. The
+      // first pair is exactly two (an undo or a redo says itself once); the
+      // second at least two, as the first pair may still show.
+      const stepToasts = page.locator(".toast", {
+        hasText: /^(Undone|Redone)/,
+      });
+      const twoToasts = async (/** @type {boolean} */ first) => {
         await page.keyboard.press("Control+z");
         await page.keyboard.press("Control+y");
         await expect.poll(() => wholeTour(page)).toEqual(moved);
         await expect
-          .poll(() =>
-            page.locator(".toast", { hasText: /^(Undone|Redone)/ }).count(),
+          .poll(
+            async () => {
+              const n = await stepToasts.count();
+              return first ? n === 2 : n >= 2;
+            },
+            { message: first ? "exactly two toasts" : "at least two toasts" },
           )
-          .toBeGreaterThanOrEqual(2);
+          .toBe(true);
       };
-      await twoToasts();
+      await twoToasts(true);
       // Where the gizmo stands now: its ring round the pivot and its knob.
       middle = await handleAt(page, "middle");
       const knob = await handleAt(page, "knob");
@@ -1071,12 +1079,21 @@ for (const view of TOAST_VIEWS) {
         ).toBeGreaterThan(reach);
       }
       // A press on the gizmo while they show is its step.
-      await twoToasts();
+      await twoToasts(false);
       steps = await revision(page);
-      await pointer(page, [
-        middle,
-        ...line(middle, { x: middle.x - 40, y: middle.y - 15 }),
-      ]);
+      let showing = 0;
+      await pointer(
+        page,
+        [middle, ...line(middle, { x: middle.x - 40, y: middle.y - 15 })],
+        async () => {
+          // Counted once, the press still held: the toasts showed during it.
+          showing = await stepToasts.count();
+        },
+      );
+      expect(
+        showing,
+        "a toast shows while the gizmo is pressed",
+      ).toBeGreaterThanOrEqual(1);
       await expect.poll(() => revision(page)).toBe(steps + 1);
       await capture(
         page,
