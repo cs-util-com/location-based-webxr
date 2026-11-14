@@ -180,14 +180,20 @@ export function createWoodsGovernor({
     return alone ? undefined : ms;
   };
 
-  /** One counted interval into the average and the verdicts. */
-  const count = (atMs: number, ms: number): void => {
+  /** One counted interval into the average; a new rung starts it afresh. */
+  const smooth = (ms: number): number => {
     const now =
       average === undefined || fresh
         ? ms
         : average + (ms - average) * G.smoothing;
     average = now;
     fresh = false;
+    return now;
+  };
+
+  /** One counted interval into the average and the verdicts. */
+  const count = (atMs: number, ms: number): void => {
+    const now = smooth(ms);
     const seconds = Math.min(ms, G.gapMs) / 1000;
     boughtFor = steps > 0 && now < G.slowMs ? boughtFor + seconds : 0;
     if (boughtFor >= G.fastS) bought = true;
