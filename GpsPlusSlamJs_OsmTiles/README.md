@@ -65,8 +65,22 @@ needs the repository secret `CLOUDFLARE_API_TOKEN` (the "Edit Cloudflare
 Workers" token template, scoped to the account in `wrangler.toml`); without
 it the job skips. Until then deploys are manual (`pnpm run deploy`).
 
+**Deploy order: the client first, then the Worker.** The Worker stores an
+operator's gzip answer on its inflated head alone, so a partial answer
+(Overpass's top-level `remark` after a timeout) can be stored, and only the
+reader catches it: `StaticTileSource` and `OverpassSource` in the Osm
+package refuse a `remark`. Every app that points at the host must run a
+client with that check before this Worker serves gzip-stored tiles;
+otherwise an older client takes a partial tile as the whole tile and keeps
+it in its cache. A merge that changes both deploys them from the same push,
+in no fixed order, so after such a merge deploy the Worker by hand (the
+workflow's manual run) once the site's deploy has finished.
+
 The Worker is served on `osm-tiles.<account>.workers.dev`. A custom domain
 is a configuration change: a `routes` entry here and the client's base URL
 (`OSM_TILES_BASE_URL` in the Osm package's `static-tile-source.ts`). It goes
-on the Worker only, never on the R2 bucket: the bucket's own domain would
-serve the files without the Worker's licence headers, CORS and data age.
+on the Worker only, never on the R2 bucket. The main reason: a bucket
+domain serves every object in it, and the bucket also holds the Worker's
+own `state/` objects (fill failures, the daily counters, the verify memos
+and verifying markers), which would become public. It would also serve
+the files without the Worker's licence headers, CORS and data age.
