@@ -21,80 +21,12 @@ import {
   REPAINT,
 } from "./fixtures.js";
 
-test.describe("caching and failure", () => {
-  test("a reload is served from OPFS without refetching @pr", async ({
-    page,
-  }) => {
-    const counts = await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-
-    // WAIT FOR THE BACKGROUND PREFETCH TO GO QUIET FIRST, or the baseline is a
-    // moving target. `prefetch.replace(...)` queues tile fetches AFTER the
-    // visible work (W8), so queries keep arriving once `waitForRefresh` has
-    // returned -- and any that land after this capture are counted against the
-    // RELOAD, failing the test with "the cache missed" when the cache was fine.
-    //
-    // Seen under full-suite load; it passes 3/3 standalone, because the window
-    // only opens when the machine is busy. Moving the capture later does NOT
-    // fix it -- it was already immediately before the reload -- so the fix has
-    // to be waiting for quiescence rather than picking a better moment.
-    // THREE consecutive equal samples, not one. Two readings 500 ms apart are
-    // equal whenever the prefetch merely PAUSES for longer than the interval,
-    // which under full-suite load it does — so the first version of this
-    // quiescence check declared victory mid-prefetch and the flake it was
-    // written to remove came back and failed a gate. Same rule and same count as
-    // `stashStableFrame` in `fixtures.js`, which settled this for frames first.
-    let previousCount = -1;
-    let stable = 0;
-    await expect
-      .poll(
-        () => {
-          stable = counts.overpassQuery === previousCount ? stable + 1 : 0;
-          previousCount = counts.overpassQuery;
-          return stable;
-        },
-        { timeout: 30000, intervals: [500] },
-      )
-      .toBeGreaterThanOrEqual(3);
-
-    const queriesAfterFirst = counts.overpassQuery;
-    expect(queriesAfterFirst).toBeGreaterThan(0);
-
-    await page.reload();
-    await waitForRefresh(page);
-
-    // A res-7 tile is tens of megabytes; refetching it on every reload would
-    // abuse donated infrastructure. The OPFS store is what stops that, and a
-    // request count is the ONLY way to see it working — the map looks identical
-    // either way.
-    //
-    // EXACTLY zero new queries, not 'at most one'. The earlier version counted
-    // status probes and queries together and allowed a slack of 1, which also
-    // passed when the cache was completely broken and the reload issued one
-    // fresh query with no probe — the precise failure this test exists to catch.
-    expect(counts.overpassQuery).toBe(queriesAfterFirst);
-  });
-
+test.describe("the static tile host switch", () => {
   // Why this test matters: the demo asks the static tile host before the
-  // Overpass race, and a refused host must cost no tile: the fixture aborts
-  // every host request, so the scene still loads from the race. With the
+  // Overpass race (asserted on the prefetch test's boot below); with the
   // read-only `tiles=off` knob the host is never asked at all.
-  // Two tests rather than two pages: each test has a fresh context, so its
-  // OPFS cache is empty and every tile really goes to a source.
-  test("asks the static tile host first and falls back to the race on its refusal", async ({
-    page,
-  }) => {
-    const counts = await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-    expect(counts.staticTiles).toBeGreaterThan(0);
-    expect(counts.overpassQuery).toBeGreaterThan(0);
-    // First: the very first tile request goes to the host, and the race
-    // starts only after it.
-    expect(counts.tileSourceOrder[0]).toBe("static");
-  });
-
+  // Its own test rather than a second page: each test has a fresh context, so
+  // its OPFS cache is empty and every tile really goes to a source.
   test("tiles=off never asks the static tile host", async ({ page }) => {
     const counts = await stubNetwork(page);
     await page.goto(`${AT_FIXTURE}&tiles=off`);
@@ -333,13 +265,15 @@ test.describe("the background ring prefetch and the rule table cache", () => {
     "\n",
   );
 
-  test("warms the neighbours, serves the rule table from its cache, and reuses the neighbours instead of refetching", async ({
+  test("asks the static tile host first, warms the neighbours, serves the rule table and every tile from OPFS on a reload, and reuses the neighbours instead of refetching @pr", async ({
     page,
   }) => {
     // ONE BOOT, and here the sharing is more than a saving: the prefetch steps
     // assert on the SAME request counter, and the last one's claim — that moving
     // does not refetch what the ring already pulled — is only meaningful against
-    // a ring the first step has just established.
+    // a ring the first step has just established. The reload is the cache's
+    // own test too: a fresh context, so the first load really went to a
+    // source, and the reload must go to none.
     const counts = await stubNetwork(page, { ruleSheetCsv: CSV });
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
@@ -348,6 +282,17 @@ test.describe("the background ring prefetch and the rule table cache", () => {
     await expect(page.locator("#status")).toContainText(/rules: live/);
     const fetchedOnce = counts.ruleSheet;
     expect(fetchedOnce).toBeGreaterThan(0);
+
+    // Why this step matters: the demo asks the static tile host before the
+    // Overpass race, and a refused host must cost no tile: the fixture aborts
+    // every host request, so the scene still loads from the race.
+    await test.step("asks the static tile host first and falls back to the race on its refusal", async () => {
+      expect(counts.staticTiles).toBeGreaterThan(0);
+      expect(counts.overpassQuery).toBeGreaterThan(0);
+      // First: the very first tile request goes to the host, and the race
+      // starts only after it.
+      expect(counts.tileSourceOrder[0]).toBe("static");
+    });
 
     await test.step("warms the neighbours, and never more than one at a time", async () => {
       // The user's own tile, plus the ring arriving behind it. The count is what
@@ -377,19 +322,40 @@ test.describe("the background ring prefetch and the rule table cache", () => {
     });
 
     // Let the ring settle before the reload below ends it.
-    let previous = -1;
+    //
+    // WAIT FOR THE BACKGROUND PREFETCH TO GO QUIET FIRST, or the baseline is a
+    // moving target. `prefetch.replace(...)` queues tile fetches AFTER the
+    // visible work (W8), so queries keep arriving once `waitForRefresh` has
+    // returned -- and any that land after this capture are counted against the
+    // RELOAD, failing the test with "the cache missed" when the cache was fine.
+    //
+    // Seen under full-suite load; it passes 3/3 standalone, because the window
+    // only opens when the machine is busy. Moving the capture later does NOT
+    // fix it -- it was already immediately before the reload -- so the fix has
+    // to be waiting for quiescence rather than picking a better moment.
+    // THREE consecutive equal samples, not one. Two readings 500 ms apart are
+    // equal whenever the prefetch merely PAUSES for longer than the interval,
+    // which under full-suite load it does — so the first version of this
+    // quiescence check declared victory mid-prefetch and the flake it was
+    // written to remove came back and failed a gate. Same rule and same count as
+    // `stashStableFrame` in `fixtures.js`, which settled this for frames first.
+    let previousCount = -1;
+    let stable = 0;
     await expect
       .poll(
         () => {
-          const settled = counts.overpassQuery === previous;
-          previous = counts.overpassQuery;
-          return settled;
+          stable = counts.overpassQuery === previousCount ? stable + 1 : 0;
+          previousCount = counts.overpassQuery;
+          return stable;
         },
         { timeout: 30000, intervals: [500] },
       )
-      .toBe(true);
+      .toBeGreaterThanOrEqual(3);
 
-    await test.step("the rule table is written on the first load and served on the next", async () => {
+    const queriesAfterFirst = counts.overpassQuery;
+    expect(queriesAfterFirst).toBeGreaterThan(0);
+
+    await test.step("the rule table is written on the first load and served on the next, and the reload refetches no tile", async () => {
       // `loadRuleTable({})` was once called with no store, so `readCache`
       // returned `undefined` before doing anything: the TTL short-circuit never
       // fired, every boot went to the network, and `checkDrift` had no baseline
@@ -400,6 +366,17 @@ test.describe("the background ring prefetch and the rule table cache", () => {
       // Second load: served from OPFS inside the TTL, with NO new request.
       await expect(page.locator("#status")).toContainText(/rules: cache/);
       expect(counts.ruleSheet).toBe(fetchedOnce);
+
+      // A res-7 tile is tens of megabytes; refetching it on every reload would
+      // abuse donated infrastructure. The OPFS store is what stops that, and a
+      // request count is the ONLY way to see it working — the map looks identical
+      // either way.
+      //
+      // EXACTLY zero new queries, not 'at most one'. The earlier version counted
+      // status probes and queries together and allowed a slack of 1, which also
+      // passed when the cache was completely broken and the reload issued one
+      // fresh query with no probe — the precise failure this test exists to catch.
+      expect(counts.overpassQuery).toBe(queriesAfterFirst);
     });
 
     await test.step("a prefetched neighbour is reused, not fetched again", async () => {

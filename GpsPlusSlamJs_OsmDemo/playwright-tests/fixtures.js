@@ -1197,16 +1197,17 @@ export async function resetUi(page, baseline) {
   // a marker actually being present, like every step here: the common case is a
   // test that never pressed the button, and that must stay two cheap reads.
   //
-  // Two clicks rather than one, and the shape is the feature: with an event
-  // held, the button opens the picker instead of re-running the identical
-  // search (G1), and the picker is where the clear lives.
+  // The clear lives in the picker, so a closed picker is opened first. The
+  // button opens it only when it is closed, and that press ALSO re-runs the
+  // search alongside it; the count assertion below waits for the cleared
+  // state, so a winner that search redraws after the clear fails loudly here
+  // rather than leaking into the next test.
   //
-  // THE OPEN CHECK IS NOT REDUNDANT, because that button is a TOGGLE and
-  // nothing else closes the picker — not a click elsewhere, only Search or
-  // Clear. A test that ended with the picker open would have this helper close
-  // it, and then wait on a hidden `#geo-event-clear` until it timed out. No
-  // test leaves that state today; a reset helper exists to be insensitive to
-  // the states that do not exist yet.
+  // THE OPEN CHECK IS NOT REDUNDANT: nothing but Search or Clear closes the
+  // picker, not a click elsewhere, so a test may end with it open, and the
+  // clear is pressed directly then. No test on the shared page presses the
+  // geo-event button today; a reset helper exists to be insensitive to the
+  // states that do not exist yet.
   if ((await page.locator("#map .geo-winner").count()) > 0) {
     const picker = page.locator("#geo-event-picker");
     if (!(await picker.isVisible())) await page.locator("#geo-event").click();

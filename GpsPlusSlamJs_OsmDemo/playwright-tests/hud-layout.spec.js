@@ -625,95 +625,94 @@ test.describe("the command bar at 1280 x 720", () => {
     await page.locator("#sun-chip").click();
   });
 
-  test("Escape closes the top layer and hands focus back to its opener", async ({
+  test("Escape closes the top layer and hands focus back to its opener, and the panel just opened is the top layer at its own centre", async ({
     page,
   }) => {
+    // ONE BOOT FOR BOTH LAYERING CLAIMS: the first step ends with every
+    // panel closed, which is where the second starts.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
 
-    await page.locator("#settings-open").click();
-    await page.locator("#sun-group > summary").click();
-    await page.locator("#light-open").click();
-    await expect(page.locator("#light-dialog")).toBeVisible();
+    await test.step("Escape closes the top layer and hands focus back to its opener", async () => {
+      await page.locator("#settings-open").click();
+      await page.locator("#sun-group > summary").click();
+      await page.locator("#light-open").click();
+      await expect(page.locator("#light-dialog")).toBeVisible();
 
-    // One Escape, one layer: the light dialog first, the drawer second.
-    await page.keyboard.press("Escape");
-    await expect(page.locator("#light-dialog")).toBeHidden();
-    await expect(page.locator("#settings-drawer")).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(page.locator("#settings-drawer")).toBeHidden();
-    await expect(page.locator("#settings-open")).toBeFocused();
-
-    // The popovers answer Escape the same way, and opening one moves focus
-    // into it, so Tab reaches its controls before the map's.
-    for (const [opener, panel, inner] of [
-      ["#info-open", "#info-panel", null],
-      ["#sun-chip", "#sun-pop", "#sun-time-quick"],
-    ]) {
-      await page.locator(opener).click();
-      await expect(page.locator(panel)).toBeFocused();
-      if (inner) {
-        await page.keyboard.press("Tab");
-        await expect(page.locator(inner)).toBeFocused();
-      }
+      // One Escape, one layer: the light dialog first, the drawer second.
       await page.keyboard.press("Escape");
-      await expect(page.locator(panel)).toBeHidden();
-      await expect(page.locator(opener)).toBeFocused();
-    }
-  });
+      await expect(page.locator("#light-dialog")).toBeHidden();
+      await expect(page.locator("#settings-drawer")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#settings-drawer")).toBeHidden();
+      await expect(page.locator("#settings-open")).toBeFocused();
 
-  test("the panel just opened is the top layer at its own centre", async ({
-    page,
-  }) => {
-    // WHY: the light dialog sits in the drawer's place above every panel.
-    // Left open under a popover it hid the popover's controls, and left open
-    // over a closed drawer it floated alone. A visible-and-inside check
-    // passes both; only the element under the panel's centre tells.
-    await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
-    const dialog = page.locator("#light-dialog");
-    const topAtCentre = (selector) =>
-      page.locator(selector).evaluate((el) => {
-        const r = el.getBoundingClientRect();
-        const hit = document.elementFromPoint(
-          r.left + r.width / 2,
-          r.top + r.height / 2,
-        );
-        return hit !== null && el.contains(hit);
-      });
-    const openLight = async () => {
-      await openLightDialog(page);
-      expect(await topAtCentre("#light-dialog")).toBe(true);
-    };
+      // The popovers answer Escape the same way, and opening one moves focus
+      // into it, so Tab reaches its controls before the map's.
+      for (const [opener, panel, inner] of [
+        ["#info-open", "#info-panel", null],
+        ["#sun-chip", "#sun-pop", "#sun-time-quick"],
+      ]) {
+        await page.locator(opener).click();
+        await expect(page.locator(panel)).toBeFocused();
+        if (inner) {
+          await page.keyboard.press("Tab");
+          await expect(page.locator(inner)).toBeFocused();
+        }
+        await page.keyboard.press("Escape");
+        await expect(page.locator(panel)).toBeHidden();
+        await expect(page.locator(opener)).toBeFocused();
+      }
+    });
 
-    for (const [opener, panel] of [
-      ["#info-open", "#info-panel"],
-      ["#sun-chip", "#sun-pop"],
-    ]) {
+    await test.step("the panel just opened is the top layer at its own centre", async () => {
+      // WHY: the light dialog sits in the drawer's place above every panel.
+      // Left open under a popover it hid the popover's controls, and left open
+      // over a closed drawer it floated alone. A visible-and-inside check
+      // passes both; only the element under the panel's centre tells.
+      const dialog = page.locator("#light-dialog");
+      const topAtCentre = (selector) =>
+        page.locator(selector).evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const hit = document.elementFromPoint(
+            r.left + r.width / 2,
+            r.top + r.height / 2,
+          );
+          return hit !== null && el.contains(hit);
+        });
+      const openLight = async () => {
+        await openLightDialog(page);
+        expect(await topAtCentre("#light-dialog")).toBe(true);
+      };
+
+      for (const [opener, panel] of [
+        ["#info-open", "#info-panel"],
+        ["#sun-chip", "#sun-pop"],
+      ]) {
+        await openLight();
+        await page.locator(opener).click();
+        await expect(page.locator(panel)).toBeVisible();
+        await expect(dialog).toBeHidden();
+        expect(await topAtCentre(panel)).toBe(true);
+        await page.locator(opener).click();
+        await expect(page.locator(panel)).toBeHidden();
+      }
+
+      // Closing the drawer closes the dialog stacked over it.
       await openLight();
-      await page.locator(opener).click();
-      await expect(page.locator(panel)).toBeVisible();
+      await page.locator("#settings-open").click();
+      await expect(page.locator("#settings-drawer")).toBeHidden();
       await expect(dialog).toBeHidden();
-      expect(await topAtCentre(panel)).toBe(true);
-      await page.locator(opener).click();
-      await expect(page.locator(panel)).toBeHidden();
-    }
 
-    // Closing the drawer closes the dialog stacked over it.
-    await openLight();
-    await page.locator("#settings-open").click();
-    await expect(page.locator("#settings-drawer")).toBeHidden();
-    await expect(dialog).toBeHidden();
-
-    // The hotkey opens the dialog over a popover by closing the popover.
-    await page.locator("#info-open").click();
-    await focusPageForHotkeys(page);
-    await page.keyboard.press("l");
-    await expect(dialog).toBeVisible();
-    await expect(page.locator("#info-panel")).toBeHidden();
-    expect(await topAtCentre("#light-dialog")).toBe(true);
+      // The hotkey opens the dialog over a popover by closing the popover.
+      await page.locator("#info-open").click();
+      await focusPageForHotkeys(page);
+      await page.keyboard.press("l");
+      await expect(dialog).toBeVisible();
+      await expect(page.locator("#info-panel")).toBeHidden();
+      expect(await topAtCentre("#light-dialog")).toBe(true);
+    });
   });
 
   test("an error toasts and never opens a panel; a refresh and a drawer switch still applying show on the bar", async ({

@@ -1224,85 +1224,6 @@ test.describe("the phone layout", () => {
 });
 
 test.describe("my location", () => {
-  test.describe("at a desktop width", () => {
-    // The phone-layout test measures the pin and the credit at 390 px. These
-    // are the same claims at 1280 x 720, where the map is a side pane rather
-    // than a sheet: one boot for all.
-    test.use({ viewport: { width: 1280, height: 720 } });
-
-    test("the pin sits bottom-right above the credit, the credit inside the map, and a denied locate toasts with no panel open", async ({
-      page,
-    }) => {
-      await page.addInitScript(() => {
-        // A DENIED PERMISSION, not a missing API: the app branches on the error
-        // it gets back, and removing `geolocation` entirely would take a
-        // different path (unsupported) that reports through a different string.
-        const denied = {
-          code: 1,
-          PERMISSION_DENIED: 1,
-          POSITION_UNAVAILABLE: 2,
-          TIMEOUT: 3,
-          message: "User denied Geolocation",
-        };
-        Object.defineProperty(navigator, "geolocation", {
-          configurable: true,
-          value: {
-            getCurrentPosition: (_ok, fail) => fail?.(denied),
-            watchPosition: (_ok, fail) => {
-              fail?.(denied);
-              return 1;
-            },
-            clearWatch: () => {},
-          },
-        });
-      });
-      await stubNetwork(page);
-      await page.goto(AT_FIXTURE);
-      await waitForRefresh(page);
-
-      await test.step("the pin and the credit", async () => {
-        const [box, mapBox, attribution] = await Promise.all([
-          page.locator(".locate-button").boundingBox(),
-          page.locator("#map").boundingBox(),
-          page.locator("#map .leaflet-control-attribution").boundingBox(),
-        ]);
-        if (box === null || mapBox === null) throw new Error("no boxes");
-        expect(box.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
-        expect(box.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
-        // UNCONDITIONAL: `boundingBox()` returns null for a hidden element, so
-        // a guard on it here would skip exactly when the credit went missing.
-        expect(attribution).not.toBeNull();
-        // Strictly above the credit, not overlapping it.
-        expect(box.y + box.height).toBeLessThanOrEqual(
-          (attribution?.y ?? 0) + 1,
-        );
-        // INSIDE THE MAP, not merely "visible": `toBeVisible()` does not detect
-        // an element clipped by the `overflow: hidden` of `.leaflet-container`.
-        expect(
-          (attribution?.y ?? 0) + (attribution?.height ?? 0),
-        ).toBeLessThanOrEqual(mapBox.y + mapBox.height + 1);
-      });
-
-      await test.step("a denied locate toasts, and opens no panel", async () => {
-        // If the toast wiring is ever lost nothing else fails: errors become
-        // invisible. With every panel closed, so the info panel's status line
-        // cannot pass for a build with no toast at all.
-        await expectNoPanelOpen(page);
-
-        await page.locator(".locate-button").click();
-
-        // The wording is the locate control's; the claim is that SOMETHING
-        // reached a surface the user can see with every panel closed.
-        const toast = page.locator("#toast-root .toast");
-        await expect(toast).toHaveText(/./, { timeout: 15000 });
-
-        // AND NO PANEL OPENED, which a build that opened one to show the error
-        // would otherwise pass.
-        await expectNoPanelOpen(page);
-      });
-    });
-  });
-
   test("moves the user to a real fix, and says so while it is working", async ({
     page,
     context,
@@ -1389,12 +1310,13 @@ test.describe("my location", () => {
 /**
  * The desktop controls, on one boot.
  *
- * ORDER MATTERS: the breakdown reads what the boot printed, the perf overlay
- * compares against the picture the boot left, and the control bar runs last
- * because it ends at a phone width.
+ * ORDER MATTERS: the breakdown reads what the boot printed, the pin and the
+ * credit are measured at the boot's desktop width, the perf overlay compares
+ * against the picture the boot left, and the control bar runs last because it
+ * ends at a phone width.
  */
 test.describe("the desktop controls", () => {
-  test("print the click breakdown, mount the perf overlay, move the sun and the render distance, and give every layer a visible switch", async ({
+  test("print the click breakdown, place the locate pin above the credit and toast a denied locate, mount the perf overlay, move the sun and the render distance, and give every layer a visible switch", async ({
     page,
   }) => {
     // Installed before the page loads: the lines are printed during the boot.
@@ -1402,6 +1324,32 @@ test.describe("the desktop controls", () => {
     page.on("console", (message) => {
       const text = message.text();
       if (text.startsWith("click ring ")) lines.push(text);
+    });
+    // A DENIED GEOLOCATION for the locate check below, installed for the whole
+    // boot: the app opens no position watch at boot (only walking, AR entry
+    // and the locate button start one), so nothing before that press sees it.
+    await page.addInitScript(() => {
+      // A DENIED PERMISSION, not a missing API: the app branches on the error
+      // it gets back, and removing `geolocation` entirely would take a
+      // different path (unsupported) that reports through a different string.
+      const denied = {
+        code: 1,
+        PERMISSION_DENIED: 1,
+        POSITION_UNAVAILABLE: 2,
+        TIMEOUT: 3,
+        message: "User denied Geolocation",
+      };
+      Object.defineProperty(navigator, "geolocation", {
+        configurable: true,
+        value: {
+          getCurrentPosition: (_ok, fail) => fail?.(denied),
+          watchPosition: (_ok, fail) => {
+            fail?.(denied);
+            return 1;
+          },
+          clearWatch: () => {},
+        },
+      });
     });
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
@@ -1457,6 +1405,50 @@ test.describe("the desktop controls", () => {
       ]) {
         expect(first, `${stage} missing from: ${first}`).toContain(`${stage} `);
       }
+    });
+
+    // MY LOCATION AT THE DESKTOP WIDTH (the suite's 1280 x 720). The
+    // phone-layout test measures the pin and the credit at 390 px; these are
+    // the same claims where the map is a side pane rather than a sheet. Before
+    // the perf overlay, whose comparison reads the canvas only, so the toast
+    // the locate press leaves cannot reach it.
+    await test.step("the pin and the credit", async () => {
+      const [box, mapBox, attribution] = await Promise.all([
+        page.locator(".locate-button").boundingBox(),
+        page.locator("#map").boundingBox(),
+        page.locator("#map .leaflet-control-attribution").boundingBox(),
+      ]);
+      if (box === null || mapBox === null) throw new Error("no boxes");
+      expect(box.x).toBeGreaterThan(mapBox.x + mapBox.width / 2);
+      expect(box.y).toBeGreaterThan(mapBox.y + mapBox.height / 2);
+      // UNCONDITIONAL: `boundingBox()` returns null for a hidden element, so
+      // a guard on it here would skip exactly when the credit went missing.
+      expect(attribution).not.toBeNull();
+      // Strictly above the credit, not overlapping it.
+      expect(box.y + box.height).toBeLessThanOrEqual((attribution?.y ?? 0) + 1);
+      // INSIDE THE MAP, not merely "visible": `toBeVisible()` does not detect
+      // an element clipped by the `overflow: hidden` of `.leaflet-container`.
+      expect(
+        (attribution?.y ?? 0) + (attribution?.height ?? 0),
+      ).toBeLessThanOrEqual(mapBox.y + mapBox.height + 1);
+    });
+
+    await test.step("a denied locate toasts, and opens no panel", async () => {
+      // If the toast wiring is ever lost nothing else fails: errors become
+      // invisible. With every panel closed, so the info panel's status line
+      // cannot pass for a build with no toast at all.
+      await expectNoPanelOpen(page);
+
+      await page.locator(".locate-button").click();
+
+      // The wording is the locate control's; the claim is that SOMETHING
+      // reached a surface the user can see with every panel closed.
+      const toast = page.locator("#toast-root .toast");
+      await expect(toast).toHaveText(/./, { timeout: 15000 });
+
+      // AND NO PANEL OPENED, which a build that opened one to show the error
+      // would otherwise pass.
+      await expectNoPanelOpen(page);
     });
 
     await test.step("the perf overlay mounts on demand and leaves the scene alone", async () => {
@@ -2008,9 +2000,13 @@ test.describe("the AR entry point", () => {
     // same overlay resized to a phone (a resize, not a cold load at that
     // size), then the panel's hidden state, which adds to `#ar-root` and so
     // comes last.
+    //
+    // NO WAIT FOR THE REFRESH: what is measured is the stylesheet on elements
+    // this test attaches to `#ar-root`, which is in the page's HTML and which
+    // nothing at boot writes to, so the pipeline has nothing to give it.
     await stubNetwork(page);
     await page.goto(AT_FIXTURE);
-    await waitForRefresh(page);
+    await expect(page.locator("#ar-root")).toBeAttached();
 
     await buildArOverlayFixture(page);
 
