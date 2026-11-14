@@ -3,21 +3,33 @@
 ## Purpose
 
 Decides whether a pointer release is a pick at all, before `pick.ts` is asked
-what was picked. Two questions with one answer: was the pointer still, and was it
-the primary button (DEC-R13-8).
+what was picked. Three questions with one answer: did it land on the scene's
+drawing surface, was the pointer still, and was it the primary button
+(DEC-R13-8).
 
 ## Public API
 
 - `PICK_MOVE_TOLERANCE_PX = 4` — how far the pointer may travel between press
   and release and still pick, as a Manhattan sum in CSS pixels.
 - `PointerOrigin` — `{ x, y }`, where a `pointerdown` happened.
-- `PickPointer` — `{ button, clientX, clientY }`. Deliberately not
-  `PointerEvent`: these three fields are the whole of what the decision reads,
-  and a test must be able to construct one without a DOM.
-- `isPickGesture(down, up) → boolean` — never throws.
+- `PickPointer` — `{ button, clientX, clientY, target }`. Deliberately not
+  `PointerEvent`: these four fields are the whole of what the decision reads,
+  and a test must be able to construct one without a DOM. `target` is compared
+  by identity only.
+- `pickOrigin(down, surface) → PointerOrigin | undefined` — the origin of a
+  press on `surface`, or `undefined` for a press anywhere else. Never throws.
+- `isPickGesture(down, up, surface) → boolean` — never throws.
 
 ## Invariants & assumptions
 
+- **Only the drawing surface picks.** The view listens on its container, and
+  the container also holds DOM panels: the light dialog is a child of it. A
+  click on one of the dialog's buttons used to bubble into a pick at the
+  button's point and order the NPC to whatever ground lay beneath it, and the
+  walk then kept the scene repainting under the dialog's own measurements (the
+  light dialog e2e failed intermittently on exactly that). A press elsewhere
+  records no origin (`pickOrigin`), and a release elsewhere is refused, so a
+  gesture that starts or ends on a control never picks.
 - **The secondary button never picks** (R13-7, DEC-R13-8). Before this module,
   `building-view.ts` picked on `pointerup` without reading `event.button`, so a
   right-click ordered the NPC _and_ opened the browser's context menu. The
@@ -51,12 +63,12 @@ the primary button (DEC-R13-8).
 ```ts
 let downAt: PointerOrigin | undefined;
 container.addEventListener("pointerdown", (event) => {
-  downAt = { x: event.clientX, y: event.clientY };
+  downAt = pickOrigin(event, canvas);
 });
 container.addEventListener("pointerup", (event) => {
   const from = downAt;
   downAt = undefined;
-  if (!isPickGesture(from, event)) return;
+  if (!isPickGesture(from, event, canvas)) return;
   onPick(resolvePick(/* … */));
 });
 ```
@@ -68,8 +80,11 @@ finding this module exists for); a touch tap accepted through the same
 primary-button test; the middle/back buttons and the `-1` sentinel refused; a
 drag past the tolerance refused and a wobble at exactly the tolerance accepted;
 both axes summed against one budget; a release with no recorded press refused,
-including when it is also a secondary release.
+including when it is also a secondary release; a release on another element
+than the surface, or with no target, refused; `pickOrigin` records a press on
+the surface and nothing for a press elsewhere.
 
 `playwright-tests/scene-3d.spec.js` › the right-click case is the end-to-end
 half: a right-click on open ground does not move the agent, while a left-click
-does.
+does. The light dialog test asserts that its clicks (the back arrow, "Check
+heat grid") draw no route.
