@@ -508,6 +508,157 @@ describe("createGlobeCloudGovernor", () => {
     }
   });
 
+  describe("what a rung, a give-back and a rest remember", () => {
+    // Why this test matters: the hold is for a step that is slow again at
+    // once. A step down in a later scene that happens to land on the rung
+    // given back last is a new verdict; held, it blocked every give-back for
+    // `restS`, and a device that got fast again kept fewer pixels for five
+    // minutes. What reverses it: a step down within `fastS` of the give-back,
+    // which the hunting sweep below holds.
+    it("holds a give-back only when the step down follows it at once", () => {
+      const governor = createGlobeCloudGovernor("high");
+      downTo(governor, 30, 0.8);
+      run(governor, 10, CLOUD_GOVERNOR.fastS + 1);
+      expect(governor.state().pixelScale).toBeCloseTo(0.9);
+      run(governor, 19, 60);
+      run(governor, 30, CLOUD_GOVERNOR.slowS + 1);
+      expect(governor.state().pixelScale).toBeCloseTo(0.8);
+      run(governor, 10, 2 * CLOUD_GOVERNOR.fastS);
+      expect(governor.state().pixelScale).toBeGreaterThan(0.8 + 1e-9);
+    });
+
+    // Why this test matters: a pair of long frames (a collection and a tab
+    // switch, a decode and a background tab) entered the average at its
+    // whole length, and the average took seconds to come back down: its
+    // decay alone filled a slow verdict, even between frames under `slowMs`
+    // and before a rung had bought its time, where every frame counts. At
+    // the fewest pixels that cost the tier. A frame enters the average at
+    // most `jump` times the average.
+    // Sweep: frames of 19 and 21.9 ms (under `slowMs`); at full pixels, at
+    // rung 2 and at the fewest, each 4 s after reaching it (not bought) and
+    // 60 s after (bought); first frame 260-3000 ms, second 300 ms to an hour.
+    // What reverses it: frames after the pair over `slowMs`, a slow device.
+    for (const ms of [19, 21.9]) {
+      it(`a pair of long frames between ${ms} ms frames changes nothing`, () => {
+        const changed: string[] = [];
+        for (const at of ["full", "rung 2", "fewest"]) {
+          for (const settled of [4, 60]) {
+            for (const first of [260, 1000, 3000]) {
+              for (const second of [300, 3000, 10_000, 60_000, 3_600_000]) {
+                const governor = createGlobeCloudGovernor("high");
+                if (at !== "full")
+                  downTo(
+                    governor,
+                    30,
+                    at === "rung 2" ? 0.8 : CLOUD_GOVERNOR.minPixelScale,
+                  );
+                run(governor, ms, settled);
+                const before = governor.state();
+                governor.frame(first);
+                governor.frame(second);
+                run(governor, ms, 30);
+                const after = governor.state();
+                if (
+                  after.tier !== before.tier ||
+                  after.pixelScale !== before.pixelScale
+                )
+                  changed.push(
+                    `${at} after ${settled} s, ${first} + ${second} ms: ${after.tier} at ${after.pixelScale}`,
+                  );
+              }
+            }
+          }
+        }
+        expect(changed).toEqual([]);
+      });
+    }
+
+    // Why this test matters: the rest counted the seconds the verdicts are
+    // credited, at most `gapMs` a frame, so at frames of a second five
+    // minutes of rest lasted about twenty. It counts the frames' own time.
+    // The bound: `restS`, plus the frames of one verdict after it ends.
+    it("rests `restS` of the frames' own time at frames of a second", () => {
+      const G = CLOUD_GOVERNOR;
+      const frame = 1000;
+      const governor = createGlobeCloudGovernor("high");
+      let t = 0;
+      let back = -1;
+      let again = -1;
+      let before = governor.state();
+      while (t < 3_000_000 && again < 0) {
+        governor.frame(frame);
+        t += frame;
+        const after = governor.state();
+        if (back < 0 && before.pixelScale < 1 && after.pixelScale === 1)
+          back = t;
+        else if (back >= 0 && before.pixelScale === 1 && after.pixelScale < 1)
+          again = t;
+        before = after;
+      }
+      expect(governor.state().tier).toBe("high");
+      expect(back).toBeGreaterThan(0);
+      const rested = (again - back) / 1000;
+      expect(rested).toBeGreaterThanOrEqual(G.restS);
+      expect(rested).toBeLessThanOrEqual(
+        G.restS + (Math.ceil((G.slowS * 1000) / G.gapMs) * frame) / 1000,
+      );
+    });
+
+    // Why this test matters: what a rung bought is that rung's. Carried to
+    // the next one, a few fast frames there completed it, and a short burst
+    // at the fewest pixels then skipped the worthwhile test and cost the tier
+    // of a device that ran fine.
+    // Sweep: rung 4 bought its time at 19 ms after a descent at 24-40 ms; a
+    // slowdown of 23-28 ms steps to the fewest pixels; 1-10 frames of 10 ms;
+    // a 3 s burst of 40-80 ms frames; then 19 ms frames. What reverses it: a
+    // burst of `slowS` or longer at the fewest after they bought their own
+    // time, which is a slowdown.
+    it("starts what a rung bought over at the next rung", () => {
+      const lost: string[] = [];
+      for (const baseline of [24, 30, 40]) {
+        for (const later of [23, 25, 28]) {
+          for (const dip of [1, 3, 10]) {
+            for (const burst of [40, 60, 80]) {
+              const governor = createGlobeCloudGovernor("high");
+              downTo(governor, baseline, 0.6);
+              run(governor, 19, 20);
+              run(governor, later, 2.5);
+              for (let i = 0; i < dip; i++) governor.frame(10);
+              run(governor, burst, 3);
+              run(governor, 19, 30);
+              if (governor.state().tier === "low")
+                lost.push(`${baseline} -> ${later} ms, ${dip} x 10, ${burst}`);
+            }
+          }
+        }
+      }
+      expect(lost).toEqual([]);
+    });
+
+    // Why this test matters: a baseline is stale when a middle rung bought
+    // its time after it was taken. Once give-backs bring every pixel back, a
+    // new descent takes a new baseline, which is fresh: a capped screen then
+    // rests as always, instead of walking the rungs again two seconds later.
+    it("takes a fresh baseline once every pixel came back", () => {
+      const G = CLOUD_GOVERNOR;
+      const governor = createGlobeCloudGovernor("high");
+      downTo(governor, 30, 0.8);
+      run(governor, 19, 60);
+      run(governor, 25, G.slowS + 1);
+      expect(governor.state().pixelScale).toBeCloseTo(0.7);
+      run(governor, 10, 5 * G.fastS);
+      expect(governor.state().pixelScale).toBe(1);
+      run(governor, 33.3, 3 * (G.steps + 2));
+      expect(governor.state()).toEqual({ pixelScale: 1, tier: "high" });
+      let fewest = 1;
+      for (let t = 0; t < 120_000; t += 33.3) {
+        governor.frame(33.3);
+        fewest = Math.min(fewest, governor.state().pixelScale);
+      }
+      expect(fewest).toBe(1);
+    });
+  });
+
   it("does nothing when a choice was made", () => {
     const governor = createGlobeCloudGovernor("high", { auto: false });
     run(governor, 100, 300);
