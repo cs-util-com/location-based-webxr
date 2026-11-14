@@ -184,7 +184,7 @@ const EXPECTED = {
     'playwright-tests/boot-and-shell.spec.js: a dead worker is REPORTED, not left hanging',
     'playwright-tests/boot-and-shell.spec.js: locates when pressed without a fix, then OFFERS to enter AR',
     "playwright-tests/boot-and-shell.spec.js: the offer's button is wired to AR entry, and the prompt clears the offer",
-    'playwright-tests/data-and-caching.spec.js: a reload is served from OPFS without refetching',
+    'playwright-tests/data-and-caching.spec.js: asks the static tile host first, warms the neighbours, serves the rule table and every tile from OPFS on a reload, and reuses the neighbours instead of refetching',
     'playwright-tests/map-and-cells.spec.js: draws the cells, the extent, the outlines, the popup — and redraws on a category switch',
     'playwright-tests/scene-3d.spec.js: draws pixels and buildings, repaints after a resize, shows the terrain as a ramp, and the GPU path matches the CPU one',
   ],
