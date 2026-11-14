@@ -9,22 +9,29 @@
  * does not follow the pixels). At the lowest scale the tier falls to low,
  * whose own numbers are cheaper, and the scale starts over. Fast for much
  * longer gives pixels back, never the tier: a device that needed low once
- * will again, and a tier that flips is what a hunt looks like.
+ * will again, and a tier that flips is what a hunt looks like. A step given
+ * back that is slow again at once is not offered again for `restS`.
  *
  * Frame times alone cannot tell a slow device from a capped one (a 30 Hz
  * screen, a saving mode), so the step-down is its own test: when the fewest
  * pixels bought less than `worthwhile`, the pixels were not the cost, all of
  * them come back and it rests for `restS`: long enough that a capped screen
  * sees the test rarely, short enough that a device that gets slower later
- * (a phone heating up) still steps down. A step that brought the average
- * under `slowMs` has bought its time, so a later slow verdict at the fewest
- * pixels is a new one: the tier falls to low instead of the steps being
- * judged against the average from before them. Higher up the steps left are
- * judged as always, against that average; at low with the fewest pixels no
- * rung is left, so the test runs as always too.
+ * still steps down. A rung that held the average under `slowMs` for `fastS`
+ * has bought its time, so a later slow verdict there is a new one. At the
+ * fewest pixels the tier falls to low instead of the steps being judged
+ * against the average from before them. Higher up the steps left go on, and
+ * at the fewest pixels the test reads the full baseline; when it finds them
+ * worthless the baseline is from before the device changed (a phone heating
+ * up), so every pixel comes back without the rest and the next step down
+ * takes a new one. At low with the fewest pixels no rung is left, so the
+ * test runs as always.
  *
  * A frame enters the average at its whole length but credits the verdicts
- * at most `gapMs` of time, so a pair of hitches cannot make a verdict.
+ * at most `gapMs` of time, so a pair of hitches cannot make a verdict. Once
+ * a rung has bought its time, only frames over `slowMs` fill a slow verdict,
+ * so a run of hitches cannot either: the short frames after them, while the
+ * average comes back down, are not slow.
  *
  * DEC-H3: the OSM package's woods governor (`three/woods-governor.ts`) is a
  * deliberate copy of this rule, which that package cannot import.
@@ -84,42 +91,96 @@ export function createGlobeCloudGovernor(
   let fastFor = 0;
   /** The average when the pixels began to fall. */
   let slowAt = 0;
-  /** The average went under `slowMs` since the last step down. */
+  /** This rung held the average under `slowMs` for `fastS`. */
   let bought = false;
+  /** The time credited under `slowMs` at this rung (s). */
+  let boughtFor = 0;
+  /** A middle rung bought its time since `slowAt` was taken. */
+  let stale = false;
+  /** The rung given back last, until the next step down. */
+  let backFrom = -1;
+  /** How long a give-back still waits (s). */
+  let holdFor = 0;
   let gapBefore = false;
   /** The rest still to run (s). */
   let restFor = 0;
 
+  /** A new pixel scale: what the rung bought starts over. */
+  const setSteps = (steps: number) => {
+    scaleSteps = steps;
+    bought = false;
+    boughtFor = 0;
+  };
+
+  /** The baseline at every pixel; a middle rung that bought its time
+   *  since makes it stale. */
+  const noteBaseline = (skip: boolean) => {
+    if (scaleSteps === 0) {
+      slowAt = average;
+      stale = false;
+    } else if (skip && scaleSteps < G.steps) {
+      stale = true;
+    }
+  };
+
+  /** One step fewer; landing on the rung just given back holds it. */
+  const lowerPixels = () => {
+    if (scaleSteps + 1 === backFrom) holdFor = G.restS;
+    backFrom = -1;
+    setSteps(scaleSteps + 1);
+  };
+
+  /** The fewest pixels bought nothing: every pixel back, and a rest unless
+   *  the baseline is stale, which the next step down takes again. */
+  const worthless = () => {
+    setSteps(0);
+    if (stale) stale = false;
+    else restFor = G.restS;
+  };
+
   const stepDown = () => {
     if (restFor > 0) return;
-    const lowest = current === "low" && scaleSteps === G.steps;
-    const skip = bought && !lowest;
+    const skip = bought && !(current === "low" && scaleSteps === G.steps);
     bought = false;
-    if (scaleSteps === 0) slowAt = average;
+    noteBaseline(skip);
     if (scaleSteps < G.steps) {
-      scaleSteps += 1;
+      lowerPixels();
     } else if (!skip && average > slowAt * (1 - G.worthwhile)) {
-      scaleSteps = 0;
-      restFor = G.restS;
+      worthless();
     } else if (current !== "low") {
       current = "low";
-      scaleSteps = 0;
+      setSteps(0);
       slowFor = -G.settleS;
     }
   };
 
-  /** One counted frame of `seconds` (at most `gapMs`) into the verdicts. */
-  const judge = (seconds: number) => {
-    if (scaleSteps > 0 && average < G.slowMs) bought = true;
+  const stepUp = () => {
+    if (scaleSteps === 0 || holdFor > 0) return;
+    backFrom = scaleSteps;
+    setSteps(scaleSteps - 1);
+  };
+
+  /** Time under `slowMs` at a lowered rung, until it bought its time. */
+  const countBought = (seconds: number) => {
+    if (scaleSteps === 0 || average >= G.slowMs) return;
+    boughtFor += seconds;
+    if (boughtFor >= G.fastS) bought = true;
+  };
+
+  /** One counted frame of `ms`, crediting `seconds` (at most `gapMs`). */
+  const judge = (ms: number, seconds: number) => {
+    countBought(seconds);
     restFor = Math.max(0, restFor - seconds);
-    slowFor = average > G.slowMs ? slowFor + seconds : 0;
+    holdFor = Math.max(0, holdFor - seconds);
+    const credit = !bought || ms > G.slowMs ? seconds : 0;
+    slowFor = average > G.slowMs ? slowFor + credit : 0;
     fastFor = average < G.fastMs ? fastFor + seconds : 0;
     if (slowFor >= G.slowS) {
       slowFor = 0;
       stepDown();
     } else if (fastFor >= G.fastS) {
       fastFor = 0;
-      scaleSteps = Math.max(0, scaleSteps - 1);
+      stepUp();
     }
   };
 
@@ -131,7 +192,7 @@ export function createGlobeCloudGovernor(
       gapBefore = gap;
       if (alone) return;
       average = average === 0 ? ms : average + (ms - average) * G.smoothing;
-      judge(Math.min(ms, G.gapMs) / 1000);
+      judge(ms, Math.min(ms, G.gapMs) / 1000);
     },
     state: () => ({
       pixelScale: Math.max(G.minPixelScale, 1 - scaleSteps * G.step),
