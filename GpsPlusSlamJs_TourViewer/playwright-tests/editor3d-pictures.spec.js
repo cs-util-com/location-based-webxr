@@ -1,7 +1,7 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { answerHosts, capture, openZip } from "./editor3d-fixture.js";
+import { answerHosts, capture, openZip, showList } from "./editor3d-fixture.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
@@ -130,6 +130,9 @@ async function openWithPhoto(page, size) {
   } else {
     await card.locator(".pick").click();
     await expect.poll(() => selected(page)).toBe("station:gate");
+    // A phone on its side shows the station's details in the list's
+    // place; a wider window shows both.
+    await showList(page);
   }
   await card.locator(`[data-select="${PHOTO}"]`).click();
   await expect.poll(() => selected(page)).toBe(PHOTO);

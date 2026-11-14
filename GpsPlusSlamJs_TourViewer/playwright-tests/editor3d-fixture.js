@@ -529,3 +529,21 @@ export async function dockSettled(page, width) {
     .toBe(width);
   await afterFrames(page, 3);
 }
+
+/**
+ * Shows the list (`#tree-body`) where it is out of sight. Docked on a
+ * phone, upright or on its side, the list and the details share one
+ * group, and a tap on a station's row shows its details in the list's
+ * place: a test that goes on to a row in the list shows the list again,
+ * by the List button where the top bar is a phone's and by the group's
+ * List tab where it is the desk's.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function showList(page) {
+  const list = page.locator("#tree-body");
+  if (await list.isVisible()) return;
+  const button = page.locator("#studio-list");
+  if (await button.isVisible()) await button.click();
+  else await page.locator('.dock-host .dock-tab[data-panel="list"]').click();
+  await expect(list).toBeVisible();
+}

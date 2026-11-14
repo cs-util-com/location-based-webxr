@@ -7,6 +7,7 @@ import {
   keepRejections,
   openSampleIn3d,
   rejections,
+  showList,
 } from "./editor3d-fixture.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
@@ -113,6 +114,8 @@ for (const viewport of VIEWPORTS) {
       await page
         .locator(`#tree-body [data-select="station:${station}"]`)
         .click();
+      // A phone shows the station's details in the list's place.
+      await showList(page);
     }
     await row.click();
     const inspector = page.locator("#shell-inspector");
