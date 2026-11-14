@@ -415,6 +415,16 @@ const DEFAULT_RATE_LIMIT_PENALTY_MS = 35_000;
 const DEFAULT_MAX_ATTEMPT_LOG = 50;
 
 /**
+ * Whether a decoded Overpass answer is a partial one: Overpass reports a
+ * timeout or a memory abort inside a 200 as a top-level `remark` next to a
+ * cut `elements` array. Such an answer parses as valid JSON, so it must be
+ * refused by this test, never returned or cached as the whole tile.
+ */
+export function isPartialOverpassAnswer(payload: unknown): boolean {
+  return typeof payload === "object" && payload !== null && "remark" in payload;
+}
+
+/**
  * A failure that retrying cannot fix — a 400 because our query is malformed, a
  * 403 because we are blocked.
  *
@@ -1326,6 +1336,11 @@ export class OverpassSource implements OsmDataSource {
       response,
       clocks.transportStart,
     );
+    // A partial answer is a failed attempt like an error page: the next
+    // operator is tried, and a race never lets it win over a complete one.
+    if (isPartialOverpassAnswer(payload)) {
+      throw new Error(`${hostOf(endpoint)} sent a partial answer (remark)`);
+    }
 
     const parseStart = this.monotonicNow();
     const parsed = parseOverpassJson(payload);

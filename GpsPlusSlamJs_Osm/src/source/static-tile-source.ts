@@ -24,7 +24,10 @@ import { parseOverpassJson } from "../model/overpass-parser.js";
 import { OVERPASS_SCHEMA_VERSION } from "./overpass-query.js";
 import { abortError, sleep } from "./backoff.js";
 import { composeSignals } from "./compose-signals.js";
-import { DEFAULT_REQUEST_TIMEOUT_MS } from "./overpass-source.js";
+import {
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  isPartialOverpassAnswer,
+} from "./overpass-source.js";
 
 /**
  * The project's own tile host (the `osm-tiles` Worker). Nothing uses it
@@ -98,22 +101,22 @@ async function discardBody(response: Response): Promise<void> {
   await response.body?.cancel().catch(() => undefined);
 }
 
-/** The parsed stored answer, or a throw when it is not a complete one. */
-function completeAnswer(text: string, tile: string): object {
+/** The parsed stored answer, or the refusal when it is not a complete one. */
+function checkStored(text: string, tile: string): object | BadStoredTile {
   let payload: unknown;
   try {
     payload = JSON.parse(text);
   } catch {
-    throw new BadStoredTile(`tile ${tile} is not JSON`);
+    return new BadStoredTile(`tile ${tile} is not JSON`);
   }
   if (typeof payload !== "object" || payload === null) {
-    throw new BadStoredTile(`tile ${tile} is not a JSON object`);
+    return new BadStoredTile(`tile ${tile} is not a JSON object`);
   }
   if (!Array.isArray((payload as { elements?: unknown }).elements)) {
-    throw new BadStoredTile(`tile ${tile} has no elements array`);
+    return new BadStoredTile(`tile ${tile} has no elements array`);
   }
-  if ("remark" in payload) {
-    throw new BadStoredTile(`tile ${tile} is a partial answer (remark)`);
+  if (isPartialOverpassAnswer(payload)) {
+    return new BadStoredTile(`tile ${tile} is a partial answer (remark)`);
   }
   return payload;
 }
@@ -270,14 +273,15 @@ export class StaticTileSource implements OsmDataSource {
   private request(
     url: string,
     signal: AbortSignal | undefined,
-    method?: "POST",
+    init: { readonly method?: "POST"; readonly cache?: RequestCache } = {},
   ): Promise<Response> {
     const limited = composeSignals(
       signal,
       AbortSignal.timeout(this.requestTimeoutMs),
     );
     return this.fetchImpl(url, {
-      ...(method === undefined ? {} : { method }),
+      ...(init.method === undefined ? {} : { method: init.method }),
+      ...(init.cache === undefined ? {} : { cache: init.cache }),
       ...(limited === undefined ? {} : { signal: limited }),
     });
   }
@@ -305,7 +309,9 @@ export class StaticTileSource implements OsmDataSource {
     tile: string,
     signal: AbortSignal | undefined,
   ): Promise<"present" | "queued"> {
-    const fill = await this.request(this.fillUrl(tile), signal, "POST");
+    const fill = await this.request(this.fillUrl(tile), signal, {
+      method: "POST",
+    });
     if (fill.status === 200) {
       await discardBody(fill);
       return "present";
@@ -356,28 +362,27 @@ export class StaticTileSource implements OsmDataSource {
     speculative: boolean,
   ): Promise<OsmTileResult | undefined> {
     const readStart = this.now();
-    const response = await this.request(this.tileUrl(tile), signal);
-    if (response.status === 404) {
-      await discardBody(response);
-      return undefined;
+    let stored = await this.readStored(tile, signal);
+    if (stored === undefined) return undefined;
+    let transportMs = elapsedMs(readStart, this.now());
+    let decodeStart = this.now();
+    let checked = checkStored(stored.text, tile);
+    if (checked instanceof BadStoredTile) {
+      // The browser may hold an older copy in its HTTP cache than the host
+      // now stores (the host replaces bad tiles): read once more past that
+      // cache before calling the tile bad or reporting it.
+      stored = await this.readStored(tile, signal, "no-cache");
+      if (stored === undefined) return undefined;
+      transportMs = elapsedMs(readStart, this.now());
+      decodeStart = this.now();
+      checked = checkStored(stored.text, tile);
+      if (checked instanceof BadStoredTile) {
+        // A speculative read asks the host for nothing, a report included.
+        if (!speculative) this.reportBad(tile, stored.etag);
+        throw checked;
+      }
     }
-    if (response.status !== 200) {
-      await discardBody(response);
-      throw new HostDeclined(`tile answered ${response.status}`);
-    }
-    // The host sends `Content-Encoding` (gzip from the operator, or the
-    // edge's own compression of a raw file), so the browser has already
-    // decoded it: the text is the Overpass answer as sent.
-    const text = await response.text();
-    const transportMs = elapsedMs(readStart, this.now());
-    const decodeStart = this.now();
-    let payload: object;
-    try {
-      payload = completeAnswer(text, tile);
-    } catch (error) {
-      this.reportBad(tile, response.headers.get("etag"));
-      throw error;
-    }
+    const payload = checked;
     const decodeMs = elapsedMs(decodeStart, this.now());
     const parseStart = this.now();
     const parsed = parseOverpassJson(payload);
@@ -404,6 +409,37 @@ export class StaticTileSource implements OsmDataSource {
   }
 
   /**
+   * The stored file's text and ETag, `undefined` on a 404, a throw on any
+   * other status. A body-read failure (a `TypeError` from `text()`) is a
+   * host failure, like a network drop: the two cannot be told apart here.
+   */
+  private async readStored(
+    tile: string,
+    signal: AbortSignal | undefined,
+    cache?: RequestCache,
+  ): Promise<
+    { readonly text: string; readonly etag: string | null } | undefined
+  > {
+    const response = await this.request(
+      this.tileUrl(tile),
+      signal,
+      cache === undefined ? {} : { cache },
+    );
+    if (response.status === 404) {
+      await discardBody(response);
+      return undefined;
+    }
+    if (response.status !== 200) {
+      await discardBody(response);
+      throw new HostDeclined(`tile answered ${response.status}`);
+    }
+    // The host sends `Content-Encoding` (gzip from the operator, or the
+    // edge's own compression of a raw file), so the browser has already
+    // decoded it: the text is the Overpass answer as sent.
+    return { text: await response.text(), etag: response.headers.get("etag") };
+  }
+
+  /**
    * Asks the host, once per tile and without waiting, to refetch a stored
    * tile whose data is old; the old file is served meanwhile. Skipped while
    * the host refuses fills and for speculative reads (nobody waits on them,
@@ -415,7 +451,7 @@ export class StaticTileSource implements OsmDataSource {
     if (this.now() - base <= this.refreshAfterMs) return;
     if (this.now() < this.refusedUntil || this.refreshAsked.has(tile)) return;
     this.refreshAsked.add(tile);
-    this.request(this.fillUrl(tile), undefined, "POST").then(
+    this.request(this.fillUrl(tile), undefined, { method: "POST" }).then(
       discardBody,
       () => undefined,
     );
@@ -430,9 +466,8 @@ export class StaticTileSource implements OsmDataSource {
   private reportBad(tile: string, etag: string | null): void {
     if (etag === null || etag === "" || this.reported.has(tile)) return;
     this.reported.add(tile);
-    this.request(this.reportUrl(tile, etag), undefined, "POST").then(
-      discardBody,
-      () => undefined,
-    );
+    this.request(this.reportUrl(tile, etag), undefined, {
+      method: "POST",
+    }).then(discardBody, () => undefined);
   }
 }

@@ -35,10 +35,17 @@ the library default is off.
      object, an `elements` array and no top-level `remark` (Overpass's mark
      of a partial answer after a timeout or memory abort; the host stores an
      operator's gzip answer on its head alone, so the reader is where a
-     partial one is caught). A bad file goes to `fallback` with no refusal
-     remembered, and the host is sent one fire-and-forget
-     `POST /report/v{schema}/{tile}?etag=<the response's ETag>` per tile per
-     session (none without an ETag; a failed report is ignored). The host
+     partial one is caught; the host must therefore never be deployed
+     ahead of this check, `GpsPlusSlamJs_OsmTiles/README.md` "Deploy
+     order"). A bad file is read once more with
+     `cache: "no-cache"`, since the browser's HTTP cache may hold an older
+     copy than the host now stores (the host replaces bad tiles); a good
+     copy is served, a 404 continues as below. When that copy is bad too,
+     the tile goes to `fallback` with no refusal remembered, and the host
+     is sent one fire-and-forget
+     `POST /report/v{schema}/{tile}?etag=<the re-read's ETag>` per tile per
+     session (none without an ETag, none for a speculative read; a failed
+     report is ignored). The host
      verifies the stored bytes itself before deleting anything
      (`GpsPlusSlamJs_OsmTiles/src/verify-tile.ts.md`).
      A complete answer is parsed with `parseOverpassJson`, exactly like a
@@ -71,7 +78,7 @@ the library default is off.
 
 **Read-only fetches** do step 1 only: a `speculative` fetch (a ring warm,
 nobody waiting on it) and any fetch while fills are refused. A speculative
-fetch also sends no refresh.
+fetch also sends no refresh and no report: it asks the host for nothing.
 
 **Timings.** `transportMs` is the delivering read's own round trip; the time
 from the first ask to that read (the wait for the host's fill, polls
@@ -100,6 +107,10 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
   is the race's per-attempt deadline: the host sends stored bytes only, so
   at equal bandwidth it never needs longer than the race, which also waits
   for the operator to compute the answer.
+- A body that fails while it is read (`text()` rejecting with a
+  `TypeError`) is a host failure with the refusal remembered, exactly like a
+  network drop: the two cannot be told apart, and either way this read got
+  nothing from the host.
 - Defensive: unknown statuses are refusals; a bad stored file goes to the
   race and is reported, with no refusal (it says nothing about other
   tiles); the response bodies of 404s, refusals and fire-and-forget asks are
@@ -126,9 +137,11 @@ const source = new CachingSource(
   other tiles, the refresh ask for old data (once,
   and never for young data or a speculative read, a failed ask harmless),
   bodies whose `cancel()` rejects, an unreachable host, a file that is not
-  JSON, a partial answer (`remark`) raced and reported once with its ETag, a
-  body without `elements`, the request time limit (a stalled host goes to
-  the race; the caller's abort still aborts; the default is the race's
-  deadline), the poll timings (`slotWaitMs` for the wait), the bounded wait,
+  JSON, a partial answer (`remark`) re-read past the browser cache, raced
+  and reported once with its ETag, a fresh copy on the re-read served with
+  no report, a speculative bad read sending no report, a body without
+  `elements`, the request time limit (a stalled host and a body that stalls
+  after its headers go to the race; the caller's abort still aborts; the
+  default is the race's deadline), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.
