@@ -138,6 +138,7 @@ import {
 } from "./editor-draft.js";
 import { createPhotoCopies } from "./photo-copy.js";
 import { savedToastWords } from "./save-toast.js";
+import { placeToasts, toastSpot } from "./toast-spot.js";
 import { wireDetailsDialog } from "./details-dialog.js";
 import {
   DRIVE_MOUNT_TIP_SHOWN,
@@ -231,6 +232,7 @@ import {
   type FileAddTarget,
 } from "./add-file-item.js";
 import { createFilePicker } from "./file-picker.js";
+import { createStoryPreview } from "./story-preview.js";
 import {
   dragHasFiles,
   FILE_FIELD_ATTR,
@@ -970,6 +972,19 @@ function toast(
       t.remove();
     }, holdMs);
   }
+  // In a short window, at the 3D view's foot, clear of its gizmo.
+  placeToasts(
+    toasts,
+    document.body.dataset.view === "3d"
+      ? toastSpot(
+          document.querySelector("#view3d canvas")?.getBoundingClientRect() ??
+            null,
+          document.getElementById("map-controls")?.getBoundingClientRect() ??
+            null,
+          { width: window.innerWidth, height: window.innerHeight },
+        )
+      : null,
+  );
   toasts.append(t);
   return t;
 }
@@ -1756,6 +1771,34 @@ async function writeNarrationEdit(
   return "written";
 }
 
+/** The inspector's "Use current frame": the picture made the video's
+ *  poster, one step, as an inspector edit: refreshed once the session
+ *  holds it, a refusal toasted, the autosave told. */
+async function writeVideoPoster(
+  id: string,
+  image: Blob,
+): Promise<TypedEditOutcome> {
+  const open = editor;
+  if (open === null) return "refused";
+  endUndo();
+  let outcome: Awaited<ReturnType<EditorSession["setVideoPoster"]>>;
+  try {
+    outcome = await open.setVideoPoster(id, image);
+  } catch {
+    outcome = { kind: "refused", reason: "The poster could not be kept." };
+  }
+  if (editor !== open) return "refused";
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return "refused";
+  }
+  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
+  if (outcome.kind === "edited") tourChanged();
+  else judgeAutosave();
+  return "written";
+}
+
 /** An edit made: the autosave's cap judged again (an edit may drop the
  *  redo steps naming a file brought in, so the next save no longer writes
  *  it), then the autosave told. */
@@ -1907,12 +1950,17 @@ function addStoryTo(stationId: string): void {
   tourChanged();
 }
 
-/** The story menu's Choice or Quiz: a new step at the story's end,
- *  selected, its inspector open on its fields. */
-function addStepToStoryEntry(storyId: string, kind: StepKind): void {
+/** The story menu's Choice or Quiz: a new step at the story's end (or
+ *  before its child at `at`), selected, its inspector open on its
+ *  fields. */
+function addStepToStoryEntry(
+  storyId: string,
+  kind: StepKind,
+  at?: number,
+): void {
   if (editor === null) return;
   endUndo();
-  const outcome = editor.addStepToStory(storyId, kind);
+  const outcome = editor.addStepToStory(storyId, kind, at);
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
@@ -1923,16 +1971,17 @@ function addStepToStoryEntry(storyId: string, kind: StepKind): void {
   tourChanged();
 }
 
-/** The tree's add into the story `storyId`: a new entry of `kind`,
- *  selected, said once it was made; one step. */
-function addToStoryEntry(storyId: string, kind: AddKind): void {
+/** The tree's add into the story `storyId`: a new entry of `kind` (at
+ *  its end, or before its child at `at`), selected, said once it was
+ *  made; one step. */
+function addToStoryEntry(storyId: string, kind: AddKind, at?: number): void {
   if (editor === null) return;
   if (isFileAddKind(kind)) {
-    void addFromFile(kind, { kind: "story", storyId });
+    void addFromFile(kind, { kind: "story", storyId, at });
     return;
   }
   endUndo();
-  const outcome = editor.addToStory(storyId, kind);
+  const outcome = editor.addToStory(storyId, kind, at);
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
@@ -1947,6 +1996,14 @@ function addToStoryEntry(storyId: string, kind: AddKind): void {
 
 /** The file picker the add menu's file kinds open. */
 const filePicker = createFilePicker(document.body);
+
+/** A story played as a visitor meets it (`story-preview.ts`), from the
+ *  tour as it is now, unsaved edits included. */
+const storyPreview = createStoryPreview({
+  doc: document,
+  tour: () => manifestToWrite(store.getState().tourDocument),
+  loadAsset: readContent,
+});
 
 /** The asset shelf's panel of the open tour (`asset-shelf/shelf-panel.ts`). */
 let shelfPanel: ShelfPanel | null = null;
@@ -2154,6 +2211,8 @@ async function addFromFile(
     return;
   }
   select(outcome.id);
+  // Where a file lands may be off screen: the view frames it, as a choice in the tree does.
+  shell.frame(outcome.id);
   sayAdded(kind, at, outcome.fileName);
   if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   tourChanged();
@@ -2174,7 +2233,8 @@ function placeFrom(
     nowIso: new Date().toISOString(),
     groundAt: (place) => shown3d?.groundAt(place) ?? null,
     place: (object) => open.place(object),
-    addEntryToStory: (storyId, child) => open.addEntryToStory(storyId, child),
+    addEntryToStory: (storyId, child, at) =>
+      open.addEntryToStory(storyId, child, at),
   });
   refresh();
   return placed;
@@ -2239,6 +2299,7 @@ function useShelfFileIn(
     return;
   }
   select(placed.id);
+  shell.frame(placed.id);
   sayAdded(kind, chosen, fileName);
   tourChanged();
 }
@@ -2631,6 +2692,7 @@ tourName.addEventListener("click", openDetails);
 function dialogOpen(): boolean {
   return (
     !modal.hidden ||
+    storyPreview.isOpen() ||
     details.isOpen() ||
     done.isOpen() ||
     characters.dialogOpen()
@@ -2713,6 +2775,11 @@ document.addEventListener("keydown", (event) => {
   }
   if (ui().moving !== null) {
     cancelMove();
+    return;
+  }
+  // "Pick in 3D" armed: Escape disarms it and keeps the selection.
+  if (ui().pointPick) {
+    store.dispatch(editorViewActions.pointPickAsked({ on: false }));
     return;
   }
   if (!modal.hidden && session !== null && !ui().busy) showModal(false);
@@ -4872,6 +4939,10 @@ const shell = createEditorShell({
   fileNameOf: (id) => store.getState().assetShelf.entries[id]?.name,
   loadPicture: readContent,
   dialogOpen,
+  previewStory: (storyId, opener) => {
+    const refused = storyPreview.open(storyId, opener);
+    if (refused !== null) toast(refused);
+  },
   stations: {
     add: addStationAt,
     reorder: reorderStations,
@@ -4891,6 +4962,8 @@ const shell = createEditorShell({
     view: (id, view) => writeInspectorEdit((e) => e.editBlockView(id, view)),
     pictureTag: (id, shown) =>
       writeInspectorEdit((e) => e.editPictureTag(id, shown)),
+    pictureViewpoint: (id, viewpoint) =>
+      writeInspectorEdit((e) => e.editPictureViewpoint(id, viewpoint)),
     model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
     scene: commitSceneEdit,
     groundItems: (items) => {
@@ -4920,6 +4993,7 @@ const shell = createEditorShell({
       void replaceItemFile(id);
     },
     voiceMaxBytes: autosaveMaxBytes,
+    poster: writeVideoPoster,
   },
   // The tree's Group, Ungroup, moves into and out of a folder and its
   // rename: each one step, its outcome said in a toast.

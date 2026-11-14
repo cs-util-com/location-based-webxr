@@ -48,7 +48,15 @@ was opened over. Both close with the view. The tree's foot
 (`#tree-foot`, `edit.html`) says these keys in words; not on a phone,
 nor while the dock is folded.
 
-**On a phone** (700 px wide or less, `phone-sheet.ts`) the docks are sheets
+**On a phone the panels dock** (`dock-host.ts`'s phone layout): the 3D
+view and one tabbed group below it (upright) or beside it (sideways),
+holding all seven panels; the sections below on sheets describe the
+phone only while the docking loads, or when it failed to load. Docked,
+`shownSheet` is null, the details' back arrow (`showList`) shows the
+List tab, and a selection that appears shows Details, except in the
+Select mode while the List tab shows (its ticks need the list).
+
+**Undocked on a phone** (700 px wide or less, `phone-sheet.ts`) the docks are sheets
 over the foot of the page with the map above them: the list when nothing
 is selected, the details over it when something is (unless
 its inspector model has no phone details, `detailsOnPhone`: a folder tap
@@ -102,6 +110,24 @@ focusout or Enter (`inspector-edits.ts`), the jump picker on `change`
 (`stepWithGoto`), Add, Remove and the right answer on a click
 (`stepActEdit`, `../story-step-edits.ts`) - one undo step each. The story
 menu's Choice and Quiz call `deps.edits.addStepToStory(storyId, kind)`.
+A story's "Preview the story" (`preview-story`) calls
+`deps.previewStory(storyId, button)`, which plays it in the visitor's
+panel (`../story-preview.ts`). A desktop's "Insert step" between two cards (`insert:<n>`) opens the
+same menu for that place: its adds pass `at` (`addToStory`,
+`addStepToStory`, 0-based, the new step before the card at `n`); a
+character still goes to the story's end, as the character maker adds it.
+
+A story's steps are cards in its inspector. Wider than 700 px
+(`phoneSheets`) a card's head (`card:<id>`) opens or closes it in place,
+the story staying selected (the open set is the shell's, passed as
+`openCards`), and a jump chip (`card-show:<id>`) opens the step it
+names and moves the focus to its head; at 700 px or less both select the
+step (drill in, as the tree's row does) and Back comes up to the story.
+Every control inside an open card answers for its step (`answersFor`:
+the nearest `data-card`): typed fields commit to it, its Delete deletes
+it without moving the focus to the list. The loop warning's fix
+(`card-fix:<id>`) writes the choice with its last answer ending the
+story (`stepWithGoto` to `END_TARGET`), one undo step.
 
 A story is a folder of the tree: its arrow folds it (`storyFolded`), its name
 selects it, its "+" and its empty line open the type menu for it, a click
@@ -120,20 +146,27 @@ to a station, a story's name in the head takes the focus, selected.
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
   - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it);
   - `deps.dock?()` - loads `dock-host.ts` (a dynamic import); absent, the
-    panels never dock. From `DOCK_MIN_PX` (701 px) wide, while the view
-    shows, the panels dock around it; narrower, or on `hide()`, they
-    undock. A fold is the store's (`foldedDocks`) and the docking's
+    panels never dock. At every width, while the view shows, the panels
+    dock around it; on `hide()` they undock. Docking and undocking draw
+    the inspector and the sheets again (docked, no sheet shows). A fold is the store's (`foldedDocks`) and the docking's
     at once: the list's and the details' folds are carried to the groups
     holding them (`dock-host.ts`'s `fold`, a rail) and back from them
-    (`syncFromDock`), each side hearing only the other's changes, so
+    (`syncFromDock`), each side hearing only the other's changes (the bottom panel's panes
+    in sight too: `docked({ shown })`, a toggle's hide is `hidePane`), so
     two panels dragged into one group (one fold for both) never undo
     each other, and the approach fold keeps working. An unfold from a rail
-    counts as the creator's for the approach. Docked, the dock rule
+    counts as the creator's for the approach. A fold the docking refuses (a
+    floating group, a size not yet known) is written back, so the store
+    never shows a fold that did not happen. Docked, the dock rule
     folds no side for the other (the 3D view gives way); only a phone
     turned sideways still unfolds the list. Docked, a selection that
     appears shows Details over Files, and the Details panel says "Select
     a station or an item, in the list or in the view." while nothing is
-    selected;
+    selected. The docking gets the browser's storage to keep its layout
+    in; a kept layout's folds are taken into the store (`restored()`)
+    rather than undone by it. The tour's problem count (`bottom-panel-model.ts`'s
+    `problemsBadge`, the Problems toggle's own) is the Problems tab's
+    badge, so a folded rail shows it;
   - `deps.onDocked?(docked)` - the panels docked or undocked;
   - `deps.onFilesShown?(shown)` - docked, the Files panel came into sight
     or went (the asset shelf's toggle redraws);
@@ -175,6 +208,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   per approach, and not at all after the creator folded or unfolded the
   tree during the flight; nothing folds the tree again afterwards (no
   zoom-out rule exists).
+- `EditorShell.frame(id)` - flies the view to an item the page just made
+  (a file added or placed from the shelf), as choosing it in the tree
+  does: on the item, else on its station; nothing while no view shows.
 - `EditorShell.hide()` - stops all of that and lets the pictures go
   (each draw also sweeps the cards a redraw replaced). Closed mid-approach
   it gives the tree back the fold it had at `show` (folded or not), so the
@@ -187,7 +223,14 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - `EditorShell.docked()` - whether the panels are docked now;
   `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
   its group unfolded (the store follows); undocked, nothing (the asset
-  shelf's toggle reveals the Files panel through it).
+  shelf's toggle reveals the Files panel through it). The shell itself reveals the details when they come into sight, and on
+  a NEW selection (one compared with the selection last drawn, so a
+  redraw of the same one leaves the creator's tab alone) while the list is
+  the tab in front of them: on a phone the list and the details share one
+  group, so a pick in the list must bring the details forward. Another
+  tab in front (Files) stays: a new pick draws the details behind it. Not
+  while their group is folded, and not while the Select mode ticks rows
+  in the list.
   `EditorShell.badge(id, badge | null)` - the count on a docked panel's
   tab (the shelf's Files count), kept for when the panels dock.
   `EditorShell.conceal(id, instead?)` - docked, takes a shown panel out of
@@ -210,6 +253,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - `ShellEditCommands.model(itemId, edit)` - a model's own edit, as typed
   (`inspector-edits.ts`) or pressed (its panel, `../kind-panels/model-panel.ts`).
   `ShellEditCommands` is exported for the kinds' panels (`PanelContext.edits`).
+- `ShellEditCommands.poster(itemId, image)` (optional) - makes a frame the
+  video preview took the free video's poster (the page's `setVideoPoster`,
+  one step, with a refusal shown as a toast); without it "Use current frame" is refused.
+- The extent slider (`extent-slider.ts`) beside a video's width writes the
+  same `extent` scene edit the 3D view's dots do, once per drag; a
+  selection change and `hide` cut a drag off.
 
 - The kinds' own parts of the inspector come from one `createKindPanels`
   (`../kind-panels/kind-panels.ts`): `sync` hands it the inspector's model
@@ -220,7 +269,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   selection change or a save. A long text's panel is its dock
   (`../long-text/long-text-dock.ts`, body through `edits.block(id, "body",
 ...)`, view through `edits.view`); a picture's writes its view through
-  `edits.view` and its tag through the optional `edits.pictureTag`; a model's answers its part buttons,
+  `edits.view`, its tag through the optional `edits.pictureTag` and its
+  viewpoint through the optional `edits.pictureViewpoint` (the typed `vp-*`
+  fields commit as an `inspectorEdit` of kind `viewpoint`; the
+  fresh-viewpoint button asks with null); a model's answers its part buttons,
   the 3D view's wait and focus going to `modelPickAsked` and
   `modelFocused`. The shell's generic field input skips a writer's fields:
   only an input drawn under a field name (`data-field`) is written by
@@ -417,6 +469,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   the page refuses (over the format's cap; its station, pin text and
   block commands return `TypedEditOutcome`, `"refused"`) is said by the
   page and put back in the field, so the typing is kept to be shortened.
+  The same text in the same field of the same selection is not sent again
+  until it changes (the shell remembers the last refusal, so a draw in
+  between does not forget it): Enter and then leaving the field say the
+  refusal once.
   That text lasts only until the inspector is drawn again: a refusal on
   Enter keeps the focus in the field, and a draw carries focused, typed
   text over; a refusal when the field is left lets the focus go where it
@@ -608,3 +664,7 @@ shell unfolds the station (or reveals the story), clears the search and
 hands the place over. The page then opens the character maker and adds the
 character that was made (`edit-main.ts`, `addCharacterTo`). Tested in
 `editor-shell.test.ts` ("the add menu's Character").
+
+## Look from a viewpoint
+
+- The shell passes `lookFrom` to the panels as `view?.lookFrom(selection) ?? false`, so the picture panel's "Look from the viewpoint" works in whichever 3D view is open and says so when none is.

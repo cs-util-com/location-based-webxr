@@ -17,7 +17,6 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { blockFileId, blockFileKind } from "../../block-file.js";
-import { isStoryOnly } from "../../kinds/edit-kinds.js";
 import { objectTitle } from "../../object-describe.js";
 import { stationTitle } from "../../station-run.js";
 import type { FileAddTarget } from "../add-file-item.js";
@@ -43,9 +42,8 @@ export type UseInTarget =
 
 /**
  * The choices for the file `asset` (its id and kind) in `stations`: a new
- * item in each station (none for a kind that plays in a story only, a
- * video), a new entry in each story, and each item of its kind made from
- * another file. Empty groups are left out; a kind no item is made from
+ * item in each station, a new entry in each story, and each item of its
+ * kind made from another file. Empty groups are left out; a kind no item is made from
  * has none.
  */
 export function useInChoices(
@@ -56,17 +54,16 @@ export function useInChoices(
   if (kind === null) return [];
   const word =
     kind === "model" ? "3D model" : kind === "audio" ? "sound" : kind;
-  const groups: UseInGroup[] = [];
-  if (!isStoryOnly(kind)) {
-    groups.push({
+  const groups: UseInGroup[] = [
+    {
       head: `A new ${word} in a station`,
       choices: stations.map((station, index) => ({
         key: `station:${station.id}`,
         label: stationTitle(station, index + 1),
         icon: "station",
       })),
-    });
-  }
+    },
+  ];
   const stories = stations.flatMap((station, index) =>
     tourStories(station).map((story) => ({
       key: `story:${story.id}`,

@@ -62,11 +62,14 @@ describe('the e2e plan names every spec exactly once', () => {
 });
 
 describe('each spec is classified by what it opens', () => {
+  // The editor's pages (`EDITOR_PAGES`) as one alternation.
+  const editorPage = plan.EDITOR_PAGES.map((p) => p.replaceAll('.', '\\.')).join('|');
   const opensEditor = (/** @type {string} */ text) =>
-    /["'`]\/edit\.html/.test(text) || /from\s+["']\.\/editor3d-fixture\.js["']/.test(text);
+    new RegExp(`["'\`]\\/(${editorPage})`).test(text) ||
+    /from\s+["']\.\/editor3d-fixture\.js["']/.test(text);
   // A visitor or check page: "/", "/?...", or any page other than the editor.
   const opensOtherPage = (/** @type {string} */ text) =>
-    /goto\(\s*["'`]\/(?!edit\.html)/.test(text) ||
+    new RegExp(`goto\\(\\s*["'\`]\\/(?!(${editorPage}))`).test(text) ||
     /goto\(\s*(VISITOR_PAGE|query|path)\b/.test(text) ||
     // ar-fakes.js's helpers that open the visitor's page (its data exports
     // open nothing).
@@ -187,8 +190,10 @@ describe("the plan's editor-only and viewer-only folders hold", () => {
     expect(pageEntries('index.html').length).toBeGreaterThan(0);
   });
 
-  const fromOthers = reachable(pages.filter((p) => p !== 'edit.html').flatMap(pageEntries));
-  const fromEditor = reachable(pageEntries('edit.html'));
+  const fromOthers = reachable(
+    pages.filter((p) => !plan.EDITOR_PAGES.includes(p)).flatMap(pageEntries)
+  );
+  const fromEditor = reachable(plan.EDITOR_PAGES.flatMap(pageEntries));
 
   it('resolves every relative and kit import it meets to a file', () => {
     // A skipped import is a blind spot: whatever sits behind it (a JSON

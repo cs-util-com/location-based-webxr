@@ -33,6 +33,16 @@ beyond what a control offers.
   answer; a quiz losing its right answer makes the first left right.
 - `stepWithRight(quiz, answerId)`: null when it already is right, or is
   none of its answers.
+- `StepKind` (`"choice" | "quiz"`) and `newStoryStep(kind, id)`: the
+  step the story menu's Choice and Quiz add. A choice asks "What does the
+  visitor choose?" with two answers ("Answer 1", "Answer 2", ids `a1`,
+  `a2`) that go on. A quiz asks "What is the right answer?" for 10
+  points with three answers ("Answer 1" to "Answer 3"), the first right.
+  The prototype starts a quiz with three blank answers and no right one;
+  this editor deviates on purpose: the words are placeholders and the
+  first answer is right, because the format reads only a step with words
+  in every field and a right answer, so the new step is valid (and
+  playable) at once. Every one stays editable.
 
 ## Invariants and assumptions
 

@@ -186,6 +186,34 @@ describe("withStoryChild", () => {
     } as TourStoryBlock;
     expect(withStoryChild(frame([]), "one", added)).toBeNull();
   });
+
+  // Why: a step can be added between two others (the cards' "Insert
+  // step"); a place outside the story, or one that is no whole number,
+  // must still add the step at an end rather than lose it or throw.
+  it("puts a child at a place, held to the story's ends", () => {
+    const added = {
+      ...line("new"),
+      advance: { mode: "tap" },
+    } as TourStoryBlock;
+    const ids = (at: number) => {
+      const next = withStoryChild(
+        frame([storyOf("one", [line("a"), line("b")])]),
+        "one",
+        added,
+        at,
+      );
+      return next === null
+        ? []
+        : tourStories(next)[0]?.children.map((c) => c.id);
+    };
+    expect(ids(0)).toEqual(["new", "a", "b"]);
+    expect(ids(1)).toEqual(["a", "new", "b"]);
+    expect(ids(2)).toEqual(["a", "b", "new"]);
+    expect(ids(-3)).toEqual(["new", "a", "b"]);
+    expect(ids(9)).toEqual(["a", "b", "new"]);
+    expect(ids(1.7)).toEqual(["a", "new", "b"]);
+    expect(ids(Number.NaN)).toEqual(["a", "b", "new"]);
+  });
 });
 
 describe("withoutStoryChild", () => {

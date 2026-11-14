@@ -157,3 +157,11 @@ edit, the camera and the world frame held still). The two-finger twist's directi
 and the pan on a real tablet are not covered by any test.
 
 The lock's parts are tested where they live (`gizmo-maths`, `gesture`, `editor3d-input`); the page's e2e (`editor3d-edit.spec.js`) checks the gizmo and the keys of a locked and an unlocked station.
+
+`orbitEditingCamera` takes an optional `leaveLens()`, called when a two-finger touch starts: that touch is the creator's own camera gesture, so it gives the camera its own field of view back after "Look from the viewpoint" (`editor3d-lens.ts`). A lock (a gizmo drag) does not call it: dragging the viewpoint's handle keeps the lens.
+
+## "Pick in 3D" and the point handle
+
+- While `models.view().pointPick` is on and the selection is a sign or a ground arrow, `clickWaited()` is true (no gesture starts) and the next click is answered by the pick: where the ray meets another item (`layer.surfaceHit`), else the ground, written as `PlaceEdit` "point" in the station's frame (rounded to the centimetre); the pick then disarms, also when the page refuses the value. A click on neither says `MISSED_POINT` and stays armed.
+- `targetOf` adds the point (world and back) when the block has `pointsTo`, so the gizmo draws its knob and `handleAt` finds it; `handleScreen("point")` gives its screen position for checks.
+- Covered in the page by `playwright-tests/editor3d-ground-arrow.spec.js` (pick, Escape, clear, handle drag); there is no unit harness for clicks in this module.

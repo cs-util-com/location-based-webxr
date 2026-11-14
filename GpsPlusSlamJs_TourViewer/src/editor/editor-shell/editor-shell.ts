@@ -41,6 +41,7 @@ import {
   isTourFolder,
   tourChildPlace,
 } from "gps-plus-slam-app-framework/ar/tour-story";
+import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
 import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
@@ -119,6 +120,7 @@ import {
   type StepKind,
   type StoryStep,
 } from "../story-step-edits.js";
+import { END_TARGET } from "../story-steps.js";
 import {
   buildInspector,
   detailsOnPhone,
@@ -137,7 +139,7 @@ import {
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
 import type { DockBadge, DockHost, mountDockHost } from "./dock-host.js";
-import { docksAt, isBottomPanelId, type DockPanelId } from "./dock-layout.js";
+import { BOTTOM_PANEL_IDS, docksAt, type DockPanelId } from "./dock-layout.js";
 import { watchKeyboard } from "./phone-keyboard.js";
 import {
   SHELL_DOCK_LAYOUT,
@@ -145,10 +147,12 @@ import {
   wirePhoneSheets,
   type SheetKind,
 } from "./phone-sheet.js";
+import { wireExtentSlider } from "./extent-slider.js";
 import { wireRadiusSlider } from "./radius-slider.js";
 import { wireFieldSliders } from "./field-sliders.js";
 import { createShellPictures } from "./shell-pictures.js";
-import { tourProblems } from "./tour-problems.js";
+import { problemsBadge } from "./bottom-panel-model.js";
+import { problemCounts, tourProblems } from "./tour-problems.js";
 import { drawSelectionBar, drawTree, type TreeRenaming } from "./shell-tree.js";
 import {
   FREE_LIST,
@@ -189,6 +193,7 @@ function timingsStampOf(timings: object): string {
 type ShellView = Pick<
   Editor3dView,
   | "flyTo"
+  | "lookFrom"
   | "frame"
   | "setTop"
   | "zoom"
@@ -243,6 +248,12 @@ export interface ShellEditCommands {
   /** A picture's tag shown or hidden (a cut-out's); absent: the page
    *  has no such edit and the switch is not drawn. */
   pictureTag?(itemId: string, shown: boolean): TypedEditOutcome;
+  /** A picture's viewpoint set (null: a fresh one in front of it);
+   *  absent: the page has no such edit and its fields are not drawn. */
+  pictureViewpoint?(
+    itemId: string,
+    viewpoint: TourPictureViewpoint | null,
+  ): TypedEditOutcome;
   /** One of a model's own edits (`model-edits.ts`): its view, a note,
    *  a section, its clip. */
   model(itemId: string, edit: ModelEdit): TypedEditOutcome;
@@ -259,11 +270,12 @@ export interface ShellEditCommands {
   addItem(stationId: string, kind: AddKind): void;
   /** A new story in the station, selected, one undo step. */
   addStory(stationId: string): void;
-  /** A new entry of `kind` in the story, selected, one undo step. */
-  addToStory(storyId: string, kind: AddKind): void;
-  /** A new choice or quiz at the end of the story, selected, one undo
-   *  step. */
-  addStepToStory(storyId: string, kind: StepKind): void;
+  /** A new entry of `kind` in the story, at its end or before its child
+   *  at `at` (0-based), selected, one undo step. */
+  addToStory(storyId: string, kind: AddKind, at?: number): void;
+  /** A new choice or quiz at the end of the story, or before its child
+   *  at `at`, selected, one undo step. */
+  addStepToStory(storyId: string, kind: StepKind, at?: number): void;
   /** The add menu's Character: the character maker opens on a new
    *  character, which is then added to the station (standing free) or to
    *  the end of the story. */
@@ -296,6 +308,10 @@ export interface ShellEditCommands {
   /** The largest voice file a long text takes (the page's autosave cap;
    *  none: the default cap). */
   readonly voiceMaxBytes?: number;
+  /** Makes `image` (a frame the inspector's video preview took) the free
+   *  video `itemId`'s poster: one step, a refusal said by the page; none:
+   *  the preview's "Use current frame" is refused. */
+  poster?(itemId: string, image: Blob): Promise<TypedEditOutcome>;
 }
 
 /** The page's store, as the shell reads it. */
@@ -323,6 +339,9 @@ export interface EditorShellDeps {
   readonly loadPicture: (path: string) => Promise<Blob>;
   /** A dialog of the page shows: the shell's keys stay out of it. */
   readonly dialogOpen: () => boolean;
+  /** Play the story `storyId` as a visitor meets it (`story-preview.ts`),
+   *  the focus going back to `opener` on close. None: no preview. */
+  readonly previewStory?: (storyId: string, opener: HTMLElement) => void;
   readonly stations: ShellStationCommands;
   readonly edits: ShellEditCommands;
   /** The plain folders' commands (Group, Ungroup, a move into or out of a
@@ -348,6 +367,9 @@ export interface EditorShell {
    *  until `approachEnded`. */
   show(view: ShellView, options?: { readonly approach?: boolean }): void;
   hide(): void;
+  /** Flies the view to an item the page just made, as choosing it in the
+   *  tree does (else to its station); nothing while no view shows. */
+  frame(id: string): void;
   /** The approach's bar went. After a landing the tree folded for it
    *  unfolds (animated, unless reduced motion), as the dock rule allows at
    *  this width; after a takeover it stays a tab for the creator to open.
@@ -548,7 +570,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         focusControl(inspector.root, '[data-act="close"]');
       }
     },
-    chooseForStory: (id, kind) => {
+    chooseForStory: (id, kind, at) => {
+      // A character goes to the story's end: the character maker adds it
+      // once it is made, and takes no place.
       if (kind === "character") {
         clearSearch();
         revealStory(id);
@@ -559,9 +583,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       clearSearch();
       revealStory(id);
       if (kind === "choice" || kind === "quiz") {
-        deps.edits.addStepToStory(id, kind);
-      } else {
+        if (at === undefined) deps.edits.addStepToStory(id, kind);
+        else deps.edits.addStepToStory(id, kind, at);
+      } else if (at === undefined) {
         deps.edits.addToStory(id, kind);
+      } else {
+        deps.edits.addToStory(id, kind, at);
       }
       if (document.activeElement === document.body) {
         focusControl(inspector.root, '[data-act="close"]');
@@ -696,9 +723,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     pickAsked: (pick) => {
       store.dispatch(editorViewActions.modelPickAsked({ pick }));
     },
+    pointPickAsked: (on) => {
+      store.dispatch(editorViewActions.pointPickAsked({ on }));
+    },
     focused: (focus) => {
       store.dispatch(editorViewActions.modelFocused({ focus }));
     },
+    lookFrom: (selection) => view?.lookFrom(selection) ?? false,
   });
   const said = byId("shell-said");
   const ground = createSceneMenu({
@@ -732,6 +763,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
   stampSteps();
   store.subscribe(stampSteps);
+  /** The browser's storage, where it may be used: the bottom panel's
+   *  height and tab, the docked layout. */
+  const storage = (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })();
   const panel = createBottomPanel({
     panel: byId("shell-panel"),
     toggles: byId("shell-toggles"),
@@ -768,20 +808,45 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     step: (which) => {
       deps.step(which);
     },
-    storage: (() => {
-      try {
-        return window.localStorage;
-      } catch {
-        return null;
-      }
-    })(),
+    storage,
   });
   let unsubscribe: (() => void) | null = null;
   let timer: number | null = null;
   let memory: TreeClickMemory = NO_TREE_CLICK;
   let positionOpen = false;
+  /** Each tab's count, for the layout when it docks. */
+  const dockBadges = new Map<DockPanelId, DockBadge>();
+  const setBadge = (id: DockPanelId, badge: DockBadge | null) => {
+    if (badge === null) dockBadges.delete(id);
+    else dockBadges.set(id, badge);
+    dockHost?.badge(id, badge);
+  };
+  /** The Problems tab's count, given on when it changes: the bottom
+   *  panel's own toggle badge (every problem, notes too), so a rail and
+   *  the toggle never disagree. */
+  let problemsShared = "";
+  const shareProblems = (groups: ReturnType<typeof tourProblems>) => {
+    const found = problemsBadge(problemCounts(groups));
+    const key = found === null ? "" : `${found.tone}|${found.title}`;
+    if (key === problemsShared) return;
+    problemsShared = key;
+    setBadge(
+      "problems",
+      found === null
+        ? null
+        : {
+            count: Number(found.text),
+            bad: found.tone === "error",
+            label: found.title,
+          },
+    );
+  };
   /** A station's Contents unfolded: kept from one station to the next. */
   let contentsOpen = true;
+  /** A story's cards open in place (by child id), and a count changed
+   *  with them so a draw sees the change. */
+  const openCards = new Set<string>();
+  let cardsChanged = 0;
   /** A ground command waiting for the ground: the inspector shows it in
    *  progress; a new selection or the view hidden calls it off. */
   let busy: {
@@ -794,6 +859,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     ui: EditorViewState;
     positionOpen: boolean;
     contentsOpen: boolean;
+    cards: number;
     busy: string | null;
   } | null = null;
 
@@ -819,8 +885,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       groundAt,
       modelFocus: ui.modelFocus,
       modelPick: ui.modelPick,
+      pointPick: ui.pointPick,
       timingsStamp: timingsStampOf(state().tourDocument.timings),
       selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
+      // On a phone a card goes to its step: none opens in place.
+      openCards: phoneSheets(window.innerWidth) ? [] : [...openCards],
     });
     const file = inspectorFileOf(
       ui.selected,
@@ -839,10 +908,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       ? null
       : model;
 
+  /** The selection the details were last drawn for (`JSON` of it). */
+  let drawnSelection = "null";
   /** The inspector drawn from the store and the ground now (a draw that
    *  changes nothing is skipped): also each readout tick, so the ground
    *  arriving shows. */
   const drawInspectorNow = (model: InspectorModel | null) => {
+    // Read before the draw, which shows the details for any selection.
+    const wasHidden = inspector.root.hidden;
+    const selection = JSON.stringify(state().editorView.selected);
+    const newSelection = selection !== drawnSelection;
+    drawnSelection = selection;
     drawInspector(
       inspector,
       model,
@@ -851,6 +927,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         positionOpen,
         contentsOpen,
         busy: busy?.act ?? null,
+        drill: phoneSheets(window.innerWidth),
         // Only for a selection shown: nothing selected builds no tour.
         ...(model === null
           ? {}
@@ -866,15 +943,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       panels.sync(model),
     );
     // A phone ticking rows in the Select mode keeps its sheet the list.
-    const wasHidden = inspector.root.hidden;
     inspector.root.hidden =
       sheetModel(model) === null || shownSheet(model) === "tree";
     // Docked, a selection shows its details over the files beside them.
+    // Where the list shares their group (a phone's) and is in front, a
+    // new selection from it does too; ticking rows in the Select mode
+    // keeps the list there. Another tab in front (Files) stays for a new
+    // selection: it draws the details behind it.
+    const listInFront =
+      dockHost !== null && dockHost.activeIn("details") === "list";
     if (
       dockHost !== null &&
-      wasHidden &&
+      (wasHidden || (newSelection && listInFront)) &&
       !inspector.root.hidden &&
-      !state().editorView.foldedDocks.inspector
+      !state().editorView.foldedDocks.inspector &&
+      !(state().editorView.selectMode && listInFront)
     ) {
       dockHost.reveal("details");
     }
@@ -940,25 +1023,28 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   /** The sheet a phone shows now: the details over the list, except in
-   *  the Select mode, whose ticks need the list. `model` is the
-   *  inspector's, when the caller has it built. */
+   *  the Select mode, whose ticks need the list; none while the panels
+   *  are docked (the sheets are the phone's panels only while the docking
+   *  loads, or when it failed to). `model` is the inspector's, when the
+   *  caller has it built. */
   const shownSheet = (
     model: InspectorModel | null = inspectorModel(state().editorView),
   ): SheetKind | null => {
     const ui = state().editorView;
-    if (!phoneSheets(window.innerWidth)) return null;
+    if (dockHost !== null || !phoneSheets(window.innerWidth)) return null;
     if (ui.selectMode) return "tree";
     if (sheetModel(model) !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
   /** The selection let go and the list shown: on a phone, the way back
-   *  from the details. */
+   *  from the details (docked, the list's tab beside them). */
   const showList = () => {
     creatorTouchesTree();
     if (state().editorView.selected !== null) deps.select(null);
     store.dispatch(
       editorViewActions.dockFolded({ dock: "tree", folded: false }),
     );
+    dockHost?.reveal("list");
   };
   const sheets = wirePhoneSheets({
     tree: tree.root,
@@ -1093,6 +1179,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       drawn.ui === ui &&
       drawn.positionOpen === positionOpen &&
       drawn.contentsOpen === contentsOpen &&
+      drawn.cards === cardsChanged &&
       drawn.busy === busyAct
     ) {
       return;
@@ -1100,7 +1187,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const docChanged = drawn?.doc !== doc;
     const uiChanged = drawn?.ui !== ui;
     const before = drawn?.ui ?? null;
-    drawn = { doc, ui, positionOpen, contentsOpen, busy: busyAct };
+    drawn = {
+      doc,
+      ui,
+      positionOpen,
+      contentsOpen,
+      cards: cardsChanged,
+      busy: busyAct,
+    };
     const tour = manifest();
     if (docChanged || uiChanged) drawTreeNow();
     const model = inspectorModel(ui);
@@ -1110,7 +1204,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const overScene = sceneHint(model);
     sceneHintLine.hidden = overScene === null;
     sceneHintLine.textContent = overScene ?? "";
-    panel.problems(tourProblems(tour?.stations ?? []), ui.selected);
+    const problems = tourProblems(tour?.stations ?? []);
+    panel.problems(problems, ui.selected);
+    shareProblems(problems);
     // The cards and the thumbnail a draw replaced are no longer watched.
     pictures.sweep();
     drawHistory(doc);
@@ -1150,6 +1246,23 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
   });
 
+  const extentSlider = wireExtentSlider({
+    root: inspector.root,
+    // Read once, at a drag's start.
+    item: () => {
+      const ui = state().editorView;
+      const model = inspectorModel(ui);
+      return ui.selected !== null &&
+        model?.kind === "item" &&
+        model.extent !== null
+        ? { id: ui.selected, value: model.extent.value }
+        : null;
+    },
+    write: (id, value) => {
+      deps.edits.scene({ kind: "extent", ref: { kind: "block", id }, value });
+    },
+  });
+
   /** The inspector's field that has the focus, with text typed and not
    *  yet committed; null for none. */
   const typedField = (): TypedField | null => {
@@ -1168,18 +1281,25 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  the edit causes carries nothing over, and a value that is no number
    *  leaves the tour's value showing. A text the page refuses (over its
    *  cap) is put back in the field, so the typing is not lost: the
-   *  refusal changes no state, so no draw replaces the field. */
+   *  refusal changes no state, so no draw replaces the field. The text
+   *  put back is not sent again until it changes: Enter and then leaving
+   *  the field would otherwise say the same refusal twice. */
+  let lastRefused: string | null = null;
   const commitField = (input: TypedField, selected: string | null) => {
     const value = input.value;
     if (selected === null || value === input.defaultValue || input.readOnly) {
       return;
     }
+    const field = input.dataset["field"] ?? "";
+    const typing = JSON.stringify([selected, field, value]);
+    if (typing === lastRefused) return;
+    lastRefused = null;
     input.value = input.defaultValue;
     const edit = inspectorEdit({
       selected,
       stations: manifest()?.stations ?? [],
       origin: view?.origin() ?? null,
-      field: input.dataset["field"] ?? "",
+      field,
       value,
     });
     let outcome: TypedEditOutcome = "written";
@@ -1202,8 +1322,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     else if (edit.kind === "turn") view?.turn(edit.selection, edit.deg);
     else if (edit.kind === "height") {
       deps.edits.groundItems([{ id: edit.id, alt: edit.alt }]);
+    } else if (edit.kind === "viewpoint") {
+      outcome =
+        deps.edits.pictureViewpoint?.(edit.id, edit.viewpoint) ?? "refused";
     }
-    if (outcome === "refused") input.value = value;
+    if (outcome === "refused") {
+      input.value = value;
+      lastRefused = typing;
+    }
   };
 
   /** A ground command on the selection: run at once with the ground
@@ -1285,6 +1411,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       positionOpen = false;
       radius.cancel();
       fieldSliders.cancel();
+      extentSlider.cancel();
       busy?.stop.abort();
       busy = null;
       const pending = typedField();
@@ -2045,14 +2172,72 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     store.dispatch(editorViewActions.dockFolded({ dock: "tree", folded }));
     if (!folded) applyDocks("tree-unfolded");
   });
+  /** The item `item` selected from the inspector, its story unfolded in
+   *  the list and the view flown to it. */
+  const goToItem = (item: string) => {
+    deps.select(item);
+    const tour = manifest();
+    const story = tour === null ? undefined : tourChildPlace(tour, item)?.story;
+    if (story !== undefined) revealStory(story.id);
+    flyToSelection(item);
+  };
+  /** A press on a story's card (`card:<id>`) opens or closes it in
+   *  place, a jump chip (`card-show:<id>`) opens the step it names, and
+   *  on a phone both go to that step; the loop warning's fix
+   *  (`card-fix:<id>`) lets the choice's last answer end the story. True
+   *  when `act` was one of them. */
+  const cardAct = (act: string): boolean => {
+    const colon = act.indexOf(":");
+    const name = act.slice(0, colon);
+    const id = act.slice(colon + 1);
+    if (name === "card-fix") {
+      const model = inspectorModel({ ...state().editorView, selected: id });
+      const step = model?.kind === "storyStep" ? model.form?.step : undefined;
+      const last = step?.kind === "choice" ? step.options.at(-1) : undefined;
+      if (step?.kind === "choice" && last !== undefined) {
+        const edited = stepWithGoto(step, last.id, END_TARGET);
+        if (edited !== null) deps.edits.storyStep(edited);
+      }
+      return true;
+    }
+    if (name !== "card" && name !== "card-show") return false;
+    if (phoneSheets(window.innerWidth)) {
+      goToItem(id);
+      return true;
+    }
+    if (name === "card" && openCards.has(id)) openCards.delete(id);
+    else openCards.add(id);
+    cardsChanged += 1;
+    draw();
+    const head = inspector.root.querySelector<HTMLElement>(
+      `[data-act=${JSON.stringify(`card:${id}`)}]`,
+    );
+    head?.focus();
+    if (name === "card-show") head?.scrollIntoView?.({ block: "nearest" });
+    return true;
+  };
+  /** The selection a control inside the inspector answers for: its
+   *  story card's step (`data-card`), else the selection. */
+  const answersFor = (target: EventTarget | null): EditorViewState => {
+    const card =
+      target instanceof Element
+        ? target.closest<HTMLElement>("[data-card]")?.dataset["card"]
+        : undefined;
+    const ui = state().editorView;
+    return card === undefined ? ui : { ...ui, selected: card };
+  };
   inspector.root.addEventListener("click", (event) => {
     const act = (event.target as Element).closest<HTMLElement>("[data-act]")
       ?.dataset["act"];
-    const chosen = state().editorView.selected;
+    if (act !== undefined && cardAct(act)) return;
+    // Inside an open card every command is the card's step's.
+    const ui = answersFor(event.target);
+    const inCard = ui !== state().editorView;
+    const chosen = ui.selected;
     if (
       act !== undefined &&
       chosen !== null &&
-      panels.act(act, inspectorModel(state().editorView), chosen)
+      panels.act(act, inspectorModel(ui), chosen)
     ) {
       draw();
       return;
@@ -2076,13 +2261,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (act === "lock") {
       // The selected station's position locked or unlocked: view state,
       // never an edit; the session refuses its moves while locked.
-      const ui = state().editorView;
-      if (ui.selected?.startsWith(STATION_PREFIX) === true) {
-        const id = ui.selected.slice(STATION_PREFIX.length);
+      const lockView = state().editorView;
+      if (lockView.selected?.startsWith(STATION_PREFIX) === true) {
+        const id = lockView.selected.slice(STATION_PREFIX.length);
         store.dispatch(
           editorViewActions.stationLocked({
             id,
-            locked: !isStationLocked(ui, id),
+            locked: !isStationLocked(lockView, id),
           }),
         );
       }
@@ -2095,7 +2280,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       contentsOpen = !contentsOpen;
       draw();
     }
-    const { selected } = state().editorView;
+    const { selected } = ui;
     if (selected === null) return;
     if (act === "add-content" && selected.startsWith(STATION_PREFIX)) {
       const button = (event.target as Element).closest<HTMLElement>(
@@ -2119,14 +2304,27 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         addMenu.openForStory(button, model.storyId, model.title);
       }
     }
+    if (act === "preview-story") {
+      const button = (event.target as Element).closest<HTMLElement>(
+        "[data-act]",
+      );
+      const model = inspectorModel(state().editorView);
+      if (button !== null && model?.kind === "story") {
+        deps.previewStory?.(model.storyId, button);
+      }
+    }
+    if (act?.startsWith("insert:") === true) {
+      const button = (event.target as Element).closest<HTMLElement>(
+        "[data-act]",
+      );
+      const model = inspectorModel(state().editorView);
+      const at = Number(act.slice("insert:".length));
+      if (button !== null && model?.kind === "story" && Number.isInteger(at)) {
+        addMenu.openForStory(button, model.storyId, model.title, at);
+      }
+    }
     if (act?.startsWith("goto:") === true) {
-      const item = act.slice("goto:".length);
-      deps.select(item);
-      const tour = manifest();
-      const story =
-        tour === null ? undefined : tourChildPlace(tour, item)?.story;
-      if (story !== undefined) revealStory(story.id);
-      flyToSelection(item);
+      goToItem(act.slice("goto:".length));
     }
     if (act === "earlier" || act === "later") moveSelected(selected, act);
     if (act?.startsWith("move-to:") === true) {
@@ -2137,7 +2335,12 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (model?.file !== undefined)
         deps.edits.replaceFile?.(model.file.blockId);
     }
-    if (act === "delete") deleteSelected(selected);
+    // A card's step goes without moving the focus to the list: its story
+    // stays selected.
+    if (act === "delete") {
+      if (inCard) deps.stations.remove(selected);
+      else deleteSelected(selected);
+    }
     if (act === "split") deps.stations.split(selected);
     // An item's "Select the folder": the 3D view's way to its folder.
     if (act?.startsWith("select:") === true)
@@ -2162,7 +2365,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       }
     }
     if (act !== undefined) {
-      const model = inspectorModel(state().editorView);
+      const model = inspectorModel(ui);
       const edit = characterChipEdit(model, act);
       if (edit !== null && model?.kind === "storyEntry") {
         deps.edits.station(model.stationId, { character: edit });
@@ -2204,7 +2407,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       !inspectorDrawing(inspector.root)
     ) {
       const next = controlName(inspector.root, event.relatedTarget);
-      commitField(input, state().editorView.selected);
+      commitField(input, answersFor(input).selected);
       focusControl(inspector.root, next, tabbed);
     }
   });
@@ -2216,7 +2419,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     if (!(pick instanceof HTMLSelectElement)) return;
     const act = pick.dataset["act"];
     if (act?.startsWith(STEP_GOTO) !== true) return;
-    const model = inspectorModel(state().editorView);
+    const model = inspectorModel(answersFor(pick));
     const step = model?.kind === "storyStep" ? model.form?.step : undefined;
     if (step?.kind !== "choice") return;
     const edited = stepWithGoto(step, act.slice(STEP_GOTO.length), pick.value);
@@ -2253,7 +2456,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       input instanceof HTMLInputElement
     ) {
       event.preventDefault();
-      commitField(input, state().editorView.selected);
+      commitField(input, answersFor(input).selected);
     } else if (event.key === "Escape" && input.value !== input.defaultValue) {
       // The tour's value back; the next Escape is the page's again.
       event.preventDefault();
@@ -2397,10 +2600,18 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   // --- the docked layout ---------------------------------------------------
-  // From `DOCK_MIN_PX` wide the panels dock around the 3D view (the
-  // docking library loaded with it, `dock-host.ts`); narrower, they are
-  // today's docks and a phone's sheets. The folds stay the store's: a
-  // folded side hides its group, its folded head back over the view.
+  // At every width the panels dock around the 3D view (the docking
+  // library loaded with it, `dock-host.ts`); until it has loaded, or when
+  // it failed to, they are the undocked docks and a phone's sheets. The
+  // folds stay the store's: a folded side hides its group, its folded
+  // head back over the view.
+  /** The inspector and the phone's sheets drawn again for a docking that
+   *  came or went: docked, no sheet shows. */
+  const drawSheets = () => {
+    const model = inspectorModel(state().editorView);
+    drawInspectorNow(model);
+    sheets.sync(shownSheet(model));
+  };
   let dockLoading = false;
   /** The docking failed to load: said once, not tried again on every
    *  resize (a module that failed to load fails again at once). */
@@ -2421,8 +2632,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   dockEmpty.className = "dock-empty";
   dockEmpty.textContent =
     "Select a station or an item, in the list or in the view.";
-  /** Each tab's count, for the layout when it docks. */
-  const dockBadges = new Map<DockPanelId, DockBadge>();
   /** The side folds last carried between the store and the docking: each
    *  side hears only the other's changes, so two panels sharing a group
    *  (one fold for both) never undo each other. */
@@ -2445,12 +2654,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         store.dispatch(editorViewActions.dockFolded({ dock, folded }));
       }
     }
-    const tab = dockHost.activeIn("problems");
-    if (!dockHost.groupShown("problems")) {
-      panel.docked({ open: false, tab: "problems" });
-    } else if (tab !== null && isBottomPanelId(tab)) {
-      panel.docked({ open: true, tab });
-    }
+    // Each bottom pane in sight, wherever it was dragged.
+    const host = dockHost;
+    panel.docked({
+      shown: BOTTOM_PANEL_IDS.filter(
+        (id) => host.groupShown(id) && host.activeIn(id) === id,
+      ),
+    });
   };
   const foldDocked = () => {
     if (dockHost === null) return;
@@ -2461,28 +2671,53 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (folded === carried[dock]) continue;
       carried = { ...carried, [dock]: folded };
       dockHost.fold(id, folded);
+      // The docking may refuse (a floating group, a size not yet known),
+      // so the store follows what it did rather than what was asked.
+      const took = dockHost.folded(id);
+      if (took !== folded) {
+        carried = { ...carried, [dock]: took };
+        store.dispatch(editorViewActions.dockFolded({ dock, folded: took }));
+      }
     }
   };
   const mountDock = (mount: typeof mountDockHost) => {
     if (dockHost !== null || view === null || !docksAt(window.innerWidth)) {
       return;
     }
-    const host = mount({ box: viewBox, onChange: syncFromDock });
+    const host = mount({ box: viewBox, onChange: syncFromDock, storage });
     dockHost = host;
     host.content("details").append(dockEmpty);
     for (const [id, badge] of dockBadges) host.badge(id, badge);
-    carried = { tree: host.folded("list"), inspector: host.folded("details") };
+    if (host.restored()) {
+      // A kept layout is the creator's own: its folds reach the store
+      // (dispatched only where they differ, so nothing echoes back).
+      const want = state().editorView.foldedDocks;
+      carried = { tree: want.tree, inspector: want.inspector };
+      for (const [dock, id] of FOLDING) {
+        const folded = host.folded(id);
+        carried = { ...carried, [dock]: folded };
+        if (want[dock] !== folded) {
+          store.dispatch(editorViewActions.dockFolded({ dock, folded }));
+        }
+      }
+    } else {
+      carried = {
+        tree: host.folded("list"),
+        inspector: host.folded("details"),
+      };
+    }
     foldDocked();
     stopDockFolds = store.subscribe(foldDocked);
     panel.dock({
       show: (tab) => {
         host.reveal(tab);
       },
-      hide: () => {
-        host.hideGroupOf("problems");
+      hide: (tab) => {
+        host.hidePane(tab);
       },
     });
     if (keyboardPx > 0) host.keyboard(keyboardPx);
+    drawSheets();
     deps.onDocked?.(true);
   };
   const syncDock = () => {
@@ -2513,6 +2748,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     dockEmpty.remove();
     dockHost.dispose();
     dockHost = null;
+    drawSheets();
     syncFilesShown();
     deps.onDocked?.(false);
   };
@@ -2528,11 +2764,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       // The store learns of an unfold from the docking (`syncFromDock`).
       dockHost?.reveal(id);
     },
-    badge(id, badge) {
-      if (badge === null) dockBadges.delete(id);
-      else dockBadges.set(id, badge);
-      dockHost?.badge(id, badge);
-    },
+    badge: setBadge,
     show(next, options) {
       view = next;
       drawn = null;
@@ -2572,6 +2804,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();
     },
+    frame(id) {
+      flyToSelection(id);
+    },
     hide() {
       // Closed mid-approach: the fold was the approach's, so the tree
       // gets back the fold it had at the open (folded or not).
@@ -2587,6 +2822,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       endUnfolding();
       radius.cancel();
       fieldSliders.cancel();
+      extentSlider.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();

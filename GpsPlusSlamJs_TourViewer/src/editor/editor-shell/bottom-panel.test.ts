@@ -380,6 +380,8 @@ describe("the Problems tab", () => {
     if (pane === null) throw new Error("no Problems pane");
     docked.append(pane);
     toggle("problems").click();
+    // The docking shows it and says so.
+    panel.docked({ shown: ["problems"] });
     panel.problems(GROUPS, null);
     const row = pane.querySelector<HTMLElement>('.prow[data-select="far"]');
     row?.dispatchEvent(key({ key: "Enter" }));
@@ -838,5 +840,70 @@ describe("the height and what the browser keeps", () => {
     panel.hide();
     expect(el.hidden).toBe(true);
     expect(panel.state().open).toBe(false);
+  });
+});
+
+describe("docked, panes dragged apart", () => {
+  /** Docked, with each pane in a docked panel of its own. */
+  function docked() {
+    const made = setUp();
+    const dock = { show: vi.fn(), hide: vi.fn() };
+    made.panel.dock(dock);
+    for (const id of ["problems", "history", "tiles", "perf"]) {
+      const host = document.createElement("div");
+      host.className = `docked-${id}`;
+      document.body.append(host);
+      const pane = document.getElementById(`shell-pane-${id}`);
+      if (pane === null) throw new Error(`no ${id} pane`);
+      host.append(pane);
+    }
+    return { ...made, dock };
+  }
+  const paneOf = (id: string) =>
+    document.getElementById(`shell-pane-${id}`) as HTMLElement;
+
+  // Why: a creator who drags Problems into the details' group sees it
+  // there and Performance in the bottom group, both at once; a panel that
+  // drew only one "current" tab left the other blank.
+  it("draws every pane in sight, each with its own tools", () => {
+    const { panel } = docked();
+    panel.docked({ shown: ["problems", "perf"] });
+    panel.problems(GROUPS, null);
+    panel.tick(readoutOf());
+    expect(paneOf("problems").querySelector(".prow")).not.toBeNull();
+    expect(paneOf("perf").querySelector(".nums")).not.toBeNull();
+    // The problems' filters stand above their own pane.
+    const tools = paneOf("problems").previousElementSibling;
+    expect(tools?.classList.contains("tools")).toBe(true);
+    expect(tools?.querySelector('[data-filter="error"]')).not.toBeNull();
+    expect(paneOf("history").querySelector(".hrow")).toBeNull();
+  });
+
+  // Why: docked, each toggle answers for its own pane: pressed while it
+  // shows, wherever it was dragged, and pressing it again takes that pane
+  // (not another group) out of sight.
+  it("presses a toggle while its pane shows, and hides that pane", () => {
+    const { panel, dock } = docked();
+    panel.docked({ shown: ["problems", "perf"] });
+    expect(toggle("problems").getAttribute("aria-pressed")).toBe("true");
+    expect(toggle("perf").getAttribute("aria-pressed")).toBe("true");
+    expect(toggle("history").getAttribute("aria-pressed")).toBe("false");
+    toggle("perf").click();
+    expect(dock.hide).toHaveBeenCalledWith("perf");
+    toggle("history").click();
+    expect(dock.show).toHaveBeenCalledWith("history");
+  });
+
+  // Why: the tab a creator just brought into sight is the one Escape and
+  // Ctrl+J then act on; keeping an older one would close the wrong pane.
+  it("takes the pane just come into sight as the current one", () => {
+    const { panel } = docked();
+    panel.docked({ shown: ["problems"] });
+    panel.docked({ shown: ["problems", "perf"] });
+    expect(panel.state()).toMatchObject({ open: true, tab: "perf" });
+    panel.docked({ shown: ["problems"] });
+    expect(panel.state()).toMatchObject({ open: true, tab: "problems" });
+    panel.docked({ shown: [] });
+    expect(panel.state()).toMatchObject({ open: false });
   });
 });

@@ -17,7 +17,9 @@ in the current text colour, as SVG elements.
   and for the inspector's Put on the ground `ground` (the prototype's),
   `left` (the fourth chevron), and for the docked panels' tabs and
   rails `details`, `problems`, `history`, `tiles` (the map loading
-  pane) and `perf`).
+  pane) and `perf`, and for a docked group's buttons on a phone
+  `float` (float it over the 3D view) and `dock` (dock it back), the
+  docking prototype's).
 - `shellIcon(name)` - a new `svg.i` element, `aria-hidden` (the control it
   sits in carries the words).
 - `placeShellIcons(root)` - every `<i data-icon="name">` under `root`

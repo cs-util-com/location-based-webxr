@@ -179,8 +179,12 @@ interface TourPlacement {
  *  where it stands. */
 type InWorld<B> = Omit<B, 'pose'> & TourPlacement;
 
-/** A short text in the world, drawn as a pin. */
-export type TourPin = InWorld<TourShortTextBlock> & { readonly view: 'pin' };
+/** A short text in the world, in one of its world views: a pin, a sign on
+ *  posts, an edge hint or an arrow on the ground (never `card`). The name
+ *  stays from when a pin was its only one. */
+export type TourPin = InWorld<TourShortTextBlock> & {
+  readonly view: Exclude<TourShortTextBlock['view'], 'card'>;
+};
 /**
  * A picture in the world, in one of its world views, with its image asset inline
  * (`imageAsset.id === image`): the page that captured a photo holds its
@@ -206,9 +210,12 @@ export type TourLectern = InWorld<TourLongTextBlock> & {
 export type TourReadingSign = InWorld<TourLongTextBlock> & {
   readonly view: 'reading';
 };
-/** A video standing free in its station, in `card` until a world look
- *  joins the format. */
-type TourFreeVideo = InWorld<TourVideoBlock> & { readonly view: 'card' };
+/** A video standing free in its station, as a screen, a cutout or a
+ *  porthole, as wide as its `widthM`. */
+type TourFreeVideo = InWorld<TourVideoBlock> & {
+  readonly view: Exclude<TourVideoBlock['view'], 'card'>;
+  readonly widthM: number;
+};
 /** A sound standing free in its station, as a video. */
 type TourFreeAudio = InWorld<TourAudioBlock> & { readonly view: 'card' };
 /** A character standing free in his station, as a figure in one of his

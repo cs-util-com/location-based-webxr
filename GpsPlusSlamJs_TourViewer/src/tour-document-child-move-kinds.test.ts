@@ -11,7 +11,7 @@
  *
  * Standing free in the format is not enough: each kind out of a story must
  * also be shown by a free host (`SHOWN_FREE`), or be refused. A kind no
- * host shows yet (a video) would otherwise become an item nobody sees.
+ * host showed would otherwise become an item nobody sees.
  *
  * The second part pins the one refusal the document adds to the move
  * rule: a free item whose file the tour a reload opens does not hold yet.
@@ -37,6 +37,7 @@ import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 import { describe, expect, it } from "vitest";
 
 import { NARRATION_DEFAULT_RADIUS_M } from "./kinds/audio/sound-reach.js";
+import { VIDEO_DEFAULT_WIDTH_M } from "./kinds/video/video-rules.js";
 import { stationContent, storyOf } from "./test-support/station-content.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
@@ -65,7 +66,7 @@ const FIELDS: Record<string, Record<string, unknown>> = {
   shortText: { caption: "A line" },
   longText: { title: "The wall", body: "It stood for a while." },
   picture: { image: "img", widthM: 1 },
-  video: { video: "clip" },
+  video: { video: "clip", poster: "img" },
   audio: { audio: "snd" },
   model: { asset: "mdl" },
   character: { name: "The guide", image: "img" },
@@ -75,12 +76,18 @@ const FIELDS: Record<string, Record<string, unknown>> = {
  *  radius, an ambient zone its reach and volume. */
 const VIEW_FIELDS: Record<string, Record<string, Record<string, unknown>>> = {
   audio: { spot: { radiusM: 9 }, zone: { maxM: 20, volume: 0.5 } },
+  video: {
+    screen: { widthM: 1.2, start: "near", withinM: 4, sound: "on" },
+    cutout: { widthM: 0.9, alpha: "stacked" },
+    porthole: { widthM: 1, start: "tap" },
+  },
 };
 
 /** What a block taking its kind's floor view gains: a sound from a story's
  *  card has no radius, so its narration circle takes the editor's default. */
 const FLOOR_DEFAULTS: Record<string, Record<string, unknown>> = {
   audio: { radiusM: NARRATION_DEFAULT_RADIUS_M },
+  video: { widthM: VIDEO_DEFAULT_WIDTH_M },
 };
 
 /** How a visitor meets each kind standing free, or null for a kind no free
@@ -93,7 +100,7 @@ const SHOWN_FREE: Record<TourBlockKind, string | null> = {
   model: "its world part (kinds/model/world.ts)",
   audio: "heard in its narration circle or zone",
   character: "a figure on a stage of his own (free-items.ts)",
-  video: null,
+  video: "a screen, a cutout or a porthole (kinds/video/video-world.ts)",
 };
 
 const MODEL_WORLD = new Set(TOUR_FREE_BLOCK_VIEWS.model as readonly string[]);
@@ -101,8 +108,7 @@ const MODEL_WORLD = new Set(TOUR_FREE_BLOCK_VIEWS.model as readonly string[]);
 interface Case {
   readonly name: string;
   readonly block: Record<string, unknown>;
-  /** It can stand in the world: a model only with a size, a video not
-   *  until a free host shows one. */
+  /** It can stand in the world: a model only with a size. */
   readonly free: boolean;
 }
 

@@ -75,7 +75,9 @@ function key(target: Element, k: string): KeyboardEvent {
 describe("the menu for a story", () => {
   function forStory() {
     const chooseForStory =
-      vi.fn<(id: string, kind: Exclude<TreeAddChoice, "story">) => void>();
+      vi.fn<
+        (id: string, kind: Exclude<TreeAddChoice, "story">, at?: number) => void
+      >();
     const menu = createTreeAddMenu({
       body,
       host: document.body,
@@ -120,13 +122,29 @@ describe("the menu for a story", () => {
     );
   });
 
-  // Why: a video plays only in a story, so a story's menu is where it is
-  // added; it must be on there, saying what it is.
+  // Why: "Insert step" opens the story's menu for a place in the story:
+  // the head says which step the new one becomes, and the place reaches
+  // the add; without one the add is called as before, with no place.
+  it("carries a place in the story to the add, and says it", () => {
+    const { menu, root, plus, chooseForStory } = forStory();
+    menu.openForStory(plus, "legend", "The legend", 1);
+    expect(root.querySelector(".mhead")?.textContent).toBe(
+      'Add to the story "The legend" as step 2',
+    );
+    root.querySelector<HTMLElement>('[data-kind="choice"]')?.click();
+    expect(chooseForStory).toHaveBeenLastCalledWith("legend", "choice", 1);
+    menu.openForStory(plus, "legend", "The legend");
+    root.querySelector<HTMLElement>('[data-kind="quiz"]')?.click();
+    expect(chooseForStory.mock.lastCall).toEqual(["legend", "quiz"]);
+  });
+
+  // Why: a video plays in a story as well as standing free in a station,
+  // so a story's menu offers it too, saying what it is.
   it("offers a video in a story", () => {
     const { root, chooseForStory } = forStory();
     const video = root.querySelector<HTMLElement>('[data-kind="video"]');
     expect(video?.getAttribute("aria-disabled")).toBeNull();
-    expect(video?.textContent).toContain("A video file, played in a story");
+    expect(video?.textContent).toContain("A video file");
     video?.click();
     expect(chooseForStory).toHaveBeenCalledWith("legend", "video");
   });
@@ -195,12 +213,7 @@ describe("createTreeAddMenu", () => {
     const character = item("character");
     expect(character?.getAttribute("aria-disabled")).toBeNull();
     expect(character?.textContent).toContain("character maker");
-    const video = item("video");
-    expect(video?.getAttribute("aria-disabled")).toBe("true");
-    expect(video?.textContent).toContain(
-      "A video plays in a story: add it to one",
-    );
-    for (const kind of ["longText", "picture", "audio", "model"]) {
+    for (const kind of ["longText", "picture", "video", "audio", "model"]) {
       expect(item(kind)?.getAttribute("aria-disabled")).toBeNull();
     }
   });
@@ -254,14 +267,6 @@ describe("createTreeAddMenu", () => {
     menu.openFor(details, "gate", "Gate");
     menu.close(true);
     expect(document.activeElement).toBe(details);
-  });
-
-  it("adds nothing for an item that is off, and stays open", () => {
-    const { root, item } = opened();
-    // A station's video is off: it plays in a story only.
-    item("video")?.click();
-    expect(choose).not.toHaveBeenCalled();
-    expect(root.hidden).toBe(false);
   });
 
   it("closes on Escape with the focus back on the +, the page's Escape not reached", () => {

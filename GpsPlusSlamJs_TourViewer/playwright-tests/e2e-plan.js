@@ -42,6 +42,11 @@ export const SPECS = {
   "code-auto-move.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "creator-indoor.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "creator-stations.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "editor-asset-optimizers.spec.js": {
+    project: "dom",
+    area: "editor",
+    lane: 1,
+  },
   "editor-characters.spec.js": { project: "dom", area: "both", lane: 1 },
   "editor-entry.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor-files.spec.js": { project: "dom", area: "editor", lane: 1 },
@@ -98,11 +103,17 @@ export const SPECS = {
   },
   "editor3d-globe-start.spec.js": { project: "webgl", area: "editor", lane: 1 },
   "editor3d-globe.spec.js": { project: "webgl", area: "editor", lane: 1 },
+  "editor3d-ground-arrow.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 2,
+  },
   "editor3d-inspector.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-long-text.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-model.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-narration.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-phone.spec.js": { project: "webgl", area: "editor", lane: 3 },
+  "editor3d-pictures.spec.js": { project: "webgl", area: "both", lane: 4 },
   "editor3d-shelf.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-shell.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d-short-text.spec.js": {
@@ -120,7 +131,13 @@ export const SPECS = {
     area: "editor",
     lane: 3,
   },
+  "editor3d-story-cards.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 3,
+  },
   "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-video.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-world-marks.spec.js": {
     project: "webgl",
     area: "editor",
@@ -223,8 +240,18 @@ const KIT = "GpsPlusSlamJs_EditorKit/src/";
 /** The specs' folder inside the package. */
 const SPECS_DIR = "playwright-tests/";
 
+/**
+ * The editor's pages: the editor itself, and the check page that runs the
+ * editor's own asset optimizers (`asset-optimizer-check.html.md`), which
+ * imports editor modules and nothing only the viewer has.
+ */
+export const EDITOR_PAGES = Object.freeze([
+  "edit.html",
+  "asset-optimizer-check.html",
+]);
+
 /** Package paths only the editor reaches (a file, or a folder's contents). */
-const EDITOR_ONLY = ["edit.html", "src/editor", "src/editor3d"];
+const EDITOR_ONLY = [...EDITOR_PAGES, "src/editor", "src/editor3d"];
 
 /**
  * Shared modules under an area's folder: the editor imports them too

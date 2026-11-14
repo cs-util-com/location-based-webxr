@@ -578,6 +578,56 @@ describe("folding and the phone", () => {
     expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
   });
 
+  // Why: a phone docks its panels too, so there the toggle must switch the
+  // Files tab like at a desk; toggling the old sheet instead pressed a
+  // button that showed nothing.
+  it("docked on a phone, its toggle shows and hides the Files panel, never a sheet", () => {
+    phone = true;
+    let shown = false;
+    const revealDocked = vi.fn(() => {
+      shown = true;
+    });
+    const hideDocked = vi.fn(() => {
+      shown = false;
+    });
+    panel({
+      dock: {
+        active: () => true,
+        shown: () => shown,
+        reveal: revealDocked,
+        hide: hideDocked,
+        badge: vi.fn(),
+      },
+    });
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+    $<HTMLButtonElement>("#tog")?.click();
+    expect(revealDocked).toHaveBeenCalledTimes(1);
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("true");
+    expect(document.body.classList.contains("shelf-sheet")).toBe(false);
+    $<HTMLButtonElement>("#tog")?.click();
+    expect(hideDocked).toHaveBeenCalledTimes(1);
+    expect($("#tog")?.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  // Why: the pill is a way to the shelf; docked on a phone the shelf is the
+  // Files tab, so the pill shows that tab rather than a sheet nobody sees.
+  it("docked on a phone, its pill shows the Files panel", () => {
+    phone = true;
+    const revealDocked = vi.fn();
+    panel({
+      dock: {
+        active: () => true,
+        shown: () => false,
+        reveal: revealDocked,
+        hide: vi.fn(),
+        badge: vi.fn(),
+      },
+    });
+    $<HTMLButtonElement>("#pill")?.click();
+    expect(revealDocked).toHaveBeenCalledTimes(1);
+    expect(document.body.classList.contains("shelf-sheet")).toBe(false);
+  });
+
   // Why: docked, the shelf has no rail of its own, so the Files tab carries
   // its news; the badge goes to the page on every draw, with its name.
   it("docked, hands the Files tab its badge", () => {

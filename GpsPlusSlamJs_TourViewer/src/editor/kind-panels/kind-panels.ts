@@ -17,6 +17,7 @@
  */
 import type { TourBlockKind } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { tourBlockKinds } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { ShellEditCommands } from "../editor-shell/editor-shell.js";
 import type { InspectorModel } from "../editor-shell/inspector-model.js";
 import { createKeptStore } from "../long-text/kept-store.js";
@@ -28,6 +29,7 @@ import { createModelPanel } from "./model-panel.js";
 import { createPicturePanel } from "./picture-panel.js";
 import { pictureSeeThrough } from "../../kinds/picture/picture-alpha.js";
 import { createShortTextPanel } from "./short-text-panel.js";
+import { createVideoPanel } from "./video-panel.js";
 
 /** What the shell gives a kind's panel: its page, its edits and its
  *  words. */
@@ -49,6 +51,8 @@ export interface PanelContext {
     | "editNarration"
     | "voiceMaxBytes"
     | "pictureTag"
+    | "pictureViewpoint"
+    | "poster"
   >;
   /** A tour file by its path. */
   readonly loadPicture: (path: string) => Promise<Blob>;
@@ -57,9 +61,17 @@ export interface PanelContext {
   readonly changed: () => void;
   /** The click the 3D view waits for on the selected model. */
   readonly pickAsked: (pick: ModelPick | null) => void;
+  /** "Pick in 3D" armed or disarmed for the selected short text. */
+  readonly pointPickAsked: (on: boolean) => void;
   /** The selected model's part in focus. */
   readonly focused: (focus: ModelFocus | null) => void;
+  /** Stand the 3D view's camera at a picture's viewpoint; false: no view
+   *  open, or nothing to look from. */
+  readonly lookFrom: (selection: string) => boolean;
 }
+
+/** Said when the 3D view cannot look from a viewpoint. */
+const NO_LOOK_FROM = "Open the 3D view to look from the viewpoint.";
 
 /** A long text's panel: its writer and its preview. */
 function longText(ctx: PanelContext): KindPanel {
@@ -93,24 +105,50 @@ function model(ctx: PanelContext): KindPanel {
   });
 }
 
-/** A short text's panel: its view, role and turn. */
+/** A short text's panel: its view, role, turn and point. */
 function shortText(ctx: PanelContext): KindPanel {
   return createShortTextPanel({
     view: (id, view) => ctx.edits.view(id, view),
     block: (id, field, value) => ctx.edits.block(id, field, value),
+    changed: () => ctx.changed(),
+    pointPick: (on) => ctx.pointPickAsked(on),
   });
 }
 
-/** A picture's panel: its view, its tag, the cut-out's alpha warning. */
+/** A picture's panel: its view, its tag, the cut-out's alpha warning, its
+ *  viewpoint. */
 function picture(ctx: PanelContext): KindPanel {
   const tag = ctx.edits.pictureTag;
+  const viewpoint = ctx.edits.pictureViewpoint;
   return createPicturePanel({
     setView: (id, view) => ctx.edits.view(id, view),
     ...(tag === undefined
       ? {}
       : { setTag: (id: string, shown: boolean) => tag(id, shown) }),
+    ...(viewpoint === undefined
+      ? {}
+      : {
+          setViewpoint: (id: string, vp: TourPictureViewpoint | null) =>
+            viewpoint(id, vp),
+        }),
     seeThrough: async (path) => pictureSeeThrough(await ctx.loadPicture(path)),
     changed: ctx.changed,
+    lookFrom: (id) => {
+      if (!ctx.lookFrom(id)) ctx.say(NO_LOOK_FROM);
+    },
+  });
+}
+
+/** A free video's panel: its view, how it starts, its sound. */
+function video(ctx: PanelContext): KindPanel {
+  return createVideoPanel({
+    writeView: (id, view) => ctx.edits.view(id, view),
+    writeChoice: (id, field, value) => ctx.edits.block(id, field, value),
+    load: ctx.loadPicture,
+    writePoster: (id, image) =>
+      ctx.edits.poster === undefined
+        ? Promise.resolve("refused")
+        : ctx.edits.poster(id, image),
   });
 }
 
@@ -124,7 +162,7 @@ export const KIND_PANELS = {
   shortText,
   longText,
   picture,
-  video: null,
+  video,
   audio: null,
   model,
   character: null,

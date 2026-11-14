@@ -42,6 +42,7 @@ const item: InspectorModel = {
   fields: [],
   model: null,
   longText: null,
+  video: null,
   offset: { northM: 2, upM: 0.5, eastM: -1.25 },
   headingDeg: 15,
   turns: false,
@@ -65,7 +66,7 @@ describe("barActions for what stands nowhere", () => {
   it("offers a story Duplicate alone, an entry or a free block nothing", () => {
     const base = { id: "x", stationId: "s", title: "T", sub: "" };
     expect(
-      barActions({ ...base, kind: "story", storyId: "x", entries: [] }).map(
+      barActions({ ...base, kind: "story", storyId: "x", cards: [] }).map(
         (a) => a.action,
       ),
     ).toEqual(["duplicate"]);

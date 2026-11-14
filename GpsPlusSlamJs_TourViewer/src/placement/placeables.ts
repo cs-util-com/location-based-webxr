@@ -29,11 +29,20 @@ import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   isTourBlockChild,
   isTourFolder,
+  isTourStoryBlock,
+  tourStories,
   type TourFolder,
   type TourStationChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { FOLDER_PREFIX, STATION_PREFIX } from "../editor/editor-model.js";
+import { TOUR_PICTURE_VIEWPOINT_VIEWS } from "gps-plus-slam-app-framework/ar/tour-kinds";
+
+import {
+  FOLDER_PREFIX,
+  STATION_PREFIX,
+  STORY_PREFIX,
+} from "../editor/editor-model.js";
+import { viewpointPose } from "../editor/picture-viewpoint.js";
 import {
   CONTAINER_PLACEMENT,
   STATION_PLACEMENT,
@@ -43,11 +52,13 @@ import {
 } from "./placement-rows.js";
 
 /** What the document can name and write a placement back to: one arm
- *  per kind of HOLDER, never per block kind. */
+ *  per kind of HOLDER, never per block kind; a picture's viewpoint is the
+ *  one place a block holds besides its pose (`id`: the picture's). */
 export type PlaceRef =
   | { readonly kind: "block"; readonly id: string }
   | { readonly kind: "folder"; readonly id: string }
-  | { readonly kind: "station"; readonly id: string };
+  | { readonly kind: "station"; readonly id: string }
+  | { readonly kind: "viewpoint"; readonly id: string };
 
 /** A placeable's dots: what they change, and the value now. */
 export type PlaceExtent = ExtentSpec & { readonly value: number };
@@ -76,6 +87,9 @@ export interface Placeable {
   readonly lifts: boolean;
   /** Its dots; null: none. */
   readonly extent: PlaceExtent | null;
+  /** Its bend (degrees, 0 where none is written) for what bends (its
+   *  row's `bends`); absent otherwise. */
+  readonly bendDeg?: number;
   /** Only its dots may be dragged (a station the creator locked). */
   readonly locked: boolean;
   /** The block ids whose drawings follow it: itself for a block, the
@@ -105,6 +119,13 @@ function extentOf(row: ViewPlacement, holder: object): PlaceExtent | null {
   return { ...spec, value };
 }
 
+/** A bending block's bend as written: 0 for none or one not finite (the
+ *  drawing's own reading). */
+function bendOf(block: object): number {
+  const value: unknown = (block as Readonly<Record<string, unknown>>).bendDeg;
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 /** A posed block standing in `station` inside `folders` (outermost
  *  first), or null for a view the world does not show. */
 function blockPlaceable(
@@ -127,6 +148,7 @@ function blockPlaceable(
     turns: row.turns,
     lifts: row.lifts,
     extent: extentOf(row, block),
+    ...(row.bends === true ? { bendDeg: bendOf(block) } : {}),
     locked: false,
     members: [block.id],
     group: false,
@@ -256,8 +278,46 @@ export function placeablesOf(
   ]);
 }
 
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+);
+
+/** The viewpoint of the picture `block` in `station`, as a placeable: a
+ *  picture seen from its viewpoint is drawn where the viewpoint says, so
+ *  its handle is the viewpoint (in the station's frame, its folders do
+ *  not carry it); null for any other block. */
+function viewpointPlaceable(
+  block: TourBlock,
+  station: TourStation,
+): Placeable | null {
+  if (block.kind !== "picture" || !VIEWPOINT_VIEWS.has(block.view)) {
+    return null;
+  }
+  const vp = block.viewpoint;
+  if (vp === undefined) return null;
+  const inStation = viewpointPose(vp);
+  return {
+    ref: { kind: "viewpoint", id: block.id },
+    selection: block.id,
+    stationId: station.id,
+    folderPath: [],
+    geo: itemGeoPose(inStation, station.geo),
+    local: inStation,
+    inStation,
+    inheritedScale: 1,
+    turns: true,
+    lifts: true,
+    extent: null,
+    locked: false,
+    members: [block.id],
+    group: false,
+  };
+}
+
 /** The placeable the page's `selection` names; null for one that names
- *  nothing placeable (a code, a card, a block or folder the tour lacks). */
+ *  nothing placeable (a code, a card, a block or folder the tour lacks).
+ *  A picture seen from its viewpoint is named by its viewpoint; every
+ *  other reader of a station's blocks (`posedEntries`) keeps its pose. */
 export function placeableOf(
   tour: { readonly stations: readonly TourStation[] },
   selection: string,
@@ -277,8 +337,58 @@ export function placeableOf(
     return null;
   }
   for (const station of tour.stations) {
-    const found = posedBlocks(station).find((p) => p.selection === selection);
-    if (found !== undefined) return found;
+    const found = posedEntryOf(station, selection);
+    if (found !== null) {
+      return viewpointPlaceable(found.block, station) ?? found.place;
+    }
+  }
+  return null;
+}
+
+/**
+ * The posed entries of `station`'s story `storyId`, in its order, each
+ * with the placeable it would be: what the 3D view draws of the open
+ * story (`openStoryOf`). A card, a choice and a quiz are left out (the
+ * world shows none of them); a story the station lacks has none.
+ *
+ * Read-only on purpose: `placeablesOf` and `placeableOf` never return
+ * them, so the gizmo offers no handle on a story's entry. Moving one
+ * comes with the path that saves a story's edits.
+ */
+export function storyEntries(
+  station: TourStation,
+  storyId: string,
+): readonly PosedBlock[] {
+  const story = tourStories(station).find((s) => s.id === storyId);
+  if (story === undefined) return [];
+  // A story stands only at a station's top: its entries' poses are in
+  // the station's frame.
+  return story.children.flatMap((child): PosedBlock[] => {
+    if (!isTourStoryBlock(child)) return [];
+    const place = blockPlaceable(child, station, []);
+    return place === null ? [] : [{ block: child, place }];
+  });
+}
+
+/** The story the page's `selection` opens: the story itself
+ *  (`story:<id>`) or the story holding the chosen entry; null for any
+ *  other selection, or none. */
+export function openStoryOf(
+  tour: { readonly stations: readonly TourStation[] } | null,
+  selection: string | null,
+): string | null {
+  if (tour === null || selection === null) return null;
+  const named = selection.startsWith(STORY_PREFIX)
+    ? selection.slice(STORY_PREFIX.length)
+    : null;
+  for (const station of tour.stations) {
+    for (const story of tourStories(station)) {
+      const opens =
+        named === null
+          ? story.children.some((c) => c.id === selection)
+          : story.id === named;
+      if (opens) return story.id;
+    }
   }
   return null;
 }

@@ -121,6 +121,7 @@ import type {
 } from "./editor3d-scene.js";
 import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
 import { createSceneEditing } from "./editor3d-editing.js";
+import { openStoryOf } from "../placement/placeables.js";
 import {
   createBillboard,
   createCodeFace,
@@ -132,6 +133,7 @@ import {
   createStationsLayer,
 } from "./editor3d-stations.js";
 import { editorDrawings } from "./editor3d-drawings.js";
+import { createLensHold } from "./editor3d-lens.js";
 import { createEditorTerrain, reliefDeviceClass } from "./editor3d-terrain.js";
 import { mountEditorCity, type EditorCity } from "./editor3d-globe-city.js";
 import { mountCredits } from "./editor3d-credits.js";
@@ -144,6 +146,7 @@ import { morphStanding } from "./editor3d-visibility.js";
 import {
   GLOBE_EDITOR_LOOK,
   aimView,
+  lookFromView,
   daylightStartMs,
   globeEditorSettings,
   globeHidden,
@@ -862,10 +865,15 @@ export async function openGlobeEditor(
     const eyeSpheres: THREE.Sphere[] = [];
     /** The SAMPLED ground a world ray meets, to its origin's horizon. */
     const groundPoint = groundPointOfRay(ground.terrain);
+    // "Look from the viewpoint" lends the camera the viewpoint's lens;
+    // any other camera move gives the view's own back.
+    const lens = createLensHold(camera, GLOBE_EDITOR_LOOK.fovYDeg);
     const controls = createGlobeCameraControls(scene, camera, canvas, globe, {
-      // The creator's own gesture ends the approach where it is.
+      // The creator's own gesture ends the approach where it is, and
+      // leaves the viewpoint's lens.
       onTake: () => {
         approach?.takeOver(performance.now());
+        lens.release();
       },
       // The editor zooms a double click itself (`zoomTowards`); the
       // library's own double-tap zoom would add a second, animated one.
@@ -1146,6 +1154,11 @@ export async function openGlobeEditor(
       );
 
       const ui = deps.store.getState().editorView;
+      // The lens holds while its picture stays selected.
+      if (lens.selection() !== null && ui.selected !== lens.selection()) {
+        lens.release();
+      }
+      lens.apply();
       const selectedStation = selectedStationOf(ui.selected, tourNow);
       hidden = globeHidden(
         onScreen(),
@@ -1174,6 +1187,7 @@ export async function openGlobeEditor(
       layer.update({
         centre: cameraTour,
         selectedStation,
+        openStory: openStoryOf(tourNow, ui.selected),
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
         selected: ui.selected,
         standing,
@@ -1226,6 +1240,7 @@ export async function openGlobeEditor(
     }
 
     const aimAt = (at: THREE.Vector3, radiusM: number) => {
+      lens.release();
       const place = placeOfTour(at);
       const goal = aimView(
         { lat: place.lat, lng: place.lng },
@@ -1243,6 +1258,7 @@ export async function openGlobeEditor(
     };
     const placePose = (change: { headingDeg?: number; pitchDeg?: number }) => {
       approach?.takeOver(performance.now());
+      lens.release();
       const pose = poseNow();
       controls.release();
       view.placeView({ ...pose, ...change });
@@ -1351,6 +1367,7 @@ export async function openGlobeEditor(
             selected: ui.selected,
             focus: ui.modelFocus,
             pick: ui.modelPick,
+            pointPick: ui.pointPick,
           };
         },
         edit: (id, edit) => deps.edits.model(id, edit),
@@ -1360,6 +1377,7 @@ export async function openGlobeEditor(
       clickPx: GLOBE_GESTURES.dragPx,
       stepCamera(code) {
         approach?.takeOver(performance.now());
+        lens.release();
         const pose = poseNow();
         const groundM = ground.groundAt(pose.lat * DEG, pose.lng * DEG);
         const aboveM = Math.max(0, pose.altitudeKm * 1000 - (groundM ?? 0));
@@ -1377,6 +1395,7 @@ export async function openGlobeEditor(
           groundPoint(ray) ?? ellipsoidPointOfRay(ground.terrain.tiles, ray);
         if (at === null) return;
         approach?.takeOver(performance.now());
+        lens.release();
         controls.release();
         camera.position.add(
           keepOverGround(at.sub(camera.position).multiplyScalar(ZOOM_SHARE)),
@@ -1534,6 +1553,7 @@ export async function openGlobeEditor(
       },
       setDistance(m) {
         approach?.takeOver(performance.now());
+        lens.release();
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
           camera.quaternion,
         );
@@ -1547,6 +1567,19 @@ export async function openGlobeEditor(
         aimAt(place.at, place.radiusM);
         return true;
       },
+      lookFrom(selection) {
+        const seen = layer.viewpointOf(selection);
+        if (seen === null) return false;
+        approach?.takeOver(performance.now());
+        controls.release();
+        view.placeView(
+          lookFromView(placeOfTour(seen.at), placeOfTour(seen.ahead)),
+        );
+        lens.lookThrough(selection, seen.hfovDeg);
+        dust.reset();
+        controls.followIntro();
+        return true;
+      },
       frame: frameView,
       setTop(on) {
         if (on === top) return;
@@ -1557,6 +1590,7 @@ export async function openGlobeEditor(
       },
       zoom(step) {
         approach?.takeOver(performance.now());
+        lens.release();
         const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
           camera.quaternion,
         );
@@ -1677,6 +1711,7 @@ export async function openGlobeEditor(
         return {
           frames,
           near: camera.near,
+          fovDeg: camera.fov,
           far: camera.far,
           tiltDeg: 90 + pose.pitchDeg,
           standing,

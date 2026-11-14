@@ -4,9 +4,9 @@
 
 The tree's type menu: what a station row's "+" (and an empty station's
 "Add content") adds in place - a short or a long text, or a picture, a
-sound or a 3D model from a file, at a free spot of that station; a video
-is offered in a story's menu only (on a station's it is off, saying to
-add it to a story), and a character is listed, off, as coming. One menu
+video, a sound or a 3D model from a file, at a free spot of that station
+(a video stands there as a screen), and a character is listed, off, as
+coming. One menu
 for every row, opened under the button pressed.
 
 ## Public API
@@ -16,16 +16,16 @@ for every row, opened under the button pressed.
   line, a station's alone), `openForStory` for a story ("Add to the story
   "<name>"", `chooseForStory`, no Story item, and behind a line Choice
   and Quiz - steps of a story only, hidden on a station's menu, so
-  `choose` never gets them). The focus returns to that row's "+".
+  `choose` never gets them; opened with `at`, as a story's "Insert step"
+  does, the head says "... as step <at + 1>" and `chooseForStory` gets
+  the `at` too). The focus returns to that row's "+".
 
 - The menu's lines are `ADD_CHOICES` of the editor's list of kinds
   (`../../kinds/edit-kinds.ts`), in its order, `{ kind, label, hint, words,
 look, addable }`, each item's `data-kind` its format kind: Short text ("A pin with a caption"), Long text ("A
   reading sign: a title and its text"), Picture, Video, Sound, 3D model
   (each opens the file picker: `../add-file-item.ts`), Character (off).
-  On opening, the menu fits its items to the place: a `storyOnly` kind is
-  off on a station's menu, its hint the reason. `words` is what a search
-  for the kind matches.
+  `words` is what a search for the kind matches.
 - `addMenuSpot(anchor, size, view)` -> `{ left, top }` (window px, pure):
   under the button, opening rightwards from 20 px left of its right
   edge (over the view beside the tree, not over its rows), else as far
@@ -70,8 +70,8 @@ menu.openFor(plusButton, "gate", "The old gate");
 ## Tests
 
 `tree-add-menu.test.ts` (jsdom): the menu titled by its station, its
-items in order and the video and the character off with their reasons,
-the video on in a story's menu; the keys through the items that are off; a choice
+items in order and the character off with its reason, the video on in
+every menu; the keys through the items that are off; a choice
 closing first, the focus back on the "+", `aria-expanded` back to false;
 the item that is off adding nothing; Escape stopping at the menu; Tab and
 a press outside closing it; `addMenuSpot` below, at the edges, above, and

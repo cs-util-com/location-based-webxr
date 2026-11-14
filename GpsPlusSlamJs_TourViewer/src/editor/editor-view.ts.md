@@ -102,6 +102,11 @@ chrome reads, one copy for every view of the page.
   (`editor3d-editing.ts`).
 - Both are cleared when the selection changes, and on an open or a close.
   Their reducers ignore input that is no focus or pick.
+- `pointPick` - "Pick in 3D" armed for the selected short text: the 3D
+  view's next click on the ground or another item sets where it points
+  (`editor3d-editing.ts`), Escape disarms it (`edit-main.ts`); set by
+  `pointPickAsked({ on })` (a flag, anything else ignored). Cleared like
+  `modelPick`, and also when several rows are picked.
 
 ## Invariants & assumptions
 

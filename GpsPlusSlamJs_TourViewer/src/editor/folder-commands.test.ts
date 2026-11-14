@@ -10,6 +10,7 @@ import {
   serializeTourManifest,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 import type { UnknownAction } from "@reduxjs/toolkit";
 import { describe, expect, it } from "vitest";
 
@@ -336,6 +337,53 @@ describe("createFolderCommands - ungroup, move, rename", () => {
     expect(t.commands.pivotToCentre("made")).toBe(false);
     expect(t.said).toEqual([
       '"Folder 2" holds no items to centre its pivot on',
+    ]);
+  });
+
+  // Why: "already stands at its items' centre" is only true when the pivot
+  // is there. A pivot the format cannot hold at the centre (here a folder
+  // inside it would end up beyond the item bound) is no step either, and
+  // calling that "already there" would tell the creator something false.
+  it("says why when the pivot cannot go to its items' centre, not that it is there already", () => {
+    const far = TOUR_ITEM_MAX_OFFSET_M * 0.9;
+    const wire = tourOf([], {
+      stations: [
+        {
+          id: "well",
+          title: "The well",
+          geo: { ...AT, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          ...stationContent([
+            {
+              id: "wide",
+              kind: "folder",
+              title: "Wide",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              children: [
+                pin("x", [far, 0, 0]),
+                pin("y", [far, 0, 0]),
+                {
+                  id: "inner",
+                  kind: "folder",
+                  title: "Inner",
+                  pose: { position: [-far, 0, 0], rotation: [0, 0, 0, 1] },
+                  children: [pin("z", [0, 0, 0])],
+                },
+              ],
+            },
+          ]),
+        },
+      ],
+    });
+    const t = setup(parseTourManifest(JSON.parse(serializeTourManifest(wire))));
+    const past = t.state().past.length;
+    expect(t.commands.pivotToCentre("wide")).toBe(false);
+    expect(t.state().past.length).toBe(past);
+    expect(t.changed()).toBe(0);
+    expect(t.said).toEqual([
+      'The pivot of "Wide" cannot go to its items\' centre: something it holds would stand too far from it',
     ]);
   });
 

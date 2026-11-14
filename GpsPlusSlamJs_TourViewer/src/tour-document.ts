@@ -116,7 +116,10 @@ import {
   type TourCode,
 } from "./code-book.js";
 import { newObjectId } from "./content-placement.js";
-import { blockPlacement } from "./placement/placement-rows.js";
+import {
+  blockPlacement,
+  writesBlockNumber,
+} from "./placement/placement-rows.js";
 import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import { stationHolding, type StationPoint } from "./station-assign.js";
 import {
@@ -3220,10 +3223,16 @@ function storyDelete(
   return next === null ? before : frameReplaced(before, next, payload.what);
 }
 
-/** A child at the end of a story (`storyChildAdded`), as one step. */
+/** A child in a story, at its end or before the child at `at`
+ *  (`storyChildAdded`), as one step. */
 function storyChildAdd(
   before: TourDocumentState,
-  payload: { story: string; child: TourStoryChild; what: string },
+  payload: {
+    story: string;
+    child: TourStoryChild;
+    what: string;
+    at?: number | undefined;
+  },
 ): TourDocumentState {
   const frame = frameOfStory(before, payload.story);
   if (
@@ -3233,7 +3242,7 @@ function storyChildAdd(
   ) {
     return before;
   }
-  const next = withStoryChild(frame, payload.story, payload.child);
+  const next = withStoryChild(frame, payload.story, payload.child, payload.at);
   return next === null ? before : frameReplaced(before, next, payload.what);
 }
 
@@ -4143,6 +4152,54 @@ const NO_FOLDER_POSE: TourLocalPose = {
   rotation: [0, 0, 0, 1],
 };
 
+/** Where a plain folder's pivot goes to stand at its items' centre, with
+ *  what moving it there needs; null for a station or folder the tour
+ *  lacks, a folder with no items, or a centre the format would refuse. */
+function centredPivot(
+  before: TourDocumentState,
+  payload: Pick<FolderPivotPayload, "stationId" | "folderId">,
+) {
+  if (before.written === null) return null;
+  const frame = before.stations.find((s) => s.id === payload.stationId);
+  if (frame === undefined) return null;
+  const chain = folderChains(frame).get(payload.folderId);
+  const old = chain?.at(-1);
+  if (chain === undefined || old === undefined) return null;
+  const members = documentObjects(before)
+    .map(({ object }) => object)
+    .filter(
+      (object) =>
+        object.station === frame.id &&
+        object.folder?.includes(payload.folderId) === true,
+    );
+  if (members.length === 0) return null;
+  const was = old.pose ?? NO_FOLDER_POSE;
+  // The centroid in the frame holding the folder (its station, or the
+  // folder around it).
+  const centre = decomposeTourFolderPath(chain.slice(0, -1), {
+    position: groupCentre(members, frame),
+    rotation: [0, 0, 0, 1],
+  }).position;
+  const pose = readPose({
+    ...was,
+    position: [centre[0] ?? 0, was.position[1] ?? 0, centre[2] ?? 0],
+  });
+  if (pose === null) return null;
+  return { frame, old, members, was, pose };
+}
+
+/** Whether a plain folder's pivot stands at its items' centre already,
+ *  so that `folderPivotCentred` is no step for that reason and not for
+ *  another (a centre the format would refuse). */
+export function folderPivotIsCentred(
+  state: TourDocumentState,
+  stationId: string,
+  folderId: string,
+): boolean {
+  const target = centredPivot(state, { stationId, folderId });
+  return target !== null && sameJson(target.pose.position, target.was.position);
+}
+
 /**
  * A plain folder's pivot moved to the centre of the items it holds (at
  * any depth), on the ground plane of its holder: its north and east go
@@ -4157,33 +4214,10 @@ function folderPivotCentre(
   before: TourDocumentState,
   payload: FolderPivotPayload,
 ): TourDocumentState {
-  if (before.written === null) return before;
-  const frame = before.stations.find((s) => s.id === payload.stationId);
-  if (frame === undefined) return before;
-  const chains = folderChains(frame);
-  const chain = chains.get(payload.folderId);
-  const old = chain?.at(-1);
-  if (chain === undefined || old === undefined) return before;
-  const members = documentObjects(before)
-    .map(({ object }) => object)
-    .filter(
-      (object) =>
-        object.station === frame.id &&
-        object.folder?.includes(payload.folderId) === true,
-    );
-  if (members.length === 0) return before;
-  const was = old.pose ?? NO_FOLDER_POSE;
-  // The centroid in the frame holding the folder (its station, or the
-  // folder around it).
-  const centre = decomposeTourFolderPath(chain.slice(0, -1), {
-    position: groupCentre(members, frame),
-    rotation: [0, 0, 0, 1],
-  }).position;
-  const pose = readPose({
-    ...was,
-    position: [centre[0] ?? 0, was.position[1] ?? 0, centre[2] ?? 0],
-  });
-  if (pose === null || sameJson(pose.position, was.position)) return before;
+  const target = centredPivot(before, payload);
+  if (target === null) return before;
+  const { frame, old, members, was, pose } = target;
+  if (sameJson(pose.position, was.position)) return before;
   const pivoted: TourFolder = { ...old, pose };
   const children: TourFolder["children"][number][] = [];
   for (const child of old.children) {
@@ -4758,7 +4792,7 @@ function folderDelete(
 }
 
 /** A block's size set (`blockNumberSet`): the field its placement row's
- *  `size` extent names, within the row's bounds. */
+ *  `size` or `scale` extent names, within the row's bounds. */
 function numberSet(
   before: TourDocumentState,
   payload: { id: string; field: string; value: number; what: string },
@@ -4773,7 +4807,8 @@ function numberSet(
       : blockPlacement(object.kind, object.view)?.extent;
   if (
     object === undefined ||
-    spec?.kind !== "size" ||
+    spec === undefined ||
+    !writesBlockNumber(spec) ||
     spec.field !== field ||
     !(value >= spec.min && value <= spec.max) ||
     (object as unknown as Record<string, unknown>)[field] === value
@@ -5099,14 +5134,16 @@ const tourDocumentSlice = createSlice({
     ) {
       return storyDelete(plain(state), action.payload);
     },
-    /** A child at the end of a story: one step; its id is minted outside
-     *  the reducer, and a taken id changes nothing. */
+    /** A child at the end of a story, or before its child at `at`: one
+     *  step; its id is minted outside the reducer, and a taken id changes
+     *  nothing. */
     storyChildAdded(
       state,
       action: PayloadAction<{
         story: string;
         child: TourStoryChild;
         what: string;
+        at?: number | undefined;
       }>,
     ) {
       return storyChildAdd(plain(state), action.payload);
@@ -5250,9 +5287,10 @@ const tourDocumentSlice = createSlice({
     ) {
       return itemsGround(plain(state), action.payload);
     },
-    /** A block's size set - the field its placement row's `size` extent
-     *  names (a model's largest side, 0.05 m to 500 m; a picture's width,
-     *  0.05 m to 50 m): one step. Not for another field, a block whose row
+    /** A block's size set - the field its placement row's `size` or
+     *  `scale` extent names (a model's largest side, 0.05 m to 500 m; a
+     *  picture's width, 0.05 m to 50 m; a ground arrow's scale, 1 to 40):
+     *  one step. Not for another field, a block whose row
      *  has no size, an unknown id, or a value out of the row's bounds. */
     blockNumberSet(
       state,

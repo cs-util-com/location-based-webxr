@@ -49,7 +49,7 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
   either way). A `TourPicture` carries its image asset inline
   (`imageAsset`, with `imageAsset.id === image`), because the page that
   captured a photo holds its asset before any tour lists it. `TourModel`
-  carries its `sizeM` (required to place it). `TourObjectKind`.
+  carries its `sizeM` (required to place it). `TourPin` is a short text in any of its world views (`pin`, `sign`, `edgeHint`, `ground`; never `card`), as `tourObjects` yields it. `TourObjectKind`.
 - `TOUR_OBJECT_RECORD_FORMAT = 5` and `TourObjectRecord` - a world-view
   object as a creator's on-device draft stores it:
   `{ format: 5, block, asset?, geo, station?, folder? }` (`block` without a
@@ -85,7 +85,8 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
   there are no `show` steps. A free block stands in a view its kind has for
   standing free (`TOUR_FREE_BLOCK_VIEWS`: `pin`, a long text's `lectern` or
   `reading`, `plane`, a model's `placed`, `ghost`, `hotspots`, `cutaway` or
-  `toy`, `card` for a video or a sound, a character's own five). A station
+  `toy`, a video's `screen`, `cutout` or `porthole`, a sound's `spot` or
+  `zone`, a character's own five). A station
   may have no children (an automatic station: finding it completes it).
   Several stories at a station are allowed by the format; a viewer plays
   the first with something to play.

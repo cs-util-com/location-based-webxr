@@ -1,13 +1,12 @@
 /**
  * The tree's type menu: what a station row's "+" (and its empty line's
  * "Add content") adds in place - a kind its row says is addable
- * (`KIND_EDIT` `add`: a text, or a picture, a sound or a 3D model from a
- * file), at a free spot of that station, or a story; a story row's "+"
+ * (`KIND_EDIT` `add`: a text, or a picture, a video, a sound or a 3D model
+ * from a file), at a free spot of that station, or a story; a story row's "+"
  * (and its empty line, and its inspector's "Add entry...") adds such a
  * kind into that story, a video among them; a kind listed but not
- * addable (a character: the character maker is still to come), and on a
- * station's menu a kind added to a story only (a video), is shown off,
- * with the reason. The head names the place. One menu for every row, opened
+ * addable (a character: the character maker is still to come) is shown
+ * off, with the reason. The head names the place. One menu for every row, opened
  * under the
  * button pressed, the WAI-ARIA menu's keys inside it: the arrows, Home and
  * End move among its items (an item that is off keeps its place, said by
@@ -38,8 +37,15 @@ export interface TreeAddMenu {
    *  focus on its first item. */
   openFor(anchor: HTMLElement, stationId: string, title: string): void;
   /** Open under `anchor` for the story `storyId`, named `title`, the focus
-   *  on its first item; a story is not offered. */
-  openForStory(anchor: HTMLElement, storyId: string, title: string): void;
+   *  on its first item; a story is not offered. With `at` (0-based) what
+   *  is chosen goes before the story's child there, its head saying which
+   *  step it becomes. */
+  openForStory(
+    anchor: HTMLElement,
+    storyId: string,
+    title: string,
+    at?: number,
+  ): void;
   close(returnFocus: boolean): void;
   isOpen(): boolean;
 }
@@ -98,10 +104,12 @@ export function createTreeAddMenu(deps: {
     stationId: string,
     kind: Exclude<TreeAddChoice, StepKind>,
   ) => void;
-  /** Add `kind` to the story; run after the menu closed. */
+  /** Add `kind` to the story, before its child at `at` when the menu
+   *  was opened with one (passed only then); run after the menu closed. */
   readonly chooseForStory: (
     storyId: string,
     kind: Exclude<TreeAddChoice, "story">,
+    at?: number,
   ) => void;
 }): TreeAddMenu {
   const menu = document.createElement("div");
@@ -133,22 +141,11 @@ export function createTreeAddMenu(deps: {
     item.append(shellIcon(icon), label, hint);
     return item;
   };
-  const kindItems = ADD_CHOICES.map((choice) => {
+  for (const choice of ADD_CHOICES) {
     const item = itemOf(choice.kind, choice.label, choice.hint, choice.look);
     setItemDisabled(item, !choice.addable);
     menu.append(item);
-    return { choice, item };
-  });
-  /** Each kind on or off for `place`, with the words that say why: a
-   *  kind added to a story only is off on a station's menu. */
-  const fitTo = (place: "station" | "story"): void => {
-    for (const { choice, item } of kindItems) {
-      const storyOnly = place === "station" ? choice.storyOnly : undefined;
-      setItemDisabled(item, !choice.addable || storyOnly !== undefined);
-      const hint = item.querySelector(".hint");
-      if (hint !== null) hint.textContent = storyOnly ?? choice.hint;
-    }
-  };
+  }
   // A character is made in the character maker first: not a kind row's
   // empty start, so it has an item of its own.
   menu.append(
@@ -187,7 +184,11 @@ export function createTreeAddMenu(deps: {
   );
   menu.append(storyPart);
   deps.host.append(menu);
-  let target: { kind: "station" | "story"; id: string } | null = null;
+  let target: {
+    kind: "station" | "story";
+    id: string;
+    at?: number | undefined;
+  } | null = null;
   /** The button it opened from, which says it is open (`aria-expanded`). */
   let opener: HTMLElement | null = null;
 
@@ -225,7 +226,7 @@ export function createTreeAddMenu(deps: {
 
   function open(
     anchor: HTMLElement,
-    to: { kind: "station" | "story"; id: string },
+    to: { kind: "station" | "story"; id: string; at?: number | undefined },
     words: string,
   ): void {
     if (isOpen()) close(false);
@@ -236,7 +237,6 @@ export function createTreeAddMenu(deps: {
     menu.setAttribute("aria-label", words);
     storyPart.hidden = to.kind === "story";
     askPart.hidden = to.kind === "station";
-    fitTo(to.kind);
     menu.hidden = false;
     const { left, top } = addMenuSpot(
       anchor.getBoundingClientRect(),
@@ -283,7 +283,9 @@ export function createTreeAddMenu(deps: {
     const kind = item.dataset["kind"] as TreeAddChoice;
     close(true);
     if (from.kind === "story") {
-      if (kind !== "story") deps.chooseForStory(from.id, kind);
+      if (kind === "story") return;
+      if (from.at === undefined) deps.chooseForStory(from.id, kind);
+      else deps.chooseForStory(from.id, kind, from.at);
     } else if (kind !== "choice" && kind !== "quiz") {
       deps.choose(from.id, kind);
     }
@@ -293,11 +295,13 @@ export function createTreeAddMenu(deps: {
     openFor(anchor, stationId, title) {
       open(anchor, { kind: "station", id: stationId }, `Add to ${title}`);
     },
-    openForStory(anchor, storyId, title) {
+    openForStory(anchor, storyId, title, at) {
       open(
         anchor,
-        { kind: "story", id: storyId },
-        `Add to the story "${title}"`,
+        { kind: "story", id: storyId, at },
+        at === undefined
+          ? `Add to the story "${title}"`
+          : `Add to the story "${title}" as step ${String(at + 1)}`,
       );
     },
     close,

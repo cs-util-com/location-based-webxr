@@ -20,11 +20,7 @@ import {
   type TourStoryBlock,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import {
-  KIND_EDIT,
-  storyOnlyReason,
-  type FileAddKind,
-} from "../kinds/edit-kinds.js";
+import { KIND_EDIT, type FileAddKind } from "../kinds/edit-kinds.js";
 import {
   newFileItem,
   newFileStoryEntry,
@@ -32,10 +28,15 @@ import {
 } from "./new-file-item.js";
 import type { NewItemInput } from "./new-pin.js";
 
-/** Where a file item goes: a station's free spot, or a story's end. */
+/** Where a file item goes: a station's free spot, or a story's end (or
+ *  before its child at `at`, 0-based). */
 export type FileAddTarget =
   | { readonly kind: "station"; readonly stationId: string }
-  | { readonly kind: "story"; readonly storyId: string };
+  | {
+      readonly kind: "story";
+      readonly storyId: string;
+      readonly at?: number | undefined;
+    };
 
 /** What the page lends the flow. */
 export interface FileAddDeps {
@@ -166,6 +167,7 @@ export function placeFileItem(input: {
   readonly addEntryToStory: (
     storyId: string,
     child: TourStoryBlock,
+    at?: number,
   ) => { readonly kind: "added"; readonly id: string } | Refused;
 }): { readonly kind: "added"; readonly id: string } | Refused {
   const { target, source } = input;
@@ -176,10 +178,10 @@ export function placeFileItem(input: {
     if (holder === undefined) {
       return { kind: "refused", reason: FILE_STORY_GONE };
     }
-    return input.addEntryToStory(
-      target.storyId,
-      newFileStoryEntry(holder, source, input.id),
-    );
+    const entry = newFileStoryEntry(holder, source, input.id);
+    return target.at === undefined
+      ? input.addEntryToStory(target.storyId, entry)
+      : input.addEntryToStory(target.storyId, entry, target.at);
   }
   const station = input.stations.find((s) => s.id === target.stationId);
   if (station === undefined) {
@@ -189,12 +191,6 @@ export function placeFileItem(input: {
     { station, id: input.id, nowIso: input.nowIso, groundAt: input.groundAt },
     source,
   );
-  if (item === null) {
-    return {
-      kind: "refused",
-      reason: `${storyOnlyReason(source.kind) ?? "It cannot stand in a station"}.`,
-    };
-  }
   const placed = input.place(item);
   return placed.kind === "placed" ? { kind: "added", id: item.id } : placed;
 }

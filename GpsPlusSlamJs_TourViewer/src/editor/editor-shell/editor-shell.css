@@ -408,6 +408,12 @@ body {
   display: none;
 }
 
+/* Back up to a level (a step to its story, an item to its station) is
+ * every layout's; Back to the list only repeats Deselect. */
+#inspector-head [data-act="back"].up {
+  display: inline-flex;
+}
+
 #inspector-head [data-act="back"] svg {
   transform: rotate(180deg);
 }
@@ -1362,7 +1368,7 @@ body {
   scrollbar-width: none;
 }
 
-.crumbs .cb {
+.crumbs .crumb {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 240px;
@@ -1380,14 +1386,14 @@ body {
   cursor: pointer;
 }
 
-.crumbs .cb:hover:not([aria-current]) {
+.crumbs .crumb:hover:not([aria-current]) {
   background: var(--s-bg3);
   color: var(--s-text);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.crumbs .cb[aria-current] {
+.crumbs .crumb[aria-current] {
   color: var(--s-text);
   font-weight: 600;
   cursor: default;
@@ -1399,7 +1405,7 @@ body {
 }
 
 @media (max-width: 700px) {
-  .crumbs .cb {
+  .crumbs .crumb {
     flex: none;
     min-height: 36px;
     max-width: 60vw;
@@ -3579,6 +3585,508 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
+/* A story's steps as cards (the step cards prototype): a head to open the
+   card in place (on a phone, to go to the step), the answers with where
+   each leads as a chip, the loop warning with its fix, and the open
+   card's fields under them. */
+.scards {
+  padding: 0 10px;
+}
+
+.scards > .note {
+  margin: 2px 0 10px;
+}
+
+.scard {
+  margin: 0 0 8px;
+  border: 1px solid var(--s-line2);
+  border-radius: 8px;
+  background: var(--s-bg2);
+}
+
+.scard:hover {
+  border-color: #4a4e56;
+}
+
+.scard.open {
+  border-color: #5a5e66;
+  background: #2a2c31;
+}
+
+.scard.bad {
+  border-color: rgb(229 115 109 / 60%);
+}
+
+.scard .chead {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scard .num {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: #3a3d44;
+  color: #eef0f3;
+  font: 600 11px var(--s-mono);
+}
+
+.scard .chead > .ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: var(--s-bg0);
+}
+
+.scard .sum {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.scard .kindtag {
+  color: var(--s-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.scard .ttl {
+  padding: 0;
+  overflow: hidden;
+  color: #f0f1f3;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scard .ttl.empty {
+  color: var(--s-danger);
+  font-style: italic;
+}
+
+.scard .l2 {
+  color: var(--s-muted);
+  line-height: 1.38;
+}
+
+.scard .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.scard .chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--s-line2);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 5%);
+  color: #c9ccd3;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.scard .chev {
+  flex: none;
+  margin-top: 4px;
+  color: var(--s-dim);
+  transition: transform 0.15s;
+}
+
+.scard.open .chev {
+  transform: rotate(180deg);
+}
+
+.scard ul.answers {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -2px 8px 8px 39px;
+  padding: 0;
+  list-style: none;
+}
+
+.scard .ans {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 3px 4px 3px 9px;
+  border: 1px solid var(--s-line);
+  border-radius: 6px;
+  background: rgb(0 0 0 / 18%);
+}
+
+.scard .albl {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scard .albl.empty {
+  color: var(--s-danger);
+  font-style: italic;
+}
+
+.scard .albl.quiet {
+  color: var(--s-muted);
+}
+
+.scard .mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--s-dim);
+  border-radius: 50%;
+}
+
+.scard .mark.right {
+  border-color: var(--s-ok);
+  background: var(--s-ok);
+  color: #10301c;
+}
+
+.scard .mark .i {
+  width: 11px;
+  height: 11px;
+}
+
+.scard .jump {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid currentcolor;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--s-text);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.scard button.jump {
+  cursor: pointer;
+}
+
+.scard button.jump:hover {
+  background: rgb(255 255 255 / 6%);
+}
+
+.scard .jump.next {
+  border-color: var(--s-line2);
+  color: var(--s-muted);
+  font-weight: 400;
+}
+
+.scard .jump.end {
+  border-color: #6a6e77;
+  color: #d6d8dd;
+}
+
+.scard .jump.back {
+  border-style: dashed;
+}
+
+.scard .jump.missing {
+  border-style: dashed;
+  color: var(--s-danger);
+}
+
+.scard .issue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 8px 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgb(229 115 109 / 12%);
+  color: #f0b3ae;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.scard .issue > span {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.scard .issue .fix {
+  flex: none;
+  max-width: 100%;
+  margin-left: auto;
+  white-space: normal;
+  text-align: left;
+}
+
+.scard .cbody {
+  padding: 4px 10px 10px;
+  border-top: 1px solid var(--s-line);
+}
+
+/* A story's preview (story-preview.ts): the visitor's panel in a dialog
+   over the view; the whole screen on a phone. */
+/* Over the top bar and the bottom bar (900), under nothing it opens. */
+.spv {
+  position: fixed;
+  z-index: 950;
+  inset: 48px auto 24px 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 72px);
+  padding: 10px 14px 14px;
+  overflow-y: auto;
+  border: 1px solid var(--s-line2);
+  border-radius: 10px;
+  background: var(--s-bg1);
+  color: var(--s-text);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+  transform: translateX(-50%);
+}
+
+.spv[hidden] {
+  display: none;
+}
+
+.spv .spvbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.spv .spvbar .where {
+  flex: 1;
+  min-width: 120px;
+}
+
+.spv .spvbar .where b {
+  display: block;
+}
+
+.spv .spvbar .where span,
+.spv .spvworld,
+.spv .spvnote,
+.spv .status,
+.spv .desc {
+  color: var(--s-muted);
+  font-size: 12px;
+}
+
+.spv .spvpanel {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--s-bg2);
+}
+
+.spv .spvpanel[hidden],
+.spv .spvpanel [hidden],
+.spv .spvacts [hidden] {
+  display: none;
+}
+
+.spv .spvpanel h3,
+.spv .spvpanel p {
+  margin: 0;
+}
+
+.spv .stitle {
+  font-family: inherit;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+/* Its buttons are the dialog's own, not the inspector's full-width rows. */
+.spv .act {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  width: auto;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+  background: var(--s-bg3);
+  color: var(--s-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.spv .act:hover {
+  border-color: var(--s-muted);
+}
+
+.spv .spvacts .act[data-spv="continue"] {
+  border-color: var(--s-accent);
+}
+
+.spv .speaker {
+  font-weight: 600;
+}
+
+.spv .text {
+  min-height: 3em;
+  line-height: 1.45;
+  white-space: pre-line;
+}
+
+.spv .image,
+.spv .simg,
+.spv .video {
+  max-width: 100%;
+  max-height: 30vh;
+  object-fit: contain;
+}
+
+.spv .portrait {
+  float: left;
+  width: 56px;
+  height: 56px;
+  margin: 2px 10px 4px 0;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.spv .surface:empty,
+.spv .status:empty,
+.spv .choices:empty {
+  display: none;
+}
+
+.spv .choices,
+.spv .spvacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.spv .spvend {
+  margin: 0;
+  font-weight: 600;
+}
+
+@media (max-width: 700px), (max-height: 500px) {
+  .spv {
+    inset: 0;
+    width: auto;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    transform: none;
+  }
+}
+
+/* The gap above a card (a desktop's): "Insert step", seen on hover or
+   focus. */
+.scards .gap {
+  position: relative;
+  height: 0;
+  margin: -4px 0 4px;
+}
+
+.scards .gap .insert {
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 10px;
+  border: 1px dashed var(--s-line2);
+  border-radius: 999px;
+  background: var(--s-bg1);
+  color: var(--s-muted);
+  font-size: 11px;
+  opacity: 0;
+  transform: translateX(-50%);
+  transition: opacity 0.12s;
+}
+
+.scards .gap:hover .insert,
+.scards .gap .insert:focus-visible {
+  opacity: 1;
+}
+
+.scards .gap .insert:hover {
+  border-color: var(--s-accent-line);
+  color: var(--s-accent-text);
+}
+
+.scards .endmark {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 10px;
+  color: var(--s-dim);
+  font-size: 11px;
+}
+
+.scards .endmark::before,
+.scards .endmark::after {
+  flex: 1;
+  height: 1px;
+  background: var(--s-line2);
+  content: "";
+}
+
+@media (max-width: 700px) {
+  .scard .chead {
+    padding: 10px 8px;
+  }
+
+  .scard ul.answers {
+    margin-right: 10px;
+    margin-left: 10px;
+  }
+
+  .scard .ans {
+    min-height: 40px;
+  }
+
+  .scard .jump {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12.5px;
+  }
+}
 /* A model's own parts in the inspector (the station blocks prototype's
  * editor mode): its view as chips, its clip, its notes and sections as
  * cards with a numbered badge, and the small buttons that wait for a click
@@ -3592,6 +4100,141 @@ body[data-view="3d"] #view3d .view3d-canvas {
 
 .vchips .chip {
   cursor: pointer;
+}
+
+/* A ground arrow's caption switch, its two colour wells with their
+ * names, and the sun warning under them. */
+.stext .chkrow,
+.stext .colwell {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.stext .chkrow {
+  margin: 6px 0 2px;
+}
+
+.stext .colrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 4px 0 2px;
+}
+
+.stext .colwell input {
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--s-line);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+/* Where a sign or a ground arrow points, as the prototype's sign editor
+ * has it: "Points to" with its frame named on the right, three boxes
+ * with their axis inside, and the pick and clear buttons under them. */
+.stext .ptlabel {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.stext .pthint {
+  color: var(--s-muted);
+  font-weight: 400;
+}
+
+.stext .xyz {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.stext .xyz label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--s-line2);
+  border-radius: 8px;
+  background: var(--s-bg0);
+  color: var(--s-muted);
+  font-size: 11px;
+}
+
+.stext .xyz label:focus-within {
+  border-color: var(--s-focus);
+}
+
+.stext .xyz input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--s-text);
+  font: 12.5px var(--s-mono);
+}
+
+.stext .ptbtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+
+.stext .sunwarn {
+  padding: 6px 8px;
+  border: 1px solid var(--s-warn);
+  border-radius: 8px;
+  color: var(--s-warn);
+}
+
+/* A free video's preview (the video prototype's asset row): the clip as a
+ * thumbnail, its length and size, Play and a scrub bar, and "Use current
+ * frame" beside it. */
+.vprev {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.vprev-clip {
+  flex: none;
+  width: 96px;
+  height: 120px;
+  border-radius: 8px;
+  background: #000;
+  object-fit: contain;
+}
+
+.vprev-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vprev-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.vprev-scrub {
+  flex: 1;
+  min-width: 0;
+}
+
+.vprev-frame {
+  align-self: flex-start;
 }
 
 /* A story character's groups of chips, apart from the next label. */
@@ -3823,6 +4466,20 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
  * never covering it. */
 body[data-view="3d"] #toasts {
   bottom: calc(var(--s-bar-h) + var(--s-panel-h, 0px) + 64px);
+}
+
+/* In a short window (a phone held sideways) that place is the view's
+ * middle, where the selection's gizmo stands: the toasts then stand at the
+ * view's bottom-left corner beside the map controls (`toast-spot.ts`
+ * writes the place), the newest alone, so the stack never climbs back up
+ * over the gizmo. An older toast shows again once the newer ones go. */
+#toasts.in-view {
+  align-items: flex-start;
+  transform: none;
+}
+
+#toasts.in-view .toast:not(:last-child) {
+  display: none;
 }
 
 .backdrop :is(.btn, .drop, .cover-choice),
@@ -4337,9 +4994,10 @@ body[data-view="3d"] #toasts {
 }
 
 /* --- the docked layout (`dock-host.ts`) ----------------------------------
- * From 701 px wide the panels dock around the 3D view: the list, the
- * details with the asset shelf as a second tab, and the bottom panel's
- * four tabs below the view. The layout fills the view below its accent
+ * At every width the panels dock around the 3D view: at a desk the list,
+ * the details with the asset shelf as a second tab, and the bottom
+ * panel's four tabs below the view; on a phone all of them in one group
+ * below the view (upright) or beside it (sideways). The layout fills the view below its accent
  * line; each adopted dock fills its panel, and the canvas fills the 3D
  * view's (the inset framing above is for the undocked docks). The docking
  * library's look comes from its own variables, set to the shell's tokens
@@ -4419,9 +5077,28 @@ body[data-view="3d"] #toasts {
 }
 
 .dockview-theme-tour .dock-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* A narrow strip (a group under the view between two columns): its tabs
+ * give up their titles first, down to the icon, before any tab is pushed
+ * into the docking's overflow menu, where a creator would not look for
+ * it. A tab's title stays its tooltip and its accessible name. */
+.dockview-theme-tour
+  .dv-tabs-container:not(.dv-tabs-container-vertical)
+  > .dv-tab {
+  flex-shrink: 1;
+  min-width: 34px;
+  overflow: hidden;
+}
+
+.dockview-theme-tour .dock-tab .dock-badge {
+  flex: none;
 }
 
 .dockview-theme-tour .dock-badge {
@@ -4477,7 +5154,7 @@ body[data-view="3d"] #toasts {
   padding: 2px 0;
 }
 
-.dockview-theme-tour .dock-fold {
+.dockview-theme-tour :is(.dock-fold, .dock-float) {
   display: grid;
   place-items: center;
   width: 26px;
@@ -4489,12 +5166,12 @@ body[data-view="3d"] #toasts {
   color: var(--s-muted);
 }
 
-.dockview-theme-tour .dock-fold:hover {
+.dockview-theme-tour :is(.dock-fold, .dock-float):hover {
   background: var(--s-bg3);
   color: var(--s-text);
 }
 
-.dockview-theme-tour .dock-fold:focus-visible {
+.dockview-theme-tour :is(.dock-fold, .dock-float):focus-visible {
   outline: 2px solid var(--s-focus);
   outline-offset: -2px;
 }
@@ -4502,7 +5179,7 @@ body[data-view="3d"] #toasts {
 /* For a finger: a button the rail's width, and splitters easy to find
  * and to take - a strip 40 px wide centred on the line, a grip on it. */
 @media (pointer: coarse) {
-  .dockview-theme-tour .dock-fold {
+  .dockview-theme-tour :is(.dock-fold, .dock-float) {
     width: 40px;
     height: 40px;
   }
@@ -4549,6 +5226,54 @@ body[data-view="3d"] #toasts {
     height: 4px;
     margin: -2px 0 0 -14px;
   }
+}
+
+/* A phone (`dock-host.ts` marks its host `dock-phone`, around the
+ * docking's themed shell, which sets its own measures): what a finger
+ * touches is bigger - a 44 px strip, a floating group's 26 px title bar,
+ * the tab menu's 44 px rows. A tab not showing keeps its icon and count
+ * (its title stays its tooltip and its accessible name), and no tab
+ * shrinks: a strip that holds more than it shows scrolls sideways
+ * (`dock-strip.ts`). The splitters' grips and the 40 px buttons come
+ * with a coarse pointer, as at a desk. */
+.dock-host.dock-phone .dockview-theme-tour {
+  --dv-tabs-and-actions-container-height: 44px;
+  --dv-tabs-and-actions-container-font-size: 12.5px;
+  --dv-floating-titlebar-height: 26px;
+}
+
+/* A tab 16 px each side of its icon: one not showing is 46 px wide, the
+ * prototype's (the library's own 8 px each side given up for it). */
+.dock-host.dock-phone .dockview-theme-tour .dock-tab {
+  padding: 0 16px;
+}
+
+.dock-host.dock-phone
+  .dockview-theme-tour
+  .dv-tabs-container:not(.dv-tabs-container-vertical)
+  > .dv-tab {
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.dock-host.dock-phone
+  .dockview-theme-tour
+  .dv-tabs-container:not(.dv-tabs-container-vertical)
+  > .dv-tab:not(.dv-active-tab)
+  .dock-tab-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+body:has(.dock-host.dock-phone) .dv-context-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 14px;
 }
 
 #view3d.docked .dock-host {
@@ -4622,6 +5347,7 @@ body.shelf-folded #view3d.docked {
 }
 
 #view3d.docked .dock-pane-view #map-controls {
+  top: auto;
   right: 12px;
   bottom: 14px;
 }
@@ -4632,7 +5358,20 @@ body.shelf-folded #view3d.docked {
   height: 100%;
   max-height: none;
   border: 0;
+  border-radius: 0;
   box-shadow: none;
+}
+
+/* A phone's sheet grip is the sheets' (`phone-sheet.ts`): docked, the
+ * splitters size the panels. */
+#view3d.docked .dock-pane > .dock > .sheet-grip {
+  display: none;
+}
+
+/* Docked on a phone the shelf is a tab like any other, not the undocked
+ * phone's sheet that shows only while open (`shelf-panel.css`). */
+#view3d.docked .dock-pane > #shell-shelf {
+  display: flex;
 }
 
 /* The asset shelf is a tab there: no fold of its own. */
@@ -4668,4 +5407,39 @@ body.shelf-folded #view3d.docked {
 
 #view3d.docked .dock-pane:has(> .tools) > .pane {
   height: calc(100% - 30px);
+}
+
+/* "Move to...": the keyboard's menu for moving a docked panel
+ * (`dock-move.ts`), in the page's body below the tab it moves. */
+.dock-move {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+  background: var(--s-bg2);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 55%);
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+}
+
+.dock-move-item {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dock-move-item:hover,
+.dock-move-item:focus-visible {
+  outline: none;
+  background: var(--s-bg3);
+  box-shadow: inset 0 0 0 1px var(--s-focus);
 }

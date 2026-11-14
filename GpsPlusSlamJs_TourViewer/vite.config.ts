@@ -81,6 +81,12 @@ export default defineConfig({
         longTextCheck: fileURLToPath(
           new URL("long-text-check.html", import.meta.url),
         ),
+        // The picture and sound optimizers at the chosen settings and one
+        // step either side (`asset-optimizer-check.html.md`), linked from
+        // the prototype gallery only.
+        assetOptimizerCheck: fileURLToPath(
+          new URL("asset-optimizer-check.html", import.meta.url),
+        ),
       },
     },
   },

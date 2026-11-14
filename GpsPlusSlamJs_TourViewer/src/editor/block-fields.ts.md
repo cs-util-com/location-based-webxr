@@ -36,6 +36,9 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
     prose);
   - picture: Title (40), Caption (1200, prose), Alt text (300, prose);
   - video and audio: Title (40), Transcript (32 000, needed, prose);
+    a video in the world also Captions (WebVTT, 32 000, prose) and, only
+    while its start is `near` (`FieldSpec` `when`), Starts within (1-20
+    m, optional) - for any other start it is neither listed nor written;
     audio also, each only in the view that reads it (`FieldSpec`
     `views`): in `spot` Radius (1-50 m, needed); in `zone` Reach (1-200
     m, needed), Full volume within (1-200 m) and Volume (0-100 %, held as 0-1, needed). Radius, Reach (with Full volume within as its lower thumb) and Volume take a slider; Volume a loudness curve. A
@@ -53,6 +56,9 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
   `KIND_EDIT` label).
 - `blockFieldPlaceholder(field)` - the empty field's hint: "Required"
   for a field the block needs, else "Optional".
+- `blockChoices(block)` -> `BlockChoice[]` (`name`, `label`, `value` in
+  use, `values`) - its choice fields in its view, for its kind's panel;
+  `blockFields` leaves them out (they are chips, not boxes).
 - `blockFieldEdit(block, name, value)` - what typing `value` writes:
   - `edited` with the block, the text trimmed at its ends (inner lines
     kept); a blank text removes an optional field;
@@ -63,6 +69,10 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
     "A body takes at most 32000 UTF-16 units." - the unit's word is the
     rule's) for a text over its cap, counted in the field's unit, or ("A body
     cannot be empty.") for a field the block needs emptied;
+  - a choice field (`FieldSpec` `choice`): `edited` with the value,
+    `unchanged` for the one in use (an absent field's fallback among
+    them) or a choice of another view, `refused` ("Starts is one of: On
+    arrival, ...") for a value it does not offer;
   - for a number field: `edited` with the typed decimal (a comma as its
     point, `typedNumber`) as a number, or without the field for a blank
     optional one; `unchanged` for the same number or a field outside the
@@ -114,4 +124,17 @@ if (out.kind === "edited")
 
 ## Choice fields
 
-`blockFields` leaves a choice field out (its panel's chips show it). `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).
+`blockFields` leaves a choice, a switch (`flag`) and a colour field out (its panel shows them). A switch writes true for `"true"` and is left out for anything else; a colour takes `#rrggbb` (lower-cased), refuses any other text, and is left out when blank. `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).
+
+## Typed fields (a point, a language)
+
+A `FieldSpec` with `typed` is written by `typedFieldEdit` whoever sends the text. The language is drawn in the dock as one line with no counter; the point is not in `blockFields` at all, because the short text panel draws it as three boxes with a pick and a clear (`short-text-panel.ts.md`) and sends the composed line here. In the dock a typed field is one line with no counter (`BlockField` `typed: { example }`, its hint "Optional, such as" the example). The rules:
+
+- `point` (a short text's `pointsTo`, signs and ground arrows): three numbers in metres in the station's frame, parted by spaces, `;` or `, ` (a comma alone is a decimal point, as in every number box), so `2 1.2 -19.6`, `2, 1.2, -19.6` and `1,5 0 -3` all read. A coordinate may carry an exponent, because the box shows a written point by `String` and must read every value it shows back unchanged (`1e-7`).
+- `tag` (a short text's `lang`, every view): the trimmed text.
+- Either is kept only when the format's own reader (`shortTextLook`, run strict) keeps it: the point's 1000 m reach and the tag's shape and 35-character cap are the format's rules, not copied here. Anything else is refused in words; a blank line removes the field; the same value is `unchanged`.
+- Tests: `block-fields.test.ts` ("a short text's point and language"), `block-fields.property.test.ts` (whatever is typed, an accepted edit is one the strict reader keeps; a shown point reads back unchanged).
+
+## `mark`
+
+- `BlockField.mark` (optional) is a line said under the field about how the block's view uses it. `blockFields` never sets it; the inspector model adds it for pictures.

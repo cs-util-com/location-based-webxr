@@ -83,6 +83,7 @@ const EXPECTED: readonly (readonly [
   ["shortText", "pin", true, false, null],
   ["shortText", "sign", true, true, null],
   ["shortText", "edgeHint", true, false, null],
+  ["shortText", "ground", true, true, "readAtM"],
   ["shortText", "card", false, false, null],
   ["longText", "lectern", true, true, null],
   ["longText", "reading", true, false, null],
@@ -90,12 +91,15 @@ const EXPECTED: readonly (readonly [
   ["picture", "plane", true, true, "widthM"],
   ["picture", "framed", true, true, "widthM"],
   ["picture", "cutout", true, true, "widthM"],
-  ["picture", "thenNow", true, true, "widthM"],
-  ["picture", "sharpen", true, true, "widthM"],
-  ["picture", "finder", true, true, "widthM"],
-  ["picture", "window", true, true, "widthM"],
-  ["picture", "viewer", true, true, "widthM"],
+  ["picture", "thenNow", true, false, null],
+  ["picture", "sharpen", true, false, null],
+  ["picture", "finder", true, false, null],
+  ["picture", "window", true, false, null],
+  ["picture", "viewer", true, false, null],
   ["picture", "card", false, false, null],
+  ["video", "screen", true, true, "widthM"],
+  ["video", "cutout", true, true, "widthM"],
+  ["video", "porthole", true, true, "widthM"],
   ["video", "card", false, false, null],
   ["audio", "spot", true, false, null],
   ["audio", "zone", true, false, null],
@@ -138,8 +142,9 @@ describe("the placement rows against the format", () => {
   });
 
   // The format's envelope: views that do not use the pose (`card`) ignore
-  // it. Every view a FREE block may hold, but `card`, stands in the world.
-  it("leave exactly the card views poseless, and pose every other free view", () => {
+  // it. Every view a FREE block may hold stands in the world: no free
+  // view is a card (the format's types say so; this holds the rows to it).
+  it("leave exactly the card views poseless, and pose every free view", () => {
     for (const [kind, view] of KIND_VIEWS) {
       expect(blockPlacement(kind, view)?.posed, `${kind}.${view}`).toBe(
         view !== "card",
@@ -148,7 +153,6 @@ describe("the placement rows against the format", () => {
     for (const kind of Object.keys(TOUR_KINDS) as TourBlockKind[]) {
       const row = TOUR_KINDS[kind];
       for (const view of [...row.freeViews, ...row.worldViews]) {
-        if (view === "card") continue;
         expect(blockPlacement(kind, view)?.posed, `${kind}.${view}`).toBe(true);
       }
     }
@@ -212,6 +216,41 @@ describe("the placement rows against the format", () => {
   });
 });
 
+// Why: a ground arrow's letters, length and width all follow one scale
+// along their own curves, so its dots set that scale and its ring grows
+// linearly with it (the drawing does not double at twice the value, which
+// is why this is no `size`); its bend has a knob of its own.
+describe("a ground arrow's handles", () => {
+  it("give its dots its one scale, within the format's bounds, and a linear ring", () => {
+    expect(BLOCK_PLACEMENT.shortText.ground).toMatchObject({
+      bends: true,
+      extent: {
+        kind: "scale",
+        field: "readAtM",
+        min: 1,
+        max: 40,
+        ring: { baseM: 0.3, perM: 0.075 },
+      },
+    });
+    expect(BLOCK_PLACEMENT.shortText.sign).not.toHaveProperty("bends");
+  });
+
+  it("read its scale and its bend (0 where none is written) from the block", () => {
+    const ground = (extra: object) => ({
+      ...blockOf("shortText", "ground", 0),
+      ...extra,
+    });
+    const [set] = posedBlocks(stationOf([ground({ readAtM: 6, bendDeg: 20 })]));
+    expect(set?.extent).toMatchObject({ kind: "scale", value: 6 });
+    expect(set?.bendDeg).toBe(20);
+    const [bare] = posedBlocks(stationOf([ground({})]));
+    expect(bare?.extent).toBeNull();
+    expect(bare?.bendDeg).toBe(0);
+    const [sign] = posedBlocks(stationOf([blockOf("shortText", "sign", 0)]));
+    expect(sign?.bendDeg).toBeUndefined();
+  });
+});
+
 // --- the editor's drawing --------------------------------------------------
 
 const A = 6_378_137;
@@ -250,7 +289,7 @@ function fieldsOf(kind: TourBlockKind, value: number): object {
     case "picture":
       return { image: "pic", widthM: value };
     case "video":
-      return { video: "vid" };
+      return { video: "vid", widthM: value };
     case "audio":
       return { audio: "snd" };
     case "model":
@@ -260,8 +299,28 @@ function fieldsOf(kind: TourBlockKind, value: number): object {
   }
 }
 
+/** The views a picture is seen in from its viewpoint. */
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set([
+  "thenNow",
+  "sharpen",
+  "viewer",
+  "finder",
+  "window",
+]);
+
+/** A picture's viewpoint 6 m east of its spot, looking west at it (the
+ *  camera's -Z is west in the station's frame): the editor never leaves a
+ *  viewpoint view without one. */
+const VIEWPOINT = {
+  position: [0, 1.6, 8],
+  rotation: [0, 0, 0, 1],
+  hfovDeg: 56,
+  distanceM: 6,
+};
+
 /** `kind` in `view`, standing 2 m east of its station, turned
- *  `headingDeg` about up, its size `value`. */
+ *  `headingDeg` about up, its size `value`; a picture in a viewpoint view
+ *  with its viewpoint. */
 function blockOf(
   kind: TourBlockKind,
   view: string,
@@ -279,6 +338,9 @@ function blockOf(
       rotation: [0, Math.sin(half), 0, Math.cos(half)],
     },
     ...fieldsOf(kind, value),
+    ...(kind === "picture" && VIEWPOINT_VIEWS.has(view)
+      ? { viewpoint: VIEWPOINT }
+      : {}),
   } as unknown as TourBlock;
 }
 
@@ -523,6 +585,9 @@ const OLD_WORLD_KINDS: ReadonlySet<string> = new Set([
   "audio",
   "model",
 ]);
+/** The kinds that stand free since the old gate: a free character, a
+ *  free video (each in every free view it may hold, none a card). */
+const NEWER_FREE_KINDS: ReadonlySet<string> = new Set(["character", "video"]);
 function oldWorldBlocks(station: TourStation): TourBlock[] {
   return tourFreeBlocks(station).filter((b) => OLD_WORLD_KINDS.has(b.kind));
 }
@@ -601,9 +666,10 @@ const childrenArb = (
   );
 
 describe("the placeables against the old gate", () => {
-  // The old gate plus exactly the free characters, each at the same
-  // pose in the world; the station first, with its own found radius.
-  it("are the old world blocks plus exactly the free characters, at the same poses", () => {
+  // The old gate plus exactly the kinds that stood free after it - the
+  // characters, then the videos - each at the same pose in the world; the
+  // station first, with its own found radius.
+  it("are the old world blocks plus exactly the free characters and videos, at the same poses", () => {
     fc.assert(
       fc.property(childrenArb("b", 2), (children) => {
         const station = stationOf(children);
@@ -614,17 +680,19 @@ describe("the placeables against the old gate", () => {
           placed
             .filter((p) => {
               const b = free.find((f) => f.id === p.ref.id)!;
-              return b.kind !== "character";
+              return !NEWER_FREE_KINDS.has(b.kind);
             })
             .map((p) => p.ref.id),
         ).toEqual(old.map((b) => b.id));
         expect(
           placed
-            .filter(
-              (p) => free.find((f) => f.id === p.ref.id)!.kind === "character",
+            .filter((p) =>
+              NEWER_FREE_KINDS.has(free.find((f) => f.id === p.ref.id)!.kind),
             )
             .map((p) => p.ref.id),
-        ).toEqual(free.filter((b) => b.kind === "character").map((b) => b.id));
+        ).toEqual(
+          free.filter((b) => NEWER_FREE_KINDS.has(b.kind)).map((b) => b.id),
+        );
         for (const p of placed) {
           const b = free.find((f) => f.id === p.ref.id)!;
           expect(p.geo).toEqual(itemGeoPose(b.pose, station.geo));

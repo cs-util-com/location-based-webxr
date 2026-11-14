@@ -13,6 +13,7 @@ import {
   answerHosts,
   boxIn,
   capture,
+  DOCK_PHONE_TABS_PX,
   DOCK_TABS_PX,
   dockBottomPx,
   dockSettled,
@@ -127,6 +128,10 @@ function nameFloorPx(width) {
   return 20;
 }
 
+/** A phone's one tabbed group (the one holding the list's tab). */
+const PHONE_GROUP =
+  '.dock-host .dv-groupview:has(.dock-tab[data-panel="list"])';
+
 /** The parts of the frame `expectFrame` measures. */
 const FRAME_PARTS = [
   "#topbar",
@@ -147,6 +152,7 @@ const FRAME_PARTS = [
   "#map-controls",
   "#view3d-credits .view3d-credits-button",
   "#topbar .brand-text",
+  PHONE_GROUP,
 ];
 
 /**
@@ -236,7 +242,10 @@ async function expectFrame(page, size) {
     boxIn(frame.layout, selector);
   const shownNow = (/** @type {string} */ selector) =>
     shownIn(frame.layout, selector);
-  const phone = size.width <= 700;
+  // A phone (at most 700 px wide or 500 px high) docks its panels as one
+  // tabbed group, below the 3D view held upright, beside it sideways.
+  const phone = size.width <= 700 || size.height <= 500;
+  const upright = phone && size.height > size.width;
   expect(must("#topbar")).toEqual({
     x: 0,
     y: 0,
@@ -268,35 +277,40 @@ async function expectFrame(page, size) {
   expect(styleIn(frame.layout, "#load-line", "background-color"), at).toBe(
     ACCENT,
   );
-  // Every open dock hangs from the line, no gap, and runs down to the
-  // bottom bar; a folded one is its head, hanging from the line too.
-  // Docked (above 700 px) the layout fills the view under the line; the
+  // The docking fills the view under the line at every size. At a desk
+  // every open dock hangs from the line, no gap, and runs down to the
+  // bottom bar; a folded one is its head, hanging from the line too. The
   // list's group shows no tab strip (the list has its own head), so the
   // list hangs from the line itself; the details and the asset shelf are
   // the two tabs of one group at the window's right, never shown together
   // (so never one over the other), the shown one under the group's tab
-  // strip.
-  if (!phone) {
-    expect(must(".dock-host"), at).toEqual({
-      x: 0,
-      y: DOCK_TOP_PX,
-      width: size.width,
-      height: size.height - 24 - DOCK_TOP_PX,
-    });
-    expect(
-      shownNow("#shell-inspector") && shownNow("#shell-shelf"),
-      `the details and the shelf both shown ${at}`,
-    ).toBe(false);
-  }
+  // strip. A phone's panels are the tabs of its one group: one shown.
+  expect(must(".dock-host"), at).toEqual({
+    x: 0,
+    y: DOCK_TOP_PX,
+    width: size.width,
+    height: size.height - 24 - DOCK_TOP_PX,
+  });
+  expect(
+    shownNow("#shell-inspector") && shownNow("#shell-shelf"),
+    `the details and the shelf both shown ${at}`,
+  ).toBe(false);
   for (const [id, body] of [
     ["#shell-tree", "#tree-body"],
     ["#shell-inspector", "#inspector-body"],
   ]) {
     if (!shownNow(id)) continue;
     const dock = must(id);
-    // A phone's sheet stands on the bottom bar, the map above it.
+    // A phone's panel stands in its group, on the bottom bar: the
+    // window's width below the 3D view upright, at the window's right
+    // under the group's strip sideways.
     if (phone) {
-      expect([dock.x, dock.width], `${id} ${at}`).toEqual([0, size.width]);
+      if (upright) {
+        expect([dock.x, dock.width], `${id} ${at}`).toEqual([0, size.width]);
+      } else {
+        expect(dock.x + dock.width, `${id} ${at}`).toBeCloseTo(size.width, 0);
+        expect(dock.y, `${id} ${at}`).toBe(DOCK_TOP_PX + DOCK_PHONE_TABS_PX);
+      }
       expect(dock.y + dock.height, `${id} ${at}`).toBeCloseTo(
         size.height - 24,
         0,
@@ -330,11 +344,10 @@ async function expectFrame(page, size) {
       0,
     );
   }
-  // The map controls: one row 14 px over the 3D view's foot (on a phone
-  // 12 px under the top bar, clear of the sheet), the compass left of + and
-  // -, 38 px buttons, the zoom pill 8 px right of the compass, its right
-  // edge 12 px in from the 3D view's right: docked, the view's panel
-  // between the docks; on a phone, the window's.
+  // The map controls: one row 14 px over the 3D view's foot, the compass
+  // left of + and -, 38 px buttons, the zoom pill 8 px right of the
+  // compass, its right edge 12 px in from the 3D view's right: the view's
+  // panel between the docks, on a phone beside or over its group.
   const compass = must("#compass");
   const zoomIn = must("#zoom-in");
   const zoomOut = must("#zoom-out");
@@ -343,40 +356,42 @@ async function expectFrame(page, size) {
   expect(zoomIn.x - (compass.x + compass.width), at).toBe(8);
   // The second button's 1 px divider is inside its 38 px.
   expect(zoomOut.x, at).toBe(zoomIn.x + 38);
-  const view = phone
-    ? {
-        x: 0,
-        y: VIEW_TOP_PX,
-        width: size.width,
-        height: size.height - 24 - VIEW_TOP_PX,
-      }
-    : must(".dock-pane-view");
-  if (phone) expect(compass.y, at).toBe(VIEW_TOP_PX + 12);
-  else expect(view.y + view.height - (compass.y + compass.height), at).toBe(14);
+  const view = must(".dock-pane-view");
+  expect(view.y + view.height - (compass.y + compass.height), at).toBe(14);
   expect(zoomOut.x + zoomOut.width, at).toBeCloseTo(
     view.x + view.width - 12,
     0,
   );
-  // The canvas covers only the 3D view (a phone's sheets lie under it, the
-  // width its own): what the view frames at its middle is in sight, never
-  // under a dock. Docked, the view's panel lies between the open docks, at
-  // most a splitter (2 px) from each, from the line to the bottom bar.
+  // The canvas covers only the 3D view: what the view frames at its middle
+  // is in sight, never under a dock. The view's panel lies between the
+  // open docks, at most a splitter (2 px) from each, from the line to the
+  // bottom bar; a phone's above its group upright, beside it sideways.
   const canvas = must("#view3d .view3d-canvas");
   expect(canvas.x, `the canvas ${at}`).toBeCloseTo(view.x, 0);
   expect(canvas.x + canvas.width, `the canvas ${at}`).toBeCloseTo(
     view.x + view.width,
     0,
   );
-  if (!phone) {
-    expect([view.y, view.y + view.height], `the 3D view ${at}`).toEqual([
-      DOCK_TOP_PX,
-      size.height - 24,
-    ]);
-    expect(canvas.y, `the canvas ${at}`).toBeCloseTo(view.y, 0);
-    expect(canvas.y + canvas.height, `the canvas ${at}`).toBeCloseTo(
-      view.y + view.height,
-      0,
+  expect(canvas.y, `the canvas ${at}`).toBeCloseTo(view.y, 0);
+  expect(canvas.y + canvas.height, `the canvas ${at}`).toBeCloseTo(
+    view.y + view.height,
+    0,
+  );
+  expect(view.y, `the 3D view ${at}`).toBe(DOCK_TOP_PX);
+  if (phone) {
+    const group = must(PHONE_GROUP);
+    const gap = upright
+      ? group.y - (view.y + view.height)
+      : group.x - (view.x + view.width);
+    expect(gap, `the 3D view beside the group ${at}`).toBeGreaterThanOrEqual(
+      -0.5,
     );
+    expect(gap, `the 3D view beside the group ${at}`).toBeLessThanOrEqual(2);
+    if (!upright) {
+      expect(view.y + view.height, `the 3D view ${at}`).toBe(size.height - 24);
+    }
+  } else {
+    expect(view.y + view.height, `the 3D view ${at}`).toBe(size.height - 24);
     const gaps = [];
     if (shownNow("#tree-body")) {
       const tree = must("#shell-tree");
@@ -497,8 +512,9 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   // About 52 s on CI, 144 s at worst under load.
   test.setTimeout(240_000);
   await useWideFont(page);
-  // A phone: the list is a sheet; selecting a station turns it into the
-  // details. Where the sheets stand: `editor3d-phone.spec.js`.
+  // A phone: the list is the shown tab of the group below the 3D view;
+  // selecting a station shows the details in its place. Where the group
+  // stands: `editor3d-phone.spec.js`.
   const phone = { width: 390, height: 844 };
   await page.setViewportSize(phone);
   await open3d(page);
@@ -511,20 +527,21 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
   await expectFrame(page, phone);
   await capture(page, test.info().outputPath("shell-390x844.png"));
 
-  // Turned, the panels dock: the list 210 px and the details 268 px, at
-  // the window's right (the asset shelf their other tab), the map
-  // controls left of them; folded to its head, the details give the view
-  // back.
+  // Turned, the group stands at the window's right, the details still
+  // its shown tab (the asset shelf another), the map controls left of it;
+  // folded by its strip's fold button, the group gives the view back.
+  // (Until the panels docked on a phone, this case docked the list and
+  // the details apart, 210 and 268 px: that layout is a desk's now.)
   const landscape = { width: 844, height: 390 };
   await page.setViewportSize(landscape);
   await expectFrame(page, landscape);
-  await expectTree(page, dockWidthsAt(landscape.width).list, true);
+  await expect(page.locator("#inspector-body")).toBeVisible();
   const turned = await box(page.locator("#shell-inspector"));
-  expect(turned.width).toBeCloseTo(dockWidthsAt(landscape.width).column, 0);
   expect(turned.x + turned.width).toBeCloseTo(landscape.width, 0);
   await expect(page.locator("#shell-shelf")).toBeHidden();
   await capture(page, test.info().outputPath("shell-844x390.png"));
-  await page.locator('#inspector-head [data-act="fold"]').click();
+  const fold = page.locator(`${PHONE_GROUP} .dock-fold`);
+  await fold.click();
   await expect(page.locator("#inspector-body")).toBeHidden();
   await expectFrame(page, landscape);
   // Folded, the details are a rail at the window's right edge, and the
@@ -587,82 +604,6 @@ test("the shell's layout at a phone, a phone in landscape, a tablet and a deskto
 });
 
 /**
- * The bottom bar's toggles and the bottom panel they open, at one size:
- * the four named toggles side by side, flush with the asset shelf's toggle
- * at the bar's right edge; the panel on the bar, between the open docks,
- * left of the asset shelf, its
- * 30 px head with the tabs at its left, the map controls 14 px over it.
- * @param {import("@playwright/test").Page} page
- * @param {{ width: number, height: number }} size
- * @param {number} heightPx the panel's height at this size
- */
-async function expectPanel(page, size, heightPx) {
-  await shelfSettled(page);
-  const at = `at ${String(size.width)} x ${String(size.height)}`;
-  await expectToggles(page, size);
-  const panel = await box(page.locator("#shell-panel"));
-  expect(panel.y + panel.height, at).toBeCloseTo(size.height - 24, 0);
-  expect(panel.height, at).toBeCloseTo(heightPx, 0);
-  const tree = page.locator("#shell-tree");
-  const inspector = page.locator("#shell-inspector");
-  const phone = size.width <= 700;
-  // It pushes the view up: the view's canvas ends at its top, or on a
-  // phone at the top of the sheet standing on it. Polled: the canvas takes
-  // its size from a ResizeObserver, a callback after the layout the panel's
-  // box is read from, which a busy page delays.
-  let mapFoot = panel.y;
-  if (phone) {
-    const sheet = (await inspector.isVisible()) ? inspector : tree;
-    if (await sheet.isVisible()) mapFoot = (await box(sheet)).y;
-  }
-  await expectCanvasFoot(page, mapFoot, at);
-  const head = await box(page.locator("#shell-panel .bp-head"));
-  expect(head.height, at).toBe(30);
-  expect(head.y, at).toBeCloseTo(panel.y + 1, 0);
-  const tab = await box(page.locator("#shell-panel .tab").first());
-  expect(tab.x, at).toBeCloseTo(panel.x, 0);
-  expect(tab.height, at).toBe(29);
-  const close = await box(page.locator("#shell-panel .bp-close"));
-  expect(close.x + close.width, at).toBeCloseTo(panel.x + panel.width - 4, 0);
-  // Between the open docks, or the width on a phone.
-  const open = async (/** @type {import("@playwright/test").Locator} */ d) =>
-    (await d.isVisible()) &&
-    !(await d.evaluate((el) => el.classList.contains("collapsed")));
-  // The asset shelf at the window's right runs down to the bottom bar
-  // beside the panel (a phone's shelf is a sheet of its own, closed here).
-  const shelf = page.locator("#shell-shelf");
-  const shelfShown = size.width > 700 && (await shelf.isVisible());
-  let left = 0;
-  let right = size.width;
-  if (shelfShown) {
-    const s = await box(shelf);
-    expect(s.x + s.width, `the shelf ${at}`).toBeCloseTo(size.width, 0);
-    expect(s.y + s.height, `the shelf ${at}`).toBeCloseTo(size.height - 24, 0);
-    right = s.x;
-  }
-  if (size.width > 700) {
-    if (await open(tree)) {
-      const t = await box(tree);
-      left = t.x + t.width;
-    }
-    if (await open(inspector)) right = (await box(inspector)).x;
-  }
-  expect(panel.x, at).toBeCloseTo(left, 0);
-  expect(panel.x + panel.width, at).toBeCloseTo(right, 0);
-  // A dock the panel lies under ends at its top.
-  for (const dock of [tree, inspector, ...(shelfShown ? [shelf] : [])]) {
-    if (!(await open(dock))) continue;
-    const d = await box(dock);
-    const under = d.x < panel.x + panel.width && d.x + d.width > panel.x;
-    if (under) expect(d.y + d.height, at).toBeCloseTo(panel.y, 0);
-  }
-  const compass = await box(page.locator("#compass"));
-  if (!phone) {
-    expect(panel.y - (compass.y + compass.height), at).toBeCloseTo(14, 0);
-  }
-}
-
-/**
  * The canvas's foot at `y`, polled: the canvas takes its size from a
  * ResizeObserver, a callback after the layout the boxes are read from,
  * which a busy page delays.
@@ -719,6 +660,41 @@ async function expectDockedPanel(page, size, heightPx) {
     const tree = boxIn(l, "#shell-tree");
     expect(tree.y + tree.height, `the list ${at}`).toBeCloseTo(foot, 0);
   }
+  await expectCanvasFoot(page, view.y + view.height, at);
+  const compass = boxIn(l, "#compass");
+  expect(view.y + view.height - (compass.y + compass.height), at).toBe(14);
+}
+
+/**
+ * The bottom panel on a phone, at one size: the bar's toggles as at a
+ * desk; its Problems tab the shown one of the phone's group, its pane
+ * filling the group under the strip, the undocked panel's frame hidden,
+ * the 3D view and its map controls where they were.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} size
+ */
+async function expectPhonePanel(page, size) {
+  const at = `at ${String(size.width)} x ${String(size.height)}`;
+  await expectToggles(page, size);
+  await expect(
+    page.locator(".dock-host").getByRole("tab", { name: /^Problems(\s|$)/ }),
+    at,
+  ).toHaveAttribute("aria-selected", "true");
+  const l = await layoutOf(page, [
+    "#shell-panel",
+    ".dock-pane-problems",
+    ".dock-pane-view",
+    PHONE_GROUP,
+    "#compass",
+  ]);
+  expect(shownIn(l, "#shell-panel"), at).toBe(false);
+  const pane = boxIn(l, ".dock-pane-problems");
+  const group = boxIn(l, PHONE_GROUP);
+  expect(pane.x, at).toBeCloseTo(group.x, 0);
+  expect(pane.width, at).toBeCloseTo(group.width, 0);
+  expect(pane.y, at).toBeCloseTo(group.y + DOCK_PHONE_TABS_PX, 0);
+  expect(pane.y + pane.height, at).toBeCloseTo(size.height - 24, 0);
+  const view = boxIn(l, ".dock-pane-view");
   await expectCanvasFoot(page, view.y + view.height, at);
   const compass = boxIn(l, "#compass");
   expect(view.y + view.height - (compass.y + compass.height), at).toBe(14);
@@ -858,35 +834,52 @@ test("the bottom bar's toggles open the bottom panel between the docks, at a pho
   await expectDockedPanel(page, desktop, dockBottomPx(desktop.height));
   await page.screenshot({ path: test.info().outputPath("panel-1440x900.png") });
 
-  // Two laptop widths and a phone in landscape: the group still between
-  // both docks and the toggles still clear of the selection's actions.
-  // The group takes its first height for the new window, as the side
-  // groups take their widths.
+  // Two laptop widths: the group still between both docks and the
+  // toggles still clear of the selection's actions. The group takes its
+  // first height for the new window, as the side groups take their widths.
   for (const docked of [
     { width: 1180, height: 820 },
     { width: 1024, height: 768 },
-    { width: 844, height: 390 },
   ]) {
     await page.setViewportSize(docked);
     await dockSettled(page, docked.width);
     await expectDockedPanel(page, docked, dockBottomPx(docked.height));
   }
-  await page.screenshot({ path: test.info().outputPath("panel-844x390.png") });
 
-  // A phone: the panel takes the width, the toggles keep their icons.
-  const phone = { width: 390, height: 844 };
-  await page.setViewportSize(phone);
+  // A phone in landscape and upright: the toggle shows the Problems tab
+  // in the phone's one group (each form factor keeps its own layout, so
+  // a phone shows it by its own toggle), the toggles keep their icons
+  // upright. (Until the panels docked on a phone, the upright panel was
+  // a frame of its own, 220 px over the bottom bar; sideways it docked
+  // between the side docks.)
+  for (const phone of [
+    { width: 844, height: 390 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(phone);
+    await dockSettled(page, phone.width);
+    if ((await problems.getAttribute("aria-pressed")) !== "true") {
+      await problems.click();
+    }
+    await expect(problems).toHaveAttribute("aria-pressed", "true");
+    await expectPhonePanel(page, phone);
+    await page.screenshot({
+      path: test
+        .info()
+        .outputPath(`panel-${String(phone.width)}x${String(phone.height)}.png`),
+    });
+  }
   await expect(page.locator("#shell-toggles .tog .tl").first()).toBeHidden();
-  await expectPanel(page, phone, 220);
-  await page.screenshot({ path: test.info().outputPath("panel-390x844.png") });
 
-  // Ctrl+J closes it, the map controls still at the map's top.
+  // Ctrl+J closes it, the map controls still over the 3D view's foot.
   await page.locator("#view3d").focus();
   await page.keyboard.press("Control+j");
-  await expect(page.locator("#shell-panel")).toBeHidden();
   await expect(problems).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".dock-pane-problems")).toBeHidden();
+  await expect(page.locator("#shell-panel")).toBeHidden();
   const compass = await box(page.locator("#compass"));
-  expect(compass.y).toBe(VIEW_TOP_PX + 12);
+  const view = await box(page.locator(".dock-pane-view"));
+  expect(view.y + view.height - (compass.y + compass.height)).toBe(14);
 });
 
 test("a card's click selects, unfolds and flies; a second deselects and folds; a double click does not toggle", async ({
@@ -1087,12 +1080,14 @@ test("the top bar holds every control in its most crowded state, at every step i
   }
 });
 
-// Why: a fresh page opens the panel at half the view at most (at least
-// 120 px, at most its usual height) on a phone, and docked at a third of
-// the layout (90 to 220 px), so the 3D view keeps most of the height; the
-// resize in the test above keeps the height the panel already had. Each size is its own fresh page with
-// nothing selected: the screenshots are the side-by-side check against
-// the chosen prototype.
+// Why: a fresh page opens the docked panel at a third of the layout (90
+// to 220 px), so the 3D view keeps most of the height; the resize in the
+// test above keeps the height the panel already had. A phone shows it as
+// a tab of its one group, whose height is the group's: the undocked
+// panel's own start height there (half the view, 120 to 220 px) has no
+// docked counterpart. Each size is its own fresh page with nothing
+// selected: the screenshots are the side-by-side check against the chosen
+// prototype.
 test("the bottom panel opens at its start height on a fresh page, at a phone, a phone in landscape and a desktop", async ({
   browser,
 }) => {
@@ -1106,16 +1101,9 @@ test("the bottom panel opens at its start height on a fresh page, at a phone, a 
     const page = await context.newPage();
     await open3d(page);
     await page.locator('#shell-toggles [data-tab="problems"]').click();
-    if (size.width <= 700) {
-      await expect(page.locator("#shell-panel")).toBeVisible();
-      const main = await page
-        .locator("#view3d")
-        .evaluate((el) => el.clientHeight);
-      const start = Math.max(
-        90,
-        Math.min(Math.min(220, Math.max(120, main * 0.5)), main),
-      );
-      await expectPanel(page, size, start);
+    if (size.width <= 700 || size.height <= 500) {
+      await expect(page.locator(".dock-pane-problems")).toBeVisible();
+      await expectPhonePanel(page, size);
     } else {
       // Docked: the Problems tab's group at a third of the layout's
       // height, 90 to 220 px (`dock-layout.ts`).
@@ -1136,12 +1124,15 @@ test("the bottom panel opens at its start height on a fresh page, at a phone, a 
 // Why: a problem's row redraws the panel as it selects (the selection is
 // marked); the focus once fell to the page, where Escape no longer closed
 // the panel and the keyboard user lost their place.
-// Docked, the panel's rows live in the Problems tab's pane; on a phone in
-// the panel's own frame. Both are checked.
+// The panel's rows live in the Problems tab's pane. On a phone that pane
+// shares its group with the details, so a choice there shows its details
+// in the pane's place (the phone's sheets showed both): there the focus
+// cannot stay in the rows, and the choice is checked to show its details.
 for (const { size, root } of [
   { size: { width: 1440, height: 900 }, root: "#shell-pane-problems" },
-  { size: { width: 390, height: 844 }, root: "#shell-panel" },
+  { size: { width: 390, height: 844 }, root: "#shell-pane-problems" },
 ]) {
+  const phone = size.width <= 700;
   test(`the bottom panel keeps the keyboard focus through a choice, and Escape closes it, at ${String(size.width)} x ${String(size.height)}`, async ({
     page,
   }) => {
@@ -1153,10 +1144,12 @@ for (const { size, root } of [
     // new station's details cover the list, the back arrow clears the
     // selection) so the Enter makes a choice.
     await page.locator("#tree-add").click();
-    await expect(page.locator("#tree-body .card")).toHaveCount(4);
-    if (size.width <= 700) {
+    if (phone) {
+      // The new station's details stand in the list's place.
       await page.locator('#inspector-head [data-act="back"]').click();
+      await expect(page.locator("#tree-body .card")).toHaveCount(4);
     } else {
+      await expect(page.locator("#tree-body .card")).toHaveCount(4);
       await page.locator("#tree-body .card > .head").first().click();
     }
     const toggle = page.locator('#shell-toggles [data-tab="problems"]');
@@ -1166,6 +1159,13 @@ for (const { size, root } of [
     await rows.first().focus();
     const chosen = await rows.first().getAttribute("data-select");
     await page.keyboard.press("Enter");
+    if (phone) {
+      await expect(
+        page.locator(".dock-host").getByRole("tab", { name: /^Details(\s|$)/ }),
+      ).toHaveAttribute("aria-selected", "true");
+      await expect(page.locator("#inspector-body")).toBeVisible();
+      return;
+    }
     await expect(
       page.locator(`${root} .prow[data-select="${chosen ?? ""}"]`),
     ).toHaveClass(/\bsel\b/);
@@ -1512,7 +1512,7 @@ test("File's Add debug data opens the same add as the map's panel", async ({
   await expect(add).toHaveText("Add debug data…");
 });
 
-test("a tap on the folded tree's Stations header opens the dock with its stations shown", async ({
+test("a tap on the folded list's rail opens it with its stations shown", async ({
   page,
 }) => {
   // Why: a tap that unfolded the dock once also closed the Stations

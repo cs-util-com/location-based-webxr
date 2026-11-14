@@ -6,9 +6,11 @@
  * colours). Every field is optional and read in every view, so a view
  * switch keeps it; the renderer gives each absent field its default.
  *
- * Read by one rule each: a value of the wrong type fails at every minor;
- * a value a later minor may allow (a new role, a wider bend) fails a file
- * of this reader's own minor and is dropped, alone, from a newer one.
+ * Read by one rule each: a value of the wrong type fails at every minor
+ * (a number or null where a word belongs, anything but true or false for
+ * a switch); a value a later minor may allow (an unknown word such as a
+ * new role, a wider bend) fails a file of this reader's own minor and is
+ * dropped, alone, from a newer one.
  *
  * @see tour-short-text.ts.md
  */
@@ -140,17 +142,12 @@ function choice<F extends string, C extends string>(
 ): Partial<Record<F, C>> {
   const value = v[field];
   if (value === undefined) return {};
-  if (
-    typeof value === 'string' &&
-    (choices as readonly string[]).includes(value)
-  ) {
+  const message = `"${ctx.at}.${field}" must be one of ${choices.join(', ')}`;
+  if (typeof value !== 'string') return ctx.fail(message);
+  if ((choices as readonly string[]).includes(value)) {
     return { [field]: value } as Record<F, C>;
   }
-  return dropped(
-    ctx,
-    field,
-    `"${ctx.at}.${field}" must be one of ${choices.join(', ')}`
-  );
+  return dropped(ctx, field, message);
 }
 
 function matching<F extends string>(
@@ -163,10 +160,12 @@ function matching<F extends string>(
 ): Partial<Record<F, string>> {
   const value = v[field];
   if (value === undefined) return {};
-  if (typeof value === 'string' && value.length <= max && pattern.test(value)) {
+  const message = `"${ctx.at}.${field}" must be ${what}`;
+  if (typeof value !== 'string') return ctx.fail(message);
+  if (value.length <= max && pattern.test(value)) {
     return { [field]: value } as Record<F, string>;
   }
-  return dropped(ctx, field, `"${ctx.at}.${field}" must be ${what}`);
+  return dropped(ctx, field, message);
 }
 
 function readAt(v: TourBlockFields, ctx: TourBlockReadContext) {
@@ -225,11 +224,7 @@ function flag(v: TourBlockFields, ctx: TourBlockReadContext) {
   const value = v.captionOnArrow;
   if (value === undefined) return {};
   if (typeof value === 'boolean') return { captionOnArrow: value };
-  return dropped(
-    ctx,
-    'captionOnArrow',
-    `"${ctx.at}.captionOnArrow" must be true or false`
-  );
+  return ctx.fail(`"${ctx.at}.captionOnArrow" must be true or false`);
 }
 
 /** A short text's look fields, in the order a writer writes them. */

@@ -95,6 +95,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   browser kept for its file is deleted (`EditorDraft.forget`); once one
   was, and the box still shows that refusal, it adds that its unsaved
   changes cannot be restored (`playwright-tests/older-format.spec.js`).
+- **Toasts in a short window** stand at the 3D view's bottom-left
+  corner beside the map controls, the newest alone, so they never cover
+  the selection's gizmo (`toast-spot.ts`; `toast()` places them each
+  time one shows).
 - **Part of a draft that did not read** (`unreadDraft`) is said in a toast
   that stays until closed, once the tour shows, as the no-backup line is.
 - **Details the reader dropped** (a hand-edited description, contact or
@@ -1059,3 +1063,7 @@ on a desktop.
   toast `Added X to "Station"`); in a story it becomes the story's last
   entry, standing at the station's free spot on the ground
   (`addCharacterToStory` with the 3D view's `groundAt`).
+
+## Escape and "Pick in 3D"
+
+Escape disarms an armed "Pick in 3D" (`editorView.pointPickAsked({ on: false })`) and keeps the selection; it comes after closing a dialog and cancelling a move, before deselecting.

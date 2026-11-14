@@ -48,10 +48,16 @@ there.
     0.5) and a zone's reach, calm and volume (`zone`: the reach's slider
     1-60 m with the calm as its lower thumb, the volume 0-100 % with the
     loudness curve).
+    prose) and its `near` start's distance. A field may instead be a
+    `choice` (`ChoiceSpec`: its values in the creator's words and the
+    fallback an absent one means), drawn by the kind's panel, not typed:
+    a video's start, its sound, its loop (a switch) and a cutout's
+    background. `when?` (`{ field, value }`) shows a field only while
+    another choice of the block has that value (its fallback counted):
+    a video's Starts within only while its start is `near`.
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
     `words`, `addable`, and for a kind made from a file `file`: the
-    asset kind its file must be, and `storyOnly`: why it is added to a
-    story only - a video, which no free host draws); a row without one is
+    asset kind its file must be); a row without one is
     not offered at all, and one with `addable: false` is listed, says why,
     and adds nothing. The character has no add line: the add menu's own
     Character entry (`editor/editor-shell/tree-add-menu.ts`) makes him in
@@ -63,9 +69,6 @@ there.
   (`add.file`: picture, video, audio, model) and the rest (short and long
   text, made from words alone: `editor/new-pin.ts`).
 - `isFileAddKind(kind)` - type guard on `add.file`.
-- `storyOnlyReason(kind)`, `isStoryOnly(kind)` - the `add.storyOnly`
-  words, or undefined; the station's menu shows them on the kind, off,
-  and the palette (which adds at stations) leaves the kind out.
 - Whether a block stands in the world, turns and has size dots is not a
   kind's: it is its VIEW's, in `placement/placement-rows.ts` (a kind may
   stand in the world in one view and be a card in another), held to the
@@ -127,8 +130,8 @@ there.
 - Each `look` is unique (the tree tells rows apart by it).
 - What the editor can do with a kind is unchanged by this list: it only
   says it. Short and long text, picture, video, sound and 3D model are
-  addable (the four files through `editor/add-file-item.ts`), a video in a
-  story only; a character is listed off.
+  addable (the four files through `editor/add-file-item.ts`); a character
+  is listed off.
 
 ## The editor half of a row
 
@@ -168,7 +171,6 @@ KIND_EDIT.longText.label; // "Long text"
 kindWithArticle("audio"); // "an audio"
 ADD_CHOICES.filter(isAddable).map((c) => c.kind);
 // ["shortText", "longText", "picture", "video", "audio", "model"]
-storyOnlyReason("video"); // "A video plays in a story: add it to one"
 ```
 
 ## Tests
@@ -185,4 +187,8 @@ row removed.
 
 ## Choice fields
 
-A `FieldSpec` may carry `choices` (`FieldChoice`: value and label): a field chosen on chips by the kind's panel, never typed. The short text has `role` (`SHORT_TEXT_ROLES`) and, for a sign, `orientation` (`SHORT_TEXT_TURNS`), plus the number field `readAtM` (1-40 m, signs only).
+A `FieldSpec` may carry `choices` (`FieldChoice`: value and label): a field chosen on chips by the kind's panel, never typed. The short text has `role` (`SHORT_TEXT_ROLES`) and, for a sign, `orientation` (`SHORT_TEXT_TURNS`), plus the number field `readAtM` (1-40 m, signs and ground arrows). A ground arrow also has `style` and `floorPlacement` (chips), `bendDeg` (a number, -60 to 60 degrees), `captionOnArrow` (`flag`: a switch, written as true or left out) and `color` / `darkColor` (`colour`: `#rrggbb`, picked in colour wells); `orientation` turns its plate. A short text also has `pointsTo` (`typed: "point"`, signs and ground arrows) and `lang` (`typed: "tag"`, every view), each typed on one line and checked by the format's reader (`block-fields.ts`).
+
+## A block's name by its view
+
+`SHORT_TEXT_VIEWS` names a short text's views (Pin, Sign, Edge hint, Ground arrow); `blockLabel(block)` is the kind's label, or for a short text its view's name. The inspector's head reads it, so a sign is headed "Sign in ...".

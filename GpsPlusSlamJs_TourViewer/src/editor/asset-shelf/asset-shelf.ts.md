@@ -21,7 +21,7 @@
   - otherwise the session's swap to `content/<id>.<extension>`; a refusal fails, retryable, with its words.
 - A job's late end (after `remove`, after `close`) changes nothing: every await is followed by an ownership check.
 - A crash (`OptimizerCrashed`) is passed to the state machine as `crashed`, which queues the job again while attempts remain.
-- The original's record and a loader of its bytes are kept in memory for "use the original"; the row offers it only while the written file does not hold the smaller file's bytes (`selectShelfRows`). The runner subscribes to the store and frees an original (`originalFreed`) as soon as its row stops offering it; a removal lets it go at once, held only by the removal's undo, which puts it back (a removal never undone frees it with the undo).
+- The original's record and a loader of its bytes are kept in memory for "use the original"; the row offers it only while the written file does not hold the smaller file's bytes (`selectShelfRows`). The runner subscribes to the store and frees an original (`originalFreed`) as soon as its row stops offering it; a removed card keeps its original with it, so the removal's undo and the page's Undo of a delete (the document naming the file again) both bring the card back with "use the original" still offered. Nothing uses a removed card's file, so no save writes it and its smaller file never "lands": the bound is the next landed save (the document's `written` changes), after which the original is let go and a later undo brings the card back without it. A delete nobody takes back therefore holds the bytes until the next landed save, never until the tour closes. A reload before that save loses nothing: the draft keeps the file and its original (only a save that writes the file spends them, and none writes a file nothing uses), and the reload puts the card back made smaller, its original offered (`editor-session-overcap.test.ts`). The same holds after that save, so a reload offers again an original the shelf had let go: the draft is the durable copy, the shelf only bounds what it holds in memory.
 - A save never waits for a job: it writes the original until the swap.
 - The keep rule: a file a character declaration names (his figure or his
   pose sheet, `CHARACTER_KEPT`) is never optimized - kept with those
@@ -40,7 +40,6 @@
 
 ## Not here yet
 
-- Real optimizers: every row of `ASSET_OPTIMIZERS` is null in this build.
 - The shelf's panel.
 
 ## Tests

@@ -7,6 +7,7 @@ import {
   keepRejections,
   openSampleIn3d,
   rejections,
+  showList,
   view3d,
 } from "./editor3d-fixture.js";
 
@@ -58,6 +59,8 @@ function selected(page) {
  * @param {string} id
  */
 async function select(page, id) {
+  // A phone shows a picked row's details in the list's place.
+  await showList(page);
   await page.locator(`#tree-body [data-select="${id}"]`).click();
   await expect.poll(() => selected(page)).toBe(id);
   await expect.poll(async () => (await view3d(page))?.flying).toBe(false);

@@ -903,11 +903,12 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     document.body.classList.toggle("shelf-folded", folded);
     document.body.classList.toggle("shelf-sheet", phone && state.sheet);
     fold.setAttribute("aria-expanded", String(!folded));
-    const pressed = phone
-      ? state.sheet
-      : deps.dock?.active() === true
+    const pressed =
+      deps.dock?.active() === true
         ? deps.dock.shown()
-        : !folded;
+        : phone
+          ? state.sheet
+          : !folded;
     toggle.setAttribute("aria-pressed", String(pressed));
     toggle.querySelector(".as-badge")?.remove();
     const badge = badgeEl(rows);
@@ -1224,13 +1225,16 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function onToggle(): void {
-    if (deps.phone()) {
+    // Docked (a phone docks too), the toggle switches the Files tab.
+    if (deps.dock?.active() === true) {
+      if (deps.dock.shown()) {
+        deps.dock.hide();
+        redraw();
+      } else open();
+    } else if (deps.phone()) {
       state.sheet = !state.sheet;
       redraw();
-    } else if (deps.dock?.active() === true && deps.dock.shown()) {
-      deps.dock.hide();
-      redraw();
-    } else if (railShown() || deps.dock?.active() === true) {
+    } else if (railShown()) {
       open();
     } else {
       setFolded(true);
@@ -1238,6 +1242,10 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function onPill(): void {
+    if (deps.dock?.active() === true) {
+      open();
+      return;
+    }
     state.sheet = true;
     redraw();
   }

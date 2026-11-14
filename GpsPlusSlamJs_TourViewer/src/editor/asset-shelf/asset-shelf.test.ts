@@ -19,6 +19,7 @@ import { describe, expect, it, vi } from "vitest";
 import { tourOf } from "../../test-support/tour-of.js";
 import {
   tourDocumentActions as doc,
+  manifestToWrite,
   tourDocumentReducer,
 } from "../../tour-document.js";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
@@ -273,7 +274,11 @@ describe("the shelf's runner", () => {
   });
 
   it("a kind without an optimizer comes in kept, with words", () => {
-    const { shelf, row } = setup({ optimizers: ASSET_OPTIMIZERS });
+    // Models have no optimizer in this build; an image row taken away
+    // stands for any kind without one.
+    const { shelf, row } = setup({
+      optimizers: { ...ASSET_OPTIMIZERS, image: null },
+    });
     shelf.add(image(A), "a.png", 1000, "added");
     expect(row(A)).toMatchObject({ status: "kept", reason: NO_OPTIMIZER });
   });
@@ -507,5 +512,63 @@ describe("a removed file whose items come back", () => {
     await settle();
     expect(row(A)).toMatchObject({ name: "a.png", status: "running" });
     expect(row(B)).toBeUndefined();
+  });
+
+  // Why: the page's Undo of a delete brings a removed card back through
+  // the document alone, not through the removal's undo. The original the
+  // smaller file replaced must come back with it while "use the original"
+  // would still be offered, or the author loses it for good.
+  it("puts the held original back with a card the document names again", async () => {
+    const { store, shelf, fake, row, settle } = setup();
+    store.dispatch(doc.opened({ manifest: tourOf([pictureOf(C)]) }));
+    store.dispatch(doc.assetsAdded({ assets: [image(A)] }));
+    shelf.add(image(A), "a.png", 1000, "added");
+    await settle();
+    fake.finish(small, "webp");
+    await settle();
+    shelf.remove(A);
+    expect(shelf.holdsOriginal(A)).toBe(false);
+    store.dispatch(
+      doc.edited({
+        object: { ...pictureOf(A), station: `st-${pictureOf(C).id}` },
+        what: "a picture",
+      }),
+    );
+    await settle();
+    expect(row(A)).toMatchObject({ status: "optimized", canUseOriginal: true });
+    expect(shelf.holdsOriginal(A)).toBe(true);
+    await expect(shelf.useOriginal(A)).resolves.toBe(true);
+  });
+
+  // Why: a removal nobody takes back must not hold a large original until
+  // the tour closes. Nothing uses a removed card's file, so no save writes
+  // it and "the smaller file landed" never comes for it: the bound is the
+  // next landed save, after which an undo brings the card back without it.
+  it("lets a removed card's original go once a save lands", async () => {
+    const { store, shelf, fake, row, settle } = setup();
+    store.dispatch(doc.opened({ manifest: tourOf([pictureOf(C)]) }));
+    store.dispatch(doc.assetsAdded({ assets: [image(A)] }));
+    shelf.add(image(A), "a.png", 1000, "added");
+    await settle();
+    fake.finish(small, "webp");
+    await settle();
+    const undo = shelf.remove(A);
+    const generation = store.getState().tourDocument.generation;
+    store.dispatch(doc.saveStarted({ generation }));
+    store.dispatch(
+      doc.saved({
+        generation,
+        written: manifestToWrite(store.getState().tourDocument)!,
+        appliedDeletions: [],
+        stationsAtStart: store.getState().tourDocument.stations,
+        // As a real save: the swap counts its bytes were written at.
+        swaps: store.getState().tourDocument.assetSwaps,
+      }),
+    );
+    store.dispatch(doc.saveEnded({ generation }));
+    await settle();
+    undo!();
+    expect(shelf.holdsOriginal(A)).toBe(false);
+    expect(row(A)?.canUseOriginal).toBe(false);
   });
 });

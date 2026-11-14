@@ -431,6 +431,86 @@ describe("renderTourObjects", () => {
     ).toBe("1 placed object");
   });
 
+  it("draws a short text by its view: only a pin is a label", async () => {
+    // Why this test matters: a tour's objects carry every world view of a
+    // short text, and the creator's previews draw them through this
+    // renderer. A sign, an edge hint or a ground arrow drawn as a pin's
+    // label would show the creator something the visitor never sees; the
+    // station renderer's rules apply, and with no world door here those
+    // views are left out quietly.
+    const { scene, children } = fakeScene();
+    const pin = mintPin({
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 5, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    })!;
+    const others: TourObject[] = (["sign", "edgeHint", "ground"] as const).map(
+      (view) => ({ ...pin, id: view, view, caption: view }),
+    );
+    const labels: string[] = [];
+    const rendered = await renderTourObjects([pin, ...others], {
+      scene,
+      zero: ZERO,
+      makeLabel: (text) => {
+        labels.push(text);
+        return { object: new Object3D(), dispose: () => undefined };
+      },
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect(labels).toEqual(["Gate"]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual([]);
+    expect(children[0]?.children).toHaveLength(1);
+  });
+
+  it("draws a picture by its view: a plane, or a viewpoint view without its viewpoint", async () => {
+    // Why this test matters: a tour's objects carry every world view of a
+    // picture, and the creator's previews draw them through this
+    // renderer. A framed print, a cut-out or a picture lined up from its
+    // viewpoint drawn as a bare plane would show the creator something the
+    // visitor never sees; the station renderer's rules apply (a viewpoint
+    // view without a viewpoint is a plane, as the format reads it), and
+    // with no world door here the other views are left out quietly.
+    const { scene, children } = fakeScene();
+    const photo = mintPhoto({
+      id: "plane",
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      alignmentMatrix: IDENTITY,
+      zero: ZERO,
+      imageWidth: 4,
+      imageHeight: 3,
+      nowIso: NOW,
+    })!;
+    const viewpoint = {
+      position: [0, 1.6, 4],
+      rotation: [0, 0, 0, 1],
+      hfovDeg: 60,
+      distanceM: 4,
+    } as const;
+    const others: TourObject[] = [
+      { ...photo, id: "framed", view: "framed" },
+      { ...photo, id: "cutout", view: "cutout" },
+      { ...photo, id: "lined-up", view: "thenNow", viewpoint },
+      { ...photo, id: "no-viewpoint", view: "window" },
+    ];
+    const loaded: string[] = [];
+    const rendered = await renderTourObjects([photo, ...others], {
+      scene,
+      zero: ZERO,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: (name) => {
+        loaded.push(name);
+        return Promise.resolve(new Texture());
+      },
+    });
+    expect(rendered.count).toBe(2);
+    expect(rendered.skipped).toEqual([]);
+    expect(loaded).toHaveLength(2);
+    expect(children[0]?.children).toHaveLength(2);
+  });
+
   it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
     // Why this test matters (authoring plan 2026-09-28-0953, M2c): the
     // creator's previews of the running visit go under the AR world group

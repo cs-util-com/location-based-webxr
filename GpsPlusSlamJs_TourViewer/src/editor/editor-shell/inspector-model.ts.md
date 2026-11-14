@@ -60,8 +60,9 @@ origin?, groundAt? })` ->
     order); read through `placeableOf`, so it shows what the gizmo moves;
   - `StoryInspector` - `kind: "story"` (selection `story:<id>`), `storyId`,
     `stationId`, `title`, `sub` ("Story"; where it stands is the crumb's)
-    and `entries`
-    (`storyRows` of `tree-model.ts`: `{ id, kind, title, place }`);
+    `cards` (its steps, `storyCards` of `story-cards.ts`) and, for the
+    cards open in place (the input's `openCards`, by child id), `opened`:
+    each one's own inspector, in the story's order (absent while none is);
   - `StoryEntryInspector` - `kind: "storyEntry"`, a block of a story: `id`,
     `stationId`, `rowKind`, `title`, `sub` ("Long text, entry 1"), `block`
     (`InspectorStoryBlock { id, kind, title, fields,
@@ -85,13 +86,20 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     title by `objectTitle`), `stationId`, `text` (a pin's caption to edit; null for a
     photo or a model), `extent` (`InspectorExtent`: the size its white
     dots change, as its placement row gives it - `field`, `label`,
-    `meaning`, the tour's `value`, `min`, `max`; a model's Size, a
+    `meaning`, the tour's `value`, `min`, `max`, `slider` (the track of
+    the slider beside the number, or null); a model's Size, a
     picture's Width; null for an item with none), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption, alt text, credit and year,
-    a model's title), `offset`
+    a model's title, a video's title, transcript and Starts within),
+    `video` (`InspectorVideo`: a free video's `blockId`, its view, the
+    tour paths of its clip and poster (`clipPath`, `posterPath`, null when
+    the tour lists no such file) for the preview, and its choices -
+    `blockChoices`: how it starts, its sound, a cutout's background - for
+    its panel, `../kind-panels/video-panel.ts`; null for any other kind),
+    `offset`
     (`northM`, `upM`, `eastM` in the station's frame, its folders composed
-    in; null for a block with no place in the world, a video),
+    in; null for a block with no place in the world),
     `headingDeg` (in the same frame; null with no place), `turns` (its
     placement row's: its gizmo has the round arrow), `folder` (the plain
     folder holding it, the innermost, as `{ id, title }`; null at its
@@ -99,7 +107,8 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     over the ground of where it stands in the world, through its
     folders, `posedEntryOf` of `../../placement/placeables.ts`; rounded as
     the station's; null while unknown or with no place), and for a picture
-    only `picture` (`InspectorPicture`: its view, whether its tag shows,
+    only `picture` (`InspectorPicture`: its view, its viewpoint's facts
+    or null (`../picture-viewpoint.ts`), whether its tag shows,
     its image's tour path or null), which its panel draws;
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;
@@ -186,8 +195,8 @@ one; a station's, an item's and a code's fields (and a code without a
 position); a station east and north of the tour's centre in metres;
 `headingOfRotation` for turns about up, and none for a forward turned
 straight up or down; `inspectorHint` for each kind and for none (a pin
-with no round arrow, a video with no place); a video as an item with no
-place; a free character as an item with its place and turn; an item in
+with no round arrow); a free video as an item with its place and its
+choices; a free character as an item with its place and turn; an item in
 a turned folder with its offset in the station's frame and its height
 off the ground where it stands.
 
@@ -218,4 +227,14 @@ it.
 
 ## Short text parts
 
-A short text's item carries `shortText: { view, role, orientation }` (role and orientation null when not written) for its kind panel.
+A short text's item carries `shortText: { view, role, orientation }` (role and orientation null when not written) for its kind panel; a ground arrow adds `ground: { id, style, floorPlacement, captionOnArrow, color, darkColor }` (null when not written, the switch false).
+
+An item's `sub` names it by `blockLabel` (`kinds/edit-kinds.ts`): a short text by its view.
+
+## A short text's point
+
+`InspectorShortText.point` is set for a sign or a ground arrow: `{ id, at, picking }`, `at` the file's `pointsTo` or null, `picking` the input's `pointPick` (false when absent). Other views carry no `point`.
+
+## A picture's field marks
+
+- A picture's block fields carry `mark` from `pictureFieldMark(item.view, field.name)` (in `kind-panels/picture-panel.ts`), so each says how the picture's view shows it; other kinds' fields carry none.

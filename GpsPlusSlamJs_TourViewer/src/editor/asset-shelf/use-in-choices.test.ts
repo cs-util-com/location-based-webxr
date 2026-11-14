@@ -1,7 +1,7 @@
 /**
  * Why these tests matter: "Use in..." is how a phone does what a drop does
  * on a desktop, so its choices must be exactly the drop's places - a
- * station (never for a video, which plays in a story only), a story's end,
+ * station, a story's end,
  * and the items of the file's kind made from another file - and a chosen
  * key must name the same target a drop would.
  */
@@ -49,14 +49,16 @@ describe("useInChoices", () => {
     ]);
   });
 
-  // Why: a video stands in no station; offering one would end in a refusal.
-  it("offers a video no station, and the story video's file to replace", () => {
+  // Why: a video stands free in a station as a picture does, so every
+  // station is offered, beside the stories and the story video's file.
+  it("offers a video every station, every story and the story video's file to replace", () => {
     const groups = useInChoices({ id: "v2", kind: "video" }, STATIONS);
     expect(groups.map((g) => g.head)).toEqual([
+      "A new video in a station",
       "A new entry at the end of a story",
       "Replace the file of",
     ]);
-    expect(groups[1]?.choices.map((c) => c.key)).toEqual(["item:v1"]);
+    expect(groups[2]?.choices.map((c) => c.key)).toEqual(["item:v1"]);
   });
 
   it("leaves out empty groups, and offers nothing for a kind no item takes", () => {

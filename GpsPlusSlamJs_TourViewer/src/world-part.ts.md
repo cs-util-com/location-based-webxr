@@ -35,11 +35,14 @@ the reading sign (`reading-sign.ts`) are world parts too.
   asks for; a no-op where the page gives none), `sound(id, channel)` (a
   `world-sound.ts` `SoundHandle` for an audio asset on the `"voice"` or
   `"background"` channel; in the editor always the silent handle), and
-  `screen?` (the page's `WorldScreen`, in `play` only).
+  `screen?` (the page's `WorldScreen`, in `play` only), and
+  `reduceMotion?()` (the visitor asked for less motion; none: motion is
+  allowed; a ground arrow's hover and light read it each frame).
 - `WorldEnvOptions` - what a page gives its env, every field optional:
   `sound` (the page's `createWorldSound`; none: silence), `screen` (handed
   on in `play` only), `parseModel(blob)` (a glb as a model, `glb-model.ts`;
-  none: a model is refused) and `enableClipping()` (none: ignored).
+  none: a model is refused), `enableClipping()` (none: ignored) and
+  `reduceMotion()` (the viewer passes the `prefers-reduced-motion` query).
 - `WorldScreen` - `show(build)`: `build(host)` fills a fresh panel and
   returns its clean-up; `show` returns the close. `screenIn(host)` is the
   page's (`main.ts`, `#narration-card-root`): one panel at a time, the newest
@@ -54,7 +57,7 @@ the reading sign (`reading-sign.ts`) are world parts too.
   narration circle's player card.
 - `WorldPart` - `object` (what stands; placed by the renderer, never by the
   part), `tapTarget?` (what a tap is cast against; none: no tap),
-  `update?({ seconds, viewer, camera?, metresPerPxAtOneM?, selected? })` (driven by
+  `update?({ seconds, viewer, facing?, camera?, metresPerPxAtOneM?, selected? })` (driven by
   `tickWorldParts` in play, by the editor's stations layer in the editor,
   which also hands the camera, its lens and the editor's selection - the
   selected block id, a station's `station:<id>`, or null; absent in play), `tap?()`,
@@ -76,7 +79,9 @@ the reading sign (`reading-sign.ts`) are world parts too.
   camera frame (`main.ts` `hooks.tickStations`): each shown part with an
   `update` gets `{ seconds: nowMs / 1000, viewer }`, the camera's world
   position in the part object's parent frame (the frame its `position` is
-  in, so a part measures its distance with no matrix of its own). No scene
+  in, so a part measures its distance with no matrix of its own), and
+  `facing`, the direction the camera looks in that same frame (a unit
+  vector; a video's `look` start reads it). No scene
   or no camera: nothing is ticked. A hidden station's parts are not ticked,
   so its sounds keep their last level until it is left (and disposed).
 - `mountWorldPart(part)`, `unmountWorldPart(part)` (false when it was not

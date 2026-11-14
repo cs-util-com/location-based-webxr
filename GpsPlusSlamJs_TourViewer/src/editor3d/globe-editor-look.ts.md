@@ -71,3 +71,7 @@ hidden = globeHidden(onScreen(), hidden, knobs, selectedStation);
 carrier's band, the size and crowding rules with their hysteresis and the
 selected station, the aimed view on its line of sight, and the pose round
 trip through `viewPoseEcef`.
+
+## `lookFromView`
+
+- `lookFromView(at, ahead)` gives the globe view pose of a camera standing at `at` and looking at `ahead` (both `{ lat, lng, heightM }`): heading and pitch from a flat-earth reading of the short step between them, altitude `at.heightM / 1000` km. Throws a RangeError when either is not finite. Used by the globe view's `lookFrom`; the globe's own limits may still hold the camera above the ground.

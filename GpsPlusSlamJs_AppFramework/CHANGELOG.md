@@ -28,9 +28,59 @@
   reported as a `folderTitle` drop.
 - `TourChildDrop` names a plain folder's scale other than 1, read as 1,
   as a `folderScale` drop.
+- **A short text has more world views than a pin** (`ar/tour-kinds`): `sign`
+  (a sign on posts) and `edgeHint` (a hint that keeps to the screen's edge
+  while its spot is out of view), beside `pin` and `ground` (an arrow on
+  the ground toward the point it points to).
+- **A short text's look fields** (`ar/tour-short-text`, a new deep entry):
+  `role` (`instruction`, `label`, `warning`), `orientation` (`world`,
+  `upright`, `face`), `readAtM` (the distance its words read from, 1 to
+  40 m; `shortTextLetterHeightM`), `pointsTo` (a point in its station's
+  frame, within 1000 m), `lang` (a BCP-47 tag), and the ground arrow's
+  `style` (`ribbon`, `vanes`, `footprints`, `lights`, `floor`),
+  `bendDeg` (up to 60 degrees either way), `floorPlacement` (`lying`,
+  `hovering`, `upright`), `captionOnArrow`, `color` and `darkColor`
+  (`#rrggbb`). Every field is optional and read in every view. A value
+  of the wrong type fails at every minor; an unknown word or an
+  out-of-range value fails a file of this minor and is dropped, alone,
+  from a newer one.
+- **A picture has more world views than a plane** (`ar/tour-kinds`):
+  `framed` (a print in a frame with a plate), `cutout` (a cut-out standing
+  on the ground) and the viewpoint views `thenNow`, `sharpen`, `finder`,
+  `window` and `viewer`, which line the picture up with the place from one
+  spot; without a viewpoint a viewpoint view is drawn as a `plane`.
+  `TOUR_PICTURE_WORLD_VIEWS` (with its type `TourPictureWorldView`) lists
+  the world views and `TOUR_PICTURE_VIEWPOINT_VIEWS` the viewpoint ones.
+- **A picture's own fields** (`ar/tour-kinds`): `credit` (up to 200
+  characters) and `year` (text, up to 24), shown on a plate and in its
+  sheet; `showTag` (a cut-out's tag at its foot, absent: shown); and
+  `viewpoint` (`TourPictureViewpoint`: the eye point and the camera's turn
+  in the station's frame, the lens's `hfovDeg` from
+  `TOUR_PICTURE_MIN_HFOV_DEG` to `TOUR_PICTURE_MAX_HFOV_DEG`, 10 to 120,
+  and the subject's `distanceM` from `TOUR_PICTURE_MIN_DISTANCE_M` to
+  `TOUR_PICTURE_MAX_DISTANCE_M`, 1 to 500 m). Every field is optional and
+  kept in every view. A viewpoint that breaks a rule fails a file of this
+  minor; a newer one's drops only the viewpoint and keeps the picture.
+- **A video stands in the world** (`ar/tour-kinds`): its views are
+  `screen`, `cutout` and `porthole` beside the story's `card`, so a free
+  video is no longer story-only. Its world fields: `widthM` (required in a
+  world view, kept in a card), `start` (`TOUR_VIDEO_STARTS`: `enter`,
+  `near`, `look`, `tap`; absent: `enter`), `withinM` (a `near` start's
+  distance, `TOUR_VIDEO_MIN_WITHIN_M` to `TOUR_VIDEO_MAX_WITHIN_M`, 1 to
+  20 m), `sound` (`TOUR_VIDEO_SOUNDS`; absent: `off`), `alpha`
+  (`TOUR_VIDEO_ALPHAS`: `none` or `stacked`; absent: `none`) and `loop`
+  (`TOUR_VIDEO_LOOPS`; absent: `off`); in every view `captions` (WebVTT
+  text) and `poster` (an image asset shown while the clip waits).
 
 ### Changed
 
+- `TourPin` (`ar/tour-manifest`) is a short text in any of its world
+  views (`pin`, `sign`, `edgeHint`, `ground`), as `tourObjects` yields
+  it; it was typed as `pin` alone.
+- `TourPicture` (`ar/tour-manifest`) is a picture in any of its world
+  views (`TourPictureWorldView`), and a free video among the
+  `TourObject`s stands in `screen`, `cutout` or `porthole` with its
+  `widthM`, as `tourObjects` yields them.
 - **Every container is a folder** (`ar/tour-story`): a story is
   `{ kind: 'folder', role: 'story', title, children }` (was
   `kind: 'story'`), read and written in that shape. A folder without a

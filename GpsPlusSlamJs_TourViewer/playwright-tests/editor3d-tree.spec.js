@@ -21,6 +21,7 @@ import {
   answerHosts,
   boxIn,
   capture,
+  dockPhoneGroupPx,
   dockSettled,
   dockWidthsAt,
   layoutOf,
@@ -295,8 +296,8 @@ test("a row's + adds a short or a long text in place, from the mouse and from th
   await expect(menu).toBeVisible();
   await expect(plus).toHaveAttribute("aria-expanded", "true");
   await expect(menu.locator('[data-kind="shortText"]')).toBeFocused();
-  // A video plays only in a story: off on a station's menu.
-  await expect(menu.locator('[data-kind="video"]')).toHaveAttribute(
+  // A video stands free at a station (as a screen): on in its menu.
+  await expect(menu.locator('[data-kind="video"]')).not.toHaveAttribute(
     "aria-disabled",
     "true",
   );
@@ -912,12 +913,17 @@ async function expectTreeControls(page, size) {
   expect(grip.height, at).toBe(tw.height);
   expect(grip.y + grip.height, at).toBeLessThanOrEqual(row.y + row.height);
   // The tree: 248 px wide on a desktop, 210 px at 1100 px or less down
-  // to the docking's 701 px (`dock-layout.ts`), as the explorer's, and the
-  // width on a phone; its search 8 px in from both of its edges (a phone's
-  // sheet has no line at its side; docked, the line beside it is the
-  // docking's splitter).
+  // to the docking's 701 px (`dock-layout.ts`), as the explorer's, and on
+  // a phone its one group's width (the window's upright); its search 8 px
+  // in from both of its edges (the line beside it is the docking's
+  // splitter).
   const tree = await box(page.locator("#shell-tree"));
-  const treePx = size.width > 700 ? dockWidthsAt(size.width).list : size.width;
+  const phone = size.width <= 700 || size.height <= 500;
+  const treePx = !phone
+    ? dockWidthsAt(size.width).list
+    : size.height > size.width
+      ? size.width
+      : dockPhoneGroupPx(size.width, size.height);
   expect(tree.width, at).toBe(treePx);
   const search = await box(page.locator("#tree-search"));
   expect(search.x - tree.x, at).toBe(8);

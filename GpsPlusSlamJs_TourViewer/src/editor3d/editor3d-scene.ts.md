@@ -133,7 +133,10 @@ keys), and writes only through the page's `edits`.
   sun light.
 - **Reads the tour, writes through the page:** the tour is what a save
   would write now (`manifestToWrite`), read again only when the document
-  changes (never per frame); the selection is read each frame for near-K.
+  changes (never per frame); the selection is read each frame for near-K
+  and for the open story (`openStoryOf`: its posed entries are drawn while
+  the story or one of its entries is selected; the globe view does the
+  same).
   The store hears a gesture's start and end, nothing per frame; a finished
   gesture is one `edits.commit`.
 - **Flights:** while one runs it places the orbit each frame in place of
@@ -219,3 +222,9 @@ the gizmo's sizes on the screen at four window sizes in a wide face. `app-bundle
 `import()` runs.
 
 The lock in the scene: `editor3d-edit.spec.js`.
+
+## `lookFrom`
+
+- `lookFrom(selection)` flies the camera to a picture's viewpoint, looking along its line of sight (`orbitPoseOf(at, ahead)`, `FLIGHT.flyMs`); false when the selection has no viewpoint. The orbit's distance limits may stop the camera short of the viewpoint.
+- While it looks from there the camera sees through the viewpoint's lens (`createLensHold`, `editor3d-lens.ts`: its horizontal field of view at the canvas's aspect, worked again each frame), so the picture's frame is in shot. The camera's own field of view (`EDITOR_CAMERA.fovDeg`) is back on the orbit's own gesture (`start`), a two-finger touch (`leaveLens`), every flight (`fly` releases before it starts, so `lookFrom` takes the lens after its own), tilt, heading and distance, and on a selection other than the picture (checked each frame). The layer's code sizing keeps reading the view's own field of view. `stats().fovDeg` gives the camera's.
+- The layer is handed `selected` each frame, for the selected picture's field-of-view lines (`editor3d-stations.ts`).

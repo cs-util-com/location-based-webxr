@@ -6,6 +6,8 @@
 
 - `OptimizerInbound` (page to Worker): `run { job, kind, payload, settings }`, `cancel { job }`.
 - `OptimizerOutbound` (Worker to page): `progress { job, fraction }`, `done { job, blob, extension, width?, height? }`, `kept { job, reason }`, `failed { job, reason }`.
+- `WorkerStepAnswer`: what a Worker step returns, a `done` or `kept` without its job id; `WorkerStepControl`: `{ signal, progress }` as a step sees them.
+- `stoppedError()`: the `AbortError` a step throws once stopped.
 - `inboundOf(data)`: `data` as an `OptimizerInbound`, or null for a non-object, an unknown type, a job that is no whole number, a run of no known kind, or a run without settings. The Worker ignores what it returns null for.
 
 ## Invariants

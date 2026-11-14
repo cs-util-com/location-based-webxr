@@ -49,7 +49,17 @@ import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-item
 import {
   TOUR_NARRATION_MAX_DURATION_MS,
   TOUR_FREE_BLOCK_VIEWS,
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+  type TourPictureViewpoint,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import {
+  TOUR_PICTURE_MAX_DISTANCE_M,
+  TOUR_PICTURE_MAX_HFOV_DEG,
+  TOUR_PICTURE_MIN_DISTANCE_M,
+  TOUR_PICTURE_MIN_HFOV_DEG,
+} from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { posedEntryOf } from "../placement/placeables.js";
+import { mintViewpoint, viewpointAt } from "./picture-viewpoint.js";
 import {
   TOUR_DESCRIPTION_MAX_CHARS,
   TOUR_TITLE_MAX_CHARS,
@@ -171,6 +181,7 @@ import { newStory, withoutStoryChild } from "../tour-story-edit.js";
 import { folderRefusalLine } from "../tour-folder-edit.js";
 import {
   blockPlacement,
+  writesBlockNumber,
   type ExtentSpec,
 } from "../placement/placement-rows.js";
 import { freeStorySpot, newCharacterEntry, newStoryEntry } from "./new-pin.js";
@@ -540,16 +551,6 @@ const MOVE_REFUSALS: Readonly<
     "A model without a size cannot stand in the world: give it a size first.",
 };
 
-/** Said for a story's item that cannot leave its story, by its kind. */
-function cannotStandFreeRefusal(manifest: TourManifest, id: string): string {
-  const place = tourChildPlace(manifest, id);
-  const item =
-    place?.story === undefined ? undefined : place.story.children[place.index];
-  return item?.kind === "video"
-    ? "A video plays only in a story for now: it cannot stand in the world by itself."
-    : MOVE_REFUSALS.cannotStandFree;
-}
-
 /** Said for a free item whose file the tour on disk does not hold yet,
  *  naming its kind ("an audio", "a 3D model"). */
 function unsavedRefusal(manifest: TourManifest, id: string): string {
@@ -674,6 +675,9 @@ const NOT_A_MODEL_EDIT = "Only a 3D model has notes, sections and views.";
 /** Said for a file given to an item made of words. */
 const NOT_MADE_OF_A_FILE = "That item is not made from a file.";
 
+/** Said for a poster given to anything but a free video. */
+const NOT_A_FREE_VIDEO = "Only a video standing at a station takes a poster.";
+
 /** Said for a file of another kind than the item is made from. */
 const NOT_ITS_KIND = "That file is not of the kind this item is made from.";
 
@@ -683,6 +687,32 @@ const NOT_ITS_VIEW = "This block cannot be shown that way.";
 const MODEL_VIEW_ELSEWHERE = "A 3D model's view is set in its own fields.";
 /** Said when a tag is asked of a block that is no picture. */
 const ONLY_A_PICTURE_TAG = "Only a picture has a tag.";
+
+const ONLY_A_PICTURE_VIEWPOINT = "Only a picture has a viewpoint.";
+const NO_VIEWPOINT = "This picture has no viewpoint to move yet.";
+
+const NOT_A_VIEWPOINT =
+  "A viewpoint needs a place, a turn, a lens of 10 to 120 degrees and a depth of 1 to 500 m.";
+
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+);
+
+/** Whether the format keeps `vp`: finite numbers, a turn of some length,
+ *  its lens and depth in their bounds. */
+function keptViewpoint(vp: TourPictureViewpoint): boolean {
+  const numbers = [...vp.position, ...vp.rotation, vp.hfovDeg, vp.distanceM];
+  return (
+    vp.position.length === 3 &&
+    vp.rotation.length === 4 &&
+    numbers.every(Number.isFinite) &&
+    Math.hypot(...vp.rotation) > 1e-6 &&
+    vp.hfovDeg >= TOUR_PICTURE_MIN_HFOV_DEG &&
+    vp.hfovDeg <= TOUR_PICTURE_MAX_HFOV_DEG &&
+    vp.distanceM >= TOUR_PICTURE_MIN_DISTANCE_M &&
+    vp.distanceM <= TOUR_PICTURE_MAX_DISTANCE_M
+  );
+}
 
 /** Said for a size out of its row's bounds. */
 function extentRange(spec: ExtentSpec): string {
@@ -846,6 +876,24 @@ export interface EditorSession {
     id: string,
     view: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Set a picture's viewpoint (`viewpoint`; null: a fresh one in front
+   *  of the picture, `mintViewpoint`): one step. A switch to a view seen
+   *  from a viewpoint (`editBlockView`) gives a picture without one its
+   *  first. Refused in words for an id the tour does not carry, a block
+   *  that is no picture and a viewpoint the format would not keep. */
+  editPictureViewpoint(
+    id: string,
+    viewpoint: TourPictureViewpoint | null,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Move a picture's viewpoint to where its handle in the 3D view was
+   *  let go (`geo`): its place, and the facing of `geo`'s heading, its
+   *  pitch, lens and depth kept (`viewpointAt`): one step, as
+   *  `editPictureViewpoint`. Refused in words for an id the tour does not
+   *  carry, a block that is no picture and a picture with no viewpoint. */
+  moveViewpoint(
+    id: string,
+    geo: QrGeoPose,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Show or hide a picture's tag (a cut-out's, `showTag`): one step;
    *  shown is the field's absence. Refused in words for an id the tour
    *  does not carry and a block that is no picture. */
@@ -917,23 +965,27 @@ export interface EditorSession {
   duplicateStory(
     storyId: string,
   ): { kind: "duplicated"; id: string } | EditorRefusal;
-  /** A new entry at the end of a story: one step. */
+  /** A new entry at the end of a story, or before its child at `at`
+   *  (0-based): one step. */
   addToStory(
     storyId: string,
     kind: TextAddKind,
+    at?: number,
   ): { kind: "added"; id: string } | EditorRefusal;
-  /** A made entry at the end of a story (a file's, `new-file-item.ts`):
-   *  one step. Refused for a story the tour does not carry and for an id
-   *  it carries already. */
+  /** A made entry at the end of a story (a file's, `new-file-item.ts`),
+   *  or before its child at `at`: one step. Refused for a story the
+   *  tour does not carry and for an id it carries already. */
   addEntryToStory(
     storyId: string,
     child: TourStoryChild,
+    at?: number,
   ): { kind: "added"; id: string } | EditorRefusal;
-  /** A new choice or quiz at the end of a story (`newStoryStep`): one
-   *  step. */
+  /** A new choice or quiz at the end of a story (`newStoryStep`), or
+   *  before its child at `at`: one step. */
   addStepToStory(
     storyId: string,
     kind: StepKind,
+    at?: number,
   ): { kind: "added"; id: string } | EditorRefusal;
   /** Delete a story's child: one step; `answers` says how many answers
    *  that led to it now go on to the next child. */
@@ -1017,7 +1069,7 @@ export interface EditorSession {
   >;
   /** Set a block's size, the number its placement row's dots change (a
    *  model's largest side, 0.05 m to 500 m; a picture's width, 0.05 m to
-   *  50 m): one step. Refused for a block whose row has no size, or a
+   *  50 m; a ground arrow's scale, 1 to 40): one step. Refused for a block whose row has no size, or a
    *  value out of the row's bounds. */
   setExtent(
     id: string,
@@ -1097,6 +1149,17 @@ export interface EditorSession {
     id: string,
     file: Blob,
     fileName: string,
+  ): Promise<
+    { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
+  >;
+  /** The picture `image` (a frame of the clip, as the inspector's "Use
+   *  current frame" grabs it) the free video `id`'s poster from now on:
+   *  brought in as `addFile` does, then one step. Refused in words,
+   *  changing nothing, for an id that is no free video and a picture
+   *  `addFile` refuses. */
+  setVideoPoster(
+    id: string,
+    image: Blob,
   ): Promise<
     { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
   >;
@@ -1408,6 +1471,53 @@ export function createEditorSession(input: {
    *  out for good; an undo does not put it back. */
   const defaultViews = new Set<string>();
 
+  /** Where the item `id` stands in its station's frame (its folders
+   *  composed in); the station's anchor for one the stations lack. */
+  function stationPoseOf(id: string): {
+    readonly position: readonly number[];
+    readonly rotation: readonly number[];
+  } {
+    for (const station of now().stations) {
+      const place = posedEntryOf(station, id)?.place.inStation;
+      if (place !== undefined && place !== null) return place;
+    }
+    return { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+  }
+
+  /** Write the viewpoint `next` makes of the picture `id`'s (none: it has
+   *  none to change) as one step, refused in words for an id the tour
+   *  does not carry, a block that is no picture, no viewpoint and one the
+   *  format would not keep. */
+  function writeViewpoint(
+    id: string,
+    next: (vp: TourPictureViewpoint | undefined) => TourPictureViewpoint | null,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal {
+    const found = find(id);
+    if (found === undefined) return notInTour;
+    const object = found.object;
+    if (object.kind !== "picture") {
+      return { kind: "refused", reason: ONLY_A_PICTURE_VIEWPOINT };
+    }
+    const viewpoint = next(object.viewpoint);
+    if (viewpoint === null) return { kind: "refused", reason: NO_VIEWPOINT };
+    if (!keptViewpoint(viewpoint)) {
+      return { kind: "refused", reason: NOT_A_VIEWPOINT };
+    }
+    if (sameJson(object.viewpoint ?? null, viewpoint)) {
+      return { kind: "unchanged" };
+    }
+    const after: typeof object = { ...object, viewpoint };
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.edited({
+          object: after,
+          what: `the viewpoint of ${objectName(object)}`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited" } : notApplied;
+  }
+
   /** Undefined for an id the tour no longer carries, or a tour no longer
    *  open: a page holding an older card gets a refusal, never a throw (E2c
    *  plan review #11). */
@@ -1607,10 +1717,12 @@ export function createEditorSession(input: {
     return null;
   }
 
-  /** `child` at the end of the story `storyId`: one step. */
+  /** `child` at the end of the story `storyId`, or before its child at
+   *  `at`: one step. */
   function addEntryToStory(
     storyId: string,
     child: TourStoryChild,
+    at?: number,
   ): { kind: "added"; id: string } | EditorRefusal {
     const state = mine();
     if (state === null) return notInTour;
@@ -1626,6 +1738,7 @@ export function createEditorSession(input: {
           story: storyId,
           child,
           what: `the new entry "${storyChildName(child)}"`,
+          at,
         }),
       ),
     )
@@ -2058,6 +2171,40 @@ export function createEditorSession(input: {
     return set.kind === "refused" ? set : { ...set, backedUp: added.backedUp };
   }
 
+  /** `setVideoPoster`: the picture brought in, then the one edit naming
+   *  it on the video as it is after the wait. */
+  async function setVideoPoster(
+    id: string,
+    image: Blob,
+  ): Promise<
+    { kind: "edited" | "unchanged"; backedUp: boolean } | EditorRefusal
+  > {
+    const freeVideo = () => {
+      const free = fileBlockNow(id)?.free;
+      return free?.kind === "video" ? free : null;
+    };
+    const before = freeVideo();
+    if (before === null) return { kind: "refused", reason: NOT_A_FREE_VIDEO };
+    const fileName = `${objectTitle(before)} poster.jpg`;
+    const added = await addFile(image, fileName, ["image"]);
+    if (added.kind === "refused") return added;
+    const videoNow = freeVideo();
+    if (videoNow === null) return notInTour;
+    const after = { ...videoNow, poster: added.asset.id };
+    if (sameJson(after, videoNow)) {
+      return { kind: "unchanged", backedUp: added.backedUp };
+    }
+    const applied = took(() =>
+      store.dispatch(
+        tourDocumentActions.edited({
+          object: after,
+          what: `the poster of ${objectName(videoNow)}`,
+        }),
+      ),
+    );
+    return applied ? { kind: "edited", backedUp: added.backedUp } : notApplied;
+  }
+
   const optimizers = input.optimizers ?? ASSET_OPTIMIZERS;
   const shelf = createAssetShelf({
     store,
@@ -2125,6 +2272,7 @@ export function createEditorSession(input: {
     shelf,
     addFile,
     setItemFile,
+    setVideoPoster,
     setItemAsset: (id, assetId) => {
       const asset = assetOf(assetId);
       if (asset === undefined) return notInTour;
@@ -2454,7 +2602,15 @@ export function createEditorSession(input: {
         return { kind: "refused", reason: NOT_ITS_VIEW };
       }
       if (object.view === view) return { kind: "unchanged" };
-      const after = { ...object, view } as typeof object;
+      // A picture switched to a view seen from a viewpoint gets its first
+      // one, standing in front of it, so the view shows at once.
+      const minted =
+        object.kind === "picture" &&
+        VIEWPOINT_VIEWS.has(view) &&
+        object.viewpoint === undefined
+          ? { viewpoint: mintViewpoint(stationPoseOf(id)) }
+          : {};
+      const after = { ...object, view, ...minted } as typeof object;
       const applied = took(() =>
         store.dispatch(
           tourDocumentActions.edited({
@@ -2464,6 +2620,20 @@ export function createEditorSession(input: {
         ),
       );
       return applied ? { kind: "edited" } : notApplied;
+    },
+    editPictureViewpoint(id, viewpoint) {
+      return writeViewpoint(
+        id,
+        () => viewpoint ?? mintViewpoint(stationPoseOf(id)),
+      );
+    },
+    moveViewpoint(id, geo) {
+      const station = now().stations.find((s) => posedEntryOf(s, id) !== null);
+      return writeViewpoint(id, (vp) =>
+        vp === undefined || station === undefined
+          ? null
+          : viewpointAt(vp, localPoseOf(geo, station.geo)),
+      );
     },
     editPictureTag(id, shown) {
       const found = find(id);
@@ -2708,7 +2878,7 @@ export function createEditorSession(input: {
           }
         : notApplied;
     },
-    addToStory(storyId, kind) {
+    addToStory(storyId, kind, at) {
       const state = mine();
       if (state === null) return notInTour;
       const station = manifestNow(state)?.stations.find((s) =>
@@ -2721,11 +2891,12 @@ export function createEditorSession(input: {
       return addEntryToStory(
         storyId,
         newStoryEntry(station, story, kind, newObjectId()),
+        at,
       );
     },
     addEntryToStory,
-    addStepToStory(storyId, kind) {
-      return addEntryToStory(storyId, newStoryStep(kind, newObjectId()));
+    addStepToStory(storyId, kind, at) {
+      return addEntryToStory(storyId, newStoryStep(kind, newObjectId()), at);
     },
     deleteStoryChild(id) {
       const state = mine();
@@ -2819,9 +2990,7 @@ export function createEditorSession(input: {
           reason:
             change.reason === "unsaved"
               ? unsavedRefusal(items, id)
-              : change.reason === "cannotStandFree"
-                ? cannotStandFreeRefusal(items, id)
-                : MOVE_REFUSALS[change.reason],
+              : MOVE_REFUSALS[change.reason],
         };
       }
       const name = childCalled(items, id);
@@ -3104,7 +3273,7 @@ export function createEditorSession(input: {
       if (found === undefined) return notInTour;
       const object = found.object;
       const spec = blockPlacement(object.kind, object.view)?.extent;
-      if (spec === undefined || spec.kind !== "size") {
+      if (spec === undefined || !writesBlockNumber(spec)) {
         return { kind: "refused", reason: NO_EXTENT };
       }
       if (!(value >= spec.min && value <= spec.max)) {

@@ -27,6 +27,7 @@ The long text's Narration section in the writer, as the "in the inspector" proto
 - The file names follow what the tour holds, never the file chosen last: a voice's name is kept by its audio asset id (`NarrationFacts.audioId`), a timing's by the timing text written, through a short key (its length and a 32-bit FNV-1a hash, `timingKey`) so the map never holds whole timings. After an undo the row names the voice or timing the tour holds again (or the generic words, for one not chosen here).
 - The result card belongs to the timing it wrote: it is shown only while the tour holds that timing text, and dropped by the first read that finds another (an undo, an import elsewhere).
 - A result or an import error that lands after the creator selected another text is dropped, never drawn in that text's section.
+- A voice the asset shelf made smaller (Ogg Opus) reads about 6.5 ms (rounded: 7 ms) longer than its original: Chromium's `<audio>.duration` for Ogg Opus counts the encoder's pre-skip (312 samples at 48 kHz), while the decoded sound is exactly as long as the original. This is known and accepted (below one frame); `editor-asset-optimizers.spec.js` pins it as `original + preSkip / 48` ms.
 
 ## Examples
 

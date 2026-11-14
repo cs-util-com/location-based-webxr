@@ -16,10 +16,13 @@ import {
   TOUR_AUDIO_MAX_REACH_M,
   TOUR_AUDIO_MIN_RADIUS_M,
   TOUR_AUDIO_MIN_REACH_M,
+  TOUR_VIDEO_MAX_WITHIN_M,
+  TOUR_VIDEO_MIN_WITHIN_M,
   type TourBlockKind,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
+  TOUR_GROUND_MAX_BEND_DEG,
   TOUR_SHORT_TEXT_MAX_READ_AT_M,
   TOUR_SHORT_TEXT_MIN_READ_AT_M,
 } from "gps-plus-slam-app-framework/ar/tour-short-text";
@@ -64,6 +67,31 @@ const SHORT_TEXT_TURNS: readonly FieldChoice[] = [
   { value: "face", label: "Faces you" },
 ];
 
+/** How a short text shows, by the words a creator reads (its views
+ *  with a world look; the card has no chip). */
+export const SHORT_TEXT_VIEWS: readonly FieldChoice[] = [
+  { value: "pin", label: "Pin" },
+  { value: "sign", label: "Sign" },
+  { value: "edgeHint", label: "Edge hint" },
+  { value: "ground", label: "Ground arrow" },
+];
+
+/** A ground arrow's styles, as its panel offers them. */
+const GROUND_STYLES: readonly FieldChoice[] = [
+  { value: "ribbon", label: "Ribbon" },
+  { value: "vanes", label: "Vanes" },
+  { value: "footprints", label: "Footprints" },
+  { value: "lights", label: "Lights" },
+  { value: "floor", label: "Floor arrow" },
+];
+
+/** How a floor arrow lies, as its panel offers it. */
+const GROUND_FLOOR_PLACEMENTS: readonly FieldChoice[] = [
+  { value: "lying", label: "Lying" },
+  { value: "hovering", label: "Hovering" },
+  { value: "upright", label: "Upright" },
+];
+
 /** One field of a kind, as the inspector draws it. */
 export interface FieldSpec {
   /** The block's own field (`data-field` in the inspector). */
@@ -78,12 +106,41 @@ export interface FieldSpec {
   /** One of these values, chosen on the kind's panel's chips rather than
    *  typed (none: typed). */
   readonly choices?: readonly FieldChoice[];
+  /** A switch on the kind's panel: written as true, or left out (its
+   *  reader's default, off). */
+  readonly flag?: true;
+  /** A colour (`#rrggbb`) picked on the kind's panel, or left out (its
+   *  reader's default). */
+  readonly colour?: true;
+  /** A value typed on one line that the format's look reader checks: a
+   *  point as three numbers in metres, or a language tag. */
+  readonly typed?: "point" | "tag";
+  /** One of a few values, set by chips the kind's panel draws
+   *  (`editor/kind-panels`), not a box the dock types: unlike `choices`,
+   *  an absent field reads as its `fallback`, so the chip in use is
+   *  always pressed and pressing it again writes nothing. */
+  readonly choice?: ChoiceSpec;
+  /** Only while another of the block's choices has this value (its
+   *  fallback counted for an absent one): a setting that does nothing
+   *  otherwise is not shown, and not written. */
+  readonly when?: { readonly field: string; readonly value: string };
 }
 
 /** One value a choice field takes, and its chip's words. */
 export interface FieldChoice {
   readonly value: string;
   readonly label: string;
+}
+
+/** The values a choice field takes, in the creator's words, and what an
+ *  absent one means. */
+export interface ChoiceSpec {
+  readonly values: readonly {
+    readonly value: string;
+    readonly label: string;
+  }[];
+  /** The value a block without the field has. */
+  readonly fallback: string;
 }
 
 /** How a kind is added from nothing: its line in the tree's type menu (and,
@@ -99,9 +156,6 @@ interface KindAdd {
   /** Made from a file of this kind: the add opens the file picker, and
    *  the file goes onto the asset shelf (`add-file-item.ts`). */
   readonly file?: TourAssetKind;
-  /** Added to a story only, and why (shown on a station's menu, where it
-   *  is off): no free host draws it. */
-  readonly storyOnly?: string;
 }
 
 /** What the editor knows of one kind. */
@@ -197,6 +251,101 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
   },
 ];
 
+/** The views a free video stands in the world in. */
+const VIDEO_WORLD_VIEWS = ["screen", "cutout", "porthole"];
+
+/** What starts a video in the world (`TOUR_VIDEO_STARTS`); absent: on
+ *  arrival, as the viewer reads it. */
+const VIDEO_START: FieldSpec = {
+  name: "start",
+  label: "Starts",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  choice: {
+    values: [
+      { value: "enter", label: "On arrival" },
+      { value: "near", label: "When near" },
+      { value: "look", label: "When looked at" },
+      { value: "tap", label: "On a tap" },
+    ],
+    fallback: "enter",
+  },
+};
+
+/** Whether a video starts with its sound (`TOUR_VIDEO_SOUNDS`); the
+ *  visitor's own choice wins over it. Absent: off. */
+const VIDEO_SOUND: FieldSpec = {
+  name: "sound",
+  label: "Sound",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  choice: {
+    values: [
+      { value: "off", label: "Starts muted" },
+      { value: "on", label: "Starts with sound" },
+    ],
+    fallback: "off",
+  },
+};
+
+/** A cutout's clip: as filmed, or its matte stacked under the picture
+ *  (`TOUR_VIDEO_ALPHAS`). Absent: as filmed. */
+const VIDEO_ALPHA: FieldSpec = {
+  name: "alpha",
+  label: "Background",
+  prose: false,
+  views: ["cutout"],
+  choice: {
+    values: [
+      { value: "none", label: "As filmed" },
+      { value: "stacked", label: "Stacked alpha" },
+    ],
+    fallback: "none",
+  },
+};
+
+/** A video's `near` start distance, in the views that stand it in the
+ *  world, bounded as the format bounds it (`tour-kinds.ts`). */
+const VIDEO_NEAR: FieldSpec = {
+  name: "withinM",
+  label: "Starts within",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  when: { field: "start", value: "near" },
+  number: {
+    min: TOUR_VIDEO_MIN_WITHIN_M,
+    max: TOUR_VIDEO_MAX_WITHIN_M,
+    unit: "m",
+    required: false,
+  },
+};
+
+/** Whether a video plays again when it ends (`TOUR_VIDEO_LOOPS`); its
+ *  panel draws it as a switch. Absent: off. */
+const VIDEO_LOOP: FieldSpec = {
+  name: "loop",
+  label: "Loop",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  choice: {
+    values: [
+      { value: "off", label: "Plays once" },
+      { value: "on", label: "Loops" },
+    ],
+    fallback: "off",
+  },
+};
+
+/** A video's captions in the world, WebVTT text the visitor's player
+ *  shows; its panel says how many cues it read and which lines it left
+ *  out. */
+const VIDEO_CAPTIONS: FieldSpec = {
+  name: "captions",
+  label: "Captions (WebVTT)",
+  prose: true,
+  views: VIDEO_WORLD_VIEWS,
+};
+
 /** THE list. Key order is the order of every derived menu. */
 export const KIND_EDIT = {
   shortText: {
@@ -217,7 +366,7 @@ export const KIND_EDIT = {
           unit: "m",
           required: false,
         },
-        views: ["sign"],
+        views: ["sign", "ground"],
       },
       { name: "role", label: "Role", prose: false, choices: SHORT_TEXT_ROLES },
       {
@@ -225,7 +374,62 @@ export const KIND_EDIT = {
         label: "Turns",
         prose: false,
         choices: SHORT_TEXT_TURNS,
-        views: ["sign"],
+        views: ["sign", "ground"],
+      },
+      {
+        name: "pointsTo",
+        label: "Points to",
+        prose: false,
+        typed: "point",
+        views: ["sign", "ground"],
+      },
+      { name: "lang", label: "Language", prose: false, typed: "tag" },
+      {
+        name: "style",
+        label: "Ground style",
+        prose: false,
+        choices: GROUND_STYLES,
+        views: ["ground"],
+      },
+      {
+        name: "bendDeg",
+        label: "Bend",
+        prose: false,
+        number: {
+          min: -TOUR_GROUND_MAX_BEND_DEG,
+          max: TOUR_GROUND_MAX_BEND_DEG,
+          unit: "°",
+          required: false,
+        },
+        views: ["ground"],
+      },
+      {
+        name: "floorPlacement",
+        label: "Floor arrow",
+        prose: false,
+        choices: GROUND_FLOOR_PLACEMENTS,
+        views: ["ground"],
+      },
+      {
+        name: "captionOnArrow",
+        label: "Caption on the arrow",
+        prose: false,
+        flag: true,
+        views: ["ground"],
+      },
+      {
+        name: "color",
+        label: "Colour",
+        prose: false,
+        colour: true,
+        views: ["ground"],
+      },
+      {
+        name: "darkColor",
+        label: "Dark colour",
+        prose: false,
+        colour: true,
+        views: ["ground"],
       },
     ],
     add: {
@@ -276,14 +480,22 @@ export const KIND_EDIT = {
     thing: "video",
     look: "video",
     searchWords: "video film",
-    fields: [TITLE, TRANSCRIPT],
+    fields: [
+      TITLE,
+      TRANSCRIPT,
+      VIDEO_CAPTIONS,
+      VIDEO_START,
+      VIDEO_NEAR,
+      VIDEO_SOUND,
+      VIDEO_LOOP,
+      VIDEO_ALPHA,
+    ],
     add: {
       label: "Video",
-      hint: "A video file, played in a story",
+      hint: "A video file, shown as a screen",
       words: "video film clip movie",
       addable: true,
       file: "video",
-      storyOnly: "A video plays in a story: add it to one",
     },
   },
   audio: {
@@ -359,23 +571,24 @@ export function isFileAddKind(kind: AddKind): kind is FileAddKind {
   return add.file !== undefined;
 }
 
-/** Why `kind` is added to a story only (`KindAdd.storyOnly`), or
- *  undefined for a kind that also stands at a station. */
-export function storyOnlyReason(kind: TourBlockKind): string | undefined {
-  const row: KindEditRow = KIND_EDIT[kind];
-  return row.add?.storyOnly;
-}
-
-/** Whether `kind` is added to a story only (`KindAdd.storyOnly`). */
-export function isStoryOnly(kind: TourBlockKind): boolean {
-  return storyOnlyReason(kind) !== undefined;
-}
-
 /** A kind's word inside a sentence ("the delete of the long text"): its
  *  label with the first letter lower-cased ("3D" kept). */
 export function kindNoun(kind: TourBlockKind): string {
   const label: string = KIND_EDIT[kind].label;
   return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/** What a block is called in the inspector's head: its kind's label,
+ *  or for a short text the view it shows as ("Sign", "Edge hint"). */
+export function blockLabel(block: {
+  readonly kind: TourBlockKind;
+  readonly view: string;
+}): string {
+  if (block.kind === "shortText") {
+    const view = SHORT_TEXT_VIEWS.find((v) => v.value === block.view);
+    if (view !== undefined) return view.label;
+  }
+  return KIND_EDIT[block.kind].label;
 }
 
 /** Its word with its article: "a pin", "an audio". */

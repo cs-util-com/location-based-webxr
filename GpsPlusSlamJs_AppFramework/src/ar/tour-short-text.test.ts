@@ -48,7 +48,7 @@ const read = (fields: Record<string, unknown>, view: string | null = 'sign') =>
   );
 
 describe('a short text in the world', () => {
-  it('stands as a pin, a sign or a hint at the screen edge', () => {
+  it('stands as a pin, a sign, a hint at the screen edge or an arrow on the ground', () => {
     // Why: every one of these is drawn in the station for as long as the
     // block is there; the card is a story's alone. An unknown view of a
     // newer file falls back to the pin, which every reader draws.
@@ -56,9 +56,15 @@ describe('a short text in the world', () => {
       'pin',
       'sign',
       'edgeHint',
+      'ground',
       'card',
     ]);
-    expect(TOUR_KINDS.shortText.freeViews).toEqual(['pin', 'sign', 'edgeHint']);
+    expect(TOUR_KINDS.shortText.freeViews).toEqual([
+      'pin',
+      'sign',
+      'edgeHint',
+      'ground',
+    ]);
     expect(TOUR_KINDS.shortText.worldViews).toEqual(
       TOUR_KINDS.shortText.freeViews
     );
@@ -88,7 +94,7 @@ describe('a short text in the world', () => {
       color: '#5fe3c9',
       darkColor: '#151A20',
     };
-    for (const view of ['pin', 'sign', 'edgeHint', 'card', null]) {
+    for (const view of ['pin', 'sign', 'edgeHint', 'ground', 'card', null]) {
       expect(read(fields, view)).toEqual({ caption: 'Gate', ...fields });
     }
   });
@@ -105,7 +111,6 @@ describe('a short text in the world', () => {
     ['lang', 'not a language'],
     ['color', 'red'],
     ['darkColor', '#12345'],
-    ['captionOnArrow', 'yes'],
   ])(
     '%s = %j fails a file of this minor and is dropped from a newer one',
     (field, value) => {
@@ -132,6 +137,10 @@ describe('a short text in the world', () => {
     ['pointsTo', [1, 2]],
     ['pointsTo', [1, Number.NaN, 2]],
     ['bendDeg', 'left'],
+    ['role', 5],
+    ['lang', 7],
+    ['captionOnArrow', 'yes'],
+    ['style', null],
   ])(
     '%s = %j fails at every minor: no revision makes it valid',
     (field, value) => {
@@ -146,6 +155,52 @@ describe('a short text in the world', () => {
       ).toThrow(field);
     }
   );
+
+  it('fails any value of the wrong type at every minor (property)', () => {
+    // Why: only an unknown string can be a newer minor's value (a new role,
+    // a wider tag); a number where a word belongs, or a word where a switch
+    // belongs, is broken data and must not pass a newer file silently.
+    const words = [
+      'role',
+      'orientation',
+      'style',
+      'floorPlacement',
+      'lang',
+      'color',
+      'darkColor',
+    ];
+    const notAWord = fc.oneof(
+      fc.integer(),
+      fc.boolean(),
+      fc.constant(null),
+      fc.array(fc.string(), { maxLength: 2 }),
+      fc.dictionary(fc.string(), fc.string(), { maxKeys: 1 })
+    );
+    const notASwitch = fc.oneof(
+      fc.string(),
+      fc.integer(),
+      fc.constant(null),
+      fc.array(fc.boolean(), { maxLength: 2 })
+    );
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.tuple(fc.constantFrom(...words), notAWord),
+          fc.tuple(fc.constant('captionOnArrow'), notASwitch)
+        ),
+        fc.boolean(),
+        ([field, value], lenient) => {
+          expect(() =>
+            TOUR_KINDS.shortText.read(
+              { caption: 'Gate', [field]: value },
+              'sign',
+              context(lenient)
+            )
+          ).toThrow(field);
+        }
+      )
+    );
+  });
 
   it('knows the five ground styles', () => {
     // Why: the editor offers these and the viewer draws them; a newer

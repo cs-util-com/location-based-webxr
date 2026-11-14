@@ -20,8 +20,9 @@ shelf runner (`asset-shelf.ts`); every word comes from
     right only together (an `active` without its `reveal` would make
     opening a silent no-op): while `dock.active()` the editor's panels
     are docked and the shelf is the Files panel - never a rail, its fold
-    button hidden - and opening it (the toggle, `open`, `reveal`) calls
-    `dock.reveal()`. `dock.shown()` says whether that panel shows: the
+    button hidden - and opening it (the toggle, the pill, `open`,
+    `reveal`) calls `dock.reveal()`. Docked wins over `deps.phone()`: a
+    docked phone has no sheet. `dock.shown()` says whether that panel shows: the
     toggle is `aria-pressed` only then (the page redraws it when it
     changes). `dock.hide()`: the pressed toggle pressed again,
     docked, asks the page to take the Files panel out of sight (Details in

@@ -908,6 +908,45 @@ describe("blockNumberSet", () => {
   });
 });
 
+// Why: a ground arrow's dots write its one scale (`readAtM`) by the same
+// action, within the format's 1 to 40, and nothing else of it.
+describe("blockNumberSet on a ground arrow", () => {
+  it("takes its scale within its row's bounds and no other field", () => {
+    const opened = open();
+    const a = objectOf(opened, "a");
+    const state = reduce(
+      opened,
+      act.edited({
+        object: { ...a, view: "ground" } as unknown as typeof a,
+        what: "to the ground",
+      }),
+    );
+    for (const scale of [1, 40, 7]) {
+      const after = reduce(
+        state,
+        act.blockNumberSet({
+          id: "a",
+          field: "readAtM",
+          value: scale,
+          what: "scale",
+        }),
+      );
+      const arrow = objectOf(after, "a");
+      expect(arrow.kind === "shortText" ? arrow.readAtM : null).toBe(scale);
+      readBack(after);
+    }
+    for (const [field, value] of [
+      ["readAtM", 0.99],
+      ["readAtM", 40.01],
+      ["bendDeg", 10],
+    ] as const) {
+      expect(
+        reduce(state, act.blockNumberSet({ id: "a", field, value, what: "x" })),
+      ).toBe(state);
+    }
+  });
+});
+
 describe("moved, into a station of its own", () => {
   it("starts a station where the item stands even within its station's radius, and the emptied one goes", () => {
     const before = open();

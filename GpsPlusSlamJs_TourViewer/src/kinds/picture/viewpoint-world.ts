@@ -57,7 +57,11 @@ import {
   type PortalLook,
 } from "./viewpoint-looks.js";
 import { buildPictureSheet } from "./picture-sheet.js";
-import { decodePicture, pictureAspect } from "./picture-decode.js";
+import {
+  decodePicture,
+  markDrawnAspect,
+  pictureAspect,
+} from "./picture-decode.js";
 
 /** The views this part stands. */
 const VIEWPOINT_PART_VIEWS = new Set<string>([
@@ -307,7 +311,9 @@ export function viewpointWorld(
         texture.dispose();
         return;
       }
-      look = buildLook(texture, pictureAspect(texture));
+      const aspect = pictureAspect(texture);
+      look = buildLook(texture, aspect);
+      markDrawnAspect(object, aspect);
       anchor.add(look.root);
       // Cast against through the part's target, in the same frame.
       for (const t of look.tappable) tapTarget.add(t);

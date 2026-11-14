@@ -45,6 +45,7 @@ import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { renderTourStation } from "../content-placement.js";
 import { posedBlocks } from "../placement/placeables.js";
+import { viewpointRotation } from "../editor/picture-viewpoint.js";
 import {
   mountedWorldParts,
   worldEnv,
@@ -778,6 +779,101 @@ describe("createStationsLayer", () => {
     expect(c1.y - a.y).toBeCloseTo(2, 3);
     expect(layer.itemPointOf("gone")).toBeNull();
     expect(layer.codePointOf("gone")).toBeNull();
+  });
+
+  // Why: "Look from the viewpoint" stands the camera at a picture's
+  // viewpoint, looking where the picture hangs from it, so the layer must
+  // say both in the world's frame: the viewpoint where its station's
+  // frame has it (never the picture's own pose), and the point its depth
+  // ahead along its facing; nothing for a picture without one or an id
+  // the tour lacks.
+  it("says where a picture's viewpoint stands and where it looks", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const seen = {
+      ...photo("v"),
+      viewpoint: {
+        position: [2, 1.6, 0],
+        rotation: viewpointRotation(90, 0),
+        hfovDeg: 56,
+        distanceM: 6,
+      },
+    } as TourBlock;
+    layer.setTour(
+      manifest([station("a", 0, 0, [seen, photo("p1")])]),
+      new Map(),
+    );
+    const a = layer.pointOf("a")!;
+    const vp = layer.viewpointOf("v")!;
+    // 2 m north is the world's -z; facing east, the world's +x.
+    expect(vp.at.x - a.x).toBeCloseTo(0, 3);
+    expect(vp.at.y - a.y).toBeCloseTo(1.6, 3);
+    expect(vp.at.z - a.z).toBeCloseTo(-2, 3);
+    expect(vp.ahead.x - vp.at.x).toBeCloseTo(6, 3);
+    expect(vp.ahead.y - vp.at.y).toBeCloseTo(0, 3);
+    expect(vp.ahead.z - vp.at.z).toBeCloseTo(0, 3);
+    // The lens the camera borrows while looking from there.
+    expect(vp.hfovDeg).toBe(56);
+    expect(layer.viewpointOf("p1")).toBeNull();
+    expect(layer.viewpointOf("gone")).toBeNull();
+  });
+
+  // Why: while a picture seen from its viewpoint is selected, the editor
+  // draws the field-of-view lines from the viewpoint to the frame the
+  // picture hangs in (as the pictures prototype does): the eye at the
+  // viewpoint, the frame's centre where "Look from the viewpoint" aims,
+  // as wide as the lens at the picture's depth. Another selection, a
+  // picture in a posed view, and a station the globe hides draw none.
+  it("draws a selected viewpoint picture's field-of-view lines", () => {
+    const { d, parent } = deps();
+    const layer = createStationsLayer(d);
+    const seen = {
+      ...photo("v"),
+      view: "thenNow",
+      viewpoint: {
+        position: [2, 1.6, 0],
+        rotation: viewpointRotation(90, 0),
+        hfovDeg: 90,
+        distanceM: 4,
+      },
+    } as TourBlock;
+    const posed = { ...seen, id: "w", view: "plane" } as TourBlock;
+    layer.setTour(manifest([station("a", 0, 0, [seen, posed])]), new Map());
+    const lines = () =>
+      parent.getObjectByName("viewpoint-frustum") as THREE.LineSegments;
+    layer.update({ ...view(0, 0, "a"), selected: null });
+    expect(lines().visible).toBe(false);
+
+    layer.update({ ...view(0, 0, "a"), selected: "v" });
+    expect(lines().visible).toBe(true);
+    const position = lines().geometry.getAttribute("position");
+    const point = (i: number) =>
+      new THREE.Vector3().fromBufferAttribute(position, i);
+    const vp = layer.viewpointOf("v")!;
+    for (const i of [0, 2, 4, 6]) {
+      expect(point(i).distanceTo(vp.at), String(i)).toBeCloseTo(0, 3);
+    }
+    const corners = [1, 3, 5, 7].map(point);
+    const centre = corners
+      .reduce((sum, c) => sum.add(c), new THREE.Vector3())
+      .multiplyScalar(0.25);
+    expect(centre.distanceTo(vp.ahead)).toBeCloseTo(0, 3);
+    // 8 m wide at 4 m through a 90 degree lens; 3:4 high before the
+    // image is read.
+    expect(corners[0]!.distanceTo(corners[1]!)).toBeCloseTo(8, 3);
+    expect(corners[1]!.distanceTo(corners[2]!)).toBeCloseTo(6, 3);
+
+    layer.update({ ...view(0, 0, "a"), selected: "w" });
+    expect(lines().visible).toBe(false);
+    layer.update({ ...view(0, 0, "a"), selected: "a" });
+    expect(lines().visible).toBe(false);
+
+    layer.setHidden(new Set(["a"]), new Set());
+    layer.update({ ...view(0, 0, "a"), selected: "v" });
+    expect(lines().visible).toBe(false);
+
+    layer.dispose();
+    expect(parent.getObjectByName("viewpoint-frustum")).toBeUndefined();
   });
 
   // Why: the layer chips turn the station names (billboards and their
@@ -2043,6 +2139,174 @@ describe("createStationsLayer", () => {
   // station by its billboard, an item by its drawing (a placed model by
   // any of its parts), a code by its square; the ring and the pole are
   // no selection, and a click on nothing is none.
+  // Why: the open story (chosen in the tree, or one of its entries) shows
+  // its scene where it stands, so a creator sees it without playing it;
+  // closed, it is freed. Opening and closing it must not draw the
+  // station's free items anew, and a card shows nowhere in the world.
+  it("draws the open story's posed entries apart, picks them, and frees them when it closes", async () => {
+    const { d, parent, log } = deps();
+    const layer = createStationsLayer(d);
+    // A story entry: the block at its pose, moving on by a tap.
+    const told = (block: TourBlock, east: number): TourBlock =>
+      Object.assign({}, block, {
+        pose: {
+          position: [east, 1.5, 0] as [number, number, number],
+          rotation: [0, 0, 0, 1] as [number, number, number, number],
+        },
+        advance: { mode: "tap" as const },
+      });
+    const a = station("a", 0, 0, [photo("free")]);
+    const withStory = {
+      ...a,
+      children: [
+        ...a.children,
+        {
+          id: "legend",
+          kind: "folder",
+          role: "story",
+          title: "The legend",
+          children: [
+            told(photo("scene"), -3),
+            told({ ...photo("told"), view: "card" }, 0),
+          ],
+        },
+      ],
+    } as TourStation;
+    layer.setTour(
+      manifest(
+        [withStory],
+        [
+          { id: "scene", path: "content/scene.jpg", kind: "image" },
+          { id: "told", path: "content/told.jpg", kind: "image" },
+        ],
+      ),
+      new Map(),
+    );
+    const drawnIds = () => {
+      const ids: string[] = [];
+      parent.traverse((o) => {
+        const id: unknown = o.userData["objectId"];
+        if (typeof id === "string") ids.push(id);
+      });
+      return ids.sort();
+    };
+    layer.update(view(0, 0, "a"));
+    await settle();
+    expect(drawnIds()).toEqual(["free"]);
+    expect(log.photos).toBe(1);
+
+    layer.update({ ...view(0, 0, "a"), openStory: "legend" });
+    await settle();
+    expect(drawnIds()).toEqual(["free", "scene"]);
+    // Only the story's posed entry was loaded; the free photo stayed.
+    expect(log.photos).toBe(2);
+    expect(layer.stats().renders).toBe(1);
+    // Where its pose has it: 3 m south of the station (NUE), 1.5 m up,
+    // and picked there as its id, seen face on.
+    const point = layer.pointOf("a")!;
+    let mesh: THREE.Mesh | null = null;
+    parent.traverse((o) => {
+      if (o.userData["objectId"] === "scene") {
+        o.traverse((m) => {
+          if ((m as THREE.Mesh).isMesh) mesh = m as THREE.Mesh;
+        });
+      }
+    });
+    parent.updateMatrixWorld(true);
+    const at = mesh!.getWorldPosition(new THREE.Vector3());
+    expect(at.x).toBeCloseTo(point.x, 1);
+    expect(at.z - point.z).toBeCloseTo(3, 1);
+    expect(at.y - point.y).toBeCloseTo(1.5, 1);
+    // The view flies to it, and finds it on the screen, as to a free item;
+    // a card stands nowhere.
+    expect(layer.itemPointOf("scene")!.distanceTo(at)).toBeLessThan(0.01);
+    expect(layer.itemPointOf("told")).toBeNull();
+    const face = new THREE.Vector3(0, 0, 1).applyQuaternion(
+      mesh!.getWorldQuaternion(new THREE.Quaternion()),
+    );
+    const eye = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    eye.position.copy(at).addScaledVector(face, 5);
+    eye.lookAt(at);
+    eye.updateMatrixWorld(true);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(0, 0), eye);
+    expect(layer.pick(ray)).toBe("scene");
+    // Looking straight down it lies flat face up, as a free photo does.
+    layer.update({ ...view(0, 0, "a", 0), openStory: "legend" });
+    parent.updateMatrixWorld(true);
+    const up = new THREE.Vector3(0, 0, 1).applyQuaternion(
+      mesh!.getWorldQuaternion(new THREE.Quaternion()),
+    );
+    expect(up.y).toBeCloseTo(1, 3);
+    // The same story again draws nothing more.
+    layer.update({ ...view(0, 0, "a"), openStory: "legend" });
+    await settle();
+    expect(log.photos).toBe(2);
+
+    // A story of no drawn station draws nothing here.
+    layer.update({ ...view(0, 0, "a"), openStory: "elsewhere" });
+    await settle();
+    expect(drawnIds()).toEqual(["free"]);
+    layer.update({ ...view(0, 0, "a"), openStory: "legend" });
+    await settle();
+    expect(drawnIds()).toEqual(["free", "scene"]);
+    layer.update(view(0, 0, "a"));
+    await settle();
+    expect(drawnIds()).toEqual(["free"]);
+    expect(layer.pick(ray)).toBeNull();
+    expect(layer.stats().renders).toBe(1);
+  });
+
+  // Why: a story closed while its photos still load must never appear
+  // late, nor stay drawn after its station leaves the near set.
+  it("draws no story that closed while it loaded, and frees one with its station", async () => {
+    const { d, parent } = deps();
+    const layer = createStationsLayer(d);
+    const a = station("a", 0, 0);
+    const others = Array.from({ length: 6 }, (_, i) =>
+      station(`s${i}`, 100 + i * 40, 0),
+    );
+    const withStory = {
+      ...a,
+      children: [
+        {
+          id: "legend",
+          kind: "folder",
+          role: "story",
+          title: "The legend",
+          children: [{ ...photo("scene"), advance: { mode: "tap" } }],
+        },
+      ],
+    } as TourStation;
+    layer.setTour(
+      manifest(
+        [withStory, ...others],
+        [{ id: "scene", path: "content/scene.jpg", kind: "image" }],
+      ),
+      new Map(),
+    );
+    const scenes = () => {
+      let n = 0;
+      parent.traverse((o) => {
+        if (o.userData["objectId"] === "scene") n++;
+      });
+      return n;
+    };
+    layer.update({ ...view(0, 0, "a"), openStory: "legend" });
+    layer.update(view(0, 0, "a"));
+    await settle();
+    expect(scenes()).toBe(0);
+    layer.update({ ...view(0, 0, "a"), openStory: "legend" });
+    await settle();
+    expect(scenes()).toBe(1);
+    // The camera leaves for the far stations, the story still open: it
+    // goes with its station.
+    layer.update({ ...view(300, 0, null), openStory: "legend" });
+    await settle();
+    expect(layer.stats().shown).not.toContain("a");
+    expect(scenes()).toBe(0);
+  });
+
   it("says what is under a ray", async () => {
     const { d } = deps({
       makeBillboard: () => {

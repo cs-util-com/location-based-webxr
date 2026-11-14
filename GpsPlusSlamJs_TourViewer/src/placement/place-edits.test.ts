@@ -16,6 +16,7 @@ const BLOCK = { kind: "block", id: "p" } as const;
 const MODEL = { kind: "block", id: "m" } as const;
 const STATION = { kind: "station", id: "st" } as const;
 const FOLDER = { kind: "folder", id: "f" } as const;
+const VIEWPOINT = { kind: "viewpoint", id: "p" } as const;
 
 function fakeSession(refuse = false) {
   const outcome = refuse
@@ -35,10 +36,20 @@ function fakeSession(refuse = false) {
         : { kind: "resized" as const },
     ),
     moveFolder: vi.fn(() => outcome),
+    editBlockField: vi.fn(() =>
+      refuse
+        ? { kind: "refused" as const, reason: "No." }
+        : { kind: "edited" as const },
+    ),
     scaleFolder: vi.fn(() =>
       refuse
         ? { kind: "refused" as const, reason: "No." }
         : { kind: "resized" as const },
+    ),
+    moveViewpoint: vi.fn(() =>
+      refuse
+        ? { kind: "refused" as const, reason: "No." }
+        : { kind: "edited" as const },
     ),
   };
 }
@@ -52,6 +63,8 @@ const asSession = (s: ReturnType<typeof fakeSession>) =>
     | "setExtent"
     | "moveFolder"
     | "scaleFolder"
+    | "editBlockField"
+    | "moveViewpoint"
   >;
 
 describe("a placement edit", () => {
@@ -71,6 +84,8 @@ describe("a placement edit", () => {
     expect(s.moveFolder).toHaveBeenCalledWith("f", GEO);
     applyPlaceEdit(asSession(s), { kind: "extent", ref: FOLDER, value: 3 });
     expect(s.scaleFolder).toHaveBeenCalledWith("f", 3);
+    applyPlaceEdit(asSession(s), { kind: "bend", ref: BLOCK, deg: -25 });
+    expect(s.editBlockField).toHaveBeenCalledWith("p", "bendDeg", "-25");
     for (const call of [
       s.pose,
       s.moveStation,
@@ -78,9 +93,38 @@ describe("a placement edit", () => {
       s.setExtent,
       s.moveFolder,
       s.scaleFolder,
+      s.editBlockField,
     ]) {
       expect(call).toHaveBeenCalledTimes(1);
     }
+  });
+
+  // Why: a picture's viewpoint is dragged with the picture's handle, but
+  // it is the viewpoint that moves (one session call, one undo step),
+  // never the picture's own pose, and never with a station to join: the
+  // viewpoint stands in its station's frame wherever it goes. It has no
+  // dots, so a size edit for it is refused rather than resizing the
+  // picture.
+  it("moves a picture's viewpoint through its own call, and sizes none", () => {
+    const s = fakeSession();
+    expect(
+      applyPlaceEdit(
+        asSession(s),
+        { kind: "pose", ref: VIEWPOINT, geo: GEO },
+        "b",
+      ),
+    ).toEqual({ kind: "applied" });
+    expect(s.moveViewpoint).toHaveBeenCalledTimes(1);
+    expect(s.moveViewpoint).toHaveBeenCalledWith("p", GEO);
+    expect(s.pose).not.toHaveBeenCalled();
+    expect(
+      applyPlaceEdit(asSession(s), {
+        kind: "extent",
+        ref: VIEWPOINT,
+        value: 2,
+      }),
+    ).toMatchObject({ kind: "refused" });
+    expect(s.setExtent).not.toHaveBeenCalled();
   });
 
   // Why: the creator's answer to "join the station it now stands in?"
@@ -93,6 +137,26 @@ describe("a placement edit", () => {
     expect(s.moveStation).toHaveBeenCalledWith("st", GEO);
   });
 
+  // Why: a short text's point set in the 3D view (a pick or its handle)
+  // must be judged by the same strict reader as the typed boxes, so it
+  // travels as the field's text through the block's field edit; a
+  // value the view rounded to the centimetre must reach it unchanged.
+  it("writes a point through the block's field edit as three numbers", () => {
+    const s = fakeSession();
+    applyPlaceEdit(asSession(s), {
+      kind: "point",
+      ref: BLOCK,
+      at: [2, 1.25, -19.6],
+    });
+    expect(s.editBlockField).toHaveBeenCalledWith(
+      "p",
+      "pointsTo",
+      "2 1.25 -19.6",
+    );
+    expect(s.editBlockField).toHaveBeenCalledTimes(1);
+    expect(s.pose).not.toHaveBeenCalled();
+  });
+
   it("passes a refusal on with its words", () => {
     const s = fakeSession(true);
     const edits: readonly PlaceEdit[] = [
@@ -102,6 +166,9 @@ describe("a placement edit", () => {
       { kind: "extent", ref: MODEL, value: 2 },
       { kind: "pose", ref: FOLDER, geo: GEO },
       { kind: "extent", ref: FOLDER, value: 3 },
+      { kind: "bend", ref: BLOCK, deg: 10 },
+      { kind: "point", ref: BLOCK, at: [1, 0, 1] },
+      { kind: "pose", ref: VIEWPOINT, geo: GEO },
     ];
     for (const edit of edits) {
       expect(applyPlaceEdit(asSession(s), edit)).toEqual({
