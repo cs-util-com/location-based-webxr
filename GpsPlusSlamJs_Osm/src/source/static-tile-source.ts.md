@@ -17,7 +17,10 @@ the library default is off.
   - `fetchImpl?`, `now?`, `sleepImpl?` - seams for tests.
   - `pollIntervalMs?` (4 s), `maxWaitMs?` (60 s), `refusalMemoryMs?`
     (10 min), `refreshAfterMs?` (30 days) - RangeError when negative or not
-    finite.
+    finite. `maxWaitMs` bounds the wait for each answer's headers, not its
+    body, so a tile is handed over (served or raced) at most
+    `maxWaitMs + requestTimeoutMs` after it was asked for: 105 s on the
+    defaults, for a body that began just before the wait's end.
   - `requestTimeoutMs?` - the limit on each request to the host, body
     included; default the race's `DEFAULT_REQUEST_TIMEOUT_MS` (45 s).
     RangeError unless positive and finite. Requests of the fill wait (the
@@ -51,7 +54,8 @@ the library default is off.
      `console.warn` line names why (a remark bounded to one line of 200
      characters), the tile goes to `fallback` with no refusal remembered,
      and the host is sent one fire-and-forget
-     `POST /report/v{schema}/{tile}?etag=<the re-read's ETag>` per tile per
+     `POST /report/v{schema}/{tile}?etag=<the ETag of the copy judged>` (the
+     re-read's, or the first read's when the re-read failed) per tile per
      session (none without an ETag, none for a speculative read; a failed
      report is ignored). The tile is marked reported before the report is
      sent, so a report the host answers with 429 (its per-IP or global
@@ -124,6 +128,11 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
   the wait's end, an absolute deadline (`started + maxWaitMs`), so the
   re-read past the browser cache inside a poll cannot overrun it; a timer
   aborts a per-request controller and is cleared once the headers arrive.
+  With at least `requestTimeoutMs` left no timer is set, as that limit
+  already bounds the headers. A re-read that fails for any reason but an
+  abort (no time left, no headers in time, a host error) leaves the first,
+  bad copy to decide: the tile is raced and reported with that copy's
+  ETag, and no refusal is remembered.
   The body is not cut at the wait's end: fills take 30-75 s against the
   60 s wait, so a tile often appears near its end, and a dense tile's body
   takes seconds at low bandwidth (3.1 MB at 2 Mbps is about 12 s); cutting
@@ -176,7 +185,9 @@ const source = new CachingSource(
   default is the race's deadline; each answer of the fill wait beginning
   within what is left of it, at several splits of headers, body and wait
   left; a late tile's body read whole past the wait's end but within the
-  per-request limit; a poll's re-read bounded by the same deadline; no
+  per-request limit; a poll's re-read bounded by the same deadline, and a
+  re-read cut by it still reporting the first copy with no refusal; header
+  timers only below the request limit; no
   request after an overshooting sleep; no fill asked with no wait left), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.

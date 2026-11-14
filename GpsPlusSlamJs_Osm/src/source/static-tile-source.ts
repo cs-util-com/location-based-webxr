@@ -49,7 +49,11 @@ export interface StaticTileSourceOptions {
   readonly pollIntervalMs?: number;
   /**
    * The longest a queued tile is waited for before the race. Default 60 s
-   * (a cold tile took 36-56 s to fill when measured).
+   * (a cold tile took 36-56 s to fill when measured). It bounds the wait
+   * for each answer's headers; a body that began just before its end keeps
+   * `requestTimeoutMs`, so a tile is handed over at most
+   * `maxWaitMs + requestTimeoutMs` after it was asked for (105 s on the
+   * defaults).
    */
   readonly maxWaitMs?: number;
   /** How long no fill is asked for after the host said no. Default 10 min. */
@@ -275,7 +279,9 @@ export class StaticTileSource implements OsmDataSource {
    * `deadline` (epoch ms, the end of the fill wait) bounds only the wait
    * for the response's headers: a tile the host stored late in the wait is
    * still read whole, at whatever bandwidth the per-request limit allows.
-   * Nothing is sent once the deadline has passed (`HostDeclined`).
+   * Nothing is sent once the deadline has passed (`HostDeclined`). A body
+   * that starts just before the deadline can therefore take up to
+   * `requestTimeoutMs` past it.
    */
   private async request(
     url: string,
@@ -288,9 +294,13 @@ export class StaticTileSource implements OsmDataSource {
   ): Promise<Response> {
     let headersBy: AbortController | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    if (init.deadline !== undefined) {
-      const left = init.deadline - this.now();
-      if (left <= 0) throw new HostDeclined(`no wait left for ${url}`);
+    const left =
+      init.deadline === undefined ? Infinity : init.deadline - this.now();
+    if (left <= 0) throw new HostDeclined(`no wait left for ${url}`);
+    // With at least the per-request limit left, that limit already bounds
+    // the headers: no timer (one fewer to clear, and none past setTimeout's
+    // range for a very long wait).
+    if (left < this.requestTimeoutMs) {
       const controller = new AbortController();
       headersBy = controller;
       timer = setTimeout(() => {
@@ -419,16 +429,28 @@ export class StaticTileSource implements OsmDataSource {
     // now stores (the host replaces bad tiles): read once more past that
     // cache before calling the tile bad, once per tile per session, as a
     // tile that stays bad would cost two downloads on every read.
+    // A re-read that fails (no time left in the fill wait, no headers in
+    // time, a host error) leaves the first copy to decide: the tile is bad
+    // and reported, not a host refusal. An abort stays an abort.
     if (checked instanceof BadStoredTile && !this.rereadPastCache.has(tile)) {
       this.rereadPastCache.add(tile);
-      stored = await this.readStored(tile, signal, {
-        cache: "no-cache",
-        deadline,
-      });
-      if (stored === undefined) return undefined;
-      transportMs = elapsedMs(readStart, this.now());
-      decodeStart = this.now();
-      checked = checkStored(stored.text, tile);
+      let fresh: typeof stored | undefined | "failed";
+      try {
+        fresh = await this.readStored(tile, signal, {
+          cache: "no-cache",
+          deadline,
+        });
+      } catch (error) {
+        if (isAbort(error) || signal?.aborted === true) throw error;
+        fresh = "failed";
+      }
+      if (fresh === undefined) return undefined;
+      if (fresh !== "failed") {
+        stored = fresh;
+        transportMs = elapsedMs(readStart, this.now());
+        decodeStart = this.now();
+        checked = checkStored(stored.text, tile);
+      }
     }
     if (checked instanceof BadStoredTile) {
       // The one diagnostic of a refused stored file; the race hides it.

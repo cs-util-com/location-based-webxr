@@ -733,6 +733,36 @@ describe("StaticTileSource", () => {
     }
   });
 
+  for (const [requestTimeoutMs, delays] of [
+    [4_999, []],
+    [5_000, []],
+    [5_001, [5_000]],
+    [9_999, [5_000]],
+    [10_000, [5_000]],
+    [10_001, [10_000, 5_000]],
+  ] as const) {
+    it(`sets a header timer only where the wait left is under the ${requestTimeoutMs} ms request limit`, async () => {
+      // Why this test matters: with at least the request limit left, that
+      // limit already bounds the headers; a timer there is one more to
+      // clear, and a wait above about 24.8 days would overflow setTimeout.
+      const notFound = (): Response => new Response("nf", { status: 404 });
+      const timer = vi.spyOn(globalThis, "setTimeout");
+      try {
+        const { source } = setup(
+          {
+            [`GET ${TILE_URL}`]: Array.from({ length: 5 }, notFound),
+            [`POST ${FILL_URL}`]: [json(202, { status: "queued" })],
+          },
+          { maxWaitMs: 20_000, requestTimeoutMs },
+        );
+        await source.fetchTile(TILE);
+        expect(timer.mock.calls.map((call) => call[1])).toEqual(delays);
+      } finally {
+        timer.mockRestore();
+      }
+    });
+  }
+
   /** Headers after `headersMs`, then the body after `bodyMs` more (real ms). */
   function slowStored(
     body: string,
@@ -772,9 +802,11 @@ describe("StaticTileSource", () => {
     leftMs: number,
     late: readonly Reply[],
     requestTimeoutMs?: number,
+    more: Record<string, Reply[]> = {},
   ) {
     return setup(
       {
+        ...more,
         [`GET ${TILE_URL}`]: [
           new Response("nf", { status: 404 }),
           new Response("nf", { status: 404 }),
@@ -871,7 +903,7 @@ describe("StaticTileSource", () => {
       // Why this test matters: a sleep can overshoot (a throttled tab). A
       // poll with no wait left is pointless, and a negative remainder must
       // never reach a timer API: AbortSignal.timeout throws on one.
-      const timeout = vi.spyOn(AbortSignal, "timeout");
+      const timer = vi.spyOn(globalThis, "setTimeout");
       try {
         const { source, fallback, calls } = setup(
           {
@@ -892,9 +924,14 @@ describe("StaticTileSource", () => {
         expect(calls.map((c) => c.method)).toEqual(
           polled ? ["GET", "POST", "GET", "GET"] : ["GET", "POST", "GET"],
         );
-        for (const [ms] of timeout.mock.calls) expect(ms).toBeGreaterThan(0);
+        // The header timers of the fill ask and the first poll, and of the
+        // second poll only when it was made: none ever gets 0 or less.
+        const delays = timer.mock.calls.map((call) => call[1]);
+        expect(delays).toEqual(
+          polled ? [11_000, 6_000, 1_000 - overshootMs] : [11_000, 6_000],
+        );
       } finally {
-        timeout.mockRestore();
+        timer.mockRestore();
       }
     });
   }
@@ -902,6 +939,9 @@ describe("StaticTileSource", () => {
   // The first, bad read of a poll with 1 000 ms left uses `readMs` of it on
   // the clock; the re-read past the browser cache answers after `headersMs`
   // real ms. Served only when the re-read fits in what is left.
+  // When the re-read cannot finish its headers in time (or no time is
+  // left for it), the first read's bad copy decides: the tile is raced and
+  // reported with its ETag, and the host is not counted as refusing.
   for (const [readMs, headersMs, reread, served] of [
     [500, 20, true, true],
     [800, 20, true, true],
@@ -923,13 +963,34 @@ describe("StaticTileSource", () => {
         .spyOn(console, "warn")
         .mockImplementation(() => undefined);
       try {
-        const ctx = lateFill(1_000, [
-          () => {
-            clock.advance(readMs);
-            return Promise.resolve(new Response(partial, { status: 200 }));
+        const other = latLngToCell(47.0468, 8.3745, 7);
+        const otherUrl = `${BASE}/osm/v${OVERPASS_SCHEMA_VERSION}/${other}.json.gz`;
+        const otherFill = `${BASE}/fill/v${OVERPASS_SCHEMA_VERSION}/${other}`;
+        const reportUrl = `${REPORT_URL}?etag=${encodeURIComponent('"first"')}`;
+        const ctx = lateFill(
+          1_000,
+          [
+            () => {
+              clock.advance(readMs);
+              return Promise.resolve(
+                new Response(partial, {
+                  status: 200,
+                  headers: { etag: '"first"' },
+                }),
+              );
+            },
+            slowStored(PAYLOAD, { headersMs }),
+          ],
+          undefined,
+          {
+            [`POST ${reportUrl}`]: [json(202, { status: "checking" })],
+            [`GET ${otherUrl}`]: [
+              new Response("nf", { status: 404 }),
+              new Response(PAYLOAD, { status: 200 }),
+            ],
+            [`POST ${otherFill}`]: [json(200, { status: "present" })],
           },
-          slowStored(PAYLOAD, { headersMs }),
-        ]);
+        );
         clock.advance = ctx.advance;
         const result = await ctx.source.fetchTile(TILE);
         expect(result.sourceId).toBe(
@@ -938,6 +999,13 @@ describe("StaticTileSource", () => {
         expect(ctx.calls.filter((c) => c.cache === "no-cache")).toHaveLength(
           reread ? 1 : 0,
         );
+        expect(
+          ctx.calls.filter((c) => c.url === reportUrl).map((c) => c.method),
+        ).toEqual(served ? [] : ["POST"]);
+        // No refusal remembered: the next missing tile is still filled.
+        const next = await ctx.source.fetchTile(other);
+        expect(next.sourceId).toBe("static:tiles.example.dev");
+        expect(ctx.calls.some((c) => c.url === otherFill)).toBe(true);
       } finally {
         warn.mockRestore();
       }
