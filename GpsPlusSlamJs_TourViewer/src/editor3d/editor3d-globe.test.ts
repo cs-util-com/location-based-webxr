@@ -1196,13 +1196,18 @@ describe("openGlobeEditor's wiring", () => {
   // Why: the editor draws the lab's heavy 3D clouds, on by default with
   // a switch; the air carries them, and the View menu's
   // switch reaches them through the view.
-  // Why this test matters: the new clouds are the default and `clouds=old`
-  // the one way back; without a worker factory they would never start.
-  it("opens with the near clouds, or the old ones on the link", async () => {
+  // Why this test matters: the old clouds are the default and the near
+  // (new) clouds an experiment behind `clouds=new`; without a worker
+  // factory the experiment would never start, and an old `clouds=old`
+  // link must still open the default.
+  it("opens with the old clouds, or the near ones on clouds=new", async () => {
     const opened = await openGlobeEditor(deps(), readGlobeSwitch(""));
+    expect(fakes.cloudsOptions?.near).toBeUndefined();
+    opened.dispose();
+    const near = await openGlobeEditor(deps(), readGlobeSwitch("?clouds=new"));
     expect(typeof fakes.cloudsOptions?.near?.createWorker).toBe("function");
     expect(fakes.cloudsOptions?.near?.autoQuality).toBe(true);
-    opened.dispose();
+    near.dispose();
     const old = await openGlobeEditor(deps(), readGlobeSwitch("?clouds=old"));
     expect(fakes.cloudsOptions?.near).toBeUndefined();
     old.dispose();
@@ -1213,7 +1218,7 @@ describe("openGlobeEditor's wiring", () => {
   it("takes the named quality and leaves it alone", async () => {
     const opened = await openGlobeEditor(
       deps(),
-      readGlobeSwitch("?quality=low"),
+      readGlobeSwitch("?quality=low&clouds=new"),
     );
     expect(fakes.viewOptions?.quality).toBe("low");
     expect(fakes.cloudsOptions?.near?.autoQuality).toBe(false);

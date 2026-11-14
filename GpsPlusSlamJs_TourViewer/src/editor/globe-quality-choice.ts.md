@@ -10,7 +10,7 @@ Purpose: the View menu's quality entry: which tier the 3D view on the globe open
 - `nextGlobeQualityChoice(choice)`: the entry's cycle.
 - `globeQualityChoiceLabel(choice)`: the entry's words.
 - `globeQualityChoiceToast(label, kept, link)`: the toast's words: when the next open applies the choice, or that a link naming a tier overrides it.
-- `qualityToOpenWith(link, choice)`: the tier's name for the view: the link's, else the choice's, else null. Null is automatic: the Globe package's `resolveGlobeQuality` takes the device's default and the step-down may act.
+- `qualityToOpenWith(link, choice)`: the tier's name for the view: the link's, else the choice's, else null. Null is automatic: the Globe package's `resolveGlobeQuality` takes the device's default, and the step-down may act on the experimental near clouds (`clouds=new`); the default clouds have none.
 
 ## Invariants
 

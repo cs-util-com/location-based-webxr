@@ -16,7 +16,7 @@ it. An old `globe=1` link keeps opening the globe.
 
 - `GLOBE_SWITCH` - `param` `"globe"`; the knobs (`GlobeSwitchKnob`:
   `param`, `fallback`, `min`, `max`):
-  - `clouds` - `clouds`: `old` exactly is the way back to the old clouds near the ground; anything else, the new ones.
+  - `clouds` - `clouds`: the old clouds near the ground are the default. `new` exactly draws the new (near) clouds, which are **experimental**: kept, tested and reachable for later work, not the look the page ships. `old` is accepted and is the default (links written while the new clouds were the default keep working); any other value is the default too.
   - `quality` - `quality`, no default here: the quality tier's name as the link wrote it, judged by `resolveGlobeQuality`. Null falls to the View menu's choice (`globe-quality-choice.ts`).
   - `grade` - `grade`, no default here: the colour grade's name, handed on
     as the link wrote it (`grade: string | null` in `GlobeSwitch`). This

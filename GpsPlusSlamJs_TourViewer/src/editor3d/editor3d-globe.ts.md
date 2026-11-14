@@ -33,10 +33,12 @@ true ECEF place, so one placed anywhere shows where it is.
 - `openGlobeEditor(deps, knobs): Promise<Editor3dView>`
   - `deps`: the same `Editor3dDeps` the OrbitControls view takes.
   - `knobs`: `hidePx` and `crowdPx` from the link switch (the visibility
-    rule's thresholds), `clouds` (the near clouds by default, `old` the way
-    back; their tiles bake in `globe-cloud-bake-worker.ts`), `quality` (the
+    rule's thresholds), `clouds` (the old clouds by default; `new` draws the
+    experimental near clouds, whose tiles bake in
+    `globe-cloud-bake-worker.ts`), `quality` (the
     tier's name, which sets the canvas's pixel ratio and the clouds' start;
-    a named tier holds it, with none the device's default may step down),
+    a named tier holds it; with none the device's default holds too, and
+    only the experimental near clouds may step down),
     and `grade`, the raw `?grade=` name judged here by
     `resolveGlobeGrade` (the globe's `globe-grade.ts`; an unknown name warns
     and keeps the default). `quality`, the raw `?quality=`, goes through `resolveGlobeQuality` with
