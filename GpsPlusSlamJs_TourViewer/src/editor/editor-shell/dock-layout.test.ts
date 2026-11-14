@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { PANEL_TABS } from "./bottom-panel-model.js";
-import { PHONE_SHEET_PX } from "./phone-sheet.js";
 import {
   KEYBOARD_ROOM_PX,
   keyboardMaximizes,
@@ -12,6 +11,8 @@ import {
   dockPanel,
   docksAt,
   dockWidths,
+  phoneDockLayout,
+  phoneGroupPx,
   isBottomPanelId,
   isDockPanelId,
   stripHidden,
@@ -19,17 +20,19 @@ import {
 } from "./dock-layout.js";
 
 describe("where the panels dock", () => {
-  // Why: a phone held sideways (844 px) docks, an upright one (390 px)
-  // keeps its sheets, and no width is both or neither: the docking starts
-  // exactly one pixel above the sheets' last width.
-  it("docks from 701 px, right above the phone's sheets", () => {
-    expect(docksAt(PHONE_SHEET_PX)).toBe(false);
-    expect(docksAt(PHONE_SHEET_PX + 1)).toBe(true);
-    expect(docksAt(700)).toBe(false);
+  // Why: the panels dock at every width, a phone held upright (390 px)
+  // included: its sheets are only the fallback while the docking loads
+  // or when it failed to. A window without a width yet docks nothing.
+  it("docks at every window width, a phone's included", () => {
+    expect(docksAt(390)).toBe(true);
+    expect(docksAt(700)).toBe(true);
     expect(docksAt(701)).toBe(true);
     expect(docksAt(844)).toBe(true);
-    expect(docksAt(390)).toBe(false);
+    expect(docksAt(1)).toBe(true);
+    expect(docksAt(0)).toBe(false);
+    expect(docksAt(-5)).toBe(false);
     expect(docksAt(Number.NaN)).toBe(false);
+    expect(docksAt(Number.POSITIVE_INFINITY)).toBe(false);
   });
 });
 
@@ -129,6 +132,76 @@ describe("the default layout", () => {
   });
 });
 
+describe("the phone's default layout", () => {
+  const PANELS = [
+    "list",
+    "details",
+    "files",
+    "problems",
+    "history",
+    "tiles",
+    "perf",
+  ];
+
+  // Why: on a phone the 3D view keeps the screen's width or height and
+  // every other panel is a tab of ONE group (the prototype's phone
+  // preset, with all seven panels): below the view held upright, beside
+  // it held sideways. The list is the shown tab, as the phone's sheets
+  // opened the list first; a selection shows its details.
+  it("puts every panel in one group below the view, held upright", () => {
+    const steps = phoneDockLayout("upright", 390, 800);
+    expect(steps[0]).toEqual({ id: "view" });
+    expect(steps[1]).toEqual({
+      id: "list",
+      against: { id: "view", direction: "below" },
+      heightPx: 368,
+    });
+    expect(steps.slice(2)).toEqual(
+      PANELS.slice(1).map((id) => ({
+        id,
+        against: { id: "list", direction: "within" },
+        inactive: true,
+      })),
+    );
+  });
+
+  // Why: a phone turned while something is selected lays its layout out
+  // anew; with the list shown the details (and a field being typed in)
+  // would leave the page, the focus and the keyboard with them.
+  it("shows the details instead of the list when asked to", () => {
+    const steps = phoneDockLayout("upright", 390, 800, "details");
+    expect(steps.find((s) => s.id === "details")).toEqual({
+      id: "details",
+      against: { id: "list", direction: "within" },
+    });
+    expect(steps.filter((s) => s.inactive === true).map((s) => s.id)).toEqual(
+      PANELS.slice(2),
+    );
+  });
+
+  it("puts every panel in one group right of the view, held sideways", () => {
+    const steps = phoneDockLayout("sideways", 844, 346);
+    expect(steps[1]).toEqual({
+      id: "list",
+      against: { id: "view", direction: "right" },
+      widthPx: 320,
+    });
+    expect(steps.map((s) => s.id)).toEqual(["view", ...PANELS]);
+    expect(steps.slice(2).every((s) => s.inactive === true)).toBe(true);
+  });
+
+  // Why: the prototype's measures - upright the group takes 46 % of the
+  // layout's height (the view 390 x 432 on a 390 x 844 phone), sideways
+  // 38 % of its width and at most 320 px (the view 524 px wide at 844).
+  it("sizes the group as the prototype did", () => {
+    expect(phoneGroupPx("upright", 390, 800)).toBe(368);
+    expect(phoneGroupPx("sideways", 844, 346)).toBe(320);
+    expect(phoneGroupPx("sideways", 700, 346)).toBe(266);
+    expect(phoneGroupPx("upright", 390, Number.NaN)).toBe(0);
+    expect(phoneGroupPx("sideways", -1, 346)).toBe(0);
+  });
+});
+
 // Why: the list brings its own head (title, search, fold), so a tab strip
 // over it alone says "List" twice; a strip still shows wherever a tab can
 // be chosen, or a panel could not be found again once something joins it.
@@ -180,6 +253,24 @@ describe("a keyboard over the docked layout", () => {
     expect(keyboardMaximizes(600, 600 - KEYBOARD_ROOM_PX + 1)).toBe(true);
     expect(keyboardMaximizes(600, 600 - KEYBOARD_ROOM_PX)).toBe(false);
     expect(keyboardMaximizes(900, 300)).toBe(false);
+  });
+
+  // Why: a phone held upright has room over any keyboard, but its group
+  // stands under the 3D view, about 420 px below the layout's top: a
+  // keyboard covers it from the foot, the list's search and the details'
+  // fields with it, while the window still counts as tall. The room that
+  // counts is the one the group in use keeps over the keyboard.
+  it("counts the room from the top of the group in use", () => {
+    expect(keyboardMaximizes(777, 150)).toBe(false);
+    expect(keyboardMaximizes(777, 150, 420)).toBe(true);
+    expect(keyboardMaximizes(777, 80, 420)).toBe(true);
+    expect(keyboardMaximizes(900, 100, 400)).toBe(false);
+    expect(keyboardMaximizes(900, 100, 411)).toBe(true);
+    expect(keyboardMaximizes(777, 0, 420)).toBe(false);
+    // A group at the layout's top, or a nonsense top, counts the window.
+    expect(keyboardMaximizes(600, 150, 0)).toBe(false);
+    expect(keyboardMaximizes(600, 150, -40)).toBe(false);
+    expect(keyboardMaximizes(600, 150, Number.NaN)).toBe(false);
   });
 
   it("never maximizes without a keyboard, or for nonsense", () => {

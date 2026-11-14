@@ -205,10 +205,14 @@ async function openFolders(page, zip) {
  */
 async function unfold(page) {
   // Docked, the tree is moved into the layout a moment after the 3D view
-  // opens; a phone shows it on its List button's press.
+  // opens; a phone shows it on its List button's press, and wider than
+  // 700 px (a phone on its side), where the top bar is the desk's, on its
+  // List tab.
   await dockSettled(page, page.viewportSize()?.width ?? 0);
   if (!(await page.locator("#tree-body").isVisible())) {
-    await page.locator("#studio-list").click();
+    const button = page.locator("#studio-list");
+    if (await button.isVisible()) await button.click();
+    else await page.locator('.dock-host .dock-tab[data-panel="list"]').click();
   }
   const card = page.locator('#tree-body .card[data-station="a"]');
   const p = card.locator('.kid[data-select="p"]');
@@ -520,11 +524,12 @@ for (const view of VIEWS) {
     await card
       .locator(`.gfolder[data-plainfolder="yard"] button.fname`)
       .click();
+    // A phone (upright or on its side) shows the folder's details in the
+    // list's place on a row's tap: the tree again first.
+    await unfold(page);
     await expect(
       card.locator('.kid.infolder.ctx[data-select="y"]'),
     ).toHaveCount(1);
-    // A phone shows the scene on a row's tap: the tree again.
-    await unfold(page);
     const at = await layoutOf(page, [...rows, ...icons], band);
     const [folderRow, kidRow, freeRow] = rows.map((s) => boxIn(at, s));
     const [folderIcon, kidIcon, freeIcon] = icons.map((s) => boxIn(at, s));

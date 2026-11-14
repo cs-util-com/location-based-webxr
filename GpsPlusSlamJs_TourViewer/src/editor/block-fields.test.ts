@@ -735,7 +735,7 @@ describe("a short text's point and language", () => {
 // reaches the file, and the chip already in use (an absent field's
 // fallback among them) must write nothing, or it would be an empty undo
 // step.
-describe("choice fields", () => {
+describe("choice fields with a fallback (ChoiceSpec)", () => {
   const SCREEN = {
     ...VIDEO,
     view: "screen",

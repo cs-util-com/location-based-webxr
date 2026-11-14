@@ -4994,9 +4994,10 @@ body[data-view="3d"] #toasts {
 }
 
 /* --- the docked layout (`dock-host.ts`) ----------------------------------
- * From 701 px wide the panels dock around the 3D view: the list, the
- * details with the asset shelf as a second tab, and the bottom panel's
- * four tabs below the view. The layout fills the view below its accent
+ * At every width the panels dock around the 3D view: at a desk the list,
+ * the details with the asset shelf as a second tab, and the bottom
+ * panel's four tabs below the view; on a phone all of them in one group
+ * below the view (upright) or beside it (sideways). The layout fills the view below its accent
  * line; each adopted dock fills its panel, and the canvas fills the 3D
  * view's (the inset framing above is for the undocked docks). The docking
  * library's look comes from its own variables, set to the shell's tokens
@@ -5076,9 +5077,28 @@ body[data-view="3d"] #toasts {
 }
 
 .dockview-theme-tour .dock-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+/* A narrow strip (a group under the view between two columns): its tabs
+ * give up their titles first, down to the icon, before any tab is pushed
+ * into the docking's overflow menu, where a creator would not look for
+ * it. A tab's title stays its tooltip and its accessible name. */
+.dockview-theme-tour
+  .dv-tabs-container:not(.dv-tabs-container-vertical)
+  > .dv-tab {
+  flex-shrink: 1;
+  min-width: 34px;
+  overflow: hidden;
+}
+
+.dockview-theme-tour .dock-tab .dock-badge {
+  flex: none;
 }
 
 .dockview-theme-tour .dock-badge {
@@ -5134,7 +5154,7 @@ body[data-view="3d"] #toasts {
   padding: 2px 0;
 }
 
-.dockview-theme-tour .dock-fold {
+.dockview-theme-tour :is(.dock-fold, .dock-float) {
   display: grid;
   place-items: center;
   width: 26px;
@@ -5146,12 +5166,12 @@ body[data-view="3d"] #toasts {
   color: var(--s-muted);
 }
 
-.dockview-theme-tour .dock-fold:hover {
+.dockview-theme-tour :is(.dock-fold, .dock-float):hover {
   background: var(--s-bg3);
   color: var(--s-text);
 }
 
-.dockview-theme-tour .dock-fold:focus-visible {
+.dockview-theme-tour :is(.dock-fold, .dock-float):focus-visible {
   outline: 2px solid var(--s-focus);
   outline-offset: -2px;
 }
@@ -5159,7 +5179,7 @@ body[data-view="3d"] #toasts {
 /* For a finger: a button the rail's width, and splitters easy to find
  * and to take - a strip 40 px wide centred on the line, a grip on it. */
 @media (pointer: coarse) {
-  .dockview-theme-tour .dock-fold {
+  .dockview-theme-tour :is(.dock-fold, .dock-float) {
     width: 40px;
     height: 40px;
   }
@@ -5206,6 +5226,54 @@ body[data-view="3d"] #toasts {
     height: 4px;
     margin: -2px 0 0 -14px;
   }
+}
+
+/* A phone (`dock-host.ts` marks its host `dock-phone`, around the
+ * docking's themed shell, which sets its own measures): what a finger
+ * touches is bigger - a 44 px strip, a floating group's 26 px title bar,
+ * the tab menu's 44 px rows. A tab not showing keeps its icon and count
+ * (its title stays its tooltip and its accessible name), and no tab
+ * shrinks: a strip that holds more than it shows scrolls sideways
+ * (`dock-strip.ts`). The splitters' grips and the 40 px buttons come
+ * with a coarse pointer, as at a desk. */
+.dock-host.dock-phone .dockview-theme-tour {
+  --dv-tabs-and-actions-container-height: 44px;
+  --dv-tabs-and-actions-container-font-size: 12.5px;
+  --dv-floating-titlebar-height: 26px;
+}
+
+/* A tab 16 px each side of its icon: one not showing is 46 px wide, the
+ * prototype's (the library's own 8 px each side given up for it). */
+.dock-host.dock-phone .dockview-theme-tour .dock-tab {
+  padding: 0 16px;
+}
+
+.dock-host.dock-phone
+  .dockview-theme-tour
+  .dv-tabs-container:not(.dv-tabs-container-vertical)
+  > .dv-tab {
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.dock-host.dock-phone
+  .dockview-theme-tour
+  .dv-tabs-container:not(.dv-tabs-container-vertical)
+  > .dv-tab:not(.dv-active-tab)
+  .dock-tab-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+body:has(.dock-host.dock-phone) .dv-context-menu-item {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 14px;
 }
 
 #view3d.docked .dock-host {
@@ -5279,6 +5347,7 @@ body.shelf-folded #view3d.docked {
 }
 
 #view3d.docked .dock-pane-view #map-controls {
+  top: auto;
   right: 12px;
   bottom: 14px;
 }
@@ -5289,7 +5358,20 @@ body.shelf-folded #view3d.docked {
   height: 100%;
   max-height: none;
   border: 0;
+  border-radius: 0;
   box-shadow: none;
+}
+
+/* A phone's sheet grip is the sheets' (`phone-sheet.ts`): docked, the
+ * splitters size the panels. */
+#view3d.docked .dock-pane > .dock > .sheet-grip {
+  display: none;
+}
+
+/* Docked on a phone the shelf is a tab like any other, not the undocked
+ * phone's sheet that shows only while open (`shelf-panel.css`). */
+#view3d.docked .dock-pane > #shell-shelf {
+  display: flex;
 }
 
 /* The asset shelf is a tab there: no fold of its own. */
@@ -5325,4 +5407,39 @@ body.shelf-folded #view3d.docked {
 
 #view3d.docked .dock-pane:has(> .tools) > .pane {
   height: calc(100% - 30px);
+}
+
+/* "Move to...": the keyboard's menu for moving a docked panel
+ * (`dock-move.ts`), in the page's body below the tab it moves. */
+.dock-move {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  border: 1px solid var(--s-line2);
+  border-radius: 6px;
+  background: var(--s-bg2);
+  box-shadow: 0 12px 34px rgb(0 0 0 / 55%);
+  color: var(--s-text);
+  font: 12px/1.4 var(--s-sans);
+}
+
+.dock-move-item {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dock-move-item:hover,
+.dock-move-item:focus-visible {
+  outline: none;
+  background: var(--s-bg3);
+  box-shadow: inset 0 0 0 1px var(--s-focus);
 }

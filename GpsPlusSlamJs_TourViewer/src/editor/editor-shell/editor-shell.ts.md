@@ -48,7 +48,15 @@ was opened over. Both close with the view. The tree's foot
 (`#tree-foot`, `edit.html`) says these keys in words; not on a phone,
 nor while the dock is folded.
 
-**On a phone** (700 px wide or less, `phone-sheet.ts`) the docks are sheets
+**On a phone the panels dock** (`dock-host.ts`'s phone layout): the 3D
+view and one tabbed group below it (upright) or beside it (sideways),
+holding all seven panels; the sections below on sheets describe the
+phone only while the docking loads, or when it failed to load. Docked,
+`shownSheet` is null, the details' back arrow (`showList`) shows the
+List tab, and a selection that appears shows Details, except in the
+Select mode while the List tab shows (its ticks need the list).
+
+**Undocked on a phone** (700 px wide or less, `phone-sheet.ts`) the docks are sheets
 over the foot of the page with the map above them: the list when nothing
 is selected, the details over it when something is (unless
 its inspector model has no phone details, `detailsOnPhone`: a folder tap
@@ -138,20 +146,27 @@ to a station, a story's name in the head takes the focus, selected.
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
   - `deps.dialogOpen()` - a page dialog shows (the keys stay out of it);
   - `deps.dock?()` - loads `dock-host.ts` (a dynamic import); absent, the
-    panels never dock. From `DOCK_MIN_PX` (701 px) wide, while the view
-    shows, the panels dock around it; narrower, or on `hide()`, they
-    undock. A fold is the store's (`foldedDocks`) and the docking's
+    panels never dock. At every width, while the view shows, the panels
+    dock around it; on `hide()` they undock. Docking and undocking draw
+    the inspector and the sheets again (docked, no sheet shows). A fold is the store's (`foldedDocks`) and the docking's
     at once: the list's and the details' folds are carried to the groups
     holding them (`dock-host.ts`'s `fold`, a rail) and back from them
-    (`syncFromDock`), each side hearing only the other's changes, so
+    (`syncFromDock`), each side hearing only the other's changes (the bottom panel's panes
+    in sight too: `docked({ shown })`, a toggle's hide is `hidePane`), so
     two panels dragged into one group (one fold for both) never undo
     each other, and the approach fold keeps working. An unfold from a rail
-    counts as the creator's for the approach. Docked, the dock rule
+    counts as the creator's for the approach. A fold the docking refuses (a
+    floating group, a size not yet known) is written back, so the store
+    never shows a fold that did not happen. Docked, the dock rule
     folds no side for the other (the 3D view gives way); only a phone
     turned sideways still unfolds the list. Docked, a selection that
     appears shows Details over Files, and the Details panel says "Select
     a station or an item, in the list or in the view." while nothing is
-    selected;
+    selected. The docking gets the browser's storage to keep its layout
+    in; a kept layout's folds are taken into the store (`restored()`)
+    rather than undone by it. The tour's problem count (`bottom-panel-model.ts`'s
+    `problemsBadge`, the Problems toggle's own) is the Problems tab's
+    badge, so a folded rail shows it;
   - `deps.onDocked?(docked)` - the panels docked or undocked;
   - `deps.onFilesShown?(shown)` - docked, the Files panel came into sight
     or went (the asset shelf's toggle redraws);
@@ -208,7 +223,14 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - `EditorShell.docked()` - whether the panels are docked now;
   `EditorShell.reveal(id)` - docked, shows a panel (`dock-layout.ts`'s ids),
   its group unfolded (the store follows); undocked, nothing (the asset
-  shelf's toggle reveals the Files panel through it).
+  shelf's toggle reveals the Files panel through it). The shell itself reveals the details when they come into sight, and on
+  a NEW selection (one compared with the selection last drawn, so a
+  redraw of the same one leaves the creator's tab alone) while the list is
+  the tab in front of them: on a phone the list and the details share one
+  group, so a pick in the list must bring the details forward. Another
+  tab in front (Files) stays: a new pick draws the details behind it. Not
+  while their group is folded, and not while the Select mode ticks rows
+  in the list.
   `EditorShell.badge(id, badge | null)` - the count on a docked panel's
   tab (the shelf's Files count), kept for when the panels dock.
   `EditorShell.conceal(id, instead?)` - docked, takes a shown panel out of

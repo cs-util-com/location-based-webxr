@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   defaultDockLayout,
-  DOCK_MIN_PX,
   DOCK_PANELS,
   dockWidths,
   keyboardMaximizes,
+  phoneDockLayout,
+  phoneGroupPx,
 } from "./dock-layout.js";
 
 describe("the default layout at any docking window", () => {
@@ -16,7 +17,7 @@ describe("the default layout at any docking window", () => {
   it("adds every panel once, each against one added before it, and leaves the view room", () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: DOCK_MIN_PX, max: 4000 }),
+        fc.integer({ min: 701, max: 4000 }),
         fc.integer({ min: 300, max: 3000 }),
         (w, h) => {
           const steps = defaultDockLayout(w, h);
@@ -46,6 +47,36 @@ describe("the default layout at any docking window", () => {
   });
 });
 
+describe("the phone's default layout at any phone", () => {
+  // Why: whatever the phone, the layout adds every panel once against
+  // one added before it, and the 3D view keeps more than half of the
+  // axis the group shares with it.
+  it("adds every panel once and leaves the view more than half", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom("upright" as const, "sideways" as const),
+        fc.integer({ min: 200, max: 1400 }),
+        fc.integer({ min: 200, max: 1400 }),
+        (shape, w, h) => {
+          const steps = phoneDockLayout(shape, w, h);
+          expect(steps.map((s) => s.id).sort()).toEqual(
+            DOCK_PANELS.map((p) => p.id).sort(),
+          );
+          const added = new Set<string>(["view"]);
+          for (const step of steps) {
+            expect(added.has(step.against?.id ?? "view")).toBe(true);
+            added.add(step.id);
+          }
+          const px = phoneGroupPx(shape, w, h);
+          const axis = shape === "upright" ? h : w;
+          expect(px).toBeGreaterThan(0);
+          expect(px).toBeLessThan(axis / 2);
+        },
+      ),
+    );
+  });
+});
+
 describe("a keyboard over the docked layout, at any window", () => {
   // Why: a keyboard that grows must never give the groups back their
   // layout, and a shorter window with the same keyboard must never keep
@@ -60,6 +91,23 @@ describe("a keyboard over the docked layout, at any window", () => {
           if (!keyboardMaximizes(h, k)) return;
           expect(keyboardMaximizes(h, k + more)).toBe(true);
           expect(keyboardMaximizes(Math.max(1, h - more), k)).toBe(true);
+        },
+      ),
+    );
+  });
+
+  // Why: a group further down keeps less over the same keyboard; once its
+  // room is too little, a group lower still must never get the layout back.
+  it("maximizes for a group lower down once it does", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 200, max: 2000 }),
+        fc.integer({ min: 1, max: 1500 }),
+        fc.integer({ min: 0, max: 1500 }),
+        fc.integer({ min: 0, max: 500 }),
+        (h, k, top, more) => {
+          if (!keyboardMaximizes(h, k, top)) return;
+          expect(keyboardMaximizes(h, k, top + more)).toBe(true);
         },
       ),
     );

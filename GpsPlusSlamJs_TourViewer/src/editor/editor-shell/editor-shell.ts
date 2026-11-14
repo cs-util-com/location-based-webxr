@@ -139,7 +139,7 @@ import {
 } from "./shell-inspector.js";
 import { createBottomPanel } from "./bottom-panel.js";
 import type { DockBadge, DockHost, mountDockHost } from "./dock-host.js";
-import { docksAt, isBottomPanelId, type DockPanelId } from "./dock-layout.js";
+import { BOTTOM_PANEL_IDS, docksAt, type DockPanelId } from "./dock-layout.js";
 import { watchKeyboard } from "./phone-keyboard.js";
 import {
   SHELL_DOCK_LAYOUT,
@@ -151,7 +151,8 @@ import { wireExtentSlider } from "./extent-slider.js";
 import { wireRadiusSlider } from "./radius-slider.js";
 import { wireFieldSliders } from "./field-sliders.js";
 import { createShellPictures } from "./shell-pictures.js";
-import { tourProblems } from "./tour-problems.js";
+import { problemsBadge } from "./bottom-panel-model.js";
+import { problemCounts, tourProblems } from "./tour-problems.js";
 import { drawSelectionBar, drawTree, type TreeRenaming } from "./shell-tree.js";
 import {
   FREE_LIST,
@@ -762,6 +763,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
   stampSteps();
   store.subscribe(stampSteps);
+  /** The browser's storage, where it may be used: the bottom panel's
+   *  height and tab, the docked layout. */
+  const storage = (() => {
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  })();
   const panel = createBottomPanel({
     panel: byId("shell-panel"),
     toggles: byId("shell-toggles"),
@@ -798,18 +808,39 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     step: (which) => {
       deps.step(which);
     },
-    storage: (() => {
-      try {
-        return window.localStorage;
-      } catch {
-        return null;
-      }
-    })(),
+    storage,
   });
   let unsubscribe: (() => void) | null = null;
   let timer: number | null = null;
   let memory: TreeClickMemory = NO_TREE_CLICK;
   let positionOpen = false;
+  /** Each tab's count, for the layout when it docks. */
+  const dockBadges = new Map<DockPanelId, DockBadge>();
+  const setBadge = (id: DockPanelId, badge: DockBadge | null) => {
+    if (badge === null) dockBadges.delete(id);
+    else dockBadges.set(id, badge);
+    dockHost?.badge(id, badge);
+  };
+  /** The Problems tab's count, given on when it changes: the bottom
+   *  panel's own toggle badge (every problem, notes too), so a rail and
+   *  the toggle never disagree. */
+  let problemsShared = "";
+  const shareProblems = (groups: ReturnType<typeof tourProblems>) => {
+    const found = problemsBadge(problemCounts(groups));
+    const key = found === null ? "" : `${found.tone}|${found.title}`;
+    if (key === problemsShared) return;
+    problemsShared = key;
+    setBadge(
+      "problems",
+      found === null
+        ? null
+        : {
+            count: Number(found.text),
+            bad: found.tone === "error",
+            label: found.title,
+          },
+    );
+  };
   /** A station's Contents unfolded: kept from one station to the next. */
   let contentsOpen = true;
   /** A story's cards open in place (by child id), and a count changed
@@ -877,10 +908,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       ? null
       : model;
 
+  /** The selection the details were last drawn for (`JSON` of it). */
+  let drawnSelection = "null";
   /** The inspector drawn from the store and the ground now (a draw that
    *  changes nothing is skipped): also each readout tick, so the ground
    *  arriving shows. */
   const drawInspectorNow = (model: InspectorModel | null) => {
+    // Read before the draw, which shows the details for any selection.
+    const wasHidden = inspector.root.hidden;
+    const selection = JSON.stringify(state().editorView.selected);
+    const newSelection = selection !== drawnSelection;
+    drawnSelection = selection;
     drawInspector(
       inspector,
       model,
@@ -905,15 +943,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       panels.sync(model),
     );
     // A phone ticking rows in the Select mode keeps its sheet the list.
-    const wasHidden = inspector.root.hidden;
     inspector.root.hidden =
       sheetModel(model) === null || shownSheet(model) === "tree";
     // Docked, a selection shows its details over the files beside them.
+    // Where the list shares their group (a phone's) and is in front, a
+    // new selection from it does too; ticking rows in the Select mode
+    // keeps the list there. Another tab in front (Files) stays for a new
+    // selection: it draws the details behind it.
+    const listInFront =
+      dockHost !== null && dockHost.activeIn("details") === "list";
     if (
       dockHost !== null &&
-      wasHidden &&
+      (wasHidden || (newSelection && listInFront)) &&
       !inspector.root.hidden &&
-      !state().editorView.foldedDocks.inspector
+      !state().editorView.foldedDocks.inspector &&
+      !(state().editorView.selectMode && listInFront)
     ) {
       dockHost.reveal("details");
     }
@@ -979,25 +1023,28 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   /** The sheet a phone shows now: the details over the list, except in
-   *  the Select mode, whose ticks need the list. `model` is the
-   *  inspector's, when the caller has it built. */
+   *  the Select mode, whose ticks need the list; none while the panels
+   *  are docked (the sheets are the phone's panels only while the docking
+   *  loads, or when it failed to). `model` is the inspector's, when the
+   *  caller has it built. */
   const shownSheet = (
     model: InspectorModel | null = inspectorModel(state().editorView),
   ): SheetKind | null => {
     const ui = state().editorView;
-    if (!phoneSheets(window.innerWidth)) return null;
+    if (dockHost !== null || !phoneSheets(window.innerWidth)) return null;
     if (ui.selectMode) return "tree";
     if (sheetModel(model) !== null) return "details";
     return ui.foldedDocks.tree ? null : "tree";
   };
   /** The selection let go and the list shown: on a phone, the way back
-   *  from the details. */
+   *  from the details (docked, the list's tab beside them). */
   const showList = () => {
     creatorTouchesTree();
     if (state().editorView.selected !== null) deps.select(null);
     store.dispatch(
       editorViewActions.dockFolded({ dock: "tree", folded: false }),
     );
+    dockHost?.reveal("list");
   };
   const sheets = wirePhoneSheets({
     tree: tree.root,
@@ -1157,7 +1204,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const overScene = sceneHint(model);
     sceneHintLine.hidden = overScene === null;
     sceneHintLine.textContent = overScene ?? "";
-    panel.problems(tourProblems(tour?.stations ?? []), ui.selected);
+    const problems = tourProblems(tour?.stations ?? []);
+    panel.problems(problems, ui.selected);
+    shareProblems(problems);
     // The cards and the thumbnail a draw replaced are no longer watched.
     pictures.sweep();
     drawHistory(doc);
@@ -2551,10 +2600,18 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   };
 
   // --- the docked layout ---------------------------------------------------
-  // From `DOCK_MIN_PX` wide the panels dock around the 3D view (the
-  // docking library loaded with it, `dock-host.ts`); narrower, they are
-  // today's docks and a phone's sheets. The folds stay the store's: a
-  // folded side hides its group, its folded head back over the view.
+  // At every width the panels dock around the 3D view (the docking
+  // library loaded with it, `dock-host.ts`); until it has loaded, or when
+  // it failed to, they are the undocked docks and a phone's sheets. The
+  // folds stay the store's: a folded side hides its group, its folded
+  // head back over the view.
+  /** The inspector and the phone's sheets drawn again for a docking that
+   *  came or went: docked, no sheet shows. */
+  const drawSheets = () => {
+    const model = inspectorModel(state().editorView);
+    drawInspectorNow(model);
+    sheets.sync(shownSheet(model));
+  };
   let dockLoading = false;
   /** The docking failed to load: said once, not tried again on every
    *  resize (a module that failed to load fails again at once). */
@@ -2575,8 +2632,6 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   dockEmpty.className = "dock-empty";
   dockEmpty.textContent =
     "Select a station or an item, in the list or in the view.";
-  /** Each tab's count, for the layout when it docks. */
-  const dockBadges = new Map<DockPanelId, DockBadge>();
   /** The side folds last carried between the store and the docking: each
    *  side hears only the other's changes, so two panels sharing a group
    *  (one fold for both) never undo each other. */
@@ -2599,12 +2654,13 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         store.dispatch(editorViewActions.dockFolded({ dock, folded }));
       }
     }
-    const tab = dockHost.activeIn("problems");
-    if (!dockHost.groupShown("problems")) {
-      panel.docked({ open: false, tab: "problems" });
-    } else if (tab !== null && isBottomPanelId(tab)) {
-      panel.docked({ open: true, tab });
-    }
+    // Each bottom pane in sight, wherever it was dragged.
+    const host = dockHost;
+    panel.docked({
+      shown: BOTTOM_PANEL_IDS.filter(
+        (id) => host.groupShown(id) && host.activeIn(id) === id,
+      ),
+    });
   };
   const foldDocked = () => {
     if (dockHost === null) return;
@@ -2615,28 +2671,53 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (folded === carried[dock]) continue;
       carried = { ...carried, [dock]: folded };
       dockHost.fold(id, folded);
+      // The docking may refuse (a floating group, a size not yet known),
+      // so the store follows what it did rather than what was asked.
+      const took = dockHost.folded(id);
+      if (took !== folded) {
+        carried = { ...carried, [dock]: took };
+        store.dispatch(editorViewActions.dockFolded({ dock, folded: took }));
+      }
     }
   };
   const mountDock = (mount: typeof mountDockHost) => {
     if (dockHost !== null || view === null || !docksAt(window.innerWidth)) {
       return;
     }
-    const host = mount({ box: viewBox, onChange: syncFromDock });
+    const host = mount({ box: viewBox, onChange: syncFromDock, storage });
     dockHost = host;
     host.content("details").append(dockEmpty);
     for (const [id, badge] of dockBadges) host.badge(id, badge);
-    carried = { tree: host.folded("list"), inspector: host.folded("details") };
+    if (host.restored()) {
+      // A kept layout is the creator's own: its folds reach the store
+      // (dispatched only where they differ, so nothing echoes back).
+      const want = state().editorView.foldedDocks;
+      carried = { tree: want.tree, inspector: want.inspector };
+      for (const [dock, id] of FOLDING) {
+        const folded = host.folded(id);
+        carried = { ...carried, [dock]: folded };
+        if (want[dock] !== folded) {
+          store.dispatch(editorViewActions.dockFolded({ dock, folded }));
+        }
+      }
+    } else {
+      carried = {
+        tree: host.folded("list"),
+        inspector: host.folded("details"),
+      };
+    }
     foldDocked();
     stopDockFolds = store.subscribe(foldDocked);
     panel.dock({
       show: (tab) => {
         host.reveal(tab);
       },
-      hide: () => {
-        host.hideGroupOf("problems");
+      hide: (tab) => {
+        host.hidePane(tab);
       },
     });
     if (keyboardPx > 0) host.keyboard(keyboardPx);
+    drawSheets();
     deps.onDocked?.(true);
   };
   const syncDock = () => {
@@ -2667,6 +2748,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     dockEmpty.remove();
     dockHost.dispose();
     dockHost = null;
+    drawSheets();
     syncFilesShown();
     deps.onDocked?.(false);
   };
@@ -2682,11 +2764,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       // The store learns of an unfold from the docking (`syncFromDock`).
       dockHost?.reveal(id);
     },
-    badge(id, badge) {
-      if (badge === null) dockBadges.delete(id);
-      else dockBadges.set(id, badge);
-      dockHost?.badge(id, badge);
-    },
+    badge: setBadge,
     show(next, options) {
       view = next;
       drawn = null;
