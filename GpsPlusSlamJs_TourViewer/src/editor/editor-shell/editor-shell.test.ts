@@ -32,6 +32,7 @@ import type * as TourDocument from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import type { DockHost, mountDockHost } from "./dock-host.js";
+import type { DockPanelId } from "./dock-layout.js";
 import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
 import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
 import {
@@ -2411,7 +2412,7 @@ describe("docked folds and counts", () => {
       badge: vi.fn(),
       content: () => document.createElement("div"),
       groupShown: () => !shut,
-      activeIn: vi.fn((_id: string): string | null => null),
+      activeIn: vi.fn((_id: DockPanelId): DockPanelId | null => null),
       conceal: vi.fn(),
       hidePane: vi.fn(),
       restored: () => kept,
