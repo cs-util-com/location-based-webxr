@@ -1233,28 +1233,39 @@ async function underTheWorldSteps(page) {
     let steps = 0;
     // THE ROTATION STOPS AT THE POLE (turns 3-5 repeat turn 2 exactly), so
     // two turns in a row with the same counts mean no further turn can
-    // change the answer: the loop ends there, before booting another
-    // sky-only page for a pose whose sky it has already measured, and the
-    // assertions below fail with their own message. Without the stop each
-    // repeated pose under the city re-measured that sky, and a missed floor
-    // ran into the test's timeout (r1162 re-judge, NIT 1).
+    // change the answer: the loop ends there, and the assertions below fail
+    // with their own message. Without the stop a missed floor ran into the
+    // test's timeout.
+    //
+    // ONE SKY-ONLY PAGE, TURNED IN STEP with this one (see `openSkyOnlyPage`):
+    // after every turn here it has taken the same turns, so its frame is the
+    // sky at this pose, measured where this pose is beneath the city.
     let previous = "";
-    while (steps < 8) {
-      await rotateUnder(page, 40);
-      steps++;
-      withBuildings = await countNonSkyPixels(page);
-      const counts = `${withBuildings.count}/${withBuildings.meanY}`;
-      if (counts === previous) break;
-      previous = counts;
-      if (withBuildings.meanY >= 0.35) continue;
-      skyOnly = await skyOnlyFrameAfter(page, steps);
-      const geometry = withBuildings.count - skyOnly.count;
-      if (
-        skyOnly.count < withBuildings.count / 10 &&
-        geometry > BENEATH_GEOMETRY_MIN
-      )
-        break;
+    const sky = await openSkyOnlyPage(page);
+    try {
+      while (steps < 8) {
+        await page.bringToFront();
+        await rotateUnder(page, 40);
+        await sky.bringToFront();
+        await rotateUnder(sky, 40);
+        steps++;
+        withBuildings = await countNonSkyPixels(page);
+        const counts = `${withBuildings.count}/${withBuildings.meanY}`;
+        if (counts === previous) break;
+        previous = counts;
+        if (withBuildings.meanY >= 0.35) continue;
+        skyOnly = await countNonSkyPixels(sky);
+        const geometry = withBuildings.count - skyOnly.count;
+        if (
+          skyOnly.count < withBuildings.count / 10 &&
+          geometry > BENEATH_GEOMETRY_MIN
+        )
+          break;
+      }
+    } finally {
+      await sky.close();
     }
+    await page.bringToFront();
     expect(withBuildings.meanY).toBeLessThan(0.35);
     expect(withBuildings.count - skyOnly.count).toBeGreaterThan(
       BENEATH_GEOMETRY_MIN,
@@ -1268,9 +1279,9 @@ async function underTheWorldSteps(page) {
     // cost broke the old bare 20x ratio once the seeded palette made the
     // buildings from below a little softer. So the sky is measured on its own: a second
     // page boots the same fixture, turns EVERY layer off, buildings and trees
-    // included, and turns the same number of steps. Its frame is the sky at
-    // this pose, by construction rather than by the hide step under test.
-    // It is taken in the loop above, at each pose that is beneath the city.
+    // included, and takes the same turns. Its frame is the sky at this pose,
+    // by construction rather than by the hide step under test. It is taken
+    // in the loop above, at each pose that is beneath the city.
     // AND NO GROUND UNDER THEM: in "No ground" with nothing on, the frame from
     // below is that small sky remainder. A ground plane drawn under the world
     // would put its silhouette across the whole width (hundreds of edges).
@@ -1304,11 +1315,14 @@ async function underTheWorldSteps(page) {
 }
 
 /**
- * The sky at the pose `underTheWorldSteps` reached, in a second page of the
- * same context: the same fixture and viewport, every layer and the ground
- * off from the start, and the same number of turns. Returns its edge count.
+ * A second page of the same context for `underTheWorldSteps`' sky-only
+ * baseline: the same fixture and viewport, every layer and the ground off
+ * from the start, and not yet turned. The caller turns it in step with the
+ * page under test and closes it. One page for every turn, rather than a
+ * fresh boot per measured pose turned from the start: either way it has
+ * taken the same turns in the same order when it is measured.
  */
-async function skyOnlyFrameAfter(page, steps) {
+async function openSkyOnlyPage(page) {
   const sky = await page.context().newPage();
   try {
     await stubNetwork(sky);
@@ -1334,10 +1348,10 @@ async function skyOnlyFrameAfter(page, steps) {
       if (await box.isChecked())
         await setting(sky, `#layer-${layer}`, (c) => c.uncheck());
     }
-    for (let i = 0; i < steps; i++) await rotateUnder(sky, 40);
-    return await countNonSkyPixels(sky);
-  } finally {
+    return sky;
+  } catch (error) {
     await sky.close();
+    throw error;
   }
 }
 
@@ -1617,120 +1631,6 @@ const meanGreenExcess = (page) =>
     }
     return sum / (data.length / 4);
   });
-
-test.describe("the land-use tint (city objects plan 2026-11-07-2315 M3)", () => {
-  // WHY THIS TEST MATTERS:
-  // the tint is on by default (owner Q6), so the default picture changed and
-  // the old gates measure it with the tint OFF. This is the gate of the tint
-  // itself: the fixture is Cologne's Volksgarten, so a working tint greens the
-  // frame; the heat grid must stay the loudest thing over a tinted ground
-  // (DEC-R4-5 binds the default scheme, D8); and switching it off must give
-  // back the switched-off ground exactly, which is what the old gates rely
-  // on.
-  test("greens the Volksgarten, keeps the heat grid the loudest, and off restores today's ground", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(
-      `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`,
-    );
-    await waitForRefresh(page);
-    await installFrameProbe(page);
-    const tint = page.locator("#layer-tint");
-    await expect(tint).toBeChecked();
-    await page.locator("#layer-cells").uncheck();
-    await setting(page, "#layer-woods", (c) => c.uncheck());
-
-    await setting(page, "#layer-tint", (c) => c.uncheck());
-    await stashStableFrame(page);
-    const greenOff = await meanGreenExcess(page);
-    await setting(page, "#layer-tint", (c) => c.check());
-    await expect
-      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
-      .toBeGreaterThan(0);
-    await settledChroma(page);
-    const greenOn = await meanGreenExcess(page);
-    console.log(
-      `land-use tint: green excess off ${greenOff.toFixed(2)}, on ${greenOn.toFixed(2)}`,
-    );
-    expect(greenOn, "the park greens the frame").toBeGreaterThan(
-      greenOff + TINT_GREEN_STEP,
-    );
-
-    // Off again: the switched-off picture, pixel for pixel within the probe's
-    // threshold. The stash was taken with the tint APPLIED and switched off
-    // (the desktop always builds one, so a never-tinted ground is not
-    // reachable here); that switched off equals a never-tinted ground rests
-    // on the unit tests of the shader's neutral (`three/ground-tint.test.ts`
-    // in the library, "switches off to the neutral ground") and of the
-    // material colour (`land-use-tint.test.ts`).
-    await setting(page, "#layer-tint", (c) => c.uncheck());
-    await expect
-      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
-      .toBe(0);
-
-    // The heat grid over the tinted ground, by the DEC-R4-5 bound (5).
-    await setting(page, "#layer-tint", (c) => c.check());
-    const margin = await marginFor(page, "cpu-slope");
-    console.log(`land-use tint: heat grid adds ${margin.toFixed(2)} chroma`);
-    expect(margin, "heat grid over the tinted ground").toBeGreaterThan(5);
-  });
-});
-
-test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => {
-  // WHY THIS TEST MATTERS (plan 4.4, D6): the dropdown is the owner's tool
-  // for rating the schemes on the phone. It must repaint the city, say
-  // "Applying" until the mesh built in the chosen colours is drawn (the
-  // echo, not the click), write the choice into the link, and give back
-  // today's picture exactly when the default is chosen again; a link with
-  // `?scheme=` must boot in that scheme.
-  test("a switch repaints the city, says Applying until the echo, writes the link, and the link boots it", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    const base = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
-    await page.goto(base);
-    await waitForRefresh(page);
-    await installFrameProbe(page);
-    const select = page.locator("#colour-scheme");
-    const status = page.locator("#colour-scheme-status");
-    await expect(select).toHaveValue("today");
-    await page.evaluate(() => {
-      const el = document.querySelector("#colour-scheme-status");
-      const seen = [];
-      window.__schemeStatus = seen;
-      if (el === null) return;
-      new MutationObserver(() => seen.push(el.textContent ?? "")).observe(el, {
-        childList: true,
-        characterData: true,
-        subtree: true,
-      });
-    });
-    await stashStableFrame(page);
-
-    await setting(page, "#colour-scheme", (c) => c.selectOption("night"));
-    await expect
-      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
-      .toBeGreaterThan(0);
-    await expect(status).toHaveText("");
-    await expect(select).toBeEnabled();
-    expect(await page.evaluate(() => window.__schemeStatus)).toContain(
-      "Applying Night...",
-    );
-    await expect(page).toHaveURL(/[?&]scheme=night(&|$)/);
-
-    // Back to the default: no link key, and today's picture.
-    await setting(page, "#colour-scheme", (c) => c.selectOption("today"));
-    await expect(page).not.toHaveURL(/[?&]scheme=/);
-    await expect
-      .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
-      .toBe(0);
-
-    await page.goto(`${base}&scheme=night`);
-    await waitForRefresh(page);
-    await expect(select).toHaveValue("night");
-  });
-});
 
 test.describe("the read-only boot overrides (roofs, markings, furniture, ao, scheme)", () => {
   // WHY THIS TEST MATTERS: `?roofs=off`, `?markings=off`, `?furniture=off`
@@ -2091,6 +1991,11 @@ test.describe("the time of day", () => {
  * The heat-ramp rule at one booted sun: the heat grid's margin over the plain and the
  * default ground, and the lit city's brightness with the grid off. Leaves the
  * ground in the default mode with the cells ON.
+ *
+ * `withMeasured`, when given, is called with `{ lit, byDefault }` (the lit
+ * surfaces with the grid off and the margin in the default mode) while the
+ * scene is still as they were measured (woods and tint off, default mode),
+ * before the woods and the tint go back on.
  */
 async function expectHeatRampLoudest(
   page,
@@ -2098,6 +2003,7 @@ async function expectHeatRampLoudest(
   approvedLit,
   share = 0.5,
   minBuildingLuma = null,
+  withMeasured = null,
 ) {
   const DEFAULT_MODE = "cpu-slope";
   // THE SCENE THIS RULE IS ABOUT HAS NO COSMETIC WOODS. The owner relaxed
@@ -2142,6 +2048,7 @@ async function expectHeatRampLoudest(
       minBuildingLuma,
     );
   }
+  if (withMeasured !== null) await withMeasured({ lit, byDefault });
   await setting(page, "#layer-woods", (c) => c.check());
   await setting(page, "#layer-tint", (c) => c.check());
 }
@@ -2681,36 +2588,59 @@ test.describe("the light dialog", () => {
       // THE NOON BRIGHTENING (plan 2026-09-24-0901): at a sun above 45° the
       // buildings and roads are lifted to the approved noon brightness, so this
       // point must reach 95 % of it (a ×1.3 lift measured 59.6, short of 61.5).
-      await expectHeatRampLoudest(page, "the June noon (62.5°)", 64.7, 0.95);
-    });
-
-    await test.step("reads the same brightness and heat-grid margin as the sweep", async () => {
-      // WHY (plan §7 item 4): the dialog's readouts must equal the sweep's own
-      // measures on the same view, or the owner would tune by a number the gate
-      // does not use. The margin is compared in the default ground mode.
-      await page.locator("#layer-cells").uncheck();
-      await settledChroma(page);
-      const inlineLit = await litSurfaceLuma(page);
-      // Closed at boot: nothing below has opened it yet.
-      await expect(page.locator("#light-dialog")).toBeHidden();
-      await setting(page, "#light-open", (c) => c.click());
-      // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
-      // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
-      // real divergence in either measure shows well above them.
-      expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
-      const inlineMargin = await marginFor(page, "cpu-slope");
-      await page.locator("#light-check").click();
-      await expect(page.locator("#light-readout")).toContainText(
-        "Heat grid adds",
+      await expectHeatRampLoudest(
+        page,
+        "the June noon (62.5°)",
+        64.7,
+        0.95,
+        null,
+        async ({ lit, byDefault }) => {
+          await test.step("reads the same brightness and heat-grid margin as the sweep", async () => {
+            // WHY (plan §7 item 4): the dialog's readouts must equal the sweep's own
+            // measures on the same view, or the owner would tune by a number the gate
+            // does not use. The margin is compared in the default ground mode.
+            // THE SWEEP'S NUMBERS ARE THE ONES THE HEAT-RAMP STEP JUST TOOK, with
+            // the woods and the tint off as it takes them, so the dialog reads the
+            // same scene: the heat grid off again, the woods and tint still off.
+            await page.locator("#layer-cells").uncheck();
+            const withoutCells = await settledChroma(page);
+            const inlineLit = lit;
+            // Closed at boot: nothing below has opened it yet.
+            await expect(page.locator("#light-dialog")).toBeHidden();
+            await setting(page, "#light-open", (c) => c.click());
+            // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
+            // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
+            // real divergence in either measure shows well above them.
+            expect(
+              Math.abs((await readoutLuma(page)) - inlineLit),
+            ).toBeLessThan(0.2);
+            const inlineMargin = byDefault;
+            // THE HEAT GRID BACK ON for the check, as the sweep's margin
+            // measurement leaves it, and waited for in the scene the same way
+            // (`marginFor`): the cells arrive by a refresh, not a redraw.
+            await enableCellLayer(page);
+            await expect
+              .poll(() => meanChroma(page), { timeout: 30000 })
+              .not.toBe(withoutCells);
+            await settledChroma(page);
+            await page.locator("#light-check").click();
+            await expect(page.locator("#light-readout")).toContainText(
+              "Heat grid adds",
+            );
+            const text =
+              (await page.locator("#light-readout").textContent()) ?? "";
+            const margin = Number(/adds ([\d.-]+)/.exec(text)?.[1]);
+            console.log(
+              `light dialog parity: lit ${inlineLit.toFixed(1)} vs ${(await readoutLuma(page)).toFixed(1)}; margin ${inlineMargin.toFixed(2)} vs ${margin.toFixed(2)}`,
+            );
+            expect(
+              Math.abs((await readoutLuma(page)) - inlineLit),
+            ).toBeLessThan(0.2);
+            expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
+            expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
+          });
+        },
       );
-      const text = (await page.locator("#light-readout").textContent()) ?? "";
-      const margin = Number(/adds ([\d.-]+)/.exec(text)?.[1]);
-      console.log(
-        `light dialog parity: lit ${inlineLit.toFixed(1)} vs ${(await readoutLuma(page)).toFixed(1)}; margin ${inlineMargin.toFixed(2)} vs ${margin.toFixed(2)}`,
-      );
-      expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
-      expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
-      expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
     });
 
     await test.step("opens from its button and the l key, closes with Escape, and brightens noon with the gain, the sky light and the EV, kept in the URL", async () => {
@@ -2890,34 +2820,30 @@ test.describe("the ambient occlusion", () => {
       [onKey, offKey],
     );
 
-  // WHY THIS TEST MATTERS: the AO is on by default, so it changes the picture
-  // every user sees. It may only DARKEN (a multiply that never exceeds 1), its
-  // darkening must stay bounded so the light the owner approved survives it,
-  // and switching it off must give back the frame without it exactly.
-  //
-  // NOT THE SKY: a view raised to show sky never stands still (the frame
-  // changes every 300 ms with the AO on and off alike), so no pair of frames
-  // can isolate the AO there. That it leaves the sky and the fogged distance
-  // alone rests on its factor being exactly 1 past the fade end (the unit and
-  // property tests of the framework module, and the fade-before-fog guard in
-  // building-view-ambient-occlusion.test.ts).
-  test("on by default at the June noon: only darkens, is bounded, and switches off exactly", async ({
+  // ONE JUNE-NOON BOOT FOR THE FOUR LOOK CHECKS that boot this sun with the
+  // AO on by default: the AO's own bounds, the AO under the GPU ground, the
+  // land-use tint and the colour scheme switch. A boot costs more than most
+  // of these steps. The AO steps run first because they need the scene at
+  // rest and untouched by a pointer; every step puts back what it changed
+  // that a later step reads (the AO wish, the ground mode, the layers); the
+  // reported heat-margin reading runs last before the scheme link's boot,
+  // because it clicks inside the dialog, which may send the NPC agent
+  // walking.
+  test("at the June noon: the AO only darkens, is bounded, switches off exactly and yields to the GPU ground; the land-use tint greens the park; a scheme switch repaints and its link boots it", async ({
     page,
   }) => {
     await stubNetwork(page);
     await page.goto(JUNE_NOON);
     await waitForRefresh(page);
     const view = page.locator("[data-ao]");
-    await expect(view).toHaveAttribute("data-ao", "on");
-
     const dialog = page.locator("#light-dialog");
     const box = page.locator("#light-ao");
-    /** Sets the box with the dialog open, closes it, and stores the frame. */
+    /** Sets the AO box with the dialog open, then closes the dialog. */
     // NO POINTER EVENTS: a click on a control over the canvas also reaches
     // the scene and sends the NPC agent walking, and its route would then
     // differ between the frames compared. The l key opens the dialog, Escape
     // closes it, and the box is changed as its change event.
-    const frameWith = async (on, key) => {
+    const setAo = async (on) => {
       if (await dialog.isHidden()) await page.locator("body").press("l");
       await expect(dialog).toBeVisible();
       await box.evaluate((el, checked) => {
@@ -2929,75 +2855,207 @@ test.describe("the ambient occlusion", () => {
       const lit = await readoutLuma(page);
       await page.locator("body").press("Escape");
       await expect(dialog).toBeHidden();
-      await settledFrame(page, key);
       return lit;
     };
-    // On, off, on, off: the two pairs must agree exactly, which is what says
-    // the scene stood still and every difference is the AO's.
-    const litOn = await frameWith(true, "__aoOn");
-    const litOff = await frameWith(false, "__aoOff");
-    await frameWith(true, "__aoOnAgain");
-    await frameWith(false, "__aoOffAgain");
-    expect((await compare(page, "__aoOnAgain", "__aoOn")).identical).toBe(true);
-    expect((await compare(page, "__aoOffAgain", "__aoOff")).identical).toBe(
-      true,
-    );
 
-    const r = await compare(page, "__aoOn", "__aoOff");
-    console.log(
-      `ambient occlusion at the June noon: ${r.darkened} of ${r.n} pixels darkened by 3 or more, largest drop ${r.maxDrop}, ${r.brightened} brightened; mean luma ${r.meanOn.toFixed(2)} on, ${r.meanOff.toFixed(2)} off; lit surfaces ${litOn} on, ${litOff} off`,
-    );
-    expect(r.brightened, "pixels the AO brightened").toBe(0);
-    expect(r.darkened / r.n).toBeGreaterThan(AO_DARKENED_SHARE_MIN);
-    expect(r.meanOn / r.meanOff).toBeGreaterThan(AO_FRAME_LUMA_RATIO_MIN);
-    expect(litOn / litOff).toBeGreaterThan(AO_LIT_LUMA_RATIO_MIN);
+    // WHY THIS STEP MATTERS: the AO is on by default, so it changes the
+    // picture every user sees. It may only DARKEN (a multiply that never
+    // exceeds 1), its darkening must stay bounded so the light the owner
+    // approved survives it, and switching it off must give back the frame
+    // without it exactly.
+    //
+    // NOT THE SKY: a view raised to show sky never stands still (the frame
+    // changes every 300 ms with the AO on and off alike), so no pair of frames
+    // can isolate the AO there. That it leaves the sky and the fogged distance
+    // alone rests on its factor being exactly 1 past the fade end (the unit and
+    // property tests of the framework module, and the fade-before-fog guard in
+    // building-view-ambient-occlusion.test.ts).
+    await test.step("the AO is on by default: only darkens, is bounded, and switches off exactly", async () => {
+      await expect(view).toHaveAttribute("data-ao", "on");
+      /** Sets the box and stores the settled frame under `key`. */
+      const frameWith = async (on, key) => {
+        const lit = await setAo(on);
+        await settledFrame(page, key);
+        return lit;
+      };
+      // On, off, on, off: the two pairs must agree exactly, which is what says
+      // the scene stood still and every difference is the AO's.
+      const litOn = await frameWith(true, "__aoOn");
+      const litOff = await frameWith(false, "__aoOff");
+      await frameWith(true, "__aoOnAgain");
+      await frameWith(false, "__aoOffAgain");
+      expect((await compare(page, "__aoOnAgain", "__aoOn")).identical).toBe(
+        true,
+      );
+      expect((await compare(page, "__aoOffAgain", "__aoOff")).identical).toBe(
+        true,
+      );
+
+      const r = await compare(page, "__aoOn", "__aoOff");
+      console.log(
+        `ambient occlusion at the June noon: ${r.darkened} of ${r.n} pixels darkened by 3 or more, largest drop ${r.maxDrop}, ${r.brightened} brightened; mean luma ${r.meanOn.toFixed(2)} on, ${r.meanOff.toFixed(2)} off; lit surfaces ${litOn} on, ${litOff} off`,
+      );
+      expect(r.brightened, "pixels the AO brightened").toBe(0);
+      expect(r.darkened / r.n).toBeGreaterThan(AO_DARKENED_SHARE_MIN);
+      expect(r.meanOn / r.meanOff).toBeGreaterThan(AO_FRAME_LUMA_RATIO_MIN);
+      expect(litOn / litOff).toBeGreaterThan(AO_LIT_LUMA_RATIO_MIN);
+    });
+
+    // Why this step matters: the AO's normal/depth pass does not run the GPU
+    // ground's displacement shader, so in that mode it would shade a flat
+    // ground under raised terrain. The switch keeps the wish and the ground
+    // mode decides what is drawn; this proves it in the running app.
+    await test.step("the AO stays off while the ground is displaced on the GPU, and comes back after", async () => {
+      // The step above left the AO off; the wish goes back on first.
+      await setAo(true);
+      const bootMode = await page.locator("#ground-mode").inputValue();
+      await setting(page, "#ground-mode", (c) => c.selectOption("gpu"));
+      await expect(page.locator("#status")).toContainText(/ground gpu \d/);
+      await expect(view).toHaveAttribute("data-ao", "off");
+      await setting(page, "#ground-mode", (c) => c.selectOption("cpu"));
+      await expect(page.locator("#status")).toContainText(/ground cpu \d/);
+      await expect(view).toHaveAttribute("data-ao", "on");
+      // Back to the boot's ground mode, which the tint step measures in.
+      // The status line names the ground's strategy (cpu or gpu), not its
+      // appearance, so the picker is what shows the boot mode is back.
+      await setting(page, "#ground-mode", (c) => c.selectOption(bootMode));
+      await expect(page.locator("#ground-mode")).toHaveValue(bootMode);
+      await expect(page.locator("#status")).toContainText(/ground cpu \d/);
+    });
+
+    // WHY THIS STEP MATTERS: the tint is on by default (owner Q6), so the
+    // default picture changed and the old gates measure it with the tint OFF.
+    // This is the gate of the tint itself: the fixture is Cologne's
+    // Volksgarten, so a working tint greens the frame; the heat grid must
+    // stay the loudest thing over a tinted ground (DEC-R4-5 binds the default
+    // scheme, D8); and switching it off must give back the switched-off
+    // ground exactly, which is what the old gates rely on.
+    await test.step("the land-use tint greens the Volksgarten, keeps the heat grid the loudest, and off restores today's ground", async () => {
+      await installFrameProbe(page);
+      const tint = page.locator("#layer-tint");
+      await expect(tint).toBeChecked();
+      await page.locator("#layer-cells").uncheck();
+      await setting(page, "#layer-woods", (c) => c.uncheck());
+
+      await setting(page, "#layer-tint", (c) => c.uncheck());
+      await stashStableFrame(page);
+      const greenOff = await meanGreenExcess(page);
+      await setting(page, "#layer-tint", (c) => c.check());
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeGreaterThan(0);
+      await settledChroma(page);
+      const greenOn = await meanGreenExcess(page);
+      console.log(
+        `land-use tint: green excess off ${greenOff.toFixed(2)}, on ${greenOn.toFixed(2)}`,
+      );
+      expect(greenOn, "the park greens the frame").toBeGreaterThan(
+        greenOff + TINT_GREEN_STEP,
+      );
+
+      // Off again: the switched-off picture, pixel for pixel within the probe's
+      // threshold. The stash was taken with the tint APPLIED and switched off
+      // (the desktop always builds one, so a never-tinted ground is not
+      // reachable here); that switched off equals a never-tinted ground rests
+      // on the unit tests of the shader's neutral (`three/ground-tint.test.ts`
+      // in the library, "switches off to the neutral ground") and of the
+      // material colour (`land-use-tint.test.ts`).
+      await setting(page, "#layer-tint", (c) => c.uncheck());
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBe(0);
+
+      // The heat grid over the tinted ground, by the DEC-R4-5 bound (5).
+      await setting(page, "#layer-tint", (c) => c.check());
+      const margin = await marginFor(page, "cpu-slope");
+      console.log(`land-use tint: heat grid adds ${margin.toFixed(2)} chroma`);
+      expect(margin, "heat grid over the tinted ground").toBeGreaterThan(5);
+      // Back to the boot's woods for the steps after this one.
+      await setting(page, "#layer-woods", (c) => c.check());
+    });
+
+    // WHY THIS STEP MATTERS: the dropdown is the owner's tool for rating the
+    // schemes on the phone. It must repaint the city, say "Applying" until
+    // the mesh built in the chosen colours is drawn (the echo, not the
+    // click), write the choice into the link, and give back today's picture
+    // exactly when the default is chosen again; a link with `?scheme=` must
+    // boot in that scheme.
+    const select = page.locator("#colour-scheme");
+    await test.step("a scheme switch repaints the city, says Applying until the echo, and writes the link", async () => {
+      // CELLS OFF, as at a fresh boot: the tint step left them on, and this
+      // step compares the city's pixels exactly.
+      await page.locator("#layer-cells").uncheck();
+      const status = page.locator("#colour-scheme-status");
+      await expect(select).toHaveValue("today");
+      await page.evaluate(() => {
+        const el = document.querySelector("#colour-scheme-status");
+        const seen = [];
+        window.__schemeStatus = seen;
+        if (el === null) return;
+        new MutationObserver(() => seen.push(el.textContent ?? "")).observe(
+          el,
+          {
+            childList: true,
+            characterData: true,
+            subtree: true,
+          },
+        );
+      });
+      await stashStableFrame(page);
+
+      await setting(page, "#colour-scheme", (c) => c.selectOption("night"));
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeGreaterThan(0);
+      await expect(status).toHaveText("");
+      await expect(select).toBeEnabled();
+      expect(await page.evaluate(() => window.__schemeStatus)).toContain(
+        "Applying Night...",
+      );
+      await expect(page).toHaveURL(/[?&]scheme=night(&|$)/);
+
+      // Back to the default: no link key, and today's picture.
+      await setting(page, "#colour-scheme", (c) => c.selectOption("today"));
+      await expect(page).not.toHaveURL(/[?&]scheme=/);
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBe(0);
+    });
 
     // REPORTED, NOT GATED: the heat grid's margin with the AO on, beside the
     // same reading with it off. The heat-ramp gates run with the AO off, so
     // this line is where a reader sees what the AO does to the one number the
-    // owner tunes the light by. Last, because it switches the cells on and
-    // clicks inside the dialog, which may send the NPC walking.
-    await enableCellLayer(page);
-    const heatMargin = async (on) => {
-      if (await dialog.isHidden()) await page.locator("body").press("l");
-      await box.evaluate((el, checked) => {
-        if (el.checked === checked) return;
-        el.checked = checked;
-        el.dispatchEvent(new Event("change", { bubbles: true }));
-      }, on);
-      await expect(view).toHaveAttribute("data-ao", on ? "on" : "off");
-      await page.locator("#light-check").click();
-      await expect(page.locator("#light-readout")).toContainText(
-        "Heat grid adds",
+    // owner tunes the light by. Late, because it clicks inside the dialog,
+    // which may send the NPC walking.
+    await test.step("reports the heat grid's margin with the AO on and off", async () => {
+      await enableCellLayer(page);
+      const heatMargin = async (on) => {
+        if (await dialog.isHidden()) await page.locator("body").press("l");
+        await box.evaluate((el, checked) => {
+          if (el.checked === checked) return;
+          el.checked = checked;
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }, on);
+        await expect(view).toHaveAttribute("data-ao", on ? "on" : "off");
+        await page.locator("#light-check").click();
+        await expect(page.locator("#light-readout")).toContainText(
+          "Heat grid adds",
+        );
+        const text = (await page.locator("#light-readout").textContent()) ?? "";
+        return Number(/adds ([\d.-]+)/.exec(text)?.[1]);
+      };
+      const marginOn = await heatMargin(true);
+      const marginOff = await heatMargin(false);
+      console.log(
+        `ambient occlusion and the heat grid: margin ${marginOn.toFixed(2)} with the AO on, ${marginOff.toFixed(2)} off`,
       );
-      const text = (await page.locator("#light-readout").textContent()) ?? "";
-      return Number(/adds ([\d.-]+)/.exec(text)?.[1]);
-    };
-    const marginOn = await heatMargin(true);
-    const marginOff = await heatMargin(false);
-    console.log(
-      `ambient occlusion and the heat grid: margin ${marginOn.toFixed(2)} with the AO on, ${marginOff.toFixed(2)} off`,
-    );
-  });
+    });
 
-  // Why this test matters: the AO's normal/depth pass does not run the GPU
-  // ground's displacement shader, so in that mode it would shade a flat
-  // ground under raised terrain. The switch keeps the wish and the ground
-  // mode decides what is drawn; this proves it in the running app.
-  test("stays off while the ground is displaced on the GPU, and comes back after", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(JUNE_NOON);
-    await waitForRefresh(page);
-    const view = page.locator("[data-ao]");
-    await expect(view).toHaveAttribute("data-ao", "on");
-    await setting(page, "#ground-mode", (c) => c.selectOption("gpu"));
-    await expect(page.locator("#status")).toContainText(/ground gpu \d/);
-    await expect(view).toHaveAttribute("data-ao", "off");
-    await setting(page, "#ground-mode", (c) => c.selectOption("cpu"));
-    await expect(page.locator("#status")).toContainText(/ground cpu \d/);
-    await expect(view).toHaveAttribute("data-ao", "on");
+    await test.step("a link naming a scheme boots in it", async () => {
+      await page.goto(`${JUNE_NOON}&scheme=night`);
+      await waitForRefresh(page);
+      await expect(select).toHaveValue("night");
+    });
   });
 });
 
