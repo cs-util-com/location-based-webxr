@@ -2000,6 +2000,9 @@ test.describe("the time of day", () => {
         if (time !== first[2]) {
           const landed = await page.evaluate(
             async ({ date, time }) => {
+              // A dev-server URL resolved from the page root, not a node path:
+              // it has an exact `ignoreUnresolved` entry in the repo-root
+              // `knip.json`. Rename the module and both places move.
               const clock = await import("/src/sun-clock.ts");
               const place = { lat: 50.9231, lng: 6.9445 };
               const [y, m, d] = date.split("-").map(Number);

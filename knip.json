@@ -121,7 +121,7 @@
         "src/gallery-main.ts"
       ],
       "project": ["src/**/*.ts"],
-      "ignoreUnresolved": ["/src/ar-compass-control.ts"],
+      "ignoreUnresolved": ["/src/ar-compass-control.ts", "/src/sun-clock.ts"],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",
