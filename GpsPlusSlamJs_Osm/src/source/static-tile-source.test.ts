@@ -1012,6 +1012,150 @@ describe("StaticTileSource", () => {
     });
   }
 
+  it("a caller abort during the re-read of a bad tile stays an abort: no report, no race, no refusal", async () => {
+    // Why this test matters: a re-read that fails leaves the first, bad
+    // copy to decide, which reports the tile and races it. A caller who
+    // gave up must get the abort instead, with nothing sent on its behalf.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const controller = new AbortController();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { source, fallback, calls } = setup({
+        [`GET ${TILE_URL}`]: [
+          new Response(partial, { status: 200, headers: { etag: '"first"' } }),
+          (init) =>
+            new Promise<Response>((_resolve, reject) => {
+              const signal = init?.signal;
+              signal?.addEventListener("abort", () => {
+                reject(signal.reason as Error);
+              });
+              queueMicrotask(() => {
+                controller.abort();
+              });
+            }),
+        ],
+      });
+      const outcome = source.fetchTile(TILE, { signal: controller.signal });
+      await expect(outcome).rejects.toMatchObject({ name: "AbortError" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(calls.map((c) => `${c.method} ${c.cache ?? ""}`)).toEqual([
+        "GET ",
+        "GET no-cache",
+      ]);
+      expect(fallback.calls).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a re-read the fill wait had no time for leaves the allowance for the next read of the tile", async () => {
+    // Why this test matters: the re-read past the browser cache is allowed
+    // once per tile per session. When no request went out (no wait left),
+    // nothing was learnt about the host's copy, so a later read of the same
+    // tile must still be able to look past the cache and find a good one.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const bad = (): Response =>
+      new Response(partial, { status: 200, headers: { etag: '"first"' } });
+    const reportUrl = `${REPORT_URL}?etag=${encodeURIComponent('"first"')}`;
+    const clock = { advance: (_ms: number): void => undefined };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const ctx = lateFill(
+        1_000,
+        [
+          () => {
+            clock.advance(1_000);
+            return Promise.resolve(bad());
+          },
+          bad(),
+          new Response(PAYLOAD, { status: 200, headers: { etag: '"new"' } }),
+        ],
+        undefined,
+        { [`POST ${reportUrl}`]: [json(202, { status: "checking" })] },
+      );
+      clock.advance = ctx.advance;
+      const first = await ctx.source.fetchTile(TILE);
+      expect(first.sourceId).toBe("overpass:test");
+      expect(ctx.calls.filter((c) => c.cache === "no-cache")).toHaveLength(0);
+      const second = await ctx.source.fetchTile(TILE);
+      expect(second.sourceId).toBe("static:tiles.example.dev");
+      expect(ctx.calls.filter((c) => c.cache === "no-cache")).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a caller abort before the re-read went out leaves the allowance too", async () => {
+    // Why this test matters: an abort says nothing about the host's copy
+    // either; the next read of the tile may still look past the cache.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const bad = (): Response =>
+      new Response(partial, { status: 200, headers: { etag: '"first"' } });
+    const controller = new AbortController();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { source, calls } = setup({
+        [`GET ${TILE_URL}`]: [
+          bad(),
+          (init) => {
+            controller.abort();
+            return Promise.reject(init?.signal?.reason as Error);
+          },
+          bad(),
+          new Response(PAYLOAD, { status: 200, headers: { etag: '"new"' } }),
+        ],
+      });
+      await expect(
+        source.fetchTile(TILE, { signal: controller.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      const next = await source.fetchTile(TILE);
+      expect(next.sourceId).toBe("static:tiles.example.dev");
+      expect(calls.map((c) => c.cache ?? "")).toEqual([
+        "",
+        "no-cache",
+        "",
+        "no-cache",
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("warns about a bad tile once per tile per session, and never for a speculative read", async () => {
+    // Why this test matters: a tile that stays bad is read again on every
+    // visit; a warning per read would flood the console, and a ring warm
+    // nobody looks at should not speak at all.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const stored = (): Response => new Response(partial, { status: 200 });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { source, fallback } = setup({
+        [`GET ${TILE_URL}`]: Array.from({ length: 5 }, stored),
+      });
+      await source.fetchTile(TILE, { speculative: true });
+      await source.fetchTile(TILE, { speculative: true });
+      expect(warn).not.toHaveBeenCalled();
+      await source.fetchTile(TILE);
+      await source.fetchTile(TILE);
+      expect(fallback.calls).toHaveLength(4);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("asks for no fill once the wait is spent before the ask", async () => {
     // Why this test matters: a fill request with no time left would be
     // cut at once; the tile goes to the race without it.

@@ -19,8 +19,10 @@ the library default is off.
     (10 min), `refreshAfterMs?` (30 days) - RangeError when negative or not
     finite. `maxWaitMs` bounds the wait for each answer's headers, not its
     body, so a tile is handed over (served or raced) at most
-    `maxWaitMs + requestTimeoutMs` after it was asked for: 105 s on the
-    defaults, for a body that began just before the wait's end.
+    `max(maxWaitMs, requestTimeoutMs) + requestTimeoutMs` after it was
+    asked for: 105 s on the defaults, for a body that began just before
+    the wait's end (with a wait shorter than the per-request limit, the
+    first read of a stored file alone may take that limit).
   - `requestTimeoutMs?` - the limit on each request to the host, body
     included; default the race's `DEFAULT_REQUEST_TIMEOUT_MS` (45 s).
     RangeError unless positive and finite. Requests of the fill wait (the
@@ -50,9 +52,13 @@ the library default is off.
      copy is served, a 404 continues as below. That re-read happens at most
      once per tile per session, speculative reads included: a tile that
      stays bad (its replace is bounded to once a day) would otherwise cost
-     two downloads on every read. When the file is still bad, one
-     `console.warn` line names why (a remark bounded to one line of 200
-     characters), the tile goes to `fallback` with no refusal remembered,
+     two downloads on every read. The allowance is spent only once the
+     re-read reached the host (an answer, a host error or a timeout); a
+     re-read the fill wait had no time left for, or one the caller aborted,
+     leaves it for the next read of the tile. When the file is still bad,
+     one `console.warn` line names why (a remark bounded to one line of 200
+     characters; once per tile per session, never for a speculative
+     read), the tile goes to `fallback` with no refusal remembered,
      and the host is sent one fire-and-forget
      `POST /report/v{schema}/{tile}?etag=<the ETag of the copy judged>` (the
      re-read's, or the first read's when the re-read failed) per tile per
@@ -132,7 +138,11 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
   already bounds the headers. A re-read that fails for any reason but an
   abort (no time left, no headers in time, a host error) leaves the first,
   bad copy to decide: the tile is raced and reported with that copy's
-  ETag, and no refusal is remembered.
+  ETag, and no refusal is remembered. A caller abort during the re-read
+  is rethrown as an abort, with no report, no race and no refusal. "No
+  time left" is its own error inside the source (`NoWaitLeft`, nothing
+  sent), apart from a `HostDeclined` (the host answered with a status
+  that is neither 200 nor 404).
   The body is not cut at the wait's end: fills take 30-75 s against the
   60 s wait, so a tile often appears near its end, and a dense tile's body
   takes seconds at low bandwidth (3.1 MB at 2 Mbps is about 12 s); cutting
@@ -186,7 +196,11 @@ const source = new CachingSource(
   within what is left of it, at several splits of headers, body and wait
   left; a late tile's body read whole past the wait's end but within the
   per-request limit; a poll's re-read bounded by the same deadline, and a
-  re-read cut by it still reporting the first copy with no refusal; header
+  re-read cut by it still reporting the first copy with no refusal; a
+  caller abort during the re-read staying an abort with no report; a
+  re-read with no wait left, or aborted before it went out, leaving the
+  allowance for the next read; the warning once per tile and never for a
+  speculative read; header
   timers only below the request limit; no
   request after an overshooting sleep; no fill asked with no wait left), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
