@@ -134,6 +134,7 @@ export async function verifyTile(
       BODY_HEAD_BYTES,
       BODY_TAIL_BYTES,
       deps.maxDecodedBytes ?? MAX_TILE_DECODED_BYTES,
+      object.size,
     );
     const decoder = new TextDecoder();
     reason = storedTileFault(

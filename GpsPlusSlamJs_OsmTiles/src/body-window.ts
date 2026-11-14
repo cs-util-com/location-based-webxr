@@ -50,14 +50,19 @@ export class SourceReadError extends Error {
  * `stream` passed through unchanged, noting when a read of it fails. The
  * error a decoder downstream reports for a failed source differs between
  * runtimes, so the note, not that error, tells a read error from a decode
- * error.
+ * error. A stream that ends before `expectedBytes` (the stored size) fails
+ * the same way: it stopped early, which says nothing about the bytes.
  */
-function watchReads(stream: ReadableStream<Uint8Array>): {
+function watchReads(
+  stream: ReadableStream<Uint8Array>,
+  expectedBytes: number | undefined,
+): {
   readonly stream: ReadableStream<Uint8Array>;
   readonly failure: () => { readonly error: unknown } | undefined;
 } {
   const reader = stream.getReader();
   let failure: { readonly error: unknown } | undefined;
+  let received = 0;
   const watched = new ReadableStream<Uint8Array>({
     async pull(controller) {
       let result: ReadableStreamReadResult<Uint8Array>;
@@ -68,8 +73,20 @@ function watchReads(stream: ReadableStream<Uint8Array>): {
         controller.error(error);
         return;
       }
-      if (result.done) controller.close();
-      else controller.enqueue(result.value);
+      if (!result.done) {
+        received += result.value.length;
+        controller.enqueue(result.value);
+        return;
+      }
+      if (expectedBytes !== undefined && received < expectedBytes) {
+        const error = new Error(
+          `stream ended after ${received} of ${expectedBytes} bytes`,
+        );
+        failure = { error };
+        controller.error(error);
+        return;
+      }
+      controller.close();
     },
     cancel(reason) {
       return reader.cancel(reason).catch(() => undefined);
@@ -154,7 +171,9 @@ export interface BodyEnds {
  * its first `headBytes` and its last `tailBytes`. Rejects on a gzip error,
  * a cut gzip stream included, with `BodyTooLarge` (the stream cancelled)
  * once more than `maxDecodedBytes` came out, and with `SourceReadError`
- * when reading `stream` itself failed, whatever the decoder made of it.
+ * when reading `stream` itself failed, whatever the decoder made of it,
+ * or when it ended before `sourceBytes` (the stored object's size, when
+ * known) had arrived.
  */
 export async function readBodyEnds(
   stream: ReadableStream<Uint8Array>,
@@ -162,8 +181,9 @@ export async function readBodyEnds(
   headBytes: number,
   tailBytes: number,
   maxDecodedBytes = MAX_TILE_DECODED_BYTES,
+  sourceBytes?: number,
 ): Promise<BodyEnds> {
-  const source = watchReads(stream);
+  const source = watchReads(stream, sourceBytes);
   const decoded: ReadableStream<Uint8Array> = gzip
     ? (source.stream as ReadableStream<BufferSource>).pipeThrough(
         new DecompressionStream("gzip"),

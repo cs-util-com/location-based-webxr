@@ -91,6 +91,48 @@ describe("readBodyEnds", () => {
     ).rejects.toBeInstanceOf(SourceReadError);
   });
 
+  // How many bytes short of the stored size the stream ends: 0 is a whole
+  // read, any shortfall a source that stopped early.
+  for (const [kind, short] of [
+    ["raw", 1],
+    ["raw", 30_000],
+    ["gzip", 1],
+    ["gzip", 1_000],
+  ] as const) {
+    it(`rejects with SourceReadError when a ${kind} stream ends ${short} bytes short of its size`, async () => {
+      // Why this test matters: a stream that ends early without an error
+      // looks like a cut tile (no closing bracket, a cut gzip), which the
+      // verify deletes. Only the stored size tells the two apart: fewer
+      // bytes than it is a failed read, no evidence about the tile.
+      const body = noisy(50_000);
+      const bytes = kind === "gzip" ? await gzip(body) : body;
+      const cut = chunked(bytes.slice(0, bytes.length - short), [4_096]);
+      await expect(
+        readBodyEnds(cut, kind === "gzip", 16, 16, 2 ** 20, bytes.length),
+      ).rejects.toBeInstanceOf(SourceReadError);
+    });
+  }
+
+  it("reads a stream that delivers exactly its stored size as before", async () => {
+    const body = noisy(50_000);
+    const zipped = await gzip(body);
+    for (const [bytes, isGzip] of [
+      [body, false],
+      [zipped, true],
+    ] as const) {
+      const ends = await readBodyEnds(
+        chunked(bytes, [4_096]),
+        isGzip,
+        16,
+        16,
+        2 ** 20,
+        bytes.length,
+      );
+      expect(ends.head).toEqual(body.slice(0, 16));
+      expect(ends.tail).toEqual(body.slice(body.length - 16));
+    }
+  });
+
   it("keeps a gzip error that is not a read error as it was (no SourceReadError)", async () => {
     const zipped = await gzip(noisy(50_000));
     const cut = chunked(zipped.slice(0, 2_000), [500]);

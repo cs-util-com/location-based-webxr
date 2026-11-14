@@ -4,7 +4,9 @@
 
 One verify of a tile a viewer reported bad, run by the serial queue
 consumer. The stored bytes are judged here, never by the report, so a
-report can cost CPU but never a good tile or an upstream request.
+report can cost CPU but never a good tile. A verify itself never makes an
+upstream request; a report the verify cannot settle is answered by a
+replace, which is one (bounded per cell and per day, `routes.ts.md`).
 
 ## Public API
 
@@ -29,7 +31,8 @@ dailyVerifyCap, maxDecodedBytes? }` and a `verify` `FillMessage` (`etag` optiona
     the tile and its memo are deleted, and `recordBadTile` backs the cell
     off by its bad count.
   - A failed read of the stored object (`SourceReadError`, an R2 stream
-    error) is no evidence: `verifyTile` rejects with it, nothing is
+    error, or a stream that ends before the object's `size` arrived) is
+    no evidence: `verifyTile` rejects with it, nothing is
     deleted or recorded, and the memo stays `started`, so the next report
     of the object refetches the tile (`replace`) instead.
 - `strongEtag(etag)` - drops a `W/` prefix: the edge weakens the ETag of a
@@ -82,7 +85,8 @@ no verify, a good memo older than a week verified again, the memo written
 `started` before the read and `good` after, a `started` memo answered
 `unfinished` without a read, a gzip bomb stopped at the decoded bound and
 deleted, a read error of a raw or gzip object keeping the tile with its
-memo `started` and no failure record, the cap, the backoff growing across a refill, and a property
+memo `started` and no failure record (a stream that fails and one that
+ends short of the object's size without an error), the cap, the backoff growing across a refill, and a property
 that a complete answer of any size, gzip or raw, is never deleted. The
 positive-evidence block keeps a compact layout and a head without a
 timestamp, deletes an HTML head, keeps two real Overpass tails
