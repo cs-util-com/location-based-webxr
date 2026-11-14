@@ -90,6 +90,10 @@ null`:
     waits (`ground-wait.ts`).
 - A model's `note-title:<i>`, `note-text:<i>`, `section-name:<i>` and
   `anim-name` fields are `{ kind: "model", id, edit }` (`model-edits.ts`);
+  a picture's `vp-*` fields are `{ kind: "viewpoint", id, viewpoint }`
+  (`../picture-viewpoint.ts`'s `viewpointWithField`: none for a picture
+  without a viewpoint, an unknown field or the value it holds; invalid
+  for a word);
   a clip's name keeps its autoplay, on for a first clip.
 
 ## Invariants & assumptions

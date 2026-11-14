@@ -234,6 +234,11 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
       "character.speak",
       "character.two-stations",
       "longText.reading",
+      "picture.finder",
+      "picture.sharpen",
+      "picture.thenNow",
+      "picture.viewer",
+      "picture.window",
       "shortText.edgeHint",
       "shortText.pin",
     ]);

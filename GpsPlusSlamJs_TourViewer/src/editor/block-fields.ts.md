@@ -124,3 +124,7 @@ A `FieldSpec` with `typed` is written by `typedFieldEdit` whoever sends the text
 - `tag` (a short text's `lang`, every view): the trimmed text.
 - Either is kept only when the format's own reader (`shortTextLook`, run strict) keeps it: the point's 1000 m reach and the tag's shape and 35-character cap are the format's rules, not copied here. Anything else is refused in words; a blank line removes the field; the same value is `unchanged`.
 - Tests: `block-fields.test.ts` ("a short text's point and language"), `block-fields.property.test.ts` (whatever is typed, an accepted edit is one the strict reader keeps; a shown point reads back unchanged).
+
+## `mark`
+
+- `BlockField.mark` (optional) is a line said under the field about how the block's view uses it. `blockFields` never sets it; the inspector model adds it for pictures.

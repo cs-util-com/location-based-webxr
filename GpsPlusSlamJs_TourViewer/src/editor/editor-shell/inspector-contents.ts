@@ -54,7 +54,7 @@ function rowOf(
 }
 
 /** The rows of a station's Contents or of a story's Entries, numbered. */
-function entriesList(
+export function entriesList(
   entries: readonly Parameters<typeof rowOf>[0][],
 ): HTMLElement {
   const list = document.createElement("div");

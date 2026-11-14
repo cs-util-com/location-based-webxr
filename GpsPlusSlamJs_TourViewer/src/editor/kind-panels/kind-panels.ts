@@ -17,6 +17,7 @@
  */
 import type { TourBlockKind } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { tourBlockKinds } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { ShellEditCommands } from "../editor-shell/editor-shell.js";
 import type { InspectorModel } from "../editor-shell/inspector-model.js";
 import { createKeptStore } from "../long-text/kept-store.js";
@@ -49,6 +50,7 @@ export interface PanelContext {
     | "editNarration"
     | "voiceMaxBytes"
     | "pictureTag"
+    | "pictureViewpoint"
   >;
   /** A tour file by its path. */
   readonly loadPicture: (path: string) => Promise<Blob>;
@@ -61,7 +63,13 @@ export interface PanelContext {
   readonly pointPickAsked: (on: boolean) => void;
   /** The selected model's part in focus. */
   readonly focused: (focus: ModelFocus | null) => void;
+  /** Stand the 3D view's camera at a picture's viewpoint; false: no view
+   *  open, or nothing to look from. */
+  readonly lookFrom: (selection: string) => boolean;
 }
+
+/** Said when the 3D view cannot look from a viewpoint. */
+const NO_LOOK_FROM = "Open the 3D view to look from the viewpoint.";
 
 /** A long text's panel: its writer and its preview. */
 function longText(ctx: PanelContext): KindPanel {
@@ -105,16 +113,27 @@ function shortText(ctx: PanelContext): KindPanel {
   });
 }
 
-/** A picture's panel: its view, its tag, the cut-out's alpha warning. */
+/** A picture's panel: its view, its tag, the cut-out's alpha warning, its
+ *  viewpoint. */
 function picture(ctx: PanelContext): KindPanel {
   const tag = ctx.edits.pictureTag;
+  const viewpoint = ctx.edits.pictureViewpoint;
   return createPicturePanel({
     setView: (id, view) => ctx.edits.view(id, view),
     ...(tag === undefined
       ? {}
       : { setTag: (id: string, shown: boolean) => tag(id, shown) }),
+    ...(viewpoint === undefined
+      ? {}
+      : {
+          setViewpoint: (id: string, vp: TourPictureViewpoint | null) =>
+            viewpoint(id, vp),
+        }),
     seeThrough: async (path) => pictureSeeThrough(await ctx.loadPicture(path)),
     changed: ctx.changed,
+    lookFrom: (id) => {
+      if (!ctx.lookFrom(id)) ctx.say(NO_LOOK_FROM);
+    },
   });
 }
 

@@ -238,7 +238,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   selection change or a save. A long text's panel is its dock
   (`../long-text/long-text-dock.ts`, body through `edits.block(id, "body",
 ...)`, view through `edits.view`); a picture's writes its view through
-  `edits.view` and its tag through the optional `edits.pictureTag`; a model's answers its part buttons,
+  `edits.view`, its tag through the optional `edits.pictureTag` and its
+  viewpoint through the optional `edits.pictureViewpoint` (the typed `vp-*`
+  fields commit as an `inspectorEdit` of kind `viewpoint`; the
+  fresh-viewpoint button asks with null); a model's answers its part buttons,
   the 3D view's wait and focus going to `modelPickAsked` and
   `modelFocused`. The shell's generic field input skips a writer's fields:
   only an input drawn under a field name (`data-field`) is written by
@@ -630,3 +633,7 @@ shell unfolds the station (or reveals the story), clears the search and
 hands the place over. The page then opens the character maker and adds the
 character that was made (`edit-main.ts`, `addCharacterTo`). Tested in
 `editor-shell.test.ts` ("the add menu's Character").
+
+## Look from a viewpoint
+
+- The shell passes `lookFrom` to the panels as `view?.lookFrom(selection) ?? false`, so the picture panel's "Look from the viewpoint" works in whichever 3D view is open and says so when none is.

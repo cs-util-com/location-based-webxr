@@ -1101,6 +1101,17 @@ describe("buildInspector: the values the inspector edits", () => {
       ...more,
     });
 
+  // Why: a picture's words say under each field where its view shows
+  // them, so the inspector must carry that mark with each field.
+  it("marks a picture's fields with where its view shows them", () => {
+    const model = at("photo-1");
+    const fields = model?.kind === "item" ? model.fields : [];
+    expect(fields.find((f) => f.name === "caption")?.mark).toBe(
+      "Not used by Plane.",
+    );
+    expect(fields.every((f) => f.mark !== undefined)).toBe(true);
+  });
+
   // Why: the title box shows what the creator typed, never the stand-in
   // the tree shows for an untitled station - typing into "Station 2"
   // would otherwise save that stand-in as a real title.

@@ -62,6 +62,8 @@ import {
   withWorldObjects,
 } from "../test-support/tour-of.js";
 import type { EditorModel } from "./editor-model.js";
+import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { viewpointFacts, viewpointRotation } from "./picture-viewpoint.js";
 import { openTourForEditing } from "./editor-open.js";
 import { bundleMatchesTour, readDebugBundle } from "../debug-bundle.js";
 import {
@@ -251,6 +253,142 @@ describe("createEditorSession", () => {
     ).not.toHaveProperty("showTag");
     const undone = editor.undo();
     expect(JSON.stringify(undone)).toContain("the tag of");
+    await session.close();
+  });
+
+  // Why: a view seen from a viewpoint shows nothing until the picture has
+  // one; the switch gives it its first (in front of the picture, facing
+  // it) in the same undo step, and a later switch keeps the one the
+  // creator set, so going to "Framed" and back loses nothing.
+  it("gives a picture its first viewpoint on a switch to a viewpoint view, and keeps it after", async () => {
+    const { session, manifest } = await opened([photo("c")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.editBlockView("c", "thenNow")).toEqual({ kind: "edited" });
+    expect(editor.changeCount()).toBe(1);
+    let saved = await editor.save({ keepScan: false });
+    const first = (await carried(saved.blob)).objects.find((o) => o.id === "c");
+    expect(first).toMatchObject({
+      view: "thenNow",
+      viewpoint: { hfovDeg: 56, distanceM: 6 },
+    });
+    expect(editor.editBlockView("c", "framed")).toEqual({ kind: "edited" });
+    expect(editor.editBlockView("c", "window")).toEqual({ kind: "edited" });
+    saved = await editor.save({ keepScan: false });
+    const again = (await carried(saved.blob)).objects.find((o) => o.id === "c");
+    expect(again).toMatchObject({ view: "window" });
+    expect(again && "viewpoint" in again ? again.viewpoint : null).toEqual(
+      first && "viewpoint" in first ? first.viewpoint : undefined,
+    );
+    // One undo takes the switch and the viewpoint back together.
+    editor.undo();
+    editor.undo();
+    editor.undo();
+    saved = await editor.save({ keepScan: false });
+    expect(
+      (await carried(saved.blob)).objects.find((o) => o.id === "c"),
+    ).not.toHaveProperty("viewpoint");
+    await session.close();
+  });
+
+  // Why: the inspector writes a typed viewpoint through one session edit:
+  // one undo step, saved; the same viewpoint again is no step; one the
+  // format would drop (a lens out of its bounds) and a block that is no
+  // picture are refused in words, changing nothing.
+  it("sets a picture's viewpoint as one step, and refuses one the format would not keep", async () => {
+    const { session, manifest } = await opened([pin("a", "Old"), photo("c")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const vp = {
+      position: [1, 1.5, 2] as const,
+      rotation: [0, 0, 0, 1] as const,
+      hfovDeg: 40,
+      distanceM: 12,
+    };
+    expect(editor.editPictureViewpoint("a", vp)).toEqual({
+      kind: "refused",
+      reason: "Only a picture has a viewpoint.",
+    });
+    expect(
+      editor.editPictureViewpoint("c", { ...vp, hfovDeg: 5 }),
+    ).toMatchObject({ kind: "refused" });
+    expect(
+      editor.editPictureViewpoint("c", { ...vp, position: [NaN, 0, 0] }),
+    ).toMatchObject({ kind: "refused" });
+    expect(editor.editPictureViewpoint("nope", vp)).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.editPictureViewpoint("c", vp)).toEqual({ kind: "edited" });
+    expect(editor.editPictureViewpoint("c", vp)).toEqual({
+      kind: "unchanged",
+    });
+    expect(editor.changeCount()).toBe(1);
+    const saved = await editor.save({ keepScan: false });
+    expect(
+      (await carried(saved.blob)).objects.find((o) => o.id === "c"),
+    ).toMatchObject({ viewpoint: vp });
+    // Null: a fresh one in front of the picture.
+    expect(editor.editPictureViewpoint("c", null)).toEqual({ kind: "edited" });
+    expect(JSON.stringify(editor.undo())).toContain("the viewpoint of");
+    await session.close();
+  });
+
+  // Why: a drag of a viewpoint's handle in the 3D view writes the
+  // viewpoint through one session edit: it stands where the handle was
+  // let go, faces the handle's heading and keeps its pitch, lens and
+  // depth; one undo puts it back. A picture with no viewpoint has none
+  // to move, and says so.
+  it("moves a picture's viewpoint where its handle was let go, as one step", async () => {
+    const { session, manifest } = await opened([photo("c")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const station = manifest.stations[0]!;
+    const half = (-120 * Math.PI) / 360;
+    const geo = itemGeoPose(
+      {
+        position: [4, 2, -3],
+        rotation: [0, Math.sin(half), 0, Math.cos(half)],
+      },
+      station.geo,
+    );
+    expect(editor.moveViewpoint("c", geo)).toMatchObject({ kind: "refused" });
+    expect(editor.moveViewpoint("nope", geo)).toMatchObject({
+      kind: "refused",
+    });
+    const vp = {
+      position: [1, 1.5, 2] as [number, number, number],
+      rotation: viewpointRotation(30, -10),
+      hfovDeg: 40,
+      distanceM: 12,
+    };
+    expect(editor.editPictureViewpoint("c", vp)).toEqual({ kind: "edited" });
+    expect(editor.moveViewpoint("c", geo)).toEqual({ kind: "edited" });
+    let saved = await editor.save({ keepScan: false });
+    const moved = (await carried(saved.blob)).objects.find((o) => o.id === "c");
+    const now = moved?.kind === "picture" ? moved.viewpoint : undefined;
+    expect(now?.position[0]).toBeCloseTo(4, 4);
+    expect(now?.position[1]).toBeCloseTo(2, 4);
+    expect(now?.position[2]).toBeCloseTo(-3, 4);
+    expect(now?.hfovDeg).toBe(40);
+    expect(now?.distanceM).toBe(12);
+    const facts = now === undefined ? null : viewpointFacts(now);
+    expect(facts?.facingDeg).toBeCloseTo(120, 4);
+    expect(facts?.pitchDeg).toBeCloseTo(-10, 4);
+    editor.undo();
+    saved = await editor.save({ keepScan: false });
+    expect(
+      (await carried(saved.blob)).objects.find((o) => o.id === "c"),
+    ).toMatchObject({ viewpoint: vp });
     await session.close();
   });
 

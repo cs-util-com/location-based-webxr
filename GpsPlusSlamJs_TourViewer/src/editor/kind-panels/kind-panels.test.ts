@@ -97,6 +97,7 @@ function context() {
     pickAsked: vi.fn(),
     pointPickAsked: vi.fn(),
     focused: vi.fn(),
+    lookFrom: vi.fn(() => true),
   };
   return { ctx, edits };
 }

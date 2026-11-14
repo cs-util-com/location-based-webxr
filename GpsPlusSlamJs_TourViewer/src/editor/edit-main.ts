@@ -4931,6 +4931,8 @@ const shell = createEditorShell({
     view: (id, view) => writeInspectorEdit((e) => e.editBlockView(id, view)),
     pictureTag: (id, shown) =>
       writeInspectorEdit((e) => e.editPictureTag(id, shown)),
+    pictureViewpoint: (id, viewpoint) =>
+      writeInspectorEdit((e) => e.editPictureViewpoint(id, viewpoint)),
     model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
     scene: commitSceneEdit,
     groundItems: (items) => {

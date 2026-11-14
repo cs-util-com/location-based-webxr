@@ -79,7 +79,11 @@ import {
   typed,
 } from "./inspector-fields.js";
 import type { KindPanelDraw } from "../kind-panels/kind-panel.js";
-import { contentsBody, contentsSummary } from "./inspector-contents.js";
+import {
+  contentsBody,
+  contentsSummary,
+  entriesList,
+} from "./inspector-contents.js";
 import type { StoryCard, StoryCardJump } from "./story-cards.js";
 import { radiusRange } from "./radius-slider.js";
 import { fieldRange, loudnessCurve } from "./field-sliders.js";
@@ -226,6 +230,14 @@ function lockButton(locked: boolean): HTMLButtonElement {
  *  against the format's cap under it as it is typed, or a number in a
  *  decimal box with its unit (the format's bounds refuse on the write). */
 function blockTextField(field: BlockField): HTMLElement[] {
+  const rows = blockTextRows(field);
+  return field.mark === undefined
+    ? rows
+    : [...rows, el("div", "note use", field.mark)];
+}
+
+/** A block's field as typed: its row, and a text's counter. */
+function blockTextRows(field: BlockField): HTMLElement[] {
   const hint = blockFieldPlaceholder(field);
   if (field.number !== undefined) {
     const { box, input } = numberBox(

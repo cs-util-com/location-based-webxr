@@ -25,6 +25,9 @@
  * - A heading, of a station or an item: the turn from the heading it has
  *   now, the short way round.
  * - A model's size.
+ * - A picture's viewpoint (`vp-north`, `vp-up`, `vp-east`, `vp-facing`,
+ *   `vp-pitch`, `vp-lens`, `vp-distance`): its viewpoint with that one
+ *   value typed (`picture-viewpoint.ts`).
  * - A plain folder's scale (`scale`), east, north, height and heading:
  *   its origin's offset in its station's frame (its holders composed in)
  *   and its turn there, written as the folder's pose or scale, its items
@@ -50,7 +53,10 @@ import {
   itemGeoPose,
   tourFreeBlocks,
 } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import type {
+  TourBlock,
+  TourPictureViewpoint,
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 import type { PlaceEdit } from "../../placement/place-edits.js";
 import {
@@ -77,6 +83,8 @@ import {
 import { headingOfRotation, ON_GROUND_M } from "./inspector-model.js";
 import { inputText } from "../../input-text.js";
 import { facingDegOf } from "../../character-views.js";
+import { sameJson } from "../../same-json.js";
+import { viewpointWithField } from "../picture-viewpoint.js";
 
 /** What a typed value writes. */
 export type InspectorEdit =
@@ -120,7 +128,13 @@ export type InspectorEdit =
   /** A turn about up of `deg` clockwise. */
   | { readonly kind: "turn"; readonly selection: string; readonly deg: number }
   /** An item's altitude (ellipsoidal m), its place and turn kept. */
-  | { readonly kind: "height"; readonly id: string; readonly alt: number };
+  | { readonly kind: "height"; readonly id: string; readonly alt: number }
+  /** A picture's viewpoint with one field typed (`picture-viewpoint.ts`). */
+  | {
+      readonly kind: "viewpoint";
+      readonly id: string;
+      readonly viewpoint: TourPictureViewpoint;
+    };
 
 const NOT_A_NUMBER = "Type a number, like 12.5";
 
@@ -325,6 +339,25 @@ function modelFieldEdit(
   return { kind: "model", id: item.id, edit };
 }
 
+/** The prefix of a picture's viewpoint fields (`vp-north`, ...). */
+const VIEWPOINT_FIELD = "vp-";
+
+/** A picture's viewpoint field typed: its viewpoint with it, nothing for
+ *  one it has not or the value it holds. */
+function viewpointEdit(
+  item: Extract<TourBlock, { kind: "picture" }>,
+  field: string,
+  value: string,
+): InspectorEdit {
+  const vp = item.viewpoint;
+  if (vp === undefined) return NONE;
+  const typed = typedNumber(value);
+  if (typed === null) return { kind: "invalid", reason: NOT_A_NUMBER };
+  const next = viewpointWithField(vp, field, typed);
+  if (next === null || sameJson(next, vp)) return NONE;
+  return { kind: "viewpoint", id: item.id, viewpoint: next };
+}
+
 /** A field typed for the posed block `entry` of `station`: its texts,
  *  its size, and its offset and heading in its station's frame. */
 function itemEdit(
@@ -338,6 +371,9 @@ function itemEdit(
   if (item.kind === "model") {
     const edit = modelFieldEdit(item, field, value);
     if (edit !== null) return edit;
+  }
+  if (item.kind === "picture" && field.startsWith(VIEWPOINT_FIELD)) {
+    return viewpointEdit(item, field, value);
   }
   if (field === "title" && item.kind === "shortText") {
     return { kind: "text", id: item.id, text: value };

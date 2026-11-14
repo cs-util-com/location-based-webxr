@@ -292,3 +292,7 @@ text area holding its lines.
 After the moves, a model with `file` draws its "File" row
 (`inspector-file.ts` `fileFieldPart`): the name and "Replace...", the row
 a drop target for the item's file (`data-filefield`).
+
+## A field's mark
+
+- A block field with a `mark` draws it under its row as `div.note.use` (number and text fields alike); a field without one draws as before.

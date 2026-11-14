@@ -59,6 +59,10 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import * as THREE from "three";
 
+import { viewpointForward } from "../kinds/picture/viewpoint-fade.js";
+import { drawnAspect } from "../kinds/picture/picture-decode.js";
+import { TOUR_PICTURE_VIEWPOINT_VIEWS } from "gps-plus-slam-app-framework/ar/tour-kinds";
+
 import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -97,6 +101,11 @@ import { drawAtExtent, drawInherited } from "../placement/place-scale.js";
 import { folderChains } from "../tour-document.js";
 import { viewHeightAtOneM } from "./gizmo-maths.js";
 import { isInterfacePart } from "./globe-interface-pass.js";
+import {
+  FRUSTUM_DEFAULT_ASPECT,
+  FRUSTUM_POINTS,
+  viewpointFrustum,
+} from "./viewpoint-frustum.js";
 
 /** What the layer needs from the page (the drawing is the page's: Node,
  *  where the tests run, has no canvas). */
@@ -164,7 +173,9 @@ export interface StationsLayerView {
    *  world part that has an `update`. Absent: no part is ticked. */
   readonly eye?: THREE.Camera;
   /** The editor's selection, handed to each ticked part (a character
-   *  opens his bubble while selected). */
+   *  opens his bubble while selected); a picture seen from its viewpoint
+   *  draws its field-of-view lines while it is selected. Absent: none
+   *  are drawn. */
   readonly selected?: string | null;
 }
 
@@ -275,6 +286,12 @@ const RING_CONTEXT = 0xa8c8ea;
  *  warning's colour (`--s-warn`, `editor-shell.css`). */
 export const RING_ITEM_OUT = 0xe9b86b;
 const POLE_COLOUR = 0xdfe3ea;
+/** A selected picture's field-of-view lines (the viewpoint's blue). */
+const VIEWPOINT_FRUSTUM_COLOUR = 0x9ccbff;
+/** The views a picture is seen from its viewpoint in. */
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
+  TOUR_PICTURE_VIEWPOINT_VIEWS,
+);
 
 interface StationContent {
   alive: boolean;
@@ -286,6 +303,9 @@ interface StationContent {
   readonly photos: { mesh: THREE.Mesh; upright: THREE.Quaternion }[];
   /** The world parts drawn for it that take a frame (`update`). */
   readonly parts: WorldPart[];
+  /** Each drawn part's object by its block's id (a picture's keeps its
+   *  image's aspect, `drawnAspect`). */
+  readonly drawn: Map<string, THREE.Object3D>;
   /** Its open story's entries, drawn apart (`drawStory`); null: none. */
   story: StoryDrawing | null;
 }
@@ -585,6 +605,29 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   let renders = 0;
   /** What a drag shows now (`setPreview`). */
   let preview: LayerPreview | null = null;
+  // The selected picture's field-of-view lines (`viewpointFrustum`), in
+  // the layer's frame: drawn over everything, under the gizmo, and never
+  // a pick.
+  const frustumPositions = new THREE.Float32BufferAttribute(
+    new Float32Array(FRUSTUM_POINTS * 3),
+    3,
+  );
+  const frustum = new THREE.LineSegments(
+    new THREE.BufferGeometry().setAttribute("position", frustumPositions),
+    new THREE.LineBasicMaterial({
+      color: VIEWPOINT_FRUSTUM_COLOUR,
+      transparent: true,
+      opacity: 0.55,
+      depthTest: false,
+      depthWrite: false,
+    }),
+  );
+  frustum.name = "viewpoint-frustum";
+  frustum.renderOrder = RING_RENDER_ORDER;
+  frustum.frustumCulled = false;
+  frustum.visible = false;
+  frustum.raycast = () => undefined;
+  group.add(frustum);
 
   // The arrival's growth about a station's point (`setGrowth`).
   const growth = new THREE.Matrix4();
@@ -663,13 +706,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       pole,
       photos: [],
       parts: [],
+      drawn: new Map(),
       story: null,
     };
     entry.content = content;
     renders++;
     void renderTourStation(
       entry.station,
-      drawDeps(entry, content, () => content.alive),
+      drawDeps(entry, content, () => content.alive, content.drawn),
     )
       .then((rendered) => {
         if (!content.alive) {
@@ -765,11 +809,14 @@ export function createStationsLayer(deps: StationsLayerDeps) {
   };
 
   /** What the renderer is handed for `entry`: its tour's assets, the
-   *  page's makers and the world door, its parts joining `content`. */
+   *  page's makers and the world door, its parts joining `content`;
+   *  each part's object is kept in `drawn` when one is handed (the
+   *  station's own, not an open story's). */
   const drawDeps = (
     entry: StationEntry,
     content: StationContent,
     alive: () => boolean,
+    drawn?: Map<string, THREE.Object3D>,
   ): TourStationRendererDeps => ({
     assets: tourAssets,
     scene: entry.root,
@@ -790,6 +837,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
             const part = deps.worldPart?.(block, env) ?? null;
             if (part !== null) {
               partObjects.add(part.object);
+              drawn?.set(block.id, part.object);
               if (part.update !== undefined) content.parts.push(part);
             }
             return part;
@@ -1014,8 +1062,58 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     }
   };
 
-  /** Draw `p` where the drag has it. */
+  /** `point` (a point in `entry`'s station frame) in the layer's frame,
+   *  in place. */
+  const inLayer = (entry: StationEntry, point: THREE.Vector3) => {
+    const { geo } = entry.station;
+    const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });
+    return point
+      .applyQuaternion(new THREE.Quaternion(...frame.rotationNue))
+      .add(new THREE.Vector3(...frame.positionNue))
+      .applyMatrix4(entry.root.matrix);
+  };
+
+  /** The picture `id` with a viewpoint and its station; null for an id
+   *  no station holds as a picture with one. */
+  const pictureWithViewpoint = (id: string) => {
+    for (const entry of stations.values()) {
+      const block = tourFreeBlocks(entry.station).find((i) => i.id === id);
+      if (block === undefined) continue;
+      if (block.kind !== "picture" || block.viewpoint === undefined) {
+        return null;
+      }
+      return { entry, block, vp: block.viewpoint };
+    }
+    return null;
+  };
+
+  /** The field-of-view lines for the selection: shown for a picture seen
+   *  from its viewpoint (a viewpoint view) whose station is drawn, with
+   *  its image's aspect once read; hidden for anything else. */
+  const placeFrustum = (selected: string | null) => {
+    frustum.visible = false;
+    const found = selected === null ? null : pictureWithViewpoint(selected);
+    if (found === null || hiddenStations.has(found.entry.id)) return;
+    if (!VIEWPOINT_VIEWS.has(found.block.view)) return;
+    const drawn = found.entry.content?.drawn.get(found.block.id);
+    const aspect =
+      (drawn === undefined ? null : drawnAspect(drawn)) ??
+      FRUSTUM_DEFAULT_ASPECT;
+    const points = viewpointFrustum(found.vp, aspect);
+    if (points === null) return;
+    points.forEach((p, i) => {
+      const at = inLayer(found.entry, p);
+      frustumPositions.setXYZ(i, at.x, at.y, at.z);
+    });
+    frustumPositions.needsUpdate = true;
+    frustum.visible = true;
+  };
+
+  /** Draw `p` where the drag has it. A picture's viewpoint is not
+   *  previewed: its look hangs from the viewpoint the tour has, so the
+   *  picture moves on release (the handle follows the drag). */
   const applyPreview = (p: LayerPreview) => {
+    if (p.ref.kind === "viewpoint") return;
     if (p.ref.kind === "station") {
       const entry = stations.get(p.ref.id);
       if (entry === undefined) return;
@@ -1043,6 +1141,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
 
   /** Draw what `p` showed where the tour has it again. */
   const clearPreview = (p: LayerPreview) => {
+    if (p.ref.kind === "viewpoint") return;
     if (p.ref.kind === "station") {
       const entry = stations.get(p.ref.id);
       if (entry === undefined) return;
@@ -1204,6 +1303,7 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       if (view.eye !== undefined) {
         tickParts(view.eye, 1 / focal, view.selected ?? null);
       }
+      placeFrustum(view.selected ?? null);
     },
     /** Draw a drag's preview (null: none; what the last one showed is
      *  drawn where the tour has it again). */
@@ -1325,14 +1425,28 @@ export function createStationsLayer(deps: StationsLayerDeps) {
             .flatMap((story) => storyEntries(entry.station, story.id))
             .find((e) => e.block.id === id)?.block;
         if (item === undefined) continue;
-        const { geo } = entry.station;
-        const frame = objectPoseNue(geo, { lat: geo.lat, lon: geo.lon });
-        return new THREE.Vector3(...item.pose.position)
-          .applyQuaternion(new THREE.Quaternion(...frame.rotationNue))
-          .add(new THREE.Vector3(...frame.positionNue))
-          .applyMatrix4(entry.root.matrix);
+        return inLayer(entry, new THREE.Vector3(...item.pose.position));
       }
       return null;
+    },
+    /** Where the viewpoint of the picture `id` stands in the layer's
+     *  frame (in its station's frame, as the format keeps it), and the
+     *  point it looks at: its depth ahead along its facing, where the
+     *  picture hangs from it. Null for an id no station holds as a
+     *  picture with a viewpoint. */
+    viewpointOf(
+      id: string,
+    ): { at: THREE.Vector3; ahead: THREE.Vector3; hfovDeg: number } | null {
+      const found = pictureWithViewpoint(id);
+      if (found === null) return null;
+      const { entry, vp } = found;
+      const at = new THREE.Vector3(...vp.position);
+      const ahead = viewpointForward(vp).multiplyScalar(vp.distanceM).add(at);
+      return {
+        at: inLayer(entry, at),
+        ahead: inLayer(entry, ahead),
+        hfovDeg: vp.hfovDeg,
+      };
     },
     /** Where a code with a position stands in the layer's frame, or
      *  null. */
@@ -1446,6 +1560,8 @@ export function createStationsLayer(deps: StationsLayerDeps) {
         codes = [];
         codeIds = [];
         codeSquares = [];
+        frustum.geometry.dispose();
+        frustum.material.dispose();
         group.removeFromParent();
       }
     },

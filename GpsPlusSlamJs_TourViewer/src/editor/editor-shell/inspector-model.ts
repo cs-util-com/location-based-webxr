@@ -79,7 +79,9 @@ import {
 } from "../block-fields.js";
 import { FOLDER_PREFIX, STORY_PREFIX } from "../editor-model.js";
 import { storyCards, type StoryCard } from "./story-cards.js";
+import { viewpointFacts, type ViewpointFacts } from "../picture-viewpoint.js";
 import { folderName } from "../folder-commands.js";
+import { pictureFieldMark } from "../kind-panels/picture-panel.js";
 import {
   FREE_LIST,
   childMayGo,
@@ -461,6 +463,8 @@ interface InspectorPicture {
   readonly showTag: boolean;
   /** Its image's tour path; null when the tour lacks the asset. */
   readonly imagePath: string | null;
+  /** Its viewpoint as the panel types it; null: it has none. */
+  readonly viewpoint: ViewpointFacts | null;
 }
 
 /** A long text as its writer shows it (`long-text-writer.ts`). */
@@ -1261,7 +1265,13 @@ export function buildInspector(input: {
       moves: movesOf(item.id, stations, input.selectedFileUnsaved === true),
       text: item.kind === "shortText" ? item.caption : null,
       extent: extentOf(item, place?.extent ?? null),
-      fields: blockFields(item),
+      fields:
+        item.kind === "picture"
+          ? blockFields(item).map((f) => {
+              const mark = pictureFieldMark(item.view, f.name);
+              return mark === null ? f : { ...f, mark };
+            })
+          : blockFields(item),
       ...(item.kind === "shortText"
         ? {
             shortText: {
@@ -1354,6 +1364,10 @@ export function buildInspector(input: {
               showTag: item.showTag !== false,
               imagePath:
                 input.assets.find((a) => a.id === item.image)?.path ?? null,
+              viewpoint:
+                item.viewpoint === undefined
+                  ? null
+                  : viewpointFacts(item.viewpoint),
             },
           }
         : {}),

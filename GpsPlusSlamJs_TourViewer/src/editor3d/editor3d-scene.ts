@@ -103,6 +103,7 @@ import {
 } from "./editor3d-view-parts.js";
 import { createFrameDrawCalls } from "./frame-draw-calls.js";
 import { morphStanding } from "./editor3d-visibility.js";
+import { createLensHold } from "./editor3d-lens.js";
 import type { EditorCityStats } from "./editor3d-globe-city.js";
 
 /** The store, as the 3D view reads it. */
@@ -182,6 +183,12 @@ export interface Editor3dView {
    *  code's level id): a station framed, an item or a code brought to a
    *  working distance. False for one the tour has no place for. */
   flyTo(selection: string): boolean;
+  /** Stand the camera at the viewpoint of the picture `selection` (its
+   *  id), looking where the picture hangs from it through the viewpoint's
+   *  lens (`editor3d-lens.ts`): the camera's own field of view is back on
+   *  the creator's next gesture or camera verb, or another selection.
+   *  False for one that is no picture with a viewpoint. */
+  lookFrom(selection: string): boolean;
   /** Fit the selection (null: the whole tour) into the view. */
   frame(selection: string | null): void;
   /** Look straight down (the left button then pans like a map), or go
@@ -315,6 +322,9 @@ export interface Editor3dStats {
   /** The camera's clip planes in the last frame (m). */
   readonly near: number;
   readonly far: number;
+  /** The camera's vertical field of view (degrees): the viewpoint's lens
+   *  while looking from one, else the view's own. */
+  readonly fovDeg: number;
   readonly tiltDeg: number;
   readonly standing: number;
   readonly stations: number;
@@ -464,6 +474,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     });
     undo.push(() => cam.dispose());
     const { camera, controls } = cam;
+    const lens = createLensHold(camera, EDITOR_CAMERA.fovDeg);
     const billboardView = () => ({
       viewportPx: size().h,
       fovDeg: EDITOR_CAMERA.fovDeg,
@@ -560,6 +571,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       camera.lookAt(pose.target);
     };
     const fly = (goal: Partial<OrbitPose>, ms: number) => {
+      lens.release();
       dropMomentum();
       const from = poseNow();
       const to = clampedPose({ ...from, ...goal });
@@ -581,6 +593,14 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     controls.addEventListener("start", endFlight);
     undo.push(() => {
       controls.removeEventListener("start", endFlight);
+    });
+    // The creator's own gesture leaves the viewpoint's lens.
+    const leaveLens = () => {
+      lens.release();
+    };
+    controls.addEventListener("start", leaveLens);
+    undo.push(() => {
+      controls.removeEventListener("start", leaveLens);
     });
 
     // Top view: straight down, the left button pans like a map and the
@@ -669,7 +689,13 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
       canvas,
       scene,
       camera,
-      view: orbitEditingCamera({ controls, camera, endFlight, dropMomentum }),
+      view: orbitEditingCamera({
+        controls,
+        camera,
+        endFlight,
+        dropMomentum,
+        leaveLens,
+      }),
       layer,
       ground,
       worldFromEcef: ground.worldFromEcef,
@@ -727,6 +753,12 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         topControls(false);
       }
       standing = morphStanding(cam.tiltDeg());
+      const ui = deps.store.getState().editorView;
+      // The lens holds while its picture stays selected.
+      if (lens.selection() !== null && ui.selected !== lens.selection()) {
+        lens.release();
+      }
+      lens.apply();
       const planes = editorClipPlanes({
         ellipsoid,
         cameraEcef: cameraEcef
@@ -742,13 +774,13 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
             groundM: groundUnder(controls.target),
           },
         ],
+        focusM: camera.position.distanceTo(controls.target),
       });
       camera.near = planes.near;
       camera.far = planes.far;
       camera.updateProjectionMatrix();
       ground.update(camera, renderer, now);
       editing.update();
-      const ui = deps.store.getState().editorView;
       layer.update({
         centre: controls.target,
         selectedStation: selectedStationOf(ui.selected, tourNow),
@@ -793,6 +825,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         paused = on;
       },
       setTilt(deg) {
+        lens.release();
         const offset = camera.position.clone().sub(controls.target);
         const spherical = new THREE.Spherical().setFromVector3(offset);
         spherical.phi = Math.min(
@@ -805,6 +838,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         controls.update();
       },
       setHeading(deg) {
+        lens.release();
         dropMomentum();
         placeOrbit({ ...poseNow(), azimuthRad: -deg * DEG });
         controls.update();
@@ -813,6 +847,16 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         const place = placeOf(selection);
         if (place === null) return false;
         fly(flightGoal(poseNow(), place), FLIGHT.flyMs);
+        return true;
+      },
+      lookFrom(selection) {
+        const seen = layer.viewpointOf(selection);
+        if (seen === null) return false;
+        // The orbit turns about where the picture hangs; its limits (its
+        // nearest distance, its lowest tilt) may hold the camera short of
+        // the viewpoint itself.
+        fly(orbitPoseOf(seen.at, seen.ahead), FLIGHT.flyMs);
+        lens.lookThrough(selection, seen.hfovDeg);
         return true;
       },
       frame: frameView,
@@ -904,6 +948,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         return p === null ? null : [p.x, p.y];
       },
       setDistance(m) {
+        lens.release();
         const offset = camera.position.clone().sub(controls.target);
         offset.setLength(
           Math.min(
@@ -922,6 +967,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           frames,
           near: camera.near,
           far: camera.far,
+          fovDeg: camera.fov,
           tiltDeg: cam.tiltDeg(),
           standing,
           ...layer.stats(),

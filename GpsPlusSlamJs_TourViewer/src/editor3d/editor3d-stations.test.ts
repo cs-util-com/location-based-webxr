@@ -45,6 +45,7 @@ import { buildLecternStand } from "../lectern-view.js";
 import { buildReadingSign } from "../reading-sign.js";
 import { renderTourStation } from "../content-placement.js";
 import { posedBlocks } from "../placement/placeables.js";
+import { viewpointRotation } from "../editor/picture-viewpoint.js";
 import {
   mountedWorldParts,
   worldEnv,
@@ -778,6 +779,101 @@ describe("createStationsLayer", () => {
     expect(c1.y - a.y).toBeCloseTo(2, 3);
     expect(layer.itemPointOf("gone")).toBeNull();
     expect(layer.codePointOf("gone")).toBeNull();
+  });
+
+  // Why: "Look from the viewpoint" stands the camera at a picture's
+  // viewpoint, looking where the picture hangs from it, so the layer must
+  // say both in the world's frame: the viewpoint where its station's
+  // frame has it (never the picture's own pose), and the point its depth
+  // ahead along its facing; nothing for a picture without one or an id
+  // the tour lacks.
+  it("says where a picture's viewpoint stands and where it looks", () => {
+    const { d } = deps();
+    const layer = createStationsLayer(d);
+    const seen = {
+      ...photo("v"),
+      viewpoint: {
+        position: [2, 1.6, 0],
+        rotation: viewpointRotation(90, 0),
+        hfovDeg: 56,
+        distanceM: 6,
+      },
+    } as TourBlock;
+    layer.setTour(
+      manifest([station("a", 0, 0, [seen, photo("p1")])]),
+      new Map(),
+    );
+    const a = layer.pointOf("a")!;
+    const vp = layer.viewpointOf("v")!;
+    // 2 m north is the world's -z; facing east, the world's +x.
+    expect(vp.at.x - a.x).toBeCloseTo(0, 3);
+    expect(vp.at.y - a.y).toBeCloseTo(1.6, 3);
+    expect(vp.at.z - a.z).toBeCloseTo(-2, 3);
+    expect(vp.ahead.x - vp.at.x).toBeCloseTo(6, 3);
+    expect(vp.ahead.y - vp.at.y).toBeCloseTo(0, 3);
+    expect(vp.ahead.z - vp.at.z).toBeCloseTo(0, 3);
+    // The lens the camera borrows while looking from there.
+    expect(vp.hfovDeg).toBe(56);
+    expect(layer.viewpointOf("p1")).toBeNull();
+    expect(layer.viewpointOf("gone")).toBeNull();
+  });
+
+  // Why: while a picture seen from its viewpoint is selected, the editor
+  // draws the field-of-view lines from the viewpoint to the frame the
+  // picture hangs in (as the pictures prototype does): the eye at the
+  // viewpoint, the frame's centre where "Look from the viewpoint" aims,
+  // as wide as the lens at the picture's depth. Another selection, a
+  // picture in a posed view, and a station the globe hides draw none.
+  it("draws a selected viewpoint picture's field-of-view lines", () => {
+    const { d, parent } = deps();
+    const layer = createStationsLayer(d);
+    const seen = {
+      ...photo("v"),
+      view: "thenNow",
+      viewpoint: {
+        position: [2, 1.6, 0],
+        rotation: viewpointRotation(90, 0),
+        hfovDeg: 90,
+        distanceM: 4,
+      },
+    } as TourBlock;
+    const posed = { ...seen, id: "w", view: "plane" } as TourBlock;
+    layer.setTour(manifest([station("a", 0, 0, [seen, posed])]), new Map());
+    const lines = () =>
+      parent.getObjectByName("viewpoint-frustum") as THREE.LineSegments;
+    layer.update({ ...view(0, 0, "a"), selected: null });
+    expect(lines().visible).toBe(false);
+
+    layer.update({ ...view(0, 0, "a"), selected: "v" });
+    expect(lines().visible).toBe(true);
+    const position = lines().geometry.getAttribute("position");
+    const point = (i: number) =>
+      new THREE.Vector3().fromBufferAttribute(position, i);
+    const vp = layer.viewpointOf("v")!;
+    for (const i of [0, 2, 4, 6]) {
+      expect(point(i).distanceTo(vp.at), String(i)).toBeCloseTo(0, 3);
+    }
+    const corners = [1, 3, 5, 7].map(point);
+    const centre = corners
+      .reduce((sum, c) => sum.add(c), new THREE.Vector3())
+      .multiplyScalar(0.25);
+    expect(centre.distanceTo(vp.ahead)).toBeCloseTo(0, 3);
+    // 8 m wide at 4 m through a 90 degree lens; 3:4 high before the
+    // image is read.
+    expect(corners[0]!.distanceTo(corners[1]!)).toBeCloseTo(8, 3);
+    expect(corners[1]!.distanceTo(corners[2]!)).toBeCloseTo(6, 3);
+
+    layer.update({ ...view(0, 0, "a"), selected: "w" });
+    expect(lines().visible).toBe(false);
+    layer.update({ ...view(0, 0, "a"), selected: "a" });
+    expect(lines().visible).toBe(false);
+
+    layer.setHidden(new Set(["a"]), new Set());
+    layer.update({ ...view(0, 0, "a"), selected: "v" });
+    expect(lines().visible).toBe(false);
+
+    layer.dispose();
+    expect(parent.getObjectByName("viewpoint-frustum")).toBeUndefined();
   });
 
   // Why: the layer chips turn the station names (billboards and their

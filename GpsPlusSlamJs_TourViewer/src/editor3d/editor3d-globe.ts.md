@@ -415,3 +415,9 @@ see-through), null without buildings.
   pinch on a touch screen at three separations (60 to 120, 60 to 300 and
   300 to 60 px) stepping toward or away from the ground under the fingers
   by a bounded share of the distance to it, never under the ground.
+
+## `lookFrom`
+
+- `lookFrom(selection)` places the globe camera at a picture's viewpoint looking along its line of sight (`lookFromView`), through the same take-over, release, `placeView`, dust reset and `followIntro` steps as a fly-to; false when the selection has no viewpoint.
+- There the camera sees through the viewpoint's lens (`createLensHold`, `editor3d-lens.ts`), worked again at the aspect each frame; the sky copies the camera's field of view, so it follows. `GLOBE_EDITOR_LOOK.fovYDeg` is back on the controls' gesture (`onTake`), every aim (`aimAt`: fly-to, Frame), pose change (`placePose`: tilt, Top view, north up), zoom, double-click zoom, keyboard step and distance, and on a selection other than the picture. `lookFrom` takes over the arrival first, so its field-of-view ease never runs against the lens; a release with no lens held writes nothing, so the arrival's ease is untouched. The layer's sizing and hiding keep reading the view's own field of view. `stats().fovDeg` gives the camera's.
+- The layer is handed `selected` each frame, for the selected picture's field-of-view lines (`editor3d-stations.ts`).

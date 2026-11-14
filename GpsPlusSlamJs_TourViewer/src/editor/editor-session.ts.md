@@ -127,6 +127,16 @@ never state). Design:
     "the tag of <name>"; shown removes `showTag` (absent is shown), hidden
     writes `false`; `unchanged` for its own state; refused for a block that
     is no picture (`ONLY_A_PICTURE_TAG`) and an id the tour lacks.
+  - `editPictureViewpoint(id, viewpoint | null)` - a picture's viewpoint,
+    one undo step named "the viewpoint of <name>"; null stands a fresh one
+    in front of the picture (`picture-viewpoint.ts`'s `mintViewpoint`, from
+    its pose in the station's frame); `unchanged` for the one it holds;
+    refused for a block that is no picture (`ONLY_A_PICTURE_VIEWPOINT`), a
+    viewpoint the format would refuse (`NOT_A_VIEWPOINT`) and an id the
+    tour lacks. `editBlockView` switching a picture without a viewpoint
+    into a viewpoint view mints one in the same step, so a creator never
+    holds a viewpoint view that draws as a plain plane; switching away
+    keeps the viewpoint for a switch back.
   - `editBlockField(id, field, value)` - `blockFieldEdit`'s outcome
     (`block-fields.ts`: a short text's description, a picture's
     title, caption or alt text, a model's title), one step through the
@@ -661,3 +671,9 @@ examples).
   draft's restore and from an opened tour; the entry's delete with its
   undo, its refusal while he speaks, Remove and restore taking it off
   and back).
+
+## `moveViewpoint`
+
+- `moveViewpoint(id, geo)` writes a picture's viewpoint where the 3D view's handle was let go: `geo` is read into the station's frame and passed to `viewpointAt`, so the facing follows the handle's heading and pitch, lens and depth stay. One dispatch, one undo step.
+- Refused, with nothing written, for an unknown id, a block that is no picture, and a picture without a viewpoint ("This picture has no viewpoint to move yet."). It shares its write path with `editPictureViewpoint` (`writeViewpoint`), so an unchanged viewpoint dispatches nothing.
+- Tested in `editor-session.test.ts` ("moves a picture's viewpoint where its handle was let go, as one step").

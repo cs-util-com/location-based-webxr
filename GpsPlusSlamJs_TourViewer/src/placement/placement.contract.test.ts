@@ -91,11 +91,11 @@ const EXPECTED: readonly (readonly [
   ["picture", "plane", true, true, "widthM"],
   ["picture", "framed", true, true, "widthM"],
   ["picture", "cutout", true, true, "widthM"],
-  ["picture", "thenNow", true, true, "widthM"],
-  ["picture", "sharpen", true, true, "widthM"],
-  ["picture", "finder", true, true, "widthM"],
-  ["picture", "window", true, true, "widthM"],
-  ["picture", "viewer", true, true, "widthM"],
+  ["picture", "thenNow", true, false, null],
+  ["picture", "sharpen", true, false, null],
+  ["picture", "finder", true, false, null],
+  ["picture", "window", true, false, null],
+  ["picture", "viewer", true, false, null],
   ["picture", "card", false, false, null],
   ["video", "card", false, false, null],
   ["audio", "spot", true, false, null],
@@ -296,8 +296,28 @@ function fieldsOf(kind: TourBlockKind, value: number): object {
   }
 }
 
+/** The views a picture is seen in from its viewpoint. */
+const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set([
+  "thenNow",
+  "sharpen",
+  "viewer",
+  "finder",
+  "window",
+]);
+
+/** A picture's viewpoint 6 m east of its spot, looking west at it (the
+ *  camera's -Z is west in the station's frame): the editor never leaves a
+ *  viewpoint view without one. */
+const VIEWPOINT = {
+  position: [0, 1.6, 8],
+  rotation: [0, 0, 0, 1],
+  hfovDeg: 56,
+  distanceM: 6,
+};
+
 /** `kind` in `view`, standing 2 m east of its station, turned
- *  `headingDeg` about up, its size `value`. */
+ *  `headingDeg` about up, its size `value`; a picture in a viewpoint view
+ *  with its viewpoint. */
 function blockOf(
   kind: TourBlockKind,
   view: string,
@@ -315,6 +335,9 @@ function blockOf(
       rotation: [0, Math.sin(half), 0, Math.cos(half)],
     },
     ...fieldsOf(kind, value),
+    ...(kind === "picture" && VIEWPOINT_VIEWS.has(view)
+      ? { viewpoint: VIEWPOINT }
+      : {}),
   } as unknown as TourBlock;
 }
 

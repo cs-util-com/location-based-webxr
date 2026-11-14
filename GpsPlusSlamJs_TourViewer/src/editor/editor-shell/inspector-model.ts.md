@@ -100,7 +100,8 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     over the ground of where it stands in the world, through its
     folders, `posedEntryOf` of `../../placement/placeables.ts`; rounded as
     the station's; null while unknown or with no place), and for a picture
-    only `picture` (`InspectorPicture`: its view, whether its tag shows,
+    only `picture` (`InspectorPicture`: its view, its viewpoint's facts
+    or null (`../picture-viewpoint.ts`), whether its tag shows,
     its image's tour path or null), which its panel draws;
   - `CodeInspector` - `kind: "code"`, title, `sub` (its line),
     `printSizeM`, `position` or null when it has none;
@@ -226,3 +227,7 @@ An item's `sub` names it by `blockLabel` (`kinds/edit-kinds.ts`): a short text b
 ## A short text's point
 
 `InspectorShortText.point` is set for a sign or a ground arrow: `{ id, at, picking }`, `at` the file's `pointsTo` or null, `picking` the input's `pointPick` (false when absent). Other views carry no `point`.
+
+## A picture's field marks
+
+- A picture's block fields carry `mark` from `pictureFieldMark(item.view, field.name)` (in `kind-panels/picture-panel.ts`), so each says how the picture's view shows it; other kinds' fields carry none.
