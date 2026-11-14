@@ -128,9 +128,13 @@ export class FakeQueue implements FillQueue {
 
 export class FakeLimiter implements RateLimiter {
   allow = true;
+  /** Keys refused while `allow` is true, to refuse one budget only. */
+  readonly denyKeys = new Set<string>();
   readonly keys: string[] = [];
   limit(options: { key: string }): Promise<{ success: boolean }> {
     this.keys.push(options.key);
-    return Promise.resolve({ success: this.allow });
+    return Promise.resolve({
+      success: this.allow && !this.denyKeys.has(options.key),
+    });
   }
 }

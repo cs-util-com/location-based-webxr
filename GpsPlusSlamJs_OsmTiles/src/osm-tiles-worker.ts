@@ -10,12 +10,18 @@ import type { FillMessage, OsmTilesEnv } from "./bindings";
 import {
   clearPending,
   clearVerifying,
+  clearVerifyingIf,
   markPending,
   sweepPending,
   sweepVerifying,
 } from "./fill-state";
 import { fillTile } from "./fill-tile";
-import { dailyUpstreamCap, dailyVerifyCap, handleRequest } from "./routes";
+import {
+  dailyReplaceCap,
+  dailyUpstreamCap,
+  dailyVerifyCap,
+  handleRequest,
+} from "./routes";
 import { parseTileCell } from "./tile-cell";
 import { verifyTile } from "./verify-tile";
 
@@ -66,7 +72,13 @@ async function verifyOne(
       JSON.stringify({ verify: "error", cell, error: describeError(error) }),
     );
   } finally {
-    await clearVerifying(env.TILES, cell).catch(() => undefined);
+    // Only this message's marker: a report of a newer object of the cell
+    // may have written its own meanwhile, and that one must stay.
+    const done =
+      typeof body.etag === "string"
+        ? clearVerifyingIf(env.TILES, cell, body.etag)
+        : clearVerifying(env.TILES, cell);
+    await done.catch(() => undefined);
   }
 }
 
@@ -100,6 +112,7 @@ async function consumeOne(body: FillMessage, env: OsmTilesEnv): Promise<void> {
         userAgent: env.USER_AGENT ?? DEFAULT_USER_AGENT,
         endpoints: DEFAULT_OVERPASS_ENDPOINTS,
         dailyUpstreamCap: dailyUpstreamCap(env),
+        dailyReplaceCap: dailyReplaceCap(env),
       },
     );
     // One line per fill: what `wrangler tail` and the dashboard logs show.

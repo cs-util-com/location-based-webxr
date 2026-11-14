@@ -684,6 +684,40 @@ describe("retry, rotation and backoff", () => {
 
     await expect(source.fetchTile(TILE)).rejects.toThrow();
   });
+
+  it("names the refused remark in its failure, on one bounded line", async () => {
+    // Why this test matters: a refused answer is diagnosed from the log
+    // line alone, so it must say what the operator wrote; and an operator
+    // controls that text, so one remark cannot flood the log.
+    const remark = `runtime error: out of memory\n${"x".repeat(1_000)}`;
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(jsonResponse({ ...OK_BODY, remark })),
+    );
+    const { source } = makeSource(fetchImpl);
+
+    const error = (await source
+      .fetchTile(TILE)
+      .catch((e: unknown) => e)) as Error;
+    expect(error.message).toMatch(
+      /partial answer: runtime error: out of memory x/,
+    );
+    expect(error.message).not.toMatch(/\n/);
+    expect(error.message.length).toBeLessThan(500);
+  });
+
+  it("takes an answer whose remark is empty or whitespace as complete", async () => {
+    // Why this test matters: an empty remark carries no message of a cut
+    // answer; refusing it would race away a whole tile for nothing.
+    for (const remark of ["", "  \n\t "]) {
+      const fetchImpl = vi.fn(() =>
+        Promise.resolve(jsonResponse({ ...OK_BODY, remark })),
+      );
+      const { source } = makeSource(fetchImpl);
+      const result = await source.fetchTile(TILE);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(result.features.length).toBeGreaterThan(0);
+    }
+  });
 });
 
 describe("AbortSignal support, end to end", () => {

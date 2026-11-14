@@ -12,26 +12,38 @@ tile in memory.
 - `hasGzipMagic(bytes)` - the body starts with `1f 8b`.
 - `MAX_TILE_GZIP_BYTES` (20 MiB) and `MAX_TILE_DECODED_BYTES` (150 MiB) -
   the size bounds of a tile, gzip and decoded. The densest tiles measured
-  were a few MB of gzip and a few tens of MB decoded.
+  were a few MB of gzip and a few tens of MB decoded. The decoded bound
+  holds for a stream read through a window (`readBodyEnds`); a check on
+  a body already buffered whole (the fill's raw answer) cannot fire
+  before the isolate's 128 MB memory limit ends the invocation.
 - `gzipDecodedSize(bytes)` - the trailer's ISIZE (last four bytes,
   little-endian): the decoded size modulo 2^32 as the stream claims it;
   undefined for fewer than 20 bytes. A crafted stream can understate it
   (nothing checks it before the stream is inflated), so it bounds honest
   answers for free and the decoded limit below is the backstop.
 - `BodyTooLarge` - the error `readBodyEnds` throws past its bound.
+- `SourceReadError` - the error `readBodyEnds` throws when reading the
+  stored stream itself failed (the cause attached), raw or gzip, as
+  opposed to bytes that do not decode, and when the stream ends without
+  an error before the stored size arrived (`sourceBytes`). A failed or
+  short read says nothing about the tile, so the verify must not judge it
+  on one.
 - `inflateHead(gzip, maxBytes)` - the first `maxBytes` decoded bytes,
   inflating at most the first 16 KB (`GZIP_HEAD_INPUT_BYTES`, module-private)
   of input.
   Rejects when those bytes are not a valid gzip start, or when a body
   given whole fails to inflate; a stream merely cut at the input bound is
   fine once anything came out.
-- `readBodyEnds(stream, gzip, headBytes, tailBytes, maxDecodedBytes?)` -
+- `readBodyEnds(stream, gzip, headBytes, tailBytes, maxDecodedBytes?, sourceBytes?)` -
   reads the stream to its end (through `DecompressionStream` when `gzip`),
   keeping only the first `headBytes` and the last `tailBytes`. Rejects on
   a gzip error, a cut gzip stream included, and with `BodyTooLarge` (the
   stream cancelled) once more than `maxDecodedBytes` (default
   `MAX_TILE_DECODED_BYTES`) came out, so a gzip bomb costs at most that
-  much inflating.
+  much inflating. With `sourceBytes` (the stored object's size), a source
+  that ends having sent fewer bytes rejects with `SourceReadError`: read
+  short, a whole tile looks cut (no closing bracket, a cut gzip), which
+  the verify would delete.
 
 ## Invariants & assumptions
 
@@ -51,5 +63,7 @@ gzip, a property over sizes, a gzip bomb stopped at the decoded bound).
 `body-window.test.ts` tests it directly: a property that any chunking
 yields the same head and tail, a gzip tail stitched from small chunks, a
 bomb rejected with `BodyTooLarge`, the stream cancelled past the bound, a
+raw or gzip stream ending 1 byte or many short of its size rejected with
+`SourceReadError` and one of exactly its size read as before, a
 body exactly at the bound passing, `inflateHead` returning the head past
 its input bound, cut gzip rejected, and `gzipDecodedSize`.

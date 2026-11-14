@@ -414,14 +414,37 @@ const DEFAULT_RATE_LIMIT_PENALTY_MS = 35_000;
  */
 const DEFAULT_MAX_ATTEMPT_LOG = 50;
 
+/** The longest remark text a refusal names; an operator writes it. */
+const MAX_REMARK_TEXT = 200;
+
 /**
- * Whether a decoded Overpass answer is a partial one: Overpass reports a
- * timeout or a memory abort inside a 200 as a top-level `remark` next to a
- * cut `elements` array. Such an answer parses as valid JSON, so it must be
- * refused by this test, never returned or cached as the whole tile.
+ * The remark of a partial Overpass answer as one bounded line, or
+ * `undefined` for an answer that is not partial. Overpass reports a timeout
+ * or a memory abort inside a 200 as a top-level `remark` next to a cut
+ * `elements` array. An empty or whitespace remark carries no such message
+ * and counts as none; any other remark, a string or not, marks the answer
+ * partial (fail closed).
+ */
+export function partialOverpassRemark(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  if (!("remark" in payload)) return undefined;
+  const remark: unknown = payload.remark;
+  const raw =
+    typeof remark === "string" ? remark : (JSON.stringify(remark) ?? "");
+  const text = raw.replace(/\s+/g, " ").trim();
+  if (text === "") return typeof remark === "string" ? undefined : "(empty)";
+  return text.length > MAX_REMARK_TEXT
+    ? `${text.slice(0, MAX_REMARK_TEXT)}\u2026`
+    : text;
+}
+
+/**
+ * Whether a decoded Overpass answer is a partial one (see
+ * {@link partialOverpassRemark}). Such an answer parses as valid JSON, so it
+ * must be refused by this test, never returned or cached as the whole tile.
  */
 export function isPartialOverpassAnswer(payload: unknown): boolean {
-  return typeof payload === "object" && payload !== null && "remark" in payload;
+  return partialOverpassRemark(payload) !== undefined;
 }
 
 /**
@@ -1338,8 +1361,9 @@ export class OverpassSource implements OsmDataSource {
     );
     // A partial answer is a failed attempt like an error page: the next
     // operator is tried, and a race never lets it win over a complete one.
-    if (isPartialOverpassAnswer(payload)) {
-      throw new Error(`${hostOf(endpoint)} sent a partial answer (remark)`);
+    const remark = partialOverpassRemark(payload);
+    if (remark !== undefined) {
+      throw new Error(`${hostOf(endpoint)} sent a partial answer: ${remark}`);
     }
 
     const parseStart = this.monotonicNow();

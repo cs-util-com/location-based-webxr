@@ -229,6 +229,7 @@ describe("verifyTile", () => {
       rawBytes: 0,
       storedBytes: 0,
       verifies: 2,
+      replaceRequests: 0,
     });
     const outcome = await verifyTile(
       verify(etag),
@@ -409,4 +410,98 @@ describe("verifyTile", () => {
       { numRuns: 15 },
     );
   });
+});
+
+describe("verifyTile: a read error is no evidence", () => {
+  // Why these tests matter: a transient R2 stream error while the verify
+  // reads the object says nothing about the tile. Classified as a gzip
+  // error, it deleted a good tile and backed its cell off; now it ends the
+  // verify with no verdict, the memo stays `started`, and the report
+  // endpoint's refetch of such a tile settles it without deleting anything.
+
+  /** The stored object's stream sends its first bytes, then fails. */
+  function tornReads(bucket: FakeBucket, sent: number): void {
+    const get = bucket.get.bind(bucket);
+    bucket.get = async (key) => {
+      const object = await get(key);
+      if (object === null || key !== KEY) return object;
+      const bytes = bucket.bytesOf(key)!;
+      let done = false;
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (done) {
+            controller.error(new TypeError("stream read failed"));
+            return;
+          }
+          done = true;
+          controller.enqueue(bytes.slice(0, sent));
+        },
+      });
+      return { ...object, body };
+    };
+  }
+
+  /** The stored object's stream sends its first bytes, then just ends. */
+  function shortReads(bucket: FakeBucket, short: number): void {
+    const get = bucket.get.bind(bucket);
+    bucket.get = async (key) => {
+      const object = await get(key);
+      if (object === null || key !== KEY) return object;
+      const bytes = bucket.bytesOf(key)!;
+      return {
+        ...object,
+        body: new Blob([bytes.slice(0, bytes.length - short)]).stream(),
+      };
+    };
+  }
+
+  for (const [kind, short] of [
+    ["raw", 1],
+    ["raw", 3_000],
+    ["gzip", 1],
+    ["gzip", 100],
+  ] as const) {
+    it(`keeps a ${kind} tile whose stream ends ${short} bytes short without an error`, async () => {
+      // Why this test matters: a stream that just stops reads like a cut
+      // tile, which is deleted; fewer bytes than the object's size is a
+      // failed read, so the tile stays and the memo stays started.
+      const bucket = new FakeBucket();
+      const text = overpassBody(4_000);
+      const etag =
+        kind === "raw"
+          ? await storeRaw(bucket, text)
+          : await storeGzip(bucket, text);
+      shortReads(bucket, short);
+      await expect(verifyTile(verify(etag), deps(bucket))).rejects.toThrow(
+        /read/,
+      );
+      expect(bucket.objects.has(KEY)).toBe(true);
+      expect(await readFailure(bucket, CELL)).toBeUndefined();
+      expect(await readVerified(bucket, CELL)).toMatchObject({
+        etag,
+        state: "started",
+      });
+    });
+  }
+
+  for (const kind of ["raw", "gzip"] as const) {
+    it(`keeps a ${kind} tile whose stream fails mid-read, memo left started`, async () => {
+      const bucket = new FakeBucket();
+      const text = overpassBody(4_000);
+      const etag =
+        kind === "raw"
+          ? await storeRaw(bucket, text)
+          : await storeGzip(bucket, text);
+      tornReads(bucket, 200);
+      await expect(verifyTile(verify(etag), deps(bucket))).rejects.toThrow(
+        /read/,
+      );
+      expect(bucket.objects.has(KEY)).toBe(true);
+      expect(await readFailure(bucket, CELL)).toBeUndefined();
+      expect(await readVerified(bucket, CELL)).toMatchObject({
+        etag,
+        state: "started",
+      });
+    });
+  }
 });

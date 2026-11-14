@@ -26,7 +26,7 @@ import { abortError, sleep } from "./backoff.js";
 import { composeSignals } from "./compose-signals.js";
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
-  isPartialOverpassAnswer,
+  partialOverpassRemark,
 } from "./overpass-source.js";
 
 /**
@@ -49,7 +49,11 @@ export interface StaticTileSourceOptions {
   readonly pollIntervalMs?: number;
   /**
    * The longest a queued tile is waited for before the race. Default 60 s
-   * (a cold tile took 36-56 s to fill when measured).
+   * (a cold tile took 36-56 s to fill when measured). It bounds the wait
+   * for each answer's headers; a body that began just before its end keeps
+   * `requestTimeoutMs`, so a tile is handed over at most
+   * `maxWaitMs + requestTimeoutMs` after it was asked for (105 s on the
+   * defaults).
    */
   readonly maxWaitMs?: number;
   /** How long no fill is asked for after the host said no. Default 10 min. */
@@ -115,8 +119,9 @@ function checkStored(text: string, tile: string): object | BadStoredTile {
   if (!Array.isArray((payload as { elements?: unknown }).elements)) {
     return new BadStoredTile(`tile ${tile} has no elements array`);
   }
-  if (isPartialOverpassAnswer(payload)) {
-    return new BadStoredTile(`tile ${tile} is a partial answer (remark)`);
+  const remark = partialOverpassRemark(payload);
+  if (remark !== undefined) {
+    return new BadStoredTile(`tile ${tile} is a partial answer: ${remark}`);
   }
   return payload;
 }
@@ -193,6 +198,8 @@ export class StaticTileSource implements OsmDataSource {
   private readonly refreshAsked = new Set<string>();
   /** Tiles already reported bad in this session. */
   private readonly reported = new Set<string>();
+  /** Tiles already re-read past the browser cache in this session. */
+  private readonly rereadPastCache = new Set<string>();
 
   constructor(options: StaticTileSourceOptions) {
     this.origin = requireBaseUrl(options.baseUrl);
@@ -267,23 +274,55 @@ export class StaticTileSource implements OsmDataSource {
   }
 
   /**
-   * One request to the host under the time limit; the caller's signal, when
-   * given, still aborts it. The limit covers the body read too.
+   * One request to the host under the per-request limit, which covers the
+   * body read too; the caller's signal, when given, still aborts it.
+   * `deadline` (epoch ms, the end of the fill wait) bounds only the wait
+   * for the response's headers: a tile the host stored late in the wait is
+   * still read whole, at whatever bandwidth the per-request limit allows.
+   * Nothing is sent once the deadline has passed (`HostDeclined`). A body
+   * that starts just before the deadline can therefore take up to
+   * `requestTimeoutMs` past it.
    */
-  private request(
+  private async request(
     url: string,
     signal: AbortSignal | undefined,
-    init: { readonly method?: "POST"; readonly cache?: RequestCache } = {},
+    init: {
+      readonly method?: "POST";
+      readonly cache?: RequestCache;
+      readonly deadline?: number | undefined;
+    } = {},
   ): Promise<Response> {
+    let headersBy: AbortController | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const left =
+      init.deadline === undefined ? Infinity : init.deadline - this.now();
+    if (left <= 0) throw new HostDeclined(`no wait left for ${url}`);
+    // With at least the per-request limit left, that limit already bounds
+    // the headers: no timer (one fewer to clear, and none past setTimeout's
+    // range for a very long wait).
+    if (left < this.requestTimeoutMs) {
+      const controller = new AbortController();
+      headersBy = controller;
+      timer = setTimeout(() => {
+        controller.abort(
+          new DOMException("no answer within the fill wait", "TimeoutError"),
+        );
+      }, left);
+    }
     const limited = composeSignals(
       signal,
       AbortSignal.timeout(this.requestTimeoutMs),
+      headersBy?.signal,
     );
-    return this.fetchImpl(url, {
-      ...(init.method === undefined ? {} : { method: init.method }),
-      ...(init.cache === undefined ? {} : { cache: init.cache }),
-      ...(limited === undefined ? {} : { signal: limited }),
-    });
+    try {
+      return await this.fetchImpl(url, {
+        ...(init.method === undefined ? {} : { method: init.method }),
+        ...(init.cache === undefined ? {} : { cache: init.cache }),
+        ...(limited === undefined ? {} : { signal: limited }),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async fromHost(
@@ -293,24 +332,35 @@ export class StaticTileSource implements OsmDataSource {
     speculative: boolean,
   ): Promise<OsmTileResult> {
     const started = this.now();
+    // The first read of a stored file is not part of the fill wait: it
+    // keeps the plain limit, so a wait of 0 still reads stored tiles.
     const first = await this.read(tile, signal, started, speculative);
     if (first !== undefined) return first;
     if (readOnly) throw new HostSkipped(`tile ${tile} not stored`);
-    if ((await this.askForFill(tile, signal)) === "present") {
-      const ready = await this.read(tile, signal, started, speculative);
+    const deadline = started + this.maxWaitMs;
+    if ((await this.askForFill(tile, signal, deadline)) === "present") {
+      const ready = await this.read(
+        tile,
+        signal,
+        started,
+        speculative,
+        deadline,
+      );
       if (ready !== undefined) return ready;
       throw new HostDeclined(`tile ${tile} announced but missing`);
     }
-    return this.waitForFill(tile, signal, started);
+    return this.waitForFill(tile, signal, started, deadline);
   }
 
   /** `present` (200), `queued` (202, nothing ahead); a throw otherwise. */
   private async askForFill(
     tile: string,
     signal: AbortSignal | undefined,
+    deadline: number,
   ): Promise<"present" | "queued"> {
     const fill = await this.request(this.fillUrl(tile), signal, {
       method: "POST",
+      deadline,
     });
     if (fill.status === 200) {
       await discardBody(fill);
@@ -333,15 +383,20 @@ export class StaticTileSource implements OsmDataSource {
     throw new HostDeclined(`fill answered ${fill.status}`);
   }
 
-  /** Looks again for a queued tile until the bounded wait is spent. */
+  /**
+   * Looks again for a queued tile until the bounded wait is spent; each
+   * look's answer must begin before the wait's `deadline`, and none starts
+   * with nothing left (a sleep can overshoot).
+   */
   private async waitForFill(
     tile: string,
     signal: AbortSignal | undefined,
     started: number,
+    deadline: number,
   ): Promise<OsmTileResult> {
-    while (this.now() - started + this.pollIntervalMs <= this.maxWaitMs) {
+    while (this.now() - started + this.pollIntervalMs < this.maxWaitMs) {
       await this.sleepImpl(this.pollIntervalMs, signal);
-      const polled = await this.read(tile, signal, started, false);
+      const polled = await this.read(tile, signal, started, false, deadline);
       if (polled !== undefined) return polled;
     }
     throw new HostDeclined(
@@ -353,34 +408,28 @@ export class StaticTileSource implements OsmDataSource {
    * The stored tile, `undefined` on a 404, a throw on anything else.
    * `started` is when the tile was first asked for: the time before this read
    * (the wait for the host's fill) is reported as `slotWaitMs`, and only this
-   * read's own round trip as `transportMs`.
+   * read's own round trip as `transportMs`. `deadline`, the end of the
+   * fill wait, bounds the wait for each of its answers' headers, the
+   * re-read's included.
    */
   private async read(
     tile: string,
     signal: AbortSignal | undefined,
     started: number,
     speculative: boolean,
+    deadline?: number,
   ): Promise<OsmTileResult | undefined> {
     const readStart = this.now();
-    let stored = await this.readStored(tile, signal);
-    if (stored === undefined) return undefined;
-    let transportMs = elapsedMs(readStart, this.now());
-    let decodeStart = this.now();
-    let checked = checkStored(stored.text, tile);
+    const judged = await this.readAndJudge(tile, signal, readStart, deadline);
+    if (judged === undefined) return undefined;
+    const { stored, transportMs, decodeStart, checked } = judged;
     if (checked instanceof BadStoredTile) {
-      // The browser may hold an older copy in its HTTP cache than the host
-      // now stores (the host replaces bad tiles): read once more past that
-      // cache before calling the tile bad or reporting it.
-      stored = await this.readStored(tile, signal, "no-cache");
-      if (stored === undefined) return undefined;
-      transportMs = elapsedMs(readStart, this.now());
-      decodeStart = this.now();
-      checked = checkStored(stored.text, tile);
-      if (checked instanceof BadStoredTile) {
-        // A speculative read asks the host for nothing, a report included.
-        if (!speculative) this.reportBad(tile, stored.etag);
-        throw checked;
-      }
+      // The one diagnostic of a refused stored file; the race hides it.
+      /* eslint-disable-next-line no-console */
+      console.warn(`StaticTileSource: ${checked.message}`);
+      // A speculative read asks the host for nothing, a report included.
+      if (!speculative) this.reportBad(tile, stored.etag);
+      throw checked;
     }
     const payload = checked;
     const decodeMs = elapsedMs(decodeStart, this.now());
@@ -409,6 +458,54 @@ export class StaticTileSource implements OsmDataSource {
   }
 
   /**
+   * Reads a stored tile and checks it, `undefined` for a missing tile.
+   * A bad first copy is read once more past the browser cache (see below);
+   * the result names the copy that was judged.
+   */
+  private async readAndJudge(
+    tile: string,
+    signal: AbortSignal | undefined,
+    readStart: number,
+    deadline?: number,
+  ) {
+    const first = await this.readStored(tile, signal, { deadline });
+    if (first === undefined) return undefined;
+    const judged = {
+      stored: first,
+      transportMs: elapsedMs(readStart, this.now()),
+      decodeStart: this.now(),
+      checked: checkStored(first.text, tile),
+    };
+    // The browser may hold an older copy in its HTTP cache than the host
+    // now stores (the host replaces bad tiles): read once more past that
+    // cache before calling the tile bad, once per tile per session, as a
+    // tile that stays bad would cost two downloads on every read.
+    // A re-read that fails (no time left in the fill wait, no headers in
+    // time, a host error) leaves the first copy to decide: the tile is bad
+    // and reported, not a host refusal. An abort stays an abort.
+    if (!(judged.checked instanceof BadStoredTile)) return judged;
+    if (this.rereadPastCache.has(tile)) return judged;
+    this.rereadPastCache.add(tile);
+    let fresh: typeof first | undefined;
+    try {
+      fresh = await this.readStored(tile, signal, {
+        cache: "no-cache",
+        deadline,
+      });
+    } catch (error) {
+      if (isAbort(error) || signal?.aborted === true) throw error;
+      return judged;
+    }
+    if (fresh === undefined) return undefined;
+    return {
+      stored: fresh,
+      transportMs: elapsedMs(readStart, this.now()),
+      decodeStart: this.now(),
+      checked: checkStored(fresh.text, tile),
+    };
+  }
+
+  /**
    * The stored file's text and ETag, `undefined` on a 404, a throw on any
    * other status. A body-read failure (a `TypeError` from `text()`) is a
    * host failure, like a network drop: the two cannot be told apart here.
@@ -416,15 +513,20 @@ export class StaticTileSource implements OsmDataSource {
   private async readStored(
     tile: string,
     signal: AbortSignal | undefined,
-    cache?: RequestCache,
+    {
+      cache,
+      deadline,
+    }: {
+      readonly cache?: RequestCache;
+      readonly deadline?: number | undefined;
+    },
   ): Promise<
     { readonly text: string; readonly etag: string | null } | undefined
   > {
-    const response = await this.request(
-      this.tileUrl(tile),
-      signal,
-      cache === undefined ? {} : { cache },
-    );
+    const response = await this.request(this.tileUrl(tile), signal, {
+      ...(cache === undefined ? {} : { cache }),
+      deadline,
+    });
     if (response.status === 404) {
       await discardBody(response);
       return undefined;
