@@ -53,8 +53,9 @@
     volumes are switched off. Without clouds there is no depth, the rays
     would end at the ellipsoid, under the relief, and the veil over high
     ground would be far too thick; so `atmoGround` 0 and the space pass
-    fades out entirely below the edge. The old clouds (the editor's default, a
-    failed bake of the experimental near clouds) take that path too, as they always did, and so does the
+    fades out entirely below the edge. The old clouds take that path too
+    (the editor's default, and a failed bake of the experimental near
+    clouds falls back to them), as they always did, and so does the
     clouds switch off: below the edge the veil is a full-canvas march
     (about 0.65 s of a 1 s frame in a software renderer), and off is the
     cheap view. The price: the switch changes the ground's colour below

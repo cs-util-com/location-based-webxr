@@ -37,7 +37,8 @@ true ECEF place, so one placed anywhere shows where it is.
     experimental near clouds, whose tiles bake in
     `globe-cloud-bake-worker.ts`), `quality` (the
     tier's name, which sets the canvas's pixel ratio and the clouds' start;
-    a named tier holds it, with none the device's default may step down),
+    a named tier holds it; with none the device's default holds too, and
+    only the experimental near clouds may step down),
     and `grade`, the raw `?grade=` name judged here by
     `resolveGlobeGrade` (the globe's `globe-grade.ts`; an unknown name warns
     and keeps the default). `quality`, the raw `?quality=`, goes through `resolveGlobeQuality` with
