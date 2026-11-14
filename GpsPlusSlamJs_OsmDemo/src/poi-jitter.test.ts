@@ -25,6 +25,7 @@ const NO_LAYERS = {
   buildings: false,
   trees: false,
   woods: false,
+  furniture: false,
   plates: false,
   roads: false,
   areas: false,

@@ -41,11 +41,13 @@ import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import {
   browserPlaceUrl,
+  cameraDampingEnabled,
   parseCameraTarget,
   staticTilesEnabled,
   sunPinnedHref,
   writeCamera,
   writeLight,
+  writeScheme,
   writePlace,
 } from "./url-state.js";
 import { createLightDialog } from "./light-dialog.js";
@@ -55,6 +57,7 @@ import {
   serializeLightSettings,
 } from "./light-settings.js";
 import { describeDrawCost } from "./draw-cost.js";
+import { readWoodsKnobs } from "./woods-readout.js";
 import {
   describeGeoEvent,
   geoEventButtonLabel,
@@ -160,7 +163,7 @@ import { renderDistanceFor } from "./render-distance.js";
 import { createMapDragLatch } from "./map-drag-latch.js";
 import { cameraDistanceForZoom } from "./map-zoom-to-camera.js";
 import { throttle } from "./throttle.js";
-import { attachHeaderCollapse } from "./header-collapse.js";
+import { attachBusyMark, attachHudPanels } from "./hud-panels.js";
 import { createAgentCycle } from "./agent-cycle.js";
 import { createExplainCycle } from "./explain-cycle.js";
 import { ROUTE_LIFT_M } from "./layer-order.js";
@@ -176,9 +179,36 @@ import {
 } from "./ground-mode.js";
 import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 import { attachSitePicker } from "./site-picker.js";
-import { isLayerEnabled, layersNeedingData, type LayerSet } from "./layers.js";
+import {
+  DEFAULT_LAYERS,
+  isLayerEnabled,
+  layersNeedingData,
+  toggleLayer,
+  type LayerSet,
+} from "./layers.js";
 import { meshLayerSelection, wantsAnyMeshLayer } from "./mesh-layers.js";
-import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
+import {
+  ambientOcclusionChanged,
+  colourSchemeChanged,
+  createDemoStore,
+  inventedRoofsChanged,
+  markingsChanged,
+  selectAmbientOcclusion,
+  selectColourScheme,
+  selectInventedRoofs,
+  selectMarkings,
+  selectLayers,
+  selectOsmView,
+} from "./osm-store.js";
+import {
+  DEFAULT_COLOUR_SCHEME,
+  colourSchemeOf,
+  resolveColourScheme,
+  schemeLinkValue,
+} from "./colour-schemes.js";
+import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
+import { attachBuildChoiceSwitch } from "./build-choice-switch.js";
+import { attachInventedRoofsSwitch } from "./invented-roofs-switch.js";
 import {
   createRefreshCycle,
   isFinalRing,
@@ -231,7 +261,10 @@ const el = <T extends HTMLElement>(id: string): T => {
  * main thread), so the tile cache moved with the fetching rather than staying
  * behind.
  */
-function createWorkerClient(onFatal: (message: string) => void) {
+function createWorkerClient(
+  onFatal: (message: string) => void,
+  onDownloadStarted: () => void,
+) {
   return createRpcClient(
     workerTransport(
       new Worker(new URL("./worker/demo-worker.ts", import.meta.url), {
@@ -239,6 +272,7 @@ function createWorkerClient(onFatal: (message: string) => void) {
       }),
       onFatal,
     ),
+    { onNotice: onDownloadStarted },
   );
 }
 
@@ -290,8 +324,12 @@ async function main(): Promise<void> {
    * every update, which would delete a child node. The dot is a pseudo-element
    * of `.is-loading`, which survives the text being replaced.
    */
+  const statusOpener = el("info-open");
   const setRefreshBusy = (busy: boolean): void => {
     status.classList.toggle("is-loading", busy);
+    // The status line sits behind the bar's info button, so the button
+    // carries the same mark: a refresh stays visible with the panel closed.
+    statusOpener.dataset["busy"] = String(busy);
     loadingAnnouncer.busyChanged(busy);
   };
 
@@ -307,14 +345,22 @@ async function main(): Promise<void> {
   let reportFatal = (message: string): void => {
     status.textContent = `Failed: ${message}`;
   };
-  const worker = createWorkerClient((message) => {
-    // BOTH, and both are needed. `worker.fail` rejects every call already in
-    // flight — a dead worker replies to nothing, so without it `latestOnly` never
-    // settles, its `busy` stays true, and every cycle chaining off it stops running
-    // (raised in review on #228). `reportFatal` is what the user sees.
-    worker.fail(message);
-    reportFatal(message);
-  });
+  const worker = createWorkerClient(
+    (message) => {
+      // BOTH, and both are needed. `worker.fail` rejects every call already in
+      // flight — a dead worker replies to nothing, so without it `latestOnly` never
+      // settles, its `busy` stays true, and every cycle chaining off it stops running
+      // (raised in review on #228). `reportFatal` is what the user sees.
+      worker.fail(message);
+      reportFatal(message);
+    },
+    () => {
+      // A tile someone is waiting on is now being downloaded: the overlay may
+      // name a download from here on (until then a cached refresh says it is
+      // building the map). See `loading-announcer.ts`.
+      loadingAnnouncer.downloadStarted();
+    },
+  );
   // The rule table is loaded INSIDE the worker, so what comes back is only what
   // the UI needs: the category list for the picker and the provenance tier. The
   // table itself stays over there, next to the scorer and `explainCell`, which
@@ -357,6 +403,29 @@ async function main(): Promise<void> {
   const { store, actions, subscribe } = createDemoStore({
     start,
     category: categorySelect.value,
+    // THE LINK CAN SWITCH THE AMBIENT OCCLUSION OFF (?ao=off), read-only like
+    // the roofs: the light dialog's box changes it, never the link.
+    ambientOcclusion:
+      new URLSearchParams(window.location.search).get("ao") !== "off",
+    // THE LINK'S SCHEME (colour schemes plan 2026-11-10-0841, D6); unknown
+    // names open the default with one warning.
+    colourScheme: resolveColourScheme(
+      new URLSearchParams(window.location.search).get("scheme"),
+    ),
+    // THE LINK CAN SWITCH THE INVENTED ROOFS OFF for a comparison (?roofs=off).
+    // A read-only boot override: the box changes the choice, never the link.
+    inventedRoofs:
+      new URLSearchParams(window.location.search).get("roofs") !== "off",
+    // THE ZEBRAS AND PEDESTRIAN AREAS too (?markings=off), read-only alike.
+    markings:
+      new URLSearchParams(window.location.search).get("markings") !== "off",
+    // THE LINK CAN SWITCH THE STREET FURNITURE OFF (?furniture=off), read-only
+    // like the roofs: the layer box changes it, never the link.
+    initialLayers: toggleLayer(
+      DEFAULT_LAYERS,
+      "furniture",
+      new URLSearchParams(window.location.search).get("furniture") !== "off",
+    ),
   });
   reportFatal = (message) => {
     store.dispatch(actions.fetchFailed(`the worker failed: ${message}`));
@@ -412,9 +481,19 @@ async function main(): Promise<void> {
    */
   let reportCameraView: (view: CameraView) => void = () => undefined;
 
+  // THE WOODS GOVERNOR'S KNOBS (?woodsauto=off, ?treeform=trunk, ?perf=1),
+  // read-only boot overrides with no app control: read once here, never
+  // written back. The governor runs only on a coarse pointer (a phone).
+  const woodsKnobs = readWoodsKnobs(
+    window.location.search,
+    window.matchMedia("(pointer: coarse)").matches,
+  );
   const buildingView = new BuildingView({
     container: el("scene"),
     initialSun: sunAnglesAt(sunInstant, sunPlace),
+    woodsAuto: woodsKnobs.auto,
+    perfReadout: woodsKnobs.perf,
+    cameraDamping: cameraDampingEnabled(window.location.search),
     onCameraMove: (view) => reportCameraView(view),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
     // does not know, and must not know, which view the selection came from. A POI
@@ -470,6 +549,45 @@ async function main(): Promise<void> {
   groundPicker.addEventListener("change", () => {
     store.dispatch(actions.groundModeChanged(groundPicker.value));
   });
+  // THE COLOUR SCHEMES (colour schemes plan 2026-11-10-0841 section 4.4):
+  // the dropdown records the choice; the subscriber further down rebuilds
+  // and writes the link, and `onMesh` ends the switch on the echoing mesh.
+  const schemeSwitch = attachColourSchemeSwitch({
+    select: el<HTMLSelectElement>("colour-scheme"),
+    status: el("colour-scheme-status"),
+    initial: selectColourScheme(store.getState()),
+    choose: (name) => store.dispatch(colourSchemeChanged(name)),
+  });
+  // THE INVENTED ROOFS, the same pattern: the box records the choice, the
+  // switch rebuilds on every change of it (`refresh` is defined further
+  // down; no store change reaches it before then), and `onMesh` ends it.
+  const roofsSwitch = attachInventedRoofsSwitch({
+    box: el<HTMLInputElement>("invented-roofs"),
+    status: el("invented-roofs-status"),
+    store: {
+      selected: () => selectInventedRoofs(store.getState()),
+      subscribe: (listener) => store.subscribe(listener),
+    },
+    choose: (on) => store.dispatch(inventedRoofsChanged(on)),
+    rebuild: () => void refresh(),
+  });
+  // THE ZEBRAS AND PEDESTRIAN AREAS, the same build-choice switch: they ride
+  // in the road buffers, so a switch is a rebuild.
+  const markingsSwitch = attachBuildChoiceSwitch({
+    name: "zebras and pedestrian areas",
+    box: el<HTMLInputElement>("markings"),
+    status: el("markings-status"),
+    store: {
+      selected: () => selectMarkings(store.getState()),
+      subscribe: (listener) => store.subscribe(listener),
+    },
+    choose: (on) => store.dispatch(markingsChanged(on)),
+    rebuild: () => void refresh(),
+    applying: (on) =>
+      on
+        ? "Applying zebras and pedestrian areas..."
+        : "Removing zebras and pedestrian areas...",
+  });
 
   // THE PERF PANELS (W14, DEC-R3-18). Its own switch rather than a layer — it
   // draws nothing in the scene — and off by default, so the demo's default
@@ -483,7 +601,7 @@ async function main(): Promise<void> {
   });
 
   // THE TIME OF DAY (§1, DEC-R6-3). A HOTKEY rather than a control in the
-  // header, and the reason is the header itself: round 5's feedback already
+  // old header, and the reason was the header itself: round 5's feedback already
   // calls it busy, and DEC-R6-16 has just committed to a seven-entry ground
   // picker there. A shortcut costs no layout.
   //
@@ -507,13 +625,20 @@ async function main(): Promise<void> {
   const sunTimeInput = el<HTMLInputElement>("sun-time");
   const SUN_SLIDER_STEPS = 1000;
   const sunReadout = el("sun-readout");
+  // THE BAR'S SUN CHIP shows the solar time, and its quick slider mirrors
+  // the canonical `#sun-time`: both are painted here and both move the sun
+  // through `moveSunToSlider`, so they cannot disagree.
+  const sunTimeQuick = el<HTMLInputElement>("sun-time-quick");
+  const sunChipTime = el("sun-chip-time");
   const showSunControl = () => {
     const d = sunDateOf(sunInstant, sunPlace);
     sunDateInput.value = `${d.year}-${pad2(d.month)}-${pad2(d.day)}`;
     sunTimeInput.value = String(
       Math.round(instantToSlider(sunInstant, sunPlace) * SUN_SLIDER_STEPS),
     );
+    sunTimeQuick.value = sunTimeInput.value;
     sunReadout.textContent = formatSunReadout(sunInstant, sunPlace);
+    sunChipTime.textContent = formatSolarClock(sunInstant, sunPlace);
   };
   // THE LIGHT DIALOG (plan 2026-09-24-2140): the owner tunes the noon
   // lighting live and pastes the result back. The settings travel in the URL
@@ -562,6 +687,15 @@ async function main(): Promise<void> {
     writeClipboard: (text) => navigator.clipboard.writeText(text),
     // The page's 2D error channel; created further down, before any click.
     showError: (message) => toast.show(message),
+    ambientOcclusion: {
+      initial: selectAmbientOcclusion(store.getState()),
+      onChange: (on) => store.dispatch(ambientOcclusionChanged(on)),
+    },
+  });
+  // The view follows the store's AO switch: one redraw, no rebuild.
+  buildingView.setAmbientOcclusion(selectAmbientOcclusion(store.getState()));
+  store.subscribe(() => {
+    buildingView.setAmbientOcclusion(selectAmbientOcclusion(store.getState()));
   });
   const moveSun = (next: number) => {
     sunInstant = next;
@@ -594,6 +728,10 @@ async function main(): Promise<void> {
     );
   }, 50);
   sunTimeInput.addEventListener("input", () => moveSunToSlider());
+  sunTimeQuick.addEventListener("input", () => {
+    sunTimeInput.value = sunTimeQuick.value;
+    moveSunToSlider();
+  });
   hotkeys.add({
     key: "t",
     description: "step the sun forward (skips the night)",
@@ -604,12 +742,45 @@ async function main(): Promise<void> {
     description: "step the sun back",
     handler: () => moveSun(stepSun(sunInstant, sunPlace, -1)),
   });
-  lightOpen.addEventListener("click", () => lightDialog.toggle());
+  // THE COMMAND BAR'S PANELS: the settings drawer, the status and the quick
+  // sun slider share one place, so at most one is open; open/closed is view
+  // state and every load starts with all of them closed. Escape closes the
+  // open one; the light dialog stacked over the drawer answers its own
+  // Escape first (see `hud-panels.ts`).
+  //
+  // THE LIGHT DIALOG IS THE TOP LAYER OF THAT PLACE, so it never outlives a
+  // change under it: opening any panel closes it (a panel opened beneath it
+  // would be invisible), and so does closing the drawer it stacks over.
+  // Opening it closes the popovers it would cover; the drawer stays.
+  const settingsDrawer = el("settings-drawer");
+  const settingsOpen = el("settings-open");
+  const hudPanels = attachHudPanels({
+    panels: {
+      settings: { element: settingsDrawer, opener: settingsOpen },
+      info: { element: el("info-panel"), opener: statusOpener },
+      sun: { element: el("sun-pop"), opener: el("sun-chip") },
+    },
+    onChange: () => lightDialog.close(),
+  });
+  const toggleLight = () => {
+    if (!lightDialog.open) {
+      hudPanels.hide("info");
+      hudPanels.hide("sun");
+    }
+    lightDialog.toggle();
+  };
+  lightOpen.addEventListener("click", toggleLight);
   hotkeys.add({
     key: "l",
     description: "open or close the light settings",
-    handler: () => lightDialog.toggle(),
+    handler: toggleLight,
   });
+  el("settings-hide").addEventListener("click", () =>
+    hudPanels.hide("settings"),
+  );
+  // A drawer control still applying shows on the bar's settings button, so
+  // the state stays visible with the drawer closed.
+  attachBusyMark({ root: settingsDrawer, mark: settingsOpen });
   // THE LOOK PRESETS (§3, DEC-R6-9/10). One key cycles whole looks rather than
   // four keys toggling four axes: sixteen combinations means no combination is
   // tested, the e2e suite can only pin one, and these axes interact — opacity
@@ -1022,22 +1193,6 @@ async function main(): Promise<void> {
     },
   });
 
-  // Collapsing hands the header's height back to the 3D view (it is a grid ROW,
-  // not an overlay — see `header-collapse.ts`), so both canvases have to be
-  // resized and the 3D one repainted. `BuildingView.resize()` schedules its own
-  // frame since finding R2-3, so calling it is enough.
-  // NOT BOUND TO A NAME ANY MORE. The only thing that held it was
-  // `revealForError`, retired with DEC-R2-15 (DEC-U10) now that errors have a
-  // toast; the collapse behaviour itself is entirely user-driven from here on.
-  attachHeaderCollapse({
-    header: el("header-bar"),
-    toggle: el("header-toggle"),
-    onToggle: () => {
-      mapView.map.invalidateSize();
-      buildingView.resize();
-    },
-  });
-
   const access = { store, actions };
   // WHERE THE SCENE IS ANCHORED — one holder, read by everything downstream.
   //
@@ -1060,6 +1215,29 @@ async function main(): Promise<void> {
     // terrain load's requested datum identical — the worker's gate compares
     // them, and two independent samples would be two chances to disagree.
     geoidUndulationM: () => arUndulationM,
+    // THE SCHEME, read at post time like the datum: AR always builds the
+    // default (D9), and the choice and the link stay as they are.
+    colourScheme: () =>
+      arSession === undefined
+        ? selectColourScheme(store.getState())
+        : DEFAULT_COLOUR_SCHEME,
+    // THE BUILD THE PAGE DRAWS, so the worker rebuilds after a reply that
+    // never reached the page (an aborted pass) instead of sending slabs for
+    // a mesh this side does not have.
+    drawnBuildKey: () => latestMesh?.buildKey,
+    // THE GROUND TINT ONLY WHERE A GROUND IS DRAWN: AR shows no ground plane,
+    // so its passes skip the tint's rasterise, transfer and texture.
+    groundTint: () => arSession === undefined,
+    // THE INVENTED ROOFS, read at post time; AR draws the same buildings.
+    inventedRoofs: () => selectInventedRoofs(store.getState()),
+    markings: () => selectMarkings(store.getState()),
+    // A FAILED CITY BUILD names its choices; reported before the error
+    // reaches the store, so the switch reverts only its own failed build.
+    onBuildFailed: (failed) => {
+      schemeSwitch.failed(failed.colourScheme);
+      roofsSwitch.failed(failed.inventedRoofs);
+      markingsSwitch.failed(failed.markings);
+    },
     // WHAT DRIVES BOTH LOADING INDICATORS. Not the store's `loading.phase`:
     // this cycle dispatches `fetchStarted` once, above the ring loop, and every
     // ring's `snapshotReady` sets the phase back to idle — so the phase is idle
@@ -1098,6 +1276,15 @@ async function main(): Promise<void> {
     onMesh: (built) => {
       if (built.kind === "full") {
         latestMesh = built.mesh;
+        // THE PAGE'S COLOURS FOLLOW THE MESH'S SCHEME, not the choice, so the
+        // ground never changes before the buildings it belongs with and AR's
+        // default build gets the default ground (colour-schemes.ts).
+        const look = colourSchemeOf(built.mesh.colourScheme);
+        buildingView.setGroundColours(look.city.ground, look.ground.slope);
+        buildingView.setBrightnessTrim(look.brightnessTrim);
+        schemeSwitch.meshDrawn(built.mesh.colourScheme);
+        roofsSwitch.meshDrawn(built.mesh.inventedRoofs);
+        markingsSwitch.meshDrawn(built.mesh.markings);
         return;
       }
       if (latestMesh === undefined) return;
@@ -1291,6 +1478,8 @@ async function main(): Promise<void> {
       });
     },
     frameOrigin: () => anchors.origin,
+    // Routes go over the roofs the city draws.
+    inventedRoofs: () => selectInventedRoofs(store.getState()),
     setBusy: (busy) => {
       // ON THE CANVAS, because the canvas is what was clicked — there is no
       // button to relabel. `index.html` turns this into `cursor: progress`, and
@@ -1724,6 +1913,7 @@ async function main(): Promise<void> {
       state.hint === undefined ? state.label : `${state.label} — ${state.hint}`,
     );
     arButton.dataset["arActive"] = String(arSession !== undefined);
+    schemeSwitch.setArActive(arSession !== undefined);
     // Cleared rather than left stale: the hint explains a DISABLED state, and
     // a tooltip surviving into the enabled one describes a condition that no
     // longer holds.
@@ -2368,6 +2558,9 @@ async function main(): Promise<void> {
   // replaces the set rather than patching one layer).
   const layerToggles = attachLayerToggles({
     container: el("layers"),
+    // THE CELL LAYER STAYS IN THE BAR, beside the category picker it draws;
+    // every other switch is in a drawer section.
+    bar: el("bar-analysis"),
     onChange: (next) => store.dispatch(actions.layersChanged(next)),
     // The perf panel is a diagnostic and belongs beside the height ramp, but it
     // draws nothing in the scene so it is deliberately not a layer (W15,
@@ -2381,25 +2574,22 @@ async function main(): Promise<void> {
     // sibling styled to look adjacent is what makes it collapse and expand with
     // that block, which is the behaviour the sixth session asked for.
     //
-    // THE CATEGORY PICKER FIRST (F3d) — and as of round three that is true
-    // rather than merely claimed. The group is captioned `Category`, so the
-    // control it names belongs at the top of it rather than below the switches
-    // that describe what to draw for it. This comment sat here for a day over a
-    // seam that could only append, so the bar rendered
-    // `Category · cells · areas · ‹select›`; the seam now takes a position and
-    // `layer-toggles.test.ts` holds the order to the screen.
+    // THE SUN SECTION sits between the city look and the view settings; it
+    // is not a layer group, so it is handed over whole.
+    sectionsBefore: { diagnostics: [el("sun-group")] },
     extrasBefore: {
-      overlays: [el("category")],
+      // THE CITY LOOK. The colour scheme, invented roofs and zebras are build
+      // choices nobody switches often, so they sit with the furniture switch
+      // in their own section. The scheme first, since it changes the whole
+      // picture; each status stays beside its control.
+      look: [el("colour-scheme-label"), el("colour-scheme-status")],
     },
     extrasAfter: {
       diagnostics: [el("perf-stats-label"), el("render-distance-label")],
       // LAST, after the two switches: it changes which cells `cells` draws, so
       // it reads as a qualifier on the switch above it rather than a third peer.
       overlays: [showBelowLabel],
-      // THE GROUND PICKER JOINS `world` (J2, DEC-J5). It was a loose `<label>`
-      // sitting as a direct header child, and J2 puts every control in a block —
-      // so left alone it would be the ONE bare thing on a now-transparent bar,
-      // i.e. the next session's finding.
+      // THE GROUND PICKER JOINS `world` (J2, DEC-J5).
       //
       // `world` rather than a block of its own: the group answers "what is in
       // the world", and the ground mode chooses which surface is drawn as the
@@ -2407,6 +2597,12 @@ async function main(): Promise<void> {
       // independently; this is one thing drawn three ways and is exclusive),
       // which is exactly why it needs the extras seam rather than the registry.
       world: [el("ground-mode-label")],
+      look: [
+        el("invented-roofs-label"),
+        el("invented-roofs-status"),
+        el("markings-label"),
+        el("markings-status"),
+      ],
     },
   });
   /**
@@ -2467,7 +2663,7 @@ async function main(): Promise<void> {
   // THE SAME FIRST-PAINT GAP AS `paintShowBelow`, one control over. The readout
   // is written only by `paintGeoEventButton`, which is reached from
   // change-subscribers and from `setBusy` — so before the first press it was
-  // present, empty and visible, holding open a gap in the header's flex row.
+  // present, empty and visible, holding open a gap in the bar's flex row.
   paintGeoEventButton();
 
   // --- state out ----------------------------------------------------------
@@ -2540,7 +2736,7 @@ async function main(): Promise<void> {
    *
    * Attributes rather than a `window` global: this app already uses `data-*` to
    * expose state the e2e asserts on (`data-state` on the locate button,
-   * `data-collapsed` on the header), and an attribute cannot be read before it
+   * `data-busy` on the bar's settings button), and an attribute cannot be read before it
    * is written by mistake.
    */
   const publishFrameState = (
@@ -2835,6 +3031,8 @@ async function main(): Promise<void> {
           const { r, g, b } = heatColour(score, scale);
           return (r << 16) | (g << 8) | b;
         },
+        plateColour: colourSchemeOf(latestMesh.colourScheme).ground.plates,
+        treeForm: woodsKnobs.treeForm,
       });
     } else if (!wantsMeshLayers) {
       buildingView.clearScene();
@@ -2943,7 +3141,7 @@ async function main(): Promise<void> {
       `${snapshot.stats.chunksScored} chunks scored / ${snapshot.stats.chunksReused} reused`,
       mesh === undefined
         ? ""
-        : `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed building heights)`,
+        : `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed building heights, ${mesh.inventedRoofCount} invented roofs)`,
       // Reported only when there are some, like the plate and POI counts: a
       // zero would be noise at every site with no mapped walls, and the
       // interesting reading is "this walled site drew none".
@@ -2961,6 +3159,11 @@ async function main(): Promise<void> {
       // The woods layer's invented trees (objects M2a), reported like the POI:
       // a count is how a user tells "switched off" from "no woods here".
       mesh === undefined || mesh.woods === 0 ? "" : `${mesh.woods} woods`,
+      // The furniture layer's lamps and bollards, the same way;
+      // the count is what was built, the 80 m cut decides what a frame draws.
+      mesh === undefined || mesh.furniture === 0
+        ? ""
+        : `${mesh.furniture} furniture`,
       mesh === undefined || mesh.roads === 0
         ? ""
         : `${mesh.roads} roads (${mesh.roadTriangles} tri)`,
@@ -3071,7 +3274,14 @@ async function main(): Promise<void> {
       // ACCEPTED COST: a toast is transient where the header stayed open
       // until dismissed, so an error can now be missed by looking away. The
       // owner chose that knowingly.
-      if (loading.phase === "error") toast.show(loading.message);
+      if (loading.phase === "error") {
+        toast.show(loading.message);
+        // Any failure ends a switch in progress; its echo will not come. A
+        // switch whose own build failed was reverted by `onBuildFailed`.
+        schemeSwitch.failed();
+        roofsSwitch.failed();
+        markingsSwitch.failed();
+      }
     },
   );
 
@@ -3164,6 +3374,24 @@ async function main(): Promise<void> {
     },
   );
 
+  // THE COLOUR SCHEME'S CHANGE (colour schemes plan 2026-11-10-0841 section
+  // 4.4): an ordinary refresh rebuilds it, because the name is in the
+  // worker's build key; the link follows (the default writes nothing). A
+  // plain store subscription: the scheme lives outside the `osmView` slice.
+  // THE LINK SHOWS THE SCHEME THE PAGE SHOWS, from boot: an unknown name
+  // (already reported once) or the default's own name is removed at once.
+  let shownScheme = selectColourScheme(store.getState());
+  const schemeUrl = browserPlaceUrl(window);
+  writeScheme(schemeUrl, schemeLinkValue(shownScheme));
+  store.subscribe(() => {
+    const scheme = selectColourScheme(store.getState());
+    if (scheme === shownScheme) return;
+    shownScheme = scheme;
+    schemeSwitch.show(scheme);
+    writeScheme(schemeUrl, schemeLinkValue(scheme));
+    void refresh();
+  });
+
   subscribe(
     (view) => view.category,
     () => {
@@ -3200,6 +3428,9 @@ async function main(): Promise<void> {
       // still keeps it while `cells` is on. The `.layer-busy` comment is
       // narrowed to say exactly that — busy stays visible, inapplicable goes.
       paintShowBelow(layers);
+      // The land-use tint is a uniform on the ground, not a mesh layer, so it
+      // follows the switch here rather than through a redraw.
+      buildingView.setLandUseTint(isLayerEnabled(layers, "tint"));
       // TURNING THE CELL LAYER ON HAS TO FETCH THE CELLS (round 10, stage B).
       // Every other layer only changes what is drawn from data already held, so
       // a redraw is enough; `cells` is different because the snapshot
@@ -3322,6 +3553,9 @@ async function main(): Promise<void> {
   // default `cpu-ramp`, which is not `GROUND_MODES[0]`, so the coincidence
   // breaks: the picker would have read "CPU ground" over a ramped scene.
   applyGroundMode(selectOsmView(store.getState()).groundMode);
+  buildingView.setLandUseTint(
+    isLayerEnabled(selectLayers(store.getState()), "tint"),
+  );
 
   /**
    * The details panel follows the selection, from whichever view produced it.

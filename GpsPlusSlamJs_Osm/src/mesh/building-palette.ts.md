@@ -94,3 +94,12 @@ buildCity(features, ground, { palette: "class" }); // the colours before M7
 - Through `buildCity`: `city.test.ts` ("buildCity's seeded palette", incl.
   a pitched tag drawn as a prism taking a flat grey, and "Heidelberg under
   the seeded palette").
+
+## Colour schemes (OSM demo colour schemes plan 2026-11-10-0841)
+
+- `seededBuildingColours(..., colours?)` and `allPaletteColours(colours?)`
+  take an optional `PaletteColours`; absent, `DEFAULT_PALETTE_COLOURS` (the
+  three tone lists above, which stay exported for `ar-building-material.test.ts`).
+- `honourColourTags` false ignores `building:colour` and `roof:colour`, so a
+  stylised scheme paints every building from its own tones (owner D7).
+- Tested in `colour-scheme.test.ts` and `colour-scheme.property.test.ts`.

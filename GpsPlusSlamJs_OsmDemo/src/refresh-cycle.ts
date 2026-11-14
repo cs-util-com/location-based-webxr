@@ -40,7 +40,12 @@ import { nowMs, nowEpochMs } from "./monotonic-clock.js";
 import { isLayerEnabled } from "./layers.js";
 import type { AnchorHolder } from "./scene-anchor.js";
 import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
-import type { MeshUpdate, UpdateResult } from "./worker/protocol.js";
+import {
+  failedBuildOf,
+  type MeshBuildChoices,
+  type MeshUpdate,
+  type UpdateResult,
+} from "./worker/protocol.js";
 
 /**
  * The part of the worker client this needs; narrowed so tests can fake it.
@@ -78,6 +83,16 @@ interface RefreshWorker {
        * cannot distinguish an ellipsoidal field from a window-centre one.
        */
       geoidUndulationM?: number;
+      /** The colour scheme's name (colour schemes plan 2026-11-10-0841). */
+      colourScheme?: string;
+      /** The build key of the full mesh the page draws; see `protocol.ts`. */
+      drawnBuildKey?: string;
+      /** Whether to build the land-use ground tint; see `protocol.ts`. */
+      groundTint?: boolean;
+      /** Whether to invent roofs; see `protocol.ts`. */
+      inventedRoofs?: boolean;
+      /** Whether to paint zebras and draw pedestrian areas; see `protocol.ts`. */
+      markings?: boolean;
     },
     options: { signal: AbortSignal },
   ): Promise<UpdateResult>;
@@ -153,6 +168,43 @@ export interface RefreshCycleOptions extends StoreAccess {
    */
   readonly geoidUndulationM?: () => number | undefined;
   /**
+   * The colour scheme the build must use, read at POST time like the datum
+   * (colour schemes plan 2026-11-10-0841 section 4.4): the page answers the
+   * default while AR runs (D9) whatever is chosen, so the choice and the link
+   * stay untouched and AR's own passes are the rebuilds. Omitted sends none,
+   * which the worker reads as the default.
+   */
+  readonly colourScheme?: () => string;
+  /**
+   * The `buildKey` of the full mesh the page DRAWS, read at post time, so the
+   * worker rebuilds whenever the page does not draw this pass's build (a
+   * dropped reply included). Omitted sends none, which always builds in full.
+   */
+  readonly drawnBuildKey?: () => string | undefined;
+  /**
+   * Whether the build should include the land-use ground tint, read at post
+   * time: the page answers `false` while AR runs, because AR draws no ground
+   * plane. Omitted sends none, which the worker reads as `true`.
+   */
+  readonly groundTint?: () => boolean;
+  /**
+   * Whether the build invents roofs for the buildings the map says nothing
+   * about (the layer list's switch), read at post time. Omitted sends none,
+   * which the worker reads as `true`.
+   */
+  readonly inventedRoofs?: () => boolean;
+  /**
+   * Whether the build paints zebras and draws the pedestrian areas (the layer
+   * list's switch), read at post time. Omitted sends none, read as `true`.
+   */
+  readonly markings?: () => boolean;
+  /**
+   * A city build failed in the worker: the choices it was built with. Called
+   * BEFORE the error reaches the store, so a switch can tell its own failed
+   * build from any other failure before the error ends its wait.
+   */
+  readonly onBuildFailed?: (failed: MeshBuildChoices) => void;
+  /**
    * The nine-stage breakdown for one pass, once it is complete.
    *
    * **A callback rather than a `console.info` here**, for the reason `onMesh`
@@ -202,6 +254,49 @@ export interface RefreshCycleOptions extends StoreAccess {
 /** `Error` messages when we have one, the value's text when we do not. */
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * The fields read at POST time rather than at construction: the datum and the
+ * colour scheme both change with the mode (AR entry draws the default colours
+ * on the AR datum). Spread conditionally because `exactOptionalPropertyTypes`
+ * distinguishes absent from undefined, and the protocol means ABSENT by
+ * "desktop datum" and "default colours".
+ */
+function postTimeReads(options: RefreshCycleOptions): {
+  geoidUndulationM?: number;
+  colourScheme?: string;
+  drawnBuildKey?: string;
+  groundTint?: boolean;
+  inventedRoofs?: boolean;
+  markings?: boolean;
+} {
+  return definedOnly({
+    geoidUndulationM: options.geoidUndulationM?.(),
+    colourScheme: options.colourScheme?.(),
+    drawnBuildKey: options.drawnBuildKey?.(),
+    groundTint: options.groundTint?.(),
+    inventedRoofs: options.inventedRoofs?.(),
+    markings: options.markings?.(),
+  });
+}
+
+/** Hands a failed city build's choices to `onBuildFailed`; other errors pass. */
+function reportFailedBuild(
+  error: unknown,
+  onBuildFailed: ((failed: MeshBuildChoices) => void) | undefined,
+): void {
+  const failedBuild = failedBuildOf(error);
+  if (failedBuild !== undefined) onBuildFailed?.(failedBuild);
+}
+
+/** The fields whose value is not `undefined`, so absent stays absent. */
+function definedOnly<T extends object>(
+  fields: T,
+): { [K in keyof T]?: Exclude<T[K], undefined> } {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined),
+  ) as { [K in keyof T]?: Exclude<T[K], undefined> };
 }
 
 /**
@@ -284,7 +379,6 @@ export function createRefreshCycle(
           // which makes a cross-boundary timestamp subtraction an offset rather
           // than an elapsed time — and every existing timing in this demo is
           // taken inside the worker, so nothing here warned about it.
-          const datum = options.geoidUndulationM?.();
           const callStart = nowMs();
           const { snapshot, mesh, workerTimings } = await worker.call(
             "update",
@@ -306,7 +400,7 @@ export function createRefreshCycle(
               // changes with the mode. Spread conditionally because
               // `exactOptionalPropertyTypes` distinguishes absent from undefined,
               // and the protocol means ABSENT by "desktop datum".
-              ...(datum === undefined ? {} : { geoidUndulationM: datum }),
+              ...postTimeReads(options),
             },
             { signal },
           );
@@ -405,6 +499,7 @@ export function createRefreshCycle(
         // The two guards further up do NOT cover this: they check the signal after
         // an await RESOLVES, and an aborted call rejects instead.
         if (signal.aborted) return;
+        reportFailedBuild(error, options.onBuildFailed);
         store.dispatch(actions.fetchFailed(messageOf(error)));
       }
     },

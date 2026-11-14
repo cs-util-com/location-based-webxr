@@ -27,6 +27,10 @@ import {
 // above: the `/visualization` barrel would pull the whole AR/scene stack into a
 // module that already costs enough to import.
 import { enableSunShadows } from "gps-plus-slam-app-framework/visualization/sun-shadow";
+import {
+  createAmbientOcclusion,
+  type AmbientOcclusion,
+} from "gps-plus-slam-app-framework/visualization/ambient-occlusion";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 
 import type { CellMesh } from "./cell-mesh.js";
@@ -40,18 +44,28 @@ import {
   TERRAIN_SPACING_M,
   type Heightfield,
 } from "gps-plus-slam-osm";
+import { applyWoodsShare } from "gps-plus-slam-osm/three";
 import { heightRampColours } from "./height-ramp.js";
+import { createWoodsMeter, type WoodsMeter } from "./woods-readout.js";
 import {
   DEFAULT_CELL_PRESET,
   cellPreset,
   type CellPreset,
 } from "./cell-presets.js";
 import { cellFaceMaterial, cellOutlineMaterial } from "./cell-materials.js";
-import { installGroundSlope } from "./ground-slope-shader.js";
+import {
+  installGroundSlope,
+  setGroundSlopeColours,
+  slopeColourUniforms,
+} from "./ground-slope-shader.js";
+import type { GroundSlopeColours } from "./ground-slope-colours.js";
+import { MAX_BRIGHTNESS_TRIM, MIN_BRIGHTNESS_TRIM } from "./colour-schemes.js";
+import { landUseTint, type LandUseTint } from "./land-use-tint.js";
 import {
   applyBuildingSkyLight,
   applySurfaceGain,
   showCosmetic,
+  showFurniture,
   drawMeshLayers,
 } from "./mesh-layers.js";
 import {
@@ -201,6 +215,23 @@ const FOG_NEAR_RATIO = 0.66;
 export const FOG_NEAR_M = FAR_PLANE_M * FOG_NEAR_RATIO;
 
 /**
+ * Where the ambient occlusion fades out, in metres of view depth: the look
+ * chosen on the design system's look-dev page. It ends before the nearest the
+ * fog ever starts (`FOG_NEAR_M`, at the shortest render distance), so the
+ * fogged distance keeps exactly the colour it has without AO.
+ */
+const AO_FADE = { fadeStartM: 700, fadeEndM: 1400 } as const;
+
+/**
+ * The ambient occlusion's display exponent: 1 multiplies the linear factor
+ * straight onto the tone-mapped, sRGB-encoded canvas, so the creases read
+ * darker than the framework's own 1 / 2.2, which stays the default for
+ * every other caller. Compared side by side on the phone, the stronger
+ * look was chosen for this demo. A fixed choice, not a link knob.
+ */
+const AO_DISPLAY_EXPONENT = 1;
+
+/**
  * Upper bound on plane subdivisions per axis.
  *
  * RAISED FROM 128 TO 256 ON 2026-07-30, because the measurement that justified
@@ -324,6 +355,20 @@ export interface BuildingViewOptions {
    * be guessing at a policy it cannot see.
    */
   readonly onCameraMove?: (view: CameraView) => void;
+  /**
+   * Whether the woods governor may thin the invented woods (`woods-readout.ts`
+   * `readWoodsKnobs`: a phone, and not `woodsauto=off`). Absent means off:
+   * the frame time is still measured, the woods stay full.
+   */
+  readonly woodsAuto?: boolean;
+  /** Shows the `?perf=1` frame readout over the pane. Absent means hidden. */
+  readonly perfReadout?: boolean;
+  /**
+   * Whether the camera eases on after a drag. Absent means on, as the app
+   * runs; only the read-only `?damping=off` knob (`cameraDampingEnabled`)
+   * turns it off, for the browser suite.
+   */
+  readonly cameraDamping?: boolean;
 }
 
 /** Where the camera is aimed, in scene coordinates, and from how far. */
@@ -334,6 +379,12 @@ export interface CameraView {
 
 export class BuildingView {
   private readonly renderer: THREE.WebGLRenderer;
+  /**
+   * Multiplied onto each frame after it is drawn; off draws the frame alone.
+   * Built on its first enabled frame, so a view that stays off never builds
+   * the pass. The AR session has its own renderer and never draws through it.
+   */
+  private readonly ao: AmbientOcclusion;
   private readonly scene = new THREE.Scene();
   /**
    * The map-derived content, as one subtree with a swappable parent.
@@ -469,6 +520,11 @@ export class BuildingView {
    * every rebuild re-applies it: new meshes arrive at factor 1.
    */
   private surfaceGain = 1;
+  /**
+   * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
+   * D4), multiplied into {@link surfaceGain} wherever that is applied.
+   */
+  private brightnessTrim = 1;
   /** The light dialog's settings (plan 2026-09-24-2140); the shipped look by default. */
   private lightSettings: LightSettings = DEFAULT_LIGHT_SETTINGS;
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
@@ -488,6 +544,13 @@ export class BuildingView {
    * to eliminate.
    */
   private readonly groundRampMaterial: THREE.MeshBasicMaterial;
+  /**
+   * The land-use tint on the lit ground material (city objects plan
+   * 2026-11-07-2315 M3, owner Q6): the latest build's raster, the layer
+   * switch and the appearance, with one rule for whether it shows. It also
+   * owns that material's colour, which is white under a tint.
+   */
+  private readonly landUse: LandUseTint;
   /** Whether the ramp is showing, so a terrain update knows to recolour. */
   private groundDebug = false;
   /** Which appearance is showing, so a repeated set is a no-op (§2). */
@@ -511,6 +574,8 @@ export class BuildingView {
    * ground, which is what stops the toggle moving the buildings.
    */
   private displacement: GroundDisplacement = "cpu";
+  /** Whether the AO is asked for; see `applyAmbientOcclusion`. */
+  private aoWanted = false;
   /** The height texture the GPU path samples. Undefined when there is no DEM. */
   private heightTexture: THREE.DataTexture | undefined;
   /** Uniforms shared by every ground material, so one write reaches all of them. */
@@ -529,6 +594,8 @@ export class BuildingView {
      * every toggle costs a program build and the picker stutters.
      */
     uSlope: { value: 0 },
+    /** The slope treatment's colours, linear; a scheme writes them (S3). */
+    ...slopeColourUniforms(),
   };
   /**
    * What the last frame cost the GPU (W10, N5).
@@ -549,10 +616,30 @@ export class BuildingView {
    * every pixel assertion in the suite — is unchanged by its existence.
    */
   private perfStats: PerfStatsOverlayHandle | undefined;
+  /**
+   * The woods governor and the frame readout's numbers. Fed from the frame
+   * callback with whether that frame was CHAINED (requested from within the
+   * previous frame's callback: a drag's damping, a walk), because this view
+   * draws on demand and an idle pause between two drags is not a slow frame.
+   */
+  private readonly woods: WoodsMeter;
+  /** The invented trees drawn at the current share, for the readout. */
+  private inventedTrees = 0;
+  /** The `?perf=1` line, mounted only when asked for. */
+  private readonly perfReadout: HTMLElement | undefined;
+  /** True while the frame callback runs, so `requestFrame` can tell chained. */
+  private inFrame = false;
+  /** Whether the frame now queued was requested from within a frame. */
+  private queuedChained = false;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
     this.sunAngles = options.initialSun;
+    this.woods = createWoodsMeter(options.woodsAuto ?? false);
+    this.perfReadout =
+      options.perfReadout === true
+        ? mountPerfReadout(this.container)
+        : undefined;
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       // Without this the drawing buffer is cleared after each composite, so a
@@ -736,6 +823,14 @@ export class BuildingView {
     );
     this.ground.rotation.x = -Math.PI / 2;
     this.groundMaterial = this.ground.material;
+    if (!(this.groundMaterial instanceof THREE.MeshStandardMaterial)) {
+      throw new TypeError("the ground material must be a MeshStandardMaterial");
+    }
+    // Anisotropy because the ground is seen at grazing angles, where a
+    // mipmapped texture blurs along the view without it.
+    this.landUse = landUseTint(this.groundMaterial, {
+      anisotropy: this.renderer.capabilities.getMaxAnisotropy(),
+    });
     this.groundRampMaterial = new THREE.MeshBasicMaterial({
       vertexColors: true,
     });
@@ -777,6 +872,15 @@ export class BuildingView {
     );
     this.camera.position.set(140, 110, 140);
     this.camera.lookAt(0, 10, 0);
+    this.ao = createAmbientOcclusion({
+      renderer: this.renderer,
+      scene: this.scene,
+      camera: this.camera,
+      params: AO_FADE,
+      enabled: false,
+      displayExponent: AO_DISPLAY_EXPONENT,
+    });
+    this.container.dataset["ao"] = "off";
 
     // `MapControls` rather than `OrbitControls` (DEC-5): pan-first suits a
     // top-down city view, where dragging should slide the ground rather than
@@ -786,7 +890,7 @@ export class BuildingView {
     // one in is out of date. Touch is handled natively: one finger pans, two
     // dolly and rotate.
     this.controls = new MapControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
+    this.controls.enableDamping = options.cameraDamping ?? true;
     this.controls.target.set(0, 0, 0);
     this.controls.update();
     // AIMED ONCE, HERE. It used to be re-aimed on every camera change because
@@ -862,6 +966,30 @@ export class BuildingView {
   setQuestBeacons(placements: readonly QuestBeaconPlacement[]): void {
     this.questBeacons.set(placements);
     this.reapplyArShadowCasting();
+    this.requestFrame();
+  }
+
+  /**
+   * Switches the ambient occlusion and redraws; nothing is rebuilt. Published
+   * as `data-ao` ("on" / "off") on the container for tests and people: what is
+   * drawn, which is off in the GPU ground mode whatever is asked here.
+   */
+  setAmbientOcclusion(on: boolean): void {
+    this.aoWanted = on;
+    this.applyAmbientOcclusion();
+  }
+
+  /**
+   * Draws the AO only when it is asked for and the ground is not displaced on
+   * the GPU: the AO's normal/depth pass uses one override material, which
+   * does not run the ground's displacement shader, so it would see a flat
+   * ground under raised terrain.
+   */
+  private applyAmbientOcclusion(): void {
+    const on = this.aoWanted && this.displacement !== "gpu";
+    if (this.ao.enabled === on) return;
+    this.ao.enabled = on;
+    this.container.dataset["ao"] = on ? "on" : "off";
     this.requestFrame();
   }
 
@@ -1057,6 +1185,7 @@ export class BuildingView {
     // exactly like the blanking bug W2 fixed.
     this.ground.visible = mode !== "none";
     this.setTerrain(this.terrain);
+    this.applyAmbientOcclusion();
   }
 
   /**
@@ -1126,6 +1255,9 @@ export class BuildingView {
       return;
     }
     this.perfStats = createPerfStatsOverlay(this.container);
+    // The overlay pins itself to the window's top-right corner, which the
+    // command bar covers; it moves down by the bar's height.
+    this.perfStats.dom.style.top = "var(--hud-bar-h, 0px)";
     // One frame immediately, or the panels sit empty until the camera moves —
     // which reads as "the overlay is broken" rather than "the scene is static".
     this.requestFrame();
@@ -1188,6 +1320,7 @@ export class BuildingView {
   setGroundAppearance(appearance: GroundAppearance): void {
     if (appearance === this.groundAppearance) return;
     this.groundAppearance = appearance;
+    this.landUse.setAppearance(appearance);
     this.groundDebug = appearance === "ramp";
     if (this.groundDebug) this.applyGroundRamp();
     this.groundUniforms.uSlope.value = appearance === "slope" ? 1 : 0;
@@ -1196,6 +1329,55 @@ export class BuildingView {
       : this.groundMaterial;
     // On demand rendering: without this the swap is invisible until the camera
     // moves, which is finding R2-3 in a new place.
+    this.requestFrame();
+  }
+
+  /**
+   * The "land-use colours" layer switch (owner Q6). A uniform write, so it
+   * needs no rebuild; hidden anyway under the height ramp.
+   */
+  setLandUseTint(on: boolean): void {
+    this.landUse.setWanted(on);
+    this.requestFrame();
+  }
+
+  /** Whether the land-use tint is drawn now, for the status line and tests. */
+  landUseTintShowing(): boolean {
+    return this.landUse.showing();
+  }
+
+  /**
+   * The ground's colours from a scheme (colour schemes plan 2026-11-10-0841
+   * section 4.4): the material colour while no tint is applied (`ground`,
+   * sRGB `0xrrggbb`) and the slope treatment's four linear colours. Uniform
+   * and colour writes only, no recompile.
+   */
+  setGroundColours(ground: number, slope: GroundSlopeColours): void {
+    this.landUse.setGroundColour(ground);
+    setGroundSlopeColours(this.groundUniforms, slope);
+    this.requestFrame();
+  }
+
+  /**
+   * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
+   * section 4.4, D4): multiplied into the noon gain, so it reaches buildings
+   * and roads (the `neutralSurface` materials) and nothing else; the gain is
+   * 1 below its start angle, so at night the trim acts alone. `RangeError`
+   * outside 0.5-2.
+   */
+  setBrightnessTrim(trim: number): void {
+    if (
+      !Number.isFinite(trim) ||
+      trim < MIN_BRIGHTNESS_TRIM ||
+      trim > MAX_BRIGHTNESS_TRIM
+    ) {
+      throw new RangeError(
+        `brightness trim ${String(trim)} is outside ${MIN_BRIGHTNESS_TRIM}-${MAX_BRIGHTNESS_TRIM}`,
+      );
+    }
+    if (trim === this.brightnessTrim) return;
+    this.brightnessTrim = trim;
+    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
     this.requestFrame();
   }
 
@@ -1513,6 +1695,8 @@ export class BuildingView {
     const read = (): Uint8Array => {
       this.prepareFrame();
       this.renderer.render(this.scene, this.camera);
+      // The view as it is seen, AO included.
+      this.ao.render();
       const gl = this.renderer.getContext();
       const pixels = new Uint8Array(
         gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
@@ -1640,7 +1824,7 @@ export class BuildingView {
       this.sunAngles.elevationRad,
       gainOf(this.lightSettings),
     );
-    applySurfaceGain(this.group, this.surfaceGain);
+    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
   }
 
   /**
@@ -1715,59 +1899,96 @@ export class BuildingView {
     // resize — so refusing here is the only place that covers them all.
     if (this.suspended) return;
     if (this.frame !== undefined) return;
-    this.frame = requestAnimationFrame(() => {
+    this.queuedChained = this.inFrame;
+    this.frame = requestAnimationFrame((atMs) => {
       this.frame = undefined;
-      this.controls.update();
-      // BEFORE THE RENDER, so this frame shows where the agent now is rather
-      // than where it was one frame ago.
-      const walking = this.advanceWalk();
-      this.prepareFrame();
-      this.renderer.render(this.scene, this.camera);
-      // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
-      // The regression this stage carries is a reintroduced permanent render
-      // loop — measured at ~6x slower e2e with one test into a timeout — and
-      // "quiet" had no machine-readable definition before this: a screenshot
-      // comparison also passes for a scene that stopped drawing, and a sleep
-      // asserts nothing at all.
-      //
-      // A MONOTONIC COUNTER ON THE CONTAINER, which is the same `#scene`
-      // element `publishFrameState` writes `data-frame-origin` and
-      // `data-ground-centre` onto, and for the same stated reason: an attribute
-      // cannot be read before it is written by mistake. A test polls it, sees it
-      // rise while the agent walks, and — the assertion that matters — sees it
-      // STOP rising once the agent arrives.
-      //
-      // Written here rather than in `main.ts` because this is where frames
-      // actually happen; a counter published from anywhere else would be
-      // counting something adjacent to rendering rather than rendering.
-      this.frames += 1;
-      this.container.dataset["frames"] = String(this.frames);
-      // The compile check's proof that a map was really drawn (three
-      // allocates it on the first shadow pass).
-      if (this.shadowCheck && this.sun.shadow.map !== null) {
-        this.container.dataset["shadowCheck"] = "rendered";
+      this.inFrame = true;
+      try {
+        this.drawFrame(atMs);
+      } finally {
+        this.inFrame = false;
       }
-      // Captured immediately after the render: three resets these counters at
-      // the START of each render, so any later read would describe a frame that
-      // has not happened yet.
-      this.lastDrawCost = {
-        calls: this.renderer.info.render.calls,
-        triangles: this.renderer.info.render.triangles,
-      };
-      // DRIVEN FROM THE ON-DEMAND FRAME, and that is the accepted trade
-      // (DEC-R3-9). This view deliberately has no permanent rAF loop — one was
-      // measured to make the e2e suite ~6x slower and would burn a phone's
-      // battery repainting a static city — so FPS and frame-ms read only while
-      // the camera is moving, which is exactly when the CPU and GPU ground paths
-      // differ. The MB panel is meaningful throughout.
-      this.perfStats?.update();
-      // THE ONLY THING IN THIS VIEW THAT SCHEDULES A FRAME FROM WITHIN A FRAME,
-      // and it stops on its own: `advanceWalk` returns false the moment the
-      // agent arrives. That is the whole of DEC-R11-15's accepted risk — a loop
-      // that did not stop is the measured ~6x e2e slowdown — and the e2e's
-      // second half asserts the stopping rather than the moving.
-      if (walking) this.requestFrame();
     });
+  }
+
+  /** One on-demand frame; `requestFrame` is its only caller. */
+  private drawFrame(atMs: number): void {
+    this.meterWoods(atMs, this.queuedChained);
+    this.controls.update();
+    // BEFORE THE RENDER, so this frame shows where the agent now is rather
+    // than where it was one frame ago.
+    const walking = this.advanceWalk();
+    this.prepareFrame();
+    this.renderer.render(this.scene, this.camera);
+    // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
+    // The regression this stage carries is a reintroduced permanent render
+    // loop — measured at ~6x slower e2e with one test into a timeout — and
+    // "quiet" had no machine-readable definition before this: a screenshot
+    // comparison also passes for a scene that stopped drawing, and a sleep
+    // asserts nothing at all.
+    //
+    // A MONOTONIC COUNTER ON THE CONTAINER, which is the same `#scene`
+    // element `publishFrameState` writes `data-frame-origin` and
+    // `data-ground-centre` onto, and for the same stated reason: an attribute
+    // cannot be read before it is written by mistake. A test polls it, sees it
+    // rise while the agent walks, and — the assertion that matters — sees it
+    // STOP rising once the agent arrives.
+    //
+    // Written here rather than in `main.ts` because this is where frames
+    // actually happen; a counter published from anywhere else would be
+    // counting something adjacent to rendering rather than rendering.
+    this.frames += 1;
+    this.container.dataset["frames"] = String(this.frames);
+    // The compile check's proof that a map was really drawn (three
+    // allocates it on the first shadow pass).
+    if (this.shadowCheck && this.sun.shadow.map !== null) {
+      this.container.dataset["shadowCheck"] = "rendered";
+    }
+    // Captured immediately after the render: three resets these counters at
+    // the START of each render, so any later read would describe a frame that
+    // has not happened yet.
+    this.lastDrawCost = {
+      calls: this.renderer.info.render.calls,
+      triangles: this.renderer.info.render.triangles,
+    };
+    // AFTER the cost capture: the AO's own renders reset those counters, and
+    // the cost reported is the scene's.
+    this.ao.render();
+    // DRIVEN FROM THE ON-DEMAND FRAME, and that is the accepted trade
+    // (DEC-R3-9). This view deliberately has no permanent rAF loop — one was
+    // measured to make the e2e suite ~6x slower and would burn a phone's
+    // battery repainting a static city — so FPS and frame-ms read only while
+    // the camera is moving, which is exactly when the CPU and GPU ground paths
+    // differ. The MB panel is meaningful throughout.
+    this.perfStats?.update();
+    this.showPerfReadout();
+    // THE ONLY THING IN THIS VIEW THAT SCHEDULES A FRAME FROM WITHIN A FRAME,
+    // and it stops on its own: `advanceWalk` returns false the moment the
+    // agent arrives. That is the whole of DEC-R11-15's accepted risk — a loop
+    // that did not stop is the measured ~6x e2e slowdown — and the e2e's
+    // second half asserts the stopping rather than the moving.
+    if (walking) this.requestFrame();
+  }
+
+  /**
+   * Feeds the woods governor one frame and applies a share it just moved.
+   * BEFORE the render, so the frame that crossed the line already draws the
+   * thinner woods. Only a changed share is applied: re-applying every frame
+   * would re-sort the trunk form's trees on every drag frame.
+   */
+  private meterWoods(atMs: number, chained: boolean): void {
+    const share = this.woods.frame(atMs, chained);
+    if (share === undefined) return;
+    this.inventedTrees = applyWoodsShare(this.group.children, share);
+  }
+
+  /** The `?perf=1` line, after the render so it carries this frame's cost. */
+  private showPerfReadout(): void {
+    if (this.perfReadout === undefined) return;
+    this.perfReadout.textContent = this.woods.describe(
+      this.inventedTrees,
+      this.lastDrawCost,
+    );
   }
 
   /**
@@ -1813,6 +2034,9 @@ export class BuildingView {
     context?: Omit<MeshLayerContext, "drawnHostLayers">,
   ): BuildingStats {
     this.clear();
+    // THE TINT FOLLOWS EVERY BUILD, including a build without one (it is then
+    // dropped): it is the ground of the window the meshes were built for.
+    this.landUse.setTint(mesh.groundTint);
     // ONE LINE PER LAYER'S WORTH OF WORK, in `mesh-layers.ts`. This used to be a
     // pair of branches per layer — one to draw it, one ternary per counter to zero
     // its contribution when off — which reached complexity 21 with three layers and
@@ -1820,9 +2044,15 @@ export class BuildingView {
     // layer detectable, which the longhand form could not: see that file's header.
     const { objects, stats } = drawMeshLayers(mesh, layers, context);
     for (const object of objects) this.group.add(object);
+    // New woods arrive whole; the governor's share holds across a rebuild,
+    // or every refetch on a slow phone would bring the full woods back.
+    this.inventedTrees = applyWoodsShare(
+      this.group.children,
+      this.woods.share(),
+    );
     // New meshes arrive at factor 1; the noon brightening is held on the
     // view for exactly this (the lesson of the AR shell material below).
-    applySurfaceGain(this.group, this.surfaceGain);
+    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
     // RE-APPLIED AFTER EVERY REBUILD. The objects above are brand new and carry
     // the desktop material; without this a refetch mid-session would silently
     // drop the AR look at whatever moment the user walked far enough to trigger
@@ -2329,6 +2559,9 @@ export class BuildingView {
     // The cosmetic woods are off in AR (owner decision, objects M2a); held
     // with the shell material so a rebuild during AR stays hidden too.
     showCosmetic(this.group, material === undefined);
+    // Street lamps and bollards are off in AR too, by the same hold under
+    // their own flag.
+    showFurniture(this.group, material === undefined);
     this.group.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       // NARROWED EXPLICITLY: `THREE.Mesh`'s default generics leave `geometry`
@@ -2419,6 +2652,7 @@ export class BuildingView {
     // "cancelled FIRST" stays literally true (PR #343 review), and pinned —
     // call and order — by `building-view-content.test.ts`.
     this.questBeacons.dispose();
+    this.perfReadout?.remove();
     this.container.removeEventListener("pointerdown", this.onPointerStart);
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();
@@ -2443,6 +2677,8 @@ export class BuildingView {
     // material twice and never freed the standard one. Naming both is the only
     // form that does not depend on which mode the view happened to be in.
     this.ground.geometry.dispose();
+    // The tint's texture is not on the material's dispose path.
+    this.landUse.dispose();
     this.groundMaterial.dispose();
     // The sky owns its LUT render targets, the environment map, its mesh and
     // the haze's texture. `AtmosphereRig.dispose()` clears `scene.environment`
@@ -2470,6 +2706,7 @@ export class BuildingView {
       this.cellOutlines.material.dispose();
     }
     this.cellOutlines = undefined;
+    this.ao.dispose();
     this.renderer.dispose();
   }
 }
@@ -2588,3 +2825,22 @@ function installGroundDisplacement(
  * because the only path to it runs through `drawCells`, which needs a
  * `WebGLRenderer`.
  */
+
+/**
+ * The `?perf=1` line at the 3D pane's top-left corner, below the command
+ * bar that covers the pane's top strip (`--hud-bar-h`): a plain text node
+ * the frame callback rewrites, never a pick target (`pointer-events: none`).
+ * `#scene` is positioned, so the corner is the pane's.
+ */
+function mountPerfReadout(container: HTMLElement): HTMLElement {
+  const readout = document.createElement("div");
+  readout.dataset["testid"] = "perf-readout";
+  readout.style.cssText =
+    "position:absolute;top:calc(var(--hud-bar-h, 0px) + 4px);left:4px;" +
+    "z-index:5;pointer-events:none;" +
+    "padding:2px 6px;border-radius:4px;background:rgba(0,0,0,0.6);" +
+    "color:#fff;font:11px/1.4 ui-monospace,monospace;white-space:nowrap;";
+  readout.textContent = "frame - ms";
+  container.appendChild(readout);
+  return readout;
+}

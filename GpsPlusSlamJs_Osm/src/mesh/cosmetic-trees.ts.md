@@ -101,3 +101,8 @@ const trees = buildCosmeticTrees(features, {
 - `testdata/sites/site-cosmetic-trees.test.ts`: Hinterzarten's pinned count, its
   relations' trees inside the window, the mapped trees unchanged, and the
   obstacle index and cell scores byte-identical with the switch on and off.
+
+## Colour schemes (OSM demo colour schemes plan 2026-11-10-0841)
+
+- `BuildCosmeticTreesOptions.treePalette`: the crown palette (a scheme's
+  `trees`), default `TREE_PALETTE`, read through `treeColour`.

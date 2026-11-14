@@ -27,6 +27,7 @@
  */
 
 import type {
+  GroundTint,
   MeshChunk,
   CellExplanation,
   RacingProviderStats,
@@ -35,6 +36,7 @@ import type {
   MeshData,
   PoiMarker,
   TreePlacement,
+  FurniturePlacement,
 } from "gps-plus-slam-osm";
 
 import type { RoutePoint } from "../agent-route.js";
@@ -70,6 +72,12 @@ export interface TransferableMesh {
    */
   readonly cosmeticTrees: readonly TreePlacement[];
   /**
+   * Mapped street lamps and bollards (`City.furniture`, input order), drawn
+   * by the `furniture` layer. Benches and bins are not here: the POI layer
+   * draws them.
+   */
+  readonly furniture: readonly FurniturePlacement[];
+  /**
    * Ground areas, CHUNKED like the buildings and for the same reason (W20).
    *
    * This said "one merged mesh" until PR #239, which is what it was before W20:
@@ -100,6 +108,36 @@ export interface TransferableMesh {
   readonly roads: readonly MeshChunk[];
   readonly roadCount: number;
   /**
+   * The land-use tint over the build window (city objects plan 2026-11-07-2315
+   * M3): a class byte per texel plus the scheme's palette. Absent when the
+   * build had no window to paint. Cloneable: a typed array, numbers, and the
+   * palette as an array of plain objects.
+   */
+  readonly groundTint?: GroundTint;
+  /**
+   * The colour scheme this mesh was BUILT in (colour schemes plan
+   * 2026-11-10-0841): the page applies that scheme's ground, plates and trim,
+   * and the dropdown's switch ends on it. Absent means the default.
+   */
+  readonly colourScheme?: string;
+  /**
+   * Whether this mesh was built with invented roofs; the layer list's
+   * switch ends on it. Absent means `true`, the library default.
+   */
+  readonly inventedRoofs?: boolean;
+  /**
+   * Whether this mesh was built with zebras and pedestrian areas; the layer
+   * list's switch ends on it. Absent means `true`, the library default.
+   */
+  readonly markings?: boolean;
+  /**
+   * The identity of this build (`meshBuildKey` in `mesh-planner.ts`). The page
+   * sends it back as `drawnBuildKey` on its next `update`, so the worker
+   * rebuilds whenever the page does not draw this pass's build, including after
+   * a reply that was dropped on the way.
+   */
+  readonly buildKey: string;
+  /**
    * The below-surface features' outlines, in ENU, packed x,y per point.
    *
    * HERE RATHER THAN IN THE SNAPSHOT because the frame lives in the worker, as
@@ -129,6 +167,8 @@ export interface TransferableMesh {
   readonly parts: number;
   readonly guessedHeights: number;
   readonly approximateRoofs: number;
+  /** Volumes whose pitched roof was invented (`roofIsInvented`). */
+  readonly inventedRoofCount: number;
   /**
    * Solid barriers drawn (DEC-R11-2).
    *
@@ -283,10 +323,11 @@ export interface TerrainResult {
    * source of truth for "what is the geometry standing on", which is the
    * divergence `worker/terrain-gate.ts` exists to prevent.
    *
-   * **It rides this reply rather than a push**, because the protocol is
-   * strictly request/reply keyed on `id` (`isWorkerReply` rejects anything
-   * without one), and a new envelope type is real surface to add for a
-   * boolean that already has a message going the right way.
+   * **It rides this reply rather than a push**, because calls are
+   * request/reply keyed on `id` (`isWorkerReply` rejects anything without
+   * one) and this boolean already has a message going the right way. The one
+   * push that exists, {@link WorkerNotice}, carries live wait state that no
+   * reply could deliver in time; this answer is part of the reply itself.
    *
    * `true` means "please refresh"; the page still declines while a refresh is
    * in flight. See `worker/terrain-arrival.ts` for why the decision is biased
@@ -360,6 +401,38 @@ export interface WorkerCalls {
        */
       readonly geoidUndulationM?: number;
       readonly category: string;
+      /**
+       * The colour scheme to build in, by NAME (colour schemes plan
+       * 2026-11-10-0841 section 4.4): the worker looks it up in the table the
+       * page reads, so it is never handed an unvalidated scheme. Omitted means
+       * the default; AR always sends the default (D9).
+       */
+      readonly colourScheme?: string;
+      /**
+       * The `buildKey` of the full mesh the page DRAWS, absent when it draws
+       * none. The worker builds in full whenever this pass's key differs, so
+       * a dropped reply cannot leave the page on an older build.
+       */
+      readonly drawnBuildKey?: string;
+      /**
+       * Whether the full build includes the land-use ground tint. The page
+       * sends `false` while AR runs, which draws no ground plane, so AR
+       * pays neither the rasterise nor the texture. Omitted means `true`.
+       * Part of the build key, so leaving AR rebuilds with the tint.
+       */
+      readonly groundTint?: boolean;
+      /**
+       * Whether the full build invents roofs for the buildings the map says
+       * nothing about. Omitted means `true`. Part of the build key, so the
+       * switch rebuilds the city.
+       */
+      readonly inventedRoofs?: boolean;
+      /**
+       * Whether the full build paints zebra crossings and draws the mapped
+       * pedestrian areas (merged into the road buffers). Omitted means
+       * `true`. Part of the build key, so the switch rebuilds the city.
+       */
+      readonly markings?: boolean;
       /**
        * Rings of chunks to score (W16). Omitted means the first pass's radius.
        *
@@ -536,6 +609,11 @@ export interface WorkerCalls {
        * polyline somewhere the agent is not.
        */
       readonly frameOrigin: LatLng;
+      /**
+       * Whether the obstacle index takes the invented heights, as the drawn
+       * city does. Omitted means `true`, as the build.
+       */
+      readonly inventedRoofs?: boolean;
     };
     /**
      * The route, or `undefined` when there is none.
@@ -582,11 +660,13 @@ export interface WorkerCalls {
    * "The better DEM has landed — apply it and tell me."
    *
    * WHY A SECOND RPC AND NOT A PUSH. The loser of the DEM race settles AFTER
-   * the `terrain` reply has already been sent, and there is no unsolicited
-   * worker→page channel to announce it on: the protocol is strictly
-   * request/reply keyed on `id` and {@link isWorkerReply} rejects anything
-   * without an `id`/`ok` pair. Adding a push envelope would be real protocol
-   * surface for one boolean. So the page ASKS, and it knows to ask because
+   * the `terrain` reply has already been sent. The one unsolicited
+   * worker→page message, {@link WorkerNotice}, exists only for live wait
+   * state that cannot ride a reply (a download starting mid-call), and it
+   * settles nothing: calls stay request/reply keyed on `id`, and
+   * {@link isWorkerReply} rejects anything without an `id`/`ok` pair. A result
+   * the page must apply belongs on a reply, and a push for it would be real
+   * protocol surface for one boolean. So the page ASKS, and it knows to ask because
    * {@link TerrainResult.upgradePending} told it to.
    *
    * WHY NOT REUSE `terrain`. That call starts a fresh load and would cancel
@@ -655,7 +735,88 @@ export type WorkerEnvelope =
  */
 export type WorkerReply =
   | { readonly id: number; readonly ok: true; readonly value: unknown }
-  | { readonly id: number; readonly ok: false; readonly message: string };
+  | {
+      readonly id: number;
+      readonly ok: false;
+      readonly message: string;
+      /**
+       * Set only when a city build failed: the choices it was built with, so
+       * the page can tell a switch's own failure from an Overpass error
+       * without reading the message.
+       */
+      readonly failedBuild?: MeshBuildChoices;
+    };
+
+/**
+ * The worker's one UNSOLICITED message: something the page should know while
+ * a call is still running. It carries no `id`, so `isWorkerReply` rejects it
+ * and it can never settle a pending call.
+ *
+ * `downloadStarted`: a tile fetch someone is waiting on went past the OPFS
+ * cache, so the wait now includes a download. Never posted for a cache hit or
+ * for a background ring warm. The loading overlay names a download only after
+ * this; local work (reading the cache, scoring, the mesh) is announced as
+ * building.
+ */
+export interface WorkerNotice {
+  readonly notice: "downloadStarted";
+}
+
+/**
+ * True for a {@link WorkerNotice}. Guards the page's `message` event.
+ *
+ * Anything with an `id` is a reply, even with a stray `notice` field: the
+ * client checks notices first, so taking one here would swallow the reply and
+ * leave its call pending forever.
+ */
+export function isWorkerNotice(value: unknown): value is WorkerNotice {
+  if (typeof value !== "object" || value === null) return false;
+  if ("id" in value) return false;
+  return (value as { notice?: unknown }).notice === "downloadStarted";
+}
+
+/**
+ * What the user chose to build, as the worker received it. Every switch that
+ * changes the built city adds its field here; the planner keys on all of them.
+ */
+export interface MeshBuildChoices {
+  readonly colourScheme: string;
+  readonly inventedRoofs: boolean;
+  readonly markings: boolean;
+}
+
+/**
+ * A city build that failed, thrown in the worker and carried across as the
+ * reply's `failedBuild` (and back out of the RPC client as this class).
+ */
+export class MeshBuildError extends Error {
+  readonly failedBuild: MeshBuildChoices;
+  constructor(message: string, failedBuild: MeshBuildChoices, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
+    this.name = "MeshBuildError";
+    this.failedBuild = failedBuild;
+  }
+}
+
+/** True for a value shaped like {@link MeshBuildChoices}; guards the reply. */
+export function isMeshBuildChoices(value: unknown): value is MeshBuildChoices {
+  if (typeof value !== "object" || value === null) return false;
+  const choices = value as {
+    colourScheme?: unknown;
+    inventedRoofs?: unknown;
+    markings?: unknown;
+  };
+  return (
+    typeof choices.colourScheme === "string" &&
+    typeof choices.inventedRoofs === "boolean" &&
+    typeof choices.markings === "boolean"
+  );
+}
+
+/** The failed build's choices, when `error` is a city build's failure. */
+export function failedBuildOf(error: unknown): MeshBuildChoices | undefined {
+  return error instanceof MeshBuildError ? error.failedBuild : undefined;
+}
 
 /** True for a value shaped like a reply. Guards the `message` event. */
 export function isWorkerReply(value: unknown): value is WorkerReply {

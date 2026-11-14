@@ -192,8 +192,21 @@ describe("createCityWorkerCore", () => {
         roads: true,
         window: { south: 48.1, west: 11.5, north: 48.2, east: 11.6 },
         cosmeticTrees: false,
+        // The globe draws no street furniture, so it builds none: the
+        // library default is all four kinds.
+        furniture: [],
+        // Invented roofs more than double a warm delivery (the tiles
+        // cached, so the build is the delivery; measured in the library's
+        // globe-invented-roofs bench), so the globe builds flat tops.
+        inventedRoofs: false,
       },
     ]);
+    // The Tour Editor builds through this core and has no land-use tint and
+    // no colour scheme (owner; OSM demo colour schemes plan 2026-11-10-0841
+    // D10). toEqual ignores an undefined key, so the absence is pinned by
+    // name: the editor neither pays for a raster nor changes colour.
+    expect(f.built[0]).not.toHaveProperty("groundTint");
+    expect(f.built[0]).not.toHaveProperty("colours");
     load.firstPass.resolve({ outcome: "settled" });
     await settle();
     load.finished.resolve({

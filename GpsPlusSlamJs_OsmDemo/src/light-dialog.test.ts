@@ -117,6 +117,45 @@ describe("createLightDialog", () => {
     expect(dialog.open).toBe(false);
   });
 
+  // WHY: the dialog stacks over the settings drawer, whose own Escape
+  // listener sits on `window` and skips a key already handled. If the
+  // dialog did not mark its Escape handled, one press would close both
+  // layers and focus would go back to a button in a hidden drawer.
+  it("marks its Escape handled, so the panel under it stays open", () => {
+    const { dialog } = setup();
+    dialog.toggle();
+    const key = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(key);
+    expect(dialog.open).toBe(false);
+    expect(key.defaultPrevented).toBe(true);
+    // Closed, the key is not the dialog's to take.
+    const later = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(later);
+    expect(later.defaultPrevented).toBe(false);
+  });
+
+  // WHY: the back arrow is how a touch user leaves the dialog for the
+  // drawer it covers; it must close the dialog and hand focus back.
+  it("closes from its back arrow and returns focus to the opener", () => {
+    const { dialog, opener, $ } = setup();
+    opener.focus();
+    dialog.toggle();
+    const back = $<HTMLButtonElement>("light-back");
+    expect(back.getAttribute("aria-label")).toBe("Back to settings");
+    back.focus();
+    back.click();
+    expect(dialog.open).toBe(false);
+    expect(document.activeElement).toBe(opener);
+  });
+
   // WHY: the brightness on a slider release is a readback of its own; the
   // margin's second render is only for the check (review finding 13).
   it("measures the brightness alone on release, and the margin only on the check", () => {
@@ -305,5 +344,38 @@ describe("createLightDialog", () => {
     await vi.waitFor(() => expect(copyOk.textContent).toBe("Copied"));
     ok.slide("gainMax", 2);
     expect(copyOk.textContent).toBe("Copy");
+  });
+
+  // Why this test matters: the ambient occlusion switch is the one control
+  // here that is not a light setting. It must reach the view at once, show
+  // the brightness it now gives (the AO darkens the lit surfaces the readout
+  // measures), and stay out of the light settings, so Copy, Reset and the
+  // link never carry it.
+  it("switches the ambient occlusion at once and re-reads the brightness", () => {
+    const onAo = vi.fn<(on: boolean) => void>();
+    const { dialog, onChange, measure, $ } = setup({
+      ambientOcclusion: { initial: true, onChange: onAo },
+    });
+    const box = $<HTMLInputElement>("light-ao");
+    expect(box.type).toBe("checkbox");
+    expect(box.checked).toBe(true);
+    expect(box.closest("label")?.textContent).toContain("Ambient occlusion");
+    dialog.toggle();
+    measure.mockClear();
+    box.click();
+    expect(onAo).toHaveBeenCalledWith(false);
+    expect(box.checked).toBe(false);
+    expect(measure).toHaveBeenCalledWith(false);
+    $<HTMLButtonElement>("light-reset").click();
+    expect(box.checked).toBe(false);
+    expect(onAo).toHaveBeenCalledTimes(1);
+    expect(onChange.mock.calls.every(([s]) => !("ambientOcclusion" in s))).toBe(
+      true,
+    );
+  });
+
+  it("has no ambient occlusion switch when the page offers none", () => {
+    const { $ } = setup();
+    expect($("light-ao")).toBeNull();
   });
 });

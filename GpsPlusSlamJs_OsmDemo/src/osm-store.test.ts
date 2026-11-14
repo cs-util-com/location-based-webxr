@@ -17,11 +17,20 @@ import { ZERO_STAGE_TIMINGS } from "./snapshot-timings-fixture.js";
 import { describe, it, expect, vi } from "vitest";
 
 import {
+  ambientOcclusionChanged,
+  colourSchemeChanged,
   createDemoStore,
+  inventedRoofsChanged,
+  markingsChanged,
+  selectAmbientOcclusion,
+  selectColourScheme,
+  selectInventedRoofs,
+  selectMarkings,
   selectOsmView,
   summariseSnapshot,
 } from "./osm-store.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
+import { DEFAULT_LAYERS, toggleLayer } from "./layers.js";
 
 import { SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
 
@@ -275,5 +284,126 @@ describe("the demo store after the framework migration", () => {
     // The counterweight: the migration must not have moved the demo's state.
     const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
     expect(selectOsmView(demo.store.getState()).category).toBe("walkable");
+  });
+});
+
+describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
+  it("starts at the link's scheme or the default, and takes only the table's names", () => {
+    // Why this test matters: the scheme is the worker's build key; a name
+    // outside the table must never reach it, and a link's scheme must be
+    // the boot state, not a change after boot (which would rebuild twice).
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectColourScheme(plain.store.getState())).toBe("today");
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      colourScheme: "today",
+    });
+    expect(selectColourScheme(linked.store.getState())).toBe("today");
+    plain.store.dispatch({ type: "colourScheme/changed", payload: "neon" });
+    plain.store.dispatch({ type: "colourScheme/changed", payload: "toString" });
+    expect(selectColourScheme(plain.store.getState())).toBe("today");
+    plain.store.dispatch(colourSchemeChanged("today"));
+    expect(selectColourScheme(plain.store.getState())).toBe("today");
+    // The framework's slice is untouched by it.
+    expect(selectOsmView(plain.store.getState()).category).toBe("x");
+  });
+});
+
+describe("the ambient occlusion switch", () => {
+  it("starts on, or off from the link, and takes only booleans", () => {
+    // Why this test matters: the light dialog toggles the AO through this
+    // field and the 3D view follows it, so a non-boolean must never reach the
+    // view, and the link's `ao=off` must be the boot state, so a view that
+    // starts without AO never builds the pass.
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectAmbientOcclusion(plain.store.getState())).toBe(true);
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      ambientOcclusion: false,
+    });
+    expect(selectAmbientOcclusion(linked.store.getState())).toBe(false);
+    plain.store.dispatch({ type: "ambientOcclusion/changed", payload: "off" });
+    expect(selectAmbientOcclusion(plain.store.getState())).toBe(true);
+    plain.store.dispatch(ambientOcclusionChanged(false));
+    expect(selectAmbientOcclusion(plain.store.getState())).toBe(false);
+    expect(selectInventedRoofs(plain.store.getState())).toBe(true);
+  });
+});
+
+describe("the invented roofs switch", () => {
+  it("starts on, or off from the link, and takes only booleans", () => {
+    // Why this test matters: the flag is part of the worker's build key, so
+    // a non-boolean must never reach it, and the link's choice must be the
+    // boot state rather than a change after boot (which would build twice).
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectInventedRoofs(plain.store.getState())).toBe(true);
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      inventedRoofs: false,
+    });
+    expect(selectInventedRoofs(linked.store.getState())).toBe(false);
+    plain.store.dispatch({ type: "inventedRoofs/changed", payload: "off" });
+    expect(selectInventedRoofs(plain.store.getState())).toBe(true);
+    plain.store.dispatch(inventedRoofsChanged(false));
+    expect(selectInventedRoofs(plain.store.getState())).toBe(false);
+    expect(selectColourScheme(plain.store.getState())).toBe("today");
+  });
+});
+
+describe("the zebras and pedestrian areas switch", () => {
+  it("starts on, or off from the link, and takes only booleans", () => {
+    // Why this test matters: like the roofs, the flag is part of the
+    // worker's build key, and the link's choice is the boot state.
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectMarkings(plain.store.getState())).toBe(true);
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      markings: false,
+    });
+    expect(selectMarkings(linked.store.getState())).toBe(false);
+    plain.store.dispatch({ type: "markings/changed", payload: "off" });
+    expect(selectMarkings(plain.store.getState())).toBe(true);
+    plain.store.dispatch(markingsChanged(false));
+    expect(selectMarkings(plain.store.getState())).toBe(false);
+    expect(selectInventedRoofs(plain.store.getState())).toBe(true);
+  });
+});
+
+describe("the layers at boot", () => {
+  it("are the defaults, or the link's set when one is given", () => {
+    // Why this test matters: `?furniture=off` must be the BOOT state of the
+    // layer switch, not a toggle dispatched after boot (which would draw the
+    // lamps once and then remove them), and without it the defaults hold.
+    const plain = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+    });
+    expect(selectOsmView(plain.store.getState()).layers).toEqual(
+      DEFAULT_LAYERS,
+    );
+    const linked = createDemoStore({
+      start: { lat: 50, lng: 7 },
+      category: "x",
+      initialLayers: toggleLayer(DEFAULT_LAYERS, "furniture", false),
+    });
+    const layers = selectOsmView(linked.store.getState()).layers;
+    expect(layers.furniture).toBe(false);
+    expect(layers.buildings).toBe(true);
   });
 });

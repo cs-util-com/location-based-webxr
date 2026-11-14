@@ -163,3 +163,19 @@ staleness is invisible and self-consistent.
 - The cosmetic woods, orchards and tree rows (invented positions, crowns only),
   listed after `trees` and so ON by default (owner decision). Off in AR, which
   `BuildingView` enforces rather than this registry.
+
+## `furniture` (objects M5, 2026-11-11)
+
+- Mapped street lamps and bollards, listed after `woods` and so ON by default
+  (toggles plan 2026-11-10-1902 T2). Off in AR, which `BuildingView` enforces.
+  `?furniture=off` boots it off (`main.ts`, through
+  `CreateDemoStoreOptions.initialLayers`).
+
+## `tint` (land-use colours, colour schemes plan 2026-11-10-0841 S3)
+
+The land-use tint in the ground (city objects plan 2026-11-07-2315 M3), on by
+default. It sits in this registry by the owner's choice (city objects plan
+Q6), although it recolours the ground in place the way the retired
+`terrainDebug` did and is not a thing in the world: it needs no data, no lift
+(`layer-order.ts` gives it 0) and no rebuild; `building-view.ts` reads it as a
+uniform switch, and the height ramp hides it whatever the switch says.

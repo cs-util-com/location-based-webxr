@@ -29,6 +29,12 @@ all (street furniture, scattered trees, a land-use layer). `omitToday` (optional
 today's layers the variant's side leaves out, any of `"ground"`, `"roads"`, `"trees"`, so a
 variant can draw its own instead of restyling today's.
 
+Today's street furniture (the library's lamps, bollards, benches and bins, all four kinds by
+`buildCity`'s default) is its own layer: V0 and the left side of a variant page draw it, each
+mesh repacking itself from the harness camera within the library's 80 m cut, so the side by
+side sees the cut. A variant's side never gets it: a clone would not repack, and a variant
+that shows furniture draws its own (O3).
+
 `ctx`: `THREE`, `fixture` (`name`, `label`, `centre`, `bbox`), `features`, `featureByKey`
 (a `Map` on `featureKey`), `frame` (`toEnu`), `ground`, `city` (the `buildCity` result with
 roads, built on the library's defaults with `fixture.bbox` as its build window, so
@@ -52,12 +58,17 @@ today's trees now carry the library's cosmetic woods; O1 omits them with today's
   refresh, and in split view it pays for both sides: read a variant's cost at `?split=off`.
 
 Link parameters: `?scene=lucerne|heidelberg|midtown|parkslope|reuss|woodland`,
-`?view=landing|bird|street`, `?split=0..1|off`, `?heat=1`, and `?cam=ex,ey,ez,tx,ty,tz`:
+`?view=landing|bird|street`, `?split=0..1|off`, `?heat=1`, `?roofs=library`, and `?cam=ex,ey,ez,tx,ty,tz`:
 eye and target in metres, render axes (east, up, minus north), replacing the view's
 pose, with orbit limits from `freeOrbitLimits`. `views.html` lists such links per topic.
 
 ## Invariants and assumptions
 
+- Today's side builds with `inventedRoofs: false`: it is the baseline the variants were
+  judged against, and V2 and V3, which invent their own roofs, build with it off as well,
+  so no library roof stacks on a variant's. `?roofs=library` (the "Today's roofs" row,
+  which reloads) draws the library's invented roofs on today's side, for comparing a
+  variant with the library at one pose and in one light.
 - Both sides go through a composer of their own (multisampled half-float target, then
   `OutputPass`), so tone mapping cannot differ between them. Only the variant's side gets
   GTAO. Split view renders each side whole, clipped by the scissor.

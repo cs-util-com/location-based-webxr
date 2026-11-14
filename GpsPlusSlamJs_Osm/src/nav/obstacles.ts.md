@@ -86,6 +86,28 @@ when the user does.
     `createObstacleIndexCache(buildObstacleIndex)`, whose `build` parameter takes
     `features` alone — so water ships unclipped. See
     [`2026-08-17-2210-obstacle-index-water-clipping-followup.md`](../../docs/2026-08-17-2210-obstacle-index-water-clipping-followup.md).
+- `options.inventedRoofs?: boolean` (default true, as `buildCity`): every
+  building the map says nothing about is indexed at its invented height
+  (`inventedRoofTotals` in `mesh/buildings.ts`, the planner `buildBuildings`
+  draws with), so an agent's walls are the drawn ones. False gives the
+  library heights (`resolveHeights`), for a consumer drawing with the option
+  off.
+  - **The index plans the roofs again**, apart from the mesh build that
+    planned them already. Deliberate for now: OsmDemo's worker builds its
+    index from the features in its own cache, separate from the city build,
+    so handing the planned heights across would couple the two caches. The
+    cost is a second planning pass when the index is rebuilt.
+  - **Any frame gives the drawn heights.** The planner works in each
+    building's own coordinates (`invented-roofs.ts.md`), so the index plans in
+    a frame at the centre of the buildings' bounding box and still matches
+    the screen's frame to within float noise
+    (`site-invented-roof-obstacles.test.ts`, 5 mm). Before that, a frame
+    300 m away changed the height of 11 of Meggen's 248 buildings, and an
+    option let the consumer pass its drawing frame; it is gone.
+  - **Cost** (index build, best of three, the drawing frame; off then on):
+    Heidelberg 162 / 288 ms, Park Slope 378 / 684, Hinterzarten 61 / 134,
+    Westminster 1358 / 1691, Reuss 4098 / 4230, Meggen 3874 / 3626, the other
+    six within 40 ms. Paid once per loaded tile set (the demo's cache).
 - `obstacleLevelsAt(index, cell, groundAt) => number[]`
 - `crossesObstacle(index, fromCell, toCell) => boolean` — **the predicate that
   makes a wall block.**
@@ -245,6 +267,10 @@ floor. While they read the same, no geometry change could have been visible.
 `obstacles.test.ts` — coverage and its absence, barrier filtering, resolved vs
 default heights, the no-ENU assertion, bent barriers (both legs, counted once),
 unusable geometry, and every `obstacleLevelsAt` invariant above.
+
+`../testdata/sites/site-invented-roof-obstacles.test.ts` - on all 12 sites,
+every indexed building at exactly the height `buildBuildings` draws it with
+invented roofs (same frame), and at the library height with the option off.
 
 **Mutation-checked**, all eight caught, including the one that only became
 catchable after a bent-barrier fixture was added.

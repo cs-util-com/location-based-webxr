@@ -18,6 +18,9 @@
  * sees the test rarely, short enough that a device that gets slower later
  * (a phone heating up) still steps down.
  *
+ * DEC-H3: the OSM package's woods governor (`three/woods-governor.ts`) is a
+ * deliberate copy of this rule, which that package cannot import.
+ *
  * @see globe-cloud-governor.ts.md
  */
 import type { GlobeQualityName } from "./globe-quality.js";

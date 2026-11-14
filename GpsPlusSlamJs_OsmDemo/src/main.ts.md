@@ -76,9 +76,9 @@ None. Entry point only, loaded by `index.html`.
   view exists (`BuildingView`'s `initialSun`, so the sky is built once):
   the viewer's today (DEC-SUN-14) at the 20° afternoon sun (DEC-SUN-13), or
   the read-only `?date=` / `?time=` test pins, never written back
-  (DEC-R12-5). The controls are the `#sun-group` header block (plan
-  2026-09-24-0706): it collapses with the header like WORLD and DEBUG, and
-  holds the date, the `#sun-time` slider (civil dawn to civil dusk, linear
+  (DEC-R12-5). The controls are the `#sun-group` section of the settings
+  drawer ("Sun and time", before "View and debug"; it was a header block
+  until the command bar), and holds the date, the `#sun-time` slider (civil dawn to civil dusk, linear
   in time, 0…1000, DEC-SUN-15; sampled with `throttle` to one sun move per
   50 ms while dragged, because each move re-renders and reads back the sky)
   and the readout. Keys: t/T step the day's
@@ -103,6 +103,13 @@ None. Entry point only, loaded by `index.html`.
   (`sunPinnedHref`), so the pick is reproduced at the same sun; a failed
   copy goes to the toast. The dialog is created before `moveSun`, which
   refreshes it, so no sun move can reach it undefined.
+- **The ambient occlusion** is on by default. The light dialog's
+  `#light-ao` box dispatches `ambientOcclusionChanged`; a store
+  subscription calls `buildingView.setAmbientOcclusion`, which redraws one
+  frame and rebuilds nothing. **`?ao=off`** seeds the store off at boot: a
+  read-only boot override like `?roofs=off`, never written back, and not
+  part of `?light=`. The AR session never draws through it (its own
+  renderer; `BuildingView` is suspended).
 - **A RE-ANCHOR clears the route; an ordinary publish does not.** Every point on
   the drawn polyline is expressed in the scene's ENU frame, and round 5B's whole
   guarantee is that an ordinary step leaves that frame alone. So the route
@@ -132,7 +139,7 @@ None. Entry point only, loaded by `index.html`.
   centre must follow the user, which is the counterweight that stops "nothing
   moved" passing for "nothing is sampled where you are". `data-*` rather than a
   `window` global, matching `data-state` on the locate button and
-  `data-collapsed` on the header.
+  `data-busy` on the bar's settings button.
   - **The e2e that reads these must not pin a map pixel** (J2, 2026-08-22).
     Both scene-frame tests walked the user by clicking `#map` at a hard-coded
     `(60, 60)`, which only works while that pixel is bare map. Leaflet holds the
@@ -203,6 +210,89 @@ None. Entry point only, loaded by `index.html`.
     schedules one camera write. That write is a no-op against an unchanged
     query, which is why `cameraQuery` updates its keys in place rather than
     deleting and re-appending them.
+
+- **The command bar and its panels** (`hud-panels.ts`). The header is gone:
+  `#command-bar` floats over both panes with the place, the category, the
+  `cells` switch, the quests, the sun chip, the info button and the settings
+  button. `attachHudPanels` owns three panels (`settings` = `#settings-drawer`,
+  `info` = `#info-panel` holding `#status`, `sun` = `#sun-pop` with the quick
+  sun slider); at most one is open, none at boot, none stored. Escape closes
+  the open one and focus returns to its opener; opening moves focus into the
+  panel. The light dialog stacks over the drawer and answers its own Escape
+  first. It is the top layer of the drawer's place, so any panel change
+  (another panel opening, the drawer closing) closes it, and opening it closes
+  the info and sun popovers that share its corner: two layers never stack
+  half-hidden. `attachBusyMark` keeps `data-busy` on `#settings-open` while a
+  drawer switch is applying, and a map refresh sets the same mark on
+  `#info-open` (the status line lives behind it), so both waits stay visible
+  with their panel closed. Errors toast; nothing here opens a
+  panel on its own.
+- **`#sun-time` is the canonical sun slider.** `#sun-time-quick` in the sun
+  popover mirrors it: `showSunControl` paints both and the chip's
+  `#sun-chip-time`, and the quick slider's input copies its value into
+  `#sun-time` before moving the sun, so there is one source of truth.
+- **The city-look controls are folded.** The colour scheme (with its
+  status), the furniture switch, the invented roofs and the zebras (each with
+  its status) sit in the "City look" section of `layer-toggles.ts`, which
+  starts folded; `main.ts` hands the non-layer ones in through
+  `extrasBefore.look` / `extrasAfter.look`. The boot overrides below are
+  unchanged.
+- **`?furniture=off`** boots the street furniture layer off
+  (`initialLayers`); a read-only boot override like `?roofs=off`. The status
+  line counts the built lamps and bollards as `N furniture`.
+- **The woods governor knobs:** `?woodsauto=off`, `?treeform=trunk` and
+  `?perf=1`, read once by `readWoodsKnobs` (`woods-readout.ts`) with whether
+  the pointer is coarse; auto and perf go to `BuildingView`, the tree form
+  into the render context. Read-only boot overrides with no app control.
+- **The zebras and pedestrian areas:** `?markings=off` boots them off
+  (read-only, like the roofs); the switch is `attachBuildChoiceSwitch` on
+  `#markings`, dispatching `markingsChanged`; the switch itself rebuilds on
+  every change of the store's choice, the refresh cycle reads it at post
+  time; the switch is ended by `meshDrawn(mesh.markings)` and reverted by
+  `failed(failedBuild.markings)`. Not read by the agent cycle: paint is no
+  obstacle.
+- **The invented roofs:**
+  - **`?roofs=off`** boots with them off. A read-only boot override: nothing
+    writes it back (see `url-state.ts`).
+  - **The switch** is `attachInventedRoofsSwitch` on `#invented-roofs`: a
+    toggle dispatches `inventedRoofsChanged`; the switch's own store
+    subscription shows it and refreshes, which rebuilds because the flag is a build choice in the
+    worker's key. The refresh cycle and the agent cycle read it at post time,
+    AR included; `onMesh` ends the switch on the echo, `onBuildFailed` reverts
+    its own failed build.
+  - **The status line** counts the invented roofs beside the guessed heights.
+
+- **The colour scheme** (colour schemes plan 2026-11-10-0841):
+  - **`?scheme=<name>`** boots in that scheme through `resolveColourScheme`
+    (an unknown name opens the default with one console warning). The link
+    then always names the scheme the page shows: `writeScheme(schemeLinkValue(...))`
+    runs once at boot, so the default's own name or an unknown one leaves the
+    link at once, and again on every switch (the default writes no
+    parameter). Like every writer it goes through `history.replaceState`.
+  - **The switch** is `attachColourSchemeSwitch` on `#colour-scheme`: a
+    choice dispatches `colourSchemeChanged`; a plain store subscription
+    shows it, writes the link and runs an ordinary `refresh()`, which
+    rebuilds because the scheme is a build choice in the worker's key.
+    `onMesh` calls `schemeSwitch.meshDrawn` with the scheme the drawn mesh
+    echoes, which ends "Applying...".
+  - **Failures:** `onBuildFailed` passes a failed city build's scheme to
+    `schemeSwitch.failed(name)` (only that scheme's own failure reverts the
+    select), and the loading-error subscriber calls `schemeSwitch.failed()`
+    for every other failure, which ends the wait and keeps the choice.
+  - **AR always builds the default** (D9): the refresh cycle's
+    `colourScheme` getter answers `DEFAULT_COLOUR_SCHEME` while
+    `arSession` is set, and `schemeSwitch.setArActive` disables the select
+    with its reason, so neither the choice nor the link changes in AR.
+  - **The drawn build:** `drawnBuildKey: () => latestMesh?.buildKey` tells
+    the worker which full build the page draws, so a dropped reply is rebuilt.
+- **The land-use tint:**
+  - **The layer switch** (`tint` in the layer bar) is a uniform, not a mesh
+    layer: the layers subscriber calls `buildingView.setLandUseTint(on)`,
+    and boot sets it once from the store, so toggling never rebuilds.
+  - **AR builds no tint:** `groundTint: () => arSession === undefined` on the
+    refresh cycle, because AR draws no ground plane (the ground lives on the
+    desktop scene, outside the content AR reparents). Leaving AR rebuilds
+    with the tint, since the flag is a build choice.
 
 ## Examples
 

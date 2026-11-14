@@ -1,5 +1,6 @@
 /**
- * The layer switches in the header, built from the registry rather than by hand.
+ * The layer switches of the settings drawer (and the one switch the command
+ * bar keeps), built from the registry rather than by hand.
  *
  * WHY IT IS GENERATED FROM `ALL_LAYERS`. A hand-written row of checkboxes is a
  * second list of layers, and the two drift the moment a builder is added — leaving a
@@ -35,47 +36,80 @@ import {
 // Not exported: the group name reaches this module through
 // `LayerTogglesOptions`, which is the only way a caller ever names a group, and
 // knip is right that a second public name earns nothing.
-type LayerGroup = "overlays" | "world" | "diagnostics";
+//
+// `look` is the fourth: the city-look settings (furniture, and the colour
+// scheme, invented roofs and zebras the caller hands in).
+type LayerGroup = "overlays" | "world" | "diagnostics" | "look";
 
-/** Which group each layer belongs to. Exhaustive over the union by construction. */
+/**
+ * Which group each layer belongs to. Exhaustive over the union by construction:
+ * a `Record` keyed by `LayerKind` fails to compile when a layer is missing.
+ */
+const GROUP_OF: Readonly<Record<LayerKind, LayerGroup>> = {
+  cells: "overlays",
+  areas: "overlays",
+  buildings: "world",
+  trees: "world",
+  woods: "world",
+  furniture: "look",
+  plates: "world",
+  tint: "world",
+  roads: "world",
+  poi: "world",
+  // A DIAGNOSTIC, not a thing in the world: it draws what the scorer REFUSED
+  // to look at, so it belongs beside the other "why does it look like that"
+  // switches rather than among the buildings and trees.
+  underground: "diagnostics",
+};
+
 function groupOf(layer: LayerKind): LayerGroup {
-  switch (layer) {
-    case "cells":
-    case "areas":
-      return "overlays";
-    case "buildings":
-    case "trees":
-    case "woods":
-    case "plates":
-    case "roads":
-    case "poi":
-      return "world";
-    // A DIAGNOSTIC, not a thing in the world: it draws what the scorer REFUSED
-    // to look at, so it belongs beside the other "why does it look like that"
-    // switches rather than among the buildings and trees.
-    case "underground":
-      return "diagnostics";
-  }
+  return GROUP_OF[layer];
 }
 
-/** Group captions, in the order the groups appear. */
+/**
+ * Section captions, in the order the drawer shows them.
+ *
+ * EVERY GROUP IS A NATIVE `<details>` WITHOUT `open`: a drawer section, folded
+ * until asked for, and the browser does the folding. Folded state is view
+ * state, never stored, so every page load starts with every section closed.
+ */
 const GROUP_LABELS: readonly (readonly [LayerGroup, string])[] = [
-  ["overlays", "Category"],
-  ["world", "world"],
-  ["diagnostics", "debug"],
+  ["overlays", "Analysis"],
+  ["world", "World"],
+  ["look", "City look"],
+  ["diagnostics", "View and debug"],
 ];
 
+/**
+ * The switches that live in the command bar rather than in a drawer section
+ * when the caller gives a `bar`: the cell layer is the analysis everybody
+ * turns on, so it stays one tap away, beside the category picker it draws.
+ */
+const BAR_LAYERS: ReadonlySet<LayerKind> = new Set(["cells"]);
+
 export interface LayerTogglesOptions {
+  /** Where the sections go: the settings drawer. */
   readonly container: HTMLElement;
+  /**
+   * The command bar's mount for the bar switches (`cells`). Without it every
+   * switch stays in its section. The bar switch keeps its id, its label and
+   * its busy state; it has no group box around it.
+   */
+  readonly bar?: HTMLElement;
+  /**
+   * Whole sections the caller owns, placed BEFORE a group's section. The sun
+   * section is the live case: it is not a layer group, and it sits between the
+   * city look and the view settings.
+   */
+  readonly sectionsBefore?: Partial<Record<LayerGroup, readonly HTMLElement[]>>;
   /** Called with the complete next set whenever a switch changes. */
   readonly onChange: (layers: LayerSet) => void;
   /**
    * Controls that belong in a group but are not layers, placed ABOVE the
    * group's generated switches — between the caption and the first one.
    *
-   * The category picker is the live case: the overlays group is captioned
-   * `Category`, so the control that names it belongs at the top of it rather
-   * than under the switches describing what to draw for it.
+   * The colour-scheme picker is the live case: it heads the city-look section,
+   * above the switches that refine the look it picks.
    *
    * WHY THE POSITION IS PART OF THE OPTION NAME (round three, G2/F7). There
    * used to be one `extras` record that always appended, while `main.ts`
@@ -88,8 +122,8 @@ export interface LayerTogglesOptions {
    * Controls that belong in a group but are not layers, placed BELOW the
    * group's generated switches.
    *
-   * The perf panel is the live case: it is a diagnostic and belongs beside the
-   * height ramp, but it draws nothing in the scene so it is deliberately not in
+   * The perf panel is the live case: it is a diagnostic and belongs with the
+   * other view settings, but it draws nothing in the scene so it is deliberately not in
    * `ALL_LAYERS` (DEC-R3-18). Passing the element in is what puts it in the right
    * group without inventing a second registry or moving DOM around after the
    * fact. `show-below` joins the overlays group the same way — it modifies what
@@ -144,43 +178,46 @@ function sideEffectOf(layer: LayerKind): string | undefined {
   return "Also hides the pool, pitch and parking markers whose area this draws — the area already says what they say.";
 }
 
-/** Human-readable name for a layer. Short, because they sit in a crowded bar. */
+/**
+ * Human-readable name for a layer. Short, because they sit in a crowded bar.
+ * A `Record` keyed by `LayerKind`, so a new layer without a label fails to
+ * compile.
+ */
+const LABELS: Readonly<Record<LayerKind, string>> = {
+  cells: "cells",
+  areas: "areas",
+  buildings: "buildings",
+  trees: "trees",
+  // The invented trees of mapped woods, orchards and tree rows (city
+  // objects plan 2026-11-07-2315 M2a), apart from the mapped "trees".
+  woods: "woods",
+  // Mapped street lamps and bollards;
+  // benches and bins stay with "poi", so nothing is drawn twice.
+  furniture: "furniture",
+  // "landuse", NOT "ground" and NOT "OSM areas", and both rejections are the
+  // point. It said "ground" until the ground-mode picker landed beside it
+  // (W11), and two controls labelled "ground" meaning different things - one
+  // a layer of OSM landuse/amenity/leisure/natural polygons, the other which
+  // SURFACE is drawn - is unreadable: picking "No ground" while something
+  // labelled "ground" is still on screen looks like the picker failed. The
+  // picker owns the word, because it is the one with a "none".
+  //
+  // "OSM areas" was the first replacement and it collided with the
+  // `areas` layer - the merged affordance regions - for a human reading the
+  // bar and for two e2e locators addressing "areas" by accessible name. What
+  // the builder actually selects is `PLATE_KEYS`: amenity, landuse, leisure,
+  // natural. "landuse" is the honest short name for that set.
+  plates: "landuse",
+  roads: "roads",
+  poi: "POI",
+  // NOT "landuse" again: the plates switch carries that word, and e2e
+  // locators address both by accessible name, which matches substrings.
+  tint: "land-use colours",
+  underground: "underground",
+};
+
 function labelFor(layer: LayerKind): string {
-  switch (layer) {
-    case "cells":
-      return "cells";
-    case "areas":
-      return "areas";
-    case "buildings":
-      return "buildings";
-    case "trees":
-      return "trees";
-    case "woods":
-      // The invented trees of mapped woods, orchards and tree rows (city
-      // objects plan 2026-11-07-2315 M2a), apart from the mapped "trees".
-      return "woods";
-    case "plates":
-      // "landuse", NOT "ground" and NOT "OSM areas", and both rejections are the
-      // point. It said "ground" until the ground-mode picker landed beside it
-      // (W11), and two controls labelled "ground" meaning different things — one
-      // a layer of OSM landuse/amenity/leisure/natural polygons, the other which
-      // SURFACE is drawn — is unreadable: picking "No ground" while something
-      // labelled "ground" is still on screen looks like the picker failed. The
-      // picker owns the word, because it is the one with a "none".
-      //
-      // "OSM areas" was the first replacement and it collided with the
-      // `areas` layer — the merged affordance regions — for a human reading the
-      // bar and for two e2e locators addressing "areas" by accessible name. What
-      // the builder actually selects is `PLATE_KEYS`: amenity, landuse, leisure,
-      // natural. "landuse" is the honest short name for that set.
-      return "landuse";
-    case "roads":
-      return "roads";
-    case "poi":
-      return "POI";
-    case "underground":
-      return "underground";
-  }
+  return LABELS[layer];
 }
 
 export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
@@ -197,11 +234,16 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
     onChange(toggleLayer(current, layer, input.checked));
   };
 
+  const bar = options.bar;
   for (const [group, caption] of GROUP_LABELS) {
-    const box = document.createElement("div");
+    for (const section of options.sectionsBefore?.[group] ?? []) {
+      container.append(section);
+    }
+    const box = document.createElement("details");
     box.className = "layer-group";
     box.id = `layer-group-${group}`;
-    const title = document.createElement("span");
+    // The caption is the `<summary>`, the element that unfolds the section.
+    const title = document.createElement("summary");
     title.className = "layer-group-label";
     title.textContent = caption;
     box.append(title);
@@ -227,7 +269,8 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
       // the only place a user meets it.
       const note = sideEffectOf(layer);
       if (note !== undefined) label.title = note;
-      box.append(label);
+      if (bar !== undefined && BAR_LAYERS.has(layer)) bar.append(label);
+      else box.append(label);
       inputs.set(layer, input);
     }
 
@@ -235,8 +278,10 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
     container.append(box);
   }
 
-  // ONE delegated listener rather than seven, and held so `dispose` can remove it.
+  // ONE delegated listener per mount rather than one per switch, held so
+  // `dispose` can remove them.
   container.addEventListener("change", onInput);
+  bar?.addEventListener("change", onInput);
 
   return {
     render(layers) {
@@ -261,6 +306,7 @@ export function attachLayerToggles(options: LayerTogglesOptions): LayerToggles {
     },
     dispose() {
       container.removeEventListener("change", onInput);
+      bar?.removeEventListener("change", onInput);
     },
   };
 }

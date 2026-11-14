@@ -85,6 +85,26 @@ describe("buildObstacleIndex", () => {
     expect(index.obstaclesIn(cellAt(HOME.lat, HOME.lng))).toEqual([]);
   });
 
+  // Why this test matters: street furniture (lamps, bollards, benches, bins)
+  // is drawn from mapped NODES, and an agent must walk past it as before; a
+  // node tagged as a barrier must never become an obstacle, or turning the
+  // furniture on would silently change every route.
+  it("never makes street furniture nodes obstacles", () => {
+    const node = (id: number, tags: Record<string, string>): OsmFeature => ({
+      type: "node",
+      id,
+      position: HOME,
+      tags,
+    });
+    const index = buildObstacleIndex([
+      node(1, { highway: "street_lamp" }),
+      node(2, { barrier: "bollard" }),
+      node(3, { amenity: "bench" }),
+      node(4, { amenity: "waste_basket" }),
+    ]);
+    expect(index.obstaclesIn(cellAt(HOME.lat, HOME.lng))).toEqual([]);
+  });
+
   it("carries the resolved height, not a default one", () => {
     const tagged = buildObstacleIndex([wall({ height: "8" })]);
     const untagged = buildObstacleIndex([wall()]);

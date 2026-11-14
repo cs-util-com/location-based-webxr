@@ -49,7 +49,10 @@ import {
   geometryFrom,
   roadObjects,
   cosmeticTreeObjects,
+  streetFurnitureObjects,
   treeObjects,
+  type TreeForm,
+  type TreeObjectOptions,
 } from "gps-plus-slam-osm/three";
 
 import { RENDER_ORDER, groundLift } from "./layer-order.js";
@@ -72,6 +75,7 @@ export const DRAWN_BY_MESH = [
   "buildings",
   "trees",
   "woods",
+  "furniture",
   "plates",
   "poi",
   "roads",
@@ -99,6 +103,8 @@ export interface BuildingStats {
   readonly guessedHeights: number;
   /** Roofs generated from the bounding rectangle rather than exactly. */
   readonly approximateRoofs: number;
+  /** Roofs the library invented for buildings mapped without a roof shape. */
+  readonly inventedRoofCount: number;
   /**
    * Solid barriers drawn (DEC-R11-2).
    *
@@ -111,6 +117,9 @@ export interface BuildingStats {
   readonly trees: number;
   /** Invented trees drawn (woods, orchards, tree rows; the `woods` layer). */
   readonly woods: number;
+  /** Street lamps and bollards built (the `furniture` layer); the cut
+   * decides how many of them are drawn in a given frame. */
+  readonly furniture: number;
   /** Ground areas drawn. Reported because a silent 0 is the failure mode. */
   readonly plates: number;
   /** Their merged triangle count — a non-zero plate count with zero triangles
@@ -141,9 +150,11 @@ const NO_STATS: BuildingStats = {
   triangles: 0,
   guessedHeights: 0,
   approximateRoofs: 0,
+  inventedRoofCount: 0,
   barriers: 0,
   trees: 0,
   woods: 0,
+  furniture: 0,
   plates: 0,
   plateTriangles: 0,
   poi: 0,
@@ -181,6 +192,23 @@ export interface MeshLayerContext {
    * cached payload and never re-runs it.
    */
   readonly drawnHostLayers: ReadonlySet<PoiHostLayer>;
+  /**
+   * The landuse plates' colour, `0xrrggbb` (colour schemes plan
+   * 2026-11-10-0841): the scheme of the mesh being drawn. Absent means
+   * {@link PLATE_COLOUR}, today's.
+   */
+  readonly plateColour?: number;
+  /**
+   * How every tree is drawn, mapped and invented alike (`?treeform=trunk`,
+   * a read-only boot knob in `url-state.ts`). Absent means the library's
+   * default, the crown-only form.
+   */
+  readonly treeForm?: TreeForm;
+}
+
+/** The library's tree options for a context: no form, no option. */
+function treeOptions(context: MeshLayerContext): TreeObjectOptions {
+  return context.treeForm === undefined ? {} : { form: context.treeForm };
 }
 
 /**
@@ -357,12 +385,13 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
       triangles: totalTriangles(mesh.buildings),
       guessedHeights: mesh.guessedHeights,
       approximateRoofs: mesh.approximateRoofs,
+      inventedRoofCount: mesh.inventedRoofCount,
       barriers: mesh.barriers,
     }),
   },
   {
     layer: "plates",
-    build: (mesh) =>
+    build: (mesh, context) =>
       mesh.plates.map((chunk) => {
         const plate = new THREE.Mesh(
           geometryFrom(chunk.mesh),
@@ -372,7 +401,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
             // and left this literal behind, which inverted the pair and is half
             // of what the sixth session saw as black polygons (the other and
             // larger half was the inverted winding, fixed in `plates.ts`).
-            color: PLATE_COLOUR,
+            color: context.plateColour ?? PLATE_COLOUR,
             roughness: 0.85,
             flatShading: true,
             // SINGLE-SIDED. A plate is horizontal with an upward normal by
@@ -397,7 +426,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // The library's `treeObjects`: one instanced mesh per variant on shared,
     // lazily made resources, each flagged `sharedResources` so `clear()` never
     // disposes them (three.js would silently draw nothing afterwards).
-    build: (mesh) => treeObjects(mesh.trees),
+    build: (mesh, context) => treeObjects(mesh.trees, treeOptions(context)),
     counters: (mesh) => ({ trees: mesh.trees.length }),
   },
   {
@@ -407,8 +436,17 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // same shared resources as `trees`, each mesh flagged
     // `userData.cosmetic` (hidden in AR, never a pick target), instances in
     // the build's rank order.
-    build: (mesh) => cosmeticTreeObjects(mesh.cosmeticTrees),
+    build: (mesh, context) =>
+      cosmeticTreeObjects(mesh.cosmeticTrees, treeOptions(context)),
     counters: (mesh) => ({ woods: mesh.cosmeticTrees.length }),
+  },
+  {
+    layer: "furniture",
+    // The library's `streetFurnitureObjects`: mapped lamps and bollards, one instanced mesh per model on shared
+    // resources, each tagged `cityLayer: "furniture"` (hidden in AR by
+    // `showFurniture`), drawing only the items within 80 m of the camera.
+    build: (mesh) => streetFurnitureObjects(mesh.furniture),
+    counters: (mesh) => ({ furniture: mesh.furniture.length }),
   },
   {
     layer: "areas",
@@ -766,5 +804,18 @@ export function applySurfaceGain(root: THREE.Object3D, gain: number): void {
 export function showCosmetic(root: THREE.Object3D, visible: boolean): void {
   root.traverse((object) => {
     if (object.userData["cosmetic"] === true) object.visible = visible;
+  });
+}
+
+/**
+ * Shows or hides the STREET FURNITURE under `root` (objects tagged
+ * `cityLayer: "furniture"`). Owner decision: lamps and bollards are not drawn in AR. Its own flag rather than
+ * `cosmetic`: the furniture is mapped, not invented. A hidden instanced mesh
+ * is never rendered, so it never repacks its cut either. Absolute, so
+ * re-applying after a rebuild is idempotent.
+ */
+export function showFurniture(root: THREE.Object3D, visible: boolean): void {
+  root.traverse((object) => {
+    if (object.userData["cityLayer"] === "furniture") object.visible = visible;
   });
 }

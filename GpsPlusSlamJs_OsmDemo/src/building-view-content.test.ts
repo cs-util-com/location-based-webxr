@@ -220,4 +220,15 @@ describe("suspend/resume — the desktop renderer's AR lifecycle (M5)", () => {
     const body = SOURCE.slice(start, SOURCE.indexOf("\n  }\n", start));
     expect(body).toContain("showCosmetic(this.group, material === undefined);");
   });
+
+  // WHY: street lamps and bollards are not
+  // drawn in AR either, held by the same mechanism under their own flag so a
+  // rebuild during AR stays hidden, and a hidden mesh never repacks its cut.
+  it("hides the street furniture together with the AR shell material", () => {
+    const start = SOURCE.indexOf("  setArShellMaterial(material");
+    const body = SOURCE.slice(start, SOURCE.indexOf("\n  }\n", start));
+    expect(body).toContain(
+      "showFurniture(this.group, material === undefined);",
+    );
+  });
 });

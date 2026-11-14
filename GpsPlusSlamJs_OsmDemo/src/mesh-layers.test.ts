@@ -27,8 +27,10 @@ import {
   meshLayerSelection,
   poiMarkerPosition,
   showCosmetic,
+  showFurniture,
 } from "./mesh-layers.js";
 import type { TransferableMesh } from "./worker/protocol.js";
+import { PLATE_COLOUR } from "./surface-colours.js";
 
 /** One triangle, enough for a layer to have something to draw. */
 function triangle(): {
@@ -85,6 +87,18 @@ function fullMesh(): TransferableMesh {
         colour: 0x52665c,
       },
     ],
+    furniture: [
+      {
+        key: "node/9001",
+        kind: "lamp",
+        model: "lamp",
+        position: { x: 2, y: 3 },
+        groundHeightM: 53,
+        yawRad: 0,
+        heightM: 5,
+        guessed: ["height", "yaw"],
+      },
+    ],
     plates: oneChunk(),
     plateCount: 3,
     roads: oneChunk(),
@@ -105,6 +119,7 @@ function fullMesh(): TransferableMesh {
     parts: 25,
     guessedHeights: 7,
     approximateRoofs: 2,
+    inventedRoofCount: 5,
     barriers: 4,
   } as unknown as TransferableMesh;
 }
@@ -112,11 +127,13 @@ function fullMesh(): TransferableMesh {
 /** A mesh in which every layer is present but empty. */
 function emptyMesh(): TransferableMesh {
   return {
+    buildKey: "test",
     // NO chunks rather than one empty chunk (W20): an empty BufferGeometry is
     // still a draw call and a disposal obligation.
     buildings: [],
     trees: [],
     cosmeticTrees: [],
+    furniture: [],
     plates: [],
     plateCount: 0,
     roads: [],
@@ -128,6 +145,7 @@ function emptyMesh(): TransferableMesh {
     parts: 0,
     guessedHeights: 0,
     approximateRoofs: 0,
+    inventedRoofCount: 0,
     barriers: 0,
   };
 }
@@ -177,8 +195,8 @@ describe("MESH_LAYERS — the table itself", () => {
     // field that can only ever be wrong.
     const { objects } = drawMeshLayers(fullMesh());
     // Buildings, plates, roads, one area slab, one instanced tree mesh, one
-    // instanced woods mesh, one instanced POI mesh.
-    expect(objects).toHaveLength(7);
+    // instanced woods mesh, one instanced lamp mesh, one instanced POI mesh.
+    expect(objects).toHaveLength(8);
   });
 });
 
@@ -186,8 +204,8 @@ describe("drawMeshLayers — what reaches the scene", () => {
   it("draws every layer that is on", () => {
     const { objects } = drawMeshLayers(fullMesh(), ALL_ON);
     // Buildings, plates, roads, one area slab, one tree, one woods mesh, one
-    // POI marker.
-    expect(objects).toHaveLength(7);
+    // lamp mesh, one POI marker.
+    expect(objects).toHaveLength(8);
     for (const object of objects) expect(object).toBeInstanceOf(THREE.Object3D);
   });
 
@@ -197,6 +215,7 @@ describe("drawMeshLayers — what reaches the scene", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       poi: false,
       roads: false,
@@ -222,11 +241,41 @@ describe("drawMeshLayers — what reaches the scene", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       poi: false,
       roads: false,
       areas: false,
     });
     expect(objects[0]?.position.y).toBeCloseTo(groundLift("plates"), 10);
+  });
+
+  it("paints the plates in the context's colour, today's when it names none", () => {
+    // Why this test matters: the plates follow the scheme of the mesh being
+    // drawn (colour schemes plan 2026-11-10-0841); a context without one must
+    // keep today's colour, which the e2e gates were measured with.
+    const platesOnly = {
+      ...ALL_ON,
+      buildings: false,
+      trees: false,
+      woods: false,
+      furniture: false,
+      poi: false,
+      roads: false,
+      areas: false,
+    };
+    const colourOf = (context?: { plateColour?: number }): number => {
+      const { objects } = drawMeshLayers(fullMesh(), platesOnly, {
+        colourForScore: () => 0,
+        ...context,
+      });
+      const plate = objects[0];
+      if (!(plate instanceof THREE.Mesh)) throw new Error("no plate drawn");
+      return (plate.material as THREE.MeshStandardMaterial).color.getHex();
+    };
+    expect(colourOf()).toBe(new THREE.Color(PLATE_COLOUR).getHex());
+    expect(colourOf({ plateColour: 0x123456 })).toBe(
+      new THREE.Color(0x123456).getHex(),
+    );
   });
 
   it("counts every layer it drew when no selection is given (W9)", () => {
@@ -307,6 +356,7 @@ describe("per-feature colour reaches the geometry (W22/W23)", () => {
       buildings: layer === "buildings",
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       roads: layer === "roads",
       poi: false,
@@ -356,6 +406,7 @@ describe("per-feature colour reaches the geometry (W22/W23)", () => {
       buildings: true,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       roads: false,
       poi: false,
@@ -382,6 +433,7 @@ describe("materials — what the light has to work with (W13)", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       roads: false,
       poi: false,
@@ -444,6 +496,7 @@ describe("materials — what the light has to work with (W13)", () => {
           buildings: false,
           trees: false,
           woods: false,
+          furniture: false,
           plates: false,
           roads: false,
           poi: false,
@@ -510,6 +563,7 @@ describe("drawMeshLayers — trees are instanced, one mesh per variant (W6)", ()
       buildings: false,
       trees: true,
       woods: false,
+      furniture: false,
       plates: false,
       roads: false,
       poi: false,
@@ -612,6 +666,7 @@ describe("drawMeshLayers — POI markers get their own models (W19)", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       roads: false,
       poi: true,
@@ -743,6 +798,7 @@ describe("drawMeshLayers — region slabs", () => {
         buildings: false,
         trees: false,
         woods: false,
+        furniture: false,
         plates: false,
         poi: false,
         roads: false,
@@ -766,6 +822,7 @@ describe("drawMeshLayers — region slabs", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       poi: false,
       roads: false,
@@ -785,6 +842,7 @@ describe("drawMeshLayers — region slabs", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       poi: false,
       roads: false,
@@ -807,6 +865,7 @@ describe("drawMeshLayers — the counters", () => {
     expect(stats.triangles).toBe(0);
     expect(stats.guessedHeights).toBe(0);
     expect(stats.approximateRoofs).toBe(0);
+    expect(stats.inventedRoofCount).toBe(0);
     // Barriers ride in the buildings layer (DEC-R11-11), so they go dark with
     // it. A barrier count surviving a switched-off buildings layer would be the
     // status line describing geometry nobody can see.
@@ -824,9 +883,11 @@ describe("drawMeshLayers — the counters", () => {
       triangles: 1,
       guessedHeights: 7,
       approximateRoofs: 2,
+      inventedRoofCount: 5,
       barriers: 4,
       trees: 1,
       woods: 1,
+      furniture: 1,
       plates: 3,
       plateTriangles: 1,
       poi: 1,
@@ -845,13 +906,14 @@ describe("drawMeshLayers — the counters", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       poi: false,
       roads: false,
       areas: false,
     });
     for (const value of Object.values(stats)) expect(value).toBe(0);
-    expect(Object.keys(stats)).toHaveLength(14);
+    expect(Object.keys(stats)).toHaveLength(16);
   });
 });
 
@@ -890,6 +952,7 @@ describe("the transparent layers composite deterministically", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       poi: false,
       roads: false,
@@ -925,6 +988,7 @@ describe("the transparent layers composite deterministically", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       poi: false,
       roads: false,
@@ -957,6 +1021,7 @@ describe("region slabs carry their identity into the scene", () => {
       buildings: false,
       trees: false,
       woods: false,
+      furniture: false,
       plates: false,
       poi: false,
       roads: false,
@@ -1109,6 +1174,7 @@ describe("drawMeshLayers - the woods layer", () => {
       buildings: false,
       trees: true,
       woods,
+      furniture: false,
       plates: false,
       roads: false,
       poi: false,
@@ -1148,6 +1214,7 @@ describe("showCosmetic", () => {
       buildings: false,
       trees: true,
       woods: true,
+      furniture: false,
       plates: false,
       roads: false,
       poi: false,
@@ -1163,5 +1230,96 @@ describe("showCosmetic", () => {
     showCosmetic(root, true);
     expect(cosmetic.visible).toBe(true);
     expect(mapped.visible).toBe(true);
+  });
+});
+
+/**
+ * WHY THESE TESTS MATTER. Street lamps and bollards are on by default and NOT
+ * in AR. The `furniture` row must draw the library's instanced furniture,
+ * tagged as furniture but NOT cosmetic (they are mapped, so picking may treat
+ * them as real), and count them; switching it off must draw none of it.
+ * `showFurniture` is what the view calls on AR entry, exit and every rebuild
+ * during AR, so it must hide exactly the furniture and restore it exactly.
+ */
+describe("drawMeshLayers - the furniture layer", () => {
+  const only = (furniture: boolean) =>
+    drawMeshLayers(fullMesh(), {
+      buildings: false,
+      trees: true,
+      woods: false,
+      furniture,
+      plates: false,
+      roads: false,
+      poi: false,
+      areas: false,
+    });
+
+  it("draws the placements as instanced furniture, counted, not cosmetic", () => {
+    const { objects, stats } = only(true);
+    const furniture = objects.filter(
+      (o) => o.userData["cityLayer"] === "furniture",
+    );
+    expect(furniture).toHaveLength(1);
+    expect(furniture[0]).toBeInstanceOf(THREE.InstancedMesh);
+    expect(furniture[0]?.userData["cosmetic"]).toBeUndefined();
+    expect(stats.furniture).toBe(1);
+  });
+
+  it("draws none of it when switched off", () => {
+    const { objects, stats } = only(false);
+    expect(objects.some((o) => o.userData["cityLayer"] === "furniture")).toBe(
+      false,
+    );
+    expect(stats.furniture).toBe(0);
+  });
+
+  it("showFurniture hides only the furniture and shows it again", () => {
+    const root = new THREE.Group();
+    root.add(...only(true).objects);
+    const furniture = root.children.find(
+      (o) => o.userData["cityLayer"] === "furniture",
+    )!;
+    const tree = root.children.find(
+      (o) => o.userData["cityLayer"] !== "furniture",
+    )!;
+    showFurniture(root, false);
+    expect(furniture.visible).toBe(false);
+    expect(tree.visible).toBe(true);
+    showFurniture(root, true);
+    expect(furniture.visible).toBe(true);
+    expect(tree.visible).toBe(true);
+  });
+});
+
+describe("the tree form", () => {
+  // WHY THIS TEST MATTERS. `?treeform=trunk` reaches the library only through
+  // the render context, and both tree rows must honour it: a link that drew
+  // trunks for the mapped trees but crowns for the woods would be a mixed
+  // picture nobody asked for, and a measurement of the trunk form's cost
+  // would quietly measure half of it.
+  const onlyTrees = {
+    ...ALL_ON,
+    buildings: false,
+    furniture: false,
+    plates: false,
+    poi: false,
+    roads: false,
+    areas: false,
+  };
+  const forms = (treeForm?: "crown" | "trunk"): Set<unknown> =>
+    new Set(
+      drawMeshLayers(fullMesh(), onlyTrees, {
+        colourForScore: () => 0,
+        ...(treeForm === undefined ? {} : { treeForm }),
+      }).objects.map((object) => object.userData["treeForm"] as unknown),
+    );
+
+  it("draws the trunk form for both tree rows when the context asks for it", () => {
+    expect(forms("trunk")).toEqual(new Set(["trunk"]));
+  });
+
+  it("draws the crown-only default otherwise", () => {
+    expect(forms()).not.toContain("trunk");
+    expect(forms("crown")).not.toContain("trunk");
   });
 });

@@ -202,11 +202,18 @@ function heatOverlay(bbox, frame) {
   );
 }
 
-/** Today's objects sorted into the layers a variant may override. */
+/**
+ * Today's objects sorted into the layers a variant may override. The
+ * street furniture is its own layer: today's side draws it, repacking itself
+ * from the camera (the library's 80 m cut), and a variant's side never gets
+ * it, since a clone would not repack and the variants draw their own.
+ */
 function todayLayers(city) {
-  const layers = { buildings: [], trees: [], roads: [] };
+  const layers = { buildings: [], trees: [], roads: [], furniture: [] };
   for (const object of cityObjects(city)) {
-    if (object.isInstancedMesh) layers.trees.push(object);
+    if (object.userData.cityLayer === "furniture")
+      layers.furniture.push(object);
+    else if (object.isInstancedMesh) layers.trees.push(object);
     else if (object.userData.cityLayer === "roads") layers.roads.push(object);
     else layers.buildings.push(object);
   }
@@ -225,7 +232,13 @@ function variantClone(object, kind, variant, ctx) {
 async function variantGroup(variant, today, ground, ctx) {
   const group = new THREE.Group();
   if (variant.id === "v0") {
-    group.add(ground, ...today.roads, ...today.trees, ...today.buildings);
+    group.add(
+      ground,
+      ...today.roads,
+      ...today.trees,
+      ...today.furniture,
+      ...today.buildings,
+    );
     return group;
   }
   const omit = new Set(variant.omitToday ?? []);
@@ -343,7 +356,16 @@ function buildChrome(variant, state, fixture, actions) {
   const stats = el("p", "cl-stats", "building the scene");
   const attribution = el("p", "cl-attribution");
   attribution.innerHTML = `${ATTRIBUTION_HTML}. ${fixture.label}`;
-  const rows = [sceneRow.row, viewRow.row, heatRow.row];
+  const roofsRow = segmented(
+    "Today's roofs",
+    [
+      { value: false, text: "flat" },
+      { value: true, text: "library" },
+    ],
+    state.roofs,
+    actions.roofs,
+  );
+  const rows = [sceneRow.row, viewRow.row, heatRow.row, roofsRow.row];
 
   const chrome = {
     stage,
@@ -441,6 +463,9 @@ async function run(variant, api) {
   const city = buildCity(features, ground, {
     roads: true,
     window: fixture.bbox,
+    // Today's side keeps the flat tops the variants were drawn against;
+    // `roofs=library` shows the library's invented roofs there instead.
+    inventedRoofs: state.roofs,
   });
   const street = streetCamera(features, frame);
 
@@ -459,6 +484,11 @@ async function run(variant, api) {
       applyView();
       chrome.markView(name);
       writeLink();
+    },
+    roofs(on) {
+      if (on === state.roofs) return;
+      // The city is built once per page, so a different roof choice reloads.
+      location.search = cityLookSearch({ ...state, roofs: on });
     },
     heat(on) {
       state.heat = on;
@@ -527,7 +557,13 @@ async function run(variant, api) {
   let sideA = null;
   if (!isToday) {
     sideA = new THREE.Group();
-    sideA.add(disc, ...today.roads, ...today.trees, ...today.buildings);
+    sideA.add(
+      disc,
+      ...today.roads,
+      ...today.trees,
+      ...today.furniture,
+      ...today.buildings,
+    );
     scene.add(sideA);
   }
 

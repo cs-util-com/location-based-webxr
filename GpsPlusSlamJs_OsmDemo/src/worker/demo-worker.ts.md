@@ -44,6 +44,13 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
     `createOsmTileSource`), the one place the globe's arrival prefetch builds
     them too, so the prefetch warms exactly the cache this worker reads
     (round-5 plan 2026-10-01-0945 §3.6).
+  - **A foreground download is posted as it starts.** The source's
+    `onForegroundDownload` posts the `WorkerNotice` `downloadStarted`
+    (`protocol.ts.md`) whenever a fetch someone waits on goes past the cache.
+    A cache hit and a ring warm post nothing, so the page's overlay can say
+    "Building the map…" for local work and name a download only for a real one.
+    It is posted for any foreground OSM fetch through that source, a geo-event
+    fetch included, not only `update`'s.
 - **The DEM provider is composed in [`dem-provider.ts`](../dem-provider.ts.md)**
   (Mapterhorn primary, AWS Terrarium fallback, one shared caching fetch), not
   inline in `init` — `init` needs `navigator.storage` and `OffscreenCanvas`, so
@@ -148,3 +155,54 @@ plateClip)`, the loaded tiles' boxes cut to the drawn ground. With no
   cosmetic trees are switched off, so nothing is invented on unfetched ground.
 - The mesh carries `cosmeticTrees` (`City.cosmeticTrees`) to the page, for the
   `woods` layer.
+
+## Street furniture (objects M5, 2026-11-11)
+
+- `buildCity` gets `furniture: ["lamp", "bollard"]`: the POI layer already
+  draws benches and bins. Built whatever the layer switch says (the switch
+  filters at draw time); the mesh carries `furniture` (`City.furniture`).
+
+## The land-use tint (colour schemes plan 2026-11-10-0841 S3)
+
+`buildCity` is asked for `groundTint: true` on every full pass, over the same
+window as the city; the page switches it with a uniform, so the layer switch
+never costs a rebuild. Its class buffer is copied, not transferred (the
+`colors` lesson in `transferablesOf`).
+
+## The colour scheme (colour schemes plan 2026-11-10-0841)
+
+The `update` handler checks the request's scheme name against
+`colour-schemes.ts` before any work, hands it to the planner (part of the
+build key) and to `buildCity` as `colours` (even the default, which the
+library's identity test proves byte-identical), and stamps the mesh with it.
+A full build that throws is rethrown as a `MeshBuildError` carrying the build's
+choices, which the reply posts as `failedBuild`, so the page can tell its own
+switch's failure from an Overpass error without reading the message.
+
+Full build or regions only is `needsFullBuild(inputs, drawnBuildKey)` from
+`mesh-planner.ts`: the page sends the `buildKey` of the mesh it draws, and
+every full mesh carries its own, so a reply dropped on the way (an aborted
+pass) is rebuilt on the next pass instead of answered with slabs.
+
+The land-use ground tint is built on every full pass unless the request sends
+`groundTint: false`, which the page does while AR runs: AR draws no ground
+plane, and the tint at the demo's window is a ~4 MB class raster costing
+~85 ms in this worker and ~20 ms of texel expansion on the page
+(`gps-plus-slam-osm` `ground-tint.bench.ts`). On desktop it is built whatever
+the tint layer switch says, because that switch is a uniform and skipping the
+tint while it is off would make switching it on cost a full rebuild. The flag
+is one of the build choices (`meshBuildChoices`), so leaving AR rebuilds the
+city with the tint.
+
+## Zebras and pedestrian areas
+
+The `update` handler passes `markings ?? true` to the planner's choices and
+to `buildCity` as `roads: { markings }`, and echoes it on the mesh. The
+obstacle index ignores it: paint and squares are no obstacle.
+
+## Invented roofs
+
+The `update` handler passes `inventedRoofs ?? true` to the planner's choices
+and to `buildCity`, and echoes it on the mesh. `planRoute` asks the obstacle
+cache with the same flag, so routes climb over the roofs the city draws and,
+switched off, over the flat lids; the cache rebuilds when the flag flips.

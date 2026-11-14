@@ -452,6 +452,9 @@ const entryFiles = [
   // visualization/
   'src/visualization/index.ts',
   'src/visualization/accuracy-circles.ts',
+  // Ambient occlusion for the 3D apps, deep-imported by OsmDemo via the
+  // `./visualization/*` wildcard (never the barrel).
+  'src/visualization/ambient-occlusion.ts',
   // The physical sky (plan 2026-09-23-0048, M3) — deep-imported by OsmDemo
   // via `./visualization/*` (the wildcard spans the `atmosphere/` folder).
   // The auto-exposure's parameters: OsmDemo's light dialog starts from

@@ -28,7 +28,12 @@ footway crossing it.
   no production caller needs them, and a consumer sets the look through
   `buildCity`'s `roads: { mitreLimit, rankStepM }` (`CityRoadOptions`, see
   `city.ts.md`), which passes them through to the validation below.
-- `RoadRibbon` — `{ feature, widthM, mesh }`.
+- `roadMarkingLiftM(rankStepM?)` - the top rank lift plus 5 mm: where
+  zebra paint sits (0.025 m by default), over every road class.
+- `pedestrianAreaLiftM(rankStepM?)` - minus one step (0 for a zero step):
+  a pedestrian area sits under the paths that cross it. Both used by
+  `buildCity` with its own `rankStepM`, so a zero step still layers right.
+- `RoadRibbon` — `{ feature, widthM, liftM, mesh }`; `liftM` is the way's rank lift, which `road-surface.ts` subtracts to find the ground a ribbon draws on.
 - `buildRoads(features, options) → RoadRibbon[]` - in input order. Throws only
   on invalid options (above); a degenerate way yields an empty mesh rather than
   `NaN` geometry.

@@ -56,3 +56,42 @@ store.dispatch(actions.positionChanged({ lat: 50.94, lng: 6.95 }));
 `osm-store.test.ts` — the slice is mounted where the selectors look; dispatching a real `DemoSnapshot` logs nothing for the rest of the state (**not** a guard on the snapshot itself — see the invariant above); `subscribe` fires only on change, fires with `undefined` when a failed fetch clears the snapshot, and stops after unsubscribing; `summariseSnapshot` replaces the cells with a count and tolerates an empty state.
 
 The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, the JSON round-trip) is tested in `GpsPlusSlamJs_AppFramework/src/state/osm-view-slice.{test,property.test}.ts` and deliberately not re-tested here.
+
+## Ambient occlusion
+
+- `DemoRootState.ambientOcclusion` - whether the 3D view multiplies ambient
+  occlusion onto its frame (the light dialog's checkbox). Starts at
+  `CreateDemoStoreOptions.ambientOcclusion` (default `true`; `main.ts` passes
+  `false` for `?ao=off`). A view setting, not a build input and not part of
+  the light link: switching it redraws one frame and rebuilds nothing.
+- `ambientOcclusionChanged(on)` - its one action; a non-boolean payload is
+  ignored.
+- `selectAmbientOcclusion(state)`.
+
+## The colour scheme (colour schemes plan 2026-11-10-0841 section 4.4)
+
+- `DemoRootState.colourScheme` - the chosen scheme, a demo-owned reducer beside
+  the framework's `osmView` (the framework is published and must not name the
+  demo's looks). Starts at `CreateDemoStoreOptions.colourScheme` (the link's)
+  or the default.
+- `colourSchemeChanged(name)` - its one action; a payload outside the table is
+  ignored, so nothing but a table name reaches the worker's build key.
+- `selectColourScheme(state)`.
+- Tested in `osm-store.test.ts`.
+
+## Invented roofs
+
+- `DemoRootState.inventedRoofs` - whether buildings without a mapped roof shape
+  get a planned roof. Starts at `CreateDemoStoreOptions.inventedRoofs` (default
+  `true`; `main.ts` passes `false` for `?roofs=off`).
+- `CreateDemoStoreOptions.initialLayers` - the layer switches at boot;
+  `DEFAULT_LAYERS` when absent. `main.ts` passes the defaults with
+  `furniture` off for `?furniture=off`, so the link sets the boot state rather
+  than a toggle after boot.
+- `inventedRoofsChanged(on)` - its one action; a non-boolean payload is ignored.
+- `DemoRootState.markings` - whether the city paints zebra crossings and draws
+  the mapped pedestrian areas. Starts at `CreateDemoStoreOptions.markings`
+  (default `true`; `false` for `?markings=off`). `markingsChanged(on)` is its
+  action (a non-boolean payload is ignored), `selectMarkings` its selector;
+  both choices share one reducer factory.
+- `selectInventedRoofs(state)`.

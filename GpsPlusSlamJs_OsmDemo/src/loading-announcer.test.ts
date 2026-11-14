@@ -28,6 +28,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   ANNOUNCE_DELAY_MS,
+  BUILDING_MESSAGE,
   createLoadingAnnouncer,
   LOADING_MESSAGE,
   type LoadingSurface,
@@ -74,8 +75,9 @@ describe("createLoadingAnnouncer", () => {
     // repeat `show()` does NOT restart the bar's CSS animation - it would
     // empty on the first show's schedule while the toast lived on the
     // second's. Detaching is what restarts it.
-    expect(calls).toEqual(["clear", `show:${LOADING_MESSAGE}`]);
-    expect(show).toHaveBeenCalledWith(LOADING_MESSAGE);
+    // Nothing was downloaded, so the text is the local-work one.
+    expect(calls).toEqual(["clear", `show:${BUILDING_MESSAGE}`]);
+    expect(show).toHaveBeenCalledWith(BUILDING_MESSAGE);
   });
 
   it("stays silent when the refresh finishes before the delay", () => {
@@ -289,9 +291,154 @@ describe("createLoadingAnnouncer", () => {
 
     expect(calls).toEqual([
       "clear",
-      `show:${LOADING_MESSAGE}`,
+      `show:${BUILDING_MESSAGE}`,
+      "clear",
+      `show:${BUILDING_MESSAGE}`,
+    ]);
+  });
+});
+
+/**
+ * What the surface SAYS. The owner's report: with the area already in the
+ * local cache, every click showed "Loading OpenStreetMap data…" for 1.4-2.1 s
+ * while not one request went out - reading and parsing the cached tile,
+ * scoring and the mesh alone outlast the 1 s delay. The feedback stays; the
+ * text must name what is actually happening.
+ */
+describe("the announced text", () => {
+  it("a refresh served from the cache says it is building, never loading", () => {
+    // Why this test matters: this is the reported defect. A cached refresh that
+    // outlives the delay must not claim a download that is not happening.
+    const { toast, show } = recordingToast();
+    const announcer = createLoadingAnnouncer({ toast });
+
+    announcer.arm();
+    announcer.busyChanged(true);
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS * 3);
+    announcer.dataArrived();
+    announcer.busyChanged(false);
+
+    expect(show).toHaveBeenCalledWith(BUILDING_MESSAGE);
+    expect(show).not.toHaveBeenCalledWith(LOADING_MESSAGE);
+  });
+
+  it("switches to the loading text when a download starts after the announcement", () => {
+    // Why this test matters: a click that first works locally and then has to
+    // fetch a tile must end up saying so. Cleared first, so the bar starts
+    // over for the download, whose length is what the bar describes.
+    const { toast, calls } = recordingToast();
+    const announcer = createLoadingAnnouncer({ toast });
+
+    announcer.arm();
+    announcer.busyChanged(true);
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+    announcer.downloadStarted();
+
+    expect(calls).toEqual([
+      "clear",
+      `show:${BUILDING_MESSAGE}`,
       "clear",
       `show:${LOADING_MESSAGE}`,
     ]);
+  });
+
+  it("shows the loading text directly when the download began before the delay ran out", () => {
+    // Why this test matters: an uncached click must still read "Loading
+    // OpenStreetMap data…" from the first frame it is shown, not flash the
+    // local text first.
+    const { toast, calls } = recordingToast();
+    const announcer = createLoadingAnnouncer({ toast });
+
+    announcer.arm();
+    announcer.busyChanged(true);
+    announcer.downloadStarted();
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+
+    expect(calls).toEqual(["clear", `show:${LOADING_MESSAGE}`]);
+  });
+
+  it("does not restart the bar for every further tile of the same download", () => {
+    // Why this test matters: one refresh can fetch several tiles; each start
+    // re-showing the overlay would reset the bar again and again.
+    const { toast, calls } = recordingToast();
+    const announcer = createLoadingAnnouncer({ toast });
+
+    announcer.arm();
+    announcer.busyChanged(true);
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+    announcer.downloadStarted();
+    announcer.downloadStarted();
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+    announcer.downloadStarted();
+
+    expect(calls).toEqual([
+      "clear",
+      `show:${BUILDING_MESSAGE}`,
+      "clear",
+      `show:${LOADING_MESSAGE}`,
+    ]);
+  });
+
+  it("a download never shows anything on its own", () => {
+    // Why this test matters: the text is chosen for an announcement the gesture
+    // rules already allow; a download in an unarmed (automatic) refresh, or in
+    // a later ring after the map filled, must not bring the overlay up.
+    const { toast, calls } = recordingToast();
+    const announcer = createLoadingAnnouncer({ toast });
+
+    announcer.busyChanged(true);
+    announcer.downloadStarted();
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS * 3);
+    expect(calls).toEqual([]);
+
+    announcer.busyChanged(false);
+    announcer.arm();
+    announcer.busyChanged(true);
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+    announcer.dataArrived();
+    announcer.downloadStarted();
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+
+    expect(calls).toEqual(["clear", `show:${BUILDING_MESSAGE}`, "clear"]);
+  });
+
+  it("a download from an earlier refresh does not colour the next one", () => {
+    // Why this test matters: the worker's background warm is never reported,
+    // so the only downloads the announcer hears belong to a refresh. Once that
+    // refresh ended, the next one - served from the cache - must say building.
+    const { toast, show } = recordingToast();
+    const announcer = createLoadingAnnouncer({ toast });
+
+    announcer.busyChanged(true);
+    announcer.downloadStarted();
+    announcer.busyChanged(false);
+    announcer.downloadStarted();
+
+    announcer.arm();
+    announcer.busyChanged(true);
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+
+    expect(show.mock.calls).toEqual([[BUILDING_MESSAGE]]);
+  });
+
+  it("a gesture that supersedes a downloading refresh is not coloured by its download", () => {
+    // Why this test matters: `latestOnly` reports no busy edge when a newer
+    // gesture aborts the run in flight, so the busy edges alone never reset
+    // the flag there. A click on a cached spot made during the widening tail
+    // of an earlier download would then read "Loading OpenStreetMap data…"
+    // for purely local work. The new run reports its own misses, if any.
+    const { toast, show } = recordingToast();
+    const announcer = createLoadingAnnouncer({ toast });
+
+    announcer.busyChanged(true);
+    announcer.downloadStarted();
+    announcer.arm();
+    vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+
+    expect(show.mock.calls).toEqual([[BUILDING_MESSAGE]]);
+
+    // And its own miss still switches the text.
+    announcer.downloadStarted();
+    expect(show.mock.calls).toEqual([[BUILDING_MESSAGE], [LOADING_MESSAGE]]);
   });
 });

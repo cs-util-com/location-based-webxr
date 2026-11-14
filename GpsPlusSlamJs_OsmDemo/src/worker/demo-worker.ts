@@ -81,7 +81,17 @@ import {
 } from "gps-plus-slam-osm";
 import { createTerrainField, type TerrainField } from "gps-plus-slam-osm";
 import { terrainWindowFor } from "gps-plus-slam-osm";
-import { createMeshPlanner } from "./mesh-planner.js";
+import {
+  DEFAULT_COLOUR_SCHEME,
+  colourSchemeOf,
+  isColourSchemeName,
+  type ColourSchemeName,
+} from "../colour-schemes.js";
+import {
+  meshBuildChoices,
+  meshBuildKey,
+  needsFullBuild,
+} from "./mesh-planner.js";
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 import { osmStoreWarn } from "./osm-store-warn.js";
 import { createPrefetchQueue, type PrefetchQueue } from "./prefetch-queue.js";
@@ -96,11 +106,14 @@ import {
   type MeshBuildRecord,
 } from "./terrain-arrival.js";
 import {
+  failedBuildOf,
   isWorkerEnvelope,
+  MeshBuildError,
   type TransferableMesh,
   type WorkerCallKind,
   type UpdateResult,
   type WorkerCalls,
+  type WorkerNotice,
 } from "./protocol.js";
 
 /** Everything the worker owns, built once on `init`. */
@@ -296,7 +309,15 @@ function buildMesh(
    * 2026-11-07-2315 M2a).
    */
   loadedTiles: readonly string[] = [],
-): TransferableMesh {
+  /** The colours to build in (colour schemes plan 2026-11-10-0841, D1). */
+  scheme: ColourSchemeName = DEFAULT_COLOUR_SCHEME,
+  /** Whether to rasterise the land-use ground tint (AR draws no ground). */
+  groundTint = true,
+  /** Whether to invent roofs for the buildings the map says nothing about. */
+  inventedRoofs = true,
+  /** Whether to paint zebras and draw the mapped pedestrian areas. */
+  markings = true,
+): Omit<TransferableMesh, "buildKey"> {
   const options = meshOptions(frameOrigin);
   const all = [...features];
   // Areas are clipped to what is actually rendered before they are triangulated.
@@ -329,7 +350,29 @@ function buildMesh(
   const city = buildCity(all, options, {
     window: window ?? plateClip,
     cosmeticTrees: window !== undefined,
-    roads: true,
+    // LAMPS AND BOLLARDS ONLY: the POI
+    // layer already draws benches and bins. Built whatever the layer switch
+    // says: the switch filters at draw time, like every other layer.
+    furniture: ["lamp", "bollard"],
+    // ZEBRAS AND PEDESTRIAN AREAS ride in the road chunks: the layer
+    // list's switch is a build choice, like the roofs.
+    roads: { markings },
+    // THE LAND-USE TINT (city objects plan 2026-11-07-2315 M3): rasterised
+    // over the same window, so it ends where the city's data ends. Built on
+    // every desktop full pass whatever the layer switch says: the switch is a
+    // uniform on the page, and a rebuild per toggle would cost a full mesh
+    // step. Skipped in AR, which draws no ground plane: at the demo's window
+    // the tint is a ~4 MB class raster, ~85 ms here and ~20 ms of texel
+    // expansion on the page (`ground-tint.bench.ts`).
+    groundTint,
+    // THE SCHEME'S COLOURS, passed even for the default: the library's
+    // identity test holds that the explicit default builds byte-identical
+    // buffers to none at all.
+    colours: colourSchemeOf(scheme).city,
+    // THE LAYER LIST'S SWITCH, the library default (on) when never touched.
+    // The obstacle index follows it (`planRoute`), so agents walk the drawn
+    // city.
+    inventedRoofs,
   });
   const { volumes, barriers, trees } = city;
   // Per-vertex terrain again: a region can be hundreds of metres across.
@@ -428,6 +471,7 @@ function buildMesh(
     buildings,
     trees,
     cosmeticTrees: city.cosmeticTrees,
+    furniture: city.furniture,
     plates: chunkMeshes(
       plates,
       (plate) => plate.mesh,
@@ -437,6 +481,13 @@ function buildMesh(
     poi,
     roads: city.roads,
     roadCount: city.roadCount,
+    colourScheme: scheme,
+    inventedRoofs,
+    markings,
+    // COPIED, not transferred: at the 2 m texel and the largest window it is
+    // about 2 MB, and the `colors` lesson in `transferablesOf` (a moved
+    // buffer something re-read) is not worth relearning for a copy that cheap.
+    ...(city.groundTint === undefined ? {} : { groundTint: city.groundTint }),
     // CONVERTED HERE because this is where the frame is. Every other piece of
     // scene geometry is built in this function for the same reason, and
     // `recentre` invalidates ENU coordinates, so a page-side copy of the frame
@@ -449,17 +500,10 @@ function buildMesh(
     // THE REAL FLAG, not a proxy: a gabled roof on an actual rectangle is EXACT,
     // and that is the common case the approximation trade rests on.
     approximateRoofs: volumes.filter((v) => v.roofIsApproximate).length,
+    inventedRoofCount: volumes.filter((v) => v.roofIsInvented).length,
     barriers: barriers.length,
   };
 }
-
-/**
- * Decides whether a pass rebuilds the geometry or only re-sends the slabs (W6).
- *
- * The decision itself lives in `mesh-planner.ts`, where it can be tested without
- * a worker — this file only supplies the inputs and acts on the answer.
- */
-const meshPlanner = createMeshPlanner();
 
 /**
  * The navigation obstacle index, held across clicks (DEC-R11-16/19).
@@ -473,7 +517,9 @@ const meshPlanner = createMeshPlanner();
  * never use. It appears on the first route request instead and survives until
  * the feature set moves.
  */
-const obstacleIndex = createObstacleIndexCache(buildObstacleIndex);
+const obstacleIndex = createObstacleIndexCache((features, inventedRoofs) =>
+  buildObstacleIndex(features, undefined, { inventedRoofs }),
+);
 
 /** Bumped whenever the held terrain is replaced; an input to the planner. */
 let terrainStamp = 0;
@@ -539,14 +585,32 @@ function meshUpdateFor(
   },
   pipeline: DemoPipeline,
   frameOrigin: LatLng,
+  scheme: ColourSchemeName,
+  /** The key of the full mesh the page draws (`undefined`: none). */
+  drawnBuildKey: string | undefined,
+  /** Whether the full build includes the ground tint. */
+  groundTint: boolean,
+  /** Whether the full build invents roofs. */
+  inventedRoofs: boolean,
+  /** Whether the full build paints zebras and draws pedestrian areas. */
+  markings: boolean,
 ): WorkerCalls["update"]["result"]["mesh"] {
-  const full = meshPlanner.needsFullBuild({
+  // FULL BUILD VERSUS REGIONS ONLY (W6), decided in `mesh-planner.ts` against
+  // the mesh the PAGE draws, so a reply dropped on the way is rebuilt.
+  const choices = meshBuildChoices({
+    colourScheme: scheme,
+    groundTint,
+    inventedRoofs,
+    markings,
+  });
+  const inputs = {
     position: snapshot.position,
     loadedTileCount: pipeline.loadedTileCount(),
     terrainStamp,
-  });
+    choices,
+  };
 
-  if (!full) {
+  if (!needsFullBuild(inputs, drawnBuildKey)) {
     const options = meshOptions(frameOrigin);
     return {
       kind: "regions",
@@ -554,17 +618,34 @@ function meshUpdateFor(
       underground: packUnderground(snapshot.undergroundOutlines, options.frame),
     };
   }
-  return {
-    kind: "full",
-    mesh: buildMesh(
-      pipeline.features().values(),
-      snapshot.position,
-      frameOrigin,
-      snapshot.regions,
-      snapshot.undergroundOutlines,
-      snapshot.loadedTiles,
-    ),
-  };
+  // A FAILED BUILD CARRIES ITS CHOICES as a field of the reply, so the
+  // dropdown reverts a switch only when the build it waits for failed.
+  try {
+    return {
+      kind: "full",
+      mesh: {
+        buildKey: meshBuildKey(inputs),
+        ...buildMesh(
+          pipeline.features().values(),
+          snapshot.position,
+          frameOrigin,
+          snapshot.regions,
+          snapshot.undergroundOutlines,
+          snapshot.loadedTiles,
+          scheme,
+          choices.groundTint,
+          choices.inventedRoofs,
+          choices.markings,
+        ),
+      },
+    };
+  } catch (error) {
+    throw new MeshBuildError(
+      `building the city failed: ${error instanceof Error ? error.message : String(error)}`,
+      choices,
+      error,
+    );
+  }
 }
 
 /** The state, or a clear error rather than a confusing `undefined` dereference. */
@@ -605,6 +686,12 @@ async function handle<K extends WorkerCallKind>(
       const { staticTiles } = payload as WorkerCalls["init"]["request"];
       const source = createOsmTileSource(store, {
         staticTiles: staticTiles === true,
+        // THE PAGE'S "LOADING" TEXT HANGS ON THIS. A cached tile is local
+        // work and the overlay says so; only a fetch that went past the cache
+        // (never a ring warm) is a download worth naming.
+        onForegroundDownload: () => {
+          postToMain({ notice: "downloadStarted" } satisfies WorkerNotice);
+        },
       });
       const pipeline = new DemoPipeline({ source, table: loaded.table });
       // THE SAME STORE AGAIN, third tenant: DEM tiles are keyed by their full
@@ -677,8 +764,24 @@ async function handle<K extends WorkerCallKind>(
         includeUnderground,
         postedAtEpochMs,
         geoidUndulationM,
+        colourScheme,
+        drawnBuildKey,
+        groundTint,
+        inventedRoofs,
+        markings,
       } = payload as WorkerCalls["update"]["request"];
       const { pipeline, prefetch } = requireState();
+      // THE SCHEME IS A NAME, looked up in the table the page reads; one this
+      // worker does not know is refused before any work, as that scheme's
+      // build failure.
+      const scheme = colourScheme ?? DEFAULT_COLOUR_SCHEME;
+      if (!isColourSchemeName(scheme)) {
+        throw new MeshBuildError(`no such colour scheme: "${scheme}"`, {
+          colourScheme: scheme,
+          inventedRoofs: inventedRoofs ?? true,
+          markings: markings ?? true,
+        });
+      }
       // THE QUEUE WAIT — post to dispatch, the one measurement here that has
       // to cross the boundary. `nowEpochMs()` is `timeOrigin + now()`, an
       // absolute timeline both sides share, so this is a real duration rather
@@ -778,7 +881,16 @@ async function handle<K extends WorkerCallKind>(
       // is legitimately near-zero on passes 2 and 3 — which is why every line
       // is tagged with its ring rather than summed per click.
       const meshStart = nowMs();
-      const mesh = meshUpdateFor(snapshot, pipeline, frameOrigin ?? position);
+      const mesh = meshUpdateFor(
+        snapshot,
+        pipeline,
+        frameOrigin ?? position,
+        scheme,
+        drawnBuildKey,
+        groundTint ?? true,
+        inventedRoofs ?? true,
+        markings ?? true,
+      );
       const meshMs = Math.max(0, nowMs() - meshStart);
       // WHAT THIS MESH IS STANDING ON (F1d). Recorded unconditionally, INCLUDING
       // when the planner decided against a full rebuild: the record answers
@@ -963,15 +1075,19 @@ async function handle<K extends WorkerCallKind>(
     }
 
     case "planRoute": {
-      const { from, to, frameOrigin } =
+      const { from, to, frameOrigin, inventedRoofs } =
         payload as WorkerCalls["planRoute"]["request"];
       const { pipeline } = requireState();
       // KEYED ON THE FEATURE SET, not on the mesh build. `loadedTileCount`
       // documents itself as a faithful signature of the features — tiles are
       // only ever added — whereas `needsFullBuild`'s key also carries
       // `terrainStamp`, and terrain does not change what blocks an agent.
-      const index = obstacleIndex.get(pipeline.loadedTileCount(), () =>
-        pipeline.features().values(),
+      // The invented-roofs switch changes the heights, so the cache keys on
+      // it too. The frame does not: the invented roofs do not depend on it.
+      const index = obstacleIndex.get(
+        pipeline.loadedTileCount(),
+        () => pipeline.features().values(),
+        inventedRoofs ?? true,
       );
       // THE SAME SAMPLER EVERY BUILDER READS, through the same cache, so the
       // ground the agent walks on and the ground the buildings stand on cannot
@@ -1324,10 +1440,12 @@ self.addEventListener("message", (event: MessageEvent) => {
       },
       (error: unknown) => {
         if (controller.signal.aborted) return;
+        const failedBuild = failedBuildOf(error);
         postToMain({
           id,
           ok: false,
           message: error instanceof Error ? error.message : String(error),
+          ...(failedBuild === undefined ? {} : { failedBuild }),
         });
       },
     )

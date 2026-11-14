@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { ALL_LAYERS } from "./layers.js";
+import { ALL_LAYERS, DEFAULT_LAYERS } from "./layers.js";
 import { attachLayerToggles, withLayerBusy } from "./layer-toggles.js";
 
 /**
@@ -147,6 +147,7 @@ describe("the side-effect note on a layer that does more than its name says", ()
       "buildings",
       "trees",
       "woods",
+      "furniture",
       "roads",
       "poi",
       "cells",
@@ -171,11 +172,10 @@ describe("the switch inventory attachLayerToggles builds", () => {
    * to move the elements without renaming any of them. A contract with no test
    * is a comment, so this is the test.
    *
-   * What deliberately STAYS in the browser: that a collapsed header actually
-   * hides the world and diagnostics groups. That is CSS resolving
-   * `header[data-collapsed="true"] { display: none }`, i.e. rendering, and
-   * asserting the attribute here instead would be the same
-   * presenter-checks-its-own-output blindness the e2e suite exists to catch.
+   * What deliberately STAYS in the browser: that a closed drawer actually
+   * hides its sections. That is rendering, and asserting an attribute here
+   * instead would be the same presenter-checks-its-own-output blindness the
+   * e2e suite exists to catch.
    */
   // The body is cleared between tests, and that is load-bearing rather than
   // tidiness: these switches carry IDS, so a container left behind by the
@@ -233,8 +233,8 @@ describe("the switch inventory attachLayerToggles builds", () => {
 
   it("puts every switch inside a named group box", () => {
     // The grouping is the reason the ids had to be preserved, so it is asserted
-    // alongside them: a switch outside a `layer-group-*` box is one the
-    // collapsed header's CSS cannot reach.
+    // alongside them: a switch outside a `layer-group-*` box is one no drawer
+    // section can fold.
     const { container } = attach();
 
     for (const layer of ALL_LAYERS) {
@@ -336,7 +336,7 @@ describe("where an extra control lands inside its group", () => {
     ]);
   });
 
-  it("keeps both, in the order the header actually needs", () => {
+  it("keeps both, in the order a section needs", () => {
     // The real call: the picker the caption names, then the switches, then the
     // setting that modifies what one of them draws.
     const container = document.createElement("div");
@@ -384,8 +384,173 @@ describe("where an extra control lands inside its group", () => {
       "layer-trees",
       "layer-woods",
       "layer-plates",
+      "layer-tint",
       "layer-roads",
       "layer-poi",
     ]);
+  });
+});
+
+describe("the drawer sections", () => {
+  /**
+   * WHY THESE TESTS MATTER. The settings drawer is a list of sections, each a
+   * native `<details>` that starts folded: that is the whole mechanism keeping
+   * a phone's drawer one screen tall, and folded state is never stored. If a
+   * section became a plain box, or opened by default, the drawer would grow
+   * past the screen and only a pixel-measuring e2e would notice. The captions
+   * and their order are what the e2e helpers open by name.
+   */
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  const extra = (id: string): HTMLElement => {
+    const node = document.createElement("span");
+    node.id = id;
+    return node;
+  };
+
+  it("builds every group as a folded <details> captioned by its <summary>, in drawer order", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    attachLayerToggles({ container, onChange: () => {} });
+
+    const sections = [...container.children];
+    expect(sections.map((s) => s.id)).toEqual([
+      "layer-group-overlays",
+      "layer-group-world",
+      "layer-group-look",
+      "layer-group-diagnostics",
+    ]);
+    for (const section of sections) {
+      expect(section).toBeInstanceOf(HTMLDetailsElement);
+      expect((section as HTMLDetailsElement).open).toBe(false);
+      expect(section.classList.contains("layer-group")).toBe(true);
+      expect(section.firstElementChild?.tagName).toBe("SUMMARY");
+      expect(
+        section.firstElementChild?.classList.contains("layer-group-label"),
+      ).toBe(true);
+    }
+    expect(sections.map((s) => s.firstElementChild?.textContent)).toEqual([
+      "Analysis",
+      "World",
+      "City look",
+      "View and debug",
+    ]);
+  });
+
+  it("puts a caller's whole section before the group it names", () => {
+    // The sun section is not a layer group; it sits between the city look
+    // and the view settings, and naming the group it precedes is what keeps
+    // that order readable at the call site.
+    const container = document.createElement("div");
+    document.body.append(container);
+    attachLayerToggles({
+      container,
+      onChange: () => {},
+      sectionsBefore: { diagnostics: [extra("sun-group")] },
+    });
+    expect([...container.children].map((s) => s.id)).toEqual([
+      "layer-group-overlays",
+      "layer-group-world",
+      "layer-group-look",
+      "sun-group",
+      "layer-group-diagnostics",
+    ]);
+  });
+
+  it("holds the furniture switch and the caller's look controls, in order", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    attachLayerToggles({
+      container,
+      onChange: () => {},
+      extrasBefore: { look: [extra("scheme")] },
+      extrasAfter: { look: [extra("roofs")] },
+    });
+
+    const keys = [
+      ...(container.querySelector("#layer-group-look")?.children ?? []),
+    ].map((c) => c.querySelector("input")?.id || c.id || c.tagName);
+    expect(keys).toEqual(["SUMMARY", "scheme", "layer-furniture", "roofs"]);
+  });
+
+  it("still reports a switch inside a folded section to onChange", () => {
+    // The section is a child of the container, so the ONE delegated change
+    // listener still sees its switches; a second listener would be a second
+    // mechanism for the same thing.
+    const container = document.createElement("div");
+    document.body.append(container);
+    const seen: boolean[] = [];
+    const toggles = attachLayerToggles({
+      container,
+      onChange: (next) => seen.push(next.furniture),
+    });
+    toggles.render(DEFAULT_LAYERS);
+    const input = container.querySelector<HTMLInputElement>("#layer-furniture");
+    if (input === null) throw new Error("no furniture switch");
+    input.checked = !input.checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(seen).toEqual([input.checked]);
+  });
+});
+
+describe("the switch the command bar keeps", () => {
+  /**
+   * WHY THESE TESTS MATTER. The cell layer is the analysis everybody turns on,
+   * so it lives in the bar beside the category picker, one tap away with the
+   * drawer closed. It must keep the id the suite addresses it by, still reach
+   * `onChange` (the bar is outside the drawer's delegated listener), and keep
+   * its busy state, which is the only feedback a ~1.9 s refresh gives.
+   */
+  beforeEach(() => {
+    document.body.replaceChildren();
+  });
+
+  const mount = () => {
+    const container = document.createElement("div");
+    const bar = document.createElement("div");
+    document.body.append(bar, container);
+    const seen: boolean[] = [];
+    const toggles = attachLayerToggles({
+      container,
+      bar,
+      onChange: (next) => seen.push(next.cells),
+    });
+    toggles.render(DEFAULT_LAYERS);
+    return { container, bar, toggles, seen };
+  };
+
+  it("puts the cells switch in the bar, outside every section", () => {
+    const { container, bar } = mount();
+    const input = bar.querySelector<HTMLInputElement>("#layer-cells");
+    expect(input).not.toBeNull();
+    expect(input?.closest(".layer-group")).toBeNull();
+    expect(container.querySelector("#layer-cells")).toBeNull();
+    // The rest of the analysis section keeps its switches.
+    expect(
+      container.querySelector("#layer-group-overlays #layer-areas"),
+    ).not.toBeNull();
+  });
+
+  it("reports the bar switch to onChange and stops after dispose", () => {
+    const { bar, toggles, seen } = mount();
+    const input = bar.querySelector<HTMLInputElement>("#layer-cells")!;
+    input.checked = !input.checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(seen).toEqual([input.checked]);
+    toggles.dispose();
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(seen).toHaveLength(1);
+  });
+
+  it("marks the bar switch busy on its own label", () => {
+    const { bar, toggles } = mount();
+    toggles.setBusy("cells", true);
+    const input = bar.querySelector<HTMLInputElement>("#layer-cells")!;
+    expect(input.disabled).toBe(true);
+    expect(input.closest("label")?.classList.contains("layer-busy")).toBe(true);
+    toggles.setBusy("cells", false);
+    expect(input.disabled).toBe(false);
   });
 });

@@ -45,6 +45,7 @@ import { stableRotationY, unit } from "./stable-jitter.js";
 import {
   DEFAULT_CROWN_RATIO,
   DEFAULT_TREE_HEIGHT_M,
+  TREE_COLOUR_JITTER,
   isTree,
   treeClass,
   treeColour,
@@ -109,6 +110,8 @@ export interface BuildCosmeticTreesOptions {
   readonly cap?: number;
   /** Default `COSMETIC_ROAD_MARGIN_M`. Zero or more. */
   readonly roadMarginM?: number;
+  /** The crown palette (a colour scheme's `trees`). Default `TREE_PALETTE`. */
+  readonly treePalette?: ReadonlyMap<string, number>;
 }
 
 /** What implies cosmetic trees in a feature, or undefined. */
@@ -588,7 +591,7 @@ function placementOf(
     crownDiameterM: heightM * DEFAULT_CROWN_RATIO,
     rotationY: stableRotationY(c.key),
     variant: variantOf(c.cls),
-    colour: treeColour(c.cls, c.key),
+    colour: treeColour(c.cls, c.key, TREE_COLOUR_JITTER, options.treePalette),
   };
 }
 

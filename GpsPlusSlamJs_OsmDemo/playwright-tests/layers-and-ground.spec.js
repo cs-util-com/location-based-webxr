@@ -17,6 +17,8 @@ import {
   waitForRefresh,
   walkByMapClick,
   REPAINT,
+  expectNoPanelOpen,
+  setting,
 } from "./fixtures.js";
 
 test.describe("the layer toggles", () => {
@@ -54,12 +56,15 @@ test.describe("the layer toggles", () => {
       // is deliberately NOT a layer — so the loose selector started counting 9 and
       // this assertion failed for a reason that had nothing to do with the layers.
       // The attribute is what "is a layer switch" actually means.
+      // The whole page, not `#layers`: the cells switch lives in the command
+      // bar, beside the category it colours by.
       await expect(
-        page.locator("#layers input[type=checkbox][data-layer]"),
-      ).toHaveCount(9);
+        page.locator("input[type=checkbox][data-layer]"),
+      ).toHaveCount(11);
 
-      // SIX OF NINE START ON (DEC-R7b-5, DEC-R7b-6; `woods` joined, on, in objects
-      // M2a). Round 4 turned every
+      // EIGHT OF ELEVEN START ON (DEC-R7b-5, DEC-R7b-6; `woods` joined, on, in
+      // objects M2a; the land-use `tint`, on, with the colour schemes; `furniture`,
+      // on, with the street furniture). Round 4 turned every
       // layer on; round 8 took plates and cells back off after a session saw the
       // demo with the terrain relief carrying the ground; the underground
       // diagnostic joined them off by default. Both halves are asserted, because
@@ -75,6 +80,8 @@ test.describe("the layer toggles", () => {
       await expect(page.locator("#layer-buildings")).toBeChecked();
       await expect(page.locator("#layer-trees")).toBeChecked();
       await expect(page.locator("#layer-woods")).toBeChecked();
+      await expect(page.locator("#layer-furniture")).toBeChecked();
+      await expect(page.locator("#layer-tint")).toBeChecked();
       await expect(page.locator("#layer-areas")).toBeChecked();
       await expect(page.locator("#layer-poi")).toBeChecked();
       // W9 turned every layer on by default, so a test about switching a layer ON
@@ -82,14 +89,14 @@ test.describe("the layer toggles", () => {
       // — it is what proves the toggle works in both directions rather than only
       // in the one the test happens to exercise.
       await expect(page.locator("#layer-roads")).toBeChecked();
-      await page.locator("#layer-roads").uncheck();
+      await setting(page, "#layer-roads", (c) => c.uncheck());
       await expect(page.locator("#layer-roads")).not.toBeChecked();
 
       const status = page.locator("#status");
       await expect(status).toContainText(/\d+ volumes/);
       const before = counts.overpassQuery;
 
-      await page.locator("#layer-buildings").uncheck();
+      await setting(page, "#layer-buildings", (c) => c.uncheck());
 
       // The counters must drop to zero volumes: the layer is genuinely not built,
       // not merely hidden.
@@ -109,18 +116,40 @@ test.describe("the layer toggles", () => {
       // the claim is that the two layers do not interfere, which needs both to
       // be observable rather than both to start in any particular state.
       await page.locator("#layer-cells").check();
+      // THE REFRESH THE SWITCH STARTED FINISHES FIRST: switching the cells on
+      // re-scores, and the grid is drawn once that pass has widened to its last
+      // ring and the switch is usable again. Asserting before then raced it.
+      await waitForRefresh(page);
+      await expect(page.locator("#layer-cells")).toBeEnabled();
       await expect(
         page.locator("#map path.affordance-cell").first(),
       ).toBeVisible();
       await page.locator("#layer-cells").uncheck();
 
-      await page.locator("#layer-buildings").check();
+      await setting(page, "#layer-buildings", (c) => c.check());
       await expect(status).toContainText(/[1-9]\d* volumes/);
       expect(counts.overpassQuery).toBe(before);
 
       // Roads back on, so the next step starts from the boot state this one did.
-      await page.locator("#layer-roads").check();
+      await setting(page, "#layer-roads", (c) => c.check());
       await expect(page.locator("#layer-roads")).toBeChecked();
+    });
+
+    await test.step("draws the street furniture by default and removes it when switched off", async () => {
+      // WHY THIS TEST MATTERS: the street furniture is on by default, behind a
+      // switch. The park fixture
+      // maps two street lamps, so the default build places them and the
+      // status line counts them; the switch filters at draw time, so off
+      // drops the count without a refetch, and on brings it back.
+      const status = page.locator("#status");
+      await expect(status).toContainText(/[1-9]\d* furniture/);
+      const before = counts.overpassQuery;
+      await setting(page, "#layer-furniture", (c) => c.uncheck());
+      await expect(status).not.toContainText(/\d+ furniture/);
+      await expect(status).toContainText(/[1-9]\d* volumes/);
+      await setting(page, "#layer-furniture", (c) => c.check());
+      await expect(status).toContainText(/[1-9]\d* furniture/);
+      expect(counts.overpassQuery).toBe(before);
     });
 
     await test.step("draws the cosmetic woods by default and removes them when switched off", async () => {
@@ -132,10 +161,10 @@ test.describe("the layer toggles", () => {
       const status = page.locator("#status");
       await expect(status).toContainText(/[1-9]\d* woods/);
       const before = counts.overpassQuery;
-      await page.locator("#layer-woods").uncheck();
+      await setting(page, "#layer-woods", (c) => c.uncheck());
       await expect(status).not.toContainText(/\d+ woods/);
       await expect(status).toContainText(/[1-9]\d* volumes/);
-      await page.locator("#layer-woods").check();
+      await setting(page, "#layer-woods", (c) => c.check());
       await expect(status).toContainText(/[1-9]\d* woods/);
       expect(counts.overpassQuery).toBe(before);
     });
@@ -181,7 +210,7 @@ test.describe("the layer toggles", () => {
         .toBe(true);
       const before = previous;
 
-      await page.locator("#layer-plates").check();
+      await setting(page, "#layer-plates", (c) => c.check());
       await expect(page.locator("#layer-plates")).toBeChecked();
 
       // The fixture is Cologne Volksgarten: 3 `amenity=parking` areas, landuse, a
@@ -218,7 +247,8 @@ test.describe("the layer toggles", () => {
       // is the feature working, not the grid failing to clear, and leaving the
       // assertion as it stood would have made a working feature look like a
       // regression in an unrelated test.
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await setting(page, "#layer-areas", (c) => c.uncheck());
+      await expectNoPanelOpen(page);
       const canvas = page.locator("#scene canvas");
       const box = await canvas.boundingBox();
       if (box === null) throw new Error("no canvas box");
@@ -226,8 +256,8 @@ test.describe("the layer toggles", () => {
       await expect(page.locator("#details")).toBeHidden();
 
       // Back to the boot state, so the steps below start from what a user has.
-      await page.getByRole("checkbox", { name: "areas" }).check();
-      await page.locator("#layer-plates").uncheck();
+      await setting(page, "#layer-areas", (c) => c.check());
+      await setting(page, "#layer-plates", (c) => c.uncheck());
     });
 
     await test.step("the underground layer draws the excluded features in both views, and nothing when off", async () => {
@@ -261,7 +291,7 @@ test.describe("the layer toggles", () => {
         return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
       });
 
-      await page.locator("#layer-underground").check();
+      await setting(page, "#layer-underground", (c) => c.check());
 
       // 2D: the outlines appear. Present rather than visible, because an excluded
       // feature can sit outside the viewport exactly as a geo-event can.
@@ -283,7 +313,7 @@ test.describe("the layer toggles", () => {
 
       // AND BACK OFF, which is the half a redraw-only implementation passes and a
       // draw-once one fails.
-      await page.locator("#layer-underground").uncheck();
+      await setting(page, "#layer-underground", (c) => c.uncheck());
       await expect(drawn).toHaveCount(0, { timeout: 30000 });
     });
 
@@ -362,7 +392,7 @@ test.describe("the layer toggles", () => {
       const picker = page.locator("#ground-mode");
       await expect(picker).toHaveValue("cpu-slope");
       const withGround = await shot();
-      await picker.selectOption("none");
+      await setting(page, "#ground-mode", (c) => c.selectOption("none"));
       await expect.poll(shot, REPAINT).not.toBe(withGround);
       await expect(page.locator("#status")).toContainText(/ground none/);
       await expect(page.locator("#status")).toContainText(/\d+ volumes/);
@@ -385,6 +415,8 @@ test.describe("the layer toggles", () => {
       "trees",
       // The cosmetic woods (objects M2a) are a layer too, on by default.
       "woods",
+      // The street furniture, on by default.
+      "furniture",
       "plates",
       "roads",
       "poi",
@@ -398,7 +430,8 @@ test.describe("the layer toggles", () => {
       // pixel here is a surface that should not be drawn.
       for (const layer of LAYERS) {
         const box = page.locator(`#layer-${layer}`);
-        if (await box.isChecked()) await box.uncheck();
+        if (await box.isChecked())
+          await setting(page, `#layer-${layer}`, (c) => c.uncheck());
       }
 
       // NO GEOMETRY LEFT, measured as hard edges rather than as colours — see
@@ -418,7 +451,8 @@ test.describe("the layer toggles", () => {
 
       for (const layer of LAYERS) {
         const box = page.locator(`#layer-${layer}`);
-        if (!(await box.isChecked())) await box.check();
+        if (!(await box.isChecked()))
+          await setting(page, `#layer-${layer}`, (c) => c.check());
       }
     });
 
@@ -435,6 +469,7 @@ test.describe("the layer toggles", () => {
       const map = page.locator("#map");
       const box = await map.boundingBox();
       if (box === null) throw new Error("no map box");
+      await expectNoPanelOpen(page);
       await page.mouse.click(
         box.x + box.width / 2 + 30,
         box.y + box.height / 2,
@@ -451,7 +486,7 @@ test.describe("the layer toggles", () => {
       expect(withoutGround).not.toBe("");
 
       // And it comes back: the picker is not a one-way door.
-      await page.locator("#ground-mode").selectOption("cpu");
+      await setting(page, "#ground-mode", (c) => c.selectOption("cpu"));
       await expect(page.locator("#status")).toContainText(/ground cpu \d/);
     });
   });

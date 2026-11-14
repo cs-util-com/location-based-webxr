@@ -37,6 +37,11 @@ import {
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
+import {
+  DEFAULT_COLOUR_SCHEME,
+  isColourSchemeName,
+  type ColourSchemeName,
+} from "./colour-schemes.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import { DEFAULT_GROUND_MODE } from "./ground-mode.js";
 import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
@@ -54,11 +59,154 @@ import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
  */
 export interface DemoRootState {
   readonly osmView: OsmViewState<DemoSnapshot, GeoEvent>;
+  /**
+   * Whether the 3D view draws ambient occlusion (the light dialog's switch).
+   * A view setting, not part of the light link and not a build input:
+   * switching it redraws the frame and rebuilds nothing.
+   */
+  readonly ambientOcclusion: boolean;
+  /**
+   * The chosen colour scheme (colour schemes plan 2026-11-10-0841 section
+   * 4.4). The demo's own reducer rather than a field of the framework's
+   * `osmView` slice: the framework is published and has no business naming
+   * this demo's looks, and a field there would pull every framework
+   * dependant into this change.
+   */
+  readonly colourScheme: ColourSchemeName;
+  /**
+   * Whether the city invents roofs for the buildings the map says nothing
+   * about (the layer list's switch). A demo field beside `colourScheme`, for
+   * the same reason: it is a build choice of this demo, not a layer.
+   */
+  readonly inventedRoofs: boolean;
+  /**
+   * Whether the city paints zebra crossings and draws the mapped pedestrian
+   * areas (the layer list's switch), a build choice like the roofs.
+   */
+  readonly markings: boolean;
 }
 
 export interface CreateDemoStoreOptions {
   readonly start: LatLng;
   readonly category: string;
+  /** The AO switch at boot, from the link (`?ao=off`); on when absent. */
+  readonly ambientOcclusion?: boolean;
+  /** The scheme at boot, from the link (`?scheme=`); the default when absent. */
+  readonly colourScheme?: ColourSchemeName;
+  /** The switch at boot, from the link (`?roofs=off`); on when absent. */
+  readonly inventedRoofs?: boolean;
+  /** The switch at boot, from the link (`?markings=off`); on when absent. */
+  readonly markings?: boolean;
+  /**
+   * The layer switches at boot, from the link (`?furniture=off`);
+   * `DEFAULT_LAYERS` when absent.
+   */
+  readonly initialLayers?: LayerSet;
+}
+
+const AMBIENT_OCCLUSION_CHANGED = "ambientOcclusion/changed";
+
+/** The light dialog's AO switch. */
+export function ambientOcclusionChanged(on: boolean): {
+  readonly type: typeof AMBIENT_OCCLUSION_CHANGED;
+  readonly payload: boolean;
+} {
+  return { type: AMBIENT_OCCLUSION_CHANGED, payload: on };
+}
+
+/** The AO reducer; a payload that is not a boolean is ignored. */
+function ambientOcclusionReducer(initial: boolean) {
+  return (
+    state: boolean = initial,
+    action: { readonly type: string; readonly payload?: unknown },
+  ): boolean => {
+    if (action.type !== AMBIENT_OCCLUSION_CHANGED) return state;
+    return typeof action.payload === "boolean" ? action.payload : state;
+  };
+}
+
+/** Whether the 3D view draws ambient occlusion. */
+export function selectAmbientOcclusion(state: DemoRootState): boolean {
+  return state.ambientOcclusion;
+}
+
+const COLOUR_SCHEME_CHANGED = "colourScheme/changed";
+
+/** The one action of the colour-scheme reducer. */
+export interface ColourSchemeChanged {
+  readonly type: typeof COLOUR_SCHEME_CHANGED;
+  readonly payload: ColourSchemeName;
+}
+
+/** The dropdown's choice (or a revert of it). */
+export function colourSchemeChanged(
+  name: ColourSchemeName,
+): ColourSchemeChanged {
+  return { type: COLOUR_SCHEME_CHANGED, payload: name };
+}
+
+/**
+ * The colour-scheme reducer, starting at `initial`. A payload that is not a
+ * scheme name is ignored (the state stays), so nothing outside the table can
+ * reach the worker's build key.
+ */
+function colourSchemeReducer(initial: ColourSchemeName) {
+  return (
+    state: ColourSchemeName = initial,
+    action: { readonly type: string; readonly payload?: unknown },
+  ): ColourSchemeName => {
+    if (action.type !== COLOUR_SCHEME_CHANGED) return state;
+    return isColourSchemeName(action.payload) ? action.payload : state;
+  };
+}
+
+/** The chosen colour scheme. */
+export function selectColourScheme(state: DemoRootState): ColourSchemeName {
+  return state.colourScheme;
+}
+
+const INVENTED_ROOFS_CHANGED = "inventedRoofs/changed";
+
+/** The invented-roofs switch's choice (or a revert of it). */
+export function inventedRoofsChanged(on: boolean): {
+  readonly type: typeof INVENTED_ROOFS_CHANGED;
+  readonly payload: boolean;
+} {
+  return { type: INVENTED_ROOFS_CHANGED, payload: on };
+}
+
+/**
+ * A build-choice switch's reducer (the roofs, the markings); a payload that
+ * is not a boolean is ignored.
+ */
+function booleanChoiceReducer(type: string, initial: boolean) {
+  return (
+    state: boolean = initial,
+    action: { readonly type: string; readonly payload?: unknown },
+  ): boolean => {
+    if (action.type !== type) return state;
+    return typeof action.payload === "boolean" ? action.payload : state;
+  };
+}
+
+/** Whether the city invents roofs. */
+export function selectInventedRoofs(state: DemoRootState): boolean {
+  return state.inventedRoofs;
+}
+
+const MARKINGS_CHANGED = "markings/changed";
+
+/** The zebras-and-pedestrian-areas switch's choice (or a revert of it). */
+export function markingsChanged(on: boolean): {
+  readonly type: typeof MARKINGS_CHANGED;
+  readonly payload: boolean;
+} {
+  return { type: MARKINGS_CHANGED, payload: on };
+}
+
+/** Whether the city paints zebras and draws the pedestrian areas. */
+export function selectMarkings(state: DemoRootState): boolean {
+  return state.markings;
 }
 
 /**
@@ -133,7 +281,7 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
   const slice = createOsmViewSlice<DemoSnapshot, GeoEvent>({
     initialPosition: options.start,
     initialCategory: options.category,
-    initialLayers: DEFAULT_LAYERS,
+    initialLayers: options.initialLayers ?? DEFAULT_LAYERS,
     // The picker names its own modes; the slice only stores the string (W11).
     initialGroundMode: DEFAULT_GROUND_MODE,
   });
@@ -161,7 +309,23 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
     // real backend here would start writing GPS actions to OPFS behind the
     // user's back.
     storageBackend: new NullStorageBackend(),
-    extraReducers: { osmView: slice.reducer },
+    extraReducers: {
+      osmView: slice.reducer,
+      ambientOcclusion: ambientOcclusionReducer(
+        options.ambientOcclusion ?? true,
+      ),
+      colourScheme: colourSchemeReducer(
+        options.colourScheme ?? DEFAULT_COLOUR_SCHEME,
+      ),
+      inventedRoofs: booleanChoiceReducer(
+        INVENTED_ROOFS_CHANGED,
+        options.inventedRoofs ?? true,
+      ),
+      markings: booleanChoiceReducer(
+        MARKINGS_CHANGED,
+        options.markings ?? true,
+      ),
+    },
     // RESTORED AFTER THE MIGRATION DROPPED IT. The old bare store passed this
     // as ; the factory hardcoded its own and had no
     // hook, so for one commit devtools deep-walked the whole ~931-cell snapshot

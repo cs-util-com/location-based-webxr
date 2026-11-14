@@ -19,7 +19,7 @@ import {
   RpcAbortError,
   type Transport,
 } from "./rpc-client.js";
-import type { WorkerEnvelope } from "./protocol.js";
+import { failedBuildOf, type WorkerEnvelope } from "./protocol.js";
 
 /** A transport that records what was posted and lets a test reply by hand. */
 function fakeTransport() {
@@ -103,6 +103,81 @@ describe("createRpcClient", () => {
     fake.reply({ id: fake.posted[0]?.id, ok: false, message: "Overpass 429" });
 
     await expect(promise).rejects.toThrow("Overpass 429");
+  });
+
+  it("carries a failed city build's choices as a field, not in the text", async () => {
+    // Why this test matters: the colour-scheme switch reverts only when the
+    // build it waits for failed. Reading that from the message text broke as
+    // soon as the text changed; a field on the reply does not, and a failure
+    // without it (an Overpass error) must stay an ordinary error.
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport);
+    const update = {
+      position: { lat: 50.94, lng: 6.96 },
+      category: "walkable",
+    };
+
+    const built = client.call("update", update);
+    fake.reply({
+      id: fake.posted[0]?.id,
+      ok: false,
+      message: "out of memory",
+      failedBuild: {
+        colourScheme: "night",
+        inventedRoofs: false,
+        markings: true,
+      },
+    });
+    const error = await built.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(Error);
+    expect(failedBuildOf(error)).toEqual({
+      colourScheme: "night",
+      inventedRoofs: false,
+      markings: true,
+    });
+
+    const fetched = client.call("update", update);
+    fake.reply({ id: fake.posted[1]?.id, ok: false, message: "Overpass 429" });
+    expect(
+      failedBuildOf(await fetched.catch((caught: unknown) => caught)),
+    ).toBe(undefined);
+
+    // A malformed field is dropped rather than trusted.
+    const odd = client.call("update", update);
+    fake.reply({
+      id: fake.posted[2]?.id,
+      ok: false,
+      message: "odd",
+      failedBuild: { colourScheme: 7 },
+    });
+    expect(failedBuildOf(await odd.catch((caught: unknown) => caught))).toBe(
+      undefined,
+    );
+
+    // Both choices are carried, so the page reverts exactly the switch
+    // whose build failed; a reply missing the roofs choice is malformed
+    // too, rather than read as "roofs on".
+    const partial = client.call("update", update);
+    fake.reply({
+      id: fake.posted[3]?.id,
+      ok: false,
+      message: "partial",
+      failedBuild: { colourScheme: "night" },
+    });
+    expect(
+      failedBuildOf(await partial.catch((caught: unknown) => caught)),
+    ).toBe(undefined);
+    // So is one missing the markings choice.
+    const noMarkings = client.call("update", update);
+    fake.reply({
+      id: fake.posted[4]?.id,
+      ok: false,
+      message: "partial",
+      failedBuild: { colourScheme: "night", inventedRoofs: true },
+    });
+    expect(
+      failedBuildOf(await noMarkings.catch((caught: unknown) => caught)),
+    ).toBe(undefined);
   });
 
   it("ignores foreign messages instead of crashing on them", async () => {
@@ -261,5 +336,48 @@ describe("createRpcClient — a fatal worker failure", () => {
     await expect(later).rejects.toThrow("gone");
     // And nothing was handed to a worker that will never answer it.
     expect(fake.posted).toHaveLength(0);
+  });
+});
+
+describe("createRpcClient notices", () => {
+  // WHY: the worker tells the page when a foreground download starts, so the
+  // loading overlay can say "loading" only then. The notice has no id, so it
+  // must reach the handler and leave every pending call untouched.
+  it("hands a notice to onNotice and settles no call", async () => {
+    const fake = fakeTransport();
+    const onNotice = vi.fn();
+    const client = createRpcClient(fake.transport, { onNotice });
+    const promise = client.call("explain", {
+      cell: "abc",
+      category: "walkable",
+    });
+    fake.reply({ notice: "downloadStarted" });
+    expect(onNotice).toHaveBeenCalledWith({ notice: "downloadStarted" });
+    const sent = fake.posted[0];
+    fake.reply({ id: sent?.id, ok: true, value: "done" });
+    await expect(promise).resolves.toBe("done");
+    expect(onNotice).toHaveBeenCalledTimes(1);
+  });
+
+  it("a throwing notice subscriber does not break replies", async () => {
+    // WHY: the notice handler runs inside the transport listener. A throw
+    // escaping it would abort that message's handling and surface as an
+    // uncaught error in the page, for a purely cosmetic overlay text.
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport, {
+      onNotice: () => {
+        throw new Error("subscriber broke");
+      },
+    });
+    const promise = client.call("explain", {
+      cell: "abc",
+      category: "walkable",
+    });
+    expect(() => {
+      fake.reply({ notice: "downloadStarted" });
+    }).not.toThrow();
+    const sent = fake.posted[0];
+    fake.reply({ id: sent?.id, ok: true, value: "done" });
+    await expect(promise).resolves.toBe("done");
   });
 });

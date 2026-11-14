@@ -43,7 +43,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function harness(call: () => Promise<readonly RoutePoint[] | undefined>) {
+function harness(
+  call: () => Promise<readonly RoutePoint[] | undefined>,
+  extra: { inventedRoofs?: () => boolean } = {},
+) {
   const busy: boolean[] = [];
   const shown: (readonly RoutePoint[] | undefined)[] = [];
   const reported: string[] = [];
@@ -60,6 +63,7 @@ function harness(call: () => Promise<readonly RoutePoint[] | undefined>) {
     setBusy: (value) => busy.push(value),
     showRoute: (route) => shown.push(route),
     report: (message) => reported.push(message),
+    ...extra,
   });
   return { order, busy, shown, reported, posted };
 }
@@ -142,6 +146,21 @@ describe("createAgentCycle", () => {
 
     expect(posted).toStrictEqual([
       { from: HOME, to: THERE, frameOrigin: HOME },
+    ]);
+  });
+
+  it("sends the invented-roofs switch, so the agent walks the drawn city", async () => {
+    // Why this test matters: the switch changes building heights in the
+    // drawn city; the route's obstacle index must be built the same way or
+    // an agent steps over a roof the screen shows.
+    const { order, posted } = harness(() => Promise.resolve(ROUTE), {
+      inventedRoofs: () => false,
+    });
+
+    await order(THERE);
+
+    expect(posted).toStrictEqual([
+      { from: HOME, to: THERE, frameOrigin: HOME, inventedRoofs: false },
     ]);
   });
 

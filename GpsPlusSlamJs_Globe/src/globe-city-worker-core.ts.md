@@ -69,7 +69,15 @@ filed follow-up.
 - The build window is the delivery's `window` (the loaded tiles' box,
   city objects plan 2026-11-07-2315 section 4), and `cosmeticTrees: false`:
   the globe draws no cosmetic woods until objects M2b wires them, so the
-  worker builds none.
+  worker builds none. Likewise `furniture: []`: the library default builds
+  all four street furniture kinds, and the globe draws none yet (pinned in
+  the test next to `cosmeticTrees: false`). And `inventedRoofs: false`:
+  with the tiles cached (a revisit, the Tour Editor's normal case) the build
+  is the delivery, and invented roofs multiply it by about 1.9 to 4.5
+  (Heidelberg and Meggen, the central half and the whole of the data box;
+  the library bench `GpsPlusSlamJs_Osm/src/mesh/globe-invented-roofs.bench.ts`),
+  past the plan's rule of "more than doubles". The globe draws the flat
+  tops the map implies; OsmDemo keeps the invented roofs.
 
 ## Example
 

@@ -32,6 +32,11 @@
 - `staticTilesEnabled(search: string): boolean` - false only for `tiles=off`:
   a read-only boot knob that switches the static tile host off (the tiles
   then come straight from the Overpass race). No writer sets or clears it.
+- `cameraDampingEnabled(search: string): boolean` - false only for
+  `damping=off`: a read-only boot knob for the browser suite that switches
+  the 3D camera's easing off (`BuildingViewOptions.cameraDamping`). The app
+  keeps its damping by default. No writer sets or clears it; tested with a
+  property over the place, camera, light and scheme writers.
 
 ## The camera target (DEC-R13-7), and why it is a safe partial reversal
 
@@ -133,3 +138,24 @@ writePlace(placeUrl, { position });
   sun pins set, replaced and every other key kept.
 
 No test data required.
+
+## `scheme` (colour schemes plan 2026-11-10-0841, D6)
+
+The fourth writer: `schemeQuery(search, name | null)` / `writeScheme(url, name | null)`
+own `scheme` only; `null` (the default scheme) removes the key, so
+`?scheme=today` is never written. The read side is `resolveColourScheme` in
+`colour-schemes.ts`. Presentation state, the second documented exception to
+DEC-R12-5 after the light. Tested in `url-state.test.ts` (own key only,
+default removes, a property over arbitrary queries, no write when unchanged).
+
+## Read-only boot overrides
+
+`roofs=off` (invented roofs off), `markings=off` (no zebras or pedestrian
+areas), `furniture=off` (the street furniture layer off), `ao=off` (the
+ambient occlusion off), `woodsauto=off` (the woods governor never thins the
+woods), `treeform=trunk` (every tree drawn with a trunk) and `perf=1` (the
+frame readout over the 3D pane, `woods-readout.ts`) and `tiles=off` (the static
+tile host off, `staticTilesEnabled` below) and `damping=off` (the 3D camera
+stops where a drag ends instead of easing on, `cameraDampingEnabled`; a test
+knob, since each eased frame is a software-rendered repaint in the browser
+suite) are read once by `main.ts` at boot and never written, so they add no writer here and DEC-R12-5 holds.

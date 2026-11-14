@@ -105,6 +105,7 @@ function everyLayer(): TransferableMesh {
     parts: 25,
     guessedHeights: 7,
     approximateRoofs: 2,
+    inventedRoofCount: 5,
     barriers: 4,
   } as unknown as TransferableMesh;
 }
@@ -145,6 +146,8 @@ function meshLayerMaterials(): { material: THREE.Material; where: string }[] {
     // The cosmetic woods are hidden in AR (owner decision, objects M2a), so
     // they are not AR content; their material is the trees layer one anyway.
     woods: false,
+    // Street furniture is hidden in AR too (owner decision).
+    furniture: false,
     plates: true,
     roads: true,
     poi: true,

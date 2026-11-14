@@ -282,6 +282,25 @@ export function capTriangles(
   return out;
 }
 
+/**
+ * The outer walls (indices AS GIVEN) whose sloped face is one triangle
+ * resting on the wall: a wing's end, where a gable can stand. Read from a
+ * finished roof, so a caller that chooses its own gables (an invented roof,
+ * with its shared walls and length band) can do so from the hipped run it
+ * already has. A face already vertical, or one cut flat by `maxT`, is none.
+ */
+export function wingEnds(roof: SkeletonRoof): number[] {
+  const ends: number[] = [];
+  for (const face of roof.faces) {
+    if (face.ring !== 0 || face.vertical) continue;
+    const raised = face.points.filter((p) => p.t > 0);
+    if (raised.length === 0 || raised.length === face.points.length) continue;
+    // The nudge can split one apex into events a hair apart: one corner still.
+    if (distinctCorners(raised).length === 1) ends.push(face.wall);
+  }
+  return ends;
+}
+
 /** The plan area the roof covers (slopes and caps; gables cover none). */
 export function skeletonPlanArea(roof: SkeletonRoof): number {
   let area = 0;

@@ -17,6 +17,8 @@ Purpose: the near clouds' step-down: a device too slow for its tier first draws 
 - **A cap is not a slow device.** A display limited to 30 Hz, or a saving mode, reads over `slowMs` for ever. The step-down therefore tests itself: when the fewest pixels saved less than `worthwhile` (15 %) of the frame time since the pixels began to fall, the pixels were not the cost, all of them come back and it rests for `restS` (300 s). A capped screen spends about 10 s on fewer pixels, every five minutes; a device that gets slower later steps down at the next try.
 - **What would reverse a verdict:** `slowMs` 22 reads 45 fps as the floor. `worthwhile` 0.15 reads a device whose clouds are under about a sixth of its frame as one the clouds do not slow; 0.05 would send a device with a jittering cap down to low, 0.3 would hold a slow device at all its pixels. No phone was measured for either. After the rest the step-down tests itself again.
 
+- **A deliberate copy (DEC-H3):** the woods governor, `GpsPlusSlamJs_Osm/src/three/woods-governor.ts`, follows this rule (smoothed interval, gap, worthwhile test, rest) for the invented trees' share. The Osm package cannot import this one, and the two differ in what they measure (chained frames only, for a view that draws on demand), in what they step and in their thresholds, so each keeps its own copy and names the other.
+
 ## Example
 
 ```ts

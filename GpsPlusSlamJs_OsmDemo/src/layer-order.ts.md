@@ -6,7 +6,7 @@
 
 - `groundLift(layer: LayerKind): number` — metres above the terrain surface for that layer. Total over `LayerKind`: every kind returns a number, and the `switch` is exhaustive with no `default`, so **adding a layer kind without deciding its lift is a compile error** rather than a silent 0.
   - Ground layers, lowest first: `plates` 0.04, `roads` 0.08, `areas` 0.12, `cells` 0.16.
-  - `buildings`, `trees`, `woods`, `poi` → **0**. They stand up from the ground and are separated by their own geometry; lifting them would only make them float.
+  - `buildings`, `trees`, `woods`, `furniture`, `poi` → **0**. They stand up from the ground and are separated by their own geometry; lifting them would only make them float.
   - `terrainDebug` used to be here at **0**, for a different reason with the same answer: it re-coloured the ground plane _in place_ rather than adding a surface above it, so a lifted copy would z-fight with the plane it replaced. It is now a ground mode rather than a layer (W6, DEC-R5-4) — and needing a bespoke reason to sit in this table was one of the signs it never belonged in the registry.
 - `GROUND_LAYERS` — the four lifted layers, lowest first. Exported so a test can assert the ladder is strictly increasing **without re-listing it**; a second list would be the thing that drifts.
 - `ROUTE_LIFT_M` — the planned route's polyline, one rung **above** the whole ladder. It is not a `LayerKind` (not toggleable, not a claim about the ground), so it cannot go through `groundLift` — but it is coplanar with everything that does, which is exactly why it lives here rather than in `route-path.ts`. Above `cells` because the route is the artefact stage 4 exists to show (DEC-R11-3), and occluding it behind an affordance overlay would hide it.
@@ -37,3 +37,10 @@ const lifts = GROUND_LAYERS.map(groundLift); // [0.04, 0.08, 0.12, 0.16]
 
 - `layer-order.test.ts` — strictly increasing along the ladder; every ground layer gets a distinct non-zero lift; `cells` is at the top, because they are what is being inspected; nothing that stands up from the ground is lifted; every `LayerKind` is answered, so a new kind cannot be forgotten; and every lift stays small enough not to look like floating.
 - The visible consequence is covered by e2e rather than here: `playwright-tests/` asserts that switching the `plates` and `areas` layers on changes the rendered pixels, which is the assertion that would fail if a lift collapsed into the terrain plane.
+
+## Since S3 (colour schemes plan 2026-11-10-0841)
+
+`groundLift` reads a `Record<LayerKind, number>` of ladder rungs (in `STEP_M`)
+instead of a switch: the new `tint` layer took the switch over the complexity
+limit, and a keyed record keeps the compile-time exhaustiveness. `tint` lifts
+0: it is drawn inside the ground's own shader.

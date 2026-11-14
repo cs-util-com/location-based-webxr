@@ -15,23 +15,44 @@
 
 import { describe, expect, it } from "vitest";
 
-import { createMeshPlanner, type MeshInputs } from "./mesh-planner.js";
+import {
+  meshBuildChoices,
+  meshBuildKey,
+  needsFullBuild,
+  type MeshInputs,
+} from "./mesh-planner.js";
 
 const AT: MeshInputs = {
   position: { lat: 50.9413, lng: 6.9583 },
   loadedTileCount: 1,
   terrainStamp: 1,
+  choices: { colourScheme: "today" },
 };
 
-describe("createMeshPlanner", () => {
+/**
+ * A page that draws every full build it is sent and reports the drawn key on
+ * its next pass, as `main.ts` does through `latestMesh.buildKey`.
+ */
+function drawingPage(): { pass(inputs: MeshInputs): boolean } {
+  let drawn: string | undefined;
+  return {
+    pass(inputs) {
+      const full = needsFullBuild(inputs, drawn);
+      if (full) drawn = meshBuildKey(inputs);
+      return full;
+    },
+  };
+}
+
+describe("needsFullBuild", () => {
   it("builds on the first pass, and not again for the same inputs", () => {
     // The three rings of one click: one full build, then slabs. This IS the
     // item — it used to be three full builds of a 2.8 km city.
-    const planner = createMeshPlanner();
+    const planner = drawingPage();
 
-    expect(planner.needsFullBuild(AT)).toBe(true);
-    expect(planner.needsFullBuild(AT)).toBe(false);
-    expect(planner.needsFullBuild(AT)).toBe(false);
+    expect(planner.pass(AT)).toBe(true);
+    expect(planner.pass(AT)).toBe(false);
+    expect(planner.pass(AT)).toBe(false);
   });
 
   it("rebuilds when the user moves far enough to change what is drawn", () => {
@@ -39,15 +60,15 @@ describe("createMeshPlanner", () => {
     // (`clipBoxAround(centre, TERRAIN_EXTENT_M)`), so a user who has moved a
     // long way needs geometry the last build never included — a slabs-only
     // reply would leave them looking at the edge of the old window.
-    const planner = createMeshPlanner();
-    planner.needsFullBuild(AT);
+    const planner = drawingPage();
+    planner.pass(AT);
 
-    expect(
-      planner.needsFullBuild({ ...AT, position: { lat: 50.95, lng: 6.9583 } }),
-    ).toBe(true);
-    expect(
-      planner.needsFullBuild({ ...AT, position: { lat: 50.95, lng: 6.96 } }),
-    ).toBe(true);
+    expect(planner.pass({ ...AT, position: { lat: 50.95, lng: 6.9583 } })).toBe(
+      true,
+    );
+    expect(planner.pass({ ...AT, position: { lat: 50.95, lng: 6.96 } })).toBe(
+      true,
+    );
   });
 
   it("does NOT rebuild for a step, now that the frame no longer moves", () => {
@@ -56,12 +77,12 @@ describe("createMeshPlanner", () => {
     // fixed scene anchor the coordinates stand still, and a step only needs a
     // rebuild if it changed what should be *drawn* — which a few metres does
     // not.
-    const planner = createMeshPlanner();
-    planner.needsFullBuild(AT);
+    const planner = drawingPage();
+    planner.pass(AT);
 
     // ~2 m north. Well inside the quantisation bucket.
     expect(
-      planner.needsFullBuild({
+      planner.pass({
         ...AT,
         position: { lat: AT.position.lat + 0.00002, lng: AT.position.lng },
       }),
@@ -73,12 +94,12 @@ describe("createMeshPlanner", () => {
     // wrong fix: dropping position from the key entirely. That would make a
     // step cheap AND freeze the clipped content forever, so the user would
     // eventually walk off the edge of the drawn world with nothing rebuilding.
-    const planner = createMeshPlanner();
-    planner.needsFullBuild(AT);
+    const planner = drawingPage();
+    planner.pass(AT);
 
     // ~500 m north — beyond the bucket, well inside the clip extent.
     expect(
-      planner.needsFullBuild({
+      planner.pass({
         ...AT,
         position: { lat: AT.position.lat + 0.0045, lng: AT.position.lng },
       }),
@@ -89,17 +110,17 @@ describe("createMeshPlanner", () => {
     // Both axes, or a bucket that only coarsened one would rebuild on every
     // eastward step while ignoring northward ones — which would look like an
     // intermittent bug rather than a missing clause.
-    const planner = createMeshPlanner();
-    planner.needsFullBuild(AT);
+    const planner = drawingPage();
+    planner.pass(AT);
 
     expect(
-      planner.needsFullBuild({
+      planner.pass({
         ...AT,
         position: { lat: AT.position.lat, lng: AT.position.lng + 0.00002 },
       }),
     ).toBe(false);
     expect(
-      planner.needsFullBuild({
+      planner.pass({
         ...AT,
         position: { lat: AT.position.lat, lng: AT.position.lng + 0.0075 },
       }),
@@ -109,20 +130,107 @@ describe("createMeshPlanner", () => {
   it("rebuilds when another fetch tile has been merged in", () => {
     // New features are new geometry. Tiles are only ever added, which is what
     // makes a count a faithful signature of the feature set rather than a proxy.
-    const planner = createMeshPlanner();
-    planner.needsFullBuild(AT);
+    const planner = drawingPage();
+    planner.pass(AT);
 
-    expect(planner.needsFullBuild({ ...AT, loadedTileCount: 2 })).toBe(true);
+    expect(planner.pass({ ...AT, loadedTileCount: 2 })).toBe(true);
   });
 
   it("rebuilds when the terrain has been replaced", () => {
     // Every builder samples heights from the field, so a new field is new
     // geometry — including the case that matters most, where the field arrives
     // AFTER the first pass at a position that had none.
-    const planner = createMeshPlanner();
-    planner.needsFullBuild(AT);
+    const planner = drawingPage();
+    planner.pass(AT);
 
-    expect(planner.needsFullBuild({ ...AT, terrainStamp: 2 })).toBe(true);
+    expect(planner.pass({ ...AT, terrainStamp: 2 })).toBe(true);
+  });
+
+  it("rebuilds for a colour-scheme change, and only once", () => {
+    // Why this test matters: the colours are in the buffers (D1), so a switch
+    // must rebuild; the second pass of the same click must not (W6).
+    const planner = drawingPage();
+    planner.pass(AT);
+    const night = { ...AT, choices: { colourScheme: "night" } };
+    expect(planner.pass(night)).toBe(true);
+    expect(planner.pass(night)).toBe(false);
+    expect(planner.pass(AT)).toBe(true);
+  });
+
+  it("rebuilds after a full build whose reply the page never drew", () => {
+    // Why this test matters: a reply can be dropped (the page aborts a
+    // superseded call, the worker drops the reply of an aborted request). A
+    // planner that remembered what it BUILT answered the next same-key pass
+    // with slabs only, so a switch waiting for that mesh stayed on
+    // "Applying..." with the old colours drawn. The page's DRAWN key decides.
+    expect(needsFullBuild(AT, undefined)).toBe(true);
+    // The first full build was dropped: the page still has nothing drawn.
+    expect(needsFullBuild(AT, undefined)).toBe(true);
+    // A switch's build was dropped: the page still draws today's mesh.
+    const night = { ...AT, choices: { colourScheme: "night" } };
+    expect(needsFullBuild(night, meshBuildKey(AT))).toBe(true);
+    expect(needsFullBuild(night, meshBuildKey(night))).toBe(false);
+  });
+
+  it("keys every build choice, whatever its name or order", () => {
+    // Why this test matters: later switches join the choices; each must be
+    // part of the key without touching the planner, and the same choices
+    // listed in another order are the same build.
+    const on = { ...AT, choices: { colourScheme: "today", roofs: true } };
+    const off = { ...AT, choices: { colourScheme: "today", roofs: false } };
+    expect(meshBuildKey(on)).not.toBe(meshBuildKey(off));
+    expect(meshBuildKey(on)).not.toBe(meshBuildKey(AT));
+    expect(
+      meshBuildKey({ ...AT, choices: { roofs: true, colourScheme: "today" } }),
+    ).toBe(meshBuildKey(on));
+  });
+
+  it("keys the ground tint, which an omitted request field builds", () => {
+    // Why this test matters: AR skips the tint, so leaving AR must rebuild
+    // the city WITH it, and a page that never sends the field must keep
+    // getting the tinted build it always had.
+    const omitted = meshBuildChoices({ colourScheme: "today" });
+    expect(omitted).toEqual({
+      colourScheme: "today",
+      groundTint: true,
+      inventedRoofs: true,
+      markings: true,
+    });
+    const skipped = meshBuildChoices({
+      colourScheme: "today",
+      groundTint: false,
+    });
+    expect(meshBuildKey({ ...AT, choices: skipped })).not.toBe(
+      meshBuildKey({ ...AT, choices: omitted }),
+    );
+  });
+
+  it("keys the invented roofs, which an omitted request field builds", () => {
+    // Why this test matters: switching invented roofs off must rebuild the
+    // city without them (the roofs are baked into the building buffers), and
+    // a page that never sends the field gets the library default, roofs on.
+    const omitted = meshBuildChoices({ colourScheme: "today" });
+    const off = meshBuildChoices({
+      colourScheme: "today",
+      inventedRoofs: false,
+    });
+    expect(off.inventedRoofs).toBe(false);
+    expect(meshBuildKey({ ...AT, choices: off })).not.toBe(
+      meshBuildKey({ ...AT, choices: omitted }),
+    );
+  });
+
+  it("keys the zebras and pedestrian areas, which an omitted request field builds", () => {
+    // Why this test matters: they are merged into the road buffers, so the
+    // switch must rebuild the city, and a page that never sends the field
+    // gets the library default, on.
+    const omitted = meshBuildChoices({ colourScheme: "today" });
+    const off = meshBuildChoices({ colourScheme: "today", markings: false });
+    expect(omitted.markings).toBe(true);
+    expect(off.markings).toBe(false);
+    expect(meshBuildKey({ ...AT, choices: off })).not.toBe(
+      meshBuildKey({ ...AT, choices: omitted }),
+    );
   });
 
   it("does NOT rebuild for a category change", () => {
@@ -130,21 +238,21 @@ describe("createMeshPlanner", () => {
     // than on "was this the first ring": a category change re-enters the mesh
     // build with identical geometry inputs, and used to rebuild the whole city
     // for a recolouring the main thread does anyway.
-    const planner = createMeshPlanner();
-    planner.needsFullBuild(AT);
+    const planner = drawingPage();
+    planner.pass(AT);
 
-    expect(planner.needsFullBuild(AT)).toBe(false);
+    expect(planner.pass(AT)).toBe(false);
   });
 
   it("rebuilds again after returning to a previous position", () => {
-    // Only the LAST build is remembered, deliberately: a history of every
+    // Only the DRAWN build counts, deliberately: a history of every
     // position visited would be a leak, and the cost of one extra rebuild on a
     // return is milliseconds against a wrong picture.
-    const planner = createMeshPlanner();
-    planner.needsFullBuild(AT);
-    planner.needsFullBuild({ ...AT, position: { lat: 50.95, lng: 6.96 } });
+    const planner = drawingPage();
+    planner.pass(AT);
+    planner.pass({ ...AT, position: { lat: 50.95, lng: 6.96 } });
 
-    expect(planner.needsFullBuild(AT)).toBe(true);
+    expect(planner.pass(AT)).toBe(true);
   });
 });
 
@@ -194,10 +302,10 @@ describe("the saving §1.2 claims, as a number", () => {
 
   /** Counts the full builds a straight `WALK_M` walk costs. */
   function rebuildsAlongAWalk(): number {
-    const planner = createMeshPlanner();
+    const planner = drawingPage();
     let rebuilds = 0;
     for (const position of walkPositions()) {
-      if (planner.needsFullBuild({ ...AT, position })) rebuilds += 1;
+      if (planner.pass({ ...AT, position })) rebuilds += 1;
     }
     return rebuilds;
   }

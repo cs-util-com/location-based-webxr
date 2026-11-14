@@ -28,15 +28,33 @@
  * meaningless after a re-anchor; a target in lat/lng has no anchor in it, so
  * that objection does not reach this encoding.
  *
- * READ-ONLY KNOBS. Keys no writer sets or clears, read once at boot: `date` and
- * `time` pin the sun (see {@link sunPinnedHref}), and `tiles=off` switches the
- * static tile host off for the session, so the tiles come straight from the
- * Overpass race (see {@link staticTilesEnabled}). Any other value, or none,
- * leaves the host on. A writer keeps them like every key it does not own.
+ * THE COLOUR SCHEME IS THE SECOND EXCEPTION (colour schemes plan
+ * 2026-11-10-0841, D6), for the same reason as the light: the owner compares
+ * looks on the phone and sends them as links. It is a name from a fixed
+ * table, absent while the scheme is the default, and an unknown name in an
+ * old link opens the default with one warning (`resolveColourScheme`).
  *
- * THREE WRITERS, SEVEN KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
+ * READ-ONLY BOOT OVERRIDES are not exceptions: they seed a control when the
+ * page loads, so a preview link can name a state, and nothing writes them
+ * back, so DEC-R12-5 holds and the writers below do not grow. `roofs=off`
+ * boots with the invented roofs switched off, `markings=off` without the
+ * zebras and pedestrian areas, `furniture=off` with the street furniture
+ * layer off (all read in `main.ts`). `ao=off` boots with the ambient
+ * occlusion off (read in `main.ts`; the light dialog's box changes it,
+ * never the link). `woodsauto=off` keeps
+ * the woods governor from thinning the invented woods on a phone,
+ * `treeform=trunk` draws every tree with a trunk, `perf=1` shows the frame
+ * readout over the 3D pane (all three read in `main.ts` through
+ * `woods-readout.ts`; no app control changes them). `tiles=off` switches
+ * the static tile host off for the session, so the tiles come straight from
+ * the Overpass race (see {@link staticTilesEnabled}, read in `main.ts`; any
+ * other value, or none, leaves the host on). `date` and `time` pin the sun
+ * (see {@link sunPinnedHref}). No writer sets or clears any of these keys;
+ * each writer keeps them like every key it does not own.
+ *
+ * FOUR WRITERS, EIGHT KEYS, AND NONE TOUCHES ANOTHER'S. `placeQuery` owns
  * `lat`/`lng`/`site`; `cameraQuery` owns `clat`/`clng`/`cdist`; `lightQuery`
- * owns `light`. Anything else in the query survives all three, so a debug flag lives through a walk and a future
+ * owns `light`; `schemeQuery` owns `scheme`. Anything else in the query survives all four, so a debug flag lives through a walk and a future
  * parameter needs no change here. They share one query string through
  * `history.replaceState`, so whichever runs last decides all of it — preserving
  * what you do not own is the whole reason that is safe.
@@ -253,6 +271,26 @@ export function lightQuery(search: string, value: string | null): string {
   return query === "" ? "" : `?${query}`;
 }
 
+/**
+ * `search` with the colour scheme's name set, or its key removed for `null`
+ * (the default, which is never written). The fourth writer: it owns
+ * `scheme` only and preserves every other key.
+ */
+export function schemeQuery(search: string, name: string | null): string {
+  const params = new URLSearchParams(search);
+  if (name === null) params.delete("scheme");
+  else params.set("scheme", name);
+  const query = params.toString();
+  return query === "" ? "" : `?${query}`;
+}
+
+/** Writes the colour scheme into `url`, and nothing when unchanged. */
+export function writeScheme(url: PlaceUrl, name: string | null): void {
+  const next = schemeQuery(url.search, name);
+  if (next === url.search) return;
+  url.replace(next);
+}
+
 /** Writes the light settings' value into `url`, and nothing when unchanged. */
 export function writeLight(url: PlaceUrl, value: string | null): void {
   const next = lightQuery(url.search, value);
@@ -396,4 +434,15 @@ export function sunPinnedHref(
  */
 export function staticTilesEnabled(search: string): boolean {
   return new URLSearchParams(search).get("tiles") !== "off";
+}
+
+/**
+ * Whether the 3D camera eases on after a drag (`enableDamping`): true unless
+ * the query carries `damping=off`. A read-only knob (see the header) for the
+ * browser suite: on a software-rendered runner the easing costs about 160
+ * repaints per drag before the view is still, and a test whose claim is the
+ * pose a drag ends in does not need them. The app keeps its damping.
+ */
+export function cameraDampingEnabled(search: string): boolean {
+  return new URLSearchParams(search).get("damping") !== "off";
 }

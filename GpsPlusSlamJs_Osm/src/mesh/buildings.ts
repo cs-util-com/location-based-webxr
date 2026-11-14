@@ -59,6 +59,13 @@ import {
   partCoverage,
 } from "./part-coverage.js";
 import type { PlanarPolygon } from "./part-coverage.js";
+import {
+  inventedRoofMesh,
+  inventedTotalM,
+  planInventedRoofs,
+} from "./invented-roofs.js";
+import type { InventedFootprint, InventedPlan } from "./invented-roofs.js";
+import type { RoofscapeParams } from "./roofscape-rules.js";
 
 /** One extruded volume, with the provenance to trace it back to OSM. */
 export interface BuildingVolume {
@@ -126,6 +133,13 @@ export interface BuildingVolume {
    * ground sample.
    */
   readonly topHeightM: number;
+  /**
+   * True when the map says nothing about this building's roof and the roof
+   * drawn is invented (`invented-roofs.ts`, `inventedRoofs: true`). Its
+   * `heights` are then the invented ones. A building refused a roof keeps
+   * this false: it is drawn with a flat lid at its invented height.
+   */
+  readonly roofIsInvented: boolean;
 }
 
 export interface BuildBuildingsOptions {
@@ -138,28 +152,34 @@ export interface BuildBuildingsOptions {
    * sweep and the lab can vary it, not for production callers.
    */
   readonly partCoverageToHideOutline?: number;
+  /**
+   * Invent a roof, or a flat lid at an invented height, for every building
+   * the map says nothing about (`invented-roofs.ts`). Default false: this
+   * builder draws the tags and nothing else unless asked; `buildCity` asks
+   * by default.
+   */
+  readonly inventedRoofs?: boolean;
 }
 
 /**
- * Extrudes every building in `features`, honouring `building:part`.
- *
- * Features that are not buildings are ignored. A feature whose geometry cannot
- * be built is skipped rather than throwing — same contract as the rest of the
- * package, because the planet contains relations that cannot be closed.
+ * The volume of every outline that is drawn: its library volume, or with
+ * `inventedRoofs` its invented roof or lid where it has a plan.
  */
-export function buildBuildings(
-  features: Iterable<OsmFeature>,
+function outlineVolumes(
+  outlines: readonly Footprint[],
+  parts: readonly Footprint[],
+  claimed: ReadonlySet<OsmFeatureKey>,
+  partsByOutline: ReadonlyMap<OsmFeatureKey, readonly Footprint[]>,
   options: BuildBuildingsOptions,
 ): BuildingVolume[] {
-  const { outlines, parts } = collectFootprints(features, options.frame);
-  const { claimed, partsByOutline } = assignPartsToOutlines(
-    outlines,
-    parts,
-    options.partCoverageToHideOutline,
-  );
-
   const volumes: BuildingVolume[] = [];
-
+  const invented =
+    options.inventedRoofs === true
+      ? planInventedRoofs(
+          inventedFootprints(outlines, parts, partsByOutline, claimed),
+          { frame: options.frame },
+        )
+      : undefined;
   for (const outline of outlines) {
     const key = featureKey(outline.feature);
     // A building whose parts FILL it is not extruded itself — the parts replace
@@ -185,16 +205,51 @@ export function buildBuildings(
     // `filledOutlines`). That is the 90 % rule measured honestly, not the rule
     // above: an outline with no parts anywhere is never hidden.
     if (claimed.has(key)) continue;
+    const ground = groundUnder(
+      [outline, ...(partsByOutline.get(key) ?? [])],
+      options,
+    );
+    const plan = invented?.get(key);
     volumes.push(
-      volumeFor(
-        outline.feature,
-        outline.polygons,
-        undefined,
-        options,
-        groundUnder([outline, ...(partsByOutline.get(key) ?? [])], options),
-      ),
+      plan === undefined
+        ? volumeFor(
+            outline.feature,
+            outline.polygons,
+            undefined,
+            options,
+            ground,
+          )
+        : inventedVolume(outline.feature, outline.polygons, plan, ground),
     );
   }
+  return volumes;
+}
+
+/**
+ * Extrudes every building in `features`, honouring `building:part`.
+ *
+ * Features that are not buildings are ignored. A feature whose geometry cannot
+ * be built is skipped rather than throwing — same contract as the rest of the
+ * package, because the planet contains relations that cannot be closed.
+ */
+export function buildBuildings(
+  features: Iterable<OsmFeature>,
+  options: BuildBuildingsOptions,
+): BuildingVolume[] {
+  const { outlines, parts } = collectFootprints(features, options.frame);
+  const { claimed, partsByOutline } = assignPartsToOutlines(
+    outlines,
+    parts,
+    options.partCoverageToHideOutline,
+  );
+
+  const volumes = outlineVolumes(
+    outlines,
+    parts,
+    claimed,
+    partsByOutline,
+    options,
+  );
 
   // INDEXED ONCE, for the same reason as `placed` below. `outlineOf` did
   // `outlines.find(...)` — recomputing `featureKey` (a template-literal string
@@ -959,6 +1014,66 @@ function volumeFor(
         };
 
   const meshes = polygons.map((rings) => extrudeOne(rings, heights, ground));
+  return assembleVolume(feature, polygons, parentFeature, heights, meshes, {
+    ground,
+    roofIsInvented: false,
+  });
+}
+
+/**
+ * The volume of a building whose roof, or lid, is invented: the plan's
+ * heights in place of the tags' (the 6 m default among them), on the
+ * building's ground. Only a one-polygon outline is ever planned.
+ */
+function inventedVolume(
+  feature: OsmFeature,
+  polygons: EnuPoint[][][],
+  plan: InventedPlan,
+  ground: { lowest: number; rise: number },
+): BuildingVolume {
+  const resolved = resolveHeights(feature.tags);
+  if (plan.kind === "lid") {
+    const heights: BuildingHeights = {
+      ...resolved,
+      eaveHeightM: plan.heightM,
+      totalHeightM: plan.heightM,
+      roofShape: "flat",
+    };
+    const meshes = polygons.map((rings) => extrudeOne(rings, heights, ground));
+    return assembleVolume(feature, polygons, undefined, heights, meshes, {
+      ground,
+      roofIsInvented: false,
+    });
+  }
+  const heights: BuildingHeights = {
+    ...resolved,
+    eaveHeightM: plan.eaveM,
+    totalHeightM: inventedTotalM(plan),
+    roofShape: plan.style === "gable" ? "gabled" : "hipped",
+  };
+  return assembleVolume(
+    feature,
+    polygons,
+    undefined,
+    heights,
+    [inventedRoofMesh(plan, ground)],
+    { ground, roofIsInvented: true },
+  );
+}
+
+/** One volume from its polygons' meshes, in polygon order. */
+function assembleVolume(
+  feature: OsmFeature,
+  polygons: EnuPoint[][][],
+  parentFeature: OsmFeatureKey | undefined,
+  heights: BuildingHeights,
+  meshes: readonly ExtrudedBuilding[],
+  extra: {
+    readonly ground: { lowest: number; rise: number };
+    readonly roofIsInvented: boolean;
+  },
+): BuildingVolume {
+  const { ground, roofIsInvented } = extra;
   const mesh =
     meshes.length === 1 ? (meshes[0] as MeshData) : mergeMeshes(meshes);
   const roofIsApproximate = meshes.some((m) => m.roofIsApproximate);
@@ -990,6 +1105,7 @@ function volumeFor(
         footprint,
         outerRings,
         topHeightM,
+        roofIsInvented,
       }
     : {
         feature: featureKey(feature),
@@ -1002,7 +1118,78 @@ function volumeFor(
         roofVertexRanges,
         roofMethods,
         topHeightM,
+        roofIsInvented,
       };
+}
+
+/**
+ * Every outline and part as the invented-roof planner sees it: each part
+ * names the outline it was assigned to, each outline whether it has any. An
+ * outline that is not drawn because what stands inside it fills it
+ * (`claimed`, which a nested outline can do without any part of its own)
+ * counts as having parts: it is never planned, so no invented height reaches
+ * the obstacle index for a building the screen does not show.
+ */
+function inventedFootprints(
+  outlines: readonly Footprint[],
+  parts: readonly Footprint[],
+  partsByOutline: ReadonlyMap<OsmFeatureKey, readonly Footprint[]>,
+  claimed: ReadonlySet<OsmFeatureKey>,
+): InventedFootprint[] {
+  const ownerOf = new Map<Footprint, OsmFeatureKey>();
+  for (const [key, list] of partsByOutline) {
+    for (const part of list) ownerOf.set(part, key);
+  }
+  const of = (f: Footprint): InventedFootprint => {
+    const key = featureKey(f.feature);
+    const owner = ownerOf.get(f);
+    return {
+      key,
+      tags: f.feature.tags,
+      at: representativePoint(f.polygons[0]?.[0] ?? []),
+      polygons: f.polygons,
+      hasParts: partsByOutline.has(key) || claimed.has(key),
+      ...(owner === undefined ? {} : { outlineKey: owner }),
+    };
+  };
+  return [...outlines.map(of), ...parts.map(of)];
+}
+
+/**
+ * The invented height (base to top, metres) of every building that takes an
+ * invented roof or lid in `features`: the numbers `buildBuildings` with
+ * `inventedRoofs: true` draws, in any frame (the planner does not depend on
+ * it; `frame` only needs to be near the buildings), for the obstacle index
+ * (`nav/obstacles.ts`). One planner, so an agent's walls are the drawn ones.
+ */
+export function inventedRoofTotals(
+  features: Iterable<OsmFeature>,
+  frame: EnuFrame,
+): Map<OsmFeatureKey, number> {
+  const totals = new Map<OsmFeatureKey, number>();
+  for (const [key, plan] of inventedRoofPlans(features, frame)) {
+    totals.set(key, inventedTotalM(plan));
+  }
+  return totals;
+}
+
+/**
+ * The invented-roof plan (a roof or a lid) of every building the planner
+ * takes in `features`, as `buildBuildings` with `inventedRoofs: true`
+ * plans them; `params` (default `ROOFSCAPE_DEFAULTS`) lets a sweep move
+ * one rule. In any frame near the buildings, as `inventedRoofTotals`.
+ */
+export function inventedRoofPlans(
+  features: Iterable<OsmFeature>,
+  frame: EnuFrame,
+  params?: RoofscapeParams,
+): Map<OsmFeatureKey, InventedPlan> {
+  const { outlines, parts } = collectFootprints(features, frame);
+  const { claimed, partsByOutline } = assignPartsToOutlines(outlines, parts);
+  return planInventedRoofs(
+    inventedFootprints(outlines, parts, partsByOutline, claimed),
+    { frame, ...(params === undefined ? {} : { params }) },
+  );
 }
 
 /** One polygon extruded on the building's ground. */

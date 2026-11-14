@@ -24,6 +24,10 @@ import {
   enableCellLayer,
   REPAINT,
   pinQuestClock,
+  expectNoPanelOpen,
+  setting,
+  focusPageForHotkeys,
+  SUN_PIN_DATE,
 } from "./fixtures.js";
 
 test.describe("the 3D view", () => {
@@ -36,8 +40,12 @@ test.describe("the 3D view", () => {
     // its pixels with a `min > 110 && max - min < 40` predicate whose counts were
     // measured at the boot size, and handing it a 1000x700 canvas would change
     // what it is counting for a reason that has nothing to do with buildings.
+    //
+    // `ao=off`: the GPU step compares the CPU ground against the GPU ground,
+    // and the AO is drawn only on the first (it is off while the ground is
+    // displaced on the GPU), so with it on the A/B would count the AO.
     await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    await page.goto(`${AT_FIXTURE}&ao=off`);
     await waitForRefresh(page);
 
     await test.step("actually draws pixels, not just a canvas element", async () => {
@@ -367,7 +375,7 @@ test.describe("the 3D view", () => {
       // really about. What changed is only that the ramp is now one mode among
       // three appearances rather than the state a fresh load lands in; the
       // default is asserted by the ground-mode picker test instead.
-      await page.locator("#ground-mode").selectOption("cpu-ramp");
+      await setting(page, "#ground-mode", (c) => c.selectOption("cpu-ramp"));
       await expect
         .poll(async () => (await rampEnds()).cool, REPAINT)
         .toBeGreaterThan(20_000);
@@ -387,14 +395,14 @@ test.describe("the 3D view", () => {
       // And it goes away again on the plain entry: an appearance that cannot be
       // turned off is a change to the primary look, which is what DEC-R2-1 forbids
       // — the neutral ground has to stay reachable for the comparison R5-2 is about.
-      await page.locator("#ground-mode").selectOption("cpu");
+      await setting(page, "#ground-mode", (c) => c.selectOption("cpu"));
       await expect
         .poll(async () => (await rampEnds()).cool, REPAINT)
         .toBeLessThan(2000);
 
       // ...and comes back, on the OTHER strategy, which is the five-way form's
       // whole point: the ramp is not tied to one displacement path.
-      await page.locator("#ground-mode").selectOption("gpu-ramp");
+      await setting(page, "#ground-mode", (c) => c.selectOption("gpu-ramp"));
       await expect
         .poll(async () => (await rampEnds()).cool, REPAINT)
         .toBeGreaterThan(20_000);
@@ -447,13 +455,13 @@ test.describe("the 3D view", () => {
       // differing pixels, and nothing to do with displacement. Pinning the plain
       // entry on both sides keeps the A/B about the thing it is named after.
       await installFrameProbe(page);
-      await page.locator("#ground-mode").selectOption("cpu");
+      await setting(page, "#ground-mode", (c) => c.selectOption("cpu"));
       expect(await stashFrame(page)).toBeGreaterThan(0);
       await expect(page.locator("#status")).toContainText(/ground cpu \d/);
 
       // The A/B switch is a five-state picker since W6; "GPU ground" is one of its
       // options rather than a checkbox of its own.
-      await page.locator("#ground-mode").selectOption("gpu");
+      await setting(page, "#ground-mode", (c) => c.selectOption("gpu"));
       await expect(page.locator("#status")).toContainText(/ground gpu \d/);
       const { differing, anyLit } = await diffFromStash(page, 3, true);
 
@@ -487,7 +495,15 @@ test.describe("the 3D view", () => {
     // pick on an untouched camera, and LAST the camera move under the world,
     // which cannot be undone.
     const counts = await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    // `ao=off`: every step here asks about geometry (layers, presets, a pick,
+    // what is under the world), not the look. The ambient occlusion adds a
+    // second pass to every software-rendered frame, which stretches the
+    // camera's damping tail in `rotateUnder` past its settle wait; the AO's
+    // own effect on the frame is the ambient-occlusion describe's job.
+    // `damping=off`: the camera stops where each drag ends, so a drag costs
+    // its own frames and not an eased tail of software-rendered repaints.
+    // Nothing here asks about the easing; the app keeps it by default.
+    await page.goto(`${AT_FIXTURE}&ao=off&damping=off`);
     await waitForRefresh(page);
 
     await test.step("fills the regions on the MAP when the areas layer is on", async () => {
@@ -509,11 +525,11 @@ test.describe("the 3D view", () => {
       await expect(outlines).not.toHaveCount(0);
       // Filled by default since W9, so the "unfilled" half of the claim has to be
       // reached by switching the layer off first.
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await setting(page, "#layer-areas", (c) => c.uncheck());
       await expect(fills).toHaveCount(0);
       await expect(outlines).not.toHaveCount(0);
 
-      await page.getByRole("checkbox", { name: "areas" }).check();
+      await setting(page, "#layer-areas", (c) => c.check());
       await expect(fills).not.toHaveCount(0);
       // Still outlined as well as filled.
       await expect(outlines).not.toHaveCount(0);
@@ -526,7 +542,7 @@ test.describe("the 3D view", () => {
         .evaluate((node) => node.getAttribute("fill"));
       expect(fill).toMatch(/^#[0-9a-f]{6}$/i);
 
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await setting(page, "#layer-areas", (c) => c.uncheck());
       await expect(fills).toHaveCount(0);
     });
 
@@ -543,9 +559,7 @@ test.describe("the 3D view", () => {
 
       // The affordance grid paints highest at 55 % opacity and would tint every
       // ground pixel; the slab is what is under test.
-      await page
-        .getByRole("checkbox", { name: "cells", exact: true })
-        .uncheck();
+      await page.locator("#layer-cells").uncheck();
 
       // A DIFFERENCE COUNT, NOT A COLOUR FILTER — and this is the THIRD test in
       // this file to make that move for the same reason, after the road layer and
@@ -572,20 +586,20 @@ test.describe("the 3D view", () => {
 
       // Off first: W9 draws the slabs by default, so the stashed frame has to be
       // one without them or the difference this measures is zero.
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await setting(page, "#layer-areas", (c) => c.uncheck());
       await expect(page.locator("#status")).not.toContainText(/\d+ area slabs/);
       await stashStableFrame(page);
 
       const changed = async () => (await diffFromStash(page, 24)).differing;
 
-      await page.getByRole("checkbox", { name: "areas" }).check();
+      await setting(page, "#layer-areas", (c) => c.check());
       await expect(page.locator("#status")).toContainText(/\d+ area slabs/);
       // ~178 000 pixels of slab were measured when this counted a colour band, and
       // a difference count sees at least as many. 20 000 is a floor with a wide
       // margin, and what it guards against produces ZERO.
       await expect.poll(changed, REPAINT).toBeGreaterThan(20_000);
 
-      await page.getByRole("checkbox", { name: "areas" }).uncheck();
+      await setting(page, "#layer-areas", (c) => c.uncheck());
       await expect.poll(changed, REPAINT).toBeLessThan(20_000);
     });
 
@@ -608,9 +622,7 @@ test.describe("the 3D view", () => {
       // roads rather than about the grid's alpha.
       // `exact`, because "cells" also substring-matches "show cells below the
       // threshold" and Playwright's strict mode rejects the ambiguity.
-      await page
-        .getByRole("checkbox", { name: "cells", exact: true })
-        .uncheck();
+      await page.locator("#layer-cells").uncheck();
 
       // Counts pixels that CHANGED against the roads-off frame.
       //
@@ -640,7 +652,7 @@ test.describe("the 3D view", () => {
 
       // Off first: roads draw by default since W9, so a "before" frame with them
       // already on would make the difference this measures zero.
-      await page.getByRole("checkbox", { name: "roads" }).uncheck();
+      await setting(page, "#layer-roads", (c) => c.uncheck());
       // THE APP'S OWN SIGNAL FIRST. `stashStableFrame` is a settle, not a
       // barrier — it cannot know which change it is waiting for, and the status
       // line drops the road counter exactly when the layer stops being built.
@@ -653,7 +665,7 @@ test.describe("the 3D view", () => {
       // held for the full 15 s timeout, with the layer correctly off.
       await stashStableFrame(page);
 
-      await page.getByRole("checkbox", { name: "roads" }).check();
+      await setting(page, "#layer-roads", (c) => c.check());
       await expect(page.locator("#status")).toContainText(/[0-9]+ roads/);
       // ~6900 pixels of road were measured when this counted a tone band, and a
       // difference count sees at least as many. 3000 is a floor with room for a
@@ -662,7 +674,7 @@ test.describe("the 3D view", () => {
 
       // And back off again, so the layer is a toggle rather than a one-way door.
       // Back to the original frame means back to almost no differing pixels.
-      await page.getByRole("checkbox", { name: "roads" }).uncheck();
+      await setting(page, "#layer-roads", (c) => c.uncheck());
       await expect.poll(changedFromStash, REPAINT).toBeLessThan(3000);
     });
 
@@ -680,9 +692,9 @@ test.describe("the 3D view", () => {
       // ON by default since W9, so the "absent" half is reached by switching it
       // off — which also proves the counter disappears rather than sticking.
       await expect(page.locator("#status")).toContainText(/[0-9]+ POI/);
-      await page.getByRole("checkbox", { name: "POI" }).uncheck();
+      await setting(page, "#layer-poi", (c) => c.uncheck());
       await expect(page.locator("#status")).not.toContainText("POI");
-      await page.getByRole("checkbox", { name: "POI" }).check();
+      await setting(page, "#layer-poi", (c) => c.check());
       await expect(page.locator("#status")).toContainText(/\d+ POI/);
 
       // BUILT is not VISIBLE — the lesson from the plates layer, which was counted
@@ -699,12 +711,12 @@ test.describe("the 3D view", () => {
       // across CDP once per poll iteration was 3 686 400 array elements a go.
       await installFrameProbe(page);
 
-      await page.getByRole("checkbox", { name: "POI" }).uncheck();
+      await setting(page, "#layer-poi", (c) => c.uncheck());
       // The app-level barrier before the settle, for the reason in the roads
       // step above: the counter disappears when the layer stops being built.
       await expect(page.locator("#status")).not.toContainText(/\d+ POI/);
       await stashStableFrame(page);
-      await page.getByRole("checkbox", { name: "POI" }).check();
+      await setting(page, "#layer-poi", (c) => c.check());
       await expect(page.locator("#status")).toContainText(/[0-9]+ POI/);
 
       // THRESHOLD 8, NOT 24, AND THAT IS THE THIRD FORM OF THIS ASSERTION.
@@ -779,6 +791,7 @@ test.describe("the 3D view", () => {
       const canvas = page.locator("#scene canvas");
       const box = await canvas.boundingBox();
       if (box === null) throw new Error("no canvas box");
+      await expectNoPanelOpen(page);
       await page.mouse.click(
         box.x + box.width * 0.55,
         box.y + box.height * 0.42,
@@ -928,6 +941,7 @@ test.describe("the 3D view", () => {
       const canvas = page.locator("#scene canvas");
       const box = await canvas.boundingBox();
       if (box === null) throw new Error("no canvas box");
+      await expectNoPanelOpen(page);
       // DRAGGED AT THE LEFT QUARTER, NOT THE CENTRE, and this is a real bug in
       // the test rather than a tweak. The step above can legitimately select a
       // cell, and the details panel then covers the RIGHT HALF of the 3D pane —
@@ -972,6 +986,7 @@ test.describe("the 3D view", () => {
       const canvas = page.locator("#scene canvas");
       const box = await canvas.boundingBox();
       if (box === null) throw new Error("no canvas box");
+      await expectNoPanelOpen(page);
 
       const panel = page.locator("#details");
       await expect(panel).toBeHidden();
@@ -1112,13 +1127,17 @@ test.describe("the 3D view", () => {
 const rotateUnder = async (page, dy) => {
   const box = await page.locator("#scene canvas").boundingBox();
   if (box === null) throw new Error("no canvas box");
+  await expectNoPanelOpen(page);
   const cx = box.x + box.width / 2;
   const cy = box.y + box.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down({ button: "right" });
-  for (let i = 1; i <= 8; i++) await page.mouse.move(cx, cy + (dy * i) / 8);
+  // ONE move: the rotation's total is the same however many moves lead
+  // there, and each move costs frames on a software-rendered runner.
+  await page.mouse.move(cx, cy + dy);
   await page.mouse.up({ button: "right" });
-  // Damping eases over several frames; wait for the picture to stop moving.
+  // Wait for the picture to stop moving (a page booted with damping on
+  // would still be easing).
   let previous = "";
   await expect
     .poll(
@@ -1169,7 +1188,7 @@ async function underTheWorldSteps(page) {
       await panel.locator(".panel-close").click();
       await expect(panel).toBeHidden();
     }
-    await page.locator("#ground-mode").selectOption("none");
+    await setting(page, "#ground-mode", (c) => c.selectOption("none"));
     // EVERY GROUND-HUGGING LAYER OFF, so what is left is the question actually
     // being asked. The affordance grid is DoubleSide and traces the terrain, so
     // it is the one thing that DOES look like ground from below — and since W9
@@ -1179,9 +1198,19 @@ async function underTheWorldSteps(page) {
     // and are not what this step asks about; with them on, the rotation's
     // settle poll never saw two equal frames and the step timed out, while
     // the same test passed on the commit before the woods layer existed.
-    for (const layer of ["cells", "plates", "roads", "areas", "poi", "woods"]) {
+    // The street furniture stands on the ground the same way.
+    for (const layer of [
+      "cells",
+      "plates",
+      "roads",
+      "areas",
+      "poi",
+      "woods",
+      "furniture",
+    ]) {
       const box = page.locator(`#layer-${layer}`);
-      if (await box.isChecked()) await box.uncheck();
+      if (await box.isChecked())
+        await setting(page, `#layer-${layer}`, (c) => c.uncheck());
     }
 
     // ROTATED IN STEPS UNTIL THE CAMERA IS DEMONSTRABLY UNDER THE SCENE, rather
@@ -1204,28 +1233,39 @@ async function underTheWorldSteps(page) {
     let steps = 0;
     // THE ROTATION STOPS AT THE POLE (turns 3-5 repeat turn 2 exactly), so
     // two turns in a row with the same counts mean no further turn can
-    // change the answer: the loop ends there, before booting another
-    // sky-only page for a pose whose sky it has already measured, and the
-    // assertions below fail with their own message. Without the stop each
-    // repeated pose under the city re-measured that sky, and a missed floor
-    // ran into the test's timeout (r1162 re-judge, NIT 1).
+    // change the answer: the loop ends there, and the assertions below fail
+    // with their own message. Without the stop a missed floor ran into the
+    // test's timeout.
+    //
+    // ONE SKY-ONLY PAGE, TURNED IN STEP with this one (see `openSkyOnlyPage`):
+    // after every turn here it has taken the same turns, so its frame is the
+    // sky at this pose, measured where this pose is beneath the city.
     let previous = "";
-    while (steps < 8) {
-      await rotateUnder(page, 40);
-      steps++;
-      withBuildings = await countNonSkyPixels(page);
-      const counts = `${withBuildings.count}/${withBuildings.meanY}`;
-      if (counts === previous) break;
-      previous = counts;
-      if (withBuildings.meanY >= 0.35) continue;
-      skyOnly = await skyOnlyFrameAfter(page, steps);
-      const geometry = withBuildings.count - skyOnly.count;
-      if (
-        skyOnly.count < withBuildings.count / 10 &&
-        geometry > BENEATH_GEOMETRY_MIN
-      )
-        break;
+    const sky = await openSkyOnlyPage(page);
+    try {
+      while (steps < 8) {
+        await page.bringToFront();
+        await rotateUnder(page, 40);
+        await sky.bringToFront();
+        await rotateUnder(sky, 40);
+        steps++;
+        withBuildings = await countNonSkyPixels(page);
+        const counts = `${withBuildings.count}/${withBuildings.meanY}`;
+        if (counts === previous) break;
+        previous = counts;
+        if (withBuildings.meanY >= 0.35) continue;
+        skyOnly = await countNonSkyPixels(sky);
+        const geometry = withBuildings.count - skyOnly.count;
+        if (
+          skyOnly.count < withBuildings.count / 10 &&
+          geometry > BENEATH_GEOMETRY_MIN
+        )
+          break;
+      }
+    } finally {
+      await sky.close();
     }
+    await page.bringToFront();
     expect(withBuildings.meanY).toBeLessThan(0.35);
     expect(withBuildings.count - skyOnly.count).toBeGreaterThan(
       BENEATH_GEOMETRY_MIN,
@@ -1239,9 +1279,9 @@ async function underTheWorldSteps(page) {
     // cost broke the old bare 20x ratio once the seeded palette made the
     // buildings from below a little softer. So the sky is measured on its own: a second
     // page boots the same fixture, turns EVERY layer off, buildings and trees
-    // included, and turns the same number of steps. Its frame is the sky at
-    // this pose, by construction rather than by the hide step under test.
-    // It is taken in the loop above, at each pose that is beneath the city.
+    // included, and takes the same turns. Its frame is the sky at this pose,
+    // by construction rather than by the hide step under test. It is taken
+    // in the loop above, at each pose that is beneath the city.
     // AND NO GROUND UNDER THEM: in "No ground" with nothing on, the frame from
     // below is that small sky remainder. A ground plane drawn under the world
     // would put its silhouette across the whole width (hundreds of edges).
@@ -1255,10 +1295,12 @@ async function underTheWorldSteps(page) {
     // put over it. A ratio rather than zero (§1): a scattering sky carries a
     // sun, and tone mapping can steepen a gradient enough to trip a step here
     // and there between two boots. Proven to go red with the hide step removed.
-    await page.locator("#layer-buildings").uncheck();
-    await page.locator("#layer-trees").uncheck();
+    await setting(page, "#layer-buildings", (c) => c.uncheck());
+    await setting(page, "#layer-trees", (c) => c.uncheck());
     // The cosmetic woods (objects M2a) are trees too, and the fixture maps a wood.
-    await page.locator("#layer-woods").uncheck();
+    await setting(page, "#layer-woods", (c) => c.uncheck());
+    // The street furniture stands up from the ground too.
+    await setting(page, "#layer-furniture", (c) => c.uncheck());
     const geometryEdges = (count) => count - skyOnly.count;
     await expect
       .poll(async () => {
@@ -1273,17 +1315,24 @@ async function underTheWorldSteps(page) {
 }
 
 /**
- * The sky at the pose `underTheWorldSteps` reached, in a second page of the
- * same context: the same fixture and viewport, every layer and the ground
- * off from the start, and the same number of turns. Returns its edge count.
+ * A second page of the same context for `underTheWorldSteps`' sky-only
+ * baseline: the same fixture and viewport, every layer and the ground off
+ * from the start, and not yet turned. The caller turns it in step with the
+ * page under test and closes it. One page for every turn, rather than a
+ * fresh boot per measured pose turned from the start: either way it has
+ * taken the same turns in the same order when it is measured.
  */
-async function skyOnlyFrameAfter(page, steps) {
+async function openSkyOnlyPage(page) {
   const sky = await page.context().newPage();
   try {
     await stubNetwork(sky);
-    await sky.goto(AT_FIXTURE);
+    // `ao=off` for the same reason as the boot of the test that calls this:
+    // the AO's second pass makes every software-rendered frame slower, so
+    // the damping tail in `rotateUnder` outlasts its settle wait. And
+    // `damping=off` as there, so both pages reach the same pose.
+    await sky.goto(`${AT_FIXTURE}&ao=off&damping=off`);
     await waitForRefresh(sky);
-    await sky.locator("#ground-mode").selectOption("none");
+    await setting(sky, "#ground-mode", (c) => c.selectOption("none"));
     for (const layer of [
       "cells",
       "plates",
@@ -1293,14 +1342,16 @@ async function skyOnlyFrameAfter(page, steps) {
       "buildings",
       "trees",
       "woods",
+      "furniture",
     ]) {
       const box = sky.locator(`#layer-${layer}`);
-      if (await box.isChecked()) await box.uncheck();
+      if (await box.isChecked())
+        await setting(sky, `#layer-${layer}`, (c) => c.uncheck());
     }
-    for (let i = 0; i < steps; i++) await rotateUnder(sky, 40);
-    return await countNonSkyPixels(sky);
-  } finally {
+    return sky;
+  } catch (error) {
     await sky.close();
+    throw error;
   }
 }
 
@@ -1517,7 +1568,7 @@ const settledChroma = async (page) => {
  * self-contained and the two measurements unambiguous.
  */
 const marginFor = async (page, mode) => {
-  await page.locator("#ground-mode").selectOption(mode);
+  await setting(page, "#ground-mode", (c) => c.selectOption(mode));
 
   await page.locator("#layer-cells").uncheck();
   const withoutCells = await settledChroma(page);
@@ -1550,6 +1601,183 @@ const marginFor = async (page, mode) => {
   ).toBeGreaterThan(0);
   return withCells - withoutCells;
 };
+
+/**
+ * How much the land-use tint must raise the frame's mean green excess over
+ * the Volksgarten fixture, in levels. MEASURED in the first browser run
+ * (headless Chromium, this test's pose and viewport): 11.60 with the tint
+ * off, 14.76 on, a step of 3.16. Set to 2.0, leaving 1.16 levels (about a
+ * third of the step) for renderer variance; a tint that greened the park
+ * by less than two thirds of today's step fails, and a measured step below
+ * 2.0 on another renderer is the value that would reverse this.
+ */
+const TINT_GREEN_STEP = 2.0;
+
+/** Mean green excess of the 3D canvas: g minus the mean of r and b, 0-255. */
+const meanGreenExcess = (page) =>
+  page.evaluate(() => {
+    const el = document.querySelector("#scene canvas");
+    if (!(el instanceof HTMLCanvasElement)) return Number.NaN;
+    const probe = document.createElement("canvas");
+    probe.width = el.width;
+    probe.height = el.height;
+    const ctx = probe.getContext("2d");
+    if (ctx === null) return Number.NaN;
+    ctx.drawImage(el, 0, 0);
+    const { data } = ctx.getImageData(0, 0, probe.width, probe.height);
+    let sum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      sum += (data[i + 1] ?? 0) - ((data[i] ?? 0) + (data[i + 2] ?? 0)) / 2;
+    }
+    return sum / (data.length / 4);
+  });
+
+test.describe("the read-only boot overrides (roofs, markings, furniture, ao, scheme)", () => {
+  // WHY THIS TEST MATTERS: `?roofs=off`, `?markings=off`, `?furniture=off`
+  // and `?ao=off` are read-only boot overrides for a side-by-side
+  // comparison. Each must seed its switch, and the switch must never write
+  // the link: a link that changed under a switch would carry a comparison
+  // state the sender did not choose. A link naming a scheme the page does
+  // not show must lose the parameter on boot, or it would be passed on as if
+  // it meant something.
+  //
+  // ONE BOOT FOR ALL FIVE: each knob owns its own switch and its own key, so
+  // they cannot interfere, and a boot here costs more than every check
+  // together. The default halves (no knob: the switch starts on, and a
+  // switch writes nothing) are in the city-look test, which boots without
+  // any knob.
+  test("every knob seeds its switch, a switch never writes the link, and an unknown scheme is dropped", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(
+      `${AT_FIXTURE}&roofs=off&markings=off&furniture=off&ao=off&scheme=neon`,
+    );
+    await waitForRefresh(page);
+
+    await test.step("an unknown scheme loses the parameter on boot", async () => {
+      await expect(page.locator("#colour-scheme")).toHaveValue("today");
+      await expect(page).not.toHaveURL(/[?&]scheme=/);
+    });
+
+    await test.step("a knob's value shows in its drawer control, and the quick sun slider mirrors the canonical one", async () => {
+      // The knobs are read at boot into the store; the drawer shows what they
+      // set, with the drawer closed (a read, not an action) and once opened.
+      await expect(page.locator("#invented-roofs")).not.toBeChecked();
+      await expect(page.locator("#sun-date")).toHaveValue(SUN_PIN_DATE);
+      await page.locator("#settings-open").click();
+      await page.locator("#layer-group-look > summary").click();
+      await expect(page.locator("#invented-roofs")).toBeVisible();
+      await expect(page.locator("#invented-roofs")).not.toBeChecked();
+      await page.locator("#layer-group-look > summary").click();
+      await page.locator("#settings-open").click();
+
+      await page.locator("#sun-chip").click();
+      const quick = page.locator("#sun-time-quick");
+      await expect(quick).toHaveValue(
+        await page.locator("#sun-time").inputValue(),
+      );
+      const chipBefore = await page.locator("#sun-chip-time").textContent();
+      await quick.fill("150");
+      await expect(page.locator("#sun-time")).toHaveValue("150");
+      await expect(page.locator("#sun-chip-time")).not.toHaveText(
+        chipBefore ?? "",
+      );
+      await page.locator("#sun-chip").click();
+    });
+
+    for (const [id, key] of [
+      ["#invented-roofs", "roofs"],
+      ["#markings", "markings"],
+    ]) {
+      await test.step(`${key}=off seeds the switch, and a switch never writes the link`, async () => {
+        const box = page.locator(id);
+        await expect(box).not.toBeChecked();
+        await setting(page, id, (c) => c.check());
+        await expect(page.locator(`${id}-status`)).toHaveText("");
+        await expect(box).toBeEnabled();
+        await expect(box).toBeChecked();
+        await expect(page).toHaveURL(new RegExp(`[?&]${key}=off(&|$)`));
+      });
+    }
+
+    await test.step("furniture=off boots the furniture layer off, and the switch never writes the link", async () => {
+      const status = page.locator("#status");
+      await expect(page.locator("#layer-furniture")).not.toBeChecked();
+      await expect(status).not.toContainText(/d+ furniture/);
+      await setting(page, "#layer-furniture", (c) => c.check());
+      await expect(status).toContainText(/[1-9]d* furniture/);
+      await expect(page).toHaveURL(/[?&]furniture=off(&|$)/);
+    });
+
+    await test.step("ao=off boots the ambient occlusion off, and the box never writes the link", async () => {
+      const view = page.locator("[data-ao]");
+      await expect(view).toHaveAttribute("data-ao", "off");
+      await setting(page, "#light-open", (c) => c.click());
+      const box = page.locator("#light-ao");
+      await expect(box).not.toBeChecked();
+      await box.check();
+      await expect(view).toHaveAttribute("data-ao", "on");
+      await expect(page).toHaveURL(/[?&]ao=off(&|$)/);
+    });
+  });
+});
+
+test.describe("the city-look section", () => {
+  // WHY THIS TEST MATTERS: the city-look settings are long-term choices, so
+  // they start FOLDED in the settings drawer (they first folded when, loose in
+  // the old header, they wrapped it onto a second row and took height from the
+  // canvas). This pins that the section starts folded with its controls
+  // hidden, and that after unfolding it every switch still rebuilds and ends
+  // on its echo.
+  test("starts folded, and after unfolding every switch still rebuilds", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(`/?lat=${50.9231}&lng=${6.9445}`);
+    await waitForRefresh(page);
+    // NO FRAME READOUT WITHOUT `perf=1`: the default picture and every pixel
+    // assertion stay as they were (the readout's own describe boots with the
+    // knob). Asserted on this boot because it is one without any knob.
+    await expect(page.getByTestId("perf-readout")).toHaveCount(0);
+    const section = page.locator("#layer-group-look");
+    await page.locator("#settings-open").click();
+    await expect(section).toBeVisible();
+    await expect(section).not.toHaveAttribute("open", "");
+    for (const id of [
+      "#colour-scheme",
+      "#invented-roofs",
+      "#markings",
+      "#layer-furniture",
+    ]) {
+      await expect(page.locator(id)).toBeHidden();
+    }
+    await page.locator("#settings-open").click();
+
+    // Without a knob each switch starts on, and switching it off writes no
+    // key: the default half of the boot-override test above.
+    for (const [box, status, key] of [
+      ["#invented-roofs", "#invented-roofs-status", "roofs"],
+      ["#markings", "#markings-status", "markings"],
+    ]) {
+      await expect(page.locator(box)).toBeChecked();
+      await setting(page, box, (c) => c.uncheck());
+      await expect(page.locator(status)).toHaveText("");
+      await expect(page.locator(box)).toBeEnabled();
+      await expect(page.locator(box)).not.toBeChecked();
+      await expect(page).not.toHaveURL(new RegExp(`[?&]${key}=`));
+    }
+    const select = page.locator("#colour-scheme");
+    await setting(page, "#colour-scheme", (c) => c.selectOption("night"));
+    await expect(page).toHaveURL(/[?&]scheme=night(&|$)/);
+    await expect(page.locator("#colour-scheme-status")).toHaveText("");
+    await expect(select).toBeEnabled();
+    const status = page.locator("#status");
+    await expect(status).toContainText(/[1-9]\d* furniture/);
+    await setting(page, "#layer-furniture", (c) => c.uncheck());
+    await expect(status).not.toContainText(/\d+ furniture/);
+  });
+});
 
 /**
  * The least mean luma (Rec. 709, 0-255) of the BUILDINGS at the night point,
@@ -1594,13 +1822,12 @@ const buildingPixelLuma = async (page) => {
     }, key);
   const settle = { timeout: 15_000 };
   const withSum = await snap("__buildingLumaWith");
-  const buildings = page.locator("#layer-buildings");
-  await buildings.uncheck();
+  await setting(page, "#layer-buildings", (c) => c.uncheck());
   await expect
     .poll(() => snap("__buildingLumaWithout"), settle)
     .not.toBe(withSum);
   const withoutSum = await snap("__buildingLumaWithout");
-  await buildings.check();
+  await setting(page, "#layer-buildings", (c) => c.check());
   await expect
     .poll(() => snap("__buildingLumaBack"), settle)
     .not.toBe(withoutSum);
@@ -1746,7 +1973,7 @@ test.describe("the time of day", () => {
     }) => {
       await stubNetwork(page);
       await page.goto(
-        `/?lat=${50.9231}&lng=${6.9445}&date=${date}&time=${time}`,
+        `/?lat=${50.9231}&lng=${6.9445}&date=${date}&time=${time}&ao=off`,
       );
       await waitForRefresh(page);
       await expectHeatRampLoudest(
@@ -1779,8 +2006,15 @@ async function expectHeatRampLoudest(
   // may outshine the heat grid. The fixture maps a wood, so the check runs with
   // the `woods` layer off; the bound itself is unchanged. The woods stay on by
   // default, so they are switched back on before returning.
-  const woods = page.locator("#layer-woods");
-  await woods.uncheck();
+  await setting(page, "#layer-woods", (c) => c.uncheck());
+  // THE LAND-USE TINT OFF TOO (colour schemes plan 2026-11-10-0841 section
+  // 4.3): `litSurfaceLuma` counts warm low-chroma pixels, and
+  // O2's commercial, park, farmland and sand colours pass that filter while
+  // today's ground fails it, so with the tint on this gate would partly
+  // measure ground against floors set for buildings and roads. Off, the
+  // ground is today's exactly, and no floor moves. The tint has its own e2e
+  // below in this file. On by default, so switched back on below.
+  await setting(page, "#layer-tint", (c) => c.uncheck());
   // The lit city first, heat grid off, in the default ground mode.
   await page.locator("#layer-cells").uncheck();
   await settledChroma(page);
@@ -1808,7 +2042,8 @@ async function expectHeatRampLoudest(
       minBuildingLuma,
     );
   }
-  await woods.check();
+  await setting(page, "#layer-woods", (c) => c.check());
+  await setting(page, "#layer-tint", (c) => c.check());
 }
 
 /**
@@ -1843,7 +2078,8 @@ async function tilePresetSteps(page) {
     await installFrameProbe(page);
     await stashStableFrame(page);
 
-    await page.locator("#scene").click({ position: { x: 5, y: 5 } });
+    await expectNoPanelOpen(page);
+    await focusPageForHotkeys(page);
     await page.keyboard.press("p");
 
     // The first step away from `current` is `opaque`, which only changes
@@ -1916,6 +2152,7 @@ test.describe("the NPC agent", () => {
     const canvas = page.locator("#scene canvas");
     const box = await canvas.boundingBox();
     if (box === null) throw new Error("no canvas box");
+    await expectNoPanelOpen(page);
     /** A click at a fraction of the canvas, in page coordinates. */
     const clickAt = (fx, fy) =>
       page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
@@ -2268,19 +2505,25 @@ test.describe("with shadow maps on (?shadowCheck=1)", () => {
 
     await test.step("the buildings draw", async () => {
       await stashStableFrame(page);
-      await page.locator("#layer-buildings").uncheck();
+      await setting(page, "#layer-buildings", (c) => c.uncheck());
       // MEASURED: 6 776 differing pixels; the floor is about a third.
       await expect
         .poll(async () => (await diffFromStash(page, 24)).differing, {
           timeout: 15_000,
         })
         .toBeGreaterThan(2_000);
-      await page.locator("#layer-buildings").check();
+      await setting(page, "#layer-buildings", (c) => c.check());
     });
 
     await test.step("a quest beacon draws", async () => {
       await page.locator("#geo-event").click();
       await expect(page.locator("#map .geo-winner")).not.toHaveCount(0);
+      // The search republishes the scene once it has found its quest, and the
+      // frame settles only after that refresh ends. The busy mark is raised in
+      // the same task that draws the marker, so it is up when the wait starts.
+      await expect(page.locator("#status")).not.toHaveClass(/is-loading/, {
+        timeout: 30_000,
+      });
       await stashStableFrame(page);
       // Clearing moves nothing but the marker, as the close-camera test above
       // explains, so the difference is the beacon: measured 248 differing
@@ -2309,7 +2552,9 @@ test.describe("with shadow maps on (?shadowCheck=1)", () => {
  * same frame.
  */
 test.describe("the light dialog", () => {
-  const JUNE_NOON = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
+  // `ao=off`: the light gates' approved lumas were set on the frame without
+  // the ambient occlusion; its own darkening is bounded in its own test.
+  const JUNE_NOON = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00&ao=off`;
   const readoutLuma = async (page) => {
     const text = (await page.locator("#light-readout").textContent()) ?? "";
     return Number(/Lit surfaces (\d+(?:\.\d+)?)/.exec(text)?.[1] ?? Number.NaN);
@@ -2348,7 +2593,7 @@ test.describe("the light dialog", () => {
       const inlineLit = await litSurfaceLuma(page);
       // Closed at boot: nothing below has opened it yet.
       await expect(page.locator("#light-dialog")).toBeHidden();
-      await page.locator("#light-open").click();
+      await setting(page, "#light-open", (c) => c.click());
       // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
       // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
       // real divergence in either measure shows well above them.
@@ -2385,10 +2630,14 @@ test.describe("the light dialog", () => {
       // wood, and its crowns stand in front of the lit facades. With them on
       // the readout read 24.9 at this view against 65.3 without them, so the
       // levers would be judged on the trees rather than on the lit city.
-      await page.locator("#layer-woods").uncheck();
+      await setting(page, "#layer-woods", (c) => c.uncheck());
+      // And the land-use tint off, for the reason `expectHeatRampLoudest`
+      // gives: the readout counts warm low-chroma pixels, which O2's ground
+      // colours are, and the levers are about the lit city.
+      await setting(page, "#layer-tint", (c) => c.uncheck());
       await settledChroma(page);
       // The dialog opens from its button and the l key, and closes with Escape.
-      await page.locator("#light-open").click();
+      await setting(page, "#light-open", (c) => c.click());
       await expect(dialog).toBeVisible();
       await page.locator("#light-gainMax").press("Escape");
       await expect(dialog).toBeHidden();
@@ -2412,10 +2661,11 @@ test.describe("the light dialog", () => {
       const tuned = await readoutLuma(page);
       await page.reload();
       await waitForRefresh(page);
-      // The same view as before the reload: the woods boot on.
-      await page.locator("#layer-woods").uncheck();
+      // The same view as before the reload: the woods and the tint boot on.
+      await setting(page, "#layer-woods", (c) => c.uncheck());
+      await setting(page, "#layer-tint", (c) => c.uncheck());
       await settledChroma(page);
-      await page.locator("#light-open").click();
+      await setting(page, "#light-open", (c) => c.click());
       await expect(page.locator("#light-gainMax")).toHaveValue("2");
       // WHY (review, 2026-09-24): the sliders showing the values is not the
       // claim; the VIEW must boot in the tuned look, or the dialog would show
@@ -2428,5 +2678,390 @@ test.describe("the light dialog", () => {
       expect(tuned).toBeGreaterThan(base + 10);
       await expect(page.locator("#light-exposureEv")).toHaveValue("-2.25");
     });
+  });
+});
+
+/*
+ * The ambient occlusion's bounds at the June-noon boot view, drawn with the
+ * demo's display exponent 1 (measured 2026-11-13, SwiftShader, 639 x 720):
+ * 19.4 % of the pixels darkened by 3 or more (largest drop 81 levels), the
+ * frame's mean luma 35.18 against 37.07 without it (0.949), the lit surfaces
+ * 24.5 against 26.0 (0.942). With the framework's default exponent 1 / 2.2
+ * the same frame measured 12.9 % (largest drop 55), 0.975 and 0.973.
+ *
+ * AO_DARKENED_SHARE_MIN says it does something: about a tenth of the measured
+ * share, so only an AO that stopped drawing (or lost most of its radius)
+ * fails it. The two ratios say it does not darken too much: 0.9 leaves the
+ * measured values a margin of about 0.05, so an AO about twice as strong
+ * fails, and any bound above 0.94 would fail the shipped look itself.
+ */
+const AO_DARKENED_SHARE_MIN = 0.02;
+const AO_FRAME_LUMA_RATIO_MIN = 0.9;
+const AO_LIT_LUMA_RATIO_MIN = 0.9;
+
+test.describe("the ambient occlusion", () => {
+  const JUNE_NOON = `/?lat=${50.9231}&lng=${6.9445}&date=2026-06-21&time=12:00`;
+  const readoutLuma = async (page) => {
+    const text = (await page.locator("#light-readout").textContent()) ?? "";
+    return Number(/Lit surfaces (\d+(?:\.\d+)?)/.exec(text)?.[1] ?? Number.NaN);
+  };
+  /**
+   * Stores the settled frame under `key`: three reads 250 ms apart that agree
+   * exactly, so a repaint still in flight is never taken for the result.
+   */
+  const settledFrame = async (page, key) => {
+    let stable = 0;
+    await expect
+      .poll(
+        async () => {
+          const same = await page.evaluate((k) => {
+            const el = document.querySelector("#scene canvas");
+            if (!(el instanceof HTMLCanvasElement)) return false;
+            const probe = document.createElement("canvas");
+            probe.width = el.width;
+            probe.height = el.height;
+            const ctx = probe.getContext("2d");
+            if (ctx === null) return false;
+            ctx.drawImage(el, 0, 0);
+            const now = ctx.getImageData(0, 0, probe.width, probe.height);
+            const before = window[k];
+            window[k] = now;
+            if (
+              before === undefined ||
+              before.data.length !== now.data.length
+            ) {
+              return false;
+            }
+            for (let i = 0; i < now.data.length; i += 1) {
+              if (now.data[i] !== before.data[i]) return false;
+            }
+            return true;
+          }, key);
+          stable = same ? stable + 1 : 0;
+          return stable;
+        },
+        { timeout: 45_000, intervals: [250] },
+      )
+      .toBeGreaterThanOrEqual(3);
+  };
+  /** How frame `onKey` differs from frame `offKey`, per pixel. */
+  const compare = (page, onKey, offKey) =>
+    page.evaluate(
+      ([a, b]) => {
+        const on = window[a];
+        const off = window[b];
+        if (on.data.length !== off.data.length) {
+          throw new Error("the frames differ in size");
+        }
+        const n = on.width * on.height;
+        const luma = (d, i) =>
+          0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+        let brightened = 0;
+        let darkened = 0;
+        let identical = true;
+        let sumOn = 0;
+        let sumOff = 0;
+        let maxDrop = 0;
+        for (let i = 0; i < on.data.length; i += 4) {
+          let up = false;
+          let down = 0;
+          for (let c = 0; c < 3; c += 1) {
+            const d = on.data[i + c] - off.data[i + c];
+            if (d !== 0) identical = false;
+            if (d > 0) up = true;
+            if (-d > down) down = -d;
+          }
+          if (up) brightened += 1;
+          if (down >= 3) darkened += 1;
+          if (down > maxDrop) maxDrop = down;
+          sumOn += luma(on.data, i);
+          sumOff += luma(off.data, i);
+        }
+        return {
+          n,
+          identical,
+          brightened,
+          darkened,
+          maxDrop,
+          meanOn: sumOn / n,
+          meanOff: sumOff / n,
+        };
+      },
+      [onKey, offKey],
+    );
+
+  // ONE JUNE-NOON BOOT FOR THE FOUR LOOK CHECKS that boot this sun with the
+  // AO on by default: the AO's own bounds, the AO under the GPU ground, the
+  // land-use tint and the colour scheme switch. A boot costs more than most
+  // of these steps. The AO steps run first because they need the scene at
+  // rest and untouched by a pointer; every step puts back what it changed
+  // that a later step reads (the AO wish, the ground mode, the layers); the
+  // reported heat-margin reading runs last before the scheme link's boot,
+  // because it clicks inside the dialog, which may send the NPC agent
+  // walking.
+  test("at the June noon: the AO only darkens, is bounded, switches off exactly and yields to the GPU ground; the land-use tint greens the park; a scheme switch repaints and its link boots it", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(JUNE_NOON);
+    await waitForRefresh(page);
+    const view = page.locator("[data-ao]");
+    const dialog = page.locator("#light-dialog");
+    const box = page.locator("#light-ao");
+    /** Sets the AO box with the dialog open, then closes the dialog. */
+    // NO POINTER EVENTS: a click on a control over the canvas also reaches
+    // the scene and sends the NPC agent walking, and its route would then
+    // differ between the frames compared. The l key opens the dialog, Escape
+    // closes it, and the box is changed as its change event.
+    const setAo = async (on) => {
+      if (await dialog.isHidden()) await page.locator("body").press("l");
+      await expect(dialog).toBeVisible();
+      await box.evaluate((el, checked) => {
+        if (el.checked === checked) return;
+        el.checked = checked;
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }, on);
+      await expect(view).toHaveAttribute("data-ao", on ? "on" : "off");
+      const lit = await readoutLuma(page);
+      await page.locator("body").press("Escape");
+      await expect(dialog).toBeHidden();
+      return lit;
+    };
+
+    // WHY THIS STEP MATTERS: the AO is on by default, so it changes the
+    // picture every user sees. It may only DARKEN (a multiply that never
+    // exceeds 1), its darkening must stay bounded so the light the owner
+    // approved survives it, and switching it off must give back the frame
+    // without it exactly.
+    //
+    // NOT THE SKY: a view raised to show sky never stands still (the frame
+    // changes every 300 ms with the AO on and off alike), so no pair of frames
+    // can isolate the AO there. That it leaves the sky and the fogged distance
+    // alone rests on its factor being exactly 1 past the fade end (the unit and
+    // property tests of the framework module, and the fade-before-fog guard in
+    // building-view-ambient-occlusion.test.ts).
+    await test.step("the AO is on by default: only darkens, is bounded, and switches off exactly", async () => {
+      await expect(view).toHaveAttribute("data-ao", "on");
+      /** Sets the box and stores the settled frame under `key`. */
+      const frameWith = async (on, key) => {
+        const lit = await setAo(on);
+        await settledFrame(page, key);
+        return lit;
+      };
+      // On, off, on, off: the two pairs must agree exactly, which is what says
+      // the scene stood still and every difference is the AO's.
+      const litOn = await frameWith(true, "__aoOn");
+      const litOff = await frameWith(false, "__aoOff");
+      await frameWith(true, "__aoOnAgain");
+      await frameWith(false, "__aoOffAgain");
+      expect((await compare(page, "__aoOnAgain", "__aoOn")).identical).toBe(
+        true,
+      );
+      expect((await compare(page, "__aoOffAgain", "__aoOff")).identical).toBe(
+        true,
+      );
+
+      const r = await compare(page, "__aoOn", "__aoOff");
+      console.log(
+        `ambient occlusion at the June noon: ${r.darkened} of ${r.n} pixels darkened by 3 or more, largest drop ${r.maxDrop}, ${r.brightened} brightened; mean luma ${r.meanOn.toFixed(2)} on, ${r.meanOff.toFixed(2)} off; lit surfaces ${litOn} on, ${litOff} off`,
+      );
+      expect(r.brightened, "pixels the AO brightened").toBe(0);
+      expect(r.darkened / r.n).toBeGreaterThan(AO_DARKENED_SHARE_MIN);
+      expect(r.meanOn / r.meanOff).toBeGreaterThan(AO_FRAME_LUMA_RATIO_MIN);
+      expect(litOn / litOff).toBeGreaterThan(AO_LIT_LUMA_RATIO_MIN);
+    });
+
+    // Why this step matters: the AO's normal/depth pass does not run the GPU
+    // ground's displacement shader, so in that mode it would shade a flat
+    // ground under raised terrain. The switch keeps the wish and the ground
+    // mode decides what is drawn; this proves it in the running app.
+    await test.step("the AO stays off while the ground is displaced on the GPU, and comes back after", async () => {
+      // The step above left the AO off; the wish goes back on first.
+      await setAo(true);
+      const bootMode = await page.locator("#ground-mode").inputValue();
+      await setting(page, "#ground-mode", (c) => c.selectOption("gpu"));
+      await expect(page.locator("#status")).toContainText(/ground gpu \d/);
+      await expect(view).toHaveAttribute("data-ao", "off");
+      await setting(page, "#ground-mode", (c) => c.selectOption("cpu"));
+      await expect(page.locator("#status")).toContainText(/ground cpu \d/);
+      await expect(view).toHaveAttribute("data-ao", "on");
+      // Back to the boot's ground mode, which the tint step measures in.
+      // The status line names the ground's strategy (cpu or gpu), not its
+      // appearance, so the picker is what shows the boot mode is back.
+      await setting(page, "#ground-mode", (c) => c.selectOption(bootMode));
+      await expect(page.locator("#ground-mode")).toHaveValue(bootMode);
+      await expect(page.locator("#status")).toContainText(/ground cpu \d/);
+    });
+
+    // WHY THIS STEP MATTERS: the tint is on by default (owner Q6), so the
+    // default picture changed and the old gates measure it with the tint OFF.
+    // This is the gate of the tint itself: the fixture is Cologne's
+    // Volksgarten, so a working tint greens the frame; the heat grid must
+    // stay the loudest thing over a tinted ground (DEC-R4-5 binds the default
+    // scheme, D8); and switching it off must give back the switched-off
+    // ground exactly, which is what the old gates rely on.
+    await test.step("the land-use tint greens the Volksgarten, keeps the heat grid the loudest, and off restores today's ground", async () => {
+      await installFrameProbe(page);
+      const tint = page.locator("#layer-tint");
+      await expect(tint).toBeChecked();
+      await page.locator("#layer-cells").uncheck();
+      await setting(page, "#layer-woods", (c) => c.uncheck());
+
+      await setting(page, "#layer-tint", (c) => c.uncheck());
+      await stashStableFrame(page);
+      const greenOff = await meanGreenExcess(page);
+      await setting(page, "#layer-tint", (c) => c.check());
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeGreaterThan(0);
+      await settledChroma(page);
+      const greenOn = await meanGreenExcess(page);
+      console.log(
+        `land-use tint: green excess off ${greenOff.toFixed(2)}, on ${greenOn.toFixed(2)}`,
+      );
+      expect(greenOn, "the park greens the frame").toBeGreaterThan(
+        greenOff + TINT_GREEN_STEP,
+      );
+
+      // Off again: the switched-off picture, pixel for pixel within the probe's
+      // threshold. The stash was taken with the tint APPLIED and switched off
+      // (the desktop always builds one, so a never-tinted ground is not
+      // reachable here); that switched off equals a never-tinted ground rests
+      // on the unit tests of the shader's neutral (`three/ground-tint.test.ts`
+      // in the library, "switches off to the neutral ground") and of the
+      // material colour (`land-use-tint.test.ts`).
+      await setting(page, "#layer-tint", (c) => c.uncheck());
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBe(0);
+
+      // The heat grid over the tinted ground, by the DEC-R4-5 bound (5).
+      await setting(page, "#layer-tint", (c) => c.check());
+      const margin = await marginFor(page, "cpu-slope");
+      console.log(`land-use tint: heat grid adds ${margin.toFixed(2)} chroma`);
+      expect(margin, "heat grid over the tinted ground").toBeGreaterThan(5);
+      // Back to the boot's woods for the steps after this one.
+      await setting(page, "#layer-woods", (c) => c.check());
+    });
+
+    // WHY THIS STEP MATTERS: the dropdown is the owner's tool for rating the
+    // schemes on the phone. It must repaint the city, say "Applying" until
+    // the mesh built in the chosen colours is drawn (the echo, not the
+    // click), write the choice into the link, and give back today's picture
+    // exactly when the default is chosen again; a link with `?scheme=` must
+    // boot in that scheme.
+    const select = page.locator("#colour-scheme");
+    await test.step("a scheme switch repaints the city, says Applying until the echo, and writes the link", async () => {
+      // CELLS OFF, as at a fresh boot: the tint step left them on, and this
+      // step compares the city's pixels exactly.
+      await page.locator("#layer-cells").uncheck();
+      const status = page.locator("#colour-scheme-status");
+      await expect(select).toHaveValue("today");
+      await page.evaluate(() => {
+        const el = document.querySelector("#colour-scheme-status");
+        const seen = [];
+        window.__schemeStatus = seen;
+        if (el === null) return;
+        new MutationObserver(() => seen.push(el.textContent ?? "")).observe(
+          el,
+          {
+            childList: true,
+            characterData: true,
+            subtree: true,
+          },
+        );
+      });
+      await stashStableFrame(page);
+
+      await setting(page, "#colour-scheme", (c) => c.selectOption("night"));
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBeGreaterThan(0);
+      await expect(status).toHaveText("");
+      await expect(select).toBeEnabled();
+      expect(await page.evaluate(() => window.__schemeStatus)).toContain(
+        "Applying Night...",
+      );
+      await expect(page).toHaveURL(/[?&]scheme=night(&|$)/);
+
+      // Back to the default: no link key, and today's picture.
+      await setting(page, "#colour-scheme", (c) => c.selectOption("today"));
+      await expect(page).not.toHaveURL(/[?&]scheme=/);
+      await expect
+        .poll(async () => (await diffFromStash(page, 24)).differing, REPAINT)
+        .toBe(0);
+    });
+
+    // REPORTED, NOT GATED: the heat grid's margin with the AO on, beside the
+    // same reading with it off. The heat-ramp gates run with the AO off, so
+    // this line is where a reader sees what the AO does to the one number the
+    // owner tunes the light by. Late, because it clicks inside the dialog,
+    // which may send the NPC walking.
+    await test.step("reports the heat grid's margin with the AO on and off", async () => {
+      await enableCellLayer(page);
+      const heatMargin = async (on) => {
+        if (await dialog.isHidden()) await page.locator("body").press("l");
+        await box.evaluate((el, checked) => {
+          if (el.checked === checked) return;
+          el.checked = checked;
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }, on);
+        await expect(view).toHaveAttribute("data-ao", on ? "on" : "off");
+        await page.locator("#light-check").click();
+        await expect(page.locator("#light-readout")).toContainText(
+          "Heat grid adds",
+        );
+        const text = (await page.locator("#light-readout").textContent()) ?? "";
+        return Number(/adds ([\d.-]+)/.exec(text)?.[1]);
+      };
+      const marginOn = await heatMargin(true);
+      const marginOff = await heatMargin(false);
+      console.log(
+        `ambient occlusion and the heat grid: margin ${marginOn.toFixed(2)} with the AO on, ${marginOff.toFixed(2)} off`,
+      );
+    });
+
+    await test.step("a link naming a scheme boots in it", async () => {
+      await page.goto(`${JUNE_NOON}&scheme=night`);
+      await waitForRefresh(page);
+      await expect(select).toHaveValue("night");
+    });
+  });
+});
+
+test.describe("the woods governor's frame readout (?perf=1)", () => {
+  // WHY THIS TEST MATTERS: the readout is what the owner reads on his phone
+  // to learn whether the woods cost frames, so it must appear for `perf=1`,
+  // must show a measured frame time once frames are CHAINED (a drag's
+  // damping), and must never appear without the knob: the default picture
+  // and every pixel assertion stay as they were. On a desktop pointer the
+  // governor is off, so the woods stay at 100 %. The "never without the
+  // knob" half is asserted on the city-look test's boot, which has no knob.
+  test("perf=1 shows the frame time after a drag, with the woods full on a desktop", async ({
+    page,
+  }) => {
+    await stubNetwork(page);
+    await page.goto(`/?lat=${50.9231}&lng=${6.9445}&perf=1&treeform=trunk`);
+    await waitForRefresh(page);
+    const readout = page.getByTestId("perf-readout");
+    await expect(readout).toBeVisible();
+    await expect(readout).toContainText("woods 100 % (off)");
+
+    const box = await page.locator("#scene canvas").boundingBox();
+    if (box === null) throw new Error("no canvas box");
+    await expectNoPanelOpen(page);
+    // At the left quarter, clear of a details panel over the right half.
+    const x = box.x + box.width * 0.25;
+    const y = box.y + box.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    for (let i = 1; i <= 8; i++) await page.mouse.move(x - 5 * i, y - 3 * i);
+    await page.mouse.up();
+
+    await expect(readout).toHaveText(
+      /^frame \d+\.\d ms · p95 \d+\.\d ms · /,
+      REPAINT,
+    );
+    await expect(readout).toContainText("woods 100 % (off)");
   });
 });

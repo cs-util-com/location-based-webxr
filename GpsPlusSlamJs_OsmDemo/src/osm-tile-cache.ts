@@ -56,10 +56,28 @@ export function createOsmTileSource(
      * true (the worker turns it on unless the URL says `tiles=off`).
      */
     readonly staticTiles?: boolean;
+    /**
+     * Told when a fetch someone is waiting on goes past the cache, i.e. a
+     * download starts. Never for a cache hit (local work only) and never for
+     * a speculative ring warm, which nobody waits on. The worker forwards it
+     * to the page, whose loading overlay names a download only then.
+     */
+    readonly onForegroundDownload?: (tile: string) => void;
   } = {},
 ): CachingSource {
+  const { onForegroundDownload } = options;
   return createCityTileSource(store, {
     userAgent: OSM_DEMO_USER_AGENT,
+    ...(onForegroundDownload === undefined
+      ? {}
+      : {
+          onCacheMiss: (
+            tile: string,
+            info: { readonly speculative: boolean },
+          ) => {
+            if (!info.speculative) onForegroundDownload(tile);
+          },
+        }),
     ...(options.fetchImpl === undefined
       ? {}
       : { fetchImpl: options.fetchImpl }),

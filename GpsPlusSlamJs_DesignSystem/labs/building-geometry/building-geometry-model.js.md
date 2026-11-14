@@ -11,9 +11,10 @@
   - `todayShotUrl(id, view)`: the committed "today" PNG, or null.
   - `allShots()`: every `{ id, view }` in page order.
   - `PALETTES`: `["seeded", "class"]`, the `buildCity` colour palettes.
-  - `parseParams(search)` / `searchFor(id, view, palette?)`: the query string
+  - `parseParams(search)` / `searchFor(id, view, palette?, roofs?)`: the query string
     and back; unknown values fall back to the first building, camera or
-    palette, and the default palette stays out of the link.
+    palette; `roofs` is true (invented, the library default) unless the link
+    says `roofs=off`, and the defaults stay out of the link.
 - **Invariants:** every URL is a literal `new URL(..., import.meta.url)`, so the
   deploy's crawl (`build-lookdev.mjs`) copies the fixtures and pictures. The
   cameras of Heidelberg, Cologne and the four landmarks are the findings doc's;

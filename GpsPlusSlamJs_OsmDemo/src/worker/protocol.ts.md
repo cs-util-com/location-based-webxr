@@ -14,7 +14,8 @@ union, and two runtime guards. No behaviour.
   points at.
 - `TransferableMesh` — built geometry plus the status-line counters. Since
   objects M2a it carries `cosmeticTrees` (the woods layer's invented trees,
-  plain placements, structured-cloned like `trees`).
+  plain placements, structured-cloned like `trees`); since objects M5
+  `furniture` (`City.furniture`, mapped lamps and bollards, plain placements).
 - `UpdateResult`, `TerrainResult` — the two compound results.
   - `TerrainResult.demSourceId` — the worker provider's own `sourceId`
     (`mapterhorn+terrarium`), reported **on the result rather than shared as a
@@ -29,9 +30,24 @@ union, and two runtime guards. No behaviour.
     older worker degrades to the composed-id-only HUD label.
 - `WorkerEnvelope` — what the main thread posts, including `{ kind: 'abort',
 target }`.
-- `WorkerReply` — `{ id, ok: true, value } | { id, ok: false, message }`.
+- `WorkerReply` - `{ id, ok: true, value } | { id, ok: false, message, failedBuild? }`;
+  `failedBuild` (`MeshBuildChoices`) is set only for a failed city build.
+- `MeshBuildChoices` - what the user chose to build (`colourScheme`,
+  `inventedRoofs`, `markings`, all required; each later build switch adds its field). `isMeshBuildChoices(value)` guards it and refuses a reply missing any.
+- `MeshBuildError` - the error class that carries `failedBuild` in the worker
+  and out of the RPC client; `failedBuildOf(error)` reads it back.
 - `isWorkerReply(value)`, `isWorkerEnvelope(value)` — guards for the two
   `message` handlers.
+- `WorkerNotice` - `{ notice: "downloadStarted" }`, the worker's one
+  unsolicited message: a tile fetch someone waits on went past the OPFS cache.
+  Never posted for a cache hit or a ring warm. It has no `id`, so
+  `isWorkerReply` rejects it; `isWorkerNotice(value)` guards it and rejects
+  anything carrying an `id`, so a reply with a stray `notice` field is never
+  swallowed. The page's loading overlay names a download only after one
+  (`loading-announcer.ts`). It is the protocol's one push and exists only for
+  live wait state that cannot ride a reply; the terrain flows still answer on
+  replies (`meshOutdated`, the `terrainUpgrade` call), because a result the page
+  must apply belongs on the call that asked for it.
 
 ## Invariants & assumptions
 
@@ -95,3 +111,54 @@ to the plain object it clones into, passing for exactly the value that fails).
 `protocol.test.ts` checks that `isWorkerEnvelope` accepts every call kind (its
 list is a `Record` over the union too, so it cannot fall behind) and rejects
 unknown kinds, a missing id and a malformed abort.
+
+## `groundTint` (colour schemes plan 2026-11-10-0841 S3)
+
+`TransferableMesh.groundTint?: GroundTint` - the land-use tint over the build
+window. Cloneable (a typed array, numbers, the palette as an array of plain
+objects); COPIED rather than
+transferred (about 2 MB at most), see `demo-worker.ts`.
+
+## `colourScheme` (colour schemes plan 2026-11-10-0841 section 4.4)
+
+- Request: `update.request.colourScheme?` - the scheme's NAME; omitted is the
+  default. The worker refuses a name outside the table as that scheme's build
+  failure.
+- Reply: `TransferableMesh.colourScheme?` - the scheme the mesh was built in;
+  the page's ground, plates and trim follow it, and the dropdown's switch ends
+  on it.
+
+## `buildKey` / `drawnBuildKey`
+
+- Reply: `TransferableMesh.buildKey` - the full build's identity
+  (`meshBuildKey` in `mesh-planner.ts`).
+- Request: `update.request.drawnBuildKey?` - the key of the full mesh the page
+  draws, absent when it draws none. The worker builds in full whenever this
+  pass's key differs, so a dropped reply never leaves the page on an older
+  build while the worker believes it current.
+
+## `groundTint`
+
+- Request: `update.request.groundTint?` - whether the full build includes the
+  land-use ground tint; omitted means `true`. The page sends `false` while AR
+  runs (AR draws no ground plane). It is a build choice, so it is in the build
+  key and a change rebuilds.
+
+## `markings`
+
+- Request: `update.request.markings?` - whether the full build paints zebra
+  crossings and draws the mapped pedestrian areas; omitted means `true`; part
+  of the build key.
+- Reply: `TransferableMesh.markings?` echoes it (absent means `true`).
+- `MeshBuildChoices.markings` names it in every failed build.
+
+## `inventedRoofs`
+
+- Request: `update.request.inventedRoofs?` and `planRoute.request.inventedRoofs?`
+  - whether buildings without a mapped roof shape get a planned roof; omitted
+    means `true`.
+- Reply: `TransferableMesh.inventedRoofs?` echoes the choice the mesh was built
+  with (absent means `true`), so the page's switch ends on the durable build.
+- `MeshBuildChoices.inventedRoofs` names it in every failed build, the unknown-scheme refusal included (resolved there as the build would: absent is on).
+- `TransferableMesh.inventedRoofCount` - how many volumes carry an invented
+  pitched roof (`roofIsInvented`), for the status line.

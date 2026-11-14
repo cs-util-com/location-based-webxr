@@ -520,7 +520,9 @@ export async function waitForRefresh(page) {
     .locator("#status")
     .filter({ hasText: /\d+ cells|Failed|unavailable/ })
     .first()
-    .waitFor({ state: "visible", timeout: 60000 });
+    // ATTACHED, not visible: the status line lives in the bar's info panel,
+    // which is closed unless a test opens it. Its text is what is waited on.
+    .waitFor({ state: "attached", timeout: 60000 });
 
   // AND THEN WAIT FOR THE WIDENING TO FINISH (W16). Scoring is progressive: the
   // first emission is the ring-2 working set and rings 3 and 4 follow, each
@@ -1167,7 +1169,11 @@ export async function captureUiBaseline(page) {
  * @param {{category: string}} baseline
  */
 export async function resetUi(page, baseline) {
-  // The panel first: closing it also DESELECTS. `onClose` dispatches
+  // The command bar's panels before anything: a test may end with the drawer
+  // or the light dialog open, and both cover part of the views.
+  await closePanels(page);
+
+  // The details panel next: closing it also DESELECTS. `onClose` dispatches
   // `cellSelected(undefined)`, and that reducer clears the cell, the feature AND
   // the region unconditionally — one dispatch, all three — so a later test's
   // selection assertions start from nothing.
@@ -1191,16 +1197,17 @@ export async function resetUi(page, baseline) {
   // a marker actually being present, like every step here: the common case is a
   // test that never pressed the button, and that must stay two cheap reads.
   //
-  // Two clicks rather than one, and the shape is the feature: with an event
-  // held, the button opens the picker instead of re-running the identical
-  // search (G1), and the picker is where the clear lives.
+  // The clear lives in the picker, so a closed picker is opened first. The
+  // button opens it only when it is closed, and that press ALSO re-runs the
+  // search alongside it; the count assertion below waits for the cleared
+  // state, so a winner that search redraws after the clear fails loudly here
+  // rather than leaking into the next test.
   //
-  // THE OPEN CHECK IS NOT REDUNDANT, because that button is a TOGGLE and
-  // nothing else closes the picker — not a click elsewhere, only Search or
-  // Clear. A test that ended with the picker open would have this helper close
-  // it, and then wait on a hidden `#geo-event-clear` until it timed out. No
-  // test leaves that state today; a reset helper exists to be insensitive to
-  // the states that do not exist yet.
+  // THE OPEN CHECK IS NOT REDUNDANT: nothing but Search or Clear closes the
+  // picker, not a click elsewhere, so a test may end with it open, and the
+  // clear is pressed directly then. No test on the shared page presses the
+  // geo-event button today; a reset helper exists to be insensitive to the
+  // states that do not exist yet.
   if ((await page.locator("#map .geo-winner").count()) > 0) {
     const picker = page.locator("#geo-event-picker");
     if (!(await picker.isVisible())) await page.locator("#geo-event").click();
@@ -1211,7 +1218,7 @@ export async function resetUi(page, baseline) {
   // Free: a presentation toggle that never refetches.
   const showBelow = page.locator("#show-below");
   if ((await showBelow.isChecked()) !== baseline.showBelow) {
-    await showBelow.setChecked(baseline.showBelow);
+    await setting(page, "#show-below", (c) => c.setChecked(baseline.showBelow));
   }
 
   // THE BASELINE IS WHATEVER THE BOOT PRODUCED, not a state this helper
@@ -1236,4 +1243,132 @@ export async function resetUi(page, baseline) {
     await category.selectOption(baseline.category);
     await waitForRefresh(page);
   }
+}
+
+/**
+ * Acts on a control in the settings drawer: opens the drawer and the folded
+ * section the control sits in, runs `act` on it, and closes the drawer again.
+ *
+ * WHY THIS EXISTS: every setting lives in a closed drawer, most of them in a
+ * `<details>` section that starts folded, and Playwright refuses to click,
+ * check, fill or select a control that is not visible. Reading one
+ * (`toBeChecked`, `inputValue`) needs none of this. Closing afterwards keeps
+ * the page in the state a user sees between changes, so a later click on the
+ * canvas does not land on the drawer. A control outside the drawer (the bar's
+ * `cells` switch) is acted on directly.
+ *
+ * @template T
+ * @param {import('@playwright/test').Page} page
+ * @param {string} selector
+ * @param {(control: import('@playwright/test').Locator) => Promise<T>} act
+ * @returns {Promise<T>}
+ */
+export async function setting(page, selector, act) {
+  const control = page.locator(selector).first();
+  const inDrawer = await control.evaluate(
+    (el) => el.closest("#settings-drawer") !== null,
+  );
+  if (!inDrawer) return act(control);
+  const drawer = page.locator("#settings-drawer");
+  // THE LIGHT DIALOG covers the drawer it opens from, as a user sees it: they
+  // go back to the drawer, change the setting and open the dialog again.
+  const dialog = page.locator("#light-dialog");
+  const dialogWasOpen = await dialog.isVisible();
+  if (dialogWasOpen) {
+    await page.locator("#light-back").click();
+    await expect(dialog).toBeHidden();
+  }
+  if (!(await drawer.isVisible())) await page.locator("#settings-open").click();
+  await expect(drawer).toBeVisible();
+  await unfoldSectionOf(control);
+  try {
+    return await act(control);
+  } finally {
+    if (dialogWasOpen && !(await dialog.isVisible())) {
+      const opener = page.locator("#light-open");
+      await unfoldSectionOf(opener);
+      await opener.click();
+      await expect(dialog).toBeVisible();
+    }
+    // Closing the drawer closes the light dialog stacked over it, so a
+    // dialog that is open now (reopened above, or opened by `act`) keeps
+    // its drawer.
+    if ((await drawer.isVisible()) && !(await dialog.isVisible())) {
+      await page.locator("#settings-open").click();
+    }
+  }
+}
+
+/**
+ * Unfolds the drawer section (a `<details>`) a control sits in, if folded.
+ *
+ * @param {import('@playwright/test').Locator} control
+ */
+async function unfoldSectionOf(control) {
+  const section = control.locator("xpath=ancestor::details[1]");
+  if (
+    (await section.count()) > 0 &&
+    (await section.getAttribute("open")) === null
+  ) {
+    await section.locator(":scope > summary").click();
+    await expect(section).toHaveAttribute("open", "");
+  }
+}
+
+/** The bar's panels and their openers, closed by `closePanels`. */
+const PANEL_OPENERS = [
+  ["#settings-drawer", "#settings-open"],
+  ["#info-panel", "#info-open"],
+  ["#sun-pop", "#sun-chip"],
+];
+
+/**
+ * Closes every panel the command bar can open, and the light dialog.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function closePanels(page) {
+  if (await page.locator("#light-dialog").isVisible()) {
+    await page.locator("#light-close").click();
+  }
+  for (const [panel, opener] of PANEL_OPENERS) {
+    if (await page.locator(panel).isVisible()) {
+      await page.locator(opener).click();
+    }
+  }
+  await expectNoPanelOpen(page);
+}
+
+/**
+ * Asserts that nothing the bar opens covers the views: a raw mouse click on
+ * the canvas or the map is only meaningful with every panel closed.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function expectNoPanelOpen(page) {
+  for (const [panel] of PANEL_OPENERS) {
+    await expect(page.locator(panel)).toBeHidden();
+  }
+  await expect(page.locator("#light-dialog")).toBeHidden();
+}
+
+/**
+ * Hands the keyboard back to the page itself before a hotkey: the registry
+ * ignores keys typed into fields, and closing a panel returns focus to the
+ * button that opened it.
+ *
+ * A BLUR, NOT A CLICK ON THE 3D VIEW. A click on the scene orders the walking
+ * agent to the point under it, so it changes the very picture a hotkey test
+ * diffs and leaves a route on screen for every later step. The old click
+ * landed on empty sky only because the pane's top-left corner was sky; with
+ * the command bar over that strip, no point is reliably sky at every
+ * viewport.
+ *
+ * @param {import('@playwright/test').Page} page
+ */
+export async function focusPageForHotkeys(page) {
+  await page.evaluate(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) active.blur();
+  });
 }

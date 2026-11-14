@@ -54,26 +54,33 @@ import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
  *   by `shoot.mjs`, where the `/fw/` route does not exist. Its sliders set
  *   no app state: the compass specimen only updates its own label, so a
  *   swipe that moves one changes a number on a sheet no phone user opens.
- * - The design prototypes in the Tour Viewer's and the OSM demo's inspiration galleries (root
+ * - The design prototypes in the Tour Viewer's inspiration gallery (root
  *   CLAUDE.md "Throwaway UX prototypes": kept, linked from nothing) are
  *   standalone drafts wired to nothing: their sliders (a landing draft's
  *   size, the 3D editor drafts' station radius, the editor panel drafts'
  *   radius and size) change only the draft's own labels and stations,
  *   and nothing outside the draft is touched.
+ * - The OSM demo's HUD prototypes ARE opened on a phone: their gallery asks
+ *   for each to be judged there. So the swipe this guard exists for can
+ *   happen in them, and the exemption rests on what it costs instead: their
+ *   sliders (the sun time, the render distance, the light levers) move only
+ *   the draft's own readouts, nothing is stored or sent, and a swipe that
+ *   moved one is undone by moving it back. They stay standalone pages by
+ *   the prototype rule rather than import the framework module.
  */
 const EXEMPT = new Map([
   ['GpsPlusSlamJs_DesignSystem/index.html', 'undeployed specimen sheet over file://'],
   [
     'GpsPlusSlamJs_OsmDemo/public/prototypes/a-command-bar/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    'HUD prototype opened on a phone; its sliders move only its own readouts',
   ],
   [
     'GpsPlusSlamJs_OsmDemo/public/prototypes/b-icon-rail/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    'HUD prototype opened on a phone; its sliders move only its own readouts',
   ],
   [
     'GpsPlusSlamJs_OsmDemo/public/prototypes/c-sheet-tabs/index.html',
-    'design prototype in the inspiration gallery, wired to nothing',
+    'HUD prototype opened on a phone; its sliders move only its own readouts',
   ],
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/landing-5-map-path/index.html',

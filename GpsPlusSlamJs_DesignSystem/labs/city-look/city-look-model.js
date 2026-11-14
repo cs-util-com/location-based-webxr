@@ -192,15 +192,24 @@ export function parseCityLookParams(search, { defaultSplit = null } = {}) {
     view: pick("view", VIEWS),
     split,
     heat: params.get("heat") === "1",
+    roofs: params.get("roofs") === "library",
     cam: parseCameraOverride(params.get("cam")),
   };
 }
 
 /** The link's search string for a state, read back by `parseCityLookParams`. */
-export function cityLookSearch({ scene, view, split, heat, cam = null }) {
+export function cityLookSearch({
+  scene,
+  view,
+  split,
+  heat,
+  roofs = false,
+  cam = null,
+}) {
   const params = new URLSearchParams({ scene, view });
   params.set("split", split === null ? "off" : split.toFixed(3));
   if (heat) params.set("heat", "1");
+  if (roofs) params.set("roofs", "library");
   // Commas stay plain, so a linked pose stays readable in the address bar.
   const pose = cam
     ? `&cam=${[...cam.position, ...cam.target].map(camNumber).join(",")}`

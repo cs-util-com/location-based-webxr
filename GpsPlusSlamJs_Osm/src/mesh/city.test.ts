@@ -14,11 +14,13 @@ import {
   seededBuildingColours,
 } from "./building-palette.js";
 import {
+  DEFAULT_ROAD_COLOURS,
   buildingColour,
   parseOsmColour,
   roadColour,
   roofColour,
 } from "./feature-colours.js";
+import { roadWidthM } from "./roads.js";
 import { srgbToLinear } from "./srgb.js";
 
 /**
@@ -438,6 +440,161 @@ describe("buildCity with roads", () => {
     expect(triangles({})).toBe(triangles(true));
   });
 
+  // WHY: zebras and squares are a look decision the owner can switch, and
+  // buildCity is the one way every app builds roads. On by default with the
+  // roads, they land in the road chunks in the scheme colour (one draw);
+  // markings: false must give exactly the roads without them.
+  it("draws zebras and pedestrian areas with the roads, switchable off", () => {
+    const enu = (x: number, y: number) => frame.toLatLng({ x, y });
+    const zebra: OsmFeature = {
+      type: "way",
+      id: 31,
+      tags: { highway: "footway", footway: "crossing", crossing: "zebra" },
+      geometry: [enu(0, -4), enu(0, 4)],
+    };
+    const square: OsmFeature = {
+      type: "way",
+      id: 32,
+      tags: { highway: "pedestrian", area: "yes" },
+      geometry: [enu(20, 0), enu(40, 0), enu(40, 20), enu(20, 20), enu(20, 0)],
+    } as unknown as OsmFeature;
+    const features = [ROAD, zebra, square];
+    const on = buildCity(features, { frame }, { window: W, roads: true });
+    expect(on.zebraStripeCount).toBe(8);
+    expect(on.pedestrianAreaCount).toBe(1);
+    const colourKeys = (city: ReturnType<typeof buildCity>) => {
+      const keys = new Set<string>();
+      for (const chunk of city.roads) {
+        const c = chunk.colors ?? new Float32Array(0);
+        for (let i = 0; i < c.length; i += 3) {
+          keys.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+        }
+      }
+      return keys;
+    };
+    expect(
+      colourKeys(on).has(unpacked(DEFAULT_ROAD_COLOURS.markings).join(",")),
+    ).toBe(true);
+    const off = buildCity(
+      features,
+      { frame },
+      { window: W, roads: { markings: false } },
+    );
+    expect(off.zebraStripeCount).toBe(0);
+    expect(off.pedestrianAreaCount).toBe(0);
+    // Off adds nothing; on adds two triangles a stripe plus the square.
+    const triangles = (city: ReturnType<typeof buildCity>) =>
+      city.roads.reduce((n, c) => n + c.mesh.indices.length / 3, 0);
+    expect(triangles(off)).toBe(
+      triangles(
+        buildCity(
+          [ROAD, zebra],
+          { frame },
+          { window: W, roads: { markings: false } },
+        ),
+      ),
+    );
+    expect(triangles(on)).toBeGreaterThanOrEqual(triangles(off) + 2 * 8 + 2);
+  });
+
+  // WHY THESE TWO MATTER: a road ribbon samples the ground only at its own
+  // vertices and is a straight chord between them, while a stripe or a
+  // square's vertex sampled the ground under itself. On curved ground the two
+  // part by metres (measured on the corpus: paint up to 0.77 m under the road,
+  // squares up to 1.8 m over a road crossing them), far past the 5-8 mm
+  // clearances. Here the road has vertices only at its two ends, 50 m out,
+  // and the ground is a parabola, so its chord and the ground under the
+  // crossing part by 25 m.
+  describe("markings and squares on curved ground follow the road surface", () => {
+    const enu = (x: number, y: number) => frame.toLatLng({ x, y });
+    const road: OsmFeature = {
+      type: "way",
+      id: 41,
+      tags: { highway: "residential" },
+      geometry: [enu(-50, 0), enu(50, 0)],
+    };
+    const parabola =
+      (sign: number) =>
+      (p: { lat: number; lng: number }): number =>
+        sign * (frame.toEnu(p).x / 10) ** 2;
+    /**
+     * The road-chunk vertices within 10 m east or west of the crossing, of
+     * one colour when `colour` is given (the road itself has none there).
+     */
+    const nearCrossing = (
+      city: ReturnType<typeof buildCity>,
+      colour?: readonly number[],
+    ) => {
+      const out: { x: number; up: number; north: number }[] = [];
+      for (const chunk of city.roads) {
+        const p = chunk.mesh.positions;
+        const c = chunk.colors ?? new Float32Array(0);
+        for (let i = 0; i < p.length; i += 3) {
+          const ofColour =
+            colour === undefined ||
+            [c[i], c[i + 1], c[i + 2]].join(",") === colour.join(",");
+          if (Math.abs(p[i]!) <= 10 && ofColour) {
+            out.push({ x: p[i]!, up: p[i + 1]!, north: -p[i + 2]! });
+          }
+        }
+      }
+      return out;
+    };
+
+    it("paints a zebra over the road surface, not under it", () => {
+      const zebra: OsmFeature = {
+        type: "way",
+        id: 42,
+        tags: { highway: "footway", footway: "crossing", crossing: "zebra" },
+        geometry: [enu(0, -4), enu(0, 4)],
+      };
+      const city = buildCity(
+        [road, zebra],
+        { frame, groundHeightM: parabola(1) },
+        { window: W, roads: true },
+      );
+      expect(city.zebraStripeCount).toBeGreaterThan(0);
+      const paint = nearCrossing(city, unpacked(DEFAULT_ROAD_COLOURS.markings));
+      expect(paint.length).toBe(4 * city.zebraStripeCount);
+      // The stripes run past the kerb (the crossing is 8 m, the road 6 m);
+      // there they lie on the ground, as the pavement does.
+      const half = roadWidthM(road.tags) / 2;
+      const onRoad = paint.filter((v) => Math.abs(v.north) < half);
+      expect(onRoad.length).toBeGreaterThan(0);
+      // The road's surface here is its chord: the ground at its ends (25 m)
+      // plus its lift (at most 3.4 steps); the paint is above all of it.
+      for (const v of onRoad) expect(v.up).toBeGreaterThan(25 + 3.4 * 0.005);
+    });
+
+    it("keeps a square under a road that crosses it", () => {
+      const square: OsmFeature = {
+        type: "way",
+        id: 43,
+        tags: { highway: "pedestrian", area: "yes" },
+        geometry: [
+          enu(-10, -10),
+          enu(10, -10),
+          enu(10, 10),
+          enu(-10, 10),
+          enu(-10, -10),
+        ],
+      } as unknown as OsmFeature;
+      const city = buildCity(
+        [road, square],
+        { frame, groundHeightM: parabola(-1) },
+        { window: W, roads: true },
+      );
+      expect(city.pedestrianAreaCount).toBe(1);
+      const half = roadWidthM(road.tags) / 2;
+      const underRoad = nearCrossing(city).filter(
+        (v) => Math.abs(v.north) < half,
+      );
+      expect(underRoad.length).toBeGreaterThan(0);
+      // The road lies at -25 m plus its lift (at least 2 steps, rank 2).
+      for (const v of underRoad) expect(v.up).toBeLessThan(-25 + 2 * 0.005);
+    });
+  });
+
   // WHY (r1164 delta review NIT 4): `roads` comes from a consumer's options
   // object, often parsed JSON, where an absent value is easily `null`. Read
   // as an object it threw a TypeError from the destructuring; it means "no
@@ -595,7 +752,13 @@ describe("Heidelberg under the seeded palette", () => {
   if (site === undefined) throw new Error("heidelberg-altstadt not in corpus");
   const features = parseOverpassJson(loadSite(site.id).payload).features;
   const ground = { frame: enuFrameAt(site.position) };
-  const city = buildCity(features, ground, { window: loadSite(site.id).bbox });
+  // INVENTED ROOFS OFF for the pinned table below: it is about the roofs the
+  // map tags, measured before invented roofs existed. The invented ones are
+  // checked on their own at the end of this block.
+  const city = buildCity(features, ground, {
+    window: loadSite(site.id).bbox,
+    inventedRoofs: false,
+  });
   const tagsByKey = new Map(features.map((f) => [featureKey(f), f.tags]));
 
   /**
@@ -749,6 +912,90 @@ describe("Heidelberg under the seeded palette", () => {
     });
   });
 
+  /**
+   * Every colour drawn at each position of `chunks`: a gable's apex and the
+   * top of a wall share positions with roof vertices and carry the wall
+   * colour, so one position can hold several.
+   */
+  const coloursByPosition = (
+    chunks: ReturnType<typeof buildCity>["buildings"],
+  ): Map<string, Set<string>> => {
+    const coloursAt = new Map<string, Set<string>>();
+    for (const chunk of chunks) {
+      const q = chunk.mesh.positions;
+      const c = chunk.colors ?? [];
+      for (let i = 0; i < q.length; i += 3) {
+        const k = `${q[i]},${q[i + 1]},${q[i + 2]}`;
+        const set = coloursAt.get(k) ?? new Set<string>();
+        set.add(`${c[i]},${c[i + 1]},${c[i + 2]}`);
+        coloursAt.set(k, set);
+      }
+    }
+    return coloursAt;
+  };
+
+  /** The position of a volume's highest roof vertex, as `x,y,z`. */
+  const highestRoofVertex = (volume: (typeof city.volumes)[number]): string => {
+    const r = volume.roofVertexRanges[0] ?? { start: 0, end: 0 };
+    const p = volume.mesh.positions;
+    let at = r.start * 3;
+    for (let v = r.start; v < r.end; v++) {
+      if ((p[v * 3 + 1] as number) > (p[at + 1] as number)) at = v * 3;
+    }
+    return `${p[at]},${p[at + 1]},${p[at + 2]}`;
+  };
+
+  it("paints every invented roof in a pitched palette tone", () => {
+    // Why: an invented roof is drawn by the skeleton, so the city must colour
+    // its surfaces as a pitched roof (not as wall or flat lid); a roof
+    // painted in the wall colour reads as a grey box from above.
+    const roofed = buildCity(features, ground, {
+      window: loadSite(site.id).bbox,
+    });
+    const tones = new Set(
+      PITCHED_ROOF_TONES.map((rgb) => linearUnpacked(rgb).join(",")),
+    );
+    const coloursAt = coloursByPosition(roofed.buildings);
+    const invented = roofed.volumes.filter((v) => v.roofIsInvented);
+    expect(invented.length).toBeGreaterThan(100);
+    let palette = 0;
+    for (const volume of invented) {
+      const r = volume.roofVertexRanges[0];
+      expect(r !== undefined && r.end > r.start).toBe(true);
+      // A `roof:colour` is no keep reason (only shape, height and levels
+      // are), so a colour-tagged roof can be invented: it keeps its colour.
+      const tagged = roofColour(tagsByKey.get(volume.feature) ?? {}, undefined);
+      const drawn = [...(coloursAt.get(highestRoofVertex(volume)) ?? [])];
+      const want =
+        tagged === undefined
+          ? drawn.some((c) => tones.has(c))
+          : drawn.includes(linearUnpacked(tagged).join(","));
+      if (tagged === undefined) palette += 1;
+      expect(want, volume.feature).toBe(true);
+    }
+    expect(palette).toBeGreaterThan(100);
+  });
+
+  it("gives the AR shell one value per vertex with invented roofs on", () => {
+    // Why: the AR shell reads height01 and featureRand per vertex. Invented
+    // roofs add vertices (soffits, gables) to many volumes; an attribute
+    // sized from anything but the merged vertex count shifts every later
+    // building's glow and pulse, which renders without an error.
+    const roofed = buildCity(features, ground, {
+      window: loadSite(site.id).bbox,
+    });
+    expect(roofed.volumes.some((v) => v.roofIsInvented)).toBe(true);
+    for (const chunk of roofed.buildings) {
+      const vertices = chunk.mesh.positions.length / 3;
+      expect(chunk.height01?.length).toBe(vertices);
+      expect(chunk.featureRand?.length).toBe(vertices);
+      expect(chunk.colors?.length).toBe(vertices * 3);
+      for (const h of chunk.height01 ?? []) {
+        expect(h >= 0 && h <= 1).toBe(true);
+      }
+    }
+  });
+
   it("draws no class colour that the palette, a tag or a barrier did not give", () => {
     const allowed = new Set<string>(
       allPaletteColours().map((rgb) => linearUnpacked(rgb).join(",")),
@@ -896,5 +1143,91 @@ describe("buildCity, cosmetic trees", () => {
       RangeError,
     );
     expect(() => buildCity([forest], { frame }, undefined as never)).toThrow();
+  });
+});
+
+describe("buildCity, street furniture", () => {
+  // WHY THIS MATTERS. The city builds the furniture its consumers draw: all
+  // four kinds by default (the globe and the harness have no POI layer), only
+  // the kinds asked for (OsmDemo's POI layer already draws benches and bins),
+  // none for an empty list (the globe, which draws none), and within withinM
+  // like every other object.
+  const lamp: OsmFeature = {
+    type: "node",
+    id: 40,
+    tags: { highway: "street_lamp" },
+    position: { lat: 50.9414, lng: 6.9584 },
+  };
+  const bench: OsmFeature = {
+    type: "node",
+    id: 41,
+    tags: { amenity: "bench" },
+    position: { lat: 50.9415, lng: 6.9585 },
+  };
+  const far: OsmFeature = {
+    type: "node",
+    id: 42,
+    tags: { barrier: "bollard" },
+    position: { lat: 50.98, lng: 6.9583 },
+  };
+
+  it("builds every kind by default", () => {
+    const city = buildCity([lamp, bench, far, TREE], { frame }, { window: W });
+    expect(city.furniture.map((f) => f.kind)).toEqual([
+      "lamp",
+      "bench",
+      "bollard",
+    ]);
+  });
+
+  it("builds only the kinds asked for, and none for an empty list", () => {
+    const some = buildCity(
+      [lamp, bench],
+      { frame },
+      {
+        window: W,
+        furniture: ["lamp", "bollard"],
+      },
+    );
+    expect(some.furniture.map((f) => f.key)).toEqual(["node/40"]);
+    const none = buildCity(
+      [lamp, bench],
+      { frame },
+      {
+        window: W,
+        furniture: [],
+      },
+    );
+    expect(none.furniture).toEqual([]);
+  });
+
+  it("keeps it within withinM", () => {
+    const city = buildCity(
+      [lamp, far],
+      { frame },
+      {
+        window: W,
+        withinM: 500,
+      },
+    );
+    expect(city.furniture.map((f) => f.key)).toEqual(["node/40"]);
+  });
+
+  it("leaves the buildings, trees and roads unchanged", () => {
+    const features = [...[lamp, bench, far], TREE, WALL, tower()];
+    const withIt = buildCity(features, { frame }, { window: W, roads: true });
+    const without = buildCity(
+      features,
+      { frame },
+      {
+        window: W,
+        roads: true,
+        furniture: [],
+      },
+    );
+    expect(withIt.buildings).toEqual(without.buildings);
+    expect(withIt.trees).toEqual(without.trees);
+    expect(withIt.roads).toEqual(without.roads);
+    expect(withIt.barriers).toEqual(without.barriers);
   });
 });

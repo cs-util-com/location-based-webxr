@@ -27,8 +27,11 @@ import { FAR_PLANE_M } from "./building-view.js";
 import { DEFAULT_RENDER_MULTIPLIER } from "./render-distance.js";
 import {
   lightQuery,
+  schemeQuery,
   writeLight,
+  writeScheme,
   browserPlaceUrl,
+  cameraDampingEnabled,
   cameraQuery,
   MAX_DISTANCE_M,
   parseCameraTarget,
@@ -495,6 +498,54 @@ describe("the sun pinned into a copied link (light dialog, plan 2026-09-24-2140)
   });
 });
 
+describe("the colour scheme in the link (colour schemes plan 2026-11-10-0841, D6)", () => {
+  it("writes only its own key, and removes it for the default", () => {
+    // Why this test matters: four writers share one query through
+    // replaceState, so each must preserve the others' keys; and the default
+    // is the absence, so a link never pins "today".
+    expect(schemeQuery("?lat=1&lng=2&light=v1", "night")).toBe(
+      "?lat=1&lng=2&light=v1&scheme=night",
+    );
+    expect(schemeQuery("?scheme=night&site=x", null)).toBe("?site=x");
+    expect(schemeQuery("?scheme=night", null)).toBe("");
+    expect(schemeQuery("?scheme=night&site=x", "map")).toBe(
+      "?scheme=map&site=x",
+    );
+  });
+
+  it("preserves every other key for any query and name", () => {
+    // Why this test matters: the same guarantee over arbitrary queries.
+    fc.assert(
+      fc.property(
+        fc.dictionary(
+          fc.string({ minLength: 1 }).filter((k) => k !== "scheme"),
+          fc.string(),
+        ),
+        fc.option(fc.string({ minLength: 1 }), { nil: null }),
+        (others, name) => {
+          const search = `?${new URLSearchParams(others).toString()}`;
+          const params = new URLSearchParams(schemeQuery(search, name));
+          for (const [key, value] of new URLSearchParams(search)) {
+            expect(params.getAll(key)).toContain(value);
+          }
+          expect(params.get("scheme")).toBe(name);
+        },
+      ),
+    );
+  });
+
+  it("does not touch the history when nothing changes", () => {
+    // Why this test matters: the subscriber writes on every change; an
+    // identical query must not cost a replaceState.
+    const replace = vi.fn();
+    writeScheme({ search: "?scheme=night", replace }, "night");
+    writeScheme({ search: "", replace }, null);
+    expect(replace).not.toHaveBeenCalled();
+    writeScheme({ search: "", replace }, "night");
+    expect(replace).toHaveBeenCalledWith("?scheme=night");
+  });
+});
+
 // Why this test matters: the static tile host is on in OsmDemo, and `tiles=off`
 // is the one way to compare it against the direct Overpass race from a link.
 // The knob is read-only: no writer may set or clear it, so a walk keeps it.
@@ -516,6 +567,41 @@ describe("the static tiles knob (read-only, tiles=off)", () => {
           const written = placeQuery("?tiles=off", { position: { lat, lng } });
           expect(staticTilesEnabled(written)).toBe(false);
           expect(staticTilesEnabled(lightQuery(written, null))).toBe(false);
+        },
+      ),
+    );
+  });
+});
+
+// The browser suite switches the camera's easing off with `damping=off`, so a
+// drag ends where the pointer stops instead of easing on for many frames,
+// each a software-rendered repaint. The app keeps its damping by default; and
+// because a test reloads and walks with the knob in the link, every writer
+// must leave it in place, the camera writer above all.
+describe("the camera damping knob (read-only, damping=off)", () => {
+  it("is on unless the query says damping=off", () => {
+    expect(cameraDampingEnabled("")).toBe(true);
+    expect(cameraDampingEnabled("?lat=1&lng=2")).toBe(true);
+    expect(cameraDampingEnabled("?damping=on")).toBe(true);
+    expect(cameraDampingEnabled("?damping=off")).toBe(false);
+    expect(cameraDampingEnabled("?lat=1&damping=off&lng=2")).toBe(false);
+  });
+
+  it("survives every writer untouched", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -80, max: 80, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        (lat, lng) => {
+          const placed = placeQuery("?damping=off", { position: { lat, lng } });
+          expect(cameraDampingEnabled(placed)).toBe(false);
+          const aimed = cameraQuery("?damping=off", {
+            target: { lat, lng },
+            distanceM: 420,
+          });
+          expect(cameraDampingEnabled(aimed)).toBe(false);
+          expect(cameraDampingEnabled(lightQuery(aimed, null))).toBe(false);
+          expect(cameraDampingEnabled(schemeQuery(aimed, null))).toBe(false);
         },
       ),
     );

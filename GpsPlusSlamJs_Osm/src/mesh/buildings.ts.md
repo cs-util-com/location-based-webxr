@@ -6,7 +6,23 @@ OSM features to building volumes, honouring `building:part`.
 
 ## Public API
 
-- `buildBuildings(features, { frame, groundHeightM? }): BuildingVolume[]`
+- `buildBuildings(features, { frame, groundHeightM?, inventedRoofs? }): BuildingVolume[]`
+  - **`inventedRoofs`** (default false; `buildCity` passes true): every
+    building the map says nothing about takes an invented roof or a flat lid
+    at an invented height ([`invented-roofs.ts`](invented-roofs.ts.md)). A
+    building with any roof or height tag, a part, an outline with parts, an
+    outline not drawn because what stands inside it fills it, and a
+    multi-polygon outline are drawn exactly as with the option off
+    (`site-invented-roofs.test.ts` compares the bytes on every fixture).
+- `inventedRoofTotals(features, frame): Map<OsmFeatureKey, number>` - the
+  invented height (base to top) of every building that takes an invented roof
+  or lid, from the same planner and the same input as `buildBuildings`, for
+  the obstacle index. The planner gives the same roofs in any frame
+  (`invented-roofs.ts.md`), so `frame` only needs to be near the buildings.
+- `inventedRoofPlans(features, frame, params?): Map<OsmFeatureKey, InventedPlan>`
+  - every building's invented plan (roof or lid) from the same planner and
+    input as `buildBuildings`, with optional planner parameters; what
+    `inventedRoofTotals` reads, and what the parameter sweep test varies.
 - `solidBuildingFootprints(features): SolidFootprint[]` — the same
   parts-else-outline selection, **in lat/lng and with no frame**, for
   [`nav/obstacles.ts`](../nav/obstacles.ts.md). Returns `{ feature,
@@ -46,7 +62,7 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
   polygon in `mesh`, review finding 3), `roofMethods` (the ladder step that
   drew each polygon's roof, in the same order; the seeded palette colours the
   drawn roof, M7 review MINOR 4), `footprint` (the first polygon's outer
-  ring), `outerRings` (every polygon's outer ring, which `buildCity` keeps
+  ring), `roofIsInvented` (true for a pitched invented roof; a lid has false and its invented `heights`), `outerRings` (every polygon's outer ring, which `buildCity` keeps
   the invented trees out of; r1158 review MINOR 4), `topHeightM`
   - **`roofIsApproximate` is the real flag from `buildRoof`, not a proxy.**
     Substituting "is the shape gabled or hipped?" is a _different_ claim: a
@@ -275,6 +291,11 @@ const batch = mergeMeshes(volumes.map((v) => v.mesh));
 
 ## Tests
 
+- `../testdata/sites/site-invented-roofs.test.ts` - with `inventedRoofs`: the
+  roofed counts (Meggen 225 of 226; Heidelberg 197, 195 ways and 2
+  relations; Midtown and Park Slope 0), every other volume byte-identical to
+  the off build, every invented top drawn at `topHeightM`, and
+  `inventedRoofTotals` equal to the drawn heights, on all 12 sites.
 - `part-coverage.test.ts` — the covered share (courtyards, overlaps, two outers,
   frame independence as a property).
 - `s3db-parts.test.ts` — a half-filled outline drawn (synthetic and Tower

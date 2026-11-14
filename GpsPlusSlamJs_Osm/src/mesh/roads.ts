@@ -310,6 +310,28 @@ const ROAD_RANK: ReadonlyMap<string, number> = new Map([
 /** The rank of every class the table does not name. */
 const TOP_ROAD_RANK = 3;
 
+/** Paint's clearance over the highest road a rank step could lift, metres. */
+const MARKING_CLEARANCE_M = 0.005;
+
+/**
+ * The height of road markings over the ground: one whole step above the top
+ * rank (whose ways lift at most 3.4 steps) plus 5 mm, 2.5 cm at the default
+ * step. Over 3 mm above every road (a smaller gap fought in the depth buffer
+ * at 226 m, `roads.ts.md`) and under OsmDemo's next ground rung (4 cm).
+ */
+export function roadMarkingLiftM(rankStepM = ROAD_RANK_STEP_M): number {
+  return rankStepM * (TOP_ROAD_RANK + 1) + MARKING_CLEARANCE_M;
+}
+
+/**
+ * The height of a pedestrian area over the ground: one step BELOW rank 0,
+ * whose paths start at lift 0 plus a tie fraction, so a path across a square
+ * stays on top of it. 0 with the ranks off (everything on the ground).
+ */
+export function pedestrianAreaLiftM(rankStepM = ROAD_RANK_STEP_M): number {
+  return rankStepM === 0 ? 0 : -rankStepM;
+}
+
 /** A way's class rank, 0 (paths) to 3 (every main road). */
 export function roadRank(tags: OsmTags): number {
   const highway = (tags as Record<string, string>)["highway"];
@@ -328,6 +350,8 @@ const TIE_LIFT_STEPS = 0.4;
 export interface RoadRibbon {
   readonly feature: OsmFeatureKey;
   readonly widthM: number;
+  /** Metres the whole ribbon is lifted over the ground it samples. */
+  readonly liftM: number;
   readonly mesh: MeshData;
 }
 
@@ -351,20 +375,26 @@ export function buildRoads(
     const points = dedupe(geometry.map((p) => options.frame.toEnu(p)));
     const key = featureKey(feature);
     const widthM = roadWidthM(feature.tags);
-    // A zero-length segment has no direction, so its normal is 0/0 = NaN —
-    // and one NaN deletes the entire draw call in three.js with no error.
-    if (points.length < 2) {
-      ribbons.push({ feature: key, widthM, mesh: new MeshBuilder().build() });
-      continue;
-    }
     // One lift for the whole way, its discs included: a disc under its strip
     // would leave it a fraction of a step over the class below, which the
     // depth buffer does not resolve (roads.ts.md, "The depth spike").
     const liftM =
       rankStepM * (roadRank(feature.tags) + TIE_LIFT_STEPS * keyFraction(key));
+    // A zero-length segment has no direction, so its normal is 0/0 = NaN —
+    // and one NaN deletes the entire draw call in three.js with no error.
+    if (points.length < 2) {
+      ribbons.push({
+        feature: key,
+        widthM,
+        liftM,
+        mesh: new MeshBuilder().build(),
+      });
+      continue;
+    }
     ribbons.push({
       feature: key,
       widthM,
+      liftM,
       mesh: ribbonMesh(mitreStrip(points, widthM / 2, mitreLimit), {
         points,
         half: widthM / 2,

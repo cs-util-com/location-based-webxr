@@ -57,9 +57,13 @@ import {
   isSolidBarrier,
   resolveBarrier,
 } from "../mesh/barriers.js";
-import { solidBuildingFootprints } from "../mesh/buildings.js";
+import {
+  inventedRoofTotals,
+  solidBuildingFootprints,
+  type SolidFootprint,
+} from "../mesh/buildings.js";
 import { resolveHeights } from "../mesh/building-heights.js";
-import { enuFrameAt } from "../mesh/enu.js";
+import { type EnuFrame, enuFrameAt } from "../mesh/enu.js";
 import { coverCells } from "../spatial/cell-coverage.js";
 import { waterBankLines } from "../mesh/water.js";
 import { isBridgeCrossing } from "../mesh/roads.js";
@@ -150,6 +154,14 @@ export interface BuildObstacleIndexOptions {
    * almost nothing in it.
    */
   readonly clipWaterTo?: Bbox;
+  /**
+   * Index every building the map says nothing about at its INVENTED height
+   * (`inventedRoofTotals`, the planner `buildBuildings` draws with), so an
+   * agent's walls are the drawn ones. Default true, as `buildCity`'s
+   * `inventedRoofs`; a consumer that draws with them off passes false here
+   * too and gets the library heights.
+   */
+  readonly inventedRoofs?: boolean;
 }
 
 /**
@@ -175,7 +187,7 @@ export function buildObstacleIndex(
   const all = [...features];
 
   addBarriers(all, resolution, byCell);
-  addBuildings(all, resolution, byCell);
+  addBuildings(all, resolution, byCell, options);
   addWater(all, resolution, byCell, options.clipWaterTo, bridgeDeckLines(all));
 
   return {
@@ -231,8 +243,10 @@ function addBuildings(
   features: readonly OsmFeature[],
   resolution: number,
   byCell: Map<string, Obstacle[]>,
+  options: BuildObstacleIndexOptions,
 ): void {
   const solids = solidBuildingFootprints(features);
+  const heightOf = buildingHeights(features, solids, options);
   // THE SECOND FEATURE SET THIS MODULE HAS EVER CONSULTED (DEC-R12-3), and the
   // reason is structural rather than incidental: `min_height` and
   // `building=roof` are readable from the building alone, while "a road goes
@@ -241,7 +255,7 @@ function addBuildings(
   const passagesPerSolid = passageLines(features, solids);
 
   for (const [i, solid] of solids.entries()) {
-    const { totalHeightM } = resolveHeights(solid.feature.tags);
+    const totalHeightM = heightOf(solid.feature);
     if (!Number.isFinite(totalHeightM) || totalHeightM <= 0) continue;
 
     const pierced = passagesPerSolid[i] ?? [];
@@ -261,6 +275,42 @@ function addBuildings(
       byCell,
     );
   }
+}
+
+/**
+ * A building's height for the index: the invented one where the planner
+ * gives one (`options.inventedRoofs`, default on), else the tagged or
+ * library one (`resolveHeights`).
+ */
+function buildingHeights(
+  features: readonly OsmFeature[],
+  solids: readonly SolidFootprint[],
+  options: BuildObstacleIndexOptions,
+): (feature: OsmFeature) => number {
+  const tagged = (feature: OsmFeature) =>
+    resolveHeights(feature.tags).totalHeightM;
+  if (options.inventedRoofs === false || solids.length === 0) return tagged;
+  // The planner gives the same roofs in any frame; this one is near the
+  // buildings, so its metres are close to true ones.
+  const totals = inventedRoofTotals(features, frameOverBuildings(solids));
+  return (feature) => totals.get(featureKey(feature)) ?? tagged(feature);
+}
+
+/** An ENU frame at the centre of the buildings' bounding box. */
+function frameOverBuildings(solids: readonly SolidFootprint[]): EnuFrame {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const solid of solids) {
+    for (const p of solid.rings[0] ?? []) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+  }
+  return enuFrameAt({ lat: (minY + maxY) / 2, lng: (minX + maxX) / 2 });
 }
 
 /**

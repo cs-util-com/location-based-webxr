@@ -18,7 +18,9 @@ heat scores. No three.js, no DOM.
 - `smoothedFrameMs(current, previous, now)`: the smoothed frame gap from frame timestamps;
   null until a real gap exists, unchanged on a gap that is not positive.
 - `clampSplit(x)`: the divider's share, kept in [0.05, 0.95].
-- `parseCityLookParams(search, { defaultSplit })`: `{ scene, view, split, heat, cam }`.
+- `parseCityLookParams(search, { defaultSplit })`: `{ scene, view, split, heat, roofs, cam }`;
+  `roofs` is true only for `roofs=library` (today's side drawn with the library's
+  invented roofs), and `cityLookSearch` writes it only when true.
 - `parseCameraOverride(raw)`: the link's `cam=ex,ey,ez,tx,ty,tz` (metres, render axes) as
   `{ position, target }`, or null for anything that is not six finite numbers within 5 km,
   or whose eye sits on its target. Never throws.

@@ -27,6 +27,10 @@ of `building-palette.ts`, which shares `parseOsmColour` and `roofColour`.
   lighter than the footway tan and still warm (objects plan M4a, O3's tone;
   the class still wins over `surface`); nothing is invented from `sidewalk=*`
   on a carriageway.
+- `RoadColours.markings` - the zebra paint, `MARKINGS_RGB` = `0xf4f2ec` in
+  `DEFAULT_ROAD_COLOURS` (lighter than the O3 lab's `0xd6d3ca`, which sat
+  5.5 L* from today's light motorway grey). Read by `buildCity`, not by
+  `roadColour`.
 - `parseOsmColour(raw): Rgb | undefined` — `#rgb`, `#rrggbb`, and the colour
   names the corpus uses.
 - `allBuildingColours()`, `allRoadColours()` — the palettes, for the tests.
@@ -94,3 +98,16 @@ roadColour({ highway: "footway", surface: "asphalt" }); // the class wins
 builders, the fallbacks, the lightness band and saturation ceiling for both
 palettes, the ground-contrast floor for every road colour, and the parser's
 accepted and rejected forms.
+
+## Colour schemes (OSM demo colour schemes plan 2026-11-10-0841)
+
+- `roadColour(tags, colours?)` takes an optional `RoadColours` (a colour
+  scheme's road part, `colour-scheme.ts`); absent, `DEFAULT_ROAD_COLOURS`,
+  built from this file's own tables, so the one-argument call (the O3 lab
+  calls it so) is unchanged.
+- `roadsBySurface` false lets the class beat `surface` for car roads (a
+  by-class scheme at surface-heavy Heidelberg); pedestrian classes and the
+  sidewalk keep their precedence in every scheme (DEC-R7b-4).
+- Road colours are written RAW into the chunk buffers (no linear
+  conversion), so a scheme's road hex renders lighter than the same hex on a
+  wall; pinned in `colour-scheme.test.ts`.

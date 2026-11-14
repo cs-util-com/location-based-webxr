@@ -90,7 +90,12 @@ function buildChrome(state, capture) {
     BUILDINGS.map((b) => ({
       value: b.id,
       text: b.label,
-      href: searchFor(b.id, Object.keys(b.views)[0], state.palette),
+      href: searchFor(
+        b.id,
+        Object.keys(b.views)[0],
+        state.palette,
+        state.roofs,
+      ),
     })),
     state.building.id,
   );
@@ -99,7 +104,7 @@ function buildChrome(state, capture) {
     Object.keys(state.building.views).map((view) => ({
       value: view,
       text: view,
-      href: searchFor(state.building.id, view, state.palette),
+      href: searchFor(state.building.id, view, state.palette, state.roofs),
     })),
     state.view,
   );
@@ -111,9 +116,21 @@ function buildChrome(state, capture) {
     PALETTES.map((palette) => ({
       value: palette,
       text: colourNames[palette],
-      href: searchFor(state.building.id, state.view, palette),
+      href: searchFor(state.building.id, state.view, palette, state.roofs),
     })),
     state.palette,
+  );
+  // The library's invented roofs against the flat tops before them, same
+  // building, same camera; named in the owner's language, as the colours.
+  const roofNames = { true: "erfunden", false: "flach" };
+  const roofs = linkRow(
+    "Dächer",
+    [true, false].map((on) => ({
+      value: on,
+      text: roofNames[on],
+      href: searchFor(state.building.id, state.view, state.palette, on),
+    })),
+    state.roofs,
   );
   const bugs = el(
     "p",
@@ -157,6 +174,7 @@ function buildChrome(state, capture) {
     buildings,
     views,
     colours,
+    roofs,
     bugs,
     source,
     pair,
@@ -199,6 +217,7 @@ async function run(api) {
   api.building = state.building.id;
   api.view = state.view;
   api.palette = state.palette;
+  api.roofs = state.roofs;
   const chrome = buildChrome(state, capture);
 
   const { features, window } = await loadFeatures(state.building.id);
@@ -209,6 +228,7 @@ async function run(api) {
     window,
     withinM: WITHIN_M,
     palette: state.palette,
+    inventedRoofs: state.roofs,
   });
   const objects = buildingObjects(city.buildings);
   api.triangles = objects.reduce(
@@ -229,6 +249,7 @@ export async function startBuildingGeometry() {
     building: null,
     view: null,
     palette: null,
+    roofs: null,
     triangles: 0,
   };
   window.__buildingGeometry = api;

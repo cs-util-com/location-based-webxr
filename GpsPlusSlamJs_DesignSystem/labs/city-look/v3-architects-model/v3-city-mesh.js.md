@@ -24,8 +24,9 @@ model shader reads.
   still builds that volume's flat cap at the eave, hidden under the sheet: about
   two triangles a house that are never seen.
 - A tagged building reaches `buildCity` as the same feature object; the build
-  window is `ctx.fixture.bbox` and the cosmetic trees are off (only volumes and
-  barriers are read).
+  window is `ctx.fixture.bbox`, the cosmetic trees are off (only volumes and
+  barriers are read) and the library's invented roofs are off (the variant
+  shapes its own).
 - Barriers are matte paper without lines.
 
 ## Example

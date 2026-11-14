@@ -50,17 +50,37 @@ function mixLinear(base: Rgb, tagged: Rgb, share: number): Rgb {
   return out >>> 0;
 }
 
+/**
+ * The colours `barrierColour` reads (a colour scheme's barrier part,
+ * `colour-scheme.ts`). `honourColourTags` false mixes in no tagged
+ * `colour`; materials are coloured from `barrierMaterials` either way.
+ */
+export interface BarrierColours {
+  readonly honourColourTags: boolean;
+  readonly barriers: ReadonlyMap<BarrierKind, Rgb>;
+  readonly barrierMaterials: ReadonlyMap<string, Rgb>;
+}
+
+/** Today's barrier colours, the default scheme's. */
+export const DEFAULT_BARRIER_COLOURS: BarrierColours = {
+  honourColourTags: true,
+  barriers: BARRIER_KIND_RGB,
+  barrierMaterials: BARRIER_MATERIAL_RGB,
+};
+
 /** A barrier's kind or material colour, before any tagged colour. */
-function baseColour(tags: OsmTags): Rgb {
+function baseColour(tags: OsmTags, colours: BarrierColours): Rgb {
   const kind = barrierKind(tags);
+  // Tags of no solid kind take a wall's colour (`WALL_RGB` in the default).
+  const wall = colours.barriers.get("wall") ?? WALL_RGB;
   const kindRgb =
-    (kind === undefined ? undefined : BARRIER_KIND_RGB.get(kind)) ?? WALL_RGB;
+    (kind === undefined ? undefined : colours.barriers.get(kind)) ?? wall;
   if (kind === "hedge") return kindRgb;
   const material =
     tags["material"] ??
     tags["fence_type"] ??
     (kind === "wall" ? tags["wall"] : undefined);
-  return BARRIER_MATERIAL_RGB.get(material ?? "") ?? kindRgb;
+  return colours.barrierMaterials.get(material ?? "") ?? kindRgb;
 }
 
 /**
@@ -73,8 +93,12 @@ function baseColour(tags: OsmTags): Rgb {
  *   `TAGGED_BARRIER_COLOUR_SHARE`, in linear light. Named colours resolve
  *   through the one parser (`parseOsmColour`).
  */
-export function barrierColour(tags: OsmTags): Rgb {
-  const base = baseColour(tags);
+export function barrierColour(
+  tags: OsmTags,
+  colours: BarrierColours = DEFAULT_BARRIER_COLOURS,
+): Rgb {
+  const base = baseColour(tags, colours);
+  if (!colours.honourColourTags) return base;
   const tagged =
     parseOsmColour(tags["colour"]) ?? parseOsmColour(tags["building:colour"]);
   return tagged === undefined

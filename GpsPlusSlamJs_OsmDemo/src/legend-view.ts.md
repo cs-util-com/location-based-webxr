@@ -1,6 +1,7 @@
 # `legend-view.ts`
 
-**Purpose.** Turn a `LegendModel` into DOM nodes in the header. Nothing else.
+**Purpose.** Turn a `LegendModel` into DOM nodes in the legend plate at the
+bottom of the 3D view. Nothing else.
 
 ## Public API
 

@@ -19,7 +19,7 @@ the same ground.
   the field's `heightAt` at a position's ENU metres, or flat (no sampler)
   without a field. One derivation, so every layer stands on one surface.
 - `buildCity(features, ground, { window }) → City` - `{ volumes, barriers,
-buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
+buildings, trees, cosmeticTrees, furniture, roads, roadCount }`. `window` (a lat/lng
   `Bbox`) is REQUIRED (city objects plan 2026-11-07-2315 section 4): the
   bounding box of the data the caller fetched; everything invented from a
   relation (the cosmetic trees today) stays inside it. RangeError without it.
@@ -28,6 +28,11 @@ buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
   ring of every built building (each part of a multipolygon, `outerRings`;
   also those outside `withinM`) and from road half
   widths, kept within `withinM`; never in `trees`.
+- `furniture` are the placements of `buildStreetFurniture` (lamps, bollards,
+  benches, bins from mapped nodes; input order), of the kinds in
+  `options.furniture` (default all four; `[]` builds none, which the globe
+  passes), kept within the window and `withinM`. Never obstacles, and they
+  change nothing else the city builds (pinned).
 - `buildCity(features, ground, { window, cosmeticTrees: false })` builds no
   cosmetic trees (default true, the owner's choice). `volumes` and `barriers` are the builders' own results (a caller
   that needs them, OsmDemo for its POI hosts and counters, does not build
@@ -44,6 +49,12 @@ buildings, trees, cosmeticTrees, roads, roadCount }`. `window` (a lat/lng
   building outside would stand on made-up ground (globe city plan
   2026-10-05-0040 §12.4 R12). RangeError for a `withinM` that is not a
   positive number.
+  - **Buildings outside `withinM` are still planned**, then dropped. This is
+    deliberate: their walls are the shared walls and the neighbourhood of
+    the buildings just inside, so planning only the kept ones would change
+    the roofs at the window's edge. The cost is the planning of buildings
+    that are never drawn (most of it the invented roofs), which a
+    consumer avoids with a smaller fetch, not a smaller `withinM`.
 - `buildCity(features, ground, { roads: true })` also returns `roads`: the
   `buildRoads` ribbons (draped per vertex on the ground; tunnels, covered
   ways and highway areas left out; paths included) within the window, merged
@@ -57,9 +68,24 @@ mitreLimit? }` (city objects plan 2026-11-07-2315 M4a, review MINOR 4):
   roads are built, with `buildRoads`'s look options passed through, so an
   audit or a before/after page can switch the class lift off (`rankStepM:
 0`) or bevel every turn (`mitreLimit: 1`). `{}` and `true` take the
-  builder's defaults; only those two keys are passed on, and an invalid value
-  throws the builder's `RangeError`. The defaults themselves are not on the
+  builder's defaults; only those keys are passed on, and an invalid value
+  throws the builder's `RangeError`.
+- With roads on, the zebra crossings (`road-markings.ts`) and the mapped
+  pedestrian areas (`pedestrian-areas.ts`) are built too, filtered by the
+  same window, and merged into the road chunks (areas in `roadColour`,
+  stripes in the scheme's `markings`); `zebraStripeCount` and
+  `pedestrianAreaCount` count them. `roads: { markings: false }` switches
+  both off and reproduces the roads before them byte for byte (the colour
+  identity test pins that path). Lifts follow `rankStepM`: paint above the
+  top rank, areas one step under the paths. The defaults themselves are not on the
   package entry: `roads.ts.md`.
+- On a sampled ground, paint and areas take their height from the roads
+  (`road-surface.ts`), not from the ground under their own vertices: the
+  paint the highest road ground under it, an area the lower of the ground
+  and the lowest road ground. A ribbon is a chord between its own vertices,
+  so on curved ground the raw ground parted from it by metres (the paint
+  under the road, a square over a road crossing it). Off every road both
+  take the ground. Flat ground skips the index: the two agree there.
 - `buildCity(features, ground, { palette })` picks the colours of a
   building without colour tags (city objects plan 2026-11-07-2315 M7):
   `"seeded"` (default) the warm palette of `building-palette.ts`, picked from
@@ -113,7 +139,9 @@ for (const chunk of city.buildings) draw(chunk);
 
 ## Tests
 
-`city.test.ts` - volumes, barriers and trees built; an untagged part coloured
+`city.test.ts` - volumes, barriers and trees built; street furniture of
+every kind by default, only the kinds asked for, none for `[]`, within
+`withinM`, and the rest of the city unchanged by it; an untagged part coloured
 exactly as its parent (and differently under another parent), in linear light;
 a barrier coloured by its kind; a mid-grey `roof:colour` reaching the roof
 vertices in linear light; a part's own colour and the roof colours in
@@ -124,7 +152,10 @@ metres; `withinM` dropping what lies outside, keeping all without it, keeping a
 building's parts together (`s3db-parts.test.ts`), and
 refusing a non-positive window; the cosmetic trees on by default, in their
 own field, none when switched off, none inside a built house, within
-`withinM`, and the build refused without a window; roads only when asked (`null` as `false`), the roads and paths
+`withinM`, and the build refused without a window; roads only when asked (`null` as `false`), zebras and pedestrian areas on
+with the roads and off with `markings: false` (and the O3 scene counts in
+`site-roads.test.ts`), paint over and a square under the road on a curved
+ground stub, the roads and paths
 coloured by class and surface and never a tunnel, draped on the ground, kept
 within the window; the seeded palette by default (walls and flat or pitched
 roofs from the key, a pitched tag drawn as a prism in a flat grey, a part
@@ -135,3 +166,33 @@ roof vertices: 150 pitched volumes, 81 roof-coloured, 69 seeded, 3 of them
 drawn as flat lids and so grey; no stray
 colour anywhere). OsmDemo's worker tests and browser suite cover the same assembly in
 use.
+
+## Colour schemes (OSM demo colour schemes plan 2026-11-10-0841)
+
+- `CityOptions.colours?: CityColourScheme` (`colour-scheme.ts`): absent,
+  `DEFAULT_CITY_COLOUR_SCHEME`; present, validated at this boundary
+  (`RangeError` for a malformed scheme) and passed to the palette, road,
+  barrier and tree colour functions.
+- Under `palette: "class"` the class colours of buildings are unchanged by a
+  scheme; everything else (roads, barriers, trees) follows it.
+- **The identity guard**: `colour-identity.test.ts` holds the colour buffers
+  and tree colours of twelve fixture sites, under both palettes, with no
+  scheme and with the default passed explicitly, to golden digests recorded
+  at 7f1d01edd before schemes existed (Reuss, added later, was digested from
+  that commit's source too). The Globe, the Tour Editor and the labs build
+  without a scheme, so this is what holds them unchanged.
+- `CityOptions.groundTint?: boolean` (default false): `City.groundTint` is
+  the land use painted over `window` (`ground-tint.ts`) in the scheme's
+  `landUse` colours over its `ground`. Absent unless asked, so the Globe and
+  the Tour Editor (no tint, owner) build no raster. Tested in
+  `ground-tint.test.ts` ("buildCity's ground tint").
+- `CityOptions.inventedRoofs?: boolean` (default true, the owner's default
+  look): passed to `buildBuildings`, so every building the map says nothing
+  about takes an invented roof or lid ([`invented-roofs.ts`](invented-roofs.ts.md)).
+  An invented roof is drawn by the skeleton, so `drawsPitchedRoof` colours
+  it from the pitched tones; a lid takes a flat tone. The colour identity
+  test passes `false`: an invented roof is new geometry and moves the
+  buildings digest by construction. Tested in `city.test.ts` (Heidelberg:
+  pitched tones or the tagged `roof:colour` on every invented roof, and the
+  AR shell attributes one value per vertex) and
+  `site-invented-roofs.test.ts`.

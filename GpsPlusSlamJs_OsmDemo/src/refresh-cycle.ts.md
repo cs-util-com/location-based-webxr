@@ -95,3 +95,35 @@ page-side stages and hands the composed breakdown to a callback.
   time at all — the per-ring algebra cancels it. Opened after the dispatch, as
   it was until the r504 review, that stage was unmeasurable everywhere while
   three documents claimed it was covered.
+
+## The colour scheme (colour schemes plan 2026-11-10-0841 section 4.4)
+
+`RefreshCycleOptions.colourScheme?: () => string` is read at POST time, per
+ring, like the datum, and sent as `colourScheme`; `main.ts` answers the
+default while AR runs (D9). Omitted sends none (the worker's default).
+Tested in `refresh-cycle.test.ts`.
+
+`drawnBuildKey?: () => string | undefined` is read at post time too and sent
+as `drawnBuildKey` (`main.ts`: `latestMesh?.buildKey`), so the worker rebuilds
+whenever the page does not draw this pass's build.
+
+`groundTint?: () => boolean` is read at post time and sent as `groundTint`;
+`main.ts` answers `false` while AR runs, so AR's passes skip the land-use
+tint. Omitted sends none (the worker builds the tint). Tested in
+`refresh-cycle.test.ts`.
+
+`onBuildFailed?: (failed: MeshBuildChoices) => void` is called with a failed
+city build's choices (`failedBuildOf(error)`) BEFORE `fetchFailed` is
+dispatched, so the switch can revert its own failed build before the store's
+error ends its wait.
+
+## Invented roofs
+
+`inventedRoofs?: () => boolean` is read at post time, like the scheme, and sent
+as `inventedRoofs`; omitted, the request leaves the field out and the worker
+builds them. `main.ts` answers from the store (AR included). Tested by "sends
+whether invented roofs are wanted, read at POST time".
+
+`markings?: () => boolean` (zebras and pedestrian areas) is read and sent the
+same way; tested by "sends whether zebras and pedestrian areas are wanted,
+read at POST time".

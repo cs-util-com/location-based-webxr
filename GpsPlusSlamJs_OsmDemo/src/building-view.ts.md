@@ -164,7 +164,7 @@ map scored.
   thing that did was the user dragging the camera — which is how the bug was
   reported: the picture returns the moment you touch it. **Any new caller that
   changes the canvas size must schedule a frame**; the callers are the container
-  `ResizeObserver`, the mobile sheet drag and the header collapse, and the sheet
+  `ResizeObserver` and the mobile sheet drag, and the sheet
   drag is the harsh one because it calls `resize()` on every pointer move
   (coalescing in `requestFrame` is what keeps that to one frame per animation
   frame).
@@ -178,12 +178,16 @@ map scored.
   stays green. Passing `updateStyle: true` as well would write an inline style
   that beats the stylesheet, so the rule would silently stop being the mechanism.
 - **The size trigger is a `ResizeObserver` on the CONTAINER, not a `window`
-  listener.** The container is the `1fr` row of a `auto 1fr` grid, so it shrinks
-  when the header grows — and the header grows with no window resize at all, as
+  listener.** Since the command bar the container no longer shares the window
+  with a header row: the bar and its panels float over both panes, so opening a
+  panel or turning the cells on never resizes the canvas (asserted by
+  `playwright-tests/hud-layout.spec.js`). History: the container was the `1fr`
+  row of a `auto 1fr` grid, so it shrank
+  when the header grew — and the header grows with no window resize at all, as
   soon as the status line fills in and wraps. Measured at 1280x800: the drawing
   buffer sat **109 px taller than its container** for the whole session, on a
   stale camera aspect. The observer covers window resize, rotation, the sheet
-  drag and the header collapse in one place.
+  drag and (then) the header collapse in one place.
 - **The sky is the framework's physical atmosphere, through
   [`atmosphere-rig.ts`](atmosphere-rig.ts.md)** (plan 2026-09-23-0048, M3). It
   owns the visible sky, `scene.environment` (a PMREM bake of the sky), the sun
@@ -485,6 +489,79 @@ AR exits already pass through — including the Android back gesture, where
 nothing calls `ArMode.dispose()`. `ar-walk-wiring.test.ts` pins that pairing by
 location; `building-view-content.test.ts` pins the four invariants above.
 
+## `setAmbientOcclusion()`: the ambient occlusion
+
+- `setAmbientOcclusion(on: boolean): void` switches the framework's
+  `createAmbientOcclusion` (deep import
+  `gps-plus-slam-app-framework/visualization/ambient-occlusion`) and
+  schedules one frame. Nothing is rebuilt. The view starts with it off
+  (`data-ao="off"`); `main.ts` switches it from the store at boot.
+- **Every render path multiplies it on**: the frame (`requestFrame`) and
+  `measureLight`'s reads, so the brightness readout measures the view as
+  seen. In the frame it runs AFTER `lastDrawCost` is captured, because
+  its own renders reset `renderer.info`, and the cost reported is the
+  scene's. `clearScene` draws the empty scene without it.
+- **Off is today's frame exactly**: no pass runs and nothing is built; the
+  pass is built on the first enabled frame. On, the factor is exactly 1
+  past the fade window (`AO_FADE`, 700-1400 m of view depth), which ends
+  before the nearest the fog ever starts (`FOG_NEAR_M`, 1584 m at the
+  shortest render distance), so the fogged distance and the sky keep
+  their colour bit for bit.
+- **Display exponent 1** (`AO_DISPLAY_EXPONENT`): the linear factor is
+  multiplied straight onto the tone-mapped, sRGB-encoded canvas, so the
+  creases read darker than with the framework's default 1 / 2.2, which
+  stays unchanged for every other caller. The stronger look was chosen
+  side by side on the phone; it is fixed here, and no link or option
+  changes it (`building-view-ambient-occlusion.test.ts` pins both).
+- **Off while the ground is displaced on the GPU**, whatever the switch
+  says. The AO's normal/depth pass draws every mesh with one override
+  material, which does not run the ground's displacement shader, so it
+  would see a flat ground under raised terrain and darken the wrong places.
+  `setAmbientOcclusion` records the wish (`aoWanted`), and both it and
+  `setGroundDisplacement` call `applyAmbientOcclusion`, which draws the AO
+  only for `aoWanted && displacement !== "gpu"`. Leaving `gpu` brings it
+  back without a further switch.
+- `data-ao` ("on" / "off") on the container says which is drawn (so it
+  reads "off" in the `gpu` ground mode with the switch on).
+- `dispose()` frees the pass with the renderer.
+- Tests: `building-view-ambient-occlusion.test.ts` (source-level: the
+  fade ends before the fog, the draw order, the GPU-ground condition in both
+  setters, the only importer); the frame itself in
+  `playwright-tests/scene-3d.spec.js` ("ambient occlusion", which also
+  logs the heat grid's margin with the AO on and off as a reported number,
+  and proves `data-ao` goes off in the `gpu` ground mode and back on after).
+  The tests that ask about geometry rather than the look boot with `ao=off`:
+  the light gates, the CPU/GPU ground A/B (the AO would be drawn on one side
+  only) and the buildings-from-beneath test with its sky-only page (the
+  AO's second pass slows each software frame past the damping settle wait).
+
+### Measuring the AO's cost on a phone
+
+The e2e runs in software rendering, where the AO adds about 44 % per
+frame (645 ms to 930 ms at full resolution, 729 ms at half). That says
+nothing about a phone's GPU, so the cost is measured there:
+
+1. Open the branch preview on the Android phone in Chrome and attach the
+   desktop DevTools through `chrome://inspect`.
+2. Boot the same place twice with the same URL, once as it is (AO on) and
+   once with `&ao=off` added. Or switch the "Ambient occlusion" box in the
+   light dialog (the Light button); do not tap into the scene, a tap sends
+   the NPC walking and changes the frame.
+3. **Still view:** record 10 s in the Performance panel without touching
+   the screen. The demo draws on demand, so a still view mostly shows the
+   last few frames; note their GPU time.
+4. **Moving view, the number that matters:** record 10 s while dragging
+   the view with one finger in slow, steady strokes, and once more while
+   the camera eases out after a fling. Every frame redraws then, so the
+   mean frame time and the share of frames over 16.7 ms and 33 ms compare
+   directly between AO on and off. The Rendering tab's "Frame rendering
+   stats" overlay gives a second reading of the frame rate.
+5. Do both at a near view (about 300 m) and a far one (1-2 km, where the
+   fade has removed most of the AO but the pass still runs).
+6. The status line's "N draws / M tri" is captured before the AO pass on
+   purpose, so it reads the same with the AO on and off; the cost shows
+   only in the frame times.
+
 ## `setFarPlane()` — the render-distance dial (r541 Q9/Q10)
 
 A **debug instrument, not a new default.** `FAR_PLANE_M` is unchanged and
@@ -554,3 +631,62 @@ field ask that raised the default was literally about zooming further out.
   refetch during AR cannot bring them back, and leaving AR shows them again.
 - Pinned by `building-view-content.test.ts` (a source-text test, as the view
   cannot be built in vitest) and `mesh-layers.test.ts` ("showCosmetic").
+- The street furniture is held the same way (toggles plan 2026-11-10-1902
+  T2): `showFurniture(this.group, material === undefined)`, under its own
+  `cityLayer` flag because the items are mapped. Hidden, its instanced meshes
+  are not rendered, so their 80 m cut does not repack in AR.
+  `building-view-ar-hold.test.ts` runs the real `setArShellMaterial` on a
+  minimal view: a rebuild's new furniture is hidden once the hold is
+  re-applied, and shown again on leaving AR.
+
+## Land-use tint and scheme ground colours (colour schemes plan 2026-11-10-0841 S3)
+
+- `render(mesh)` hands `mesh.groundTint` to a `land-use-tint.ts` control on
+  the lit ground material (every build, so a build without one drops it).
+- `setLandUseTint(on)` - the `tint` layer switch, a uniform write;
+  `setGroundAppearance` also tells the control (the ramp hides the tint).
+  `landUseTintShowing()` reports the result.
+- `setGroundColours(ground, slope)` - the scheme's ground (sRGB, the material
+  colour while no tint is applied) and the slope treatment's linear colours.
+- `dispose()` frees the tint's texture before the material.
+- `setBrightnessTrim(trim)` (colour schemes plan 4.4, D4) - multiplied into the
+  noon gain wherever it is applied (the frame loop and `render`), so it reaches
+  buildings and roads only; `RangeError` outside 0.5-2. `main.ts` sets it,
+  with the ground colours, from the scheme each full mesh was built in.
+
+## The woods governor and the `?perf=1` readout (city objects M2b)
+
+- **Options:** `woodsAuto` (absent: off) lets the library's woods governor
+  thin the invented woods; `perfReadout` (absent: hidden) mounts the frame
+  readout, a `data-testid="perf-readout"` line over the pane's top-left
+  corner, removed by `dispose()`. It and the `?stats` panel start just below
+  the command bar (`--hud-bar-h`), because the bar covers the pane's top strip. `main.ts` reads both from the link
+  (`woods-readout.ts` `readWoodsKnobs`). `cameraDamping` (absent: on) is
+  `MapControls.enableDamping`; only the browser suite's read-only
+  `?damping=off` (`url-state.ts` `cameraDampingEnabled`) turns it off, so a
+  drag stops where the pointer does instead of easing on for about 160
+  software-rendered repaints.
+- **Chained frames only.** This view draws on demand, so `requestFrame`
+  records whether it was called from within the frame callback (a drag's
+  damping through the controls' `change`, a walk), and only such a frame's
+  interval is measured. The first frame of a burst follows an idle pause and
+  measures nothing; without this every phone would read its pauses as slow
+  frames and lose its woods.
+- **Order in the frame:** the governor is fed BEFORE the render, and a share
+  it just moved is applied then (`applyWoodsShare` on the group), so the frame
+  that crossed the line already draws fewer trees; an unchanged share is
+  never re-applied. `render()` re-applies the current share to every rebuild,
+  so a refetch on a slow phone keeps its thinned woods. The readout is
+  written AFTER the render, with this frame's draws and triangles.
+- **Desktop:** auto is off, so the share stays 1; the readout still shows the
+  measured frame time and p95.
+- Tested: the numbers in `woods-readout.test.ts`; the readout's presence,
+  absence and frame time in `playwright-tests/scene-3d.spec.js` ("the woods governor's frame readout").
+
+### Measuring the woods on a phone
+
+Open the branch preview's OsmDemo at the place, with `&perf=1` added, drag
+and orbit for some seconds, then read the line: `frame` (smoothed
+counted-frame ms), `p95` (last 10 s), `woods N % (mode)`, the invented trees
+drawn, draws and triangles. Repeat with `&woodsauto=off` for the full woods,
+and with `&treeform=trunk` for the trunk form.

@@ -8,7 +8,10 @@ assumed.
 
 ## Public API
 
-- `GROUND_COLOUR` — `0x6b7280`, the ground plane (DEC-R6-6).
+- `GROUND_COLOUR` - `0x6b7280`, the ground plane (DEC-R6-6). It equals the
+  library's `DEFAULT_GROUND_RGB`, which the land-use tint and the default
+  colour scheme paint, held by a test (a literal because the design-system
+  labs load this file without a resolver for the library).
 - `PLATE_COLOUR` — `0x848d9e`, landuse plates (DEC-R6b-7).
 - `relativeLuminance(colour: number): number` — WCAG sRGB relative luminance of a
   packed `0xrrggbb`, 0–1.

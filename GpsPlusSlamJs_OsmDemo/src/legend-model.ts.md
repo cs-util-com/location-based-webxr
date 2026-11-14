@@ -80,7 +80,8 @@ are worth reading as numbers, while the observed maximum comes from the data and
 genuinely reaches `1.7e11`, where a short form still earns its keep. See
 `heat-colours.ts.md` for why the spell-out is bounded rather than unconditional.
 
-**The collapsed header now hides the ramp and keeps the category name** (F3e,
-DEC-U7) — a CSS rule in `index.html`, not a model change. It is **not** a
-reversal of DEC-1, which requires a legend that NAMES the current category;
-`.legend-category` still does.
+**The legend plate shows only while the cells are on** - a CSS rule in
+`index.html`, not a model change; meanwhile the command bar's category picker
+names the category. It is **not** a reversal of DEC-1, which requires a legend
+that NAMES the current category; `.legend-category` still does whenever the
+plate is shown.

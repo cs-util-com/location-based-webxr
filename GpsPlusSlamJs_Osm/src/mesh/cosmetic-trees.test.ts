@@ -391,6 +391,14 @@ describe("a wood larger than a spread can carry", () => {
   // failed (colour schemes plan 2026-11-10-0841, S6). 300 k candidates is
   // well past the limit of every engine; the cap keeps the result small.
   it("places the capped trees of a wood with 300 000 candidate cells", () => {
+    // The premise, pinned: uncapped, this wood has more candidates than a
+    // spread can carry, so the capped build below really crosses the limit
+    // (measured 299 935 against the old limit of about 125 000).
+    const uncapped = build([wood(square(0, 0, 1000, 1000))], {
+      densityPerM2: 0.3,
+      cap: Infinity,
+    });
+    expect(uncapped.length).toBeGreaterThan(125_000);
     const trees = build([wood(square(0, 0, 1000, 1000))], {
       densityPerM2: 0.3,
       cap: 10,

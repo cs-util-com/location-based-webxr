@@ -22,12 +22,13 @@ overpassTiles, heightUrls, window }`. Pure.
     - RangeError: a target that is not a latitude and longitude, a zoom
       that is not an integer 0-15, no template or one without `{z}`, `{x}`,
       `{y}`, rings that are not strictly ascending positive integers.
-  - `createCityTileSource(store, { userAgent, fetchImpl?, staticTiles? })` →
+  - `createCityTileSource(store, { userAgent, fetchImpl?, staticTiles?, onCacheMiss? })` →
     `CachingSource(OverpassSource)`: the endpoint race behind the store;
     with `staticTiles: { baseUrl }` the store wraps
     `StaticTileSource(baseUrl, fallback: the race)` instead (off by default;
     see [static-tile-source.ts.md](../source/static-tile-source.ts.md)).
-    `userAgent` is each app's own.
+    `userAgent` is each app's own. `onCacheMiss` is forwarded to the cache
+    (see [caching-source.ts.md](../source/caching-source.ts.md)).
   - `loadCityData(plan, options)` → `{ progress(), landingProgress(),
 counts(), done,
 finished, abort() }`. Options: `source`, `heightFetch` (e.g.

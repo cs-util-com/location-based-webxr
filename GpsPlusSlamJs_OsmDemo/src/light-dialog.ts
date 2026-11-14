@@ -55,6 +55,14 @@ export interface LightDialogDeps {
   readonly showError: (message: string) => void;
   /** Runs `callback` once the in-progress state has painted. */
   readonly nextFrame?: (callback: () => void) => void;
+  /**
+   * The ambient occlusion switch, when the page offers one. Not a light
+   * setting: Copy, Reset and the light link never carry it.
+   */
+  readonly ambientOcclusion?: {
+    readonly initial: boolean;
+    readonly onChange: (on: boolean) => void;
+  };
 }
 
 export interface LightDialog {
@@ -91,9 +99,20 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   panel.className = "plate prose";
   panel.hidden = true;
   panel.setAttribute("aria-label", "Light settings");
+  // THE BACK ARROW: the dialog stacks over the settings drawer it is opened
+  // from, and going back closes it and leaves the drawer as it was.
+  const head = document.createElement("div");
+  head.className = "light-head";
+  const back = document.createElement("button");
+  back.type = "button";
+  back.id = "light-back";
+  back.className = "light-back";
+  back.setAttribute("aria-label", "Back to settings");
+  back.textContent = "‹";
   const heading = document.createElement("h2");
   heading.textContent = "Light";
-  panel.append(heading);
+  head.append(back, heading);
+  panel.append(head);
 
   const inputs = new Map<keyof LightSettings, HTMLInputElement>();
   const values = new Map<keyof LightSettings, HTMLOutputElement>();
@@ -115,6 +134,20 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     panel.append(label);
     inputs.set(field, input);
     values.set(field, value);
+  }
+
+  let aoBox: HTMLInputElement | undefined;
+  if (deps.ambientOcclusion !== undefined) {
+    const label = document.createElement("label");
+    label.className = "light-row";
+    aoBox = document.createElement("input");
+    aoBox.type = "checkbox";
+    aoBox.id = "light-ao";
+    aoBox.checked = deps.ambientOcclusion.initial;
+    const text = document.createElement("span");
+    text.textContent = "Ambient occlusion";
+    label.append(aoBox, text);
+    panel.append(label);
   }
 
   const readout = document.createElement("p");
@@ -178,6 +211,13 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     input.addEventListener("change", brightness);
   }
 
+  // Applied at once (the view redraws one frame); the brightness it now
+  // gives is read back while the panel is open.
+  aoBox?.addEventListener("change", () => {
+    deps.ambientOcclusion?.onChange(aoBox.checked);
+    if (!panel.hidden) brightness();
+  });
+
   reset.addEventListener("click", () => {
     apply(DEFAULT_LIGHT_SETTINGS);
     brightness();
@@ -226,9 +266,13 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   });
 
   // Escape from anywhere while open: the dialog is opened by its button or
-  // the l key, so focus starts outside it.
+  // the l key, so focus starts outside it. The key is marked handled, so a
+  // panel under the dialog (the settings drawer) stays open: one Escape
+  // closes one layer.
   const onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") close();
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    close();
   };
   const setExpanded = (expanded: boolean) =>
     deps.opener?.setAttribute("aria-expanded", String(expanded));
@@ -252,6 +296,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     if (hadFocus) deps.opener?.focus();
   };
   closeButton.addEventListener("click", close);
+  back.addEventListener("click", close);
 
   show(settings);
   return {

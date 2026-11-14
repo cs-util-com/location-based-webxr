@@ -113,3 +113,40 @@ describe("createOsmTileSource with the static tile host", () => {
     );
   });
 });
+
+// Why this test matters: the loading overlay names a download only while one
+// is happening. The worker learns that here: a tile served from the cache is
+// local work and must not be reported, a miss someone waits on must be, and a
+// background ring warm (speculative) must not be, because nobody waits on it.
+describe("createOsmTileSource reports a foreground download", () => {
+  const tile = "871fa199affffff";
+  const answer = () =>
+    Promise.resolve(
+      new Response(JSON.stringify({ version: 0.6, elements: [] }), {
+        status: 200,
+      }),
+    );
+
+  it("reports a foreground miss and stays silent on the cache hit after it", async () => {
+    const onForegroundDownload = vi.fn();
+    const source = createOsmTileSource(new MemoryBlobStore(), {
+      fetchImpl: vi.fn(answer) as unknown as typeof fetch,
+      onForegroundDownload,
+    });
+    await source.fetchTile(tile);
+    expect(onForegroundDownload).toHaveBeenCalledTimes(1);
+    expect(onForegroundDownload).toHaveBeenCalledWith(tile);
+    await source.fetchTile(tile);
+    expect(onForegroundDownload).toHaveBeenCalledTimes(1);
+  });
+
+  it("never reports a speculative fetch", async () => {
+    const onForegroundDownload = vi.fn();
+    const source = createOsmTileSource(new MemoryBlobStore(), {
+      fetchImpl: vi.fn(answer) as unknown as typeof fetch,
+      onForegroundDownload,
+    });
+    await source.fetchTile(tile, { speculative: true });
+    expect(onForegroundDownload).not.toHaveBeenCalled();
+  });
+});

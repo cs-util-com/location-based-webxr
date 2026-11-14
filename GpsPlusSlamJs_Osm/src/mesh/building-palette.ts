@@ -42,6 +42,26 @@ export const FLAT_ROOF_TONES: readonly Rgb[] = [
   0x8a8782, 0x7a7772, 0x97938c, 0x6f6d6a,
 ];
 
+/**
+ * The colours `seededBuildingColours` reads (a colour scheme's building
+ * part, `colour-scheme.ts`). `honourColourTags` false paints every building
+ * from the tone lists, whatever its `building:colour` / `roof:colour` say.
+ */
+export interface PaletteColours {
+  readonly honourColourTags: boolean;
+  readonly walls: readonly Rgb[];
+  readonly pitchedRoofs: readonly Rgb[];
+  readonly flatRoofs: readonly Rgb[];
+}
+
+/** Today's palette, the default scheme's. */
+export const DEFAULT_PALETTE_COLOURS: PaletteColours = {
+  honourColourTags: true,
+  walls: WALL_TONES,
+  pitchedRoofs: PITCHED_ROOF_TONES,
+  flatRoofs: FLAT_ROOF_TONES,
+};
+
 /** The wall and roof colour of one building volume. */
 export interface BuildingColours {
   readonly wall: Rgb;
@@ -67,21 +87,27 @@ export function seededBuildingColours(
   outline: OsmTags | undefined,
   key: string,
   pitched: boolean,
+  colours: PaletteColours = DEFAULT_PALETTE_COLOURS,
 ): BuildingColours {
   const seed = typeof key === "string" ? key : "";
-  const wall =
-    parseOsmColour(tags["building:colour"]) ??
-    parseOsmColour(outline?.["building:colour"]) ??
-    pick(WALL_TONES, seed, "wall");
+  const honour = colours.honourColourTags;
+  const taggedWall = honour
+    ? (parseOsmColour(tags["building:colour"]) ??
+      parseOsmColour(outline?.["building:colour"]))
+    : undefined;
+  const taggedRoof = honour ? roofColour(tags, outline) : undefined;
+  const wall = taggedWall ?? pick(colours.walls, seed, "wall");
   const roof =
-    roofColour(tags, outline) ??
+    taggedRoof ??
     (pitched
-      ? pick(PITCHED_ROOF_TONES, seed, "roof")
-      : pick(FLAT_ROOF_TONES, seed, "lid"));
+      ? pick(colours.pitchedRoofs, seed, "roof")
+      : pick(colours.flatRoofs, seed, "lid"));
   return { wall, roof };
 }
 
 /** Every tone the palette can draw, for the chroma check. */
-export function allPaletteColours(): Rgb[] {
-  return [...WALL_TONES, ...PITCHED_ROOF_TONES, ...FLAT_ROOF_TONES];
+export function allPaletteColours(
+  colours: PaletteColours = DEFAULT_PALETTE_COLOURS,
+): Rgb[] {
+  return [...colours.walls, ...colours.pitchedRoofs, ...colours.flatRoofs];
 }

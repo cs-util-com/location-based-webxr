@@ -56,3 +56,20 @@ uniforms.uSlope.value = 1; // no recompile
   shaders; it chains rather than replacing; the uniform object is shared; the
   material is marked for recompilation.
 - `terrain-slope.test.ts` covers the arithmetic this mirrors.
+
+## Colours (colour schemes plan 2026-11-10-0841, S3)
+
+- `GroundSlopeColours` `{cool, warm, isoline, rim}` are LINEAR rgb triples,
+  uniforms `uSlopeCool`, `uSlopeWarm`, `uSlopeIsoline`, `uSlopeRim` since S3.
+  `DEFAULT_GROUND_SLOPE_COLOURS` holds the literals the shader carried, so the
+  default look is unchanged; `slopeColourUniforms()` makes the uniform objects
+  (shared by every ground material), and `setGroundSlopeColours(uniforms,
+colours)` writes them in place (no recompile), `RangeError` for a channel
+  outside [0, 1], nothing written then.
+- Tested in `ground-slope-shader.test.ts` (defaults equal the old literals, no
+  literal left, writes in place, refusal).
+
+Since S4 the colour data (`LinearRgb`, `GroundSlopeColours`,
+`DEFAULT_GROUND_SLOPE_COLOURS`, the validation) lives in
+`ground-slope-colours.ts`, which has no three.js import, because the colour
+scheme table that names it is also read by the worker.

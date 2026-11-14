@@ -19,11 +19,14 @@ three-free; three.js is an optional peer, loaded only by this entry.
   `MeshStandardMaterial` (white, `vertexColors`, `FrontSide`, `flatShading`,
   roughness 0.55, metalness 0, `userData.neutralSurface`) and
   `userData.solid` and `userData.cityLayer = "buildings"` on the mesh.
-- `treeObjects(placements)` → one `InstancedMesh` per tree variant present
+- `treeObjects(placements, { form? })` → one `InstancedMesh` per tree variant present
   (`packInstances` groups and reflects ENU to scene), on shared geometry and
   material, each flagged `userData.sharedResources`, each instance coloured
   through `instanceColor` from the placement sRGB colour (converted with
-  `SRGBColorSpace`). Empty in, empty out.
+  `SRGBColorSpace`). Empty in, empty out. `form: "trunk"` draws the
+  trunk-and-crown option instead (`trunk-trees.ts`: four meshes per variant,
+  two levels by distance); an unknown form is a RangeError. Type `TreeForm`
+  (`crown` | `trunk`), `TreeObjectOptions`.
 - `roadObjects(chunks)` → one mesh per road chunk (`buildCity` with
   `roads`), OsmDemo's look moved here (round-4 plan 2026-10-11-0122
   DEC-R4-7): white plus vertex colours, opaque (a vertex disc overlaps its
@@ -31,16 +34,27 @@ three-free; three.js is an optional peer, loaded only by this entry.
   roughness 0.9, `userData.neutralSurface`; each carries
   `userData.cityLayer = "roads"` and lies at its ground (the lift off a
   drawn ground is each app's: OsmDemo's ladder, the globe's relief).
-- `cosmeticTreeObjects(placements)` → `treeObjects` for `City.cosmeticTrees`,
-  each mesh flagged `userData = { sharedResources: true, cosmetic: true }`
+- `cosmeticTreeObjects(placements, { form? })` → `treeObjects` for
+  `City.cosmeticTrees`, each mesh's `userData` gaining `cosmetic: true`
   so an app can hide the invented trees (OsmDemo's `woods` layer, AR)
   without touching the mapped ones. Instances keep the build's rank order
   within each form (`packInstances` preserves order), so drawing the first n
   thins a wood evenly (city objects plan 2026-11-07-2315 M2a; the phone
   governor of M2b).
-- `cityObjects(city)` → buildings, then trees, then the cosmetic trees (when
-  the city has them), then roads (when the city has them), for a
-  `buildCity` result.
+- `applyWoodsShare(objects, share)` → draws `share` of the invented trees
+  among `objects`: `count = ceil(capacity x share)` on each crown-form
+  cosmetic mesh (a rank prefix), the share handed to the sort of each
+  trunk-form one (`setTreeLodShare`). Mapped trees and every other object
+  are left alone. Returns the invented trees now drawn (each counted once).
+  RangeError for a share outside (0, 1]. The share comes from
+  `woods-governor.ts`.
+- `cityObjects(city, { furnitureCutM?, treeForm? })` → buildings, then trees, then the
+  cosmetic trees (when the city has them), then roads (when the city has
+  them), then the street furniture (when the city has it;
+  `streetFurnitureObjects` in `street-furniture.ts`, drawn within
+  `furnitureCutM` of the eye, default 80 m), for a `buildCity` result.
+  `treeForm` draws the mapped and the invented trees in that form (default
+  `crown`).
 - `disposeCityObjects(objects)` → disposes each mesh's geometry and
   materials, skipping any object flagged `sharedResources`.
 
@@ -112,5 +126,10 @@ three forms (triangle counts, vertex shade, unit bounds, the material); disposal
 material and never the trees' shared geometry; the road row's material,
 layer flag and zero lift, and roads in `cityObjects` only when built; the
 cosmetic meshes flagged, one per form, in rank order, and drawn by
-`cityObjects` only when the city has them. OsmDemo's
+`cityObjects` only when the city has them; the woods share as a rank prefix
+that leaves the mapped trees alone, in both forms, and its RangeError; the
+crown form unless the trunk form is asked for. `city-objects.property.test.ts`:
+a smaller share draws a subset of a larger one and full draws every tree, in
+both forms. The crown geometry lives in `crown-hull.ts`. `street-furniture.test.ts` covers
+the furniture in `cityObjects` (its cut, and never freed). OsmDemo's
 `mesh-layers.test.ts` covers the rows that delegate here.

@@ -35,6 +35,10 @@ the counters and the layers only OsmDemo draws.
   tagged `userData.cosmetic` (the woods layer), leaving mapped objects alone.
   Absolute, so idempotent after a rebuild. `BuildingView.setArShellMaterial`
   calls it: the woods are off in AR (owner decision, objects M2a).
+- `showFurniture(root, visible)` - shows or hides every object under `root`
+  tagged `cityLayer: "furniture"` (the furniture layer). Absolute, so
+  idempotent after a rebuild. `BuildingView.setArShellMaterial` calls it:
+  lamps and bollards are off in AR (toggles plan 2026-11-10-1902 T2).
 - `meshLayerSelection(layers: LayerSet) → MeshLayers` — narrows the registry's
   full set to the mesh layers.
 - `wantsAnyMeshLayer(layers: LayerSet) → boolean` — whether `render` has
@@ -168,3 +172,37 @@ the two tagged materials scale, idempotent, bad gains refused):
   resolves to no feature, because there is none.
 - Hidden in AR by `showCosmetic` (above). Tests: `mesh-layers.test.ts`
   ("the woods layer", "showCosmetic"), `building-view-content.test.ts`.
+
+## The furniture layer (city objects plan 2026-11-07-2315 M5)
+
+- Row `furniture`: `streetFurnitureObjects(mesh.furniture)` from the Osm
+  library: mapped street lamps and bollards (the worker builds only these two
+  kinds; benches and bins are the `poi` layer's), one instanced mesh per model,
+  drawing the items within 80 m of the camera and repacking after it moves
+  4 m. Counter `furniture` is what was built, not what the cut draws.
+- Tagged `cityLayer: "furniture"`, NOT `cosmetic`: the items are mapped, so
+  they keep their own flag. On by default (toggles plan T2), off with the
+  layer switch at draw time (no rebuild) or `?furniture=off` at boot.
+- Hidden in AR by `showFurniture` (above); a hidden mesh is never rendered, so
+  its cut does not repack in AR. Tests: `mesh-layers.test.ts` ("the furniture
+  layer"), `building-view-content.test.ts`.
+
+## Plates colour (colour schemes plan 2026-11-10-0841)
+
+`MeshLayerContext.plateColour?` colours the plates; absent is `PLATE_COLOUR`.
+`main.ts` passes the colour of the scheme the drawn mesh was built in.
+Tested in `mesh-layers.test.ts`.
+
+## Invented roof count
+
+`BuildingStats.inventedRoofCount` carries the mesh's count of volumes with an
+invented pitched roof, zero while the buildings layer is off like every other
+buildings counter; the status line shows it beside the guessed heights.
+
+## The tree form
+
+`MeshLayerContext.treeForm` (`?treeform=trunk`, read by `main.ts` through
+`woods-readout.ts`) reaches both tree rows, the mapped `trees` and the
+invented `woods`, as the library's `TreeObjectOptions.form`; absent draws
+the crown-only default. Both rows take it so a trunk-form measurement
+covers every tree. Tested in `mesh-layers.test.ts` ("the tree form").
