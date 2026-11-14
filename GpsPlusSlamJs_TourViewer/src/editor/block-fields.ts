@@ -23,7 +23,11 @@ import {
   TOUR_SHORT_TEXT_POINT_MAX_M,
 } from "gps-plus-slam-app-framework/ar/tour-short-text";
 
-import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
+import {
+  KIND_EDIT,
+  type ChoiceSpec,
+  type FieldSpec,
+} from "../kinds/edit-kinds.js";
 import type { SliderTrack } from "./editor-shell/range-slider.js";
 
 /** One field of a block, as the inspector draws it. */
@@ -125,12 +129,21 @@ export function typedNumber(value: string): number | null {
 }
 
 /** `block`'s own fields in its view: a field its row names for some
- *  views only is left out of the others. */
+ *  views only is left out of the others, and one shown only while another
+ *  choice has a value (`FieldSpec` `when`) is left out otherwise. */
 function ownFields(block: AnyBlock): readonly FieldSpec[] {
   const own: readonly FieldSpec[] = KIND_EDIT[block.kind].fields;
-  return own.filter(
+  const inView = own.filter(
     (spec) => spec.views === undefined || spec.views.includes(block.view),
   );
+  return inView.filter((spec) => {
+    if (spec.when === undefined) return true;
+    const { field, value } = spec.when;
+    const other = inView.find((s) => s.name === field)?.choice;
+    if (other === undefined) return false;
+    const set = textOf(block, field);
+    return (set === "" ? other.fallback : set) === value;
+  });
 }
 
 function numberOf(block: AnyBlock, name: string): number | undefined {
@@ -206,11 +219,12 @@ function loudnessOf(block: AnyBlock): LoudnessOf {
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
   const own = ownFields(block);
-  // A choice, a switch, a colour or a point is the kind's panel's (a
-  // point is its three boxes there): never a line of the dock.
+  // A choice (either sort), a switch, a colour or a point is the kind's
+  // panel's (a point is its three boxes there): never a line of the dock.
   return own
     .flatMap((spec) =>
       spec.choices === undefined &&
+      spec.choice === undefined &&
       spec.flag === undefined &&
       spec.colour === undefined &&
       spec.typed !== "point"
@@ -243,6 +257,32 @@ export function blockFields(block: AnyBlock): BlockField[] {
         required: rule.required,
       };
     });
+}
+
+/** One of a block's choices (`FieldSpec` `choice`), as its kind's panel
+ *  draws it: chips, the one in use pressed. */
+export interface BlockChoice {
+  readonly name: string;
+  readonly label: string;
+  /** The value in use: the block's, or the fallback when it has none. */
+  readonly value: string;
+  readonly values: ChoiceSpec["values"];
+}
+
+/** `block`'s choices in its view, in its row's order. */
+export function blockChoices(block: AnyBlock): BlockChoice[] {
+  return ownFields(block).flatMap((spec) => {
+    if (spec.choice === undefined) return [];
+    const own = textOf(block, spec.name);
+    return [
+      {
+        name: spec.name,
+        label: spec.label,
+        value: own === "" ? spec.choice.fallback : own,
+        values: spec.choice.values,
+      },
+    ];
+  });
 }
 
 /** The fields the station's inspector types for `block`, one its story
@@ -303,6 +343,9 @@ export function blockFieldEdit<B extends AnyBlock>(
   }
   if (spec.typed !== undefined) {
     return typedFieldEdit(block, name, TYPED[spec.typed], value);
+  }
+  if (spec.choice !== undefined) {
+    return choiceSpecFieldEdit(block, spec.label, name, spec.choice, value);
   }
   const text = value.trim();
   if (text === textOf(block, name)) return { kind: "unchanged" };
@@ -545,6 +588,34 @@ function typedFieldEdit<B extends AnyBlock>(
   if (sameTyped(was, parsed)) return { kind: "unchanged" };
   return withField(block, name, parsed);
 }
+
+/** What pressing the chip `value` of a `ChoiceSpec` choice writes
+ *  (`blockFieldEdit`): the value, `unchanged` for the one in use (an
+ *  absent field's fallback among them), refused for one the choice does
+ *  not offer. */
+function choiceSpecFieldEdit<B extends AnyBlock>(
+  block: B,
+  label: string,
+  name: string,
+  choice: ChoiceSpec,
+  value: string,
+):
+  | { readonly kind: "edited"; readonly after: B }
+  | { readonly kind: "unchanged" }
+  | { readonly kind: "refused"; readonly reason: string } {
+  if (!choice.values.some((v) => v.value === value)) {
+    const words = choice.values.map((v) => v.label).join(", ");
+    return { kind: "refused", reason: `${label} is one of: ${words}.` };
+  }
+  const own = textOf(block, name);
+  if (value === (own === "" ? choice.fallback : own)) {
+    return { kind: "unchanged" };
+  }
+  const rest = { ...(block as unknown as Record<string, unknown>) };
+  rest[name] = value;
+  return { kind: "edited", after: rest as unknown as B };
+}
+
 
 /** What a cap counts, in the refusal's words. */
 const UNIT_WORDS: Readonly<Record<TourTextUnit, string>> = {

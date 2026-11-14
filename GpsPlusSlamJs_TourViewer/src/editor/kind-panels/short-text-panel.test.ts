@@ -31,6 +31,7 @@ function item(shortText: NonNullable<PanelItem["shortText"]>): PanelItem {
     turns: false,
     groundOffM: null,
     folder: null,
+    video: null,
   };
 }
 

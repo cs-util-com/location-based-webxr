@@ -2785,3 +2785,41 @@ describe("docked folds and counts", () => {
     made.shell.hide();
   });
 });
+
+describe("framing an item the page just made", () => {
+  // Why: choosing an item flies the view to it; one just added from a file
+  // lands where the creator may not be looking, so the page frames it the
+  // same way - on the item, else on its station - and with no view shown
+  // nothing happens.
+  it("flies to the item, else to its station, and does nothing hidden", () => {
+    const { store, shell, view } = setUp();
+    const at = station("c", 0.0008);
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...at,
+              ...stationContent([
+                {
+                  ...(stationBlocks(at)[0] as object),
+                  id: "new-video",
+                } as unknown as TourBlock,
+              ]),
+            },
+          ],
+        },
+      }),
+    );
+    shell.frame("new-video");
+    expect(view.flyTo).toHaveBeenLastCalledWith("new-video");
+    view.flyTo.mockReturnValue(false);
+    shell.frame("new-video");
+    expect(view.flyTo).toHaveBeenLastCalledWith("station:c");
+    view.flyTo.mockClear();
+    shell.hide();
+    shell.frame("new-video");
+    expect(view.flyTo).not.toHaveBeenCalled();
+  });
+});

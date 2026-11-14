@@ -245,9 +245,9 @@ never state). Design:
       answers that led to it now go on to the next entry, and whether it
       took its kind's world view), `{ kind: "unchanged" }`, or a refusal
       in words (a choice or a quiz leaving its story, a story into a story,
-      a model without a size standing free, a video standing free - "A
-      video plays only in a story for now: it cannot stand in the world by
-      itself." - a picture made here before the tour holds its file).
+      a model without a size standing free, a picture made here before the
+      tour holds its file); a video leaving its story stands free as a
+      screen (`floored`).
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
@@ -427,6 +427,11 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   pressed included - takes the model out of the rule for good; an undo
   does not put it back.
 
+- `setVideoPoster(id, image)` - brings in the picture (a frame the
+  inspector's preview took) as `addFile` does, as an image, then makes it
+  the free video `id`'s `poster`, in one step. It is refused in words,
+  changing nothing, for an id that is not a free video (a story's video,
+  another kind, a removed id) and for a picture `addFile` refuses.
 - `setItemFile(id, file, fileName)` - the item `id` (free, or a block a
   station's story shows) made from `file` from now on: brought in as
   `addFile` does for the block's file kind (`../block-file.ts`), then one

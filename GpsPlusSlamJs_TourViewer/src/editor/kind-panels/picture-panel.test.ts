@@ -42,6 +42,7 @@ function item(
     turns: true,
     groundOffM: null,
     folder: null,
+    video: null,
     picture,
   };
 }

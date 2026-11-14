@@ -1771,6 +1771,34 @@ async function writeNarrationEdit(
   return "written";
 }
 
+/** The inspector's "Use current frame": the picture made the video's
+ *  poster, one step, as an inspector edit: refreshed once the session
+ *  holds it, a refusal toasted, the autosave told. */
+async function writeVideoPoster(
+  id: string,
+  image: Blob,
+): Promise<TypedEditOutcome> {
+  const open = editor;
+  if (open === null) return "refused";
+  endUndo();
+  let outcome: Awaited<ReturnType<EditorSession["setVideoPoster"]>>;
+  try {
+    outcome = await open.setVideoPoster(id, image);
+  } catch {
+    outcome = { kind: "refused", reason: "The poster could not be kept." };
+  }
+  if (editor !== open) return "refused";
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return "refused";
+  }
+  if (!outcome.backedUp) toast(FILE_NOT_KEPT);
+  if (outcome.kind === "edited") tourChanged();
+  else judgeAutosave();
+  return "written";
+}
+
 /** An edit made: the autosave's cap judged again (an edit may drop the
  *  redo steps naming a file brought in, so the next save no longer writes
  *  it), then the autosave told. */
@@ -2183,6 +2211,8 @@ async function addFromFile(
     return;
   }
   select(outcome.id);
+  // Where a file lands may be off screen: the view frames it, as a choice in the tree does.
+  shell.frame(outcome.id);
   sayAdded(kind, at, outcome.fileName);
   if (!outcome.backedUp) toast(FILE_NOT_KEPT);
   tourChanged();
@@ -2269,6 +2299,7 @@ function useShelfFileIn(
     return;
   }
   select(placed.id);
+  shell.frame(placed.id);
   sayAdded(kind, chosen, fileName);
   tourChanged();
 }
@@ -4962,6 +4993,7 @@ const shell = createEditorShell({
       void replaceItemFile(id);
     },
     voiceMaxBytes: autosaveMaxBytes,
+    poster: writeVideoPoster,
   },
   // The tree's Group, Ungroup, moves into and out of a folder and its
   // rename: each one step, its outcome said in a toast.

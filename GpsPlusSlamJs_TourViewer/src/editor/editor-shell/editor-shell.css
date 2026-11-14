@@ -4196,6 +4196,47 @@ body[data-view="3d"] #view3d .view3d-canvas {
   color: var(--s-warn);
 }
 
+/* A free video's preview (the video prototype's asset row): the clip as a
+ * thumbnail, its length and size, Play and a scrub bar, and "Use current
+ * frame" beside it. */
+.vprev {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.vprev-clip {
+  flex: none;
+  width: 96px;
+  height: 120px;
+  border-radius: 8px;
+  background: #000;
+  object-fit: contain;
+}
+
+.vprev-meta {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vprev-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.vprev-scrub {
+  flex: 1;
+  min-width: 0;
+}
+
+.vprev-frame {
+  align-self: flex-start;
+}
+
 /* A story character's groups of chips, apart from the next label. */
 .character > .vchips {
   margin-bottom: 8px;

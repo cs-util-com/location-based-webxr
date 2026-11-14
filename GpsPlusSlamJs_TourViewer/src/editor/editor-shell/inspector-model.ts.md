@@ -86,13 +86,20 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     title by `objectTitle`), `stationId`, `text` (a pin's caption to edit; null for a
     photo or a model), `extent` (`InspectorExtent`: the size its white
     dots change, as its placement row gives it - `field`, `label`,
-    `meaning`, the tour's `value`, `min`, `max`; a model's Size, a
+    `meaning`, the tour's `value`, `min`, `max`, `slider` (the track of
+    the slider beside the number, or null); a model's Size, a
     picture's Width; null for an item with none), `fields` (its
     other text fields to type, `blockFields` of `../block-fields.ts`:
     a short text's description, a picture's title, caption, alt text, credit and year,
-    a model's title), `offset`
+    a model's title, a video's title, transcript and Starts within),
+    `video` (`InspectorVideo`: a free video's `blockId`, its view, the
+    tour paths of its clip and poster (`clipPath`, `posterPath`, null when
+    the tour lists no such file) for the preview, and its choices -
+    `blockChoices`: how it starts, its sound, a cutout's background - for
+    its panel, `../kind-panels/video-panel.ts`; null for any other kind),
+    `offset`
     (`northM`, `upM`, `eastM` in the station's frame, its folders composed
-    in; null for a block with no place in the world, a video),
+    in; null for a block with no place in the world),
     `headingDeg` (in the same frame; null with no place), `turns` (its
     placement row's: its gizmo has the round arrow), `folder` (the plain
     folder holding it, the innermost, as `{ id, title }`; null at its
@@ -188,8 +195,8 @@ one; a station's, an item's and a code's fields (and a code without a
 position); a station east and north of the tour's centre in metres;
 `headingOfRotation` for turns about up, and none for a forward turned
 straight up or down; `inspectorHint` for each kind and for none (a pin
-with no round arrow, a video with no place); a video as an item with no
-place; a free character as an item with its place and turn; an item in
+with no round arrow); a free video as an item with its place and its
+choices; a free character as an item with its place and turn; an item in
 a turned folder with its offset in the station's frame and its height
 off the ground where it stands.
 

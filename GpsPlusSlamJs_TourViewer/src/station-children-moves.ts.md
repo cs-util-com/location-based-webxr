@@ -30,7 +30,7 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   (a choice or a quiz leaves only within its story: its answers name that
   story's entries), `noNesting` (a story into a story or among the free
   items, a free item among the stories), `cannotStandFree` (a model without
-  a size, or a video), `unchanged` (it would stay where it is).
+  a size), `unchanged` (it would stay where it is).
 - `movedToStation(from, to, id)` -> `{ from, to, answers, floored }` (both
   stations after the move) or `{ refused }`:
   - a free item goes among `to`'s free items (at their end), its position
@@ -44,7 +44,7 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
     around one station's centre now stands around the other's. Nothing is
     reset, so the editor says the story's entries need placing too;
   - refused as within a station: `ownStory` (a choice or a quiz),
-    `cannotStandFree` (a model without a size, or a video), `missing`, and
+    `cannotStandFree` (a model without a size), `missing`, and
     `unchanged` for `to` being `from`.
 - The tree's lists of a station, by name: `STORIES_LIST` (`"stories"`),
   `FREE_LIST` (`"free"`) and `storyList(id)` (`"story:<id>"`, the
@@ -52,7 +52,7 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
   - `childMayGo(holder, id, list)` -> whether the rule takes item `id`
     into that list at all (the drag's `accepts`): it asks `movedChild`
     for a drop at the list's first slot, so the two cannot disagree (a
-    model without a size or a video is offered no way out of its story; a drop on
+    model without a size is offered no way out of its story; a drop on
     the item's own place counts as taken). No refusal but `unchanged`
     depends on the slot. `station-children-moves.property.test.ts` pins
     the agreement over random stations, every item and every list.
@@ -69,11 +69,10 @@ the editor's tree (`editor-shell.ts`, `shell-tree.ts`) and inspector
 - Leaving a story, a block drops its `advance` and keeps its view when its
   kind may stand free in it (`TOUR_FREE_BLOCK_VIEWS`), else takes
   `tourFloorView(kind)`: the framework's rule, called, never copied. The format
-  lets every kind stand free (a video as a `card`, a sound as a
-  narration circle or a zone, a character in any of his views), but two
-  are refused: a model without a size (each of its world views needs one)
-  and a video, which no free host draws yet (`free-items.ts`), so it
-  would stand where nobody sees it. The editor says which in its refusal.
+  lets every kind stand free (a video as a screen, a sound as a
+  narration circle or a zone, a character in any of his views), but one
+  is refused: a model without a size (each of its world views needs one).
+  The editor says so in its refusal.
 - A block taking its kind's floor gains the fields that floor requires and
   its story view lacked: a sound's floor is the narration circle (`spot`),
   which the format refuses without `radiusM`, so a sound from a story's

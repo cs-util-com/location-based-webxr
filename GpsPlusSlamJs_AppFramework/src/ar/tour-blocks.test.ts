@@ -331,6 +331,90 @@ describe('every cap at N-1, N and N+1', () => {
   });
 });
 
+describe('a video in the world', () => {
+  // Why this test matters: a free video stands as a screen, a cutout or a
+  // porthole, each as wide as its `widthM`; when it starts and whether it
+  // starts with sound are the creator's, read here so the viewer never
+  // meets a start it does not know or a distance out of bounds.
+  it.each(['screen', 'cutout', 'porthole'])(
+    'needs its width in the %s view, and keeps it in a card',
+    (view) => {
+      expect(() => one('video', { view })).toThrow(
+        `"blocks[0].widthM" is required for a video in the world (${view})`
+      );
+      expect(one('video', { view, widthM: 1.5 })).toMatchObject({
+        widthM: 1.5,
+      });
+      expect(one('video', { widthM: 1.5 })).toMatchObject({ widthM: 1.5 });
+      expect(() => one('video', { view, widthM: 0.01 })).toThrow(
+        /from 0.05 to 50/
+      );
+    }
+  );
+
+  it('reads the start, its distance, the sound, the alpha and the loop', () => {
+    const world = { view: 'screen', widthM: 1 };
+    for (const start of ['enter', 'near', 'look', 'tap']) {
+      expect(one('video', { ...world, start })).toMatchObject({ start });
+    }
+    expect(one('video', { ...world, start: 'near', withinM: 6 })).toMatchObject(
+      { withinM: 6 }
+    );
+    for (const sound of ['on', 'off']) {
+      expect(one('video', { ...world, sound })).toMatchObject({ sound });
+    }
+    for (const alpha of ['none', 'stacked']) {
+      expect(one('video', { ...world, alpha })).toMatchObject({ alpha });
+    }
+    for (const loop of ['off', 'on']) {
+      expect(one('video', { ...world, loop })).toMatchObject({ loop });
+    }
+    const plain = one('video', world) as unknown as Record<string, unknown>;
+    for (const field of ['start', 'withinM', 'sound', 'alpha', 'loop']) {
+      expect(field in plain, field).toBe(false);
+    }
+  });
+
+  it('refuses a start, a sound or an alpha it does not know, and a distance out of bounds', () => {
+    const world = { view: 'screen', widthM: 1 };
+    expect(() => one('video', { ...world, start: 'wave' })).toThrow(
+      '"blocks[0].start" must be one of enter, near, look, tap'
+    );
+    expect(() => one('video', { ...world, sound: 'loud' })).toThrow(
+      '"blocks[0].sound" must be one of on, off'
+    );
+    expect(() => one('video', { ...world, alpha: 'green' })).toThrow(
+      '"blocks[0].alpha" must be one of none, stacked'
+    );
+    expect(() => one('video', { ...world, loop: true })).toThrow(
+      '"blocks[0].loop" must be one of off, on'
+    );
+    for (const withinM of [0.5, 21]) {
+      expect(() => one('video', { ...world, withinM })).toThrow(/from 1 to 20/);
+    }
+  });
+
+  // Why this test matters: captions are the creator's WebVTT text, kept
+  // as written (the viewer reads the cues) and capped like a transcript,
+  // so a tour file cannot carry an unbounded text into every visitor's
+  // player.
+  it('keeps captions as written and leaves them out over their cap', () => {
+    const vtt = 'WEBVTT\n\n00:00.000 --> 00:02.000\nHello';
+    expect(one('video', { captions: vtt })).toMatchObject({ captions: vtt });
+    for (const captions of ['x'.repeat(32_001), 7]) {
+      const read = one('video', { captions }) as unknown as object;
+      expect('captions' in read).toBe(false);
+    }
+  });
+
+  it('a lenient reader skips a video whose start it does not know', () => {
+    const drops: TourBlockDrop[] = [];
+    const odd = { ...VALID.video, view: 'screen', widthM: 1, start: 'wave' };
+    expect(parse([odd], { lenient: true, drops })).toEqual([]);
+    expect(drops).toHaveLength(1);
+  });
+});
+
 describe('media references and sizes', () => {
   it('every media field names an asset of its own kind', () => {
     // Why: a renderer must never meet a picture that is a sound.
@@ -427,7 +511,7 @@ describe('views', () => {
         'viewer',
         'card',
       ],
-      video: ['card'],
+      video: ['screen', 'cutout', 'porthole', 'card'],
       audio: ['spot', 'zone', 'card'],
       model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'card'],
       character: [
@@ -455,12 +539,18 @@ describe('views', () => {
   it('a free block stands in a view its kind has for standing free', () => {
     // Why: a text, a picture or a model has a look in the world, so a card
     // would be a block nobody can reach, and a character in his card
-    // view shows only while a story runs. A video stands free in `card` until its world
-    // views join the format; a sound stands as a circle or a zone.
+    // view shows only while a story runs. A video stands as a screen, a
+    // cutout or a porthole; a sound stands as a circle or a zone.
     for (const kind of ['shortText', 'picture', 'model'] as const) {
       expect(parse([VALID[kind]], { shown: [] })).toHaveLength(1);
     }
-    expect(parse([VALID.video], { shown: [] })[0]?.view).toBe('card');
+    expect(() => parse([VALID.video], { shown: [] })).toThrow(
+      /stands free in its station/
+    );
+    for (const view of ['screen', 'cutout', 'porthole']) {
+      const video = { ...VALID.video, view, widthM: 1.2 };
+      expect(parse([video], { shown: [] })[0]?.view).toBe(view);
+    }
     expect(() => parse([VALID.audio], { shown: [] })).toThrow(
       /stands free in its station/
     );
@@ -497,7 +587,7 @@ describe('views', () => {
     expect(tourFloorView('picture')).toBe('plane');
     expect(tourFloorView('model')).toBe('placed');
     expect(tourFloorView('longText')).toBe('reading');
-    expect(tourFloorView('video')).toBe('card');
+    expect(tourFloorView('video')).toBe('screen');
     expect(tourFloorView('audio')).toBe('spot');
     expect(tourFloorView('character')).toBe('speak');
     for (const kind of Object.keys(
@@ -725,6 +815,8 @@ describe("a model's views, notes, sections and clip", () => {
       'finder',
       'window',
       'viewer',
+      'screen',
+      'porthole',
       'spot',
       'zone',
       ...TOUR_MODEL_WORLD_VIEWS,

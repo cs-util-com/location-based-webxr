@@ -17,11 +17,13 @@ folder and a station), what the 3D editor's handles do with it:
   never mixed: `size` (a real size of the drawing, which scales with it:
   a model's `sizeM`, a picture's `widthM`), `reach` (a distance that is
   no scale of the drawing: a station's `foundRadiusM`) and `factor` (a
-  uniform scale of a whole frame: a folder's `scale`).
+  uniform scale of a whole frame: a folder's `scale`). Its optional
+  `slider` is the inspector's track beside the typed value (a video's
+  width: 0.3-6 m, step 0.05 m; `extent-slider.ts`).
 
 The rows are per VIEW, not per kind, because a block may stand in the
-world in one view and be a card in another (a video gaining a screen
-view would be the first such kind).
+world in one view and be a card in another (a video: a screen, a cutout
+or a porthole free, a card in a story).
 
 ## Public API
 
@@ -62,7 +64,8 @@ view would be the first such kind).
   width change nothing on screen (the handle stays at the pose; the
   viewpoint is typed in the inspector, `editor/kind-panels/picture-panel.ts`);
   `card` poseless.
-- `video`: `card` poseless (no world view yet).
+- `video`: `screen`, `cutout` and `porthole` posed, turning, `size` on
+  `widthM` (the picture's bounds); `card` poseless.
 - `audio`: `spot` and `zone` posed, facing, no dots (a sound's reach is
   set in the inspector); `card` poseless.
 - `model`: every world view posed, turning, `size` on `sizeM`

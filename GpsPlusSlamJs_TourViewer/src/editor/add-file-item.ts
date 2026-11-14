@@ -20,11 +20,7 @@ import {
   type TourStoryBlock,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import {
-  KIND_EDIT,
-  storyOnlyReason,
-  type FileAddKind,
-} from "../kinds/edit-kinds.js";
+import { KIND_EDIT, type FileAddKind } from "../kinds/edit-kinds.js";
 import {
   newFileItem,
   newFileStoryEntry,
@@ -195,12 +191,6 @@ export function placeFileItem(input: {
     { station, id: input.id, nowIso: input.nowIso, groundAt: input.groundAt },
     source,
   );
-  if (item === null) {
-    return {
-      kind: "refused",
-      reason: `${storyOnlyReason(source.kind) ?? "It cannot stand in a station"}.`,
-    };
-  }
   const placed = input.place(item);
   return placed.kind === "placed" ? { kind: "added", id: item.id } : placed;
 }

@@ -24,7 +24,8 @@ model | character`.
   - `shortText`: `pin`, `card`; `longText`: `lectern` (a reading stand in the
     square), `reading` (a short sign that opens the whole text on a tap),
     `card`;
-  - `picture`: `plane`, `card`; `video`, `audio`: `card`;
+  - `picture`: `plane`, `card`; `video`: `screen`, `cutout`, `porthole`,
+    `card`; `audio`: `spot`, `zone`, `card`;
   - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `card`;
     `character`: `bubble`, `speak`, `two-stations`, `portrait`, `popup`,
     `card` (the five before `card` are `TOUR_CHARACTER_VIEWS`, in a story
@@ -56,6 +57,9 @@ model | character`.
   - `picture`: `title` optional 40, `caption` optional 1200, `alt`
     optional 300;
   - `video`, `audio`: `title` optional 40, `transcript` optional 32 000;
+    a video's `captions` optional 32 000; its world fields (`widthM`,
+    `start`, `withinM`, `sound`, `alpha`, `loop`) are its kind row's
+    (`tour-kinds.ts`);
   - `model`: `title` optional 80;
   - `character`: `name` required 80, `caption` optional 2000.
 - `TOUR_PICTURE_MIN_WIDTH_M` (0.05), `TOUR_PICTURE_MAX_WIDTH_M` (50) - a
@@ -70,14 +74,15 @@ model | character`.
   `{ ok: true, value }` (the text exactly as written) or
   `{ ok: false, reason, blank? }` (`blank` for a whitespace-only text).
 - `TOUR_FREE_BLOCK_VIEWS` - the views a block of each kind may stand free
-  in: every kind has some. `TOUR_WORLD_VIEWS` plus a video's and a sound's
-  `card` (their free look is the viewer's business, the format only keeps
-  them) and a character's five views (he stands as a figure). A text, a
+  in: every kind has some, and none is a `card`: a video stands as a
+  `screen`, a `cutout` or a `porthole`, a sound as a `spot` or a `zone`,
+  a character in his five views (he stands as a figure). A text, a
   picture or a model in `card` stays refused: a card without a step would
   show nothing.
 - `tourFloorView(kind): TourBlockView` - the view a free block falls back
   to when its own is unknown to this reader: `pin`, `reading`, `plane`,
-  `placed`, `card` for a video or a sound, `speak` for a character. A story
+  `placed`, `screen` for a video, `spot` for a sound, `speak` for a
+  character. A story
   block's floor is `card`, from its reader.
 - `readTourBlocks(value, at, options): TourBlockRead[]` - a list of blocks
   read at once, ids unique (the draft record's one block).
@@ -117,7 +122,12 @@ durationMs? }`: `audio` names an audio asset; `timing` must be the
 - `picture`: `image` (an image asset), optional `title`, `caption`, `alt`,
   and `widthM` (required).
 - `video`: `video` (a video asset), `transcript`, optional `title`, optional
-  `poster` (an image asset).
+  `poster` (an image asset); in the world `widthM` (required in every world
+  view, kept in a card), optional `start` (`enter`, `near`, `look`, `tap`),
+  `withinM` (a `near` start's distance, 1 to 20 m), `sound` (`on`, `off`),
+  `alpha` (`none`, `stacked`) and `loop` (`off`, `on`); in any view
+  optional `captions` (WebVTT text, at most 32 000 characters, kept as
+  written: the viewer reads its cues and leaves out one it cannot read).
 - `audio`: `audio` (an audio asset), `transcript`, optional `title`.
 - `model`: `asset` (a model asset), `sizeM` by view - required in every
   world view, optional for `card` - and optional `title`. In any view:

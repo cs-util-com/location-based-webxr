@@ -44,8 +44,8 @@ addEntryToStory })` - makes the item (`new-file-item.ts`) and places
 - The file itself takes no undo step (`addFile` does not), so the add is
   one step: undoing it removes the item, and the file stays on the shelf
   until the shelf drops it.
-- A video at a station is refused with its row's `storyOnly` words, and
-  nothing is placed.
+- A video at a station stands free as a screen (`new-file-item.ts`), like
+  every other file kind.
 
 ## Examples
 
@@ -62,7 +62,7 @@ if (outcome.kind === "refused") toast(outcome.reason);
 
 `add-file-item.test.ts` (each outcome, the busy state ended on each, a
 dropped file and a poster, throws at every step; `placeFileItem` at a
-station, in a story, a gone story, a gone station, a video at a station, the tour's
+station, in a story, a gone story, a gone station, a video at a station as a screen, the tour's
 refusal) and `editor-session-add-file.test.ts` (a real session: one undo
 step, the file on the shelf while it runs, the file resolving before and
 after the smaller one replaced it, a save, a refusal leaving the revision

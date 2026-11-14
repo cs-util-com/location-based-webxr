@@ -97,6 +97,9 @@ const EXPECTED: readonly (readonly [
   ["picture", "window", true, false, null],
   ["picture", "viewer", true, false, null],
   ["picture", "card", false, false, null],
+  ["video", "screen", true, true, "widthM"],
+  ["video", "cutout", true, true, "widthM"],
+  ["video", "porthole", true, true, "widthM"],
   ["video", "card", false, false, null],
   ["audio", "spot", true, false, null],
   ["audio", "zone", true, false, null],
@@ -139,8 +142,9 @@ describe("the placement rows against the format", () => {
   });
 
   // The format's envelope: views that do not use the pose (`card`) ignore
-  // it. Every view a FREE block may hold, but `card`, stands in the world.
-  it("leave exactly the card views poseless, and pose every other free view", () => {
+  // it. Every view a FREE block may hold stands in the world: no free
+  // view is a card (the format's types say so; this holds the rows to it).
+  it("leave exactly the card views poseless, and pose every free view", () => {
     for (const [kind, view] of KIND_VIEWS) {
       expect(blockPlacement(kind, view)?.posed, `${kind}.${view}`).toBe(
         view !== "card",
@@ -149,7 +153,6 @@ describe("the placement rows against the format", () => {
     for (const kind of Object.keys(TOUR_KINDS) as TourBlockKind[]) {
       const row = TOUR_KINDS[kind];
       for (const view of [...row.freeViews, ...row.worldViews]) {
-        if (view === "card") continue;
         expect(blockPlacement(kind, view)?.posed, `${kind}.${view}`).toBe(true);
       }
     }
@@ -286,7 +289,7 @@ function fieldsOf(kind: TourBlockKind, value: number): object {
     case "picture":
       return { image: "pic", widthM: value };
     case "video":
-      return { video: "vid" };
+      return { video: "vid", widthM: value };
     case "audio":
       return { audio: "snd" };
     case "model":
@@ -582,6 +585,9 @@ const OLD_WORLD_KINDS: ReadonlySet<string> = new Set([
   "audio",
   "model",
 ]);
+/** The kinds that stand free since the old gate: a free character, a
+ *  free video (each in every free view it may hold, none a card). */
+const NEWER_FREE_KINDS: ReadonlySet<string> = new Set(["character", "video"]);
 function oldWorldBlocks(station: TourStation): TourBlock[] {
   return tourFreeBlocks(station).filter((b) => OLD_WORLD_KINDS.has(b.kind));
 }
@@ -660,9 +666,10 @@ const childrenArb = (
   );
 
 describe("the placeables against the old gate", () => {
-  // The old gate plus exactly the free characters, each at the same
-  // pose in the world; the station first, with its own found radius.
-  it("are the old world blocks plus exactly the free characters, at the same poses", () => {
+  // The old gate plus exactly the kinds that stood free after it - the
+  // characters, then the videos - each at the same pose in the world; the
+  // station first, with its own found radius.
+  it("are the old world blocks plus exactly the free characters and videos, at the same poses", () => {
     fc.assert(
       fc.property(childrenArb("b", 2), (children) => {
         const station = stationOf(children);
@@ -673,17 +680,19 @@ describe("the placeables against the old gate", () => {
           placed
             .filter((p) => {
               const b = free.find((f) => f.id === p.ref.id)!;
-              return b.kind !== "character";
+              return !NEWER_FREE_KINDS.has(b.kind);
             })
             .map((p) => p.ref.id),
         ).toEqual(old.map((b) => b.id));
         expect(
           placed
-            .filter(
-              (p) => free.find((f) => f.id === p.ref.id)!.kind === "character",
+            .filter((p) =>
+              NEWER_FREE_KINDS.has(free.find((f) => f.id === p.ref.id)!.kind),
             )
             .map((p) => p.ref.id),
-        ).toEqual(free.filter((b) => b.kind === "character").map((b) => b.id));
+        ).toEqual(
+          free.filter((b) => NEWER_FREE_KINDS.has(b.kind)).map((b) => b.id),
+        );
         for (const p of placed) {
           const b = free.find((f) => f.id === p.ref.id)!;
           expect(p.geo).toEqual(itemGeoPose(b.pose, station.geo));

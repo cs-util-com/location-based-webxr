@@ -927,10 +927,10 @@ describe("a station item's move, counted and kept", () => {
     await session.close();
   });
 
-  // Why: a video cannot leave its story (no free host shows one yet), and
-  // the words a model without a size gets ("give it a size") would send
-  // the creator looking for a size a video does not have.
-  it("says why a video stays in its story, in words of its own", async () => {
+  // Why: a video stands free in a station now; moved out of its story it
+  // must land there as a screen with a width (floored), never be refused
+  // with the words a model without a size gets.
+  it("moves a video out of its story into the station, floored to a screen", async () => {
     const manifest = parseTourManifest(
       JSON.parse(
         serializeTourManifest(
@@ -979,12 +979,8 @@ describe("a station item's move, counted and kept", () => {
       levels: new Map(),
     });
     const out = editor.moveChild("film", { place: "free" });
-    expect(out).toEqual({
-      kind: "refused",
-      reason: expect.stringContaining("video") as unknown,
-    });
-    expect(JSON.stringify(out)).not.toContain("size");
-    expect(editor.changeCount()).toBe(0);
+    expect(out).toEqual({ kind: "moved", answers: 0, floored: true });
+    expect(editor.changeCount()).toBe(1);
     await session.close();
   });
 

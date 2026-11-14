@@ -72,9 +72,12 @@ import {
   posedEntryOf,
 } from "../../placement/placeables.js";
 import type { ExtentSpec } from "../../placement/placement-rows.js";
+import type { SliderTrack } from "./range-slider.js";
 import {
+  blockChoices,
   blockFields,
   storyBlockFields,
+  type BlockChoice,
   type BlockField,
 } from "../block-fields.js";
 import { FOLDER_PREFIX, STORY_PREFIX } from "../editor-model.js";
@@ -382,6 +385,9 @@ export interface InspectorExtent {
   readonly value: number;
   readonly min: number;
   readonly max: number;
+  /** The slider beside the number (`ExtentSpec.slider`); null: typed
+   *  only. */
+  readonly slider: SliderTrack | null;
 }
 
 /** `item`'s size its row's `spec` names, with the tour's value; null for
@@ -401,6 +407,7 @@ function extentOf(
     value,
     min: spec.min,
     max: spec.max,
+    slider: spec.slider ?? null,
   };
 }
 
@@ -465,6 +472,32 @@ interface InspectorPicture {
   readonly imagePath: string | null;
   /** Its viewpoint as the panel types it; null: it has none. */
   readonly viewpoint: ViewpointFacts | null;
+}
+
+/** The tour path of the file `id`; null for no id or a file not listed. */
+function assetPath(
+  assets: readonly TourAsset[],
+  id: string | undefined,
+): string | null {
+  return id === undefined
+    ? null
+    : (assets.find((a) => a.id === id)?.path ?? null);
+}
+
+/** A free video as its panel shows it (`kind-panels/video-panel.ts`). */
+export interface InspectorVideo {
+  /** The block's id (the poster's edit names it). */
+  readonly blockId: string;
+  readonly view: string;
+  /** Its choices in that view (`block-fields.ts` `blockChoices`). */
+  readonly choices: readonly BlockChoice[];
+  /** Its WebVTT captions as typed; "" for none. */
+  readonly captions: string;
+  /** The clip's tour path, for the inspector's preview; null when the
+   *  tour lists no such file. */
+  readonly clipPath: string | null;
+  /** Its poster's tour path; null for none. */
+  readonly posterPath: string | null;
 }
 
 /** A long text as its writer shows it (`long-text-writer.ts`). */
@@ -532,6 +565,9 @@ interface ItemInspector {
   readonly shortText?: InspectorShortText;
   /** A long text's writer's data; null for any other item. */
   readonly longText: InspectorLongText | null;
+  /** A free video's view and its choices (how it starts, its sound, a
+   *  cutout's background); null for any other item. */
+  readonly video: InspectorVideo | null;
   /** In its station's frame (m), its folders composed in: where it stands
    *  from the anchor; null for an item with no place in the world (a
    *  video). */
@@ -1342,6 +1378,17 @@ export function buildInspector(input: {
               narrationKey: `${JSON.stringify(item.narration ?? null)}|${input.timingsStamp ?? ""}`,
               over: readingSheetContent(stations, item).over,
               pictures: textPictures(input.assets),
+            }
+          : null,
+      video:
+        item.kind === "video"
+          ? {
+              blockId: item.id,
+              view: item.view,
+              choices: blockChoices(item),
+              captions: item.captions ?? "",
+              clipPath: assetPath(input.assets, item.video),
+              posterPath: assetPath(input.assets, item.poster),
             }
           : null,
       offset:

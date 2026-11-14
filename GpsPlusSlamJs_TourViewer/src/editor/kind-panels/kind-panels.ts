@@ -29,6 +29,7 @@ import { createModelPanel } from "./model-panel.js";
 import { createPicturePanel } from "./picture-panel.js";
 import { pictureSeeThrough } from "../../kinds/picture/picture-alpha.js";
 import { createShortTextPanel } from "./short-text-panel.js";
+import { createVideoPanel } from "./video-panel.js";
 
 /** What the shell gives a kind's panel: its page, its edits and its
  *  words. */
@@ -51,6 +52,7 @@ export interface PanelContext {
     | "voiceMaxBytes"
     | "pictureTag"
     | "pictureViewpoint"
+    | "poster"
   >;
   /** A tour file by its path. */
   readonly loadPicture: (path: string) => Promise<Blob>;
@@ -137,6 +139,19 @@ function picture(ctx: PanelContext): KindPanel {
   });
 }
 
+/** A free video's panel: its view, how it starts, its sound. */
+function video(ctx: PanelContext): KindPanel {
+  return createVideoPanel({
+    writeView: (id, view) => ctx.edits.view(id, view),
+    writeChoice: (id, field, value) => ctx.edits.block(id, field, value),
+    load: ctx.loadPicture,
+    writePoster: (id, image) =>
+      ctx.edits.poster === undefined
+        ? Promise.resolve("refused")
+        : ctx.edits.poster(id, image),
+  });
+}
+
 /** A kind's panel maker, or null for a kind without one. */
 type KindPanelList = {
   readonly [K in TourBlockKind]: ((ctx: PanelContext) => KindPanel) | null;
@@ -147,7 +162,7 @@ export const KIND_PANELS = {
   shortText,
   longText,
   picture,
-  video: null,
+  video,
   audio: null,
   model,
   character: null,

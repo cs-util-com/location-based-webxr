@@ -193,6 +193,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   per approach, and not at all after the creator folded or unfolded the
   tree during the flight; nothing folds the tree again afterwards (no
   zoom-out rule exists).
+- `EditorShell.frame(id)` - flies the view to an item the page just made
+  (a file added or placed from the shelf), as choosing it in the tree
+  does: on the item, else on its station; nothing while no view shows.
 - `EditorShell.hide()` - stops all of that and lets the pictures go
   (each draw also sweeps the cards a redraw replaced). Closed mid-approach
   it gives the tree back the fold it had at `show` (folded or not), so the
@@ -228,6 +231,12 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - `ShellEditCommands.model(itemId, edit)` - a model's own edit, as typed
   (`inspector-edits.ts`) or pressed (its panel, `../kind-panels/model-panel.ts`).
   `ShellEditCommands` is exported for the kinds' panels (`PanelContext.edits`).
+- `ShellEditCommands.poster(itemId, image)` (optional) - makes a frame the
+  video preview took the free video's poster (the page's `setVideoPoster`,
+  one step, with a refusal shown as a toast); without it "Use current frame" is refused.
+- The extent slider (`extent-slider.ts`) beside a video's width writes the
+  same `extent` scene edit the 3D view's dots do, once per drag; a
+  selection change and `hide` cut a drag off.
 
 - The kinds' own parts of the inspector come from one `createKindPanels`
   (`../kind-panels/kind-panels.ts`): `sync` hands it the inspector's model

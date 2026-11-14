@@ -36,6 +36,9 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
     prose);
   - picture: Title (40), Caption (1200, prose), Alt text (300, prose);
   - video and audio: Title (40), Transcript (32 000, needed, prose);
+    a video in the world also Captions (WebVTT, 32 000, prose) and, only
+    while its start is `near` (`FieldSpec` `when`), Starts within (1-20
+    m, optional) - for any other start it is neither listed nor written;
     audio also, each only in the view that reads it (`FieldSpec`
     `views`): in `spot` Radius (1-50 m, needed); in `zone` Reach (1-200
     m, needed), Full volume within (1-200 m) and Volume (0-100 %, held as 0-1, needed). Radius, Reach (with Full volume within as its lower thumb) and Volume take a slider; Volume a loudness curve. A
@@ -53,6 +56,9 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
   `KIND_EDIT` label).
 - `blockFieldPlaceholder(field)` - the empty field's hint: "Required"
   for a field the block needs, else "Optional".
+- `blockChoices(block)` -> `BlockChoice[]` (`name`, `label`, `value` in
+  use, `values`) - its choice fields in its view, for its kind's panel;
+  `blockFields` leaves them out (they are chips, not boxes).
 - `blockFieldEdit(block, name, value)` - what typing `value` writes:
   - `edited` with the block, the text trimmed at its ends (inner lines
     kept); a blank text removes an optional field;
@@ -63,6 +69,10 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
     "A body takes at most 32000 UTF-16 units." - the unit's word is the
     rule's) for a text over its cap, counted in the field's unit, or ("A body
     cannot be empty.") for a field the block needs emptied;
+  - a choice field (`FieldSpec` `choice`): `edited` with the value,
+    `unchanged` for the one in use (an absent field's fallback among
+    them) or a choice of another view, `refused` ("Starts is one of: On
+    arrival, ...") for a value it does not offer;
   - for a number field: `edited` with the typed decimal (a comma as its
     point, `typedNumber`) as a number, or without the field for a blank
     optional one; `unchanged` for the same number or a field outside the

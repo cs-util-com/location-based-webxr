@@ -85,7 +85,8 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
   there are no `show` steps. A free block stands in a view its kind has for
   standing free (`TOUR_FREE_BLOCK_VIEWS`: `pin`, a long text's `lectern` or
   `reading`, `plane`, a model's `placed`, `ghost`, `hotspots`, `cutaway` or
-  `toy`, `card` for a video or a sound, a character's own five). A station
+  `toy`, a video's `screen`, `cutout` or `porthole`, a sound's `spot` or
+  `zone`, a character's own five). A station
   may have no children (an automatic station: finding it completes it).
   Several stories at a station are allowed by the format; a viewer plays
   the first with something to play.

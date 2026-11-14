@@ -72,6 +72,14 @@ interface ExtentCommon {
   readonly meaning: string;
   readonly min: number;
   readonly max: number;
+  /** The inspector's slider beside the typed value: the values a creator
+   *  sets by feel (the number takes the rest of `min`..`max`); absent:
+   *  typed only. */
+  readonly slider?: {
+    readonly min: number;
+    readonly max: number;
+    readonly step: number;
+  };
 }
 
 /** Whether `spec` is dots that write a number on the block itself (a
@@ -122,8 +130,9 @@ const MODEL: ViewPlacement = {
   },
 };
 
-/** A picture standing at its pose: turned by it, sized by its width. */
-const PICTURE_STANDING: ViewPlacement = {
+/** A picture's or a video's dots: its width (the format's bounds, which
+ *  the two kinds share). */
+const WIDE: ViewPlacement = {
   ...TURNING,
   extent: {
     kind: "size",
@@ -143,6 +152,15 @@ const PICTURE_STANDING: ViewPlacement = {
  * no width dots; its viewpoint is typed in the inspector.
  */
 const PICTURE_FROM_VIEWPOINT: ViewPlacement = FACING;
+/** A video's dots: a picture's, and a slider for the widths a wall, a
+ *  table or a doorway takes. */
+const VIDEO_WIDE: ViewPlacement = {
+  ...WIDE,
+  extent: {
+    ...(WIDE.extent as ExtentSpec),
+    slider: { min: 0.3, max: 6, step: 0.05 },
+  },
+};
 
 type ViewsOf<K extends TourBlockKind> = (typeof TOUR_KINDS)[K]["views"][number];
 
@@ -173,9 +191,9 @@ export const BLOCK_PLACEMENT = {
   // turns to the viewer as it is drawn.
   longText: { lectern: TURNING, reading: FACING, card: POSELESS },
   picture: {
-    plane: PICTURE_STANDING,
-    framed: PICTURE_STANDING,
-    cutout: PICTURE_STANDING,
+    plane: WIDE,
+    framed: WIDE,
+    cutout: WIDE,
     thenNow: PICTURE_FROM_VIEWPOINT,
     sharpen: PICTURE_FROM_VIEWPOINT,
     finder: PICTURE_FROM_VIEWPOINT,
@@ -183,7 +201,14 @@ export const BLOCK_PLACEMENT = {
     viewer: PICTURE_FROM_VIEWPOINT,
     card: POSELESS,
   },
-  video: { card: POSELESS },
+  // A screen and a porthole stand at their pose; a cutout turns toward
+  // the viewer by a little from it, so its pose's turn is still its own.
+  video: {
+    screen: VIDEO_WIDE,
+    cutout: VIDEO_WIDE,
+    porthole: VIDEO_WIDE,
+    card: POSELESS,
+  },
   // A sound's reach has no dots: it is set in the inspector.
   audio: { spot: FACING, zone: FACING, card: POSELESS },
   model: {

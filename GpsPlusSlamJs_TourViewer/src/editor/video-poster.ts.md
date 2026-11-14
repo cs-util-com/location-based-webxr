@@ -24,6 +24,9 @@ element gives the video's length, which the shelf's size warning reads
   `objectUrl { create, revoke }`, `timeoutMs`, `lengthTimeoutMs` (default
   2 s, how long a recorded clip's length is waited for).
 - `PosterVideo` - the parts of a video element it uses.
+- `FAR_PAST_THE_END_S` (1e9 s) - the seek that makes the browser read a
+  recorded clip's length; the inspector's preview (`kind-panels/video-preview.ts`)
+  uses it too.
 
 ## Invariants & assumptions
 

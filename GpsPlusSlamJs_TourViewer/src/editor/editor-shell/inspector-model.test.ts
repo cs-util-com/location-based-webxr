@@ -817,6 +817,7 @@ describe("buildInspector", () => {
       longText: null,
       // A short text's view, role and turn, for its panel.
       shortText: { view: "pin", role: null, orientation: null },
+      video: null,
       // B2c: its other text fields, by the format's caps.
       fields: [
         {
@@ -955,6 +956,44 @@ describe("inspectorHint", () => {
       extent: { field: "widthM", label: "Width", value: 1.5, max: 50 },
     });
     expect(inspectorHint(photo)).toMatch(/, a white dot to resize$/);
+    // A picture has no slider: its width is typed. A video standing as a
+    // screen has one beside the number, on the track set by feel.
+    expect(photo).toMatchObject({ extent: { slider: null } });
+    const screen = buildInspector({
+      selected: "clip",
+      stations: [
+        {
+          ...STATIONS[0]!,
+          ...stationContent([
+            {
+              id: "clip",
+              kind: "video",
+              view: "screen",
+              video: "v",
+              poster: "p",
+              widthM: 2,
+              createdAtIso: AT,
+              pose: { position: [1, 1, 0], rotation: [0, 0, 0, 1] },
+            },
+          ]),
+        },
+      ],
+      assets: [
+        { id: "v", path: "content/v.mp4", kind: "video" },
+        { id: "p", path: "content/p.jpg", kind: "image" },
+      ],
+      codes: CODES,
+      unlockedStations: [],
+    });
+    // The inspector's preview reads the clip and its poster by their paths.
+    expect(screen).toMatchObject({
+      video: { clipPath: "content/v.mp4", posterPath: "content/p.jpg" },
+      extent: {
+        field: "widthM",
+        value: 2,
+        slider: { min: 0.3, max: 6, step: 0.05 },
+      },
+    });
     expect(inspectorHint(inspect("level-1"))).toBe(
       "Code 1 - read-only here; F frames it, Esc deselects",
     );

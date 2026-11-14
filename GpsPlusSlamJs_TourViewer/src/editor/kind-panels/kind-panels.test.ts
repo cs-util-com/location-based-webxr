@@ -4,7 +4,7 @@
  * per kind in `KIND_PANELS`, so the inspector draws no kind by name and a
  * new kind brings its inspector as one row. These hold that every kind of
  * the format has a row, that exactly the short text, the long text, the
- * picture and the model have a panel today, that each draws what the inspector used to draw itself and
+ * picture, the video and the model have a panel today, that each draws what the inspector used to draw itself and
  * answers its own buttons (and no other), and that the inspector puts a
  * panel's pieces in their places and draws no kind's parts without one.
  *
@@ -44,6 +44,7 @@ function item(over: Partial<PanelItem> = {}): PanelItem {
     fields: [],
     model: PARTS,
     longText: null,
+    video: null,
     offset: { northM: 0, upM: 0, eastM: 0 },
     headingDeg: 0,
     turns: true,
@@ -110,11 +111,17 @@ describe("KIND_PANELS", () => {
     expect(Object.keys(KIND_PANELS)).toEqual(tourBlockKinds());
   });
 
-  it("gives a panel to the short text, the long text, the picture and the model only", () => {
+  it("gives a panel to the short text, the long text, the picture, the video and the model only", () => {
     const with_ = Object.entries(KIND_PANELS)
       .filter(([, panel]) => panel !== null)
       .map(([kind]) => kind);
-    expect(with_).toEqual(["shortText", "longText", "picture", "model"]);
+    expect(with_).toEqual([
+      "shortText",
+      "longText",
+      "picture",
+      "video",
+      "model",
+    ]);
   });
 });
 

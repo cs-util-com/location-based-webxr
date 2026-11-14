@@ -2894,6 +2894,78 @@
         margin: 8px 0 0;
         font-size: 0.9rem;
       }
+      /* A free video's card (video-card.ts): the same frame, its sound
+         switch beside play, and a porthole's clip large above them. */
+      .narration-card[data-kind="video"] {
+        padding: 12px 14px;
+        border: 1px solid var(--walk-line);
+        border-radius: 12px;
+        background: var(--walk-surface);
+        color: var(--walk-ink);
+        font-variant-numeric: lining-nums;
+      }
+      [data-kind="video"] .narration-card-head,
+      [data-kind="video"] .narration-card-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      [data-kind="video"] .narration-card-head {
+        justify-content: space-between;
+        color: var(--walk-muted);
+        font-size: 0.8rem;
+      }
+      [data-kind="video"] .narration-card-title {
+        margin: 4px 0 8px;
+        font-size: 1rem;
+      }
+      [data-kind="video"] .narration-card-time {
+        margin-left: auto;
+      }
+      [data-kind="video"] .video-card-sound[aria-pressed="true"] {
+        color: var(--walk-accent);
+      }
+      [data-kind="video"] .narration-card-line {
+        margin: 8px 0 0;
+        font-size: 0.9rem;
+      }
+      [data-kind="video"] .video-card-cc[aria-pressed="true"] {
+        color: var(--walk-accent);
+      }
+      /* The caption strip: the cue on now, on a dark band as subtitles. */
+      .video-card-caption {
+        margin: 8px 0 0;
+        padding: 6px 10px;
+        border-radius: 6px;
+        background: rgb(0 0 0 / 72%);
+        color: #fff;
+        font-size: 0.95rem;
+        line-height: 1.35;
+        text-align: center;
+        white-space: pre-line;
+      }
+      #narration-card-root:has([data-player="open"]) {
+        /* stylelint-disable-next-line csstree/validator -- valid CSS; the bundled css-tree grammar predates it. */
+        max-width: min(720px, calc(100vw - 32px));
+      }
+      .video-card-player {
+        position: relative;
+        margin: 0 0 10px;
+        overflow: hidden;
+        border-radius: 8px;
+        background: #000;
+      }
+      .video-card-player video {
+        display: block;
+        width: 100%;
+        max-height: 60vh;
+        object-fit: contain;
+      }
+      .video-card-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+      }
       /* The toast (the prototype's place, the framework's toast in the design
          system's toast look, restated here: design.css's .toast class is
          not used, plan §1.2). Below the radar's top at the left; its right

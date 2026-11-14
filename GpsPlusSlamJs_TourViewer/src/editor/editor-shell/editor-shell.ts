@@ -147,6 +147,7 @@ import {
   wirePhoneSheets,
   type SheetKind,
 } from "./phone-sheet.js";
+import { wireExtentSlider } from "./extent-slider.js";
 import { wireRadiusSlider } from "./radius-slider.js";
 import { wireFieldSliders } from "./field-sliders.js";
 import { createShellPictures } from "./shell-pictures.js";
@@ -306,6 +307,10 @@ export interface ShellEditCommands {
   /** The largest voice file a long text takes (the page's autosave cap;
    *  none: the default cap). */
   readonly voiceMaxBytes?: number;
+  /** Makes `image` (a frame the inspector's video preview took) the free
+   *  video `itemId`'s poster: one step, a refusal said by the page; none:
+   *  the preview's "Use current frame" is refused. */
+  poster?(itemId: string, image: Blob): Promise<TypedEditOutcome>;
 }
 
 /** The page's store, as the shell reads it. */
@@ -361,6 +366,9 @@ export interface EditorShell {
    *  until `approachEnded`. */
   show(view: ShellView, options?: { readonly approach?: boolean }): void;
   hide(): void;
+  /** Flies the view to an item the page just made, as choosing it in the
+   *  tree does (else to its station); nothing while no view shows. */
+  frame(id: string): void;
   /** The approach's bar went. After a landing the tree folded for it
    *  unfolds (animated, unless reduced motion), as the dock rule allows at
    *  this width; after a takeover it stays a tab for the creator to open.
@@ -1189,6 +1197,23 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     },
   });
 
+  const extentSlider = wireExtentSlider({
+    root: inspector.root,
+    // Read once, at a drag's start.
+    item: () => {
+      const ui = state().editorView;
+      const model = inspectorModel(ui);
+      return ui.selected !== null &&
+        model?.kind === "item" &&
+        model.extent !== null
+        ? { id: ui.selected, value: model.extent.value }
+        : null;
+    },
+    write: (id, value) => {
+      deps.edits.scene({ kind: "extent", ref: { kind: "block", id }, value });
+    },
+  });
+
   /** The inspector's field that has the focus, with text typed and not
    *  yet committed; null for none. */
   const typedField = (): TypedField | null => {
@@ -1337,6 +1362,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       positionOpen = false;
       radius.cancel();
       fieldSliders.cancel();
+      extentSlider.cancel();
       busy?.stop.abort();
       busy = null;
       const pending = typedField();
@@ -2700,6 +2726,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();
     },
+    frame(id) {
+      flyToSelection(id);
+    },
     hide() {
       // Closed mid-approach: the fold was the approach's, so the tree
       // gets back the fold it had at the open (folded or not).
@@ -2715,6 +2744,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       endUnfolding();
       radius.cancel();
       fieldSliders.cancel();
+      extentSlider.cancel();
       const pending = typedField();
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();

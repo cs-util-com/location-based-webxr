@@ -16,6 +16,8 @@ import {
   TOUR_AUDIO_MAX_REACH_M,
   TOUR_AUDIO_MIN_RADIUS_M,
   TOUR_AUDIO_MIN_REACH_M,
+  TOUR_VIDEO_MAX_WITHIN_M,
+  TOUR_VIDEO_MIN_WITHIN_M,
   type TourBlockKind,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -113,12 +115,32 @@ export interface FieldSpec {
   /** A value typed on one line that the format's look reader checks: a
    *  point as three numbers in metres, or a language tag. */
   readonly typed?: "point" | "tag";
+  /** One of a few values, set by chips the kind's panel draws
+   *  (`editor/kind-panels`), not a box the dock types: unlike `choices`,
+   *  an absent field reads as its `fallback`, so the chip in use is
+   *  always pressed and pressing it again writes nothing. */
+  readonly choice?: ChoiceSpec;
+  /** Only while another of the block's choices has this value (its
+   *  fallback counted for an absent one): a setting that does nothing
+   *  otherwise is not shown, and not written. */
+  readonly when?: { readonly field: string; readonly value: string };
 }
 
 /** One value a choice field takes, and its chip's words. */
 export interface FieldChoice {
   readonly value: string;
   readonly label: string;
+}
+
+/** The values a choice field takes, in the creator's words, and what an
+ *  absent one means. */
+export interface ChoiceSpec {
+  readonly values: readonly {
+    readonly value: string;
+    readonly label: string;
+  }[];
+  /** The value a block without the field has. */
+  readonly fallback: string;
 }
 
 /** How a kind is added from nothing: its line in the tree's type menu (and,
@@ -134,9 +156,6 @@ interface KindAdd {
   /** Made from a file of this kind: the add opens the file picker, and
    *  the file goes onto the asset shelf (`add-file-item.ts`). */
   readonly file?: TourAssetKind;
-  /** Added to a story only, and why (shown on a station's menu, where it
-   *  is off): no free host draws it. */
-  readonly storyOnly?: string;
 }
 
 /** What the editor knows of one kind. */
@@ -231,6 +250,101 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
     },
   },
 ];
+
+/** The views a free video stands in the world in. */
+const VIDEO_WORLD_VIEWS = ["screen", "cutout", "porthole"];
+
+/** What starts a video in the world (`TOUR_VIDEO_STARTS`); absent: on
+ *  arrival, as the viewer reads it. */
+const VIDEO_START: FieldSpec = {
+  name: "start",
+  label: "Starts",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  choice: {
+    values: [
+      { value: "enter", label: "On arrival" },
+      { value: "near", label: "When near" },
+      { value: "look", label: "When looked at" },
+      { value: "tap", label: "On a tap" },
+    ],
+    fallback: "enter",
+  },
+};
+
+/** Whether a video starts with its sound (`TOUR_VIDEO_SOUNDS`); the
+ *  visitor's own choice wins over it. Absent: off. */
+const VIDEO_SOUND: FieldSpec = {
+  name: "sound",
+  label: "Sound",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  choice: {
+    values: [
+      { value: "off", label: "Starts muted" },
+      { value: "on", label: "Starts with sound" },
+    ],
+    fallback: "off",
+  },
+};
+
+/** A cutout's clip: as filmed, or its matte stacked under the picture
+ *  (`TOUR_VIDEO_ALPHAS`). Absent: as filmed. */
+const VIDEO_ALPHA: FieldSpec = {
+  name: "alpha",
+  label: "Background",
+  prose: false,
+  views: ["cutout"],
+  choice: {
+    values: [
+      { value: "none", label: "As filmed" },
+      { value: "stacked", label: "Stacked alpha" },
+    ],
+    fallback: "none",
+  },
+};
+
+/** A video's `near` start distance, in the views that stand it in the
+ *  world, bounded as the format bounds it (`tour-kinds.ts`). */
+const VIDEO_NEAR: FieldSpec = {
+  name: "withinM",
+  label: "Starts within",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  when: { field: "start", value: "near" },
+  number: {
+    min: TOUR_VIDEO_MIN_WITHIN_M,
+    max: TOUR_VIDEO_MAX_WITHIN_M,
+    unit: "m",
+    required: false,
+  },
+};
+
+/** Whether a video plays again when it ends (`TOUR_VIDEO_LOOPS`); its
+ *  panel draws it as a switch. Absent: off. */
+const VIDEO_LOOP: FieldSpec = {
+  name: "loop",
+  label: "Loop",
+  prose: false,
+  views: VIDEO_WORLD_VIEWS,
+  choice: {
+    values: [
+      { value: "off", label: "Plays once" },
+      { value: "on", label: "Loops" },
+    ],
+    fallback: "off",
+  },
+};
+
+/** A video's captions in the world, WebVTT text the visitor's player
+ *  shows; its panel says how many cues it read and which lines it left
+ *  out. */
+const VIDEO_CAPTIONS: FieldSpec = {
+  name: "captions",
+  label: "Captions (WebVTT)",
+  prose: true,
+  views: VIDEO_WORLD_VIEWS,
+};
 
 /** THE list. Key order is the order of every derived menu. */
 export const KIND_EDIT = {
@@ -366,14 +480,22 @@ export const KIND_EDIT = {
     thing: "video",
     look: "video",
     searchWords: "video film",
-    fields: [TITLE, TRANSCRIPT],
+    fields: [
+      TITLE,
+      TRANSCRIPT,
+      VIDEO_CAPTIONS,
+      VIDEO_START,
+      VIDEO_NEAR,
+      VIDEO_SOUND,
+      VIDEO_LOOP,
+      VIDEO_ALPHA,
+    ],
     add: {
       label: "Video",
-      hint: "A video file, played in a story",
+      hint: "A video file, shown as a screen",
       words: "video film clip movie",
       addable: true,
       file: "video",
-      storyOnly: "A video plays in a story: add it to one",
     },
   },
   audio: {
@@ -447,18 +569,6 @@ export type TextAddKind = Exclude<AddKind, FileAddKind>;
 export function isFileAddKind(kind: AddKind): kind is FileAddKind {
   const add: KindAdd = KIND_EDIT[kind].add;
   return add.file !== undefined;
-}
-
-/** Why `kind` is added to a story only (`KindAdd.storyOnly`), or
- *  undefined for a kind that also stands at a station. */
-export function storyOnlyReason(kind: TourBlockKind): string | undefined {
-  const row: KindEditRow = KIND_EDIT[kind];
-  return row.add?.storyOnly;
-}
-
-/** Whether `kind` is added to a story only (`KindAdd.storyOnly`). */
-export function isStoryOnly(kind: TourBlockKind): boolean {
-  return storyOnlyReason(kind) !== undefined;
 }
 
 /** A kind's word inside a sentence ("the delete of the long text"): its

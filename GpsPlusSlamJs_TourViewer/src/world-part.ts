@@ -25,6 +25,7 @@
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   CanvasTexture,
+  Quaternion,
   SRGBColorSpace,
   Vector3,
   type Camera,
@@ -50,6 +51,10 @@ interface WorldFrame {
   readonly seconds: number;
   /** The viewer's position in the part's parent frame (metres). */
   readonly viewer: readonly [number, number, number];
+  /** Where the viewer looks: a unit direction in the part's parent
+   *  frame (a video that starts when looked at); absent where the page
+   *  gives none. */
+  readonly facing?: readonly [number, number, number];
   /** The camera drawing the frame, for a part that turns toward it or
    *  keeps a size on the screen (the editor's marks, a character's
    *  card, a hint's tag); absent where the page gives none. Read, never
@@ -300,6 +305,8 @@ export function mountedWorldParts(): WorldPart[] {
 }
 
 const viewerLocal = new Vector3();
+const facingLocal = new Vector3();
+const parentTurn = new Quaternion();
 
 function isCamera(object: Object3D): object is Camera {
   return (object as Partial<Camera>).isCamera === true;
@@ -309,7 +316,8 @@ function isCamera(object: Object3D): object is Camera {
  * Every camera frame (`main.ts`): each of `parts` shown under a
  * station's content group of `scene` (`shownIn`) and having an
  * `update` is given the page clock (`nowMs`, as seconds) and the world
- * position of `viewer` (the camera) in its object's parent frame. A
+ * position of `viewer` (the camera) in its object's parent frame, and
+ * the direction it looks in that frame. A
  * viewer that is a camera is handed on too (a hint at the screen's edge
  * places its tag by it, a picture faces it), with its lens over
  * `viewHeightPx` (the view's height in CSS px) where that is given. No
@@ -337,10 +345,16 @@ export function tickWorldParts(
     if (part.update === undefined || !shownIn(part.object, scene)) continue;
     const parent = part.object.parent;
     viewer.getWorldPosition(viewerLocal);
-    if (parent !== null) parent.worldToLocal(viewerLocal);
+    viewer.getWorldDirection(facingLocal);
+    if (parent !== null) {
+      parent.worldToLocal(viewerLocal);
+      parent.getWorldQuaternion(parentTurn);
+      facingLocal.applyQuaternion(parentTurn.invert());
+    }
     part.update({
       seconds,
       viewer: [viewerLocal.x, viewerLocal.y, viewerLocal.z],
+      facing: [facingLocal.x, facingLocal.y, facingLocal.z],
       ...(camera === undefined ? {} : { camera }),
       ...(metresPerPxAtOneM === undefined ? {} : { metresPerPxAtOneM }),
     });
