@@ -42,6 +42,11 @@ export const SPECS = {
   "code-auto-move.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "creator-indoor.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "creator-stations.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "editor-asset-optimizers.spec.js": {
+    project: "dom",
+    area: "editor",
+    lane: 1,
+  },
   "editor-characters.spec.js": { project: "dom", area: "both", lane: 1 },
   "editor-entry.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor-files.spec.js": { project: "dom", area: "editor", lane: 1 },
@@ -230,8 +235,18 @@ const KIT = "GpsPlusSlamJs_EditorKit/src/";
 /** The specs' folder inside the package. */
 const SPECS_DIR = "playwright-tests/";
 
+/**
+ * The editor's pages: the editor itself, and the check page that runs the
+ * editor's own asset optimizers (`asset-optimizer-check.html.md`), which
+ * imports editor modules and nothing only the viewer has.
+ */
+export const EDITOR_PAGES = Object.freeze([
+  "edit.html",
+  "asset-optimizer-check.html",
+]);
+
 /** Package paths only the editor reaches (a file, or a folder's contents). */
-const EDITOR_ONLY = ["edit.html", "src/editor", "src/editor3d"];
+const EDITOR_ONLY = [...EDITOR_PAGES, "src/editor", "src/editor3d"];
 
 /**
  * Shared modules under an area's folder: the editor imports them too

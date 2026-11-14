@@ -6,19 +6,21 @@
 
 - `OptimizeOutcome`: `{ kind: "optimized", blob, extension, width?, height? }` or `{ kind: "kept", reason }`.
 - `OptimizeControl`: `{ signal, progress(fraction) }`; `OptimizeContext` adds `settings` and `host`.
-- `OptimizerHost`: `run(kind, payload, settings, control)` and `close()`, implemented by `optimizer-client.ts`. `run` rejects with `OptimizerCrashed` when the Worker died and with an `AbortError` once aborted.
+- `OptimizerHost`: `run(kind, payload, settings, control, transfer?)` and `close()`, implemented by `optimizer-client.ts`. `run` rejects with `OptimizerCrashed` when the Worker died and with an `AbortError` once aborted.
 - `AssetOptimizer`: `optimize(source, ctx)`; a throw is a failure the shelf shows with Retry.
 - `OptimizerTable`: `Record<TourAssetKind, AssetOptimizer | null>`.
-- `ASSET_OPTIMIZERS`: this build's table - every row null (no optimizer yet).
+- `PICTURE_OPTIMIZER`: the `image` row; hands the file to the Worker's picture step (`picture-step.ts`).
+- `ASSET_OPTIMIZERS`: this build's table - `image` the picture row, `audio` the sound row (`sound-optimizer.ts`), `video` and `model` null.
 - `optimizerShrinks(table)`: `(kind) => boolean`, whether a file of the kind can be made smaller here; `editor-session.ts` passes it to `readTourFile` as `shrinks`.
 - `OptimizerCrashed`: the error a dead Worker turns into.
 
 ## Invariants
 
-- A plain object literal, no registry: adding the picture row is a one-line edit here, and nothing in the shelf's panel changes.
+- A plain object literal, no registry: adding a row is a one-line edit here, and nothing in the shelf's panel changes.
 - An optimizer runs on the PAGE and may do a step there before handing the heavy part to the Worker through `ctx.host`; the Worker has a matching step in `asset-optimizer.worker.ts`.
 - A null row means no job runs (the file is kept, with words), and a file of that kind over the entry or pixel cap is refused when it comes in.
 - Results are judged by the runner (`asset-shelf.ts`), not by the optimizer: not 10 % smaller keeps the original; still over the cap fails.
+- `transfer` lists buffers the payload hands to the Worker instead of copying them (a sound's samples).
 
 ## Tests
 

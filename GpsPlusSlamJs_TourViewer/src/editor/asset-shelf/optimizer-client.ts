@@ -26,7 +26,7 @@ import type {
 
 /** The part of a `Worker` the client uses, so a test can fake it. */
 export interface OptimizerWorker {
-  postMessage(message: OptimizerInbound): void;
+  postMessage(message: OptimizerInbound, transfer?: Transferable[]): void;
   terminate(): void;
   onmessage: ((event: MessageEvent) => void) | null;
   onerror: ((event: Event) => void) | null;
@@ -162,7 +162,7 @@ export function createOptimizerHost(
   }
 
   return {
-    run(kind, payload, settings, control) {
+    run(kind, payload, settings, control, transfer = []) {
       if (control.signal.aborted) return Promise.reject(aborted());
       return new Promise<OptimizeOutcome>((resolve, reject) => {
         const job = ++seq;
@@ -180,7 +180,9 @@ export function createOptimizerHost(
         };
         pending.set(job, { kind, resolve, reject, control, onAbort });
         control.signal.addEventListener("abort", onAbort, { once: true });
-        target.postMessage({ type: "run", job, kind, payload, settings });
+        target.postMessage({ type: "run", job, kind, payload, settings }, [
+          ...transfer,
+        ]);
       });
     },
     close() {

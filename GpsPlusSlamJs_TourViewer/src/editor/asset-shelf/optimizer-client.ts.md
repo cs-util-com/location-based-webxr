@@ -13,6 +13,7 @@
 - **Lazy:** the Worker is spawned on the first `run`, so a build whose rows need no Worker never starts one.
 - **Correlated:** each run gets a fresh job id; answers for an unknown job, or of no known type, are ignored. Progress is forwarded to the run's `control.progress`.
 - **Validated:** an answer of a known type is read field by field. A `done` must carry a Blob, an extension the format allows for the run's kind (`tourMediaTypeOf`), and, when given, a width and height that are positive whole numbers; a `kept` or `failed` must carry its words. One that does not read rejects its run with words (`the optimizer answered with ...`), so the job fails with Retry instead of hanging or handing a file every later save would refuse.
+- **Transfer:** `run`'s optional `transfer` list is posted with the run, so a sound's sample buffers move to the Worker instead of being copied (they are detached on the page afterwards).
 - **Abort:** an aborted signal posts `cancel` and rejects the run with an `AbortError`.
 - **Crash:** the Worker's `error` event rejects every pending run with `OptimizerCrashed` and terminates it; the next run spawns a fresh Worker.
 - **close():** every pending run rejects with an `AbortError`; the Worker is terminated.
