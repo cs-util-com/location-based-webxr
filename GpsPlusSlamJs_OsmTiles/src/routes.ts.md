@@ -88,7 +88,10 @@ tiles (below).
        each of the two queue sends (this verify and the replace below)
        and nowhere else, so repeats that queue nothing (`checking`,
        `backoff`, an already pending replace) and junk reports cannot
-       drain it for the real ones;
+       drain it for the real ones. The cost of that: a junk report naming
+       the current ETag runs a few storage reads and one list (steps 3-8)
+       before any shared bound, though no Queues operation; the per-IP
+       limit bounds it;
     10. otherwise the verifying marker (with the ETag), then a `verify`
         message to the serial queue: `202 {status:"checking"}`; a queue
         failure removes the marker again and is `503 {status:"unavailable"}`.
