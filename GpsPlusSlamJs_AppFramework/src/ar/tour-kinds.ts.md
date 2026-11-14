@@ -92,9 +92,11 @@ rotation [x, y, z, w], hfovDeg 10-120, distanceM 1-500 }` in the
   local -Z. Like a sound's world fields, `showTag` and `viewpoint` are
   kept in every view, so a view switch loses nothing.
 - A video's `start`, `sound`, `alpha` and `loop` read through `choice`
-  (`tour-block-read.ts`): an unknown word in a newer minor's file drops
-  that field alone and keeps the video; its `widthM` takes the picture's
-  bounds.
+  (`tour-block-read.ts`): an unknown `start`, `sound` or `loop` word in a
+  newer minor's file drops that field alone and keeps the video; an
+  unknown `alpha` skips the whole video, since shown without its packing
+  a newer clip's matte half would stand on screen. Its `widthM` takes the
+  picture's bounds.
 - A viewpoint view WITHOUT a viewpoint is read, not refused: the viewer
   draws it as its floor, a `plane`, and the editor never writes one (its
   view switch gives the picture a viewpoint). A broken viewpoint fails a

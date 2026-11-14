@@ -322,6 +322,38 @@ describe("the tree's story commands, a recorded voice", () => {
     ).resolves.toBeUndefined();
     await session.close();
   }, 30_000);
+
+  // Why: the same voice kept for its redo, then a new edit that drops the
+  // redo step and so the file, then an undo of that edit. The undo gives
+  // back the tour before it, whose file list still held the voice: what
+  // the tour names must match, and the files must be the ones the tour
+  // and the history name now, so the dropped voice is right and a file an
+  // undo still needs is never dropped.
+  it.each([
+    ["a second voice", { kind: "voice", at: 0 }],
+    ["a new story", { kind: "add", at: 0 }],
+  ] as const)(
+    "an undo of %s after an undone voice gives back the tour",
+    async (_what, edit) => {
+      const { session, manifest } = await opened();
+      // The checks are inside the helper; resolving is the pass.
+      await expect(
+        commandsKeepTheTour(
+          session,
+          manifest,
+        )([
+          { kind: "addChild", at: 0, make: "longText", place: 0 },
+          { kind: "move", at: 1, to: 0 },
+          { kind: "voice", at: 0 },
+          { kind: "undo" },
+          edit,
+          { kind: "undo" },
+        ]),
+      ).resolves.toBeUndefined();
+      await session.close();
+    },
+    30_000,
+  );
 });
 
 /** Drives `commands` through a fresh editor session and draft, checking
@@ -513,28 +545,36 @@ function commandsKeepTheTour(
         past.push(was);
         future.length = 0;
       }
-      // Exactly, but for the files only a REDO step still names
-      // (`historyAssetIds`): a save after the undo keeps them, so a redo
-      // across that save finds its file (a voice recorded, then undone).
-      // The tour itself names none of them, and nothing else differs.
-      const redoOnly = historyAssetIds({
-        ...store.getState().tourDocument,
-        past: [],
-      });
-      const expectedIds = new Set((expected?.assets ?? []).map((a) => a.id));
-      const named = new Set(withReferencedAssets(now).assets.map((a) => a.id));
-      for (const asset of now.assets) {
-        if (expectedIds.has(asset.id)) continue;
-        expect(
-          { id: asset.id, redoOnly: redoOnly.has(asset.id) },
-          `${c.kind} left a file`,
-        ).toEqual({ id: asset.id, redoOnly: true });
-        expect(named.has(asset.id), `${c.kind} names ${asset.id}`).toBe(false);
-      }
-      expect({
-        ...now,
-        assets: now.assets.filter((a) => expectedIds.has(a.id)),
-      }).toEqual(expected);
+      // The tour as it names its files is given back exactly. The file
+      // list is not compared with the snapshot: a save keeps the files the
+      // undo and redo steps name (`historyAssetIds`), and those steps
+      // change after the snapshot (a voice undone stays for its redo, and
+      // goes when a new edit drops that redo step).
+      expect(withReferencedAssets(now)).toEqual(
+        expected === null || expected === undefined
+          ? expected
+          : withReferencedAssets(expected),
+      );
+      // The files are exactly those the tour or a tour an undo or a redo
+      // gives back names (this run's own snapshots, not the product's
+      // `historyAssetIds`), beside the opened tour's own, of the files
+      // there are: a file an undo or a redo still needs is never dropped,
+      // and no other one stays.
+      const doc = store.getState().tourDocument;
+      const there = new Set(
+        [...manifest.assets, ...doc.addedAssets].map((a) => a.id),
+      );
+      const kept = new Set([
+        ...manifest.assets.map((a) => a.id),
+        ...[now, ...past, ...future].flatMap((tour) =>
+          tour === null
+            ? []
+            : withReferencedAssets(tour).assets.map((a) => a.id),
+        ),
+      ]);
+      expect(now.assets.map((a) => a.id).sort(), `${c.kind}'s files`).toEqual(
+        [...kept].filter((id) => there.has(id)).sort(),
+      );
       expect(() =>
         parseTourManifest(JSON.parse(serializeTourManifest(now))),
       ).not.toThrow();

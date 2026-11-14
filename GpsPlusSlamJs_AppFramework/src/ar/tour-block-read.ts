@@ -129,12 +129,15 @@ export function dropped<T extends object>(
 
 /** One of `choices` in an optional `field`, absent when the block has
  *  none. A value that is not a string fails at every minor (no later minor
- *  can make it a word); an unknown word is {@link dropped}. */
+ *  can make it a word); an unknown word is {@link dropped}, or with
+ *  `unknown: "skip"` a {@link problem} that skips the whole block (a
+ *  field the block cannot be shown right without). */
 export function choice<F extends string, C extends string>(
   v: TourBlockFields,
   field: F,
   choices: readonly C[],
-  ctx: TourBlockReadContext
+  ctx: TourBlockReadContext,
+  unknown: 'drop' | 'skip' = 'drop'
 ): Partial<Record<F, C>> {
   const value = v[field];
   if (value === undefined) return {};
@@ -143,7 +146,9 @@ export function choice<F extends string, C extends string>(
   if ((choices as readonly string[]).includes(value)) {
     return { [field]: value } as Record<F, C>;
   }
-  return dropped(ctx, field, message);
+  return unknown === 'skip'
+    ? problem(ctx, message)
+    : dropped(ctx, field, message);
 }
 
 export function requiredText(

@@ -574,7 +574,9 @@ function videoWorld(
       ? {}
       : { withinM: metres(v.withinM, `${ctx.at}.withinM`, within, ctx) }),
     ...choice(v, 'sound', TOUR_VIDEO_SOUNDS, ctx),
-    ...choice(v, 'alpha', TOUR_VIDEO_ALPHAS, ctx),
+    // Shown without its packing, a newer one's matte half would stand on
+    // screen: an unknown alpha skips the video rather than drop the field.
+    ...choice(v, 'alpha', TOUR_VIDEO_ALPHAS, ctx, 'skip'),
     ...choice(v, 'loop', TOUR_VIDEO_LOOPS, ctx),
   };
 }

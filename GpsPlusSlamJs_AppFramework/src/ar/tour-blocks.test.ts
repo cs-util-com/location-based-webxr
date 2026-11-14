@@ -407,14 +407,13 @@ describe('a video in the world', () => {
     }
   });
 
-  // Why this test matters: a later minor may add a start, a sound, an
-  // alpha or a loop. A reader of this minor must still show that newer
-  // file's video, without just the word it does not know, and say so -
-  // the short text's rule, not a skipped block.
+  // Why this test matters: a later minor may add a start, a sound or a
+  // loop. A reader of this minor must still show that newer file's video,
+  // without just the word it does not know, and say so - the short text's
+  // rule, not a skipped block.
   it.each([
     ['start', 'wave'],
     ['sound', 'loud'],
-    ['alpha', 'green'],
     ['loop', 'twice'],
   ])('a lenient reader drops only an unknown %s (%s)', (field, value) => {
     const drops: TourBlockDrop[] = [];
@@ -425,6 +424,18 @@ describe('a video in the world', () => {
     expect(drops).toEqual([
       expect.objectContaining({ kind: 'field', block: 'b4', field }),
     ]);
+  });
+
+  // Why: an alpha names how the clip packs its matte. Shown without it,
+  // a newer packing's matte half would stand on screen beside the picture,
+  // so a lenient reader skips the whole video (and says so) rather than
+  // dropping the field; a strict one refuses the file.
+  it('an unknown alpha skips the whole video in a lenient read', () => {
+    const drops: TourBlockDrop[] = [];
+    const odd = { ...VALID.video, view: 'screen', widthM: 1, alpha: 'side' };
+    expect(parse([odd], { lenient: true, shown: [], drops })).toEqual([]);
+    expect(drops).toEqual([expect.objectContaining({ kind: 'block' })]);
+    expect(() => parse([odd], { lenient: false })).toThrow('"blocks[0].alpha"');
   });
 
   // Why: a value of the wrong type is no word a later minor can add, so it

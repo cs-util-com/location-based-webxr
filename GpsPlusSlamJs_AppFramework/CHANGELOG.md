@@ -74,8 +74,10 @@
   A video's `widthM` takes the picture's bounds (`TOUR_PICTURE_MIN_WIDTH_M`
   to `TOUR_PICTURE_MAX_WIDTH_M`, 0.05 to 50 m). As with a short text's
   look fields, a `start`, `sound`, `alpha` or `loop` of the wrong type
-  fails at every minor; an unknown word fails a file of this minor and is
-  dropped, alone, from a newer one, which still shows the video.
+  fails at every minor, and an unknown word fails a file of this minor. In
+  a newer one an unknown `start`, `sound` or `loop` is dropped, alone, and
+  the video still shows; an unknown `alpha` skips the whole video, since
+  shown without it a newer clip's matte half would stand on screen.
 
 ### Changed
 

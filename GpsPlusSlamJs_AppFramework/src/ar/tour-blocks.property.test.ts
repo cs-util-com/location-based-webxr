@@ -167,9 +167,10 @@ describe('a placed model size (properties)', () => {
 
 /**
  * Why this matters: a later minor may add a word to any of a video's look
- * fields. Whatever word it adds, a reader of this minor must keep the
- * video and drop only that field (reporting it), and a reader of a file of
- * its own minor must refuse it - for every string, not only the examples.
+ * fields. Whatever word it adds to start, sound or loop, a reader of this
+ * minor must keep the video and drop only that field (reporting it); an
+ * unknown alpha skips the video, as its matte would show; and a reader of
+ * a file of its own minor must refuse any of them - for every string.
  */
 describe("a video's look fields (properties)", () => {
   const videoAssets = parseTourAssets(
@@ -188,7 +189,7 @@ describe("a video's look fields (properties)", () => {
       .filter((s) => !(words[field] as readonly string[]).includes(s))
       .map((value) => ({ field, value }));
 
-  it('any unknown word in start, sound, alpha or loop never skips the video', () => {
+  it('any unknown word in start, sound or loop never skips the video, and any unknown alpha skips it', () => {
     fc.assert(
       fc.property(
         fc.oneof(
@@ -216,11 +217,21 @@ describe("a video's look fields (properties)", () => {
               onDropped: (drop) => drops.push(drop),
             }).map((r) => r.block);
           expect(() => read(false)).toThrow(Invalid);
-          const [kept] = read(true);
-          expect(kept).toMatchObject({ kind: 'video', widthM: 1 });
-          expect(field in (kept as object)).toBe(false);
+          const lenient = read(true);
+          // An alpha the reader does not know would show a newer packing's
+          // matte half on screen: the video is skipped, not shown without it.
+          const skips = field === 'alpha';
+          expect(lenient.length).toBe(skips ? 0 : 1);
+          expect(
+            lenient.every((kept) => !(field in (kept as object))) &&
+              lenient.every((kept) => kept.kind === 'video')
+          ).toBe(true);
           expect(drops).toEqual([
-            expect.objectContaining({ kind: 'field', block: 'v1', field }),
+            expect.objectContaining(
+              skips
+                ? { kind: 'block', block: 'v1' }
+                : { kind: 'field', block: 'v1', field }
+            ),
           ]);
         }
       ),
