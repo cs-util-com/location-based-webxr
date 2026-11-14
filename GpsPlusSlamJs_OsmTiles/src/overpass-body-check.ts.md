@@ -12,7 +12,9 @@ have.
 - `checkOverpassBody(bytes, now?)` - `{ ok: true, osmBase }` or
   `{ ok: false, reason }` with reason one of:
   - `not-json` - the head does not start with `{`;
-  - `no-timestamp` - no `osm3s.timestamp_osm_base` in the first 2 KiB;
+  - `no-timestamp` - no `osm3s.timestamp_osm_base` in the first 2 KiB, or
+    one of the right shape that is not a date (month 13): it would pass the
+    future check as `NaN` and become the tile's data age;
   - `future-timestamp` - that timestamp is more than an hour after `now`
     (default `Date.now()`); it would win every newer-than comparison and
     block the tile's refreshes;
@@ -20,7 +22,17 @@ have.
     reports a timeout or a memory abort this way, with a partial array);
   - `incomplete` - the tail does not show the top-level end (a cut
     transfer).
-- `BODY_HEAD_BYTES` (2048) - the head window.
+- `checkOverpassHead(head, now?)` - the head reasons alone (`not-json`,
+  `no-timestamp`, `future-timestamp`) on the decoded head text, for a body
+  whose tail is not at hand (a gzip answer, of which only the start is
+  inflated).
+- `checkOverpassTail(tail)` - the tail reasons alone (`remark`,
+  `incomplete`) on the decoded tail text.
+- `hasTopLevelRemark(tail)` - the remark test alone: a `"remark"` key after
+  the closing `]` of the elements array. The verify of a stored tile uses
+  it without the layout rule below, which is the fill's alone.
+- `checkOverpassBody` is the two together, the tail first, as before.
+- `BODY_HEAD_BYTES` (2048) and `BODY_TAIL_BYTES` (512) - the windows.
 
 ## Invariants & assumptions
 
@@ -44,5 +56,7 @@ have.
 `overpass-body-check.test.ts`: a real-shaped answer, each refusal reason, a
 tag named `remark` in the last element, cuts after an untagged way and
 inside a relation, the empty answer as Overpass writes it, the timestamp
-looked for only in the head window, a future timestamp, and a property that
+looked for only in the head window, a future timestamp, a timestamp of the
+right shape that is no date, two real Overpass tails accepted and their
+cut and remark forms refused, and a property that
 a big answer is judged by its tail whatever sits in the middle.

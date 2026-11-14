@@ -256,7 +256,7 @@ export interface OverpassStats {
  * too tight and 60-75 s is right. Three samples per host cannot settle that -
  * re-measure with `scripts/benchmark-endpoints.mjs` before trusting it further.
  */
-const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+export const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
 
 /**
  * What the opening race produced.
@@ -413,6 +413,16 @@ const DEFAULT_RATE_LIMIT_PENALTY_MS = 35_000;
  * diagnosed is nearly always the latest one.
  */
 const DEFAULT_MAX_ATTEMPT_LOG = 50;
+
+/**
+ * Whether a decoded Overpass answer is a partial one: Overpass reports a
+ * timeout or a memory abort inside a 200 as a top-level `remark` next to a
+ * cut `elements` array. Such an answer parses as valid JSON, so it must be
+ * refused by this test, never returned or cached as the whole tile.
+ */
+export function isPartialOverpassAnswer(payload: unknown): boolean {
+  return typeof payload === "object" && payload !== null && "remark" in payload;
+}
 
 /**
  * A failure that retrying cannot fix — a 400 because our query is malformed, a
@@ -1326,6 +1336,11 @@ export class OverpassSource implements OsmDataSource {
       response,
       clocks.transportStart,
     );
+    // A partial answer is a failed attempt like an error page: the next
+    // operator is tried, and a race never lets it win over a complete one.
+    if (isPartialOverpassAnswer(payload)) {
+      throw new Error(`${hostOf(endpoint)} sent a partial answer (remark)`);
+    }
 
     const parseStart = this.monotonicNow();
     const parsed = parseOverpassJson(payload);

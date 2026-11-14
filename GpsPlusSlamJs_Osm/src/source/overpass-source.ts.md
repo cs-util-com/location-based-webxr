@@ -12,8 +12,14 @@ and the home of every item of the plan's §5.3 network discipline.
   `fetchImpl`, `maxConcurrent`, `maxRetries`, `timeoutSeconds`, `backoff`,
   `random`, `now`, `monotonicNow`, `sleepImpl`, `selectKeys`, `budget`,
   `maxAttemptLog`.
+- `DEFAULT_REQUEST_TIMEOUT_MS` (45 s) - the per-attempt deadline; also the
+  static tile host's per-request limit (`static-tile-source.ts`), so the host
+  never gives up on a download the race would still wait for.
 - `DEFAULT_OVERPASS_ENDPOINTS`.
 - `PermanentOverpassError`.
+- `isPartialOverpassAnswer(payload)` - whether a decoded answer carries a
+  top-level `remark` (Overpass's mark of a partial answer); the static tile
+  source's check of a stored file uses it too.
 - `stats` — `{ requests, retries, deduplicated }`, for the demo app's
   "how many queries did this session make?" measurement the plan asks for.
 
@@ -134,6 +140,12 @@ and the home of every item of the plan's §5.3 network discipline.
 - **An HTML error page served with status 200 is retryable.** Real public
   instances do this under load; `JSON.parse` throws and the throw must not be a
   hard failure.
+- **A partial answer is a failed attempt.** Overpass reports a timeout or a
+  memory abort inside a 200, as a top-level `remark` next to a cut
+  `elements` array; it parses, so `toResult` refuses it by
+  `isPartialOverpassAnswer` and the next operator is tried. The operator
+  that gives up early answers first, so without this a race would return,
+  and the cache would keep, a partial tile.
 - **Everything injectable is injected** — `fetch`, `now`, `monotonicNow`,
   `random`, `sleepImpl`
   — so the whole policy is tested offline, deterministically, with no real
@@ -153,8 +165,10 @@ is effectively required for production use.
 exact request shape and headers, provenance, dedup (including release after
 success and after failure), bounded concurrency, retry on each retryable status
 with endpoint rotation, no-retry on 400, `Retry-After` in both forms, jittered
-fallback, give-up reporting, transport-level throws, HTML-in-a-200, and
-`AbortSignal` before and during a retry wait.
+fallback, give-up reporting, transport-level throws, HTML-in-a-200, a
+partial answer (`remark`) retried and never returned, and
+`AbortSignal` before and during a retry wait. `overpass-race.test.ts` also
+shows a fast partial answer losing the race to a slower complete one.
 
 **The backoff-duration tests pin the pool to ONE entry, and that is load-bearing
 rather than incidental.** Since 2026-08-19 the client sleeps only when the next

@@ -48,7 +48,8 @@ export interface OsmTileTimings {
    */
   readonly servedBy: "network" | "cache" | "joined" | "stale-on-rate-limit";
   /**
-   * Time queued behind `maxConcurrent` before any work began.
+   * Time queued behind `maxConcurrent` before any work began; for the static
+   * tile host, the wait for its fill before the read that delivered the tile.
    *
    * Its own field because it is a real, unenumerated stage on the click path:
    * folded into `transportMs` it reads as a slow server, and dropped entirely it

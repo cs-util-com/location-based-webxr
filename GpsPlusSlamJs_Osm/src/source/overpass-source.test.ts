@@ -648,6 +648,42 @@ describe("retry, rotation and backoff", () => {
     await expect(source.fetchTile(TILE)).resolves.toMatchObject({ tile: TILE });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
+
+  it("retries a 200 whose answer carries a top-level remark (a partial answer)", async () => {
+    // Why this test matters: Overpass reports a timeout or a memory abort
+    // inside a 200, as a top-level "remark" after a PARTIAL elements array.
+    // It parses as valid JSON, so without this check the partial tile would
+    // be returned and cached as if it were the whole tile, and a race would
+    // let the faster, partial answer win. It must count as a failed attempt.
+    const partial = {
+      ...OK_BODY,
+      elements: [],
+      remark:
+        'runtime error: Query timed out in "query" at line 1 after 26 seconds.',
+    };
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(partial))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse(OK_BODY)));
+    const { source } = makeSource(fetchImpl);
+
+    const result = await source.fetchTile(TILE);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result.features.length).toBeGreaterThan(0);
+  });
+
+  it("rejects when every answer carries a top-level remark", async () => {
+    // Why this test matters: a partial answer is never the result, even when
+    // no operator gives a complete one; the caller then keeps what it had.
+    const fetchImpl = vi.fn(() =>
+      Promise.resolve(
+        jsonResponse({ ...OK_BODY, remark: "runtime error: out of memory" }),
+      ),
+    );
+    const { source } = makeSource(fetchImpl);
+
+    await expect(source.fetchTile(TILE)).rejects.toThrow();
+  });
 });
 
 describe("AbortSignal support, end to end", () => {

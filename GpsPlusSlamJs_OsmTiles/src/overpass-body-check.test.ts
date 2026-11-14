@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { checkOverpassBody, BODY_HEAD_BYTES } from "./overpass-body-check";
+import {
+  checkOverpassBody,
+  checkOverpassTail,
+  BODY_HEAD_BYTES,
+} from "./overpass-body-check";
+import { REAL_TAIL_A, REAL_TAIL_B } from "./testing/overpass-tails";
 
 // Why these tests matter: Overpass can answer HTTP 200 with a `remark`
 // ("runtime error: Query timed out") and only part of the elements. A
@@ -18,6 +23,30 @@ function body(elements: string, end = "\n\n  ]\n}\n"): Uint8Array {
 }
 
 const ELEMENT = `{\n  "type": "node",\n  "id": 1,\n  "lat": 50.9,\n  "lon": 6.9,\n  "tags": {\n    "amenity": "bench"\n  }\n}`;
+
+describe("checkOverpassTail on real operator answers", () => {
+  // Why: the fill's tail pattern was written from one layout; these are the
+  // ends of answers two operator versions actually sent for the tile query.
+  it("accepts both real tails", () => {
+    expect(checkOverpassTail(REAL_TAIL_A)).toEqual({ ok: true });
+    expect(checkOverpassTail(REAL_TAIL_B)).toEqual({ ok: true });
+  });
+
+  it("refuses them cut after the last element or carrying a remark", () => {
+    for (const tail of [REAL_TAIL_A, REAL_TAIL_B]) {
+      const cut = tail.slice(0, tail.lastIndexOf("]"));
+      expect(checkOverpassTail(cut)).toEqual({
+        ok: false,
+        reason: "incomplete",
+      });
+      const remark = tail.replace(/\]\s*\}\s*$/, '],\n  "remark": "x"\n}\n');
+      expect(checkOverpassTail(remark)).toEqual({
+        ok: false,
+        reason: "remark",
+      });
+    }
+  });
+});
 
 describe("checkOverpassBody", () => {
   it("accepts a complete answer and reads its data age", () => {
@@ -138,5 +167,20 @@ describe("checkOverpassBody", () => {
     });
     const close = Date.parse("2026-11-11T08:13:00Z");
     expect(checkOverpassBody(body(ELEMENT), close).ok).toBe(true);
+  });
+
+  it("refuses a data timestamp of the right shape that is not a date", () => {
+    // The pattern admits any 20 characters of digits, T, Z, colons and
+    // hyphens; a value that does not parse would pass the future check (NaN
+    // compares false) and be stored as the tile's data age.
+    for (const bad of ["9999-99-99T99:99:99Z", "2026-13-01T00:00:00Z"]) {
+      const text = new TextDecoder()
+        .decode(body(ELEMENT))
+        .replace("2026-11-11T09:12:34Z", bad);
+      expect(checkOverpassBody(encoder.encode(text)), bad).toEqual({
+        ok: false,
+        reason: "no-timestamp",
+      });
+    }
   });
 });

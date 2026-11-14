@@ -172,6 +172,43 @@ describe("what the race actually does", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("never lets a fast PARTIAL answer win over a complete one", async () => {
+    // Why this test matters: Overpass reports a timeout inside a 200 as a
+    // top-level "remark" next to a cut elements array. The operator that
+    // gives up early answers FIRST, so a race that took the first parseable
+    // answer would hand out, and get cached, a partial tile. It must count
+    // as that racer failing, and the complete answer must win.
+    const partial = JSON.stringify({
+      elements: [],
+      remark: "runtime error: Query timed out",
+    });
+    const complete = JSON.stringify({
+      elements: [
+        {
+          type: "node",
+          id: 1,
+          lat: 50.92,
+          lon: 6.94,
+          tags: { amenity: "bench" },
+        },
+      ],
+    });
+    const fetchImpl = vi
+      .fn()
+      .mockImplementation((url: string) =>
+        String(url).includes("lz4")
+          ? Promise.resolve(jsonResponse(partial))
+          : new Promise<Response>((resolve) =>
+              setTimeout(() => resolve(jsonResponse(complete)), 5),
+            ),
+      );
+    const source = makeSource(fetchImpl, { maxConcurrent: 2 });
+
+    const result = await source.fetchTile(TILE);
+
+    expect(result.features.length).toBe(1);
+  });
+
   it("still serves the tile when the FIRST-drawn operator fails", async () => {
     // The measured win, in miniature: in 3 of 9 races the first-drawn operator
     // failed outright and the race is what made the tile arrive at all.

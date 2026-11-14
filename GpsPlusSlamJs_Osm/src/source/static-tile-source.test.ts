@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 import { latLngToCell } from "h3-js";
 import { StaticTileSource } from "./static-tile-source.js";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "./overpass-source.js";
 import type {
   FetchTileOptions,
   OsmDataSource,
@@ -20,6 +21,16 @@ const TILE = latLngToCell(50.9384, 6.9598, 7);
 const BASE = "https://tiles.example.dev";
 const TILE_URL = `${BASE}/osm/v${OVERPASS_SCHEMA_VERSION}/${TILE}.json.gz`;
 const FILL_URL = `${BASE}/fill/v${OVERPASS_SCHEMA_VERSION}/${TILE}`;
+const REPORT_URL = `${BASE}/report/v${OVERPASS_SCHEMA_VERSION}/${TILE}`;
+
+/** A response whose body's cancel() rejects, as a torn stream's can. */
+function uncancellable(status: number): Response {
+  const response = new Response("x", { status });
+  Object.defineProperty(response, "body", {
+    value: { cancel: () => Promise.reject(new Error("cancel failed")) },
+  });
+  return response;
+}
 
 const PAYLOAD = JSON.stringify({
   version: 0.6,
@@ -37,13 +48,30 @@ const PAYLOAD = JSON.stringify({
 
 type Reply = Response | Error;
 
+interface RecordedCall {
+  method: string;
+  url: string;
+  signal?: AbortSignal;
+  cache?: RequestCache;
+}
+
+/** The parts of a request's init the tests look at. */
+function initParts(
+  init: RequestInit | undefined,
+): Pick<RecordedCall, "signal" | "cache"> {
+  return {
+    ...(init?.signal == null ? {} : { signal: init.signal }),
+    ...(init?.cache === undefined ? {} : { cache: init.cache }),
+  };
+}
+
 /** A fetch that answers from a script and records every call. */
 function scriptedFetch(script: Record<string, Reply[]>) {
-  const calls: { method: string; url: string }[] = [];
+  const calls: RecordedCall[] = [];
   const impl = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = input instanceof Request ? input.url : input.toString();
     const method = init?.method ?? "GET";
-    calls.push({ method, url });
+    calls.push({ method, url, ...initParts(init) });
     const queue = script[`${method} ${url}`];
     const next = queue?.shift();
     if (next === undefined) {
@@ -134,7 +162,9 @@ describe("StaticTileSource", () => {
     expect(result.sourceId).toBe("static:tiles.example.dev");
     expect(result.timings?.servedBy).toBe("network");
     expect(fallback.calls).toEqual([]);
-    expect(calls).toEqual([{ method: "GET", url: TILE_URL }]);
+    expect(calls.map(({ method, url }) => ({ method, url }))).toEqual([
+      { method: "GET", url: TILE_URL },
+    ]);
   });
 
   it("dates a stored tile without an osm_base by the time it was read", async () => {
@@ -159,6 +189,10 @@ describe("StaticTileSource", () => {
     expect(fallback.calls).toEqual([]);
     expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "GET", "GET"]);
     expect(slept).toEqual([5_000, 5_000]);
+    // The wait for the host's fill is time before the bytes existed, not
+    // transport: the delivering read took no clock time here.
+    expect(result.timings?.transportMs).toBe(0);
+    expect(result.timings?.slotWaitMs).toBe(10_000);
   });
 
   it("reads the tile at once when the fill answer says it is already there", async () => {
@@ -316,6 +350,51 @@ describe("StaticTileSource", () => {
     expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "GET"]);
   });
 
+  it("sends no refresh for a speculative read of an old tile", async () => {
+    // A ring warm has nobody waiting on it and asks the host for nothing;
+    // the next waited-for read of the tile still asks once.
+    const old = PAYLOAD.replace("2026-11-11T09:00:00Z", "1970-01-01T00:00:00Z");
+    const { source, calls, advance } = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response(old, { status: 200 }),
+        new Response(old, { status: 200 }),
+      ],
+      [`POST ${FILL_URL}`]: [json(200, { status: "refreshing" })],
+    });
+    advance(31 * 86_400_000);
+    await source.fetchTile(TILE, { speculative: true });
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
+    await source.fetchTile(TILE);
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "POST"]);
+  });
+
+  it("a refresh answer whose body cannot be cancelled raises nothing", async () => {
+    // The refresh is fire-and-forget; a rejected cancel() there was an
+    // unhandled rejection, which the test runner reports as an error.
+    const old = PAYLOAD.replace("2026-11-11T09:00:00Z", "1970-01-01T00:00:00Z");
+    const { source, calls, advance } = setup({
+      [`GET ${TILE_URL}`]: [new Response(old, { status: 200 })],
+      [`POST ${FILL_URL}`]: [uncancellable(200)],
+    });
+    advance(31 * 86_400_000);
+    const result = await source.fetchTile(TILE);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(result.features).toHaveLength(1);
+    expect(calls.map((c) => c.method)).toEqual(["GET", "POST"]);
+  });
+
+  it("a speculative miss whose body cannot be cancelled is still no refusal", async () => {
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [uncancellable(404), uncancellable(404)],
+      [`POST ${FILL_URL}`]: [json(202, { status: "queued", ahead: 2 })],
+    });
+    await source.fetchTile(TILE, { speculative: true });
+    await source.fetchTile(TILE);
+    expect(fallback.calls).toHaveLength(2);
+    // The second, waited-for fetch still asked for a fill.
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "POST"]);
+  });
+
   it("sends no refresh for a young tile, and a failed refresh changes nothing", async () => {
     const old = PAYLOAD.replace("2026-11-11T09:00:00Z", "1970-01-01T00:00:00Z");
     const young = setup({
@@ -352,6 +431,193 @@ describe("StaticTileSource", () => {
     });
     await source.fetchTile(TILE);
     expect(fallback.calls).toHaveLength(1);
+  });
+
+  it("rejects a stored partial answer (a remark), races the tile, and reports it once", async () => {
+    // Overpass marks a timeout or memory abort with a top-level `remark`
+    // and a partial elements array; the host stores an operator's gzip
+    // answer on its head alone, so the reader is where it is caught.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: 'runtime error: Query timed out in "query" at line 3',
+    });
+    const stored = (): Response =>
+      new Response(partial, { status: 200, headers: { etag: '"e1"' } });
+    const reportUrl = `${REPORT_URL}?etag=${encodeURIComponent('"e1"')}`;
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [stored(), stored(), stored(), stored()],
+      [`POST ${reportUrl}`]: [json(202, { status: "checking" })],
+      [`POST ${FILL_URL}`]: [json(200, { status: "present" })],
+    });
+    const result = await source.fetchTile(TILE);
+    expect(result.sourceId).toBe("overpass:test");
+    expect(fallback.calls).toHaveLength(1);
+    await source.fetchTile(TILE);
+    expect(fallback.calls).toHaveLength(2);
+    // Each bad read is read once more past the browser cache; one report
+    // per tile per session, and no fill asked for a stored tile.
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET ${TILE_URL}`,
+      `GET ${TILE_URL}`,
+      `POST ${reportUrl}`,
+      `GET ${TILE_URL}`,
+      `GET ${TILE_URL}`,
+    ]);
+  });
+
+  it("re-reads a bad tile once past the browser cache and serves the fresh copy without a report", async () => {
+    // Why this test matters: the host replaces a bad tile, but the browser
+    // may still hold the old bad copy in its HTTP cache. Without a re-read
+    // that bypasses the cache, every visit would race the tile and report
+    // an object the host no longer stores.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response(partial, { status: 200, headers: { etag: '"old"' } }),
+        new Response(PAYLOAD, { status: 200, headers: { etag: '"new"' } }),
+      ],
+    });
+    const result = await source.fetchTile(TILE);
+    expect(result.sourceId).toBe("static:tiles.example.dev");
+    expect(fallback.calls).toEqual([]);
+    expect(calls.map((c) => [c.method, c.cache])).toEqual([
+      ["GET", undefined],
+      ["GET", "no-cache"],
+    ]);
+  });
+
+  it("a speculative read of a bad tile sends no report", async () => {
+    // Why this test matters: a speculative read (a ring warm) asks the host
+    // for nothing. A report queues work on the host, so warming tiles nobody
+    // looks at must not send one; the tile still goes to the race.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const stored = (): Response =>
+      new Response(partial, { status: 200, headers: { etag: '"e1"' } });
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [stored(), stored()],
+    });
+    await source.fetchTile(TILE, { speculative: true });
+    expect(fallback.calls).toHaveLength(1);
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET"]);
+  });
+
+  it("rejects a stored body without an elements array, and a bad tile is no refusal", async () => {
+    const other = latLngToCell(47.0468, 8.3745, 7);
+    const otherUrl = `${BASE}/osm/v${OVERPASS_SCHEMA_VERSION}/${other}.json.gz`;
+    const otherFill = `${BASE}/fill/v${OVERPASS_SCHEMA_VERSION}/${other}`;
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [
+        new Response(JSON.stringify({ version: 0.6 }), { status: 200 }),
+        new Response(JSON.stringify({ version: 0.6 }), { status: 200 }),
+      ],
+      [`GET ${otherUrl}`]: [
+        new Response("nf", { status: 404 }),
+        new Response(PAYLOAD, { status: 200 }),
+      ],
+      [`POST ${otherFill}`]: [json(200, { status: "present" })],
+    });
+    await source.fetchTile(TILE);
+    expect(fallback.calls).toHaveLength(1);
+    // Without an ETag nothing can be reported; the next tile is still
+    // filled by the host (the bad file said nothing about the host).
+    const next = await source.fetchTile(other);
+    expect(next.sourceId).toBe("static:tiles.example.dev");
+    expect(calls.map((c) => c.method)).toEqual([
+      "GET",
+      "GET",
+      "GET",
+      "POST",
+      "GET",
+    ]);
+  });
+
+  it("gives every host request a time limit, and a host that does not answer in it goes to the race", async () => {
+    // Without one a stalled connection to the host held the tile for as
+    // long as the browser let it, while the race would have delivered it.
+    const fallback = new FallbackSpy();
+    const signals: AbortSignal[] = [];
+    const source = new StaticTileSource({
+      baseUrl: BASE,
+      fallback,
+      requestTimeoutMs: 20,
+      fetchImpl: (_input: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal == null) return;
+          signals.push(signal);
+          signal.addEventListener("abort", () => {
+            reject(signal.reason as Error);
+          });
+        }),
+    });
+    const result = await source.fetchTile(TILE);
+    expect(result.sourceId).toBe("overpass:test");
+    expect(signals).toHaveLength(1);
+    expect((signals[0]?.reason as Error).name).toBe("TimeoutError");
+  });
+
+  it("the time limit also covers a body that stalls after the headers", async () => {
+    // Why this test matters: a host can send its headers at once and then
+    // stall the body. If the limit only covered the wait for the headers,
+    // the tile would hang on the body read for as long as the browser let
+    // it. A real fetch ties the body to the request's signal; this fake does
+    // the same.
+    const fallback = new FallbackSpy();
+    const source = new StaticTileSource({
+      baseUrl: BASE,
+      fallback,
+      requestTimeoutMs: 20,
+      fetchImpl: (_input: RequestInfo | URL, init?: RequestInit) => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"elements":['));
+            init?.signal?.addEventListener("abort", () => {
+              controller.error(init.signal?.reason);
+            });
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200 }));
+      },
+    });
+    const result = await source.fetchTile(TILE);
+    expect(result.sourceId).toBe("overpass:test");
+    expect(fallback.calls).toHaveLength(1);
+  });
+
+  it("keeps the caller's abort a hard abort under the time limit", async () => {
+    const controller = new AbortController();
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [new Response(PAYLOAD, { status: 200 })],
+    });
+    await source.fetchTile(TILE, { signal: controller.signal });
+    // The signal handed to fetch follows the caller's as well as the limit.
+    const signal = calls[0]?.signal;
+    expect(signal).toBeDefined();
+    expect(signal).not.toBe(controller.signal);
+    controller.abort();
+    expect(signal?.aborted).toBe(true);
+    expect(fallback.calls).toEqual([]);
+  });
+
+  it("uses the direct race's per-request deadline as its default time limit", async () => {
+    // The host must never give up sooner than the race would at any
+    // bandwidth: both fetch the same compressed bytes under one deadline.
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const { source } = setup({
+        [`GET ${TILE_URL}`]: [new Response(PAYLOAD, { status: 200 })],
+      });
+      await source.fetchTile(TILE);
+      expect(timeout.mock.calls).toEqual([[DEFAULT_REQUEST_TIMEOUT_MS]]);
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("stops polling at the bounded wait and falls back, never both at once", async () => {
