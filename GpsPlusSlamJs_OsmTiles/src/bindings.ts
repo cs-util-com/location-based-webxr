@@ -92,6 +92,11 @@ export interface OsmTilesEnv {
   readonly FILL_LIMITER?: RateLimiter;
   /** Upstream requests per UTC day, all operators together (a string var). */
   readonly DAILY_UPSTREAM_CAP?: string;
+  /**
+   * Of DAILY_UPSTREAM_CAP, the requests replaces of reported tiles may send
+   * per UTC day (a string var; a third of the upstream cap when unset).
+   */
+  readonly DAILY_REPLACE_CAP?: string;
   /** Queued or running fills at which the endpoint answers busy (a string var). */
   readonly MAX_PENDING_FILLS?: string;
   /** Verifies of reported tiles per UTC day (a string var). */

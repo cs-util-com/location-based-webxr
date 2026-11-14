@@ -28,6 +28,10 @@ dailyVerifyCap, maxDecodedBytes? }` and a `verify` `FillMessage` (`etag` optiona
     `MAX_TILE_DECODED_BYTES`, 150 MiB) came out of it):
     the tile and its memo are deleted, and `recordBadTile` backs the cell
     off by its bad count.
+  - A failed read of the stored object (`SourceReadError`, an R2 stream
+    error) is no evidence: `verifyTile` rejects with it, nothing is
+    deleted or recorded, and the memo stays `started`, so the next report
+    of the object refetches the tile (`replace`) instead.
 - `strongEtag(etag)` - drops a `W/` prefix: the edge weakens the ETag of a
   response it compressed, and the report endpoint compares with it too.
 
@@ -77,7 +81,8 @@ replaced object (stale) and a missing one left alone, a memo hit costing
 no verify, a good memo older than a week verified again, the memo written
 `started` before the read and `good` after, a `started` memo answered
 `unfinished` without a read, a gzip bomb stopped at the decoded bound and
-deleted, the cap, the backoff growing across a refill, and a property
+deleted, a read error of a raw or gzip object keeping the tile with its
+memo `started` and no failure record, the cap, the backoff growing across a refill, and a property
 that a complete answer of any size, gzip or raw, is never deleted. The
 positive-evidence block keeps a compact layout and a head without a
 timestamp, deletes an HTML head, keeps two real Overpass tails

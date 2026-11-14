@@ -1,7 +1,7 @@
 /**
  * One verify of a reported tile, as the serial queue consumer runs it: the
- * stored bytes are judged here, never by the report, so a good tile survives
- * any number of reports and a bad one is deleted with a growing backoff.
+ * stored bytes are judged here, never by the report, so a report never
+ * deletes a good tile, and a bad one is deleted with a growing backoff.
  *
  * @see verify-tile.ts.md
  */
@@ -11,6 +11,7 @@ import {
   BodyTooLarge,
   MAX_TILE_DECODED_BYTES,
   readBodyEnds,
+  SourceReadError,
 } from "./body-window";
 import {
   clearVerified,
@@ -140,6 +141,10 @@ export async function verifyTile(
       decoder.decode(ends.tail),
     );
   } catch (error) {
+    // A failed read of the stored object is no evidence about the tile: no
+    // verdict, and the memo stays `started`, so the next report refetches
+    // the tile (`replace`) instead of deleting it.
+    if (error instanceof SourceReadError) throw error;
     reason = error instanceof BodyTooLarge ? "too-large" : "encoding";
   }
   if (reason === undefined) {

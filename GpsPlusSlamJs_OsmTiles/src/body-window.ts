@@ -32,6 +32,53 @@ export class BodyTooLarge extends Error {
 }
 
 /**
+ * Thrown by `readBodyEnds` when reading the source stream itself failed
+ * (a torn connection, a transient storage error). It says nothing about
+ * the bytes, unlike a gzip error, so a caller must not judge a tile by it.
+ */
+export class SourceReadError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `source stream read failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { cause },
+    );
+    this.name = "SourceReadError";
+  }
+}
+
+/**
+ * `stream` passed through unchanged, noting when a read of it fails. The
+ * error a decoder downstream reports for a failed source differs between
+ * runtimes, so the note, not that error, tells a read error from a decode
+ * error.
+ */
+function watchReads(stream: ReadableStream<Uint8Array>): {
+  readonly stream: ReadableStream<Uint8Array>;
+  readonly failure: () => { readonly error: unknown } | undefined;
+} {
+  const reader = stream.getReader();
+  let failure: { readonly error: unknown } | undefined;
+  const watched = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let result: ReadableStreamReadResult<Uint8Array>;
+      try {
+        result = await reader.read();
+      } catch (error) {
+        failure = { error };
+        controller.error(error);
+        return;
+      }
+      if (result.done) controller.close();
+      else controller.enqueue(result.value);
+    },
+    cancel(reason) {
+      return reader.cancel(reason).catch(() => undefined);
+    },
+  });
+  return { stream: watched, failure: () => failure };
+}
+
+/**
  * The decoded size a gzip stream declares in its trailer (ISIZE, the last
  * four bytes, little-endian), or undefined for bytes too short to be gzip.
  * It is the size modulo 2^32 and nothing checks it before the stream is
@@ -105,8 +152,9 @@ export interface BodyEnds {
 /**
  * Reads `stream` to its end (inflating it first when `gzip`), keeping only
  * its first `headBytes` and its last `tailBytes`. Rejects on a gzip error,
- * a cut gzip stream included, and with `BodyTooLarge` (the stream
- * cancelled) once more than `maxDecodedBytes` came out.
+ * a cut gzip stream included, with `BodyTooLarge` (the stream cancelled)
+ * once more than `maxDecodedBytes` came out, and with `SourceReadError`
+ * when reading `stream` itself failed, whatever the decoder made of it.
  */
 export async function readBodyEnds(
   stream: ReadableStream<Uint8Array>,
@@ -115,11 +163,12 @@ export async function readBodyEnds(
   tailBytes: number,
   maxDecodedBytes = MAX_TILE_DECODED_BYTES,
 ): Promise<BodyEnds> {
+  const source = watchReads(stream);
   const decoded: ReadableStream<Uint8Array> = gzip
-    ? (stream as ReadableStream<BufferSource>).pipeThrough(
+    ? (source.stream as ReadableStream<BufferSource>).pipeThrough(
         new DecompressionStream("gzip"),
       )
-    : stream;
+    : source.stream;
   const reader = decoded.getReader();
   const head = new Uint8Array(headBytes);
   let headLength = 0;
@@ -149,6 +198,9 @@ export async function readBodyEnds(
         tail = joined.slice(Math.max(0, joined.length - tailBytes));
       }
     }
+  } catch (error) {
+    const failed = source.failure();
+    throw failed === undefined ? error : new SourceReadError(failed.error);
   } finally {
     reader.releaseLock();
   }

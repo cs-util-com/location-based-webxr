@@ -19,6 +19,10 @@ import {
   readVerifying,
   sweepVerifying,
   PENDING_STALE_MS,
+  clearVerifyingIf,
+  readLastReplace,
+  REPLACE_MIN_GAP_MS,
+  writeLastReplace,
   recordFailure,
   sweepPending,
   utcDay,
@@ -63,6 +67,7 @@ describe("the daily counter", () => {
       rawBytes: 0,
       storedBytes: 0,
       verifies: 0,
+      replaceRequests: 0,
     });
     await writeDaily(bucket, now, {
       upstreamRequests: 3,
@@ -71,6 +76,7 @@ describe("the daily counter", () => {
       rawBytes: 10,
       storedBytes: 4,
       verifies: 0,
+      replaceRequests: 0,
     });
     expect((await readDaily(bucket, now)).upstreamRequests).toBe(3);
     const nextDay = Date.parse("2026-11-12T00:00:01Z");
@@ -287,6 +293,19 @@ describe("verifying markers", () => {
     ]);
   });
 
+  it("clears a marker only for the object it names", async () => {
+    // Why this test matters: a verify of an object already replaced ends
+    // after a report of the new object wrote that cell's marker; clearing
+    // it then would let further reports of the new object each queue a
+    // verify again.
+    const bucket = new FakeBucket();
+    await markVerifying(bucket, "cell", '"new"', NOW - 1000);
+    await clearVerifyingIf(bucket, "cell", '"old"');
+    expect((await readVerifying(bucket, "cell", NOW))?.etag).toBe('"new"');
+    await clearVerifyingIf(bucket, "cell", '"new"');
+    expect(await readVerifying(bucket, "cell", NOW)).toBeUndefined();
+  });
+
   it("clears one marker, and sweeps the stale ones", async () => {
     const bucket = new FakeBucket();
     await markVerifying(bucket, "fresh", '"a"', NOW - 1000);
@@ -299,5 +318,34 @@ describe("verifying markers", () => {
         k.startsWith("state/verifying/"),
       ),
     ).toEqual(["state/verifying/fresh"]);
+  });
+});
+
+describe("the replace bookkeeping", () => {
+  // Why these tests matter: a replace refetches a stored tile, so it costs
+  // the operators a request, and anyone can cause one with a report. Its
+  // per-cell gap and its share of the day's budget are what bound that;
+  // both live here.
+  it("remembers when a cell was last replaced", async () => {
+    const bucket = new FakeBucket();
+    expect(await readLastReplace(bucket, "cell")).toBeUndefined();
+    await writeLastReplace(bucket, "cell", 1_234);
+    expect(await readLastReplace(bucket, "cell")).toBe(1_234);
+    expect(REPLACE_MIN_GAP_MS).toBe(86_400_000);
+  });
+
+  it("counts the day's replace requests, zero for a day written before the field", async () => {
+    const bucket = new FakeBucket();
+    const now = Date.parse("2026-11-11T10:00:00Z");
+    await bucket.put(
+      "state/daily/2026-11-11.json",
+      JSON.stringify({ upstreamRequests: 4 }),
+    );
+    expect((await readDaily(bucket, now)).replaceRequests).toBe(0);
+    await writeDaily(bucket, now, {
+      ...(await readDaily(bucket, now)),
+      replaceRequests: 2,
+    });
+    expect((await readDaily(bucket, now)).replaceRequests).toBe(2);
   });
 });

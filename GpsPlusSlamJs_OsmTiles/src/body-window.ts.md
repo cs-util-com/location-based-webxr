@@ -12,13 +12,20 @@ tile in memory.
 - `hasGzipMagic(bytes)` - the body starts with `1f 8b`.
 - `MAX_TILE_GZIP_BYTES` (20 MiB) and `MAX_TILE_DECODED_BYTES` (150 MiB) -
   the size bounds of a tile, gzip and decoded. The densest tiles measured
-  were a few MB of gzip and a few tens of MB decoded.
+  were a few MB of gzip and a few tens of MB decoded. The decoded bound
+  holds for a stream read through a window (`readBodyEnds`); a check on
+  a body already buffered whole (the fill's raw answer) cannot fire
+  before the isolate's 128 MB memory limit ends the invocation.
 - `gzipDecodedSize(bytes)` - the trailer's ISIZE (last four bytes,
   little-endian): the decoded size modulo 2^32 as the stream claims it;
   undefined for fewer than 20 bytes. A crafted stream can understate it
   (nothing checks it before the stream is inflated), so it bounds honest
   answers for free and the decoded limit below is the backstop.
 - `BodyTooLarge` - the error `readBodyEnds` throws past its bound.
+- `SourceReadError` - the error `readBodyEnds` throws when reading the
+  stored stream itself failed (the cause attached), raw or gzip, as
+  opposed to bytes that do not decode. A failed read says nothing about
+  the tile, so the verify must not judge it on one.
 - `inflateHead(gzip, maxBytes)` - the first `maxBytes` decoded bytes,
   inflating at most the first 16 KB (`GZIP_HEAD_INPUT_BYTES`, module-private)
   of input.

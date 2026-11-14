@@ -5,6 +5,7 @@ import {
   gzipDecodedSize,
   inflateHead,
   readBodyEnds,
+  SourceReadError,
 } from "./body-window";
 
 // Why these tests matter: the fill judges a gzip answer by its inflated head
@@ -57,7 +58,49 @@ function noisy(length: number): Uint8Array {
   return out;
 }
 
+/** A stream that sends the first `sent` bytes of `bytes`, then fails as a torn read does. */
+function failingAfter(
+  bytes: Uint8Array,
+  sent: number,
+): ReadableStream<Uint8Array> {
+  let done = false;
+  return new ReadableStream({
+    pull(controller) {
+      if (done) {
+        controller.error(new TypeError("network connection lost"));
+        return;
+      }
+      done = true;
+      controller.enqueue(bytes.slice(0, sent));
+    },
+  });
+}
+
 describe("readBodyEnds", () => {
+  it("rejects with SourceReadError when the stored stream itself fails, raw or gzip", async () => {
+    // Why this test matters: a torn read of the stored object says nothing
+    // about the tile, while a gzip error is evidence against it. The verify
+    // deletes on the second only, so the two must never look alike.
+    const body = noisy(50_000);
+    const zipped = await gzip(body);
+    await expect(
+      readBodyEnds(failingAfter(body, 10_000), false, 16, 16),
+    ).rejects.toBeInstanceOf(SourceReadError);
+    await expect(
+      readBodyEnds(failingAfter(zipped, 1_000), true, 16, 16),
+    ).rejects.toBeInstanceOf(SourceReadError);
+  });
+
+  it("keeps a gzip error that is not a read error as it was (no SourceReadError)", async () => {
+    const zipped = await gzip(noisy(50_000));
+    const cut = chunked(zipped.slice(0, 2_000), [500]);
+    const error: unknown = await readBodyEnds(cut, true, 16, 16).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(SourceReadError);
+  });
+
   it("property: head and tail are the body's first and last bytes for any chunking", async () => {
     await fc.assert(
       fc.asyncProperty(
