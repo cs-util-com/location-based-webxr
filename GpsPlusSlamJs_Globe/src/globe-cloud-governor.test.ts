@@ -540,34 +540,40 @@ describe("createGlobeCloudGovernor", () => {
     // What reverses it: frames after the pair over `slowMs`, a slow device.
     for (const ms of [19, 21.9]) {
       it(`a pair of long frames between ${ms} ms frames changes nothing`, () => {
+        const cases = ["full", "rung 2", "fewest"].flatMap((at) =>
+          [4, 60].flatMap((settled) =>
+            [260, 1000, 3000].flatMap((first) =>
+              [300, 3000, 10_000, 60_000, 3_600_000].map((second) => ({
+                at,
+                settled,
+                first,
+                second,
+              })),
+            ),
+          ),
+        );
         const changed: string[] = [];
-        for (const at of ["full", "rung 2", "fewest"]) {
-          for (const settled of [4, 60]) {
-            for (const first of [260, 1000, 3000]) {
-              for (const second of [300, 3000, 10_000, 60_000, 3_600_000]) {
-                const governor = createGlobeCloudGovernor("high");
-                if (at !== "full")
-                  downTo(
-                    governor,
-                    30,
-                    at === "rung 2" ? 0.8 : CLOUD_GOVERNOR.minPixelScale,
-                  );
-                run(governor, ms, settled);
-                const before = governor.state();
-                governor.frame(first);
-                governor.frame(second);
-                run(governor, ms, 30);
-                const after = governor.state();
-                if (
-                  after.tier !== before.tier ||
-                  after.pixelScale !== before.pixelScale
-                )
-                  changed.push(
-                    `${at} after ${settled} s, ${first} + ${second} ms: ${after.tier} at ${after.pixelScale}`,
-                  );
-              }
-            }
-          }
+        for (const { at, settled, first, second } of cases) {
+          const governor = createGlobeCloudGovernor("high");
+          if (at !== "full")
+            downTo(
+              governor,
+              30,
+              at === "rung 2" ? 0.8 : CLOUD_GOVERNOR.minPixelScale,
+            );
+          run(governor, ms, settled);
+          const before = governor.state();
+          governor.frame(first);
+          governor.frame(second);
+          run(governor, ms, 30);
+          const after = governor.state();
+          if (
+            after.tier !== before.tier ||
+            after.pixelScale !== before.pixelScale
+          )
+            changed.push(
+              `${at} after ${settled} s, ${first} + ${second} ms: ${after.tier} at ${after.pixelScale}`,
+            );
         }
         expect(changed).toEqual([]);
       });
@@ -614,23 +620,24 @@ describe("createGlobeCloudGovernor", () => {
     // burst of `slowS` or longer at the fewest after they bought their own
     // time, which is a slowdown.
     it("starts what a rung bought over at the next rung", () => {
+      const cases = [24, 30, 40].flatMap((baseline) =>
+        [23, 25, 28].flatMap((later) =>
+          [1, 3, 10].flatMap((dip) =>
+            [40, 60, 80].map((burst) => ({ baseline, later, dip, burst })),
+          ),
+        ),
+      );
       const lost: string[] = [];
-      for (const baseline of [24, 30, 40]) {
-        for (const later of [23, 25, 28]) {
-          for (const dip of [1, 3, 10]) {
-            for (const burst of [40, 60, 80]) {
-              const governor = createGlobeCloudGovernor("high");
-              downTo(governor, baseline, 0.6);
-              run(governor, 19, 20);
-              run(governor, later, 2.5);
-              for (let i = 0; i < dip; i++) governor.frame(10);
-              run(governor, burst, 3);
-              run(governor, 19, 30);
-              if (governor.state().tier === "low")
-                lost.push(`${baseline} -> ${later} ms, ${dip} x 10, ${burst}`);
-            }
-          }
-        }
+      for (const { baseline, later, dip, burst } of cases) {
+        const governor = createGlobeCloudGovernor("high");
+        downTo(governor, baseline, 0.6);
+        run(governor, 19, 20);
+        run(governor, later, 2.5);
+        for (let i = 0; i < dip; i++) governor.frame(10);
+        run(governor, burst, 3);
+        run(governor, 19, 30);
+        if (governor.state().tier === "low")
+          lost.push(`${baseline} -> ${later} ms, ${dip} x 10, ${burst}`);
       }
       expect(lost).toEqual([]);
     });
