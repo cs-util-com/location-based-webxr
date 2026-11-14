@@ -1890,16 +1890,23 @@ test.describe("the time of day", () => {
    * 2026-09-23-2149 review finding 5), and civil twilight at −2.9° and −5.9°.
    * The labels are the elevations the pinned minutes actually give (M2 review
    * finding 6, computed with the framework's solar position). The six daylight
-   * and civil-twilight points share one page reached through the time slider;
-   * the two points below civil dusk lie outside the slider's span and boot
-   * their own pages by URL pin.
+   * and civil-twilight points share two pages, three points each, reached
+   * through the time slider; the two points below civil dusk lie outside the
+   * slider's span and boot their own pages by URL pin.
    *
    * THE SLIDER LANDS 15-44 s AFTER EACH PINNED MINUTE. It has 1000 integer
-   * steps across the day, so a pinned minute generally falls between two; the
-   * test takes the first step at or after it, so the chip still reads that
-   * minute (asserted before each measurement), and the sun stands at most
-   * about 0.12° of elevation from the booted point (44 s near dusk). The measured values move in their last
+   * steps across `daySpan` (civil dawn to civil dusk of the shown date), so a
+   * pinned minute generally falls between two; the test takes the first step
+   * at or after it, so the chip still reads that minute (asserted before each
+   * measurement), and the sun stands at most about 0.12° of elevation from
+   * the booted point (44 s near dusk). The measured values move in their last
    * printed digit against a boot by URL pin; every bound holds unchanged.
+   *
+   * THE CHIP ASSERTION HOLDS ONLY WHILE ONE STEP IS UNDER 60 s. On the pinned
+   * September date a step is about 47 s, so the first step at or after a
+   * minute still lies inside it. A date with a longer civil day (a June row
+   * here would be about 68 s a step) can land past the next minute, and the
+   * chip then reads a later time: such a row boots by URL pin instead.
    *
    * BOTH THE ISOLATED BACKDROP AND THE ONE A USER ACTUALLY SEES (F49), and
    * asserting only one of them is how this gate grew a hole: `cpu` is the plain
@@ -1972,76 +1979,89 @@ test.describe("the time of day", () => {
       NIGHT_BUILDING_LUMA_MIN,
     ],
   ];
-  // THE DAY POINTS SHARE ONE PAGE, moved by the time slider (civil dawn to
-  // civil dusk, which spans all six): the boot is the first point, by URL
-  // pin, and each later point is the slider position whose instant is the
-  // first at or after the pinned minute, so the chip reads that minute. The
-  // chip is asserted before each measurement, and the instant the slider
-  // lands on is logged next to the pinned one.
-  test("the heat ramp stays the loudest thing at every daylight point, moved by the time slider", async ({
-    page,
-  }) => {
-    const [first] = DAY_POINTS;
+  // THE DAY POINTS SHARE TWO PAGES, three points each, moved by the time
+  // slider (civil dawn to civil dusk, which spans all six): each page boots
+  // its first point by URL pin, and each later point is the slider position
+  // whose instant is the first at or after the pinned minute, so the chip
+  // reads that minute. The chip is asserted before each measurement, and the
+  // instant the slider lands on is logged next to the pinned one.
+  //
+  // TWO PAGES, NOT ONE, for the test timeout rather than for the boot: all
+  // six on one page took about 125 s against the 180 s timeout, contention
+  // inflates a run 3-4x, and a retry repeats the whole test. Three points a
+  // test halve both what one run must fit into the timeout and what a retry
+  // repeats, for one extra boot.
+  const DAY_HALVES = [DAY_POINTS.slice(0, 3), DAY_POINTS.slice(3)];
+  for (const points of DAY_HALVES) {
+    const [first] = points;
     if (first === undefined) throw new Error("no day points");
-    await stubNetwork(page);
-    await page.goto(
-      `/?lat=${50.9231}&lng=${6.9445}&date=${first[1]}&time=${first[2]}&ao=off`,
-    );
-    await waitForRefresh(page);
-    for (const [
-      label,
-      date,
-      time,
-      approvedLit,
-      share = 0.5,
-      minBuildingLuma = null,
-    ] of DAY_POINTS) {
-      await test.step(`at ${label}`, async () => {
-        if (time !== first[2]) {
-          const landed = await page.evaluate(
-            async ({ date, time }) => {
-              // A dev-server URL resolved from the page root, not a node path:
-              // it has an exact `ignoreUnresolved` entry in the repo-root
-              // `knip.json`. Rename the module and both places move.
-              const clock = await import("/src/sun-clock.ts");
-              const place = { lat: 50.9231, lng: 6.9445 };
-              const [y, m, d] = date.split("-").map(Number);
-              const hours = clock.parseSolarTime(time);
-              if (hours === null) throw new Error(`bad time ${time}`);
-              const day = { year: y, month: m, day: d };
-              const pinned = clock.instantAt(day, place, hours);
-              const steps = 1000;
-              const value = Math.ceil(
-                clock.instantToSlider(pinned, place) * steps - 1e-9,
-              );
-              const input = document.getElementById("sun-time");
-              if (!(input instanceof HTMLInputElement)) {
-                throw new Error("no #sun-time");
-              }
-              input.value = String(value);
-              input.dispatchEvent(new Event("input", { bubbles: true }));
-              const instant = clock.sliderToInstant(value / steps, day, place);
-              return { value, offsetSeconds: (instant - pinned) / 1000 };
-            },
-            { date, time },
+    test(`the heat ramp stays the loudest thing at ${points.map(([label]) => label).join(", ")}, moved by the time slider`, async ({
+      page,
+    }) => {
+      await stubNetwork(page);
+      await page.goto(
+        `/?lat=${50.9231}&lng=${6.9445}&date=${first[1]}&time=${first[2]}&ao=off`,
+      );
+      await waitForRefresh(page);
+      for (const [
+        label,
+        date,
+        time,
+        approvedLit,
+        share = 0.5,
+        minBuildingLuma = null,
+      ] of points) {
+        await test.step(`at ${label}`, async () => {
+          if (time !== first[2]) {
+            const landed = await page.evaluate(
+              async ({ date, time }) => {
+                // A dev-server URL resolved from the page root, not a node path:
+                // it has an exact `ignoreUnresolved` entry in the repo-root
+                // `knip.json`. Rename the module and both places move.
+                const clock = await import("/src/sun-clock.ts");
+                const place = { lat: 50.9231, lng: 6.9445 };
+                const [y, m, d] = date.split("-").map(Number);
+                const hours = clock.parseSolarTime(time);
+                if (hours === null) throw new Error(`bad time ${time}`);
+                const day = { year: y, month: m, day: d };
+                const pinned = clock.instantAt(day, place, hours);
+                const steps = 1000;
+                const value = Math.ceil(
+                  clock.instantToSlider(pinned, place) * steps - 1e-9,
+                );
+                const input = document.getElementById("sun-time");
+                if (!(input instanceof HTMLInputElement)) {
+                  throw new Error("no #sun-time");
+                }
+                input.value = String(value);
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                const instant = clock.sliderToInstant(
+                  value / steps,
+                  day,
+                  place,
+                );
+                return { value, offsetSeconds: (instant - pinned) / 1000 };
+              },
+              { date, time },
+            );
+            console.log(
+              `${label}: slider ${landed.value}, ${landed.offsetSeconds.toFixed(1)} s after the pinned minute`,
+            );
+            await expect(page.locator("#sun-chip")).toHaveAccessibleName(
+              `Sun time ${time}`,
+            );
+          }
+          await expectHeatRampLoudest(
+            page,
+            label,
+            approvedLit,
+            share,
+            minBuildingLuma,
           );
-          console.log(
-            `${label}: slider ${landed.value}, ${landed.offsetSeconds.toFixed(1)} s after the pinned minute`,
-          );
-          await expect(page.locator("#sun-chip")).toHaveAccessibleName(
-            `Sun time ${time}`,
-          );
-        }
-        await expectHeatRampLoudest(
-          page,
-          label,
-          approvedLit,
-          share,
-          minBuildingLuma,
-        );
-      });
-    }
-  });
+        });
+      }
+    });
+  }
 
   for (const [
     label,
