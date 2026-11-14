@@ -28,7 +28,7 @@ export function handGlb(json: object, bin = new Uint8Array(0)): Uint8Array {
 
 /** The first bytes of a 1x1 PNG (its signature and header chunk): enough
  *  for the tour's check to read an embedded image's size. */
-export function pngHead(): Uint8Array<ArrayBuffer> {
+function pngHead(): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(36);
   out.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
   const view = new DataView(out.buffer);
