@@ -14,6 +14,7 @@ The docked editor's groups fold to rails, and this module is the fold as data: w
 - `foldedAt(folds, id, group, layout)` - a new `Folds` with `id` folded at its present size along its axis. Returns the same map when `id` is folded already (the rail's own size must never become the size to give back) or the size is not a finite number of at least 0.
 - `unfoldedAt(folds, id)` - `{ folds, restore }`, where `restore` is `{ axis, px: max(UNFOLD_MIN_PX[axis], prevPx) }`, or `null` with the same map when `id` was not folded.
 - `prunedTo(folds, live)` - the folds of the groups still in `live`. Returns the same map when nothing is dropped.
+- `foldsAfterTurn(session, groupOf)` - by group, the folds a turn gives back: `session` maps a panel id to whether it was folded before the turn, `groupOf` places it in the turned layout (null: nowhere, left out). A group holding several session panels is folded only when all of them were. Tested in `dock-rail.test.ts` and `dock-rail.property.test.ts`.
 - `moveOf(shape, location, fixed)` - the move a group's Float/Dock button offers: `"float"` for a group in the grid, `"dock"` for a floating one, null at a desk (`shape` null), for a `fixed` group (folded, or the 3D view's) and for any other location. A phone only: the desk keeps its strips as they were.
 - `railSide(groupBox, viewBox)` - `"left" | "right" | "up" | "down"`: where the group lies against the 3D view, which is the direction its fold chevron points. The boxes are page rectangles, with 1 px of slack for sub-pixel edges.
 

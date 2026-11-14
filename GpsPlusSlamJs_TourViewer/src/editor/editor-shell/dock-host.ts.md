@@ -111,7 +111,13 @@ are not part of the page's first load.
   the library loads it with every panel; otherwise the layout is cleared
   and the default laid out, never an empty one. A resize into another
   form factor clears the layout and lays out that form factor's kept one
-  (or the default), refolding its kept folds. A kept layout laid out at
+  (or the default), refolding its kept folds; then the list's and the
+  details' groups take the folds they had before the turn
+  (`foldsAfterTurn`, `dock-rail.ts`), a shared group folded only when
+  both were. Decision (2026-11-14): folds follow the session across a
+  turn, sizes and arrangement stay per form factor, so a fold kept from
+  long ago (the approach's) never comes back over a station just picked.
+  A kept layout laid out at
   another size than it was kept at (`keptAtSize`) is fitted as after a
   window resize (below), not scaled in proportion.
 - A tab's Shift+F10 or ContextMenu key opens "Move to..." (`dock-move.ts`)

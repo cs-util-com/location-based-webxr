@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   foldAxis,
   foldedAt,
+  foldsAfterTurn,
   prunedTo,
   UNFOLD_MIN_PX,
   unfoldedAt,
@@ -79,6 +80,41 @@ describe("the fold's states over any sizes", () => {
             ids.filter((id) => live.includes(id)).sort(),
           );
           for (const [id, fold] of kept) expect(fold).toBe(folds.get(id));
+        },
+      ),
+    );
+  });
+});
+
+describe("the folds after a turn, over any session and grouping", () => {
+  // Why: whatever the panels' grouping after the turn, a group is folded
+  // exactly when every session panel in it was, and only groups holding a
+  // session panel are named.
+  it("folds a group only when all its session panels were folded", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            folded: fc.boolean(),
+            group: fc.option(fc.constantFrom("a", "b", "c"), { nil: null }),
+          }),
+          { maxLength: 6 },
+        ),
+        (panels) => {
+          const session = new Map(
+            panels.map((p, i) => [`p${String(i)}`, p.folded] as const),
+          );
+          const groupOf = (id: string) =>
+            panels[Number(id.slice(1))]?.group ?? null;
+          const got = foldsAfterTurn(session, groupOf);
+          const named = new Set(
+            panels.flatMap((p) => (p.group === null ? [] : [p.group])),
+          );
+          expect(new Set(got.keys())).toEqual(named);
+          for (const [group, shut] of got) {
+            const inIt = panels.filter((p) => p.group === group);
+            expect(shut).toBe(inIt.every((p) => p.folded));
+          }
         },
       ),
     );

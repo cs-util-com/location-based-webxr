@@ -45,6 +45,7 @@ import {
   canFold,
   foldAxis,
   foldedAt,
+  foldsAfterTurn,
   moveOf,
   prunedTo,
   railPx,
@@ -502,6 +503,9 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     disableTabsOverflowList: true,
   });
 
+  /** The panels whose folds the session carries across a turn (the
+   *  editor's list and details, `foldedDocks`). */
+  const SESSION_FOLDS: readonly DockPanelId[] = ["list", "details"];
   const panelOf = (id: DockPanelId): IDockviewPanel => {
     const found = dock.getPanel(id);
     if (found === undefined) throw new Error(`No docked panel "${id}"`);
@@ -1229,6 +1233,11 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     // was made in.
     keeper.flush();
     giveBack();
+    // The list's and the details' folds are the session's, not the
+    // turned layout's: what the creator folded or opened stays so.
+    const session = new Map(
+      SESSION_FOLDS.map((id) => [id, folds.has(groupOf(id).id)] as const),
+    );
     const back = holdFocus([...contents.values()]);
     laying = true;
     formFactor = next;
@@ -1243,6 +1252,15 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     settle(layOut());
     laying = false;
     refold();
+    const turned = foldsAfterTurn(session, (id) =>
+      isDockPanelId(id) && dock.getPanel(id) !== undefined
+        ? groupOf(id).id
+        : null,
+    );
+    for (const [id, shut] of turned) {
+      const group = dock.groups.find((g) => g.id === id);
+      if (group !== undefined) foldGroup(group, shut);
+    }
     fitKept();
     windowPx = root.clientWidth;
     fitWriter();

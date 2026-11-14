@@ -4,6 +4,7 @@ import {
   canFold,
   foldAxis,
   foldedAt,
+  foldsAfterTurn,
   moveOf,
   prunedTo,
   RAIL_PX,
@@ -179,5 +180,60 @@ describe("a group's float and dock button", () => {
     expect(moveOf("sideways", "floating", true)).toBeNull();
     expect(moveOf("upright", "edge", false)).toBeNull();
     expect(moveOf("upright", "popout", false)).toBeNull();
+  });
+});
+
+describe("the folds after a turn", () => {
+  // Why: a turned phone (or a window crossing to another form factor)
+  // brings back that form factor's kept arrangement, but the list's and
+  // the details' folds are the session's: a fold made in one orientation
+  // is the fold after the turn, and a fold kept from long ago (say, the
+  // approach's) must not come back over a station just picked.
+  it("a fold made in one orientation is the fold after a turn", () => {
+    const groups: Record<string, string> = { list: "g1", details: "g2" };
+    const at = (id: string) => groups[id] ?? null;
+    expect(foldsAfterTurn(new Map([["list", true]]), at)).toEqual(
+      new Map([["g1", true]]),
+    );
+    expect(
+      foldsAfterTurn(
+        new Map([
+          ["list", false],
+          ["details", true],
+        ]),
+        at,
+      ),
+    ).toEqual(
+      new Map([
+        ["g1", false],
+        ["g2", true],
+      ]),
+    );
+  });
+
+  // Why: a phone's one group holds the list and the details; folded on
+  // one side only at a desk, the turned group shows what was in sight
+  // rather than hiding it.
+  it("folds a shared group only when every panel in it was folded", () => {
+    const one = () => "g";
+    const both = (list: boolean, details: boolean) =>
+      foldsAfterTurn(
+        new Map([
+          ["list", list],
+          ["details", details],
+        ]),
+        one,
+      ).get("g");
+    expect(both(true, false)).toBe(false);
+    expect(both(false, true)).toBe(false);
+    expect(both(true, true)).toBe(true);
+    expect(both(false, false)).toBe(false);
+  });
+
+  // Why: a panel the turned layout lacks has no group to fold.
+  it("leaves out a panel with no group", () => {
+    expect(foldsAfterTurn(new Map([["list", true]]), () => null)).toEqual(
+      new Map(),
+    );
   });
 });
