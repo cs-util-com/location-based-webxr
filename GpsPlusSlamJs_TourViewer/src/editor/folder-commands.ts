@@ -24,6 +24,7 @@ import { objectTitle } from "../object-describe.js";
 import {
   documentObjects,
   folderDropRefusal,
+  folderPivotIsCentred,
   groupRefusal,
   manifestToWrite,
   objectsFolderRefusal,
@@ -176,7 +177,8 @@ export interface FolderCommands {
   reorder(folderId: string, index: number): boolean;
   /** The folder's pivot put at the centre of its items, nothing moving
    *  (the inspector's Pivot to centre): whether it changed. Said either
-   *  way; a pivot there already is no step. */
+   *  way; a pivot there already is no step, and one the format cannot
+   *  hold at the centre says so rather than that it is there. */
   pivotToCentre(folderId: string): boolean;
 }
 
@@ -344,7 +346,9 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
       deps.say(
         took
           ? `The pivot of "${name}" stands at its items' centre - nothing moved`
-          : `The pivot of "${name}" already stands at its items' centre`,
+          : folderPivotIsCentred(deps.getState(), place.stationId, folderId)
+            ? `The pivot of "${name}" already stands at its items' centre`
+            : `The pivot of "${name}" cannot go to its items' centre: something it holds would stand too far from it`,
       );
       return took;
     },

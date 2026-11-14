@@ -47,8 +47,10 @@ reorder, pivotToCentre }`:
     folder's pivot put at its items' centre on the ground, as one step,
     nothing in the scene moving (`folderPivotCentred`); whether it
     changed. Said: `The pivot of "F" stands at its items' centre -
-nothing moved`, or `already stands` when it did; an empty folder says
-    it holds no items, a gone one `gone`.
+nothing moved`, or `already stands` when it did (`folderPivotIsCentred`), `cannot go to
+its items' centre` when the format would refuse it there (something
+    it holds too far from it); an empty folder says it holds no items, a
+    gone one `gone`.
 
 ## Invariants & assumptions
 

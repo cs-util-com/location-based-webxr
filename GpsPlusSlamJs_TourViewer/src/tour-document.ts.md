@@ -443,6 +443,9 @@ geo?, what })` - a copy inserted after the original (any station the
     pivot. No step (the same state): an unknown station or folder, a
     folder with no items, a pivot there already, or a pose the format
     would refuse or that takes an item past the station's bound.
+    `folderPivotIsCentred(state, stationId, folderId)` tells the first
+    of those no-steps from the others: whether the pivot stands at its
+    items' centre already (false for a centre the format would refuse).
   - `folderGrouped({ folderId, title, ids, what })` - items of one
     station grouped in a new plain folder at their centroid, turned like
     the station (yaw 0), titled by the creator (`folderTitle`); every

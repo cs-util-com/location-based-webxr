@@ -4152,6 +4152,54 @@ const NO_FOLDER_POSE: TourLocalPose = {
   rotation: [0, 0, 0, 1],
 };
 
+/** Where a plain folder's pivot goes to stand at its items' centre, with
+ *  what moving it there needs; null for a station or folder the tour
+ *  lacks, a folder with no items, or a centre the format would refuse. */
+function centredPivot(
+  before: TourDocumentState,
+  payload: Pick<FolderPivotPayload, "stationId" | "folderId">,
+) {
+  if (before.written === null) return null;
+  const frame = before.stations.find((s) => s.id === payload.stationId);
+  if (frame === undefined) return null;
+  const chain = folderChains(frame).get(payload.folderId);
+  const old = chain?.at(-1);
+  if (chain === undefined || old === undefined) return null;
+  const members = documentObjects(before)
+    .map(({ object }) => object)
+    .filter(
+      (object) =>
+        object.station === frame.id &&
+        object.folder?.includes(payload.folderId) === true,
+    );
+  if (members.length === 0) return null;
+  const was = old.pose ?? NO_FOLDER_POSE;
+  // The centroid in the frame holding the folder (its station, or the
+  // folder around it).
+  const centre = decomposeTourFolderPath(chain.slice(0, -1), {
+    position: groupCentre(members, frame),
+    rotation: [0, 0, 0, 1],
+  }).position;
+  const pose = readPose({
+    ...was,
+    position: [centre[0] ?? 0, was.position[1] ?? 0, centre[2] ?? 0],
+  });
+  if (pose === null) return null;
+  return { frame, old, members, was, pose };
+}
+
+/** Whether a plain folder's pivot stands at its items' centre already,
+ *  so that `folderPivotCentred` is no step for that reason and not for
+ *  another (a centre the format would refuse). */
+export function folderPivotIsCentred(
+  state: TourDocumentState,
+  stationId: string,
+  folderId: string,
+): boolean {
+  const target = centredPivot(state, { stationId, folderId });
+  return target !== null && sameJson(target.pose.position, target.was.position);
+}
+
 /**
  * A plain folder's pivot moved to the centre of the items it holds (at
  * any depth), on the ground plane of its holder: its north and east go
@@ -4166,33 +4214,10 @@ function folderPivotCentre(
   before: TourDocumentState,
   payload: FolderPivotPayload,
 ): TourDocumentState {
-  if (before.written === null) return before;
-  const frame = before.stations.find((s) => s.id === payload.stationId);
-  if (frame === undefined) return before;
-  const chains = folderChains(frame);
-  const chain = chains.get(payload.folderId);
-  const old = chain?.at(-1);
-  if (chain === undefined || old === undefined) return before;
-  const members = documentObjects(before)
-    .map(({ object }) => object)
-    .filter(
-      (object) =>
-        object.station === frame.id &&
-        object.folder?.includes(payload.folderId) === true,
-    );
-  if (members.length === 0) return before;
-  const was = old.pose ?? NO_FOLDER_POSE;
-  // The centroid in the frame holding the folder (its station, or the
-  // folder around it).
-  const centre = decomposeTourFolderPath(chain.slice(0, -1), {
-    position: groupCentre(members, frame),
-    rotation: [0, 0, 0, 1],
-  }).position;
-  const pose = readPose({
-    ...was,
-    position: [centre[0] ?? 0, was.position[1] ?? 0, centre[2] ?? 0],
-  });
-  if (pose === null || sameJson(pose.position, was.position)) return before;
+  const target = centredPivot(before, payload);
+  if (target === null) return before;
+  const { frame, old, members, was, pose } = target;
+  if (sameJson(pose.position, was.position)) return before;
   const pivoted: TourFolder = { ...old, pose };
   const children: TourFolder["children"][number][] = [];
   for (const child of old.children) {
