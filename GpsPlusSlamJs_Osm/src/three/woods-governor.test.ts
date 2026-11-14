@@ -716,47 +716,54 @@ describe("a long-frame pair at the start of a session", () => {
 
 /**
  * The same pair right after a step, from the second, third or fourth
- * interval on (the first is the step's own and skipped): a half that pays (full 55-80 ms, the
- * half at 35-48 ms) keeps paying; it never goes back to full woods for a
- * rest. Swept over second hitches of 0.4-30 s. What reverses it: a fresh
- * average starting at the 300 ms frame alone, which sent 30 of these 48 to
- * full woods with a 300 s rest.
+ * interval on (the first is the step's own and skipped): a half that pays
+ * (full 55-80 ms, the half at 35-48 ms) keeps paying; it never goes back to
+ * full woods for a rest. Swept over second hitches of 0.4-30 s. What
+ * reverses it: a fresh average starting at the 300 ms frame alone, which
+ * sent 30 of these 48 to full woods with a 300 s rest.
  */
 describe("a long-frame pair right after a step", () => {
+  /** Whether the governor ever rests when the pair starts `offset` intervals after the step to the half. */
+  const restsAfterPair = (
+    full: number,
+    half: number,
+    second: number,
+    offset: number,
+  ): boolean => {
+    const byShare = (share: number): number =>
+      share === 1 ? full : share === 0.5 ? half : half * 0.8;
+    const governor = createWoodsGovernor();
+    let at = 0;
+    let frames = 0;
+    let stepAt = Number.POSITIVE_INFINITY;
+    let pairAt = Number.POSITIVE_INFINITY;
+    let share = 1;
+    let rested = false;
+    governor.frame(at, true);
+    while (at < 120_000) {
+      if (share === 0.5 && pairAt === Number.POSITIVE_INFINITY) {
+        pairAt = stepAt + offset;
+      }
+      const pair = [300, second][frames - pairAt];
+      at += pair ?? byShare(share);
+      frames += 1;
+      governor.frame(at, true);
+      const state = governor.state();
+      rested ||= state.mode === "resting";
+      if (state.share !== share) {
+        share = state.share;
+        stepAt = frames;
+      }
+    }
+    return rested;
+  };
   for (const full of [55, 60, 80]) {
     it(`keeps a half that pays at ${full} ms`, () => {
       for (const half of [35, 40, 45, 48]) {
         for (const second of [400, 1_000, 5_000, 30_000]) {
           for (const offset of [1, 2, 3]) {
-            const governor = createWoodsGovernor();
-            let at = 0;
-            let sinceStep = Number.POSITIVE_INFINITY;
-            let share = 1;
-            let pair = 0;
-            let rested = false;
-            governor.frame(at, true);
-            while (at < 120_000) {
-              let ms = share === 1 ? full : share === 0.5 ? half : half * 0.8;
-              if (pair === 0 && share === 0.5 && sinceStep === offset) pair = 1;
-              if (pair === 1) {
-                ms = 300;
-                pair = 2;
-              } else if (pair === 2) {
-                ms = second;
-                pair = 3;
-              }
-              at += ms;
-              sinceStep += 1;
-              governor.frame(at, true);
-              const state = governor.state();
-              if (state.mode === "resting") rested = true;
-              if (state.share !== share) {
-                share = state.share;
-                sinceStep = 0;
-              }
-            }
             expect(
-              rested,
+              restsAfterPair(full, half, second, offset),
               `half ${half} ms, second ${second} ms at ${offset}`,
             ).toBe(false);
           }
