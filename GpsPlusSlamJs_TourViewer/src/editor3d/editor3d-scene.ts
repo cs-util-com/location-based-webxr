@@ -475,10 +475,12 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     undo.push(() => cam.dispose());
     const { camera, controls } = cam;
     const lens = createLensHold(camera, EDITOR_CAMERA.fovDeg);
+    // Screen-sized marks take the field the camera sees through now.
     const billboardView = () => ({
       viewportPx: size().h,
-      fovDeg: EDITOR_CAMERA.fovDeg,
+      fovDeg: lens.fovDeg(),
     });
+    let billboardFovDeg = lens.fovDeg();
     // The view's height, read when it changes (never per frame: a read of
     // the box's size can force a layout): codes are sized on screen by it.
     let viewportPx = size().h;
@@ -513,17 +515,21 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
     });
     undo.push(unsubscribe);
 
+    const resizeBillboards = () => {
+      const view = billboardView();
+      layer.group.traverse((o) => {
+        if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
+          resizeBillboard(o as THREE.Sprite, view);
+        }
+      });
+    };
     const resize = new ResizeObserver(() => {
       const { w, h } = size();
       viewportPx = h;
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      layer.group.traverse((o) => {
-        if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
-          resizeBillboard(o as THREE.Sprite, billboardView());
-        }
-      });
+      resizeBillboards();
     });
     resize.observe(deps.container);
     resize.observe(canvas);
@@ -759,6 +765,11 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         lens.release();
       }
       lens.apply();
+      // A lens taken or given back resizes the billboards made before it.
+      if (lens.fovDeg() !== billboardFovDeg) {
+        billboardFovDeg = lens.fovDeg();
+        resizeBillboards();
+      }
       const planes = editorClipPlanes({
         ellipsoid,
         cameraEcef: cameraEcef
@@ -791,7 +802,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
         camera: camera.position,
         eye: camera,
         viewportPx,
-        fovDeg: EDITOR_CAMERA.fovDeg,
+        fovDeg: lens.fovDeg(),
       });
       renderer.render(scene, camera);
       drawCalls.end();

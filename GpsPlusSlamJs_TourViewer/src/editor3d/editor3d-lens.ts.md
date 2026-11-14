@@ -20,6 +20,11 @@ corners); released, the camera has its own field of view back.
   - `release()`: the own field of view back; a no-op when nothing holds.
   - `selection()`: the picture whose lens holds, or null.
   - `apply()`: each frame, the lens again at the aspect now.
+  - `fovDeg()`: the vertical field the camera sees through now, the lens's
+    while one holds, else the own. Both views size their screen-sized marks
+    from it (`billboardView`, `layer.update`, and the globe's hiding rules)
+    and resize their billboards when it changes, so a held lens never draws
+    a code square or a billboard at the wrong size.
 
 ## Invariants
 

@@ -38,6 +38,11 @@ export interface LensHold {
   /** Each frame: the lens again at the aspect now (a resize changes the
    *  vertical field of a fixed horizontal one); nothing when none holds. */
   apply(): void;
+  /** The vertical field of view (degrees) the camera sees through now:
+   *  the lens's at the aspect it last took while one holds, else the own.
+   *  Whatever is sized on screen (billboards, code squares, the globe's
+   *  hiding rules) takes this, never the own field alone. */
+  fovDeg(): number;
 }
 
 /** A lens hold over `camera`, whose own field of view is `ownFovDeg`
@@ -53,6 +58,7 @@ export function createLensHold(
   }
   let held: { readonly selection: string; readonly hfovDeg: number } | null =
     null;
+  let heldFovDeg = ownFovDeg;
   const set = (fovDeg: number) => {
     if (camera.fov === fovDeg) return;
     camera.fov = fovDeg;
@@ -71,6 +77,7 @@ export function createLensHold(
         return false;
       }
       held = { selection, hfovDeg };
+      heldFovDeg = fovDeg;
       set(fovDeg);
       return true;
     },
@@ -79,7 +86,10 @@ export function createLensHold(
     apply() {
       if (held === null) return;
       const fovDeg = verticalFovDeg(held.hfovDeg, camera.aspect);
-      if (fovDeg !== null) set(fovDeg);
+      if (fovDeg === null) return;
+      heldFovDeg = fovDeg;
+      set(fovDeg);
     },
+    fovDeg: () => (held === null ? ownFovDeg : heldFovDeg),
   };
 }

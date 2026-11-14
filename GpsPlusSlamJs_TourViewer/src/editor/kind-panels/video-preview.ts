@@ -117,6 +117,8 @@ export function videoPreview(
   let bytes: number | null = null;
   /** As the clip last said (`play` / `pause`). */
   let playing = false;
+  /** True once the browser said it cannot play the clip: final. */
+  let unplayable = false;
   const url = (blob: Blob) => {
     const u = urls.create(blob);
     made.push(u);
@@ -124,6 +126,7 @@ export function videoPreview(
   };
   const showFacts = () => {
     const length = video.duration;
+    if (unplayable) return;
     if (!Number.isFinite(length) || length <= 0 || bytes === null) return;
     facts.textContent = `${clockText(length * 1000)} · ${formatBytes(bytes)}`;
   };
@@ -153,6 +156,7 @@ export function videoPreview(
   /** True while the far seek reads a recorded clip's length. */
   let readingLength = false;
   const lengthKnown = () => {
+    if (unplayable) return false;
     const length = video.duration;
     if (!Number.isFinite(length) || length <= 0) return false;
     scrub.max = String(length);
@@ -171,6 +175,18 @@ export function videoPreview(
     if (!readingLength || !lengthKnown()) return;
     readingLength = false;
     video.currentTime = 0;
+  });
+  // Read but not playable here (a codec this browser lacks, a broken
+  // file): the media error is the only word the browser gives, so it is
+  // the preview's final state, with nothing left to press.
+  video.addEventListener("error", () => {
+    if (gone) return;
+    unplayable = true;
+    readingLength = false;
+    facts.textContent = "This clip cannot be played here.";
+    play.disabled = true;
+    scrub.disabled = true;
+    frame.disabled = true;
   });
   video.addEventListener("timeupdate", () => {
     scrub.value = String(video.currentTime);
@@ -205,7 +221,7 @@ export function videoPreview(
       const written =
         image === null ? null : await deps.usePoster(image).catch(() => false);
       if (gone) return;
-      frame.disabled = false;
+      frame.disabled = unplayable;
       frame.textContent = FRAME_WORDS;
       if (image === null) note.textContent = "No frame could be taken here.";
       else if (written === true)

@@ -195,4 +195,36 @@ describe("the inspector's video preview", () => {
     expect(revoked).toEqual(made);
     expect(made).toHaveLength(2);
   });
+
+  // Why: a clip that was read but cannot be decoded here (a codec this
+  // browser lacks, a broken file) fires the media 'error' event and
+  // nothing else; without its own final state the preview would say
+  // "Loading the clip..." for ever and offer a frame it cannot take.
+  it("says a clip it cannot play, and offers no frame of it", async () => {
+    const { d } = deps();
+    const p = videoPreview(document, "content/v.mp4", null, d);
+    const el = parts(p.root);
+    await settle();
+    el.video.dispatchEvent(new Event("error"));
+    expect(el.facts.textContent).toBe("This clip cannot be played here.");
+    expect(el.frame.disabled).toBe(true);
+    expect(el.play.disabled).toBe(true);
+    expect(el.scrub.disabled).toBe(true);
+    // Metadata that arrives after the error never offers the frame again.
+    metadata(el.video, 12);
+    expect(el.frame.disabled).toBe(true);
+    expect(el.facts.textContent).toBe("This clip cannot be played here.");
+  });
+
+  it("turns the frame button off again when the clip fails after its length was known", async () => {
+    const { d } = deps();
+    const p = videoPreview(document, "content/v.mp4", null, d);
+    const el = parts(p.root);
+    await settle();
+    metadata(el.video, 12);
+    expect(el.frame.disabled).toBe(false);
+    el.video.dispatchEvent(new Event("error"));
+    expect(el.frame.disabled).toBe(true);
+    expect(el.facts.textContent).toBe("This clip cannot be played here.");
+  });
 });

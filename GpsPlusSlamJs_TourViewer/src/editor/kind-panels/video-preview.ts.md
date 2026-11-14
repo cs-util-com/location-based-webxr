@@ -26,6 +26,10 @@ poster without leaving the editor.
 - The clip and its poster are read by path. A clip that cannot be read
   says "The clip could not be read.", and its "Use current frame" stays
   disabled. A poster that cannot be read leaves the first frame showing.
+- A clip that was read but cannot be played here (the media `error` event:
+  a codec this browser lacks, a broken file) says "This clip cannot be played
+  here." and stays so: Play, the scrub bar and "Use current frame" are
+  disabled, also when metadata or a running frame grab arrives after it.
 - "Use current frame" is disabled until the clip's length is known. While
   it works it reads "Saving the poster..." and is disabled. It is restored
   whether the frame was written, refused or could not be taken:

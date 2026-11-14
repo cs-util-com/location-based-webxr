@@ -683,10 +683,15 @@ export async function openGlobeEditor(
       centre,
     );
 
+    // "Look from the viewpoint" lends the camera the viewpoint's lens;
+    // any other camera move gives the view's own back. Screen-sized marks
+    // take the field the camera sees through now.
+    const lens = createLensHold(camera, GLOBE_EDITOR_LOOK.fovYDeg);
     const billboardView = () => ({
       viewportPx,
-      fovDeg: GLOBE_EDITOR_LOOK.fovYDeg,
+      fovDeg: lens.fovDeg(),
     });
+    let billboardFovDeg = lens.fovDeg();
     const codeFace = createCodeFace();
     undo.push(() => {
       codeFace.dispose();
@@ -809,14 +814,18 @@ export async function openGlobeEditor(
       });
     };
 
+    const resizeBillboards = () => {
+      const sized = billboardView();
+      layer.group.traverse((o) => {
+        if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
+          resizeBillboard(o as THREE.Sprite, sized);
+        }
+      });
+    };
     const resize = new ResizeObserver(() => {
       viewportPx = Math.max(1, canvasHeight());
       marks.resize(canvas.clientWidth, canvas.clientHeight);
-      layer.group.traverse((o) => {
-        if ((o as THREE.Sprite).isSprite && o.name.startsWith("billboard")) {
-          resizeBillboard(o as THREE.Sprite, billboardView());
-        }
-      });
+      resizeBillboards();
     });
     resize.observe(deps.container);
     resize.observe(canvas);
@@ -863,9 +872,6 @@ export async function openGlobeEditor(
     const eyeSpheres: THREE.Sphere[] = [];
     /** The SAMPLED ground a world ray meets, to its origin's horizon. */
     const groundPoint = groundPointOfRay(ground.terrain);
-    // "Look from the viewpoint" lends the camera the viewpoint's lens;
-    // any other camera move gives the view's own back.
-    const lens = createLensHold(camera, GLOBE_EDITOR_LOOK.fovYDeg);
     const controls = createGlobeCameraControls(scene, camera, canvas, globe, {
       // The creator's own gesture ends the approach where it is, and
       // leaves the viewpoint's lens.
@@ -1157,6 +1163,11 @@ export async function openGlobeEditor(
         lens.release();
       }
       lens.apply();
+      // A lens taken or given back resizes the billboards made before it.
+      if (lens.fovDeg() !== billboardFovDeg) {
+        billboardFovDeg = lens.fovDeg();
+        resizeBillboards();
+      }
       const selectedStation = selectedStationOf(ui.selected, tourNow);
       hidden = globeHidden(
         onScreen(),
@@ -1164,7 +1175,7 @@ export async function openGlobeEditor(
         {
           hidePx: knobs.hidePx,
           crowdPx: knobs.crowdPx,
-          fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
+          fovYDeg: lens.fovDeg(),
           viewportPx,
         },
         selectedStation,
@@ -1192,7 +1203,7 @@ export async function openGlobeEditor(
         camera: cameraTour,
         eye: camera,
         viewportPx,
-        fovDeg: GLOBE_EDITOR_LOOK.fovYDeg,
+        fovDeg: lens.fovDeg(),
       });
       // After the layer's update: a station's billboard is made there.
       uploads.step();

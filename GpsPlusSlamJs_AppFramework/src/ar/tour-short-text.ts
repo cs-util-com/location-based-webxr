@@ -16,9 +16,11 @@
  */
 
 import { isFiniteNumber } from '../utils/json-guards.js';
-import type {
-  TourBlockFields,
-  TourBlockReadContext,
+import {
+  choice,
+  dropped,
+  type TourBlockFields,
+  type TourBlockReadContext,
 } from './tour-block-read.js';
 
 /** What a short text is for: it tells the visitor to do something, names
@@ -120,34 +122,6 @@ export function shortTextLetterHeightM(readAtM: number): number {
     Math.max(TOUR_SHORT_TEXT_MIN_READ_AT_M, readAtM)
   );
   return clamped * LETTER_M_PER_READ_M;
-}
-
-/** A value a later minor may allow: fails a file of this minor, drops the
- *  field alone from a newer one. */
-function dropped<T extends object>(
-  ctx: TourBlockReadContext,
-  field: string,
-  reason: string
-): Partial<T> {
-  if (!ctx.lenient) return ctx.fail(reason);
-  ctx.onDropped?.({ kind: 'field', block: ctx.id, field, reason });
-  return {};
-}
-
-function choice<F extends string, C extends string>(
-  v: TourBlockFields,
-  field: F,
-  choices: readonly C[],
-  ctx: TourBlockReadContext
-): Partial<Record<F, C>> {
-  const value = v[field];
-  if (value === undefined) return {};
-  const message = `"${ctx.at}.${field}" must be one of ${choices.join(', ')}`;
-  if (typeof value !== 'string') return ctx.fail(message);
-  if ((choices as readonly string[]).includes(value)) {
-    return { [field]: value } as Record<F, C>;
-  }
-  return dropped(ctx, field, message);
 }
 
 function matching<F extends string>(

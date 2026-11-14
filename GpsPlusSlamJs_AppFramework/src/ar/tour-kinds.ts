@@ -20,6 +20,7 @@ import { isFiniteNumber, isRecord } from '../utils/json-guards.js';
 import type { TourAssetKind } from './tour-assets.js';
 import {
   assetRef,
+  choice,
   metres,
   optional,
   optionalAssetRef,
@@ -541,27 +542,6 @@ function audioWorld(
   return { ...fields, volume };
 }
 
-/** One of `choices` in `field`, absent when the block has none. */
-function oneOf<T extends string>(
-  v: TourBlockFields,
-  field: string,
-  choices: readonly T[],
-  ctx: TourBlockReadContext
-): Partial<Record<string, T>> {
-  const value = v[field];
-  if (value === undefined) return {};
-  if (
-    typeof value === 'string' &&
-    (choices as readonly string[]).includes(value)
-  ) {
-    return { [field]: value as T };
-  }
-  return problem(
-    ctx,
-    `"${ctx.at}.${field}" must be one of ${choices.join(', ')}`
-  );
-}
-
 /** The views a video stands in the world in: its width is required in
  *  each. */
 const VIDEO_WORLD_VIEWS: ReadonlySet<string> = new Set([
@@ -589,13 +569,13 @@ function videoWorld(
     ...(v.widthM === undefined
       ? {}
       : { widthM: metres(v.widthM, `${ctx.at}.widthM`, width, ctx) }),
-    ...oneOf(v, 'start', TOUR_VIDEO_STARTS, ctx),
+    ...choice(v, 'start', TOUR_VIDEO_STARTS, ctx),
     ...(v.withinM === undefined
       ? {}
       : { withinM: metres(v.withinM, `${ctx.at}.withinM`, within, ctx) }),
-    ...oneOf(v, 'sound', TOUR_VIDEO_SOUNDS, ctx),
-    ...oneOf(v, 'alpha', TOUR_VIDEO_ALPHAS, ctx),
-    ...oneOf(v, 'loop', TOUR_VIDEO_LOOPS, ctx),
+    ...choice(v, 'sound', TOUR_VIDEO_SOUNDS, ctx),
+    ...choice(v, 'alpha', TOUR_VIDEO_ALPHAS, ctx),
+    ...choice(v, 'loop', TOUR_VIDEO_LOOPS, ctx),
   };
 }
 

@@ -71,6 +71,11 @@
   (`TOUR_VIDEO_ALPHAS`: `none` or `stacked`; absent: `none`) and `loop`
   (`TOUR_VIDEO_LOOPS`; absent: `off`); in every view `captions` (WebVTT
   text) and `poster` (an image asset shown while the clip waits).
+  A video's `widthM` takes the picture's bounds (`TOUR_PICTURE_MIN_WIDTH_M`
+  to `TOUR_PICTURE_MAX_WIDTH_M`, 0.05 to 50 m). As with a short text's
+  look fields, a `start`, `sound`, `alpha` or `loop` of the wrong type
+  fails at every minor; an unknown word fails a file of this minor and is
+  dropped, alone, from a newer one, which still shows the video.
 
 ### Changed
 

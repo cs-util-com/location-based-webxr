@@ -20,6 +20,13 @@ onDropped }`.
   block reader.
 - `problem(ctx, message)` - skips the block in a newer minor, fails the file
   at this reader's own.
+- `dropped(ctx, field, reason)` - for an optional field a later minor may
+  give new values: fails the file at this reader's own minor, drops that
+  field alone (reported as a `field` drop) from a newer one.
+- `choice(v, field, choices, ctx)` - an optional word: a value that is not
+  a string fails at every minor, an unknown word is `dropped`. The short
+  text's look fields and the video's `start`, `sound`, `alpha` and `loop`
+  read through it.
 - `requiredText`, `optionalText`, `assetRef`, `optionalAssetRef`, `metres` -
   one field each.
 
@@ -27,6 +34,8 @@ onDropped }`.
 
 - `optionalText` reports nothing for a blank text and nothing in a lenient
   read: a blank optional text is simply absent.
+- `problem` skips a whole block, `dropped` one optional field: a value a
+  newer minor may add to an optional field must never cost the block.
 - `problem` is for a rule a later minor may relax. `ctx.fail` is for what no
   revision can make valid.
 - `assetRef` resolves a reference against `ctx.assets`, so a renderer never

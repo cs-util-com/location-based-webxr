@@ -8,7 +8,11 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
+import * as THREE from "three";
+
 import { createLensHold, verticalFovDeg } from "./editor3d-lens.js";
+import { resizeBillboard } from "./editor3d-marks.js";
+import { viewHeightAtOneM } from "./gizmo-maths.js";
 
 function camera(aspect = 16 / 10, fov = 50) {
   return {
@@ -124,5 +128,44 @@ describe("createLensHold", () => {
         RangeError,
       );
     }
+  });
+});
+
+describe("the field of view marks are sized by", () => {
+  // Why: a billboard or a code square is sized for a number of pixels on
+  // screen from a field of view. While a lens holds, the camera sees
+  // through the lens, so sizing from the view's own field would draw
+  // every screen-sized mark off by the ratio of the two (up to about 2.5x
+  // on an upright phone); `fovDeg` is the one field both must take.
+  it("is the lens's while it holds and the view's own otherwise", () => {
+    const cam = camera(0.5);
+    const lens = createLensHold(cam, 50);
+    expect(lens.fovDeg()).toBe(50);
+    lens.lookThrough("pic", 60);
+    expect(lens.fovDeg()).toBeCloseTo(verticalFovDeg(60, 0.5)!, 9);
+    expect(lens.fovDeg()).toBe(cam.fov);
+    cam.aspect = 2;
+    lens.apply();
+    expect(lens.fovDeg()).toBe(cam.fov);
+    lens.release();
+    expect(lens.fovDeg()).toBe(50);
+  });
+
+  it("keeps a billboard sized from it at its height on screen under a held lens", () => {
+    const viewportPx = 844;
+    const onScreenPx = (fovDeg: number, scaleY: number) =>
+      (scaleY / viewHeightAtOneM(fovDeg)) * viewportPx;
+    const cam = camera(390 / 844);
+    const lens = createLensHold(cam, 50);
+    lens.lookThrough("pic", 60);
+    const sprite = { scale: new THREE.Vector3() } as THREE.Sprite;
+    resizeBillboard(sprite, { viewportPx, fovDeg: lens.fovDeg() });
+    const held = onScreenPx(cam.fov, sprite.scale.y);
+    resizeBillboard(sprite, { viewportPx, fovDeg: 50 });
+    const fromOwn = onScreenPx(cam.fov, sprite.scale.y);
+    expect(held).toBeCloseTo(34, 6);
+    // The defect this guards: sized from the view's own field, the same
+    // mark is drawn at well under half its height through this wide lens.
+    expect(held / fromOwn).toBeGreaterThan(2);
   });
 });

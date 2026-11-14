@@ -216,7 +216,7 @@ type TourFreeVideo = InWorld<TourVideoBlock> & {
   readonly view: Exclude<TourVideoBlock['view'], 'card'>;
   readonly widthM: number;
 };
-/** A sound standing free in its station, as a video. */
+/** A sound standing free in its station, in its `card` view. */
 type TourFreeAudio = InWorld<TourAudioBlock> & { readonly view: 'card' };
 /** A character standing free in his station, as a figure in one of his
  *  views. */

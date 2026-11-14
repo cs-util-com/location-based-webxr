@@ -407,11 +407,38 @@ describe('a video in the world', () => {
     }
   });
 
-  it('a lenient reader skips a video whose start it does not know', () => {
+  // Why this test matters: a later minor may add a start, a sound, an
+  // alpha or a loop. A reader of this minor must still show that newer
+  // file's video, without just the word it does not know, and say so -
+  // the short text's rule, not a skipped block.
+  it.each([
+    ['start', 'wave'],
+    ['sound', 'loud'],
+    ['alpha', 'green'],
+    ['loop', 'twice'],
+  ])('a lenient reader drops only an unknown %s (%s)', (field, value) => {
     const drops: TourBlockDrop[] = [];
-    const odd = { ...VALID.video, view: 'screen', widthM: 1, start: 'wave' };
-    expect(parse([odd], { lenient: true, drops })).toEqual([]);
-    expect(drops).toHaveLength(1);
+    const odd = { ...VALID.video, view: 'screen', widthM: 1, [field]: value };
+    const [video] = parse([odd], { lenient: true, drops });
+    expect(video).toMatchObject({ kind: 'video', view: 'screen', widthM: 1 });
+    expect(field in (video as unknown as object)).toBe(false);
+    expect(drops).toEqual([
+      expect.objectContaining({ kind: 'field', block: 'b4', field }),
+    ]);
+  });
+
+  // Why: a value of the wrong type is no word a later minor can add, so it
+  // fails the file at every minor, as a short text's does.
+  it.each([
+    ['start', 1],
+    ['sound', true],
+    ['alpha', null],
+    ['loop', ['on']],
+  ])('a %s of the wrong type fails at every minor', (field, value) => {
+    const odd = { ...VALID.video, view: 'screen', widthM: 1, [field]: value };
+    for (const lenient of [false, true]) {
+      expect(() => parse([odd], { lenient })).toThrow(`"blocks[0].${field}"`);
+    }
   });
 });
 

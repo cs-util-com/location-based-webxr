@@ -21,6 +21,13 @@ import {
   TOUR_MODEL_NOTE_RULES,
   TOUR_MODEL_WORLD_VIEWS,
 } from './tour-blocks';
+import type { TourBlockDrop } from './tour-block-read';
+import {
+  TOUR_VIDEO_ALPHAS,
+  TOUR_VIDEO_LOOPS,
+  TOUR_VIDEO_SOUNDS,
+  TOUR_VIDEO_STARTS,
+} from './tour-kinds';
 import {
   tourModelAnimationArbitrary,
   tourModelNoteArbitrary,
@@ -154,6 +161,70 @@ describe('a placed model size (properties)', () => {
         expect(() => read(model(sizeM), lenient)).toThrow(Invalid);
       }),
       { numRuns: 500 }
+    );
+  });
+});
+
+/**
+ * Why this matters: a later minor may add a word to any of a video's look
+ * fields. Whatever word it adds, a reader of this minor must keep the
+ * video and drop only that field (reporting it), and a reader of a file of
+ * its own minor must refuse it - for every string, not only the examples.
+ */
+describe("a video's look fields (properties)", () => {
+  const videoAssets = parseTourAssets(
+    [{ id: 'clip', path: 'content/clip.mp4' }],
+    { fail }
+  );
+  const words = {
+    start: TOUR_VIDEO_STARTS,
+    sound: TOUR_VIDEO_SOUNDS,
+    alpha: TOUR_VIDEO_ALPHAS,
+    loop: TOUR_VIDEO_LOOPS,
+  } as const;
+  const unknownWord = (field: keyof typeof words) =>
+    fc
+      .string()
+      .filter((s) => !(words[field] as readonly string[]).includes(s))
+      .map((value) => ({ field, value }));
+
+  it('any unknown word in start, sound, alpha or loop never skips the video', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          unknownWord('start'),
+          unknownWord('sound'),
+          unknownWord('alpha'),
+          unknownWord('loop')
+        ),
+        ({ field, value }) => {
+          const video = {
+            id: 'v1',
+            kind: 'video',
+            view: 'screen',
+            video: 'clip',
+            widthM: 1,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            [field]: value,
+          };
+          const drops: TourBlockDrop[] = [];
+          const read = (lenient: boolean) =>
+            readTourBlocks([video], 'x', {
+              assets: videoAssets,
+              fail,
+              lenient,
+              onDropped: (drop) => drops.push(drop),
+            }).map((r) => r.block);
+          expect(() => read(false)).toThrow(Invalid);
+          const [kept] = read(true);
+          expect(kept).toMatchObject({ kind: 'video', widthM: 1 });
+          expect(field in (kept as object)).toBe(false);
+          expect(drops).toEqual([
+            expect.objectContaining({ kind: 'field', block: 'v1', field }),
+          ]);
+        }
+      ),
+      { numRuns: 300 }
     );
   });
 });
