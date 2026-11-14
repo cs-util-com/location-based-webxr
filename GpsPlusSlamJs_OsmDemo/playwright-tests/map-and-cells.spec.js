@@ -501,6 +501,16 @@ test.describe("explaining one cell", () => {
       // covered — the same loud failure, without the standing coin-flip.
       await walkByMapClick(shared);
       await expect(panel).toBeHidden();
+      // THE WALK SETTLES before the next test, which shares this page and
+      // which `resetUi` cannot move back (see its list). The click starts the
+      // refresh synchronously, so the status line no longer reads a cell
+      // count here and `waitForRefresh` waits for this walk's own last ring;
+      // the busy mark also covers a refresh queued behind it.
+      await waitForRefresh(shared);
+      await expect(shared.locator("#status")).not.toHaveClass(
+        /is-loading/,
+        REPAINT,
+      );
     });
   });
 });
