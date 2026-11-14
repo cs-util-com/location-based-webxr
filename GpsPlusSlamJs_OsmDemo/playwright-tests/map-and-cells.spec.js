@@ -28,6 +28,9 @@ import {
   pinQuestClock,
   expectNoPanelOpen,
   setting,
+  installFrameProbe,
+  stashStableFrame,
+  diffFromStash,
 } from "./fixtures.js";
 
 /**
@@ -568,29 +571,39 @@ test.describe("revealing the sub-threshold cells", () => {
     // and the test failed for a reason that had nothing to do with show-below.
     await enableCellLayer(shared);
 
+    // About 101 000 pixels change in 3D when show-below draws the
+    // sub-threshold cells (measured 2026-11-14 on the shared page). 20 000 is
+    // a floor with a wide margin; show-below drawing nothing gives zero.
+    const SHOW_BELOW_3D_FLOOR = 20_000;
     await test.step("changes BOTH views, in both directions", async () => {
-      const canvas = shared.locator("#scene canvas");
-      const shot = () =>
-        shared.evaluate(() => {
-          const el = document.querySelector("#scene canvas");
-          return el instanceof HTMLCanvasElement ? el.toDataURL() : "";
-        });
-      await expect(canvas).toBeVisible();
+      await expect(shared.locator("#scene canvas")).toBeVisible();
 
       const cells = shared.locator("#map path.affordance-cell");
       const before2d = await cells.count();
-      const before3d = await shot();
+
+      // 3D: THE REVEALED CELLS, counted as pixels that change against a
+      // SETTLED frame and go back when the switch does. "The canvas is not the
+      // frame it was" was the earlier form, and any residual motion of the
+      // scene satisfies it with show-below drawing nothing. A settled baseline
+      // rules that motion out before the switch, and the return below rules
+      // it out after: a picture still moving would not come back.
+      await installFrameProbe(shared);
+      await stashStableFrame(shared);
+      const changed = async () => (await diffFromStash(shared, 24)).differing;
 
       await setting(shared, "#show-below", (c) => c.check());
 
-      // 2D: more cells on screen. 3D: a different picture. Both halves, because
-      // the reported symptom was that nothing appeared to happen at all.
+      // 2D: more cells on screen. 3D: the sub-threshold cells drawn. Both
+      // halves, because the reported symptom was that nothing appeared to
+      // happen at all.
       await expect.poll(() => cells.count()).toBeGreaterThan(before2d);
-      await expect.poll(shot, REPAINT).not.toBe(before3d);
+      await expect.poll(changed, REPAINT).toBeGreaterThan(SHOW_BELOW_3D_FLOOR);
+      console.log(`show-below: ${await changed()} pixels changed in 3D`);
 
       // AND BACK, which is the half that catches a redraw that only ever adds.
       await setting(shared, "#show-below", (c) => c.uncheck());
       await expect.poll(() => cells.count()).toBe(before2d);
+      await expect.poll(changed, REPAINT).toBeLessThan(SHOW_BELOW_3D_FLOOR);
     });
 
     await test.step("an identity cell can still be clicked to ask why", async () => {
