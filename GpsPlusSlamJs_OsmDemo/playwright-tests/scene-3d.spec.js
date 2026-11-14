@@ -2720,7 +2720,10 @@ test.describe("the light dialog", () => {
       // button. Measured in a trace: the back arrow's click set
       // `data-routing`, a route was drawn 0.2 s later, and the walk kept the
       // frame moving under `settledChroma` past its 5 s. No canvas has been
-      // clicked in this test, so no route may exist.
+      // clicked in this test, so no order may have been given:
+      // `data-routing` is set on every order, a planned one or not, while
+      // `data-route` only appears once a route was found.
+      await expect(page.locator("#scene")).not.toHaveAttribute("data-routing");
       await expect(page.locator("#scene")).not.toHaveAttribute("data-route");
     });
 

@@ -60,7 +60,7 @@ export interface PointerOrigin {
  * The `PointerEvent` fields the decision reads.
  *
  * Deliberately not `PointerEvent` itself: this module must be constructible in a
- * test without a DOM, and these three fields are the whole of what it looks at.
+ * test without a DOM, and these four fields are the whole of what it looks at.
  */
 export interface PickPointer {
   readonly button: number;
@@ -87,7 +87,8 @@ export function pickOrigin(
  * Whether a `pointerup` should produce a pick.
  *
  * `down` is `undefined` when no `pointerdown` was recorded — a pointer that
- * entered the canvas already pressed, or a release after the view re-armed.
+ * entered the canvas already pressed, a release after the view re-armed, or a
+ * press that began on something other than the surface.
  * That is refused rather than measured against a guessed origin, which would
  * make a drag starting off-canvas read as a tap.
  *

@@ -16,7 +16,7 @@ drawing surface, was the pointer still, and was it the primary button
   `PointerEvent`: these four fields are the whole of what the decision reads,
   and a test must be able to construct one without a DOM. `target` is compared
   by identity only.
-- `pickOrigin(down, surface) → PointerOrigin | undefined` — the origin of a
+- `pickOrigin(down, surface) → PointerOrigin | undefined` - the origin of a
   press on `surface`, or `undefined` for a press anywhere else. Never throws.
 - `isPickGesture(down, up, surface) → boolean` — never throws.
 
@@ -29,7 +29,10 @@ drawing surface, was the pointer still, and was it the primary button
   walk then kept the scene repainting under the dialog's own measurements (the
   light dialog e2e failed intermittently on exactly that). A press elsewhere
   records no origin (`pickOrigin`), and a release elsewhere is refused, so a
-  gesture that starts or ends on a control never picks.
+  gesture that starts or ends on a control never picks. The same holds for
+  every other DOM child of the container that takes pointer events: the
+  loading overlay's box no longer picks the scene behind it (the perf readouts
+  set `pointer-events: none`, so a click there still reaches the canvas).
 - **The secondary button never picks** (R13-7, DEC-R13-8). Before this module,
   `building-view.ts` picked on `pointerup` without reading `event.button`, so a
   right-click ordered the NPC _and_ opened the browser's context menu. The
