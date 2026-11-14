@@ -31,6 +31,7 @@ import {
   writeLight,
   writeScheme,
   browserPlaceUrl,
+  cameraDampingEnabled,
   cameraQuery,
   MAX_DISTANCE_M,
   parseCameraTarget,
@@ -566,6 +567,41 @@ describe("the static tiles knob (read-only, tiles=off)", () => {
           const written = placeQuery("?tiles=off", { position: { lat, lng } });
           expect(staticTilesEnabled(written)).toBe(false);
           expect(staticTilesEnabled(lightQuery(written, null))).toBe(false);
+        },
+      ),
+    );
+  });
+});
+
+// The browser suite switches the camera's easing off with `damping=off`, so a
+// drag ends where the pointer stops instead of easing on for many frames,
+// each a software-rendered repaint. The app keeps its damping by default; and
+// because a test reloads and walks with the knob in the link, every writer
+// must leave it in place, the camera writer above all.
+describe("the camera damping knob (read-only, damping=off)", () => {
+  it("is on unless the query says damping=off", () => {
+    expect(cameraDampingEnabled("")).toBe(true);
+    expect(cameraDampingEnabled("?lat=1&lng=2")).toBe(true);
+    expect(cameraDampingEnabled("?damping=on")).toBe(true);
+    expect(cameraDampingEnabled("?damping=off")).toBe(false);
+    expect(cameraDampingEnabled("?lat=1&damping=off&lng=2")).toBe(false);
+  });
+
+  it("survives every writer untouched", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: -80, max: 80, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        (lat, lng) => {
+          const placed = placeQuery("?damping=off", { position: { lat, lng } });
+          expect(cameraDampingEnabled(placed)).toBe(false);
+          const aimed = cameraQuery("?damping=off", {
+            target: { lat, lng },
+            distanceM: 420,
+          });
+          expect(cameraDampingEnabled(aimed)).toBe(false);
+          expect(cameraDampingEnabled(lightQuery(aimed, null))).toBe(false);
+          expect(cameraDampingEnabled(schemeQuery(aimed, null))).toBe(false);
         },
       ),
     );

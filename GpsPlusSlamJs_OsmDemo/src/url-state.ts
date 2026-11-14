@@ -435,3 +435,14 @@ export function sunPinnedHref(
 export function staticTilesEnabled(search: string): boolean {
   return new URLSearchParams(search).get("tiles") !== "off";
 }
+
+/**
+ * Whether the 3D camera eases on after a drag (`enableDamping`): true unless
+ * the query carries `damping=off`. A read-only knob (see the header) for the
+ * browser suite: on a software-rendered runner the easing costs about 160
+ * repaints per drag before the view is still, and a test whose claim is the
+ * pose a drag ends in does not need them. The app keeps its damping.
+ */
+export function cameraDampingEnabled(search: string): boolean {
+  return new URLSearchParams(search).get("damping") !== "off";
+}

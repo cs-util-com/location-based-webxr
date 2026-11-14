@@ -499,7 +499,10 @@ test.describe("the 3D view", () => {
     // second pass to every software-rendered frame, which stretches the
     // camera's damping tail in `rotateUnder` past its settle wait; the AO's
     // own effect on the frame is the ambient-occlusion describe's job.
-    await page.goto(`${AT_FIXTURE}&ao=off`);
+    // `damping=off`: the camera stops where each drag ends, so a drag costs
+    // its own frames and not an eased tail of software-rendered repaints.
+    // Nothing here asks about the easing; the app keeps it by default.
+    await page.goto(`${AT_FIXTURE}&ao=off&damping=off`);
     await waitForRefresh(page);
 
     await test.step("fills the regions on the MAP when the areas layer is on", async () => {
@@ -1307,8 +1310,9 @@ async function skyOnlyFrameAfter(page, steps) {
     await stubNetwork(sky);
     // `ao=off` for the same reason as the boot of the test that calls this:
     // the AO's second pass makes every software-rendered frame slower, so
-    // the damping tail in `rotateUnder` outlasts its settle wait.
-    await sky.goto(`${AT_FIXTURE}&ao=off`);
+    // the damping tail in `rotateUnder` outlasts its settle wait. And
+    // `damping=off` as there, so both pages reach the same pose.
+    await sky.goto(`${AT_FIXTURE}&ao=off&damping=off`);
     await waitForRefresh(sky);
     await setting(sky, "#ground-mode", (c) => c.selectOption("none"));
     for (const layer of [

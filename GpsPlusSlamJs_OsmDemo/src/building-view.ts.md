@@ -661,7 +661,11 @@ field ask that raised the default was literally about zooming further out.
   readout, a `data-testid="perf-readout"` line over the pane's top-left
   corner, removed by `dispose()`. It and the `?stats` panel start just below
   the command bar (`--hud-bar-h`), because the bar covers the pane's top strip. `main.ts` reads both from the link
-  (`woods-readout.ts` `readWoodsKnobs`).
+  (`woods-readout.ts` `readWoodsKnobs`). `cameraDamping` (absent: on) is
+  `MapControls.enableDamping`; only the browser suite's read-only
+  `?damping=off` (`url-state.ts` `cameraDampingEnabled`) turns it off, so a
+  drag stops where the pointer does instead of easing on for about 160
+  software-rendered repaints.
 - **Chained frames only.** This view draws on demand, so `requestFrame`
   records whether it was called from within the frame callback (a drag's
   damping through the controls' `change`, a walk), and only such a frame's

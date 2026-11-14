@@ -32,6 +32,11 @@
 - `staticTilesEnabled(search: string): boolean` - false only for `tiles=off`:
   a read-only boot knob that switches the static tile host off (the tiles
   then come straight from the Overpass race). No writer sets or clears it.
+- `cameraDampingEnabled(search: string): boolean` - false only for
+  `damping=off`: a read-only boot knob for the browser suite that switches
+  the 3D camera's easing off (`BuildingViewOptions.cameraDamping`). The app
+  keeps its damping by default. No writer sets or clears it; tested with a
+  property over the place, camera, light and scheme writers.
 
 ## The camera target (DEC-R13-7), and why it is a safe partial reversal
 
@@ -150,4 +155,7 @@ areas), `furniture=off` (the street furniture layer off), `ao=off` (the
 ambient occlusion off), `woodsauto=off` (the woods governor never thins the
 woods), `treeform=trunk` (every tree drawn with a trunk) and `perf=1` (the
 frame readout over the 3D pane, `woods-readout.ts`) and `tiles=off` (the static
-tile host off, `staticTilesEnabled` below) are read once by `main.ts` at boot and never written, so they add no writer here and DEC-R12-5 holds.
+tile host off, `staticTilesEnabled` below) and `damping=off` (the 3D camera
+stops where a drag ends instead of easing on, `cameraDampingEnabled`; a test
+knob, since each eased frame is a software-rendered repaint in the browser
+suite) are read once by `main.ts` at boot and never written, so they add no writer here and DEC-R12-5 holds.

@@ -142,7 +142,10 @@ test.describe("a superseded refresh", () => {
     page,
   }) => {
     await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    // `damping=off`: the drag below then costs its own frames, not an eased
+    // tail of software-rendered repaints. The pan's total is the same either
+    // way; the app keeps its damping by default.
+    await page.goto(`${AT_FIXTURE}&damping=off`);
     await waitForRefresh(page);
     // CELLS ON: they start OFF since DEC-R7b-6, and the grid is what this test
     // watches for blanking. With the layer off it would compare zero against
@@ -191,7 +194,7 @@ test.describe("a superseded refresh", () => {
       await page.mouse.down();
       // Five intermediate moves, not seventeen: each move costs several
       // frames on a software-rendered runner, and the pan still covers the
-      // same 200 px (damping carries the rest after the button is released).
+      // same 200 px.
       await page.mouse.move(
         box.x + box.width / 2 - 200,
         box.y + box.height / 2,
@@ -246,8 +249,9 @@ test.describe("a superseded refresh", () => {
     // every controls change writes them on a 400 ms throttle.
     //
     // THE DISTANCE IS EXACT, THE TARGET NEARLY. The view repaints on demand, so
-    // the drag's damping is only finished off by the refresh's own repaints:
-    // the target creeps 0.00002-0.00005 degrees (about 4 m) in a passing run.
+    // with damping on (the app's default) the drag's damping is only finished
+    // off by the refresh's own repaints, and the target creeps 0.00002-0.00005
+    // degrees (about 4 m) in a passing run; this test boots with it off.
     // So the target is judged against the drag itself: the drag must be large
     // enough to see (about 60 m, 0.0005 degrees; under 0.0003 a reset could not
     // be told from the creep), and the target must stay nearer to where the

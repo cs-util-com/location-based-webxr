@@ -748,7 +748,10 @@ test.describe("the location picker", () => {
     // back would leave that exactly as broken while looking fixed, so the
     // assertion is the round trip through a real reload, as for the place above.
     await stubNetwork(page);
-    await page.goto(AT_FIXTURE);
+    // `damping=off`: each drag below then costs its own frames, not an eased
+    // tail of software-rendered repaints. The knob is read-only, so the URL
+    // writers keep it through the reload; the app keeps its damping by default.
+    await page.goto(`${AT_FIXTURE}&damping=off`);
     await waitForRefresh(page);
 
     const canvas = page.locator("#scene canvas");

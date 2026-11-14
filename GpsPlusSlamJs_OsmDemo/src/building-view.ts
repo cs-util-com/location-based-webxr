@@ -363,6 +363,12 @@ export interface BuildingViewOptions {
   readonly woodsAuto?: boolean;
   /** Shows the `?perf=1` frame readout over the pane. Absent means hidden. */
   readonly perfReadout?: boolean;
+  /**
+   * Whether the camera eases on after a drag. Absent means on, as the app
+   * runs; only the read-only `?damping=off` knob (`cameraDampingEnabled`)
+   * turns it off, for the browser suite.
+   */
+  readonly cameraDamping?: boolean;
 }
 
 /** Where the camera is aimed, in scene coordinates, and from how far. */
@@ -884,7 +890,7 @@ export class BuildingView {
     // one in is out of date. Touch is handled natively: one finger pans, two
     // dolly and rotate.
     this.controls = new MapControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
+    this.controls.enableDamping = options.cameraDamping ?? true;
     this.controls.target.set(0, 0, 0);
     this.controls.update();
     // AIMED ONCE, HERE. It used to be re-aimed on every camera change because

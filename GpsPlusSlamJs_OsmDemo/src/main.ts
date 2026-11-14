@@ -41,6 +41,7 @@ import { type DemoSnapshot } from "./demo-pipeline.js";
 import { parseStartPosition } from "./start-position.js";
 import {
   browserPlaceUrl,
+  cameraDampingEnabled,
   parseCameraTarget,
   staticTilesEnabled,
   sunPinnedHref,
@@ -492,6 +493,7 @@ async function main(): Promise<void> {
     initialSun: sunAnglesAt(sunInstant, sunPlace),
     woodsAuto: woodsKnobs.auto,
     perfReadout: woodsKnobs.perf,
+    cameraDamping: cameraDampingEnabled(window.location.search),
     onCameraMove: (view) => reportCameraView(view),
     // A cell selection dispatches the SAME action a 2D cell click does: the panel
     // does not know, and must not know, which view the selection came from. A POI
