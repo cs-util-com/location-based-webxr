@@ -29,7 +29,10 @@ tiles (below).
        `https://<name>.csutil.workers.dev`, `http://localhost` and
        `127.0.0.1` on any port), else `403`;
     2. cell validation, else `400`;
-    3. per-IP rate limit, else `429` with `Retry-After: 60`;
+    3. per-IP rate limit, else `429` with `Retry-After: 60`. The key is
+       `rateLimitKey(ip)`: an IPv4 address as is, an IPv6 address by its
+       /64 (`2001:db8:1:2::/64`), since one host is given a whole /64, and
+       a v4-mapped IPv6 address by its IPv4 address;
     4. tile present: `200 {status:"present", url}`; older than 30 days:
        one refresh is queued and the answer is
        `200 {status:"refreshing", url}`. Not when the cell is in failure
@@ -55,33 +58,62 @@ tiles (below).
     a viewer found the stored tile bad (not JSON, no elements array, or a
     top-level `remark`). In this order:
     1. the fill endpoint's origin allowlist (`403`), cell validation
-       (`400`) and per-IP limit, under its own key `report:<ip>` so reports
+       (`400`) and per-IP limit, under its own key `report:<key>` (the
+       same `rateLimitKey`) so reports
        and fills do not share one budget (`429`);
     2. no `etag`: `400 {status:"invalid-etag"}`;
     3. no tile: `200 {status:"missing"}`;
     4. the named ETag (weak form accepted) is not the stored one, i.e. the
        tile was already replaced: `200 {status:"stale"}`;
-    5. the stored ETag was already verified good (the memo):
-       `200 {status:"verified"}`;
-    6. the day's verifies spent (`DAILY_VERIFY_CAP`, default 50):
+    5. the verify memo names the stored ETag:
+       - `started` less than 15 minutes ago (a verify may still run):
+         `202 {status:"checking"}`;
+       - `started` longer ago (the runtime killed that verify, and would
+         again), or `good` less than 7 days ago (the verify cannot settle
+         this report): a refetch, below;
+       - `good` and older: verified again, as if there were no memo;
+    6. a verify of this same object already open (a fresh
+       `state/verifying/<cell>` marker naming this ETag):
+       `202 {status:"checking"}` and nothing sent, so a burst of reports
+       of one tile costs one message;
+    7. the day's verifies spent (`DAILY_VERIFY_CAP`, default 50):
        `503 {status:"cap"}` until the UTC day ends;
-    7. otherwise a `verify` message to the serial queue:
-       `202 {status:"checking"}`; a queue failure is
-       `503 {status:"unavailable"}`.
-       **A report never deletes anything itself.** The consumer verifies the
-       stored bytes (`verify-tile.ts`) and deletes only a bad tile. Deleting on
-       report would let any script with a forged `Origin` delete every stored
-       tile for one request each, and each refill costs the volunteer
-       operators; counting reports from distinct IPs is defeated by cheap IP
-       rotation. A verify costs Worker CPU only, never an upstream request,
-       and is bounded by the per-IP limit and the daily cap; a good tile
-       survives any number of reports.
+    8. other cells' open verifies at `MAX_OPEN_VERIFIES` (8):
+       `503 {status:"busy"}`, `Retry-After: 60`, nothing sent, so forged
+       reports spread over many cells cannot fill the serial queue in
+       front of the fills;
+    9. otherwise the verifying marker (with the ETag), then a `verify`
+       message to the serial queue: `202 {status:"checking"}`; a queue
+       failure removes the marker again and is `503 {status:"unavailable"}`.
+       The consumer clears the marker when the verify ends; a marker older
+       than 15 minutes (a lost or killed run) no longer counts.
+
+    The refetch (`replace`) is bounded like a fill: the cell's failure
+    backoff `503 {status:"backoff"}`; the cell already pending
+    `202 {status:"replacing"}` without a second message; the day's upstream
+    cap `503 {status:"cap"}`; a full backlog `503 {status:"busy"}`;
+    otherwise a pending marker and a `replace` message,
+    `202 {status:"replacing"}`. The consumer counts it as a bad tile, so
+    the cell's backoff grows with every replace and survives its success,
+    and it never deletes: the old file serves until the new one is
+    stored.
+    **A report never deletes anything itself.** The consumer verifies the
+    stored bytes (`verify-tile.ts`) and deletes only a bad tile. Deleting on
+    report would let any script with a forged `Origin` delete every stored
+    tile for one request each, and each refill costs the volunteer
+    operators; counting reports from distinct IPs is defeated by cheap IP
+    rotation. A verify costs Worker CPU only, never an upstream request,
+    and is bounded by the per-IP limit and the daily cap; a good tile
+    survives any number of reports.
+
   - `GET /` - what the service is (its paths built from the schema version,
     as the routes are), the ODbL notice naming the OpenStreetMap
     contributors, and the source repository.
   - `<schema>` is the query schema version (`TILE_SCHEMA_VERSION` in
     `tile-cell.ts`); a path of another version is an ordinary `404`.
   - Anything else `404`; a wrong method `405`.
+- `rateLimitKey(ip)` - the limiter key above; an address it cannot read
+  is kept as it came, never folded into a shared key.
 - `isAllowedFillOrigin(origin)`; `dailyUpstreamCap(env)` (the
   `DAILY_UPSTREAM_CAP` var, 300 when unset or invalid); `dailyVerifyCap(env)`
   (the `DAILY_VERIFY_CAP` var, 50 when unset or invalid).
@@ -97,7 +129,8 @@ tiles (below).
 
 - **The origin check is a hotlink guard only**: any non-browser client can
   send any `Origin`. The bounds that hold against a determined caller are
-  the per-IP limit (approximate: Cloudflare counts per location) and the
+  the per-IP limit (approximate: Cloudflare counts per location; per /64
+  for IPv6) and the
   daily cap the serial consumer keeps.
 - Every refusal answers at once and enqueues nothing, so the client falls
   back to its direct Overpass race without waiting.
@@ -107,8 +140,11 @@ tiles (below).
   route hands to `Response` rather than the bytes.
 - **A custom domain goes on the Worker only, never on the bucket**: a
   `routes` (or `custom_domain`) entry in `wrangler.toml`, after which the
-  client's base URL option changes and the code does not. A domain on the
-  R2 bucket would serve the objects without this Worker: no licence
+  client's base URL option changes and the code does not. The main
+  reason: a bucket domain serves every object in the bucket, and the
+  bucket also holds the Worker's `state/` objects (`failures/`, `daily`,
+  `verified/`, `verifying/`, `pending/`), which would become public. A
+  domain on the R2 bucket would also serve the tiles without this Worker: no licence
   headers, no CORS, no `X-Osm-Base`, and the stored gzip without the
   manual-encoding handling, so the paths being the R2 keys does not make
   the two equivalent.
@@ -123,7 +159,9 @@ tiles (below).
 
 ## Tests
 
-`routes.test.ts`: every route and refusal, the pass-through bytes and
+`routes.test.ts`: the limiter key for IPv4, IPv6 spellings of one /64,
+v4-mapped addresses and unreadable input, with a property that two
+addresses share a key exactly when their first 64 bits match; every route and refusal, the pass-through bytes and
 `encodeBody: "manual"`, the uncached 404, the licence headers on GET and
 HEAD, no fill time or `Last-Modified` sent, the manifest path answering 404, the fill path and service text
 following the schema version (another version 404), the backlog (`ahead`, busy, stale markers
@@ -134,5 +172,11 @@ both sides, look-alike origins, a property that only the three listed
 origin shapes are ever allowed, a raw tile served without `Content-Encoding`
 or manual encoding, and the report endpoint: one verify queued for the named
 object and nothing deleted, a weak ETag matched, stale, missing, verified,
-cap, every guard (its own limiter key), the preflight, a queue outage, and
-a property that no sequence of reports removes a stored tile.
+cap, every guard (its own limiter key), the preflight, a queue outage
+(its marker removed), a good memo answered with a replace (and an old one
+verified again), a `started` memo answered checking or, once old, with a
+replace, the replace's bounds, one message per open verify of an object, a stale
+marker sending again, the open-verify bound, and
+a property that no sequence of reports, run through the real verify and
+refetch steps over days with the upstream up or down, removes a good
+stored tile.

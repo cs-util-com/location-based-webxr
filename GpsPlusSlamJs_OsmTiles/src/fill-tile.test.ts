@@ -7,7 +7,14 @@ import {
 } from "gps-plus-slam-osm/source";
 import { fillTile, type FillDeps } from "./fill-tile";
 import { tileObjectKey } from "./tile-cell";
-import { readDaily, readFailure } from "./fill-state";
+import {
+  readDaily,
+  readFailure,
+  readVerified,
+  recordBadTile,
+  writeDaily,
+  writeVerified,
+} from "./fill-state";
 import { FakeBucket } from "./testing/fake-bindings";
 
 // Why these tests matter: the consumer is the only code that writes tiles
@@ -289,7 +296,8 @@ describe("fillTile", () => {
       osmBase: "2026-11-11T09:00:00Z",
       storedBytes: body.length,
     });
-    expect(outcome.rawBytes).toBeUndefined();
+    // The decoded size is the gzip trailer's ISIZE: no inflate needed.
+    expect(outcome.rawBytes).toBe(raw.length);
     const stored = bucket.objects.get(KEY)!;
     expect(stored.bytes).toEqual(body);
     expect(stored.options.httpMetadata?.contentEncoding).toBe("gzip");
@@ -299,10 +307,10 @@ describe("fillTile", () => {
       endpoint: "lz4.overpass-api.de",
       storedAs: "upstream-gzip",
       checked: "head",
+      rawBytes: String(raw.length),
     });
-    // The raw size of a gzip answer is unknown without inflating it all.
     expect(await readDaily(bucket, NOW)).toMatchObject({
-      rawBytes: 0,
+      rawBytes: raw.length,
       storedBytes: body.length,
     });
   });
@@ -354,12 +362,13 @@ describe("fillTile", () => {
     ]);
   });
 
-  it("refuses an answer labelled gzip that is not gzip, and an encoding it never asked for", async () => {
+  it("refuses an answer labelled gzip that is neither gzip nor JSON, and an encoding it never asked for", async () => {
     const bucket = new FakeBucket();
     const raw = new TextEncoder().encode(overpassBody("2026-11-11T09:00:00Z"));
+    const junk = new TextEncoder().encode("<html>busy</html>");
     const { deps: d } = deps(bucket, (_url, i) =>
       i === 0
-        ? gzipped(raw)
+        ? gzipped(junk)
         : i === 1
           ? gzipped(raw, "br")
           : new Response(raw as BodyInit),
@@ -370,6 +379,57 @@ describe("fillTile", () => {
       "encoding",
       "ok",
     ]);
+  });
+
+  it("treats a body labelled gzip that starts with { as raw, with the full head and tail check", async () => {
+    // Why: a hop that already decoded the body may keep the gzip header.
+    // Such a body is plain JSON and can be checked whole, so it is judged
+    // (and stored) as raw instead of being refused; a partial one is still
+    // refused.
+    const bucket = new FakeBucket();
+    const raw = new TextEncoder().encode(overpassBody("2026-11-11T09:00:00Z"));
+    const partial = new TextEncoder().encode(
+      overpassBody("2026-11-11T09:00:00Z", REMARK),
+    );
+    const { deps: d } = deps(bucket, (_url, i) =>
+      gzipped(i === 0 ? partial : raw),
+    );
+    const outcome = await fillTile(fill, d);
+    expect(outcome.attempts.map((a) => a.result)).toEqual(["remark", "ok"]);
+    const stored = bucket.objects.get(KEY)!;
+    expect(stored.options.httpMetadata?.contentEncoding).toBeUndefined();
+    expect(stored.options.customMetadata).toMatchObject({
+      storedAs: "raw",
+      checked: "full",
+    });
+  });
+
+  it("refuses a gzip answer whose trailer says it decodes to more than the bound, and asks the next operator", async () => {
+    // Why: the fill never inflates the whole answer, so a small gzip that
+    // decodes to gigabytes would be stored and every client would have to
+    // inflate it. The trailer's ISIZE names the decoded size for free.
+    const bucket = new FakeBucket();
+    const good = await gzip(overpassBody("2026-11-11T09:00:00Z"));
+    const bomb = good.slice();
+    new DataView(bomb.buffer).setUint32(bomb.length - 4, 200 * 2 ** 20, true);
+    const { deps: d } = deps(bucket, (_url, i) =>
+      gzipped(i === 0 ? bomb : good),
+    );
+    const outcome = await fillTile(fill, d);
+    expect(outcome.attempts.map((a) => a.result)).toEqual(["too-large", "ok"]);
+  });
+
+  it("refuses a gzip answer larger than the stored-size bound", async () => {
+    const bucket = new FakeBucket();
+    const good = await gzip(overpassBody("2026-11-11T09:00:00Z"));
+    const huge = new Uint8Array(21 * 2 ** 20);
+    huge.set(good.subarray(0, good.length - 8));
+    huge.set(good.subarray(good.length - 8), huge.length - 8);
+    const { deps: d } = deps(bucket, (_url, i) =>
+      gzipped(i === 0 ? huge : good),
+    );
+    const outcome = await fillTile(fill, d);
+    expect(outcome.attempts.map((a) => a.result)).toEqual(["too-large", "ok"]);
   });
 
   it("stores a gzip answer whose tail carries a remark: the tail is the reader's check", async () => {
@@ -455,5 +515,81 @@ describe("fillTile", () => {
       "ok",
     ]);
     expect(outcome.osmBase).toBe("2026-11-11T09:00:00Z");
+  });
+});
+
+describe("fillTile: replace", () => {
+  // Why these tests matter: a replace is how a tile stuck past the verify
+  // is put right (a report of a tile the verify judged good, or a verify
+  // the runtime killed). It must refetch whatever the stored data age,
+  // never delete, and count against the cell's bad-tile backoff so forged
+  // reports cannot turn it into a refetch loop.
+  const replace = { cell: CELL, kind: "replace", at: NOW } as const;
+
+  async function stored(bucket: FakeBucket, osmBase: string): Promise<void> {
+    await bucket.put(KEY, "old", { customMetadata: { osmBase } });
+  }
+
+  it("refetches and stores the answer even when it is not newer, and forgets the memo", async () => {
+    const bucket = new FakeBucket();
+    await stored(bucket, "2026-11-11T09:30:00Z");
+    await writeVerified(bucket, CELL, '"old"', NOW - 1000);
+    const { deps: d, calls } = deps(
+      bucket,
+      () => new Response(overpassBody("2026-11-11T09:00:00Z")),
+    );
+    expect((await fillTile(replace, d)).outcome).toBe("filled");
+    expect(calls).toHaveLength(1);
+    expect(bucket.objects.get(KEY)!.options.customMetadata?.osmBase).toBe(
+      "2026-11-11T09:00:00Z",
+    );
+    expect(await readVerified(bucket, CELL)).toBeUndefined();
+  });
+
+  it("counts as a bad tile: the backoff grows and survives the success", async () => {
+    const bucket = new FakeBucket();
+    await stored(bucket, "2026-11-11T09:00:00Z");
+    await recordBadTile(bucket, CELL, NOW - 3 * 86_400_000, "remark");
+    const { deps: d } = deps(
+      bucket,
+      () => new Response(overpassBody("2026-11-11T09:00:00Z")),
+    );
+    expect((await fillTile(replace, d)).outcome).toBe("filled");
+    expect(await readFailure(bucket, CELL)).toMatchObject({
+      badCount: 2,
+      retryAt: NOW + 7_200_000,
+    });
+    const again = deps(bucket, () => new Response("never"));
+    expect((await fillTile(replace, again.deps)).outcome).toBe("backoff");
+    expect(again.calls).toHaveLength(0);
+  });
+
+  it("never deletes: a failed refetch keeps the stored tile", async () => {
+    const bucket = new FakeBucket();
+    await stored(bucket, "2026-11-11T09:00:00Z");
+    const { deps: d } = deps(bucket, () => new Response("x", { status: 504 }));
+    expect((await fillTile(replace, d)).outcome).toBe("failed");
+    expect(bucket.textOf(KEY)).toBe("old");
+    expect(await readFailure(bucket, CELL)).toMatchObject({
+      badCount: 1,
+      reason: "status",
+    });
+  });
+
+  it("does nothing for a missing tile, and respects the daily cap", async () => {
+    const bucket = new FakeBucket();
+    const { deps: d, calls } = deps(bucket, () => new Response("never"));
+    expect((await fillTile(replace, d)).outcome).toBe("missing");
+    await stored(bucket, "2026-11-11T09:00:00Z");
+    await writeDaily(bucket, NOW, {
+      upstreamRequests: 100,
+      fills: 0,
+      failures: 0,
+      rawBytes: 0,
+      storedBytes: 0,
+      verifies: 0,
+    });
+    expect((await fillTile(replace, d)).outcome).toBe("cap");
+    expect(calls).toHaveLength(0);
   });
 });

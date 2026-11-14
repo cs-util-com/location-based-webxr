@@ -13,7 +13,7 @@ methods, so the unit tests can pass small fakes.
   `TileObjectHead` / `TileObjectBody` / `BucketListing` results
   (`BucketListOptions`: `prefix`, `limit`, `cursor`, `include`); a subset
   of `R2Bucket`.
-- `FillMessage` - `{ cell, kind: "fill" | "refresh" | "verify", at, etag? }`,
+- `FillMessage` - `{ cell, kind: "fill" | "refresh" | "verify" | "replace", at, etag? }`,
   the queue body; `etag` names the object a `verify` is about.
 - `FillQueue`, `RateLimiter` - one method each.
 - `OsmTilesEnv` - `TILES`, `FILL_QUEUE`, optional `FILL_LIMITER`, and the

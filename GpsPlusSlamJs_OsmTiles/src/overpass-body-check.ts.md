@@ -28,6 +28,9 @@ have.
   inflated).
 - `checkOverpassTail(tail)` - the tail reasons alone (`remark`,
   `incomplete`) on the decoded tail text.
+- `hasTopLevelRemark(tail)` - the remark test alone: a `"remark"` key after
+  the closing `]` of the elements array. The verify of a stored tile uses
+  it without the layout rule below, which is the fill's alone.
 - `checkOverpassBody` is the two together, the tail first, as before.
 - `BODY_HEAD_BYTES` (2048) and `BODY_TAIL_BYTES` (512) - the windows.
 
@@ -54,5 +57,6 @@ have.
 tag named `remark` in the last element, cuts after an untagged way and
 inside a relation, the empty answer as Overpass writes it, the timestamp
 looked for only in the head window, a future timestamp, a timestamp of the
-right shape that is no date, and a property that
+right shape that is no date, two real Overpass tails accepted and their
+cut and remark forms refused, and a property that
 a big answer is judged by its tail whatever sits in the middle.

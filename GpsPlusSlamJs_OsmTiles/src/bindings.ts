@@ -65,9 +65,11 @@ export interface FillMessage {
   readonly cell: string;
   /**
    * `fill`: the tile is missing; `refresh`: it is older than the refresh
-   * age; `verify`: a viewer reported the stored object bad.
+   * age; `verify`: a viewer reported the stored object bad; `replace`: a
+   * viewer reported an object the verify cannot judge bad (it passed, or
+   * its verify never finished), so it is refetched whatever its age.
    */
-  readonly kind: "fill" | "refresh" | "verify";
+  readonly kind: "fill" | "refresh" | "verify" | "replace";
   /** Epoch ms of the request. */
   readonly at: number;
   /** `verify` only: the ETag of the object the viewer read. */

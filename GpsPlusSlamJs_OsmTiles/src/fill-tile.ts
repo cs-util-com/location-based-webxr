@@ -15,7 +15,13 @@ import {
   OVERPASS_SELECT_KEYS,
 } from "gps-plus-slam-osm/source/overpass-query";
 import type { FillMessage, TileBucket } from "./bindings";
-import { hasGzipMagic, inflateHead } from "./body-window";
+import {
+  gzipDecodedSize,
+  hasGzipMagic,
+  inflateHead,
+  MAX_TILE_DECODED_BYTES,
+  MAX_TILE_GZIP_BYTES,
+} from "./body-window";
 import {
   BODY_HEAD_BYTES,
   checkOverpassBody,
@@ -23,8 +29,10 @@ import {
 } from "./overpass-body-check";
 import {
   clearFailure,
+  clearVerified,
   readDaily,
   readFailure,
+  recordBadTile,
   recordFailure,
   writeDaily,
   writeFailure,
@@ -74,7 +82,8 @@ interface FillAttempt {
     | "no-timestamp"
     | "future-timestamp"
     | "remark"
-    | "incomplete";
+    | "incomplete"
+    | "too-large";
   readonly ms: number;
   readonly bytes?: number;
 }
@@ -89,11 +98,12 @@ export interface FillOutcome {
     | "backoff"
     | "cap"
     | "failed"
-    | "kept-newer";
+    | "kept-newer"
+    | "missing";
   readonly attempts: readonly FillAttempt[];
   readonly endpoint?: string;
   readonly osmBase?: string;
-  /** Decoded size; only for an uncompressed answer (gzip is not inflated). */
+  /** Decoded size: the length of a raw answer, the gzip trailer's ISIZE. */
   readonly rawBytes?: number;
   readonly storedBytes?: number;
   readonly wallMs: number;
@@ -114,16 +124,46 @@ interface Fetched {
   readonly gzip: boolean;
   readonly osmBase: string;
   readonly endpoint: string;
+  /** Decoded size: the raw length, or the gzip trailer's ISIZE. */
+  readonly rawBytes: number;
 }
 
 type AnswerCheck =
-  | { readonly ok: true; readonly osmBase: string; readonly gzip: boolean }
+  | {
+      readonly ok: true;
+      readonly osmBase: string;
+      readonly gzip: boolean;
+      readonly rawBytes: number;
+    }
   | { readonly ok: false; readonly reason: FillAttempt["result"] };
+
+/** Whether the first byte that is not JSON whitespace is `{`. */
+function startsWithBrace(bytes: Uint8Array): boolean {
+  for (const byte of bytes) {
+    if (byte === 0x20 || byte === 0x09 || byte === 0x0a || byte === 0x0d) {
+      continue;
+    }
+    return byte === 0x7b;
+  }
+  return false;
+}
+
+/** The full head and tail check of an answer held uncompressed. */
+function checkRaw(bytes: Uint8Array, now: number): AnswerCheck {
+  if (bytes.length > MAX_TILE_DECODED_BYTES) {
+    return { ok: false, reason: "too-large" };
+  }
+  const check = checkOverpassBody(bytes, now);
+  return check.ok ? { ...check, gzip: false, rawBytes: bytes.length } : check;
+}
 
 /**
  * An uncompressed answer gets the full head and tail check; a gzip one
  * only its inflated head (a bounded cost), as its tail is reached only by
- * inflating the whole tile. Any other encoding was never asked for.
+ * inflating the whole tile, plus the size bounds its length and trailer
+ * give for free. A body labelled gzip that is plain JSON (a hop decoded it
+ * and kept the header) is checked and stored as raw. Any other encoding
+ * was never asked for.
  */
 async function checkAnswer(
   bytes: Uint8Array,
@@ -131,12 +171,17 @@ async function checkAnswer(
   now: number,
 ): Promise<AnswerCheck> {
   const encoding = (contentEncoding ?? "").trim().toLowerCase();
-  if (encoding === "" || encoding === "identity") {
-    const check = checkOverpassBody(bytes, now);
-    return check.ok ? { ...check, gzip: false } : check;
+  if (encoding === "" || encoding === "identity") return checkRaw(bytes, now);
+  if (encoding !== "gzip") return { ok: false, reason: "encoding" };
+  if (!hasGzipMagic(bytes)) {
+    return startsWithBrace(bytes)
+      ? checkRaw(bytes, now)
+      : { ok: false, reason: "encoding" };
   }
-  if (encoding !== "gzip" || !hasGzipMagic(bytes)) {
-    return { ok: false, reason: "encoding" };
+  const rawBytes = gzipDecodedSize(bytes);
+  if (rawBytes === undefined) return { ok: false, reason: "encoding" };
+  if (bytes.length > MAX_TILE_GZIP_BYTES || rawBytes > MAX_TILE_DECODED_BYTES) {
+    return { ok: false, reason: "too-large" };
   }
   let head: Uint8Array;
   try {
@@ -145,7 +190,7 @@ async function checkAnswer(
     return { ok: false, reason: "encoding" };
   }
   const check = checkOverpassHead(new TextDecoder().decode(head), now);
-  return check.ok ? { ...check, gzip: true } : check;
+  return check.ok ? { ...check, gzip: true, rawBytes } : check;
 }
 
 /** What the store says about the tile before any request is sent. */
@@ -158,7 +203,16 @@ async function precheck(
   const existingBase = existing?.customMetadata?.["osmBase"];
   if (existing !== null && message.kind === "fill")
     return { outcome: "present" };
-  if (existing !== null && existingBase !== undefined) {
+  // A replace refetches a stored tile whatever its age; with none stored
+  // there is nothing to replace (an ordinary fill brings it).
+  if (message.kind === "replace" && existing === null) {
+    return { outcome: "missing" };
+  }
+  if (
+    message.kind !== "replace" &&
+    existing !== null &&
+    existingBase !== undefined
+  ) {
     const age = now - Date.parse(existingBase);
     if (age < REFRESH_AGE_MS) return { outcome: "fresh" };
   }
@@ -219,7 +273,13 @@ async function attemptOnce(
     if (!check.ok) return { attempt: { ...base, result: check.reason } };
     return {
       attempt: { ...base, result: "ok" },
-      fetched: { bytes, gzip: check.gzip, osmBase: check.osmBase, endpoint },
+      fetched: {
+        bytes,
+        gzip: check.gzip,
+        osmBase: check.osmBase,
+        endpoint,
+        rawBytes: check.rawBytes,
+      },
     };
   } catch {
     return { attempt: { endpoint, result: "error", ms: elapsed() } };
@@ -291,7 +351,7 @@ async function store(
       // (a viewer's report and the verify job), see fill-tile.ts.md.
       storedAs: gzip ? "upstream-gzip" : "raw",
       checked: gzip ? "head" : "full",
-      ...(gzip ? {} : { rawBytes: String(bytes.length) }),
+      rawBytes: String(fetched.rawBytes),
     },
   });
 }
@@ -320,12 +380,13 @@ export async function fillTile(
   // the runtime can kill a fill mid-way (CPU or wall limit), the queue does
   // not retry it, and only a record written up front turns that kill into
   // backoff instead of a fresh download on the next request.
-  const pending = await recordFailure(
-    deps.bucket,
-    message.cell,
-    started,
-    "unfinished",
-  );
+  // A replace counts as a bad tile up front: its backoff (1 h, doubling, up
+  // to 7 days) holds after a success too, so reports of one cell cannot
+  // turn into a refetch loop.
+  const replace = message.kind === "replace";
+  const pending = replace
+    ? await recordBadTile(deps.bucket, message.cell, started, "replace")
+    : await recordFailure(deps.bucket, message.cell, started, "unfinished");
   const { attempts, fetched } = await fetchFromOperators(
     message.cell,
     deps,
@@ -337,25 +398,32 @@ export async function fillTile(
     await bumpDaily(deps, (d) => ({ ...d, failures: d.failures + 1 }));
     return done("failed", { attempts });
   }
-  const rawBytes = fetched.gzip ? undefined : fetched.bytes.length;
+  const { rawBytes } = fetched;
   const facts = {
     attempts,
     endpoint: new URL(fetched.endpoint).hostname,
     osmBase: fetched.osmBase,
-    ...(rawBytes === undefined ? {} : { rawBytes }),
+    rawBytes,
   };
-  // ISO-8601 UTC strings of one format compare correctly as text.
-  if (pre.existingBase !== undefined && fetched.osmBase <= pre.existingBase) {
+  // ISO-8601 UTC strings of one format compare correctly as text. A
+  // replace stores the answer even when it is not newer: the stored tile
+  // is the one a viewer could not use.
+  if (
+    !replace &&
+    pre.existingBase !== undefined &&
+    fetched.osmBase <= pre.existingBase
+  ) {
     await clearFailure(deps.bucket, message.cell);
     return done("kept-newer", facts);
   }
   await store(message.cell, fetched, deps);
   const storedBytes = fetched.bytes.length;
-  await clearFailure(deps.bucket, message.cell);
+  if (replace) await clearVerified(deps.bucket, message.cell);
+  else await clearFailure(deps.bucket, message.cell);
   await bumpDaily(deps, (d) => ({
     ...d,
     fills: d.fills + 1,
-    rawBytes: d.rawBytes + (rawBytes ?? 0),
+    rawBytes: d.rawBytes + rawBytes,
     storedBytes: d.storedBytes + storedBytes,
   }));
   return done("filled", { ...facts, storedBytes });

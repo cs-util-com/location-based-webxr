@@ -3,7 +3,7 @@ import fc from "fast-check";
 import {
   clearFailure,
   clearVerified,
-  readVerifiedEtag,
+  readVerified,
   recordBadTile,
   writeVerified,
   failureBackoffMs,
@@ -11,8 +11,13 @@ import {
   readDaily,
   readFailure,
   clearPending,
+  clearVerifying,
   listPending,
+  listVerifying,
   markPending,
+  markVerifying,
+  readVerifying,
+  sweepVerifying,
   PENDING_STALE_MS,
   recordFailure,
   sweepPending,
@@ -136,11 +141,43 @@ describe("a bad tile's record", () => {
 describe("the verified memo", () => {
   it("holds the ETag of the object last verified good", async () => {
     const bucket = new FakeBucket();
-    expect(await readVerifiedEtag(bucket, "871fa")).toBeUndefined();
-    await writeVerified(bucket, "871fa", '"abc"');
-    expect(await readVerifiedEtag(bucket, "871fa")).toBe('"abc"');
+    expect(await readVerified(bucket, "871fa")).toBeUndefined();
+    await writeVerified(bucket, "871fa", '"abc"', 5);
+    expect((await readVerified(bucket, "871fa"))?.etag).toBe('"abc"');
     await clearVerified(bucket, "871fa");
-    expect(await readVerifiedEtag(bucket, "871fa")).toBeUndefined();
+    expect(await readVerified(bucket, "871fa")).toBeUndefined();
+  });
+
+  it("holds the verify's state and time: started before the inflate, good after", async () => {
+    // Why: a verify the runtime kills (CPU, on a huge tile) must leave a
+    // trace, or every later report would start the same killed verify again
+    // and the tile would stay stuck; and a good memo must expire, or a tile
+    // the verify misjudged would be stuck for good.
+    const bucket = new FakeBucket();
+    await writeVerified(bucket, "871fa", '"abc"', 5, "started");
+    expect(await readVerified(bucket, "871fa")).toEqual({
+      etag: '"abc"',
+      state: "started",
+      at: 5,
+    });
+    await writeVerified(bucket, "871fa", '"abc"', 9);
+    expect(await readVerified(bucket, "871fa")).toEqual({
+      etag: '"abc"',
+      state: "good",
+      at: 9,
+    });
+  });
+
+  it("reads a memo written before it held a state as good and long expired", async () => {
+    const bucket = new FakeBucket();
+    await bucket.put("state/verified/871fa", "", {
+      customMetadata: { etag: '"abc"' },
+    });
+    expect(await readVerified(bucket, "871fa")).toEqual({
+      etag: '"abc"',
+      state: "good",
+      at: 0,
+    });
   });
 });
 
@@ -225,5 +262,42 @@ describe("the pending-fill markers", () => {
         },
       ),
     );
+  });
+});
+
+describe("verifying markers", () => {
+  // Why these tests matter: a report writes one marker per cell before it
+  // queues a verify, and the report endpoint reads them to send at most one
+  // message per open verify and to bound how many are open at all. A
+  // marker that never went stale, or a sweep that missed one, would either
+  // refuse every later report of that cell or let the backlog grow.
+  const NOW = Date.parse("2026-11-11T10:00:00Z");
+  it("holds the reported ETag and lists only fresh markers", async () => {
+    const bucket = new FakeBucket();
+    await markVerifying(bucket, "fresh", '"a"', NOW - 1000);
+    await markVerifying(bucket, "stale", '"b"', NOW - PENDING_STALE_MS);
+    expect(await readVerifying(bucket, "fresh", NOW)).toEqual({
+      cell: "fresh",
+      etag: '"a"',
+      queuedAt: NOW - 1000,
+    });
+    expect(await readVerifying(bucket, "stale", NOW)).toBeUndefined();
+    expect((await listVerifying(bucket, NOW)).map((m) => m.cell)).toEqual([
+      "fresh",
+    ]);
+  });
+
+  it("clears one marker, and sweeps the stale ones", async () => {
+    const bucket = new FakeBucket();
+    await markVerifying(bucket, "fresh", '"a"', NOW - 1000);
+    await markVerifying(bucket, "stale", '"b"', NOW - PENDING_STALE_MS);
+    await markVerifying(bucket, "done", '"c"', NOW);
+    await clearVerifying(bucket, "done");
+    await sweepVerifying(bucket, NOW);
+    expect(
+      [...bucket.objects.keys()].filter((k) =>
+        k.startsWith("state/verifying/"),
+      ),
+    ).toEqual(["state/verifying/fresh"]);
   });
 });

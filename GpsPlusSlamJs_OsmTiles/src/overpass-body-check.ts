@@ -37,6 +37,11 @@ const COMPLETE_END = /\n[ \t]*\n[ \t]*\][ \t]*\n?\}\s*$/;
 /** How far ahead of the Worker's clock a data timestamp may be. */
 const FUTURE_TOLERANCE_MS = 3_600_000;
 
+/** Whether a body's tail carries Overpass's top-level remark. */
+export function hasTopLevelRemark(tail: string): boolean {
+  return TOP_LEVEL_REMARK.test(tail);
+}
+
 type HeadReason = "not-json" | "no-timestamp" | "future-timestamp";
 type TailReason = "remark" | "incomplete";
 
@@ -77,7 +82,7 @@ export function checkOverpassHead(
 export function checkOverpassTail(
   tail: string,
 ): { readonly ok: true } | { readonly ok: false; readonly reason: TailReason } {
-  if (TOP_LEVEL_REMARK.test(tail)) return { ok: false, reason: "remark" };
+  if (hasTopLevelRemark(tail)) return { ok: false, reason: "remark" };
   if (!COMPLETE_END.test(tail)) return { ok: false, reason: "incomplete" };
   return { ok: true };
 }

@@ -10,7 +10,8 @@ verifies tiles.
 
 - default export `{ fetch, queue }`:
   - `fetch(request, env)` - `handleRequest` with the clock.
-  - `queue(batch, env)` - for each message: validate the cell and kind;
+  - `queue(batch, env)` - for each message: validate the cell and kind
+    (`fill`, `refresh`, `replace` run `fillTile`; `verify` below);
     sweep the pending markers (stale ones and any still flagged running,
     which belong to a killed run) and mark this cell running; `fillTile`
     with the OSM package's `DEFAULT_OVERPASS_ENDPOINTS`, the global
@@ -19,7 +20,9 @@ verifies tiles.
     cell's marker, also when the fill threw; ack. A `verify` message runs
     `verifyTile` with the `DAILY_VERIFY_CAP` var instead, logs one
     `{verify: ...}` line, and neither marks nor clears the pending marker
-    (a fill of the same cell may be queued behind it).
+    (a fill of the same cell may be queued behind it). It sweeps the stale
+    verifying markers first and clears its own when it ends, also when
+    it threw.
 - `QueueBatch` - the minimal batch shape.
 
 ## Invariants & assumptions
@@ -36,4 +39,6 @@ verifies tiles.
 `osm-tiles-worker.test.ts`: the fetch path, an invalid message dropped and
 acked, a throwing fill logged and acked, the marker cleared after a fill
 that threw, the running mark plus the sweep of a killed run's marker, and a
-verify message deleting a bad tile without touching the cell's marker.
+verify message deleting a bad tile without touching the cell's marker,
+a verify clearing its verifying marker and sweeping a stale one, and a
+replace message run as a fill of its cell.

@@ -6,11 +6,12 @@ import { tileObjectKey } from "./tile-cell";
 import {
   readDaily,
   readFailure,
-  readVerifiedEtag,
+  readVerified,
   writeDaily,
   writeVerified,
 } from "./fill-state";
 import { FakeBucket } from "./testing/fake-bindings";
+import { REAL_TAIL_A, REAL_TAIL_B } from "./testing/overpass-tails";
 
 // Why these tests matter: a viewer's report of a bad tile is the only way a
 // stored tile is ever deleted, and anyone can send one. The verify job is
@@ -82,7 +83,7 @@ describe("verifyTile", () => {
     const outcome = await verifyTile(verify(etag), deps(bucket));
     expect(outcome.outcome).toBe("good");
     expect(bucket.objects.has(KEY)).toBe(true);
-    expect(await readVerifiedEtag(bucket, CELL)).toBe(etag);
+    expect((await readVerified(bucket, CELL))?.etag).toBe(etag);
     expect((await readDaily(bucket, NOW)).verifies).toBe(1);
   });
 
@@ -95,7 +96,7 @@ describe("verifyTile", () => {
     const outcome = await verifyTile(verify(etag), deps(bucket));
     expect(outcome).toMatchObject({ outcome: "bad", reason: "remark" });
     expect(bucket.objects.has(KEY)).toBe(false);
-    expect(await readVerifiedEtag(bucket, CELL)).toBeUndefined();
+    expect(await readVerified(bucket, CELL)).toBeUndefined();
     expect(await readFailure(bucket, CELL)).toMatchObject({
       retryAt: NOW + 3_600_000,
       badCount: 1,
@@ -151,10 +152,71 @@ describe("verifyTile", () => {
   it("verifies one object once: a remembered good ETag costs no inflate", async () => {
     const bucket = new FakeBucket();
     const etag = await storeGzip(bucket, overpassBody(2));
-    await writeVerified(bucket, CELL, etag);
+    await writeVerified(bucket, CELL, etag, NOW - 1000);
     const outcome = await verifyTile(verify(etag), deps(bucket));
     expect(outcome.outcome).toBe("verified");
     expect((await readDaily(bucket, NOW)).verifies).toBe(0);
+  });
+
+  it("verifies a tile again once its good memo is older than a week", async () => {
+    // Why: a memo that never expired would keep a tile the verify misjudged
+    // (or the client judges stricter) out of every later check for good.
+    const bucket = new FakeBucket();
+    const etag = await storeGzip(bucket, overpassBody(2));
+    await writeVerified(bucket, CELL, etag, NOW - 7 * 86_400_000 - 1);
+    const outcome = await verifyTile(verify(etag), deps(bucket));
+    expect(outcome.outcome).toBe("good");
+    expect((await readDaily(bucket, NOW)).verifies).toBe(1);
+    expect(await readVerified(bucket, CELL)).toEqual({
+      etag,
+      state: "good",
+      at: NOW,
+    });
+  });
+
+  it("marks the memo started BEFORE it reads the body, so a killed verify leaves a trace", async () => {
+    const bucket = new FakeBucket();
+    const etag = await storeGzip(bucket, overpassBody(2));
+    const states: string[] = [];
+    const put = bucket.put.bind(bucket);
+    bucket.put = (key, value, options) => {
+      if (key.startsWith("state/verified/")) {
+        states.push(options?.customMetadata?.["state"] ?? "");
+      }
+      return put(key, value, options);
+    };
+    await verifyTile(verify(etag), deps(bucket));
+    expect(states).toEqual(["started", "good"]);
+  });
+
+  it("does not start again on an object whose last verify never finished", async () => {
+    // Why: a verify the runtime killed on this object would be killed again;
+    // the report endpoint replaces such a tile instead (a refetch).
+    const bucket = new FakeBucket();
+    const etag = await storeGzip(bucket, overpassBody(2, REMARK));
+    await writeVerified(bucket, CELL, etag, NOW - 60_000, "started");
+    const outcome = await verifyTile(verify(etag), deps(bucket));
+    expect(outcome.outcome).toBe("unfinished");
+    expect(bucket.objects.has(KEY)).toBe(true);
+    expect((await readDaily(bucket, NOW)).verifies).toBe(0);
+  });
+
+  it("deletes a tile that decodes to more than the decoded-size bound (a gzip bomb)", async () => {
+    // Why: the stored gzip may be small and still inflate to gigabytes; the
+    // verify must stop counting at its bound and treat the tile as bad
+    // rather than spend the consumer's CPU on it.
+    const bucket = new FakeBucket();
+    const padded = overpassBody(1).replace(
+      '"elements"',
+      `"pad": "${" ".repeat(400_000)}", "elements"`,
+    );
+    const etag = await storeGzip(bucket, padded);
+    const outcome = await verifyTile(
+      verify(etag),
+      deps(bucket, { maxDecodedBytes: 100_000 }),
+    );
+    expect(outcome).toMatchObject({ outcome: "bad", reason: "too-large" });
+    expect(bucket.objects.has(KEY)).toBe(false);
   });
 
   it("stops at the daily verify cap without reading the tile", async () => {
@@ -188,6 +250,143 @@ describe("verifyTile", () => {
     expect(await readFailure(bucket, CELL)).toMatchObject({
       retryAt: later + 7_200_000,
       badCount: 2,
+    });
+  });
+
+  describe("deletes only on positive evidence", () => {
+    // Why these tests matter: a delete costs the operators a refill, and a
+    // report can name any tile. The fill's tail pattern knows the layout
+    // Overpass writes today; the verify must not delete a complete answer
+    // because a later Overpass version lays it out otherwise, so it deletes
+    // only on what proves a tile bad: a gzip that does not decode, a
+    // top-level remark, a head that is not JSON, or an end that does not
+    // close at all.
+    const HEAD =
+      '{\n  "version": 0.6,\n  "generator": "Overpass API 0.7.62.11",\n  "osm3s": {\n    "timestamp_osm_base": "2026-11-13T11:00:00Z"\n  },\n  "elements": [\n';
+
+    it("keeps a complete answer in a layout the fill's tail pattern does not know", async () => {
+      const bucket = new FakeBucket();
+      const compact = JSON.stringify({
+        version: 0.6,
+        osm3s: { timestamp_osm_base: "2026-11-13T11:00:00Z" },
+        elements: [{ type: "node", id: 1, lat: 1, lon: 2 }],
+      });
+      const etag = await storeRaw(bucket, compact);
+      expect((await verifyTile(verify(etag), deps(bucket))).outcome).toBe(
+        "good",
+      );
+      expect(bucket.objects.has(KEY)).toBe(true);
+    });
+
+    it("keeps a JSON tile whose head lacks the data timestamp", async () => {
+      const bucket = new FakeBucket();
+      const etag = await storeGzip(
+        bucket,
+        overpassBody(2).replace("timestamp_osm_base", "other"),
+      );
+      expect((await verifyTile(verify(etag), deps(bucket))).outcome).toBe(
+        "good",
+      );
+    });
+
+    it("deletes a tile whose head is no JSON", async () => {
+      const bucket = new FakeBucket();
+      const etag = await storeRaw(bucket, "<html>502</html>\n}");
+      expect(await verifyTile(verify(etag), deps(bucket))).toMatchObject({
+        outcome: "bad",
+        reason: "not-json",
+      });
+    });
+
+    it("keeps real operator answers and deletes their partial and cut forms", async () => {
+      for (const tail of [REAL_TAIL_A, REAL_TAIL_B]) {
+        for (const compressed of [false, true]) {
+          const store = compressed ? storeGzip : storeRaw;
+          const bucket = new FakeBucket();
+          const good = await store(bucket, HEAD + tail);
+          expect(
+            (await verifyTile(verify(good), deps(bucket))).outcome,
+            "complete",
+          ).toBe("good");
+          const remark = tail.replace(
+            /\]\s*\}\s*$/,
+            '],\n  "remark": "runtime error: Query timed out"\n}\n',
+          );
+          const partial = await store(bucket, HEAD + remark);
+          expect(
+            await verifyTile(verify(partial), deps(bucket)),
+            "remark",
+          ).toMatchObject({ outcome: "bad", reason: "remark" });
+          const cut = await store(bucket, HEAD + tail.slice(0, -40));
+          expect(
+            await verifyTile(verify(cut), deps(bucket)),
+            "cut",
+          ).toMatchObject({ outcome: "bad", reason: "incomplete" });
+        }
+      }
+    });
+
+    it("property: a complete answer of any indent and any extra keys is never deleted", async () => {
+      // The answers are built by JSON.stringify, not by the layout the
+      // checks look for, so the property does not restate the checks.
+      const element = fc.record({
+        type: fc.constantFrom("node", "way", "relation"),
+        id: fc.nat(),
+        tags: fc.dictionary(fc.string({ maxLength: 6 }), fc.string()),
+      });
+      const extraKey = fc
+        .string({ minLength: 1, maxLength: 8 })
+        .filter((k) => !["remark", "elements", "version"].includes(k));
+      await fc.assert(
+        fc.asyncProperty(
+          fc.array(element, { maxLength: 30 }),
+          fc.dictionary(extraKey, fc.jsonValue(), { maxKeys: 3 }),
+          fc.integer({ min: 0, max: 4 }),
+          fc.boolean(),
+          async (elements, extra, indent, compressed) => {
+            const text = JSON.stringify(
+              {
+                version: 0.6,
+                osm3s: { timestamp_osm_base: "2026-11-13T11:00:00Z" },
+                elements,
+                ...extra,
+              },
+              null,
+              indent,
+            );
+            const bucket = new FakeBucket();
+            const etag = compressed
+              ? await storeGzip(bucket, text)
+              : await storeRaw(bucket, text);
+            expect((await verifyTile(verify(etag), deps(bucket))).outcome).toBe(
+              "good",
+            );
+            expect(bucket.objects.has(KEY)).toBe(true);
+          },
+        ),
+        { numRuns: 40 },
+      );
+    });
+
+    it("property: a gzip tile cut anywhere is always deleted", async () => {
+      const full = await gzip(overpassBody(200));
+      await fc.assert(
+        fc.asyncProperty(
+          fc.integer({ min: 1, max: full.length - 1 }),
+          async (length) => {
+            const bucket = new FakeBucket();
+            await bucket.put(KEY, full.slice(0, length), {
+              httpMetadata: { contentEncoding: "gzip" },
+              customMetadata: { osmBase: "2026-11-13T11:00:00Z" },
+            });
+            const etag = (await bucket.head(KEY))!.httpEtag;
+            const outcome = await verifyTile(verify(etag), deps(bucket));
+            expect(outcome.outcome).toBe("bad");
+            expect(bucket.objects.has(KEY)).toBe(false);
+          },
+        ),
+        { numRuns: 40 },
+      );
     });
   });
 

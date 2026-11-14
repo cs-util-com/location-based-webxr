@@ -7,20 +7,24 @@
  */
 
 import type { FillMessage, TileBucket } from "./bindings";
-import { readBodyEnds } from "./body-window";
+import {
+  BodyTooLarge,
+  MAX_TILE_DECODED_BYTES,
+  readBodyEnds,
+} from "./body-window";
 import {
   clearVerified,
   readDaily,
-  readVerifiedEtag,
+  readVerified,
   recordBadTile,
+  VERIFIED_TTL_MS,
   writeDaily,
   writeVerified,
 } from "./fill-state";
 import {
   BODY_HEAD_BYTES,
   BODY_TAIL_BYTES,
-  checkOverpassHead,
-  checkOverpassTail,
+  hasTopLevelRemark,
 } from "./overpass-body-check";
 import { tileObjectKey } from "./tile-cell";
 
@@ -29,13 +33,19 @@ export interface VerifyDeps {
   readonly now: () => number;
   /** Verifies one UTC day may run, all cells together. */
   readonly dailyVerifyCap: number;
+  /** Decoded bytes at which the read stops and the tile is bad. */
+  readonly maxDecodedBytes?: number;
 }
 
 export interface VerifyOutcome {
   readonly cell: string;
   readonly kind: "verify";
-  readonly outcome: "missing" | "stale" | "verified" | "cap" | "good" | "bad";
-  /** For `bad`: the check that failed (`encoding` for a gzip error). */
+  readonly outcome:
+    "missing" | "stale" | "verified" | "unfinished" | "cap" | "good" | "bad";
+  /**
+   * For `bad`: the check that failed (`encoding` for a gzip error,
+   * `too-large` past the decoded bound).
+   */
   readonly reason?: string;
   readonly wallMs: number;
 }
@@ -43,6 +53,23 @@ export interface VerifyOutcome {
 /** Strong form of an ETag: the edge sends `W/"..."` for what it compressed. */
 export function strongEtag(etag: string): string {
   return etag.startsWith("W/") ? etag.slice(2) : etag;
+}
+
+/**
+ * What proves a stored tile bad, from its two ends, or undefined. Only
+ * positive evidence counts, since a delete costs the operators a refill
+ * and anyone can report: a head that is no JSON object, a top-level remark
+ * (a partial answer), or an end that does not close the object at all.
+ * The fill's stricter tail pattern (the layout Overpass writes today)
+ * is not used here: a later layout must not get complete tiles deleted. A
+ * body cut exactly after an element's closing brace passes; the client
+ * still rejects it when it parses, and its report then refetches the tile.
+ */
+function storedTileFault(head: string, tail: string): string | undefined {
+  if (!head.trimStart().startsWith("{")) return "not-json";
+  if (hasTopLevelRemark(tail)) return "remark";
+  if (!tail.trimEnd().endsWith("}")) return "incomplete";
+  return undefined;
 }
 
 export async function verifyTile(
@@ -74,9 +101,18 @@ export async function verifyTile(
     await discard();
     return done("stale");
   }
-  if ((await readVerifiedEtag(bucket, message.cell)) === object.httpEtag) {
-    await discard();
-    return done("verified");
+  const memo = await readVerified(bucket, message.cell);
+  if (memo?.etag === object.httpEtag) {
+    if (memo.state === "started") {
+      // The last verify of this object never finished (the runtime killed
+      // it); it would be killed again. The report endpoint refetches it.
+      await discard();
+      return done("unfinished");
+    }
+    if (now() - memo.at < VERIFIED_TTL_MS) {
+      await discard();
+      return done("verified");
+    }
   }
   // Counted BEFORE the work, as fills count upstream requests: a verify the
   // runtime kills (CPU) still counts against the day's cap.
@@ -86,6 +122,7 @@ export async function verifyTile(
     return done("cap");
   }
   await writeDaily(bucket, now(), { ...daily, verifies: daily.verifies + 1 });
+  await writeVerified(bucket, message.cell, object.httpEtag, now(), "started");
 
   const gzip = object.httpMetadata?.contentEncoding === "gzip";
   let reason: string | undefined;
@@ -95,22 +132,18 @@ export async function verifyTile(
       gzip,
       BODY_HEAD_BYTES,
       BODY_TAIL_BYTES,
+      deps.maxDecodedBytes ?? MAX_TILE_DECODED_BYTES,
     );
     const decoder = new TextDecoder();
-    const tail = checkOverpassTail(decoder.decode(ends.tail));
-    // The tile's own age is not judged against today's clock here: only a
-    // head without a valid timestamp is bad (Infinity: never "future").
-    const head = checkOverpassHead(
+    reason = storedTileFault(
       decoder.decode(ends.head),
-      Number.POSITIVE_INFINITY,
+      decoder.decode(ends.tail),
     );
-    if (!head.ok) reason = head.reason;
-    else if (!tail.ok) reason = tail.reason;
-  } catch {
-    reason = "encoding";
+  } catch (error) {
+    reason = error instanceof BodyTooLarge ? "too-large" : "encoding";
   }
   if (reason === undefined) {
-    await writeVerified(bucket, message.cell, object.httpEtag);
+    await writeVerified(bucket, message.cell, object.httpEtag, now());
     return done("good");
   }
   await bucket.delete(key);

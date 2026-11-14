@@ -3,7 +3,7 @@ import { latLngToCell } from "h3-js";
 import worker, { type QueueBatch } from "./osm-tiles-worker";
 import { FakeBucket, FakeQueue } from "./testing/fake-bindings";
 import type { FillMessage } from "./bindings";
-import { listPending, markPending } from "./fill-state";
+import { listPending, markPending, markVerifying } from "./fill-state";
 import { tileObjectKey } from "./tile-cell";
 
 // Why these tests matter: the entry wires the bindings into the routes and
@@ -85,6 +85,55 @@ describe("the worker entry", () => {
     expect(acked).toEqual([0]);
     expect(bucket.objects.has(key)).toBe(false);
     expect(bucket.objects.has(`state/pending/${CELL}`)).toBe(true);
+  });
+
+  it("clears the verify's marker when it ends, and sweeps markers a killed or lost run left", async () => {
+    // The report endpoint sends no second verify while a cell's marker is
+    // open; a marker left behind would hold later reports back for its
+    // whole stale age, and stale ones would pile up in the listing.
+    const bucket = new FakeBucket();
+    const key = tileObjectKey(CELL);
+    await bucket.put(key, "{ cut", {
+      customMetadata: { osmBase: "2026-11-11T09:00:00Z", storedAs: "raw" },
+    });
+    const etag = (await bucket.head(key))!.httpEtag;
+    const other = latLngToCell(47.0468, 8.3745, 7);
+    await markVerifying(bucket, CELL, etag, Date.now());
+    await markVerifying(bucket, other, '"x"', Date.now() - 16 * 60_000);
+    const env = { TILES: bucket, FILL_QUEUE: new FakeQueue() };
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const { batch: b } = batch([{ cell: CELL, kind: "verify", at: 1, etag }]);
+    await worker.queue(b, env);
+    log.mockRestore();
+    expect(
+      [...bucket.objects.keys()].filter((k) =>
+        k.startsWith("state/verifying/"),
+      ),
+    ).toEqual([]);
+  });
+
+  it("runs a replace message as a fill of its cell: refetched, marker cleared", async () => {
+    // Why: a replace is how a reported tile the verify cannot judge bad is
+    // put right; dropped as an unknown kind, every such report would be
+    // answered "replacing" and nothing would ever change.
+    const bucket = new FakeBucket();
+    await bucket.put(tileObjectKey(CELL), "old", {
+      customMetadata: { osmBase: "2026-11-11T09:00:00Z" },
+    });
+    await markPending(bucket, CELL, Date.now());
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("busy", { status: 504 }));
+    const env = { TILES: bucket, FILL_QUEUE: new FakeQueue() };
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const { batch: b, acked } = batch([{ cell: CELL, kind: "replace", at: 1 }]);
+    await worker.queue(b, env);
+    log.mockRestore();
+    expect(fetchSpy).toHaveBeenCalled();
+    fetchSpy.mockRestore();
+    expect(acked).toEqual([0]);
+    expect(bucket.textOf(tileObjectKey(CELL))).toBe("old");
+    expect(bucket.objects.has(`state/pending/${CELL}`)).toBe(false);
   });
 
   it("clears its pending marker when the fill ends, also when it threw", async () => {

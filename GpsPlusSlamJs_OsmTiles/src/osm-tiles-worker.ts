@@ -7,7 +7,13 @@
 
 import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm/source/overpass-source";
 import type { FillMessage, OsmTilesEnv } from "./bindings";
-import { clearPending, markPending, sweepPending } from "./fill-state";
+import {
+  clearPending,
+  clearVerifying,
+  markPending,
+  sweepPending,
+  sweepVerifying,
+} from "./fill-state";
 import { fillTile } from "./fill-tile";
 import { dailyUpstreamCap, dailyVerifyCap, handleRequest } from "./routes";
 import { parseTileCell } from "./tile-cell";
@@ -31,7 +37,8 @@ function describeError(error: unknown): string {
 /**
  * A verify reads and may delete the stored tile; it is no fill, so it
  * neither marks nor clears the cell's pending marker (a fill of the same
- * cell may be queued behind it).
+ * cell may be queued behind it). It clears its own verifying marker when it
+ * ends, and sweeps the stale ones a lost or killed run left.
  */
 async function verifyOne(
   cell: string,
@@ -39,6 +46,7 @@ async function verifyOne(
   env: OsmTilesEnv,
 ): Promise<void> {
   try {
+    await sweepVerifying(env.TILES, Date.now());
     const outcome = await verifyTile(
       {
         cell,
@@ -57,6 +65,8 @@ async function verifyOne(
     console.log(
       JSON.stringify({ verify: "error", cell, error: describeError(error) }),
     );
+  } finally {
+    await clearVerifying(env.TILES, cell).catch(() => undefined);
   }
 }
 
@@ -65,7 +75,10 @@ async function consumeOne(body: FillMessage, env: OsmTilesEnv): Promise<void> {
   const kind = body.kind;
   if (
     cell === undefined ||
-    (kind !== "fill" && kind !== "refresh" && kind !== "verify")
+    (kind !== "fill" &&
+      kind !== "refresh" &&
+      kind !== "verify" &&
+      kind !== "replace")
   ) {
     console.log(JSON.stringify({ fill: "invalid-message", body }));
     return;

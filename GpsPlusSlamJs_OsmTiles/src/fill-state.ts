@@ -1,15 +1,16 @@
 /**
  * The fill's small bookkeeping objects in R2: the daily counter (the global
  * caps), the per-tile failure record (backoff), one pending marker per
- * queued or running fill (the backlog) and the verified memo (the ETag a
- * verify found good). Only the serial queue consumer writes the counter,
- * the records and the memos, so a read-modify-write needs no lock; the fill
- * endpoint writes only its own cell's marker.
+ * queued or running fill (the fill backlog), one verifying marker per
+ * queued verify (the report backlog) and the verified memo (the verdict on
+ * one stored object). Only the serial queue consumer writes the counter,
+ * the records and the memos, so a read-modify-write needs no lock; the
+ * endpoints write only their own cell's markers.
  *
  * @see fill-state.ts.md
  */
 
-import type { TileBucket } from "./bindings";
+import type { TileBucket, TileObjectHead } from "./bindings";
 
 export interface DailyState {
   /** Requests sent to Overpass operators today, all of them together. */
@@ -17,8 +18,8 @@ export interface DailyState {
   readonly fills: number;
   readonly failures: number;
   /**
-   * Decoded bytes, summed over today's fills whose size is known: a gzip
-   * answer is stored without inflating, so it adds nothing here.
+   * Decoded bytes, summed over today's fills: a raw answer's length, a
+   * gzip answer's trailer ISIZE (no inflate needed).
    */
   readonly rawBytes: number;
   /** Bytes as stored, summed over today's fills. */
@@ -55,6 +56,7 @@ const MAX_BACKOFF_MS = 7 * DAY_MS;
 
 const PENDING_PREFIX = "state/pending/";
 const VERIFIED_PREFIX = "state/verified/";
+const VERIFYING_PREFIX = "state/verifying/";
 
 /**
  * A marker older than this no longer counts: a consumer invocation has 15
@@ -234,22 +236,48 @@ export async function clearFailure(
   });
 }
 
-/** The ETag of the object of `cell` last verified good, if any. */
-export async function readVerifiedEtag(
+/** How long a good verdict on one object stands before it is checked again. */
+export const VERIFIED_TTL_MS = 7 * 86_400_000;
+
+/**
+ * The last verify of one object: `started` is written before the body is
+ * read and `good` after it passed, so a `started` memo that stays is the
+ * trace of a verify the runtime killed.
+ */
+export interface VerifiedMemo {
+  readonly etag: string;
+  readonly state: "good" | "started";
+  /** Epoch ms the state was written. */
+  readonly at: number;
+}
+
+/** The verify memo of `cell`, if any. */
+export async function readVerified(
   bucket: TileBucket,
   cell: string,
-): Promise<string | undefined> {
+): Promise<VerifiedMemo | undefined> {
   const memo = await bucket.head(`${VERIFIED_PREFIX}${cell}`);
-  return memo?.customMetadata?.["etag"];
+  const meta = memo?.customMetadata;
+  const etag = meta?.["etag"];
+  if (etag === undefined) return undefined;
+  // A memo written before it held a state reads as good and long expired.
+  const at = Number(meta?.["at"] ?? 0);
+  return {
+    etag,
+    state: meta?.["state"] === "started" ? "started" : "good",
+    at: Number.isFinite(at) ? at : 0,
+  };
 }
 
 export async function writeVerified(
   bucket: TileBucket,
   cell: string,
   etag: string,
+  at: number,
+  state: VerifiedMemo["state"] = "good",
 ): Promise<void> {
   await bucket.put(`${VERIFIED_PREFIX}${cell}`, "", {
-    customMetadata: { etag },
+    customMetadata: { etag, state, at: String(at) },
   });
 }
 
@@ -282,26 +310,44 @@ export async function clearPending(
   await bucket.delete(`${PENDING_PREFIX}${cell}`);
 }
 
-/** Every marker, stale ones included; one page holds them (the backlog is bounded). */
-async function allPending(bucket: TileBucket): Promise<PendingFill[]> {
-  const listing = await bucket.list({
-    prefix: PENDING_PREFIX,
-    include: ["customMetadata"],
-  });
-  return listing.objects.map((object) => {
-    const meta = object.customMetadata ?? {};
-    const queuedAt = Number(meta["queuedAt"]);
-    return {
-      cell: object.key.slice(PENDING_PREFIX.length),
-      queuedAt: Number.isFinite(queuedAt)
-        ? queuedAt
-        : object.uploaded.getTime(),
-      running: meta["running"] === "1",
-    };
-  });
+interface Marker {
+  readonly cell: string;
+  readonly queuedAt: number;
+  readonly running: boolean;
+  readonly etag?: string;
 }
 
-function isFresh(pending: PendingFill, now: number): boolean {
+function markerOf(object: TileObjectHead, prefix: string): Marker {
+  const meta = object.customMetadata ?? {};
+  const queuedAt = Number(meta["queuedAt"]);
+  const etag = meta["etag"];
+  return {
+    cell: object.key.slice(prefix.length),
+    queuedAt: Number.isFinite(queuedAt) ? queuedAt : object.uploaded.getTime(),
+    running: meta["running"] === "1",
+    ...(etag === undefined ? {} : { etag }),
+  };
+}
+
+/**
+ * Every marker under `prefix`, stale ones included; one page holds them
+ * (both backlogs are bounded, and stale markers are swept).
+ */
+async function allMarkers(
+  bucket: TileBucket,
+  prefix: string,
+): Promise<Marker[]> {
+  const listing = await bucket.list({ prefix, include: ["customMetadata"] });
+  return listing.objects.map((object) => markerOf(object, prefix));
+}
+
+async function allPending(bucket: TileBucket): Promise<PendingFill[]> {
+  return (await allMarkers(bucket, PENDING_PREFIX)).map(
+    ({ cell, queuedAt, running }) => ({ cell, queuedAt, running }),
+  );
+}
+
+function isFresh(pending: { readonly queuedAt: number }, now: number): boolean {
   return now - pending.queuedAt < PENDING_STALE_MS;
 }
 
@@ -329,5 +375,79 @@ export async function sweepPending(
     if (pending.running || !isFresh(pending, now)) {
       await clearPending(bucket, pending.cell);
     }
+  }
+}
+
+/** An open verify of a reported object, as the report endpoint left it. */
+export interface VerifyingMarker {
+  readonly cell: string;
+  /** The ETag of the reported object. */
+  readonly etag: string;
+  /** Epoch ms the verify was queued. */
+  readonly queuedAt: number;
+}
+
+function verifyingOf(marker: Marker): VerifyingMarker | undefined {
+  return marker.etag === undefined
+    ? undefined
+    : { cell: marker.cell, etag: marker.etag, queuedAt: marker.queuedAt };
+}
+
+/**
+ * Marks a verify of `cell`'s object `etag` as queued. The report endpoint
+ * writes it before it sends the message and the consumer clears it when the
+ * verify ends, so a cell has at most one verify message open at a time.
+ */
+export async function markVerifying(
+  bucket: TileBucket,
+  cell: string,
+  etag: string,
+  now: number,
+): Promise<void> {
+  await bucket.put(`${VERIFYING_PREFIX}${cell}`, "", {
+    customMetadata: { etag, queuedAt: String(now) },
+  });
+}
+
+/** The cell's open verify, unless absent or older than the stale age. */
+export async function readVerifying(
+  bucket: TileBucket,
+  cell: string,
+  now: number,
+): Promise<VerifyingMarker | undefined> {
+  const head = await bucket.head(`${VERIFYING_PREFIX}${cell}`);
+  if (head === null) return undefined;
+  const marker = verifyingOf(markerOf(head, VERIFYING_PREFIX));
+  return marker !== undefined && isFresh(marker, now) ? marker : undefined;
+}
+
+export async function clearVerifying(
+  bucket: TileBucket,
+  cell: string,
+): Promise<void> {
+  await bucket.delete(`${VERIFYING_PREFIX}${cell}`);
+}
+
+/** The open verifies younger than the stale age: the report backlog. */
+export async function listVerifying(
+  bucket: TileBucket,
+  now: number,
+): Promise<VerifyingMarker[]> {
+  const markers = await allMarkers(bucket, VERIFYING_PREFIX);
+  return markers
+    .filter((m) => isFresh(m, now))
+    .flatMap((m) => verifyingOf(m) ?? []);
+}
+
+/**
+ * Removes the verifying markers older than the stale age: a verify the
+ * runtime killed, or a message that was lost, leaves its marker behind.
+ */
+export async function sweepVerifying(
+  bucket: TileBucket,
+  now: number,
+): Promise<void> {
+  for (const marker of await allMarkers(bucket, VERIFYING_PREFIX)) {
+    if (!isFresh(marker, now)) await clearVerifying(bucket, marker.cell);
   }
 }

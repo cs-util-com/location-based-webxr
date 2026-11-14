@@ -13,13 +13,22 @@ Worker (CPU). The fill writes no list of stored tiles; there is none
 ## Public API
 
 - `fillTile(message, deps)` - returns a `FillOutcome`:
-  - `filled` (with endpoint, `osmBase`, stored bytes, the raw size for an
-    uncompressed answer only, attempts);
+  - `filled` (with endpoint, `osmBase`, stored bytes, the decoded size
+    `rawBytes`, attempts);
   - `present` (a `fill` for a stored tile), `fresh` (a `refresh` for a tile
     younger than 30 days), `backoff`, `cap` - no request was sent;
   - `failed` - every attempt failed; the failure record names the last
     attempt's reason;
-  - `kept-newer` - the answer's data is not newer than the stored tile's.
+  - `kept-newer` - the answer's data is not newer than the stored tile's;
+  - `missing` - a `replace` for a cell with no stored tile; no request.
+- A `replace` message (a reported tile the verify cannot judge bad)
+  refetches a stored tile whatever its age and stores the answer even when
+  its data is not newer. It counts as a bad tile up front
+  (`recordBadTile`: `badCount` + 1, backoff 1 h doubling to 7 days) and a
+  success does not clear that record, so the backoff holds and reports of
+  one cell cannot become a refetch loop. A success clears the cell's
+  verified memo; a failure keeps the stored tile (a replace never deletes)
+  and names the reason. Backoff and the daily cap apply as to any fill.
 - `FillDeps` - `bucket`, `fetchImpl`, `now`, `userAgent`, `endpoints`,
   `dailyUpstreamCap`, optional `attemptTimeoutMs` (200 s), `wallLimitMs`
   (14 min).
@@ -36,8 +45,18 @@ Worker (CPU). The fill writes no list of stored tiles; there is none
     `1f 8b`; only its head is inflated (the first 16 KB in, at most 2 KB
     out: `body-window.ts`, about 0.3-0.4 ms at any tile size) for
     `checkOverpassHead` (`{`, a valid `timestamp_osm_base`, not in the
-    future). Stored byte for byte with `contentEncoding: gzip`,
-    `storedAs: upstream-gzip`, `checked: head`. **The tail is not checked
+    future). Size bounds first, for free: more than
+    `MAX_TILE_GZIP_BYTES` (20 MiB) of gzip, or a trailer ISIZE (the
+    decoded size modulo 2^32, the last four bytes, little-endian) above
+    `MAX_TILE_DECODED_BYTES` (150 MiB), is refused as `too-large`. Stored
+    byte for byte with `contentEncoding: gzip`, `storedAs: upstream-gzip`,
+    `checked: head`, and the ISIZE as `rawBytes`. ISIZE is the gzip's own
+    claim: a crafted stream can understate it, and the verify's decoded
+    limit (`readBodyEnds`) is the backstop for what slips past. A gzip
+    answer's tail is not checked here, so a partial one (a top-level
+    `remark`) can be stored and only the reader refuses it: this Worker
+    must never be deployed ahead of a client that does (see the README,
+    "Deploy order"). **The tail is not checked
     here**: a gzip answer with a top-level `remark` (a partial answer) can
     be stored. The client rejects such a body, falls back to the direct
     race and reports it; the verify job (`verify-tile.ts`) then deletes it.
@@ -45,9 +64,13 @@ Worker (CPU). The fill writes no list of stored tiles; there is none
     the Free plan's 10 ms for any dense tile.
   - No encoding (or `identity`): the full head and tail check
     (`checkOverpassBody`), stored raw (`storedAs: raw`, `checked: full`,
-    `rawBytes`); the edge compresses it per client when served.
-  - Any other encoding, a `gzip` label on bytes without the magic, or a
-    head that does not inflate: refused as `encoding`, next operator.
+    `rawBytes`); the edge compresses it per client when served. Longer
+    than `MAX_TILE_DECODED_BYTES`: `too-large`.
+  - A `gzip` label on bytes without the magic that start with `{` (a hop
+    decoded the body and kept the header): treated as raw, with the full
+    check, and stored raw.
+  - Any other encoding, a `gzip` label on other bytes without the magic,
+    or a head that does not inflate: refused as `encoding`, next operator.
 - The head inflate is a deliberate exception to "the fill decompresses
   nothing": without it the fill would lose `osmBase`, which carries the
   never-older rule, the refresh age and `X-Osm-Base`, and an operator's
@@ -90,10 +113,16 @@ for, manual body encoding, an uncompressed answer stored raw), a gzip
 answer stored byte for byte with its head-checked metadata, the timestamp
 read from a large gzip answer's head, a gzipped error page, an invalid
 timestamp in a gzip head, a false gzip label and an unasked encoding
-refused, a gzip answer with a tail remark stored (the reader's check), each early outcome sending no
+refused, a gzip-labelled body starting with `{` checked whole and stored
+raw (a partial one refused), a gzip answer refused by its trailer's ISIZE
+and one by its length, the ISIZE stored as `rawBytes` and counted, a gzip
+answer with a tail remark stored (the reader's check), each early outcome sending no
 request, 429 skipping an operator, a `remark` answer refused and the next
 operator used, failure backoff and its clearing, the record written before
 the first attempt (a killed fill backs off), the reason named without a
 second count, no attempt started past the wall limit, a future data
 timestamp refused, the cap stopping mid-fill, the attempt timeout,
-kept-newer, and a refresh replacing an older tile.
+kept-newer, a refresh replacing an older tile, and the replace: stored
+when not newer with the memo forgotten, its bad-tile backoff growing and
+surviving the success, a failed refetch keeping the tile, nothing for a
+missing tile, the daily cap.
