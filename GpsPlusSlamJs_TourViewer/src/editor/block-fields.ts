@@ -616,7 +616,6 @@ function choiceSpecFieldEdit<B extends AnyBlock>(
   return { kind: "edited", after: rest as unknown as B };
 }
 
-
 /** What a cap counts, in the refusal's words. */
 const UNIT_WORDS: Readonly<Record<TourTextUnit, string>> = {
   codePoints: "characters",
