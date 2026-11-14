@@ -35,16 +35,35 @@ function runOnPixels(
   }
 }
 
-/** Slow at `ms` until the fewest pixels, then at most one more second. */
-function downToFewest(
+/** Frames of `ms` until the pixel scale is down to `scale` (the fewest by
+ *  default); throws when a minute of them does not get there. */
+function downTo(
+  governor: ReturnType<typeof createGlobeCloudGovernor>,
+  ms: number,
+  scale: number = CLOUD_GOVERNOR.minPixelScale,
+) {
+  for (let t = 0; t < 60_000; t += ms) {
+    if (governor.state().pixelScale <= scale + 1e-9) return;
+    governor.frame(ms);
+  }
+  throw new Error(`never reached a pixel scale of ${scale}`);
+}
+
+/** What the worthwhile test against the full `baseline` gives at `later`:
+ *  low when the fewest pixels saved enough, every pixel back when not. */
+function fullBaselineVerdict(baseline: number, later: number): unknown {
+  return later <= baseline * (1 - CLOUD_GOVERNOR.worthwhile)
+    ? expect.objectContaining({ tier: "low" })
+    : { pixelScale: 1, tier: "high" };
+}
+
+/** Two counted hitches of `ms` in a row (one alone is a gap). */
+function hitchPair(
   governor: ReturnType<typeof createGlobeCloudGovernor>,
   ms: number,
 ) {
-  for (let t = 0; t < 60_000; t += ms) {
-    if (governor.state().pixelScale === CLOUD_GOVERNOR.minPixelScale) return;
-    governor.frame(ms);
-  }
-  throw new Error("never reached the fewest pixels");
+  governor.frame(ms);
+  governor.frame(ms);
 }
 
 describe("createGlobeCloudGovernor", () => {
@@ -158,11 +177,12 @@ describe("createGlobeCloudGovernor", () => {
   // `slowMs` (nothing bought), which is the capped screen's rest below.
   for (const baseline of [24, 26, 30]) {
     for (const bought of [19, 21]) {
-      for (const later of [23, 25.5, 27]) {
-        if (later <= baseline * (1 - CLOUD_GOVERNOR.worthwhile)) continue;
+      for (const later of [23, 25.5, 27].filter(
+        (ms) => ms > baseline * (1 - CLOUD_GOVERNOR.worthwhile),
+      )) {
         it(`falls to low when the fewest pixels bought their time and got slow later (${baseline} -> ${bought} -> ${later} ms)`, () => {
           const governor = createGlobeCloudGovernor("high");
-          downToFewest(governor, baseline);
+          downTo(governor, baseline);
           run(governor, bought, 120);
           expect(governor.state()).toEqual({
             pixelScale: CLOUD_GOVERNOR.minPixelScale,
@@ -175,17 +195,70 @@ describe("createGlobeCloudGovernor", () => {
     }
   }
 
+  // Why this test matters: a step that bought its time skips the worthwhile
+  // test only at the fewest pixels, where the next rung is the tier. Higher
+  // up, the steps still left are judged at the fewest pixels against the
+  // average from before the pixels fell: a baseline re-taken at a middle
+  // rung would measure only the last rung or two, read a slowdown that the
+  // pixels do not cause (a denser deck at a flat cost) as worthless steps and
+  // give every pixel back for `restS`, where the full baseline sends the
+  // device to low.
+  // Sweep: bought at rungs 3 and 4 at 20 ms, later 22.5-26 ms flat, baselines
+  // 24-40 ms. The expected end is the full baseline's verdict: low where the
+  // later time is at most `baseline * (1 - worthwhile)`, all pixels back
+  // above it. What reverses it: a later time on the other side of that line.
+  for (const baseline of [24, 26, 30, 40]) {
+    for (const rung of [3, 4]) {
+      for (const later of [22.5, 24, 26]) {
+        it(`judges the steps left against the full baseline after a middle rung bought its time (${baseline} ms, rung ${rung}, later ${later} ms)`, () => {
+          const governor = createGlobeCloudGovernor("high");
+          downTo(governor, baseline, 1 - rung * CLOUD_GOVERNOR.step);
+          run(governor, 20, 30);
+          expect(governor.state().pixelScale).toBeCloseTo(
+            1 - rung * CLOUD_GOVERNOR.step,
+            9,
+          );
+          run(governor, later, 10);
+          expect(governor.state()).toEqual(
+            fullBaselineVerdict(baseline, later),
+          );
+        });
+      }
+    }
+  }
+
+  // Why this test matters: two long hitches in a row (a collection, a tile
+  // decode) at the fewest pixels, once they bought their time, are a fresh
+  // slow verdict, and the next rung is the tier: low for the view's life.
+  // A frame credits at most `gapMs` to the verdicts' seconds, so a pair of
+  // hitches cannot hold the average over `slowMs` for `slowS` by itself.
+  // Sweep: hitches 0.4-10 s, frames before and after 19-21.8 ms (all under
+  // `slowMs`). What reverses it: frames after the hitches over `slowMs`,
+  // which is a slow device, not a hitch.
+  for (const end of [19, 20.5, 21.8]) {
+    for (const hitch of [400, 800, 1700, 4000, 10_000]) {
+      it(`keeps the tier through two hitches at the fewest pixels (${hitch} ms between ${end} ms frames)`, () => {
+        const governor = createGlobeCloudGovernor("high");
+        downTo(governor, 30);
+        run(governor, end, 60);
+        hitchPair(governor, hitch);
+        run(governor, end, 30);
+        expect(governor.state().tier).toBe("high");
+      });
+    }
+  }
+
   // Why this test matters: at low with the fewest pixels no rung is left to
   // buy time with, so the baseline stays: the fewest pixels still pay
   // against low's full ones and stay, rather than a re-taken baseline
   // judging the next verdict worthless and giving every pixel back.
-  // Sweep: later 21.5-24 ms against a low baseline of 30 ms (all under
+  // Sweep: later 22.5-25 ms against a low baseline of 30 ms (all under
   // `30 * (1 - worthwhile)` = 25.5); above 25.5 the step-down is worthless
   // against low's own full pixels and rests, as it always did.
   for (const later of [22.5, 24, 25]) {
     it(`stays at low with the fewest pixels when they bought their time and got slow later (${later} ms)`, () => {
       const governor = createGlobeCloudGovernor("low");
-      downToFewest(governor, 30);
+      downTo(governor, 30);
       run(governor, 19, 60);
       run(governor, later, 30);
       expect(governor.state()).toEqual({
