@@ -46,9 +46,9 @@ imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   decoded (photos decode one at a time - memory), so a session ending
   mid-run owns no stray labels; `dispose` removes the group.
   Details:
-  Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin` view as a label object (a sign, an edge hint or a ground arrow is the world door's, which this renderer has not, so it is left out quietly),
-pictures as capture planes (`placeCapturedImagePlanes`, from each
-picture's inline `imageAsset`), all at the scene root; a picture whose
+  Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin`view as a label object (a sign, an edge hint or a ground arrow is the world door's, which this renderer has not, so it is left out quietly),
+a picture in its`plane` view, or in a viewpoint view without its viewpoint, as a capture plane (`placeCapturedImagePlanes`, from each
+picture's inline `imageAsset`; a framed print, a cut-out or a picture lined up from its viewpoint is the world door's, so it is left out quietly), all at the scene root; a picture whose
 texture fails is skipped and named in `skipped`; a placed 3D model
 here (a world-view object, the creator's previews) is not drawn - it never
 reaches the photo loader and

@@ -465,6 +465,52 @@ describe("renderTourObjects", () => {
     expect(children[0]?.children).toHaveLength(1);
   });
 
+  it("draws a picture by its view: a plane, or a viewpoint view without its viewpoint", async () => {
+    // Why this test matters: a tour's objects carry every world view of a
+    // picture, and the creator's previews draw them through this
+    // renderer. A framed print, a cut-out or a picture lined up from its
+    // viewpoint drawn as a bare plane would show the creator something the
+    // visitor never sees; the station renderer's rules apply (a viewpoint
+    // view without a viewpoint is a plane, as the format reads it), and
+    // with no world door here the other views are left out quietly.
+    const { scene, children } = fakeScene();
+    const photo = mintPhoto({
+      id: "plane",
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      alignmentMatrix: IDENTITY,
+      zero: ZERO,
+      imageWidth: 4,
+      imageHeight: 3,
+      nowIso: NOW,
+    })!;
+    const viewpoint = {
+      position: [0, 1.6, 4],
+      rotation: [0, 0, 0, 1],
+      hfovDeg: 60,
+      distanceM: 4,
+    } as const;
+    const others: TourObject[] = [
+      { ...photo, id: "framed", view: "framed" },
+      { ...photo, id: "cutout", view: "cutout" },
+      { ...photo, id: "lined-up", view: "thenNow", viewpoint },
+      { ...photo, id: "no-viewpoint", view: "window" },
+    ];
+    const loaded: string[] = [];
+    const rendered = await renderTourObjects([photo, ...others], {
+      scene,
+      zero: ZERO,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: (name) => {
+        loaded.push(name);
+        return Promise.resolve(new Texture());
+      },
+    });
+    expect(rendered.count).toBe(2);
+    expect(rendered.skipped).toEqual([]);
+    expect(loaded).toHaveLength(2);
+    expect(children[0]?.children).toHaveLength(2);
+  });
+
   it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
     // Why this test matters (authoring plan 2026-09-28-0953, M2c): the
     // creator's previews of the running visit go under the AR world group

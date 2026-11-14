@@ -515,7 +515,7 @@ function drawnByView(
 
 /** A world-view object as drawn: a picture's file is its inline asset. An
  *  object's renderer has no world door, so a view only the door draws (a
- *  sign, a model) is left out quietly. */
+ *  sign, a framed or cut-out picture, a model) is left out quietly. */
 function drawnObject(object: TourObject): Drawn {
   const drawn = drawnByView(object, () =>
     object.kind === "picture" ? object.imageAsset.path : null,
