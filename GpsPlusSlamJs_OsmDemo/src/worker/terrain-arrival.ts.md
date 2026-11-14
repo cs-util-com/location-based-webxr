@@ -87,11 +87,12 @@ void refresh();`. **The `busy` check is not redundant with the worker's
   posted, the page's when the reply has been applied, and a terrain reply
   delivered in that gap would abort a live refresh.
 
-**Why the flag rides the reply instead of a push.** The worker protocol is
-strictly request/reply keyed on `id`, and `isWorkerReply` rejects anything
-without an `id`/`ok` pair — there is no unsolicited worker→page channel. Adding
-one is real protocol surface for a boolean that already has a message travelling
-in the right direction.
+**Why the flag rides the reply instead of a push.** Calls are request/reply
+keyed on `id`, and `isWorkerReply` rejects anything without an `id`/`ok` pair.
+The one unsolicited worker→page message, `WorkerNotice`, carries live wait
+state only and settles nothing; widening it for this flag would be real
+protocol surface for a boolean that already has a message travelling in the
+right direction.
 
 ## Examples
 

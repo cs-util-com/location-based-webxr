@@ -19,7 +19,7 @@ It owns the timing only; `loading-overlay.ts` owns what the user sees.
   - `busyChanged(busy)` - wire to `latestOnly`'s `onBusyChange`.
   - `downloadStarted()` - wire to the worker's `downloadStarted` notice
     (via `createRpcClient`'s `onNotice`). Switches the text to
-    `LOADING_MESSAGE` for the rest of the busy period; never shows the
+    `LOADING_MESSAGE` for the rest of the current run; never shows the
     surface on its own.
   - `dataArrived()` - wire to the store's snapshot subscription, **guarded**
     (see the example): it means "the content is on screen", and the subscription
@@ -71,20 +71,30 @@ It owns the timing only; `loading-overlay.ts` owns what the user sees.
 - **The text names what is happening.** A refresh that is only doing local
   work (reading and parsing a cached tile, scoring, the mesh) says
   `BUILDING_MESSAGE`, "Building the map…"; `LOADING_MESSAGE` appears only
-  once the worker reported a download for this busy period. Owner decision
+  once the worker reported a download for the current run (a run starts
+  at the rising edge of `busy`, or at a gesture made while busy). Owner decision
   after a measurement: with the area cached, a click made zero requests and
   still read "Loading OpenStreetMap data…" for 1.4-2.1 s, because local work
   alone outlasts the 1 s delay. The delay, the latch and both hide paths are
   unchanged; only the text is chosen.
   - Known before the delay fires: the loading text is shown directly.
-  - Started after it: clear, then show the loading text, once per busy
-    period. The bar starts over for the download, whose length is what it
+  - Started after it: clear, then show the loading text, once per run. The bar starts over for the download, whose length is what it
     describes; further tiles do not restart it again.
   - `downloading` resets on both edges of `busy`, and on a gesture made while
     busy. A supersession has no busy edge, so without that third reset a
     click on a cached spot during the widening tail of an earlier download
     would read the loading text for purely local work; the new run reports
     its own misses.
+  - The same holds while the loading text is ON SCREEN: the superseding
+    gesture re-announces after its own delay, with the text its own notices
+    chose. A notice inside that delay gives one loading show; a notice after
+    it gives the building text, then the loading text. Holding the loading
+    text across the supersession was declined, because for a cached spot it
+    would bring back the claim this text exists to remove.
+  - A known race, accepted: a notice the old run posted just before the
+    gesture can arrive after it, within milliseconds, and colour the new run
+    with the loading text. Notices carry no call id, deliberately: tagging
+    them would add protocol surface to fix a wrong word shown for one run.
   - A download never brings the surface up by itself: not in an unarmed
     refresh, not after `dataArrived` took it down.
 - **Every show is preceded by a clear.** The surface restarts its bar on a fresh
@@ -129,5 +139,7 @@ a second gesture's latch not leaking to an automatic refresh, the same
 behaviour at 400 / 1000 / 2000 ms, and the announced text: building for a
 cached refresh, the switch to loading when a download starts after the
 announcement, loading directly when it started before, no repeated restart
-per tile, no show from a download alone, and no carry-over to the next
-refresh.
+per tile, no show from a download alone, no carry-over to the next
+refresh or across a supersession, and a supersession while the loading text
+is shown (one loading show for a notice inside the new delay; building then
+loading for one after it).

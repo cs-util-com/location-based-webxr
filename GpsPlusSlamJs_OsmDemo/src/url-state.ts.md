@@ -36,7 +36,10 @@
   `damping=off`: a read-only boot knob for the browser suite that switches
   the 3D camera's easing off (`BuildingViewOptions.cameraDamping`). The app
   keeps its damping by default. No writer sets or clears it; tested with a
-  property over the place, camera, light and scheme writers.
+  property over the place, camera, light and scheme writers. The wiring from
+  here to `MapControls.enableDamping` (`main.ts` into `BuildingView`) has no
+  unit test, because `BuildingView` needs WebGL and cannot be built under
+  vitest; the browser tests that boot with `damping=off` exercise it.
 
 ## The camera target (DEC-R13-7), and why it is a safe partial reversal
 
