@@ -589,7 +589,11 @@ test.describe("revealing the sub-threshold cells", () => {
       // it out after: a picture still moving would not come back.
       await installFrameProbe(shared);
       await stashStableFrame(shared);
-      const changed = async () => (await diffFromStash(shared, 24)).differing;
+      // The last count read, so the log prints the value the poll asserted
+      // rather than reading the frame back once more.
+      let lastChanged = 0;
+      const changed = async () =>
+        (lastChanged = (await diffFromStash(shared, 24)).differing);
 
       await setting(shared, "#show-below", (c) => c.check());
 
@@ -598,7 +602,7 @@ test.describe("revealing the sub-threshold cells", () => {
       // happen at all.
       await expect.poll(() => cells.count()).toBeGreaterThan(before2d);
       await expect.poll(changed, REPAINT).toBeGreaterThan(SHOW_BELOW_3D_FLOOR);
-      console.log(`show-below: ${await changed()} pixels changed in 3D`);
+      console.log(`show-below: ${lastChanged} pixels changed in 3D`);
 
       // AND BACK, which is the half that catches a redraw that only ever adds.
       await setting(shared, "#show-below", (c) => c.uncheck());
