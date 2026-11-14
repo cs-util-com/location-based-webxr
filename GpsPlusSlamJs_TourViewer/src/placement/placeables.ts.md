@@ -117,3 +117,9 @@ if (target !== null && target.turns) showKnob();
 - `placeables.folders.test.ts` - a folder's placeable: its pivot through
   its holders, its scale as its dots, its members at any depth, the
   scale its holders give it and its blocks, and an unknown folder none.
+
+## Bend
+
+A block whose row `bends` (a ground arrow) carries `bendDeg`: its written
+bend, 0 for none or one not finite (the drawing's own reading). Absent on
+every other placeable, so the gizmo draws no bend knob for it.

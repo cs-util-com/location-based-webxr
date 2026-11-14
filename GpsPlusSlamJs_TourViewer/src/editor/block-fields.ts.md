@@ -114,4 +114,13 @@ if (out.kind === "edited")
 
 ## Choice fields
 
-`blockFields` leaves a choice field out (its panel's chips show it). `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).
+`blockFields` leaves a choice, a switch (`flag`) and a colour field out (its panel shows them). A switch writes true for `"true"` and is left out for anything else; a colour takes `#rrggbb` (lower-cased), refuses any other text, and is left out when blank. `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).
+
+## Typed fields (a point, a language)
+
+A `FieldSpec` with `typed` is written by `typedFieldEdit` whoever sends the text. The language is drawn in the dock as one line with no counter; the point is not in `blockFields` at all, because the short text panel draws it as three boxes with a pick and a clear (`short-text-panel.ts.md`) and sends the composed line here. In the dock a typed field is one line with no counter (`BlockField` `typed: { example }`, its hint "Optional, such as" the example). The rules:
+
+- `point` (a short text's `pointsTo`, signs and ground arrows): three numbers in metres in the station's frame, parted by spaces, `;` or `, ` (a comma alone is a decimal point, as in every number box), so `2 1.2 -19.6`, `2, 1.2, -19.6` and `1,5 0 -3` all read. A coordinate may carry an exponent, because the box shows a written point by `String` and must read every value it shows back unchanged (`1e-7`).
+- `tag` (a short text's `lang`, every view): the trimmed text.
+- Either is kept only when the format's own reader (`shortTextLook`, run strict) keeps it: the point's 1000 m reach and the tag's shape and 35-character cap are the format's rules, not copied here. Anything else is refused in words; a blank line removes the field; the same value is `unchanged`.
+- Tests: `block-fields.test.ts` ("a short text's point and language"), `block-fields.property.test.ts` (whatever is typed, an accepted edit is one the strict reader keeps; a shown point reads back unchanged).

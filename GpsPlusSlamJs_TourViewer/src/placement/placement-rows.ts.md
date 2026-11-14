@@ -25,12 +25,20 @@ view would be the first such kind).
 
 ## Public API
 
-- `ExtentSpec` - `{ kind: "size" | "reach" | "factor", field, label, meaning, min, max }`
+- `ExtentSpec` - `{ kind: "size" | "reach" | "factor", field, label, meaning, min, max }`,
+  or `{ kind: "scale", ..., ring: { baseM, perM } }` (`LinearRing`): the one
+  scale a drawing's parts follow along their own curves, whose ring is
+  linear in it (a ground arrow's `readAtM`; its drawing does not double at
+  twice the value, so it is no `size`)
   (`meaning`: what the value is in the creator's words, the inspector's
   note under a size field).
   `min` and `max` are inclusive; metres for `size` and `reach`, a ratio for
   `factor`.
-- `ViewPlacement` - `{ posed, turns, lifts, extent? }`.
+- `ViewPlacement` - `{ posed, turns, lifts, extent?, bends? }`; `bends`: a
+  knob behind the start sets the block's `bendDeg` (a ground arrow).
+- `writesBlockNumber(spec)` - whether the dots write a number on the block
+  itself (`size` or `scale`): the one test the session's `setExtent` and the
+  document's `blockNumberSet` share.
 - `BLOCK_PLACEMENT` - the block table, `satisfies` one row for every view in
   `TOUR_KINDS[kind].views`: a view joining the format is a compile error
   until it gets a row.
@@ -87,3 +95,8 @@ view would be the first such kind).
 ## Short text views
 
 `sign` turns (its heading is the creator's, a turning gizmo); `edgeHint` faces the camera like a pin.
+`ground` turns, bends, and its dots set `readAtM` as a `scale` (1 to 40,
+the format's bounds) on the ring `GROUND.ringA` + `GROUND.ringB` per unit
+(0.75 m at 6), the drawing's own constants. A ground arrow with no
+`readAtM` written has no dots (its scale then comes from its target's
+distance, which the row cannot read); the dock's number field sets one.

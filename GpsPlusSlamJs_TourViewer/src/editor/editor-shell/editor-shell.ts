@@ -696,6 +696,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     pickAsked: (pick) => {
       store.dispatch(editorViewActions.modelPickAsked({ pick }));
     },
+    pointPickAsked: (on) => {
+      store.dispatch(editorViewActions.pointPickAsked({ on }));
+    },
     focused: (focus) => {
       store.dispatch(editorViewActions.modelFocused({ focus }));
     },
@@ -819,6 +822,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       groundAt,
       modelFocus: ui.modelFocus,
       modelPick: ui.modelPick,
+      pointPick: ui.pointPick,
       timingsStamp: timingsStampOf(state().tourDocument.timings),
       selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
     });
@@ -1168,18 +1172,25 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  the edit causes carries nothing over, and a value that is no number
    *  leaves the tour's value showing. A text the page refuses (over its
    *  cap) is put back in the field, so the typing is not lost: the
-   *  refusal changes no state, so no draw replaces the field. */
+   *  refusal changes no state, so no draw replaces the field. The text
+   *  put back is not sent again until it changes: Enter and then leaving
+   *  the field would otherwise say the same refusal twice. */
+  let lastRefused: string | null = null;
   const commitField = (input: TypedField, selected: string | null) => {
     const value = input.value;
     if (selected === null || value === input.defaultValue || input.readOnly) {
       return;
     }
+    const field = input.dataset["field"] ?? "";
+    const typing = JSON.stringify([selected, field, value]);
+    if (typing === lastRefused) return;
+    lastRefused = null;
     input.value = input.defaultValue;
     const edit = inspectorEdit({
       selected,
       stations: manifest()?.stations ?? [],
       origin: view?.origin() ?? null,
-      field: input.dataset["field"] ?? "",
+      field,
       value,
     });
     let outcome: TypedEditOutcome = "written";
@@ -1203,7 +1214,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     else if (edit.kind === "height") {
       deps.edits.groundItems([{ id: edit.id, alt: edit.alt }]);
     }
-    if (outcome === "refused") input.value = value;
+    if (outcome === "refused") {
+      input.value = value;
+      lastRefused = typing;
+    }
   };
 
   /** A ground command on the selection: run at once with the ground

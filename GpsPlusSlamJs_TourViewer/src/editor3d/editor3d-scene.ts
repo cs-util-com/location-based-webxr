@@ -691,6 +691,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
             selected: ui.selected,
             focus: ui.modelFocus,
             pick: ui.modelPick,
+            pointPick: ui.pointPick,
           };
         },
         edit: (id, edit) => deps.edits.model(id, edit),

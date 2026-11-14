@@ -477,7 +477,7 @@ const modelSize = fc.double({
 export const TOUR_FREE_VIEWS: Readonly<
   Record<TourBlockKind, readonly string[]>
 > = {
-  shortText: ['pin', 'sign', 'edgeHint'],
+  shortText: ['pin', 'sign', 'edgeHint', 'ground'],
   longText: ['lectern', 'reading'],
   picture: TOUR_PICTURE_WORLD_VIEWS,
   video: ['card'],

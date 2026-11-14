@@ -447,7 +447,7 @@ const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
 /** Whether a picture in `view` is drawn as a plane at its pose: `plane`,
  *  and a viewpoint view of a picture without a viewpoint (the format
  *  reads one so); a viewpoint view with one goes to the world door. */
-function drawnAsPlane(block: TourBlock, view: string): boolean {
+function drawnAsPlane(block: TourBlock | TourObject, view: string): boolean {
   if (block.kind !== "picture") return false;
   return (
     view === "plane" ||
@@ -480,7 +480,7 @@ function longTextOf(text: {
   readonly view: string;
   readonly title: string;
   readonly body: string;
-}): Drawn {
+}): Extract<Drawn, { as: "lectern" | "reading" }> {
   return {
     id: text.id,
     as: longTextDrawnAs(text.view),
@@ -489,26 +489,38 @@ function longTextOf(text: {
   };
 }
 
-/** A world-view object as drawn: a picture's file is its inline asset. */
-function drawnObject(object: TourObject): Drawn {
-  switch (object.kind) {
-    case "shortText":
-      return { id: object.id, as: "label", text: object.caption };
-    case "longText":
-      return longTextOf(object);
-    case "picture":
-      return {
-        id: object.id,
-        as: "plane",
-        entry: object.imageAsset.path,
-        widthM: object.widthM,
-      };
-    case "model":
-    case "video":
-    case "audio":
-    case "character":
-      return { id: object.id, as: "none" };
+/** What this renderer draws of a block or an object by its view, one rule
+ *  for both: `door` for a view no drawing here has (the world door's).
+ *  `entryOf` gives a picture's archive entry (null: none). */
+function drawnByView(
+  item: TourBlock | TourObject,
+  entryOf: (image: string) => string | null,
+): Exclude<Drawn, { as: "world" }> | { readonly as: "door" } {
+  if (item.kind === "shortText" && item.view === "pin") {
+    return { id: item.id, as: "label", text: item.caption };
   }
+  if (item.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(item.view)) {
+    return longTextOf(item);
+  }
+  if (item.kind === "picture" && drawnAsPlane(item, item.view)) {
+    return {
+      id: item.id,
+      as: "plane",
+      entry: entryOf(item.image),
+      widthM: item.widthM,
+    };
+  }
+  return { as: "door" };
+}
+
+/** A world-view object as drawn: a picture's file is its inline asset. An
+ *  object's renderer has no world door, so a view only the door draws (a
+ *  sign, a model) is left out quietly. */
+function drawnObject(object: TourObject): Drawn {
+  const drawn = drawnByView(object, () =>
+    object.kind === "picture" ? object.imageAsset.path : null,
+  );
+  return drawn.as === "door" ? { id: object.id, as: "none" } : drawn;
 }
 
 /** A station's free block as drawn: a picture's file is the tour's asset
@@ -518,21 +530,8 @@ function drawnBlock(
   block: TourBlock,
   paths: ReadonlyMap<string, string>,
 ): Drawn {
-  if (block.kind === "shortText" && block.view === "pin") {
-    return { id: block.id, as: "label", text: block.caption };
-  }
-  if (block.kind === "longText" && LONG_TEXT_WORLD_VIEWS.has(block.view)) {
-    return longTextOf(block);
-  }
-  if (block.kind === "picture" && drawnAsPlane(block, block.view)) {
-    return {
-      id: block.id,
-      as: "plane",
-      entry: paths.get(block.image) ?? null,
-      widthM: block.widthM,
-    };
-  }
-  return { id: block.id, as: "world", block };
+  const drawn = drawnByView(block, (image) => paths.get(image) ?? null);
+  return drawn.as === "door" ? { id: block.id, as: "world", block } : drawn;
 }
 
 /** The one renderer: pins as labels, pictures as planes, reading stands

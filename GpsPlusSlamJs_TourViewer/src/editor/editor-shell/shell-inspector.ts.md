@@ -118,7 +118,7 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     group's name once on entering it, so two blocks' "Title" fields are
     told apart by their group without the head said again per field. A story block's text field is named
     `block:<id>:<field>` and drawn as an item's other texts are
-    (`blockTextField`, its count under it; a number field, a sound's radius, reach or volume, is a decimal box with its unit and no count). Where these controls sit is this build's choice, made before the
+    (`blockTextField`, its count under it; a number field, a sound's radius, reach or volume, is a decimal box with its unit and no count; a typed field, a short text's point or language, is one line with no count). Where these controls sit is this build's choice, made before the
     owner's prototype round on the editor's character UI.
   - A story's choice or quiz: with a `form`, its Question
     (`data-field="step:prompt"`) and an "Answers" box: each answer a typed

@@ -81,6 +81,10 @@ function oldLayout(subject: OldSubject, metresPerPx: number): GizmoLayout {
     bodyGrips: false,
     dots,
     knob: along(subject.centre, heading, reach),
+    // The old gizmo had no bend knob (nothing bent).
+    bendKnob: null,
+    // Nor a point handle (nothing pointed).
+    pointKnob: null,
     bar: {
       fromM: radius,
       lengthM: reach - radius,
@@ -177,6 +181,10 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
     let compared = 0;
     for (const { kind, view, row } of POSED) {
       if (!row.turns) continue;
+      // A ground arrow is new ON PURPOSE: its dots ring its one scale and
+      // it has a bend knob, which the old gizmo never had (held instead by
+      // gizmo-maths.test.ts and gesture.test.ts).
+      if (row.extent?.kind === "scale") continue;
       const sizes =
         kind === "model"
           ? [0.05, 2.4, 40, 500]

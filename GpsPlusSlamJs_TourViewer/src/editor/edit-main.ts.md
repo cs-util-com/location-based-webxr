@@ -1063,3 +1063,7 @@ on a desktop.
   toast `Added X to "Station"`); in a story it becomes the story's last
   entry, standing at the station's free spot on the ground
   (`addCharacterToStory` with the 3D view's `groundAt`).
+
+## Escape and "Pick in 3D"
+
+Escape disarms an armed "Pick in 3D" (`editorView.pointPickAsked({ on: false })`) and keeps the selection; it comes after closing a dialog and cancelling a move, before deselecting.

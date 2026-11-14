@@ -1351,6 +1351,7 @@ export async function openGlobeEditor(
             selected: ui.selected,
             focus: ui.modelFocus,
             pick: ui.modelPick,
+            pointPick: ui.pointPick,
           };
         },
         edit: (id, edit) => deps.edits.model(id, edit),

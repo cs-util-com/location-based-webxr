@@ -49,7 +49,7 @@ TourLectern | TourReadingSign | TourPicture | TourModel` - a free block without 
   either way). A `TourPicture` carries its image asset inline
   (`imageAsset`, with `imageAsset.id === image`), because the page that
   captured a photo holds its asset before any tour lists it. `TourModel`
-  carries its `sizeM` (required to place it). `TourObjectKind`.
+  carries its `sizeM` (required to place it). `TourPin` is a short text in any of its world views (`pin`, `sign`, `edgeHint`, `ground`; never `card`), as `tourObjects` yields it. `TourObjectKind`.
 - `TOUR_OBJECT_RECORD_FORMAT = 5` and `TourObjectRecord` - a world-view
   object as a creator's on-device draft stores it:
   `{ format: 5, block, asset?, geo, station?, folder? }` (`block` without a

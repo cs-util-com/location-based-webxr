@@ -98,7 +98,10 @@ describe("blockFields", () => {
   it("lists each kind's fields with the format's caps, in the inspector's order", () => {
     expect(
       blockFields(PIN).map((f) => [f.name, f.label, f.max, f.prose, f.value]),
-    ).toEqual([["description", "Description", 160, true, ""]]);
+    ).toEqual([
+      ["description", "Description", 160, true, ""],
+      ["lang", "Language", undefined, false, ""],
+    ]);
     expect(
       blockFields(PICTURE).map((f) => [f.name, f.label, f.max, f.prose]),
     ).toEqual([
@@ -154,6 +157,7 @@ describe("storyBlockFields", () => {
     expect(rows(PIN)).toEqual([
       ["caption", 40, true],
       ["description", 160, false],
+      ["lang", undefined, false],
     ]);
     expect(rows(CHARACTER).map((r) => r[0])).toEqual(["name", "caption"]);
     expect(
@@ -549,5 +553,177 @@ describe("choice fields", () => {
     expect(blockFieldEdit(PIN, "orientation", "")).toEqual({
       kind: "unchanged",
     });
+  });
+});
+
+describe("a ground arrow's own fields", () => {
+  const GROUND = {
+    ...(PIN as unknown as Record<string, unknown>),
+    view: "ground",
+  } as unknown as TourObject;
+
+  it("types its bend as a number within the format's bounds, and nothing it picks on the panel", () => {
+    // Why: the bend is a number the dock types; its style, placement,
+    // caption switch and colours are the panel's (chips, a box, colour
+    // wells), so the dock must not draw a text box for them too.
+    const names = blockFields(GROUND).map((f) => f.name);
+    expect(names).toContain("bendDeg");
+    expect(names).toContain("readAtM");
+    for (const own of [
+      "style",
+      "floorPlacement",
+      "captionOnArrow",
+      "color",
+      "darkColor",
+    ]) {
+      expect(names).not.toContain(own);
+    }
+    expect(blockFieldEdit(GROUND, "bendDeg", "-30")).toEqual({
+      kind: "edited",
+      after: { ...GROUND, bendDeg: -30 },
+    });
+    expect(blockFieldEdit(GROUND, "bendDeg", "61").kind).toBe("refused");
+  });
+
+  it("writes the caption switch as true or leaves it out, never as a text", () => {
+    // Why: the format reads `captionOnArrow` as a boolean; the text "true"
+    // would be refused by the reader and lose the block's look.
+    const on = blockFieldEdit(GROUND, "captionOnArrow", "true");
+    expect(on).toEqual({
+      kind: "edited",
+      after: { ...GROUND, captionOnArrow: true },
+    });
+    const after = on.kind === "edited" ? on.after : GROUND;
+    expect(blockFieldEdit(after, "captionOnArrow", "")).toEqual({
+      kind: "edited",
+      after: GROUND,
+    });
+    expect(blockFieldEdit(GROUND, "captionOnArrow", "")).toEqual({
+      kind: "unchanged",
+    });
+  });
+
+  it("takes a colour as #rrggbb only, and leaves it out when cleared", () => {
+    // Why: the reader takes six hex digits; anything else would be
+    // refused when the tour is read back.
+    expect(blockFieldEdit(GROUND, "color", "#5fe3c9")).toEqual({
+      kind: "edited",
+      after: { ...GROUND, color: "#5fe3c9" },
+    });
+    expect(blockFieldEdit(GROUND, "darkColor", "red").kind).toBe("refused");
+    expect(blockFieldEdit(GROUND, "color", "")).toEqual({ kind: "unchanged" });
+    const set = {
+      ...(GROUND as unknown as Record<string, unknown>),
+      color: "#5fe3c9",
+    } as unknown as TourObject;
+    expect(blockFieldEdit(set, "color", "")).toEqual({
+      kind: "edited",
+      after: GROUND,
+    });
+  });
+});
+
+describe("a short text's point and language", () => {
+  const view = (v: string, own: Record<string, unknown> = {}) =>
+    ({
+      ...(PIN as unknown as Record<string, unknown>),
+      view: v,
+      ...own,
+    }) as unknown as TourObject;
+  const edited = (out: ReturnType<typeof blockFieldEdit>) => {
+    if (out.kind !== "edited") throw new Error(`not edited: ${out.kind}`);
+    return out.after as unknown as Record<string, unknown>;
+  };
+
+  it("leaves the point to the panel's boxes, and types the language in every view", () => {
+    // Why: the point is typed in the short text's panel as three boxes
+    // x, y and z (`kind-panels/short-text-panel.ts`), as the chosen
+    // prototype has it; a dock line as well would be a second place to
+    // type it. The language matters to every view's line breaking and
+    // font.
+    const names = (v: string) => blockFields(view(v)).map((f) => f.name);
+    for (const v of ["pin", "sign", "edgeHint", "ground"]) {
+      expect(names(v)).not.toContain("pointsTo");
+    }
+    for (const v of ["pin", "sign", "edgeHint", "ground"]) {
+      expect(names(v)).toContain("lang");
+    }
+  });
+
+  it("writes a point given as three numbers", () => {
+    // Why: the format stores three numbers in the station's frame; the
+    // panel's boxes and the 3D view's pick send them as one text,
+    // separated by spaces (", " read too), a comma alone still being a
+    // decimal point as in every number box.
+    const sign = view("sign");
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", "2 1.2 -19.6")).pointsTo,
+    ).toEqual([2, 1.2, -19.6]);
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", " 2, 1.2, -19.6 ")).pointsTo,
+    ).toEqual([2, 1.2, -19.6]);
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", "1,5 0 -3")).pointsTo,
+    ).toEqual([1.5, 0, -3]);
+    const set = view("sign", { pointsTo: [2, 1.2, -19.6] });
+    expect(blockFieldEdit(set, "pointsTo", "2 1.2 -19.6")).toEqual({
+      kind: "unchanged",
+    });
+    expect("pointsTo" in edited(blockFieldEdit(set, "pointsTo", ""))).toBe(
+      false,
+    );
+    expect(blockFieldEdit(sign, "pointsTo", "")).toEqual({ kind: "unchanged" });
+  });
+
+  it("refuses a point that is not three numbers within the format's reach", () => {
+    // Why: the reader fails a file with two numbers, and drops a point
+    // over 1000 m from its station; the editor must not write either.
+    const sign = view("sign");
+    for (const bad of [
+      "2 1",
+      "2 1 3 4",
+      "a b c",
+      "1,2,3",
+      "1001 0 0",
+      "0 0 -1000.5",
+    ]) {
+      expect(blockFieldEdit(sign, "pointsTo", bad), bad).toEqual({
+        kind: "refused",
+        reason: expect.stringContaining("1000 m"),
+      });
+    }
+    expect(blockFieldEdit(sign, "pointsTo", "1000 -1000 0").kind).toBe(
+      "edited",
+    );
+  });
+
+  it("writes a language tag the format keeps, trimmed, and refuses one it would not", () => {
+    // Why: the reader keeps only a BCP-47 shaped tag of at most 35
+    // characters; anything else would be dropped or fail the file.
+    const pin = view("pin");
+    expect(edited(blockFieldEdit(pin, "lang", " pt-BR ")).lang).toBe("pt-BR");
+    expect(edited(blockFieldEdit(pin, "lang", "de")).lang).toBe("de");
+    for (const bad of [
+      "english!",
+      "d",
+      "de_DE",
+      `de-${"a".repeat(8)}-${"b".repeat(8)}-${"c".repeat(8)}-${"d".repeat(8)}`,
+    ]) {
+      const out = blockFieldEdit(pin, "lang", bad);
+      expect(out.kind, bad).toBe("refused");
+    }
+    const set = view("pin", { lang: "de" });
+    expect(blockFields(set).find((f) => f.name === "lang")?.value).toBe("de");
+    expect("lang" in edited(blockFieldEdit(set, "lang", " "))).toBe(false);
+    expect(blockFieldEdit(set, "lang", "de")).toEqual({ kind: "unchanged" });
+  });
+
+  it("hints at what to type in the empty language field", () => {
+    // Why: the field does not say on its own how a tag is written; the
+    // hint is the one place that does.
+    const fields = blockFields(view("sign"));
+    const hint = (n: string) =>
+      blockFieldPlaceholder(fields.find((f) => f.name === n)!);
+    expect(hint("lang")).toMatch(/^Optional, such as /);
   });
 });

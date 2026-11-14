@@ -144,3 +144,5 @@ if (combined !== null) {
   spike's subset strategy"): equals the spike's measured strategy on real
   fixture visits, with a proper subset; the opt-in sweeps there (`CODE_ESTIMATE_SPIKE=1`) are the
   evidence for the numbers above.
+
+Yaw offsets are wrapped with `wrapAngle` (`angle-easing.ts`).

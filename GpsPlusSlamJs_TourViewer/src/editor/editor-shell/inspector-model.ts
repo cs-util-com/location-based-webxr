@@ -60,7 +60,7 @@ import {
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import { facingDegOf } from "../../character-views.js";
 
-import { KIND_EDIT } from "../../kinds/edit-kinds.js";
+import { blockLabel, KIND_EDIT } from "../../kinds/edit-kinds.js";
 import { objectTitle } from "../../object-describe.js";
 import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
@@ -407,6 +407,25 @@ interface InspectorShortText {
   readonly view: string;
   readonly role: string | null;
   readonly orientation: string | null;
+  /** A ground arrow's own look, as written (null: the reader's
+   *  default), and the block's id its colour wells write to; absent in
+   *  any other view. */
+  readonly ground?: {
+    readonly id: string;
+    readonly style: string | null;
+    readonly floorPlacement: string | null;
+    readonly captionOnArrow: boolean;
+    readonly color: string | null;
+    readonly darkColor: string | null;
+  };
+  /** Where a sign or a ground arrow points (the station's frame, m;
+   *  null: nowhere), the block's id its boxes write to, and whether
+   *  "Pick in 3D" is armed; absent in a view that points nowhere. */
+  readonly point?: {
+    readonly id: string;
+    readonly at: readonly [number, number, number] | null;
+    readonly picking: boolean;
+  };
 }
 
 /** A model's own parts as its inspector edits them. */
@@ -1031,7 +1050,7 @@ function storyChildInspector(
       moves: movesOf(child.id, stations),
       rowKind: storyRows({ children: [child] })[0]?.kind ?? "text",
       title: objectTitle(child),
-      sub: `${KIND_EDIT[child.kind].label}, ${entry}`,
+      sub: `${blockLabel(child)}, ${entry}`,
       block: storyEntry(child),
       advance: {
         mode: child.advance.mode,
@@ -1155,6 +1174,8 @@ export function buildInspector(input: {
    *  none. */
   readonly modelFocus?: ModelFocus | null;
   readonly modelPick?: ModelPick | null;
+  /** "Pick in 3D" armed for the selected short text. */
+  readonly pointPick?: boolean;
   /** Changes whenever the tour's read-along texts do; none given: "". */
   readonly timingsStamp?: string;
   /** The selected free item's file is not in the tour on disk yet, so it
@@ -1219,7 +1240,7 @@ export function buildInspector(input: {
       kind: "item",
       itemKind: item.kind,
       title: objectTitle(item),
-      sub: `${KIND_EDIT[item.kind].label} in ${stationTitle(station, index + 1)}`,
+      sub: `${blockLabel(item)} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
       moves: movesOf(item.id, stations, input.selectedFileUnsaved === true),
       text: item.kind === "shortText" ? item.caption : null,
@@ -1231,6 +1252,27 @@ export function buildInspector(input: {
               view: item.view,
               role: item.role ?? null,
               orientation: item.orientation ?? null,
+              ...(item.view === "ground"
+                ? {
+                    ground: {
+                      id: item.id,
+                      style: item.style ?? null,
+                      floorPlacement: item.floorPlacement ?? null,
+                      captionOnArrow: item.captionOnArrow === true,
+                      color: item.color ?? null,
+                      darkColor: item.darkColor ?? null,
+                    },
+                  }
+                : {}),
+              ...(item.view === "sign" || item.view === "ground"
+                ? {
+                    point: {
+                      id: item.id,
+                      at: item.pointsTo ?? null,
+                      picking: input.pointPick === true,
+                    },
+                  }
+                : {}),
             },
           }
         : {}),

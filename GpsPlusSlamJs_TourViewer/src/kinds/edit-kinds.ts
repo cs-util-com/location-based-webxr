@@ -20,6 +20,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
+  TOUR_GROUND_MAX_BEND_DEG,
   TOUR_SHORT_TEXT_MAX_READ_AT_M,
   TOUR_SHORT_TEXT_MIN_READ_AT_M,
 } from "gps-plus-slam-app-framework/ar/tour-short-text";
@@ -64,6 +65,31 @@ const SHORT_TEXT_TURNS: readonly FieldChoice[] = [
   { value: "face", label: "Faces you" },
 ];
 
+/** How a short text shows, by the words a creator reads (its views
+ *  with a world look; the card has no chip). */
+export const SHORT_TEXT_VIEWS: readonly FieldChoice[] = [
+  { value: "pin", label: "Pin" },
+  { value: "sign", label: "Sign" },
+  { value: "edgeHint", label: "Edge hint" },
+  { value: "ground", label: "Ground arrow" },
+];
+
+/** A ground arrow's styles, as its panel offers them. */
+const GROUND_STYLES: readonly FieldChoice[] = [
+  { value: "ribbon", label: "Ribbon" },
+  { value: "vanes", label: "Vanes" },
+  { value: "footprints", label: "Footprints" },
+  { value: "lights", label: "Lights" },
+  { value: "floor", label: "Floor arrow" },
+];
+
+/** How a floor arrow lies, as its panel offers it. */
+const GROUND_FLOOR_PLACEMENTS: readonly FieldChoice[] = [
+  { value: "lying", label: "Lying" },
+  { value: "hovering", label: "Hovering" },
+  { value: "upright", label: "Upright" },
+];
+
 /** One field of a kind, as the inspector draws it. */
 export interface FieldSpec {
   /** The block's own field (`data-field` in the inspector). */
@@ -78,6 +104,15 @@ export interface FieldSpec {
   /** One of these values, chosen on the kind's panel's chips rather than
    *  typed (none: typed). */
   readonly choices?: readonly FieldChoice[];
+  /** A switch on the kind's panel: written as true, or left out (its
+   *  reader's default, off). */
+  readonly flag?: true;
+  /** A colour (`#rrggbb`) picked on the kind's panel, or left out (its
+   *  reader's default). */
+  readonly colour?: true;
+  /** A value typed on one line that the format's look reader checks: a
+   *  point as three numbers in metres, or a language tag. */
+  readonly typed?: "point" | "tag";
 }
 
 /** One value a choice field takes, and its chip's words. */
@@ -217,7 +252,7 @@ export const KIND_EDIT = {
           unit: "m",
           required: false,
         },
-        views: ["sign"],
+        views: ["sign", "ground"],
       },
       { name: "role", label: "Role", prose: false, choices: SHORT_TEXT_ROLES },
       {
@@ -225,7 +260,62 @@ export const KIND_EDIT = {
         label: "Turns",
         prose: false,
         choices: SHORT_TEXT_TURNS,
-        views: ["sign"],
+        views: ["sign", "ground"],
+      },
+      {
+        name: "pointsTo",
+        label: "Points to",
+        prose: false,
+        typed: "point",
+        views: ["sign", "ground"],
+      },
+      { name: "lang", label: "Language", prose: false, typed: "tag" },
+      {
+        name: "style",
+        label: "Ground style",
+        prose: false,
+        choices: GROUND_STYLES,
+        views: ["ground"],
+      },
+      {
+        name: "bendDeg",
+        label: "Bend",
+        prose: false,
+        number: {
+          min: -TOUR_GROUND_MAX_BEND_DEG,
+          max: TOUR_GROUND_MAX_BEND_DEG,
+          unit: "°",
+          required: false,
+        },
+        views: ["ground"],
+      },
+      {
+        name: "floorPlacement",
+        label: "Floor arrow",
+        prose: false,
+        choices: GROUND_FLOOR_PLACEMENTS,
+        views: ["ground"],
+      },
+      {
+        name: "captionOnArrow",
+        label: "Caption on the arrow",
+        prose: false,
+        flag: true,
+        views: ["ground"],
+      },
+      {
+        name: "color",
+        label: "Colour",
+        prose: false,
+        colour: true,
+        views: ["ground"],
+      },
+      {
+        name: "darkColor",
+        label: "Dark colour",
+        prose: false,
+        colour: true,
+        views: ["ground"],
       },
     ],
     add: {
@@ -376,6 +466,19 @@ export function isStoryOnly(kind: TourBlockKind): boolean {
 export function kindNoun(kind: TourBlockKind): string {
   const label: string = KIND_EDIT[kind].label;
   return label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+/** What a block is called in the inspector's head: its kind's label,
+ *  or for a short text the view it shows as ("Sign", "Edge hint"). */
+export function blockLabel(block: {
+  readonly kind: TourBlockKind;
+  readonly view: string;
+}): string {
+  if (block.kind === "shortText") {
+    const view = SHORT_TEXT_VIEWS.find((v) => v.value === block.view);
+    if (view !== undefined) return view.label;
+  }
+  return KIND_EDIT[block.kind].label;
 }
 
 /** Its word with its article: "a pin", "an audio". */

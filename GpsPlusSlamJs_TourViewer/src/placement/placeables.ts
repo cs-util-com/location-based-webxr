@@ -82,6 +82,9 @@ export interface Placeable {
   readonly lifts: boolean;
   /** Its dots; null: none. */
   readonly extent: PlaceExtent | null;
+  /** Its bend (degrees, 0 where none is written) for what bends (its
+   *  row's `bends`); absent otherwise. */
+  readonly bendDeg?: number;
   /** Only its dots may be dragged (a station the creator locked). */
   readonly locked: boolean;
   /** The block ids whose drawings follow it: itself for a block, the
@@ -111,6 +114,13 @@ function extentOf(row: ViewPlacement, holder: object): PlaceExtent | null {
   return { ...spec, value };
 }
 
+/** A bending block's bend as written: 0 for none or one not finite (the
+ *  drawing's own reading). */
+function bendOf(block: object): number {
+  const value: unknown = (block as Readonly<Record<string, unknown>>).bendDeg;
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 /** A posed block standing in `station` inside `folders` (outermost
  *  first), or null for a view the world does not show. */
 function blockPlaceable(
@@ -133,6 +143,7 @@ function blockPlaceable(
     turns: row.turns,
     lifts: row.lifts,
     extent: extentOf(row, block),
+    ...(row.bends === true ? { bendDeg: bendOf(block) } : {}),
     locked: false,
     members: [block.id],
     group: false,

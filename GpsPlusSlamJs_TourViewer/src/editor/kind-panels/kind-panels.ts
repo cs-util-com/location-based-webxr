@@ -57,6 +57,8 @@ export interface PanelContext {
   readonly changed: () => void;
   /** The click the 3D view waits for on the selected model. */
   readonly pickAsked: (pick: ModelPick | null) => void;
+  /** "Pick in 3D" armed or disarmed for the selected short text. */
+  readonly pointPickAsked: (on: boolean) => void;
   /** The selected model's part in focus. */
   readonly focused: (focus: ModelFocus | null) => void;
 }
@@ -93,11 +95,13 @@ function model(ctx: PanelContext): KindPanel {
   });
 }
 
-/** A short text's panel: its view, role and turn. */
+/** A short text's panel: its view, role, turn and point. */
 function shortText(ctx: PanelContext): KindPanel {
   return createShortTextPanel({
     view: (id, view) => ctx.edits.view(id, view),
     block: (id, field, value) => ctx.edits.block(id, field, value),
+    changed: () => ctx.changed(),
+    pointPick: (on) => ctx.pointPickAsked(on),
   });
 }
 

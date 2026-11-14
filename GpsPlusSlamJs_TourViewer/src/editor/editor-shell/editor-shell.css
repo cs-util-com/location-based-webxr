@@ -3594,6 +3594,100 @@ body[data-view="3d"] #view3d .view3d-canvas {
   cursor: pointer;
 }
 
+/* A ground arrow's caption switch, its two colour wells with their
+ * names, and the sun warning under them. */
+.stext .chkrow,
+.stext .colwell {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.stext .chkrow {
+  margin: 6px 0 2px;
+}
+
+.stext .colrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 4px 0 2px;
+}
+
+.stext .colwell input {
+  width: 40px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--s-line);
+  border-radius: 8px;
+  background: none;
+  cursor: pointer;
+}
+
+/* Where a sign or a ground arrow points, as the prototype's sign editor
+ * has it: "Points to" with its frame named on the right, three boxes
+ * with their axis inside, and the pick and clear buttons under them. */
+.stext .ptlabel {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.stext .pthint {
+  color: var(--s-muted);
+  font-weight: 400;
+}
+
+.stext .xyz {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+.stext .xyz label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--s-line2);
+  border-radius: 8px;
+  background: var(--s-bg0);
+  color: var(--s-muted);
+  font-size: 11px;
+}
+
+.stext .xyz label:focus-within {
+  border-color: var(--s-focus);
+}
+
+.stext .xyz input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--s-text);
+  font: 12.5px var(--s-mono);
+}
+
+.stext .ptbtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 2px;
+}
+
+.stext .sunwarn {
+  padding: 6px 8px;
+  border: 1px solid var(--s-warn);
+  border-radius: 8px;
+  color: var(--s-warn);
+}
+
 /* A story character's groups of chips, apart from the next label. */
 .character > .vchips {
   margin-bottom: 8px;

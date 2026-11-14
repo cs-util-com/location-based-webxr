@@ -414,7 +414,7 @@ describe('ids', () => {
 describe('views', () => {
   it('lists the views this reader draws, per kind', () => {
     expect(TOUR_BLOCK_VIEWS).toEqual({
-      shortText: ['pin', 'sign', 'edgeHint', 'card'],
+      shortText: ['pin', 'sign', 'edgeHint', 'ground', 'card'],
       longText: ['lectern', 'reading', 'card'],
       picture: [
         'plane',
@@ -634,7 +634,7 @@ describe('the exact words a tour author reads, and shapes coerced into valid one
       '"blocks[0].widthM" must be a number of metres from 0.05 to 50'
     );
     expect(() => one('shortText', { view: 'plane' })).toThrow(
-      '"blocks[0].view" must be pin, sign, edgeHint, card for a shortText'
+      '"blocks[0].view" must be pin, sign, edgeHint, ground, card for a shortText'
     );
     expect(() => one('shortText', { createdAtIso: 'yesterday' })).toThrow(
       '"blocks[0].createdAtIso" must be an ISO-8601 timestamp'
@@ -714,6 +714,7 @@ describe("a model's views, notes, sections and clip", () => {
       'pin',
       'sign',
       'edgeHint',
+      'ground',
       'lectern',
       'reading',
       'plane',

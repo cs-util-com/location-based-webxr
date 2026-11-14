@@ -35,11 +35,14 @@ the reading sign (`reading-sign.ts`) are world parts too.
   asks for; a no-op where the page gives none), `sound(id, channel)` (a
   `world-sound.ts` `SoundHandle` for an audio asset on the `"voice"` or
   `"background"` channel; in the editor always the silent handle), and
-  `screen?` (the page's `WorldScreen`, in `play` only).
+  `screen?` (the page's `WorldScreen`, in `play` only), and
+  `reduceMotion?()` (the visitor asked for less motion; none: motion is
+  allowed; a ground arrow's hover and light read it each frame).
 - `WorldEnvOptions` - what a page gives its env, every field optional:
   `sound` (the page's `createWorldSound`; none: silence), `screen` (handed
   on in `play` only), `parseModel(blob)` (a glb as a model, `glb-model.ts`;
-  none: a model is refused) and `enableClipping()` (none: ignored).
+  none: a model is refused), `enableClipping()` (none: ignored) and
+  `reduceMotion()` (the viewer passes the `prefers-reduced-motion` query).
 - `WorldScreen` - `show(build)`: `build(host)` fills a fresh panel and
   returns its clean-up; `show` returns the close. `screenIn(host)` is the
   page's (`main.ts`, `#narration-card-root`): one panel at a time, the newest

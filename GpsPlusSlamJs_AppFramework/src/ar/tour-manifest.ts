@@ -179,8 +179,12 @@ interface TourPlacement {
  *  where it stands. */
 type InWorld<B> = Omit<B, 'pose'> & TourPlacement;
 
-/** A short text in the world, drawn as a pin. */
-export type TourPin = InWorld<TourShortTextBlock> & { readonly view: 'pin' };
+/** A short text in the world, in one of its world views: a pin, a sign on
+ *  posts, an edge hint or an arrow on the ground (never `card`). The name
+ *  stays from when a pin was its only one. */
+export type TourPin = InWorld<TourShortTextBlock> & {
+  readonly view: Exclude<TourShortTextBlock['view'], 'card'>;
+};
 /**
  * A picture in the world, in one of its world views, with its image asset inline
  * (`imageAsset.id === image`): the page that captured a photo holds its

@@ -183,16 +183,20 @@ export interface WorldEnv {
   sound(id: string, channel: SoundChannel): SoundHandle;
   /** The page's screen, in `play` only (none: a part opens no panel). */
   readonly screen?: WorldScreen;
+  /** Whether the visitor asked for less motion (none: the page does not
+   *  say, so motion is allowed); read each frame, as it can change. */
+  readonly reduceMotion?: () => boolean;
 }
 
 /** What a page gives its parts beyond reading files, every field
  *  optional: its sounds, its screen, a model reader, its renderer's
- *  clipping switch. */
+ *  clipping switch, the visitor's reduced-motion wish. */
 export interface WorldEnvOptions {
   readonly sound?: WorldSound;
   readonly screen?: WorldScreen;
   readonly parseModel?: (blob: Blob) => Promise<Object3D>;
   readonly enableClipping?: () => void;
+  readonly reduceMotion?: () => boolean;
 }
 
 /** A kind's object in the world. */
@@ -255,6 +259,7 @@ export function worldEnv(
     screen,
     parseModel,
     enableClipping,
+    reduceMotion,
   } = options;
   return {
     mode,
@@ -272,6 +277,7 @@ export function worldEnv(
         ? SILENT_SOUND
         : sound.sound(() => loadAsset(id), channel),
     ...(mode === "play" && screen !== undefined ? { screen } : {}),
+    ...(reduceMotion === undefined ? {} : { reduceMotion }),
   };
 }
 

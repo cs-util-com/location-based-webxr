@@ -171,6 +171,7 @@ import { newStory, withoutStoryChild } from "../tour-story-edit.js";
 import { folderRefusalLine } from "../tour-folder-edit.js";
 import {
   blockPlacement,
+  writesBlockNumber,
   type ExtentSpec,
 } from "../placement/placement-rows.js";
 import { freeStorySpot, newCharacterEntry, newStoryEntry } from "./new-pin.js";
@@ -1017,7 +1018,7 @@ export interface EditorSession {
   >;
   /** Set a block's size, the number its placement row's dots change (a
    *  model's largest side, 0.05 m to 500 m; a picture's width, 0.05 m to
-   *  50 m): one step. Refused for a block whose row has no size, or a
+   *  50 m; a ground arrow's scale, 1 to 40): one step. Refused for a block whose row has no size, or a
    *  value out of the row's bounds. */
   setExtent(
     id: string,
@@ -3104,7 +3105,7 @@ export function createEditorSession(input: {
       if (found === undefined) return notInTour;
       const object = found.object;
       const spec = blockPlacement(object.kind, object.view)?.extent;
-      if (spec === undefined || spec.kind !== "size") {
+      if (spec === undefined || !writesBlockNumber(spec)) {
         return { kind: "refused", reason: NO_EXTENT };
       }
       if (!(value >= spec.min && value <= spec.max)) {
