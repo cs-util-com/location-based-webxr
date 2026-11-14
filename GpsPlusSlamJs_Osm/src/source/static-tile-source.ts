@@ -270,30 +270,49 @@ export class StaticTileSource implements OsmDataSource {
   }
 
   /**
-   * One request to the host under the time limit (`limitMs`, at most the
-   * per-request limit); the caller's signal, when given, still aborts it.
-   * The limit covers the body read too.
+   * One request to the host under the per-request limit, which covers the
+   * body read too; the caller's signal, when given, still aborts it.
+   * `deadline` (epoch ms, the end of the fill wait) bounds only the wait
+   * for the response's headers: a tile the host stored late in the wait is
+   * still read whole, at whatever bandwidth the per-request limit allows.
+   * Nothing is sent once the deadline has passed (`HostDeclined`).
    */
-  private request(
+  private async request(
     url: string,
     signal: AbortSignal | undefined,
     init: {
       readonly method?: "POST";
       readonly cache?: RequestCache;
-      readonly limitMs?: number;
+      readonly deadline?: number | undefined;
     } = {},
   ): Promise<Response> {
+    let headersBy: AbortController | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (init.deadline !== undefined) {
+      const left = init.deadline - this.now();
+      if (left <= 0) throw new HostDeclined(`no wait left for ${url}`);
+      const controller = new AbortController();
+      headersBy = controller;
+      timer = setTimeout(() => {
+        controller.abort(
+          new DOMException("no answer within the fill wait", "TimeoutError"),
+        );
+      }, left);
+    }
     const limited = composeSignals(
       signal,
-      AbortSignal.timeout(
-        Math.min(this.requestTimeoutMs, init.limitMs ?? Infinity),
-      ),
+      AbortSignal.timeout(this.requestTimeoutMs),
+      headersBy?.signal,
     );
-    return this.fetchImpl(url, {
-      ...(init.method === undefined ? {} : { method: init.method }),
-      ...(init.cache === undefined ? {} : { cache: init.cache }),
-      ...(limited === undefined ? {} : { signal: limited }),
-    });
+    try {
+      return await this.fetchImpl(url, {
+        ...(init.method === undefined ? {} : { method: init.method }),
+        ...(init.cache === undefined ? {} : { cache: init.cache }),
+        ...(limited === undefined ? {} : { signal: limited }),
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async fromHost(
@@ -308,36 +327,30 @@ export class StaticTileSource implements OsmDataSource {
     const first = await this.read(tile, signal, started, speculative);
     if (first !== undefined) return first;
     if (readOnly) throw new HostSkipped(`tile ${tile} not stored`);
-    const left = this.waitLeft(started);
-    if (left <= 0) throw new HostDeclined(`no wait left to fill ${tile}`);
-    if ((await this.askForFill(tile, signal, left)) === "present") {
+    const deadline = started + this.maxWaitMs;
+    if ((await this.askForFill(tile, signal, deadline)) === "present") {
       const ready = await this.read(
         tile,
         signal,
         started,
         speculative,
-        this.waitLeft(started),
+        deadline,
       );
       if (ready !== undefined) return ready;
       throw new HostDeclined(`tile ${tile} announced but missing`);
     }
-    return this.waitForFill(tile, signal, started);
-  }
-
-  /** What is left of the fill wait that began at `started`, in ms. */
-  private waitLeft(started: number): number {
-    return started + this.maxWaitMs - this.now();
+    return this.waitForFill(tile, signal, started, deadline);
   }
 
   /** `present` (200), `queued` (202, nothing ahead); a throw otherwise. */
   private async askForFill(
     tile: string,
     signal: AbortSignal | undefined,
-    limitMs: number,
+    deadline: number,
   ): Promise<"present" | "queued"> {
     const fill = await this.request(this.fillUrl(tile), signal, {
       method: "POST",
-      limitMs,
+      deadline,
     });
     if (fill.status === 200) {
       await discardBody(fill);
@@ -362,23 +375,18 @@ export class StaticTileSource implements OsmDataSource {
 
   /**
    * Looks again for a queued tile until the bounded wait is spent; each
-   * look is limited to what is left of the wait, and none starts with
-   * nothing left.
+   * look's answer must begin before the wait's `deadline`, and none starts
+   * with nothing left (a sleep can overshoot).
    */
   private async waitForFill(
     tile: string,
     signal: AbortSignal | undefined,
     started: number,
+    deadline: number,
   ): Promise<OsmTileResult> {
     while (this.now() - started + this.pollIntervalMs < this.maxWaitMs) {
       await this.sleepImpl(this.pollIntervalMs, signal);
-      const polled = await this.read(
-        tile,
-        signal,
-        started,
-        false,
-        this.waitLeft(started),
-      );
+      const polled = await this.read(tile, signal, started, false, deadline);
       if (polled !== undefined) return polled;
     }
     throw new HostDeclined(
@@ -390,18 +398,19 @@ export class StaticTileSource implements OsmDataSource {
    * The stored tile, `undefined` on a 404, a throw on anything else.
    * `started` is when the tile was first asked for: the time before this read
    * (the wait for the host's fill) is reported as `slotWaitMs`, and only this
-   * read's own round trip as `transportMs`. `limitMs` bounds each of its
-   * requests below the per-request limit.
+   * read's own round trip as `transportMs`. `deadline`, the end of the
+   * fill wait, bounds the wait for each of its answers' headers, the
+   * re-read's included.
    */
   private async read(
     tile: string,
     signal: AbortSignal | undefined,
     started: number,
     speculative: boolean,
-    limitMs?: number,
+    deadline?: number,
   ): Promise<OsmTileResult | undefined> {
     const readStart = this.now();
-    let stored = await this.readStored(tile, signal, { limitMs });
+    let stored = await this.readStored(tile, signal, { deadline });
     if (stored === undefined) return undefined;
     let transportMs = elapsedMs(readStart, this.now());
     let decodeStart = this.now();
@@ -414,7 +423,7 @@ export class StaticTileSource implements OsmDataSource {
       this.rereadPastCache.add(tile);
       stored = await this.readStored(tile, signal, {
         cache: "no-cache",
-        limitMs,
+        deadline,
       });
       if (stored === undefined) return undefined;
       transportMs = elapsedMs(readStart, this.now());
@@ -465,14 +474,17 @@ export class StaticTileSource implements OsmDataSource {
     signal: AbortSignal | undefined,
     {
       cache,
-      limitMs,
-    }: { readonly cache?: RequestCache; readonly limitMs?: number | undefined },
+      deadline,
+    }: {
+      readonly cache?: RequestCache;
+      readonly deadline?: number | undefined;
+    },
   ): Promise<
     { readonly text: string; readonly etag: string | null } | undefined
   > {
     const response = await this.request(this.tileUrl(tile), signal, {
       ...(cache === undefined ? {} : { cache }),
-      ...(limitMs === undefined ? {} : { limitMs }),
+      deadline,
     });
     if (response.status === 404) {
       await discardBody(response);

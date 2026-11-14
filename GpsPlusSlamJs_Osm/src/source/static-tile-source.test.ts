@@ -46,7 +46,8 @@ const PAYLOAD = JSON.stringify({
   ],
 });
 
-type Reply = Response | Error;
+/** A scripted answer: a response, a network error, or one built per call. */
+type Reply = Response | Error | ((init?: RequestInit) => Promise<Response>);
 
 interface RecordedCall {
   method: string;
@@ -78,6 +79,7 @@ function scriptedFetch(script: Record<string, Reply[]>) {
       return Promise.reject(new Error(`unscripted ${method} ${url}`));
     }
     if (next instanceof Error) return Promise.reject(next);
+    if (typeof next === "function") return next(init);
     return Promise.resolve(next);
   }) as typeof fetch;
   return { impl, calls };
@@ -115,7 +117,13 @@ function json(status: number, body: object): Response {
 
 function setup(
   script: Record<string, Reply[]>,
-  extra: { maxWaitMs?: number; refusalMemoryMs?: number } = {},
+  extra: {
+    maxWaitMs?: number;
+    refusalMemoryMs?: number;
+    requestTimeoutMs?: number;
+    /** Extra clock time per sleep call, by index: a sleep that overshoots. */
+    oversleepMs?: readonly number[];
+  } = {},
 ) {
   let clock = 1_000_000;
   const slept: number[] = [];
@@ -127,13 +135,16 @@ function setup(
     fetchImpl: fetchMock.impl,
     now: () => clock,
     sleepImpl: (ms) => {
+      clock += ms + (extra.oversleepMs?.[slept.length] ?? 0);
       slept.push(ms);
-      clock += ms;
       return Promise.resolve();
     },
     pollIntervalMs: 5_000,
     maxWaitMs: extra.maxWaitMs ?? 60_000,
     refusalMemoryMs: extra.refusalMemoryMs ?? 600_000,
+    ...(extra.requestTimeoutMs === undefined
+      ? {}
+      : { requestTimeoutMs: extra.requestTimeoutMs }),
   });
   return {
     source,
@@ -691,13 +702,15 @@ describe("StaticTileSource", () => {
     }
   });
 
-  it("keeps every request of the fill wait within the time left of it", async () => {
+  it("keeps the wait for each fill-wait answer's headers within the time left of it", async () => {
     // Why this test matters: the wait for a fill is bounded by maxWaitMs,
     // but a poll started near its end with the full per-request limit could
-    // hold the tile far past it. The first read of a stored file is not
-    // part of the fill wait and keeps the plain limit.
+    // hold the tile far past it. What is left bounds the wait for the
+    // headers only; every request, body included, keeps the plain limit.
+    // The first read of a stored file is not part of the fill wait.
     const notFound = (): Response => new Response("nf", { status: 404 });
     const timeout = vi.spyOn(AbortSignal, "timeout");
+    const timer = vi.spyOn(globalThis, "setTimeout");
     try {
       const { source, fallback } = setup(
         {
@@ -708,17 +721,228 @@ describe("StaticTileSource", () => {
       );
       await source.fetchTile(TILE);
       expect(fallback.calls).toHaveLength(1);
-      expect(timeout.mock.calls).toEqual([
-        [DEFAULT_REQUEST_TIMEOUT_MS],
-        [20_000],
-        [15_000],
-        [10_000],
-        [5_000],
+      expect(timeout.mock.calls).toEqual(
+        Array.from({ length: 5 }, () => [DEFAULT_REQUEST_TIMEOUT_MS]),
+      );
+      expect(timer.mock.calls.map((call) => call[1])).toEqual([
+        20_000, 15_000, 10_000, 5_000,
       ]);
     } finally {
       timeout.mockRestore();
+      timer.mockRestore();
     }
   });
+
+  /** Headers after `headersMs`, then the body after `bodyMs` more (real ms). */
+  function slowStored(
+    body: string,
+    { headersMs = 0, bodyMs = 0 }: { headersMs?: number; bodyMs?: number },
+  ): (init?: RequestInit) => Promise<Response> {
+    return (init) =>
+      new Promise<Response>((resolve, reject) => {
+        const signal = init?.signal;
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            const done = setTimeout(() => {
+              controller.enqueue(new TextEncoder().encode(body));
+              controller.close();
+            }, bodyMs);
+            signal?.addEventListener("abort", () => {
+              clearTimeout(done);
+              controller.error(signal.reason);
+            });
+          },
+        });
+        const headers = setTimeout(() => {
+          resolve(new Response(stream, { status: 200 }));
+        }, headersMs);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(headers);
+          reject(signal.reason as Error);
+        });
+      });
+  }
+
+  /**
+   * A fill wait of `10 s + leftMs` (polls every 5 s) leaves `leftMs` for
+   * the third read: two misses, then `late` (the third read, and any
+   * re-read of it).
+   */
+  function lateFill(
+    leftMs: number,
+    late: readonly Reply[],
+    requestTimeoutMs?: number,
+  ) {
+    return setup(
+      {
+        [`GET ${TILE_URL}`]: [
+          new Response("nf", { status: 404 }),
+          new Response("nf", { status: 404 }),
+          ...late,
+        ],
+        [`POST ${FILL_URL}`]: [json(202, { status: "queued" })],
+      },
+      {
+        maxWaitMs: 10_000 + leftMs,
+        ...(requestTimeoutMs === undefined ? {} : { requestTimeoutMs }),
+      },
+    );
+  }
+
+  // The wait left and the body time in real ms, scaled down from the case
+  // that matters (1 s left, a 3 s body: a dense tile at a few Mbps) so the
+  // test stays fast; the pairs sit on both sides of "body longer than what
+  // is left".
+  for (const [leftMs, bodyMs] of [
+    [100, 30],
+    [300, 100],
+    [100, 300],
+    [40, 200],
+  ] as const) {
+    it(`serves a tile filled late in the wait when its body takes ${bodyMs} ms with ${leftMs} ms left`, async () => {
+      // Why this test matters: fills take 30-75 s against a 60 s wait, so
+      // the tile often appears near the end of it, and a dense tile's body
+      // takes seconds at low bandwidth. Cutting that body at the wait's end
+      // read as a host refusal: every tile read-only for the refusal
+      // memory, and the race spent an Overpass request on a tile the host
+      // had just stored.
+      const { source, fallback, calls } = lateFill(leftMs, [
+        slowStored(PAYLOAD, { bodyMs }),
+      ]);
+      const result = await source.fetchTile(TILE);
+      expect(result.sourceId).toBe("static:tiles.example.dev");
+      expect(fallback.calls).toEqual([]);
+      expect(calls.map((c) => c.method)).toEqual(["GET", "POST", "GET", "GET"]);
+    });
+  }
+
+  for (const [leftMs, headersMs, served] of [
+    [300, 30, true],
+    [100, 30, true],
+    [100, 300, false],
+    [40, 200, false],
+  ] as const) {
+    it(`${served ? "serves" : "races"} a poll whose headers take ${headersMs} ms with ${leftMs} ms left`, async () => {
+      // Why this test matters: what is left of the wait still bounds the
+      // wait for the answer itself, so a host that does not answer a poll
+      // before the wait is spent cannot hold the tile past it.
+      const { source, fallback } = lateFill(leftMs, [
+        slowStored(PAYLOAD, { headersMs }),
+      ]);
+      const result = await source.fetchTile(TILE);
+      expect(result.sourceId).toBe(
+        served ? "static:tiles.example.dev" : "overpass:test",
+      );
+      expect(fallback.calls).toHaveLength(served ? 0 : 1);
+    });
+  }
+
+  for (const [bodyMs, served] of [
+    [40, true],
+    [400, false],
+  ] as const) {
+    it(`keeps the per-request limit on a body read after the fill wait (${bodyMs} ms body, 150 ms limit)`, async () => {
+      // Why this test matters: the body is free of the wait, not of every
+      // bound; a body that stalls past requestTimeoutMs still goes to the
+      // race.
+      const { source, fallback } = lateFill(
+        100,
+        [slowStored(PAYLOAD, { bodyMs })],
+        150,
+      );
+      const result = await source.fetchTile(TILE);
+      expect(result.sourceId).toBe(
+        served ? "static:tiles.example.dev" : "overpass:test",
+      );
+      expect(fallback.calls).toHaveLength(served ? 0 : 1);
+    });
+  }
+
+  // How far the second sleep overshoots, against the 1 000 ms it leaves:
+  // 999 leaves 1 ms, 1 000 nothing, more a negative remainder.
+  for (const [overshootMs, polled] of [
+    [998, true],
+    [999, true],
+    [1_000, false],
+    [1_001, false],
+    [6_000, false],
+  ] as const) {
+    it(`a sleep overshooting by ${overshootMs} ms ${polled ? "still polls" : "polls no more and races"}`, async () => {
+      // Why this test matters: a sleep can overshoot (a throttled tab). A
+      // poll with no wait left is pointless, and a negative remainder must
+      // never reach a timer API: AbortSignal.timeout throws on one.
+      const timeout = vi.spyOn(AbortSignal, "timeout");
+      try {
+        const { source, fallback, calls } = setup(
+          {
+            [`GET ${TILE_URL}`]: [
+              new Response("nf", { status: 404 }),
+              new Response("nf", { status: 404 }),
+              new Response(PAYLOAD, { status: 200 }),
+            ],
+            [`POST ${FILL_URL}`]: [json(202, { status: "queued" })],
+          },
+          { maxWaitMs: 11_000, oversleepMs: [0, overshootMs] },
+        );
+        const result = await source.fetchTile(TILE);
+        expect(result.sourceId).toBe(
+          polled ? "static:tiles.example.dev" : "overpass:test",
+        );
+        expect(fallback.calls).toHaveLength(polled ? 0 : 1);
+        expect(calls.map((c) => c.method)).toEqual(
+          polled ? ["GET", "POST", "GET", "GET"] : ["GET", "POST", "GET"],
+        );
+        for (const [ms] of timeout.mock.calls) expect(ms).toBeGreaterThan(0);
+      } finally {
+        timeout.mockRestore();
+      }
+    });
+  }
+
+  // The first, bad read of a poll with 1 000 ms left uses `readMs` of it on
+  // the clock; the re-read past the browser cache answers after `headersMs`
+  // real ms. Served only when the re-read fits in what is left.
+  for (const [readMs, headersMs, reread, served] of [
+    [500, 20, true, true],
+    [800, 20, true, true],
+    [900, 300, true, false],
+    [800, 400, true, false],
+    [1_000, 0, false, false],
+    [1_100, 0, false, false],
+  ] as const) {
+    it(`bounds a poll's re-read by what is left after a ${readMs} ms bad read (re-read headers ${headersMs} ms)`, async () => {
+      // Why this test matters: the re-read past the browser cache is a
+      // second request inside the same poll. Bounded by the poll's starting
+      // remainder it could overrun the wait by up to a whole request.
+      const partial = JSON.stringify({
+        ...JSON.parse(PAYLOAD),
+        remark: "runtime error: Query timed out",
+      });
+      const clock = { advance: (_ms: number): void => undefined };
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      try {
+        const ctx = lateFill(1_000, [
+          () => {
+            clock.advance(readMs);
+            return Promise.resolve(new Response(partial, { status: 200 }));
+          },
+          slowStored(PAYLOAD, { headersMs }),
+        ]);
+        clock.advance = ctx.advance;
+        const result = await ctx.source.fetchTile(TILE);
+        expect(result.sourceId).toBe(
+          served ? "static:tiles.example.dev" : "overpass:test",
+        );
+        expect(ctx.calls.filter((c) => c.cache === "no-cache")).toHaveLength(
+          reread ? 1 : 0,
+        );
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  }
 
   it("asks for no fill once the wait is spent before the ask", async () => {
     // Why this test matters: a fill request with no time left would be

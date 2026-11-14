@@ -21,8 +21,9 @@ the library default is off.
   - `requestTimeoutMs?` - the limit on each request to the host, body
     included; default the race's `DEFAULT_REQUEST_TIMEOUT_MS` (45 s).
     RangeError unless positive and finite. Requests of the fill wait (the
-    fill ask, the read after a 200, each poll and its re-read) are limited
-    to the smaller of it and what is left of `maxWaitMs`.
+    fill ask, the read after a 200, each poll and its re-read) must also
+    have their response headers before the wait's end; their bodies keep
+    this limit alone.
 - `fetchTile(tile, { signal?, speculative? })` - `OsmDataSource`.
 - `sourceId` - `static:<host>`; `attribution` - the OSM attribution.
 - `OSM_TILES_BASE_URL` - the project's own host
@@ -52,7 +53,12 @@ the library default is off.
      and the host is sent one fire-and-forget
      `POST /report/v{schema}/{tile}?etag=<the re-read's ETag>` per tile per
      session (none without an ETag, none for a speculative read; a failed
-     report is ignored). The host
+     report is ignored). The tile is marked reported before the report is
+     sent, so a report the host answers with 429 (its per-IP or global
+     report limit) is not retried in that session: a wave of distinct bad
+     tiles loses most of its reports. That is deliberate, since the race
+     keeps every such tile usable and a retry would only add load to a host
+     that is already limiting. The host
      verifies the stored bytes itself before deleting anything
      (`GpsPlusSlamJs_OsmTiles/src/verify-tile.ts.md`).
      A complete answer is parsed with `parseOverpassJson`, exactly like a
@@ -113,10 +119,19 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
   not slower than the race it replaces. The race depends on Overpass load,
   so the comparison is provisional.
 - **Every request to the host has a time limit** (`requestTimeoutMs`,
-  composed with the caller's signal, which still aborts hard), and a request
-  of the fill wait never outlasts the wait: its limit is the smaller of
-  `requestTimeoutMs` and the time left of `maxWaitMs`. The first read of
-  a stored file is not part of the fill wait and keeps the plain limit. The default
+  body included, composed with the caller's signal, which still aborts
+  hard). A request of the fill wait must also have its response headers by
+  the wait's end, an absolute deadline (`started + maxWaitMs`), so the
+  re-read past the browser cache inside a poll cannot overrun it; a timer
+  aborts a per-request controller and is cleared once the headers arrive.
+  The body is not cut at the wait's end: fills take 30-75 s against the
+  60 s wait, so a tile often appears near its end, and a dense tile's body
+  takes seconds at low bandwidth (3.1 MB at 2 Mbps is about 12 s); cutting
+  it would read as a refusal and send a tile the host just stored to the
+  race. No request starts once the deadline has passed (a sleep can
+  overshoot): that is `HostDeclined`, never a negative timer. The first
+  read of a stored file is not part of the fill wait and keeps the plain
+  limit. The default
   is the race's per-attempt deadline: the host sends stored bytes only, so
   at equal bandwidth it never needs longer than the race, which also waits
   for the operator to compute the answer.
@@ -158,7 +173,10 @@ const source = new CachingSource(
   no report, a speculative bad read sending no report, a body without
   `elements`, the request time limit (a stalled host and a body that stalls
   after its headers go to the race; the caller's abort still aborts; the
-  default is the race's deadline; each request of the fill wait within
-  what is left of it; no fill asked with no wait left), the poll timings (`slotWaitMs` for the wait), the bounded wait,
+  default is the race's deadline; each answer of the fill wait beginning
+  within what is left of it, at several splits of headers, body and wait
+  left; a late tile's body read whole past the wait's end but within the
+  per-request limit; a poll's re-read bounded by the same deadline; no
+  request after an overshooting sleep; no fill asked with no wait left), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.
