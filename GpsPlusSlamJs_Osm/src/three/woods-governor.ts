@@ -26,7 +26,8 @@
  *   most `spikeLimit` times the average and credits the verdicts at most
  *   `gapMs` of time, so a pair of hitches cannot make a verdict while a
  *   device at a second a frame still reads as slow as it is (a fresh
- *   average starts at the raw frame). Each rung is judged by its own
+ *   average starts at the smaller of its first two counted frames, unlimited,
+ *   so a long frame there is not the start the limit then defends). Each rung is judged by its own
  *   frames: at a step the average starts afresh, so a device with few
  *   frames a verdict does not judge the new rung by the old one's, and the
  *   step's own frame (the woods re-sort their draw order) counts toward
@@ -130,6 +131,12 @@ export function createWoodsGovernor({
   /** A step was taken: the next counted frame starts the average afresh. */
   let fresh = false;
   /**
+   * The average was just started: a second counted frame shorter than the
+   * first starts it again, so a fresh average starts at the smaller of its
+   * first two frames and one long frame cannot be its start.
+   */
+  let seeding = false;
+  /**
    * A step was taken: the next interval is the step's own frame (the woods
    * re-sort their draw order), so it counts toward nothing.
    */
@@ -179,7 +186,6 @@ export function createWoodsGovernor({
   const stepUp = (at: number): void => {
     if (steps === 0) return;
     if (at - (leftAt[steps - 1] ?? Number.NEGATIVE_INFINITY) < restMs) return;
-    againAt = undefined;
     enter(steps - 1);
     // A rung re-entered from below: the rung under it bought its time, so a
     // slow verdict here is a new one rather than the woods not paying.
@@ -200,10 +206,15 @@ export function createWoodsGovernor({
     return alone ? undefined : ms;
   };
 
-  /** One counted interval into the average; a new rung starts it afresh. */
+  /**
+   * One counted interval into the average; a new rung starts it afresh, at
+   * the smaller of its first two counted frames.
+   */
   const smooth = (ms: number): number => {
+    const reseed = seeding && average !== undefined && ms < average;
+    seeding = average === undefined || fresh;
     const now =
-      average === undefined || fresh
+      average === undefined || fresh || reseed
         ? ms
         : average +
           (Math.min(ms, G.spikeLimit * average) - average) * G.smoothing;

@@ -391,11 +391,12 @@ describe("slow devices across frame times and woods shares", () => {
   // An upper bound on the time to the quarter: two verdicts of `slowS`, each
   // frame crediting at most `gapMs` (or its own length when shorter) and
   // lasting at most `full`, plus the first frame ignored as a lone gap, the
-  // frame after each of the two steps (it counts toward nothing) and one
+  // frame after the step to the half (it counts toward nothing; the one
+  // after the step to the quarter comes once the quarter is reached) and one
   // frame of rounding.
   const boundMs = (full: number): number =>
     ((2 * WOODS_GOVERNOR.slowS * 1000) / Math.min(full, WOODS_GOVERNOR.gapMs) +
-      4) *
+      3) *
     full;
   for (const full of [150, 300, 400, 600, 1000, 2000]) {
     for (const w of [0.35, 0.5, 0.65, 0.8]) {
@@ -495,14 +496,16 @@ describe("two long frames in a row on a device at or under the line", () => {
  * judges against, or the useless thinning would look worthwhile and stay
  * for good. Swept over second hitches of 0.4-30 s at 0.5 and 1 s into the
  * burst. What reverses it: cheaper woods' frames under the line (52 ms with
- * woods at 10 % thins to 49.4 ms, under 50, which is a real purchase).
+ * woods at 10 % thins to 49.4 ms, under 50, which is a real purchase), and a
+ * pair from 1.25 s on, inside the first verdict's window, which lifts the
+ * baseline itself (the accepted limit the sidecar names).
  */
 describe("a long-frame pair before the first verdict on cheap woods", () => {
   for (const full of [55, 60, 70]) {
     for (const w of [0.05, 0.1]) {
       it(`gives the woods back at ${full} ms with woods ${w * 100} % of the frame`, () => {
         for (const second of [400, 1_000, 5_000, 30_000]) {
-          for (const pairAt of [500, 1_000]) {
+          for (const pairAt of [250, 500, 750, 1_000]) {
             const governor = createWoodsGovernor();
             let at = 0;
             let injected = 0;
@@ -583,6 +586,25 @@ describe("the frame right after a step", () => {
         }
       }
     });
+    it(`changes no verdict with two long post-step frames at ${full} ms`, () => {
+      for (const half of [0.6, 0.7, 0.8, 0.84]) {
+        const byShare = (share: number): number =>
+          full * (share === 1 ? 1 : share === 0.5 ? half : 1.5 * half - 0.5);
+        const clean = run((share) => byShare(share), 60_000);
+        for (const longer of [1.1, 1.5, 2, 3, 5]) {
+          expect(
+            run(
+              (share, since) =>
+                since < 2 ? byShare(share) * longer : byShare(share),
+              60_000,
+            ),
+            `half ${half}, two post-step frames x${longer}`,
+          ).toEqual(
+            expect.objectContaining({ share: clean.share, mode: clean.mode }),
+          );
+        }
+      }
+    });
   }
   for (const full of [300, 600, 1000, 2000]) {
     it(`lets a slow device at ${full} ms reach the quarter with longer post-step frames`, () => {
@@ -644,5 +666,133 @@ describe("a quarter that climbs back to a slow half", () => {
         }
       });
     }
+  }
+});
+
+/**
+ * A fresh average (the session's first counted frame, and the first after
+ * every step) starts at the smaller of its first two counted frames, so one
+ * long frame there cannot be the start the spike limit then defends. A pair
+ * of hitches (300 ms, then 0.26-60 s) in the first chained intervals of a
+ * session, after none, one or two of the device's own frames, on devices at
+ * 16.7-49 ms never thins. What reverses it: starting
+ * at the first frame alone, which thins a 45 ms device from a second frame of
+ * 400 ms, 40 ms from 2 s and 33.3 ms from 5 s, and the half never comes back
+ * (it sits above `fastMs`).
+ */
+describe("a long-frame pair at the start of a session", () => {
+  for (const device of [16.7, 25, 1000 / 30, 40, 45, 49]) {
+    it(`does not thin at ${device.toFixed(1)} ms`, () => {
+      for (const second of [
+        260, 400, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000,
+      ]) {
+        for (const lead of [0, 1, 2]) {
+          const governor = createWoodsGovernor();
+          let at = 0;
+          governor.frame(at, true);
+          for (let i = 0; i < lead; i += 1) {
+            at += device;
+            governor.frame(at, true);
+          }
+          at += 300;
+          governor.frame(at, true);
+          at += second;
+          governor.frame(at, true);
+          const end = at + 120_000;
+          let thinned = false;
+          while (at < end) {
+            at += device;
+            governor.frame(at, true);
+            if (governor.state().share < 1) thinned = true;
+          }
+          expect(thinned, `second frame ${second} ms after ${lead}`).toBe(
+            false,
+          );
+        }
+      }
+    });
+  }
+});
+
+/**
+ * The same pair right after a step, from the second, third or fourth
+ * interval on (the first is the step's own and skipped): a half that pays (full 55-80 ms, the
+ * half at 35-48 ms) keeps paying; it never goes back to full woods for a
+ * rest. Swept over second hitches of 0.4-30 s. What reverses it: a fresh
+ * average starting at the 300 ms frame alone, which sent 30 of these 48 to
+ * full woods with a 300 s rest.
+ */
+describe("a long-frame pair right after a step", () => {
+  for (const full of [55, 60, 80]) {
+    it(`keeps a half that pays at ${full} ms`, () => {
+      for (const half of [35, 40, 45, 48]) {
+        for (const second of [400, 1_000, 5_000, 30_000]) {
+          for (const offset of [1, 2, 3]) {
+            const governor = createWoodsGovernor();
+            let at = 0;
+            let sinceStep = Number.POSITIVE_INFINITY;
+            let share = 1;
+            let pair = 0;
+            let rested = false;
+            governor.frame(at, true);
+            while (at < 120_000) {
+              let ms = share === 1 ? full : share === 0.5 ? half : half * 0.8;
+              if (pair === 0 && share === 0.5 && sinceStep === offset) pair = 1;
+              if (pair === 1) {
+                ms = 300;
+                pair = 2;
+              } else if (pair === 2) {
+                ms = second;
+                pair = 3;
+              }
+              at += ms;
+              sinceStep += 1;
+              governor.frame(at, true);
+              const state = governor.state();
+              if (state.mode === "resting") rested = true;
+              if (state.share !== share) {
+                share = state.share;
+                sinceStep = 0;
+              }
+            }
+            expect(
+              rested,
+              `half ${half} ms, second ${second} ms at ${offset}`,
+            ).toBe(false);
+          }
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A regular stutter whose mean is well over the line (every 2nd-4th frame
+ * 120-245 ms on a 16.7 or 25 ms device, a mean of 60 ms or more) thins: the
+ * spike limit must not hide it. What reverses it: a limit of 3 times the
+ * average, which leaves a 16.7 ms device with every 4th frame at 200 or
+ * 245 ms (a mean of 63 and 74 ms) at full woods for good.
+ */
+describe("a regular stutter over the line", () => {
+  for (const device of [16.7, 25]) {
+    it(`thins at ${device} ms with long frames every 2-4 frames`, () => {
+      for (const every of [2, 3, 4]) {
+        for (const long of [120, 200, 245]) {
+          const mean = (device * (every - 1) + long) / every;
+          if (mean < 60) continue;
+          const governor = createWoodsGovernor();
+          let at = 0;
+          let i = 0;
+          let thinned = false;
+          governor.frame(at, true);
+          while (at < 60_000 && !thinned) {
+            at += i++ % every === every - 1 ? long : device;
+            governor.frame(at, true);
+            thinned = governor.state().share < 1;
+          }
+          expect(thinned, `every ${every}, ${long} ms`).toBe(true);
+        }
+      }
+    });
   }
 });
