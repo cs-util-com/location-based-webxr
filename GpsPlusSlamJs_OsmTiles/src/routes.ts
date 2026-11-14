@@ -494,12 +494,6 @@ async function handleReport(
   if (strongEtag(named) !== existing.httpEtag) {
     return fillAnswer(200, { status: "stale" }, origin);
   }
-  // Only a report of the current object draws on the shared budget, so
-  // junk reports cannot spend it for the real ones.
-  const all = await deps.env.FILL_LIMITER?.limit({ key: ALL_REPORTS_KEY });
-  if (all !== undefined && !all.success) {
-    return fillAnswer(429, { status: "limited" }, origin, LIMIT_RETRY_AFTER_S);
-  }
   const now = deps.now();
   const checking = fillAnswer(202, { status: "checking" }, origin);
   const memo = await readVerified(deps.env.TILES, cell);
@@ -529,6 +523,8 @@ async function handleReport(
   if (backlog.filter((m) => m.cell !== cell).length >= MAX_OPEN_VERIFIES) {
     return fillAnswer(503, { status: "busy" }, origin, BUSY_RETRY_AFTER_S);
   }
+  const spent = await reportBudgetSpent(origin, deps);
+  if (spent !== undefined) return spent;
   return (await enqueueVerify(cell, existing.httpEtag, now, deps))
     ? checking
     : unavailable(origin);
@@ -572,8 +568,26 @@ async function answerReplace(
   if (pending.length >= maxPendingFills(deps.env)) {
     return fillAnswer(503, { status: "busy" }, origin, BUSY_RETRY_AFTER_S);
   }
+  const spent = await reportBudgetSpent(origin, deps);
+  if (spent !== undefined) return spent;
   const message = { cell, kind: "replace", at: now } as const;
   return (await enqueue(message, deps)) ? replacing : unavailable(origin);
+}
+
+/**
+ * Takes a token of the budget all reports share (`report:all`), right
+ * before a report's queue send: a `429` to answer when it is spent, else
+ * undefined. Only a report that queues work draws on it, so repeats that
+ * queue nothing (a verify already open, a cell in backoff) and junk
+ * reports cannot spend it for the real ones.
+ */
+async function reportBudgetSpent(
+  origin: string,
+  deps: RouteDeps,
+): Promise<Response | undefined> {
+  const all = await deps.env.FILL_LIMITER?.limit({ key: ALL_REPORTS_KEY });
+  if (all === undefined || all.success) return undefined;
+  return fillAnswer(429, { status: "limited" }, origin, LIMIT_RETRY_AFTER_S);
 }
 
 /** Marks the verify open and sends it; false (marker removed) on failure. */

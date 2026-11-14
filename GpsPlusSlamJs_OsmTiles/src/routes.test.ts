@@ -803,6 +803,76 @@ describe("POST a bad-tile report", () => {
     expect(limiter.keys).toEqual(["report:203.0.113.7"]);
   });
 
+  describe("the shared report budget is spent only on a queue send", () => {
+    // Why these tests matter: the `report:all` budget bounds what a burst
+    // of reports can queue. A repeat that queues nothing (a verify already
+    // open or running, a cell in backoff) must not drain it, or a client
+    // reporting one tile again and again would lock every other viewer's
+    // real report out of it.
+    const IP_KEY = "report:203.0.113.7";
+
+    async function stored() {
+      const ctx = setup();
+      await storeTile(ctx.bucket, "2026-11-11T09:00:00Z");
+      return { ...ctx, etag: await etagOf(ctx.bucket) };
+    }
+
+    it("a queued verify takes the token, its open repeat does not", async () => {
+      const { deps, limiter, queue, etag } = await stored();
+      await handleRequest(report(CELL, etag), deps);
+      expect(limiter.keys).toEqual([IP_KEY, "report:all"]);
+      const repeat = await handleRequest(report(CELL, etag), deps);
+      expect(await repeat.json()).toEqual({ status: "checking" });
+      expect(limiter.keys).toEqual([IP_KEY, "report:all", IP_KEY]);
+      expect(queue.sent).toHaveLength(1);
+    });
+
+    it("a repeat while a started verify may still run does not take it", async () => {
+      const { bucket, deps, limiter, etag } = await stored();
+      await writeVerified(bucket, CELL, etag, NOW - 60_000, "started");
+      const response = await handleRequest(report(CELL, etag), deps);
+      expect(await response.json()).toEqual({ status: "checking" });
+      expect(limiter.keys).toEqual([IP_KEY]);
+    });
+
+    it("a replace in either backoff, or already pending, does not take it", async () => {
+      for (const prepare of [
+        (bucket: FakeBucket) => writeLastReplace(bucket, CELL, NOW - 3_600_000),
+        (bucket: FakeBucket) =>
+          recordFailure(bucket, CELL, NOW - 60_000, "timeout"),
+        (bucket: FakeBucket) => markPending(bucket, CELL, NOW - 60_000),
+      ]) {
+        const { bucket, deps, limiter, queue, etag } = await stored();
+        await writeVerified(bucket, CELL, etag, NOW - 60_000);
+        await prepare(bucket);
+        const response = await handleRequest(report(CELL, etag), deps);
+        expect([503, 202]).toContain(response.status);
+        expect(limiter.keys).toEqual([IP_KEY]);
+        expect(queue.sent).toEqual([]);
+      }
+    });
+
+    it("a queued replace takes the token, and a spent budget sends nothing", async () => {
+      const { bucket, deps, limiter, queue, etag } = await stored();
+      await writeVerified(bucket, CELL, etag, NOW - 60_000);
+      limiter.denyKeys.add("report:all");
+      const refused = await handleRequest(report(CELL, etag), deps);
+      expect(refused.status).toBe(429);
+      expect(await refused.json()).toEqual({ status: "limited" });
+      expect(queue.sent).toEqual([]);
+      expect(await listPending(bucket, NOW)).toEqual([]);
+      limiter.denyKeys.clear();
+      const queued = await handleRequest(report(CELL, etag), deps);
+      expect(await queued.json()).toEqual({ status: "replacing" });
+      expect(limiter.keys).toEqual([
+        IP_KEY,
+        "report:all",
+        IP_KEY,
+        "report:all",
+      ]);
+    });
+  });
+
   it("answers backoff for a replace within 24 h of the cell's last one", async () => {
     // Why: a replace costs the operators a request and anyone can report,
     // so one cell is refetched this way at most once a day.
