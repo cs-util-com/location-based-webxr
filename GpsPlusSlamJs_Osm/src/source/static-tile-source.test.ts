@@ -454,15 +454,86 @@ describe("StaticTileSource", () => {
     expect(fallback.calls).toHaveLength(1);
     await source.fetchTile(TILE);
     expect(fallback.calls).toHaveLength(2);
-    // Each bad read is read once more past the browser cache; one report
-    // per tile per session, and no fill asked for a stored tile.
+    // The first bad read is read once more past the browser cache, later
+    // ones not; one report per tile per session, and no fill asked for a
+    // stored tile.
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
       `GET ${TILE_URL}`,
       `GET ${TILE_URL}`,
       `POST ${reportUrl}`,
       `GET ${TILE_URL}`,
-      `GET ${TILE_URL}`,
     ]);
+  });
+
+  it("re-reads a bad tile past the browser cache at most once per session, speculative reads included", async () => {
+    // Why this test matters: a re-read past the cache is a full download
+    // from the host. A bad tile that stays bad (its replace is bounded to
+    // once a day) would otherwise cost two downloads on every visit and
+    // every ring warm.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const stored = (): Response =>
+      new Response(partial, { status: 200, headers: { etag: '"e1"' } });
+    const reportUrl = `${REPORT_URL}?etag=${encodeURIComponent('"e1"')}`;
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [stored(), stored(), stored(), stored()],
+      [`POST ${reportUrl}`]: [json(202, { status: "checking" })],
+    });
+    await source.fetchTile(TILE, { speculative: true });
+    await source.fetchTile(TILE, { speculative: true });
+    await source.fetchTile(TILE);
+    expect(fallback.calls).toHaveLength(3);
+    expect(calls.map((c) => `${c.method} ${c.cache ?? ""}`)).toEqual([
+      "GET ",
+      "GET no-cache",
+      "GET ",
+      "GET ",
+      "POST ",
+    ]);
+  });
+
+  it("serves a stored answer whose remark is empty or whitespace", async () => {
+    // Why this test matters: an empty remark is no mark of a cut answer;
+    // refusing it would race and report a good tile.
+    for (const remark of ["", " \n "]) {
+      const body = JSON.stringify({ ...JSON.parse(PAYLOAD), remark });
+      const { source, fallback, calls } = setup({
+        [`GET ${TILE_URL}`]: [
+          new Response(body, { status: 200, headers: { etag: '"e1"' } }),
+        ],
+      });
+      const result = await source.fetchTile(TILE);
+      expect(result.sourceId).toBe("static:tiles.example.dev");
+      expect(fallback.calls).toEqual([]);
+      expect(calls).toHaveLength(1);
+    }
+  });
+
+  it("logs a refused stored remark on one bounded line", async () => {
+    // Why this test matters: the remark is what tells a reader why a stored
+    // tile was refused; the host's operator wrote it, so its length and
+    // line breaks are bounded before it reaches the console.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: `runtime error: Query timed out\n${"y".repeat(2_000)}`,
+    });
+    const stored = (): Response => new Response(partial, { status: 200 });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { source } = setup({
+        [`GET ${TILE_URL}`]: [stored(), stored()],
+      });
+      await source.fetchTile(TILE);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = String(warn.mock.calls[0]?.[0]);
+      expect(line).toMatch(/partial answer: runtime error: Query timed out y/);
+      expect(line).not.toMatch(/\n/);
+      expect(line.length).toBeLessThan(500);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("re-reads a bad tile once past the browser cache and serves the fresh copy without a report", async () => {
@@ -618,6 +689,47 @@ describe("StaticTileSource", () => {
     } finally {
       timeout.mockRestore();
     }
+  });
+
+  it("keeps every request of the fill wait within the time left of it", async () => {
+    // Why this test matters: the wait for a fill is bounded by maxWaitMs,
+    // but a poll started near its end with the full per-request limit could
+    // hold the tile far past it. The first read of a stored file is not
+    // part of the fill wait and keeps the plain limit.
+    const notFound = (): Response => new Response("nf", { status: 404 });
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      const { source, fallback } = setup(
+        {
+          [`GET ${TILE_URL}`]: Array.from({ length: 5 }, notFound),
+          [`POST ${FILL_URL}`]: [json(202, { status: "queued" })],
+        },
+        { maxWaitMs: 20_000 },
+      );
+      await source.fetchTile(TILE);
+      expect(fallback.calls).toHaveLength(1);
+      expect(timeout.mock.calls).toEqual([
+        [DEFAULT_REQUEST_TIMEOUT_MS],
+        [20_000],
+        [15_000],
+        [10_000],
+        [5_000],
+      ]);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("asks for no fill once the wait is spent before the ask", async () => {
+    // Why this test matters: a fill request with no time left would be
+    // cut at once; the tile goes to the race without it.
+    const { source, fallback, calls } = setup(
+      { [`GET ${TILE_URL}`]: [new Response("nf", { status: 404 })] },
+      { maxWaitMs: 0 },
+    );
+    await source.fetchTile(TILE);
+    expect(fallback.calls).toHaveLength(1);
+    expect(calls.map((c) => c.method)).toEqual(["GET"]);
   });
 
   it("stops polling at the bounded wait and falls back, never both at once", async () => {

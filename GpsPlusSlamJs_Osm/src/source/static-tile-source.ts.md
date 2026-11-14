@@ -20,7 +20,9 @@ the library default is off.
     finite.
   - `requestTimeoutMs?` - the limit on each request to the host, body
     included; default the race's `DEFAULT_REQUEST_TIMEOUT_MS` (45 s).
-    RangeError unless positive and finite.
+    RangeError unless positive and finite. Requests of the fill wait (the
+    fill ask, the read after a 200, each poll and its re-read) are limited
+    to the smaller of it and what is left of `maxWaitMs`.
 - `fetchTile(tile, { signal?, speculative? })` - `OsmDataSource`.
 - `sourceId` - `static:<host>`; `attribution` - the OSM attribution.
 - `OSM_TILES_BASE_URL` - the project's own host
@@ -32,7 +34,8 @@ the library default is off.
    - 200: the body is the Overpass answer (the host sends `Content-Encoding`,
      either the operator's gzip or the edge's own compression of a raw file,
      so the browser has decoded it). It must be a complete answer: JSON, an
-     object, an `elements` array and no top-level `remark` (Overpass's mark
+     object, an `elements` array and no top-level `remark` with content
+     (an empty or whitespace one counts as none; Overpass's mark
      of a partial answer after a timeout or memory abort; the host stores an
      operator's gzip answer on its head alone, so the reader is where a
      partial one is caught; the host must therefore never be deployed
@@ -40,9 +43,13 @@ the library default is off.
      order"). A bad file is read once more with
      `cache: "no-cache"`, since the browser's HTTP cache may hold an older
      copy than the host now stores (the host replaces bad tiles); a good
-     copy is served, a 404 continues as below. When that copy is bad too,
-     the tile goes to `fallback` with no refusal remembered, and the host
-     is sent one fire-and-forget
+     copy is served, a 404 continues as below. That re-read happens at most
+     once per tile per session, speculative reads included: a tile that
+     stays bad (its replace is bounded to once a day) would otherwise cost
+     two downloads on every read. When the file is still bad, one
+     `console.warn` line names why (a remark bounded to one line of 200
+     characters), the tile goes to `fallback` with no refusal remembered,
+     and the host is sent one fire-and-forget
      `POST /report/v{schema}/{tile}?etag=<the re-read's ETag>` per tile per
      session (none without an ETag, none for a speculative read; a failed
      report is ignored). The host
@@ -64,7 +71,10 @@ the library default is off.
      this one. Above 0 the tile goes to `fallback` at once with no refusal
      remembered (each fill takes 30-75 s, so the wait would run out). At 0
      (or unsaid) read again every `pollIntervalMs` while the next look still
-     fits inside `maxWaitMs` from the start.
+     fits inside `maxWaitMs` from the start (a look that would start
+     with nothing left is not made). With no wait left before the ask
+     (`maxWaitMs` 0) no fill is asked for and the tile goes to
+     `fallback`, as when the wait is spent.
    - 503 `{status:"backoff"}`: this cell's fill failed, was killed or is
      running; the tile goes to `fallback` with no refusal remembered, since
      it says nothing about other cells.
@@ -103,7 +113,10 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
   not slower than the race it replaces. The race depends on Overpass load,
   so the comparison is provisional.
 - **Every request to the host has a time limit** (`requestTimeoutMs`,
-  composed with the caller's signal, which still aborts hard). The default
+  composed with the caller's signal, which still aborts hard), and a request
+  of the fill wait never outlasts the wait: its limit is the smaller of
+  `requestTimeoutMs` and the time left of `maxWaitMs`. The first read of
+  a stored file is not part of the fill wait and keeps the plain limit. The default
   is the race's per-attempt deadline: the host sends stored bytes only, so
   at equal bandwidth it never needs longer than the race, which also waits
   for the operator to compute the answer.
@@ -138,10 +151,14 @@ const source = new CachingSource(
   and never for young data or a speculative read, a failed ask harmless),
   bodies whose `cancel()` rejects, an unreachable host, a file that is not
   JSON, a partial answer (`remark`) re-read past the browser cache, raced
-  and reported once with its ETag, a fresh copy on the re-read served with
+  and reported once with its ETag, the re-read past the cache made once
+  per tile per session (speculative reads included), an empty or
+  whitespace remark served, the refused remark logged on one bounded line,
+  a fresh copy on the re-read served with
   no report, a speculative bad read sending no report, a body without
   `elements`, the request time limit (a stalled host and a body that stalls
   after its headers go to the race; the caller's abort still aborts; the
-  default is the race's deadline), the poll timings (`slotWaitMs` for the wait), the bounded wait,
+  default is the race's deadline; each request of the fill wait within
+  what is left of it; no fill asked with no wait left), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.

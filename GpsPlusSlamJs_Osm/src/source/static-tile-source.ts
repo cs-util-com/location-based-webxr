@@ -26,7 +26,7 @@ import { abortError, sleep } from "./backoff.js";
 import { composeSignals } from "./compose-signals.js";
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
-  isPartialOverpassAnswer,
+  partialOverpassRemark,
 } from "./overpass-source.js";
 
 /**
@@ -115,8 +115,9 @@ function checkStored(text: string, tile: string): object | BadStoredTile {
   if (!Array.isArray((payload as { elements?: unknown }).elements)) {
     return new BadStoredTile(`tile ${tile} has no elements array`);
   }
-  if (isPartialOverpassAnswer(payload)) {
-    return new BadStoredTile(`tile ${tile} is a partial answer (remark)`);
+  const remark = partialOverpassRemark(payload);
+  if (remark !== undefined) {
+    return new BadStoredTile(`tile ${tile} is a partial answer: ${remark}`);
   }
   return payload;
 }
@@ -193,6 +194,8 @@ export class StaticTileSource implements OsmDataSource {
   private readonly refreshAsked = new Set<string>();
   /** Tiles already reported bad in this session. */
   private readonly reported = new Set<string>();
+  /** Tiles already re-read past the browser cache in this session. */
+  private readonly rereadPastCache = new Set<string>();
 
   constructor(options: StaticTileSourceOptions) {
     this.origin = requireBaseUrl(options.baseUrl);
@@ -267,17 +270,24 @@ export class StaticTileSource implements OsmDataSource {
   }
 
   /**
-   * One request to the host under the time limit; the caller's signal, when
-   * given, still aborts it. The limit covers the body read too.
+   * One request to the host under the time limit (`limitMs`, at most the
+   * per-request limit); the caller's signal, when given, still aborts it.
+   * The limit covers the body read too.
    */
   private request(
     url: string,
     signal: AbortSignal | undefined,
-    init: { readonly method?: "POST"; readonly cache?: RequestCache } = {},
+    init: {
+      readonly method?: "POST";
+      readonly cache?: RequestCache;
+      readonly limitMs?: number;
+    } = {},
   ): Promise<Response> {
     const limited = composeSignals(
       signal,
-      AbortSignal.timeout(this.requestTimeoutMs),
+      AbortSignal.timeout(
+        Math.min(this.requestTimeoutMs, init.limitMs ?? Infinity),
+      ),
     );
     return this.fetchImpl(url, {
       ...(init.method === undefined ? {} : { method: init.method }),
@@ -293,24 +303,41 @@ export class StaticTileSource implements OsmDataSource {
     speculative: boolean,
   ): Promise<OsmTileResult> {
     const started = this.now();
+    // The first read of a stored file is not part of the fill wait: it
+    // keeps the plain limit, so a wait of 0 still reads stored tiles.
     const first = await this.read(tile, signal, started, speculative);
     if (first !== undefined) return first;
     if (readOnly) throw new HostSkipped(`tile ${tile} not stored`);
-    if ((await this.askForFill(tile, signal)) === "present") {
-      const ready = await this.read(tile, signal, started, speculative);
+    const left = this.waitLeft(started);
+    if (left <= 0) throw new HostDeclined(`no wait left to fill ${tile}`);
+    if ((await this.askForFill(tile, signal, left)) === "present") {
+      const ready = await this.read(
+        tile,
+        signal,
+        started,
+        speculative,
+        this.waitLeft(started),
+      );
       if (ready !== undefined) return ready;
       throw new HostDeclined(`tile ${tile} announced but missing`);
     }
     return this.waitForFill(tile, signal, started);
   }
 
+  /** What is left of the fill wait that began at `started`, in ms. */
+  private waitLeft(started: number): number {
+    return started + this.maxWaitMs - this.now();
+  }
+
   /** `present` (200), `queued` (202, nothing ahead); a throw otherwise. */
   private async askForFill(
     tile: string,
     signal: AbortSignal | undefined,
+    limitMs: number,
   ): Promise<"present" | "queued"> {
     const fill = await this.request(this.fillUrl(tile), signal, {
       method: "POST",
+      limitMs,
     });
     if (fill.status === 200) {
       await discardBody(fill);
@@ -333,15 +360,25 @@ export class StaticTileSource implements OsmDataSource {
     throw new HostDeclined(`fill answered ${fill.status}`);
   }
 
-  /** Looks again for a queued tile until the bounded wait is spent. */
+  /**
+   * Looks again for a queued tile until the bounded wait is spent; each
+   * look is limited to what is left of the wait, and none starts with
+   * nothing left.
+   */
   private async waitForFill(
     tile: string,
     signal: AbortSignal | undefined,
     started: number,
   ): Promise<OsmTileResult> {
-    while (this.now() - started + this.pollIntervalMs <= this.maxWaitMs) {
+    while (this.now() - started + this.pollIntervalMs < this.maxWaitMs) {
       await this.sleepImpl(this.pollIntervalMs, signal);
-      const polled = await this.read(tile, signal, started, false);
+      const polled = await this.read(
+        tile,
+        signal,
+        started,
+        false,
+        this.waitLeft(started),
+      );
       if (polled !== undefined) return polled;
     }
     throw new HostDeclined(
@@ -353,34 +390,44 @@ export class StaticTileSource implements OsmDataSource {
    * The stored tile, `undefined` on a 404, a throw on anything else.
    * `started` is when the tile was first asked for: the time before this read
    * (the wait for the host's fill) is reported as `slotWaitMs`, and only this
-   * read's own round trip as `transportMs`.
+   * read's own round trip as `transportMs`. `limitMs` bounds each of its
+   * requests below the per-request limit.
    */
   private async read(
     tile: string,
     signal: AbortSignal | undefined,
     started: number,
     speculative: boolean,
+    limitMs?: number,
   ): Promise<OsmTileResult | undefined> {
     const readStart = this.now();
-    let stored = await this.readStored(tile, signal);
+    let stored = await this.readStored(tile, signal, { limitMs });
     if (stored === undefined) return undefined;
     let transportMs = elapsedMs(readStart, this.now());
     let decodeStart = this.now();
     let checked = checkStored(stored.text, tile);
-    if (checked instanceof BadStoredTile) {
-      // The browser may hold an older copy in its HTTP cache than the host
-      // now stores (the host replaces bad tiles): read once more past that
-      // cache before calling the tile bad or reporting it.
-      stored = await this.readStored(tile, signal, "no-cache");
+    // The browser may hold an older copy in its HTTP cache than the host
+    // now stores (the host replaces bad tiles): read once more past that
+    // cache before calling the tile bad, once per tile per session, as a
+    // tile that stays bad would cost two downloads on every read.
+    if (checked instanceof BadStoredTile && !this.rereadPastCache.has(tile)) {
+      this.rereadPastCache.add(tile);
+      stored = await this.readStored(tile, signal, {
+        cache: "no-cache",
+        limitMs,
+      });
       if (stored === undefined) return undefined;
       transportMs = elapsedMs(readStart, this.now());
       decodeStart = this.now();
       checked = checkStored(stored.text, tile);
-      if (checked instanceof BadStoredTile) {
-        // A speculative read asks the host for nothing, a report included.
-        if (!speculative) this.reportBad(tile, stored.etag);
-        throw checked;
-      }
+    }
+    if (checked instanceof BadStoredTile) {
+      // The one diagnostic of a refused stored file; the race hides it.
+      /* eslint-disable-next-line no-console */
+      console.warn(`StaticTileSource: ${checked.message}`);
+      // A speculative read asks the host for nothing, a report included.
+      if (!speculative) this.reportBad(tile, stored.etag);
+      throw checked;
     }
     const payload = checked;
     const decodeMs = elapsedMs(decodeStart, this.now());
@@ -416,15 +463,17 @@ export class StaticTileSource implements OsmDataSource {
   private async readStored(
     tile: string,
     signal: AbortSignal | undefined,
-    cache?: RequestCache,
+    {
+      cache,
+      limitMs,
+    }: { readonly cache?: RequestCache; readonly limitMs?: number | undefined },
   ): Promise<
     { readonly text: string; readonly etag: string | null } | undefined
   > {
-    const response = await this.request(
-      this.tileUrl(tile),
-      signal,
-      cache === undefined ? {} : { cache },
-    );
+    const response = await this.request(this.tileUrl(tile), signal, {
+      ...(cache === undefined ? {} : { cache }),
+      ...(limitMs === undefined ? {} : { limitMs }),
+    });
     if (response.status === 404) {
       await discardBody(response);
       return undefined;
