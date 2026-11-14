@@ -1042,17 +1042,27 @@ for (const view of TOAST_VIEWS) {
       ]);
       await expect.poll(() => revision(page)).toBe(steps + 1);
       const moved = await wholeTour(page);
-      await page.keyboard.press("Control+z");
-      await page.keyboard.press("Control+y");
-      await expect.poll(() => wholeTour(page)).toEqual(moved);
-      await expect(
-        page.locator(".toast", { hasText: /^(Undone|Redone)/ }),
-      ).toHaveCount(2);
+      // The undo and the redo make the two toasts afresh before each check
+      // below, so neither rests on their linger outlasting a slow run. At
+      // least two: the pair made for the first check may still show.
+      const twoToasts = async () => {
+        await page.keyboard.press("Control+z");
+        await page.keyboard.press("Control+y");
+        await expect.poll(() => wholeTour(page)).toEqual(moved);
+        await expect
+          .poll(() =>
+            page.locator(".toast", { hasText: /^(Undone|Redone)/ }).count(),
+          )
+          .toBeGreaterThanOrEqual(2);
+      };
+      await twoToasts();
       // Where the gizmo stands now: its ring round the pivot and its knob.
       middle = await handleAt(page, "middle");
       const knob = await handleAt(page, "knob");
       const reach = Math.hypot(knob.x - middle.x, knob.y - middle.y) + 12;
-      for (const t of await toastBoxes(page)) {
+      const toasts = await toastBoxes(page);
+      expect(toasts.length, "the toasts still show").toBeGreaterThanOrEqual(2);
+      for (const t of toasts) {
         const nx = Math.max(t.left, Math.min(middle.x, t.right));
         const ny = Math.max(t.top, Math.min(middle.y, t.bottom));
         expect(
@@ -1061,15 +1071,13 @@ for (const view of TOAST_VIEWS) {
         ).toBeGreaterThan(reach);
       }
       // A press on the gizmo while they show is its step.
+      await twoToasts();
       steps = await revision(page);
       await pointer(page, [
         middle,
         ...line(middle, { x: middle.x - 40, y: middle.y - 15 }),
       ]);
       await expect.poll(() => revision(page)).toBe(steps + 1);
-      await expect(
-        page.locator(".toast", { hasText: /^(Undone|Redone)/ }),
-      ).not.toHaveCount(0);
       await capture(
         page,
         test.info().outputPath(`folder-toasts-${view.name}.png`),

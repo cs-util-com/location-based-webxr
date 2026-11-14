@@ -300,6 +300,30 @@ describe("the tree's story commands", () => {
   }, 30_000);
 });
 
+describe("the tree's story commands, a recorded voice", () => {
+  // Why: a run the property found (seed -1791953786, path
+  // "31:4:5:4:7:9:17"). A long text added to a story, moved out of it, a
+  // voice recorded for it, then that voice undone: the undo gives back
+  // the tour before the voice, and the new audio file stays listed only
+  // because the redo step still names it (a redo after a save needs it).
+  it("an undo of a voice gives back the tour, its file kept for the redo", async () => {
+    const { session, manifest } = await opened();
+    // The checks are inside the helper; resolving is the pass.
+    await expect(
+      commandsKeepTheTour(
+        session,
+        manifest,
+      )([
+        { kind: "addChild", at: 0, make: "longText", place: 0 },
+        { kind: "move", at: 1, to: 0 },
+        { kind: "voice", at: 0 },
+        { kind: "undo" },
+      ]),
+    ).resolves.toBeUndefined();
+    await session.close();
+  }, 30_000);
+});
+
 /** Drives `commands` through a fresh editor session and draft, checking
  *  after every step and after a draft reload (the property above);
  *  `afterStep` sees the tour after each command. */
@@ -489,7 +513,28 @@ function commandsKeepTheTour(
         past.push(was);
         future.length = 0;
       }
-      expect(now).toEqual(expected);
+      // Exactly, but for the files only a REDO step still names
+      // (`historyAssetIds`): a save after the undo keeps them, so a redo
+      // across that save finds its file (a voice recorded, then undone).
+      // The tour itself names none of them, and nothing else differs.
+      const redoOnly = historyAssetIds({
+        ...store.getState().tourDocument,
+        past: [],
+      });
+      const expectedIds = new Set((expected?.assets ?? []).map((a) => a.id));
+      const named = new Set(withReferencedAssets(now).assets.map((a) => a.id));
+      for (const asset of now.assets) {
+        if (expectedIds.has(asset.id)) continue;
+        expect(
+          { id: asset.id, redoOnly: redoOnly.has(asset.id) },
+          `${c.kind} left a file`,
+        ).toEqual({ id: asset.id, redoOnly: true });
+        expect(named.has(asset.id), `${c.kind} names ${asset.id}`).toBe(false);
+      }
+      expect({
+        ...now,
+        assets: now.assets.filter((a) => expectedIds.has(a.id)),
+      }).toEqual(expected);
       expect(() =>
         parseTourManifest(JSON.parse(serializeTourManifest(now))),
       ).not.toThrow();

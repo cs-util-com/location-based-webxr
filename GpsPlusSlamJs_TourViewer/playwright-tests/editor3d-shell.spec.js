@@ -754,6 +754,9 @@ test("the details are never under the shelf while it shows or goes", async ({
     { width: 844, height: 390 },
   ]) {
     await page.setViewportSize(size);
+    // The layout is rebuilt by its ResizeObserver (844x390 is a phone's
+    // form): a tab pressed before that lands on the layout being replaced.
+    await dockSettled(page, size.width);
     await expect(page.locator("#inspector-body")).toBeVisible();
     await expect(page.locator('#shell-shelf [data-act="fold"]')).toBeHidden();
     for (const tab of ["Files", "Details"]) {
@@ -1542,6 +1545,21 @@ test("a tap on the folded list's rail opens it with its stations shown", async (
     "false",
   );
   await expect(card(page, "The old gate")).toHaveCount(0);
+  // The folded rail's List tab is a target too, and it also only
+  // unfolds: the Stations section stays as it was, closed and then open.
+  const listTab = page.locator('.dock-host .dock-tab[data-panel="list"]');
+  for (const expanded of ["false", "true"]) {
+    if (expanded === "true") await page.locator("#tree-stations").click();
+    await page.locator("#tree-fold").click();
+    await expect(page.locator("#shell-tree")).toHaveClass(/\bcollapsed\b/);
+    await listTab.click();
+    await expect(page.locator("#shell-tree")).not.toHaveClass(/\bcollapsed\b/);
+    await expect(
+      page.locator("#tree-stations"),
+      `Stations ${expanded === "true" ? "open" : "closed"} before the fold`,
+    ).toHaveAttribute("aria-expanded", expanded);
+  }
+  await expect(card(page, "The old gate")).toBeVisible();
 });
 
 test("the tour's name carries a pen that opens its details, with no Details button and no mark", async ({
