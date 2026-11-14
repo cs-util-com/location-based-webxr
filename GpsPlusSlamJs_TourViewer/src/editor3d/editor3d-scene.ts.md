@@ -133,7 +133,10 @@ keys), and writes only through the page's `edits`.
   sun light.
 - **Reads the tour, writes through the page:** the tour is what a save
   would write now (`manifestToWrite`), read again only when the document
-  changes (never per frame); the selection is read each frame for near-K.
+  changes (never per frame); the selection is read each frame for near-K
+  and for the open story (`openStoryOf`: its posed entries are drawn while
+  the story or one of its entries is selected; the globe view does the
+  same).
   The store hears a gesture's start and end, nothing per frame; a finished
   gesture is one `edits.commit`.
 - **Flights:** while one runs it places the orbit each frame in place of

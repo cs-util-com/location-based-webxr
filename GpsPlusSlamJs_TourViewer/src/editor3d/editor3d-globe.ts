@@ -121,6 +121,7 @@ import type {
 } from "./editor3d-scene.js";
 import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
 import { createSceneEditing } from "./editor3d-editing.js";
+import { openStoryOf } from "../placement/placeables.js";
 import {
   createBillboard,
   createCodeFace,
@@ -1172,6 +1173,7 @@ export async function openGlobeEditor(
       layer.update({
         centre: cameraTour,
         selectedStation,
+        openStory: openStoryOf(tourNow, ui.selected),
         stationSelected: ui.selected?.startsWith(STATION) ?? false,
         selected: ui.selected,
         standing,

@@ -138,6 +138,7 @@ import {
 } from "./editor-draft.js";
 import { createPhotoCopies } from "./photo-copy.js";
 import { savedToastWords } from "./save-toast.js";
+import { placeToasts, toastSpot } from "./toast-spot.js";
 import { wireDetailsDialog } from "./details-dialog.js";
 import {
   DRIVE_MOUNT_TIP_SHOWN,
@@ -970,6 +971,19 @@ function toast(
       t.remove();
     }, holdMs);
   }
+  // In a short window, at the 3D view's foot, clear of its gizmo.
+  placeToasts(
+    toasts,
+    document.body.dataset.view === "3d"
+      ? toastSpot(
+          document.querySelector("#view3d canvas")?.getBoundingClientRect() ??
+            null,
+          document.getElementById("map-controls")?.getBoundingClientRect() ??
+            null,
+          { width: window.innerWidth, height: window.innerHeight },
+        )
+      : null,
+  );
   toasts.append(t);
   return t;
 }

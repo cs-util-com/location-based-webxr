@@ -84,6 +84,16 @@ async function foldersTour() {
                 pose: { position: [2, 1.5, 0], rotation: [0, 0, 0, 1] },
                 advance: { mode: "tap" },
               },
+              {
+                id: "e2",
+                kind: "shortText",
+                view: "pin",
+                caption: "Entry e2",
+                createdAtIso: "2026-11-10T09:00:00.000Z",
+                // 4 m west of the station, clear of the free pins.
+                pose: { position: [0, 1.5, -4], rotation: [0, 0, 0, 1] },
+                advance: { mode: "tap" },
+              },
             ],
           },
           {
@@ -349,6 +359,75 @@ test("a folder dropped onto a story, or a folder's item, says Not possible here 
     expect(await revision(page)).toBe(start);
     expect(await groups(page)).toEqual({ Yard: ["y"], free: ["p", "q", "r"] });
   }
+});
+
+/**
+ * What the 3D view picks at the point where entry e2 stands (null: off
+ * the screen).
+ * @param {import("@playwright/test").Page} page
+ */
+function pickAtE2(page) {
+  return page.evaluate(() => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const at = hook.view3dScreenOf("e2");
+    return at === null ? null : (hook.view3dUnder(at[0], at[1])?.pick ?? null);
+  });
+}
+
+// Why: a story's scene is seen where it stands while the story is open
+// (chosen in the tree, or one of its entries), and only then; picking an
+// entry in the 3D view chooses it in the tree. Its entries take no
+// handle: a move the story editor cannot save yet is not offered.
+test("an open story's posed entry shows in the 3D view, is chosen there, and takes no handle", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFolders(page, await foldersTour());
+  const card = await unfold(page);
+  const start = await revision(page);
+  const selected = () =>
+    page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
+  const settled = () =>
+    expect
+      .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
+      .toBe(false);
+
+  // Closed: nothing of the story stands there.
+  await card.locator('.kid[data-select="p"]').click();
+  await expect.poll(selected).toBe("p");
+  await settled();
+  expect(await pickAtE2(page)).not.toBe("e2");
+
+  await card.locator('.folder[data-story="s1"] button.fname').click();
+  await expect.poll(selected).toBe("story:s1");
+  await settled();
+  await expect.poll(() => pickAtE2(page)).toBe("e2");
+
+  // Chosen in the 3D view, it is chosen in the tree, with no handle.
+  const at = await shownAt(page, () =>
+    page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.view3dScreenOf("e2"),
+    ),
+  );
+  await page.mouse.click(at.x, at.y);
+  await expect.poll(selected).toBe("e2");
+  await settled();
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.view3dHandle("middle"),
+    ),
+  ).toBeNull();
+  // Still drawn while its entry is chosen.
+  await expect.poll(() => pickAtE2(page)).toBe("e2");
+  await capture(page, "editor3d-story-entry-open");
+
+  // Another item chosen: the story closes, and nothing was written.
+  await card.locator('.kid[data-select="p"]').click();
+  await expect.poll(selected).toBe("p");
+  await settled();
+  await expect.poll(() => pickAtE2(page)).not.toBe("e2");
+  expect(await revision(page)).toBe(start);
 });
 
 /**
@@ -909,5 +988,87 @@ for (const view of VIEWS) {
       page,
       test.info().outputPath(`folder-gizmo-${view.name}.png`),
     );
+  });
+}
+
+/**
+ * The toasts' boxes on the page, each with its words.
+ * @param {import("@playwright/test").Page} page
+ */
+function toastBoxes(page) {
+  return page.locator("#toasts .toast").evaluateAll((all) =>
+    all.map((t) => ({
+      ...t.getBoundingClientRect().toJSON(),
+      text: t.textContent,
+    })),
+  );
+}
+
+// Why: an undo or a redo says so in a toast for six seconds, and the
+// next gesture follows at once. On a short screen (a phone held sideways)
+// the toasts stood over the middle of the 3D view, where the gizmo of the
+// selection stands, and took the press meant for it. The toasts must keep
+// clear of the gizmo - its ring and its turn knob - and a press on the
+// gizmo while they show must still make its step, by mouse and by touch.
+const TOAST_VIEWS = [
+  { name: "sideways", width: 844, height: 390, touch: true },
+  { name: "sideways-mouse", width: 844, height: 390, touch: false },
+  { name: "phone", width: 390, height: 844, touch: true },
+  { name: "desktop", width: 1280, height: 800, touch: false },
+];
+
+for (const view of TOAST_VIEWS) {
+  test.describe(`toasts at ${view.name}`, () => {
+    test.use({ hasTouch: view.touch });
+    test(`the undo and redo toasts keep clear of the gizmo, which still takes a press while they show (${view.name})`, async ({
+      page,
+    }) => {
+      test.slow();
+      await page.setViewportSize({ width: view.width, height: view.height });
+      await openFolders(page, await foldersTour());
+      await selectYard(page);
+      const pointer = view.touch ? byTouch : byMouse;
+      // One move, undone and redone: two toasts stand on the page.
+      let steps = await revision(page);
+      let middle = await handleAt(page, "middle");
+      await pointer(page, [
+        middle,
+        ...line(middle, { x: middle.x + 40, y: middle.y + 15 }),
+      ]);
+      await expect.poll(() => revision(page)).toBe(steps + 1);
+      const moved = await wholeTour(page);
+      await page.keyboard.press("Control+z");
+      await page.keyboard.press("Control+y");
+      await expect.poll(() => wholeTour(page)).toEqual(moved);
+      await expect(
+        page.locator(".toast", { hasText: /^(Undone|Redone)/ }),
+      ).toHaveCount(2);
+      // Where the gizmo stands now: its ring round the pivot and its knob.
+      middle = await handleAt(page, "middle");
+      const knob = await handleAt(page, "knob");
+      const reach = Math.hypot(knob.x - middle.x, knob.y - middle.y) + 12;
+      for (const t of await toastBoxes(page)) {
+        const nx = Math.max(t.left, Math.min(middle.x, t.right));
+        const ny = Math.max(t.top, Math.min(middle.y, t.bottom));
+        expect(
+          Math.hypot(nx - middle.x, ny - middle.y),
+          `the toast "${t.text}" clear of the gizmo`,
+        ).toBeGreaterThan(reach);
+      }
+      // A press on the gizmo while they show is its step.
+      steps = await revision(page);
+      await pointer(page, [
+        middle,
+        ...line(middle, { x: middle.x - 40, y: middle.y - 15 }),
+      ]);
+      await expect.poll(() => revision(page)).toBe(steps + 1);
+      await expect(
+        page.locator(".toast", { hasText: /^(Undone|Redone)/ }),
+      ).not.toHaveCount(0);
+      await capture(
+        page,
+        test.info().outputPath(`folder-toasts-${view.name}.png`),
+      );
+    });
   });
 }

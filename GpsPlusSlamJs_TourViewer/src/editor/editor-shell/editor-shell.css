@@ -3825,6 +3825,20 @@ body[data-view="3d"] #toasts {
   bottom: calc(var(--s-bar-h) + var(--s-panel-h, 0px) + 64px);
 }
 
+/* In a short window (a phone held sideways) that place is the view's
+ * middle, where the selection's gizmo stands: the toasts then stand at the
+ * view's bottom-left corner beside the map controls (`toast-spot.ts`
+ * writes the place), the newest alone, so the stack never climbs back up
+ * over the gizmo. An older toast shows again once the newer ones go. */
+#toasts.in-view {
+  align-items: flex-start;
+  transform: none;
+}
+
+#toasts.in-view .toast:not(:last-child) {
+  display: none;
+}
+
 .backdrop :is(.btn, .drop, .cover-choice),
 #view3d-failed .btn,
 .backdrop .link-row input,

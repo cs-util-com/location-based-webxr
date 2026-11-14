@@ -29,11 +29,17 @@ import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   isTourBlockChild,
   isTourFolder,
+  isTourStoryBlock,
+  tourStories,
   type TourFolder,
   type TourStationChild,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { FOLDER_PREFIX, STATION_PREFIX } from "../editor/editor-model.js";
+import {
+  FOLDER_PREFIX,
+  STATION_PREFIX,
+  STORY_PREFIX,
+} from "../editor/editor-model.js";
 import {
   CONTAINER_PLACEMENT,
   STATION_PLACEMENT,
@@ -279,6 +285,54 @@ export function placeableOf(
   for (const station of tour.stations) {
     const found = posedBlocks(station).find((p) => p.selection === selection);
     if (found !== undefined) return found;
+  }
+  return null;
+}
+
+/**
+ * The posed entries of `station`'s story `storyId`, in its order, each
+ * with the placeable it would be: what the 3D view draws of the open
+ * story (`openStoryOf`). A card, a choice and a quiz are left out (the
+ * world shows none of them); a story the station lacks has none.
+ *
+ * Read-only on purpose: `placeablesOf` and `placeableOf` never return
+ * them, so the gizmo offers no handle on a story's entry. Moving one
+ * comes with the path that saves a story's edits.
+ */
+export function storyEntries(
+  station: TourStation,
+  storyId: string,
+): readonly PosedBlock[] {
+  const story = tourStories(station).find((s) => s.id === storyId);
+  if (story === undefined) return [];
+  // A story stands only at a station's top: its entries' poses are in
+  // the station's frame.
+  return story.children.flatMap((child): PosedBlock[] => {
+    if (!isTourStoryBlock(child)) return [];
+    const place = blockPlaceable(child, station, []);
+    return place === null ? [] : [{ block: child, place }];
+  });
+}
+
+/** The story the page's `selection` opens: the story itself
+ *  (`story:<id>`) or the story holding the chosen entry; null for any
+ *  other selection, or none. */
+export function openStoryOf(
+  tour: { readonly stations: readonly TourStation[] } | null,
+  selection: string | null,
+): string | null {
+  if (tour === null || selection === null) return null;
+  const named = selection.startsWith(STORY_PREFIX)
+    ? selection.slice(STORY_PREFIX.length)
+    : null;
+  for (const station of tour.stations) {
+    for (const story of tourStories(station)) {
+      const opens =
+        named === null
+          ? story.children.some((c) => c.id === selection)
+          : story.id === named;
+      if (opens) return story.id;
+    }
   }
   return null;
 }

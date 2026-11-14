@@ -27,6 +27,8 @@ ray (`pick`).
   `editorDrawings` (`editor3d-drawings.ts`), so neither lacks one.
 - `StationsLayerView` - per frame: `centre` (the orbit's centre in the
   world), `selectedStation` (the selected station, or the selected item's),
+  `openStory` (optional: the story whose posed entries are drawn,
+  `openStoryOf` of the selection; absent or null, none),
   `stationSelected` (the selection is that station itself), `standing`
   (`morphStanding`), `camera` (the camera's position in the world),
   `viewportPx` and `fovDeg` (the view's height in CSS px and the camera's
@@ -86,7 +88,8 @@ standing`). A distance, size or focal length that is not a positive
     `itemPointOf(id)` (an item's place, its station drawn or not; any free
     block, a part from the world door too, which a click selects and the
     view flies to although no gesture moves it: only world blocks get the
-    gizmo),
+    gizmo; a story's posed entry too, located the same way, never a
+    gesture's target),
     `codePointOf(levelId)` (a code's centre); each null for an id the
     tour does not have. `pointOf`, `itemPointOf` and `codePointOf` are in
     the layer's frame (`deps.parent`'s), see the invariant below;
@@ -141,6 +144,20 @@ standing`). A distance, size or focal length that is not a positive
   outline (`folder-outline.ts`) measures its boxes around these.
 
 ## Invariants & assumptions
+
+- The open story: a near station holding `view.openStory` draws that
+  story's posed entries (`storyEntries`) in their views' look, rendered
+  apart from its free items (`renderStationBlocks` into the same root),
+  so opening, switching and closing a story render nothing else anew and
+  load no free item again. Their photos join the morph and their parts
+  the frame's tick; closing the story takes both out and disposes the
+  drawing; a station freed (left the near set, changed, dropped) frees
+  its story with it; a story that closed while it loaded is disposed when
+  it arrives, never shown. They pick as their ids (`userData.objectId`),
+  so a click selects the entry in the tree, and they take no drag:
+  `placeableOf` gives no placeable for a story's entry, so the gizmo
+  offers no handle. Moving a story's entry comes with the save path for a
+  story's edits, after the story editor work lands.
 
 - **Heights:** each station's root is `pointRootMatrix` at its own point
   (drawn N lower than its ellipsoidal `alt`), its group at (0, alt, 0) as
@@ -310,7 +327,12 @@ left as it lies; a code laid flat drawn its size on screen from high
 above with no cap (its gap with it, picked at its grown size, its corners
 for the page's measure, its printed size near or tilted up) and for the
 view's own height; where an item and a
-code stand, drawn or not; a station's and an item's (a model's) preview
+code stand, drawn or not; the open story's posed entries drawn apart
+from the free items (no free item loaded again), where they stand,
+picked, located, laid flat with the morph, a card left out, nothing
+drawn for a story of another station, and freed when the story closes;
+a story closed while it loaded never shown, and one freed with its
+station; a station's and an item's (a model's) preview
 shown and taken back; a scaled folder's picture drawn further out and
 larger, following a drag of the folder's origin and scale and back when
 cleared; a moved station, its items and the codes kept in
