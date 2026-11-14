@@ -1059,15 +1059,13 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     });
   };
 
-  const changed = dock.onDidActivePanelChange(
-    (panel: IDockviewPanel | undefined) => {
-      if (laying) return;
-      if (panel !== undefined) showTabSoon(panel.id);
-      updateFolders();
-      keepSoon();
-      deps.onChange();
-    },
-  );
+  const changed = dock.onDidActivePanelChange(({ panel }) => {
+    if (laying) return;
+    if (panel !== undefined) showTabSoon(panel.id);
+    updateFolders();
+    keepSoon();
+    deps.onChange();
+  });
   const laidOut = dock.onDidLayoutChange(() => {
     if (laying) return;
     // A group dragged empty is gone, its fold with it.
