@@ -488,7 +488,7 @@ test.describe("the layer toggles", () => {
       // And the ground did not come back: the frame is a scene without it. (The
       // move reloads the terrain and redraws the layers still on around the new
       // position, while the cells and the plates are off by now, so the frame is
-      // not the one before and this is not a pixel comparison — the status
+      // not the one before and this is not a pixel comparison - the status
       // line's own mode readout is the honest assertion here.)
       expect(withoutGround).not.toBe("");
 

@@ -2031,21 +2031,20 @@ test.describe("the time of day", () => {
                 if (!(input instanceof HTMLInputElement)) {
                   throw new Error("no #sun-time");
                 }
-                // The slider's own resolution, read from the control.
-                const min = Number(input.min);
-                const steps = Number(input.max) - min;
-                if (!(steps > 0)) {
-                  throw new Error(`bad range ${input.min}-${input.max}`);
+                // The slider's own resolution, read from the control. The app
+                // maps a value as value / max, so the range must start at 0.
+                if (Number(input.min) !== 0) {
+                  throw new Error(`slider min ${input.min}, not 0`);
                 }
-                const value =
-                  min +
-                  Math.ceil(
-                    clock.instantToSlider(pinned, place) * steps - 1e-9,
-                  );
+                const steps = Number(input.max);
+                if (!(steps > 0)) throw new Error(`bad max ${input.max}`);
+                const value = Math.ceil(
+                  clock.instantToSlider(pinned, place) * steps - 1e-9,
+                );
                 input.value = String(value);
                 input.dispatchEvent(new Event("input", { bubbles: true }));
                 const instant = clock.sliderToInstant(
-                  (value - min) / steps,
+                  value / steps,
                   day,
                   place,
                 );
