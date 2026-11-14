@@ -22,12 +22,20 @@
  * - the smoothed interval above `slowMs` for `slowS` of counted frames steps
  *   one rung down; under `fastMs` for `fastS` steps one rung up;
  * - one frame longer than `gapMs` says nothing of the device (a hitch, a tab
- *   coming back); two in a row do;
+ *   coming back); two in a row do. A counted frame enters the average whole
+ *   but credits the verdicts at most `gapMs` of time, so a pair of hitches
+ *   cannot make a verdict while a device at a second a frame still reads as
+ *   slow as it is. Each rung is judged by its own frames: at a step the
+ *   average starts afresh, so a device with few frames a verdict does not
+ *   judge the new rung by the old one's;
  * - the worthwhile test: when thinning bought less than `worthwhile` of the
- *   frame time the woods were not the cost, so they come back in full and
- *   the step-down rests for `restS`. A step that brought the average under
- *   `slowMs` has bought something, so a later slow verdict is a new one: it
- *   re-takes the baseline and steps down a rung;
+ *   frame time, measured against the full woods, the woods were not the
+ *   cost, so they come back in full and the step-down rests for `restS`;
+ * - a thinned share that stayed under `slowMs` for `fastS` has bought its
+ *   time. A later slow verdict there is a new one: the half steps on to a
+ *   quarter and remembers the slowness that sent it, and the quarter is
+ *   worthwhile against that or the full woods; a quarter that had bought
+ *   its time has no rung left and stays;
  * - a share left for being too slow is not returned to within `restS` of
  *   leaving it, so the governor does not pop between 1 and 0.5.
  * Rests run on the clock passed in (wall time), so idle time counts toward
@@ -103,35 +111,59 @@ export function createWoodsGovernor({
   let fastFor = 0;
   /** The average when the thinning began, for the worthwhile test. */
   let slowAt = 0;
-  /** The average went under `slowMs` since the last step: it bought time. */
+  /** The average when a thinned share that had bought its time got slow. */
+  let againAt: number | undefined;
+  /** The average stayed under `slowMs` for `fastS` at this rung. */
   let bought = false;
+  let boughtFor = 0;
+  /** A step was taken: the next counted frame starts the average afresh. */
+  let fresh = false;
   let gapBefore = false;
   /** No step-down before this time (the worthwhile test's rest). */
   let restUntil = Number.NEGATIVE_INFINITY;
   /** When each rung was left for being too slow. */
   const leftAt: number[] = G.shares.map(() => Number.NEGATIVE_INFINITY);
 
+  /** A new rung: its purchase and its average start over. */
+  const enter = (rung: number): void => {
+    steps = rung;
+    bought = false;
+    boughtFor = 0;
+    fresh = true;
+  };
+
   const stepDown = (at: number, now: number): void => {
     if (at < restUntil) return;
-    if (steps === 0 || (bought && steps < lowest)) {
+    const line = 1 - G.worthwhile;
+    if (steps === 0) {
       slowAt = now;
-    } else if (now > slowAt * (1 - G.worthwhile)) {
-      steps = 0;
+      againAt = undefined;
+    } else if (bought && steps < lowest) {
+      againAt = now;
+    } else if (bought) {
+      // The fewest woods had bought their time: no rung left, it stays.
       bought = false;
+      boughtFor = 0;
+      return;
+    } else if (
+      now > slowAt * line &&
+      (againAt === undefined || now > againAt * line)
+    ) {
+      enter(0);
       restUntil = at + restMs;
       return;
     }
-    bought = false;
     if (steps < lowest) {
       leftAt[steps] = at;
-      steps += 1;
+      enter(steps + 1);
     }
   };
 
   const stepUp = (at: number): void => {
     if (steps === 0) return;
     if (at - (leftAt[steps - 1] ?? Number.NEGATIVE_INFINITY) < restMs) return;
-    steps -= 1;
+    againAt = undefined;
+    enter(steps - 1);
   };
 
   /** The interval this frame measures, or undefined when it measures none. */
@@ -151,10 +183,14 @@ export function createWoodsGovernor({
   /** One counted interval into the average and the verdicts. */
   const count = (atMs: number, ms: number): void => {
     const now =
-      average === undefined ? ms : average + (ms - average) * G.smoothing;
+      average === undefined || fresh
+        ? ms
+        : average + (ms - average) * G.smoothing;
     average = now;
-    if (steps > 0 && now < G.slowMs) bought = true;
-    const seconds = ms / 1000;
+    fresh = false;
+    const seconds = Math.min(ms, G.gapMs) / 1000;
+    boughtFor = steps > 0 && now < G.slowMs ? boughtFor + seconds : 0;
+    if (boughtFor >= G.fastS) bought = true;
     slowFor = now > G.slowMs ? slowFor + seconds : 0;
     fastFor = now < G.fastMs ? fastFor + seconds : 0;
     if (!auto) return;
@@ -171,7 +207,7 @@ export function createWoodsGovernor({
   return {
     frame(atMs, chained) {
       const ms = measured(atMs, chained);
-      if (ms !== undefined) count(atMs, Math.min(ms, G.gapMs));
+      if (ms !== undefined) count(atMs, ms);
     },
     state() {
       const share = G.shares[steps] ?? 1;
