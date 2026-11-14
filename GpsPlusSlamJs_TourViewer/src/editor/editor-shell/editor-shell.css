@@ -4410,6 +4410,12 @@ body.shelf-folded #view3d.docked {
   display: none;
 }
 
+/* Docked on a phone the shelf is a tab like any other, not the undocked
+ * phone's sheet that shows only while open (`shelf-panel.css`). */
+#view3d.docked .dock-pane > #shell-shelf {
+  display: flex;
+}
+
 /* The asset shelf is a tab there: no fold of its own. */
 #view3d.docked .dock-pane > #shell-shelf [data-act="fold"] {
   display: none;
