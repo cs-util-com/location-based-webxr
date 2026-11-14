@@ -16,7 +16,12 @@
  * pixels bought less than `worthwhile`, the pixels were not the cost, all of
  * them come back and it rests for `restS`: long enough that a capped screen
  * sees the test rarely, short enough that a device that gets slower later
- * (a phone heating up) still steps down.
+ * (a phone heating up) still steps down. A step that brought the average
+ * under `slowMs` has bought its time, so a later slow verdict is a new one:
+ * it re-takes the baseline and steps down a rung (at the fewest pixels, the
+ * tier falls to low) instead of judging the steps against the average from
+ * before them. At low with the fewest pixels no rung is left, so the
+ * baseline stays.
  *
  * @see globe-cloud-governor.ts.md
  */
@@ -46,7 +51,10 @@ export const CLOUD_GOVERNOR = Object.freeze({
   /** How much of a frame reaches the average. */
   smoothing: 0.1,
   /** One frame this long says nothing of the device (ms); two in a row do:
-   *  a device this slow is the one the step-down is for. */
+   *  a device this slow is the one the step-down is for. A counted frame
+   *  enters at its whole length: capped at this, frames over it would hide
+   *  what fewer pixels save, and a device that slow would never reach low
+   *  (the step-down would judge itself worthless). */
   gapMs: 250,
 });
 
@@ -68,24 +76,45 @@ export function createGlobeCloudGovernor(
   let average = 0;
   let slowFor = 0;
   let fastFor = 0;
-  /** The average when the pixels began to fall. */
+  /** The average when the pixels began to fall, or when a step that had
+   *  bought its time got slow again. */
   let slowAt = 0;
+  /** The average went under `slowMs` since the last step down. */
+  let bought = false;
   let gapBefore = false;
   /** The rest still to run (s). */
   let restFor = 0;
 
   const stepDown = () => {
     if (restFor > 0) return;
-    if (scaleSteps === 0) slowAt = average;
+    const lowest = current === "low" && scaleSteps === G.steps;
+    const fresh = scaleSteps === 0 || (bought && !lowest);
+    if (fresh) slowAt = average;
+    bought = false;
     if (scaleSteps < G.steps) {
       scaleSteps += 1;
-    } else if (average > slowAt * (1 - G.worthwhile)) {
+    } else if (!fresh && average > slowAt * (1 - G.worthwhile)) {
       scaleSteps = 0;
       restFor = G.restS;
     } else if (current !== "low") {
       current = "low";
       scaleSteps = 0;
       slowFor = -G.settleS;
+    }
+  };
+
+  /** One counted frame of `seconds` into the verdicts. */
+  const judge = (seconds: number) => {
+    if (scaleSteps > 0 && average < G.slowMs) bought = true;
+    restFor = Math.max(0, restFor - seconds);
+    slowFor = average > G.slowMs ? slowFor + seconds : 0;
+    fastFor = average < G.fastMs ? fastFor + seconds : 0;
+    if (slowFor >= G.slowS) {
+      slowFor = 0;
+      stepDown();
+    } else if (fastFor >= G.fastS) {
+      fastFor = 0;
+      scaleSteps = Math.max(0, scaleSteps - 1);
     }
   };
 
@@ -97,17 +126,7 @@ export function createGlobeCloudGovernor(
       gapBefore = gap;
       if (alone) return;
       average = average === 0 ? ms : average + (ms - average) * G.smoothing;
-      const seconds = ms / 1000;
-      restFor = Math.max(0, restFor - seconds);
-      slowFor = average > G.slowMs ? slowFor + seconds : 0;
-      fastFor = average < G.fastMs ? fastFor + seconds : 0;
-      if (slowFor >= G.slowS) {
-        slowFor = 0;
-        stepDown();
-      } else if (fastFor >= G.fastS) {
-        fastFor = 0;
-        scaleSteps = Math.max(0, scaleSteps - 1);
-      }
+      judge(ms / 1000);
     },
     state: () => ({
       pixelScale: Math.max(G.minPixelScale, 1 - scaleSteps * G.step),
