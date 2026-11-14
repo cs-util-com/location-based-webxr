@@ -84,7 +84,8 @@ export interface TerrainState {
    *
    * The page's cue to issue `terrainUpgrade`. Without it the DEM race is a
    * silent no-op — the loser lands after this reply was sent, and the protocol
-   * has no unsolicited worker-to-page channel to announce it on.
+   * has one unsolicited worker-to-page message, `WorkerNotice`, which carries
+   * live wait state only; a result the page must apply rides a reply.
    */
   readonly upgradePending?: boolean | undefined;
   /** Posts holding an invented height. Carried, not yet displayed. */
@@ -247,8 +248,9 @@ export function createTerrainCycle(
     if (signal.aborted) return;
     apply(state);
     // THE TRIGGER FOR THE UPGRADE, and the whole race depends on this line.
-    // The preferred DEM settles after the reply above was built, and the
-    // protocol is strictly request/reply — so if the page does not ask here,
+    // The preferred DEM settles after the reply above was built, and every
+    // result the protocol delivers rides a reply (its one push, `WorkerNotice`,
+    // carries live wait state only) — so if the page does not ask here,
     // nothing ever asks, the better heights are applied where nothing can see
     // them, and the race is a no-op that passes every other assertion.
     //

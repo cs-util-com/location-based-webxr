@@ -1298,9 +1298,9 @@ function describeCurrentTerrain(
   // Computed AFTER the stamp bump above, so `terrainStamp` is the value any
   // rebuild would use, and BEFORE the reply is built, so the page learns about
   // it on the same message that delivers the field. The alternative — an
-  // unsolicited worker→page push — has no wire: the protocol is strictly
-  // request/reply keyed on `id` and `isWorkerReply` rejects anything without
-  // one, so a new envelope type would be real protocol surface for a boolean.
+  // unsolicited worker→page push — is not what the one push, `WorkerNotice`,
+  // is for: it carries live wait state only, results ride replies keyed on
+  // `id`, and widening it would be real protocol surface for a boolean.
   const meshOutdated = meshOutdatedByTerrain(lastMeshBuild, {
     centre,
     terrainStamp,

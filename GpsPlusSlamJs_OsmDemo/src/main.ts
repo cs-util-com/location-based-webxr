@@ -1666,13 +1666,11 @@ async function main(): Promise<void> {
   });
 
   /**
-   * The button's two meanings (G1, DEC-G1).
-   *
-   * WITH NOTHING FOUND it searches, which keeps the common case one tap. WITH
-   * AN EVENT ON THE MAP it opens the picker instead, because a second press
-   * used to re-run the identical search — exactly identical, since the event is
-   * a pure function of tile and quarter-hour, so within one slot it could not
-   * produce anything new. It read as a broken button.
+   * One meaning on every press: search for an event at the current time, and
+   * open the picker if it is closed. The button does not toggle; a press with
+   * an event already on the map re-runs the search, which within one
+   * quarter-hour finds the same event (the event is a pure function of tile and
+   * quarter-hour), while the open picker is where another time is chosen.
    *
    * The dialog opens on the HELD event's time rather than on now, so the common
    * edit is "the same place two hours later".

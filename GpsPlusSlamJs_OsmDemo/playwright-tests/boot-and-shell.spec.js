@@ -798,11 +798,14 @@ test.describe("the location picker", () => {
     const linked = pairNow();
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
     await page.mouse.down();
-    // Twenty pixels, not two: the writer skips a query that did not change,
-    // and two pixels can round to the same five decimals, so no write would
-    // come at all. Twenty is still metres, far inside the bound below.
+    // Forty-five pixels: the writer skips a query that did not change, and a
+    // nudge that rounds to the same five decimals writes nothing, so the poll
+    // below times out. Twenty pixels moved the target only about 0.000014
+    // degrees here, barely more than the 0.00001 rounding step; forty-five
+    // keeps a margin of about three steps and is still a few metres, far
+    // inside the bound below.
     await page.mouse.move(
-      box.x + box.width * 0.5 + 20,
+      box.x + box.width * 0.5 + 45,
       box.y + box.height * 0.5,
     );
     await page.mouse.up();

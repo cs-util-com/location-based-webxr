@@ -441,4 +441,50 @@ describe("the announced text", () => {
     announcer.downloadStarted();
     expect(show.mock.calls).toEqual([[BUILDING_MESSAGE], [LOADING_MESSAGE]]);
   });
+
+  // Why this test matters: the superseding gesture drops the old run's
+  // download, so while the loading text is on screen the new run's text is
+  // decided by its own notices. Holding the loading text instead would bring
+  // back the false claim for a cached spot. Pinned in both orders: a notice
+  // INSIDE the new delay gives one loading show at the re-announcement, with
+  // no building text in between; one AFTER it gives building, then loading.
+  it.each([
+    {
+      when: "inside",
+      beforeNotice: ANNOUNCE_DELAY_MS / 2,
+      afterNotice: ANNOUNCE_DELAY_MS,
+      expected: ["clear", `show:${LOADING_MESSAGE}`],
+    },
+    {
+      when: "after",
+      beforeNotice: ANNOUNCE_DELAY_MS,
+      afterNotice: 0,
+      expected: [
+        "clear",
+        `show:${BUILDING_MESSAGE}`,
+        "clear",
+        `show:${LOADING_MESSAGE}`,
+      ],
+    },
+  ])(
+    "a gesture that supersedes a SHOWN download re-announces from its own notices (notice $when the new delay)",
+    ({ beforeNotice, afterNotice, expected }) => {
+      const { toast, calls } = recordingToast();
+      const announcer = createLoadingAnnouncer({ toast });
+
+      announcer.arm();
+      announcer.busyChanged(true);
+      announcer.downloadStarted();
+      vi.advanceTimersByTime(ANNOUNCE_DELAY_MS);
+      expect(calls).toEqual(["clear", `show:${LOADING_MESSAGE}`]);
+      calls.length = 0;
+
+      announcer.arm();
+      vi.advanceTimersByTime(beforeNotice);
+      announcer.downloadStarted();
+      vi.advanceTimersByTime(afterNotice);
+
+      expect(calls).toEqual(expected);
+    },
+  );
 });
