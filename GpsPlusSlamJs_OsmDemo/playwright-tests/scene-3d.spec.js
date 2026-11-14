@@ -27,6 +27,7 @@ import {
   expectNoPanelOpen,
   setting,
   focusPageForHotkeys,
+  SUN_PIN_DATE,
 } from "./fixtures.js";
 
 test.describe("the 3D view", () => {
@@ -1131,9 +1132,12 @@ const rotateUnder = async (page, dy) => {
   const cy = box.y + box.height / 2;
   await page.mouse.move(cx, cy);
   await page.mouse.down({ button: "right" });
-  for (let i = 1; i <= 8; i++) await page.mouse.move(cx, cy + (dy * i) / 8);
+  // ONE move: the rotation's total is the same however many moves lead
+  // there, and each move costs frames on a software-rendered runner.
+  await page.mouse.move(cx, cy + dy);
   await page.mouse.up({ button: "right" });
-  // Damping eases over several frames; wait for the picture to stop moving.
+  // Wait for the picture to stop moving (a page booted with damping on
+  // would still be easing).
   let previous = "";
   await expect
     .poll(
@@ -1726,121 +1730,96 @@ test.describe("the colour schemes (colour schemes plan 2026-11-10-0841)", () => 
     await waitForRefresh(page);
     await expect(select).toHaveValue("night");
   });
-
-  test("a link naming the default or an unknown scheme loses the parameter on boot", async ({
-    page,
-  }) => {
-    // Why this test matters: the link must name the scheme the page shows;
-    // one naming a scheme the page does not show would be passed on as if it
-    // meant something.
-    await stubNetwork(page);
-    for (const name of ["today", "neon"]) {
-      await page.goto(`/?lat=${50.9231}&lng=${6.9445}&scheme=${name}`);
-      await waitForRefresh(page);
-      await expect(page.locator("#colour-scheme")).toHaveValue("today");
-      await expect(page).not.toHaveURL(/[?&]scheme=/);
-    }
-  });
 });
 
-test.describe("the read-only boot overrides (roofs, markings, furniture, ao)", () => {
-  // WHY THIS TEST MATTERS: `?roofs=off` is a read-only boot override for a
-  // side-by-side comparison. It must seed the switch, and the switch must
-  // never write the link: a link that changed under a switch would carry a
-  // comparison state the sender did not choose.
-  test("roofs=off seeds the switch, and a switch never writes the link", async ({
+test.describe("the read-only boot overrides (roofs, markings, furniture, ao, scheme)", () => {
+  // WHY THIS TEST MATTERS: `?roofs=off`, `?markings=off`, `?furniture=off`
+  // and `?ao=off` are read-only boot overrides for a side-by-side
+  // comparison. Each must seed its switch, and the switch must never write
+  // the link: a link that changed under a switch would carry a comparison
+  // state the sender did not choose. A link naming a scheme the page does
+  // not show must lose the parameter on boot, or it would be passed on as if
+  // it meant something.
+  //
+  // ONE BOOT FOR ALL FIVE: each knob owns its own switch and its own key, so
+  // they cannot interfere, and a boot here costs more than every check
+  // together. The default halves (no knob: the switch starts on, and a
+  // switch writes nothing) are in the city-look test, which boots without
+  // any knob.
+  test("every knob seeds its switch, a switch never writes the link, and an unknown scheme is dropped", async ({
     page,
   }) => {
     await stubNetwork(page);
-    const base = `/?lat=${50.9231}&lng=${6.9445}`;
-    const box = page.locator("#invented-roofs");
-    const status = page.locator("#invented-roofs-status");
-
-    await page.goto(`${base}&roofs=off`);
+    await page.goto(
+      `${AT_FIXTURE}&roofs=off&markings=off&furniture=off&ao=off&scheme=neon`,
+    );
     await waitForRefresh(page);
-    await expect(box).not.toBeChecked();
-    await setting(page, "#invented-roofs", (c) => c.check());
-    await expect(status).toHaveText("");
-    await expect(box).toBeEnabled();
-    await expect(box).toBeChecked();
-    await expect(page).toHaveURL(/[?&]roofs=off(&|$)/);
 
-    await page.goto(base);
-    await waitForRefresh(page);
-    await expect(box).toBeChecked();
-    await setting(page, "#invented-roofs", (c) => c.uncheck());
-    await expect(status).toHaveText("");
-    await expect(box).toBeEnabled();
-    await expect(box).not.toBeChecked();
-    await expect(page).not.toHaveURL(/[?&]roofs=/);
-  });
+    await test.step("an unknown scheme loses the parameter on boot", async () => {
+      await expect(page.locator("#colour-scheme")).toHaveValue("today");
+      await expect(page).not.toHaveURL(/[?&]scheme=/);
+    });
 
-  // WHY THIS TEST MATTERS: `?markings=off` is the same read-only boot
-  // override for the zebras and pedestrian areas: it seeds the switch, a
-  // switch rebuilds and ends on its echo, and never writes the link.
-  test("markings=off seeds the switch, and a switch never writes the link", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    const base = `/?lat=${50.9231}&lng=${6.9445}`;
-    const box = page.locator("#markings");
-    const status = page.locator("#markings-status");
+    await test.step("a knob's value shows in its drawer control, and the quick sun slider mirrors the canonical one", async () => {
+      // The knobs are read at boot into the store; the drawer shows what they
+      // set, with the drawer closed (a read, not an action) and once opened.
+      await expect(page.locator("#invented-roofs")).not.toBeChecked();
+      await expect(page.locator("#sun-date")).toHaveValue(SUN_PIN_DATE);
+      await page.locator("#settings-open").click();
+      await page.locator("#layer-group-look > summary").click();
+      await expect(page.locator("#invented-roofs")).toBeVisible();
+      await expect(page.locator("#invented-roofs")).not.toBeChecked();
+      await page.locator("#layer-group-look > summary").click();
+      await page.locator("#settings-open").click();
 
-    await page.goto(`${base}&markings=off`);
-    await waitForRefresh(page);
-    await expect(box).not.toBeChecked();
-    await setting(page, "#markings", (c) => c.check());
-    await expect(status).toHaveText("");
-    await expect(box).toBeEnabled();
-    await expect(box).toBeChecked();
-    await expect(page).toHaveURL(/[?&]markings=off(&|$)/);
+      await page.locator("#sun-chip").click();
+      const quick = page.locator("#sun-time-quick");
+      await expect(quick).toHaveValue(
+        await page.locator("#sun-time").inputValue(),
+      );
+      const chipBefore = await page.locator("#sun-chip-time").textContent();
+      await quick.fill("150");
+      await expect(page.locator("#sun-time")).toHaveValue("150");
+      await expect(page.locator("#sun-chip-time")).not.toHaveText(
+        chipBefore ?? "",
+      );
+      await page.locator("#sun-chip").click();
+    });
 
-    await page.goto(base);
-    await waitForRefresh(page);
-    await expect(box).toBeChecked();
-    await setting(page, "#markings", (c) => c.uncheck());
-    await expect(status).toHaveText("");
-    await expect(box).toBeEnabled();
-    await expect(box).not.toBeChecked();
-    await expect(page).not.toHaveURL(/[?&]markings=/);
-  });
+    for (const [id, key] of [
+      ["#invented-roofs", "roofs"],
+      ["#markings", "markings"],
+    ]) {
+      await test.step(`${key}=off seeds the switch, and a switch never writes the link`, async () => {
+        const box = page.locator(id);
+        await expect(box).not.toBeChecked();
+        await setting(page, id, (c) => c.check());
+        await expect(page.locator(`${id}-status`)).toHaveText("");
+        await expect(box).toBeEnabled();
+        await expect(box).toBeChecked();
+        await expect(page).toHaveURL(new RegExp(`[?&]${key}=off(&|$)`));
+      });
+    }
 
-  // WHY THIS TEST MATTERS: `?furniture=off` is the same kind of read-only
-  // boot override, for the street furniture layer: it must seed the layer
-  // switch (no lamps counted), and switching the layer on must not rewrite
-  // the link.
-  test("furniture=off boots the furniture layer off, and the switch never writes the link", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(`/?lat=${50.9231}&lng=${6.9445}&furniture=off`);
-    await waitForRefresh(page);
-    const box = page.locator("#layer-furniture");
-    const status = page.locator("#status");
-    await expect(box).not.toBeChecked();
-    await expect(status).not.toContainText(/\d+ furniture/);
-    await setting(page, "#layer-furniture", (c) => c.check());
-    await expect(status).toContainText(/[1-9]\d* furniture/);
-    await expect(page).toHaveURL(/[?&]furniture=off(&|$)/);
-  });
+    await test.step("furniture=off boots the furniture layer off, and the switch never writes the link", async () => {
+      const status = page.locator("#status");
+      await expect(page.locator("#layer-furniture")).not.toBeChecked();
+      await expect(status).not.toContainText(/d+ furniture/);
+      await setting(page, "#layer-furniture", (c) => c.check());
+      await expect(status).toContainText(/[1-9]d* furniture/);
+      await expect(page).toHaveURL(/[?&]furniture=off(&|$)/);
+    });
 
-  // WHY THIS TEST MATTERS: `?ao=off` is the same kind of read-only boot
-  // override, for the ambient occlusion: it must seed the light dialog's box
-  // and the view, and the box must never rewrite the link.
-  test("ao=off boots the ambient occlusion off, and the box never writes the link", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(`/?lat=${50.9231}&lng=${6.9445}&ao=off`);
-    await waitForRefresh(page);
-    const view = page.locator("[data-ao]");
-    await expect(view).toHaveAttribute("data-ao", "off");
-    await setting(page, "#light-open", (c) => c.click());
-    const box = page.locator("#light-ao");
-    await expect(box).not.toBeChecked();
-    await box.check();
-    await expect(view).toHaveAttribute("data-ao", "on");
-    await expect(page).toHaveURL(/[?&]ao=off(&|$)/);
+    await test.step("ao=off boots the ambient occlusion off, and the box never writes the link", async () => {
+      const view = page.locator("[data-ao]");
+      await expect(view).toHaveAttribute("data-ao", "off");
+      await setting(page, "#light-open", (c) => c.click());
+      const box = page.locator("#light-ao");
+      await expect(box).not.toBeChecked();
+      await box.check();
+      await expect(view).toHaveAttribute("data-ao", "on");
+      await expect(page).toHaveURL(/[?&]ao=off(&|$)/);
+    });
   });
 });
 
@@ -1857,6 +1836,10 @@ test.describe("the city-look section", () => {
     await stubNetwork(page);
     await page.goto(`/?lat=${50.9231}&lng=${6.9445}`);
     await waitForRefresh(page);
+    // NO FRAME READOUT WITHOUT `perf=1`: the default picture and every pixel
+    // assertion stay as they were (the readout's own describe boots with the
+    // knob). Asserted on this boot because it is one without any knob.
+    await expect(page.getByTestId("perf-readout")).toHaveCount(0);
     const section = page.locator("#layer-group-look");
     await page.locator("#settings-open").click();
     await expect(section).toBeVisible();
@@ -1871,14 +1854,18 @@ test.describe("the city-look section", () => {
     }
     await page.locator("#settings-open").click();
 
-    for (const [box, status] of [
-      ["#invented-roofs", "#invented-roofs-status"],
-      ["#markings", "#markings-status"],
+    // Without a knob each switch starts on, and switching it off writes no
+    // key: the default half of the boot-override test above.
+    for (const [box, status, key] of [
+      ["#invented-roofs", "#invented-roofs-status", "roofs"],
+      ["#markings", "#markings-status", "markings"],
     ]) {
+      await expect(page.locator(box)).toBeChecked();
       await setting(page, box, (c) => c.uncheck());
       await expect(page.locator(status)).toHaveText("");
       await expect(page.locator(box)).toBeEnabled();
       await expect(page.locator(box)).not.toBeChecked();
+      await expect(page).not.toHaveURL(new RegExp(`[?&]${key}=`));
     }
     const select = page.locator("#colour-scheme");
     await setting(page, "#colour-scheme", (c) => c.selectOption("night"));
@@ -3020,7 +3007,8 @@ test.describe("the woods governor's frame readout (?perf=1)", () => {
   // must show a measured frame time once frames are CHAINED (a drag's
   // damping), and must never appear without the knob: the default picture
   // and every pixel assertion stay as they were. On a desktop pointer the
-  // governor is off, so the woods stay at 100 %.
+  // governor is off, so the woods stay at 100 %. The "never without the
+  // knob" half is asserted on the city-look test's boot, which has no knob.
   test("perf=1 shows the frame time after a drag, with the woods full on a desktop", async ({
     page,
   }) => {
@@ -3047,12 +3035,5 @@ test.describe("the woods governor's frame readout (?perf=1)", () => {
       REPAINT,
     );
     await expect(readout).toContainText("woods 100 % (off)");
-  });
-
-  test("no readout without perf=1", async ({ page }) => {
-    await stubNetwork(page);
-    await page.goto(`/?lat=${50.9231}&lng=${6.9445}`);
-    await waitForRefresh(page);
-    await expect(page.getByTestId("perf-readout")).toHaveCount(0);
   });
 });

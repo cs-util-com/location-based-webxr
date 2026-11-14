@@ -25,7 +25,6 @@ import {
   expectCanvasFillsContainer,
   focusPageForHotkeys,
   stubNetwork,
-  SUN_PIN_DATE,
   waitForRefresh,
 } from "./fixtures.js";
 
@@ -775,36 +774,6 @@ test.describe("the command bar at 1280 x 720", () => {
       "data-busy",
       "false",
       { timeout: 60000 },
-    );
-  });
-
-  test("a URL knob's value shows in its drawer control, and the quick sun slider mirrors the canonical one", async ({
-    page,
-  }) => {
-    await stubNetwork(page);
-    await page.goto(`${AT_FIXTURE}&roofs=off`);
-    await waitForRefresh(page);
-    // The knobs are read at boot into the store; the drawer shows what they
-    // set, with the drawer closed (a read, not an action) and once opened.
-    await expect(page.locator("#invented-roofs")).not.toBeChecked();
-    await expect(page.locator("#sun-date")).toHaveValue(SUN_PIN_DATE);
-    await page.locator("#settings-open").click();
-    await page.locator("#layer-group-look > summary").click();
-    await expect(page.locator("#invented-roofs")).toBeVisible();
-    await expect(page.locator("#invented-roofs")).not.toBeChecked();
-    await page.locator("#layer-group-look > summary").click();
-    await page.locator("#settings-open").click();
-
-    await page.locator("#sun-chip").click();
-    const quick = page.locator("#sun-time-quick");
-    await expect(quick).toHaveValue(
-      await page.locator("#sun-time").inputValue(),
-    );
-    const chipBefore = await page.locator("#sun-chip-time").textContent();
-    await quick.fill("150");
-    await expect(page.locator("#sun-time")).toHaveValue("150");
-    await expect(page.locator("#sun-chip-time")).not.toHaveText(
-      chipBefore ?? "",
     );
   });
 });

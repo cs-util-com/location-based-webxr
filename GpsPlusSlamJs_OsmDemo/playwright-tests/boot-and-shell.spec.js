@@ -762,11 +762,10 @@ test.describe("the location picker", () => {
     // the URL to remember. MapControls pans with the primary button.
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
     await page.mouse.down();
-    // Five intermediate moves, not twelve: each move costs several frames on a
-    // software-rendered runner, and the pan still ends at the same point.
-    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.35, {
-      steps: 5,
-    });
+    // ONE move: the claim is the pose the drag ends on, each move costs
+    // several frames on a software-rendered runner, and with damping off the
+    // pan ends at the same point however many moves lead there.
+    await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.35);
     await page.mouse.up();
 
     // AFTER THE DEBOUNCE, which is the point of the poll rather than a read:
@@ -805,9 +804,6 @@ test.describe("the location picker", () => {
     await page.mouse.move(
       box.x + box.width * 0.5 + 20,
       box.y + box.height * 0.5,
-      {
-        steps: 2,
-      },
     );
     await page.mouse.up();
     // Times out, and fails, when the nudge writes nothing.
