@@ -420,38 +420,9 @@ export class StaticTileSource implements OsmDataSource {
     deadline?: number,
   ): Promise<OsmTileResult | undefined> {
     const readStart = this.now();
-    let stored = await this.readStored(tile, signal, { deadline });
-    if (stored === undefined) return undefined;
-    let transportMs = elapsedMs(readStart, this.now());
-    let decodeStart = this.now();
-    let checked = checkStored(stored.text, tile);
-    // The browser may hold an older copy in its HTTP cache than the host
-    // now stores (the host replaces bad tiles): read once more past that
-    // cache before calling the tile bad, once per tile per session, as a
-    // tile that stays bad would cost two downloads on every read.
-    // A re-read that fails (no time left in the fill wait, no headers in
-    // time, a host error) leaves the first copy to decide: the tile is bad
-    // and reported, not a host refusal. An abort stays an abort.
-    if (checked instanceof BadStoredTile && !this.rereadPastCache.has(tile)) {
-      this.rereadPastCache.add(tile);
-      let fresh: typeof stored | undefined | "failed";
-      try {
-        fresh = await this.readStored(tile, signal, {
-          cache: "no-cache",
-          deadline,
-        });
-      } catch (error) {
-        if (isAbort(error) || signal?.aborted === true) throw error;
-        fresh = "failed";
-      }
-      if (fresh === undefined) return undefined;
-      if (fresh !== "failed") {
-        stored = fresh;
-        transportMs = elapsedMs(readStart, this.now());
-        decodeStart = this.now();
-        checked = checkStored(stored.text, tile);
-      }
-    }
+    const judged = await this.readAndJudge(tile, signal, readStart, deadline);
+    if (judged === undefined) return undefined;
+    const { stored, transportMs, decodeStart, checked } = judged;
     if (checked instanceof BadStoredTile) {
       // The one diagnostic of a refused stored file; the race hides it.
       /* eslint-disable-next-line no-console */
@@ -483,6 +454,54 @@ export class StaticTileSource implements OsmDataSource {
         parseMs: elapsedMs(parseStart, this.now()),
         attempts: 1,
       },
+    };
+  }
+
+  /**
+   * Reads a stored tile and checks it, `undefined` for a missing tile.
+   * A bad first copy is read once more past the browser cache (see below);
+   * the result names the copy that was judged.
+   */
+  private async readAndJudge(
+    tile: string,
+    signal: AbortSignal | undefined,
+    readStart: number,
+    deadline?: number,
+  ) {
+    const first = await this.readStored(tile, signal, { deadline });
+    if (first === undefined) return undefined;
+    const judged = {
+      stored: first,
+      transportMs: elapsedMs(readStart, this.now()),
+      decodeStart: this.now(),
+      checked: checkStored(first.text, tile),
+    };
+    // The browser may hold an older copy in its HTTP cache than the host
+    // now stores (the host replaces bad tiles): read once more past that
+    // cache before calling the tile bad, once per tile per session, as a
+    // tile that stays bad would cost two downloads on every read.
+    // A re-read that fails (no time left in the fill wait, no headers in
+    // time, a host error) leaves the first copy to decide: the tile is bad
+    // and reported, not a host refusal. An abort stays an abort.
+    if (!(judged.checked instanceof BadStoredTile)) return judged;
+    if (this.rereadPastCache.has(tile)) return judged;
+    this.rereadPastCache.add(tile);
+    let fresh: typeof first | undefined;
+    try {
+      fresh = await this.readStored(tile, signal, {
+        cache: "no-cache",
+        deadline,
+      });
+    } catch (error) {
+      if (isAbort(error) || signal?.aborted === true) throw error;
+      return judged;
+    }
+    if (fresh === undefined) return undefined;
+    return {
+      stored: fresh,
+      transportMs: elapsedMs(readStart, this.now()),
+      decodeStart: this.now(),
+      checked: checkStored(fresh.text, tile),
     };
   }
 
