@@ -23,34 +23,12 @@ import {
   validatorErrors,
   worldPositions,
 } from "./test-support/glb-fixtures.js";
+import { handGlb, pngViews } from "./test-support/hand-glb.js";
 
 function partsOf(bytes: Uint8Array): GlbParts {
   const read = readGlb(bytes);
   if (!read.ok) throw new Error(read.reason);
   return read.parts;
-}
-
-/** A GLB of `json` and `bin`, written by hand to make broken files. */
-function handGlb(json: object, bin = new Uint8Array(0)): Uint8Array {
-  const text = new TextEncoder().encode(JSON.stringify(json));
-  const jsonLength = (text.length + 3) & ~3;
-  const binLength = (bin.length + 3) & ~3;
-  const total = 12 + 8 + jsonLength + (bin.length > 0 ? 8 + binLength : 0);
-  const out = new Uint8Array(total);
-  const view = new DataView(out.buffer);
-  view.setUint32(0, 0x46546c67, true);
-  view.setUint32(4, 2, true);
-  view.setUint32(8, total, true);
-  view.setUint32(12, jsonLength, true);
-  view.setUint32(16, 0x4e4f534a, true);
-  out.fill(0x20, 20, 20 + jsonLength);
-  out.set(text, 20);
-  if (bin.length > 0) {
-    view.setUint32(20 + jsonLength, binLength, true);
-    view.setUint32(24 + jsonLength, 0x004e4942, true);
-    out.set(bin, 28 + jsonLength);
-  }
-  return out;
 }
 
 describe("readGlb and writeGlb", () => {
@@ -134,7 +112,70 @@ describe("readGlb and writeGlb", () => {
     );
     expect(readGlb(outside)).toMatchObject({ ok: false, why: "unreadable" });
   });
+
+  // Why: a rewrite renumbers the buffer views by the indices accessors and
+  // images name. An index the file does not have was written as nothing
+  // (out of range: the key dropped) or left as it was (negative, not whole)
+  // while the views moved under it, so the result was a model with no
+  // geometry. Such a file is refused here, and the shelf keeps the original.
+  it.each([
+    ["an accessor", "out of range", "accessor", 1],
+    ["an accessor", "negative", "accessor", -1],
+    ["an accessor", "not whole", "accessor", 0.5],
+    ["an accessor", "no number", "accessor", "0"],
+    ["a sparse part", "out of range", "sparse", 7],
+    ["an image", "out of range", "image", 3],
+    ["an image", "negative", "image", -2],
+    ["an image", "not whole", "image", 1e-9],
+  ] as const)(
+    "calls a file unreadable when %s names a buffer view %s",
+    (_who, _how, where, index) => {
+      // An image the tour cannot size is refused by the tour's own check
+      // first; either way the file is unreadable, never rewritten.
+      expect(
+        readGlb(handGlb(namingView(where, index), pngViews(1))),
+      ).toMatchObject({ ok: false, why: "unreadable" });
+    },
+  );
+
+  it("reads a file whose accessor, sparse part and image name views it has", () => {
+    for (const where of ["accessor", "sparse", "image"] as const) {
+      expect(readGlb(handGlb(namingView(where, 0), pngViews(1))).ok).toBe(true);
+    }
+  });
 });
+
+/** A model with one buffer view (a PNG's first bytes), and `index` as the buffer view
+ *  that `where` names. */
+function namingView(
+  where: "accessor" | "sparse" | "image",
+  index: unknown,
+): object {
+  const accessor = {
+    componentType: 5126,
+    count: 1,
+    type: "SCALAR",
+    bufferView: where === "accessor" ? index : 0,
+    ...(where === "sparse"
+      ? {
+          sparse: {
+            count: 1,
+            indices: { bufferView: index, componentType: 5121 },
+            values: { bufferView: 0 },
+          },
+        }
+      : {}),
+  };
+  return {
+    asset: { version: "2.0" },
+    buffers: [{ byteLength: 36 }],
+    bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 36 }],
+    accessors: [accessor],
+    ...(where === "image"
+      ? { images: [{ bufferView: index, mimeType: "image/png" }] }
+      : {}),
+  };
+}
 
 describe("readAccessor", () => {
   const bin = new Uint8Array(32);

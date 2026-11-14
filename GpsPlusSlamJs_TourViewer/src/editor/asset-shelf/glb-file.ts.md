@@ -8,7 +8,7 @@
 - `GlbParts`: `{ json, views }`, `views[i]` the bytes of `json.bufferViews[i]`.
 - `readGlb(bytes): GlbRead`:
   - `{ ok: true, parts }`;
-  - `{ ok: false, why: "unreadable", reason }` when the tour's own check (`checkGlbInert`) refuses the file, its JSON does not parse, or a buffer view lies outside the binary chunk;
+  - `{ ok: false, why: "unreadable", reason }` when the tour's own check (`checkGlbInert`) refuses the file, its JSON does not parse, a buffer view lies outside the binary chunk, or an accessor, a sparse part or an image names a buffer view the file does not have (past the end, negative, not a whole number): a rewrite renumbers the views by those names, so such a file would come out without its geometry;
   - `{ ok: false, why: "unsupported", reason }` for a valid model this code leaves as it is: more than one buffer, a buffer with a `uri`, or a glTF extension outside the known list.
 - `appendView(parts, bytes, fields?)`: adds a buffer view (with `byteStride`, `target` and the like); its index.
 - `writeGlb(parts)`: a `.glb` of one JSON chunk (padded with spaces) and, when any view is still named, one binary chunk (padded with zeros), each view starting on a 4-byte boundary. Views no accessor, sparse part or image names are left out and the rest renumbered in their order; `buffers[0].byteLength` is rewritten. `parts` is changed.
@@ -23,5 +23,6 @@
 
 ## Tests
 
-- `glb-file.test.ts`: a round trip judged by glTF-Transform's reader and the Khronos validator; views nothing names dropped and the rest aligned; a model without buffers; unsupported and unreadable files; `readAccessor` on strided normalized integers, floats, and every refused case.
+- `glb-file.property.test.ts`: any mix of valid and invalid buffer view names reads exactly when all are valid, and a rewrite of a readable one names only views it holds. The hand-written files come from `test-support/hand-glb.ts`.
+- `glb-file.test.ts`: a round trip judged by glTF-Transform's reader and the Khronos validator; views nothing names dropped and the rest aligned; a model without buffers; unsupported and unreadable files, a buffer view named out of range, negative or not whole on an accessor, a sparse part and an image; `readAccessor` on strided normalized integers, floats, and every refused case.
 - Indirectly every model test (`model-quantize*.test.ts`, `model-textures.test.ts`, `model-step.test.ts`).

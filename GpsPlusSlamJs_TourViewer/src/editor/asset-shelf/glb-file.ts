@@ -163,6 +163,13 @@ export function readGlb(bytes: Uint8Array): GlbRead {
   if (typeof views === "string") {
     return { ok: false, why: "unreadable", reason: views };
   }
+  if (!namesOnlyViewsOf(json, views.length)) {
+    return {
+      ok: false,
+      why: "unreadable",
+      reason: "an accessor or image names a buffer view the file does not have",
+    };
+  }
   return { ok: true, parts: { json, views } };
 }
 
@@ -199,6 +206,19 @@ function viewUsers(json: GltfObject): GltfObject[] {
     if (image !== null) users.push(image);
   }
   return users;
+}
+
+/** Whether every `bufferView` an accessor, a sparse part or an image
+ *  names is a whole number below `count`. A rewrite renumbers the views by
+ *  these names, so one the file does not have would come out as nothing
+ *  (or as a stale index) and the model would lose its geometry. */
+function namesOnlyViewsOf(json: GltfObject, count: number): boolean {
+  return viewUsers(json).every((user) => {
+    const named = user["bufferView"];
+    if (named === undefined) return true;
+    const index = indexOf(named);
+    return index !== null && index < count;
+  });
 }
 
 const pad4 = (n: number) => (n + 3) & ~3;
