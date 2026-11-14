@@ -50,7 +50,12 @@ state = "good")`, `clearVerified`, `VERIFIED_TTL_MS` (7 days). One empty
   `writeLastReplace(bucket, cell, at)` (an empty object
   `state/replaced/<cell>`, the time in its metadata), and
   `REPLACE_MIN_GAP_MS` (24 h), the least time between two replaces of
-  one cell.
+  one cell. These markers are kept on purpose and never swept: a
+  marker older than 24 h is inert (it only says the gap has passed), so
+  a sweep would buy nothing but its own list and delete operations
+  (R2 Class A). Their number cannot grow without bound: at most one
+  empty object per cell ever replaced, and at most `DAILY_REPLACE_CAP`
+  new ones a day, against one stored tile per cell already.
 - Verifying markers: `VerifyingMarker { cell, etag, queuedAt }`,
   `markVerifying(bucket, cell, etag, now)`, `readVerifying(bucket, cell,
 now)` (fresh only), `clearVerifying`, `clearVerifyingIf(bucket, cell,

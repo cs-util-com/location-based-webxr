@@ -63,6 +63,10 @@ const MAX_BACKOFF_MS = 7 * DAY_MS;
 const PENDING_PREFIX = "state/pending/";
 const VERIFIED_PREFIX = "state/verified/";
 const VERIFYING_PREFIX = "state/verifying/";
+/**
+ * The last replace of a cell, never swept: one empty object per cell ever
+ * replaced, inert once its 24 h gap has passed (see the sidecar).
+ */
 const REPLACED_PREFIX = "state/replaced/";
 
 /**
