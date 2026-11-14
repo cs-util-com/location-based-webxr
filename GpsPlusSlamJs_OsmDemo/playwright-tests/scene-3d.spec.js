@@ -1991,11 +1991,6 @@ test.describe("the time of day", () => {
  * The heat-ramp rule at one booted sun: the heat grid's margin over the plain and the
  * default ground, and the lit city's brightness with the grid off. Leaves the
  * ground in the default mode with the cells ON.
- *
- * `withMeasured`, when given, is called with `{ lit, byDefault }` (the lit
- * surfaces with the grid off and the margin in the default mode) while the
- * scene is still as they were measured (woods and tint off, default mode),
- * before the woods and the tint go back on.
  */
 async function expectHeatRampLoudest(
   page,
@@ -2003,7 +1998,6 @@ async function expectHeatRampLoudest(
   approvedLit,
   share = 0.5,
   minBuildingLuma = null,
-  withMeasured = null,
 ) {
   const DEFAULT_MODE = "cpu-slope";
   // THE SCENE THIS RULE IS ABOUT HAS NO COSMETIC WOODS. The owner relaxed
@@ -2048,7 +2042,6 @@ async function expectHeatRampLoudest(
       minBuildingLuma,
     );
   }
-  if (withMeasured !== null) await withMeasured({ lit, byDefault });
   await setting(page, "#layer-woods", (c) => c.check());
   await setting(page, "#layer-tint", (c) => c.check());
 }
@@ -2588,59 +2581,36 @@ test.describe("the light dialog", () => {
       // THE NOON BRIGHTENING (plan 2026-09-24-0901): at a sun above 45° the
       // buildings and roads are lifted to the approved noon brightness, so this
       // point must reach 95 % of it (a ×1.3 lift measured 59.6, short of 61.5).
-      await expectHeatRampLoudest(
-        page,
-        "the June noon (62.5°)",
-        64.7,
-        0.95,
-        null,
-        async ({ lit, byDefault }) => {
-          await test.step("reads the same brightness and heat-grid margin as the sweep", async () => {
-            // WHY (plan §7 item 4): the dialog's readouts must equal the sweep's own
-            // measures on the same view, or the owner would tune by a number the gate
-            // does not use. The margin is compared in the default ground mode.
-            // THE SWEEP'S NUMBERS ARE THE ONES THE HEAT-RAMP STEP JUST TOOK, with
-            // the woods and the tint off as it takes them, so the dialog reads the
-            // same scene: the heat grid off again, the woods and tint still off.
-            await page.locator("#layer-cells").uncheck();
-            const withoutCells = await settledChroma(page);
-            const inlineLit = lit;
-            // Closed at boot: nothing below has opened it yet.
-            await expect(page.locator("#light-dialog")).toBeHidden();
-            await setting(page, "#light-open", (c) => c.click());
-            // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
-            // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
-            // real divergence in either measure shows well above them.
-            expect(
-              Math.abs((await readoutLuma(page)) - inlineLit),
-            ).toBeLessThan(0.2);
-            const inlineMargin = byDefault;
-            // THE HEAT GRID BACK ON for the check, as the sweep's margin
-            // measurement leaves it, and waited for in the scene the same way
-            // (`marginFor`): the cells arrive by a refresh, not a redraw.
-            await enableCellLayer(page);
-            await expect
-              .poll(() => meanChroma(page), { timeout: 30000 })
-              .not.toBe(withoutCells);
-            await settledChroma(page);
-            await page.locator("#light-check").click();
-            await expect(page.locator("#light-readout")).toContainText(
-              "Heat grid adds",
-            );
-            const text =
-              (await page.locator("#light-readout").textContent()) ?? "";
-            const margin = Number(/adds ([\d.-]+)/.exec(text)?.[1]);
-            console.log(
-              `light dialog parity: lit ${inlineLit.toFixed(1)} vs ${(await readoutLuma(page)).toFixed(1)}; margin ${inlineMargin.toFixed(2)} vs ${margin.toFixed(2)}`,
-            );
-            expect(
-              Math.abs((await readoutLuma(page)) - inlineLit),
-            ).toBeLessThan(0.2);
-            expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
-            expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
-          });
-        },
+      await expectHeatRampLoudest(page, "the June noon (62.5°)", 64.7, 0.95);
+    });
+
+    await test.step("reads the same brightness and heat-grid margin as the sweep", async () => {
+      // WHY (plan §7 item 4): the dialog's readouts must equal the sweep's own
+      // measures on the same view, or the owner would tune by a number the gate
+      // does not use. The margin is compared in the default ground mode.
+      await page.locator("#layer-cells").uncheck();
+      await settledChroma(page);
+      const inlineLit = await litSurfaceLuma(page);
+      // Closed at boot: nothing below has opened it yet.
+      await expect(page.locator("#light-dialog")).toBeHidden();
+      await setting(page, "#light-open", (c) => c.click());
+      // Tolerances from the measurement (2026-09-24: 65.0 vs 65.0, margin 5.31
+      // vs 5.31 on the same view): the readout rounds to 0.1 and 0.01, so a
+      // real divergence in either measure shows well above them.
+      expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
+      const inlineMargin = await marginFor(page, "cpu-slope");
+      await page.locator("#light-check").click();
+      await expect(page.locator("#light-readout")).toContainText(
+        "Heat grid adds",
       );
+      const text = (await page.locator("#light-readout").textContent()) ?? "";
+      const margin = Number(/adds ([\d.-]+)/.exec(text)?.[1]);
+      console.log(
+        `light dialog parity: lit ${inlineLit.toFixed(1)} vs ${(await readoutLuma(page)).toFixed(1)}; margin ${inlineMargin.toFixed(2)} vs ${margin.toFixed(2)}`,
+      );
+      expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
+      expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
+      expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
     });
 
     await test.step("opens from its button and the l key, closes with Escape, and brightens noon with the gain, the sky light and the EV, kept in the URL", async () => {
