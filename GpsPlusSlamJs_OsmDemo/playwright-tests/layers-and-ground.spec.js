@@ -428,10 +428,17 @@ test.describe("the layer toggles", () => {
       // strongly blue-dominant, while the ground plane (0x3a4356), the buildings
       // (0xc8ccd8) and the plates (0x4a5468) are all near-neutral greys. A grey
       // pixel here is a surface that should not be drawn.
+      // Only the switches that are on go off, and only those come back on
+      // below: the cells and the plates are off by now, and switching them on
+      // would cost a re-scoring refresh no later step asks for.
+      /** @type {string[]} */
+      const wereOn = [];
       for (const layer of LAYERS) {
         const box = page.locator(`#layer-${layer}`);
-        if (await box.isChecked())
+        if (await box.isChecked()) {
+          wereOn.push(layer);
           await setting(page, `#layer-${layer}`, (c) => c.uncheck());
+        }
       }
 
       // NO GEOMETRY LEFT, measured as hard edges rather than as colours — see
@@ -449,10 +456,8 @@ test.describe("the layer toggles", () => {
 
       expect(count).toBeLessThan(2000);
 
-      for (const layer of LAYERS) {
-        const box = page.locator(`#layer-${layer}`);
-        if (!(await box.isChecked()))
-          await setting(page, `#layer-${layer}`, (c) => c.check());
+      for (const layer of wereOn) {
+        await setting(page, `#layer-${layer}`, (c) => c.check());
       }
     });
 
