@@ -1884,13 +1884,22 @@ const buildingPixelLuma = async (page) => {
  */
 test.describe("the time of day", () => {
   /**
-   * DEC-R4-5 AT EVERY SUN THE USER CAN REACH, one test per point, each booted
-   * by URL pin at the fixture: the evening golden hour (the boot), a 3.6°
+   * DEC-R4-5 AT EVERY SUN THE USER CAN REACH: the evening golden hour, a 3.6°
    * morning, 24°, the September noon (38.9°), the JUNE noon (62.5°, the
    * highest sun at the fixture; the margin falls as the sun rises, plan
    * 2026-09-23-2149 review finding 5), and civil twilight at −2.9° and −5.9°.
    * The labels are the elevations the pinned minutes actually give (M2 review
-   * finding 6, computed with the framework's solar position).
+   * finding 6, computed with the framework's solar position). The six daylight
+   * and civil-twilight points share one page reached through the time slider;
+   * the two points below civil dusk lie outside the slider's span and boot
+   * their own pages by URL pin.
+   *
+   * THE SLIDER LANDS 15-44 s AFTER EACH PINNED MINUTE. It has 1000 integer
+   * steps across the day, so a pinned minute generally falls between two; the
+   * test takes the first step at or after it, so the chip still reads that
+   * minute (asserted before each measurement), and the sun stands at most
+   * about 0.12° of elevation from the booted point (44 s near dusk). The measured values move in their last
+   * printed digit against a boot by URL pin; every bound holds unchanged.
    *
    * BOTH THE ISOLATED BACKDROP AND THE ONE A USER ACTUALLY SEES (F49), and
    * asserting only one of them is how this gate grew a hole: `cpu` is the plain
@@ -1926,7 +1935,7 @@ test.describe("the time of day", () => {
   // 96.8 at 24°, 75.1 at 38.9°), so no row is implied by its neighbours. The
   // June noon (62.5°) runs in the light dialog's June-noon test, which shares
   // its boot.
-  const SUN_POINTS = [
+  const DAY_POINTS = [
     // [label, date, apparent solar time, lit-surface luma under ACES −2 EV,
     //  the share of it the point must reach (half by default); null = the
     //  night, no lit-surface value; and, at the night, the least mean luma
@@ -1937,6 +1946,9 @@ test.describe("the time of day", () => {
     ["the September noon (38.9°)", "2026-09-23", "12:00", 75.1],
     ["civil twilight at −2.9°", "2026-09-23", "18:17", 20.8],
     ["civil twilight at −5.9°", "2026-09-23", "18:36", 16.5],
+  ];
+  // Below civil dusk, outside the time slider's span: each boots its own page.
+  const NIGHT_POINTS = [
     // The night (r1155): the heat grid must stay the loudest thing under the
     // night floor (`NIGHT_FLOOR` in `atmosphere-rig.ts`) too. No lit-surface
     // value: that metric counts WARM pixels (r >= b) and the night floor is
@@ -1960,6 +1972,74 @@ test.describe("the time of day", () => {
       NIGHT_BUILDING_LUMA_MIN,
     ],
   ];
+  // THE DAY POINTS SHARE ONE PAGE, moved by the time slider (civil dawn to
+  // civil dusk, which spans all six): the boot is the first point, by URL
+  // pin, and each later point is the slider position whose instant is the
+  // first at or after the pinned minute, so the chip reads that minute. The
+  // chip is asserted before each measurement, and the instant the slider
+  // lands on is logged next to the pinned one.
+  test("the heat ramp stays the loudest thing at every daylight point, moved by the time slider", async ({
+    page,
+  }) => {
+    const [first] = DAY_POINTS;
+    if (first === undefined) throw new Error("no day points");
+    await stubNetwork(page);
+    await page.goto(
+      `/?lat=${50.9231}&lng=${6.9445}&date=${first[1]}&time=${first[2]}&ao=off`,
+    );
+    await waitForRefresh(page);
+    for (const [
+      label,
+      date,
+      time,
+      approvedLit,
+      share = 0.5,
+      minBuildingLuma = null,
+    ] of DAY_POINTS) {
+      await test.step(`at ${label}`, async () => {
+        if (time !== first[2]) {
+          const landed = await page.evaluate(
+            async ({ date, time }) => {
+              const clock = await import("/src/sun-clock.ts");
+              const place = { lat: 50.9231, lng: 6.9445 };
+              const [y, m, d] = date.split("-").map(Number);
+              const hours = clock.parseSolarTime(time);
+              if (hours === null) throw new Error(`bad time ${time}`);
+              const day = { year: y, month: m, day: d };
+              const pinned = clock.instantAt(day, place, hours);
+              const steps = 1000;
+              const value = Math.ceil(
+                clock.instantToSlider(pinned, place) * steps - 1e-9,
+              );
+              const input = document.getElementById("sun-time");
+              if (!(input instanceof HTMLInputElement)) {
+                throw new Error("no #sun-time");
+              }
+              input.value = String(value);
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+              const instant = clock.sliderToInstant(value / steps, day, place);
+              return { value, offsetSeconds: (instant - pinned) / 1000 };
+            },
+            { date, time },
+          );
+          console.log(
+            `${label}: slider ${landed.value}, ${landed.offsetSeconds.toFixed(1)} s after the pinned minute`,
+          );
+          await expect(page.locator("#sun-chip")).toHaveAccessibleName(
+            `Sun time ${time}`,
+          );
+        }
+        await expectHeatRampLoudest(
+          page,
+          label,
+          approvedLit,
+          share,
+          minBuildingLuma,
+        );
+      });
+    }
+  });
+
   for (const [
     label,
     date,
@@ -1967,7 +2047,7 @@ test.describe("the time of day", () => {
     approvedLit,
     share = 0.5,
     minBuildingLuma = null,
-  ] of SUN_POINTS) {
+  ] of NIGHT_POINTS) {
     test(`DEC-R4-5: the heat ramp stays the loudest thing at ${label}`, async ({
       page,
     }) => {
