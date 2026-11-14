@@ -25,12 +25,19 @@ function device(width: number, height: number, encodedType = "image/webp") {
         },
       }),
     ),
-    encode: vi.fn((_picture, w: number, h: number, quality: number) => {
-      d.asked.push({ w, h, quality });
-      return Promise.resolve(
-        new Blob([new Uint8Array(10)], { type: encodedType }),
-      );
-    }),
+    encode: vi.fn(
+      (
+        _picture,
+        w: number,
+        h: number,
+        { type, quality }: { type: string; quality: number },
+      ) => {
+        d.asked.push({ w, h, type, quality });
+        return Promise.resolve(
+          new Blob([new Uint8Array(10)], { type: encodedType }),
+        );
+      },
+    ),
   };
   return d;
 }
@@ -75,7 +82,9 @@ describe("the picture step", () => {
       width: 1600,
       height: 1200,
     });
-    expect(d.asked).toEqual([{ w: 1600, h: 1200, quality: 0.75 }]);
+    expect(d.asked).toEqual([
+      { w: 1600, h: 1200, type: "image/webp", quality: 0.75 },
+    ]);
     expect(d.closed).toBe(1);
     expect(c.progress).toHaveBeenLastCalledWith(1);
   });

@@ -2,8 +2,9 @@
  * The asset optimizer's module Worker: runs the heavy part of an
  * optimization off the page (`optimizer-client.ts` is its page side,
  * `optimizer-protocol.ts` the messages). Each kind's step is a row of
- * `WORKER_STEPS`: pictures (`picture-step.ts`) and sounds
- * (`sound-step.ts`); a kind without a step answers "failed" with words.
+ * `WORKER_STEPS`: pictures (`picture-step.ts`), sounds (`sound-step.ts`)
+ * and 3D models (`model-step.ts`, whose textures go through the picture
+ * device); a kind without a step answers "failed" with words.
  * The device seam: not unit-tested (it needs a real Worker); the steps'
  * decisions are, and the e2e runs this file.
  *
@@ -20,6 +21,7 @@ import {
   type WorkerStepControl,
 } from "./optimizer-protocol.js";
 import type { OptimizerSettings } from "./optimizer-settings.js";
+import { optimizeModel } from "./model-step.js";
 import { optimizePicture, PICTURE_DEVICE } from "./picture-step.js";
 import { optimizeSound, SOUND_DEVICE } from "./sound-step.js";
 
@@ -35,6 +37,8 @@ const WORKER_STEPS: Partial<Record<TourAssetKind, WorkerStep>> = {
     optimizePicture(payload, settings, control, PICTURE_DEVICE),
   audio: (payload, settings, control) =>
     optimizeSound(payload, settings, control, SOUND_DEVICE),
+  model: (payload, settings, control) =>
+    optimizeModel(payload, settings, control, PICTURE_DEVICE),
 };
 
 // `self` is typed as `Window` under the app's DOM lib (no webworker lib).

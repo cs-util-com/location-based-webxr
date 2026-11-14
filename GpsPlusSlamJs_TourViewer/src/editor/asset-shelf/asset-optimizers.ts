@@ -80,15 +80,20 @@ const PICTURE_OPTIMIZER: AssetOptimizer = {
   optimize: (source, ctx) => ctx.host.run("image", source, ctx.settings, ctx),
 };
 
-/** The optimizers this build has: pictures (WebP, in the Worker) and
- *  sounds (decoded on the page, Ogg Opus in the Worker). Model textures
- *  get their row in a milestone of their own; video stays without one
- *  (no transcode in the first version). */
+/** A 3D model's whole optimization runs in the Worker (`model-step.ts`):
+ *  textures made smaller, geometry quantized. */
+const MODEL_OPTIMIZER: AssetOptimizer = {
+  optimize: (source, ctx) => ctx.host.run("model", source, ctx.settings, ctx),
+};
+
+/** The optimizers this build has: pictures (WebP, in the Worker), sounds
+ *  (decoded on the page, Ogg Opus in the Worker) and 3D models (in the
+ *  Worker). Video stays without one (no transcode in the first version). */
 export const ASSET_OPTIMIZERS: OptimizerTable = {
   image: PICTURE_OPTIMIZER,
   audio: soundOptimizer(SOUND_DECODER),
   video: null,
-  model: null,
+  model: MODEL_OPTIMIZER,
 };
 
 /** Whether a file of `kind` can be made smaller here: only then may one
