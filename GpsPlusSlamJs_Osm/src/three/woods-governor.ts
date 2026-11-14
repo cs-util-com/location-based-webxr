@@ -22,12 +22,15 @@
  * - the smoothed interval above `slowMs` for `slowS` of counted frames steps
  *   one rung down; under `fastMs` for `fastS` steps one rung up;
  * - one frame longer than `gapMs` says nothing of the device (a hitch, a tab
- *   coming back); two in a row do. A counted frame enters the average whole
- *   but credits the verdicts at most `gapMs` of time, so a pair of hitches
- *   cannot make a verdict while a device at a second a frame still reads as
- *   slow as it is. Each rung is judged by its own frames: at a step the
- *   average starts afresh, so a device with few frames a verdict does not
- *   judge the new rung by the old one's;
+ *   coming back); two in a row do. A counted frame enters the average at
+ *   most `spikeLimit` times the average and credits the verdicts at most
+ *   `gapMs` of time, so a pair of hitches cannot make a verdict while a
+ *   device at a second a frame still reads as slow as it is (a fresh
+ *   average starts at the raw frame). Each rung is judged by its own
+ *   frames: at a step the average starts afresh, so a device with few
+ *   frames a verdict does not judge the new rung by the old one's, and the
+ *   step's own frame (the woods re-sort their draw order) counts toward
+ *   nothing;
  * - the worthwhile test: when thinning bought less than `worthwhile` of the
  *   frame time, measured against the full woods, the woods were not the
  *   cost, so they come back in full and the step-down rests for `restS`;
@@ -35,7 +38,8 @@
  *   time. A later slow verdict there is a new one: the half steps on to a
  *   quarter and remembers the slowness that sent it, and the quarter is
  *   worthwhile against that or the full woods; a quarter that had bought
- *   its time has no rung left and stays;
+ *   its time has no rung left and keeps that purchase until it steps up. A
+ *   rung re-entered from below counts as bought: the rung under it paid;
  * - a share left for being too slow is not returned to within `restS` of
  *   leaving it, so the governor does not pop between 1 and 0.5.
  * Rests run on the clock passed in (wall time), so idle time counts toward
@@ -66,6 +70,13 @@ export const WOODS_GOVERNOR = Object.freeze({
    * each counts as this long.
    */
   gapMs: 250,
+  /**
+   * A counted frame enters the average at most this many times the average,
+   * so one long frame on a device near the line cannot lift the average for
+   * the seconds its decay takes (the verdicts' seconds are capped at
+   * `gapMs` apart from this).
+   */
+  spikeLimit: 4,
   /** The ladder, from full to the fewest; never 0. */
   shares: Object.freeze([1, 0.5, 0.25] as const),
 });
@@ -118,6 +129,11 @@ export function createWoodsGovernor({
   let boughtFor = 0;
   /** A step was taken: the next counted frame starts the average afresh. */
   let fresh = false;
+  /**
+   * A step was taken: the next interval is the step's own frame (the woods
+   * re-sort their draw order), so it counts toward nothing.
+   */
+  let afterStep = false;
   let gapBefore = false;
   /** No step-down before this time (the worthwhile test's rest). */
   let restUntil = Number.NEGATIVE_INFINITY;
@@ -130,6 +146,7 @@ export function createWoodsGovernor({
     bought = false;
     boughtFor = 0;
     fresh = true;
+    afterStep = true;
   };
 
   const stepDown = (at: number, now: number): void => {
@@ -141,9 +158,9 @@ export function createWoodsGovernor({
     } else if (bought && steps < lowest) {
       againAt = now;
     } else if (bought) {
-      // The fewest woods had bought their time: no rung left, it stays.
-      bought = false;
-      boughtFor = 0;
+      // The fewest woods bought their time: no rung left, and the purchase
+      // holds until a step up, so a phone that heats up keeps its quarter
+      // rather than getting every tree back with a rest.
       return;
     } else if (
       now > slowAt * line &&
@@ -164,6 +181,9 @@ export function createWoodsGovernor({
     if (at - (leftAt[steps - 1] ?? Number.NEGATIVE_INFINITY) < restMs) return;
     againAt = undefined;
     enter(steps - 1);
+    // A rung re-entered from below: the rung under it bought its time, so a
+    // slow verdict here is a new one rather than the woods not paying.
+    bought = steps > 0;
   };
 
   /** The interval this frame measures, or undefined when it measures none. */
@@ -185,7 +205,8 @@ export function createWoodsGovernor({
     const now =
       average === undefined || fresh
         ? ms
-        : average + (ms - average) * G.smoothing;
+        : average +
+          (Math.min(ms, G.spikeLimit * average) - average) * G.smoothing;
     average = now;
     fresh = false;
     return now;
@@ -213,7 +234,12 @@ export function createWoodsGovernor({
   return {
     frame(atMs, chained) {
       const ms = measured(atMs, chained);
-      if (ms !== undefined) count(atMs, ms);
+      if (ms === undefined) return;
+      if (afterStep) {
+        afterStep = false;
+        return;
+      }
+      count(atMs, ms);
     },
     state() {
       const share = G.shares[steps] ?? 1;
