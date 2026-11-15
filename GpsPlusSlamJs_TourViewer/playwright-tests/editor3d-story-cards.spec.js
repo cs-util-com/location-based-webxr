@@ -386,17 +386,73 @@ for (const size of SIZES) {
         await page.mouse.down();
         await page.mouse.move(from.x, from.y + to, { steps: 6 });
       } else {
-        // A flick that starts on the grip moves nothing.
-        const flick = Date.now() / 1000;
+        // A flick that starts on a grip scrolls the cards: the cards at
+        // their end, from the last step's grip as far as the drag below
+        // runs, in one burst. No card may be marked on the way.
+        const range = await body.evaluate(
+          (b) => b.scrollHeight - b.clientHeight,
+        );
+        expect(range, "the cards overflow the body").toBeGreaterThan(20);
+        await body.evaluate((b) => {
+          b.scrollTop = b.scrollHeight;
+          const seen = { marks: 0 };
+          new MutationObserver(() => {
+            if (b.querySelector(".dragging, .drop-before, .drop-after")) {
+              seen.marks++;
+            }
+          }).observe(b, { subtree: true, attributeFilter: ["class"] });
+          Object.assign(window, { __gripMarks: seen });
+        });
+        const atEnd = await body.evaluate((b) => b.scrollTop);
+        const low = await boxOf(cards.nth(2).locator(".grip"));
+        expect(
+          low.y + low.height,
+          "the last grip in sight",
+        ).toBeLessThanOrEqual((await boxOf(foot)).y);
+        const grab = {
+          x: low.x + low.width / 2,
+          y: low.y + low.height / 2,
+        };
+        const swipe = Date.now() / 1000;
         await sendTouches(cdp, [
           ...fingerOf(
+            grab,
+            [1, 2, 3, 4, 5, 6].map((i) => [i * 16, (to * i) / 6]),
+            swipe,
+          ),
+          { type: "touchEnd", touchPoints: [], timestamp: swipe + 0.12 },
+        ]);
+        await expect
+          .poll(() => body.evaluate((b) => b.scrollTop))
+          .toBeLessThan(atEnd);
+        expect(
+          await page.evaluate(
+            () => /** @type {any} */ (window).__gripMarks.marks,
+          ),
+        ).toBe(0);
+        expect(await stepsOf(page, "The legend")).toEqual(before);
+        await body.evaluate((b) => {
+          b.scrollTop = 0;
+        });
+
+        // The same flick as the drag below, from the first step's grip past
+        // the last, in one burst: while the finger is still down nothing is
+        // held and no slot shows; lifted, the order is as it was.
+        const flick = Date.now() / 1000;
+        await sendTouches(
+          cdp,
+          fingerOf(
             from,
-            [1, 2, 3, 4, 5].map((i) => [i * 16, i * 12]),
+            [1, 2, 3, 4, 5, 6].map((i) => [i * 16, (to * i) / 6]),
             flick,
           ),
-          { type: "touchEnd", touchPoints: [], timestamp: flick + 0.1 },
-        ]);
+        );
         await expect(inspector.locator(".scard.dragging")).toHaveCount(0);
+        await expect(inspector.locator(".scard.drop-after")).toHaveCount(0);
+        await expect(inspector.locator(".scard.drop-before")).toHaveCount(0);
+        await sendTouches(cdp, [
+          { type: "touchEnd", touchPoints: [], timestamp: flick + 0.12 },
+        ]);
         expect(await stepsOf(page, "The legend")).toEqual(before);
         await body.evaluate((b) => {
           b.scrollTop = 0;

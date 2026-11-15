@@ -4145,7 +4145,9 @@ body[data-view="3d"] #view3d .view3d-canvas {
   border-radius: 4px;
   color: var(--s-dim);
   cursor: grab;
-  touch-action: none;
+  /* A flick from the grip scrolls the cards; once a rested finger drags,
+   * the drag holds them still (createTreeDrag's touchmove). */
+  touch-action: pan-y;
 }
 
 .scard .grip:hover {
@@ -4203,6 +4205,15 @@ body[data-view="3d"] #view3d .view3d-canvas {
   flex: none;
 }
 
+/* A column makes the title's count (an inline output elsewhere) a block,
+ * whose padding would then push the cards down: it keeps the line it has
+ * in the item inspector. */
+#inspector-body:has(> .sfoot) > output.note.pad {
+  margin: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
 .acts.sfoot {
   position: sticky;
   bottom: 0;
@@ -4241,9 +4252,6 @@ body[data-view="3d"] #view3d .view3d-canvas {
 
 .sfoot .act.pri {
   flex: none;
-}
-
-.sfoot .act.pri {
   border-color: var(--s-accent);
   background: var(--s-accent);
   color: #1c1c1c;

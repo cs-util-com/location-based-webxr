@@ -38,7 +38,11 @@ draws them; `inspector-model.ts` puts them on the story's inspector.
   marks nothing. Short of the dock tabs' 250 ms hold and the page's
   500 ms long press, so neither runs out under a drag. Swept in
   `tree-drag-arm.test.ts` over holds 100-250 ms and tolerances 4-8 px:
-  flicks never drag, a 300 ms rest always does.
+  flicks never drag, a 300 ms rest always does, and a slow drift turns
+  from a drag to none near tolerancePx / holdMs (between 0.6 and 0.7 px a
+  frame at 150 ms and 6 px). The grip lets a finger pan (`touch-action:
+pan-y`), so a flick from it scrolls the cards; once a rested finger
+  drags, the drag holds them still.
 - `advanceChip(advance)` (module-private): "After <s> s", "On a tap",
   "When the line ends".
 
