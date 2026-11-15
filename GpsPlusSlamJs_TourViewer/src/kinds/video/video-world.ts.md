@@ -33,7 +33,8 @@ same look, still and silent.
   scale its folders draw it at (`inheritedScaleOf`), in its own metres,
   passed to `look.ground`. That holds at rest and while a folder's
   scale is dragged (the renderer moves the object and its scale, the
-  part keeps its old pose), and moves the shadow and foot without a
+  part keeps its old pose), while its width is dragged (the look divides
+  by the width drawn), and moves the shadow and foot without a
   rebuild; a committed scale redraws the station anyway.
 - There: the horizontal distance from the object over the scale its
   folders draw it at (`inheritedScaleOf`), with `videoThere`'s margin.
@@ -80,5 +81,7 @@ part?.update?.({ seconds, viewer, facing });
   CC, leave
   and return, finished then replay, the porthole, the silent editor, a
   posed cutout's turn and dispose, and the ground of a screen and a cutout
-  in folders of scale 0.5 to 3, at rest and while a folder's scale is
-  dragged (no rebuild: the same tap target).
+  in folders of scale 0.5 to 10, at rest, while a folder's scale is
+  dragged and while its width is dragged (0.1 to 6 m, in folders of
+  scale 1 and 3; no rebuild: the same tap target), each checked against
+  the shadow's 0.012 gap times the scale the look is drawn at.

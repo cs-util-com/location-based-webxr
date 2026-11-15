@@ -31,7 +31,11 @@ approved station-blocks video prototype's measures:
 - `videoLook(options)` -> `{ object, tapTarget, show(state), ground(liftM), dispose() }`;
   `ground` stands the shadow and a cutout's foot `liftM` (the part's own
   metres) below the object, for a folder that draws the part at another
-  scale; nonsense and the porthole change nothing.
+  scale; nonsense and the porthole change nothing. It divides by the
+  root's scale as drawn now, not the one it was built at: the editor's
+  width drag rescales the root in place (`drawAtExtent`). The folders'
+  scale is the part object's, outside the root, and is already out of
+  `liftM`, so neither scale is counted twice.
 - `centredSquare(aspect)` -> `[u, v, w, h]` - the porthole's crop; the
   whole clip for an aspect that is no positive number.
 

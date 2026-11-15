@@ -688,9 +688,13 @@ export function centredSquare(
 export function videoLook(options: LookOptions): VideoLook {
   const owned = new Owned();
   const scale = options.widthM / LOOK_REFERENCE_WIDTH_M;
-  // The ground in the look's own (reference) metres.
-  const groundAt = (liftM: number): number => (scale > 0 ? -liftM / scale : 0);
-  const ground = groundAt(options.liftM);
+  // The ground in the look's own (reference) metres, at the scale it is
+  // drawn at now: a width drag (`drawAtExtent`) rescales the root in
+  // place. The folders' scale is not in it: that is the part's object's,
+  // and `liftM` is already in the part's own metres.
+  const groundAt = (liftM: number, at: number): number =>
+    at > 0 ? -liftM / at : 0;
+  const ground = groundAt(options.liftM, scale);
   const built =
     options.view === "screen"
       ? screenLook(owned, options, ground)
@@ -715,7 +719,7 @@ export function videoLook(options: LookOptions): VideoLook {
     },
     ground(liftM) {
       if (!Number.isFinite(liftM) || !("ground" in built)) return;
-      built.ground(groundAt(liftM));
+      built.ground(groundAt(liftM, scaleOf(object)));
     },
     dispose() {
       object.removeFromParent();

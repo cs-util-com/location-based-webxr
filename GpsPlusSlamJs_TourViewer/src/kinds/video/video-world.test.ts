@@ -20,8 +20,8 @@ import {
   saveVisitorPrefs,
   type PrefsStorage,
 } from "../../visitor-prefs.js";
-import { drawInherited } from "../../placement/place-scale.js";
-import type { WorldEnv, WorldMode } from "../../world-part.js";
+import { drawAtExtent, drawInherited } from "../../placement/place-scale.js";
+import type { WorldEnv, WorldMode, WorldPart } from "../../world-part.js";
 import {
   VIDEO_AWAY_M,
   VIDEO_LOOK_DWELL_S,
@@ -99,6 +99,8 @@ interface Setup {
   readonly activated?: boolean;
   readonly storage?: PrefsStorage;
   readonly refuse?: FakePlayer["refuse"];
+  /** Done to the part before its clip's size is known. */
+  readonly beforeReady?: (part: WorldPart) => void;
 }
 
 async function video(setup: Setup = {}) {
@@ -154,6 +156,7 @@ async function video(setup: Setup = {}) {
   } as TourVideoBlock;
   const part = videoWorld(block, env, deps);
   if (part === null) throw new Error("no part");
+  setup.beforeReady?.(part);
   await part.ready;
   return { part, player, shown, storage };
 }
@@ -486,5 +489,39 @@ describe("a free video's ground", () => {
         expect(part.tapTarget, `scale ${String(scale)}`).toBe(tap);
       }
     });
+
+    // Why: the editor's width drag rescales the look in place
+    // (`drawAtExtent`) and does not rebuild it, so the part keeps the
+    // width it was built with (1.6 m here). The ground must follow the
+    // width drawn, not the built one: dividing the lift by the built
+    // width's scale put a screen's shadow 2 m under the ground at twice
+    // the width and 1 m in the air at half of it. Swept over widths
+    // either side of the built one, at folder scales 1 and 3 (a drag
+    // inside a scaled folder, where the two scales multiply).
+    for (const folder of [1, 3]) {
+      it(`a ${view} 2 m up in a folder of scale ${String(folder)} keeps its ground while its width is dragged`, async () => {
+        const { part } = await video({
+          mode: "edit",
+          block: {
+            view,
+            pose: { position: [0, 2, 0], rotation: [0, 0, 0, 1] },
+          },
+        });
+        part.object.position.set(0, 2 * folder, 0);
+        drawInherited(part.object, folder);
+        part.update?.(at(0, 0));
+        const tap = part.tapTarget;
+        for (const widthM of [3.2, 0.8, 6, 0.1, 1.6]) {
+          drawAtExtent(part.object, widthM);
+          part.update?.(at(0, 0));
+          expectOnGround(
+            part.object,
+            (folder * widthM) / 1.6,
+            `width ${String(widthM)}`,
+          );
+          expect(part.tapTarget, `width ${String(widthM)}`).toBe(tap);
+        }
+      });
+    }
   }
 });
