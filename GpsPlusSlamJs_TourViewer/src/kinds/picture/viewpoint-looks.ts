@@ -145,7 +145,7 @@ export function spotMarker(viewpoint: TourPictureViewpoint): {
 
 /** The viewer's plate on its column (m): its size, its height and how
  *  far it stands out toward the spot, tilted back to the visitor. */
-export const VIEWER_PLATE = {
+const VIEWER_PLATE = {
   widthM: 0.34,
   heightM: 0.15,
   heightOverGroundM: 0.95,
@@ -154,7 +154,7 @@ export const VIEWER_PLATE = {
 } as const;
 
 /** The window's plate under its frame (m): its size and the gap. */
-export const PORTAL_PLATE = {
+const PORTAL_PLATE = {
   widthM: 0.36,
   heightM: 0.09,
   gapM: 0.05,
