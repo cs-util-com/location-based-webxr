@@ -17,6 +17,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { validateBytes } from "gltf-validator";
 
+import { heightField } from "./meshes.js";
+
 export const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 
 /** The repo's real scanned models (the model LOD prototype's), by name. */
@@ -122,6 +124,34 @@ export function boxSpec(name: string, offset = [0, 0, 0], size = 1): MeshSpec {
     texcoords: Float32Array.from(uvs),
     indices: Uint32Array.from(faces),
   };
+}
+
+/** A textureless bumpy height field of `2 n²` triangles (4608 at the
+ *  default 48, above the level-of-detail floor): geometry only, so a
+ *  saved chain's index lists weigh most against the file's bytes. Its
+ *  index list is 16-bit when `indices16`. */
+export async function bumpyField(
+  n = 48,
+  indices16 = false,
+): Promise<Uint8Array> {
+  const mesh = heightField(
+    n,
+    (u, v) =>
+      0.08 * Math.sin(7 * u) * Math.cos(5 * v) + 0.02 * Math.sin(23 * u),
+  );
+  return buildModel({
+    meshes: [
+      {
+        name: "field",
+        positions: mesh.positions as Float32Array<ArrayBuffer>,
+        normals: mesh.normals as Float32Array<ArrayBuffer>,
+        texcoords: mesh.uvs as Float32Array<ArrayBuffer>,
+        indices: indices16
+          ? Uint16Array.from(mesh.indices)
+          : (mesh.indices as Uint32Array<ArrayBuffer>),
+      },
+    ],
+  });
 }
 
 export interface ModelSpec {
@@ -284,11 +314,11 @@ export async function buildModel(spec: ModelSpec): Promise<Uint8Array> {
 /** The bending tube's shape: an open tube of radius 0.2 along y from 0 to
  *  2, `rings` rings of `segments` vertices (plus a texture seam copy),
  *  bound to two bones, one at y = 0 and one at the bend, y = 1. */
-export const TUBE = { radius: 0.2, length: 2, bend: 1 } as const;
+const TUBE = { radius: 0.2, length: 2, bend: 1 } as const;
 
 /** The upper bone's weight at height `y`: 0 below the bend's band
  *  (0.8 to 1.2), 1 above it, smooth in between. */
-export function tubeWeight(y: number): number {
+function tubeWeight(y: number): number {
   const u = Math.min(1, Math.max(0, (y - 0.8) / 0.4));
   return u * u * (3 - 2 * u);
 }

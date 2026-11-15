@@ -617,6 +617,95 @@ function choicesOf(o: Ordered): LodChoice[] {
   });
 }
 
+/** Bytes of an index component, by glTF component type. */
+const INDEX_BYTES: Readonly<Record<number, number>> = {
+  5121: 1,
+  5123: 2,
+  5125: 4,
+};
+
+/** A primitive's saved levels as whole ranges, or null when they do not
+ *  read. */
+function rangesOf(lod: GltfObject): { start: number; count: number }[] | null {
+  const levels = lod["levels"];
+  if (!Array.isArray(levels) || levels.length === 0) return null;
+  const ranges = levels.map((value) => {
+    const level = objectOf(value);
+    const start = level?.["start"];
+    const count = level?.["count"];
+    return Number.isInteger(start) && Number.isInteger(count)
+      ? { start: start as number, count: count as number }
+      : null;
+  });
+  return ranges.every((r) => r !== null) ? ranges : null;
+}
+
+/** Drops the coarsest saved level of every primitive with a chain, and
+ *  the chain itself (`extras.lod`) where only the author's level would be
+ *  left; the chain's index list and its buffer view are cut to the levels
+ *  kept, so the dropped levels' bytes leave the file. The author's level
+ *  (the primitive's index list) is never touched. Whether anything was
+ *  dropped. */
+export function dropCoarsestLevel(parts: GlbParts): boolean {
+  const accessors = listOf(parts.json, "accessors") ?? [];
+  const views = listOf(parts.json, "bufferViews") ?? [];
+  let dropped = false;
+  for (const mesh of listOf(parts.json, "meshes") ?? []) {
+    for (const p of listOf(objectOf(mesh) ?? {}, "primitives") ?? []) {
+      const prim = objectOf(p);
+      const extras = objectOf(prim?.["extras"]);
+      const lod = objectOf(extras?.["lod"]);
+      const ranges = lod === null ? null : rangesOf(lod);
+      const chain = indexOf(lod?.["indices"]);
+      const accessor = chain === null ? null : objectOf(accessors[chain]);
+      const bytes = INDEX_BYTES[accessor?.["componentType"] as number];
+      if (extras === null || ranges === null || accessor === null || !bytes)
+        continue;
+      const kept = ranges.slice(0, ranges.length <= 2 ? 1 : -1);
+      const count = Math.max(...kept.map((r) => r.start + r.count));
+      if (!(count <= (accessor["count"] as number))) continue;
+      accessor["count"] = count;
+      if (kept.length === 1) delete extras["lod"];
+      else lod!["levels"] = (lod!["levels"] as unknown[]).slice(0, -1);
+      if (Object.keys(extras).length === 0) delete prim!["extras"];
+      cutView(parts, accessors, views, accessor, count * bytes);
+      dropped = true;
+    }
+  }
+  return dropped;
+}
+
+/** Cuts the view under `chain` to end where its first `length` bytes do,
+ *  when no other accessor reads past that. */
+function cutView(
+  parts: GlbParts,
+  accessors: readonly unknown[],
+  views: readonly unknown[],
+  chain: GltfObject,
+  length: number,
+): void {
+  const v = indexOf(chain["bufferView"]);
+  const view = v === null ? null : objectOf(views[v]);
+  const data = v === null ? undefined : parts.views[v];
+  if (view === null || data === undefined) return;
+  const end = ((chain["byteOffset"] as number | undefined) ?? 0) + length;
+  const readsPast = accessors.some((value) => {
+    const other = objectOf(value);
+    if (other === null || other === chain || other["bufferView"] !== v)
+      return false;
+    const size = INDEX_BYTES[other["componentType"] as number];
+    const offset = (other["byteOffset"] as number | undefined) ?? 0;
+    return (
+      !size ||
+      other["type"] !== "SCALAR" ||
+      offset + (other["count"] as number) * size > end
+    );
+  });
+  if (readsPast || end > data.length) return;
+  parts.views[v!] = data.subarray(0, end);
+  view["byteLength"] = end;
+}
+
 const NOTHING: Omit<LodReport, "skipped" | "automatic"> = {
   primitives: 0,
   trianglesBefore: 0,

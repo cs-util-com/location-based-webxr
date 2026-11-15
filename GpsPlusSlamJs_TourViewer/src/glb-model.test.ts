@@ -21,28 +21,8 @@ import {
 import { optimizeModel } from "./editor/asset-shelf/model-step.js";
 import { OPTIMIZER_SETTINGS } from "./editor/asset-shelf/optimizer-settings.js";
 import { fakePictureDevice } from "./editor/asset-shelf/test-support/fake-picture-device.js";
-import { buildModel } from "./editor/asset-shelf/test-support/glb-fixtures.js";
-import { heightField } from "./editor/asset-shelf/test-support/meshes.js";
+import { bumpyField } from "./editor/asset-shelf/test-support/glb-fixtures.js";
 import { loadGlbModel } from "./glb-model.js";
-
-async function bumpyField(): Promise<Uint8Array> {
-  const mesh = heightField(
-    48,
-    (u, v) =>
-      0.08 * Math.sin(7 * u) * Math.cos(5 * v) + 0.02 * Math.sin(23 * u),
-  );
-  return buildModel({
-    meshes: [
-      {
-        name: "field",
-        positions: mesh.positions as Float32Array<ArrayBuffer>,
-        normals: mesh.normals as Float32Array<ArrayBuffer>,
-        texcoords: mesh.uvs as Float32Array<ArrayBuffer>,
-        indices: mesh.indices as Uint32Array<ArrayBuffer>,
-      },
-    ],
-  });
-}
 
 const blobOf = (bytes: Uint8Array) =>
   new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "model/gltf-binary" });

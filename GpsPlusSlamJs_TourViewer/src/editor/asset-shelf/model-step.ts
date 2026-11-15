@@ -14,8 +14,12 @@
 
 import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
 
-import { readGlb, writeGlb } from "./glb-file.js";
-import { type LodReport, simplifyModel } from "./model-lod.js";
+import { type GlbParts, readGlb, writeGlb } from "./glb-file.js";
+import {
+  dropCoarsestLevel,
+  type LodReport,
+  simplifyModel,
+} from "./model-lod.js";
 import { type QuantizeReport, quantizeModel } from "./model-quantize.js";
 import { shrinkTextures, type TextureReport } from "./model-textures.js";
 import {
@@ -39,6 +43,11 @@ export interface ModelReport {
  *  about as long as its textures. */
 const TEXTURE_SHARE = 0.45;
 const LOD_SHARE = 0.5;
+
+/** `parts` as a `.glb`, leaving `parts` as it was (`writeGlb` renumbers
+ *  the views of the JSON it writes). */
+const written = (parts: GlbParts) =>
+  writeGlb({ json: structuredClone(parts.json), views: [...parts.views] });
 
 /** The step: `payload` is the model's file as it came in. */
 export async function optimizeModel<P extends DecodedPicture>(
@@ -72,7 +81,13 @@ export async function optimizeModel<P extends DecodedPicture>(
   );
   if (control.signal.aborted) throw stoppedError();
   const quantize = quantizeModel(parts, settings.model);
-  const bytes = writeGlb(parts);
+  // The shelf keeps the original when the file is above `keepAbove` of
+  // it: the saved chain must never cost the file its other savings, so
+  // its coarsest levels go first, down to none, until the file is under.
+  const line = payload.size * settings.keepAbove;
+  let bytes = written(parts);
+  while (bytes.length > line && dropCoarsestLevel(parts))
+    bytes = written(parts);
   const check = checkGlbInert(bytes);
   if (!check.ok) {
     throw new Error(
