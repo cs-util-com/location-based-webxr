@@ -10,6 +10,7 @@
 import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
+  rebaseLightSettings,
   type LightSettings,
 } from "./light-settings.js";
 
@@ -55,6 +56,11 @@ export interface LightDialogDeps {
   /** The button that opens it: told whether it is expanded, and focused again on close. */
   readonly opener?: HTMLElement;
   readonly initial: LightSettings;
+  /**
+   * What Reset returns to: the colour scheme's light (`lightDefaultsFor`),
+   * the shipped look when left out. `setDefaults` moves it later.
+   */
+  readonly defaults?: LightSettings;
   /** Applies a setting live (the view, the URL). */
   readonly onChange: (settings: LightSettings) => void;
   /**
@@ -86,6 +92,14 @@ export interface LightDialog {
   /** Re-reads the brightness when open (the page calls it on a sun move). */
   refresh(): void;
   readonly settings: LightSettings;
+  /** The defaults Reset returns to and the light link is written against. */
+  readonly defaults: LightSettings;
+  /**
+   * Moves onto new defaults (the page calls it on a colour scheme switch):
+   * a value still at the old default takes the new one, a value the viewer
+   * set keeps it (`rebaseLightSettings`), and the result is applied.
+   */
+  setDefaults(next: LightSettings): void;
   dispose(): void;
 }
 
@@ -107,6 +121,7 @@ const afterPaint = (callback: () => void) => {
 export function createLightDialog(deps: LightDialogDeps): LightDialog {
   const nextFrame = deps.nextFrame ?? afterPaint;
   let settings = deps.initial;
+  let defaults = deps.defaults ?? DEFAULT_LIGHT_SETTINGS;
 
   const panel = document.createElement("section");
   panel.id = "light-dialog";
@@ -241,7 +256,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   });
 
   reset.addEventListener("click", () => {
-    apply(DEFAULT_LIGHT_SETTINGS);
+    apply(defaults);
     brightness();
   });
 
@@ -335,6 +350,14 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     },
     get settings() {
       return settings;
+    },
+    get defaults() {
+      return defaults;
+    },
+    setDefaults(next) {
+      const from = defaults;
+      defaults = next;
+      apply(rebaseLightSettings(settings, from, next));
     },
     dispose() {
       document.removeEventListener("keydown", onKey);

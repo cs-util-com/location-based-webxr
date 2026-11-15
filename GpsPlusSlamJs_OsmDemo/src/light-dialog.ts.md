@@ -16,8 +16,11 @@ WebGL.
   - `deps.opener?`: the button that opens it. It gets `aria-controls` and
     `aria-expanded`, and focus back on close.
   - `deps.initial`: the starting `LightSettings` (from the URL).
-  - `deps.onChange(settings)`: called on every slider `input` and on Reset,
-    except the haze visibility, which is applied on `change` (release).
+  - `deps.defaults?`: what Reset returns to, the colour scheme's light
+    (`lightDefaultsFor`); the shipped look when left out.
+  - `deps.onChange(settings)`: called on every slider `input`, on Reset and
+    on `setDefaults`, except the haze visibility, which is applied on
+    `change` (release).
     `main.ts` applies the settings to the view and writes the URL.
   - `deps.measure(withMargin)`: a `LightReadout` for the view as it stands:
     `litLuma`, `margin | null` (only measured when `withMargin`) and `view`
@@ -40,7 +43,11 @@ WebGL.
     focuses the first slider.
   - `refresh()`: re-reads the brightness when open. The page calls it on
     every sun move.
-  - `settings` and `dispose()`.
+  - `settings`, `defaults` and `dispose()`.
+  - `setDefaults(next)`: moves onto a new scheme's defaults
+    (`rebaseLightSettings`: an untouched value follows, a set one stays),
+    shows and applies the result through `onChange`. The page calls it on a
+    colour scheme switch.
 - `HEAT_GRID_MARGIN_BOUND = 5`: the DEC-R4-5 bound that the check compares
   against.
 
@@ -132,7 +139,8 @@ dialog.toggle();
   - the veil's two sliders, off by default and applied live;
   - the brightness alone on release, the margin only on the check;
   - `refresh()` while open and while closed;
-  - Reset;
+  - Reset, to the shipped look and to a scheme's own defaults, and
+    `setDefaults` carrying a set value onto the new scheme;
   - the check's in-progress state, its result on both sides of the bound,
     the ground mode, no grid, and a measurement that throws;
   - the default `nextFrame` measuring only after the frame's task;

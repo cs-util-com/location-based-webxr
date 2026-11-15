@@ -269,7 +269,10 @@ describe("the schemes", () => {
     // Why this test matters: a material-tagged building draws exactly ONE
     // tone, its material's, on every wall, so a mean over the materials says
     // nothing about any one building: a glass tone 2 L* from the ground hid
-    // behind a comfortable group mean. Each tone is held to the floor.
+    // behind a comfortable group mean. Each tone is held to the floor PLUS
+    // the scheme's wall jitter: every wall is shifted by up to `wallJitterL`
+    // L* either way, so a tone exactly at the floor renders a building that
+    // much closer to the ground.
     for (const name of COLOUR_SCHEME_NAMES) {
       const { city } = COLOUR_SCHEMES[name];
       if (!city.honourMaterialTags) continue;
@@ -279,8 +282,8 @@ describe("the schemes", () => {
         const least = Math.min(Math.abs(l - roads), Math.abs(l - ground));
         expect(
           least,
-          `${name} ${material}: ${l.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}`,
-        ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+          `${name} ${material}: ${l.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}, jitter ${city.wallJitterL}`,
+        ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE + city.wallJitterL);
       }
     }
   });
@@ -387,15 +390,15 @@ describe("the urban scheme (real-albedo grey ladder)", () => {
     expect(city.towerFromM).toBe(40);
     expect(city.honourMaterialTags).toBe(true);
     expect([...city.materialWalls]).toEqual([
-      ["glass", 0x454f55],
-      ["brick", 0x977165],
+      ["glass", 0x3d474d],
+      ["brick", 0x9f786c],
       ["concrete", 0x979692],
       ["stone", 0xb3aa9d],
       ["sandstone", 0xb39c87],
-      ["granite", 0x817b78],
+      ["granite", 0x86807d],
       ["metal", 0x888c8e],
       ["plaster", 0xbeb5a7],
-      ["wood", 0x8f7462],
+      ["wood", 0x977c6a],
     ]);
     expect(city.wallJitterL).toBe(3);
   });

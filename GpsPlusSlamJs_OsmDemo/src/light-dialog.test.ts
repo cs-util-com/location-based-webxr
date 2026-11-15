@@ -18,6 +18,7 @@ import {
 } from "./light-dialog.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
+  lightDefaultsFor,
   type LightSettings,
 } from "./light-settings.js";
 
@@ -280,6 +281,28 @@ describe("createLightDialog", () => {
     const back = onChange.mock.calls.at(-1)![0];
     expect(back.gainFullDeg).toBe(10);
     expect(back.gainFromDeg).toBe(9);
+  });
+
+  it("resets to the scheme's defaults, and moves onto a new scheme's", () => {
+    // Why this test matters: urban is tuned with its own light, so Reset
+    // must land on urban's light while urban is shown, and a scheme switch
+    // must carry what the viewer set while the untouched rest follows.
+    const urban = lightDefaultsFor("urban");
+    const { dialog, onChange, slide, $ } = setup({
+      initial: urban,
+      defaults: urban,
+    });
+    expect(dialog.defaults).toBe(urban);
+    slide("gainMax", 2);
+    $("light-reset").click();
+    expect(onChange).toHaveBeenLastCalledWith(urban);
+    slide("hazeVisibilityKm", 15);
+    dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    expect(dialog.defaults).toBe(DEFAULT_LIGHT_SETTINGS);
+    const moved = { ...DEFAULT_LIGHT_SETTINGS, hazeVisibilityKm: 15 };
+    expect(dialog.settings).toEqual(moved);
+    expect(onChange).toHaveBeenLastCalledWith(moved);
+    expect($<HTMLInputElement>("light-hazeVeilLightness").value).toBe("0");
   });
 
   it("resets every value to the shipped look", () => {

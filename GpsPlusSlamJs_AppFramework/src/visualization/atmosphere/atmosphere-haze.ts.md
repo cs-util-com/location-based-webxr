@@ -27,7 +27,7 @@ with the air's per-channel extinction, replacing the one-colour fog. An
     neutral 1×1 texture bound (AR, or no atmosphere yet).
   - `mode` — the requested mode (so an AR session can restore it).
   - `setDensityScale(k)` — multiplier on the physical extinction (≥ 0).
-  - `setVeil(rgb | null)` and `veil` — a fixed scene-linear colour the haze
+  - `setVeil(rgb | null)` and `veil`: a fixed scene-linear colour the haze
     fades toward in place of the sky-view LUT colour (an app's look
     control); `null` (the default) is the sky's colour. Each channel must
     be finite and ≥ 0 (`RangeError`). Survives `sync`.

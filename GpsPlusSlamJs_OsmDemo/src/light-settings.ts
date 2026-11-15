@@ -2,8 +2,9 @@
  * The light settings the owner tunes in the light dialog (plan
  * 2026-09-24-2140-osm-demo-light-settings-dialog-plan): the noon surface
  * gain's ramp, the sky light on buildings, the sky's auto-exposure
- * adaptation, the EV compensation, and the haze's visibility and start
- * (`HAZE_VISIBILITY_KM`, `HAZE_START_RATIO`). The defaults ARE the shipped look, so
+ * adaptation, the EV compensation, the haze's visibility and start
+ * (`HAZE_VISIBILITY_KM`, `HAZE_START_RATIO`), and the haze veil's lightness
+ * and tint (`veil`, `tint`; `haze-veil.ts`). The defaults ARE the shipped look, so
  * an untouched dialog changes nothing; the values travel in the URL
  * (`?light=v1:gain=1.8,ev=-2.5`, only the fields that differ) so a tuned
  * look can be shared and pasted back. This is a deliberate exception to
@@ -27,6 +28,7 @@ import {
   NOON_SURFACE_GAIN,
   type SurfaceGainRamp,
 } from "./atmosphere-rig.js";
+import type { ColourSchemeName } from "./colour-schemes.js";
 import { HAZE_VEIL_TINT, type HazeVeil } from "./haze-veil.js";
 
 export interface LightSettings {
@@ -77,6 +79,31 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
   hazeVeilLightness: 0,
   hazeVeilTint: HAZE_VEIL_TINT,
 };
+
+/**
+ * The light a colour scheme is tuned with, where it differs from the shipped
+ * look. Urban's walls were tuned under a bright, bluish veil at EV -2, which
+ * brings its far field toward the reference city's haze; the price is paler
+ * far accents and a few points less near contrast, accepted for the look.
+ */
+const SCHEME_LIGHT: Partial<Record<ColourSchemeName, Partial<LightSettings>>> =
+  {
+    urban: { hazeVeilLightness: 78, exposureEv: -2 },
+  };
+
+/**
+ * The defaults a link is read against under a colour scheme: the shipped
+ * look, with the scheme's own light over it. An unknown name, or a scheme
+ * with no light of its own, gives `DEFAULT_LIGHT_SETTINGS` itself.
+ */
+export function lightDefaultsFor(scheme: string): LightSettings {
+  const own = Object.hasOwn(SCHEME_LIGHT, scheme)
+    ? SCHEME_LIGHT[scheme as ColourSchemeName]
+    : undefined;
+  return own === undefined
+    ? DEFAULT_LIGHT_SETTINGS
+    : { ...DEFAULT_LIGHT_SETTINGS, ...own };
+}
 
 /** The sliders' ranges and steps (the dialog's inputs and the URL's bounds). */
 export const LIGHT_SETTING_RANGES: {
@@ -131,11 +158,15 @@ const round = (v: number) => Number(v.toFixed(3));
  * throws: a missing, unknown, non-numeric or out-of-range field falls back
  * to its default, a ramp that does not rise falls back to the default ramp,
  * and another version or no version is ignored (a shared link with a typo
- * still opens the page).
+ * still opens the page). "Default" is `defaults`: the scheme's
+ * (`lightDefaultsFor`), the shipped look when left out.
  */
-export function parseLightSettings(search: string): LightSettings {
+export function parseLightSettings(
+  search: string,
+  defaults: LightSettings = DEFAULT_LIGHT_SETTINGS,
+): LightSettings {
   const raw = new URLSearchParams(search).get(LIGHT_PARAM);
-  if (raw === null || !raw.startsWith(VERSION)) return DEFAULT_LIGHT_SETTINGS;
+  if (raw === null || !raw.startsWith(VERSION)) return defaults;
   const pairs = new Map(
     raw
       .slice(VERSION.length)
@@ -145,9 +176,7 @@ export function parseLightSettings(search: string): LightSettings {
         return [pair.slice(0, eq).trim(), pair.slice(eq + 1).trim()] as const;
       }),
   );
-  const out: Record<keyof LightSettings, number> = {
-    ...DEFAULT_LIGHT_SETTINGS,
-  };
+  const out: Record<keyof LightSettings, number> = { ...defaults };
   FIELDS.forEach((field) => {
     const text = pairs.get(KEYS[field]) ?? "";
     const v = text === "" ? Number.NaN : Number(text);
@@ -155,22 +184,40 @@ export function parseLightSettings(search: string): LightSettings {
     if (Number.isFinite(v) && v >= r.min && v <= r.max) out[field] = round(v);
   });
   if (!(out.gainFullDeg > out.gainFromDeg)) {
-    out.gainFromDeg = DEFAULT_LIGHT_SETTINGS.gainFromDeg;
-    out.gainFullDeg = DEFAULT_LIGHT_SETTINGS.gainFullDeg;
+    out.gainFromDeg = defaults.gainFromDeg;
+    out.gainFullDeg = defaults.gainFullDeg;
   }
   return out;
 }
 
 /**
- * The `?light=` value (only the fields that differ from the defaults), or
- * null when the settings are the defaults.
+ * The `?light=` value (only the fields that differ from `defaults`, the
+ * shipped look when left out), or null when the settings are the defaults.
  */
-export function serializeLightSettings(s: LightSettings): string | null {
-  const changed = FIELDS.filter(
-    (f) => round(s[f]) !== round(DEFAULT_LIGHT_SETTINGS[f]),
-  );
+export function serializeLightSettings(
+  s: LightSettings,
+  defaults: LightSettings = DEFAULT_LIGHT_SETTINGS,
+): string | null {
+  const changed = FIELDS.filter((f) => round(s[f]) !== round(defaults[f]));
   if (changed.length === 0) return null;
   return VERSION + changed.map((f) => `${KEYS[f]}=${round(s[f])}`).join(",");
+}
+
+/**
+ * The settings moved from one scheme's defaults to another's: a field still
+ * at `from`'s value was never set, so it takes `to`'s; a field that differs
+ * was set, and keeps its value. What a link states, it still states.
+ */
+export function rebaseLightSettings(
+  s: LightSettings,
+  from: LightSettings,
+  to: LightSettings,
+): LightSettings {
+  const out = { ...s } as Record<keyof LightSettings, number>;
+  for (const f of FIELDS) {
+    if (round(s[f]) === round(from[f])) out[f] = to[f];
+  }
+  return out;
 }
 
 /** The one-line summary the Copy button puts on the clipboard. */

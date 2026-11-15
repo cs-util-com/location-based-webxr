@@ -30,7 +30,7 @@ mapping turns into exactly that, because the haze blends before tone mapping.
 ## Why L\* and b\*, not a mix factor
 
 The look is tuned against a reference photo whose far field is measured in
-L\* and b\* (`city-look-measurement` scripts). A slider in those units says
+L\* and b\*. A slider in those units says
 what the screen will show, at any EV, sun and visibility: the scene colour
 is derived from the renderer's fixed exposure (`TONE_MAPPING_EXPOSURE`), and
 the haze's colour never passes through the sky's auto-exposure. A mix factor

@@ -27,16 +27,34 @@ hazeVeilLightness, hazeVeilTint }`.
   (DEC-LIGHT-9/10). A link keeps the values it states; a field it leaves out
   means today's default.
 - `LIGHT_SETTING_RANGES`: each field's slider min, max and step.
-- `parseLightSettings(search)`: from `?light=v1:gain=1.8,ev=-2.5` (keyed,
-  versioned pairs; the keys are gain, from, full, sky, adapt, ev, vis,
-  haze, veil, tint). Never
+- `parseLightSettings(search, defaults = DEFAULT_LIGHT_SETTINGS)`: from
+  `?light=v1:gain=1.8,ev=-2.5` (keyed, versioned pairs; the keys are gain,
+  from, full, sky, adapt, ev, vis, haze, veil, tint). Never
   throws. A missing, unknown, non-numeric or out-of-range field falls back to
-  its default, a ramp that does not rise falls back to the default ramp, and
-  another version or a bare list is ignored.
-- `serializeLightSettings(settings)`: the `?light=` value with only the
-  fields that differ from the defaults, or `null` for the defaults (the URL
-  stays clean). Keyed, so an old link keeps every value it states after a new
-  field or new defaults (plan §7); what it leaves out follows the defaults.
+  its value in `defaults`, a ramp that does not rise falls back to their
+  ramp, and another version or a bare list is ignored.
+- `serializeLightSettings(settings, defaults = DEFAULT_LIGHT_SETTINGS)`: the
+  `?light=` value with only the fields that differ from `defaults`, or
+  `null` at them (the URL stays clean). Keyed, so an old link keeps every
+  value it states after a new field or new defaults (plan §7); what it
+  leaves out follows the defaults.
+- **A colour scheme's own light.** `lightDefaultsFor(scheme)` gives the
+  defaults a link is read and written against under that scheme: the
+  shipped look with the scheme's own values over it, or
+  `DEFAULT_LIGHT_SETTINGS` itself for a scheme without any (every scheme
+  but urban) and for an unknown name. Urban's are the veil at L* 78 (tint
+  -4) and EV -2: its walls were chosen under that light, and it brings the
+  far field toward the reference city's haze, at the price of paler far
+  accents and a few points less near contrast. So an urban link without
+  `veil` or `ev` opens in that light, `veil=0` switches the veil off, and a
+  stated `ev` wins. Other schemes, and AR (its own renderer and lighting;
+  the veil never reaches its fog), are unchanged.
+- `rebaseLightSettings(settings, from, to)`: the settings moved onto
+  another scheme's defaults. A field still at `from`'s value takes `to`'s; a
+  field that differs keeps its value, so what a link states it still
+  states. Known limit: the settings carry values, not which were touched,
+  so a veil switched off on urban (0) is the default on `today`, and the way
+  back to urban brings the veil again.
 - The adaptation's range is 0.5-1: measured, lowering it barely changes
   noon and mostly darkens dawn and dusk (plan §8).
 - `describeLightSettings(settings)`: the Copy line, e.g.
@@ -55,8 +73,8 @@ haze 45 km from 0.66 of the draw distance`.
   lightness as CIE L* on screen (default 0 = no veil, range 0-80 step 1),
   and `tint`, its CIE b* (default `HAZE_VEIL_TINT` -4, range -12..4 step
   0.5; a* is 0). At lightness 0 the haze keeps the sky's colour exactly, so
-  the default, an old link and a link with only a `tint` all render today's
-  look. 80 is the brightest lightness every tint can show below the tone
+  the shipped default, an old link and a link with only a `tint` all render
+  today's look, except under urban, whose own default is a veil (above). 80 is the brightest lightness every tint can show below the tone
   curve's compression knee (at b* -12 the last is 81). `veilOf(settings)`
   gives `{ lightness, tint }` for `AtmosphereRig.setHazeVeil`, or `null` at
   lightness 0. Why L* and b* rather than a mix factor toward a colour:
@@ -93,10 +111,11 @@ haze 45 km from 0.66 of the draw distance`.
 ## Example
 
 ```ts
-const settings = parseLightSettings(location.search);
+const defaults = lightDefaultsFor("urban");
+const settings = parseLightSettings(location.search, defaults);
 const gain = surfaceGainAt(sunElevationRad, gainOf(settings));
 // null at the defaults removes the key; every other key is kept.
-writeLight(browserPlaceUrl(window), serializeLightSettings(settings));
+writeLight(browserPlaceUrl(window), serializeLightSettings(settings, defaults));
 ```
 
 ## Tests
@@ -116,3 +135,14 @@ writeLight(browserPlaceUrl(window), serializeLightSettings(settings));
   tint, and any veil alone round-trips writing only `veil` and `tint` (a
   property test, fixed seed);
 - the Copy line names every value, and the veil only when one is set.
+- a scheme's own light: urban's veil and EV inside the ranges and every
+  other scheme at the shipped look; an urban link without the keys read in
+  urban's light, a stated value and `veil=0` winning; nothing written at
+  urban's defaults; any setting round-tripping against them, and any
+  rebase keeping every set field and moving every other (property tests,
+  fixed seed); the known limit of a veil switched off and switched back.
+
+`playwright-tests/boot-and-shell.spec.js`, "an urban link without light
+keys ...", boots the page: urban's veil and EV from a link that states
+nothing (and no `light` key written), `veil=0` switching it off, and a
+switch to `today` keeping the set veil and visibility while the EV follows.

@@ -1681,6 +1681,38 @@ test.describe("the desktop controls", () => {
     await start.dispatchEvent("input");
     await expect(readout).toHaveText("draw 24000 m · haze 12000 m");
   });
+
+  test("an urban link without light keys opens in urban's veil, veil=0 switches it off, and a scheme switch keeps what was set", async ({
+    page,
+  }) => {
+    // WHY: urban is tuned with its own light (veil L* 78, EV -2), read as
+    // the DEFAULTS of the link, so an old urban link that states nothing
+    // gets it and the link stays clean. The page reads the scheme from the
+    // store before the light, which only a booted page can show.
+    await stubNetwork(page);
+    const veil = page.locator("#light-hazeVeilLightness");
+    const ev = page.locator("#light-exposureEv");
+    const vis = page.locator("#light-hazeVisibilityKm");
+    const lightParam = () => new URL(page.url()).searchParams.get("light");
+
+    await page.goto(`${AT_FIXTURE}&scheme=urban`);
+    await waitForRefresh(page);
+    await expect(veil).toHaveValue("78");
+    await expect(ev).toHaveValue("-2");
+    expect(lightParam()).toBeNull();
+
+    await page.goto(`${AT_FIXTURE}&scheme=urban&light=v1:veil=0,vis=15`);
+    await waitForRefresh(page);
+    await expect(veil).toHaveValue("0");
+    await expect(ev).toHaveValue("-2");
+    // Away from urban: the veil stays off and the visibility stays as set,
+    // while the untouched EV goes back to the shipped look's.
+    await setting(page, "#colour-scheme", (c) => c.selectOption("today"));
+    await expect(veil).toHaveValue("0");
+    await expect(vis).toHaveValue("15");
+    await expect(ev).not.toHaveValue("-2");
+    await expect.poll(lightParam).toBe("v1:vis=15");
+  });
 });
 
 test.describe("the AR entry point", () => {

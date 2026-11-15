@@ -26,7 +26,9 @@ import {
   LIGHT_SETTING_RANGES,
   describeLightSettings,
   gainOf,
+  lightDefaultsFor,
   parseLightSettings,
+  rebaseLightSettings,
   serializeLightSettings,
   veilOf,
   type LightSettings,
@@ -354,5 +356,127 @@ describe("describeLightSettings", () => {
       hazeVeilTint: -5,
     });
     expect(line.endsWith(", veil L* 78 b* -5")).toBe(true);
+  });
+});
+
+describe("a colour scheme's light defaults", () => {
+  // Why this test matters: the urban look is tuned WITH its light (a bright
+  // veil at EV -2); the defaults a link is read against follow the scheme,
+  // so an urban link that states nothing opens in that light, a stated value
+  // still wins, and every other scheme keeps the shipped look.
+  const URBAN = lightDefaultsFor("urban");
+
+  it("gives urban the veil at L* 78 and EV -2, and every other scheme the shipped look", () => {
+    expect(URBAN).toEqual({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVeilLightness: 78,
+      exposureEv: -2,
+    });
+    expect(veilOf(URBAN)).toEqual({ lightness: 78, tint: HAZE_VEIL_TINT });
+    for (const name of ["today", "architect", "night", "no-such-scheme"]) {
+      expect(lightDefaultsFor(name)).toBe(DEFAULT_LIGHT_SETTINGS);
+    }
+  });
+
+  it("keeps the urban defaults inside the sliders' ranges", () => {
+    for (const field of FIELDS) {
+      const r = LIGHT_SETTING_RANGES[field];
+      expect(URBAN[field]).toBeGreaterThanOrEqual(r.min);
+      expect(URBAN[field]).toBeLessThanOrEqual(r.max);
+    }
+  });
+
+  it("reads an old urban link without the keys in the new default, and a stated value over it", () => {
+    expect(parseLightSettings("", URBAN)).toBe(URBAN);
+    expect(parseLightSettings("?light=v1:vis=15", URBAN)).toEqual({
+      ...URBAN,
+      hazeVisibilityKm: 15,
+    });
+    // veil=0 still switches the veil off; ev=-1 overrides the scheme's -2.
+    const off = parseLightSettings("?light=v1:veil=0,ev=-1", URBAN);
+    expect(veilOf(off)).toBeNull();
+    expect(off.exposureEv).toBe(-1);
+  });
+
+  it("writes nothing for the scheme's defaults, and veil=0 when the veil is switched off", () => {
+    expect(serializeLightSettings(URBAN, URBAN)).toBeNull();
+    expect(
+      serializeLightSettings({ ...URBAN, hazeVeilLightness: 0 }, URBAN),
+    ).toBe("v1:veil=0");
+    // Against the shipped defaults the urban look states its two values.
+    expect(serializeLightSettings(URBAN)).toBe("v1:ev=-2,veil=78");
+  });
+
+  it("round-trips any setting against the urban defaults (fixed seed)", () => {
+    const arb = fc.record(
+      Object.fromEntries(
+        FIELDS.map((f) => {
+          const r = LIGHT_SETTING_RANGES[f];
+          const steps = Math.round((r.max - r.min) / r.step);
+          return [
+            f,
+            fc
+              .integer({ min: 0, max: steps })
+              .map((i) => Number((r.min + i * r.step).toFixed(3))),
+          ];
+        }),
+      ) as { [K in keyof LightSettings]: fc.Arbitrary<number> },
+    );
+    fc.assert(
+      fc.property(arb, (s) => {
+        fc.pre(s.gainFullDeg > s.gainFromDeg);
+        const text = serializeLightSettings(s, URBAN);
+        const back = parseLightSettings(
+          text === null ? "" : `?light=${text}`,
+          URBAN,
+        );
+        expect(back).toEqual(s);
+      }),
+      { seed: 20261115, numRuns: 300 },
+    );
+  });
+
+  it("rebases onto a new scheme's defaults: untouched fields follow, changed ones stay", () => {
+    const tuned = { ...URBAN, hazeVisibilityKm: 15 };
+    expect(rebaseLightSettings(tuned, URBAN, DEFAULT_LIGHT_SETTINGS)).toEqual({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVisibilityKm: 15,
+    });
+    expect(rebaseLightSettings(URBAN, URBAN, DEFAULT_LIGHT_SETTINGS)).toEqual(
+      DEFAULT_LIGHT_SETTINGS,
+    );
+    // A veil switched off on urban stays off on the move to another scheme
+    // (0 differs from urban's 78, so it was set) ...
+    const off = { ...URBAN, hazeVeilLightness: 0 };
+    const away = rebaseLightSettings(off, URBAN, DEFAULT_LIGHT_SETTINGS);
+    expect(away).toEqual(DEFAULT_LIGHT_SETTINGS);
+    // ... but there 0 IS the default, so nothing says it was set, and the way
+    // back to urban brings the veil again. A known limit: the settings carry
+    // values, not which of them the viewer touched.
+    expect(rebaseLightSettings(away, DEFAULT_LIGHT_SETTINGS, URBAN)).toEqual(
+      URBAN,
+    );
+  });
+
+  it("keeps every stated field across a rebase, and moves every other (fixed seed)", () => {
+    // A value the viewer set is theirs; a value they never touched is the
+    // scheme's, so it follows the scheme.
+    fc.assert(
+      fc.property(fc.subarray(FIELDS), fc.nat(), (changed, k) => {
+        const s = { ...URBAN } as Record<keyof LightSettings, number>;
+        for (const f of changed) {
+          const r = LIGHT_SETTING_RANGES[f];
+          const steps = Math.round((r.max - r.min) / r.step);
+          s[f] = Number((r.min + (k % (steps + 1)) * r.step).toFixed(3));
+        }
+        const moved = rebaseLightSettings(s, URBAN, DEFAULT_LIGHT_SETTINGS);
+        for (const f of FIELDS) {
+          expect(moved[f]).toBe(
+            s[f] === URBAN[f] ? DEFAULT_LIGHT_SETTINGS[f] : s[f],
+          );
+        }
+      }),
+      { seed: 20261115, numRuns: 300 },
+    );
   });
 });
