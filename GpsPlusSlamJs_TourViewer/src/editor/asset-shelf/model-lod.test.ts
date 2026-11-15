@@ -488,6 +488,23 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
     }
   });
 
+  // Why: the page counts a Worker silent for 2 minutes as crashed, and a
+  // large scan's one primitive can take longer than that on a phone. The
+  // pass must therefore speak during a primitive, not only after it:
+  // several progress calls for a one-primitive model, never falling, the
+  // last one 1.
+  it("reports progress during a primitive's pass, not only after it", async () => {
+    const parts = partsOf(await bendingTube({ clip: true }));
+    const heard: number[] = [];
+    const report = simplifyModel(parts, TUBE_SETTINGS, (f) => heard.push(f));
+    expect(report.primitives).toBe(1);
+    expect(heard.length).toBeGreaterThanOrEqual(5);
+    expect(heard.at(-1)).toBe(1);
+    for (let k = 1; k < heard.length; k++) {
+      expect(heard[k]!).toBeGreaterThanOrEqual(heard[k - 1]!);
+    }
+  });
+
   // Why: exporters sort each vertex's joints by weight, so on a tube whose
   // vertices each follow one bone every weight reads [1, 0, 0, 0] and only
   // the joints say which bone moves a vertex. The order must therefore see
