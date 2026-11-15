@@ -64,6 +64,44 @@ describe("woods governor properties", () => {
     );
   });
 
+  // The session's seed as a property: its average is the first counted
+  // frame, then the smaller of the first two, then the median of the first
+  // three, whatever they are (none over `gapMs`, so each is counted), and no
+  // verdict can be reached before the seed exists. The fourth is smoothed
+  // into it, entering at most `spikeLimit` times the seed.
+  it("seeds the session's average at the median of its first three counted frames", () => {
+    // Whole milliseconds, so the clock sums them exactly.
+    const counted = fc.integer({ min: 1, max: WOODS_GOVERNOR.gapMs });
+    fc.assert(
+      fc.property(fc.tuple(counted, counted, counted, counted), (four) => {
+        const three = four.slice(0, 3);
+        const governor = createWoodsGovernor();
+        let at = 0;
+        governor.frame(at, true);
+        const seen: number[] = [];
+        for (const ms of three) {
+          at += ms;
+          governor.frame(at, true);
+          seen.push(ms);
+          const sorted = [...seen].sort((a, b) => a - b);
+          expect(governor.state().averageMs).toBe(
+            sorted[(sorted.length - 1) >> 1],
+          );
+          expect(governor.state().share).toBe(1);
+        }
+        const seeded = governor.state().averageMs ?? Number.NaN;
+        const fourth = four[3];
+        governor.frame(at + fourth, true);
+        const G = WOODS_GOVERNOR;
+        expect(governor.state().averageMs).toBeCloseTo(
+          seeded +
+            (Math.min(fourth, G.spikeLimit * seeded) - seeded) * G.smoothing,
+          9,
+        );
+      }),
+    );
+  });
+
   // The idle-gap guard as a property: a frame stream with no chained frame
   // is all idle, so it can never thin the woods.
   it("never steps on unchained frames alone", () => {

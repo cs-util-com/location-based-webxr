@@ -25,17 +25,16 @@
  *   coming back); two in a row do. A counted frame enters the average at
  *   most `spikeLimit` times the average and credits the verdicts at most
  *   `gapMs` of time, so a pair of hitches cannot make a verdict while a
- *   device at a second a frame still reads as slow as it is (a fresh
- *   average starts unlimited at its first counted frame, and again at the
- *   second when that is shorter: after a step any shorter one; at the
- *   session's start one `spikeLimit` times shorter, or any shorter one at
- *   most `seedNear` times `slowMs`. So a long first frame on a device
- *   near the line is not the start the limit then defends, and a short
- *   second frame on a slow device is not its baseline). Each rung is judged
- *   by its own frames: at a step the average starts afresh, so a device with
- *   few frames a verdict does not judge the new rung by the old one's, and the
- *   step's own frame (the woods re-sort their draw order) counts toward
- *   nothing;
+ *   device at a second a frame still reads as slow as it is. A fresh
+ *   average is seeded unlimited: the session's at the median of its first
+ *   three counted frames, a rung's after a step at the smaller of its first
+ *   two. So one long warm-up frame near the line is not the start the limit
+ *   then defends (a second one is, at its own length), and one short frame
+ *   among a slow device's first three is not its baseline. Each rung is
+ *   judged by its own frames: at a step the average starts afresh, so a
+ *   device with few frames a verdict does not judge the new rung by the old
+ *   one's, and the step's own frame (the woods re-sort their draw order)
+ *   counts toward nothing;
  * - the worthwhile test: when thinning bought less than `worthwhile` of the
  *   frame time, measured against the full woods, the woods were not the
  *   cost, so they come back in full and the step-down rests for `restS`;
@@ -82,13 +81,6 @@ export const WOODS_GOVERNOR = Object.freeze({
    * `gapMs` apart from this).
    */
   spikeLimit: 4,
-  /**
-   * At the session's start a shorter second counted frame up to this many
-   * times `slowMs` starts the average again, so one long first frame on a
-   * device near the line is not its seed; a slow device's short frame, far
-   * above it, is not its baseline either.
-   */
-  seedNear: 1.2,
   /** The ladder, from full to the fewest; never 0. */
   shares: Object.freeze([1, 0.5, 0.25] as const),
 });
@@ -139,21 +131,20 @@ export function createWoodsGovernor({
   /** The average stayed under `slowMs` for `fastS` at this rung. */
   let bought = false;
   let boughtFor = 0;
-  /** A step was taken: the next counted frame starts the average afresh. */
-  let fresh = false;
   /**
-   * The average was just started: a second counted frame shorter than the
-   * first may start it again (`reseeds` says which), so one long frame
-   * after a step, or one long first frame near the line, is not its start.
+   * The fresh average's first counted frames while they seed it: the
+   * average is their lower median, so the first frame, then the smaller of
+   * two, then the median of three.
    */
-  let seeding = false;
+  const seed: number[] = [];
   /**
-   * The average being seeded follows a step: there any shorter second frame
-   * reseeds it. At the session's start only a spike-sized drop does, or a
-   * shorter frame at most `seedNear` times `slowMs`, so a short second
-   * frame on a slow device cannot become its baseline.
+   * How many counted frames seed the fresh average: three at the session's
+   * start, two after a step, where the first may be the re-sort's second
+   * frame (below); seeding at three there too rests more often under
+   * natural jitter (the sidecar has the counts). No verdict can come before a seed is complete:
+   * three counted frames credit at most three `gapMs`, under `slowS`.
    */
-  let seedStep = false;
+  let seedOf = 3;
   /**
    * A step was taken: the next interval is the step's own frame (the woods
    * re-sort their draw order), so it counts toward nothing.
@@ -170,7 +161,8 @@ export function createWoodsGovernor({
     steps = rung;
     bought = false;
     boughtFor = 0;
-    fresh = true;
+    seed.length = 0;
+    seedOf = 2;
     afterStep = true;
   };
 
@@ -225,37 +217,19 @@ export function createWoodsGovernor({
   };
 
   /**
-   * Whether this second counted frame starts the fresh average again: after
-   * a step when shorter; at the session's start when a spike-sized drop, or
-   * shorter and near the line (a slow device's short frame is not).
-   */
-  const reseeds = (ms: number): boolean => {
-    if (!seeding || average === undefined) return false;
-    if (seedStep) return ms < average;
-    return (
-      ms * G.spikeLimit < average ||
-      (ms < average && ms <= G.seedNear * G.slowMs)
-    );
-  };
-
-  /**
-   * One counted interval into the average; a new rung starts it afresh, at
-   * the smaller of its first two counted frames, and the session at its
-   * second only when the first was a spike over it or the second is shorter
-   * and near the line.
+   * One counted interval into the average: while the fresh average is
+   * seeded, the lower median of its seed frames, unlimited; then smoothed,
+   * a frame entering at most `spikeLimit` times the average.
    */
   const smooth = (ms: number): number => {
-    const reseed = reseeds(ms);
-    seedStep = average !== undefined && fresh;
-    seeding = average === undefined || fresh;
-    const now =
-      average === undefined || fresh || reseed
-        ? ms
-        : average +
-          (Math.min(ms, G.spikeLimit * average) - average) * G.smoothing;
-    average = now;
-    fresh = false;
-    return now;
+    if (average === undefined || seed.length < seedOf) {
+      seed.push(ms);
+      const sorted = [...seed].sort((a, b) => a - b);
+      average = sorted[(sorted.length - 1) >> 1] ?? ms;
+    } else {
+      average += (Math.min(ms, G.spikeLimit * average) - average) * G.smoothing;
+    }
+    return average;
   };
 
   /** One counted interval into the average and the verdicts. */

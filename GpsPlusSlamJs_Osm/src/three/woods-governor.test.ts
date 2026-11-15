@@ -670,17 +670,15 @@ describe("a quarter that climbs back to a slow half", () => {
 });
 
 /**
- * A fresh average (the session's first counted frame, and the first after
- * every step) starts again at its second counted frame when that is shorter:
- * after a step any shorter one; at the session's start one `spikeLimit`
- * times shorter, or a shorter one at most `seedNear` times `slowMs`. So a
- * long first frame there is not the start the spike limit defends. A pair
+ * The session's average is seeded at the median of its first three counted
+ * frames, so a hitch there is not the start the spike limit defends. A pair
  * of hitches (300 ms, then 0.26-60 s) in the first chained intervals of a
  * session, after none, one or two of the device's own frames, on devices at
- * 16.7-49 ms never thins. What reverses it: starting
- * at the first frame alone, which thins a 45 ms device from a second frame of
- * 400 ms, 40 ms from 2 s and 33.3 ms from 5 s, and the half never comes back
- * (it sits above `fastMs`).
+ * 16.7-49 ms never thins: the first hitch is a lone gap and ignored, the
+ * second is one of three counted frames. What reverses it: starting at the
+ * first counted frame alone, which thins a 45 ms device from a second frame
+ * of 400 ms, 40 ms from 2 s and 33.3 ms from 5 s, and the half never comes
+ * back (it sits above `fastMs`).
  */
 describe("a long-frame pair at the start of a session", () => {
   for (const device of [16.7, 25, 1000 / 30, 40, 45, 49]) {
@@ -719,14 +717,13 @@ describe("a long-frame pair at the start of a session", () => {
 /**
  * One long frame (2.5-3.5 times the device's, under `gapMs`) as the first
  * counted frame of a session, on a device just under the line (48-49.5 ms,
- * the woods 30 % of the frame): the next frame is not `spikeLimit` times
- * shorter, but it is shorter and itself near the line, so the average starts
- * again there and the device keeps its full woods; the next frame is the
- * device's own or up to 10 % longer (jitter). What reverses it: reseeding at
- * the session's start only on a spike-sized drop, which keeps the long frame
- * as the seed; its decay holds the average over 50 ms for the two slow
- * seconds at 49 and 49.5 ms, and the half (above `fastMs`) never comes
- * back. A `seedNear` of 1.05 or less fails the 10 % longer next frame.
+ * the woods 30 % of the frame), then the device's own frame or one up to
+ * 10 % longer (jitter): the median of the first three counted frames is the
+ * second, so the device keeps its full woods. What reverses it: seeding at
+ * the first frame (or at the second only when it is `spikeLimit` times
+ * shorter), which keeps the long frame as the seed; its decay holds the
+ * average over 50 ms for the two slow seconds at 49 and 49.5 ms, and the
+ * half (above `fastMs`) never comes back.
  */
 describe("a single long first counted frame on a near-line device", () => {
   for (const device of [48, 49, 49.5]) {
@@ -757,13 +754,12 @@ describe("a single long first counted frame on a near-line device", () => {
  * full-woods baseline. At 300-2000 ms a frame the first interval is a lone
  * gap and ignored, so the second counted frame is the third interval; here
  * it is 0.45-0.85 times the device's frame (natural jitter on a slow phone).
- * The session's fresh average reseeds there only on a spike-sized drop (a
- * frame `spikeLimit` times shorter; the near-line reseed is far below these
- * frames), so the baseline stays the device's own frame
- * and thinning that pays (woods 35-80 % of the frame) reaches the quarter
- * without a rest. What reverses it: reseeding at any shorter second frame,
- * which takes the 0.7 frame as the baseline, judges the half worthless and
- * rests 300 s at full woods (82 of 144 jittered cases of this kind).
+ * The median of the first three counted frames is the device's own frame,
+ * so thinning that pays (woods 35-80 % of the frame) reaches the quarter
+ * without a rest. What reverses it: seeding at the smaller of the first two
+ * (the rule after a step) or the smallest of three, which takes the short
+ * frame as the baseline, judges the half worthless and rests 300 s at full
+ * woods (82-92 of 144 jittered cases at 0.7).
  */
 describe("a short second counted frame on a slow device", () => {
   for (const full of [300, 600, 1000, 2000]) {
@@ -778,43 +774,6 @@ describe("a short second counted frame on a slow device", () => {
           while (at < 600_000) {
             const ms = full * (1 - w + w * governor.state().share);
             at += i === 2 ? ms * short : ms;
-            i += 1;
-            governor.frame(at, true);
-            rested ||= governor.state().mode === "resting";
-          }
-          expect(rested, `woods ${w * 100} %, second frame x${short}`).toBe(
-            false,
-          );
-          expect(governor.state().share).toBe(0.25);
-        }
-      }
-    });
-  }
-});
-
-/**
- * The near-line reseed at a session's start reaches no slower device than
- * `seedNear` times `slowMs` (60 ms): on devices at 150 and 200 ms a short
- * second counted frame (0.45-0.7 times, natural jitter) is far above it, so
- * it does not become the full-woods baseline and thinning that pays reaches
- * the quarter without a rest. Devices at 100-120 ms with cheap woods are
- * inside the bound and do rest: an accepted cost. What reverses it: a
- * `seedNear` of 1.4 or more, which reseeds at a 150 ms device's 0.45 frame
- * and rests 300 s at full woods.
- */
-describe("a short second counted frame on a 150-200 ms device", () => {
-  for (const full of [150, 200]) {
-    it(`reaches the quarter without a rest at ${full} ms`, () => {
-      for (const w of [0.35, 0.5, 0.8]) {
-        for (const short of [0.45, 0.5, 0.7]) {
-          const governor = createWoodsGovernor();
-          let at = 0;
-          let i = 0;
-          let rested = false;
-          governor.frame(at, true);
-          while (at < 600_000) {
-            const ms = full * (1 - w + w * governor.state().share);
-            at += i === 1 ? ms * short : ms;
             i += 1;
             governor.frame(at, true);
             rested ||= governor.state().mode === "resting";
@@ -913,6 +872,176 @@ describe("a regular stutter over the line", () => {
             thinned = governor.state().share < 1;
           }
           expect(thinned, `every ${every}, ${long} ms`).toBe(true);
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A 60 Hz device near the line mixes 33.3 and 50 ms frames (vsyncs; a mean
+ * of 44-49 ms with the woods at 30 % of it). Its first counted frame is a
+ * long warm-up (6-14 vsyncs) and its second a dropped vsync (66.7 ms), so
+ * neither is the device's own. The session's average starts at the median
+ * of its first three counted frames, the 66.7 ms one, which decays under
+ * the line before two slow seconds pass. What reverses it: seeding at the
+ * first frame (a single long frame that the spike limit then defends) thins
+ * 49 ms from 6 vsyncs, 48 ms from 10 and 47 ms from 14. An open limit: a
+ * mean of 49.5 ms still thins under the median, from every first frame here.
+ */
+describe("a dropped vsync after a long first counted frame near the line", () => {
+  const vsync = 1000 / 60;
+  /** 33.3 and 50 ms frames whose running mean follows the woods drawn. */
+  const mix = (mean: number) => {
+    let error = 0;
+    return (share: number): number => {
+      const target = mean * (0.7 + 0.3 * share);
+      const next = error + target > 2.5 * vsync ? 3 * vsync : 2 * vsync;
+      error += target - next;
+      return next;
+    };
+  };
+  for (const mean of [44, 46, 47, 48, 49]) {
+    it(`does not thin at a mean of ${mean} ms`, () => {
+      for (const first of [6, 8, 10, 12, 14]) {
+        const governor = createWoodsGovernor();
+        const next = mix(mean);
+        let at = 0;
+        let i = 0;
+        let thinned = false;
+        governor.frame(at, true);
+        while (at < 300_000) {
+          const share = governor.state().share;
+          at += i === 0 ? first * vsync : i === 1 ? 4 * vsync : next(share);
+          i += 1;
+          governor.frame(at, true);
+          if (governor.state().share < 1) thinned = true;
+        }
+        expect(thinned, `first frame ${first} vsyncs`).toBe(false);
+      }
+    });
+  }
+});
+
+/**
+ * A two-frame warm-up on a device near the line (40-49 ms, the woods 30 % of
+ * the frame): the first counted frame 2-4 times the device's, the second
+ * 1.25-2 times. The median of the first three counted frames is the second
+ * one, which decays under the line in time. What reverses it: seeding at the
+ * first frame, or at the second only when it is near the line, which thins
+ * 48 ms from a 4 times first frame and 49 ms from 3 times. An open limit:
+ * at 49 ms a second frame twice as long, and at 49.5 ms one 1.5 times as
+ * long, are themselves the median and thin.
+ */
+describe("a two-frame warm-up near the line", () => {
+  const thins = (device: number, first: number, second: number): boolean => {
+    const governor = createWoodsGovernor();
+    let at = 0;
+    let i = 0;
+    let thinned = false;
+    governor.frame(at, true);
+    while (at < 300_000) {
+      const ms = device * (0.7 + 0.3 * governor.state().share);
+      at += i === 0 ? device * first : i === 1 ? device * second : ms;
+      i += 1;
+      governor.frame(at, true);
+      if (governor.state().share < 1) thinned = true;
+    }
+    return thinned;
+  };
+  for (const device of [40, 44, 46, 47, 48, 49]) {
+    it(`does not thin at ${device} ms`, () => {
+      for (const first of [2, 3, 4]) {
+        for (const second of device < 49 ? [1.25, 1.5, 2] : [1.25, 1.5]) {
+          expect(
+            thins(device, first, second),
+            `first x${first}, second x${second}`,
+          ).toBe(false);
+        }
+      }
+    });
+  }
+});
+
+/**
+ * One short counted frame among a 100-200 ms device's first three (the
+ * first, second or third; 0.3-0.7 times the device's frame, or a flat 55 ms) is not its full-woods baseline: the median of the three is the
+ * device's own frame, so thinning that pays (woods 35-80 % of the frame)
+ * reaches the quarter without a rest. What reverses it: a short second frame
+ * near the line starting the average again (it rests at 100-200 ms with the
+ * woods at 35-50 %), and seeding at the first frame alone (a short first
+ * frame rests there too).
+ */
+describe("a short counted frame among a 100-200 ms device's first three", () => {
+  for (const full of [100, 120, 150, 200]) {
+    it(`reaches the quarter without a rest at ${full} ms`, () => {
+      for (const w of [0.35, 0.5, 0.8]) {
+        for (const position of [0, 1, 2]) {
+          for (const short of [0.3, 0.4, 0.5, 0.7]
+            .map((x) => x * full)
+            .concat(55)) {
+            const governor = createWoodsGovernor();
+            let at = 0;
+            let i = 0;
+            let rested = false;
+            governor.frame(at, true);
+            while (at < 600_000) {
+              const ms = full * (1 - w + w * governor.state().share);
+              at += i === position ? short : ms;
+              i += 1;
+              governor.frame(at, true);
+              rested ||= governor.state().mode === "resting";
+            }
+            expect(
+              rested,
+              `woods ${w * 100} %, frame ${position + 1} at ${short} ms`,
+            ).toBe(false);
+            expect(governor.state().share).toBe(0.25);
+          }
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A pair of hitches at a session's start on a device over the line whose
+ * woods are cheap (100-150 ms, the woods 5-10 % of the frame, so a half
+ * saves under 15 %): the first hitch (300 ms) is a lone gap and ignored, the
+ * second (0.5-2 s) is a counted frame, and it must not become the full-woods
+ * baseline, or the useless thinning would look worthwhile and stay. The
+ * median of the first three counted frames is the device's own, so the woods
+ * come back in full. What reverses it: seeding at the first counted frame
+ * (or the largest of three), which keeps the woods thinned at 100-150 ms
+ * when the pair comes first; reseeding only on a frame `spikeLimit` times
+ * shorter misses the 150 ms device after a 500 ms hitch.
+ */
+describe("a hitch pair at a session's start on cheap woods over the line", () => {
+  for (const full of [100, 120, 150]) {
+    it(`ends at full woods at ${full} ms`, () => {
+      for (const w of [0.05, 0.1]) {
+        for (const second of [500, 1_000, 2_000]) {
+          for (const lead of [0, 1, 2]) {
+            const governor = createWoodsGovernor();
+            const start = [
+              ...Array.from({ length: lead }, () => full),
+              300,
+              second,
+            ];
+            let at = 0;
+            let i = 0;
+            governor.frame(at, true);
+            while (at < 900_000) {
+              const ms = full * (1 - w + w * governor.state().share);
+              at += start[i] ?? ms;
+              i += 1;
+              governor.frame(at, true);
+            }
+            expect(
+              governor.state().share,
+              `woods ${w * 100} %, hitch ${second} ms after ${lead}`,
+            ).toBe(1);
+          }
         }
       }
     });
