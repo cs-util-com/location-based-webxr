@@ -82,7 +82,7 @@ interface ShareChange {
 }
 
 /** A burst's slowest chained interval, with the frame drawn before it. */
-export interface SlowestFrame {
+interface SlowestFrame {
   /** When the interval ended (ms from page start). */
   readonly atMs: number;
   readonly ms: number;
@@ -91,7 +91,7 @@ export interface SlowestFrame {
 }
 
 /** One burst: its first frame and, once it has one, its slowest interval. */
-export interface PerfBurst {
+interface PerfBurst {
   readonly atMs: number;
   /** What the burst's first frame drew; null until it was drawn. */
   readonly drawCost: DrawCost | null;
