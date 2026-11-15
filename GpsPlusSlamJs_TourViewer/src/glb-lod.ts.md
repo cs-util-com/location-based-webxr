@@ -35,7 +35,10 @@ import; `glb-model.ts` wires it into a loaded scene.
 The three scanned models in `public/prototypes/model-lod-1/` at their
 default level (0.25 % of the diagonal), seen by a phone in portrait (65
 degree vertical field of view, 2 400 px tall drawing buffer); triangles
-drawn at 1 / 3 / 10 / 30 / 100 m, per budget:
+drawn at 1 / 3 / 10 / 30 / 100 m, per budget. Measured on a chain of
+halvings; the saved chain is now quarters (`model-lod.ts.md`, "Choosing
+the chain"), so a frame draws the nearest saved level at or above the one
+listed, and the budget's verdict below does not depend on the spacing:
 
 - rock (0.17 m across; levels 7 936, 3 968, 1 984, 992, 496):
   - 0.5 px: 7 936 / 1 984 / 496 / 496 / 496

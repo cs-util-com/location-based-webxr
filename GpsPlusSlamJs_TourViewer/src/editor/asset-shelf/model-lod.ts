@@ -6,7 +6,7 @@
  * stays within an error budget, or the share of triangles the author chose
  * on the shelf's slider. That level becomes the primitive's index list,
  * the vertex buffer is cut down to the vertices the saved levels use, and
- * a chain of up to four coarser levels follows it in one buffer view,
+ * a chain of up to two coarser levels follows it in one buffer view,
  * named in `primitive.extras.lod` (no glTF extension: a viewer that does
  * not read it draws the author's level).
  *
@@ -98,8 +98,14 @@ export interface LodReport {
   readonly choices: readonly LodChoice[];
 }
 
-/** Coarser levels saved after the author's level, at most. */
-export const LOD_CHAIN_LEVELS = 4;
+/** Coarser levels saved after the author's level, at most, each keeping
+ *  `1 / LOD_CHAIN_RATIO` of the triangles of the one before: a quarter and
+ *  a sixteenth. Swept on the scanned models against halving and against
+ *  one to four levels (model-lod.ts.md, "Choosing the chain"): the same
+ *  far views at about a third of halving's index bytes, for at most a
+ *  fifth more triangles drawn. */
+export const LOD_CHAIN_LEVELS = 2;
+export const LOD_CHAIN_RATIO = 4;
 /** Samples a side: the slider's stops (an estimate shown before the
  *  author picks one), the search and the chain (quick probes), and the
  *  author's level's stored deviation (the number the shelf shows after). */
@@ -507,7 +513,7 @@ interface Level {
 const stored = (d: number) => Number(d.toPrecision(4));
 
 /** The author's level and up to `LOD_CHAIN_LEVELS` coarser ones, each at
- *  about half the triangles of the one before. A level's error never reads
+ *  about `1 / LOD_CHAIN_RATIO` of the triangles of the one before. A level's error never reads
  *  below a finer one's (sampling noise is clamped), so a renderer may walk
  *  the chain one way. */
 function chainOf(o: Ordered, author: number): Level[] {
@@ -518,7 +524,7 @@ function chainOf(o: Ordered, author: number): Level[] {
   const top = prog.stepAlive[author]!;
   let previous = top;
   for (let k = 1; k <= LOD_CHAIN_LEVELS; k++) {
-    const target = Math.floor(top / 2 ** k);
+    const target = Math.floor(top / LOD_CHAIN_RATIO ** k);
     if (target < CHAIN_MIN_TRIANGLES) break;
     const steps = stepsTo(prog, target);
     if (prog.stepAlive[steps]! >= previous) break;

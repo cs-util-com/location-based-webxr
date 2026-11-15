@@ -36,8 +36,39 @@
 
 - **Automatic (the default):** a search on the triangle count's log scale (`SEARCH_ROUNDS` halvings) with quick probes of `LOD_SEARCH_SAMPLES` points a side, then a check of the answer with `LOD_CHECK_SAMPLES`; a level that fails the check steps 15 % finer, up to `CHECK_RETRIES` times, else every triangle stays. The deviation reported and stored for the author's level is always the checked one, so it is within the budget by construction.
 - **The author's share:** `stepsFor` the share of the triangles; its deviation is measured and shown, whatever it is.
-- **The chain:** up to `LOD_CHAIN_LEVELS` levels at a half, a quarter, an eighth and a sixteenth of the author's triangles, stopping under 64 triangles or when the order allows no coarser level. Each level's error is measured with the quick probe against the full mesh, and never reads below a finer level's (sampling noise is clamped), so the renderer may walk the chain one way.
+- **The chain:** up to `LOD_CHAIN_LEVELS` (2) levels, each at `1 / LOD_CHAIN_RATIO` (a quarter) of the triangles of the one before (a quarter and a sixteenth of the author's), stopping under 64 triangles or when the order allows no coarser level. Each level's error is measured with the quick probe against the full mesh, and never reads below a finer level's (sampling noise is clamped), so the renderer may walk the chain one way. While the made file would be above the shelf's `keepAbove` line, the model step drops the coarsest levels again, down to none (`dropCoarsestLevel`).
 - Deviations are cached per (steps, samples), so the search, the slider's stops and the chain share their measurements.
+
+## Choosing the chain
+
+Swept on the three scanned models, at the default level and at share 1:
+the spacing (halving, quartering) against the level count (1 to 4). The
+file is the whole made file as a share of the original; the drawing cost
+is the triangles drawn at the 1 px and 2 px budgets over bands of screen
+size, weighted by how often a band occurs (P^-2, P^-1 and flat), relative
+to halving with 4 levels.
+
+- No chain: rock 0.833 (default level), 0.874 (share 1).
+- Halving, 1 to 4 levels:
+  - rock 0.868 / 0.886 / 0.894 / 0.899, at share 1 0.918 / 0.940 / 0.951 / 0.957;
+  - coast-rock 0.237 / 0.247 / 0.254 / 0.254 (the order stops at 1 582);
+  - boulder 0.367 / 0.385 / 0.394 / 0.398;
+  - 3 levels draws up to 1.95 times 4 levels' triangles under P^-2.
+- Quartering, 1 to 3 levels:
+  - rock 0.851 / 0.855 / 0.856, at share 1 0.896 / 0.902 / 0.903;
+  - coast-rock 0.228 / 0.235 / 0.235;
+  - boulder 0.349 / 0.354 / 0.356 (19 312 / 4 828 / 1 206 triangles);
+  - 2 levels reach the same sixteenth as halving's 4 and draw 1.02 to
+    1.20 times its triangles; a third level (a 64th) saves under 1 % of
+    the file and is seldom drawn.
+- Chosen: quartering with 2 levels, the cheapest in bytes for about the
+  same drawing (at share 1 halving with 4 levels put rock over the 0.9
+  line at 0.957).
+- **What would reverse it:** a flat distribution of screen sizes, where
+  the 200 to 400 px band counts as much as a far one: there quartering
+  draws the author's level where halving drew its half (up to twice the
+  triangles on boulder and coast-rock in that band). Halving with 2 or 3
+  levels is then the better trade.
 
 ## Skinned and animated models
 

@@ -413,12 +413,11 @@ test("models: a smaller .glb the tour accepts, drawn as before, over texture siz
     }
     const limit = model.textureMaxSidePx ?? 1024;
     expect(after.textureSide).toBe(Math.min(before.textureSide, limit));
-    // Every triangle kept still saves the coarser levels for far views;
-    // their index lists are the level of detail's cost, so the texture and
-    // position steps are held to their own gain without them.
+    // Every triangle kept still saves coarser levels for far views, but
+    // never so many that the whole file, their index lists included,
+    // crosses the shelf's line: the coarsest go first when it would.
     expect(before.chainBytes).toBe(0);
-    expect(after.chainBytes).toBeGreaterThan(0);
-    expect(row.bytes - after.chainBytes).toBeLessThan(row.originalBytes * 0.9);
+    expect(row.bytes).toBeLessThan(row.originalBytes * 0.9);
     expect(row.ssim).toBeGreaterThanOrEqual(MODEL_SSIM_FLOOR);
   }
   // The chosen setting under the phone's 10 s per model (a desktop is

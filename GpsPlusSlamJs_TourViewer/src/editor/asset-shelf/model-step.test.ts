@@ -58,7 +58,12 @@ function levelsOf(bytes: Uint8Array): {
 async function answerOf(source: Uint8Array, keepAbove: number) {
   const answer = await optimizeModel(
     blobOf(source),
-    { ...OPTIMIZER_SETTINGS, keepAbove },
+    {
+      ...OPTIMIZER_SETTINGS,
+      // every triangle kept, so the chain has all its levels
+      model: { ...OPTIMIZER_SETTINGS.model, detailShare: 1 },
+      keepAbove,
+    },
     control(),
     fakePictureDevice().device,
   );
