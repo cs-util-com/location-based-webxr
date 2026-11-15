@@ -11,7 +11,7 @@ import type * as THREE from "three";
 import { litSurfaceLuma, meanChroma } from "./light-readouts.js";
 
 /** The two calls of the view's ambient occlusion this measurement uses. */
-export interface LightMeasureAo {
+interface LightMeasureAo {
   /** Computes the AO and multiplies it onto the frame just drawn. */
   render(): boolean;
   /** Multiplies the AO last computed onto the frame just drawn, or refuses. */

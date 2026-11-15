@@ -26,7 +26,7 @@ test. The two measures themselves are `light-readouts.ts`.
   - `deps.requestFrame()`: schedules a frame.
   - Returns `{ litLuma, margin }`; `margin` is `null` without a shown grid or
     without `withMargin`. Errors from any dependency propagate.
-- Types `LightMeasureDeps`, `LightMeasureAo`, `LightMeasurement`.
+- Types `LightMeasureDeps` and `LightMeasurement`.
 
 ## Invariants & assumptions
 
