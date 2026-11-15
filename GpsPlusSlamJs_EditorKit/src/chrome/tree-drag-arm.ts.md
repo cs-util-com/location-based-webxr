@@ -50,8 +50,13 @@ armState(
 ## Tests
 
 `tree-drag-arm.test.ts`: swept over holds of 100-250 ms and tolerances of
-4-8 px - a flick or a slow scroll from the grip never drags, a finger that
+4-8 px - a flick or a scroll of 4 px a frame or more from the grip never
+drags; a slow drift (0.5, 1, 2 px a frame) drags exactly when it is still
+within the tolerance at the last frame before the hold, so the turn lies
+near tolerancePx / holdMs (0.6-0.7 px a frame at 150 ms and 6 px); a finger that
 rested 300 ms always does, a 120 ms rest drags only at a 100 ms hold (the
 hold is the boundary); a still finger waits until a move after the hold;
 a mouse or a pen from its threshold on; values that are not numbers.
-`tree-drag.test.ts` drives it through the drag.
+`tree-drag-arm.property.test.ts` (fast-check): for a finger, later never
+undoes a drag nor makes a refusal a drag; for a mouse or a pen, time plays
+no part. `tree-drag.test.ts` drives it through the drag.

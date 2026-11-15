@@ -65,6 +65,9 @@ sheets.sync("tree");
 `phone-sheet.test.ts` (jsdom): the layout's numbers, `sheetRelease`, the
 share per sheet, nothing written during a drag, the limit, a dismissal, a
 sheet's remembered height, a cancelled drag.
+`phone-sheet.property.test.ts` (fast-check): `steadyHeight` never reports
+less than a finite height seen since the width last changed, and equals the
+new height at a width change.
 `editor-shell.test.ts` ("on a phone"): which sheet shows when.
 `playwright-tests/editor3d-phone.spec.js`: positions and gaps at 390x844 and
 844x390, the tap to details and back, the drag, the bottom panel.

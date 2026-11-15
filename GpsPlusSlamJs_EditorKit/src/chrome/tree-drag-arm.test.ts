@@ -65,6 +65,46 @@ describe("armState, swept over holds and tolerances", () => {
     }
   });
 
+  it("a slow drift drags exactly when it is still within the tolerance at the last frame before the hold", () => {
+    // The boundary, stated: a finger drifting v px a frame (16 ms) is a
+    // drag when its distance at the last move before the hold is within
+    // the tolerance, and no drag when it already strayed past it. In
+    // speed: below about tolerancePx / holdMs a drag, above it none. The
+    // default (150 ms, 6 px) turns between 0.6 and 0.7 px a frame.
+    for (const hold of HOLDS) {
+      for (const tolerance of TOLERANCES) {
+        for (const speed of [0.5, 1, 2]) {
+          const framesBefore = Math.ceil(hold / 16) - 1;
+          const want: ArmState =
+            speed * framesBefore > tolerance ? "none" : "drag";
+          expect(
+            outcome(hold, tolerance, moving(speed, framesBefore + 3)),
+            `hold ${String(hold)}, tolerance ${String(tolerance)}, speed ${String(speed)}`,
+          ).toBe(want);
+        }
+      }
+    }
+    expect(outcome(150, 6, moving(0.6, 12))).toBe("drag");
+    expect(outcome(150, 6, moving(0.7, 12))).toBe("none");
+    // Half a pixel a frame, by hold (rows) and tolerance 4, 6, 8 px: the
+    // tightest pairs already refuse it. 2 px a frame never drags.
+    expect(
+      HOLDS.map((hold) =>
+        TOLERANCES.map((t) => outcome(hold, t, moving(0.5, 20))),
+      ),
+    ).toEqual([
+      ["drag", "drag", "drag"],
+      ["none", "drag", "drag"],
+      ["none", "drag", "drag"],
+      ["none", "none", "drag"],
+    ]);
+    expect(
+      HOLDS.flatMap((hold) =>
+        TOLERANCES.map((t) => outcome(hold, t, moving(2, 20))),
+      ),
+    ).not.toContain("drag");
+  });
+
   it("drags for a finger that rested 300 ms, at every hold up to 250 ms", () => {
     for (const hold of HOLDS) {
       for (const tolerance of TOLERANCES) {
