@@ -969,7 +969,6 @@ export function standHereSpot(
   };
 }
 
-/** The drawing of `options.view`, at the reference width. */
 /** One view's drawing before it is scaled: its root, what a tap hits,
  *  its per-frame show and, for a view with something on the ground, the
  *  ground's height in its own metres. */
@@ -980,6 +979,7 @@ interface BuiltLook {
   ground?(y: number): void;
 }
 
+/** The drawing of `options.view`, at the reference width. */
 function lookOf(owned: Owned, options: LookOptions, ground: number): BuiltLook {
   switch (options.view) {
     case "screen":
