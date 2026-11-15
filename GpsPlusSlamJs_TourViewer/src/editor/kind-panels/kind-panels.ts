@@ -139,8 +139,10 @@ function picture(ctx: PanelContext): KindPanel {
   });
 }
 
-/** A free video's panel: its view, how it starts, its sound. */
+/** A free video's panel: its view, how it starts, its sound, and a
+ *  stand-here video's viewpoint. */
 function video(ctx: PanelContext): KindPanel {
+  const viewpoint = ctx.edits.pictureViewpoint;
   return createVideoPanel({
     writeView: (id, view) => ctx.edits.view(id, view),
     writeChoice: (id, field, value) => ctx.edits.block(id, field, value),
@@ -149,6 +151,15 @@ function video(ctx: PanelContext): KindPanel {
       ctx.edits.poster === undefined
         ? Promise.resolve("refused")
         : ctx.edits.poster(id, image),
+    ...(viewpoint === undefined
+      ? {}
+      : {
+          setViewpoint: (id: string, vp: TourPictureViewpoint | null) =>
+            viewpoint(id, vp),
+        }),
+    lookFrom: (id) => {
+      if (!ctx.lookFrom(id)) ctx.say(NO_LOOK_FROM);
+    },
   });
 }
 

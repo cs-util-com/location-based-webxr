@@ -61,7 +61,7 @@ import * as THREE from "three";
 
 import { viewpointForward } from "../kinds/picture/viewpoint-fade.js";
 import { drawnAspect } from "../kinds/picture/picture-decode.js";
-import { TOUR_PICTURE_VIEWPOINT_VIEWS } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { tourSeenFromViewpoint } from "gps-plus-slam-app-framework/ar/tour-kinds";
 
 import { localPlaneToEnu } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
@@ -286,12 +286,9 @@ const RING_CONTEXT = 0xa8c8ea;
  *  warning's colour (`--s-warn`, `editor-shell.css`). */
 export const RING_ITEM_OUT = 0xe9b86b;
 const POLE_COLOUR = 0xdfe3ea;
-/** A selected picture's field-of-view lines (the viewpoint's blue). */
+/** A selected picture's or stand-here video's field-of-view lines (the
+ *  viewpoint's blue). */
 const VIEWPOINT_FRUSTUM_COLOUR = 0x9ccbff;
-/** The views a picture is seen from its viewpoint in. */
-const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
-  TOUR_PICTURE_VIEWPOINT_VIEWS,
-);
 
 interface StationContent {
   alive: boolean;
@@ -1073,13 +1070,16 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       .applyMatrix4(entry.root.matrix);
   };
 
-  /** The picture `id` with a viewpoint and its station; null for an id
-   *  no station holds as a picture with one. */
-  const pictureWithViewpoint = (id: string) => {
+  /** The picture or video `id` with a viewpoint and its station; null
+   *  for an id no station holds as one with one. */
+  const blockWithViewpoint = (id: string) => {
     for (const entry of stations.values()) {
       const block = tourFreeBlocks(entry.station).find((i) => i.id === id);
       if (block === undefined) continue;
-      if (block.kind !== "picture" || block.viewpoint === undefined) {
+      if (
+        (block.kind !== "picture" && block.kind !== "video") ||
+        block.viewpoint === undefined
+      ) {
         return null;
       }
       return { entry, block, vp: block.viewpoint };
@@ -1087,14 +1087,15 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     return null;
   };
 
-  /** The field-of-view lines for the selection: shown for a picture seen
-   *  from its viewpoint (a viewpoint view) whose station is drawn, with
-   *  its image's aspect once read; hidden for anything else. */
+  /** The field-of-view lines for the selection: shown for a picture or
+   *  video seen from its viewpoint (`tourSeenFromViewpoint`) whose
+   *  station is drawn, with its drawing's aspect once read; hidden for
+   *  anything else. */
   const placeFrustum = (selected: string | null) => {
     frustum.visible = false;
-    const found = selected === null ? null : pictureWithViewpoint(selected);
+    const found = selected === null ? null : blockWithViewpoint(selected);
     if (found === null || hiddenStations.has(found.entry.id)) return;
-    if (!VIEWPOINT_VIEWS.has(found.block.view)) return;
+    if (!tourSeenFromViewpoint(found.block.kind, found.block.view)) return;
     const drawn = found.entry.content?.drawn.get(found.block.id);
     const aspect =
       (drawn === undefined ? null : drawnAspect(drawn)) ??
@@ -1429,15 +1430,15 @@ export function createStationsLayer(deps: StationsLayerDeps) {
       }
       return null;
     },
-    /** Where the viewpoint of the picture `id` stands in the layer's
-     *  frame (in its station's frame, as the format keeps it), and the
-     *  point it looks at: its depth ahead along its facing, where the
-     *  picture hangs from it. Null for an id no station holds as a
-     *  picture with a viewpoint. */
+    /** Where the viewpoint of the picture or video `id` stands in the
+     *  layer's frame (in its station's frame, as the format keeps it),
+     *  and the point it looks at: its depth ahead along its facing, where
+     *  the picture hangs from it. Null for an id no station holds as a
+     *  picture or video with a viewpoint. */
     viewpointOf(
       id: string,
     ): { at: THREE.Vector3; ahead: THREE.Vector3; hfovDeg: number } | null {
-      const found = pictureWithViewpoint(id);
+      const found = blockWithViewpoint(id);
       if (found === null) return null;
       const { entry, vp } = found;
       const at = new THREE.Vector3(...vp.position);

@@ -112,6 +112,19 @@ function photo(id: string): TourPicture {
   };
 }
 
+function clip(id: string): TourObject {
+  return {
+    id,
+    kind: "video",
+    view: "screen",
+    video: id,
+    transcript: "Hello",
+    widthM: 1.6,
+    createdAtIso: "2026-10-13T00:00:00.000Z",
+    geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+  } as TourObject;
+}
+
 /** The model's notes and codes: what the rail lists besides the stations
  *  every version 3 note sits in (one each here, `tourOf`). */
 function noteIds(model: EditorModel): string[] {
@@ -300,6 +313,42 @@ describe("createEditorSession", () => {
     await session.close();
   });
 
+  // Why: a stand-here video is seen from its viewpoint, so the switch to
+  // it gives the video its first (in front of it, facing it) in the same
+  // step, as a picture's does; a window is not, and gets none. Its
+  // viewpoint is then set through the same edit as a picture's.
+  it("gives a video its first viewpoint on a switch to stand-here, and sets it as one step", async () => {
+    const { session, manifest } = await opened([clip("v")], {
+      assets: [{ id: "v", path: "content/v.mp4", kind: "video" }],
+    });
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    const saved = async (): Promise<TourObject | undefined> =>
+      (
+        await carried((await editor.save({ keepScan: false })).blob)
+      ).objects.find((o) => o.id === "v");
+    expect(editor.editBlockView("v", "window")).toEqual({ kind: "edited" });
+    expect(await saved()).not.toHaveProperty("viewpoint");
+    expect(editor.editBlockView("v", "standHere")).toEqual({ kind: "edited" });
+    expect(await saved()).toMatchObject({
+      view: "standHere",
+      viewpoint: { hfovDeg: 56, distanceM: 6 },
+    });
+    const vp = {
+      position: [4, 1.6, -2] as const,
+      rotation: [0, 0, 0, 1] as const,
+      hfovDeg: 50,
+      distanceM: 8,
+    };
+    expect(editor.editPictureViewpoint("v", vp)).toEqual({ kind: "edited" });
+    expect(await saved()).toMatchObject({ viewpoint: vp });
+    expect(JSON.stringify(editor.undo())).toContain("the viewpoint of");
+    await session.close();
+  });
+
   // Why: the inspector writes a typed viewpoint through one session edit:
   // one undo step, saved; the same viewpoint again is no step; one the
   // format would drop (a lens out of its bounds) and a block that is no
@@ -319,7 +368,7 @@ describe("createEditorSession", () => {
     };
     expect(editor.editPictureViewpoint("a", vp)).toEqual({
       kind: "refused",
-      reason: "Only a picture has a viewpoint.",
+      reason: "Only a picture or a video has a viewpoint.",
     });
     // The words name the format's own bounds, so they cannot drift from
     // what is refused.

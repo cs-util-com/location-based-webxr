@@ -18,6 +18,7 @@ function videoItem(
   choices: NonNullable<PanelItem["video"]>["choices"],
   captions = "",
   clipPath: string | null = null,
+  viewpoint: NonNullable<PanelItem["video"]>["viewpoint"] = null,
 ): PanelItem {
   return {
     kind: "item",
@@ -37,6 +38,7 @@ function videoItem(
       captions,
       clipPath,
       posterPath: null,
+      viewpoint,
     },
     offset: { northM: 0, upM: 0, eastM: 0 },
     headingDeg: 0,
@@ -80,6 +82,8 @@ function panel() {
     writeChoice: vi.fn((): "written" => "written"),
     load: vi.fn(() => Promise.resolve(new Blob(["clip"]))),
     writePoster: vi.fn(() => Promise.resolve<"written">("written")),
+    setViewpoint: vi.fn((): "written" => "written"),
+    lookFrom: vi.fn(),
   };
   return { panel: createVideoPanel(deps), deps };
 }
@@ -92,11 +96,68 @@ function pressed(root: HTMLElement): string[] {
 
 describe("the video panel", () => {
   it("offers the format's free video views", () => {
-    expect(VIDEO_VIEW_CHOICES.map((c) => c.value)).toEqual([
-      "screen",
-      "cutout",
-      "porthole",
+    expect(VIDEO_VIEW_CHOICES.map((c) => [c.value, c.label])).toEqual([
+      ["screen", "Screen"],
+      ["cutout", "Cutout"],
+      ["porthole", "Porthole"],
+      ["window", "Window"],
+      ["standHere", "Stand here"],
     ]);
+  });
+
+  // Why: every view says under its chips what it does, so the creator
+  // can choose without trying each one in the 3D view.
+  it("says what each view does", () => {
+    const { panel: p } = panel();
+    for (const { value } of VIDEO_VIEW_CHOICES) {
+      const root = document.createElement("div");
+      root.append(...(p.sync(videoItem(value, []))?.parts() ?? []));
+      expect(root.querySelector(".note")?.textContent, value).not.toBe("");
+    }
+  });
+
+  // Why: a stand-here video develops where the visitor stands, so its
+  // viewpoint is typed here with the picture's fields, can be stood in
+  // front of the video afresh and looked from in the 3D view; a view not
+  // seen from a viewpoint shows none of it.
+  it("types a stand-here video's viewpoint, and none in another view", () => {
+    const { panel: p, deps } = panel();
+    const seen = videoItem("standHere", [], "", null, {
+      northM: 1.5,
+      upM: 1.6,
+      eastM: -2,
+      facingDeg: 270,
+      pitchDeg: 4,
+      lensDeg: 56,
+      distanceM: 6,
+    });
+    const root = document.createElement("div");
+    root.append(...(p.sync(seen)?.parts() ?? []));
+    const values = [
+      ...root.querySelectorAll<HTMLInputElement>(".pviewpoint input"),
+    ].map((i) => [i.dataset["field"], i.value]);
+    expect(values).toEqual([
+      ["vp-north", "1.50"],
+      ["vp-up", "1.60"],
+      ["vp-east", "-2.00"],
+      ["vp-facing", "270.0"],
+      ["vp-pitch", "4.0"],
+      ["vp-lens", "56.0"],
+      ["vp-distance", "6.00"],
+    ]);
+    expect(root.querySelector(".pviewpoint .use")?.textContent).toContain(
+      "footprints",
+    );
+    expect(p.act("video-viewpoint-new", seen, "v")).toBe(true);
+    expect(deps.setViewpoint.mock.calls).toEqual([["v", null]]);
+    expect(p.act("video-look-from", seen, "v")).toBe(true);
+    expect(deps.lookFrom.mock.calls).toEqual([["v"]]);
+    const window = document.createElement("div");
+    window.append(...(p.sync(videoItem("window", []))?.parts() ?? []));
+    expect(window.querySelector(".pviewpoint")).toBeNull();
+    expect(p.act("video-viewpoint-new", videoItem("window", []), "v")).toBe(
+      false,
+    );
   });
 
   it("draws nothing for another kind or no selection", () => {

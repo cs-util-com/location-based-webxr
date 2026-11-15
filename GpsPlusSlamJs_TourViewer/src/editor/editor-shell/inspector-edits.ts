@@ -25,7 +25,7 @@
  * - A heading, of a station or an item: the turn from the heading it has
  *   now, the short way round.
  * - A model's size.
- * - A picture's viewpoint (`vp-north`, `vp-up`, `vp-east`, `vp-facing`,
+ * - A picture's or a video's viewpoint (`vp-north`, `vp-up`, `vp-east`, `vp-facing`,
  *   `vp-pitch`, `vp-lens`, `vp-distance`): its viewpoint with that one
  *   value typed (`picture-viewpoint.ts`).
  * - A plain folder's scale (`scale`), east, north, height and heading:
@@ -339,13 +339,14 @@ function modelFieldEdit(
   return { kind: "model", id: item.id, edit };
 }
 
-/** The prefix of a picture's viewpoint fields (`vp-north`, ...). */
+/** The prefix of a picture's or a video's viewpoint fields (`vp-north`,
+ *  ...). */
 const VIEWPOINT_FIELD = "vp-";
 
-/** A picture's viewpoint field typed: its viewpoint with it, nothing for
- *  one it has not or the value it holds. */
+/** A picture's or a video's viewpoint field typed: its viewpoint with
+ *  it, nothing for one it has not or the value it holds. */
 function viewpointEdit(
-  item: Extract<TourBlock, { kind: "picture" }>,
+  item: Extract<TourBlock, { kind: "picture" | "video" }>,
   field: string,
   value: string,
 ): InspectorEdit {
@@ -372,7 +373,10 @@ function itemEdit(
     const edit = modelFieldEdit(item, field, value);
     if (edit !== null) return edit;
   }
-  if (item.kind === "picture" && field.startsWith(VIEWPOINT_FIELD)) {
+  if (
+    (item.kind === "picture" || item.kind === "video") &&
+    field.startsWith(VIEWPOINT_FIELD)
+  ) {
     return viewpointEdit(item, field, value);
   }
   if (field === "title" && item.kind === "shortText") {

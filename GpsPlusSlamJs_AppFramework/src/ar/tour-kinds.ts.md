@@ -103,6 +103,8 @@ rotation [x, y, z, w], hfovDeg 10-120, distanceM 1-500 }` in the
   spot and faces it; `TOUR_VIDEO_VIEWPOINT_VIEWS`). Its `viewpoint` is the
   picture's record, read by the same reader (`blockViewpoint`), kept in
   every view and written last; stand-here without one develops at once.
+  `tourSeenFromViewpoint(kind, view)` answers for both kinds whether a
+  block is drawn from its viewpoint.
   Both views are minor 0 of format 5, as every video view.
 - A viewpoint view WITHOUT a viewpoint is read, not refused: the viewer
   draws it as its floor, a `plane`, and the editor never writes one (its

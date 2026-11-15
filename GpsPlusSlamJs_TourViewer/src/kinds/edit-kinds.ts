@@ -252,7 +252,18 @@ const AUDIO_WORLD: readonly FieldSpec[] = [
 ];
 
 /** The views a free video stands in the world in. */
-const VIDEO_WORLD_VIEWS = ["screen", "cutout", "porthole"];
+const VIDEO_WORLD_VIEWS = [
+  "screen",
+  "cutout",
+  "porthole",
+  "window",
+  "standHere",
+];
+/** Those its creator's trigger starts: a stand-here video starts when
+ *  the visitor stands on its spot facing it. */
+const VIDEO_TRIGGERED_VIEWS = VIDEO_WORLD_VIEWS.filter(
+  (view) => view !== "standHere",
+);
 
 /** What starts a video in the world (`TOUR_VIDEO_STARTS`); absent: on
  *  arrival, as the viewer reads it. */
@@ -260,7 +271,7 @@ const VIDEO_START: FieldSpec = {
   name: "start",
   label: "Starts",
   prose: false,
-  views: VIDEO_WORLD_VIEWS,
+  views: VIDEO_TRIGGERED_VIEWS,
   choice: {
     values: [
       { value: "enter", label: "On arrival" },
@@ -310,7 +321,7 @@ const VIDEO_NEAR: FieldSpec = {
   name: "withinM",
   label: "Starts within",
   prose: false,
-  views: VIDEO_WORLD_VIEWS,
+  views: VIDEO_TRIGGERED_VIEWS,
   when: { field: "start", value: "near" },
   number: {
     min: TOUR_VIDEO_MIN_WITHIN_M,

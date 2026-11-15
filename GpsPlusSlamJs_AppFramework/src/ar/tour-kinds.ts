@@ -240,6 +240,18 @@ export const TOUR_VIDEO_VIEWPOINT_VIEWS = [
   'standHere',
 ] as const satisfies readonly (typeof VIDEO_VIEWS)[number][];
 
+const SEEN_FROM_VIEWPOINT: Readonly<Record<string, ReadonlySet<string>>> = {
+  picture: new Set(TOUR_PICTURE_VIEWPOINT_VIEWS),
+  video: new Set(TOUR_VIDEO_VIEWPOINT_VIEWS),
+};
+
+/** Whether a block of `kind` in `view` is drawn from its `viewpoint`:
+ *  a picture in one of {@link TOUR_PICTURE_VIEWPOINT_VIEWS}, a video in
+ *  one of {@link TOUR_VIDEO_VIEWPOINT_VIEWS}; false for anything else. */
+export function tourSeenFromViewpoint(kind: string, view: string): boolean {
+  return SEEN_FROM_VIEWPOINT[kind]?.has(view) ?? false;
+}
+
 /** A viewpoint's lens: its horizontal field of view (degrees), inclusive. */
 export const TOUR_PICTURE_MIN_HFOV_DEG = 10;
 export const TOUR_PICTURE_MAX_HFOV_DEG = 120;

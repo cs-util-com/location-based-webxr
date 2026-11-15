@@ -127,18 +127,22 @@ never state). Design:
     "the tag of <name>"; shown removes `showTag` (absent is shown), hidden
     writes `false`; `unchanged` for its own state; refused for a block that
     is no picture (`ONLY_A_PICTURE_TAG`) and an id the tour lacks.
-  - `editPictureViewpoint(id, viewpoint | null)` - a picture's viewpoint,
-    one undo step named "the viewpoint of <name>"; null stands a fresh one
-    in front of the picture (`picture-viewpoint.ts`'s `mintViewpoint`, from
-    its pose in the station's frame); `unchanged` for the one it holds;
-    refused for a block that is no picture (`ONLY_A_PICTURE_VIEWPOINT`), a
+  - `editPictureViewpoint(id, viewpoint | null)` - a picture's or a
+    video's viewpoint, one undo step named "the viewpoint of <name>"; null
+    stands a fresh one in front of the block (`picture-viewpoint.ts`'s
+    `mintViewpoint`, from its pose in the station's frame); `unchanged`
+    for the one it holds; refused for a block that is neither
+    (`ONLY_A_PICTURE_VIEWPOINT`, "Only a picture or a video has a
+    viewpoint."), a
     viewpoint the format would refuse (`NOT_A_VIEWPOINT`: a place past
     `TOUR_ITEM_MAX_OFFSET_M` on any axis among them; its words state
     that bound, the lens and the depth from the format's constants) and an id the
     tour lacks. `editBlockView` switching a picture without a viewpoint
     into a viewpoint view mints one in the same step, so a creator never
     holds a viewpoint view that draws as a plain plane; switching away
-    keeps the viewpoint for a switch back.
+    keeps the viewpoint for a switch back. A video switched to stand-here
+    gets its first the same way (`tourSeenFromViewpoint` decides both);
+    a window gets none.
   - `editBlockField(id, field, value)` - `blockFieldEdit`'s outcome
     (`block-fields.ts`: a short text's description, a picture's
     title, caption or alt text, a model's title), one step through the

@@ -21,6 +21,7 @@ import {
   tourBlockMinor,
   tourBlockRefs,
   tourKindsMinor,
+  tourSeenFromViewpoint,
 } from './tour-kinds';
 import { TOUR_MANIFEST_MINOR } from './tour-manifest';
 
@@ -471,6 +472,28 @@ describe("a newer minor's picture viewpoint", () => {
     expect(drops).toEqual([
       '"block.viewpoint.position" must be three numbers within 10000 m',
     ]);
+  });
+});
+
+// Why: the editor draws a viewpoint's lines, looks from it and gives a
+// block its first one by this one answer, so a picture and a video must
+// both be asked here and nothing else may say yes.
+describe('tourSeenFromViewpoint', () => {
+  it('is true for the picture viewpoint views and a stand-here video only', () => {
+    for (const kind of tourBlockKinds()) {
+      for (const view of TOUR_KINDS[kind].views) {
+        const expected =
+          (kind === 'picture' &&
+            ['thenNow', 'sharpen', 'finder', 'window', 'viewer'].includes(
+              view
+            )) ||
+          (kind === 'video' && view === 'standHere');
+        expect(tourSeenFromViewpoint(kind, view), `${kind} ${view}`).toBe(
+          expected
+        );
+      }
+    }
+    expect(tourSeenFromViewpoint('model', 'standHere')).toBe(false);
   });
 });
 

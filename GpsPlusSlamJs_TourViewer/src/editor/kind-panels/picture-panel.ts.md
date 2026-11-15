@@ -29,7 +29,8 @@ text fields (title, caption, alt text, credit, year) stay the dock's
 
 ## The viewpoint section
 
-Drawn for a viewpoint view when the page gives `setViewpoint`: the
+Drawn by `viewpoint-part.ts` (shared with the video panel's stand-here
+view) for a viewpoint view when the page gives `setViewpoint`: the
 viewpoint's place (north, eye height, east, m), facing, pitch and lens
 (degrees) and depth (m) as number fields (`data-field` `vp-*`, from
 `../picture-viewpoint.ts`'s `VIEWPOINT_FIELDS`), which the shell commits

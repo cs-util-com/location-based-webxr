@@ -54,7 +54,11 @@ there.
     a video's start, its sound, its loop (a switch) and a cutout's
     background. `when?` (`{ field, value }`) shows a field only while
     another choice of the block has that value (its fallback counted):
-    a video's Starts within only while its start is `near`.
+    a video's Starts within only while its start is `near`. A video's
+    start and its distance are offered in the views its trigger starts
+    (`VIDEO_TRIGGERED_VIEWS`: every world view but stand-here, which
+    starts when the visitor stands on its spot); its sound, loop and
+    captions in every world view (`VIDEO_WORLD_VIEWS`).
   - `add` - its line in the tree's add menu (`KindAdd`: `label`, `hint`,
     `words`, `addable`, and for a kind made from a file `file`: the
     asset kind its file must be); a row without one is

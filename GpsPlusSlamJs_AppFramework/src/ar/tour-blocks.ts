@@ -83,6 +83,7 @@ export {
   TOUR_PICTURE_MAX_WIDTH_M,
   TOUR_PICTURE_VIEWPOINT_VIEWS,
   TOUR_VIDEO_VIEWPOINT_VIEWS,
+  tourSeenFromViewpoint,
   TOUR_PICTURE_MIN_WIDTH_M,
   type TourAudioBlock,
   type TourBlock,

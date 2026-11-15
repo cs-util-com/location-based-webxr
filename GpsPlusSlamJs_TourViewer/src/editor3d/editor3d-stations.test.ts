@@ -876,6 +876,47 @@ describe("createStationsLayer", () => {
     expect(parent.getObjectByName("viewpoint-frustum")).toBeUndefined();
   });
 
+  // Why: a stand-here video is seen from its viewpoint as a picture in a
+  // viewpoint view is, so the creator gets the same lines and the same
+  // "Look from the viewpoint"; a window keeps a viewpoint it was given
+  // but is not seen from it, and draws no lines.
+  it("draws a selected stand-here video's field-of-view lines and looks from its viewpoint", () => {
+    const { d, parent } = deps();
+    const layer = createStationsLayer(d);
+    const { image: _image, ...base } = photo("sv") as TourBlock & {
+      image?: string;
+    };
+    const standing = {
+      ...base,
+      kind: "video",
+      view: "standHere",
+      video: "clip",
+      transcript: "Hello",
+      viewpoint: {
+        position: [2, 1.6, 0],
+        rotation: viewpointRotation(90, 0),
+        hfovDeg: 90,
+        distanceM: 4,
+      },
+    } as unknown as TourBlock;
+    const window = { ...standing, id: "sw", view: "window" } as TourBlock;
+    layer.setTour(
+      manifest([station("a", 0, 0, [standing, window])]),
+      new Map(),
+    );
+    const a = layer.pointOf("a")!;
+    const vp = layer.viewpointOf("sv")!;
+    expect(vp.at.z - a.z).toBeCloseTo(-2, 3);
+    expect(vp.ahead.x - vp.at.x).toBeCloseTo(4, 3);
+    const lines = () =>
+      parent.getObjectByName("viewpoint-frustum") as THREE.LineSegments;
+    layer.update({ ...view(0, 0, "a"), selected: "sv" });
+    expect(lines().visible).toBe(true);
+    layer.update({ ...view(0, 0, "a"), selected: "sw" });
+    expect(lines().visible).toBe(false);
+    layer.dispose();
+  });
+
   // Why: the layer chips turn the station names (billboards and their
   // poles) and the codes off and on again; a station rendered while its
   // name is off must stay without a billboard too.

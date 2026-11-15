@@ -3,8 +3,9 @@
 ## Purpose
 
 The video's own part of the item inspector (`kind-panel.ts`): its view
-(screen, cutout, porthole) and its choices in that view as chips - how it
-starts, whether it starts with its sound, and a cutout's background - with
+(screen, cutout, porthole, window, stand here) and its choices in that
+view as chips - how it starts (not in stand-here, which starts when the
+visitor stands on its spot), whether it starts with its sound, and a cutout's background - with
 a line saying what the view does, and a note under a cutout as filmed that
 a clean edge needs a stacked-alpha video. Its loop is one switch
 (`role="switch"`, `aria-checked`) whose press writes the other value.
@@ -21,10 +22,14 @@ and "Use current frame", which makes the frame shown its poster.
 - `VideoPanelDeps` - `writeView(id, view)` and `writeChoice(id, field,
 value)`, each one undo step (the shell's `edits.view` and `edits.block`);
   `load(path)` (a tour file, for the preview) and `writePoster(id, image)`
-  (the shell's `edits.poster`: one undo step, with a refusal shown as a toast).
-- `VIDEO_VIEW_CHOICES` - the format's free video views with their labels.
+  (the shell's `edits.poster`: one undo step, with a refusal shown as a toast);
+  optional `setViewpoint(id, viewpoint | null)` (the shell's
+  `edits.pictureViewpoint`, which writes a video's too) and `lookFrom(id)`.
+- `VIDEO_VIEW_CHOICES` - the format's free video views with their labels
+  (`standHere` is "Stand here").
 - `createVideoPanel(deps)` -> `KindPanel`.
-  - Acts: `video-view:<view>` and `video-set:<field>:<value>`.
+  - Acts: `video-view:<view>`, `video-set:<field>:<value>`, and in a view
+    seen from a viewpoint `video-viewpoint-new` and `video-look-from`.
 
 ## Invariants & assumptions
 
@@ -38,6 +43,11 @@ value)`, each one undo step (the shell's `edits.view` and `edits.block`);
 - One preview per block and clip path, kept (`KindPanelDraw.kept`) while
   they stay the same; another clip or no selection disposes it. A video
   whose file the tour does not list (`clipPath` null) has none.
+- The viewpoint section (`viewpoint-part.ts`, the picture's fields and
+  words) is drawn only for a view `tourSeenFromViewpoint` names (today
+  stand-here) on a page that gives `setViewpoint`; its acts are refused
+  in any other view. The draw's key is the viewpoint, so a typed value
+  redraws the dock.
 
 ## Compared with the video prototype (`station-blocks-4-video`)
 
@@ -61,9 +71,11 @@ Accepted as intended, so not built:
   The prototype draws the clip and the poster as two separate thumbnails
   and adds the frame rate and pixel size, which the editor does not read.
 
-Waiting for the viewpoint work: the window view, the stand-here view and
-the viewpoint fields (position, heading, field of view, "Look from
-viewpoint").
+The stand-here viewpoint is typed in the inspector (place, facing,
+pitch, lens, depth; "Look from the viewpoint"); the 3D view draws its
+field-of-view lines but has no drag handle for it, since the video's own
+pose handle places the projection. Dragging the viewpoint in 3D (the
+prototype's camera marker) is parked.
 
 Out of scope, filed as a follow-up
 ([`docs/2026-11-14-0005-free-video-gaps-followups.md`](../../../docs/2026-11-14-0005-free-video-gaps-followups.md)):

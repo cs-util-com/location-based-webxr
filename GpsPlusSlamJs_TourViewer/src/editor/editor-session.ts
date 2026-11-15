@@ -49,7 +49,7 @@ import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-item
 import {
   TOUR_NARRATION_MAX_DURATION_MS,
   TOUR_FREE_BLOCK_VIEWS,
-  TOUR_PICTURE_VIEWPOINT_VIEWS,
+  tourSeenFromViewpoint,
   type TourPictureViewpoint,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
@@ -688,14 +688,10 @@ const MODEL_VIEW_ELSEWHERE = "A 3D model's view is set in its own fields.";
 /** Said when a tag is asked of a block that is no picture. */
 const ONLY_A_PICTURE_TAG = "Only a picture has a tag.";
 
-const ONLY_A_PICTURE_VIEWPOINT = "Only a picture has a viewpoint.";
+const ONLY_A_PICTURE_VIEWPOINT = "Only a picture or a video has a viewpoint.";
 const NO_VIEWPOINT = "This picture has no viewpoint to move yet.";
 
 const NOT_A_VIEWPOINT = `A viewpoint needs a place within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station, a turn, a lens of ${String(TOUR_PICTURE_MIN_HFOV_DEG)} to ${String(TOUR_PICTURE_MAX_HFOV_DEG)} degrees and a depth of ${String(TOUR_PICTURE_MIN_DISTANCE_M)} to ${String(TOUR_PICTURE_MAX_DISTANCE_M)} m.`;
-
-const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
-  TOUR_PICTURE_VIEWPOINT_VIEWS,
-);
 
 /** Whether the format keeps `vp`: finite numbers, a place within its
  *  offset bound on each axis, a turn of some length, its lens and depth
@@ -877,11 +873,12 @@ export interface EditorSession {
     id: string,
     view: string,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Set a picture's viewpoint (`viewpoint`; null: a fresh one in front
-   *  of the picture, `mintViewpoint`): one step. A switch to a view seen
-   *  from a viewpoint (`editBlockView`) gives a picture without one its
-   *  first. Refused in words for an id the tour does not carry, a block
-   *  that is no picture and a viewpoint the format would not keep. */
+  /** Set a picture's or a video's viewpoint (`viewpoint`; null: a fresh
+   *  one in front of it, `mintViewpoint`): one step. A switch to a view
+   *  seen from a viewpoint (`editBlockView`: a picture's viewpoint views,
+   *  a video's stand-here) gives one without one its first. Refused in
+   *  words for an id the tour does not carry, a block that is neither and
+   *  a viewpoint the format would not keep. */
   editPictureViewpoint(
     id: string,
     viewpoint: TourPictureViewpoint | null,
@@ -890,7 +887,8 @@ export interface EditorSession {
    *  let go (`geo`): its place, and the facing of `geo`'s heading, its
    *  pitch, lens and depth kept (`viewpointAt`): one step, as
    *  `editPictureViewpoint`. Refused in words for an id the tour does not
-   *  carry, a block that is no picture and a picture with no viewpoint. */
+   *  carry, a block that is neither a picture nor a video, and one with
+   *  no viewpoint. */
   moveViewpoint(
     id: string,
     geo: QrGeoPose,
@@ -1485,10 +1483,10 @@ export function createEditorSession(input: {
     return { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
   }
 
-  /** Write the viewpoint `next` makes of the picture `id`'s (none: it has
-   *  none to change) as one step, refused in words for an id the tour
-   *  does not carry, a block that is no picture, no viewpoint and one the
-   *  format would not keep. */
+  /** Write the viewpoint `next` makes of the picture or video `id`'s
+   *  (none: it has none to change) as one step, refused in words for an
+   *  id the tour does not carry, a block that is neither, no viewpoint
+   *  and one the format would not keep. */
   function writeViewpoint(
     id: string,
     next: (vp: TourPictureViewpoint | undefined) => TourPictureViewpoint | null,
@@ -1496,7 +1494,7 @@ export function createEditorSession(input: {
     const found = find(id);
     if (found === undefined) return notInTour;
     const object = found.object;
-    if (object.kind !== "picture") {
+    if (object.kind !== "picture" && object.kind !== "video") {
       return { kind: "refused", reason: ONLY_A_PICTURE_VIEWPOINT };
     }
     const viewpoint = next(object.viewpoint);
@@ -2603,11 +2601,12 @@ export function createEditorSession(input: {
         return { kind: "refused", reason: NOT_ITS_VIEW };
       }
       if (object.view === view) return { kind: "unchanged" };
-      // A picture switched to a view seen from a viewpoint gets its first
-      // one, standing in front of it, so the view shows at once.
+      // A picture or a video switched to a view seen from a viewpoint
+      // gets its first one, standing in front of it, so the view shows at
+      // once.
       const minted =
-        object.kind === "picture" &&
-        VIEWPOINT_VIEWS.has(view) &&
+        (object.kind === "picture" || object.kind === "video") &&
+        tourSeenFromViewpoint(object.kind, view) &&
         object.viewpoint === undefined
           ? { viewpoint: mintViewpoint(stationPoseOf(id)) }
           : {};

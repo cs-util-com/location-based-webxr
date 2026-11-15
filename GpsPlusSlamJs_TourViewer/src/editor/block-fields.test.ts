@@ -764,6 +764,22 @@ describe("choice fields with a fallback (ChoiceSpec)", () => {
     expect(blockChoices(VIDEO)).toEqual([]);
   });
 
+  // Why: a window starts as a screen does, so it offers the same choices;
+  // a stand-here video starts when the visitor stands on its spot, so a
+  // start chip there would be a setting that does nothing.
+  it("offers a window the screen's choices, and a stand-here video no start", () => {
+    const named = (view: string) =>
+      blockChoices({ ...SCREEN, view } as unknown as TourObject).map(
+        (c) => c.name,
+      );
+    expect(named("window")).toEqual(["start", "sound", "loop"]);
+    expect(named("standHere")).toEqual(["sound", "loop"]);
+    const near = { ...SCREEN, view: "standHere", start: "near" };
+    expect(
+      blockFields(near as unknown as TourObject).map((f) => f.name),
+    ).toEqual(["title", "transcript", "captions"]);
+  });
+
   it("keeps the choices out of the fields the dock types", () => {
     expect(blockFields(CUTOUT).map((f) => f.name)).toEqual([
       "title",

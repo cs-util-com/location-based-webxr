@@ -748,6 +748,17 @@ describe("inspectorEdit: a picture's viewpoint", () => {
           pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
         },
         {
+          id: "vid",
+          kind: "video",
+          view: "standHere",
+          video: "clip",
+          transcript: "Hello",
+          widthM: 2,
+          viewpoint: VIEWPOINT,
+          createdAtIso: AT,
+          pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
+        },
+        {
           id: "bare",
           kind: "picture",
           view: "plane",
@@ -774,6 +785,16 @@ describe("inspectorEdit: a picture's viewpoint", () => {
     expect(typed("pic", "vp-lens", "500")).toMatchObject({
       kind: "viewpoint",
       viewpoint: { hfovDeg: 120 },
+    });
+  });
+
+  // Why: a stand-here video's viewpoint is typed with the same fields as
+  // a picture's, and must reach the video's viewpoint the same way.
+  it("writes one typed value into a video's viewpoint", () => {
+    expect(typed("vid", "vp-east", "3")).toEqual({
+      kind: "viewpoint",
+      id: "vid",
+      viewpoint: { ...VIEWPOINT, position: [6, 1.6, 3] },
     });
   });
 

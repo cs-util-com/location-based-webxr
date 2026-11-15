@@ -18,14 +18,9 @@
  */
 import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
-import {
-  chipGroup,
-  el,
-  fixed,
-  numberField,
-} from "../editor-shell/inspector-fields.js";
-import { VIEWPOINT_FIELDS, type ViewpointFacts } from "../picture-viewpoint.js";
+import { chipGroup, el } from "../editor-shell/inspector-fields.js";
 import type { KindPanel, KindPanelDraw, PanelItem } from "./kind-panel.js";
+import { viewpointPart } from "./viewpoint-part.js";
 
 /** The views a creator picks among, in the format's order. */
 export const PICTURE_VIEW_CHOICES: readonly {
@@ -79,10 +74,6 @@ const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set([
   "finder",
   "window",
 ]);
-
-/** Said over a viewpoint's fields. */
-const VIEWPOINT_NOTE =
-  "Where to stand to see it lined up, in the station's frame. Its spot shows in the 3D view.";
 
 /** Where the visitor meets each of a picture's dock fields in each view
  *  the chips offer, in a few words; null: the view does not show it. The
@@ -196,61 +187,6 @@ export function createPicturePanel(deps: PicturePanelDeps): KindPanel {
     );
   };
 
-  /** A viewpoint view's section: its fields, or the button that gives
-   *  it one. */
-  const viewpointPart = (
-    view: string,
-    vp: ViewpointFacts | null,
-  ): HTMLElement => {
-    const box = el("div", "isec pviewpoint");
-    box.append(
-      el("div", "flabel", "Viewpoint"),
-      el("div", "note", VIEWPOINT_NOTE),
-      el(
-        "div",
-        "note use",
-        `Used by ${viewLabel(view) ?? view}: it sets where the picture hangs, so its Position below is not used.`,
-      ),
-    );
-    if (vp !== null) {
-      const values: Readonly<Record<string, number>> = {
-        "vp-north": vp.northM,
-        "vp-up": vp.upM,
-        "vp-east": vp.eastM,
-        "vp-facing": vp.facingDeg,
-        "vp-pitch": vp.pitchDeg,
-        "vp-lens": vp.lensDeg,
-        "vp-distance": vp.distanceM,
-      };
-      for (const f of VIEWPOINT_FIELDS) {
-        const value = values[f.field] ?? 0;
-        box.append(
-          numberField(
-            f.label,
-            f.field,
-            fixed(value, f.unit === "m" ? 2 : 1),
-            f.unit,
-          ),
-        );
-      }
-    }
-    if (vp !== null && deps.lookFrom !== undefined) {
-      const look = el("button", "mini", "Look from the viewpoint");
-      look.type = "button";
-      look.dataset["act"] = "picture-look-from";
-      box.append(look);
-    }
-    const fresh = el(
-      "button",
-      "mini",
-      vp === null ? "Stand in front of it" : "Stand in front of it again",
-    );
-    fresh.type = "button";
-    fresh.dataset["act"] = "picture-viewpoint-new";
-    box.append(fresh);
-    return box;
-  };
-
   const parts = (picture: NonNullable<PanelItem["picture"]>): HTMLElement[] => {
     const box = el("div", "isec pview");
     const [label, chips] = chipGroup(
@@ -285,7 +221,15 @@ export function createPicturePanel(deps: PicturePanelDeps): KindPanel {
       }
     }
     if (deps.setViewpoint !== undefined && VIEWPOINT_VIEWS.has(picture.view)) {
-      return [box, viewpointPart(picture.view, picture.viewpoint)];
+      return [
+        box,
+        viewpointPart({
+          vp: picture.viewpoint,
+          use: `Used by ${viewLabel(picture.view) ?? picture.view}: it sets where the picture hangs, so its Position below is not used.`,
+          lookFromAct: deps.lookFrom === undefined ? null : "picture-look-from",
+          freshAct: "picture-viewpoint-new",
+        }),
+      ];
     }
     return [box];
   };

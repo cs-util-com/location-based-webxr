@@ -498,6 +498,8 @@ export interface InspectorVideo {
   readonly clipPath: string | null;
   /** Its poster's tour path; null for none. */
   readonly posterPath: string | null;
+  /** Its viewpoint as the inspector shows it; null for none. */
+  readonly viewpoint: ViewpointFacts | null;
 }
 
 /** A long text as its writer shows it (`long-text-writer.ts`). */
@@ -1389,6 +1391,10 @@ export function buildInspector(input: {
               captions: item.captions ?? "",
               clipPath: assetPath(input.assets, item.video),
               posterPath: assetPath(input.assets, item.poster),
+              viewpoint:
+                item.viewpoint === undefined
+                  ? null
+                  : viewpointFacts(item.viewpoint),
             }
           : null,
       offset:

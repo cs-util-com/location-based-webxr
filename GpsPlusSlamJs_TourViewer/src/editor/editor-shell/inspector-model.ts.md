@@ -95,8 +95,10 @@ view, advance, facingDeg }`) and `advance { mode, afterS }`;
     `video` (`InspectorVideo`: a free video's `blockId`, its view, the
     tour paths of its clip and poster (`clipPath`, `posterPath`, null when
     the tour lists no such file) for the preview, and its choices -
-    `blockChoices`: how it starts, its sound, a cutout's background - for
-    its panel, `../kind-panels/video-panel.ts`; null for any other kind),
+    `blockChoices`: how it starts, its sound, a cutout's background - and
+    its viewpoint's facts or null (`viewpoint`, `../picture-viewpoint.ts`)
+    for its panel, `../kind-panels/video-panel.ts`; null for any other
+    kind),
     `offset`
     (`northM`, `upM`, `eastM` in the station's frame, its folders composed
     in; null for a block with no place in the world),
