@@ -211,11 +211,11 @@ function markingsDistance(scheme: ColourScheme): number {
  */
 const MIN_MARKINGS_DISTANCE = 15;
 
-describe("the ten schemes", () => {
-  it("are the plan's ten, in its order", () => {
+describe("the schemes", () => {
+  it("are the plan's ten in its order, then the later looks", () => {
     // Why this test matters: the dropdown order and the link names are the
-    // owner's vocabulary for rating them (D5); a renamed key breaks every
-    // `?scheme=` link he has sent.
+    // vocabulary for rating them (D5); a renamed key breaks every
+    // `?scheme=` link already sent, so a new look is appended, never inserted.
     expect(COLOUR_SCHEME_NAMES).toEqual([
       "today",
       "architect",
@@ -227,6 +227,7 @@ describe("the ten schemes", () => {
       "night",
       "mono",
       "contrast",
+      "urban",
     ]);
   });
 
@@ -275,7 +276,7 @@ describe("the ten schemes", () => {
     const honouring = COLOUR_SCHEME_NAMES.filter(
       (name) => COLOUR_SCHEMES[name].city.honourColourTags,
     );
-    expect(honouring).toEqual(["today", "mediterranean", "nordic"]);
+    expect(honouring).toEqual(["today", "mediterranean", "nordic", "urban"]);
     expect(COLOUR_SCHEMES.map.city.roadsBySurface).toBe(false);
   });
 
@@ -294,5 +295,49 @@ describe("the ten schemes", () => {
     // noon, the model must not glare.
     expect(COLOUR_SCHEMES.night.brightnessTrim).toBeGreaterThan(1);
     expect(COLOUR_SCHEMES.architect.brightnessTrim).toBeLessThan(1);
+  });
+});
+
+describe("the urban scheme (real-albedo grey ladder)", () => {
+  const urban = COLOUR_SCHEMES.urban;
+
+  it("is a ladder of real facade, roof and asphalt reflectances", () => {
+    // Why this test matters: the look's point is a value ladder at real
+    // albedos (walls from dark stone to limestone, aged asphalt, a neutral
+    // ground). The hex proxy pins the targets the look was designed to, so a
+    // retune that drifts back to one bright beige band fails here.
+    const { buildings, roads, ground } = groupLightness(urban);
+    expect(buildings).toBeGreaterThan(53);
+    expect(buildings).toBeLessThan(57);
+    expect(roads).toBeGreaterThan(10);
+    expect(roads).toBeLessThan(14);
+    expect(ground).toBeGreaterThan(40);
+    expect(ground).toBeLessThan(44);
+    expect(leastDistance(urban)).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+    const walls = urban.city.walls.map(lightness);
+    // A ladder, not a band: the walls span at least 30 L*.
+    expect(Math.max(...walls) - Math.min(...walls)).toBeGreaterThanOrEqual(30);
+  });
+
+  it("honours colour tags, colours roads by class, and trims up for its darker walls", () => {
+    // Why this test matters: the tags carry real facade colours where mapped;
+    // one asphalt family needs the surface colours off; the walls' mean
+    // reflectance is well below today's, so the trim compensates.
+    expect(urban.city.honourColourTags).toBe(true);
+    expect(urban.city.roadsBySurface).toBe(false);
+    expect(urban.city.walls).toHaveLength(20);
+    expect(urban.city.flatRoofs).toHaveLength(6);
+    expect(urban.city.pitchedRoofs).toHaveLength(7);
+    expect(urban.city.ground).toBe(0x626462);
+    expect(urban.brightnessTrim).toBe(1.6);
+  });
+
+  it("keeps the default's land use, trees and barriers", () => {
+    // Why this test matters: the look changes buildings, roads and ground
+    // only; vegetation and land use stay today's, so a comparison with today
+    // isolates the palette.
+    expect(urban.city.landUse).toBe(DEFAULT_CITY_COLOUR_SCHEME.landUse);
+    expect(urban.city.trees).toBe(DEFAULT_CITY_COLOUR_SCHEME.trees);
+    expect(urban.city.barriers).toBe(DEFAULT_CITY_COLOUR_SCHEME.barriers);
   });
 });

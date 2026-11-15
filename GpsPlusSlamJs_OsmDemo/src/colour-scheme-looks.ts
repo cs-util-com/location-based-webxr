@@ -1,5 +1,5 @@
 /**
- * The nine colour schemes beside today's look (colour schemes plan
+ * The colour schemes beside today's look (colour schemes plan
  * 2026-11-10-0841, section 4.5, D5): drafts the owner rates on the phone and
  * the session tunes. Each is a spread of the default with its overrides, so a
  * field nobody overrides stays today's.
@@ -23,6 +23,7 @@ import {
 
 import type { ColourScheme } from "./colour-schemes.js";
 import { DEFAULT_GROUND_SLOPE_COLOURS } from "./ground-slope-colours.js";
+import { PLATE_COLOUR } from "./surface-colours.js";
 
 const D = DEFAULT_CITY_COLOUR_SCHEME;
 
@@ -468,4 +469,68 @@ export const CONTRAST: ColourScheme = {
   },
   ground: { slope: SLOPE, plates: 0xa79d8a },
   brightnessTrim: 1,
+};
+
+/**
+ * A ladder of real facade albedos, mostly grey with sparse warm accents
+ * (city look exploration 2026-11-15, direction A). Walls span limestone to
+ * dark stone (reflectance about 0.08-0.50, L* 34-76), roofs are bitumen,
+ * gravel, slate and muted clay, and the car roads one aged-asphalt family
+ * (drawn raw, so the hex is the reflectance). The walls' mean reflectance is
+ * about 0.25 against today's 0.59, which the trim of 1.6 makes up. Tags
+ * honoured; land use, trees and barriers stay the default's.
+ */
+export const URBAN: ColourScheme = {
+  label: "Urban greys",
+  city: {
+    ...D,
+    honourColourTags: true,
+    roadsBySurface: false,
+    ground: 0x626462,
+    walls: [
+      // limestone and cream
+      0xc4baab, 0xbcaf9d, 0xaca597,
+      // sand and beige
+      0xae9e8c, 0xa69380, 0x968a7a,
+      // light concrete
+      0xb2b0ad, 0x9ea1a4, 0x92908e,
+      // mid grey and granite
+      0x83817e, 0x707276,
+      // cool blue-grey
+      0x81878d, 0x696d73,
+      // brick and salmon
+      0xa07f72, 0x976d61, 0x8a645b,
+      // brownstone
+      0x705950, 0x64504a,
+      // dark stone or glass
+      0x4d5055, 0x575a5c,
+    ],
+    flatRoofs: [
+      // bitumen
+      0x4a4b4e, 0x565452, 0x4a4645,
+      // gravel
+      0x74726e, 0x858380,
+      // white membrane
+      0xc4c7c9,
+    ],
+    pitchedRoofs: [
+      // slate
+      0x575a5d, 0x64696d, 0x4e5053,
+      // muted clay
+      0x816156, 0x866d62, 0x715952,
+      // zinc
+      0x808889,
+    ],
+    ...roadsOf({
+      major: 0x1c1d20,
+      middle: 0x1f2023,
+      minor: 0x222326,
+      paths: 0x55524d,
+      sidewalk: 0x5a5855,
+      markings: 0xc8c6c0,
+      surfaces: 0x222326,
+    }),
+  },
+  ground: { slope: SLOPE, plates: PLATE_COLOUR },
+  brightnessTrim: 1.6,
 };
