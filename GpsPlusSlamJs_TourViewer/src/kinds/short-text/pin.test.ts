@@ -21,6 +21,7 @@ import {
 } from "three";
 import { describe, expect, it, vi } from "vitest";
 
+import { setSubtreeOpacity } from "../../content-fade.js";
 import { worldEnv, type WorldEnv, type WorldPart } from "../../world-part.js";
 import { PIN, PIN_DEFAULT_ORIENTATION, pinMeasures, pinPart } from "./pin.js";
 
@@ -218,6 +219,50 @@ describe("a pin", () => {
     expect(scaleAt(calm, t0)).toBeCloseTo(scaleAt(calm, tHalf), 10);
     const edit = worldEnv("edit", [], none);
     expect(scaleAt(edit, t0)).toBeCloseTo(scaleAt(edit, tHalf), 10);
+  });
+
+  it("fades as a whole with its station, the pulse included", () => {
+    // Why: the station fade writes each material's own opacity times its
+    // alpha only on the frames it moves, before the parts' update; a pulse
+    // that rewrote its opacity from its own value alone showed at full
+    // strength while the rest faded in, and kept pulsing after it had gone.
+    const calm = worldEnv("play", [], none, { reduceMotion: () => true });
+    const part = pin({}, calm);
+    new Group().add(part.object);
+    const frame = {
+      seconds: 10,
+      viewer: [0, 1.6, 5] as [number, number, number],
+    };
+    part.update?.(frame);
+    const opacities = () => {
+      const out = new Map<string, number>();
+      part.object.traverse((o) => {
+        const mesh = o as Mesh;
+        if (mesh.isMesh !== true) return;
+        out.set(
+          `${mesh.name || mesh.parent?.name}:${mesh.id}`,
+          (mesh.material as MeshBasicMaterial).opacity,
+        );
+      });
+      return out;
+    };
+    const designed = opacities();
+    expect([...designed.keys()].some((k) => k.startsWith("pin-pulse"))).toBe(
+      true,
+    );
+    for (const alpha of [0.5, 0]) {
+      setSubtreeOpacity(part.object, alpha);
+      part.update?.(frame);
+      for (const [key, value] of opacities()) {
+        expect(value, key).toBeCloseTo(designed.get(key)! * alpha, 10);
+      }
+    }
+    setSubtreeOpacity(part.object, 1);
+    part.update?.(frame);
+    for (const [key, value] of opacities()) {
+      expect(value, key).toBeCloseTo(designed.get(key)!, 10);
+    }
+    part.dispose();
   });
 
   it("follows the reduced-motion setting while it stands", () => {

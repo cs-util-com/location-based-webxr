@@ -47,7 +47,11 @@ covering what is behind it.
 - The pulse: one swell every 2.8 s from 0.7 to 2.2 times its size, fading
   from 0.55 to nothing; still (at a fixed phase) in the editor and when
   the visitor asked for less motion (`env.reduceMotion`, asked every
-  frame, so switching it on mid-walk stops the pulse at once).
+  frame, so switching it on mid-walk stops the pulse at once). The pulse
+  rewrites its opacity every frame, after the station fade
+  (`content-fade.ts`, which writes only on the frames it moves), so it
+  scales by the ring's faded share (the ring's opacity over its own
+  0.95): it fades in and out with the rest of the pin.
 - All materials are unlit, transparent and write no depth, so the mark
   never hides the camera image as an opaque square; without a canvas (in
   Node) the plate and the halo are plain colours and everything still
@@ -74,6 +78,7 @@ orientation's turn and tilt, both faces, the arrow's world direction
 (past, right, left, behind) for every orientation and from behind a
 `world` pin, no arrow without a point, the pulse moving in play and still
 under reduce-motion (also switched on while it stands) and in the
-editor, and dispose: every geometry, material and painted texture (a
+editor, every part at its share of the station fade (0.5, 0 and back
+to 1), the pulse included, and dispose: every geometry, material and painted texture (a
 stubbed drawing context lets the three paint) fires its dispose event
 exactly once.

@@ -221,11 +221,9 @@ export function pinPart(block: TourShortTextBlock, env: WorldEnv): WorldPart {
     0.02,
     2,
   ).name = "pin-disc";
+  const ringMaterial = basic({ color: accent, opacity: PIN.ringOpacity });
   flat(
-    new Mesh(
-      geometry(new RingGeometry(gs * 0.38, gs * 0.5, 48)),
-      basic({ color: accent, opacity: PIN.ringOpacity }),
-    ),
+    new Mesh(geometry(new RingGeometry(gs * 0.38, gs * 0.5, 48)), ringMaterial),
     0.022,
     3,
   ).name = "pin-ring";
@@ -286,7 +284,13 @@ export function pinPart(block: TourShortTextBlock, env: WorldEnv): WorldPart {
         ? (frame.seconds % PIN.pulsePeriodS) / PIN.pulsePeriodS
         : 0.35;
       pulse.scale.setScalar(0.7 + phase * 1.5);
-      pulseMaterial.opacity = PIN.pulseOpacity * (1 - phase);
+      // The station fade writes the ring's opacity (its own times the
+      // fade) only on the frames the fade moves, before this update; the
+      // pulse rewrites its own each frame, so it takes the ring's share.
+      pulseMaterial.opacity =
+        PIN.pulseOpacity *
+        (1 - phase) *
+        (ringMaterial.opacity / PIN.ringOpacity);
       if (turns) {
         // The viewer in the pin's own frame: the yaw that faces it, and
         // for `face` the tilt down (or up) to its eyes.
