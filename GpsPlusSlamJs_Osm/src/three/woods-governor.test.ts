@@ -623,6 +623,59 @@ describe("the frame right after a step", () => {
 });
 
 /**
+ * After a step the fresh average is seeded at the smaller of its first two
+ * counted frames, not at the median of three as at the session's start. A
+ * slow device (300-2000 ms, eight counted frames a verdict) whose half sits
+ * just over the worthwhile line (87-93 % of the full woods' frame, the
+ * quarter at 70 %) and whose first counted frame at the half is short
+ * (0.7-0.8 times; the re-sort's frames settling) starts the half's average
+ * at that frame, so the half's verdict reads under the line and the woods
+ * step on to the quarter. Without the short frame the same device rests at
+ * full woods, which shows the case sits at the line. What reverses it: a
+ * seed of three after a step, whose median drops the short frame and sends
+ * every one of these cases to full woods for a rest; the seed length after a
+ * step is otherwise pinned by no test here.
+ */
+describe("the seed after a step is its first two counted frames", () => {
+  const run = (full: number, half: number, short: number) => {
+    const governor = createWoodsGovernor();
+    const byShare = (share: number): number =>
+      full * (share === 1 ? 1 : share === 0.5 ? half : 0.7);
+    let at = 0;
+    let share = 1;
+    let sinceStep = Number.POSITIVE_INFINITY;
+    let rested = false;
+    governor.frame(at, true);
+    while (at < 600_000) {
+      // 0 is the step's own frame (skipped); 1 is the first counted one.
+      const ms = byShare(share);
+      at += share === 0.5 && sinceStep === 1 ? ms * short : ms;
+      sinceStep += 1;
+      governor.frame(at, true);
+      const state = governor.state();
+      rested ||= state.mode === "resting";
+      if (state.share !== share) {
+        share = state.share;
+        sinceStep = 0;
+      }
+    }
+    return { state: governor.state(), rested };
+  };
+  for (const full of [300, 600, 1000, 2000]) {
+    it(`steps on to the quarter at ${full} ms with a short first frame at the half`, () => {
+      for (const half of [0.87, 0.9, 0.93]) {
+        expect(run(full, half, 1).rested, `half ${half} unseeded`).toBe(true);
+        for (const short of [0.7, 0.8]) {
+          const { state, rested } = run(full, half, short);
+          expect(rested, `half ${half}, first frame x${short}`).toBe(false);
+          expect(state).toMatchObject({ share: 0.25, mode: "thinned" });
+        }
+      }
+    });
+  }
+});
+
+/**
  * A quarter that is fast climbs back to the half once the rest allows it;
  * when the half is slow again it steps back to the quarter, never through
  * the full woods: the half was re-entered from a rung that bought its time.
@@ -965,7 +1018,8 @@ describe("a two-frame warm-up near the line", () => {
 
 /**
  * One short counted frame among a 100-200 ms device's first three (the
- * first, second or third; 0.3-0.7 times the device's frame, or a flat 55 ms) is not its full-woods baseline: the median of the three is the
+ * first, second or third; 0.3-0.7 times the device's frame, or a flat
+ * 55 ms) is not its full-woods baseline: the median of the three is the
  * device's own frame, so thinning that pays (woods 35-80 % of the frame)
  * reaches the quarter without a rest. What reverses it: a short second frame
  * near the line starting the average again (it rests at 100-200 ms with the

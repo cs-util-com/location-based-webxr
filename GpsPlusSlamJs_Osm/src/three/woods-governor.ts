@@ -30,11 +30,12 @@
  *   three counted frames, a rung's after a step at the smaller of its first
  *   two. So one long warm-up frame near the line is not the start the limit
  *   then defends (a second one is, at its own length), and one short frame
- *   among a slow device's first three is not its baseline. Each rung is
- *   judged by its own frames: at a step the average starts afresh, so a
- *   device with few frames a verdict does not judge the new rung by the old
- *   one's, and the step's own frame (the woods re-sort their draw order)
- *   counts toward nothing;
+ *   among a slow device's first three is not its baseline (two outliers in
+ *   the same direction among the three are the seed, an open limit the
+ *   sidecar measures). Each rung is judged by its own frames: at a step
+ *   the average starts afresh, so a device with few frames a verdict does
+ *   not judge the new rung by the old one's, and the step's own frame
+ *   (the woods re-sort their draw order) counts toward nothing;
  * - the worthwhile test: when thinning bought less than `worthwhile` of the
  *   frame time, measured against the full woods, the woods were not the
  *   cost, so they come back in full and the step-down rests for `restS`;
@@ -141,8 +142,9 @@ export function createWoodsGovernor({
    * How many counted frames seed the fresh average: three at the session's
    * start, two after a step, where the first may be the re-sort's second
    * frame (below); seeding at three there too rests more often under
-   * natural jitter (the sidecar has the counts). No verdict can come before a seed is complete:
-   * three counted frames credit at most three `gapMs`, under `slowS`.
+   * natural jitter (the sidecar has the counts). No verdict can come before
+   * a seed is complete: three counted frames credit at most three `gapMs`,
+   * under `slowS`.
    */
   let seedOf = 3;
   /**
