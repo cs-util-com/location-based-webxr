@@ -21,8 +21,8 @@
  *   malformed, a joint its skin does not have, no skin binding it);
  * - a primitive with morph targets, a mode other than triangles, an
  *   accessor another primitive (or anything else) also reads, an
- *   attribute this code cannot read or whose count is not its positions', extras that are no object, or levels
- *   already saved;
+ *   attribute this code cannot read or whose count is not its
+ *   positions', extras that are no object, or levels already saved;
  * - a primitive under the triangle floor.
  *
  * Runs in the optimizer's Worker, between the texture pass and
@@ -517,9 +517,9 @@ interface Level {
 const stored = (d: number) => Number(d.toPrecision(4));
 
 /** The author's level and up to `LOD_CHAIN_LEVELS` coarser ones, each at
- *  about `1 / LOD_CHAIN_RATIO` of the triangles of the one before. A level's error never reads
- *  below a finer one's (sampling noise is clamped), so a renderer may walk
- *  the chain one way. */
+ *  about `1 / LOD_CHAIN_RATIO` of the triangles of the one before. A
+ *  level's error never reads below a finer one's (sampling noise is
+ *  clamped), so a renderer may walk the chain one way. */
 function chainOf(o: Ordered, author: number): Level[] {
   const { prog } = o;
   const levels: Level[] = [

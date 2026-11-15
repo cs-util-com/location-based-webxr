@@ -10,8 +10,8 @@
   - `lodBudget`: the default level's largest deviation, as a share of the primitive's bounding box diagonal (0.0025 in `OPTIMIZER_SETTINGS`);
   - `lodMinTriangles`: a primitive with fewer triangles is left as it is (2 000);
   - `detailShare?`: the author's share of triangles kept (0..1, clamped), overriding the budget. Left out, or not a finite number, the budget decides.
-- `LodReport`: `skipped` (why the whole model was left as it is, or null: a skinned mesh that could not be posed), `primitives`, `trianglesBefore`, `trianglesAfter` (of the primitives given levels), `deviation` (the author's level's, as a share of the size, the largest over the primitives), `size` (the largest primitive's box diagonal: a still primitive's in model units, a skinned one's in its rest pose), `automatic`, and `choices`: the slider's stops (`LOD_SHARES`), each `{ share, triangles, deviation }`, summed over the primitives (triangles) or their largest (deviation).
-- Constants: `LOD_CHAIN_LEVELS` (4); internal to the module: `LOD_STOP_SAMPLES` (2 000, the slider's stops: an estimate shown before the author picks one), `LOD_SEARCH_SAMPLES` (5 000), `LOD_CHECK_SAMPLES` (20 000), `LOD_SHARES`.
+- `LodReport`: `skipped` (why part of the model was left as it is, or null: set when a skinned primitive could not be posed; that primitive is left alone and the others are still given levels), `primitives`, `trianglesBefore`, `trianglesAfter` (of the primitives given levels), `deviation` (the author's level's, as a share of the size, the largest over the primitives), `size` (the largest primitive's box diagonal: a still primitive's in model units, a skinned one's in its rest pose), `automatic`, and `choices`: the slider's stops (`LOD_SHARES`), each `{ share, triangles, deviation }`, summed over the primitives (triangles) or their largest (deviation).
+- Constants: `LOD_CHAIN_LEVELS` (2) and `LOD_CHAIN_RATIO` (4), see "Choosing the chain"; internal to the module: `LOD_STOP_SAMPLES` (2 000, the slider's stops: an estimate shown before the author picks one), `LOD_SEARCH_SAMPLES` (5 000), `LOD_CHECK_SAMPLES` (20 000), `LOD_SHARES`.
 
 ## What is saved
 
@@ -41,12 +41,14 @@
 
 ## Choosing the chain
 
-Swept on the three scanned models, at the default level and at share 1:
-the spacing (halving, quartering) against the level count (1 to 4). The
-file is the whole made file as a share of the original; the drawing cost
-is the triangles drawn at the 1 px and 2 px budgets over bands of screen
-size, weighted by how often a band occurs (P^-2, P^-1 and flat), relative
-to halving with 4 levels.
+Swept on the three scanned models, at the default level and at share 1,
+by `model-lod-chain.sweep.test.ts` (opt-in, `LOD_CHAIN_SWEEP=1`): the
+spacing (halving, a third, quartering) against the level count (1 to 4).
+The file is the whole made file as a share of the original; the drawing
+cost is the triangles drawn at the 1 px and 2 px budgets at screen sizes
+of the box diagonal from 25 to 800 px, weighted by how often a size occurs
+(P^-2, P^-1 and flat: every size as likely), relative to halving with 4
+levels.
 
 - No chain: rock 0.833 (default level), 0.874 (share 1).
 - Halving, 1 to 4 levels:
@@ -58,17 +60,27 @@ to halving with 4 levels.
   - rock 0.851 / 0.855 / 0.856, at share 1 0.896 / 0.902 / 0.903;
   - coast-rock 0.228 / 0.235 / 0.235;
   - boulder 0.349 / 0.354 / 0.356 (19 312 / 4 828 / 1 206 triangles);
-  - 2 levels reach the same sixteenth as halving's 4 and draw 1.02 to
-    1.20 times its triangles; a third level (a 64th) saves under 1 % of
-    the file and is seldom drawn.
+  - 2 levels reach the same sixteenth as halving's 4 and, under P^-2 and
+    P^-1, draw 1.01 to 1.33 times its triangles; a third level (a 64th)
+    saves under 1 % of the file and is seldom drawn.
+- A third of the triangles a level, 2 levels: rock 0.864, coast-rock
+  0.238, boulder 0.363, between the two.
 - Chosen: quartering with 2 levels, the cheapest in bytes for about the
-  same drawing (at share 1 halving with 4 levels put rock over the 0.9
-  line at 0.957).
-- **What would reverse it:** a flat distribution of screen sizes, where
-  the 200 to 400 px band counts as much as a far one: there quartering
-  draws the author's level where halving drew its half (up to twice the
-  triangles on boulder and coast-rock in that band). Halving with 2 or 3
-  levels is then the better trade.
+  same drawing under P^-2 and P^-1 (at share 1 halving with 4 levels put
+  rock over the 0.9 line at 0.957).
+- **What it costs, and what would reverse it.** Under the flat weight it
+  draws 1.08 to 1.34 times halving-4's triangles at the 1 px budget, up to
+  1.71 times at 2 px (boulder, share 1). The cost sits in the 200 to 400
+  px band, which is an ordinary size for a model in AR a few metres away,
+  not a rare one: there quartering draws the author's level where halving
+  drew its half (boulder at 200 px: 19 312 against 9 656 triangles at the
+  default level, 14 360 against 7 180 at share 1; coast-rock at share 1:
+  11 895 against 5 948). In absolute terms that is under about 10 000
+  triangles a model, against the 2 to 14 % of the original's bytes that
+  halving-4 adds to the file (coast-rock 0.235 against 0.254 at the
+  default level, boulder 0.742 against 0.875 at share 1). A scene of many such models seen at that size, on a device
+  bound by triangles rather than by download, would reverse the choice;
+  halving with 2 or 3 levels is then the better trade.
 
 ## Skinned and animated models
 
@@ -86,7 +98,8 @@ to halving with 4 levels.
 
 ## Left as they are
 
-- **A model with a skinned mesh that cannot be posed, whole** (`skipped` says so): its bones, skin or clips do not read (`skin-pose.ts`), a mesh is used by nodes with different skins, or a `JOINTS_n` has no matching `WEIGHTS_n`. Not one byte of it changes, since a level judged in a pose it cannot compute might tear.
+- **A skinned primitive that cannot be posed** (`skipped` says so): its bones, skin or clips do not read (`skin-pose.ts`), or its mesh is used by nodes with different skins. That primitive keeps every byte, since a level judged in a pose it cannot compute might tear; the model's other primitives are still given levels.
+- A primitive with a `JOINTS_n` that has no matching `WEIGHTS_n` (or the other way round) is left alone too, silently: it is malformed rather than unposable, and `skipped` stays null for it.
 - A primitive with morph targets, a mode other than triangles (4), an attribute or index accessor that anything else also reads (another primitive, a clip's sampler, a skin's inverse bind matrices, a morph target, a node extension; counted with `otherReaders` from `model-quantize.ts`), an accessor `readAccessor` cannot read, an attribute whose count is not the positions' (the rest of the model is still given levels), non-float or non-finite positions, an index naming a vertex it does not have, extras that are no object, or `extras.lod` already there (an optimized file optimized again keeps its levels).
 - A primitive under `lodMinTriangles`.
 - A primitive without indices gets `0, 1, 2, ...` and then a saved index list.
@@ -98,7 +111,7 @@ to halving with 4 levels.
 
 ## Tests
 
-- `model-lod.test.ts`: a scanned rock taken to its default level within the budget, its vertices compacted and a chain saved, measured again from the file as glTF-Transform reads it; the author's share followed and its deviation reported; share 1 keeps every triangle; a model under the floor untouched; a skinned tube whose rest-only level tears when bent: its posed level stays within the budget at rest and at 30, 45, 60 and 90 degrees; a skinned model without clips keeps at least half its triangles unless the author's share says otherwise; an animated unskinned model given levels; a skinned model whose joint or skin does not read left untouched to the byte, with `skipped` saying so; a primitive with morph targets, or whose positions another mesh shares, left alone; a primitive whose normals are one short of its positions left alone while the other is given levels; every original vertex of a default level within the budget, by a brute-force distance in the test; a 32-bit chain for a triangle soup of 66 000 kept vertices; the author's share and share 1 on a 2 048-triangle bumpy sphere; a primitive with levels not simplified again (dropping its coarser levels is pinned in `model-step.test.ts`); the Khronos validator's verdict and the primitive's own extras kept.
+- `model-lod.test.ts`: a scanned rock taken to its default level within the budget, its vertices compacted and a chain saved, measured again from the file as glTF-Transform reads it; the author's share followed and its deviation reported; share 1 keeps every triangle; a model under the floor untouched; no empty level saved, even at share 0; a skinned tube whose rest-only level tears when bent: its posed level, posed by the JOINTS_0 and WEIGHTS_0 the file saved, stays within the budget at rest and at 30, 45, 60 and 90 degrees; a skinned tube with every vertex on one bone ordered by its clip poses (more than four times fewer triangles than without them); a skinned model whose only clip moves no joint of its skin kept at half or more; a skinned model sized by its rest pose whether its bind shape is in metres or centimetres; a skinned model without clips keeps at least half its triangles unless the author's share says otherwise; an animated unskinned model given levels; a skinned model whose joint or skin does not read left untouched to the byte, with `skipped` saying so; a primitive with morph targets, or whose positions another mesh shares, left alone; a primitive whose accessor a clip's sampler or a skin's inverse bind matrices also reads left alone; a primitive whose normals are one short of its positions left alone while the other is given levels; every original vertex of a default level within the budget, by a brute-force distance in the test; a 32-bit chain for a triangle soup of 66 000 kept vertices; the author's share and share 1 on a 2 048-triangle bumpy sphere; a primitive with levels not simplified again (dropping its coarser levels is pinned in `model-step.test.ts`); the Khronos validator's verdict and the primitive's own extras kept.
 - `model-lod.property.test.ts`: for random height fields and spheres, random budgets and random author's shares, every level indexes the compacted buffer, the levels lie end to end with falling counts and non-falling errors, no level has a degenerate triangle, and an automatic level stays within its budget, measured again from the written file.
 - `skin-pose.test.ts`, `skin-pose.property.test.ts`: the poses themselves (see `skin-pose.ts.md`).
 - `model-step.test.ts`: the pass inside the step, its report on the answer.
