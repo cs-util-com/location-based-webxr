@@ -415,22 +415,25 @@ wired into its logic: every interaction is faked.
     sparks and ground rings on the items, one subtitle line and a panned
     chime for what is out of view. Weakness: a glow in the world is wrong by
     the position error, and guidance in the picture covers 29-37 % of a
-    portrait view near the items.
+    portrait view near the items (the page's own "world cues" readout, in
+    headless software rendering).
   - `hud-agg-5-aim-to-ask/` - a ring in the middle of the screen: aiming at
     a thing brings one label with its name and one action. Weakness: a thing
     the visitor never aims at never says what it is, and reading means
     holding the phone up.
 - `quiz-player-1-card-answers/` ... `quiz-player-3-creator-decides/` - how a
   visitor plays a quiz, three directions; made 2026-11-15. Typed answers are
-  judged after normalisation against salted SHA-256 hashes (`crypto.subtle`,
-  so open them over https).
+  judged after normalisation against salted SHA-256 hashes. Pages 1 and 3
+  hash with `crypto.subtle`, which exists only on a secure origin: open them
+  over https, because page 1 counts every typed answer wrong without it.
+  Page 2 carries its own SHA-256 and works anywhere.
   - `quiz-player-1-card-answers/` - the quiz plays in the story card with all
     five answer types; letters over the things in the square pick the same
     answers. Weakness: the place only decorates the question.
   - `quiz-player-2-place-answers/` - the question sits on a stone; the
     answers are found in the square, picked by standing in a ring and given
-    at the stone. Weakness: up close in landscape the question sign fills
-    much of the view.
+    at the stone. Weakness: it is slow and asks for a lot of walking (find
+    four, stand at one, walk back to the stone).
   - `quiz-player-3-creator-decides/` - a placed quiz lifts its answers into
     the square while the position is good and drops them back into the card
     when it turns weak; typed answers stay in the card. Weakness: two
