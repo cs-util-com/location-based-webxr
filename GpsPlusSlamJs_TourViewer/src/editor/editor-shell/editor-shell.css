@@ -4210,25 +4210,37 @@ body[data-view="3d"] #view3d .view3d-canvas {
   display: flex;
   gap: 8px;
   margin-top: auto;
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-top: 1px solid var(--s-line);
   background: var(--s-bg1);
 }
 
+/* Add step gives way when the two do not fit (a narrow panel, a wide
+ * font): its label shortens with an ellipsis, Preview stays whole. */
 .sfoot .act {
   justify-content: center;
   width: auto;
+  min-width: 0;
   height: auto;
   min-height: 30px;
-  padding: 0 12px;
+  padding: 0 10px;
   border: 1px solid var(--s-line2);
   border-radius: 5px;
   background: var(--s-bg3);
   white-space: nowrap;
 }
 
+.sfoot .act .lbl {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .sfoot .act.wide {
-  flex: 1;
+  flex: 1 1 0;
+}
+
+.sfoot .act.pri {
+  flex: none;
 }
 
 .sfoot .act.pri {
@@ -4268,8 +4280,9 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 
   /* A phone's two halves, as the prototype's bottom bar has them. */
-  .sfoot .act {
-    flex: 1;
+  .sfoot .act,
+  .sfoot .act.pri {
+    flex: 1 1 0;
     min-height: 42px;
   }
 }

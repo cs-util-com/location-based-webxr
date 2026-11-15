@@ -323,8 +323,8 @@ for (const size of SIZES) {
           : FOOT.desktop;
 
       // The footer: flush with the body's foot at either end of the
-      // cards' scroll, Add step and Preview side by side 8 px apart, 12 px
-      // in from the panel's sides, a button row's height.
+      // cards' scroll, Add step and Preview side by side 8 px apart and
+      // inside it whatever the font, a button row's height.
       const foot = inspector.locator(".sfoot");
       const add = foot.locator('[data-act="add-entry"]');
       const play = foot.locator('[data-act="preview-story"]');
@@ -345,8 +345,9 @@ for (const size of SIZES) {
         expect(a.height).toBeCloseTo(want.button, 0);
         expect(Math.abs(a.y - p.y)).toBeLessThanOrEqual(1);
         expect(p.x - (a.x + a.width)).toBeCloseTo(8, 0);
-        expect(a.x - f.x).toBeCloseTo(12, 0);
-        expect(f.x + f.width - (p.x + p.width)).toBeCloseTo(12, 0);
+        // 10 px in from the panel's sides, as the cards are.
+        expect(a.x - f.x).toBeCloseTo(10, 0);
+        expect(f.x + f.width - (p.x + p.width)).toBeCloseTo(10, 0);
         // A phone's two halves; elsewhere Add step takes what Preview leaves.
         if (size.phone) expect(a.width).toBeCloseTo(p.width, 0);
         room.push(shown.height - f.height);
