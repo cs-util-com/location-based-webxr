@@ -11,6 +11,29 @@ A tour's `.glb` model as a three scene, for the phone's AR (through
   clips in `animations` (where `model-views.ts` plays one); rejects
   when three's GLTFLoader cannot parse the bytes.
 
+## Saved levels of detail
+
+A primitive the asset shelf gave coarser levels (`extras.lod`, which
+three's loader copies to `geometry.userData.lod`; format in
+`editor/asset-shelf/model-lod.ts.md`) draws through its chain:
+
+- On load the chain accessor becomes the geometry's index and the finest
+  level its draw range, so a frame that never runs the hook (a shadow
+  pass, a raycast) sees the author's level.
+- Each mesh's `onBeforeRender` picks the coarsest level whose deviation
+  stays within `LOD_PIXEL_BUDGET` (`glb-lod.ts`, which has the sweep):
+  the world box diagonal (the largest axis scale of `matrixWorld`), the
+  distance from the camera to the near side of the bounding sphere (a
+  camera inside it draws the finest level), the projection's focal
+  length and the render target's height (the canvas's when drawing to the
+  screen).
+- A geometry several meshes share gets its chain once; each mesh sets the
+  range just before it is drawn. A clone made with `Object3D.clone` shares
+  the geometry but not the hook, so it draws whatever range was set last;
+  nothing in the app clones a model today.
+- A file without `extras.lod`, or with one that is malformed or does not
+  fit its accessor, loads exactly as before.
+
 ## Invariants & assumptions
 
 - **Lazy:** three's GLTFLoader is imported on first use, so no page pays
@@ -31,7 +54,9 @@ station.add(model);
 
 ## Tests
 
-No unit test of its own (the loader is three's). The phone's AR e2e
+`glb-model.test.ts`: a model through the real optimizer and three's
+loader draws its chain (finest first, the finest up close, the coarsest
+far away and back again); a file without levels loads as before. The phone's AR e2e
 walks run it for real: `playwright-tests/ar-fakes.js` keeps the real
 seam, so three's GLTFLoader parses the fixture's minimal `.glb`; the stations layer's unit tests
 (`editor3d/editor3d-stations.test.ts`) hand in a stand-in and check a
