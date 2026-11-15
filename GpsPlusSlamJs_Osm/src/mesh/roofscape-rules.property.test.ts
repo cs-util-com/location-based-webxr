@@ -58,13 +58,16 @@ const toEntries = (
     },
   }));
 
-/** The definition the grid must reproduce: every pair, no grid. */
+/**
+ * The definition the grid must reproduce: every pair, no grid. The radius
+ * reaches a micrometre past `priorRadiusM`, as the sidecar states.
+ */
 function bruteForceFlat(entries: readonly PriorEntry[], self: PriorEntry) {
   let roofs = 0;
   let flat = 0;
   for (const other of entries) {
     const d = Math.hypot(other.at.x - self.at.x, other.at.y - self.at.y);
-    if (d > P.priorRadiusM) continue;
+    if (d > P.priorRadiusM + 1e-6) continue;
     const roof = other.tags["roof:shape"];
     if (roof === undefined) continue;
     roofs += 1;
