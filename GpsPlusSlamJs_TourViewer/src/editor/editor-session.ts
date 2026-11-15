@@ -691,8 +691,7 @@ const ONLY_A_PICTURE_TAG = "Only a picture has a tag.";
 const ONLY_A_PICTURE_VIEWPOINT = "Only a picture has a viewpoint.";
 const NO_VIEWPOINT = "This picture has no viewpoint to move yet.";
 
-const NOT_A_VIEWPOINT =
-  "A viewpoint needs a place within 10 km of its station, a turn, a lens of 10 to 120 degrees and a depth of 1 to 500 m.";
+const NOT_A_VIEWPOINT = `A viewpoint needs a place within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station, a turn, a lens of 10 to 120 degrees and a depth of 1 to 500 m.`;
 
 const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
   TOUR_PICTURE_VIEWPOINT_VIEWS,
