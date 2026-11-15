@@ -11,6 +11,7 @@ import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
 
 import {
   appendView,
+  gatherAccessor,
   type GlbParts,
   readAccessor,
   readGlb,
@@ -239,5 +240,104 @@ describe("readAccessor", () => {
     refused.forEach((accessor) => {
       expect(readAccessor(parts([accessor]), 0)).toBeNull();
     });
+  });
+});
+
+describe("gatherAccessor", () => {
+  // Why: the level-of-detail pass keeps only the vertices its levels use,
+  // so every attribute of a primitive is cut down to the same elements. A
+  // stale min or max on a position is a validator error and a wrong
+  // bounding box (culling, the shelf's size readout); a 1-byte element
+  // left unpadded breaks the 4-byte rule for vertex attributes.
+  it("keeps the chosen elements in their new order, packed and padded, with min and max of what is kept", () => {
+    const bin = new Uint8Array(36);
+    const data = new DataView(bin.buffer);
+    [
+      [0, 0, 0],
+      [5, -1, 2],
+      [1, 7, -3],
+    ].forEach((p, i) =>
+      p.forEach((v, c) => data.setFloat32(12 * i + 4 * c, v, true)),
+    );
+    const colours = Uint8Array.of(10, 20, 30, 40, 50, 60);
+    const parts: GlbParts = {
+      json: {
+        bufferViews: [
+          { buffer: 0, byteOffset: 0, byteLength: 36 },
+          { buffer: 0, byteOffset: 36, byteLength: 6 },
+        ],
+        accessors: [
+          {
+            bufferView: 0,
+            componentType: 5126,
+            type: "VEC3",
+            count: 3,
+            min: [0, -1, -3],
+            max: [5, 7, 2],
+          },
+          {
+            bufferView: 1,
+            componentType: 5121,
+            normalized: true,
+            type: "VEC2",
+            count: 3,
+            min: [10, 20],
+            max: [50, 60],
+          },
+        ],
+      },
+      views: [bin, colours],
+    };
+    const keep = Uint32Array.of(2, 0);
+    expect(gatherAccessor(parts, 0, keep)).toBe(true);
+    expect(gatherAccessor(parts, 1, keep)).toBe(true);
+    const accessors = parts.json["accessors"] as Record<string, unknown>[];
+    expect(Array.from(readAccessor(parts, 0)!.values)).toEqual([
+      1, 7, -3, 0, 0, 0,
+    ]);
+    expect(accessors[0]).toMatchObject({
+      count: 2,
+      byteOffset: 0,
+      min: [0, 0, -3],
+      max: [1, 7, 0],
+    });
+    expect(Array.from(readAccessor(parts, 1)!.values)).toEqual([
+      50 / 255,
+      60 / 255,
+      10 / 255,
+      20 / 255,
+    ]);
+    // raw integers, as glTF stores min and max of a normalized accessor
+    expect(accessors[1]).toMatchObject({ min: [10, 20], max: [50, 60] });
+    const view = (parts.json["bufferViews"] as Record<string, unknown>[])[
+      accessors[1]!["bufferView"] as number
+    ]!;
+    expect(view["byteStride"]).toBe(4);
+  });
+
+  it("refuses an accessor it cannot read, or an element it does not have, and changes nothing", () => {
+    const parts: GlbParts = {
+      json: {
+        bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 12 }],
+        accessors: [
+          { bufferView: 0, componentType: 5126, type: "VEC3", count: 1 },
+          {
+            bufferView: 0,
+            componentType: 5126,
+            type: "SCALAR",
+            count: 1,
+            sparse: { count: 1 },
+          },
+        ],
+      },
+      views: [new Uint8Array(12)],
+    };
+    const before = JSON.stringify(parts.json);
+    expect(gatherAccessor(parts, 0, Uint32Array.of(1))).toBe(false);
+    expect(gatherAccessor(parts, 1, Uint32Array.of(0))).toBe(false);
+    expect(gatherAccessor(parts, 7, Uint32Array.of(0))).toBe(false);
+    expect(gatherAccessor(parts, 0, new Uint32Array(0))).toBe(false);
+    expect(JSON.stringify(parts.json)).toBe(before);
+    expect(parts.views.length).toBe(1);
   });
 });

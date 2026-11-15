@@ -82,11 +82,33 @@ const QUANTIZE_FIELDS = [
   "texcoordError",
 ] as const;
 
+const LOD_FIELDS = [
+  "primitives",
+  "trianglesBefore",
+  "trianglesAfter",
+  "deviation",
+  "size",
+] as const;
+const CHOICE_FIELDS = ["share", "triangles", "deviation"] as const;
+
 /** Whether `value` is an object whose `fields` are all finite numbers. */
 function numbersAt(value: unknown, fields: readonly string[]): boolean {
   if (typeof value !== "object" || value === null) return false;
   const o = value as Partial<Record<string, unknown>>;
   return fields.every((f) => Number.isFinite(o[f]));
+}
+
+/** Whether `value` reads as a level-of-detail report: its counts, its
+ *  reason (a string or null), its flag and every slider stop. */
+function isLodReport(value: unknown): boolean {
+  if (!numbersAt(value, LOD_FIELDS)) return false;
+  const r = value as Partial<Record<string, unknown>>;
+  return (
+    (r.skipped === null || typeof r.skipped === "string") &&
+    typeof r.automatic === "boolean" &&
+    Array.isArray(r.choices) &&
+    r.choices.every((c) => numbersAt(c, CHOICE_FIELDS))
+  );
 }
 
 /** `value` as a model's report, or undefined when it does not read: the
@@ -95,6 +117,7 @@ function modelReportOf(value: unknown): ModelReport | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const r = value as Partial<Record<string, unknown>>;
   return numbersAt(r.textures, TEXTURE_FIELDS) &&
+    isLodReport(r.lod) &&
     numbersAt(r.quantize, QUANTIZE_FIELDS)
     ? (value as ModelReport)
     : undefined;

@@ -471,7 +471,9 @@
       }
 
       const MODEL_VARIANTS = [
-        { label: "1024 px, 16-bit", model: {}, chosen: true },
+        { label: "1024 px, 16-bit, default detail", model: {}, chosen: true },
+        { label: "every triangle", model: { detailShare: 1 } },
+        { label: "a quarter of the triangles", model: { detailShare: 0.25 } },
         { label: "512 px textures", model: { textureMaxSidePx: 512 } },
         { label: "2048 px textures", model: { textureMaxSidePx: 2048 } },
         {
@@ -504,6 +506,7 @@
             v.label,
             kib(result.blob.size),
             `${((100 * result.blob.size) / source.size).toFixed(0)} % of the original`,
+            `${result.after.triangles} triangles`,
             `textures up to ${result.after.textureSide} px`,
             `SSIM ${result.ssim.toFixed(4)}`,
             `${result.ms} ms`,

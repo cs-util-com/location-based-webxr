@@ -29,13 +29,21 @@ function control(signal = new AbortController().signal) {
 const blobOf = (bytes: Uint8Array) =>
   new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "model/gltf-binary" });
 
-describe("optimizeModel", () => {
+// a scanned model's levels of detail take seconds to order and measure
+describe("optimizeModel", { timeout: 30_000 }, () => {
+  // Why: with every triangle kept (the slider at its top), the stored
+  // geometry must draw the same points within the quantize budget; the
+  // default level's thinning, and the smaller file it gives, are pinned by
+  // the next test (at share 1 the saved chain adds its index lists).
   it("answers a smaller .glb the tour accepts, drawing the same model", async () => {
     const before = realModel("rock");
     const run = control();
     const answer = await optimizeModel(
       blobOf(before),
-      OPTIMIZER_SETTINGS,
+      {
+        ...OPTIMIZER_SETTINGS,
+        model: { ...OPTIMIZER_SETTINGS.model, detailShare: 1 },
+      },
       run,
       fakePictureDevice().device,
     );
@@ -44,7 +52,6 @@ describe("optimizeModel", () => {
     expect(answer.blob.type).toBe("model/gltf-binary");
     const out = new Uint8Array(await answer.blob.arrayBuffer());
     expect(checkGlbInert(out).ok).toBe(true);
-    expect(out.length).toBeLessThan(before.length * 0.9);
     const { shift, diagonal } = largestShift(
       await worldPositions(before),
       await worldPositions(out),
@@ -77,9 +84,42 @@ describe("optimizeModel", () => {
       largestSide: 1024,
     });
     expect(answer.model?.quantize.positions).toBeGreaterThan(0);
+    // a box is far under the triangle floor: no levels
+    expect(answer.model?.lod.primitives).toBe(0);
     expect(answer.model?.quantize.positionError).toBeLessThanOrEqual(
       OPTIMIZER_SETTINGS.model.maxPositionError,
     );
+  });
+
+  // Why: dropped as it is, a scan is thinned to its default level of
+  // detail, and the shelf hears how far that level deviates and what the
+  // slider's stops would give; the run's progress only moves forward.
+  it("thins a scan to its default level within the budget, and reports it", async () => {
+    const before = realModel("rock");
+    const run = control();
+    const answer = await optimizeModel(
+      blobOf(before),
+      OPTIMIZER_SETTINGS,
+      run,
+      fakePictureDevice().device,
+    );
+    if (answer.type !== "done") throw new Error(answer.type);
+    const lod = answer.model!.lod;
+    expect(lod).toMatchObject({
+      skipped: null,
+      primitives: 1,
+      automatic: true,
+    });
+    expect(lod.trianglesAfter).toBeLessThan(lod.trianglesBefore);
+    expect(lod.deviation).toBeLessThanOrEqual(
+      OPTIMIZER_SETTINGS.model.lodBudget,
+    );
+    expect(lod.choices.length).toBeGreaterThan(1);
+    const out = new Uint8Array(await answer.blob.arrayBuffer());
+    expect(checkGlbInert(out).ok).toBe(true);
+    expect(out.length).toBeLessThan(before.length * 0.9);
+    expect(run.seen).toEqual([...run.seen].sort((a, b) => a - b));
+    expect(run.seen.at(-1)).toBe(1);
   });
 
   it("keeps a model with an extension it does not know, and says why", async () => {

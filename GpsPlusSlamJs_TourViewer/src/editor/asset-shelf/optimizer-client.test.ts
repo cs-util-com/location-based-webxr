@@ -233,7 +233,8 @@ describe("the optimizer's Worker client", () => {
     const host = createOptimizerHost(() => w);
     const good = host.run("model", 1, OPTIMIZER_SETTINGS, control());
     const bad = host.run("model", 1, OPTIMIZER_SETTINGS, control());
-    const [a, b] = w.posted.map((m) => m.job);
+    const badLod = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+    const [a, b, c] = w.posted.map((m) => m.job);
     const blob = new Blob(["s"]);
     const model = {
       textures: {
@@ -253,8 +254,31 @@ describe("the optimizer's Worker client", () => {
         normalErrorDeg: 0,
         texcoordError: 0,
       },
+      lod: {
+        skipped: null,
+        primitives: 1,
+        trianglesBefore: 9000,
+        trianglesAfter: 3000,
+        deviation: 0.002,
+        size: 1.5,
+        automatic: true,
+        choices: [{ share: 1, triangles: 9000, deviation: 0 }],
+      },
     };
     w.answer({ type: "done", job: a!, blob, extension: "glb", model });
+    // a level-of-detail report whose slider stop does not read
+    w.onmessage?.({
+      data: {
+        type: "done",
+        job: c,
+        blob,
+        extension: "glb",
+        model: {
+          ...model,
+          lod: { ...model.lod, choices: [{ share: 1, triangles: "many" }] },
+        },
+      },
+    } as MessageEvent);
     w.onmessage?.({
       data: { type: "done", job: b, blob, extension: "glb", model: 3 },
     } as MessageEvent);
@@ -265,6 +289,11 @@ describe("the optimizer's Worker client", () => {
       model,
     });
     await expect(bad).resolves.toEqual({
+      kind: "optimized",
+      blob,
+      extension: "glb",
+    });
+    await expect(badLod).resolves.toEqual({
       kind: "optimized",
       blob,
       extension: "glb",

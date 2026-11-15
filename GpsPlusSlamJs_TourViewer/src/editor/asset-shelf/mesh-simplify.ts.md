@@ -15,6 +15,7 @@
 - A half-edge collapse moves a vertex onto an existing neighbour, so no level adds a vertex; a coarser level's triangles are a prefix of a finer one's.
 - A vertex on a border or attribute seam moves only along it, priced by the border's edge constraints: a straight border thins out for free, a corner of an outline moves only at a cost. A vertex where more than two seam or border edges meet, and any non-manifold vertex, never moves. So at a small error an open patch keeps its outline and a texture seam stays where it was.
 - A collapse is refused when a remaining triangle would turn by more than `maxTurnDeg`, degenerate, face away from its corners' shading normals, or break the link condition (the mesh stays manifold where it was).
+- An open patch can collapse to nothing at the end of its order (`stepAlive` reaching 0); a caller that saves levels stops at the last step that leaves a triangle (`model-lod.ts`).
 - Triangles degenerate from the start (two corners at one position) die at step -1 and are in no level.
 - The metric is normalized to the bounding box diagonal; `stepError` is the square root of the quadric cost, a ranking, not a distance: the deviation in model units is measured by `mesh-distance.ts`.
 - Pure and synchronous: typed arrays, no allocation per collapse. It runs in the optimizer's Worker.

@@ -13,6 +13,7 @@
 - `appendView(parts, bytes, fields?)`: adds a buffer view (with `byteStride`, `target` and the like); its index.
 - `writeGlb(parts)`: a `.glb` of one JSON chunk (padded with spaces) and, when any view is still named, one binary chunk (padded with zeros), each view starting on a 4-byte boundary. Views no accessor, sparse part or image names are left out and the rest renumbered in their order; `buffers[0].byteLength` is rewritten. `parts` is changed.
 - `readAccessor(parts, index): AccessorData | null`: `{ size, count, values }`, strided and normalized data turned into values (normalized -32768 clamped to -1, as glTF says). Null for no such accessor, a sparse one, a matrix type, an unknown component type, no buffer view, or elements past the end of the view.
+- `gatherAccessor(parts, index, keep)`: cuts an accessor down to the elements `keep` names, in that order, into a new packed view (each element padded to 4 bytes, `byteStride` set when the padding differs, the old view's `target` kept), with `count` set and `min` / `max` recomputed from the raw kept values when present. False with nothing changed for an accessor `readAccessor` refuses, an empty `keep`, or one naming an element the accessor does not have. The level-of-detail pass compacts a primitive's vertices with it.
 - `listOf`, `objectOf`, `indexOf`: the defensive field readers the passes share.
 
 ## Invariants
@@ -24,5 +25,5 @@
 ## Tests
 
 - `glb-file.property.test.ts`: any mix of valid and invalid buffer view names reads exactly when all are valid, and a rewrite of a readable one names only views it holds. The hand-written files come from `test-support/hand-glb.ts`.
-- `glb-file.test.ts`: a round trip judged by glTF-Transform's reader and the Khronos validator; views nothing names dropped and the rest aligned; a model without buffers; unsupported and unreadable files, a buffer view named out of range, negative or not whole on an accessor, a sparse part and an image; `readAccessor` on strided normalized integers, floats, and every refused case.
-- Indirectly every model test (`model-quantize*.test.ts`, `model-textures.test.ts`, `model-step.test.ts`).
+- `glb-file.test.ts`: a round trip judged by glTF-Transform's reader and the Khronos validator; views nothing names dropped and the rest aligned; a model without buffers; unsupported and unreadable files, a buffer view named out of range, negative or not whole on an accessor, a sparse part and an image; `readAccessor` on strided normalized integers, floats, and every refused case; `gatherAccessor` reordering, padding a 2-byte element and keeping raw min and max of a normalized accessor, and refusing without a change.
+- Indirectly every model test (`model-quantize*.test.ts`, `model-textures.test.ts`, `model-lod*.test.ts`, `model-step.test.ts`).
