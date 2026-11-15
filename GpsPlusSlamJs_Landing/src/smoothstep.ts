@@ -18,7 +18,7 @@
  * duplications.
  *
  * NOT SHARED WITH THE FRAMEWORK, deliberately, and this package does not
- * depend on it (owner decision DEC-H3, 2026-08-24: shared BEHAVIOUR is unified
+ * depend on it (deliberate copy (shared-helper rule): shared BEHAVIOUR is unified
  * across packages, pure one-liners are not). `AppFramework`'s
  * `visualization/occlusion-mesh.ts` carries the three-argument GLSL form
  * `smoothstep(edge0, edge1, x)`, which mirrors a shader line for line and is

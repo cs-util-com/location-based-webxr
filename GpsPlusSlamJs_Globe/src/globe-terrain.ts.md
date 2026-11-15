@@ -156,7 +156,7 @@
     is a quarter of it per level); Error if the library stops exporting the plugin (0.5.3
     ships it without typings, so it is read off the plugins entry at
     runtime). The tile meshes are found by `tileMeshes` from
-    `globe-tile-meshes.ts` (one implementation, DEC-H3).
+    `globe-tile-meshes.ts` (one implementation).
 - Invariants & assumptions:
   - The template is the globe's own (`createGlobeSurface().template`), so
     the relief reads the same uniforms and sun as the globe.

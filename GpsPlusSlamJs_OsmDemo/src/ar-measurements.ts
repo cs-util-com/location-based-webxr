@@ -293,7 +293,7 @@ export interface ArMeasurements {
    * `ar-origin.ts`'s `nueBearingDeg`, which carries the axis convention and its
    * tests, rather than an `atan2` at a call site.
    *
-   * Read beside the library's compass bearing once that is exposed (DEC-H3/H6).
+   * Read beside the library's compass bearing once that is exposed (H6).
    * The two differing by tens of degrees says the compass is being outvoted or
    * is wrong; either line alone says nothing.
    */

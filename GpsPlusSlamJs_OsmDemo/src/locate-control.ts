@@ -6,7 +6,7 @@
  * control is a div, a click handler and two listeners rather than a plugin.
  *
  * All the decisions live in the framework's `utils/locate-state.ts` (shared
- * with the globe lab's pin since round-2 plan 2026-09-26-2055 M3g, DEC-H3)
+ * with the globe lab's pin since round-2 plan 2026-09-26-2055 M3g)
  * and are tested there without a browser. This file is the DOM and the
  * Leaflet wiring.
  *

@@ -12,7 +12,7 @@
   - `MIN_SUN_Z`: sin 2°, the floor a relative shade divides by.
   - `SKY_FILL` and `skyLevel` are the Globe package's (`sky-level.ts`,
     imported as `/globe/sky-level.js` and re-exported here): one
-    implementation that the globe's surface reads too (DEC-H3), so the
+    implementation that the globe's surface reads too, so the
     relief and the globe's flat ground take the same fill at a low sun.
     `node --test` resolves the path with `test-route-loader.mjs`.
   - `SKY_FILL` `{ floor, twilightDeg: 6 }` (DEC-GL5-11): the sky fill's

@@ -295,7 +295,7 @@ describe("the sun-lit light", () => {
 describe("the sky level (the fill's light, DEC-GL5-11)", () => {
   const zOf = (deg) => Math.sin(deg * DEG);
 
-  // One implementation (DEC-H3): the terrain lab and the globe lab read the
+  // One implementation: the terrain lab and the globe lab read the
   // Globe package's sky level, so at a low sun the relief and the globe's
   // flat ground get the same fill. The terrain lab re-exports it; these are
   // the same objects, not copies. The globe's surface shader reads the
@@ -470,7 +470,7 @@ describe("the sun-lit colour (what the globe draws)", () => {
     want.forEach((v, i) => close(got[i], v, 1e-12, `[${i}]`));
   });
 
-  // One implementation (DEC-H3): the far field's colour at a straight-down
+  // One implementation: the far field's colour at a straight-down
   // sun is the sun-lit colour at light 1.
   it("is the far field's colour for the same light", () => {
     const albedo = [0.5, 0.36, 0.2];
@@ -509,8 +509,9 @@ describe("the sun-lit colour (what the globe draws)", () => {
 });
 
 describe("the globe's intensity", () => {
-  // DEC-H3 across a package boundary the lab cannot import from under
-  // `node --test` (TypeScript): the copy is held to the globe's source.
+  // A deliberate copy (shared-helper rule) across a package boundary the lab
+  // cannot import from under `node --test` (TypeScript): the copy is held to
+  // the globe's source.
   it("is the globe surface's own sunIntensity", () => {
     const source = readFileSync(
       new URL(

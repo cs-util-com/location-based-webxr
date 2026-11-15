@@ -1584,8 +1584,8 @@ async function start() {
       : null;
   const terrarium =
     startParams.reliefHeights !== "synthetic" ? terrariumModule : null;
-  // The relief's source (G1 2): its URL and credit from the Osm library
-  // (DEC-H3), what the globe needs to know of it from `globe-relief-source`.
+  // The relief's source (G1 2): its URL and credit from the Osm library,
+  // what the globe needs to know of it from `globe-relief-source`.
   const awsRelief = terrariumModule
     ? awsTerrariumRelief({
         url: terrariumModule.TERRARIUM_URL_TEMPLATE,

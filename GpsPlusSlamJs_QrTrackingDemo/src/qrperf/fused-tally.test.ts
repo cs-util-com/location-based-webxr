@@ -522,7 +522,7 @@ describe("createFusedTally re-reads (plan §55 #3)", () => {
 
 describe("createFusedTally report lines (plan §67 #8)", () => {
   // Why this test matters: the lock counts moved into the framework's
-  // `createFusedPoseTally` (DEC-H3, plan §66). This pins the count lines
+  // `createFusedPoseTally` (plan §66). This pins the count lines
   // character for character, so the delegation cannot change a report the
   // owner compares across builds.
   it("renders the count lines exactly", () => {

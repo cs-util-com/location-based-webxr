@@ -26,7 +26,7 @@
   (`formatViewText`; volume-cloud plan §16), so an export pasted back opens
   exactly that view; null without a readable pose.
 - Invariants: the frame statistics are the framework's (`createFrameRun`
-  and `formatFrameRunSummary` through `globe-perf-stats.js`, DEC-H3). The
+  and `formatFrameRunSummary` through `globe-perf-stats.js`). The
   recorder core and the share helpers are the frame-hitch recorder's
   (`globe-perf-recorder.js`, `globe-perf-share.js`). They load (a dynamic
   import) when the panel first opens, so a page whose panel stays closed

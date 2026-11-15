@@ -288,7 +288,7 @@ describe("atmosphereLook", () => {
 // WHY (F2 plan 2026-10-03-1922, "the radius mapping and the observer's
 // altitude"): the ground sky's observer is the camera's height above the
 // ELLIPSOID's image in the model (not above the exaggerated ground), and
-// the space pass reads the same number, from this one place (DEC-H3).
+// the space pass reads the same number, from this one place.
 describe("observerAltitudeKm", () => {
   it("is the height over the ellipsoid in the model, at the equator and the pole", () => {
     const [a, , c] = WGS84;

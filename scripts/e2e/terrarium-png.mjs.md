@@ -10,7 +10,7 @@ Two suites need it: OsmDemo's (its 2x2 DEM tile, `stubNetwork` in
 `GpsPlusSlamJs_OsmDemo/playwright-tests/fixtures.js`) and the design
 system's terrain lab (the ridge and flat tiles of its geometry checks,
 terrain plan 2026-09-27-0605 §9 findings 6-7). The encoding carries a
-contract (one red step is 256 m), so under DEC-H3 it has ONE implementation.
+contract (one red step is 256 m), so under the shared-helper rule it has ONE implementation.
 It began as an inline function in OsmDemo's fixtures and moved here, byte for
 byte, when the second consumer arrived.
 

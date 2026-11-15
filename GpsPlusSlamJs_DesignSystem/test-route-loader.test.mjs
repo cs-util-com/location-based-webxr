@@ -3,7 +3,7 @@
  *
  * Why this test matters: the terrain lab's pure modules import the Globe
  * package's sky level by its page path (`/globe/sky-level.js`), the one
- * implementation both labs read (DEC-H3). The browser gets it from the
+ * implementation both labs read. The browser gets it from the
  * dev server's route table; `node --test` gets it from this loader, which
  * reads the SAME table. If the loader drifted from the table, the unit
  * tests would load a different file than the page does, or none at all.
