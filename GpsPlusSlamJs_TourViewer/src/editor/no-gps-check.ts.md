@@ -14,7 +14,7 @@ when their text changes).
 - `NO_GPS_CODE_REACH_M` (40) - how far a station may be from the nearest
   placing code: `visit-settle.ts` `CODE_EVENT_REACH_M`, the reach a code
   event has for the notes walked from it - the same drift argument, one
-  number (DEC-H3).
+  number.
 - `checkNoGps({ stations, levels }): NoGpsCheck`
   - `farFromCodes` - the names of the stations farther than
     `NO_GPS_CODE_REACH_M` (horizontal, `move-with-code.ts` `horizontalM`)
@@ -25,7 +25,7 @@ when their text changes).
     title, else "Station N").
   - `codesPlace` - whether one of the tour's codes can place it: the
     viewer's own rule, `visitor-screen.ts` `tourCodesUsable`, never a copy
-    (root CLAUDE.md DEC-H3).
+    (the shared-helper rule).
 - `noGpsWarnings(check): string[]` - the plain-word lines:
   - none, when a code can place the tour and every station is near one;
   - "N station(s) is/are farther than 40 m from every printed code: "A",

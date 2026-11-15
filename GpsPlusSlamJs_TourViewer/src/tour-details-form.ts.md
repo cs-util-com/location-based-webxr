@@ -38,7 +38,7 @@ editor (`.dependency-cruiser.cjs`, `viewer-not-to-editor`). Pure.
 
 ## Invariants & assumptions
 
-- **One rule set, the format's own** (DEC-H3): what this accepts, the
+- **One rule set, the format's own**: what this accepts, the
   manifest's reader keeps. The title cap is an EDITOR rule only: the
   reader keeps a longer title (`tour-details.ts.md` in the framework).
 - Pure: nothing is mutated, `withDetails` copies.

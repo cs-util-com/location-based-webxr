@@ -10,8 +10,9 @@
  * 2026-07 (see `GpsPlusSlamJs_AppFramework/src/utils/median.ts`, which
  * replaced six copies carrying two different rules).
  *
- * This package deliberately does NOT depend on the framework, so per the
- * helper-unification rule (DEC-H3) it keeps its own copy — ONE of them,
+ * This package deliberately does NOT depend on the framework, so it keeps a
+ * deliberate copy (shared-helper rule: shared behaviour has one
+ * implementation, a dependency-free one-liner may exist once per package) — ONE of them,
  * which `tests/repo-config/duplicate-helpers.test.js` now enforces.
  */
 

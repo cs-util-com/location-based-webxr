@@ -5,7 +5,7 @@
  * Node-only and build-time: an app's `vite.config.ts` imports it by path
  * (the framework's published `dist` carries browser code only, and this file
  * reads git and the file system). One copy for every app that stamps its
- * recordings (DEC-H3): the Recorder and the Tour Viewer.
+ * recordings: the Recorder and the Tour Viewer.
  *
  * @see build-metadata-define.mjs.md
  */

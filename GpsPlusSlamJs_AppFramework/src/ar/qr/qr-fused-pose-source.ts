@@ -2,7 +2,7 @@
  * The fused QR pose per code, for apps (QR near-frontal pose plan §60-§61,
  * b4b-3): one `createFusedQrPoseTracker` per decoded payload over the
  * entries the app reads for it. The QR demo, the TourViewer and (b6) the
- * recorder share it (DEC-H3). See qr-fused-pose-source.ts.md.
+ * recorder share it. See qr-fused-pose-source.ts.md.
  *
  * Structural on purpose: the app passes `entriesOf` (in practice
  * `selectQrFusedEntries(store.getState(), text)`), so the `ar` layer never

@@ -4,7 +4,7 @@
   (terrain plan 2026-09-27-0605 §9 finding 4: a worker's requests are
   outside the smokes' routing, so "no request leaves the machine" would
   pass vacuously). One implementation for the terrain lab and the globe
-  lab's detail region (DEC-H3).
+  lab's detail region.
 - Public API:
   - `TILE_TIMEOUT_MS` - 30,000: a tile that never answers must not stall
     a page forever.

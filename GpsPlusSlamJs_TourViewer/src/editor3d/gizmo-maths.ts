@@ -24,7 +24,7 @@ import type { LinearRing } from "../placement/placement-rows.js";
  * camera: 2 tan(fov / 2). Over a view's height in px it gives the metres a
  * pixel covers at 1 m (a sprite's scale per px); a view's height over it
  * gives the focal length in px. The one copy of the lens arithmetic for the
- * 3D editor (PR bot finding 14, DEC-H3).
+ * 3D editor (PR bot finding 14).
  */
 export function viewHeightAtOneM(fovDeg: number): number {
   return 2 * Math.tan((fovDeg * Math.PI) / 360);

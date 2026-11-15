@@ -10,7 +10,7 @@
  * geolocation fails in three different ways that need three different
  * remedies: "denied" is fixed in the browser's settings, "timeout" by going
  * somewhere with a view of the sky, and "unavailable" not at all. The labels
- * and the mapping moved here from the OSM demo (DEC-H3: shared behaviour
+ * and the mapping moved here from the OSM demo (shared behaviour
  * has one home) when the globe lab's pin needed the same contract; the
  * request is new with it, and must never leave a button stuck on
  * "locating" (it never rejects, whatever the browser hands it).

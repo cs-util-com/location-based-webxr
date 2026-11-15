@@ -67,7 +67,10 @@ export function hexToRgb(hex) {
   return [m[1], m[2], m[3]].map((v) => parseInt(v, 16) / 255);
 }
 
-/** GLSL `smoothstep`: the design system's one copy (DEC-H3, per package). */
+/**
+ * GLSL `smoothstep`: the design system's one
+ * deliberate copy (shared-helper rule: a one-liner once per package).
+ */
 export function smoothstep(edge0, edge1, x) {
   const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);

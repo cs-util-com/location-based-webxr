@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { createPipelineTimings } from "./pipeline-timings.js";
 
-// The percentile rule itself is the framework's (utils/percentile, DEC-H3)
+// The percentile rule itself is the framework's (utils/percentile)
 // and is tested there; these tests pin how the collector uses it.
 
 describe("createPipelineTimings", () => {

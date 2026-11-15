@@ -49,7 +49,7 @@
     image in the model: its distance from the centre after
     `ellipsoidToModel` minus `groundKm`; negative below the ellipsoid,
     RangeError for a non-finite position. The ground sky's observer and the
-    space pass read this one number (DEC-H3), the height over the
+    space pass read this one number, the height over the
     ellipsoid, never over the exaggerated ground.
 - Invariants & assumptions:
   - The map is affine, so rays stay straight and the pass intersects

@@ -139,7 +139,7 @@ onError)`, from `globe-map-loader.ts`) fetches the two global maps (night lights
     `litCopy(template)` (a clone keeping the compile hooks and program key)
     live in `globe-tile-meshes.ts` and are re-exported here; the relief
     carrier (`globe-terrain.ts`) imports them from there, so both carriers
-    share one implementation (DEC-H3) without the relief pulling this
+    share one implementation without the relief pulling this
     module into its bundle.
 - Invariants & assumptions:
   - A tile that fails to load leaves its parent drawn over that area

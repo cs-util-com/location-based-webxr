@@ -92,7 +92,7 @@ no-op, and Null Island being allowed rather than refused.
 ## `nueBearingDeg` — moved to the framework
 
 Lifted on 2026-09-24 to `gps-plus-slam-app-framework/utils/nue-bearing`
-(DEC-H3), with its tests, when the AR sun check needed the same conversion.
+(one shared implementation), with its tests, when the AR sun check needed the same conversion.
 The AR HUD's compass (`ar-mode.ts`) imports it from there. The warning
 stands: take the direction in WORLD space (see that module's sidecar).
 

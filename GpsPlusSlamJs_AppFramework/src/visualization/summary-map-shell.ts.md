@@ -7,7 +7,7 @@ trajectory layers (`map-overlay-draw.ts`), the app's own layers on top, an
 optional fullscreen toggle, and a clean, idempotent `destroy`.
 
 Moved out of the RecorderApp (`ui/summary-map.ts`) on 2026-10-01 under
-DEC-H3, when the Tour Viewer's summary after Finish became the second
+the shared-helper rule, when the Tour Viewer's summary after Finish became the second
 consumer (Tour Viewer authoring plan
 `2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md`
 §3.3, milestone M3b). What the two apps do differently is passed in, never

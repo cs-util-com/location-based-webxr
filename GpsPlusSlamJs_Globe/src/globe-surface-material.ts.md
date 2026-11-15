@@ -57,7 +57,7 @@ fill: true`, round-6 plan G6-1) under `-band-fill`.
 uCloudFlat`, so faded clouds leave no cloud-shaped dull water).
   - `GLOBE_CLOUD_GLSL` and `GLOBE_TWILIGHT_GLSL`: the cloud sample and
     shade, and the twilight look, shared with the cloud shell
-    (`globe-cloud-shell.ts`, DEC-H3); `afterChunk(source, anchor, code)`,
+    (`globe-cloud-shell.ts`); `afterChunk(source, anchor, code)`,
     the insertion both use, which throws on a missing or repeated anchor.
   - The shadow reads the cloud where the sun's ray through the ground
     point crosses the shell: the point moved toward the sun by

@@ -105,7 +105,7 @@ function normalizeUnitQuaternion(q: Quaternion): Quaternion {
  * The ONE renormalization contract for authored/minted unit quaternions —
  * shared by `mintQrGeoPose` (writer) and `parseQrLevel`'s rotation parsing
  * (reader), so the two halves of the level-file round-trip can never
- * disagree (DEC-H3: shared behaviour is unified). Accepts a norm within
+ * disagree (shared behaviour is unified). Accepts a norm within
  * 1e-3 of 1 (JSON round-trip loss), returns `undefined` for anything
  * further off (callers throw their own error type) — and for anything
  * NON-FINITE or not four components long.

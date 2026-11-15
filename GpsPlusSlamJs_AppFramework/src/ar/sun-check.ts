@@ -38,7 +38,7 @@ import {
   bearingDeltaDeg,
   normalizeBearingDeg,
 } from '../utils/bearing-degrees.js';
-// The shared rules (DEC-H3): the interpolating median and the nearest-rank
+// The shared rules: the interpolating median and the nearest-rank
 // percentile, whose private copies here behaved the same on every window
 // this check builds (non-empty, p = 0.8).
 import { interpolatingMedian as median } from '../utils/median.js';

@@ -4,7 +4,8 @@
  *
  * WHY IT IS SHARED. It was a private copy in `visualization/occlusion-mesh.ts`
  * until the atmosphere code needed the same curve twice (haze boundary, cloud
- * density), and DEC-H3 allows a one-liner once per package, not once per file.
+ * density). It is the package's one deliberate copy (shared-helper rule: a
+ * one-liner may exist once per package, not once per file).
  *
  * DELIBERATELY NOT THE SAME FUNCTION as the one-argument `smoothstep(t)` in
  * `GpsPlusSlamJs_OsmDemo/src/easing.ts` and `GpsPlusSlamJs_Landing`: that is

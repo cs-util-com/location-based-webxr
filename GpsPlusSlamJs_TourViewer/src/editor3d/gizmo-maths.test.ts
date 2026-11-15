@@ -866,7 +866,7 @@ describe("the scene's keys", () => {
 });
 
 // Why: the lens arithmetic (the view's height at 1 m, 2 tan(fov / 2)) was
-// written out in three 3D-editor modules (PR bot finding 14, DEC-H3: one
+// written out in three 3D-editor modules (PR bot finding 14: one
 // rule, one implementation); the gizmo's sprites, the billboards and a
 // code's size on screen must agree on it.
 describe("viewHeightAtOneM", () => {

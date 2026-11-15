@@ -14,7 +14,7 @@
   - `LIGHT_AZIMUTHS_DEG` `[225, 270, 315, 360]`.
   - `NO_DATA_COLOURS`: the hatch where a post had no data.
   - `hexToRgb(hex)`, `smoothstep(e0, e1, x)` (GLSL's; the design system's
-    one copy under DEC-H3), `rampColour(stops, h)`,
+    one deliberate copy (shared-helper rule: one-liner once per package)), `rampColour(stops, h)`,
     `greenWeight(spread, style?)`, `landColour(style, h, spread)`,
     `waterColour(style, h)`.
   - `multidirectionalShade(gx, gy, gain?, altitudeDeg?)`: Mark 1992's four

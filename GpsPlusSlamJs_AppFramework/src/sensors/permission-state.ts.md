@@ -1,7 +1,7 @@
 # permission-state.ts - the prompt-free permission query
 
 - Purpose: the ONE place that asks `navigator.permissions` about a
-  permission (DEC-H3, one implementation of shared behaviour). It never
+  permission (one implementation of shared behaviour). It never
   prompts and never rejects. `permission-checker.ts` builds its geolocation
   and camera rows on it; the design system's globe lab reads it at load
   (round-5 plan 2026-10-01-0945 §3.1: a position only where the permission

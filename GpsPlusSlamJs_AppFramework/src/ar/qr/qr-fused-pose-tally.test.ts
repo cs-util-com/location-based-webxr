@@ -4,7 +4,7 @@
  * Why these tests matter: the QR demo's `?qrperf` report and the
  * TourViewer's debug readout both say why a code was not stable, and the
  * owner compares those numbers across builds and apps. They must count by
- * ONE rule (DEC-H3): above all, a lock whose newest detection did not
+ * ONE rule: above all, a lock whose newest detection did not
  * advance (an ignored native frame, plan §54) is a re-read and counts
  * nothing else, or every such frame would add a lock and a reason twice.
  */

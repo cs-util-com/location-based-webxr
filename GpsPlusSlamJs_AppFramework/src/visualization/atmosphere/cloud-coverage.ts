@@ -2,7 +2,7 @@
  * The clouds from a coverage map, and a disc around the camera (globe
  * volume-cloud plan 2026-10-05-0016, C1 and C3), shared by the cloud slab
  * and the cloud shadow so the shadow falls from exactly the clouds the slab
- * draws (DEC-H3: one implementation).
+ * draws (one implementation).
  *
  * One per-position threshold carries both: the map's local cover becomes
  * the column's noise threshold through the noise's own quantiles (the rule

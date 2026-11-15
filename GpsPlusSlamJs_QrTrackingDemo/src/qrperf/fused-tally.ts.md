@@ -29,7 +29,7 @@ motion }`; the percentiles are nearest-rank over the FINITE values only
     stable locks from an unchanged window); `locks` excludes them. The
     phone's proof that the rule fired on a native NEWEST entry.
   - `locks`, `reReads`, `stable`, `nativeIgnoredLocks` and `notStable` come
-    from the framework's `createFusedPoseTally` (plan §66, DEC-H3), the
+    from the framework's `createFusedPoseTally` (plan §66), the
     same counting rule as the TourViewer's `?debug=1` readout; the report
     lines are pinned character for character in `fused-tally.test.ts`.
   - `nativeIgnoredLocks`: locks (re-reads excluded) whose run had native

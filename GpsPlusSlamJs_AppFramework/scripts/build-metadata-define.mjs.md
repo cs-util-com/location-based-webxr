@@ -6,7 +6,7 @@ The build half of an app's build stamp: the Vite `define` block that injects
 the five constants [`src/utils/build-info.ts`](../src/utils/build-info.ts.md)
 reads (`__BUILD_COMMIT__`, `__BUILD_TIME__`, `__APP_VERSION__`,
 `__LIB_VERSION__`, `__FW_VERSION__`). One copy for every app that stamps its
-recordings (DEC-H3): the RecorderApp (`config/vite.config.ts`) and the Tour
+recordings: the RecorderApp (`config/vite.config.ts`) and the Tour
 Viewer (`vite.config.ts`) import it by relative path. It moved out of the
 Recorder's Vite config on 2026-09-28, when the Tour Viewer's troubleshooting
 recording needed the same stamp (authoring recording plan 2026-09-28-0953,

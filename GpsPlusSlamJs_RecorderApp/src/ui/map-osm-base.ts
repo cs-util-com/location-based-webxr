@@ -4,7 +4,7 @@
  *
  * The OSM basemap itself is no longer built here: `addOsmTileLayer` moved to
  * the framework (`gps-plus-slam-app-framework/visualization/osm-tile-layer`,
- * 2026-10-01) together with the summary map's shell (DEC-H3, Tour Viewer
+ * 2026-10-01) together with the summary map's shell (Tour Viewer
  * authoring plan 2026-09-28-0953 §3.3), which draws the basemap itself. The
  * views import it from there. What stays here is the recorder's LOOK.
  */

@@ -52,8 +52,8 @@ detail, shares }`: the footprint drift (CIE76 between the fine albedo's
     post's albedo from the coarse colour) and the mean fine class shares.
     Only footprints wholly on land posts with imagery count; with none,
     `drift` is `{ mean: NaN, p95: NaN, n: 0 }`. The footprint means use
-    `summedArea` and `boxMeanAt` from `terrain-globe-colour.js` (DEC-H3:
-    one box mean in the lab).
+    `summedArea` and `boxMeanAt` from `terrain-globe-colour.js` (shared-helper
+    rule: one box mean in the lab).
   - `CLASS_SWEEP`: the sweep's settings, one threshold moved at a time:
     snow line ±300 / ±600 m, tree line ±400 m, rock slope 30-46°, colour
     width 6-24, floor 0.02-0.15; and the measured prototypes at colour

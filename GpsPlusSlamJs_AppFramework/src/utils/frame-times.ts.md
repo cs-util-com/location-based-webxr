@@ -4,7 +4,7 @@
 
 A ring of the last frame times with nearest-rank p50 / p95 / p99 and the
 max, for a LIVE readout. Moved from OsmDemo's `ar-sun-shadow.ts` on
-2026-10-03 (DEC-H3; globe zoom performance plan
+2026-10-03 (globe zoom performance plan
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2017-globe-zoom-frame-hitches-performance-plan.md`,
 PERF-0), gaining p99, so the AR sun shadow status line and the globe lab's
 recorder overlay read one implementation.

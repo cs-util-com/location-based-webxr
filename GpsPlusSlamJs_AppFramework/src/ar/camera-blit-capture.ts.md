@@ -11,7 +11,7 @@ Background: `docs/2026-02-06-bug-camera-frames-black.md`; RGB path: `GpsPlusSlam
 - `rgbaImageToJpegBlob(frame: RgbaFrame, quality): Promise<Blob | null>` -
   the one RGBA (top-left origin) → JPEG encoder, OffscreenCanvas first,
   DOM canvas otherwise; shared by `CameraBlitCapture` and the Tour
-  Viewer's placed photos (DEC-H3). Rejects (never throws synchronously)
+  Viewer's placed photos. Rejects (never throws synchronously)
   when the data is not exactly `width * height * 4` bytes.
 
 - **`new CameraBlitCapture(config?)`** — `{ width, height }` of the intermediate target (default 512×512). Allocates the render target, shader quad and CPU pixel buffer once.

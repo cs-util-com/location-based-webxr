@@ -12,8 +12,8 @@ printed in.
 ## Public API
 
 - The Drive file id comes from the framework's
-  `utils/drive-file-id.ts` `driveFileId`, the one parser (follow-up F3,
-  DEC-H3); this module has none of its own.
+  `utils/drive-file-id.ts` `driveFileId`, the one parser (follow-up
+  F3); this module has none of its own.
 - `printableLink(url)` - a Drive file link as
   `https://drive.google.com/file/d/<id>`; anything else unchanged.
 - `linkSpellings(url)` - the spellings a tour's measured codes may carry:

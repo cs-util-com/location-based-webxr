@@ -12,7 +12,7 @@ this module (a picture's title against its caption, an untitled model
 called "Photo") and was folded in here. The two existing
 copies had drifted (a photo with a blank caption read "Photo" on the map
 and a blank title in the list); the M6 E1 plan review (#3) asked for one
-rule before a third page used it (root `CLAUDE.md` DEC-H3). Pure.
+rule before a third page used it (the shared-helper rule). Pure.
 
 ## Public API
 

@@ -25,7 +25,7 @@ source to trust is chosen after field logs show which one is biased.
 ## Invariants & assumptions
 
 - **The counting rule is the framework's** `createQrParallaxSizeTally`
-  (DEC-H3, shared with the TourViewer's print check); this tally adds the
+  (shared with the TourViewer's print check); this tally adds the
   depth half, the percentiles and the report line. The JSON also carries
   `independentWindows` - windows sharing no detection with the previous one.
 

@@ -10,8 +10,8 @@
  *
  * It is a pure transform `(zip, cells, resolution) -> zip`: it reads
  * `session.json`, decides whether there is anything to do, and re-emits the
- * archive through `rebuildZipWithEntries` (the package's ONE re-emit loop,
- * DEC-H3 — this module used to carry its own copy). It never mutates
+ * archive through `rebuildZipWithEntries` (the package's ONE re-emit loop;
+ * this module used to carry its own copy). It never mutates
  * anything in place — the caller (the RecorderApp backfill) owns the safe
  * write-then-verify-then-overwrite protocol around it — and it keeps its
  * skip-and-return-input semantics on top of the rebuild's throw: a backfill

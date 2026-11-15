@@ -4,7 +4,7 @@
 
 The geographic bearing of a direction in the GPS-world NUE frame (`X = North`,
 `Y = Up`, `Z = East`), degrees clockwise from north. Lifted from OsmDemo's
-`ar-origin.ts` on 2026-09-24 (DEC-H3) when the AR sun check
+`ar-origin.ts` on 2026-09-24 when the AR sun check
 (`ar/sun-check-geometry.ts`) needed the same conversion.
 
 ## Public API
