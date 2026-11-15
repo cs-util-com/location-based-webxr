@@ -64,20 +64,31 @@ export function tiltDegOf(polarAngleRad: number): number {
  * the globe's fraction of the clearance to the nearest of the drawn-ground
  * `samples` (each `distanceM` away horizontally, at `groundM` over the
  * ellipsoid, null when not loaded; without any, the height over the
- * ellipsoid), floored at `EDITOR_CLIP.minNearM`; the far plane
- * `EDITOR_CLIP.farM`, or the globe's horizon where that is nearer.
+ * ellipsoid), and never more than that fraction of `focusM` (how far the
+ * camera is from what it turns about), floored at `EDITOR_CLIP.minNearM`;
+ * the far plane `EDITOR_CLIP.farM`, or the globe's horizon where that is
+ * nearer.
  */
 export function editorClipPlanes(input: {
   readonly ellipsoid: Parameters<typeof clipPlanes>[0];
   readonly cameraEcef: THREE.Vector3;
   readonly samples: readonly { distanceM: number; groundM: number | null }[];
+  readonly focusM?: number;
 }): { near: number; far: number } {
   const altitude = input.ellipsoid.getPositionElevation(input.cameraEcef);
   const clearanceM = reliefClearanceM(altitude, input.samples);
   const globe = clipPlanes(input.ellipsoid, input.cameraEcef, { clearanceM });
+  // A camera close to what it looks at, high over ground not loaded yet
+  // (whose clearance is then the height over the ellipsoid), would clip
+  // that very thing away.
+  const focusM =
+    input.focusM !== undefined && Number.isFinite(input.focusM)
+      ? Math.max(0, input.focusM)
+      : Infinity;
   const near = Math.max(
     EDITOR_CLIP.minNearM,
-    Math.min(Math.max(0, altitude), clearanceM) * GLOBE_CLIP.nearFraction,
+    Math.min(Math.max(0, altitude), clearanceM, focusM) *
+      GLOBE_CLIP.nearFraction,
   );
   return {
     near,

@@ -29,9 +29,8 @@ kind made from a file never needs a gesture to be valid.
   free spot (`new-pin.ts` `freeGeo`), in the first view the format's kind
   table lets a free block hold (`TOUR_KINDS[kind].freeViews`): a picture
   as a plane with its image inline (`imageAsset`), a sound as a narration
-  circle (`spot`), a model placed at its size; `null` for a video (no
-  free host draws one; the caller refuses with the kind's `storyOnly`
-  words).
+  circle (`spot`), a model placed at its size, a video as a `screen`
+  `VIDEO_DEFAULT_WIDTH_M` wide (`../kinds/video/video-rules.ts`).
 - `newFileStoryEntry(station, source, id)` -> `TourStoryBlock`: the shape
   every new entry starts in (`new-pin.ts` `storyEntryShell`: a card that
   moves on by a tap, at the station's free spot, never the anchor's own
@@ -62,8 +61,8 @@ newFileItem(
 ## Tests
 
 `new-file-item.test.ts`: titles (separators, empty names, a property that
-every title passes its kind's rule), each kind's starting fields, no free
-video, a format round trip per kind, and a sweep over station radii (3 to
+every title passes its kind's rule), each kind's starting fields, a free
+video as a screen, a format round trip per kind, and a sweep over station radii (3 to
 60 m) and fills (0 to 12 items) that the item stands inside the circle;
 story entries per kind at the station's free spot in the shape a
 words' entry has, with and without a poster; each free kind in the

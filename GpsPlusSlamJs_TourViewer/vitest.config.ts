@@ -1,5 +1,5 @@
-import { fileURLToPath, URL } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { fileURLToPath, URL } from "node:url";
+import { defineConfig } from "vitest/config";
 
 // Vitest scoping for the tour viewer. The Playwright e2e specs live in
 // `playwright-tests/*.spec.js` and import `@playwright/test`, which throws if
@@ -12,9 +12,12 @@ export default defineConfig({
     // scripts/test-timing/fast-check-time-limit.mjs.md.
     setupFiles: [
       fileURLToPath(
-        new URL('../scripts/test-timing/fast-check-time-limit.mjs', import.meta.url)
+        new URL(
+          "../scripts/test-timing/fast-check-time-limit.mjs",
+          import.meta.url,
+        ),
       ),
     ],
-    include: ['src/**/*.test.ts'],
+    include: ["src/**/*.test.ts"],
   },
 });

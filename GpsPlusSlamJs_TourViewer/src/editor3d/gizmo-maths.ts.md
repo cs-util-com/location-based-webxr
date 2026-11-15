@@ -130,3 +130,23 @@ bounds over random subjects and scales.
 `gizmo-maths.test.ts` also pins the dashed outline round a group (an exact
 case; a property that every footprint keeps exactly the pad to the nearest
 edge it touches; null for no finite footprint), and a locked station's layout (dots kept, not posable) and its handles (a dot only).
+
+## A ground arrow
+
+- A `scale` extent rings at `ring.baseM + ring.perM * value` (never below
+  the item ring's on-screen least); `draggedScale(d, fine, ring, bounds)`
+  inverts it: whole units, tenths with Shift, within the row's bounds. A
+  ring's own distance gives its scale back (property test).
+- A subject with `bendDeg` gets `bendKnob`: as far out as the turn knob, at
+  compass `heading + 180 + bendDeg` (behind the start, swung like a
+  tiller), none when locked. `handleAt` takes it as `bend` with the turn
+  knob's grip. `bentDeg(b0, from, to, snap, max)`: the knob follows the
+  pointer, so the bend grows by the sweep; whole degrees, 5 with Shift,
+  within +-max.
+- With a target (`pointsTo`) the arrow runs toward it, not along the
+  heading, so the knob's resting spot reads against the heading; the drag
+  is a sweep and writes the right bend either way.
+
+## A short text's point
+
+`GizmoSubject.pointAt` gives the layout a `pointKnob` (the point itself), null without a point or on a locked subject. `handleAt` finds it within `GIZMO.knobPx` as the handle "point", only where the subject is posable.

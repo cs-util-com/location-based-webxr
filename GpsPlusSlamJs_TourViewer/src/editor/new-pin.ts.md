@@ -21,7 +21,8 @@ has loaded and seated in the station it was added to.
 - `NewItemInput` - `{ station, id, nowIso, groundAt }`, what each new
   item is made from.
 - `newPin(input)` -> `TourPin`: a pin (a short
-  text in its `pin` view) with that id and time, its caption "New pin n"
+  text in its `pin` view, `orientation` written as `upright`) with
+  that id and time, its caption "New pin n"
   (n one more than the station's pins), its `geo` at the free spot (`itemGeoPose`), its height the
   ground's there by `groundAt` (the anchor's height while none has
   loaded), and `station` set to the station's id, so the station rule
@@ -43,7 +44,8 @@ reason }`): the add itself - the new pin or long text of the station,
 - `KIND_ADD`: one row per addable kind made from words alone
   (`TextAddKind`, in the add menu's order; a file's kind starts from its
   file: `new-file-item.ts`): `item(input)`, what it starts as at a station's free spot (typed per kind, so a row with another kind's maker fails to compile), and
-  `entry(n)`, its own fields as a story's `n`-th entry of that kind. The
+  `entry(n)`, its own fields as a story's `n`-th entry of that kind (a
+  pin's carries `orientation` `upright`, as `newPin`'s does). The
   add path reads it and names no kind.
 - `storyEntryShell(station, id)`: what every new story entry starts as,
   made from words or from a file (`new-file-item.ts`): a card moving on

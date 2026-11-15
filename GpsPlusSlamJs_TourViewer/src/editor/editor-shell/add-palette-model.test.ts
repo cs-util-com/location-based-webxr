@@ -5,8 +5,8 @@
  * that names only a kind must add it to the selection; a word that
  * matches nothing must list nothing rather than add somewhere else. Every
  * kind that adds at a station is offered, the ones made from a file among
- * them; a video is not (it plays only in a story, and the palette adds at
- * stations), nor a character (it is still to come).
+ * them, a video too (it stands free in a station as a screen); a
+ * character is not (it is still to come).
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -37,6 +37,7 @@ describe("paletteRows", () => {
       "shortText@gate",
       "longText@gate",
       "picture@gate",
+      "video@gate",
       "audio@gate",
       "model@gate",
       "station",
@@ -44,7 +45,7 @@ describe("paletteRows", () => {
     const first = paletteRows("", STATIONS, "gate")[0];
     expect(first?.label).toBe("Short text");
     expect(first?.place).toBe("in 2 The old gate");
-    expect(paletteRows("", STATIONS, "gate")[5]?.place).toBe(NEW_STATION_PLACE);
+    expect(paletteRows("", STATIONS, "gate")[6]?.place).toBe(NEW_STATION_PLACE);
   });
 
   it("defaults to the first station with none selected, or one that is gone", () => {
@@ -108,11 +109,18 @@ describe("paletteRows", () => {
     expect(short(paletteRows("sta", STATIONS, "gate"))[0]).toBe("station");
   });
 
-  it("lists nothing for a word that matches nothing, nor a video or a character", () => {
+  it("lists nothing for a word that matches nothing, nor a character", () => {
     expect(paletteRows("zebra", STATIONS, "gate")).toEqual([]);
-    expect(paletteRows("video", STATIONS, "gate")).toEqual([]);
-    expect(paletteRows("film gate", STATIONS, "gate")).toEqual([]);
     expect(paletteRows("character", STATIONS, "gate")).toEqual([]);
+  });
+
+  // Why: a video now stands free in a station, so the palette adds it
+  // there as the menu does, found by a creator's words for it.
+  it("finds a video by its words, at the station the query names", () => {
+    expect(short(paletteRows("film gate", STATIONS, "column"))).toEqual([
+      "video@gate",
+    ]);
+    expect(short(paletteRows("clip", STATIONS, "gate"))[0]).toBe("video@gate");
   });
 
   // Why: a picture, a sound and a 3D model add from the palette as from
@@ -210,6 +218,7 @@ describe("paletteRows with a kind chip", () => {
       "shortText",
       "longText",
       "picture",
+      "video",
       "audio",
       "model",
       "station",
@@ -218,6 +227,7 @@ describe("paletteRows with a kind chip", () => {
       "Short text",
       "Long text",
       "Picture",
+      "Video",
       "Sound",
       "3D model",
       "Station",

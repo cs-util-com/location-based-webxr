@@ -15,8 +15,8 @@ desktop), and the target a chosen key names. Pure data, no DOM.
   or `{ kind: "item", id }`.
 - `useInChoices(asset, stations)` -> `UseInGroup[]`, for `asset` (`id`,
   `kind`), in this order:
-  - "A new <word> in a station": every station, by its title. Left out for
-    a kind that plays in a story only (a video).
+  - "A new <word> in a station": every station, by its title (a video
+    stands there as a screen).
   - "A new entry at the end of a story": every story, as
     "<story> - <station>".
   - "Replace the file of": every item of the asset's kind (free, in a
@@ -46,7 +46,7 @@ useInTarget("story:st1"); // { kind: "story", storyId: "st1" }
 
 ## Tests
 
-`use-in-choices.test.ts`: the groups per kind (a sound, a video without
+`use-in-choices.test.ts`: the groups per kind (a sound, a video with
 the station group, a kind with no choices), stories in folders and
 blocks inside stories, the current file left out, and the keys read
 back.

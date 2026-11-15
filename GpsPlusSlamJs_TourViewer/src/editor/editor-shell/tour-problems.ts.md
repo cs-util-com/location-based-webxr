@@ -9,6 +9,11 @@ its station's circle" that the inspector's count reads too.
 
 ## Public API
 
+- `storyProblems(story)` - the story's own rows (today the loop no answer
+  can leave, below), the same rows `tourProblems` lists for it. The story
+  inspector's "Story valid" / "N problems" pill counts these, so the pill
+  and the Problems tab cannot disagree; there is no second rule set.
+
 - `ProblemSeverity` - `"error" | "warning" | "note"`.
 - `TourProblem` (module-private, the shape of `problems`) -
   `{ severity, what, who, select, fixes? }`: what is wrong, the item's or

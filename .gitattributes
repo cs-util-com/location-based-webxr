@@ -10,3 +10,6 @@
 *.png binary
 *.webp binary
 *.zip binary
+*.jpg binary
+*.mp3 binary
+*.flac binary

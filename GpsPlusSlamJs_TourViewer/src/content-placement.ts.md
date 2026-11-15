@@ -46,9 +46,9 @@ imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   decoded (photos decode one at a time - memory), so a session ending
   mid-run owns no stray labels; `dispose` removes the group.
   Details:
-  Promise<RenderedTourObjects>` - pins (short texts) as label objects,
-pictures as capture planes (`placeCapturedImagePlanes`, from each
-picture's inline `imageAsset`), all at the scene root; a picture whose
+  Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin`view as a label object (a sign, an edge hint or a ground arrow is the world door's, which this renderer has not, so it is left out quietly),
+a picture in its`plane` view, or in a viewpoint view without its viewpoint, as a capture plane (`placeCapturedImagePlanes`, from each
+picture's inline `imageAsset`; a framed print, a cut-out or a picture lined up from its viewpoint is the world door's, so it is left out quietly), all at the scene root; a picture whose
 texture fails is skipped and named in `skipped`; a placed 3D model
 here (a world-view object, the creator's previews) is not drawn - it never
 reaches the photo loader and
@@ -66,7 +66,9 @@ under - what a tap in AR is cast against to name the object
   blocks outside its stories) as children at their LOCAL poses
   (`[north, up, east]` and a rotation relative to the station), added to
   `scene` once every picture decoded; `root` is that group. A `pin` short
-  text is a label, a `plane` picture (and one in a viewpoint view without a
+  text is the world door's (its head on a stem, `kinds/short-text/pin.ts`)
+  where the page passes one, and the plain label where not, so it never
+  vanishes; a `plane` picture (and one in a viewpoint view without a
   viewpoint) a photo plane (as wide as its
   `widthM`; a 1 m picture is drawn as it always was) whose file is the
   tour's asset of its `image` (from `assets`; a picture whose asset the
@@ -102,7 +104,7 @@ under - what a tap in AR is cast against to name the object
   constructor) frees everything made so far, then goes on (the caller gets
   the rejection and nothing to dispose); a free that throws there is not
   what the caller is told - the construction error is.
-- Every rendered pin's label and photo's plane carries its object's id in
+- Every rendered pin (its label or its part) and photo's plane carries its object's id in
   `userData.objectId`, so a pointer over the 3D editor can say which item
   it is over (`editor3d-stations.ts`, `pick`).
 

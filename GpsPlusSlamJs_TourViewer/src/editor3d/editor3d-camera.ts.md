@@ -17,10 +17,13 @@ follow the camera's clearance over the drawn ground.
   around `target`.
 - `tiltDegOf(polarAngleRad)` -> degrees from straight down. RangeError for
   an angle that is not finite.
-- `editorClipPlanes({ ellipsoid, cameraEcef, samples })` -> `{ near, far }`:
-  near is the globe's fraction (`GLOBE_CLIP.nearFraction`) of the smaller
-  of the height over the ellipsoid and the clearance to the drawn-ground
-  samples (`reliefClearanceM`), floored at 0.2 m; far is the globe's
+- `editorClipPlanes({ ellipsoid, cameraEcef, samples, focusM? })` -> `{ near, far }`:
+  near is the globe's fraction (`GLOBE_CLIP.nearFraction`) of the smallest
+  of the height over the ellipsoid, the clearance to the drawn-ground
+  samples (`reliefClearanceM`) and `focusM` (the camera's distance to the
+  orbit's centre; not finite or absent: no cap), floored at 0.2 m. The cap
+  keeps a camera close to what it looks at (looking from a picture's
+  viewpoint) from clipping it while the ground under it is not loaded; far is the globe's
   horizon or 8 km, whichever is nearer, and at least twice the near plane.
 - `createEditorCamera({ domElement, target, aspect })` ->
   `{ camera, controls, tiltDeg(), dispose() }`: three's OrbitControls with

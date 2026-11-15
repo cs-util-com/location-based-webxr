@@ -33,9 +33,11 @@ import {
   assetShelfActions as act,
   selectShelfRows,
   type AssetShelfState,
+  type ShelfDetail,
   type ShelfEntry,
   type ShelfVideoLook,
 } from "./asset-shelf-slice.js";
+import type { ModelReport } from "./model-step.js";
 import {
   OPTIMIZER_SETTINGS,
   OPTIMIZER_SLOTS,
@@ -57,6 +59,40 @@ export const RESULT_TOO_LARGE =
 export const CHARACTER_KEPT =
   "Kept as it is: a character is drawn with it, and his pictures stay exactly as drawn.";
 const ORIGINAL_USED = "The original is used, as you asked.";
+/** The slider's level came out no smaller than the original: the tour
+ *  keeps the file it has. */
+export const DETAIL_NOT_SMALLER =
+  "At this detail the model would be no smaller than the original, so the tour keeps the one it has.";
+const DETAIL_NOT_OFFERED =
+  "Its detail can no longer be changed: the original was let go at the last save.";
+const DETAIL_BUSY = "Its detail is already being changed.";
+const DETAIL_NOT_MADE = "It could not be made at this detail.";
+
+/** What a slider request came to. */
+export type DetailOutcome =
+  | { readonly kind: "applied" }
+  | { readonly kind: "refused"; readonly reason: string }
+  /** Stopped by the author's own later act ("use the original", a
+   *  delete, the tour closing): nothing to tell them. */
+  | { readonly kind: "stopped" };
+
+/** A model report's level of detail, for the shelf; undefined when no
+ *  level was made (nothing to adjust). */
+function detailOf(
+  report: ModelReport | undefined,
+  share: number | null,
+): ShelfDetail | undefined {
+  const lod = report?.lod;
+  if (lod === undefined || lod.primitives === 0) return undefined;
+  return {
+    share,
+    triangles: lod.trianglesAfter,
+    trianglesBefore: lod.trianglesBefore,
+    deviation: lod.deviation,
+    size: lod.size,
+    choices: lod.choices,
+  };
+}
 const UNREADABLE = "Its bytes could not be read to make it smaller.";
 const TOO_LARGE =
   "Still too large to stay in the tour, and it could not be made small enough. Use a smaller file, or remove it.";
@@ -69,6 +105,9 @@ interface ShelfSwap {
   readonly height?: number;
   /** "Use the original": the creator's choice, remembered by the draft. */
   readonly originalChosen?: true;
+  /** A made model's level of detail, kept by the draft with the file, so
+   *  a reload offers the slider again. */
+  readonly detail?: ShelfDetail;
 }
 
 /** An original a smaller file replaced: its record, and its bytes, read
@@ -76,6 +115,14 @@ interface ShelfSwap {
 interface HeldOriginal {
   readonly asset: TourAsset;
   readonly load: () => Promise<Blob | undefined>;
+}
+
+/** A card removed from the shelf, as it was, with the original it held
+ *  and the document's last written tour when it was removed. */
+interface RemovedCard {
+  readonly entry: ShelfEntry;
+  readonly held?: HeldOriginal;
+  readonly writtenAt?: TourDocumentState["written"];
 }
 
 export interface AssetShelfDeps {
@@ -123,12 +170,14 @@ export interface AssetShelf {
   ): void;
   /** A reload put back a smaller file the draft kept: on the shelf as
    *  optimized, no job run for it, its original offered when `original`
-   *  can read its bytes. */
+   *  can read its bytes, and a made model's level of detail (`detail`,
+   *  as the draft kept it) on its slider. */
   restored(
     asset: TourAsset,
     name: string,
     sizes: { readonly originalBytes: number; readonly optimizedBytes: number },
     original?: HeldOriginal,
+    detail?: ShelfDetail,
   ): void;
   /** A reload put back a file brought in whose original the creator
    *  chose ("use the original"): on the shelf as that choice left it -
@@ -155,6 +204,12 @@ export interface AssetShelf {
    *  alone, so dropping the undo lets it go. Null for an id the shelf does
    *  not hold. */
   remove(id: string): (() => void) | null;
+  /** The slider: a made model re-made from its original at `share` of
+   *  its triangles (0..1), or at its default level (null), the new file
+   *  swapped in when it is smaller than the original. Offered while the
+   *  original is kept (`ShelfRow.detail.adjustable`) and no other request
+   *  for it runs; refused with words otherwise, the tour's file unchanged. */
+  setDetail(id: string, share: number | null): Promise<DetailOutcome>;
   /** Whether the shelf keeps the original of `id` ("use the original"):
    *  bytes that may be large. */
   holdsOriginal(id: string): boolean;
@@ -173,10 +228,11 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
   const running = new Map<string, AbortController>();
   /** The originals a smaller file replaced, while they are offered. */
   const originals = new Map<string, HeldOriginal>();
-  /** The cards removed from the shelf, as they were (no original): one
-   *  comes back when the document names its file again - the page's Undo
-   *  of a delete brings the items back through the document alone. */
-  const removed = new Map<string, ShelfEntry>();
+  /** The cards removed from the shelf, as they were, with the original
+   *  each held: one comes back when the document names its file again -
+   *  the page's Undo of a delete brings the items back through the
+   *  document alone - or by the removal's own undo. */
+  const removed = new Map<string, RemovedCard>();
   let seenDocument: TourDocumentState | null = null;
   let closed = false;
 
@@ -192,14 +248,24 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
   };
 
   /** Each original no longer offered - a save wrote the smaller file's
-   *  bytes, or the job left "optimized" - is let go: it may be large. One
-   *  whose entry left the shelf went with it (`remove`). */
+   *  bytes, or the job left "optimized" - is let go: it may be large. A
+   *  removed card's goes at the next landed save: nothing uses its file,
+   *  so no save writes it and the smaller file never "lands" for it. */
   function freeOriginals(): void {
-    if (closed || originals.size === 0) return;
-    for (const row of selectShelfRows(store.getState())) {
-      if (!originals.has(row.id) || row.canUseOriginal) continue;
-      originals.delete(row.id);
-      dispatch(act.originalFreed({ id: row.id }));
+    if (closed) return;
+    if (originals.size > 0) {
+      for (const row of selectShelfRows(store.getState())) {
+        if (!originals.has(row.id) || row.canUseOriginal) continue;
+        originals.delete(row.id);
+        dispatch(act.originalFreed({ id: row.id }));
+      }
+    }
+    const document = store.getState().tourDocument;
+    for (const [id, card] of removed) {
+      if (card.held === undefined || document.written === card.writtenAt) {
+        continue;
+      }
+      removed.set(id, { entry: { ...card.entry, originalHeld: false } });
     }
   }
   /** Each removed card whose file an item names again is back on the
@@ -209,10 +275,9 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     const document = store.getState().tourDocument;
     if (document === seenDocument) return;
     seenDocument = document;
-    for (const [id, entry] of removed) {
+    for (const [id, card] of removed) {
       if (fileUseCount(fileUsesOf(document, id)) === 0) continue;
-      removed.delete(id);
-      dispatch(act.entryRestored({ entry: asPutBack(entry) }));
+      putBack(id, card);
     }
     pump();
   }
@@ -231,6 +296,13 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       void run(entry);
     }
   }
+
+  /** Ids whose original is going back ("use the original"): no re-make
+   *  starts for them meanwhile. */
+  const goingBack = new Set<string>();
+  /** Each running re-make's end, which "use the original" waits for so
+   *  that a swap under way lands before the original's, never after. */
+  const remakes = new Map<string, Promise<void>>();
 
   /** Whether job `stop` still owns entry `id`'s run. */
   const owns = (id: string, stop: AbortController) =>
@@ -330,11 +402,13 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       dispatch(act.jobKept({ id, reason: NOT_SMALLER }));
       return;
     }
+    const detail = detailOf(outcome.model, null);
     const swapped = await deps.swap(id, {
       blob: outcome.blob,
       path: `content/${id}.${outcome.extension}`,
       ...(outcome.width === undefined ? {} : { width: outcome.width }),
       ...(outcome.height === undefined ? {} : { height: outcome.height }),
+      ...(detail === undefined ? {} : { detail }),
     });
     if (!owns(id, stop)) return;
     if (swapped.kind === "refused") {
@@ -347,17 +421,106 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         id,
         optimizedBytes: outcome.blob.size,
         originalHeld: true,
+        ...(detail === undefined ? {} : { detail }),
       }),
     );
   }
 
-  /** A removed card as it comes back: a job it was waiting for or running
-   *  starts again; an original it offered is no longer held. */
-  function asPutBack(entry: ShelfEntry): ShelfEntry {
+  async function setDetail(
+    id: string,
+    share: number | null,
+  ): Promise<DetailOutcome> {
+    const refused = (reason: string): DetailOutcome => ({
+      kind: "refused",
+      reason,
+    });
+    const row = selectShelfRows(store.getState()).find((r) => r.id === id);
+    const original = originals.get(id);
+    const optimizer = optimizers.model;
+    if (share !== null && !(share >= 0 && share <= 1)) {
+      return refused(DETAIL_NOT_MADE);
+    }
+    if (
+      closed ||
+      row?.detail === undefined ||
+      !row.detail.adjustable ||
+      original === undefined ||
+      optimizer === null
+    ) {
+      return refused(DETAIL_NOT_OFFERED);
+    }
+    if (row.detail.busy || running.has(id) || goingBack.has(id)) {
+      return refused(DETAIL_BUSY);
+    }
+    const stop = new AbortController();
+    running.set(id, stop);
+    let ended = () => {};
+    const end = new Promise<void>((resolve) => (ended = resolve));
+    remakes.set(id, end);
+    const stopped: DetailOutcome = { kind: "stopped" };
+    dispatch(act.detailAsked({ id }));
+    try {
+      const source = await original.load();
+      if (!owns(id, stop)) return stopped;
+      if (source === undefined) return refused(UNREADABLE);
+      const { detailShare: _default, ...model } = settings.model;
+      const outcome = await optimizer.optimize(source, {
+        signal: stop.signal,
+        progress: () => {},
+        settings: {
+          ...settings,
+          model: share === null ? model : { ...model, detailShare: share },
+        },
+        host,
+      });
+      if (!owns(id, stop)) return stopped;
+      const detail =
+        outcome.kind === "optimized"
+          ? detailOf(outcome.model, share)
+          : undefined;
+      if (outcome.kind !== "optimized" || detail === undefined) {
+        return refused(DETAIL_NOT_MADE);
+      }
+      if (outcome.blob.size >= source.size) return refused(DETAIL_NOT_SMALLER);
+      if (!(outcome.blob.size <= maxBytes)) return refused(RESULT_TOO_LARGE);
+      const swapped = await deps.swap(id, {
+        blob: outcome.blob,
+        path: `content/${id}.${outcome.extension}`,
+        detail,
+      });
+      if (!owns(id, stop)) return stopped;
+      if (swapped.kind === "refused") return refused(swapped.reason);
+      dispatch(
+        act.detailApplied({ id, optimizedBytes: outcome.blob.size, detail }),
+      );
+      return { kind: "applied" };
+    } catch (err) {
+      if (!owns(id, stop)) return stopped;
+      const words = err instanceof Error ? err.message : String(err);
+      return refused(`${DETAIL_NOT_MADE} ${words}`);
+    } finally {
+      if (running.get(id) === stop) running.delete(id);
+      if (remakes.get(id) === end) remakes.delete(id);
+      ended();
+      dispatch(act.detailSettled({ id }));
+      pump();
+    }
+  }
+
+  /** A removed card back on the shelf, with the original it still held: a
+   *  job it was waiting for or running starts again. */
+  function putBack(id: string, card: RemovedCard): void {
+    removed.delete(id);
+    if (card.held !== undefined) originals.set(id, card.held);
+    const { entry } = card;
     const waiting = entry.phase === "queued" || entry.phase === "running";
-    return waiting
-      ? { ...entry, phase: "queued", progress: 0, attempts: 0 }
-      : entry;
+    dispatch(
+      act.entryRestored({
+        entry: waiting
+          ? { ...entry, phase: "queued", progress: 0, attempts: 0 }
+          : entry,
+      }),
+    );
   }
 
   function stopJob(id: string): void {
@@ -422,7 +585,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         }),
       );
     },
-    restored(asset, name, sizes, original) {
+    restored(asset, name, sizes, original, detail) {
       if (closed) return;
       stopJob(asset.id);
       if (original === undefined) originals.delete(asset.id);
@@ -434,6 +597,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
           name,
           ...sizes,
           originalHeld: original !== undefined,
+          ...(detail === undefined ? {} : { detail }),
         }),
       );
       pump();
@@ -452,51 +616,63 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         (r) => r.id === id,
       )?.canUseOriginal;
       if (closed || original === undefined || offered !== true) return false;
-      const { asset } = original;
-      const blob = await original.load().catch(() => undefined);
-      if (blob === undefined || closed || originals.get(id) !== original) {
-        return false;
+      if (goingBack.has(id)) return false;
+      goingBack.add(id);
+      try {
+        // a re-make still running would land after the original: stop it,
+        // and let a swap it already started finish first
+        stopJob(id);
+        await remakes.get(id);
+        const { asset } = original;
+        const blob = await original.load().catch(() => undefined);
+        if (blob === undefined || closed || originals.get(id) !== original) {
+          return false;
+        }
+        const swapped = await deps.swap(id, {
+          blob,
+          path: asset.path,
+          ...(asset.width === undefined ? {} : { width: asset.width }),
+          ...(asset.height === undefined ? {} : { height: asset.height }),
+          originalChosen: true,
+        });
+        if (swapped.kind === "refused" || closed) return false;
+        originals.delete(id);
+        dispatch(act.originalUsed({ id, reason: ORIGINAL_USED }));
+        return true;
+      } finally {
+        goingBack.delete(id);
       }
-      const swapped = await deps.swap(id, {
-        blob,
-        path: asset.path,
-        ...(asset.width === undefined ? {} : { width: asset.width }),
-        ...(asset.height === undefined ? {} : { height: asset.height }),
-        originalChosen: true,
-      });
-      if (swapped.kind === "refused" || closed) return false;
-      originals.delete(id);
-      dispatch(act.originalUsed({ id, reason: ORIGINAL_USED }));
-      return true;
     },
     remove(id) {
       const entry = entries()[id];
       if (closed || entry === undefined) return null;
       stopJob(id);
-      // The undo alone keeps it: an original may be large, and a removal
-      // nobody takes back must not hold it until the tour closes.
-      let held = originals.get(id);
+      // The removed card keeps its original while an undo could still
+      // offer it: an original may be large, so a delete nobody takes back
+      // holds it until the next landed save (`freeOriginals`), not until
+      // the tour closes.
+      const held = originals.get(id);
       originals.delete(id);
       dispatch(act.entryRemoved({ id }));
-      removed.set(id, { ...entry, originalHeld: false });
+      removed.set(
+        id,
+        held === undefined
+          ? { entry: { ...entry, originalHeld: false } }
+          : { entry, held, writtenAt: store.getState().tourDocument.written },
+      );
       seenDocument = null;
       putBackNamed();
       pump();
       return () => {
-        if (closed || entries()[id] !== undefined) return;
-        removed.delete(id);
-        if (held !== undefined) originals.set(id, held);
-        dispatch(
-          act.entryRestored({
-            entry: asPutBack(
-              held === undefined ? { ...entry, originalHeld: false } : entry,
-            ),
-          }),
-        );
-        held = undefined;
+        const card = removed.get(id);
+        if (closed || card === undefined || entries()[id] !== undefined) {
+          return;
+        }
+        putBack(id, card);
         pump();
       };
     },
+    setDetail,
     holdsOriginal: (id) => originals.has(id),
     optimizeTour() {
       if (closed) return 0;
@@ -516,6 +692,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       unsubscribe();
       for (const id of [...running.keys()]) stopJob(id);
       originals.clear();
+      removed.clear();
       host.close();
     },
   };

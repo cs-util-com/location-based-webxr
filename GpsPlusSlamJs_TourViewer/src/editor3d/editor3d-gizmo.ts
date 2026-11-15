@@ -3,7 +3,10 @@
  * (a station's own circle is the tour's), four white dots on it for a
  * station's found radius, a model's size or a picture's width, a turn
  * knob on a stalk along
- * the heading (only on what turns), and a move arrow lying on the ground
+ * the heading (only on what turns), a bend knob behind the start (only
+ * on what bends: a ground arrow), a white diamond where a sign or a
+ * ground arrow points with a dashed line to it from the text (as the
+ * prototype's sign editor draws it), and a move arrow lying on the ground
  * in the middle. One set
  * for the scene, placed on the selection each frame from its layout
  * (`gizmo-maths.ts`); the knob and the dots keep their on-screen size at
@@ -30,6 +33,10 @@ export interface GizmoPictures {
   readonly dot: THREE.Texture;
   readonly knob: THREE.Texture;
   readonly move: THREE.Texture;
+  /** The bend knob: a curved double arrow. */
+  readonly bend: THREE.Texture;
+  /** The point handle: a white diamond. */
+  readonly point: THREE.Texture;
 }
 
 /** What the gizmo is drawn from in a frame. */
@@ -143,7 +150,53 @@ export function drawGizmoPictures(): GizmoPictures {
       g.restore();
     }
   });
-  return { dot, knob, move };
+  const bend = picture(96, (g, n) => {
+    const c = n / 2;
+    g.beginPath();
+    g.arc(c, c, n * 0.33, 0, 7);
+    g.fillStyle = "#1f2023";
+    g.fill();
+    g.lineWidth = n * 0.05;
+    g.strokeStyle = AMBER;
+    g.stroke();
+    // A bow with a head at each end: the arrow bends either way.
+    g.strokeStyle = "#fff";
+    g.fillStyle = "#fff";
+    g.lineWidth = n * 0.055;
+    g.lineCap = "round";
+    g.beginPath();
+    g.arc(c, c + n * 0.3, n * 0.3, -2.4, -0.74);
+    g.stroke();
+    for (const a of [-2.4, -0.74]) {
+      const ex = c + n * 0.3 * Math.cos(a);
+      const ey = c + n * 0.3 + n * 0.3 * Math.sin(a);
+      const side = a < -1.5 ? -1 : 1;
+      g.beginPath();
+      g.moveTo(ex + side * n * 0.09, ey + n * 0.05);
+      g.lineTo(ex - side * n * 0.04, ey - n * 0.08);
+      g.lineTo(ex - side * n * 0.05, ey + n * 0.09);
+      g.closePath();
+      g.fill();
+    }
+  });
+  const point = picture(64, (g, n) => {
+    const c = n / 2;
+    const diamond = (r: number) => {
+      g.beginPath();
+      g.moveTo(c, c - r);
+      g.lineTo(c + r, c);
+      g.lineTo(c, c + r);
+      g.lineTo(c - r, c);
+      g.closePath();
+    };
+    diamond(n * 0.3);
+    g.fillStyle = "rgba(0,0,0,.45)";
+    g.fill();
+    diamond(n * 0.24);
+    g.fillStyle = "#fff";
+    g.fill();
+  });
+  return { dot, knob, move, bend, point };
 }
 
 /**
@@ -196,15 +249,45 @@ export function createGizmo(parent: THREE.Object3D, pictures: GizmoPictures) {
     return s;
   };
   const knob = sprite(pictures.knob);
+  const bend = sprite(pictures.bend);
+  const point = sprite(pictures.point);
   const dots = [0, 1, 2, 3].map(() => sprite(pictures.dot));
-  const all: THREE.Object3D[] = [ring, disc, bar, knob, ...dots];
+  // From the text to its point; its two ends set each frame.
+  const pointLineMaterial = new THREE.LineDashedMaterial({
+    color: 0xffffff,
+    dashSize: 0.4,
+    gapSize: 0.25,
+    transparent: true,
+    opacity: 0.9,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const pointLine = new THREE.Line(
+    new THREE.BufferGeometry().setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(new Float32Array(6), 3),
+    ),
+    pointLineMaterial,
+  );
+  pointLine.renderOrder = 23;
+  pointLine.frustumCulled = false;
+  const all: THREE.Object3D[] = [
+    ring,
+    disc,
+    bar,
+    knob,
+    bend,
+    point,
+    pointLine,
+    ...dots,
+  ];
   for (const part of all) {
     part.visible = false;
     parent.add(part);
   }
 
   return {
-    parts: { ring, disc, bar, knob, dots },
+    parts: { ring, disc, bar, knob, bend, point, pointLine, dots },
     /** Place the gizmo for a frame, or hide it (null: no selection with
      *  handles). */
     update(frame: GizmoFrame | null) {
@@ -232,6 +315,27 @@ export function createGizmo(parent: THREE.Object3D, pictures: GizmoPictures) {
       disc.position.set(x, y + DISC_LIFT_M, z);
       disc.scale.set(layout.moveM, 1, layout.moveM);
       moveMaterial.opacity = hovered === "move" ? 1 : 0.85;
+      if (layout.bendKnob !== null) {
+        bend.visible = true;
+        bend.position.set(
+          layout.bendKnob.x,
+          frame.groundY(layout.bendKnob) + KNOB_LIFT_M,
+          layout.bendKnob.z,
+        );
+        bend.scale.setScalar(GIZMO.knobPx * spritePerPx * big("bend"));
+      }
+      if (layout.pointKnob !== null) {
+        const to = layout.pointKnob;
+        point.visible = true;
+        point.position.set(to.x, to.y, to.z);
+        point.scale.setScalar(GIZMO.knobPx * spritePerPx * big("point"));
+        const ends = pointLine.geometry.getAttribute("position");
+        ends.setXYZ(0, x, y + KNOB_LIFT_M, z);
+        ends.setXYZ(1, to.x, to.y, to.z);
+        ends.needsUpdate = true;
+        pointLine.computeLineDistances();
+        pointLine.visible = true;
+      }
       // What does not turn: no knob and no stalk.
       if (layout.knob === null || layout.bar === null) return;
       knob.visible = true;
@@ -256,12 +360,16 @@ export function createGizmo(parent: THREE.Object3D, pictures: GizmoPictures) {
       ring.geometry.dispose();
       disc.geometry.dispose();
       bar.geometry.dispose();
+      pointLine.geometry.dispose();
+      pointLineMaterial.dispose();
       lineMaterial.dispose();
       moveMaterial.dispose();
-      for (const s of [knob, ...dots]) s.material.dispose();
+      for (const s of [knob, bend, point, ...dots]) s.material.dispose();
       pictures.dot.dispose();
       pictures.knob.dispose();
       pictures.move.dispose();
+      pictures.bend.dispose();
+      pictures.point.dispose();
     },
   };
 }

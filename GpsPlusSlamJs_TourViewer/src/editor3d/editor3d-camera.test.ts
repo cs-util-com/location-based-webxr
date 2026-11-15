@@ -109,4 +109,41 @@ describe("editorClipPlanes", () => {
     expect(none.near).toBeGreaterThan(0);
     expect(Number.isFinite(none.far)).toBe(true);
   });
+
+  // Why: looking from a picture's viewpoint puts the camera a few metres
+  // from what it turns about. With no ground loaded the clearance is the
+  // height over the ellipsoid (hundreds of metres), whose fraction put the
+  // near plane tens of metres out and clipped the whole picture away; the
+  // focus distance caps it. Swept over the heights and distances an
+  // editor camera takes.
+  it("never clips what the camera turns about", () => {
+    for (const height of [20, 520, 1500]) {
+      for (const focusM of [2.5, 6, 30, 200]) {
+        const planes = editorClipPlanes({
+          ellipsoid: SPHERE,
+          cameraEcef: up(height),
+          samples: [{ distanceM: 0, groundM: null }],
+          focusM,
+        });
+        expect(planes.near).toBeLessThan(focusM);
+        expect(planes.near).toBeGreaterThanOrEqual(EDITOR_CLIP.minNearM);
+      }
+    }
+    // Far from what it turns about, the clearance still rules.
+    const far = editorClipPlanes({
+      ellipsoid: SPHERE,
+      cameraEcef: up(518),
+      samples: [{ distanceM: 0, groundM: 515 }],
+      focusM: 500,
+    });
+    expect(far.near).toBeCloseTo(0.9, 6);
+    // A focus that is not finite is no cap.
+    const unread = editorClipPlanes({
+      ellipsoid: SPHERE,
+      cameraEcef: up(1500),
+      samples: [{ distanceM: 0, groundM: 515 }],
+      focusM: NaN,
+    });
+    expect(unread.near).toBeCloseTo(0.3 * 985, 6);
+  });
 });

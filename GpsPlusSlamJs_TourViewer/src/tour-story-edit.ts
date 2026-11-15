@@ -109,17 +109,30 @@ export function withoutStory<H extends Holder>(
     : null;
 }
 
-/** `holder` with `child` at the end of its story `id`; null when it has
- *  none. */
+/** `holder` with `child` in its story `id` before the child at `at`
+ *  (0-based; at the end without one, held to the story's ends when it
+ *  lies outside them or is not a whole number); null when it has none. */
 export function withStoryChild<H extends Holder>(
   holder: H,
   id: string,
   child: TourStoryChild,
+  at?: number,
 ): H | null {
-  return withStoryChanged(holder, id, (story) => ({
-    ...story,
-    children: [...story.children, child],
-  }));
+  return withStoryChanged(holder, id, (story) => {
+    const n = story.children.length;
+    const place =
+      at === undefined || !Number.isFinite(at)
+        ? n
+        : Math.min(n, Math.max(0, Math.trunc(at)));
+    return {
+      ...story,
+      children: [
+        ...story.children.slice(0, place),
+        child,
+        ...story.children.slice(place),
+      ],
+    };
+  });
 }
 
 /** `child` with no `goto` naming `gone` (the answer goes on to the next

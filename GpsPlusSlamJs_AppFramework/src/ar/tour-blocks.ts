@@ -82,6 +82,8 @@ export {
   TOUR_NARRATION_RULES,
   TOUR_PICTURE_MAX_WIDTH_M,
   TOUR_PICTURE_VIEWPOINT_VIEWS,
+  TOUR_VIDEO_VIEWPOINT_VIEWS,
+  tourSeenFromViewpoint,
   TOUR_PICTURE_MIN_WIDTH_M,
   type TourAudioBlock,
   type TourBlock,
@@ -291,6 +293,9 @@ function freePlacement(read: TourBlockRead): TourBlock | string {
   const floor = tourFloorView(block.kind);
   if (block.kind === 'model' && block.sizeM === undefined) {
     return `block "${block.id}" stands free in its station, and a placed model needs a size`;
+  }
+  if (block.kind === 'video' && block.widthM === undefined) {
+    return `block "${block.id}" stands free in its station, and a video in the world needs a width`;
   }
   return { ...block, view: floor } as TourBlock;
 }

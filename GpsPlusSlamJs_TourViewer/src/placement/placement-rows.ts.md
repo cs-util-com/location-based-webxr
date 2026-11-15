@@ -9,7 +9,7 @@ folder and a station), what the 3D editor's handles do with it:
   the pose, but nothing in the world shows it, so the block gets no
   handles.
 - `turns` - turning it shows. False for what faces the camera or the
-  viewer (a pin's label, a sound's icon and circle, a reading sign's
+  viewer (a sound's icon and circle, a reading sign's
   plate): no turn knob, and turning keys do nothing.
 - `lifts` - its height is its own. False for a station, whose height is
   the ground's.
@@ -17,20 +17,30 @@ folder and a station), what the 3D editor's handles do with it:
   never mixed: `size` (a real size of the drawing, which scales with it:
   a model's `sizeM`, a picture's `widthM`), `reach` (a distance that is
   no scale of the drawing: a station's `foundRadiusM`) and `factor` (a
-  uniform scale of a whole frame: a folder's `scale`).
+  uniform scale of a whole frame: a folder's `scale`). Its optional
+  `slider` is the inspector's track beside the typed value (a video's
+  width: 0.3-6 m, step 0.05 m; `extent-slider.ts`).
 
 The rows are per VIEW, not per kind, because a block may stand in the
-world in one view and be a card in another (a video gaining a screen
-view would be the first such kind).
+world in one view and be a card in another (a video: a screen, a cutout,
+a porthole, a window or a stand-here projection free, a card in a story).
 
 ## Public API
 
-- `ExtentSpec` - `{ kind: "size" | "reach" | "factor", field, label, meaning, min, max }`
+- `ExtentSpec` - `{ kind: "size" | "reach" | "factor", field, label, meaning, min, max }`,
+  or `{ kind: "scale", ..., ring: { baseM, perM } }` (`LinearRing`): the one
+  scale a drawing's parts follow along their own curves, whose ring is
+  linear in it (a ground arrow's `readAtM`; its drawing does not double at
+  twice the value, so it is no `size`)
   (`meaning`: what the value is in the creator's words, the inspector's
   note under a size field).
   `min` and `max` are inclusive; metres for `size` and `reach`, a ratio for
   `factor`.
-- `ViewPlacement` - `{ posed, turns, lifts, extent? }`.
+- `ViewPlacement` - `{ posed, turns, lifts, extent?, bends? }`; `bends`: a
+  knob behind the start sets the block's `bendDeg` (a ground arrow).
+- `writesBlockNumber(spec)` - whether the dots write a number on the block
+  itself (`size` or `scale`): the one test the session's `setExtent` and the
+  document's `blockNumberSet` share.
 - `BLOCK_PLACEMENT` - the block table, `satisfies` one row for every view in
   `TOUR_KINDS[kind].views`: a view joining the format is a compile error
   until it gets a row.
@@ -43,12 +53,21 @@ view would be the first such kind).
 
 ## The rows
 
-- `shortText`: `pin` posed, facing (the label faces the camera); `card` poseless.
+- `shortText`: `pin` posed and turning (like a sign it keeps its pose's turn unless its `orientation` turns it to the visitor); `card` poseless.
 - `longText`: `lectern` posed, turning (the stand keeps its turn about up);
   `reading` posed, facing (the plate turns to the viewer); `card` poseless.
-- `picture`: every standing view (`plane`, `framed`, `cutout` and the viewpoint views, which are drawn as a plane at the pose until their overlays stand) posed, turning, `size` on `widthM`
-  (`TOUR_PICTURE_MIN_WIDTH_M` to `TOUR_PICTURE_MAX_WIDTH_M`); `card` poseless.
-- `video`: `card` poseless (no world view yet).
+- `picture`: `plane`, `framed` and `cutout` posed, turning, `size` on `widthM`
+  (`TOUR_PICTURE_MIN_WIDTH_M` to `TOUR_PICTURE_MAX_WIDTH_M`); the viewpoint
+  views (`thenNow`, `sharpen`, `viewer`, `finder`, `window`) posed, not
+  turning, no dots: their look stands in the station's frame, lined up from
+  the viewpoint and sized by its lens and depth, so the pose's turn and the
+  width change nothing on screen (the handle stays at the pose; the
+  viewpoint is typed in the inspector, `editor/kind-panels/picture-panel.ts`);
+  `card` poseless.
+- `video`: `screen`, `cutout`, `porthole`, `window` and `standHere`
+  posed, turning, `size` on `widthM` (the picture's bounds); a
+  stand-here's handle is its projection's pose, its viewpoint typed in
+  the inspector; `card` poseless.
 - `audio`: `spot` and `zone` posed, facing, no dots (a sound's reach is
   set in the inspector); `card` poseless.
 - `model`: every world view posed, turning, `size` on `sizeM`
@@ -86,4 +105,9 @@ view would be the first such kind).
 
 ## Short text views
 
-`sign` turns (its heading is the creator's, a turning gizmo); `edgeHint` faces the camera like a pin.
+`sign` and `pin` turn (their heading is the creator's, a turning gizmo); `edgeHint` faces the camera.
+`ground` turns, bends, and its dots set `readAtM` as a `scale` (1 to 40,
+the format's bounds) on the ring `GROUND.ringA` + `GROUND.ringB` per unit
+(0.75 m at 6), the drawing's own constants. A ground arrow with no
+`readAtM` written has no dots (its scale then comes from its target's
+distance, which the row cannot read); the dock's number field sets one.

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   foldAxis,
   foldedAt,
+  foldsAfterTurn,
   prunedTo,
   UNFOLD_MIN_PX,
   unfoldedAt,
@@ -16,6 +17,24 @@ const size = fc.record({
 });
 
 describe("the fold's states over any sizes", () => {
+  // Why: a group spanning the layout's width (a phone's, upright) folds
+  // its height whatever its height; the 55 % rule decides only for one
+  // narrower than the layout.
+  it("a group as wide as the layout always folds its height", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 4000 }),
+        fc.integer({ min: 1, max: 3000 }),
+        fc.integer({ min: 1, max: 3000 }),
+        (width, height, layoutHeight) => {
+          expect(
+            foldAxis({ width, height }, { width, height: layoutHeight }),
+          ).toBe("height");
+        },
+      ),
+    );
+  });
+
   // Why: whatever size a group was folded at, unfolding gives back that
   // size (or the least usable one) along the axis it folded, and leaves no
   // trace; a second fold never overwrites the size to give back.
@@ -61,6 +80,41 @@ describe("the fold's states over any sizes", () => {
             ids.filter((id) => live.includes(id)).sort(),
           );
           for (const [id, fold] of kept) expect(fold).toBe(folds.get(id));
+        },
+      ),
+    );
+  });
+});
+
+describe("the folds after a turn, over any session and grouping", () => {
+  // Why: whatever the panels' grouping after the turn, a group is folded
+  // exactly when every session panel in it was, and only groups holding a
+  // session panel are named.
+  it("folds a group only when all its session panels were folded", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            folded: fc.boolean(),
+            group: fc.option(fc.constantFrom("a", "b", "c"), { nil: null }),
+          }),
+          { maxLength: 6 },
+        ),
+        (panels) => {
+          const session = new Map(
+            panels.map((p, i) => [`p${String(i)}`, p.folded] as const),
+          );
+          const groupOf = (id: string) =>
+            panels[Number(id.slice(1))]?.group ?? null;
+          const got = foldsAfterTurn(session, groupOf);
+          const named = new Set(
+            panels.flatMap((p) => (p.group === null ? [] : [p.group])),
+          );
+          expect(new Set(got.keys())).toEqual(named);
+          for (const [group, shut] of got) {
+            const inIt = panels.filter((p) => p.group === group);
+            expect(shut).toBe(inIt.every((p) => p.folded));
+          }
         },
       ),
     );

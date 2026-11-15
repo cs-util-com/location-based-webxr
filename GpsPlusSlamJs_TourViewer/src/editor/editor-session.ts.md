@@ -127,6 +127,22 @@ never state). Design:
     "the tag of <name>"; shown removes `showTag` (absent is shown), hidden
     writes `false`; `unchanged` for its own state; refused for a block that
     is no picture (`ONLY_A_PICTURE_TAG`) and an id the tour lacks.
+  - `editPictureViewpoint(id, viewpoint | null)` - a picture's or a
+    video's viewpoint, one undo step named "the viewpoint of <name>"; null
+    stands a fresh one in front of the block (`picture-viewpoint.ts`'s
+    `mintViewpoint`, from its pose in the station's frame); `unchanged`
+    for the one it holds; refused for a block that is neither
+    (`ONLY_A_PICTURE_VIEWPOINT`, "Only a picture or a video has a
+    viewpoint."), a
+    viewpoint the format would refuse (`NOT_A_VIEWPOINT`: a place past
+    `TOUR_ITEM_MAX_OFFSET_M` on any axis among them; its words state
+    that bound, the lens and the depth from the format's constants) and an id the
+    tour lacks. `editBlockView` switching a picture without a viewpoint
+    into a viewpoint view mints one in the same step, so a creator never
+    holds a viewpoint view that draws as a plain plane; switching away
+    keeps the viewpoint for a switch back. A video switched to stand-here
+    gets its first the same way (`tourSeenFromViewpoint` decides both);
+    a window gets none.
   - `editBlockField(id, field, value)` - `blockFieldEdit`'s outcome
     (`block-fields.ts`: a short text's description, a picture's
     title, caption or alt text, a model's title), one step through the
@@ -213,12 +229,14 @@ never state). Design:
       `editor-session-files.test.ts` pins it), `deleteStory(id)` (says how
       many children went and `stationGone` when its untitled automatic
       station, kept by nothing else, went with it),
-      `addToStory(storyId, kind)` (a kind made from words), `addEntryToStory(storyId,
-child)` (an entry made elsewhere - a file's, `new-file-item.ts` -
-      added at the story's end, refused for a story that is gone or an id
+      `addToStory(storyId, kind, at?)` (a kind made from words),
+      `addEntryToStory(storyId, child, at?)` (an entry made elsewhere - a
+      file's, `new-file-item.ts` - added at the story's end, or before its
+      child at `at`, 0-based, as the cards' "Insert step" asks, refused for a story that is gone or an id
       the tour holds), `deleteStoryChild(id)` (says how many
-      answers no longer lead anywhere), `addStepToStory(storyId, kind)` (a
-      new choice or quiz, `newStoryStep`, at the story's end),
+      answers no longer lead anywhere), `addStepToStory(storyId, kind, at?)`
+      (a new choice or quiz, `newStoryStep`, at the story's end or at
+      `at`),
       `setStoryStep(step)` (a choice or quiz rewritten whole by its
       inspector; refused in words when the format would refuse it - a jump
       to a gone step, a blank text, points below 0),
@@ -233,9 +251,9 @@ child)` (an entry made elsewhere - a file's, `new-file-item.ts` -
       answers that led to it now go on to the next entry, and whether it
       took its kind's world view), `{ kind: "unchanged" }`, or a refusal
       in words (a choice or a quiz leaving its story, a story into a story,
-      a model without a size standing free, a video standing free - "A
-      video plays only in a story for now: it cannot stand in the world by
-      itself." - a picture made here before the tour holds its file).
+      a model without a size standing free, a picture made here before the
+      tour holds its file); a video leaving its story stands free as a
+      screen (`floored`).
     - `groundItems([{ id, alt }])` - "Put on the ground": the altitudes the
       page measured, ONE step for all; refused whole for an unknown id or
       a height beyond an item's reach of its station (`HEIGHT_REFUSED`).
@@ -415,6 +433,11 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   pressed included - takes the model out of the rule for good; an undo
   does not put it back.
 
+- `setVideoPoster(id, image)` - brings in the picture (a frame the
+  inspector's preview took) as `addFile` does, as an image, then makes it
+  the free video `id`'s `poster`, in one step. It is refused in words,
+  changing nothing, for an id that is not a free video (a story's video,
+  another kind, a removed id) and for a picture `addFile` refuses.
 - `setItemFile(id, file, fileName)` - the item `id` (free, or a block a
   station's story shows) made from `file` from now on: brought in as
   `addFile` does for the block's file kind (`../block-file.ts`), then one
@@ -601,7 +624,7 @@ examples).
 
 - `swapAsset` is async: judged by the document's rule, written to the draft (`EditorSessionDraft.swapAsset`, with the new record), judged again, then the files table and the document take it in one synchronous step. Without a draft it is taken before the first await. `backedUp` false: the draft could not keep it.
 - `restore`: an offered file whose id the written tour lists is a smaller file for that asset. It is left out of `restored.assets` and dispatched as `assetOptimized` after the rest, counted among `changed`.
-- `restore` puts every restored file the document lists back on the shelf: a plain file as `added` (queued again, so an over-cap file is made smaller and the save stops refusing once it lands) unless the creator chose "use the original" for it (`originalChosen`, kept in the draft by `swapAsset`'s third argument): that one comes back kept, with the original-used words and a retry (`shelf.originalKept`), a smaller file with its kept original as optimized (`shelf.restored`, the original loaded from the draft's bytes, else from the opened file's entry). A smaller file at the same path that is not smaller is left off.
+- `restore` puts every restored file the document lists back on the shelf: a plain file as `added` (queued again, so an over-cap file is made smaller and the save stops refusing once it lands) unless the creator chose "use the original" for it (`originalChosen`, kept in the draft by `swapAsset`'s third argument): that one comes back kept, with the original-used words and a retry (`shelf.originalKept`), a smaller file with its kept original as optimized (`shelf.restored`, the original loaded from the draft's bytes, else from the opened file's entry, and a made model's level of detail as the draft kept it: the shelf's swap hands it over, `swapAsset` writes it with the smaller file). A smaller file at the same path that is not smaller is left off.
 - A save resolves with `wrote` (id to the Blob it wrote): the page hands it to the draft's `landed`, which spends an entry only when its own bytes were written.
 - The save's refusal of an over-cap file says it is being made smaller only while the shelf has a job queued or running for it (`shrinking`); otherwise it says nothing is, and what to do.
 - A placed picture embeds its `imageAsset` record, which keeps the old path after a swap (the written tour is right: a reader inflates the record from the manifest by id). `contentOf` resolves by id, and a copy of a photo (`copiedObject`) takes the record `addedAssets` holds, so its entry gets the new file's extension. A preview keys its cache on `assetSwaps`, not on the inline path.
@@ -659,3 +682,9 @@ examples).
   draft's restore and from an opened tour; the entry's delete with its
   undo, its refusal while he speaks, Remove and restore taking it off
   and back).
+
+## `moveViewpoint`
+
+- `moveViewpoint(id, geo)` writes a picture's viewpoint where the 3D view's handle was let go: `geo` is read into the station's frame and passed to `viewpointAt`, so the facing follows the handle's heading and pitch, lens and depth stay. One dispatch, one undo step.
+- Refused, with nothing written, for an unknown id, a block that is no picture, and a picture without a viewpoint ("This picture has no viewpoint to move yet."). It shares its write path with `editPictureViewpoint` (`writeViewpoint`), so an unchanged viewpoint dispatches nothing.
+- Tested in `editor-session.test.ts` ("moves a picture's viewpoint where its handle was let go, as one step").

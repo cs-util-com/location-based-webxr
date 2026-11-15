@@ -2,14 +2,28 @@
 
 ## Purpose
 
-The editor's panels on a phone: the tree and the details as sheets over the
-map, each with a drag grip, and the map's canvas ending at a sheet's top.
+The editor's panels on a phone while they are not docked: the tree and the
+details as sheets over the map, each with a drag grip, and the map's canvas
+ending at a sheet's top. Since the panels dock at every width
+(`dock-host.ts`'s phone layout), the sheets show only while the docking
+loads or when it failed to load; docked, `editor-shell.ts` syncs no sheet.
 
 ## Public API
 
 - `PHONE_SHEET_PX` - 700; at this width and under the panels are sheets. The
   same number stands in the `width <= 700px` rules of `editor-shell.css`.
 - `phoneSheets(widthPx)` - whether that is so.
+- `cardsDrill(widthPx, heightPx)` - whether a story's step cards go into
+  their step on a press rather than open in place: a phone width
+  (`phoneSheets`) or a height of `CARDS_DRILL_SHORT_PX` (500) or less, a
+  phone on its side (and a desktop window that short). Swept in the tests
+  over phone sizes on their side and short and ordinary desktop windows.
+- `steadyHeight()` -> `(widthPx, heightPx) => px`: the page's height as
+  `cardsDrill` reads it, blind to a keyboard: the tallest height seen at the
+  current width (a keyboard shrinks the height only; turning a phone changes
+  the width, which starts over). A non-finite height is ignored. A desktop
+  window made shorter at the same width is read at its tallest until its
+  width changes.
 - `SheetKind` - `"tree"` or `"details"`.
 - `SHEET_SHARE` - the part a sheet first takes: 0.62 and 0.66.
 - `SHEET_LIMITS` - what a drag leaves: 0.3 to 0.8; under 0.2 the sheet goes.
@@ -51,6 +65,9 @@ sheets.sync("tree");
 `phone-sheet.test.ts` (jsdom): the layout's numbers, `sheetRelease`, the
 share per sheet, nothing written during a drag, the limit, a dismissal, a
 sheet's remembered height, a cancelled drag.
+`phone-sheet.property.test.ts` (fast-check): `steadyHeight` never reports
+less than a finite height seen since the width last changed, and equals the
+new height at a width change.
 `editor-shell.test.ts` ("on a phone"): which sheet shows when.
 `playwright-tests/editor3d-phone.spec.js`: positions and gaps at 390x844 and
 844x390, the tap to details and back, the drag, the bottom panel.

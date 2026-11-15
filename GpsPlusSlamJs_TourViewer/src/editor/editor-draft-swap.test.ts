@@ -110,6 +110,19 @@ async function swapped(stores: MemoryDraftStores): Promise<EditorDraft> {
   return draft;
 }
 
+/** A made model's level of detail as the shelf hands it over. */
+const DETAIL = {
+  share: 0.25,
+  triangles: 2_500,
+  trianglesBefore: 10_000,
+  deviation: 0.009,
+  size: 0.2,
+  choices: [
+    { share: 1, triangles: 10_000, deviation: 0 },
+    { share: 0.25, triangles: 2_500, deviation: 0.009 },
+  ],
+};
+
 describe("the draft of a smaller file", () => {
   it("keeps the new bytes beside the original, and a reload offers both", async () => {
     const stores = memoryDraftStores();
@@ -122,6 +135,44 @@ describe("the draft of a smaller file", () => {
     expect(await offeredAfterReload(stores, opened())).toEqual([
       { path: OPUS.path, text: "OggS", original: "RIFF" },
     ]);
+  });
+
+  // Why: a made model's level of detail (the slider's stops and the level
+  // chosen) comes from the optimizer's report alone, which a reload does
+  // not run again: the draft keeps it with the smaller file, or the slider
+  // is gone after a reload. The draft keeps whatever level the shelf hands
+  // it, whatever the file's kind. One that does not read when the list is
+  // read back is dropped, and the file still comes back.
+  it("keeps a made model's level of detail with its smaller file, and a reload offers it", async () => {
+    const stores = memoryDraftStores();
+    const draft = draftOf(stores);
+    await draft.open(K1, opened());
+    expect(await draft.saveAsset(WAV, RIFF)).toBe(true);
+    await draft.saveObject(ESSAY);
+    expect(await draft.swapAsset(OPUS, OGGS, false, DETAIL)).toBe(true);
+    await draft.idle();
+    draft.close();
+    const again = draftOf(stores);
+    const { offer } = await again.open(K1, opened());
+    expect(offer?.files).toHaveLength(1);
+    expect(offer?.files?.[0]).toMatchObject({ asset: OPUS, detail: DETAIL });
+    await again.idle();
+    again.close();
+
+    const space = stores.spaces.get(SPACE)!;
+    const list = JSON.parse(space.get("assets") as string) as object[];
+    space.set(
+      "assets",
+      JSON.stringify(
+        list.map((item) => ({ ...item, detail: { ...DETAIL, triangles: -1 } })),
+      ),
+    );
+    const third = draftOf(stores);
+    const read = await third.open(K1, opened());
+    expect(read.offer?.files?.[0]?.asset).toEqual(OPUS);
+    expect(read.offer?.files?.[0]?.detail).toBeUndefined();
+    await third.idle();
+    third.close();
   });
 
   // Why: the save that wrote the new file is the end of the original; it

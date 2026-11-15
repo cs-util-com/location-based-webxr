@@ -21,6 +21,13 @@ import {
   TOUR_MODEL_NOTE_RULES,
   TOUR_MODEL_WORLD_VIEWS,
 } from './tour-blocks';
+import type { TourBlockDrop } from './tour-block-read';
+import {
+  TOUR_VIDEO_ALPHAS,
+  TOUR_VIDEO_LOOPS,
+  TOUR_VIDEO_SOUNDS,
+  TOUR_VIDEO_STARTS,
+} from './tour-kinds';
 import {
   tourModelAnimationArbitrary,
   tourModelNoteArbitrary,
@@ -154,6 +161,81 @@ describe('a placed model size (properties)', () => {
         expect(() => read(model(sizeM), lenient)).toThrow(Invalid);
       }),
       { numRuns: 500 }
+    );
+  });
+});
+
+/**
+ * Why this matters: a later minor may add a word to any of a video's look
+ * fields. Whatever word it adds to start, sound or loop, a reader of this
+ * minor must keep the video and drop only that field (reporting it); an
+ * unknown alpha skips the video, as its matte would show; and a reader of
+ * a file of its own minor must refuse any of them - for every string.
+ */
+describe("a video's look fields (properties)", () => {
+  const videoAssets = parseTourAssets(
+    [{ id: 'clip', path: 'content/clip.mp4' }],
+    { fail }
+  );
+  const words = {
+    start: TOUR_VIDEO_STARTS,
+    sound: TOUR_VIDEO_SOUNDS,
+    alpha: TOUR_VIDEO_ALPHAS,
+    loop: TOUR_VIDEO_LOOPS,
+  } as const;
+  const unknownWord = (field: keyof typeof words) =>
+    fc
+      .string()
+      .filter((s) => !(words[field] as readonly string[]).includes(s))
+      .map((value) => ({ field, value }));
+
+  it('any unknown word in start, sound or loop never skips the video, and any unknown alpha skips it', () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          unknownWord('start'),
+          unknownWord('sound'),
+          unknownWord('alpha'),
+          unknownWord('loop')
+        ),
+        ({ field, value }) => {
+          const video = {
+            id: 'v1',
+            kind: 'video',
+            view: 'screen',
+            video: 'clip',
+            widthM: 1,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+            [field]: value,
+          };
+          const drops: TourBlockDrop[] = [];
+          const read = (lenient: boolean) =>
+            readTourBlocks([video], 'x', {
+              assets: videoAssets,
+              fail,
+              lenient,
+              onDropped: (drop) => drops.push(drop),
+            }).map((r) => r.block);
+          expect(() => read(false)).toThrow(Invalid);
+          const lenient = read(true);
+          // An alpha the reader does not know would show a newer packing's
+          // matte half on screen: the video is skipped, not shown without it.
+          const skips = field === 'alpha';
+          expect(lenient.length).toBe(skips ? 0 : 1);
+          for (const kept of lenient) {
+            expect(kept).not.toHaveProperty(field);
+            expect(kept.kind).toBe('video');
+          }
+          expect(drops).toEqual([
+            expect.objectContaining(
+              skips
+                ? { kind: 'block', block: 'v1' }
+                : { kind: 'field', block: 'v1', field }
+            ),
+          ]);
+        }
+      ),
+      { numRuns: 300 }
     );
   });
 });

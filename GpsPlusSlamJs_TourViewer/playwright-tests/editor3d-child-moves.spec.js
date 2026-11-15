@@ -522,7 +522,7 @@ test("a drag onto another station's card asks first: no writes nothing, yes move
 test.describe("on a phone", () => {
   test.use({ hasTouch: true });
 
-  test("a finger drags an item by its grip in the list sheet, and the Move button works from a tap", async ({
+  test("a finger drags an item by its grip in the list, and the Move button works from a tap", async ({
     page,
   }) => {
     test.slow();

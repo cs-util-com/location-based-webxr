@@ -19,6 +19,7 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import {
   outsideItems,
   problemCounts,
+  storyProblems,
   tourProblems,
   type ProblemFix,
   type ProblemGroup,
@@ -256,6 +257,45 @@ describe("tourProblems", () => {
       },
     ]);
     expect(withStory(["hi", undefined])).toEqual([]);
+  });
+
+  // Why: the story inspector says "Story valid" or "N problems" from
+  // these same rows, so a story the Problems tab warns of can never read
+  // as valid there, nor the other way round. Both ways of the loop are
+  // checked: trapped and leavable.
+  it("gives a story the same rows the Problems tab lists for it", () => {
+    const line = (id: string) => ({
+      id,
+      kind: "shortText",
+      view: "card",
+      caption: id,
+      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      advance: { mode: "tap" },
+    });
+    const ask = (goto?: string) => ({
+      id: "ask",
+      kind: "choice",
+      prompt: "Again?",
+      options: [
+        { id: "o0", label: "A0", goto: "hi" },
+        { id: "o1", label: "A1", ...(goto === undefined ? {} : { goto }) },
+      ],
+    });
+    const trapped = storyOf("t", [line("hi"), ask("hi")] as never, "Trapped");
+    const fine = storyOf("f", [line("hi"), ask()] as never, "Fine");
+    expect(storyProblems(fine)).toEqual([]);
+    expect(storyProblems(trapped)).toEqual([
+      {
+        severity: "warning",
+        what: "Steps 1 and 2 go round in a loop that no answer can leave: a visitor who gets to step 1 never reaches the end. Let one answer end the story or go on.",
+        who: "Trapped",
+        select: "hi",
+      },
+    ]);
+    const listed = tourProblems([
+      { ...station("a", [], "Square"), children: [fine, trapped] },
+    ]);
+    expect(listed[0]?.problems).toEqual(storyProblems(trapped));
   });
 
   // Why: the other edge of the same rule. A story with nothing in it shows

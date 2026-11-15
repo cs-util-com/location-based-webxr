@@ -4,8 +4,9 @@
  * a station's free characters as figures: from arrival, on every return,
  * several in one station, each on a stage of his own. A tap plays his voice in
  * the visitor's one voice channel (`voice-focus.ts`); walking away pauses it
- * and his return carries on. A free video has no look yet, so nothing is built
- * for one here (`content-placement.ts` holds its seam).
+ * and his return carries on. A free video is not built here: it stands by
+ * its world part (`kinds/video/video-world.ts`) through the station
+ * renderer's world door (`content-placement.ts`).
  *
  * Never a story: a station with only free items stays stepless, and this host
  * reports no step, no end and no status line. A failure the visitor must hear

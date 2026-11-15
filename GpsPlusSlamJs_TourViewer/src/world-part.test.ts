@@ -405,4 +405,29 @@ describe("the world's sound and frame", () => {
     tickWorldParts(scene, new Object3D(), 0, parts);
     expect(cameras).toEqual([camera, undefined]);
   });
+
+  it("hands the direction the viewer looks in the part's parent frame", () => {
+    // Why: a video that starts when looked at compares this direction with
+    // its own place in the same frame; a scene direction under a turned
+    // station would start the wrong video, or none.
+    const { scene, shown } = stage();
+    shown.position.set(10, 0, 0);
+    shown.rotation.y = Math.PI / 2;
+    const facings: (readonly number[])[] = [];
+    const object = new Group();
+    shown.add(object);
+    const part: WorldPart = {
+      object,
+      update: (f) => facings.push([...(f.facing ?? [])]),
+      dispose: () => undefined,
+    };
+    // A camera looks down its -Z: north in the scene, east in the
+    // station's frame turned a quarter.
+    const camera = new PerspectiveCamera();
+    tickWorldParts(scene, camera, 0, [part]);
+    const [x, y, z] = facings[0] ?? [];
+    expect(x).toBeCloseTo(1);
+    expect(y).toBeCloseTo(0);
+    expect(z).toBeCloseTo(0);
+  });
 });

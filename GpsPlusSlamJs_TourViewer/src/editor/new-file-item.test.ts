@@ -30,6 +30,7 @@ import {
   fileItemTitle,
   NEW_MODEL_SIZE_M,
   NEW_PICTURE_WIDTH_M,
+  NEW_VIDEO_WIDTH_M,
   NEW_SOUND_RADIUS_M,
   newFileItem,
   newFileStoryEntry,
@@ -166,23 +167,32 @@ describe("newFileItem", () => {
   // Why: the views a free block may hold are the format's (its kind
   // table); a view written here beside it would drift from it unseen.
   it("stands each free kind in the format's first free view", () => {
-    for (const kind of ["picture", "audio", "model"] as const) {
+    for (const kind of ["picture", "audio", "model", "video"] as const) {
       const item = newFileItem(input(), source(kind));
       expect(item?.view).toBe(TOUR_KINDS[kind].freeViews[0]);
     }
   });
 
-  // Why: no free host draws a video, so it would be an item nobody sees.
-  it("makes no free video", () => {
-    expect(newFileItem(input(), source("video", "flood.mp4"))).toBeNull();
+  // Why: a free video stands as a screen as wide as a new video starts,
+  // its minted poster kept so the screen shows a still before it plays.
+  it("makes a video a screen, its poster kept", () => {
+    expect(newFileItem(input(), source("video", "flood.mp4"))).toMatchObject({
+      kind: "video",
+      view: "screen",
+      video: "vid1",
+      poster: POSTER.id,
+      widthM: NEW_VIDEO_WIDTH_M,
+      title: "flood",
+    });
+    const { poster: _poster, ...bare } = source("video");
+    expect(newFileItem(input(), bare)).not.toHaveProperty("poster");
   });
 
   // Why: a free item the format would not read back is lost at the next
   // open; each kind's starting fields are what its view requires.
   it("makes every free kind a record the format reads back as it was", () => {
-    for (const kind of ["picture", "audio", "model"] as const) {
+    for (const kind of ["picture", "audio", "model", "video"] as const) {
       const item = newFileItem(input(), source(kind));
-      if (item === null) throw new Error(kind);
       expect(
         parseTourObject(JSON.parse(JSON.stringify(tourObjectRecord(item)))),
       ).toEqual(item);
@@ -197,9 +207,8 @@ describe("newFileItem", () => {
     for (const radius of [3, 5, 8, 12, 25, 40, 60]) {
       for (const pins of [0, 1, 4, 8, 12]) {
         const s = station(radius, pins);
-        for (const kind of ["picture", "audio", "model"] as const) {
+        for (const kind of ["picture", "audio", "model", "video"] as const) {
           const item = newFileItem(input(s), source(kind));
-          if (item === null) throw new Error(kind);
           const pose = localPoseOf(item.geo, s.geo);
           const off = Math.hypot(pose.position[0], pose.position[2]);
           expect(off).toBeLessThanOrEqual(radius + 1e-6);

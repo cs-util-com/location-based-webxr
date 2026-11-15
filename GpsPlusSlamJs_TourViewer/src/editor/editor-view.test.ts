@@ -33,6 +33,7 @@ const SHELL_START = {
   unlockedStations: [],
   modelFocus: null,
   modelPick: null,
+  pointPick: false,
   picked: [],
   selectMode: false,
   foldedFolders: [],
@@ -98,6 +99,35 @@ describe("editorView model focus and pick", () => {
     );
     state = reduce(state, tourDocumentActions.closed());
     expect(state.modelPick).toBeNull();
+  });
+});
+
+// Why: "Pick in 3D" arms the next click of the 3D view to set where the
+// selected short text points. Kept across another selection, that click
+// would move another sign's point; kept into another tour, a stray click
+// there would write one.
+describe("editorView point pick", () => {
+  it("arms and disarms, and is dropped with the selection, a picking and another tour", () => {
+    let state = reduce(initialEditorViewState, act.selected({ id: "t" }));
+    expect(state.pointPick).toBe(false);
+    state = reduce(state, act.pointPickAsked({ on: true }));
+    expect(state.pointPick).toBe(true);
+    state = reduce(state, act.selected({ id: "t" }));
+    expect(state.pointPick).toBe(true);
+    state = reduce(state, act.pointPickAsked({ on: "yes" } as never));
+    expect(state.pointPick).toBe(true);
+    state = reduce(state, act.pointPickAsked({ on: false }));
+    expect(state.pointPick).toBe(false);
+    state = reduce(state, act.pointPickAsked({ on: true }));
+    state = reduce(state, act.selected({ id: "other" }));
+    expect(state.pointPick).toBe(false);
+    state = reduce(state, act.pointPickAsked({ on: true }));
+    state = reduce(state, act.picked({ ids: ["a", "b"] }));
+    expect(state.pointPick).toBe(false);
+    state = reduce(state, act.selected({ id: "t" }));
+    state = reduce(state, act.pointPickAsked({ on: true }));
+    state = reduce(state, tourDocumentActions.closed());
+    expect(state.pointPick).toBe(false);
   });
 });
 
@@ -433,7 +463,7 @@ describe("the 3D view's gesture", () => {
 describe("pointerDragRuns", () => {
   it("is true only while a handle of the gizmo is dragged", () => {
     expect(pointerDragRuns(initialEditorViewState)).toBe(false);
-    for (const handle of ["move", "turn", "dot"] as const) {
+    for (const handle of ["move", "turn", "dot", "point"] as const) {
       expect(
         pointerDragRuns(
           reduce(

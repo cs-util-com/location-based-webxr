@@ -32,6 +32,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { NARRATION_DEFAULT_RADIUS_M } from "./kinds/audio/sound-reach.js";
+import { VIDEO_DEFAULT_WIDTH_M } from "./kinds/video/video-rules.js";
 import { withoutStoryChild, withStory } from "./tour-story-edit.js";
 
 interface Holder {
@@ -53,9 +54,8 @@ export type ChildMoveTo =
 /** Why a move is not made: no such item, story or slot; a choice or a quiz
  *  leaving its story (its answers name that story's entries); a story
  *  into a story or among the free items, or a free item among the stories;
- *  a block that cannot stand in the world (a model without a size, or a
- *  video: no free host shows one yet, so it would stand unseen); or the
- *  item would stay where it is. */
+ *  a block that cannot stand in the world (a model without a size); or
+ *  the item would stay where it is. */
 export type ChildMoveRefusal =
   "missing" | "ownStory" | "noNesting" | "cannotStandFree" | "unchanged";
 
@@ -97,10 +97,16 @@ const inPlainFolder = (place: TourChildrenPlace): boolean =>
 
 /** `block` given the fields its floor view requires that a story view
  *  does not: a sound in the card view has no radius, and a narration
- *  circle cannot be written without one. A radius it already carries is
- *  the author's and is kept; only a missing one takes the editor's
- *  starting value. */
+ *  circle cannot be written without one; a video card has no width, and
+ *  a screen cannot. A radius or a width it already carries is the
+ *  author's and is kept; only a missing one takes the editor's starting
+ *  value. */
 function withFloorFields(block: TourBlock): TourBlock {
+  if (block.kind === "video") {
+    return block.widthM === undefined
+      ? { ...block, widthM: VIDEO_DEFAULT_WIDTH_M }
+      : block;
+  }
   if (block.kind !== "audio" || block.view !== "spot") return block;
   if (block.radiusM !== undefined) return block;
   return { ...block, radiusM: NARRATION_DEFAULT_RADIUS_M };
@@ -114,9 +120,6 @@ function freeBlock(
 ): { block: TourBlock; floored: boolean } | null {
   const { advance: _advance, ...free } = block;
   if (free.kind === "model" && free.sizeM === undefined) return null;
-  // The format takes a free video, but no host draws one yet
-  // (`free-items.ts`): out of its story it would be an item nobody sees.
-  if (free.kind === "video") return null;
   const views: readonly string[] = TOUR_FREE_BLOCK_VIEWS[free.kind];
   if (views.includes(free.view)) {
     return { block: free, floored: false };

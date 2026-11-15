@@ -197,8 +197,9 @@ export interface BottomPanelDeps {
 interface PanelDock {
   /** Shows the tab's panel (its group shown, it the shown tab). */
   show(tab: PanelTab): void;
-  /** Hides the panes' group. */
-  hide(): void;
+  /** Takes the tab's pane out of sight (its group, when it holds only
+   *  the panel's panes). */
+  hide(tab: PanelTab): void;
 }
 
 export interface BottomPanel {
@@ -217,8 +218,9 @@ export interface BottomPanel {
   /** Docked: the panes are docked panels, shown and hidden through
    *  `dock`, and the panel itself stays hidden; null: the panel again. */
   dock(dock: PanelDock | null): void;
-  /** Docked: the docking's own controls showed a tab or hid the group. */
-  docked(state: { readonly open: boolean; readonly tab: PanelTab }): void;
+  /** Docked: the panes in sight now (several, once dragged apart into
+   *  other groups), as the docking's own controls left them. */
+  docked(state: { readonly shown: readonly PanelTab[] }): void;
 }
 
 /** The panel; its markup is the page's (`edit.html`), its contents its
@@ -235,6 +237,8 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   })();
   let ui: PanelState = { open: false, tab: saved.tab, max: false };
   let dock: PanelDock | null = null;
+  /** Docked: the panes in sight, in the tabs' order. */
+  let docksShown: readonly PanelTab[] = [];
   let heightPx: number | null = saved.heightPx;
   let started = false;
   let groups: readonly ProblemGroup[] = [];
@@ -292,6 +296,10 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
   tabs.setAttribute("aria-label", "Panel");
   const tools = el("div", "bp-tools");
   const tabTools = el("div", "tools");
+  /** Docked, each pane's own tools, above it in its panel. */
+  const paneTools = new Map<PanelTab, HTMLElement>(
+    PANEL_TABS.map((t) => [t.id, el("div", "tools")]),
+  );
   const headButton = (name: PanelIcon, title: string, cls: string) => {
     const button = el("button", `ib ${cls}`);
     button.type = "button";
@@ -318,6 +326,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     node !== null &&
     (panel.contains(node) ||
       tabTools.contains(node) ||
+      [...paneTools.values()].some((row) => row.contains(node)) ||
       [...panes.values()].some((pane) => pane.contains(node)));
   for (const tab of PANEL_TABS) {
     const pane = el("div", "pane");
@@ -359,6 +368,11 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
 
   // --- drawing -------------------------------------------------------------
   const mainPx = () => box.clientHeight;
+  /** The tabs whose pane is in sight: undocked the shown tab while open,
+   *  docked each pane its group shows. */
+  const inSight = (): readonly PanelTab[] =>
+    dock !== null ? docksShown : ui.open ? [ui.tab] : [];
+  const live = (tab: PanelTab) => inSight().includes(tab);
   const badgeOf = (tab: PanelTab): PanelBadge | null => {
     if (tab === "problems") return problemsBadge(problemCounts(groups));
     if (tab === "history") {
@@ -393,7 +407,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
           if (text !== "") slot.append(text);
         }
         if (button.classList.contains("tog")) {
-          const pressed = ui.open && ui.tab === tab.id;
+          const pressed = live(tab.id);
           button.setAttribute("aria-pressed", String(pressed));
           const key = TAB_KEY[tab.id];
           button.title = `${tab.label}${found === null ? "" : `: ${found.title}`} - click to ${pressed ? "close" : "open"}${key === undefined ? "" : ` (${key})`}`;
@@ -442,9 +456,12 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     maxButton.setAttribute("aria-pressed", String(ui.max));
   };
 
-  const drawTools = () => {
-    tabTools.replaceChildren();
-    if (ui.tab === "problems") {
+  /** A tab's tools: undocked in the panel's head (the shown tab's),
+   *  docked above its pane. */
+  const drawToolsOf = (tab: PanelTab) => {
+    const into = dock === null ? tabTools : (paneTools.get(tab) ?? tabTools);
+    into.replaceChildren();
+    if (tab === "problems") {
       const counts = problemCounts(groups);
       for (const severity of ["error", "warning", "note"] as const) {
         const label = SEVERITY_LABEL[severity];
@@ -456,17 +473,17 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
         button.setAttribute("aria-pressed", String(shown[severity]));
         button.prepend(icon(severity, `sev-${severity}`));
         button.append(` ${String(counts[severity])}`);
-        tabTools.append(button);
+        into.append(button);
       }
-    } else if (ui.tab === "history") {
+    } else if (tab === "history") {
       const undo = chip("Undo", "Undo the last step (Ctrl+Z)");
       undo.dataset["step"] = "undo";
       undo.disabled = history.past.length === 0;
       const redo = chip("Redo", "Redo the next step (Ctrl+Shift+Z)");
       redo.dataset["step"] = "redo";
       redo.disabled = history.future.length === 0;
-      tabTools.append(undo, redo);
-    } else if (ui.tab === "tiles") {
+      into.append(undo, redo);
+    } else if (tab === "tiles") {
       const retry = chip(
         retryRun === null ? "Retry failed" : "Retrying...",
         "Retry failed tiles",
@@ -477,14 +494,22 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       retry.prepend(icon("retry"));
       const note = el("span", "retry-note", retryNote);
       note.setAttribute("role", "status");
-      tabTools.append(retry, note);
+      into.append(retry, note);
     }
+  };
+  const drawTools = () => {
+    if (dock === null) drawToolsOf(ui.tab);
+    else for (const tab of docksShown) drawToolsOf(tab);
   };
 
   /** The retry's state said: under way, or what it came to. */
   const sayRetry = (text: string) => {
     retryNote = text;
-    if (ui.open && ui.tab === "tiles") keepingFocus(drawTools);
+    if (live("tiles")) {
+      keepingFocus(() => {
+        drawToolsOf("tiles");
+      });
+    }
   };
 
   const startRetry = () => {
@@ -917,13 +942,19 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     for (const [tab, pane] of panes) {
       pane.hidden = dock === null && tab !== ui.tab;
     }
-    // Docked, the shown tab's tools stand at the top of its panel.
-    if (dock !== null) panes.get(ui.tab)?.before(tabTools);
-    if (!ui.open) return;
-    if (ui.tab === "problems") drawProblems();
-    else if (ui.tab === "history") drawHistory();
-    else if (ui.tab === "tiles") drawTiles();
-    else drawPerf();
+    // Docked, each pane's tools stand at the top of its panel.
+    if (dock !== null) {
+      for (const [tab, pane] of panes) {
+        const row = paneTools.get(tab);
+        if (row !== undefined && row.nextSibling !== pane) pane.before(row);
+      }
+    }
+    for (const tab of inSight()) {
+      if (tab === "problems") drawProblems();
+      else if (tab === "history") drawHistory();
+      else if (tab === "tiles") drawTiles();
+      else drawPerf();
+    }
   };
 
   /**
@@ -948,7 +979,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     const match =
       key === undefined || value === undefined
         ? null
-        : ([panel, tabTools, ...panes.values()]
+        : ([panel, tabTools, ...paneTools.values(), ...panes.values()]
             .flatMap((part) => [
               ...part.querySelectorAll<HTMLElement>(`[data-${key}]`),
             ])
@@ -982,7 +1013,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     draw();
     if (dock !== null) {
       if (ui.open) dock.show(ui.tab);
-      else dock.hide();
+      else dock.hide(ui.tab);
     }
     // A close from inside the panel gives the focus to its toggle.
     if (wasOpen && !ui.open && hadFocus) {
@@ -995,7 +1026,15 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     const tab = (event.target as Element).closest<HTMLElement>("[data-tab]")
       ?.dataset["tab"];
     const known = PANEL_TABS.find((t) => t.id === tab);
-    if (known !== undefined) setState(toggled(ui, known.id));
+    if (known === undefined) return;
+    // Docked, each toggle is its own pane's: shown, or taken out of
+    // sight when it is in sight (the docking then says what shows).
+    if (dock !== null) {
+      if (live(known.id)) dock.hide(known.id);
+      else dock.show(known.id);
+      return;
+    }
+    setState(toggled(ui, known.id));
   });
   tabs.addEventListener("click", (event) => {
     const tab = (event.target as Element).closest<HTMLElement>("[data-tab]")
@@ -1034,7 +1073,7 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     toggleMax();
   });
   grip.addEventListener("dblclick", toggleMax);
-  tabTools.addEventListener("click", (event) => {
+  const onToolClick = (event: MouseEvent) => {
     const target = (event.target as Element).closest<HTMLButtonElement>(
       "button",
     );
@@ -1050,7 +1089,10 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     }
     const which = target?.dataset["step"];
     if (which === "undo" || which === "redo") deps.step(which);
-  });
+  };
+  for (const row of [tabTools, ...paneTools.values()]) {
+    row.addEventListener("click", onToolClick);
+  }
   // The rows' clicks and keys are heard on the panes themselves: docked,
   // each pane sits in its docked panel, out of the panel's body.
   const onPaneClick = (event: MouseEvent) => {
@@ -1175,9 +1217,9 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       groups = next;
       selected = nowSelected;
       drawBadges();
-      if (ui.open && ui.tab === "problems") {
+      if (live("problems")) {
         keepingFocus(() => {
-          drawTools();
+          drawToolsOf("problems");
           drawProblems();
         });
       }
@@ -1185,9 +1227,9 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     history(next) {
       history = next;
       drawBadges();
-      if (ui.open && ui.tab === "history") {
+      if (live("history")) {
         keepingFocus(() => {
-          drawTools();
+          drawToolsOf("history");
           drawHistory();
         });
       }
@@ -1203,10 +1245,9 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
       seenFrames = next.frameCount;
       drawBadges();
       watchRetry();
-      if (!ui.open) return;
-      if (ui.tab === "tiles") keepingFocus(drawTiles);
-      else if (ui.tab === "perf") drawPerf();
-      else if (ui.tab === "history") drawTimes();
+      if (live("tiles")) keepingFocus(drawTiles);
+      if (live("perf")) drawPerf();
+      if (live("history")) drawTimes();
     },
     key(event) {
       const ctrl = event.ctrlKey || event.metaKey;
@@ -1251,19 +1292,35 @@ export function createBottomPanel(deps: BottomPanelDeps): BottomPanel {
     dock(next) {
       if (next === dock) return;
       dock = next;
-      if (dock === null) tools.prepend(tabTools);
+      if (dock === null) {
+        for (const row of paneTools.values()) row.remove();
+        docksShown = [];
+      }
       draw();
       if (dock !== null && ui.open) dock.show(ui.tab);
-      else dock?.hide();
+      else dock?.hide(ui.tab);
     },
     docked(state) {
       if (dock === null) return;
-      if (state.open === ui.open && (!state.open || state.tab === ui.tab)) {
+      const inSightNow = PANEL_TABS.map((t) => t.id).filter((id) =>
+        state.shown.includes(id),
+      );
+      if (
+        inSightNow.length === docksShown.length &&
+        inSightNow.every((id, i) => docksShown[i] === id)
+      ) {
         return;
       }
-      ui = state.open
-        ? { ...ui, open: true, tab: state.tab }
-        : { ...ui, open: false, max: false };
+      // The current tab: one just come into sight (a tab the creator
+      // chose), else the one before while it shows, else the first.
+      const tab =
+        inSightNow.find((id) => !docksShown.includes(id)) ??
+        (inSightNow.includes(ui.tab) ? ui.tab : inSightNow[0]);
+      docksShown = inSightNow;
+      ui =
+        tab === undefined
+          ? { ...ui, open: false, max: false }
+          : { ...ui, open: true, tab };
       remember();
       draw();
     },
