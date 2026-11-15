@@ -442,6 +442,8 @@ export async function openGlobeEditor(
     const coarsePointer =
       window.matchMedia?.("(pointer: coarse)").matches === true;
     const quality = resolveGlobeQuality(knobs.quality, coarsePointer);
+    // The near clouds are experimental (`clouds=new`); the old ones are the
+    // default.
     const nearClouds = knobs.clouds === "new";
     // Over this height the interface stays under the clouds.
     const cloudDeckKm = nearClouds

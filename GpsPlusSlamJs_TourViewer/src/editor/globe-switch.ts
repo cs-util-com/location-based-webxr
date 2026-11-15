@@ -156,10 +156,13 @@ export const GLOBE_SWITCH = Object.freeze({
    */
   grade: Object.freeze({ param: "grade" }),
   /**
-   * The clouds near the ground: the way back to the old ones is `clouds=old`,
-   * exactly; anything else keeps the new ones.
+   * The clouds near the ground. The old clouds are the default; the new
+   * (near) clouds are EXPERIMENTAL and draw only for `clouds=new`, exactly.
+   * `clouds=old` is accepted and is the default, so links written while
+   * the new clouds were the default keep working; any other value is the
+   * default too.
    */
-  clouds: Object.freeze({ param: "clouds", old: "old" }),
+  clouds: Object.freeze({ param: "clouds", experimental: "new" }),
   /**
    * The quality tier by name (`GLOBE_QUALITIES` in the Globe package, which
    * judges it). Absent, the View menu's choice, else the device's default.
@@ -204,7 +207,8 @@ export interface GlobeSwitch {
   readonly buildings: number;
   /** The colour grade's name as the link wrote it; null: none named. */
   readonly grade: string | null;
-  /** Which clouds draw near the ground. */
+  /** Which clouds draw near the ground: "old" (the default) or "new"
+   *  (experimental). */
   readonly clouds: "new" | "old";
   /** The quality tier's name; null: none named, the device's default. */
   readonly quality: string | null;
@@ -257,9 +261,9 @@ export function readGlobeSwitch(search: string): GlobeSwitch {
     buildings: Math.round(knob(params, GLOBE_SWITCH.buildings)),
     grade: params.get(GLOBE_SWITCH.grade.param),
     clouds:
-      params.get(GLOBE_SWITCH.clouds.param) === GLOBE_SWITCH.clouds.old
-        ? "old"
-        : "new",
+      params.get(GLOBE_SWITCH.clouds.param) === GLOBE_SWITCH.clouds.experimental
+        ? "new"
+        : "old",
     quality: params.get(GLOBE_SWITCH.quality.param),
   };
 }

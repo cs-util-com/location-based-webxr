@@ -60,6 +60,14 @@ the answers into geometry.
   exactly the neighbours a scan of every pair finds (grid of cell size
   `priorRadiusM`, 3x3 cells searched). Non-finite centres are left out of the
   grid.
+- The neighbourhood reaches a micrometre past `priorRadiusM` (both the
+  distance test and the grid cell). A caller in a stretched frame divides by
+  `xScale` and the prior multiplies by it again; that round trip moves a
+  distance by about 1e-14 m, and without the slack a neighbour exactly at the
+  radius (common with whole-metre coordinates: 160 m east and 120 m north is
+  exactly 200 m) voted in one frame and not in another, which could flip a
+  neighbourhood across the evidence floor. Frame invariance therefore holds
+  for every pair except one within float noise of radius plus a micrometre.
 - Rings are ENU metres, unclosed (no repeated last corner).
 
 ## Examples
@@ -89,7 +97,9 @@ if (keep === undefined) {
 
 - `roofscape-rules.test.ts`: the keep reasons, the refusals, the heights and
   their bands, part votes collapsing into their outline, the tall
-  neighbourhood, shared walls, gable choice, offsets.
-- `roofscape-rules.property.test.ts`: priors are order-invariant and equal a
-  brute-force scan; a zero offset is the identity; the untagged eave stays
+  neighbourhood, a neighbour exactly at the radius in a stretched frame,
+  shared walls, gable choice, offsets.
+- `roofscape-rules.property.test.ts`: priors are order-invariant, equal a
+  brute-force scan and do not move when a frame stretches east-west and
+  `xScale` undoes it; a zero offset is the identity; the untagged eave stays
   within 2.5-10.5 m.

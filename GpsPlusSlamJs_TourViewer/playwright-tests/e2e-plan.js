@@ -86,6 +86,11 @@ export const SPECS = {
     area: "editor",
     lane: 2,
   },
+  "editor3d-globe-near-clouds.spec.js": {
+    project: "webgl",
+    area: "editor",
+    lane: 2,
+  },
   "editor3d-globe-osm-hold.spec.js": {
     project: "webgl",
     area: "editor",

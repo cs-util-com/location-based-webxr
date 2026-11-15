@@ -1,7 +1,9 @@
 /**
  * The View menu's quality entry: which tier the 3D view on the globe opens
  * with, remembered per browser. Automatic names no tier, so the view takes
- * the device's default and may step down; a named tier is held as it is.
+ * the device's default, and the experimental near clouds (`clouds=new`)
+ * may step down; a named tier is held as it is. The default clouds have no
+ * step-down.
  * A tier is fixed for a view's life (the sea compiles it), so a change takes
  * effect at the next open.
  *

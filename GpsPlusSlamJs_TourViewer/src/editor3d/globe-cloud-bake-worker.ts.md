@@ -8,4 +8,4 @@ Invariants: it bakes once and is ended by the page. Why a worker: the bakes take
 
 Example: `new Worker(new URL("./globe-cloud-bake-worker.ts", import.meta.url), { type: "module" })`.
 
-Tests: the core's `globe-cloud-bake-worker-core.test.ts`; the shell is covered by the editor's globe e2e, which needs the bundled worker to reach the new clouds.
+Tests: the core's `globe-cloud-bake-worker-core.test.ts`; the shell is started by `editor3d-globe-near-clouds.spec.js`, which opens the editor with `clouds=new` (the near clouds are experimental; the default clouds bake nothing); it reads that the near clouds are there, not that their bake finished.

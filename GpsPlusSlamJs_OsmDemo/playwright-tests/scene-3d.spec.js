@@ -2722,6 +2722,17 @@ test.describe("the light dialog", () => {
       expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
       expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
       expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
+      // WHY: the dialog sits inside the 3D view's container, and its clicks
+      // (the back arrow on every `setting`, "Check heat grid") used to bubble
+      // into a scene pick that ordered the NPC to the ground under the
+      // button. Measured in a trace: the back arrow's click set
+      // `data-routing`, a route was drawn 0.2 s later, and the walk kept the
+      // frame moving under `settledChroma` past its 5 s. No canvas has been
+      // clicked in this test, so no order may have been given:
+      // `data-routing` is set on every order, a planned one or not, while
+      // `data-route` only appears once a route was found.
+      await expect(page.locator("#scene")).not.toHaveAttribute("data-routing");
+      await expect(page.locator("#scene")).not.toHaveAttribute("data-route");
     });
 
     await test.step("opens from its button and the l key, closes with Escape, and brightens noon with the gain, the sky light and the EV, kept in the URL", async () => {
@@ -2908,8 +2919,7 @@ test.describe("the ambient occlusion", () => {
   // rest and untouched by a pointer; every step puts back what it changed
   // that a later step reads (the AO wish, the ground mode, the layers); the
   // reported heat-margin reading runs last before the scheme link's boot,
-  // because it clicks inside the dialog, which may send the NPC agent
-  // walking.
+  // because it toggles the cells and measures inside the dialog.
   test("at the June noon: the AO only darkens, is bounded, switches off exactly and yields to the GPU ground; the land-use tint greens the park; a scheme switch repaints and its link boots it", async ({
     page,
   }) => {
@@ -2920,10 +2930,11 @@ test.describe("the ambient occlusion", () => {
     const dialog = page.locator("#light-dialog");
     const box = page.locator("#light-ao");
     /** Sets the AO box with the dialog open, then closes the dialog. */
-    // NO POINTER EVENTS: a click on a control over the canvas also reaches
-    // the scene and sends the NPC agent walking, and its route would then
-    // differ between the frames compared. The l key opens the dialog, Escape
-    // closes it, and the box is changed as its change event.
+    // NO POINTER EVENTS: the frames compared must come from a scene nothing
+    // has touched. Only the canvas picks now (`pick-gesture.ts`), but the
+    // keyboard keeps these steps independent of that guard. The l key opens
+    // the dialog, Escape closes it, and the box is changed as its change
+    // event.
     const setAo = async (on) => {
       if (await dialog.isHidden()) await page.locator("body").press("l");
       await expect(dialog).toBeVisible();
@@ -3106,8 +3117,8 @@ test.describe("the ambient occlusion", () => {
     // REPORTED, NOT GATED: the heat grid's margin with the AO on, beside the
     // same reading with it off. The heat-ramp gates run with the AO off, so
     // this line is where a reader sees what the AO does to the one number the
-    // owner tunes the light by. Late, because it clicks inside the dialog,
-    // which may send the NPC walking.
+    // owner tunes the light by. Late, because it switches the cells on, which
+    // the steps above compare without.
     await test.step("reports the heat grid's margin with the AO on and off", async () => {
       await enableCellLayer(page);
       const heatMargin = async (on) => {
