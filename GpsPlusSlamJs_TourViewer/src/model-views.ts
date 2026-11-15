@@ -20,6 +20,8 @@
  *   (`model-gestures.ts`); `resetToy` puts it back.
  * - `animation` with `autoplay`: the named clip loops in every view but
  *   `hotspots`. A name the file lacks plays nothing.
+ * - Every view stands on a soft contact shadow at the model's feet,
+ *   lighter under the ghost.
  *
  * Disposing restores the model's own materials and removes what the view
  * added, so the caller frees the model as usual (`disposeObject3D`).
@@ -120,6 +122,30 @@ const TOY_REACH_M = 10;
 const TOY_REACH_SIZES = 3;
 /** How fast the facing cut turns after the visitor (per second). */
 const CUT_TURN_RATE = 3;
+
+/** The contact shadow's opacity under a solid model, and under the ghost,
+ *  whose feet already fade into the ground: the chosen page's 0.85 and
+ *  0.35. A station's fade multiplies them (`content-fade.ts`). */
+export const MODEL_SHADOW_OPACITY = 0.85;
+export const MODEL_SHADOW_GHOST_OPACITY = 0.35;
+/** The shadow spans its footprint's side times this. With the floor below
+ *  it matches the page's 3.3 m x 2.5 m blob under its 2.7 m bell frame
+ *  (3.4 m x 2.0 m here); swept 1.1-1.6 in the tests. */
+export const MODEL_SHADOW_SPREAD = 1.25;
+/** A side's span never counts as less than this share of the model's
+ *  largest side, so a thin post or a tower still stands on a blob. */
+export const MODEL_SHADOW_FLOOR_SHARE = 0.6;
+/** How far above the model's lowest point the shadow lies (m in the
+ *  world): above the feet, so it never hides inside the ground. */
+const MODEL_SHADOW_LIFT_M = 0.012;
+/** The shadow texture's side (px) and its radial stops (distance from
+ *  the middle as a share of the radius, alpha), the page's gradient. */
+const SHADOW_TEXTURE_PX = 64;
+const SHADOW_STOPS: readonly (readonly [number, number])[] = [
+  [0, 0.55],
+  [0.55, 0.28],
+  [1, 0],
+];
 
 // Through three's own vertex chunks, in the order its meshbasic shader
 // runs them, so a rigged, morphed or instanced mesh moves under its glass
@@ -305,6 +331,58 @@ function ownBox(model: THREE.Object3D): THREE.Box3 {
   return box;
 }
 
+/**
+ * The contact shadow's span along one side: the footprint's `span`, held
+ * at `MODEL_SHADOW_FLOOR_SHARE` of the model's `largest` side, times
+ * `spread` (all in one unit). Zero for a span or size that is not finite
+ * and > 0.
+ */
+export function contactShadowSpan(
+  span: number,
+  largest: number,
+  spread: number = MODEL_SHADOW_SPREAD,
+): number {
+  if (!(Number.isFinite(span) && Number.isFinite(largest) && largest > 0)) {
+    return 0;
+  }
+  return (
+    Math.max(Math.max(0, span), MODEL_SHADOW_FLOOR_SHARE * largest) * spread
+  );
+}
+
+/** The alpha of the shadow's radial fade at `r` (0 middle, 1 rim). */
+function shadowAlpha(r: number): number {
+  for (let i = 1; i < SHADOW_STOPS.length; i++) {
+    const [r1, a1] = SHADOW_STOPS[i]!;
+    if (r <= r1) {
+      const [r0, a0] = SHADOW_STOPS[i - 1]!;
+      return a0 + ((a1 - a0) * (r - r0)) / (r1 - r0);
+    }
+  }
+  return 0;
+}
+
+/** The shadow's black radial fade, made once and shared by every model's
+ *  shadow (each has its own material; the texture is never freed). Data
+ *  rather than a canvas, so it needs no document. */
+let shadowTexture: THREE.DataTexture | null = null;
+function contactShadowTexture(): THREE.DataTexture {
+  if (shadowTexture !== null) return shadowTexture;
+  const n = SHADOW_TEXTURE_PX;
+  const data = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      const r = Math.hypot(x + 0.5 - n / 2, y + 0.5 - n / 2) / (n / 2);
+      data[(y * n + x) * 4 + 3] = Math.round(255 * shadowAlpha(r));
+    }
+  }
+  shadowTexture = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
+  shadowTexture.magFilter = THREE.LinearFilter;
+  shadowTexture.minFilter = THREE.LinearFilter;
+  shadowTexture.needsUpdate = true;
+  return shadowTexture;
+}
+
 /** A view the format does not know is drawn as `placed` (defensive: the
  *  reader never hands one over). */
 function viewOf(block: TourModelBlock): TourModelWorldView {
@@ -430,6 +508,41 @@ export function mountModelView(
       if (part.geometry !== undefined) owned.push(part.geometry);
       if (part.material !== undefined) owned.push(...materialsOf(part));
     });
+  }
+
+  // --- the contact shadow, on the model (so it moves, turns and scales
+  // with it, a toy too), flat at its lowest point at rest
+  if (!restBox.isEmpty()) {
+    const size = restBox.getSize(new THREE.Vector3());
+    const material = new THREE.MeshBasicMaterial({
+      name: "model-contact-shadow",
+      map: contactShadowTexture(),
+      color: 0x000000,
+      transparent: true,
+      opacity:
+        view === "ghost" ? MODEL_SHADOW_GHOST_OPACITY : MODEL_SHADOW_OPACITY,
+      depthWrite: false,
+    });
+    const geometry = new THREE.PlaneGeometry(1, 1);
+    owned.push(material, geometry);
+    const shadow = new THREE.Mesh(geometry, material);
+    shadow.name = "model-contact-shadow";
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.scale.set(
+      contactShadowSpan(size.x, native),
+      contactShadowSpan(size.z, native),
+      1,
+    );
+    shadow.position.set(
+      centre.x,
+      restBox.min.y + MODEL_SHADOW_LIFT_M / baseScale,
+      centre.z,
+    );
+    // Drawn before the model's glass, and never a tap or a note's cover.
+    shadow.renderOrder = -1;
+    shadow.raycast = () => undefined;
+    model.add(shadow);
+    restores.push(() => shadow.removeFromParent());
   }
 
   // --- toy

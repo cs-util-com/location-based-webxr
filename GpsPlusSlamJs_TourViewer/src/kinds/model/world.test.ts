@@ -268,6 +268,11 @@ describe("modelWorld", () => {
             envOf(() => Promise.resolve(mesh)),
           );
           await part!.ready;
+          // The model's own size: its contact shadow lies on the ground
+          // wider than the model by design (`model-views.ts`).
+          part!.object
+            .getObjectByName("model-contact-shadow")
+            ?.removeFromParent();
           part!.object.updateMatrixWorld(true);
           const box = new Box3().setFromObject(part!.object);
           const side = box.getSize(new Vector3());
