@@ -5,7 +5,7 @@
 ## Public API
 
 - `optimizeModel(payload, settings, control, device)`:
-  - `{ type: "done", blob, extension: "glb" }`, the blob typed `model/gltf-binary`;
+  - `{ type: "done", blob, extension: "glb", model }`, the blob typed `model/gltf-binary`, `model` the `ModelReport` `{ textures, quantize }` of the passes (`TextureReport`, `QuantizeReport`);
   - `{ type: "kept", reason: "Kept as it is: ..." }` for a valid model this code leaves alone (an unknown extension, several buffers);
   - throws "it could not be read as a 3D model: ..." for a file the tour would refuse, "no 3D model was handed over" for a payload that is no `Blob`, "the smaller model would not open in a tour: ..." if the result failed the tour's check, and an `AbortError` once stopped.
 
@@ -18,5 +18,5 @@
 
 ## Tests
 
-- `model-step.test.ts`: the scanned rock comes back smaller than 0.9 of its bytes, accepted by the tour, drawn within the error budget; an unknown extension kept with words; a file that is no model and a payload that is no file fail; a stop.
+- `model-step.test.ts`: the scanned rock comes back smaller than 0.9 of its bytes, accepted by the tour, drawn within the error budget; the done answer carries both passes' reports; an unknown extension kept with words; a file that is no model and a payload that is no file fail; a stop.
 - `playwright-tests/editor-asset-optimizers.spec.js`: the shipped row in a real Worker on the three scanned models, judged by three.js and by drawings from the same camera.

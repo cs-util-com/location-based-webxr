@@ -10,6 +10,7 @@
 
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import type { ModelReport } from "./model-step.js";
 import type { OptimizerSettings } from "./optimizer-settings.js";
 
 /** page to worker: optimize `payload` (a file's bytes, or what the page
@@ -66,7 +67,8 @@ interface ProgressMessage {
   readonly fraction: number;
 }
 
-/** The smaller file, its extension and an image's new size. */
+/** The smaller file, its extension, an image's new size, and what a
+ *  model's passes did. */
 interface DoneMessage {
   readonly type: "done";
   readonly job: number;
@@ -74,6 +76,7 @@ interface DoneMessage {
   readonly extension: string;
   readonly width?: number;
   readonly height?: number;
+  readonly model?: ModelReport;
 }
 
 /** The original stays, for `reason` (plain words). */

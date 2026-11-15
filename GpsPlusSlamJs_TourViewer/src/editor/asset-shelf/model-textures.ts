@@ -10,10 +10,15 @@
  *   PNG when it came as PNG (a lossless map stays lossless);
  * - an image no texture names, one of another type (WebP), one kept in a
  *   `data:` URI, or one that cannot be decoded: left as it is.
+ * An image used both ways takes the data rule (the stricter use wins).
  * A texture whose result is not smaller and not resized keeps its bytes.
+ * The report's largest side counts every texture in the binary chunk,
+ * one left as it is by its file header (`imageInfo`).
  *
  * @see model-textures.ts.md
  */
+
+import { imageInfo } from "gps-plus-slam-app-framework/utils/image-header";
 
 import {
   appendView,
@@ -48,7 +53,8 @@ export interface TextureReport {
   /** Image bytes before and after, over all images. */
   readonly bytesBefore: number;
   readonly bytesAfter: number;
-  /** The largest texture side after the pass. */
+  /** The largest texture side after the pass, over every image a texture
+   *  uses from the binary chunk (one left as it is read by its header). */
   readonly largestSide: number;
 }
 
@@ -104,7 +110,10 @@ export function imageUses(json: GltfObject): Map<number, ImageUse> {
 const JPEG = "image/jpeg";
 const PNG = "image/png";
 
-/** The format `use` of a `mime` source is written as. */
+/** The format `use` of a `mime` source is written as: alpha first (PNG,
+ *  so it survives), then data (a PNG stays lossless, else JPEG at the data
+ *  quality), then colour (JPEG at the colour quality). An image used as
+ *  colour and as data takes the data rule. */
 export function textureFormat(
   use: ImageUse,
   mime: string,
@@ -138,6 +147,20 @@ interface Rewrite {
   readonly bytes: Uint8Array;
   readonly type: string;
   readonly side: number;
+}
+
+/** The side of an image a texture uses that the pass leaves as it is (of
+ *  another type, or not decodable), from its header; 0 when none reads. */
+function keptSide(
+  parts: GlbParts,
+  image: GltfObject | null,
+  use: ImageUse | undefined,
+): number {
+  const view = indexOf(image?.["bufferView"]);
+  const bytes = view === null ? undefined : parts.views[view];
+  if (use === undefined || bytes === undefined) return 0;
+  const info = imageInfo(bytes);
+  return info === null ? 0 : Math.max(info.width, info.height);
 }
 
 /** One image through the device, or null when it stays as it is. */
@@ -205,10 +228,16 @@ export async function shrinkTextures<P extends DecodedPicture>(
     if (control.signal.aborted) throw stoppedError();
     const image = objectOf(images[i]);
     const source = candidate(parts, image, uses.get(i));
-    if (image === null || source === null) continue;
+    if (image === null || source === null) {
+      largestSide = Math.max(largestSide, keptSide(parts, image, uses.get(i)));
+      continue;
+    }
     bytesBefore += source.bytes.length;
     const result = await rewrite(source, uses.get(i)!, settings, device);
-    largestSide = Math.max(largestSide, result?.side ?? 0);
+    largestSide = Math.max(
+      largestSide,
+      result?.side ?? keptSide(parts, image, uses.get(i)),
+    );
     if (result !== null && "bytes" in result) {
       image["bufferView"] = appendView(parts, result.bytes);
       image["mimeType"] = result.type;

@@ -224,4 +224,50 @@ describe("the optimizer's Worker client", () => {
     await expect(image).resolves.toMatchObject({ width: 1600, height: 1200 });
     await expect(audio).resolves.toMatchObject({ extension: "opus" });
   });
+
+  // Why: a model's report is what the shelf shows about its passes; it is
+  // advisory, so one that does not read is dropped and the checked file
+  // still lands (a run never fails on words about it).
+  it("carries a model's report through, and drops one that does not read", async () => {
+    const w = fakeWorker();
+    const host = createOptimizerHost(() => w);
+    const good = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+    const bad = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+    const [a, b] = w.posted.map((m) => m.job);
+    const blob = new Blob(["s"]);
+    const model = {
+      textures: {
+        changed: 1,
+        kept: 0,
+        bytesBefore: 9,
+        bytesAfter: 4,
+        largestSide: 8,
+      },
+      quantize: {
+        positions: 1,
+        normals: 0,
+        tangents: 0,
+        texcoords: 0,
+        indices: 1,
+        positionError: 0,
+        normalErrorDeg: 0,
+        texcoordError: 0,
+      },
+    };
+    w.answer({ type: "done", job: a!, blob, extension: "glb", model });
+    w.onmessage?.({
+      data: { type: "done", job: b, blob, extension: "glb", model: 3 },
+    } as MessageEvent);
+    await expect(good).resolves.toEqual({
+      kind: "optimized",
+      blob,
+      extension: "glb",
+      model,
+    });
+    await expect(bad).resolves.toEqual({
+      kind: "optimized",
+      blob,
+      extension: "glb",
+    });
+  });
 });

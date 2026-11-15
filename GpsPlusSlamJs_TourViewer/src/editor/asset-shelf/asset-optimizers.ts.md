@@ -4,7 +4,7 @@
 
 ## Public API
 
-- `OptimizeOutcome`: `{ kind: "optimized", blob, extension, width?, height? }` or `{ kind: "kept", reason }`.
+- `OptimizeOutcome`: `{ kind: "optimized", blob, extension, width?, height?, model? }` (`model` what a model's passes did) or `{ kind: "kept", reason }`.
 - `OptimizeControl`: `{ signal, progress(fraction) }`; `OptimizeContext` adds `settings` and `host`.
 - `OptimizerHost`: `run(kind, payload, settings, control, transfer?)` and `close()`, implemented by `optimizer-client.ts`. `run` rejects with `OptimizerCrashed` when the Worker died and with an `AbortError` once aborted.
 - `AssetOptimizer`: `optimize(source, ctx)`; a throw is a failure the shelf shows with Retry.

@@ -19,6 +19,7 @@ import {
   type OptimizeOutcome,
   type OptimizerHost,
 } from "./asset-optimizers.js";
+import type { ModelReport } from "./model-step.js";
 import type {
   OptimizerInbound,
   OptimizerOutbound,
@@ -61,6 +62,42 @@ interface Malformed {
 
 function isPixelCount(n: unknown): boolean {
   return n === undefined || (Number.isSafeInteger(n) && (n as number) > 0);
+}
+
+const TEXTURE_FIELDS = [
+  "changed",
+  "kept",
+  "bytesBefore",
+  "bytesAfter",
+  "largestSide",
+] as const;
+const QUANTIZE_FIELDS = [
+  "positions",
+  "normals",
+  "tangents",
+  "texcoords",
+  "indices",
+  "positionError",
+  "normalErrorDeg",
+  "texcoordError",
+] as const;
+
+/** Whether `value` is an object whose `fields` are all finite numbers. */
+function numbersAt(value: unknown, fields: readonly string[]): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const o = value as Partial<Record<string, unknown>>;
+  return fields.every((f) => Number.isFinite(o[f]));
+}
+
+/** `value` as a model's report, or undefined when it does not read: the
+ *  report is advisory, so the checked file lands without it. */
+function modelReportOf(value: unknown): ModelReport | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const r = value as Partial<Record<string, unknown>>;
+  return numbersAt(r.textures, TEXTURE_FIELDS) &&
+    numbersAt(r.quantize, QUANTIZE_FIELDS)
+    ? (value as ModelReport)
+    : undefined;
 }
 
 /** `data` as an answer of the protocol for a run of `kindOf(job)`; one of
@@ -140,12 +177,14 @@ export function createOptimizerHost(
     } else if (answer.type === "kept") {
       run.resolve({ kind: "kept", reason: answer.reason });
     } else {
+      const model = modelReportOf(answer.model);
       run.resolve({
         kind: "optimized",
         blob: answer.blob,
         extension: answer.extension,
         ...(answer.width === undefined ? {} : { width: answer.width }),
         ...(answer.height === undefined ? {} : { height: answer.height }),
+        ...(model === undefined ? {} : { model }),
       });
     }
   }

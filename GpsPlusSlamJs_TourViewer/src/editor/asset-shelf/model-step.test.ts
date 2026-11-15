@@ -55,6 +55,33 @@ describe("optimizeModel", () => {
     expect(run.seen.at(-1)).toBe(1);
   });
 
+  // Why: the shelf shows what the optimizer did to a model; the passes'
+  // reports were once computed and thrown away, so nothing could show them.
+  it("answers what its passes did: the textures and the stored geometry", async () => {
+    const answer = await optimizeModel(
+      blobOf(
+        await buildModel({
+          meshes: [boxSpec("a")],
+          baseColor: "png",
+          textureSize: [2048, 512],
+        }),
+      ),
+      OPTIMIZER_SETTINGS,
+      control(),
+      fakePictureDevice().device,
+    );
+    if (answer.type !== "done") throw new Error(answer.type);
+    expect(answer.model?.textures).toMatchObject({
+      changed: 1,
+      kept: 0,
+      largestSide: 1024,
+    });
+    expect(answer.model?.quantize.positions).toBeGreaterThan(0);
+    expect(answer.model?.quantize.positionError).toBeLessThanOrEqual(
+      OPTIMIZER_SETTINGS.model.maxPositionError,
+    );
+  });
+
   it("keeps a model with an extension it does not know, and says why", async () => {
     const read = readGlb(await buildModel({ meshes: [boxSpec("a")] }));
     if (!read.ok) throw new Error(read.reason);

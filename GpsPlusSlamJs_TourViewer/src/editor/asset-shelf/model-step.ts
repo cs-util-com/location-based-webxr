@@ -15,8 +15,8 @@
 import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
 
 import { readGlb, writeGlb } from "./glb-file.js";
-import { quantizeModel } from "./model-quantize.js";
-import { shrinkTextures } from "./model-textures.js";
+import { type QuantizeReport, quantizeModel } from "./model-quantize.js";
+import { shrinkTextures, type TextureReport } from "./model-textures.js";
 import {
   stoppedError,
   type WorkerStepAnswer,
@@ -24,6 +24,12 @@ import {
 } from "./optimizer-protocol.js";
 import type { OptimizerSettings } from "./optimizer-settings.js";
 import type { DecodedPicture, PictureDevice } from "./picture-step.js";
+
+/** What the model step's passes did, carried on its done answer. */
+export interface ModelReport {
+  readonly textures: TextureReport;
+  readonly quantize: QuantizeReport;
+}
 
 /** The textures' share of a run's progress (quantizing is quick). */
 const TEXTURE_SHARE = 0.85;
@@ -44,12 +50,18 @@ export async function optimizeModel<P extends DecodedPicture>(
   if (!read.ok)
     throw new Error(`it could not be read as a 3D model: ${read.reason}`);
   const { parts } = read;
-  await shrinkTextures(parts, settings.model, device, control, {
-    from: 0,
-    to: TEXTURE_SHARE,
-  });
+  const textures = await shrinkTextures(
+    parts,
+    settings.model,
+    device,
+    control,
+    {
+      from: 0,
+      to: TEXTURE_SHARE,
+    },
+  );
   if (control.signal.aborted) throw stoppedError();
-  quantizeModel(parts, settings.model);
+  const quantize = quantizeModel(parts, settings.model);
   const bytes = writeGlb(parts);
   const check = checkGlbInert(bytes);
   if (!check.ok) {
@@ -62,5 +74,6 @@ export async function optimizeModel<P extends DecodedPicture>(
     type: "done",
     blob: new Blob([bytes], { type: "model/gltf-binary" }),
     extension: "glb",
+    model: { textures, quantize },
   };
 }
