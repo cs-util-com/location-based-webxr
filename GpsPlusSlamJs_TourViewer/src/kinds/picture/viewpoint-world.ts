@@ -36,6 +36,7 @@ import {
   takeOverThenNow,
   type ThenNowState,
 } from "./then-now-fade.js";
+import { thenNowFeatherMap } from "./then-now-feather.js";
 import { buildThenNowSlider } from "./then-now-slider.js";
 import {
   FINDER_FADE,
@@ -267,7 +268,9 @@ export function viewpointWorld(
         },
       };
     }
-    // Then and now.
+    // Then and now: the old picture melts into today at its edges.
+    plane.mesh.material.alphaMap = thenNowFeatherMap();
+    plane.mesh.material.needsUpdate = true;
     return {
       root,
       tappable: [plane.holder],

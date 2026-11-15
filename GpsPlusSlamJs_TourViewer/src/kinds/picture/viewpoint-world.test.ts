@@ -20,6 +20,7 @@ import {
   Texture,
   Vector3,
   type Material,
+  type MeshBasicMaterial,
   type Mesh,
   type Object3D,
   type ShaderMaterial,
@@ -34,6 +35,7 @@ import {
 } from "../../world-part.js";
 import { drawnAspect } from "./picture-decode.js";
 import { THEN_NOW_TIMING } from "./then-now-fade.js";
+import { thenNowFeatherMap } from "./then-now-feather.js";
 import { EDITOR_PICTURE_ALPHA, viewpointWorld } from "./viewpoint-world.js";
 
 /** Looking east (+Z in north-up-east) from 1.6 m over the station's anchor. */
@@ -294,6 +296,22 @@ describe("viewpointWorld", () => {
     tick(part, station, 10, [0, 1.6, -8]);
     expect(host.querySelector("input[type=range]")).toBeNull();
     part.dispose();
+  });
+
+  it("softens only then and now's picture at its edges", async () => {
+    // Why: the chosen page's then-and-now melts into today at its border;
+    // sharpen and the viewer show the whole picture edge to edge.
+    for (const view of ["thenNow", "sharpen", "viewer"] as const) {
+      const { part } = await placed(picture(view), envOf("play"));
+      const plane = named(part.object, "picture-viewpoint-plane");
+      const material = plane.material as MeshBasicMaterial;
+      expect(material.alphaMap, view).toBe(
+        view === "thenNow" ? thenNowFeatherMap() : null,
+      );
+      part.dispose();
+      // The shared map outlives every part.
+      expect(thenNowFeatherMap().image.data).toBeDefined();
+    }
   });
 
   it("points the window's shader at the picture's plane in the world", async () => {

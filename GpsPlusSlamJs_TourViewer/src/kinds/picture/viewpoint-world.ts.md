@@ -25,7 +25,10 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
   no blur).
 - `thenNow`: the plane's opacity is `THEN_NOW_FADE` times the blend of
   `then-now-fade.ts`; lined up, the visitor gets the slider on the page's
-  screen (`then-now-slider.ts`), and it closes when they leave.
+  screen (`then-now-slider.ts`), and it closes when they leave. Its
+  plane carries the shared soft-edge alpha map (`then-now-feather.ts`),
+  which the other views' planes do not; the part's disposal frees it
+  with the look, and three uploads it again for the next part.
 - `viewer`: the viewer stand fades out as the picture fades in
   (`VIEWER_FADE`); the editor shows the stand and a half picture.
 - `finder`: corner marks; the crop's fill fades in by `FINDER_FADE` and the
@@ -56,4 +59,5 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 `viewpoint-world.test.ts` (jsdom): looks per view, the anchor property over
 random poses and sizes, sharpen by place and facing, the editor's half
 picture, the viewer giving way, the slider's arrival, fade-in, take-over and
-departure, the window's shader plane, the sheet, disposal.
+departure, the soft edge on then and now's plane only, the window's
+shader plane, the sheet, disposal.
