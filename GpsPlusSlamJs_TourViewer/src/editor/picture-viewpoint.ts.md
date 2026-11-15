@@ -23,7 +23,11 @@ same reading as `kinds/picture/viewpoint-fade.ts`'s `viewpointForward`).
 - `mintViewpoint(pose)`: a first viewpoint for a picture at `pose` (station
   frame): `VIEWPOINT_STAND_BACK_M` in front of its front (local +Z) on the
   ground, at eye height, facing it level, lens 56, depth the way back, so
-  the picture seen from it hangs where it stood.
+  the picture seen from it hangs where it stood. A place the stand-back
+  would take past `TOUR_ITEM_MAX_OFFSET_M` on an axis is clamped to it,
+  so the switch to a viewpoint view, which saves the mint as it is, never
+  writes a tour the reader refuses (there the depth is no longer exactly
+  the way back).
 - `viewpointWithField(vp, field, value)`: `vp` with one field typed, or
   null for an unknown field or a value that is no finite number.
 
@@ -52,7 +56,7 @@ viewpointWithField(vp, "vp-lens", 40); // the same with a 40 degree lens
 ## Tests
 
 `picture-viewpoint.test.ts` (round trip of facing and pitch as a property,
-agreement with the viewer's `viewpointForward`, the mint as a property,
+agreement with the viewer's `viewpointForward`, the mint as a property, the mint within the offset bound (from 9998 m, and swept up to the bound),
 the flat and NaN cases, every field, the bounds, the null cases, and as a
 property that any number typed into any field writes a viewpoint the
 format's reader keeps).

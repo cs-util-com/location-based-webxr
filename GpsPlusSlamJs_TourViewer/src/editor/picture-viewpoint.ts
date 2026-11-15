@@ -125,7 +125,9 @@ export function viewpointFacts(vp: TourPictureViewpoint): ViewpointFacts {
  * frame): `VIEWPOINT_STAND_BACK_M` in front of it on the ground, at eye
  * height, facing it level, its depth the way back, so the picture seen
  * from it hangs where the picture stood. A picture lying flat (its front
- * up or down) is stood in front of from the south, facing north.
+ * up or down) is stood in front of from the south, facing north. A
+ * place the stand-back would take past the format's offset bound stands
+ * at the bound instead (the reader refuses a tour holding one past it).
  */
 export function mintViewpoint(pose: StationPose): TourPictureViewpoint {
   const [px = 0, , pz = 0] = pose.position;
@@ -143,9 +145,9 @@ export function mintViewpoint(pose: StationPose): TourPictureViewpoint {
   }
   const back = VIEWPOINT_STAND_BACK_M;
   const at: [number, number, number] = [
-    (Number.isFinite(px) ? px : 0) + north * back,
+    offset((Number.isFinite(px) ? px : 0) + north * back),
     VIEWPOINT_EYE_M,
-    (Number.isFinite(pz) ? pz : 0) + east * back,
+    offset((Number.isFinite(pz) ? pz : 0) + east * back),
   ];
   const facingDeg = wrap(Math.atan2(-east, -north) / DEG);
   return {

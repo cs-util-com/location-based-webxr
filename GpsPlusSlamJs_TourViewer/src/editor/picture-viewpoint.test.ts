@@ -129,6 +129,39 @@ describe("mintViewpoint", () => {
     const bad = mintViewpoint({ position: [NaN, 0, Infinity], rotation: [] });
     expect(bad.position.every(Number.isFinite)).toBe(true);
   });
+
+  // Why: the switch to a viewpoint view saves the minted viewpoint as it
+  // is, and the reader refuses a tour holding a place past its offset
+  // bound on any axis. A picture near the bound faced outward must not
+  // mint its viewpoint past it: it stands at the bound instead. Swept
+  // over every facing and places up to the bound on both axes, the
+  // stand-back (6 m) being what can cross it.
+  it("never stands a viewpoint past the format's offset bound", () => {
+    const edge = TOUR_ITEM_MAX_OFFSET_M - 2;
+    // Facing north at 9998 m north: 6 m back would be 10 004 m.
+    const out = mintViewpoint({ position: [edge, 0, 0], rotation: frontTo(0) });
+    expect(out.position[0]).toBe(TOUR_ITEM_MAX_OFFSET_M);
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 359.9, noNaN: true }),
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        fc.double({ min: -1, max: 1, noNaN: true }),
+        (front, n, e) => {
+          const vp = mintViewpoint({
+            position: [
+              n * TOUR_ITEM_MAX_OFFSET_M,
+              0,
+              e * TOUR_ITEM_MAX_OFFSET_M,
+            ],
+            rotation: frontTo(front),
+          });
+          for (const v of vp.position) {
+            expect(Math.abs(v)).toBeLessThanOrEqual(TOUR_ITEM_MAX_OFFSET_M);
+          }
+        },
+      ),
+    );
+  });
 });
 
 describe("viewpointWithField", () => {
