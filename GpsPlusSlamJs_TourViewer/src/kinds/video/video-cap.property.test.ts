@@ -31,16 +31,17 @@ describe("the play cap, over any sequence", () => {
             const before = state;
             state = step.state;
             expect(state.playing.length).toBeLessThanOrEqual(limit);
-            if (state.audible !== null) {
-              expect(state.playing).toContain(state.audible);
-            }
+            // The one heard, if any, plays.
+            expect(
+              state.audible === null || state.playing.includes(state.audible),
+            ).toBe(true);
             // Playing and waiting are apart, and each lists a video once.
             const all = [...state.playing, ...state.waiting];
             expect(new Set(all).size).toBe(all.length);
             // Nobody waits while a place is free.
-            if (state.waiting.length > 0) {
-              expect(state.playing.length).toBe(limit);
-            }
+            expect(
+              state.waiting.length === 0 || state.playing.length === limit,
+            ).toBe(true);
             // A video granted now did not play before, and plays now.
             for (const id of step.granted) {
               expect(before.playing).not.toContain(id);
