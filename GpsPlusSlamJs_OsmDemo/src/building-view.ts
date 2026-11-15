@@ -89,7 +89,11 @@ import {
   stepFollower,
   type Follower,
 } from "./agent-follower.js";
-import { isPickGesture, type PointerOrigin } from "./pick-gesture.js";
+import {
+  isPickGesture,
+  pickOrigin,
+  type PointerOrigin,
+} from "./pick-gesture.js";
 import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
 import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
 import type { SunAngles } from "./sun-position.js";
@@ -934,17 +938,21 @@ export class BuildingView {
     // the "what did you click" decision one step later in the chain. Note the
     // ORIGIN IS CLEARED WHATEVER THE ANSWER, so a refused right-click cannot
     // leave a stale press for the next release to measure against.
+    //
+    // THE CANVAS, NOT THE CONTAINER, is what may be picked: the container also
+    // holds DOM panels (the light dialog), whose clicks bubble up to here.
     let downAt: PointerOrigin | undefined;
+    const surface = this.renderer.domElement;
     // Held, like every other listener here, so `dispose()` can remove it. An
     // anonymous one outlives disposal and keeps the view reachable.
     this.onPointerStart = (event: PointerEvent): void => {
-      downAt = { x: event.clientX, y: event.clientY };
+      downAt = pickOrigin(event, surface);
     };
     this.container.addEventListener("pointerdown", this.onPointerStart);
     this.onPointerDown = (event: PointerEvent): void => {
       const from = downAt;
       downAt = undefined;
-      if (!isPickGesture(from, event)) return;
+      if (!isPickGesture(from, event, surface)) return;
       const picked = this.pick(event);
       if (picked !== undefined) options.onPick?.(picked);
     };

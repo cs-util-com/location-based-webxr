@@ -8,8 +8,12 @@
  * raycast and the listener stay in the view, the judgement lives in a pure
  * module the device layer thinly wraps.
  *
- * TWO QUESTIONS, ONE ANSWER, and they arrived a round apart:
+ * THREE QUESTIONS, ONE ANSWER, and they arrived one at a time:
  *
+ * - **Did it land on the scene itself?** The view listens on its container,
+ *   and the light dialog is a child of that container, so a click on one of
+ *   its buttons bubbled into a pick at the button's point and ordered the NPC
+ *   to whatever ground lay beneath it. Only the drawing surface picks.
  * - **Was the pointer still?** MapControls consumes drags, so a release at the
  *   end of a 200 px pan must not select whatever ended up under the cursor.
  * - **Was it the primary button?** The ninth session found left-click and
@@ -56,19 +60,35 @@ export interface PointerOrigin {
  * The `PointerEvent` fields the decision reads.
  *
  * Deliberately not `PointerEvent` itself: this module must be constructible in a
- * test without a DOM, and these three fields are the whole of what it looks at.
+ * test without a DOM, and these four fields are the whole of what it looks at.
  */
 export interface PickPointer {
   readonly button: number;
   readonly clientX: number;
   readonly clientY: number;
+  /** The element the event was dispatched to; compared by identity only. */
+  readonly target: unknown;
+}
+
+/**
+ * Where a `pointerdown` counts as the start of a pick: on `surface` itself,
+ * or nowhere. A press on a control over the scene records no origin, so the
+ * release that follows cannot pick either.
+ */
+export function pickOrigin(
+  down: PickPointer,
+  surface: unknown,
+): PointerOrigin | undefined {
+  if (down.target !== surface) return undefined;
+  return { x: down.clientX, y: down.clientY };
 }
 
 /**
  * Whether a `pointerup` should produce a pick.
  *
  * `down` is `undefined` when no `pointerdown` was recorded — a pointer that
- * entered the canvas already pressed, or a release after the view re-armed.
+ * entered the canvas already pressed, a release after the view re-armed, or a
+ * press that began on something other than the surface.
  * That is refused rather than measured against a guessed origin, which would
  * make a drag starting off-canvas read as a tap.
  *
@@ -79,8 +99,10 @@ export interface PickPointer {
 export function isPickGesture(
   down: PointerOrigin | undefined,
   up: PickPointer,
+  surface: unknown,
 ): boolean {
   if (up.button !== PRIMARY_BUTTON) return false;
+  if (up.target !== surface) return false;
   if (down === undefined) return false;
   const moved = Math.abs(up.clientX - down.x) + Math.abs(up.clientY - down.y);
   return moved <= PICK_MOVE_TOLERANCE_PX;
