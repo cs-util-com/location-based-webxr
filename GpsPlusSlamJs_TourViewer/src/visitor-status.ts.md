@@ -94,7 +94,7 @@ visitor's `?debug=1`.
 - **The station HUD has its own line** (`#station-line`); this sentence
   does not repeat it.
 - **Waiting for tracking and tracking lost are the framework's coaching
-  hints** (DEC-H3: shared with the other apps).
+  hints** (shared with the other apps).
 - **Unsupported is one sentence**, not the plan's two cases: the page
   cannot tell "not Chrome on Android" from "Android without AR support"
   without a probe it does not have (deviation, plan U1).

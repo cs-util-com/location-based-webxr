@@ -302,7 +302,7 @@ function placementSentence(input: ArStatusInput): VisitorStatus {
   if (placement.kind === "waiting-ready") {
     return {
       state: "warming-up",
-      // The framework's coaching copy (DEC-H3: shared with the other apps).
+      // The framework's coaching copy (shared with the other apps).
       text:
         input.readiness?.hint ??
         "Move the phone slowly so it can see the surroundings.",
@@ -349,7 +349,7 @@ function runningSentence(input: ArStatusInput): VisitorStatus {
     return { state: "nothing", text: CODES_ONLY_NOTHING[input.gate.reason] };
   }
   if (isPlaced(input)) {
-    // Tracking lost after placing: the framework's hint (DEC-H3), since
+    // Tracking lost after placing: the framework's hint, since
     // the placed tour drifts until it recovers (U1 review #7).
     if (input.readiness?.phase === "ar-lost") {
       return { state: "tracking-lost", text: input.readiness.hint };

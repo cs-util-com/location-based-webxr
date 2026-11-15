@@ -1,7 +1,7 @@
 /**
  * The summary's map (authoring plan 2026-09-28-0953 §3.3, milestone M3b):
  * the model of `summary-model.ts` drawn with Leaflet, through the
- * framework's summary map shell (moved out of the Recorder, DEC-H3).
+ * framework's summary map shell (moved out of the Recorder).
  *
  * LOADED ONLY BY A DYNAMIC IMPORT (`summary-panel.ts`): this module is the
  * one place the Tour Viewer imports Leaflet, its CSS and the shell, so a

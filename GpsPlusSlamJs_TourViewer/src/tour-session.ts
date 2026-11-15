@@ -773,9 +773,9 @@ async function buildSession(
         // The framework's parse over THIS session's entry list - the one
         // tier 1 checked. A second read of the directory from the live
         // source could return another list (K1 milestone review R1), and
-        // re-implementing the index-ordered parse here would be the DEC-H3
-        // drift. Every action entry goes through the session's own read,
-        // so it is capped and hashed too.
+        // re-implementing the index-ordered parse here would be the
+        // drift a shared implementation exists to prevent. Every action entry
+        // goes through the session's own read, so it is capped and hashed too.
         const loaded = await loadActionsFromEntries(
           zipEntries,
           (entry, maxBytes) => readText(entry, maxBytes),

@@ -436,7 +436,7 @@ const PHOTO_JPEG_QUALITY = 0.85;
 /**
  * The detector frame (1024 px long edge, top-left origin RGBA) as a JPEG,
  * through the framework's encoder (`rgbaImageToJpegBlob`, the one behind
- * the blit capture - DEC-H3, M4 review #14). The alpha channel is sampled
+ * the blit capture, M4 review #14). The alpha channel is sampled
  * first: a frame that is not opaque would be composited over the canvas
  * ground and come out dark, which is the one failure a creator cannot see
  * until the visitor does. Async throughout: nothing here throws

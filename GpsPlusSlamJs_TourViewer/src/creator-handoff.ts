@@ -283,7 +283,7 @@ export function wireCreatorHandoff(deps: {
   dom.replaceDriveCopy.addEventListener("click", () => {
     const address = driveAddress;
     if (address === null) return;
-    // The framework's one copy sequence (F7, DEC-H3).
+    // The framework's one copy sequence (F7).
     void copyWithFeedback(dom.replaceDriveCopy, address, seams.copyText, {
       busy: DRIVE_COPY_LABELS.busy,
       done: DRIVE_COPY_LABELS.done,

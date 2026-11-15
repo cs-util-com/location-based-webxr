@@ -26,7 +26,7 @@ number.
 ## Invariants & assumptions
 
 - **Device fixes only, through `deviceSamples`** (`device-gps-quality.ts`), the one
-  device-only filter of the store's history (DEC-H3): a synthetic code vote
+  device-only filter of the store's history: a synthetic code vote
   or an unknown source is skipped, and the step bridges the device fixes on
   either side.
 - **Horizontal** (odometry north and east, indices 0 and 2); height is no

@@ -3,7 +3,7 @@
 ## Purpose
 
 The Finish's rules without a page (Tour Viewer M6 E0, B10's "shared
-business logic", root `CLAUDE.md` DEC-H3): from an open tour and the edits
+business logic", the shared-helper rule): from an open tour and the edits
 to it, the finished zip. The phone's Finish (`creator-finish.ts`) and the
 desktop editor (M6 E1/E2, `/tour/edit.html`) call this one module, so a
 desktop save cannot skip a rule - deleted photos left in the zip, a dead

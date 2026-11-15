@@ -1,7 +1,7 @@
 /**
  * The recorder's occluder mesh worker: the framework's
  * `createOccluderMeshWorker` (lifted there from this file 2026-10-13, Tour
- * Viewer polish round M5a, DEC-H3) over the recorder's own worker file - its
+ * Viewer polish round M5a) over the recorder's own worker file - its
  * `new URL(...)` resolves against this app's source, which is why the worker
  * is created here and not in the framework. See
  * `2026-07-01-0733-occluder-worker-and-chunked-remesh-plan.md`.

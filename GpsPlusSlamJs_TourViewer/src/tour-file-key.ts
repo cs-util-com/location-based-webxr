@@ -133,7 +133,7 @@ export async function tourFileKey(
         `${name}\u0000${String(e.uncompressedSize)}\u0000${String(e.crc32 ?? "")}`,
     )
     .sort();
-  // The framework's one SHA-256 (DEC-H3, K1 milestone review R14).
+  // The framework's one SHA-256 (K1 milestone review R14).
   const hex = await sha256Hex(new TextEncoder().encode(lines.join("\n")));
   return `${TOUR_FILE_KEY_PREFIX}${hex.slice(0, 32)}`;
 }
