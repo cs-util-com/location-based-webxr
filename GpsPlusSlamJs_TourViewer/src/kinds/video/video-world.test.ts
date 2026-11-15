@@ -12,7 +12,7 @@
  * @vitest-environment jsdom
  */
 import type { TourVideoBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
-import { Texture } from "three";
+import { Texture, Vector3, type Mesh, type Object3D } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,6 +20,7 @@ import {
   saveVisitorPrefs,
   type PrefsStorage,
 } from "../../visitor-prefs.js";
+import { drawInherited } from "../../placement/place-scale.js";
 import type { WorldEnv, WorldMode } from "../../world-part.js";
 import {
   VIDEO_AWAY_M,
@@ -401,4 +402,49 @@ describe("a free video's part", () => {
     expect(player.paused).toBe(true);
     expect(shown.open).toBe(0);
   });
+});
+
+/** The world heights of `part`'s ground shadows (the meshes lying flat). */
+function shadowHeights(object: Object3D): number[] {
+  object.updateMatrixWorld(true);
+  const heights: number[] = [];
+  object.traverse((o) => {
+    if ((o as Mesh).isMesh && Math.abs(o.rotation.x + Math.PI / 2) < 1e-9) {
+      heights.push(o.getWorldPosition(new Vector3()).y);
+    }
+  });
+  return heights;
+}
+
+describe("a free video's ground", () => {
+  // Why: the renderer stands a part at its pose in the station's frame
+  // and then draws it as much larger as its folders scale it
+  // (`drawInherited`). The shadow under a screen and the foot of a
+  // cutout must still lie on the station's ground, not the lift times
+  // the folder's scale below the part. Swept over a few scales and
+  // lifts, either side of 1.
+  for (const view of ["screen", "cutout"] as const) {
+    for (const [scale, liftM] of [
+      [1, 2],
+      [2, 2],
+      [0.5, 3],
+      [3, 0.4],
+    ] as const) {
+      it(`a ${view} lifted ${String(liftM)} m in a folder of scale ${String(scale)} lies on the ground`, async () => {
+        const { part } = await video({
+          mode: "edit",
+          block: {
+            view,
+            pose: { position: [0, liftM, 0], rotation: [0, 0, 0, 1] },
+          },
+        });
+        part.object.position.set(0, liftM, 0);
+        drawInherited(part.object, scale);
+        part.update?.(at(0, 0));
+        const heights = shadowHeights(part.object);
+        expect(heights.length).toBeGreaterThan(0);
+        for (const y of heights) expect(Math.abs(y)).toBeLessThan(0.05);
+      });
+    }
+  }
 });

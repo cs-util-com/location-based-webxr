@@ -191,13 +191,17 @@ export function videoWorld(
   const start = videoStartOf(block);
   const reachM = videoReachM(block);
   const object = new Group();
+  // The scale its folders draw it at (`inheritedScaleOf`), known only once
+  // it is placed: its ground is the pose's height below it in the
+  // station's metres, so that height over the scale in its own.
+  let groundScale = 1;
   const build = (aspect: number): VideoLook =>
     videoLook({
       view,
       widthM,
       aspect,
       stacked: block.alpha === "stacked",
-      liftM: block.pose?.position[1] ?? 0,
+      liftM: (block.pose?.position[1] ?? 0) / groundScale,
       edit: !play,
       canvasTexture: (canvas) => env.canvasTexture(canvas),
     });
@@ -447,6 +451,15 @@ export function videoWorld(
     },
     ready,
     update(frame) {
+      // Placed in a scaled folder, or its scale changed: the look is
+      // rebuilt with its ground where the station's is.
+      const scale = inheritedScaleOf(object);
+      if (scale !== groundScale) {
+        groundScale = scale;
+        look.dispose();
+        look = build(aspect);
+        object.add(look.object);
+      }
       seconds = frame.seconds;
       const dt = lastSeconds === null ? 0 : seconds - lastSeconds;
       lastSeconds = seconds;
