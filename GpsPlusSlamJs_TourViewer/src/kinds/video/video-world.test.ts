@@ -421,8 +421,8 @@ function shadowHeights(object: Object3D): number[] {
 
 /** What of `object`'s shadows is off the station's ground (none: all
  *  on it). A shadow sits 0.012 above its ground in the look's own
- *  (reference) metres, so in the world that gap is 0.012 times everything the look is drawn larger by
- *  (`drawnScale`). The 1e-6 is float noise: every misplacement seen so
+ *  (reference) metres, so in the world that gap is 0.012 times
+ *  everything the look is drawn larger by (`drawnScale`). The 1e-6 is float noise: every misplacement seen so
  *  far was a metre or more, and a fixed tolerance instead (0.05 was used)
  *  fails a correct ground above a drawn scale of about 4.2. */
 function offGround(object: Object3D, drawnScale: number): string[] {
