@@ -1091,48 +1091,50 @@ describe("StaticTileSource", () => {
     }
   });
 
-  for (const [failure, reread] of [
-    ["a host error (500)", (): Reply => new Response("x", { status: 500 })],
-    ["a network error", (): Reply => new TypeError("Failed to fetch")],
-    [
-      "no headers within the request limit",
-      (): Reply => (init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          const signal = init?.signal;
-          signal?.addEventListener("abort", () => {
-            reject(signal.reason as Error);
-          });
-        }),
-    ],
-  ] as const) {
-    it(`a re-read that failed with ${failure} spends the allowance: the next read of the tile makes no re-read`, async () => {
-      // Why this test matters: the re-read past the browser cache is a full
-      // download, allowed once per tile per session. A re-read that reached
-      // the host and failed produced a verdict on it, so a tile that stays
-      // bad must not cost a second download on every later read.
-      const partial = JSON.stringify({
-        ...JSON.parse(PAYLOAD),
-        remark: "runtime error: Query timed out",
+  describe("a re-read past the browser cache that failed", () => {
+    for (const [failure, reread] of [
+      ["a host error (500)", (): Reply => new Response("x", { status: 500 })],
+      ["a network error", (): Reply => new TypeError("Failed to fetch")],
+      [
+        "no headers within the request limit",
+        (): Reply => (init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            signal?.addEventListener("abort", () => {
+              reject(signal.reason as Error);
+            });
+          }),
+      ],
+    ] as const) {
+      it(`a re-read that failed with ${failure} spends the allowance: the next read of the tile makes no re-read`, async () => {
+        // Why this test matters: the re-read past the browser cache is a full
+        // download, allowed once per tile per session. A re-read that reached
+        // the host and failed produced a verdict on it, so a tile that stays
+        // bad must not cost a second download on every later read.
+        const partial = JSON.stringify({
+          ...JSON.parse(PAYLOAD),
+          remark: "runtime error: Query timed out",
+        });
+        const bad = (): Response => new Response(partial, { status: 200 });
+        const warn = vi
+          .spyOn(console, "warn")
+          .mockImplementation(() => undefined);
+        try {
+          const { source, fallback, calls } = setup(
+            { [`GET ${TILE_URL}`]: [bad(), reread(), bad()] },
+            { requestTimeoutMs: 30 },
+          );
+          await source.fetchTile(TILE);
+          expect(calls.map((c) => c.cache ?? "")).toEqual(["", "no-cache"]);
+          await source.fetchTile(TILE);
+          expect(fallback.calls).toHaveLength(2);
+          expect(calls.map((c) => c.cache ?? "")).toEqual(["", "no-cache", ""]);
+        } finally {
+          warn.mockRestore();
+        }
       });
-      const bad = (): Response => new Response(partial, { status: 200 });
-      const warn = vi
-        .spyOn(console, "warn")
-        .mockImplementation(() => undefined);
-      try {
-        const { source, fallback, calls } = setup(
-          { [`GET ${TILE_URL}`]: [bad(), reread(), bad()] },
-          { requestTimeoutMs: 30 },
-        );
-        await source.fetchTile(TILE);
-        expect(calls.map((c) => c.cache ?? "")).toEqual(["", "no-cache"]);
-        await source.fetchTile(TILE);
-        expect(fallback.calls).toHaveLength(2);
-        expect(calls.map((c) => c.cache ?? "")).toEqual(["", "no-cache", ""]);
-      } finally {
-        warn.mockRestore();
-      }
-    });
-  }
+    }
+  });
 
   it("a re-read the caller aborted leaves the allowance for the next read of the tile", async () => {
     // Why this test matters: an abort says nothing about the host's copy
