@@ -346,7 +346,7 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
   // still given levels.
   it("leaves a primitive whose attribute counts differ from its positions as it is", async () => {
     const parts = partsOf(
-      await buildModel({ meshes: [rockSpec("a"), rockSpec("b")] }),
+      await buildModel({ meshes: [rockSpec("a", 3), rockSpec("b", 3)] }),
     );
     const prim = primitiveOf(parts, 0);
     const normal = (prim["attributes"] as Record<string, number>)["NORMAL"]!;
@@ -354,7 +354,8 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
     accessor["count"] = (accessor["count"] as number) - 1;
     delete accessor["min"];
     delete accessor["max"];
-    const report = simplifyModel(parts, SETTINGS);
+    // spheres of 512 triangles, cheap to order, over a lower floor
+    const report = simplifyModel(parts, { ...SETTINGS, lodMinTriangles: 500 });
     expect(report.primitives).toBe(1);
     expect(lodOf(primitiveOf(parts, 0))).toBeUndefined();
     expect(lodOf(primitiveOf(parts, 1))).toBeDefined();
