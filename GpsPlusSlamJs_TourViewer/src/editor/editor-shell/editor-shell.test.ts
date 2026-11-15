@@ -1404,6 +1404,61 @@ describe("a story's folder in the tree", () => {
     shell.hide();
   });
 
+  // Why: a step card dragged by its grip moves the step in its story
+  // through the page's move command, once per drop (one undo step), to
+  // the slot it was dropped at; a flick that starts on a grip, as a
+  // finger scrolling the cards does, moves nothing.
+  it("moves a step to where its card is dropped, and not for a flick", () => {
+    const { deps, select, shell } = withStory();
+    select("story:legend");
+    const cards = [
+      ...document.querySelectorAll<HTMLElement>("#shell-inspector .scard"),
+    ];
+    expect(cards).toHaveLength(3);
+    for (const [i, card] of cards.entries()) {
+      vi.spyOn(card, "getBoundingClientRect").mockReturnValue({
+        top: 100 + i * 40,
+        bottom: 140 + i * 40,
+        height: 40,
+        left: 0,
+        right: 200,
+        width: 200,
+      } as DOMRect);
+    }
+    const grip = cards[0]?.querySelector(".grip") as HTMLElement;
+    const touch = (to: EventTarget, type: string, y: number, at: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientY: y,
+        button: 0,
+      });
+      Object.defineProperty(event, "pointerId", { value: 7 });
+      Object.defineProperty(event, "pointerType", { value: "touch" });
+      Object.defineProperty(event, "timeStamp", { value: at });
+      to.dispatchEvent(event);
+    };
+    // Rested, then past the last card: the end of the story.
+    touch(grip, "pointerdown", 120, 1000);
+    touch(window, "pointermove", 121, 1300);
+    touch(window, "pointermove", 215, 1320);
+    expect(cards[0]?.classList.contains("dragging")).toBe(true);
+    expect(cards[2]?.classList.contains("drop-after")).toBe(true);
+    touch(window, "pointerup", 215, 1340);
+    expect(deps.stations.moveChild).toHaveBeenCalledTimes(1);
+    expect(deps.stations.moveChild).toHaveBeenCalledWith("l1", {
+      place: "story",
+      story: "legend",
+      index: 3,
+    });
+    // A flick from the grip: no move.
+    touch(grip, "pointerdown", 120, 2000);
+    touch(window, "pointermove", 215, 2016);
+    touch(window, "pointerup", 215, 2032);
+    expect(deps.stations.moveChild).toHaveBeenCalledTimes(1);
+    shell.hide();
+  });
+
   // Why: the story's preview is the page's (the visitor's panel in a
   // dialog): the inspector's button hands it the story and the button the
   // focus goes back to.

@@ -4116,6 +4116,156 @@ body[data-view="3d"] #view3d .view3d-canvas {
     font-size: 12.5px;
   }
 }
+/* A step card's grip (the step cards prototype): left of its number, in
+ * the card's head row, held a moment by a finger before it drags
+ * (`STEP_GRIP_ARM`), so a flick across the cards still scrolls them.
+ * A step moves by keys with its Earlier and Later. */
+.scard {
+  position: relative;
+}
+
+.scard .crow {
+  display: flex;
+  align-items: flex-start;
+}
+
+.scard .crow > .chead {
+  flex: 1;
+  min-width: 0;
+  padding-left: 9px;
+}
+
+.scard .grip {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 40px;
+  margin: 4px 0 0 4px;
+  border-radius: 4px;
+  color: var(--s-dim);
+  cursor: grab;
+  touch-action: none;
+}
+
+.scard .grip:hover {
+  background: var(--s-bg3);
+  color: var(--s-text);
+}
+
+.scard .grip svg.i {
+  width: 14px;
+  height: 14px;
+}
+
+.scard.dragging {
+  border-color: var(--s-accent);
+  box-shadow: 0 14px 30px rgb(0 0 0 / 55%);
+}
+
+.scard.dragging .grip {
+  cursor: grabbing;
+}
+
+/* Where a dragged card lands: a line in the gap above the card it goes
+ * before, or below the last. */
+.scard.drop-before::before,
+.scard.drop-after::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--s-accent);
+  content: "";
+  pointer-events: none;
+}
+
+.scard.drop-before::before {
+  top: -6px;
+}
+
+.scard.drop-after::after {
+  bottom: -6px;
+}
+
+/* A story's Add step and Preview at the panel's foot, in sight while the
+ * cards scroll under them. The body becomes a column so the footer sits at
+ * the foot of a short story too; the scroll padding keeps a field brought
+ * into sight clear of it. */
+#inspector-body:has(> .sfoot) {
+  display: flex;
+  flex-direction: column;
+  scroll-padding-bottom: 56px;
+}
+
+#inspector-body:has(> .sfoot) > * {
+  flex: none;
+}
+
+.acts.sfoot {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  gap: 8px;
+  margin-top: auto;
+  padding: 8px 12px;
+  border-top: 1px solid var(--s-line);
+  background: var(--s-bg1);
+}
+
+.sfoot .act {
+  justify-content: center;
+  width: auto;
+  height: auto;
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--s-line2);
+  border-radius: 5px;
+  background: var(--s-bg3);
+  white-space: nowrap;
+}
+
+.sfoot .act.wide {
+  flex: 1;
+}
+
+.sfoot .act.pri {
+  border-color: var(--s-accent);
+  background: var(--s-accent);
+  color: #1c1c1c;
+  font-weight: 600;
+}
+
+.sfoot .act.pri svg.i {
+  color: #1c1c1c;
+}
+
+.sfoot .act.pri:hover:not(:disabled, [aria-disabled="true"]) {
+  background: #f0b257;
+}
+
+@media (max-width: 700px) {
+  .scard .grip {
+    width: 26px;
+    height: 44px;
+    margin: 6px 0 0 2px;
+  }
+
+  .scard .crow > .chead {
+    padding-left: 8px;
+  }
+
+  #inspector-body:has(> .sfoot) {
+    scroll-padding-bottom: 68px;
+  }
+
+  .sfoot .act {
+    min-height: 42px;
+  }
+}
+
 /* A model's own parts in the inspector (the station blocks prototype's
  * editor mode): its view as chips, its clip, its notes and sections as
  * cards with a numbered badge, and the small buttons that wait for a click

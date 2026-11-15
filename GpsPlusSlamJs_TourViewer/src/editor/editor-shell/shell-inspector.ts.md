@@ -103,10 +103,15 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     items move with it. Its items follow every typed field.
   - A story: its name to type in the head (`data-field="story-title"`, its
     count under it), its steps as cards (`.scards`, `story-cards.ts`),
-    "Add step..." (`add-entry`), "Preview the story" (`preview-story`,
-    once it has a step) and "Delete story" (with an entry count
-    and "..." when it holds any). A card (`article.scard`, `data-card`
-    its step's id) has a head (`card:<id>`: its number, kind icon, tag,
+    "Delete story" (with an entry count
+    and "..." when it holds any). Last in the body, after "Move to station", its footer
+    (`.acts.sfoot`, `storyFoot`): "Add step..." (`add-entry`, `act
+wide`) and "Preview the story" (`preview-story`, `act pri`, once it
+    has a step), sticky at the panel's foot while the cards scroll. A card
+    (`article.scard`, `data-card` its step's id) has a row (`.crow`)
+    of its grip (`span.grip`, `data-drag` its step's id, aria-hidden:
+    the keys move a step with its Earlier and Later; the shell's
+    `createTreeDrag` drags it) and its head (`card:<id>`: its number, kind icon, tag,
     title, a choice's or quiz's line and a block's moves-on chip; on a
     desktop with `aria-expanded`, with `InspectorState.drill` none, as it
     goes to the step), its answers each with a jump chip (a button

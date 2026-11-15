@@ -131,6 +131,7 @@ import {
   type InspectorModel,
 } from "./inspector-model.js";
 import { inspectorFileOf, REPLACE_FILE_ACT } from "./inspector-file.js";
+import { STEP_GRIP_ARM } from "./story-cards.js";
 import {
   controlName,
   drawInspector,
@@ -2031,6 +2032,26 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     idAttribute: "station",
     reorder: (order) => {
       deps.stations.reorder(order);
+    },
+  });
+  // A story's step card dragged by its grip (`shell-inspector.ts`): the
+  // step to the slot it is dropped at in its story, the page's move (one
+  // undo step). The grip waits for its arm, so a flick that scrolls the
+  // cards and starts on a grip moves nothing.
+  createTreeDrag({
+    body: inspector.body,
+    cards: ".scard[data-card]",
+    idAttribute: "card",
+    arm: STEP_GRIP_ARM,
+    reorder: (_order, { id, slot }) => {
+      const tour = manifest();
+      const story = tour === null ? undefined : tourChildPlace(tour, id)?.story;
+      if (story === undefined) return;
+      deps.stations.moveChild(id, {
+        place: "story",
+        story: story.id,
+        index: slot,
+      });
     },
   });
   // An item's or a story's grip (`shell-tree.ts`): among the stories,

@@ -37,11 +37,14 @@ moved a little, so a click on a grip marks nothing. Pure.
 ## Examples
 
 ```ts
-armState({ holdMs: 150, tolerancePx: 6, movePx: 4 }, {
-  pointer: "touch",
-  distancePx: 12,
-  ms: 16,
-}); // "none": a flick
+armState(
+  { holdMs: 150, tolerancePx: 6, movePx: 4 },
+  {
+    pointer: "touch",
+    distancePx: 12,
+    ms: 16,
+  },
+); // "none": a flick
 ```
 
 ## Tests

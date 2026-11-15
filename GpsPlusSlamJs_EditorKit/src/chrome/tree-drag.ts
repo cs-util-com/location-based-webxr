@@ -77,10 +77,7 @@ export function createTreeDrag(deps: {
   readonly idAttribute: string;
   /** Write the cards' new order (every id once); `move` is the one card
    *  moved, for a page that writes a move rather than an order. */
-  readonly reorder: (
-    order: readonly string[],
-    move: TreeDragMove,
-  ) => void;
+  readonly reorder: (order: readonly string[], move: TreeDragMove) => void;
   /** When a press becomes a drag (default: at once). */
   readonly arm?: TreeDragArm;
   /** The frame scheduler (default: the window's animation frames). */

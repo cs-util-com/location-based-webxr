@@ -31,6 +31,14 @@ draws them; `inspector-model.ts` puts them on the story's inspector.
 - `StoryCardJump { text, type, to }`: the chip's words (`stepJumpText`),
   its kind (`next`, `jump`, `back`, `end`, `missing`) and the id of the
   step it leads to (null for the end or a gone step).
+- `STEP_GRIP_ARM` (frozen `{ holdMs: 150, tolerancePx: 6, movePx: 4 }`):
+  when a press on a card's grip drags it (`createTreeDrag`'s `arm`). A
+  finger rests 150 ms within 6 px first, so a flick that scrolls the cards
+  and starts on a grip moves nothing; a mouse drags from 4 px, so a click
+  marks nothing. Short of the dock tabs' 250 ms hold and the page's
+  500 ms long press, so neither runs out under a drag. Swept in
+  `tree-drag-arm.test.ts` over holds 100-250 ms and tolerances 4-8 px:
+  flicks never drag, a 300 ms rest always does.
 - `advanceChip(advance)` (module-private): "After <s> s", "On a tap",
   "When the line ends".
 
