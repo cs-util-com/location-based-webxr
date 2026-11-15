@@ -73,6 +73,9 @@ export interface ModelViewHandle {
   readonly notes: readonly TourModelNote[];
   /** The notes' points in the world now (empty outside `hotspots`). */
   notePoints(): NoteWorldPoints[];
+  /** The model's size as it is drawn now (m in the world): its `sizeM`
+   *  times every scale above it, a folder's included. */
+  drawnSizeM(): number;
   /** The cutaway's section shown (an index into `block.sections`), or -1
    *  for the cut that faces the visitor (and outside a cutaway). */
   section(): number;
@@ -592,6 +595,9 @@ export function mountModelView(
     block,
     model,
     notes,
+    drawnSizeM() {
+      return native * model.getWorldScale(scratch).x;
+    },
     notePoints() {
       if (notes.length === 0) return [];
       model.updateWorldMatrix(true, false);

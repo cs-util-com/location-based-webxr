@@ -50,6 +50,9 @@ height)`, held at 1 mm at least so a flat model never asks GLSL for the
   - `notePoints()` - each note's surface point, its marker point (out
     along its normal by `clamp(0.13 * native size * scale, 0.04, 4)`)
     and its world normal.
+  - `drawnSizeM()` - the model's native size times its world scale now
+    (a folder's scale included): what the note cover's slack is a share
+    of.
   - `section()` / `setSection(i)` - the current section; `setSection`
     wraps and ignores a non-integer.
   - `toyFactor()`, `pinchToy(fromPx, toPx)`, `moveToy(dx, dz)` (world
