@@ -1,10 +1,10 @@
 /**
  * The meshes of the pictures seen from a viewpoint, in the viewpoint's
  * frame (the station's: north, up, east, the ground at height 0): the
- * picture's plane on the viewpoint's axis, the spot marker on the ground,
- * the viewer on its column, the finder's corner marks and the standing
- * frame the window shows the picture through. Geometry only: what shows
- * how much, and when, is `viewpoint-world.ts`'s.
+ * picture's plane on the viewpoint's axis, the viewer on its column, the
+ * finder's corner marks and the standing frame the window shows the
+ * picture through. The way to the spot is `spot-guide-look.ts`'s.
+ * Geometry only: what shows how much, and when, is `viewpoint-world.ts`'s.
  *
  * @see viewpoint-looks.ts.md
  */
@@ -26,7 +26,6 @@ import {
   Quaternion,
   RingGeometry,
   Shape,
-  ShapeGeometry,
   ShaderMaterial,
   Vector2,
   Vector3,
@@ -110,44 +109,94 @@ export function viewpointPlane(
   return { holder, mesh, widthM, heightM };
 }
 
-/** The "stand here" mark: a ring on the ground at the spot with an arrow
- *  the way to face. One material, so one opacity fades it. */
-export function spotMarker(viewpoint: TourPictureViewpoint): {
-  readonly group: Group;
-  readonly material: MeshBasicMaterial;
-} {
-  const material = new MeshBasicMaterial({
-    color: AMBER,
-    transparent: true,
-    depthWrite: false,
-    toneMapped: false,
-    side: DoubleSide,
-  });
-  const ring = new Mesh(new RingGeometry(0.62, 0.7, 48), material);
-  ring.rotation.x = -Math.PI / 2;
-  const arrow = new Shape();
-  arrow.moveTo(0, 0.86);
-  arrow.lineTo(0.18, 0.62);
-  arrow.lineTo(0, 0.7);
-  arrow.lineTo(-0.18, 0.62);
-  arrow.closePath();
-  const tip = new Mesh(new ShapeGeometry(arrow), material);
-  // The shape's +Y becomes the group's -Z: the arrow points ahead.
-  tip.rotation.x = -Math.PI / 2;
-  const group = new Group();
-  group.name = "picture-spot";
-  group.position.set(viewpoint.position[0], 0.02, viewpoint.position[2]);
-  group.rotation.y = viewpointYaw(viewpoint);
-  group.add(ring, tip);
-  group.renderOrder = 2;
-  return { group, material };
+/** The viewer's plate on its column: its size and where it hangs on the
+ *  stand, tilted back to be read from above. */
+export const VIEWER_PLATE = {
+  widthM: 0.34,
+  heightM: 0.15,
+  /** The card it is painted from (its proportions). */
+  paintM: [0.8, 0.353],
+  liftM: 0.95,
+  outM: 0.08,
+  tiltRad: 0.35,
+} as const;
+
+/** The viewer's halo on the ground around its foot. */
+const VIEWER_HALO_M = [0.46, 0.5] as const;
+
+/** A plate showing `map` as painted. */
+function plateMaterial(map: Texture): MeshBasicMaterial {
+  return new MeshBasicMaterial({ map, transparent: true, toneMapped: false });
+}
+
+/** The ground shadows under the viewer and the window (m, opacity): the
+ *  prototype's `shadowDecal(0.9, 0.9, 0.3)` and
+ *  `shadowDecal(ow * 1.15, 0.8, 0.22)`, 12 mm over the ground. */
+export const VIEWER_SHADOW = { widthM: 0.9, depthM: 0.9, opacity: 0.3 };
+const PORTAL_SHADOW = { widthShare: 1.15, depthM: 0.8, opacity: 0.22 };
+const SHADOW_LIFT_M = 0.012;
+
+type GroundShadow = Mesh<PlaneGeometry, MeshBasicMaterial>;
+
+/** A soft shadow `widthM` x `depthM` flat on the ground, `map` its alpha
+ *  (painted black fading out); it takes no tap. */
+function groundShadow(
+  map: Texture,
+  widthM: number,
+  depthM: number,
+  opacity: number,
+): GroundShadow {
+  const shadow = new Mesh(
+    new PlaneGeometry(widthM, depthM),
+    new MeshBasicMaterial({
+      map,
+      color: 0x000000,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+    }),
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = SHADOW_LIFT_M;
+  shadow.renderOrder = 1;
+  shadow.raycast = () => undefined;
+  return shadow;
+}
+
+/** A group on the ground at `(x, z)` turned by `yaw`, holding `shadow`
+ *  `aheadM` along its -Z: apart from a look's tappable group, so that
+ *  the ground stretches no tap bounds. */
+function floorUnder(
+  shadow: GroundShadow,
+  x: number,
+  z: number,
+  yaw: number,
+  aheadM: number,
+): Group {
+  const floor = new Group();
+  floor.position.set(x, 0, z);
+  floor.rotation.y = yaw;
+  shadow.position.z = -aheadM;
+  floor.add(shadow);
+  return floor;
 }
 
 /** The viewer: a stand with binoculars on a column, 0.42 m ahead of the
- *  spot, its head tilted with the viewpoint. `materials` fade it. */
-export function viewerStand(viewpoint: TourPictureViewpoint): {
+ *  spot, its head tilted with the viewpoint, a plate on its column
+ *  (`plateMap`, painted words) and a halo on the ground at its foot.
+ *  `materials` (the plate's among them) fade it; the halo pulses on its
+ *  own. Its soft shadow (`shadowMap`) lies in `floor`, apart from
+ *  `group`, for the part to fade with it. */
+export function viewerStand(
+  viewpoint: TourPictureViewpoint,
+  plateMap: Texture,
+  shadowMap: Texture,
+): {
   readonly group: Group;
   readonly materials: readonly Material[];
+  readonly halo: Mesh<RingGeometry, MeshBasicMaterial>;
+  readonly floor: Group;
+  readonly shadow: GroundShadow;
 } {
   const body = new MeshStandardMaterial({
     color: 0x2b4a44,
@@ -228,12 +277,53 @@ export function viewerStand(viewpoint: TourPictureViewpoint): {
     head.add(hood, lens, eye);
   }
   stand.add(head);
+  const plateMat = plateMaterial(plateMap);
+  const plate = at(
+    new Mesh(
+      new PlaneGeometry(VIEWER_PLATE.widthM, VIEWER_PLATE.heightM),
+      plateMat,
+    ),
+    0,
+    VIEWER_PLATE.liftM,
+    VIEWER_PLATE.outM,
+  );
+  plate.name = "picture-viewer-plate";
+  plate.rotation.x = -VIEWER_PLATE.tiltRad;
+  stand.add(plate);
+  const halo = new Mesh(
+    new RingGeometry(VIEWER_HALO_M[0], VIEWER_HALO_M[1], 64),
+    new MeshBasicMaterial({
+      color: AMBER,
+      transparent: true,
+      depthWrite: false,
+      toneMapped: false,
+    }),
+  );
+  halo.name = "picture-viewer-halo";
+  halo.rotation.x = -Math.PI / 2;
+  halo.position.set(0, 0.015, stand.position.z);
   const group = new Group();
   group.name = "picture-viewer";
   group.position.set(viewpoint.position[0], 0, viewpoint.position[2]);
   group.rotation.y = viewpointYaw(viewpoint);
-  group.add(stand);
-  return { group, materials: [body, brass, rubber, lensMat, hoodMat] };
+  group.add(stand, halo);
+  const S = VIEWER_SHADOW;
+  const shadow = groundShadow(shadowMap, S.widthM, S.depthM, S.opacity);
+  shadow.name = "picture-viewer-shadow";
+  const floor = floorUnder(
+    shadow,
+    group.position.x,
+    group.position.z,
+    group.rotation.y,
+    -stand.position.z,
+  );
+  return {
+    group,
+    materials: [body, brass, rubber, lensMat, hoodMat, plateMat],
+    halo,
+    floor,
+    shadow,
+  };
 }
 
 /**
@@ -354,6 +444,14 @@ const PORTAL_FRAME = {
   edgeFade: 0.04,
 } as const;
 
+/** The window's plate: its width (a quarter as high), the gap under the
+ *  frame, and the card it is painted from (its proportions). */
+export const PORTAL_PLATE = {
+  widthM: 0.36,
+  gapM: 0.05,
+  paintM: [0.8, 0.2],
+} as const;
+
 const VS_PORTAL = `varying vec3 vWorld;
 void main() {
   vec4 w = modelMatrix * vec4(position, 1.0);
@@ -403,6 +501,8 @@ export interface PortalLook {
   readonly plane: PortalPlane;
   /** The frame's lit materials, which fade with the opening. */
   readonly materials: readonly Material[];
+  /** The soft shadow on the ground under the frame, apart from `group`. */
+  readonly floor: Group;
 }
 
 function ringGeometry(
@@ -437,12 +537,15 @@ function ringGeometry(
  * the spot, facing it, at the eye's height plus the viewpoint's pitch; the
  * opening at the back of a short dark reveal shows the picture hanging at
  * the subject's depth (the then-and-now plane), so from the spot it lines
- * up and a step aside shows more of it, as through a real window.
+ * up and a step aside shows more of it, as through a real window. A
+ * small plate under the opening (`plateMap`, painted words) names it.
  */
 export function portalLook(
   viewpoint: TourPictureViewpoint,
   aspect: number,
   texture: Texture,
+  plateMap: Texture,
+  shadowMap: Texture,
 ): PortalLook {
   const F = PORTAL_FRAME;
   const P = new Vector3(...viewpoint.position);
@@ -536,6 +639,21 @@ export function portalLook(
     wall(w, rv, -Math.PI / 2, 0, 0, -h / 2),
     opening,
   );
+  const plateMat = plateMaterial(plateMap);
+  const pw = PORTAL_PLATE.widthM;
+  const plate = new Mesh(new PlaneGeometry(pw, pw / 4), plateMat);
+  plate.name = "picture-portal-plate";
+  // Under the frame, or just above the ground when the frame stands too
+  // low for it (the plate then overlaps the frame's foot, in front).
+  plate.position.set(
+    0,
+    Math.max(
+      -oh / 2 - (PORTAL_PLATE.gapM + pw / 8),
+      -group.position.y + pw / 8 + 0.01,
+    ),
+    0.01,
+  );
+  group.add(plate);
   // Two posts with feet when the frame clears the ground (a low
   // viewpoint's may not).
   const lift = group.position.y - oh / 2;
@@ -552,5 +670,19 @@ export function portalLook(
       group.add(post, foot);
     }
   }
-  return { group, opening, plane, materials: [ringM, caseM, wallM] };
+  const shadow = groundShadow(
+    shadowMap,
+    ow * PORTAL_SHADOW.widthShare,
+    PORTAL_SHADOW.depthM,
+    PORTAL_SHADOW.opacity,
+  );
+  shadow.name = "picture-portal-shadow";
+  const floor = floorUnder(shadow, group.position.x, group.position.z, yaw, 0);
+  return {
+    group,
+    opening,
+    plane,
+    materials: [ringM, caseM, wallM, plateMat],
+    floor,
+  };
 }
