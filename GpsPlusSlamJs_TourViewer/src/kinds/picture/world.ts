@@ -51,11 +51,10 @@ export function pictureWorld(
   deps: PictureWorldDeps = {},
 ): WorldPart | null {
   if (block.view !== "framed" && block.view !== "cutout") {
-    return viewpointWorld(
-      block,
-      env,
-      deps.decode === undefined ? {} : { decode: deps.decode },
-    );
+    return viewpointWorld(block, env, {
+      ...(deps.decode === undefined ? {} : { decode: deps.decode }),
+      ...(deps.painters === undefined ? {} : { painters: deps.painters }),
+    });
   }
   const view = block.view;
   const decode = deps.decode ?? decodePicture;

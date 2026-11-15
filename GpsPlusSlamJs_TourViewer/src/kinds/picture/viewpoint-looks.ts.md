@@ -15,23 +15,27 @@ materials only; `viewpoint-world.ts` decides what shows how much.
   axis, `2 * depth * tan(hfov / 2) * crop` wide, so from the eye it covers
   what the camera saw. No depth test (an overlay that lines up), render
   order 50, opacity 0 until the part sets it. Mesh `picture-viewpoint-plane`.
-- `spotMarker(vp)`: an amber ring with an arrow the way to face, on the
-  ground under the eye; one material. Group `picture-spot`.
-- `viewerStand(vp)`: the viewer (binoculars on a column) 0.42 m ahead of the
-  spot, its head tilted with the viewpoint's pitch; `materials` fade it.
-  Group `picture-viewer`.
+- `viewerStand(vp, plateMap)` and `VIEWER_PLATE`: the viewer (binoculars on
+  a column) 0.42 m ahead of the spot, its head tilted with the viewpoint's
+  pitch, a 0.34 x 0.15 m plate (`picture-viewer-plate`, the painted
+  `plateMap`) on its column at 0.95 m tilted back 0.35 rad, and an amber
+  halo (`picture-viewer-halo`, a 0.46-0.5 m ring) on the ground at its foot.
+  `materials` (the plate's among them) fade it; `halo` is the part's to
+  pulse. Group `picture-viewer`. The viewer is its own mark: no spot guide.
 - `finderCorners(vp, aspect, crop)`: four L-shaped corner marks of the
   centre crop, each at its own depth (1.2 and 0.75 times the subject's
   depth, 6.5 m, 4.5 m; a lower one kept above the ground), so they meet only
   from the spot. Meshes `picture-finder-ink` and `picture-finder-under`.
-- `portalLook(vp, aspect, texture)` and `PORTAL_FRAME`: the window, a frame
+- `portalLook(vp, aspect, texture, plateMap)`, `PORTAL_FRAME` and
+  `PORTAL_PLATE`: the window, a frame
   1 m wide, 1.5 m ahead of the spot, upright on two posts, at the eye's
   height plus the pitch. Its opening (`picture-portal-opening`) is a quad at
   the back of a 16 cm reveal whose shader casts the ray from the eye
   (`cameraPosition`, each eye's own in a headset) through the fragment to
   the picture's plane at the subject's depth and samples it there, a dark
   box past the edges with a 4 % fade. `plane` is that plane in the
-  viewpoint's frame; the part copies it into world space every frame.
+  viewpoint's frame; the part copies it into world space every frame. A
+  0.36 x 0.09 m plate (`picture-portal-plate`) hangs 5 cm under the frame.
 
 ## Invariants
 
@@ -39,9 +43,10 @@ materials only; `viewpoint-world.ts` decides what shows how much.
   cover the lens's angle (or the crop's share of it).
 - Taken from the chosen prototype: the standing frame (width 1.0 m at
   1.5 m, the sweep's default), the finder's corner depths, the viewer's
-  shape. Left out: the prototype's soft edge feather on the plane, the
-  card on a post beside the spot, the light column, the ground shadows and
-  the plates on the viewer and under the window.
+  shape, its halo and plate, the window's plate. The way to the spot (the
+  decal, the light column, the card on its post) is `spot-guide-look.ts`.
+  Left out: the prototype's soft edge feather on the plane and the ground
+  shadows.
 
 ## Tests
 

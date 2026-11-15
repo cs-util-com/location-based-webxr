@@ -1,8 +1,10 @@
 /**
  * What a picture's world parts paint on canvases: the framed print's plate
  * (its year large, its caption in three lines, its credit small and a
- * quiet "i" mark that says a tap shows more), its cream mat, and the
- * cut-out's foot tag. The look is the chosen picture prototype's
+ * quiet "i" mark that says a tap shows more), its cream mat, the cut-out's
+ * foot tag, the small cards of the viewpoint views (the spot guide's card
+ * on its post, the plates on the viewer and under the window) and the
+ * spot guide's decal on the ground. The look is the chosen picture prototype's
  * (`public/prototypes/station-blocks-3-pictures`), number for number.
  *
  * The parts take these as `PicturePainters` so their tests run without a
@@ -35,6 +37,20 @@ export interface TagWords {
   readonly caption?: string | undefined;
 }
 
+/** A small card's words and size: the year large in amber, a first line
+ *  and a quieter second, under an optional thumbnail of the picture
+ *  `aspect` high per unit wide. Painted at `ppm` px a metre. */
+export interface CardWords {
+  readonly widthM: number;
+  readonly heightM: number;
+  readonly year?: string | undefined;
+  readonly line1: string;
+  readonly line2?: string | undefined;
+  readonly thumb?:
+    { readonly image: CanvasImageSource; readonly aspect: number } | undefined;
+  readonly ppm?: number | undefined;
+}
+
 /** What the picture parts paint with. */
 export interface PicturePainters {
   /** The plate under a framed print `widthM` wide (its frame's outer
@@ -47,6 +63,12 @@ export interface PicturePainters {
   /** A soft round shadow, black fading out from its middle (its alpha is
    *  the shadow). */
   shadow(): HTMLCanvasElement;
+  /** A small card (`CardWords`). */
+  card(words: CardWords): HTMLCanvasElement;
+  /** The spot guide's decal, 512 px square: a dark disc in an amber
+   *  ring, a dashed inner ring, two pale footprints and an amber arrow at
+   *  the top, the way to face. */
+  spotDecal(): HTMLCanvasElement;
 }
 
 /** The tag's size in the world (m). */
@@ -238,18 +260,32 @@ function paintMat(
   return canvas;
 }
 
-/** The foot tag, painted at 560 px a metre: the year, the tag line and
- *  "Tap for the story". */
-function paintTag(doc: Document, words: TagWords): HTMLCanvasElement {
-  const ppm = 560;
-  const W = Math.round(TAG_WIDTH_M * ppm);
-  const H = Math.round(TAG_HEIGHT_M * ppm);
+/** A small card, painted at `words.ppm` (560 by default) px a metre. */
+function paintCard(doc: Document, words: CardWords): HTMLCanvasElement {
+  const ppm = words.ppm ?? 560;
+  const W = Math.round(words.widthM * ppm);
+  const H = Math.round(words.heightM * ppm);
   const { canvas, g } = canvasOf(doc, W, H);
   const pad = 0.045 * ppm;
   g.fillStyle = "rgba(19,16,13,0.92)";
   roundRect(g, 0, 0, W, H, 0.03 * ppm);
   g.fill();
-  const y = pad;
+  let y = pad;
+  const thumb = words.thumb;
+  if (
+    thumb !== undefined &&
+    Number.isFinite(thumb.aspect) &&
+    thumb.aspect > 0
+  ) {
+    const tw = W - 2 * pad;
+    const th = tw * thumb.aspect;
+    g.save();
+    roundRect(g, pad, y, tw, th, 0.008 * ppm);
+    g.clip();
+    g.drawImage(thumb.image, pad, y, tw, th);
+    g.restore();
+    y += th + 0.035 * ppm;
+  }
   let x = pad;
   g.textBaseline = "top";
   const year = words.year?.trim() ?? "";
@@ -262,14 +298,72 @@ function paintTag(doc: Document, words: TagWords): HTMLCanvasElement {
   const maxW = W - x - pad;
   g.fillStyle = INK;
   g.font = `600 ${String(0.05 * ppm)}px ${SANS}`;
-  g.fillText(
-    fitLine(g, tagLine(words.title, words.caption), maxW),
-    x,
-    y + 0.008 * ppm,
-  );
-  g.fillStyle = "#bcb09c";
-  g.font = `${String(0.04 * ppm)}px ${SANS}`;
-  g.fillText(fitLine(g, "Tap for the story", maxW), x, y + 0.064 * ppm);
+  g.fillText(fitLine(g, words.line1, maxW), x, y + 0.008 * ppm);
+  const line2 = words.line2 ?? "";
+  if (line2 !== "") {
+    g.fillStyle = "#bcb09c";
+    g.font = `${String(0.04 * ppm)}px ${SANS}`;
+    g.fillText(fitLine(g, line2, maxW), x, y + 0.064 * ppm);
+  }
+  return canvas;
+}
+
+/** The foot tag: a card with the year, the tag line and "Tap for the
+ *  story". */
+function paintTag(doc: Document, words: TagWords): HTMLCanvasElement {
+  return paintCard(doc, {
+    widthM: TAG_WIDTH_M,
+    heightM: TAG_HEIGHT_M,
+    year: words.year,
+    line1: tagLine(words.title, words.caption),
+    line2: "Tap for the story",
+  });
+}
+
+/** The spot guide's decal, 512 px square. */
+function paintSpotDecal(doc: Document): HTMLCanvasElement {
+  const S = 512;
+  const c = S / 2;
+  const { canvas, g } = canvasOf(doc, S, S);
+  g.fillStyle = "rgba(18,15,12,0.5)";
+  g.beginPath();
+  g.arc(c, c, 200, 0, 2 * Math.PI);
+  g.fill();
+  g.strokeStyle = AMBER;
+  g.lineWidth = 13;
+  g.beginPath();
+  g.arc(c, c, 204, 0, 2 * Math.PI);
+  g.stroke();
+  g.strokeStyle = "rgba(233,184,114,0.45)";
+  g.lineWidth = 4;
+  g.setLineDash([14, 14]);
+  g.beginPath();
+  g.arc(c, c, 176, 0, 2 * Math.PI);
+  g.stroke();
+  g.setLineDash([]);
+  g.fillStyle = "rgba(244,237,225,0.95)";
+  for (const sx of [-1, 1]) {
+    g.save();
+    g.translate(c + sx * 40, c + 18);
+    g.rotate(sx * 0.07);
+    g.beginPath();
+    g.ellipse(0, -30, 23, 46, 0, 0, 2 * Math.PI);
+    g.fill();
+    g.beginPath();
+    g.ellipse(0, 50, 18, 23, 0, 0, 2 * Math.PI);
+    g.fill();
+    g.restore();
+  }
+  // The arrow at the canvas's top: the way to face, once the decal lies
+  // with that edge ahead.
+  g.fillStyle = AMBER;
+  g.beginPath();
+  g.moveTo(c, 6);
+  g.lineTo(c + 50, 64);
+  g.lineTo(c, 46);
+  g.lineTo(c - 50, 64);
+  g.closePath();
+  g.fill();
   return canvas;
 }
 
@@ -294,5 +388,7 @@ export function canvasPicturePainters(
     mat: (innerW, innerH, w, h) => paintMat(doc, innerW, innerH, w, h),
     tag: (words) => paintTag(doc, words),
     shadow: () => paintShadow(doc),
+    card: (words) => paintCard(doc, words),
+    spotDecal: () => paintSpotDecal(doc),
   };
 }

@@ -8,7 +8,7 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 
 ## Public API
 
-- `viewpointWorld(block, env, { decode? })`: the part, or null for another
+- `viewpointWorld(block, env, { decode?, painters? })`: the part, or null for another
   view or a block without a viewpoint (the renderer draws that as a plain
   plane at the block's pose, sized by its width). This is a deliberate
   fallback, not the prototype's behaviour: a tour file may carry a
@@ -18,6 +18,11 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
   `ready` rejects when the image cannot be read or decoded.
 - `EDITOR_PICTURE_ALPHA` (0.55): how much of a fading picture the editor
   shows, to place it by.
+- `VIEWER_HALO`: the viewer halo's glow, `(1 - k) * (0.35 + 0.25 sin(2.2 t))`,
+  at half that farther than 4.5 m from the spot (the prototype's numbers).
+- `painters` (default `canvasPicturePainters()`, made once the image is
+  read) paint the guide's decal and card and the viewer's and window's
+  plates.
 
 ## Behaviour per view
 
@@ -26,13 +31,27 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 - `thenNow`: the plane's opacity is `THEN_NOW_FADE` times the blend of
   `then-now-fade.ts`; lined up, the visitor gets the slider on the page's
   screen (`then-now-slider.ts`), and it closes when they leave.
-- `viewer`: the viewer stand fades out as the picture fades in
-  (`VIEWER_FADE`); the editor shows the stand and a half picture.
+- `viewer`: the viewer stand and its plate fade out as the picture fades
+  in (`VIEWER_FADE`); its halo pulses, softer far away, and goes with it.
+  The plate's words are generic ("Step up to it", "and see it as it was"),
+  since a picture has no short name for them. The editor shows the stand
+  and a half picture.
 - `finder`: corner marks; the crop's fill fades in by `FINDER_FADE` and the
   ink turns amber on the spot.
-- `window`: the standing frame (`portalLook`), always shown; its shader's
-  plane is copied into world space every frame.
-- Every view: the spot marker, fading as the picture takes over.
+- `window`: the standing frame (`portalLook`), always shown, its plate
+  naming the caption's first phrase and "Look through the frame"; its
+  shader's plane is copied into world space every frame.
+- Every view but the viewer: the spot guide (`spot-guide-look.ts`), shaded
+  by `spotGuideShade` with the view's take-over: then and now its distance
+  ramp (0 in the editor), the finder its on-spot ramp, sharpen its picture's
+  opacity, the window 1. The guide sits in the tap target, so a tap on its
+  card or decal opens the sheet; the column takes none.
+- What pulses (the column's ripple, the halo) reads a clock held at 0 when
+  `env.reduceMotion` says so.
+- The screen hints of the prototype ("Walk to the marker", "Turn this
+  way") and its arrival caption are screen elements, not built here: a
+  page would read the guide's card shade (the distance from the spot) and
+  the reach's off-axis angle for them.
 - A tap in play opens the picture's sheet (`picture-sheet.ts`) with the
   picture, closing the slider; the editor takes no tap.
 
@@ -55,5 +74,8 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 
 `viewpoint-world.test.ts` (jsdom): looks per view, the anchor property over
 random poses and sizes, sharpen by place and facing, the editor's half
-picture, the viewer giving way, the slider's arrival, fade-in, take-over and
+picture, the viewer giving way with its plate and halo, the guide standing
+at the viewpoint under random item and folder poses and sizes, the guide
+on the way in and on the spot, sharpen's card without the picture, the
+column held still on reduced motion, the slider's arrival, fade-in, take-over and
 departure, the window's shader plane, the sheet, disposal.
