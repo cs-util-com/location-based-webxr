@@ -32,19 +32,23 @@ describe("model comparison view state, over any sequence of actions", () => {
     fc.assert(
       fc.property(fc.array(action, { maxLength: 40 }), (actions) => {
         let state = INITIAL_MODEL_VIEW;
+        const broken: string[] = [];
         for (const a of actions) {
           const before: CameraPose | null = state.camera;
           const next = modelViewReducer(state, a);
-          if (a.type === "show" || a.type === "wireframe") {
-            expect(next.camera).toBe(before);
+          const keepsCamera = a.type !== "show" && a.type !== "wireframe";
+          if (!keepsCamera && next.camera !== before) {
+            broken.push(`${a.type} moved the camera`);
           }
-          if (a.type === "show") expect(next.wireframe).toBe(state.wireframe);
-          if (next.count > 0) {
-            expect(next.shown).toBeGreaterThanOrEqual(0);
-            expect(next.shown).toBeLessThan(next.count);
+          if (a.type === "show" && next.wireframe !== state.wireframe) {
+            broken.push("show changed the wireframe look");
+          }
+          if (next.count > 0 && (next.shown < 0 || next.shown >= next.count)) {
+            broken.push(`shown ${next.shown} of ${next.count}`);
           }
           state = next;
         }
+        expect(broken).toEqual([]);
       }),
     );
   });
