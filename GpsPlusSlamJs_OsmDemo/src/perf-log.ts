@@ -25,7 +25,7 @@ import type { WoodsGovernorMode } from "gps-plus-slam-osm/three";
 import { describeDrawCost, type DrawCost } from "./draw-cost.js";
 
 /** How many entries each timeline keeps before dropping the oldest. */
-export const PERF_LOG_LIMITS = Object.freeze({
+const PERF_LOG_LIMITS = Object.freeze({
   intervals: 3000,
   bursts: 1000,
   shareChanges: 500,
@@ -68,7 +68,7 @@ export function createRing<T>(capacity: number): Ring<T> {
 }
 
 /** One move of the woods' share, and the governor's state just after it. */
-export interface ShareChange {
+interface ShareChange {
   readonly atMs: number;
   readonly from: number;
   readonly to: number;

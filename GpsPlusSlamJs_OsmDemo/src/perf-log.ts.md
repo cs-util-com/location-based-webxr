@@ -6,7 +6,7 @@ The `?perf=1` perf log for OsmDemo: a bounded record of the frames since load (c
 
 ## Public API
 
-- `PERF_LOG_LIMITS`: `{ intervals: 3000, bursts: 1000, shareChanges: 500 }`, how many entries each timeline keeps.
+- The default limits (module-private): `{ intervals: 3000, bursts: 1000, shareChanges: 500 }`, how many entries each timeline keeps; `createPerfRecorder(limits)` takes others.
 - `createRing(capacity)`: `push`, `items()` (oldest first, a copy), `dropped()`. Throws `RangeError` for a capacity that is not a positive integer.
 - `createPerfRecorder(limits?)`:
   - `frame(atMs, chained)`: a chained frame with a previous one records `[atMs, interval]`; an unchained frame (or the first) records a burst start. Non-finite times and intervals that are not positive are ignored.
