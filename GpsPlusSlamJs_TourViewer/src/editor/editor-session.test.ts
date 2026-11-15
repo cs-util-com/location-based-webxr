@@ -25,6 +25,12 @@ import {
   type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
+  TOUR_PICTURE_MAX_DISTANCE_M,
+  TOUR_PICTURE_MAX_HFOV_DEG,
+  TOUR_PICTURE_MIN_DISTANCE_M,
+  TOUR_PICTURE_MIN_HFOV_DEG,
+} from "gps-plus-slam-app-framework/ar/tour-kinds";
+import {
   openTourFile,
   tourFileKeyOfFile,
   type TourSession,
@@ -315,9 +321,17 @@ describe("createEditorSession", () => {
       kind: "refused",
       reason: "Only a picture has a viewpoint.",
     });
-    expect(
-      editor.editPictureViewpoint("c", { ...vp, hfovDeg: 5 }),
-    ).toMatchObject({ kind: "refused" });
+    // The words name the format's own bounds, so they cannot drift from
+    // what is refused.
+    const lensRefusal = editor.editPictureViewpoint("c", { ...vp, hfovDeg: 5 });
+    expect(lensRefusal).toMatchObject({ kind: "refused" });
+    const said = "reason" in lensRefusal ? lensRefusal.reason : "";
+    expect(said).toContain(
+      `a lens of ${String(TOUR_PICTURE_MIN_HFOV_DEG)} to ${String(TOUR_PICTURE_MAX_HFOV_DEG)} degrees`,
+    );
+    expect(said).toContain(
+      `a depth of ${String(TOUR_PICTURE_MIN_DISTANCE_M)} to ${String(TOUR_PICTURE_MAX_DISTANCE_M)} m`,
+    );
     expect(
       editor.editPictureViewpoint("c", { ...vp, position: [NaN, 0, 0] }),
     ).toMatchObject({ kind: "refused" });
