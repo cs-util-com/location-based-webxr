@@ -844,6 +844,27 @@ describe("a stand-here video", () => {
     expect(shown.open).toBe(1);
   });
 
+  // Why: the card's Play is the visitor's own wish to see it now, as in
+  // the prototype: it plays at once, off the spot too, and develops whole
+  // with its captions - never a faint ghost without words.
+  it("plays at once from the card's Play, off its spot, and develops whole", async () => {
+    const captions = "WEBVTT\n\n00:00.000 --> 00:30.000\nThe gate";
+    const { part, player, shown } = await video({
+      block: { view: "standHere", viewpoint, captions },
+    });
+    walk(part, 12, 0, 1, [1, 0, 0]);
+    // The in-world tap still waits for the spot.
+    part.tap?.();
+    expect(player.calls).toEqual([]);
+    shown.host?.querySelector<HTMLElement>(".narration-card-play")?.click();
+    expect(player.calls).toEqual(["play muted"]);
+    player.currentTime = 1;
+    walk(part, 12, 1, 3, [1, 0, 0]);
+    const strip = shown.host?.querySelector<HTMLElement>(".video-card-caption");
+    expect(strip?.textContent).toBe("The gate");
+    expect(line(shown.host)).toBe("");
+  });
+
   it("develops at once without a viewpoint, and says nothing", async () => {
     const { part, player, shown } = await video({
       block: { view: "standHere", start: "tap" },

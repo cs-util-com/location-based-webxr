@@ -59,8 +59,12 @@ than a kept `near` distance, or than the reach itself, still starts it. Without 
 - Stand-here: the same angle (0 with no facing in the frame) and the
   ground distance from the viewer to the viewpoint give the develop's
   target; the develop eases toward it every frame, so walking off fades
-  the projection while it plays. A tap does nothing while it waits; once
-  started it toggles as any other. The card's line is the guide
+  the projection while it plays. An in-world tap does nothing while it
+  waits; once started it toggles as any other. The card's Play is the
+  visitor's own wish to see it, as in the prototype: it plays a waiting
+  stand-here video at once, wherever he stands, and while it plays from
+  there its develop's target is 1, so it develops whole with its captions,
+  until the visitor leaves (then the spot rules again). The card's line is the guide
   (`standHereGuide`) and its captions wait for `standHereCaptions`. The
   footprints (`standHereSpot`) hang under an anchor whose matrix is the
   part's matrix inverted, refreshed each frame, so they stand at the

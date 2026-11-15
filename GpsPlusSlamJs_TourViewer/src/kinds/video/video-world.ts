@@ -268,6 +268,9 @@ export function videoWorld(
   const standHere = view === "standHere";
   const viewpoint = standHere ? block.viewpoint : undefined;
   let develop = 0;
+  /** Started from the card's Play: it develops whole wherever the
+   *  visitor stands, until he leaves. */
+  let cardPlayed = false;
   let spotM = Number.POSITIVE_INFINITY;
   let spot: StandHereSpot | null = null;
   const anchor = new Group();
@@ -458,7 +461,12 @@ export function videoWorld(
         host,
         block,
         {
-          toggle,
+          // The card's Play plays a waiting stand-here video at once (an
+          // in-world tap waits for the spot), and it then develops whole.
+          toggle: () => {
+            if (standHere && state === "waiting") cardPlayed = true;
+            toggle();
+          },
           toggleSound,
           playing: () => state === "playing",
           sound: () => player !== null && !player.muted,
@@ -613,6 +621,7 @@ export function videoWorld(
         there = now;
         if (there) openCard();
         else shutCard();
+        if (!there) cardPlayed = false;
         event(there ? "return" : "leave");
       }
       // Degrees between the view's middle and the video's centre; 0
@@ -631,7 +640,9 @@ export function videoWorld(
       };
       if (standHere) {
         const target =
-          viewpoint === undefined ? 1 : standHereTarget(spotM, offDeg());
+          viewpoint === undefined || (cardPlayed && state === "playing")
+            ? 1
+            : standHereTarget(spotM, offDeg());
         develop = standHereDevelop(develop, target, dt);
         if (state === "waiting" && there && develop > STAND_HERE_PLAYS_AT) {
           event("start");
