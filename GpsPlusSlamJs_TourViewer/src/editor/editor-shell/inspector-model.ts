@@ -211,7 +211,7 @@ interface InspectorMoves {
  *  the Problems tab's rows for the story (`tour-problems.ts`
  *  `storyProblems`), each with what it is and what a press selects;
  *  none: the story is valid. */
-export type StoryCheck = readonly {
+type StoryCheck = readonly {
   readonly what: string;
   readonly select: string;
 }[];

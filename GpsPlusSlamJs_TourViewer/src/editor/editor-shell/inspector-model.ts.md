@@ -9,7 +9,7 @@ edit. The DOM is `shell-inspector.ts`'s; what a typed value writes is
 
 ## Public API
 
-- `StoryCheck` - a story's check, on the story's model and on each of its
+- `StoryCheck` (module-private type) - a story's check, on the story's model and on each of its
   steps' models as `check`: the Problems tab's rows for the story
   (`tour-problems.ts` `storyProblems`), each `{ what, select }`; empty
   when the story is valid.
