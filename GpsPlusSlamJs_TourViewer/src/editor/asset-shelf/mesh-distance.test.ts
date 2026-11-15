@@ -96,6 +96,47 @@ describe("pointTri2", () => {
   });
 });
 
+/** `n` long triangles in one plane, each from a corner of the unit square
+ *  to the opposite one: terrain strips, a CAD fan, a ground quad split
+ *  along its diagonal. Unindexed, so each triangle has its own corners. */
+function longTriangles(n: number): { P: Float32Array; I: Uint32Array } {
+  const P = new Float32Array(n * 9);
+  for (let i = 0; i < n; i++) {
+    P.set([0, 0, 0, 1, 1, 0, 1 - (i + 1) / n, 1, 0], 9 * i);
+  }
+  return { P, I: Uint32Array.from({ length: 3 * n }, (_, k) => k) };
+}
+
+describe("SurfaceGrid", () => {
+  // Why: the grid used to put a triangle into every cell of its bounding
+  // box. A flat mesh of long triangles has about T/2 cells and each such
+  // triangle's box covers nearly all of them, so the grid held about T^2/2
+  // entries: about 50 million at 10 000 triangles, past a phone Worker's
+  // memory, and the level-of-detail pass builds one per pose. Its size
+  // must stay linear in the triangle count, whatever their shape.
+  it("holds a number of entries linear in the triangles, for long ones too", () => {
+    const n = 1000;
+    const { P, I } = longTriangles(n);
+    const grid = new SurfaceGrid(P, I);
+    expect(grid.entries).toBeLessThanOrEqual(64 * n);
+    // and its answers stay those of a search over every triangle
+    for (const [x, y, z] of [
+      [0.5, 0.5, 0.3],
+      [2, -1, 0],
+      [0.9, 0.1, -0.2],
+    ] as const) {
+      let best = Infinity;
+      for (let t = 0; t < n; t++) {
+        best = Math.min(
+          best,
+          pointTri2(x, y, z, P, 9 * t, 9 * t + 3, 9 * t + 6),
+        );
+      }
+      expect(grid.nearest(x, y, z)).toBe(Math.sqrt(best));
+    }
+  });
+});
+
 describe("surfaceDistance", () => {
   it("reads zero between a mesh and itself, and is the same on every call", () => {
     const m = sphere(2);
