@@ -91,11 +91,11 @@ export const LOD_CHAIN_LEVELS = 4;
 /** Samples a side: the slider's stops (an estimate shown before the
  *  author picks one), the search and the chain (quick probes), and the
  *  author's level's stored deviation (the number the shelf shows after). */
-export const LOD_STOP_SAMPLES = 2000;
-export const LOD_SEARCH_SAMPLES = 5000;
-export const LOD_CHECK_SAMPLES = 20000;
+const LOD_STOP_SAMPLES = 2000;
+const LOD_SEARCH_SAMPLES = 5000;
+const LOD_CHECK_SAMPLES = 20000;
 /** The slider's stops, as shares of the triangles kept. */
-export const LOD_SHARES: readonly number[] = [
+const LOD_SHARES: readonly number[] = [
   1, 0.75, 0.5, 0.35, 0.25, 0.18, 0.12, 0.08, 0.05, 0.03, 0.02, 0.01,
 ];
 /** A chain level under this many triangles is not worth a draw range. */

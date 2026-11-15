@@ -26,7 +26,7 @@ type Positions = ArrayLike<number>;
 type Indices = ArrayLike<number>;
 
 /** `n` points uniformly by area on the mesh, xyz each. */
-export function samplePoints(
+function samplePoints(
   P: Positions,
   I: Indices,
   n: number,

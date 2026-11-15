@@ -10,7 +10,7 @@
   - `lodMinTriangles`: a primitive with fewer triangles is left as it is (2 000);
   - `detailShare?`: the author's share of triangles kept (0..1, clamped), overriding the budget. Left out, or not a finite number, the budget decides.
 - `LodReport`: `skipped` (why the whole model was left as it is, or null), `primitives`, `trianglesBefore`, `trianglesAfter` (of the primitives given levels), `deviation` (the author's level's, as a share of the size, the largest over the primitives), `size` (the largest primitive's box diagonal, model units), `automatic`, and `choices`: the slider's stops (`LOD_SHARES`), each `{ share, triangles, deviation }`, summed over the primitives (triangles) or their largest (deviation).
-- Constants: `LOD_CHAIN_LEVELS` (4), `LOD_STOP_SAMPLES` (2 000, the slider's stops: an estimate shown before the author picks one), `LOD_SEARCH_SAMPLES` (5 000), `LOD_CHECK_SAMPLES` (20 000), `LOD_SHARES`.
+- Constants: `LOD_CHAIN_LEVELS` (4); internal to the module: `LOD_STOP_SAMPLES` (2 000, the slider's stops: an estimate shown before the author picks one), `LOD_SEARCH_SAMPLES` (5 000), `LOD_CHECK_SAMPLES` (20 000), `LOD_SHARES`.
 
 ## What is saved
 
