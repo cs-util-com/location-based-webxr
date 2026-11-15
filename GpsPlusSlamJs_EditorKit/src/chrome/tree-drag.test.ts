@@ -393,6 +393,7 @@ function timed(
   y: number,
   pointerType: string,
   at: number,
+  coalesced?: readonly { readonly y: number; readonly at: number }[],
 ): void {
   const event = new MouseEvent(type, {
     bubbles: true,
@@ -403,6 +404,17 @@ function timed(
   Object.defineProperty(event, "pointerId", { value: 1 });
   Object.defineProperty(event, "pointerType", { value: pointerType });
   Object.defineProperty(event, "timeStamp", { value: at });
+  if (coalesced !== undefined) {
+    // The moves Chrome folded into this one while the page lagged.
+    const moves = coalesced.map((m) => ({
+      clientX: 0,
+      clientY: m.y,
+      timeStamp: m.at,
+    }));
+    Object.defineProperty(event, "getCoalescedEvents", {
+      value: () => moves,
+    });
+  }
   target.dispatchEvent(event);
 }
 
@@ -461,7 +473,82 @@ describe("createTreeDrag with an arm", () => {
     });
   });
 
-  it("a press still waiting is the grip's: no scroll, and a lift ends it", () => {
+  // Why: under lag Chrome folds a finger's moves into one pointermove;
+  // read alone, its last move can look like a rested finger although the
+  // first moves were a flick, or start the drag late.
+  it("decides by the first decided move a lagging pointermove folded in", () => {
+    const { grip, card, reorder } = setUp({ arm: ARM });
+    timed(grip("a"), "pointerdown", 120, "touch", 1000);
+    // A flick (20 px at 16 ms), folded with a move after the hold.
+    timed(window, "pointermove", 122, "touch", 1400, [
+      { y: 140, at: 1016 },
+      { y: 122, at: 1400 },
+    ]);
+    expect(card("a").classList.contains("dragging")).toBe(false);
+    timed(window, "pointermove", 175, "touch", 1500);
+    timed(window, "pointerup", 175, "touch", 1520);
+    expect(reorder).not.toHaveBeenCalled();
+    // A rest, then the drag, folded into one: the drag lands where the
+    // last folded move is.
+    timed(grip("a"), "pointerdown", 120, "touch", 2000);
+    timed(window, "pointermove", 175, "touch", 2200, [
+      { y: 121, at: 2160 },
+      { y: 175, at: 2200 },
+    ]);
+    expect(card("a").classList.contains("dragging")).toBe(true);
+    expect(card("c").classList.contains("drop-before")).toBe(true);
+    timed(window, "pointerup", 175, "touch", 2220);
+    expect(reorder).toHaveBeenCalledWith(["b", "a", "c"], {
+      id: "a",
+      from: 0,
+      slot: 2,
+    });
+  });
+
+  // Why: a finger that rests on a grip and pulls straight to the panel's
+  // edge must scroll the cards from that first move, as a drag that was
+  // already running does.
+  it("scrolls from the move that begins the drag when it is near the edge", () => {
+    const frames: FrameRequestCallback[] = [];
+    const { grip, body } = setUp({
+      arm: ARM,
+      frame: (run) => {
+        frames.push(run);
+        return frames.length;
+      },
+    });
+    vi.spyOn(body, "getBoundingClientRect").mockReturnValue({
+      top: 100,
+      bottom: 180,
+      height: 80,
+    } as DOMRect);
+    timed(grip("a"), "pointerdown", 120, "touch", 1000);
+    timed(window, "pointermove", 176, "touch", 1200);
+    expect(frames).toHaveLength(1);
+    timed(window, "pointerup", 176, "touch", 1220);
+  });
+
+  // Why: a story's cards scroll under a finger. Once a rested finger
+  // drags, its moves must not scroll the cards as well; before, the
+  // browser keeps the flick (the grip lets it pan).
+  it("holds the cards still under a drag's touch moves, and leaves a waiting press's to the browser", () => {
+    const { grip, body } = setUp({ arm: ARM });
+    const touchmove = () => {
+      const event = new Event("touchmove", { bubbles: true, cancelable: true });
+      grip("a").dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    timed(grip("a"), "pointerdown", 120, "touch", 1000);
+    timed(window, "pointermove", 122, "touch", 1050);
+    expect(touchmove()).toBe(false);
+    timed(window, "pointermove", 175, "touch", 1200);
+    expect(body.querySelector(".dragging")).not.toBe(null);
+    expect(touchmove()).toBe(true);
+    timed(window, "pointerup", 175, "touch", 1220);
+    expect(touchmove()).toBe(false);
+  });
+
+  it("a press still waiting takes no text selection or mouse emulation, and a lift ends it", () => {
     const { grip, reorder } = setUp({ arm: ARM });
     const down = new MouseEvent("pointerdown", {
       bubbles: true,

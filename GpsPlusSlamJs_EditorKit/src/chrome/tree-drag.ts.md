@@ -25,8 +25,14 @@ cards' markup is the app's: the kit has no selector of its own.
     first move after resting `holdMs` (by the events' own times) and
     never if it strayed past `tolerancePx` first; a mouse or a pen at a
     move of `movePx`. Nothing is marked or written while it waits, and a
-    lift, a cancel or Escape (the page's own, not stopped) ends it. An arm
-    that is not numbers of 0 or more throws `RangeError`.
+    lift, a cancel or Escape (the page's own, not stopped) ends it. A
+    pointermove that folds in several moves (`getCoalescedEvents`, a
+    lagging page) is decided by the first of them that decides. With an
+    arm a non-passive `touchmove` listener on `body` holds the cards
+    still under a finger that drags; a press that waits leaves its touch
+    moves to the browser, so a grip with `touch-action: pan-y` (the app's
+    CSS) scrolls the list for a flick, which the browser then cancels. An
+    arm that is not numbers of 0 or more throws `RangeError`.
   - `frame` / `cancelFrame` - the frame scheduler of the edge scroll
     (default: `requestAnimationFrame`); tests pass their own.
   - `dispose()` ends a drag under way (writing nothing) and stops
@@ -35,8 +41,10 @@ cards' markup is the app's: the kit has no selector of its own.
 ## Invariants & assumptions
 
 - A drag starts only with the main button on a grip inside `body`; the
-  press is `preventDefault`ed (no scroll of the dock, no text selection),
-  a press that waits for its arm too.
+  press is `preventDefault`ed (no text selection, no emulated mouse), a
+  press that waits for its arm too. Whether a finger scrolls the dock is
+  the grip's `touch-action` (the app's), and with an arm the drag's
+  `touchmove`: a waiting press scrolls, a drag does not.
 - The cards' middles are read again at every move and every scroll of
   the dock: the slot is where the pointer is among the cards as they
   stand now.
@@ -49,7 +57,8 @@ cards' markup is the app's: the kit has no selector of its own.
   too, so a redraw between the last move and the release writes nothing.
 - Held within 32 px of the dock's top or bottom edge, the drag scrolls
   the dock each frame (up to 12 px a frame, less farther from the edge),
-  and stops at the end of the list or when the pointer leaves the edge.
+  and stops at the end of the list or when the pointer leaves the edge,
+  from the move that begins a drag on.
 - While it moves: the carried card is marked `dragging`; the card it would
   land before is marked `drop-before`, or the last card `drop-after` past
   the end (`editor-shell.css` draws the line). Every mark goes at the end.
@@ -84,6 +93,8 @@ does not scroll; cards of the app's own selector and attribute drag the
 same way, an empty or a missing one refused; the move passed beside the
 order; with an arm, a rested finger drags and lands, a flick from the grip
 drags nothing even resting later, a mouse from its threshold on (a click
-marks nothing), a waiting press is the grip's and a lift ends it, a bad arm
-refused. End to end (the Tour Viewer's):
+marks nothing), a waiting press takes no selection and a lift ends it,
+the first decided move of a folded pointermove decides, a drag begun at
+the edge scrolls from that move, a drag's touch moves are held and a
+waiting press's are not, a bad arm refused. End to end (the Tour Viewer's):
 `playwright-tests/editor3d-tree.spec.js`.

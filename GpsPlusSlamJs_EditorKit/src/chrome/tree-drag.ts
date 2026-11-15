@@ -18,7 +18,12 @@
  *
  * @see tree-drag.ts.md
  */
-import { armIsValid, armState, type TreeDragArm } from "./tree-drag-arm.js";
+import {
+  armIsValid,
+  armState,
+  type ArmState,
+  type TreeDragArm,
+} from "./tree-drag-arm.js";
 import { dropSlot, movedTo } from "./tree-reorder.js";
 
 interface Drag {
@@ -217,22 +222,41 @@ export function createTreeDrag(deps: {
     return true;
   };
 
+  /** The drag follows the pointer to `y`, and scrolls the dock while
+   *  it is near an edge. */
+  const track = (now: Drag, y: number): void => {
+    now.y = y;
+    follow(now);
+    if (drag === now && now.frame === null && scrollStep(now.y) !== 0) {
+      now.frame = frame(scrollFrame);
+    }
+  };
+
   /** A move of a press that waits: still waiting, its drag begun (this
-   *  move followed), or no drag at all. */
+   *  move tracked), or no drag at all. A lagging page gets several moves
+   *  folded into one event: the first that decides counts. */
   const armed = (now: Press, event: PointerEvent): void => {
     if (arm === undefined) return;
-    const state = armState(arm, {
-      pointer: now.pointerType,
-      distancePx: Math.hypot(event.clientX - now.x, event.clientY - now.y),
-      ms: event.timeStamp - now.at,
-    });
+    const folded =
+      typeof event.getCoalescedEvents === "function"
+        ? event.getCoalescedEvents()
+        : [];
+    let state: ArmState = "wait";
+    for (const move of folded.length > 0 ? folded : [event]) {
+      state = armState(arm, {
+        pointer: now.pointerType,
+        distancePx: Math.hypot(move.clientX - now.x, move.clientY - now.y),
+        ms: move.timeStamp - now.at,
+      });
+      if (state !== "wait") break;
+    }
     if (state === "wait") return;
     press = null;
     if (state === "none" || !begin(now.pointerId, now.id, event.clientY)) {
       unlisten();
       return;
     }
-    if (drag !== null) follow(drag);
+    if (drag !== null) track(drag, event.clientY);
   };
 
   function onMove(event: PointerEvent): void {
@@ -242,11 +266,14 @@ export function createTreeDrag(deps: {
     }
     const now = drag;
     if (now === null || event.pointerId !== now.pointerId) return;
-    now.y = event.clientY;
-    follow(now);
-    if (drag === now && now.frame === null && scrollStep(now.y) !== 0) {
-      now.frame = frame(scrollFrame);
-    }
+    track(now, event.clientY);
+  }
+
+  /** A finger's moves while it drags: the cards stay still under it. A
+   *  press that waits leaves them to the browser, which scrolls for a
+   *  flick (the app's grip lets it pan) and then cancels the press. */
+  function onTouchMove(event: TouchEvent): void {
+    if (drag !== null && event.cancelable) event.preventDefault();
   }
 
   /** A scroll of the dock by any means (a wheel, the drag's own): the
@@ -296,8 +323,9 @@ export function createTreeDrag(deps: {
     if (drag !== null || press !== null) return;
     const id = grip.dataset["drag"] ?? "";
     if (!cardsNow().map(idOf).includes(id)) return;
-    // Neither a scroll of the dock nor a text selection: a drag, or a
-    // press that waits for its arm.
+    // No text selection and no emulated mouse: a drag, or a press that
+    // waits for its arm. (Whether a finger scrolls the dock is the grip's
+    // touch-action, and with an arm, onTouchMove's.)
     event.preventDefault();
     if (arm === undefined) {
       begin(event.pointerId, id, event.clientY);
@@ -319,10 +347,16 @@ export function createTreeDrag(deps: {
   };
 
   body.addEventListener("pointerdown", onDown);
+  // Not passive, so a drag's touch moves can hold the cards still; only
+  // with an arm, whose grips let a finger pan.
+  if (arm !== undefined) {
+    body.addEventListener("touchmove", onTouchMove, { passive: false });
+  }
   return {
     dispose() {
       end(false);
       body.removeEventListener("pointerdown", onDown);
+      body.removeEventListener("touchmove", onTouchMove);
     },
   };
 }
