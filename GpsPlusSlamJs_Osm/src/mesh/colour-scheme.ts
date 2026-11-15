@@ -177,6 +177,12 @@ export function validateCityColourScheme(scheme: unknown): CityColourScheme {
   }
   for (const field of LIST_FIELDS) validateList(field, s[field]);
   for (const field of MAP_FIELDS) validateMap(field, s[field]);
+  validateWallRules(s);
+  return scheme as CityColourScheme;
+}
+
+/** `towerFromM`, `wallJitterL` and `materialWalls`, as documented above. */
+function validateWallRules(s: Record<string, unknown>): void {
   const towerFromM = s["towerFromM"];
   if (typeof towerFromM !== "number" || !(towerFromM > 0)) {
     throw new RangeError(
@@ -195,7 +201,6 @@ export function validateCityColourScheme(scheme: unknown): CityColourScheme {
     );
   }
   validateMaterialWalls(s["materialWalls"]);
-  return scheme as CityColourScheme;
 }
 
 function validateMaterialWalls(map: unknown): void {

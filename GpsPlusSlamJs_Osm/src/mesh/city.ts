@@ -279,12 +279,7 @@ export function buildCity(
   // cathedral draws one wall tone and one roof tone across all its parts.
   // The tower rule reads the height of the same building, its tallest volume,
   // so a podium and its tower stay one colour too.
-  const tallestByKey = new Map<string, number>();
-  for (const volume of volumes) {
-    const k = volume.parentFeature ?? volume.feature;
-    const h = volume.heights.totalHeightM;
-    tallestByKey.set(k, Math.max(h, tallestByKey.get(k) ?? h));
-  }
+  const tallestByKey = tallestVolumeByKey(volumes);
   const drawn = [
     ...volumes.map((volume) => {
       const tags = tagsByKey.get(volume.feature) ?? {};
@@ -419,6 +414,19 @@ function cityFurniture(
  * draw as a flat lid ("flat" cap, "prism") takes the flat greys (M7 review
  * MINOR 4). A volume without polygons reads as flat.
  */
+/** The tallest `totalHeightM` per building key (a part: its outline's). */
+function tallestVolumeByKey(
+  volumes: readonly BuildingVolume[],
+): Map<string, number> {
+  const tallest = new Map<string, number>();
+  for (const volume of volumes) {
+    const k = volume.parentFeature ?? volume.feature;
+    const h = volume.heights.totalHeightM;
+    tallest.set(k, Math.max(h, tallest.get(k) ?? h));
+  }
+  return tallest;
+}
+
 function drawsPitchedRoof(volume: BuildingVolume): boolean {
   return volume.roofMethods.some((m) => m !== "flat" && m !== "prism");
 }

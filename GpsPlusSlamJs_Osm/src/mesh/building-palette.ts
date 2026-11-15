@@ -147,6 +147,30 @@ function jitterLightness(tone: Rgb, key: string, jitterL: number): Rgb {
 }
 
 /**
+ * The wall of a building no colour tag paints: its material's tone when the
+ * scheme reads materials and names it, else a pick from the tower list (at or
+ * above `towerFromM`; a height that is absent or not finite is no tower) or
+ * from the walls.
+ */
+function untaggedWall(
+  tags: OsmTags,
+  outline: OsmTags | undefined,
+  seed: string,
+  colours: PaletteColours,
+  heightM: number | undefined,
+): Rgb {
+  const material = colours.honourMaterialTags
+    ? materialWall(tags, outline, colours)
+    : undefined;
+  if (material !== undefined) return material;
+  const tower =
+    heightM !== undefined &&
+    Number.isFinite(heightM) &&
+    heightM >= colours.towerFromM;
+  return pick(tower ? colours.towerWalls : colours.walls, seed, "wall");
+}
+
+/**
  * The seeded colours of a building: `key` is the building's own key, or its
  * outline's for a part; `pitched` picks the clay and slate roofs over the flat
  * greys; `heightM` is the building's height for the tower rule (absent or not
@@ -168,16 +192,8 @@ export function seededBuildingColours(
       parseOsmColour(outline?.["building:colour"]))
     : undefined;
   const taggedRoof = honour ? roofColour(tags, outline) : undefined;
-  const isTower =
-    heightM !== undefined &&
-    Number.isFinite(heightM) &&
-    heightM >= colours.towerFromM;
   const picked =
-    taggedWall ??
-    (colours.honourMaterialTags
-      ? materialWall(tags, outline, colours)
-      : undefined) ??
-    pick(isTower ? colours.towerWalls : colours.walls, seed, "wall");
+    taggedWall ?? untaggedWall(tags, outline, seed, colours, heightM);
   const wall = jitterLightness(picked, seed, colours.wallJitterL);
   const roof =
     taggedRoof ??
