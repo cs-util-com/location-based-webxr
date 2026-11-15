@@ -1238,7 +1238,7 @@ describe('camera-blit-capture', () => {
 
 describe('rgbaImageToJpegBlob (the shared encoder)', () => {
   // Why this matters: the Tour Viewer encodes a placed photo through this
-  // function instead of its own canvas dance (DEC-H3). The contract that
+  // function instead of its own canvas dance. The contract that
   // matters to it: a length mismatch REJECTS (never throws synchronously
   // into a click handler), and a well-formed frame yields a JPEG Blob
   // through OffscreenCanvas when the browser has one.

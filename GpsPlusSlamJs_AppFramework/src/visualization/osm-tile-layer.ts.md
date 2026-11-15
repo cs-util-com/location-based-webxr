@@ -5,7 +5,7 @@
 The OpenStreetMap raster basemap as a Leaflet layer: the one call that
 applies the tile-policy values of `utils/osm-tiles.ts`. Moved from the
 RecorderApp's `ui/map-osm-base.ts` on 2026-10-01 with the summary map's
-shell (`summary-map-shell.ts`, DEC-H3), which draws the basemap itself.
+shell (`summary-map-shell.ts`), which draws the basemap itself.
 
 ## Public API
 

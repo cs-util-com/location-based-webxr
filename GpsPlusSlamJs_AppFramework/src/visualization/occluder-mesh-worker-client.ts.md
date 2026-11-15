@@ -1,6 +1,6 @@
 # occluder-mesh-worker-client.ts
 
-Lifted here from the RecorderApp 2026-10-13 (Tour Viewer polish round M5a, DEC-H3). The
+Lifted here from the RecorderApp 2026-10-13 (Tour Viewer polish round M5a). The
 app passes the factory that creates its `Worker` (`createOccluderMeshWorker(createWorker)`,
 no default): a `new Worker(new URL(...))` resolves against the app's own source, so the
 worker file and its URL stay in each app (a ~10-line shell over `runMeshRequest`).

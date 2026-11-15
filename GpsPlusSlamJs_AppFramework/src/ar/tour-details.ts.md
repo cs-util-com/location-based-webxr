@@ -4,7 +4,7 @@
 `contact` (tour editor plan 2026-10-17-1816, W2, decision D15) - shared by
 the manifest's reader and writer (`tour-manifest.ts`) and by an
 app's own fields (the Tour Viewer editor's "Tour details" dialog), so what
-an editor accepts is exactly what a reader keeps (DEC-H3). Kept apart from
+an editor accepts is exactly what a reader keeps. Kept apart from
 `tour-manifest.ts` so every format version reads the same fields with
 the same parsers unchanged.
 

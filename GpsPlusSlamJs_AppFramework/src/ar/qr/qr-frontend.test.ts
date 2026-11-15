@@ -169,7 +169,7 @@ describe('default ImageData conversion', () => {
 /**
  * Why this test matters: the QR demo's `?qrperf=1&baseline=1` A/B run builds
  * its pre-fix (copying, timed) front end through this factory rather than
- * re-implementing the BarcodeDetector lookup (DEC-H3), so the override must
+ * re-implementing the BarcodeDetector lookup, so the override must
  * actually reach the detector.
  */
 describe('createBarcodeDetectorFrontEnd toSource override', () => {

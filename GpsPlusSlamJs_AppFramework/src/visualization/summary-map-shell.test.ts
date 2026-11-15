@@ -1,8 +1,8 @@
 /**
  * The 2D summary map's shell, unit tests.
  *
- * Why these tests matter: the shell moved out of the RecorderApp (DEC-H3,
- * Tour Viewer authoring plan 2026-09-28-0953 §3.3) so a second app - the
+ * Why these tests matter: the shell moved out of the RecorderApp (one shared
+ * implementation, Tour Viewer authoring plan 2026-09-28-0953 §3.3) so a second app - the
  * Tour Viewer's summary after Finish - draws its map through the SAME
  * code. What each app adds (the Recorder's ref points, the Tour Viewer's
  * codes and pins) goes through `drawExtra`, and how it frames the view is

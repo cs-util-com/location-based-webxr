@@ -39,7 +39,7 @@ The one `clamp01` in this package: clamps a number into `[0, 1]`.
     is worth having — a total guard is one the next caller need not analyse —
     but it is a smaller claim than the first draft made.
 - **Not exported from the package.** It is an internal one-liner, kept once per
-  package by owner decision (DEC-H3, 2026-08-24): shared _behaviour_ is
+  package as a deliberate copy (shared-helper rule): shared _behaviour_ is
   unified across packages, pure one-liners are not — they may exist once in
   each package that needs them. `GpsPlusSlamJs_Landing` has its own copy for
   that reason.

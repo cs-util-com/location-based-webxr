@@ -58,7 +58,7 @@ export function qrLevelEntryName(id: string): string {
 /**
  * Can `id` be written into an archive path at all? The PREDICATE behind
  * `qrLevelFileName`'s throw, exported so a caller that must DECIDE - rather
- * than fail - asks the same question the writer will (DEC-H3).
+ * than fail - asks the same question the writer will.
  *
  * The live caller is the Tour Viewer's draft reader: a draft file carrying
  * an unwritable id has to be recognised, because the alternative is an

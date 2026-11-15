@@ -178,7 +178,7 @@ const entryFiles = [
 
   // state/
   'src/state/index.ts',
-  // Shared AR session-end STATE teardown (DEC-H3 unification, 2026-08-26)
+  // Shared AR session-end STATE teardown (shared-helper unification, 2026-08-26)
   // — deep-importable via the ./state/* wildcard → per-file entry.
   'src/state/ar-session-teardown.ts',
   'src/state/app-selectors.ts',
@@ -302,7 +302,7 @@ const entryFiles = [
   // utils/
   'src/utils/index.ts',
   // The build-stamp reader, deep-imported by the RecorderApp and the Tour
-  // Viewer (moved from the RecorderApp 2026-09-28, DEC-H3).
+  // Viewer (moved from the RecorderApp 2026-09-28).
   'src/utils/build-info.ts',
   'src/utils/concurrency.ts',
   // The apps' ?debug=1 reader, deep-imported by the RecorderApp and the
@@ -342,8 +342,8 @@ const entryFiles = [
   // it `360 − ε` snaps to 0, a full turn that never happened.
   'src/utils/bearing-degrees.ts',
   // NUE direction → geographic bearing, deep-imported by the OSM demo's AR
-  // HUD and used by the AR sun check (lifted from OsmDemo 2026-09-24,
-  // DEC-H3). Built per-file for the `./utils/*` wildcard, like the above.
+  // HUD and used by the AR sun check (lifted from OsmDemo 2026-09-24).
+  // Built per-file for the `./utils/*` wildcard, like the above.
   'src/utils/nue-bearing.ts',
   // CSS cubic-bezier timing functions — deep-imported by the wayfinding
   // HUD's diamond entrance (NOT via the `/utils` barrel, which would pull in
@@ -356,11 +356,11 @@ const entryFiles = [
   // tsc and vitest resolve it while Vite in the browser does not (found by
   // the recorder e2e stage, 26 minutes into a cascade).
   'src/utils/median.ts',
-  // The nearest-rank percentile (DEC-H3) - deep-imported by QrTrackingDemo's
+  // The nearest-rank percentile - deep-imported by QrTrackingDemo's
   // ?qrperf tallies and by the frame-time helpers below; per-file for the
   // './utils/*' wildcard, like median.ts.
   'src/utils/percentile.ts',
-  // The frame-time ring (moved from OsmDemo 2026-10-03, DEC-H3) -
+  // The frame-time ring (moved from OsmDemo 2026-10-03) -
   // deep-imported by OsmDemo's AR sun shadow session and served to the
   // globe lab's recorder; per-file for the './utils/*' wildcard.
   'src/utils/frame-times.ts',
@@ -376,7 +376,7 @@ const entryFiles = [
   // The locate buttons' shared behaviour (labels, error mapping, the fix
   // each failure names, one request) - deep-imported by the OSM demo's
   // locate control and served to the globe lab's pin (round-2 plan
-  // 2026-09-26-2055 M3g, DEC-H3). Built per-file for the `./utils/*`
+  // 2026-09-26-2055 M3g). Built per-file for the `./utils/*`
   // wildcard, like the above.
   'src/utils/locate-state.ts',
   'src/utils/toast-core.ts',
@@ -404,9 +404,9 @@ const entryFiles = [
   // by the Tour Viewer's print panel, and shaped so the recorder can print
   // the same sheet without a second implementation.
   'src/utils/qr-payload/qr-print-pdf.ts',
-  // The one Drive file-id parser (DEC-H3), deep-imported by the Tour Viewer.
+  // The one Drive file-id parser, deep-imported by the Tour Viewer.
   'src/utils/drive-file-id.ts',
-  // The one copy-to-clipboard-with-feedback sequence (DEC-H3, Tour Viewer
+  // The one copy-to-clipboard-with-feedback sequence (Tour Viewer
   // follow-up F7), deep-imported by the Tour Viewer.
   'src/utils/copy-with-feedback.ts',
   // Its text encoding: the Tour Viewer previews the poster text as the PDF
@@ -421,8 +421,8 @@ const entryFiles = [
   'src/ar/qr/qr-geo-pose-minting.ts',
   // The level/manifest-shared geo-pose validator (guided-setup plan M1).
   'src/ar/qr/geo-pose.ts',
-  // The JSON type guards those parsers share (one copy per package,
-  // DEC-H3) - under the `./utils/*` wildcard, so per-file.
+  // The JSON type guards those parsers share (one copy per
+  // package) - under the `./utils/*` wildcard, so per-file.
   'src/utils/json-guards.ts',
   // Hex/SHA-256, base58btc and did:key (tour kit plan K1), deep-imported by
   // the Tour Viewer's integrity check and its test fixtures.
@@ -441,7 +441,7 @@ const entryFiles = [
   'src/ar/qr/qr-mint-alignment-tracker.ts',
   'src/ar/qr/qr-gps-vote.ts',
   // Shared per-code vote budget: both the TourViewer and the RecorderApp
-  // gate their dispatchVotes on it (DEC-H3), so it must be deep-importable.
+  // gate their dispatchVotes on it, so it must be deep-importable.
   'src/ar/qr/qr-vote-budget.ts',
   'src/ar/qr/qr-tracking-controller.ts',
   // The fused QR pose per code (QR near-frontal pose plan §60, b4b-3): the
@@ -490,7 +490,7 @@ const entryFiles = [
   'src/visualization/diamond-entrance.ts',
   'src/visualization/diamond-marker-texture.ts',
   'src/visualization/frame-conversions.ts',
-  // Blob → upright THREE.Texture (promoted from the recorder, DEC-H3) —
+  // Blob → upright THREE.Texture (promoted from the recorder) —
   // deep-imported by the recorder and the TourViewer via the
   // `./visualization/*` wildcard, so it must be built per-file.
   'src/visualization/frame-texture-decoder.ts',
@@ -517,7 +517,7 @@ const entryFiles = [
   'src/visualization/map-data.ts',
   'src/visualization/map-overlay-draw.ts',
   // The summary map's shell and the OSM basemap layer (moved from the
-  // RecorderApp 2026-10-01, DEC-H3) - deep-imported by the Recorder and,
+  // RecorderApp 2026-10-01) - deep-imported by the Recorder and,
   // dynamically, by the Tour Viewer's summary via `./visualization/*`.
   'src/visualization/osm-tile-layer.ts',
   'src/visualization/summary-map-shell.ts',

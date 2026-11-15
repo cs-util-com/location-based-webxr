@@ -35,7 +35,7 @@ milestone review #5 found three readers that knew only the single action).
   on the NUMBER of solves (one per batch), which no reader here derives from
   the action list.
 - Deep-imported (`gps-plus-slam-app-framework/utils/gps-event-actions`),
-  never through the `/utils` barrel (DEC-H3).
+  never through the `/utils` barrel.
 
 ## Users
 

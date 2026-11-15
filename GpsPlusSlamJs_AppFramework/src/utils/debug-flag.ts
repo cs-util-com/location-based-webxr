@@ -4,7 +4,7 @@
  * Gates developer-only surfaces - the RecorderApp's in-recording settings
  * wheel (2026-09-02, rotation-first search plan D8) and the TourViewer's QR
  * readout (QR near-frontal pose plan §66). One reader, so every app reads
- * the same owner habit by one rule (DEC-H3; moved here from the RecorderApp,
+ * the same owner habit by one rule (moved here from the RecorderApp,
  * plan §67 #3). Deep-import it (`utils/debug-flag`), never through the
  * `/utils` barrel.
  *

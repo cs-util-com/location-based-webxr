@@ -3,7 +3,7 @@
  * shared trajectory layers, the app's own layers on top, an optional
  * fullscreen toggle, and a clean `destroy`.
  *
- * MOVED OUT OF THE RECORDERAPP (DEC-H3, Tour Viewer authoring plan
+ * MOVED OUT OF THE RECORDERAPP (Tour Viewer authoring plan
  * 2026-09-28-0953 §3.3). The Recorder's session summary drew its map here
  * since 2026-01; the Tour Viewer's summary after Finish is the second
  * consumer. What differs between them is passed in, never forked:

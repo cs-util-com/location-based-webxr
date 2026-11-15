@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The apps' developer-UI gate: `?debug=1` (or `=true`) in the page URL. Behind it: the RecorderApp's in-recording settings wheel (2026-09-02, rotation-first search plan D8) and the TourViewer's QR readout (QR near-frontal pose plan §66). Moved here from the RecorderApp so both apps read the flag by one rule (DEC-H3, plan §67 #3). Without it those surfaces are not rendered at all, so an ordinary user's screen is unchanged.
+The apps' developer-UI gate: `?debug=1` (or `=true`) in the page URL. Behind it: the RecorderApp's in-recording settings wheel (2026-09-02, rotation-first search plan D8) and the TourViewer's QR readout (QR near-frontal pose plan §66). Moved here from the RecorderApp so both apps read the flag by one rule (plan §67 #3). Without it those surfaces are not rendered at all, so an ordinary user's screen is unchanged.
 
 ## Public API
 

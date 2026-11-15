@@ -21,7 +21,7 @@ No functions, no error modes. Three constants.
   the shards buy nothing and the OSM tile usage policy discourages them.
   `tests/repo-config/osm-tile-url-copies.test.js` matches BOTH spellings
   precisely so the deprecated one cannot come back in a new copy.
-- **Deep-imported, never through the `/utils` barrel** (DEC-H3). The barrel
+- **Deep-imported, never through the `/utils` barrel**. The barrel
   feeds `src/index.ts`'s `export *`, so adding it there would put three
   basemap constants on the package's root export surface. Consumers write
   `from 'gps-plus-slam-app-framework/utils/osm-tiles'`.

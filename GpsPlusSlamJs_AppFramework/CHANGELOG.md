@@ -936,7 +936,7 @@ Requires `gps-plus-slam-js` ≥ 1.26.0. The version matches the core library's 1
   `buildSessionMetadataRecord`, `writeSessionMetadata` and `sanitizedPageUrl`,
   the builder of a recording's `session.json` (`odomCoordVersion: 5`, the H3
   coverage, the build stamp), moved here from the RecorderApp so a second
-  writer agrees with it on the coordinate era (DEC-H3). The build info is
+  writer agrees with it on the coordinate era. The build info is
   injected (`getBuildInfo`, which may throw: that drops only the `build`
   field), and `pageUrl` is left out rather than `undefined` when absent.
 - **`utils/build-info`** (deep import): `getBuildInfo()` and `BuildInfo`, the
@@ -1015,7 +1015,7 @@ Requires `gps-plus-slam-js` ≥ 1.26.0. The version matches the core library's 1
   the owner switched without the replay measurement §23 had planned (no
   usable recordings existed). New: `createFusedQrPoseSource` on `/ar/qr`
   (and deep-importable), one fused tracker per code over the entries an app
-  reads - the QR demo's former local copy, now shared (DEC-H3). Behaviour
+  reads - the QR demo's former local copy, now shared. Behaviour
   changes for the TourViewer: after a tracking restart the old frame's
   detections stop counting (the entries are per frame epoch); the 3 cm
   translation-spread gate is gone (position agreement is policed by the
@@ -1503,7 +1503,7 @@ Requires `gps-plus-slam-js` ≥ 1.22.0.
 - **Google Drive tours through the CORS proxy** — share-link normalization,
   range-probe and remote byte-source hardening, with `410 Gone` no longer
   conflated with the two other conditions it had been folded into.
-- **Shared helpers unified (DEC-H3)** — `utils/median` (the weighted-median
+- **Shared helpers unified** — `utils/median` (the weighted-median
   family) and the new `utils/bearing-degrees` replace copies that had drifted
   apart; see the fixes below for what the drift had cost.
 
@@ -1566,7 +1566,7 @@ Requires `gps-plus-slam-js` ≥ 1.20 (the `resetGpsSessionData` carrier).
   AR session-end STATE teardown (close the recording, drop the session's
   odometry↔GPS pairs via the core's `resetGpsSessionData` while keeping
   the zero, clear the coordinator cache). Unified from three identical
-  app sequences (DEC-H3); requires gps-plus-slam-js ≥ 1.20.
+  app sequences; requires gps-plus-slam-js ≥ 1.20.
 - **`decodeFrameTexture` promoted from the recorder** —
   `visualization/frame-texture-decoder` decodes an image Blob into an
   UPRIGHT `THREE.Texture` (the ImageBitmap orientation contract: browsers

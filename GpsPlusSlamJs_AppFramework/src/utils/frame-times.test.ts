@@ -1,6 +1,6 @@
 /**
  * Tests for the frame-time ring (moved from OsmDemo's `ar-sun-shadow.ts`,
- * 2026-10-03, DEC-H3).
+ * 2026-10-03).
  *
  * Why this file matters: a window MEAN (the HUD's fps) is blind to the one
  * frame that renders a shadow map or compiles a shader; the ring's p95, p99

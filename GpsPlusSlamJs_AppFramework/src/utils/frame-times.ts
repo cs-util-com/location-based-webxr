@@ -1,6 +1,6 @@
 /**
  * A ring of the last frame times with nearest-rank percentiles (moved from
- * OsmDemo's `ar-sun-shadow.ts` on 2026-10-03, DEC-H3; globe zoom
+ * OsmDemo's `ar-sun-shadow.ts` on 2026-10-03; globe zoom
  * performance plan 2026-10-03-2017, PERF-0).
  *
  * For a LIVE readout only: it holds the last `capacity` frames, so it
