@@ -32,6 +32,11 @@ import {
 } from "gps-plus-slam-app-framework/visualization/atmosphere/sky-atmosphere";
 import * as THREE from "three";
 
+import {
+  type HazeVeil,
+  veilDisplayLinear,
+  veilSceneColour,
+} from "./haze-veil.js";
 import type { SunAngles, Vector3Like } from "./sun-position.js";
 import { sunDirection } from "./sun-position.js";
 
@@ -343,6 +348,8 @@ export class AtmosphereRig {
   /** The air's visibility the light dialog set (`setHaze`), km. */
   private visibilityKm: number = HAZE_VISIBILITY_KM;
   private startRatio: number = HAZE_START_RATIO;
+  /** The haze veil the light dialog set (`setHazeVeil`); none by default. */
+  private veil: HazeVeil | null = null;
 
   constructor(options: AtmosphereRigOptions) {
     this.scene = options.scene;
@@ -479,6 +486,27 @@ export class AtmosphereRig {
     }
   }
 
+  /**
+   * The haze veil the light dialog tunes (`haze-veil.ts`): the colour a
+   * fully hazed distance shows, in place of the sky's colour in that
+   * direction; null gives the sky's colour back. The haze gets the scene
+   * colour that the renderer's exposure tone maps to the veil. Uniforms
+   * only: the sky is not rebuilt, and the physical path leaves the scene fog
+   * (which AR swaps for its own) alone. On the fallback, whose haze is the
+   * stock fog, the veil is the fog colour. Validated before any change.
+   *
+   * @throws RangeError for a veil `veilSceneColour` refuses.
+   */
+  setHazeVeil(veil: HazeVeil | null): void {
+    const scene =
+      veil === null ? null : veilSceneColour(veil, TONE_MAPPING_EXPOSURE);
+    this.veil = veil;
+    this.haze.setVeil(scene);
+    if (this.fallback !== undefined && this.lastDirection !== undefined) {
+      this.applyFallback(this.lastDirection);
+    }
+  }
+
   /** Where the haze's boundary fade starts, as a share of the draw distance. */
   get hazeStartRatio(): number {
     return this.startRatio;
@@ -570,7 +598,11 @@ export class AtmosphereRig {
     });
     this.sun.color.setRGB(...sky.sun.colour);
     this.sun.intensity = sky.sun.intensity;
-    this.setFogColour(new THREE.Color(...sky.horizon));
+    this.setFogColour(
+      new THREE.Color(
+        ...(this.veil === null ? sky.horizon : veilDisplayLinear(this.veil)),
+      ),
+    );
     // Radiance-coloured, so π turns it into the irradiance three's
     // hemisphere term expects; the zenith's hue is an approximation of the
     // whole sky's (it is a fallback).

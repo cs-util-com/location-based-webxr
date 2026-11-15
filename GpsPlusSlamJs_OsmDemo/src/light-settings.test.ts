@@ -20,6 +20,7 @@ import {
   NOON_SURFACE_GAIN,
   surfaceGainAt,
 } from "./atmosphere-rig.js";
+import { HAZE_VEIL_TINT } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
@@ -27,6 +28,7 @@ import {
   gainOf,
   parseLightSettings,
   serializeLightSettings,
+  veilOf,
   type LightSettings,
 } from "./light-settings.js";
 
@@ -44,7 +46,11 @@ describe("DEFAULT_LIGHT_SETTINGS", () => {
       exposureEv: NATURAL_LIGHT_COMPENSATION_EV,
       hazeVisibilityKm: HAZE_VISIBILITY_KM,
       hazeStartRatio: HAZE_START_RATIO,
+      hazeVeilLightness: 0,
+      hazeVeilTint: HAZE_VEIL_TINT,
     });
+    // No veil: the haze takes the sky's colour, as it always has.
+    expect(veilOf(DEFAULT_LIGHT_SETTINGS)).toBeNull();
     // Today's haze: 45 km, its boundary fade from 0.66 of the draw distance.
     expect(HAZE_VISIBILITY_KM).toBe(45);
     expect(HAZE_START_RATIO).toBe(0.66);
@@ -60,8 +66,13 @@ describe("DEFAULT_LIGHT_SETTINGS", () => {
   // sky light on buildings was raised to its old slider end (1.4 -> 3, to
   // carry the linear-light building colours), which would have left the
   // owner no way to brighten the buildings further.
+  // The veil's lightness is the exception: its default is OFF (0, the
+  // sky's colour), which sits at the slider's start by design.
   it("leaves every slider room on both sides of its default", () => {
-    for (const f of FIELDS) {
+    expect(DEFAULT_LIGHT_SETTINGS.hazeVeilLightness).toBe(
+      LIGHT_SETTING_RANGES.hazeVeilLightness.min,
+    );
+    for (const f of FIELDS.filter((x) => x !== "hazeVeilLightness")) {
       const r = LIGHT_SETTING_RANGES[f];
       expect(DEFAULT_LIGHT_SETTINGS[f], f).toBeGreaterThan(r.min);
       expect(DEFAULT_LIGHT_SETTINGS[f], f).toBeLessThan(r.max);
@@ -245,6 +256,73 @@ describe("parseLightSettings and serializeLightSettings", () => {
   });
 });
 
+describe("the haze veil keys", () => {
+  // WHY (city look, a bright bluish veil): the veil is tuned by two keys,
+  // `veil` (its lightness on screen, L*; 0 is off) and `tint` (its b*). A
+  // link without them must keep the sky-derived haze; one that states them
+  // must get exactly those values, inside the sliders' bounds only.
+  it("reads and writes them, inside their bounds", () => {
+    const d = DEFAULT_LIGHT_SETTINGS;
+    const s = parseLightSettings("?light=v1:veil=80,tint=-6.5");
+    expect(s).toEqual({ ...d, hazeVeilLightness: 80, hazeVeilTint: -6.5 });
+    expect(veilOf(s)).toEqual({ lightness: 80, tint: -6.5 });
+    expect(serializeLightSettings({ ...d, hazeVeilLightness: 72 })).toBe(
+      "v1:veil=72",
+    );
+    for (const bad of [
+      "veil=-1",
+      "veil=81",
+      "tint=-12.5",
+      "tint=4.5",
+      "veil=x",
+    ]) {
+      expect(parseLightSettings(`?light=v1:${bad}`), bad).toEqual(d);
+    }
+    const v = LIGHT_SETTING_RANGES.hazeVeilLightness;
+    const t = LIGHT_SETTING_RANGES.hazeVeilTint;
+    expect([v.min, v.max, v.step]).toEqual([0, 80, 1]);
+    expect([t.min, t.max, t.step]).toEqual([-12, 4, 0.5]);
+  });
+
+  // WHY: a tint on its own is not a veil; the haze keeps the sky's colour
+  // until a lightness is set.
+  it("is off at lightness 0, whatever the tint", () => {
+    expect(veilOf({ ...DEFAULT_LIGHT_SETTINGS, hazeVeilTint: -10 })).toBeNull();
+  });
+
+  // WHY: a veil tried in the dialog and shared must come back exactly, and
+  // must not drag any other field away from today's look with it.
+  it("round-trips any veil alone, writing only the veil keys", () => {
+    const grid = (f: "hazeVeilLightness" | "hazeVeilTint") => {
+      const r = LIGHT_SETTING_RANGES[f];
+      return fc
+        .integer({ min: 0, max: Math.round((r.max - r.min) / r.step) })
+        .map((k) => Number((r.min + k * r.step).toFixed(3)));
+    };
+    fc.assert(
+      fc.property(grid("hazeVeilLightness"), grid("hazeVeilTint"), (l, t) => {
+        const s = {
+          ...DEFAULT_LIGHT_SETTINGS,
+          hazeVeilLightness: l,
+          hazeVeilTint: t,
+        };
+        const value = serializeLightSettings(s);
+        const keys = (value ?? "v1:")
+          .slice(3)
+          .split(",")
+          .filter((p) => p !== "")
+          .map((p) => p.split("=")[0]);
+        expect(keys.every((k) => k === "veil" || k === "tint")).toBe(true);
+        const back = parseLightSettings(
+          value === null ? "" : `?light=${encodeURIComponent(value)}`,
+        );
+        expect(back).toEqual(s);
+      }),
+      { numRuns: 200, seed: 20261115 },
+    );
+  });
+});
+
 describe("describeLightSettings", () => {
   // WHY: the Copy line is what the owner pastes back; every value must be
   // in it, readable.
@@ -258,10 +336,23 @@ describe("describeLightSettings", () => {
       exposureEv: -2.5,
       hazeVisibilityKm: 15,
       hazeStartRatio: 0.2,
+      hazeVeilLightness: 0,
+      hazeVeilTint: -4,
     });
     expect(line).toBe(
       "light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5, " +
         "haze 15 km from 0.2 of the draw distance",
     );
+  });
+
+  // WHY: a veil changes the look as much as the haze it colours, so the
+  // pasted line must carry it; without one the line stays as it was.
+  it("names the veil when one is set", () => {
+    const line = describeLightSettings({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVeilLightness: 78,
+      hazeVeilTint: -5,
+    });
+    expect(line.endsWith(", veil L* 78 b* -5")).toBe(true);
   });
 });

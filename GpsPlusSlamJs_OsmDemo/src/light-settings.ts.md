@@ -17,7 +17,8 @@ tuned look can be shared and pasted back.
 ## Public API
 
 - `LightSettings`: `{ gainMax, gainFromDeg, gainFullDeg, buildingSkyLight,
-exposureAdaptation, exposureEv, hazeVisibilityKm, hazeStartRatio }`.
+exposureAdaptation, exposureEv, hazeVisibilityKm, hazeStartRatio,
+hazeVeilLightness, hazeVeilTint }`.
 - `DEFAULT_LIGHT_SETTINGS`: built from `NOON_SURFACE_GAIN`,
   `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION`,
   `NATURAL_LIGHT_COMPENSATION_EV`, `HAZE_VISIBILITY_KM` and
@@ -28,7 +29,7 @@ exposureAdaptation, exposureEv, hazeVisibilityKm, hazeStartRatio }`.
 - `LIGHT_SETTING_RANGES`: each field's slider min, max and step.
 - `parseLightSettings(search)`: from `?light=v1:gain=1.8,ev=-2.5` (keyed,
   versioned pairs; the keys are gain, from, full, sky, adapt, ev, vis,
-  haze). Never
+  haze, veil, tint). Never
   throws. A missing, unknown, non-numeric or out-of-range field falls back to
   its default, a ramp that does not rise falls back to the default ramp, and
   another version or a bare list is ignored.
@@ -50,6 +51,17 @@ haze 45 km from 0.66 of the draw distance`.
   `hazeOf(settings)` gives `{ visibilityKm, startRatio }` for
   `AtmosphereRig.setHaze`. What the two mean in the haze shader is in
   `atmosphere-rig.ts.md`.
+- **The haze veil (city look, a bright bluish veil).** `veil`, the veil's
+  lightness as CIE L* on screen (default 0 = no veil, range 0-80 step 1),
+  and `tint`, its CIE b* (default `HAZE_VEIL_TINT` -4, range -12..4 step
+  0.5; a* is 0). At lightness 0 the haze keeps the sky's colour exactly, so
+  the default, an old link and a link with only a `tint` all render today's
+  look. 80 is the brightest lightness every tint can show below the tone
+  curve's compression knee (at b* -12 the last is 81). `veilOf(settings)`
+  gives `{ lightness, tint }` for `AtmosphereRig.setHazeVeil`, or `null` at
+  lightness 0. Why L* and b* rather than a mix factor toward a colour:
+  `haze-veil.ts.md`. The Copy line adds `, veil L* 78 b* -5` only when a
+  veil is set.
 - `gainOf(settings)`: the ramp for `surfaceGainAt(elevationRad, ramp)` in
   `atmosphere-rig.ts`.
 
@@ -99,4 +111,8 @@ writeLight(browserPlaceUrl(window), serializeLightSettings(settings));
 - bad fields fall back one by one;
 - the haze keys are read and written inside their bounds, and any haze
   alone round-trips writing only `vis` and `haze` (a property test);
-- the Copy line names every value.
+- the veil keys: read and written inside their bounds, out-of-range and
+  non-numeric values ignored, `veilOf` null at lightness 0 whatever the
+  tint, and any veil alone round-trips writing only `veil` and `tint` (a
+  property test, fixed seed);
+- the Copy line names every value, and the veil only when one is set.

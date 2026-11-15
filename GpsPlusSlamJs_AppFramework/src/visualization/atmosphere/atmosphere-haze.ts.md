@@ -27,6 +27,10 @@ with the air's per-channel extinction, replacing the one-colour fog. An
     neutral 1×1 texture bound (AR, or no atmosphere yet).
   - `mode` — the requested mode (so an AR session can restore it).
   - `setDensityScale(k)` — multiplier on the physical extinction (≥ 0).
+  - `setVeil(rgb | null)` and `veil` — a fixed scene-linear colour the haze
+    fades toward in place of the sky-view LUT colour (an app's look
+    control); `null` (the default) is the sky's colour. Each channel must
+    be finite and ≥ 0 (`RangeError`). Survives `sync`.
   - `uniforms` (the haze's own shared objects), `dispose()`.
 - `HazeAnchorError` — thrown at compile time when three's shader lacks an
   anchor the patch hooks.
@@ -65,6 +69,14 @@ observerAltitudeKm)`, `hazeTransmittance(distanceM, extinctionPerM)`,
   app whose installers assign late re-applies before each render; an
   unchanged material costs one comparison.
 
+- THE VEIL IS A MIX, OFF BY DEFAULT. The shader computes the sky colour as
+  always, then `atmHazeSky = mix(atmHazeSky, atmHazeVeil, atmHazeVeilOn)`;
+  with `atmHazeVeilOn` 0 the sky colour passes unchanged, so an app that
+  never calls `setVeil` renders exactly what it did. The veil is constant
+  across view directions (the sky's colour varies with the sun's azimuth),
+  and it is scene-linear: an app that states it as a screen colour inverts
+  its own tone mapping first. Fog mode ignores it.
+
 ## Examples
 
 ```ts
@@ -84,7 +96,9 @@ haze.setMode(inAr ? 'fog' : 'atmosphere');
   new hook first, a key naming it, a custom key kept), the second-owner
   refusal, the named
   anchor error, subtree application (skips included), modes, sync after an
-  atmosphere replacement (altitude derived), density.
+  atmosphere replacement (altitude derived), density, the veil (off by
+  default, kept through a sync, mixed in after the sky lookup, bad colours
+  refused).
 - Pixels: the look-dev smoke asserts the haze changes the distant ridges
   several times more than the near city; that every changed ridge pixel
   moved TOWARD the sky just above it (direction, not only magnitude); and

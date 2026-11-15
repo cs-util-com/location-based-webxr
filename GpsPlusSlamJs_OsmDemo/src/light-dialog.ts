@@ -26,6 +26,9 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   exposureAdaptation: "Auto-exposure strength (mostly dawn and dusk darkness)",
   hazeVisibilityKm: "Haze: visibility (km, lower is hazier)",
   hazeStartRatio: "Haze: fade starts at (share of the draw distance)",
+  hazeVeilLightness:
+    "Haze: veil lightness (L* on screen, 0 = the sky's colour)",
+  hazeVeilTint: "Haze: veil tint (b* on screen, below 0 is bluer)",
 };
 
 /**

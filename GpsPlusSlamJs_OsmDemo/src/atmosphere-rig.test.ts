@@ -32,6 +32,7 @@ import {
   TONE_MAPPING_EXPOSURE,
   type SkyLike,
 } from "./atmosphere-rig.js";
+import { veilDisplayLinear, veilSceneColour } from "./haze-veil.js";
 import { sunDirection, type SunAngles } from "./sun-position.js";
 
 /** A sun at an elevation and an azimuth, degrees (the rig does not care how it was chosen). */
@@ -566,5 +567,73 @@ describe("AtmosphereRig night floor (r1155, owner: Nachts Grundhelligkeit)", () 
       view.dispose();
       expect(floorOf(scene)).toBeUndefined();
     }
+  });
+});
+
+describe("AtmosphereRig.setHazeVeil (city look, a bright bluish veil)", () => {
+  // WHY: the shipped look must not move: until the dialog sets a veil, the
+  // haze takes the sky's colour, exactly as before.
+  it("starts with no veil", () => {
+    const { view } = rig();
+    expect(view.haze.veil).toBeNull();
+    expect(view.haze.uniforms.atmHazeVeilOn.value).toBe(0);
+  });
+
+  // WHY: the veil is a colour on SCREEN; the haze blends before tone
+  // mapping, so the rig hands it the scene colour that shows it at the
+  // renderer's exposure. Uniforms only: the sky is neither rebuilt nor
+  // re-read, and the fog object (which AR swaps for its own) is untouched.
+  it("sets the haze colour, and touches neither the sky nor the fog", () => {
+    const { view, sky, scene } = rig();
+    view.setSun(sunAt(25, 200));
+    const calls = sky.calls.length;
+    const fog = (scene.fog as THREE.Fog).color.clone();
+    const veil = { lightness: 80, tint: -4 };
+    view.setHazeVeil(veil);
+    expect(view.haze.veil).toEqual(
+      veilSceneColour(veil, TONE_MAPPING_EXPOSURE),
+    );
+    expect(sky.calls.length).toBe(calls);
+    expect((scene.fog as THREE.Fog).color.equals(fog)).toBe(true);
+    view.setHazeVeil(null);
+    expect(view.haze.veil).toBeNull();
+  });
+
+  // WHY: a sun move or an exposure change re-syncs the haze from the sky;
+  // the veil is the dialog's and must survive both.
+  it("keeps the veil through a sun move and an exposure change", () => {
+    const { view } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setHazeVeil({ lightness: 75, tint: -6 });
+    const set = view.haze.veil;
+    view.setSun(sunAt(40, 180));
+    view.setExposure({ ev: -2, adaptation: 0.8 });
+    expect(view.haze.veil).toEqual(set);
+  });
+
+  // WHY: on the fallback the haze is three's stock fog, whose colour is the
+  // scene fog's; the veil must reach it there, and leave it for the
+  // fallback's horizon again when cleared.
+  it("colours the fallback's fog, and gives it back to the horizon", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(25, 200));
+    const horizon = (scene.fog as THREE.Fog).color.clone();
+    const veil = { lightness: 80, tint: -4 };
+    view.setHazeVeil(veil);
+    const fog = (scene.fog as THREE.Fog).color;
+    const want = veilDisplayLinear(veil);
+    expect([fog.r, fog.g, fog.b]).toEqual([...want]);
+    view.setHazeVeil(null);
+    expect((scene.fog as THREE.Fog).color.equals(horizon)).toBe(true);
+  });
+
+  it("refuses a veil it cannot show, changing nothing", () => {
+    const { view } = rig();
+    view.setHazeVeil({ lightness: 70, tint: -4 });
+    const set = view.haze.veil;
+    expect(() => view.setHazeVeil({ lightness: 99, tint: -4 })).toThrow(
+      RangeError,
+    );
+    expect(view.haze.veil).toEqual(set);
   });
 });

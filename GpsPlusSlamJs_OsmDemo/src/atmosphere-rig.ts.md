@@ -33,6 +33,23 @@ colour that matched the sky at one time of day.
     `building-view.ts` writes `fog.near = startRatio x fog.far` from it.
     Validated before any change: a visibility that is not a positive finite
     number, or a start outside [0, 1), is a `RangeError`.
+  - `setHazeVeil(veil | null)`: the light dialog's haze veil
+    (`haze-veil.ts`), the colour a fully hazed distance SHOWS, in place of
+    the sky's colour in that direction. The haze gets
+    `veilSceneColour(veil, TONE_MAPPING_EXPOSURE)`, the scene colour the
+    renderer's tone mapping turns into the veil; `null` gives the sky's
+    colour back, bit for bit (the shader's mix weight is 0). Uniforms only:
+    the sky is not rebuilt or re-read, and on the physical path the scene
+    fog (whose colour only the stock fog uses, and which AR swaps for its
+    own) is left alone. The veil survives `setSun`, `setExposure` and
+    `setHaze`. On the fallback, whose haze is three's stock fog blending
+    after tone mapping, the veil's display colour IS the fog colour, and
+    `null` gives the fog back to the fallback's horizon. Validated before
+    any change (`RangeError` from `veilSceneColour`).
+    - **The sky stays the sky.** The veil changes only what geometry fades
+      toward; the visible sky behind it keeps its own colour, so a bright
+      veil against a darker horizon shows the seam the reference does not.
+      Deliberately not hidden by changing the sky model.
   - `HAZE_VISIBILITY_KM` (45) and `HAZE_START_RATIO` (0.66): the shipped
     haze, and the light dialog's defaults.
   - **What the two values are, in the haze's own terms.** The haze on a
@@ -193,7 +210,11 @@ renderer.render(scene, camera);
   built at today's visibility and the start is today's until set; the sky's
   visibility and the haze's extinction move together; an unchanged
   visibility does not reconfigure the sky; bad values change nothing; the
-  fallback's horizon follows the visibility.
+  fallback's horizon follows the visibility. `setHazeVeil`: none by
+  default; the haze gets the veil's scene colour while the sky and the
+  fog are untouched; it survives a sun move and an exposure change; the
+  fallback's fog takes the veil's display colour and returns to the
+  horizon on `null`; a veil it cannot show changes nothing.
 - The night floor (same file): off by day and at -2.9 deg, full at -30 deg,
   cool, one light, untouched by an exposure change, the same in the fallback,
   removed on dispose. `atmosphere-rig.property.test.ts`: the weight is in

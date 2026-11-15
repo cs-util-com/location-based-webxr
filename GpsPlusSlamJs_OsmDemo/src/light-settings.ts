@@ -27,6 +27,7 @@ import {
   NOON_SURFACE_GAIN,
   type SurfaceGainRamp,
 } from "./atmosphere-rig.js";
+import { HAZE_VEIL_TINT, type HazeVeil } from "./haze-veil.js";
 
 export interface LightSettings {
   /** The building and road colour factor at a high sun. */
@@ -54,6 +55,13 @@ export interface LightSettings {
    * (0 at the camera). The physical haze acts at every distance either way.
    */
   readonly hazeStartRatio: number;
+  /**
+   * The haze veil's lightness, CIE L* on screen (`haze-veil.ts`); 0 means
+   * no veil, the haze takes the sky's colour as it always did.
+   */
+  readonly hazeVeilLightness: number;
+  /** The haze veil's tint, CIE b* on screen; below 0 is bluer. */
+  readonly hazeVeilTint: number;
 }
 
 /** Today's look: the shipped constants, read from where they live. */
@@ -66,6 +74,8 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
   exposureEv: NATURAL_LIGHT_COMPENSATION_EV,
   hazeVisibilityKm: HAZE_VISIBILITY_KM,
   hazeStartRatio: HAZE_START_RATIO,
+  hazeVeilLightness: 0,
+  hazeVeilTint: HAZE_VEIL_TINT,
 };
 
 /** The sliders' ranges and steps (the dialog's inputs and the URL's bounds). */
@@ -88,6 +98,10 @@ export const LIGHT_SETTING_RANGES: {
   hazeVisibilityKm: { min: 9, max: 60, step: 1 },
   // Below 1, so the fade never starts at the far plane itself.
   hazeStartRatio: { min: 0, max: 0.9, step: 0.01 },
+  // 80 keeps every tint below the tone curve's knee (at -12, L* 81 is the last; haze-veil.test.ts holds
+  // it for every slider value); 0 is "no veil".
+  hazeVeilLightness: { min: 0, max: 80, step: 1 },
+  hazeVeilTint: { min: -12, max: 4, step: 0.5 },
 };
 
 /** Each field's key in the URL; never rename one (shared links use them). */
@@ -100,6 +114,8 @@ const KEYS: { readonly [K in keyof LightSettings]: string } = {
   exposureEv: "ev",
   hazeVisibilityKm: "vis",
   hazeStartRatio: "haze",
+  hazeVeilLightness: "veil",
+  hazeVeilTint: "tint",
 };
 const FIELDS = Object.keys(KEYS) as (keyof LightSettings)[];
 
@@ -163,7 +179,10 @@ export function describeLightSettings(s: LightSettings): string {
     `light: gain ${round(s.gainMax)} (${round(s.gainFromDeg)}° to ${round(s.gainFullDeg)}°), ` +
     `sky light ${round(s.buildingSkyLight)}, adaptation ${round(s.exposureAdaptation)}, ` +
     `EV ${round(s.exposureEv)}, ` +
-    `haze ${round(s.hazeVisibilityKm)} km from ${round(s.hazeStartRatio)} of the draw distance`
+    `haze ${round(s.hazeVisibilityKm)} km from ${round(s.hazeStartRatio)} of the draw distance` +
+    (s.hazeVeilLightness > 0
+      ? `, veil L* ${round(s.hazeVeilLightness)} b* ${round(s.hazeVeilTint)}`
+      : "")
   );
 }
 
@@ -173,6 +192,13 @@ export function hazeOf(s: LightSettings): {
   readonly startRatio: number;
 } {
   return { visibilityKm: s.hazeVisibilityKm, startRatio: s.hazeStartRatio };
+}
+
+/** The haze veil these settings describe, or null for the sky's colour. */
+export function veilOf(s: LightSettings): HazeVeil | null {
+  return s.hazeVeilLightness > 0
+    ? { lightness: s.hazeVeilLightness, tint: s.hazeVeilTint }
+    : null;
 }
 
 /** The surface gain ramp these settings describe (`surfaceGainAt`). */

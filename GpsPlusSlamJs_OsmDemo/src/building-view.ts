@@ -72,6 +72,7 @@ import {
   DEFAULT_LIGHT_SETTINGS,
   gainOf,
   hazeOf,
+  veilOf,
   type LightSettings,
 } from "./light-settings.js";
 import { litSurfaceLuma, meanChroma } from "./light-readouts.js";
@@ -1681,7 +1682,7 @@ export class BuildingView {
    * ramp (applied through `aimSun`, as the sun does), the exposure through
    * the rig (which re-derives the sun light, fog and haze), and the sky light
    * on buildings (applied before every render). Held, so rebuilt meshes and
-   * later sun changes keep them. The haze goes to the rig, and its start is
+   * later sun changes keep them. The haze and its veil go to the rig, and its start is
    * re-applied to the fog at the current draw distance.
    */
   setLightSettings(settings: LightSettings): void {
@@ -1691,6 +1692,7 @@ export class BuildingView {
       adaptation: settings.exposureAdaptation,
     });
     this.atmosphere.setHaze(hazeOf(settings));
+    this.atmosphere.setHazeVeil(veilOf(settings));
     // The view's OWN fog, not `scene.fog`: an AR session swaps in its stock
     // fog and restores this one after, so a change made meanwhile still
     // lands where the desktop view will draw it.

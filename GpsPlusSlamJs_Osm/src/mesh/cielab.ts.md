@@ -14,6 +14,9 @@ designed in.
 - `labToRgb(lab): Rgb` - the nearest 8-bit sRGB hex colour; channels outside
   the gamut are clamped and NaN reads as 0, so the result is always an
   integer in 0..0xffffff.
+- All three are exported from the package root (`mesh/index.ts`), so an
+  app states a colour in L\*a\*b\* with this one conversion rather than a
+  copy of its own (OsmDemo's haze veil, `haze-veil.ts`).
 
 ## Invariants & assumptions
 
@@ -24,7 +27,6 @@ designed in.
   (sampled over 2000 colours by the property test, not proven for all).
 - Not used on any per-frame path: the palette converts once per building
   and only when its jitter is above 0.
-- Internal to the package (not exported from the `mesh` barrel).
 
 ## Examples
 

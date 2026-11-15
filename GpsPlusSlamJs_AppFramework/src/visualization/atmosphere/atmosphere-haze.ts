@@ -112,6 +112,8 @@ uniform sampler2D atmHazeSkyView;
 uniform vec3 atmSunDirection;
 uniform float atmObserverRadius;
 uniform float atmRadianceToScene;
+uniform vec3 atmHazeVeil;
+uniform float atmHazeVeilOn;
 ${ATMOSPHERE_COMMON_GLSL}
 #endif`;
 
@@ -125,6 +127,9 @@ if (atmHazeMode > 0.5) {
   vec3 atmDir = atmHorizonClampedDir(atmViewDir);
   vec3 atmHazeSky = texture2D(atmHazeSkyView, atmSkyViewUv(atmObserverRadius, atmDir, atmSunDirection)).rgb
     * atmRadianceToScene;
+  // The app's own veil colour in place of the sky's, when set (weight 1);
+  // a weight of 0 returns the sky colour unchanged.
+  atmHazeSky = mix(atmHazeSky, atmHazeVeil, atmHazeVeilOn);
   #ifdef FOG_EXP2
     float atmBoundary = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
   #else
@@ -166,6 +171,10 @@ export interface HazeUniforms {
   atmSunDirection: THREE.IUniform<THREE.Vector3>;
   atmObserverRadius: THREE.IUniform<number>;
   atmRadianceToScene: THREE.IUniform<number>;
+  /** The veil colour, scene-linear (the units the haze blends in). */
+  atmHazeVeil: THREE.IUniform<THREE.Vector3>;
+  /** 1 while a veil is set, else 0. */
+  atmHazeVeilOn: THREE.IUniform<number>;
 }
 
 /** What the haze reads from an atmosphere (`SkyAtmosphere` satisfies it). */
@@ -219,6 +228,7 @@ export class AtmosphereHaze {
   private densityScale: number;
   private requested: 'atmosphere' | 'fog' = 'atmosphere';
   private skyView: THREE.Texture | undefined;
+  private veilColour: Rgb | null = null;
 
   constructor(options: AtmosphereHazeOptions) {
     mieExtinctionForVisibility(options.visibilityKm);
@@ -239,6 +249,8 @@ export class AtmosphereHaze {
         value: EARTH_ATMOSPHERE.groundRadiusKm + this.observerAltitudeKm,
       },
       atmRadianceToScene: { value: 0 },
+      atmHazeVeil: { value: new THREE.Vector3() },
+      atmHazeVeilOn: { value: 0 },
     };
     this.updateExtinction();
   }
@@ -293,6 +305,34 @@ export class AtmosphereHaze {
     this.uniforms.atmHazeSkyView.value = atmosphere
       ? this.skyView!
       : this.neutral;
+  }
+
+  /**
+   * A haze colour of the app's own, in place of the sky in the view
+   * direction: the distance then fades toward this one colour, at the same
+   * physical rate and boundary fade. Scene-linear, the units the haze blends
+   * in before tone mapping (so the caller decides what it shows on screen).
+   * `null` returns to the sky's colour, the default. Only atmosphere mode
+   * draws it; the stock fog (AR) keeps its own colour. A sync keeps it.
+   *
+   * @throws RangeError for a colour that is not three finite values of at
+   *   least 0 (nothing changes).
+   */
+  setVeil(colour: Rgb | null): void {
+    if (colour !== null && !colour.every((c) => Number.isFinite(c) && c >= 0)) {
+      throw new RangeError(
+        `haze veil must be three finite values of at least 0, got ${colour.join(', ')}`
+      );
+    }
+    this.veilColour =
+      colour === null ? null : [colour[0], colour[1], colour[2]];
+    this.uniforms.atmHazeVeilOn.value = colour === null ? 0 : 1;
+    if (colour !== null) this.uniforms.atmHazeVeil.value.set(...colour);
+  }
+
+  /** The veil colour set by {@link setVeil}, or `null` (the sky's colour). */
+  get veil(): Rgb | null {
+    return this.veilColour;
   }
 
   /** Scale the physical extinction (a demo's taste knob). */

@@ -49,8 +49,10 @@ WebGL.
 - **The element ids are the contract with the page and the e2e:**
   - `#light-dialog`;
   - `#light-<field>`, one range input per `LightSettings` field, with its
-    range from `LIGHT_SETTING_RANGES` (the two haze sliders,
-    `#light-hazeVisibilityKm` and `#light-hazeStartRatio`, come last);
+    range from `LIGHT_SETTING_RANGES` (the haze sliders come last:
+    `#light-hazeVisibilityKm`, `#light-hazeStartRatio`, then the veil's
+    `#light-hazeVeilLightness`, 0 = the sky's colour, and
+    `#light-hazeVeilTint`);
   - `#light-ao`, the ambient occlusion checkbox (only when offered);
   - `#light-readout`;
   - `#light-back`, `#light-check`, `#light-copy`, `#light-reset` and
@@ -127,6 +129,7 @@ dialog.toggle();
   - the ramp kept rising in both directions;
   - the haze visibility applied on release with its readout live, the
     other values live on the drag;
+  - the veil's two sliders, off by default and applied live;
   - the brightness alone on release, the margin only on the check;
   - `refresh()` while open and while closed;
   - Reset;

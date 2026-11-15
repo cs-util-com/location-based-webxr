@@ -110,6 +110,24 @@ describe("createLightDialog", () => {
     });
   });
 
+  // WHY: the veil is tuned here like the haze; at its default (lightness 0)
+  // the haze keeps the sky's colour, so an untouched dialog changes nothing.
+  it("offers the haze veil, off by default, and applies it live", () => {
+    const { $, slide, onChange } = setup();
+    const l = $<HTMLInputElement>("light-hazeVeilLightness");
+    const t = $<HTMLInputElement>("light-hazeVeilTint");
+    expect([l.min, l.max, l.value]).toEqual(["0", "80", "0"]);
+    expect([t.min, t.max, t.value]).toEqual(["-12", "4", "-4"]);
+    expect(l.parentElement!.textContent).toContain("0 = the sky");
+    slide("hazeVeilLightness", 76);
+    slide("hazeVeilTint", -6);
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVeilLightness: 76,
+      hazeVeilTint: -6,
+    });
+  });
+
   // WHY: a new visibility rebuilds the sky's tables, so a drag that applied
   // every step rebuilt them at every whole km. The value is applied once, on
   // release; its readout still follows the thumb while it moves.
