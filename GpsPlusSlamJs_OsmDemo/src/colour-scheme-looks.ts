@@ -523,15 +523,15 @@ export const URBAN: ColourScheme = {
     towerFromM: 40,
     honourMaterialTags: true,
     materialWalls: new Map([
-      ["glass", 0x566066],
-      ["brick", 0x8f695e],
+      ["glass", 0x454f55],
+      ["brick", 0x977165],
       ["concrete", 0x979692],
       ["stone", 0xb3aa9d],
       ["sandstone", 0xb39c87],
       ["granite", 0x817b78],
       ["metal", 0x888c8e],
       ["plaster", 0xbeb5a7],
-      ["wood", 0x826856],
+      ["wood", 0x8f7462],
     ]),
     wallJitterL: 3,
     flatRoofs: [

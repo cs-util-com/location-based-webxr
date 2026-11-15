@@ -244,30 +244,42 @@ describe("the schemes", () => {
     }
   });
 
-  it("keep the tower and material walls apart from roads and ground too", () => {
-    // Why this test matters: a tower or a material-tagged building draws its
-    // walls from `towerWalls` or `materialWalls` instead of `walls`, so each
-    // is a building group of its own; a tower list as dark as the ground
-    // loses the towers against it, which the walls-only floor never saw.
+  it("keep the tower walls apart from roads and ground too, by their mean", () => {
+    // Why this test matters: a tower draws its walls from `towerWalls`
+    // instead of `walls`, so the list is a building group of its own; a tower
+    // list as dark as the ground loses the towers against it, which the
+    // walls-only floor never saw. A MEAN-ONLY PROXY, like the walls' own
+    // check: a seeded pick spreads the list's tones over the towers, so one
+    // tone near the ground is one tower in several (colour-scheme-looks.ts.md).
     for (const name of COLOUR_SCHEME_NAMES) {
       const { city } = COLOUR_SCHEMES[name];
+      // The tower rule is off at an infinite height.
+      if (!Number.isFinite(city.towerFromM)) continue;
       const { roads, ground } = groupLightness(COLOUR_SCHEMES[name]);
-      // Only the groups the scheme draws from: the tower rule is off at an
-      // infinite height and the materials without the flag.
-      const groups = [
-        ["towerWalls", Number.isFinite(city.towerFromM) ? city.towerWalls : []],
-        [
-          "materialWalls",
-          city.honourMaterialTags ? [...city.materialWalls.values()] : [],
-        ],
-      ] as const;
-      for (const [group, colours] of groups) {
-        if (colours.length === 0) continue;
-        const mean = meanOf(colours.map(lightness));
-        const least = Math.min(Math.abs(mean - roads), Math.abs(mean - ground));
+      const mean = meanOf(city.towerWalls.map(lightness));
+      const least = Math.min(Math.abs(mean - roads), Math.abs(mean - ground));
+      expect(
+        least,
+        `${name} towerWalls: ${mean.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}`,
+      ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+    }
+  });
+
+  it("keep EVERY material wall tone apart from roads and ground", () => {
+    // Why this test matters: a material-tagged building draws exactly ONE
+    // tone, its material's, on every wall, so a mean over the materials says
+    // nothing about any one building: a glass tone 2 L* from the ground hid
+    // behind a comfortable group mean. Each tone is held to the floor.
+    for (const name of COLOUR_SCHEME_NAMES) {
+      const { city } = COLOUR_SCHEMES[name];
+      if (!city.honourMaterialTags) continue;
+      const { roads, ground } = groupLightness(COLOUR_SCHEMES[name]);
+      for (const [material, rgb] of city.materialWalls) {
+        const l = lightness(rgb);
+        const least = Math.min(Math.abs(l - roads), Math.abs(l - ground));
         expect(
           least,
-          `${name} ${group}: ${mean.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}`,
+          `${name} ${material}: ${l.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}`,
         ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
       }
     }
@@ -375,15 +387,15 @@ describe("the urban scheme (real-albedo grey ladder)", () => {
     expect(city.towerFromM).toBe(40);
     expect(city.honourMaterialTags).toBe(true);
     expect([...city.materialWalls]).toEqual([
-      ["glass", 0x566066],
-      ["brick", 0x8f695e],
+      ["glass", 0x454f55],
+      ["brick", 0x977165],
       ["concrete", 0x979692],
       ["stone", 0xb3aa9d],
       ["sandstone", 0xb39c87],
       ["granite", 0x817b78],
       ["metal", 0x888c8e],
       ["plaster", 0xbeb5a7],
-      ["wood", 0x826856],
+      ["wood", 0x8f7462],
     ]);
     expect(city.wallJitterL).toBe(3);
   });

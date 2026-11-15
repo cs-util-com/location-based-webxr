@@ -110,6 +110,39 @@ describe("createLightDialog", () => {
     });
   });
 
+  // WHY: a new visibility rebuilds the sky's tables, so a drag that applied
+  // every step rebuilt them at every whole km. The value is applied once, on
+  // release; its readout still follows the thumb while it moves.
+  it("applies the haze visibility on release, its readout live", () => {
+    const { $, onChange } = setup();
+    const vis = $<HTMLInputElement>("light-hazeVisibilityKm");
+    const out = vis.parentElement!.querySelector("output")!;
+    vis.value = "20";
+    vis.dispatchEvent(new Event("input"));
+    expect(out.value).toBe("20");
+    expect(onChange).not.toHaveBeenCalled();
+    vis.value = "15";
+    vis.dispatchEvent(new Event("input"));
+    vis.dispatchEvent(new Event("change"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVisibilityKm: 15,
+    });
+  });
+
+  // WHY: every other value is cheap to apply, so it stays live on the drag.
+  it("applies the other values while they are dragged", () => {
+    const { $, onChange } = setup();
+    const start = $<HTMLInputElement>("light-hazeStartRatio");
+    start.value = "0.3";
+    start.dispatchEvent(new Event("input"));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeStartRatio: 0.3,
+    });
+  });
+
   // WHY (review, 2026-09-24): the dialog opens by its button or the l key, so
   // focus is OUTSIDE it and a panel-only Escape did nothing. Focus moves in on
   // open and back to the opener on close, and the opener says whether it is

@@ -2,7 +2,8 @@
  * The light settings the owner tunes in the light dialog (plan
  * 2026-09-24-2140-osm-demo-light-settings-dialog-plan): the noon surface
  * gain's ramp, the sky light on buildings, the sky's auto-exposure
- * adaptation and the EV compensation. The defaults ARE the shipped look, so
+ * adaptation, the EV compensation, and the haze's visibility and start
+ * (`HAZE_VISIBILITY_KM`, `HAZE_START_RATIO`). The defaults ARE the shipped look, so
  * an untouched dialog changes nothing; the values travel in the URL
  * (`?light=v1:gain=1.8,ev=-2.5`, only the fields that differ) so a tuned
  * look can be shared and pasted back. This is a deliberate exception to

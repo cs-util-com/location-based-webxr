@@ -122,10 +122,22 @@ it reads dirty, shift it up 6-8 L* before trimming further), the warm share
   steel grey `0x838789`, drawn by every building of `towerFromM` = 40 m or
   more. The glass and dark-stone tones sit 4 L* above the exploration's
   draft (hue and chroma kept), so the tower group's mean stays 8 L* clear
-  of the ground (`colour-schemes.test.ts`).
-- `honourMaterialTags` with `materialWalls`: glass, brick, concrete, stone,
-  sandstone, granite, metal, plaster, wood, each at its real albedo; a
-  colour tag still wins, a material beats the height.
+  of the ground (`colour-schemes.test.ts`). That check is a MEAN-ONLY
+  PROXY: a tower draws one tone of the list by its seed, so a single tone
+  near the ground (glass `0x566066` is 2 L* from it) is one tower in
+  several, not every tower; the rendered look is the judge.
+- `honourMaterialTags` with `materialWalls`: glass `0x454f55`, brick
+  `0x977165`, concrete `0x979692`, stone `0xb3aa9d`, sandstone `0xb39c87`,
+  granite `0x817b78`, metal `0x888c8e`, plaster `0xbeb5a7`, wood
+  `0x8f7462`, each at or near its real albedo; a colour tag still wins, a
+  material beats the height. A material building draws its ONE tone on
+  every wall, so each tone is held 8 L* from the ground and the roads ON
+  ITS OWN, not by a mean. Three were moved in L* for it, hue and chroma
+  kept in Lab: glass from L* 40 (the exploration's 36 was too close as
+  well) down to 33, 9 below the ground; brick (48) and wood (46) up to
+  51, the low end of the brick and salmon facades lit in the reference
+  (L* 49-69), where real brick albedo alone (L* 38-47) would sit on the
+  ground.
 - `wallJitterL` 3: every wall shifted by a seeded amount of up to 3 L*.
 - The rules live in the library (`building-palette.ts`); the default has
   them off. Values to sweep on the rendered look: `towerFromM` 25-60 m (at

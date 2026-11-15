@@ -28,6 +28,15 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   hazeStartRatio: "Haze: fade starts at (share of the draw distance)",
 };
 
+/**
+ * The values applied when the slider is released, not while it is dragged:
+ * a new haze visibility rebuilds the sky's tables, which a drag would do at
+ * every step. Their readout still follows the thumb.
+ */
+const APPLIED_ON_RELEASE: ReadonlySet<keyof LightSettings> = new Set([
+  "hazeVisibilityKm",
+]);
+
 /** One measurement of the view as it stands. */
 interface LightReadout {
   readonly litLuma: number;
@@ -196,21 +205,29 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     deps.onChange(settings);
   };
 
+  const applyField = (field: keyof LightSettings, input: HTMLInputElement) => {
+    let next: LightSettings = { ...settings, [field]: Number(input.value) };
+    // The ramp must rise: a start dragged past the end moves the end.
+    if (!(next.gainFullDeg > next.gainFromDeg)) {
+      next =
+        field === "gainFromDeg"
+          ? { ...next, gainFullDeg: next.gainFromDeg + 1 }
+          : { ...next, gainFromDeg: next.gainFullDeg - 1 };
+    }
+    apply(next);
+  };
   for (const [field, input] of inputs) {
+    const onRelease = APPLIED_ON_RELEASE.has(field);
     input.addEventListener("input", () => {
-      let next: LightSettings = { ...settings, [field]: Number(input.value) };
-      // The ramp must rise: a start dragged past the end moves the end.
-      if (!(next.gainFullDeg > next.gainFromDeg)) {
-        next =
-          field === "gainFromDeg"
-            ? { ...next, gainFullDeg: next.gainFromDeg + 1 }
-            : { ...next, gainFromDeg: next.gainFullDeg - 1 };
-      }
-      apply(next);
+      if (onRelease) values.get(field)!.value = input.value;
+      else applyField(field, input);
     });
     // The brightness on release, not on every drag event: each reading is a
     // full-frame readback (plan §7 item 4).
-    input.addEventListener("change", brightness);
+    input.addEventListener("change", () => {
+      if (onRelease) applyField(field, input);
+      brightness();
+    });
   }
 
   // Applied at once (the view redraws one frame); the brightness it now

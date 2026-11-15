@@ -19,8 +19,9 @@ tuned look can be shared and pasted back.
 - `LightSettings`: `{ gainMax, gainFromDeg, gainFullDeg, buildingSkyLight,
 exposureAdaptation, exposureEv, hazeVisibilityKm, hazeStartRatio }`.
 - `DEFAULT_LIGHT_SETTINGS`: built from `NOON_SURFACE_GAIN`,
-  `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION` and
-  `NATURAL_LIGHT_COMPENSATION_EV` (`atmosphere-rig.ts`), so it cannot drift
+  `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION`,
+  `NATURAL_LIGHT_COMPENSATION_EV`, `HAZE_VISIBILITY_KM` and
+  `HAZE_START_RATIO` (`atmosphere-rig.ts`), so it cannot drift
   from the shipped constants. Since 2026-09-25 they are the owner's pick
   (DEC-LIGHT-9/10). A link keeps the values it states; a field it leaves out
   means today's default.

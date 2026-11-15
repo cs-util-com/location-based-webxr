@@ -202,7 +202,8 @@ export function groundPositionFor(centreEnu: {
 }
 
 /**
- * Where the haze starts, as a fraction of the far plane.
+ * Where the haze starts at the 1x far plane, in metres: the shipped start RATIO
+ * times `FAR_PLANE_M`. The ratio, not this distance, is what the view keeps.
  *
  * A RATIO RATHER THAN A SECOND DISTANCE, and the shape is deliberate.
  * `ar-scene-environment.ts` records removing exactly the alternative: "This was
@@ -214,7 +215,8 @@ export function groundPositionFor(centreEnu: {
  * The ratio is `HAZE_START_RATIO` (0.66, `atmosphere-rig.ts`), and the light
  * dialog can lower it (`AtmosphereRig.setHaze`); the view reads it back from
  * the rig on every far-plane or light change, so it is still one number.
- * `FOG_NEAR_M` is the shipped start at the shipped far plane.
+ * This constant is only its value at the 1x far plane (1584 m at
+ * 2400 m); it moves with neither the dial nor the dialog.
  */
 export const FOG_NEAR_M = FAR_PLANE_M * HAZE_START_RATIO;
 

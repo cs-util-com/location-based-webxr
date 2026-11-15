@@ -1653,6 +1653,34 @@ test.describe("the desktop controls", () => {
       ).toBeAttached();
     });
   });
+
+  test("a light link's haze start reaches the view's fog, keeps its share at any draw distance, and follows the dialog", async ({
+    page,
+  }) => {
+    // WHY: the haze start is a SHARE of the draw distance that the light
+    // link and the dialog set and the view re-applies to its own fog. The
+    // readout reads the fog back, so these texts prove the boot path, the
+    // dial and the dialog each wrote it. `BuildingView` needs WebGL, so no
+    // unit test can.
+    await stubNetwork(page);
+    await page.goto(`${AT_FIXTURE}&light=v1:haze=0.2`);
+    await waitForRefresh(page);
+    const readout = page.locator("#render-distance-value");
+    await expect(readout).toHaveText("draw 4800 m · haze 960 m");
+
+    await setting(page, "#render-distance", async (slider) => {
+      await slider.fill("10");
+      await slider.dispatchEvent("input");
+      // The share holds at the new draw distance: 0.2 of 24000.
+      await expect(readout).toHaveText("draw 24000 m · haze 4800 m");
+    });
+
+    await setting(page, "#light-open", (opener) => opener.click());
+    const start = page.locator("#light-hazeStartRatio");
+    await start.fill("0.5");
+    await start.dispatchEvent("input");
+    await expect(readout).toHaveText("draw 24000 m · haze 12000 m");
+  });
 });
 
 test.describe("the AR entry point", () => {
