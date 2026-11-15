@@ -120,7 +120,6 @@ function labelWords(seed: number): number[][][] {
   });
 }
 
-
 /** The colour of the cartoon at (x, y), in units of the picture's
  *  shorter side from its centre. */
 function cartoonAt(
