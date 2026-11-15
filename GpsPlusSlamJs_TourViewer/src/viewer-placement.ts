@@ -116,6 +116,7 @@ import {
   type ContentPart,
   type StationContent,
 } from "./station-content.js";
+import { reducedMotionReader } from "./reduced-motion.js";
 import {
   selectPresentStationId,
   selectShowAllContent,
@@ -1187,9 +1188,7 @@ export function createViewerPlacement(deps: {
       ...(deps.worldSay === undefined ? {} : { say: deps.worldSay }),
       parseModel: (blob) => seams.loadGlbModel(blob),
       enableClipping: () => seams.enableClipping(),
-      reduceMotion: () =>
-        globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ===
-        true,
+      reduceMotion: reducedMotionReader(globalThis),
     });
     const rendererDeps = (parent: Object3D, alive: () => boolean) => ({
       assets: manifest.assets,
