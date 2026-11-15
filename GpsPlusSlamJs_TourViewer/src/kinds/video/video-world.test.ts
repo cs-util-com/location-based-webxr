@@ -31,6 +31,7 @@ import {
 import { videoCap, type VideoCap } from "./video-cap.js";
 import {
   SOUND_REFUSED_NOTE,
+  VIDEO_SWITCH_NOTE_S,
   VIDEO_WAITING_NOTE,
   videoWorld,
   type ClipPlayer,
@@ -420,6 +421,32 @@ describe("a free video's part", () => {
     expect(lineOf(loneHost)).toBe("Captions off");
   });
 
+  // Why: without storage a CC choice cannot be read back, so the card
+  // that opens again (the visitor walked out and back) must keep this
+  // video's own choice rather than fall back to captions on.
+  it("keeps this video's CC choice when its card opens again without storage", async () => {
+    const captions = "WEBVTT\n\n00:01.000 --> 00:03.000\nThe gate";
+    const broken: PrefsStorage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    const { part, shown } = await video({
+      storage: broken,
+      block: { captions },
+    });
+    part.update?.(at(1, 0));
+    shown.host?.querySelector<HTMLElement>(".video-card-cc")?.click();
+    part.update?.(at(100, 1));
+    part.update?.(at(1, 2));
+    expect(shown.open).toBe(1);
+    const cc = shown.host?.querySelector<HTMLElement>(".video-card-cc");
+    expect(cc?.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("stays still and silent in the editor", async () => {
     const { part, player, shown } = await video({ mode: "edit" });
     part.update?.(at(1, 0));
@@ -690,6 +717,93 @@ describe("videos that share the play cap", () => {
     expect(here.player.calls).toEqual(["play muted"]);
   });
 
+  // Why: a held video that waits for a place to come back is still the
+  // visitor's wish to watch it; his press on its card's Play must not
+  // turn that wait into a pause that gives up its turn.
+  it("keeps a held video's turn when its card's Play is pressed while it waits", async () => {
+    const cap = videoCap();
+    const [a, b, c] = await Promise.all([
+      video({ cap }),
+      video({ cap }),
+      video({ cap }),
+    ]);
+    c.part.update?.(at(1, 0));
+    a.part.update?.(at(1, 0));
+    c.part.update?.(at(100, 1));
+    b.part.update?.(at(1, 1));
+    c.part.update?.(at(1, 2));
+    expect(lineOf(c.shown.host)).toBe(VIDEO_WAITING_NOTE);
+    c.shown.host?.querySelector<HTMLElement>(".narration-card-play")?.click();
+    c.part.update?.(at(1, 3));
+    expect(lineOf(c.shown.host)).toBe(VIDEO_WAITING_NOTE);
+    a.part.tap?.();
+    expect(plays(c.player)).toBe(true);
+  });
+
+  // Why: a start with sound mutes the one heard so far before the
+  // browser has said yes; when the browser then keeps the new one muted,
+  // the sound goes back to where it was rather than to nobody.
+  it("gives the sound back to the video heard before when a start with sound is refused", async () => {
+    const cap = videoCap();
+    const a = await video({ cap, block: { sound: "on" } });
+    const b = await video({ cap, block: { sound: "on" }, refuse: "sound" });
+    a.part.update?.(at(1, 0));
+    b.part.update?.(at(1, 0));
+    await settle();
+    expect(plays(b.player)).toBe(true);
+    expect(b.player.muted).toBe(true);
+    expect(heard(a.player)).toBe(true);
+    expect(a.player.calls).toEqual(["play sound"]);
+  });
+
+  // Why: a start with sound the browser has not answered after a second
+  // is muted and tried again; when the first try's refusal arrives only
+  // after that, it must not stop the muted try that plays, or the part
+  // gives up its place while its player plays on beside the next one.
+  it("keeps its place when a late refusal of a start with sound arrives after the muted try plays", async () => {
+    const cap = videoCap(1);
+    const a = await video({ cap, block: { sound: "on" }, refuse: "sound" });
+    const b = await video({ cap, block: { sound: "on" } });
+    for (const t of [0, 0.4, 0.8, 1.2]) {
+      a.part.update?.(at(1, t));
+      b.part.update?.(at(1, t));
+    }
+    await settle();
+    expect(plays(a.player)).toBe(true);
+    expect(a.player.muted).toBe(true);
+    expect(plays(b.player)).toBe(false);
+  });
+
+  // Why: a video the browser would not start even muted plays nothing,
+  // so its place must go to the next in line at once.
+  it("frees the place of a video the browser would not start, for the next in line", async () => {
+    const cap = videoCap();
+    const a = await video({ cap });
+    const b = await video({ cap, refuse: "always" });
+    const c = await video({ cap });
+    for (const v of [a, b, c]) v.part.update?.(at(1, 0));
+    expect(c.player.calls).toEqual([]);
+    await settle();
+    expect(plays(c.player)).toBe(true);
+  });
+
+  // Why: a video taken away while it waits must leave the line, or the
+  // next freed place would go to nothing and the one behind it would
+  // wait for good.
+  it("drops a video that is taken away from the line", async () => {
+    const cap = videoCap();
+    const [a, b, c, d] = await Promise.all([
+      video({ cap }),
+      video({ cap }),
+      video({ cap }),
+      video({ cap }),
+    ]);
+    for (const v of [a, b, c, d]) v.part.update?.(at(1, 0));
+    c.part.dispose();
+    a.part.tap?.();
+    expect(plays(d.player)).toBe(true);
+  });
+
   // Why: the cap's promise, over any mix of videos, triggers and visitor
   // walks and taps: never more than two playing, never two heard. The
   // limit is swept from 1 to 3, since 2 is a guess about phones.
@@ -700,6 +814,7 @@ describe("videos that share the play cap", () => {
       sound: fc.constantFrom("on", "off"),
       view: fc.constantFrom("screen", "porthole", "standHere"),
       loop: fc.constantFrom("on", "off"),
+      refuse: fc.constantFrom("never", "sound", "always"),
     });
     const move = fc.oneof(
       fc.record({
@@ -722,6 +837,7 @@ describe("videos that share the play cap", () => {
             specs.map(async (s) => {
               const v = await video({
                 cap,
+                refuse: s.refuse,
                 block: {
                   start: s.start,
                   sound: s.sound,
@@ -756,6 +872,9 @@ describe("videos that share the play cap", () => {
                 each.part.update?.(at(viewer, t, facing));
               }
             }
+            // A refused play() reaches its catch, and its muted retry
+            // settles: a few microtask hops, cheaper than a timer per move.
+            for (let hop = 0; hop < 4; hop++) await Promise.resolve();
             const players = videos.map((each) => each.player);
             expect(players.filter(plays).length).toBeLessThanOrEqual(limit);
             expect(players.filter(heard).length).toBeLessThanOrEqual(1);
@@ -931,6 +1050,77 @@ describe("a stand-here video", () => {
     expect(shownInWorld()).toBe(false);
     part.update?.(at(20, 0));
     expect(shownInWorld()).toBe(true);
+  });
+
+  // Why: a turn in line is for a visitor on the spot; one who stepped
+  // off it (still near the video) must not have it start behind him as
+  // a faint ghost without captions. It asks again once he is back.
+  it("gives up its turn in line once the visitor steps off its spot", async () => {
+    const cap = videoCap();
+    const a = await video({ cap });
+    const b = await video({ cap });
+    a.part.update?.(at(1, 0));
+    b.part.update?.(at(1, 0));
+    const here = await video({
+      cap,
+      block: { view: "standHere", viewpoint },
+    });
+    walk(here.part, 6, 0, 3);
+    expect(here.player.calls).toEqual([]);
+    expect(line(here.shown.host)).toBe(VIDEO_WAITING_NOTE);
+    walk(here.part, 12, 3, 6, [1, 0, 0]);
+    a.part.tap?.();
+    expect(here.player.calls).toEqual([]);
+    walk(here.part, 6, 6, 9);
+    expect(here.player.calls).toEqual(["play muted"]);
+  });
+
+  // Why: the guide is what tells the visitor where to stand; a switch's
+  // note says what the switch did, for a moment, and then the guide (or
+  // a screen's own line) is back. Checked just before and just after
+  // the note's length.
+  it("lets a switch's note make way for the guide again after a moment", async () => {
+    const captions = "WEBVTT\n\n00:01.000 --> 00:03.000\nThe gate";
+    const { part, shown } = await video({
+      block: { view: "standHere", viewpoint, captions },
+    });
+    walk(part, 12, 0, 1, [1, 0, 0]);
+    expect(line(shown.host)).toBe("Stand on the footprints · 6 m");
+    shown.host?.querySelector<HTMLElement>(".video-card-cc")?.click();
+    expect(line(shown.host)).toBe("Captions off for every video");
+    part.update?.(at(12, 1 + VIDEO_SWITCH_NOTE_S - 0.1, [1, 0, 0]));
+    expect(line(shown.host)).toBe("Captions off for every video");
+    part.update?.(at(12, 1 + VIDEO_SWITCH_NOTE_S + 0.1, [1, 0, 0]));
+    expect(line(shown.host)).toBe("Stand on the footprints · 6 m");
+    const screen = await video({});
+    screen.part.update?.(at(1, 0));
+    screen.shown.host?.querySelector<HTMLElement>(".video-card-sound")?.click();
+    expect(line(screen.shown.host)).toBe("Sound on for every video");
+    screen.part.update?.(at(1, VIDEO_SWITCH_NOTE_S + 0.1));
+    expect(line(screen.shown.host)).toBe("");
+  });
+
+  // Why: the video's reach is in its own metres (a folder that draws it
+  // larger widens it), so the way to its spot must be too, or a scaled
+  // folder would let a visitor in too early or too late. Swept over
+  // scales on both sides of 1, just inside and just outside the reach.
+  it("measures the way to its spot in the video's own metres under a scaled folder", async () => {
+    for (const scale of [0.5, 1, 2, 3]) {
+      for (const [offM, open] of [
+        [VIDEO_AWAY_M - 1, 1],
+        [VIDEO_AWAY_M + 1, 0],
+      ] as const) {
+        const far = { ...viewpoint, position: [100 * scale, 1.6, 0] } as const;
+        const { part, shown } = await video({
+          block: { view: "standHere", viewpoint: far },
+        });
+        drawInherited(part.object, scale);
+        part.update?.(at((100 + offM) * scale, 0, [1, 0, 0]));
+        expect(shown.open, `scale ${String(scale)}, ${String(offM)} m`).toBe(
+          open,
+        );
+      }
+    }
   });
 
   it("stays still and silent in the editor, on its spot or not", async () => {

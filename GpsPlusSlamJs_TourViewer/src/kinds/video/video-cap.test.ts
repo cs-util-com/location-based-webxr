@@ -30,6 +30,7 @@ describe("the play cap's rule", () => {
       playing: ["a", "b"],
       waiting: ["c"],
       audible: null,
+      before: null,
     });
   });
 
@@ -57,7 +58,12 @@ describe("the play cap's rule", () => {
     s = capStep(s.state, { type: "leave", id: "d" });
     s = capStep(s.state, { type: "leave", id: "a" });
     expect(s.granted).toEqual([]);
-    expect(s.state).toEqual({ playing: ["c"], waiting: [], audible: null });
+    expect(s.state).toEqual({
+      playing: ["c"],
+      waiting: [],
+      audible: null,
+      before: null,
+    });
   });
 
   it("gives the sound to the newest that plays with it, and mutes the other", () => {
@@ -80,6 +86,37 @@ describe("the play cap's rule", () => {
     // A quiet from one not heard changes nothing.
     expect(capStep(s.state, { type: "quiet", id: "a" }).state.audible).toBe(
       "b",
+    );
+  });
+
+  // Why: a start with sound takes the sound before the browser has said
+  // yes; when the browser keeps it muted, the one it took the sound from
+  // must be heard again, not nobody.
+  it("gives the sound back to the one heard before when a start with sound is refused", () => {
+    let s = capStep(EMPTY_CAP, { type: "ask", id: "a" });
+    s = capStep(s.state, { type: "ask", id: "b" });
+    s = capStep(s.state, { type: "heard", id: "a" });
+    s = capStep(s.state, { type: "heard", id: "b" });
+    s = capStep(s.state, { type: "refused", id: "b" });
+    expect(s.unmuted).toEqual(["a"]);
+    expect(s.state.audible).toBe("a");
+    // Nobody to give it back to: one heard first, or one gone since.
+    let t = capStep(EMPTY_CAP, { type: "ask", id: "a" });
+    t = capStep(t.state, { type: "heard", id: "a" });
+    t = capStep(t.state, { type: "refused", id: "a" });
+    expect(t.unmuted).toEqual([]);
+    expect(t.state.audible).toBe(null);
+    let u = capStep(EMPTY_CAP, { type: "ask", id: "a" });
+    u = capStep(u.state, { type: "ask", id: "b" });
+    u = capStep(u.state, { type: "heard", id: "a" });
+    u = capStep(u.state, { type: "heard", id: "b" });
+    u = capStep(u.state, { type: "leave", id: "a" });
+    u = capStep(u.state, { type: "refused", id: "b" });
+    expect(u.unmuted).toEqual([]);
+    expect(u.state.audible).toBe(null);
+    // A refusal of one not heard changes nothing.
+    expect(capStep(s.state, { type: "refused", id: "b" }).state).toEqual(
+      s.state,
     );
   });
 
@@ -112,6 +149,7 @@ describe("the page's cap", () => {
     return {
       granted: () => log.push(`${name} plays`),
       muted: () => log.push(`${name} muted`),
+      unmuted: () => log.push(`${name} unmuted`),
     };
   }
 
@@ -134,17 +172,23 @@ describe("the page's cap", () => {
   it("commits each step before it calls a seat back, so a seat may call it again", () => {
     const cap = videoCap();
     const order: string[] = [];
-    const a: CapSeat = { granted: () => undefined, muted: () => undefined };
+    const a: CapSeat = {
+      granted: () => undefined,
+      muted: () => undefined,
+      unmuted: () => undefined,
+    };
     const b: CapSeat = {
       granted: () => {
         order.push(`b asks: ${String(cap.ask(b))}`);
         cap.heard(b);
       },
       muted: () => undefined,
+      unmuted: () => undefined,
     };
     const c: CapSeat = {
       granted: () => undefined,
       muted: () => order.push("c muted"),
+      unmuted: () => undefined,
     };
     cap.ask(a);
     cap.ask(c);

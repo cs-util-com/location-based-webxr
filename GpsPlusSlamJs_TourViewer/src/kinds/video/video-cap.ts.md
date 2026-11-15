@@ -21,6 +21,9 @@ videos play at once, and at most one of them with its sound. A pure rule
   or the visitor's sound switch turned on, takes the sound; the video heard
   before is muted where it is, still playing, never paused, rewound or
   restarted. The design: "a second unmuted start mutes the first".
+  Should the browser then keep that start muted, the sound goes back to
+  the video it was taken from, if it still plays (`refused`): a refusal
+  must not leave nobody heard.
 - A place comes free when a video stops playing: paused by the visitor,
   left (beyond its reach plus the margin), ended, refused by the browser,
   or freed. A wait is given up when the visitor leaves the video.
@@ -31,20 +34,23 @@ videos play at once, and at most one of them with its sound. A pure rule
 
 - `VIDEO_PLAY_CAP` (2) - the design's guess at what a mid-range phone
   decodes smoothly; a phone where two stutter would lower it to one.
-- `CapState` `{ playing, waiting, audible }` and `EMPTY_CAP`.
-- `CapAction` `{ type: "ask" | "leave" | "heard" | "quiet", id }`.
+- `CapState` `{ playing, waiting, audible, before }` and `EMPTY_CAP`;
+  `before` is the one the heard one took the sound from.
+- `CapAction` `{ type: "ask" | "leave" | "heard" | "quiet" | "refused", id }`.
 - `capStep(state, action, limit = VIDEO_PLAY_CAP)` ->
-  `{ state, granted, muted }`:
+  `{ state, granted, muted, unmuted }`:
   - `ask` - one that plays or waits keeps its place; else it plays when a
     place is free (`granted`), or waits last in line.
   - `leave` - out of both lists, no longer heard; each freed place goes to
     the first that waits (`granted`).
   - `heard` - one that plays becomes the one heard; the one heard before
     is in `muted`. One that does not play is ignored.
-  - `quiet` - the one heard is heard no more.
+  - `quiet` - the one heard is heard no more (and nobody gets it back).
+  - `refused` - the one heard is heard no more, and `before`, if it still
+    plays, is heard again (in `unmuted`).
   - A `limit` that is no whole number of at least one counts as one.
-- `CapSeat` `{ granted(), muted() }` - a video as the cap sees it.
-- `videoCap(limit?)` -> `VideoCap` `{ ask, leave, heard, quiet }`: `ask`
+- `CapSeat` `{ granted(), muted(), unmuted() }` - a video as the cap sees it.
+- `videoCap(limit?)` -> `VideoCap` `{ ask, leave, heard, quiet, refused }`: `ask`
   returns whether it may play now; a seat that waits has `granted` called
   once it may. The state is committed before any seat is called back, so a
   seat may call the cap again from its callback.
@@ -53,7 +59,7 @@ videos play at once, and at most one of them with its sound. A pure rule
 
 - Never more than `limit` play; the one heard is one that plays; playing
   and waiting are apart and list each video once; nobody waits while a
-  place is free.
+  place is free; `before`, when set, plays and is not the one heard.
 - A seat that neither plays nor waits is forgotten, so a page that builds
   and frees videos for hours keeps no list of the gone.
 - The page's cap is one module value in `video-world.ts`, shared by every
@@ -72,7 +78,7 @@ cap.leave(a); // c.granted() is called
 
 ## Tests
 
-- `video-cap.test.ts` - each rule, the line's order, a limit other than
+- `video-cap.test.ts` - each rule (the sound given back included), the line's order, a limit other than
   two, and a seat calling the cap again from its callback.
 - `video-cap.property.test.ts` - over any action sequence and limits 1 to
   4, the invariants above.
