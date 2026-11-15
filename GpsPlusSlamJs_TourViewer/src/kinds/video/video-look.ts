@@ -83,6 +83,11 @@ export interface VideoLook {
    *  shadow on the ground. */
   readonly tapTarget: Object3D;
   show(state: LookState): void;
+  /** Stands the shadow and a cutout's foot `liftM` (in the part's own
+   *  metres) below the object, where the ground is now: a folder drawing
+   *  the part at another scale moves it. A value that is no finite
+   *  number, and the porthole (no ground), change nothing. */
+  ground(liftM: number): void;
   dispose(): void;
 }
 
@@ -480,6 +485,9 @@ function screenLook(owned: Owned, o: LookOptions, ground: number) {
   return {
     root,
     tapTarget: front,
+    ground(y: number) {
+      shadow.position.y = y + 0.012;
+    },
     show(s: LookState) {
       feedClip(clip, s);
       glyph.visible = !s.playing && glyphPaint !== null;
@@ -533,6 +541,9 @@ function cutoutLook(owned: Owned, o: LookOptions, ground: number) {
   return {
     root,
     tapTarget: figure,
+    ground(y: number) {
+      foot.position.y = y;
+    },
     show(s: LookState) {
       feedClip(clip, s);
       if (s.viewer === null) return;
@@ -678,7 +689,8 @@ export function videoLook(options: LookOptions): VideoLook {
   const owned = new Owned();
   const scale = options.widthM / LOOK_REFERENCE_WIDTH_M;
   // The ground in the look's own (reference) metres.
-  const ground = scale > 0 ? -options.liftM / scale : 0;
+  const groundAt = (liftM: number): number => (scale > 0 ? -liftM / scale : 0);
+  const ground = groundAt(options.liftM);
   const built =
     options.view === "screen"
       ? screenLook(owned, options, ground)
@@ -700,6 +712,10 @@ export function videoLook(options: LookOptions): VideoLook {
     tapTarget: built.tapTarget,
     show: (state) => {
       built.show(state);
+    },
+    ground(liftM) {
+      if (!Number.isFinite(liftM) || !("ground" in built)) return;
+      built.ground(groundAt(liftM));
     },
     dispose() {
       object.removeFromParent();

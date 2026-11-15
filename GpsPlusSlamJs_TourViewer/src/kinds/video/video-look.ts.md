@@ -28,7 +28,10 @@ approved station-blocks video prototype's measures:
 - `LookOptions` - view, width, aspect (height per width), stacked, lift
   (the pose's height, to stand a cutout on the ground), edit, and the
   page's `canvasTexture`.
-- `videoLook(options)` -> `{ object, tapTarget, show(state), dispose() }`.
+- `videoLook(options)` -> `{ object, tapTarget, show(state), ground(liftM), dispose() }`;
+  `ground` stands the shadow and a cutout's foot `liftM` (the part's own
+  metres) below the object, for a folder that draws the part at another
+  scale; nonsense and the porthole change nothing.
 - `centredSquare(aspect)` -> `[u, v, w, h]` - the porthole's crop; the
   whole clip for an aspect that is no positive number.
 
@@ -63,7 +66,8 @@ look.show({ ...state, viewer: [0, 1.6, 4] });
 ## Tests
 
 - `video-look.test.ts` - proportional size in every view, the cutout's
-  clamped turn, the porthole's crop.
+  clamped turn, the porthole's crop, the ground moved and nonsense
+  ignored.
 - `video-world.test.ts` - a posed cutout is turned by the viewer in its
   own frame.
 - `placement/placement.contract.test.ts` - the drawn size against the

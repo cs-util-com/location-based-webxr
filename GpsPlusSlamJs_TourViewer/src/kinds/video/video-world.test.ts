@@ -446,5 +446,36 @@ describe("a free video's ground", () => {
         for (const y of heights) expect(Math.abs(y)).toBeLessThan(0.05);
       });
     }
+
+    // Why: while a folder's scale is dragged the renderer moves the part
+    // to its new composed height and draws it at the new scale, but the
+    // part keeps the pose it was built with (at the old scale). Its
+    // ground must follow what is drawn, not that pose, and the look must
+    // not be rebuilt per frame of the drag (new canvases each frame): the
+    // tap target is the same object throughout. Back at scale 1 the
+    // ground is where it was.
+    it(`a ${view} 2 m up in a folder on the ground keeps its ground while the folder's scale is dragged`, async () => {
+      const { part } = await video({
+        mode: "edit",
+        block: {
+          view,
+          pose: { position: [0, 2, 0], rotation: [0, 0, 0, 1] },
+        },
+      });
+      part.object.position.set(0, 2, 0);
+      part.update?.(at(0, 0));
+      const tap = part.tapTarget;
+      for (const scale of [3, 3, 0.5, 2, 1]) {
+        part.object.position.set(0, 2 * scale, 0);
+        drawInherited(part.object, scale);
+        part.update?.(at(0, 0));
+        const heights = shadowHeights(part.object);
+        expect(heights.length).toBeGreaterThan(0);
+        for (const y of heights) {
+          expect(Math.abs(y), `scale ${String(scale)}`).toBeLessThan(0.05);
+        }
+        expect(part.tapTarget, `scale ${String(scale)}`).toBe(tap);
+      }
+    });
   }
 });

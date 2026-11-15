@@ -27,12 +27,14 @@ same look, still and silent.
   it), waits for the clip's metadata and rejects when it cannot be read;
   on a page with no player it settles at once. The look is rebuilt to the
   clip's own shape (a stacked clip's picture is its upper half).
-- The ground: a shadow and a cutout's foot lie on the station's ground,
-  the pose's height below the object. Drawn in a scaled folder that
-  height is the scale smaller in the object's own metres, so when the
-  scale its folders draw it at (`inheritedScaleOf`) changes, the next
-  `update` rebuilds the look with its ground there (dragging a folder's
-  scale rebuilds it each frame the scale moves).
+- The ground: a shadow and a cutout's foot lie on the station's ground.
+  Each `update` takes it from what is drawn, not from the pose the part
+  was built with: the object's height in the station's frame over the
+  scale its folders draw it at (`inheritedScaleOf`), in its own metres,
+  passed to `look.ground`. That holds at rest and while a folder's
+  scale is dragged (the renderer moves the object and its scale, the
+  part keeps its old pose), and moves the shadow and foot without a
+  rebuild; a committed scale redraws the station anyway.
 - There: the horizontal distance from the object over the scale its
   folders draw it at (`inheritedScaleOf`), with `videoThere`'s margin.
   Coming there opens the card and sends `return`; leaving closes it and
@@ -78,4 +80,5 @@ part?.update?.({ seconds, viewer, facing });
   CC, leave
   and return, finished then replay, the porthole, the silent editor, a
   posed cutout's turn and dispose, and the ground of a screen and a cutout
-  in folders of scale 0.5 to 3.
+  in folders of scale 0.5 to 3, at rest and while a folder's scale is
+  dragged (no rebuild: the same tap target).

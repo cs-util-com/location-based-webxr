@@ -6,7 +6,7 @@
  * edge; and a porthole crops the clip to its centred square whatever its
  * shape.
  */
-import { Box3, type Object3D, Vector3 } from "three";
+import { Box3, type Mesh, type Object3D, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -48,6 +48,19 @@ function size(o: Object3D): Vector3 {
   return new Box3().setFromObject(o).getSize(new Vector3());
 }
 
+/** The heights, in the look's parent, of the meshes lying flat (its
+ *  ground shadows). */
+function shadowYs(o: Object3D): number[] {
+  o.updateMatrixWorld(true);
+  const ys: number[] = [];
+  o.traverse((c) => {
+    if ((c as Mesh).isMesh && Math.abs(c.rotation.x + Math.PI / 2) < 1e-9) {
+      ys.push(c.getWorldPosition(new Vector3()).y);
+    }
+  });
+  return ys;
+}
+
 /** The largest turn about the vertical among the look's parts. */
 function turn(o: Object3D): number {
   let most = 0;
@@ -76,6 +89,30 @@ describe("a free video's look", () => {
       cutout.show({ ...STILL, viewer: [100, 1.5, 0.5], seconds: s });
     }
     expect(turn(cutout.object)).toBeCloseTo(CUTOUT_MAX_TURN, 3);
+  });
+
+  // Why: a folder drawing the part at another scale moves where its
+  // ground is in the part's own metres; the look must move its shadow
+  // (and a cutout its foot) there, in its parent's metres, without being
+  // rebuilt. Nonsense must not move it, and the porthole has no ground.
+  it("stands its shadow the given lift below, and ignores nonsense", () => {
+    for (const view of ["screen", "cutout"] as const) {
+      const l = look(view, 2);
+      const at0 = shadowYs(l.object);
+      expect(at0.length, view).toBeGreaterThan(0);
+      l.ground(1.5);
+      for (const [i, y] of shadowYs(l.object).entries()) {
+        expect(y, view).toBeCloseTo((at0[i] ?? 0) - 1.5, 6);
+      }
+      l.ground(Number.NaN);
+      for (const [i, y] of shadowYs(l.object).entries()) {
+        expect(y, view).toBeCloseTo((at0[i] ?? 0) - 1.5, 6);
+      }
+    }
+    const porthole = look("porthole", 2);
+    expect(() => {
+      porthole.ground(3);
+    }).not.toThrow();
   });
 
   it("crops a clip to its centred square, whatever its shape", () => {
