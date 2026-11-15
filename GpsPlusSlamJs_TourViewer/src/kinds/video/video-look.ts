@@ -871,7 +871,9 @@ function standHereLook(owned: Owned, o: LookOptions) {
     root,
     tapTarget: projection,
     show(s: LookState) {
-      feedClip(clip, s);
+      // The ghost is the clip's own first frame, never its poster (the
+      // prototype's): a poster would develop into another picture.
+      feedClip(clip, { ...s, poster: null });
       const shade = standHereShade(s.develop ?? 1, s.seconds);
       setUniform(clip, "opacity", shade.opacity);
       setUniform(clip, "tone", shade.tone);

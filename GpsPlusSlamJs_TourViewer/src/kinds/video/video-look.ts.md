@@ -23,7 +23,8 @@ approved station-blocks video prototype's measures:
   width.
 - `standHere` - the clip projected 12 % larger onto the wall in a
   feathered ellipse, shaded by its develop (`stand-here.ts`): a faint
-  sepia ghost at 0, the clip at 1; absent (the editor), whole.
+  sepia ghost of the clip itself at 0 (never its poster, which shows
+  another moment), the clip at 1; absent (the editor), whole.
   `standHereSpot(viewpoint, canvasTexture)` draws its footprints on the
   ground at the viewpoint (a 1.2 m disc with toes along the viewpoint's
   facing, and a 2.2 m pulse), in the frame it is added to.

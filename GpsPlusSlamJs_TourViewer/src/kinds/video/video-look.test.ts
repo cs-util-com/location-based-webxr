@@ -11,6 +11,7 @@ import {
   type Mesh,
   type Object3D,
   type ShaderMaterial,
+  Texture,
   Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
@@ -199,6 +200,26 @@ describe("a stand-here video's look", () => {
     expect(uniform(clip, "tone")).toBeCloseTo(0, 6);
     l.show(STILL);
     expect(uniform(clip, "opacity")).toBeCloseTo(1, 6);
+  });
+
+  // Why: the prototype's waiting ghost is the clip's own first frame; a
+  // poster (a title card, another picture) would develop into a picture
+  // that is not the clip. Other views still show their poster.
+  it("shows the clip, never its poster, as the stand-here ghost", () => {
+    const poster = new Texture();
+    const l = look("standHere", 1.6);
+    const [clip] = named(l.object, "video-stand-here-clip");
+    l.show({ ...STILL, poster, develop: 0 });
+    expect(uniform(clip, "hasPoster")).toBe(0);
+    expect(uniform(clip, "posterMix")).toBe(0);
+    const screen = look("screen", 1.6);
+    screen.show({ ...STILL, poster });
+    let mixes = 0;
+    screen.object.traverse((c) => {
+      const m = (c as Mesh).material as ShaderMaterial | undefined;
+      if (m?.uniforms?.posterMix?.value === 1) mixes++;
+    });
+    expect(mixes).toBeGreaterThan(0);
   });
 
   it("stands its footprints at the viewpoint, on the ground, toes the way to face", () => {
