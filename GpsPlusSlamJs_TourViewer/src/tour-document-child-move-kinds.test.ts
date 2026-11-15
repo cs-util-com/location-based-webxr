@@ -80,6 +80,8 @@ const VIEW_FIELDS: Record<string, Record<string, Record<string, unknown>>> = {
     screen: { widthM: 1.2, start: "near", withinM: 4, sound: "on" },
     cutout: { widthM: 0.9, alpha: "stacked" },
     porthole: { widthM: 1, start: "tap" },
+    window: { widthM: 1.1, start: "tap" },
+    standHere: { widthM: 1.4 },
   },
 };
 
@@ -100,7 +102,8 @@ const SHOWN_FREE: Record<TourBlockKind, string | null> = {
   model: "its world part (kinds/model/world.ts)",
   audio: "heard in its narration circle or zone",
   character: "a figure on a stage of his own (free-items.ts)",
-  video: "a screen, a cutout or a porthole (kinds/video/video-world.ts)",
+  video:
+    "a screen, a cutout, a porthole, a window or a stand-here projection (kinds/video/video-world.ts)",
 };
 
 const MODEL_WORLD = new Set(TOUR_FREE_BLOCK_VIEWS.model as readonly string[]);

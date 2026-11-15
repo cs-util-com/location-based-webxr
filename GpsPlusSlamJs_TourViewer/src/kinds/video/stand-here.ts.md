@@ -25,7 +25,8 @@ prototype's measures. `video-world.ts` drives them per frame,
   both null (no viewpoint) is 1; any other non-number is 0.
 - `standHereDevelop(develop, target, dtS)` -> 0..1: an exponential ease,
   the same after one long step as after many short ones; a step that is no
-  positive number is no step.
+  positive number is no step; the develop and the target are clamped to 0..1
+  first (a non-finite one reads 0), so no input overflows into NaN.
 - `standHereGuide(develop, spotM, hasViewpoint)` -> the line or null:
   "Stand on the footprints · N m" beyond the on-spot distance, "Face the
   video" on it, null once developed or without a viewpoint.

@@ -56,8 +56,8 @@ export function standHereDevelop(
   target: number,
   dtS: number,
 ): number {
-  const from = Number.isFinite(develop) ? develop : 0;
-  const to = Number.isFinite(target) ? target : 0;
+  const from = Number.isFinite(develop) ? Math.min(1, Math.max(0, develop)) : 0;
+  const to = Number.isFinite(target) ? Math.min(1, Math.max(0, target)) : 0;
   const step = Number.isFinite(dtS) && dtS > 0 ? dtS : 0;
   const next = from + (to - from) * (1 - Math.exp(-step * STAND_HERE_RATE));
   return Math.min(1, Math.max(0, next));
