@@ -29,6 +29,7 @@ import {
   KIND_EDIT,
   kindNoun,
   kindWithArticle,
+  shortTextPoints,
   type KindEditRow,
 } from "./edit-kinds.js";
 
@@ -248,5 +249,16 @@ describe("KIND_EDIT", () => {
       "audio",
       "model",
     ]);
+  });
+});
+
+describe("shortTextPoints", () => {
+  // Why: the panel draws the point boxes, and "Pick in 3D" waits for a
+  // click, only for a view that reads the point; the row field's views
+  // are the one list, so a view added there points everywhere at once.
+  it("is true for a pin, a sign and a ground arrow, and false otherwise", () => {
+    expect(
+      ["pin", "sign", "ground", "edgeHint", "nope"].map(shortTextPoints),
+    ).toEqual([true, true, true, false, false]);
   });
 });

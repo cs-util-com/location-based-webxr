@@ -240,7 +240,7 @@ An item's `sub` names it by `blockLabel` (`kinds/edit-kinds.ts`): a short text b
 
 ## A short text's point
 
-`InspectorShortText.point` is set for a sign or a ground arrow: `{ id, at, picking }`, `at` the file's `pointsTo` or null, `picking` the input's `pointPick` (false when absent). Other views carry no `point`.
+`InspectorShortText.point` is set for a view that points (`shortTextPoints`: a pin, a sign or a ground arrow): `{ id, at, picking }`, `at` the file's `pointsTo` or null, `picking` the input's `pointPick` (false when absent). Other views carry no `point`.
 
 ## A picture's field marks
 

@@ -862,7 +862,19 @@ describe("buildInspector", () => {
               { value: "warning", label: "Warning" },
             ],
           },
+          {
+            name: "orientation",
+            label: "Turns",
+            value: "world",
+            values: [
+              { value: "world", label: "Fixed" },
+              { value: "upright", label: "Upright" },
+              { value: "face", label: "Faces you" },
+            ],
+          },
         ],
+        // A pin turns its head toward the point it points to.
+        point: { id: "pin-1", at: null, picking: false },
       },
       video: null,
       // B2c: its other text fields, by the format's caps.
@@ -877,6 +889,14 @@ describe("buildInspector", () => {
           required: false,
         },
         {
+          name: "readAtM",
+          label: "Reads at",
+          value: "",
+          number: { unit: "m", scale: 1 },
+          prose: false,
+          required: false,
+        },
+        {
           name: "lang",
           label: "Language",
           value: "",
@@ -887,8 +907,8 @@ describe("buildInspector", () => {
       ],
       offset: { northM: 4, upM: 1.5, eastM: -2 },
       headingDeg: 0,
-      // A pin faces the visitor: its gizmo has no round arrow.
-      turns: false,
+      // A pin stands in the world and keeps its turn, as a sign does.
+      turns: true,
       folder: null,
       groundOffM: null,
     });
@@ -968,9 +988,9 @@ describe("inspectorHint", () => {
     expect(inspectorHint(inspect("station:a", ["a"]))).toBe(
       "Market Square - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn",
     );
-    // A pin faces the visitor, so its gizmo has no round arrow to name.
+    // A pin keeps its turn, so its gizmo names the round arrow too.
     expect(inspectorHint(inspect("pin-1"))).toBe(
-      "Fountain, 1612 - drag the middle to move along the ground",
+      "Fountain, 1612 - drag the middle to move along the ground, the round arrow to turn",
     );
     expect(inspectorHint(inspect("model-1"))).toBe(
       "3D model - drag the middle to move along the ground, the round arrow to turn, a white dot to resize",

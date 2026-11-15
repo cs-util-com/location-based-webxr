@@ -240,7 +240,6 @@ describe("the gizmo through the placement rows against the frozen layout", () =>
       "picture.viewer",
       "picture.window",
       "shortText.edgeHint",
-      "shortText.pin",
     ]);
     for (const { kind, view, row } of facing) {
       for (const headingDeg of HEADINGS) {

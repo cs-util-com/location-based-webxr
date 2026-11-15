@@ -286,8 +286,12 @@ describe("inspectorEdit", () => {
       selection: "model-1",
       deg: -90,
     });
-    // A pin faces the visitor (its row does not turn): no turn to write.
-    expect(edit("pin-1", "heading", "-90")).toEqual({ kind: "none" });
+    // A pin keeps its turn, as a sign does: the typed heading turns it.
+    expect(edit("pin-1", "heading", "-90")).toEqual({
+      kind: "turn",
+      selection: "pin-1",
+      deg: -90,
+    });
     // The short way round: 350 from 30 is a turn of -40.
     expect(edit("station:a", "heading", "350")).toMatchObject({ deg: -40 });
   });

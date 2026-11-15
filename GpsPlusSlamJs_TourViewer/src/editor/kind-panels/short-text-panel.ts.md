@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A short text's panel in the item inspector: chips for how it shows (pin, sign, edge hint, ground arrow), its role, and for a sign or a ground arrow how it turns; for a ground arrow also its style, a floor arrow's placement and caption switch, and its two colours with the sun check.
+A short text's panel in the item inspector: chips for how it shows (pin, sign, edge hint, ground arrow), its role, and for a pin, a sign or a ground arrow how it turns; for a ground arrow also its style, a floor arrow's placement and caption switch, and its two colours with the sun check.
 
 ## Public API
 
@@ -16,7 +16,7 @@ A short text's panel in the item inspector: chips for how it shows (pin, sign, e
 - The turn chips show only on a sign and a ground arrow (the views the row names): a pin and an edge hint face the visitor anyway.
 - A ground arrow: the style chips always; the placement chips (the row's `when`) and the caption switch only for a floor arrow. The colour wells show the written colour, else the role's accent and the style's dark default (`GROUND_DARK_DEFAULT`); the switch writes `"true"` or `""` and a well writes `#rrggbb`, both through `block` (`block-fields.ts` turns them into a boolean and a colour).
 - The sun check rates the dark colour, the one that carries the shape on pale paving in direct sun (`sunContrast`); below 3 : 1 it turns into a warning (`.sunwarn`). An estimate for a flat part facing up, so it errs toward warning.
-- Every chip writes at once; the panel has nothing to flush. The typed fields (description, reading distance, language) stay the dock's; where a sign or a ground arrow points is the panel's (below).
+- Every chip writes at once; the panel has nothing to flush. The typed fields (description, reading distance, language) stay the dock's; where a pin, a sign or a ground arrow points is the panel's (below).
 
 ## Tests
 

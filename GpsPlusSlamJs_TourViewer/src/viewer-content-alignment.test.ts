@@ -199,13 +199,15 @@ async function visitorSession(
   arStore.dispatch(showAllContentSet(true));
   const { level, pin } = tourAtTruth();
   const scene = new Scene();
-  const label = new Object3D();
+  /** The pin as drawn (its part, by the name the world door gives it),
+   *  or a parentless stand-in while nothing is drawn. */
+  const unplaced = new Object3D();
+  const drawnPin = (): Object3D =>
+    scene.getObjectByName("short-text-pin") ?? unplaced;
   const syntheticVotes = (): number =>
     (arStore.getState().gpsData?.gpsEvents?.gpsPositions ?? []).filter(
       (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_SYNTHETIC_QR,
     ).length;
-  /** The synthetic votes in the store when the pin's label was made. */
-  const atRender: { votes: number | null } = { votes: null };
   /** The page timers (`seams.schedule`), fired by hand. */
   const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const seams = {
@@ -236,10 +238,7 @@ async function visitorSession(
     }),
     getIntrinsics: () => ({ fx: 500, fy: 500, cx: 320, cy: 240 }),
     getScene: () => scene,
-    createLabel: () => {
-      atRender.votes = syntheticVotes();
-      return { object: label, dispose: () => undefined };
-    },
+    createLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
     canShareZip: () => false,
   } as unknown as TourViewerSeams;
   /** The page clock: the controller's lock times (set after the walk). */
@@ -323,11 +322,12 @@ async function visitorSession(
     ctx,
     arStore,
     scene,
-    label,
+    get label() {
+      return drawnPin();
+    },
     fix,
     frame,
     syntheticVotes,
-    atRender,
     clock,
 
     fireAllTimers,
@@ -387,7 +387,7 @@ function walk(s: Awaited<ReturnType<typeof visitorSession>>, laps = 0): void {
   s.clock.nowMs = t + 500; // the scan follows the walk
 }
 
-/** What the rendered content hangs under: a label's group, its station's
+/** What the rendered content hangs under: a drawn block's group, its station's
  *  group (version 3, tour editor plan W3), the content's root, then this. */
 function hungUnder(label: Object3D): Object3D | null {
   return label.parent?.parent?.parent?.parent ?? null;
@@ -416,12 +416,12 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     }
     // The votes-before-lock order: the frame that cast the first votes is
     // the frame whose lock passed the gate and placed the content, and the
-    // label was made with those votes already in the store. Were the lock
-    // reported first, this lock would find no vote and the gate would pass
-    // one frame later.
+    // pin stands right after it, with those votes already in the store.
+    // Were the lock reported first, this lock would find no vote and the
+    // gate would pass one frame later.
     expect(s.syntheticVotes()).toBe(VIEWER_VOTE_COUNT);
     expect(s.ctx.scanGate).toEqual({ kind: "passed", via: "code" });
-    expect(s.atRender.votes).toBe(VIEWER_VOTE_COUNT);
+    expect(s.label.parent).not.toBeNull();
 
     await flush();
     // At the scene root, in the session's NUE: no anchor, not under the

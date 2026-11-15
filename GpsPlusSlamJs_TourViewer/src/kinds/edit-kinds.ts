@@ -582,6 +582,15 @@ export function isFileAddKind(kind: AddKind): kind is FileAddKind {
   return add.file !== undefined;
 }
 
+/** Whether a short text in `view` points somewhere: the views its
+ *  `pointsTo` field lists (a pin turns its head toward the point, a sign
+ *  its arrow, a ground arrow runs to it). */
+export function shortTextPoints(view: string): boolean {
+  const fields: readonly FieldSpec[] = KIND_EDIT.shortText.fields;
+  const views = fields.find((f) => f.name === "pointsTo")?.views;
+  return views?.includes(view) === true;
+}
+
 /** A kind's word inside a sentence ("the delete of the long text"): its
  *  label with the first letter lower-cased ("3D" kept). */
 export function kindNoun(kind: TourBlockKind): string {

@@ -162,6 +162,6 @@ The lock's parts are tested where they live (`gizmo-maths`, `gesture`, `editor3d
 
 ## "Pick in 3D" and the point handle
 
-- While `models.view().pointPick` is on and the selection is a sign or a ground arrow, `clickWaited()` is true (no gesture starts) and the next click is answered by the pick: where the ray meets another item (`layer.surfaceHit`), else the ground, written as `PlaceEdit` "point" in the station's frame (rounded to the centimetre); the pick then disarms, also when the page refuses the value. A click on neither says `MISSED_POINT` and stays armed.
+- While `models.view().pointPick` is on and the selection is a short text that points (a pin, a sign or a ground arrow: `shortTextPoints`), `clickWaited()` is true (no gesture starts) and the next click is answered by the pick: where the ray meets another item (`layer.surfaceHit`), else the ground, written as `PlaceEdit` "point" in the station's frame (rounded to the centimetre); the pick then disarms, also when the page refuses the value. A click on neither says `MISSED_POINT` and stays armed.
 - `targetOf` adds the point (world and back) when the block has `pointsTo`, so the gizmo draws its knob and `handleAt` finds it; `handleScreen("point")` gives its screen position for checks.
 - Covered in the page by `playwright-tests/editor3d-ground-arrow.spec.js` (pick, Escape, clear, handle drag); there is no unit harness for clicks in this module.
