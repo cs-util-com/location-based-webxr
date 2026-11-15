@@ -30,7 +30,9 @@ picture's sheet (`picture-sheet.ts`) on the page's screen.
   - `update(frame)` - a cut-out fades for `frame.viewer` (below). A
     framed print lays its shadow on the ground under the part (its height
     over the scale its folders draw it at, `inheritedScaleOf`, as a
-    video's), and in `play` arrives from the first frame it is shown:
+    video's), level under a pitch or a roll (`level`), from the look's
+    `floor`, hung on the part beside its tap target (never in it) and
+    freed on dispose, and in `play` arrives from the first frame it is shown:
     `arrive((seconds - first) / FRAMED_ARRIVAL_S)`, once, then never
     again. A station's content is built again on each entry, so the print
     arrives each time the visitor does; in the editor it stands arrived.
@@ -64,7 +66,8 @@ part?.tap?.(); // play: the sheet opens on env.screen
 - `world.test.ts` - the views it stands, the look's parts and their
   layout, uniform scale, the tag switch, the facing fade, the sheet per
   view and per mode, the framed print's ground shadow (three widths, moved
-  up and down), its arrival in play (monotone, risen 12 cm and developed
+  up and down, kept out of the tap target's bounds, level under three
+  pitches and rolls), its arrival in play (monotone, risen 12 cm and developed
   at its end, never again) and its arrived look in the editor, a property
   test of `framedRise` and `framedDevelop`, the rejected ready, dispose (also before load), and a
   property test of `cutoutFacingFade`.

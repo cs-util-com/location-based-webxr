@@ -14,17 +14,26 @@ by `plate.ts`).
   at; the caller scales the root by `widthM / 1.6`.
 - `framedSizes(widthM, aspect)` - print, mat, frame, inner and outer sizes
   (m): mat `max(0.05, 0.07 w)`, frame `clamp(0.034 w, 0.03, 0.12)`.
-- `buildFramedLook(picture, aspect, words, painters) -> { root, tapTarget }`
+- `buildFramedLook(picture, aspect, words, painters) -> { root, tapTarget,
+floor, ground, level, arrive }`
   - origin at the print's centre, facing local +Z; the plate hangs 5 cm
     under the frame's foot.
   - `ground(liftM)` - lays the shadow (`picture-framed-shadow`) `liftM`
     below the print's centre plus `FRAMED_SHADOW_LIFT_M` (12 mm), in the
-    root's parent's metres (the root's scale is undone). It is the
+    floor's parent's metres (the floor's scale is undone). It is the
     prototype's `shadowDecal(ow * 1.2, 0.9, 0.2)`: 1.2 x the frame's outer
     width, 0.9 m deep at the reference width, opacity
     `FRAMED_SHADOW_OPACITY` 0.2, the painters' radial shadow, no depth
-    write, no ray; beside the look's tap target, never in it. A value that
-    is no finite number changes nothing.
+    write, no ray. It hangs in `floor` (`picture-framed-floor`), apart
+    from the root, which the caller hangs beside the part's tap target
+    with the root's place and scale, so no bounds of the tap target (a
+    pick's fallback box, the editor's outline) reach the ground. A value
+    that is no finite number changes nothing.
+  - `level(partRotation)` - turns the floor by the inverse of the part's
+    rotation times its turn about the vertical (`uprightTurn`), so under a
+    pitched or rolled part the shadow lies flat on the ground with only the
+    part's heading. Worked out only when the rotation changes (the last
+    one is kept), since `uprightTurn` allocates.
   - `arrive(a)` - arrival `a` (0..1): the frame, print and plate stand
     `framedRise(a)` below their place and the picture is
     `framedDevelop(a)` out of the paper. A new look stands arrived.
@@ -51,10 +60,12 @@ smoothstep(0.3, 1, a)`: it comes up first, then develops. NaN: arrived.
   (`content-fade.ts`, 0.4 s) fades the look and its shadow in, where the
   prototype faded them over the first 45 % of its arrival. Writing it here
   too would fight the fade's remembered own opacities.
-- No per-frame allocation: `ground` and `arrive` write numbers only.
+- No per-frame allocation: `ground` and `arrive` write numbers only,
+  and `level` returns at once for an unchanged rotation.
 
 ## Tests
 
-`world.test.ts` (parts, layout, scale, the ground shadow, the arrival in
+`world.test.ts` (parts, layout, scale, the ground shadow, out of the tap
+target's bounds and level under a pitched or rolled part, the arrival in
 play and its absence in the editor, `framedRise` / `framedDevelop`) and
 the placement contract test.

@@ -78,6 +78,7 @@ export function pictureWorld(
   let look: Object3D | null = null;
   let cutout: CutoutLook | null = null;
   let framed: FramedLook | null = null;
+  let floor: Object3D | null = null;
   // The arrival's first frame (s), once the print is shown; done at 1.
   let arrivalStartS: number | null = null;
   let arrived = env.mode !== "play";
@@ -127,6 +128,12 @@ export function pictureWorld(
       // The look's tap meshes are cast against through the part's target.
       tapTarget.add(inner);
       look = inner;
+      if (framed !== null) {
+        // Its shadow hangs beside the tap target, scaled as the look.
+        framed.floor.scale.copy(inner.scale);
+        object.add(framed.floor);
+        floor = framed.floor;
+      }
       image = blob;
     });
 
@@ -170,7 +177,9 @@ export function pictureWorld(
     update(frame) {
       cutout?.face(object, frame.viewer);
       if (framed === null) return;
-      // The ground is where the part is drawn, in its own metres.
+      // The ground is where the part is drawn, in its own metres, and
+      // level whatever the part's pitch or roll.
+      framed.level(object.quaternion);
       framed.ground(object.position.y / inheritedScaleOf(object));
       if (arrived) return;
       arrivalStartS ??= frame.seconds;
@@ -188,10 +197,12 @@ export function pictureWorld(
       cutout = null;
       framed = null;
       image = null;
-      if (drawn !== null) {
-        drawn.removeFromParent();
-        disposeObject3D(drawn);
+      for (const o of [drawn, floor]) {
+        if (o === null) continue;
+        o.removeFromParent();
+        disposeObject3D(o);
       }
+      floor = null;
     },
   };
 }

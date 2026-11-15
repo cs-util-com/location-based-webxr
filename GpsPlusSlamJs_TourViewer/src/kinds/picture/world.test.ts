@@ -13,9 +13,11 @@ import fc from "fast-check";
 import type { TourPictureBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
   Box3,
+  Euler,
   Group,
   type Mesh,
   type MeshBasicMaterial,
+  Quaternion,
   Texture,
   Vector3,
   type Object3D,
@@ -415,11 +417,66 @@ describe("a framed print's arrival and its shadow", () => {
       const material = shadow.material as MeshBasicMaterial;
       expect(material.opacity).toBeCloseTo(FRAMED_SHADOW_OPACITY, 6);
       expect(material.depthWrite).toBe(false);
-      // Beside the look's own tap target, never in it.
-      expect(shadow.parent?.name).toBe("picture-framed");
+      // Beside the part's tap target, never in it.
+      expect(shadow.parent?.name).toBe("picture-framed-floor");
+      let inTap = false;
+      part.tapTarget!.traverse((o) => {
+        inTap ||= o === shadow;
+      });
+      expect(inTap).toBe(false);
       const hits: unknown[] = [];
       shadow.raycast(undefined as never, hits as never);
       expect(hits).toEqual([]);
+      part.dispose();
+    }
+  });
+
+  // Why: the tap target's bounds are what a pick falls back to and what
+  // the editor outlines; a shadow inside them stretched both to the
+  // ground under a hanging print.
+  it("keeps the shadow out of the tap target's bounds", async () => {
+    const { part, root } = await framed("edit", {
+      widthM: 0.8,
+      pose: { position: [0, 4, 0], rotation: [0, 0, 0, 1] },
+    });
+    part.update?.({ seconds: 0, viewer: [0, 1.6, 5] });
+    root.updateMatrixWorld(true);
+    const tap = new Box3().setFromObject(part.tapTarget!);
+    expect(tap.isEmpty()).toBe(false);
+    expect(tap.min.y).toBeGreaterThan(1);
+    part.dispose();
+    expect(named(root, "picture-framed-shadow")).toBeUndefined();
+  });
+
+  // Why: a print hung with a pitch or a roll must not tilt its shadow
+  // off the ground: the shadow keeps only the part's turn about the
+  // vertical, lies flat and stays on the ground, over a range of tilts.
+  it("keeps the shadow level and on the ground under a pitched or rolled print", async () => {
+    for (const [pitch, roll] of [
+      [0.35, 0],
+      [0, -0.3],
+      [-0.5, 0.25],
+    ] as const) {
+      const yaw = 0.6;
+      const { part, root } = await framed("edit", {
+        pose: { position: [0, 3, 0], rotation: [0, 0, 0, 1] },
+      });
+      root.quaternion.setFromEuler(new Euler(pitch, yaw, roll, "YXZ"));
+      root.updateMatrixWorld(true);
+      part.update?.({ seconds: 0, viewer: [0, 1.6, 5] });
+      root.updateMatrixWorld(true);
+      const shadow = named(root, "picture-framed-shadow") as Mesh;
+      const q = shadow.getWorldQuaternion(new Quaternion());
+      const normal = new Vector3(0, 0, 1).applyQuaternion(q);
+      const label = `pitch ${String(pitch)} roll ${String(roll)}`;
+      expect(normal.y, label).toBeCloseTo(1, 6);
+      // Its width runs along the part's turn about the vertical.
+      const across = new Vector3(1, 0, 0).applyQuaternion(q);
+      expect(across.x, label).toBeCloseTo(Math.cos(yaw), 6);
+      expect(across.z, label).toBeCloseTo(-Math.sin(yaw), 6);
+      const box = new Box3().setFromObject(shadow);
+      expect(box.min.y, label).toBeCloseTo(FRAMED_SHADOW_LIFT_M, 6);
+      expect(box.max.y - box.min.y, label).toBeCloseTo(0, 6);
       part.dispose();
     }
   });

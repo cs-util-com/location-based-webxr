@@ -7,7 +7,8 @@
  * smaller (the prototype instead kept its mat, frame and plate text at
  * fixed sizes outside about 0.9 to 3.5 m).
  *
- * A soft shadow lies on the ground under it (`ground`), and in play it
+ * A soft shadow lies on the ground under it (`floor`, held level by
+ * `level` and laid on the ground by `ground`), and in play it
  * arrives as the prototype's does (`arrive`): it rises out of the ground
  * and its picture comes out of the paper.
  *
@@ -25,10 +26,12 @@ import {
   MeshStandardMaterial,
   Path,
   PlaneGeometry,
+  Quaternion,
   Shape,
   type Texture,
 } from "three";
 
+import { uprightTurn } from "../../content-placement.js";
 import { smoothstep } from "../../smoothstep.js";
 import { canvasTexture } from "../../world-part.js";
 import type { PicturePainters, PlateWords } from "./picture-paint.js";
@@ -135,9 +138,18 @@ export interface FramedLook {
   readonly root: Group;
   /** What a tap is cast against: the frame, the print and the plate. */
   readonly tapTarget: Group;
-  /** Lays the shadow `liftM` (in the root's parent's metres) below the
+  /** The ground shadow, apart from `root` so that no bounds of the tap
+   *  target reach the ground: the caller hangs it beside the root, at its
+   *  place and with its scale. */
+  readonly floor: Group;
+  /** Lays the shadow `liftM` (in the floor's parent's metres) below the
    *  print's centre, where the ground is. Not a finite number: it stays. */
   ground(liftM: number): void;
+  /** Keeps the shadow level under a part turned by `partRotation` (its
+   *  rotation in an upright parent): only the turn about the vertical is
+   *  kept, a pitch or a roll is undone. Worked out only when the rotation
+   *  changes. */
+  level(partRotation: Quaternion): void;
   /** Shows arrival `a` (0..1): `framedRise` and `framedDevelop`. A
    *  new look stands arrived (1). */
   arrive(a: number): void;
@@ -219,7 +231,10 @@ export function buildFramedLook(
   plate.position.y = -s.outerH / 2 - PLATE_GAP_M - plateArt.heightM / 2;
   tapTarget.add(frame, back, mat, print, plate);
 
-  // Out of the tap target: the ground under the print takes no tap.
+  // Out of the root and its tap target: the ground under the print takes
+  // no tap and stretches no bounds.
+  const floor = new Group();
+  floor.name = "picture-framed-floor";
   const shadow = new Mesh(
     new PlaneGeometry(s.outerW * SHADOW_WIDTH_SHARE, SHADOW_DEPTH_M),
     new MeshBasicMaterial({
@@ -234,15 +249,26 @@ export function buildFramedLook(
   shadow.rotation.x = -Math.PI / 2;
   shadow.renderOrder = 1;
   shadow.raycast = () => undefined;
-  root.add(shadow);
+  floor.add(shadow);
+  // The rotation last levelled for: NaN until the first.
+  const levelledFor = new Quaternion(Number.NaN, 0, 0, 0);
+  const undo = new Quaternion();
 
   return {
     root,
     tapTarget,
+    floor,
     ground(liftM) {
-      const scale = root.scale.y;
+      const scale = floor.scale.y;
       if (!Number.isFinite(liftM) || !(scale > 0)) return;
       shadow.position.y = (FRAMED_SHADOW_LIFT_M - liftM) / scale;
+    },
+    level(partRotation) {
+      if (levelledFor.equals(partRotation)) return;
+      levelledFor.copy(partRotation);
+      const q = partRotation;
+      undo.copy(q).invert();
+      uprightTurn([q.x, q.y, q.z, q.w], floor.quaternion).premultiply(undo);
     },
     arrive(a) {
       tapTarget.position.y = framedRise(a);
