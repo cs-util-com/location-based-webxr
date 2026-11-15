@@ -27,11 +27,13 @@
  *   `gapMs` of time, so a pair of hitches cannot make a verdict while a
  *   device at a second a frame still reads as slow as it is (a fresh
  *   average starts unlimited at its first counted frame, and again at the
- *   second when that is shorter: after a step any shorter one, at the
- *   session's start only one `spikeLimit` times shorter, so a long frame
- *   there is not the start the limit then defends, and a short one on a slow
- *   device is not its baseline). Each rung is judged by its own frames: at a step the average starts afresh, so a device with few
- *   frames a verdict does not judge the new rung by the old one's, and the
+ *   second when that is shorter: after a step any shorter one; at the
+ *   session's start one `spikeLimit` times shorter, or any shorter one at
+ *   most `seedNear` times `slowMs`. So a long first frame on a device
+ *   near the line is not the start the limit then defends, and a short
+ *   second frame on a slow device is not its baseline). Each rung is judged
+ *   by its own frames: at a step the average starts afresh, so a device with
+ *   few frames a verdict does not judge the new rung by the old one's, and the
  *   step's own frame (the woods re-sort their draw order) counts toward
  *   nothing;
  * - the worthwhile test: when thinning bought less than `worthwhile` of the
@@ -80,6 +82,13 @@ export const WOODS_GOVERNOR = Object.freeze({
    * `gapMs` apart from this).
    */
   spikeLimit: 4,
+  /**
+   * At the session's start a shorter second counted frame up to this many
+   * times `slowMs` starts the average again, so one long first frame on a
+   * device near the line is not its seed; a slow device's short frame, far
+   * above it, is not its baseline either.
+   */
+  seedNear: 1.2,
   /** The ladder, from full to the fewest; never 0. */
   shares: Object.freeze([1, 0.5, 0.25] as const),
 });
@@ -134,13 +143,15 @@ export function createWoodsGovernor({
   let fresh = false;
   /**
    * The average was just started: a second counted frame shorter than the
-   * first may start it again, so one long frame cannot be its start.
+   * first may start it again (`reseeds` says which), so one long frame
+   * after a step, or one long first frame near the line, is not its start.
    */
   let seeding = false;
   /**
    * The average being seeded follows a step: there any shorter second frame
-   * reseeds it. At the session's start only a spike-sized drop does, so a
-   * short second frame on a slow device cannot become its baseline.
+   * reseeds it. At the session's start only a spike-sized drop does, or a
+   * shorter frame at most `seedNear` times `slowMs`, so a short second
+   * frame on a slow device cannot become its baseline.
    */
   let seedStep = false;
   /**
@@ -213,16 +224,25 @@ export function createWoodsGovernor({
     return alone ? undefined : ms;
   };
 
-  /** Whether this second counted frame starts the fresh average again. */
+  /**
+   * Whether this second counted frame starts the fresh average again: after
+   * a step when shorter; at the session's start when a spike-sized drop, or
+   * shorter and near the line (a slow device's short frame is not).
+   */
   const reseeds = (ms: number): boolean => {
     if (!seeding || average === undefined) return false;
-    return seedStep ? ms < average : ms * G.spikeLimit < average;
+    if (seedStep) return ms < average;
+    return (
+      ms * G.spikeLimit < average ||
+      (ms < average && ms <= G.seedNear * G.slowMs)
+    );
   };
 
   /**
    * One counted interval into the average; a new rung starts it afresh, at
    * the smaller of its first two counted frames, and the session at its
-   * second only when the first was a spike over it.
+   * second only when the first was a spike over it or the second is shorter
+   * and near the line.
    */
   const smooth = (ms: number): number => {
     const reseed = reseeds(ms);
