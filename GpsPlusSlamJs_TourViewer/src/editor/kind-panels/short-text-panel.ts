@@ -4,10 +4,12 @@
  * and for a sign or a ground arrow how it turns, each a group of chips;
  * for a ground arrow also its style, a floor arrow's placement and
  * caption switch, and its two colours with the sun check. A view chip writes the view
- * (`editBlockView`); a role or turn chip writes that field through the
- * block's field edit (`block-fields.ts`, its `choices` from the kind's
- * row in `kinds/edit-kinds.ts`), so the choices and their words live in
- * one place. For a sign or a ground arrow it also holds where the text
+ * (`editBlockView`); every other chip is one of the block's choices
+ * (`block-fields.ts` `blockChoices`, from the kind's row in
+ * `kinds/edit-kinds.ts`), drawn with the one in use pressed and written
+ * through the block's field edit, so the choices, their words and their
+ * fallbacks live in one place, and the chip already pressed writes
+ * nothing. For a sign or a ground arrow it also holds where the text
  * points: three boxes x, y and z (the station's frame, metres), "Pick in
  * 3D" (the 3D view's next click sets it) and "Clear". The boxes send
  * their text as typed through the same field edit, so the format's
@@ -17,12 +19,8 @@
  *
  * @see short-text-panel.ts.md
  */
-import {
-  KIND_EDIT,
-  SHORT_TEXT_VIEWS,
-  type FieldChoice,
-  type FieldSpec,
-} from "../../kinds/edit-kinds.js";
+import type { BlockChoice } from "../block-fields.js";
+import { SHORT_TEXT_VIEWS } from "../../kinds/edit-kinds.js";
 import {
   GROUND_DARK_DEFAULT,
   GROUND_SUN_MIN_RATIO,
@@ -52,17 +50,28 @@ const GROUND_PARTS: Readonly<
   lights: { main: "Lens", dark: "Ring" },
   floor: { main: "Top", dark: "Flanks" },
 };
-const DEFAULT_STYLE = "ribbon";
-const DEFAULT_FLOOR = "lying";
 
-/** The reader's default role and turn, pressed when none is written. */
-const DEFAULT_ROLE = "label";
-const DEFAULT_TURN = "world";
+/** The block's choice `name` in its view; undefined when the view does
+ *  not read it. */
+function choiceOf(
+  choices: readonly BlockChoice[],
+  name: string,
+): BlockChoice | undefined {
+  return choices.find((c) => c.name === name);
+}
 
-/** The choices of the short text's field `name` (its row's). */
-function choicesOf(name: string): readonly FieldChoice[] {
-  const fields: readonly FieldSpec[] = KIND_EDIT.shortText.fields;
-  return fields.find((f) => f.name === name)?.choices ?? [];
+/** A choice's chips, under `label`, acting as `act:<value>`; none for
+ *  a choice the view does not read. */
+function choiceChips(
+  choices: readonly BlockChoice[],
+  name: string,
+  label: string,
+  act: string,
+): HTMLElement[] {
+  const choice = choiceOf(choices, name);
+  return choice === undefined
+    ? []
+    : chipGroup(label, act, choice.values, choice.value);
 }
 
 /** What the panel writes through; `changed` asks for a new draw after
@@ -188,27 +197,21 @@ function sunLine(dark: string, part: string): HTMLElement {
 /** A ground arrow's own controls, writing through `deps`. */
 function groundParts(
   look: GroundLook,
-  role: string,
+  choices: readonly BlockChoice[],
   deps: ShortTextPanelDeps,
 ): HTMLElement[] {
-  const style = look.style ?? DEFAULT_STYLE;
+  const style = choiceOf(choices, "style")?.value ?? "";
+  const role = choiceOf(choices, "role")?.value ?? "";
   const parts = GROUND_PARTS[style] ?? { main: "Main", dark: "Dark" };
   const write = (field: string, value: string) => {
     deps.block(look.id, field, value);
     deps.changed?.();
   };
   const out: HTMLElement[] = [
-    ...chipGroup("Ground style", "short-style", choicesOf("style"), style),
+    ...choiceChips(choices, "style", "Ground style", "short-style"),
+    ...choiceChips(choices, "floorPlacement", "Floor arrow", "short-floor"),
   ];
   if (style === "floor") {
-    out.push(
-      ...chipGroup(
-        "Floor arrow",
-        "short-floor",
-        choicesOf("floorPlacement"),
-        look.floorPlacement ?? DEFAULT_FLOOR,
-      ),
-    );
     const label = el("label", "chkrow");
     const box = el("input", "");
     box.type = "checkbox";
@@ -275,28 +278,14 @@ export function createShortTextPanel(deps: ShortTextPanelDeps): KindPanel {
             viewLabel,
             viewChips,
             el("div", "note", VIEW_NOTE[parts.view] ?? ""),
-            ...chipGroup(
-              "Role",
-              "short-role",
-              choicesOf("role"),
-              parts.role ?? DEFAULT_ROLE,
-            ),
+            ...choiceChips(parts.choices, "role", "Role", "short-role"),
           );
           if (parts.ground !== undefined) {
-            box.append(
-              ...groundParts(parts.ground, parts.role ?? DEFAULT_ROLE, deps),
-            );
+            box.append(...groundParts(parts.ground, parts.choices, deps));
           }
-          if (parts.view === "sign" || parts.view === "ground") {
-            box.append(
-              ...chipGroup(
-                "Turns",
-                "short-turn",
-                choicesOf("orientation"),
-                parts.orientation ?? DEFAULT_TURN,
-              ),
-            );
-          }
+          box.append(
+            ...choiceChips(parts.choices, "orientation", "Turns", "short-turn"),
+          );
           // After the turn, as the prototype's sign editor has it.
           if (parts.point !== undefined) {
             box.append(...pointParts(parts.point, deps));
@@ -325,8 +314,15 @@ export function createShortTextPanel(deps: ShortTextPanelDeps): KindPanel {
       }
       if (!(act in ACTS)) return false;
       const field = ACTS[act as keyof typeof ACTS];
-      if (field === null) deps.view(selected, value);
-      else deps.block(selected, field, value);
+      if (field === null) {
+        deps.view(selected, value);
+        return true;
+      }
+      const choice = choiceOf(item.shortText?.choices ?? [], field);
+      // A choice its view does not read is not this panel's to write; the
+      // one in use is pressed already, so pressing it writes nothing.
+      if (choice === undefined) return false;
+      if (value !== choice.value) deps.block(selected, field, value);
       return true;
     },
     flush() {

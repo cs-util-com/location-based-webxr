@@ -37,6 +37,16 @@ export function phoneSheets(widthPx: number): boolean {
   return widthPx <= PHONE_SHEET_PX;
 }
 
+/** At this height and under, a story's cards drill in whatever the
+ *  width: a phone on its side (a desktop window that short too). */
+export const CARDS_DRILL_SHORT_PX = 500;
+
+/** Whether a story's step cards go into their step on a press (a phone,
+ *  either way round) rather than open in place (a desktop). */
+export function cardsDrill(widthPx: number, heightPx: number): boolean {
+  return phoneSheets(widthPx) || heightPx <= CARDS_DRILL_SHORT_PX;
+}
+
 /** Where a sheet released at `share` rests; null: it goes. */
 export function sheetRelease(share: number): number | null {
   if (!(share >= SHEET_LIMITS.dismiss)) return null;

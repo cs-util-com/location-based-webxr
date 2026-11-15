@@ -9,6 +9,11 @@ edit. The DOM is `shell-inspector.ts`'s; what a typed value writes is
 
 ## Public API
 
+- `StoryCheck` (module-private type) - a story's check, on the story's model and on each of its
+  steps' models as `check`: the Problems tab's rows for the story
+  (`tour-problems.ts` `storyProblems`), each `{ what, select }`; empty
+  when the story is valid.
+
 - `InspectorMoves` (`moves` of a story's, an entry's and an item's
   inspector): `step` (`{ earlier, later }`, whether each is possible; null
   for a free item, as the free items have no order) and `targets` (each
@@ -229,7 +234,7 @@ it.
 
 ## Short text parts
 
-A short text's item carries `shortText: { view, role, orientation }` (role and orientation null when not written) for its kind panel; a ground arrow adds `ground: { id, style, floorPlacement, captionOnArrow, color, darkColor }` (null when not written, the switch false).
+A short text's item carries `shortText: { view, choices }` (`blockChoices`: its role, and in the views that read them its turn, a ground arrow's style and a floor arrow's placement, each with the value in use) for its kind panel; a ground arrow adds `ground: { id, captionOnArrow, color, darkColor }` (null when not written, the switch false).
 
 An item's `sub` names it by `blockLabel` (`kinds/edit-kinds.ts`): a short text by its view.
 

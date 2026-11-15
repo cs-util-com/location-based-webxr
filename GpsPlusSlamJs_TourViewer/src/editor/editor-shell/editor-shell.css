@@ -1571,6 +1571,35 @@ body {
   text-underline-offset: 3px;
 }
 
+/* A story's pill in the head: "Story valid" in green, or how many
+ * problems it has in red (the chosen step-cards prototype's pill). */
+.vpill {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: rgb(108 192 138 / 13%);
+  color: #6cc08a;
+  font: 600 11.5px var(--s-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.vpill svg {
+  width: 13px;
+  height: 13px;
+}
+
+.vpill.bad {
+  border-color: rgb(229 115 109 / 40%);
+  background: rgb(229 115 109 / 13%);
+  color: #e5736d;
+}
+
 .ttlin:not([readonly]):focus {
   background-color: var(--s-bg2);
   background-image: none;

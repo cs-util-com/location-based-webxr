@@ -1527,6 +1527,36 @@ export function drawInspector(
   }
 }
 
+/** A story's or its step's pill on its place's line (`story-check`): "Story
+ *  valid", or how many of the Problems tab's rows the story has
+ *  (`InspectorModel` `check`); none for anything else. */
+function storyPill(model: InspectorModel): HTMLElement[] {
+  if (
+    model.kind !== "story" &&
+    model.kind !== "storyEntry" &&
+    model.kind !== "storyStep"
+  ) {
+    return [];
+  }
+  const n = model.check.length;
+  const pill = el("button", n === 0 ? "vpill" : "vpill bad");
+  pill.type = "button";
+  pill.dataset["act"] = "story-check";
+  pill.title =
+    n === 0
+      ? "Every path of the story can reach the end"
+      : "Show what needs fixing";
+  pill.append(
+    shellIcon(n === 0 ? "check" : "problems"),
+    el(
+      "span",
+      "",
+      n === 0 ? "Story valid" : `${String(n)} problem${n === 1 ? "" : "s"}`,
+    ),
+  );
+  return [pill];
+}
+
 /** The head's title: its kind's panel's, a pin's text or a story's name
  *  to type, else the title in words (a station's name is typed in its
  *  labelled field, AU-2). */
@@ -1731,7 +1761,7 @@ function drawDock(
     iconButton("close", "Deselect (Esc)", "close"),
   );
   const sub = el("div", "sub");
-  sub.append(el("span", "", model.sub));
+  sub.append(el("span", "", model.sub), ...storyPill(model));
   const parts = [
     ...partsOf(model, state, pictures, sub, panel),
     ...moveParts(model, sub),

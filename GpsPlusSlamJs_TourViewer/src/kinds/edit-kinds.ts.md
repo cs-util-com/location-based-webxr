@@ -52,9 +52,13 @@ there.
     `choice` (`ChoiceSpec`: its values in the creator's words and the
     fallback an absent one means), drawn by the kind's panel, not typed:
     a video's start, its sound, its loop (a switch) and a cutout's
-    background. `when?` (`{ field, value }`) shows a field only while
+    background, and a short text's role, turn, ground style and floor
+    arrow placement. It is the only chip mechanism: pressing the chip
+    already in use (an absent field's fallback among them) writes
+    nothing, for every kind. `when?` (`{ field, value }`) shows a field only while
     another choice of the block has that value (its fallback counted):
-    a video's Starts within only while its start is `near`. A video's
+    a video's Starts within only while its start is `near`, a floor
+    arrow's placement only while its ground style is `floor`. A video's
     start and its distance are offered in the views its trigger starts
     (`VIDEO_TRIGGERED_VIEWS`: every world view but stand-here, which
     starts when the visitor stands on its spot); its sound, loop and
@@ -191,7 +195,7 @@ row removed.
 
 ## Choice fields
 
-A `FieldSpec` may carry `choices` (`FieldChoice`: value and label): a field chosen on chips by the kind's panel, never typed. The short text has `role` (`SHORT_TEXT_ROLES`) and, for a sign, `orientation` (`SHORT_TEXT_TURNS`), plus the number field `readAtM` (1-40 m, signs and ground arrows). A ground arrow also has `style` and `floorPlacement` (chips), `bendDeg` (a number, -60 to 60 degrees), `captionOnArrow` (`flag`: a switch, written as true or left out) and `color` / `darkColor` (`colour`: `#rrggbb`, picked in colour wells); `orientation` turns its plate. A short text also has `pointsTo` (`typed: "point"`, signs and ground arrows) and `lang` (`typed: "tag"`, every view), each typed on one line and checked by the format's reader (`block-fields.ts`).
+The short text's chip fields are `choice`s (values `FieldChoice`: value and label): `role` (`SHORT_TEXT_ROLES`, fallback `label`) and, for a sign or a ground arrow, `orientation` (`SHORT_TEXT_TURNS`, fallback `world`), plus the number field `readAtM` (1-40 m, signs and ground arrows). A ground arrow also has `style` (fallback `ribbon`) and `floorPlacement` (fallback `lying`, only for a floor arrow) as chips, `bendDeg` (a number, -60 to 60 degrees), `captionOnArrow` (`flag`: a switch, written as true or left out) and `color` / `darkColor` (`colour`: `#rrggbb`, picked in colour wells); `orientation` turns its plate. A short text also has `pointsTo` (`typed: "point"`, signs and ground arrows) and `lang` (`typed: "tag"`, every view), each typed on one line and checked by the format's reader (`block-fields.ts`).
 
 ## A block's name by its view
 

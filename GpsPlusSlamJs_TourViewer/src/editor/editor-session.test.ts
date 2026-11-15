@@ -459,6 +459,29 @@ describe("createEditorSession", () => {
     await session.close();
   });
 
+  // Why: a pin without a role shows "Label" pressed; pressing it again
+  // is no edit at all: no change counted, no undo step, and the saved
+  // file carries no role. A chip sort that wrote the shown default made
+  // an empty undo step and a changed document for that tap.
+  it("writes nothing when a short text's shown default chip is pressed", async () => {
+    const { session, manifest } = await opened([pin("a", "Old")]);
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+    });
+    expect(editor.editBlockField("a", "role", "label")).toEqual({
+      kind: "unchanged",
+    });
+    expect(editor.changeCount()).toBe(0);
+    expect(editor.undo()).not.toMatchObject({ kind: "undone" });
+    const saved = await editor.save({ keepScan: false });
+    expect("role" in ((await carried(saved.blob)).objects[0] ?? {})).toBe(
+      false,
+    );
+    await session.close();
+  });
+
   // Why: a block's other text fields (a short text's description
   // here) are edited through the same tour document as its caption: one
   // undo step each, counted as a change, written by the save; a text

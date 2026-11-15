@@ -9,6 +9,11 @@ value writes is `inspector-edits.ts`'s, and the shell commits it.
 
 ## Public API
 
+- A story, and each of its steps, shows its pill on the line under its name
+  (`.sub`, beside where it sits; the head is too narrow to share):
+  "Story valid" in green, or "N problem(s)" in red, from the model's
+  `check`, a button acting `story-check`.
+
 - `drawInspector(dock, model, { folded, positionOpen, contentsOpen?, busy? }, pictures, panel?)` -
   `dock` is `{ root, head, body }` (`#shell-inspector`,
   `#inspector-head`, `#inspector-body`); a null model hides the dock.

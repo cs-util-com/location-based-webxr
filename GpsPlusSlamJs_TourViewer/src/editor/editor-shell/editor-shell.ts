@@ -144,6 +144,7 @@ import { watchKeyboard } from "./phone-keyboard.js";
 import {
   SHELL_DOCK_LAYOUT,
   phoneSheets,
+  cardsDrill,
   wirePhoneSheets,
   type SheetKind,
 } from "./phone-sheet.js";
@@ -889,7 +890,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       timingsStamp: timingsStampOf(state().tourDocument.timings),
       selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
       // On a phone a card goes to its step: none opens in place.
-      openCards: phoneSheets(window.innerWidth) ? [] : [...openCards],
+      openCards: cardsDrill(window.innerWidth, window.innerHeight)
+        ? []
+        : [...openCards],
     });
     const file = inspectorFileOf(
       ui.selected,
@@ -927,7 +930,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         positionOpen,
         contentsOpen,
         busy: busy?.act ?? null,
-        drill: phoneSheets(window.innerWidth),
+        drill: cardsDrill(window.innerWidth, window.innerHeight),
         // Only for a selection shown: nothing selected builds no tour.
         ...(model === null
           ? {}
@@ -2201,7 +2204,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return true;
     }
     if (name !== "card" && name !== "card-show") return false;
-    if (phoneSheets(window.innerWidth)) {
+    if (cardsDrill(window.innerWidth, window.innerHeight)) {
       goToItem(id);
       return true;
     }
@@ -2311,6 +2314,24 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       const model = inspectorModel(state().editorView);
       if (button !== null && model?.kind === "story") {
         deps.previewStory?.(model.storyId, button);
+      }
+    }
+    if (act === "story-check") {
+      // The story's pill: a valid story says so; one with a problem goes
+      // to where the Problems tab's row goes, saying what is wrong.
+      const model = inspectorModel(state().editorView);
+      if (
+        model?.kind === "story" ||
+        model?.kind === "storyEntry" ||
+        model?.kind === "storyStep"
+      ) {
+        const first = model.check[0];
+        if (first === undefined) {
+          deps.say("The story is valid: every path of it can reach the end.");
+        } else {
+          goToItem(first.select);
+          deps.say(first.what);
+        }
       }
     }
     if (act?.startsWith("insert:") === true) {

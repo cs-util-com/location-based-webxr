@@ -95,7 +95,7 @@ import {
 } from "../../station-children-moves.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import type { InspectorFile } from "./inspector-file.js";
-import { outsideItems } from "./tour-problems.js";
+import { outsideItems, storyProblems } from "./tour-problems.js";
 import {
   gotoChoices,
   gotoValue,
@@ -207,9 +207,20 @@ interface InspectorMoves {
   }[];
 }
 
+/** A story's check, as its "Story valid" / "N problems" pill shows it:
+ *  the Problems tab's rows for the story (`tour-problems.ts`
+ *  `storyProblems`), each with what it is and what a press selects;
+ *  none: the story is valid. */
+type StoryCheck = readonly {
+  readonly what: string;
+  readonly select: string;
+}[];
+
 /** A story, selected by `story:<id>`. */
 interface StoryInspector {
   readonly kind: "story";
+  /** The story's check (the pill). */
+  readonly check: StoryCheck;
   readonly storyId: string;
   readonly stationId: string;
   /** Where it may move in its station (the inspector's Earlier, Later
@@ -229,6 +240,8 @@ interface StoryInspector {
 /** A block of a story, as its inspector shows it. */
 interface StoryEntryInspector {
   readonly kind: "storyEntry";
+  /** Its story's check (the pill). */
+  readonly check: StoryCheck;
   readonly id: string;
   readonly stationId: string;
   /** Where it may move in its station (the inspector's Earlier, Later
@@ -286,6 +299,8 @@ interface InspectorStepForm {
  *  (`form`), another quiz read only. */
 interface StoryStepInspector {
   readonly kind: "storyStep";
+  /** Its story's check (the pill). */
+  readonly check: StoryCheck;
   readonly stepKind: "choice" | "quiz";
   readonly id: string;
   readonly stationId: string;
@@ -415,15 +430,15 @@ function extentOf(
  *  (null: the reader's default). */
 interface InspectorShortText {
   readonly view: string;
-  readonly role: string | null;
-  readonly orientation: string | null;
+  /** Its chip choices in that view, the one in use pressed (`block-fields.ts`
+   *  `blockChoices`): its role, and as its view reads them how it turns,
+   *  a ground arrow's style and a floor arrow's placement. */
+  readonly choices: readonly BlockChoice[];
   /** A ground arrow's own look, as written (null: the reader's
    *  default), and the block's id its colour wells write to; absent in
    *  any other view. */
   readonly ground?: {
     readonly id: string;
-    readonly style: string | null;
-    readonly floorPlacement: string | null;
     readonly captionOnArrow: boolean;
     readonly color: string | null;
     readonly darkColor: string | null;
@@ -1088,6 +1103,7 @@ function storyChildInspector(
   if (isTourStoryBlock(child)) {
     return {
       kind: "storyEntry",
+      check: storyCheck(story),
       id: child.id,
       stationId: station.id,
       moves: movesOf(child.id, stations),
@@ -1103,6 +1119,7 @@ function storyChildInspector(
   }
   const common = {
     kind: "storyStep",
+    check: storyCheck(story),
     id: child.id,
     stationId: station.id,
     moves: movesOf(child.id, stations),
@@ -1128,6 +1145,11 @@ function storyChildInspector(
   };
 }
 
+/** The story's check: the Problems tab's rows for it. */
+function storyCheck(story: TourStory): StoryCheck {
+  return storyProblems(story).map(({ what, select }) => ({ what, select }));
+}
+
 /** The inspector of the story `storyId`, or null for a gone one. */
 function storyInspector(
   storyId: string,
@@ -1138,6 +1160,7 @@ function storyInspector(
     if (story === undefined) continue;
     return {
       kind: "story",
+      check: storyCheck(story),
       storyId,
       stationId: station.id,
       moves: movesOf(storyId, stations),
@@ -1314,14 +1337,11 @@ export function buildInspector(input: {
         ? {
             shortText: {
               view: item.view,
-              role: item.role ?? null,
-              orientation: item.orientation ?? null,
+              choices: blockChoices(item),
               ...(item.view === "ground"
                 ? {
                     ground: {
                       id: item.id,
-                      style: item.style ?? null,
-                      floorPlacement: item.floorPlacement ?? null,
                       captionOnArrow: item.captionOnArrow === true,
                       color: item.color ?? null,
                       darkColor: item.darkColor ?? null,

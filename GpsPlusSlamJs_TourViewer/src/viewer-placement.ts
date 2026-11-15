@@ -196,6 +196,10 @@ export function createViewerPlacement(deps: {
   /** Where a free item's part opens a panel of its own (a narration's
    *  player card). Absent: no panel. */
   worldScreen?: WorldScreen;
+  /** Where a free item's part says a short text: the walk's toast, shown
+   *  and announced (a ground arrow's description on a tap). Absent: a
+   *  part says nothing. */
+  worldSay?: (text: string) => void;
   /** The page clock: the QR controller's detection times and the moment a
    *  GPS fix ARRIVES, the one clock the keep-alive's hold runs on (M2b
    *  review #4), and the content's fades. Absent: `Date.now` - the
@@ -1180,6 +1184,7 @@ export function createViewerPlacement(deps: {
     const env = worldEnv("play", manifest.assets, loadContent, {
       ...(deps.worldSound === undefined ? {} : { sound: deps.worldSound }),
       ...(deps.worldScreen === undefined ? {} : { screen: deps.worldScreen }),
+      ...(deps.worldSay === undefined ? {} : { say: deps.worldSay }),
       parseModel: (blob) => seams.loadGlbModel(blob),
       enableClipping: () => seams.enableClipping(),
       reduceMotion: () =>

@@ -355,6 +355,39 @@ describe("buildInspector", () => {
       ]);
     });
 
+    // Why: the "Story valid" / "N problems" pill reads these rows, and they
+    // must be the Problems tab's own (`storyProblems`), not a second rule
+    // set: on the story and on each of its steps (a phone drills into one),
+    // valid while every path can reach the end, and naming the loop's first
+    // step once every answer of a choice goes back.
+    it("checks a story with the Problems tab's rows, on it and its steps", () => {
+      for (const selected of ["story:legend", "intro", "way"]) {
+        expect(inStory(selected)).toMatchObject({ check: [] });
+      }
+      const trapped = structuredClone(STORY_STATION);
+      const story = trapped.children[0] as unknown as {
+        children: {
+          id: string;
+          options?: { goto?: string; end?: boolean }[];
+        }[];
+      };
+      for (const option of story.children[2]?.options ?? []) {
+        option.goto = "intro";
+        delete option.end;
+      }
+      for (const selected of ["story:legend", "intro", "way"]) {
+        const model = buildInspector({
+          selected,
+          stations: [STATIONS[0]!, trapped],
+          assets: [],
+          codes: CODES,
+        });
+        expect(model).toMatchObject({
+          check: [{ select: "intro", what: expect.stringContaining("loop") }],
+        });
+      }
+    });
+
     // Why: a card opened in place edits its step with the step's own
     // controls, so the story's inspector carries the step's inspector for
     // each open card, in the story's order; an id the story lacks opens
@@ -815,8 +848,22 @@ describe("buildInspector", () => {
       model: null,
       // Only a free long text has the writer.
       longText: null,
-      // A short text's view, role and turn, for its panel.
-      shortText: { view: "pin", role: null, orientation: null },
+      // A short text's view and its choices in that view, for its panel.
+      shortText: {
+        view: "pin",
+        choices: [
+          {
+            name: "role",
+            label: "Role",
+            value: "label",
+            values: [
+              { value: "instruction", label: "Instruction" },
+              { value: "label", label: "Label" },
+              { value: "warning", label: "Warning" },
+            ],
+          },
+        ],
+      },
       video: null,
       // B2c: its other text fields, by the format's caps.
       fields: [

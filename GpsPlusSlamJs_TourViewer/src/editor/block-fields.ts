@@ -219,11 +219,10 @@ function loudnessOf(block: AnyBlock): LoudnessOf {
  *  caption (the head's). */
 export function blockFields(block: AnyBlock): BlockField[] {
   const own = ownFields(block);
-  // A choice (either sort), a switch, a colour or a point is the kind's
+  // A choice, a switch, a colour or a point is the kind's
   // panel's (a point is its three boxes there): never a line of the dock.
   return own
     .flatMap((spec) =>
-      spec.choices === undefined &&
       spec.choice === undefined &&
       spec.flag === undefined &&
       spec.colour === undefined &&
@@ -334,9 +333,6 @@ export function blockFieldEdit<B extends AnyBlock>(
   if (spec.number !== undefined) {
     return numberFieldEdit(block, spec.label, name, spec.number, value);
   }
-  if (spec.choices !== undefined) {
-    return choiceFieldEdit(block, spec.label, name, spec.choices, value);
-  }
   if (spec.flag !== undefined) return flagFieldEdit(block, name, value);
   if (spec.colour !== undefined) {
     return colourFieldEdit(block, spec.label, name, value);
@@ -408,36 +404,6 @@ function numberFieldEdit<B extends AnyBlock>(
       reason: "Full volume within must be less than the reach.",
     };
   }
-  return { kind: "edited", after: rest as unknown as B };
-}
-
-/** What choosing `value` for a choice field writes (`blockFieldEdit`):
- *  one of its `choices`, or none for a blank one (the reader's default). */
-function choiceFieldEdit<B extends AnyBlock>(
-  block: B,
-  label: string,
-  name: string,
-  choices: NonNullable<FieldSpec["choices"]>,
-  value: string,
-):
-  | { readonly kind: "edited"; readonly after: B }
-  | { readonly kind: "unchanged" }
-  | { readonly kind: "refused"; readonly reason: string } {
-  const rest = { ...(block as unknown as Record<string, unknown>) };
-  const was = rest[name];
-  if (value === "") {
-    if (was === undefined) return { kind: "unchanged" };
-    delete rest[name];
-    return { kind: "edited", after: rest as unknown as B };
-  }
-  if (!choices.some((c) => c.value === value)) {
-    return {
-      kind: "refused",
-      reason: `${label} is one of ${choices.map((c) => c.label).join(", ")}.`,
-    };
-  }
-  if (was === value) return { kind: "unchanged" };
-  rest[name] = value;
   return { kind: "edited", after: rest as unknown as B };
 }
 

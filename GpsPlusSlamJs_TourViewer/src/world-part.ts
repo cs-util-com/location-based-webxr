@@ -188,6 +188,9 @@ export interface WorldEnv {
   sound(id: string, channel: SoundChannel): SoundHandle;
   /** The page's screen, in `play` only (none: a part opens no panel). */
   readonly screen?: WorldScreen;
+  /** Shows a short text as the page's toast and announces it, in `play`
+   *  only (none: a part says nothing). */
+  readonly say?: (text: string) => void;
   /** Whether the visitor asked for less motion (none: the page does not
    *  say, so motion is allowed); read each frame, as it can change. */
   readonly reduceMotion?: () => boolean;
@@ -199,6 +202,7 @@ export interface WorldEnv {
 export interface WorldEnvOptions {
   readonly sound?: WorldSound;
   readonly screen?: WorldScreen;
+  readonly say?: (text: string) => void;
   readonly parseModel?: (blob: Blob) => Promise<Object3D>;
   readonly enableClipping?: () => void;
   readonly reduceMotion?: () => boolean;
@@ -262,6 +266,7 @@ export function worldEnv(
   const {
     sound = SILENT_WORLD_SOUND,
     screen,
+    say,
     parseModel,
     enableClipping,
     reduceMotion,
@@ -282,6 +287,7 @@ export function worldEnv(
         ? SILENT_SOUND
         : sound.sound(() => loadAsset(id), channel),
     ...(mode === "play" && screen !== undefined ? { screen } : {}),
+    ...(mode === "play" && say !== undefined ? { say } : {}),
     ...(reduceMotion === undefined ? {} : { reduceMotion }),
   };
 }

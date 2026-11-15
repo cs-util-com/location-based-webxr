@@ -1217,8 +1217,28 @@ export function groundPart(
     return { x: v.x, z: v.z };
   };
 
+  // The caption is on the ground; its description is said on a tap (a
+  // toast), in a visitor's view only.
+  const description = block.description?.trim() ?? "";
+  const say = env.say;
+  const tap =
+    play && say !== undefined && description !== ""
+      ? {
+          tap: () => {
+            say(description);
+          },
+        }
+      : {};
+
   return {
     object,
+    // The marks and the plate, read at each tap: a hidden plate (its
+    // caption painted on a floor arrow) takes none, as a raycast still
+    // meets hidden meshes. Without `tap` it is never cast against.
+    get tapTarget(): Object3D {
+      return plateNode.visible ? object : arrow;
+    },
+    ...tap,
     update(frame) {
       const dt =
         lastSeconds === null
