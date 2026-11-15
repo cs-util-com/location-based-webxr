@@ -26,7 +26,7 @@
  * A frame enters the average at its whole length but credits the verdicts
  * at most `gapMs` of time, so a pair of hitches cannot make a verdict.
  *
- * DEC-H3: the OSM package's woods governor (`three/woods-governor.ts`) is a
+ * The OSM package's woods governor (`three/woods-governor.ts`) is a
  * deliberate copy of this rule, which that package cannot import.
  *
  * @see globe-cloud-governor.ts.md

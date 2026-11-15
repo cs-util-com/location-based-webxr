@@ -22,12 +22,29 @@
  * - the smoothed interval above `slowMs` for `slowS` of counted frames steps
  *   one rung down; under `fastMs` for `fastS` steps one rung up;
  * - one frame longer than `gapMs` says nothing of the device (a hitch, a tab
- *   coming back); two in a row do;
+ *   coming back); two in a row do. A counted frame enters the average at
+ *   most `spikeLimit` times the average and credits the verdicts at most
+ *   `gapMs` of time, so a pair of hitches cannot make a verdict while a
+ *   device at a second a frame still reads as slow as it is. A fresh
+ *   average is seeded unlimited: the session's at the median of its first
+ *   three counted frames, a rung's after a step at the smaller of its first
+ *   two. So one long warm-up frame near the line is not the start the limit
+ *   then defends (a second one is, at its own length), and one short frame
+ *   among a slow device's first three is not its baseline (two outliers in
+ *   the same direction among the three are the seed, an open limit the
+ *   sidecar measures). Each rung is judged by its own frames: at a step
+ *   the average starts afresh, so a device with few frames a verdict does
+ *   not judge the new rung by the old one's, and the step's own frame
+ *   (the woods re-sort their draw order) counts toward nothing;
  * - the worthwhile test: when thinning bought less than `worthwhile` of the
- *   frame time the woods were not the cost, so they come back in full and
- *   the step-down rests for `restS`. A step that brought the average under
- *   `slowMs` has bought something, so a later slow verdict is a new one: it
- *   re-takes the baseline and steps down a rung;
+ *   frame time, measured against the full woods, the woods were not the
+ *   cost, so they come back in full and the step-down rests for `restS`;
+ * - a thinned share that stayed under `slowMs` for `fastS` has bought its
+ *   time. A later slow verdict there is a new one: the half steps on to a
+ *   quarter and remembers the slowness that sent it, and the quarter is
+ *   worthwhile against that or the full woods; a quarter that had bought
+ *   its time has no rung left and keeps that purchase until it steps up. A
+ *   rung re-entered from below counts as bought: the rung under it paid;
  * - a share left for being too slow is not returned to within `restS` of
  *   leaving it, so the governor does not pop between 1 and 0.5.
  * Rests run on the clock passed in (wall time), so idle time counts toward
@@ -58,6 +75,13 @@ export const WOODS_GOVERNOR = Object.freeze({
    * each counts as this long.
    */
   gapMs: 250,
+  /**
+   * A counted frame enters the average at most this many times the average,
+   * so one long frame on a device near the line cannot lift the average for
+   * the seconds its decay takes (the verdicts' seconds are capped at
+   * `gapMs` apart from this).
+   */
+  spikeLimit: 4,
   /** The ladder, from full to the fewest; never 0. */
   shares: Object.freeze([1, 0.5, 0.25] as const),
 });
@@ -103,35 +127,81 @@ export function createWoodsGovernor({
   let fastFor = 0;
   /** The average when the thinning began, for the worthwhile test. */
   let slowAt = 0;
-  /** The average went under `slowMs` since the last step: it bought time. */
+  /** The average when a thinned share that had bought its time got slow. */
+  let againAt: number | undefined;
+  /** The average stayed under `slowMs` for `fastS` at this rung. */
   let bought = false;
+  let boughtFor = 0;
+  /**
+   * The fresh average's first counted frames while they seed it: the
+   * average is their lower median, so the first frame, then the smaller of
+   * two, then the median of three.
+   */
+  const seed: number[] = [];
+  /**
+   * How many counted frames seed the fresh average: three at the session's
+   * start, two after a step, where the first may be the re-sort's second
+   * frame (below); seeding at three there too rests more often under
+   * natural jitter (the sidecar has the counts). No verdict can come before
+   * a seed is complete: three counted frames credit at most three `gapMs`,
+   * under `slowS`.
+   */
+  let seedOf = 3;
+  /**
+   * A step was taken: the next interval is the step's own frame (the woods
+   * re-sort their draw order), so it counts toward nothing.
+   */
+  let afterStep = false;
   let gapBefore = false;
   /** No step-down before this time (the worthwhile test's rest). */
   let restUntil = Number.NEGATIVE_INFINITY;
   /** When each rung was left for being too slow. */
   const leftAt: number[] = G.shares.map(() => Number.NEGATIVE_INFINITY);
 
+  /** A new rung: its purchase and its average start over. */
+  const enter = (rung: number): void => {
+    steps = rung;
+    bought = false;
+    boughtFor = 0;
+    seed.length = 0;
+    seedOf = 2;
+    afterStep = true;
+  };
+
   const stepDown = (at: number, now: number): void => {
     if (at < restUntil) return;
-    if (steps === 0 || (bought && steps < lowest)) {
+    const line = 1 - G.worthwhile;
+    if (steps === 0) {
       slowAt = now;
-    } else if (now > slowAt * (1 - G.worthwhile)) {
-      steps = 0;
-      bought = false;
+      againAt = undefined;
+    } else if (bought && steps < lowest) {
+      againAt = now;
+    } else if (bought) {
+      // The fewest woods bought their time: no rung left, and the purchase
+      // holds until a step up, so a phone that heats up keeps its quarter
+      // rather than getting every tree back with a rest.
+      return;
+    } else if (
+      now > slowAt * line &&
+      (againAt === undefined || now > againAt * line)
+    ) {
+      enter(0);
       restUntil = at + restMs;
       return;
     }
-    bought = false;
     if (steps < lowest) {
       leftAt[steps] = at;
-      steps += 1;
+      enter(steps + 1);
     }
   };
 
   const stepUp = (at: number): void => {
     if (steps === 0) return;
     if (at - (leftAt[steps - 1] ?? Number.NEGATIVE_INFINITY) < restMs) return;
-    steps -= 1;
+    enter(steps - 1);
+    // A rung re-entered from below: the rung under it bought its time, so a
+    // slow verdict here is a new one rather than the woods not paying.
+    bought = steps > 0;
   };
 
   /** The interval this frame measures, or undefined when it measures none. */
@@ -148,13 +218,28 @@ export function createWoodsGovernor({
     return alone ? undefined : ms;
   };
 
+  /**
+   * One counted interval into the average: while the fresh average is
+   * seeded, the lower median of its seed frames, unlimited; then smoothed,
+   * a frame entering at most `spikeLimit` times the average.
+   */
+  const smooth = (ms: number): number => {
+    if (average === undefined || seed.length < seedOf) {
+      seed.push(ms);
+      const sorted = [...seed].sort((a, b) => a - b);
+      average = sorted[(sorted.length - 1) >> 1] ?? ms;
+    } else {
+      average += (Math.min(ms, G.spikeLimit * average) - average) * G.smoothing;
+    }
+    return average;
+  };
+
   /** One counted interval into the average and the verdicts. */
   const count = (atMs: number, ms: number): void => {
-    const now =
-      average === undefined ? ms : average + (ms - average) * G.smoothing;
-    average = now;
-    if (steps > 0 && now < G.slowMs) bought = true;
-    const seconds = ms / 1000;
+    const now = smooth(ms);
+    const seconds = Math.min(ms, G.gapMs) / 1000;
+    boughtFor = steps > 0 && now < G.slowMs ? boughtFor + seconds : 0;
+    if (boughtFor >= G.fastS) bought = true;
     slowFor = now > G.slowMs ? slowFor + seconds : 0;
     fastFor = now < G.fastMs ? fastFor + seconds : 0;
     if (!auto) return;
@@ -171,7 +256,12 @@ export function createWoodsGovernor({
   return {
     frame(atMs, chained) {
       const ms = measured(atMs, chained);
-      if (ms !== undefined) count(atMs, Math.min(ms, G.gapMs));
+      if (ms === undefined) return;
+      if (afterStep) {
+        afterStep = false;
+        return;
+      }
+      count(atMs, ms);
     },
     state() {
       const share = G.shares[steps] ?? 1;
