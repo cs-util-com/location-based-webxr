@@ -43,8 +43,11 @@ and the phone's progress pill. Pure functions over the shelf's rows
 - `cardWarning(row)`: a video's words when it is large for its length
   (`video-size.ts`, on `estimatedBytes` over `seconds`); null for other
   kinds or no known length.
+- `formatLength(metres)`: whole µm under a millimetre, mm with one decimal under a metre, m with two above (the level-of-detail prototype's); 0 for a non-finite or negative length. `formatCount(n)`: thousands marked ("10,000").
+- `detailReadout(triangles, trianglesBefore, deviation, size)`: a level's words: its share of the triangles ("25 %"), "2,500 of 10,000 triangles" and "Largest deviation: 1.8 mm (0.90 % of the model's size)", the deviation being a share of the model's box diagonal `size` (metres).
+- `detailView(row)`: a made model's slider: `stops` (the measured shares, plus the default level as a stop of its own, `share` null, while it is the tour's), fewest triangles first; `at`, the stop the tour holds; `isDefault`, `adjustable`, `busy`, and `note` (why a fixed level cannot change; null while it can). Null for a row with no detail.
 - `shapeKey(rows)`: everything a full draw depends on (the swaps, a
-  video's poster and length, a character's files too) except the progress, so the panel moves bars alone between real changes.
+  video's poster and length, a character's files, a model's detail too) except the progress, so the panel moves bars alone between real changes.
 - `shelfSqueezed(widthPx, detailsOpen)`: true when the details panel is
   open and the window is wider than a phone (700 px) but at most
   `SHELF_BESIDE_DETAILS_PX` (900 px): the shelf then shows as its rail so
@@ -74,4 +77,4 @@ const summary = shelfSummary(rows); // { kind: "busy", lead: "Optimizing 2 of 5"
 chips' fallback, the rail's cap and rest, the badge and pill ending with
 the work, a video's warning (and none for other kinds or no length),
 a character's kind line, the redraw on a new poster, length or swap, `shelfSqueezed`'s band
-edges and non-widths, and properties for the gain's and the rings' ranges and the squeeze band.
+edges and non-widths, and properties for the gain's and the rings' ranges and the squeeze band. The detail's words: `shelf-panel-detail.test.ts`.
