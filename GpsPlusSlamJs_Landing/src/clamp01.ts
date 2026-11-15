@@ -19,7 +19,7 @@
  * not a defect.
  *
  * The contract matches the framework's `utils/clamp01.ts` exactly. The two are
- * separate copies on purpose (owner decision DEC-H3, 2026-08-24: shared
+ * separate copies on purpose (deliberate copy (shared-helper rule): shared
  * BEHAVIOUR is unified across packages, pure one-liners are not) — this package
  * deliberately does not depend on the framework.
  *

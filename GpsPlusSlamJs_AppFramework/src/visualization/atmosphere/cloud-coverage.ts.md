@@ -6,7 +6,7 @@ The clouds from a coverage map, and a disc around the camera, shared by
 the cloud slab (`cloud-slab.ts`) and the cloud shadow (`cloud-shadow.ts`)
 so the shadow falls from exactly the clouds the slab draws (globe
 volume-cloud plan `2026-10-05-0016-globe-volume-cloud-variants-plan.md`, C1
-and C3; DEC-H3, one implementation).
+and C3, one implementation).
 
 ## Public API
 

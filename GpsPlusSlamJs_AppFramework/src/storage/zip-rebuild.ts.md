@@ -6,8 +6,8 @@ Produce a new uncompressed zip from an existing one plus entries added or
 replaced by path, keeping every other entry byte-identical. The Tour
 Viewer's finish step writes `qr/<id>.json`, `tour.json` and captured photos
 into the zip the creator hosted; `zip-coverage-embed.ts` is a wrapper over
-this for its `session.json` rewrite (one re-emit loop in the package,
-DEC-H3).
+this for its `session.json` rewrite (one re-emit loop in the
+package).
 
 ## Public API
 

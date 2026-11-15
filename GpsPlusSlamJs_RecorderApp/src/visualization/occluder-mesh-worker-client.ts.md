@@ -4,7 +4,7 @@
 
 The recorder's occluder mesh worker: the framework's `createOccluderMeshWorker`
 (`gps-plus-slam-app-framework/visualization/occluder-mesh-worker-client`, lifted there from
-this file 2026-10-13, Tour Viewer polish round M5a, DEC-H3) over the recorder's own worker
+this file 2026-10-13, Tour Viewer polish round M5a) over the recorder's own worker
 file, `../workers/occlusion-mesher.worker.ts`. The worker is created here because its
 `new URL(...)` resolves against this app's source.
 

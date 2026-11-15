@@ -8,7 +8,7 @@
  * 5.8e-3/km or 1e-9 keep their value), and a RangeError instead of "NaN" or
  * "Infinity" in a shader.
  *
- * Unified 2026-09-23 (DEC-H3): `visualization/occlusion-mesh.ts` had a private
+ * Unified 2026-09-23: `visualization/occlusion-mesh.ts` had a private
  * `toFixed(4)` copy, which rounded anything below 5e-5 to zero and passed NaN
  * through; the atmosphere needed the stricter form.
  *

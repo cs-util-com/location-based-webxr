@@ -218,7 +218,7 @@ function formatErrors(errors: string[]): string {
  *
  * The Web-Share-then-download dance used to be written out here, together
  * with a second hand copy of the framework's `<a download>` fallback. Both
- * are now the framework's `shareOrDownloadBlob` (DEC-H3: shared behaviour
+ * are now the framework's `shareOrDownloadBlob` (shared behaviour
  * carrying a contract is unified, and the repo's duplicate guard is keyed
  * on names so it could see neither copy).
  *

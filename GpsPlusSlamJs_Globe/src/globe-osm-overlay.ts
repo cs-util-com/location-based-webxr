@@ -10,7 +10,7 @@
  * The OSM tile servers run under a usage policy (no heavy use, a visible
  * credit): every rule here exists to keep the editor a light user. The URL
  * and attribution are the caller's (the framework's `osm-tiles.ts`: one
- * home, DEC-H3); this module never names the host.
+ * home); this module never names the host.
  *
  * @see globe-osm-overlay.ts.md
  */

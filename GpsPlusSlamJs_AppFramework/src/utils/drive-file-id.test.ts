@@ -1,6 +1,6 @@
 /**
  * The one Google Drive file-id parser (Tour Viewer M0c follow-up F3, root
- * CLAUDE.md DEC-H3).
+ * the shared-helper rule).
  *
  * Why these tests matter: four modules read a Drive file id from a link -
  * the share-link normaliser, the QR launch URL's short form, the Tour

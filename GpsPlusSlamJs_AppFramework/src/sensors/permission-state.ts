@@ -1,5 +1,5 @@
 /**
- * The one prompt-free Permissions-API query (DEC-H3): what the browser says
+ * The one prompt-free Permissions-API query: what the browser says
  * about a permission, without ever showing a prompt.
  *
  * Deliberately free of imports, so a no-build page that serves the

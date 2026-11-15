@@ -2,7 +2,7 @@
  * The compass-influence mapping: one 0..1 number → the SET of library
  * settings that together mean "the compass has this much say".
  *
- * Shared behaviour with a contract, so it lives here (root reuse rule, DEC-H3)
+ * Shared behaviour with a contract, so it lives here (root reuse rule)
  * and is deep-imported by every app that offers a compass-influence slider -
  * the OSM demo since 2026-08-20, the recorder's in-recording field wheel since
  * 2026-09-02. Moved out of the demo on 2026-09-02; the demo's EXPERIMENT

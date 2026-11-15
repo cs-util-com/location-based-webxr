@@ -2,7 +2,7 @@
  * Why these tests matter: `ImageData` refuses a view over shared memory, and
  * the capture path hands out plain-ArrayBuffer-backed frames that are already
  * owned copies. One rule decides "adopt or copy" for every place that wraps a
- * frame (the JPEG encoder and the QR front end, DEC-H3); a regression either
+ * frame (the JPEG encoder and the QR front end); a regression either
  * reintroduces a full-frame copy per call or makes ImageData throw. Node has
  * no ImageData, so a stub records which array it was given.
  */

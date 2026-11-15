@@ -3,8 +3,7 @@
  * globe zoom plan 2026-10-03-2017 §4.1 DEC-PERF-1, and the Debug panel,
  * round-6 plan 2026-10-04-1050 G6-0): the browser, the GPU, the screen,
  * the build (a preview's host names its branch or commit) and the page's
- * flags. Strings, numbers and booleans only. One implementation for both
- * (DEC-H3).
+ * flags. Strings, numbers and booleans only. One implementation for both.
  *
  * @see globe-device.js.md
  */

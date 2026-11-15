@@ -51,7 +51,7 @@ import type { ViewerMode } from "./mode.js";
  * for). The frame source is the SINGLE cadence owner (Option A): the QR
  * controller that will consume these frames in M3/M4 must run
  * `minIntervalMs: 0`, because two equal throttles in series drop ~1 frame
- * per cycle. The value is the framework's shared QR default (DEC-H3), not
+ * per cycle. The value is the framework's shared QR default, not
  * a copy.
  */
 export const CAMERA_FRAME_INTERVAL_MS = DEFAULT_QR_CAPTURE_INTERVAL_MS;
@@ -353,7 +353,7 @@ export function endTourArRuntime(
   deps: { stopCameraFrameCapture(): void },
 ): void {
   deps.stopCameraFrameCapture();
-  // The store half is the shared framework sequence (DEC-H3 unification):
+  // The store half is the shared framework sequence (shared-helper unification):
   // endSession + resetGpsSessionData + coordinator reset.
   teardownArSessionState(store);
 }

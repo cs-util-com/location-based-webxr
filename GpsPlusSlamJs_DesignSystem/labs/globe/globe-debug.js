@@ -5,7 +5,7 @@
  * by hand (touches do not void it, unlike `#perf=1`'s scripted runs), and
  * Copy puts the device, the live state, the recording and the event log on
  * the clipboard as one JSON (`globe-debug-log.js`). The frame statistics
- * are the framework's (`globe-perf-stats.js`, DEC-H3). The recorder, its
+ * are the framework's (`globe-perf-stats.js`). The recorder, its
  * statistics and the share helpers load when the panel first opens, so a
  * page whose panel stays closed never fetches them (`#perf=1` stays the
  * only thing that loads the recorder at boot; globe-perf.smoke).

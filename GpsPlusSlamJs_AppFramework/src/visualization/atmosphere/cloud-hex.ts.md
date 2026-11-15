@@ -44,7 +44,7 @@ Real-Time Hex-Tiling" (JCGT 11(2)); blend: Heitz and Neyret 2018
 - `coverTableThreshold(table, lowTail, cover)` and
   `quantileThresholds(values, covers)`: the table reading and the
   quantile picking behind the hex tables, shared with the live field's
-  (`cloud-live-noise.ts`, round-3 plan N1; DEC-H3: one implementation).
+  (`cloud-live-noise.ts`, round-3 plan N1: one implementation).
 - `CLOUD_HEX_GLSL`: the shader twin (GLSL ES 3.00), include-guarded:
   `atmCloudHexGrad(tex, uv, dx, dy, mean)` reads with the gradients of the
   continuous uv (the offsets jump at the cells' edges, so implicit

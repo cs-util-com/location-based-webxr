@@ -6,8 +6,8 @@
  * The Tour Viewer's troubleshooting recording now writes a `session.json`
  * too, and a recording that cannot say which build made it is a recording
  * nobody can reproduce. The five global names are a contract between the
- * build (which defines them) and this reader, so they have one reader
- * (DEC-H3). The build half is
+ * build (which defines them) and this reader, so they have one reader.
+ * The build half is
  * `GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs`.
  *
  * @see build-info.ts.md

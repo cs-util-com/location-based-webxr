@@ -6,7 +6,7 @@
  * Why it lives here and not in an app: the recorder has done exactly this
  * since 2026-02-06 (owner feedback), the Tour Viewer's finish step now
  * needs it, and the behaviour carries a CONTRACT - what the user is told
- * happened - which DEC-H3 says is unified rather than copied. Before this
+ * happened - which the shared-helper rule says is unified rather than copied. Before this
  * module there were two hand-written `<a download>` fallbacks in the
  * repository and one hand-written share dance; the repo's duplicate guard
  * is keyed on NAMES and could see none of it.

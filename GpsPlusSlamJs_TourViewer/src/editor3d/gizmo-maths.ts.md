@@ -11,7 +11,7 @@ layout, `editor3d-input.ts` feeds the pointer and the keys.
 
 - `viewHeightAtOneM(fovDeg)` - how tall (m) the view of a vertical lens
   is at 1 m from the camera, 2 tan(fov / 2): the one copy of the 3D
-  editor's lens arithmetic (PR bot finding 14, DEC-H3), read by the
+  editor's lens arithmetic (PR bot finding 14), read by the
   gizmo's sprite scale (`editor3d-editing.ts`), the billboards'
   `resizeBillboard` (`editor3d-marks.ts`) and `focalPxOf`
   (`editor3d-stations.ts`).

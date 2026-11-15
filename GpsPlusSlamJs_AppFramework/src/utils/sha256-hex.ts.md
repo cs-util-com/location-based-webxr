@@ -1,7 +1,7 @@
 # sha256-hex.ts
 
 **Purpose:** lowercase hex, and the SHA-256 of bytes as lowercase hex via
-WebCrypto - one copy (DEC-H3). Its callers: the printed code's identity
+WebCrypto - one copy. Its callers: the printed code's identity
 (`qr-payload/qr-code-id.ts`, which keeps the first 12 hex digits), a
 tour's file hashes and a signing key's fingerprint (tour kit plan K1), and
 the Tour Viewer's file-opened tour key (`tour-file-key.ts`, deep-imported

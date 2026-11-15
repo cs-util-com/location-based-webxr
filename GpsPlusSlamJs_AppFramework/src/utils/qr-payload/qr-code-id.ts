@@ -48,7 +48,7 @@ export async function qrCodeId(text: string): Promise<string> {
       `qrCodeId: expected the decoded QR text as a string, got ${typeof text}`
     );
   }
-  // The package's one SHA-256 (DEC-H3, K1 milestone review R14): it copies
+  // The package's one SHA-256 (K1 milestone review R14): it copies
   // the bytes into a plain ArrayBuffer for WebCrypto and rejects where
   // `crypto.subtle` is missing (an insecure context).
   return (await sha256Hex(utf8Encode(text))).slice(0, QR_CODE_ID_LENGTH);

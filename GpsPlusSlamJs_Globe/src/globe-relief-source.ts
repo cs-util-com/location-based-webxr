@@ -16,7 +16,7 @@
  *
  * URLs and attribution texts are the caller's (the Osm library's
  * `TERRARIUM_URL_TEMPLATE` / `MAPTERHORN_URL_TEMPLATE` and their
- * attributions: one home, DEC-H3); this module adds what the globe needs
+ * attributions: one home); this module adds what the globe needs
  * to know about each source, and the credit lines of the sources BEHIND
  * one (Copernicus GLO-30 behind Mapterhorn), which have no other home.
  *

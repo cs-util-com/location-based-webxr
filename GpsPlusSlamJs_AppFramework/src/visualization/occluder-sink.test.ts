@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * createOccluderSink — the shared persistent-occluder wiring, lifted from the
- * RecorderApp into the framework (Tour Viewer polish round M5a, DEC-H3) so
+ * RecorderApp into the framework (Tour Viewer polish round M5a) so
  * the Tour Viewer's mesh cursor and the recorder share it.
  *
  * Why these tests matter (code-health plan step 5): this factory replaced two

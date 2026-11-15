@@ -1,6 +1,6 @@
 /**
  * The Finish's rules, page-free (M6 E0, B10's "shared business logic",
- * root CLAUDE.md DEC-H3): from an open tour and the edits to it, the
+ * the shared-helper rule): from an open tour and the edits to it, the
  * finished zip - the manifest with the edits applied, the files to write
  * and to remove, a listed tour's series continued, rebuilt from the NEWEST
  * bytes. The phone's Finish (`creator-finish.ts`) and the desktop editor

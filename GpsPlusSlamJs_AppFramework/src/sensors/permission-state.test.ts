@@ -1,6 +1,6 @@
 /**
  * Why this test matters: `permission-state.ts` is the ONE prompt-free
- * Permissions-API query (DEC-H3). The permission checker builds its
+ * Permissions-API query. The permission checker builds its
  * geolocation and camera rows on it, and the globe lab reads it to decide
  * whether a position may be asked for at load at all (round-5 plan
  * 2026-10-01-0945 §3.1). A wrong mapping would either prompt nobody who

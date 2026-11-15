@@ -7,7 +7,7 @@ The summary's map (authoring plan
 §3.3, milestone M3b): the model of `summary-model.ts` drawn with Leaflet
 through the framework's summary map shell
 (`gps-plus-slam-app-framework/visualization/summary-map-shell`, moved out of
-the Recorder under DEC-H3) and its shared trajectory drawing
+the Recorder under the shared-helper rule) and its shared trajectory drawing
 (`map-overlay-draw`).
 
 ## Public API
