@@ -452,15 +452,22 @@ test("?allstations=1 shows every station's content at once", async ({
 });
 
 /** What one station's group draws, however deep (its free blocks hang under
- *  their frame): every mesh (a photo plane) and sprite (a pin), each
- *  with its opacity. */
+ *  their frame): every mesh (a photo plane) and sprite, each with its
+ *  opacity. A pin is one drawn thing read by its head: its stem, ground
+ *  disc, ring and pulse carry their own lighter opacities by design, as
+ *  the AR walk counts a pin as its part without looking into it. */
 function drawnOpacitiesIn(page, group) {
   return page.evaluate((name) => {
     /** @param {any} o @returns {number[]} */
-    const opacities = (o) => [
-      ...(o.isMesh === true || o.isSprite === true ? [o.material.opacity] : []),
-      ...(o.children ?? []).flatMap(opacities),
-    ];
+    const opacities = (o) =>
+      o.name === "short-text-pin"
+        ? opacities(o.getObjectByName("pin-head")).slice(0, 1)
+        : [
+            ...(o.isMesh === true || o.isSprite === true
+              ? [o.material.opacity]
+              : []),
+            ...(o.children ?? []).flatMap(opacities),
+          ];
     const root = /** @type {any} */ (
       window
     ).__tourViewerTest.fakeScene.children.find(
@@ -518,7 +525,12 @@ test("the gate's content stands with its station: in the gate's group there, fad
       const drawn = (o) =>
         o.isMesh === true || o.isSprite === true
           ? o
-          : (o.children ?? []).map(drawn).find((/** @type {any} */ d) => d);
+          : (o.name === "short-text-pin"
+              ? [o.getObjectByName("pin-head")]
+              : (o.children ?? [])
+            )
+              .map(drawn)
+              .find((/** @type {any} */ d) => d);
       const object = gate === undefined ? undefined : drawn(gate);
       t.ringSamples.push(object === undefined ? null : object.material.opacity);
     }, 16);
