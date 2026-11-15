@@ -56,11 +56,10 @@ describe("armState, swept over holds and tolerances", () => {
     for (const hold of HOLDS) {
       for (const tolerance of TOLERANCES) {
         for (const speed of [4, 12, 30]) {
-          expect(outcome(hold, tolerance, moving(speed, 10)), [
-            hold,
-            tolerance,
-            speed,
-          ]).toBe("none");
+          expect(
+            outcome(hold, tolerance, moving(speed, 10)),
+            `hold ${String(hold)}, tolerance ${String(tolerance)}, speed ${String(speed)}`,
+          ).toBe("none");
         }
       }
     }
@@ -69,9 +68,10 @@ describe("armState, swept over holds and tolerances", () => {
   it("drags for a finger that rested 300 ms, at every hold up to 250 ms", () => {
     for (const hold of HOLDS) {
       for (const tolerance of TOLERANCES) {
-        expect(outcome(hold, tolerance, rested(300)), [hold, tolerance]).toBe(
-          "drag",
-        );
+        expect(
+          outcome(hold, tolerance, rested(300)),
+          `hold ${String(hold)}, tolerance ${String(tolerance)}`,
+        ).toBe("drag");
       }
     }
   });
