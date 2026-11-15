@@ -18,6 +18,12 @@ loads or when it failed to load; docked, `editor-shell.ts` syncs no sheet.
   (`phoneSheets`) or a height of `CARDS_DRILL_SHORT_PX` (500) or less, a
   phone on its side (and a desktop window that short). Swept in the tests
   over phone sizes on their side and short and ordinary desktop windows.
+- `steadyHeight()` -> `(widthPx, heightPx) => px`: the page's height as
+  `cardsDrill` reads it, blind to a keyboard: the tallest height seen at the
+  current width (a keyboard shrinks the height only; turning a phone changes
+  the width, which starts over). A non-finite height is ignored. A desktop
+  window made shorter at the same width is read at its tallest until its
+  width changes.
 - `SheetKind` - `"tree"` or `"details"`.
 - `SHEET_SHARE` - the part a sheet first takes: 0.62 and 0.66.
 - `SHEET_LIMITS` - what a drag leaves: 0.3 to 0.8; under 0.2 the sheet goes.

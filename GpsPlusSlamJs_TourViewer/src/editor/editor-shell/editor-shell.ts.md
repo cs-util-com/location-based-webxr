@@ -140,7 +140,9 @@ to a station, a story's name in the head takes the focus, selected.
 - A press on a story's pill (`story-check`): a valid story says "The story
   is valid: every path of it can reach the end."; one with a problem goes to
   where the Problems tab's first row for it goes and says what it is.
-- A story's cards drill into their step (`cardsDrill`, `phone-sheet.ts`)
+- A story's cards drill into their step (`cardsDrill` of the width and
+  `steadyHeight`, so a keyboard that resizes the page never closes an open
+  card while its field is typed in; `phone-sheet.ts`)
   on a phone either way round; on a desktop they open in place.
 
 - `createEditorShell(deps)` -> `EditorShell`, made once by `edit-main.ts`:
