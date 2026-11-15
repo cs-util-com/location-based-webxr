@@ -392,6 +392,54 @@ wired into its logic: every interaction is faked.
     a guided "Add a voice" flow. Weakness: rich-text editing covers the
     common paths only, and at 1024 px the 3D view shrinks to about 260 px.
 
+- `hud-agg-1-one-slot/` ... `hud-agg-5-aim-to-ask/` - one calm visitor HUD
+  for a station whose items all want the screen, five directions; made
+  2026-11-15. All five show the same eight beats (arrive, stand still, turn,
+  walk to a film, a narration circle, the story asks a quiz, a weak
+  position, leave) with a readout of HUD share, element count and overlaps.
+  The story always wins the screen; items of the station the visitor is in
+  look different from those of a station they are not at.
+  - `hud-agg-1-one-slot/` - Exit, the radar, one line and one slot; every
+    item asks for the slot with a rank and the rest waits silently.
+    Weakness: what waits is invisible, so a visitor may never learn it is
+    there.
+  - `hud-agg-2-edge-halo/` - the screen's border is the HUD: one mark per
+    item out of view, at its bearing, without text, melting into its item
+    when turned to. Weakness: a mark without text says little until the
+    visitor turns.
+  - `hud-agg-3-radar-zooms/` - the radar zooms into the station on arrival
+    and shows its things as symbols with their state; a tap sets one focus.
+    Weakness: the radar is small, so reading it means looking away from the
+    world.
+  - `hud-agg-4-world-says-it/` - almost no HUD: a light column per station,
+    sparks and ground rings on the items, one subtitle line and a panned
+    chime for what is out of view. Weakness: a glow in the world is wrong by
+    the position error, and guidance in the picture covers 29-37 % of a
+    portrait view near the items (the page's own "world cues" readout, in
+    headless software rendering).
+  - `hud-agg-5-aim-to-ask/` - a ring in the middle of the screen: aiming at
+    a thing brings one label with its name and one action. Weakness: a thing
+    the visitor never aims at never says what it is, and reading means
+    holding the phone up.
+- `quiz-player-1-card-answers/` ... `quiz-player-3-creator-decides/` - how a
+  visitor plays a quiz, three directions; made 2026-11-15. Typed answers are
+  judged after normalisation against salted SHA-256 hashes. Pages 1 and 3
+  hash with `crypto.subtle`, which exists only on a secure origin: open them
+  over https, because page 1 counts every typed answer wrong without it.
+  Page 2 carries its own SHA-256 and works anywhere.
+  - `quiz-player-1-card-answers/` - the quiz plays in the story card with all
+    five answer types; letters over the things in the square pick the same
+    answers. Weakness: the place only decorates the question.
+  - `quiz-player-2-place-answers/` - the question sits on a stone; the
+    answers are found in the square, picked by standing in a ring and given
+    at the stone. Weakness: it is slow and asks for a lot of walking (find
+    four, stand at one, walk back to the stone).
+  - `quiz-player-3-creator-decides/` - a placed quiz lifts its answers into
+    the square while the position is good and drops them back into the card
+    when it turns weak; typed answers stay in the card. Weakness: two
+    presentations to learn, and a flickering position means repeated
+    hand-overs.
+
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own
 coding agent to build that one. The verdicts are in the polish-round plan

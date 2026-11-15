@@ -1,0 +1,1085 @@
+<!doctype html>
+<!-- Prototype "Edge halo": the HUD lives on the screen's border. Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<title>HUD edge halo</title>
+<style>
+:root{
+  --ink:#f3f5f7;
+  --muted:#b6bfc9;
+  --surface:rgba(12,16,21,.9);
+  --surface-2:rgba(255,255,255,.08);
+  --line:rgba(255,255,255,.22);
+  --teal:#2dd4bf;
+  --orange:#fb923c;
+  --amber:#fbbf24;
+  --quiz:#fde047;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:15px/1.4 var(--sans);background:#101317;color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+
+/* ---------- the phone ---------- */
+.device{position:fixed;inset:0;overflow:hidden;background:#000;touch-action:none;user-select:none;-webkit-user-select:none}
+#cam,#halo,#measure{position:absolute;inset:0;width:100%;height:100%;display:block}
+#cam{touch-action:none;cursor:grab}
+#halo{z-index:18;pointer-events:none}
+#measure{z-index:70;pointer-events:none}
+.vignette{position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 62%,rgba(0,0,0,.26) 100%)}
+
+/* ---------- HUD: exit ---------- */
+.exit{position:absolute;z-index:30;top:calc(30px + env(safe-area-inset-top));left:calc(12px + env(safe-area-inset-left));width:44px;height:44px;border-radius:50%;border:1.5px solid var(--line);background:rgba(10,14,19,.78);display:grid;place-items:center;cursor:pointer;padding:0}
+.exit svg{width:16px;height:16px}
+.device.land .exit{top:calc(14px + env(safe-area-inset-top))}
+
+/* ---------- HUD: toast (walk news) ---------- */
+.toast{position:absolute;z-index:85;top:calc(84px + env(safe-area-inset-top));left:50%;transform:translate(-50%,-6px);opacity:0;width:max-content;max-width:calc(100% - 80px);padding:9px 14px;border-radius:14px;background:rgba(12,17,22,.92);border:1.5px solid var(--line);font-size:14px;font-weight:600;line-height:1.3;pointer-events:none;transition:opacity .3s,transform .3s;display:flex;gap:9px;align-items:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast i{flex:none;width:10px;height:10px;border-radius:50%;background:var(--dot,var(--teal))}
+.device.land .toast{top:calc(28px + env(safe-area-inset-top));left:auto;right:calc(30px + env(safe-area-inset-right));transform:translateY(-6px);max-width:34%}
+.device.land .toast.show{transform:none}
+
+/* ---------- HUD: the one caption of an item in view ---------- */
+.cap{position:absolute;z-index:22;left:0;top:0;display:flex;align-items:center;gap:8px;min-height:40px;max-width:calc(100% - 64px);padding:6px 14px 6px 10px;border-radius:999px;background:rgba(12,16,21,.9);border:2px solid var(--k,#fff);font-size:14.5px;font-weight:650;white-space:nowrap;cursor:pointer;opacity:0;transition:opacity .22s;transform:translate(-50%,-100%);pointer-events:none}
+.cap.show{opacity:1;pointer-events:auto}
+.cap i{flex:none;width:11px;height:11px;border-radius:50%;background:var(--k)}
+.cap span{overflow:hidden;text-overflow:ellipsis}
+.cap em{font-style:normal;color:var(--k);font-weight:700}
+
+/* ---------- HUD: the foot (one card at a time) ---------- */
+.foot{position:absolute;z-index:25;left:50%;bottom:calc(38px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(380px,calc(100% - 76px))}
+.device.land .foot{width:min(470px,58%);bottom:calc(38px + env(safe-area-inset-bottom))}
+.foot > *{animation:rise .28s cubic-bezier(.2,.8,.2,1)}
+@keyframes rise{from{opacity:0;transform:scale(.97)}}
+.now{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 10px;border-radius:20px;background:var(--surface);border:1.5px solid var(--line);min-height:60px}
+.now img{flex:none;width:34px;height:34px}
+.now .m{flex:1;min-width:0}
+.now .tt{font-size:15px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.now .st{font-size:12.5px;color:var(--muted);white-space:nowrap}
+.bar{height:5px;border-radius:3px;background:rgba(255,255,255,.18);margin-top:5px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--k,#fff)}
+.ib{flex:none;width:44px;height:44px;border-radius:50%;border:1.5px solid var(--line);background:var(--surface-2);display:grid;place-items:center;cursor:pointer;padding:0}
+.ib svg{width:16px;height:16px}
+.card{padding:12px 14px 14px;border-radius:20px;background:var(--surface);border:1.5px solid var(--line)}
+.card .hd{display:flex;align-items:center;gap:10px}
+.card .hd img{width:28px;height:28px;flex:none}
+.card .hd .ib{margin-left:auto;width:40px;height:40px}
+.eyebrow{font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--k,var(--muted))}
+.card h3{margin:2px 0 0;font-size:17px;line-height:1.2}
+.card p{margin:8px 0 0;font-size:15px;line-height:1.42}
+.row{display:flex;gap:8px;margin-top:12px;justify-content:flex-end}
+.btn{min-height:44px;padding:10px 16px;border-radius:14px;border:1.5px solid rgba(255,255,255,.3);background:var(--surface-2);font-size:14.5px;font-weight:650;cursor:pointer;line-height:1.2}
+.btn.pri{background:var(--quiz);color:#1d1a05;border-color:var(--quiz)}
+.answers{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.answers .btn{text-align:left}
+.answers .btn.right{background:rgba(45,212,191,.25);border-color:var(--teal)}
+.answers .btn.wrong{background:rgba(248,113,113,.2);border-color:#f87171}
+.answers .btn.dim{opacity:.45}
+.story{border-color:rgba(253,224,71,.55)}
+.pic{display:block;width:100%;height:auto;aspect-ratio:2.6/1;max-height:150px;border-radius:12px;margin-top:10px;background:#222}
+.notes{display:flex;gap:8px;align-items:center;margin-top:10px}
+.notes .btn{padding:8px 12px}
+.device.land .card p{font-size:14px;margin-top:6px}
+.device.land .answers{grid-template-columns:1fr 1fr 1fr 1fr;gap:6px}
+.device.land .answers .btn{padding:8px 10px;text-align:center}
+.device.land .pic{max-height:110px}
+
+/* ---------- demo dock (not part of the design; excluded from the measuring) ---------- */
+.dock{position:absolute;z-index:80;top:calc(26px + env(safe-area-inset-top));left:64px;right:10px;padding:6px;border-radius:14px;background:rgba(6,8,11,.84);border:1.5px dashed rgba(255,255,255,.38);font-size:12px;line-height:1.3}
+.device.land .dock{right:auto;width:min(430px,50%)}
+.dock .r1{display:flex;gap:4px;align-items:center}
+.dock button{flex:none;min-width:34px;height:34px;border-radius:9px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.08);cursor:pointer;padding:0 8px;font-size:14px}
+.dock button.title{flex:1;min-width:0;text-align:left;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dock button.on{background:#0f766e;border-color:#14b8a6}
+.dock .hint{margin:5px 3px 0;color:#dbe2ea}
+.dock .read{margin:3px 3px 1px;color:#a6b6c4;font-variant-numeric:tabular-nums;font-size:11px}
+.dock .read b{color:#fff}
+.dock .read .bad{color:#fca5a5}
+.dock.min .hint,.dock.min .read,.dock.min .jump{display:none}
+.device.land .dock .hint{display:none}
+.jump{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-top:6px}
+.jump button{text-align:left;font-size:12px;height:auto;min-height:32px;padding:4px 8px}
+
+/* ---------- side panel: thresholds, readout, design note ---------- */
+.demo{position:fixed;z-index:90;inset:auto 8px 8px 8px;top:calc(8px + env(safe-area-inset-top));overflow-y:auto;background:rgba(14,18,23,.97);border:1px solid rgba(255,255,255,.16);border-radius:14px;font-size:13px;color:#e8edf2;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px 12px}
+.demo h4{margin:12px 0 5px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#a9b4bf}
+.demo .close{float:right}
+.demo p,.demo ul{margin:0 0 8px;line-height:1.45;color:#cfd8e1}
+.demo ul{padding-left:18px}
+.opt{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:0 0 6px}
+.opt span{flex:1 0 100%;color:#cfd8e1;font-size:12.5px}
+.opt button,.demo .close{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#fff;border-radius:8px;padding:5px 9px;cursor:pointer;font-size:12.5px;min-height:32px}
+.opt button.on{background:#0f766e;border-color:#14b8a6}
+table.log{width:100%;border-collapse:collapse;font-size:11.5px;font-variant-numeric:tabular-nums}
+table.log th,table.log td{padding:3px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:right}
+table.log th:first-child,table.log td:first-child{text-align:left}
+table.log caption{text-align:left;color:#a9b4bf;padding:4px 0}
+.legend{display:grid;grid-template-columns:26px 1fr;gap:5px 8px;align-items:center;margin:4px 0 8px}
+.legend img{width:22px;height:22px}
+
+@media (min-width:960px) and (min-height:700px){
+  body{display:flex;align-items:center;justify-content:center;gap:32px;padding:24px;background:radial-gradient(1200px 700px at 30% 20%,#26303a,#12151a)}
+  .device{position:relative;inset:auto;flex:none;width:390px;height:min(844px,calc(100vh - 48px));border-radius:42px;border:10px solid #0a0c0f;box-shadow:0 0 0 2px #2d333b,0 40px 90px rgba(0,0,0,.6)}
+  .device.rot{width:min(844px,calc(100vw - 420px));height:390px}
+  .demo{position:static;inset:auto;flex:none;width:330px;max-height:calc(100vh - 48px);display:block!important}
+  .demo .close{display:none}
+}
+@media (prefers-reduced-motion:reduce){ .foot > *{animation:none} }
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+</head>
+<body>
+<div class="device" id="device">
+  <canvas id="cam"></canvas>
+  <div class="vignette"></div>
+  <canvas id="halo"></canvas>
+  <button class="exit" id="exit" aria-label="Exit AR"><svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg></button>
+  <div class="toast" id="toast"><i></i><span></span></div>
+  <div id="caps"></div>
+  <div class="foot" id="foot"></div>
+  <canvas id="measure"></canvas>
+  <div class="dock" id="dock">
+    <div class="r1">
+      <button id="prev" aria-label="Previous beat">&lsaquo;</button>
+      <button class="title" id="btitle">Beats</button>
+      <button id="next" aria-label="Next beat">&rsaquo;</button>
+      <button id="all" title="Walk for me: play all beats">&#9654;</button>
+      <button id="cfgBtn" title="Thresholds, readout and design note">&#9881;</button>
+      <button id="minBtn" title="Fold the demo bar">&#8963;</button>
+    </div>
+    <div class="jump" id="jump" hidden></div>
+    <div class="hint" id="hint">Drag sideways to turn, up or down to walk. Use &rsaquo; to step through the eight beats, or &#9654; to watch them all.</div>
+    <div class="read" id="read"></div>
+  </div>
+</div>
+
+<aside class="demo" id="demo" hidden>
+  <button class="close" id="demoClose">Close</button>
+  <h4 style="margin-top:2px">Edge halo</h4>
+  <p>The middle of the screen belongs to the world. Everything that is not in view lives on the screen's border, as one coloured mark per item at its bearing. Turn toward a mark and it melts into its item; only then does one caption appear.</p>
+  <div class="legend" id="legend"></div>
+  <h4>Thresholds to try</h4>
+  <div class="opt" data-k="cap"><span>Marks that carry a symbol (the rest become plain dots)</span><button data-v="3">3</button><button data-v="4">4</button><button data-v="99">all</button></div>
+  <div class="opt" data-k="pulse"><span>Pulse of a waiting item</span><button data-v="1.6">1.6 s</button><button data-v="2.4">2.4 s</button><button data-v="3.6">3.6 s</button><button data-v="0">no pulse</button></div>
+  <div class="opt" data-k="near"><span>Brightness bottoms out at</span><button data-v="10">10 m</button><button data-v="25">25 m</button><button data-v="40">40 m</button><button data-v="0">no fade</button></div>
+  <div class="opt" data-k="leave"><span>A control closes after leaving its place by</span><button data-v="0.8">0.8 s</button><button data-v="1.5">1.5 s</button><button data-v="3">3 s</button></div>
+  <div class="opt" data-k="band"><span>The frame's own glow</span><button data-v="off">off</button><button data-v="faint">faint</button><button data-v="on">strong</button></div>
+  <div class="opt" data-k="captions"><span>Captions for items in view</span><button data-v="one">one, nearest the middle</button><button data-v="all">all (to compare)</button></div>
+  <div class="opt" data-k="extra"><span>Items in the station</span><button data-v="false">6</button><button data-v="true">8 (adds a sign and a sound zone)</button></div>
+  <div class="opt" data-k="short"><span>The 20 s stand-still beat</span><button data-v="false">real 20 s</button><button data-v="true">short 5 s</button></div>
+  <div class="opt" data-k="boxes"><span>Measuring boxes on the phone</span><button data-v="false">off</button><button data-v="true">on</button></div>
+  <div class="opt" data-k="rot" id="rotOpt"><span>Desktop only: the phone held</span><button data-v="false">upright</button><button data-v="true">sideways</button></div>
+  <h4>Measured, per beat (maximum while the beat ran)</h4>
+  <p style="font-size:12px">HUD = share of the screen covered by HUD pixels, without and with the frame's glow band. Elements counts Exit, the frame, each mark, the caption, the foot card and the toast. Run the beats in both orientations to fill both tables.</p>
+  <div id="logs"></div>
+  <h4>Ranking rule</h4>
+  <ul>
+    <li><b>The frame</b> shows every item of this station that is out of view. When there are more than the symbol limit, the order is: playing, waiting for you, not yet seen, paused, seen; nearer before farther. The rest stay on the frame as plain dots, so nothing disappears.</li>
+    <li><b>The middle</b> shows one caption: the item in view nearest the middle of the screen. It keeps the caption until another item is clearly nearer, so it does not flicker.</li>
+    <li><b>The foot</b> shows one thing: the story if it speaks, else a card you opened, else what is playing. Nothing stacks.</li>
+    <li><b>One voice:</b> starting a sound pauses the other one. The story pauses free sound and hands it back when it ends.</li>
+  </ul>
+  <h4>Items of this station, and everything else</h4>
+  <ul>
+    <li>Inside a station: one symbol mark per item, and a tinted frame says "you are here". Other stations are not shown at all.</li>
+    <li>Outside a station: no item marks. Stations are dots, the next one is an orange flag mark. Items of a station you are not at never show on the screen; they show only their look in the world.</li>
+    <li>The next station joins the frame inside a station only once the station is done (its story finished).</li>
+  </ul>
+  <h4>A seventh and an eighth item</h4>
+  <p>They get marks like the others. The symbol limit keeps the frame readable: beyond it a mark is a dot, ranked as above. Turn on 8 items above to see it.</p>
+  <h4>The strongest case against it</h4>
+  <ul>
+    <li>The edge of a phone is where thumbs and the eye's attention are weakest. In bright sun a 20 px mark at the border may simply not be seen, and the design puts everything there.</li>
+    <li>Bearing is only as good as the position. Near items (3 m) swing right round the frame when the position moves a few metres, and when the position is weak the marks have to widen into smears that say little.</li>
+    <li>Colour carries the item kind. Eight kinds are near the limit of colours told apart at a glance, and the symbol inside a 20 px mark is small.</li>
+    <li>Nothing on the frame is tappable, so a visitor cannot ask "what is that mark?" without turning toward it.</li>
+  </ul>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+
+const $ = (s, r = document) => r.querySelector(s);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = (t) => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const device = $('#device'), camCanvas = $('#cam'), haloCanvas = $('#halo'), measCanvas = $('#measure');
+const hctx = haloCanvas.getContext('2d'), mctx = measCanvas.getContext('2d');
+
+const KC = { pin: '#f5efe0', model: '#a78bfa', picture: '#7dd3fc', video: '#f472b6', narration: '#2dd4bf', quiz: '#fde047', sign: '#cbd5e1', zone: '#4ade80', station: '#fb923c' };
+const KNAME = { pin: 'Pin with a text', model: '3D model with notes', picture: 'Then-and-now picture', video: 'Film', narration: 'Narration circle', quiz: 'The guide (story and quiz)', sign: 'Sign', zone: 'Sound zone', station: 'Next station' };
+const CFG = { cap: 3, pulse: 2.4, near: 25, leave: 1.5, band: 'faint', captions: 'one', extra: false, short: false, boxes: false, rot: false };
+
+/* ======================================================================
+   The faked AR camera: a small procedural market square
+   ====================================================================== */
+const renderer = new THREE.WebGLRenderer({ canvas: camCanvas, antialias: true, powerPreference: 'low-power' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+{
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#93b3d1'); gr.addColorStop(.55, '#cddbe6'); gr.addColorStop(1, '#e6e1d6');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; scene.background = t;
+}
+scene.fog = new THREE.Fog(0xd4dfe8, 45, 240);
+const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 600);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xeef4ff, 0x6d6252, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0d4, 1.6); sun.position.set(-60, 110, 40); scene.add(sun);
+const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+function rng(seed) { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
+const rand = rng(20261115);
+
+const PLAZA = { x: 0, z: -36, r: 32 };
+{
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), lam(0x8a8476)); ground.rotation.x = -Math.PI / 2; scene.add(ground);
+  const sq = new THREE.Mesh(new THREE.CircleGeometry(36, 64), lam(0xa79d8a)); sq.rotation.x = -Math.PI / 2; sq.position.set(PLAZA.x, 0.02, PLAZA.z); scene.add(sq);
+  const road = (x0, z0, x1, z1, w) => { const l = Math.hypot(x1 - x0, z1 - z0); const m = new THREE.Mesh(new THREE.PlaneGeometry(w, l), lam(0x64625e)); m.rotation.x = -Math.PI / 2; m.rotation.z = -Math.atan2(x1 - x0, z1 - z0) + Math.PI; m.position.set((x0 + x1) / 2, 0.015, (z0 + z1) / 2); scene.add(m); };
+  road(0, 90, 0, -6, 11); road(14, -62, 60, -150, 11); road(-20, -60, -70, -170, 10);
+  // paving rings
+  const ringM = new THREE.MeshLambertMaterial({ color: 0xc8bfae });
+  for (const r of [12, 24]) { const m = new THREE.Mesh(new THREE.RingGeometry(r - 0.25, r, 96), ringM); m.rotation.x = -Math.PI / 2; m.position.set(PLAZA.x, 0.03, PLAZA.z); scene.add(m); }
+}
+function facadeTexture(floors) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 128);
+  const fh = 128 / (floors + 0.3);
+  for (let f = 0; f < floors; f++) for (let w = 0; w < 3; w++) {
+    g.fillStyle = f === 0 && w === 1 ? '#3b2f28' : '#46525c';
+    const x = 14 + w * 38, y = 128 - (f + 1) * fh + fh * 0.22;
+    g.fillRect(x, y, 22, f === 0 && w === 1 ? fh * 0.78 : fh * 0.5);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+{
+  const FAC = [0xe8d8bf, 0xd9b99a, 0xc9d1c3, 0xe5c7a8, 0xd2c1b0, 0xbfa58c, 0xe9e1cf, 0xcaa588];
+  const texes = { 2: facadeTexture(2), 3: facadeTexture(3), 4: facadeTexture(4) };
+  const gaps = [Math.atan2(0, 1), Math.atan2(46, -68), Math.atan2(-30, -66)];
+  const addB = (x, z, w, d, floors, rotY) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, floors * 3.4 + 1, d), new THREE.MeshLambertMaterial({ map: texes[floors], color: FAC[Math.floor(rand() * FAC.length)] }));
+    m.position.set(x, (floors * 3.4 + 1) / 2, z); m.rotation.y = rotY; scene.add(m);
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(Math.max(w, d) * 0.72, 3, 4), lam(0x9c4a32)); roof.rotation.y = rotY + Math.PI / 4; roof.position.set(x, floors * 3.4 + 2.5, z); scene.add(roof);
+  };
+  for (let a = 0; a < Math.PI * 2; a += 0.27) {
+    if (gaps.some((g) => Math.abs(((a - g + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.24)) continue;
+    const r = 46 + rand() * 4, x = PLAZA.x + Math.sin(a) * r, z = PLAZA.z + Math.cos(a) * r;
+    addB(x, z, 11 + rand() * 3, 10, 2 + Math.floor(rand() * 3), a);
+  }
+  for (let z = 22; z < 90; z += 13) for (const x of [-13, 13]) addB(x, z, 10, 11, 2 + Math.floor(rand() * 3), 0);
+  for (let t = 0.15; t < 1; t += 0.14) { const x = 14 + 46 * t, z = -62 - 88 * t; addB(x - 13, z - 4, 10, 10, 2 + Math.floor(rand() * 3), 0.48); addB(x + 13, z + 6, 10, 10, 2 + Math.floor(rand() * 3), 0.48); }
+  { const stone = lam(0x8f8a80), s3 = { x: 46, z: -110 };
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.5, 1, 20), stone); w.position.set(s3.x, 0.5, s3.z); scene.add(w);
+    for (const dx of [-1.3, 1.3]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, 0.2), lam(0x5b4330)); p.position.set(s3.x + dx, 1.8, s3.z); scene.add(p); }
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.2, 4), lam(0x7f3b2a)); roof.rotation.y = Math.PI / 4; roof.position.set(s3.x, 3.6, s3.z); scene.add(roof); }
+  const trunk = lam(0x5b4330), crown = lam(0x4f7d3a);
+  for (const [x, z] of [[-26, -18], [24, -16], [-28, -56], [22, -60], [-14, -66], [32, -46]]) {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 2.6), trunk); t.position.set(x, 1.3, z); scene.add(t);
+    const c = new THREE.Mesh(new THREE.IcosahedronGeometry(1.6, 1), crown); c.position.set(x, 3.6, z); scene.add(c);
+  }
+}
+
+/* ---------- the station's items ---------- */
+const ITEMS = [
+  { id: 'pin', kind: 'pin', name: 'Market notice', x: 0.7, z: -33, h: 1.75, passive: true, tapReach: 8, text: 'Every Thursday from 1650 the square held the cloth market. This notice board is where the prices were posted.' },
+  { id: 'model', kind: 'model', name: 'The market cross', x: 27, z: -36, h: 3.4, passive: true, tapReach: 40 },
+  { id: 'picture', kind: 'picture', name: 'Then and now', x: -2, z: -20, h: 1.5, passive: true, tapReach: 15 },
+  { id: 'video', kind: 'video', name: 'Market day film', x: -8, z: -34, h: 1.75, reach: 5, dur: 22 },
+  { id: 'narration', kind: 'narration', name: 'Voice of the square', x: -9, z: -38, h: 0.4, ring: 2, dur: 48 },
+  { id: 'quiz', kind: 'quiz', name: 'The guide', x: 6, z: -46, h: 2.0, tapReach: 9 },
+  { id: 'sign', kind: 'sign', name: 'Old shop sign', x: 15, z: -22, h: 2.7, passive: true, extra: true, tapReach: 12, text: 'J. Weber, weaver. The sign hung here until 1911.' },
+  { id: 'zone', kind: 'zone', name: 'Fountain sounds', x: -21, z: -52, h: 0.4, ring: 3, extra: true, dur: 30 },
+];
+const item = (id) => ITEMS.find((i) => i.id === id);
+const active = (it) => !it.extra || CFG.extra;
+const soundy = (it) => it.kind === 'video' || it.kind === 'narration' || it.kind === 'zone';
+const STATIONS = [
+  { id: 's1', name: 'The gate', x: 0, z: 70, done: true },
+  { id: 's2', name: 'Market square', x: PLAZA.x, z: PLAZA.z, r: PLAZA.r },
+  { id: 's3', name: 'The well', x: 46, z: -110 },
+  { id: 's4', name: 'Clock tower', x: -66, z: -160 },
+  { id: 's5', name: 'The bridge', x: 70, z: -220 },
+];
+const station = (id) => STATIONS.find((s) => s.id === id);
+
+const glowMat = (c) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0.4, depthWrite: false, side: THREE.DoubleSide });
+const pickMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+const picks = [];
+function canvasTex(w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.userData.canvas = c; return t; }
+function addGlow(it, r0, r1) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(r0, r1, 64), glowMat(KC[it.kind])); m.rotation.x = -Math.PI / 2; m.position.set(it.x, 0.05, it.z); scene.add(m); it.glow = m;
+}
+function addPick(it, w, h, d, y) { const p = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), pickMat); p.position.set(it.x, y, it.z); p.userData.item = it; scene.add(p); picks.push(p); }
+{
+  const dark = lam(0x2b2f33);
+  // 1 pin
+  { const it = item('pin'); const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.45), dark); post.position.set(it.x, 0.72, it.z); scene.add(post);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 18, 14), lam(0xf5efe0)); head.position.set(it.x, 1.62, it.z); scene.add(head);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.3, 14), lam(0xf5efe0)); cone.rotation.x = Math.PI; cone.position.set(it.x, 1.42, it.z); scene.add(cone);
+    addGlow(it, 0.5, 0.85); addPick(it, 1, 2.2, 1, 1); }
+  // 2 model: the market cross
+  { const it = item('model'); const stone = lam(0xbcae95);
+    const g = new THREE.Group(); g.position.set(it.x, 0, it.z);
+    for (let i = 0; i < 3; i++) { const s = new THREE.Mesh(new THREE.BoxGeometry(3.4 - i * 0.8, 0.35, 3.4 - i * 0.8), stone); s.position.y = 0.17 + i * 0.35; g.add(s); }
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 4.2, 10), stone); col.position.y = 3.15; g.add(col);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.3, 0.3), stone); bar.position.y = 4.7; g.add(bar);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.1, 0.3), stone); top.position.y = 5.2; g.add(top);
+    scene.add(g); addGlow(it, 2.2, 2.6); addPick(it, 4, 6, 4, 3);
+    it.notes = [ { y: 1.1, text: 'The steps: traders sat here to keep the cloth off the wet ground.' }, { y: 4.7, text: 'The cross bar: once carried the town scales.' } ];
+    it.noteSprites = it.notes.map((n, i) => { const t = canvasTex(64, 64, (g2) => { g2.fillStyle = '#a78bfa'; g2.beginPath(); g2.arc(32, 32, 26, 0, 7); g2.fill(); g2.lineWidth = 5; g2.strokeStyle = '#111'; g2.stroke(); g2.fillStyle = '#111'; g2.font = 'bold 30px sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText(String(i + 1), 32, 34); });
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, opacity: 0, depthTest: false })); sp.scale.set(0.7, 0.7, 1); sp.position.set(it.x - 1.2, n.y, it.z + 0.6); scene.add(sp); return sp; }); }
+  // 3 picture on a stand, facing the square
+  { const it = item('picture');
+    it.picTex = canvasTex(256, 180, (g, w, h) => drawPicture(g, w, h, 'then'));
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.05), new THREE.MeshBasicMaterial({ map: it.picTex })); board.position.set(it.x, 1.55, it.z); board.rotation.y = Math.PI; scene.add(board);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.62, 1.17, 0.05), dark); back.position.set(it.x, 1.55, it.z + 0.04); scene.add(back);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.0, 0.08), dark); post.position.set(it.x, 0.5, it.z + 0.04); scene.add(post);
+    addGlow(it, 0.8, 1.15); addPick(it, 1.8, 2.4, 0.8, 1.2); }
+  // 4 video: a standing screen facing the arrival spot
+  { const it = item('video');
+    it.screen = canvasTex(256, 144, (g, w, h) => drawScreen(g, w, h, it));
+    const grp = new THREE.Group(); grp.position.set(it.x, 0, it.z);
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.35), new THREE.MeshBasicMaterial({ map: it.screen })); scr.position.y = 1.75; grp.add(scr);
+    const fr = new THREE.Mesh(new THREE.BoxGeometry(2.56, 1.5, 0.08), dark); fr.position.set(0, 1.75, -0.05); grp.add(fr);
+    for (const dx of [-1, 1]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.1, 0.08), dark); l.position.set(dx, 0.55, -0.05); grp.add(l); }
+    grp.lookAt(-1, 0, -30); scene.add(grp);
+    const reach = new THREE.Mesh(new THREE.RingGeometry(it.reach - 0.12, it.reach, 96), glowMat(KC.video)); reach.rotation.x = -Math.PI / 2; reach.position.set(it.x, 0.045, it.z); scene.add(reach); it.reachRing = reach;
+    addGlow(it, 0.9, 1.3); addPick(it, 2.8, 2.8, 1.2, 1.5); }
+  // 5 narration circle and 8 sound zone: rings with rising motes
+  for (const id of ['narration', 'zone']) { const it = item(id);
+    addGlow(it, it.ring - 0.3, it.ring);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(it.ring - 0.3, 48), glowMat(KC[it.kind])); disc.rotation.x = -Math.PI / 2; disc.position.set(it.x, 0.04, it.z); disc.material.opacity = 0.12; scene.add(disc); it.disc = disc;
+    const n = 26, pos = new Float32Array(n * 3); it.motes = []; for (let i = 0; i < n; i++) { const a = rand() * 7, r = (it.ring - 0.3) * (0.55 + 0.45 * rand()); it.motes.push({ a, r, y: rand() * 2.4, s: 0.4 + rand() * 0.5 }); }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: KC[it.kind], size: 0.05, transparent: true, opacity: 0.8, depthWrite: false })); scene.add(pts); it.pts = pts;
+    addPick(it, it.ring * 2, 2.4, it.ring * 2, 1.2);
+    it.objs = [it.glow, disc, pts]; }
+  // 6 the guide (the station's story, which reaches the quiz)
+  { const it = item('quiz'); const g = new THREE.Group(); g.position.set(it.x, 0, it.z);
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.9, 4, 12), lam(0x355c7d)); body.position.y = 0.98; g.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), lam(0xe8c4a0)); head.position.y = 1.78; g.add(head);
+    const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.14, 14), lam(0x2b2f33)); hat.position.y = 1.97; g.add(hat);
+    scene.add(g);
+    const t = canvasTex(64, 64, (g2) => { g2.fillStyle = '#fde047'; g2.beginPath(); g2.arc(32, 32, 27, 0, 7); g2.fill(); g2.lineWidth = 5; g2.strokeStyle = '#111'; g2.stroke(); g2.fillStyle = '#111'; g2.font = 'bold 36px sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText('?', 32, 35); });
+    it.qSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false })); it.qSprite.scale.set(0.55, 0.55, 1); it.qSprite.position.set(it.x, 2.55, it.z); scene.add(it.qSprite);
+    addGlow(it, 0.8, 1.15); addPick(it, 1.2, 2.6, 1.2, 1.2); }
+  // 7 sign
+  { const it = item('sign'); const g = new THREE.Group(); g.position.set(it.x, 0, it.z);
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.4, 0.1), dark); p.position.y = 1.2; g.add(p);
+    const t = canvasTex(128, 80, (g2) => { g2.fillStyle = '#3a2a1c'; g2.fillRect(0, 0, 128, 80); g2.fillStyle = '#e8d6b0'; g2.font = 'bold 20px Georgia'; g2.textAlign = 'center'; g2.fillText('J. WEBER', 64, 36); g2.font = '15px Georgia'; g2.fillText('weaver', 64, 60); });
+    const b = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.75), new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide })); b.position.set(0, 2.6, 0); b.rotation.y = 0.6; g.add(b);
+    scene.add(g); it.objs = [g]; addGlow(it, 0.5, 0.8); it.objs.push(it.glow); addPick(it, 1.4, 3.2, 1.4, 1.6); }
+}
+// the next station's beacon (world guidance between stations)
+const beacon = (() => {
+  const g = new THREE.Group();
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false })); gem.scale.y = 1.4; gem.position.y = 5;
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 26, 6, 1, true), new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.35, depthWrite: false })); col.position.y = 16;
+  g.add(gem, col); scene.add(g); return { g, gem, col, a: 1 };
+})();
+
+function drawPicture(g, w, h, mode) {
+  const sep = mode === 'then';
+  g.fillStyle = sep ? '#d9c7a1' : '#a9c7e0'; g.fillRect(0, 0, w, h);
+  g.fillStyle = sep ? '#8a7350' : '#c9a982'; for (let i = 0; i < 5; i++) g.fillRect(10 + i * 50, h * 0.3 - (i % 2) * 14, 40, h * 0.45 + (i % 2) * 14);
+  g.fillStyle = sep ? '#5a4630' : '#7f3b2a'; for (let i = 0; i < 5; i++) { g.beginPath(); g.moveTo(8 + i * 50, h * 0.3 - (i % 2) * 14); g.lineTo(30 + i * 50, h * 0.14 - (i % 2) * 14); g.lineTo(52 + i * 50, h * 0.3 - (i % 2) * 14); g.fill(); }
+  g.fillStyle = sep ? '#b39c74' : '#8d8678'; g.fillRect(0, h * 0.75, w, h * 0.25);
+  if (sep) { g.fillStyle = '#6b5637'; for (let i = 0; i < 7; i++) g.fillRect(20 + i * 33, h * 0.68, 22, 16); }
+  g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 6; g.strokeRect(0, 0, w, h);
+}
+function drawScreen(g, w, h, it) {
+  g.fillStyle = '#14161a'; g.fillRect(0, 0, w, h);
+  const st = it ? it.st : 'fresh';
+  if (st === 'playing') {
+    const t = it.t;
+    g.fillStyle = '#6b5a45'; g.fillRect(0, h * 0.62, w, h * 0.38);
+    for (let i = 0; i < 6; i++) { const x = ((i * 52 - t * 18) % (w + 60) + w + 60) % (w + 60) - 30; g.fillStyle = ['#c0703c', '#d9b14a', '#6f8f5a'][i % 3]; g.fillRect(x, h * 0.35, 36, h * 0.3); g.fillStyle = '#e8dcc4'; g.fillRect(x - 4, h * 0.3, 44, 8); }
+    g.fillStyle = 'rgba(255,255,255,.85)'; g.fillRect(10, h - 10, (w - 20) * (it.t / it.dur), 4);
+  } else {
+    drawScreen(g, w, h, { st: 'playing', t: 3, dur: 1e9 }); g.fillStyle = 'rgba(10,12,16,.55)'; g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(10,12,16,.75)'; g.beginPath(); g.arc(w / 2, h / 2, 38, 0, 7); g.fill();
+    g.fillStyle = '#f472b6'; g.beginPath();
+    if (st === 'done') { g.lineWidth = 9; g.strokeStyle = '#f472b6'; g.arc(w / 2, h / 2, 26, 0.6, 5.6); g.stroke(); g.moveTo(w / 2 + 34, h / 2 - 22); g.lineTo(w / 2 + 22, h / 2 - 2); g.lineTo(w / 2 + 8, h / 2 - 20); g.fill(); }
+    else { g.moveTo(w / 2 - 16, h / 2 - 24); g.lineTo(w / 2 + 24, h / 2); g.lineTo(w / 2 - 16, h / 2 + 24); g.fill(); }
+  }
+}
+
+/* ---------- glyphs (shared by the frame, the caption, the cards) ---------- */
+function glyph(g, kind, x, y, col) {
+  g.save(); g.translate(x, y); g.fillStyle = col; g.strokeStyle = col; g.lineWidth = 2; g.lineCap = 'round'; g.lineJoin = 'round';
+  switch (kind) {
+    case 'pin': g.beginPath(); g.arc(0, -1.8, 3.6, 0, 7); g.fill(); g.beginPath(); g.moveTo(-3, -0.2); g.lineTo(3, -0.2); g.lineTo(0, 5.5); g.fill(); break;
+    case 'model': g.beginPath(); g.moveTo(0, -5.5); g.lineTo(5, -2.8); g.lineTo(5, 2.8); g.lineTo(0, 5.5); g.lineTo(-5, 2.8); g.lineTo(-5, -2.8); g.closePath(); g.stroke(); g.beginPath(); g.moveTo(-5, -2.8); g.lineTo(0, 0); g.lineTo(5, -2.8); g.moveTo(0, 0); g.lineTo(0, 5.5); g.stroke(); break;
+    case 'picture': g.strokeRect(-5.5, -4.5, 11, 9); g.beginPath(); g.moveTo(-4.5, 3.5); g.lineTo(-1, -0.5); g.lineTo(1.5, 2); g.lineTo(3, 0.5); g.lineTo(4.5, 3.5); g.closePath(); g.fill(); break;
+    case 'video': g.beginPath(); g.moveTo(-3.5, -5); g.lineTo(5, 0); g.lineTo(-3.5, 5); g.closePath(); g.fill(); break;
+    case 'narration': g.beginPath(); g.arc(-3, 0, 1.9, 0, 7); g.fill(); g.beginPath(); g.arc(-3, 0, 4.6, -0.8, 0.8); g.stroke(); g.beginPath(); g.arc(-3, 0, 7.6, -0.75, 0.75); g.stroke(); break;
+    case 'quiz': g.font = 'bold 13px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('?', 0, 1); break;
+    case 'sign': for (const yy of [-3.5, 0, 3.5]) { g.beginPath(); g.moveTo(-4.5, yy); g.lineTo(4.5, yy); g.stroke(); } break;
+    case 'zone': g.beginPath(); g.arc(0, 0, 5, 0, 7); g.stroke(); g.beginPath(); g.arc(0, 0, 1.8, 0, 7); g.fill(); break;
+    case 'station': g.beginPath(); g.moveTo(-3.5, 6); g.lineTo(-3.5, -6); g.stroke(); g.beginPath(); g.moveTo(-3.5, -6); g.lineTo(5, -3); g.lineTo(-3.5, 0); g.closePath(); g.fill(); break;
+  }
+  g.restore();
+}
+const ICON = {};
+for (const k of Object.keys(KC)) { const c = document.createElement('canvas'); c.width = c.height = 72; const g = c.getContext('2d'); g.scale(2, 2);
+  g.beginPath(); g.arc(18, 18, 16, 0, 7); g.fillStyle = KC[k]; g.fill(); g.lineWidth = 2.5; g.strokeStyle = 'rgba(0,0,0,.8)'; g.stroke(); g.translate(18, 18); g.scale(1.45, 1.45); glyph(g, k, 0, 0, '#0b0d10'); ICON[k] = c.toDataURL(); }
+$('#legend').innerHTML = Object.keys(KC).map((k) => `<img src="${ICON[k]}" alt=""><span>${KNAME[k]}</span>`).join('');
+
+/* ======================================================================
+   State
+   ====================================================================== */
+const S = { pos: { x: 0, z: 12 }, yaw: 0, pitch: -0.05, yawTarget: null, auto: null, spin: null, inStation: false, stationDone: false, weak: false, story: null, panel: null, finished: null, beat: 0, lastDone: 0, points: 0, openAt: -1e9, openFrom: null, autoAnswer: false };
+function resetItems() { for (const it of ITEMS) { it.st = 'fresh'; it.t = 0; it.inPlace = false; it.outT = 0; it.inView = false; it.flash = -1e9; it.d = 99; it.p = null; } }
+resetItems();
+const yawToward = (t, p = S.pos) => Math.atan2(-(t.x - p.x), -(t.z - p.z));
+const nextStation = () => (S.stationDone ? station('s3') : station('s2'));
+
+/* ======================================================================
+   The screen: size, perimeter, projection
+   ====================================================================== */
+let W = 390, H = 844, DPR = 1;
+const C = 17;          // the frame's centre line, px from the edge (a mark and its nub fit inside)
+const BEAD = 10;       // a mark's radius
+function resize() {
+  W = device.clientWidth; H = device.clientHeight; DPR = Math.min(devicePixelRatio || 1, 2);
+  renderer.setSize(W, H, false);
+  for (const c of [haloCanvas, measCanvas]) { c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); }
+  camera.aspect = W / H;
+  // the longer side keeps a 64 degree view, as a phone camera does
+  camera.fov = W < H ? 64 : (2 * Math.atan(Math.tan(32 * Math.PI / 180) / camera.aspect)) * 180 / Math.PI;
+  camera.updateProjectionMatrix();
+  device.classList.toggle('land', W > H);
+}
+new ResizeObserver(resize).observe(device); resize();
+
+const perimLen = () => 2 * (W - 2 * C) + 2 * (H - 2 * C);
+function uToXY(u) {
+  const a = W - 2 * C, b = H - 2 * C, P = 2 * a + 2 * b; u = ((u % P) + P) % P;
+  if (u < a) return { x: C + u, y: C, e: 't' }; u -= a;
+  if (u < b) return { x: W - C, y: C + u, e: 'r' }; u -= b;
+  if (u < a) return { x: W - C - u, y: H - C, e: 'b' }; u -= a;
+  return { x: C, y: H - C - u, e: 'l' };
+}
+function xyToU(x, y) {
+  const a = W - 2 * C, b = H - 2 * C;
+  const dt = Math.abs(y - C), dr = Math.abs(x - (W - C)), db = Math.abs(y - (H - C)), dl = Math.abs(x - C), m = Math.min(dt, dr, db, dl);
+  if (m === dt) return clamp(x - C, 0, a);
+  if (m === dr) return a + clamp(y - C, 0, b);
+  if (m === db) return a + b + clamp(W - C - x, 0, a);
+  return 2 * a + b + clamp(H - C - y, 0, b);
+}
+// Exit sits in the top-left corner: marks never park under it
+function blocked() {
+  const a = W - 2 * C, b = H - 2 * C, P = 2 * a + 2 * b, exitBottom = W > H ? 66 : 82;
+  return [[-60, 64 - C], [2 * a + b + (H - C - exitBottom), P + 64 - C]];
+}
+const vc = new THREE.Vector3();
+const IN_MARGIN = 20;
+// Where an item sits for the visitor: in view (a screen point), or on the frame.
+function place(x, y, z) {
+  vc.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+  const P0 = camera.projectionMatrix.elements[0], P5 = camera.projectionMatrix.elements[5];
+  const hw = W / 2 - C, hh = H / 2 - C;
+  if (vc.z < -0.05) {
+    const nx = (vc.x / -vc.z) * P0, ny = (vc.y / -vc.z) * P5;
+    const sx = (nx + 1) / 2 * W, sy = (1 - ny) / 2 * H;
+    if (sx > IN_MARGIN && sx < W - IN_MARGIN && sy > IN_MARGIN && sy < H - IN_MARGIN) return { inView: true, sx, sy };
+    const dx = sx - W / 2, dy = sy - H / 2;
+    const t = Math.min(hw / Math.max(Math.abs(dx), 1e-6), hh / Math.max(Math.abs(dy), 1e-6));
+    const px = W / 2 + dx * t, py = H / 2 + dy * t;
+    let nub = 0; if (Math.abs(px - C) < 0.5) nub = Math.PI; else if (Math.abs(px - (W - C)) < 0.5) nub = 0; else if (Math.abs(py - C) < 0.5) nub = -Math.PI / 2; else nub = Math.PI / 2;
+    return { inView: false, sx, sy, u: xyToU(px, py), nub };
+  }
+  // behind: run down the side the item is on, then along the bottom to its middle
+  const side = vc.x >= 0 ? 1 : -1;
+  const yoff = clamp(hw * (-vc.y * P5 * H) / (Math.max(Math.abs(vc.x), 1e-3) * P0 * W), -hh, hh);
+  const y90 = H / 2 + yoff;
+  const alpha = Math.atan2(Math.abs(vc.x), -vc.z);
+  const s = clamp((alpha - Math.PI / 2) / (Math.PI / 2), 0, 1);
+  const L1 = (H - C) - y90, L2 = W / 2 - C, d = s * (L1 + L2), sideX = side > 0 ? W - C : C;
+  let px, py; if (d <= L1) { px = sideX; py = y90 + d; } else { px = sideX - side * (d - L1); py = H - C; }
+  return { inView: false, u: xyToU(px, py), nub: side > 0 ? 0 : Math.PI, behind: true };
+}
+
+/* ======================================================================
+   The frame: marks, their ranking, de-overlap and drawing
+   ====================================================================== */
+const MARKS = new Map(); // key -> { du, a, x, y, ... } (displayed state, eased)
+const flashes = [];
+const RANK = { play: 0, wait: 1, idle: 2, pause: 3, done: 4 };
+function beadState(it) {
+  if (it.st === 'playing') return 'play';
+  if (it.st === 'done' || it.st === 'seen') return 'done';
+  if (it.st === 'fresh') return it.passive ? 'idle' : 'wait';
+  return 'pause';
+}
+function brightness(d) { if (S.weak || !CFG.near) return 0.75; return 1 - clamp((d - 3) / (CFG.near - 3), 0, 1) * 0.62; }
+function smearHalf(d) { return clamp(Math.atan(20 / Math.max(d, 1)) * 120, 26, 220) / 2; }
+
+function frameTargets(now) {
+  const T = [];
+  if (S.inStation) {
+    for (const it of ITEMS) {
+      if (!active(it)) continue;
+      const p = place(it.x, it.h, it.z); const was = it.inView; it.p = p; it.inView = p.inView && it.d < 70;
+      const m = MARKS.get(it.id);
+      if (!was && it.inView && m && m.a > 0.3 && !S.story) { flashes.push({ x0: m.x, y0: m.y, it, t0: now, col: KC[it.kind] }); it.flash = now; }
+      if (S.story || it.inView || (it.ring && it.inPlace)) continue;
+      T.push({ key: it.id, kind: it.kind, u: p.u, nub: p.nub, behind: p.behind, state: beadState(it), d: it.d, it, prog: it.st === 'playing' ? it.t / it.dur : null });
+    }
+  }
+  // stations: outside any station all of them; inside only the next one, once the station is done
+  for (const st of STATIONS) {
+    if (S.inStation && st.id === 's2') continue;
+    const isNext = st === nextStation();
+    if (S.inStation && !(isNext && S.stationDone)) continue;
+    const p = place(st.x, 4, st.z); st.inView = p.inView; st.p = p; st.d = dist(S.pos, st);
+    if (p.inView || S.story) continue;
+    T.push({ key: 'st:' + st.id, kind: 'station', u: p.u, nub: p.nub, behind: p.behind, state: isNext ? 'next' : (st.done || (st.id === 's2' && S.stationDone) ? 'sdone' : 'sother'), d: st.d, station: st, dotOnly: !isNext });
+  }
+  // the symbol limit: the best ranked items keep a symbol, the rest become dots
+  const items = T.filter((t) => t.it).sort((a, b) => (RANK[a.state] - RANK[b.state]) || (a.d - b.d));
+  items.forEach((t, i) => { t.dot = i >= CFG.cap; });
+  for (const t of T) { if (t.dotOnly) t.dot = true; t.half = t.dot ? 8 : (S.weak && t.it ? smearHalf(t.d) : 18); }
+  relax(T);
+  return T;
+}
+function relax(T) {
+  const P = perimLen(), B = blocked();
+  for (const t of T) t.tu = t.u;
+  T.sort((a, b) => a.tu - b.tu);
+  for (let it = 0; it < 10; it++) {
+    for (let i = 0; i < T.length - 1; i++) { const a = T[i], b = T[i + 1]; const need = a.half + b.half + 3, gap = b.tu - a.tu; if (gap < need) { const push = (need - gap) / 2; a.tu -= push; b.tu += push; } }
+    for (const t of T) for (const [z0, z1] of B) { const lo = z0 - t.half, hi = z1 + t.half; for (const off of [0, P]) { if (t.tu + off > lo && t.tu + off < hi) t.tu = (t.tu + off - lo < hi - (t.tu + off) ? lo : hi) - off; } }
+  }
+  for (const t of T) t.tu = ((t.tu % P) + P) % P;
+}
+function shortestDelta(a, b) { const P = perimLen(); let d = ((b - a) % P + P) % P; if (d > P / 2) d -= P; return d; }
+
+function updateMarks(T, dt, now) {
+  const seen = new Set();
+  const k = 1 - Math.exp(-dt * 10);
+  for (const t of T) {
+    seen.add(t.key);
+    let m = MARKS.get(t.key);
+    if (!m) { m = { du: t.tu, a: 0 }; MARKS.set(t.key, m); if (t.it && now - S.openAt < 900 && S.openFrom) m.fly = { x: S.openFrom.x, y: S.openFrom.y, t0: S.openAt + 60 * MARKS.size % 360 }; }
+    m.du += shortestDelta(m.du, t.tu) * k;
+    m.a += (1 - m.a) * Math.min(1, dt * 7);
+    Object.assign(m, { kind: t.kind, state: t.state, dot: t.dot, half: t.half, nub: t.nub, behind: t.behind, d: t.d, prog: t.prog, it: t.it, live: true });
+  }
+  // keep the spacing on what is drawn too, not only on the targets, so gliding marks never touch
+  const P = perimLen(), L = [...MARKS.values()].filter((m) => m.live);
+  for (const m of L) m.du = ((m.du % P) + P) % P;
+  L.sort((a, b) => a.du - b.du);
+  for (let n = 0; n < 4; n++) for (let i = 0; i < L.length - 1; i++) { const a = L[i], b = L[i + 1], need = a.half + b.half + 3, gap = b.du - a.du; if (gap < need) { const p = (need - gap) / 2; a.du -= p; b.du += p; } }
+  for (const [key, m] of MARKS) { if (!seen.has(key)) { m.live = false; m.a -= Math.min(m.a, dt * 6); if (m.a <= 0.01) MARKS.delete(key); } }
+}
+
+function rgba(hex, a) { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; }
+function bandStyle() {
+  const a = { off: 0, faint: 0.22, on: 0.5 }[CFG.band];
+  let col = '#ffffff', aa = a * 0.55;
+  if (S.inStation) { col = '#2dd4bf'; aa = a; }
+  if (S.story && S.story.step === 1) { col = '#fde047'; aa = a; }
+  if (S.weak) { col = '#fbbf24'; aa = a; }
+  return { col, a: aa };
+}
+const BAND_T = 14;
+function drawHalo(now) {
+  const g = hctx; g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, W, H);
+  const band = bandStyle();
+  if (band.a > 0) {
+    const sides = [[0, 0, W, BAND_T, 0, 0, 0, BAND_T], [0, H - BAND_T, W, BAND_T, 0, H, 0, H - BAND_T], [0, 0, BAND_T, H, 0, 0, BAND_T, 0], [W - BAND_T, 0, BAND_T, H, W, 0, W - BAND_T, 0]];
+    for (const [x, y, w, h, gx0, gy0, gx1, gy1] of sides) { const gr = g.createLinearGradient(gx0, gy0, gx1, gy1); gr.addColorStop(0, rgba(band.col, band.a)); gr.addColorStop(1, rgba(band.col, 0)); g.fillStyle = gr; g.fillRect(x, y, w, h); }
+  }
+  const pulseK = CFG.pulse ? 0.5 + 0.5 * Math.sin(now / 1000 * Math.PI * 2 / CFG.pulse) : 0.5;
+  const drawn = [];
+  for (const [key, m] of MARKS) {
+    if (m.a <= 0.02) continue;
+    let { x, y } = uToXY(m.du);
+    if (m.fly) { const kf = (now - m.fly.t0) / 650; if (kf < 1) { const e = ease(Math.max(0, kf)); x = lerp(m.fly.x, x, e); y = lerp(m.fly.y, y, e); } else m.fly = null; }
+    m.x = x; m.y = y;
+    const col = KC[m.kind]; const b = m.it ? brightness(m.d) : (m.state === 'next' ? 1 : 0.7);
+    const A = m.a;
+    if (m.dot) {
+      const fill = m.state === 'sdone' ? '#2dd4bf' : m.state === 'sother' ? '#e5e7eb' : col;
+      g.globalAlpha = A * (0.55 + 0.45 * b); g.beginPath(); g.arc(x, y, 5, 0, 7); g.fillStyle = fill; g.fill(); g.lineWidth = 2.5; g.strokeStyle = 'rgba(0,0,0,.8)'; g.stroke(); g.globalAlpha = 1;
+      drawn.push({ key, rects: m.live ? [{ x: x - 7, y: y - 7, w: 14, h: 14 }] : [] }); continue;
+    }
+    const waiting = m.state === 'wait';
+    // the halo: the frame lights up around the mark
+    const glowA = A * b * (m.state === 'play' ? 0.6 : waiting ? 0.18 + 0.55 * pulseK : m.state === 'next' ? 0.45 : m.state === 'done' ? 0.08 : 0.25);
+    const gr = g.createRadialGradient(x, y, 2, x, y, 44); gr.addColorStop(0, rgba(col, glowA)); gr.addColorStop(1, rgba(col, 0)); g.fillStyle = gr; g.fillRect(x - 44, y - 44, 88, 88);
+    const rects = [];
+    if (S.weak && m.it) {
+      // weak position: the mark widens to the arc the item could be in
+      const pts = []; for (let s = -m.half + 9; s <= m.half - 9; s += 4) pts.push(uToXY(m.du + s));
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      g.beginPath(); pts.forEach((p, i) => i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); g.globalAlpha = A; g.lineWidth = 12; g.strokeStyle = 'rgba(0,0,0,.45)'; g.stroke(); g.lineWidth = 8; g.strokeStyle = rgba(col, 0.85); g.stroke(); g.globalAlpha = 1;
+      for (const p of pts) rects.push({ x: p.x - 6, y: p.y - 6, w: 12, h: 12 });
+    }
+    const r = BEAD * (waiting ? 1 + 0.08 * pulseK : 1);
+    g.globalAlpha = A * (m.state === 'done' ? 0.75 : 0.45 + 0.55 * b);
+    // the mark: a disc with a nub toward the turn
+    g.beginPath(); g.arc(x, y, r, m.nub + 0.62, m.nub - 0.62 + Math.PI * 2); g.lineTo(x + Math.cos(m.nub) * (r + 6.5), y + Math.sin(m.nub) * (r + 6.5)); g.closePath();
+    if (m.state === 'done') { g.fillStyle = 'rgba(14,17,21,.92)'; g.fill(); g.lineWidth = 3; g.strokeStyle = col; g.stroke(); }
+    else { g.fillStyle = m.state === 'pause' ? rgba(col, 0.6) : col; g.fill(); g.lineWidth = 2.5; g.strokeStyle = 'rgba(0,0,0,.82)'; g.stroke(); }
+    glyph(g, m.kind, x, y, m.state === 'done' ? col : '#0b0d10');
+    if (m.state === 'play' && m.prog != null) {
+      g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,.7)'; g.beginPath(); g.arc(x, y, r + 4.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * m.prog); g.stroke();
+      g.lineWidth = 3; g.strokeStyle = '#fff'; g.stroke();
+    }
+    g.globalAlpha = 1;
+    { const e = m.state === 'play' ? r + 7 : r + 2, tx = x + Math.cos(m.nub) * (r + 7), ty = y + Math.sin(m.nub) * (r + 7);
+      const x0 = Math.min(x - e, tx), x1 = Math.max(x + e, tx), y0 = Math.min(y - e, ty), y1 = Math.max(y + e, ty); rects.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }); }
+    drawn.push({ key, rects: A > 0.35 && m.live ? rects : [] });
+  }
+  // a mark melts into its item when it comes into view
+  for (let i = flashes.length - 1; i >= 0; i--) {
+    const f = flashes[i], k = (now - f.t0) / 480; const p = f.it.p;
+    if (k > 1.9 || !p || !p.inView) { flashes.splice(i, 1); continue; }
+    if (k < 1) { const e = ease(k); g.globalAlpha = 1 - k; g.beginPath(); g.arc(lerp(f.x0, p.sx, e), lerp(f.y0, p.sy, e), lerp(BEAD, 4, e), 0, 7); g.fillStyle = f.col; g.fill(); }
+    const k2 = (k - 0.55) / 1.3; if (k2 > 0 && k2 < 1) { g.globalAlpha = (1 - k2) * 0.95; g.lineWidth = 5; g.strokeStyle = 'rgba(0,0,0,.5)'; g.beginPath(); g.arc(p.sx, p.sy, 8 + 30 * ease(k2), 0, 7); g.stroke(); g.lineWidth = 3; g.strokeStyle = f.col; g.stroke(); }
+    g.globalAlpha = 1;
+  }
+  return { drawn, band };
+}
+
+/* ======================================================================
+   Captions: one line for one item in view
+   ====================================================================== */
+const capPool = [];
+for (let i = 0; i < 8; i++) { const b = document.createElement('button'); b.className = 'cap'; b.innerHTML = '<i></i><span></span>'; b.addEventListener('click', () => { const t = b._target; if (!t) return; if (t.it) tapItem(t.it); else showToast(S.weak ? `${t.station.name}: the next station` : `${t.station.name}: walk on, ${Math.round(t.station.d)} m`, KC.station); }); $('#caps').appendChild(b); capPool.push(b); }
+let capCurrent = null;
+function capText(it) {
+  const w = S.weak;
+  switch (it.kind) {
+    case 'pin': case 'sign': return [it.name, it.st === 'seen' ? 'read' : 'tap to read'];
+    case 'model': return [it.name, 'tap for 2 notes'];
+    case 'picture': return [it.name, 'tap to compare'];
+    case 'video':
+      if (it.st === 'playing') return [it.name, 'playing'];
+      if (!it.inPlace) return [it.name, w ? 'walk closer' : `walk closer · ${Math.max(1, Math.ceil(it.d - it.reach))} m`];
+      if (it.st === 'done') return [it.name, 'tap to replay'];
+      return [it.name, it.st === 'fresh' ? 'tap to play' : 'tap to resume'];
+    case 'narration': case 'zone':
+      if (it.st === 'playing') return [it.name, 'listening'];
+      if (!it.inPlace) return [it.name, 'step into the circle'];
+      if (it.st === 'done') return [it.name, 'tap to hear again'];
+      return [it.name, it.st === 'fresh' ? 'tap to listen' : 'tap to resume'];
+    case 'quiz': return [it.name, it.st === 'done' ? 'thanks for your answer' : 'tap to talk'];
+  }
+  return [it.name, ''];
+}
+function updateCaptions() {
+  const cands = [];
+  if (!S.story) {
+    if (S.inStation) for (const it of ITEMS) if (active(it) && it.inView && it.d < 45 && !(it.ring && it.inPlace)) cands.push({ key: it.id, it, sx: it.p.sx, sy: it.p.sy, col: KC[it.kind] });
+    const ns = nextStation();
+    if ((!S.inStation || S.stationDone) && ns.p && ns.p.inView) cands.push({ key: 'st', station: ns, sx: ns.p.sx, sy: ns.p.sy, col: KC.station });
+  }
+  for (const c of cands) c.score = Math.hypot(c.sx - W / 2, (c.sy - H / 2) * 0.6);
+  let show = [];
+  if (CFG.captions === 'all') show = cands;
+  else if (cands.length) {
+    cands.sort((a, b) => a.score - b.score);
+    const cur = capCurrent && cands.find((c) => c.key === capCurrent);
+    const pick = cur && cur.score < cands[0].score * 1.35 + 24 ? cur : cands[0];
+    capCurrent = pick.key; show = [pick];
+  } else capCurrent = null;
+  const foot = $('#foot').firstElementChild; const footTop = foot ? devRect(foot).y : H - 30;
+  // a caption stays clear of Exit and of a toast that is showing
+  const toastEl = $('#toast'), tr = toastEl.classList.contains('show') ? devRect(toastEl) : null, topMin = W > H ? 66 : 82;
+  capPool.forEach((b, i) => {
+    const c = show[i];
+    if (!c) { b.classList.remove('show'); b._target = null; return; }
+    const [name, act] = c.it ? capText(c.it) : [c.station.name, S.weak ? 'next station' : `${Math.round(c.station.d)} m`];
+    const html = `${name}${act ? ` · <em>${act}</em>` : ''}`;
+    if (b._html !== html) { b.querySelector('span').innerHTML = html; b._html = html; }
+    b.style.setProperty('--k', c.col);
+    const w = b.offsetWidth || 160, h = b.offsetHeight || 40;
+    const x = clamp(c.sx, w / 2 + 38, W - w / 2 - 38); let y = clamp(c.sy - 16, h + topMin, footTop - 10);
+    if (tr && x + w / 2 > tr.x - 6 && x - w / 2 < tr.x + tr.w + 6 && y - h < tr.y + tr.h + 6 && y > tr.y - 6) y = Math.min(footTop - 10, tr.y + tr.h + 8 + h);
+    b.style.left = x + 'px'; b.style.top = y + 'px';
+    if (!b._target || b._target.key !== c.key) { b.classList.remove('show'); b._since = performance.now(); }
+    b._target = c;
+    if (performance.now() - (b._since || 0) > 220) b.classList.add('show');
+  });
+}
+
+/* ======================================================================
+   The foot: story > opened card > what is playing
+   ====================================================================== */
+const SVG = {
+  play: '<svg viewBox="0 0 16 16"><path d="M4 2.5l9.5 5.5L4 13.5z" fill="#fff"/></svg>',
+  pause: '<svg viewBox="0 0 16 16"><path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z" fill="#fff"/></svg>',
+  stop: '<svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>',
+  replay: '<svg viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M4.5 1.5v3h3"/></svg>',
+};
+let footKey = '';
+function nowItem() {
+  const p = ITEMS.find((i) => active(i) && i.st === 'playing'); if (p) return { it: p, mode: 'play' };
+  const q = ITEMS.find((i) => active(i) && i.st === 'paused' && i.inPlace); if (q) return { it: q, mode: 'paused' };
+  if (S.finished && performance.now() - S.finished.at < 2400) return { it: S.finished.it, mode: 'done' };
+  // standing inside a sound's circle: it is at your feet, so the foot offers it
+  const r = ITEMS.find((i) => active(i) && i.ring && i.inPlace && i.st !== 'playing'); if (r) return { it: r, mode: 'ready' };
+  return null;
+}
+function renderFoot() {
+  const foot = $('#foot');
+  let key = '', html = '';
+  if (S.story) {
+    const st = S.story; key = 'story' + st.step + (st.picked || '');
+    const Q = ['Fish', 'Cloth', 'Salt', 'Cattle'];
+    if (st.step === 0) html = `<div class="card story" style="--k:#fde047"><div class="hd"><img src="${ICON.quiz}" alt=""><div><div class="eyebrow">Story · the guide</div></div></div><p>Welcome to the market square. Before you walk on, one question for you.</p><div class="row"><button class="btn pri" data-a="cont">Continue</button></div></div>`;
+    else if (st.step === 1) html = `<div class="card story" style="--k:#fde047"><div class="hd"><img src="${ICON.quiz}" alt=""><div><div class="eyebrow">Quiz · 1 point</div></div></div><p>What was sold here most, three hundred years ago?</p><div class="answers">${Q.map((q) => `<button class="btn" data-q="${q}">${q}</button>`).join('')}</div></div>`;
+    else { const ok = st.picked === 'Cloth'; html = `<div class="card story" style="--k:#fde047"><div class="hd"><img src="${ICON.quiz}" alt=""><div><div class="eyebrow">Quiz · ${ok ? 'right, +1 point' : 'not quite'}</div></div></div><p>${ok ? 'Cloth.' : 'It was cloth.'} Weavers from three villages sold here every Thursday.</p><div class="answers">${Q.map((q) => `<button class="btn ${q === 'Cloth' ? 'right' : q === st.picked ? 'wrong' : 'dim'}" disabled>${q}</button>`).join('')}</div><div class="row"><button class="btn pri" data-a="end">Continue</button></div></div>`; }
+  } else if (S.panel) {
+    const it = S.panel.it; key = 'panel' + it.id + (S.panel.note ?? '');
+    const hd = (eyebrow) => `<div class="hd"><img src="${ICON[it.kind]}" alt=""><div><div class="eyebrow" style="--k:${KC[it.kind]}">${eyebrow}</div><h3>${it.name}</h3></div><button class="ib" data-a="close" aria-label="Close">${SVG.stop}</button></div>`;
+    if (it.kind === 'pin' || it.kind === 'sign') html = `<div class="card">${hd(it.kind === 'pin' ? 'Pin' : 'Sign')}<p>${it.text}</p></div>`;
+    else if (it.kind === 'picture') html = `<div class="card">${hd('Picture · 1890 and today')}<canvas class="pic" id="picC" width="520" height="200"></canvas></div>`;
+    else if (it.kind === 'model') { const n = S.panel.note ?? 0; html = `<div class="card">${hd(`Model · note ${n + 1} of 2`)}<p>${it.notes[n].text}</p><div class="notes"><button class="btn" data-a="note" ${n ? '' : 'disabled'} data-n="${n - 1}">Back</button><button class="btn" data-a="note" ${n < 1 ? '' : 'disabled'} data-n="${n + 1}">Next note</button></div></div>`; }
+  } else {
+    const n = nowItem();
+    if (n) {
+      const it = n.it; key = 'now' + it.id + n.mode;
+      const label = n.mode === 'done' ? 'finished' : n.mode === 'paused' ? 'paused' : n.mode === 'ready' ? (it.st === 'fresh' ? 'you are in its circle: tap play' : it.st === 'done' ? 'heard: tap to hear again' : 'tap play to go on') : (it.kind === 'video' ? 'playing' : 'listening');
+      const btn = n.mode === 'done' ? `<button class="ib" data-a="toggle" aria-label="Replay">${SVG.replay}</button>` : n.mode === 'ready' ? `<button class="ib" data-a="toggle" aria-label="Play">${SVG.play}</button>` : `<button class="ib" data-a="toggle" aria-label="${n.mode === 'play' ? 'Pause' : 'Play'}">${n.mode === 'play' ? SVG.pause : SVG.play}</button><button class="ib" data-a="stop" aria-label="Stop">${SVG.stop}</button>`;
+      html = `<div class="now" style="--k:${KC[it.kind]}" data-id="${it.id}"><img src="${ICON[it.kind]}" alt=""><div class="m"><div class="tt">${it.name}</div><div class="st">${label}</div><div class="bar"><i></i></div></div>${btn}</div>`;
+    }
+  }
+  if (key !== footKey) {
+    footKey = key; foot.innerHTML = html;
+    const pc = $('#picC'); if (pc) { const g = pc.getContext('2d'); g.save(); drawPicture(g, 260, 200, 'then'); g.restore(); g.save(); g.translate(260, 0); drawPicture(g, 260, 200, 'now'); g.restore(); g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 168, 520, 32); g.fillStyle = '#fff'; g.font = '600 18px system-ui'; g.fillText('1890', 12, 190); g.fillText('today', 272, 190); g.fillStyle = '#fff'; g.fillRect(258, 0, 4, 200); }
+  }
+  const nowEl = foot.querySelector('.now');
+  if (nowEl) { const it = item(nowEl.dataset.id); const bar = nowEl.querySelector('.bar i'); if (bar) bar.style.width = (100 * it.t / it.dur).toFixed(1) + '%'; }
+}
+$('#foot').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.q && S.story) { answer(b.dataset.q); return; }
+  const a = b.dataset.a;
+  if (a === 'cont') { S.story.step = 1; }
+  else if (a === 'end') closeStory();
+  else if (a === 'close') closePanel();
+  else if (a === 'note') { S.panel.note = +b.dataset.n; }
+  else if (a === 'toggle' || a === 'stop') { const id = b.closest('.now').dataset.id; const it = item(id); if (a === 'toggle') togglePlay(it); else { it.st = 'stopped'; S.finished = null; } }
+});
+
+/* ---------- actions ---------- */
+let toastTimer = 0;
+function showToast(text, dot = KC.narration) {
+  const t = $('#toast'); t.querySelector('span').textContent = text; t.style.setProperty('--dot', dot); t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4200);
+}
+function togglePlay(it) {
+  if (S.story) return;
+  if (it.st === 'playing') { it.st = 'paused'; return; }
+  for (const o of ITEMS) if (o !== it && o.st === 'playing') o.st = 'paused';   // one voice at a time
+  if (it.st === 'done') it.t = 0;
+  it.st = 'playing'; it.outT = 0; S.finished = null;
+}
+function tapItem(it) {
+  if (!S.inStation) { showToast('Reach the station first', KC.station); return; }
+  if (S.story) return;
+  if (it.kind === 'quiz') { if (it.st === 'done') showToast('You have answered the guide’s question', KC.quiz); else if (it.d <= it.tapReach) openStory(); else showToast('Walk up to the guide to talk', KC.quiz); return; }
+  if (it.kind === 'video' || it.ring) { if (!it.inPlace) { showToast(it.kind === 'video' ? 'Walk closer to start the film' : 'Step into the circle to listen', KC[it.kind]); return; } togglePlay(it); return; }
+  if (it.d > it.tapReach + 0.5) { showToast('Walk a little closer', KC[it.kind]); return; }
+  S.panel = { it, outT: 0, note: it.kind === 'model' ? 0 : undefined };
+  if (it.passive && it.st === 'fresh') it.st = 'seen';
+}
+function closePanel() { S.panel = null; }
+function openStory() {
+  S.panel = null; S.story = { step: 0 };
+  for (const o of ITEMS) if (o.st === 'playing') o.st = 'story';   // the story wins: free sound waits
+}
+function answer(q) { if (!S.story || S.story.step !== 1) return; S.story.picked = q; S.story.step = 2; if (q === 'Cloth') S.points += 1; }
+function closeStory() {
+  if (!S.story) return;
+  S.story = null; item('quiz').st = 'done';
+  for (const o of ITEMS) if (o.st === 'story') o.st = o.inPlace ? 'playing' : 'away';
+  if (!S.stationDone) { S.stationDone = true; showToast('Station done. The next one is on the frame when you want it.', KC.station); }
+}
+function enterStation(quiet) {
+  S.inStation = true;
+  const p = place(PLAZA.x, 4, PLAZA.z); const m = MARKS.get('st:s2');
+  S.openFrom = p.inView ? { x: p.sx, y: p.sy } : (m ? { x: m.x, y: m.y } : { x: W / 2, y: H / 2 });
+  S.openAt = quiet ? -1e9 : performance.now();
+  if (!quiet) showToast('You are at Market square', KC.narration);
+}
+function leaveStation() {
+  S.inStation = false; S.panel = null;
+  if (S.stationDone) { station('s2').done = true; showToast(`Next: ${station('s3').name}`, KC.station); }
+}
+function setWeak(on) { S.weak = on; showToast(on ? 'Position is rough: marks widen, distances hide' : 'Position is good again', on ? '#fbbf24' : KC.narration); }
+$('#exit').addEventListener('click', () => showToast('Exit AR is not part of this prototype', '#e5e7eb'));
+
+/* ======================================================================
+   Input: drag to turn and walk, tap the world
+   ====================================================================== */
+let drag = null;
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+camCanvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0 }; camCanvas.setPointerCapture(e.pointerId); });
+camCanvas.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.moved += Math.abs(dx) + Math.abs(dy);
+  if (drag.moved > 8 && (S.auto || S.spin || S.yawTarget != null)) cancelRun('Free look. › continues with the next beat.');
+  S.yaw += dx * 0.006;
+  const f = -dy * 0.045, y = S.yaw; S.pos.x += -Math.sin(y) * f; S.pos.z += -Math.cos(y) * f;
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+camCanvas.addEventListener('pointerup', (e) => {
+  if (drag && drag.moved < 8 && performance.now() - drag.t0 < 600) {
+    const r = camCanvas.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera); const hit = ray.intersectObjects(picks.filter((p) => active(p.userData.item)))[0];
+    if (hit) tapItem(hit.object.userData.item);
+  }
+  drag = null;
+});
+camCanvas.addEventListener('pointercancel', () => { drag = null; });
+const keys = new Set();
+addEventListener('keydown', (e) => keys.add(e.code)); addEventListener('keyup', (e) => keys.delete(e.code)); addEventListener('blur', () => keys.clear());
+
+/* ======================================================================
+   Simulation
+   ====================================================================== */
+function turnToward(target, dt, rate = 1.8) { let d = ((target - S.yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI; const step = rate * dt; if (Math.abs(d) <= step) { S.yaw = target; return true; } S.yaw += Math.sign(d) * step; return false; }
+function sim(dt, now) {
+  if (S.auto) {
+    const a = S.auto, dx = a.x - S.pos.x, dz = a.z - S.pos.z, d = Math.hypot(dx, dz), stepM = a.speed * dt;
+    if (d > 0.6) turnToward(Math.atan2(-dx, -dz), dt, 2.4);
+    if (d <= stepM) { S.pos.x = a.x; S.pos.z = a.z; S.auto = null; } else { S.pos.x += dx / d * stepM; S.pos.z += dz / d * stepM; }
+  } else if (S.yawTarget != null) { if (turnToward(S.yawTarget, dt)) S.yawTarget = null; }
+  if (S.spin) { const s = S.spin.rate * dt; S.yaw += S.spin.dir * s; S.spin.left -= s; if (S.spin.left <= 0) S.spin = null; }
+  let f = 0; if (keys.has('KeyW') || keys.has('ArrowUp')) f = 3; if (keys.has('KeyS') || keys.has('ArrowDown')) f = -2;
+  if (keys.has('KeyA') || keys.has('ArrowLeft')) S.yaw += 1.4 * dt; if (keys.has('KeyD') || keys.has('ArrowRight')) S.yaw -= 1.4 * dt;
+  if (f) { S.pos.x += -Math.sin(S.yaw) * f * dt; S.pos.z += -Math.cos(S.yaw) * f * dt; }
+
+  // the station
+  const dS = dist(S.pos, PLAZA);
+  if (!S.inStation && dS <= PLAZA.r && !station('s2').done) enterStation(false);
+  else if (S.inStation && dS > PLAZA.r + 3) leaveStation();
+
+  for (const it of ITEMS) {
+    if (!active(it)) continue;
+    it.d = dist(S.pos, it);
+    if (it.kind === 'video') { if (!it.inPlace && it.d <= it.reach) it.inPlace = true; else if (it.inPlace && it.d > it.reach + 1.5) it.inPlace = false; }
+    else if (it.ring) { if (!it.inPlace && it.d <= it.ring) it.inPlace = true; else if (it.inPlace && it.d > it.ring + 1.2) it.inPlace = false; }
+    if (!soundy(it)) continue;
+    if (it.st === 'playing') {
+      it.t += dt;
+      if (it.t >= it.dur) { it.t = it.dur; it.st = 'done'; S.finished = { it, at: performance.now() }; }
+      else if (!it.inPlace) { it.outT += dt; if (it.outT >= CFG.leave) it.st = 'away'; }
+      else it.outT = 0;
+    } else if (it.st === 'away' && it.inPlace && !S.story && !ITEMS.some((o) => o.st === 'playing')) { it.st = 'playing'; it.outT = 0; }
+  }
+  // a card closes when its place is left
+  if (S.panel) { const it = S.panel.it; if (it.d > it.tapReach + 1.5) { S.panel.outT += dt; if (S.panel.outT >= CFG.leave) S.panel = null; } else S.panel.outT = 0; }
+  if (S.story && item('quiz').d > item('quiz').tapReach + 12) { S.story = null; for (const o of ITEMS) if (o.st === 'story') o.st = 'away'; showToast('The guide waits here for you', KC.quiz); }
+
+  // world looks
+  const pk = CFG.pulse ? 0.5 + 0.5 * Math.sin(now / 1000 * Math.PI * 2 / CFG.pulse) : 0.5;
+  for (const it of ITEMS) {
+    const vis = active(it);
+    if (it.objs) for (const o of it.objs) o.visible = vis;
+    if (!vis || !it.glow) continue;
+    const bs = beadState(it); let o = bs === 'play' ? 0.85 : bs === 'wait' ? 0.3 + 0.5 * pk : bs === 'done' ? 0.18 : 0.42;
+    if (S.story && it.kind !== 'quiz') o = 0.62;
+    if (!S.inStation) o *= 0.5;
+    o = Math.min(1, o + Math.max(0, 1 - (now - it.flash) / 700) * 0.8);
+    it.glow.material.opacity = o;
+    if (it.pts) {
+      const arr = it.pts.geometry.attributes.position.array; const sp = it.st === 'playing' ? 1.6 : 0.6;
+      it.motes.forEach((m, i) => { m.y = (m.y + dt * m.s * sp) % 2.4; arr[i * 3] = it.x + Math.cos(m.a) * m.r; arr[i * 3 + 1] = m.y; arr[i * 3 + 2] = it.z + Math.sin(m.a) * m.r; });
+      it.pts.geometry.attributes.position.needsUpdate = true; it.pts.material.opacity = 0.35 + 0.5 * o; it.disc.material.opacity = it.inPlace ? 0.28 : 0.1;
+    }
+  }
+  const V = item('video'); V.reachRing.material.opacity = S.inStation && V.st !== 'done' ? 0.25 + (V.inPlace ? 0.35 : 0) : 0.08;
+  if (V.st !== V._drawn || V.st === 'playing') { if (!V._last || now - V._last > 90 || V.st !== V._drawn) { drawScreen(V.screen.userData.canvas.getContext('2d'), 256, 144, V); V.screen.needsUpdate = true; V._drawn = V.st; V._last = now; } }
+  const Q = item('quiz'); Q.qSprite.visible = Q.st !== 'done'; Q.qSprite.position.y = 2.55 + Math.sin(now / 500) * 0.06;
+  const M = item('model'); M.noteSprites.forEach((sp, i) => { sp.material.opacity = S.panel && S.panel.it === M ? (S.panel.note === i ? 1 : 0.55) : 0; });
+  // beacon over the next station
+  const ns = nextStation(); const showBeacon = !S.story && (!S.inStation || S.stationDone);
+  beacon.a += ((showBeacon ? 1 : 0) - beacon.a) * Math.min(1, dt * 4); beacon.g.visible = beacon.a > 0.02;
+  beacon.g.position.set(ns.x, 0, ns.z); beacon.gem.material.opacity = 0.95 * beacon.a; beacon.col.material.opacity = 0.35 * beacon.a; beacon.gem.rotation.y += dt;
+}
+
+/* ======================================================================
+   Measuring hook: footprint, element count, overlaps
+   ====================================================================== */
+const LOG = {}; window.__hud = { LOG, last: null };
+let lastFrames = [], frameMax = 0;
+function devRect(el) { const d = device.getBoundingClientRect(), r = el.getBoundingClientRect(); return { x: r.left - d.left - device.clientLeft, y: r.top - d.top - device.clientTop, w: r.width, h: r.height }; }
+function measure(drawn, band) {
+  const els = [];
+  els.push({ name: 'Exit', rects: [devRect($('#exit'))] });
+  if ($('#toast').classList.contains('show')) els.push({ name: 'Toast', rects: [devRect($('#toast'))] });
+  for (const b of capPool) if (b.classList.contains('show')) els.push({ name: 'Caption', rects: [devRect(b)] });
+  const f = $('#foot').firstElementChild; if (f) els.push({ name: 'Foot', rects: [devRect(f)] });
+  let marks = 0; for (const d of drawn) if (d.rects.length) { els.push({ name: 'Mark:' + d.key, rects: d.rects, mark: true }); marks++; }
+  const bandW = band.a > 0 ? BAND_T * Math.max(0, 1 - 0.12 / band.a) : 0;
+  const bandRects = bandW > 0 ? [{ x: 0, y: 0, w: W, h: bandW }, { x: 0, y: H - bandW, w: W, h: bandW }, { x: 0, y: 0, w: bandW, h: H }, { x: W - bandW, y: 0, w: bandW, h: H }] : [];
+  const cs = 2, gw = Math.ceil(W / cs), gh = Math.ceil(H / cs), grid = new Uint8Array(gw * gh);
+  const fill = (r, v) => { const x0 = clamp(Math.floor(r.x / cs), 0, gw), x1 = clamp(Math.ceil((r.x + r.w) / cs), 0, gw), y0 = clamp(Math.floor(r.y / cs), 0, gh), y1 = clamp(Math.ceil((r.y + r.h) / cs), 0, gh); for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) grid[y * gw + x] |= v; };
+  for (const e of els) for (const r of e.rects) fill(r, 1);
+  for (const r of bandRects) fill(r, 2);
+  let a1 = 0, a2 = 0; for (let i = 0; i < grid.length; i++) { if (grid[i] & 1) a1++; if (grid[i]) a2++; }
+  const foot1 = 100 * a1 / grid.length, foot2 = 100 * a2 / grid.length;
+  const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h && Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 2 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 2;
+  let overlaps = 0; const bad = new Set(), pairs = [];
+  for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+    if (els[i].rects.some((a) => els[j].rects.some((b) => hit(a, b)))) { overlaps++; bad.add(i); bad.add(j); pairs.push(els[i].name + '+' + els[j].name); }
+  }
+  const elements = els.length + (bandW > 0 ? 1 : 0);
+  // draw
+  const g = mctx; g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, W, H);
+  els.forEach((e, i) => {
+    if (!bad.has(i) && !CFG.boxes) return;
+    g.setLineDash(bad.has(i) ? [] : [4, 3]); g.lineWidth = bad.has(i) ? 2.5 : 1.2; g.strokeStyle = bad.has(i) ? '#ef4444' : 'rgba(103,232,249,.9)';
+    for (const r of e.rects.length > 3 ? [bbox(e.rects)] : e.rects) g.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  });
+  if (CFG.boxes && bandW) { g.setLineDash([2, 4]); g.strokeStyle = 'rgba(253,224,71,.7)'; g.lineWidth = 1; g.strokeRect(bandW, bandW, W - 2 * bandW, H - 2 * bandW); }
+  g.setLineDash([]);
+  const m = { foot1, foot2, elements, marks, overlaps, frameMax, pairs };
+  window.__hud.last = m;
+  const ok = (v, lim) => v <= lim ? `<b>${v}</b>` : `<b class="bad">${v}</b>`;
+  $('#read').innerHTML = `HUD <b>${foot1.toFixed(1)}%</b> (with frame glow ${foot2.toFixed(1)}%) · ${elements} elements (${marks} marks) · overlaps ${ok(overlaps, 0)} · frame work ${ok(Math.round(frameMax), 50)} ms`;
+  if (S.beat) {
+    const ok2 = `${W}x${H}`; const L = (LOG[ok2] ??= {}); const r = (L[S.beat] ??= { foot1: 0, foot2: 0, elements: 0, marks: 0, overlaps: 0 });
+    r.foot1 = Math.max(r.foot1, foot1); r.foot2 = Math.max(r.foot2, foot2); r.elements = Math.max(r.elements, elements); r.marks = Math.max(r.marks, marks); r.overlaps = Math.max(r.overlaps, overlaps); if (overlaps) { r.pairs ??= {}; for (const p of pairs) r.pairs[p] = (r.pairs[p] || 0) + 1; }
+  }
+}
+function bbox(rs) { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const r of rs) { x0 = Math.min(x0, r.x); y0 = Math.min(y0, r.y); x1 = Math.max(x1, r.x + r.w); y1 = Math.max(y1, r.y + r.h); } return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }; }
+function renderLogs() {
+  const keysL = Object.keys(LOG); if (!keysL.length) { $('#logs').innerHTML = '<p style="font-size:12px">Nothing measured yet: run a beat.</p>'; return; }
+  $('#logs').innerHTML = keysL.map((k) => `<table class="log"><caption>${k} ${(() => { const [w, h] = k.split('x'); return +w > +h ? 'landscape' : 'portrait'; })()}</caption><tr><th>Beat</th><th>HUD</th><th>+glow</th><th>El.</th><th>Marks</th><th>Overl.</th></tr>${Object.entries(LOG[k]).map(([b, r]) => `<tr><td>${b} ${BEATS[b - 1].t.split(' ').slice(0, 3).join(' ')}</td><td>${r.foot1.toFixed(1)}%</td><td>${r.foot2.toFixed(1)}%</td><td>${r.elements}</td><td>${r.marks}</td><td>${r.overlaps}</td></tr>`).join('')}</table>`).join('');
+}
+
+/* ======================================================================
+   The fixed demonstration: eight beats
+   ====================================================================== */
+class Cancel extends Error {}
+let runId = 0, playingAll = false;
+const wait = (ms, id) => new Promise((res, rej) => { const end = performance.now() + ms; const f = () => { if (id !== runId) return rej(new Cancel()); if (performance.now() >= end) return res(); setTimeout(f, 40); }; f(); });
+const until = (pred, id) => new Promise((res, rej) => { const f = () => { if (id !== runId) return rej(new Cancel()); if (pred()) return res(); setTimeout(f, 40); }; f(); });
+const walkTo = (x, z, speed, id) => { S.auto = { x, z, speed }; return until(() => !S.auto, id); };
+const turnTo = (y, id) => { S.yawTarget = y; return until(() => S.yawTarget == null, id); };
+const spin = (total, rate, dir, id) => { S.spin = { left: total, rate, dir }; return until(() => !S.spin, id); };
+function approachPoint(t, d, from) { const dx = from.x - t.x, dz = from.z - t.z, l = Math.hypot(dx, dz); return { x: t.x + dx / l * d, z: t.z + dz / l * d }; }
+async function tapLike(it, id) {
+  const b = capPool.find((c) => c._target && c._target.it === it && c.classList.contains('show'));
+  if (b) { b.animate([{ transform: 'translate(-50%,-100%) scale(1)' }, { transform: 'translate(-50%,-100%) scale(.92)' }, { transform: 'translate(-50%,-100%) scale(1)' }], { duration: 320 }); }
+  else { const fb = document.querySelector(`.now[data-id="${it.id}"] [data-a=toggle]`); if (fb) fb.animate([{ transform: 'scale(1)' }, { transform: 'scale(.85)', background: 'rgba(255,255,255,.35)' }, { transform: 'scale(1)' }], { duration: 360 }); }
+  await wait(260, id); tapItem(it);
+}
+const P0 = { x: 0, z: -30 };
+const BEATS = [
+  { t: 'Arrive at the station', hint: 'Watch the frame: on arrival the station opens into one mark per item, each at its bearing.',
+    run: async (id) => { await walkTo(P0.x, P0.z, 4.5, id); await turnTo(0, id); await wait(1800, id); } },
+  { t: 'Stand still 20 s', hint: 'Nothing starts by itself. Items that wait for you pulse on the frame; the pin ahead has the one caption.',
+    run: async (id) => { const n = CFG.short ? 5 : 20; for (let i = n; i > 0; i--) { $('#hint').textContent = `Standing still: ${i} s. Nothing starts by nearness; waiting items only pulse.`; await wait(1000, id); } $('#hint').textContent = BEATS[1].hint; } },
+  { t: 'Turn a full circle', hint: 'Each mark slides along the frame and melts into its item as it comes into view. The picture behind sits on the bottom edge.',
+    run: async (id) => { await spin(Math.PI * 2, 0.55, -1, id); await wait(800, id); } },
+  { t: 'Walk toward the film', hint: 'The film’s caption says how far to walk. Inside its reach a tap starts it, and the foot shows one control.',
+    run: async (id) => { const V = item('video'); await turnTo(yawToward(V), id); await wait(2200, id); const p = approachPoint(V, 4.2, S.pos); await walkTo(p.x, p.z, 1.6, id); await turnTo(yawToward(V), id); await wait(1300, id); await tapLike(V, id); await wait(2500, id); } },
+  { t: 'Step into the narration while the film plays', hint: 'The film finishes; a tap starts the voice. Stepping out pauses it and the control leaves; stepping back resumes it.',
+    run: async (id) => { const N = item('narration'), V = item('video'); await walkTo(N.x, N.z, 1.4, id); await turnTo(yawToward(V), id); await wait(1500, id); if (V.st === 'playing') V.t = Math.max(V.t, V.dur - 2.2); await until(() => V.st !== 'playing', id); await wait(2800, id); await turnTo(yawToward({ x: N.x - 1, z: N.z - 6 }), id); await wait(500, id); await tapLike(N, id); await wait(3000, id); await walkTo(N.x + 1, N.z + 4.5, 1.4, id); await wait(CFG.leave * 1000 + 1500, id); await walkTo(N.x, N.z, 1.4, id); await wait(2200, id); } },
+  { t: 'The story reaches the quiz', hint: 'The story takes the foot and the frame clears: free items keep only their glow in the world. The quiz enters in the story card.',
+    run: async (id) => { const Q = item('quiz'); await turnTo(yawToward(Q), id); await wait(1700, id); const p = approachPoint(Q, 7, S.pos); await walkTo(p.x, p.z, 1.6, id); await turnTo(yawToward(Q), id); await wait(900, id); await tapLike(Q, id); await wait(2600, id); if (S.story) S.story.step = 1; $('#hint').textContent = 'Answer the quiz, or press › and the demo answers for you.';
+      if (playingAll) { await wait(3500, id); answer('Cloth'); await wait(2200, id); closeStory(); } else { await until(() => !S.story || S.autoAnswer, id); if (S.story) { answer('Cloth'); await wait(1600, id); closeStory(); } }
+      S.autoAnswer = false; await wait(1800, id); } },
+  { t: 'The position becomes weak', hint: 'Marks widen into the arc an item could be in, all at one brightness. No distance shows anywhere.',
+    run: async (id) => { setWeak(true); await wait(1200, id); await spin(Math.PI * 1.1, 0.5, 1, id); await wait(1500, id); } },
+  { t: 'Leave toward the next station', hint: 'Stepping out of its place closes the narration control. Outside the station the item marks fold away; the next station is the one flag.',
+    run: async (id) => { setWeak(false); await wait(1300, id); const s3 = station('s3'); await turnTo(yawToward(s3), id); await wait(700, id); await walkTo(18, -64, 4, id); await walkTo(28, -76, 4, id); await turnTo(yawToward(s3), id); await wait(2500, id); } },
+];
+function setup(k) {
+  resetItems(); S.story = null; S.panel = null; S.weak = false; S.stationDone = false; S.finished = null; S.points = 0; S.autoAnswer = false; station('s2').done = false;
+  MARKS.clear(); flashes.length = 0; S.openAt = -1e9;
+  const V = item('video'), N = item('narration'), Q = item('quiz');
+  if (k <= 1) { S.pos = { x: 0, z: 12 }; S.yaw = 0; S.inStation = false; return; }
+  S.pos = { ...P0 }; S.yaw = 0; enterStation(true);
+  if (k >= 5) { S.pos = approachPoint(V, 4.2, P0); S.yaw = yawToward(V); V.st = 'playing'; V.t = 9; V.inPlace = true; }
+  if (k >= 6) { S.pos = { x: N.x, z: N.z }; V.st = 'done'; V.t = V.dur; N.st = 'playing'; N.t = 12; N.inPlace = true; S.yaw = yawToward({ x: N.x - 1, z: N.z - 6 }); }
+  if (k >= 7) { S.pos = approachPoint(Q, 7, { x: N.x, z: N.z }); N.inPlace = false; N.st = 'away'; Q.st = 'done'; S.stationDone = true; S.points = 1; S.yaw = yawToward(Q); }
+  if (k >= 8) { S.weak = true; }
+}
+function cancelRun(msg) { runId++; S.auto = null; S.spin = null; S.yawTarget = null; playingAll = false; $('#all').classList.remove('on'); if (msg) $('#hint').textContent = msg; }
+async function runBeat(k, fresh) {
+  const keepAll = playingAll; cancelRun(); playingAll = keepAll; $('#all').classList.toggle('on', keepAll); const id = runId;
+  if (fresh) setup(k);
+  S.beat = k; S.beatAt = performance.now(); S.lastDone = 0; updateDock();
+  try { await BEATS[k - 1].run(id); S.lastDone = k; renderLogs(); if (playingAll && k < BEATS.length) runBeat(k + 1, false); else { playingAll = false; $('#all').classList.remove('on'); } }
+  catch (e) { if (!(e instanceof Cancel)) throw e; }
+}
+function updateDock() {
+  const b = BEATS[S.beat - 1];
+  $('#btitle').textContent = b ? `${S.beat}/8 ${b.t}` : 'Beats';
+  if (b) $('#hint').textContent = b.hint;
+  [...$('#jump').children].forEach((c, i) => c.classList.toggle('on', i + 1 === S.beat));
+}
+$('#jump').innerHTML = BEATS.map((b, i) => `<button data-b="${i + 1}">${i + 1} ${b.t}</button>`).join('');
+$('#jump').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; $('#jump').hidden = true; runBeat(+b.dataset.b, true); });
+$('#btitle').addEventListener('click', () => { $('#jump').hidden = !$('#jump').hidden; });
+$('#next').addEventListener('click', () => {
+  if (S.beat === 6 && S.story && S.lastDone !== 6) { S.autoAnswer = true; return; }
+  if (S.beat >= BEATS.length) { runBeat(1, true); return; }
+  // a finished beat flows on from where it ended; an unfinished one jumps to the next beat's start
+  runBeat(S.beat + 1, S.beat === 0 || S.lastDone !== S.beat);
+});
+$('#prev').addEventListener('click', () => runBeat(Math.max(1, S.beat - 1), true));
+$('#all').addEventListener('click', () => { if (playingAll) { cancelRun('Stopped. › continues beat by beat.'); return; } playingAll = true; runBeat(1, true); });
+$('#minBtn').addEventListener('click', () => { $('#dock').classList.toggle('min'); $('#minBtn').innerHTML = $('#dock').classList.contains('min') ? '&#8964;' : '&#8963;'; });
+$('#cfgBtn').addEventListener('click', () => { renderLogs(); $('#demo').hidden = !$('#demo').hidden; });
+$('#demoClose').addEventListener('click', () => { $('#demo').hidden = true; });
+
+/* ---------- thresholds ---------- */
+function syncOpts() { document.querySelectorAll('.opt').forEach((o) => { const k = o.dataset.k; o.querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(CFG[k]) === b.dataset.v)); }); }
+document.querySelectorAll('.opt').forEach((o) => o.addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return; const k = o.dataset.k, v = b.dataset.v;
+  CFG[k] = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v;
+  if (k === 'rot') device.classList.toggle('rot', CFG.rot);
+  if (k === 'extra') MARKS.clear();
+  syncOpts();
+}));
+syncOpts();
+if (matchMedia('(min-width:960px) and (min-height:700px)').matches) $('#demo').hidden = false; else $('#rotOpt').hidden = true;
+const q = new URLSearchParams(location.search);
+for (const [k, v] of q) if (k in CFG) { CFG[k] = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v; }
+if (CFG.rot) device.classList.add('rot');
+syncOpts();
+
+/* ======================================================================
+   Frame loop
+   ====================================================================== */
+let last = performance.now(), lastMeasure = 0;
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now; const w0 = performance.now();
+  sim(dt, now);
+  camera.position.set(S.pos.x, 1.6, S.pos.z); camera.rotation.set(S.pitch, S.yaw, 0);
+  camera.updateMatrixWorld(); camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+  renderer.render(scene, camera);
+  const T = frameTargets(now); updateMarks(T, dt, now);
+  const { drawn, band } = drawHalo(now);
+  updateCaptions(); renderFoot();
+  const ms = performance.now() - w0; lastFrames.push({ t: now, ms }); while (lastFrames.length && now - lastFrames[0].t > 1500) lastFrames.shift(); frameMax = Math.max(...lastFrames.map((f) => f.ms));
+  if (now - lastMeasure > 200) { lastMeasure = now; measure(drawn, band); }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+const startBeat = +(q.get('beat') || 1);
+window.__demo = { runBeat, setup, S, CFG, item, answer, closeStory, BEATS };
+if (!q.has('still')) runBeat(clamp(startBeat, 1, 8), true);
+</script>
+</body>
+</html>
