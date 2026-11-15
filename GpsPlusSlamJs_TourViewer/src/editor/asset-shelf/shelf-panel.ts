@@ -1223,6 +1223,11 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
    *  locked until the shelf settled it; the outcome is said in a toast. */
   async function setDetail(row: ShelfRow, share: number | null): Promise<void> {
     if (state.detailing.has(row.id)) return;
+    // the slider is disabled while it runs, which drops the focus: an
+    // author stepping with the arrow keys gets it back when it settles
+    const focused =
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.classList.contains("as-detail-range");
     state.detailing.set(row.id, share);
     redraw();
     let outcome: DetailOutcome;
@@ -1233,7 +1238,10 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     } finally {
       state.detailing.delete(row.id);
       redraw();
+      const card = focused ? withData(root, "aid", row.id) : null;
+      card?.querySelector<HTMLElement>("input.as-detail-range")?.focus();
     }
+    if (outcome.kind === "stopped") return;
     if (outcome.kind === "refused") {
       deps.toast(`${row.name} was not changed. ${outcome.reason}`);
       return;

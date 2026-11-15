@@ -44,6 +44,7 @@ createSlamAppStore({ storageBackend: new NullStorageBackend() });
 const M = "m".repeat(64);
 const APPLIED = { kind: "applied" };
 const REFUSED = { kind: "refused", reason: expect.any(String) };
+const STOPPED = { kind: "stopped" };
 
 const model: TourAsset = { id: M, path: `content/${M}.glb`, kind: "model" };
 
@@ -273,6 +274,91 @@ describe("the shelf's detail slider", () => {
       detail: { triangles: 8_000, adjustable: false },
     });
     await expect(shelf.setDetail(M, 0.5)).resolves.toMatchObject(REFUSED);
+  });
+
+  // Why: "Use the original" is the author's last word on a file. A re-make
+  // still running when it is pressed must not land afterwards and swap the
+  // thinned file back in while the card says the original is used, in
+  // whichever order the two finish, and its end is no news to toast.
+  describe("the original used while a re-make runs", () => {
+    function expectOriginalUsed(t: Awaited<ReturnType<typeof madeModel>>) {
+      expect(t.swap).toHaveBeenLastCalledWith(
+        M,
+        expect.objectContaining({ blob: t.original, originalChosen: true }),
+      );
+      expect(t.row()).toMatchObject({ status: "kept", canUseOriginal: false });
+      expect(t.row()?.detail).toBeUndefined();
+    }
+
+    it("stops the re-make while the optimizer still works on it", async () => {
+      const t = await madeModel();
+      const asked = t.shelf.setDetail(M, 0.25);
+      await t.settle();
+      expect(t.fake.calls).toHaveLength(1);
+      await expect(t.shelf.useOriginal(M)).resolves.toBe(true);
+      await expect(asked).resolves.toEqual(STOPPED);
+      expect(t.fake.calls).toHaveLength(0);
+      expect(t.swap).toHaveBeenCalledTimes(2);
+      expectOriginalUsed(t);
+    });
+
+    it("swaps the original in after a re-make whose swap was already under way", async () => {
+      const t = await madeModel();
+      const swapped = t.swap.getMockImplementation()!;
+      let landRemake: () => void = () => {};
+      t.swap.mockImplementationOnce(
+        (id, file) =>
+          new Promise((resolve) => {
+            landRemake = () => resolve(swapped(id, file));
+          }),
+      );
+      const asked = t.shelf.setDetail(M, 0.25);
+      await t.settle();
+      t.fake.calls.shift()!.resolve(made(400, lod({ automatic: false })));
+      await t.settle();
+      const back = t.shelf.useOriginal(M);
+      await t.settle();
+      // the original waits for the swap under way instead of racing it
+      expect(t.swap).toHaveBeenCalledTimes(2);
+      landRemake();
+      await expect(back).resolves.toBe(true);
+      await expect(asked).resolves.toEqual(STOPPED);
+      expect(t.swap).toHaveBeenCalledTimes(3);
+      expectOriginalUsed(t);
+    });
+
+    it("refuses a re-make asked while the original is going back", async () => {
+      const t = await madeModel();
+      const back = t.shelf.useOriginal(M);
+      await expect(t.shelf.setDetail(M, 0.25)).resolves.toMatchObject(REFUSED);
+      await expect(back).resolves.toBe(true);
+      expect(t.fake.calls).toHaveLength(0);
+      expectOriginalUsed(t);
+    });
+
+    it("uses the original after a re-make that landed first", async () => {
+      const t = await madeModel();
+      const asked = t.shelf.setDetail(M, 0.25);
+      await t.settle();
+      t.fake.calls.shift()!.resolve(made(400, lod({ automatic: false })));
+      await expect(asked).resolves.toEqual(APPLIED);
+      await expect(t.shelf.useOriginal(M)).resolves.toBe(true);
+      expectOriginalUsed(t);
+    });
+  });
+
+  // Why: a card deleted during a re-make and put back by Undo must not
+  // say "Applying..." until a reload, and the stopped re-make is no news.
+  it("is no longer busy after a delete during a re-make is undone", async () => {
+    const t = await madeModel();
+    const asked = t.shelf.setDetail(M, 0.25);
+    await t.settle();
+    expect(t.row()?.detail?.busy).toBe(true);
+    const undo = t.shelf.remove(M)!;
+    await expect(asked).resolves.toEqual(STOPPED);
+    undo();
+    expect(t.row()?.detail).toMatchObject({ busy: false, adjustable: true });
+    expect(t.swap).toHaveBeenCalledTimes(1);
   });
 
   it("drops the detail when the original is used again", async () => {

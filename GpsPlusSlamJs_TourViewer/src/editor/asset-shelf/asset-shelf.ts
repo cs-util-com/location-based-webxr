@@ -71,7 +71,10 @@ const DETAIL_NOT_MADE = "It could not be made at this detail.";
 /** What a slider request came to. */
 export type DetailOutcome =
   | { readonly kind: "applied" }
-  | { readonly kind: "refused"; readonly reason: string };
+  | { readonly kind: "refused"; readonly reason: string }
+  /** Stopped by the author's own later act ("use the original", a
+   *  delete, the tour closing): nothing to tell them. */
+  | { readonly kind: "stopped" };
 
 /** A model report's level of detail, for the shelf; undefined when no
  *  level was made (nothing to adjust). */
@@ -289,6 +292,13 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     }
   }
 
+  /** Ids whose original is going back ("use the original"): no re-make
+   *  starts for them meanwhile. */
+  const goingBack = new Set<string>();
+  /** Each running re-make's end, which "use the original" waits for so
+   *  that a swap under way lands before the original's, never after. */
+  const remakes = new Map<string, Promise<void>>();
+
   /** Whether job `stop` still owns entry `id`'s run. */
   const owns = (id: string, stop: AbortController) =>
     !closed && running.get(id) === stop && !stop.signal.aborted;
@@ -433,13 +443,19 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     ) {
       return refused(DETAIL_NOT_OFFERED);
     }
-    if (row.detail.busy || running.has(id)) return refused(DETAIL_BUSY);
+    if (row.detail.busy || running.has(id) || goingBack.has(id)) {
+      return refused(DETAIL_BUSY);
+    }
     const stop = new AbortController();
     running.set(id, stop);
+    let ended = () => {};
+    const end = new Promise<void>((resolve) => (ended = resolve));
+    remakes.set(id, end);
+    const stopped: DetailOutcome = { kind: "stopped" };
     dispatch(act.detailAsked({ id }));
     try {
       const source = await original.load();
-      if (!owns(id, stop)) return refused(DETAIL_NOT_OFFERED);
+      if (!owns(id, stop)) return stopped;
       if (source === undefined) return refused(UNREADABLE);
       const { detailShare: _default, ...model } = settings.model;
       const outcome = await optimizer.optimize(source, {
@@ -451,7 +467,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         },
         host,
       });
-      if (!owns(id, stop)) return refused(DETAIL_NOT_OFFERED);
+      if (!owns(id, stop)) return stopped;
       const detail =
         outcome.kind === "optimized"
           ? detailOf(outcome.model, share)
@@ -465,17 +481,20 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         blob: outcome.blob,
         path: `content/${id}.${outcome.extension}`,
       });
-      if (!owns(id, stop)) return refused(DETAIL_NOT_OFFERED);
+      if (!owns(id, stop)) return stopped;
       if (swapped.kind === "refused") return refused(swapped.reason);
       dispatch(
         act.detailApplied({ id, optimizedBytes: outcome.blob.size, detail }),
       );
       return { kind: "applied" };
     } catch (err) {
+      if (!owns(id, stop)) return stopped;
       const words = err instanceof Error ? err.message : String(err);
       return refused(`${DETAIL_NOT_MADE} ${words}`);
     } finally {
       if (running.get(id) === stop) running.delete(id);
+      if (remakes.get(id) === end) remakes.delete(id);
+      ended();
       dispatch(act.detailSettled({ id }));
       pump();
     }
@@ -589,22 +608,32 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         (r) => r.id === id,
       )?.canUseOriginal;
       if (closed || original === undefined || offered !== true) return false;
-      const { asset } = original;
-      const blob = await original.load().catch(() => undefined);
-      if (blob === undefined || closed || originals.get(id) !== original) {
-        return false;
+      if (goingBack.has(id)) return false;
+      goingBack.add(id);
+      try {
+        // a re-make still running would land after the original: stop it,
+        // and let a swap it already started finish first
+        stopJob(id);
+        await remakes.get(id);
+        const { asset } = original;
+        const blob = await original.load().catch(() => undefined);
+        if (blob === undefined || closed || originals.get(id) !== original) {
+          return false;
+        }
+        const swapped = await deps.swap(id, {
+          blob,
+          path: asset.path,
+          ...(asset.width === undefined ? {} : { width: asset.width }),
+          ...(asset.height === undefined ? {} : { height: asset.height }),
+          originalChosen: true,
+        });
+        if (swapped.kind === "refused" || closed) return false;
+        originals.delete(id);
+        dispatch(act.originalUsed({ id, reason: ORIGINAL_USED }));
+        return true;
+      } finally {
+        goingBack.delete(id);
       }
-      const swapped = await deps.swap(id, {
-        blob,
-        path: asset.path,
-        ...(asset.width === undefined ? {} : { width: asset.width }),
-        ...(asset.height === undefined ? {} : { height: asset.height }),
-        originalChosen: true,
-      });
-      if (swapped.kind === "refused" || closed) return false;
-      originals.delete(id);
-      dispatch(act.originalUsed({ id, reason: ORIGINAL_USED }));
-      return true;
     },
     remove(id) {
       const entry = entries()[id];

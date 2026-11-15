@@ -189,12 +189,13 @@ const assetShelfSlice = createSlice({
       delete entries[action.payload.id];
       return { ...state, entries };
     },
-    /** An undo of a removal: the entry as it was. */
+    /** An undo of a removal: the entry as it was, but never busy with a
+     *  re-make: the removal stopped any. */
     entryRestored(
       state,
       action: PayloadAction<{ readonly entry: ShelfEntry }>,
     ) {
-      const { entry } = action.payload;
+      const { detailBusy: _stopped, ...entry } = action.payload.entry;
       if (state.entries[entry.id] !== undefined) return state;
       return { ...state, entries: { ...state.entries, [entry.id]: entry } };
     },
