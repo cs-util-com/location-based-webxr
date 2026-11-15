@@ -298,6 +298,25 @@ describe("the detail slider", () => {
     expect(document.activeElement).toBe(slider());
   });
 
+  // Why: the request can take seconds; an author who moved on to another
+  // control meanwhile must not have the focus pulled back to the slider.
+  it("leaves the focus where the author put it while the request ran", async () => {
+    rows = [model()];
+    panel();
+    openCard();
+    slider().focus();
+    slider().value = "1";
+    slider().dispatchEvent(new Event("change", { bubbles: true }));
+    const elsewhere = document.createElement("button");
+    document.body.append(elsewhere);
+    elsewhere.focus();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(slider().disabled).toBe(false);
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
+
   it("goes back to the default level", () => {
     rows = [model({ share: 0.25, triangles: 2_500, deviation: 0.009 })];
     const deps = panel();

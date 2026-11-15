@@ -1238,7 +1238,11 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     } finally {
       state.detailing.delete(row.id);
       redraw();
-      const card = focused ? withData(root, "aid", row.id) : null;
+      // only while nothing else took the focus in the meantime
+      const free =
+        document.activeElement === null ||
+        document.activeElement === document.body;
+      const card = focused && free ? withData(root, "aid", row.id) : null;
       card?.querySelector<HTMLElement>("input.as-detail-range")?.focus();
     }
     if (outcome.kind === "stopped") return;
