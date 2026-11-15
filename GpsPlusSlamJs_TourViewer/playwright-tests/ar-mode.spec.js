@@ -113,16 +113,19 @@ function drawnGroups(page) {
 }
 
 /** The photo planes standing in the fake scene, however deep: a
- *  station's free blocks hang under its frame (pins are sprites, not meshes). */
+ *  station's free blocks hang under its frame. A pin's own meshes (its
+ *  head, stem and ground ring) are not looked into. */
 function photoPlanes(page) {
   return page.evaluate(() => {
     /** @param {any} o @returns {number} */
     const count = (o) =>
-      (o.isMesh === true ? 1 : 0) +
-      (o.children ?? []).reduce(
-        (/** @type {number} */ n, /** @type {any} */ c) => n + count(c),
-        0,
-      );
+      o.name === "short-text-pin"
+        ? 0
+        : (o.isMesh === true ? 1 : 0) +
+          (o.children ?? []).reduce(
+            (/** @type {number} */ n, /** @type {any} */ c) => n + count(c),
+            0,
+          );
     return count(/** @type {any} */ (window).__tourViewerTest.fakeScene);
   });
 }

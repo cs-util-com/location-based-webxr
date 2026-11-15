@@ -98,12 +98,10 @@ describe("a pin", () => {
       const head = named(part, "pin-head");
       const turns = orientation === "upright" || orientation === "face";
       expect(head.rotation.y).toBeCloseTo(turns ? Math.PI / 2 : 0, 5);
-      if (orientation === "face") {
-        // The eyes are below the head: it tips its face down to them.
-        expect(head.rotation.x).toBeGreaterThan(0.05);
-      } else {
-        expect(head.rotation.x).toBe(0);
-      }
+      // For `face` the eyes are below the head: it tips its face down
+      // to them; the others never tilt.
+      expect(head.rotation.x > 0.05).toBe(orientation === "face");
+      expect(head.rotation.x === 0).toBe(orientation !== "face");
       expect(head.rotation.z).toBe(0);
       part.dispose();
     },
