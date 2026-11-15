@@ -20,9 +20,11 @@ import { expect, test } from "@playwright/test";
  *   measurements, generated sounds pin the exact lengths over sample
  *   rates and lengths;
  * - a 3D model comes back as a .glb the tour accepts, smaller, with the
- *   same triangles and box (within the position error budget) as three.js
- *   loads it, textures at the asked side, and a drawing close to the
- *   original's, over texture sides, qualities and position bits;
+ *   same triangles (every triangle kept) and box (within the position
+ *   error budget) as three.js loads it, textures at the asked side, and a
+ *   drawing close to the original's, over texture sides, qualities and
+ *   position bits; at its default level of detail it has fewer triangles,
+ *   its box within the deviation budget, and its drawing still close;
  * - a GIF is kept, and a sound that is no sound fails with words;
  * - the times stay under the thresholds set for a phone, measured here on
  *   a desktop (the phone's own measurement is still open).
@@ -357,6 +359,8 @@ test("models: a smaller .glb the tour accepts, drawn as before, over texture siz
   const errors = await openCheck(page);
   const rows = await page.evaluate(async () => {
     const check = /** @type {any} */ (window).assetOptimizerCheck;
+    // Every triangle kept, so the texture and position steps are measured
+    // on their own; the level of detail has its own test below.
     const variants = [
       { textureMaxSidePx: 512 },
       { textureMaxSidePx: 1024 },
@@ -364,7 +368,7 @@ test("models: a smaller .glb the tour accepts, drawn as before, over texture siz
       { textureMaxSidePx: 1024, colourQuality: 0.75, dataQuality: 0.85 },
       { textureMaxSidePx: 1024, colourQuality: 0.95, dataQuality: 0.95 },
       { positionBits: 8, maxPositionError: 0.01 },
-    ];
+    ].map((v) => ({ ...v, detailShare: 1 }));
     const out = [];
     for (const name of ["rock", "coast-rock", "boulder"]) {
       const source = await check.testModel(name);
@@ -409,14 +413,71 @@ test("models: a smaller .glb the tour accepts, drawn as before, over texture siz
     }
     const limit = model.textureMaxSidePx ?? 1024;
     expect(after.textureSide).toBe(Math.min(before.textureSide, limit));
-    expect(row.bytes).toBeLessThan(row.originalBytes * 0.9);
+    // Every triangle kept still saves the coarser levels for far views;
+    // their index lists are the level of detail's cost, so the texture and
+    // position steps are held to their own gain without them.
+    expect(before.chainBytes).toBe(0);
+    expect(after.chainBytes).toBeGreaterThan(0);
+    expect(row.bytes - after.chainBytes).toBeLessThan(row.originalBytes * 0.9);
     expect(row.ssim).toBeGreaterThanOrEqual(MODEL_SSIM_FLOOR);
   }
   // The chosen setting under the phone's 10 s per model (a desktop is
   // several times faster, so this is a floor, not the proof).
-  for (const row of rows.filter((r) => Object.keys(r.model).length === 1)) {
+  for (const row of rows.filter((r) => Object.keys(r.model).length === 2)) {
     if (row.model.textureMaxSidePx === 1024)
       expect(row.ms).toBeLessThan(10_000);
+  }
+  expect(errors).toEqual([]);
+});
+
+/** The default level's largest deviation, as a share of the box diagonal
+ *  (`OPTIMIZER_SETTINGS.model.lodBudget`). */
+const LOD_BUDGET = 0.0025;
+
+test("models: the default level of detail keeps fewer triangles, its box within the deviation budget, drawn as before", async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  const errors = await openCheck(page);
+  const rows = await page.evaluate(async () => {
+    const check = /** @type {any} */ (window).assetOptimizerCheck;
+    const out = [];
+    for (const name of ["rock", "coast-rock", "boulder"]) {
+      const source = await check.testModel(name);
+      const result = await check.compareModel(source, {});
+      out.push({
+        name,
+        originalBytes: source.size,
+        bytes: result.blob.size,
+        before: result.before,
+        after: result.after,
+        ssim: result.ssim,
+        ms: result.ms,
+      });
+    }
+    return out;
+  });
+  console.log(JSON.stringify({ modelsAtDefaultDetail: rows }));
+  for (const row of rows) {
+    const { before, after } = row;
+    expect(after.inert).toBe(true);
+    expect(after.triangles).toBeLessThan(before.triangles);
+    expect(after.triangles).toBeGreaterThan(0);
+    // A level keeps original vertices, so its box can only shrink, by at
+    // most the deviation; quantizing adds its own 0.01 %. The 1.25 is the
+    // sampling slack the deviation check is measured with.
+    const diagonal = Math.hypot(
+      ...before.max.map(
+        (/** @type {number} */ v, /** @type {number} */ i) => v - before.min[i],
+      ),
+    );
+    const bound = (LOD_BUDGET * 1.25 + 0.0001) * diagonal;
+    for (let i = 0; i < 3; i++) {
+      expect(Math.abs(after.min[i] - before.min[i])).toBeLessThanOrEqual(bound);
+      expect(Math.abs(after.max[i] - before.max[i])).toBeLessThanOrEqual(bound);
+    }
+    expect(row.bytes).toBeLessThan(row.originalBytes * 0.9);
+    expect(row.ssim).toBeGreaterThanOrEqual(MODEL_SSIM_FLOOR);
   }
   expect(errors).toEqual([]);
 });

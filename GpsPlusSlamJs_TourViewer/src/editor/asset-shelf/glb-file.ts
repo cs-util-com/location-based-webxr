@@ -2,7 +2,8 @@
  * A `.glb` taken apart into its JSON and the bytes of each buffer view,
  * read as numbers where an optimizer needs them, and put back together
  * with only the buffer views something still names. The model optimizer's
- * passes (`model-textures.ts`, `model-quantize.ts`) work on these parts.
+ * passes (`model-textures.ts`, `model-lod.ts`, `model-quantize.ts`) work
+ * on these parts.
  *
  * Tours are untrusted input: the bytes must pass the tour's own check
  * (`checkGlbInert`) first, every range is checked against the binary
@@ -390,4 +391,55 @@ export function readAccessor(
     }
   }
   return { size, count, values };
+}
+
+/** Cuts accessor `index` down to the elements `keep` names, in that order:
+ *  their bytes copied into a new packed view (each element padded to 4
+ *  bytes, as vertex attributes must be), `count` set, and `min` and `max`
+ *  recomputed from the raw kept values when the accessor has them. False,
+ *  with nothing changed, when the accessor cannot be read here (see
+ *  `readAccessor`), `keep` is empty, or it names an element the accessor
+ *  does not have. */
+export function gatherAccessor(
+  parts: GlbParts,
+  index: number,
+  keep: Uint32Array,
+): boolean {
+  const layout = layoutOf(parts, index);
+  if (layout === null || keep.length === 0) return false;
+  if (keep.some((k) => k >= layout.count)) return false;
+  const { accessor, bytes, size, stride, offset } = layout;
+  const type = Number(accessor["componentType"]);
+  const component = COMPONENT_BYTES[type]!;
+  const element = size * component;
+  const packed = pad4(element);
+  const out = new Uint8Array(packed * keep.length);
+  for (let i = 0; i < keep.length; i++) {
+    const from = offset + keep[i]! * stride;
+    out.set(bytes.subarray(from, from + element), i * packed);
+  }
+  const old = objectOf(
+    (listOf(parts.json, "bufferViews") ?? [])[indexOf(accessor["bufferView"])!],
+  );
+  const fields: GltfObject = packed === element ? {} : { byteStride: packed };
+  if (old?.["target"] !== undefined) fields["target"] = old["target"];
+  accessor["bufferView"] = appendView(parts, out, fields);
+  accessor["byteOffset"] = 0;
+  accessor["count"] = keep.length;
+  if (accessor["min"] !== undefined || accessor["max"] !== undefined) {
+    const [read] = READERS[type]!;
+    const view = new DataView(out.buffer);
+    const min = new Array<number>(size).fill(Infinity);
+    const max = new Array<number>(size).fill(-Infinity);
+    for (let i = 0; i < keep.length; i++) {
+      for (let c = 0; c < size; c++) {
+        const v = read(view, i * packed + c * component);
+        min[c] = Math.min(min[c]!, v);
+        max[c] = Math.max(max[c]!, v);
+      }
+    }
+    accessor["min"] = min;
+    accessor["max"] = max;
+  }
+  return true;
 }

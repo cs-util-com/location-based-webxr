@@ -2106,6 +2106,7 @@ function openShelfPanel(open: EditorSession): void {
     subscribe: (listener) => store.subscribe(listener),
     retry: (id) => open.shelf.retry(id),
     useOriginal: (id) => open.shelf.useOriginal(id),
+    setDetail: (id, share) => open.shelf.setDetail(id, share),
     remove: (id) => open.shelf.remove(id),
     // A file in use goes with its uses in one step, said and undone like
     // any delete (the shelf puts its card back with the items).

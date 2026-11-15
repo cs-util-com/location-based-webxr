@@ -232,8 +232,31 @@
         return gltf.scene;
       }
 
+      const INDEX_BYTES = { 5121: 1, 5123: 2, 5125: 4 };
+
+      /** The bytes of the coarser levels' index lists a file carries
+       *  (`primitive.extras.lod.indices`), read from its JSON chunk. */
+      function chainBytesOf(bytes) {
+        const view = new DataView(bytes.buffer, bytes.byteOffset);
+        const json = JSON.parse(
+          new TextDecoder().decode(
+            bytes.subarray(20, 20 + view.getUint32(12, true)),
+          ),
+        );
+        let sum = 0;
+        for (const mesh of json.meshes ?? []) {
+          for (const primitive of mesh.primitives ?? []) {
+            const chain = json.accessors?.[primitive.extras?.lod?.indices];
+            if (chain)
+              sum += chain.count * (INDEX_BYTES[chain.componentType] ?? 0);
+          }
+        }
+        return sum;
+      }
+
       /** What three.js makes of `blob`: its world box, triangles, largest
-       *  texture side, and whether the tour's own check accepts the file. */
+       *  texture side, the bytes of its saved coarser levels, and whether
+       *  the tour's own check accepts the file. */
       async function modelFacts(blob) {
         const scene = await loadModel(blob);
         const box = new THREE.Box3().setFromObject(scene);
@@ -257,6 +280,7 @@
           max: box.max.toArray(),
           triangles,
           textureSide,
+          chainBytes: chainBytesOf(bytes),
           inert: checkGlbInert(bytes).ok,
         };
       }
@@ -471,7 +495,9 @@
       }
 
       const MODEL_VARIANTS = [
-        { label: "1024 px, 16-bit", model: {}, chosen: true },
+        { label: "1024 px, 16-bit, default detail", model: {}, chosen: true },
+        { label: "every triangle", model: { detailShare: 1 } },
+        { label: "a quarter of the triangles", model: { detailShare: 0.25 } },
         { label: "512 px textures", model: { textureMaxSidePx: 512 } },
         { label: "2048 px textures", model: { textureMaxSidePx: 2048 } },
         {
@@ -504,6 +530,7 @@
             v.label,
             kib(result.blob.size),
             `${((100 * result.blob.size) / source.size).toFixed(0)} % of the original`,
+            `${result.after.triangles} triangles`,
             `textures up to ${result.after.textureSide} px`,
             `SSIM ${result.ssim.toFixed(4)}`,
             `${result.ms} ms`,

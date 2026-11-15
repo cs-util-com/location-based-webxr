@@ -21,8 +21,8 @@ interface SoundSettings {
   readonly channels: 1 | 2;
 }
 
-/** A 3D model's: its textures made smaller, its geometry stored in fewer
- *  bytes (`model-step.ts`). */
+/** A 3D model's: its textures made smaller, its triangles thinned to a
+ *  level of detail, its geometry stored in fewer bytes (`model-step.ts`). */
 export interface ModelSettings {
   /** A texture's longest side after resizing; never enlarged. */
   readonly textureMaxSidePx: number;
@@ -39,6 +39,15 @@ export interface ModelSettings {
   /** The largest position error allowed, as a share of a mesh's box
    *  diagonal; more keeps its positions as they were. */
   readonly maxPositionError: number;
+  /** The default level of detail's largest deviation, as a share of a
+   *  primitive's box diagonal (`model-lod.ts`): the fewest triangles
+   *  within it are kept. */
+  readonly lodBudget: number;
+  /** A primitive with fewer triangles keeps them all. */
+  readonly lodMinTriangles: number;
+  /** The author's share of triangles kept, from the shelf's slider,
+   *  overriding the budget; left out by default. */
+  readonly detailShare?: number;
 }
 
 export interface OptimizerSettings {
@@ -65,6 +74,8 @@ export const OPTIMIZER_SETTINGS: OptimizerSettings = {
     normalBits: 8,
     texcoordBits: 16,
     maxPositionError: 0.0001,
+    lodBudget: 0.0025,
+    lodMinTriangles: 2000,
   },
   keepAbove: 0.9,
 };

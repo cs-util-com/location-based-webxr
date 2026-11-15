@@ -33,9 +33,11 @@ import {
   assetShelfActions as act,
   selectShelfRows,
   type AssetShelfState,
+  type ShelfDetail,
   type ShelfEntry,
   type ShelfVideoLook,
 } from "./asset-shelf-slice.js";
+import type { ModelReport } from "./model-step.js";
 import {
   OPTIMIZER_SETTINGS,
   OPTIMIZER_SLOTS,
@@ -57,6 +59,37 @@ export const RESULT_TOO_LARGE =
 export const CHARACTER_KEPT =
   "Kept as it is: a character is drawn with it, and his pictures stay exactly as drawn.";
 const ORIGINAL_USED = "The original is used, as you asked.";
+/** The slider's level came out no smaller than the original: the tour
+ *  keeps the file it has. */
+export const DETAIL_NOT_SMALLER =
+  "At this detail the model would be no smaller than the original, so the tour keeps the one it has.";
+const DETAIL_NOT_OFFERED =
+  "Its detail can no longer be changed: the original was let go at the last save.";
+const DETAIL_BUSY = "Its detail is already being changed.";
+const DETAIL_NOT_MADE = "It could not be made at this detail.";
+
+/** What a slider request came to. */
+export type DetailOutcome =
+  | { readonly kind: "applied" }
+  | { readonly kind: "refused"; readonly reason: string };
+
+/** A model report's level of detail, for the shelf; undefined when no
+ *  level was made (nothing to adjust). */
+function detailOf(
+  report: ModelReport | undefined,
+  share: number | null,
+): ShelfDetail | undefined {
+  const lod = report?.lod;
+  if (lod === undefined || lod.primitives === 0) return undefined;
+  return {
+    share,
+    triangles: lod.trianglesAfter,
+    trianglesBefore: lod.trianglesBefore,
+    deviation: lod.deviation,
+    size: lod.size,
+    choices: lod.choices,
+  };
+}
 const UNREADABLE = "Its bytes could not be read to make it smaller.";
 const TOO_LARGE =
   "Still too large to stay in the tour, and it could not be made small enough. Use a smaller file, or remove it.";
@@ -163,6 +196,12 @@ export interface AssetShelf {
    *  alone, so dropping the undo lets it go. Null for an id the shelf does
    *  not hold. */
   remove(id: string): (() => void) | null;
+  /** The slider: a made model re-made from its original at `share` of
+   *  its triangles (0..1), or at its default level (null), the new file
+   *  swapped in when it is smaller than the original. Offered while the
+   *  original is kept (`ShelfRow.detail.adjustable`) and no other request
+   *  for it runs; refused with words otherwise, the tour's file unchanged. */
+  setDetail(id: string, share: number | null): Promise<DetailOutcome>;
   /** Whether the shelf keeps the original of `id` ("use the original"):
    *  bytes that may be large. */
   holdsOriginal(id: string): boolean;
@@ -360,13 +399,86 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       return;
     }
     originals.set(id, { asset: before, load: () => Promise.resolve(source) });
+    const detail = detailOf(outcome.model, null);
     dispatch(
       act.jobOptimized({
         id,
         optimizedBytes: outcome.blob.size,
         originalHeld: true,
+        ...(detail === undefined ? {} : { detail }),
       }),
     );
+  }
+
+  async function setDetail(
+    id: string,
+    share: number | null,
+  ): Promise<DetailOutcome> {
+    const refused = (reason: string): DetailOutcome => ({
+      kind: "refused",
+      reason,
+    });
+    const row = selectShelfRows(store.getState()).find((r) => r.id === id);
+    const original = originals.get(id);
+    const optimizer = optimizers.model;
+    if (share !== null && !(share >= 0 && share <= 1)) {
+      return refused(DETAIL_NOT_MADE);
+    }
+    if (
+      closed ||
+      row?.detail === undefined ||
+      !row.detail.adjustable ||
+      original === undefined ||
+      optimizer === null
+    ) {
+      return refused(DETAIL_NOT_OFFERED);
+    }
+    if (row.detail.busy || running.has(id)) return refused(DETAIL_BUSY);
+    const stop = new AbortController();
+    running.set(id, stop);
+    dispatch(act.detailAsked({ id }));
+    try {
+      const source = await original.load();
+      if (!owns(id, stop)) return refused(DETAIL_NOT_OFFERED);
+      if (source === undefined) return refused(UNREADABLE);
+      const { detailShare: _default, ...model } = settings.model;
+      const outcome = await optimizer.optimize(source, {
+        signal: stop.signal,
+        progress: () => {},
+        settings: {
+          ...settings,
+          model: share === null ? model : { ...model, detailShare: share },
+        },
+        host,
+      });
+      if (!owns(id, stop)) return refused(DETAIL_NOT_OFFERED);
+      const detail =
+        outcome.kind === "optimized"
+          ? detailOf(outcome.model, share)
+          : undefined;
+      if (outcome.kind !== "optimized" || detail === undefined) {
+        return refused(DETAIL_NOT_MADE);
+      }
+      if (outcome.blob.size >= source.size) return refused(DETAIL_NOT_SMALLER);
+      if (!(outcome.blob.size <= maxBytes)) return refused(RESULT_TOO_LARGE);
+      const swapped = await deps.swap(id, {
+        blob: outcome.blob,
+        path: `content/${id}.${outcome.extension}`,
+      });
+      if (!owns(id, stop)) return refused(DETAIL_NOT_OFFERED);
+      if (swapped.kind === "refused") return refused(swapped.reason);
+      dispatch(
+        act.detailApplied({ id, optimizedBytes: outcome.blob.size, detail }),
+      );
+      return { kind: "applied" };
+    } catch (err) {
+      const words = err instanceof Error ? err.message : String(err);
+      return refused(`${DETAIL_NOT_MADE} ${words}`);
+    } finally {
+      if (running.get(id) === stop) running.delete(id);
+      dispatch(act.detailSettled({ id }));
+      pump();
+    }
   }
 
   /** A removed card back on the shelf, with the original it still held: a
@@ -523,6 +635,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         pump();
       };
     },
+    setDetail,
     holdsOriginal: (id) => originals.has(id),
     optimizeTour() {
       if (closed) return 0;

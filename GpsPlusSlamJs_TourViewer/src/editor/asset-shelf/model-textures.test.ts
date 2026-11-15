@@ -77,6 +77,22 @@ describe("imageUses and textureFormat", () => {
     expect(textureFormat(data, "image/png", SETTINGS).type).toBe("image/png");
     expect(textureFormat(alpha, "image/jpeg", SETTINGS).type).toBe("image/png");
   });
+
+  // Why: one image can be both a colour and a data texture (a base colour
+  // map reused as an occlusion map). The stricter use wins: a lossless
+  // source stays lossless and a lossy one takes the data quality, since
+  // banding in the lighting shows more than a slightly larger file.
+  it("writes an image used as colour and as data by the data rule", () => {
+    const both = { colour: true, data: true, alpha: false };
+    expect(textureFormat(both, "image/png", SETTINGS)).toEqual({
+      type: "image/png",
+      quality: 1,
+    });
+    expect(textureFormat(both, "image/jpeg", SETTINGS)).toEqual({
+      type: "image/jpeg",
+      quality: SETTINGS.dataQuality,
+    });
+  });
 });
 
 describe("shrinkTextures", () => {
@@ -147,8 +163,15 @@ describe("shrinkTextures", () => {
     expect(parts.views.length).toBe(before);
   });
 
-  it("leaves an image it cannot decode, and one of another type, as they are", async () => {
-    const parts = await partsOf({ baseColor: "jpeg", normalMap: "png" });
+  // Why: the largest side is what the shelf reports about a model's
+  // textures; an image left as it is still draws at its own size, so a
+  // large WebP the pass cannot rewrite must not read as a small model.
+  it("leaves an image it cannot decode, and one of another type, as they are, and counts their size", async () => {
+    const parts = await partsOf({
+      baseColor: "jpeg",
+      normalMap: "png",
+      textureSize: [3000, 1000],
+    });
     const images = parts.json["images"] as { mimeType: string }[];
     images[1]!.mimeType = "image/webp";
     const fake = fakePictureDevice();
@@ -159,7 +182,7 @@ describe("shrinkTextures", () => {
       fake.device,
       control(),
     );
-    expect(report).toMatchObject({ changed: 0, kept: 2 });
+    expect(report).toMatchObject({ changed: 0, kept: 2, largestSide: 3000 });
     expect(images.map((i) => i.mimeType)).toEqual(["image/jpeg", "image/webp"]);
   });
 

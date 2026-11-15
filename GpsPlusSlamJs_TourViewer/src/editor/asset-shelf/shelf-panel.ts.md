@@ -36,6 +36,9 @@ shelf runner (`asset-shelf.ts`); every word comes from
   - `deps.retry`, `deps.useOriginal`, `deps.remove`, `deps.optimizeTour`:
     the runner's commands. `remove` returns the undo, or null when the
     file is not on the shelf.
+  - `deps.setDetail(id, share)`: re-makes a model at a share of its
+    triangles, null for the default level (`AssetShelf.setDetail`);
+    resolves to `{ kind: "applied" }` or `{ kind: "refused", reason }`.
   - `deps.removeUsed?`: the delete of a file in use. `plan(id)` says in
     plain words what the delete does ("Deletes 2 items, removes it from 1
     other.", the session's `deletePlan`) or why it cannot be done (a long
@@ -127,9 +130,26 @@ shelf runner (`asset-shelf.ts`); every word comes from
 - The toggle's `aria-pressed` says whether the shelf is open; its badge
   (`.as-badge`, `.error` when something failed) counts what is under way
   or failed.
+- A made model's open card shows its detail (`detailView`), as the
+  level-of-detail prototype's slider: "Quality, share of triangles kept"
+  with the share floated right ("80 % (default)"), a range over the
+  stops with the fewest triangles on the left, and a box with the stop's
+  triangles ("8,000 of 10,000 triangles") and largest deviation ("320 µm
+  (0.16 % of the model's size)"). Dragging (`input`) moves the readout
+  only, so a redraw never takes the thumb away; letting go (`change`)
+  on another stop asks `deps.setDetail` with that stop's share (the
+  default level's stop asks for null). While it runs the range is
+  disabled with `aria-busy` and the share reads "Applying...", the
+  thumb on the stop asked for; once settled a toast says the outcome:
+  "rock.glb now has 5,000 triangles." or "rock.glb was not changed."
+  and the reason (a rejection reads as "It could not be made."), and the
+  thumb stands on the level the tour holds. "Default detail" in the
+  card's buttons goes back to the default level while another is
+  chosen. A level that can no longer be changed (its original let go at
+  the last save) shows its readout and says why, with no range.
 - Redraw: a full redraw only when the rows' shape (`shapeKey`, which
   leaves out progress), the filter, the open card, the dialog, a
-  "Use the original" or a replace under way changed; otherwise only the bars,
+  "Use the original", a replace or a detail under way changed; otherwise only the bars,
   percentages and rings move, so a running job never steals focus or
   scroll. A full redraw puts the focus back on the same file's same
   button.
@@ -157,6 +177,7 @@ const panel = createShelfPanel({
   subscribe: (l) => store.subscribe(l),
   retry: (id) => shelf.retry(id),
   useOriginal: (id) => shelf.useOriginal(id),
+  setDetail: (id, share) => shelf.setDetail(id, share),
   remove: (id) => shelf.remove(id),
   optimizeTour: () => shelf.optimizeTour(),
   removeUsed: { plan: (id) => session.deletePlan(id), run: deleteInUse },
@@ -188,3 +209,10 @@ and pill, a progress update that moves only the bar and keeps the focus,
 the thumbnails (a picture, a poster with its play mark, the icon without
 one) with their object URLs let go, the video warning on an unopened
 card, and nothing drawn after `destroy`. The words are `shelf-panel-model.test.ts`'s.
+`shelf-panel-detail.test.ts` (jsdom): the detail's words (`formatLength`,
+`detailView`, `detailReadout`) and its slider: the readout and label, the
+readout following a drag with nothing asked and the thumb kept through a
+redraw, the request on letting go with its busy state and toast, a
+refusal and a rejection said with the thumb back, the default level by
+its button and by its stop, nothing asked on the same stop, and a fixed
+level said with no range.

@@ -78,6 +78,7 @@ function panel(over: Partial<ShelfPanelDeps> = {}) {
     },
     retry: vi.fn(() => true),
     useOriginal: vi.fn(() => Promise.resolve(true)),
+    setDetail: vi.fn(() => Promise.resolve({ kind: "applied" as const })),
     remove: vi.fn<(id: string) => (() => void) | null>(() => vi.fn()),
     optimizeTour: vi.fn(() => 2),
     addFiles: vi.fn(),

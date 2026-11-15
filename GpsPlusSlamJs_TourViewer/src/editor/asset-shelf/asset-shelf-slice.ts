@@ -43,6 +43,24 @@ import {
   type ShelfJob,
   type ShelfPhase,
 } from "./asset-jobs.js";
+import type { LodChoice } from "./model-lod.js";
+
+/** A made model's level of detail (`model-lod.ts`'s report): what the
+ *  shelf's detail slider shows and moves. */
+export interface ShelfDetail {
+  /** The author's share of the triangles, or null for the default level
+   *  (the fewest within the deviation budget). */
+  readonly share: number | null;
+  /** Triangles in the level drawn up close, and in the original. */
+  readonly triangles: number;
+  readonly trianglesBefore: number;
+  /** Its largest deviation, as a share of `size` (the model's box
+   *  diagonal, in model units). */
+  readonly deviation: number;
+  readonly size: number;
+  /** The slider's stops, from every triangle down. */
+  readonly choices: readonly LodChoice[];
+}
 
 /** One file on the shelf. */
 export interface ShelfEntry extends ShelfJob {
@@ -63,6 +81,10 @@ export interface ShelfEntry extends ShelfJob {
   /** A video's: the poster minted with it, and its length in seconds. */
   readonly posterId?: string;
   readonly seconds?: number;
+  /** A made model's level of detail, and whether the author's request
+   *  for another one is under way. */
+  readonly detail?: ShelfDetail;
+  readonly detailBusy?: boolean;
 }
 
 /** What a video brought in carries beyond its asset (`AssetShelf.add`). */
@@ -120,6 +142,10 @@ function withJob(
     ...state,
     entries: { ...state.entries, [id]: { ...entry, ...job, ...extra } },
   };
+}
+
+function withEntry(state: AssetShelfState, entry: ShelfEntry): AssetShelfState {
+  return { ...state, entries: { ...state.entries, [entry.id]: entry } };
 }
 
 const assetShelfSlice = createSlice({
@@ -189,12 +215,49 @@ const assetShelfSlice = createSlice({
         readonly id: string;
         readonly optimizedBytes: number;
         readonly originalHeld: boolean;
+        readonly detail?: ShelfDetail;
       }>,
     ) =>
       withJob(state, action.payload.id, jobOptimized, {
         optimizedBytes: action.payload.optimizedBytes,
         originalHeld: action.payload.originalHeld,
+        ...(action.payload.detail === undefined
+          ? {}
+          : { detail: action.payload.detail }),
       }),
+    /** The author asked for another level of detail of a made model. */
+    detailAsked(state, action: PayloadAction<{ readonly id: string }>) {
+      const entry = state.entries[action.payload.id];
+      if (entry?.phase !== "optimized" || entry.detail === undefined) {
+        return state;
+      }
+      return withEntry(state, { ...entry, detailBusy: true });
+    },
+    /** That level landed: the tour holds the new file. */
+    detailApplied(
+      state,
+      action: PayloadAction<{
+        readonly id: string;
+        readonly optimizedBytes: number;
+        readonly detail: ShelfDetail;
+      }>,
+    ) {
+      const { id, optimizedBytes, detail } = action.payload;
+      const entry = state.entries[id];
+      if (entry?.detailBusy !== true) return state;
+      return withEntry(state, {
+        ...entry,
+        optimizedBytes,
+        detail,
+        detailBusy: false,
+      });
+    },
+    /** It did not: the tour keeps the file it has. */
+    detailSettled(state, action: PayloadAction<{ readonly id: string }>) {
+      const entry = state.entries[action.payload.id];
+      if (entry?.detailBusy !== true) return state;
+      return withEntry(state, { ...entry, detailBusy: false });
+    },
     jobKept: (
       state,
       action: PayloadAction<{ readonly id: string; readonly reason: string }>,
@@ -274,7 +337,12 @@ const assetShelfSlice = createSlice({
       });
       if (next === state) return state;
       const entries = { ...next.entries };
-      const { optimizedBytes: _gone, ...rest } = entries[id]!;
+      const {
+        optimizedBytes: _gone,
+        detail: _level,
+        detailBusy: _asked,
+        ...rest
+      } = entries[id]!;
       entries[id] = rest;
       return { ...next, entries };
     },
@@ -327,6 +395,13 @@ export interface ShelfRow {
   /** A video's poster (an image asset id) and length, when known. */
   readonly posterId?: string;
   readonly seconds?: number;
+  /** A made model's level of detail: `adjustable` while the slider can
+   *  re-make it (the original is kept, `canUseOriginal`), `busy` while
+   *  it does. */
+  readonly detail?: ShelfDetail & {
+    readonly adjustable: boolean;
+    readonly busy: boolean;
+  };
   /** A character's row: named after him, its id his first file's, its
    *  sizes his files' together; its places are where his files are used
    *  (`characterFileUses`), never his own declaration. */
@@ -392,6 +467,10 @@ export const selectShelfRows = createSelector(
     };
     const fileRow = (e: ShelfEntry): ShelfRow => {
       const position = queued.indexOf(e.id);
+      const canUseOriginal =
+        e.phase === "optimized" &&
+        e.originalHeld &&
+        assetBytesPending(doc, e.id);
       return {
         id: e.id,
         kind: e.kind,
@@ -409,11 +488,17 @@ export const selectShelfRows = createSelector(
         queuePosition: position < 0 ? null : position,
         placesInUse: usedIn(e.id),
         swaps: doc.assetSwaps[e.id] ?? 0,
-        canUseOriginal:
-          e.phase === "optimized" &&
-          e.originalHeld &&
-          assetBytesPending(doc, e.id),
+        canUseOriginal,
         ...lookOf(e),
+        ...(e.detail === undefined || e.phase !== "optimized"
+          ? {}
+          : {
+              detail: {
+                ...e.detail,
+                adjustable: canUseOriginal,
+                busy: e.detailBusy === true,
+              },
+            }),
       };
     };
     const held = charactersByFile(shelf, doc);
