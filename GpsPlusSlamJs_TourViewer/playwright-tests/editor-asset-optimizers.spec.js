@@ -475,6 +475,9 @@ test("models: the default level of detail keeps fewer triangles, its box within 
       expect(Math.abs(after.min[i] - before.min[i])).toBeLessThanOrEqual(bound);
       expect(Math.abs(after.max[i] - before.max[i])).toBeLessThanOrEqual(bound);
     }
+    // The coarser levels are saved at the default level too (a chain the
+    // size line dropped whole would pass every other check here).
+    expect(after.chainBytes).toBeGreaterThan(0);
     // The whole file, its saved coarser levels included: the level of
     // detail must never cost the file the gain the other steps made.
     expect(row.bytes).toBeLessThan(row.originalBytes * 0.9);

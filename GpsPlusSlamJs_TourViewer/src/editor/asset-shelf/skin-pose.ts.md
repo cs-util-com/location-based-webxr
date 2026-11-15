@@ -24,6 +24,11 @@ blend skinning, as glTF defines it.
   - Reads the nodes, their transforms and the clips.
   - Each clip is sampled at a third, two thirds and its end. Of all those
     times, at most `CLIP_POSES` are kept, spread evenly over the list.
+    With up to three clips every clip is sampled; with more, only the
+    first, a middle one and the last are, so a model with k clips leaves
+    k - 3 of them unmeasured. Sampling a clip at a sixth, a half and five
+    sixths instead was tried and refused: it misses the clip's end, the
+    largest bend of the tube test, which then fails at 90 degrees.
   - Null when the nodes are no forest (a child out of range, two parents,
     a cycle), a transform is not finite, a clip channel does not read, or
     a clip animates a node given by a matrix (glTF does not allow that).
