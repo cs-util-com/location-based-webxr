@@ -145,6 +145,65 @@ describe("the shelf's detail slider", () => {
     expect(row()?.detail?.choices).toHaveLength(3);
   });
 
+  // Why: the draft keeps a made model's level with its smaller file, so
+  // the swap must hand it over, at the default level and after a re-make.
+  it("hands the level made to the swap, for the draft to keep", async () => {
+    const { shelf, fake, swap, settle } = await madeModel();
+    expect(swap).toHaveBeenLastCalledWith(
+      M,
+      expect.objectContaining({
+        detail: expect.objectContaining({ share: null, triangles: 8_000 }),
+      }),
+    );
+    const asked = shelf.setDetail(M, 0.25);
+    await settle();
+    fake.calls
+      .shift()!
+      .resolve(made(400, lod({ automatic: false, trianglesAfter: 2_500 })));
+    await asked;
+    expect(swap).toHaveBeenLastCalledWith(
+      M,
+      expect.objectContaining({
+        detail: expect.objectContaining({ share: 0.25, triangles: 2_500 }),
+      }),
+    );
+  });
+
+  // Why: a reload puts a made model back from the draft without running
+  // the optimizer. The slider must come back with the level the draft
+  // kept, and a slide must re-make the model from the original offered.
+  it("offers the slider again for a made model a reload put back", async () => {
+    const t = setup();
+    const kept = {
+      share: 0.25,
+      triangles: 2_500,
+      trianglesBefore: 10_000,
+      deviation: 0.009,
+      size: 0.2,
+      choices: lod().choices,
+    };
+    t.shelf.restored(
+      model,
+      "rock.glb",
+      { originalBytes: 1000, optimizedBytes: 400 },
+      { asset: model, load: () => Promise.resolve(t.original) },
+      kept,
+    );
+    expect(t.row()).toMatchObject({
+      status: "optimized",
+      canUseOriginal: true,
+      detail: { ...kept, adjustable: true, busy: false },
+    });
+    const asked = t.shelf.setDetail(M, 0.5);
+    await t.settle();
+    expect(t.fake.calls[0]!.source).toBe(t.original);
+    t.fake.calls
+      .shift()!
+      .resolve(made(500, lod({ automatic: false, trianglesAfter: 5_000 })));
+    await expect(asked).resolves.toEqual(APPLIED);
+    expect(t.row()?.detail).toMatchObject({ share: 0.5, triangles: 5_000 });
+  });
+
   it("shows no detail for a model no level was made for", async () => {
     const t = setup();
     t.shelf.add(model, "box.glb", 1000, "added");
@@ -179,6 +238,7 @@ describe("the shelf's detail slider", () => {
     expect(swap).toHaveBeenLastCalledWith(M, {
       blob: expect.any(Blob),
       path: `content/${M}.glb`,
+      detail: expect.objectContaining({ share: 0.25, triangles: 2_500 }),
     });
     expect(row()).toMatchObject({
       status: "optimized",

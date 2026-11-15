@@ -31,6 +31,11 @@ import {
 } from "./asset-shelf/asset-optimizers.js";
 import { selectShelfRows } from "./asset-shelf/asset-shelf-slice.js";
 import { fakeOptimizer } from "./asset-shelf/test-support/fake-optimizer.js";
+import {
+  boxSpec,
+  buildModel,
+} from "./asset-shelf/test-support/glb-fixtures.js";
+import type { ModelReport } from "./asset-shelf/model-step.js";
 import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
 
@@ -312,5 +317,108 @@ describe('the creator\'s "use the original" across a reload', () => {
     await settle();
     expect(third.audio.calls).toHaveLength(0);
     await third.leave();
+  });
+});
+
+describe("a made model's level of detail across a reload", () => {
+  // Why: a reload puts a made model back from the draft, without running
+  // the optimizer whose report the slider comes from. The session must
+  // carry the level the draft kept to the shelf, or the slider is gone
+  // after a reload and the author cannot change the detail again.
+  it("offers the slider again, from the level the draft kept", async () => {
+    const stores = memoryDraftStores();
+    const K = "local-file:00000000000000000000000000000010";
+    const openEditor = async () => {
+      const session = await openedTour();
+      const draft = createEditorDraft({
+        openStore: stores.open,
+        holdLock: freeDraftLocks,
+        noBackup: () => undefined,
+      });
+      const { offer } = await draft.open(K, MANIFEST);
+      const store = editorStore();
+      const model = fakeOptimizer();
+      const editor = createEditorSession({
+        session,
+        manifest: MANIFEST,
+        levels: new Map(),
+        store,
+        draft: draft.writes(),
+        optimizers: { ...ASSET_OPTIMIZERS, model },
+        optimizerHost: {
+          run: () => Promise.reject(new Error("unused")),
+          close: () => undefined,
+        },
+      });
+      if (offer !== null) editor.restore(offer);
+      const leave = async () => {
+        await draft.idle();
+        editor.shelf.close();
+        draft.close();
+        await session.close();
+      };
+      return { editor, model, store, leave };
+    };
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    const first = await openEditor();
+    const glb = await buildModel({ meshes: [boxSpec("box")] });
+    const added = await first.editor.addFile(new Blob([glb]), "box.glb");
+    if (added.kind === "refused") throw new Error(added.reason);
+    const id = added.asset.id;
+    // Placed, so the tour names the file: a draft keeps only what the
+    // tour names.
+    expect(
+      first.editor.place({
+        id: "m1",
+        kind: "model",
+        view: "placed",
+        asset: id,
+        sizeM: 2,
+        createdAtIso: "2026-11-15T00:00:00.000Z",
+        geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
+      }),
+    ).toEqual({ kind: "placed" });
+    await settle();
+    const lod = {
+      skipped: null,
+      primitives: 1,
+      trianglesBefore: 10_000,
+      trianglesAfter: 8_000,
+      deviation: 0.0016,
+      size: 0.2,
+      automatic: true,
+      choices: [
+        { share: 1, triangles: 10_000, deviation: 0 },
+        { share: 0.5, triangles: 5_000, deviation: 0.004 },
+      ],
+    };
+    first.model.calls.shift()!.resolve({
+      kind: "optimized",
+      blob: new Blob([glb.subarray(0, glb.length >> 1)]),
+      extension: "glb",
+      model: { lod } as unknown as ModelReport,
+    });
+    await settle();
+    const made = selectShelfRows(first.store.getState()).find(
+      (r) => r.id === id,
+    );
+    expect(made?.detail).toMatchObject({ triangles: 8_000, adjustable: true });
+    await first.leave();
+
+    const again = await openEditor();
+    await settle();
+    const row = selectShelfRows(again.store.getState()).find(
+      (r) => r.id === id,
+    );
+    expect(row).toMatchObject({ status: "optimized", canUseOriginal: true });
+    expect(row?.detail).toMatchObject({
+      share: null,
+      triangles: 8_000,
+      trianglesBefore: 10_000,
+      choices: lod.choices,
+      adjustable: true,
+    });
+    expect(again.model.calls).toHaveLength(0);
+    await again.leave();
   });
 });

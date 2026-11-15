@@ -107,6 +107,10 @@ import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain"
 import { isTourContentKey } from "../tour-file-key.js";
 import type { EditorLock } from "./save-target.js";
 import {
+  type ShelfDetail,
+  shelfDetailOf,
+} from "./asset-shelf/asset-shelf-slice.js";
+import {
   framesOf,
   objectAssetsHeld,
   sameBeyondPose,
@@ -581,6 +585,9 @@ interface DraftFile {
    *  original"): a reload puts it on the shelf as that choice left it,
    *  never queued to be made smaller again. */
   readonly originalChosen?: true;
+  /** A smaller file's level of detail (a made model's, as the shelf
+   *  handed it over): a reload offers the slider again. */
+  readonly detail?: ShelfDetail;
 }
 
 /** Where `file`'s own bytes are kept: `asset:<id>` for a plain file,
@@ -613,6 +620,7 @@ function listItem(file: DraftFile): unknown {
     ...file.asset,
     original: file.original.asset,
     originalKept: file.original.blob !== undefined,
+    ...(file.detail === undefined ? {} : { detail: file.detail }),
   };
 }
 
@@ -639,10 +647,13 @@ interface ListedFile {
   readonly original?: TourAsset;
   readonly originalKept: boolean;
   readonly originalChosen?: true;
+  readonly detail?: ShelfDetail;
 }
 
 /** The `assets` list as written, each record one the format takes, and a
- *  replaced record of the same id; null when it does not read. */
+ *  replaced record of the same id; null when it does not read. A smaller
+ *  file's level of detail that does not read is dropped (its slider is
+ *  then not offered), the file kept. */
 function assetListOf(text: string | undefined): ListedFile[] | null {
   if (text === undefined) return [];
   let data: unknown;
@@ -655,11 +666,12 @@ function assetListOf(text: string | undefined): ListedFile[] | null {
   const listed: ListedFile[] = [];
   for (const item of data as unknown[]) {
     if (!readsAsAsset(item)) return null;
-    const { original, originalKept, originalChosen, ...asset } =
+    const { original, originalKept, originalChosen, detail, ...asset } =
       item as TourAsset & {
         readonly original?: unknown;
         readonly originalKept?: unknown;
         readonly originalChosen?: unknown;
+        readonly detail?: unknown;
       };
     if (original === undefined && originalKept === undefined) {
       if (originalChosen !== undefined && originalChosen !== true) return null;
@@ -678,7 +690,13 @@ function assetListOf(text: string | undefined): ListedFile[] | null {
     ) {
       return null;
     }
-    listed.push({ asset, original, originalKept });
+    const kept = shelfDetailOf(detail);
+    listed.push({
+      asset,
+      original,
+      originalKept,
+      ...(kept === undefined ? {} : { detail: kept }),
+    });
   }
   return listed;
 }
@@ -800,11 +818,14 @@ interface DraftFileWrites {
    *  file on disk's bytes: nothing held). False when it did not land, or
    *  for an id held nowhere. `originalChosen`: the creator's "use the
    *  original" - a file brought in that stands as its plain original
-   *  again remembers it (`DraftFile.originalChosen`). */
+   *  again remembers it (`DraftFile.originalChosen`). `detail`: a made
+   *  model's level of detail, kept with a smaller file
+   *  (`DraftFile.detail`). */
   swapAsset(
     asset: TourAsset,
     blob: Blob | undefined,
     originalChosen?: boolean,
+    detail?: ShelfDetail,
   ): Promise<boolean>;
   /** Whether the draft keeps the bytes a smaller file replaced ("use the
    *  original"): until a save that wrote the smaller file landed. */
@@ -1558,8 +1579,13 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           ? undefined
           : new Blob([bytes], { type: stored.type });
       };
-      for (const { asset, original, originalKept, originalChosen } of listed ??
-        []) {
+      for (const {
+        asset,
+        original,
+        originalKept,
+        originalChosen,
+        detail,
+      } of listed ?? []) {
         // A file the file on disk lists at its path is its own when the
         // entry there has its size (`sizeInFile`): the path alone does not
         // say which bytes are there - a save that started before "use the
@@ -1617,7 +1643,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             ? { asset: original }
             : { asset: original, blob: kept };
         if (blob !== undefined)
-          files.set(asset.id, { asset, blob, original: was });
+          files.set(asset.id, {
+            asset,
+            blob,
+            original: was,
+            ...(detail === undefined ? {} : { detail }),
+          });
         else {
           // The smaller bytes are gone: the original stands, when kept.
           lost = true;
@@ -1877,9 +1908,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         saveAsset: (asset, blob) =>
           live() ? api.saveAsset(asset, blob) : Promise.resolve(true),
         holdsFile: (id) => api.holdsFile(id),
-        swapAsset: (asset, blob, originalChosen) =>
+        swapAsset: (asset, blob, originalChosen, detail) =>
           live()
-            ? api.swapAsset(asset, blob, originalChosen)
+            ? api.swapAsset(asset, blob, originalChosen, detail)
             : Promise.resolve(true),
         holdsOriginal: (id) => api.holdsOriginal(id),
         built: (written) => {
@@ -2097,7 +2128,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       return keepFile(s, file);
     },
     holdsFile: (id) => !filesNotKept.has(id),
-    swapAsset(asset, blob, originalChosen) {
+    swapAsset(asset, blob, originalChosen, detail) {
       const id = asset.id;
       const prev = files.get(id);
       const onDisk = opened?.assets.find((a) => a.id === id);
@@ -2125,7 +2156,12 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
                   ? { originalChosen: true as const }
                   : {}),
               }
-            : { asset, blob, original };
+            : {
+                asset,
+                blob,
+                original,
+                ...(detail === undefined ? {} : { detail }),
+              };
       const before = prev === undefined ? [] : keysOf(prev);
       if (next === undefined) files.delete(id);
       else files.set(id, next);

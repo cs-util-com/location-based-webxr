@@ -105,6 +105,9 @@ interface ShelfSwap {
   readonly height?: number;
   /** "Use the original": the creator's choice, remembered by the draft. */
   readonly originalChosen?: true;
+  /** A made model's level of detail, kept by the draft with the file, so
+   *  a reload offers the slider again. */
+  readonly detail?: ShelfDetail;
 }
 
 /** An original a smaller file replaced: its record, and its bytes, read
@@ -167,12 +170,14 @@ export interface AssetShelf {
   ): void;
   /** A reload put back a smaller file the draft kept: on the shelf as
    *  optimized, no job run for it, its original offered when `original`
-   *  can read its bytes. */
+   *  can read its bytes, and a made model's level of detail (`detail`,
+   *  as the draft kept it) on its slider. */
   restored(
     asset: TourAsset,
     name: string,
     sizes: { readonly originalBytes: number; readonly optimizedBytes: number },
     original?: HeldOriginal,
+    detail?: ShelfDetail,
   ): void;
   /** A reload put back a file brought in whose original the creator
    *  chose ("use the original"): on the shelf as that choice left it -
@@ -397,11 +402,13 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       dispatch(act.jobKept({ id, reason: NOT_SMALLER }));
       return;
     }
+    const detail = detailOf(outcome.model, null);
     const swapped = await deps.swap(id, {
       blob: outcome.blob,
       path: `content/${id}.${outcome.extension}`,
       ...(outcome.width === undefined ? {} : { width: outcome.width }),
       ...(outcome.height === undefined ? {} : { height: outcome.height }),
+      ...(detail === undefined ? {} : { detail }),
     });
     if (!owns(id, stop)) return;
     if (swapped.kind === "refused") {
@@ -409,7 +416,6 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       return;
     }
     originals.set(id, { asset: before, load: () => Promise.resolve(source) });
-    const detail = detailOf(outcome.model, null);
     dispatch(
       act.jobOptimized({
         id,
@@ -480,6 +486,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
       const swapped = await deps.swap(id, {
         blob: outcome.blob,
         path: `content/${id}.${outcome.extension}`,
+        detail,
       });
       if (!owns(id, stop)) return stopped;
       if (swapped.kind === "refused") return refused(swapped.reason);
@@ -578,7 +585,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
         }),
       );
     },
-    restored(asset, name, sizes, original) {
+    restored(asset, name, sizes, original, detail) {
       if (closed) return;
       stopJob(asset.id);
       if (original === undefined) originals.delete(asset.id);
@@ -590,6 +597,7 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
           name,
           ...sizes,
           originalHeld: original !== undefined,
+          ...(detail === undefined ? {} : { detail }),
         }),
       );
       pump();
