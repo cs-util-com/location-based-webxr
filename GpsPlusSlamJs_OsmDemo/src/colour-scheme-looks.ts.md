@@ -117,10 +117,12 @@ it reads dirty, shift it up 6-8 L* before trimming further), the warm share
 
 ### Height, use and material aware (direction B, 2026-11-15)
 
-- `towerWalls`: glass blue-grey `0x4d565c`, `0x5d6469`, `0x42474d`; dark
-  stone `0x605e5b`, `0x6b6d70`; light limestone `0xb1aaa0`, `0x9d9b96`;
+- `towerWalls`: glass blue-grey `0x566066`, `0x676e73`, `0x4b5056`; dark
+  stone `0x6a6865`, `0x75777a`; light limestone `0xb1aaa0`, `0x9d9b96`;
   steel grey `0x838789`, drawn by every building of `towerFromM` = 40 m or
-  more.
+  more. The glass and dark-stone tones sit 4 L* above the exploration's
+  draft (hue and chroma kept), so the tower group's mean stays 8 L* clear
+  of the ground (`colour-schemes.test.ts`).
 - `honourMaterialTags` with `materialWalls`: glass, brick, concrete, stone,
   sandstone, granite, metal, plaster, wood, each at its real albedo; a
   colour tag still wins, a material beats the height.

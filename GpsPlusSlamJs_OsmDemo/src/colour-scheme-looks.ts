@@ -512,9 +512,9 @@ export const URBAN: ColourScheme = {
     ],
     towerWalls: [
       // glass blue-grey
-      0x4d565c, 0x5d6469, 0x42474d,
+      0x566066, 0x676e73, 0x4b5056,
       // dark stone
-      0x605e5b, 0x6b6d70,
+      0x6a6865, 0x75777a,
       // light limestone
       0xb1aaa0, 0x9d9b96,
       // steel grey
@@ -523,7 +523,7 @@ export const URBAN: ColourScheme = {
     towerFromM: 40,
     honourMaterialTags: true,
     materialWalls: new Map([
-      ["glass", 0x4d565c],
+      ["glass", 0x566066],
       ["brick", 0x8f695e],
       ["concrete", 0x979692],
       ["stone", 0xb3aa9d],

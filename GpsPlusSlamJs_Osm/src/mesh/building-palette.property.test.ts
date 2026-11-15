@@ -126,7 +126,8 @@ describe("wall lightness jitter (properties)", () => {
       fc.property(
         fc.string(),
         fc.integer({ min: 0, max: 0xffffff }),
-        fc.double({ min: 0, max: 10, noNaN: true }),
+        // Up to the scheme's cap (MAX_WALL_JITTER_L, 20).
+        fc.double({ min: 0, max: 20, noNaN: true }),
         fc.double({ min: 0, max: 300, noNaN: true }),
         (key, tone, jitter, heightM) => {
           const colours = {

@@ -20,7 +20,8 @@ designed in.
 - The standard conversion: the sRGB curve of `srgb.ts`, the sRGB primaries
   to XYZ (and the inverse matrix back), the CIE 1976 cube-root mapping with
   its linear segment below (6/29)^3, the D65 white (0.95047, 1, 1.08883).
-- The round trip is exact on 8-bit colours: `labToRgb(rgbToLab(c)) === c`.
+- The round trip is exact on 8-bit colours: `labToRgb(rgbToLab(c)) === c`
+  (sampled over 2000 colours by the property test, not proven for all).
 - Not used on any per-frame path: the palette converts once per building
   and only when its jitter is above 0.
 - Internal to the package (not exported from the `mesh` barrel).

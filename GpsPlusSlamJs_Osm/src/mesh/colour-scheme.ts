@@ -208,13 +208,16 @@ function validateMaterialWalls(map: unknown): void {
     throw new RangeError("colour scheme materialWalls must be a Map");
   }
   for (const [key, value] of map as Map<unknown, unknown>) {
+    // The palette reads only the first entry of a `;` list, so a key holding
+    // one could never match.
     if (
       typeof key !== "string" ||
       key === "" ||
-      key !== key.trim().toLowerCase()
+      key !== key.trim().toLowerCase() ||
+      key.includes(";")
     ) {
       throw new RangeError(
-        `colour scheme materialWalls key "${String(key)}" must be non-empty, trimmed and lower case`,
+        `colour scheme materialWalls key "${String(key)}" must be non-empty, trimmed, lower case and one value (no ";")`,
       );
     }
     if (!isRgb(value)) {

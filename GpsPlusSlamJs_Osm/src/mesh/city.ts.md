@@ -203,9 +203,16 @@ use.
 ## Height and material aware walls (city look exploration 2026-11-15, direction B)
 
 - The tower rule of `building-palette.ts` needs the height, which only this
-  file knows: the tallest volume per building key (`totalHeightM`, tagged,
-  derived from `building:levels`, or the guessed default of at most 11 m,
-  which only a tagged `min_height` raises).
+  file knows: the tallest volume per building key (`totalHeightM`). That
+  height is tagged, derived from `building:levels`, guessed (6 m plus the
+  roof, raised by `min_height` or by `roof:height` / `roof:levels`,
+  `resolveRoofHeightM`), or, with invented roofs on, invented: a refused
+  lid takes a seeded height from its neighbours' quartiles
+  (`refusedHeightM` in `roofscape-rules.ts`), and that neighbourhood prior
+  can reach tower heights (often 40 m or more in Midtown).
+- Near a tile window's edge the neighbourhood behind that prior changes
+  between rebuilds, so an invented building's tower status (and so its wall
+  list) can flip from one rebuild to the next.
 - The default scheme has the rule off (`towerFromM` infinite), so the
   identity digests are unchanged.
 - Tested in `city.test.ts` ("the tower rule": a tall and a low house, a

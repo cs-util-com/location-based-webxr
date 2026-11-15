@@ -108,6 +108,10 @@ describe("validateCityColourScheme", () => {
       { ...d, materialWalls: new Map([["Brick", 0x8f695e]]) },
     ],
     [
+      "a material key holding a list (only a list's first entry is read)",
+      { ...d, materialWalls: new Map([["brick;glass", 0x8f695e]]) },
+    ],
+    [
       "an empty material key",
       { ...d, materialWalls: new Map([["", 0x8f695e]]) },
     ],

@@ -14,7 +14,7 @@ of `feature-colours.ts`.
 - `WALL_TONES` - six warm plaster and sandstone tones.
 - `PITCHED_ROOF_TONES` - five clay tones, then two slate greys.
 - `FLAT_ROOF_TONES` - four bitumen and gravel greys.
-- `seededBuildingColours(tags, outline, key, pitched) → { wall, roof }`
+- `seededBuildingColours(tags, outline, key, pitched, colours?, heightM?) → { wall, roof }`
   - `wall`: `building:colour` (the part's, then the outline's), else a wall
     tone picked by `key`.
   - `roof`: `roofColour(tags, outline)`, else a pitched tone (`pitched`) or a
@@ -36,8 +36,9 @@ of `feature-colours.ts`.
   (pitched) and 29.8 (flat) over the property test's nine id ranges. The V2 prototype
   picked with its own `seededRandom`, so the tones match V2 but which house
   gets which tone does not.
-- **`building:material` is not read** under this palette (owner, Q3 of that
-  plan); the class palette still reads it.
+- **`building:material` is not read under the default palette** (Q3 of
+  that plan); a scheme opts in with `honourMaterialTags`, and the class
+  palette still reads it.
 - **Every tone is muted**: chroma (max minus min channel, 0-255) at most 58,
   the first clay, against the affordance heat ramp's floor of 80 (DEC-R4-5).
   The tones are sRGB; `buildCity` converts building chunks to linear light.
@@ -127,7 +128,8 @@ buildCity(features, ground, { palette: "class" }); // the colours before M7
   `u = mixedUnit(key, "wallL")`, in CIE L*a*b* (`cielab.ts`), and converted
   back to the nearest 8-bit sRGB colour (out-of-gamut channels clamped). So
   the shift is stable per building key (parts share their outline's), within
-  `wallJitterL` plus at most half an L* unit of 8-bit rounding, and a
+  `wallJitterL` plus at most half an L* unit of 8-bit rounding (sampled by
+  the property test up to the cap of 20, not proven), and a
   jitter of 0 returns the tone itself without the Lab round trip.
 - **The default stays byte-identical**: with the rules off the pick is the
   one before them; the golden digests of `colour-identity.test.ts` hold.

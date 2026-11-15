@@ -244,6 +244,35 @@ describe("the schemes", () => {
     }
   });
 
+  it("keep the tower and material walls apart from roads and ground too", () => {
+    // Why this test matters: a tower or a material-tagged building draws its
+    // walls from `towerWalls` or `materialWalls` instead of `walls`, so each
+    // is a building group of its own; a tower list as dark as the ground
+    // loses the towers against it, which the walls-only floor never saw.
+    for (const name of COLOUR_SCHEME_NAMES) {
+      const { city } = COLOUR_SCHEMES[name];
+      const { roads, ground } = groupLightness(COLOUR_SCHEMES[name]);
+      // Only the groups the scheme draws from: the tower rule is off at an
+      // infinite height and the materials without the flag.
+      const groups = [
+        ["towerWalls", Number.isFinite(city.towerFromM) ? city.towerWalls : []],
+        [
+          "materialWalls",
+          city.honourMaterialTags ? [...city.materialWalls.values()] : [],
+        ],
+      ] as const;
+      for (const [group, colours] of groups) {
+        if (colours.length === 0) continue;
+        const mean = meanOf(colours.map(lightness));
+        const least = Math.min(Math.abs(mean - roads), Math.abs(mean - ground));
+        expect(
+          least,
+          `${name} ${group}: ${mean.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}`,
+        ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+      }
+    }
+  });
+
   it("keep the zebra paint apart from every street it lies on", () => {
     // Why this test matters: paint is drawn raw on a car road; a stripe as
     // light or as dark as its street is no crossing at all. Every car-road
@@ -340,13 +369,13 @@ describe("the urban scheme (real-albedo grey ladder)", () => {
     // a retune is a deliberate edit here, not drift.
     const city = urban.city;
     expect(city.towerWalls).toEqual([
-      0x4d565c, 0x5d6469, 0x42474d, 0x605e5b, 0x6b6d70, 0xb1aaa0, 0x9d9b96,
+      0x566066, 0x676e73, 0x4b5056, 0x6a6865, 0x75777a, 0xb1aaa0, 0x9d9b96,
       0x838789,
     ]);
     expect(city.towerFromM).toBe(40);
     expect(city.honourMaterialTags).toBe(true);
     expect([...city.materialWalls]).toEqual([
-      ["glass", 0x4d565c],
+      ["glass", 0x566066],
       ["brick", 0x8f695e],
       ["concrete", 0x979692],
       ["stone", 0xb3aa9d],

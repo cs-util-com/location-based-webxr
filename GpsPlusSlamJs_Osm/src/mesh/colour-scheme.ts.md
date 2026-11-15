@@ -40,8 +40,9 @@ without one and gets `DEFAULT_CITY_COLOUR_SCHEME`.
   key the default does not have, a `towerFromM` that is not a number above
   0 (infinite is allowed), a `wallJitterL` outside 0..`MAX_WALL_JITTER_L`
   (20) or not finite, a `materialWalls` that is not a `Map`, or one with a
-  key that is empty, untrimmed or not lower case (the palette looks up that
-  form, so such a key would never be read) or a value that is not a colour.
+  key that is empty, untrimmed, not lower case or holding a `;` list (the
+  palette looks up the trimmed, lower-case first entry of a tag's list, so
+  such a key would never be read) or a value that is not a colour.
   Returns its argument unchanged.
 - `MAX_WALL_JITTER_L` (module-local) - 20, the largest `wallJitterL`.
 
