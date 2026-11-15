@@ -408,12 +408,6 @@ function cityFurniture(
   }).filter((f) => inside(f.position));
 }
 
-/**
- * True when the ladder drew a sloped roof on some polygon of the volume: the
- * clay and slate tones go on what is drawn, so a pitched tag the ladder had to
- * draw as a flat lid ("flat" cap, "prism") takes the flat greys (M7 review
- * MINOR 4). A volume without polygons reads as flat.
- */
 /** The tallest `totalHeightM` per building key (a part: its outline's). */
 function tallestVolumeByKey(
   volumes: readonly BuildingVolume[],
@@ -427,6 +421,12 @@ function tallestVolumeByKey(
   return tallest;
 }
 
+/**
+ * True when the ladder drew a sloped roof on some polygon of the volume: the
+ * clay and slate tones go on what is drawn, so a pitched tag the ladder had to
+ * draw as a flat lid ("flat" cap, "prism") takes the flat greys (M7 review
+ * MINOR 4). A volume without polygons reads as flat.
+ */
 function drawsPitchedRoof(volume: BuildingVolume): boolean {
   return volume.roofMethods.some((m) => m !== "flat" && m !== "prism");
 }
