@@ -114,6 +114,49 @@ function originalOf(bytes: Uint8Array) {
   };
 }
 
+type Point = readonly [number, number, number] | readonly number[];
+const sub = (a: Point, b: Point) => [
+  a[0]! - b[0]!,
+  a[1]! - b[1]!,
+  a[2]! - b[2]!,
+];
+const dot = (a: Point, b: Point) =>
+  a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+
+/** The distance from `p` to triangle `abc` (Ericson's closest point on a
+ *  triangle, by its Voronoi regions). */
+function pointTriangle(p: Point, a: Point, b: Point, c: Point): number {
+  const ab = sub(b, a);
+  const ac = sub(c, a);
+  const ap = sub(p, a);
+  const at = (u: number, v: number) =>
+    Math.hypot(
+      ...[0, 1, 2].map((i) => a[i]! + u * ab[i]! + v * ac[i]! - p[i]!),
+    );
+  const d1 = dot(ab, ap);
+  const d2 = dot(ac, ap);
+  if (d1 <= 0 && d2 <= 0) return at(0, 0);
+  const bp = sub(p, b);
+  const d3 = dot(ab, bp);
+  const d4 = dot(ac, bp);
+  if (d3 >= 0 && d4 <= d3) return at(1, 0);
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return at(d1 / (d1 - d3), 0);
+  const cp = sub(p, c);
+  const d5 = dot(ab, cp);
+  const d6 = dot(ac, cp);
+  if (d6 >= 0 && d5 <= d6) return at(0, 1);
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return at(0, d2 / (d2 - d6));
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) {
+    const w = (d4 - d3) / (d4 - d3 + (d5 - d6));
+    return at(1 - w, w);
+  }
+  const denom = 1 / (va + vb + vc);
+  return at(vb * denom, vc * denom);
+}
+
 function diagonalOf(p: Float32Array): number {
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
@@ -210,8 +253,8 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
 
   // Why: the slider overrides the default; the saved level must follow it
   // and the report must say how far the author's level deviates.
-  it("follows the author's share of triangles and reports its deviation", () => {
-    const parts = partsOf(realModel("rock"));
+  it("follows the author's share of triangles and reports its deviation", async () => {
+    const parts = partsOf(await buildModel({ meshes: [rockSpec()] }));
     const report = simplifyModel(parts, { ...SETTINGS, detailShare: 0.25 });
     expect(report.automatic).toBe(false);
     expect(report.trianglesAfter).toBeLessThanOrEqual(
@@ -224,11 +267,97 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
 
   // Why: share 1 is "leave it as drawn": every triangle stays, and only a
   // chain is added.
-  it("keeps every triangle at share 1", () => {
-    const parts = partsOf(realModel("rock"));
+  it("keeps every triangle at share 1", async () => {
+    const parts = partsOf(await buildModel({ meshes: [rockSpec()] }));
     const report = simplifyModel(parts, { ...SETTINGS, detailShare: 1 });
     expect(report.trianglesAfter).toBe(report.trianglesBefore);
     expect(report.deviation).toBe(0);
+  });
+
+  // Why: the sampled distance can miss a spike: a vertex the level cut
+  // away between two samples. Every original vertex, measured to the
+  // saved level's triangles by brute force written here, must lie within
+  // the budget (with the same sampling slack the e2e allows).
+  it("keeps every original vertex of a default level within the budget", async () => {
+    const before = await buildModel({ meshes: [rockSpec()] });
+    const original = originalOf(before);
+    const parts = partsOf(before);
+    const report = simplifyModel(parts, SETTINGS);
+    expect(report.trianglesAfter).toBeLessThan(report.trianglesBefore);
+    const saved = await readBack(writeGlb(parts));
+    const bound = SETTINGS.lodBudget * 1.25 * diagonalOf(original.positions);
+    const p = saved.positions;
+    const corner = (t: number, k: number) => {
+      const v = saved.level[t + k]!;
+      return [p[3 * v]!, p[3 * v + 1]!, p[3 * v + 2]!] as const;
+    };
+    let worst = 0;
+    for (let v = 0; v < original.positions.length / 3; v++) {
+      const q = Array.from(original.positions.subarray(3 * v, 3 * v + 3));
+      let nearest = Infinity;
+      for (let t = 0; t < saved.level.length; t += 3) {
+        nearest = Math.min(
+          nearest,
+          pointTriangle(q, corner(t, 0), corner(t, 1), corner(t, 2)),
+        );
+      }
+      worst = Math.max(worst, nearest);
+    }
+    expect(worst).toBeLessThanOrEqual(bound);
+  });
+
+  // Why: a level with more than 65 534 vertices cannot be a 16-bit list
+  // (65 535 is WebGL's restart index), so its chain is saved 32-bit; a
+  // triangle soup at share 1 keeps every one of its 66 000 vertices.
+  it("saves a 32-bit chain when the kept vertices need it", async () => {
+    const triangles = 22_000;
+    const positions = new Float32Array(triangles * 9);
+    for (let t = 0; t < triangles; t++) {
+      const x = t % 150;
+      const y = Math.floor(t / 150);
+      positions.set([x, y, 0, x + 0.5, y, 0.1, x, y + 0.5, 0.2], 9 * t);
+    }
+    const parts = partsOf(
+      await buildModel({
+        meshes: [
+          {
+            name: "soup",
+            positions,
+            indices: Uint32Array.from({ length: triangles * 3 }, (_, i) => i),
+          },
+        ],
+      }),
+    );
+    const report = simplifyModel(parts, { ...SETTINGS, detailShare: 1 });
+    expect(report.trianglesAfter).toBe(triangles);
+    const lod = lodOf(primitiveOf(parts))!;
+    const accessors = parts.json["accessors"] as GltfObject[];
+    expect(accessors[lod.indices]!["componentType"]).toBe(5125);
+    const bytes = writeGlb(parts);
+    expect(await validatorErrors(bytes)).toEqual([]);
+    const saved = await readBack(bytes);
+    expect(Math.max(...saved.chain)).toBe(triangles * 3 - 1);
+    expect(saved.level).toEqual(saved.chain.subarray(0, triangles * 3));
+  });
+
+  // Why: an attribute with fewer or more entries than POSITION would be
+  // welded and cut down wrongly (a vertex reading its neighbour's normal),
+  // so such a primitive is left as it is, and the rest of the model is
+  // still given levels.
+  it("leaves a primitive whose attribute counts differ from its positions as it is", async () => {
+    const parts = partsOf(
+      await buildModel({ meshes: [rockSpec("a"), rockSpec("b")] }),
+    );
+    const prim = primitiveOf(parts, 0);
+    const normal = (prim["attributes"] as Record<string, number>)["NORMAL"]!;
+    const accessor = (parts.json["accessors"] as GltfObject[])[normal]!;
+    accessor["count"] = (accessor["count"] as number) - 1;
+    delete accessor["min"];
+    delete accessor["max"];
+    const report = simplifyModel(parts, SETTINGS);
+    expect(report.primitives).toBe(1);
+    expect(lodOf(primitiveOf(parts, 0))).toBeUndefined();
+    expect(lodOf(primitiveOf(parts, 1))).toBeDefined();
   });
 
   // Why: a flat open patch can collapse to nothing at the end of its

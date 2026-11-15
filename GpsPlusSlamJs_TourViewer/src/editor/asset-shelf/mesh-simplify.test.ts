@@ -85,6 +85,25 @@ describe("weldVertices", () => {
     );
     expect(weld.count).toBe(3);
   });
+
+  // Why: an attribute with more or fewer entries than the positions would
+  // key each vertex with part of its neighbour's values and weld wrongly;
+  // the weld refuses it rather than guess.
+  it.each([
+    ["a texture coordinate short of one vertex", { uv: new Float32Array(4) }],
+    [
+      "an exact attribute of a fraction a vertex",
+      { exact: [new Float32Array(5)] },
+    ],
+    ["a normal short of one vertex", { normal: new Float32Array(6) }],
+  ])("refuses %s", (_, extra) => {
+    expect(() =>
+      weldVertices(
+        { position: new Float32Array(9), ...extra },
+        new Uint32Array([0, 1, 2]),
+      ),
+    ).toThrow(RangeError);
+  });
 });
 
 describe("buildProgressive", () => {

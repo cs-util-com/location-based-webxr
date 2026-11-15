@@ -21,7 +21,7 @@
  *   malformed, a joint its skin does not have, no skin binding it);
  * - a primitive with morph targets, a mode other than triangles, an
  *   accessor another primitive (or anything else) also reads, an
- *   attribute this code cannot read, extras that are no object, or levels
+ *   attribute this code cannot read or whose count is not its positions', extras that are no object, or levels
  *   already saved;
  * - a primitive under the triangle floor.
  *
@@ -319,6 +319,11 @@ function candidateOf(
   if (accessor?.["componentType"] !== FLOAT || data.size !== 3) return null;
   if (!data.values.every(Number.isFinite)) return null;
   const vertices = data.count;
+  // every attribute is one entry a vertex, or the weld and the cut-down
+  // would pair a vertex with another one's normal or weights
+  for (const index of attributes.values()) {
+    if (readAccessor(parts, index)!.count !== vertices) return null;
+  }
   const indices = indicesOf(parts, prim, uses, vertices);
   if (indices === null || indices.length / 3 < minTriangles) return null;
   const sets = skinSetsOf(parts, attributes);

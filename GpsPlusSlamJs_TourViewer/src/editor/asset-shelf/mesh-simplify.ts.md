@@ -4,7 +4,7 @@
 
 ## Public API
 
-- `weldVertices({ position, uv?, normal?, exact? }, indices, normalAngleDeg = 2)` returns `{ remap, count, indices, first }`: render vertices merged where position, texture coordinate and every `exact` attribute are bit-equal (-0 equals 0) and the normals differ by at most `normalAngleDeg`. `first[r]` is the first input vertex of welded vertex `r`, so a level over the welded vertices maps back to the input buffer.
+- `weldVertices({ position, uv?, normal?, exact? }, indices, normalAngleDeg = 2)` returns `{ remap, count, indices, first }`: render vertices merged where position, texture coordinate and every `exact` attribute are bit-equal (-0 equals 0) and the normals differ by at most `normalAngleDeg`. `first[r]` is the first input vertex of welded vertex `r`, so a level over the welded vertices maps back to the input buffer. Throws a `RangeError` when an attribute does not have one whole entry a vertex (a weld would otherwise mix one vertex's values with the next one's).
 - `remapAttribute(data, size, weld)`: one attribute over the welded vertices (the first input vertex wins).
 - `buildProgressive({ positions, indices, attributes? }, { maxTurnDeg = 45, edgeWeight = 1, normals? })` returns a `Progressive`: the collapse order (`order`, `triDeath`, `wParent`, `wStep`), the live triangles after each step (`stepAlive`, non-increasing), the largest quadric error so far (`stepError`, non-decreasing), `triangleCount`, `minTriangles`, `diag`. `attributes` enter the error metric scaled by `weight`; `normals` enable the facing check.
 - `stepsFor(prog, targetTris)`: the fewest steps whose level has at most `targetTris` triangles (the last step when none has).

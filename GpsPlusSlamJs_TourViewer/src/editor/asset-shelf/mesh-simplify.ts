@@ -67,6 +67,15 @@ export function weldVertices(
     (a): a is Float32Array => a !== undefined,
   );
   const sizes = exact.map((a) => a.length / n);
+  // one whole entry a vertex in every attribute, or the key would mix
+  // one vertex's values with the next one's
+  if (
+    !Number.isInteger(n) ||
+    !sizes.every((size) => Number.isInteger(size) && size > 0) ||
+    (attrs.normal !== undefined && attrs.normal.length !== 3 * n)
+  ) {
+    throw new RangeError("every attribute must have one entry a vertex");
+  }
   const K = sizes.reduce((s, x) => s + x, 0);
   const cosMax = Math.cos((normalAngleDeg * Math.PI) / 180);
   // the exact key of every vertex as doubles (-0 counts as 0), hashed
