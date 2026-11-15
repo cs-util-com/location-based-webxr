@@ -56,7 +56,8 @@ pnpm run deploy     # wrangler deploy of THIS Worker only
 `wrangler.toml` here is the Worker's whole configuration: the R2 bucket
 `osm-tiles`, the queue `osm-tiles-fill` (producer and serial consumer), the
 per-IP rate limiter and the vars (`DAILY_UPSTREAM_CAP`,
-`MAX_PENDING_FILLS`, `DAILY_VERIFY_CAP`, `USER_AGENT`). The
+`DAILY_REPLACE_CAP`, `MAX_PENDING_FILLS`, `DAILY_VERIFY_CAP`,
+`USER_AGENT`). The
 site Worker and the root `wrangler.toml` are unrelated.
 
 `.github/workflows/deploy-osm-tiles.yml` deploys this Worker on a push to
@@ -74,7 +75,14 @@ client with that check before this Worker serves gzip-stored tiles;
 otherwise an older client takes a partial tile as the whole tile and keeps
 it in its cache. A merge that changes both deploys them from the same push,
 in no fixed order, so after such a merge deploy the Worker by hand (the
-workflow's manual run) once the site's deploy has finished.
+workflow's manual run) once the site's deploy has finished. Once the
+workflow's secret exists, every such push deploys the Worker and the site
+in no fixed order, a window of minutes in which the new Worker can serve
+before the new client is live. And a deployed site does not reach a tab
+already open: an old client keeps running there until it is reloaded. A
+change that needs the new client first must therefore stay off the
+Worker's storage path until the clients that lack it are gone, not merely
+until the site is deployed.
 
 The Worker is served on `osm-tiles.<account>.workers.dev`. A custom domain
 is a configuration change: a `routes` entry here and the client's base URL

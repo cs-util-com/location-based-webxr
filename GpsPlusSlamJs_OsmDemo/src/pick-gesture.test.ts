@@ -16,16 +16,32 @@
 
 import { describe, expect, it } from "vitest";
 
-import { PICK_MOVE_TOLERANCE_PX, isPickGesture } from "./pick-gesture.js";
+import {
+  PICK_MOVE_TOLERANCE_PX,
+  isPickGesture as isPickGestureOn,
+  pickOrigin,
+} from "./pick-gesture.js";
+
+/** The scene's own drawing surface (the canvas, in the view). */
+const SURFACE = { name: "canvas" };
+/** Something else inside the scene's container: a dialog button, say. */
+const CONTROL = { name: "button" };
 
 /** A pointer release at `(x, y)` from `button`, with the defaults a tap has. */
 function up(
   button: number,
   x = 100,
   y = 100,
-): { button: number; clientX: number; clientY: number } {
-  return { button, clientX: x, clientY: y };
+  target: unknown = SURFACE,
+): { button: number; clientX: number; clientY: number; target: unknown } {
+  return { button, clientX: x, clientY: y, target };
 }
+
+/** The decision against the scene's surface, as the view asks it. */
+const isPickGesture = (
+  down: Parameters<typeof isPickGestureOn>[0],
+  release: Parameters<typeof isPickGestureOn>[1],
+) => isPickGestureOn(down, release, SURFACE);
 
 const DOWN = { x: 100, y: 100 };
 
@@ -113,5 +129,35 @@ describe("isPickGesture", () => {
    */
   it("refuses a secondary release with no recorded press", () => {
     expect(isPickGesture(undefined, up(2))).toBe(false);
+  });
+
+  /**
+   * A CONTROL OVER THE SCENE IS NOT THE SCENE. The light dialog lives inside
+   * the 3D view's container, so a click on its buttons bubbles to the view's
+   * listeners, and the view used to pick at the click's point: the back arrow
+   * or "Check heat grid" ordered the NPC to wherever ground lay under the
+   * button, and the walk kept the scene repainting under the measurements
+   * that followed. Only a release on the drawing surface itself may pick.
+   */
+  it("refuses a still primary release on another element than the surface", () => {
+    expect(isPickGesture(DOWN, up(0, 100, 100, CONTROL))).toBe(false);
+  });
+
+  it("refuses a release with no target", () => {
+    expect(isPickGesture(DOWN, up(0, 100, 100, null))).toBe(false);
+  });
+});
+
+describe("pickOrigin", () => {
+  it("records a press on the surface", () => {
+    expect(pickOrigin(up(0, 12, 34), SURFACE)).toEqual({ x: 12, y: 34 });
+  });
+
+  /**
+   * A press on a control over the scene records nothing, so a release that
+   * then lands on the surface has no origin and cannot pick either.
+   */
+  it("records nothing for a press on another element", () => {
+    expect(pickOrigin(up(0, 12, 34, CONTROL), SURFACE)).toBeUndefined();
   });
 });

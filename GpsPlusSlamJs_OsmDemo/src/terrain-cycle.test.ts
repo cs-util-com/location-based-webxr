@@ -425,8 +425,8 @@ describe("collecting the DEM race's better answer (N2)", () => {
    * WHY THESE TESTS MATTER MORE THAN THEY LOOK. The DEM race publishes the fast
    * source's heights and applies the preferred source's when they land — but
    * the preferred source lands AFTER the `terrain` reply was built, and the
-   * worker protocol is strictly request/reply keyed on `id` with no
-   * unsolicited worker-to-page channel. So the page has to ASK for the upgrade,
+   * worker protocol delivers results only as replies keyed on `id` (its one
+   * push, `WorkerNotice`, carries live wait state only). So the page has to ASK for the upgrade,
    * and the only thing that tells it to is `upgradePending` on the reply.
    *
    * If this line is ever lost, nothing else fails. The map still shows terrain,

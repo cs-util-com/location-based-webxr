@@ -5,6 +5,7 @@ import {
   gzipDecodedSize,
   inflateHead,
   readBodyEnds,
+  SourceReadError,
 } from "./body-window";
 
 // Why these tests matter: the fill judges a gzip answer by its inflated head
@@ -57,7 +58,91 @@ function noisy(length: number): Uint8Array {
   return out;
 }
 
+/** A stream that sends the first `sent` bytes of `bytes`, then fails as a torn read does. */
+function failingAfter(
+  bytes: Uint8Array,
+  sent: number,
+): ReadableStream<Uint8Array> {
+  let done = false;
+  return new ReadableStream({
+    pull(controller) {
+      if (done) {
+        controller.error(new TypeError("network connection lost"));
+        return;
+      }
+      done = true;
+      controller.enqueue(bytes.slice(0, sent));
+    },
+  });
+}
+
 describe("readBodyEnds", () => {
+  it("rejects with SourceReadError when the stored stream itself fails, raw or gzip", async () => {
+    // Why this test matters: a torn read of the stored object says nothing
+    // about the tile, while a gzip error is evidence against it. The verify
+    // deletes on the second only, so the two must never look alike.
+    const body = noisy(50_000);
+    const zipped = await gzip(body);
+    await expect(
+      readBodyEnds(failingAfter(body, 10_000), false, 16, 16),
+    ).rejects.toBeInstanceOf(SourceReadError);
+    await expect(
+      readBodyEnds(failingAfter(zipped, 1_000), true, 16, 16),
+    ).rejects.toBeInstanceOf(SourceReadError);
+  });
+
+  // How many bytes short of the stored size the stream ends: 0 is a whole
+  // read, any shortfall a source that stopped early.
+  for (const [kind, short] of [
+    ["raw", 1],
+    ["raw", 30_000],
+    ["gzip", 1],
+    ["gzip", 1_000],
+  ] as const) {
+    it(`rejects with SourceReadError when a ${kind} stream ends ${short} bytes short of its size`, async () => {
+      // Why this test matters: a stream that ends early without an error
+      // looks like a cut tile (no closing bracket, a cut gzip), which the
+      // verify deletes. Only the stored size tells the two apart: fewer
+      // bytes than it is a failed read, no evidence about the tile.
+      const body = noisy(50_000);
+      const bytes = kind === "gzip" ? await gzip(body) : body;
+      const cut = chunked(bytes.slice(0, bytes.length - short), [4_096]);
+      await expect(
+        readBodyEnds(cut, kind === "gzip", 16, 16, 2 ** 20, bytes.length),
+      ).rejects.toBeInstanceOf(SourceReadError);
+    });
+  }
+
+  it("reads a stream that delivers exactly its stored size as before", async () => {
+    const body = noisy(50_000);
+    const zipped = await gzip(body);
+    for (const [bytes, isGzip] of [
+      [body, false],
+      [zipped, true],
+    ] as const) {
+      const ends = await readBodyEnds(
+        chunked(bytes, [4_096]),
+        isGzip,
+        16,
+        16,
+        2 ** 20,
+        bytes.length,
+      );
+      expect(ends.head).toEqual(body.slice(0, 16));
+      expect(ends.tail).toEqual(body.slice(body.length - 16));
+    }
+  });
+
+  it("keeps a gzip error that is not a read error as it was (no SourceReadError)", async () => {
+    const zipped = await gzip(noisy(50_000));
+    const cut = chunked(zipped.slice(0, 2_000), [500]);
+    const error: unknown = await readBodyEnds(cut, true, 16, 16).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(SourceReadError);
+  });
+
   it("property: head and tail are the body's first and last bytes for any chunking", async () => {
     await fc.assert(
       fc.asyncProperty(

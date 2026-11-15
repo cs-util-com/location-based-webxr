@@ -44,9 +44,18 @@ state = "good")`, `clearVerified`, `VERIFIED_TTL_MS` (7 days). One empty
   `listPending(bucket, now)` (fresh markers, oldest first),
   `sweepPending(bucket, now)` (removes stale markers and every marker still
   flagged running), `PENDING_STALE_MS` (15 min).
+- `DailyState.replaceRequests` - of `upstreamRequests`, those a replace
+  sent (0 for a day written before the field).
+- The last replace: `readLastReplace(bucket, cell)` and
+  `writeLastReplace(bucket, cell, at)` (an empty object
+  `state/replaced/<cell>`, the time in its metadata), and
+  `REPLACE_MIN_GAP_MS` (24 h), the least time between two replaces of
+  one cell.
 - Verifying markers: `VerifyingMarker { cell, etag, queuedAt }`,
   `markVerifying(bucket, cell, etag, now)`, `readVerifying(bucket, cell,
-now)` (fresh only), `clearVerifying`, `listVerifying(bucket, now)` (fresh
+now)` (fresh only), `clearVerifying`, `clearVerifyingIf(bucket, cell,
+etag)` (clears only a marker naming `etag`, so a verify of a replaced
+  object leaves the marker of the new object's report), `listVerifying(bucket, now)` (fresh
   ones), `sweepVerifying(bucket, now)` (removes the stale ones). The same
   15-minute stale age as the pending markers.
 
@@ -85,4 +94,6 @@ the verify memo (its state and time, an old memo read as expired), and
 the pending markers: fresh ones
 listed oldest first, stale ones ignored, the sweep, and a property that a
 listing holds exactly the fresh markers; the verifying markers read,
-listed, cleared and swept by their stale age.
+listed, cleared and swept by their stale age, a marker naming another
+object left by `clearVerifyingIf`; the last replace's round trip and the
+replace counter reading 0 for an older day.

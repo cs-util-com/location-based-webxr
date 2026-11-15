@@ -11,6 +11,7 @@ import {
   readDaily,
   readFailure,
   readVerified,
+  readLastReplace,
   recordBadTile,
   writeDaily,
   writeVerified,
@@ -546,7 +547,9 @@ describe("fillTile: replace", () => {
     expect(await readVerified(bucket, CELL)).toBeUndefined();
   });
 
-  it("counts as a bad tile: the backoff grows and survives the success", async () => {
+  it("does not raise the bad count, and a second replace within 24 h sends nothing", async () => {
+    // Why: a replace raising the bad count let forged reports ratchet a
+    // cell's later genuine backoff to a week; the gap bounds it instead.
     const bucket = new FakeBucket();
     await stored(bucket, "2026-11-11T09:00:00Z");
     await recordBadTile(bucket, CELL, NOW - 3 * 86_400_000, "remark");
@@ -556,12 +559,72 @@ describe("fillTile: replace", () => {
     );
     expect((await fillTile(replace, d)).outcome).toBe("filled");
     expect(await readFailure(bucket, CELL)).toMatchObject({
-      badCount: 2,
-      retryAt: NOW + 7_200_000,
+      badCount: 1,
+      retryAt: 0,
     });
-    const again = deps(bucket, () => new Response("never"));
-    expect((await fillTile(replace, again.deps)).outcome).toBe("backoff");
-    expect(again.calls).toHaveLength(0);
+    expect(await readLastReplace(bucket, CELL)).toBe(NOW);
+    const soon = deps(bucket, () => new Response("never"), {
+      now: () => NOW + 86_400_000 - 1,
+    });
+    expect((await fillTile(replace, soon.deps)).outcome).toBe("too-soon");
+    expect(soon.calls).toHaveLength(0);
+    const later = deps(
+      bucket,
+      () => new Response(overpassBody("2026-11-11T09:00:00Z")),
+      { now: () => NOW + 86_400_000 },
+    );
+    expect((await fillTile(replace, later.deps)).outcome).toBe("filled");
+  });
+
+  it("draws on its own share of the day's upstream budget (a third by default)", async () => {
+    // Why: forged reports must not spend the budget real fills need. Each
+    // replace request counts in the day's total and in the replace share.
+    const bucket = new FakeBucket();
+    await stored(bucket, "2026-11-11T09:00:00Z");
+    const { deps: d } = deps(bucket, (_url, i) =>
+      i === 0
+        ? new Response("x", { status: 504 })
+        : new Response(overpassBody("2026-11-11T09:00:00Z")),
+    );
+    expect((await fillTile(replace, d)).outcome).toBe("filled");
+    expect(await readDaily(bucket, NOW)).toMatchObject({
+      upstreamRequests: 2,
+      replaceRequests: 2,
+    });
+    // A cap of 100 leaves replaces 33 a day by default.
+    const day = NOW + 2 * 86_400_000;
+    await writeDaily(bucket, day, {
+      ...(await readDaily(bucket, NOW)),
+      upstreamRequests: 33,
+      replaceRequests: 33,
+    });
+    const spent = deps(bucket, () => new Response("never"), {
+      now: () => day,
+    });
+    expect((await fillTile(replace, spent.deps)).outcome).toBe("cap");
+    expect(spent.calls).toHaveLength(0);
+  });
+
+  it("stops at the replace share mid-way, while an ordinary fill still runs", async () => {
+    const bucket = new FakeBucket();
+    await stored(bucket, "2026-11-11T09:00:00Z");
+    const { deps: d, calls } = deps(
+      bucket,
+      () => new Response("x", { status: 504 }),
+      { dailyReplaceCap: 2 },
+    );
+    expect((await fillTile(replace, d)).outcome).toBe("failed");
+    expect(calls).toHaveLength(2);
+    const other = latLngToCell(47.0468, 8.3745, 7);
+    const fillOther = deps(
+      bucket,
+      () => new Response(overpassBody("2026-11-11T09:00:00Z")),
+      { dailyReplaceCap: 2 },
+    );
+    expect(
+      (await fillTile({ cell: other, kind: "fill", at: NOW }, fillOther.deps))
+        .outcome,
+    ).toBe("filled");
   });
 
   it("never deletes: a failed refetch keeps the stored tile", async () => {
@@ -570,10 +633,9 @@ describe("fillTile: replace", () => {
     const { deps: d } = deps(bucket, () => new Response("x", { status: 504 }));
     expect((await fillTile(replace, d)).outcome).toBe("failed");
     expect(bucket.textOf(KEY)).toBe("old");
-    expect(await readFailure(bucket, CELL)).toMatchObject({
-      badCount: 1,
-      reason: "status",
-    });
+    const failure = await readFailure(bucket, CELL);
+    expect(failure).toMatchObject({ count: 1, reason: "status" });
+    expect(failure?.badCount).toBeUndefined();
   });
 
   it("does nothing for a missing tile, and respects the daily cap", async () => {
@@ -588,6 +650,7 @@ describe("fillTile: replace", () => {
       rawBytes: 0,
       storedBytes: 0,
       verifies: 0,
+      replaceRequests: 0,
     });
     expect((await fillTile(replace, d)).outcome).toBe("cap");
     expect(calls).toHaveLength(0);

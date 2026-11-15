@@ -32,10 +32,12 @@ import {
   clearVerified,
   readDaily,
   readFailure,
-  recordBadTile,
+  readLastReplace,
   recordFailure,
+  REPLACE_MIN_GAP_MS,
   writeDaily,
   writeFailure,
+  writeLastReplace,
   type DailyState,
 } from "./fill-state";
 import { tileObjectKey } from "./tile-cell";
@@ -53,6 +55,27 @@ const DEFAULT_ATTEMPT_TIMEOUT_MS = 200_000;
  */
 const DEFAULT_WALL_LIMIT_MS = 14 * 60_000;
 
+/** The replace share of a day's upstream budget unless configured: a third. */
+export function defaultReplaceCap(dailyUpstreamCap: number): number {
+  return Math.floor(dailyUpstreamCap / 3);
+}
+
+function replaceCapOf(deps: FillDeps): number {
+  return deps.dailyReplaceCap ?? defaultReplaceCap(deps.dailyUpstreamCap);
+}
+
+/** Whether today's budget, or a replace's share of it, is spent. */
+function budgetSpent(
+  day: DailyState,
+  deps: FillDeps,
+  replace: boolean,
+): boolean {
+  return (
+    day.upstreamRequests >= deps.dailyUpstreamCap ||
+    (replace && day.replaceRequests >= replaceCapOf(deps))
+  );
+}
+
 /** A stored tile older than this (by its data age) is refreshed on request. */
 export const REFRESH_AGE_MS = 30 * 86_400_000;
 
@@ -66,6 +89,11 @@ export interface FillDeps {
   readonly userAgent: string;
   readonly endpoints: readonly string[];
   readonly dailyUpstreamCap: number;
+  /**
+   * Of `dailyUpstreamCap`, the requests replaces may send in one day;
+   * {@link defaultReplaceCap} when absent.
+   */
+  readonly dailyReplaceCap?: number;
   readonly attemptTimeoutMs?: number;
   readonly wallLimitMs?: number;
 }
@@ -97,6 +125,8 @@ export interface FillOutcome {
     | "fresh"
     | "backoff"
     | "cap"
+    /** A replace within {@link REPLACE_MIN_GAP_MS} of the cell's last one. */
+    | "too-soon"
     | "failed"
     | "kept-newer"
     | "missing";
@@ -220,9 +250,16 @@ async function precheck(
   if (failure !== undefined && failure.retryAt > now) {
     return { outcome: "backoff" };
   }
+  if (message.kind === "replace") {
+    const last = await readLastReplace(deps.bucket, message.cell);
+    if (last !== undefined && now - last < REPLACE_MIN_GAP_MS) {
+      return { outcome: "too-soon" };
+    }
+  }
   const daily = await readDaily(deps.bucket, now);
-  if (daily.upstreamRequests >= deps.dailyUpstreamCap)
+  if (budgetSpent(daily, deps, message.kind === "replace")) {
     return { outcome: "cap" };
+  }
   return existingBase === undefined ? {} : { existingBase };
 }
 
@@ -289,12 +326,13 @@ async function attemptOnce(
 /**
  * The operators in turn, never in parallel. Each request is counted in the
  * daily state BEFORE it is sent, so a fill the runtime kills mid-way still
- * counts against the cap.
+ * counts against the cap; a replace's request counts in its share too.
  */
 async function fetchFromOperators(
   cell: string,
   deps: FillDeps,
   started: number,
+  replace: boolean,
 ): Promise<{ attempts: FillAttempt[]; fetched?: Fetched }> {
   const query = buildTileQuery(
     cellToBoundingBox(cell),
@@ -310,10 +348,11 @@ async function fetchFromOperators(
     const now = deps.now();
     if (now - started + attemptMs > limit) break;
     const daily = await readDaily(deps.bucket, now);
-    if (daily.upstreamRequests >= deps.dailyUpstreamCap) break;
+    if (budgetSpent(daily, deps, replace)) break;
     await writeDaily(deps.bucket, now, {
       ...daily,
       upstreamRequests: daily.upstreamRequests + 1,
+      replaceRequests: daily.replaceRequests + (replace ? 1 : 0),
     });
     const { attempt, fetched } = await attemptOnce(endpoint, query, deps);
     attempts.push(attempt);
@@ -380,17 +419,23 @@ export async function fillTile(
   // the runtime can kill a fill mid-way (CPU or wall limit), the queue does
   // not retry it, and only a record written up front turns that kill into
   // backoff instead of a fresh download on the next request.
-  // A replace counts as a bad tile up front: its backoff (1 h, doubling, up
-  // to 7 days) holds after a success too, so reports of one cell cannot
-  // turn into a refetch loop.
+  // A replace is bounded by its own gap and budget share, not by the bad
+  // count: a report is no evidence the tile is bad, so it must not lengthen
+  // the backoff a genuine bad tile of the cell earns later. The gap is
+  // written up front, so a replace the runtime kills still counts.
   const replace = message.kind === "replace";
-  const pending = replace
-    ? await recordBadTile(deps.bucket, message.cell, started, "replace")
-    : await recordFailure(deps.bucket, message.cell, started, "unfinished");
+  if (replace) await writeLastReplace(deps.bucket, message.cell, started);
+  const pending = await recordFailure(
+    deps.bucket,
+    message.cell,
+    started,
+    "unfinished",
+  );
   const { attempts, fetched } = await fetchFromOperators(
     message.cell,
     deps,
     started,
+    replace,
   );
   if (fetched === undefined) {
     const reason = attempts.at(-1)?.result ?? "cap";
@@ -418,8 +463,8 @@ export async function fillTile(
   }
   await store(message.cell, fetched, deps);
   const storedBytes = fetched.bytes.length;
+  await clearFailure(deps.bucket, message.cell);
   if (replace) await clearVerified(deps.bucket, message.cell);
-  else await clearFailure(deps.bucket, message.cell);
   await bumpDaily(deps, (d) => ({
     ...d,
     fills: d.fills + 1,

@@ -82,29 +82,59 @@ tiles (below).
        `503 {status:"busy"}`, `Retry-After: 60`, nothing sent, so forged
        reports spread over many cells cannot fill the serial queue in
        front of the fills;
-    9. otherwise the verifying marker (with the ETag), then a `verify`
-       message to the serial queue: `202 {status:"checking"}`; a queue
-       failure removes the marker again and is `503 {status:"unavailable"}`.
-       The consumer clears the marker when the verify ends; a marker older
-       than 15 minutes (a lost or killed run) no longer counts.
+    9. one token of the limiter budget all reports share, key
+       `report:all` (the binding's rate, 20 per 60 s per location), else
+       `429`, `Retry-After: 60`, nothing sent. It is taken right before
+       each of the two queue sends (this verify and the replace below)
+       and nowhere else, so repeats that queue nothing (`checking`,
+       `backoff`, an already pending replace) and junk reports cannot
+       drain it for the real ones. The cost of that: a junk report naming
+       the current ETag runs a few storage reads and one list (steps 3-8)
+       before any shared bound, though no Queues operation; the per-IP
+       limit bounds it;
+    10. otherwise the verifying marker (with the ETag), then a `verify`
+        message to the serial queue: `202 {status:"checking"}`; a queue
+        failure removes the marker again and is `503 {status:"unavailable"}`.
+        The consumer clears the marker when the verify ends; a marker older
+        than 15 minutes (a lost or killed run) no longer counts.
 
-    The refetch (`replace`) is bounded like a fill: the cell's failure
-    backoff `503 {status:"backoff"}`; the cell already pending
-    `202 {status:"replacing"}` without a second message; the day's upstream
-    cap `503 {status:"cap"}`; a full backlog `503 {status:"busy"}`;
-    otherwise a pending marker and a `replace` message,
-    `202 {status:"replacing"}`. The consumer counts it as a bad tile, so
-    the cell's backoff grows with every replace and survives its success,
+    The refetch (`replace`) is bounded like a fill and further: the
+    cell's failure backoff `503 {status:"backoff"}`; a replace of the cell
+    less than 24 h ago (`REPLACE_MIN_GAP_MS`) `503 {status:"backoff"}`
+    with `Retry-After` naming the rest of the gap; the cell already
+    pending `202 {status:"replacing"}` without a second message; the
+    day's upstream cap, or its replace share (`DAILY_REPLACE_CAP`, a
+    third of the upstream cap by default), `503 {status:"cap"}`; a full
+    backlog `503 {status:"busy"}`; the shared `report:all` token (step
+    9), else `429`; otherwise a pending marker and a
+    `replace` message, `202 {status:"replacing"}`. A replace does not
+    raise the cell's bad count (a report is no evidence the tile is bad),
     and it never deletes: the old file serves until the new one is
     stored.
+
+    **The per-cell bounds are sequential, not atomic.** The memo, the
+    verifying marker, the backlog count and the pending marker are each
+    read, then written: two reports of one cell arriving together can both
+    pass and send two messages. The serial consumer makes the second one
+    cheap (a memo hit, a `stale` or a `too-soon`), and the shared
+    `report:all` budget bounds how many such races a burst can start.
     **A report never deletes anything itself.** The consumer verifies the
     stored bytes (`verify-tile.ts`) and deletes only a bad tile. Deleting on
     report would let any script with a forged `Origin` delete every stored
     tile for one request each, and each refill costs the volunteer
     operators; counting reports from distinct IPs is defeated by cheap IP
     rotation. A verify costs Worker CPU only, never an upstream request,
-    and is bounded by the per-IP limit and the daily cap; a good tile
-    survives any number of reports.
+    and is bounded by the per-IP limit and the daily cap. A report the
+    verify cannot settle does cost an upstream request (the replace), at
+    most one per cell per day and within the replace share. A good tile is
+    never deleted on a report, however many arrive; at worst it is
+    refetched once a day.
+    **A report answered `429` is not retried.** The client marks a tile
+    reported before it sends the report, once per tile per session, so a
+    wave of distinct bad tiles that exceeds the per-IP or the shared
+    budget loses the reports past it for that session. That is
+    deliberate: the client's direct race keeps every such tile usable,
+    and a retry would only add load to a host that is already limiting.
 
   - `GET /` - what the service is (its paths built from the schema version,
     as the routes are), the ODbL notice naming the OpenStreetMap
@@ -115,8 +145,10 @@ tiles (below).
 - `rateLimitKey(ip)` - the limiter key above; an address it cannot read
   is kept as it came, never folded into a shared key.
 - `isAllowedFillOrigin(origin)`; `dailyUpstreamCap(env)` (the
-  `DAILY_UPSTREAM_CAP` var, 300 when unset or invalid); `dailyVerifyCap(env)`
-  (the `DAILY_VERIFY_CAP` var, 50 when unset or invalid).
+  `DAILY_UPSTREAM_CAP` var, 300 when unset or invalid); `dailyReplaceCap(env)`
+  (the `DAILY_REPLACE_CAP` var, a third of the upstream cap when unset or
+  invalid); `dailyVerifyCap(env)` (the `DAILY_VERIFY_CAP` var, 50 when
+  unset or invalid).
 
 ## Invariants & assumptions
 
@@ -175,7 +207,10 @@ object and nothing deleted, a weak ETag matched, stale, missing, verified,
 cap, every guard (its own limiter key), the preflight, a queue outage
 (its marker removed), a good memo answered with a replace (and an old one
 verified again), a `started` memo answered checking or, once old, with a
-replace, the replace's bounds, one message per open verify of an object, a stale
+replace, the replace's bounds, the shared `report:all` token taken by a queued
+verify and a queued replace only (never by an open or running verify's
+repeat, a replace in either backoff or already pending, and a spent
+budget sending nothing), one message per open verify of an object, a stale
 marker sending again, the open-verify bound, and
 a property that no sequence of reports, run through the real verify and
 refetch steps over days with the upstream up or down, removes a good

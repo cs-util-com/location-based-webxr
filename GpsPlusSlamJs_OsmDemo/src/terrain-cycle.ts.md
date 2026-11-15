@@ -74,10 +74,12 @@ Related: `latest-only.ts.md` (the coalescing contract), `refresh-cycle.ts.md` (t
 `terrainUpgrade` RPC.
 
 **Why the page has to ask at all.** The preferred DEM settles after the
-`terrain` reply was built, and the worker protocol is strictly request/reply
-keyed on `id` — `isWorkerReply` rejects anything without an `id`/`ok` pair,
-so there is no unsolicited worker-to-page channel to announce the upgrade on.
-Adding a push envelope would be real protocol surface for one boolean. Instead
+`terrain` reply was built, and the worker protocol delivers results as replies
+keyed on `id` — `isWorkerReply` rejects anything without an `id`/`ok` pair.
+Its one unsolicited worker-to-page message, `WorkerNotice`, carries live wait
+state only (a download starting mid-call) and settles nothing, so it is not a
+channel for a result the page must apply. Widening it for the upgrade would be
+real protocol surface for one boolean. Instead
 the reply carries `upgradePending`, and the page asks.
 
 **If that trigger is ever lost, nothing else fails.** The map still shows

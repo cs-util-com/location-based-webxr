@@ -17,9 +17,14 @@ and the home of every item of the plan's §5.3 network discipline.
   never gives up on a download the race would still wait for.
 - `DEFAULT_OVERPASS_ENDPOINTS`.
 - `PermanentOverpassError`.
-- `isPartialOverpassAnswer(payload)` - whether a decoded answer carries a
-  top-level `remark` (Overpass's mark of a partial answer); the static tile
-  source's check of a stored file uses it too.
+- `partialOverpassRemark(payload)` - the top-level `remark` of a partial
+  answer (Overpass's mark of one) as one line of at most 200 characters
+  (whitespace runs collapsed, an ellipsis past the bound), or `undefined`
+  when the answer is not partial. An empty or whitespace remark counts as
+  none; any other remark, a string or not, marks the answer partial (fail
+  closed). The static tile source's check of a stored file uses it too.
+- `isPartialOverpassAnswer(payload)` - `partialOverpassRemark(payload)`
+  is defined.
 - `stats` — `{ requests, retries, deduplicated }`, for the demo app's
   "how many queries did this session make?" measurement the plan asks for.
 
@@ -143,7 +148,9 @@ and the home of every item of the plan's §5.3 network discipline.
 - **A partial answer is a failed attempt.** Overpass reports a timeout or a
   memory abort inside a 200, as a top-level `remark` next to a cut
   `elements` array; it parses, so `toResult` refuses it by
-  `isPartialOverpassAnswer` and the next operator is tried. The operator
+  `partialOverpassRemark`, names the bounded remark in the attempt's error
+  (so in the attempt log and the final failure), and the next operator is
+  tried. The operator
   that gives up early answers first, so without this a race would return,
   and the cache would keep, a partial tile.
 - **Everything injectable is injected** — `fetch`, `now`, `monotonicNow`,
@@ -166,9 +173,13 @@ exact request shape and headers, provenance, dedup (including release after
 success and after failure), bounded concurrency, retry on each retryable status
 with endpoint rotation, no-retry on 400, `Retry-After` in both forms, jittered
 fallback, give-up reporting, transport-level throws, HTML-in-a-200, a
-partial answer (`remark`) retried and never returned, and
+partial answer (`remark`) retried and never returned, its remark named on
+one bounded line, an empty or whitespace remark taken as complete, and
 `AbortSignal` before and during a retry wait. `overpass-race.test.ts` also
 shows a fast partial answer losing the race to a slower complete one.
+`overpass-remark.property.test.ts`: for any string remark, refused exactly
+when it has content and named on one bounded line; a remark of any other
+type refused; an answer without one passed.
 
 **The backoff-duration tests pin the pool to ONE entry, and that is load-bearing
 rather than incidental.** Since 2026-08-19 the client sleeps only when the next

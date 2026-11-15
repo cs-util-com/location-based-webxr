@@ -37,6 +37,9 @@ simple = { limit = 20, period = 60 }
 [vars]
 # Upstream Overpass requests one UTC day may spend, all fills together.
 DAILY_UPSTREAM_CAP = "300"
+# Of that budget, the requests replaces of reported tiles may send, so
+# reports cannot spend what fills need (a third when unset).
+DAILY_REPLACE_CAP = "100"
 # Queued or running fills at which the fill endpoint answers busy at once.
 MAX_PENDING_FILLS = "4"
 # Verifies of reported tiles one UTC day may run (CPU only, no upstream).

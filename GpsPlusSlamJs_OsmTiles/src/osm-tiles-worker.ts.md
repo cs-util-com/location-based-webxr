@@ -21,8 +21,10 @@ verifies tiles.
     `verifyTile` with the `DAILY_VERIFY_CAP` var instead, logs one
     `{verify: ...}` line, and neither marks nor clears the pending marker
     (a fill of the same cell may be queued behind it). It sweeps the stale
-    verifying markers first and clears its own when it ends, also when
-    it threw.
+    verifying markers first and, when it ends (also when it threw),
+    clears the cell's marker only if it names this message's ETag: a
+    report of a newer object may have written its own meanwhile. Fills
+    get the `DAILY_REPLACE_CAP` var as the replace share.
 - `QueueBatch` - the minimal batch shape.
 
 ## Invariants & assumptions
@@ -40,5 +42,6 @@ verifies tiles.
 acked, a throwing fill logged and acked, the marker cleared after a fill
 that threw, the running mark plus the sweep of a killed run's marker, and a
 verify message deleting a bad tile without touching the cell's marker,
-a verify clearing its verifying marker and sweeping a stale one, and a
-replace message run as a fill of its cell.
+a verify clearing its verifying marker and sweeping a stale one, a verify
+leaving a marker that names another object, a replace message run as a
+fill of its cell, and `DAILY_REPLACE_CAP` reaching the replace.

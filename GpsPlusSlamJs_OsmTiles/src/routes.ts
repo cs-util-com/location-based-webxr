@@ -19,13 +19,15 @@ import {
   msUntilNextUtcDay,
   readDaily,
   readFailure,
+  readLastReplace,
+  REPLACE_MIN_GAP_MS,
   PENDING_STALE_MS,
   readVerified,
   readVerifying,
   type PendingFill,
   VERIFIED_TTL_MS,
 } from "./fill-state";
-import { REFRESH_AGE_MS } from "./fill-tile";
+import { defaultReplaceCap, REFRESH_AGE_MS } from "./fill-tile";
 import {
   FILL_PREFIX,
   parseTileCell,
@@ -49,6 +51,15 @@ const DEFAULT_DAILY_UPSTREAM_CAP = 300;
  * inflate leans on the Free plan's burst budget, so the day is bounded.
  */
 const DEFAULT_DAILY_VERIFY_CAP = 50;
+
+/**
+ * The limiter key every report shares besides its per-IP one. The per-cell
+ * bounds below are check-then-act, so a burst of reports from many
+ * addresses can pass them all before any marker exists; this one budget
+ * (the limiter binding's rate, per location) bounds what such a burst can
+ * queue.
+ */
+const ALL_REPORTS_KEY = "report:all";
 
 /** Seconds a client should wait before looking for a queued tile. */
 const FILL_RETRY_AFTER_S = 15;
@@ -172,6 +183,17 @@ function nonNegativeInt(raw: string | undefined, fallback: number): number {
 
 export function dailyUpstreamCap(env: OsmTilesEnv): number {
   return nonNegativeInt(env.DAILY_UPSTREAM_CAP, DEFAULT_DAILY_UPSTREAM_CAP);
+}
+
+/**
+ * Of the day's upstream budget, the requests replaces may send: the var, or
+ * a third of the upstream cap when it is unset or invalid.
+ */
+export function dailyReplaceCap(env: OsmTilesEnv): number {
+  return nonNegativeInt(
+    env.DAILY_REPLACE_CAP,
+    defaultReplaceCap(dailyUpstreamCap(env)),
+  );
 }
 
 export function dailyVerifyCap(env: OsmTilesEnv): number {
@@ -447,10 +469,13 @@ async function handleFill(
 
 /**
  * A viewer found the stored tile bad (not JSON, no elements, a remark).
- * The report only ever queues a verify of the object it names; the serial
- * consumer judges the stored bytes and deletes only a bad tile, so a forged
- * report can cost CPU (bounded per IP and per day) but never a good tile
- * or an upstream request.
+ * The report queues a verify of the object it names, and the serial
+ * consumer deletes only a tile whose stored bytes are bad. A report of an
+ * object the verify cannot settle (judged good recently, or a verify that
+ * did not finish) queues a replace instead: an upstream refetch, bounded
+ * per cell by a 24 h gap and per day by the replace share of the upstream
+ * budget. So a forged report can cost CPU and, within those bounds,
+ * upstream requests, but it never deletes a good tile.
  */
 async function handleReport(
   request: Request,
@@ -498,6 +523,8 @@ async function handleReport(
   if (backlog.filter((m) => m.cell !== cell).length >= MAX_OPEN_VERIFIES) {
     return fillAnswer(503, { status: "busy" }, origin, BUSY_RETRY_AFTER_S);
   }
+  const spent = await reportBudgetSpent(origin, deps);
+  if (spent !== undefined) return spent;
   return (await enqueueVerify(cell, existing.httpEtag, now, deps))
     ? checking
     : unavailable(origin);
@@ -505,10 +532,11 @@ async function handleReport(
 
 /**
  * A refetch of a reported tile the verify cannot judge bad, bounded like a
- * fill: the cell's backoff (a replace counts as a bad tile, so its backoff
- * grows with every replace), one message per cell, the day's upstream cap
- * and the backlog. It never deletes: the old file serves until the new one
- * is stored.
+ * fill and further: the cell's backoff, at most one replace of a cell per
+ * 24 h (a replace leaves the bad count alone, as a report is no evidence),
+ * one message per cell, the day's upstream cap and its replace share, and
+ * the backlog. It never deletes: the old file serves until the new one is
+ * stored.
  */
 async function answerReplace(
   cell: string,
@@ -521,19 +549,45 @@ async function answerReplace(
     const wait = Math.ceil((failure.retryAt - now) / 1000);
     return fillAnswer(503, { status: "backoff" }, origin, wait);
   }
+  const last = await readLastReplace(deps.env.TILES, cell);
+  if (last !== undefined && now - last < REPLACE_MIN_GAP_MS) {
+    const wait = Math.ceil((last + REPLACE_MIN_GAP_MS - now) / 1000);
+    return fillAnswer(503, { status: "backoff" }, origin, wait);
+  }
   const replacing = fillAnswer(202, { status: "replacing" }, origin);
   const pending = await listPending(deps.env.TILES, now);
   if (pending.some((p) => p.cell === cell)) return replacing;
   const daily = await readDaily(deps.env.TILES, now);
-  if (daily.upstreamRequests >= dailyUpstreamCap(deps.env)) {
+  if (
+    daily.upstreamRequests >= dailyUpstreamCap(deps.env) ||
+    daily.replaceRequests >= dailyReplaceCap(deps.env)
+  ) {
     const wait = Math.ceil(msUntilNextUtcDay(now) / 1000);
     return fillAnswer(503, { status: "cap" }, origin, wait);
   }
   if (pending.length >= maxPendingFills(deps.env)) {
     return fillAnswer(503, { status: "busy" }, origin, BUSY_RETRY_AFTER_S);
   }
+  const spent = await reportBudgetSpent(origin, deps);
+  if (spent !== undefined) return spent;
   const message = { cell, kind: "replace", at: now } as const;
   return (await enqueue(message, deps)) ? replacing : unavailable(origin);
+}
+
+/**
+ * Takes a token of the budget all reports share (`report:all`), right
+ * before a report's queue send: a `429` to answer when it is spent, else
+ * undefined. Only a report that queues work draws on it, so repeats that
+ * queue nothing (a verify already open, a cell in backoff) and junk
+ * reports cannot spend it for the real ones.
+ */
+async function reportBudgetSpent(
+  origin: string,
+  deps: RouteDeps,
+): Promise<Response | undefined> {
+  const all = await deps.env.FILL_LIMITER?.limit({ key: ALL_REPORTS_KEY });
+  if (all === undefined || all.success) return undefined;
+  return fillAnswer(429, { status: "limited" }, origin, LIMIT_RETRY_AFTER_S);
 }
 
 /** Marks the verify open and sends it; false (marker removed) on failure. */

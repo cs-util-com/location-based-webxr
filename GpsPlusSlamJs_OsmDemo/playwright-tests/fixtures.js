@@ -1159,6 +1159,11 @@ export async function captureUiBaseline(page) {
  *   failing afterwards.
  * - **Cells OFF.** The in-progress test exists to watch the cell FETCH happen,
  *   which cannot be observed on a page where the cells are already held.
+ * - **The user's position.** A walk (`walkByMapClick`) moves the user, and
+ *   the terrain window with them, and no control puts them back where the
+ *   boot left them. So a test that walks lets its walk settle before it ends
+ *   (`waitForRefresh`, then the status line without `is-loading`), and the
+ *   next test starts from a finished refresh at the place the walk reached.
  *
  * The geo-event marker USED to be on that list — "there is no control that
  * removes it" (#271 review). W6 added one, so it is reset below like anything

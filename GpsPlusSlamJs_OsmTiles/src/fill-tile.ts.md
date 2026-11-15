@@ -20,18 +20,28 @@ Worker (CPU). The fill writes no list of stored tiles; there is none
   - `failed` - every attempt failed; the failure record names the last
     attempt's reason;
   - `kept-newer` - the answer's data is not newer than the stored tile's;
-  - `missing` - a `replace` for a cell with no stored tile; no request.
+  - `missing` - a `replace` for a cell with no stored tile; no request;
+  - `too-soon` - a `replace` within 24 h of the cell's last one; no
+    request.
 - A `replace` message (a reported tile the verify cannot judge bad)
   refetches a stored tile whatever its age and stores the answer even when
-  its data is not newer. It counts as a bad tile up front
-  (`recordBadTile`: `badCount` + 1, backoff 1 h doubling to 7 days) and a
-  success does not clear that record, so the backoff holds and reports of
-  one cell cannot become a refetch loop. A success clears the cell's
-  verified memo; a failure keeps the stored tile (a replace never deletes)
-  and names the reason. Backoff and the daily cap apply as to any fill.
+  its data is not newer. It does not raise the cell's bad count: a report
+  is no evidence the tile is bad, and a forged one must not lengthen the
+  backoff a genuinely bad tile of the cell earns later. It is bounded
+  instead by a per-cell gap (`REPLACE_MIN_GAP_MS`, 24 h; within it the
+  outcome is `too-soon` and nothing is sent), written up front so a
+  killed replace still counts, and by its share of the day's upstream
+  budget (`dailyReplaceCap`, a third of `dailyUpstreamCap` by default):
+  each replace request counts in `upstreamRequests` and in
+  `replaceRequests`, and a spent share stops a replace (`cap`, also
+  mid-way) while ordinary fills still run. The failure record is written
+  up front as for any fill. A success clears it and the cell's verified
+  memo; a failure keeps the stored tile (a replace never deletes) and
+  names the reason.
 - `FillDeps` - `bucket`, `fetchImpl`, `now`, `userAgent`, `endpoints`,
-  `dailyUpstreamCap`, optional `attemptTimeoutMs` (200 s), `wallLimitMs`
-  (14 min).
+  `dailyUpstreamCap`, optional `dailyReplaceCap` (default
+  `defaultReplaceCap(dailyUpstreamCap)`, a third), `attemptTimeoutMs`
+  (200 s), `wallLimitMs` (14 min).
 - `FillOutcome` - the outcome above with its attempts and sizes; one JSON
   log line per fill.
 - `REFRESH_AGE_MS` (30 days) - also read by the fill endpoint.
@@ -65,7 +75,12 @@ Worker (CPU). The fill writes no list of stored tiles; there is none
   - No encoding (or `identity`): the full head and tail check
     (`checkOverpassBody`), stored raw (`storedAs: raw`, `checked: full`,
     `rawBytes`); the edge compresses it per client when served. Longer
-    than `MAX_TILE_DECODED_BYTES`: `too-large`.
+    than `MAX_TILE_DECODED_BYTES`: `too-large`. That check cannot fire
+    in practice: the body is buffered whole before it, and an isolate has
+    128 MB of memory, so an uncompressed answer anywhere near 150 MiB
+    ends the invocation first (the fill is then a killed run, backed off
+    by its record written up front). Operators answer gzip when asked, so
+    a raw answer of that size is not expected.
   - A `gzip` label on bytes without the magic that start with `{` (a hop
     decoded the body and kept the header): treated as raw, with the full
     check, and stored raw.
@@ -123,6 +138,8 @@ the first attempt (a killed fill backs off), the reason named without a
 second count, no attempt started past the wall limit, a future data
 timestamp refused, the cap stopping mid-fill, the attempt timeout,
 kept-newer, a refresh replacing an older tile, and the replace: stored
-when not newer with the memo forgotten, its bad-tile backoff growing and
-surviving the success, a failed refetch keeping the tile, nothing for a
-missing tile, the daily cap.
+when not newer with the memo forgotten, the bad count left alone, a second
+replace within 24 h sending nothing, its share of the budget (counted in
+both counters, a third by default, stopping mid-way while a fill still
+runs), a failed refetch keeping the tile, nothing for a missing tile, the
+daily cap.

@@ -166,6 +166,11 @@ entirely after confirming they were only transitively pulled in.
       check was never the thing protecting this link; the runtime failure is.
     - **It is an exact-string ignore, not a glob** — a second such import would
       fail the gate and have to be added deliberately, which is the point.
+    - **`/src/sun-clock.ts` is the second one, added on purpose**: the daylight
+      heat-ramp e2e (`playwright-tests/scene-3d.spec.js`) asks the page's own
+      sun clock which slider step lands on each pinned sun time, so the spec
+      never re-implements the slider's mapping. Same argument: a rename makes
+      the import 404 and that test throws.
     - Found by the once-per-session root cascade, NOT by the per-commit gate:
       `test:changed` never runs knip, and neither does any package's own
       `pnpm test`. `check:deadcode` exists only as a root stage, which is why

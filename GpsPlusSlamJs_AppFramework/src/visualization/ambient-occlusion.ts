@@ -380,6 +380,11 @@ export function createAmbientOcclusion(
     try {
       shadows.autoUpdate = false;
       shadows.needsUpdate = false;
+      // NULL BUFFERS, AN ASSUMPTION ABOUT three.js: with `output` at
+      // `OUTPUT.Off` the pass draws only into its own normal, AO and denoise
+      // targets and never reads the write or read buffer it is handed. A
+      // three.js update that starts reading them there throws on the first AO
+      // frame, an uncaught page error the browser e2e fails on loudly.
       pass.render(
         renderer,
         null as unknown as THREE.WebGLRenderTarget,

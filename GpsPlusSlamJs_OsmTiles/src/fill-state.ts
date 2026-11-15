@@ -26,6 +26,11 @@ export interface DailyState {
   readonly storedBytes: number;
   /** Verifies of reported tiles run today. */
   readonly verifies: number;
+  /**
+   * Of `upstreamRequests`, those a replace sent: a replace has its own
+   * share of the day's budget, so reports cannot spend what fills need.
+   */
+  readonly replaceRequests: number;
 }
 
 export interface FailureRecord {
@@ -48,6 +53,7 @@ const EMPTY_DAY: DailyState = Object.freeze({
   rawBytes: 0,
   storedBytes: 0,
   verifies: 0,
+  replaceRequests: 0,
 });
 
 const HOUR_MS = 3_600_000;
@@ -57,6 +63,13 @@ const MAX_BACKOFF_MS = 7 * DAY_MS;
 const PENDING_PREFIX = "state/pending/";
 const VERIFIED_PREFIX = "state/verified/";
 const VERIFYING_PREFIX = "state/verifying/";
+const REPLACED_PREFIX = "state/replaced/";
+
+/**
+ * The least time between two replaces of one cell: a replace costs the
+ * operators a request, and anyone can cause one with a report.
+ */
+export const REPLACE_MIN_GAP_MS = DAY_MS;
 
 /**
  * A marker older than this no longer counts: a consumer invocation has 15
@@ -132,6 +145,7 @@ export async function readDaily(
     rawBytes: count(raw["rawBytes"]),
     storedBytes: count(raw["storedBytes"]),
     verifies: count(raw["verifies"]),
+    replaceRequests: count(raw["replaceRequests"]),
   };
 }
 
@@ -233,6 +247,26 @@ export async function clearFailure(
     retryAt: 0,
     reason: previous.reason,
     badCount: previous.badCount,
+  });
+}
+
+/** Epoch ms of the cell's last replace, if one is on record. */
+export async function readLastReplace(
+  bucket: TileBucket,
+  cell: string,
+): Promise<number | undefined> {
+  const head = await bucket.head(`${REPLACED_PREFIX}${cell}`);
+  const at = Number(head?.customMetadata?.["at"]);
+  return head === null || !Number.isFinite(at) ? undefined : at;
+}
+
+export async function writeLastReplace(
+  bucket: TileBucket,
+  cell: string,
+  at: number,
+): Promise<void> {
+  await bucket.put(`${REPLACED_PREFIX}${cell}`, "", {
+    customMetadata: { at: String(at) },
   });
 }
 
@@ -426,6 +460,24 @@ export async function clearVerifying(
   cell: string,
 ): Promise<void> {
   await bucket.delete(`${VERIFYING_PREFIX}${cell}`);
+}
+
+/**
+ * Clears the cell's verifying marker only when it names the object `etag`.
+ * A verify of an object already replaced can end after a report of the new
+ * object wrote its own marker; that marker must stay, or each further
+ * report of the new object would queue another verify.
+ */
+export async function clearVerifyingIf(
+  bucket: TileBucket,
+  cell: string,
+  etag: string,
+): Promise<void> {
+  const head = await bucket.head(`${VERIFYING_PREFIX}${cell}`);
+  if (head === null) return;
+  if (markerOf(head, VERIFYING_PREFIX).etag === etag) {
+    await clearVerifying(bucket, cell);
+  }
 }
 
 /** The open verifies younger than the stale age: the report backlog. */

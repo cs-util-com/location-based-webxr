@@ -48,7 +48,9 @@
  * `woods-readout.ts`; no app control changes them). `tiles=off` switches
  * the static tile host off for the session, so the tiles come straight from
  * the Overpass race (see {@link staticTilesEnabled}, read in `main.ts`; any
- * other value, or none, leaves the host on). `date` and `time` pin the sun
+ * other value, or none, leaves the host on). `damping=off` boots the 3D
+ * camera without its easing after a drag (see {@link cameraDampingEnabled},
+ * read in `main.ts`). `date` and `time` pin the sun
  * (see {@link sunPinnedHref}). No writer sets or clears any of these keys;
  * each writer keeps them like every key it does not own.
  *

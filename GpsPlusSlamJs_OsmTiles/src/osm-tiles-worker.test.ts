@@ -112,6 +112,46 @@ describe("the worker entry", () => {
     ).toEqual([]);
   });
 
+  it("leaves a verifying marker that names another object (a newer report)", async () => {
+    // Why: a verify of an object already replaced ends after a report of
+    // the new object wrote the cell's marker; clearing that marker would let
+    // every further report of the new object queue another verify.
+    const bucket = new FakeBucket();
+    const key = tileObjectKey(CELL);
+    await bucket.put(key, "{}", { customMetadata: { storedAs: "raw" } });
+    const current = (await bucket.head(key))!.httpEtag;
+    await markVerifying(bucket, CELL, current, Date.now());
+    const env = { TILES: bucket, FILL_QUEUE: new FakeQueue() };
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const { batch: b } = batch([
+      { cell: CELL, kind: "verify", at: 1, etag: '"replaced-object"' },
+    ]);
+    await worker.queue(b, env);
+    log.mockRestore();
+    expect(bucket.objects.has(`state/verifying/${CELL}`)).toBe(true);
+  });
+
+  it("runs a replace under the DAILY_REPLACE_CAP var", async () => {
+    const bucket = new FakeBucket();
+    await bucket.put(tileObjectKey(CELL), "old", {
+      customMetadata: { osmBase: "2026-11-11T09:00:00Z" },
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("busy", { status: 504 }));
+    const env = {
+      TILES: bucket,
+      FILL_QUEUE: new FakeQueue(),
+      DAILY_REPLACE_CAP: "0",
+    };
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const { batch: b } = batch([{ cell: CELL, kind: "replace", at: 1 }]);
+    await worker.queue(b, env);
+    log.mockRestore();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
   it("runs a replace message as a fill of its cell: refetched, marker cleared", async () => {
     // Why: a replace is how a reported tile the verify cannot judge bad is
     // put right; dropped as an unknown kind, every such report would be
