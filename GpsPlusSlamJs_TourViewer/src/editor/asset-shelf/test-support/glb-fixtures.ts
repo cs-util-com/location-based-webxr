@@ -390,19 +390,30 @@ export function bendTube(
  * 0). Synthetic: two bones, one clip, a smooth
  * cylinder; a real character has many bones, several clips and weights
  * over four joints.
+ *
+ * With `units: "cm"` the tube is stored in centimetres under a root bone
+ * scaled by 0.01, as many character exports are: posed, it stands as
+ * large as the metre tube. With `door`, a clip moves a node no skin
+ * reads (a door beside the character).
  */
 export async function bendingTube(options: {
   readonly clip: boolean;
   readonly degrees?: readonly number[];
   readonly interpolation?: "LINEAR" | "STEP" | "CUBICSPLINE";
+  readonly units?: "m" | "cm";
+  readonly door?: boolean;
 }): Promise<Uint8Array> {
   const doc = new Document();
   doc.createBuffer();
   const scene = doc.createScene();
   const spec = tubeSpec();
+  const unit = options.units === "cm" ? 100 : 1;
   const prim = doc
     .createPrimitive()
-    .setAttribute("POSITION", accessor(doc, "VEC3", spec.positions))
+    .setAttribute(
+      "POSITION",
+      accessor(doc, "VEC3", spec.positions.map((v) => v * unit)),
+    )
     .setAttribute("NORMAL", accessor(doc, "VEC3", spec.normals!))
     .setAttribute("TEXCOORD_0", accessor(doc, "VEC2", spec.texcoords!))
     .setIndices(accessor(doc, "SCALAR", spec.indices!))
@@ -417,12 +428,14 @@ export async function bendingTube(options: {
   }
   prim.setAttribute("JOINTS_0", accessor(doc, "VEC4", joints));
   prim.setAttribute("WEIGHTS_0", accessor(doc, "VEC4", weights));
-  const root = doc.createNode("root-bone");
-  const upper = doc.createNode("upper-bone").setTranslation([0, TUBE.bend, 0]);
+  const root = doc.createNode("root-bone").setScale([1 / unit, 1 / unit, 1 / unit]);
+  const upper = doc
+    .createNode("upper-bone")
+    .setTranslation([0, TUBE.bend * unit, 0]);
   root.addChild(upper);
   const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   const upperInverse = [...identity];
-  upperInverse[13] = -TUBE.bend;
+  upperInverse[13] = -TUBE.bend * unit;
   const skin = doc
     .createSkin()
     .addJoint(root)
@@ -440,6 +453,24 @@ export async function bendingTube(options: {
     .setMesh(doc.createMesh("tube").addPrimitive(prim))
     .setSkin(skin);
   scene.addChild(root).addChild(node);
+  if (options.door === true) {
+    const door = doc.createNode("door");
+    scene.addChild(door);
+    const sampler = doc
+      .createAnimationSampler()
+      .setInput(accessor(doc, "SCALAR", Float32Array.of(0, 1)))
+      .setOutput(accessor(doc, "VEC3", Float32Array.of(0, 0, 0, 1, 0, 0)));
+    doc
+      .createAnimation("open")
+      .addSampler(sampler)
+      .addChannel(
+        doc
+          .createAnimationChannel()
+          .setTargetNode(door)
+          .setTargetPath("translation")
+          .setSampler(sampler),
+      );
+  }
   if (options.clip) {
     const quarter = (deg: number) => {
       const h = (deg * Math.PI) / 360;

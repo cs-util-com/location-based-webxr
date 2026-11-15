@@ -62,7 +62,6 @@ describe("posesOf", () => {
   it("samples the rest and a clip at a third, two thirds and its end", async () => {
     const parts = partsOf(await bendingTube({ clip: true }));
     const poses = posesOf(parts)!;
-    expect(poses.fromClips).toBe(true);
     expect(poses.worlds).toHaveLength(4);
     const tube = tubeSpec().positions;
     [0, 30, 60, 90].forEach((degrees, k) => {
@@ -75,7 +74,6 @@ describe("posesOf", () => {
   // Why: without a clip there is only the rest pose to measure in.
   it("has the rest pose alone when the model has no clip", async () => {
     const poses = posesOf(partsOf(await bendingTube({ clip: false })))!;
-    expect(poses.fromClips).toBe(false);
     expect(poses.worlds).toHaveLength(1);
   });
 

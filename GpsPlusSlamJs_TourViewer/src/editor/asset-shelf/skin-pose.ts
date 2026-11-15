@@ -31,10 +31,9 @@ const CLIP_POSES = 3;
 const CLIP_SHARES = [1 / 3, 2 / 3, 1];
 
 export interface Poses {
-  /** Each pose's world matrix of every node; `worlds[0]` is the rest. */
+  /** Each pose's world matrix of every node; `worlds[0]` is the rest,
+   *  any further one a clip's. */
   readonly worlds: readonly (readonly Matrix[])[];
-  /** Whether any pose comes from a clip. */
-  readonly fromClips: boolean;
 }
 
 interface Trs {
@@ -287,7 +286,7 @@ export function posesOf(parts: GlbParts): Poses | null {
       ),
     );
   }
-  return { worlds, fromClips: worlds.length > 1 };
+  return { worlds };
 }
 
 /** Skin `skin`'s joint matrices in a pose (each joint's world matrix times

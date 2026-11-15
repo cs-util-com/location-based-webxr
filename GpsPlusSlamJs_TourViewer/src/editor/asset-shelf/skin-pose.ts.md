@@ -15,10 +15,11 @@ blend skinning, as glTF defines it.
   glTF and three.js use).
 - (internal) `CLIP_POSES = 3`: the most clip poses sampled, across all
   clips.
-- `interface Poses { worlds, fromClips }`
+- `interface Poses { worlds }`
   - `worlds[k][node]`: the world matrix of every node in pose `k`.
-    `worlds[0]` is the rest pose.
-  - `fromClips`: true when any pose came from a clip.
+    `worlds[0]` is the rest pose, any further one a clip's. Whether a
+    clip pose bends a given skin is the caller's question (`model-lod.ts`
+    keeps only the poses that move one of that skin's joints).
 - `posesOf(parts): Poses | null`
   - Reads the nodes, their transforms and the clips.
   - Each clip is sampled at a third, two thirds and its end. Of all those

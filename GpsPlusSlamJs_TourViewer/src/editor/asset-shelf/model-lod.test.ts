@@ -451,6 +451,43 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
     ).toBeLessThanOrEqual(Math.round(report.trianglesBefore * 0.2));
   });
 
+  // Why: a clip that moves no joint of a skin (a door beside a character)
+  // says nothing about how that skin bends, so the character is still
+  // measured at rest only and keeps at least half its triangles.
+  it("keeps at least half of a skinned model whose only clip moves no joint of its skin", async () => {
+    const parts = partsOf(await bendingTube({ clip: false, door: true }));
+    const report = simplifyModel(parts, TUBE_SETTINGS);
+    expect(report.primitives).toBe(1);
+    expect(report.trianglesAfter).toBeGreaterThanOrEqual(
+      Math.ceil(report.trianglesBefore * 0.5),
+    );
+  });
+
+  // Why: the shelf shows a deviation as a length, the deviation times the
+  // size. A skinned model stored in centimetres under a 0.01 armature
+  // stands in metres when posed, so its size is its rest pose's and every
+  // pose's deviation is a share of it: the centimetre tube then reads as
+  // the metre tube does, not a hundred times larger.
+  it("sizes a skinned model by its rest pose, whatever units its bind shape is stored in", async () => {
+    const settings = { ...TUBE_SETTINGS, detailShare: 0.3 };
+    const metres = simplifyModel(
+      partsOf(await bendingTube({ clip: true })),
+      settings,
+    );
+    const centimetres = simplifyModel(
+      partsOf(await bendingTube({ clip: true, units: "cm" })),
+      settings,
+    );
+    // the tube's box: 0.4 x 2 x 0.4 m
+    const tube = Math.hypot(0.4, 2, 0.4);
+    expect(metres.size).toBeCloseTo(tube, 2);
+    expect(centimetres.size).toBeCloseTo(tube, 2);
+    expect(centimetres.deviation).toBeGreaterThan(0);
+    expect(
+      Math.abs(centimetres.deviation - metres.deviation) / metres.deviation,
+    ).toBeLessThan(0.1);
+  });
+
   // Why: a clip that only moves a node moves the model rigidly, which does
   // not change its shape, so an animated model is given levels like a
   // still one.

@@ -53,6 +53,7 @@ import {
 import { otherReaders } from "./model-quantize.js";
 import {
   jointMatrices,
+  type Matrix,
   type Poses,
   posesOf,
   skinPositions,
@@ -161,24 +162,18 @@ function accessorUses(json: GltfObject): Map<number, number> {
   return uses;
 }
 
-/** One shape a primitive's levels are measured in. */
-interface Shape {
-  /** Positions, in input vertex order. */
-  readonly positions: Float32Array;
-  /** Its box diagonal. */
-  readonly diag: number;
-}
-
 interface Candidate {
   readonly prim: GltfObject;
   /** Accessor index by attribute name. */
   readonly attributes: ReadonlyMap<string, number>;
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
-  /** A skinned primitive's shape in each pose; empty for a still one,
-   *  which is measured as it is. */
-  readonly shapes: readonly Shape[];
-  /** Whether `shapes` holds a clip's pose. */
+  /** A skinned primitive's positions in each pose, in input vertex
+   *  order, the rest pose first; empty for a still one, which is
+   *  measured as it is. */
+  readonly shapes: readonly Float32Array[];
+  /** Whether `shapes` holds a clip's pose: one that moves a joint of
+   *  this primitive's skin. */
   readonly fromClips: boolean;
   /** Skin weights, 4 a vertex per set; none for a still primitive. */
   readonly weights: readonly Float64Array[];
@@ -242,9 +237,18 @@ function skinSetsOf(
   return sets.every(([j, w]) => vec4(j) && vec4(w)) ? sets : null;
 }
 
-/** A skinned primitive's shape in each pose, or null when it cannot be
- *  posed: no one skin binds its mesh, or the poses or the skin do not
- *  read, or a pose collapses it to a point. */
+/** Whether two poses' joint matrices are the same: a clip that moves
+ *  none of a skin's joints leaves its shape as it is at rest. */
+function samePose(a: readonly Matrix[], b: readonly Matrix[]): boolean {
+  return a.every((m, j) =>
+    m.every((v, k) => Math.abs(v - b[j]![k]!) <= 1e-9 * (1 + Math.abs(v))),
+  );
+}
+
+/** A skinned primitive's shape in the rest pose and in each clip pose
+ *  that moves one of its skin's joints, or null when it cannot be posed:
+ *  no one skin binds its mesh, the poses or the skin do not read, or the
+ *  rest pose collapses it to a point. */
 function posedShapes(
   parts: GlbParts,
   mesh: number,
@@ -258,17 +262,19 @@ function posedShapes(
   if (poses === null) return null;
   const joints = sets.map(([j]) => readAccessor(parts, j)!.values);
   const weights = sets.map(([, w]) => readAccessor(parts, w)!.values);
-  const shapes: Shape[] = [];
+  const shapes: Float32Array[] = [];
+  let rest: Matrix[] | null = null;
   for (const worlds of poses.worlds) {
     const matrices = jointMatrices(parts, skin, worlds);
     if (matrices === null) return null;
+    if (rest !== null && samePose(matrices, rest)) continue;
+    rest ??= matrices;
     const posed = skinPositions(positions, joints, weights, matrices);
-    if (posed === null) return null;
-    const diag = diagonalOf(posed);
-    if (!(diag > 0) || !Number.isFinite(diag)) return null;
-    shapes.push({ positions: posed, diag });
+    if (posed === null || !posed.every(Number.isFinite)) return null;
+    shapes.push(posed);
   }
-  return { shapes, fromClips: poses.fromClips, weights };
+  if (!(diagonalOf(shapes[0]!) > 0)) return null;
+  return { shapes, fromClips: shapes.length > 1, weights };
 }
 
 /** The primitive's attributes, when each is read by it alone and can be
@@ -360,7 +366,11 @@ interface Ordered {
   readonly prog: Progressive;
   /** Input vertex of each welded vertex. */
   readonly first: Uint32Array;
-  /** A level's largest deviation as a share of `prog.diag`. */
+  /** The size deviations are shares of: the box diagonal of the rest
+   *  shape (a skinned primitive's rest pose, in the units it is posed
+   *  in; a still one's positions). */
+  readonly size: number;
+  /** A level's largest deviation, in any shape, as a share of `size`. */
   readonly deviation: (steps: number, samples: number) => number;
 }
 
@@ -410,14 +420,13 @@ function order(parts: GlbParts, c: Candidate): Ordered {
   );
   const shapes =
     c.shapes.length === 0
-      ? [{ positions, diag: prog.diag }]
-      : c.shapes.map((s) => ({
-          positions: remapAttribute(s.positions, 3, weld),
-          diag: s.diag,
-        }));
-  const grids = shapes.map((s) => new SurfaceGrid(s.positions, weld.indices));
+      ? [positions]
+      : c.shapes.map((s) => remapAttribute(s, 3, weld));
+  // every pose against the rest pose's size: the size the shelf shows
+  // and the box the viewer picks a level by do not change with the pose
+  const size = c.shapes.length === 0 ? prog.diag : diagonalOf(shapes[0]!);
+  const grids = shapes.map((s) => new SurfaceGrid(s, weld.indices));
   const measured = new Map<string, number>();
-  // the largest deviation in any of the shapes, each against its own size
   const deviation = (steps: number, samples: number) => {
     if (steps <= 0) return 0;
     const key = `${steps}:${samples}`;
@@ -427,21 +436,15 @@ function order(parts: GlbParts, c: Candidate): Ordered {
       d = Math.max(
         ...shapes.map(
           (s, k) =>
-            surfaceDistance(
-              s.positions,
-              weld.indices,
-              s.positions,
-              level,
-              samples,
-              grids[k],
-            ).max / s.diag,
+            surfaceDistance(s, weld.indices, s, level, samples, grids[k]).max /
+            size,
         ),
       );
       measured.set(key, d);
     }
     return d;
   };
-  return { prog, first: weld.first, deviation };
+  return { prog, first: weld.first, size, deviation };
 }
 
 /** The last step that leaves a triangle: an open patch can collapse to
@@ -769,7 +772,7 @@ export function simplifyModel(
       trianglesBefore: report.trianglesBefore + c.indices.length / 3,
       trianglesAfter: report.trianglesAfter + lists[0]!.length / 3,
       deviation: Math.max(report.deviation, levels[0]!.error),
-      size: Math.max(report.size, o.prog.diag),
+      size: Math.max(report.size, o.size),
     };
     progress?.((i + 1) / candidates.length);
   });
