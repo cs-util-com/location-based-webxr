@@ -26,9 +26,11 @@
  *   most `spikeLimit` times the average and credits the verdicts at most
  *   `gapMs` of time, so a pair of hitches cannot make a verdict while a
  *   device at a second a frame still reads as slow as it is (a fresh
- *   average starts at the smaller of its first two counted frames, unlimited,
- *   so a long frame there is not the start the limit then defends). Each rung is judged by its own
- *   frames: at a step the average starts afresh, so a device with few
+ *   average starts unlimited at its first counted frame, and again at the
+ *   second when that is shorter: after a step any shorter one, at the
+ *   session's start only one `spikeLimit` times shorter, so a long frame
+ *   there is not the start the limit then defends, and a short one on a slow
+ *   device is not its baseline). Each rung is judged by its own frames: at a step the average starts afresh, so a device with few
  *   frames a verdict does not judge the new rung by the old one's, and the
  *   step's own frame (the woods re-sort their draw order) counts toward
  *   nothing;
@@ -132,10 +134,15 @@ export function createWoodsGovernor({
   let fresh = false;
   /**
    * The average was just started: a second counted frame shorter than the
-   * first starts it again, so a fresh average starts at the smaller of its
-   * first two frames and one long frame cannot be its start.
+   * first may start it again, so one long frame cannot be its start.
    */
   let seeding = false;
+  /**
+   * The average being seeded follows a step: there any shorter second frame
+   * reseeds it. At the session's start only a spike-sized drop does, so a
+   * short second frame on a slow device cannot become its baseline.
+   */
+  let seedStep = false;
   /**
    * A step was taken: the next interval is the step's own frame (the woods
    * re-sort their draw order), so it counts toward nothing.
@@ -206,12 +213,20 @@ export function createWoodsGovernor({
     return alone ? undefined : ms;
   };
 
+  /** Whether this second counted frame starts the fresh average again. */
+  const reseeds = (ms: number): boolean => {
+    if (!seeding || average === undefined) return false;
+    return seedStep ? ms < average : ms * G.spikeLimit < average;
+  };
+
   /**
    * One counted interval into the average; a new rung starts it afresh, at
-   * the smaller of its first two counted frames.
+   * the smaller of its first two counted frames, and the session at its
+   * second only when the first was a spike over it.
    */
   const smooth = (ms: number): number => {
-    const reseed = seeding && average !== undefined && ms < average;
+    const reseed = reseeds(ms);
+    seedStep = average !== undefined && fresh;
     seeding = average === undefined || fresh;
     const now =
       average === undefined || fresh || reseed

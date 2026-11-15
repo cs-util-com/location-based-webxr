@@ -671,7 +671,8 @@ describe("a quarter that climbs back to a slow half", () => {
 
 /**
  * A fresh average (the session's first counted frame, and the first after
- * every step) starts at the smaller of its first two counted frames, so one
+ * every step) starts again at its second counted frame when the first was a
+ * spike over it (`spikeLimit` times longer; after a step, any longer), so one
  * long frame there cannot be the start the spike limit then defends. A pair
  * of hitches (300 ms, then 0.26-60 s) in the first chained intervals of a
  * session, after none, one or two of the device's own frames, on devices at
@@ -708,6 +709,45 @@ describe("a long-frame pair at the start of a session", () => {
           expect(thinned, `second frame ${second} ms after ${lead}`).toBe(
             false,
           );
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A short second counted frame on a slow device must not become its
+ * full-woods baseline. At 300-2000 ms a frame the first interval is a lone
+ * gap and ignored, so the second counted frame is the third interval; here
+ * it is 0.7 times the device's frame (natural jitter on a slow phone). The
+ * session's fresh average reseeds only on a spike-sized drop (a frame
+ * `spikeLimit` times shorter), so the baseline stays the device's own frame
+ * and thinning that pays (woods 35-80 % of the frame) reaches the quarter
+ * without a rest. What reverses it: reseeding at any shorter second frame,
+ * which takes the 0.7 frame as the baseline, judges the half worthless and
+ * rests 300 s at full woods (82 of 144 jittered cases of this kind).
+ */
+describe("a short second counted frame on a slow device", () => {
+  for (const full of [300, 600, 1000, 2000]) {
+    it(`reaches the quarter without a rest at ${full} ms`, () => {
+      for (const w of [0.35, 0.5, 0.8]) {
+        for (const short of [0.5, 0.7, 0.85]) {
+          const governor = createWoodsGovernor();
+          let at = 0;
+          let i = 0;
+          let rested = false;
+          governor.frame(at, true);
+          while (at < 600_000) {
+            const ms = full * (1 - w + w * governor.state().share);
+            at += i === 2 ? ms * short : ms;
+            i += 1;
+            governor.frame(at, true);
+            rested ||= governor.state().mode === "resting";
+          }
+          expect(rested, `woods ${w * 100} %, second frame x${short}`).toBe(
+            false,
+          );
+          expect(governor.state().share).toBe(0.25);
         }
       }
     });
