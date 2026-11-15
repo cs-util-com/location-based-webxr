@@ -4,7 +4,8 @@
 
 The canvas painters of the picture looks, ported number for number from
 the chosen picture prototype: the framed print's plate, its mat, the
-cut-out's tag and the contact shadow. The parts take them as
+cut-out's tag, the small cards of the viewpoint looks and the contact
+shadow. The parts take them as
 `PicturePainters`, so their tests run without a canvas
 (`test-support/fake-picture-painters.ts`).
 
@@ -18,11 +19,16 @@ cut-out's tag and the contact shadow. The parts take them as
   - `mat(innerW, innerH, w, h)` - 420 px a metre, cream with a seeded
     grain (the same each time), a white bevel round the print and a
     shadow under the frame's top and left;
-  - `tag(words)` - 560 px a metre, `TAG_WIDTH_M` x `TAG_HEIGHT_M`: the
-    year, the tag line, "Tap for the story";
+  - `card(words, widthM, heightM, ppm = 560)` - a small card: a dark
+    round panel, the year large in amber, `line1` beside it and the
+    quieter `line2` under that, each cut to fit; the prototype's
+    `cardTexture`. The viewer's plate is 0.8 x 0.353 at 500, the
+    window's 0.8 x 0.2 at 600, as the prototype paints them;
+  - `tag(words)` - the card at 560 px a metre, `TAG_WIDTH_M` x
+    `TAG_HEIGHT_M`: the year, the tag line, "Tap for the story";
   - `shadow()` - a 128 px radial fade, its alpha the shadow.
 - `canvasPicturePainters(doc = document)` - the painters on `doc`.
-- `PaintedPanel`, `PlateWords`, `TagWords`, `TAG_WIDTH_M`, `TAG_HEIGHT_M`.
+- `PaintedPanel`, `PlateWords`, `TagWords`, `CardWords`, `TAG_WIDTH_M`, `TAG_HEIGHT_M`.
 
 ## Invariants and assumptions
 

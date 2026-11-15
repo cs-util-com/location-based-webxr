@@ -13,6 +13,7 @@ import type {
   TourPictureViewpoint,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
+  Box3,
   type BufferGeometry,
   Group,
   PerspectiveCamera,
@@ -33,6 +34,7 @@ import {
   type WorldMode,
   type WorldPart,
 } from "../../world-part.js";
+import { fakePicturePainters } from "../../test-support/fake-picture-painters.js";
 import { drawnAspect } from "./picture-decode.js";
 import { THEN_NOW_TIMING } from "./then-now-fade.js";
 import { thenNowFeatherMap } from "./then-now-feather.js";
@@ -97,9 +99,16 @@ async function placed(
   block: TourPictureBlock,
   env: WorldEnv,
   tex = texture(),
-): Promise<{ part: WorldPart; station: Group; tex: typeof tex }> {
+): Promise<{
+  part: WorldPart;
+  station: Group;
+  tex: typeof tex;
+  fake: ReturnType<typeof fakePicturePainters>;
+}> {
+  const fake = fakePicturePainters();
   const part = viewpointWorld(block, env, {
     decode: () => Promise.resolve(tex),
+    painters: fake.painters,
   });
   if (part === null) throw new Error("no part");
   const station = new Group();
@@ -108,7 +117,7 @@ async function placed(
   part.object.position.set(...block.pose.position);
   part.object.quaternion.set(...block.pose.rotation);
   await part.ready;
-  return { part, station, tex };
+  return { part, station, tex, fake };
 }
 
 /** A camera at `at` (station frame) looking along `yawDeg` from east. */
@@ -263,6 +272,87 @@ describe("viewpointWorld", () => {
     expect(standOpacity()).toBe(0);
     expect(opacity(part.object, "picture-viewpoint-plane")).toBe(1);
     part.dispose();
+  });
+
+  it("puts a plate on the viewer's column, facing the spot, fading with it", async () => {
+    // Why: the chosen page's viewer says what it is for on its column: the
+    // year, and to step up to it; it gives way with the viewer.
+    const { part, station, fake } = await placed(
+      picture("viewer"),
+      envOf("play"),
+    );
+    expect(fake.painted.cards).toEqual([
+      {
+        year: "1902",
+        line1: "Step up to it",
+        line2: "and see it as it was",
+      },
+    ]);
+    const plate = named(part.object, "picture-viewer-plate");
+    expect(
+      named<Group>(part.object, "picture-viewer").getObjectById(plate.id),
+    ).toBe(plate);
+    station.updateMatrixWorld(true);
+    // In the viewpoint's frame (the part's): 0.95 m up, 0.34 m ahead of
+    // the spot (east, +Z), turned to face back at it and tipped up to the
+    // eye.
+    const at = part.object.worldToLocal(plate.getWorldPosition(new Vector3()));
+    expect(at.y).toBeCloseTo(0.95, 6);
+    expect(at.z).toBeCloseTo(0.34, 6);
+    expect(at.x).toBeCloseTo(0, 6);
+    const facing = new Vector3(0, 0, 1)
+      .transformDirection(plate.matrixWorld)
+      .applyQuaternion(station.getWorldQuaternion(new Quaternion()).invert());
+    expect(facing.z).toBeLessThan(-0.9);
+    expect(facing.y).toBeGreaterThan(0.3);
+    const size = new Box3().setFromObject(plate).getSize(new Vector3());
+    expect(size.x).toBeCloseTo(0.34, 6);
+    tick(part, station, 0, [0, 1.6, -8]);
+    expect(opacity(part.object, "picture-viewer-plate")).toBe(1);
+    tick(part, station, 1, [0, 1.6, 0]);
+    expect(opacity(part.object, "picture-viewer-plate")).toBe(0);
+    part.dispose();
+  });
+
+  it("hangs a plate under the window's frame", async () => {
+    // Why: the chosen page's window names what it shows under its frame:
+    // the year, the caption's first phrase, and to look through.
+    const { part, station, fake } = await placed(
+      picture("window"),
+      envOf("play"),
+    );
+    expect(fake.painted.cards).toEqual([
+      {
+        year: "1902",
+        line1: "The square on market day",
+        line2: "Look through the frame",
+      },
+    ]);
+    station.updateMatrixWorld(true);
+    const frame = new Box3().setFromObject(
+      named(part.object, "picture-portal-frame"),
+    );
+    const plate = new Box3().setFromObject(
+      named(part.object, "picture-portal-plate"),
+    );
+    const size = plate.getSize(new Vector3());
+    // 0.36 m wide, a quarter as tall, 5 cm under the frame, centred.
+    expect(Math.max(size.x, size.z)).toBeCloseTo(0.36, 6);
+    expect(size.y).toBeCloseTo(0.09, 6);
+    expect(frame.min.y - plate.max.y).toBeCloseTo(0.05, 6);
+    expect(plate.getCenter(new Vector3()).x).toBeCloseTo(
+      frame.getCenter(new Vector3()).x,
+      6,
+    );
+    part.dispose();
+  });
+
+  it("paints no plate for the views without one", async () => {
+    for (const view of ["thenNow", "sharpen", "finder"] as const) {
+      const { part, fake } = await placed(picture(view), envOf("play"));
+      expect(fake.painted.cards, view).toEqual([]);
+      part.dispose();
+    }
   });
 
   it("hands a lined-up visitor the then-and-now slider and takes it back", async () => {

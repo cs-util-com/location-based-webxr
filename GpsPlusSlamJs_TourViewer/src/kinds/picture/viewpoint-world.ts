@@ -29,7 +29,11 @@ import {
 } from "three";
 
 import { smoothstep } from "../../smoothstep.js";
-import type { WorldEnv, WorldPart } from "../../world-part.js";
+import {
+  canvasTexture,
+  type WorldEnv,
+  type WorldPart,
+} from "../../world-part.js";
 import {
   THEN_NOW_START,
   stepThenNow,
@@ -59,6 +63,11 @@ import {
 } from "./viewpoint-looks.js";
 import { buildPictureSheet } from "./picture-sheet.js";
 import {
+  canvasPicturePainters,
+  type PicturePainters,
+} from "./picture-paint.js";
+import { tagLine } from "./plate.js";
+import {
   decodePicture,
   markDrawnAspect,
   pictureAspect,
@@ -79,9 +88,10 @@ export const EDITOR_PICTURE_ALPHA = 0.55;
 /** The finder's centre crop: 18 degrees either side, at most the lens. */
 const FINDER_HALF_DEG = 18;
 
-/** What the part decodes with (a fake in unit tests). */
+/** What the part decodes and paints with (fakes in unit tests). */
 export interface ViewpointWorldDeps {
   readonly decode?: (blob: Blob) => Promise<Texture | null>;
+  readonly painters?: PicturePainters;
 }
 
 /** One frame's reading of the visitor against the viewpoint. */
@@ -134,6 +144,9 @@ export function viewpointWorld(
   }
   const view = block.view;
   const decode = deps.decode ?? decodePicture;
+  let paintersMade: PicturePainters | undefined = deps.painters;
+  const painters = (): PicturePainters =>
+    (paintersMade ??= canvasPicturePainters());
   const editing = env.mode === "edit";
   const screen = env.mode === "play" ? env.screen : undefined;
 
@@ -213,7 +226,19 @@ export function viewpointWorld(
       };
     }
     if (view === "window") {
-      const portal: PortalLook = portalLook(viewpoint, aspect, texture);
+      const plate = canvasTexture(
+        painters().card(
+          {
+            year: block.year,
+            line1: tagLine(undefined, block.caption),
+            line2: "Look through the frame",
+          },
+          0.8,
+          0.2,
+          600,
+        ),
+      );
+      const portal: PortalLook = portalLook(viewpoint, aspect, texture, plate);
       root.add(portal.group);
       const uniforms = portal.opening.material.uniforms;
       return {
@@ -240,7 +265,19 @@ export function viewpointWorld(
     const plane = viewpointPlane(viewpoint, aspect, texture);
     root.add(plane.holder);
     if (view === "viewer") {
-      const stand = viewerStand(viewpoint);
+      const plate = canvasTexture(
+        painters().card(
+          {
+            year: block.year,
+            line1: "Step up to it",
+            line2: "and see it as it was",
+          },
+          0.8,
+          0.353,
+          500,
+        ),
+      );
+      const stand = viewerStand(viewpoint, plate);
       root.add(stand.group);
       return {
         root,

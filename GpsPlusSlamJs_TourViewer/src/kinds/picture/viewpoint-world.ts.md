@@ -8,7 +8,7 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 
 ## Public API
 
-- `viewpointWorld(block, env, { decode? })`: the part, or null for another
+- `viewpointWorld(block, env, { decode?, painters? })`: the part, or null for another
   view or a block without a viewpoint (the renderer draws that as a plain
   plane at the block's pose, sized by its width). This is a deliberate
   fallback, not the prototype's behaviour: a tour file may carry a
@@ -30,11 +30,17 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
   which the other views' planes do not; the part's disposal frees it
   with the look, and three uploads it again for the next part.
 - `viewer`: the viewer stand fades out as the picture fades in
-  (`VIEWER_FADE`); the editor shows the stand and a half picture.
+  (`VIEWER_FADE`); the editor shows the stand and a half picture. A
+  plate on its column (the year, "Step up to it", "and see it as it
+  was") fades with it.
 - `finder`: corner marks; the crop's fill fades in by `FINDER_FADE` and the
   ink turns amber on the spot.
 - `window`: the standing frame (`portalLook`), always shown; its shader's
-  plane is copied into world space every frame.
+  plane is copied into world space every frame. A plate under the frame
+  carries the year, the caption's first phrase (`tagLine`) and "Look
+  through the frame".
+- The plates are painted with `painters` (default: the canvas painters,
+  made on first use); the other views paint nothing.
 - Every view: the spot marker, fading as the picture takes over.
 - A tap in play opens the picture's sheet (`picture-sheet.ts`) with the
   picture, closing the slider; the editor takes no tap.
@@ -59,5 +65,6 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 `viewpoint-world.test.ts` (jsdom): looks per view, the anchor property over
 random poses and sizes, sharpen by place and facing, the editor's half
 picture, the viewer giving way, the slider's arrival, fade-in, take-over and
-departure, the soft edge on then and now's plane only, the window's
-shader plane, the sheet, disposal.
+departure, the soft edge on then and now's plane only, the viewer's and
+the window's plates (none on the other views), the window's shader plane,
+the sheet, disposal.

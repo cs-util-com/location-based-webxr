@@ -143,9 +143,35 @@ export function spotMarker(viewpoint: TourPictureViewpoint): {
   return { group, material };
 }
 
+/** The viewer's plate on its column (m): its size, its height and how
+ *  far it stands out toward the spot, tilted back to the visitor. */
+export const VIEWER_PLATE = {
+  widthM: 0.34,
+  heightM: 0.15,
+  heightOverGroundM: 0.95,
+  outM: 0.08,
+  tilt: -0.35,
+} as const;
+
+/** The window's plate under its frame (m): its size and the gap. */
+export const PORTAL_PLATE = {
+  widthM: 0.36,
+  heightM: 0.09,
+  gapM: 0.05,
+} as const;
+
+/** A plate showing `map` as painted. */
+function plateMaterial(map: Texture): MeshBasicMaterial {
+  return new MeshBasicMaterial({ map, transparent: true, toneMapped: false });
+}
+
 /** The viewer: a stand with binoculars on a column, 0.42 m ahead of the
- *  spot, its head tilted with the viewpoint. `materials` fade it. */
-export function viewerStand(viewpoint: TourPictureViewpoint): {
+ *  spot, its head tilted with the viewpoint, and `plate` (when given) on
+ *  the column, facing the spot. `materials` fade it. */
+export function viewerStand(
+  viewpoint: TourPictureViewpoint,
+  plate?: Texture,
+): {
   readonly group: Group;
   readonly materials: readonly Material[];
 } {
@@ -228,12 +254,27 @@ export function viewerStand(viewpoint: TourPictureViewpoint): {
     head.add(hood, lens, eye);
   }
   stand.add(head);
+  const materials: Material[] = [body, brass, rubber, lensMat, hoodMat];
+  if (plate !== undefined) {
+    const P = VIEWER_PLATE;
+    const plateMat = plateMaterial(plate);
+    const mesh = at(
+      new Mesh(new PlaneGeometry(P.widthM, P.heightM), plateMat),
+      0,
+      P.heightOverGroundM,
+      P.outM,
+    );
+    mesh.name = "picture-viewer-plate";
+    mesh.rotation.x = P.tilt;
+    stand.add(mesh);
+    materials.push(plateMat);
+  }
   const group = new Group();
   group.name = "picture-viewer";
   group.position.set(viewpoint.position[0], 0, viewpoint.position[2]);
   group.rotation.y = viewpointYaw(viewpoint);
   group.add(stand);
-  return { group, materials: [body, brass, rubber, lensMat, hoodMat] };
+  return { group, materials };
 }
 
 /**
@@ -438,11 +479,13 @@ function ringGeometry(
  * opening at the back of a short dark reveal shows the picture hanging at
  * the subject's depth (the then-and-now plane), so from the spot it lines
  * up and a step aside shows more of it, as through a real window.
+ * `plate` (when given) hangs under the frame.
  */
 export function portalLook(
   viewpoint: TourPictureViewpoint,
   aspect: number,
   texture: Texture,
+  plate?: Texture,
 ): PortalLook {
   const F = PORTAL_FRAME;
   const P = new Vector3(...viewpoint.position);
@@ -552,5 +595,21 @@ export function portalLook(
       group.add(post, foot);
     }
   }
-  return { group, opening, plane, materials: [ringM, caseM, wallM] };
+  const materials: Material[] = [ringM, caseM, wallM];
+  if (plate !== undefined) {
+    const plateMat = plateMaterial(plate);
+    const mesh = new Mesh(
+      new PlaneGeometry(PORTAL_PLATE.widthM, PORTAL_PLATE.heightM),
+      plateMat,
+    );
+    mesh.name = "picture-portal-plate";
+    mesh.position.set(
+      0,
+      -oh / 2 - PORTAL_PLATE.gapM - PORTAL_PLATE.heightM / 2,
+      0.01,
+    );
+    group.add(mesh);
+    materials.push(plateMat);
+  }
+  return { group, opening, plane, materials };
 }

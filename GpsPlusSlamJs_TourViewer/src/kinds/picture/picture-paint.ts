@@ -1,8 +1,9 @@
 /**
  * What a picture's world parts paint on canvases: the framed print's plate
  * (its year large, its caption in three lines, its credit small and a
- * quiet "i" mark that says a tap shows more), its cream mat, and the
- * cut-out's foot tag. The look is the chosen picture prototype's
+ * quiet "i" mark that says a tap shows more), its cream mat, the
+ * cut-out's foot tag and the small cards the viewpoint looks carry (the
+ * viewer's plate on its column, the window's plate under its frame). The look is the chosen picture prototype's
  * (`public/prototypes/station-blocks-3-pictures`), number for number.
  *
  * The parts take these as `PicturePainters` so their tests run without a
@@ -35,6 +36,14 @@ export interface TagWords {
   readonly caption?: string | undefined;
 }
 
+/** A small card's words: the year large, a line and a quieter second
+ *  line beside it. */
+export interface CardWords {
+  readonly year?: string | undefined;
+  readonly line1: string;
+  readonly line2?: string | undefined;
+}
+
 /** What the picture parts paint with. */
 export interface PicturePainters {
   /** The plate under a framed print `widthM` wide (its frame's outer
@@ -44,6 +53,14 @@ export interface PicturePainters {
   mat(innerW: number, innerH: number, w: number, h: number): HTMLCanvasElement;
   /** The cut-out's foot tag, `TAG_WIDTH_M` x `TAG_HEIGHT_M`. */
   tag(words: TagWords): HTMLCanvasElement;
+  /** A small card `widthM` x `heightM` (m) at `ppm` px a metre
+   *  (560 when not given): the tag's look with other words. */
+  card(
+    words: CardWords,
+    widthM: number,
+    heightM: number,
+    ppm?: number,
+  ): HTMLCanvasElement;
   /** A soft round shadow, black fading out from its middle (its alpha is
    *  the shadow). */
   shadow(): HTMLCanvasElement;
@@ -238,12 +255,17 @@ function paintMat(
   return canvas;
 }
 
-/** The foot tag, painted at 560 px a metre: the year, the tag line and
- *  "Tap for the story". */
-function paintTag(doc: Document, words: TagWords): HTMLCanvasElement {
-  const ppm = 560;
-  const W = Math.round(TAG_WIDTH_M * ppm);
-  const H = Math.round(TAG_HEIGHT_M * ppm);
+/** A small card, painted at `ppm` px a metre: the year in amber, then
+ *  its two lines, each cut to fit. */
+function paintCard(
+  doc: Document,
+  words: CardWords,
+  widthM: number,
+  heightM: number,
+  ppm = 560,
+): HTMLCanvasElement {
+  const W = Math.round(widthM * ppm);
+  const H = Math.round(heightM * ppm);
   const { canvas, g } = canvasOf(doc, W, H);
   const pad = 0.045 * ppm;
   g.fillStyle = "rgba(19,16,13,0.92)";
@@ -262,15 +284,28 @@ function paintTag(doc: Document, words: TagWords): HTMLCanvasElement {
   const maxW = W - x - pad;
   g.fillStyle = INK;
   g.font = `600 ${String(0.05 * ppm)}px ${SANS}`;
-  g.fillText(
-    fitLine(g, tagLine(words.title, words.caption), maxW),
-    x,
-    y + 0.008 * ppm,
-  );
-  g.fillStyle = "#bcb09c";
-  g.font = `${String(0.04 * ppm)}px ${SANS}`;
-  g.fillText(fitLine(g, "Tap for the story", maxW), x, y + 0.064 * ppm);
+  g.fillText(fitLine(g, words.line1, maxW), x, y + 0.008 * ppm);
+  const line2 = words.line2?.trim() ?? "";
+  if (line2 !== "") {
+    g.fillStyle = "#bcb09c";
+    g.font = `${String(0.04 * ppm)}px ${SANS}`;
+    g.fillText(fitLine(g, line2, maxW), x, y + 0.064 * ppm);
+  }
   return canvas;
+}
+
+/** The foot tag: the year, the tag line and "Tap for the story". */
+function paintTag(doc: Document, words: TagWords): HTMLCanvasElement {
+  return paintCard(
+    doc,
+    {
+      year: words.year,
+      line1: tagLine(words.title, words.caption),
+      line2: "Tap for the story",
+    },
+    TAG_WIDTH_M,
+    TAG_HEIGHT_M,
+  );
 }
 
 /** The contact shadow: a radial fade, 128 px. */
@@ -293,6 +328,8 @@ export function canvasPicturePainters(
     plate: (words, widthM) => paintPlate(doc, words, widthM),
     mat: (innerW, innerH, w, h) => paintMat(doc, innerW, innerH, w, h),
     tag: (words) => paintTag(doc, words),
+    card: (words, widthM, heightM, ppm) =>
+      paintCard(doc, words, widthM, heightM, ppm),
     shadow: () => paintShadow(doc),
   };
 }

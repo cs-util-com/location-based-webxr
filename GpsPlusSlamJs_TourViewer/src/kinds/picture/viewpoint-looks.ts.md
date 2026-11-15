@@ -17,14 +17,16 @@ materials only; `viewpoint-world.ts` decides what shows how much.
   order 50, opacity 0 until the part sets it. Mesh `picture-viewpoint-plane`.
 - `spotMarker(vp)`: an amber ring with an arrow the way to face, on the
   ground under the eye; one material. Group `picture-spot`.
-- `viewerStand(vp)`: the viewer (binoculars on a column) 0.42 m ahead of the
-  spot, its head tilted with the viewpoint's pitch; `materials` fade it.
-  Group `picture-viewer`.
+- `viewerStand(vp, plate?)`: the viewer (binoculars on a column) 0.42 m ahead
+  of the spot, its head tilted with the viewpoint's pitch; `materials` fade
+  it, the plate's included. Group `picture-viewer`. With `plate`, a mesh
+  `picture-viewer-plate` (`VIEWER_PLATE`: 0.34 x 0.15 m, 0.95 m up, 8 cm
+  out toward the spot, tipped back 0.35 rad to the visitor's eye).
 - `finderCorners(vp, aspect, crop)`: four L-shaped corner marks of the
   centre crop, each at its own depth (1.2 and 0.75 times the subject's
   depth, 6.5 m, 4.5 m; a lower one kept above the ground), so they meet only
   from the spot. Meshes `picture-finder-ink` and `picture-finder-under`.
-- `portalLook(vp, aspect, texture)` and `PORTAL_FRAME`: the window, a frame
+- `portalLook(vp, aspect, texture, plate?)` and `PORTAL_FRAME`: the window, a frame
   1 m wide, 1.5 m ahead of the spot, upright on two posts, at the eye's
   height plus the pitch. Its opening (`picture-portal-opening`) is a quad at
   the back of a 16 cm reveal whose shader casts the ray from the eye
@@ -32,6 +34,9 @@ materials only; `viewpoint-world.ts` decides what shows how much.
   the picture's plane at the subject's depth and samples it there, a dark
   box past the edges with a 4 % fade. `plane` is that plane in the
   viewpoint's frame; the part copies it into world space every frame.
+  With `plate`, a mesh `picture-portal-plate` (`PORTAL_PLATE`: 0.36 x
+  0.09 m) hangs 5 cm under the frame, centred, its material among
+  `materials`.
 
 ## Invariants
 

@@ -41,7 +41,8 @@ picture's sheet (`picture-sheet.ts`) on the page's screen.
     never added.
 - `PictureWorldDeps` - `decode` (default: the tour's capped decode,
   `decodeFrameTexture` at half size against `TOUR_MAX_IMAGE_PIXELS`, as a
-  picture plane's, sRGB) and `painters` (default: canvas painters).
+  picture plane's, sRGB) and `painters` (default: canvas painters), both
+  handed on to `viewpointWorld` for the viewpoint views.
 
 ## Invariants and assumptions
 

@@ -1,6 +1,7 @@
 /** Picture painters for node tests: no canvas, each painted thing a
  *  sized stand-in, and every call recorded. */
 import type {
+  CardWords,
   PaintedPanel,
   PicturePainters,
   PlateWords,
@@ -15,6 +16,7 @@ export function fakePicturePainters(): {
   painted: {
     plates: PlateWords[];
     tags: TagWords[];
+    cards: CardWords[];
     mats: number;
     shadows: number;
   };
@@ -22,6 +24,7 @@ export function fakePicturePainters(): {
   const painted = {
     plates: [] as PlateWords[],
     tags: [] as TagWords[],
+    cards: [] as CardWords[],
     mats: 0,
     shadows: 0,
   };
@@ -45,6 +48,10 @@ export function fakePicturePainters(): {
       tag(words) {
         painted.tags.push(words);
         return image(62, 21);
+      },
+      card(words, widthM, heightM) {
+        painted.cards.push(words);
+        return image(Math.round(widthM * 500), Math.round(heightM * 500));
       },
       shadow() {
         painted.shadows++;
