@@ -2,8 +2,8 @@
  * A free video's part in the world (`screen`, `cutout`, `porthole`,
  * `window`, `standHere`): its look (`video-look.ts`) fed by a `<video>`
  * element, and the rules of `video-rules.ts` driven by the camera frame.
- * The creator's trigger starts it once (on entering, within a distance, when looked at, or on a
- * tap); leaving pauses it and coming back resumes it; a finished video
+ * The creator's trigger starts it once (on entering, within a distance,
+ * when looked at, or on a tap); leaving pauses it and coming back resumes it; a finished video
  * stays finished and a tap replays it. It starts with its sound when the
  * visitor's remembered choice, else the creator's, says so - and only
  * after the visitor has touched the page; a start the browser still
@@ -277,6 +277,9 @@ export function videoWorld(
   if (viewpoint !== undefined) {
     spot = standHereSpot(viewpoint, (canvas) => env.canvasTexture(canvas));
     anchor.matrixAutoUpdate = false;
+    // Hidden until the first frame places it: its identity matrix
+    // would draw the footprints under the video's pose.
+    anchor.visible = false;
     anchor.add(spot.object);
     object.add(anchor);
   }
@@ -579,6 +582,7 @@ export function videoWorld(
     object.updateMatrix();
     anchor.matrix.copy(object.matrix).invert();
     anchor.matrixWorldNeedsUpdate = true;
+    anchor.visible = true;
     spot.show(play ? develop : 0, seconds);
   };
 

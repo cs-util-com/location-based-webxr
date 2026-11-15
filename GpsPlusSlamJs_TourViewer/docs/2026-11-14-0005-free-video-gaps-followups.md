@@ -78,6 +78,15 @@ later:
 - **The near-start hint.** A near start shows no "Walk closer" hint before
   it starts; `video-world.test.ts` holds it as an expected failure until
   it is decided whether the hint goes or gets a home outside the card.
+- **The footprints stretch the editor's outline and gizmo.** A stand-here
+  video's footprints hang under its part's object, at the viewpoint, so
+  the editor's folder outline (`src/editor3d/folder-outline.ts`, its box
+  of the item's world bounds) and the gizmo's span
+  (`src/editor3d/editor3d-editing.ts`) measure from the video to its
+  footprints, a box several metres longer than the video itself. The
+  honest fix keeps the footprints out of the item's measured bounds
+  (a flag the measuring walk skips, or a sibling object), which is a
+  choice about how the editor measures items, not a one-line change.
 
 ## Visitor side compared with the prototype (from the code)
 

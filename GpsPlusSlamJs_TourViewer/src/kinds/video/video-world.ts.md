@@ -69,7 +69,8 @@ than a kept `near` distance, or than the reach itself, still starts it. Without 
   footprints (`standHereSpot`) hang under an anchor whose matrix is the
   part's matrix inverted, refreshed each frame, so they stand at the
   viewpoint in the station's frame wherever the video is posed (the
-  picture viewpoint's pattern). In the editor the projection is whole and
+  picture viewpoint's pattern); the anchor stays hidden until the first
+  frame has placed it. In the editor the projection is whole and
   the footprints undeveloped.
 - Sound: decided once, at the first start, by `decideStartSound`. A start
   that wanted sound before the page was touched plays muted, and the next

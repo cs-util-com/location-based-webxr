@@ -912,6 +912,27 @@ describe("a stand-here video", () => {
     }
   });
 
+  it("hides its footprints until the first frame has placed them", async () => {
+    // Why: before its first update the footprints' anchor still has an
+    // identity matrix, so a render in that gap would draw them under
+    // the video's pose rather than at the viewpoint.
+    const { part } = await video({ block: { view: "standHere", viewpoint } });
+    let spot: Object3D | undefined;
+    part.object.traverse((c) => {
+      if (c.name === "video-stand-here-spot") spot = c;
+    });
+    const shownInWorld = (): boolean => {
+      for (let o: Object3D | null = spot ?? null; o !== null; o = o.parent) {
+        if (!o.visible) return false;
+        if (o === part.object) return true;
+      }
+      return false;
+    };
+    expect(shownInWorld()).toBe(false);
+    part.update?.(at(20, 0));
+    expect(shownInWorld()).toBe(true);
+  });
+
   it("stays still and silent in the editor, on its spot or not", async () => {
     const { part, player } = await video({
       mode: "edit",
