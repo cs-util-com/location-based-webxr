@@ -102,6 +102,7 @@ describe("blockFields", () => {
       blockFields(PIN).map((f) => [f.name, f.label, f.max, f.prose, f.value]),
     ).toEqual([
       ["description", "Description", 160, true, ""],
+      ["readAtM", "Reads at", undefined, false, ""],
       ["lang", "Language", undefined, false, ""],
     ]);
     expect(
@@ -159,6 +160,7 @@ describe("storyBlockFields", () => {
     expect(rows(PIN)).toEqual([
       ["caption", 40, true],
       ["description", 160, false],
+      ["readAtM", undefined, false],
       ["lang", undefined, false],
     ]);
     expect(rows(CHARACTER).map((r) => r[0])).toEqual(["name", "caption"]);
@@ -548,8 +550,14 @@ describe("choice fields", () => {
       kind: "refused",
     });
     expect(blockFieldEdit(chose.after, "role", "").kind).toBe("refused");
-    // A pin does not turn: its turn is no field of its view.
-    expect(blockFieldEdit(PIN, "orientation", "face")).toEqual({
+    // A pin turns as a sign does; an edge hint does not: its turn is
+    // no field of its view.
+    expect(blockFieldEdit(PIN, "orientation", "face")).toMatchObject({
+      kind: "edited",
+      after: { orientation: "face" },
+    });
+    const hint = { ...PIN, view: "edgeHint" } as unknown as TourObject;
+    expect(blockFieldEdit(hint, "orientation", "face")).toEqual({
       kind: "unchanged",
     });
   });

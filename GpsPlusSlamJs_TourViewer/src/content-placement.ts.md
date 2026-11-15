@@ -66,7 +66,9 @@ under - what a tap in AR is cast against to name the object
   blocks outside its stories) as children at their LOCAL poses
   (`[north, up, east]` and a rotation relative to the station), added to
   `scene` once every picture decoded; `root` is that group. A `pin` short
-  text is a label, a `plane` picture (and one in a viewpoint view without a
+  text is the world door's (its head on a stem, `kinds/short-text/pin.ts`)
+  where the page passes one, and the plain label where not, so it never
+  vanishes; a `plane` picture (and one in a viewpoint view without a
   viewpoint) a photo plane (as wide as its
   `widthM`; a 1 m picture is drawn as it always was) whose file is the
   tour's asset of its `image` (from `assets`; a picture whose asset the
@@ -102,7 +104,7 @@ under - what a tap in AR is cast against to name the object
   constructor) frees everything made so far, then goes on (the caller gets
   the rejection and nothing to dispose); a free that throws there is not
   what the caller is told - the construction error is.
-- Every rendered pin's label and photo's plane carries its object's id in
+- Every rendered pin (its label or its part) and photo's plane carries its object's id in
   `userData.objectId`, so a pointer over the 3D editor can say which item
   it is over (`editor3d-stations.ts`, `pick`).
 

@@ -2,10 +2,13 @@
 
 ## Purpose
 
-A pin's label as every view of a tour draws it: the framework's text
-sprite on a pill. One recipe for the phone's AR (through `seams.ts`) and
-the desktop editor's 3D view (`editor3d/editor3d-scene.ts`), so a pin
-reads the same in both.
+A pin's label where a page draws a pin without the world door: the
+framework's text sprite on a pill. A station's pin in the phone's AR and
+the desktop editor's 3D view is the world door's head on a stem
+(`kinds/short-text/pin.ts`); this label stays for what has no door (an
+object's renderer, a creator's previews, the editor's drawings), one
+recipe through `seams.ts` and `editor3d/editor3d-drawings.ts`, so such a
+pin reads the same everywhere.
 
 ## Public API
 

@@ -80,7 +80,7 @@ const EXPECTED: readonly (readonly [
   boolean,
   string | null,
 ])[] = [
-  ["shortText", "pin", true, false, null],
+  ["shortText", "pin", true, true, null],
   ["shortText", "sign", true, true, null],
   ["shortText", "edgeHint", true, false, null],
   ["shortText", "ground", true, true, "readAtM"],
@@ -754,7 +754,7 @@ describe("the placeables against the old gate", () => {
     const video = { ...blockOf("video", "card", 0), id: "vid" } as TourBlock;
     const tour = { stations: [stationOf([pin, video])] };
     expect(placeableOf(tour, "pin")?.ref).toEqual({ kind: "block", id: "pin" });
-    expect(placeableOf(tour, "pin")?.turns).toBe(false);
+    expect(placeableOf(tour, "pin")?.turns).toBe(true);
     expect(placeableOf(tour, "vid")).toBeNull();
     expect(placeableOf(tour, "nothing")).toBeNull();
     expect(placeableOf(tour, "station:a")?.locked).toBe(false);

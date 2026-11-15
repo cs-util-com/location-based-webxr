@@ -371,7 +371,7 @@ export const KIND_EDIT = {
           unit: "m",
           required: false,
         },
-        views: ["sign", "ground"],
+        views: ["pin", "sign", "ground"],
       },
       {
         name: "role",
@@ -384,14 +384,14 @@ export const KIND_EDIT = {
         label: "Turns",
         prose: false,
         choice: { values: SHORT_TEXT_TURNS, fallback: "world" },
-        views: ["sign", "ground"],
+        views: ["pin", "sign", "ground"],
       },
       {
         name: "pointsTo",
         label: "Points to",
         prose: false,
         typed: "point",
-        views: ["sign", "ground"],
+        views: ["pin", "sign", "ground"],
       },
       { name: "lang", label: "Language", prose: false, typed: "tag" },
       {

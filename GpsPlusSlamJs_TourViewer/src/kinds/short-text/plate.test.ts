@@ -10,8 +10,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   ESTIMATED_MEASURE,
+  layoutPlate,
   layoutSignPlate,
+  PIN_PLATE,
   PLATE_PX_PER_EM,
+  SIGN_PLATE,
   SHORT_TEXT_ACCENT,
   signPlate,
   wrapText,
@@ -97,6 +100,19 @@ describe("a sign's plate", () => {
     const plate = signPlate("Gate", undefined, "warning", { icon: true });
     expect(plate.canvas).toBeNull();
     expect(plate.layout.bodyW).toBeGreaterThan(0);
+  });
+
+  it("lays out a pin's head as a band-less tag with its pointer below the board", () => {
+    // Why: the pin's pointer leads the eye down its stem; the canvas
+    // must hold it, or the tip is cut off and the head floats loose.
+    const sign = layoutPlate(SIGN_PLATE, "Gate", undefined, ESTIMATED_MEASURE);
+    const head = layoutPlate(PIN_PLATE, "Gate", undefined, ESTIMATED_MEASURE);
+    expect(sign.pointer).toBe(0);
+    expect(sign.canvasH).toBe(sign.bodyH + 2 * sign.margin);
+    expect(head.band).toBe(0);
+    expect(head.pointer).toBeGreaterThan(0);
+    expect(head.canvasH).toBe(head.bodyH + 2 * head.margin + head.pointer);
+    expect(layoutSignPlate("Gate", undefined, ESTIMATED_MEASURE)).toEqual(sign);
   });
 
   it("gives each role its own accent", () => {

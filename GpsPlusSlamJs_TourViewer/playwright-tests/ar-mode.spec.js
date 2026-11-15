@@ -1866,11 +1866,11 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
         .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
         .flatMap((/** @type {any} */ g) => (g.isGroup ? g.children : []))
         .filter((/** @type {any} */ o) => o.isMesh === true).length,
-      pinLabels: t.fakeScene.children
+      pins: t.fakeScene.children
         .flatMap((/** @type {any} */ c) => (c.isGroup ? c.children : []))
         .flatMap((/** @type {any} */ s) => (s.isGroup ? s.children : []))
         .flatMap((/** @type {any} */ g) => (g.isGroup ? g.children : []))
-        .filter((/** @type {any} */ o) => o.isSprite === true).length,
+        .filter((/** @type {any} */ o) => o.name === "short-text-pin").length,
     };
   });
   // 3 seeded fixes + 10 vote batches × 16 correspondences (the 30 m ring,
@@ -1881,9 +1881,9 @@ test("viewer mode relocalizes against the tour's level: budgeted votes, marker, 
   // three photos among it, in one group...
   expect(afterBudget.groups).toBe(1);
   expect(afterBudget.planes).toBe(3);
-  // ...which really holds the fixture pin's label sprite: a label three
-  // refused still counted in the placement but was never drawn.
-  expect(afterBudget.pinLabels).toBe(1);
+  // ...which really holds the fixture pin (its head on a stem): a pin
+  // three refused still counted in the placement but was never drawn.
+  expect(afterBudget.pins).toBe(1);
   expect(refusedAdds).toEqual([]);
 
   // Budget holds: more locked frames add NOTHING.

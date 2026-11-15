@@ -1,7 +1,7 @@
 /**
- * Why this test matters: the renderer draws a pin as a label itself and
- * sends every other short-text view through this door; a view that went
- * missing here would stand nothing in the world.
+ * Why this test matters: every short-text view that stands in the world
+ * comes through this door; a view that went missing here would stand
+ * nothing in the world.
  */
 import { describe, expect, it } from "vitest";
 
@@ -22,11 +22,11 @@ const of = (view: string) =>
   );
 
 describe("a short text through the world door", () => {
-  it("stands as a sign, an edge hint or a ground arrow, and as nothing in a pin or a card", () => {
+  it("stands as a pin, a sign, an edge hint or a ground arrow, and as nothing in a card", () => {
     expect(of("sign")?.object.name).toBe("short-text-sign");
     expect(of("edgeHint")?.object.name).toBe("short-text-edge-hint");
     expect(of("ground")?.object.name).toBe("short-text-ground");
-    expect(of("pin")).toBeNull();
+    expect(of("pin")?.object.name).toBe("short-text-pin");
     expect(of("card")).toBeNull();
   });
 });
