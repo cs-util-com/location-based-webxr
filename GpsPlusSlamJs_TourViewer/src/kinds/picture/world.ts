@@ -10,6 +10,10 @@
  * by it; the look lands in it once the image is read, built at the
  * prototype's width and scaled to the block's (`widthM`), so a resize
  * preview scales from what was drawn (`placement/place-scale.ts`).
+ * A framed print's shadow follows the ground under the part each frame,
+ * and in play the print arrives (rises and develops) from the first frame
+ * it is shown: a station's content is built again on each entry, so it
+ * arrives each time the visitor does.
  *
  * @see world.ts.md
  */
@@ -18,10 +22,18 @@ import type { TourPictureBlock } from "gps-plus-slam-app-framework/ar/tour-kinds
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
 import { Group, type Object3D, type Texture } from "three";
 
-import { markPlaceScale } from "../../placement/place-scale.js";
+import {
+  inheritedScaleOf,
+  markPlaceScale,
+} from "../../placement/place-scale.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import { buildCutoutLook, type CutoutLook } from "./cutout.js";
-import { buildFramedLook, PICTURE_REFERENCE_WIDTH_M } from "./framed.js";
+import {
+  buildFramedLook,
+  FRAMED_ARRIVAL_S,
+  type FramedLook,
+  PICTURE_REFERENCE_WIDTH_M,
+} from "./framed.js";
 import {
   canvasPicturePainters,
   type PicturePainters,
@@ -66,6 +78,10 @@ export function pictureWorld(
   let gone = false;
   let look: Object3D | null = null;
   let cutout: CutoutLook | null = null;
+  let framed: FramedLook | null = null;
+  // The arrival's first frame (s), once the print is shown; done at 1.
+  let arrivalStartS: number | null = null;
+  let arrived = env.mode !== "play";
   let image: Blob | null = null;
   let closeSheet: (() => void) | null = null;
 
@@ -87,12 +103,14 @@ export function pictureWorld(
       const aspect = pictureAspect(texture);
       let built: { root: Group; tapTarget: Group };
       if (view === "framed") {
-        built = buildFramedLook(
+        framed = buildFramedLook(
           texture,
           aspect,
           { year: block.year, caption: block.caption, credit: block.credit },
           painters,
         );
+        if (!arrived) framed.arrive(0);
+        built = framed;
       } else {
         cutout = buildCutoutLook(
           texture,
@@ -152,6 +170,14 @@ export function pictureWorld(
     ...(screen === undefined ? {} : { tap: openSheet }),
     update(frame) {
       cutout?.face(object, frame.viewer);
+      if (framed === null) return;
+      // The ground is where the part is drawn, in its own metres.
+      framed.ground(object.position.y / inheritedScaleOf(object));
+      if (arrived) return;
+      arrivalStartS ??= frame.seconds;
+      const a = (frame.seconds - arrivalStartS) / FRAMED_ARRIVAL_S;
+      arrived = a >= 1;
+      framed.arrive(Math.min(1, Math.max(0, a)));
     },
     dispose() {
       gone = true;
@@ -161,6 +187,7 @@ export function pictureWorld(
       const drawn = look;
       look = null;
       cutout = null;
+      framed = null;
       image = null;
       if (drawn !== null) {
         drawn.removeFromParent();

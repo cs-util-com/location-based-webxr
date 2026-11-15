@@ -7,6 +7,10 @@
  * smaller (the prototype instead kept its mat, frame and plate text at
  * fixed sizes outside about 0.9 to 3.5 m).
  *
+ * A soft shadow lies on the ground under it (`ground`), and in play it
+ * arrives as the prototype's does (`arrive`): it rises out of the ground
+ * and its picture comes out of the paper.
+ *
  * Its origin is the print's centre; it faces local +Z.
  *
  * @see framed.ts.md
@@ -25,6 +29,7 @@ import {
   type Texture,
 } from "three";
 
+import { smoothstep } from "../../smoothstep.js";
 import { canvasTexture } from "../../world-part.js";
 import type { PicturePainters, PlateWords } from "./picture-paint.js";
 
@@ -35,6 +40,73 @@ export const PICTURE_REFERENCE_WIDTH_M = 1.6;
 /** The gap between the frame's foot and the plate (m, at the reference
  *  width). */
 const PLATE_GAP_M = 0.05;
+
+/** How long the arrival takes (s): the prototype's appear, 0 to 1 at
+ *  `dt / 1.6`. */
+export const FRAMED_ARRIVAL_S = 1.6;
+
+/** How far below its place the print starts (m, at the reference width,
+ *  so it scales with the print like the rest of the look). */
+export const FRAMED_RISE_M = 0.12;
+
+/** The ground shadow's opacity and its height over the ground (m, in the
+ *  station's metres): the prototype's `shadowDecal(ow * 1.2, 0.9, 0.2)`. */
+export const FRAMED_SHADOW_OPACITY = 0.2;
+export const FRAMED_SHADOW_LIFT_M = 0.012;
+
+/** The shadow's width over the frame's and its depth (m, at the reference
+ *  width). */
+const SHADOW_WIDTH_SHARE = 1.2;
+const SHADOW_DEPTH_M = 0.9;
+
+/** Where the print stands at arrival `a` (0..1) against its place (m, at
+ *  the reference width): `-FRAMED_RISE_M` at 0, risen by 0.7. Not a
+ *  number: risen. */
+export function framedRise(a: number): number {
+  if (Number.isNaN(a)) return 0;
+  return -FRAMED_RISE_M * (1 - smoothstep(0, 0.7, a));
+}
+
+/** How far the picture has come out of the paper at arrival `a`
+ *  (0..1): from 0.3 on, whole at 1. Not a number: whole. */
+export function framedDevelop(a: number): number {
+  if (Number.isNaN(a)) return 1;
+  return smoothstep(0.3, 1, a);
+}
+
+/** The prototype's develop: the paper's colour, giving way to the
+ *  picture's darks first and its lights last. Runs after three's
+ *  `map_fragment`, on the linear colour, as the prototype's did. */
+const DEVELOP_GLSL = `
+{
+  float developLum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+  float developed = clamp(uDevelop * 1.7 - developLum * 0.7, 0.0, 1.0);
+  diffuseColor.rgb = mix(vec3(0.84, 0.77, 0.62), diffuseColor.rgb, smoothstep(0.0, 1.0, developed));
+}`;
+
+/** The print's material: the picture as painted, with the develop wired
+ *  into three's basic shader through `develop` (one uniform object, so a
+ *  write needs no recompile). */
+function developingPrint(
+  picture: Texture,
+  develop: { value: number },
+): MeshBasicMaterial {
+  const material = new MeshBasicMaterial({ map: picture, toneMapped: false });
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms["uDevelop"] = develop;
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        "#include <common>\nuniform float uDevelop;",
+      )
+      .replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>${DEVELOP_GLSL}`,
+      );
+  };
+  material.customProgramCacheKey = () => "picture-framed-develop";
+  return material;
+}
 
 /** The sizes of a framed print `widthM` wide whose picture is `aspect`
  *  (height over width) tall (m). */
@@ -63,6 +135,12 @@ export interface FramedLook {
   readonly root: Group;
   /** What a tap is cast against: the frame, the print and the plate. */
   readonly tapTarget: Group;
+  /** Lays the shadow `liftM` (in the root's parent's metres) below the
+   *  print's centre, where the ground is. Not a finite number: it stays. */
+  ground(liftM: number): void;
+  /** Shows arrival `a` (0..1): `framedRise` and `framedDevelop`. A
+   *  new look stands arrived (1). */
+  arrive(a: number): void;
 }
 
 /** A material showing `map` as painted (no light, no tone mapping). */
@@ -79,6 +157,7 @@ export function buildFramedLook(
   painters: PicturePainters,
 ): FramedLook {
   const s = framedSizes(PICTURE_REFERENCE_WIDTH_M, aspect);
+  const develop = { value: 1 };
   const root = new Group();
   root.name = "picture-framed";
   const tapTarget = new Group();
@@ -127,7 +206,7 @@ export function buildFramedLook(
   mat.position.z = 0.004;
   const print = new Mesh(
     new PlaneGeometry(s.w, s.h),
-    new MeshBasicMaterial({ map: picture, toneMapped: false }),
+    developingPrint(picture, develop),
   );
   print.name = "picture-print";
   print.position.z = 0.007;
@@ -139,5 +218,35 @@ export function buildFramedLook(
   plate.name = "picture-plate";
   plate.position.y = -s.outerH / 2 - PLATE_GAP_M - plateArt.heightM / 2;
   tapTarget.add(frame, back, mat, print, plate);
-  return { root, tapTarget };
+
+  // Out of the tap target: the ground under the print takes no tap.
+  const shadow = new Mesh(
+    new PlaneGeometry(s.outerW * SHADOW_WIDTH_SHARE, SHADOW_DEPTH_M),
+    new MeshBasicMaterial({
+      map: canvasTexture(painters.shadow()),
+      color: 0x000000,
+      transparent: true,
+      opacity: FRAMED_SHADOW_OPACITY,
+      depthWrite: false,
+    }),
+  );
+  shadow.name = "picture-framed-shadow";
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.renderOrder = 1;
+  shadow.raycast = () => undefined;
+  root.add(shadow);
+
+  return {
+    root,
+    tapTarget,
+    ground(liftM) {
+      const scale = root.scale.y;
+      if (!Number.isFinite(liftM) || !(scale > 0)) return;
+      shadow.position.y = (FRAMED_SHADOW_LIFT_M - liftM) / scale;
+    },
+    arrive(a) {
+      tapTarget.position.y = framedRise(a);
+      develop.value = framedDevelop(a);
+    },
+  };
 }
