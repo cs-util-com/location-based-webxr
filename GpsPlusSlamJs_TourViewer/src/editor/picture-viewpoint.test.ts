@@ -6,9 +6,20 @@
  * picture switched to "Then and now" would hang behind the creator.
  */
 import fc from "fast-check";
+import {
+  parseTourLocalPose,
+  TOUR_ITEM_MAX_OFFSET_M,
+} from "gps-plus-slam-app-framework/ar/tour-items";
+import {
+  TOUR_PICTURE_MAX_DISTANCE_M,
+  TOUR_PICTURE_MAX_HFOV_DEG,
+  TOUR_PICTURE_MIN_DISTANCE_M,
+  TOUR_PICTURE_MIN_HFOV_DEG,
+} from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { describe, expect, it } from "vitest";
 import { viewpointForward } from "../kinds/picture/viewpoint-fade.js";
 import {
+  VIEWPOINT_FIELDS,
   mintViewpoint,
   viewpointAt,
   viewpointFacts,
@@ -147,6 +158,56 @@ describe("viewpointWithField", () => {
     expect(viewpointWithField(vp, "vp-distance", 9e9)?.distanceM).toBe(500);
     const steep = viewpointFacts(viewpointWithField(vp, "vp-pitch", 95)!);
     expect(steep.pitchDeg).toBeCloseTo(80);
+  });
+
+  // Why: the tour's reader refuses a viewpoint standing more than
+  // TOUR_ITEM_MAX_OFFSET_M from its station along an axis, and a refused
+  // viewpoint refuses the whole tour file when it is opened again. So a
+  // place typed beyond that bound is kept at the bound, as the lens and
+  // the depth are kept at theirs.
+  it("keeps its place within the tour's offset bound on every axis", () => {
+    const max = TOUR_ITEM_MAX_OFFSET_M;
+    expect(viewpointWithField(vp, "vp-north", 99_999)?.position[0]).toBe(max);
+    expect(viewpointWithField(vp, "vp-up", -1e12)?.position[1]).toBe(-max);
+    expect(viewpointWithField(vp, "vp-east", max + 0.5)?.position[2]).toBe(max);
+    expect(viewpointWithField(vp, "vp-east", -max)?.position[2]).toBe(-max);
+  });
+
+  // Why: whatever a creator types into whichever field, the viewpoint
+  // written must be one the tour's reader keeps (its pose by the
+  // framework's own pose rule, its lens and depth in their bounds), or
+  // the saved tour cannot be opened again.
+  it("writes, for any number typed into any field, a viewpoint the reader keeps", () => {
+    const fields = VIEWPOINT_FIELDS.map((f) => f.field);
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...fields),
+        fc.oneof(
+          fc.double({ noNaN: true, noDefaultInfinity: true }),
+          fc.double({ min: -2e4, max: 2e4, noNaN: true }),
+        ),
+        (field, value) => {
+          const next = viewpointWithField(vp, field, value);
+          expect(next).not.toBeNull();
+          const fail = (why: string): never => {
+            throw new Error(why);
+          };
+          expect(() =>
+            parseTourLocalPose(next, "viewpoint", fail),
+          ).not.toThrow();
+          expect(next!.hfovDeg).toBeGreaterThanOrEqual(
+            TOUR_PICTURE_MIN_HFOV_DEG,
+          );
+          expect(next!.hfovDeg).toBeLessThanOrEqual(TOUR_PICTURE_MAX_HFOV_DEG);
+          expect(next!.distanceM).toBeGreaterThanOrEqual(
+            TOUR_PICTURE_MIN_DISTANCE_M,
+          );
+          expect(next!.distanceM).toBeLessThanOrEqual(
+            TOUR_PICTURE_MAX_DISTANCE_M,
+          );
+        },
+      ),
+    );
   });
 
   it("writes nothing for a field it does not know or a value that is no number", () => {

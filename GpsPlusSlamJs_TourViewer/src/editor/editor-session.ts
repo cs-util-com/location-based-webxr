@@ -692,20 +692,22 @@ const ONLY_A_PICTURE_VIEWPOINT = "Only a picture has a viewpoint.";
 const NO_VIEWPOINT = "This picture has no viewpoint to move yet.";
 
 const NOT_A_VIEWPOINT =
-  "A viewpoint needs a place, a turn, a lens of 10 to 120 degrees and a depth of 1 to 500 m.";
+  "A viewpoint needs a place within 10 km of its station, a turn, a lens of 10 to 120 degrees and a depth of 1 to 500 m.";
 
 const VIEWPOINT_VIEWS: ReadonlySet<string> = new Set(
   TOUR_PICTURE_VIEWPOINT_VIEWS,
 );
 
-/** Whether the format keeps `vp`: finite numbers, a turn of some length,
- *  its lens and depth in their bounds. */
+/** Whether the format keeps `vp`: finite numbers, a place within its
+ *  offset bound on each axis, a turn of some length, its lens and depth
+ *  in their bounds. */
 function keptViewpoint(vp: TourPictureViewpoint): boolean {
   const numbers = [...vp.position, ...vp.rotation, vp.hfovDeg, vp.distanceM];
   return (
     vp.position.length === 3 &&
     vp.rotation.length === 4 &&
     numbers.every(Number.isFinite) &&
+    vp.position.every((v) => Math.abs(v) <= TOUR_ITEM_MAX_OFFSET_M) &&
     Math.hypot(...vp.rotation) > 1e-6 &&
     vp.hfovDeg >= TOUR_PICTURE_MIN_HFOV_DEG &&
     vp.hfovDeg <= TOUR_PICTURE_MAX_HFOV_DEG &&

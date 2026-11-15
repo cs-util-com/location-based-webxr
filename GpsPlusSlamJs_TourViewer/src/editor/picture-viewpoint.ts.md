@@ -35,8 +35,10 @@ same reading as `kinds/picture/viewpoint-fade.ts`'s `viewpointForward`).
   is stood in front of from the south, facing north.
 - A non-finite pose never gives a NaN viewpoint (the place falls back to 0).
 - Bounds: lens 10 to 120 and depth 1 to 500 (the format's
-  `TOUR_PICTURE_*` constants), pitch +-80; a typed value past one is kept
-  at it, never refused.
+  `TOUR_PICTURE_*` constants), pitch +-80, and the place within
+  `TOUR_ITEM_MAX_OFFSET_M` (10 km) of the station on each axis, past which
+  the reader refuses the saved tour; a typed value past one is kept at it,
+  never refused.
 - Typing the facing keeps the pitch and the other way round.
 
 ## Examples
@@ -51,7 +53,9 @@ viewpointWithField(vp, "vp-lens", 40); // the same with a 40 degree lens
 
 `picture-viewpoint.test.ts` (round trip of facing and pitch as a property,
 agreement with the viewer's `viewpointForward`, the mint as a property,
-the flat and NaN cases, every field, the bounds, the null cases).
+the flat and NaN cases, every field, the bounds, the null cases, and as a
+property that any number typed into any field writes a viewpoint the
+format's reader keeps).
 
 ## The 3D view's handle
 

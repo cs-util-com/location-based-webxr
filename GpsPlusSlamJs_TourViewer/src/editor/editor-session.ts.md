@@ -132,7 +132,8 @@ never state). Design:
     in front of the picture (`picture-viewpoint.ts`'s `mintViewpoint`, from
     its pose in the station's frame); `unchanged` for the one it holds;
     refused for a block that is no picture (`ONLY_A_PICTURE_VIEWPOINT`), a
-    viewpoint the format would refuse (`NOT_A_VIEWPOINT`) and an id the
+    viewpoint the format would refuse (`NOT_A_VIEWPOINT`: a place past
+    `TOUR_ITEM_MAX_OFFSET_M` on any axis among them) and an id the
     tour lacks. `editBlockView` switching a picture without a viewpoint
     into a viewpoint view mints one in the same step, so a creator never
     holds a viewpoint view that draws as a plain plane; switching away

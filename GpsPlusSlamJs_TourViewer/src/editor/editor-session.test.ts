@@ -321,6 +321,10 @@ describe("createEditorSession", () => {
     expect(
       editor.editPictureViewpoint("c", { ...vp, position: [NaN, 0, 0] }),
     ).toMatchObject({ kind: "refused" });
+    // Beyond the reader's offset bound: the saved tour would not open.
+    expect(
+      editor.editPictureViewpoint("c", { ...vp, position: [1, 10_001, 2] }),
+    ).toMatchObject({ kind: "refused" });
     expect(editor.editPictureViewpoint("nope", vp)).toMatchObject({
       kind: "refused",
     });

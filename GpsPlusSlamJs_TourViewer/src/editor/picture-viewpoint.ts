@@ -18,6 +18,7 @@ import {
   TOUR_PICTURE_MIN_HFOV_DEG,
   type TourPictureViewpoint,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { TOUR_ITEM_MAX_OFFSET_M } from "gps-plus-slam-app-framework/ar/tour-items";
 
 /** A pose in the station's frame, as the editor knows a picture's. */
 interface StationPose {
@@ -64,6 +65,11 @@ export interface ViewpointFacts {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+/** `value` (m) within the offset the format keeps on each axis. */
+function offset(value: number): number {
+  return clamp(value, -TOUR_ITEM_MAX_OFFSET_M, TOUR_ITEM_MAX_OFFSET_M);
 }
 
 /** `deg` in 0 to 360. */
@@ -194,10 +200,12 @@ export function viewpointAt(
 }
 
 /**
- * `vp` with `field` typed as `value`: its place moved on one axis, turned
- * to a facing, tilted (within `VIEWPOINT_MAX_PITCH_DEG`), its lens or its
- * depth (within the format's bounds). Null for a field that is none of
- * them and a value that is no finite number.
+ * `vp` with `field` typed as `value`: its place moved on one axis (within
+ * the format's offset bound, `TOUR_ITEM_MAX_OFFSET_M`, beyond which the
+ * saved tour would not open), turned to a facing, tilted (within
+ * `VIEWPOINT_MAX_PITCH_DEG`), its lens or its depth (within the format's
+ * bounds). Null for a field that is none of them and a value that is no
+ * finite number.
  */
 export function viewpointWithField(
   vp: TourPictureViewpoint,
@@ -209,11 +217,11 @@ export function viewpointWithField(
   const [n, u, e] = vp.position;
   switch (field) {
     case "vp-north":
-      return { ...vp, position: [value, u, e] };
+      return { ...vp, position: [offset(value), u, e] };
     case "vp-up":
-      return { ...vp, position: [n, value, e] };
+      return { ...vp, position: [n, offset(value), e] };
     case "vp-east":
-      return { ...vp, position: [n, u, value] };
+      return { ...vp, position: [n, u, offset(value)] };
     case "vp-facing":
       return { ...vp, rotation: viewpointRotation(value, facts.pitchDeg) };
     case "vp-pitch": {
