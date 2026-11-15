@@ -499,9 +499,9 @@ describe("StaticTileSource", () => {
     expect(calls.map((c) => `${c.method} ${c.cache ?? ""}`)).toEqual([
       "GET ",
       "GET no-cache",
-      "GET ",
-      "GET ",
       "POST ",
+      "GET ",
+      "GET ",
     ]);
   });
 
@@ -571,22 +571,37 @@ describe("StaticTileSource", () => {
     ]);
   });
 
-  it("a speculative read of a bad tile sends no report", async () => {
-    // Why this test matters: a speculative read (a ring warm) asks the host
-    // for nothing. A report queues work on the host, so warming tiles nobody
-    // looks at must not send one; the tile still goes to the race.
+  it("a speculative read of a bad tile reports it once, and a later foreground read sends no second report", async () => {
+    // Why this test matters: a ring warm often reaches a tile first, and the
+    // cache in front keeps that read's result, so no foreground read may
+    // ever see the tile. A report skipped there would leave a bad tile on
+    // the host for good. The report stays once per tile per session.
     const partial = JSON.stringify({
       ...JSON.parse(PAYLOAD),
       remark: "runtime error: Query timed out",
     });
     const stored = (): Response =>
       new Response(partial, { status: 200, headers: { etag: '"e1"' } });
+    const reportUrl = `${REPORT_URL}?etag=${encodeURIComponent('"e1"')}`;
     const { source, fallback, calls } = setup({
-      [`GET ${TILE_URL}`]: [stored(), stored()],
+      [`GET ${TILE_URL}`]: [stored(), stored(), stored()],
+      [`POST ${reportUrl}`]: [json(202, { status: "checking" })],
     });
     await source.fetchTile(TILE, { speculative: true });
     expect(fallback.calls).toHaveLength(1);
-    expect(calls.map((c) => c.method)).toEqual(["GET", "GET"]);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET ${TILE_URL}`,
+      `GET ${TILE_URL}`,
+      `POST ${reportUrl}`,
+    ]);
+    await source.fetchTile(TILE);
+    expect(fallback.calls).toHaveLength(2);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET ${TILE_URL}`,
+      `GET ${TILE_URL}`,
+      `POST ${reportUrl}`,
+      `GET ${TILE_URL}`,
+    ]);
   });
 
   it("rejects a stored body without an elements array, and a bad tile is no refusal", async () => {
@@ -936,6 +951,38 @@ describe("StaticTileSource", () => {
     });
   }
 
+  describe("a sleep that leaves no wait for the next poll", () => {
+    for (const overshootMs of [1_000, 1_001, 6_000]) {
+      it(`a sleep overshooting by ${overshootMs} ms counts as a refusal: the next fetch only reads`, async () => {
+        // Why this test matters: no poll could start, so nothing was sent and
+        // nothing was learnt about the host, yet the caller backs off as after
+        // any refusal. Without that, every tile would ask for a fill again
+        // right after a wait the host could not answer in.
+        const { source, fallback, calls } = setup(
+          {
+            [`GET ${TILE_URL}`]: [
+              new Response("nf", { status: 404 }),
+              new Response("nf", { status: 404 }),
+              new Response("nf", { status: 404 }),
+            ],
+            [`POST ${FILL_URL}`]: [json(202, { status: "queued" })],
+          },
+          { maxWaitMs: 11_000, oversleepMs: [0, overshootMs] },
+        );
+        await source.fetchTile(TILE);
+        expect(fallback.calls).toHaveLength(1);
+        await source.fetchTile(TILE);
+        expect(fallback.calls).toHaveLength(2);
+        expect(calls.map((c) => c.method)).toEqual([
+          "GET",
+          "POST",
+          "GET",
+          "GET",
+        ]);
+      });
+    }
+  });
+
   // The first, bad read of a poll with 1 000 ms left uses `readMs` of it on
   // the clock; the re-read past the browser cache answers after `headersMs`
   // real ms. Served only when the re-read fits in what is left.
@@ -1011,6 +1058,196 @@ describe("StaticTileSource", () => {
       }
     });
   }
+
+  it("a caller abort during the re-read of a bad tile stays an abort: no report, no race, no refusal", async () => {
+    // Why this test matters: a re-read that fails leaves the first, bad
+    // copy to decide, which reports the tile and races it. A caller who
+    // gave up must get the abort instead, with nothing sent on its behalf.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const controller = new AbortController();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { source, fallback, calls } = setup({
+        [`GET ${TILE_URL}`]: [
+          new Response(partial, { status: 200, headers: { etag: '"first"' } }),
+          (init) =>
+            new Promise<Response>((_resolve, reject) => {
+              const signal = init?.signal;
+              signal?.addEventListener("abort", () => {
+                reject(signal.reason as Error);
+              });
+              queueMicrotask(() => {
+                controller.abort();
+              });
+            }),
+        ],
+      });
+      const outcome = source.fetchTile(TILE, { signal: controller.signal });
+      await expect(outcome).rejects.toMatchObject({ name: "AbortError" });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(calls.map((c) => `${c.method} ${c.cache ?? ""}`)).toEqual([
+        "GET ",
+        "GET no-cache",
+      ]);
+      expect(fallback.calls).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a re-read the fill wait had no time for leaves the allowance for the next read of the tile", async () => {
+    // Why this test matters: the re-read past the browser cache is allowed
+    // once per tile per session. When no request went out (no wait left),
+    // nothing was learnt about the host's copy, so a later read of the same
+    // tile must still be able to look past the cache and find a good one.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const bad = (): Response =>
+      new Response(partial, { status: 200, headers: { etag: '"first"' } });
+    const reportUrl = `${REPORT_URL}?etag=${encodeURIComponent('"first"')}`;
+    const clock = { advance: (_ms: number): void => undefined };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const ctx = lateFill(
+        1_000,
+        [
+          () => {
+            clock.advance(1_000);
+            return Promise.resolve(bad());
+          },
+          bad(),
+          new Response(PAYLOAD, { status: 200, headers: { etag: '"new"' } }),
+        ],
+        undefined,
+        { [`POST ${reportUrl}`]: [json(202, { status: "checking" })] },
+      );
+      clock.advance = ctx.advance;
+      const first = await ctx.source.fetchTile(TILE);
+      expect(first.sourceId).toBe("overpass:test");
+      expect(ctx.calls.filter((c) => c.cache === "no-cache")).toHaveLength(0);
+      const second = await ctx.source.fetchTile(TILE);
+      expect(second.sourceId).toBe("static:tiles.example.dev");
+      expect(ctx.calls.filter((c) => c.cache === "no-cache")).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  describe("a re-read past the browser cache that failed", () => {
+    for (const [failure, reread] of [
+      ["a host error (500)", (): Reply => new Response("x", { status: 500 })],
+      ["a network error", (): Reply => new TypeError("Failed to fetch")],
+      [
+        "no headers within the request limit",
+        (): Reply => (init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            const signal = init?.signal;
+            signal?.addEventListener("abort", () => {
+              reject(signal.reason as Error);
+            });
+          }),
+      ],
+    ] as const) {
+      it(`a re-read that failed with ${failure} spends the allowance: the next read of the tile makes no re-read`, async () => {
+        // Why this test matters: the re-read past the browser cache is a full
+        // download, allowed once per tile per session. A re-read that reached
+        // the host and failed produced a verdict on it, so a tile that stays
+        // bad must not cost a second download on every later read.
+        const partial = JSON.stringify({
+          ...JSON.parse(PAYLOAD),
+          remark: "runtime error: Query timed out",
+        });
+        const bad = (): Response => new Response(partial, { status: 200 });
+        const warn = vi
+          .spyOn(console, "warn")
+          .mockImplementation(() => undefined);
+        try {
+          const { source, fallback, calls } = setup(
+            { [`GET ${TILE_URL}`]: [bad(), reread(), bad()] },
+            { requestTimeoutMs: 30 },
+          );
+          await source.fetchTile(TILE);
+          expect(calls.map((c) => c.cache ?? "")).toEqual(["", "no-cache"]);
+          await source.fetchTile(TILE);
+          expect(fallback.calls).toHaveLength(2);
+          expect(calls.map((c) => c.cache ?? "")).toEqual(["", "no-cache", ""]);
+        } finally {
+          warn.mockRestore();
+        }
+      });
+    }
+  });
+
+  it("a re-read the caller aborted leaves the allowance for the next read of the tile", async () => {
+    // Why this test matters: an abort says nothing about the host's copy
+    // either; the next read of the tile may still look past the cache.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const bad = (): Response =>
+      new Response(partial, { status: 200, headers: { etag: '"first"' } });
+    const controller = new AbortController();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { source, calls } = setup({
+        [`GET ${TILE_URL}`]: [
+          bad(),
+          (init) => {
+            controller.abort();
+            return Promise.reject(init?.signal?.reason as Error);
+          },
+          bad(),
+          new Response(PAYLOAD, { status: 200, headers: { etag: '"new"' } }),
+        ],
+      });
+      await expect(
+        source.fetchTile(TILE, { signal: controller.signal }),
+      ).rejects.toMatchObject({ name: "AbortError" });
+      const next = await source.fetchTile(TILE);
+      expect(next.sourceId).toBe("static:tiles.example.dev");
+      expect(calls.map((c) => c.cache ?? "")).toEqual([
+        "",
+        "no-cache",
+        "",
+        "no-cache",
+      ]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("warns about a bad tile once per tile per session, speculative reads included", async () => {
+    // Why this test matters: a tile that stays bad is read again on every
+    // visit; a warning per read would flood the console. A ring warm often
+    // reaches a tile first, and the cache in front keeps that read's result,
+    // so a warning skipped there would leave the tile unnamed all session.
+    const partial = JSON.stringify({
+      ...JSON.parse(PAYLOAD),
+      remark: "runtime error: Query timed out",
+    });
+    const stored = (): Response => new Response(partial, { status: 200 });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { source, fallback } = setup({
+        [`GET ${TILE_URL}`]: Array.from({ length: 5 }, stored),
+      });
+      await source.fetchTile(TILE, { speculative: true });
+      expect(warn).toHaveBeenCalledTimes(1);
+      await source.fetchTile(TILE, { speculative: true });
+      await source.fetchTile(TILE);
+      await source.fetchTile(TILE);
+      expect(fallback.calls).toHaveLength(4);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 
   it("asks for no fill once the wait is spent before the ask", async () => {
     // Why this test matters: a fill request with no time left would be

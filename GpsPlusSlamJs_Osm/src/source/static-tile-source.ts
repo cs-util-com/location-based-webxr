@@ -52,8 +52,11 @@ export interface StaticTileSourceOptions {
    * (a cold tile took 36-56 s to fill when measured). It bounds the wait
    * for each answer's headers; a body that began just before its end keeps
    * `requestTimeoutMs`, so a tile is handed over at most
-   * `maxWaitMs + requestTimeoutMs` after it was asked for (105 s on the
-   * defaults).
+   * `max(maxWaitMs, requestTimeoutMs) + requestTimeoutMs` after it was
+   * asked for (105 s on the defaults). The second term is that late body;
+   * with a wait shorter than the per-request limit, the two terms are the
+   * first read of a stored file and its re-read past the browser cache,
+   * neither of which is part of the fill wait.
    */
   readonly maxWaitMs?: number;
   /** How long no fill is asked for after the host said no. Default 10 min. */
@@ -77,9 +80,23 @@ const DEFAULT_MAX_WAIT_MS = 60_000;
 const DEFAULT_REFUSAL_MEMORY_MS = 10 * 60_000;
 const DEFAULT_REFRESH_AFTER_MS = 30 * 86_400_000;
 
-/** The host could not serve this tile; the reason is for the log only. */
+/**
+ * The host could not serve this tile; the reason is for the log only. A
+ * refusal: no fill is asked for during `refusalMemoryMs`.
+ */
 class HostDeclined extends Error {
   override readonly name = "HostDeclined";
+}
+
+/**
+ * The fill wait was spent before a request could start: nothing was sent,
+ * so nothing was learnt about the host (unlike a `HostDeclined`, which
+ * names an answer the host gave). Outside the re-read past the browser
+ * cache it still counts as a refusal, exactly like a `HostDeclined`: the
+ * caller backs off the same way.
+ */
+class NoWaitLeft extends Error {
+  override readonly name = "NoWaitLeft";
 }
 
 /**
@@ -200,6 +217,8 @@ export class StaticTileSource implements OsmDataSource {
   private readonly reported = new Set<string>();
   /** Tiles already re-read past the browser cache in this session. */
   private readonly rereadPastCache = new Set<string>();
+  /** Tiles whose refusal was already logged in this session. */
+  private readonly warned = new Set<string>();
 
   constructor(options: StaticTileSourceOptions) {
     this.origin = requireBaseUrl(options.baseUrl);
@@ -248,7 +267,12 @@ export class StaticTileSource implements OsmDataSource {
     }
   }
 
-  /** An abort rethrown; any other failure: the race, at once. */
+  /**
+   * An abort rethrown; any other failure: the race, at once. Every failure
+   * but a skip or a bad stored file is remembered as a refusal, a
+   * `NoWaitLeft` included: no request went out, so nothing was learnt about
+   * the host, but the caller backs off the same way.
+   */
   private afterHostFailed(
     error: unknown,
     tile: string,
@@ -279,7 +303,7 @@ export class StaticTileSource implements OsmDataSource {
    * `deadline` (epoch ms, the end of the fill wait) bounds only the wait
    * for the response's headers: a tile the host stored late in the wait is
    * still read whole, at whatever bandwidth the per-request limit allows.
-   * Nothing is sent once the deadline has passed (`HostDeclined`). A body
+   * Nothing is sent once the deadline has passed (`NoWaitLeft`). A body
    * that starts just before the deadline can therefore take up to
    * `requestTimeoutMs` past it.
    */
@@ -296,7 +320,7 @@ export class StaticTileSource implements OsmDataSource {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const left =
       init.deadline === undefined ? Infinity : init.deadline - this.now();
-    if (left <= 0) throw new HostDeclined(`no wait left for ${url}`);
+    if (left <= 0) throw new NoWaitLeft(`no wait left for ${url}`);
     // With at least the per-request limit left, that limit already bounds
     // the headers: no timer (one fewer to clear, and none past setTimeout's
     // range for a very long wait).
@@ -424,11 +448,13 @@ export class StaticTileSource implements OsmDataSource {
     if (judged === undefined) return undefined;
     const { stored, transportMs, decodeStart, checked } = judged;
     if (checked instanceof BadStoredTile) {
-      // The one diagnostic of a refused stored file; the race hides it.
-      /* eslint-disable-next-line no-console */
-      console.warn(`StaticTileSource: ${checked.message}`);
-      // A speculative read asks the host for nothing, a report included.
-      if (!speculative) this.reportBad(tile, stored.etag);
+      // Warned and reported once per tile, speculative reads included: a
+      // ring warm often reaches a tile first and the cache in front keeps
+      // its result, so no later read may ever see the tile, and a tile
+      // never reported is never replaced. The host bounds reports per
+      // address and per day.
+      this.warnOnce(tile, checked);
+      this.reportBad(tile, stored.etag);
       throw checked;
     }
     const payload = checked;
@@ -483,9 +509,15 @@ export class StaticTileSource implements OsmDataSource {
     // A re-read that fails (no time left in the fill wait, no headers in
     // time, a host error) leaves the first copy to decide: the tile is bad
     // and reported, not a host refusal. An abort stays an abort.
+    // The allowance is spent only once the re-read produced a verdict (an
+    // answer, a host error, a network error or no headers in time): with no
+    // wait left, or after a caller abort, nothing was learnt about the
+    // host's copy, so a later read of the tile may still look past the cache.
+    // As it is not claimed before the attempt, concurrent reads of one bad
+    // tile can each make the re-read; a caching source in front, which
+    // shares one read per tile, keeps that rare.
     if (!(judged.checked instanceof BadStoredTile)) return judged;
     if (this.rereadPastCache.has(tile)) return judged;
-    this.rereadPastCache.add(tile);
     let fresh: typeof first | undefined;
     try {
       fresh = await this.readStored(tile, signal, {
@@ -494,8 +526,10 @@ export class StaticTileSource implements OsmDataSource {
       });
     } catch (error) {
       if (isAbort(error) || signal?.aborted === true) throw error;
+      if (!(error instanceof NoWaitLeft)) this.rereadPastCache.add(tile);
       return judged;
     }
+    this.rereadPastCache.add(tile);
     if (fresh === undefined) return undefined;
     return {
       stored: fresh,
@@ -545,7 +579,7 @@ export class StaticTileSource implements OsmDataSource {
    * Asks the host, once per tile and without waiting, to refetch a stored
    * tile whose data is old; the old file is served meanwhile. Skipped while
    * the host refuses fills and for speculative reads (nobody waits on them,
-   * so they ask the host for nothing); a failed ask is ignored.
+   * so they ask for no refetch); a failed ask is ignored.
    */
   private refreshIfOld(tile: string, osmBase: string | undefined): void {
     const base = Date.parse(osmBase ?? "");
@@ -557,6 +591,17 @@ export class StaticTileSource implements OsmDataSource {
       discardBody,
       () => undefined,
     );
+  }
+
+  /**
+   * The one diagnostic of a refused stored file (the race hides it), once
+   * per tile per session: a tile that stays bad is read on every visit.
+   */
+  private warnOnce(tile: string, refusal: BadStoredTile): void {
+    if (this.warned.has(tile)) return;
+    this.warned.add(tile);
+    /* eslint-disable-next-line no-console */
+    console.warn(`StaticTileSource: ${refusal.message}`);
   }
 
   /**
