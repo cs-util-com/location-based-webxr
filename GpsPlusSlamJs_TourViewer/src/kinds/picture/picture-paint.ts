@@ -311,7 +311,7 @@ function paintCard(doc: Document, words: CardWords): HTMLCanvasElement {
   g.fillStyle = INK;
   g.font = `600 ${String(0.05 * ppm)}px ${SANS}`;
   g.fillText(fitLine(g, words.line1, maxW), x, y + 0.008 * ppm);
-  const line2 = words.line2 ?? "";
+  const line2 = words.line2?.trim() ?? "";
   if (line2 !== "") {
     g.fillStyle = "#bcb09c";
     g.font = `${String(0.04 * ppm)}px ${SANS}`;

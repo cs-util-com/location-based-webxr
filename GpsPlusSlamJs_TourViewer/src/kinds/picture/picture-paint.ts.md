@@ -27,7 +27,8 @@ the plates of the viewer and the window) and the spot decal. The parts take them
     (rounded, clipped, `aspect` high per unit wide, mirrored upright
     inside its clip when `thumb.flipped` says the image is stored upside
     down, as a texture decoded pre-flipped for the GPU is), the year in amber and
-    one or two lines; the tag is this card;
+    one or two lines (the second trimmed, none when blank); the tag is
+    this card;
   - `spotDecal()` - 512 px: a dark disc, the amber ring, a dashed inner
     ring, two pale soles and the arrow at the top (the way to face).
 - `canvasPicturePainters(doc = document)` - the painters on `doc`.

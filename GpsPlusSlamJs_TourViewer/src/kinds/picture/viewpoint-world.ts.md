@@ -30,7 +30,10 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
   no blur).
 - `thenNow`: the plane's opacity is `THEN_NOW_FADE` times the blend of
   `then-now-fade.ts`; lined up, the visitor gets the slider on the page's
-  screen (`then-now-slider.ts`), and it closes when they leave.
+  screen (`then-now-slider.ts`), and it closes when they leave. Its
+  plane carries the shared soft-edge alpha map (`then-now-feather.ts`),
+  which the other views' planes do not; the part's disposal frees it
+  with the look, and three uploads it again for the next part.
 - `viewer`: the viewer stand and its plate fade out as the picture fades
   in (`VIEWER_FADE`); its halo pulses, softer far away, and goes with it.
   The plate's words are generic ("Step up to it", "and see it as it was"),
@@ -54,6 +57,8 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
   `editor3d/editor3d-editing.ts`, which box the item's objects) grow to
   hold it. That is intended: the prototype shows the guide in its editor
   too, and the creator places the picture by where the spot is.
+- The plates and the guide's card are painted with `painters` (default:
+  the canvas painters).
 - What pulses (the column's ripple, the halo) reads a clock held at 0 when
   `env.reduceMotion` says so.
 - The screen hints of the prototype ("Walk to the marker", "Turn this
@@ -86,7 +91,9 @@ picture, the viewer giving way with its plate and halo, the guide standing
 at the viewpoint under random item and folder poses and sizes, the guide
 on the way in and on the spot, the card told of an upside-down picture,
 the tap target without the column and the hidden card taking no ray, the
-window's plate above the ground for a low viewpoint, sharpen's card
+window's plate above the ground for a low viewpoint, the viewer's and the
+window's plates (none on the other views, which paint only the guide's
+card), the soft edge on then and now's plane only, sharpen's card
 without the picture, the
 column held still on reduced motion, the slider's arrival, fade-in, take-over and
 departure, the window's shader plane, the sheet, disposal.

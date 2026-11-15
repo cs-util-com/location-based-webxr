@@ -29,6 +29,9 @@ sound, on one of two channels.
     ignores the seek;
   - `level(gain, seconds)` - a background's loudness (0 to 1) at page time
     `seconds`; a voice ignores it;
+  - `lowered()` - a background's lowering under a voice as of its last
+    `level`: 1, gliding to `BACKGROUND_UNDER_VOICE` and back (the zone's
+    glow dims by it); a voice and `SILENT_SOUND` say 1;
   - `dispose()` - stops it and frees its element and its object URL.
 - `WorldSoundDeps` - `focus` (the page's voice focus), and optional `audio`
   (an element factory, default `new Audio()`), `sound` (a `SoundGate`, the
@@ -81,7 +84,8 @@ voice.carryOn(); // and back: it plays on
 
 `world-sound.test.ts`: the voice through the focus (play, hold, carry on, the
 visitor's pause staying off), the background's lazy read, its loop and
-level, its lowering under a voice over the glide, the sound setting (a pause,
+level, its lowering under a voice over the glide (and `lowered()` telling
+it, 1 for a voice), the sound setting (a pause,
 no read while off), a refused play reported once, dispose freeing the
 element and the URL; and, wired as `main.ts` wires them, a voice queued
 behind a held one staying quiet when that one is freed, off and on again,

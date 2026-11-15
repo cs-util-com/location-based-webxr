@@ -11,13 +11,16 @@ ground glow whose fade is the loudness curve.
 
 - (module-private) `zoneReachOf(block)` -> `ZoneReach`: the block's `maxM`, `minM` and
   `volume`, with `AMBIENT_DEFAULT_MAX_M` and full volume for those it lacks.
-- (module-private) `zoneGlow(reach)` -> `{ object, dispose }`: a flat disc of radius `maxM`
-  whose shader draws the alpha of the `zoneGain` curve, warm and faint.
+- (module-private) `zoneGlow(reach)` -> `{ object, dim, dispose }`: a flat disc of radius `maxM`
+  whose shader draws the alpha of the `zoneGain` curve, warm and faint,
+  at `ZONE_GLOW_ALPHA` (0.35) times `dim`'s factor (clamped to 0..1).
 - `zonePart(block, env)` -> `WorldPart`: the glow; in play an `update` that
   sets the background sound's level (`zoneGain` of the horizontal distance
   from the object's position, divided by the scale its folders draw it at:
   `inheritedScaleOf` of `../../placement/place-scale.ts`, so its reach
-  grows with its drawn glow) every frame. In the editor: still and
+  grows with its drawn glow) every frame, and dims the glow by the
+  sound's own `lowered()`: under a narration it fades to 30 % with the
+  sound, over the same glide, and comes back with it. In the editor: still and
   silent, the glow plus the speaker icon at the centre (`sound-icon.ts`)
   and the hearing range as a ring at `maxM`; only the icon is picked.
 - `RANGE_RING` - `{ px: 3, minWidthM: 0.12, maxWidthM: 4 }`: the range
@@ -32,8 +35,8 @@ ground glow whose fade is the loudness curve.
 - The sound is made on the first frame, through
   `env.sound(block.audio, "background")`, and read only when its level is
   first above 0 (`world-sound.ts`).
-- The glow's fade and the loudness use one curve, so what the visitor sees
-  is what they hear.
+- The glow's fade and the loudness use one curve, and the glow's dim is the
+  sound's own lowering, so what the visitor sees is what they hear.
 - `dispose` frees the sound, the disc's geometry and its material (in
   the editor also the ring and the icon).
 - In the editor the glow and the ring do not take a ray (`raycast` is a
@@ -56,7 +59,8 @@ part.update?.({ seconds: 1, viewer: [5, 1.5, 0] });
 
 ## Tests
 
-`zone.test.ts`: the level by distance, the defaults, the editor's silence,
+`zone.test.ts`: the level by distance, the glow dimming with the sound's
+lowering and back, the defaults, the editor's silence,
 dispose, the ring and icon in the editor only, picked by the icon alone
 (rays down inside the range hit nothing; one at the icon hits), and the
 range line at least 3 px across from 5 m to 300 m with its caps. `play.test.ts`: the world door picks it for `zone`.

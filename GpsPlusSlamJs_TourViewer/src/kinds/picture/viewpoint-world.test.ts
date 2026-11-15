@@ -24,6 +24,7 @@ import {
   Texture,
   Vector3,
   type Material,
+  type MeshBasicMaterial,
   type Mesh,
   type Object3D,
   type ShaderMaterial,
@@ -41,6 +42,7 @@ import {
 import { drawnAspect } from "./picture-decode.js";
 import { SPOT_CARD_LINES, spotCardPlace } from "./spot-guide.js";
 import { THEN_NOW_TIMING } from "./then-now-fade.js";
+import { thenNowFeatherMap } from "./then-now-feather.js";
 import { EDITOR_PICTURE_ALPHA, viewpointWorld } from "./viewpoint-world.js";
 
 /** Looking east (+Z in north-up-east) from 1.6 m over the station's anchor. */
@@ -535,6 +537,85 @@ describe("viewpointWorld", () => {
     part.dispose();
   });
 
+  it("puts a plate on the viewer's column, facing the spot, fading with it", async () => {
+    // Why: the chosen page's viewer says what it is for on its column: the
+    // year, and to step up to it; it gives way with the viewer.
+    const { part, station, painted } = await placed(
+      picture("viewer"),
+      envOf("play"),
+    );
+    // The viewer is its own mark: its plate is its only card.
+    expect(painted.cards).toHaveLength(1);
+    expect(painted.cards[0]).toMatchObject({
+      year: "1902",
+      line1: "Step up to it",
+      line2: "and see it as it was",
+    });
+    const plate = named(part.object, "picture-viewer-plate");
+    expect(
+      named<Group>(part.object, "picture-viewer").getObjectById(plate.id),
+    ).toBe(plate);
+    station.updateMatrixWorld(true);
+    // In the viewpoint's frame (the part's): 0.95 m up, 0.34 m ahead of
+    // the spot (east, +Z), turned to face back at it and tipped up to the
+    // eye.
+    const at = part.object.worldToLocal(plate.getWorldPosition(new Vector3()));
+    expect(at.y).toBeCloseTo(0.95, 6);
+    expect(at.z).toBeCloseTo(0.34, 6);
+    expect(at.x).toBeCloseTo(0, 6);
+    const facing = new Vector3(0, 0, 1)
+      .transformDirection(plate.matrixWorld)
+      .applyQuaternion(station.getWorldQuaternion(new Quaternion()).invert());
+    expect(facing.z).toBeLessThan(-0.9);
+    expect(facing.y).toBeGreaterThan(0.3);
+    const size = new Box3().setFromObject(plate).getSize(new Vector3());
+    expect(size.x).toBeCloseTo(0.34, 6);
+    tick(part, station, 0, [0, 1.6, -8]);
+    expect(opacity(part.object, "picture-viewer-plate")).toBe(1);
+    tick(part, station, 1, [0, 1.6, 0]);
+    expect(opacity(part.object, "picture-viewer-plate")).toBe(0);
+    part.dispose();
+  });
+
+  it("hangs a plate under the window's frame", async () => {
+    // Why: the chosen page's window names what it shows under its frame:
+    // the year, the caption's first phrase, and to look through.
+    const { part, station, painted } = await placed(
+      picture("window"),
+      envOf("play"),
+    );
+    // The guide's card is the other one.
+    expect(
+      painted.cards.find((c) => c.line2 === "Look through the frame"),
+    ).toMatchObject({ year: "1902", line1: "The square on market day" });
+    station.updateMatrixWorld(true);
+    const frame = new Box3().setFromObject(
+      named(part.object, "picture-portal-frame"),
+    );
+    const plate = new Box3().setFromObject(
+      named(part.object, "picture-portal-plate"),
+    );
+    const size = plate.getSize(new Vector3());
+    // 0.36 m wide, a quarter as tall, 5 cm under the frame, centred.
+    expect(Math.max(size.x, size.z)).toBeCloseTo(0.36, 6);
+    expect(size.y).toBeCloseTo(0.09, 6);
+    expect(frame.min.y - plate.max.y).toBeCloseTo(0.05, 6);
+    expect(plate.getCenter(new Vector3()).x).toBeCloseTo(
+      frame.getCenter(new Vector3()).x,
+      6,
+    );
+    part.dispose();
+  });
+
+  it("paints no plate for the views without one, only the guide's card", async () => {
+    for (const view of ["thenNow", "sharpen", "finder"] as const) {
+      const { part, painted } = await placed(picture(view), envOf("play"));
+      expect(painted.cards, view).toHaveLength(1);
+      expect(painted.cards[0]?.line1, view).toBe(SPOT_CARD_LINES[view][0]);
+      part.dispose();
+    }
+  });
+
   it("hands a lined-up visitor the then-and-now slider and takes it back", async () => {
     const host = document.createElement("div");
     document.body.append(host);
@@ -566,6 +647,22 @@ describe("viewpointWorld", () => {
     tick(part, station, 10, [0, 1.6, -8]);
     expect(host.querySelector("input[type=range]")).toBeNull();
     part.dispose();
+  });
+
+  it("softens only then and now's picture at its edges", async () => {
+    // Why: the chosen page's then-and-now melts into today at its border;
+    // sharpen and the viewer show the whole picture edge to edge.
+    for (const view of ["thenNow", "sharpen", "viewer"] as const) {
+      const { part } = await placed(picture(view), envOf("play"));
+      const plane = named(part.object, "picture-viewpoint-plane");
+      const material = plane.material as MeshBasicMaterial;
+      expect(material.alphaMap, view).toBe(
+        view === "thenNow" ? thenNowFeatherMap() : null,
+      );
+      part.dispose();
+      // The shared map outlives every part.
+      expect(thenNowFeatherMap().image.data).toBeDefined();
+    }
   });
 
   it("points the window's shader at the picture's plane in the world", async () => {

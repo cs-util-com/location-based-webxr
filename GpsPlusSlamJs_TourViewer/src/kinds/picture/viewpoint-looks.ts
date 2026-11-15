@@ -124,6 +124,11 @@ export const VIEWER_PLATE = {
 /** The viewer's halo on the ground around its foot. */
 const VIEWER_HALO_M = [0.46, 0.5] as const;
 
+/** A plate showing `map` as painted. */
+function plateMaterial(map: Texture): MeshBasicMaterial {
+  return new MeshBasicMaterial({ map, transparent: true, toneMapped: false });
+}
+
 /** The viewer: a stand with binoculars on a column, 0.42 m ahead of the
  *  spot, its head tilted with the viewpoint, a plate on its column
  *  (`plateMap`, painted words) and a halo on the ground at its foot.
@@ -216,11 +221,7 @@ export function viewerStand(
     head.add(hood, lens, eye);
   }
   stand.add(head);
-  const plateMat = new MeshBasicMaterial({
-    map: plateMap,
-    transparent: true,
-    toneMapped: false,
-  });
+  const plateMat = plateMaterial(plateMap);
   const plate = at(
     new Mesh(
       new PlaneGeometry(VIEWER_PLATE.widthM, VIEWER_PLATE.heightM),
@@ -567,11 +568,7 @@ export function portalLook(
     wall(w, rv, -Math.PI / 2, 0, 0, -h / 2),
     opening,
   );
-  const plateMat = new MeshBasicMaterial({
-    map: plateMap,
-    transparent: true,
-    toneMapped: false,
-  });
+  const plateMat = plateMaterial(plateMap);
   const pw = PORTAL_PLATE.widthM;
   const plate = new Mesh(new PlaneGeometry(pw, pw / 4), plateMat);
   plate.name = "picture-portal-plate";

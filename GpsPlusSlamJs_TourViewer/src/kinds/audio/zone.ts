@@ -3,7 +3,8 @@
  * looping, while the visitor is within its reach, louder toward the
  * centre, through the background channel; it has no stop of its own, so
  * it takes no tap. Its mark is a glow on the ground whose gradient is the
- * loudness curve (`zoneGlow`). In the editor it is the same glow, still
+ * loudness curve (`zoneGlow`); while a narration lowers the sound, the
+ * glow dims with it by the same factor. In the editor it is the same glow, still
  * and silent, with two marks the visitor never sees: the hearing range as
  * a ring drawn over the ground (`rangeRing`), and a speaker icon at the
  * centre (`soundIcon`), which is all the editor picks it by - a press
@@ -43,8 +44,9 @@ function zoneReachOf(block: TourAudioBlock): ZoneReach {
   };
 }
 
-/** How strong the glow is where the sound is at full volume. */
-const GLOW_ALPHA = 0.35;
+/** How strong the glow is where the sound is at full volume. While a
+ *  narration lowers the sound, this times the sound's own lowering. */
+export const ZONE_GLOW_ALPHA = 0.35;
 
 /**
  * The ground glow: a disc of the zone's reach, lying a little above the
@@ -53,6 +55,8 @@ const GLOW_ALPHA = 0.35;
  */
 function zoneGlow(reach: ZoneReach): {
   readonly object: Object3D;
+  /** Dims the glow to `k` (0..1) of its strength. */
+  dim(k: number): void;
   dispose(): void;
 } {
   const geometry = new CircleGeometry(reach.maxM, 64);
@@ -62,7 +66,7 @@ function zoneGlow(reach: ZoneReach): {
     uniforms: {
       uMin: { value: Math.min(reach.minM ?? 0, reach.maxM) },
       uMax: { value: reach.maxM },
-      uAlpha: { value: GLOW_ALPHA },
+      uAlpha: { value: ZONE_GLOW_ALPHA },
       uColor: { value: new Vector3(...WARM_GLOW.glow) },
     },
     vertexShader: /* glsl */ `
@@ -89,6 +93,11 @@ function zoneGlow(reach: ZoneReach): {
   disc.renderOrder = -1;
   return {
     object: disc,
+    dim(k) {
+      const uniform = material.uniforms["uAlpha"];
+      if (uniform === undefined || !Number.isFinite(k)) return;
+      uniform.value = ZONE_GLOW_ALPHA * Math.min(1, Math.max(0, k));
+    },
     dispose() {
       geometry.dispose();
       material.dispose();
@@ -220,6 +229,7 @@ export function zonePart(block: TourAudioBlock, env: WorldEnv): WorldPart {
           inheritedScaleOf(object);
         sound ??= env.sound(block.audio, "background");
         sound.level(zoneGain(d, reach), frame.seconds);
+        glow.dim(sound.lowered());
       },
       dispose() {
         sound?.dispose();

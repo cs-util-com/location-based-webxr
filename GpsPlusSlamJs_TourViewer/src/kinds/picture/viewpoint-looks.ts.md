@@ -20,6 +20,7 @@ materials only; `viewpoint-world.ts` decides what shows how much.
   pitch, a 0.34 x 0.15 m plate (`picture-viewer-plate`, the painted
   `plateMap`) on its column at 0.95 m tilted back 0.35 rad, and an amber
   halo (`picture-viewer-halo`, a 0.46-0.5 m ring) on the ground at its foot.
+  Both plates' materials come from one `plateMaterial(map)`.
   `materials` (the plate's among them) fade it; `halo` is the part's to
   pulse. Group `picture-viewer`. The viewer is its own mark: no spot guide.
 - `finderCorners(vp, aspect, crop)`: four L-shaped corner marks of the
