@@ -1740,6 +1740,7 @@ test.describe("the city-look section", () => {
     // assertion stay as they were (the readout's own describe boots with the
     // knob). Asserted on this boot because it is one without any knob.
     await expect(page.getByTestId("perf-readout")).toHaveCount(0);
+    await expect(page.getByTestId("perf-log-copy")).toHaveCount(0);
     const section = page.locator("#layer-group-look");
     await page.locator("#settings-open").click();
     await expect(section).toBeVisible();
@@ -3188,5 +3189,51 @@ test.describe("the woods governor's frame readout (?perf=1)", () => {
       REPAINT,
     );
     await expect(readout).toContainText("woods 100 % (off)");
+  });
+
+  // WHY THIS TEST MATTERS: the copied log is how a phone's measurement
+  // reaches someone else, so the button must exist with `perf=1`, its copy
+  // must carry every section and a JSON block that parses, and it must not
+  // carry the place the link opened at. Its absence without the knob is
+  // asserted on the city-look test's boot, beside the readout's.
+  test("perf=1 copies a perf log with every section and no location", async ({
+    page,
+    context,
+  }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await stubNetwork(page);
+    await page.goto(`/?lat=${50.9231}&lng=${6.9445}&perf=1`);
+    await waitForRefresh(page);
+    const button = page.getByTestId("perf-log-copy");
+    await expect(button).toHaveText("Copy perf log");
+    await button.click();
+    await expect(button).toHaveText("Copied");
+    // A Windows clipboard hands the text back with CRLF line ends.
+    const report = (
+      await page.evaluate(() => navigator.clipboard.readText())
+    ).replace(/\r\n/g, "\n");
+    // Kept with the run, so a desktop sample of the log is at hand.
+    await test.info().attach("perf-log.txt", {
+      body: report,
+      contentType: "text/plain",
+    });
+    for (const heading of [
+      "== Summary ==",
+      "== Readout ==",
+      "== Device ==",
+      "== Settings ==",
+      "== JSON ==",
+    ]) {
+      expect(report).toContain(heading);
+    }
+    expect(report).toContain("query woodsauto=(unset) treeform=(unset) perf=1");
+    expect(report).not.toContain("50.9231");
+    expect(report).not.toContain("6.9445");
+    const json = JSON.parse(
+      report.split("\n== JSON ==\n")[1]?.split("\n")[0] ?? "",
+    );
+    expect(json.format).toBe("osmdemo-perf-log/1");
+    expect(json.now.mode).toBe("off");
+    expect(json.device.devicePixelRatio).toBeGreaterThan(0);
   });
 });

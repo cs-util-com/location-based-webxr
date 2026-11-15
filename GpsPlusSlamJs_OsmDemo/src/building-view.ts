@@ -44,9 +44,20 @@ import {
   TERRAIN_SPACING_M,
   type Heightfield,
 } from "gps-plus-slam-osm";
-import { applyWoodsShare } from "gps-plus-slam-osm/three";
+import { applyWoodsShare, WOODS_GOVERNOR } from "gps-plus-slam-osm/three";
 import { heightRampColours } from "./height-ramp.js";
 import { createWoodsMeter, type WoodsMeter } from "./woods-readout.js";
+import {
+  buildPerfReport,
+  createPerfRecorder,
+  pickQueryKnobs,
+  type PerfRecorder,
+} from "./perf-log.js";
+import {
+  mountPerfLogPanel,
+  readBrowserDevice,
+  type PerfLogPanel,
+} from "./perf-log-panel.js";
 import {
   DEFAULT_CELL_PRESET,
   cellPreset,
@@ -631,6 +642,12 @@ export class BuildingView {
   private inventedTrees = 0;
   /** The `?perf=1` line, mounted only when asked for. */
   private readonly perfReadout: HTMLElement | undefined;
+  /**
+   * The `?perf=1` "Copy perf log" button and the bounded frame log it
+   * copies (`perf-log.ts`); both absent without the knob, so nothing is
+   * recorded then.
+   */
+  private readonly perfLog: PerfLogPanel | undefined;
   /** True while the frame callback runs, so `requestFrame` can tell chained. */
   private inFrame = false;
   /** Whether the frame now queued was requested from within a frame. */
@@ -639,7 +656,13 @@ export class BuildingView {
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
     this.sunAngles = options.initialSun;
-    this.woods = createWoodsMeter(options.woodsAuto ?? false);
+    const recorder =
+      options.perfReadout === true ? createPerfRecorder() : undefined;
+    this.woods = createWoodsMeter(options.woodsAuto ?? false, recorder);
+    this.perfLog =
+      recorder === undefined
+        ? undefined
+        : mountPerfLogPanel(this.container, () => this.perfLogReport(recorder));
     this.perfReadout =
       options.perfReadout === true
         ? mountPerfReadout(this.container)
@@ -1999,6 +2022,30 @@ export class BuildingView {
     );
   }
 
+  /** The `?perf=1` log as copied: the session so far, built on each click. */
+  private perfLogReport(recorder: PerfRecorder): string {
+    const state = this.woods.state();
+    return buildPerfReport({
+      nowMs: performance.now(),
+      device: readBrowserDevice(
+        this.renderer.domElement,
+        this.renderer.getContext(),
+      ),
+      settings: {
+        query: pickQueryKnobs(window.location.search),
+        governorOn: state.mode !== "off",
+        governor: WOODS_GOVERNOR,
+      },
+      timeline: recorder.snapshot(),
+      now: {
+        ...state,
+        readout: this.perfReadout?.textContent ?? "",
+        drawCost: this.lastDrawCost,
+        inventedTrees: this.inventedTrees,
+      },
+    });
+  }
+
   /**
    * Matches the renderer and camera to the container, and REPAINTS.
    *
@@ -2661,6 +2708,7 @@ export class BuildingView {
     // call and order — by `building-view-content.test.ts`.
     this.questBeacons.dispose();
     this.perfReadout?.remove();
+    this.perfLog?.dispose();
     this.container.removeEventListener("pointerdown", this.onPointerStart);
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();

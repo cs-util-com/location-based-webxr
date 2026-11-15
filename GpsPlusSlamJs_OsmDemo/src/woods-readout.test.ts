@@ -6,6 +6,7 @@ import {
   describeWoodsReadout,
   readWoodsKnobs,
 } from "./woods-readout.js";
+import { createPerfRecorder } from "./perf-log.js";
 
 /**
  * The woods governor's link knobs and its `?perf=1` readout: what the owner
@@ -133,5 +134,24 @@ describe("createWoodsMeter", () => {
     expect(meter.describe(3, undefined)).toBe(
       "frame 16.0 ms · p95 16.0 ms · woods 100 % (off) · 3 invented trees",
     );
+  });
+
+  // WHY THIS TEST MATTERS. The `?perf=1` log is fed by the meter, so a share
+  // change reaches it with the governor's mode and average at that moment,
+  // and the frames it records follow the same chained rule.
+  it("feeds a perf recorder its frames and each share change", () => {
+    const recorder = createPerfRecorder();
+    const meter = createWoodsMeter(true, recorder);
+    for (let t = 0; t <= 8_000; t += meter.share() === 1 ? 60 : 40) {
+      meter.frame(t, t > 0);
+    }
+    const timeline = recorder.snapshot();
+    expect(timeline.bursts).toEqual([0]);
+    expect(timeline.intervalCount).toBeGreaterThan(100);
+    expect(timeline.shareChanges).toHaveLength(1);
+    const change = timeline.shareChanges[0];
+    expect(change).toMatchObject({ from: 1, to: 0.5, mode: "thinned" });
+    expect(change?.averageMs).toBeGreaterThan(50);
+    expect(meter.state()).toMatchObject({ share: 0.5, mode: "thinned" });
   });
 });

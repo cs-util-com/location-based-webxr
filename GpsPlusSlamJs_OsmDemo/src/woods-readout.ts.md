@@ -12,10 +12,11 @@ The woods governor's link knobs and its `?perf=1` frame readout for OsmDemo: the
   - `perf`: `perf=1`.
 - `createFrameWindow(windowMs = 10000)`: `add(atMs, ms)` keeps the intervals of the last `windowMs` (non-positive or non-finite ignored); `p95()` is the nearest-rank 95th percentile, undefined while empty.
 - `describeWoodsReadout({ averageMs, p95Ms, share, mode, inventedTrees, drawCost })`: one line, e.g. `frame 61.2 ms · p95 88.0 ms · woods 50 % (thinned) · 1,234 invented trees · 120 draws / 456,789 tri`; `-` for an unmeasured time, the cost dropped while unmeasured (`describeDrawCost`).
-- `createWoodsMeter(auto)`: what `building-view.ts` holds.
+- `createWoodsMeter(auto, recorder?)`: what `building-view.ts` holds. The optional `recorder` (`perf-log.ts`, only with `?perf=1`) receives every frame and every share change with the governor's mode and average just after it.
   - `frame(atMs, chained)`: feeds the library's `createWoodsGovernor` and the window; returns the share to apply when the governor just moved it, otherwise undefined.
   - `share()`: the current share.
   - `describe(inventedTrees, drawCost)`: the readout line.
+  - `state()`: the governor's state now (`share`, `mode`, `averageMs`), for the perf log.
 
 ## Invariants & assumptions
 
@@ -41,4 +42,4 @@ readout.textContent = meter.describe(inventedTrees, drawCost);
 
 ## Tests
 
-`woods-readout.test.ts`: the knobs (coarse pointer, `woodsauto=off`, unknown tree forms, `perf=1` among other keys); the p95 over the last 10 s and invalid intervals; the readout line with and without measurements; the meter reporting one share change, never moving with auto off while still reading the frame time, and leaving an idle pause out. The e2e in `playwright-tests/scene-3d.spec.js` ("the woods governor's frame readout").
+`woods-readout.test.ts`: the knobs (coarse pointer, `woodsauto=off`, unknown tree forms, `perf=1` among other keys); the p95 over the last 10 s and invalid intervals; the readout line with and without measurements; the meter reporting one share change, never moving with auto off while still reading the frame time, and leaving an idle pause out; the meter feeding a perf recorder its frames and the share change. The e2e in `playwright-tests/scene-3d.spec.js` ("the woods governor's frame readout").
