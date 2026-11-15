@@ -25,7 +25,7 @@ model | character`.
     square), `reading` (a short sign that opens the whole text on a tap),
     `card`;
   - `picture`: `plane`, `card`; `video`: `screen`, `cutout`, `porthole`,
-    `card`; `audio`: `spot`, `zone`, `card`;
+    `window`, `standHere`, `card`; `audio`: `spot`, `zone`, `card`;
   - `model`: `placed`, `ghost`, `hotspots`, `cutaway`, `toy`, `card`;
     `character`: `bubble`, `speak`, `two-stations`, `portrait`, `popup`,
     `card` (the five before `card` are `TOUR_CHARACTER_VIEWS`, in a story
@@ -75,7 +75,8 @@ model | character`.
   `{ ok: false, reason, blank? }` (`blank` for a whitespace-only text).
 - `TOUR_FREE_BLOCK_VIEWS` - the views a block of each kind may stand free
   in: every kind has some, and none is a `card`: a video stands as a
-  `screen`, a `cutout` or a `porthole`, a sound as a `spot` or a `zone`,
+  `screen`, a `cutout`, a `porthole`, a `window` or a `standHere`
+  projection, a sound as a `spot` or a `zone`,
   a character in his five views (he stands as a figure). A text, a
   picture or a model in `card` stays refused: a card without a step would
   show nothing.

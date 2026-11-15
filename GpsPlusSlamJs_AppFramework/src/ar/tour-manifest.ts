@@ -210,8 +210,9 @@ export type TourLectern = InWorld<TourLongTextBlock> & {
 export type TourReadingSign = InWorld<TourLongTextBlock> & {
   readonly view: 'reading';
 };
-/** A video standing free in its station, as a screen, a cutout or a
- *  porthole, as wide as its `widthM`. */
+/** A video standing free in its station, as a screen, a cutout, a
+ *  porthole, a window or a stand-here projection, as wide as its
+ *  `widthM`. */
 type TourFreeVideo = InWorld<TourVideoBlock> & {
   readonly view: Exclude<TourVideoBlock['view'], 'card'>;
   readonly widthM: number;

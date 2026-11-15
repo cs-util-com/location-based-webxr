@@ -2,13 +2,19 @@
 
 ## Purpose
 
-The `WorldPart` of a free video (`screen`, `cutout`, `porthole`), routed by
+The `WorldPart` of a free video (`screen`, `cutout`, `porthole`, `window`,
+`standHere`), routed by
 `play-kinds.ts`: its look (`video-look.ts`) fed by a `<video>` element, and
 its rules (`video-rules.ts`) driven by the frames. The creator's trigger
 starts it once; leaving pauses it and coming back resumes it; a finished
 video stays finished and a tap replays it. While the visitor is there its
 card (`video-card.ts`) is on the page's screen. In the editor it is the
 same look, still and silent.
+
+A `standHere` video ignores the trigger: its footprints stand at its
+viewpoint and its projection develops (`stand-here.ts`) while the visitor
+stands on them facing it; once past `STAND_HERE_PLAYS_AT`, and there, it
+starts. Without a viewpoint it develops wherever the visitor stands.
 
 ## Public API
 
@@ -44,6 +50,17 @@ same look, still and silent.
   sends `leave`.
 - A `look` start measures the angle between `frame.facing` and the
   direction to the object's position (its pose, not its drawn centre).
+- Stand-here: the same angle (0 with no facing in the frame) and the
+  ground distance from the viewer to the viewpoint give the develop's
+  target; the develop eases toward it every frame, so walking off fades
+  the projection while it plays. A tap does nothing while it waits; once
+  started it toggles as any other. The card's line is the guide
+  (`standHereGuide`) and its captions wait for `standHereCaptions`. The
+  footprints (`standHereSpot`) hang under an anchor whose matrix is the
+  part's matrix inverted, refreshed each frame, so they stand at the
+  viewpoint in the station's frame wherever the video is posed (the
+  picture viewpoint's pattern). In the editor the projection is whole and
+  the footprints undeveloped.
 - Sound: decided once, at the first start, by `decideStartSound`. A start
   that wanted sound before the page was touched plays muted, and the next
   tap turns the sound on instead of pausing. A `play()` with sound the
@@ -88,4 +105,9 @@ part?.update?.({ seconds, viewer, facing });
   scale 1 and 3; no rebuild: the same tap target), each checked against
   the shadow's 0.012 gap times the scale the look is drawn at. Also the
   rebuild to the clip's shape inside a raised, scaled folder, grounded
-  before any frame.
+  before any frame. A window starts by its trigger and a tap toggles it;
+  a stand-here video plays only on its spot facing it, whatever its
+  trigger, says the guide until then, develops at once without a
+  viewpoint, holds its captions until developed, keeps its footprints at
+  the viewpoint under any pose (play and edit) and is silent in the
+  editor.

@@ -6,12 +6,19 @@
  * edge; and a porthole crops the clip to its centred square whatever its
  * shape.
  */
-import { Box3, type Mesh, type Object3D, Vector3 } from "three";
+import {
+  Box3,
+  type Mesh,
+  type Object3D,
+  type ShaderMaterial,
+  Vector3,
+} from "three";
 import { describe, expect, it } from "vitest";
 
 import {
   CUTOUT_MAX_TURN,
   centredSquare,
+  standHereSpot,
   videoLook,
   type LookState,
   type VideoWorldView,
@@ -72,7 +79,13 @@ function turn(o: Object3D): number {
 
 describe("a free video's look", () => {
   it("is exactly twice as large at twice the width, in every view", () => {
-    for (const view of ["screen", "cutout", "porthole"] as const) {
+    for (const view of [
+      "screen",
+      "cutout",
+      "porthole",
+      "window",
+      "standHere",
+    ] as const) {
       const one = size(look(view, 1.6).object);
       const two = size(look(view, 3.2).object);
       expect(two.x / one.x, view).toBeCloseTo(2, 5);
@@ -96,7 +109,7 @@ describe("a free video's look", () => {
   // (and a cutout its foot) there, in its parent's metres, without being
   // rebuilt. Nonsense must not move it, and the porthole has no ground.
   it("stands its shadow the given lift below, and ignores nonsense", () => {
-    for (const view of ["screen", "cutout"] as const) {
+    for (const view of ["screen", "cutout", "window"] as const) {
       const l = look(view, 2);
       const at0 = shadowYs(l.object);
       expect(at0.length, view).toBeGreaterThan(0);
@@ -120,5 +133,102 @@ describe("a free video's look", () => {
     expect(centredSquare(0.5625)).toEqual([(1 - 0.5625) / 2, 0, 0.5625, 1]);
     expect(centredSquare(2)).toEqual([0, 0.25, 1, 0.5]);
     expect(centredSquare(Number.NaN)).toEqual([0, 0, 1, 1]);
+  });
+});
+
+/** The meshes of `o` named `name`. */
+function named(o: Object3D, name: string): Mesh[] {
+  const found: Mesh[] = [];
+  o.traverse((c) => {
+    if (c.name === name) found.push(c as Mesh);
+  });
+  return found;
+}
+
+/** A clip material's uniform `name`. */
+function uniform(mesh: Mesh | undefined, name: string): unknown {
+  return (mesh?.material as ShaderMaterial | undefined)?.uniforms[name]?.value;
+}
+
+describe("a video in a window", () => {
+  // Why: the clip plays deep in a real opening, so it reads as a room
+  // behind the wall; the frame keeps to the opening's edge, since the
+  // chosen look has nothing lying over the clip itself (no cross bars).
+  it("plays behind the wall, its timber only round the opening's edge", () => {
+    const w = 1.6;
+    const h = w * 0.5625;
+    const l = look("window", w);
+    l.object.updateMatrixWorld(true);
+    const [clip] = named(l.object, "video-window-clip");
+    expect(clip?.position.z).toBeCloseTo(-0.38, 6);
+    expect(l.tapTarget).toBe(clip);
+    const bars = named(l.object, "video-window-bar");
+    expect(bars).toHaveLength(4);
+    for (const bar of bars) {
+      const box = new Box3().setFromObject(bar);
+      // Each bar touches the opening's outline and reaches no further in
+      // than its own thickness.
+      const atSide =
+        Math.abs(Math.abs(bar.position.x) - (w / 2 - 0.03)) < 1e-6 &&
+        box.max.y - box.min.y > h - 1e-6;
+      const atTopOrFoot =
+        Math.abs(Math.abs(bar.position.y) - (h / 2 - 0.03)) < 1e-6 &&
+        box.max.x - box.min.x > w - 1e-6;
+      expect(atSide || atTopOrFoot).toBe(true);
+    }
+    // The clip's edge darkens inward, as the prototype's reveal light.
+    expect(uniform(clip, "inner")).toBeCloseTo(0.42, 6);
+  });
+});
+
+describe("a stand-here video's look", () => {
+  // Why: undeveloped the projection is a faint sepia ghost, developed the
+  // clip; the look must hand the shade of the rule to its clip, and the
+  // editor sees it developed (its creator places the picture, not the
+  // ghost).
+  it("is shaded by its develop, and drawn whole in the editor", () => {
+    const l = look("standHere", 1.6);
+    const [clip] = named(l.object, "video-stand-here-clip");
+    expect(l.tapTarget).toBe(clip);
+    l.show({ ...STILL, develop: 0 });
+    expect(uniform(clip, "opacity")).toBeCloseTo(0.13, 6);
+    expect(uniform(clip, "tone")).toBeCloseTo(1, 6);
+    expect(uniform(clip, "ellipse")).toBe(1);
+    l.show({ ...STILL, develop: 1 });
+    expect(uniform(clip, "opacity")).toBeCloseTo(1, 6);
+    expect(uniform(clip, "tone")).toBeCloseTo(0, 6);
+    l.show(STILL);
+    expect(uniform(clip, "opacity")).toBeCloseTo(1, 6);
+  });
+
+  it("stands its footprints at the viewpoint, on the ground, toes the way to face", () => {
+    // Why: the spot is where the visitor must go; it is in the station's
+    // frame (the part's anchor undoes its pose), and its toes point the
+    // way the viewpoint looks, so standing on them faces the video.
+    const spot = standHereSpot(
+      {
+        position: [4, 1.6, -2],
+        // Facing east (`viewpointRotation(90, 0)`): a half turn about up,
+        // so its -Z looks along +Z.
+        rotation: [0, Math.sin(-Math.PI / 2), 0, Math.cos(-Math.PI / 2)],
+        hfovDeg: 56,
+        distanceM: 6,
+      },
+      () => {
+        throw new Error("no canvas in node");
+      },
+    );
+    expect(spot.object.position.toArray()).toEqual([4, 0.014, -2]);
+    spot.object.updateMatrixWorld(true);
+    const toes = new Vector3(0, 0, -1).transformDirection(
+      spot.object.matrixWorld,
+    );
+    // Facing the viewpoint's own forward.
+    expect(toes.x).toBeCloseTo(0, 6);
+    expect(toes.z).toBeCloseTo(1, 6);
+    expect(() => {
+      spot.show(0.3, 1);
+      spot.dispose();
+    }).not.toThrow();
   });
 });

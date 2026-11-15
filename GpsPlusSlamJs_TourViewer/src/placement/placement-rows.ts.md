@@ -22,8 +22,8 @@ folder and a station), what the 3D editor's handles do with it:
   width: 0.3-6 m, step 0.05 m; `extent-slider.ts`).
 
 The rows are per VIEW, not per kind, because a block may stand in the
-world in one view and be a card in another (a video: a screen, a cutout
-or a porthole free, a card in a story).
+world in one view and be a card in another (a video: a screen, a cutout,
+a porthole, a window or a stand-here projection free, a card in a story).
 
 ## Public API
 
@@ -64,8 +64,10 @@ or a porthole free, a card in a story).
   width change nothing on screen (the handle stays at the pose; the
   viewpoint is typed in the inspector, `editor/kind-panels/picture-panel.ts`);
   `card` poseless.
-- `video`: `screen`, `cutout` and `porthole` posed, turning, `size` on
-  `widthM` (the picture's bounds); `card` poseless.
+- `video`: `screen`, `cutout`, `porthole`, `window` and `standHere`
+  posed, turning, `size` on `widthM` (the picture's bounds); a
+  stand-here's handle is its projection's pose, its viewpoint typed in
+  the inspector; `card` poseless.
 - `audio`: `spot` and `zone` posed, facing, no dots (a sound's reach is
   set in the inspector); `card` poseless.
 - `model`: every world view posed, turning, `size` on `sizeM`

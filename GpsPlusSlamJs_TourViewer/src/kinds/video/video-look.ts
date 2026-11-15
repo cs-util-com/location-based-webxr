@@ -4,7 +4,13 @@
  * control bar), a cutout (the figure standing on the ground below its
  * pose, turning at most 30 degrees toward the visitor) and a porthole (a
  * round medallion with a bronze bezel, a progress ring and a "Watch"
- * label). Built from the chosen prototype's measures at its 1.6 m width
+ * label), a window (the clip deep in an opening of a stone wall, its
+ * reveals lit at the front, a timber frame round its edge, a keystone, a
+ * sill and a warm spill of light on the ground) and a stand-here
+ * projection (a soft-edged ellipse on the wall, shaded by how far it has
+ * developed, `stand-here.ts`; its footprints at the viewpoint are
+ * `standHereSpot`, which the part stands in the station's frame). Built
+ * from the chosen prototype's measures at its 1.6 m width
  * and scaled as a whole to the block's width, so a drawing twice as wide
  * is exactly twice as large; marked with that width for the editor's
  * size preview (`placement/place-scale.ts`). Pure drawing: the part
@@ -18,16 +24,21 @@
  * @see video-look.ts.md
  */
 
+import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
   AdditiveBlending,
+  BoxGeometry,
+  BufferGeometry,
   CircleGeometry,
   CylinderGeometry,
   DoubleSide,
   ExtrudeGeometry,
+  Float32BufferAttribute,
   Group,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
+  Path,
   PlaneGeometry,
   ShaderMaterial,
   Shape,
@@ -40,6 +51,8 @@ import {
 } from "three";
 
 import { markPlaceScale } from "../../placement/place-scale.js";
+import { viewpointYaw } from "../picture/viewpoint-looks.js";
+import { standHereShade } from "./stand-here.js";
 
 /** The prototype's width, at which its measures hold (m). */
 const LOOK_REFERENCE_WIDTH_M = 1.6;
@@ -52,7 +65,8 @@ export const VIDEO_DEFAULT_ASPECT = 1.25;
 export const CUTOUT_MAX_TURN = (30 * Math.PI) / 180;
 
 /** The views a free video stands in. */
-export type VideoWorldView = "screen" | "cutout" | "porthole";
+export type VideoWorldView =
+  "screen" | "cutout" | "porthole" | "window" | "standHere";
 
 /** What the part tells its look each frame. */
 export interface LookState {
@@ -73,6 +87,9 @@ export interface LookState {
   /** The viewer in the look's parent frame (the part's object), or none:
    *  a cutout then stands as posed. */
   readonly viewer: readonly [number, number, number] | null;
+  /** How far a stand-here projection has developed, 0 to 1; absent:
+   *  whole (the editor, and every other view). */
+  readonly develop?: number;
 }
 
 /** A view's drawing. */
@@ -117,11 +134,13 @@ void main() {
 
 // The clip: its colour (the upper half of a stacked frame), the poster
 // over it until it plays, its matte (the lower half) or a feathered
-// ellipse as its alpha, a circle for the porthole, and a crop.
+// ellipse as its alpha, a circle for the porthole, a crop, its edge
+// darkened inward (a window's reveal), and a sepia tone and a warm gain (a
+// stand-here projection not yet developed).
 const CLIP_FRAG = /* glsl */ `
 uniform sampler2D map;
 uniform sampler2D poster;
-uniform float hasMap, hasPoster, posterMix, stacked, ellipse, feather, circle, opacity;
+uniform float hasMap, hasPoster, posterMix, stacked, ellipse, feather, circle, opacity, inner, tone, tint;
 uniform vec3 blank;
 uniform vec4 crop;
 varying vec2 vUv;
@@ -139,6 +158,12 @@ void main() {
     a *= 1.0 - smoothstep(0.98, 1.0, r);
     col *= mix(0.55, 1.0, smoothstep(1.0, 0.55, r));
   }
+  if (inner > 0.0) {
+    vec2 e = smoothstep(vec2(0.0), vec2(0.2), vUv) * smoothstep(vec2(0.0), vec2(0.2), 1.0 - vUv);
+    col *= mix(1.0 - inner, 1.0, e.x * e.y);
+  }
+  float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(col, vec3(l) * vec3(1.1, 0.97, 0.8), tone) * tint;
   gl_FragColor = vec4(col, a * opacity);
   #include <colorspace_fragment>
 }`;
@@ -161,6 +186,9 @@ const SLAB = "#17191d";
 const BEZEL = "#8d6c42";
 const ACCENT = "#f1b45c";
 const INK = "#f6f2ea";
+/** A window's timber frame and its stone surround. */
+const TIMBER = "#3b2d23";
+const STONE = "#d9d3c6";
 
 /** A porthole glows while the visitor is this near (m). */
 const HALO_NEAR_M = 12;
@@ -168,7 +196,10 @@ const HALO_NEAR_M = 12;
 function clipMaterial(o: {
   stacked?: boolean;
   ellipse?: boolean;
+  feather?: number;
   circle?: boolean;
+  inner?: number;
+  depthWrite?: boolean;
   crop?: readonly [number, number, number, number];
 }): ShaderMaterial {
   return new ShaderMaterial({
@@ -180,24 +211,36 @@ function clipMaterial(o: {
       posterMix: { value: 1 },
       stacked: { value: o.stacked === true ? 1 : 0 },
       ellipse: { value: o.ellipse === true ? 1 : 0 },
-      feather: { value: 0.35 },
+      feather: { value: o.feather ?? 0.35 },
       circle: { value: o.circle === true ? 1 : 0 },
       opacity: { value: 1 },
+      inner: { value: o.inner ?? 0 },
+      tone: { value: 0 },
+      tint: { value: 1 },
       blank: { value: [0.02, 0.022, 0.026] },
       crop: { value: new Vector4(...(o.crop ?? [0, 0, 1, 1])) },
     },
     vertexShader: CLIP_VERT,
     fragmentShader: CLIP_FRAG,
     transparent: true,
+    ...(o.depthWrite === true ? { depthWrite: true } : {}),
   });
+}
+
+/** Sets a material's uniform `name`, if it has one. */
+function setUniform(
+  material: ShaderMaterial,
+  name: string,
+  value: unknown,
+): void {
+  const uniform = material.uniforms[name];
+  if (uniform !== undefined) uniform.value = value;
 }
 
 /** Hand the clip and the poster to a clip material. */
 function feedClip(material: ShaderMaterial, state: LookState): void {
-  const u = material.uniforms;
   const set = (name: string, value: unknown): void => {
-    const uniform = u[name];
-    if (uniform !== undefined) uniform.value = value;
+    setUniform(material, name, value);
   };
   set("map", state.clip);
   set("hasMap", state.clip === null ? 0 : 1);
@@ -671,6 +714,287 @@ function portholeLook(owned: Owned, o: LookOptions) {
   };
 }
 
+/** The window: the prototype's `buildWindow` at its reference width. The
+ *  prototype's caption plate under the sill is left out: captions are
+ *  the card's strip, as in every view. */
+function windowLook(owned: Owned, o: LookOptions, ground: number) {
+  const w = LOOK_REFERENCE_WIDTH_M;
+  const h = w * o.aspect;
+  const depth = 0.38;
+  const root = new Group();
+  const clip = clipMaterial({ inner: 0.42, depthWrite: true });
+  const picture = owned.mesh(new PlaneGeometry(w, h), clip);
+  picture.name = "video-window-clip";
+  picture.position.z = -depth;
+  root.add(picture);
+  // The reveals: four quads from the wall back to the clip, lit at the
+  // front edge, dark at the back, each side its own shade.
+  const positions: number[] = [];
+  const colours: number[] = [];
+  const front = [0.52, 0.47, 0.42];
+  const back = [0.09, 0.075, 0.065];
+  const quad = (
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+    shade: number,
+  ): void => {
+    const f = front.map((c) => c * shade);
+    const b = back.map((c) => c * shade);
+    const corners: [number, number, number, number[]][] = [
+      [x0, y0, 0, f],
+      [x1, y1, 0, f],
+      [x1, y1, -depth, b],
+      [x0, y0, 0, f],
+      [x1, y1, -depth, b],
+      [x0, y0, -depth, b],
+    ];
+    for (const [x, y, z, c] of corners) {
+      positions.push(x, y, z);
+      colours.push(...c);
+    }
+  };
+  quad(-w / 2, -h / 2, -w / 2, h / 2, 0.9);
+  quad(w / 2, h / 2, w / 2, -h / 2, 0.68);
+  quad(-w / 2, h / 2, w / 2, h / 2, 0.42);
+  quad(w / 2, -h / 2, -w / 2, -h / 2, 1.15);
+  const reveals = new BufferGeometry();
+  reveals.setAttribute("position", new Float32BufferAttribute(positions, 3));
+  reveals.setAttribute("color", new Float32BufferAttribute(colours, 3));
+  root.add(
+    owned.mesh(
+      reveals,
+      new MeshBasicMaterial({
+        vertexColors: true,
+        toneMapped: false,
+        side: DoubleSide,
+      }),
+    ),
+  );
+  // The timber frame round the opening: its four edges only, so nothing
+  // lies over the clip itself.
+  const timber = new MeshLambertMaterial({ color: TIMBER });
+  owned.materials.push(timber);
+  const tb = 0.06;
+  const bar = (bw: number, bh: number, x: number, y: number): void => {
+    const geometry = new BoxGeometry(bw, bh, 0.06);
+    owned.geometries.push(geometry);
+    const mesh = new Mesh(geometry, timber);
+    mesh.name = "video-window-bar";
+    mesh.position.set(x, y, -0.06);
+    root.add(mesh);
+  };
+  bar(w, tb, 0, h / 2 - tb / 2);
+  bar(w, tb, 0, -h / 2 + tb / 2);
+  bar(tb, h, -w / 2 + tb / 2, 0);
+  bar(tb, h, w / 2 - tb / 2, 0);
+  // The stone surround with its keystone, and the sill.
+  const m = 0.15;
+  const outer = new Shape();
+  outer.moveTo(-w / 2 - m, -h / 2);
+  outer.lineTo(w / 2 + m, -h / 2);
+  outer.lineTo(w / 2 + m, h / 2 + m);
+  outer.lineTo(-w / 2 - m, h / 2 + m);
+  outer.closePath();
+  const hole = new Path();
+  hole.moveTo(-w / 2, -h / 2);
+  hole.lineTo(-w / 2, h / 2);
+  hole.lineTo(w / 2, h / 2);
+  hole.lineTo(w / 2, -h / 2);
+  hole.closePath();
+  outer.holes.push(hole);
+  const stone = new MeshLambertMaterial({ color: STONE });
+  owned.materials.push(stone);
+  const stoneMesh = (
+    geometry: BufferGeometry,
+    x: number,
+    y: number,
+    z: number,
+  ): void => {
+    owned.geometries.push(geometry);
+    const mesh = new Mesh(geometry, stone);
+    mesh.position.set(x, y, z);
+    root.add(mesh);
+  };
+  stoneMesh(
+    new ExtrudeGeometry(outer, { depth: 0.05, bevelEnabled: false }),
+    0,
+    0,
+    0,
+  );
+  stoneMesh(new BoxGeometry(0.2, 0.26, 0.08), 0, h / 2 + m * 0.6, 0.03);
+  stoneMesh(
+    new BoxGeometry(w + 2 * m + 0.12, 0.08, 0.2),
+    0,
+    -h / 2 - 0.04,
+    0.08,
+  );
+  // The warm light it spills on the ground in front.
+  const glow = owned.texture(o, radialCanvas(GLOW_STOPS));
+  const spillMaterial = uiMaterial(glow, {
+    opacity: 0,
+    blending: AdditiveBlending,
+  });
+  const spill = owned.mesh(new PlaneGeometry(w * 2.4, 3), spillMaterial);
+  spill.rotation.x = -Math.PI / 2;
+  spill.position.set(0, ground + 0.015, 1.4);
+  spill.raycast = () => undefined;
+  root.add(spill);
+  return {
+    root,
+    tapTarget: picture,
+    ground(y: number) {
+      spill.position.y = y + 0.015;
+    },
+    show(s: LookState) {
+      feedClip(clip, s);
+      spillMaterial.opacity =
+        glow === null ? 0 : 0.16 * (0.85 + 0.15 * Math.sin(s.seconds / 0.9));
+    },
+  };
+}
+
+/** The stand-here projection: the prototype's `buildStandHere` at its
+ *  reference width, a soft ellipse a little larger than the clip, just in
+ *  front of the wall. */
+function standHereLook(owned: Owned, o: LookOptions) {
+  const w = LOOK_REFERENCE_WIDTH_M;
+  const h = w * o.aspect;
+  const root = new Group();
+  const clip = clipMaterial({ ellipse: true, feather: 0.42 });
+  const projection = owned.mesh(new PlaneGeometry(w * 1.12, h * 1.12), clip);
+  projection.name = "video-stand-here-clip";
+  projection.position.z = 0.03;
+  root.add(projection);
+  return {
+    root,
+    tapTarget: projection,
+    show(s: LookState) {
+      feedClip(clip, s);
+      const shade = standHereShade(s.develop ?? 1, s.seconds);
+      setUniform(clip, "opacity", shade.opacity);
+      setUniform(clip, "tone", shade.tone);
+      setUniform(clip, "tint", shade.tint);
+      setUniform(clip, "feather", shade.feather);
+    },
+  };
+}
+
+/** A stand-here video's footprints. */
+export interface StandHereSpot {
+  /** In the station's frame: at the viewpoint on the ground, its toes
+   *  (local -Z) the way the viewpoint looks. */
+  readonly object: Object3D;
+  /** Shaded by the develop (0 to 1) at the page clock `seconds`. */
+  show(develop: number, seconds: number): void;
+  dispose(): void;
+}
+
+/** The prototype's footprints: a dashed circle with two amber soles. */
+function footprintCanvas(): { canvas: HTMLCanvasElement } | null {
+  const c = canvasOf(512, 512);
+  if (c === null) return null;
+  const g = c.g;
+  g.strokeStyle = "rgba(255,255,255,.85)";
+  g.lineWidth = 6;
+  g.setLineDash([22, 16]);
+  g.beginPath();
+  g.arc(256, 256, 236, 0, Math.PI * 2);
+  g.stroke();
+  g.setLineDash([]);
+  const sole = (x: number, y: number, flip: boolean): void => {
+    g.save();
+    g.translate(x, y);
+    g.scale(flip ? -1 : 1, 1);
+    g.fillStyle = "rgba(241,180,92,.95)";
+    g.beginPath();
+    g.ellipse(0, -40, 34, 58, 0.08, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.ellipse(4, 58, 26, 34, 0.05, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  };
+  sole(205, 250, false);
+  sole(307, 250, true);
+  return c;
+}
+
+/** The footprints at `viewpoint`: a 1.2 m disc over a 2.2 m pulse, both
+ *  lying flat. Without a page their materials stay unpainted. */
+export function standHereSpot(
+  viewpoint: TourPictureViewpoint,
+  canvasTexture: (canvas: HTMLCanvasElement) => CanvasTexture,
+): StandHereSpot {
+  const owned = new Owned();
+  const paint = (
+    painted: { canvas: HTMLCanvasElement } | null,
+  ): CanvasTexture | null => {
+    if (painted === null) return null;
+    const t = canvasTexture(painted.canvas);
+    owned.textures.push(t);
+    return t;
+  };
+  const prints = paint(footprintCanvas());
+  const glow = paint(radialCanvas(GLOW_STOPS));
+  const printMaterial = uiMaterial(prints);
+  const pulseMaterial = uiMaterial(glow, {
+    opacity: 0,
+    blending: AdditiveBlending,
+  });
+  const disc = owned.mesh(new PlaneGeometry(1.2, 1.2), printMaterial);
+  const pulse = owned.mesh(new PlaneGeometry(2.2, 2.2), pulseMaterial);
+  for (const flat of [disc, pulse]) {
+    flat.rotation.x = -Math.PI / 2;
+    flat.raycast = () => undefined;
+  }
+  pulse.position.y = 0.002;
+  const object = new Group();
+  object.name = "video-stand-here-spot";
+  object.position.set(viewpoint.position[0], 0.014, viewpoint.position[2]);
+  object.rotation.y = viewpointYaw(viewpoint);
+  object.add(disc, pulse);
+  return {
+    object,
+    show(develop, seconds) {
+      const shade = standHereShade(develop, seconds);
+      printMaterial.opacity = prints === null ? 0 : shade.footprints;
+      pulseMaterial.opacity = glow === null ? 0 : Math.max(0, shade.pulse);
+    },
+    dispose() {
+      object.removeFromParent();
+      owned.dispose();
+    },
+  };
+}
+
+/** The drawing of `options.view`, at the reference width. */
+/** One view's drawing before it is scaled: its root, what a tap hits,
+ *  its per-frame show and, for a view with something on the ground, the
+ *  ground's height in its own metres. */
+interface BuiltLook {
+  readonly root: Object3D;
+  readonly tapTarget: Object3D;
+  show(state: LookState): void;
+  ground?(y: number): void;
+}
+
+function lookOf(owned: Owned, options: LookOptions, ground: number): BuiltLook {
+  switch (options.view) {
+    case "screen":
+      return screenLook(owned, options, ground);
+    case "cutout":
+      return cutoutLook(owned, options, ground);
+    case "porthole":
+      return portholeLook(owned, options);
+    case "window":
+      return windowLook(owned, options, ground);
+    case "standHere":
+      return standHereLook(owned, options);
+  }
+}
+
 /** The crop of a clip `aspect` high per unit wide to its centred square
  *  (u, v, width, height in the clip's 0..1). */
 export function centredSquare(
@@ -695,12 +1019,7 @@ export function videoLook(options: LookOptions): VideoLook {
   const groundAt = (liftM: number, at: number): number =>
     at > 0 ? -liftM / at : 0;
   const ground = groundAt(options.liftM, scale);
-  const built =
-    options.view === "screen"
-      ? screenLook(owned, options, ground)
-      : options.view === "cutout"
-        ? cutoutLook(owned, options, ground)
-        : portholeLook(owned, options);
+  const built = lookOf(owned, options, ground);
   const object = built.root;
   object.scale.setScalar(scale);
   markPlaceScale(object, options.widthM);
@@ -718,8 +1037,8 @@ export function videoLook(options: LookOptions): VideoLook {
       built.show(state);
     },
     ground(liftM) {
-      if (!Number.isFinite(liftM) || !("ground" in built)) return;
-      built.ground(groundAt(liftM, scaleOf(object)));
+      if (!Number.isFinite(liftM)) return;
+      built.ground?.(groundAt(liftM, scaleOf(object)));
     },
     dispose() {
       object.removeFromParent();

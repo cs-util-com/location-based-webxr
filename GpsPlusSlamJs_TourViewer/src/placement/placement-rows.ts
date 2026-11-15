@@ -201,12 +201,16 @@ export const BLOCK_PLACEMENT = {
     viewer: PICTURE_FROM_VIEWPOINT,
     card: POSELESS,
   },
-  // A screen and a porthole stand at their pose; a cutout turns toward
-  // the viewer by a little from it, so its pose's turn is still its own.
+  // A screen, a porthole and a window stand at their pose; a cutout turns
+  // toward the viewer by a little from it, so its pose's turn is still its
+  // own. A stand-here projection hangs at its pose too: its viewpoint is
+  // only where the visitor stands, typed in the inspector.
   video: {
     screen: VIDEO_WIDE,
     cutout: VIDEO_WIDE,
     porthole: VIDEO_WIDE,
+    window: VIDEO_WIDE,
+    standHere: VIDEO_WIDE,
     card: POSELESS,
   },
   // A sound's reach has no dots: it is set in the inspector.

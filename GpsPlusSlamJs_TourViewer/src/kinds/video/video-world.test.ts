@@ -551,3 +551,122 @@ describe("a free video's ground", () => {
     });
   }
 });
+
+/** Frames from `from` to `to` seconds at 30 a second, the viewer `x` m
+ *  east of the video looking along `facing`. */
+function walk(
+  part: WorldPart,
+  x: number,
+  from: number,
+  to: number,
+  facing: readonly [number, number, number] = [-1, 0, 0],
+): void {
+  for (let s = from; s <= to + 1e-9; s += 1 / 30)
+    part.update?.(at(x, s, facing));
+}
+
+describe("a video in a window", () => {
+  // Why: a window is a screen in a wall: the creator's start rule holds
+  // as it does for a screen, and a tap toggles it.
+  it("starts by the creator's trigger, and a tap toggles it", async () => {
+    const { part, player } = await video({
+      block: { view: "window", start: "tap" },
+    });
+    walk(part, 2, 0, 2);
+    expect(player.calls).toEqual([]);
+    part.tap?.();
+    expect(player.calls).toEqual(["play muted"]);
+    part.tap?.();
+    expect(player.calls).toEqual(["play muted", "pause"]);
+  });
+});
+
+describe("a stand-here video", () => {
+  // Why: standing on its footprints and facing it is the whole start of
+  // this view: far off or turned away it must not play whatever the
+  // creator's trigger says, on the spot facing it it must, and the card
+  // must say where to go until it has developed. Its spot is 6 m east of
+  // the video, the way a first viewpoint stands.
+  const viewpoint = {
+    position: [6, 1.6, 0],
+    rotation: [0, 0, 0, 1],
+    hfovDeg: 56,
+    distanceM: 6,
+  } as const;
+  const line = (host: HTMLElement | null): string | null =>
+    host?.querySelector(".narration-card-line")?.textContent ?? null;
+
+  it("plays only once the visitor stands on the spot facing it, whatever its trigger", async () => {
+    for (const start of ["enter", "tap", "look"] as const) {
+      const { part, player, shown } = await video({
+        block: { view: "standHere", viewpoint, start },
+      });
+      walk(part, 12, 0, 3);
+      expect(player.calls, start).toEqual([]);
+      expect(line(shown.host), start).toBe("Stand on the footprints · 6 m");
+      // On the spot, turned away: still a ghost.
+      walk(part, 6, 3, 6, [0, 0, 1]);
+      expect(player.calls, start).toEqual([]);
+      expect(line(shown.host), start).toBe("Face the video");
+      walk(part, 6, 6, 7.5);
+      expect(player.calls, start).toEqual(["play muted"]);
+      expect(line(shown.host), start).toBe("");
+    }
+  });
+
+  it("develops at once without a viewpoint, and says nothing", async () => {
+    const { part, player, shown } = await video({
+      block: { view: "standHere", start: "tap" },
+    });
+    walk(part, 12, 0, 1.5, [0, 0, 1]);
+    expect(player.calls).toEqual(["play muted"]);
+    expect(line(shown.host)).toBe("");
+  });
+
+  it("shows its captions only once developed", async () => {
+    const captions = "WEBVTT\n\n00:00.000 --> 00:30.000\nThe gate";
+    const { part, player, shown } = await video({
+      block: { view: "standHere", viewpoint, captions },
+    });
+    walk(part, 12, 0, 1);
+    player.currentTime = 1;
+    walk(part, 12, 1, 2);
+    const strip = shown.host?.querySelector<HTMLElement>(".video-card-caption");
+    expect(strip?.textContent ?? "").toBe("");
+    walk(part, 6, 2, 4);
+    expect(strip?.textContent).toBe("The gate");
+  });
+
+  it("stands its footprints at the viewpoint in the station's frame, wherever it is posed", async () => {
+    // Why: the viewpoint is the station's, so moving or turning the
+    // video's pose must never move where the visitor is asked to stand.
+    for (const mode of ["play", "edit"] as const) {
+      const { part } = await video({
+        mode,
+        block: { view: "standHere", viewpoint },
+      });
+      part.object.position.set(3, 2, -4);
+      part.object.rotation.y = 1.1;
+      part.object.scale.setScalar(2);
+      part.update?.(at(20, 0));
+      part.object.updateMatrixWorld(true);
+      let spot: Object3D | undefined;
+      part.object.traverse((c) => {
+        if (c.name === "video-stand-here-spot") spot = c;
+      });
+      const p = spot?.getWorldPosition(new Vector3());
+      expect(p?.x, mode).toBeCloseTo(6, 6);
+      expect(p?.y, mode).toBeCloseTo(0.014, 6);
+      expect(p?.z, mode).toBeCloseTo(0, 6);
+    }
+  });
+
+  it("stays still and silent in the editor, on its spot or not", async () => {
+    const { part, player } = await video({
+      mode: "edit",
+      block: { view: "standHere", viewpoint },
+    });
+    walk(part, 6, 0, 3);
+    expect(player.calls).toEqual([]);
+  });
+});

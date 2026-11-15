@@ -100,6 +100,8 @@ const EXPECTED: readonly (readonly [
   ["video", "screen", true, true, "widthM"],
   ["video", "cutout", true, true, "widthM"],
   ["video", "porthole", true, true, "widthM"],
+  ["video", "window", true, true, "widthM"],
+  ["video", "standHere", true, true, "widthM"],
   ["video", "card", false, false, null],
   ["audio", "spot", true, false, null],
   ["audio", "zone", true, false, null],

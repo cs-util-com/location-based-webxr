@@ -336,7 +336,7 @@ describe('a video in the world', () => {
   // porthole, each as wide as its `widthM`; when it starts and whether it
   // starts with sound are the creator's, read here so the viewer never
   // meets a start it does not know or a distance out of bounds.
-  it.each(['screen', 'cutout', 'porthole'])(
+  it.each(['screen', 'cutout', 'porthole', 'window', 'standHere'])(
     'needs its width in the %s view, and keeps it in a card',
     (view) => {
       expect(() => one('video', { view })).toThrow(
@@ -549,7 +549,7 @@ describe('views', () => {
         'viewer',
         'card',
       ],
-      video: ['screen', 'cutout', 'porthole', 'card'],
+      video: ['screen', 'cutout', 'porthole', 'window', 'standHere', 'card'],
       audio: ['spot', 'zone', 'card'],
       model: ['placed', 'ghost', 'hotspots', 'cutaway', 'toy', 'card'],
       character: [
@@ -585,7 +585,13 @@ describe('views', () => {
     expect(() => parse([VALID.video], { shown: [] })).toThrow(
       /stands free in its station/
     );
-    for (const view of ['screen', 'cutout', 'porthole']) {
+    for (const view of [
+      'screen',
+      'cutout',
+      'porthole',
+      'window',
+      'standHere',
+    ]) {
       const video = { ...VALID.video, view, widthM: 1.2 };
       expect(parse([video], { shown: [] })[0]?.view).toBe(view);
     }
@@ -855,6 +861,7 @@ describe("a model's views, notes, sections and clip", () => {
       'viewer',
       'screen',
       'porthole',
+      'standHere',
       'spot',
       'zone',
       ...TOUR_MODEL_WORLD_VIEWS,

@@ -1,8 +1,8 @@
 /**
- * A free video's part in the world (`screen`, `cutout`, `porthole`): its
- * look (`video-look.ts`) fed by a `<video>` element, and the rules of
- * `video-rules.ts` driven by the camera frame. The creator's trigger
- * starts it once (on entering, within a distance, when looked at, or on a
+ * A free video's part in the world (`screen`, `cutout`, `porthole`,
+ * `window`, `standHere`): its look (`video-look.ts`) fed by a `<video>`
+ * element, and the rules of `video-rules.ts` driven by the camera frame.
+ * The creator's trigger starts it once (on entering, within a distance, when looked at, or on a
  * tap); leaving pauses it and coming back resumes it; a finished video
  * stays finished and a tap replays it. It starts with its sound when the
  * visitor's remembered choice, else the creator's, says so - and only
@@ -11,8 +11,14 @@
  * (`video-card.ts`) is on the page's screen with play, the sound switch
  * (remembered for every video), the hint and, with captions, a CC switch
  * over a caption strip; a porthole's tap opens the clip large in that
- * card. A looping video plays again on the element itself. In the editor: the same look, still and
- * silent, its first frame or its poster.
+ * card. A looping video plays again on the element itself. A stand-here
+ * video ignores the trigger: footprints stand at its viewpoint, and its
+ * projection develops from a faint ghost while the visitor stands on them
+ * facing it (`stand-here.ts`), starting once developed; the card says
+ * where to stand until then, and its captions wait for it. Without a
+ * viewpoint it develops wherever the visitor stands. In the editor: the
+ * same look, still and silent, its first frame or its poster (a
+ * stand-here projection whole, its footprints undeveloped).
  *
  * @see video-world.ts.md
  */
@@ -35,6 +41,13 @@ import {
   type PrefsStorage,
 } from "../../visitor-prefs.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
+import {
+  STAND_HERE_PLAYS_AT,
+  standHereCaptions,
+  standHereDevelop,
+  standHereGuide,
+  standHereTarget,
+} from "./stand-here.js";
 import { captionAt, readCaptions } from "./video-captions.js";
 import {
   videoCard,
@@ -42,8 +55,10 @@ import {
   type VideoCard,
 } from "./video-card.js";
 import {
+  standHereSpot,
   VIDEO_DEFAULT_ASPECT,
   videoLook,
+  type StandHereSpot,
   type VideoLook,
   type VideoWorldView,
 } from "./video-look.js";
@@ -161,6 +176,8 @@ const WORLD_VIEWS: ReadonlySet<string> = new Set([
   "screen",
   "cutout",
   "porthole",
+  "window",
+  "standHere",
 ]);
 
 /** Scratch for the viewer in a part's own frame. */
@@ -228,6 +245,20 @@ export function videoWorld(
   let soundDecided = false;
   let note: string | null = null;
   let playAskedAt: number | null = null;
+  // A stand-here video's footprints, kept in the station's frame by an
+  // anchor that undoes the part's own pose; how far it has developed.
+  const standHere = view === "standHere";
+  const viewpoint = standHere ? block.viewpoint : undefined;
+  let develop = 0;
+  let spotM = Number.POSITIVE_INFINITY;
+  let spot: StandHereSpot | null = null;
+  const anchor = new Group();
+  if (viewpoint !== undefined) {
+    spot = standHereSpot(viewpoint, (canvas) => env.canvasTexture(canvas));
+    anchor.matrixAutoUpdate = false;
+    anchor.add(spot.object);
+    object.add(anchor);
+  }
   // Captions, on until the visitor's CC turns them off; none offered
   // when the text reads to no cue.
   const cues = readCaptions(block.captions).cues;
@@ -236,7 +267,10 @@ export function videoWorld(
     cues.length === 0
       ? undefined
       : {
-          text: () => captionAt(cues, player?.currentTime ?? 0),
+          text: () =>
+            standHere && !standHereCaptions(develop)
+              ? ""
+              : captionAt(cues, player?.currentTime ?? 0),
           on: () => captionsOn,
           toggle: () => {
             captionsOn = !captionsOn;
@@ -351,7 +385,11 @@ export function videoWorld(
           sound: () => player !== null && !player.muted,
           timeMs: () => (player?.currentTime ?? 0) * 1000,
           durationMs: () => durationOf(player) * 1000,
-          line: () => note ?? videoHint(start, state, distanceM, reachM),
+          line: () =>
+            note ??
+            (standHere
+              ? standHereGuide(develop, spotM, viewpoint !== undefined)
+              : videoHint(start, state, distanceM, reachM)),
           ...(captions === undefined ? {} : { captions }),
         },
         element === null
@@ -444,7 +482,17 @@ export function videoWorld(
       sound: p !== null && !p.muted,
       seconds,
       viewer,
+      ...(standHere && play ? { develop } : {}),
     });
+  };
+  /** The footprints back where the viewpoint stands, under the part's
+   *  pose of this frame. */
+  const placeSpot = (): void => {
+    if (spot === null) return;
+    object.updateMatrix();
+    anchor.matrix.copy(object.matrix).invert();
+    anchor.matrixWorldNeedsUpdate = true;
+    spot.show(play ? develop : 0, seconds);
   };
 
   return {
@@ -460,6 +508,7 @@ export function videoWorld(
       const dt = lastSeconds === null ? 0 : seconds - lastSeconds;
       lastSeconds = seconds;
       if (!play) {
+        placeSpot();
         showLook(null);
         return;
       }
@@ -475,7 +524,10 @@ export function videoWorld(
         else shutCard();
         event(there ? "return" : "leave");
       }
-      if (start === "look" && frame.facing !== undefined) {
+      // Degrees between the view's middle and the video's centre; 0
+      // with no facing in the frame.
+      const offDeg = (): number => {
+        if (frame.facing === undefined) return 0;
         const to = [position.x - x, position.y - y, position.z - z];
         const length = Math.hypot(to[0] ?? 0, to[1] ?? 0, to[2] ?? 0);
         const [fx, fy, fz] = frame.facing;
@@ -484,12 +536,26 @@ export function videoWorld(
             ? ((to[0] ?? 0) * fx + (to[1] ?? 0) * fy + (to[2] ?? 0) * fz) /
               length
             : 1;
-        const offDeg =
-          (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI;
-        dwell = lookDwell(dwell, offDeg, dt);
-      }
-      if (state === "waiting" && startFires(start, there, dwell)) {
-        event("start");
+        return (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI;
+      };
+      if (standHere) {
+        spotM =
+          viewpoint === undefined
+            ? 0
+            : Math.hypot(x - viewpoint.position[0], z - viewpoint.position[2]);
+        const target =
+          viewpoint === undefined ? 1 : standHereTarget(spotM, offDeg());
+        develop = standHereDevelop(develop, target, dt);
+        if (state === "waiting" && there && develop > STAND_HERE_PLAYS_AT) {
+          event("start");
+        }
+      } else {
+        if (start === "look" && frame.facing !== undefined) {
+          dwell = lookDwell(dwell, offDeg(), dt);
+        }
+        if (state === "waiting" && startFires(start, there, dwell)) {
+          event("start");
+        }
       }
       // A start with sound that the browser has not played after a
       // second: muted, and said. A muted one may only be slow to load, and
@@ -508,10 +574,13 @@ export function videoWorld(
       toLocal.copy(object.matrix).invert();
       viewerLocal.set(x, y, z).applyMatrix4(toLocal);
       showLook([viewerLocal.x, viewerLocal.y, viewerLocal.z]);
+      placeSpot();
       card?.render();
     },
     tap() {
       if (!play) return;
+      // Not yet developed, a stand-here video waits for its spot.
+      if (standHere && state === "waiting") return;
       if (view === "porthole") {
         overlay = true;
         shutCard();
@@ -536,6 +605,7 @@ export function videoWorld(
       url = null;
       clip?.dispose();
       poster?.dispose();
+      spot?.dispose();
       look.dispose();
     },
   };

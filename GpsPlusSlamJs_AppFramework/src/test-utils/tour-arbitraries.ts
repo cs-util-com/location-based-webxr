@@ -365,6 +365,7 @@ const KIND_FIELDS: Record<
         nil: undefined,
       }),
       captions: optionalText(r.video.captions),
+      viewpoint: fc.option(pictureViewpointArbitrary, { nil: undefined }),
     }),
   audio: (view) =>
     fc
@@ -520,7 +521,7 @@ export const TOUR_FREE_VIEWS: Readonly<
   shortText: ['pin', 'sign', 'edgeHint', 'ground'],
   longText: ['lectern', 'reading'],
   picture: TOUR_PICTURE_WORLD_VIEWS,
-  video: ['screen', 'cutout', 'porthole'],
+  video: ['screen', 'cutout', 'porthole', 'window', 'standHere'],
   audio: ['spot', 'zone'],
   model: TOUR_MODEL_WORLD_VIEWS,
   character: TOUR_CHARACTER_VIEWS,

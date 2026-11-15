@@ -322,7 +322,13 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
     }),
   video: (id) =>
     everyField<TourVideoBlock>({
-      ...envelope(id, ["screen", "cutout", "porthole"] as const),
+      ...envelope(id, [
+        "screen",
+        "cutout",
+        "porthole",
+        "window",
+        "standHere",
+      ] as const),
       kind: fc.constant("video"),
       video: fc.constant("clip"),
       transcript: words,
@@ -336,6 +342,14 @@ const BLOCKS: Record<TourBlockKind, (id: string) => fc.Arbitrary<TourBlock>> = {
       alpha: maybe(fc.constantFrom("none", "stacked")),
       loop: maybe(fc.constantFrom("off", "on")),
       captions: maybe(words),
+      viewpoint: maybe(
+        fc.constant({
+          position: [6, 1.6, 0] as const,
+          rotation: [0, 0, 0, 1] as const,
+          hfovDeg: 56,
+          distanceM: 6,
+        }),
+      ),
     }),
   audio: (id) =>
     everyField<TourAudioBlock>({

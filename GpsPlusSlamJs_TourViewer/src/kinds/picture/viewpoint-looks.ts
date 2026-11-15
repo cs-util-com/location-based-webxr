@@ -47,7 +47,7 @@ function viewpointTurn(viewpoint: TourPictureViewpoint): Quaternion {
 
 /** The viewpoint's heading on the ground: the turn about up that points
  *  a group's local -Z the way the viewpoint looks. */
-function viewpointYaw(viewpoint: TourPictureViewpoint): number {
+export function viewpointYaw(viewpoint: TourPictureViewpoint): number {
   const f = new Vector3(0, 0, -1).applyQuaternion(viewpointTurn(viewpoint));
   return Math.atan2(-f.x, -f.z);
 }

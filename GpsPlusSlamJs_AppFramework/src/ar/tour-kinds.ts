@@ -100,9 +100,19 @@ const PICTURE_VIEWS = [
   'viewer',
   'card',
 ] as const;
-/* A video stands as a framed screen, a figure cut out of its clip, or a
- * small round porthole that opens the clip on a tap. */
-const VIDEO_VIEWS = ['screen', 'cutout', 'porthole', 'card'] as const;
+/* A video stands as a framed screen, a figure cut out of its clip, a
+ * small round porthole that opens the clip on a tap, a window in a stone
+ * wall it plays behind (`window`), or a projection that develops as the
+ * visitor stands on its spot and faces it (`standHere`, from its
+ * `viewpoint`: {@link TOUR_VIDEO_VIEWPOINT_VIEWS}). */
+const VIDEO_FREE_VIEWS = [
+  'screen',
+  'cutout',
+  'porthole',
+  'window',
+  'standHere',
+] as const;
+const VIDEO_VIEWS = [...VIDEO_FREE_VIEWS, 'card'] as const;
 /* An audio item stands as a narration circle (`spot`: the voice plays on
  * a tap inside it) or an ambient zone (`zone`: it plays by itself within
  * its reach, louder toward the centre). */
@@ -223,6 +233,12 @@ export const TOUR_PICTURE_VIEWPOINT_VIEWS = [
   'window',
   'viewer',
 ] as const satisfies readonly TourPictureWorldView[];
+
+/** The views that draw a video from its `viewpoint` (the spot to stand
+ *  on); without one it develops at once, wherever the visitor stands. */
+export const TOUR_VIDEO_VIEWPOINT_VIEWS = [
+  'standHere',
+] as const satisfies readonly (typeof VIDEO_VIEWS)[number][];
 
 /** A viewpoint's lens: its horizontal field of view (degrees), inclusive. */
 export const TOUR_PICTURE_MIN_HFOV_DEG = 10;
@@ -372,6 +388,10 @@ export interface TourVideoBlock extends TourBlockEnvelope<
   readonly sound?: (typeof TOUR_VIDEO_SOUNDS)[number];
   /** How its clip carries transparency; absent: `none`. */
   readonly alpha?: (typeof TOUR_VIDEO_ALPHAS)[number];
+  /** Where to stand to see it develop, in the station's frame (as a
+   *  picture's); read by {@link TOUR_VIDEO_VIEWPOINT_VIEWS}, kept in
+   *  every other view so a view switch loses nothing. */
+  readonly viewpoint?: TourPictureViewpoint;
   /** Whether it plays again when it ends; absent: `off`. */
   readonly loop?: (typeof TOUR_VIDEO_LOOPS)[number];
   /** Its captions as WebVTT text, shown under it in the visitor's player.
@@ -544,11 +564,7 @@ function audioWorld(
 
 /** The views a video stands in the world in: its width is required in
  *  each. */
-const VIDEO_WORLD_VIEWS: ReadonlySet<string> = new Set([
-  'screen',
-  'cutout',
-  'porthole',
-]);
+const VIDEO_WORLD_VIEWS: ReadonlySet<string> = new Set(VIDEO_FREE_VIEWS);
 
 /** A video's world fields: its width (required in a world view), when it
  *  starts, a near start's distance, its sound, its alpha and its loop. */
@@ -810,10 +826,11 @@ function viewpointOf(
   }
 }
 
-/** A picture's viewpoint, in any view. One breaking a rule fails a file of
- *  this reader's own minor; a newer one's drops just the viewpoint (the
- *  picture is then drawn as a plane), keeping the picture. */
-function pictureViewpoint(v: TourBlockFields, ctx: TourBlockReadContext) {
+/** A picture's or a video's viewpoint, in any view. One breaking a rule
+ *  fails a file of this reader's own minor; a newer one's drops just the
+ *  viewpoint (a picture is then drawn as a plane, a stand-here video
+ *  develops at once), keeping the block. */
+function blockViewpoint(v: TourBlockFields, ctx: TourBlockReadContext) {
   const value = v.viewpoint;
   if (value === undefined) return {};
   const viewpoint = viewpointOf(value, `${ctx.at}.viewpoint`);
@@ -1055,7 +1072,7 @@ export const TOUR_KINDS = {
         ctx
       ),
       ...pictureShowTag(v, ctx),
-      ...pictureViewpoint(v, ctx),
+      ...blockViewpoint(v, ctx),
     }),
     refs: (b) => refTo(b.image, 'image', 'image'),
   },
@@ -1063,8 +1080,8 @@ export const TOUR_KINDS = {
     sinceMinor: 0,
     views: VIDEO_VIEWS,
     // Free, it stands in the world; its card is a story's.
-    freeViews: ['screen', 'cutout', 'porthole'],
-    worldViews: ['screen', 'cutout', 'porthole'],
+    freeViews: VIDEO_FREE_VIEWS,
+    worldViews: VIDEO_FREE_VIEWS,
     floor: 'screen',
     text: VIDEO_RULES,
     read: (v, view, ctx) => ({
@@ -1074,6 +1091,7 @@ export const TOUR_KINDS = {
       ...optionalText(v, 'captions', VIDEO_RULES.captions, ctx),
       ...optionalAssetRef(v, 'poster', 'image', ctx),
       ...videoWorld(v, view, ctx),
+      ...blockViewpoint(v, ctx),
     }),
     refs: (b) => [
       ...refTo(b.video, 'video', 'video'),

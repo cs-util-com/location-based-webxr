@@ -97,6 +97,13 @@ rotation [x, y, z, w], hfovDeg 10-120, distanceM 1-500 }` in the
   unknown `alpha` skips the whole video, since shown without its packing
   a newer clip's matte half would stand on screen. Its `widthM` takes the
   picture's bounds.
+- A video stands free in every view but `card`: `screen`, `cutout`,
+  `porthole`, `window` (a window in a stone wall it plays behind) and
+  `standHere` (a projection that develops as the visitor stands on its
+  spot and faces it; `TOUR_VIDEO_VIEWPOINT_VIEWS`). Its `viewpoint` is the
+  picture's record, read by the same reader (`blockViewpoint`), kept in
+  every view and written last; stand-here without one develops at once.
+  Both views are minor 0 of format 5, as every video view.
 - A viewpoint view WITHOUT a viewpoint is read, not refused: the viewer
   draws it as its floor, a `plane`, and the editor never writes one (its
   view switch gives the picture a viewpoint). A broken viewpoint fails a

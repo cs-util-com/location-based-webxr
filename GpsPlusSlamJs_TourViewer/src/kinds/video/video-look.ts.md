@@ -15,16 +15,31 @@ approved station-blocks video prototype's measures:
 - `porthole` - the clip cropped to its centred square in a round brass
   bezel, a progress ring and a halo that glows while the visitor is within
   12 m, with a "Watch" label and the duration.
+- `window` - the clip set back 0.38 into a wall opening (a clip with a
+  darker inner edge that writes depth), its reveals shaded by vertex
+  colours, four timber edge bars (no cross: the frame is left clear), a
+  stone surround with a keystone and a sill, and a faint glow spill on the
+  ground. The clip is the tap target. Every measure scales with the
+  width.
+- `standHere` - the clip projected 12 % larger onto the wall in a
+  feathered ellipse, shaded by its develop (`stand-here.ts`): a faint
+  sepia ghost at 0, the clip at 1; absent (the editor), whole.
+  `standHereSpot(viewpoint, canvasTexture)` draws its footprints on the
+  ground at the viewpoint (a 1.2 m disc with toes along the viewpoint's
+  facing, and a 2.2 m pulse), in the frame it is added to.
 
 ## Public API
 
 - `VIDEO_DEFAULT_ASPECT` (1.25, until the clip's own is known),
   `CUTOUT_MAX_TURN`.
-- `VideoWorldView` - `"screen" | "cutout" | "porthole"`.
+- `VideoWorldView` - `"screen" | "cutout" | "porthole" | "window" | "standHere"`.
+- `StandHereSpot` / `standHereSpot(viewpoint, canvasTexture)` ->
+  `{ object, show(develop, seconds), dispose() }`.
 - `LookState` - what the part tells the look each frame: the clip and
   poster textures, started, playing, progress, time text, sound, the page
   clock and the viewer in the look's parent frame (the part's object), or
-  null (a cutout then stands as posed).
+  null (a cutout then stands as posed), and a stand-here projection's
+  develop (absent: whole).
 - `LookOptions` - view, width, aspect (height per width), stacked, lift
   (the pose's height, to stand a cutout on the ground), edit, and the
   page's `canvasTexture`.
@@ -70,8 +85,9 @@ look.show({ ...state, viewer: [0, 1.6, 4] });
 ## Tests
 
 - `video-look.test.ts` - proportional size in every view, the cutout's
-  clamped turn, the porthole's crop, the ground moved and nonsense
-  ignored.
+  clamped turn, the porthole's crop, the window's set-back clip and four
+  bars, the stand-here shade by develop, the footprints' place and
+  facing, the ground moved and nonsense ignored.
 - `video-world.test.ts` - a posed cutout is turned by the viewer in its
   own frame.
 - `placement/placement.contract.test.ts` - the drawn size against the
