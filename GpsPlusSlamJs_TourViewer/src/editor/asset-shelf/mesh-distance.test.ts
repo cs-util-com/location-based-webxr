@@ -107,18 +107,54 @@ function longTriangles(n: number): { P: Float32Array; I: Uint32Array } {
   return { P, I: Uint32Array.from({ length: 3 * n }, (_, k) => k) };
 }
 
+/** `base` with one more triangle in its z = 0 plane, from (x0, y) to
+ *  (x1, y) and (x1, y + h). */
+function withTriangle(
+  base: { P: Float32Array; I: Uint32Array },
+  x0: number,
+  x1: number,
+  y: number,
+  h: number,
+): { P: Float32Array; I: Uint32Array } {
+  const P = new Float32Array(base.P.length + 9);
+  P.set(base.P);
+  P.set([x0, y, 0, x1, y, 0, x1, y + h, 0], base.P.length);
+  return { P, I: Uint32Array.from({ length: P.length / 3 }, (_, k) => k) };
+}
+
 describe("SurfaceGrid", () => {
   // Why: the grid used to put a triangle into every cell of its bounding
   // box. A flat mesh of long triangles has about T/2 cells and each such
-  // triangle's box covers nearly all of them, so the grid held about T^2/2
-  // entries: about 50 million at 10 000 triangles, past a phone Worker's
-  // memory, and the level-of-detail pass builds one per pose. Its size
-  // must stay linear in the triangle count, whatever their shape.
+  // triangle's box covers nearly all of them: 1 000 of them over the unit
+  // square get 37 x 37 x 1 = 1 369 cells and the grid held about 1.4
+  // million entries; at 10 000, 80 x 80 x 1 = 6 400 cells and about 64
+  // million, past a phone Worker's memory, and the level-of-detail pass
+  // builds one per pose. Its size must stay linear in the triangle count,
+  // whatever their shape: a triangle covering 32 cells is filed in them,
+  // one covering 33 goes to the large list as a single entry.
   it("holds a number of entries linear in the triangles, for long ones too", () => {
     const n = 1000;
-    const { P, I } = longTriangles(n);
+    const base = longTriangles(n);
+    const { P, I } = base;
     const grid = new SurfaceGrid(P, I);
-    expect(grid.entries).toBeLessThanOrEqual(64 * n);
+    // every long triangle covers more than 32 cells: one entry each
+    expect(grid.entries).toBe(n);
+    // the grid's cell for 1 001 triangles over this flat square, by its
+    // sizing rule (about two triangles a cell, the flat axis at 1 %)
+    const cell = Math.cbrt(0.01 / ((n + 1) / 2));
+    for (const [cells, entries] of [
+      [32, n + 32],
+      [33, n + 1],
+    ] as const) {
+      const probe = withTriangle(
+        base,
+        0.5 * cell,
+        (cells - 0.5) * cell,
+        0.5 * cell,
+        0.1 * cell,
+      );
+      expect(new SurfaceGrid(probe.P, probe.I).entries).toBe(entries);
+    }
     // and its answers stay those of a search over every triangle
     for (const [x, y, z] of [
       [0.5, 0.5, 0.3],

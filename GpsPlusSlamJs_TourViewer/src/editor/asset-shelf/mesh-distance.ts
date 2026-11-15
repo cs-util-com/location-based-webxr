@@ -232,6 +232,8 @@ export class SurfaceGrid {
   private readonly cells = new Map<number, number[]>();
   /** The triangles whose box covers more than `maxCells` cells. */
   private readonly large: number[] = [];
+  /** Each large triangle's bounding box: min xyz, then max xyz. */
+  private readonly largeBox: number[] = [];
   private readonly mark: Int32Array;
   private stamp = 0;
 
@@ -287,6 +289,7 @@ export class SurfaceGrid {
         (b[0]! - a[0]! + 1) * (b[1]! - a[1]! + 1) * (b[2]! - a[2]! + 1);
       if (covered > maxCells) {
         this.large.push(t);
+        this.largeBox.push(mn[0]!, mn[1]!, mn[2]!, mx[0]!, mx[1]!, mx[2]!);
         continue;
       }
       for (let i = a[0]!; i <= b[0]!; i++) {
@@ -338,8 +341,15 @@ export class SurfaceGrid {
     // the large triangles are in no cell: each is measured directly, and
     // the shell search below only has to beat the nearest of them
     let best = Infinity;
-    for (const t of this.large) {
-      const d = this.tri2(px, py, pz, t);
+    const box = this.largeBox;
+    for (let k = 0; k < this.large.length; k++) {
+      // a triangle is no nearer than its box: skip it when the box is
+      // already no nearer than the best (exact, never a missed triangle)
+      const dx = Math.max(box[6 * k]! - px, 0, px - box[6 * k + 3]!);
+      const dy = Math.max(box[6 * k + 1]! - py, 0, py - box[6 * k + 4]!);
+      const dz = Math.max(box[6 * k + 2]! - pz, 0, pz - box[6 * k + 5]!);
+      if (dx * dx + dy * dy + dz * dz >= best) continue;
+      const d = this.tri2(px, py, pz, this.large[k]!);
       if (d < best) best = d;
     }
     this.stamp++;

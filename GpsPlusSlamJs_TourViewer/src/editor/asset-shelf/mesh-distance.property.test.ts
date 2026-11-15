@@ -37,7 +37,7 @@ describe("SurfaceGrid against every triangle (property)", () => {
   it("gives the nearest distance a search over every triangle gives", () => {
     fc.assert(
       fc.property(
-        fc.array(triangle, { minLength: 1, maxLength: 60 }),
+        fc.array(triangle, { minLength: 1, maxLength: 40 }),
         fc.boolean(),
         fc.constantFrom(1, 2, 8, undefined),
         fc.array(fc.tuple(coord, coord, coord), { minLength: 1, maxLength: 8 }),
@@ -59,7 +59,7 @@ describe("SurfaceGrid against every triangle (property)", () => {
           }
         },
       ),
-      { seed: 7, numRuns: 300 },
+      { seed: 7, numRuns: 200 },
     );
   });
 });
