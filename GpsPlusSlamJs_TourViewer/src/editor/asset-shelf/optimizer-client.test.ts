@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { OptimizerCrashed } from "./asset-optimizers.js";
 import {
   createOptimizerHost,
+  OPTIMIZER_SILENCE_MS,
   type OptimizerWorker,
 } from "./optimizer-client.js";
 import type {
@@ -139,6 +140,55 @@ describe("the optimizer's Worker client", () => {
       reason: "r",
     });
     await expect(c).resolves.toEqual({ kind: "kept", reason: "r" });
+  });
+
+  // Why: a Worker killed for running out of memory does not reliably fire
+  // its error event in Chrome, so without a watchdog the run never
+  // settles and its card shows "in progress" until the author stops it.
+  // A Worker that sends nothing for OPTIMIZER_SILENCE_MS is treated as a
+  // crash; one that keeps sending progress is never cut off, however long
+  // its run.
+  it("treats a Worker silent for OPTIMIZER_SILENCE_MS as crashed, and progress keeps it alive", async () => {
+    vi.useFakeTimers();
+    try {
+      const workers: FakeWorker[] = [];
+      const host = createOptimizerHost(() => {
+        const w = fakeWorker();
+        workers.push(w);
+        return w;
+      });
+      const run = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+      const outcome = run.then(
+        () => "settled",
+        (err: unknown) => err,
+      );
+      const job = workers[0]!.posted[0]!.job;
+      // a long run that reports progress is not cut off
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS - 1);
+        workers[0]!.answer({ type: "progress", job, fraction: i / 3 });
+      }
+      expect(workers[0]!.terminated).toBe(false);
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS);
+      const err = await outcome;
+      expect(err).toBeInstanceOf(OptimizerCrashed);
+      expect((err as Error).message).toMatch(/stopped answering/);
+      expect(workers[0]!.terminated).toBe(true);
+      // the next run gets a fresh Worker, and a settled run leaves no
+      // watchdog behind
+      const next = host.run("image", 2, OPTIMIZER_SETTINGS, control());
+      expect(workers).toHaveLength(2);
+      workers[1]!.answer({
+        type: "kept",
+        job: workers[1]!.posted[0]!.job,
+        reason: "r",
+      });
+      await expect(next).resolves.toEqual({ kind: "kept", reason: "r" });
+      await vi.advanceTimersByTimeAsync(2 * OPTIMIZER_SILENCE_MS);
+      expect(workers[1]!.terminated).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("close stops every run and the Worker; a spawn that throws rejects the run", async () => {

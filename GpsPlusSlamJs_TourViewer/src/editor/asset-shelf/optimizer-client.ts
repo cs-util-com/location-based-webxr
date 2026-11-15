@@ -3,7 +3,9 @@
  * `OptimizerHost` that spawns the Worker on the first run that needs it,
  * correlates answers by job, forwards progress, cancels on abort, and
  * after a crash rejects every run it held with `OptimizerCrashed` and
- * spawns a fresh Worker for the next one. The transport logic
+ * spawns a fresh Worker for the next one. A Worker that holds runs and
+ * sends nothing for `OPTIMIZER_SILENCE_MS` counts as crashed, because a
+ * Worker killed out of memory does not reliably fire its error event. The transport logic
  * (`createOptimizerHost`) is tested with a fake Worker; the device seam
  * (`spawnOptimizerWorker`) only constructs the real one.
  *
@@ -24,6 +26,19 @@ import type {
   OptimizerInbound,
   OptimizerOutbound,
 } from "./optimizer-protocol.js";
+
+/** How long a Worker holding runs may send nothing (no progress, no
+ *  answer) before it counts as crashed: 2 minutes. The longest silent
+ *  stretch of a sound run is one primitive's level-of-detail ordering and
+ *  measurement, which reports progress once it is done: the model budget
+ *  is 10 s on a desktop for the largest measured model (a 57 600-triangle
+ *  skinned tube, 9.7 s), a phone takes several times that (about 50 s at
+ *  five times), and 2 minutes leaves more than twice that again. Progress
+ *  restarts the wait, so a long run that keeps reporting is never cut. */
+export const OPTIMIZER_SILENCE_MS = 120_000;
+
+/** Said when the Worker stopped answering. */
+const SILENT = "the optimizer stopped answering for 2 minutes";
 
 /** The part of a `Worker` the client uses, so a test can fake it. */
 export interface OptimizerWorker {
@@ -169,12 +184,26 @@ export function createOptimizerHost(
   let worker: OptimizerWorker | null = null;
   const pending = new Map<number, Pending>();
   let seq = 0;
+  let watchdog: ReturnType<typeof setTimeout> | null = null;
+
+  /** (Re)starts the silence watchdog while the Worker holds runs, and
+   *  stops it once it holds none. */
+  function watch(): void {
+    if (watchdog !== null) clearTimeout(watchdog);
+    watchdog = null;
+    if (worker === null || pending.size === 0) return;
+    watchdog = setTimeout(() => {
+      watchdog = null;
+      dropAll(() => new OptimizerCrashed(SILENT));
+    }, OPTIMIZER_SILENCE_MS);
+  }
 
   function settle(job: number): Pending | undefined {
     const run = pending.get(job);
     if (run === undefined) return undefined;
     pending.delete(job);
     run.control.signal.removeEventListener("abort", run.onAbort);
+    if (pending.size === 0) watch();
     return run;
   }
 
@@ -184,6 +213,7 @@ export function createOptimizerHost(
     worker = null;
     for (const job of [...pending.keys()]) settle(job)?.reject(error());
     dead?.terminate();
+    watch();
   }
 
   function onAnswer(event: MessageEvent): void {
@@ -215,7 +245,11 @@ export function createOptimizerHost(
   function live(): OptimizerWorker {
     if (worker !== null) return worker;
     const spawned = spawn();
-    spawned.onmessage = onAnswer;
+    spawned.onmessage = (event) => {
+      // any word from the live Worker shows it is alive
+      if (worker === spawned) watch();
+      onAnswer(event);
+    };
     spawned.onerror = () => {
       if (worker === spawned) dropAll(() => new OptimizerCrashed());
     };
@@ -242,6 +276,7 @@ export function createOptimizerHost(
         };
         pending.set(job, { kind, resolve, reject, control, onAbort });
         control.signal.addEventListener("abort", onAbort, { once: true });
+        watch();
         target.postMessage({ type: "run", job, kind, payload, settings }, [
           ...transfer,
         ]);
