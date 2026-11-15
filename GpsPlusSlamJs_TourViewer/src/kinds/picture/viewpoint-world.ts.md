@@ -31,9 +31,13 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 - `thenNow`: the plane's opacity is `THEN_NOW_FADE` times the blend of
   `then-now-fade.ts`; lined up, the visitor gets the slider on the page's
   screen (`then-now-slider.ts`), and it closes when they leave. Its
-  plane carries the shared soft-edge alpha map (`then-now-feather.ts`),
-  which the other views' planes do not; the part's disposal frees it
-  with the look, and three uploads it again for the next part.
+  plane carries the shared soft-edge alpha map (`then-now-feather.ts`)
+  at 0.035; the viewer's plane takes the same width and sharpen's 0.02.
+  The maps are shared by every part, so `dispose` detaches them from
+  the look's materials before freeing it.
+- The viewer and the window lay a soft shadow on the ground
+  (`viewpoint-looks.ts`), outside the tap target; the viewer's fades out
+  with the stand.
 - `viewer`: the viewer stand and its plate fade out as the picture fades
   in (`VIEWER_FADE`); its halo pulses, softer far away, and goes with it.
   The plate's words are generic ("Step up to it", "and see it as it was"),
@@ -93,7 +97,9 @@ on the way in and on the spot, the card told of an upside-down picture,
 the tap target without the column and the hidden card taking no ray, the
 window's plate above the ground for a low viewpoint, the viewer's and the
 window's plates (none on the other views, which paint only the guide's
-card), the soft edge on then and now's plane only, sharpen's card
+card), each view's soft-edge width, one part's disposal leaving the
+shared feather map alive, the viewer's and the window's ground shadows
+outside the tap target, sharpen's card
 without the picture, the
 column held still on reduced motion, the slider's arrival, fade-in, take-over and
 departure, the window's shader plane, the sheet, disposal.

@@ -129,18 +129,74 @@ function plateMaterial(map: Texture): MeshBasicMaterial {
   return new MeshBasicMaterial({ map, transparent: true, toneMapped: false });
 }
 
+/** The ground shadows under the viewer and the window (m, opacity): the
+ *  prototype's `shadowDecal(0.9, 0.9, 0.3)` and
+ *  `shadowDecal(ow * 1.15, 0.8, 0.22)`, 12 mm over the ground. */
+export const VIEWER_SHADOW = { widthM: 0.9, depthM: 0.9, opacity: 0.3 };
+const PORTAL_SHADOW = { widthShare: 1.15, depthM: 0.8, opacity: 0.22 };
+const SHADOW_LIFT_M = 0.012;
+
+type GroundShadow = Mesh<PlaneGeometry, MeshBasicMaterial>;
+
+/** A soft shadow `widthM` x `depthM` flat on the ground, `map` its alpha
+ *  (painted black fading out); it takes no tap. */
+function groundShadow(
+  map: Texture,
+  widthM: number,
+  depthM: number,
+  opacity: number,
+): GroundShadow {
+  const shadow = new Mesh(
+    new PlaneGeometry(widthM, depthM),
+    new MeshBasicMaterial({
+      map,
+      color: 0x000000,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+    }),
+  );
+  shadow.rotation.x = -Math.PI / 2;
+  shadow.position.y = SHADOW_LIFT_M;
+  shadow.renderOrder = 1;
+  shadow.raycast = () => undefined;
+  return shadow;
+}
+
+/** A group on the ground at `(x, z)` turned by `yaw`, holding `shadow`
+ *  `aheadM` along its -Z: apart from a look's tappable group, so that
+ *  the ground stretches no tap bounds. */
+function floorUnder(
+  shadow: GroundShadow,
+  x: number,
+  z: number,
+  yaw: number,
+  aheadM: number,
+): Group {
+  const floor = new Group();
+  floor.position.set(x, 0, z);
+  floor.rotation.y = yaw;
+  shadow.position.z = -aheadM;
+  floor.add(shadow);
+  return floor;
+}
+
 /** The viewer: a stand with binoculars on a column, 0.42 m ahead of the
  *  spot, its head tilted with the viewpoint, a plate on its column
  *  (`plateMap`, painted words) and a halo on the ground at its foot.
  *  `materials` (the plate's among them) fade it; the halo pulses on its
- *  own. */
+ *  own. Its soft shadow (`shadowMap`) lies in `floor`, apart from
+ *  `group`, for the part to fade with it. */
 export function viewerStand(
   viewpoint: TourPictureViewpoint,
   plateMap: Texture,
+  shadowMap: Texture,
 ): {
   readonly group: Group;
   readonly materials: readonly Material[];
   readonly halo: Mesh<RingGeometry, MeshBasicMaterial>;
+  readonly floor: Group;
+  readonly shadow: GroundShadow;
 } {
   const body = new MeshStandardMaterial({
     color: 0x2b4a44,
@@ -251,10 +307,22 @@ export function viewerStand(
   group.position.set(viewpoint.position[0], 0, viewpoint.position[2]);
   group.rotation.y = viewpointYaw(viewpoint);
   group.add(stand, halo);
+  const S = VIEWER_SHADOW;
+  const shadow = groundShadow(shadowMap, S.widthM, S.depthM, S.opacity);
+  shadow.name = "picture-viewer-shadow";
+  const floor = floorUnder(
+    shadow,
+    group.position.x,
+    group.position.z,
+    group.rotation.y,
+    -stand.position.z,
+  );
   return {
     group,
     materials: [body, brass, rubber, lensMat, hoodMat, plateMat],
     halo,
+    floor,
+    shadow,
   };
 }
 
@@ -433,6 +501,8 @@ export interface PortalLook {
   readonly plane: PortalPlane;
   /** The frame's lit materials, which fade with the opening. */
   readonly materials: readonly Material[];
+  /** The soft shadow on the ground under the frame, apart from `group`. */
+  readonly floor: Group;
 }
 
 function ringGeometry(
@@ -475,6 +545,7 @@ export function portalLook(
   aspect: number,
   texture: Texture,
   plateMap: Texture,
+  shadowMap: Texture,
 ): PortalLook {
   const F = PORTAL_FRAME;
   const P = new Vector3(...viewpoint.position);
@@ -599,10 +670,19 @@ export function portalLook(
       group.add(post, foot);
     }
   }
+  const shadow = groundShadow(
+    shadowMap,
+    ow * PORTAL_SHADOW.widthShare,
+    PORTAL_SHADOW.depthM,
+    PORTAL_SHADOW.opacity,
+  );
+  shadow.name = "picture-portal-shadow";
+  const floor = floorUnder(shadow, group.position.x, group.position.z, yaw, 0);
   return {
     group,
     opening,
     plane,
     materials: [ringM, caseM, wallM, plateMat],
+    floor,
   };
 }

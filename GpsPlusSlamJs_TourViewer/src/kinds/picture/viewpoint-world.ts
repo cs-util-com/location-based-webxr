@@ -37,7 +37,7 @@ import {
   takeOverThenNow,
   type ThenNowState,
 } from "./then-now-fade.js";
-import { thenNowFeatherMap } from "./then-now-feather.js";
+import { THEN_NOW_FEATHER, thenNowFeatherMap } from "./then-now-feather.js";
 import { buildThenNowSlider } from "./then-now-slider.js";
 import {
   FINDER_FADE,
@@ -56,6 +56,7 @@ import {
   PORTAL_PLATE,
   VIEWER_PLATE,
   viewerStand,
+  VIEWER_SHADOW,
   viewpointPlane,
   type PortalLook,
 } from "./viewpoint-looks.js";
@@ -130,7 +131,25 @@ interface Reading {
 interface ViewpointLook {
   readonly root: Group;
   readonly tappable: readonly Object3D[];
+  /** Materials whose alpha is a shared feather map, which outlives the
+   *  part: detached before the look is disposed. */
+  readonly feathered: readonly MeshBasicMaterial[];
   show(reading: Reading): void;
+}
+
+/** How soft each picture's edges are (a share of the shorter side):
+ *  then and now melts into today, sharpen only loses its hard rim. */
+const VIEWER_FEATHER = THEN_NOW_FEATHER;
+const SHARPEN_FEATHER = 0.02;
+
+/** Softens `material`'s edges by `feather` with the shared map. */
+function feathered(
+  material: MeshBasicMaterial,
+  feather: number,
+): MeshBasicMaterial {
+  material.alphaMap = thenNowFeatherMap(feather);
+  material.needsUpdate = true;
+  return material;
 }
 
 const facingWorld = new Vector3();
@@ -273,6 +292,7 @@ export function viewpointWorld(
       return {
         root,
         tappable,
+        feathered: [],
         show(reading) {
           const { reach } = reading;
           const on = smoothstep(
@@ -310,13 +330,15 @@ export function viewpointWorld(
               600,
               block.year,
             ),
+        canvasTexture(painters.shadow()),
       );
-      root.add(portal.group);
+      root.add(portal.group, portal.floor);
       tappable.push(portal.group);
       const uniforms = portal.opening.material.uniforms;
       return {
         root,
         tappable,
+        feathered: [],
         show(reading) {
           // The plane in the world, for the shader: the part moves with
           // the session's alignment.
@@ -341,17 +363,22 @@ export function viewpointWorld(
       const stand = viewerStand(
         viewpoint,
         card(VIEWER_PLATE.paintM, ...VIEWER_PLATE_LINES, 500, block.year),
+        canvasTexture(painters.shadow()),
       );
-      root.add(stand.group);
+      root.add(stand.group, stand.floor);
       const halo = stand.halo.material;
+      const shadow = stand.shadow.material;
       return {
         root,
         tappable: [stand.group, plane.holder],
+        feathered: [feathered(plane.mesh.material, VIEWER_FEATHER)],
         show({ reach, seconds }) {
           const k = editing ? 0 : viewpointAlpha(reach, VIEWER_FADE);
           // The viewer gives way to the picture.
           setOpacity(stand.materials, 1 - k);
+          shadow.opacity = VIEWER_SHADOW.opacity * (1 - k);
           stand.group.visible = k < 0.99;
+          stand.floor.visible = stand.group.visible;
           plane.mesh.material.opacity = editing ? EDITOR_PICTURE_ALPHA : k;
           const H = VIEWER_HALO;
           halo.opacity =
@@ -366,6 +393,7 @@ export function viewpointWorld(
       return {
         root,
         tappable,
+        feathered: [feathered(plane.mesh.material, SHARPEN_FEATHER)],
         show(reading) {
           const k = editing
             ? EDITOR_PICTURE_ALPHA
@@ -376,11 +404,10 @@ export function viewpointWorld(
       };
     }
     // Then and now: the old picture melts into today at its edges.
-    plane.mesh.material.alphaMap = thenNowFeatherMap();
-    plane.mesh.material.needsUpdate = true;
     return {
       root,
       tappable,
+      feathered: [feathered(plane.mesh.material, THEN_NOW_FEATHER)],
       show(reading) {
         const { reach, dtS } = reading;
         if (editing) {
@@ -504,6 +531,8 @@ export function viewpointWorld(
       look = null;
       image = null;
       if (drawn !== null) {
+        // The feather maps are shared by every part: never freed here.
+        for (const m of drawn.feathered) m.alphaMap = null;
         for (const t of [drawn.root, ...drawn.tappable]) {
           t.removeFromParent();
           disposeObject3D(t);

@@ -4,7 +4,8 @@
  * (its `uFeather` 0.035 of the width at the sides, half as much again at
  * the top and bottom). Given to the overlay as a shared alpha map, so the
  * overlay stays a basic material whose opacity the view and the station's
- * fade keep writing.
+ * fade keep writing. The viewer's and sharpen's planes take the same
+ * edge at their own widths.
  *
  * @see then-now-feather.ts.md
  */
@@ -25,9 +26,17 @@ export const THEN_NOW_FEATHER = 0.035;
 /** The top and bottom band over the sides'. */
 const TOP_SHARE = 1.5;
 
-/** The alpha map's side (px): the band spans 9 texels at the default
- *  width, so filtering keeps it a ramp. */
-const MAP_PX = 256;
+/** The alpha map's least side (px), and the texels its band must span
+ *  so that filtering keeps it a ramp: 256 px gives the default width 9;
+ *  a narrower feather takes the next power of two that gives it as many. */
+const MAP_MIN_PX = 256;
+const BAND_TEXELS = 8;
+
+function mapPx(feather: number): number {
+  let px = MAP_MIN_PX;
+  while (px * feather < BAND_TEXELS && px < 4096) px *= 2;
+  return px;
+}
 
 /**
  * How much of the picture shows at `(u, v)` (0..1 across and up): 0 at
@@ -52,38 +61,38 @@ export function thenNowFeather(
   );
 }
 
-let featherMap: DataTexture | null = null;
+const featherMaps = new Map<number, DataTexture>();
 
-/** The feather at its default width as an alpha map (green channel, as
- *  three reads one): made once, shared by every overlay, never freed. */
-export function thenNowFeatherMap(): DataTexture {
-  if (featherMap !== null) return featherMap;
-  const data = new Uint8Array(MAP_PX * MAP_PX * 4);
-  for (let y = 0; y < MAP_PX; y += 1) {
-    for (let x = 0; x < MAP_PX; x += 1) {
+/** The feather `feather` wide (the default: then and now's) as an alpha
+ *  map (green channel, as three reads one): made once per width, shared
+ *  by every overlay, never freed (a part detaches it before it frees its
+ *  look). */
+export function thenNowFeatherMap(
+  feather: number = THEN_NOW_FEATHER,
+): DataTexture {
+  const made = featherMaps.get(feather);
+  if (made !== undefined) return made;
+  const side = mapPx(feather);
+  const data = new Uint8Array(side * side * 4);
+  for (let y = 0; y < side; y += 1) {
+    for (let x = 0; x < side; x += 1) {
       const a = Math.round(
-        255 * thenNowFeather(x / (MAP_PX - 1), y / (MAP_PX - 1)),
+        255 * thenNowFeather(x / (side - 1), y / (side - 1), feather),
       );
-      const i = (y * MAP_PX + x) * 4;
+      const i = (y * side + x) * 4;
       data[i] = a;
       data[i + 1] = a;
       data[i + 2] = a;
       data[i + 3] = 255;
     }
   }
-  const map = new DataTexture(
-    data,
-    MAP_PX,
-    MAP_PX,
-    RGBAFormat,
-    UnsignedByteType,
-  );
+  const map = new DataTexture(data, side, side, RGBAFormat, UnsignedByteType);
   map.name = "then-now-feather";
   map.magFilter = LinearFilter;
   map.minFilter = LinearFilter;
   map.wrapS = ClampToEdgeWrapping;
   map.wrapT = ClampToEdgeWrapping;
   map.needsUpdate = true;
-  featherMap = map;
+  featherMaps.set(feather, map);
   return map;
 }

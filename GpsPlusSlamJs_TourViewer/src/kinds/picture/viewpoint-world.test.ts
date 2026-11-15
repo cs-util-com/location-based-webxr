@@ -649,20 +649,94 @@ describe("viewpointWorld", () => {
     part.dispose();
   });
 
-  it("softens only then and now's picture at its edges", async () => {
-    // Why: the chosen page's then-and-now melts into today at its border;
-    // sharpen and the viewer show the whole picture edge to edge.
-    for (const view of ["thenNow", "sharpen", "viewer"] as const) {
-      const { part } = await placed(picture(view), envOf("play"));
+  it("softens each viewpoint picture at its edges by the chosen widths", async () => {
+    // Why: on the chosen page then and now and the viewer melt into today
+    // over 0.035 of the width, sharpen over 0.02.
+    const widths = { thenNow: 0.035, viewer: 0.035, sharpen: 0.02 } as const;
+    for (const [view, feather] of Object.entries(widths)) {
+      const { part } = await placed(
+        picture(view as keyof typeof widths),
+        envOf("play"),
+      );
       const plane = named(part.object, "picture-viewpoint-plane");
       const material = plane.material as MeshBasicMaterial;
-      expect(material.alphaMap, view).toBe(
-        view === "thenNow" ? thenNowFeatherMap() : null,
-      );
+      expect(material.alphaMap, view).toBe(thenNowFeatherMap(feather));
       part.dispose();
-      // The shared map outlives every part.
-      expect(thenNowFeatherMap().image.data).toBeDefined();
     }
+  });
+
+  // The feather map is shared by every part: one part going must not free
+  // the GPU texture another part still draws with.
+  it("leaves the shared feather map alive when a part goes", async () => {
+    const map = thenNowFeatherMap();
+    let freed = 0;
+    const count = (): void => {
+      freed += 1;
+    };
+    map.addEventListener("dispose", count);
+    const first = await placed(picture("thenNow"), envOf("play"));
+    const second = await placed(picture("viewer"), envOf("play"));
+    first.part.dispose();
+    expect(freed).toBe(0);
+    const plane = named(second.part.object, "picture-viewpoint-plane");
+    expect((plane.material as MeshBasicMaterial).alphaMap).toBe(map);
+    second.part.dispose();
+    expect(freed).toBe(0);
+    map.removeEventListener("dispose", count);
+  });
+
+  // The chosen page lays a soft shadow under the viewer and under the
+  // standing window; on the ground it takes no tap and stretches no tap
+  // bounds, and the viewer's goes with the viewer.
+  it("lays the viewer's and the window's shadows on the ground", async () => {
+    const viewer = await placed(picture("viewer"), envOf("play"));
+    expect(viewer.painted.shadows).toBe(1);
+    const vs = named(viewer.part.object, "picture-viewer-shadow");
+    expect(viewer.part.tapTarget?.getObjectById(vs.id)).toBeUndefined();
+    tick(viewer.part, viewer.station, 0, [0, 1.6, -8]);
+    viewer.station.updateMatrixWorld(true);
+    // Under the stand, 0.42 m ahead of the spot (east, +Z), in the
+    // viewpoint's frame (the station's: the anchor undoes the part's pose).
+    const vAt = viewer.station.worldToLocal(vs.getWorldPosition(new Vector3()));
+    expect(vAt.x).toBeCloseTo(0, 6);
+    expect(vAt.y).toBeCloseTo(0.012, 6);
+    expect(vAt.z).toBeCloseTo(0.42, 6);
+    const vSize = new Box3().setFromObject(vs).getSize(new Vector3());
+    expect(vSize.x).toBeCloseTo(0.9, 6);
+    expect(vSize.z).toBeCloseTo(0.9, 6);
+    expect(opacity(viewer.part.object, "picture-viewer-shadow")).toBeCloseTo(
+      0.3,
+      6,
+    );
+    tick(viewer.part, viewer.station, 1, [0, 1.6, 0]);
+    expect(opacity(viewer.part.object, "picture-viewer-shadow")).toBe(0);
+    viewer.part.dispose();
+
+    const win = await placed(picture("window"), envOf("play"));
+    expect(win.painted.shadows).toBe(1);
+    const ws = named(win.part.object, "picture-portal-shadow");
+    expect(win.part.tapTarget?.getObjectById(ws.id)).toBeUndefined();
+    tick(win.part, win.station, 0, [0, 1.6, 0]);
+    win.station.updateMatrixWorld(true);
+    // Under the window's opening, as the prototype lays it.
+    const frame = named(win.part.object, "picture-portal").getWorldPosition(
+      new Vector3(),
+    );
+    const shadow = new Box3().setFromObject(ws);
+    const centre = shadow.getCenter(new Vector3());
+    expect(centre.x).toBeCloseTo(frame.x, 6);
+    expect(centre.z).toBeCloseTo(frame.z, 6);
+    expect(win.station.worldToLocal(centre.clone()).y).toBeCloseTo(0.012, 6);
+    // 1.15 x the frame's outer width (1.12 m) across, 0.8 m deep: the
+    // window faces east, so across is north-south (X).
+    const size = shadow.getSize(new Vector3());
+    expect(size.x).toBeCloseTo(1.12 * 1.15, 6);
+    expect(size.z).toBeCloseTo(0.8, 6);
+    expect(opacity(win.part.object, "picture-portal-shadow")).toBeCloseTo(
+      0.22,
+      6,
+    );
+    win.part.dispose();
   });
 
   it("points the window's shader at the picture's plane in the world", async () => {

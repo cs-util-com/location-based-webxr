@@ -48,8 +48,12 @@ materials only; `viewpoint-world.ts` decides what shows how much.
   1.5 m, the sweep's default), the finder's corner depths, the viewer's
   shape, its halo and plate, the window's plate. The way to the spot (the
   decal, the light column, the card on its post) is `spot-guide-look.ts`.
-  Left out: the prototype's soft edge feather on the plane and the ground
-  shadows.
+  Their ground shadows too (`VIEWER_SHADOW`, `PORTAL_SHADOW`: 0.9 x 0.9 m
+  at 0.3 under the viewer, 1.15 x the frame's width by 0.8 m at 0.22
+  under the window, 12 mm over the ground, painted by `painters.shadow()`),
+  each in a `floor` group apart from the tappable `group` and casting no
+  ray, so the ground stretches no tap bounds. The soft edge on the plane
+  is `then-now-feather.ts`, set by `viewpoint-world.ts`.
 
 ## Tests
 

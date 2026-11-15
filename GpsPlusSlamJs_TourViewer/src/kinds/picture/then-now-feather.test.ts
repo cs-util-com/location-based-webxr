@@ -80,4 +80,29 @@ describe("thenNowFeatherMap", () => {
     }
     expect(ramp).toBeGreaterThanOrEqual(6);
   });
+
+  // Sharpen's picture takes a narrower feather (0.02) than then and now
+  // and the viewer (0.035): one shared map per width, each ramp still
+  // wide enough in texels that filtering keeps it a ramp.
+  it("makes one shared map per feather width, each a ramp of several texels", () => {
+    const narrow = thenNowFeatherMap(0.02);
+    expect(thenNowFeatherMap(0.02)).toBe(narrow);
+    expect(narrow).not.toBe(thenNowFeatherMap());
+    expect(thenNowFeatherMap(THEN_NOW_FEATHER)).toBe(thenNowFeatherMap());
+    for (const feather of [0.02, 0.035]) {
+      const { width, height, data } = thenNowFeatherMap(feather).image as {
+        width: number;
+        height: number;
+        data: Uint8Array;
+      };
+      let ramp = 0;
+      for (let x = 0; x < width / 2; x += 1) {
+        const g = data[((height / 2) * width + x) * 4 + 1]!;
+        if (g > 0 && g < 255) ramp += 1;
+      }
+      expect(ramp, String(feather)).toBeGreaterThanOrEqual(6);
+      // The band is the feather's share of the width.
+      expect(ramp / width, String(feather)).toBeCloseTo(feather, 2);
+    }
+  });
 });
