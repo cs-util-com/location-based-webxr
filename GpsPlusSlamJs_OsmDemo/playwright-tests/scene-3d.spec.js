@@ -2031,13 +2031,16 @@ test.describe("the time of day", () => {
                 if (!(input instanceof HTMLInputElement)) {
                   throw new Error("no #sun-time");
                 }
-                // The slider's own resolution, read from the control. The app
-                // maps a value as value / max, so the range must start at 0.
+                // The app maps a value as value / SUN_SLIDER_STEPS (1000, a
+                // constant in `src/main.ts`), not by the control's own `max`,
+                // so the control must span exactly 0 to that constant.
                 if (Number(input.min) !== 0) {
                   throw new Error(`slider min ${input.min}, not 0`);
                 }
-                const steps = Number(input.max);
-                if (!(steps > 0)) throw new Error(`bad max ${input.max}`);
+                const steps = 1000;
+                if (Number(input.max) !== steps) {
+                  throw new Error(`slider max ${input.max}, not ${steps}`);
+                }
                 const value = Math.ceil(
                   clock.instantToSlider(pinned, place) * steps - 1e-9,
                 );
