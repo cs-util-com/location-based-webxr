@@ -62,6 +62,14 @@ The hold is the time the finger RESTED on the tab before it moved
 machine) delivers a swipe's moves far apart, and the clock alone read a
 quick swipe as a held drag. A finger that rests, then moves, still drags.
 
+The library keeps two limits of its own, and both run on the wall clock
+(`setTimeout`), not on event timestamps: the 250 ms arming above, and a
+500 ms long press (tolerance 8 px) that, when it fires, cancels the
+pending drag and opens the tab's menu. This module cannot move either,
+so on a machine whose frames are slow a finger held still for 500 ms
+of wall time gets the menu, not a drag, whatever its event timestamps
+say. A test that holds a press must keep it under that limit.
+
 The slop and the hold are swept by a property test (slop 4-24 px, hold
 150-500 ms), and the rest by another (2-9 px): the rule keeps its shape
 across the range.

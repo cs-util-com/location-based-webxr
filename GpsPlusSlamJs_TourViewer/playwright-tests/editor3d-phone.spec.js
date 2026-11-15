@@ -556,13 +556,59 @@ test("the radius slider writes its number, one step in the history", async ({
 });
 
 /**
- * A finger on the page by the browser's own touch input (CDP), so the
- * page gets real pointer events of type "touch": down at `from`, moved
- * by `dx`, `dy` in `steps`, then up. Each event carries its own time,
- * `stepMs` after the one before (as a quick finger's, 16 ms): a loaded
- * machine delivers them far apart, and the strip's rule reads the events'
- * times (the 250 ms hold), so unstamped a busy test machine turned a quick
- * swipe into a held drag.
+ * A finger's touches by the browser's own touch input (CDP), so the page
+ * gets real pointer events of type "touch": down at `from`, moved by
+ * `dx`, `dy` in `steps`. Each event carries its own time, `stepMs` after
+ * the one before (as a quick finger's, 16 ms): the strip's rule reads the
+ * events' times (the 250 ms hold), so a busy test machine that delivers
+ * them far apart still gives the page a quick swipe.
+ * @param {{ x: number, y: number }} from
+ * @param {number} dx
+ * @param {number} dy
+ * @param {number} steps
+ * @param {number} stepMs
+ */
+function touchesOf(from, dx, dy, steps, stepMs) {
+  // CDP takes seconds since the epoch; the page's events get these times.
+  const start = Date.now() / 1000;
+  const at = (/** @type {number} */ n) => start + (n * stepMs) / 1000;
+  const moves = [];
+  for (let step = 1; step <= steps; step++) {
+    const t = step / steps;
+    moves.push({
+      type: "touchMove",
+      touchPoints: [{ x: from.x + dx * t, y: from.y + dy * t }],
+      timestamp: at(step),
+    });
+  }
+  return {
+    press: [
+      { type: "touchStart", touchPoints: [from], timestamp: at(0) },
+      ...moves,
+    ],
+    lift: { type: "touchEnd", touchPoints: [], timestamp: at(steps + 1) },
+  };
+}
+
+/**
+ * Sends touches in one burst, in order, and waits for them all. Sent one
+ * by one, each waited a frame of the page (70-230 ms here), so a quick
+ * gesture took 0.5-1.3 s of wall time, and the docking library's long
+ * press, timed on the wall clock (500 ms, `dock-strip.ts.md`), fired
+ * under it: its menu opened over the strip and took the next press. In a
+ * burst the page gets the moves of a frame as one, with its times.
+ * @param {import("@playwright/test").CDPSession} cdp
+ * @param {ReadonlyArray<Record<string, unknown>>} touches
+ */
+async function sendTouches(cdp, touches) {
+  await Promise.all(
+    touches.map((touch) => cdp.send("Input.dispatchTouchEvent", touch)),
+  );
+}
+
+/**
+ * A quick finger: down at `from`, moved by `dx`, `dy` in `steps`, then up
+ * (`touchesOf`, in one burst).
  * @param {import("@playwright/test").CDPSession} cdp
  * @param {{ x: number, y: number }} from
  * @param {number} dx
@@ -571,27 +617,30 @@ test("the radius slider writes its number, one step in the history", async ({
  * @param {number} [stepMs]
  */
 async function swipe(cdp, from, dx, dy, steps = 3, stepMs = 16) {
-  // CDP takes seconds since the epoch; the page's events get these times.
-  const start = Date.now() / 1000;
-  const at = (/** @type {number} */ n) => start + (n * stepMs) / 1000;
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: [from],
-    timestamp: at(0),
-  });
-  for (let step = 1; step <= steps; step++) {
-    const t = step / steps;
-    await cdp.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: [{ x: from.x + dx * t, y: from.y + dy * t }],
-      timestamp: at(step),
-    });
-  }
-  await cdp.send("Input.dispatchTouchEvent", {
-    type: "touchEnd",
-    touchPoints: [],
-    timestamp: at(steps + 1),
-  });
+  const { press, lift } = touchesOf(from, dx, dy, steps, stepMs);
+  await sendTouches(cdp, [...press, lift]);
+}
+
+/**
+ * A finger that drags a tab: down at `from`, moved by `dx`, `dy` in
+ * `steps`, then up. The steps but the last go in one burst (`sendTouches`)
+ * and reach the page as one move, which only starts the docking library's
+ * tab drag; the drop goes where a later move of the drag found it, so the
+ * last step is sent once the page has drawn the first. (A move to where
+ * the finger already is never reaches the page.)
+ * @param {import("@playwright/test").Page} page
+ * @param {import("@playwright/test").CDPSession} cdp
+ * @param {{ x: number, y: number }} from
+ * @param {number} dx
+ * @param {number} dy
+ * @param {number} [steps]
+ */
+async function pull(page, cdp, from, dx, dy, steps = 12) {
+  const { press, lift } = touchesOf(from, dx, dy, steps, 16);
+  const last = press.slice(-1);
+  await sendTouches(cdp, press.slice(0, -1));
+  await afterFrames(page, 2);
+  await sendTouches(cdp, [...last, lift]);
 }
 
 /**
@@ -649,6 +698,9 @@ test.describe("by touch", () => {
       const b = await box(tab(page, name));
       return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
     };
+    // The docking library's tab menu: a quick gesture never opens it (it
+    // opens on a held press).
+    const menu = page.locator(".dv-context-menu");
     const resetTo = async (/** @type {number} */ px) => {
       await strip(page).evaluate((s, at) => {
         s.scrollLeft = at;
@@ -667,6 +719,7 @@ test.describe("by touch", () => {
       ).toBeLessThanOrEqual(2);
       expect(now.shown, `swiped ${String(dx)} px`).toEqual(["Performance"]);
       expect(now.groups, `swiped ${String(dx)} px`).toBe(start.groups);
+      await expect(menu, `swiped ${String(dx)} px`).toHaveCount(0);
     }
     // Back the other way, from the end.
     await resetTo(start.room);
@@ -675,6 +728,7 @@ test.describe("by touch", () => {
     expect(
       Math.abs((await stripState(page)).scroll - Math.max(0, start.room - 40)),
     ).toBeLessThanOrEqual(2);
+    await expect(menu).toHaveCount(0);
 
     // Under the slop, a tap: it shows its tab, the strip unmoved by it
     // (beyond bringing that tab into sight).
@@ -682,17 +736,18 @@ test.describe("by touch", () => {
     await swipe(cdp, await middle("Files"), -6, 0, 2);
     await expect(tab(page, "Files")).toHaveAttribute("aria-selected", "true");
     expect((await stripState(page)).groups).toBe(start.groups);
+    await expect(menu).toHaveCount(0);
 
     // Pulled across the strip, up into the 3D view's left edge: the
     // library's tab drag, Files in a group of its own there.
     const view = await box(viewPane(page));
     const from = await middle("Files");
-    await swipe(
+    await pull(
+      page,
       cdp,
       from,
       view.x + 12 - from.x,
       view.y + view.height / 2 - from.y,
-      12,
     );
     await expect
       .poll(async () => (await stripState(page)).groups)
