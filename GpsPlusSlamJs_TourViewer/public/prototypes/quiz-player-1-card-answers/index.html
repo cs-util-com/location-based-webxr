@@ -1,0 +1,2654 @@
+<!doctype html>
+<!-- Prototype: the visitor quiz player, answered in the story card. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>The Card Answers</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --walk-accent: #fb923c;
+        --walk-accent-ink: #1f1105;
+        --walk-found: #2dd4bf;
+        --walk-found-ink: #04201c;
+        --walk-ink: #f3f5f7;
+        --walk-muted: #b3bcc6;
+        --walk-surface: rgb(12 16 21 / 86%);
+        --walk-surface-2: rgb(255 255 255 / 8%);
+        --walk-line: rgb(255 255 255 / 16%);
+        --walk-danger: #f87171;
+        --gold: #e5ab3e;
+        --tap: 44px;
+        --font:
+          Corbel, "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        font: 15px/1.4 var(--font);
+        background: #14171d;
+        color: var(--walk-ink);
+        overflow: hidden;
+        font-variant-numeric: lining-nums;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button,
+      input {
+        font: inherit;
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+
+      /* ---------- the phone: the whole screen on a phone, a frame on a desktop ---------- */
+      .stage {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 36px;
+      }
+      .device {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #8fb4cf;
+        container: dev / size;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      #gl {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      /* the camera feed's own texture: grain and a soft lens falloff */
+      .grain {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+          radial-gradient(
+            ellipse at 50% 45%,
+            transparent 55%,
+            rgb(0 0 0 / 26%) 100%
+          ),
+          var(--noise);
+        mix-blend-mode: normal;
+        opacity: 0.9;
+      }
+
+      /* ---------- the HUD the visitor sees ---------- */
+      .exit {
+        position: absolute;
+        z-index: 30;
+        top: calc(12px + env(safe-area-inset-top));
+        left: 12px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 1.5px solid rgb(255 255 255 / 45%);
+        background: rgb(10 14 18 / 62%);
+        display: grid;
+        place-items: center;
+        padding: 0;
+      }
+      .exit svg {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: #fff;
+        stroke-width: 2.6;
+        stroke-linecap: round;
+      }
+      .radar {
+        position: absolute;
+        z-index: 20;
+        top: calc(12px + env(safe-area-inset-top));
+        right: 12px;
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        transition: opacity 0.4s;
+      }
+      .radar.weak {
+        opacity: 0.55;
+      }
+      .toast {
+        position: absolute;
+        z-index: 30;
+        top: calc(118px + env(safe-area-inset-top));
+        left: 12px;
+        max-width: min(270px, 64cqw);
+        padding: 9px 13px;
+        border-radius: 12px;
+        background: rgb(255 255 255 / 94%);
+        color: #111;
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.3;
+        box-shadow: 0 8px 22px rgb(0 0 0 / 28%);
+        animation: in 0.3s ease;
+      }
+
+      /* the card: the one panel, at the foot */
+      .card {
+        position: absolute;
+        z-index: 25;
+        left: 0;
+        right: 0;
+        bottom: var(--kbd, 0px);
+        margin: 0 auto;
+        max-width: 520px;
+        padding: 8px 14px calc(10px + env(safe-area-inset-bottom));
+        border-top: 1px solid var(--walk-line);
+        border-radius: 20px 20px 0 0;
+        background: var(--walk-surface);
+        box-shadow: 0 -8px 26px rgb(0 0 0 / 24%);
+      }
+      .eyerow {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 32px;
+      }
+      .portrait {
+        flex: none;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        overflow: hidden;
+        background: #1b2232;
+        box-shadow: 0 0 0 2px var(--gold);
+      }
+      .portrait svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      .portrait .m {
+        display: none;
+      }
+      .portrait[data-mood="calm"] .m-calm,
+      .portrait[data-mood="happy"] .m-happy,
+      .portrait[data-mood="doubt"] .m-doubt {
+        display: inline;
+      }
+      .portrait[data-mood="happy"] {
+        animation: hop 0.55s cubic-bezier(0.3, 1.6, 0.5, 1);
+      }
+      .portrait[data-mood="doubt"] {
+        animation: tilt 0.6s ease;
+      }
+      @keyframes hop {
+        35% {
+          transform: translateY(-6px);
+        }
+      }
+      @keyframes tilt {
+        30% {
+          transform: rotate(-11deg);
+        }
+        65% {
+          transform: rotate(7deg);
+        }
+      }
+      .eyebrow {
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--walk-found);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .eyebrow.muted {
+        color: var(--walk-muted);
+      }
+      .eyebrow.warn {
+        color: #fecaca;
+      }
+      .total {
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        color: #ffd391;
+        font-size: 14px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .total svg {
+        width: 13px;
+        height: 13px;
+        fill: currentcolor;
+      }
+      .total.pulse {
+        animation: pulse 0.6s ease;
+      }
+      @keyframes pulse {
+        40% {
+          transform: scale(1.35);
+        }
+      }
+      .foldbtn {
+        flex: none;
+        width: 38px;
+        height: 34px;
+        margin-right: -6px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        display: grid;
+        place-items: center;
+      }
+      .foldbtn svg,
+      .fold .up {
+        width: 18px;
+        height: 18px;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 2.6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .line {
+        margin-top: 6px;
+        font-size: 17px;
+        line-height: 1.32;
+        font-weight: 500;
+      }
+      .line.ask {
+        font-weight: 700;
+      }
+      .in {
+        animation: in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      @keyframes in {
+        from {
+          opacity: 0;
+          transform: translateY(6px);
+        }
+      }
+      .plus {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #ffd391;
+        color: #2a1a04;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.5;
+        vertical-align: 1px;
+      }
+      .plus.none {
+        background: rgb(255 255 255 / 15%);
+        color: var(--walk-ink);
+      }
+
+      /* the answers: the one large element of the card */
+      .answers {
+        display: grid;
+        gap: 7px;
+        margin-top: 10px;
+      }
+      .answers.row {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+      .answers.grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .a {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-height: 62px;
+        padding: 6px 4px 5px;
+        border: 2px solid rgb(255 255 255 / 40%);
+        border-radius: 14px;
+        background: rgb(255 255 255 / 11%);
+        color: #fff;
+        font-size: 13.5px;
+        font-weight: 700;
+        line-height: 1.12;
+        text-align: center;
+        touch-action: manipulation;
+        transition:
+          background 0.15s,
+          border-color 0.15s,
+          opacity 0.25s;
+      }
+      .answers.grid .a {
+        flex-direction: row;
+        justify-content: flex-start;
+        gap: 9px;
+        min-height: 52px;
+        padding: 6px 10px;
+        font-size: 15.5px;
+        text-align: left;
+      }
+      .a:active:not(:disabled) {
+        background: rgb(255 255 255 / 24%);
+      }
+      .a:disabled {
+        cursor: default;
+      }
+      .ltr {
+        flex: none;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: #f6f1e6;
+        color: #17191c;
+        font-size: 13.5px;
+        font-weight: 800;
+      }
+      .ltr svg {
+        width: 15px;
+        height: 15px;
+        fill: none;
+        stroke: currentcolor;
+        stroke-width: 3.4;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .multi .ltr {
+        border-radius: 7px;
+      }
+      .a .dir {
+        position: absolute;
+        top: 3px;
+        right: 4px;
+        width: 16px;
+        height: 16px;
+        opacity: 0;
+        transition: opacity 0.35s;
+      }
+      .answers.grid .a .dir {
+        top: 50%;
+        right: 8px;
+        margin-top: -8px;
+      }
+      .a .dir.show {
+        opacity: 0.9;
+      }
+      .a .dir svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        fill: #ffd391;
+      }
+      .a.on {
+        border-color: var(--walk-accent);
+        background: rgb(251 146 60 / 26%);
+      }
+      .a.on .ltr {
+        background: var(--walk-accent);
+        color: var(--walk-accent-ink);
+      }
+      .a.right {
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+        animation: pop 0.3s cubic-bezier(0.3, 1.6, 0.5, 1);
+      }
+      .a.right .ltr {
+        background: var(--walk-found-ink);
+        color: var(--walk-found);
+      }
+      .a.wrong {
+        border-color: var(--walk-danger);
+        background: rgb(248 113 113 / 20%);
+        color: #fecaca;
+        text-decoration: line-through;
+        text-decoration-thickness: 2px;
+      }
+      .a.wrong.fresh {
+        animation: shake 0.35s ease;
+      }
+      .a.wrong .ltr {
+        background: var(--walk-danger);
+        color: #2a0606;
+      }
+      .a.was {
+        border-color: var(--walk-found);
+        border-style: dashed;
+        background: transparent;
+        color: #a7f3e6;
+      }
+      .a.dim {
+        opacity: 0.4;
+      }
+      @keyframes pop {
+        50% {
+          transform: scale(1.05);
+        }
+      }
+      @keyframes shake {
+        25% {
+          transform: translateX(-5px);
+        }
+        60% {
+          transform: translateX(4px);
+        }
+      }
+
+      /* a typed answer: one field, one button */
+      .typed {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .fieldwrap {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+      }
+      .field {
+        width: 100%;
+        height: 58px;
+        padding: 0 14px;
+        border: 2px solid rgb(255 255 255 / 55%);
+        border-radius: 14px;
+        background: rgb(255 255 255 / 12%);
+        color: #fff;
+        font-size: 21px;
+        font-weight: 700;
+        outline: 0;
+      }
+      .field.code {
+        font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+        letter-spacing: 0.32em;
+        text-transform: uppercase;
+      }
+      .field.withunit {
+        padding-right: 48px;
+      }
+      .unit {
+        position: absolute;
+        right: 14px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--walk-muted);
+        font-size: 18px;
+        font-weight: 700;
+        pointer-events: none;
+      }
+      .field:focus {
+        border-color: var(--walk-accent);
+      }
+      .field::placeholder {
+        color: #c6cdd5;
+        font-weight: 500;
+        font-size: 16px;
+        letter-spacing: 0;
+        text-transform: none;
+        font-family: var(--font);
+      }
+      .field.wrong {
+        border-color: var(--walk-danger);
+        color: #fecaca;
+      }
+      .field.wrong.fresh {
+        animation: shake 0.35s ease;
+      }
+      .field.right {
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+      }
+      .check {
+        flex: none;
+        min-width: 90px;
+        height: 58px;
+        border: 0;
+        border-radius: 14px;
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+        font-size: 17px;
+        font-weight: 800;
+      }
+      .check:disabled {
+        background: rgb(255 255 255 / 12%);
+        color: var(--walk-muted);
+        cursor: default;
+      }
+
+      /* the action row keeps one height in every state, so nothing jumps */
+      .acts {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 44px;
+        margin-top: 8px;
+      }
+      .hint {
+        flex: 1;
+        min-width: 0;
+        color: var(--walk-muted);
+        font-size: 13.5px;
+        line-height: 1.25;
+      }
+      .btn {
+        min-height: var(--tap);
+        padding: 9px 15px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 14px;
+        background: var(--walk-surface-2);
+        color: var(--walk-ink);
+        font-size: 14.5px;
+        font-weight: 700;
+        line-height: 1.15;
+      }
+      .btn.primary {
+        flex: 1;
+        min-width: 0;
+        border-color: var(--walk-found);
+        background: var(--walk-found);
+        color: var(--walk-found-ink);
+        font-size: 16px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .btn.lock {
+        border-color: var(--walk-accent);
+        background: var(--walk-accent);
+        color: var(--walk-accent-ink);
+      }
+      .btn.primary:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .btn.ghost {
+        border-color: transparent;
+        background: transparent;
+        color: var(--walk-muted);
+        padding: 9px 8px;
+      }
+      .dots {
+        display: flex;
+        gap: 4px;
+        flex: none;
+      }
+      .dots i {
+        width: 16px;
+        height: 4px;
+        border-radius: 2px;
+        background: rgb(255 255 255 / 22%);
+      }
+      .dots i.on {
+        background: var(--walk-found);
+      }
+      .dots i.q {
+        background: #ffd391;
+      }
+
+      /* folded: one line, the question waits */
+      .fold {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        width: 100%;
+        min-height: 48px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        text-align: left;
+      }
+      .fold .mark {
+        flex: none;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: #ffd391;
+        color: #2a1a04;
+        font-size: 21px;
+        font-weight: 800;
+      }
+      .fold .t {
+        flex: 1;
+        min-width: 0;
+      }
+      .fold b {
+        display: block;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .fold small {
+        display: block;
+        margin-top: 1px;
+        font-size: 13px;
+        color: var(--walk-muted);
+        line-height: 1.25;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* the walk's peek, once the story is done */
+      .seg {
+        display: flex;
+        gap: 4px;
+        margin: 2px 0 9px;
+      }
+      .seg i {
+        flex: 1;
+        height: 6px;
+        border-radius: 3px;
+        background: rgb(255 255 255 / 15%);
+      }
+      .seg i.found {
+        background: var(--walk-found);
+      }
+      .seg i.next {
+        background: var(--walk-accent);
+      }
+      .peektitle {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        margin-top: 2px;
+      }
+      .peektitle b {
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.15;
+      }
+      .peektitle em {
+        font-style: normal;
+        font-size: 17px;
+        font-weight: 700;
+        color: var(--walk-accent);
+      }
+      .tail {
+        margin-top: 3px;
+        font-size: 13.5px;
+        color: var(--walk-muted);
+      }
+
+      /* the phone's keyboard, drawn on a screen that has none */
+      .kbd {
+        position: absolute;
+        z-index: 24;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: var(--kbd, 0px);
+        padding: 7px 4px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        background: #2a2e35;
+      }
+      .kbd div {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        gap: 5px;
+      }
+      .kbd span {
+        flex: 1;
+        max-width: 36px;
+        border-radius: 5px;
+        background: #4b515b;
+      }
+      .kbd div:last-child span {
+        max-width: 200px;
+      }
+      .device.typing .portrait,
+      .device.typing .dots,
+      .device.typing .acts .hint {
+        display: none;
+      }
+
+      /* ---------- a phone held sideways: the card at the bottom left ---------- */
+      @container dev (orientation: landscape) and (max-height: 520px) {
+        .card {
+          left: 10px;
+          right: auto;
+          bottom: calc(10px + var(--kbd, 0px));
+          width: min(390px, 47cqw);
+          margin: 0;
+          padding: 8px 12px 10px;
+          border: 1px solid var(--walk-line);
+          border-radius: 18px;
+        }
+        .line {
+          font-size: 15.5px;
+          margin-top: 3px;
+        }
+        .answers {
+          margin-top: 7px;
+          gap: 6px;
+        }
+        .a {
+          min-height: 56px;
+          font-size: 12.5px;
+        }
+        .answers.grid .a {
+          min-height: 44px;
+          font-size: 14px;
+        }
+        .typed {
+          margin-top: 7px;
+        }
+        .field,
+        .check {
+          height: 48px;
+        }
+        .acts {
+          min-height: 40px;
+          margin-top: 7px;
+        }
+        .acts .btn {
+          min-height: 40px;
+          padding: 7px 12px;
+        }
+        .toast {
+          top: auto;
+          left: auto;
+          right: 12px;
+          bottom: 12px;
+          max-width: min(300px, 40cqw);
+        }
+        .device.typing .card {
+          left: 0;
+          right: 0;
+          width: auto;
+          max-width: none;
+          bottom: var(--kbd, 0px);
+          border-radius: 14px 14px 0 0;
+          padding: 6px 12px 6px;
+        }
+        .device.typing .eyerow {
+          display: none;
+        }
+        .device.typing .line {
+          margin-top: 0;
+          font-size: 14.5px;
+        }
+        .device.typing .acts {
+          display: none;
+        }
+        .device.typing .typed {
+          margin-top: 5px;
+        }
+        .device.typing .field,
+        .device.typing .check {
+          height: 44px;
+        }
+      }
+
+      /* ---------- the demonstration's own layer: dashed, not part of the design ---------- */
+      .demobar {
+        position: absolute;
+        z-index: 40;
+        top: calc(14px + env(safe-area-inset-top));
+        left: 66px;
+        right: 86px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px;
+        border: 1px dashed rgb(255 255 255 / 70%);
+        border-radius: 12px;
+        background: rgb(0 0 0 / 50%);
+        max-width: 420px;
+        margin: 0 auto;
+      }
+      .demobar button {
+        flex: none;
+        width: 36px;
+        height: 34px;
+        border: 0;
+        border-radius: 9px;
+        background: rgb(255 255 255 / 12%);
+        color: #fff;
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .demobar .lbl {
+        flex: 1;
+        min-width: 0;
+        font-size: 12px;
+        line-height: 1.2;
+        color: #f2f4f6;
+        text-align: center;
+        overflow: hidden;
+      }
+      .demobar .lbl b {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .demobar .lbl span {
+        display: block;
+        color: #c5ccd3;
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .readout {
+        position: absolute;
+        z-index: 40;
+        top: calc(60px + env(safe-area-inset-top));
+        left: 66px;
+        right: 86px;
+        max-width: 420px;
+        margin: 0 auto;
+        padding: 2px 8px;
+        border: 1px dashed rgb(255 255 255 / 55%);
+        border-radius: 8px;
+        background: rgb(0 0 0 / 50%);
+        color: #e9edf0;
+        font:
+          11px/1.35 ui-monospace,
+          Consolas,
+          monospace;
+        text-align: center;
+        pointer-events: none;
+      }
+      .readout b.bad {
+        color: #fca5a5;
+      }
+      .try {
+        position: absolute;
+        z-index: 40;
+        top: calc(84px + env(safe-area-inset-top));
+        left: 66px;
+        right: 86px;
+        max-width: 420px;
+        margin: 0 auto;
+        padding: 5px 9px;
+        border: 1px dashed rgb(255 255 255 / 55%);
+        border-radius: 8px;
+        background: rgb(0 0 0 / 50%);
+        color: #fff;
+        font-size: 12px;
+        line-height: 1.3;
+        text-align: center;
+        transition: opacity 0.6s;
+      }
+      .try.gone {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .ov {
+        position: absolute;
+        z-index: 45;
+        border: 2px solid #ff2d2d;
+        border-radius: 6px;
+        pointer-events: none;
+      }
+      @container dev (orientation: landscape) and (max-height: 520px) {
+        .demobar,
+        .readout,
+        .try {
+          left: 70px;
+          right: 90px;
+          max-width: 460px;
+        }
+        .try {
+          top: auto;
+          bottom: 12px;
+          left: calc(min(390px, 47cqw) + 24px);
+          right: 12px;
+        }
+      }
+
+      /* ---------- the demonstration's panel ---------- */
+      .panel {
+        display: none;
+        position: absolute;
+        z-index: 60;
+        inset: 8px;
+        overflow: auto;
+        padding: 12px 14px 16px;
+        border-radius: 16px;
+        background: #f5f1e8;
+        color: #17191c;
+        box-shadow: 0 14px 34px rgb(0 0 0 / 40%);
+        font-size: 13.5px;
+        line-height: 1.4;
+      }
+      .panel.open {
+        display: block;
+      }
+      .panel h1 {
+        font-size: 18px;
+        line-height: 1.2;
+      }
+      .panel h2 {
+        margin-top: 13px;
+        font-size: 11.5px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #5c605d;
+      }
+      .panel p {
+        margin-top: 5px;
+        color: #33373a;
+      }
+      .panel ul,
+      .panel ol {
+        margin: 5px 0 0;
+        padding-left: 18px;
+        color: #33373a;
+      }
+      .panel li {
+        margin-top: 2px;
+      }
+      .panel .close {
+        float: right;
+        min-height: 36px;
+        padding: 0 12px;
+        border: 1px solid #c9c2b2;
+        border-radius: 10px;
+        background: #fff;
+      }
+      .opts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .opts button {
+        min-height: 36px;
+        padding: 0 11px;
+        border: 1px solid #c9c2b2;
+        border-radius: 10px;
+        background: #fff;
+        color: #17191c;
+        font-size: 13px;
+      }
+      .opts button[aria-pressed="true"] {
+        background: #0f766e;
+        border-color: #0f766e;
+        color: #fff;
+      }
+      .beats {
+        list-style: none;
+        padding: 0 !important;
+      }
+      .beats button {
+        width: 100%;
+        min-height: 32px;
+        padding: 4px 8px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: #17191c;
+        text-align: left;
+        font-size: 13px;
+      }
+      .beats button[aria-current="true"] {
+        background: #fff;
+        border-color: #0f766e;
+        font-weight: 700;
+      }
+      table.m {
+        width: 100%;
+        margin-top: 6px;
+        border-collapse: collapse;
+        font:
+          11.5px/1.3 ui-monospace,
+          Consolas,
+          monospace;
+      }
+      table.m th,
+      table.m td {
+        padding: 3px 4px;
+        border-bottom: 1px solid #ddd5c4;
+        text-align: right;
+      }
+      table.m th:first-child,
+      table.m td:first-child {
+        text-align: left;
+        font-family: var(--font);
+      }
+      .deskonly {
+        display: none;
+      }
+      @media (min-width: 900px) and (min-height: 640px) {
+        .stage {
+          background: radial-gradient(circle at 70% 30%, #242a36, #14171d 70%);
+        }
+        .device {
+          flex: none;
+          width: 390px;
+          height: min(844px, calc(100vh - 40px));
+          border-radius: 30px;
+          box-shadow:
+            0 0 0 8px #0a0c10,
+            0 24px 60px rgb(0 0 0 / 50%);
+        }
+        .stage[data-view="land"] .device {
+          width: 844px;
+          height: 390px;
+        }
+        .panel {
+          display: block;
+          position: static;
+          flex: none;
+          width: 340px;
+          max-height: calc(100vh - 40px);
+        }
+        .panel .close,
+        #menuBtn {
+          display: none;
+        }
+        .deskonly {
+          display: block;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage" id="stage" data-view="port">
+      <aside class="panel" id="panel" aria-label="About this prototype">
+        <button class="close" id="closePanel" type="button">Close</button>
+        <h1>The card answers</h1>
+        <p>
+          A quiz is one more step of the story, so it lives in the story card:
+          the question as one line, the answers where Continue stood, the guide
+          reacting in the same card. The answers may stand in the square, but
+          you always answer on the card, so walking is never required.
+        </p>
+        <h2>Question</h2>
+        <div class="opts" id="qids"></div>
+        <h2>Beats</h2>
+        <ol class="beats" id="beatList"></ol>
+        <h2>Try other values</h2>
+        <p>A wrong answer</p>
+        <div class="opts" id="retryOpts">
+          <button data-retry="1">One more try, half points</button>
+          <button data-retry="0">No retry</button>
+        </div>
+        <p>Answers on the card</p>
+        <div class="opts" id="layoutOpts">
+          <button data-layout="row">One row of four</button>
+          <button data-layout="grid">Two by two</button>
+        </div>
+        <p>While walking with the question open</p>
+        <div class="opts" id="walkOpts">
+          <button data-walk="keep">Card stays open</button>
+          <button data-walk="fold">Card folds to one line</button>
+        </div>
+        <p>Continue wakes after an answer (so a double tap cannot skip the reaction)</p>
+        <div class="opts" id="guardOpts">
+          <button data-guard="0">0 ms</button>
+          <button data-guard="450">450 ms</button>
+          <button data-guard="900">900 ms</button>
+        </div>
+        <div class="deskonly">
+          <h2>Screen</h2>
+          <div class="opts" id="views">
+            <button data-view="port">Phone upright</button>
+            <button data-view="land">Phone sideways</button>
+          </div>
+        </div>
+        <h2>Measured</h2>
+        <p>
+          HUD = Exit, radar, toast and the card. The demo's dashed controls and
+          the phone's keyboard are not counted; the keyboard is shown apart.
+        </p>
+        <div class="opts">
+          <button id="measureAll" type="button">Measure every beat</button>
+        </div>
+        <div id="mtable"></div>
+        <h2>The rules this page keeps</h2>
+        <ul>
+          <li>
+            Nothing counts until the one orange or green button: tap an answer
+            again, or tap another, to take it back.
+          </li>
+          <li>
+            Standing somewhere never answers. A weak position changes nothing on
+            the card; only the world's letters fade and the direction arrows go.
+          </li>
+          <li>
+            Typed answers are judged after folding case, white space, accents
+            written out (ü = ue) and a decimal comma, against salted hashes.
+            The page never holds the solution of a text or a code.
+          </li>
+          <li>
+            Every type is handled here: one answer, several answers, a word, a
+            code and a number with its unit. Nothing is handed elsewhere.
+          </li>
+          <li>
+            While the question is on the card, free items (the narration plume,
+            the video) only glow in the world.
+          </li>
+          <li>Leaving with the question open folds the card to one line; coming back opens it with your pick kept.</li>
+        </ul>
+        <h2>Strongest case against</h2>
+        <p>
+          It is a form. The place carries the answer, but the screen carries
+          the act: a visitor can answer the 1784 question from the gate without
+          looking up once, and the card costs about a quarter of the screen
+          while it is open, the most of any quiz direction. It needs no new
+          format and no position, which is why it is the floor, not why it is
+          the best.
+        </p>
+      </aside>
+
+      <main class="device" id="dev">
+        <canvas id="gl" aria-hidden="true"></canvas>
+        <div class="grain" id="grain" aria-hidden="true"></div>
+
+        <button class="exit" id="exitBtn" type="button" data-hud="Exit" aria-label="Exit AR">
+          <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+        <canvas class="radar" id="radar" width="128" height="128" data-hud="Radar" aria-hidden="true"></canvas>
+        <div class="toast" id="toast" data-hud="Toast" hidden></div>
+        <section class="card" id="card" data-hud="Card" aria-label="Story">
+          <div id="body"></div>
+        </section>
+        <div class="kbd" id="kbd" hidden aria-hidden="true">
+          <div><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          <div><span></span></div>
+        </div>
+
+        <div class="demobar" id="demobar">
+          <button id="prevBeat" type="button" aria-label="Previous beat">&#9664;</button>
+          <div class="lbl" id="beatLbl"><b>-</b><span>-</span></div>
+          <button id="nextBeat" type="button" aria-label="Next beat">&#9654;</button>
+          <button id="menuBtn" type="button" aria-label="Demo menu">&#9776;</button>
+        </div>
+        <div class="readout" id="readout">-</div>
+        <div class="try" id="try">
+          Drag to look around, drag up to walk. Tap a letter in the square or on
+          the card. The arrows step through the demo.
+        </div>
+        <div id="ovs"></div>
+      </main>
+    </div>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      const $ = (s, r = document) => r.querySelector(s);
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c],
+        );
+      const dev = $("#dev");
+      const stage = $("#stage");
+
+      /* ================= the sample tour ================= */
+      const GUIDE = "Greta, the guide";
+      const STATION = "The Old Square";
+      const NEXT = "The Weir";
+      const POINTS = 10;
+
+      /* Things in the square that a question may point at. World metres, y up. */
+      const THINGS = {
+        fountain: { name: "The fountain", at: [-8, 0, -6], badge: [-8, 3.3, -6], plate: "1784", plateAt: [-8, 0.32, -3.47, 0], plateSize: [0.9, 0.32], hit: 2.6 },
+        statue: { name: "The statue", at: [9, 0, -7], badge: [9, 4.1, -7], plate: "1871", plateAt: [9, 0.85, -6.24, 0], plateSize: [0.9, 0.32], hit: 1.8 },
+        tower: { name: "The clock tower", at: [-10, 0, -23], badge: [-10, 5.2, -20.2], plate: "1902", plateAt: [-10, 3.2, -20.44, 0], plateSize: [1.6, 0.55], hit: 4 },
+        gate: { name: "The gate", at: [0, 0, 21], badge: [0, 4.6, 21], plate: "1812", plateAt: [0, 3.5, 20.54, Math.PI], plateSize: [1.5, 0.45], hit: 3.2 },
+        hall: { name: "The hall door", at: [9.5, 0, -20.5], badge: [9.5, 4.2, -20.3], plate: "CONCORDIA", plateAt: [9.5, 2.85, -20.45, 0], plateSize: [3.2, 0.46], hit: 2.6 },
+        bench: { name: "The bench", at: [-7, 0, 8], badge: [-7, 1.6, 8], plate: "K7M2", plateAt: [-7, 0.3, 8.26, 0], plateSize: [0.34, 0.12], hit: 1.4 },
+      };
+
+      const INTRO =
+        "This square has heard more gossip than any town hall. Before we go on, one question for you.";
+      const QUIZZES = {
+        single: {
+          label: "One answer",
+          type: "single",
+          ask: "Which of these was built in 1784?",
+          options: [
+            { id: "a", label: "The fountain", thing: "fountain" },
+            { id: "b", label: "The statue", thing: "statue" },
+            { id: "c", label: "The clock tower", thing: "tower" },
+            { id: "d", label: "The gate", thing: "gate" },
+          ],
+          correct: "a",
+          says: {
+            right: "The fountain. The square was built around it.",
+            retry: "Not that one. The year is carved low down. Have a closer look.",
+            wrong: "It was the fountain. Its year is carved into the rim.",
+          },
+          after: "Good. The next stop is through the gate and down to the weir.",
+          search: { at: [-6.6, 0.2], look: [-8, 0.9, -3.5], hint: "the fountain's rim" },
+          demo: { first: ["b"], again: ["a"], wrongRun: ["c"] },
+        },
+        multiple: {
+          label: "Several answers",
+          type: "multiple",
+          ask: "Which of these are older than 1850?",
+          options: [
+            { id: "a", label: "The fountain", thing: "fountain" },
+            { id: "b", label: "The statue", thing: "statue" },
+            { id: "c", label: "The clock tower", thing: "tower" },
+            { id: "d", label: "The gate", thing: "gate" },
+          ],
+          correct: ["a", "d"],
+          says: {
+            right: "The fountain and the gate. Both older than the town hall.",
+            retry: "One of those is wrong or missing. Each one carries its year.",
+            wrong: "The fountain and the gate. The others came later.",
+          },
+          after: "Good. The next stop is through the gate and down to the weir.",
+          search: { at: [1.2, 15.5], look: [0, 3.4, 21], hint: "the gate" },
+          demo: { first: ["a", "b"], again: ["a", "d"], wrongRun: ["a"] },
+        },
+        text: {
+          label: "A word",
+          type: "text",
+          thing: "hall",
+          ask: "One word is carved above the hall door. What is it?",
+          placeholder: "Type the word",
+          salt: "sq-hall-41f",
+          sha256: ["5e559960f3bb5e83df2a841967f0122767918a0d0d9a4a811d47210e056b7437"],
+          says: {
+            right: "Concordia: harmony. The town hoped for a lot.",
+            retry: "That is not what the stone says. Letter by letter, once more.",
+            wrong: "That is not the word. Look up at the door on your way out.",
+          },
+          after: "Good. The next stop is through the gate and down to the weir.",
+          search: { at: [8.6, -14.5], look: [9.5, 2.8, -20.45], hint: "the hall door" },
+          demo: { first: "Concord", again: "concordia ", wrongRun: "harmony" },
+        },
+        code: {
+          label: "A code",
+          type: "code",
+          thing: "bench",
+          ask: "The bench has a small brass plate. Enter its code.",
+          placeholder: "Four signs",
+          salt: "sq-bench-9c2",
+          sha256: [
+            "22c2a1b871ea7b68f5367d11846420109b0fb2747f026ed713d8e24e1ce1a8eb",
+            "36573dfd7bd72b90392042fff5edefd8bc5ef9d80a2b3cf58c343b3bf6106524",
+          ],
+          maxlength: 6,
+          says: {
+            right: "That opens the next chapter. Well spotted.",
+            retry: "That code does not fit. Look at the plate again.",
+            wrong: "That code does not fit. The plate is on the seat's front edge.",
+          },
+          after: "Good. The next stop is through the gate and down to the weir.",
+          search: { at: [-6.9, 9.9], look: [-7, 0.3, 8.26], hint: "the bench" },
+          demo: { first: "K7N2", again: "k7 m2", wrongRun: "K1M2" },
+        },
+        number: {
+          label: "A number",
+          type: "number",
+          thing: "tower",
+          ask: "How tall is the clock tower? A good guess counts.",
+          placeholder: "Your guess",
+          value: 23,
+          tolerance: 3,
+          unit: "m",
+          says: {
+            right: "About 23 m. Anything from 20 to 26 counted.",
+            retry: "Not quite. Count the storeys of the houses beside it.",
+            wrong: "About 23 m. Anything from 20 to 26 would have counted.",
+          },
+          after: "Good. The next stop is through the gate and down to the weir.",
+          search: { at: [-5.5, -9.5], look: [-10, 12, -23], hint: "the tower" },
+          demo: { first: "35", again: "21,5", wrongRun: "12" },
+        },
+      };
+      const QIDS = Object.keys(QUIZZES);
+
+      /* The tour kit's normalisation: Unicode NFC, case and white space folded,
+         umlauts written out. A number also reads a decimal comma. */
+      const normalise = (s) =>
+        String(s)
+          .normalize("NFC")
+          .toLowerCase()
+          .replace(/ä/g, "ae")
+          .replace(/ö/g, "oe")
+          .replace(/ü/g, "ue")
+          .replace(/ß/g, "ss")
+          .trim()
+          .replace(/\s+/g, " ");
+      const parseNumber = (s, unit) => {
+        let n = normalise(s).replace(",", ".");
+        if (unit) n = n.replace(new RegExp("\\s*" + unit.toLowerCase() + "$"), "");
+        if (!/^-?\d+(\.\d+)?$/.test(n)) return null;
+        return Number(n);
+      };
+      async function sha(salt, text) {
+        const bytes = new TextEncoder().encode(salt + text);
+        const d = await crypto.subtle.digest("SHA-256", bytes);
+        return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+      }
+      async function judgeTyped(q, typed) {
+        if (q.type === "number") {
+          const v = parseNumber(typed, q.unit);
+          return v !== null && Math.abs(v - q.value) <= q.tolerance;
+        }
+        if (!crypto.subtle) return false;
+        return q.sha256.includes(await sha(q.salt, normalise(typed)));
+      }
+
+      /* ================= the state ================= */
+      const fresh = () => ({ picked: [], typed: "", tries: 0, crossed: [], result: null, earned: 0, freshResult: false });
+      const S = {
+        qid: "single",
+        step: "intro", // intro | quiz | after | ended
+        q: fresh(),
+        score: 20,
+        folded: false, // folded by hand at the station
+        away: false, // left the station with the question open
+        weak: false,
+        still: false,
+        retry: true,
+        layout: "row",
+        walkFold: "keep",
+        guardMs: 450,
+        typing: false,
+        pulse: false,
+        anim: true,
+        beat: 0,
+      };
+      const Q = () => QUIZZES[S.qid];
+      const isChoice = () => Q().type === "single" || Q().type === "multiple";
+      function phase() {
+        if (S.q.result === "right") return "right";
+        if (S.q.result === "wrong") return "wrong";
+        return S.q.tries > 0 ? "retry" : "open";
+      }
+
+      /* ================= the card ================= */
+      const CHECK = '<svg viewBox="0 0 24 24"><path d="M5 13l5 5 9-11"/></svg>';
+      const CROSS = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      const STAR = '<svg viewBox="0 0 24 24"><path d="M12 2l3 6.7 7 .8-5.2 4.8 1.5 7.2L12 17.3 5.7 21l1.5-7.2L2 9.5l7-.8z"/></svg>';
+      const DOWN = '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>';
+      const UP = '<svg class="up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>';
+      const ARROW = '<svg viewBox="0 0 16 16"><path d="M8 1l6 9H10v5H6v-5H2z"/></svg>';
+      const PORTRAIT = `<svg viewBox="0 0 64 64" aria-hidden="true">
+  <rect width="64" height="64" fill="#3a4a5a"/>
+  <path d="M8 64c2-14 12-19 24-19s22 5 24 19z" fill="#8c6a48"/>
+  <path d="M24 45c4 3 12 3 16 0l2 19H22z" fill="#efe7d8"/>
+  <rect x="27" y="35" width="10" height="12" rx="4" fill="#d9a67c"/>
+  <ellipse cx="32" cy="27" rx="13.5" ry="15" fill="#ecbf98"/>
+  <path d="M17 24c0-11 7-17 15-17s15 6 15 17c-3-5-9-7-15-7s-12 2-15 7z" fill="#f4efe6"/>
+  <circle cx="26.5" cy="28" r="1.8" fill="#26211c"/><circle cx="37.5" cy="28" r="1.8" fill="#26211c"/>
+  <g class="m m-calm" fill="none" stroke="#6b4a33" stroke-width="1.8" stroke-linecap="round"><path d="M23 23.5q3.5-1.6 6.5 0M34.5 23.5q3.5-1.6 6.5 0"/><path d="M28 36.5q4 2 8 0"/></g>
+  <g class="m m-happy" fill="none" stroke="#6b4a33" stroke-width="1.8" stroke-linecap="round"><path d="M23 22q3.5-2.6 6.5-.4M34.5 21.6q3-2.2 6.5.4"/><path d="M26.5 34.5q5.5 6.5 11 0z" fill="#fff"/></g>
+  <g class="m m-doubt" fill="none" stroke="#6b4a33" stroke-width="1.8" stroke-linecap="round"><path d="M23 23q3.5-1.2 6.5 0M34.5 21.6q3-2.6 6.5-1.4"/><path d="M29 37.4l6.4-1"/></g>
+</svg>`;
+      const moodOf = (p) => (p === "right" ? "happy" : p === "retry" || p === "wrong" ? "doubt" : "calm");
+      const dotsHtml = () => {
+        const at = { intro: 0, quiz: 1, after: 2, ended: 3 }[S.step];
+        return `<span class="dots" aria-hidden="true">${[0, 1, 2]
+          .map((i) => `<i class="${i < at ? "on" : i === 1 && at === 1 ? "q" : i === at ? "on" : ""}"></i>`)
+          .join("")}</span>`;
+      };
+      const totalHtml = () => `<span class="total ${S.pulse ? "pulse" : ""}">${STAR}${S.score}</span>`;
+
+      function chipState(o, p) {
+        const q = Q();
+        const correct = q.type === "single" ? [q.correct] : q.correct;
+        const picked = S.q.picked.includes(o.id);
+        const crossed = S.q.crossed.includes(o.id);
+        if (p === "right") return picked ? "right" : "dim";
+        if (p === "wrong") {
+          if (picked && !correct.includes(o.id)) return "wrong";
+          if (correct.includes(o.id)) return "was";
+          if (crossed) return "wrong";
+          return "dim";
+        }
+        if (crossed) return "wrong";
+        return picked ? "on" : "";
+      }
+
+      function answersHtml(p) {
+        const q = Q();
+        if (isChoice()) {
+          const shut = p === "right" || p === "wrong";
+          const multi = q.type === "multiple";
+          const items = q.options
+            .map((o) => {
+              const st = chipState(o, p);
+              const glyph = st === "right" || (multi && st === "on") ? CHECK : st === "wrong" ? CROSS : o.id.toUpperCase();
+              const off = shut || S.q.crossed.includes(o.id) ? "disabled" : "";
+              const fr = st === "wrong" && S.q.freshResult ? "fresh" : "";
+              return `<button class="a ${st} ${fr}" type="button" data-a="${o.id}" ${off} aria-pressed="${S.q.picked.includes(o.id)}"><span class="ltr">${glyph}</span><span class="lb">${esc(o.label)}</span><span class="dir" data-dir="${o.thing}">${ARROW}</span></button>`;
+            })
+            .join("");
+          return `<div class="answers ${S.layout} ${multi ? "multi" : ""}">${items}</div>`;
+        }
+        const locked = p === "right" || p === "wrong";
+        const cls = p === "right" ? "right" : p === "wrong" || (p === "retry" && S.q.typed === S.q.lastChecked) ? "wrong" : "";
+        const fr = S.q.freshResult ? "fresh" : "";
+        const isCode = q.type === "code";
+        const isNum = q.type === "number";
+        const mode = isNum ? 'inputmode="decimal"' : isCode ? 'autocapitalize="characters"' : 'autocapitalize="off"';
+        return `<div class="typed"><span class="fieldwrap"><input class="field ${cls} ${fr} ${isCode ? "code" : ""} ${isNum ? "withunit" : ""}" id="field" type="text" ${mode} autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="done" aria-label="Your answer" placeholder="${esc(q.placeholder)}" ${q.maxlength ? `maxlength="${q.maxlength}"` : ""} value="${esc(S.q.typed)}" ${locked ? "readonly" : ""}>${isNum ? `<span class="unit">${esc(q.unit)}</span>` : ""}</span>${locked ? "" : `<button class="check" id="check" type="button" ${S.q.typed.trim() ? "" : "disabled"}>Check</button>`}</div>`;
+      }
+
+      function actsHtml(p) {
+        const q = Q();
+        if (p === "right" || p === "wrong") {
+          return `${dotsHtml()}<button class="btn primary" id="cont" type="button" ${S.guardMs > 0 && S.q.freshResult && S.anim ? "disabled data-guard" : ""}>Continue</button>`;
+        }
+        if (isChoice()) {
+          const n = S.q.picked.length;
+          if (n) {
+            const lab =
+              q.type === "single"
+                ? `Lock in ${S.q.picked[0].toUpperCase()}: ${q.options.find((o) => o.id === S.q.picked[0]).label}`
+                : `Lock in ${n} answer${n > 1 ? "s" : ""}`;
+            return `<button class="btn primary lock" id="lock" type="button">${esc(lab)}</button><button class="btn ghost" id="skip" type="button">Skip</button>`;
+          }
+          const hint =
+            p === "retry"
+              ? `One more try, for ${Math.floor(POINTS / 2)} points.`
+              : q.type === "single"
+                ? "Pick one. Nothing counts until you lock it in."
+                : "Pick all that fit, then lock them in.";
+          return `<p class="hint">${hint}</p><button class="btn ghost" id="skip" type="button">Skip</button>`;
+        }
+        const hint =
+          p === "retry"
+            ? `One more try, for ${Math.floor(POINTS / 2)} points.`
+            : q.type === "number"
+              ? `Within ${q.tolerance} ${q.unit} counts. Nothing counts until Check.`
+              : "Nothing counts until Check.";
+        return `<p class="hint">${hint}</p><button class="btn ghost" id="skip" type="button">Skip</button>`;
+      }
+
+      function renderQuiz() {
+        const q = Q();
+        const p = phase();
+        let eyebrow;
+        let eyeCls = "";
+        if (p === "open") eyebrow = `Question - ${POINTS} points`;
+        else if (p === "retry") {
+          eyebrow = "Not quite";
+          eyeCls = "warn";
+        } else if (p === "right") eyebrow = "Right";
+        else {
+          eyebrow = "Not this time";
+          eyeCls = "muted";
+        }
+        let line;
+        if (p === "open") line = `<p class="line ask ${S.freshLine ? "in" : ""}">${esc(q.ask)}</p>`;
+        else {
+          const said = p === "right" ? q.says.right : p === "retry" ? q.says.retry : q.says.wrong;
+          const pill = p === "right" ? `<span class="plus">+${S.q.earned}</span>` : p === "wrong" ? '<span class="plus none">No points</span>' : "";
+          line = `<p class="line ${S.freshLine ? "in" : ""}">${esc(said)}${pill}</p>`;
+        }
+        const fold = p === "open" || p === "retry" ? `<button class="foldbtn" id="foldBtn" type="button" aria-label="Fold the card">${DOWN}</button>` : "";
+        return `<div class="eyerow"><span class="portrait" data-mood="${moodOf(p)}">${PORTRAIT}</span><p class="eyebrow ${eyeCls}">${esc(eyebrow)}</p>${totalHtml()}${fold}</div>
+          ${line}${answersHtml(p)}<div class="acts">${actsHtml(p)}</div>`;
+      }
+
+      function renderStory(text) {
+        return `<div class="eyerow"><span class="portrait" data-mood="calm">${PORTRAIT}</span><p class="eyebrow muted">${esc(GUIDE)}</p>${totalHtml()}</div>
+          <p class="line ${S.freshLine ? "in" : ""}">${esc(text)}</p>
+          <div class="acts">${dotsHtml()}<button class="btn primary" id="cont" type="button">Continue</button></div>`;
+      }
+
+      function renderFold() {
+        const sub = S.away
+          ? `At ${STATION}${S.weak ? "" : ", 34 m behind you"}. Your pick is kept.`
+          : "Tap to open. Nothing counts yet.";
+        return `<button class="fold" id="unfold" type="button"><span class="mark" aria-hidden="true">?</span><span class="t"><b>${S.away ? "A question is waiting" : esc(Q().ask)}</b><small>${esc(sub)}</small></span>${UP}</button>`;
+      }
+
+      function renderPeek() {
+        const seg = ["found", "found", "next", "", ""];
+        const earned = S.q.result === "right" ? `${STATION} done, ${S.score} points so far.` : `${STATION} done. ${S.score} points so far.`;
+        return `<div class="seg" aria-hidden="true">${seg.map((c) => `<i class="${c}"></i>`).join("")}</div>
+          <p class="eyebrow muted">Next station</p>
+          <p class="peektitle"><b>${esc(NEXT)}</b>${S.weak ? "" : "<em>120 m</em>"}</p>
+          <p class="tail">${esc(S.weak ? "Position is rough, so no distance for now." : earned)}</p>`;
+      }
+
+      function render() {
+        let html;
+        const quizOpen = S.step === "quiz" && (phase() === "open" || phase() === "retry");
+        if (S.step === "ended") html = renderPeek();
+        else if (S.step === "intro") html = renderStory(INTRO);
+        else if (S.step === "after") html = renderStory(Q().after);
+        else if (quizOpen && (S.away || S.folded || (S.walkFold === "fold" && walking))) html = renderFold();
+        else html = renderQuiz();
+        $("#body").innerHTML = html;
+        dev.classList.toggle("typing", S.typing);
+        S.freshLine = false;
+        S.pulse = false;
+        const guarded = $("#cont[data-guard]");
+        if (guarded) setTimeout(() => (guarded.disabled = false), S.guardMs);
+        S.q.freshResult = false;
+        syncWorld();
+        renderPanel();
+        scheduleMeasure();
+      }
+
+      /* ================= moves ================= */
+      let toastTimer = 0;
+      function toast(text, ms = 2800) {
+        const t = $("#toast");
+        t.textContent = text;
+        t.hidden = false;
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+          t.hidden = true;
+          scheduleMeasure();
+        }, ms);
+        scheduleMeasure();
+      }
+      function hideToast() {
+        clearTimeout(toastTimer);
+        $("#toast").hidden = true;
+      }
+
+      function pick(id) {
+        const q = Q();
+        const p = phase();
+        if (p === "right" || p === "wrong" || S.q.crossed.includes(id)) return;
+        if (q.type === "single") S.q.picked = S.q.picked[0] === id ? [] : [id];
+        else {
+          const i = S.q.picked.indexOf(id);
+          if (i >= 0) S.q.picked.splice(i, 1);
+          else S.q.picked.push(id);
+        }
+        render();
+      }
+
+      function answered(right) {
+        S.q.freshResult = true;
+        S.freshLine = true;
+        if (right) {
+          S.q.result = "right";
+          S.q.earned = S.q.tries === 0 ? POINTS : Math.floor(POINTS / 2);
+          S.score += S.q.earned;
+          S.pulse = true;
+        } else {
+          S.q.tries += 1;
+          if (Q().type === "single") S.q.crossed.push(...S.q.picked);
+          if (!S.retry || S.q.tries >= 2) {
+            S.q.result = "wrong";
+            S.q.earned = 0;
+          } else if (isChoice()) S.q.picked = [];
+        }
+        render();
+      }
+
+      function lockIn() {
+        const q = Q();
+        if (q.type === "single") answered(S.q.picked[0] === q.correct);
+        else {
+          const p = S.q.picked;
+          answered(p.length === q.correct.length && q.correct.every((id) => p.includes(id)));
+        }
+      }
+      async function checkTyped() {
+        if (!S.q.typed.trim()) return;
+        const right = await judgeTyped(Q(), S.q.typed);
+        S.q.lastChecked = S.q.typed;
+        closeKeyboard();
+        answered(right);
+      }
+      function advance() {
+        if (S.step === "intro") {
+          S.step = "quiz";
+          S.freshLine = true;
+        } else if (S.step === "quiz") {
+          S.step = "after";
+          S.freshLine = true;
+        } else if (S.step === "after") S.step = "ended";
+        else return;
+        render();
+      }
+
+      /* ================= the keyboard ================= */
+      const hasRealKeyboard = () => matchMedia("(pointer: coarse)").matches;
+      function setKeyboard(px) {
+        dev.style.setProperty("--kbd", `${px}px`);
+        S.typing = px > 0;
+        dev.classList.toggle("typing", S.typing);
+        scheduleMeasure();
+      }
+      function openKeyboard() {
+        if (hasRealKeyboard()) return;
+        const h = dev.clientHeight;
+        const land = dev.clientWidth > h;
+        $("#kbd").hidden = false;
+        setKeyboard(Math.round(land ? h * 0.5 : Math.min(h * 0.32, 280)));
+      }
+      function closeKeyboard() {
+        $("#kbd").hidden = true;
+        setKeyboard(0);
+      }
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", () => {
+          if (!hasRealKeyboard()) return;
+          const v = window.visualViewport;
+          const px = Math.round(window.innerHeight - v.height - v.offsetTop);
+          setKeyboard(v.scale <= 1.01 && px >= 80 ? px : 0);
+        });
+      }
+
+      /* ================= card events ================= */
+      $("#body").addEventListener("click", (e) => {
+        const a = e.target.closest("[data-a]");
+        if (a && !a.disabled) {
+          pick(a.dataset.a);
+          closeup(Q().options.find((o) => o.id === a.dataset.a).thing, false);
+          return;
+        }
+        const b = e.target.closest("button");
+        if (!b) return;
+        if (b.id === "lock") lockIn();
+        else if (b.id === "check") checkTyped();
+        else if (b.id === "cont") advance();
+        else if (b.id === "skip") {
+          toast("Skipped. No points, and the story goes on.");
+          S.step = "after";
+          S.freshLine = true;
+          closeKeyboard();
+          render();
+        } else if (b.id === "foldBtn") {
+          S.folded = true;
+          closeKeyboard();
+          render();
+        } else if (b.id === "unfold") {
+          if (S.away) return;
+          S.folded = false;
+          S.freshLine = true;
+          render();
+        }
+      });
+      $("#body").addEventListener("input", (e) => {
+        if (e.target.id !== "field") return;
+        S.q.typed = e.target.value;
+        e.target.classList.remove("wrong");
+        const c = $("#check");
+        if (c) c.disabled = !S.q.typed.trim();
+      });
+      $("#body").addEventListener("keydown", (e) => {
+        if (e.target.id === "field" && e.key === "Enter") {
+          e.preventDefault();
+          checkTyped();
+        }
+      });
+      $("#body").addEventListener("focusin", (e) => {
+        if (e.target.id !== "field" || e.target.readOnly) return;
+        openKeyboard();
+      });
+      $("#body").addEventListener("focusout", (e) => {
+        if (e.target.id !== "field") return;
+        setTimeout(() => {
+          if (document.activeElement?.id !== "field") closeKeyboard();
+        }, 140);
+      });
+      $("#exitBtn").addEventListener("click", () => toast("Exit AR. Not part of this demo."));
+
+      /* ================= the world ================= */
+      const renderer = new THREE.WebGLRenderer({ canvas: $("#gl"), antialias: true, powerPreference: "high-performance" });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog(0xdfe7ea, 45, 160);
+      const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 400);
+      camera.rotation.order = "YXZ";
+      scene.add(new THREE.HemisphereLight(0xffffff, 0xbfb6a4, 1.75));
+      const sun = new THREE.DirectionalLight(0xfff4e6, 1.5);
+      sun.position.set(-30, 50, 20);
+      scene.add(sun);
+
+      function paintCanvas(w, h, draw) {
+        const c = document.createElement("canvas");
+        c.width = w;
+        c.height = h;
+        draw(c.getContext("2d"), w, h);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 4;
+        return t;
+      }
+
+      /* the sky */
+      {
+        const geo = new THREE.SphereGeometry(300, 16, 10);
+        const p = geo.attributes.position;
+        const col = new Float32Array(p.count * 3);
+        const top = new THREE.Color("#8fc0e8");
+        const mid = new THREE.Color("#dbe8f0");
+        const low = new THREE.Color("#efe9dd");
+        const c = new THREE.Color();
+        for (let i = 0; i < p.count; i++) {
+          const y = p.getY(i) / 300;
+          if (y > 0.1) c.copy(mid).lerp(top, Math.min(1, (y - 0.1) / 0.6));
+          else c.copy(low).lerp(mid, Math.max(0, (y + 0.1) / 0.2));
+          col.set([c.r, c.g, c.b], i * 3);
+        }
+        geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+        const sky = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+        sky.renderOrder = -10;
+        scene.add(sky);
+      }
+
+      /* the square: merged low-poly geometry, nothing loaded */
+      function roofGeometry(w, d, h) {
+        const a = [-w / 2, 0, -d / 2], b = [w / 2, 0, -d / 2], c = [w / 2, 0, d / 2], e = [-w / 2, 0, d / 2], f = [-w / 2, h, 0], g = [w / 2, h, 0];
+        const g0 = new THREE.BufferGeometry();
+        g0.setAttribute("position", new THREE.Float32BufferAttribute([e, c, g, e, g, f, b, a, f, b, f, g, a, e, f, c, b, g].flat(), 3));
+        g0.computeVertexNormals();
+        return g0;
+      }
+      {
+        const pos = [], nor = [], col = [];
+        const tint = new THREE.Color();
+        const add = (geo, color, x = 0, y = 0, z = 0, ry = 0) => {
+          const g = geo.index ? geo.toNonIndexed() : geo;
+          if (ry) g.rotateY(ry);
+          g.translate(x, y, z);
+          tint.set(color);
+          const p = g.attributes.position, n = g.attributes.normal;
+          for (let i = 0; i < p.count; i++) {
+            pos.push(p.getX(i), p.getY(i), p.getZ(i));
+            nor.push(n.getX(i), n.getY(i), n.getZ(i));
+            col.push(tint.r, tint.g, tint.b);
+          }
+        };
+        const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+        const cyl = (r0, r1, h, n = 12) => new THREE.CylinderGeometry(r0, r1, h, n);
+        const house = (x, z, w, d, h, color, facing, roof = "#a65f46") => {
+          const c = Math.cos(facing), s = Math.sin(facing);
+          const local = (lx, lz) => [x + lx * c + lz * s, z - lx * s + lz * c];
+          add(box(w, h, d), color, x, h / 2, z, facing);
+          add(roofGeometry(w + 0.6, d + 0.8, 2.2), roof, x, h, z, facing);
+          const floors = Math.floor(h / 3), cols = Math.floor(w / 3);
+          for (let fl = 0; fl < floors; fl++)
+            for (let i = 0; i < cols; i++) {
+              const lx = (i - (cols - 1) / 2) * 3;
+              const isDoor = fl === 0 && i === Math.floor(cols / 2);
+              const [wx, wz] = local(lx, d / 2 + 0.03);
+              if (isDoor) add(box(1.3, 2.3, 0.08), "#5a3d2c", wx, 1.15, wz, facing);
+              else add(box(1, 1.4, 0.08), "#5d6d7e", wx, 1.7 + fl * 3, wz, facing);
+            }
+        };
+        house(-25, -12, 11, 8, 9, "#e7dcc8", Math.PI / 2);
+        house(-25, 0, 10, 8, 12, "#d9e2e6", Math.PI / 2, "#7c6a5c");
+        house(-25, 11, 10, 8, 7, "#efd9c6", Math.PI / 2);
+        house(25, -11, 13, 8, 10, "#e6e2d2", -Math.PI / 2, "#7c6a5c");
+        house(25, 3, 11, 8, 7, "#dcc9b6", -Math.PI / 2);
+        house(8, -24.5, 20, 8, 9, "#f0e8d8", 0, "#6f7b84");
+        house(-18, -25, 8, 8, 8, "#e3d3c8", 0);
+        // the tower
+        add(box(5, 15, 5), "#cbb9a0", -10, 7.5, -23);
+        add(box(5.6, 3, 5.6), "#e0d2bb", -10, 16.5, -23);
+        add(new THREE.ConeGeometry(4.2, 5, 4).rotateY(Math.PI / 4), "#5e6f7d", -10, 20.5, -23);
+        add(new THREE.CylinderGeometry(1.5, 1.5, 0.12, 24).rotateX(Math.PI / 2), "#fbf8f0", -10, 12.6, -20.44);
+        add(box(0.14, 1.1, 0.05), "#23282e", -10, 13.1, -20.36);
+        add(box(0.8, 0.14, 0.05), "#23282e", -9.65, 12.6, -20.36);
+        add(box(1.6, 2.6, 0.1), "#5a3d2c", -10, 1.3, -20.46);
+        // the hall's door, wider than the house's own
+        add(box(2.2, 2.6, 0.1), "#4d3324", 9.5, 1.3, -20.42);
+        // the fountain
+        add(cyl(2.3, 2.5, 0.55, 20), "#b9b2a4", -8, 0.27, -6);
+        add(cyl(2.05, 2.05, 0.04, 20), "#6fb2d6", -8, 0.56, -6);
+        add(cyl(0.28, 0.4, 1.7, 10), "#b9b2a4", -8, 1.1, -6);
+        add(cyl(0.95, 0.3, 0.25, 14), "#c6bfb1", -8, 2, -6);
+        add(new THREE.IcosahedronGeometry(0.22, 1), "#c6bfb1", -8, 2.3, -6);
+        // the statue
+        add(box(1.5, 1.5, 1.5), "#a9a294", 9, 0.75, -7);
+        add(box(1.9, 0.2, 1.9), "#928b7e", 9, 0.1, -7);
+        add(cyl(0.3, 0.42, 1.5, 10), "#4c6a5e", 9, 2.25, -7);
+        add(new THREE.IcosahedronGeometry(0.24, 1), "#4c6a5e", 9, 3.2, -7);
+        add(box(0.16, 0.16, 1), "#4c6a5e", 9, 2.7, -6.55);
+        // a tree and the bench
+        const tree = (x, z, s = 1) => {
+          add(cyl(0.16 * s, 0.26 * s, 3 * s, 8), "#7d6650", x, 1.5 * s, z);
+          add(new THREE.IcosahedronGeometry(2.1 * s, 1), "#6f9e62", x, 3.9 * s, z);
+          add(new THREE.IcosahedronGeometry(1.5 * s, 1), "#7fae6e", x + 1.1 * s, 3.3 * s, z + 0.5 * s);
+          add(new THREE.IcosahedronGeometry(1.4 * s, 1), "#65945a", x - 1 * s, 3.5 * s, z - 0.6 * s);
+        };
+        tree(10, 7.5);
+        tree(-14, 30, 1.5);
+        tree(15, 33, 1.3);
+        add(box(1.8, 0.08, 0.5), "#8a6a4e", -7, 0.46, 8);
+        add(box(1.8, 0.5, 0.07), "#8a6a4e", -7, 0.74, 7.76);
+        add(box(1.8, 0.1, 0.05), "#7a5c42", -7, 0.38, 8.24);
+        add(box(0.08, 0.44, 0.45), "#3c4044", -7.8, 0.22, 8);
+        add(box(0.08, 0.44, 0.45), "#3c4044", -6.2, 0.22, 8);
+        for (const [x, z] of [[-15, -15], [15, -15], [-15, 15], [15, 13]]) {
+          add(cyl(0.05, 0.08, 3.4, 6), "#3c4044", x, 1.7, z);
+          add(new THREE.IcosahedronGeometry(0.2, 0), "#fff1cf", x, 3.5, z);
+        }
+        add(box(18.5, 1.2, 0.5), "#b5a68f", -11.75, 0.6, 21);
+        add(box(18.5, 1.2, 0.5), "#b5a68f", 11.75, 0.6, 21);
+        add(box(0.5, 1.2, 12), "#b5a68f", 21, 0.6, 15);
+        add(box(0.8, 3.2, 0.8), "#a99a84", -2.6, 1.6, 21);
+        add(box(0.8, 3.2, 0.8), "#a99a84", 2.6, 1.6, 21);
+        add(box(6.2, 0.6, 0.9), "#a99a84", 0, 3.5, 21);
+        // the video board, a free item of the station
+        add(box(0.12, 2.2, 0.12), "#3c4044", -15, 1.1, 3);
+        add(box(0.1, 1.35, 2.2), "#2a2f36", -15, 2.6, 3);
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2 + 0.2;
+          const r = 58 + ((i * 37) % 24);
+          add(box(16, 8 + ((i * 53) % 14), 14), "#b4bcc2", Math.cos(a) * r, 8, Math.sin(a) * r, a);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+        scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true })));
+      }
+
+      /* the ground */
+      {
+        const G = 46, E = 20;
+        const tex = paintCanvas(1024, 1024, (g, S2) => {
+          const k = 1024 / G;
+          g.setTransform(k, 0, 0, k, 512, 512);
+          g.fillStyle = "#b7b09f";
+          g.fillRect(-G / 2, -G / 2, G, G);
+          let s = 7;
+          const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+          for (let x = -E; x < E; x += 1.2)
+            for (let z = -E; z < E; z += 1.2) {
+              const v = 200 + rnd() * 18;
+              g.fillStyle = `rgb(${v} ${v - 8} ${v - 22})`;
+              g.fillRect(x + 0.03, z + 0.03, 1.14, 1.14);
+            }
+          g.strokeStyle = "rgb(150 140 120 / 45%)";
+          g.lineWidth = 0.14;
+          for (const r of [3, 5]) {
+            g.beginPath();
+            g.arc(0, 0, r, 0, Math.PI * 2);
+            g.stroke();
+          }
+          g.fillStyle = "rgb(120 112 96 / 18%)";
+          g.fillRect(-1.6, 5, 3.2, E - 3);
+          g.fillStyle = "#93ad78";
+          g.beginPath();
+          g.ellipse(10, 7.5, 5, 4.2, 0.2, 0, Math.PI * 2);
+          g.fill();
+          const blob = (x, z, r, a) => {
+            const gr = g.createRadialGradient(x, z, r * 0.2, x, z, r);
+            gr.addColorStop(0, `rgb(30 30 30 / ${a}%)`);
+            gr.addColorStop(1, "rgb(30 30 30 / 0%)");
+            g.fillStyle = gr;
+            g.beginPath();
+            g.arc(x, z, r, 0, Math.PI * 2);
+            g.fill();
+          };
+          blob(10.6, 8, 3.8, 40);
+          blob(-8, -6, 3.6, 34);
+          blob(9.2, -6.8, 1.9, 40);
+          blob(-7, 8.1, 1.4, 30);
+        });
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(G, G).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tex }));
+        scene.add(ground);
+        const outer = new THREE.Mesh(new THREE.PlaneGeometry(500, 500).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: "#b7b09f" }));
+        outer.position.y = -0.04;
+        scene.add(outer);
+      }
+
+      /* the plates: what the place says, readable when near */
+      const FONT = 'Corbel, "Noto Sans", system-ui, sans-serif';
+      function plateTexture(text, w, h, brass) {
+        return paintCanvas(w, h, (g) => {
+          g.fillStyle = brass ? "#b8913f" : "#d8cfbd";
+          g.fillRect(0, 0, w, h);
+          g.strokeStyle = brass ? "#6d5320" : "#8f8574";
+          g.lineWidth = h * 0.08;
+          g.strokeRect(h * 0.06, h * 0.06, w - h * 0.12, h - h * 0.12);
+          g.fillStyle = brass ? "#3a2a0c" : "#4a4136";
+          g.font = `700 ${Math.round(h * 0.62)}px ${brass ? "Consolas, monospace" : 'Georgia, "Times New Roman", serif'}`;
+          g.textAlign = "center";
+          g.textBaseline = "middle";
+          g.fillText(text, w / 2, h * 0.54);
+        });
+      }
+      for (const [key, t] of Object.entries(THINGS)) {
+        const [pw, ph] = t.plateSize;
+        const tex = plateTexture(t.plate, 512, Math.round((512 * ph) / pw), key === "bench");
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshLambertMaterial({ map: tex }));
+        const [x, y, z, ry] = t.plateAt;
+        m.position.set(x, y, z);
+        m.rotation.y = ry;
+        scene.add(m);
+        const hit = new THREE.Mesh(new THREE.SphereGeometry(t.hit, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+        hit.position.set(t.at[0], Math.min(t.hit, 2), t.at[2]);
+        if (key === "tower") hit.position.set(-10, 6, -21);
+        if (key === "hall") hit.position.set(9.5, 2, -20.2);
+        hit.userData.thing = key;
+        scene.add(hit);
+        t.hitMesh = hit;
+      }
+
+      /* the answer letters in the place: the same letter as on the card */
+      const BADGE_PX = 40;
+      function badgeDraw(letter, state, weak) {
+        return (g, w, h) => {
+          g.clearRect(0, 0, w, h);
+          const r = w * 0.4;
+          g.globalAlpha = weak ? 0.5 : 1;
+          g.beginPath();
+          g.arc(w / 2, h / 2, r + w * 0.06, 0, Math.PI * 2);
+          g.fillStyle =
+            state === "on" ? "#fb923c" : state === "right" ? "#2dd4bf" : state === "wrong" ? "#f87171" : state === "was" ? "#2dd4bf" : "rgb(12 16 21 / 85%)";
+          g.fill();
+          g.beginPath();
+          g.arc(w / 2, h / 2, r, 0, Math.PI * 2);
+          g.fillStyle = state === "right" ? "#04201c" : state === "on" ? "#1f1105" : state === "wrong" ? "#2a0606" : "#f6f1e6";
+          g.fill();
+          if (weak) {
+            g.setLineDash([w * 0.08, w * 0.06]);
+            g.lineWidth = w * 0.05;
+            g.strokeStyle = "#fff";
+            g.beginPath();
+            g.arc(w / 2, h / 2, r + w * 0.07, 0, Math.PI * 2);
+            g.stroke();
+          }
+          g.fillStyle = state === "right" ? "#2dd4bf" : state === "on" ? "#fb923c" : state === "wrong" ? "#fecaca" : "#17191c";
+          g.font = `800 ${Math.round(w * 0.46)}px ${FONT}`;
+          g.textAlign = "center";
+          g.textBaseline = "middle";
+          g.fillText(state === "right" ? "✓" : letter, w / 2, h / 2 + w * 0.03);
+        };
+      }
+      const badges = {};
+      for (const key of ["fountain", "statue", "tower", "gate"]) {
+        const c = document.createElement("canvas");
+        c.width = c.height = 128;
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+        sp.renderOrder = 5;
+        sp.position.set(...THINGS[key].badge);
+        sp.userData.thing = key;
+        sp.visible = false;
+        scene.add(sp);
+        badges[key] = { sp, c, tex, key: "" };
+      }
+      function paintBadge(b, letter, state, weak) {
+        const k = letter + state + weak;
+        if (b.key === k) return;
+        b.key = k;
+        badgeDraw(letter, state, weak)(b.c.getContext("2d"), 128, 128);
+        b.tex.needsUpdate = true;
+      }
+
+      /* the one thing a typed question asks about: a soft ring on the ground */
+      const ringTex = paintCanvas(256, 256, (g, w, h) => {
+        const gr = g.createRadialGradient(w / 2, h / 2, w * 0.28, w / 2, h / 2, w / 2);
+        gr.addColorStop(0, "rgb(255 211 145 / 0%)");
+        gr.addColorStop(0.55, "rgb(255 211 145 / 85%)");
+        gr.addColorStop(1, "rgb(255 211 145 / 0%)");
+        g.fillStyle = gr;
+        g.fillRect(0, 0, w, h);
+      });
+      const ring = new THREE.Mesh(
+        new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ map: ringTex, transparent: true, depthWrite: false }),
+      );
+      ring.position.y = 0.03;
+      ring.visible = false;
+      scene.add(ring);
+
+      /* free items: a narration plume and a video, which only glow during a question */
+      const plume = new THREE.Group();
+      {
+        const n = 70;
+        const g = new THREE.BufferGeometry();
+        const p = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) {
+          const a = (i * 2.399) % (Math.PI * 2);
+          const r = 0.4 + ((i * 37) % 10) / 10;
+          p.set([Math.cos(a) * r, ((i * 0.13) % 2.6), Math.sin(a) * r], i * 3);
+        }
+        g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+        const dot = paintCanvas(64, 64, (c, w) => {
+          const gr = c.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+          gr.addColorStop(0, "rgb(255 255 255 / 100%)");
+          gr.addColorStop(1, "rgb(255 255 255 / 0%)");
+          c.fillStyle = gr;
+          c.fillRect(0, 0, w, w);
+        });
+        const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.16, map: dot, color: 0xbfe9ff, transparent: true, depthWrite: false, opacity: 0.8 }));
+        plume.add(pts);
+        plume.userData.pts = pts;
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(1.6, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xbfe9ff, transparent: true, opacity: 0.22, depthWrite: false }));
+        disc.position.y = 0.02;
+        plume.add(disc);
+        plume.position.set(13, 0, -1);
+        scene.add(plume);
+      }
+      const videoGlow = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.1, 1.25),
+        new THREE.MeshBasicMaterial({
+          map: paintCanvas(256, 152, (g, w, h) => {
+            g.fillStyle = "#24303c";
+            g.fillRect(0, 0, w, h);
+            g.fillStyle = "rgb(255 255 255 / 85%)";
+            g.beginPath();
+            g.moveTo(w * 0.42, h * 0.3);
+            g.lineTo(w * 0.62, h * 0.5);
+            g.lineTo(w * 0.42, h * 0.7);
+            g.fill();
+          }),
+        }),
+      );
+      videoGlow.position.set(-14.93, 2.6, 3);
+      videoGlow.rotation.y = Math.PI / 2;
+      scene.add(videoGlow);
+
+      /* a closer look: the thing's plate, large, for a visitor who cannot walk there */
+      const closeTex = { c: document.createElement("canvas") };
+      closeTex.c.width = 512;
+      closeTex.c.height = 256;
+      closeTex.tex = new THREE.CanvasTexture(closeTex.c);
+      closeTex.tex.colorSpace = THREE.SRGBColorSpace;
+      const close = new THREE.Sprite(new THREE.SpriteMaterial({ map: closeTex.tex, depthTest: false, transparent: true }));
+      close.renderOrder = 6;
+      close.visible = false;
+      scene.add(close);
+      let closeUntil = 0;
+      let closeThing = null;
+      function closeup(key, fromWorld) {
+        const t = THINGS[key];
+        if (!t) return;
+        const g = closeTex.c.getContext("2d");
+        g.clearRect(0, 0, 512, 256);
+        g.fillStyle = "rgb(12 16 21 / 88%)";
+        g.beginPath();
+        g.roundRect(8, 8, 496, 240, 28);
+        g.fill();
+        g.fillStyle = "#c5ccd3";
+        g.font = `700 34px ${FONT}`;
+        g.textAlign = "center";
+        g.fillText(t.name, 256, 66);
+        const brass = key === "bench";
+        g.fillStyle = brass ? "#b8913f" : "#d8cfbd";
+        g.fillRect(56, 96, 400, 116);
+        g.fillStyle = brass ? "#3a2a0c" : "#4a4136";
+        g.font = `700 ${t.plate.length > 5 ? 60 : 84}px ${brass ? "Consolas, monospace" : 'Georgia, "Times New Roman", serif'}`;
+        g.textBaseline = "middle";
+        g.fillText(t.plate, 256, 158);
+        closeTex.tex.needsUpdate = true;
+        close.position.set(t.badge[0], t.badge[1] + (key === "bench" ? 0.9 : 2.3), t.badge[2]);
+        close.visible = true;
+        closeThing = key;
+        closeUntil = performance.now() + (fromWorld ? 3800 : 2200);
+      }
+
+      /* which things the current question shows in the place */
+      function syncWorld() {
+        const q = Q();
+        const showQuiz = S.step === "quiz" && !S.away;
+        const p = phase();
+        for (const [key, b] of Object.entries(badges)) {
+          const o = isChoice() ? q.options.find((x) => x.thing === key) : null;
+          b.sp.visible = !!(showQuiz && o);
+          if (o) {
+            const st = chipState(o, p);
+            paintBadge(b, o.id.toUpperCase(), st, S.weak);
+            b.sp.material.opacity = st === "dim" ? 0.35 : 1;
+          }
+        }
+        ring.visible = showQuiz && !isChoice();
+        if (ring.visible) {
+          const t = THINGS[q.thing];
+          const r = key2ringR[q.thing] || 3;
+          ring.scale.set(r * 2, 1, r * 2);
+          ring.position.x = t.at[0];
+          ring.position.z = t.at[2] + (q.thing === "tower" ? 3 : q.thing === "hall" ? 1.2 : 0);
+          ring.material.opacity = S.weak ? 0.35 : 1;
+        }
+        if (!showQuiz) close.visible = false;
+      }
+      const key2ringR = { hall: 2.4, bench: 1.6, tower: 3.4 };
+
+      /* ================= the visitor: pose, drag, walk ================= */
+      const pose = { x: 0, z: 13, yaw: 0, pitch: -0.04 };
+      let tween = null;
+      let walking = false;
+      let walkUntil = 0;
+      const EDGE = 19;
+      const yawTo = (fx, fz, tx, tz) => Math.atan2(-(tx - fx), -(tz - fz));
+      function poseLooking(at, look) {
+        const [x, z] = at;
+        const yaw = yawTo(x, z, look[0], look[2]);
+        const d = Math.hypot(look[0] - x, look[2] - z);
+        const pitch = Math.atan2(look[1] - 1.6, d) * 0.85;
+        return { x, z, yaw, pitch };
+      }
+      function goPose(target, instant) {
+        let dy = target.yaw - pose.yaw;
+        dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+        const to = { ...target, yaw: pose.yaw + dy };
+        if (instant || !S.anim) {
+          Object.assign(pose, to);
+          tween = null;
+          return;
+        }
+        const dist = Math.hypot(to.x - pose.x, to.z - pose.z);
+        tween = { from: { ...pose }, to, t0: performance.now(), ms: Math.min(3200, 700 + dist * 140 + Math.abs(dy) * 300) };
+      }
+      const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
+      let drag = null;
+      dev.addEventListener("pointerdown", (e) => {
+        if (e.target !== $("#gl") && e.target !== $("#grain")) return;
+        drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), moved: false };
+        $("#gl").setPointerCapture?.(e.pointerId);
+        tween = null;
+      });
+      dev.addEventListener("pointermove", (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        const dx = e.clientX - drag.x;
+        const dy = e.clientY - drag.y;
+        drag.x = e.clientX;
+        drag.y = e.clientY;
+        if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) drag.moved = true;
+        pose.yaw += dx * 0.006;
+        if (Math.abs(dy) > 0.5) {
+          const step = -dy * 0.04;
+          pose.x = THREE.MathUtils.clamp(pose.x - Math.sin(pose.yaw) * step, -EDGE, EDGE);
+          pose.z = THREE.MathUtils.clamp(pose.z - Math.cos(pose.yaw) * step, -EDGE, EDGE + 1);
+          pose.pitch += (-0.04 - pose.pitch) * 0.08;
+          markWalking();
+        }
+      });
+      const endDrag = (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        const tap = !drag.moved && performance.now() - drag.t < 450;
+        drag = null;
+        if (tap) worldTap(e);
+      };
+      dev.addEventListener("pointerup", endDrag);
+      dev.addEventListener("pointercancel", () => (drag = null));
+
+      function markWalking() {
+        walkUntil = performance.now() + 700;
+        if (!walking) {
+          walking = true;
+          if (S.walkFold === "fold") render();
+        }
+      }
+
+      const ray = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      function worldTap(e) {
+        const r = $("#gl").getBoundingClientRect();
+        ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+        ray.setFromCamera(ndc, camera);
+        const targets = [...Object.values(badges).map((b) => b.sp).filter((s) => s.visible), ...Object.values(THINGS).map((t) => t.hitMesh)];
+        const hits = ray.intersectObjects(targets, false);
+        if (!hits.length) return;
+        const key = hits[0].object.userData.thing;
+        closeup(key, true);
+        if (S.step === "quiz" && !S.away && isChoice()) {
+          const o = Q().options.find((x) => x.thing === key);
+          if (o) {
+            if (S.folded) S.folded = false;
+            pick(o.id);
+          }
+        }
+      }
+
+      /* ================= the radar (the walk's own instrument, kept small) ================= */
+      const rc = $("#radar").getContext("2d");
+      function drawRadar() {
+        const W = 128, c = W / 2, R = 60;
+        rc.clearRect(0, 0, W, W);
+        rc.save();
+        rc.beginPath();
+        rc.arc(c, c, R, 0, Math.PI * 2);
+        rc.fillStyle = "rgb(10 14 18 / 60%)";
+        rc.fill();
+        rc.lineWidth = 3;
+        rc.strokeStyle = "rgb(255 255 255 / 45%)";
+        if (S.weak) rc.setLineDash([8, 7]);
+        rc.stroke();
+        rc.setLineDash([]);
+        rc.clip();
+        const k = R / 40; // 40 m to the rim
+        rc.translate(c, c);
+        // the world turns, the visitor looks up
+        rc.rotate(pose.yaw);
+        const toR = (x, z) => [(x - pose.x) * k, (z - pose.z) * k];
+        const [sx, sz] = toR(0, 0);
+        rc.beginPath();
+        rc.arc(sx, sz, 20 * k, 0, Math.PI * 2);
+        rc.fillStyle = "rgb(45 212 191 / 18%)";
+        rc.fill();
+        rc.lineWidth = 3;
+        rc.strokeStyle = "rgb(45 212 191 / 80%)";
+        rc.stroke();
+        // the next station, toward the gate
+        const [nx, nz] = toR(30, 120);
+        const a = Math.atan2(nz, nx);
+        const d = Math.min(R - 9, Math.hypot(nx, nz));
+        rc.beginPath();
+        rc.arc(Math.cos(a) * d, Math.sin(a) * d, 7, 0, Math.PI * 2);
+        rc.fillStyle = "#fb923c";
+        rc.fill();
+        rc.restore();
+        // the view cone and the visitor
+        rc.save();
+        rc.translate(c, c);
+        rc.beginPath();
+        rc.moveTo(0, 0);
+        rc.arc(0, 0, R, -Math.PI / 2 - 0.34, -Math.PI / 2 + 0.34);
+        rc.closePath();
+        rc.fillStyle = "rgb(255 255 255 / 22%)";
+        rc.fill();
+        rc.beginPath();
+        rc.arc(0, 0, 8, 0, Math.PI * 2);
+        rc.fillStyle = "#fff";
+        rc.fill();
+        rc.beginPath();
+        rc.arc(0, 0, 5, 0, Math.PI * 2);
+        rc.fillStyle = "#fb923c";
+        rc.fill();
+        rc.restore();
+      }
+
+      /* ================= frame loop ================= */
+      const tmp = new THREE.Vector3();
+      let last = performance.now();
+      let worst = 0;
+      function resize() {
+        const w = dev.clientWidth, h = dev.clientHeight;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        if (w >= h) {
+          const hf = THREE.MathUtils.degToRad(66);
+          camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hf / 2) / camera.aspect));
+        } else camera.fov = 70;
+        camera.updateProjectionMatrix();
+        scheduleMeasure();
+      }
+      new ResizeObserver(resize).observe(dev);
+
+      function frame(now) {
+        const dt = Math.min(0.1, (now - last) / 1000);
+        if (now - last > worst && now - last < 1000) worst = now - last;
+        last = now;
+        if (tween) {
+          const t = Math.min(1, (now - tween.t0) / tween.ms);
+          const e = ease(t);
+          for (const k of ["x", "z", "yaw", "pitch"]) pose[k] = tween.from[k] + (tween.to[k] - tween.from[k]) * e;
+          if (Math.hypot(tween.to.x - tween.from.x, tween.to.z - tween.from.z) > 0.5 && t < 1) markWalking();
+          if (t >= 1) tween = null;
+        }
+        if (walking && now > walkUntil) {
+          walking = false;
+          if (S.walkFold === "fold") render();
+        }
+        const tt = now / 1000;
+        const bob = walking && S.anim ? Math.abs(Math.sin(tt * 9)) * 0.025 : 0;
+        const sway = S.anim ? 1 : 0;
+        camera.position.set(pose.x, 1.6 + bob, pose.z);
+        camera.rotation.set(pose.pitch + Math.sin(tt * 0.7) * 0.004 * sway, pose.yaw + Math.sin(tt * 0.43) * 0.006 * sway, 0);
+        camera.updateMatrixWorld();
+
+        // the letters keep one size on screen, whatever their distance
+        const H = dev.clientHeight || 1;
+        const unit = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H;
+        for (const b of Object.values(badges)) {
+          if (!b.sp.visible) continue;
+          const d = b.sp.position.distanceTo(camera.position);
+          const s = d * unit * BADGE_PX * 1.12;
+          b.sp.scale.set(s, s, 1);
+        }
+        if (close.visible) {
+          const d = close.position.distanceTo(camera.position);
+          const wpx = Math.min(dev.clientWidth * 0.4, 220);
+          const s = d * unit * wpx;
+          close.scale.set(s, s / 2, 1);
+          const left = closeUntil - now;
+          close.material.opacity = Math.max(0, Math.min(1, left / 400));
+          if (left <= 0) close.visible = false;
+        }
+        // the direction arrows on the chips, only for answers out of view and only with a good position
+        if (S.step === "quiz" && isChoice()) {
+          for (const el of document.querySelectorAll(".a .dir")) {
+            const t = THINGS[el.dataset.dir];
+            tmp.set(t.badge[0], t.badge[1], t.badge[2]).project(camera);
+            const inView = tmp.z < 1 && Math.abs(tmp.x) < 0.92 && Math.abs(tmp.y) < 0.92;
+            const show = !S.weak && !inView && !el.closest(".a").disabled;
+            el.classList.toggle("show", show);
+            if (show) {
+              let rel = yawTo(pose.x, pose.z, t.badge[0], t.badge[2]) - pose.yaw;
+              rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+              el.style.transform = `rotate(${(-rel * 180) / Math.PI}deg)`;
+            }
+          }
+        }
+        const pts = plume.userData.pts;
+        const pa = pts.geometry.attributes.position;
+        for (let i = 0; i < pa.count; i++) {
+          let y = pa.getY(i) + dt * 0.5 * S.anim;
+          if (y > 2.6) y -= 2.6;
+          pa.setY(i, y);
+        }
+        pa.needsUpdate = true;
+        const quizOn = S.step === "quiz";
+        pts.material.opacity = quizOn ? 0.45 : 0.85;
+        videoGlow.material.color.setScalar(quizOn ? 0.75 + 0.25 * Math.sin(tt * 2.2) : 1);
+        if (ring.visible) ring.material.opacity = (S.weak ? 0.35 : 0.7) + 0.3 * Math.sin(tt * 2.4);
+
+        renderer.render(scene, camera);
+        drawRadar();
+        requestAnimationFrame(frame);
+      }
+
+      /* the camera feed's grain, once */
+      {
+        const c = document.createElement("canvas");
+        c.width = c.height = 128;
+        const g = c.getContext("2d");
+        const img = g.createImageData(128, 128);
+        let s = 3;
+        for (let i = 0; i < img.data.length; i += 4) {
+          s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+          const v = s >>> 24;
+          img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+          img.data[i + 3] = 14;
+        }
+        g.putImageData(img, 0, 0);
+        $("#grain").style.setProperty("--noise", `url(${c.toDataURL()})`);
+      }
+
+      /* ================= the demonstration's beats ================= */
+      const ARRIVE = { x: 0, z: 13, yaw: 0, pitch: -0.04 };
+      const BEATS = [
+        { t: "Arrive", s: "The story speaks first", set: () => ({ step: "intro" }), pose: () => ARRIVE },
+        { t: "The question appears", s: "One line, answers where Continue was", set: () => ({ step: "quiz" }), pose: () => ARRIVE },
+        { t: "Search", s: "Walk over and read the place", set: () => ({ step: "quiz" }), pose: () => poseLooking(Q().search.at, Q().search.look) },
+        { t: "Answer", s: "Picked, not yet counted", set: () => ({ step: "quiz", pickDemo: "first" }), pose: () => poseLooking(Q().search.at, Q().search.look) },
+        { t: "Take it back", s: "Tap again: nothing counted", set: () => ({ step: "quiz", pickDemo: "none" }), pose: () => poseLooking(Q().search.at, Q().search.look) },
+        { t: "Answer again", s: "A different pick", set: () => ({ step: "quiz", pickDemo: "again" }), pose: () => poseLooking(Q().search.at, Q().search.look) },
+        { t: "Result", s: "Locked in: right, points", set: () => ({ step: "quiz", pickDemo: "again", lock: true }), pose: () => poseLooking(Q().search.at, Q().search.look) },
+        { t: "If it was wrong", s: "One more try, half points", set: () => ({ step: "quiz", pickDemo: "wrongRun", lock: true }), pose: () => poseLooking(Q().search.at, Q().search.look) },
+        { t: "The story goes on", s: "The guide's next line", set: () => ({ step: "after", resultFrom: "again" }), pose: () => poseLooking(Q().search.at, Q().search.look) },
+        { t: "Station done", s: "The walk's peek in the same slot", set: () => ({ step: "ended", resultFrom: "again" }), pose: () => ({ x: 0, z: 10, yaw: Math.PI, pitch: -0.02 }) },
+        { t: "Run: position weak", s: "The card is unchanged", set: () => ({ step: "quiz", weak: true, toast: "Your position is rough. Answer on the card." }), pose: () => ({ x: 1, z: 9, yaw: 0.35, pitch: -0.05 }) },
+        { t: "Run: visitor does not move", s: "Tap a letter in the square to read it", set: () => ({ step: "quiz", still: true, worldPick: true }), pose: () => (isChoice() ? { ...ARRIVE, yaw: 0.22 } : poseLooking([ARRIVE.x, ARRIVE.z], THINGS[Q().thing].badge)) },
+        { t: "Leave with it open", s: "The card folds to one line", set: () => ({ step: "quiz", away: true, pickDemo: "first" }), pose: () => ({ x: 1.2, z: 19.8, yaw: Math.PI, pitch: -0.02 }) },
+        { t: "Come back", s: "It opens again, the pick kept", set: () => ({ step: "quiz", pickDemo: "first", noKbd: true }), pose: () => ({ x: 0.2, z: 11, yaw: 0.1, pitch: -0.04 }) },
+      ];
+
+      async function goBeat(i, opts = {}) {
+        i = (i + BEATS.length) % BEATS.length;
+        const b = BEATS[i];
+        S.beat = i;
+        const st = b.set();
+        const q = Q();
+        hideToast();
+        closeKeyboard();
+        Object.assign(S, { step: st.step, q: fresh(), folded: false, away: !!st.away, weak: !!st.weak, still: !!st.still, freshLine: true });
+        const typed = !isChoice();
+        const want = st.pickDemo ? q.demo[st.pickDemo === "none" ? "first" : st.pickDemo] : null;
+        if (st.pickDemo && st.pickDemo !== "none") {
+          if (typed) S.q.typed = want;
+          else S.q.picked = [...want];
+        }
+        if (st.pickDemo === "none" && !typed && q.type === "multiple") S.q.picked = q.demo.first.filter((id) => q.correct.includes(id));
+        if (st.resultFrom) {
+          S.q.result = "right";
+          S.q.earned = POINTS;
+          S.score = 20 + POINTS;
+        } else S.score = 20;
+        if (st.worldPick && !typed) S.q.picked = [q.options[q.type === "single" ? 2 : 0].id];
+        goPose(b.pose(), opts.instant);
+        if (st.lock) {
+          if (typed) {
+            const right = await judgeTyped(q, S.q.typed);
+            S.q.lastChecked = S.q.typed;
+            answered(right);
+          } else lockIn();
+          if (opts.instant) S.q.freshResult = false;
+        } else render();
+        const showKbd = typed && st.step === "quiz" && ["first", "none", "again"].includes(st.pickDemo) && !st.lock && !st.away && !st.noKbd;
+        if (showKbd) openKeyboard();
+        if (st.pickDemo === "none" && typed) {
+          S.q.typed = "";
+          render();
+          if (showKbd) openKeyboard();
+        }
+        if (st.toast) toast(st.toast, opts.instant ? 60000 : 3600);
+        if (st.worldPick) {
+          const key = isChoice() ? q.options.find((o) => o.id === S.q.picked[0]).thing : q.thing;
+          closeup(key, true);
+          if (opts.instant) closeUntil = performance.now() + 60000;
+        }
+        $("#beatLbl").innerHTML = `<b>${i + 1}/${BEATS.length} ${esc(b.t)}</b><span>${esc(q.label)} - ${esc(b.s)}</span>`;
+        renderPanel();
+        scheduleMeasure();
+      }
+      $("#prevBeat").addEventListener("click", () => goBeat(S.beat - 1));
+      $("#nextBeat").addEventListener("click", () => goBeat(S.beat + 1));
+
+      /* ================= measuring hook ================= */
+      let measureQueued = false;
+      function scheduleMeasure() {
+        if (measureQueued) return;
+        measureQueued = true;
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            measureQueued = false;
+            showMeasure(measure());
+          }),
+        );
+      }
+      function visibleBox(el) {
+        if (el.hidden || el.offsetParent === null) return null;
+        const cs = getComputedStyle(el);
+        if (cs.visibility === "hidden" || Number(cs.opacity) < 0.05) return null;
+        const r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) return null;
+        return r;
+      }
+      function measure() {
+        const d = dev.getBoundingClientRect();
+        const boxes = [];
+        for (const el of dev.querySelectorAll("[data-hud]")) {
+          const r = visibleBox(el);
+          if (!r) continue;
+          const x0 = Math.max(r.left, d.left), y0 = Math.max(r.top, d.top);
+          const x1 = Math.min(r.right, d.right), y1 = Math.min(r.bottom, d.bottom);
+          if (x1 > x0 && y1 > y0) boxes.push({ name: el.dataset.hud, el, x0, y0, x1, y1 });
+        }
+        const step = 3;
+        let inside = 0, total = 0;
+        for (let y = d.top + step / 2; y < d.bottom; y += step)
+          for (let x = d.left + step / 2; x < d.right; x += step) {
+            total++;
+            for (const b of boxes)
+              if (x >= b.x0 && x < b.x1 && y >= b.y0 && y < b.y1) {
+                inside++;
+                break;
+              }
+          }
+        const overlaps = [];
+        for (let i = 0; i < boxes.length; i++)
+          for (let j = i + 1; j < boxes.length; j++) {
+            const a = boxes[i], b = boxes[j];
+            if (Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 1 && Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > 1) overlaps.push([a, b]);
+          }
+        const k = $("#kbd");
+        let kbd = 0;
+        if (!k.hidden) {
+          const r = k.getBoundingClientRect();
+          kbd = (r.width * r.height) / (d.width * d.height);
+        }
+        return { footprint: inside / total, count: boxes.length, names: boxes.map((b) => b.name), overlaps, kbd, d, w: Math.round(d.width), h: Math.round(d.height) };
+      }
+      function showMeasure(m) {
+        const ovs = $("#ovs");
+        ovs.innerHTML = "";
+        const seen = new Set();
+        for (const pair of m.overlaps)
+          for (const b of pair) {
+            if (seen.has(b)) continue;
+            seen.add(b);
+            const o = document.createElement("div");
+            o.className = "ov";
+            Object.assign(o.style, { left: `${b.x0 - m.d.left}px`, top: `${b.y0 - m.d.top}px`, width: `${b.x1 - b.x0}px`, height: `${b.y1 - b.y0}px` });
+            ovs.appendChild(o);
+          }
+        const pct = (m.footprint * 100).toFixed(1);
+        $("#readout").innerHTML =
+          `HUD ${pct}% - ${m.count} el - <b class="${m.overlaps.length ? "bad" : ""}">${m.overlaps.length} overlap${m.overlaps.length === 1 ? "" : "s"}</b>` +
+          (m.kbd ? ` - kbd ${(m.kbd * 100).toFixed(0)}%` : "");
+        window.__lastMeasure = { footprint: +pct, count: m.count, names: m.names, overlaps: m.overlaps.map((p) => p.map((b) => b.name).join("+")), keyboard: +(m.kbd * 100).toFixed(1), w: m.w, h: m.h };
+      }
+      const results = {};
+      async function measureAll() {
+        const anim = S.anim;
+        S.anim = false;
+        const views = matchMedia("(min-width: 900px) and (min-height: 640px)").matches ? ["port", "land"] : [dev.clientWidth > dev.clientHeight ? "land" : "port"];
+        const keepView = stage.dataset.view;
+        for (const v of views) {
+          stage.dataset.view = v;
+          resize();
+          for (let i = 0; i < BEATS.length; i++) {
+            await goBeat(i, { instant: true });
+            // let entrance animations (the toast fades in) finish before measuring
+            await new Promise((r) => setTimeout(r, 450));
+            const m = measure();
+            showMeasure(m);
+            (results[S.qid] ??= {})[`${v}:${i}`] = { f: m.footprint * 100, c: m.count, o: m.overlaps.length, k: m.kbd * 100 };
+          }
+        }
+        stage.dataset.view = keepView;
+        resize();
+        S.anim = anim;
+        renderTable();
+        await goBeat(0, { instant: true });
+        return results[S.qid];
+      }
+      function renderTable() {
+        const r = results[S.qid];
+        if (!r) {
+          $("#mtable").innerHTML = "";
+          return;
+        }
+        const cell = (x) => (x ? `${x.f.toFixed(1)}% / ${x.c}${x.o ? ` / <b style="color:#b91c1c">${x.o} ov</b>` : ""}${x.k ? ` +kb` : ""}` : "-");
+        $("#mtable").innerHTML = `<table class="m"><tr><th>${esc(Q().label)}</th><th>upright</th><th>sideways</th></tr>${BEATS.map(
+          (b, i) => `<tr><td>${i + 1} ${esc(b.t)}</td><td>${cell(r[`port:${i}`])}</td><td>${cell(r[`land:${i}`])}</td></tr>`,
+        ).join("")}</table><p>% of the screen / HUD elements / overlaps. "+kb": the keyboard is up as well.</p>`;
+      }
+      $("#measureAll").addEventListener("click", measureAll);
+      window.__demo = { goBeat, measure: () => (showMeasure(measure()), window.__lastMeasure), measureAll, S, setQid: (id) => setQid(id), beats: BEATS.length };
+
+      /* ================= the panel ================= */
+      function setQid(id) {
+        S.qid = id;
+        renderTable();
+        return goBeat(S.beat, { instant: false });
+      }
+      function renderPanel() {
+        $("#qids").innerHTML = QIDS.map((id) => `<button data-q="${id}" aria-pressed="${id === S.qid}">${esc(QUIZZES[id].label)}</button>`).join("");
+        $("#beatList").innerHTML = BEATS.map((b, i) => `<li><button data-b="${i}" aria-current="${i === S.beat}">${i + 1}. ${esc(b.t)}</button></li>`).join("");
+        for (const b of document.querySelectorAll("[data-retry]")) b.setAttribute("aria-pressed", String((b.dataset.retry === "1") === S.retry));
+        for (const b of document.querySelectorAll("[data-layout]")) b.setAttribute("aria-pressed", String(b.dataset.layout === S.layout));
+        for (const b of document.querySelectorAll("[data-walk]")) b.setAttribute("aria-pressed", String(b.dataset.walk === S.walkFold));
+        for (const b of document.querySelectorAll("[data-guard]")) b.setAttribute("aria-pressed", String(Number(b.dataset.guard) === S.guardMs));
+        for (const b of document.querySelectorAll("[data-view]")) b.setAttribute("aria-pressed", String(b.dataset.view === stage.dataset.view));
+      }
+      $("#panel").addEventListener("click", (e) => {
+        const b = e.target.closest("button");
+        if (!b) return;
+        if (b.dataset.q) setQid(b.dataset.q);
+        else if (b.dataset.b) {
+          goBeat(Number(b.dataset.b));
+          if (!matchMedia("(min-width: 900px) and (min-height: 640px)").matches) $("#panel").classList.remove("open");
+        } else if (b.dataset.retry) {
+          S.retry = b.dataset.retry === "1";
+          goBeat(S.beat);
+        } else if (b.dataset.layout) {
+          S.layout = b.dataset.layout;
+          render();
+        } else if (b.dataset.walk) {
+          S.walkFold = b.dataset.walk;
+          render();
+        } else if (b.dataset.guard) {
+          S.guardMs = Number(b.dataset.guard);
+          renderPanel();
+        } else if (b.dataset.view) {
+          stage.dataset.view = b.dataset.view;
+          renderPanel();
+          resize();
+        } else if (b.id === "closePanel") $("#panel").classList.remove("open");
+      });
+      $("#menuBtn").addEventListener("click", () => $("#panel").classList.add("open"));
+
+      /* first open: URL ?q=&beat=&view= for a fixed look */
+      const params = new URLSearchParams(location.search);
+      if (QUIZZES[params.get("q")]) S.qid = params.get("q");
+      if (params.get("view") === "land") stage.dataset.view = "land";
+      if (params.has("still")) S.anim = false;
+      resize();
+      goBeat(Number(params.get("beat") || 1) - 1, { instant: true });
+      if (params.get("try") === "0") $("#try").classList.add("gone");
+      setTimeout(() => $("#try").classList.add("gone"), params.has("still") ? 600000 : 9000);
+      for (const id of ["#prevBeat", "#nextBeat"]) $(id).addEventListener("click", () => $("#try").classList.add("gone"));
+      $("#try").addEventListener("click", () => $("#try").classList.add("gone"));
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>

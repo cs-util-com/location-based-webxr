@@ -1,0 +1,1406 @@
+<!doctype html>
+<!-- Prototype: the visitor quiz player, "the creator decides, the player adapts". Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <title>Creator Decides Quiz</title>
+    <script type="importmap">
+      { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+    </script>
+    <style>
+      :root {
+        --accent: #fb923c;
+        --accent-ink: #1f1105;
+        --found: #2dd4bf;
+        --found-ink: #04201c;
+        --ink: #f3f5f7;
+        --muted: #b3bcc6;
+        --surface: rgb(12 16 21 / 88%);
+        --surface-2: rgb(255 255 255 / 10%);
+        --line: rgb(255 255 255 / 18%);
+        --danger: #f87171;
+        --gold: #e5ab3e;
+        --tap: 44px;
+        --font: Corbel, "Noto Sans", system-ui, sans-serif;
+        --chrome-h: 64px;
+        color-scheme: dark;
+      }
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #14171d; color: var(--ink); font: 15px/1.4 var(--font); font-variant-numeric: lining-nums; -webkit-tap-highlight-color: transparent; }
+      button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+      #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+      /* the fake camera: a soft lens vignette and a little sensor grain over the 3D square */
+      #feed { position: fixed; inset: 0; pointer-events: none;
+        background:
+          radial-gradient(ellipse at 50% 45%, transparent 58%, rgb(0 0 0 / 30%) 100%),
+          repeating-linear-gradient(0deg, rgb(255 255 255 / 2.5%) 0 1px, transparent 1px 3px); }
+
+      /* ---------- the visitor's HUD (everything marked data-hud is measured) ---------- */
+      #hud { position: fixed; inset: 0; pointer-events: none; }
+      #hud > * { pointer-events: auto; }
+      #hud [hidden] { display: none !important; }
+      .exit { position: absolute; left: 12px; top: calc(var(--chrome-h) + 10px); width: var(--tap); height: var(--tap); padding: 0; border-radius: 50%;
+        border: 2px solid rgb(255 255 255 / 75%); background: rgb(10 14 18 / 62%); font-size: 20px; font-weight: 700; line-height: 1; }
+      .radar { position: absolute; right: 12px; top: calc(var(--chrome-h) + 10px); width: 92px; height: 92px; border-radius: 50%; }
+      .toast { position: absolute; left: 12px; top: calc(var(--chrome-h) + 64px); max-width: min(250px, calc(100% - 136px)); padding: 8px 12px; border-radius: 14px;
+        background: var(--surface); font-size: 14px; line-height: 1.3; transition: opacity 0.4s; }
+      .toast.out { opacity: 0; }
+
+      .card, .story { position: absolute; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); margin: 0 auto; max-width: 440px; box-sizing: border-box;
+        padding: 12px; border-radius: 20px; background: var(--surface); border: 1px solid var(--line); overflow: hidden;
+        max-height: calc(100% - var(--chrome-h) - 70px); overflow-y: auto; transition: opacity 0.25s, transform 0.25s; }
+      .card.leaving { opacity: 0; transform: translateY(24px) scale(0.96); pointer-events: none; }
+      .card.arriving .a { opacity: 0; }
+      .card .lift { position: absolute; left: 0; top: 0; height: 4px; width: 0; background: var(--accent); border-radius: 0 2px 2px 0; }
+      .eyebrow { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--found); }
+      .eyebrow .why { margin-left: auto; padding: 1px 8px; border-radius: 999px; background: rgb(251 146 60 / 20%); color: #fed7aa; text-transform: none; letter-spacing: 0; font-weight: 600; }
+      .q { margin: 4px 0 8px; font-size: 19px; font-weight: 700; line-height: 1.22; }
+      .answers { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+      .a { position: relative; display: flex; flex-direction: column; justify-content: center; min-height: 52px; padding: 6px 10px 6px 28px; border-radius: 14px; text-align: left;
+        border: 2px solid rgb(255 255 255 / 30%); background: var(--surface-2); font-size: 16px; font-weight: 700; line-height: 1.15; transition: background 0.15s, opacity 0.25s; }
+      .a .hue { position: absolute; left: 10px; top: 50%; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; background: var(--hue, #fff); }
+      .a small { display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: var(--muted); }
+      .a small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.2; }
+      .a .hue.hollow { background: transparent; border: 2px solid var(--hue); box-sizing: border-box; }
+      .a.on { border-color: var(--accent); background: rgb(251 146 60 / 26%); }
+      .a.on::after { content: "chosen"; position: absolute; right: 8px; top: 4px; font-size: 10px; font-weight: 700; color: #fed7aa; text-transform: uppercase; }
+      .a.right { border-color: var(--found); background: var(--found); color: var(--found-ink); }
+      .a.right small { color: var(--found-ink); }
+      .a.wrong { border-color: var(--danger); background: rgb(248 113 113 / 18%); color: #fecaca; text-decoration: line-through; text-decoration-thickness: 2px; }
+      .a.dim { opacity: 0.45; }
+      .a:disabled { cursor: default; }
+      .typed { display: flex; gap: 8px; align-items: stretch; }
+      .typed label { position: relative; flex: 1; min-width: 0; display: flex; }
+      .field { flex: 1; min-width: 0; height: 54px; padding: 0 14px; border: 2px solid rgb(255 255 255 / 55%); border-radius: 14px; background: rgb(255 255 255 / 12%);
+        color: #fff; font: 600 20px var(--font); outline: 0; box-sizing: border-box; }
+      .field.code { font-family: ui-monospace, Consolas, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
+      .field.has-unit { padding-right: 44px; }
+      .typed .unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; font-size: 18px; pointer-events: none; }
+      .field:focus { border-color: var(--found); }
+      .field.right { border-color: var(--found); background: var(--found); color: var(--found-ink); }
+      .field.wrong { border-color: var(--danger); color: #fecaca; }
+      .foot { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+      .hint { flex: 1; min-width: 0; margin: 0; font-size: 13px; line-height: 1.25; color: var(--muted); }
+      .btn { flex: none; min-width: 96px; height: 46px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--found); color: var(--found-ink); font-size: 16px; font-weight: 700; }
+      .btn:disabled { background: rgb(255 255 255 / 12%); color: var(--muted); cursor: default; }
+      .btn.quiet { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); }
+      .typed .btn { height: 54px; }
+      .result { flex: 1; min-width: 0; margin: 0; font-size: 16px; font-weight: 700; }
+      .plus { display: inline-block; margin-left: 4px; padding: 0 8px; border-radius: 999px; background: #ffd391; color: #2a1a04; font-size: 14px; }
+      .plus.none { background: rgb(255 255 255 / 16%); color: var(--ink); }
+      .story .speaker { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+      .story .line { margin: 2px 0 0; font-size: 16px; line-height: 1.35; }
+
+      .pill { position: absolute; left: 50%; bottom: calc(12px + env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 6px;
+        height: 50px; padding: 0 4px 0 6px; box-sizing: border-box; border-radius: 25px; background: var(--surface); border: 1px solid var(--line); max-width: calc(100% - 24px);
+        white-space: nowrap; overflow: hidden; transition: opacity 0.3s; }
+      .pill.entering { opacity: 0; }
+      .pill .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: rgb(255 255 255 / 14%); pointer-events: none; }
+      .pill .ask { position: relative; display: flex; align-items: center; gap: 6px; height: 42px; padding: 0 10px; border: 0; border-radius: 21px; background: transparent; }
+      .pill .ask i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--hue); box-sizing: border-box; }
+      .pill .ask i.on { background: var(--hue); }
+      .pill .ask b { margin-left: 2px; width: 22px; height: 22px; border-radius: 50%; background: rgb(255 255 255 / 16%); font-size: 14px; line-height: 22px; text-align: center; }
+      .pill .plabel { position: relative; padding: 0 6px 0 8px; font-size: 15px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; }
+      .pill .plabel em { font-style: normal; font-weight: 600; color: var(--muted); }
+      .pill .pbtn { position: relative; flex: none; height: 42px; padding: 0 14px; border-radius: 21px; border: 1px solid var(--line); background: var(--surface-2); font-size: 14px; font-weight: 700; }
+      .pill .pbtn.strong { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+      .pill .pbtn.go { border-color: transparent; background: var(--found); color: var(--found-ink); }
+
+      /* the measuring hook: any two HUD boxes that overlap get a red outline */
+      [data-hud].overlap { outline: 3px solid #ff2d2d; outline-offset: -1px; }
+
+      @media (orientation: landscape) and (max-height: 540px) {
+        .card, .story { left: 8px; right: auto; width: min(390px, 48vw); margin: 0; padding: 10px; }
+        .q { font-size: 16px; margin: 2px 0 6px; }
+        .a { min-height: 44px; font-size: 14.5px; }
+        .btn { height: 42px; }
+        .field, .typed .btn { height: 46px; }
+        .toast { max-width: min(300px, 40vw); }
+        #chrome .cap { -webkit-line-clamp: 1; }
+      }
+
+      /* hand-over chips: answers flying between the card and their places */
+      #chips { position: fixed; inset: 0; pointer-events: none; z-index: 40; }
+      .chip { position: absolute; display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; background: rgb(12 16 21 / 90%);
+        border: 2px solid var(--hue); font-size: 14px; font-weight: 700; white-space: nowrap; transform: translate(-50%, -50%); }
+      .chip i { width: 10px; height: 10px; border-radius: 50%; background: var(--hue); }
+
+      /* ---------- prototype tools (not part of the HUD, never measured) ---------- */
+      #chrome { position: fixed; left: 0; right: 0; top: 0; z-index: 50; padding: 6px 8px 6px; background: rgb(20 23 29 / 94%); border-bottom: 1px dashed rgb(255 255 255 / 40%); font-size: 12px; }
+      #chrome .row { display: flex; align-items: center; gap: 6px; }
+      #chrome select, #chrome button { height: 32px; border-radius: 8px; border: 1px solid rgb(255 255 255 / 28%); background: rgb(255 255 255 / 8%); color: #fff; font-size: 13px; }
+      #chrome select { min-width: 0; flex: 1 1 auto; padding: 0 4px; }
+      #chrome .row2 { align-items: flex-start; margin-top: 5px; }
+      #chrome button { min-width: 34px; padding: 0 8px; }
+      #chrome button[aria-pressed="true"] { background: #fff; color: #14171d; }
+      #chrome .meter { flex: none; margin-left: auto; font: 600 11px/1.3 ui-monospace, Consolas, monospace; text-align: right; white-space: nowrap; color: #e5e7eb; }
+      #chrome .meter.bad { color: #ff8a8a; }
+      #chrome .cap { flex: 1; min-width: 0; margin: 0 2px; line-height: 1.3; color: #d6dbe1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      #chrome .cap b { color: #fff; }
+      #chrome .tag { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #9aa4ae; }
+      #tools { position: fixed; left: 0; right: 0; top: var(--chrome-h); bottom: 0; z-index: 49; overflow-y: auto; padding: 12px 14px 40px; background: #14171d; font-size: 14px; }
+      #tools h2 { margin: 18px 0 6px; font-size: 15px; }
+      #tools h2:first-child { margin-top: 0; }
+      #tools p, #tools li { color: #d6dbe1; line-height: 1.4; }
+      #tools ul { padding-left: 18px; margin: 4px 0; }
+      #tools .why li.no { color: #fecaca; }
+      #tools .why li.yes::marker { color: var(--found); }
+      #tools .why li.no::marker { color: var(--danger); }
+      #tools .tracking button, #tools .look button { height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid rgb(255 255 255 / 28%); background: rgb(255 255 255 / 8%); color: #fff; }
+      #tools .tracking button[aria-pressed="true"], #tools .look button[aria-pressed="true"] { background: #fff; color: #14171d; }
+      #tools label.slider { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 8px 0; }
+      #tools label.slider input { grid-column: 1 / -1; width: 100%; }
+      #tools label.slider output { font: 600 13px ui-monospace, Consolas, monospace; }
+      #tools pre { margin: 6px 0; padding: 10px; border-radius: 10px; background: rgb(255 255 255 / 6%); font-size: 12px; line-height: 1.45; overflow-x: auto; white-space: pre; }
+      #tools table { border-collapse: collapse; font-size: 12.5px; width: 100%; }
+      #tools td, #tools th { padding: 3px 6px; border-bottom: 1px solid rgb(255 255 255 / 10%); text-align: left; vertical-align: top; }
+      #tools td.n { font-family: ui-monospace, Consolas, monospace; white-space: nowrap; }
+      @media (orientation: landscape) and (max-height: 540px) {
+        #chrome .cap { -webkit-line-clamp: 1; }
+        .a small { -webkit-line-clamp: 1; }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="feed"></div>
+
+    <div id="hud">
+      <button class="exit" data-hud="exit" data-act="exit" aria-label="Exit AR">&#x2715;</button>
+      <canvas class="radar" data-hud="radar" width="184" height="184"></canvas>
+      <div class="toast" data-hud="toast" hidden></div>
+      <section class="card" data-hud="card" hidden></section>
+      <div class="pill" data-hud="pill" hidden></div>
+      <section class="story" data-hud="story" hidden></section>
+    </div>
+    <div id="chips"></div>
+
+    <header id="chrome">
+      <div class="row">
+        <select id="run" aria-label="Demo run"></select>
+        <button id="prev" aria-label="Previous beat">&#x25C0;</button>
+        <button id="next" aria-label="Next beat">&#x25B6;</button>
+        <button id="play" aria-pressed="false" aria-label="Walk for me">Play</button>
+        <button id="toolsBtn" aria-pressed="false" aria-label="Notes and controls">&#x2699;</button>
+      </div>
+      <div class="row row2"><p class="cap" id="cap"></p><span class="meter" id="meter">-</span></div>
+    </header>
+
+    <aside id="tools" hidden>
+      <h2>What to try</h2>
+      <p>Pick a run at the top, step through its beats with the arrows, or press Play and the page walks for you. Drag to look around, tap the ground to walk there (W A S D on a desktop). The quiz you see is one player: the tour's data decides whether a quiz can live in the square, and the player drops it back into the card the moment the square cannot be trusted.</p>
+
+      <h2>Why the card, why the square (live)</h2>
+      <ul class="why" id="why"></ul>
+
+      <h2>Position</h2>
+      <p class="tracking"><button data-track="good">Good</button> <button data-track="weak">Weak</button></p>
+      <p>Weak stops any fill at once, so a brief wrong position never locks an answer. The answers fall back to the card only after the position stayed weak for the drop delay, and lift again only after it stayed good for the lift delay, and only while the visitor has not started answering in the card.</p>
+
+      <h2>Values to judge (each is an assumption)</h2>
+      <div id="sliders"></div>
+
+      <h2>HUD footprint, this run</h2>
+      <p>Share of the screen covered by HUD boxes (Exit, radar, toast, card, pill, story card), the number of HUD elements and the number of overlapping pairs. Recorded about a second after each beat is reached; turn the phone to fill the other column.</p>
+      <table id="log"></table>
+
+      <h2>The format: what a placed quiz needs</h2>
+      <pre id="format"></pre>
+      <p>Everything new is optional, so every quiz written today still plays, as a card. Text, code and number answers never need a place.</p>
+
+      <h2>The rules this page plays by</h2>
+      <ul>
+        <li><b>The creator decides whether a quiz may be placed:</b> a single or several-answer quiz whose every answer has a place, at least the spacing apart, and not marked "card".</li>
+        <li><b>The player decides whether it is placed now:</b> only while the position is vouched for, and only until the visitor chooses the card.</li>
+        <li><b>One quiz, one band:</b> while a quiz is open it owns the bottom of the screen, either as the card or as the small pill, never both and never over a story card. The walk's own layer (Exit, radar, toast) stays.</li>
+        <li><b>Nothing is lost in a hand-over:</b> what was found stays found, a chosen answer stays chosen, and nothing counts without the visitor: Check in the card, or the grace ring closing while they still stand there.</li>
+        <li><b>Other items wait:</b> while a quiz is open they dim in the square and their cards do not take the band. A sound already playing is not stopped.</li>
+        <li><b>Answer types:</b> single goes to the square when placed. Several-answer quizzes are found in the square and chosen in the card. Text, code and number always play in the card.</li>
+      </ul>
+
+      <h2>The strongest case against this</h2>
+      <p>Two presentations of one quiz is two things to learn. A visitor whose position flickers sees the quiz move between the square and the card, and may lose trust in both; the hysteresis hides short flickers, but a long walk under trees could still hand over several times. The creator also places answers that may, on the day, play only as a card, so the effort of placing them can be invisible to many visitors. A card-only player is simpler and always works.</p>
+
+      <h2>Look</h2>
+      <p class="look"><button data-look="bright" aria-pressed="true">Bright</button> <button data-look="dark">Dark</button></p>
+    </aside>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      /* ================= values the feel rests on (sliders in the notes) ================= */
+      const T = {
+        liftAfter: 3, // s of good position before the answers go out into the square
+        dropAfter: 1.5, // s of weak position before the answers fall back into the card
+        spacingMin: 5, // m between the two closest answers for a quiz to be placed
+        dwellS: 3, // s standing in a ring to choose
+        graceS: 2.5, // s after choosing in which a step out takes it back
+        stillNudge: 20, // s standing still in the square before "Answer here" is offered strongly
+      };
+      const SLIDERS = [
+        ["liftAfter", "Lift after good position", 1, 8, 0.5, "s"],
+        ["dropAfter", "Drop after weak position", 0.5, 5, 0.5, "s"],
+        ["spacingMin", "Closest answers at least", 2, 10, 0.5, "m"],
+        ["dwellS", "Stand in a ring to choose", 1.5, 8, 0.5, "s"],
+        ["graceS", "Step out to take back within", 0, 6, 0.5, "s"],
+        ["stillNudge", "Offer the card after standing still", 5, 40, 1, "s"],
+      ];
+      const FIND_R = 2; // m: an answer is found this close
+      const RING = 2; // m: the answer ring
+      const LET_GO = 0.5; // m past the ring before it lets go, so jitter at its edge cannot cancel
+      const ENTER_DELAY = 0.4; // s inside a ring before it starts filling
+      const STILL_SPEED = 0.6; // m/s: slower counts as standing
+      const DRAIN = 2; // a left ring empties this many times faster than it filled
+      const EYE = 1.6;
+      const WALK = 1.4;
+      const DEMO_WALK = 3.0; // the scripted walker, faster than life
+      const EDGE = 19;
+      const HUE = ["#fbbf24", "#60a5fa", "#a3e635", "#f472b6"];
+
+      /* ================= the tour data (as the format would carry it) ================= */
+      const STATION = { name: "The market square", speaker: "Mara, your guide" };
+      const FOUR = [
+        { id: "fountain", label: "The fountain", clue: "Water has run here since 1652.", at: { x: -4.2, z: -3.0 } },
+        { id: "statue", label: "The statue", clue: "Cast in bronze in 1890.", at: { x: 6.6, z: -5.0 } },
+        { id: "tree", label: "The plane tree", clue: "Planted in 1921.", at: { x: 7.4, z: 5.4 } },
+        { id: "bench", label: "The bench", clue: "Its plaque: new this spring.", at: { x: -4.6, z: 5.8 } },
+      ];
+      const QUIZZES = {
+        placed: {
+          question: "Which of these stood on this square first?",
+          points: 10,
+          present: "auto",
+          answer: { type: "single", correct: "fountain", options: FOUR },
+          after: {
+            right: "The fountain. Its water ran here two hundred years before the statue came.",
+            wrong: "It was the fountain, from 1652. The statue came in 1890, the tree in 1921.",
+          },
+        },
+        close: {
+          question: "Which of these four lamps was lit first?",
+          points: 10,
+          present: "auto",
+          answer: {
+            type: "single",
+            correct: "c",
+            options: [
+              { id: "a", label: "Lamp A, the crown", at: { x: -1.5, z: -5.5 } },
+              { id: "b", label: "Lamp B, the plain one", at: { x: 1.5, z: -5.5 } },
+              { id: "c", label: "Lamp C, the bell", at: { x: -1.5, z: -2.5 } },
+              { id: "d", label: "Lamp D, the twin", at: { x: 1.5, z: -2.5 } },
+            ],
+          },
+          after: { right: "The bell lamp, gas in 1861. The others came with the electric light.", wrong: "It was the bell lamp, lit by gas in 1861." },
+        },
+        typed: {
+          question: "One word is carved over the hall door. Which?",
+          points: 10,
+          answer: { type: "text", salt: "hall-door-7d1", accept: ["Bürgerhaus"] },
+          after: { right: "Bürgerhaus, the citizens' house. The town met there for three hundred years.", wrong: "It says Bürgerhaus, the citizens' house." },
+        },
+        number: {
+          question: "How tall is the clock tower?",
+          points: 5,
+          answer: { type: "number", value: 23, tolerance: 1, unit: "m" },
+          after: { right: "Twenty-three metres, to the tip of its roof.", wrong: "It is twenty-three metres, to the tip of its roof." },
+        },
+        code: {
+          question: "Type the code on the plaque by the gate.",
+          points: 5,
+          answer: { type: "code", salt: "gate-plaque-2c9", accept: ["K7Q"] },
+          after: { right: "That opens the next part of the walk.", wrong: "Look again at the plaque on the right pillar." },
+        },
+        multi: {
+          question: "Which of these were here before 1900?",
+          points: 10,
+          present: "auto",
+          answer: { type: "multiple", correct: ["fountain", "statue"], options: FOUR },
+          after: { right: "The fountain and the statue. The tree and the bench are young.", wrong: "The fountain (1652) and the statue (1890). The tree came in 1921." },
+        },
+      };
+
+      /* ---------- judging: a stand-in for the tour's normalisation and salted hashes ---------- */
+      function normaliseText(s) {
+        return String(s).normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim()
+          .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+      }
+      function parseNumber(s) {
+        const t = String(s).trim().replace(/\s+/g, "").replace(",", ".");
+        return /^[-+]?\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
+      }
+      const HAS_SUBTLE = !!(globalThis.crypto && crypto.subtle);
+      async function sha256hex(s) {
+        if (!HAS_SUBTLE) return "plain:" + s; // insecure context: compared in clear, said in the notes
+        const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+        return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+      }
+      // what the editor would do at save time: hash the accepted answers, drop them in clear
+      const hashesReady = Promise.all(
+        Object.values(QUIZZES).filter((q) => q.answer.accept).map(async (q) => {
+          q.answer.sha256 = await Promise.all(q.answer.accept.map((a) => sha256hex(q.answer.salt + normaliseText(a))));
+          delete q.answer.accept;
+        }),
+      );
+      function judgeChoice(q, ids) {
+        const a = q.answer;
+        if (a.type === "single") return ids.length === 1 && ids[0] === a.correct;
+        const want = new Set(a.correct);
+        return ids.length === want.size && ids.every((i) => want.has(i));
+      }
+      async function judgeTyped(q, text) {
+        const a = q.answer;
+        if (a.type === "number") {
+          const v = parseNumber(text);
+          return Number.isFinite(v) && Math.abs(v - a.value) <= a.tolerance;
+        }
+        const h = await sha256hex(a.salt + normaliseText(text));
+        return a.sha256.includes(h);
+      }
+
+      /* ================= the decider: the creator's data first, then the player's state ================= */
+      function closestPair(opts) {
+        let m = Infinity;
+        for (let i = 0; i < opts.length; i++)
+          for (let j = i + 1; j < opts.length; j++) m = Math.min(m, Math.hypot(opts[i].at.x - opts[j].at.x, opts[i].at.z - opts[j].at.z));
+        return m;
+      }
+      function decide(q, s) {
+        const a = q.answer;
+        const rows = [];
+        const choice = a.type === "single" || a.type === "multiple";
+        rows.push({ who: "Tour", ok: choice, text: choice ? `answer type "${a.type}" can be placed` : `answer type "${a.type}" always plays in the card` });
+        const placed = choice && a.options.every((o) => o.at);
+        if (choice) rows.push({ who: "Tour", ok: placed, text: placed ? "every answer has a place" : "an answer has no place" });
+        if (placed) {
+          const gap = closestPair(a.options);
+          rows.push({ who: "Tour", ok: gap >= T.spacingMin, text: `closest two answers ${gap.toFixed(1)} m apart, needs ${T.spacingMin} m` });
+        }
+        if (choice) rows.push({ who: "Tour", ok: q.present !== "card", text: `presentation "${q.present || "auto"}"` });
+        const tourOk = rows.every((r) => r.ok);
+        rows.push({
+          who: "Player",
+          ok: s.vouched,
+          text: s.vouched ? (s.raw === "weak" ? `position weak for ${s.weakFor.toFixed(1)} s, drops at ${T.dropAfter} s` : "position vouched for")
+            : s.raw === "good" ? `position good for ${s.goodFor.toFixed(1)} s, lifts at ${T.liftAfter} s` : "position weak",
+        });
+        rows.push({ who: "Player", ok: !s.pinned, text: s.pinned ? "the visitor answers in the card" : "the visitor has not taken the card" });
+        const several = a.type === "multiple" && placed && s.found.size === a.options.length;
+        if (a.type === "multiple") rows.push({ who: "Player", ok: !several, text: several ? "all found: several answers are chosen in the card" : "found in the square, chosen in the card" });
+        const ok = rows.every((r) => r.ok);
+        let why = "";
+        if (!ok && tourOk) {
+          if (several) why = "several";
+          else if (s.pinned) why = "pinned";
+          else if (s.raw === "weak") why = "weak";
+          else why = "settling";
+        }
+        return { mode: ok ? "world" : "card", rows, tourOk, why };
+      }
+
+      /* ================= the player's state ================= */
+      const P = {
+        id: null, q: null, phase: "none", mode: "card", why: "", tourOk: false,
+        raw: "good", vouched: false, goodFor: 0, weakFor: 0,
+        found: new Set(), chosen: [], pinned: false, typed: "",
+        dwell: { id: null, fill: 0, grace: -1, inside: 0 },
+        still: 0, nudge: false, result: null, checking: false, liftedOnce: false,
+      };
+      function openQuiz(id) {
+        P.id = id; P.q = QUIZZES[id]; P.phase = "open"; P.mode = "card"; P.why = "";
+        P.vouched = false; P.goodFor = 0; P.weakFor = 0;
+        P.found = new Set(); P.chosen = []; P.pinned = false; P.typed = "";
+        P.dwell = { id: null, fill: 0, grace: -1, inside: 0 };
+        P.still = 0; P.nudge = false; P.result = null; P.checking = false; P.liftedOnce = false;
+        world.build(P.q);
+      }
+      function commitChoice(ids) {
+        if (P.phase !== "open") return;
+        const right = judgeChoice(P.q, ids);
+        P.chosen = [...ids];
+        P.result = { right, points: right ? P.q.points : 0 };
+        P.phase = "result";
+        world.result(right, ids);
+        render();
+      }
+      async function commitTyped() {
+        if (P.phase !== "open" || P.checking || !P.typed.trim()) return;
+        P.checking = true; render();
+        await hashesReady;
+        const right = await judgeTyped(P.q, P.typed);
+        P.checking = false;
+        P.result = { right, points: right ? P.q.points : 0 };
+        P.phase = "result";
+        render();
+      }
+
+      /* ================= three.js: the square standing in for the camera ================= */
+      const canvas = document.getElementById("view");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(66, 1, 0.05, 400);
+      camera.rotation.order = "YXZ";
+      scene.fog = new THREE.Fog(0xe9eef2, 45, 160);
+      const hemi = new THREE.HemisphereLight(0xffffff, 0x8a7f6e, 1.6);
+      const sun = new THREE.DirectionalLight(0xffffff, 1.7);
+      sun.position.set(-30, 50, 20);
+      scene.add(hemi, sun);
+
+      function paintCanvas(w, h, draw) {
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        draw(c.getContext("2d"), w, h);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return t;
+      }
+      function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+
+      const sky = new THREE.Mesh(new THREE.SphereGeometry(280, 24, 12), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+      sky.geometry.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(sky.geometry.attributes.position.count * 3), 3));
+      sky.renderOrder = -10;
+      scene.add(sky);
+      const LOOKS = {
+        bright: { sky: ["#6fa6dc", "#cfe2f1", "#eef2f3"], fog: 0xe9eef2, hemi: 1.6, sun: 1.7, outer: "#a9a291" },
+        dark: { sky: ["#141d2c", "#30405a", "#4b5563"], fog: 0x3a4454, hemi: 0.55, sun: 0.35, outer: "#4b4a45" },
+      };
+      function paintSky([top, mid, low]) {
+        const p = sky.geometry.attributes.position, c = sky.geometry.attributes.color;
+        const A = new THREE.Color(top), B = new THREE.Color(mid), D = new THREE.Color(low), o = new THREE.Color();
+        for (let i = 0; i < p.count; i++) {
+          const y = p.getY(i) / 280;
+          if (y > 0.12) o.copy(B).lerp(A, Math.min(1, (y - 0.12) / 0.6)); else o.copy(D).lerp(B, Math.max(0, (y + 0.1) / 0.22));
+          c.setXYZ(i, o.r, o.g, o.b);
+        }
+        c.needsUpdate = true;
+      }
+
+      /* ---------- the place: one merged mesh ---------- */
+      const placeParts = [];
+      function addPart(geo, color, x = 0, y = 0, z = 0, ry = 0) {
+        const g = geo.index ? geo.toNonIndexed() : geo;
+        if (ry) g.rotateY(ry);
+        g.translate(x, y, z);
+        const col = new THREE.Color(color), n = g.attributes.position.count, arr = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { arr[i * 3] = col.r; arr[i * 3 + 1] = col.g; arr[i * 3 + 2] = col.b; }
+        g.setAttribute("color", new THREE.Float32BufferAttribute(arr, 3));
+        g.deleteAttribute("uv");
+        placeParts.push(g);
+      }
+      const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+      const cyl = (a, b, h, n = 12) => new THREE.CylinderGeometry(a, b, h, n);
+      function house(x, z, w, d, h, color, facing, roof = "#a65f46") {
+        const c = Math.cos(facing), s = Math.sin(facing);
+        const local = (lx, lz) => [x + lx * c + lz * s, z - lx * s + lz * c];
+        addPart(box(w, h, d), color, x, h / 2, z, facing);
+        const rg = new THREE.ConeGeometry(Math.max(w, d) * 0.62, 2.4, 4, 1).rotateY(Math.PI / 4).scale(w / Math.max(w, d), 1, d / Math.max(w, d));
+        addPart(rg, roof, x, h + 1.2, z, facing);
+        const floors = Math.floor(h / 3), cols = Math.floor(w / 3);
+        for (let fl = 0; fl < floors; fl++)
+          for (let i = 0; i < cols; i++) {
+            const lx = (i - (cols - 1) / 2) * 3, door = fl === 0 && i === Math.floor(cols / 2);
+            const [wx, wz] = local(lx, d / 2 + 0.03);
+            if (door) addPart(box(1.3, 2.3, 0.08), "#5a3d2c", wx, 1.15, wz, facing);
+            else addPart(box(1, 1.4, 0.08), "#5d6d7e", wx, 1.7 + fl * 3, wz, facing);
+          }
+      }
+      house(-25, -12, 11, 8, 9, "#e7dcc8", Math.PI / 2);
+      house(-25, 0, 10, 8, 12, "#d9e2e6", Math.PI / 2, "#7c6a5c");
+      house(-25, 11, 10, 8, 7, "#efd9c6", Math.PI / 2);
+      house(25, -11, 13, 8, 10, "#e6e2d2", -Math.PI / 2, "#7c6a5c");
+      house(25, 3, 11, 8, 7, "#dcc9b6", -Math.PI / 2);
+      house(8, -24.5, 20, 8, 9, "#f0e8d8", 0, "#6f7b84"); // the hall
+      house(-18, -25, 8, 8, 8, "#e3d3c8", 0);
+      addPart(box(5, 15, 5), "#cbb9a0", -10, 7.5, -23); // the tower, 23 m to its tip
+      addPart(box(5.6, 3, 5.6), "#e0d2bb", -10, 16.5, -23);
+      addPart(new THREE.ConeGeometry(4.2, 5, 4).rotateY(Math.PI / 4), "#5e6f7d", -10, 20.5, -23);
+      addPart(cyl(1.5, 1.5, 0.12, 24).rotateX(Math.PI / 2), "#fbf8f0", -10, 12.6, -20.44);
+      addPart(box(0.14, 1.1, 0.05), "#23282e", -10, 13.1, -20.36);
+      addPart(cyl(2.3, 2.5, 0.55, 20), "#b9b2a4", -8, 0.27, -6); // fountain
+      addPart(cyl(2.05, 2.05, 0.04, 20), "#6fb2d6", -8, 0.56, -6);
+      addPart(cyl(0.28, 0.4, 1.7, 10), "#b9b2a4", -8, 1.1, -6);
+      addPart(cyl(0.95, 0.3, 0.25, 14), "#c6bfb1", -8, 2, -6);
+      addPart(box(1.5, 1.5, 1.5), "#a9a294", 9, 0.75, -7); // statue
+      addPart(cyl(0.3, 0.42, 1.5, 10), "#4c6a5e", 9, 2.25, -7);
+      addPart(new THREE.IcosahedronGeometry(0.24, 1), "#4c6a5e", 9, 3.2, -7);
+      const tree = (x, z, s = 1) => {
+        addPart(cyl(0.16 * s, 0.26 * s, 3 * s, 8), "#7d6650", x, 1.5 * s, z);
+        addPart(new THREE.IcosahedronGeometry(2.1 * s, 1), "#6f9e62", x, 3.9 * s, z);
+        addPart(new THREE.IcosahedronGeometry(1.5 * s, 1), "#7fae6e", x + 1.1 * s, 3.3 * s, z + 0.5 * s);
+      };
+      tree(10, 7.5); tree(-14, 30, 1.5); tree(15, 33, 1.3);
+      addPart(box(1.8, 0.08, 0.5), "#8a6a4e", -7, 0.46, 8); // bench
+      addPart(box(1.8, 0.5, 0.07), "#8a6a4e", -7, 0.74, 7.76);
+      for (const [x, z] of [[-15, -15], [15, -15], [-15, 15], [15, 13]]) {
+        addPart(cyl(0.05, 0.08, 3.4, 6), "#3c4044", x, 1.7, z);
+        addPart(new THREE.IcosahedronGeometry(0.2, 0), "#fff1cf", x, 3.5, z);
+      }
+      addPart(box(18.5, 1.2, 0.5), "#b5a68f", -11.75, 0.6, 21);
+      addPart(box(18.5, 1.2, 0.5), "#b5a68f", 11.75, 0.6, 21);
+      addPart(box(0.8, 3.2, 0.8), "#a99a84", -2.6, 1.6, 21); // the gate
+      addPart(box(0.8, 3.2, 0.8), "#a99a84", 2.6, 1.6, 21);
+      addPart(box(6.2, 0.6, 0.9), "#a99a84", 0, 3.5, 21);
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2 + 0.2, r = 58 + ((i * 37) % 24);
+        addPart(box(16, 8 + ((i * 53) % 14), 14), "#b4bcc2", Math.cos(a) * r, 8, Math.sin(a) * r, a);
+      }
+      {
+        let n = 0;
+        for (const g of placeParts) n += g.attributes.position.count;
+        const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3);
+        let o = 0;
+        for (const g of placeParts) {
+          pos.set(g.attributes.position.array, o); nor.set(g.attributes.normal.array, o); col.set(g.attributes.color.array, o);
+          o += g.attributes.position.array.length; g.dispose();
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        geo.setAttribute("normal", new THREE.BufferAttribute(nor, 3));
+        geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+        scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true })));
+      }
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(46, 46).rotateX(-Math.PI / 2),
+        new THREE.MeshLambertMaterial({
+          map: paintCanvas(1024, 1024, (g, S) => {
+            const k = S / 46;
+            g.setTransform(k, 0, 0, k, S / 2, S / 2);
+            g.fillStyle = "#b7b09f"; g.fillRect(-23, -23, 46, 46);
+            let s = 7;
+            const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+            for (let x = -20; x < 20; x += 1.2)
+              for (let z = -20; z < 20; z += 1.2) { const v = 200 + rnd() * 18; g.fillStyle = `rgb(${v} ${v - 8} ${v - 22})`; g.fillRect(x + 0.03, z + 0.03, 1.14, 1.14); }
+            g.fillStyle = "#93ad78"; g.beginPath(); g.ellipse(10, 7.5, 5, 4.2, 0.2, 0, Math.PI * 2); g.fill();
+            g.fillStyle = "rgb(120 112 96 / 18%)"; g.fillRect(-1.6, 5, 3.2, 17);
+            const blob = (x, z, r) => { const gr = g.createRadialGradient(x, z, r * 0.2, x, z, r); gr.addColorStop(0, "rgb(30 30 30 / 34%)"); gr.addColorStop(1, "rgb(30 30 30 / 0%)"); g.fillStyle = gr; g.beginPath(); g.arc(x, z, r, 0, 7); g.fill(); };
+            blob(10.6, 8, 3.8); blob(-8, -6, 3.6); blob(9.2, -6.8, 1.9); blob(-7, 8.1, 1.4);
+          }),
+        }),
+      );
+      scene.add(ground);
+      const outer = new THREE.Mesh(new THREE.PlaneGeometry(500, 500).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: LOOKS.bright.outer }));
+      outer.position.y = -0.04;
+      scene.add(outer);
+
+      // writing that belongs to the place: the hall door's word, the gate's plaque
+      function wallPlate(text, w, h, px, mono) {
+        const tex = paintCanvas(px, Math.round((px * h) / w), (g, W, H) => {
+          g.fillStyle = "#e9e0cc"; g.fillRect(0, 0, W, H);
+          g.strokeStyle = "#7b6a50"; g.lineWidth = H * 0.06; g.strokeRect(H * 0.05, H * 0.05, W - H * 0.1, H - H * 0.1);
+          g.fillStyle = "#3b3226"; g.textAlign = "center"; g.textBaseline = "middle";
+          g.font = `700 ${H * 0.52}px ${mono ? "Consolas, monospace" : "Georgia, serif"}`;
+          g.fillText(text, W / 2, H * 0.54);
+        });
+        return new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: tex }));
+      }
+      const hallWord = wallPlate("BÜRGERHAUS", 4.2, 0.7, 1024);
+      hallWord.position.set(8, 3.05, -20.44);
+      scene.add(hallWord);
+      const plaque = wallPlate("K7Q", 0.62, 0.36, 256, true);
+      plaque.position.set(2.6, 1.55, 20.58);
+      plaque.rotation.y = Math.PI;
+      scene.add(plaque);
+
+      /* ---------- another item of the station: a narration circle that waits while the quiz is open ---------- */
+      const narration = (() => {
+        const g = new THREE.Group();
+        g.position.set(3.5, 0, 12);
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(1.8, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: "#5eead4", transparent: true, opacity: 0.32, depthWrite: false }));
+        disc.position.y = 0.03;
+        const N = 36, pos = new Float32Array(N * 3), seeds = [];
+        for (let i = 0; i < N; i++) { const a = Math.random() * 7, r = Math.random() * 1.6; seeds.push([Math.cos(a) * r, Math.sin(a) * r, Math.random()]); }
+        const pts = new THREE.Points(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(pos, 3)),
+          new THREE.PointsMaterial({ color: "#99f6e4", size: 0.09, transparent: true, opacity: 0.9, depthWrite: false }));
+        g.add(disc, pts);
+        scene.add(g);
+        let dim = 1;
+        return {
+          update(t, dt, quizOpen) {
+            dim += ((quizOpen ? 0.25 : 1) - dim) * Math.min(1, dt * 2);
+            disc.material.opacity = 0.32 * dim; pts.material.opacity = 0.9 * dim;
+            for (let i = 0; i < N; i++) { const [x, z, s] = seeds[i]; pos[i * 3] = x; pos[i * 3 + 1] = ((t * 0.35 + s) % 1) * 2.4; pos[i * 3 + 2] = z; }
+            pts.geometry.attributes.position.needsUpdate = true;
+          },
+        };
+      })();
+
+      /* ---------- the quiz in the square ---------- */
+      function plate(lines, hue, maxW = 560) {
+        const pad = 22, dpr = 2;
+        const meas = document.createElement("canvas").getContext("2d");
+        let w = 0, h = pad;
+        for (const l of lines) { meas.font = `${l.weight || 700} ${l.size}px Corbel, "Noto Sans", system-ui, sans-serif`; w = Math.max(w, Math.min(maxW, meas.measureText(l.text).width)); h += l.size * 1.22; }
+        w += pad * 2 + (hue ? 18 : 0); h += pad * 0.8;
+        const tex = paintCanvas(Math.ceil(w * dpr), Math.ceil(h * dpr), (g) => {
+          g.scale(dpr, dpr);
+          g.fillStyle = "rgba(12,16,21,0.88)"; rr(g, 0, 0, w, h, 18); g.fill();
+          if (hue) { g.fillStyle = hue; rr(g, 10, 12, 8, h - 24, 4); g.fill(); }
+          let y = pad;
+          for (const l of lines) {
+            g.font = `${l.weight || 700} ${l.size}px Corbel, "Noto Sans", system-ui, sans-serif`;
+            g.fillStyle = l.color || "#f3f5f7"; g.textBaseline = "top";
+            g.fillText(l.text, pad + (hue ? 18 : 0), y, maxW); y += l.size * 1.22;
+          }
+        });
+        const k = 1 / 220; // metres per canvas pixel
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(w * k, h * k), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
+        m.renderOrder = 20;
+        m.userData.w = w * k;
+        return m;
+      }
+      function arcRing(r0, r1, color, opacity) {
+        const g = new THREE.RingGeometry(r0, r1, 64, 1, Math.PI / 2).rotateX(-Math.PI / 2);
+        const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false, side: THREE.DoubleSide }));
+        m.position.y = 0.04; m.renderOrder = 5;
+        return m;
+      }
+      const glintTex = paintCanvas(128, 128, (g) => {
+        const gr = g.createRadialGradient(64, 64, 2, 64, 64, 60);
+        gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.25, "rgba(255,246,214,0.7)"); gr.addColorStop(1, "rgba(255,246,214,0)");
+        g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+        g.fillStyle = "rgba(255,255,255,0.95)"; g.fillRect(60, 8, 8, 112); g.fillRect(8, 60, 112, 8);
+      });
+
+      const world = (() => {
+        let root = null, items = [], question = null, posts = [], plus = null, resultT = -1, vis = 0, visDelay = 0, fade = 1;
+        function disposeTree(o) {
+          o.traverse((c) => { c.geometry?.dispose(); const m = c.material; if (m) { m.map?.dispose(); m.dispose(); } });
+        }
+        return {
+          get items() { return items; },
+          build(q) {
+            if (root) { scene.remove(root); disposeTree(root); }
+            root = new THREE.Group(); items = []; posts = []; question = null; plus = null; resultT = -1; vis = 0; visDelay = 0; fade = 1;
+            scene.add(root);
+            const a = q.answer;
+            if (P.id === "close") {
+              // the creator's lamps stand in the square; they are things, not answers to stand at
+              a.options.forEach((o, i) => {
+                const g = new THREE.Group(); g.position.set(o.at.x, 0, o.at.z);
+                const pole = new THREE.Mesh(cyl(0.06, 0.09, 2.6, 8), new THREE.MeshLambertMaterial({ color: "#3c4044" })); pole.position.y = 1.3;
+                const lamp = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), new THREE.MeshBasicMaterial({ color: "#fff1cf" })); lamp.position.y = 2.7;
+                const tag = plate([{ text: "ABCD"[i], size: 46 }], HUE[i]); tag.position.y = 3.25;
+                g.add(pole, lamp, tag); root.add(g); posts.push({ g, tag });
+              });
+            }
+            if (!(a.type === "single" || a.type === "multiple") || !a.options.every((o) => o.at)) return;
+            question = plate([{ text: q.question, size: 34 }, { text: a.type === "multiple" ? "Find all four, then choose in the card." : "Find all four, then stand at your answer.", size: 24, weight: 600, color: "#b3bcc6" }], null, 640);
+            question.position.set(0, 2.5, -2);
+            root.add(question);
+            a.options.forEach((o, i) => {
+              const g = new THREE.Group(); g.position.set(o.at.x, 0, o.at.z);
+              const token = new THREE.Mesh(new THREE.OctahedronGeometry(0.24), new THREE.MeshBasicMaterial({ color: HUE[i], transparent: true }));
+              token.position.y = 1.3;
+              const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: glintTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+              glint.position.y = 1.3; glint.renderOrder = 6;
+              const label = plate([{ text: o.label, size: 36 }, { text: o.clue || "", size: 24, weight: 600, color: "#c7d0d9" }], HUE[i]);
+              label.position.y = 2.15;
+              const base = arcRing(RING - 0.16, RING + 0.16, "#0b0f14", 0.4); base.geometry.setDrawRange(0, Infinity);
+              const edge = arcRing(RING - 0.07, RING + 0.07, "#ffffff", 0.85);
+              const fill = arcRing(RING - 0.13, RING + 0.13, HUE[i], 1); fill.position.y = 0.05;
+              const seal = arcRing(RING - 0.42, RING - 0.24, "#ffffff", 1); seal.position.y = 0.05;
+              g.add(token, glint, label, base, edge, fill, seal);
+              root.add(g);
+              items.push({ o, i, g, token, glint, label, base, edge, fill, seal, near: 0 });
+            });
+          },
+          result(right, ids) { resultT = 0; if (items.length && P.mode === "world") { const it = items.find((x) => x.o.id === ids[0]); if (it) { plus = plate([{ text: right ? `+${P.q.points}` : "+0", size: 52 }], right ? "#2dd4bf" : "#f87171"); plus.position.set(0, 2.6, 0); it.g.add(plus); } } },
+          liftSoon(delay) { visDelay = delay; },
+          screenPoints() { return items.map((it) => ({ id: it.o.id, p: new THREE.Vector3(it.o.at.x, 1.3, it.o.at.z) })); },
+          update(t, dt) {
+            if (!root) return;
+            const quizShown = P.phase === "open" || P.phase === "result";
+            const target = quizShown && P.mode === "world" ? 1 : 0;
+            if (visDelay > 0) visDelay -= dt; else vis += (target - vis) * Math.min(1, dt * 5);
+            fade += ((P.phase === "done" || P.phase === "story" ? 0 : 1) - fade) * Math.min(1, dt * 2);
+            const camPos = camera.position;
+            const capScale = (m, share) => { const d = Math.max(0.5, m.getWorldPosition(_v).distanceTo(camPos)); const viewW = 2 * d * Math.tan(hfov / 2); return Math.min(1, (share * viewW) / m.userData.w); };
+            const face = (m) => { m.getWorldPosition(_v); m.rotation.y = Math.atan2(camPos.x - _v.x, camPos.z - _v.z) - (m.parent?.rotation.y || 0); };
+            for (const p of posts) { face(p.tag); p.tag.scale.setScalar(capScale(p.tag, 0.2)); }
+            if (question) { question.visible = vis > 0.02 && P.phase === "open"; question.material.opacity = vis; face(question); question.scale.setScalar(capScale(question, 0.6)); }
+            const allFound = items.length && P.found.size === items.length;
+            for (const it of items) {
+              const found = P.found.has(it.o.id);
+              const isRight = P.result && (P.q.answer.type === "single" ? it.o.id === P.q.answer.correct : P.q.answer.correct.includes(it.o.id));
+              const chosen = P.chosen.includes(it.o.id);
+              let alive = vis * fade;
+              if (P.phase === "result" && resultT >= 0) alive *= isRight || chosen ? 1 : Math.max(0.15, 1 - resultT);
+              it.g.visible = alive > 0.02;
+              if (!it.g.visible) continue;
+              // not found yet: only a glint that breathes; found: the token, its name and its clue
+              it.glint.visible = !found;
+              const pulse = 0.5 + 0.5 * Math.sin(t * 2.4 + it.i * 1.7);
+              it.glint.material.opacity = alive * (0.45 + 0.55 * pulse);
+              it.glint.scale.setScalar(0.7 + 0.5 * pulse);
+              it.token.visible = found;
+              it.token.material.opacity = alive;
+              it.token.rotation.y = t * 1.4 + it.i;
+              const near = Math.hypot(V.x - it.o.at.x, V.z - it.o.at.z) < RING + LET_GO ? 1 : 0;
+              it.near += (near - it.near) * Math.min(1, dt * 4);
+              it.token.scale.setScalar(1 - 0.6 * it.near);
+              it.token.position.y = 1.3 + 0.9 * it.near + Math.sin(t * 1.8 + it.i) * 0.06;
+              it.label.position.y = 2.15 + 0.5 * it.near;
+              it.label.visible = found;
+              it.label.material.opacity = alive;
+              face(it.label); it.label.scale.setScalar(capScale(it.label, 0.4));
+              const ringOn = allFound && P.q.answer.type === "single";
+              it.base.visible = it.edge.visible = ringOn;
+              it.edge.material.opacity = 0.85 * alive;
+              it.base.material.opacity = 0.4 * alive;
+              let f = it.o.id === P.dwell.id ? P.dwell.fill : 0, s = it.o.id === P.dwell.id && P.dwell.grace >= 0 ? Math.min(1, P.dwell.grace / Math.max(0.01, T.graceS)) : 0;
+              if (P.phase === "result") { f = chosen || isRight ? 1 : 0; s = chosen ? 1 : 0; it.fill.material.color.set(isRight ? "#2dd4bf" : chosen ? "#f87171" : HUE[it.i]); }
+              else it.fill.material.color.set(HUE[it.i]);
+              it.fill.visible = ringOn && f > 0.001; it.fill.geometry.setDrawRange(0, 6 * Math.round(f * 64)); it.fill.material.opacity = alive;
+              it.seal.visible = ringOn && s > 0.001; it.seal.geometry.setDrawRange(0, 6 * Math.round(s * 64)); it.seal.material.opacity = alive;
+            }
+            if (plus) { plus.position.y = 2.6 + Math.min(1, resultT) * 0.9; face(plus); plus.scale.setScalar(capScale(plus, 0.2)); }
+            if (resultT >= 0) resultT += dt;
+          },
+        };
+      })();
+      const _v = new THREE.Vector3();
+      let hfov = 1;
+
+      /* ================= the visitor: look, walk, and a scripted walker ================= */
+      const V = { x: 0, z: 4, yaw: 0, pitch: -0.05, vyaw: 0, speed: 0, path: [], walkSpeed: WALK, onArrive: null, faceAt: null, keys: new Set() };
+      const yawTo = (x, z, px, pz) => Math.atan2(x - px, z - pz);
+      function setPose(p) {
+        V.x = p.x; V.z = p.z; V.path = []; V.onArrive = null;
+        V.yaw = p.face ? yawTo(p.x, p.z, p.face[0], p.face[1]) : p.yaw ?? V.yaw;
+        V.pitch = p.pitch ?? -0.05; V.faceAt = null; V.speed = 0;
+      }
+      function walkPath(points, faceAt, pitch) {
+        return new Promise((res) => {
+          V.path = points.map((p) => ({ x: p[0], z: p[1] })); V.walkSpeed = DEMO_WALK;
+          V.onArrive = () => { if (faceAt) V.faceAt = { x: faceAt[0], z: faceAt[1], pitch }; res(); };
+        });
+      }
+      let drag = null;
+      canvas.addEventListener("pointerdown", (e) => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t: performance.now() }; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        V.yaw += (e.clientX - drag.x) * 0.0045; V.pitch = Math.max(-0.9, Math.min(0.7, V.pitch + (e.clientY - drag.y) * 0.0035));
+        V.faceAt = null; drag.x = e.clientX; drag.y = e.clientY;
+      });
+      canvas.addEventListener("pointerup", (e) => {
+        if (!drag) return;
+        const moved = Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0), quick = performance.now() - drag.t < 350;
+        drag = null;
+        if (moved < 8 && quick) {
+          const r = canvas.getBoundingClientRect();
+          const ray = new THREE.Raycaster();
+          ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+          const hit = new THREE.Vector3();
+          if (ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) {
+            stopPlay();
+            V.path = [{ x: Math.max(-EDGE, Math.min(EDGE, hit.x)), z: Math.max(-EDGE, Math.min(EDGE, hit.z)) }];
+            V.walkSpeed = WALK * 1.6; V.onArrive = null; V.faceAt = null;
+          }
+        }
+      });
+      addEventListener("keydown", (e) => { if (e.target.closest?.("input,select")) return; V.keys.add(e.key.toLowerCase()); });
+      addEventListener("keyup", (e) => V.keys.delete(e.key.toLowerCase()));
+
+      function updateVisitor(dt) {
+        const x0 = V.x, z0 = V.z;
+        const k = V.keys;
+        let fwd = (k.has("w") || k.has("arrowup") ? 1 : 0) - (k.has("s") || k.has("arrowdown") ? 1 : 0);
+        let side = (k.has("d") ? 1 : 0) - (k.has("a") ? 1 : 0);
+        V.yaw += ((k.has("arrowleft") ? 1 : 0) - (k.has("arrowright") ? 1 : 0)) * dt * 1.6;
+        if (fwd || side) {
+          V.path = []; const sp = (k.has("shift") ? 2 : 1) * WALK * dt;
+          V.x += (-Math.sin(V.yaw) * fwd + Math.cos(V.yaw) * side) * sp; V.z += (-Math.cos(V.yaw) * fwd - Math.sin(V.yaw) * side) * sp;
+        } else if (V.path.length) {
+          const p = V.path[0], dx = p.x - V.x, dz = p.z - V.z, d = Math.hypot(dx, dz), step = V.walkSpeed * dt;
+          const want = Math.atan2(-dx, -dz);
+          let dy = ((want - V.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+          V.yaw += dy * Math.min(1, dt * 3);
+          if (d <= step) { V.x = p.x; V.z = p.z; V.path.shift(); if (!V.path.length && V.onArrive) { const f = V.onArrive; V.onArrive = null; f(); } }
+          else { V.x += (dx / d) * step; V.z += (dz / d) * step; }
+        }
+        if (V.faceAt) {
+          const want = yawTo(V.x, V.z, V.faceAt.x, V.faceAt.z);
+          let dy = ((want - V.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+          V.yaw += dy * Math.min(1, dt * 3);
+          if (V.faceAt.pitch != null) V.pitch += (V.faceAt.pitch - V.pitch) * Math.min(1, dt * 3);
+        }
+        V.x = Math.max(-EDGE, Math.min(EDGE, V.x)); V.z = Math.max(-EDGE, Math.min(EDGE, V.z));
+        const sp = Math.hypot(V.x - x0, V.z - z0) / Math.max(dt, 1e-3);
+        V.speed += (sp - V.speed) * Math.min(1, dt / 0.25);
+        camera.position.set(V.x, EYE + (V.speed > 0.3 ? Math.sin(performance.now() / 170) * 0.025 : 0), V.z);
+        camera.rotation.set(V.pitch, V.yaw, 0);
+      }
+
+      /* ================= the player's clock: position hysteresis, finding, standing ================= */
+      function tick(dt) {
+        if (P.raw === "good") { P.goodFor += dt; P.weakFor = 0; if (!P.vouched && P.goodFor >= T.liftAfter) P.vouched = true; }
+        else { P.weakFor += dt; P.goodFor = 0; if (P.vouched && P.weakFor >= T.dropAfter) P.vouched = false; }
+        if (P.phase !== "open") return;
+        const d = decide(P.q, P);
+        P.why = d.why; P.tourOk = d.tourOk;
+        if (d.mode !== P.mode) handOver(P.mode, d.mode, d.why);
+        if (P.mode !== "world") { P.dwell.fill = 0; return; }
+        const opts = P.q.answer.options;
+        const dist = (o) => Math.hypot(V.x - o.at.x, V.z - o.at.z);
+        // finding needs a trusted position too
+        if (P.raw === "good") for (const o of opts) if (!P.found.has(o.id) && dist(o) < FIND_R) { P.found.add(o.id); P.still = 0; P.nudge = false; render(); }
+        // standing still with nothing happening: offer the card strongly
+        if (V.speed < STILL_SPEED) P.still += dt; else if (V.speed > 0.9) P.still = 0;
+        if (!P.nudge && P.still >= T.stillNudge) { P.nudge = true; render(); }
+        if (P.q.answer.type !== "single" || P.found.size < opts.length) return;
+        const D = P.dwell;
+        const inRing = opts.find((o) => dist(o) < RING);
+        const holder = D.id ? opts.find((o) => o.id === D.id) : null;
+        if (holder && dist(holder) > RING + LET_GO) {
+          // stepped out: a pending choice is taken back without a word, a part fill drains
+          if (D.grace >= 0) { D.grace = -1; P.chosen = []; render(); }
+          D.fill = Math.max(0, D.fill - (dt * DRAIN) / T.dwellS);
+          D.inside = 0;
+          if (D.fill === 0) D.id = null;
+          return;
+        }
+        if (D.spent) { const sp = opts.find((o) => o.id === D.spent); if (!sp || dist(sp) > RING + LET_GO) D.spent = null; }
+        if (!holder && inRing && inRing.id !== D.spent) { D.id = inRing.id; D.fill = 0; D.inside = 0; }
+        if (!D.id) return;
+        if (P.raw !== "good") { if (D.grace < 0) D.fill = Math.max(0, D.fill - (dt * DRAIN) / T.dwellS); return; } // weak: nothing fills, nothing counts
+        D.inside += dt;
+        if (D.grace >= 0) {
+          D.grace += dt;
+          if (D.grace >= T.graceS) commitChoice([D.id]);
+          return;
+        }
+        if (D.inside > ENTER_DELAY && V.speed < STILL_SPEED) D.fill = Math.min(1, D.fill + dt / T.dwellS);
+        if (D.fill >= 1) { D.grace = 0; P.chosen = [D.id]; render(); }
+      }
+
+      /* ================= the hand-over between card and square ================= */
+      const hud = document.getElementById("hud");
+      const el = { card: hud.querySelector(".card"), pill: hud.querySelector(".pill"), story: hud.querySelector(".story"), toast: hud.querySelector(".toast"), radar: hud.querySelector(".radar") };
+      const chips = document.getElementById("chips");
+      let animate = true;
+      function screenOf(p) {
+        const W = innerWidth, H = innerHeight, inset = 28;
+        const c = p.clone().applyMatrix4(camera.matrixWorldInverse);
+        if (c.z > -0.2) return { x: W / 2 + Math.sign(c.x || 1) * W * 0.32, y: H - inset, edge: true };
+        const n = p.clone().project(camera);
+        let x = ((n.x + 1) / 2) * W, y = ((1 - n.y) / 2) * H;
+        const cx = W / 2, cy = H / 2, dx = x - cx, dy = y - cy;
+        const sx = dx ? (W / 2 - inset) / Math.abs(dx) : Infinity, sy = dy ? (H / 2 - inset) / Math.abs(dy) : Infinity, s = Math.min(1, sx, sy);
+        return { x: cx + dx * s, y: cy + dy * s, edge: s < 1 };
+      }
+      function fly(from, to, label, hue, delay) {
+        const c = document.createElement("div");
+        c.className = "chip"; c.style.setProperty("--hue", hue);
+        c.innerHTML = `<i></i>${label}`;
+        c.style.left = from.x + "px"; c.style.top = from.y + "px";
+        chips.append(c);
+        const dx = to.x - from.x, dy = to.y - from.y;
+        const a = c.animate([
+          { transform: "translate(-50%,-50%) scale(1)", opacity: 1 },
+          { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.55)`, opacity: 0.95, offset: 0.85 },
+          { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.4)`, opacity: 0 },
+        ], { duration: 950, delay, easing: "cubic-bezier(.45,.05,.3,1)", fill: "both" });
+        a.onfinish = () => c.remove();
+      }
+      function handOver(from, to, why) {
+        const opts = P.q.answer.options || [];
+        if (to === "world") {
+          const tiles = [...el.card.querySelectorAll(".a")].map((b) => b.getBoundingClientRect());
+          P.mode = "world"; P.liftedOnce = true;
+          if (animate && tiles.length) {
+            const pts = world.screenPoints();
+            opts.forEach((o, i) => { const r = tiles[i]; if (r) fly({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, screenOf(pts[i].p), o.label, HUE[i], i * 70); });
+            world.liftSoon(0.75);
+            el.card.classList.add("leaving");
+            setTimeout(() => { el.card.classList.remove("leaving"); render(); }, 260);
+            render({ keepCard: true });
+            toast(P.q.answer.type === "multiple" ? "The answers are out on the square. Find them all." : "The answers are out on the square. Find all four, then stand at yours.", 6);
+          } else render();
+          if (!animate) toast(P.q.answer.type === "multiple" ? "The answers are out on the square. Find them all." : "The answers are out on the square. Find all four, then stand at yours.", 6);
+        } else {
+          const pts = world.screenPoints().map((x) => screenOf(x.p));
+          P.mode = "card";
+          // a choice that was still in its grace comes along, waiting for Check
+          if (P.dwell.grace >= 0 && P.dwell.id) P.chosen = [P.dwell.id];
+          P.dwell = { id: null, fill: 0, grace: -1, inside: 0 };
+          if (animate && pts.length) {
+            render({ arriving: true });
+            const tiles = [...el.card.querySelectorAll(".a")].map((b) => b.getBoundingClientRect());
+            opts.forEach((o, i) => { const r = tiles[i]; if (r) fly(pts[i], { x: r.left + r.width / 2, y: r.top + r.height / 2 }, o.label, HUE[i], i * 70); });
+            setTimeout(() => el.card.classList.remove("arriving"), 900);
+          } else render();
+        }
+      }
+
+      /* ================= the HUD, drawn from the player's state ================= */
+      let toastTimer = 0;
+      function toast(text, s = 4) {
+        el.toast.textContent = text; el.toast.hidden = false; el.toast.classList.remove("out");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => { el.toast.classList.add("out"); setTimeout(() => (el.toast.hidden = true), 400); }, s * 1000);
+      }
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      function hintText() {
+        const a = P.q.answer;
+        if (P.phase === "result") return "";
+        if (P.why === "weak") return P.liftedOnce ? "Your position is unsure, so answer here." : "Answer here, or wait: the answers go out once your position is sure.";
+        if (P.why === "settling") return "These answers are going out onto the square. Or answer here.";
+        if (P.why === "several") return "You found them all. Choose every one that fits.";
+        if (a.type === "text" || a.type === "code") return "";
+        if (a.type === "number") return "";
+        return a.type === "multiple" ? "Choose every one that fits." : "Tap your answer, then Check.";
+      }
+      function render(opt = {}) {
+        const q = P.q;
+        const open = P.phase === "open" || P.phase === "result";
+        const showCard = open && (P.mode === "card" || (P.phase === "result" && P.mode === "card")) || opt.keepCard;
+        const showPill = open && P.mode === "world" && !opt.keepCard;
+        el.story.hidden = P.phase !== "story";
+        if (P.phase === "story") {
+          el.story.innerHTML = `<p class="speaker">${esc(STATION.speaker)}</p><p class="line">${esc(P.result?.right ? q.after.right : q.after.wrong)}</p>
+            <div class="foot"><p class="hint"></p><button class="btn" data-act="story-next">Continue</button></div>`;
+        }
+        if (opt.keepCard) { el.pill.hidden = true; return; }
+        el.card.hidden = !showCard;
+        el.card.classList.toggle("arriving", !!opt.arriving);
+        if (showCard) el.card.innerHTML = cardHtml(q);
+        el.pill.hidden = !showPill;
+        if (showPill) {
+          const wasHidden = !el.pill.dataset.on;
+          el.pill.innerHTML = pillHtml(q);
+          if (wasHidden && animate) { el.pill.classList.add("entering"); requestAnimationFrame(() => requestAnimationFrame(() => el.pill.classList.remove("entering"))); }
+          el.pill.dataset.on = "1";
+        } else delete el.pill.dataset.on;
+        const f = el.card.querySelector(".field");
+        if (f && opt.focus) f.focus();
+      }
+      function cardHtml(q) {
+        const a = q.answer, res = P.result, done = P.phase === "result";
+        let why = "";
+        if (P.why === "weak" && P.liftedOnce) why = `<span class="why">position unsure</span>`;
+        let body = "";
+        if (a.type === "single" || a.type === "multiple") {
+          body = `<div class="answers">${a.options.map((o, i) => {
+            const on = P.chosen.includes(o.id);
+            const right = a.type === "single" ? o.id === a.correct : a.correct.includes(o.id);
+            let cls = on ? "on" : "";
+            if (done) cls = right ? "right" : on ? "wrong" : "dim";
+            const clue = P.found.has(o.id) && o.clue ? `<small>${esc(o.clue)}</small>` : "";
+            const hollow = P.tourOk && !P.found.has(o.id) ? "hollow" : "";
+            return `<button class="a ${cls}" data-act="tile" data-id="${o.id}" style="--hue:${HUE[i]}" ${done ? "disabled" : ""}><span class="hue ${hollow}"></span>${esc(o.label)}${clue}</button>`;
+          }).join("")}</div>`;
+        } else {
+          const unit = a.type === "number" && a.unit ? `<span class="unit">${esc(a.unit)}</span>` : "";
+          const cls = ["field", a.type === "code" ? "code" : "", unit ? "has-unit" : "", done ? (res.right ? "right" : "wrong") : ""].join(" ");
+          const mode = a.type === "number" ? `inputmode="decimal"` : a.type === "code" ? `autocapitalize="characters" spellcheck="false"` : `autocapitalize="off" spellcheck="false"`;
+          body = `<div class="typed"><label><input class="${cls}" ${mode} autocomplete="off" aria-label="Your answer" placeholder="${a.type === "number" ? "a number" : a.type === "code" ? "the code" : "one word"}" value="${esc(P.typed)}" ${done ? "disabled" : ""}/>${unit}</label>
+            ${done ? "" : `<button class="btn" data-act="check" ${P.typed.trim() && !P.checking ? "" : "disabled"}>${P.checking ? "Checking..." : "Check"}</button>`}</div>`;
+        }
+        let foot;
+        if (done) foot = `<div class="foot"><p class="result">${res.right ? "Right" : "Not quite"}<span class="plus ${res.points ? "" : "none"}">+${res.points}</span></p><button class="btn" data-act="continue">Continue</button></div>`;
+        else if (a.type === "single" || a.type === "multiple") foot = `<div class="foot"><p class="hint">${esc(hintText())}</p><button class="btn" data-act="check" ${P.chosen.length ? "" : "disabled"}>Check</button></div>`;
+        else foot = hintText() ? `<div class="foot"><p class="hint">${esc(hintText())}</p></div>` : "";
+        const lift = P.why === "settling" && !done ? `<i class="lift"></i>` : "";
+        return `${lift}<div class="eyebrow"><span>Quiz &middot; ${q.points} points</span>${why}</div><p class="q">${esc(q.question)}</p>${body}${foot}`;
+      }
+      function pillHtml(q) {
+        const a = q.answer, D = P.dwell;
+        if (P.phase === "result") {
+          return `<span class="plabel">${P.result.right ? "Right" : "Not quite"} <span class="plus ${P.result.points ? "" : "none"}">+${P.result.points}</span></span><button class="pbtn go" data-act="continue">Continue</button>`;
+        }
+        if (D.id && (D.fill > 0 || D.grace >= 0)) {
+          const o = a.options.find((x) => x.id === D.id);
+          if (D.grace >= 0) return `<i class="fill"></i><span class="plabel">${esc(o.label)} <em>counts in ${Math.max(0, Math.ceil(T.graceS - D.grace))} s</em></span><button class="pbtn" data-act="undo">Take back</button>`;
+          return `<i class="fill"></i><span class="plabel">${esc(o.label)} <em>stay to choose</em></span><button class="pbtn" data-act="here">Answer here</button>`;
+        }
+        const dots = a.options.map((o, i) => `<i class="${P.found.has(o.id) ? "on" : ""}" style="--hue:${HUE[i]}"></i>`).join("");
+        const here = P.nudge ? `<span class="plabel"><em>Can't walk?</em></span><button class="pbtn strong" data-act="here">Answer here</button>` : `<button class="pbtn" data-act="here">Answer here</button>`;
+        return `<button class="ask" data-act="ask" aria-label="The question">${dots}<b>?</b></button>${here}`;
+      }
+      // live parts that change every frame, without rebuilding the DOM
+      let lastDwellKey = "";
+      function liveHud() {
+        const lift = el.card.querySelector(".lift");
+        if (lift) lift.style.width = Math.min(100, (P.goodFor / T.liftAfter) * 100) + "%";
+        if (!el.pill.hidden) {
+          const D = P.dwell;
+          const key = `${D.id}|${D.fill > 0}|${D.grace >= 0}|${D.grace >= 0 ? Math.ceil(T.graceS - D.grace) : ""}`;
+          if (key !== lastDwellKey) { lastDwellKey = key; render(); }
+          const fill = el.pill.querySelector(".fill");
+          if (fill) fill.style.width = (D.grace >= 0 ? 100 : D.fill * 100) + "%";
+        }
+        const live = el.card.querySelector(".lift");
+        if (P.why === "settling" && !live && !el.card.hidden && P.phase === "open") render();
+        if (P.why !== "settling" && live) render();
+      }
+      hud.addEventListener("click", (e) => act(e.target.closest("[data-act]")?.dataset.act, e.target.closest("[data-id]")?.dataset.id));
+      hud.addEventListener("input", (e) => {
+        if (!e.target.matches(".field")) return;
+        P.typed = e.target.value;
+        const b = el.card.querySelector('[data-act="check"]');
+        if (b) b.disabled = !P.typed.trim();
+      });
+      hud.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches(".field")) act("check"); });
+      function act(name, id) {
+        if (!name) return;
+        if (name === "exit") return toast("This would leave AR.", 3);
+        if (name === "ask") return toast(P.q.question, 5);
+        if (name === "tile" && P.phase === "open") {
+          P.pinned = true; // the visitor chose the card: it stays the card
+          if (P.q.answer.type === "multiple") P.chosen = P.chosen.includes(id) ? P.chosen.filter((x) => x !== id) : [...P.chosen, id];
+          else P.chosen = P.chosen[0] === id ? [] : [id];
+          const d = decide(P.q, P); P.why = d.why;
+          return render();
+        }
+        if (name === "here") { P.pinned = true; P.nudge = false; const d = decide(P.q, P); handOver("world", "card", d.why); P.why = d.why; return render(); }
+        if (name === "undo") { P.dwell = { id: null, fill: 0, grace: -1, inside: 0, spent: P.dwell.id }; P.chosen = []; return render(); }
+        if (name === "check") {
+          if (P.q.answer.type === "single" || P.q.answer.type === "multiple") { if (P.chosen.length) commitChoice(P.chosen); }
+          else commitTyped();
+          return;
+        }
+        if (name === "continue" && P.phase === "result") { P.phase = "story"; return render(); }
+        if (name === "story-next" && P.phase === "story") { P.phase = "done"; render(); return toast("The walk goes on: the old gate is next.", 4); }
+      }
+
+      /* ---------- the walk's own layer: a small radar ---------- */
+      const STATIONS = [{ x: 0, z: 0, here: true }, { x: 0, z: 70, next: true }, { x: -80, z: -30 }, { x: 55, z: -75 }];
+      function drawRadar() {
+        const c = el.radar, g = c.getContext("2d"), S = c.width, R = S / 2 - 4, k = R / 100;
+        g.clearRect(0, 0, S, S);
+        const weak = P.raw === "weak";
+        g.fillStyle = "rgba(10,14,18,0.66)"; g.beginPath(); g.arc(S / 2, S / 2, R, 0, 7); g.fill();
+        g.lineWidth = 4; g.strokeStyle = weak ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.8)"; g.stroke();
+        g.save(); g.translate(S / 2, S / 2);
+        g.fillStyle = "rgba(255,255,255,0.16)"; g.beginPath(); g.moveTo(0, 0); g.arc(0, 0, R, -Math.PI / 2 - hfov / 2, -Math.PI / 2 + hfov / 2); g.fill();
+        if (!weak) {
+          g.rotate(V.yaw);
+          for (const s of STATIONS) {
+            let dx = (s.x - V.x) * k, dz = (s.z - V.z) * k; const d = Math.hypot(dx, dz);
+            if (d > R - 10) { dx *= (R - 10) / d; dz *= (R - 10) / d; }
+            g.beginPath(); g.arc(dx, dz, s.here ? 16 : 9, 0, 7);
+            if (s.here) { g.lineWidth = 4; g.strokeStyle = "#fb923c"; g.stroke(); } else { g.fillStyle = s.next ? "#fb923c" : "#ffffff"; g.fill(); }
+          }
+          g.rotate(-V.yaw);
+        } else { g.fillStyle = "rgba(255,255,255,0.7)"; g.font = "700 40px system-ui"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("?", 0, 4); }
+        if (!weak) { g.fillStyle = "#fff"; g.beginPath(); g.moveTo(0, -12); g.lineTo(9, 9); g.lineTo(-9, 9); g.closePath(); g.fill(); }
+        g.restore();
+      }
+
+      /* ================= the measuring hook ================= */
+      function measure() {
+        const W = innerWidth, H = innerHeight, cell = 4;
+        const boxes = [...hud.querySelectorAll("[data-hud]")].filter((e) => !e.hidden && getComputedStyle(e).display !== "none" && +getComputedStyle(e).opacity > 0.05)
+          .map((e) => ({ e, name: e.dataset.hud, r: e.getBoundingClientRect() })).filter((b) => b.r.width > 0 && b.r.height > 0);
+        const cols = Math.ceil(W / cell), rows = Math.ceil(H / cell), grid = new Uint8Array(cols * rows);
+        for (const { r } of boxes) {
+          for (let y = Math.max(0, Math.floor(r.top / cell)); y < Math.min(rows, Math.ceil(r.bottom / cell)); y++)
+            for (let x = Math.max(0, Math.floor(r.left / cell)); x < Math.min(cols, Math.ceil(r.right / cell)); x++) grid[y * cols + x] = 1;
+        }
+        let on = 0; for (const v of grid) on += v;
+        const pairs = [];
+        for (const b of boxes) b.e.classList.remove("overlap");
+        for (let i = 0; i < boxes.length; i++)
+          for (let j = i + 1; j < boxes.length; j++) {
+            const a = boxes[i].r, b = boxes[j].r;
+            const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (w > 1 && h > 1) { pairs.push(boxes[i].name + "+" + boxes[j].name); boxes[i].e.classList.add("overlap"); boxes[j].e.classList.add("overlap"); }
+          }
+        const qg = new Uint8Array(cols * rows);
+        for (const { r, name } of boxes) {
+          if (!["card", "pill", "story"].includes(name)) continue;
+          for (let y = Math.max(0, Math.floor(r.top / cell)); y < Math.min(rows, Math.ceil(r.bottom / cell)); y++)
+            for (let x = Math.max(0, Math.floor(r.left / cell)); x < Math.min(cols, Math.ceil(r.right / cell)); x++) qg[y * cols + x] = 1;
+        }
+        let qon = 0; for (const v of qg) qon += v;
+        return { pct: Math.round((on / grid.length) * 1000) / 10, quizPct: Math.round((qon / grid.length) * 1000) / 10, count: boxes.length, names: boxes.map((b) => b.name), overlaps: pairs, orient: W > H ? "landscape" : "portrait", size: `${W}x${H}` };
+      }
+
+      /* ================= the fixed demonstration: runs and beats ================= */
+      const R1 = (o = {}) => Object.assign({ quiz: "placed" }, o);
+      const ALL = FOUR.map((o) => o.id);
+      const RUNS = [
+        { id: "placed", name: "1 Placed: find, then stand", beats: [
+          { t: "The story reaches the quiz", c: "It opens in the card. The position is good, so after a short wait the answers lift out into the square.",
+            jump: () => snap(R1({ pose: { x: 0, z: 4, face: [0, -4] }, goodFor: 1.2 })), play: async () => { snap(R1({ pose: { x: 0, z: 4, face: [0, -4] } })); await wait(1.2); } },
+          { t: "The answers lift into the square", c: "The card hands its four answers to their places: each flies to where it hides. Only a small pill stays at the foot.",
+            jump: () => { snap(R1({ pose: { x: 0, z: 4, face: [-1.5, -4] }, vouched: true })); toast(LIFT_TOAST, 6); }, play: async () => { await until(() => P.mode === "world", 12); await wait(3.5); } },
+          { t: "Search", c: "Walking past an answer finds it: its token, name and clue appear in the world, its dot fills in the pill. Two of four found.",
+            jump: () => snap(R1({ pose: { x: 6.4, z: -4.8, face: [7.4, 5.4] }, vouched: true, found: ["fountain", "statue"] })),
+            play: async () => { await walkPath([[-4.0, -2.8], [6.4, -4.8]], [7.4, 5.4]); await wait(1.5); } },
+          { t: "All four found: the rings appear", c: "With every answer found, each gets a ring on the ground. Walking through a ring never fills it; only standing does.",
+            jump: () => snap(R1({ pose: { x: 0, z: 0.5, face: [6.6, -5.0], pitch: -0.12 }, vouched: true, found: ALL })),
+            play: async () => { await walkPath([[7.2, 5.2], [-4.4, 5.6], [0, 0.5]], [6.6, -5.0], -0.12); await wait(1.5); } },
+          { t: "Stand at an answer", c: "Standing in the statue's ring fills it; once full the statue is chosen, and a second ring counts down. The pill says so.",
+            jump: () => snap(R1({ pose: { x: 5.5, z: -4.1, face: [9, -7], pitch: -0.5 }, vouched: true, found: ALL, dwell: { id: "statue", fill: 1, grace: 0.3, inside: 4 }, chosen: ["statue"] })),
+            play: async () => { await walkPath([[5.5, -4.1]], [9, -7], -0.5); await wait(T.dwellS + 0.9); } },
+          { t: "Take it back: step out", c: "Leaving the ring before the countdown ends takes the choice back, without a word. Take back in the pill does the same.",
+            jump: () => snap(R1({ pose: { x: 3.0, z: -1.8, face: [6.6, -5.0], pitch: -0.25 }, vouched: true, found: ALL })),
+            play: async () => { await walkPath([[3.0, -1.8]], [6.6, -5.0], -0.25); await wait(1.5); } },
+          { t: "Answer again", c: "Standing at the fountain chooses it. Staying until the countdown closes makes it count.",
+            jump: () => snap(R1({ pose: { x: -3.1, z: -2.1, face: [-8, -6], pitch: -0.5 }, vouched: true, found: ALL, dwell: { id: "fountain", fill: 1, grace: 0.3, inside: 4 }, chosen: ["fountain"] })),
+            play: async () => { await walkPath([[-3.1, -2.1]], [-8, -6], -0.5); await wait(T.dwellS + 0.6); } },
+          { t: "Result", c: "Right: the fountain's ring turns teal and the points rise from it. The pill says it once and offers Continue.",
+            jump: () => { snap(R1({ pose: { x: -3.1, z: -2.1, face: [-8, -6], pitch: -0.32 }, vouched: true, found: ALL })); commitChoice(["fountain"]); },
+            play: async () => { await until(() => P.phase === "result", 10); V.faceAt = { x: -8, z: -6, pitch: -0.32 }; await wait(2.5); } },
+          { t: "The story goes on", c: "Continue hands the band back to the story; the quiz leaves the square and the narration circle behind you brightens again.",
+            jump: () => { snap(R1({ pose: { x: -3.1, z: -2.1, face: [-8, -6], pitch: -0.32 }, vouched: true, found: ALL })); commitChoice(["fountain"]); act("continue"); },
+            play: async () => { act("continue"); await wait(3); } },
+        ] },
+        { id: "weak", name: "2 The position turns weak", beats: [
+          { t: "Searching, two found", c: "The quiz is in the square and two answers are found.",
+            jump: () => snap(R1({ pose: { x: 5.5, z: 1, face: [7.4, 5.4] }, vouched: true, found: ["fountain", "statue"] })), play: async () => { snap(R1({ pose: { x: 5.5, z: 1, face: [7.4, 5.4] }, vouched: true, found: ["fountain", "statue"] })); await wait(1.5); } },
+          { t: "Weak while standing in a ring", c: "The position turns weak while the tree's ring is half full: the fill stops and drains at once, so a wrong position can never lock an answer.",
+            jump: () => snap(R1({ pose: { x: 6.3, z: 4.5, face: [10, 7.5], pitch: -0.5 }, vouched: true, found: ALL, dwell: { id: "tree", fill: 0.45, grace: -1, inside: 2 }, raw: "weak", weakFor: 0.3 })),
+            play: async () => { P.found = new Set(ALL); render(); await walkPath([[6.3, 4.5]], [10, 7.5], -0.5); await wait(1.9); setRaw("weak"); await wait(0.8); } },
+          { t: "The answers fall back to the card", c: "After the drop delay the answers fly back into the card. What was found keeps its clue; nothing was chosen for the visitor.",
+            jump: () => snap(R1({ pose: { x: 6.3, z: 4.5, face: [10, 7.5], pitch: -0.1 }, raw: "weak", found: ALL, liftedOnce: true })), play: async () => { await until(() => P.mode === "card", 8); V.faceAt = { x: 10, z: 7.5, pitch: -0.1 }; await wait(2.5); } },
+          { t: "The position returns: they lift again", c: "The visitor had not touched the card, so once the position stays good for the lift delay the answers go back out.",
+            jump: () => snap(R1({ pose: { x: 6.3, z: 4.5, face: [0, 0], pitch: -0.1 }, vouched: true, found: ALL })), play: async () => { setRaw("good"); await until(() => P.mode === "world", 12); await wait(2); } },
+          { t: "Weak again: back to the card", c: "The same hand-over, the other way.",
+            jump: () => snap(R1({ pose: { x: 6.3, z: 4.5, face: [0, 0], pitch: -0.1 }, raw: "weak", found: ALL, liftedOnce: true })), play: async () => { setRaw("weak"); await until(() => P.mode === "card", 8); await wait(1.5); } },
+          { t: "Choose in the card", c: "A tap chooses the statue. Touching the card means the visitor has chosen it: it stays the card from now on.",
+            jump: () => snap(R1({ pose: { x: 6.3, z: 4.5, face: [0, 0], pitch: -0.1 }, raw: "weak", found: ALL, chosen: ["statue"], pinned: true, liftedOnce: true })), play: async () => { act("tile", "statue"); await wait(2); } },
+          { t: "The position returns: the card stays", c: "Good position again, but the answers do not lift: the visitor is answering here.",
+            jump: () => snap(R1({ pose: { x: 6.3, z: 4.5, face: [0, 0], pitch: -0.1 }, vouched: true, found: ALL, chosen: ["statue"], pinned: true, liftedOnce: true })), play: async () => { setRaw("good"); await wait(T.liftAfter + 1.5); } },
+          { t: "Change your mind, then Check", c: "A tap on the fountain replaces the statue; Check makes it count.",
+            jump: () => { snap(R1({ pose: { x: 6.3, z: 4.5, face: [0, 0], pitch: -0.1 }, vouched: true, found: ALL, pinned: true, liftedOnce: true })); commitChoice(["fountain"]); },
+            play: async () => { act("tile", "fountain"); await wait(1.2); act("check"); await wait(2.5); } },
+          { t: "The story goes on", c: "As in the placed run.",
+            jump: () => { snap(R1({ pose: { x: 6.3, z: 4.5, face: [0, 0], pitch: -0.1 }, vouched: true, found: ALL, pinned: true })); commitChoice(["fountain"]); act("continue"); }, play: async () => { act("continue"); await wait(3); } },
+        ] },
+        { id: "still", name: "3 A visitor who does not move", beats: [
+          { t: "The quiz opens", c: "The same quiz, a visitor on a bench who will not walk.",
+            jump: () => snap(R1({ pose: { x: 0, z: 4, face: [0, -4] }, goodFor: 1.2 })), play: async () => { snap(R1({ pose: { x: 0, z: 4, face: [0, -4] } })); await wait(1); } },
+          { t: "The answers lift", c: "The position is good, so they go out into the square.",
+            jump: () => { snap(R1({ pose: { x: 0, z: 4, face: [0, -4] }, vouched: true })); toast(LIFT_TOAST, 6); }, play: async () => { await until(() => P.mode === "world", 12); await wait(2); } },
+          { t: "Standing still", c: "Nothing is found and nothing starts by standing alone. After a while the pill offers the card more strongly.",
+            jump: () => snap(R1({ pose: { x: 0, z: 4, face: [0, -4] }, vouched: true, still: T.stillNudge + 0.1 })), play: async () => { await until(() => P.nudge, T.stillNudge + 5); await wait(2); } },
+          { t: "Answer here", c: "One tap brings every answer into the card, found or not. The tour never depends on walking.",
+            jump: () => snap(R1({ pose: { x: 0, z: 4, face: [0, -4] }, vouched: true, pinned: true, liftedOnce: true })), play: async () => { act("here"); await wait(2); } },
+          { t: "Choose and Check", c: "A wrong answer: it says so, shows the right one, and gives no points.",
+            jump: () => { snap(R1({ pose: { x: 0, z: 4, face: [0, -4] }, vouched: true, pinned: true })); commitChoice(["bench"]); }, play: async () => { act("tile", "bench"); await wait(1); act("check"); await wait(2.5); } },
+          { t: "The story goes on", c: "The guide's line says what the right answer was.",
+            jump: () => { snap(R1({ pose: { x: 0, z: 4, face: [0, -4] }, vouched: true, pinned: true })); commitChoice(["bench"]); act("continue"); }, play: async () => { act("continue"); await wait(3); } },
+        ] },
+        { id: "close", name: "4 Answers placed too close", beats: [
+          { t: "The tour keeps this quiz in the card", c: "The creator put the four lamps 3 m apart. Standing to choose between them would misfire, so the quiz plays as a card even with a good position. Try the spacing slider in the notes.",
+            jump: () => snap({ quiz: "close", pose: { x: 0, z: 7.5, face: [0, -4], pitch: 0.06 }, vouched: true }), play: async () => { snap({ quiz: "close", pose: { x: 0, z: 7.5, face: [0, -4], pitch: 0.06 }, vouched: true }); await wait(3); } },
+          { t: "Choose, then change your mind", c: "Tap one, tap another: the last tap is the choice.",
+            jump: () => snap({ quiz: "close", pose: { x: 0, z: 7.5, face: [0, -4], pitch: 0.06 }, vouched: true, chosen: ["c"], pinned: true }), play: async () => { act("tile", "a"); await wait(1); act("tile", "c"); await wait(1.5); } },
+          { t: "Check", c: "Right.",
+            jump: () => { snap({ quiz: "close", pose: { x: 0, z: 7.5, face: [0, -4], pitch: 0.06 }, vouched: true, pinned: true }); commitChoice(["c"]); }, play: async () => { act("check"); await wait(2.5); } },
+          { t: "The story goes on", c: "",
+            jump: () => { snap({ quiz: "close", pose: { x: 0, z: 7.5, face: [0, -4], pitch: 0.06 }, vouched: true, pinned: true }); commitChoice(["c"]); act("continue"); }, play: async () => { act("continue"); await wait(3); } },
+        ] },
+        { id: "typed", name: "5 A typed answer", beats: [
+          { t: "A second story: a typed answer", c: "Text, code and number answers always play in the card. The word is on the hall in front of you.",
+            jump: () => snap({ quiz: "typed", pose: { x: 5, z: -10, face: [8, -20.5], pitch: 0.16 }, vouched: true }), play: async () => { snap({ quiz: "typed", pose: { x: 5, z: -10, face: [8, -20.5], pitch: 0.16 }, vouched: true }); await wait(2); } },
+          { t: "Type it your way", c: "Capitals, spaces and ue for the umlaut are all fine: the answer is compared after the tour's normalisation, never as typed.",
+            jump: () => snap({ quiz: "typed", pose: { x: 5, z: -10, face: [8, -20.5], pitch: 0.16 }, vouched: true, typed: "  BUERGERHAUS" }), play: async () => { await typeInto("  BUERGERHAUS"); await wait(1); } },
+          { t: "Check", c: "Right. The card judges a salted hash of the normalised answer, so the tour file never holds the word in clear.",
+            jump: async () => { snap({ quiz: "typed", pose: { x: 5, z: -10, face: [8, -20.5], pitch: 0.16 }, vouched: true, typed: "  BUERGERHAUS" }); await commitTyped(); }, play: async () => { act("check"); await until(() => P.phase === "result", 5); await wait(2.5); } },
+          { t: "The story goes on", c: "",
+            jump: async () => { snap({ quiz: "typed", pose: { x: 5, z: -10, face: [8, -20.5], pitch: 0.16 }, vouched: true, typed: "  BUERGERHAUS" }); await commitTyped(); act("continue"); }, play: async () => { act("continue"); await wait(3); } },
+        ] },
+        { id: "number", name: "6 Number and code", beats: [
+          { t: "A number with its unit", c: "The unit stands in the field; a decimal comma is accepted.",
+            jump: () => snap({ quiz: "number", pose: { x: -6, z: -6, face: [-10, -23], pitch: 0.42 }, vouched: true, typed: "22,5" }), play: async () => { snap({ quiz: "number", pose: { x: -6, z: -6, face: [-10, -23], pitch: 0.42 }, vouched: true }); await wait(1); await typeInto("22,5"); await wait(1); } },
+          { t: "Check: within the tolerance", c: "22.5 m is within a metre of 23 m: right.",
+            jump: async () => { snap({ quiz: "number", pose: { x: -6, z: -6, face: [-10, -23], pitch: 0.42 }, vouched: true, typed: "22,5" }); await commitTyped(); }, play: async () => { act("check"); await until(() => P.phase === "result", 5); await wait(2.5); } },
+          { t: "A code from a plaque", c: "A code field takes letters and digits; case does not matter.",
+            jump: () => snap({ quiz: "code", pose: { x: 1.6, z: 18.4, face: [2.6, 20.6], pitch: -0.05 }, vouched: true, typed: "k7q" }), play: async () => { snap({ quiz: "code", pose: { x: 1.6, z: 18.4, face: [2.6, 20.6], pitch: -0.05 }, vouched: true }); await wait(1); await typeInto("k7q"); await wait(1); } },
+          { t: "Check", c: "Right.",
+            jump: async () => { snap({ quiz: "code", pose: { x: 1.6, z: 18.4, face: [2.6, 20.6], pitch: -0.05 }, vouched: true, typed: "k7q" }); await commitTyped(); }, play: async () => { act("check"); await until(() => P.phase === "result", 5); await wait(2.5); } },
+        ] },
+        { id: "multi", name: "7 Several answers", beats: [
+          { t: "Found in the square", c: "A quiz with several right answers lifts like the others; its clues are found on the things.",
+            jump: () => snap({ quiz: "multi", pose: { x: 6.4, z: -4.8, face: [7.4, 5.4] }, vouched: true, found: ["fountain", "statue"] }), play: async () => { snap({ quiz: "multi", pose: { x: 0, z: 4, face: [-1.5, -4] }, vouched: true }); await walkPath([[-4.0, -2.8], [6.4, -4.8]], [7.4, 5.4]); await wait(1); } },
+          { t: "All found: choosing moves to the card", c: "Toggling several answers by standing has no honest way to take one back, so once all are found the answers fly back to be chosen in the card.",
+            jump: () => snap({ quiz: "multi", pose: { x: -4.4, z: 5.6, face: [0, 0] }, vouched: true, found: ALL, liftedOnce: true }), play: async () => { await walkPath([[7.2, 5.2], [-4.4, 5.6]], [0, 0]); await until(() => P.mode === "card", 5); await wait(2); } },
+          { t: "Pick every one that fits", c: "Each tap toggles one.",
+            jump: () => snap({ quiz: "multi", pose: { x: -4.4, z: 5.6, face: [0, 0] }, vouched: true, found: ALL, chosen: ["fountain", "statue"], pinned: true, liftedOnce: true }), play: async () => { act("tile", "fountain"); await wait(0.8); act("tile", "statue"); await wait(1.5); } },
+          { t: "Check", c: "Right.",
+            jump: () => { snap({ quiz: "multi", pose: { x: -4.4, z: 5.6, face: [0, 0] }, vouched: true, found: ALL, pinned: true, liftedOnce: true }); commitChoice(["fountain", "statue"]); }, play: async () => { act("check"); await wait(2.5); } },
+          { t: "The story goes on", c: "",
+            jump: () => { snap({ quiz: "multi", pose: { x: -4.4, z: 5.6, face: [0, 0] }, vouched: true, found: ALL, pinned: true }); commitChoice(["fountain", "statue"]); act("continue"); }, play: async () => { act("continue"); await wait(3); } },
+        ] },
+      ];
+
+      const LIFT_TOAST = "The answers are out on the square. Find all four, then stand at yours.";
+      function setRaw(r) { P.raw = r; syncTools(); }
+      function snap(o) {
+        V.path = []; V.onArrive = null;
+        const prev = animate; animate = false;
+        chips.innerHTML = "";
+        if (o.quiz) openQuiz(o.quiz);
+        if (o.pose) setPose(o.pose);
+        P.raw = o.raw || "good";
+        P.vouched = !!o.vouched;
+        P.goodFor = o.vouched ? T.liftAfter : o.goodFor || 0;
+        P.weakFor = o.weakFor || 0;
+        if (P.raw === "weak") P.goodFor = 0;
+        if (o.found) P.found = new Set(o.found);
+        if (o.chosen) P.chosen = [...o.chosen];
+        if (o.dwell) P.dwell = { ...o.dwell };
+        P.pinned = !!o.pinned;
+        P.liftedOnce = !!o.liftedOnce || (o.vouched && !o.pinned);
+        if (o.typed != null) P.typed = o.typed;
+        if (o.still != null) { P.still = o.still; P.nudge = o.still >= T.stillNudge; }
+        const d = decide(P.q, P); P.mode = d.mode; P.why = d.why; P.tourOk = d.tourOk;
+        el.toast.hidden = true;
+        render();
+        animate = prev;
+        syncTools();
+      }
+
+      let playToken = 0, runIdx = 0, beatIdx = 0, logTimer = 0;
+      const LOG = {};
+      class Stopped extends Error {}
+      function wait(s) { const tk = playToken; return new Promise((res, rej) => setTimeout(() => (tk === playToken ? res() : rej(new Stopped())), s * 1000)); }
+      function until(cond, max) {
+        const tk = playToken, t0 = performance.now();
+        return new Promise((res, rej) => { const f = () => { if (tk !== playToken) return rej(new Stopped()); if (cond() || performance.now() - t0 > max * 1000) return res(); requestAnimationFrame(f); }; f(); });
+      }
+      async function typeInto(text) { for (let i = 1; i <= text.length; i++) { P.typed = text.slice(0, i); render(); await wait(0.09); } }
+      function showBeat() {
+        const run = RUNS[runIdx], b = run.beats[beatIdx];
+        document.getElementById("cap").innerHTML = `<span class="tag">Beat ${beatIdx + 1} of ${run.beats.length}</span> <b>${esc(b.t)}.</b> ${esc(b.c)}`;
+        clearTimeout(logTimer);
+        logTimer = setTimeout(recordBeat, 1100);
+      }
+      function recordBeat() {
+        const m = measure(), key = RUNS[runIdx].id;
+        (LOG[key] ||= {})[beatIdx] ||= {};
+        LOG[key][beatIdx][m.orient] = m;
+        syncTools();
+      }
+      async function jump(r, b) {
+        stopPlay();
+        runIdx = r; beatIdx = b;
+        document.getElementById("run").value = String(r);
+        await RUNS[r].beats[b].jump();
+        showBeat();
+      }
+      function stopPlay() { playToken++; V.path = []; V.onArrive = null; document.getElementById("play").setAttribute("aria-pressed", "false"); document.getElementById("play").textContent = "Play"; }
+      async function play() {
+        const tk = ++playToken;
+        const btn = document.getElementById("play");
+        btn.setAttribute("aria-pressed", "true"); btn.textContent = "Stop";
+        animate = true;
+        const run = RUNS[runIdx];
+        try {
+          // from the first beat, or from the one after the beat shown
+          let start = P.id && P.phase !== "none" && beatIdx < run.beats.length - 1 && P.phase !== "done" ? beatIdx + 1 : 0;
+          if (start === 0) { beatIdx = 0; }
+          for (let i = start; i < run.beats.length; i++) {
+            if (tk !== playToken) return;
+            beatIdx = i; showBeat();
+            await run.beats[i].play();
+          }
+        } catch (e) { if (!(e instanceof Stopped)) throw e; return; }
+        if (tk === playToken) stopPlay();
+      }
+
+      /* ================= prototype tools ================= */
+      const runSel = document.getElementById("run");
+      RUNS.forEach((r, i) => runSel.add(new Option(r.name, String(i))));
+      runSel.addEventListener("change", () => jump(+runSel.value, 0));
+      document.getElementById("prev").onclick = () => jump(runIdx, Math.max(0, beatIdx - 1));
+      document.getElementById("next").onclick = () => { if (beatIdx < RUNS[runIdx].beats.length - 1) jump(runIdx, beatIdx + 1); else jump((runIdx + 1) % RUNS.length, 0); };
+      document.getElementById("play").onclick = () => (document.getElementById("play").getAttribute("aria-pressed") === "true" ? stopPlay() : play());
+      const tools = document.getElementById("tools"), toolsBtn = document.getElementById("toolsBtn");
+      toolsBtn.onclick = () => { tools.hidden = !tools.hidden; toolsBtn.setAttribute("aria-pressed", String(!tools.hidden)); syncTools(); };
+      tools.querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => setRaw(b.dataset.track)));
+      tools.querySelectorAll("[data-look]").forEach((b) => (b.onclick = () => setLook(b.dataset.look)));
+      const sliders = document.getElementById("sliders");
+      for (const [key, label, min, max, step, unit] of SLIDERS) {
+        const l = document.createElement("label"); l.className = "slider";
+        l.innerHTML = `<span>${label}</span><output>${T[key]} ${unit}</output><input type="range" min="${min}" max="${max}" step="${step}" value="${T[key]}">`;
+        l.querySelector("input").oninput = (e) => { T[key] = +e.target.value; l.querySelector("output").textContent = `${T[key]} ${unit}`; syncTools(); };
+        sliders.append(l);
+      }
+      document.getElementById("format").textContent = `quiz (a story step), new optional fields
+  present: "auto" | "card"   default "auto". "card" keeps a placed
+                             quiz in the card on every phone.
+  place:                     the feel; each value has a default
+    find:   { radius: 2 }                    metres
+    choose: { ring: 2, dwellS: 3, graceS: 2.5 }
+
+option ({ id, label } today), new optional fields
+  at:   { x: -5.6, z: -4.2 }  metres in the station's own frame,
+                              the frame its other items use
+  clue: "Water has run here since 1652."
+                              shown on the thing once found
+
+checked when the tour is saved
+  - every option has "at", or none has: a half-placed quiz
+    plays as a card, and the editor says so
+  - closest two answers >= 5 m apart, inside the station
+  - "at" only on single and multiple answers`;
+      function syncTools() {
+        tools.querySelectorAll("[data-track]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.track === P.raw)));
+        if (tools.hidden || !P.q) return;
+        const d = decide(P.q, P);
+        document.getElementById("why").innerHTML = d.rows.map((r) => `<li class="${r.ok ? "yes" : "no"}"><b>${r.who}:</b> ${esc(r.text)}</li>`).join("") +
+          `<li class="${d.mode === "world" ? "yes" : "no"}"><b>Now:</b> ${d.mode === "world" ? "in the square" : "in the card"}</li>` +
+          (HAS_SUBTLE ? "" : `<li class="no">This page runs without secure hashing here, so typed answers are compared in clear.</li>`);
+        const run = RUNS[runIdx], log = LOG[run.id] || {};
+        const cell = (m) => (m ? `${m.pct} % (quiz ${m.quizPct}) &middot; ${m.count}${m.overlaps.length ? ` &middot; <b style="color:#ff8a8a">${m.overlaps.length} overlap</b>` : ""}` : "-");
+        document.getElementById("log").innerHTML = `<tr><th>Beat</th><th>Portrait</th><th>Landscape</th></tr>` +
+          run.beats.map((b, i) => `<tr><td>${i + 1}. ${esc(b.t)}</td><td class="n">${cell(log[i]?.portrait)}</td><td class="n">${cell(log[i]?.landscape)}</td></tr>`).join("");
+      }
+      function setLook(name) {
+        const L = LOOKS[name];
+        paintSky(L.sky); scene.fog.color.set(L.fog); hemi.intensity = L.hemi; sun.intensity = L.sun; outer.material.color.set(L.outer);
+        tools.querySelectorAll("[data-look]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.look === name)));
+      }
+      setLook("bright");
+
+      /* ================= frame loop ================= */
+      const chromeEl = document.getElementById("chrome");
+      function resize() {
+        const w = innerWidth, h = innerHeight;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h; camera.fov = w > h ? 42 : 66; camera.updateProjectionMatrix();
+        hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * camera.aspect);
+        document.documentElement.style.setProperty("--chrome-h", chromeEl.offsetHeight + "px");
+      }
+      addEventListener("resize", () => { resize(); clearTimeout(logTimer); logTimer = setTimeout(recordBeat, 900); });
+      new ResizeObserver(resize).observe(chromeEl);
+      resize();
+      let last = performance.now(), meterT = 0, radarT = 0, frameMs = 0;
+      function frame(now) {
+        const dt = Math.min(0.1, (now - last) / 1000); last = now;
+        const t0 = performance.now();
+        updateVisitor(dt);
+        tick(dt);
+        world.update(now / 1000, dt);
+        narration.update(now / 1000, dt, P.phase === "open" || P.phase === "result");
+        liveHud();
+        renderer.render(scene, camera);
+        frameMs += (performance.now() - t0 - frameMs) * 0.1;
+        if ((radarT -= dt) <= 0) { radarT = 0.1; drawRadar(); }
+        if ((meterT -= dt) <= 0) {
+          meterT = 0.3;
+          const m = measure(), me = document.getElementById("meter");
+          me.innerHTML = `HUD ${m.pct}% · ${m.count} el<br>quiz ${m.quizPct}% · ${m.overlaps.length} overlap`;
+          me.classList.toggle("bad", m.overlaps.length > 0);
+          if (!tools.hidden) syncTools();
+        }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+
+      window.__quiz = {
+        runs: RUNS.map((r) => ({ id: r.id, name: r.name, beats: r.beats.map((b) => b.t) })),
+        jump, measure, log: LOG,
+        state: () => ({ mode: P.mode, phase: P.phase, why: P.why, found: [...P.found], chosen: P.chosen, dwell: P.dwell, vouched: P.vouched, raw: P.raw, frameMs }),
+        setRaw, act,
+      };
+      await hashesReady;
+      jump(0, 0);
+    </script>
+  </body>
+</html>

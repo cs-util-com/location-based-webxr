@@ -1,0 +1,1564 @@
+<!doctype html>
+<!-- Prototype: the visitor quiz player, direction "The place answers". The answers are hidden in the
+     place and found like eggs; a visitor chooses by standing at one and gives it at the question
+     stone. The screen keeps one small pill. Throwaway and standalone; not wired to any app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <title>The Place Answers</title>
+    <script type="importmap">
+      { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+    </script>
+    <style>
+      :root {
+        --accent: #fb923c;
+        --accent-ink: #1f1105;
+        --found: #2dd4bf;
+        --ink: #f3f5f7;
+        --muted: #b3bcc6;
+        --surface: rgb(12 16 21 / 84%);
+        --surface-2: rgb(255 255 255 / 8%);
+        --line: rgb(255 255 255 / 18%);
+        --danger: #f87171;
+        --tap: 44px;
+        --font: Corbel, "Noto Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        --bar-h: 58px;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      html, body { height: 100%; margin: 0; overflow: hidden; background: #14171d; color: var(--ink); }
+      body { font: 15px/1.4 var(--font); -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+      button, input, select { font: inherit; color: inherit; }
+      button { cursor: pointer; }
+      p { margin: 0; }
+
+      /* ---------- the demo bar: not part of the HUD, never measured ---------- */
+      #demo {
+        position: fixed; z-index: 50; top: 0; left: 0; right: 0; padding: 6px 8px 6px;
+        padding-top: calc(6px + env(safe-area-inset-top));
+        background: #1d222b; border-bottom: 1px solid #333a46; user-select: none;
+      }
+      #demo .row { display: flex; align-items: center; gap: 6px; }
+      #demo .nb {
+        flex: none; width: 36px; height: 32px; border-radius: 8px; border: 1px solid #3d4552;
+        background: #272d38; color: #fff; font-size: 16px; font-weight: 700; padding: 0;
+      }
+      #demo .title { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #demo .title small { color: var(--muted); font-weight: 600; margin-right: 4px; }
+      #readout {
+        flex: none; font-size: 11px; line-height: 1.15; text-align: right; color: #cfe7df;
+        font-variant-numeric: tabular-nums; padding: 2px 6px; border-radius: 6px; background: #12161c; border: 1px solid #2c333d;
+      }
+      #readout.bad { color: #fecaca; border-color: #f87171; }
+      #caption { margin-top: 4px; font-size: 12px; line-height: 1.3; color: #c9d1da; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+      /* ---------- the fake AR view ---------- */
+      #ar { position: fixed; left: 0; right: 0; bottom: 0; top: var(--bar-h); overflow: hidden; }
+      #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+      #hud { position: absolute; inset: 0; pointer-events: none; user-select: none; }
+      #hud > * { pointer-events: auto; }
+      .hud.overlap { outline: 3px solid #ff2d2d !important; outline-offset: 0; }
+
+      /* walk layer: exit, radar, toast */
+      #exit {
+        position: absolute; top: 10px; left: 12px; width: 44px; height: 44px; border-radius: 50%;
+        border: 1px solid var(--line); background: var(--surface); color: #fff; font-size: 20px; line-height: 1; padding: 0;
+      }
+      #radar { position: absolute; top: 10px; right: 12px; width: 84px; height: 84px; border-radius: 50%; }
+      #toast {
+        position: absolute; top: 104px; left: 50%; transform: translateX(-50%); width: max-content;
+        max-width: min(300px, calc(100% - 32px)); padding: 9px 14px; border-radius: 14px;
+        background: rgb(250 250 247 / 95%); color: #111; font-size: 14px; font-weight: 600; text-align: center;
+        box-shadow: 0 6px 20px rgb(0 0 0 / 30%); transition: opacity 0.6s; pointer-events: auto;
+      }
+      #toast.gone { opacity: 0; pointer-events: none; }
+
+      /* the story strip: one line of the guide, one button */
+      #strip {
+        position: absolute; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom));
+        margin: 0 auto; max-width: 460px; display: flex; align-items: center; gap: 10px;
+        padding: 10px 10px 10px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line);
+        transition: opacity 0.35s, transform 0.35s;
+      }
+      #strip .face { flex: none; width: 40px; height: 40px; border-radius: 50%; overflow: hidden; background: #3a4a5a; }
+      #strip .face svg { width: 100%; height: 100%; display: block; }
+      #strip .txt { flex: 1; min-width: 0; }
+      #strip .who { font-size: 12px; color: var(--muted); font-weight: 600; }
+      #strip .who b { color: var(--accent); font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; font-size: 11px; }
+      #strip .say { font-size: 15px; line-height: 1.3; }
+      #strip .go {
+        flex: none; min-height: var(--tap); padding: 0 14px; border-radius: 22px; border: 0;
+        background: var(--accent); color: var(--accent-ink); font-weight: 700;
+      }
+      #strip.lifting { opacity: 0; transform: translateY(10px) scale(0.96); }
+
+      /* the ghost that flies from the strip to the stone */
+      #ghost {
+        position: absolute; z-index: 3; left: 0; top: 0; padding: 8px 12px; border-radius: 12px; background: #fbf8f0; color: #1c2128;
+        font-weight: 700; font-size: 14px; pointer-events: none; transform-origin: 0 0; transition: transform 0.75s cubic-bezier(.5,0,.3,1), opacity 0.75s;
+      }
+
+      /* the quiz pill: the only quiz element on screen during the search */
+      #pill {
+        position: absolute; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+        display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px 0 6px; border-radius: 22px;
+        background: var(--surface); border: 1px solid var(--line); transition: opacity 0.4s;
+      }
+      #pill .glyph {
+        flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
+        background: #fbf8f0; color: #1c2128; font-weight: 800; font-size: 17px;
+      }
+      #pill .glyph svg { width: 18px; height: 18px; }
+      #pill .dots { display: flex; gap: 7px; }
+      #pill .dot { width: 13px; height: 13px; border-radius: 50%; border: 2.5px solid var(--c); background: transparent; transition: background 0.3s, transform 0.3s; }
+      #pill .dot.f { background: var(--c); }
+      #pill .dot.p { box-shadow: 0 0 0 2.5px #fff; transform: scale(1.18); }
+      #pill .word { font-size: 14px; font-weight: 700; }
+      #pill.small { padding: 0 6px; opacity: 0.8; }
+      #pill.pulse { animation: pulse 1.2s ease-in-out 2; }
+      @keyframes pulse { 50% { box-shadow: 0 0 0 7px rgb(251 146 60 / 55%); } }
+      #pill.score { background: #0f3d36; }
+
+      /* the floor: the sheet behind the pill (answer without walking, take back, give, skip) */
+      #sheet {
+        position: absolute; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); margin: 0 auto; max-width: 420px;
+        padding: 10px 12px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line);
+      }
+      #sheet .hd { display: flex; align-items: flex-start; gap: 8px; }
+      #sheet .q { flex: 1; font-size: 14px; line-height: 1.3; font-weight: 600; }
+      #sheet .q small { display: block; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+      #sheet .x { flex: none; width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: #fff; font-size: 17px; padding: 0; }
+      #sheet .opts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px; }
+      #sheet .o {
+        min-height: 40px; padding: 4px 8px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface-2);
+        display: flex; align-items: center; gap: 7px; text-align: left; font-size: 13px; line-height: 1.15; font-weight: 600;
+      }
+      #sheet .o i { flex: none; width: 11px; height: 11px; border-radius: 50%; background: var(--c); }
+      #sheet .o.un { color: var(--muted); border-style: dashed; font-weight: 500; }
+      #sheet .o.un i { background: transparent; border: 2px solid var(--c); }
+      #sheet .o.on { border-color: #fff; background: rgb(255 255 255 / 16%); }
+      #sheet .acts { display: flex; gap: 6px; margin-top: 8px; }
+      #sheet .acts button { min-height: 40px; padding: 0 12px; border-radius: 20px; border: 1px solid var(--line); background: transparent; font-weight: 700; font-size: 13px; }
+      #sheet .acts .give { background: var(--accent); color: var(--accent-ink); border: 0; }
+      #sheet .acts .sp { flex: 1; }
+      #sheet .acts .skip { color: var(--muted); font-weight: 600; }
+
+      /* the typed answer: the one quiz part that has to be a card (it needs a keyboard) */
+      #typecard {
+        position: absolute; left: 12px; right: 12px; bottom: calc(14px + env(safe-area-inset-bottom)); margin: 0 auto; max-width: 420px;
+        padding: 10px 12px 12px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line);
+      }
+      #typecard .q { font-size: 14px; font-weight: 600; line-height: 1.3; }
+      #typecard .q small { display: block; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+      #typecard form { display: flex; gap: 6px; margin-top: 8px; }
+      #typecard input {
+        flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid var(--line);
+        background: rgb(255 255 255 / 92%); color: #111; font-size: 16px; user-select: text;
+      }
+      #typecard input.right { border-color: var(--found); box-shadow: 0 0 0 2px var(--found); }
+      #typecard input.wrong { border-color: var(--danger); box-shadow: 0 0 0 2px var(--danger); }
+      #typecard .check { flex: none; height: 44px; padding: 0 16px; border-radius: 22px; border: 0; background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+      #typecard .res { margin-top: 6px; font-size: 13px; color: var(--muted); min-height: 1.3em; }
+      #typecard .res.right { color: var(--found); font-weight: 700; }
+      #typecard .row2 { display: flex; justify-content: space-between; align-items: center; margin-top: 2px; }
+      #typecard .row2 button { border: 0; background: transparent; color: var(--muted); font-size: 13px; padding: 6px 2px; min-height: 36px; }
+
+      /* landscape phone: panels go to the left foot, the pill stays centred */
+      @media (orientation: landscape) and (max-height: 520px) {
+        #strip, #sheet, #typecard { right: auto; max-width: min(400px, 52vw); margin: 0; }
+        #sheet .opts { grid-template-columns: 1fr 1fr; gap: 5px; margin-top: 6px; }
+        #sheet .o { min-height: 36px; }
+        #sheet .acts { margin-top: 6px; }
+        #sheet .acts button { min-height: 36px; }
+        #toast { top: 12px; max-width: min(360px, calc(100% - 220px)); }
+        #caption { -webkit-line-clamp: 1; }
+      }
+
+      /* ---------- notes and sweeps (demo, not HUD) ---------- */
+      #panel {
+        position: fixed; z-index: 60; top: 0; right: 0; bottom: 0; width: min(440px, 100%); overflow: auto;
+        background: #171b22; border-left: 1px solid #333a46; padding: 14px 16px 40px; font-size: 14px; line-height: 1.45;
+        padding-top: calc(14px + env(safe-area-inset-top));
+      }
+      #panel h2 { font-size: 17px; margin: 0 0 6px; }
+      #panel h3 { font-size: 14px; margin: 16px 0 4px; color: var(--accent); }
+      #panel p, #panel li { color: #d4dae2; }
+      #panel ul { margin: 4px 0; padding-left: 18px; }
+      #panel .close { position: sticky; top: 0; float: right; width: 40px; height: 40px; border-radius: 50%; border: 1px solid #3d4552; background: #272d38; color: #fff; font-size: 18px; }
+      #panel label { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 6px 0; }
+      #panel select { background: #232934; border: 1px solid #3d4552; border-radius: 8px; padding: 6px 8px; min-height: 36px; max-width: 58%; }
+      #panel .beats { display: grid; grid-template-columns: 1fr; gap: 4px; }
+      #panel .beats button { text-align: left; padding: 7px 10px; border-radius: 8px; border: 1px solid #333a46; background: #1f252f; font-size: 13px; }
+      #panel .beats button.cur { border-color: var(--accent); }
+      #panel table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+      #panel td, #panel th { padding: 3px 4px; border-bottom: 1px solid #2a303a; text-align: left; }
+      #panel .btn { min-height: 38px; padding: 0 14px; border-radius: 19px; border: 1px solid #3d4552; background: #272d38; font-weight: 700; margin: 4px 6px 4px 0; }
+    </style>
+  </head>
+  <body>
+    <header id="demo">
+      <div class="row">
+        <button class="nb" id="prev" aria-label="Previous beat">&#9664;</button>
+        <div class="title" id="btitle"></div>
+        <button class="nb" id="next" aria-label="Next beat">&#9654;</button>
+        <div id="readout">-</div>
+        <button class="nb" id="menu" aria-label="Notes and settings">&#8801;</button>
+      </div>
+      <p id="caption"></p>
+    </header>
+
+    <main id="ar">
+      <canvas id="gl"></canvas>
+      <div id="hud">
+        <button id="exit" class="hud" aria-label="Exit AR">&#10005;</button>
+        <canvas id="radar" class="hud" width="168" height="168"></canvas>
+        <div id="toast" class="hud gone"></div>
+        <div id="strip" class="hud" hidden>
+          <div class="face" id="face"></div>
+          <div class="txt"><p class="who" id="who"></p><p class="say" id="say"></p></div>
+          <button class="go" id="go">Continue</button>
+        </div>
+        <button id="pill" class="hud" hidden aria-label="The question"></button>
+        <div id="sheet" class="hud" hidden></div>
+        <div id="typecard" class="hud" hidden>
+          <p class="q" id="tq"></p>
+          <form id="tform" autocomplete="off">
+            <input id="tin" type="text" spellcheck="false" autocapitalize="off" placeholder="Type the word" />
+            <button class="check" type="submit">Check</button>
+          </form>
+          <p class="res" id="tres"></p>
+          <div class="row2"><button id="tskip" type="button">Skip this question</button><button id="tclose" type="button">Hide</button></div>
+        </div>
+      </div>
+    </main>
+
+    <aside id="panel" hidden>
+      <button class="close" id="pclose" aria-label="Close">&#10005;</button>
+      <h2>The place answers</h2>
+      <p>A quiz step of a station's story, played in the place. The answers are hidden at the things they are about and found like eggs. You choose by standing at one until its ring fills, and you give your answer back at the question stone in the middle. The screen keeps one small pill of dots.</p>
+
+      <h3>What wins the screen</h3>
+      <ul>
+        <li>A story line on screen wins: one strip at the foot, nothing else of the quiz.</li>
+        <li>While the question is open, the pill is the quiz's only screen element. Everything the quiz says lives in the world: the question on the stone, each answer and its clue on its thing, the rings on the ground.</li>
+        <li>The guide's short reactions appear once as a toast and fade.</li>
+        <li>A sheet opens only when the pill or the stone is tapped. It is the floor: answer from where you stand, take back, give, skip.</li>
+        <li>Typed answers need a keyboard, so they are the one case that goes to a card.</li>
+      </ul>
+
+      <h3>The other items meanwhile</h3>
+      <p>By default a playing narration or film pauses when the question enters and its mark in the world dims (two voices at once cannot both be heard). Nothing is locked: tapping a dimmed item plays it, and the quiz simply waits. Change it below to compare.</p>
+
+      <h3>A seventh and an eighth item</h3>
+      <p>More free items in the station change nothing on the screen: they dim in the world like the others. A second quiz in the same station waits for the first; its stone stays dark until the story reaches it.</p>
+
+      <h3>Answer types</h3>
+      <ul>
+        <li><b>Single</b>: in the world, beats 1-11.</li>
+        <li><b>Multiple</b>: in the world, each ring toggles its answer, beat 16.</li>
+        <li><b>Text</b>: the answer is found in the place (beat 14), typed in a one-line card (beat 15).</li>
+        <li><b>Code</b> and <b>number</b> are handed to the same card: a code like text, a number with its unit and tolerance, a decimal comma accepted. Not demonstrated.</li>
+        <li>Typed answers are judged the tour format's way and no other: Unicode NFC, case and spaces folded, umlaut variants (ae, oe, ue, ss); then the salted SHA-256 is compared.</li>
+      </ul>
+
+      <h3>The strongest case against it</h3>
+      <p>It is slow, and it asks for a lot of walking. Find four, stand at one, walk back to the stone: on a busy square, or for a visitor with a child on the hand, that is a chore, and the sheet that rescues them also skips the whole idea. It rests on answers standing at least about 5 m apart and on a position good enough to tell them apart; when the position is rough the rings switch off and the quiz becomes a tap game in 3D, which is only play while people hold a phone. And a question on a stone in the world is easy to lose: the visitor who walks away from it relies on the pill and the radar to remember there is one.</p>
+
+      <h3>Settings to sweep</h3>
+      <div id="sweeps"></div>
+
+      <h3>Beats</h3>
+      <div class="beats" id="beatlist"></div>
+
+      <h3>Measure every beat</h3>
+      <p>Runs all beats fast in this orientation and lists the HUD footprint (share of the AR view covered by HUD boxes), the count of HUD elements and overlapping pairs. The demo bar is never counted.</p>
+      <button class="btn" id="measure">Measure every beat</button>
+      <div id="mtable"></div>
+    </aside>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      /* ======================= what the feel rests on (each one can be swept in the notes) ======================= */
+      const P = {
+        dwellS: 3, // seconds standing in a ring to choose
+        ring: 2.0, // metres, ring radius (enter)
+        hyst: 0.6, // metres more to leave a ring (hysteresis)
+        sealDwellS: 2, // seconds at the stone to give the answer
+        count: "stone", // when a pick counts: "stone" | "timer" | "now"
+        countTimerS: 6,
+        afar: "idle", // tapping from afar: "idle" (after idleS without progress) | "always" | "weak" (only with a rough position)
+        idleS: 20,
+        others: "dimpause", // other items during the quiz: "dimpause" | "dim" | "none"
+        jitter: 0.3, // metres, tracking wander with a good position
+        weakJitter: 5, // metres, with a rough one
+        findR: 1.5, // metres: an egg is found this close (measured position)
+        seeR: 4.5, // metres: the egg itself shows this close
+        retry: true,
+      };
+      const MIN_APART = 5; // metres: closer answers are never chosen by standing
+      const STATION = { x: 0, z: 0, ring: 12, back: 11.6 };
+      const STONE = { x: 0, z: -1, ring: 2.0 };
+      const EYE = 1.6;
+      const WALK = 1.4;
+      const NEXT = { x: 0, z: 25, name: "The Gate" };
+      const HUES = { fountain: "#fbbf24", statue: "#7dd3fc", tree: "#fda4af", bench: "#c4b5fd" };
+      const RIGHT = "#2dd4bf";
+      const WRONG = "#f87171";
+      const PAPER = "#fbf8f0";
+      const INK = "#1c2128";
+      const FONT = 'Corbel, "Noto Sans", system-ui, sans-serif';
+      let timeScale = 1, frozenScale = 1;
+
+      /* ======================= the tour's records (as the format would carry them, plus places) ======================= */
+      const OPTIONS = [
+        { id: "fountain", label: "The fountain", clue: "Water has run here since 1652.", at: [-5.6, -4.2], lift: 0 },
+        { id: "statue", label: "The statue", clue: "Cast in bronze for the fair of 1890.", at: [7.4, -5.8], lift: 0 },
+        { id: "tree", label: "The plane tree", clue: "Planted the year the tram came, 1921.", at: [7.8, 5.8], lift: 0 },
+        { id: "bench", label: "The bench", clue: "Its plaque says: new this spring.", at: [-5.6, 7], lift: 0 },
+      ];
+      const GUIDE = "Greta, the guide";
+      const QUIZZES = {
+        single: {
+          type: "single", points: 10, options: OPTIONS, correct: ["fountain"],
+          question: "Which of these stood on this square first?",
+          before: "This square has heard more gossip than any town hall. Before we go on, a question for you.",
+          after: "Good. The next stop is through the gate. Mind the step.",
+          enter: "The answers are hidden around the square. Find all four.",
+          says: {
+            right: "The fountain. Its water ran here two hundred years before the statue came.",
+            retry: "Not that one. Think of the clues, and stand at another.",
+            wrong: "It was the fountain, from 1652. The statue came in 1890, the tree in 1921.",
+          },
+        },
+        multiple: {
+          type: "multiple", points: 20, options: OPTIONS, correct: ["fountain", "statue"],
+          question: "Which two of these stood here before 1900?",
+          before: "One more, and this one has two answers.",
+          after: "Two old ones: the fountain and the statue. On to the gate.",
+          enter: "Two answers this time. Find all four first.",
+          says: {
+            right: "Both right: the fountain from 1652 and the statue from 1890.",
+            retry: "Not quite. Stand in a ring again to take one out, or add another.",
+            wrong: "The fountain and the statue; the tree came in 1921.",
+          },
+        },
+        text: {
+          type: "text", points: 10, salt: "hall-door-7f3a", sha256: [], accepted: ["Concordia"],
+          question: "What one word is carved above the hall's door?",
+          before: "Look up when you pass the hall. The old town carved a promise over its door.",
+          after: "Concordia: harmony. They needed it, after the great fire.",
+          enter: "The answer is written somewhere on this square. Look for it.",
+          says: { right: "Concordia. Right, and well spotted.", retry: "Not quite. Look at the hall again." },
+        },
+      };
+
+      /* ======================= the tour format's normalisation and the salted hash ======================= */
+      function canonical(s) {
+        return String(s).normalize("NFC").replace(/\s+/gu, " ").trim().toLowerCase()
+          .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss");
+      }
+      function parseNumber(s) {
+        const t = canonical(s).replace(/,/g, ".");
+        return /^[-+]?\d+(\.\d+)?$/.test(t) ? Number(t) : NaN;
+      }
+      const ror = (x, n) => (x >>> n) | (x << (32 - n));
+      const PRIMES = (() => { const out = []; for (let n = 2; out.length < 64; n++) if (out.every((p) => n % p)) out.push(n); return out; })();
+      const frac32 = (v) => ((v - Math.floor(v)) * 4294967296) >>> 0;
+      const SHA_K = PRIMES.map((p) => frac32(Math.cbrt(p)));
+      const SHA_H = PRIMES.slice(0, 8).map((p) => frac32(Math.sqrt(p)));
+      function sha256Hex(str) {
+        const bytes = new TextEncoder().encode(str);
+        const l = bytes.length, n = ((l + 9 + 63) >> 6) << 6;
+        const m = new Uint8Array(n); m.set(bytes); m[l] = 0x80;
+        const dv = new DataView(m.buffer);
+        dv.setUint32(n - 4, (l * 8) >>> 0); dv.setUint32(n - 8, Math.floor((l * 8) / 4294967296));
+        const w = new Uint32Array(64); const H = SHA_H.slice();
+        for (let i = 0; i < n; i += 64) {
+          for (let t = 0; t < 16; t++) w[t] = dv.getUint32(i + t * 4);
+          for (let t = 16; t < 64; t++) {
+            const a = w[t - 15], b = w[t - 2];
+            w[t] = (w[t - 16] + (ror(a, 7) ^ ror(a, 18) ^ (a >>> 3)) + w[t - 7] + (ror(b, 17) ^ ror(b, 19) ^ (b >>> 10))) >>> 0;
+          }
+          let [a, b, c, d, e, f, g, h] = H;
+          for (let t = 0; t < 64; t++) {
+            const t1 = (h + (ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)) + ((e & f) ^ (~e & g)) + SHA_K[t] + w[t]) >>> 0;
+            const t2 = ((ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+            h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+          }
+          H[0] = (H[0] + a) >>> 0; H[1] = (H[1] + b) >>> 0; H[2] = (H[2] + c) >>> 0; H[3] = (H[3] + d) >>> 0;
+          H[4] = (H[4] + e) >>> 0; H[5] = (H[5] + f) >>> 0; H[6] = (H[6] + g) >>> 0; H[7] = (H[7] + h) >>> 0;
+        }
+        return H.map((v) => v.toString(16).padStart(8, "0")).join("");
+      }
+      const hashAnswer = (salt, typed) => sha256Hex(salt + ":" + canonical(typed));
+      // The creator's side: the record carries only the hashes.
+      QUIZZES.text.sha256 = QUIZZES.text.accepted.map((a) => hashAnswer(QUIZZES.text.salt, a));
+      delete QUIZZES.text.accepted;
+
+      /* ======================= renderer, camera, the square ======================= */
+      const $ = (id) => document.getElementById(id);
+      const canvas = $("gl");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
+      camera.rotation.order = "YXZ";
+      const hemi = new THREE.HemisphereLight(0xffffff, 0xbfb6a4, 1.75);
+      const sun = new THREE.DirectionalLight(0xfff4e6, 1.5);
+      sun.position.set(-30, 50, 20);
+      scene.add(hemi, sun);
+      const LOOKS = {
+        bright: { sky: ["#8fc0e8", "#dbe8f0", "#efe9dd"], fog: "#dfe7ea", hemi: 1.75, sun: 1.5 },
+        dark: { sky: ["#070b16", "#141b2d", "#1e2536"], fog: "#141b2a", hemi: 0.5, sun: 0.3 },
+      };
+      scene.fog = new THREE.Fog("#dfe7ea", 45, 150);
+
+      function buildPlace() {
+        const pos = [], nor = [], col = [];
+        const tint = new THREE.Color();
+        const add = (geo, color, x = 0, y = 0, z = 0, ry = 0) => {
+          const g = geo.index ? geo.toNonIndexed() : geo;
+          if (ry) g.rotateY(ry);
+          g.translate(x, y, z);
+          tint.set(color);
+          const p = g.attributes.position, nn = g.attributes.normal;
+          for (let i = 0; i < p.count; i++) {
+            pos.push(p.getX(i), p.getY(i), p.getZ(i)); nor.push(nn.getX(i), nn.getY(i), nn.getZ(i)); col.push(tint.r, tint.g, tint.b);
+          }
+        };
+        const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+        const cyl = (a, b, h, n = 12) => new THREE.CylinderGeometry(a, b, h, n);
+        const roof = (w, d, h) => {
+          const A = [-w / 2, 0, -d / 2], B = [w / 2, 0, -d / 2], C = [w / 2, 0, d / 2], E = [-w / 2, 0, d / 2], F = [-w / 2, h, 0], G = [w / 2, h, 0];
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.Float32BufferAttribute([E, C, G, E, G, F, B, A, F, B, F, G, A, E, F, C, B, G].flat(), 3));
+          g.computeVertexNormals(); return g;
+        };
+        const house = (x, z, w, d, h, color, facing, roofc = "#a65f46") => {
+          const c = Math.cos(facing), s = Math.sin(facing);
+          const local = (lx, lz) => [x + lx * c + lz * s, z - lx * s + lz * c];
+          add(box(w, h, d), color, x, h / 2, z, facing);
+          add(roof(w + 0.6, d + 0.8, 2.2), roofc, x, h, z, facing);
+          const floors = Math.floor(h / 3), cols = Math.floor(w / 3);
+          for (let fl = 0; fl < floors; fl++) for (let i = 0; i < cols; i++) {
+            const lx = (i - (cols - 1) / 2) * 3, door = fl === 0 && i === Math.floor(cols / 2);
+            const [wx, wz] = local(lx, d / 2 + 0.03);
+            if (door) add(box(1.3, 2.3, 0.08), "#5a3d2c", wx, 1.15, wz, facing);
+            else add(box(1, 1.4, 0.08), "#5d6d7e", wx, 1.7 + fl * 3, wz, facing);
+          }
+        };
+        house(-25, -12, 11, 8, 9, "#e7dcc8", Math.PI / 2);
+        house(-25, 0, 10, 8, 12, "#d9e2e6", Math.PI / 2, "#7c6a5c");
+        house(-25, 11, 10, 8, 7, "#efd9c6", Math.PI / 2);
+        house(25, -11, 13, 8, 10, "#e6e2d2", -Math.PI / 2, "#7c6a5c");
+        house(25, 3, 11, 8, 7, "#dcc9b6", -Math.PI / 2);
+        house(8, -24.5, 20, 8, 9, "#f0e8d8", 0, "#6f7b84"); // the hall
+        house(-18, -25, 8, 8, 8, "#e3d3c8", 0);
+        add(box(5, 15, 5), "#cbb9a0", -10, 7.5, -23);
+        add(box(5.6, 3, 5.6), "#e0d2bb", -10, 16.5, -23);
+        add(new THREE.ConeGeometry(4.2, 5, 4).rotateY(Math.PI / 4), "#5e6f7d", -10, 20.5, -23);
+        add(new THREE.CylinderGeometry(1.5, 1.5, 0.12, 24).rotateX(Math.PI / 2), "#fbf8f0", -10, 12.6, -20.44);
+        // the fountain
+        add(cyl(2.3, 2.5, 0.55, 20), "#b9b2a4", -8, 0.27, -6);
+        add(cyl(2.05, 2.05, 0.04, 20), "#6fb2d6", -8, 0.56, -6);
+        add(cyl(0.28, 0.4, 1.7, 10), "#b9b2a4", -8, 1.1, -6);
+        add(cyl(0.95, 0.3, 0.25, 14), "#c6bfb1", -8, 2, -6);
+        // the statue
+        add(box(1.5, 1.5, 1.5), "#a9a294", 9, 0.75, -7);
+        add(box(1.9, 0.2, 1.9), "#928b7e", 9, 0.1, -7);
+        add(cyl(0.3, 0.42, 1.5, 10), "#4c6a5e", 9, 2.25, -7);
+        add(new THREE.IcosahedronGeometry(0.24, 1), "#4c6a5e", 9, 3.2, -7);
+        // trees and a bench
+        const tree = (x, z, s = 1) => {
+          add(cyl(0.16 * s, 0.26 * s, 3 * s, 8), "#7d6650", x, 1.5 * s, z);
+          add(new THREE.IcosahedronGeometry(2.1 * s, 1), "#6f9e62", x, 3.9 * s, z);
+          add(new THREE.IcosahedronGeometry(1.5 * s, 1), "#7fae6e", x + 1.1 * s, 3.3 * s, z + 0.5 * s);
+        };
+        tree(10, 7.5); tree(-14, 32, 1.5); tree(15, 34, 1.3);
+        add(box(1.8, 0.08, 0.5), "#8a6a4e", -7, 0.46, 8);
+        add(box(1.8, 0.5, 0.07), "#8a6a4e", -7, 0.74, 7.76);
+        add(box(0.08, 0.44, 0.45), "#3c4044", -7.8, 0.22, 8);
+        add(box(0.08, 0.44, 0.45), "#3c4044", -6.2, 0.22, 8);
+        for (const [x, z] of [[-15, -15], [15, -15], [-15, 15], [15, 13]]) {
+          add(cyl(0.05, 0.08, 3.4, 6), "#3c4044", x, 1.7, z);
+          add(new THREE.IcosahedronGeometry(0.2, 0), "#fff1cf", x, 3.5, z);
+        }
+        add(box(18.5, 1.2, 0.5), "#b5a68f", -11.75, 0.6, 21);
+        add(box(18.5, 1.2, 0.5), "#b5a68f", 11.75, 0.6, 21);
+        add(box(0.8, 3.2, 0.8), "#a99a84", -2.6, 1.6, 21);
+        add(box(0.8, 3.2, 0.8), "#a99a84", 2.6, 1.6, 21);
+        add(box(6.2, 0.6, 0.9), "#a99a84", 0, 3.5, 21);
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2 + 0.2, r = 62 + ((i * 37) % 24);
+          add(box(16, 8 + ((i * 53) % 14), 14), "#b4bcc2", Math.cos(a) * r, 8, Math.sin(a) * r, a);
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+        geo.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+        geo.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+        scene.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true })));
+
+        // the ground: paving, the central circles, the path to the gate
+        const S = 1024, G = 46, cv = document.createElement("canvas");
+        cv.width = cv.height = S;
+        const g = cv.getContext("2d");
+        g.setTransform(S / G, 0, 0, S / G, S / 2, S / 2);
+        g.fillStyle = "#b7b09f"; g.fillRect(-23, -23, 46, 46);
+        let seed = 7; const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+        for (let x = -20; x < 20; x += 1.2) for (let z = -20; z < 20; z += 1.2) {
+          const v = 200 + rnd() * 18; g.fillStyle = `rgb(${v} ${v - 8} ${v - 22})`; g.fillRect(x + 0.03, z + 0.03, 1.14, 1.14);
+        }
+        g.fillStyle = "rgb(120 112 96 / 18%)"; g.fillRect(-1.6, 5, 3.2, 18);
+        g.fillStyle = "#93ad78"; g.beginPath(); g.ellipse(10, 7.5, 5, 4.2, 0.2, 0, Math.PI * 2); g.fill();
+        const tex = new THREE.CanvasTexture(cv);
+        tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(G, G).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tex }));
+        scene.add(ground);
+        const outer = new THREE.Mesh(new THREE.PlaneGeometry(500, 500).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: "#b7b09f" }));
+        outer.position.y = -0.04; scene.add(outer);
+        return { ground, outer };
+      }
+      const place = buildPlace();
+      const sky = new THREE.Mesh(new THREE.SphereGeometry(300, 16, 10), new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+      sky.geometry.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(sky.geometry.attributes.position.count * 3), 3));
+      sky.renderOrder = -10; scene.add(sky);
+      function setLook(name) {
+        const L = LOOKS[name]; const [a, b, d] = L.sky.map((c) => new THREE.Color(c));
+        const p = sky.geometry.attributes.position, c = sky.geometry.attributes.color, o = new THREE.Color();
+        for (let i = 0; i < p.count; i++) {
+          const h = p.getY(i) / 300;
+          if (h >= 0) o.lerpColors(b, a, Math.min(1, h / 0.55)); else o.lerpColors(b, d, Math.min(1, -h / 0.15));
+          c.setXYZ(i, o.r, o.g, o.b);
+        }
+        c.needsUpdate = true; scene.fog.color.set(L.fog); hemi.intensity = L.hemi; sun.intensity = L.sun;
+        look = name;
+      }
+      let look = "bright";
+      setLook("bright");
+
+      /* ======================= painting words for the world ======================= */
+      const DPR = Math.min(2, devicePixelRatio || 1);
+      function paintable(w, h) {
+        const c = document.createElement("canvas");
+        c.width = Math.round(w * DPR); c.height = Math.round(h * DPR);
+        const g = c.getContext("2d");
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+        return { c, g, t, w, h, key: "" };
+      }
+      function begin(P2) { P2.g.setTransform(DPR, 0, 0, DPR, 0, 0); P2.g.clearRect(0, 0, P2.w, P2.h); return P2.g; }
+      function rr(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+      function wrap(g, text, maxW) {
+        const words = String(text).split(" "); const lines = []; let line = "";
+        for (const wd of words) { const t = line ? line + " " + wd : wd; if (g.measureText(t).width > maxW && line) { lines.push(line); line = wd; } else line = t; }
+        if (line) lines.push(line); return lines;
+      }
+
+      /* ======================= the quiz in the world ======================= */
+      const ringVS = `varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+      const ringFS = `uniform vec3 uColor; uniform float uOpacity; uniform float uFill; uniform float uDash; varying vec2 vP;
+        void main(){ float f = fract(atan(vP.x, vP.y) / 6.2831853 + 1.0);
+          if (f > uFill) discard;
+          if (uDash > 0.5 && fract(f * 30.0) > 0.55) discard;
+          gl_FragColor = vec4(uColor, uOpacity);
+          #include <colorspace_fragment>
+        }`;
+      function ringMesh(r, width, color, opacity, order = 2) {
+        const m = new THREE.Mesh(
+          new THREE.RingGeometry(r - width / 2, r + width / 2, 96, 1),
+          new THREE.ShaderMaterial({
+            vertexShader: ringVS, fragmentShader: ringFS, transparent: true, depthWrite: false,
+            uniforms: { uColor: { value: new THREE.Color(color) }, uOpacity: { value: opacity }, uFill: { value: 1 }, uDash: { value: 0 } },
+          }),
+        );
+        m.rotation.x = -Math.PI / 2; m.renderOrder = order; return m;
+      }
+      function glintTexture() {
+        const c = document.createElement("canvas"); c.width = c.height = 128; const g = c.getContext("2d");
+        const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+        gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.18, "rgba(255,248,220,0.95)"); gr.addColorStop(0.45, "rgba(255,220,140,0.35)"); gr.addColorStop(1, "rgba(255,220,140,0)");
+        g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+        g.fillStyle = "rgba(255,255,255,0.9)"; g.fillRect(62, 6, 4, 116); g.fillRect(6, 62, 116, 4);
+        const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+      }
+      const GLINT = glintTexture();
+      const DOT = (() => { const c = document.createElement("canvas"); c.width = c.height = 32; const g = c.getContext("2d"); const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.5, "rgba(255,255,255,0.7)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+
+      // One answer: its egg, glint, label and ring.
+      const answers = OPTIONS.map((o) => {
+        const grp = new THREE.Group(); grp.position.set(o.at[0], 0, o.at[1]); scene.add(grp);
+        const hue = new THREE.Color(HUES[o.id]);
+        const pts = []; for (let i = 0; i <= 12; i++) { const t = i / 12; const a = t * Math.PI; pts.push(new THREE.Vector2(Math.sin(a) * 0.12 * (t < 0.5 ? 1 : 0.85 + 0.15 * Math.cos((t - 0.5) * Math.PI)), -Math.cos(a) * 0.17 + 0.17)); }
+        const eggMat = new THREE.MeshLambertMaterial({ color: hue, emissive: hue, emissiveIntensity: 0.35, transparent: true });
+        const egg = new THREE.Mesh(new THREE.LatheGeometry(pts, 16), eggMat);
+        egg.position.y = 0.05 + o.lift; grp.add(egg);
+        const cap = new THREE.Mesh(new THREE.SphereGeometry(0.105, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), eggMat);
+        cap.position.y = 0.05 + o.lift + 0.3; grp.add(cap);
+        const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLINT, transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, color: hue }));
+        glint.position.y = 0.35 + o.lift; glint.renderOrder = 6; grp.add(glint);
+        const glintCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLINT, transparent: true, depthTest: false, depthWrite: false, color: 0xffffff }));
+        glintCore.position.copy(glint.position); glintCore.renderOrder = 7; grp.add(glintCore);
+        const lp = paintable(320, 200);
+        const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: lp.t, transparent: true, depthTest: false, depthWrite: false }));
+        label.center.set(0.5, 0); label.position.y = 0.95 + o.lift; label.renderOrder = 9; grp.add(label);
+        const halo = ringMesh(P.ring + 0.17, 0.1, "#1c2128", 0.35, 1); grp.add(halo);
+        const base = ringMesh(P.ring, 0.26, "#ffffff", 0.6, 2); grp.add(base);
+        const fill = ringMesh(P.ring, 0.26, HUES[o.id], 1, 3); grp.add(fill);
+        [halo, base, fill].forEach((m) => (m.position.y = 0.025));
+        return {
+          o, grp, egg, cap, eggMat, glint, glintCore, label, lp, halo, base, fill,
+          inside: false, needExit: false, charge: 0, findDwell: 0, open: 0, ringVis: 0, flare: 0, glintT: Math.random() * 3,
+        };
+      });
+      const byId = Object.fromEntries(answers.map((a) => [a.o.id, a]));
+      function resizeRings() {
+        for (const a of answers) {
+          a.halo.geometry.dispose(); a.base.geometry.dispose(); a.fill.geometry.dispose();
+          a.halo.geometry = new THREE.RingGeometry(P.ring + 0.12, P.ring + 0.22, 96, 1);
+          a.base.geometry = new THREE.RingGeometry(P.ring - 0.13, P.ring + 0.13, 96, 1);
+          a.fill.geometry = new THREE.RingGeometry(P.ring - 0.13, P.ring + 0.13, 96, 1);
+        }
+      }
+
+      // The question stone at the station's middle: the question lives here, the answer is given here.
+      const stone = new THREE.Group(); stone.position.set(STONE.x, 0, STONE.z); scene.add(stone);
+      const plinth = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 0.75, 8), new THREE.MeshLambertMaterial({ color: "#a39a8a" }));
+      plinth.position.y = 0.375; stone.add(plinth);
+      const signHolder = new THREE.Group(); signHolder.position.y = 0.85; stone.add(signHolder);
+      const sp = paintable(560, 330);
+      const signMat = new THREE.MeshBasicMaterial({ map: sp.t, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+      const sign = new THREE.Mesh(new THREE.PlaneGeometry(1, 330 / 560), signMat);
+      sign.geometry.translate(0, 330 / 560 / 2, 0); sign.renderOrder = 8; signHolder.add(sign);
+      const sealBase = ringMesh(STONE.ring, 0.24, "#ffffff", 0.7, 2); sealBase.position.y = 0.03; stone.add(sealBase);
+      const sealFill = ringMesh(STONE.ring, 0.24, RIGHT, 1, 3); sealFill.position.y = 0.031; stone.add(sealFill);
+      const plusP = paintable(200, 110);
+      const plus = new THREE.Sprite(new THREE.SpriteMaterial({ map: plusP.t, transparent: true, depthTest: false })); plus.renderOrder = 10; plus.visible = false; stone.add(plus);
+
+      // The hall's inscription: where the text answer is found.
+      const insP = paintable(640, 90);
+      { const g = begin(insP); g.fillStyle = "#cdbf9f"; rr(g, 0, 0, 640, 90, 8); g.fill(); g.strokeStyle = "#8f805f"; g.lineWidth = 6; rr(g, 6, 6, 628, 78, 6); g.stroke();
+        g.fillStyle = "#4b3f2a"; g.font = `700 54px Georgia, serif`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("· CONCORDIA ·", 320, 48); insP.t.needsUpdate = true; }
+      const inscription = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 4.2 * 90 / 640), new THREE.MeshLambertMaterial({ map: insP.t }));
+      inscription.position.set(8, 3.55, -20.42); scene.add(inscription);
+      const insGlow = new THREE.Mesh(new THREE.PlaneGeometry(4.7, 4.7 * 90 / 640 + 0.4), new THREE.MeshBasicMaterial({ color: RIGHT, transparent: true, opacity: 0, depthWrite: false }));
+      insGlow.position.set(8, 3.55, -20.45); scene.add(insGlow);
+
+      /* ---------- the other items of the station (they only dim or pause) ---------- */
+      const others = {};
+      {
+        // narration circle, plume look: a soft disc and rising motes
+        const grp = new THREE.Group(); grp.position.set(1.2, 0, 7.2); scene.add(grp);
+        const dc = document.createElement("canvas"); dc.width = dc.height = 128; const g = dc.getContext("2d");
+        const gr = g.createRadialGradient(64, 64, 10, 64, 64, 64); gr.addColorStop(0, "rgba(253,230,138,0.55)"); gr.addColorStop(0.8, "rgba(251,191,36,0.28)"); gr.addColorStop(1, "rgba(251,191,36,0)");
+        g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+        const dt = new THREE.CanvasTexture(dc); dt.colorSpace = THREE.SRGBColorSpace;
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(2.4, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: dt, transparent: true, depthWrite: false }));
+        disc.position.y = 0.02; grp.add(disc);
+        const N = 70, arr = new Float32Array(N * 3), seedA = [];
+        for (let i = 0; i < N; i++) { const a = Math.random() * 6.283, r = Math.sqrt(Math.random()) * 2.1; seedA.push([Math.cos(a) * r, Math.sin(a) * r, Math.random()]); }
+        const pg = new THREE.BufferGeometry(); pg.setAttribute("position", new THREE.BufferAttribute(arr, 3));
+        const pm = new THREE.PointsMaterial({ color: "#fcd34d", size: 0.06, map: DOT, alphaTest: 0.02, transparent: true, opacity: 0.9, depthWrite: false });
+        const motes = new THREE.Points(pg, pm); grp.add(motes);
+        const ip = paintable(120, 120);
+        const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: ip.t, transparent: true, depthWrite: false })); icon.position.y = 2.3; icon.scale.set(0.55, 0.55, 1); grp.add(icon);
+        others.narr = { grp, disc, motes, seedA, arr, pm, icon, ip, state: "playing", t: 0.25, r: 2.4, x: 1.2, z: 7.2, dim: 1, pausedByQuiz: false };
+      }
+      {
+        // a free film on a stand
+        const grp = new THREE.Group(); grp.position.set(-2.2, 0, -10.5); scene.add(grp);
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 0.1), new THREE.MeshLambertMaterial({ color: "#3c4044" })); post.position.y = 0.65; grp.add(post);
+        const vp = paintable(320, 180);
+        const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.07), new THREE.MeshBasicMaterial({ map: vp.t, transparent: true, fog: false }));
+        scr.position.y = 1.85; grp.add(scr);
+        others.video = { grp, scr, vp, state: "idle", t: 0, dim: 1, pausedByQuiz: false };
+      }
+      {
+        // a pin with a short text
+        const grp = new THREE.Group(); grp.position.set(-2.6, 0, 3.6); scene.add(grp);
+        const mat = new THREE.MeshLambertMaterial({ color: "#fb923c", emissive: "#fb923c", emissiveIntensity: 0.25, transparent: true });
+        const stem = new THREE.Mesh(new THREE.ConeGeometry(0.09, 1.4, 10).rotateX(Math.PI), mat); stem.position.y = 0.7; grp.add(stem);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), mat); head.position.y = 1.55; grp.add(head);
+        const pp = paintable(380, 120);
+        const note = new THREE.Sprite(new THREE.SpriteMaterial({ map: pp.t, transparent: true, depthTest: false })); note.center.set(0.5, 0); note.position.y = 1.9; note.renderOrder = 9; note.visible = false; grp.add(note);
+        others.pin = { grp, mat, head, note, pp, open: 0, dim: 1 };
+      }
+      // the next station's beacon: only once this station is done, or when the visitor leaves it
+      const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 12, 20, 1, true), new THREE.MeshBasicMaterial({ color: "#fb923c", transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+      beacon.position.set(NEXT.x, 6, NEXT.z); scene.add(beacon);
+
+      /* ======================= state ======================= */
+      const V = { x: 0, z: 7.5, yaw: 0, pitch: -0.08 }; // the true pose
+      const M = { x: 0, z: 7.5, jx: 0, jz: 0 }; // the measured position (true + slow wander)
+      const Q = {
+        key: "single", quiz: QUIZZES.single, phase: "story", found: new Set(), picks: new Set(), outcome: null, points: 0,
+        idle: 0, hinted: false, weak: false, away: false, tapArm: null, seen: false, seenT: 0, timer: 0, seal: 0, sealInside: false,
+        afterAt: 0, story: "before", tries: 0, scoreUntil: 0,
+      };
+      let simTime = 0;
+      let walkTarget = null;
+      let faceTarget = null;
+      const keys = new Set();
+
+      const quizOpen = () => Q.phase === "search" || Q.phase === "choose";
+      const isWorldQuiz = () => Q.quiz.type === "single" || Q.quiz.type === "multiple";
+      const afarAllowed = () => Q.weak || P.afar === "always" || (P.afar === "idle" && (Q.afarUnlocked || Q.idle >= P.idleS));
+      const minApart = () => { let m = Infinity; for (const a of OPTIONS) for (const b of OPTIONS) if (a !== b) m = Math.min(m, Math.hypot(a.at[0] - b.at[0], a.at[1] - b.at[1])); return m; };
+      const standingAllowed = () => !Q.weak && minApart() >= MIN_APART;
+      const label = (id) => byId[id].o.label;
+
+      /* ======================= the HUD (DOM) ======================= */
+      const PORTRAIT = `<svg viewBox="0 0 64 64"><rect width="64" height="64" fill="#3a4a5a"/><path d="M8 64c2-14 12-19 24-19s22 5 24 19z" fill="#8c6a48"/><rect x="27" y="35" width="10" height="12" rx="4" fill="#d9a67c"/><ellipse cx="32" cy="27" rx="13.5" ry="15" fill="#ecbf98"/><path d="M17 24c0-11 7-17 15-17s15 6 15 17c-3-5-9-7-15-7s-12 2-15 7z" fill="#f4efe6"/><circle cx="26.5" cy="28" r="1.8" fill="#26211c"/><circle cx="37.5" cy="28" r="1.8" fill="#26211c"/><path d="M27 35.5q5 4 10 0" fill="none" stroke="#6b4a33" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+      $("face").innerHTML = PORTRAIT;
+      const HAND = `<svg viewBox="0 0 24 24" fill="none" stroke="#1c2128" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5V4.5a1.5 1.5 0 0 1 3 0V11m0-1a1.5 1.5 0 0 1 3 0v4.5a6.5 6.5 0 0 1-6.5 6.5h-.6a6 6 0 0 1-4.6-2.2L4.6 15.4a1.6 1.6 0 0 1 2.4-2.1L9 15"/></svg>`;
+
+      let toastTimer = 0;
+      function toast(text, ms) {
+        const el = $("toast"); el.textContent = text; el.classList.remove("gone");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.classList.add("gone"), (ms || Math.max(3000, Math.min(9000, text.length * 60))) / Math.max(0.25, timeScale));
+      }
+      $("toast").addEventListener("click", () => $("toast").classList.add("gone"));
+      function toastHide() { clearTimeout(toastTimer); $("toast").classList.add("gone"); }
+
+      function showStrip(eyebrow, text, btn = "Continue") {
+        const s = $("strip"); s.hidden = false; s.classList.remove("lifting");
+        $("who").innerHTML = eyebrow ? `<b>${eyebrow}</b> · ${GUIDE}` : GUIDE;
+        $("say").textContent = text; $("go").textContent = btn;
+      }
+      const hideStrip = () => ($("strip").hidden = true);
+      $("go").addEventListener("click", () => storyNext());
+
+      function renderPill() {
+        const el = $("pill");
+        const panelUp = !$("strip").hidden || !$("sheet").hidden || !$("typecard").hidden;
+        el.hidden = panelUp || !(quizOpen() || simTime < Q.scoreUntil);
+        el.classList.toggle("small", Q.away);
+        el.classList.toggle("score", simTime < Q.scoreUntil && !quizOpen());
+        if (el.hidden) return;
+        if (!quizOpen()) { el.innerHTML = `<span class="glyph">&#9733;</span><span class="word">+${Q.quiz.points}</span>`; return; }
+        const glyph = Q.weak || (afarAllowed() && Q.hinted) ? HAND : "?";
+        if (Q.away) { el.innerHTML = `<span class="glyph">?</span>`; return; }
+        if (!isWorldQuiz()) {
+          el.innerHTML = `<span class="glyph">Aa</span><span class="dots"><span class="dot ${Q.seen ? "f" : ""}" style="--c:${RIGHT}"></span></span><span class="word">Type it</span>`;
+          return;
+        }
+        el.innerHTML = `<span class="glyph">${glyph}</span><span class="dots">${OPTIONS.map((o) => `<span class="dot ${Q.found.has(o.id) ? "f" : ""} ${Q.picks.has(o.id) ? "p" : ""}" style="--c:${HUES[o.id]}"></span>`).join("")}</span>`;
+      }
+      $("pill").addEventListener("click", () => {
+        if (!quizOpen()) return;
+        if (Q.away) { toast("The question waits at the square. Come back to finish it, or open the notes to skip it."); openSheet(); return; }
+        if (isWorldQuiz()) openSheet(); else openType();
+      });
+
+      function openSheet() {
+        const el = $("sheet"); el.hidden = false; $("pill").hidden = true; renderSheet();
+      }
+      function closeSheet() { $("sheet").hidden = true; renderPill(); }
+      function renderSheet() {
+        const el = $("sheet"); if (el.hidden) return;
+        const multi = Q.quiz.type === "multiple";
+        const picks = [...Q.picks];
+        el.innerHTML = `<div class="hd"><p class="q"><small>Question · ${Q.quiz.points} points</small>${Q.quiz.question}</p><button class="x" data-a="close" aria-label="Close">&#10005;</button></div>
+          <div class="opts">${OPTIONS.map((o) => Q.found.has(o.id)
+            ? `<button class="o ${Q.picks.has(o.id) ? "on" : ""}" data-pick="${o.id}" style="--c:${HUES[o.id]}"><i></i>${o.label}</button>`
+            : `<button class="o un" data-reveal="${o.id}" style="--c:${HUES[o.id]}"><i></i>Not found yet - show it</button>`).join("")}</div>
+          <div class="acts">${picks.length ? `<button data-a="back">Take back</button><button class="give" data-a="give">Give ${multi ? "these" : "it"}</button>` : ""}<span class="sp"></span><button class="skip" data-a="skip">Skip</button></div>`;
+      }
+      $("sheet").addEventListener("click", (e) => {
+        const b = e.target.closest("button"); if (!b) return;
+        if (b.dataset.pick) { commitPick(b.dataset.pick, "sheet"); renderSheet(); return; }
+        if (b.dataset.reveal) { find(b.dataset.reveal, "sheet"); renderSheet(); return; }
+        const a = b.dataset.a;
+        if (a === "close") closeSheet();
+        if (a === "back") { takeBack(); renderSheet(); }
+        if (a === "give") { closeSheet(); judge(); }
+        if (a === "skip") { closeSheet(); skip(); }
+      });
+
+      function openType() {
+        $("typecard").hidden = false; $("pill").hidden = true;
+        $("tq").innerHTML = `<small>Question · ${Q.quiz.points} points</small>${Q.quiz.question}`;
+        $("tres").textContent = Q.seen ? "" : "Look around the square first, or type it if you know it.";
+        $("tres").className = "res"; $("tin").className = "";
+      }
+      function closeType() { $("typecard").hidden = true; renderPill(); }
+      $("tclose").addEventListener("click", closeType);
+      $("tskip").addEventListener("click", () => { closeType(); skip(); });
+      $("tform").addEventListener("submit", (e) => { e.preventDefault(); judgeTyped($("tin").value); });
+      function judgeTyped(typed) {
+        if (!canonical(typed)) { $("tres").textContent = "Type the word first."; return; }
+        const h = hashAnswer(Q.quiz.salt, typed);
+        const ok = Q.quiz.sha256.includes(h);
+        lastJudge = { typed, canonical: canonical(typed), hash: h.slice(0, 12) + "...", ok };
+        $("tin").className = ok ? "right" : "wrong";
+        if (ok) {
+          $("tres").className = "res right"; $("tres").textContent = `Right: +${Q.quiz.points} points`;
+          Q.outcome = "right"; Q.points += Q.quiz.points; result(true); $("tin").blur();
+          Q.closeTypeAt = simTime + 2.6;
+        } else { $("tres").className = "res"; $("tres").textContent = Q.quiz.says.retry; tone("wrong"); }
+      }
+      let lastJudge = null;
+
+      /* ---------- radar (the walk layer, unchanged in idea: stations only) ---------- */
+      const rctx = $("radar").getContext("2d");
+      function drawRadar() {
+        const g = rctx, S = 168, c = S / 2, R = 80, scale = R / 30;
+        g.clearRect(0, 0, S, S);
+        g.fillStyle = "rgba(12,16,21,0.84)"; g.beginPath(); g.arc(c, c, R, 0, 6.283); g.fill();
+        g.lineWidth = 3; g.strokeStyle = Q.weak ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.22)";
+        g.setLineDash(Q.weak ? [6, 6] : []); g.beginPath(); g.arc(c, c, R - 2, 0, 6.283); g.stroke(); g.setLineDash([]);
+        const toR = (x, z) => { const dx = x - V.x, dz = z - V.z; const cs = Math.cos(V.yaw), sn = Math.sin(V.yaw);
+          const rx = dx * cs - dz * sn, rz = dx * sn + dz * cs; let px = rx * scale, py = rz * scale; const d = Math.hypot(px, py), lim = R - 12; if (d > lim) { px *= lim / d; py *= lim / d; } return [c + px, c + py]; };
+        // the station's ring
+        const [sx, sy] = toR(STATION.x, STATION.z);
+        g.strokeStyle = "rgba(255,255,255,0.4)"; g.lineWidth = 2.5; g.beginPath(); g.arc(sx, sy, STATION.ring * scale, 0, 6.283); g.stroke();
+        g.fillStyle = "#fff"; g.beginPath(); g.arc(sx, sy, 7, 0, 6.283); g.fill();
+        if (quizOpen()) { g.fillStyle = "#1c2128"; g.font = "800 11px " + FONT; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("?", sx, sy + 0.5); }
+        const nextOn = Q.phase === "after" || Q.phase === "done" || Q.away;
+        if (nextOn) { const [nx, ny] = toR(NEXT.x, NEXT.z); g.fillStyle = "#fb923c"; g.beginPath(); g.arc(nx, ny, 8, 0, 6.283); g.fill(); }
+        // the visitor and the view cone
+        const half = (camera.getEffectiveFOV() * Math.PI / 180) * camera.aspect / 2;
+        g.fillStyle = "rgba(255,255,255,0.12)"; g.beginPath(); g.moveTo(c, c); g.arc(c, c, R - 4, -Math.PI / 2 - half, -Math.PI / 2 + half); g.closePath(); g.fill();
+        g.fillStyle = "#fb923c"; g.beginPath(); g.moveTo(c, c - 9); g.lineTo(c + 7, c + 7); g.lineTo(c, c + 3); g.lineTo(c - 7, c + 7); g.closePath(); g.fill();
+        if (Q.weak) { g.fillStyle = "#fde68a"; g.font = "700 20px " + FONT; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("rough", c, c + 44); }
+      }
+
+      /* ======================= world painting ======================= */
+      function paintLabel(a) {
+        const near = Math.hypot(V.x - a.o.at[0], V.z - a.o.at[1]) < 7;
+        const picked = Q.picks.has(a.o.id);
+        const armed = Q.tapArm && Q.tapArm.id === a.o.id;
+        const outcome = Q.outcome && a.flare > 0 ? (Q.quiz.correct.includes(a.o.id) ? "right" : picked ? "wrong" : "") : "";
+        const banner = outcome === "right" ? "Right" : outcome === "wrong" ? "Not this one" : armed ? "Tap again to choose" : picked ? (Q.quiz.type === "multiple" ? "One of your answers" : "Your answer") : "";
+        const key = [near, banner].join("|");
+        if (a.lp.key === key) return; a.lp.key = key;
+        const g = begin(a.lp), W = a.lp.w, H = a.lp.h, pad = 18;
+        g.font = `700 34px ${FONT}`; const nameLines = wrap(g, a.o.label, W - pad * 2);
+        g.font = `500 25px ${FONT}`; const clueLines = near ? wrap(g, a.o.clue, W - pad * 2).slice(0, 2) : [];
+        const bh = banner ? 40 : 0;
+        const h = 14 + nameLines.length * 38 + clueLines.length * 30 + (clueLines.length ? 8 : 0) + bh + 14;
+        const y0 = H - h;
+        g.fillStyle = PAPER; rr(g, 2, y0, W - 4, h - 2, 18); g.fill();
+        g.fillStyle = HUES[a.o.id]; rr(g, 2, y0, W - 4, 12, [18, 18, 0, 0]); g.fill();
+        g.fillStyle = INK; g.textBaseline = "top"; g.textAlign = "left";
+        let y = y0 + 18;
+        g.font = `700 34px ${FONT}`; for (const l of nameLines) { g.fillText(l, pad, y); y += 38; }
+        g.font = `500 25px ${FONT}`; g.fillStyle = "#4b5563"; if (clueLines.length) y += 4; for (const l of clueLines) { g.fillText(l, pad, y); y += 30; }
+        if (banner) {
+          g.fillStyle = outcome === "right" ? RIGHT : outcome === "wrong" ? WRONG : armed ? "#fb923c" : INK;
+          rr(g, 10, H - bh - 12, W - 20, bh, 12); g.fill();
+          g.fillStyle = outcome || armed ? "#111" : "#fff"; g.font = `700 24px ${FONT}`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(banner, W / 2, H - 12 - bh / 2);
+        }
+        a.lp.t.needsUpdate = true; a.lp.used = h;
+      }
+      function signState() {
+        const q = Q.quiz, multi = q.type === "multiple";
+        if (Q.phase === "story" || Q.phase === "off") return { eyebrow: "", text: "", line: "", dark: true };
+        if (Q.outcome === "skipped") return { eyebrow: "Question · skipped", text: q.question, line: "Skipped. The story went on." };
+        if (Q.outcome === "right") return { eyebrow: `Right · +${q.points} points`, text: q.question, line: isWorldQuiz() ? q.correct.map(label).join(" and ") : "Concordia", good: true };
+        if (Q.outcome === "wrong") return { eyebrow: "Answered", text: q.question, line: `It was ${q.correct.map((id) => label(id).toLowerCase()).join(" and ")}.`, bad: true };
+        let line;
+        if (!isWorldQuiz()) line = Q.seen ? "Found it? Tap the stone or the pill to type it." : "Look around: the square holds the answer.";
+        else if (Q.lastWrong) line = `Not ${Q.lastWrong}. Stand at another.`;
+        else if (Q.phase === "search") line = Q.found.size ? `${Q.found.size} of ${OPTIONS.length} found. Keep looking.` : "Find the answers hidden around the square.";
+        else if (!standingAllowed()) line = "Position is rough: tap a thing twice to choose it.";
+        else if (Q.picks.size === 0) line = multi ? "Stand at each one that is right." : "Stand at the one you choose.";
+        else if (P.count === "stone") line = `Stand here to give ${multi ? "your answers" : [...Q.picks].map(label)[0].toLowerCase()}.`;
+        else if (P.count === "timer") line = `${[...Q.picks].map(label).join(", ")} counts in ${Math.ceil(Q.timer)} s.`;
+        else line = "";
+        return { eyebrow: `Question · ${q.points} points`, text: q.question, line };
+      }
+      function paintSign() {
+        const s = signState(); const key = JSON.stringify(s);
+        if (sp.key === key) return; sp.key = key;
+        const g = begin(sp), W = sp.w, H = sp.h;
+        if (s.dark) { g.fillStyle = "rgba(60,64,70,0.9)"; rr(g, 4, 4, W - 8, H - 8, 22); g.fill(); g.fillStyle = "#9aa3ad"; g.font = `700 46px ${FONT}`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("?", W / 2, H / 2); sp.t.needsUpdate = true; return; }
+        g.fillStyle = PAPER; rr(g, 4, 4, W - 8, H - 8, 22); g.fill();
+        g.lineWidth = 8; g.strokeStyle = s.good ? RIGHT : s.bad ? WRONG : "#fb923c"; rr(g, 8, 8, W - 16, H - 16, 18); g.stroke();
+        g.textAlign = "left"; g.textBaseline = "top";
+        g.fillStyle = s.good ? "#0f766e" : s.bad ? "#b91c1c" : "#c2410c"; g.font = `800 24px ${FONT}`; g.fillText(s.eyebrow.toUpperCase(), 30, 30);
+        g.fillStyle = INK; g.font = `700 38px ${FONT}`;
+        let y = 66; for (const l of wrap(g, s.text, W - 60).slice(0, 4)) { g.fillText(l, 30, y); y += 44; }
+        if (s.line) { g.font = `600 28px ${FONT}`; g.fillStyle = "#374151"; y += 10; for (const l of wrap(g, s.line, W - 60).slice(0, 2)) { g.fillText(l, 30, y); y += 34; } }
+        sp.t.needsUpdate = true;
+      }
+      function paintNarrIcon() {
+        const n = others.narr; if (n.ip.key === n.state) return; n.ip.key = n.state;
+        const g = begin(n.ip); g.fillStyle = "rgba(28,33,40,0.9)"; g.beginPath(); g.arc(60, 60, 56, 0, 6.283); g.fill();
+        g.fillStyle = "#fcd34d"; g.strokeStyle = "#fcd34d"; g.lineWidth = 7; g.lineCap = "round";
+        if (n.state === "paused") { g.fillRect(40, 34, 14, 52); g.fillRect(66, 34, 14, 52); }
+        else if (n.state === "playing") { g.beginPath(); g.moveTo(30, 48); g.lineTo(44, 48); g.lineTo(60, 32); g.lineTo(60, 88); g.lineTo(44, 72); g.lineTo(30, 72); g.closePath(); g.fill(); g.beginPath(); g.arc(62, 60, 18, -0.8, 0.8); g.stroke(); g.beginPath(); g.arc(62, 60, 32, -0.8, 0.8); g.stroke(); }
+        else { g.beginPath(); g.moveTo(46, 34); g.lineTo(88, 60); g.lineTo(46, 86); g.closePath(); g.fill(); }
+        n.ip.t.needsUpdate = true;
+      }
+      function paintVideo() {
+        const v = others.video; const key = v.state; if (v.vp.key === key) return; v.vp.key = key;
+        const g = begin(v.vp); const gr = g.createLinearGradient(0, 0, 320, 180); gr.addColorStop(0, "#5b6b7a"); gr.addColorStop(1, "#2f3a45"); g.fillStyle = gr; g.fillRect(0, 0, 320, 180);
+        g.fillStyle = "#c9b48a"; g.fillRect(0, 120, 320, 60); g.fillStyle = "#e9e1cf"; g.fillRect(40, 60, 60, 60); g.fillRect(200, 50, 80, 70);
+        g.fillStyle = "rgba(0,0,0,0.45)"; g.fillRect(0, 150, 320, 30); g.fillStyle = "#fff"; g.font = `600 16px ${FONT}`; g.textBaseline = "middle"; g.fillText("The square in 1900", 10, 165);
+        if (v.state !== "playing") { g.fillStyle = "rgba(255,255,255,0.9)"; g.beginPath(); g.arc(160, 85, 30, 0, 6.283); g.fill(); g.fillStyle = "#1c2128";
+          if (v.state === "paused") { g.fillRect(148, 70, 9, 30); g.fillRect(163, 70, 9, 30); } else { g.beginPath(); g.moveTo(150, 68); g.lineTo(176, 85); g.lineTo(150, 102); g.closePath(); g.fill(); } }
+        v.vp.t.needsUpdate = true;
+      }
+      function paintPinNote() {
+        const p = others.pin, g = begin(p.pp); g.fillStyle = PAPER; rr(g, 2, 2, 376, 116, 16); g.fill();
+        g.fillStyle = INK; g.font = `700 26px ${FONT}`; g.textBaseline = "top"; g.fillText("The market cross", 18, 14);
+        g.font = `500 21px ${FONT}`; g.fillStyle = "#4b5563"; wrap(g, "Stood on this spot until 1820, when the market moved.", 340).slice(0, 2).forEach((l, i) => g.fillText(l, 18, 52 + i * 26));
+        p.pp.t.needsUpdate = true;
+      }
+      paintPinNote();
+      function paintPlus(text, color) {
+        const g = begin(plusP); g.fillStyle = color; rr(g, 4, 10, 192, 90, 45); g.fill(); g.fillStyle = "#06201c"; g.font = `800 50px ${FONT}`; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(text, 100, 57); plusP.t.needsUpdate = true;
+      }
+
+      /* ======================= sounds (synthesised, quiet) ======================= */
+      let actx = null;
+      function tone(kind) {
+        try {
+          actx = actx || new AudioContext();
+          const seq = { find: [[880, 0.07], [1320, 0.09]], pick: [[660, 0.1]], right: [[660, 0.09], [880, 0.16]], wrong: [[220, 0.2]] }[kind] || [];
+          let t = actx.currentTime;
+          for (const [f, d] of seq) { const o = actx.createOscillator(), gn = actx.createGain(); o.frequency.value = f; gn.gain.setValueAtTime(0.06, t); gn.gain.exponentialRampToValueAtTime(0.0001, t + d); o.connect(gn).connect(actx.destination); o.start(t); o.stop(t + d); t += d; }
+        } catch { /* sound is optional */ }
+      }
+
+      /* ======================= the player: flow ======================= */
+      function storyNext() {
+        if (Q.phase === "story") { enterQuiz(); return; }
+        if (Q.phase === "after") { Q.phase = "done"; hideStrip(); toast(`Next: ${NEXT.name}. Follow the light.`); return; }
+      }
+      function enterQuiz() {
+        // 1. the strip turns into the question, 2. the question lifts onto the stone, 3. the strip becomes the pill
+        Q.phase = "entering";
+        showStrip("Question", Q.quiz.question, "...");
+        $("go").disabled = true;
+        setTimeout(() => lift(), 1300 / Math.max(0.25, timeScale));
+      }
+      function lift() {
+        $("go").disabled = false;
+        if (Q.phase !== "entering") return;
+        const ghost = document.createElement("div"); ghost.id = "ghost"; ghost.textContent = Q.quiz.question;
+        const ar = $("ar").getBoundingClientRect(), sr = $("say").getBoundingClientRect();
+        ghost.style.left = sr.left - ar.left + "px"; ghost.style.top = sr.top - ar.top + "px"; ghost.style.maxWidth = sr.width + "px";
+        $("ar").appendChild(ghost);
+        const tgt = new THREE.Vector3(STONE.x, 1.4, STONE.z).project(camera);
+        const tx = (tgt.x * 0.5 + 0.5) * ar.width, ty = (-tgt.y * 0.5 + 0.5) * ar.height;
+        $("strip").classList.add("lifting");
+        requestAnimationFrame(() => { ghost.style.transform = `translate(${tx - (sr.left - ar.left) - 30}px, ${ty - (sr.top - ar.top) - 20}px) scale(0.35)`; ghost.style.opacity = "0.15"; });
+        setTimeout(() => ghost.remove(), 800 / Math.max(0.25, timeScale));
+        setTimeout(() => {
+          hideStrip(); Q.phase = "search"; Q.idle = 0; Q.hinted = false;
+          if (P.others === "dimpause") {
+            if (others.narr.state === "playing") { others.narr.state = "paused"; others.narr.pausedByQuiz = true; }
+            if (others.video.state === "playing") { others.video.state = "paused"; others.video.pausedByQuiz = true; }
+          }
+          renderPill(); toast(Q.quiz.enter);
+        }, 600 / Math.max(0.25, timeScale));
+      }
+      function find(id, how) {
+        if (!quizOpen() || Q.found.has(id)) return;
+        Q.found.add(id); Q.idle = 0; tone("find");
+        if (Q.found.size === OPTIONS.length && Q.phase === "search") enterChoose();
+        renderPill(); renderSheet();
+      }
+      function enterChoose() {
+        Q.phase = "choose";
+        for (const a of answers) { const d = Math.hypot(M.x - a.o.at[0], M.z - a.o.at[1]); a.inside = d < P.ring; a.needExit = a.inside; a.charge = 0; }
+        if (!standingAllowed()) toast(Q.weak ? "All four found. Your position is rough, so tap a thing twice to choose it." : "All found. These stand too close together to choose by standing: tap one twice.");
+        else toast(Q.quiz.type === "multiple" ? "All four found. Stand at each one you think is right." : "All four found. Stand at the one you choose.");
+      }
+      function commitPick(id, how) {
+        if (Q.phase !== "choose" && !(how === "sheet" && Q.phase === "search")) {
+          if (Q.phase === "search") toast("Find all four first, then choose.");
+          return;
+        }
+        if (how === "sheet" && Q.phase === "search") enterChoose();
+        Q.lastWrong = null;
+        if (Q.quiz.type === "multiple") { if (Q.picks.has(id)) Q.picks.delete(id); else Q.picks.add(id); }
+        else Q.picks = new Set([id]);
+        Q.idle = 0; Q.tapArm = null; tone("pick");
+        const a = byId[id]; a.needExit = a.inside;
+        if (P.count === "now" && Q.quiz.type === "single") { judge(); return; }
+        if (P.count === "timer") Q.timer = P.countTimerS;
+        const names = [...Q.picks].map(label);
+        if (!names.length) toast("Taken out.");
+        else if (P.count === "stone") toast(Q.quiz.type === "multiple" ? `${sentence(names)}. Add or take out more, then give them at the stone.` : `${names[0]}. Give it at the stone in the middle, or stand at another to change.`);
+        else toast(`${sentence(names)}. It counts in ${P.countTimerS} s; stand at another to change.`);
+        renderPill();
+      }
+      const sentence = (names) => names.map((n, i) => (i ? n.toLowerCase() : n)).join(" and ");
+      function takeBack() { Q.picks.clear(); Q.timer = 0; Q.seal = 0; toast("Taken back. Nothing is chosen."); renderPill(); }
+      function judge() {
+        if (!isWorldQuiz() || !quizOpen() || Q.picks.size === 0) return;
+        const want = new Set(Q.quiz.correct);
+        const ok = Q.picks.size === want.size && [...Q.picks].every((id) => want.has(id));
+        if (ok) { Q.outcome = "right"; Q.points += Q.quiz.points; result(true); return; }
+        tone("wrong"); Q.tries++;
+        if (P.retry) {
+          Q.lastWrong = [...Q.picks].map((id) => label(id).toLowerCase()).join(" and ");
+          for (const id of Q.picks) byId[id].needExit = byId[id].inside;
+          Q.picks.clear(); Q.timer = 0; Q.seal = 0; toast(Q.quiz.says.retry); renderPill();
+          return;
+        }
+        Q.outcome = "wrong"; result(false);
+      }
+      function result(ok) {
+        tone(ok ? "right" : "wrong");
+        for (const a of answers) a.flare = isWorldQuiz() && (Q.quiz.correct.includes(a.o.id) || Q.picks.has(a.o.id)) ? 1 : 0;
+        toast(ok ? Q.quiz.says.right : Q.quiz.says.wrong);
+        if (ok) { paintPlus(`+${Q.quiz.points}`, RIGHT); plus.visible = true; plus.userData.t = 0; Q.scoreUntil = simTime + 3.0; }
+        Q.phase = "result"; Q.afterAt = simTime + 3.3;
+        renderPill(); closeSheet();
+      }
+      function skip() { Q.outcome = "skipped"; Q.phase = "result"; Q.afterAt = simTime + 0.8; toast("Skipped. The story goes on."); renderPill(); }
+      function toAfter() { Q.phase = "after"; showStrip("", Q.quiz.after); renderPill(); }
+
+      /* ======================= input: drag to look, tap to walk or to touch a thing ======================= */
+      let drag = null;
+      canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), moved: false, id: e.pointerId }; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+        if (!drag.moved && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 10) drag.moved = true;
+        if (drag.moved) { V.yaw += dx * 0.0042; V.pitch = Math.max(-0.7, Math.min(0.6, V.pitch + dy * 0.0042)); faceTarget = null; userActed(); }
+        drag.x = e.clientX; drag.y = e.clientY;
+      });
+      canvas.addEventListener("pointerup", (e) => {
+        if (!drag || drag.id !== e.pointerId) return;
+        const d = drag; drag = null;
+        if (!d.moved && performance.now() - d.t < 500) onTap(e.clientX, e.clientY);
+      });
+      addEventListener("keydown", (e) => { if (e.target.tagName === "INPUT") return; keys.add(e.key.toLowerCase()); if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(e.key.toLowerCase())) userActed(); });
+      addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+      function userActed() { if (scriptRunning) cancelBeat(); }
+
+      const tmpV = new THREE.Vector3();
+      function screenOf(x, y, z) {
+        tmpV.set(x, y, z).project(camera);
+        const r = canvas.getBoundingClientRect();
+        if (tmpV.z > 1) return null;
+        return [r.left + (tmpV.x * 0.5 + 0.5) * r.width, r.top + (-tmpV.y * 0.5 + 0.5) * r.height, tmpV.z];
+      }
+      function tappables() {
+        const out = [];
+        if (isWorldQuiz() && (quizOpen() || Q.phase === "result")) for (const a of answers) {
+          const [x, z] = a.o.at;
+          if (!Q.found.has(a.o.id)) out.push({ id: a.o.id, kind: "glint", p: [x, 0.35 + a.o.lift, z], r: 0.5 });
+          else if (a.label.visible) out.push({ id: a.o.id, kind: "label", p: [x, a.label.position.y + a.label.scale.y * 0.5, z], r: Math.max(0.5, a.label.scale.x * 0.5) });
+        }
+        if (Q.phase !== "story" && Q.phase !== "entering") out.push({ id: "stone", kind: "stone", p: [STONE.x, 0.85 + sign.scale.y * 0.3, STONE.z], r: Math.max(0.6, sign.scale.x * 0.5) });
+        out.push({ id: "narr", kind: "narr", p: [others.narr.x, 2.3, others.narr.z], r: 0.5 });
+        out.push({ id: "video", kind: "video", p: [-2.2, 1.85, -10.5], r: 0.95 });
+        out.push({ id: "pin", kind: "pin", p: [-2.6, 1.55, 3.6], r: 0.35 });
+        if (Q.quiz.type === "text" && quizOpen()) out.push({ id: "ins", kind: "ins", p: [8, 3.55, -20.42], r: 2.1 });
+        return out;
+      }
+      function onTap(cx, cy) {
+        userActed();
+        let best = null;
+        const r = canvas.getBoundingClientRect();
+        const ppm = (dist) => r.height / (2 * dist * Math.tan((camera.fov * Math.PI) / 360));
+        for (const t of tappables()) {
+          const s = screenOf(...t.p); if (!s) continue;
+          const dist = Math.hypot(camera.position.x - t.p[0], camera.position.y - t.p[1], camera.position.z - t.p[2]);
+          const reach = Math.max(26, t.r * ppm(dist));
+          const dd = Math.hypot(s[0] - cx, s[1] - cy);
+          if (dd <= reach && (!best || dist < best.dist)) best = { t, dist };
+        }
+        if (best) { touch(best.t); return; }
+        // the ground: walk there
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
+        const hit = new THREE.Vector3();
+        if (ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit) && hit.distanceTo(camera.position) < 40) walkTarget = { x: hit.x, z: hit.z, turn: true };
+      }
+      function touch(t) {
+        if (t.kind === "glint") {
+          const near = Math.hypot(V.x - t.p[0], V.z - t.p[2]) < P.seeR;
+          if (near || afarAllowed()) find(t.id, "tap");
+          else toast("Walk over to it to open it.");
+          return;
+        }
+        if (t.kind === "label") {
+          if (Q.phase === "search") { toast("Find all four first, then choose."); return; }
+          if (Q.phase !== "choose") return;
+          if (standingAllowed() && !afarAllowed()) { toast(`Stand in its ring to choose ${label(t.id).toLowerCase()}.`); return; }
+          if (Q.tapArm && Q.tapArm.id === t.id) commitPick(t.id, "tap");
+          else Q.tapArm = { id: t.id, until: simTime + 4 };
+          return;
+        }
+        if (t.kind === "stone") {
+          if (!quizOpen()) return;
+          if (!isWorldQuiz()) { openType(); return; }
+          if (Q.picks.size) judge(); else openSheet();
+          return;
+        }
+        if (t.kind === "ins") { Q.seen = true; renderPill(); return; }
+        if (t.kind === "narr") { const n = others.narr; n.state = n.state === "playing" ? "paused" : "playing"; n.pausedByQuiz = false; return; }
+        if (t.kind === "video") { const v = others.video; v.state = v.state === "playing" ? "paused" : "playing"; v.pausedByQuiz = false; return; }
+        if (t.kind === "pin") { others.pin.open = 6; return; }
+      }
+
+      /* ======================= the frame ======================= */
+      let lastNow = performance.now();
+      function resize() {
+        const bar = $("demo").getBoundingClientRect().height;
+        document.documentElement.style.setProperty("--bar-h", bar + "px");
+        const w = $("ar").clientWidth, h = $("ar").clientHeight;
+        renderer.setSize(w, h, false);
+        const aspect = w / h; camera.aspect = aspect;
+        const hfov = Math.max(40, Math.min(70, 40 + (aspect - 0.46) * 15)) * Math.PI / 180;
+        camera.fov = (2 * Math.atan(Math.tan(hfov / 2) / aspect) * 180) / Math.PI;
+        camera.updateProjectionMatrix();
+      }
+      addEventListener("resize", resize);
+      new ResizeObserver(resize).observe($("demo"));
+
+      let jitterT = 0;
+      const gauss = () => { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.2832 * v); };
+      function step(dt) {
+        simTime += dt;
+        // walking
+        let mx = 0, mz = 0;
+        const fwd = [-Math.sin(V.yaw), -Math.cos(V.yaw)], right = [Math.cos(V.yaw), -Math.sin(V.yaw)];
+        if (keys.has("w") || keys.has("arrowup")) { mx += fwd[0]; mz += fwd[1]; }
+        if (keys.has("s") || keys.has("arrowdown")) { mx -= fwd[0]; mz -= fwd[1]; }
+        if (keys.has("d")) { mx += right[0]; mz += right[1]; }
+        if (keys.has("a")) { mx -= right[0]; mz -= right[1]; }
+        if (keys.has("arrowleft")) V.yaw += 1.6 * dt;
+        if (keys.has("arrowright")) V.yaw -= 1.6 * dt;
+        if (mx || mz) { walkTarget = null; const l = Math.hypot(mx, mz); V.x += (mx / l) * WALK * dt; V.z += (mz / l) * WALK * dt; }
+        else if (walkTarget) {
+          const dx = walkTarget.x - V.x, dz = walkTarget.z - V.z, d = Math.hypot(dx, dz);
+          if (d < 0.05) { walkTarget = null; }
+          else {
+            const s = Math.min(d, WALK * dt); V.x += (dx / d) * s; V.z += (dz / d) * s;
+            if (walkTarget.turn && d > 0.6) { const want = Math.atan2(-dx, -dz); V.yaw += angDiff(want, V.yaw) * (1 - Math.exp(-dt / 0.7)); }
+          }
+        }
+        if (faceTarget) { const want = Math.atan2(-(faceTarget.x - V.x), -(faceTarget.z - V.z)); const pw = faceTarget.pitch ?? V.pitch; V.yaw += angDiff(want, V.yaw) * (1 - Math.exp(-dt / 0.35)); V.pitch += (pw - V.pitch) * (1 - Math.exp(-dt / 0.35)); }
+        // the square's edge; the gate lets the walker out toward the next station
+        const inGate = Math.abs(V.x) < 2.0;
+        V.x = Math.max(-19.5, Math.min(19.5, V.x));
+        V.z = Math.max(-19.5, Math.min(inGate ? 30 : 19.5, V.z));
+        if (V.z > 20 && !inGate) V.z = 19.5;
+        // the measured position wanders slowly; rough tracking wanders far
+        jitterT += dt;
+        const sig = Q.weak ? P.weakJitter : P.jitter, k = 1 - Math.exp(-dt / 1.2);
+        M.jx += (gauss() * sig * 0.9 - M.jx) * k; M.jz += (gauss() * sig * 0.9 - M.jz) * k;
+        M.x = V.x + M.jx; M.z = V.z + M.jz;
+
+        // leaving and coming back to the station with the question open
+        const dc = Math.hypot(V.x - STATION.x, V.z - STATION.z);
+        if (quizOpen() && !Q.away && dc > STATION.ring) { Q.away = true; closeSheet(); closeType(); toast("The question waits at the square. Come back to finish it, or go on."); renderPill(); }
+        else if (Q.away && dc < STATION.back) { Q.away = false; toast(isWorldQuiz() ? `Welcome back. ${Q.found.size} of ${OPTIONS.length} found.` : "Welcome back. The question still waits."); renderPill(); }
+        if (!quizOpen() && Q.away) Q.away = false;
+
+        if (quizOpen() && !Q.away) {
+          Q.idle += dt;
+          if (!Q.hinted && Q.idle >= P.idleS && (Q.phase === "search" || Q.picks.size === 0)) {
+            Q.hinted = true; Q.afarUnlocked = P.afar === "idle";
+            if (P.afar === "idle" || P.afar === "always") toast(isWorldQuiz() ? (Q.phase === "search" ? "You can find them from here too: tap a glint." : "You can choose from here too: tap a thing twice.") : "Tap the pill to type the answer.");
+            $("pill").classList.remove("pulse"); void $("pill").offsetWidth; $("pill").classList.add("pulse"); renderPill();
+          }
+        }
+        if (Q.tapArm && simTime > Q.tapArm.until) Q.tapArm = null;
+        if (Q.closeTypeAt && simTime >= Q.closeTypeAt) { Q.closeTypeAt = 0; closeType(); }
+        if (Q.phase === "result" && simTime >= Q.afterAt) toAfter();
+        if (Q.scoreUntil && simTime > Q.scoreUntil) { Q.scoreUntil = 0; renderPill(); }
+
+        // finding by standing (with a short dwell, so a wander spike cannot find)
+        if (isWorldQuiz() && Q.phase === "search" && !Q.away) for (const a of answers) {
+          if (Q.found.has(a.o.id)) continue;
+          const d = Math.hypot(M.x - a.o.at[0], M.z - a.o.at[1]);
+          if (!Q.weak && d < P.findR) { a.findDwell += dt; if (a.findDwell > 0.25) find(a.o.id, "stand"); } else a.findDwell = 0;
+        }
+        // choosing by standing: dwell, a visible fill, step out cancels, hysteresis, a fresh entry needed
+        if (isWorldQuiz() && Q.phase === "choose" && !Q.away) {
+          for (const a of answers) {
+            const d = Math.hypot(M.x - a.o.at[0], M.z - a.o.at[1]);
+            if (!a.inside && d < P.ring) a.inside = true;
+            else if (a.inside && d > P.ring + P.hyst) { a.inside = false; a.needExit = false; }
+            const canCharge = standingAllowed() && a.inside && !a.needExit && !(Q.quiz.type === "single" && Q.picks.has(a.o.id));
+            if (canCharge) { a.charge += dt / P.dwellS; if (a.charge >= 1) { a.charge = 0; commitPick(a.o.id, "stand"); a.needExit = true; } }
+            else a.charge = Math.max(0, a.charge - dt / 0.6);
+          }
+          // giving the answer at the stone
+          const ds = Math.hypot(M.x - STONE.x, M.z - STONE.z);
+          if (!Q.sealInside && ds < STONE.ring) Q.sealInside = true; else if (Q.sealInside && ds > STONE.ring + P.hyst) Q.sealInside = false;
+          if (P.count === "stone" && Q.picks.size && standingAllowed() && Q.sealInside) { Q.seal += dt / P.sealDwellS; if (Q.seal >= 1) { Q.seal = 0; judge(); } }
+          else Q.seal = Math.max(0, Q.seal - dt / 0.6);
+          if (P.count === "timer" && Q.picks.size && Q.phase === "choose") { Q.timer -= dt; if (Q.timer <= 0) { Q.timer = 0; judge(); } }
+        }
+        // the text answer: the inscription is "seen" when looked at from near enough
+        if (Q.quiz.type === "text" && Q.phase === "search" && !Q.seen) {
+          const dx = 8 - V.x, dz = -20.42 - V.z, d = Math.hypot(dx, dz);
+          const off = Math.abs(angDiff(Math.atan2(-dx, -dz), V.yaw));
+          if (d < 17 && off < 0.3) { Q.seenT += dt; if (Q.seenT > 0.6) { Q.seen = true; tone("find"); renderPill(); } } else Q.seenT = 0;
+        }
+
+        // the other items: dim while the question is open, pause / resume on leaving / entering
+        const dimTarget = quizOpen() && !Q.away && P.others !== "none" ? 0.32 : 1;
+        const n = others.narr, dn = Math.hypot(V.x - n.x, V.z - n.z);
+        n.dim += (dimTarget - n.dim) * (1 - Math.exp(-dt / 0.4));
+        others.video.dim = n.dim; others.pin.dim = n.dim;
+        if (n.inside === undefined) n.inside = dn < n.r;
+        if (n.inside && dn > n.r + 0.5) { n.inside = false; if (n.state === "playing") n.state = "paused"; }
+        else if (!n.inside && dn < n.r) { n.inside = true; const held = quizOpen() && P.others === "dimpause"; if (n.state === "paused" && !held) { n.state = "playing"; n.pausedByQuiz = false; } }
+        if (!quizOpen() && n.pausedByQuiz && n.inside && Q.phase !== "result") { n.state = "playing"; n.pausedByQuiz = false; }
+        if (n.state === "playing") { n.t += dt / 60; if (n.t >= 1) { n.t = 1; n.state = "done"; } }
+        const v = others.video; if (v.state === "playing") { v.t += dt / 40; if (v.t >= 1) { v.t = 0; v.state = "idle"; } }
+        if (others.pin.open > 0) others.pin.open -= dt;
+      }
+      const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+
+      function visuals(dt) {
+        const t = simTime, H = canvas.clientHeight || 1, W = canvas.clientWidth || 1;
+        const tanV = Math.tan((camera.fov * Math.PI) / 360), tanH = tanV * camera.aspect;
+        const ppm = (dist) => H / (2 * dist * tanV);
+        const fitW = (dist, share) => share * 2 * dist * tanH;
+        const world = isWorldQuiz();
+        const shown = world && Q.phase !== "story" && Q.phase !== "entering" && Q.phase !== "off";
+        const fold = Q.phase === "after" || Q.phase === "done";
+        for (const a of answers) {
+          const [x, z] = a.o.at, d = Math.hypot(V.x - x, V.z - z), dist = Math.hypot(V.x - x, EYE - 1.2, V.z - z);
+          const found = Q.found.has(a.o.id);
+          a.grp.visible = shown;
+          if (!shown) continue;
+          const awayK = Q.away ? 0.45 : 1;
+          // egg: hidden until near, open once found, closed again when the quiz folds
+          a.open += ((found && !fold ? 1 : 0) - a.open) * (1 - Math.exp(-dt / 0.25));
+          const seeK = found ? 1 : Math.max(0, Math.min(1, (P.seeR - d) / 1.2));
+          a.eggMat.opacity = (fold ? 0.0 : seeK) * awayK; a.egg.visible = a.cap.visible = a.eggMat.opacity > 0.02;
+          a.cap.position.y = 0.05 + a.o.lift + 0.3 + a.open * 0.35; a.cap.rotation.z = a.open * 0.9;
+          // glint: now and then from afar, faster near, fast once hinted; gone once found
+          const fast = Q.hinted && afarAllowed() ? 0.7 : 0;
+          const period = fast || Math.max(0.9, Math.min(4.5, 0.9 + (d / 16) * 3.6));
+          a.glintT += dt; const ph = (a.glintT % period) / period;
+          const pulse = ph < 0.22 ? Math.sin((ph / 0.22) * Math.PI) : 0;
+          const gl = found || fold || Q.phase === "result" ? 0 : (0.35 + 0.65 * pulse) * awayK;
+          const gpx = Math.max(0.45, 30 / ppm(dist)) * (0.7 + 0.5 * pulse);
+          a.glint.material.opacity = gl; a.glint.scale.set(gpx * 1.6, gpx * 1.6, 1);
+          a.glintCore.material.opacity = gl * 0.9; a.glintCore.scale.set(gpx * 0.6, gpx * 0.6, 1);
+          a.glint.visible = a.glintCore.visible = gl > 0.01;
+          // label: only once found; at least readable from afar, never more than 40 % of the view's width
+          a.label.visible = found && !fold;
+          if (a.label.visible) {
+            paintLabel(a);
+            const base = 1.15, minW = 150 / ppm(dist), cap = fitW(dist, 0.4);
+            const w = Math.min(Math.max(base, minW), cap);
+            a.label.scale.set(w, (w * a.lp.h) / a.lp.w, 1);
+            a.label.position.y = 0.05 + a.o.lift + 0.75 + a.open * 0.35;
+            a.label.material.opacity = Math.min(1, a.open * 1.4) * (Q.away ? 0.5 : 1);
+          }
+          // the ring: only in the choose phase (or showing the result); dashed and grey when standing does not count
+          const ringOn = (Q.phase === "choose" || (Q.phase === "result" && a.flare > 0)) && !fold;
+          a.ringVis += ((ringOn ? 1 : 0) - a.ringVis) * (1 - Math.exp(-dt / 0.3));
+          const vis = a.ringVis > 0.02; a.base.visible = a.halo.visible = a.fill.visible = vis;
+          if (vis) {
+            const picked = Q.picks.has(a.o.id), off = !standingAllowed() && Q.phase === "choose";
+            const bu = a.base.material.uniforms, fu = a.fill.material.uniforms;
+            bu.uColor.value.set(picked ? HUES[a.o.id] : off ? "#9ca3af" : "#ffffff");
+            bu.uOpacity.value = a.ringVis * (off ? 0.45 : picked ? 1 : 0.7) * awayK; bu.uDash.value = off ? 1 : 0;
+            a.halo.material.uniforms.uOpacity.value = 0.35 * a.ringVis * awayK;
+            let f = picked ? (P.count === "timer" && Q.timer > 0 ? Q.timer / P.countTimerS : 1) : a.charge;
+            let col = HUES[a.o.id];
+            if (Q.phase === "result") { f = 1; col = Q.quiz.correct.includes(a.o.id) ? RIGHT : WRONG; }
+            fu.uFill.value = f; fu.uColor.value.set(col); fu.uOpacity.value = (picked ? 0.0 : 1) * a.ringVis * awayK + (Q.phase === "result" ? 1 : 0);
+            if (picked && Q.phase !== "result") { fu.uOpacity.value = P.count === "timer" ? 1 : 0; fu.uColor.value.set("#ffffff"); }
+            const s = 1 + (Q.phase === "result" ? 0.08 * Math.sin(t * 8) * a.flare : 0) + (a.charge > 0 && !picked ? 0.03 * Math.sin(t * 10) : 0);
+            a.base.scale.set(s, s, 1); a.fill.scale.set(s, s, 1); a.halo.scale.set(s, s, 1);
+          }
+          if (a.flare > 0) a.flare = Math.max(0, a.flare - dt / 6);
+          if (Q.phase === "result" || Q.outcome) paintLabel(a);
+        }
+        // the stone and its sign
+        const signOn = Q.quiz && Q.phase !== "off";
+        stone.visible = true;
+        paintSign();
+        const ds = Math.hypot(V.x - STONE.x, V.z - STONE.z), sdist = Math.hypot(V.x - STONE.x, EYE - 1.2, V.z - STONE.z);
+        signHolder.rotation.y = Math.atan2(V.x - STONE.x, V.z - STONE.z);
+        const dark = Q.phase === "story" || Q.phase === "off";
+        const sw = dark ? 0.7 : Math.min(Math.max(1.3, 190 / ppm(sdist)), fitW(sdist, 0.8));
+        sign.scale.set(sw, sw, 1);
+        signMat.opacity = Q.away ? 0.6 : 1;
+        const sealOn = world && Q.phase === "choose" && Q.picks.size > 0 && P.count === "stone";
+        sealBase.visible = sealFill.visible = sealOn;
+        if (sealOn) {
+          const off = !standingAllowed();
+          sealBase.material.uniforms.uDash.value = off ? 1 : 0; sealBase.material.uniforms.uColor.value.set(off ? "#9ca3af" : "#ffffff");
+          sealFill.material.uniforms.uFill.value = Q.seal; sealFill.material.uniforms.uColor.value.set("#fb923c");
+          const s = 1 + 0.04 * Math.sin(t * 3); sealBase.scale.set(s, s, 1);
+        }
+        if (plus.visible) { plus.userData.t += dt; const k = plus.userData.t; plus.position.set(0, 1.1 + sign.scale.y * (330 / 560) + k * 0.4, 0); plus.material.opacity = Math.max(0, 1 - k / 3); const pw = Math.min(Math.max(0.6, 90 / ppm(sdist)), fitW(sdist, 0.25)); plus.scale.set(pw, pw * 0.55, 1); if (k > 3) plus.visible = false; }
+        // the inscription glows once seen in the text quiz
+        insGlow.material.opacity = Q.quiz.type === "text" && Q.seen && Q.phase !== "done" ? 0.35 + 0.15 * Math.sin(t * 3) : 0;
+        // the other items
+        const n = others.narr; paintNarrIcon();
+        n.disc.material.opacity = n.dim * (n.state === "playing" ? 1 : 0.7);
+        n.pm.opacity = 0.9 * n.dim; n.icon.material.opacity = Math.max(0.35, n.dim);
+        const speed = n.state === "playing" ? 0.45 : 0.15;
+        for (let i = 0; i < n.seedA.length; i++) { const s = n.seedA[i]; s[2] = (s[2] + dt * speed * (0.6 + (i % 5) * 0.12)) % 1; n.arr[i * 3] = s[0]; n.arr[i * 3 + 1] = s[2] * 2.2; n.arr[i * 3 + 2] = s[1]; }
+        n.motes.geometry.attributes.position.needsUpdate = true;
+        n.icon.position.y = 2.3 + Math.sin(t * 1.5) * 0.04;
+        const vv = others.video; paintVideo(); vv.scr.material.opacity = Math.max(0.3, vv.dim); vv.scr.lookAt(V.x, 1.85, V.z);
+        const p = others.pin; p.mat.opacity = Math.max(0.3, p.dim); p.head.position.y = 1.55 + (p.dim > 0.9 ? Math.sin(t * 2) * 0.05 : 0);
+        p.note.visible = p.open > 0; if (p.note.visible) { const pd = Math.hypot(V.x + 2.6, V.z - 3.6) + 0.1; const w = Math.min(Math.max(1.1, 150 / ppm(pd)), fitW(pd, 0.4)); p.note.scale.set(w, w * 120 / 380, 1); }
+        // the next station's light
+        const nextOn = Q.phase === "after" || Q.phase === "done" || Q.away;
+        beacon.material.opacity += ((nextOn ? 0.45 : 0) - beacon.material.opacity) * (1 - Math.exp(-dt / 0.5));
+        beacon.visible = beacon.material.opacity > 0.01;
+      }
+
+      let radarT = 0, measureT = 0;
+      function tick(now) {
+        const realDt = Math.min(0.1, (now - lastNow) / 1000), dt = realDt * timeScale; lastNow = now;
+        step(dt);
+        camera.position.set(V.x, EYE, V.z); camera.rotation.set(V.pitch, V.yaw, 0);
+        visuals(dt);
+        renderer.render(scene, camera);
+        radarT += dt; if (radarT > 0.08) { radarT = 0; drawRadar(); }
+        measureT += realDt; if (measureT > 0.25) { measureT = 0; showReadout(); }
+        checkWaiters();
+        requestAnimationFrame(tick);
+      }
+
+      /* ======================= the measuring hook ======================= */
+      function measure() {
+        const ar = $("ar").getBoundingClientRect();
+        const els = [...document.querySelectorAll("#hud .hud")].filter((el) => {
+          if (el.hidden) return false; const cs = getComputedStyle(el);
+          if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) < 0.05) return false;
+          const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+        });
+        const rects = els.map((el) => { const r = el.getBoundingClientRect(); return { el, x0: Math.max(ar.left, r.left), y0: Math.max(ar.top, r.top), x1: Math.min(ar.right, r.right), y1: Math.min(ar.bottom, r.bottom) }; }).filter((r) => r.x1 > r.x0 && r.y1 > r.y0);
+        // exact union area by coordinate compression
+        const xs = [...new Set(rects.flatMap((r) => [r.x0, r.x1]))].sort((a, b) => a - b);
+        const ys = [...new Set(rects.flatMap((r) => [r.y0, r.y1]))].sort((a, b) => a - b);
+        let area = 0;
+        for (let i = 0; i < xs.length - 1; i++) for (let j = 0; j < ys.length - 1; j++) {
+          const cx = (xs[i] + xs[i + 1]) / 2, cy = (ys[j] + ys[j + 1]) / 2;
+          if (rects.some((r) => cx > r.x0 && cx < r.x1 && cy > r.y0 && cy < r.y1)) area += (xs[i + 1] - xs[i]) * (ys[j + 1] - ys[j]);
+        }
+        const over = new Set(); let pairs = 0;
+        for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+          const a = rects[i], b = rects[j];
+          if (Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > 1 && Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > 1) { over.add(a.el); over.add(b.el); pairs++; }
+        }
+        document.querySelectorAll("#hud .hud").forEach((el) => el.classList.toggle("overlap", over.has(el)));
+        const total = ar.width * ar.height;
+        const walk = rects.filter((r) => r.el.id === "exit" || r.el.id === "radar");
+        const walkArea = walk.reduce((s, r) => s + (r.x1 - r.x0) * (r.y1 - r.y0), 0);
+        // the widest world label, as a share of the view's width
+        let labelMax = 0;
+        for (const a of answers) if (a.grp.visible && a.label.visible) {
+          const dist = Math.hypot(V.x - a.o.at[0], V.z - a.o.at[1]) + 0.01; const tanH = Math.tan((camera.fov * Math.PI) / 360) * camera.aspect;
+          labelMax = Math.max(labelMax, a.label.scale.x / (2 * dist * tanH));
+        }
+        return {
+          pct: Math.round((area / total) * 1000) / 10,
+          quizPct: Math.round(((area - walkArea) / total) * 1000) / 10,
+          count: rects.length, overlaps: pairs, names: rects.map((r) => r.el.id), labelMax: Math.round(labelMax * 100),
+          w: Math.round(ar.width), h: Math.round(ar.height),
+        };
+      }
+      function showReadout() {
+        const m = measure();
+        const el = $("readout");
+        el.innerHTML = `HUD ${m.pct}% · ${m.count} el<br>${m.overlaps ? `<b>${m.overlaps} overlap</b>` : "0 overlaps"} · ${m.w}x${m.h}`;
+        el.classList.toggle("bad", m.overlaps > 0 || m.pct > 33);
+        return m;
+      }
+
+      /* ======================= the beats ======================= */
+      const CANCEL = Symbol("cancel");
+      let beatToken = 0, scriptRunning = false, waiters = [];
+      function checkWaiters() { waiters = waiters.filter((w) => { if (w.tok !== beatToken) { w.reject(CANCEL); return false; } if (w.pred() || simTime > w.deadline) { w.resolve(); return false; } return true; }); }
+      function until(pred, maxS = 40) { const tok = beatToken; return new Promise((resolve, reject) => waiters.push({ pred, resolve, reject, tok, deadline: simTime + maxS })); }
+      const wait = (s) => { const t0 = simTime; return until(() => simTime - t0 >= s, s + 1); };
+      const walkTo = (x, z, turn = true) => { walkTarget = { x, z, turn }; return until(() => !walkTarget, 60); };
+      const face = (x, z, pitch) => { faceTarget = { x, z, pitch }; return wait(0.9); };
+      function cancelBeat() { beatToken++; scriptRunning = false; faceTarget = null; walkTarget = null; window.__proto.beatDone = true; }
+      const tapThing = (kind, id) => { const t = tappables().find((x) => x.kind === kind && x.id === id); if (t) touch(t); };
+
+      function setScene(s) {
+        toastHide(); hideStrip(); $("sheet").hidden = true; $("typecard").hidden = true; $("tin").value = "";
+        Q.key = s.quiz || "single"; Q.quiz = QUIZZES[Q.key];
+        Q.phase = s.phase || "story"; Q.found = new Set(s.found || []); Q.picks = new Set(s.picks || []);
+        Q.outcome = s.outcome || null; Q.idle = s.idle || 0; Q.hinted = Q.idle >= P.idleS; Q.afarUnlocked = false; Q.weak = !!s.weak; Q.away = !!s.away;
+        Q.tapArm = null; Q.seen = !!s.seen; Q.seenT = 0; Q.timer = 0; Q.seal = 0; Q.sealInside = false; Q.lastWrong = null; Q.scoreUntil = 0; Q.closeTypeAt = 0; plus.visible = false;
+        if (Q.phase === "result") Q.afterAt = simTime + 0.2;
+        V.x = s.at[0]; V.z = s.at[1]; V.pitch = s.pitch ?? -0.08;
+        V.yaw = s.face ? Math.atan2(-(s.face[0] - V.x), -(s.face[1] - V.z)) : 0;
+        M.jx = M.jz = 0; M.x = V.x; M.z = V.z; walkTarget = null; faceTarget = null;
+        for (const a of answers) {
+          const d = Math.hypot(V.x - a.o.at[0], V.z - a.o.at[1]);
+          a.inside = d < P.ring; a.needExit = a.inside; a.charge = 0; a.findDwell = 0; a.flare = 0; a.lp.key = "";
+          a.open = Q.found.has(a.o.id) ? 1 : 0; a.ringVis = Q.phase === "choose" ? 1 : 0;
+        }
+        const n = others.narr; n.state = s.narr || (Q.phase === "story" ? "playing" : "paused"); n.pausedByQuiz = n.state === "paused" && quizOpen(); n.t = 0.3; n.inside = undefined; n.dim = quizOpen() && P.others !== "none" ? 0.32 : 1;
+        others.video.state = s.video || "idle"; others.pin.open = 0;
+        sp.key = "";
+        if (Q.phase === "story") showStrip("", Q.quiz.before);
+        if (Q.phase === "after") showStrip("", Q.quiz.after);
+        renderPill();
+      }
+
+      const BEATS = [
+        {
+          title: "A story plays", caption: "Try: drag to look, tap the ground to walk, tap things; the arrows step through the beats. A story plays; tap Continue to reach the quiz.",
+          setup: { phase: "story", at: [0, 8.2], face: [0, -1] },
+        },
+        {
+          title: "The question enters", caption: "The question shows in the strip, then lifts onto the stone in the middle; the strip becomes a pill of four empty dots. The playing narration pauses and the other items dim.",
+          setup: { phase: "story", at: [0, 8.2], face: [0, -1] },
+          script: async () => { await wait(0.6); storyNext(); await until(() => Q.phase === "search"); await wait(0.6); },
+        },
+        {
+          title: "Search: found like eggs", caption: "From afar each answer glints now and then. Walk close and it opens, with its clue above it, and a dot fills. Nothing on the screen names it.",
+          setup: { phase: "search", found: ["statue"], at: [4.6, -0.4], face: [7.8, 5.8] },
+          script: async () => { await walkTo(7.3, 4.7); await until(() => Q.found.has("tree"), 4); await walkTo(5.6, 2.2, false); await face(7.8, 6.2, -0.05); },
+        },
+        {
+          title: "All four found: rings wake", caption: "The last find wakes a ring on the ground at every answer. The ring you stand in waits until you have stepped out once, so a find never chooses.",
+          setup: { phase: "search", found: ["statue", "tree", "fountain"], at: [-3.2, 4.6], face: [-5.6, 7] },
+          script: async () => { await walkTo(-5.0, 6.3); await until(() => Q.phase === "choose", 4); await walkTo(-1.6, 3.6, false); await face(-5.6, -4.2, -0.22); },
+        },
+        {
+          title: "Answer: stand in a ring", caption: "Standing in a ring fills it in about 3 s; stepping out drains it. When it is full, the statue is your answer for now: its label says so, its dot gets a ring.",
+          setup: { phase: "choose", found: ["statue", "tree", "fountain", "bench"], at: [4.4, -2.4], face: [7.4, -5.8] },
+          script: async () => { await walkTo(6.9, -5.0); await until(() => Q.picks.has("statue"), 8); await walkTo(5.2, -3.0, false); await face(7.4, -5.6, -0.42); },
+        },
+        {
+          title: "Take back", caption: "Tap the pill (or the stone): the sheet is the floor. Take back clears the pick; Give and Skip are there too. Or simply stand at another one instead.",
+          setup: { phase: "choose", found: ["statue", "tree", "fountain", "bench"], picks: ["statue"], at: [5.2, -3.0], face: [7.4, -5.6], pitch: -0.15 },
+          script: async () => { await wait(0.5); openSheet(); await wait(1.4); },
+        },
+        {
+          title: "Answer again", caption: "After a take back, the visitor stands at the fountain. Its ring fills; the guide's toast says where to give it.",
+          setup: { phase: "choose", found: ["statue", "tree", "fountain", "bench"], at: [-2.2, -1.6], face: [-5.6, -4.2] },
+          script: async () => { await walkTo(-5.2, -3.9); await until(() => Q.picks.has("fountain"), 8); await walkTo(-3.2, -2.4, false); await face(0, -1, -0.2); },
+        },
+        {
+          title: "Give it at the stone", caption: "With a pick, the stone gets its own ring. Standing in it for 2 s gives the answer (a tap on the stone does the same). Until then, any other ring changes it.",
+          setup: { phase: "choose", found: ["statue", "tree", "fountain", "bench"], picks: ["fountain"], at: [-2.2, 2.6], face: [0, -1] },
+          script: async () => { faceTarget = { x: 0, z: -1, pitch: -0.26 }; await walkTo(0.3, 0.75, false); await until(() => Q.seal > 0.5 || Q.phase !== "choose", 6); },
+        },
+        {
+          title: "Result", caption: "Right: the fountain's ring turns green, +10 rises from the stone and shows on the pill for a moment, the guide says why. A wrong pick would say so and let you try again.",
+          setup: { phase: "choose", found: ["statue", "tree", "fountain", "bench"], picks: ["fountain"], at: [2.0, 2.6], face: [-3.2, -2.8], pitch: -0.2 },
+          script: async () => { await wait(0.3); judge(); await wait(1.0); },
+        },
+        {
+          title: "The story goes on", caption: "The quiz folds away in the world; the stone keeps the result. The guide's next line takes the foot, the items brighten again and the next station's light appears.",
+          setup: { phase: "after", outcome: "right", found: ["statue", "tree", "fountain", "bench"], at: [0.4, 3.0], face: [0, -1] },
+        },
+        {
+          title: "Leave with it open", caption: "Half way through the search the visitor walks out through the gate. The question does not vanish: a toast says it waits, the pill shrinks to a ?, the radar marks the square with ?.",
+          setup: { phase: "search", found: ["statue", "tree"], at: [0, 9.4], face: [0, 25] },
+          script: async () => { await walkTo(0, 13.4); await until(() => Q.away, 3); await wait(0.4); },
+        },
+        {
+          title: "Come back", caption: "Back inside the square, everything is as it was: two of four found, the pill back in full.",
+          setup: { phase: "search", found: ["statue", "tree"], away: true, at: [0, 14.2], face: [0, -1] },
+          script: async () => { await walkTo(0, 10.4); await until(() => !Q.away, 4); await wait(0.4); },
+        },
+        {
+          title: "Position weak", caption: "With a rough position no ring counts: they turn grey and dashed, the pill shows a hand, the stone says why. A thing is chosen by tapping it twice. No distance is shown anywhere.",
+          setup: { phase: "choose", weak: true, found: ["statue", "tree", "fountain", "bench"], at: [-0.6, 2.8], face: [-5.6, -4.2], pitch: -0.18 },
+          script: async () => { await wait(0.8); tapThing("label", "fountain"); await wait(0.5); },
+        },
+        {
+          title: "A visitor who does not move", caption: "Twenty seconds without a find: the pill pulses, the glints quicken, and a glint can be tapped from where you stand. Two are found here without a step.",
+          setup: { phase: "search", at: [0, 8.2], face: [0, -1], idle: 19.6 },
+          script: async () => { await wait(0.8); await face(7.4, -5.8, -0.1); tapThing("glint", "statue"); await wait(0.7); await face(-5.6, -4.2, -0.1); tapThing("glint", "fountain"); await wait(0.9); },
+        },
+        {
+          title: "Text answer: look for it", caption: "A second story asks for a word. The stone holds the question; the answer is carved above the hall's door. Looking at it from near enough lights it and fills the one dot.",
+          setup: { quiz: "text", phase: "search", at: [3.2, -6.0], face: [8, -20.4] },
+          script: async () => { await walkTo(6.6, -9.8); await face(8, -20.4, 0.12); await until(() => Q.seen, 4); await wait(0.4); },
+        },
+        {
+          title: "Text answer: type it", caption: "Typing needs a keyboard, so a text answer is the one case that goes to a card. It is judged by the tour format's normalisation, then a salted hash: here ' CONCORDIA ' counts.",
+          setup: { quiz: "text", phase: "search", seen: true, at: [6.6, -9.8], face: [8, -20.4], pitch: 0.12 },
+          script: async () => { await wait(0.4); openType(); const word = " CONCORDIA "; for (let i = 1; i <= word.length; i++) { $("tin").value = word.slice(0, i); await wait(0.08); } await wait(0.3); judgeTyped($("tin").value); await wait(0.4); },
+        },
+        {
+          title: "Two answers (multiple)", caption: "With more than one right answer, each ring toggles its answer on (or off again, after stepping out and back in). Both are then given at the stone.",
+          setup: { quiz: "multiple", phase: "choose", found: ["statue", "tree", "fountain", "bench"], picks: ["fountain"], at: [4.6, -2.2], face: [7.4, -5.8] },
+          script: async () => { await walkTo(6.9, -5.0); await until(() => Q.picks.has("statue"), 8); await walkTo(3.6, -1.6, false); await face(-1, -3.6, -0.2); },
+        },
+      ];
+
+      let cur = 0;
+      async function runBeat(i) {
+        cur = (i + BEATS.length) % BEATS.length;
+        beatToken++; const tok = beatToken; waiters.forEach((w) => w.reject(CANCEL)); waiters = [];
+        const b = BEATS[cur];
+        window.__proto.beatDone = false;
+        setScene(b.setup);
+        $("btitle").innerHTML = `<small>${cur + 1}/${BEATS.length}</small>${b.title}`;
+        $("caption").textContent = b.caption;
+        document.querySelectorAll("#beatlist button").forEach((el, k) => el.classList.toggle("cur", k === cur));
+        try { url.searchParams.set("beat", String(cur + 1)); history.replaceState(null, "", url); } catch { /* optional */ }
+        if (b.script) { scriptRunning = true; try { await b.script(); } catch (e) { if (e !== CANCEL) console.error(e); } }
+        if (tok === beatToken) { scriptRunning = false; window.__proto.beatDone = true; }
+      }
+      $("prev").addEventListener("click", () => runBeat(cur - 1));
+      $("next").addEventListener("click", () => runBeat(cur + 1));
+
+      /* ======================= notes, sweeps, measuring all beats ======================= */
+      $("menu").addEventListener("click", () => ($("panel").hidden = false));
+      $("pclose").addEventListener("click", () => ($("panel").hidden = true));
+      const SWEEPS = [
+        ["dwellS", "Seconds standing to choose", [[2, "2 s"], [3, "3 s"], [5, "5 s"]]],
+        ["ring", "Ring radius", [[1.5, "1.5 m"], [2, "2 m"], [2.5, "2.5 m"]]],
+        ["hyst", "Extra to leave a ring", [[0.3, "0.3 m"], [0.6, "0.6 m"], [1.2, "1.2 m"]]],
+        ["count", "A pick counts", [["stone", "given at the stone"], ["timer", "after 6 s by itself"], ["now", "at once (no take back)"]]],
+        ["afar", "Tap a thing from afar", [["idle", "after 20 s without progress"], ["always", "always"], ["weak", "only with a rough position"]]],
+        ["idleS", "Idle time before the hint", [[10, "10 s"], [20, "20 s"], [40, "40 s"]]],
+        ["others", "Other items during the quiz", [["dimpause", "dim, sound pauses"], ["dim", "dim only"], ["none", "unchanged"]]],
+        ["jitter", "Tracking wander (good)", [[0.1, "0.1 m"], [0.3, "0.3 m"], [1, "1 m"], [2, "2 m"]]],
+        ["retry", "After a wrong answer", [[true, "try again"], [false, "show the right one"]]],
+        ["look", "Camera backdrop", [["bright", "bright day"], ["dark", "dusk"]]],
+      ];
+      $("sweeps").innerHTML = SWEEPS.map(([k, name, opts]) => `<label>${name}<select data-k="${k}">${opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>`).join("");
+      document.querySelectorAll("#sweeps select").forEach((sel) => {
+        const k = sel.dataset.k; sel.value = String(k === "look" ? look : P[k]);
+        sel.addEventListener("change", () => {
+          if (k === "look") { setLook(sel.value); return; }
+          const v = sel.value; P[k] = v === "true" ? true : v === "false" ? false : isNaN(Number(v)) ? v : Number(v);
+          if (k === "ring") resizeRings();
+        });
+      });
+      $("beatlist").innerHTML = BEATS.map((b, i) => `<button data-i="${i}">${i + 1}. ${b.title}</button>`).join("");
+      $("beatlist").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { $("panel").hidden = true; runBeat(Number(b.dataset.i)); } });
+      async function measureAll() {
+        const rows = []; const ts = timeScale; timeScale = 4;
+        for (let i = 0; i < BEATS.length; i++) {
+          runBeat(i); await new Promise((r) => { const iv = setInterval(() => { if (window.__proto.beatDone) { clearInterval(iv); r(); } }, 50); });
+          await new Promise((r) => setTimeout(r, 120)); const m = measure(); rows.push({ beat: i + 1, title: BEATS[i].title, ...m });
+        }
+        timeScale = ts; window.__proto.table = rows;
+        $("mtable").innerHTML = `<table><tr><th>#</th><th>beat</th><th>HUD</th><th>quiz</th><th>el</th><th>ov</th></tr>${rows.map((r) => `<tr><td>${r.beat}</td><td>${r.title}</td><td>${r.pct}%</td><td>${r.quizPct}%</td><td>${r.count}</td><td>${r.overlaps}</td></tr>`).join("")}</table><p>${rows[0].w} x ${rows[0].h} AR view. "quiz" leaves out Exit and the radar.</p>`;
+        return rows;
+      }
+      $("measure").addEventListener("click", () => measureAll());
+
+      /* ======================= start ======================= */
+      window.__proto = {
+        beatDone: false, runBeat, measure: showReadout, measureAll, state: () => ({ ...Q, found: [...Q.found], picks: [...Q.picks], quiz: Q.key, V: { ...V }, lastJudge }),
+        setTimeScale: (s) => (timeScale = s), freeze: (on) => { if (on) { frozenScale = timeScale; timeScale = 0; } else timeScale = frozenScale || 1; }, canonical, hashAnswer, sha256Hex, P,
+      };
+      const url = new URL(location.href);
+      if (url.searchParams.get("fast")) timeScale = Number(url.searchParams.get("fast")) || 3;
+      resize();
+      requestAnimationFrame((n) => { lastNow = n; tick(n); });
+      runBeat(Math.max(0, (Number(url.searchParams.get("beat")) || 1) - 1));
+    </script>
+  </body>
+</html>

@@ -1,0 +1,1118 @@
+<!doctype html>
+<!-- HUD aggregation prototype "One slot". Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<title>HUD - One slot</title>
+<style>
+:root{
+  --ink:#f5f7f9;
+  --muted:#c3cbd3;
+  --surface:rgba(11,15,20,.88);
+  --surface-2:rgba(255,255,255,.10);
+  --story:#2dd4bf; --story-ink:#03201b;
+  --video:#f472b6;
+  --voice:#facc15;
+  --picture:#a5b4fc;
+  --model:#93c5fd;
+  --pin:#fdba74;
+  --next:#fb923c;
+  --weak:#fbbf24;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --cap:30;          /* panel height cap, % of the viewport height (swept in the demo panel) */
+  --radar:78px;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:15px/1.4 var(--sans);background:#0e1115;color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+
+/* ---------- device (the phone screen) ---------- */
+.device{position:fixed;inset:0;overflow:hidden;background:#000;container-type:size}
+#cam{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.vignette{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 58%,rgba(0,0,0,.32) 100%)}
+
+/* ---------- prototype chrome (not HUD, not measured) ---------- */
+.meta-top{position:absolute;z-index:70;top:calc(4px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:3px;pointer-events:none;width:max-content;max-width:calc(100cqw - 2*var(--radar) - 60px)}
+.beatbar{display:flex;align-items:center;gap:2px;pointer-events:auto;background:rgba(0,0,0,.62);border-radius:999px;padding:2px}
+.beatbar button{appearance:none;border:0;background:transparent;color:#fff;font:600 11.5px/1 var(--sans);min-height:28px;padding:0 8px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.beatbar .lbl{max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.beatbar .arr{font-size:15px;padding:0 9px}
+.readout{font:600 10.5px/1.2 ui-monospace,Consolas,monospace;color:#fff;background:rgba(0,0,0,.55);padding:3px 7px;border-radius:7px;white-space:nowrap}
+.readout b{color:#5eead4}
+.readout.bad b{color:#fca5a5}
+.try{position:absolute;z-index:70;left:50%;top:calc(118px + env(safe-area-inset-top));transform:translateX(-50%);width:max-content;max-width:min(280px,calc(100cqw - 32px));font:600 13px/1.4 var(--sans);color:#fff;background:rgba(0,0,0,.66);padding:8px 12px;border-radius:12px;text-align:center;pointer-events:none;transition:opacity .6s}
+.try.gone{opacity:0}
+.ripple{position:absolute;z-index:75;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;border:3px solid #fff;pointer-events:none;animation:rip .55s ease-out forwards}
+@keyframes rip{from{transform:scale(.4);opacity:1}to{transform:scale(1.4);opacity:0}}
+.hud-ol{outline:3px solid #ef4444!important;outline-offset:1px}
+
+/* ---------- HUD: Exit (top left) ---------- */
+.exit{position:absolute;z-index:30;top:calc(30px + env(safe-area-inset-top));left:calc(12px + env(safe-area-inset-left));appearance:none;width:44px;height:44px;border-radius:50%;border:0;background:rgba(11,15,20,.78);display:grid;place-items:center;cursor:pointer;padding:0}
+.exit svg{width:16px;height:16px}
+
+/* ---------- HUD: the radar (stations only) ---------- */
+.radar{position:absolute;z-index:20;top:calc(30px + env(safe-area-inset-top));right:calc(12px + env(safe-area-inset-right));appearance:none;width:var(--radar);height:var(--radar);padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer}
+.radar canvas{display:block;width:100%;height:100%;border-radius:50%}
+
+/* ---------- HUD: the foot (nudge line + the one slot) ---------- */
+.foot{position:absolute;z-index:25;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));transform:translateX(-50%);width:min(calc(100cqw - 24px),440px);display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.nudge{pointer-events:auto;display:flex;align-items:center;gap:8px;max-width:100%;min-height:34px;padding:5px 6px 5px 11px;border-radius:999px;background:var(--surface);font-size:14px;font-weight:650;line-height:1.2;transition:opacity .25s}
+.nudge.fade{opacity:0}
+.nudge .ni{flex:none;width:18px;height:18px;display:grid;place-items:center}
+.nudge .ni svg{width:18px;height:18px;transition:transform .25s}
+.nudge .nt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:5px}
+.nudge .na{flex:none;appearance:none;border:0;min-height:30px;padding:0 12px;border-radius:999px;background:#fff;color:#0b0f14;font-size:13.5px;font-weight:750;cursor:pointer}
+.nudge[data-tone=weak]{background:rgba(66,46,6,.92);color:#fde68a}
+.nudge[data-tone=event] .ni i{width:9px;height:9px;border-radius:50%;background:var(--story)}
+
+.slot{pointer-events:auto;width:100%;max-height:calc(var(--cap) * 1cqh);border-radius:20px;background:var(--surface);overflow:hidden;transition:height .26s cubic-bezier(.2,.8,.2,1),opacity .2s;touch-action:pan-x}
+.slot.empty{opacity:0}
+.slot-in{max-height:calc(var(--cap) * 1cqh);overflow-y:auto;overscroll-behavior:contain;padding:8px 14px 14px;transition:opacity .14s}
+.slot.swap .slot-in{opacity:0}
+.slot .grab{display:block;width:36px;height:4px;margin:0 auto 8px;border-radius:2px;background:rgba(255,255,255,.35)}
+.eb{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:750;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.kd{flex:none;width:10px;height:10px;border-radius:50%;background:var(--c,#fff)}
+.k-story{--c:var(--story)} .k-video{--c:var(--video)} .k-narration{--c:var(--voice)} .k-picture{--c:var(--picture)} .k-model{--c:var(--model)} .k-pin{--c:var(--pin)} .k-next{--c:var(--next)}
+.row{display:flex;align-items:center;gap:10px}
+.row .tt{flex:1;min-width:0}
+.row .tt b{display:block;font-size:17px;font-weight:750;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .tt small{display:block;font-size:13.5px;color:var(--muted);margin-top:1px}
+.ibtn{flex:none;appearance:none;width:46px;height:46px;border-radius:50%;border:0;background:#fff;color:#0b0f14;display:grid;place-items:center;cursor:pointer;padding:0}
+.ibtn svg{width:18px;height:18px}
+.bar{height:5px;border-radius:3px;background:rgba(255,255,255,.2);margin:10px 0 8px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--c,#fff);border-radius:3px}
+.cap{margin:0;font-size:15.5px;line-height:1.38;min-height:2.76em}
+.muted-tag{display:inline-block;margin-left:6px;font-size:11.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;color:#0b0f14;background:var(--muted);padding:1px 6px;border-radius:5px;vertical-align:1px}
+.spk{font-size:13.5px;color:var(--muted);margin:6px 0 2px}
+.say{margin:0 0 12px;font-size:16px;line-height:1.42}
+.q{margin:6px 0 10px;font-size:17px;font-weight:700;line-height:1.3}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.opt{appearance:none;min-height:46px;border-radius:14px;border:0;background:var(--surface-2);font-size:15px;font-weight:650;cursor:pointer;padding:8px 10px;text-align:center}
+.opt.picked{background:var(--story);color:var(--story-ink)}
+.opt.wrong{background:rgba(248,113,113,.3)}
+.res{margin:8px 0 12px;font-size:16px;font-weight:650;line-height:1.35}
+.res.ok{color:#99f6e4}
+.acts{display:flex;gap:8px;margin-top:10px}
+.btn{appearance:none;min-height:46px;padding:10px 16px;border-radius:14px;border:0;background:var(--surface-2);font-size:15px;font-weight:700;cursor:pointer;line-height:1.2}
+.btn.primary{background:#fff;color:#0b0f14}
+.btn.wide{flex:1}
+.txt{margin:6px 0 0;font-size:15.5px;line-height:1.45}
+.thennow{position:relative;height:118px;margin:10px 0 4px;border-radius:12px;overflow:hidden;background:#333}
+.thennow canvas{position:absolute;inset:0;width:100%;height:100%}
+.thennow .then{clip-path:inset(0 calc(100% - var(--s,50%)) 0 0)}
+.thennow input{position:absolute;left:0;right:0;bottom:4px;width:100%;margin:0;accent-color:#fff}
+.thennow .lab{position:absolute;top:6px;font-size:11.5px;font-weight:750;background:rgba(0,0,0,.6);padding:2px 7px;border-radius:6px}
+.stations{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:4px}
+.stations li{display:flex;align-items:center;gap:10px;min-height:44px;padding:4px 6px;border-radius:12px}
+.stations li.here{background:rgba(45,212,191,.14)}
+.stations li b{flex:1;font-size:15.5px}
+.stations li small{font-size:13px;color:var(--muted)}
+
+/* ---------- design note ---------- */
+.note{position:absolute;inset:0;z-index:85;background:rgba(0,0,0,.6);display:grid;place-items:center;padding:calc(18px + env(safe-area-inset-top)) 12px calc(18px + env(safe-area-inset-bottom))}
+.note-in{width:min(540px,100%);max-height:100%;overflow-y:auto;background:#151a20;border-radius:18px;padding:16px 18px 6px;font-size:14px;line-height:1.5}
+.note-in h2{margin:0 0 6px;font-size:18px}
+.note-in h3{margin:14px 0 4px;font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;color:#5eead4}
+.note-in p,.note-in ul,.note-in ol{margin:0 0 8px}
+.note-in ul,.note-in ol{padding-left:20px}
+.note-in .close{position:sticky;bottom:0;display:block;width:100%;margin:10px 0 10px}
+
+/* ---------- demo panel (not part of the design) ---------- */
+.demo{position:fixed;z-index:90;top:calc(36px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:min(360px,calc(100vw - 16px));max-height:calc(100vh - 48px);overflow-y:auto;background:rgba(14,18,23,.97);border-radius:14px;font-size:13px;color:#e8edf2;box-shadow:0 8px 24px rgba(0,0,0,.45);padding:10px 10px 12px}
+.demo h4{margin:12px 2px 5px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#a9b4bf;display:flex;justify-content:space-between}
+.demo .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.demo .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.demo button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#fff;border-radius:9px;padding:6px 7px;text-align:left;cursor:pointer;font-size:12.5px;min-height:34px}
+.demo button.on{background:#0f766e;border-color:#14b8a6}
+.demo button.primary{background:#ea580c;border-color:#ea580c;font-weight:700;text-align:center}
+.demo .row2{display:grid;grid-template-columns:96px 1fr;gap:6px;align-items:center;margin:3px 0}
+.demo .row2 span{color:#c6d0da;font-size:12px}
+.demo .status{font-size:12px;color:#a9b4bf;padding:6px 2px 0;min-height:16px}
+.demo .about{margin:0 2px 6px;line-height:1.45;color:#c6d0da}
+.demo ol.queue{margin:2px 0 0;padding-left:20px;color:#c6d0da;font-size:12px;line-height:1.5}
+.demo ol.queue .s{color:#5eead4;font-weight:700}
+.demo ol.queue .n{color:#fde68a;font-weight:700}
+.demo ol.queue .x{color:#7d8792}
+.demo table{width:100%;border-collapse:collapse;font:11.5px/1.35 ui-monospace,Consolas,monospace;margin-top:4px}
+.demo td,.demo th{padding:2px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+.demo th{color:#a9b4bf;font-weight:600}
+.demo .close-demo{width:100%;text-align:center;margin-top:10px}
+
+@media (min-width:960px) and (min-height:600px){
+  body{display:flex;align-items:center;justify-content:center;gap:32px;padding:24px;background:radial-gradient(1200px 700px at 30% 20%,#26303a,#12151a)}
+  .device{position:relative;inset:auto;flex:none;width:390px;height:min(844px,calc(100vh - 48px));border-radius:40px;border:10px solid #0a0c0f;box-shadow:0 0 0 2px #2d333b,0 40px 90px rgba(0,0,0,.6)}
+  .device.land{width:min(844px,calc(100vw - 420px));height:390px}
+  .demo{position:static;transform:none;width:340px;max-height:calc(100vh - 48px);display:block!important}
+  .demo .close-demo{display:none}
+}
+
+/* ---------- phone landscape ---------- */
+@container (orientation:landscape) and (max-height:520px){
+  .exit{top:calc(10px + env(safe-area-inset-top))}
+  .radar{top:calc(10px + env(safe-area-inset-top))}
+  .meta-top{top:calc(4px + env(safe-area-inset-top))}
+  .foot{bottom:calc(10px + env(safe-area-inset-bottom));width:min(60cqw,440px);gap:6px}
+  .slot,.slot-in{max-height:calc(var(--cap) * 1.75cqh)}
+  .slot-in{padding:6px 14px 12px}
+  .say{font-size:15px;margin-bottom:8px}
+  .q{margin:4px 0 8px;font-size:16px}
+  .opts{grid-template-columns:repeat(4,1fr);gap:6px}
+  .opt{min-height:44px;font-size:14px;padding:6px}
+  .thennow{height:84px}
+  .try{top:calc(58px + env(safe-area-inset-top));max-width:min(440px,60cqw)}
+}
+@media (prefers-reduced-motion:reduce){ .slot,.slot-in,.nudge{transition:none} }
+.measuring .slot,.measuring .slot-in,.measuring .nudge,.measuring .nudge .ni svg{transition:none!important}
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+</head>
+<body>
+<main class="device" id="device">
+  <canvas id="cam" aria-label="Simulated camera view of a town square"></canvas>
+  <div class="vignette"></div>
+
+  <!-- HUD: exactly four things can ever be on screen: Exit, the radar, the nudge line and the one slot -->
+  <button class="exit" id="exitBtn" type="button" aria-label="Exit AR" data-hud><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+  <button class="radar" id="radarBtn" type="button" aria-label="Stations around you" data-hud="circle"><canvas id="radar"></canvas></button>
+  <div class="foot" id="foot">
+    <div class="nudge" id="nudge" data-hud hidden><span class="ni" id="nIcon"></span><span class="nt" id="nText"></span><button class="na" id="nAct" type="button" hidden></button></div>
+    <section class="slot empty" id="slot" data-hud hidden style="height:0px"><div class="slot-in" id="slotIn"></div></section>
+  </div>
+
+  <!-- prototype chrome -->
+  <div class="meta-top" id="metaTop">
+    <div class="beatbar"><button class="arr" id="prevBeat" type="button" aria-label="Previous beat">&lsaquo;</button><button class="lbl" id="beatLbl" type="button" aria-controls="demo">One slot</button><button class="arr" id="nextBeat" type="button" aria-label="Next beat">&rsaquo;</button></div>
+    <div class="readout" id="readout">HUD -</div>
+  </div>
+  <div class="try" id="try">Drag to turn, drag up to walk, tap things in the square. The arrows at the top step through the demo; the label in between opens it.</div>
+
+  <div class="note" id="note" hidden>
+    <div class="note-in">
+      <h2>One slot</h2>
+      <p>The screen owns exactly <b>one "now" slot</b> at the foot and <b>one nudge line</b> above it. Every item of the station, the story and the walk ask for the screen with a rank; one arbiter gives the slot to the top request and the nudge line to the best one-liner. Everything else waits silently. There are no edge marks, no item list, no second panel.</p>
+      <h3>Ranking rule</h3>
+      <ol>
+        <li>What you tapped yourself (a pin's text, a picture, a model's card). Your own choice wins; what it covered comes back when you close it.</li>
+        <li>A story step, a quiz included. While it is on screen, free items show only in the world: their glow and their moving bars say they are playing.</li>
+        <li>What is playing. If two play, the one you started last has the slot and the sound; the other plays on, muted, and the nudge line offers a swap.</li>
+        <li>A start where you stand ("you are there - Play"). It never starts by itself: a tap is always needed.</li>
+        <li>Nudge line only: position weak, fresh walk news, "walk closer", the one thing out of view that matters, where the walk goes next.</li>
+      </ol>
+      <h3>Inside the station, and not</h3>
+      <p>Items of the station you are in are awake: their own colour, a glowing ring, a kind badge. Items of a station you are not at are asleep: grey, no ring, no badge (look ahead to the well). The radar shows the station you are in as a filled disc around you; other stations are dots on its rim.</p>
+      <h3>A seventh and an eighth item</h3>
+      <p>They join the queue. The HUD does not grow: still one slot and one line. They show in the world only, until they rank first. Try "Items: 8" in the demo panel and watch the queue (the queue is a demo readout, never shown to a visitor).</p>
+      <h3>What changes from today's walk</h3>
+      <ul>
+        <li>The walk sheet's peek becomes the nudge line ("Next: The well - 55 m ahead"). The station list opens in the slot from a tap on the radar.</li>
+        <li>The focus edge pill and the station edge arrows are gone; the toast is the nudge line.</li>
+        <li>The narration card, the video card, the captions strip and the story card are one panel that changes content and never stacks.</li>
+      </ul>
+      <h3>The strongest case against it</h3>
+      <p>One slot means one thing at a time, and a queue the visitor cannot see. With two things playing and a story waiting, the visitor has no way to know what is queued except by walking and tapping in the world; a swipe can hide the only control of something still playing. Without edge marks, an item out of view is found only if it is the one the nudge line names, so a quiet item in a corner may never be found. And text is slow to read in sunlight while walking: the nudge line asks to be read, where a glyph would only ask to be seen.</p>
+      <button class="btn primary close" id="noteClose" type="button">Close</button>
+    </div>
+  </div>
+</main>
+
+<aside class="demo" id="demo" hidden>
+  <p class="about"><b>One slot.</b> One panel at the foot, one line above it, one arbiter deciding who gets them. <button type="button" id="openNote" style="min-height:26px;padding:2px 8px">Ranking rule and case against</button></p>
+  <h4>Beats (jump)</h4>
+  <div class="grid" id="beats"></div>
+  <div class="grid" style="margin-top:6px">
+    <button class="primary" id="walkBtn" type="button">Walk for me</button>
+    <button id="stopBtn" type="button" style="text-align:center">Stop</button>
+  </div>
+  <div class="status" id="status"></div>
+  <h4>Sweep</h4>
+  <div class="row2"><span>Ranking</span><div class="grid" data-k="rank"><button data-v="story">Story first</button><button data-v="playing">Playing first</button></div></div>
+  <div class="row2"><span>Close after leaving</span><div class="grid3" data-k="closeDelay"><button data-v="0.5">0.5 s</button><button data-v="1.5">1.5 s</button><button data-v="3">3 s</button></div></div>
+  <div class="row2"><span>Leave margin</span><div class="grid3" data-k="hyst"><button data-v="0">0 m</button><button data-v="1.5">1.5 m</button><button data-v="3">3 m</button></div></div>
+  <div class="row2"><span>Panel cap</span><div class="grid3" data-k="cap"><button data-v="25">25 %</button><button data-v="30">30 %</button><button data-v="36">36 %</button></div></div>
+  <div class="row2"><span>News lingers</span><div class="grid3" data-k="linger"><button data-v="3">3 s</button><button data-v="6">6 s</button><button data-v="10">10 s</button></div></div>
+  <div class="row2"><span>Items</span><div class="grid" data-k="items"><button data-v="6">6</button><button data-v="8">8</button></div></div>
+  <div class="row2"><span>Position</span><div class="grid" data-k="prec"><button data-v="good">Good</button><button data-v="weak">Weak</button></div></div>
+  <div class="row2"><span>Overlap outline</span><div class="grid" data-k="outline"><button data-v="on">On</button><button data-v="off">Off</button></div></div>
+  <div class="row2" id="landRow"><span>Frame</span><div class="grid" data-k="frame"><button data-v="port">Portrait</button><button data-v="land">Landscape</button></div></div>
+  <h4>Queue right now <span>demo only</span></h4>
+  <ol class="queue" id="queue"></ol>
+  <h4>Measure every beat <span id="measVp"></span></h4>
+  <button id="measureAll" type="button" style="width:100%;text-align:center">Measure all beats in this frame</button>
+  <table id="measTable"></table>
+  <button class="close-demo primary" id="closeDemo" type="button">Back to the square</button>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+const $ = (s) => document.querySelector(s);
+const device = $('#device');
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ======================================================================
+   Settings (swept in the demo panel)
+   ====================================================================== */
+const CFG = { rank: 'story', closeDelay: 1.5, hyst: 1.5, cap: 30, linger: 6, items: 6, prec: 'good', outline: 'on', frame: 'port' };
+
+/* ======================================================================
+   The station, its six items (plus two extra), the other stations
+   ====================================================================== */
+const STATION = { id: 'market', name: 'Market square', pos: { x: 0, z: 0 }, enter: 30, leave: 34 };
+const STATIONS = [
+  { id: 'gate', name: 'Town gate', pos: { x: 0, z: 70 }, state: 'done' },
+  { id: 'market', name: 'Market square', pos: { x: 0, z: 0 }, state: 'here' },
+  { id: 'well', name: 'The well', pos: { x: 0, z: -96 }, state: 'next' },
+  { id: 'tower', name: 'The tower', pos: { x: -82, z: -40 }, state: 'later' },
+];
+const ITEMS = {
+  pin:     { kind: 'pin', name: 'Old market cross', pos: { x: 0, z: 3 }, reach: 3,
+             text: 'The cross marked where the market could be held. Traders who sold outside its sight paid twice the toll.' },
+  model:   { kind: 'model', name: 'Mill model', pos: { x: 28, z: 6 }, reach: 8,
+             notes: ['The sails turned against the wind from the sea.', 'The miller lived above the grinding floor.'] },
+  picture: { kind: 'picture', name: 'The square in 1890', pos: { x: 0, z: 16 }, reach: 3 },
+  film:    { kind: 'video', name: 'Harbour, 1910', pos: { x: -7, z: 0.5 }, reach: 5, dur: 40, startable: true,
+             lines: ['Boats unload grain at the old quay.', 'The carts take it up to the square.', 'The mill on the hill grinds it the same day.', 'By evening there is bread at the market.'] },
+  voice:   { kind: 'narration', name: "The miller's voice", pos: { x: -3.5, z: -2.5 }, reach: 2.2, dur: 60, startable: true,
+             lines: ['I came down to this square every Thursday.', 'The flour went in sacks, the money in my boot.', 'When the well was dug, the market doubled.', 'Listen - you can still hear the carts.'] },
+  sign2:   { kind: 'pin', name: 'Guild sign', pos: { x: 9, z: -8 }, reach: 3, extra: true,
+             text: 'The bakers’ guild hung its sign here; the bread had to weigh what the sign said.' },
+  voice2:  { kind: 'narration', name: "The baker's voice", pos: { x: 11, z: 12 }, reach: 2.2, dur: 45, startable: true, extra: true,
+             lines: ['We baked before dawn.', 'The first loaf always went to the miller.', 'Then the market woke up.'] },
+};
+const KIND_WORD = { pin: 'A sign', model: 'A model', picture: 'A picture', video: 'A film', narration: 'A voice' };
+const STORY = {
+  speaker: 'Anna, your guide',
+  intro: 'Welcome to the old market. There is more here than it seems - look around. I will ask you something in a while.',
+  question: 'What did the market need most, before the well was dug?',
+  options: [{ id: 'a', label: 'A bridge' }, { id: 'b', label: 'Water' }, { id: 'c', label: 'A church' }, { id: 'd', label: 'A mill' }],
+  right: 'b',
+};
+
+/* ======================================================================
+   State
+   ====================================================================== */
+const S = {};
+function freshItemState() {
+  const o = {};
+  for (const id of Object.keys(ITEMS)) o[id] = { state: 'idle', t: 0, focusAt: 0, muted: false, there: false, leaveT: 0, dStart: 0, pausedByLeave: false, finAt: -99, pausedAt: -99, afar: false, seenT: 0 };
+  return o;
+}
+function resetState() {
+  Object.assign(S, {
+    pos: { x: 0, z: 6 }, yaw: 0, now: 0, inStation: true,
+    story: { step: 'intro', readyAt: 1e9, answer: null }, it: freshItemState(), seen: new Set(),
+    tapped: null, note: null, dismissed: new Set(), events: [], hint: null, stand: 0, anim: null, beat: null,
+  });
+}
+resetState();
+
+const activeItems = () => Object.keys(ITEMS).filter((id) => !ITEMS[id].extra || CFG.items === 8);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
+const yawToward = (p, from = S.pos) => Math.atan2(-(p.x - from.x), -(p.z - from.z));
+function relAngle(p, from = S.pos, yaw = S.yaw) {
+  const vx = p.x - from.x, vz = p.z - from.z;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  return Math.atan2(vx * rx + vz * rz, vx * fx + vz * fz); // + = to the right
+}
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const weak = () => CFG.prec === 'weak';
+const storyOn = () => ['intro', 'quiz', 'result'].includes(S.story.step);
+function dirWord(a) {
+  const d = Math.abs(a) * 180 / Math.PI, side = a > 0 ? 'right' : 'left';
+  if (d < 30) return 'ahead';
+  if (d < 70) return 'ahead ' + side;
+  if (d < 125) return 'to your ' + side;
+  return 'behind you';
+}
+const metres = (m) => Math.max(1, Math.round(m)) + ' m';
+
+/* ======================================================================
+   The faked AR camera: a procedural town square
+   ====================================================================== */
+const canvas = $('#cam');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+{
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 256); gr.addColorStop(0, '#8fb3d3'); gr.addColorStop(0.55, '#d4e0ea'); gr.addColorStop(1, '#e9e4da');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; scene.background = t;
+}
+scene.fog = new THREE.Fog(0xd8e1e8, 70, 320);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 900);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xeef4ff, 0x6d6252, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0d4, 1.6); sun.position.set(-60, 110, 40); scene.add(sun);
+function rng(seed) { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
+const rand = rng(20261115);
+const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200, 1200), lam(0x8a8476)); ground.rotation.x = -Math.PI / 2; scene.add(ground);
+const STREETS = [{ x0: -6, x1: 6, z0: -300, z1: 200 }, { x0: -200, x1: -30, z0: -46, z1: -34 }];
+const SQUARES = [{ x: 0, z: 0, r: 36 }, { x: 0, z: -96, r: 14 }];
+for (const r of STREETS) { const m = new THREE.Mesh(new THREE.PlaneGeometry(r.x1 - r.x0, r.z1 - r.z0), lam(0x65635f)); m.rotation.x = -Math.PI / 2; m.position.set((r.x0 + r.x1) / 2, 0.02, (r.z0 + r.z1) / 2); scene.add(m); }
+for (const q of SQUARES) { const m = new THREE.Mesh(new THREE.CircleGeometry(q.r, 48), lam(0xa69c8a)); m.rotation.x = -Math.PI / 2; m.position.set(q.x, 0.03, q.z); scene.add(m); }
+{ // paving rings on the square
+  const g = new THREE.RingGeometry(17.8, 18.1, 64), m = new THREE.Mesh(g, lam(0xc8bfae)); m.rotation.x = -Math.PI / 2; m.position.y = 0.035; scene.add(m);
+}
+function facadeTexture(floors) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 128);
+  const fh = 128 / (floors + 0.3);
+  for (let f = 0; f < floors; f++) for (let w = 0; w < 3; w++) {
+    g.fillStyle = f === 0 && w === 1 ? '#3b2f28' : '#46525c';
+    g.fillRect(14 + w * 38, 128 - (f + 1) * fh + fh * 0.22, 22, f === 0 && w === 1 ? fh * 0.78 : fh * 0.5);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+{
+  const FAC = [0xe8d8bf, 0xd9b99a, 0xc9d1c3, 0xe5c7a8, 0xd2c1b0, 0xbfa58c, 0xe9e1cf, 0xcaa588];
+  const inStreet = (x, z, p) => STREETS.some((r) => x > r.x0 - p && x < r.x1 + p && z > r.z0 - p && z < r.z1 + p);
+  const inSquare = (x, z, p) => SQUARES.some((q) => Math.hypot(q.x - x, q.z - z) < q.r + p);
+  const by = { 2: [], 3: [], 4: [] };
+  for (let x = -130; x <= 130; x += 13) for (let z = 120; z >= -200; z -= 13) {
+    const w = 10 + rand() * 2.6, d = 10 + rand() * 2.6;
+    if (inStreet(x, z, w / 2 + 1.2) || inSquare(x, z, w / 2 + 2) || Math.hypot(x + 82, z + 40) < 10) continue;
+    const f = 2 + Math.floor(rand() * 3);
+    by[f].push({ x, z, w, d, h: f * 3.5 + 1.2, c: FAC[Math.floor(rand() * FAC.length)] });
+  }
+  const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
+  const rg = new THREE.ConeGeometry(0.75, 1, 4); rg.rotateY(Math.PI / 4); rg.translate(0, 0.5, 0);
+  const o = new THREE.Object3D(), col = new THREE.Color();
+  for (const f of [2, 3, 4]) {
+    const L = by[f], inst = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ map: facadeTexture(f) }), L.length), roofs = new THREE.InstancedMesh(rg, lam(0x9c4a32), L.length);
+    L.forEach((b, i) => {
+      o.position.set(b.x, 0, b.z); o.scale.set(b.w, b.h, b.d); o.updateMatrix(); inst.setMatrixAt(i, o.matrix); inst.setColorAt(i, col.setHex(b.c));
+      o.position.set(b.x, b.h, b.z); o.scale.set(b.w * 1.02, 3 + (i % 3), b.d * 1.02); o.updateMatrix(); roofs.setMatrixAt(i, o.matrix); roofs.setColorAt(i, col.setHex([0x9c4a32, 0x7f3b2a, 0x6b4a3a, 0x8a5a44][i % 4]));
+    });
+    scene.add(inst, roofs);
+  }
+  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.13, 0.19, 2.4).translate(0, 1.2, 0), lam(0x5b4330), 14);
+  const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.35, 1).translate(0, 3.3, 0), lam(0x4f7d3a), 14);
+  for (let i = 0; i < 14; i++) { const a = i / 14 * Math.PI * 2 + 0.2; o.position.set(Math.cos(a) * 33, 0, Math.sin(a) * 33); if (Math.abs(o.position.x) < 8) o.position.x += 12; o.scale.setScalar(0.9); o.updateMatrix(); trunk.setMatrixAt(i, o.matrix); crown.setMatrixAt(i, o.matrix); }
+  scene.add(trunk, crown);
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(8, 30, 8), lam(0xcdb99a)); tower.position.set(-82, 15, -40); scene.add(tower);
+  const troof = new THREE.Mesh(new THREE.ConeGeometry(6.4, 8, 4), lam(0x5d6b70)); troof.rotation.y = Math.PI / 4; troof.position.set(-82, 34, -40); scene.add(troof);
+}
+
+/* ---------- item looks: awake (this station) and asleep (not here) ---------- */
+const GREY = new THREE.Color(0x8f9194);
+const HEX = { pin: 0xfdba74, model: 0x93c5fd, picture: 0xa5b4fc, video: 0xf472b6, narration: 0xfacc15, story: 0x2dd4bf, next: 0xfb923c };
+const hits = [];
+const looks = {};
+function badgeTexture(kind) {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = 'rgba(11,15,20,.85)'; g.beginPath(); g.arc(64, 64, 58, 0, 7); g.fill();
+  g.strokeStyle = '#' + HEX[kind].toString(16).padStart(6, '0'); g.lineWidth = 10; g.beginPath(); g.arc(64, 64, 52, 0, 7); g.stroke();
+  g.fillStyle = g.strokeStyle; g.strokeStyle = g.fillStyle; g.lineWidth = 9; g.lineCap = 'round'; g.lineJoin = 'round';
+  if (kind === 'video') { g.beginPath(); g.moveTo(50, 40); g.lineTo(90, 64); g.lineTo(50, 88); g.closePath(); g.fill(); }
+  else if (kind === 'narration') { for (const [x, h] of [[42, 16], [57, 34], [72, 24], [87, 12]]) { g.beginPath(); g.moveTo(x, 64 - h); g.lineTo(x, 64 + h); g.stroke(); } }
+  else if (kind === 'picture') { g.strokeRect(36, 42, 56, 44); g.beginPath(); g.moveTo(40, 82); g.lineTo(58, 62); g.lineTo(70, 74); g.lineTo(78, 66); g.lineTo(88, 82); g.stroke(); }
+  else if (kind === 'model') { g.beginPath(); g.moveTo(64, 34); g.lineTo(90, 48); g.lineTo(90, 78); g.lineTo(64, 92); g.lineTo(38, 78); g.lineTo(38, 48); g.closePath(); g.moveTo(38, 48); g.lineTo(64, 62); g.lineTo(90, 48); g.moveTo(64, 62); g.lineTo(64, 92); g.stroke(); }
+  else { g.beginPath(); g.arc(64, 54, 16, 0, 7); g.stroke(); g.beginPath(); g.moveTo(64, 70); g.lineTo(64, 94); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function textTexture(lines, w = 512, h = 256, bg = '#f4efe4', ink = '#1d1f22') {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, w, h); g.fillStyle = ink; g.textAlign = 'center';
+  lines.forEach((l, i) => { g.font = (i === 0 ? '700 ' : '500 ') + (i === 0 ? h * 0.2 : h * 0.13) + 'px system-ui,sans-serif'; g.fillText(l, w / 2, h * (0.36 + i * 0.28)); });
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+let dotTex = null;
+function dotTexture() {
+  if (dotTex) return dotTex;
+  const c = document.createElement('canvas'); c.width = c.height = 32; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 32, 32); dotTex = new THREE.CanvasTexture(c); return dotTex;
+}
+function ring(r, color, y = 0.06) {
+  const m = new THREE.Mesh(new THREE.RingGeometry(r - 0.16, r, 64), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = y; return m;
+}
+function fill(r, color) {
+  const m = new THREE.Mesh(new THREE.CircleGeometry(r, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.18, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2; m.position.y = 0.05; return m;
+}
+function bars(color) {
+  const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color });
+  for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.45, 0.04).translate(0, 0.225, 0), mat); b.position.x = (i - 1) * 0.24; g.add(b); }
+  g.visible = false; return g;
+}
+function makeLook(id) {
+  const I = ITEMS[id], k = I.kind, col = HEX[k], g = new THREE.Group(); g.position.set(I.pos.x, 0, I.pos.z); scene.add(g);
+  const L = { id, g, tint: [], ring: null, fill: null, badge: null, bars: bars(col), glow: 0, wake: 1 };
+  const solid = (geo, c, x = 0, y = 0, z = 0) => { const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: c })); m.position.set(x, y, z); m.userData.base = new THREE.Color(c); L.tint.push(m); g.add(m); return m; };
+  const hit = (m) => { m.userData.id = id; hits.push(m); return m; };
+  let top = 2.4;
+  if (k === 'pin') {
+    solid(new THREE.CylinderGeometry(0.06, 0.06, 1.32), 0x3a3d42, 0, 0.66, -0.05);
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), new THREE.MeshBasicMaterial({ map: textTexture([I.name, 'Tap to read']) }));
+    plate.position.set(0, 1.55, 0.04); g.add(plate); L.tint.push(plate); plate.userData.base = new THREE.Color(0xffffff); hit(plate);
+    hit(solid(new THREE.BoxGeometry(0.96, 0.5, 0.04), 0x2a2d31, 0, 1.55, 0));
+    L.ring = ring(0.8, col); top = 2.1;
+  } else if (k === 'model') {
+    solid(new THREE.BoxGeometry(2.4, 0.9, 2.4), 0x8b8478, 0, 0.45, 0);
+    hit(solid(new THREE.CylinderGeometry(0.7, 0.95, 2.4, 8), 0xe8dcc6, 0, 2.1, 0));
+    solid(new THREE.ConeGeometry(0.9, 0.8, 8), 0x7f3b2a, 0, 3.7, 0);
+    const hub = new THREE.Group(); hub.position.set(0, 2.9, 0.85); g.add(hub);
+    for (let i = 0; i < 4; i++) { const s = solid(new THREE.BoxGeometry(0.22, 2.2, 0.04).translate(0, 1.1, 0), 0xf3eee4); g.remove(s); s.rotation.z = i * Math.PI / 2; hub.add(s); }
+    L.hub = hub; L.ring = ring(2.4, col); top = 4.8;
+    L.notes = [[-0.9, 2.2, 0.8], [0.9, 1.4, 0.9]].map(([x, y, z], i) => {
+      const c = document.createElement('canvas'); c.width = c.height = 64; const q = c.getContext('2d');
+      q.fillStyle = '#fff'; q.beginPath(); q.arc(32, 32, 28, 0, 7); q.fill(); q.fillStyle = '#0b0f14'; q.font = '800 34px system-ui'; q.textAlign = 'center'; q.textBaseline = 'middle'; q.fillText(String(i + 1), 32, 34);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false })); sp.scale.setScalar(0.5); sp.position.set(x, y, z); sp.userData.id = 'note' + (i + 1); hits.push(sp); g.add(sp); return sp;
+    });
+  } else if (k === 'picture') {
+    solid(new THREE.CylinderGeometry(0.05, 0.05, 1.3), 0x3a3d42, 0, 0.65, 0);
+    const fr = solid(new THREE.BoxGeometry(1.3, 0.95, 0.06), 0x2a2420, 0, 1.75, 0); hit(fr);
+    const photo = new THREE.Mesh(new THREE.PlaneGeometry(1.18, 0.83), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(oldPhoto(256, 180, true)) }));
+    photo.position.set(0, 1.75, -0.035); photo.rotation.y = Math.PI; g.add(photo); hit(photo); L.tint.push(photo); photo.userData.base = new THREE.Color(0xffffff);
+    L.ring = ring(0.9, col); L.fill = fill(0.9, col); top = 2.6;
+    // footprints of the viewpoint
+    for (const dx of [-0.16, 0.16]) { const f = new THREE.Mesh(new THREE.CircleGeometry(0.11, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })); f.scale.set(1, 1.9, 1); f.rotation.x = -Math.PI / 2; f.position.set(dx, 0.06, -0.9); g.add(f); }
+  } else if (k === 'video') {
+    const scr = new THREE.Group(); scr.position.set(-1.6, 0, -1.4); scr.rotation.y = Math.atan2(7 - 1.6, 5.5 - 1.4) * 0; g.add(scr);
+    scr.lookAt(new THREE.Vector3(I.pos.x + 4, 0, I.pos.z + 3));
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.4, 0.12), lam(0x2b2f33)); leg.position.y = 0.7; scr.add(leg); leg.userData.base = new THREE.Color(0x2b2f33); L.tint.push(leg);
+    const vc = document.createElement('canvas'); vc.width = 256; vc.height = 144; L.vc = vc; L.vtex = new THREE.CanvasTexture(vc); L.vtex.colorSpace = THREE.SRGBColorSpace;
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.35), new THREE.MeshBasicMaterial({ map: L.vtex })); screen.position.set(0, 2.1, 0.07); scr.add(screen); hit(screen);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(2.55, 1.5, 0.1), lam(0x1d2024)); back.position.set(0, 2.1, 0); scr.add(back); hit(back);
+    L.ring = ring(I.reach, col); L.ring.material.opacity = 0.5; L.fill = fill(0.7, col); top = 3.2;
+    for (const dx of [-0.16, 0.16]) { const f = new THREE.Mesh(new THREE.CircleGeometry(0.11, 12), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75 })); f.scale.set(1, 1.9, 1); f.rotation.x = -Math.PI / 2; f.position.set(dx, 0.06, 0); g.add(f); }
+    L.barsAt = scr; L.bars.position.set(0, 2.9, 0.06); scr.add(L.bars); L.screenGroup = scr;
+  } else if (k === 'narration') {
+    L.ring = ring(I.reach, col); L.fill = fill(I.reach, col);
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(I.reach, 32), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })); disc.rotation.x = -Math.PI / 2; disc.position.y = 0.07; g.add(disc); hit(disc);
+    const N = 70, pos = new Float32Array(N * 3), seed = [];
+    for (let i = 0; i < N; i++) { const a = rand() * 6.283, r = Math.sqrt(rand()) * I.reach; pos[i * 3] = Math.cos(a) * r; pos[i * 3 + 1] = rand() * 2.4; pos[i * 3 + 2] = Math.sin(a) * r; seed.push(0.35 + rand() * 0.5); }
+    const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    L.parts = new THREE.Points(pg, new THREE.PointsMaterial({ color: col, size: 0.08, map: dotTexture(), alphaTest: 0.2, transparent: true, opacity: 0.9, depthWrite: false })); L.partSeed = seed; L.partBase = pos.slice(); g.add(L.parts);
+    top = 2.8;
+  }
+  if (L.ring) g.add(L.ring); if (L.fill) g.add(L.fill);
+  if (!L.barsAt) { L.bars.position.set(0, top - 0.1, 0); g.add(L.bars); }
+  L.badge = new THREE.Sprite(new THREE.SpriteMaterial({ map: badgeTexture(k), transparent: true, depthWrite: false }));
+  L.badge.scale.setScalar(0.55); L.badge.position.set(k === 'video' ? -1.6 : 0, top + 0.5, k === 'video' ? -1.4 : 0); g.add(L.badge);
+  looks[id] = L;
+}
+function oldPhoto(w, h, sepia) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, sepia ? '#d9c7a3' : '#9fc0dc'); gr.addColorStop(1, sepia ? '#8d7656' : '#e9e2d4'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  g.fillStyle = sepia ? '#5f4a33' : '#c79f7c';
+  for (let i = 0; i < 7; i++) { const x = i * w / 7, bh = h * (0.35 + ((i * 37) % 5) / 14); g.fillRect(x + 2, h - bh, w / 7 - 4, bh); g.fillStyle = sepia ? (i % 2 ? '#4c3a27' : '#6b553b') : (i % 2 ? '#b98e6a' : '#d2b190'); }
+  g.fillStyle = sepia ? '#3d2f20' : '#5b5f63'; g.fillRect(0, h * 0.86, w, h * 0.14);
+  if (!sepia) { g.fillStyle = '#2c6e8f'; g.fillRect(w * 0.44, h * 0.62, w * 0.12, h * 0.24); }
+  else { g.fillStyle = '#2b2116'; for (let i = 0; i < 5; i++) g.fillRect(w * (0.15 + i * 0.17), h * 0.7, 4, 14); }
+  return c;
+}
+for (const id of Object.keys(ITEMS)) makeLook(id);
+
+/* the guide (the story's presence in the world) */
+const guide = new THREE.Group(); guide.position.set(3, 0, -3); scene.add(guide);
+{
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.9, 4, 10), lam(0x2f6f66)); body.position.y = 0.85; guide.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), lam(0xe8c4a0)); head.position.y = 1.62; guide.add(head);
+  body.userData.id = head.userData.id = 'guide'; hits.push(body, head);
+}
+const guideHalo = ring(0.7, HEX.story); guide.add(guideHalo);
+const guideQ = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#2dd4bf'; g.beginPath(); g.arc(64, 64, 56, 0, 7); g.fill(); g.fillStyle = '#03201b'; g.font = '900 80px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('?', 64, 70);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthWrite: false })); s.scale.setScalar(0.5); s.position.y = 2.2; guide.add(s); return s;
+})();
+
+/* the next station: the well, its focus beacon, and its two items asleep */
+{
+  const stone = lam(0xb5a488);
+  const well = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.5, 1, 20), stone); well.position.set(0, 0.5, -96); scene.add(well);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.2, 4), lam(0x7f3b2a)); roof.rotation.y = Math.PI / 4; roof.position.set(0, 3.6, -96); scene.add(roof);
+  for (const dx of [-1.3, 1.3]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, 0.2), lam(0x5b4330)); p.position.set(dx, 1.8, -96); scene.add(p); }
+  for (const [x, z] of [[-6, -90], [7, -101]]) { // asleep: grey, no ring, no badge
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.6), lam(0x8f9194)); p.position.set(x, 0.8, z); scene.add(p);
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.45, 0.04), lam(0x9a9c9f)); b.position.set(x, 1.55, z); scene.add(b);
+  }
+}
+const beacon = new THREE.Group(); beacon.position.set(0, 0, -96); scene.add(beacon);
+{
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 30, 16, 1, true), new THREE.MeshBasicMaterial({ color: HEX.next, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide })); col.position.y = 15; beacon.add(col);
+  const dia = new THREE.Mesh(new THREE.OctahedronGeometry(1.4), new THREE.MeshBasicMaterial({ color: HEX.next })); dia.position.y = 8; beacon.add(dia); beacon.userData.dia = dia;
+}
+
+/* ======================================================================
+   Simulation: places, playback, leaving
+   ====================================================================== */
+const hfov = () => 2 * Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect);
+function inView(p, margin = 0) { return Math.abs(relAngle(p)) < hfov() / 2 - margin; }
+function push(text) { S.events.push({ text, at: S.now }); }
+
+function play(id) {
+  const st = S.it[id], I = ITEMS[id];
+  if (st.state === 'finished') st.t = 0;
+  st.state = 'playing'; st.focusAt = S.now; st.pausedByLeave = false; st.dStart = dist(S.pos, I.pos); st.afar = !st.there; S.seen.add(id);
+  S.dismissed.clear(); if (S.tapped === id) S.tapped = null;
+}
+function step(dt) {
+  S.now += dt;
+  const ids = activeItems();
+  // station membership with a margin
+  const ds = dist(S.pos, STATION.pos);
+  if (S.inStation && ds > STATION.leave) { S.inStation = false; push('Market square done - on to the well'); for (const id of ids) { const st = S.it[id]; if (st.state === 'playing') { st.state = 'paused'; st.pausedByLeave = true; } } S.tapped = null; }
+  else if (!S.inStation && ds < STATION.enter) S.inStation = true;
+  // per item: "there" with a leave margin, playback, close after leaving
+  for (const id of ids) {
+    const I = ITEMS[id], st = S.it[id], d = dist(S.pos, I.pos);
+    if (!weak()) { // a weak position never opens or closes anything by place
+      if (!st.there && d < I.reach) st.there = true;
+      else if (st.there && d > I.reach + CFG.hyst) st.there = false;
+    }
+    if (st.state === 'playing') {
+      st.t += dt;
+      if (st.t >= I.dur) { st.state = 'finished'; st.t = I.dur; st.finAt = S.now; }
+      const limit = Math.max(I.reach, st.dStart) + CFG.hyst;
+      if (!weak() && d > limit) { st.leaveT += dt; if (st.leaveT > CFG.closeDelay) { st.state = 'paused'; st.pausedByLeave = true; st.pausedAt = S.now; st.leaveT = 0; } }
+      else st.leaveT = 0;
+    } else if (st.state === 'paused' && st.pausedByLeave && st.there && !weak()) { st.state = 'playing'; st.focusAt = S.now; st.pausedByLeave = false; } // a paused one carries on at return
+    // seen: in view, near enough, for 0.8 s
+    if (S.inStation && d < 35 && inView(I.pos, 0.05)) { st.seenT += dt; if (st.seenT > 0.8) S.seen.add(id); }
+  }
+  // one sound at a time: the newest focus plays aloud, the rest muted
+  const playing = ids.filter((id) => S.it[id].state === 'playing').sort((a, b) => S.it[b].focusAt - S.it[a].focusAt);
+  playing.forEach((id, i) => { S.it[id].muted = i > 0; });
+  // the story reaches its quiz on its own after a while
+  if (S.story.step === 'idle' && S.now >= S.story.readyAt) S.story.step = 'quiz';
+  if (S.tapped && S.tapped !== 'stations' && S.tapped !== 'story') { const I = ITEMS[S.tapped]; if (I && dist(S.pos, I.pos) > Math.max(I.reach + 12, 16)) S.tapped = null; } // a card does not outlive its place
+  S.events = S.events.filter((e) => S.now - e.at < CFG.linger);
+}
+
+/* ======================================================================
+   Requests and the arbiter (pure: state in, slot + nudge out)
+   ====================================================================== */
+const ICON = {
+  arrow: '<svg viewBox="0 0 18 18"><path d="M9 2l6 12-6-3-6 3z" fill="currentColor"/></svg>',
+  walk: '<svg viewBox="0 0 18 18"><circle cx="10" cy="3" r="2" fill="currentColor"/><path d="M9 6l-3 4 3 1 -1 5M9 6l3 3 2 0M9 11l3 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  warn: '<svg viewBox="0 0 18 18"><path d="M9 2l7.5 13h-15z" fill="currentColor"/><path d="M9 7v4M9 13v.5" stroke="#3a2a06" stroke-width="2" stroke-linecap="round"/></svg>',
+  pause: '<svg viewBox="0 0 18 18"><rect x="3" y="2" width="4" height="14" rx="1" fill="currentColor"/><rect x="11" y="2" width="4" height="14" rx="1" fill="currentColor"/></svg>',
+  play: '<svg viewBox="0 0 18 18"><path d="M4 2l12 7-12 7z" fill="currentColor"/></svg>',
+  dot: '<i></i>',
+  sound: '<svg viewBox="0 0 18 18"><path d="M2 7h3l4-4v12l-4-4H2z" fill="currentColor"/><path d="M12 6c1.5 1.5 1.5 4.5 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+};
+function buildRequests() {
+  const R = [], ids = activeItems(), st = S.it;
+  const P = CFG.rank === 'story' ? { tap: 100, story: 90, play: 80, reach: 70, fin: 60 } : { tap: 100, play: 92, reach: 88, story: 85, fin: 60 };
+  if (S.tapped) R.push({ key: 'tap:' + S.tapped + ':' + (S.note || ''), rank: P.tap, form: 'panel', who: S.tapped, own: true, panel: () => tappedPanel(S.tapped) });
+  if (storyOn()) R.push({ key: 'story:' + S.story.step, rank: P.story, form: 'panel', who: 'story', panel: storyPanel,
+    line: { key: 'storyline', text: 'The guide has a question', icon: 'dot', tone: 'event', act: ['Show', 'show-story'] } });
+  if (!S.inStation) return R.concat(lineRequests());
+  const playing = ids.filter((id) => st[id].state === 'playing').sort((a, b) => st[b].focusAt - st[a].focusAt);
+  playing.forEach((id, i) => R.push({ key: 'play:' + id, rank: P.play - i, form: 'panel', who: id, free: true, panel: () => playPanel(id),
+    line: { key: 'muted:' + id, text: ITEMS[id].name + ' plays on, muted', icon: 'sound', act: ['Swap', 'swap:' + id] } }));
+  for (const id of ids) {
+    const I = ITEMS[id], s = st[id];
+    if (I.startable && s.there && (s.state === 'idle' || (s.state === 'paused' && !s.pausedByLeave)))
+      R.push({ key: 'reach:' + id + ':' + s.state, rank: P.reach, form: 'panel', who: id, free: true, panel: () => reachPanel(id),
+        line: { key: 'reachline:' + id, text: (I.kind === 'video' ? 'You are at the film' : 'You are in ' + I.name.toLowerCase().replace(/^the /, 'the ')), icon: 'play', act: ['Play', 'play:' + id] } });
+    if (s.state === 'finished' && S.now - s.finAt < 4)
+      R.push({ key: 'fin:' + id, rank: P.fin, form: 'panel', who: id, free: true, panel: () => finPanel(id),
+        line: { key: 'finline:' + id, text: I.name + ' finished', icon: 'dot', tone: 'event', act: ['Replay', 'play:' + id] } });
+  }
+  return R.concat(lineRequests());
+}
+function lineRequests() {
+  const L = [], ids = activeItems(), st = S.it;
+  if (weak()) L.push({ key: 'weak', rank: 96, form: 'line', text: 'Position is rough - distances hidden', icon: 'warn', tone: 'weak', walk: true });
+  const ev = S.events[S.events.length - 1];
+  if (ev) L.push({ key: 'ev:' + ev.at, rank: 85, form: 'line', text: ev.text, icon: 'dot', tone: 'event', walk: true });
+  if (S.inStation) {
+    // paused by leaving: one line, for a while
+    for (const id of ids) { const s = st[id]; if (s.state === 'paused' && s.pausedByLeave && S.now - s.pausedAt < CFG.linger * 1.5) L.push({ key: 'paused:' + id, rank: 50, form: 'line', free: true, text: (ITEMS[id].kind === 'video' ? 'Film' : 'Voice') + ' paused - come back to carry on', icon: 'pause' }); }
+    // walk closer: the nearest startable thing roughly in view, not yet there
+    let best = null;
+    for (const id of ids) {
+      const I = ITEMS[id], s = st[id]; if (!I.startable || s.state !== 'idle' || s.there) continue;
+      const d = dist(S.pos, I.pos); if (d > 25 || Math.abs(relAngle(I.pos)) > hfov() / 2 + 0.2) continue;
+      if (!best || d < best.d) best = { id, d };
+    }
+    if (best) { const I = ITEMS[best.id]; L.push({ key: 'near:' + best.id, rank: 65, form: 'line', free: true, who: best.id, icon: 'walk', text: I.name + ' - walk ' + (weak() ? 'closer' : metres(best.d - I.reach) + ' closer') }); }
+    // the one thing out of view that matters (sticky until seen)
+    if (S.hint && (S.seen.has(S.hint) || !ids.includes(S.hint))) S.hint = null;
+    if (!S.hint) {
+      let pick = null;
+      for (const id of ids) {
+        const I = ITEMS[id]; if (S.seen.has(id) || S.it[id].state !== 'idle' || inView(I.pos, -0.05)) continue;
+        const a = Math.abs(relAngle(I.pos)), score = dist(S.pos, I.pos) - 6 * (a / Math.PI);
+        if (!pick || score < pick.score) pick = { id, score };
+      }
+      if (pick) S.hint = pick.id;
+    }
+    if (S.hint && !inView(ITEMS[S.hint].pos, -0.05)) { const I = ITEMS[S.hint]; L.push({ key: 'hint:' + S.hint + ':' + dirWord(relAngle(I.pos)), rank: 55, form: 'line', free: true, who: S.hint, icon: 'arrow', bearing: I.pos, text: KIND_WORD[I.kind] + ' waits ' + dirWord(relAngle(I.pos)) }); }
+  }
+  if (!S.inStation || S.story.step === 'done') {
+    const w = STATIONS[2], d = dist(S.pos, w.pos);
+    L.push({ key: 'next:' + dirWord(relAngle(w.pos)) + (weak() ? 'w' : Math.round(d / 5)), rank: 40, form: 'line', walk: true, icon: 'arrow', bearing: w.pos, tone: 'next',
+      text: 'Next: ' + w.name + (weak() ? '' : ' - ' + metres(d)) + ' ' + dirWord(relAngle(w.pos)).replace('to your', '') });
+  }
+  return L;
+}
+function arbitrate(R) {
+  const quiet = storyOn() && CFG.rank === 'story'; // the story wins the screen: free items only in the world
+  const ok = (r) => !S.dismissed.has(r.key) && !(quiet && r.free);
+  const panels = R.filter((r) => r.form === 'panel' && ok(r)).sort((a, b) => b.rank - a.rank);
+  const slot = panels[0] || null;
+  const lines = R.filter((r) => r.form === 'line' && ok(r));
+  for (const p of panels.slice(1)) if (p.line && !S.dismissed.has(p.line.key)) lines.push({ ...p.line, rank: Math.min(p.rank - 5, 79), form: 'line', from: p.who });
+  const lineOk = quiet ? lines.filter((l) => l.key === 'weak') : lines;
+  lineOk.sort((a, b) => b.rank - a.rank);
+  return { slot, nudge: lineOk[0] || null, all: R, panels, lines: lineOk };
+}
+
+/* ---------- panel content ---------- */
+const grab = '<span class="grab" aria-hidden="true"></span>';
+function storyPanel() {
+  const s = S.story;
+  if (s.step === 'intro') return `${grab}<div class="eb k-story"><i class="kd"></i>Story - ${STATION.name}</div><div class="spk">${STORY.speaker}</div><p class="say">${STORY.intro}</p><div class="acts"><button class="btn primary wide" data-act="story-continue">Continue</button></div>`;
+  if (s.step === 'quiz') return `${grab}<div class="eb k-story"><i class="kd"></i>Story - a question</div><p class="q">${STORY.question}</p><div class="opts">${STORY.options.map((o) => `<button class="opt" data-act="answer:${o.id}">${o.label}</button>`).join('')}</div>`;
+  const right = s.answer === STORY.right;
+  return `${grab}<div class="eb k-story"><i class="kd"></i>Story - a question</div><p class="res ${right ? 'ok' : ''}">${right ? 'Right - water. The well came in 1580, and the market doubled. +10 points' : 'Not quite - it was water. The well came in 1580.'}</p><div class="acts"><button class="btn primary wide" data-act="story-continue">Continue</button></div>`;
+}
+function playPanel(id) {
+  const I = ITEMS[id], s = S.it[id];
+  return `${grab}<div class="row k-${I.kind}"><i class="kd"></i><div class="tt"><b>${I.name}</b><small data-f="sub">${I.kind === 'video' ? 'Film' : 'Voice'} - playing</small></div><button class="ibtn" data-act="toggle:${id}" aria-label="Pause" data-f="pp">${ICON.pause}</button></div><div class="bar k-${I.kind}"><i data-f="bar"></i></div><p class="cap" data-f="cap"></p>`;
+}
+function tickPlay(el, id) {
+  const I = ITEMS[id], s = S.it[id];
+  const b = el.querySelector('[data-f=bar]'); if (b) b.style.width = (100 * s.t / I.dur).toFixed(1) + '%';
+  const c = el.querySelector('[data-f=cap]'); if (c) { const l = I.lines[Math.min(I.lines.length - 1, Math.floor(s.t / I.dur * I.lines.length))]; if (c.textContent !== l) c.textContent = l; }
+  const sub = el.querySelector('[data-f=sub]'); if (sub) { const t = (I.kind === 'video' ? 'Film' : 'Voice') + (s.state === 'playing' ? ' - playing' : ' - paused'); const h = t + (s.muted ? '<span class="muted-tag">muted</span>' : ''); if (sub.innerHTML !== h) sub.innerHTML = h; }
+  const pp = el.querySelector('[data-f=pp]'); if (pp) { const h = s.state === 'playing' ? ICON.pause : ICON.play; if (pp.innerHTML !== h) pp.innerHTML = h; }
+}
+function reachPanel(id) {
+  const I = ITEMS[id], s = S.it[id];
+  return `${grab}<div class="row k-${I.kind}"><i class="kd"></i><div class="tt"><b>${I.name}</b><small>${I.kind === 'video' ? 'Film' : 'Voice'} - ${s.state === 'paused' ? 'paused' : 'you are there'}</small></div><button class="ibtn" data-act="play:${id}" aria-label="Play">${ICON.play}</button></div>`;
+}
+function finPanel(id) {
+  const I = ITEMS[id];
+  return `${grab}<div class="row k-${I.kind}"><i class="kd"></i><div class="tt"><b>${I.name}</b><small>Finished</small></div><button class="btn" data-act="play:${id}">Replay</button></div>`;
+}
+function tappedPanel(id) {
+  if (id === 'stations') return `${grab}<div class="eb">Stations</div><ul class="stations">${STATIONS.map((s) => `<li class="${s.id === 'market' && S.inStation ? 'here' : ''}"><i class="kd ${s.state === 'next' ? 'k-next' : s.state === 'done' || (s.id === 'market' && !S.inStation) ? 'k-story' : ''}" style="${s.state === 'later' ? 'background:transparent;border:2px solid #fff' : ''}"></i><b>${s.name}</b><small>${s.id === 'market' ? (S.inStation ? 'you are here' : 'done') : s.state === 'next' ? 'next' : s.state === 'done' ? 'done' : 'later'}</small></li>`).join('')}</ul><div class="acts"><button class="btn wide" data-act="close">Close</button></div>`;
+  const I = ITEMS[id], s = S.it[id];
+  if (I.kind === 'pin') return `${grab}<div class="eb k-pin"><i class="kd"></i>Sign</div><div class="row"><div class="tt"><b>${I.name}</b></div></div><p class="txt">${I.text}</p><div class="acts"><button class="btn wide" data-act="close">Close</button></div>`;
+  if (I.kind === 'picture') return `${grab}<div class="eb k-picture"><i class="kd"></i>Then and now</div><div class="row"><div class="tt"><b>${I.name}</b></div></div><div class="thennow" id="tn"><canvas class="now"></canvas><canvas class="then"></canvas><span class="lab" style="left:6px">1890</span><span class="lab" style="right:6px">today</span><input type="range" min="0" max="100" value="55" aria-label="Then and now"></div><div class="acts"><button class="btn wide" data-act="close">Close</button></div>`;
+  if (I.kind === 'model') return `${grab}<div class="eb k-model"><i class="kd"></i>Model</div><div class="row"><div class="tt"><b>${I.name}</b><small>${S.note ? 'Note ' + S.note : '2 notes - tap a number on the model'}</small></div></div>${S.note ? `<p class="txt">${I.notes[S.note - 1]}</p>` : ''}<div class="acts"><button class="btn wide" data-act="close">Close</button></div>`;
+  // a startable thing tapped from afar: tap stays the floor
+  const d = dist(S.pos, I.pos) - I.reach;
+  return `${grab}<div class="row k-${I.kind}"><i class="kd"></i><div class="tt"><b>${I.name}</b><small>${I.kind === 'video' ? 'Film' : 'Voice'} - ${weak() ? 'best from its place' : 'best from its place, ' + metres(d) + ' closer'}</small></div></div><div class="acts"><button class="btn primary wide" data-act="play:${id}">Play from here</button><button class="btn" data-act="close">Close</button></div>`;
+}
+
+/* ---------- rendering the slot and the nudge (morph, never stack) ---------- */
+const slot = $('#slot'), slotIn = $('#slotIn'), nudge = $('#nudge');
+let slotKey = undefined, slotReq = null, slotTimer = 0, INSTANT = false;
+function capPx() { return parseFloat(getComputedStyle(slot).maxHeight) || 9999; }
+function fitSlot() { if (!slotReq) return; slot.style.height = Math.min(slotIn.scrollHeight, capPx()) + 'px'; }
+function applySlot() {
+  if (!slotReq) {
+    slot.style.height = '0px'; slot.classList.add('empty'); slot.classList.remove('swap');
+    clearTimeout(slotTimer); slotTimer = setTimeout(() => { if (!slotReq) slot.hidden = true; }, INSTANT ? 0 : 260);
+    if (INSTANT) slot.hidden = true;
+    return;
+  }
+  const wasHidden = slot.hidden; slot.hidden = false;
+  if (wasHidden) slot.style.height = '0px';
+  slotIn.innerHTML = slotReq.panel(); wirePanel();
+  if (slotReq.who && S.it[slotReq.who] && slotReq.key.startsWith('play:')) tickPlay(slotIn, slotReq.who);
+  void slot.offsetHeight;
+  slot.classList.remove('empty', 'swap'); fitSlot();
+}
+function renderSlot(req) {
+  const key = req ? req.key : null;
+  if (key === slotKey) { if (req && req.key.startsWith('play:')) tickPlay(slotIn, req.who); return; }
+  slotKey = key; slotReq = req;
+  if (INSTANT || slot.hidden || !req) { applySlot(); return; }
+  slot.classList.add('swap'); clearTimeout(slotTimer);
+  slotTimer = setTimeout(applySlot, 140);
+}
+function wirePanel() {
+  const tn = slotIn.querySelector('#tn');
+  if (tn) {
+    const [now, then] = tn.querySelectorAll('canvas'); const w = 300, h = 120;
+    now.width = then.width = w; now.height = then.height = h;
+    now.getContext('2d').drawImage(oldPhoto(w, h, false), 0, 0); then.getContext('2d').drawImage(oldPhoto(w, h, true), 0, 0);
+    const inp = tn.querySelector('input'); const set = () => tn.style.setProperty('--s', inp.value + '%'); inp.addEventListener('input', set); set();
+  }
+}
+let nudgeKey = undefined, nudgeReq = null, nudgeTimer = 0;
+function nudgeSig(r) { return r ? r.key + '|' + r.text + '|' + (r.act ? r.act[1] : '') : null; }
+function applyNudge() {
+  const r = nudgeReq;
+  if (!r) { nudge.hidden = true; nudge.classList.remove('fade'); return; }
+  nudge.hidden = false; nudge.dataset.tone = r.tone || '';
+  $('#nIcon').innerHTML = ICON[r.icon] || ''; $('#nText').textContent = r.text;
+  const a = $('#nAct'); if (r.act) { a.hidden = false; a.textContent = r.act[0]; a.dataset.act = r.act[1]; } else a.hidden = true;
+  tickNudge(); nudge.classList.remove('fade');
+  if (slotReq) fitSlot();
+}
+function tickNudge() {
+  const r = nudgeReq; if (!r || !r.bearing) return;
+  const svg = $('#nIcon svg'); if (svg) svg.style.transform = `rotate(${(relAngle(r.bearing) * 180 / Math.PI).toFixed(1)}deg)`;
+}
+function renderNudge(r) {
+  const sig = nudgeSig(r);
+  if (sig === nudgeKey) { tickNudge(); return; }
+  nudgeKey = sig; nudgeReq = r;
+  if (INSTANT || nudge.hidden || !r) { applyNudge(); return; }
+  nudge.classList.add('fade'); clearTimeout(nudgeTimer); nudgeTimer = setTimeout(applyNudge, 160);
+}
+
+/* ---------- actions ---------- */
+function act(a) {
+  const [verb, arg] = a.split(':');
+  if (verb === 'story-continue') {
+    if (S.story.step === 'intro') { S.story.step = 'idle'; S.story.readyAt = S.now + 45; }
+    else if (S.story.step === 'result') S.story.step = 'done';
+  } else if (verb === 'answer') { S.story.answer = arg; S.story.step = 'result'; }
+  else if (verb === 'show-story') { for (const p of (A ? A.panels : [])) if (p.who !== 'story') S.dismissed.add(p.key); }
+  else if (verb === 'play') play(arg);
+  else if (verb === 'toggle') { const s = S.it[arg]; if (s.state === 'playing') { s.state = 'paused'; s.pausedByLeave = false; } else play(arg); }
+  else if (verb === 'swap') { const s = S.it[arg]; s.focusAt = S.now; S.dismissed.clear(); }
+  else if (verb === 'close') { S.tapped = null; S.note = null; }
+  frame(0);
+}
+slotIn.addEventListener('click', (e) => { const b = e.target.closest('[data-act]'); if (b) act(b.dataset.act); });
+$('#nAct').addEventListener('click', (e) => { e.stopPropagation(); act(e.currentTarget.dataset.act); });
+// swipe down on the slot: dismiss for now (never a list of the queue)
+{
+  let y0 = null;
+  slot.addEventListener('pointerdown', (e) => { if (e.target.closest('button,input')) return; y0 = e.clientY; });
+  slot.addEventListener('pointerup', (e) => { if (y0 != null && e.clientY - y0 > 40 && slotReq) { S.dismissed.add(slotReq.key); if (slotReq.own) { S.tapped = null; S.note = null; } } y0 = null; });
+  slot.addEventListener('pointercancel', () => { y0 = null; });
+}
+$('#radarBtn').addEventListener('click', () => { S.tapped = S.tapped === 'stations' ? null : 'stations'; frame(0); });
+$('#exitBtn').addEventListener('click', () => { push('Exit AR is not part of this prototype'); });
+
+/* ---------- world taps (raycast) ---------- */
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function worldTap(x, y) {
+  const r = canvas.getBoundingClientRect(); ndc.set((x - r.left) / r.width * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const vis = hits.filter((m) => { let o = m; while (o) { if (!o.visible) return false; o = o.parent; } return true; });
+  const h = ray.intersectObjects(vis, false)[0]; if (!h) return;
+  const id = h.object.userData.id;
+  if (id === 'guide') { if (S.story.step === 'idle') S.story.step = 'quiz'; S.dismissed.clear(); return frame(0); }
+  if (id.startsWith('note')) { S.tapped = 'model'; S.note = Number(id.slice(4)); return frame(0); }
+  if (!activeItems().includes(id) || !S.inStation) return;
+  const I = ITEMS[id], s = S.it[id];
+  if (I.startable) {
+    if (s.state === 'playing') { S.it[id].focusAt = S.now; S.dismissed.clear(); }
+    else if (s.there) play(id);
+    else { S.tapped = id; }
+  } else { S.tapped = id; S.note = null; }
+  S.dismissed.clear(); frame(0);
+}
+
+/* ======================================================================
+   Radar (stations only; the station you are in is a filled disc around you)
+   ====================================================================== */
+const rc = $('#radar'), rctx = rc.getContext('2d');
+function drawRadar() {
+  const css = rc.clientWidth || 78, dpr = Math.min(devicePixelRatio, 2), s = Math.round(css * dpr);
+  if (rc.width !== s) { rc.width = rc.height = s; }
+  const c = s / 2, r = c - 2 * dpr, g = rctx; g.clearRect(0, 0, s, s);
+  g.fillStyle = 'rgba(11,15,20,.80)'; g.beginPath(); g.arc(c, c, r, 0, 7); g.fill();
+  // view cone (heading up)
+  const hf = hfov() / 2; g.fillStyle = 'rgba(255,255,255,.14)'; g.beginPath(); g.moveTo(c, c); g.arc(c, c, r - 3 * dpr, -Math.PI / 2 - hf, -Math.PI / 2 + hf); g.closePath(); g.fill();
+  if (S.inStation) { g.fillStyle = 'rgba(45,212,191,.30)'; g.beginPath(); g.arc(c, c, r * 0.4, 0, 7); g.fill(); g.strokeStyle = '#2dd4bf'; g.lineWidth = 3 * dpr; g.stroke(); }
+  const RANGE = 120;
+  for (const st of STATIONS) {
+    if (st.id === 'market' && S.inStation) continue;
+    const a = relAngle(st.pos), d = dist(S.pos, st.pos), rr = Math.min(r - 7 * dpr, Math.max(r * 0.5, d / RANGE * r));
+    const x = c + Math.sin(a) * rr, y = c - Math.cos(a) * rr;
+    g.beginPath(); g.arc(x, y, (st.state === 'next' ? 5.5 : 4) * dpr, 0, 7);
+    if (st.state === 'next') { g.fillStyle = '#fb923c'; g.fill(); }
+    else if (st.state === 'done' || st.id === 'market') { g.fillStyle = '#2dd4bf'; g.fill(); }
+    else { g.strokeStyle = '#fff'; g.lineWidth = 2.5 * dpr; g.stroke(); }
+  }
+  if (weak()) { g.setLineDash([5 * dpr, 4 * dpr]); g.strokeStyle = '#fbbf24'; g.lineWidth = 3 * dpr; g.beginPath(); g.arc(c, c, r - 1.5 * dpr, 0, 7); g.stroke(); g.setLineDash([]); g.fillStyle = 'rgba(251,191,36,.28)'; g.beginPath(); g.arc(c, c, r * 0.3, 0, 7); g.fill(); }
+  g.fillStyle = '#fff'; g.beginPath(); g.moveTo(c, c - 7 * dpr); g.lineTo(c + 5 * dpr, c + 5 * dpr); g.lineTo(c, c + 2.5 * dpr); g.lineTo(c - 5 * dpr, c + 5 * dpr); g.closePath(); g.fill();
+}
+
+/* ======================================================================
+   World update: awake/asleep, glow for what plays, what the nudge names
+   ====================================================================== */
+let lastVideoDraw = 0;
+function updateWorld(dt, nudgeWho) {
+  const t = S.now, ids = activeItems();
+  for (const id of Object.keys(ITEMS)) {
+    const L = looks[id], s = S.it[id], on = ids.includes(id);
+    L.g.visible = on;
+    if (!on) continue;
+    const wakeT = S.inStation ? 1 : 0; L.wake += (wakeT - L.wake) * Math.min(1, dt * 3 + (INSTANT ? 1 : 0));
+    const playing = s.state === 'playing', named = nudgeWho === id;
+    const pulse = playing ? 0.75 + 0.25 * Math.sin(t * 5) : named ? 0.8 + 0.2 * Math.sin(t * 3) : S.seen.has(id) ? 0.45 : 0.75;
+    if (L.ring) L.ring.material.opacity = L.wake * pulse * (ITEMS[id].kind === 'video' ? 0.55 : 0.9);
+    if (L.fill) L.fill.material.opacity = L.wake * (playing ? 0.3 : 0.14);
+    L.badge.material.opacity = L.wake; L.badge.visible = L.wake > 0.05;
+    L.badge.scale.setScalar(named ? 0.7 + 0.05 * Math.sin(t * 4) : 0.55);
+    for (const m of L.tint) if (m.material.color && m.userData.base) m.material.color.copy(m.userData.base).lerp(GREY, 1 - L.wake);
+    L.bars.visible = playing && L.wake > 0.5;
+    if (L.bars.visible) L.bars.children.forEach((b, i) => { b.scale.y = 0.35 + 0.65 * Math.abs(Math.sin(t * (4 + i * 1.7) + i)); });
+    if (L.hub) L.hub.rotation.z = t * 0.4;
+    if (L.parts) {
+      L.parts.material.opacity = L.wake * (playing ? 0.95 : s.state === 'paused' ? 0.35 : 0.7);
+      const p = L.parts.geometry.attributes.position, sp = playing ? 1.6 : 1;
+      const cx = S.pos.x - L.g.position.x, cz = S.pos.z - L.g.position.z;
+      for (let i = 0; i < p.count; i++) {
+        let y = p.getY(i) + dt * L.partSeed[i] * sp; if (y > 2.4) y = 0; p.setY(i, y);
+        // keep particles out of the camera's face when the visitor stands inside the circle
+        const bx = L.partBase[i * 3], bz = L.partBase[i * 3 + 2], near = Math.hypot(bx - cx, bz - cz) < 1.1;
+        p.setX(i, near ? 99 : bx); p.setZ(i, near ? 99 : bz);
+      }
+      p.needsUpdate = true;
+    }
+    const wall = performance.now();
+    if (L.vc && (wall - lastVideoDraw > 80 || INSTANT || L.vstate !== s.state)) { drawVideo(L, s); lastVideoDraw = wall; L.vstate = s.state; }
+  }
+  guideHalo.material.opacity = storyOn() ? 0.6 + 0.35 * Math.sin(t * 4) : 0;
+  guideQ.visible = S.story.step === 'quiz';
+  beacon.visible = !S.inStation || S.story.step === 'done';
+  beacon.userData.dia.rotation.y = t; beacon.userData.dia.position.y = 8 + Math.sin(t * 1.5) * 0.6;
+}
+function drawVideo(L, s) {
+  const g = L.vc.getContext('2d'), w = L.vc.width, h = L.vc.height, I = ITEMS.film;
+  if (s.state === 'idle' || s.state === 'finished') {
+    g.fillStyle = '#16191d'; g.fillRect(0, 0, w, h); g.fillStyle = '#f472b6'; g.beginPath(); g.moveTo(w / 2 - 16, h / 2 - 22); g.lineTo(w / 2 + 22, h / 2); g.lineTo(w / 2 - 16, h / 2 + 22); g.fill();
+    g.fillStyle = '#fff'; g.font = '700 15px system-ui'; g.textAlign = 'center'; g.fillText(s.state === 'finished' ? 'Tap to replay' : I.name, w / 2, h - 16);
+  } else {
+    const k = s.t; g.fillStyle = '#c9b48f'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#7b8d93'; g.fillRect(0, h * 0.6, w, h * 0.4);
+    g.fillStyle = '#4a3b2a'; const bx = (k * 18) % (w + 80) - 60; g.fillRect(bx, h * 0.5, 60, 18); g.fillRect(bx + 26, h * 0.2, 4, 34);
+    g.fillStyle = '#5b4a35'; for (let i = 0; i < 4; i++) g.fillRect(i * 70 + 10, h * 0.3, 40, h * 0.3);
+    g.fillStyle = 'rgba(0,0,0,' + (0.1 + 0.08 * Math.random()) + ')'; g.fillRect(0, 0, w, h);
+    if (s.state === 'paused') { g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; g.fillRect(w / 2 - 14, h / 2 - 18, 9, 36); g.fillRect(w / 2 + 5, h / 2 - 18, 9, 36); }
+  }
+  L.vtex.needsUpdate = true;
+}
+
+/* ======================================================================
+   Measuring hook: footprint, element count, overlaps
+   ====================================================================== */
+const readout = $('#readout');
+function measure() {
+  const dr = device.getBoundingClientRect(), W = dr.width, H = dr.height;
+  const els = [...device.querySelectorAll('[data-hud]')].filter((el) => {
+    if (el.hidden || el.closest('[hidden]')) return false;
+    const cs = getComputedStyle(el); if (cs.display === 'none' || cs.visibility === 'hidden' || parseFloat(cs.opacity) < 0.05) return false;
+    const r = el.getBoundingClientRect(); return r.width > 2 && r.height > 2;
+  });
+  const boxes = els.map((el) => { const r = el.getBoundingClientRect(); return { el, x: r.left - dr.left, y: r.top - dr.top, w: r.width, h: r.height, circle: el.dataset.hud === 'circle' }; });
+  const step = 3; let n = 0, tot = 0;
+  for (let y = step / 2; y < H; y += step) for (let x = step / 2; x < W; x += step) {
+    tot++;
+    if (boxes.some((b) => b.circle ? Math.hypot(x - (b.x + b.w / 2), y - (b.y + b.h / 2)) <= b.w / 2 : x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h)) n++;
+  }
+  const over = new Set(); let pairs = 0;
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i], b = boxes[j], ix = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), iy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+    if (ix > 1 && iy > 1) { over.add(a.el); over.add(b.el); pairs++; }
+  }
+  for (const el of device.querySelectorAll('[data-hud]')) el.classList.toggle('hud-ol', CFG.outline === 'on' && over.has(el));
+  const pct = 100 * n / tot;
+  return { pct, count: boxes.length, overlaps: pairs, names: boxes.map((b) => b.el.id) };
+}
+function showReadout(m) {
+  readout.innerHTML = `HUD <b>${m.pct.toFixed(1)}%</b> - ${m.count} el - overlaps <b>${m.overlaps}</b>`;
+  readout.classList.toggle('bad', m.overlaps > 0);
+}
+
+/* ======================================================================
+   Beats: a hidden state switcher jumps to each moment
+   ====================================================================== */
+const P0 = { x: 0, z: 6 };
+const BEATS = [
+  { id: '1', label: '1 Arrive', go() { S.story.step = 'intro'; } },
+  { id: '2', label: '2 Stand still 20 s', go() { S.story.step = 'idle'; S.stand = 20; seen('pin'); } },
+  { id: '3', label: '3 Turn around', go() { S.story.step = 'idle'; S.yaw = Math.PI; seen('pin', 'picture'); } },
+  { id: '4a', label: '4 Walk to the film', go() { S.story.step = 'idle'; seen('pin', 'picture', 'model'); S.yaw = yawToward(ITEMS.film.pos); } },
+  { id: '4b', label: '4 At the film', go() { idle4(); S.pos = { x: -4.4, z: 3.0 }; face('film'); there('film'); } },
+  { id: '4c', label: '4 The film plays', go() { idle4(); S.pos = { x: -4.4, z: 3.0 }; face('film'); there('film'); playAt('film', 6); } },
+  { id: '5a', label: '5 Into the voice', go() { idle4(); S.pos = { ...ITEMS.voice.pos }; face('film'); there('film', 'voice'); playAt('film', 14); } },
+  { id: '5b', label: '5 The voice plays', go() { idle4(); S.pos = { ...ITEMS.voice.pos }; face('film'); there('film', 'voice'); playAt('film', 18); playAt('voice', 4, 1); } },
+  { id: '6', label: '6 The quiz enters', go() { idle4(); S.story.step = 'quiz'; S.pos = { ...ITEMS.voice.pos }; S.yaw = yawToward(guide.position); there('film', 'voice'); playAt('film', 24); playAt('voice', 10, 1); } },
+  { id: '7', label: '7 Position weak', go() { idle4(); S.story.step = 'done'; S.pos = { ...ITEMS.voice.pos }; face('film'); there('film', 'voice'); playAt('voice', 22, 1); const f = S.it.film; f.state = 'finished'; f.t = ITEMS.film.dur; f.finAt = S.now - 1; setCfg('prec', 'weak'); } },
+  { id: '8a', label: '8 Leaving', go() { idle4(); S.story.step = 'done'; S.pos = { x: -1, z: -12 }; S.yaw = yawToward(STATIONS[2].pos); const f = S.it.film; f.state = 'finished'; f.t = ITEMS.film.dur; f.finAt = S.now - 30; const v = S.it.voice; v.state = 'paused'; v.t = 26; v.pausedByLeave = true; v.pausedAt = S.now; } },
+  { id: '8b', label: '8 On to the next', go() { idle4(); S.story.step = 'done'; S.pos = { x: 2, z: -40 }; S.yaw = yawToward(STATIONS[2].pos); S.inStation = false; const f = S.it.film; f.state = 'finished'; f.t = ITEMS.film.dur; const v = S.it.voice; v.state = 'paused'; v.t = 26; v.pausedByLeave = true; push('Market square done - on to the well'); } },
+];
+function seen(...ids) { for (const id of ids) S.seen.add(id); }
+function idle4() { S.story.step = 'idle'; S.story.readyAt = 1e9; seen('pin', 'picture', 'model'); }
+function face(id) { S.yaw = yawToward(ITEMS[id].pos) - 0.25; }
+function there(...ids) { for (const id of ids) S.it[id].there = true; }
+function playAt(id, t, order = 0) { const s = S.it[id]; S.seen.add(id); s.state = 'playing'; s.t = t; s.focusAt = S.now + order * 0.01; s.dStart = ITEMS[id].reach; }
+function setBeat(i, { keepCfg = false } = {}) {
+  const b = BEATS[i]; if (!b) return;
+  const prec = CFG.prec; resetState(); S.now = 100; S.pos = { ...P0 }; S.yaw = 0; S.beat = i;
+  if (!keepCfg) setCfg('prec', 'good'); else CFG.prec = prec;
+  b.go(); S.hint = null;
+  if (S.story.step !== 'intro') S.seen.add('pin');
+  $('#beatLbl').textContent = b.label;
+  for (const el of document.querySelectorAll('#beats button')) el.classList.toggle('on', el.dataset.i === String(i));
+  status(b.id === '2' ? 'Standing still for 20 s: nothing started by nearness. The film waits for a tap.' : '');
+  frame(0);
+}
+
+/* ======================================================================
+   Walk for me (the scripted walk through every beat)
+   ====================================================================== */
+let run = 0;
+const wait = (ms, id) => new Promise((res, rej) => setTimeout(() => (id === run ? res() : rej('stop')), ms));
+function moveTo(p, yaw, ms, id) {
+  return new Promise((res, rej) => { S.anim = { from: { ...S.pos }, to: p, y0: S.yaw, y1: yaw ?? S.yaw, t0: performance.now(), ms, res, rej, id }; });
+}
+function tapEl(sel) {
+  const el = typeof sel === 'string' ? document.querySelector(sel) : sel; if (!el || el.closest('[hidden]')) return false;
+  const r = el.getBoundingClientRect(), dr = device.getBoundingClientRect(), rp = document.createElement('div');
+  rp.className = 'ripple'; rp.style.left = (r.left + r.width / 2 - dr.left) + 'px'; rp.style.top = (r.top + r.height / 2 - dr.top) + 'px'; device.appendChild(rp); setTimeout(() => rp.remove(), 600);
+  el.click(); return true;
+}
+async function walkForMe() {
+  const id = ++run; setBeat(0); $('#demo').hidden = !wide(); status('Walking...');
+  try {
+    S.pos = { x: 0, z: 26 }; await moveTo({ ...P0 }, 0, 3500, id); await wait(3500, id);
+    tapEl('[data-act=story-continue]'); setLbl(1); status('Standing still (20 s shown at 4x): nothing starts by nearness.');
+    for (let i = 0; i < 10; i++) { S.stand = (i + 1) * 2; status('Standing still: ' + S.stand + ' s (shown at 4x). Nothing starts by nearness.'); await wait(500, id); }
+    setLbl(2); status('A full circle.'); await moveTo({ ...S.pos }, S.yaw - Math.PI * 2, 9000, id); S.yaw = wrap(S.yaw);
+    setLbl(3); status('Walking toward the film.'); await moveTo({ ...S.pos }, yawToward(ITEMS.film.pos), 1200, id); await wait(1800, id);
+    await moveTo({ x: -4.4, z: 3.0 }, yawToward(ITEMS.film.pos) - 0.25, 3200, id); setLbl(4); await wait(1800, id);
+    tapEl('[data-act="play:film"]'); setLbl(5); await wait(3000, id);
+    status('Stepping into the voice while the film plays.'); await moveTo({ ...ITEMS.voice.pos }, S.yaw, 2600, id); setLbl(6); await wait(2200, id);
+    tapEl('#nAct'); setLbl(7); await wait(3500, id);
+    status('The story reaches its quiz.'); S.story.step = 'quiz'; setLbl(8); await wait(3500, id);
+    tapEl('[data-act="answer:b"]'); await wait(2500, id); tapEl('[data-act=story-continue]'); await wait(1500, id);
+    status('The position becomes weak.'); setCfg('prec', 'weak'); S.it.film.t = Math.max(S.it.film.t, ITEMS.film.dur - 2); setLbl(9); await wait(5000, id);
+    setCfg('prec', 'good'); status('Leaving the station.'); await moveTo({ x: -1, z: -12 }, yawToward(STATIONS[2].pos), 4200, id); setLbl(10); await wait(3000, id);
+    await moveTo({ x: 2, z: -40 }, yawToward(STATIONS[2].pos), 6000, id); setLbl(11); await wait(4000, id);
+    status('Done. Jump to any beat, or walk again.');
+  } catch (e) { if (e !== 'stop') throw e; }
+}
+function setLbl(i) { S.beat = i; $('#beatLbl').textContent = BEATS[i].label; for (const el of document.querySelectorAll('#beats button')) el.classList.toggle('on', el.dataset.i === String(i)); }
+
+/* ======================================================================
+   Input: drag to turn, drag up to walk, tap things; keys on a desktop
+   ====================================================================== */
+let drag = null;
+canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now() }; canvas.setPointerCapture(e.pointerId); hideTry(); });
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag) return; run++; S.anim = null;
+  S.yaw += (e.clientX - drag.x) * 0.006;
+  const fwd = -(e.clientY - drag.y) * 0.04; if (Math.abs(e.clientY - drag.y0) > 12) { S.pos.x += -Math.sin(S.yaw) * fwd; S.pos.z += -Math.cos(S.yaw) * fwd; }
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (drag && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 8 && performance.now() - drag.t0 < 500) worldTap(e.clientX, e.clientY);
+  drag = null;
+});
+canvas.addEventListener('pointercancel', () => { drag = null; });
+const keys = new Set();
+addEventListener('keydown', (e) => { if (e.target.closest('input')) return; keys.add(e.code); hideTry(); });
+addEventListener('keyup', (e) => keys.delete(e.code));
+function hideTry() { const t = $('#try'); if (!t.classList.contains('gone')) { t.classList.add('gone'); setTimeout(() => { t.hidden = true; }, 700); } }
+setTimeout(hideTry, 14000);
+
+/* ======================================================================
+   Demo panel
+   ====================================================================== */
+const wide = () => matchMedia('(min-width:960px) and (min-height:600px)').matches;
+function status(t) { $('#status').textContent = t; }
+BEATS.forEach((b, i) => { const el = document.createElement('button'); el.type = 'button'; el.textContent = b.label; el.dataset.i = i; el.addEventListener('click', () => { run++; S.anim = null; setBeat(i); }); $('#beats').appendChild(el); });
+function setCfg(k, v) {
+  CFG[k] = typeof CFG[k] === 'number' ? Number(v) : v;
+  for (const b of document.querySelectorAll(`[data-k=${k}] button`)) b.classList.toggle('on', b.dataset.v === String(CFG[k]));
+  if (k === 'cap') document.documentElement.style.setProperty('--cap', CFG.cap);
+  if (k === 'frame') { device.classList.toggle('land', v === 'land'); resize(); }
+  if (k === 'outline' && v === 'off') for (const el of device.querySelectorAll('.hud-ol')) el.classList.remove('hud-ol');
+}
+for (const g of document.querySelectorAll('[data-k]')) for (const b of g.querySelectorAll('button')) b.addEventListener('click', () => { setCfg(g.dataset.k, b.dataset.v); frame(0); });
+for (const k of Object.keys(CFG)) setCfg(k, CFG[k]);
+if (!wide()) $('#landRow').hidden = true;
+$('#beatLbl').addEventListener('click', () => { if (!wide()) $('#demo').hidden = !$('#demo').hidden; });
+$('#closeDemo').addEventListener('click', () => { $('#demo').hidden = true; });
+$('#prevBeat').addEventListener('click', () => { run++; S.anim = null; setBeat(((S.beat ?? 0) - 1 + BEATS.length) % BEATS.length); });
+$('#nextBeat').addEventListener('click', () => { run++; S.anim = null; setBeat(((S.beat ?? -1) + 1) % BEATS.length); });
+$('#walkBtn').addEventListener('click', walkForMe);
+$('#stopBtn').addEventListener('click', () => { run++; S.anim = null; status('Stopped.'); });
+$('#openNote').addEventListener('click', () => { $('#note').hidden = false; if (!wide()) $('#demo').hidden = true; });
+$('#noteClose').addEventListener('click', () => { $('#note').hidden = true; });
+function renderQueue(A) {
+  const rows = [];
+  const label = (r) => r.panel ? (r.key.split(':').slice(0, 2).join(' ')) : r.text;
+  for (const r of A.all) {
+    const cls = A.slot === r ? 's' : (A.nudge && (A.nudge.key === r.key)) ? 'n' : 'x';
+    rows.push(`<li><span class="${cls}">${cls === 's' ? 'SLOT' : cls === 'n' ? 'LINE' : 'waits'}</span> ${r.rank} ${label(r)}</li>`);
+  }
+  if (A.nudge && A.nudge.from) rows.push(`<li><span class="n">LINE</span> ${A.nudge.rank} ${A.nudge.text}</li>`);
+  const h = rows.join('') || '<li>nothing asks</li>';
+  if ($('#queue').innerHTML !== h) $('#queue').innerHTML = h;
+}
+async function measureAll() {
+  run++; S.anim = null; device.classList.add('measuring'); INSTANT = true;
+  const out = [];
+  for (let i = 0; i < BEATS.length; i++) {
+    setBeat(i); frame(0); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); frame(0);
+    const m = measure(); out.push({ beat: BEATS[i].label, pct: +m.pct.toFixed(1), count: m.count, overlaps: m.overlaps, els: m.names.join(' ') });
+  }
+  INSTANT = false; device.classList.remove('measuring');
+  const dr = device.getBoundingClientRect(); $('#measVp').textContent = Math.round(dr.width) + ' x ' + Math.round(dr.height);
+  $('#measTable').innerHTML = '<tr><th>beat</th><th>HUD</th><th>el</th><th>ov</th></tr>' + out.map((o) => `<tr><td>${o.beat}</td><td>${o.pct}%</td><td>${o.count}</td><td>${o.overlaps}</td></tr>`).join('');
+  setBeat(0);
+  return out;
+}
+$('#measureAll').addEventListener('click', measureAll);
+
+/* ======================================================================
+   Loop
+   ====================================================================== */
+function resize() {
+  const r = device.getBoundingClientRect(), w = Math.max(1, r.width), h = Math.max(1, r.height);
+  renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w > h ? 48 : 70; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+let A = null, measT = 0;
+function frame(dt) {
+  if (dt > 0) step(dt);
+  camera.position.set(S.pos.x, 1.6, S.pos.z); camera.rotation.set(-0.06, S.yaw, 0);
+  A = arbitrate(buildRequests());
+  renderSlot(A.slot); renderNudge(A.nudge);
+  updateWorld(dt, A.nudge && A.nudge.who);
+  drawRadar(); renderer.render(scene, camera);
+}
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (S.anim) {
+    const a = S.anim, k = Math.min(1, (now - a.t0) / a.ms), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+    S.pos.x = a.from.x + (a.to.x - a.from.x) * e; S.pos.z = a.from.z + (a.to.z - a.from.z) * e; S.yaw = a.y0 + (a.y1 - a.y0) * e;
+    if (k >= 1) { S.anim = null; a.id === run ? a.res() : a.rej('stop'); }
+  }
+  if (keys.size) {
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) S.yaw += 1.6 * dt;
+    if (keys.has('KeyD') || keys.has('ArrowRight')) S.yaw -= 1.6 * dt;
+    const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
+    if (f) { S.pos.x += -Math.sin(S.yaw) * f * 2.4 * dt; S.pos.z += -Math.cos(S.yaw) * f * 2.4 * dt; }
+  }
+  frame(dt);
+  if (now - measT > 250) { measT = now; showReadout(measure()); renderQueue(A); }
+  requestAnimationFrame(loop);
+}
+window.__proto = { setBeat, measure, measureAll, BEATS, S, CFG, setCfg };
+setBeat(0);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,1122 @@
+<!doctype html>
+<!-- Prototype HUD aggregation, direction "Aim to ask": a centre ring; details only for what you point at. Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<title>HUD Aim to Ask</title>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+<style>
+:root{
+  --here:#2dd4bf;        /* items of the station you are in */
+  --here-ink:#04201c;
+  --next:#fb923c;        /* the next station */
+  --wait:#fde68a;        /* an action that waits for you */
+  --weak:#fbbf24;
+  --ink:#f5f7f9;
+  --muted:#c2cad3;
+  --plate:rgba(9,13,18,.82);
+  --plate-2:rgba(255,255,255,.10);
+  --edge:rgba(0,0,0,.55);
+  --demo:#facc15;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --top:calc(30px + env(safe-area-inset-top));
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;background:#0b0e12}
+body{font:15px/1.4 var(--sans);color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+button{font:inherit;color:inherit}
+
+.device{position:fixed;inset:0;overflow:hidden;background:#000}
+#cam{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+/* the fake camera feed: a little grain and lens falloff over the 3D square */
+.feed{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 58%,rgba(0,0,0,.32) 100%)}
+.feed::after{content:"";position:absolute;inset:0;opacity:.07;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/></filter><rect width='120' height='120' filter='url(%23n)'/></svg>")}
+
+/* ===================== the HUD (everything with .hud is measured) ===================== */
+.hud{position:absolute;transition:opacity .25s}
+.hud.off{opacity:0;pointer-events:none}
+.ov{outline:3px solid #ef4444!important;outline-offset:1px}
+.measure-off .ov{outline:none!important}
+
+.exit{z-index:30;top:var(--top);left:calc(12px + env(safe-area-inset-left));width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,.28);background:rgba(9,13,18,.62);display:grid;place-items:center;cursor:pointer;padding:0;appearance:none}
+.exit svg{width:16px;height:16px}
+
+/* the walk dial: the radar between stations, a small compass to the next stop inside one */
+.dial{z-index:20;top:var(--top);right:calc(12px + env(safe-area-inset-right));display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.dial canvas{display:block;width:132px;height:132px;border-radius:50%;transition:width .45s cubic-bezier(.2,.8,.2,1),height .45s cubic-bezier(.2,.8,.2,1);box-shadow:0 4px 14px rgba(0,0,0,.3)}
+.dial.small canvas{width:48px;height:48px}
+.chip{font-size:12px;font-weight:700;line-height:1.1;padding:6px 9px;border-radius:12px;background:var(--plate);border:2px solid rgba(251,191,36,.7);color:#fde68a;white-space:nowrap}
+
+.toast{z-index:30;top:calc(84px + env(safe-area-inset-top));left:calc(12px + env(safe-area-inset-left));max-width:min(300px,calc(100vw - 96px));padding:9px 13px;border-radius:14px;background:var(--plate);border:2px solid rgba(255,255,255,.14);font-size:13.5px;font-weight:650;display:flex;gap:8px;align-items:center;opacity:0;transform:translateY(-6px);transition:opacity .3s,transform .3s;pointer-events:none}
+.toast.show{opacity:1;transform:none}
+.radar-big .toast,.weak .toast{max-width:calc(100vw - 184px)}
+.toast i{flex:none;width:9px;height:9px;border-radius:50%;background:var(--here)}
+.toast[data-k=weak] i{background:var(--weak)}
+.toast[data-k=next] i{background:var(--next)}
+
+/* the reticle */
+.reticle{z-index:22;left:50%;top:50%;width:56px;height:56px;margin:-28px 0 0 -28px;pointer-events:none}
+.reticle svg{width:56px;height:56px;overflow:visible}
+.reticle .halo{fill:none;stroke:rgba(0,0,0,.5);stroke-width:7}
+.reticle .ring{fill:none;stroke:#fff;stroke-width:3.5;transition:stroke .2s}
+.reticle .core{fill:#fff;transition:fill .2s}
+.reticle .grow{transform-origin:28px 28px;transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.reticle .drain{fill:none;stroke:var(--wait);stroke-width:4.5;stroke-linecap:round;transform:rotate(-90deg);transform-origin:28px 28px;opacity:0;transition:opacity .2s}
+.reticle .drain-halo{fill:none;stroke:rgba(0,0,0,.5);stroke-width:8;opacity:0;transition:opacity .2s}
+.reticle[data-s=aim] .grow{transform:scale(1.32)}
+.reticle[data-s=aim] .ring{stroke:var(--here)}
+.reticle[data-s=aim] .core{fill:var(--here)}
+.reticle[data-t=next] .ring,.reticle[data-t=next] .core{stroke:var(--next);fill:var(--next)}
+.reticle[data-t=next] .ring{fill:none}
+.reticle[data-t=away] .ring{stroke:#cbd5e1}
+.reticle[data-t=away] .core{fill:#cbd5e1}
+.reticle[data-s=panel] .grow{transform:scale(.78)}
+.reticle[data-s=story] .grow{transform:scale(.7)}
+.reticle[data-s=story] .ring{stroke:#fde68a}
+.reticle[data-s=story] .core{fill:#fde68a}
+.reticle.draining .drain,.reticle.draining .drain-halo{opacity:1}
+.reticle[data-weak="1"] .ring{stroke-dasharray:6 5}
+
+/* the one label beside the ring */
+.aim{z-index:22;pointer-events:auto;cursor:pointer;display:flex;align-items:center;gap:9px;padding:8px 13px 8px 9px;border-radius:16px;background:var(--plate);border:2px solid rgba(255,255,255,.12);max-width:min(270px,calc(100vw - 32px));white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.aim .g{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--here);color:var(--here-ink)}
+.aim .g svg{width:17px;height:17px}
+.aim .t{min-width:0}
+.aim b{display:block;font-size:15px;font-weight:750;line-height:1.15;overflow:hidden;text-overflow:ellipsis}
+.aim span{display:block;font-size:13.5px;font-weight:650;line-height:1.2;color:var(--here);overflow:hidden;text-overflow:ellipsis}
+.aim[data-a=wait] span{color:var(--wait)}
+.aim[data-t=next] .g{background:var(--next);color:#1f1105}
+.aim[data-t=next] span{color:#fed7aa}
+.aim[data-t=away] .g{background:#64748b;color:#fff}
+.aim[data-t=away] span{color:var(--muted)}
+.aim.one span{display:inline;margin-left:6px}
+.aim.one b{display:inline}
+.aim.swap{animation:swap .22s ease}
+@keyframes swap{from{opacity:.35}to{opacity:1}}
+.aim.nudge{animation:nudge .4s ease}
+@keyframes nudge{30%{transform:translateX(-4px)}60%{transform:translateX(4px)}}
+
+/* the one panel, opened from the ring */
+.panel{z-index:24;width:min(342px,calc(100vw - 32px));padding:12px 14px 14px;border-radius:20px;background:var(--plate);border:2px solid rgba(255,255,255,.13);box-shadow:0 10px 30px rgba(0,0,0,.35);overflow:auto;transform-origin:50% 0;animation:open .26s cubic-bezier(.2,.8,.2,1)}
+.panel.side{transform-origin:0 50%}
+@keyframes open{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+.panel::before{content:"";position:absolute;width:14px;height:14px;background:inherit;border:inherit;border-right:0;border-bottom:0;transform:rotate(45deg);left:calc(50% - 7px);top:-9px;display:none}
+.panel .eb{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--here)}
+.panel .eb .x{margin-left:auto;appearance:none;width:34px;height:34px;margin:-6px -6px -6px auto;border-radius:50%;border:0;background:var(--plate-2);display:grid;place-items:center;cursor:pointer;padding:0}
+.panel .eb .x svg{width:13px;height:13px}
+.panel h3{margin:4px 0 4px;font-size:18px;line-height:1.2}
+.panel p{margin:0 0 6px;font-size:15px;line-height:1.42}
+.panel .mut{color:var(--muted);font-size:13px}
+.panel .row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.btn{appearance:none;min-height:44px;padding:10px 15px;border-radius:14px;border:2px solid rgba(255,255,255,.22);background:var(--plate-2);font-weight:700;font-size:14.5px;cursor:pointer}
+.btn.pri{background:var(--here);border-color:var(--here);color:var(--here-ink)}
+.bar{height:6px;border-radius:3px;background:rgba(255,255,255,.18);overflow:hidden;margin:8px 0 2px}
+.bar i{display:block;height:100%;background:var(--here);width:0}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.opts .btn{text-align:left;min-height:48px}
+.opts .btn.right{background:var(--here);border-color:var(--here);color:var(--here-ink)}
+.opts .btn.chosen{border-color:#fff}
+.panel .held{margin-top:10px;font-size:12.5px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.panel .held i{width:8px;height:8px;border-radius:50%;background:#94a3b8}
+.panel canvas{display:block;width:100%;height:auto;border-radius:10px;margin:6px 0 4px;touch-action:none}
+
+/* the turn cue: one count and one direction at the foot */
+.cue{z-index:21;bottom:calc(26px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;background:var(--plate);border:2px solid rgba(45,212,191,.55);font-size:14px;font-weight:750;white-space:nowrap;pointer-events:none}
+.cue svg{width:16px;height:16px;flex:none}
+.cue .pips{display:flex;gap:5px}
+.cue .pips i{width:9px;height:9px;border-radius:50%;background:var(--here)}
+.cue[data-t=next]{border-color:rgba(251,146,60,.8)}
+.cue[data-t=next] .pips i{background:var(--next)}
+.cue.side-l{left:calc(14px + env(safe-area-inset-left));transform:none}
+.cue.side-r{left:auto;right:calc(14px + env(safe-area-inset-right));transform:none}
+.cue.ring{bottom:auto;top:50%;transform:translateY(-50%);padding:5px 8px;font-size:13px}
+
+/* ===================== the demo chrome (never measured) ===================== */
+.demo{position:absolute;z-index:70;top:calc(2px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:2px;padding:2px;border-radius:999px;background:rgba(20,18,4,.82);border:1.5px dashed var(--demo);color:#fef9c3;font:700 12px/1 var(--sans)}
+.demo button{white-space:nowrap;appearance:none;border:0;background:transparent;height:24px;min-width:28px;padding:0 6px;border-radius:999px;cursor:pointer;color:inherit;font:inherit}
+.demo button:active{background:rgba(250,204,21,.25)}
+.demo .n{padding:0 4px;font-variant-numeric:tabular-nums}
+.readout{position:absolute;z-index:70;bottom:calc(3px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);max-width:calc(100vw - 12px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:3px 9px;border-radius:999px;background:rgba(20,18,4,.82);border:1.5px dashed var(--demo);color:#fef9c3;font:600 10.5px/1.2 ui-monospace,Consolas,monospace;pointer-events:none}
+.readout b{color:#fff}
+.readout .bad{color:#fca5a5}
+.hint{position:absolute;z-index:69;top:26%;left:50%;transform:translateX(-50%);width:max-content;max-width:min(300px,calc(100vw - 40px));text-align:center;padding:8px 12px;border-radius:14px;background:rgba(20,18,4,.84);border:1.5px dashed var(--demo);color:#fef9c3;font:600 13px/1.35 var(--sans);pointer-events:none;transition:opacity .6s}
+.hint.gone{opacity:0}
+.sheet{position:absolute;z-index:80;top:0;bottom:0;right:0;width:min(420px,100vw);background:rgba(16,15,8,.97);border-left:1.5px dashed var(--demo);color:#fefce8;overflow:auto;padding:14px 16px calc(24px + env(safe-area-inset-bottom));font-size:14px;transform:translateX(102%);transition:transform .3s}
+.sheet.open{transform:none}
+.sheet h2{font-size:16px;margin:16px 0 6px;color:var(--demo)}
+.sheet h2:first-of-type{margin-top:4px}
+.sheet p,.sheet li{line-height:1.45;color:#ecebd8}
+.sheet ul{padding-left:18px;margin:4px 0}
+.sheet .close{float:right;appearance:none;border:1.5px dashed var(--demo);background:transparent;color:#fef9c3;border-radius:999px;padding:6px 12px;cursor:pointer;font-weight:700}
+.beats{display:grid;grid-template-columns:1fr;gap:5px}
+.beats button,.seg button,.sheet .wide{appearance:none;text-align:left;border:1.5px solid rgba(250,204,21,.45);background:rgba(250,204,21,.07);color:#fefce8;border-radius:10px;padding:8px 10px;cursor:pointer;font:600 13.5px/1.25 var(--sans)}
+.beats button.on{background:rgba(250,204,21,.28);border-color:var(--demo)}
+.sheet .wide{width:100%;text-align:center;margin:6px 0;background:rgba(250,204,21,.2)}
+.knob{margin:8px 0}
+.knob label{display:block;font-size:12.5px;color:#d9d6b8;margin-bottom:4px}
+.seg{display:flex;gap:4px;flex-wrap:wrap}
+.seg button{padding:6px 9px;font-size:12.5px;text-align:center}
+.seg button.on{background:rgba(250,204,21,.35);border-color:var(--demo);color:#fff}
+table.log{width:100%;border-collapse:collapse;font:12px/1.3 ui-monospace,Consolas,monospace;margin-top:4px}
+table.log th,table.log td{border-bottom:1px solid rgba(250,204,21,.2);padding:4px 3px;text-align:right}
+table.log th:first-child,table.log td:first-child{text-align:left}
+table.log tr.on td{color:#fff;background:rgba(250,204,21,.12)}
+</style>
+</head>
+<body>
+<div class="device" id="device">
+  <canvas id="cam" aria-label="Camera view"></canvas>
+  <div class="feed"></div>
+
+  <!-- HUD -->
+  <button class="hud exit" id="exit" data-name="exit" aria-label="Exit AR"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg></button>
+  <div class="hud dial" id="dial" data-name="dial"><canvas id="dialCv" width="264" height="264"></canvas><div class="chip" id="weakChip" hidden>Position weak</div></div>
+  <div class="hud toast" id="toast" data-name="toast"><i></i><span></span></div>
+  <div class="hud reticle" id="reticle" data-name="ring" data-s="idle">
+    <svg viewBox="0 0 56 56">
+      <circle class="drain-halo" cx="28" cy="28" r="24"/>
+      <circle class="drain" id="drain" cx="28" cy="28" r="24" pathLength="100" stroke-dasharray="100 100"/>
+      <g class="grow"><circle class="halo" cx="28" cy="28" r="12"/><circle class="ring" cx="28" cy="28" r="12"/><circle class="core" cx="28" cy="28" r="2.6"/></g>
+    </svg>
+  </div>
+  <div class="hud aim off" id="aim" data-name="label"><div class="g" id="aimG"></div><div class="t"><b id="aimT"></b><span id="aimA"></span></div></div>
+  <div class="hud panel" id="panel" data-name="panel" hidden></div>
+  <div class="hud cue off" id="cue" data-name="turn cue"></div>
+
+  <!-- demo chrome -->
+  <div class="demo" id="demo">
+    <button id="prev" aria-label="Previous beat">&#9664;</button>
+    <span class="n" id="beatN">1/8</span>
+    <button id="next" aria-label="Next beat">&#9654;</button>
+    <button id="play" aria-label="Walk for me">Walk for me</button>
+    <button id="menu" aria-label="Demo menu">&#9776;</button>
+  </div>
+  <div class="hint" id="hint">Drag sideways to turn, drag up to walk. Point the ring at things and tap. Use the arrows above for the eight beats.</div>
+  <div class="readout" id="readout"></div>
+
+  <aside class="sheet" id="sheet" aria-label="Demo menu">
+    <button class="close" id="sheetClose">Close</button>
+    <h2>Aim to ask</h2>
+    <p>The screen stays empty except for a small ring in the middle. Point the ring at something and only that one thing says what it is and what one action starts it. Things you cannot see are a single count at the foot, with the shorter way to turn.</p>
+    <h2>What to try</h2>
+    <ul>
+      <li>Drag sideways to turn, drag up or down to walk (or the arrow keys).</li>
+      <li>Point the ring at the pin, the film screen, the sculpture, the picture behind you, the glowing listening spot.</li>
+      <li>Tap anywhere to act on what the ring points at, or tap a thing directly.</li>
+      <li>Turn away from an open panel: the ring drains and the panel closes.</li>
+    </ul>
+    <h2>The eight beats</h2>
+    <div class="beats" id="beats"></div>
+    <button class="wide" id="playAll">Walk for me: play every beat from beat 1</button>
+    <h2>Tune it</h2>
+    <div id="knobs"></div>
+    <h2>Measured per beat</h2>
+    <p class="mut" style="font-size:12.5px;color:#d9d6b8">Highest value while the beat ran, at this window size. HUD = share of the screen covered by HUD boxes. Items = HUD boxes on screen (the ring and the label count as two). Beyond = items besides Exit and the dial.</p>
+    <table class="log" id="log"></table>
+    <h2>Which thing wins the screen</h2>
+    <ul>
+      <li><b>A story step, a quiz included,</b> wins over everything. While it shows, the ring names nothing, the turn cue hides, a playing narration pauses and a film plays on silently. The free things only glow in the world.</li>
+      <li><b>Otherwise, what the ring points at wins.</b> One label, one action.</li>
+      <li><b>Pointing at nothing,</b> the place you stand in speaks (the listening spot, the film's reach).</li>
+      <li><b>A panel</b> opens only on your tap or on a start you walked into. A new one replaces the old one, whose thing goes on in the world. It closes after you point away for the set time, or when you leave its place.</li>
+      <li><b>Things of the station you are in</b> have a teal glow and answer the ring one by one. <b>A station you are not at</b> answers only as itself ("Old well, next stop"), its things are grey and never named, and they never count at the foot.</li>
+    </ul>
+    <h2>A seventh and an eighth item</h2>
+    <p>Nothing on screen grows: the count at the foot goes up by one each, and the ring names each only while pointed at. Try "+2 items" under Tune it.</p>
+    <h2>The strongest case against it</h2>
+    <ul>
+      <li>To read a panel you have to keep pointing near the thing. Holding a phone up in daylight tires the arm, and a phone lowered to read turns the ring onto the ground.</li>
+      <li>Nothing is discoverable by glancing: a thing you never point at never introduces itself, and the count at the foot is easy to ignore.</li>
+      <li>Under a weak position the things drift away from where they are drawn, so the ring points at the drawing, not at the real place.</li>
+      <li>Two things behind each other in the same direction share one ring: the nearer one wins and the other needs a step aside.</li>
+    </ul>
+  </aside>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+const $ = (s) => document.querySelector(s);
+const device = $('#device');
+
+/* ======================================================================
+   The fake AR camera: a small market square
+   ====================================================================== */
+const canvas = $('#cam');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+{
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, '#6f9cc8'); gr.addColorStop(0.5, '#bcd3e4'); gr.addColorStop(1, '#e6e0d2');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; scene.background = t;
+}
+scene.fog = new THREE.Fog(0xd3dce2, 55, 260);
+const camera = new THREE.PerspectiveCamera(66, 1, 0.1, 600);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xeef4ff, 0x6d6252, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0d4, 1.6); sun.position.set(-60, 110, 40); scene.add(sun);
+const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+const put = (parent, mesh) => (parent.add(mesh), mesh);
+function rng(seed) { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
+const rand = rng(20261115);
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), lam(0x8a8576)); ground.rotation.x = -Math.PI / 2; scene.add(ground);
+function tiles() {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#b8ad98'; g.fillRect(0, 0, 128, 128);
+  g.strokeStyle = 'rgba(70,60,50,.28)'; g.lineWidth = 2;
+  for (let i = 0; i <= 128; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 128); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(128, i); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(16, 16); return t;
+}
+const plaza = new THREE.Mesh(new THREE.CircleGeometry(31, 60), new THREE.MeshLambertMaterial({ map: tiles() }));
+plaza.rotation.x = -Math.PI / 2; plaza.position.set(0, 0.035, -2); scene.add(plaza);
+const streetMat = lam(0x65635f);
+function street(x0, z0, x1, z1, w) {
+  const len = Math.hypot(x1 - x0, z1 - z0);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, 0.02, len), streetMat);
+  m.position.set((x0 + x1) / 2, 0.01, (z0 + z1) / 2); m.rotation.y = Math.atan2(x1 - x0, z1 - z0); scene.add(m);
+}
+street(0, -2, 40, -90, 9); street(0, -2, 0, 90, 9); street(40, -90, 40, -200, 9);
+const segDist = (px, pz, x0, z0, x1, z1) => { const dx = x1 - x0, dz = z1 - z0; const t = Math.max(0, Math.min(1, ((px - x0) * dx + (pz - z0) * dz) / (dx * dx + dz * dz))); return Math.hypot(px - x0 - t * dx, pz - z0 - t * dz); };
+function facade(floors) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 128);
+  const fh = 128 / (floors + 0.3);
+  for (let f = 0; f < floors; f++) for (let w = 0; w < 3; w++) { g.fillStyle = f === 0 && w === 1 ? '#3b2f28' : '#46525c'; g.fillRect(14 + w * 38, 128 - (f + 1) * fh + fh * 0.22, 22, f === 0 && w === 1 ? fh * 0.78 : fh * 0.5); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+{
+  const COLS = [0xe8d8bf, 0xd9b99a, 0xc9d1c3, 0xe5c7a8, 0xd2c1b0, 0xbfa58c, 0xe9e1cf];
+  const mats = [2, 3, 4].map((f) => new THREE.MeshLambertMaterial({ map: facade(f) }));
+  const geo = new THREE.BoxGeometry(1, 1, 1); geo.translate(0, 0.5, 0);
+  for (let a = 0; a < Math.PI * 2; a += Math.PI / 13) {
+    const r = 40 + rand() * 5, x = Math.cos(a) * r, z = -2 + Math.sin(a) * r;
+    if (segDist(x, z, 0, -2, 40, -90) < 11 || segDist(x, z, 0, -2, 0, 90) < 11) continue;
+    const fl = 2 + Math.floor(rand() * 3), mat = mats[fl - 2].clone(); mat.color = new THREE.Color(COLS[Math.floor(rand() * COLS.length)]);
+    const b = new THREE.Mesh(geo, mat); b.scale.set(11 + rand() * 3, fl * 3.6 + 1, 9); b.position.set(x, 0, z); b.rotation.y = Math.atan2(-x, -(z + 2)); scene.add(b);
+  }
+  // houses along the street to the next stop
+  for (let t = 0.62; t < 1.6; t += 0.12) for (const side of [-1, 1]) {
+    const x = t * 40 + side * 13 * 0.91, z = -2 - t * 88 + side * 13 * 0.41;
+    if (Math.hypot(x - 40, z + 90) < 16) continue;
+    const fl = 2 + Math.floor(rand() * 3), mat = mats[fl - 2].clone(); mat.color = new THREE.Color(COLS[Math.floor(rand() * COLS.length)]);
+    const b = new THREE.Mesh(geo, mat); b.scale.set(10, fl * 3.6 + 1, 10); b.position.set(x, 0, z); b.rotation.y = Math.atan2(40, -88); scene.add(b);
+  }
+  const trunkG = new THREE.CylinderGeometry(0.13, 0.19, 2.4).translate(0, 1.2, 0), crownG = new THREE.IcosahedronGeometry(1.5, 1).translate(0, 3.4, 0);
+  for (const [x, z] of [[-22, -20], [-26, 8], [20, 18], [-12, -28], [24, -22], [-28, -6], [12, 24]]) {
+    const t = new THREE.Mesh(trunkG, lam(0x5b4330)); t.position.set(x, 0, z); scene.add(t);
+    const c = new THREE.Mesh(crownG, lam(0x4f7d3a)); c.position.set(x, 0, z); scene.add(c);
+  }
+  for (const [x, z, ry] of [[-9, 5, 0.3], [9, -14, -0.5], [14, 6, 1.2]]) {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.45, 0.5), lam(0x6b4f35)); b.position.set(x, 0.45, z); b.rotation.y = ry; scene.add(b);
+  }
+}
+
+/* ---------- glow texture shared by every item of the station you are in ---------- */
+const glowTex = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  return new THREE.CanvasTexture(c);
+})();
+const HERE = new THREE.Color('#2dd4bf');
+function glow(x, y, z, s) {
+  const m = new THREE.SpriteMaterial({ map: glowTex, color: HERE, transparent: true, opacity: 0.4, depthWrite: false, fog: false, blending: THREE.AdditiveBlending });
+  const sp = new THREE.Sprite(m); sp.position.set(x, y, z); sp.scale.setScalar(s); scene.add(sp); return sp;
+}
+
+/* ======================================================================
+   The station's things (data first; meshes are built from it)
+   ====================================================================== */
+const ANCHOR = { x: 0, z: -1 };                 // the market square's found point
+const FOUND_R = 4, STATION_IN = 32, STATION_OUT = 36;
+const WELL = { x: 40, z: -90 };
+const ITEMS = [
+  { id: 'pin', kind: 'pin', title: 'The old fountain', x: 0, z: -3, y: 1.55, r: 0.35, leave: 14 },
+  { id: 'model', kind: 'model', title: 'Guild sculpture', x: 28, z: -1, y: 2.0, r: 1.6, leave: 40 },
+  { id: 'pic', kind: 'picture', title: 'Then and now', x: 0.8, z: 10, y: 1.55, r: 0.85, leave: 18 },
+  { id: 'video', kind: 'video', title: 'The market in 1958', x: -6, z: -6.7, y: 1.55, r: 1.0, reach: 5, dur: 45 },
+  { id: 'narr', kind: 'narration', title: 'Voices of the square', x: -2, z: -14, y: 1.0, r: 1.3, reach: 2.5, dur: 60 },
+];
+const EXTRA = [
+  { id: 'sign', kind: 'text', title: 'Market rights', x: -13, z: 3, y: 1.6, r: 0.7, leave: 16, extra: true },
+  { id: 'bells', kind: 'sound', title: 'The noon bells', x: 15, z: 8, y: 1.0, r: 1.2, reach: 3, dur: 30, extra: true },
+];
+const ALL = [...ITEMS, ...EXTRA];
+const byId = Object.fromEntries(ALL.map((i) => [i.id, i]));
+const GUIDE = { id: 'guide', kind: 'guide', title: 'Mira, your guide', x: 3.5, z: -9, y: 1.4, r: 0.6 };
+const ST_WELL = { id: 'st-well', kind: 'station', station: 'well', title: 'Old well', x: WELL.x, z: WELL.z, y: 4, r: 3.5 };
+const ST_MARKET = { id: 'st-market', kind: 'station', station: 'market', title: 'Market square', x: 0, z: -2, y: 2.2, r: 9 };
+const NARR_LINES = [
+  'Every Thursday the square filled with carts before sunrise.',
+  'The fish sellers stood by the fountain, where the water was cold.',
+  'Children were sent to fetch the bread and came back without the change.',
+  'When the bells rang noon, the stalls folded in minutes.',
+];
+const NOTES = ['The four strands stand for the four guilds that paid for it.', 'It was cast in 1911 from the bells of a church that burned.'];
+
+const hit = [];   // tap targets: meshes with userData.target
+function tag(mesh, id) { mesh.userData.target = id; hit.push(mesh); return mesh; }
+const looks = {};
+
+// 1 pin
+{
+  const g = new THREE.Group(); g.position.set(0, 0, -3);
+  put(g, tag(new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.4), lam(0x30363d)), 'pin')).position.y = 0.7;
+  const head = tag(new THREE.Mesh(new THREE.SphereGeometry(0.17, 20, 14), lam(0x14b8a6)), 'pin'); head.position.y = 1.55; g.add(head);
+  scene.add(g); looks.pin = { glow: glow(0, 1.55, -3, 1.3) };
+}
+// 2 model with two notes
+{
+  const g = new THREE.Group(); g.position.set(28, 0, -1);
+  put(g, tag(new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.1, 1.6), lam(0x9a917f)), 'model')).position.y = 0.55;
+  const k = tag(new THREE.Mesh(new THREE.TorusKnotGeometry(0.6, 0.2, 80, 12), new THREE.MeshLambertMaterial({ color: 0x8c6a3c })), 'model'); k.position.y = 2.0; g.add(k);
+  for (const [x, y, z] of [[0.5, 2.5, 0.5], [-0.6, 1.7, -0.3]]) { const n = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), new THREE.MeshBasicMaterial({ color: 0x2dd4bf })); n.position.set(x, y, z); g.add(n); }
+  scene.add(g); looks.model = { glow: glow(28, 2.0, -1, 4.2), knot: k };
+}
+// 3 then-now picture at a viewpoint behind
+function oldSquare(w, h, split) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  const draw = (sepia) => {
+    g.fillStyle = sepia ? '#d8c3a0' : '#bcd3e4'; g.fillRect(0, 0, w, h * 0.55);
+    g.fillStyle = sepia ? '#a68b64' : '#b8ad98'; g.fillRect(0, h * 0.55, w, h);
+    const cols = sepia ? ['#8a7051', '#7a6046', '#957a58'] : ['#e5c7a8', '#c9d1c3', '#d9b99a'];
+    for (let i = 0; i < 6; i++) { g.fillStyle = cols[i % 3]; const bw = w / 6; g.fillRect(i * bw + 2, h * (0.2 + (i % 3) * 0.05), bw - 4, h * 0.38); }
+    g.fillStyle = sepia ? '#5c4a33' : '#30363d'; g.fillRect(w * 0.47, h * 0.38, w * 0.06, h * 0.3);
+    if (sepia) { g.fillStyle = '#6d573c'; for (let i = 0; i < 9; i++) g.fillRect(w * (0.1 + i * 0.09), h * 0.62, 6, 14); }
+  };
+  draw(false); g.save(); g.beginPath(); g.rect(0, 0, w * split, h); g.clip(); draw(true); g.restore();
+  g.fillStyle = '#fff'; g.fillRect(w * split - 1.5, 0, 3, h);
+  return c;
+}
+{
+  const g = new THREE.Group(); g.position.set(0.8, 0, 10); g.rotation.y = Math.atan2(-0.8, -10);
+  const tex = new THREE.CanvasTexture(oldSquare(256, 180, 0.5)); tex.colorSpace = THREE.SRGBColorSpace;
+  const board = tag(new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.92), new THREE.MeshBasicMaterial({ map: tex })), 'pic'); board.position.y = 1.55; g.add(board);
+  const back = tag(new THREE.Mesh(new THREE.BoxGeometry(1.42, 1.04, 0.05), lam(0x2b2f33)), 'pic'); back.position.set(0, 1.55, -0.04); g.add(back);
+  put(g, new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.05, 0.07), lam(0x2b2f33))).position.y = 0.52;
+  scene.add(g);
+  for (const dx of [-0.16, 0.16]) { const f = new THREE.Mesh(new THREE.CircleGeometry(0.12, 12), new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.6 })); f.scale.y = 2; f.rotation.x = -Math.PI / 2; f.position.set(0.7 + dx, 0.03, 8.6); scene.add(f); }
+  looks.pic = { glow: glow(0.8, 1.55, 10, 2.4) };
+}
+// 4 near-start video: a screen on legs with its reach ring
+const vc = document.createElement('canvas'); vc.width = 256; vc.height = 144; const vg = vc.getContext('2d');
+const vtex = new THREE.CanvasTexture(vc); vtex.colorSpace = THREE.SRGBColorSpace;
+{
+  const g = new THREE.Group(); g.position.set(-6, 0, -6.7); g.rotation.y = Math.atan2(6, 6.7);
+  const scr = tag(new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.96), new THREE.MeshBasicMaterial({ map: vtex })), 'video'); scr.position.y = 1.6; g.add(scr);
+  const back = tag(new THREE.Mesh(new THREE.BoxGeometry(1.82, 1.08, 0.08), lam(0x1f2328)), 'video'); back.position.set(0, 1.6, -0.05); g.add(back);
+  for (const dx of [-0.7, 0.7]) put(g, new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.1, 0.07), lam(0x1f2328))).position.set(dx, 0.55, -0.05);
+  scene.add(g);
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(4.85, 5, 96), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.set(-6, 0.04, -6.7); scene.add(ring);
+  looks.video = { glow: glow(-6, 1.6, -6.7, 2.8), ringMat };
+}
+function drawVideo(st, t) {
+  const g = vg; g.fillStyle = '#0c0f13'; g.fillRect(0, 0, 256, 144);
+  if (st === 'playing' || st === 'paused') {
+    for (let i = 0; i < 8; i++) { g.fillStyle = `hsl(${30 + i * 6},${25 + (i % 3) * 8}%,${30 + ((i * 37 + Math.floor(t * 6)) % 30)}%)`; g.fillRect(i * 32, 30 + Math.sin(t * 2 + i) * 8, 30, 80); }
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 118, 256, 26); g.fillStyle = '#2dd4bf'; g.fillRect(0, 140, 256 * Math.min(1, t / 45), 4);
+    g.fillStyle = '#fff'; g.font = '600 15px system-ui'; g.fillText(st === 'paused' ? 'Paused' : fmt(t) + ' / 0:45', 10, 135);
+  } else {
+    g.fillStyle = '#fff'; g.globalAlpha = 0.9;
+    if (st === 'finished') { g.font = '700 22px system-ui'; g.fillText('The end', 86, 70); g.font = '500 14px system-ui'; g.fillText('tap to watch again', 70, 96); }
+    else { g.beginPath(); g.moveTo(112, 48); g.lineTo(150, 72); g.lineTo(112, 96); g.closePath(); g.fill(); g.font = '600 14px system-ui'; g.fillText('1958', 112, 124); }
+    g.globalAlpha = 1;
+  }
+  vtex.needsUpdate = true;
+}
+// 5 narration circle (Plume stand-in: a ground ring and rising motes)
+const plume = { pts: null, speed: new Float32Array(70) };
+{
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2.3, 2.5, 80), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.set(-2, 0.05, -14); scene.add(ring);
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(2.3, 60), new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.12, depthWrite: false }));
+  disc.rotation.x = -Math.PI / 2; disc.position.set(-2, 0.045, -14); scene.add(disc);
+  const pos = new Float32Array(70 * 3);
+  for (let i = 0; i < 70; i++) { const a = rand() * 6.28, r = rand() * 0.7; pos[i * 3] = -2 + Math.cos(a) * r; pos[i * 3 + 1] = rand() * 2.6; pos[i * 3 + 2] = -14 + Math.sin(a) * r; plume.speed[i] = 0.3 + rand() * 0.5; }
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  plume.pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0x99f6e4, map: glowTex, size: 0.14, transparent: true, opacity: 0.9, depthWrite: false, fog: false }));
+  scene.add(plume.pts);
+  const col = tag(new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 2.6, 12, 1, true), new THREE.MeshBasicMaterial({ visible: false })), 'narr'); col.position.set(-2, 1.3, -14); scene.add(col);
+  looks.narr = { glow: glow(-2, 1.0, -14, 3.0), ringMat, disc };
+}
+// the guide (the story's speaker)
+{
+  const g = new THREE.Group(); g.position.set(3.5, 0, -9); g.rotation.y = Math.atan2(-3.5, 9);
+  put(g, tag(new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.85, 4, 10), lam(0x355c7d)), 'guide')).position.y = 0.95;
+  put(g, tag(new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 12), lam(0xe8c4a0)), 'guide')).position.y = 1.72;
+  scene.add(g); looks.guide = { glow: glow(3.5, 2.25, -9, 0.9) };
+}
+// extra items (the seventh and the eighth)
+{
+  const s = new THREE.Group(); s.position.set(-13, 0, 3); s.rotation.y = Math.atan2(13, -3);
+  put(s, tag(new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.06), lam(0xf5f1e8)), 'sign')).position.y = 1.6;
+  put(s, new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.3, 0.07), lam(0x2b2f33))).position.y = 0.65;
+  const b = new THREE.Group(); b.position.set(15, 0, 8);
+  const br = new THREE.Mesh(new THREE.RingGeometry(2.8, 3, 64), new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.5, side: THREE.DoubleSide })); br.rotation.x = -Math.PI / 2; br.position.y = 0.05; b.add(br);
+  put(b, tag(new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 16), lam(0xb08d3c)), 'bells')).position.y = 1.0;
+  scene.add(s, b);
+  looks.sign = { glow: glow(-13, 1.6, 3, 1.8), grp: s }; looks.bells = { glow: glow(15, 1.0, 8, 2.0), grp: b };
+}
+// the next station: the old well with a beacon; its own things are grey and nameless from here
+{
+  const stone = lam(0xa29a8b);
+  const well = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.5, 1, 20), stone); well.position.set(WELL.x, 0.5, WELL.z); scene.add(well);
+  const roof = new THREE.Mesh(new THREE.ConeGeometry(2.2, 1.2, 4), lam(0x7f3b2a)); roof.rotation.y = Math.PI / 4; roof.position.set(WELL.x, 3.6, WELL.z); scene.add(roof);
+  for (const dx of [-1.3, 1.3]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.6, 0.2), lam(0x5b4330)); p.position.set(WELL.x + dx, 1.8, WELL.z); scene.add(p); }
+  const grey = lam(0x8f949a);
+  const sg = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.8, 0.06), grey); sg.position.set(WELL.x - 4, 1.6, WELL.z + 3); scene.add(sg);
+  const pn = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), grey); pn.position.set(WELL.x + 4, 1.55, WELL.z + 2); scene.add(pn);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 26, 6, 1, true), new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.35, depthWrite: false }));
+  beam.position.set(WELL.x, 17, WELL.z); scene.add(beam);
+  const gem = tag(new THREE.Mesh(new THREE.OctahedronGeometry(0.9), new THREE.MeshBasicMaterial({ color: 0xfb923c })), 'st-well'); gem.scale.y = 1.4; gem.position.set(WELL.x, 6, WELL.z); scene.add(gem);
+  looks.well = { gem, beam };
+}
+
+/* ======================================================================
+   State
+   ====================================================================== */
+const S = {
+  x: 0, z: 7.5, yaw: 0, speed: 0,
+  found: false, inStation: false,
+  weak: false, extra: false,
+  story: null,         // null | {step:'welcome'|'quiz', answer:null}
+  panel: null,         // null | {id, openedInPlace}
+  aim: null, aimSince: 0, shownAim: null,
+  awaySince: 0, leftSince: 0,
+  it: {},              // per item: {st, t, seen, note, byLeave}
+  beat: 1, stillS: null,
+};
+const K = { away: 2, cone: 9, cue: 'one', label: 'two' };
+function resetItems() { for (const i of ALL) S.it[i.id] = { st: 'idle', t: 0, seen: false, note: 0, byLeave: false, byStory: false }; }
+resetItems();
+
+const fmt = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+const dist = (o) => Math.hypot(o.x - S.x, o.z - S.z);
+const yawTo = (o) => Math.atan2(-(o.x - S.x), -(o.z - S.z));
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const activeItems = () => ITEMS.concat(S.extra ? EXTRA : []);
+
+/* ======================================================================
+   Aiming: the thing nearest the ring wins, with a little stickiness
+   ====================================================================== */
+function candidates() {
+  if (S.inStation) return [...activeItems(), GUIDE, ST_WELL];
+  return S.found ? [ST_MARKET, ST_WELL] : [ST_WELL];
+}
+const fwd = new THREE.Vector3();
+function aimScore(o) {
+  fwd.set(-Math.sin(S.yaw), 0, -Math.cos(S.yaw));
+  const v = new THREE.Vector3(o.x - S.x, o.y - 1.6, o.z - S.z); const d = v.length();
+  const ang = THREE.MathUtils.radToDeg(fwd.angleTo(v));
+  const thr = Math.max(K.cone, THREE.MathUtils.radToDeg(Math.atan(o.r / Math.max(d, 0.1))));
+  return { ang, thr, ratio: ang / thr, d };
+}
+function pickAim() {
+  let best = null, bestS = null;
+  for (const o of candidates()) { const s = aimScore(o); if (s.ratio < 1 && (!bestS || s.ratio < bestS.ratio)) { best = o; bestS = s; } }
+  if (S.aim && S.aim !== best && !S.aim.standing) {   // stickiness: keep the current one until another is clearly better
+    const cur = candidates().includes(S.aim) ? aimScore(S.aim) : null;
+    if (cur && cur.ratio < 1.25 && (!bestS || bestS.ratio > cur.ratio - 0.3)) return S.aim;
+  }
+  if (best) return best;
+  // pointing at nothing: the place you stand in speaks
+  if (S.inStation) {
+    for (const id of ['narr', 'bells', 'video']) {
+      const o = byId[id]; if (o.extra && !S.extra) continue;
+      if (dist(o) < o.reach && (id !== 'video' || S.it.video.st !== 'idle')) return { ...o, standing: true };
+    }
+  }
+  return null;
+}
+const sameAim = (a, b) => (a && b ? a.id === b.id : a === b);
+
+/* ======================================================================
+   What the one label says
+   ====================================================================== */
+const ICON = {
+  pin: '<svg viewBox="0 0 20 20"><circle cx="10" cy="8" r="4.5" fill="currentColor"/><path d="M10 12v6" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
+  model: '<svg viewBox="0 0 20 20"><path d="M10 2l7 4v8l-7 4-7-4V6z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/><path d="M3 6l7 4 7-4M10 10v8" stroke="currentColor" stroke-width="2"/></svg>',
+  picture: '<svg viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M4 14l4-4 3 3 2-2 3 3" fill="none" stroke="currentColor" stroke-width="2"/></svg>',
+  video: '<svg viewBox="0 0 20 20"><path d="M6 4l10 6-10 6z" fill="currentColor"/></svg>',
+  narration: '<svg viewBox="0 0 20 20"><path d="M3 8h3l4-3v10l-4-3H3z" fill="currentColor"/><path d="M13 7c1.4 1.6 1.4 4.4 0 6M15.5 5c2.6 2.8 2.6 7.2 0 10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  sound: '<svg viewBox="0 0 20 20"><path d="M3 8h3l4-3v10l-4-3H3z" fill="currentColor"/><path d="M13 7c1.4 1.6 1.4 4.4 0 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',
+  text: '<svg viewBox="0 0 20 20"><path d="M4 5h12M4 10h12M4 15h8" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
+  guide: '<svg viewBox="0 0 20 20"><path d="M3 4h14v9H9l-4 3v-3H3z" fill="currentColor"/></svg>',
+  station: '<svg viewBox="0 0 20 20"><path d="M5 18V3M5 3h10l-2.5 3.5L15 10H5" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>',
+  quiz: '<svg viewBox="0 0 20 20"><text x="10" y="15.5" text-anchor="middle" font-size="15" font-weight="800" fill="currentColor" font-family="system-ui">?</text></svg>',
+};
+const metres = (m) => (S.weak ? '' : ` · ${Math.max(1, Math.round(m))} m`);
+function unseenCount() { return activeItems().filter((i) => !S.it[i.id].seen).length; }
+function labelFor(o) {
+  const d = dist(o), st = S.it[o.id];
+  const L = (title, action, tone = 'here', a = '') => ({ title, action, tone, a, kind: o.kind });
+  switch (o.kind) {
+    case 'pin': case 'text': return L(o.title, st.seen ? 'Tap to read again' : 'Tap to read');
+    case 'model': return L(o.title, 'Tap to look at 2 notes' + (d > 8 ? metres(d) : ''));
+    case 'picture': return L(o.title, 'Tap to compare' + (d > 4 ? metres(d) : ''));
+    case 'video': {
+      if (st.st === 'playing') return L(o.title, `Playing ${fmt(st.t)} · Tap for sound`);
+      if (st.st === 'paused') return L(o.title, 'Paused · Tap to go on');
+      if (st.st === 'finished') return L(o.title, 'Finished · Tap to watch again');
+      if (d < o.reach || S.weak) return L(o.title, 'Tap to play', 'here', 'wait');
+      return L(o.title, `Walk closer · ${Math.ceil(d - o.reach)} m`, 'here', 'wait');
+    }
+    case 'narration': case 'sound': {
+      const inside = d < o.reach;
+      if (st.st === 'playing') return L(o.title, 'Listening · Tap to pause');
+      if (st.st === 'paused') return L(o.title, inside ? 'Paused · Tap to go on' : 'Paused · Step back in', 'here', 'wait');
+      if (st.st === 'finished') return L(o.title, 'Heard · Tap to hear again');
+      return L(o.title, inside ? 'Tap to listen' : 'Step into the glow' + metres(d - o.reach), 'here', 'wait');
+    }
+    case 'guide': return L(o.title, S.it.narr.st === 'finished' ? 'Story heard' : 'Speaks again after the listening spot');
+    case 'station':
+      if (o.station === 'well') return L('Old well', 'Next stop' + metres(d), 'next');
+      { const n = unseenCount(); return L('Market square', n ? `Left · ${n} not seen` : 'Left · all seen', 'away'); }
+  }
+  return L(o.title, '');
+}
+
+/* ======================================================================
+   Acting: a tap acts on what the ring points at (or what was tapped)
+   ====================================================================== */
+function act(o) {
+  if (!o) { const a = $('#aim'); a.classList.remove('nudge'); void a.offsetWidth; return; }
+  if (S.story) return;   // the story has the screen; its panel takes the taps
+  const st = S.it[o.id];
+  switch (o.kind) {
+    case 'pin': case 'text': case 'model': case 'picture': st.seen = true; openPanel(o.id); break;
+    case 'video':
+      if (st.st === 'idle' || st.st === 'finished') { st.st = 'playing'; st.t = 0; }
+      else if (st.st === 'paused') st.st = 'playing';
+      st.seen = true; openPanel(o.id, dist(o) < o.reach); break;
+    case 'narration': case 'sound':
+      if (S.panel && S.panel.id === o.id && st.st === 'playing') { st.st = 'paused'; st.byLeave = false; renderPanel(); break; }
+      if (st.st !== 'playing') { if (st.st === 'finished') st.t = 0; st.st = 'playing'; st.byLeave = false; }
+      st.seen = true; openPanel(o.id, dist(o) < o.reach); break;
+    default: break;
+  }
+}
+
+/* ======================================================================
+   The one panel
+   ====================================================================== */
+const panel = $('#panel');
+const X = '<button class="x" data-act="close" aria-label="Close"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg></button>';
+function openPanel(id, inPlace = true) { S.panel = { id, inPlace }; S.awaySince = 0; S.leftSince = 0; renderPanel(true); }
+function closePanel() { S.panel = null; panel.hidden = true; panel.innerHTML = ''; }
+function renderPanel(fresh) {
+  if (!S.panel) { closePanel(); return; }
+  const id = S.panel.id; let h = '';
+  if (id === 'story') {
+    const s = S.story;
+    if (s.step === 'welcome') {
+      h = `<div class="eb">Story · ${GUIDE.title}</div><p>Welcome to the market square. Five things are hidden around you. Point the ring at anything and it tells you what it is.</p><div class="row"><button class="btn pri" data-act="continue">Continue</button></div>`;
+    } else {
+      const O = [['a', 'Fresh water'], ['b', 'Music'], ['c', 'Light at night'], ['d', 'A clock']];
+      const held = [];
+      if (S.it.narr.byStory) held.push('Listening paused');
+      if (S.it.video.st === 'playing') held.push('film silent');
+      h = `<div class="eb">Story · Mira asks</div><p><b>What did the old fountain once give the town?</b></p>
+        <div class="opts">${O.map(([k, l]) => `<button class="btn ${s.answer ? (k === 'a' ? 'right' : (s.answer === k ? 'chosen' : '')) : ''}" data-act="answer" data-k="${k}" ${s.answer ? 'disabled' : ''}>${l}</button>`).join('')}</div>
+        ${s.answer ? `<p style="margin-top:10px">${s.answer === 'a' ? 'Right: fresh water, for the whole street. +10 points.' : 'Not quite: it gave fresh water, for the whole street.'}</p><div class="row"><button class="btn pri" data-act="continue">Continue</button></div>` : ''}
+        ${held.length ? `<div class="held"><i></i>${held.join(' · ')} while Mira asks</div>` : ''}`;
+    }
+  } else {
+    const o = byId[id], st = S.it[id];
+    if (o.kind === 'pin') h = `<div class="eb">Pin${X}</div><h3>${o.title}</h3><p>The water came down from the hills in wooden pipes. Until 1902 every house on the square drew from here.</p>`;
+    else if (o.kind === 'text') h = `<div class="eb">Sign${X}</div><h3>${o.title}</h3><p>In 1388 the town won the right to hold a market every Thursday, and it never missed one since.</p>`;
+    else if (o.kind === 'model') h = `<div class="eb">Note ${st.note + 1} of 2${X}</div><h3>${o.title}</h3><p>${NOTES[st.note]}</p><div class="row"><button class="btn" data-act="note">${st.note ? 'First note' : 'Next note'}</button></div>`;
+    else if (o.kind === 'picture') h = `<div class="eb">Then and now${X}</div><canvas id="picCv" width="600" height="300"></canvas><p class="mut">The square in 1910 on the left, today on the right. Drag to compare.</p>`;
+    else if (o.kind === 'video') h = `<div class="eb">Film${X}</div><h3>${o.title}</h3><div class="bar"><i data-live="vbar"></i></div><p class="mut" data-live="vtime"></p><p data-live="vcap" style="font-size:14px"></p><div class="row"><button class="btn" data-act="vplay" data-live="vbtn">Pause</button><button class="btn" data-act="sound">Sound on</button></div>`;
+    else if (o.kind === 'narration' || o.kind === 'sound') h = `<div class="eb">Listening spot${X}</div><h3>${o.title}</h3><p data-live="nline"></p><div class="bar"><i data-live="nbar"></i></div><div class="row"><button class="btn" data-act="nplay" data-live="nbtn">Pause</button></div>`;
+  }
+  panel.innerHTML = h; panel.hidden = false;
+  if (fresh) { panel.style.animation = 'none'; void panel.offsetWidth; panel.style.animation = ''; }
+  const pc = panel.querySelector('#picCv'); if (pc) bindPicture(pc);
+  tickPanel(); placePanel();
+}
+function bindPicture(pc) {
+  const ctx = pc.getContext('2d');
+  const draw = (k) => ctx.drawImage(oldSquare(600, 300, k), 0, 0);
+  draw(0.5);
+  const mv = (e) => { const r = pc.getBoundingClientRect(); draw(Math.max(0.05, Math.min(0.95, (e.clientX - r.left) / r.width))); };
+  pc.addEventListener('pointerdown', (e) => { pc.setPointerCapture(e.pointerId); mv(e); pc.onpointermove = mv; });
+  pc.addEventListener('pointerup', () => { pc.onpointermove = null; });
+}
+function tickPanel() {
+  if (!S.panel || S.panel.id === 'story') return;
+  const st = S.it[S.panel.id], o = byId[S.panel.id];
+  const set = (k, v, prop = 'textContent') => { const e = panel.querySelector(`[data-live=${k}]`); if (e) e[prop] = v; };
+  if (o.kind === 'video') {
+    const e = panel.querySelector('[data-live=vbar]'); if (e) e.style.width = `${(100 * st.t) / o.dur}%`;
+    set('vtime', st.st === 'finished' ? 'Finished' : `${st.st === 'paused' ? 'Paused' : 'Playing'} · ${fmt(st.t)} / ${fmt(o.dur)}`);
+    set('vcap', st.st === 'finished' ? '' : 'CC: "Two eggs and a loaf, and mind the change!"');
+    set('vbtn', st.st === 'playing' ? 'Pause' : st.st === 'finished' ? 'Watch again' : 'Play');
+  } else if (o.kind === 'narration' || o.kind === 'sound') {
+    const e = panel.querySelector('[data-live=nbar]'); if (e) e.style.width = `${(100 * st.t) / o.dur}%`;
+    set('nline', st.st === 'finished' ? 'That was the whole story of this spot.' : (st.st === 'paused' ? 'Paused. ' : '') + (o.kind === 'sound' ? 'Bells ring out over the roofs.' : NARR_LINES[Math.floor(st.t / 6) % NARR_LINES.length]));
+    set('nbtn', st.st === 'playing' ? 'Pause' : st.st === 'finished' ? 'Hear again' : 'Go on');
+  }
+}
+panel.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return; e.stopPropagation();
+  const a = b.dataset.act;
+  if (a === 'close') closePanel();
+  else if (a === 'continue') endStoryStep();
+  else if (a === 'answer') { S.story.answer = b.dataset.k; renderPanel(); }
+  else if (a === 'note') { const st = S.it.model; st.note = st.note ? 0 : 1; renderPanel(); }
+  else if (a === 'vplay') { const st = S.it.video; if (st.st === 'playing') st.st = 'paused'; else { if (st.st === 'finished') st.t = 0; st.st = 'playing'; } tickPanel(); }
+  else if (a === 'sound') b.textContent = b.textContent === 'Sound on' ? 'Sound off' : 'Sound on';
+  else if (a === 'nplay') { const st = S.it[S.panel.id]; if (st.st === 'playing') { st.st = 'paused'; st.byLeave = false; } else { if (st.st === 'finished') st.t = 0; st.st = 'playing'; } tickPanel(); }
+});
+function placePanel() {
+  if (panel.hidden) return;
+  const W = innerWidth, H = innerHeight, cx = W / 2, cy = H / 2;
+  const land = W > H;
+  panel.classList.toggle('side', land);
+  panel.style.maxHeight = ''; panel.style.width = '';
+  if (land) {
+    const left = cx + 34, w = Math.min(360, W - left - 16);
+    panel.style.width = `${w}px`; panel.style.left = `${left}px`;
+    const top = 92, bottom = H - 70; panel.style.maxHeight = `${bottom - top}px`;
+    const ph = panel.offsetHeight; panel.style.top = `${Math.max(top, Math.min(cy - ph / 2, bottom - ph))}px`;
+  } else {
+    const w = Math.min(342, W - 32), top = cy + 34;
+    panel.style.width = `${w}px`; panel.style.left = `${(W - w) / 2}px`;
+    const mh = Math.min(300, H - 74 - top); panel.style.maxHeight = `${mh}px`;
+    // docked low, so the thing under the ring stays visible; it still grows out of the ring
+    panel.style.top = `${Math.max(top, H - 74 - panel.offsetHeight)}px`;
+    // sink to the foot so the thing under the ring stays visible; it still grows out of the ring
+    const ph = panel.offsetHeight; panel.style.top = `${Math.max(top, H - 74 - ph)}px`;
+  }
+}
+
+/* ---------- the story ---------- */
+function startStory(step) { S.story = { step, answer: null }; openPanel('story'); }
+function endStoryStep() {
+  const step = S.story && S.story.step; S.story = null; closePanel();
+  if (step === 'quiz') {   // the things the story held go on
+    const n = S.it.narr; if (n.byStory) { n.byStory = false; if (dist(byId.narr) < byId.narr.reach) { n.st = 'playing'; openPanel('narr'); } else { n.st = 'paused'; n.byLeave = true; } }
+  }
+}
+function startQuiz() {
+  const n = S.it.narr; if (n.st === 'playing') { n.st = 'paused'; n.byStory = true; }
+  startStory('quiz');
+}
+
+/* ======================================================================
+   Station membership, arrival and leaving
+   ====================================================================== */
+function arrive(silent) {
+  S.found = true; S.inStation = true;
+  if (!silent) { toast('Arrived at Market square'); startStory('welcome'); }
+}
+function leave() {
+  S.inStation = false; if (S.panel && S.panel.id !== 'story') closePanel();
+  toast('Left Market square · next: Old well', 'next');
+}
+function membership() {
+  const d = Math.hypot(S.x - ANCHOR.x, S.z - ANCHOR.z);
+  if (!S.found) { if (d < FOUND_R) arrive(false); return; }
+  if (S.inStation && d > STATION_OUT) leave();
+  else if (!S.inStation && d < STATION_IN) { S.inStation = true; toast('Back at Market square'); }
+}
+
+/* ======================================================================
+   Toast
+   ====================================================================== */
+let toastT = 0;
+function toast(text, k = '') { const t = $('#toast'); t.querySelector('span').textContent = text; t.dataset.k = k; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 6000); }
+function hideToast() { clearTimeout(toastT); $('#toast').classList.remove('show'); }
+
+/* ======================================================================
+   Per-frame rules for the things
+   ====================================================================== */
+let lastX = S.x, lastZ = S.z;
+function tickItems(dt) {
+  for (const o of activeItems()) {
+    const st = S.it[o.id];
+    if (st.st === 'playing') { st.t += dt; if (st.t >= o.dur) { st.t = o.dur; st.st = 'finished'; } }
+    if (o.kind === 'video' && st.st === 'idle' && dist(o) < o.reach && S.speed > 0.3 && !S.story) {   // walked into it: a start the visitor caused
+      st.st = 'playing'; st.t = 0; st.seen = true; openPanel(o.id, true);
+    }
+    if ((o.kind === 'narration' || o.kind === 'sound') && !st.byStory) {
+      const d = dist(o);
+      if (st.st === 'playing' && d > o.reach + 0.5) { st.st = 'paused'; st.byLeave = true; }
+      else if (st.st === 'paused' && st.byLeave && d < o.reach) { st.st = 'playing'; st.byLeave = false; if (!S.panel) openPanel(o.id, true); }
+    }
+  }
+}
+function panelRules(now) {
+  const dr = $('#reticle');
+  if (!S.panel || S.panel.id === 'story') { dr.classList.remove('draining'); return; }
+  const o = byId[S.panel.id];
+  // leaving its place closes it (a card never outlives its place)
+  let leftPlace = false;
+  if (o.kind === 'narration' || o.kind === 'sound') leftPlace = S.panel.inPlace && dist(o) > o.reach + 0.5;
+  else if (o.kind === 'video') leftPlace = S.panel.inPlace && dist(o) > o.reach + 1.5;
+  else leftPlace = dist(o) > o.leave;
+  if (leftPlace) { if (!S.leftSince) S.leftSince = now; if (now - S.leftSince > 1000) { closePanel(); dr.classList.remove('draining'); return; } } else S.leftSince = 0;
+  // pointing away closes it after the set time: away = another thing caught, or the thing far off the ring
+  const s = aimScore(o);
+  const other = S.aim && S.aim.id !== o.id && !S.aim.standing;
+  const standingIn = o.reach && dist(o) < o.reach;   // inside a place you need not point at it
+  const away = other || (s.ang > 35 && !standingIn);
+  if (away && K.away > 0) {
+    if (!S.awaySince) S.awaySince = now;
+    const k = (now - S.awaySince) / (K.away * 1000);
+    $('#drain').setAttribute('stroke-dasharray', `${Math.max(0, 100 * (1 - k))} 100`);
+    dr.classList.add('draining');
+    if (k >= 1) { closePanel(); dr.classList.remove('draining'); S.awaySince = 0; }
+  } else { S.awaySince = 0; dr.classList.remove('draining'); }
+}
+
+/* ======================================================================
+   HUD update
+   ====================================================================== */
+const aimEl = $('#aim'), ret = $('#reticle'), cueEl = $('#cue');
+const ARROW_L = '<svg viewBox="0 0 16 16"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const ARROW_R = '<svg viewBox="0 0 16 16"><path d="M6 3l5 5-5 5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+let lastLabelKey = '';
+function placeLabel() {
+  const W = innerWidth, H = innerHeight;
+  if (W > H) { aimEl.style.left = `${W / 2 + 36}px`; aimEl.style.top = `${H / 2 - aimEl.offsetHeight / 2}px`; }
+  else { aimEl.style.left = `${W / 2 - aimEl.offsetWidth / 2}px`; aimEl.style.top = `${H / 2 + 36}px`; }
+}
+const v3 = new THREE.Vector3();
+function offscreen(o) {   // returns 0 when in view, else the signed shorter turn (radians, + = left)
+  v3.set(o.x, o.y, o.z).applyMatrix4(camera.matrixWorldInverse);
+  if (v3.z < 0) { v3.set(o.x, o.y, o.z).project(camera); if (Math.abs(v3.x) < 0.96 && Math.abs(v3.y) < 0.98) return 0; }
+  return wrap(yawTo(o) - S.yaw) || 1e-3;
+}
+function updateHUD(now) {
+  const story = !!S.story;
+  // reticle
+  ret.dataset.s = story ? 'story' : (S.panel ? 'panel' : (S.aim ? 'aim' : 'idle'));
+  ret.dataset.t = S.aim && !story ? (S.aim.kind === 'station' ? (S.aim.station === 'well' ? 'next' : 'away') : 'here') : '';
+  ret.dataset.weak = S.weak ? '1' : '0';
+  // label: only when pointing, never during a story, never over an open panel
+  const showLabel = !story && !S.panel && S.aim && now - S.aimSince > 120;
+  if (showLabel) {
+    const L = labelFor(S.aim);
+    aimEl.dataset.t = L.tone; aimEl.dataset.a = L.a;
+    const key = S.aim.id;
+    if (key !== lastLabelKey) { aimEl.classList.remove('swap'); void aimEl.offsetWidth; aimEl.classList.add('swap'); lastLabelKey = key; }
+    $('#aimG').innerHTML = ICON[L.kind] || '';
+    $('#aimT').textContent = L.title; $('#aimA').textContent = L.action;
+    aimEl.classList.toggle('one', K.label === 'one');
+    aimEl.classList.remove('off'); placeLabel();
+  } else { aimEl.classList.add('off'); if (!S.aim) lastLabelKey = ''; }
+  // turn cue
+  updateCue(story);
+  // weak chip and dial
+  $('#weakChip').hidden = !S.weak;
+  $('#dial').classList.toggle('small', S.inStation);
+  device.classList.toggle('radar-big', !S.inStation);
+  device.classList.toggle('weak', S.weak);
+  drawDial();
+}
+function updateCue(story) {
+  cueEl.className = 'hud cue';
+  if (story || K.cue === 'off') { cueEl.classList.add('off'); return; }
+  let list = [];
+  if (S.inStation) list = activeItems().filter((o) => !S.it[o.id].seen).map((o) => ({ o, turn: offscreen(o) })).filter((e) => e.turn !== 0);
+  else { const t = offscreen(ST_WELL); if (t !== 0) list = [{ o: ST_WELL, turn: t }]; }
+  if (!list.length) { cueEl.classList.add('off'); return; }
+  const nextMode = !S.inStation;
+  cueEl.dataset.t = nextMode ? 'next' : 'here';
+  list.sort((a, b) => Math.abs(a.turn) - Math.abs(b.turn));
+  const left = list[0].turn > 0;
+  if (K.cue === 'ring') {
+    cueEl.classList.add('ring');
+    const W = innerWidth; cueEl.style.left = left ? `${W / 2 - 90}px` : `${W / 2 + 34}px`; cueEl.style.right = 'auto';
+    cueEl.innerHTML = left ? `${ARROW_L}${nextMode ? '' : list.length}` : `${nextMode ? '' : list.length}${ARROW_R}`;
+    return;
+  }
+  cueEl.style.left = ''; cueEl.style.right = '';
+  if (K.cue === 'pips') {
+    const pips = `<span class="pips">${list.map(() => '<i></i>').join('')}</span>`;
+    cueEl.innerHTML = left ? ARROW_L + pips : pips + ARROW_R; return;
+  }
+  const text = nextMode ? 'Next stop' : `${list.length} more`;
+  cueEl.innerHTML = left ? `${ARROW_L}<span>${text}, turn left</span>` : `<span>${text}, turn right</span>${ARROW_R}`;
+}
+const dctx = $('#dialCv').getContext('2d');
+const RADAR_ST = [{ x: 0, z: -1, k: 'here' }, { x: WELL.x, z: WELL.z, k: 'next' }, { x: -20, z: 150, k: 'done' }, { x: 40, z: -230, k: 'later' }];
+function drawDial() {
+  const g = dctx, s = 264, c = s / 2; g.clearRect(0, 0, s, s);
+  g.fillStyle = 'rgba(9,13,18,.74)'; g.beginPath(); g.arc(c, c, c - 2, 0, 6.283); g.fill();
+  g.lineWidth = 5; g.strokeStyle = 'rgba(255,255,255,.22)'; g.stroke();
+  const rel = (o) => { const dx = o.x - S.x, dz = o.z - S.z; const a = Math.atan2(-dx, -dz) - S.yaw; return { a, d: Math.hypot(dx, dz) }; };
+  if (S.inStation) {   // the small compass: you are in a station; the dot is the next stop
+    g.lineWidth = 14; g.strokeStyle = S.weak ? 'rgba(148,163,184,.8)' : 'rgba(45,212,191,.95)'; g.beginPath(); g.arc(c, c, 42, 0, 6.283); g.stroke();
+    const r = rel(WELL); const x = c - Math.sin(r.a) * 92, y = c - Math.cos(r.a) * 92;
+    g.fillStyle = S.weak ? '#94a3b8' : '#fb923c'; g.beginPath(); g.arc(x, y, 24, 0, 6.283); g.fill();
+    g.lineWidth = 6; g.strokeStyle = 'rgba(0,0,0,.5)'; g.stroke();
+    return;
+  }
+  g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.18)'; for (const rr of [44, 88]) { g.beginPath(); g.arc(c, c, rr, 0, 6.283); g.stroke(); }
+  g.fillStyle = 'rgba(255,255,255,.12)'; g.beginPath(); g.moveTo(c, c); g.arc(c, c, c - 6, -Math.PI / 2 - 0.5, -Math.PI / 2 + 0.5); g.closePath(); g.fill();
+  const scale = (c - 16) / 160;
+  for (const st of RADAR_ST) {
+    const r = rel(st); const d = Math.min(r.d * scale, c - 16); const x = c - Math.sin(r.a) * d, y = c - Math.cos(r.a) * d;
+    g.fillStyle = st.k === 'next' ? (S.weak ? '#94a3b8' : '#fb923c') : st.k === 'here' ? '#2dd4bf' : st.k === 'done' ? '#2dd4bf' : '#f3f5f7';
+    g.beginPath(); g.arc(x, y, st.k === 'next' ? 15 : 10, 0, 6.283); g.fill(); g.lineWidth = 4; g.strokeStyle = 'rgba(0,0,0,.5)'; g.stroke();
+  }
+  g.fillStyle = '#fff'; g.beginPath(); g.moveTo(c, c - 14); g.lineTo(c + 10, c + 10); g.lineTo(c, c + 4); g.lineTo(c - 10, c + 10); g.closePath(); g.fill();
+}
+
+/* ======================================================================
+   World looks: the world says what waits; the HUD stays empty
+   ====================================================================== */
+function updateWorld(now) {
+  const t = now / 1000, story = !!S.story;
+  for (const o of [...ALL, GUIDE]) {
+    const L = looks[o.id]; if (!L) continue;
+    const st = S.it[o.id] || {};
+    const visible = !o.extra || S.extra;
+    if (L.grp) L.grp.visible = visible;
+    let op = 0, sc = 1;
+    if (visible && S.inStation) {
+      const aimed = S.aim && S.aim.id === o.id && !story;
+      if (o.id === 'guide') op = story ? 0.55 + 0.3 * Math.sin(t * 4) : 0.15;
+      else if (story) op = st.st === 'playing' ? 0.75 : 0.35 + 0.25 * Math.sin(t * 2.2 + o.x);   // only the world speaks during a story
+      else if (aimed) { op = 0.85; sc = 1.25; }
+      else if (st.st === 'playing') op = 0.7;
+      else if (!st.seen) op = 0.3 + 0.18 * Math.sin(t * 1.6 + o.x);
+      else op = 0.12;
+    }
+    const near = Math.min(1, Math.max(0, (dist(o) - 1.2) / 3));   // fade a glow you stand next to
+    L.glow.material.opacity = op * near; L.glow.scale.setScalar((L.base ??= L.glow.scale.x) * sc);
+  }
+  // narration circle and video ring
+  const n = S.it.narr; looks.narr.ringMat.opacity = S.inStation ? (n.st === 'playing' ? 0.95 : 0.6) : 0.2;
+  looks.narr.disc.material.opacity = n.st === 'playing' ? 0.22 : 0.1;
+  const pos = plume.pts.geometry.attributes.position; const sp = n.st === 'playing' ? 1.8 : 1;
+  for (let i = 0; i < pos.count; i++) { let y = pos.getY(i) + plume.speed[i] * sp * 0.016; if (y > 2.8) y = 0.05; pos.setY(i, y); }
+  pos.needsUpdate = true;
+  const pd = Math.hypot(S.x + 2, S.z + 14);   // motes fade when you stand among them
+  plume.pts.material.opacity = (S.inStation ? 0.9 : 0.25) * Math.min(1, Math.max(0, (pd - 0.9) / 1.6));
+  const v = S.it.video; looks.video.ringMat.opacity = !S.inStation ? 0.12 : dist(byId.video) < 5 ? 0.6 : 0.3;
+  looks.video.ringMat.color.set(dist(byId.video) < 5 ? 0x2dd4bf : 0xffffff);
+  drawVideo(v.st, v.t);
+  looks.model.knot.rotation.y = t * 0.3;
+  looks.well.gem.rotation.y = t; looks.well.beam.material.opacity = S.inStation ? 0.2 : 0.45;
+}
+
+/* ======================================================================
+   Input: drag to turn and walk; tap to act
+   ====================================================================== */
+let ptr = null; const keys = new Set();
+canvas.addEventListener('pointerdown', (e) => { ptr = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t: performance.now(), drag: false }; canvas.setPointerCapture(e.pointerId); dismissHint(); });
+canvas.addEventListener('pointermove', (e) => {
+  if (!ptr) return;
+  if (!ptr.drag && Math.hypot(e.clientX - ptr.x0, e.clientY - ptr.y0) > 8) { ptr.drag = true; stopScript(); }
+  if (ptr.drag) {
+    S.yaw += (e.clientX - ptr.x) * 0.0055;
+    const step = (e.clientY - ptr.y) * 0.035; S.x += Math.sin(S.yaw) * step; S.z += Math.cos(S.yaw) * step;
+  }
+  ptr.x = e.clientX; ptr.y = e.clientY;
+});
+canvas.addEventListener('pointerup', (e) => {
+  if (ptr && !ptr.drag && performance.now() - ptr.t < 600) tapAt(e.clientX, e.clientY);
+  ptr = null;
+});
+canvas.addEventListener('pointercancel', () => { ptr = null; });
+canvas.addEventListener('wheel', (e) => { e.preventDefault(); stopScript(); const step = -Math.sign(e.deltaY) * 0.6; S.x -= Math.sin(S.yaw) * step; S.z -= Math.cos(S.yaw) * step; }, { passive: false });
+aimEl.addEventListener('click', () => act(S.aim));
+addEventListener('keydown', (e) => { if (e.code.startsWith('Arrow') || ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(e.code)) { keys.add(e.code); stopScript(); dismissHint(); } });
+addEventListener('keyup', (e) => keys.delete(e.code));
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function tapAt(x, y) {
+  ndc.set((x / innerWidth) * 2 - 1, -(y / innerHeight) * 2 + 1); ray.setFromCamera(ndc, camera);
+  const h = ray.intersectObjects(hit, false).find((i) => i.object.visible !== false && (i.object.parent ? i.object.parent.visible : true));
+  if (h) {
+    const id = h.object.userData.target, o = byId[id] || (id === 'guide' ? GUIDE : id === 'st-well' ? ST_WELL : null);
+    if (o && (S.inStation || o.kind === 'station') && (!o.extra || S.extra)) { act(o); return; }
+  }
+  act(S.aim);
+}
+$('#exit').addEventListener('click', () => toast('Exit AR is not part of this demo'));
+$('#dial').addEventListener('click', () => toast(S.inStation ? 'The dot is the next stop: Old well' : 'The radar shows every stop', 'next'));
+
+/* ======================================================================
+   Measuring hook: footprint, element count, overlaps (demo chrome excluded)
+   ====================================================================== */
+function visibleHud() {
+  const out = [];
+  for (const el of device.querySelectorAll('.hud')) {
+    if (el.hidden || el.classList.contains('off') || (el.id === 'toast' && !el.classList.contains('show'))) continue;
+    const cs = getComputedStyle(el); if (cs.display === 'none' || +cs.opacity < 0.05) continue;
+    let r = el.getBoundingClientRect();
+    if (el.id === 'reticle') { const g = el.querySelector('.grow').getBoundingClientRect(); r = g; }
+    if (el.id === 'dial') { const cv = el.querySelector('canvas').getBoundingClientRect(), ch = el.querySelector('.chip'); r = ch.hidden ? cv : { left: Math.min(cv.left, ch.getBoundingClientRect().left), top: cv.top, right: cv.right, bottom: ch.getBoundingClientRect().bottom }; }
+    if (r.right - r.left < 1) continue;
+    out.push({ el, name: el.dataset.name, r: { l: r.left, t: r.top, r: r.right, b: r.bottom } });
+  }
+  return out;
+}
+function measure() {
+  const W = innerWidth, H = innerHeight, C = 4, cw = Math.ceil(W / C), ch = Math.ceil(H / C);
+  const grid = new Uint8Array(cw * ch); const boxes = visibleHud();
+  for (const { r } of boxes) {
+    const x0 = Math.max(0, Math.floor(r.l / C)), x1 = Math.min(cw, Math.ceil(r.r / C)), y0 = Math.max(0, Math.floor(r.t / C)), y1 = Math.min(ch, Math.ceil(r.b / C));
+    for (let y = y0; y < y1; y++) grid.fill(1, y * cw + x0, y * cw + x1);
+  }
+  let n = 0; for (const v of grid) n += v;
+  const pct = (100 * n) / grid.length;
+  for (const el of device.querySelectorAll('.ov')) el.classList.remove('ov');
+  let ov = 0; const ovPairs = [];
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const a = boxes[i].r, b = boxes[j].r;
+    if (Math.min(a.r, b.r) - Math.max(a.l, b.l) > 1 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 1) { ov++; boxes[i].el.classList.add('ov'); boxes[j].el.classList.add('ov'); ovPairs.push(`${boxes[i].name}+${boxes[j].name}`); }
+  }
+  const beyond = boxes.filter((b) => b.name !== 'exit' && b.name !== 'dial').length;
+  const m = { pct: +pct.toFixed(1), count: boxes.length, beyond, overlaps: ov, pairs: ovPairs, names: boxes.map((b) => b.name), panel: !!S.panel, w: W, h: H };
+  const L = LOG[S.beat] ||= { pct: 0, count: 0, beyond: 0, overlaps: 0 };
+  L.pct = Math.max(L.pct, m.pct); L.count = Math.max(L.count, m.count); L.beyond = Math.max(L.beyond, m.beyond); L.overlaps = Math.max(L.overlaps, m.overlaps);
+  const nm = W > 600 ? ` ${BEATS[S.beat - 1].name}` : '';
+  $('#readout').innerHTML = `Beat ${S.beat}${nm}${S.stillS != null ? ` (${S.stillS} s)` : ''} · HUD <b>${m.pct}%</b> · Exit, dial <b>+${m.beyond}</b> · <span class="${ov ? 'bad' : ''}">${ov} overlap${ov === 1 ? '' : 's'}</span>`;
+  window.__last = m; return m;
+}
+const LOG = {};
+function renderLog() {
+  $('#log').innerHTML = `<tr><th>Beat</th><th>HUD %</th><th>Items</th><th>Beyond</th><th>Overlaps</th></tr>` +
+    BEATS.map((b, i) => { const L = LOG[i + 1]; return `<tr class="${S.beat === i + 1 ? 'on' : ''}"><td>${i + 1} ${b.name}</td><td>${L ? L.pct : '-'}</td><td>${L ? L.count : '-'}</td><td>${L ? L.beyond : '-'}</td><td>${L ? L.overlaps : '-'}</td></tr>`; }).join('') +
+    `<tr><td colspan="5" style="text-align:left;color:#d9d6b8">Window ${innerWidth} x ${innerHeight}</td></tr>`;
+}
+
+/* ======================================================================
+   The fixed demonstration: eight beats, each with a set-up and a script
+   ====================================================================== */
+const CANCEL = Symbol('cancel'); let run = 0, playing = false;
+function stopScript() { if (playing) { run++; playing = false; updateDemo(); } }
+const sleep = (ms, tok) => new Promise((res, rej) => { const t0 = performance.now(); const id = setInterval(() => { if (tok !== run) { clearInterval(id); rej(CANCEL); } else if (performance.now() - t0 >= ms) { clearInterval(id); res(); } }, 25); });
+const ease = (k) => (k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2);
+function tween(ms, tok, fn, lin) {
+  return new Promise((res, rej) => {
+    const t0 = performance.now();
+    const step = () => { if (tok !== run) { rej(CANCEL); return; } const k = Math.min(1, (performance.now() - t0) / ms); fn(lin ? k : ease(k)); if (k < 1) setTimeout(step, 16); else res(); };
+    step();
+  });
+}
+const walkTo = (x, z, ms, tok) => { const x0 = S.x, z0 = S.z; return tween(ms, tok, (k) => { S.x = x0 + (x - x0) * k; S.z = z0 + (z - z0) * k; }, true); };
+const turnBy = (d, ms, tok) => { const y0 = S.yaw; return tween(ms, tok, (k) => { S.yaw = y0 + d * k; }); };
+const turnTo = (o, ms, tok) => turnBy(wrap(yawTo(o) - S.yaw), ms, tok);
+const toward = (o, back) => { const d = dist(o), k = (d - back) / d; return [S.x + (o.x - S.x) * k, S.z + (o.z - S.z) * k]; };
+
+function base() {
+  closePanel(); S.story = null; S.weak = false; hideToast(); resetItems(); S.stillS = null; S.aim = null; S.speed = 0;
+}
+function standAt(x, z, yaw) { S.x = x; S.z = z; S.yaw = yaw; lastX = x; lastZ = z; }
+const NARR_SPOT = [-2, -13.6];
+const BEATS = [
+  { name: 'Arrive', setup() { base(); S.found = false; S.inStation = false; standAt(0, 7.5, 0); },
+    async run(tok) { await sleep(500, tok); await walkTo(0, 0, 2400, tok); await sleep(1600, tok); } },
+  { name: 'Stand still 20 s', setup() { base(); arrive(true); standAt(0, 0, 0); },
+    async run(tok) { for (let s = 0; s <= 20; s++) { S.stillS = s; await sleep(220, tok); } } },
+  { name: 'Turn a full circle', setup() { base(); arrive(true); standAt(0, 0, 0); },
+    async run(tok) { await sleep(500, tok); act(byId.pin); await sleep(2000, tok); const end = 2 * Math.PI + wrap(yawTo(byId.video)); await turnBy(end, 15000, tok); await sleep(900, tok); } },
+  { name: 'Walk toward the video', setup() { base(); arrive(true); standAt(0, 0, 0); S.yaw = yawTo(byId.video); S.it.pin.seen = true; },
+    async run(tok) { await sleep(900, tok); const [x, z] = toward(byId.video, 4.4); await walkTo(x, z, 5200, tok); await sleep(2400, tok); } },
+  { name: 'Into the narration', setup() { base(); arrive(true); standAt(0, 0, 0); S.it.pin.seen = true; const [x, z] = toward(byId.video, 4.4); standAt(x, z, yawTo(byId.video)); Object.assign(S.it.video, { st: 'playing', t: 8, seen: true }); openPanel('video', true); },
+    async run(tok) {
+      await sleep(900, tok); await turnTo(byId.narr, 1200, tok); await walkTo(NARR_SPOT[0], NARR_SPOT[1], 5200, tok);
+      await turnBy(wrap(0 - S.yaw), 900, tok); await sleep(1400, tok); act(pickAim()); await sleep(2600, tok);
+      await walkTo(-2, -10.2, 1500, tok); await sleep(2000, tok); await walkTo(NARR_SPOT[0], NARR_SPOT[1], 1500, tok); await sleep(1600, tok);
+    } },
+  { name: 'The story reaches the quiz', setup() { base(); arrive(true); standAt(NARR_SPOT[0], NARR_SPOT[1], 0); S.it.pin.seen = true; Object.assign(S.it.video, { st: 'playing', t: 24, seen: true }); Object.assign(S.it.narr, { st: 'playing', t: 14, seen: true }); openPanel('narr', true); },
+    async run(tok) { await sleep(1500, tok); startQuiz(); await sleep(3000, tok); } },
+  { name: 'Position weak', setup() { base(); arrive(true); standAt(NARR_SPOT[0], NARR_SPOT[1], 0); S.it.pin.seen = true; Object.assign(S.it.video, { st: 'finished', t: 45, seen: true }); Object.assign(S.it.narr, { st: 'finished', t: 60, seen: true }); },
+    async run(tok) { await sleep(400, tok); S.weak = true; toast('Position weak: distances are hidden', 'weak'); await sleep(900, tok); await turnTo(byId.video, 1500, tok); await sleep(2200, tok); await turnTo(byId.model, 2200, tok); await sleep(2400, tok); } },
+  { name: 'Leave for the next stop', setup() { base(); arrive(true); standAt(NARR_SPOT[0], NARR_SPOT[1], 0); S.it.pin.seen = true; Object.assign(S.it.video, { st: 'finished', t: 45, seen: true }); Object.assign(S.it.narr, { st: 'finished', t: 60, seen: true }); },
+    async run(tok) { await sleep(500, tok); await turnTo(WELL, 1400, tok); const [x, z] = toward(WELL, dist(WELL) - 26); await walkTo(x, z, 6500, tok); await sleep(900, tok); await turnBy(Math.PI, 1800, tok); await sleep(2000, tok); await turnTo(WELL, 1800, tok); await sleep(1600, tok); } },
+];
+async function gotoBeat(n, chain = false) {
+  n = Math.max(1, Math.min(8, n)); const tok = ++run; playing = true;
+  S.beat = n; delete LOG[n]; BEATS[n - 1].setup(); updateDemo();
+  try { await BEATS[n - 1].run(tok); } catch (e) { if (e !== CANCEL) throw e; return false; }
+  if (tok !== run) return false;
+  S.stillS = null; measure(); window.__beatDone = n;
+  if (chain && n < 8) return gotoBeat(n + 1, true);
+  playing = false; updateDemo(); return true;
+}
+function updateDemo() {
+  $('#beatN').textContent = `${S.beat}/8`;
+  $('#play').textContent = playing ? 'Stop' : 'Walk for me';
+  $('#beats').innerHTML = BEATS.map((b, i) => `<button data-b="${i + 1}" class="${S.beat === i + 1 ? 'on' : ''}">${i + 1}. ${b.name}</button>`).join('');
+  renderLog();
+}
+$('#prev').onclick = () => gotoBeat(S.beat - 1); $('#next').onclick = () => gotoBeat(S.beat + 1);
+$('#play').onclick = () => { if (playing) stopScript(); else gotoBeat(S.beat, true); };
+$('#playAll').onclick = () => { $('#sheet').classList.remove('open'); gotoBeat(1, true); };
+$('#menu').onclick = () => { updateDemo(); $('#sheet').classList.add('open'); };
+$('#sheetClose').onclick = () => $('#sheet').classList.remove('open');
+$('#beats').addEventListener('click', (e) => { const b = e.target.closest('[data-b]'); if (b) { $('#sheet').classList.remove('open'); gotoBeat(+b.dataset.b); } });
+function dismissHint() { $('#hint').classList.add('gone'); }
+setTimeout(dismissHint, 12000);
+
+/* ---------- knobs: sweep this direction's own thresholds ---------- */
+const KNOBS = [
+  ['away', 'Close a panel after pointing away for', [[1, '1 s'], [2, '2 s'], [3, '3 s'], [0, 'never (only on leaving)']]],
+  ['cone', 'How wide the ring catches', [[5, 'narrow 5°'], [9, '9°'], [14, 'wide 14°']]],
+  ['cue', 'Things out of view', [['one', 'count + turn'], ['pips', 'one dot each'], ['ring', 'beside the ring'], ['off', 'none']]],
+  ['label', 'The label', [['two', 'two lines'], ['one', 'one line']]],
+  ['extra', 'A seventh and an eighth item', [[false, 'six items'], [true, '+2 items']]],
+];
+function renderKnobs() {
+  $('#knobs').innerHTML = KNOBS.map(([k, label, opts]) => `<div class="knob"><label>${label}</label><div class="seg">${opts.map(([v, t]) => `<button data-k="${k}" data-v="${v}" class="${String(k === 'extra' ? S.extra : K[k]) === String(v) ? 'on' : ''}">${t}</button>`).join('')}</div></div>`).join('');
+}
+$('#knobs').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-k]'); if (!b) return;
+  const k = b.dataset.k, raw = b.dataset.v, v = raw === 'true' ? true : raw === 'false' ? false : isNaN(+raw) ? raw : +raw;
+  if (k === 'extra') S.extra = v; else K[k] = v; renderKnobs();
+});
+renderKnobs();
+
+/* ======================================================================
+   Main loop
+   ====================================================================== */
+function resize() { const W = innerWidth, H = innerHeight; renderer.setSize(W, H, false); camera.aspect = W / H; camera.updateProjectionMatrix(); placePanel(); }
+addEventListener('resize', resize); resize();
+let last = performance.now(), lastMeasure = 0;
+function frame(now) {
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (keys.size) {
+    if (keys.has('ArrowLeft') || keys.has('KeyA')) S.yaw += 1.6 * dt;
+    if (keys.has('ArrowRight') || keys.has('KeyD')) S.yaw -= 1.6 * dt;
+    const f = (keys.has('ArrowUp') || keys.has('KeyW') ? 1 : 0) - (keys.has('ArrowDown') || keys.has('KeyS') ? 1 : 0);
+    S.x -= Math.sin(S.yaw) * f * 2.4 * dt; S.z -= Math.cos(S.yaw) * f * 2.4 * dt;
+  }
+  const mv = Math.hypot(S.x - lastX, S.z - lastZ) / Math.max(dt, 1e-3); S.speed = S.speed * 0.8 + mv * 0.2; lastX = S.x; lastZ = S.z;
+  camera.position.set(S.x, 1.6, S.z); camera.rotation.set(0, S.yaw, 0); camera.updateMatrixWorld();
+  membership();
+  tickItems(dt);
+  const a = pickAim(); if (!sameAim(a, S.aim)) { S.aim = a; S.aimSince = now; } else if (a) S.aim = a;
+  panelRules(now);
+  if (S.panel) { tickPanel(); placePanel(); }
+  updateHUD(now);
+  updateWorld(now);
+  renderer.render(scene, camera);
+  if (now - lastMeasure > 200) { lastMeasure = now; measure(); }
+  requestAnimationFrame(frame);
+}
+updateDemo();
+requestAnimationFrame(frame);
+window.__hud = { gotoBeat, measure, log: LOG, S, K };
+gotoBeat(1);
+</script>
+</body>
+</html>

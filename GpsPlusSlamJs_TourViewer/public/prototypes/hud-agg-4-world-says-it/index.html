@@ -1,0 +1,1096 @@
+<!doctype html>
+<!-- Prototype: HUD aggregation, direction "The world says it". Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>The World Says It</title>
+<style>
+:root{
+  --wait:#ffc24a;--wait-ink:#241603;--play:#2dd4bf;--play-ink:#04201c;--next:#fb923c;--done:#9aa4ae;
+  --ink:#f3f5f7;--muted:#b3bcc6;--plate:rgb(10 13 18 / 80%);--plate-2:rgb(12 16 21 / 94%);--line:rgb(255 255 255 / 16%);
+  --bad:#f87171;--tap:44px;
+  --font:Corbel,"Noto Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%;overflow:hidden;background:#101318;color:var(--ink);font:15px/1.4 var(--font);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+p{margin:0}
+.dev{position:fixed;inset:0;overflow:hidden;user-select:none;-webkit-user-select:none}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;outline:0}
+#gl:active{cursor:grabbing}
+/* the fake camera feed: a lens vignette and a little sensor grain over the 3D square */
+.feed{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 45%,transparent 58%,rgb(0 0 0 / 28%) 100%)}
+.feed::after{content:"";position:absolute;inset:0;opacity:.08;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+/* ================= the HUD: Exit, one subtitle line, and a panel only on a tap ================= */
+.exit{position:absolute;z-index:30;top:calc(14px + env(safe-area-inset-top));left:calc(14px + env(safe-area-inset-left));width:var(--tap);height:var(--tap);padding:0;border-radius:50%;border:2px solid rgb(255 255 255 / 72%);background:rgb(10 13 18 / 72%);display:grid;place-items:center}
+.exit svg{width:20px;height:20px}
+.sub{position:absolute;z-index:25;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);width:max-content;max-width:min(560px,calc(100% - 32px));min-height:var(--tap);display:flex;align-items:center;gap:10px;padding:7px 14px 7px 7px;border-radius:16px;background:var(--plate);box-shadow:0 6px 18px rgb(0 0 0 / 26%);transition:opacity .35s ease;cursor:pointer}
+.sub.off{opacity:0;pointer-events:none}
+.sub.in{animation:subin .3s ease}
+@keyframes subin{from{opacity:0}}
+.sub .ico{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgb(255 255 255 / 10%);color:var(--wait)}
+.sub[data-tone=play] .ico{color:var(--play)}
+.sub[data-tone=next] .ico{color:var(--next)}
+.sub[data-tone=calm] .ico{color:var(--ink)}
+.sub .ico svg{width:20px;height:20px}
+.sub p{font-size:16.5px;line-height:1.3;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sub .who{color:var(--wait);font-weight:700;margin-right:5px}
+.sub[data-tone=play] .who{color:var(--play)}
+.sub[data-tone=next] .who{color:var(--next)}
+.sub[data-tone=calm] .who{color:var(--muted)}
+.sub .chip{flex:none;padding:6px 10px;border-radius:12px;background:var(--wait);color:var(--wait-ink);font-size:13.5px;font-weight:700;white-space:nowrap}
+.glint{position:absolute;z-index:24;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:var(--next);box-shadow:0 0 0 5px rgb(251 146 60 / 32%),0 0 14px 4px rgb(251 146 60 / 45%);pointer-events:none;transition:opacity .4s}
+
+.panel{position:absolute;z-index:28;left:0;right:0;bottom:0;margin:0 auto;max-width:560px;max-height:40%;display:flex;flex-direction:column;padding-bottom:env(safe-area-inset-bottom);border-radius:22px 22px 0 0;border-top:1px solid var(--line);background:var(--plate-2);box-shadow:0 -10px 30px rgb(0 0 0 / 28%);animation:panin .28s cubic-bezier(.2,.8,.2,1)}
+@keyframes panin{from{opacity:0;transform:translateY(16px)}}
+.panel header{flex:none;display:flex;align-items:center;gap:10px;padding:10px 8px 6px 14px}
+.panel header .ico{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:rgb(255 255 255 / 10%);color:var(--wait)}
+.panel header .ico svg{width:20px;height:20px}
+.panel h2{flex:1;min-width:0;margin:0;font-size:16px;font-weight:700;line-height:1.25}
+.panel h2 small{display:block;font-size:12.5px;font-weight:600;color:var(--muted)}
+.panel .x{flex:none;width:var(--tap);height:var(--tap);border:0;border-radius:50%;background:rgb(255 255 255 / 8%);font-size:24px;line-height:1}
+.panel .pbody{flex:1 1 auto;min-height:0;overflow:auto;padding:2px 16px 14px;font-size:16px;line-height:1.42}
+.panel .pbody canvas{display:block;width:100%;max-width:340px;height:auto;margin:2px auto 8px;border-radius:10px}
+.panel .pbody .credit{font-size:12.5px;color:var(--muted);margin-top:4px}
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.opt{min-height:54px;padding:8px 10px;border:1.5px solid rgb(255 255 255 / 40%);border-radius:14px;background:rgb(255 255 255 / 9%);font-size:15px;font-weight:650;line-height:1.2}
+.opt.wrong{border-color:var(--bad);color:#fecaca;text-decoration:line-through}
+.opt.right{border-color:var(--play);background:var(--play);color:var(--play-ink)}
+.qline{font-size:13.5px;color:var(--muted);margin-top:8px;min-height:18px}
+@media (orientation:landscape) and (max-height:520px){
+  .sub{bottom:calc(12px + env(safe-area-inset-bottom));max-width:min(560px,62%)}
+  .sub p{font-size:15.5px}
+  .panel{left:calc(12px + env(safe-area-inset-left));right:auto;bottom:12px;margin:0;width:min(380px,46%);max-height:calc(100% - 76px);border:1px solid var(--line);border-radius:18px;padding-bottom:0}
+  .opt{min-height:44px;font-size:14px}
+}
+@media (min-width:900px) and (min-height:600px){
+  .panel{bottom:16px;border:1px solid var(--line);border-radius:20px;max-height:38%}
+}
+
+/* the measuring hook: any two HUD boxes that overlap get a red outline */
+.ovl{outline:3px solid #ff2d2d!important;outline-offset:0}
+
+/* ================= demo chrome: dashed, not part of the design, not measured ================= */
+.chrome{position:absolute;z-index:40;top:calc(12px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));display:flex;align-items:center;gap:3px;padding:3px;border:1.5px dashed rgb(255 255 255 / 55%);border-radius:22px;background:rgb(0 0 0 / 52%)}
+.chrome button{height:36px;min-width:36px;padding:0 8px;border:0;border-radius:18px;background:transparent;color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
+.chrome button:active{background:rgb(255 255 255 / 18%)}
+.chrome #beatName{min-width:122px;max-width:46vw;overflow:hidden;text-overflow:ellipsis;font-weight:650}
+.chrome #infoBtn{font:italic 700 16px/1 Georgia,serif;border:1px solid rgb(255 255 255 / 40%)}
+.readout{position:absolute;z-index:40;top:calc(58px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));padding:4px 9px;border:1.5px dashed rgb(255 255 255 / 45%);border-radius:10px;background:rgb(0 0 0 / 55%);font:11.5px/1.35 ui-monospace,Consolas,monospace;color:#fff;font-variant-numeric:tabular-nums;pointer-events:none;text-align:right;white-space:pre}
+.try{position:absolute;z-index:40;top:calc(100px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));max-width:min(300px,calc(100% - 92px));padding:7px 10px;border:1.5px dashed rgb(255 255 255 / 45%);border-radius:12px;background:rgb(0 0 0 / 60%);font-size:13px;line-height:1.35;color:#fff;transition:opacity .8s;pointer-events:none}
+.try.gone{opacity:0}
+.ff{position:absolute;z-index:40;top:calc(14px + env(safe-area-inset-top));left:calc(68px + env(safe-area-inset-left));padding:4px 9px;border:1.5px dashed rgb(255 255 255 / 50%);border-radius:10px;background:rgb(0 0 0 / 60%);font-size:12px;font-weight:700;color:#fff;pointer-events:none}
+@media (orientation:landscape) and (max-height:520px){
+  .readout{top:calc(56px + env(safe-area-inset-top))}
+  .try{top:calc(98px + env(safe-area-inset-top));max-width:min(330px,40%)}
+}
+.rip{position:absolute;z-index:45;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px rgb(0 0 0 / 35%);pointer-events:none;animation:rip .7s ease-out forwards}
+@keyframes rip{from{transform:scale(.5);opacity:1}to{transform:scale(1.5);opacity:0}}
+.info{position:absolute;z-index:50;top:0;right:0;bottom:0;width:min(420px,100%);overflow:auto;padding:14px 16px calc(20px + env(safe-area-inset-bottom));background:rgb(14 18 23 / 97%);border-left:1px solid var(--line);font-size:14px;line-height:1.45;-webkit-user-select:text;user-select:text}
+.info h1{margin:0 0 2px;font-size:19px}
+.info h3{margin:14px 0 4px;font-size:11.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.info p,.info li{color:#dfe4ea}
+.info ol,.info ul{margin:4px 0;padding-left:20px}
+.info .close{position:sticky;top:0;float:right;width:var(--tap);height:var(--tap);border:0;border-radius:50%;background:rgb(255 255 255 / 10%);font-size:22px}
+.info .knob{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:6px 0}
+.info .knob span{min-width:118px;font-weight:600;color:#fff}
+.info .knob button{min-height:36px;padding:4px 10px;border:1px solid rgb(255 255 255 / 30%);border-radius:10px;background:rgb(255 255 255 / 6%);font-size:13px}
+.info .knob button[aria-pressed=true]{border-color:var(--play);color:var(--play)}
+.info table{width:100%;border-collapse:collapse;font:12px/1.4 ui-monospace,Consolas,monospace;font-variant-numeric:tabular-nums}
+.info td,.info th{padding:3px 4px;border-bottom:1px solid var(--line);text-align:right}
+.info td:first-child,.info th:first-child{text-align:left}
+.info .beats{display:flex;flex-wrap:wrap;gap:5px}
+.info .beats button{min-height:36px;padding:4px 9px;border:1px solid rgb(255 255 255 / 30%);border-radius:10px;background:rgb(255 255 255 / 6%);font-size:13px}
+.legend{display:grid;grid-template-columns:18px 1fr;gap:4px 8px;align-items:center;margin:4px 0}
+.legend i{width:14px;height:14px;border-radius:50%}
+.exited{position:absolute;z-index:60;inset:0;display:grid;place-items:center;align-content:center;gap:14px;background:#0d1015;text-align:center;font-size:16px}
+.exited button{min-height:var(--tap);padding:8px 18px;border:0;border-radius:22px;background:var(--play);color:var(--play-ink);font-weight:700}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.185.1/build/three.module.js"}}</script>
+</head>
+<body>
+<main class="dev" id="dev">
+  <canvas id="gl" tabindex="0" aria-label="The square, standing in for the camera view"></canvas>
+  <div class="feed" aria-hidden="true"></div>
+
+  <!-- the HUD (everything with data-hud is measured) -->
+  <button type="button" class="exit" id="exit" data-hud aria-label="Exit AR"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <div class="glint" id="glint" data-hud hidden></div>
+  <div class="sub off" id="sub" data-hud role="status"><span class="ico"></span><p><b class="who"></b><span class="txt"></span></p><span class="chip" hidden></span></div>
+  <section class="panel" id="panel" data-hud hidden><header><span class="ico"></span><h2></h2><button type="button" class="x" aria-label="Close">&times;</button></header><div class="pbody"></div></section>
+
+  <!-- demo chrome -->
+  <div class="chrome" id="chrome">
+    <button type="button" id="prev" aria-label="Previous beat">&#9664;</button>
+    <button type="button" id="beatName" aria-label="Replay this beat">1/8 Arrive</button>
+    <button type="button" id="next" aria-label="Next beat, walk for me">&#9654;</button>
+    <button type="button" id="infoBtn" aria-label="About this page, the knobs and the numbers">i</button>
+  </div>
+  <div class="readout" id="readout"></div>
+  <p class="try" id="try">Drag sideways to turn, up to walk. Tap a glow in the world. Or press &#9654; to step through the eight beats.</p>
+  <div class="ff" id="ff" hidden></div>
+  <aside class="info" id="info" hidden></aside>
+  <div class="exited" id="exited" hidden><p>You left AR.</p><button type="button" id="backIn">Back into AR</button></div>
+</main>
+
+<script type="module">
+import * as THREE from "three";
+
+/* ---------------- tune here ---------------- */
+const EYE = 1.6;
+const GUIDE = 1, SKY = 2; // render layers: guidance (measured as "world cues") and the sky
+const LOOK_GAIN = 0.0048; // radians per CSS pixel
+const DRAG_WALK = 0.035; // metres per CSS pixel of vertical drag
+const PITCH = -0.1;
+const TAP_PX = 10, TAP_MS = 420, HIT_PX = 30;
+const PANEL_LEAVE_M = 4; // a panel closes once you walk this far from where you opened it
+const COL = { wait: "#ffc24a", play: "#2dd4bf", done: "#9aa4ae", next: "#fb923c" };
+const KN = { cap: 3, read: 1, margin: 1, glint: false, extra: false, sound: true, weak: false };
+
+const S1 = { name: "The Market Well", c: [0, -2], rIn: 32, rOut: 34 };
+const S2 = { name: "The Old Gate", c: [18, -70] };
+const WELL = [4, -7];
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const damp = (dt, tau) => 1 - Math.exp(-dt / tau);
+const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) d -= Math.PI * 2; if (d < -Math.PI) d += Math.PI * 2; return d; };
+const $ = (s) => document.querySelector(s);
+
+/* ---------------- icons (thick strokes, for the subtitle and the panel) ---------------- */
+const SVG = {
+  pin: '<path d="M12 21s-6-6.2-6-10.5a6 6 0 0 1 12 0C18 14.8 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/>',
+  model: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
+  picture: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/>',
+  video: '<path d="M8 5.5v13l11-6.5z"/>',
+  narr: '<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>',
+  quiz: '<path d="M9 9a3 3 0 1 1 4.2 2.7c-.8.4-1.2 1-1.2 1.8V15"/><circle cx="12" cy="18.5" r=".6"/>',
+  story: '<path d="M4 5h16v10H9l-5 4z"/>',
+  walk: '<path d="M6 21V4M6 4h11l-3 4 3 4H6"/>',
+  gps: '<circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
+};
+const svg = (k) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">${SVG[k] ?? SVG.story}</svg>`;
+
+/* ---------------- renderer, camera, the square ---------------- */
+const canvas = $("#gl");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog("#dfe6ea", 70, 240);
+const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 600);
+camera.rotation.order = "YXZ";
+camera.layers.enable(GUIDE); camera.layers.enable(SKY);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xb9ae98, 1.8));
+const sun = new THREE.DirectionalLight(0xfff2e0, 1.4); sun.position.set(30, 60, 20); scene.add(sun);
+
+(function sky() {
+  const g = new THREE.SphereGeometry(400, 24, 12);
+  const c = new Float32Array(g.attributes.position.count * 3);
+  const top = new THREE.Color("#7fb3e0"), mid = new THREE.Color("#dbe7ef"), low = new THREE.Color("#efe8da"), o = new THREE.Color();
+  for (let i = 0; i < g.attributes.position.count; i++) {
+    const h = g.attributes.position.getY(i) / 400;
+    if (h >= 0) o.lerpColors(mid, top, Math.min(1, h / 0.5)); else o.lerpColors(mid, low, Math.min(1, -h / 0.1));
+    c.set([o.r, o.g, o.b], i * 3);
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(c, 3));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  m.layers.set(SKY); m.renderOrder = -10; scene.add(m);
+})();
+
+function paving() {
+  const S = 512, cv = document.createElement("canvas"); cv.width = cv.height = S;
+  const g = cv.getContext("2d"); let s = 11;
+  const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+  g.fillStyle = "#b9b09e"; g.fillRect(0, 0, S, S);
+  const n = 12, k = S / n;
+  for (let x = 0; x < n; x++) for (let z = 0; z < n; z++) {
+    const v = 196 + rnd() * 22; g.fillStyle = `rgb(${v} ${v - 7} ${v - 20})`;
+    g.fillRect(x * k + 1.5, z * k + 1.5, k - 3, k - 3);
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(36, 36);
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); return t;
+}
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: paving() }));
+scene.add(ground);
+
+const mats = new Map();
+const mat = (c) => { if (!mats.has(c)) mats.set(c, new THREE.MeshLambertMaterial({ color: c })); return mats.get(c); };
+const box = (w, h, d, c, x, y, z, ry = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c)); m.position.set(x, y, z); m.rotation.y = ry; scene.add(m); return m; };
+const cyl = (r0, r1, h, c, x, y, z, n = 16) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, n), mat(c)); m.position.set(x, y, z); scene.add(m); return m; };
+
+(function town() {
+  const colors = ["#e7dcc8", "#d9e2e6", "#efd9c6", "#e6e2d2", "#dcc9b6", "#f0e8d8", "#e3d3c8", "#d6cbb8"];
+  let i = 0;
+  const house = (x, z, w, d, h, ry) => {
+    const c = colors[i++ % colors.length];
+    box(w, h, d, c, x, h / 2, z, ry);
+    box(w + 0.4, 0.5, d + 0.4, "#8a6d5a", x, h + 0.25, z, ry);
+    const fx = Math.sin(ry), fz = Math.cos(ry); // facade normal, towards the square
+    for (let fl = 0; fl < Math.floor(h / 3.2); fl++) for (let k = -1; k <= 1; k++) {
+      const off = k * (w / 3.2), ox = Math.cos(ry) * off, oz = -Math.sin(ry) * off;
+      box(1.0, 1.4, 0.1, fl === 0 && k === 0 ? "#5a3d2c" : "#5d6d7e", x + ox + fx * (d / 2 + 0.03), fl === 0 && k === 0 ? 1.2 : 2 + fl * 3.2, z + oz + fz * (d / 2 + 0.03), ry);
+    }
+  };
+  for (let x = -40; x <= 40; x += 13) house(x, 48, 12, 8, 8 + ((x * 7) & 7), Math.PI); // south
+  for (let x = -40; x <= 2; x += 13) house(x, -50, 12, 8, 9 + ((x * 5) & 7), 0); // north, open towards the gate
+  house(38, -50, 12, 8, 10, 0);
+  for (let z = -38; z <= 40; z += 13) { house(-46, z, 12, 8, 8 + ((z * 3) & 7), Math.PI / 2); house(46, z, 12, 8, 9 + ((z * 11) & 5), -Math.PI / 2); }
+  for (const [x, z, s] of [[-20, -24, 1], [16, 20, 1.2], [-24, 22, 1.1], [34, -30, 1], [-34, -6, 0.9]]) {
+    cyl(0.18 * s, 0.28 * s, 3 * s, "#7d6650", x, 1.5 * s, z, 8);
+    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2 * s, 1), mat("#6f9e62")); crown.position.set(x, 4 * s, z); scene.add(crown);
+  }
+  // far skyline beyond the open side, and the old gate of the next stop
+  for (let k = 0; k < 14; k++) { const a = (k / 14) * Math.PI * 2; box(18, 10 + (k * 5) % 12, 14, "#b8c0c6", Math.cos(a) * 120, 6, Math.sin(a) * 120, a); }
+  box(1.6, 7, 1.6, "#a99a84", S2.c[0] - 3, 3.5, S2.c[1]); box(1.6, 7, 1.6, "#a99a84", S2.c[0] + 3, 3.5, S2.c[1]); box(8, 1.6, 1.8, "#a99a84", S2.c[0], 7.6, S2.c[1]);
+  // the well, the station's middle
+  cyl(1.2, 1.3, 0.8, "#b9b2a4", WELL[0], 0.4, WELL[1], 20); cyl(1.0, 1.0, 0.05, "#3e5866", WELL[0], 0.82, WELL[1], 20);
+  box(0.14, 2.2, 0.14, "#5a3d2c", WELL[0] - 1.1, 1.1, WELL[1]); box(0.14, 2.2, 0.14, "#5a3d2c", WELL[0] + 1.1, 1.1, WELL[1]); box(2.5, 0.14, 0.14, "#5a3d2c", WELL[0], 2.2, WELL[1]);
+  box(1.8, 0.08, 0.5, "#8a6a4e", -12, 0.46, 6); box(1.8, 0.5, 0.07, "#8a6a4e", -12, 0.74, 6.24);
+})();
+
+/* ---------------- shared guidance materials ---------------- */
+const shared = { uViewH: { value: 800 }, uPxScale: { value: 1 } };
+const SPARK_V = `attribute vec4 aSeed;uniform float uT,uViewH,uPxScale,uStrength,uHeight,uRadius,uSwirl,uSize;varying float vA;
+void main(){float life=fract(aSeed.x+uT*(0.55+0.5*aSeed.y)/uHeight);float ang=aSeed.z*6.2832+uT*uSwirl*(0.4+aSeed.w);
+float r=uRadius*(0.2+0.8*aSeed.w)*(1.0-0.55*life);vec3 p=vec3(cos(ang)*r,0.05+life*uHeight,sin(ang)*r);
+vec4 mv=modelViewMatrix*vec4(p,1.0);gl_Position=projectionMatrix*mv;
+float px=uSize*uViewH*0.5*projectionMatrix[1][1]/max(0.1,-mv.z);gl_PointSize=clamp(px,2.4*uPxScale,7.0*uPxScale);
+vA=uStrength*smoothstep(0.0,0.12,life)*(1.0-smoothstep(0.7,1.0,life));}`;
+const SPARK_F = `uniform vec3 uColor;varying float vA;void main(){float d=length(gl_PointCoord-0.5);float a=smoothstep(0.5,0.12,d)*vA;if(a<0.01)discard;
+vec3 c=mix(uColor,vec3(1.0),smoothstep(0.22,0.0,d)*0.55);gl_FragColor=vec4(c,a);
+#include <colorspace_fragment>
+}`;
+function sparks({ n = 80, h = 2.2, r = 0.5, size = 0.05, swirl = 0.7 }) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  const seed = new Float32Array(n * 4); for (let i = 0; i < n * 4; i++) seed[i] = Math.random();
+  g.setAttribute("aSeed", new THREE.BufferAttribute(seed, 4));
+  const m = new THREE.ShaderMaterial({
+    uniforms: { uT: { value: Math.random() * 10 }, uViewH: shared.uViewH, uPxScale: shared.uPxScale, uStrength: { value: 0 }, uHeight: { value: h }, uRadius: { value: r }, uSwirl: { value: swirl }, uSize: { value: size }, uColor: { value: new THREE.Color(COL.wait) } },
+    vertexShader: SPARK_V, fragmentShader: SPARK_F, transparent: true, depthWrite: false,
+  });
+  const p = new THREE.Points(g, m); p.frustumCulled = false; p.layers.set(GUIDE); p.renderOrder = 4; return p;
+}
+const RING_V = `varying vec2 vP;void main(){vP=position.xy;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`;
+const RING_F = `uniform vec3 uColor;uniform float uStrength,uFill,uRimW,uPulse,uT;varying vec2 vP;
+void main(){float r=length(vP);if(r>1.0)discard;
+float rim=smoothstep(1.0-uRimW-0.02,1.0-uRimW,r)*(1.0-smoothstep(0.985,1.0,r));
+float fill=(1.0-smoothstep(uFill-0.03,uFill,r))*(0.14+0.2*r);
+float front=step(0.02,uFill)*smoothstep(uFill-uRimW,uFill,r)*(1.0-smoothstep(uFill,uFill+0.02,r))*0.6;
+float pulse=1.0+uPulse*0.4*sin(uT*4.0);
+gl_FragColor=vec4(uColor,clamp((rim*0.85+fill+front)*uStrength*pulse,0.0,1.0));
+#include <colorspace_fragment>
+}`;
+function ring(R) {
+  const m = new THREE.ShaderMaterial({ uniforms: { uColor: { value: new THREE.Color(COL.wait) }, uStrength: { value: 0 }, uFill: { value: 0 }, uRimW: { value: clamp(0.3 / R, 0.04, 0.2) }, uPulse: { value: 0 }, uT: { value: 0 } }, vertexShader: RING_V, fragmentShader: RING_F, transparent: true, depthWrite: false });
+  const mesh = new THREE.Mesh(new THREE.CircleGeometry(1, 64), m);
+  mesh.rotation.x = -Math.PI / 2; mesh.scale.set(R, R, 1); mesh.position.y = 0.03; mesh.layers.set(GUIDE); mesh.renderOrder = 2; return mesh;
+}
+const glowTex = (() => { const S = 64, cv = document.createElement("canvas"); cv.width = cv.height = S; const g = cv.getContext("2d"); const gr = g.createRadialGradient(32, 32, 2, 32, 32, 32); gr.addColorStop(0, "rgb(255 255 255 / 100%)"); gr.addColorStop(0.35, "rgb(255 255 255 / 55%)"); gr.addColorStop(1, "rgb(255 255 255 / 0%)"); g.fillStyle = gr; g.fillRect(0, 0, S, S); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+function ember() { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: COL.wait, transparent: true, depthWrite: false, opacity: 0 })); s.layers.set(GUIDE); s.scale.set(0.9, 0.9, 1); return s; }
+
+/* the kind's glyph in the world: a dark disc, a ring and an icon, tinted by the state colour */
+const GLYPH_DRAW = {
+  pin: (g) => { g.beginPath(); g.moveTo(64, 98); g.bezierCurveTo(44, 76, 40, 64, 40, 54); g.arc(64, 54, 24, Math.PI, 0); g.bezierCurveTo(88, 64, 84, 76, 64, 98); g.stroke(); g.beginPath(); g.arc(64, 54, 8, 0, 7); g.stroke(); },
+  model: (g) => { g.beginPath(); g.moveTo(64, 30); g.lineTo(92, 46); g.lineTo(92, 80); g.lineTo(64, 96); g.lineTo(36, 80); g.lineTo(36, 46); g.closePath(); g.moveTo(36, 46); g.lineTo(64, 62); g.lineTo(92, 46); g.moveTo(64, 62); g.lineTo(64, 96); g.stroke(); },
+  picture: (g) => { g.strokeRect(34, 40, 60, 46); g.beginPath(); g.moveTo(34, 76); g.lineTo(52, 60); g.lineTo(66, 72); g.lineTo(76, 64); g.lineTo(94, 80); g.stroke(); },
+  video: (g) => { g.beginPath(); g.moveTo(52, 38); g.lineTo(52, 90); g.lineTo(92, 64); g.closePath(); g.fill(); },
+  narr: (g) => { g.beginPath(); for (const [x, h] of [[38, 10], [51, 22], [64, 34], [77, 22], [90, 10]]) { g.moveTo(x, 64 - h); g.lineTo(x, 64 + h); } g.stroke(); },
+  quiz: (g) => { g.font = "bold 66px Georgia,serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("?", 64, 68); },
+  note1: (g) => { g.font = "bold 58px system-ui,sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("1", 64, 68); },
+  note2: (g) => { g.font = "bold 58px system-ui,sans-serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("2", 64, 68); },
+};
+const glyphTex = {};
+for (const k of Object.keys(GLYPH_DRAW)) {
+  const cv = document.createElement("canvas"); cv.width = cv.height = 128; const g = cv.getContext("2d");
+  g.fillStyle = "rgb(14 18 24 / 90%)"; g.beginPath(); g.arc(64, 64, 60, 0, 7); g.fill();
+  g.strokeStyle = "#fff"; g.fillStyle = "#fff"; g.lineWidth = 9; g.lineCap = "round"; g.lineJoin = "round";
+  g.beginPath(); g.arc(64, 64, 54, 0, 7); g.stroke();
+  g.lineWidth = 8; GLYPH_DRAW[k](g);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; glyphTex[k] = t;
+}
+function glyph(kind) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glyphTex[kind], color: COL.wait, transparent: true, depthWrite: false, opacity: 0 })); s.layers.set(GUIDE); s.renderOrder = 10; return s; }
+
+/* ---------------- the items ---------------- */
+function picCanvas(w = 340, h = 230) {
+  const cv = document.createElement("canvas"); cv.width = w; cv.height = h; const g = cv.getContext("2d");
+  const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, "#d9c7a2"); gr.addColorStop(1, "#a58a62"); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  g.fillStyle = "#6e5638"; for (let i = 0; i < 6; i++) { const bx = i * 60 - 10, bh = 70 + (i * 37) % 50; g.fillRect(bx, h * 0.62 - bh, 54, bh); }
+  g.fillStyle = "#4f3c26"; g.fillRect(w * 0.42, h * 0.48, 50, 34); g.fillRect(w * 0.42 - 6, h * 0.44, 62, 8);
+  g.fillStyle = "#8a7150"; g.fillRect(0, h * 0.62, w, h * 0.38);
+  g.fillStyle = "rgb(40 28 16 / 55%)"; for (let i = 0; i < 9; i++) g.fillRect(20 + i * 36, h * 0.66 + (i % 3) * 8, 6, 20);
+  g.strokeStyle = "rgb(60 40 20 / 50%)"; g.lineWidth = 10; g.strokeRect(0, 0, w, h);
+  return cv;
+}
+const videoCv = document.createElement("canvas"); videoCv.width = 256; videoCv.height = 144;
+const videoTex = new THREE.CanvasTexture(videoCv); videoTex.colorSpace = THREE.SRGBColorSpace;
+
+const ITEMS = [
+  { id: "pin", kind: "pin", label: "The market pin", noun: "a pinned note", pos: [0.45, -2.95], footR: 0.8, glyphY: 2.0, sp: { n: 60, h: 1.7, r: 0.3 } },
+  { id: "model", kind: "model", label: "The tower model", noun: "a model with notes", pos: [26, -10], footR: 1.6, reachM: 10, glyphY: 3.6, sp: { n: 110, h: 3.2, r: 0.9, size: 0.08 } },
+  { id: "picture", kind: "picture", label: "Then and now", noun: "an old picture", pos: [0, 10], footR: 1.0, glyphY: 2.4, sp: { n: 80, h: 2.3, r: 0.6 } },
+  { id: "video", kind: "video", label: "The film", noun: "a film", pos: [-7, -5.7], footR: 5, reach: 5, near: true, dur: 30, glyphY: 2.9, sp: { n: 70, h: 1.3, r: 1.2 },
+    cap: ["A market day on this square, 1958.", "Stalls from the well right up to the tower.", "Most of them sold fish, bread and cloth.", "By noon you could not cross the square.", "Then the rain came, and everyone ran.", "The film ends here."] },
+  { id: "narr", kind: "narr", label: "The well", noun: "a story to hear", pos: [-3.2, -2.4], footR: 1.8, reach: 1.8, dur: 26, glyphY: 3.1, sp: { n: 120, h: 2.7, r: 0.5, swirl: 1.1 },
+    cap: ["The well was dug in 1602: the town's only clean water.", "Women carried it home in yokes, two buckets at a time.", "A roof kept the leaves out until the storm of 1910.", "The water comes from the hills now, but the well stays."] },
+  { id: "bench", kind: "narr", label: "The bench", noun: "a story to hear", pos: [-12, 6.8], footR: 1.6, reach: 1.6, dur: 20, glyphY: 3.2, extra: true, sp: { n: 150, h: 2.8, r: 0.5, swirl: 1.1 }, cap: ["Old men sat here every evening.", "They say the best stories were told on this bench."] },
+  { id: "pin2", kind: "pin", label: "The baker's sign", noun: "a pinned note", pos: [13, 3], footR: 0.8, glyphY: 2.4, extra: true, sp: { n: 60, h: 1.9, r: 0.3 } },
+];
+const PANEL_TEXT = {
+  pin: "Every Thursday from 1602 the market stood here. The stone ring at your feet marks where the town scales were.",
+  pin2: "The bakery behind you has baked on this corner since 1788. Its sign was a golden pretzel.",
+};
+const NOTES = ["The tower lost its top floor in the storm of 1910.", "The clock came in 1923, a gift of the brewers."];
+const byId = Object.fromEntries(ITEMS.map((it) => [it.id, it]));
+
+// the props each item stands for
+(function props() {
+  // a pin: a short post with a small plate turned to the middle of the square
+  for (const q of [byId.pin, byId.pin2]) { const ry = Math.atan2(-q.pos[0], -q.pos[1]); box(0.06, 1.0, 0.06, "#3c4044", q.pos[0], 0.5, q.pos[1]); box(0.42, 0.3, 0.04, "#2f6f8f", q.pos[0], 1.05, q.pos[1], ry); }
+  const m = byId.model; box(1.3, 1.0, 1.3, "#a9a294", m.pos[0], 0.5, m.pos[1]); box(0.5, 1.3, 0.5, "#cbb9a0", m.pos[0], 1.65, m.pos[1]);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.45, 0.6, 4), mat("#5e6f7d")); cone.position.set(m.pos[0], 2.6, m.pos[1]); cone.rotation.y = Math.PI / 4; scene.add(cone);
+  const pc = byId.picture; box(0.08, 1.0, 0.08, "#3c4044", pc.pos[0], 0.5, pc.pos[1]);
+  const pt = new THREE.CanvasTexture(picCanvas()); pt.colorSpace = THREE.SRGBColorSpace;
+  const pm = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.88), new THREE.MeshBasicMaterial({ map: pt })); pm.position.set(pc.pos[0], 1.45, pc.pos[1]); pm.rotation.y = Math.PI; scene.add(pm);
+  box(1.42, 1.0, 0.05, "#3a3026", pc.pos[0], 1.45, pc.pos[1] + 0.03);
+  const v = byId.video; const vy = Math.atan2(-v.pos[0], -v.pos[1]);
+  box(0.1, 1.4, 0.1, "#3c4044", v.pos[0], 0.7, v.pos[1]);
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.07), new THREE.MeshBasicMaterial({ map: videoTex }));
+  scr.position.set(v.pos[0], 1.95, v.pos[1]); scr.rotation.y = vy; scene.add(scr); v.screen = scr;
+  box(2.02, 1.18, 0.06, "#20242a", v.pos[0] - Math.sin(vy) * 0.04, 1.95, v.pos[1] - Math.cos(vy) * 0.04, vy);
+})();
+
+for (const it of ITEMS) {
+  it.spark = sparks(it.sp); it.spark.position.set(it.pos[0], 0, it.pos[1]); scene.add(it.spark);
+  it.ring = ring(it.footR); it.ring.position.set(it.pos[0], 0.03, it.pos[1]); scene.add(it.ring);
+  it.glyph = glyph(it.kind); it.glyph.position.set(it.pos[0], it.glyphY, it.pos[1]); scene.add(it.glyph);
+  it.ember = ember(); it.ember.position.set(it.pos[0], 0.35, it.pos[1]); scene.add(it.ember);
+  it.vis = { spark: 0, ring: 0, glyph: 0, ember: 0, color: new THREE.Color(COL.wait), t: 0 };
+}
+const model = byId.model;
+model.noteSprites = [glyph("note1"), glyph("note2")];
+model.noteSprites[0].position.set(model.pos[0] - 0.2, 3.0, model.pos[1] + 0.4);
+model.noteSprites[1].position.set(model.pos[0] + 0.5, 1.6, model.pos[1] - 0.6);
+for (const s of model.noteSprites) { s.material.color.set(COL.play); scene.add(s); }
+
+// the quiz enters as a flame of sparks over the well
+const quizFx = { spark: sparks({ n: 130, h: 2.8, r: 0.5, size: 0.07, swirl: 1.3 }), glyph: glyph("quiz"), s: 0 };
+quizFx.spark.position.set(WELL[0], 0.8, WELL[1]); scene.add(quizFx.spark);
+quizFx.glyph.position.set(WELL[0], 3.9, WELL[1]); scene.add(quizFx.glyph);
+
+// stations: a column of light, and small embers for the items of a station you are not at
+const BEAM_F = `uniform vec3 uColor;uniform float uStrength;varying vec2 vUv;void main(){float a=pow(1.0-vUv.y,1.4)*0.62*uStrength;gl_FragColor=vec4(uColor,a);
+#include <colorspace_fragment>
+}`;
+function beacon(x, z) {
+  const m = new THREE.ShaderMaterial({ uniforms: { uColor: { value: new THREE.Color(COL.next) }, uStrength: { value: 0 } }, vertexShader: `varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`, fragmentShader: BEAM_F, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  const b = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 0.9, 46, 20, 1, true), m); b.position.set(x, 23, z); b.layers.set(GUIDE); scene.add(b); return b;
+}
+const beaconS1 = beacon(S1.c[0], S1.c[1]);
+const beaconS2 = beacon(S2.c[0], S2.c[1]);
+const s2Embers = [[-3.2, 2.5], [2.4, 3.1], [3.8, -1.8]].map(([dx, dz]) => { const e = ember(); e.position.set(S2.c[0] + dx, 0.35, S2.c[1] + dz); e.material.opacity = 0.9; e.scale.set(1.4, 1.4, 1); scene.add(e); return e; });
+
+// the thread: one ribbon on the ground, from the feet to the one thing that matters next
+const THREAD_N = 48;
+const thread = (() => {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array((THREAD_N + 1) * 2 * 3), 3));
+  g.setAttribute("aUv", new THREE.BufferAttribute(new Float32Array((THREAD_N + 1) * 2 * 2), 2));
+  const idx = []; for (let i = 0; i < THREAD_N; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } g.setIndex(idx);
+  const m = new THREE.ShaderMaterial({
+    uniforms: { uColor: { value: new THREE.Color(COL.next) }, uT: { value: 0 }, uLen: { value: 1 }, uFadeEnd: { value: 1 }, uStrength: { value: 0 } },
+    vertexShader: `attribute vec2 aUv;varying vec2 vUv;void main(){vUv=aUv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+    fragmentShader: `uniform vec3 uColor;uniform float uT,uLen,uFadeEnd,uStrength;varying vec2 vUv;
+void main(){float edge=1.0-smoothstep(0.45,1.0,abs(vUv.y));float k=fract(vUv.x*0.42-uT*0.85);
+float flow=0.5+0.5*smoothstep(0.0,0.18,k)*(1.0-smoothstep(0.18,0.6,k));
+float ends=smoothstep(0.4,1.8,vUv.x)*(1.0-smoothstep(uFadeEnd-uFadeEnd*0.6,uFadeEnd,vUv.x));
+gl_FragColor=vec4(mix(uColor,vec3(1.0),0.15*flow),edge*flow*ends*uStrength*0.9);
+#include <colorspace_fragment>
+}`, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const mesh = new THREE.Mesh(g, m); mesh.frustumCulled = false; mesh.layers.set(GUIDE); mesh.renderOrder = 3; scene.add(mesh);
+  return { mesh, m, s: 0, key: null, drawnKey: null };
+})();
+
+/* ---------------- state ---------------- */
+const me = { x: 0, z: 40, yaw: 0, hist: [] };
+const W = {
+  t: 0, timeScale: 1, inS1: false, s1Visited: false, stationDone: false, asked: null, storyPoint: null,
+  quiz: "off", panel: null, voice: [], lastAnnounce: {}, order: [], later: [], entered: {}, nothingStartedCheck: null,
+};
+const sub = { story: null, reply: null, notes: [], key: null };
+const rec = {}; let beat = 1;
+
+const dist2 = (x, z) => Math.hypot(x - me.x, z - me.z);
+const dist = (it) => dist2(it.pos[0], it.pos[1]);
+const after = (s, fn) => W.later.push({ at: W.t + s, fn });
+const readTime = (text) => clamp(2.4 + text.length * 0.055, 3, 9) * KN.read;
+
+function resetWorld() {
+  Object.assign(me, { x: 0, z: 40, yaw: 0, hist: [] });
+  Object.assign(W, { t: 0, inS1: false, s1Visited: false, stationDone: false, asked: null, storyPoint: null, quiz: "off", panel: null, voice: [], lastAnnounce: {}, order: [], later: [], entered: {}, nothingStartedCheck: null });
+  for (const it of ITEMS) { Object.assign(it, { state: "waiting", seen: false, prog: 0, pausedBy: null, notesOn: false, notesRead: [false, false], bloomAt: 0 }); }
+  sub.story = null; sub.reply = null; sub.notes = []; sub.key = null;
+  closePanel(true);
+  for (const it of ITEMS) Object.assign(it.vis, { spark: 0, ring: 0, glyph: 0, ember: 1 });
+}
+const active = (it) => !it.extra || KN.extra;
+const items = () => ITEMS.filter(active);
+const playing = () => items().filter((it) => it.state === "playing");
+function voiceOwner() { for (let i = W.voice.length - 1; i >= 0; i--) { const it = W.voice[i]; if (it.state === "playing") return it; } return null; }
+function takeVoice(it) { W.voice = W.voice.filter((v) => v !== it); W.voice.push(it); }
+
+/* ---------------- the subtitle line: one slot, ranked ---------------- */
+// 1 what you opened yourself (a panel then replaces the line), 2 the story, a quiz step included,
+// 3 the captions of the one thing whose voice you hear, 4 what the place tells you (behind you,
+// rough position, walk news). Lower ones wait silently and drop when stale.
+function sayStory(who, text, extra = {}) { sub.story = { key: "story:" + text, tone: "wait", icon: "story", who, text, until: W.t + readTime(text), ...extra }; }
+function reply(r) { sub.reply = { tone: "wait", ...r, key: "reply:" + (r.id ?? r.text), until: W.t + (r.ttl ?? readTime(typeof r.text === "function" ? r.text() : r.text)) }; }
+function note(n) { if (sub.notes.some((m) => m.key === n.key)) return; sub.notes.push({ tone: "calm", ...n, queued: W.t, until: null }); }
+const textOf = (m) => (typeof m.text === "function" ? m.text() : m.text);
+function pickLine() {
+  if (W.panel) return null;
+  if (sub.story && (sub.story.sticky || W.t < sub.story.until)) return sub.story; sub.story = null;
+  if (sub.reply && (sub.reply.alive ? sub.reply.alive() : true) && W.t < sub.reply.until) return sub.reply; sub.reply = null;
+  const v = voiceOwner();
+  if (v && W.quiz !== "asking") { const i = Math.min(v.cap.length - 1, Math.floor((v.prog / v.dur) * v.cap.length)); return { key: v.id + ":" + i, tone: "play", icon: v.kind, who: v.label, text: v.cap[i], item: v }; }
+  while (sub.notes.length) {
+    const n = sub.notes[0];
+    if ((n.valid && !n.valid()) || (n.until == null && W.t - n.queued > 15)) { sub.notes.shift(); continue; }
+    if (n.until == null) { n.until = W.t + (n.ttl ?? readTime(textOf(n))); n.onShow?.(); }
+    if (W.t < n.until) return n; sub.notes.shift();
+  }
+  return null;
+}
+const subEl = $("#sub");
+function renderSub() {
+  const m = pickLine();
+  if (!m) { if (sub.key !== null) { subEl.classList.add("off"); sub.key = null; } return; }
+  if (m.key !== sub.key) {
+    sub.key = m.key; subEl.dataset.tone = m.tone;
+    subEl.querySelector(".ico").innerHTML = svg(m.icon);
+    subEl.querySelector(".who").textContent = m.who ? m.who + (m.who.endsWith(":") ? "" : ":") : "";
+    const chip = subEl.querySelector(".chip"); chip.hidden = !m.chip; chip.textContent = m.chip ?? "";
+    subEl.classList.remove("off", "in"); void subEl.offsetWidth; subEl.classList.add("in");
+  }
+  const t = textOf(m); const el = subEl.querySelector(".txt"); if (el.textContent !== t) el.textContent = t;
+}
+subEl.addEventListener("click", () => { userTouched(false); tapSubtitle(); });
+function tapSubtitle() {
+  const m = pickLine(); if (!m) return;
+  if (m === sub.story && W.quiz === "asking") { openPanel("quiz"); return; }
+  if (m === sub.story) { sub.story = null; return; }
+  if (m === sub.reply) { sub.reply = null; return; }
+  if (m.item) { pauseItem(m.item, "tap"); reply({ id: "paused", icon: m.item.kind, who: m.item.label, text: "Paused. Tap it in the world to go on.", ttl: 3.5 }); return; }
+  sub.notes.shift();
+}
+
+/* ---------------- the panel: only ever opened by a tap, at most one ---------------- */
+const panelEl = $("#panel");
+function openPanel(kind, it) {
+  closePanel(true);
+  W.panel = { kind, it, at: [me.x, me.z], leftAt: null };
+  panelEl.querySelector(".ico").innerHTML = svg(kind === "quiz" ? "quiz" : it.kind);
+  const h2 = panelEl.querySelector("h2"), body = panelEl.querySelector(".pbody"); body.innerHTML = "";
+  if (kind === "pin") { h2.innerHTML = `${it.label}<small>A pinned note</small>`; const p = document.createElement("p"); p.textContent = PANEL_TEXT[it.id]; body.append(p); }
+  if (kind === "picture") { h2.innerHTML = `The square in 1890<small>Then and now</small>`; const c = picCanvas(); body.append(c); const p = document.createElement("p"); p.textContent = "The well had a roof then, and the market stalls stood right up to it."; const cr = document.createElement("p"); cr.className = "credit"; cr.textContent = "Photo: town archive, about 1890"; body.append(p, cr); }
+  if (kind === "quiz") {
+    h2.innerHTML = `Which way did the water reach this well?<small>Greta asks - one answer</small>`;
+    const grid = document.createElement("div"); grid.className = "opts";
+    const line = document.createElement("p"); line.className = "qline";
+    for (const [id, label] of [["hills", "Down from the hills, in pipes"], ["spring", "Up from a spring below"], ["river", "Carried up from the river"], ["rain", "Rain off the roofs"]]) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "opt"; b.dataset.id = id; b.textContent = label;
+      b.addEventListener("click", () => answer(id)); grid.append(b);
+    }
+    body.append(grid, line);
+  }
+  panelEl.hidden = false;
+}
+function closePanel(silent) { W.panel = null; panelEl.hidden = true; }
+panelEl.querySelector(".x").addEventListener("click", () => { userTouched(false); closePanel(); });
+function answer(id) {
+  const b = panelEl.querySelector(`.opt[data-id="${id}"]`); if (!b || W.quiz !== "asking") return;
+  if (id !== "hills") { b.classList.add("wrong"); b.disabled = true; panelEl.querySelector(".qline").textContent = "Not that one. Try another."; chime(0, false, "low"); return; }
+  b.classList.add("right"); chime(0, false, "up");
+  after(0.9, () => {
+    closePanel(); W.quiz = "done"; byId.narr && resumeByStory();
+    sayStory("Greta", "Right. The pipes came in 1911.", { chip: "+10", key: "quiz-right" });
+    after(readTime("Right. The pipes came in 1911.") + 0.2, () => sayStory("Greta", "Have a look round. The well has more to tell you."));
+  });
+}
+
+/* ---------------- items: tap, start, pause, leave ---------------- */
+function startItem(it) {
+  if (it.state === "done") it.prog = 0;
+  it.state = "playing"; it.pausedBy = null; it.seen = true; takeVoice(it); if (W.asked === it) W.asked = null;
+  chime(relOf(it), false, "up");
+}
+function pauseItem(it, why) { if (it.state !== "playing") return; it.state = "paused"; it.pausedBy = why; }
+function resumeByStory() { for (const it of items()) if (it.state === "paused" && it.pausedBy === "story") { it.state = "playing"; it.pausedBy = null; takeVoice(it); } }
+const reachOf = (it) => it.reach ?? it.footR;
+
+function tapItem(it, scripted) {
+  if (!scripted) userTouched(false);
+  chime(relOf(it), false, "tap");
+  const d = dist(it), r = reachOf(it), weak = KN.weak;
+  if (it.kind === "pin" || it.kind === "picture") { openPanel(it.kind, it); it.seen = true; if (W.asked === it) W.asked = null; if (W.storyPoint === it) W.storyPoint = null; return; }
+  if (W.panel) closePanel();
+  if (it.kind === "model") {
+    it.notesOn = true; W.asked = it;
+    reply({ id: "model-notes", icon: "model", who: it.label, text: "Its two notes are lit over it. Tap one to read it." });
+    return;
+  }
+  if (it.kind === "video" || it.kind === "narr") {
+    if (it.state === "playing") { pauseItem(it, "tap"); return; }
+    if (it.state === "paused") { it.state = "playing"; it.pausedBy = null; takeVoice(it); return; }
+    const second = sub.reply?.id === "closer-" + it.id;
+    if (d <= r || weak || second) { sub.reply = null; startItem(it); return; }
+    W.asked = it;
+    const verb = it.kind === "video" ? "it starts there" : "then tap it";
+    reply({ id: "closer-" + it.id, icon: it.kind, who: it.label, ttl: 30,
+      text: () => KN.weak ? `Walk closer, or tap again to start it here.` : `Walk closer · ${Math.max(1, Math.round(dist(it) - reachOf(it)))} m, ${verb}. Or tap again to start it here.`,
+      alive: () => it.state === "waiting" || it.state === "done" });
+  }
+}
+function tapNote(i) {
+  userTouchedIfReal();
+  model.notesRead[i] = true; if (model.notesRead.every(Boolean)) { model.seen = true; if (W.asked === model) W.asked = null; }
+  reply({ id: "note" + i, icon: "model", who: `Note ${i + 1}`, text: NOTES[i] });
+  chime(relOf(model), false, "tap");
+}
+let scriptedTap = false;
+function userTouchedIfReal() { if (!scriptedTap) userTouched(false); }
+
+function enterS1(instant) {
+  W.inS1 = true; W.s1Visited = true;
+  const list = items().slice().sort((a, b) => dist(a) - dist(b));
+  W.order = list.map((it) => it.id);
+  list.forEach((it, i) => { it.bloomAt = W.t + (instant ? 0 : 0.25 + i * 0.22); });
+  if (!instant) {
+    note({ key: "arrive", tone: "next", icon: "walk", who: "Arrived", text: S1.name, ttl: 3 });
+    chime(0, false, "up");
+    after(2.6, () => sayStory("Greta", "Welcome to the well. What glows here has something for you."));
+  }
+}
+function leaveS1() {
+  W.inS1 = false; closePanel();
+  for (const it of items()) if (it.state === "playing") pauseItem(it, "leave");
+  sub.reply = null;
+  const d = Math.round(dist2(S2.c[0], S2.c[1]));
+  note({ key: "next", tone: "next", icon: "walk", who: "Next", text: () => KN.weak ? S2.name : `${S2.name} · ${d} m`, ttl: 5 });
+}
+
+/* the thread's target: changes only on events (a tap, a start, the story), never on a live distance rank */
+function threadTarget() {
+  if (!W.inS1) return W.s1Visited ? "S2" : "S1";
+  if (W.stationDone) return "S2";
+  if (W.quiz === "asking") return "quiz";
+  if (W.asked && active(W.asked) && !(W.asked.state === "playing" || W.asked.seen && W.asked.kind !== "model")) return W.asked.id;
+  if (playing().length) return null; // something plays near you: the thread rests
+  if (W.storyPoint && !W.storyPoint.seen) return W.storyPoint.id;
+  return null;
+}
+function targetPoint(key) {
+  if (key === "S1") return [S1.c[0], S1.c[1], 1.2];
+  if (key === "S2") return [S2.c[0], S2.c[1], 2];
+  if (key === "quiz") return [WELL[0], WELL[1], 1.4];
+  const it = byId[key]; return [it.pos[0], it.pos[1], it.footR];
+}
+
+/* ---------------- sound: a short chime from the direction of the thing ---------------- */
+let ac = null;
+function ensureAudio() { try { if (!ac) ac = new AudioContext(); if (ac.state === "suspended") ac.resume(); } catch { ac = null; } }
+function chime(rel = 0, behind = false, tone = "soft") {
+  if (!KN.sound || !ac || ac.state !== "running") return;
+  try {
+    const t = ac.currentTime;
+    const pan = new StereoPannerNode(ac, { pan: clamp(-Math.sin(rel) * 0.95, -1, 1) });
+    const lp = new BiquadFilterNode(ac, { type: "lowpass", frequency: behind ? 700 : 6000 });
+    const g = ac.createGain(); g.gain.setValueAtTime(0, t);
+    g.connect(lp); lp.connect(pan); pan.connect(ac.destination);
+    const notes = { soft: [784, 1047], up: [659, 988], tap: [880], low: [262], behind: [587, 740] }[tone] ?? [784];
+    notes.forEach((f, i) => {
+      const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = behind ? f * 0.85 : f;
+      const s = t + i * 0.12; const og = ac.createGain(); og.gain.setValueAtTime(0, s); og.gain.linearRampToValueAtTime(0.16, s + 0.015); og.gain.exponentialRampToValueAtTime(0.0008, s + 0.5);
+      o.connect(og); og.connect(g); o.start(s); o.stop(s + 0.55);
+    });
+    g.gain.linearRampToValueAtTime(1, t + 0.01);
+  } catch { /* sound is a bonus, never a failure */ }
+}
+
+/* ---------------- geometry helpers ---------------- */
+const v3 = new THREE.Vector3();
+function toScreen(x, y, z) {
+  v3.set(x, y, z).applyMatrix4(camera.matrixWorldInverse); const front = v3.z < 0;
+  v3.set(x, y, z).project(camera);
+  return { x: (v3.x * 0.5 + 0.5) * innerWidth, y: (-v3.y * 0.5 + 0.5) * innerHeight, front, ndc: [v3.x, v3.y] };
+}
+function relAng(x, z) { return angDiff(me.yaw, Math.atan2(-(x - me.x), -(z - me.z))); }
+const relOf = (it) => relAng(it.pos[0], it.pos[1]);
+function inView(x, ys, z) { for (const y of ys) { const s = toScreen(x, y, z); if (s.front && Math.abs(s.ndc[0]) < 0.92 && Math.abs(s.ndc[1]) < 0.95) return true; } return false; }
+const itemInView = (it) => inView(it.pos[0], [0.3, it.glyphY], it.pos[1]);
+
+/* ---------------- the frame ---------------- */
+const keys = new Set();
+let last = performance.now(), visT = 0, maxFrame = 0, frameN = 0, demoMult = 1;
+function frame(now) {
+  const real = Math.min(0.1, (now - last) / 1000); last = now; maxFrame = Math.max(maxFrame * 0.995, real * 1000); frameN++;
+  const dt = real * W.timeScale * demoMult; W.t += dt; visT += real;
+
+  // input
+  if (keys.size) {
+    if (keys.has("a") || keys.has("arrowleft")) me.yaw += 1.3 * real;
+    if (keys.has("d") || keys.has("arrowright")) me.yaw -= 1.3 * real;
+    const f = (keys.has("w") || keys.has("arrowup") ? 1 : 0) - (keys.has("s") || keys.has("arrowdown") ? 1 : 0);
+    if (f) step(f * 1.6 * real);
+  }
+  runScript(dt);
+  for (const l of W.later.splice(0)) { if (W.t >= l.at) l.fn(); else W.later.push(l); }
+
+  me.hist.push([W.t, me.x, me.z]); while (me.hist.length && W.t - me.hist[0][0] > 5) me.hist.shift();
+  const walked = me.hist.length > 1 ? Math.hypot(me.x - me.hist[0][1], me.z - me.hist[0][2]) : 0;
+
+  // the station
+  const dS1 = dist2(S1.c[0], S1.c[1]);
+  if (!W.inS1 && dS1 < S1.rIn && !W.stationDone) enterS1(false);
+  else if (W.inS1 && dS1 > S1.rOut) leaveS1();
+
+  // the items' own rules
+  for (const it of items()) {
+    if (!it.dur) continue;
+    const d = dist(it), r = reachOf(it);
+    if (W.inS1 && it.near && it.state === "waiting" && d < r && walked > 1.5 && !KN.weak) startItem(it); // a near start needs a walking visitor, never a standing one
+    if (it.state === "playing" && d > r + KN.margin && !KN.weak) pauseItem(it, "leave");
+    if (it.state === "paused" && it.pausedBy === "leave" && d < r && W.quiz !== "asking") { it.state = "playing"; it.pausedBy = null; takeVoice(it); }
+    if (it.kind === "narr" && it.state === "waiting" && W.inS1) {
+      const inside = d < r; if (inside && !W.entered[it.id]) chime(relOf(it), false, "soft"); W.entered[it.id] = inside;
+    }
+    if (it.state === "playing") { it.prog += dt; if (it.prog >= it.dur) { it.prog = it.dur; it.state = "done"; it.seen = true; } }
+  }
+  if (W.inS1 && !W.stationDone && items().every((it) => it.seen)) { W.stationDone = true; sayStory("Greta", "That was all of it. The old gate is next: follow the light."); }
+
+  // a panel closes once its place is left (with a short delay, so a jitter does not close it)
+  if (W.panel && W.panel.kind !== "quiz") {
+    const away = dist2(W.panel.at[0], W.panel.at[1]) > PANEL_LEAVE_M + KN.margin || !W.inS1;
+    if (away) { W.panel.leftAt ??= W.t; if (W.t - W.panel.leftAt > 1.2) closePanel(); } else W.panel.leftAt = null;
+  }
+
+  camera.position.set(me.x, EYE + Math.sin(visT * 1.3) * 0.004, me.z);
+  camera.rotation.set(PITCH, me.yaw, 0); camera.updateMatrixWorld();
+
+  updateVisuals(real, dt);
+  announce();
+  renderSub();
+  renderer.render(scene, camera);
+  if (frameN % 8 === 0) measureHud();
+  if (frameN % 30 === 0) measureWorld();
+  requestAnimationFrame(frame);
+}
+
+function step(m) { me.x += -Math.sin(me.yaw) * m; me.z += -Math.cos(me.yaw) * m; me.x = clamp(me.x, -42, 42); me.z = clamp(me.z, -80, 44); }
+
+const cTmp = new THREE.Color();
+function updateVisuals(real, dt) {
+  const tKey = threadTarget();
+  // which waiting items may raise sparks: the thread's target, what plays, the nearest in reach, then a stable order up to the cap
+  const full = new Set();
+  if (tKey && byId[tKey]) full.add(byId[tKey]);
+  for (const it of items()) if (it.state === "playing" || it.state === "paused") full.add(it);
+  const inReach = items().filter((it) => it.state === "waiting" && dist(it) < reachOf(it) + 1.5).sort((a, b) => dist(a) - dist(b))[0];
+  if (inReach) full.add(inReach);
+  let n = [...full].filter((it) => it.state === "waiting").length;
+  for (const id of W.order) { const it = byId[id]; if (!active(it) || it.state !== "waiting" || full.has(it)) continue; if (n < KN.cap) { full.add(it); n++; } }
+  const quizDim = W.quiz === "asking" ? 0.35 : 1;
+
+  for (const it of ITEMS) {
+    const on = active(it) && W.inS1 && W.t >= it.bloomAt;
+    const d = dist(it), r = reachOf(it), near = d < r + 0.2;
+    let sp = 0, rg = 0, gl = 0, em = 0, col = COL.wait, speed = 1, pulse = 0, fill = 0, px = 30;
+    if (!active(it)) { /* hidden */ }
+    else if (!on) { em = W.s1Visited || !W.inS1 ? 0.9 : 0; }
+    else {
+      if (it.state === "done" || (it.seen && it.state === "waiting")) { col = COL.done; rg = 0.28; gl = 0.6; px = 24; }
+      else if (it.state === "playing") { col = COL.play; sp = 1; rg = 0.9; gl = 1; speed = 1.8; px = 32; }
+      else if (it.state === "paused") { col = COL.play; sp = 0.5; rg = 0.55; gl = 0.8; speed = 0.04; px = 30; }
+      else { sp = full.has(it) ? 1 : 0; rg = 0.75; gl = 1; px = near ? 40 : 30; pulse = near ? 1 : 0; }
+      if (!KN.weak && it.state === "waiting" && !it.seen) fill = clamp((it.footR + 8 - d) / 8, 0, 1);
+      // once it plays, the rim alone says so: a filled disc under a playing thing only covers the view
+      sp *= quizDim; rg *= quizDim; gl *= quizDim === 1 ? 1 : 0.55;
+    }
+    const k = damp(real, 0.45), V = it.vis;
+    V.spark += (sp - V.spark) * k; V.ring += (rg - V.ring) * k; V.glyph += (gl - V.glyph) * k; V.ember += (em - V.ember) * damp(real, 0.6);
+    V.color.lerp(cTmp.set(col), damp(real, 0.3));
+    V.t += real * speed;
+    const u = it.spark.material.uniforms; u.uT.value = V.t; u.uStrength.value = V.spark; u.uColor.value.copy(V.color); it.spark.visible = V.spark > 0.01;
+    const ru = it.ring.material.uniforms; ru.uStrength.value = V.ring; ru.uColor.value.copy(V.color); ru.uFill.value += (fill - ru.uFill.value) * damp(real, 0.25); ru.uPulse.value = pulse; ru.uT.value = visT; it.ring.visible = V.ring > 0.01;
+    it.glyph.material.opacity = V.glyph; it.glyph.material.color.copy(V.color); it.glyph.visible = V.glyph > 0.01;
+    // inside a story circle its sign comes to you: it floats a step ahead at chest height, where a thumb can reach it
+    const inside = on && it.kind === "narr" && d < r && it.state !== "done";
+    const gx = inside ? me.x - Math.sin(me.yaw) * 1.5 : it.pos[0], gy = inside ? 1.3 : it.glyphY, gz = inside ? me.z - Math.cos(me.yaw) * 1.5 : it.pos[1];
+    const gk = damp(real, 0.35); it.glyph.position.x += (gx - it.glyph.position.x) * gk; it.glyph.position.y += (gy - it.glyph.position.y) * gk; it.glyph.position.z += (gz - it.glyph.position.z) * gk;
+    const pulseS = pulse ? 1 + 0.08 * Math.sin(visT * 4) : 1;
+    sizeSprite(it.glyph, px * pulseS);
+    { const de = Math.max(0.5, camera.position.distanceTo(it.ember.position)); const m = Math.max(0.9, (12 * 2 * de * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / innerHeight); it.ember.scale.set(m, m, 1); } // never smaller than 12 px
+    it.ember.material.opacity = V.ember; it.ember.material.color.set(it.seen ? COL.done : COL.wait); it.ember.visible = V.ember > 0.01;
+  }
+  // the model's notes: over the model once tapped, or when you stand near it
+  const notesOn = W.inS1 && (model.notesOn || dist(model) < 10) && W.quiz !== "asking";
+  model.noteSprites.forEach((s, i) => { const o = notesOn ? (model.notesRead[i] ? 0.6 : 1) : 0; s.material.opacity += (o - s.material.opacity) * damp(real, 0.3); s.visible = s.material.opacity > 0.01; sizeSprite(s, 30); });
+
+  // the quiz flame
+  quizFx.s += ((W.quiz === "asking" ? 1 : 0) - quizFx.s) * damp(real, 0.5);
+  quizFx.spark.material.uniforms.uT.value += real * 1.5; quizFx.spark.material.uniforms.uStrength.value = quizFx.s; quizFx.spark.visible = quizFx.s > 0.01;
+  quizFx.glyph.material.opacity = quizFx.s; quizFx.glyph.visible = quizFx.s > 0.01; sizeSprite(quizFx.glyph, 40 * (1 + 0.06 * Math.sin(visT * 4)));
+
+  // stations
+  const b1 = !W.inS1 && !W.s1Visited ? 1 : 0; const b2 = W.stationDone || (W.s1Visited && !W.inS1) ? 1 : 0.2;
+  beaconS1.material.uniforms.uStrength.value += (b1 - beaconS1.material.uniforms.uStrength.value) * damp(real, 0.6);
+  beaconS2.material.uniforms.uStrength.value += (b2 - beaconS2.material.uniforms.uStrength.value) * damp(real, 0.6);
+  beaconS1.visible = beaconS1.material.uniforms.uStrength.value > 0.01;
+  for (const e of s2Embers) e.material.opacity = 0.85;
+
+  // the thread: fade out, swap, fade in, so a change of target never jumps
+  const want = tKey ?? null;
+  if (want !== thread.key) { thread.s += (0 - thread.s) * damp(real, 0.18); if (thread.s < 0.04) { thread.key = want; } }
+  else thread.s += ((want ? 1 : 0) - thread.s) * damp(real, 0.35);
+  if (thread.key) layThread(thread.key);
+  thread.m.uniforms.uStrength.value = thread.s; thread.m.uniforms.uT.value = visT; thread.mesh.visible = thread.s > 0.01 && !!thread.key;
+
+  drawVideo();
+}
+function sizeSprite(s, px) {
+  const d = Math.max(0.5, camera.position.distanceTo(s.position));
+  const sc = (px * 2 * d * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / innerHeight; s.scale.set(sc, sc, 1);
+}
+function layThread(key) {
+  const [tx, tz, endR] = targetPoint(key);
+  const pos = thread.mesh.geometry.attributes.position, uv = thread.mesh.geometry.attributes.aUv;
+  const sx = me.x, sz = me.z; let ex = tx, ez = tz;
+  const L0 = Math.hypot(ex - sx, ez - sz); if (L0 > endR) { ex = tx - ((tx - sx) / L0) * endR; ez = tz - ((tz - sz) / L0) * endR; }
+  const L = Math.max(0.5, Math.hypot(ex - sx, ez - sz));
+  const nx = -(ez - sz) / L, nz = (ex - sx) / L, bend = Math.min(3, L * 0.12);
+  const cx = (sx + ex) / 2 + nx * bend, cz = (sz + ez) / 2 + nz * bend;
+  const halfW = 0.22 + Math.min(0.5, L * 0.004);
+  let s = 0, px = sx, pz = sz;
+  for (let i = 0; i <= THREAD_N; i++) {
+    const t = i / THREAD_N, a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t;
+    const x = a * sx + b * cx + c * ex, z = a * sz + b * cz + c * ez;
+    const dx = 2 * (1 - t) * (cx - sx) + 2 * t * (ex - cx), dz = 2 * (1 - t) * (cz - sz) + 2 * t * (ez - cz), dl = Math.hypot(dx, dz) || 1;
+    const ox = (-dz / dl) * halfW, oz = (dx / dl) * halfW;
+    s += Math.hypot(x - px, z - pz); px = x; pz = z;
+    pos.setXYZ(i * 2, x + ox, 0.035, z + oz); pos.setXYZ(i * 2 + 1, x - ox, 0.035, z - oz);
+    uv.setXY(i * 2, s, 1); uv.setXY(i * 2 + 1, s, -1);
+  }
+  pos.needsUpdate = true; uv.needsUpdate = true;
+  thread.m.uniforms.uLen.value = s;
+  thread.m.uniforms.uFadeEnd.value = KN.weak ? Math.min(s, 8) : s; // a rough position: only the first metres, a direction and no more
+}
+let lastVid = -1;
+function drawVideo() {
+  const v = byId.video; const g = videoCv.getContext("2d"); const key = v.state + Math.floor(v.prog * 8);
+  if (key === lastVid) return; lastVid = key;
+  const w = 256, h = 144;
+  if (v.state === "playing" || v.state === "paused") {
+    const p = v.prog / v.dur; const gr = g.createLinearGradient(0, 0, w, h);
+    gr.addColorStop(0, `hsl(${30 + p * 160} 30% 52%)`); gr.addColorStop(1, `hsl(${200 + p * 60} 25% 30%)`); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgb(40 30 20 / 60%)"; for (let i = 0; i < 7; i++) g.fillRect(((i * 41 + v.prog * 14) % (w + 30)) - 30, 70 + (i % 3) * 10, 22, 38);
+    g.fillStyle = "rgb(0 0 0 / 50%)"; g.fillRect(0, h - 8, w, 8); g.fillStyle = COL.play; g.fillRect(0, h - 8, w * p, 8);
+    if (v.state === "paused") { g.fillStyle = "rgb(0 0 0 / 45%)"; g.fillRect(0, 0, w, h); g.fillStyle = "#fff"; g.fillRect(112, 50, 12, 44); g.fillRect(134, 50, 12, 44); }
+  } else {
+    g.fillStyle = "#2b3138"; g.fillRect(0, 0, w, h); g.fillStyle = v.state === "done" ? "#9aa4ae" : "#fff";
+    g.beginPath(); g.moveTo(112, 48); g.lineTo(112, 96); g.lineTo(150, 72); g.closePath(); g.fill();
+    g.font = "600 15px system-ui"; g.textAlign = "center"; g.fillText(v.state === "done" ? "Tap to play again" : "A market day, 1958", 128, 124);
+  }
+  videoTex.needsUpdate = true;
+}
+
+/* what is out of view is told by a chime from its side and one subtitle line, never by a list */
+function announce() {
+  const glint = $("#glint");
+  const key = threadTarget(); const it = key && byId[key];
+  if (!W.inS1 || !it || itemInView(it)) { glint.hidden = true; return; }
+  const rel = relOf(it), side = Math.abs(rel) > 2.0 ? "Behind you" : rel > 0 ? "To your left" : "To your right";
+  if (KN.glint) placeGlint(glint, it, rel); else glint.hidden = true;
+  const lastA = W.lastAnnounce[it.id] ?? -1e9;
+  if (W.t - lastA < 40) return;
+  W.lastAnnounce[it.id] = W.t;
+  note({ key: "where-" + it.id, tone: "wait", icon: it.kind, who: side, text: `${it.noun} is waiting.`,
+    valid: () => threadTarget() === it.id && !itemInView(it), onShow: () => chime(relOf(it), Math.abs(relOf(it)) > 2.0, "behind") });
+}
+function placeGlint(el, it, rel) {
+  const w = innerWidth, h = innerHeight, m = 18;
+  let x, y; if (Math.abs(rel) > 2.0) { x = w / 2 - Math.sin(rel) * w * 0.3; y = h - m - 70; } else { x = rel > 0 ? m : w - m; y = h * 0.5; }
+  el.style.left = x + "px"; el.style.top = y + "px"; el.hidden = false;
+}
+
+/* ---------------- input ---------------- */
+let drag = null;
+canvas.addEventListener("pointerdown", (e) => { ensureAudio(); canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), moved: false }; });
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return; const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly; drag.lx = e.clientX; drag.ly = e.clientY;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > TAP_PX) { drag.moved = true; userTouched(true); }
+  if (drag.moved) { me.yaw += dx * LOOK_GAIN; step(-dy * DRAG_WALK); }
+});
+canvas.addEventListener("pointerup", (e) => { if (drag && !drag.moved && performance.now() - drag.t < TAP_MS) worldTap(e.clientX, e.clientY, false); drag = null; });
+canvas.addEventListener("pointercancel", () => (drag = null));
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); userTouched(true); step(-e.deltaY * 0.01); }, { passive: false });
+addEventListener("keydown", (e) => { const k = e.key.toLowerCase(); if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) { keys.add(k); userTouched(true); } });
+addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+addEventListener("pointerdown", ensureAudio, { once: false, capture: true });
+
+const ray = new THREE.Raycaster();
+function worldTap(x, y, scripted) {
+  // notes first, then the glyphs and the things themselves, then the film's screen
+  let best = null, bd = 1e9;
+  const consider = (wx, wy, wz, r, what) => { const s = toScreen(wx, wy, wz); if (!s.front) return; const d = Math.hypot(s.x - x, s.y - y); if (d < r && d < bd) { bd = d; best = what; } };
+  if (W.inS1) {
+    model.noteSprites.forEach((s, i) => { if (s.visible && s.material.opacity > 0.5) consider(s.position.x, s.position.y, s.position.z, HIT_PX, { note: i }); });
+    for (const it of items()) { const g = it.glyph.position; consider(g.x, g.y, g.z, HIT_PX, { it }); consider(it.pos[0], 1.0, it.pos[1], HIT_PX + 6, { it }); }
+    if (W.quiz === "asking") consider(WELL[0], 3.9, WELL[1], HIT_PX + 10, { quiz: true });
+  }
+  if (!best && W.inS1) { ray.setFromCamera({ x: (x / innerWidth) * 2 - 1, y: -(y / innerHeight) * 2 + 1 }, camera); if (ray.intersectObject(byId.video.screen).length) best = { it: byId.video }; }
+  if (!best) { if (W.panel && W.panel.kind !== "quiz") closePanel(); return; }
+  scriptedTap = scripted;
+  if (best.note != null) tapNote(best.note); else if (best.quiz) openPanel("quiz"); else tapItem(best.it, scripted);
+  scriptedTap = false;
+}
+
+/* ---------------- the demonstration: eight beats ---------------- */
+const BEATS = [
+  { n: 1, name: "Arrive" }, { n: 2, name: "Stand still 20 s" }, { n: 3, name: "Turn a full circle" }, { n: 4, name: "Walk to the film" },
+  { n: 5, name: "Into the circle" }, { n: 6, name: "The story asks" }, { n: 7, name: "Position weak" }, { n: 8, name: "Leave" },
+];
+const yawTo = (x, z) => Math.atan2(-(x - me.x), -(z - me.z));
+function face(x, z) { me.yaw = yawTo(x, z); }
+
+function preState(n) {
+  resetWorld();
+  if (n >= 2) { me.x = 0; me.z = 0; me.yaw = 0; enterS1(true); }
+  if (n >= 3) { W.storyPoint = byId.picture; }
+  if (n >= 4) { byId.pin.seen = true; openPanel("pin", byId.pin); W.panel.at = [0, 0]; W.lastAnnounce.picture = 0; }
+  if (n >= 5) { closePanel(); me.x = -4.6; me.z = -4.8; face(-7, -5.7); const v = byId.video; v.state = "playing"; v.seen = true; v.prog = 6; takeVoice(v); }
+  if (n >= 6) { me.x = -3.4; me.z = -2.6; face(-3.2, -2.4); byId.video.prog = 25; const r = byId.narr; r.state = "playing"; r.seen = true; r.prog = 7; takeVoice(r); W.entered.narr = true; }
+  if (n >= 7) { W.quiz = "done"; for (const id of ["video", "narr"]) Object.assign(byId[id], { state: "done", prog: byId[id].dur, seen: true }); face(WELL[0], WELL[1]); W.lastAnnounce.picture = -1e9; }
+  if (n >= 8) { KN.weak = true; model.notesOn = true; W.asked = model; model.notesRead[0] = true; face(model.pos[0], model.pos[1]); }
+  else KN.weak = false;
+  if (W.inS1) for (const it of ITEMS) { const v = it.vis; v.ember = 0; }
+  syncKnobs();
+}
+
+let script = [], cur = null;
+const A = {
+  wait: (s) => ({ s, step(dt) { return (this.s -= dt) <= 0; } }),
+  call: (fn) => ({ step() { fn(); return true; } }),
+  speed: (k) => ({ step() { W.timeScale = k; showFF(); return true; } }),
+  turn: (total, dur) => ({ left: dur, rate: total / dur, step(dt) { const d = Math.min(dt, this.left); me.yaw += this.rate * d; this.left -= d; return this.left <= 1e-6; } }),
+  face: (x, z, dur = 1) => ({ step(dt) { const d = angDiff(me.yaw, yawTo(x, z)); const s = Math.min(Math.abs(d), Math.max(Math.abs(d) * dt * (4 / dur), 0.5 * dt)); me.yaw += Math.sign(d) * s; return Math.abs(d) - s < 0.01; } }),
+  walk: (pts, speed) => ({ i: 0, step(dt) {
+    let left = dt * speed;
+    while (left > 0 && this.i < pts.length) {
+      const [tx, tz] = pts[this.i]; const dx = tx - me.x, dz = tz - me.z, d = Math.hypot(dx, dz);
+      if (d < 1e-3) { this.i++; continue; }
+      const want = Math.atan2(-dx, -dz); me.yaw += angDiff(me.yaw, want) * Math.min(1, dt * 4);
+      const m = Math.min(left, d); me.x += (dx / d) * m; me.z += (dz / d) * m; left -= m; if (m >= d - 1e-6) this.i++;
+    }
+    return this.i >= pts.length;
+  } }),
+  tap: (fn) => ({ step() { const p = fn(); if (p) { ripple(p.x, p.y); worldTap(p.x, p.y, true); } return true; } }),
+  tapEl: (sel) => ({ step() { const el = typeof sel === "function" ? sel() : $(sel); if (el && !el.hidden) { const r = el.getBoundingClientRect(); ripple(r.left + r.width / 2, r.top + r.height / 2); scriptedTap = true; el.click(); scriptedTap = false; } return true; } }),
+  mark: (name) => ({ step() { if (demo.stopAt === name) { demo.held = true; } return !demo.held; } }),
+};
+// the scripted finger taps the item's sign if it is on screen, else the thing itself
+const glyphScreen = (id) => () => { const it = byId[id]; const g = it.glyph.position; const s = toScreen(g.x, g.y, g.z); if (s.front && s.x > 0 && s.x < innerWidth && s.y > 0 && s.y < innerHeight) return s; const b = toScreen(it.pos[0], 1.0, it.pos[1]); return b.front ? b : null; };
+const noteScreen = (i) => () => { const s = model.noteSprites[i].position; const p = toScreen(s.x, s.y, s.z); return p.front ? p : null; };
+
+function beatScript(n) {
+  const v = byId.video, r = byId.narr;
+  switch (n) {
+    case 1: return [A.wait(0.6), A.walk([[0, 0]], 5), A.mark("arrived"), A.wait(4)];
+    case 2: return [A.call(() => { sayStory("Greta", "Behind you hangs a picture of this square from 1890."); W.storyPoint = byId.picture; W.nothingStartedCheck = W.t; }), A.mark("pointed"), A.wait(1), A.speed(5), A.wait(19), A.speed(1), A.call(reportStanding), A.wait(0.5)];
+    case 3: return [A.wait(1.2), A.mark("behind"), A.turn(Math.PI * 2, 10), A.wait(0.6), A.tap(glyphScreen("pin")), A.mark("pin"), A.wait(2.5)];
+    case 4: return [A.face(v.pos[0], v.pos[1], 1.2), A.tap(glyphScreen("video")), A.wait(1.2), A.mark("closer"), A.walk([[-2, -6.2]], 1.4), A.mark("closer2"), A.walk([[-4.6, -4.8]], 1.4), A.face(v.pos[0], v.pos[1], 0.8), A.mark("film"), A.wait(3)];
+    case 5: return [A.face(r.pos[0], r.pos[1], 0.8), A.walk([[-3.3, -2.5]], 1.4), A.face(v.pos[0], v.pos[1], 0.8), A.mark("inside"), A.wait(2), A.tap(glyphScreen("narr")), A.wait(0.5), A.mark("both"), A.wait(3.5), A.walk([[-5.3, -4.6]], 1.4), A.mark("stepout"), A.wait(2.5), A.walk([[-3.4, -2.6]], 1.4), A.face(v.pos[0], v.pos[1], 0.8), A.wait(2.5)];
+    case 6: return [A.face(WELL[0], WELL[1], 1), A.call(startQuiz), A.wait(0.4), A.mark("asks"), A.wait(2.6), A.tapEl("#sub"), A.wait(1.2), A.mark("panel"), A.wait(1), A.tapEl(() => panelEl.querySelector('.opt[data-id="spring"]')), A.wait(1.5), A.tapEl(() => panelEl.querySelector('.opt[data-id="hills"]')), A.wait(2.5), A.mark("after"), A.wait(3)];
+    case 7: return [A.call(() => setWeak(true)), A.wait(0.4), A.mark("weak"), A.wait(3), A.face(model.pos[0], model.pos[1], 1.2), A.tap(glyphScreen("model")), A.wait(0.6), A.mark("stub"), A.wait(2.2), A.tap(noteScreen(0)), A.wait(3.5)];
+    case 8: return [A.call(() => { setWeak(false); W.stationDone = true; sayStory("Greta", "That is the well. The old gate is next: follow the light."); }), A.face(S2.c[0], S2.c[1], 1.2), A.mark("next"), A.wait(1.5), A.walk([[6, -30], [10.5, -40]], 4.5), A.mark("left"), A.wait(3.5)];
+  }
+  return [];
+}
+function startQuiz() {
+  W.quiz = "asking";
+  for (const it of items()) if (it.state === "playing" && it.kind === "narr") pauseItem(it, "story");
+  sub.reply = null;
+  sayStory("Greta asks", "Which way did the water reach this well?", { sticky: true, icon: "quiz", chip: "Tap to answer", key: "quiz-ask" });
+  chime(relAng(WELL[0], WELL[1]), false, "up");
+}
+function setWeak(on) {
+  KN.weak = on; syncKnobs();
+  if (on) note({ key: "weak", tone: "calm", icon: "gps", who: "Rough position", text: "Tap a glow to start it.", ttl: 4 });
+}
+function reportStanding() {
+  const started = items().filter((it) => it.state !== "waiting").map((it) => it.id);
+  demo.standing = started.length ? `started: ${started.join(", ")}` : "nothing started by standing";
+}
+function runScript(dt) {
+  while (true) {
+    if (!cur) { cur = script.shift(); if (!cur) { if (demo.running) { demo.running = false; W.timeScale = 1; showFF(); } return; } }
+    if (cur.step(dt)) { cur = null; dt = 0; continue; }
+    return;
+  }
+}
+function jump(n, { run = true } = {}) {
+  beat = clamp(n, 1, 8); rec[beat] = { hud: 0, el: 0, ov: 0, world: 0 };
+  W.timeScale = 1; preState(beat); script = run ? beatScript(beat) : []; cur = null; demo.running = run; demo.held = false;
+  $("#beatName").textContent = `${beat}/8 ${BEATS[beat - 1].name}`;
+  showFF(); renderInfo();
+}
+function userTouched(moving) { if (moving && demo.running) { script = []; cur = null; demo.running = false; W.timeScale = 1; showFF(); $("#beatName").textContent = `${beat}/8 free`; } }
+function ripple(x, y) { const d = document.createElement("div"); d.className = "rip"; d.style.left = x + "px"; d.style.top = y + "px"; $("#dev").append(d); setTimeout(() => d.remove(), 800); }
+function showFF() { const el = $("#ff"); el.hidden = W.timeScale === 1; el.textContent = `time x${W.timeScale}`; }
+
+$("#prev").addEventListener("click", () => jump(beat - 1));
+$("#next").addEventListener("click", () => jump(beat + 1 > 8 ? 1 : beat + 1));
+$("#beatName").addEventListener("click", () => jump(beat));
+$("#exit").addEventListener("click", () => { $("#exited").hidden = false; });
+$("#backIn").addEventListener("click", () => { $("#exited").hidden = true; });
+
+/* ---------------- the measuring hook ---------------- */
+let hudNow = { hud: 0, el: 0, ov: 0 }, worldNow = 0;
+function hudBoxes() {
+  return [...document.querySelectorAll("[data-hud]")].filter((el) => {
+    if (el.hidden || el.classList.contains("off")) return false;
+    const cs = getComputedStyle(el); if (cs.display === "none" || cs.visibility === "hidden" || +cs.opacity < 0.05) return false;
+    const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+  }).map((el) => ({ el, r: el.getBoundingClientRect() }));
+}
+function measureHud() {
+  const bx = hudBoxes(); const W0 = innerWidth, H0 = innerHeight, S = 4; let cov = 0;
+  for (let y = S / 2; y < H0; y += S) for (let x = S / 2; x < W0; x += S) { for (const b of bx) if (x >= b.r.left && x < b.r.right && y >= b.r.top && y < b.r.bottom) { cov++; break; } }
+  const total = Math.ceil(W0 / S) * Math.ceil(H0 / S);
+  document.querySelectorAll(".ovl").forEach((e) => e.classList.remove("ovl"));
+  let ov = 0;
+  for (let i = 0; i < bx.length; i++) for (let j = i + 1; j < bx.length; j++) {
+    const a = bx[i].r, b = bx[j].r; const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (w > 2 && h > 2) { ov++; bx[i].el.classList.add("ovl"); bx[j].el.classList.add("ovl"); }
+  }
+  hudNow = { hud: (cov / total) * 100, el: bx.length, ov };
+  const R = rec[beat]; if (R) { R.hud = Math.max(R.hud, hudNow.hud); R.el = Math.max(R.el, hudNow.el); R.ov = Math.max(R.ov, ov); R.world = Math.max(R.world, worldNow); }
+  const orient = innerWidth >= innerHeight ? "landscape" : "portrait";
+  $("#readout").textContent = `HUD ${hudNow.hud.toFixed(1)}% · ${hudNow.el} el · ${ov} overlap\nworld cues ${worldNow.toFixed(1)}% · ${innerWidth}x${innerHeight} ${orient}`;
+  if (!$("#info").hidden) renderTable();
+}
+// "world cues": the share of the view the guidance in the world covers (sparks, glows, the thread, glyphs, beams), occluded by the square
+const mrt = new THREE.WebGLRenderTarget(4, 4); let mbuf = new Uint8Array(16);
+const depthOnly = new THREE.MeshBasicMaterial({ colorWrite: false });
+function measureWorld() {
+  const w = Math.max(16, Math.round(innerWidth / 4)), h = Math.max(16, Math.round(innerHeight / 4));
+  if (mrt.width !== w || mrt.height !== h) { mrt.setSize(w, h); mbuf = new Uint8Array(w * h * 4); }
+  const fog = scene.fog, cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha();
+  const vh = shared.uViewH.value, ps = shared.uPxScale.value;
+  scene.fog = null; renderer.setRenderTarget(mrt); renderer.setClearColor(0x000000, 0); renderer.clear();
+  camera.layers.set(0); scene.overrideMaterial = depthOnly; renderer.render(scene, camera); scene.overrideMaterial = null;
+  shared.uViewH.value = h; shared.uPxScale.value = h / innerHeight;
+  camera.layers.set(GUIDE); renderer.autoClear = false; renderer.render(scene, camera); renderer.autoClear = true;
+  renderer.readRenderTargetPixels(mrt, 0, 0, w, h, mbuf);
+  renderer.setRenderTarget(null); renderer.setClearColor(cc, ca); scene.fog = fog;
+  camera.layers.set(0); camera.layers.enable(GUIDE); camera.layers.enable(SKY);
+  shared.uViewH.value = vh; shared.uPxScale.value = ps;
+  let n = 0; for (let i = 3; i < mbuf.length; i += 4) if (mbuf[i] > 12) n++; // alpha: a cue covers a pixel at 5 % or more
+  worldNow = (n / (w * h)) * 100;
+}
+
+/* ---------------- the page's own notes and knobs ---------------- */
+const KNOBS = [
+  { key: "cap", label: "Sparks at once", opts: [[2, "2"], [3, "3"], [Infinity, "all"]] },
+  { key: "read", label: "Read time", opts: [[0.7, "short"], [1, "normal"], [1.5, "long"]] },
+  { key: "margin", label: "Leave margin", opts: [[0.5, "0.5 m"], [1, "1 m"], [2, "2 m"]] },
+  { key: "glint", label: "Edge glint", opts: [[false, "off"], [true, "for the one next thing"]] },
+  { key: "extra", label: "Items", opts: [[false, "6"], [true, "8 (adds a bench story and a pin)"]] },
+  { key: "weak", label: "Position", opts: [[false, "good"], [true, "weak"]] },
+  { key: "sound", label: "Sound", opts: [[true, "on"], [false, "off"]] },
+];
+function renderInfo() {
+  const el = $("#info"); if (el.hidden) return;
+  el.innerHTML = `<button type="button" class="close" aria-label="Close">&times;</button>
+  <h1>The world says it</h1>
+  <p>Almost nothing on the screen: an exit, one subtitle line at the foot, and a panel only when you tap something that has text or a picture. Every item tells you about itself in the place, with one grammar for every kind.</p>
+  <h3>The grammar in the world</h3>
+  <div class="legend">
+    <i style="background:${COL.wait}"></i><span>Gold sparks rising: something waits for you here. Its sign hovers over it and says what kind of thing it is.</span>
+    <i style="background:${COL.wait};opacity:.55"></i><span>A ground glow that fills as you come closer. Full and pulsing: you are there, tap it.</span>
+    <i style="background:${COL.play}"></i><span>Teal swirl: it is playing. Still teal: paused.</span>
+    <i style="background:${COL.done}"></i><span>Grey: seen.</span>
+    <i style="background:${COL.next}"></i><span>One orange thread from your feet to the one thing that matters next, and an orange column over a station.</span>
+    <i style="background:${COL.wait};box-shadow:0 0 6px ${COL.wait}"></i><span>Small embers on the ground: the items of a station you are not at. Inside a station they open up into sparks; when you leave they fold back into embers (grey for seen).</span>
+  </div>
+  <h3>Ranking rule: the subtitle line</h3>
+  <ol><li>What you opened yourself. A panel then takes the line's place; nothing stacks.</li>
+  <li>The story, a quiz step included. While it speaks, free items speak only through their look in the world.</li>
+  <li>The captions of the one thing whose voice you hear: the newest you started. Another one plays on quietly in the world.</li>
+  <li>What the place tells you: what waits behind you or to one side, a rough position, walk news. These wait their turn and drop when stale.</li></ol>
+  <h3>Ranking rule: the thread</h3>
+  <p>The station you walk to; inside it, the question while the story asks; else the thing you tapped and have not reached; nothing while something plays near you; else the thing the story pointed at. It changes only on an event, never because something became nearer, and it fades out and in rather than jumping.</p>
+  <h3>A seventh and an eighth item</h3>
+  <p>They join the same grammar. At most three waiting things raise sparks at once (the thread's target, what plays, the nearest in reach, then the order they had when you arrived); the others keep their ground glow and their sign. The subtitle still names one thing at a time. Try "Items: 8" below.</p>
+  <h3>What it changes in today's walk</h3>
+  <p>The radar, the walk sheet and the focus pill go. The thread and the station's column replace them inside and between stations; walk news goes to the subtitle line; the station list is left out of this page.</p>
+  <h3>The strongest case against it</h3>
+  <ul><li>When the position is rough, a glow in the world says "here" at the wrong place, up to 25 m off. A HUD that says "nearby" is vaguer, but it does not lie. This page shortens the thread and stops the glows filling, but the sparks still stand where the position puts them.</li>
+  <li>It is the walk guided in the world again, now inside a station. If the world cues are hard to see, this has nothing to fall back on. Compare the "world cues" number with the HUD number: the screen is near empty partly because the guidance moved into the picture.</li>
+  <li>Gold sparks on a bright, busy street in sunlight may simply not be seen, and a chime does not reach someone in traffic or chatting with friends.</li>
+  <li>Nobody learns the grammar by being told it once. A first-time visitor may not know that a sparkling thing can be tapped.</li></ul>
+  <h3>Knobs</h3>
+  ${KNOBS.map((k) => `<div class="knob"><span>${k.label}</span>${k.opts.map(([v, l], i) => `<button type="button" data-k="${k.key}" data-i="${i}" aria-pressed="${KN[k.key] === v}">${l}</button>`).join("")}</div>`).join("")}
+  <h3>Beats</h3>
+  <div class="beats">${BEATS.map((b) => `<button type="button" data-beat="${b.n}">${b.n} ${b.name}</button>`).join("")}</div>
+  <p style="margin-top:6px;font-size:13px;color:var(--muted)">Beat 2 checks that standing still starts nothing: ${demo.standing ?? "run beat 2 to see"}.</p>
+  <h3>Numbers per beat (the most seen during the beat, this orientation)</h3>
+  <div id="tbl"></div>
+  <p style="margin-top:6px;font-size:13px;color:var(--muted)">HUD: share of the view covered by HUD boxes. el: HUD elements visible. overlap: pairs of HUD boxes that overlap (outlined red). world cues: share of the view covered by guidance in the 3D scene. Slowest recent frame: <span id="mf"></span> ms.</p>`;
+  el.querySelector(".close").addEventListener("click", () => { el.hidden = true; });
+  el.querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => { const k = KNOBS.find((x) => x.key === b.dataset.k); KN[k.key] = k.opts[+b.dataset.i][0]; if (k.key === "extra" && W.inS1) enterS1(true); if (k.key === "sound" && KN.sound) ensureAudio(); renderInfo(); }));
+  el.querySelectorAll("[data-beat]").forEach((b) => b.addEventListener("click", () => { el.hidden = true; jump(+b.dataset.beat); }));
+  renderTable();
+}
+function renderTable() {
+  const t = $("#tbl"); if (!t) return;
+  t.innerHTML = `<table><tr><th>beat</th><th>HUD %</th><th>el</th><th>overlap</th><th>world %</th></tr>${BEATS.map((b) => { const r = rec[b.n]; return `<tr><td>${b.n} ${b.name}</td><td>${r ? r.hud.toFixed(1) : "-"}</td><td>${r ? r.el : "-"}</td><td>${r ? r.ov : "-"}</td><td>${r ? r.world.toFixed(1) : "-"}</td></tr>`; }).join("")}</table>`;
+  const mf = $("#mf"); if (mf) mf.textContent = maxFrame.toFixed(0);
+}
+function syncKnobs() { if (!$("#info").hidden) renderInfo(); }
+$("#infoBtn").addEventListener("click", () => { const el = $("#info"); el.hidden = !el.hidden; renderInfo(); });
+setTimeout(() => $("#try").classList.add("gone"), 14000);
+
+/* ---------------- size ---------------- */
+function resize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false);
+  const aspect = w / h; camera.aspect = aspect;
+  // a phone camera's long side sees about 64 degrees, whichever way the phone is held
+  camera.fov = aspect < 1 ? 64 : THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(32)) / aspect));
+  camera.updateProjectionMatrix();
+  shared.uViewH.value = h * renderer.getPixelRatio(); shared.uPxScale.value = renderer.getPixelRatio();
+}
+addEventListener("resize", resize); resize();
+
+/* ---------------- automation hook (for screenshots and the numbers) ---------------- */
+const demo = window.demo = {
+  running: false, held: false, stopAt: null, standing: null,
+  jump(n, { stopAt = null, speed = 1 } = {}) { this.stopAt = stopAt; demoMult = speed; jump(n); },
+  release() { this.held = false; this.stopAt = null; },
+  speed(k) { demoMult = k; },
+  idle() { return !this.running || this.held; },
+  numbers() { return { beat, rec: JSON.parse(JSON.stringify(rec)), now: { ...hudNow, world: worldNow }, standing: this.standing, maxFrame }; },
+};
+const qBeat = +new URLSearchParams(location.search).get("beat");
+jump(qBeat >= 1 && qBeat <= 8 ? qBeat : 1);
+requestAnimationFrame((t) => { last = t; frame(t); });
+</script>
+</body>
+</html>
