@@ -8,15 +8,25 @@ cards' markup is the app's: the kit has no selector of its own.
 
 ## Public API
 
-- `createTreeDrag({ body, reorder, cards, idAttribute, frame?, cancelFrame? })` ->
+- `createTreeDrag({ body, reorder, cards, idAttribute, arm?, frame?, cancelFrame? })` ->
   `{ dispose() }`:
   - `body` - the tree's body; its cards, in the list's order, each with a
     grip `[data-drag="<card id>"]` (drawn by the app);
   - `cards` - the cards' selector and `idAttribute` - the `dataset` key of
     a card's id (`node` reads `data-node`), both required; a missing or
     empty one of either throws `RangeError`;
-  - `reorder(order)` - writes the new order (every id once); the
-    shell passes the page's reorder.
+  - `reorder(order, move)` - writes the new order (every id once); the
+    shell passes the page's reorder. `move` is `{ id, from, slot }`: the
+    card moved, its index before and the slot it went to (counted before
+    the move), for a page whose command moves one card (the Tour
+    Viewer's story cards).
+  - `arm` - when a press becomes a drag (`tree-drag-arm.ts`); without
+    one, at the press. With one, the press waits: a finger drags at its
+    first move after resting `holdMs` (by the events' own times) and
+    never if it strayed past `tolerancePx` first; a mouse or a pen at a
+    move of `movePx`. Nothing is marked or written while it waits, and a
+    lift, a cancel or Escape (the page's own, not stopped) ends it. An arm
+    that is not numbers of 0 or more throws `RangeError`.
   - `frame` / `cancelFrame` - the frame scheduler of the edge scroll
     (default: `requestAnimationFrame`); tests pass their own.
   - `dispose()` ends a drag under way (writing nothing) and stops
@@ -25,7 +35,8 @@ cards' markup is the app's: the kit has no selector of its own.
 ## Invariants & assumptions
 
 - A drag starts only with the main button on a grip inside `body`; the
-  press is `preventDefault`ed (no scroll of the dock, no text selection).
+  press is `preventDefault`ed (no scroll of the dock, no text selection),
+  a press that waits for its arm too.
 - The cards' middles are read again at every move and every scroll of
   the dock: the slot is where the pointer is among the cards as they
   stand now.
@@ -70,5 +81,9 @@ and the main button start it; the press is the drag's; nothing after
 other cards ends it unwritten, at a move or at the release; held near the bottom edge it scrolls
 the dock and lands by where the cards are then; away from the edges it
 does not scroll; cards of the app's own selector and attribute drag the
-same way, an empty or a missing one refused. End to end (the Tour Viewer's):
+same way, an empty or a missing one refused; the move passed beside the
+order; with an arm, a rested finger drags and lands, a flick from the grip
+drags nothing even resting later, a mouse from its threshold on (a click
+marks nothing), a waiting press is the grip's and a lift ends it, a bad arm
+refused. End to end (the Tour Viewer's):
 `playwright-tests/editor3d-tree.spec.js`.

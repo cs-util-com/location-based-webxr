@@ -47,7 +47,10 @@ function rectsScrolled(body: HTMLElement, scroll: () => number): void {
 }
 
 function setUp(
-  options: { readonly frame?: (run: FrameRequestCallback) => number } = {},
+  options: {
+    readonly frame?: (run: FrameRequestCallback) => number;
+    readonly arm?: { holdMs: number; tolerancePx: number; movePx: number };
+  } = {},
 ) {
   document.body.innerHTML = `<div id="tree-body"><div class="cards">${IDS.map(
     (id) =>
@@ -72,6 +75,7 @@ function setUp(
     body,
     reorder,
     ...TOUR_CARDS,
+    ...(options.arm === undefined ? {} : { arm: options.arm }),
     ...(options.frame === undefined
       ? {}
       : { frame: options.frame, cancelFrame: () => undefined }),
@@ -140,7 +144,11 @@ describe("createTreeDrag with the app's own cards", () => {
     pointer(grip, "pointerdown", 200);
     pointer(window, "pointermove", 110);
     pointer(window, "pointerup", 110);
-    expect(reorder).toHaveBeenCalledWith(["c", "a", "b"]);
+    expect(reorder).toHaveBeenCalledWith(["c", "a", "b"], {
+      id: "c",
+      from: 2,
+      slot: 0,
+    });
     drag.dispose();
   });
 
@@ -184,7 +192,11 @@ describe("createTreeDrag", () => {
     pointer(window, "pointerup", 175);
     // Below b's middle (160), above c's (200): between b and c.
     expect(reorder).toHaveBeenCalledTimes(1);
-    expect(reorder).toHaveBeenCalledWith(["b", "a", "c"]);
+    expect(reorder).toHaveBeenCalledWith(["b", "a", "c"], {
+      id: "a",
+      from: 0,
+      slot: 2,
+    });
     expect(body.querySelector(".dragging, .drop-before, .drop-after")).toBe(
       null,
     );
@@ -266,7 +278,11 @@ describe("createTreeDrag", () => {
     expect(card("a").classList.contains("dragging")).toBe(true);
     expect(card("c").classList.contains("drop-before")).toBe(true);
     pointer(window, "pointerup", 176);
-    expect(reorder).toHaveBeenCalledWith(["b", "a", "c"]);
+    expect(reorder).toHaveBeenCalledWith(["b", "a", "c"], {
+      id: "a",
+      from: 0,
+      slot: 2,
+    });
 
     pointer(grip("a"), "pointerdown", 120);
     pointer(window, "pointermove", 175);
@@ -334,7 +350,11 @@ describe("createTreeDrag", () => {
     expect(scroll).toBe(40);
     pointer(window, "pointerup", 176);
     // Scrolled by 40: c's middle is at 160, so the pointer is past it.
-    expect(reorder).toHaveBeenCalledWith(["b", "c", "a"]);
+    expect(reorder).toHaveBeenCalledWith(["b", "c", "a"], {
+      id: "a",
+      from: 0,
+      slot: 3,
+    });
   });
 
   it("does not scroll the dock away from its edges", () => {
@@ -363,5 +383,113 @@ describe("createTreeDrag", () => {
     pointer(window, "pointermove", 260);
     pointer(window, "pointerup", 260);
     expect(reorder).not.toHaveBeenCalled();
+  });
+});
+
+/** A press by `pointerType` at `y`, its event time `at` (ms). */
+function timed(
+  target: EventTarget,
+  type: string,
+  y: number,
+  pointerType: string,
+  at: number,
+): void {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    clientY: y,
+    button: 0,
+  });
+  Object.defineProperty(event, "pointerId", { value: 1 });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  Object.defineProperty(event, "timeStamp", { value: at });
+  target.dispatchEvent(event);
+}
+
+const ARM = { holdMs: 150, tolerancePx: 6, movePx: 4 };
+
+// Why: a list that scrolls under a finger (the inspector's story cards)
+// must not reorder for a flick that starts on a grip, and a click on a
+// grip with a mouse must not mark a drag. With an `arm`, the press waits:
+// a finger drags after resting `holdMs` (by the events' own times), a
+// mouse after moving `movePx`; nothing is marked or written before.
+describe("createTreeDrag with an arm", () => {
+  it("a finger that rested drags, and lands where it is dropped", () => {
+    const { grip, card, reorder } = setUp({ arm: ARM });
+    timed(grip("a"), "pointerdown", 120, "touch", 1000);
+    expect(card("a").classList.contains("dragging")).toBe(false);
+    timed(window, "pointermove", 122, "touch", 1100);
+    expect(card("a").classList.contains("dragging")).toBe(false);
+    timed(window, "pointermove", 175, "touch", 1160);
+    expect(card("a").classList.contains("dragging")).toBe(true);
+    expect(card("c").classList.contains("drop-before")).toBe(true);
+    timed(window, "pointerup", 175, "touch", 1200);
+    expect(reorder).toHaveBeenCalledWith(["b", "a", "c"], {
+      id: "a",
+      from: 0,
+      slot: 2,
+    });
+  });
+
+  it("a flick that starts on a grip drags nothing, even when it rests later", () => {
+    const { grip, body, reorder } = setUp({ arm: ARM });
+    timed(grip("a"), "pointerdown", 120, "touch", 1000);
+    timed(window, "pointermove", 140, "touch", 1016);
+    timed(window, "pointermove", 175, "touch", 1400);
+    timed(window, "pointerup", 175, "touch", 1420);
+    expect(reorder).not.toHaveBeenCalled();
+    expect(body.querySelector(".dragging, .drop-before, .drop-after")).toBe(
+      null,
+    );
+  });
+
+  it("a mouse drags from its threshold on; a click marks nothing", () => {
+    const { grip, card, reorder } = setUp({ arm: ARM });
+    timed(grip("a"), "pointerdown", 120, "mouse", 1000);
+    timed(window, "pointermove", 123, "mouse", 1010);
+    expect(card("a").classList.contains("dragging")).toBe(false);
+    timed(window, "pointerup", 123, "mouse", 1020);
+    expect(reorder).not.toHaveBeenCalled();
+    timed(grip("c"), "pointerdown", 200, "mouse", 2000);
+    timed(window, "pointermove", 110, "mouse", 2010);
+    expect(card("c").classList.contains("dragging")).toBe(true);
+    timed(window, "pointerup", 110, "mouse", 2020);
+    expect(reorder).toHaveBeenCalledWith(["c", "a", "b"], {
+      id: "c",
+      from: 2,
+      slot: 0,
+    });
+  });
+
+  it("a press still waiting is the grip's: no scroll, and a lift ends it", () => {
+    const { grip, reorder } = setUp({ arm: ARM });
+    const down = new MouseEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      clientY: 120,
+      button: 0,
+    });
+    Object.defineProperty(down, "pointerId", { value: 1 });
+    Object.defineProperty(down, "pointerType", { value: "touch" });
+    grip("a").dispatchEvent(down);
+    expect(down.defaultPrevented).toBe(true);
+    timed(window, "pointerup", 120, "touch", down.timeStamp + 400);
+    // A move after the lift is no drag.
+    timed(window, "pointermove", 175, "touch", down.timeStamp + 500);
+    timed(window, "pointerup", 175, "touch", down.timeStamp + 600);
+    expect(reorder).not.toHaveBeenCalled();
+  });
+
+  it("refuses an arm that is not numbers of 0 or more", () => {
+    document.body.innerHTML = `<div id="b"></div>`;
+    const body = document.getElementById("b") as HTMLElement;
+    expect(() =>
+      createTreeDrag({
+        body,
+        ...TOUR_CARDS,
+        arm: { holdMs: -1, tolerancePx: 6, movePx: 4 },
+        reorder: () => undefined,
+      }),
+    ).toThrow(RangeError);
   });
 });

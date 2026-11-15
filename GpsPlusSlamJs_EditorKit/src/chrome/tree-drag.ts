@@ -12,10 +12,13 @@
  * ends it with nothing written when they are not, at a move or at the
  * release. The slot maths is
  * `tree-reorder.ts`'s. The cards' selector and id attribute are the
- * app's: the kit has none of its own.
+ * app's: the kit has none of its own. With an `arm` a press waits before
+ * it drags (`tree-drag-arm.ts`): a finger rests first, a mouse moves a
+ * little; a list that scrolls under a finger needs it.
  *
  * @see tree-drag.ts.md
  */
+import { armIsValid, armState, type TreeDragArm } from "./tree-drag-arm.js";
 import { dropSlot, movedTo } from "./tree-reorder.js";
 
 interface Drag {
@@ -28,6 +31,25 @@ interface Drag {
   y: number;
   /** The scroll frame asked for, while the pointer is near an edge. */
   frame: number | null;
+}
+
+/** A press on a grip that waits for its arm (`deps.arm`). */
+interface Press {
+  readonly pointerId: number;
+  readonly pointerType: string;
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  /** The press's event time (ms). */
+  readonly at: number;
+}
+
+/** The move a drop made: the card's id, its index before, and the slot it
+ *  went to (counted before the move, `movedTo`'s). */
+interface TreeDragMove {
+  readonly id: string;
+  readonly from: number;
+  readonly slot: number;
 }
 
 const MARKS = ["dragging", "drop-before", "drop-after"] as const;
@@ -53,13 +75,22 @@ export function createTreeDrag(deps: {
   /** The `dataset` key of a card's id (`node` reads `data-node`); a
    *  grip's `data-drag` names the same id. */
   readonly idAttribute: string;
-  /** Write the cards' new order (every id once). */
-  readonly reorder: (order: readonly string[]) => void;
+  /** Write the cards' new order (every id once); `move` is the one card
+   *  moved, for a page that writes a move rather than an order. */
+  readonly reorder: (
+    order: readonly string[],
+    move: TreeDragMove,
+  ) => void;
+  /** When a press becomes a drag (default: at once). */
+  readonly arm?: TreeDragArm;
   /** The frame scheduler (default: the window's animation frames). */
   readonly frame?: (run: FrameRequestCallback) => number;
   readonly cancelFrame?: (id: number) => void;
 }): { dispose(): void } {
-  const { body } = deps;
+  const { body, arm } = deps;
+  if (arm !== undefined && !armIsValid(arm)) {
+    throw new RangeError("a tree drag's arm takes numbers of 0 or more");
+  }
   const selector: unknown = deps.cards;
   const idAttribute: unknown = deps.idAttribute;
   if (
@@ -81,6 +112,7 @@ export function createTreeDrag(deps: {
   const cancelFrame =
     deps.cancelFrame ?? ((id: number) => cancelAnimationFrame(id));
   let drag: Drag | null = null;
+  let press: Press | null = null;
 
   const unmark = (cards: readonly HTMLElement[]): void => {
     for (const card of cards) card.classList.remove(...MARKS);
@@ -149,23 +181,68 @@ export function createTreeDrag(deps: {
     if (drag === now && body.scrollTop !== was) now.frame = frame(scrollFrame);
   };
 
-  const end = (write: boolean): void => {
-    const was = drag;
-    if (was === null) return;
-    drag = null;
-    if (was.frame !== null) cancelFrame(was.frame);
+  const unlisten = (): void => {
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", onCancel);
     window.removeEventListener("keydown", onKey, true);
     body.removeEventListener("scroll", onScroll);
+  };
+
+  const end = (write: boolean): void => {
+    if (press !== null) {
+      press = null;
+      unlisten();
+    }
+    const was = drag;
+    if (was === null) return;
+    drag = null;
+    if (was.frame !== null) cancelFrame(was.frame);
+    unlisten();
     unmark(was.cards);
     if (!write) return;
     const order = movedTo(was.ids, was.from, was.slot);
-    if (order !== null) deps.reorder(order);
+    const id = was.ids[was.from];
+    if (order !== null && id !== undefined) {
+      deps.reorder(order, { id, from: was.from, slot: was.slot });
+    }
+  };
+
+  /** The drag of the card `id` from the pointer at `y`, by the cards as
+   *  they stand now; false when the card is gone. */
+  const begin = (pointerId: number, id: string, y: number): boolean => {
+    const cards = cardsNow();
+    const ids = cards.map(idOf);
+    const from = ids.indexOf(id);
+    if (from < 0) return false;
+    drag = { pointerId, cards, ids, from, slot: from, y, frame: null };
+    cards[from]?.classList.add("dragging");
+    return true;
+  };
+
+  /** A move of a press that waits: still waiting, its drag begun (this
+   *  move followed), or no drag at all. */
+  const armed = (now: Press, event: PointerEvent): void => {
+    if (arm === undefined) return;
+    const state = armState(arm, {
+      pointer: now.pointerType,
+      distancePx: Math.hypot(event.clientX - now.x, event.clientY - now.y),
+      ms: event.timeStamp - now.at,
+    });
+    if (state === "wait") return;
+    press = null;
+    if (state === "none" || !begin(now.pointerId, now.id, event.clientY)) {
+      unlisten();
+      return;
+    }
+    if (drag !== null) follow(drag);
   };
 
   function onMove(event: PointerEvent): void {
+    if (press !== null && event.pointerId === press.pointerId) {
+      armed(press, event);
+      return;
+    }
     const now = drag;
     if (now === null || event.pointerId !== now.pointerId) return;
     now.y = event.clientY;
@@ -182,6 +259,10 @@ export function createTreeDrag(deps: {
   }
 
   function onUp(event: PointerEvent): void {
+    if (press !== null && event.pointerId === press.pointerId) {
+      end(false);
+      return;
+    }
     if (drag === null || event.pointerId !== drag.pointerId) return;
     // The cards changed since the last move: the drag ended unwritten.
     if (!current(drag)) return;
@@ -189,12 +270,21 @@ export function createTreeDrag(deps: {
   }
 
   function onCancel(event: PointerEvent): void {
+    if (press !== null && event.pointerId === press.pointerId) {
+      end(false);
+      return;
+    }
     if (drag === null || event.pointerId !== drag.pointerId) return;
     end(false);
   }
 
   function onKey(event: KeyboardEvent): void {
     if (event.key !== "Escape") return;
+    // A press still waiting is no drag yet: the page's Escape stands.
+    if (drag === null) {
+      end(false);
+      return;
+    }
     // The drag's: the page's own Escape (deselect) does not run as well.
     event.preventDefault();
     event.stopPropagation();
@@ -206,23 +296,24 @@ export function createTreeDrag(deps: {
       "[data-drag]",
     );
     if (grip == null || !body.contains(grip) || event.button !== 0) return;
-    if (drag !== null) return;
-    const cards = cardsNow();
-    const ids = cards.map(idOf);
-    const from = ids.indexOf(grip.dataset["drag"] ?? "");
-    if (from < 0) return;
-    // Neither a scroll of the dock nor a text selection: a drag.
+    if (drag !== null || press !== null) return;
+    const id = grip.dataset["drag"] ?? "";
+    if (!cardsNow().map(idOf).includes(id)) return;
+    // Neither a scroll of the dock nor a text selection: a drag, or a
+    // press that waits for its arm.
     event.preventDefault();
-    drag = {
-      pointerId: event.pointerId,
-      cards,
-      ids,
-      from,
-      slot: from,
-      y: event.clientY,
-      frame: null,
-    };
-    cards[from]?.classList.add("dragging");
+    if (arm === undefined) {
+      begin(event.pointerId, id, event.clientY);
+    } else {
+      press = {
+        pointerId: event.pointerId,
+        pointerType: event.pointerType,
+        id,
+        x: event.clientX,
+        y: event.clientY,
+        at: event.timeStamp,
+      };
+    }
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
