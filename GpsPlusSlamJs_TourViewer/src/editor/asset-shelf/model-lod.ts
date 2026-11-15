@@ -91,7 +91,8 @@ export interface LodReport {
   /** The author's level's largest deviation, as a share of the size (the
    *  largest over the primitives, each against its own size). */
   readonly deviation: number;
-  /** The largest primitive's bounding box diagonal, in model units. */
+  /** The largest primitive's bounding box diagonal: a still one's in
+   *  model units, a skinned one's in its rest pose. */
   readonly size: number;
   /** Whether the budget chose the level (not the author's share). */
   readonly automatic: boolean;
@@ -127,9 +128,11 @@ const CHECK_RETRIES = 4;
 /** The share of a skinned primitive's triangles its default level keeps
  *  at least when the model has no clip (only its rest pose measured). */
 const SKINNED_REST_SHARE = 0.5;
-/** What a change of skin weights costs in the simplifier's order, against
- *  a move of the whole box diagonal: collapses across bones are ordered
- *  late, so the levels the poses allow come early in the order. */
+/** What a vertex's place in each clip pose costs in the simplifier's
+ *  order, against its place at rest (both as shares of the rest pose's
+ *  box diagonal): a collapse that is flat at rest but tears where the
+ *  model bends is ordered late, so the levels the poses allow come early
+ *  in the order. */
 const SKIN_WEIGHT = 1;
 const NOT_POSED =
   "a skinned mesh could not be posed (its bones, skin or clips do not read), so it was left as it is";
@@ -175,8 +178,6 @@ interface Candidate {
   /** Whether `shapes` holds a clip's pose: one that moves a joint of
    *  this primitive's skin. */
   readonly fromClips: boolean;
-  /** Skin weights, 4 a vertex per set; none for a still primitive. */
-  readonly weights: readonly Float64Array[];
 }
 
 function diagonalOf(p: Float32Array): number {
@@ -255,7 +256,7 @@ function posedShapes(
   positions: Float32Array,
   sets: readonly [number, number][],
   posing: Posing,
-): Pick<Candidate, "shapes" | "fromClips" | "weights"> | null {
+): Pick<Candidate, "shapes" | "fromClips"> | null {
   const skins = posing.skinsOfMesh.get(mesh);
   const skin = skins?.size === 1 ? [...skins][0]! : -1;
   const poses = skin < 0 ? null : posing.poses();
@@ -274,7 +275,7 @@ function posedShapes(
     shapes.push(posed);
   }
   if (!(diagonalOf(shapes[0]!) > 0)) return null;
-  return { shapes, fromClips: shapes.length > 1, weights };
+  return { shapes, fromClips: shapes.length > 1 };
 }
 
 /** The primitive's attributes, when each is read by it alone and can be
@@ -333,7 +334,7 @@ function candidateOf(
   const positions = Float32Array.from(data.values);
   const posed =
     sets.length === 0
-      ? { shapes: [], fromClips: false, weights: [] }
+      ? { shapes: [], fromClips: false }
       : posedShapes(parts, mesh, positions, sets, posing);
   if (posed === null) return "not posed";
   return { prim, attributes, positions, indices, ...posed };
@@ -397,6 +398,10 @@ function order(parts: GlbParts, c: Candidate): Ordered {
     c.indices,
   );
   const positions = remapAttribute(c.positions, 3, weld);
+  const posed = c.shapes.map((s) => remapAttribute(s, 3, weld));
+  // every pose against the rest pose's size: the size the shelf shows
+  // and the box the viewer picks a level by do not change with the pose
+  const rest = posed[0] === undefined ? 0 : diagonalOf(posed[0]);
   const prog = buildProgressive(
     {
       positions,
@@ -405,9 +410,9 @@ function order(parts: GlbParts, c: Candidate): Ordered {
         ...(uv === undefined
           ? []
           : [{ data: remapAttribute(uv, 2, weld), size: 2, weight: 1 }]),
-        ...c.weights.map((w) => ({
-          data: remapAttribute(Float32Array.from(w), 4, weld),
-          size: 4,
+        ...posed.slice(1).map((s) => ({
+          data: s.map((v) => v / rest),
+          size: 3,
           weight: SKIN_WEIGHT,
         })),
       ],
@@ -418,13 +423,8 @@ function order(parts: GlbParts, c: Candidate): Ordered {
         : { normals: remapAttribute(normal, 3, weld) }),
     },
   );
-  const shapes =
-    c.shapes.length === 0
-      ? [positions]
-      : c.shapes.map((s) => remapAttribute(s, 3, weld));
-  // every pose against the rest pose's size: the size the shelf shows
-  // and the box the viewer picks a level by do not change with the pose
-  const size = c.shapes.length === 0 ? prog.diag : diagonalOf(shapes[0]!);
+  const shapes = posed.length === 0 ? [positions] : posed;
+  const size = posed.length === 0 ? prog.diag : rest;
   const grids = shapes.map((s) => new SurfaceGrid(s, weld.indices));
   const measured = new Map<string, number>();
   const deviation = (steps: number, samples: number) => {
@@ -499,7 +499,7 @@ function authorSteps(o: Ordered, c: Candidate, settings: LodSettings): number {
   const share = settings.detailShare;
   if (share === undefined || !Number.isFinite(share)) {
     const steps = automaticSteps(o, settings.lodBudget);
-    const restOnly = c.weights.length > 0 && !c.fromClips;
+    const restOnly = c.shapes.length > 0 && !c.fromClips;
     return restOnly
       ? Math.min(steps, stepsKeeping(o.prog, SKINNED_REST_SHARE))
       : steps;

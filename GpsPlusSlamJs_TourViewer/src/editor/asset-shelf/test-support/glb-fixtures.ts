@@ -394,7 +394,11 @@ export function bendTube(
  * With `units: "cm"` the tube is stored in centimetres under a root bone
  * scaled by 0.01, as many character exports are: posed, it stands as
  * large as the metre tube. With `door`, a clip moves a node no skin
- * reads (a door beside the character).
+ * reads (a door beside the character). With `rigid`, each vertex follows one
+ * bone alone (the lower one up to the bend, the upper one above it) and
+ * names it first, as exporters sort joints by weight: every vertex then
+ * has weights [1, 0, 0, 0], and only its joints say which bone it
+ * follows.
  */
 export async function bendingTube(options: {
   readonly clip: boolean;
@@ -402,17 +406,25 @@ export async function bendingTube(options: {
   readonly interpolation?: "LINEAR" | "STEP" | "CUBICSPLINE";
   readonly units?: "m" | "cm";
   readonly door?: boolean;
+  readonly rigid?: boolean;
+  /** The tube's rings and segments (`tubeSpec`'s defaults when left out). */
+  readonly rings?: number;
+  readonly segments?: number;
 }): Promise<Uint8Array> {
   const doc = new Document();
   doc.createBuffer();
   const scene = doc.createScene();
-  const spec = tubeSpec();
+  const spec = tubeSpec(options.rings, options.segments);
   const unit = options.units === "cm" ? 100 : 1;
   const prim = doc
     .createPrimitive()
     .setAttribute(
       "POSITION",
-      accessor(doc, "VEC3", spec.positions.map((v) => v * unit)),
+      accessor(
+        doc,
+        "VEC3",
+        spec.positions.map((v) => v * unit),
+      ),
     )
     .setAttribute("NORMAL", accessor(doc, "VEC3", spec.normals!))
     .setAttribute("TEXCOORD_0", accessor(doc, "VEC2", spec.texcoords!))
@@ -422,13 +434,21 @@ export async function bendingTube(options: {
   const joints = new Uint8Array(count * 4);
   const weights = new Float32Array(count * 4);
   for (let i = 0; i < count; i++) {
-    const w = tubeWeight(spec.positions[3 * i + 1]!);
-    joints.set([0, 1, 0, 0], 4 * i);
-    weights.set([1 - w, w, 0, 0], 4 * i);
+    const y = spec.positions[3 * i + 1]!;
+    if (options.rigid === true) {
+      joints.set([y > TUBE.bend + 1e-6 ? 1 : 0, 0, 0, 0], 4 * i);
+      weights.set([1, 0, 0, 0], 4 * i);
+    } else {
+      const w = tubeWeight(y);
+      joints.set([0, 1, 0, 0], 4 * i);
+      weights.set([1 - w, w, 0, 0], 4 * i);
+    }
   }
   prim.setAttribute("JOINTS_0", accessor(doc, "VEC4", joints));
   prim.setAttribute("WEIGHTS_0", accessor(doc, "VEC4", weights));
-  const root = doc.createNode("root-bone").setScale([1 / unit, 1 / unit, 1 / unit]);
+  const root = doc
+    .createNode("root-bone")
+    .setScale([1 / unit, 1 / unit, 1 / unit]);
   const upper = doc
     .createNode("upper-bone")
     .setTranslation([0, TUBE.bend * unit, 0]);

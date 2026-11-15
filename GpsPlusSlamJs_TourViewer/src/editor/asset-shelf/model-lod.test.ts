@@ -91,8 +91,12 @@ async function readBack(bytes: Uint8Array) {
   }
   const lod = (prim.getExtras() as { lod: SavedLod }).lod;
   const chain = doc.getRoot().listAccessors()[lod.indices]!.getArray()!;
+  const skin = (name: string) =>
+    Float32Array.from(prim.getAttribute(name)?.getArray() ?? []);
   return {
     positions,
+    joints: skin("JOINTS_0"),
+    weights: skin("WEIGHTS_0"),
     level: Uint32Array.from(prim.getIndices()!.getArray()!),
     chain: Uint32Array.from(chain),
     lod,
@@ -104,10 +108,14 @@ function originalOf(bytes: Uint8Array) {
   const parts = partsOf(bytes);
   const prim = primitiveOf(parts);
   const attributes = prim["attributes"] as Record<string, number>;
+  const floats = (name: string) =>
+    attributes[name] === undefined
+      ? new Float32Array()
+      : Float32Array.from(readAccessor(parts, attributes[name])!.values);
   return {
-    positions: Float32Array.from(
-      readAccessor(parts, attributes["POSITION"]!)!.values,
-    ),
+    positions: floats("POSITION"),
+    joints: floats("JOINTS_0"),
+    weights: floats("WEIGHTS_0"),
     indices: Uint32Array.from(
       readAccessor(parts, prim["indices"] as number)!.values,
     ),
@@ -178,6 +186,50 @@ function posedDeviation(
     level,
   );
   return d.max / diagonalOf(whole);
+}
+
+/** The tube's `positions` skinned by their own `joints` and `weights`
+ *  (`JOINTS_0`, `WEIGHTS_0`), the upper bone (joint 1) turned by
+ *  `degrees` about z at the bend, the root (joint 0) still: a linear
+ *  blend written here, independently of the code under test, so a level
+ *  saved with scrambled skin attributes poses wrongly. */
+function skinTube(
+  positions: Float32Array,
+  joints: Float32Array,
+  weights: Float32Array,
+  degrees: number,
+): Float32Array {
+  const a = (degrees * Math.PI) / 180;
+  const [c, s] = [Math.cos(a), Math.sin(a)];
+  const out = new Float32Array(positions.length);
+  for (let v = 0; v < positions.length / 3; v++) {
+    const [x, y, z] = [
+      positions[3 * v]!,
+      positions[3 * v + 1]!,
+      positions[3 * v + 2]!,
+    ];
+    const turned = [c * x - s * (y - 1), s * x + c * (y - 1) + 1, z];
+    for (let k = 0; k < 4; k++) {
+      const w = weights[4 * v + k]!;
+      const p = joints[4 * v + k] === 1 ? turned : [x, y, z];
+      for (let i = 0; i < 3; i++) out[3 * v + i]! += w * p[i]!;
+    }
+  }
+  return out;
+}
+
+/** A saved level against the whole tube, both skinned by their own skin
+ *  attributes and bent by `degrees`, as a share of the bent whole's box
+ *  diagonal. */
+function skinnedDeviation(
+  whole: ReturnType<typeof originalOf>,
+  saved: Awaited<ReturnType<typeof readBack>>,
+  degrees: number,
+): number {
+  const bent = skinTube(whole.positions, whole.joints, whole.weights, degrees);
+  const level = skinTube(saved.positions, saved.joints, saved.weights, degrees);
+  const d = surfaceDistance(bent, whole.indices, level, saved.level);
+  return d.max / diagonalOf(bent);
 }
 
 // ordering and measuring a scanned model takes seconds, more on a loaded
@@ -416,7 +468,9 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
       posedDeviation(tube, restLevel.positions, restLevel.level, 90),
     ).toBeGreaterThan(TUBE_SETTINGS.lodBudget * 4);
 
-    const parts = partsOf(await bendingTube({ clip: true }));
+    const before = await bendingTube({ clip: true });
+    const whole = originalOf(before);
+    const parts = partsOf(before);
     const report = simplifyModel(parts, TUBE_SETTINGS);
     expect(report.primitives).toBe(1);
     expect(report.trianglesAfter).toBeLessThan(report.trianglesBefore * 0.9);
@@ -425,10 +479,35 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
     const bytes = writeGlb(parts);
     expect(await validatorErrors(bytes)).toEqual([]);
     const saved = await readBack(bytes);
+    // the saved level posed by its own saved skin, so a level whose
+    // joints or weights were cut down out of step with its positions fails
     for (const degrees of [0, 30, 45, 60, 90]) {
-      expect(
-        posedDeviation(tube, saved.positions, saved.level, degrees),
-      ).toBeLessThanOrEqual(TUBE_SETTINGS.lodBudget * 1.25);
+      expect(skinnedDeviation(whole, saved, degrees)).toBeLessThanOrEqual(
+        TUBE_SETTINGS.lodBudget * 1.25,
+      );
+    }
+  });
+
+  // Why: exporters sort each vertex's joints by weight, so on a tube whose
+  // vertices each follow one bone every weight reads [1, 0, 0, 0] and only
+  // the joints say which bone moves a vertex. The order must therefore see
+  // where each vertex goes in the clip's poses, not its raw weights: a
+  // collapse across the hinge is flat at rest and tears when bent. Without
+  // the poses in the order (the skin term off) the search finds only a
+  // level of about 1 100 of the 1 280 triangles; with them, about 110.
+  it("orders a skinned model by where its vertices go in the clip's poses, whichever joint its weights name first", async () => {
+    const before = await bendingTube({ clip: true, rigid: true });
+    const whole = originalOf(before);
+    const parts = partsOf(before);
+    const report = simplifyModel(parts, TUBE_SETTINGS);
+    expect(report.primitives).toBe(1);
+    expect(report.deviation).toBeLessThanOrEqual(TUBE_SETTINGS.lodBudget);
+    expect(report.trianglesAfter).toBeLessThan(report.trianglesBefore * 0.25);
+    const saved = await readBack(writeGlb(parts));
+    for (const degrees of [0, 30, 45, 60, 90]) {
+      expect(skinnedDeviation(whole, saved, degrees)).toBeLessThanOrEqual(
+        TUBE_SETTINGS.lodBudget * 1.25,
+      );
     }
   });
 
@@ -482,10 +561,14 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
     const tube = Math.hypot(0.4, 2, 0.4);
     expect(metres.size).toBeCloseTo(tube, 2);
     expect(centimetres.size).toBeCloseTo(tube, 2);
+    // the same shape, so the same deviation up to the order's ties (the
+    // tube's rings collapse at equal cost, and a rounding of 1e-7 picks
+    // another of them): within a factor of 2, where sizing by the bind
+    // shape read a hundred times larger
     expect(centimetres.deviation).toBeGreaterThan(0);
-    expect(
-      Math.abs(centimetres.deviation - metres.deviation) / metres.deviation,
-    ).toBeLessThan(0.1);
+    const ratio = centimetres.deviation / metres.deviation;
+    expect(ratio).toBeGreaterThan(0.5);
+    expect(ratio).toBeLessThan(2);
   });
 
   // Why: a clip that only moves a node moves the model rigidly, which does
