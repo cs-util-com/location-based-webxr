@@ -5,9 +5,9 @@
  * after a crash rejects every run it held with `OptimizerCrashed` and
  * spawns a fresh Worker for the next one. A Worker that holds runs and
  * sends nothing for `OPTIMIZER_SILENCE_MS` counts as crashed, because a
- * Worker killed out of memory does not reliably fire its error event. The transport logic
- * (`createOptimizerHost`) is tested with a fake Worker; the device seam
- * (`spawnOptimizerWorker`) only constructs the real one.
+ * Worker killed out of memory does not reliably fire its error event. The
+ * transport logic (`createOptimizerHost`) is tested with a fake Worker;
+ * the device seam (`spawnOptimizerWorker`) only constructs the real one.
  *
  * @see optimizer-client.ts.md
  */
@@ -28,17 +28,21 @@ import type {
 } from "./optimizer-protocol.js";
 
 /** How long a Worker holding runs may send nothing (no progress, no
- *  answer) before it counts as crashed: 2 minutes. The longest silent
- *  stretch of a sound run is one primitive's level-of-detail ordering and
- *  measurement, which reports progress once it is done: the model budget
- *  is 10 s on a desktop for the largest measured model (a 57 600-triangle
- *  skinned tube, 9.7 s), a phone takes several times that (about 50 s at
- *  five times), and 2 minutes leaves more than twice that again. Progress
- *  restarts the wait, so a long run that keeps reporting is never cut. */
+ *  answer) before it counts as crashed: 2 minutes. A healthy model run
+ *  reports progress after each step of its level-of-detail pass, so its
+ *  longest silent stretch is one such step; the measured gaps and their
+ *  margin are in optimizer-client.ts.md. Progress restarts the wait, so a
+ *  long run that keeps reporting is never cut. */
 export const OPTIMIZER_SILENCE_MS = 120_000;
 
 /** Said when the Worker stopped answering. */
-const SILENT = "the optimizer stopped answering for 2 minutes";
+const SILENT = `the optimizer stopped answering for ${OPTIMIZER_SILENCE_MS / 60_000} minutes`;
+
+/** The part of the page the watchdog reads, so a test can fake it: the
+ *  wait pauses while the page is hidden. */
+export interface OptimizerPage extends EventTarget {
+  readonly visibilityState: DocumentVisibilityState;
+}
 
 /** The part of a `Worker` the client uses, so a test can fake it. */
 export interface OptimizerWorker {
@@ -180,18 +184,22 @@ function answerOf(
 
 export function createOptimizerHost(
   spawn: () => OptimizerWorker,
+  page: OptimizerPage | null = globalThis.document ?? null,
 ): OptimizerHost {
   let worker: OptimizerWorker | null = null;
   const pending = new Map<number, Pending>();
   let seq = 0;
   let watchdog: ReturnType<typeof setTimeout> | null = null;
 
-  /** (Re)starts the silence watchdog while the Worker holds runs, and
-   *  stops it once it holds none. */
+  /** (Re)starts the silence watchdog while the Worker holds runs and the
+   *  page is shown, and stops it otherwise: a hidden tab's timers are
+   *  throttled or frozen, and one that came due while frozen could fire
+   *  on resume before the Worker's queued progress is read. */
   function watch(): void {
     if (watchdog !== null) clearTimeout(watchdog);
     watchdog = null;
     if (worker === null || pending.size === 0) return;
+    if (page?.visibilityState === "hidden") return;
     watchdog = setTimeout(() => {
       watchdog = null;
       dropAll(() => new OptimizerCrashed(SILENT));
@@ -207,10 +215,14 @@ export function createOptimizerHost(
     return run;
   }
 
+  /** Showing the page again starts the wait afresh; hiding it pauses it. */
+  const onVisibility = () => watch();
+
   /** Every run rejects with `error`; the Worker goes. */
   function dropAll(error: () => unknown): void {
     const dead = worker;
     worker = null;
+    page?.removeEventListener("visibilitychange", onVisibility);
     for (const job of [...pending.keys()]) settle(job)?.reject(error());
     dead?.terminate();
     watch();
@@ -254,6 +266,7 @@ export function createOptimizerHost(
       if (worker === spawned) dropAll(() => new OptimizerCrashed());
     };
     worker = spawned;
+    page?.addEventListener("visibilitychange", onVisibility);
     return spawned;
   }
 
@@ -276,10 +289,17 @@ export function createOptimizerHost(
         };
         pending.set(job, { kind, resolve, reject, control, onAbort });
         control.signal.addEventListener("abort", onAbort, { once: true });
-        watch();
-        target.postMessage({ type: "run", job, kind, payload, settings }, [
-          ...transfer,
-        ]);
+        // a new run is no sign of life: it starts the wait, never restarts it
+        if (watchdog === null) watch();
+        try {
+          target.postMessage({ type: "run", job, kind, payload, settings }, [
+            ...transfer,
+          ]);
+        } catch (err) {
+          // a payload that cannot be copied: no run was started
+          settle(job);
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
       });
     },
     close() {

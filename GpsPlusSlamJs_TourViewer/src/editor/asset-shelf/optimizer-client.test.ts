@@ -12,6 +12,7 @@ import { OptimizerCrashed } from "./asset-optimizers.js";
 import {
   createOptimizerHost,
   OPTIMIZER_SILENCE_MS,
+  type OptimizerPage,
   type OptimizerWorker,
 } from "./optimizer-client.js";
 import type {
@@ -186,6 +187,94 @@ describe("the optimizer's Worker client", () => {
       await expect(next).resolves.toEqual({ kind: "kept", reason: "r" });
       await vi.advanceTimersByTimeAsync(2 * OPTIMIZER_SILENCE_MS);
       expect(workers[1]!.terminated).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Why: a new run is no sign that the Worker lives. Were it to restart
+  // the wait, a Worker that died without a word would be kept "alive" by
+  // every file the author adds, and no card would ever leave "in progress".
+  it("does not restart a silent Worker's wait for a new run", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = fakeWorker();
+      const host = createOptimizerHost(() => w, null);
+      const first = host
+        .run("image", 1, OPTIMIZER_SETTINGS, control())
+        .catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS - 10);
+      const second = host
+        .run("image", 2, OPTIMIZER_SETTINGS, control())
+        .catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(await first).toBeInstanceOf(OptimizerCrashed);
+      expect(await second).toBeInstanceOf(OptimizerCrashed);
+      expect(w.terminated).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Why: a payload the browser cannot copy (a DataCloneError) throws from
+  // postMessage. The run must reject with that error at once and leave no
+  // pending run behind: a phantom one would never be answered, and the
+  // watchdog would then kill a healthy Worker for it.
+  it("rejects a run whose message cannot be posted, and keeps no phantom run", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = fakeWorker();
+      let refuse = true;
+      const post = w.postMessage.bind(w);
+      w.postMessage = (message, transfer) => {
+        if (refuse && message.type === "run") {
+          throw new DOMException("cannot be cloned", "DataCloneError");
+        }
+        post(message, transfer);
+      };
+      const host = createOptimizerHost(() => w, null);
+      await expect(
+        host.run("image", 1, OPTIMIZER_SETTINGS, control()),
+      ).rejects.toMatchObject({ name: "DataCloneError" });
+      await vi.advanceTimersByTimeAsync(2 * OPTIMIZER_SILENCE_MS);
+      expect(w.terminated).toBe(false);
+      refuse = false;
+      const next = host.run("image", 2, OPTIMIZER_SETTINGS, control());
+      w.answer({ type: "kept", job: w.posted.at(-1)!.job, reason: "r" });
+      await expect(next).resolves.toEqual({ kind: "kept", reason: "r" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Why: a browser throttles and freezes a background tab's timers, and on
+  // resume a timer that came due while frozen can fire before the Worker's
+  // queued progress is read, killing a healthy run. The wait therefore
+  // pauses while the page is hidden and starts afresh when it is shown.
+  it("pauses the wait while the page is hidden and restarts it when shown", async () => {
+    vi.useFakeTimers();
+    try {
+      class Page extends EventTarget implements OptimizerPage {
+        visibilityState: DocumentVisibilityState = "visible";
+      }
+      const page = new Page();
+      const w = fakeWorker();
+      const host = createOptimizerHost(() => w, page);
+      const run = host
+        .run("model", 1, OPTIMIZER_SETTINGS, control())
+        .catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS - 10);
+      page.visibilityState = "hidden";
+      page.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(3 * OPTIMIZER_SILENCE_MS);
+      expect(w.terminated).toBe(false);
+      page.visibilityState = "visible";
+      page.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS - 10);
+      expect(w.terminated).toBe(false);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(await run).toBeInstanceOf(OptimizerCrashed);
+      expect(w.terminated).toBe(true);
     } finally {
       vi.useRealTimers();
     }
