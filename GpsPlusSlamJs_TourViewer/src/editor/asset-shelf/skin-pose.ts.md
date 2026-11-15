@@ -13,7 +13,8 @@ blend skinning, as glTF defines it.
 
 - `type Matrix = Float64Array`: a 4 x 4 matrix, column-major (the order
   glTF and three.js use).
-- `CLIP_POSES = 3`: the most clip poses sampled, across all clips.
+- (internal) `CLIP_POSES = 3`: the most clip poses sampled, across all
+  clips.
 - `interface Poses { worlds, fromClips }`
   - `worlds[k][node]`: the world matrix of every node in pose `k`.
     `worlds[0]` is the rest pose.

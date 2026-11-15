@@ -26,7 +26,7 @@ import {
 export type Matrix = Float64Array;
 
 /** Clip poses sampled, at most. */
-export const CLIP_POSES = 3;
+const CLIP_POSES = 3;
 /** Where in a clip its poses are sampled, as shares of its length. */
 const CLIP_SHARES = [1 / 3, 2 / 3, 1];
 
