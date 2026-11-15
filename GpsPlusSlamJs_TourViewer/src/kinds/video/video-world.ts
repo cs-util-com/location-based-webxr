@@ -596,7 +596,19 @@ export function videoWorld(
       // In its own metres: a folder that draws it larger widens its reach.
       distanceM =
         Math.hypot(x - position.x, z - position.z) / inheritedScaleOf(object);
-      const now = videoThere(distanceM, reachM, there);
+      if (standHere) {
+        spotM =
+          viewpoint === undefined
+            ? 0
+            : Math.hypot(x - viewpoint.position[0], z - viewpoint.position[2]);
+      }
+      // A stand-here visitor is there near the video or near its spot, so
+      // a spot typed beyond the station's reach still starts it.
+      const thereM =
+        standHere && viewpoint !== undefined
+          ? Math.min(distanceM, spotM)
+          : distanceM;
+      const now = videoThere(thereM, reachM, there);
       if (now !== there) {
         there = now;
         if (there) openCard();
@@ -618,10 +630,6 @@ export function videoWorld(
         return (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI;
       };
       if (standHere) {
-        spotM =
-          viewpoint === undefined
-            ? 0
-            : Math.hypot(x - viewpoint.position[0], z - viewpoint.position[2]);
         const target =
           viewpoint === undefined ? 1 : standHereTarget(spotM, offDeg());
         develop = standHereDevelop(develop, target, dt);

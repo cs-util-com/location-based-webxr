@@ -11,10 +11,12 @@ video stays finished and a tap replays it. While the visitor is there its
 card (`video-card.ts`) is on the page's screen. In the editor it is the
 same look, still and silent.
 
-A `standHere` video ignores the trigger: its footprints stand at its
-viewpoint and its projection develops (`stand-here.ts`) while the visitor
-stands on them facing it; once past `STAND_HERE_PLAYS_AT`, and there, it
-starts. Without a viewpoint it develops wherever the visitor stands.
+A `standHere` video reads neither the trigger nor its distance: its
+footprints stand at its viewpoint and its projection develops
+(`stand-here.ts`) while the visitor stands on them facing it; once past
+`STAND_HERE_PLAYS_AT`, and there, it starts. It is there within the
+station's reach of the video or of its viewpoint, so a viewpoint farther
+than a kept `near` distance, or than the reach itself, still starts it. Without a viewpoint it develops wherever the visitor stands.
 
 ## Public API
 
@@ -48,8 +50,9 @@ starts. Without a viewpoint it develops wherever the visitor stands.
   by the width drawn), and moves the shadow and foot without a
   rebuild; a committed scale redraws the station anyway.
 - There: the horizontal distance from the object over the scale its
-  folders draw it at (`inheritedScaleOf`), with `videoThere`'s margin.
-  Coming there opens the card and sends `return`; leaving closes it and
+  folders draw it at (`inheritedScaleOf`), with `videoThere`'s margin;
+  for a stand-here video with a viewpoint, the nearer of that and the
+  ground distance to the viewpoint. Coming there opens the card and sends `return`; leaving closes it and
   sends `leave`.
 - A `look` start measures the angle between `frame.facing` and the
   direction to the object's position (its pose, not its drawn centre).

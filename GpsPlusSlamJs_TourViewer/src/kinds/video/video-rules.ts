@@ -51,10 +51,14 @@ export function videoStartOf(
 }
 
 /** How near the visitor must come to be "there" (m): a `near` start's
- *  distance, else the station's reach. */
+ *  distance, else the station's reach. A stand-here video reads no
+ *  trigger, so it always has the station's reach (a `near` start kept
+ *  from before a switch to stand-here is not read). */
 export function videoReachM(
-  block: Pick<TourVideoBlock, "start" | "withinM">,
+  block: Pick<TourVideoBlock, "start" | "withinM"> &
+    Partial<Pick<TourVideoBlock, "view">>,
 ): number {
+  if (block.view === "standHere") return VIDEO_AWAY_M;
   return videoStartOf(block) === "near"
     ? (block.withinM ?? VIDEO_DEFAULT_WITHIN_M)
     : VIDEO_AWAY_M;

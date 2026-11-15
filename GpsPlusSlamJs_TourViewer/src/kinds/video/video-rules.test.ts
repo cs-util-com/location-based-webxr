@@ -28,6 +28,11 @@ describe("a video's start trigger", () => {
     expect(videoReachM({})).toBe(VIDEO_AWAY_M);
     expect(videoReachM({ start: "near" })).toBe(VIDEO_DEFAULT_WITHIN_M);
     expect(videoReachM({ start: "near", withinM: 3 })).toBe(3);
+    // A stand-here video reads no trigger: a near start kept from before
+    // the switch does not shrink its reach.
+    expect(videoReachM({ view: "standHere", start: "near", withinM: 3 })).toBe(
+      VIDEO_AWAY_M,
+    );
     // A distance set for another trigger is kept but not read.
     expect(videoReachM({ start: "look", withinM: 3 })).toBe(VIDEO_AWAY_M);
     expect(startFires("enter", true, 0)).toBe(true);

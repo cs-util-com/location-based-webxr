@@ -23,7 +23,8 @@ drives these each frame.
     for the browser before the part mutes it and says so.
 - `videoStartOf(block)` - the trigger, `enter` when absent.
 - `videoReachM(block)` - `withinM` (or the default) for `near`, else
-  `VIDEO_AWAY_M`.
+  `VIDEO_AWAY_M`; always `VIDEO_AWAY_M` for a `standHere` view, which
+  reads no trigger.
 - `videoThere(distanceM, reachM, was)` - there within the reach, gone beyond
   reach + margin, unchanged between them and for a distance that is no
   number.

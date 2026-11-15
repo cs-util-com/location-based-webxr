@@ -813,9 +813,11 @@ describe("a stand-here video", () => {
     host?.querySelector(".narration-card-line")?.textContent ?? null;
 
   it("plays only once the visitor stands on the spot facing it, whatever its trigger", async () => {
-    for (const start of ["enter", "tap", "look"] as const) {
+    // A `near` start of 3 m is the trigger a video keeps when it is
+    // switched to stand-here: its reach must not hold the spot 6 m off.
+    for (const start of ["enter", "tap", "look", "near"] as const) {
       const { part, player, shown } = await video({
-        block: { view: "standHere", viewpoint, start },
+        block: { view: "standHere", viewpoint, start, withinM: 3 },
       });
       walk(part, 12, 0, 3);
       expect(player.calls, start).toEqual([]);
@@ -828,6 +830,18 @@ describe("a stand-here video", () => {
       expect(player.calls, start).toEqual(["play muted"]);
       expect(line(shown.host), start).toBe("");
     }
+  });
+
+  // Why: a viewpoint may be typed far from its video; standing on it is
+  // being there, whatever the station's reach from the video itself.
+  it("plays on a spot farther from the video than a station's reach", async () => {
+    const far = { ...viewpoint, position: [40, 1.6, 0] } as const;
+    const { part, player, shown } = await video({
+      block: { view: "standHere", viewpoint: far },
+    });
+    walk(part, 40, 0, 2);
+    expect(player.calls).toEqual(["play muted"]);
+    expect(shown.open).toBe(1);
   });
 
   it("develops at once without a viewpoint, and says nothing", async () => {
