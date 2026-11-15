@@ -37,7 +37,11 @@ prototype's measures. `video-world.ts` drives them per frame,
 
 ## Invariants & assumptions
 
-- The creator's start trigger is never read: standing there is the start.
+- The creator's start trigger is not read, nor its `withinM`: standing
+  there is the start. The part (`video-world.ts`) gives a stand-here video
+  the station's reach whatever its trigger (`videoReachM`), and counts the
+  visitor as there near the video or near its viewpoint, so a viewpoint
+  minted from a `near` start or typed beyond the reach still starts it.
 - Walking off or turning away fades the projection back toward the ghost;
   a video that started keeps playing while the visitor is there.
 - Time to play on the spot, facing it, from 0: `-ln(1 - 0.6) / rate`,

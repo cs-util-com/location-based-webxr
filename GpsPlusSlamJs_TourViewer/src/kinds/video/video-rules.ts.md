@@ -23,7 +23,8 @@ drives these each frame.
     for the browser before the part mutes it and says so.
 - `videoStartOf(block)` - the trigger, `enter` when absent.
 - `videoReachM(block)` - `withinM` (or the default) for `near`, else
-  `VIDEO_AWAY_M`.
+  `VIDEO_AWAY_M`; always `VIDEO_AWAY_M` for a `standHere` view, which
+  reads no trigger.
 - `videoThere(distanceM, reachM, was)` - there within the reach, gone beyond
   reach + margin, unchanged between them and for a distance that is no
   number.
@@ -44,6 +45,9 @@ drives these each frame.
 - `videoSoundChoice(stored)` / `withVideoSound(stored, choice)` - read and
   write the `videoSound` key of the visitor's stored preferences
   (`visitor-prefs.ts`), keeping every other key.
+- `videoCaptionsChoice(stored)` / `withVideoCaptions(stored, choice)` - the
+  same for the `videoCaptions` key (the CC switch); both pairs share one
+  reader and one writer, so the two keys follow one rule.
 - `videoHint(start, state, distanceM, reachM)` - "Tap the video to play",
   "Walk closer to start · N m" (N at least 1), or null.
 

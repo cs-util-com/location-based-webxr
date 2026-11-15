@@ -21,10 +21,15 @@ independent.
   standing at the station, through the camera. The editor places items only
   in its 3D view. This needs its own design (who holds the phone, how a
   placement is confirmed) before any build.
-- **A cap on videos playing at once.** Nothing limits how many free videos
-  of one station play together. Each is a decoder and a texture upload per
-  frame, which a phone notices. A cap needs a rule for which one wins (the
-  nearest, or the last started), and measurements on a phone to set it.
+- **A cap on videos playing at once - built.** At most two free videos
+  play at once and one is heard (`src/kinds/video/video-cap.ts.md`). The
+  first to start keep playing and a later start waits in line on its
+  poster (or paused frame), its card's line saying so; the newest start
+  with sound takes the sound and the other plays on muted. Every view
+  counts, stand-here included. The cap is one per page, not per station:
+  the decoders are the phone's. Still open: the value 2 is the design's
+  guess, to be measured on a mid-range phone; a visitor's tap on a third
+  video waits like a trigger's start rather than taking a place.
 - **Lowering other audio under a video's voice.** A video with sound plays
   over a narration or another item's sound at full level. Ducking needs one
   place that knows every audio source of the station; `voice-focus.ts` is
@@ -34,10 +39,14 @@ independent.
   the feathered ellipse, with no hint. Whether a visitor should ever see such
   a note (or whether a tour with that cutout should refuse to be shared) is
   open.
-- **Remembering the CC choice.** Captions are on at first and the switch
-  holds for one video only. The prototype remembers the visitor's sound
-  choice for every video. The same rule for captions is plausible but was
-  not asked for.
+- **Remembering the CC choice - built.** The CC switch is remembered for
+  every video of every tour, under `videoCaptions` in the same stored
+  preferences as the sound choice (`videoCaptionsChoice` /
+  `withVideoCaptions` in `src/kinds/video/video-rules.ts`), read again
+  each time a video's card opens. Without storage it holds for that video
+  only. Still open: the design's rule that a start whose sound the browser
+  refused switches captions on for that clip whatever the stored choice;
+  today a visitor who stored "off" gets a muted clip without words then.
 - **A live 3D preview while dragging the width slider.** The slider writes
   the width once, on release, like the 3D view's white dots. The number
   follows the drag, but the video in the 3D view does not resize until the
@@ -69,6 +78,15 @@ later:
 - **The near-start hint.** A near start shows no "Walk closer" hint before
   it starts; `video-world.test.ts` holds it as an expected failure until
   it is decided whether the hint goes or gets a home outside the card.
+- **The footprints stretch the editor's outline and gizmo.** A stand-here
+  video's footprints hang under its part's object, at the viewpoint, so
+  the editor's folder outline (`src/editor3d/folder-outline.ts`, its box
+  of the item's world bounds) and the gizmo's span
+  (`src/editor3d/editor3d-editing.ts`) measure from the video to its
+  footprints, a box several metres longer than the video itself. The
+  honest fix keeps the footprints out of the item's measured bounds
+  (a flag the measuring walk skips, or a sibling object), which is a
+  choice about how the editor measures items, not a one-line change.
 
 ## Visitor side compared with the prototype (from the code)
 

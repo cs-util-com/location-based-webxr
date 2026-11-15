@@ -11,17 +11,22 @@ video stays finished and a tap replays it. While the visitor is there its
 card (`video-card.ts`) is on the page's screen. In the editor it is the
 same look, still and silent.
 
-A `standHere` video ignores the trigger: its footprints stand at its
-viewpoint and its projection develops (`stand-here.ts`) while the visitor
-stands on them facing it; once past `STAND_HERE_PLAYS_AT`, and there, it
-starts. Without a viewpoint it develops wherever the visitor stands.
+A `standHere` video reads neither the trigger nor its distance: its
+footprints stand at its viewpoint and its projection develops
+(`stand-here.ts`) while the visitor stands on them facing it; once past
+`STAND_HERE_PLAYS_AT`, and there, it starts. It is there within the
+station's reach of the video or of its viewpoint, so a viewpoint farther
+than a kept `near` distance, or than the reach itself, still starts it. Without a viewpoint it develops wherever the visitor stands.
 
 ## Public API
 
 - `ClipPlayer` - what the part uses of a `<video>` element.
 - `VideoDeps` - the page: `makePlayer`, `clipTexture`, `posterTexture`,
   `url` / `revoke`, `activated` (the page was touched), `storage` (the
-  visitor's preferences), `element` (the player as a page element).
+  visitor's preferences), `element` (the player as a page element), `cap`
+  (the play cap the page's videos share).
+- `VIDEO_WAITING_NOTE` - the card's line while it waits for a place under
+  the play cap.
 - `SOUND_REFUSED_NOTE` - the card's line when the browser kept a wanted
   sound off.
 - `videoWorld(block, env, deps?)` -> `WorldPart | null`: null in the card
@@ -45,21 +50,27 @@ starts. Without a viewpoint it develops wherever the visitor stands.
   by the width drawn), and moves the shadow and foot without a
   rebuild; a committed scale redraws the station anyway.
 - There: the horizontal distance from the object over the scale its
-  folders draw it at (`inheritedScaleOf`), with `videoThere`'s margin.
-  Coming there opens the card and sends `return`; leaving closes it and
+  folders draw it at (`inheritedScaleOf`), with `videoThere`'s margin;
+  for a stand-here video with a viewpoint, the nearer of that and the
+  ground distance to the viewpoint. Coming there opens the card and sends `return`; leaving closes it and
   sends `leave`.
 - A `look` start measures the angle between `frame.facing` and the
   direction to the object's position (its pose, not its drawn centre).
 - Stand-here: the same angle (0 with no facing in the frame) and the
   ground distance from the viewer to the viewpoint give the develop's
   target; the develop eases toward it every frame, so walking off fades
-  the projection while it plays. A tap does nothing while it waits; once
-  started it toggles as any other. The card's line is the guide
+  the projection while it plays. An in-world tap does nothing while it
+  waits; once started it toggles as any other. The card's Play is the
+  visitor's own wish to see it, as in the prototype: it plays a waiting
+  stand-here video at once, wherever he stands, and while it plays from
+  there its develop's target is 1, so it develops whole with its captions,
+  until the visitor leaves (then the spot rules again). The card's line is the guide
   (`standHereGuide`) and its captions wait for `standHereCaptions`. The
   footprints (`standHereSpot`) hang under an anchor whose matrix is the
   part's matrix inverted, refreshed each frame, so they stand at the
   viewpoint in the station's frame wherever the video is posed (the
-  picture viewpoint's pattern). In the editor the projection is whole and
+  picture viewpoint's pattern); the anchor stays hidden until the first
+  frame has placed it. In the editor the projection is whole and
   the footprints undeveloped.
 - Sound: decided once, at the first start, by `decideStartSound`. A start
   that wanted sound before the page was touched plays muted, and the next
@@ -69,14 +80,50 @@ starts. Without a viewpoint it develops wherever the visitor stands.
   `play()` the browser rejects stops it: the state goes to `paused` (the
   card says Play), the line says the browser did not start it, and the
   visitor's tap is the next try. A muted start that is only slow to load is
-  left to its own promise and still counts as playing.
+  left to its own promise and still counts as playing. Only the newest
+  `play()` may answer: a rejection of an earlier try that arrives after a
+  later one (the timed-out start with sound and its muted retry) is
+  ignored, so it never stops the try that plays.
 - The sound switch stores the visitor's choice for every video.
+- The play cap (`video-cap.ts`, `deps.cap`; the browser's is one per
+  page): every step of the playing rule that would set it playing (its
+  start, a return, a tap's resume or replay) asks the cap first. While no
+  place is free it changes nothing: the look stays as it is (the poster
+  before a first start, the frame it was paused on), the event is kept as
+  pending and sent again once the cap lets it play, and the card's line
+  says `VIDEO_WAITING_NOTE`. A tap while it waits (the card's Play, on a
+  held or a waiting video) keeps the wait, since it is a wish to play it.
+  Leaving gives up the wait, and so does a stand-here video's visitor
+  stepping off its spot (its develop below `STAND_HERE_PLAYS_AT`, unless
+  the card's Play started it): it asks again once it develops past the
+  start. Every step that stops it playing (pause, leave, end, a refused
+  muted start) and `dispose` free its place, after its own pause, so a
+  waiter never plays beside it. A start or resume with sound, the sound
+  switch on and the tap that turns a blocked sound on tell the cap it is
+  heard; the video heard before has only its `muted` set, so it plays on
+  where it was. When the browser then keeps that start muted, the cap
+  gives the sound back to the video heard before (`refused`). No new
+  element is drawn for any of this.
+- A stand-here visitor is there near the video or near its spot, both in
+  the video's own metres (the spot's station metres over the folders'
+  scale), as its reach is.
 - A `loop: "on"` video sets the element's own `loop`, so it plays again
   without an `ended` (it never reaches `finished`).
 - Captions are read once (`video-captions.ts`); with at least one cue the
-  card gets a CC switch, on at first and for this video only (not
-  remembered), and a strip showing `captionAt` the player's time. With
-  none (absent, unreadable) no CC is offered.
+  card gets a CC switch and a strip showing `captionAt` the player's time.
+  With none (absent, unreadable) no CC is offered. The switch is the
+  visitor's remembered `videoCaptions` choice (on when he never chose),
+  read again each time the card opens, so a choice made on one video
+  holds for the next; a click flips it, stores it in the same preferences
+  as the sound choice and says "Captions on/off for every video". With no
+  storage, or one that throws, it flips for this video only, the line
+  says "Captions on/off", and a card opened again keeps this video's
+  choice (nothing read back, nothing changed).
+- A switch's note (Sound, CC) holds the card's line for
+  `VIDEO_SWITCH_NOTE_S` (3 s) by the frames' clock, then the line says
+  again what it said: the waiting note first, then a fresh switch note,
+  then the browser's notes, then the stand-here guide or the hint. The
+  visitor's sound switch clears a "kept the sound off" note.
 - A porthole's tap opens the card with the clip large and starts it if it
   does not play; Close returns to the plain card.
 - The viewer is handed to the look in the part's own frame (the object's
@@ -97,7 +144,8 @@ part?.update?.({ seconds, viewer, facing });
 - `video-world.test.ts` - with a fake player and screen: each trigger, the
   sound paths (creator, untouched page, refusal, a refused muted start, a
   slow muted load, remembered choice), the loop, the captions strip and
-  CC, leave
+  CC, the remembered CC choice (and a storage that throws, also across a
+  card opened again), leave
   and return, finished then replay, the porthole, the silent editor, a
   posed cutout's turn and dispose, and the ground of a screen and a cutout
   in folders of scale 0.5 to 10, at rest, while a folder's scale is
@@ -109,5 +157,12 @@ part?.update?.({ seconds, viewer, facing });
   a stand-here video plays only on its spot facing it, whatever its
   trigger, says the guide until then, develops at once without a
   viewpoint, holds its captions until developed, keeps its footprints at
-  the viewpoint under any pose (play and edit) and is silent in the
-  editor.
+  the viewpoint under any pose (play and edit) and hidden until placed,
+  gives up its turn in line off its spot, lets a switch's note make way
+  for the guide after `VIDEO_SWITCH_NOTE_S` (checked 0.1 s either side),
+  measures the way to its spot in its own metres (scales 0.5 to 3, 1 m
+  inside and outside the reach) and is silent in the editor. Under the
+  cap: a held video's wait survives its card's Play, a refused start with
+  sound gives the sound back, a refused muted start and a disposed waiter
+  free the line, a late refusal of the first try leaves the muted retry
+  its place, and the property run includes refusing browsers.

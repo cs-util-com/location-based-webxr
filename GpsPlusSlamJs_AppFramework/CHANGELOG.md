@@ -62,7 +62,9 @@
   kept in every view. A viewpoint that breaks a rule fails a file of this
   minor; a newer one's drops only the viewpoint and keeps the picture.
 - **A video stands in the world** (`ar/tour-kinds`): its views are
-  `screen`, `cutout` and `porthole` beside the story's `card`, so a free
+  `screen`, `cutout`, `porthole`, `window` (the clip deep in an opening of
+  a wall) and `standHere` (a projection that develops while the visitor
+  stands on its spot) beside the story's `card`, so a free
   video is no longer story-only. Its world fields: `widthM` (required in a
   world view, kept in a card), `start` (`TOUR_VIDEO_STARTS`: `enter`,
   `near`, `look`, `tap`; absent: `enter`), `withinM` (a `near` start's
@@ -78,6 +80,13 @@
   a newer one an unknown `start`, `sound` or `loop` is dropped, alone, and
   the video still shows; an unknown `alpha` skips the whole video, since
   shown without it a newer clip's matte half would stand on screen.
+- **A video has a viewpoint** (`ar/tour-kinds`): `viewpoint`, a picture's
+  viewpoint (`TourPictureViewpoint`, the same rules), the spot to stand on.
+  It is read by the views in `TOUR_VIDEO_VIEWPOINT_VIEWS` (`standHere`) and
+  kept in every other view, so a view switch loses nothing.
+  `tourSeenFromViewpoint(kind, view)` says whether a block of a kind in a
+  view is drawn from its viewpoint (a picture in
+  `TOUR_PICTURE_VIEWPOINT_VIEWS`, a video in `TOUR_VIDEO_VIEWPOINT_VIEWS`).
 
 ### Changed
 

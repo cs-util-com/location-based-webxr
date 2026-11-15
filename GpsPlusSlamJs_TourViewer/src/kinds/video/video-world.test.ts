@@ -13,6 +13,7 @@
  */
 import type { TourVideoBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { Texture, Vector3, type Mesh, type Object3D } from "three";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -27,8 +28,11 @@ import {
   VIDEO_LOOK_DWELL_S,
   withVideoSound,
 } from "./video-rules.js";
+import { videoCap, type VideoCap } from "./video-cap.js";
 import {
   SOUND_REFUSED_NOTE,
+  VIDEO_SWITCH_NOTE_S,
+  VIDEO_WAITING_NOTE,
   videoWorld,
   type ClipPlayer,
   type VideoDeps,
@@ -99,6 +103,8 @@ interface Setup {
   readonly activated?: boolean;
   readonly storage?: PrefsStorage;
   readonly refuse?: FakePlayer["refuse"];
+  /** The play cap it shares with other videos; none: its own. */
+  readonly cap?: VideoCap;
   /** Done to the part before its clip's size is known. */
   readonly beforeReady?: (part: WorldPart) => void;
 }
@@ -145,6 +151,7 @@ async function video(setup: Setup = {}) {
     activated: () => setup.activated ?? true,
     storage: () => storage,
     element: () => null,
+    cap: setup.cap ?? videoCap(),
   };
   const block = {
     id: "v",
@@ -372,6 +379,74 @@ describe("a free video's part", () => {
     }
   });
 
+  // Why: a visitor who turned captions off (or on) for one video wants
+  // the same for every video of every tour, as with the sound switch; a
+  // page whose storage is missing or throws still switches this one.
+  it("remembers the CC choice for every video, and still switches without storage", async () => {
+    const captions = "WEBVTT\n\n00:01.000 --> 00:03.000\nThe gate";
+    const lineOf = (host: HTMLElement) =>
+      host.querySelector(".narration-card-line")?.textContent;
+    const storage = memoryStorage();
+    const first = await video({ storage, block: { captions } });
+    first.part.update?.(at(1, 0));
+    const firstHost = first.shown.host as HTMLElement;
+    firstHost.querySelector<HTMLElement>(".video-card-cc")?.click();
+    expect(lineOf(firstHost)).toBe("Captions off for every video");
+    expect(loadVisitorPrefs(storage)).toEqual({ videoCaptions: "off" });
+    const second = await video({ storage, block: { captions } });
+    second.part.update?.(at(1, 0));
+    second.player.currentTime = 2;
+    second.part.update?.(at(1, 1));
+    const host = second.shown.host as HTMLElement;
+    const cc = host.querySelector<HTMLElement>(".video-card-cc");
+    expect(cc?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector<HTMLElement>(".video-card-caption")?.hidden).toBe(
+      true,
+    );
+    const broken: PrefsStorage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    const lone = await video({ storage: broken, block: { captions } });
+    lone.part.update?.(at(1, 0));
+    const loneHost = lone.shown.host as HTMLElement;
+    const loneCc = loneHost.querySelector<HTMLElement>(".video-card-cc");
+    expect(loneCc?.getAttribute("aria-pressed")).toBe("true");
+    loneCc?.click();
+    expect(loneCc?.getAttribute("aria-pressed")).toBe("false");
+    expect(lineOf(loneHost)).toBe("Captions off");
+  });
+
+  // Why: without storage a CC choice cannot be read back, so the card
+  // that opens again (the visitor walked out and back) must keep this
+  // video's own choice rather than fall back to captions on.
+  it("keeps this video's CC choice when its card opens again without storage", async () => {
+    const captions = "WEBVTT\n\n00:01.000 --> 00:03.000\nThe gate";
+    const broken: PrefsStorage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    const { part, shown } = await video({
+      storage: broken,
+      block: { captions },
+    });
+    part.update?.(at(1, 0));
+    shown.host?.querySelector<HTMLElement>(".video-card-cc")?.click();
+    part.update?.(at(100, 1));
+    part.update?.(at(1, 2));
+    expect(shown.open).toBe(1);
+    const cc = shown.host?.querySelector<HTMLElement>(".video-card-cc");
+    expect(cc?.getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("stays still and silent in the editor", async () => {
     const { part, player, shown } = await video({ mode: "edit" });
     part.update?.(at(1, 0));
@@ -552,6 +627,266 @@ describe("a free video's ground", () => {
   }
 });
 
+describe("videos that share the play cap", () => {
+  const lineOf = (host: HTMLElement | null) =>
+    host?.querySelector(".narration-card-line")?.textContent ?? "";
+  const plays = (p: FakePlayer) => !p.paused;
+  const heard = (p: FakePlayer) => !p.paused && !p.muted;
+
+  // Why: a phone decodes only a few clips at once; the first two to start
+  // play, and a third waits on its poster - saying so in its card's line,
+  // the only words a waiting video has - until one of them stops.
+  it("plays the first two to start, and a third waits until one stops", async () => {
+    const cap = videoCap();
+    const [a, b, c] = await Promise.all([
+      video({ cap }),
+      video({ cap }),
+      video({ cap }),
+    ]);
+    for (const v of [a, b, c]) v.part.update?.(at(1, 0));
+    expect([a, b, c].map((v) => plays(v.player))).toEqual([true, true, false]);
+    expect(c.player.calls).toEqual([]);
+    expect(lineOf(c.shown.host)).toBe(VIDEO_WAITING_NOTE);
+    // The visitor pauses the first: its place goes to the one that waits.
+    a.part.tap?.();
+    expect(c.player.calls).toEqual(["play muted"]);
+    expect(c.player.currentTime).toBe(0);
+    c.part.update?.(at(1, 1));
+    expect(lineOf(c.shown.host)).toBe("");
+    // The paused one now waits for its own turn back.
+    a.part.tap?.();
+    expect(plays(a.player)).toBe(false);
+    b.player.end();
+    expect(plays(a.player)).toBe(true);
+    expect(a.player.calls.at(-1)).toBe("play muted");
+  });
+
+  // Why: the design's rule for sound - a second start with sound takes
+  // it from the first - must not cost the first its place in the clip:
+  // it is muted where it is, never paused, rewound or restarted.
+  it("gives the sound to the newest start with it, and the other plays on muted where it was", async () => {
+    const cap = videoCap();
+    const a = await video({ cap, block: { sound: "on" } });
+    const b = await video({ cap, block: { sound: "on" } });
+    a.part.update?.(at(1, 0));
+    expect(heard(a.player)).toBe(true);
+    a.player.currentTime = 5;
+    b.part.update?.(at(1, 1));
+    expect(heard(b.player)).toBe(true);
+    expect(a.player.muted).toBe(true);
+    expect(a.player.paused).toBe(false);
+    expect(a.player.currentTime).toBe(5);
+    expect(a.player.calls).toEqual(["play sound"]);
+    // The visitor's sound switch on the first takes it back.
+    a.shown.host?.querySelector<HTMLElement>(".video-card-sound")?.click();
+    expect(heard(a.player)).toBe(true);
+    expect(b.player.muted).toBe(true);
+    expect(b.player.paused).toBe(false);
+  });
+
+  // Why: a turn is for a video the visitor is at; one he walked away from
+  // while it waited must not start behind his back, and asks again when
+  // he comes back.
+  it("drops a waiting video's turn when the visitor leaves it", async () => {
+    const cap = videoCap();
+    const a = await video({ cap });
+    const b = await video({ cap });
+    const c = await video({ cap, block: { start: "near", withinM: 4 } });
+    c.part.object.position.set(20, 0, 0);
+    for (const v of [a, b, c]) v.part.update?.(at(19, 0));
+    expect(c.player.calls).toEqual([]);
+    c.part.update?.(at(10, 1));
+    a.part.tap?.();
+    expect(c.player.calls).toEqual([]);
+    c.part.update?.(at(19, 2));
+    expect(c.player.calls).toEqual(["play muted"]);
+  });
+
+  // Why: a stand-here projection is a decoder like any other; the design
+  // makes no exception for it.
+  it("counts a stand-here video like the others", async () => {
+    const cap = videoCap();
+    const a = await video({ cap });
+    const b = await video({ cap });
+    const here = await video({ cap, block: { view: "standHere" } });
+    a.part.update?.(at(1, 0));
+    b.part.update?.(at(1, 0));
+    for (let s = 0; s <= 120; s++) here.part.update?.(at(1, s / 30));
+    expect(here.player.calls).toEqual([]);
+    a.part.dispose();
+    expect(here.player.calls).toEqual(["play muted"]);
+  });
+
+  // Why: a held video that waits for a place to come back is still the
+  // visitor's wish to watch it; his press on its card's Play must not
+  // turn that wait into a pause that gives up its turn.
+  it("keeps a held video's turn when its card's Play is pressed while it waits", async () => {
+    const cap = videoCap();
+    const [a, b, c] = await Promise.all([
+      video({ cap }),
+      video({ cap }),
+      video({ cap }),
+    ]);
+    c.part.update?.(at(1, 0));
+    a.part.update?.(at(1, 0));
+    c.part.update?.(at(100, 1));
+    b.part.update?.(at(1, 1));
+    c.part.update?.(at(1, 2));
+    expect(lineOf(c.shown.host)).toBe(VIDEO_WAITING_NOTE);
+    c.shown.host?.querySelector<HTMLElement>(".narration-card-play")?.click();
+    c.part.update?.(at(1, 3));
+    expect(lineOf(c.shown.host)).toBe(VIDEO_WAITING_NOTE);
+    a.part.tap?.();
+    expect(plays(c.player)).toBe(true);
+  });
+
+  // Why: a start with sound mutes the one heard so far before the
+  // browser has said yes; when the browser then keeps the new one muted,
+  // the sound goes back to where it was rather than to nobody.
+  it("gives the sound back to the video heard before when a start with sound is refused", async () => {
+    const cap = videoCap();
+    const a = await video({ cap, block: { sound: "on" } });
+    const b = await video({ cap, block: { sound: "on" }, refuse: "sound" });
+    a.part.update?.(at(1, 0));
+    b.part.update?.(at(1, 0));
+    await settle();
+    expect(plays(b.player)).toBe(true);
+    expect(b.player.muted).toBe(true);
+    expect(heard(a.player)).toBe(true);
+    expect(a.player.calls).toEqual(["play sound"]);
+  });
+
+  // Why: a start with sound the browser has not answered after a second
+  // is muted and tried again; when the first try's refusal arrives only
+  // after that, it must not stop the muted try that plays, or the part
+  // gives up its place while its player plays on beside the next one.
+  it("keeps its place when a late refusal of a start with sound arrives after the muted try plays", async () => {
+    const cap = videoCap(1);
+    const a = await video({ cap, block: { sound: "on" }, refuse: "sound" });
+    const b = await video({ cap, block: { sound: "on" } });
+    for (const t of [0, 0.4, 0.8, 1.2]) {
+      a.part.update?.(at(1, t));
+      b.part.update?.(at(1, t));
+    }
+    await settle();
+    expect(plays(a.player)).toBe(true);
+    expect(a.player.muted).toBe(true);
+    expect(plays(b.player)).toBe(false);
+  });
+
+  // Why: a video the browser would not start even muted plays nothing,
+  // so its place must go to the next in line at once.
+  it("frees the place of a video the browser would not start, for the next in line", async () => {
+    const cap = videoCap();
+    const a = await video({ cap });
+    const b = await video({ cap, refuse: "always" });
+    const c = await video({ cap });
+    for (const v of [a, b, c]) v.part.update?.(at(1, 0));
+    expect(c.player.calls).toEqual([]);
+    await settle();
+    expect(plays(c.player)).toBe(true);
+  });
+
+  // Why: a video taken away while it waits must leave the line, or the
+  // next freed place would go to nothing and the one behind it would
+  // wait for good.
+  it("drops a video that is taken away from the line", async () => {
+    const cap = videoCap();
+    const [a, b, c, d] = await Promise.all([
+      video({ cap }),
+      video({ cap }),
+      video({ cap }),
+      video({ cap }),
+    ]);
+    for (const v of [a, b, c, d]) v.part.update?.(at(1, 0));
+    c.part.dispose();
+    a.part.tap?.();
+    expect(plays(d.player)).toBe(true);
+  });
+
+  // Why: the cap's promise, over any mix of videos, triggers and visitor
+  // walks and taps: never more than two playing, never two heard. The
+  // limit is swept from 1 to 3, since 2 is a guess about phones.
+  it("never plays more than its limit nor lets two be heard, wherever the visitor goes", async () => {
+    const spec = fc.record({
+      x: fc.integer({ min: -30, max: 30 }),
+      start: fc.constantFrom("enter", "near", "look", "tap"),
+      sound: fc.constantFrom("on", "off"),
+      view: fc.constantFrom("screen", "porthole", "standHere"),
+      loop: fc.constantFrom("on", "off"),
+      refuse: fc.constantFrom("never", "sound", "always"),
+    });
+    const move = fc.oneof(
+      fc.record({
+        kind: fc.constant("walk" as const),
+        x: fc.integer({ min: -40, max: 40 }),
+        turn: fc.constantFrom(-1, 1),
+      }),
+      fc.record({ kind: fc.constant("tap" as const), i: fc.nat(5) }),
+      fc.record({ kind: fc.constant("end" as const), i: fc.nat(5) }),
+      fc.record({ kind: fc.constant("sound" as const), i: fc.nat(5) }),
+    );
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 3 }),
+        fc.array(spec, { minLength: 2, maxLength: 5 }),
+        fc.array(move, { maxLength: 40 }),
+        async (limit, specs, moves) => {
+          const cap = videoCap(limit);
+          const videos = await Promise.all(
+            specs.map(async (s) => {
+              const v = await video({
+                cap,
+                refuse: s.refuse,
+                block: {
+                  start: s.start,
+                  sound: s.sound,
+                  view: s.view,
+                  loop: s.loop,
+                },
+              });
+              v.part.object.position.set(s.x, 0, 0);
+              return v;
+            }),
+          );
+          let t = 0;
+          let viewer = 0;
+          let facing: readonly [number, number, number] = [1, 0, 0];
+          for (const m of moves) {
+            const v =
+              m.kind === "walk" ? undefined : videos[m.i % videos.length];
+            if (m.kind === "walk") {
+              viewer = m.x;
+              facing = [m.turn, 0, 0];
+            } else if (m.kind === "tap") v?.part.tap?.();
+            else if (m.kind === "end" && v !== undefined && !v.player.paused) {
+              v.player.end();
+            } else if (m.kind === "sound") {
+              v?.shown.host
+                ?.querySelector<HTMLElement>(".video-card-sound")
+                ?.click();
+            }
+            for (let k = 0; k < 3; k++) {
+              t += 0.4;
+              for (const each of videos) {
+                each.part.update?.(at(viewer, t, facing));
+              }
+            }
+            // A refused play() reaches its catch, and its muted retry
+            // settles: a few microtask hops, cheaper than a timer per move.
+            for (let hop = 0; hop < 4; hop++) await Promise.resolve();
+            const players = videos.map((each) => each.player);
+            expect(players.filter(plays).length).toBeLessThanOrEqual(limit);
+            expect(players.filter(heard).length).toBeLessThanOrEqual(1);
+          }
+          for (const each of videos) each.part.dispose();
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
+});
+
 /** Frames from `from` to `to` seconds at 30 a second, the viewer `x` m
  *  east of the video looking along `facing`. */
 function walk(
@@ -597,9 +932,11 @@ describe("a stand-here video", () => {
     host?.querySelector(".narration-card-line")?.textContent ?? null;
 
   it("plays only once the visitor stands on the spot facing it, whatever its trigger", async () => {
-    for (const start of ["enter", "tap", "look"] as const) {
+    // A `near` start of 3 m is the trigger a video keeps when it is
+    // switched to stand-here: its reach must not hold the spot 6 m off.
+    for (const start of ["enter", "tap", "look", "near"] as const) {
       const { part, player, shown } = await video({
-        block: { view: "standHere", viewpoint, start },
+        block: { view: "standHere", viewpoint, start, withinM: 3 },
       });
       walk(part, 12, 0, 3);
       expect(player.calls, start).toEqual([]);
@@ -612,6 +949,39 @@ describe("a stand-here video", () => {
       expect(player.calls, start).toEqual(["play muted"]);
       expect(line(shown.host), start).toBe("");
     }
+  });
+
+  // Why: a viewpoint may be typed far from its video; standing on it is
+  // being there, whatever the station's reach from the video itself.
+  it("plays on a spot farther from the video than a station's reach", async () => {
+    const far = { ...viewpoint, position: [40, 1.6, 0] } as const;
+    const { part, player, shown } = await video({
+      block: { view: "standHere", viewpoint: far },
+    });
+    walk(part, 40, 0, 2);
+    expect(player.calls).toEqual(["play muted"]);
+    expect(shown.open).toBe(1);
+  });
+
+  // Why: the card's Play is the visitor's own wish to see it now, as in
+  // the prototype: it plays at once, off the spot too, and develops whole
+  // with its captions - never a faint ghost without words.
+  it("plays at once from the card's Play, off its spot, and develops whole", async () => {
+    const captions = "WEBVTT\n\n00:00.000 --> 00:30.000\nThe gate";
+    const { part, player, shown } = await video({
+      block: { view: "standHere", viewpoint, captions },
+    });
+    walk(part, 12, 0, 1, [1, 0, 0]);
+    // The in-world tap still waits for the spot.
+    part.tap?.();
+    expect(player.calls).toEqual([]);
+    shown.host?.querySelector<HTMLElement>(".narration-card-play")?.click();
+    expect(player.calls).toEqual(["play muted"]);
+    player.currentTime = 1;
+    walk(part, 12, 1, 3, [1, 0, 0]);
+    const strip = shown.host?.querySelector<HTMLElement>(".video-card-caption");
+    expect(strip?.textContent).toBe("The gate");
+    expect(line(shown.host)).toBe("");
   });
 
   it("develops at once without a viewpoint, and says nothing", async () => {
@@ -658,6 +1028,98 @@ describe("a stand-here video", () => {
       expect(p?.x, mode).toBeCloseTo(6, 6);
       expect(p?.y, mode).toBeCloseTo(0.014, 6);
       expect(p?.z, mode).toBeCloseTo(0, 6);
+    }
+  });
+
+  it("hides its footprints until the first frame has placed them", async () => {
+    // Why: before its first update the footprints' anchor still has an
+    // identity matrix, so a render in that gap would draw them under
+    // the video's pose rather than at the viewpoint.
+    const { part } = await video({ block: { view: "standHere", viewpoint } });
+    let spot: Object3D | undefined;
+    part.object.traverse((c) => {
+      if (c.name === "video-stand-here-spot") spot = c;
+    });
+    const shownInWorld = (): boolean => {
+      for (let o: Object3D | null = spot ?? null; o !== null; o = o.parent) {
+        if (!o.visible) return false;
+        if (o === part.object) return true;
+      }
+      return false;
+    };
+    expect(shownInWorld()).toBe(false);
+    part.update?.(at(20, 0));
+    expect(shownInWorld()).toBe(true);
+  });
+
+  // Why: a turn in line is for a visitor on the spot; one who stepped
+  // off it (still near the video) must not have it start behind him as
+  // a faint ghost without captions. It asks again once he is back.
+  it("gives up its turn in line once the visitor steps off its spot", async () => {
+    const cap = videoCap();
+    const a = await video({ cap });
+    const b = await video({ cap });
+    a.part.update?.(at(1, 0));
+    b.part.update?.(at(1, 0));
+    const here = await video({
+      cap,
+      block: { view: "standHere", viewpoint },
+    });
+    walk(here.part, 6, 0, 3);
+    expect(here.player.calls).toEqual([]);
+    expect(line(here.shown.host)).toBe(VIDEO_WAITING_NOTE);
+    walk(here.part, 12, 3, 6, [1, 0, 0]);
+    a.part.tap?.();
+    expect(here.player.calls).toEqual([]);
+    walk(here.part, 6, 6, 9);
+    expect(here.player.calls).toEqual(["play muted"]);
+  });
+
+  // Why: the guide is what tells the visitor where to stand; a switch's
+  // note says what the switch did, for a moment, and then the guide (or
+  // a screen's own line) is back. Checked just before and just after
+  // the note's length.
+  it("lets a switch's note make way for the guide again after a moment", async () => {
+    const captions = "WEBVTT\n\n00:01.000 --> 00:03.000\nThe gate";
+    const { part, shown } = await video({
+      block: { view: "standHere", viewpoint, captions },
+    });
+    walk(part, 12, 0, 1, [1, 0, 0]);
+    expect(line(shown.host)).toBe("Stand on the footprints · 6 m");
+    shown.host?.querySelector<HTMLElement>(".video-card-cc")?.click();
+    expect(line(shown.host)).toBe("Captions off for every video");
+    part.update?.(at(12, 1 + VIDEO_SWITCH_NOTE_S - 0.1, [1, 0, 0]));
+    expect(line(shown.host)).toBe("Captions off for every video");
+    part.update?.(at(12, 1 + VIDEO_SWITCH_NOTE_S + 0.1, [1, 0, 0]));
+    expect(line(shown.host)).toBe("Stand on the footprints · 6 m");
+    const screen = await video({});
+    screen.part.update?.(at(1, 0));
+    screen.shown.host?.querySelector<HTMLElement>(".video-card-sound")?.click();
+    expect(line(screen.shown.host)).toBe("Sound on for every video");
+    screen.part.update?.(at(1, VIDEO_SWITCH_NOTE_S + 0.1));
+    expect(line(screen.shown.host)).toBe("");
+  });
+
+  // Why: the video's reach is in its own metres (a folder that draws it
+  // larger widens it), so the way to its spot must be too, or a scaled
+  // folder would let a visitor in too early or too late. Swept over
+  // scales on both sides of 1, just inside and just outside the reach.
+  it("measures the way to its spot in the video's own metres under a scaled folder", async () => {
+    for (const scale of [0.5, 1, 2, 3]) {
+      for (const [offM, open] of [
+        [VIDEO_AWAY_M - 1, 1],
+        [VIDEO_AWAY_M + 1, 0],
+      ] as const) {
+        const far = { ...viewpoint, position: [100 * scale, 1.6, 0] } as const;
+        const { part, shown } = await video({
+          block: { view: "standHere", viewpoint: far },
+        });
+        drawInherited(part.object, scale);
+        part.update?.(at((100 + offM) * scale, 0, [1, 0, 0]));
+        expect(shown.open, `scale ${String(scale)}, ${String(offM)} m`).toBe(
+          open,
+        );
+      }
     }
   });
 

@@ -51,10 +51,14 @@ export function videoStartOf(
 }
 
 /** How near the visitor must come to be "there" (m): a `near` start's
- *  distance, else the station's reach. */
+ *  distance, else the station's reach. A stand-here video reads no
+ *  trigger, so it always has the station's reach (a `near` start kept
+ *  from before a switch to stand-here is not read). */
 export function videoReachM(
-  block: Pick<TourVideoBlock, "start" | "withinM">,
+  block: Pick<TourVideoBlock, "start" | "withinM"> &
+    Partial<Pick<TourVideoBlock, "view">>,
 ): number {
+  if (block.view === "standHere") return VIDEO_AWAY_M;
   return videoStartOf(block) === "near"
     ? (block.withinM ?? VIDEO_DEFAULT_WITHIN_M)
     : VIDEO_AWAY_M;
@@ -172,14 +176,33 @@ export function decideStartSound(input: {
   return { sound: want, blocked: false };
 }
 
-/** The key of the visitor's sound choice in the stored preferences. */
-const SOUND_KEY = "videoSound";
+/** The keys of the visitor's video switches in the stored preferences:
+ *  sound and captions, each on or off for every video of every tour. */
+type VideoSwitchKey = "videoSound" | "videoCaptions";
+
+/** The stored switch at `key`; null when never set or not on or off. */
+function switchChoice(stored: unknown, key: VideoSwitchKey): VideoSound | null {
+  const value = prefsRoot(stored)[key];
+  return value === "on" || value === "off" ? value : null;
+}
+
+/** A new stored value with the switch at `key` set (null: cleared);
+ *  every other key kept, `stored` not changed. */
+function withSwitch(
+  stored: unknown,
+  key: VideoSwitchKey,
+  choice: VideoSound | null,
+): Record<string, unknown> {
+  const root = { ...prefsRoot(stored) };
+  if (choice === null) delete root[key];
+  else root[key] = choice;
+  return root;
+}
 
 /** The visitor's stored sound choice for every video; null when he never
  *  chose or the stored value is not one. */
 export function videoSoundChoice(stored: unknown): VideoSound | null {
-  const value = prefsRoot(stored)[SOUND_KEY];
-  return value === "on" || value === "off" ? value : null;
+  return switchChoice(stored, "videoSound");
 }
 
 /** A new stored value with the sound choice set (null: cleared); every
@@ -188,10 +211,22 @@ export function withVideoSound(
   stored: unknown,
   choice: VideoSound | null,
 ): Record<string, unknown> {
-  const root = { ...prefsRoot(stored) };
-  if (choice === null) delete root[SOUND_KEY];
-  else root[SOUND_KEY] = choice;
-  return root;
+  return withSwitch(stored, "videoSound", choice);
+}
+
+/** The visitor's stored captions choice for every video; null when he
+ *  never chose (captions are then on) or the value is not one. */
+export function videoCaptionsChoice(stored: unknown): VideoSound | null {
+  return switchChoice(stored, "videoCaptions");
+}
+
+/** A new stored value with the captions choice set (null: cleared);
+ *  every other key kept, `stored` not changed. */
+export function withVideoCaptions(
+  stored: unknown,
+  choice: VideoSound | null,
+): Record<string, unknown> {
+  return withSwitch(stored, "videoCaptions", choice);
 }
 
 /** The line that tells the visitor how it starts, while it waits: a tap

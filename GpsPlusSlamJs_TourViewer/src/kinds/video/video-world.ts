@@ -2,15 +2,15 @@
  * A free video's part in the world (`screen`, `cutout`, `porthole`,
  * `window`, `standHere`): its look (`video-look.ts`) fed by a `<video>`
  * element, and the rules of `video-rules.ts` driven by the camera frame.
- * The creator's trigger starts it once (on entering, within a distance, when looked at, or on a
- * tap); leaving pauses it and coming back resumes it; a finished video
+ * The creator's trigger starts it once (on entering, within a distance,
+ * when looked at, or on a tap); leaving pauses it and coming back resumes it; a finished video
  * stays finished and a tap replays it. It starts with its sound when the
  * visitor's remembered choice, else the creator's, says so - and only
  * after the visitor has touched the page; a start the browser still
  * refuses is muted and said. While the visitor is there its card
  * (`video-card.ts`) is on the page's screen with play, the sound switch
  * (remembered for every video), the hint and, with captions, a CC switch
- * over a caption strip; a porthole's tap opens the clip large in that
+ * (remembered the same way) over a caption strip; a porthole's tap opens the clip large in that
  * card. A looping video plays again on the element itself. A stand-here
  * video ignores the trigger: footprints stand at its viewpoint, and its
  * projection develops from a faint ghost while the visitor stands on them
@@ -48,6 +48,7 @@ import {
   standHereGuide,
   standHereTarget,
 } from "./stand-here.js";
+import { videoCap, type CapSeat, type VideoCap } from "./video-cap.js";
 import { captionAt, readCaptions } from "./video-captions.js";
 import {
   videoCard,
@@ -67,12 +68,14 @@ import {
   lookDwell,
   startFires,
   VIDEO_SOUND_REFUSED_MS,
+  videoCaptionsChoice,
   videoHint,
   videoReachM,
   videoSoundChoice,
   videoStartOf,
   videoStep,
   videoThere,
+  withVideoCaptions,
   withVideoSound,
   type VideoAction,
   type VideoEvent,
@@ -112,7 +115,17 @@ export interface VideoDeps {
   storage(): PrefsStorage | undefined;
   /** The player as a page element, for a porthole's card; null: none. */
   element(player: ClipPlayer): HTMLElement | null;
+  /** The play cap every free video of the page shares (`video-cap.ts`). */
+  readonly cap: VideoCap;
 }
+
+/**
+ * The page's one play cap. A module value, not store state: it counts
+ * the page's playing `<video>` elements, a resource like the elements
+ * themselves, and a phone's decoders are the page's, whichever station
+ * a video stands in.
+ */
+const PAGE_CAP = videoCap();
 
 /** The browser's: a `<video>`, its frames, `createImageBitmap`, object
  *  URLs, `navigator.userActivation` and `localStorage`. */
@@ -169,6 +182,7 @@ function browserVideoDeps(): VideoDeps {
       typeof HTMLElement !== "undefined" && player instanceof HTMLElement
         ? player
         : null,
+    cap: PAGE_CAP,
   };
 }
 
@@ -186,6 +200,15 @@ const viewerLocal = new Vector3();
 
 /** The note when the browser kept a wanted sound off. */
 export const SOUND_REFUSED_NOTE = "The browser kept the sound off";
+
+/** The card's line while it waits for a place under the play cap; its
+ *  look stays as it is (the poster, or the frame it was paused on). */
+export const VIDEO_WAITING_NOTE = "Waiting for another video to stop";
+
+/** How long a switch's note (Sound, CC) holds the card's line (s)
+ *  before the line says again what it said: long enough to read four
+ *  words, short enough not to hide a guide the visitor needs. */
+export const VIDEO_SWITCH_NOTE_S = 3;
 
 /** The note when the browser refused to play it at all, even muted. */
 const PLAY_REFUSED_NOTE = "The browser did not start it. Tap to play";
@@ -250,19 +273,42 @@ export function videoWorld(
   const standHere = view === "standHere";
   const viewpoint = standHere ? block.viewpoint : undefined;
   let develop = 0;
+  /** Started from the card's Play: it develops whole wherever the
+   *  visitor stands, until he leaves. */
+  let cardPlayed = false;
   let spotM = Number.POSITIVE_INFINITY;
   let spot: StandHereSpot | null = null;
   const anchor = new Group();
   if (viewpoint !== undefined) {
     spot = standHereSpot(viewpoint, (canvas) => env.canvasTexture(canvas));
     anchor.matrixAutoUpdate = false;
+    // Hidden until the first frame places it: its identity matrix
+    // would draw the footprints under the video's pose.
+    anchor.visible = false;
     anchor.add(spot.object);
     object.add(anchor);
   }
-  // Captions, on until the visitor's CC turns them off; none offered
-  // when the text reads to no cue.
+  // Captions, as the visitor's remembered CC choice says (on when he
+  // never chose), read again whenever the card opens, so a choice made
+  // on another video holds here too; none offered when the text reads
+  // to no cue.
   const cues = readCaptions(block.captions).cues;
   let captionsOn = true;
+  /** The remembered CC choice, or this video's own when none can be
+   *  read (no storage, or nothing kept): a card opened again must not
+   *  undo the visitor's switch on a page that cannot remember it. */
+  const rememberedCaptions = (): boolean => {
+    const choice = videoCaptionsChoice(loadVisitorPrefs(deps.storage()));
+    return choice === null ? captionsOn : choice !== "off";
+  };
+  /** A switch's note (Sound, CC) and when it was said: it holds the
+   *  card's line for `VIDEO_SWITCH_NOTE_S`, then the line says again
+   *  what it said (a stand-here guide above all). */
+  let switchNote: { readonly text: string; readonly at: number } | null = null;
+  const freshSwitchNote = (): string | null =>
+    switchNote !== null && seconds - switchNote.at < VIDEO_SWITCH_NOTE_S
+      ? switchNote.text
+      : null;
   const captions: VideoCaptionControls | undefined =
     cues.length === 0
       ? undefined
@@ -274,17 +320,70 @@ export function videoWorld(
           on: () => captionsOn,
           toggle: () => {
             captionsOn = !captionsOn;
+            const storage = deps.storage();
+            const kept = saveVisitorPrefs(
+              storage,
+              withVideoCaptions(
+                loadVisitorPrefs(storage),
+                captionsOn ? "on" : "off",
+              ),
+            );
+            switchNote = {
+              text: `Captions ${captionsOn ? "on" : "off"}${kept ? " for every video" : ""}`,
+              at: seconds,
+            };
           },
         };
 
+  /** The event that waits for a place under the cap (its start, its
+   *  return, the visitor's tap), sent again once the cap lets it play. */
+  let pending: VideoEvent | null = null;
+  const seat: CapSeat = {
+    granted: () => {
+      const waited = pending;
+      pending = null;
+      if (waited !== null && !gone) event(waited);
+      card?.render();
+    },
+    // Another video took the sound: muted where it is, still playing.
+    muted: () => {
+      if (player !== null) player.muted = true;
+    },
+    // The browser kept the one that took it muted: heard again.
+    unmuted: () => {
+      if (player !== null) player.muted = false;
+    },
+  };
+  /** The player muted or not, and the cap told who is heard. */
+  const setMuted = (muted: boolean): void => {
+    const p = player;
+    if (p === null) return;
+    p.muted = muted;
+    if (muted) deps.cap.quiet(seat);
+    else deps.cap.heard(seat);
+  };
+  /** It neither plays nor waits any more: its place goes to the next. */
+  const release = (): void => {
+    pending = null;
+    deps.cap.leave(seat);
+  };
+  /** Each `play()` is a try; only the newest may answer, so a refusal
+   *  that arrives after a later try never stops that one. */
+  let tries = 0;
+  const tryPlay = (p: ClipPlayer): void => {
+    const thisTry = ++tries;
+    p.play().catch(() => {
+      if (thisTry === tries) refused();
+    });
+  };
   const startPlaying = (): void => {
     const p = player;
     if (p === null) return;
     playAskedAt = seconds;
     if (note === PLAY_REFUSED_NOTE) note = null;
-    p.play().catch(() => {
-      refused();
-    });
+    // Before `play()`: a start with sound mutes the one heard so far.
+    if (!p.muted) deps.cap.heard(seat);
+    tryPlay(p);
   };
   /** The browser refused to play: with sound, muted and tried again;
    *  muted already, stopped - paused, said, and the visitor's tap is the
@@ -296,13 +395,14 @@ export function videoWorld(
     if (p.muted) {
       state = "paused";
       note = PLAY_REFUSED_NOTE;
+      release();
       return;
     }
+    // Muted, and the sound this start took goes back where it was.
     p.muted = true;
+    deps.cap.refused(seat);
     note = SOUND_REFUSED_NOTE;
-    p.play().catch(() => {
-      refused();
-    });
+    tryPlay(p);
   };
   const decideSound = (): void => {
     if (soundDecided || player === null) return;
@@ -336,10 +436,29 @@ export function videoWorld(
         return;
     }
   };
+  /**
+   * One event through the playing rule. A step that would set it playing
+   * asks the cap first; while no place is free it changes nothing and
+   * waits as `pending`. A step that leaves it not playing (a leave, a
+   * pause, an end) gives up its wait or its place, after its own pause,
+   * so a waiter never plays beside it. A tap while it waits is a wish
+   * to play it, which it waits for already: the wait is kept.
+   */
   const event = (e: VideoEvent): void => {
+    if (pending !== null && e === "tap") return;
     const step = videoStep(state, e);
+    const starts =
+      step.action === "play" ||
+      step.action === "resume" ||
+      step.action === "replay";
+    if (starts && !deps.cap.ask(seat)) {
+      pending = e;
+      return;
+    }
+    if (starts) pending = null;
     state = step.state;
     apply(step.action);
+    if (state !== "playing") release();
   };
 
   let card: VideoCard | null = null;
@@ -351,7 +470,7 @@ export function videoWorld(
     // A start that wanted sound before the page was touched: this tap
     // touches it, and turns the sound on rather than pausing.
     if (state === "playing" && blocked && p !== null && p.muted) {
-      p.muted = false;
+      setMuted(false);
       blocked = false;
       note = null;
       return;
@@ -362,30 +481,43 @@ export function videoWorld(
     const p = player;
     if (p === null) return;
     const on = p.muted;
-    p.muted = !on;
+    setMuted(!on);
     blocked = false;
+    // The visitor's own switch says the last word on a refused sound.
+    if (note === SOUND_REFUSED_NOTE) note = null;
     const storage = deps.storage();
     const kept = saveVisitorPrefs(
       storage,
       withVideoSound(loadVisitorPrefs(storage), on ? "on" : "off"),
     );
-    note = `Sound ${on ? "on" : "off"}${kept ? " for every video" : ""}`;
+    switchNote = {
+      text: `Sound ${on ? "on" : "off"}${kept ? " for every video" : ""}`,
+      at: seconds,
+    };
   };
   const openCard = (): void => {
     if (env.screen === undefined || closeCard !== null) return;
+    if (captions !== undefined) captionsOn = rememberedCaptions();
     const element = overlay && player !== null ? deps.element(player) : null;
     closeCard = env.screen.show((host) => {
       card = videoCard(
         host,
         block,
         {
-          toggle,
+          // The card's Play plays a waiting stand-here video at once (an
+          // in-world tap waits for the spot), and it then develops whole.
+          toggle: () => {
+            if (standHere && state === "waiting") cardPlayed = true;
+            toggle();
+          },
           toggleSound,
           playing: () => state === "playing",
           sound: () => player !== null && !player.muted,
           timeMs: () => (player?.currentTime ?? 0) * 1000,
           durationMs: () => durationOf(player) * 1000,
           line: () =>
+            (pending !== null ? VIDEO_WAITING_NOTE : null) ??
+            freshSwitchNote() ??
             note ??
             (standHere
               ? standHereGuide(develop, spotM, viewpoint !== undefined)
@@ -492,6 +624,7 @@ export function videoWorld(
     object.updateMatrix();
     anchor.matrix.copy(object.matrix).invert();
     anchor.matrixWorldNeedsUpdate = true;
+    anchor.visible = true;
     spot.show(play ? develop : 0, seconds);
   };
 
@@ -517,11 +650,25 @@ export function videoWorld(
       // In its own metres: a folder that draws it larger widens its reach.
       distanceM =
         Math.hypot(x - position.x, z - position.z) / inheritedScaleOf(object);
-      const now = videoThere(distanceM, reachM, there);
+      if (standHere) {
+        spotM =
+          viewpoint === undefined
+            ? 0
+            : Math.hypot(x - viewpoint.position[0], z - viewpoint.position[2]);
+      }
+      // A stand-here visitor is there near the video or near its spot, so
+      // a spot typed beyond the station's reach still starts it.
+      // Both in the video's own metres, as its reach is.
+      const thereM =
+        standHere && viewpoint !== undefined
+          ? Math.min(distanceM, spotM / inheritedScaleOf(object))
+          : distanceM;
+      const now = videoThere(thereM, reachM, there);
       if (now !== there) {
         there = now;
         if (there) openCard();
         else shutCard();
+        if (!there) cardPlayed = false;
         event(there ? "return" : "leave");
       }
       // Degrees between the view's middle and the video's centre; 0
@@ -539,13 +686,21 @@ export function videoWorld(
         return (Math.acos(Math.min(1, Math.max(-1, cos))) * 180) / Math.PI;
       };
       if (standHere) {
-        spotM =
-          viewpoint === undefined
-            ? 0
-            : Math.hypot(x - viewpoint.position[0], z - viewpoint.position[2]);
         const target =
-          viewpoint === undefined ? 1 : standHereTarget(spotM, offDeg());
+          viewpoint === undefined || (cardPlayed && state === "playing")
+            ? 1
+            : standHereTarget(spotM, offDeg());
         develop = standHereDevelop(develop, target, dt);
+        // A turn in line is for a visitor on the spot: stepped off it, he
+        // gives it up, and asks again once it develops past the start.
+        if (
+          state === "waiting" &&
+          pending !== null &&
+          !cardPlayed &&
+          develop < STAND_HERE_PLAYS_AT
+        ) {
+          release();
+        }
         if (state === "waiting" && there && develop > STAND_HERE_PLAYS_AT) {
           event("start");
         }
@@ -594,6 +749,7 @@ export function videoWorld(
     dispose() {
       gone = true;
       shutCard();
+      release();
       const p = player;
       player = null;
       if (p !== null) {
