@@ -131,6 +131,7 @@ import {
   type InspectorModel,
 } from "./inspector-model.js";
 import { inspectorFileOf, REPLACE_FILE_ACT } from "./inspector-file.js";
+import { STEP_GRIP_ARM } from "./story-cards.js";
 import {
   controlName,
   drawInspector,
@@ -145,6 +146,7 @@ import {
   SHELL_DOCK_LAYOUT,
   phoneSheets,
   cardsDrill,
+  steadyHeight,
   wirePhoneSheets,
   type SheetKind,
 } from "./phone-sheet.js";
@@ -848,6 +850,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
    *  with them so a draw sees the change. */
   const openCards = new Set<string>();
   let cardsChanged = 0;
+  /** The page's height blind to a keyboard (`steadyHeight`), so typing
+   *  in an open card never turns the cards into ones that drill. */
+  const pageHeight = steadyHeight();
+  const drillsNow = (): boolean =>
+    cardsDrill(
+      window.innerWidth,
+      pageHeight(window.innerWidth, window.innerHeight),
+    );
   /** A ground command waiting for the ground: the inspector shows it in
    *  progress; a new selection or the view hidden calls it off. */
   let busy: {
@@ -890,9 +900,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       timingsStamp: timingsStampOf(state().tourDocument.timings),
       selectedFileUnsaved: freeItemUnsaved(state().tourDocument, ui.selected),
       // On a phone a card goes to its step: none opens in place.
-      openCards: cardsDrill(window.innerWidth, window.innerHeight)
-        ? []
-        : [...openCards],
+      openCards: drillsNow() ? [] : [...openCards],
     });
     const file = inspectorFileOf(
       ui.selected,
@@ -930,7 +938,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         positionOpen,
         contentsOpen,
         busy: busy?.act ?? null,
-        drill: cardsDrill(window.innerWidth, window.innerHeight),
+        drill: drillsNow(),
         // Only for a selection shown: nothing selected builds no tour.
         ...(model === null
           ? {}
@@ -2033,6 +2041,26 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       deps.stations.reorder(order);
     },
   });
+  // A story's step card dragged by its grip (`shell-inspector.ts`): the
+  // step to the slot it is dropped at in its story, the page's move (one
+  // undo step). The grip waits for its arm, so a flick that scrolls the
+  // cards and starts on a grip moves nothing.
+  createTreeDrag({
+    body: inspector.body,
+    cards: ".scard[data-card]",
+    idAttribute: "card",
+    arm: STEP_GRIP_ARM,
+    reorder: (_order, { id, slot }) => {
+      const tour = manifest();
+      const story = tour === null ? undefined : tourChildPlace(tour, id)?.story;
+      if (story === undefined) return;
+      deps.stations.moveChild(id, {
+        place: "story",
+        story: story.id,
+        index: slot,
+      });
+    },
+  });
   // An item's or a story's grip (`shell-tree.ts`): among the stories,
   // between a story and another or the station's free items, or onto
   // another station's card as a whole (asked first, `moveToStation`). A
@@ -2204,7 +2232,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       return true;
     }
     if (name !== "card" && name !== "card-show") return false;
-    if (cardsDrill(window.innerWidth, window.innerHeight)) {
+    if (drillsNow()) {
       goToItem(id);
       return true;
     }

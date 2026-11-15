@@ -140,7 +140,9 @@ to a station, a story's name in the head takes the focus, selected.
 - A press on a story's pill (`story-check`): a valid story says "The story
   is valid: every path of it can reach the end."; one with a problem goes to
   where the Problems tab's first row for it goes and says what it is.
-- A story's cards drill into their step (`cardsDrill`, `phone-sheet.ts`)
+- A story's cards drill into their step (`cardsDrill` of the width and
+  `steadyHeight`, so a keyboard that resizes the page never closes an open
+  card while its field is typed in; `phone-sheet.ts`)
   on a phone either way round; on a desktop they open in place.
 
 - `createEditorShell(deps)` -> `EditorShell`, made once by `edit-main.ts`:
@@ -370,6 +372,15 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   was pressed, or at an end on the other one; the new place is said in a
   polite live region (`#shell-said`, hidden but read: "Now Station n of
   N").
+- **A story's step cards:** a card's grip (`data-drag`, in the story's
+  inspector) drags it among the story's cards with the editor kit's
+  `createTreeDrag`, armed by `STEP_GRIP_ARM` (a finger rests 150 ms, a
+  mouse moves 4 px), so a flick across the cards still scrolls them. The
+  dragged card shows `dragging`, the slot it lands in a line
+  (`drop-before`, `drop-after`). One drop is one
+  `stations.moveChild(id, { place: "story", story, index })`, the slot
+  counted before the move, so one undo step; Earlier and Later stay the
+  keyboard's way.
 - **Moves inside a station:** a story's, an entry's or a free item's grip
   (`data-move`) drags it with the editor kit's `createNestDrag`
   (`tree-nest-drag.ts`) among its station's stories, into a story (onto

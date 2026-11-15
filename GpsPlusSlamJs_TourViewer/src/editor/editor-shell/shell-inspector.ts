@@ -733,10 +733,11 @@ function cardAnswers(card: StoryCard): HTMLElement | null {
   return list;
 }
 
-/** A step's card: its head (a press opens it in place, or on a phone
- *  goes to the step: `card:<id>`), its answers, the loop warning with
- *  its fix, and, open, its inspector's parts. Every control inside
- *  answers for the step (`data-card`). */
+/** A step's card: its grip (`data-drag`, the shell's drag to reorder)
+ *  beside its head (a press opens it in place, or on a phone goes to the
+ *  step: `card:<id>`), its answers, the loop warning with its fix, and,
+ *  open, its inspector's parts. Every control inside answers for the step
+ *  (`data-card`). */
 function storyCard(
   card: StoryCard,
   opened: InspectorModel | undefined,
@@ -779,7 +780,16 @@ function storyCard(
   const chev = el("span", "chev");
   chev.append(shellIcon(drill ? "right" : "down"));
   head.append(el("span", "num", String(card.number)), icon, sum, chev);
-  box.append(head);
+  // The grip is no button (a pointer's alone, and a button holds none):
+  // the step's Earlier and Later are the keyboard's way to move it.
+  const grip = el("span", "grip");
+  grip.dataset["drag"] = card.id;
+  grip.title = "Drag to reorder";
+  grip.setAttribute("aria-hidden", "true");
+  grip.append(shellIcon("grip"));
+  const row = el("div", "crow");
+  row.append(grip, head);
+  box.append(row);
   const answers = cardAnswers(card);
   if (answers !== null) box.append(answers);
   if (card.issue !== null) {
@@ -809,7 +819,8 @@ function storyCard(
 
 /** A story: its steps as cards in order (`story-cards.ts`), each open
  *  in place or, on a phone (`InspectorState.drill`), a way into its
- *  step; the way to add one, and its Delete saying what goes with it. */
+ *  step, and its Delete saying what goes with it. The way to add one is
+ *  in its footer (`storyFoot`). */
 function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
   const n = model.cards.length;
   const drill = state.drill === true;
@@ -841,10 +852,6 @@ function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
   return [
     list,
     actions([
-      action("add-entry", "plus", "Add step..."),
-      ...(n === 0 ? [] : [action("preview-story", "eye", "Preview the story")]),
-    ]),
-    actions([
       action(
         "delete",
         "trash",
@@ -853,6 +860,24 @@ function storyParts(model: StoryModel, state: InspectorState): HTMLElement[] {
       ),
     ]),
   ];
+}
+
+/** A story's footer, the dock body's last part (`editor-shell.css` keeps
+ *  it at the dock's foot while the cards scroll): "Add step...", and
+ *  "Preview the story" once it has a step; none for anything else. */
+function storyFoot(model: InspectorModel): HTMLElement[] {
+  if (model.kind !== "story") return [];
+  const add = action("add-entry", "plus", "Add step...");
+  add.classList.add("wide");
+  const buttons = [add];
+  if (model.cards.length > 0) {
+    const preview = action("preview-story", "eye", "Preview the story");
+    preview.classList.add("pri");
+    buttons.push(preview);
+  }
+  const foot = actions(buttons);
+  foot.classList.add("sfoot");
+  return [foot];
 }
 
 /** The gap above the card at `at` (0-based) on a desktop: a button,
@@ -1437,7 +1462,8 @@ export interface InspectorState {
    *  way up. None given: no crumb, and Back goes to the list. */
   readonly crumb?: readonly InspectorCrumb[];
   /** A story's cards go to their step on a press, never open in place
-   *  (a phone: `phoneSheets`); none said: they open in place. */
+   *  (a phone either way round: `cardsDrill`); none said: they open in
+   *  place. */
   readonly drill?: boolean;
 }
 
@@ -1766,6 +1792,7 @@ function drawDock(
     ...partsOf(model, state, pictures, sub, panel),
     ...moveParts(model, sub),
     ...(model.file === undefined ? [] : [fileFieldPart(model.file)]),
+    ...storyFoot(model),
   ];
   const before = [
     ...(state.crumb === undefined ? [] : [crumbNav(state.crumb)]),

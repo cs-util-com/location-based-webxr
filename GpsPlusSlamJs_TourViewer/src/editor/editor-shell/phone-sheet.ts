@@ -47,6 +47,30 @@ export function cardsDrill(widthPx: number, heightPx: number): boolean {
   return phoneSheets(widthPx) || heightPx <= CARDS_DRILL_SHORT_PX;
 }
 
+/**
+ * The page's height as `cardsDrill` reads it, blind to a keyboard: the
+ * tallest height seen at the current width. A keyboard that resizes the
+ * page shrinks only its height, so a card open with its field focused
+ * stays open; turning a phone changes the width, which starts over. A
+ * height that is not a finite number is ignored. A desktop window made
+ * shorter at the same width is therefore read at its tallest until its
+ * width changes too.
+ */
+export function steadyHeight(): (widthPx: number, heightPx: number) => number {
+  let width = Number.NaN;
+  let tallest = 0;
+  return (widthPx, heightPx) => {
+    if (!Number.isFinite(heightPx)) return tallest;
+    if (widthPx !== width) {
+      width = widthPx;
+      tallest = heightPx;
+    } else {
+      tallest = Math.max(tallest, heightPx);
+    }
+    return tallest;
+  };
+}
+
 /** Where a sheet released at `share` rests; null: it goes. */
 export function sheetRelease(share: number): number | null {
   if (!(share >= SHEET_LIMITS.dismiss)) return null;

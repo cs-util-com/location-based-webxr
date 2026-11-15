@@ -22,6 +22,18 @@ import {
 } from "../story-steps.js";
 import { storyRows, type TreeRowKind } from "./tree-model.js";
 
+/** When a press on a card's grip drags the card (`createTreeDrag`'s
+ *  `arm`): a finger rests 150 ms within 6 px first, so a flick that
+ *  scrolls the cards and happens to start on a grip moves nothing; a mouse
+ *  drags from 4 px, so a click on a grip marks nothing. Short of the
+ *  dock tabs' 250 ms hold and the page's 500 ms long press (8 px), so
+ *  neither runs out under a grip's drag. */
+export const STEP_GRIP_ARM = Object.freeze({
+  holdMs: 150,
+  tolerancePx: 6,
+  movePx: 4,
+});
+
 /** A jump chip: its words, its kind (the chip's look) and the id of the
  *  step it leads to (null: the end, or a step that is gone). */
 export interface StoryCardJump {

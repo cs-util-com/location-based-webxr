@@ -424,6 +424,65 @@ describe("drawInspector", () => {
     expect(dock.body.querySelector(".gap")).toBeNull();
   });
 
+  // Why: the chosen step-cards prototype keeps "Add step" and "Preview the
+  // story" at the panel's foot while the cards scroll: one footer, the
+  // dock body's last part (after Delete and Move to station), Add first
+  // and wide, Preview the primary; an empty story has nothing to preview.
+  it("puts Add step and Preview the story in a footer at the body's foot", () => {
+    const foot = () => dock.body.lastElementChild as HTMLElement | null;
+    const buttons = () =>
+      [...(foot()?.querySelectorAll<HTMLElement>("button") ?? [])].map((b) => [
+        b.dataset["act"],
+        b.className,
+        b.textContent,
+      ]);
+    drawInspector(dock, STORY, FOLD, pictures);
+    expect(foot()?.className).toBe("acts sfoot");
+    expect(buttons()).toEqual([
+      ["add-entry", "act wide", "Add step..."],
+      ["preview-story", "act pri", "Preview the story"],
+    ]);
+    expect(dock.body.querySelectorAll('[data-act="add-entry"]')).toHaveLength(
+      1,
+    );
+    drawInspector(dock, { ...STORY, cards: [] }, FOLD, pictures);
+    expect(buttons()).toEqual([["add-entry", "act wide", "Add step..."]]);
+  });
+
+  // Why: a card is dragged by its grip alone (the head opens the card, the
+  // rest of it scrolls the list on a phone), so the grip sits beside the
+  // head, not in it (a button holds no button), names its step for the
+  // drag (`data-drag`), and is hidden from a screen reader: the step's
+  // Earlier and Later are the keyboard's way to move it.
+  it("gives each card a grip beside its head, on a desktop and a phone", () => {
+    for (const drill of [false, true]) {
+      drawInspector(dock, STORY, { ...FOLD, drill }, pictures);
+      expect(
+        [...dock.body.querySelectorAll<HTMLElement>(".scard")].map((k) => {
+          const row = k.firstElementChild as HTMLElement;
+          const grip = row.querySelector<HTMLElement>(".grip");
+          return [
+            row.className,
+            [...row.children].map((c) => c.className),
+            grip?.tagName,
+            grip?.dataset["drag"],
+            grip?.getAttribute("aria-hidden"),
+            grip?.title,
+          ];
+        }),
+      ).toEqual(
+        ["intro", "way"].map((id) => [
+          "crow",
+          ["grip", "chead"],
+          "SPAN",
+          id,
+          "true",
+          "Drag to reorder",
+        ]),
+      );
+    }
+  });
+
   // Why: the loop warning is said on every step of the loop, and only the
   // loop's last choice carries the one-click fix, named by the answer it
   // changes; a card open in place draws its step's own controls inside
