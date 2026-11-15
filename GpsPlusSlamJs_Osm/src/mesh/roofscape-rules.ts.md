@@ -58,8 +58,20 @@ the answers into geometry.
   so reloads, devices and moved windows draw the same house.
 - `neighbourhoodPriors` does not depend on the order of its input and finds
   exactly the neighbours a scan of every pair finds (grid of cell size
-  `priorRadiusM`, 3x3 cells searched). Non-finite centres are left out of the
+  `priorRadiusM` plus the slack below, times the largest east-west stretch
+  `1 / xScale`, 3x3 cells searched). Non-finite centres are left out of the
   grid.
+- The neighbourhood reaches a micrometre past `priorRadiusM` (both the
+  distance test and the grid cell). Two frames reach the same ground distance
+  by different float paths: in a frame stretched by `k` the prior multiplies
+  the east-west difference `x1 * k - x0 * k` by `xScale = 1 / k`, which can
+  differ from `x1 - x0` by about 1e-14 m, and without the slack a neighbour
+  exactly at the radius (common with whole-metre coordinates: 160 m east and
+  120 m north is exactly 200 m) voted in one frame and not in another, which
+  could flip a neighbourhood across the evidence floor. The slack in the cell
+  size matters on its own: without it a point at an exact multiple of the cell
+  can round into the cell below and fall out of a neighbour's 3x3 search. Frame invariance therefore holds
+  for every pair except one within float noise of radius plus a micrometre.
 - Rings are ENU metres, unclosed (no repeated last corner).
 
 ## Examples
@@ -89,7 +101,10 @@ if (keep === undefined) {
 
 - `roofscape-rules.test.ts`: the keep reasons, the refusals, the heights and
   their bands, part votes collapsing into their outline, the tall
-  neighbourhood, shared walls, gable choice, offsets.
-- `roofscape-rules.property.test.ts`: priors are order-invariant and equal a
-  brute-force scan; a zero offset is the identity; the untagged eave stays
+  neighbourhood, a neighbour exactly at the radius in a stretched frame (in
+  the distance test and across a grid cell edge),
+  shared walls, gable choice, offsets.
+- `roofscape-rules.property.test.ts`: priors are order-invariant, equal a
+  brute-force scan and do not move when a frame stretches east-west and
+  `xScale` undoes it; a zero offset is the identity; the untagged eave stays
   within 2.5-10.5 m.

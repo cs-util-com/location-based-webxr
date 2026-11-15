@@ -2003,16 +2003,18 @@ test.describe("the time of day", () => {
         `/?lat=${50.9231}&lng=${6.9445}&date=${first[1]}&time=${first[2]}&ao=off`,
       );
       await waitForRefresh(page);
+      // The slider moves the time within the booted day only, so every point
+      // of a half shares the booted date; the first point is the booted one
+      // and is measured as booted, the others are reached by the slider.
+      expect(new Set(points.map(([, date]) => date))).toEqual(
+        new Set([first[1]]),
+      );
       for (const [
-        label,
-        date,
-        time,
-        approvedLit,
-        share = 0.5,
-        minBuildingLuma = null,
-      ] of points) {
+        index,
+        [label, date, time, approvedLit, share = 0.5, minBuildingLuma = null],
+      ] of points.entries()) {
         await test.step(`at ${label}`, async () => {
-          if (time !== first[2]) {
+          if (index > 0) {
             const landed = await page.evaluate(
               async ({ date, time }) => {
                 // A dev-server URL resolved from the page root, not a node path:
@@ -2025,14 +2027,23 @@ test.describe("the time of day", () => {
                 if (hours === null) throw new Error(`bad time ${time}`);
                 const day = { year: y, month: m, day: d };
                 const pinned = clock.instantAt(day, place, hours);
-                const steps = 1000;
-                const value = Math.ceil(
-                  clock.instantToSlider(pinned, place) * steps - 1e-9,
-                );
                 const input = document.getElementById("sun-time");
                 if (!(input instanceof HTMLInputElement)) {
                   throw new Error("no #sun-time");
                 }
+                // The app maps a value as value / SUN_SLIDER_STEPS (1000, a
+                // constant in `src/main.ts`), not by the control's own `max`,
+                // so the control must span exactly 0 to that constant.
+                if (Number(input.min) !== 0) {
+                  throw new Error(`slider min ${input.min}, not 0`);
+                }
+                const steps = 1000;
+                if (Number(input.max) !== steps) {
+                  throw new Error(`slider max ${input.max}, not ${steps}`);
+                }
+                const value = Math.ceil(
+                  clock.instantToSlider(pinned, place) * steps - 1e-9,
+                );
                 input.value = String(value);
                 input.dispatchEvent(new Event("input", { bubbles: true }));
                 const instant = clock.sliderToInstant(
