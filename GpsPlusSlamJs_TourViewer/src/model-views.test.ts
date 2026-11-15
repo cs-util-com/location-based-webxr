@@ -8,6 +8,7 @@
  * its place" would no longer be the tour's model. The notes live on the
  * block, so they must survive a replaced model file.
  */
+import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
@@ -615,32 +616,74 @@ describe("the contact shadow", () => {
   });
 
   // Why: the shadow's span per side is the footprint's, held at a floor
-  // share of the model's largest side (a thin post still casts a round
-  // blob), times the spread. Swept over the spread a page could pick
-  // (1.1-1.6) and over shapes from a coin to a tower: the shadow always
-  // covers the footprint and never outgrows twice the largest side.
-  it("covers the footprint and stays within twice the largest side, over spreads and shapes", () => {
-    const shapes: [number, number, number][] = [
-      [2, 1, 1],
-      [0.1, 3, 0.1],
-      [3, 0.05, 3],
-      [0.3, 0.3, 4],
+  // share of the footprint's larger side (a long thin bench still casts a
+  // blob both ways), times the spread. Swept over the spread a page could
+  // pick (1.1-1.6) and over footprints from a coin to a long beam: the
+  // shadow always covers the footprint and never outgrows twice its
+  // larger side.
+  it("covers the footprint and stays within twice its larger side, over spreads and shapes", () => {
+    const footprints: [number, number][] = [
+      [2, 1],
+      [0.1, 0.1],
+      [3, 3],
+      [0.3, 4],
     ];
     for (const spread of [1.1, 1.25, 1.4, 1.6]) {
-      for (const [x, y, z] of shapes) {
-        const largest = Math.max(x, y, z);
+      for (const [x, z] of footprints) {
+        const larger = Math.max(x, z);
         for (const span of [x, z]) {
-          const shown = contactShadowSpan(span, largest, spread);
+          const shown = contactShadowSpan(span, larger, spread);
           expect(shown).toBeGreaterThan(span);
-          expect(shown).toBeLessThanOrEqual(2 * largest + 1e-9);
+          expect(shown).toBeLessThanOrEqual(2 * larger + 1e-9);
           expect(shown).toBeGreaterThanOrEqual(
-            MODEL_SHADOW_FLOOR_SHARE * largest,
+            MODEL_SHADOW_FLOOR_SHARE * larger,
           );
         }
       }
     }
     expect(contactShadowSpan(Number.NaN, 1)).toBe(0);
     expect(contactShadowSpan(1, 0)).toBe(0);
+  });
+
+  // Why: the spread is a plain factor; a span computed with any other
+  // factor (or none) fails here, where the sweep's bounds would pass it.
+  it("is the held span times exactly the spread, for any span and spread", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 50, noNaN: true }),
+        fc.double({ min: 0.01, max: 50, noNaN: true }),
+        fc.double({ min: 1, max: 2, noNaN: true }),
+        (span, larger, spread) => {
+          const held = Math.max(span, MODEL_SHADOW_FLOOR_SHARE * larger);
+          expect(contactShadowSpan(span, larger, spread) / held).toBeCloseTo(
+            spread,
+            9,
+          );
+          expect(contactShadowSpan(span, larger)).toBeCloseTo(
+            held * MODEL_SHADOW_SPREAD,
+            9,
+          );
+        },
+      ),
+      { seed: 11, numRuns: 300 },
+    );
+  });
+
+  // Why: a tower 10 m tall on a 1 m square stands on a blob the size of
+  // its foot; held by its height, it got a 7.5 m pool of dark around it.
+  it("lays a tower's shadow by its footprint, not its height", () => {
+    const parent = new THREE.Group();
+    const model = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 1));
+    mesh.position.y = 5;
+    model.add(mesh);
+    parent.add(model);
+    parent.updateMatrixWorld(true);
+    mountModelView(model, block("placed", { sizeM: 10 }), 1);
+    parent.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(shadowOf(model)!);
+    expect(box.max.x - box.min.x).toBeCloseTo(MODEL_SHADOW_SPREAD, 6);
+    expect(box.max.z - box.min.z).toBeCloseTo(MODEL_SHADOW_SPREAD, 6);
   });
 });
 

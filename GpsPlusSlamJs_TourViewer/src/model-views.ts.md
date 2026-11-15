@@ -17,8 +17,9 @@ drawn model; `model-visitor.ts` drives the handles.
   - Every view: a soft contact shadow (`model-contact-shadow`) hangs on
     the model, flat at its lowest point at rest (`MODEL_SHADOW_LIFT_M`,
     12 mm, above it), centred under its footprint; each side spans
-    `contactShadowSpan(side, largest side)` = `max(side, 0.6 x largest)
-x 1.25` (`MODEL_SHADOW_FLOOR_SHARE`, `MODEL_SHADOW_SPREAD`, the chosen
+    `contactShadowSpan(side, larger footprint side)` = `max(side, 0.6 x
+larger) x 1.25` (the footprint, never the height: a 10 m tower on a
+    1 m foot gets a 1.25 m blob) (`MODEL_SHADOW_FLOOR_SHARE`, `MODEL_SHADOW_SPREAD`, the chosen
     page's 3.3 m x 2.5 m blob under its 2.7 m bell frame; swept 1.1-1.6
     in the tests). Opacity `MODEL_SHADOW_OPACITY` 0.85, under the ghost
     `MODEL_SHADOW_GHOST_OPACITY` 0.35 (its feet already fade). The radial
@@ -118,8 +119,9 @@ view.update(dtS, camera);
 ## Tests
 
 `model-views.test.ts`: placed untouched; the contact shadow's place,
-size, opacity per view, no ray and its removal, and its span swept over
-spreads and shapes; the ghost's materials and their
+size, opacity per view, no ray and its removal, its span swept over
+spreads and footprints, a property that the span is the held side times
+exactly the spread, a tower's shadow by its foot; the ghost's materials and their
 return; the facing cut and its easing; sections in a rotated parent and after the parent moves; note
 points; notes after a file swap; the clip held in hotspots; the toy's
 factor, cap, move, reach (swept over tour sizes 0.1-500 m, and after a

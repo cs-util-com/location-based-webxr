@@ -135,8 +135,10 @@ export const MODEL_SHADOW_GHOST_OPACITY = 0.35;
  *  it matches the page's 3.3 m x 2.5 m blob under its 2.7 m bell frame
  *  (3.4 m x 2.0 m here); swept 1.1-1.6 in the tests. */
 export const MODEL_SHADOW_SPREAD = 1.25;
-/** A side's span never counts as less than this share of the model's
- *  largest side, so a thin post or a tower still stands on a blob. */
+/** A side's span never counts as less than this share of the footprint's
+ *  larger side, so a long thin bench still lays a blob both ways. Held by
+ *  the footprint, never the height: a tall tower on a small foot stands
+ *  on a blob its foot's size. */
 export const MODEL_SHADOW_FLOOR_SHARE = 0.6;
 /** How far above the model's lowest point the shadow lies (m in the
  *  world): above the feet, so it never hides inside the ground. */
@@ -336,20 +338,20 @@ function ownBox(model: THREE.Object3D): THREE.Box3 {
 
 /**
  * The contact shadow's span along one side: the footprint's `span`, held
- * at `MODEL_SHADOW_FLOOR_SHARE` of the model's `largest` side, times
+ * at `MODEL_SHADOW_FLOOR_SHARE` of the footprint's `larger` side, times
  * `spread` (all in one unit). Zero for a span or size that is not finite
  * and > 0.
  */
 export function contactShadowSpan(
   span: number,
-  largest: number,
+  larger: number,
   spread: number = MODEL_SHADOW_SPREAD,
 ): number {
-  if (!(Number.isFinite(span) && Number.isFinite(largest) && largest > 0)) {
+  if (!(Number.isFinite(span) && Number.isFinite(larger) && larger > 0)) {
     return 0;
   }
   return (
-    Math.max(Math.max(0, span), MODEL_SHADOW_FLOOR_SHARE * largest) * spread
+    Math.max(Math.max(0, span), MODEL_SHADOW_FLOOR_SHARE * larger) * spread
   );
 }
 
@@ -532,8 +534,8 @@ export function mountModelView(
     shadow.name = "model-contact-shadow";
     shadow.rotation.x = -Math.PI / 2;
     shadow.scale.set(
-      contactShadowSpan(size.x, native),
-      contactShadowSpan(size.z, native),
+      contactShadowSpan(size.x, Math.max(size.x, size.z)),
+      contactShadowSpan(size.z, Math.max(size.x, size.z)),
       1,
     );
     shadow.position.set(
