@@ -26,7 +26,9 @@ same look, still and silent.
 - `ready` loads the clip (and the poster, a failure of which only drops
   it), waits for the clip's metadata and rejects when it cannot be read;
   on a page with no player it settles at once. The look is rebuilt to the
-  clip's own shape (a stacked clip's picture is its upper half).
+  clip's own shape (a stacked clip's picture is its upper half), and
+  that rebuild takes its ground from what is drawn at once (below), not
+  from the pose it is built with.
 - The ground: a shadow and a cutout's foot lie on the station's ground.
   Each `update` takes it from what is drawn, not from the pose the part
   was built with: the object's height in the station's frame over the
@@ -84,4 +86,6 @@ part?.update?.({ seconds, viewer, facing });
   in folders of scale 0.5 to 10, at rest, while a folder's scale is
   dragged and while its width is dragged (0.1 to 6 m, in folders of
   scale 1 and 3; no rebuild: the same tap target), each checked against
-  the shadow's 0.012 gap times the scale the look is drawn at.
+  the shadow's 0.012 gap times the scale the look is drawn at. Also the
+  rebuild to the clip's shape inside a raised, scaled folder, grounded
+  before any frame.

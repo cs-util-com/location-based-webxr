@@ -204,6 +204,12 @@ export function videoWorld(
   let aspect = VIDEO_DEFAULT_ASPECT;
   let look = build(aspect);
   object.add(look.object);
+  // The ground is where it is drawn: its height in the station's metres,
+  // over the scale its folders draw it at in its own. Both move while a
+  // folder's scale is dragged, the pose it was built with does not.
+  const groundLook = (): void => {
+    look.ground(object.position.y / inheritedScaleOf(object));
+  };
 
   let gone = false;
   let player: ClipPlayer | null = null;
@@ -417,6 +423,8 @@ export function videoWorld(
       look.dispose();
       look = build(aspect);
       object.add(look.object);
+      // Built from the pose: the folders may draw it elsewhere already.
+      groundLook();
     }
     // A trigger that fired while the file was read starts it now.
     if (play && state === "playing") apply("play");
@@ -447,11 +455,7 @@ export function videoWorld(
     },
     ready,
     update(frame) {
-      // The ground is where it is drawn: its height in the station's
-      // metres, over the scale its folders draw it at in its own. Both
-      // move while a folder's scale is dragged, the pose it was built
-      // with does not.
-      look.ground(object.position.y / inheritedScaleOf(object));
+      groundLook();
       seconds = frame.seconds;
       const dt = lastSeconds === null ? 0 : seconds - lastSeconds;
       lastSeconds = seconds;

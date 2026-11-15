@@ -523,5 +523,27 @@ describe("a free video's ground", () => {
         }
       });
     }
+
+    // Why: the look is rebuilt once the clip's own shape is known (the
+    // fake clip is 16:9, the look is first built at the default shape).
+    // A part its folders already draw larger by then must have its ground
+    // right at once, not only from its next frame's `update()`. The
+    // folder stands 3 m up, so the part is drawn at 3 + 2 * 3 = 9 m and
+    // its own lift (9 / 3 = 3 m) is not its pose's 2 m: a rebuild from
+    // the pose alone put the ground 3 m above the station's.
+    it(`a ${view} rebuilt to its clip's shape in a raised folder of scale 3 lies on the ground before its next frame`, async () => {
+      const { part } = await video({
+        mode: "edit",
+        block: {
+          view,
+          pose: { position: [0, 2, 0], rotation: [0, 0, 0, 1] },
+        },
+        beforeReady: (p) => {
+          p.object.position.set(0, 9, 0);
+          drawInherited(p.object, 3);
+        },
+      });
+      expectOnGround(part.object, 3, "before a frame");
+    });
   }
 });
