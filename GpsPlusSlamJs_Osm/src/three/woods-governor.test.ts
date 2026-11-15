@@ -150,6 +150,42 @@ describe("createWoodsGovernor", () => {
     expect(governor.state().share).toBe(0.5);
   });
 
+  // A thinned share that bought its time and then met a denser district is
+  // judged against the slowness that sent it down, not only the full woods:
+  // full at 60 ms, half at 45, later 70 at half (heavier woods), a quarter at
+  // 55. The quarter saved over 15 percent against the 70, so it stays,
+  // though against the full woods' 60 it would read as worthless.
+  it("keeps a quarter that pays against the half's later slowness", () => {
+    const governor = createWoodsGovernor();
+    let at = burst(governor, 0, 3_000, 60);
+    expect(governor.state().share).toBe(0.5);
+    at = burst(governor, at, 60_000, 45);
+    burst(governor, at + 60_000, 30_000, (share) => (share === 0.5 ? 70 : 55));
+    expect(governor.state()).toMatchObject({ share: 0.25, mode: "thinned" });
+  });
+
+  // A thinned share has bought its time only after `fastS` of counted frames
+  // under the line, not after one fast frame: a short dip at half (a pause in
+  // the scene, startup frames) followed by the same slowness as before is
+  // still the woods not paying, so the full woods come back and rest. A dip
+  // as long as `fastS` is a real purchase and the next verdict steps on.
+  it("counts a thinned share as having bought its time only after fastS under the line", () => {
+    const dip = (seconds: number) => {
+      const governor = createWoodsGovernor();
+      let at = burst(governor, 0, 3_000, 60);
+      expect(governor.state().share).toBe(0.5);
+      at = burst(governor, at, seconds * 1000, 30);
+      burst(governor, at, 4_000, 55);
+      return governor.state();
+    };
+    for (const seconds of [0.1, 1, 5, WOODS_GOVERNOR.fastS - 2]) {
+      expect(dip(seconds)).toMatchObject({ share: 1, mode: "resting" });
+    }
+    for (const seconds of [WOODS_GOVERNOR.fastS + 2, 30]) {
+      expect(dip(seconds)).toMatchObject({ share: 0.25, mode: "thinned" });
+    }
+  });
+
   // A step that once bought its time is not judged against the full woods
   // forever. Full at 60 ms steps to half; at half the phone runs at 45 ms
   // (between the lines: it stays); minutes later a denser district makes it
@@ -179,17 +215,44 @@ describe("createWoodsGovernor", () => {
     expect(governor.state()).toMatchObject({ share: 0.25, mode: "thinned" });
   });
 
+  // A quarter that bought its time keeps it until it steps up: when the
+  // phone later slows whatever the woods (heat), the fewest woods stay rather
+  // than every tree coming back with a 300 s rest, even when the later frame
+  // is over 85 % of the full woods' (here 80 ms full, later 56-90 ms).
+  it("keeps a quarter that bought its time when it gets slow later, above the worthwhile line too", () => {
+    for (const later of [56, 65, 70, 90]) {
+      const governor = createWoodsGovernor();
+      let at = burst(governor, 0, 8_000, (share) => (share === 1 ? 80 : 60));
+      expect(governor.state().share).toBe(0.25);
+      at = burst(governor, at, 30_000, 45);
+      burst(governor, at + 180_000, 120_000, later);
+      expect(governor.state(), `later ${later} ms`).toMatchObject({
+        share: 0.25,
+        mode: "thinned",
+      });
+    }
+  });
+
   // A pair of long frames says the device is slow, but only by the gap's
-  // worth each: the second of two hitches, 1.9 s long, must not by itself
-  // fill the two slow seconds on an otherwise fast device.
-  it("counts at most gapMs of a long frame toward the verdict and the average", () => {
+  // worth each in the verdict's seconds: the second of two hitches, 1.9 s
+  // long, must not by itself fill the two slow seconds on an otherwise fast
+  // device. The average takes it in at most `spikeLimit` times the average,
+  // so one long frame cannot lift it for seconds; a device whose every frame
+  // is that long still reaches its true time, the limit growing with the
+  // average (see the slow devices).
+  it("credits at most gapMs of a long frame to the verdict, and at most spikeLimit times the average to the average", () => {
     const governor = createWoodsGovernor();
     let at = burst(governor, 0, 5_000, 16.7);
+    const before = governor.state().averageMs ?? 0;
     at += 300;
     governor.frame(at, true);
     at += 1_900;
     governor.frame(at, true);
-    expect(governor.state().averageMs ?? 0).toBeLessThan(WOODS_GOVERNOR.slowMs);
+    const G = WOODS_GOVERNOR;
+    expect(governor.state().averageMs ?? 0).toBeCloseTo(
+      before + (G.spikeLimit * before - before) * G.smoothing,
+      6,
+    );
     burst(governor, at, 10_000, 16.7);
     expect(governor.state()).toMatchObject({ share: 1, mode: "full" });
   });
@@ -294,6 +357,747 @@ describe("the step-up across steady frame times", () => {
       const { governor, at } = thinnedAndRested();
       burst(governor, at, 60_000, ms);
       expect(governor.state().share).toBe(0.5);
+    });
+  }
+});
+
+/**
+ * A device at 300 ms a frame or more still deserves fewer woods when they
+ * are its cost. Each such frame credits only `gapMs` to the verdict, but the
+ * average keeps the whole frame, so the worthwhile test sees what thinning
+ * saved. Frame time here is `full * (1 - w + w * share)`: the woods are `w`
+ * of the frame, so the half rung saves `w / 2`. From `w` 0.3 (15 percent
+ * saved, the `worthwhile` line, which is what reverses the verdict) the
+ * woods thin to a quarter, swept at 0.35-0.8; at `w` 0.2 (10 percent saved)
+ * they come back and rest. Each rung is judged by its own frames (the
+ * average starts afresh at a step), so at eight counted frames a verdict
+ * the smoothing has no lag to hide the saving in. Swept over 150-2000 ms.
+ */
+describe("slow devices across frame times and woods shares", () => {
+  const run = (full: number, w: number) => {
+    const governor = createWoodsGovernor();
+    let at = 0;
+    let quarterAt: number | undefined;
+    governor.frame(at, true);
+    while (at < 600_000) {
+      at += full * (1 - w + w * governor.state().share);
+      governor.frame(at, true);
+      if (quarterAt === undefined && governor.state().share === 0.25) {
+        quarterAt = at;
+      }
+    }
+    return { state: governor.state(), quarterAt };
+  };
+  // An upper bound on the time to the quarter: two verdicts of `slowS`, each
+  // frame crediting at most `gapMs` (or its own length when shorter) and
+  // lasting at most `full`, plus the first frame ignored as a lone gap, the
+  // frame after the step to the half (it counts toward nothing; the one
+  // after the step to the quarter comes once the quarter is reached) and one
+  // frame of rounding.
+  const boundMs = (full: number): number =>
+    ((2 * WOODS_GOVERNOR.slowS * 1000) / Math.min(full, WOODS_GOVERNOR.gapMs) +
+      3) *
+    full;
+  for (const full of [150, 300, 400, 600, 1000, 2000]) {
+    for (const w of [0.35, 0.5, 0.65, 0.8]) {
+      it(`reaches the fewest woods at ${full} ms with woods ${w * 100} % of the frame`, () => {
+        const { state, quarterAt } = run(full, w);
+        expect(state).toMatchObject({ share: 0.25, mode: "thinned" });
+        expect(quarterAt ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+          boundMs(full),
+        );
+      });
+    }
+    it(`gives the woods back and rests at ${full} ms when they are 20 % of the frame`, () => {
+      expect(run(full, 0.2).state).toMatchObject({ share: 1, mode: "resting" });
+    });
+  }
+});
+
+/**
+ * The half rung after a purchase: full woods at `full` ms step to half, half
+ * runs 45 ms for a minute (bought), then the device slows to a flat `later`
+ * ms whatever the woods (heat, a heavier scene elsewhere). The half steps on
+ * to a quarter; the quarter is judged against the full woods' baseline, so
+ * it stays while `later` is under `(1 - worthwhile)` of `full` and gives the
+ * woods back with a rest above it. That line is what reverses each verdict;
+ * pairs within 1.5 ms of it are left out of the sweep. Swept over `full`
+ * 60-150 ms, `later` 52-65 ms, and 30 and 120 s at the later frame time.
+ */
+describe("the half rung's later slowdown across baselines", () => {
+  for (const seconds of [30, 120]) {
+    for (const full of [60, 65, 70, 80, 100, 150]) {
+      for (const later of [52, 55, 58, 60, 65]) {
+        const line = full * (1 - WOODS_GOVERNOR.worthwhile);
+        if (Math.abs(later - line) < 1.5) continue;
+        const pays = later < line;
+        it(`full ${full}, later ${later} for ${seconds} s: ${pays ? "stays at a quarter" : "full and resting"}`, () => {
+          const governor = createWoodsGovernor();
+          let at = 0;
+          governor.frame(at, true);
+          while (governor.state().share === 1 && at < 60_000) {
+            at += full;
+            governor.frame(at, true);
+          }
+          expect(governor.state().share).toBe(0.5);
+          at = burst(governor, at, 60_000, 45);
+          burst(governor, at, seconds * 1000, later);
+          expect(governor.state()).toMatchObject(
+            pays
+              ? { share: 0.25, mode: "thinned" }
+              : { share: 1, mode: "resting" },
+          );
+        });
+      }
+    }
+  }
+});
+
+/**
+ * Two hitches in a row on a device at or under the line: the first is a
+ * lone gap and ignored, the second enters the average at most `spikeLimit`
+ * times the average and credits only `gapMs` to the slow seconds. So the
+ * frames after it bring the average back under the line before two slow
+ * seconds are reached, whatever the hitch's length, on a fast device, a
+ * 30 Hz cap (33.3 ms), a 25 Hz cap (40 ms) and devices just under the line
+ * (45-49 ms), where a thinned share would never get back under `fastMs`.
+ * Swept over second hitches of 0.4 s to an hour. What reverses it: a limit
+ * of 16 times the average (or none, when an inflated average's decay at
+ * 45-49 ms fills the two slow seconds).
+ */
+describe("two long frames in a row on a device at or under the line", () => {
+  for (const device of [16.7, 1000 / 30, 40, 45, 47, 49]) {
+    for (const second of [400, 1_900, 10_000, 60_000, 600_000, 3_600_000]) {
+      it(`does not thin at ${device.toFixed(1)} ms after hitches of 300 ms and ${second} ms`, () => {
+        const governor = createWoodsGovernor();
+        let at = burst(governor, 0, 5_000, device);
+        at += 300;
+        governor.frame(at, true);
+        at += second;
+        governor.frame(at, true);
+        const end = at + 30_000;
+        let thinned = false;
+        while (at < end) {
+          at += device;
+          governor.frame(at, true);
+          if (governor.state().share < 1) thinned = true;
+        }
+        expect(thinned).toBe(false);
+        expect(governor.state()).toMatchObject({ share: 1, mode: "full" });
+      });
+    }
+  }
+});
+
+/**
+ * A pair of long frames before the first verdict on a device whose woods are
+ * cheap (5-10 % of a 55-70 ms frame, so a half saves under 15 % and stays
+ * over the line): the pair must not lift the baseline the worthwhile test
+ * judges against, or the useless thinning would look worthwhile and stay
+ * for good. Swept over second hitches of 0.4-30 s at 0.5 and 1 s into the
+ * burst. What reverses it: cheaper woods' frames under the line (52 ms with
+ * woods at 10 % thins to 49.4 ms, under 50, which is a real purchase), and a
+ * pair from 1.25 s on, inside the first verdict's window, which lifts the
+ * baseline itself (the accepted limit the sidecar names).
+ */
+describe("a long-frame pair before the first verdict on cheap woods", () => {
+  for (const full of [55, 60, 70]) {
+    for (const w of [0.05, 0.1]) {
+      it(`gives the woods back at ${full} ms with woods ${w * 100} % of the frame`, () => {
+        for (const second of [400, 1_000, 5_000, 30_000]) {
+          for (const pairAt of [250, 500, 750, 1_000]) {
+            const governor = createWoodsGovernor();
+            let at = 0;
+            let injected = 0;
+            governor.frame(at, true);
+            while (at < 900_000) {
+              let ms: number;
+              if (at >= pairAt && injected === 0) {
+                injected = 1;
+                ms = 300;
+              } else if (injected === 1) {
+                injected = 2;
+                ms = second;
+              } else {
+                ms = full * (1 - w + w * governor.state().share);
+              }
+              at += ms;
+              governor.frame(at, true);
+            }
+            expect(
+              governor.state().share,
+              `second ${second} ms at ${pairAt} ms`,
+            ).toBe(1);
+          }
+        }
+      });
+    }
+  }
+});
+
+/**
+ * The frame right after a step is the step's own (the woods re-sort their
+ * draw order), so it counts toward nothing: a fresh average does not start
+ * at it, and it cannot change a verdict. Swept over full-woods frames of
+ * 60-100 ms, a half at 60-84 % of the full frame (woods proportional to the
+ * share), and one post-step frame of 80-250 ms: every verdict after 30 s is
+ * the one without that frame. And on slow devices (300-2000 ms, woods at 35 %
+ * of the frame) a post-step frame 10 or 50 % longer still lets them reach
+ * the quarter. What reverses it: counting that frame, which with eight
+ * counted frames a verdict carries about 43 % of a fresh average.
+ */
+describe("the frame right after a step", () => {
+  const run = (
+    frameMs: (share: number, sinceStep: number) => number,
+    durationMs: number,
+  ) => {
+    const governor = createWoodsGovernor();
+    let at = 0;
+    let share = 1;
+    let sinceStep = Number.POSITIVE_INFINITY;
+    governor.frame(at, true);
+    while (at < durationMs) {
+      at += frameMs(share, sinceStep);
+      sinceStep += 1;
+      governor.frame(at, true);
+      if (governor.state().share !== share) {
+        share = governor.state().share;
+        sinceStep = 0;
+      }
+    }
+    return governor.state();
+  };
+  for (const full of [60, 70, 80, 100]) {
+    it(`changes no verdict at ${full} ms`, () => {
+      for (const half of [0.6, 0.7, 0.8, 0.84]) {
+        const byShare = (share: number): number =>
+          full * (share === 1 ? 1 : share === 0.5 ? half : 1.5 * half - 0.5);
+        const clean = run((share) => byShare(share), 30_000);
+        for (const post of [80, 120, 160, 200, 250]) {
+          expect(
+            run(
+              (share, since) => (since === 0 ? post : byShare(share)),
+              30_000,
+            ),
+            `half ${half}, post-step ${post} ms`,
+          ).toEqual(
+            expect.objectContaining({ share: clean.share, mode: clean.mode }),
+          );
+        }
+      }
+    });
+    it(`changes no verdict with two long post-step frames at ${full} ms`, () => {
+      for (const half of [0.6, 0.7, 0.8, 0.84]) {
+        const byShare = (share: number): number =>
+          full * (share === 1 ? 1 : share === 0.5 ? half : 1.5 * half - 0.5);
+        const clean = run((share) => byShare(share), 60_000);
+        for (const longer of [1.1, 1.5, 2, 3, 5]) {
+          expect(
+            run(
+              (share, since) =>
+                since < 2 ? byShare(share) * longer : byShare(share),
+              60_000,
+            ),
+            `half ${half}, two post-step frames x${longer}`,
+          ).toEqual(
+            expect.objectContaining({ share: clean.share, mode: clean.mode }),
+          );
+        }
+      }
+    });
+  }
+  for (const full of [300, 600, 1000, 2000]) {
+    it(`lets a slow device at ${full} ms reach the quarter with longer post-step frames`, () => {
+      for (const longer of [1.1, 1.5]) {
+        const state = run((share, since) => {
+          const ms = full * (0.65 + 0.35 * share);
+          return since === 0 ? ms * longer : ms;
+        }, 600_000);
+        expect(state, `post-step x${longer}`).toMatchObject({
+          share: 0.25,
+          mode: "thinned",
+        });
+      }
+    });
+  }
+});
+
+/**
+ * After a step the fresh average is seeded at the smaller of its first two
+ * counted frames, not at the median of three as at the session's start. A
+ * slow device (300-2000 ms, eight counted frames a verdict) whose half sits
+ * just over the worthwhile line (87-93 % of the full woods' frame, the
+ * quarter at 70 %) and whose first counted frame at the half is short
+ * (0.7-0.8 times; the re-sort's frames settling) starts the half's average
+ * at that frame, so the half's verdict reads under the line and the woods
+ * step on to the quarter. Without the short frame the same device rests at
+ * full woods, which shows the case sits at the line. What reverses it: a
+ * seed of three after a step, whose median drops the short frame and sends
+ * every one of these cases to full woods for a rest; the seed length after a
+ * step is otherwise pinned by no test here.
+ */
+describe("the seed after a step is its first two counted frames", () => {
+  const run = (full: number, half: number, short: number) => {
+    const governor = createWoodsGovernor();
+    const byShare = (share: number): number =>
+      full * (share === 1 ? 1 : share === 0.5 ? half : 0.7);
+    let at = 0;
+    let share = 1;
+    let sinceStep = Number.POSITIVE_INFINITY;
+    let rested = false;
+    governor.frame(at, true);
+    while (at < 600_000) {
+      // 0 is the step's own frame (skipped); 1 is the first counted one.
+      const ms = byShare(share);
+      at += share === 0.5 && sinceStep === 1 ? ms * short : ms;
+      sinceStep += 1;
+      governor.frame(at, true);
+      const state = governor.state();
+      rested ||= state.mode === "resting";
+      if (state.share !== share) {
+        share = state.share;
+        sinceStep = 0;
+      }
+    }
+    return { state: governor.state(), rested };
+  };
+  for (const full of [300, 600, 1000, 2000]) {
+    it(`steps on to the quarter at ${full} ms with a short first frame at the half`, () => {
+      for (const half of [0.87, 0.9, 0.93]) {
+        expect(run(full, half, 1).rested, `half ${half} unseeded`).toBe(true);
+        for (const short of [0.7, 0.8]) {
+          const { state, rested } = run(full, half, short);
+          expect(rested, `half ${half}, first frame x${short}`).toBe(false);
+          expect(state).toMatchObject({ share: 0.25, mode: "thinned" });
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A quarter that is fast climbs back to the half once the rest allows it;
+ * when the half is slow again it steps back to the quarter, never through
+ * the full woods: the half was re-entered from a rung that bought its time.
+ * Full at 60 or 80 ms, half at 45 for a minute, then a district where the
+ * half runs 55-90 ms, the quarter 20-34 ms and the full woods 1.4 times the
+ * half, for 20 minutes. What reverses it: judging the re-entered half
+ * against the old full-woods baseline, which sends most of these cases to
+ * full woods for a 300 s rest.
+ */
+describe("a quarter that climbs back to a slow half", () => {
+  for (const full of [60, 80]) {
+    for (const half of [55, 70, 90]) {
+      it(`never returns to full woods: full ${full}, later half ${half} ms`, () => {
+        for (const quarter of [20, 30, 34]) {
+          const governor = createWoodsGovernor();
+          let at = 0;
+          let stepped = false;
+          let backToFull = false;
+          governor.frame(at, true);
+          while (at < 1_260_000) {
+            const share = governor.state().share;
+            at +=
+              at < 60_000
+                ? share === 1
+                  ? full
+                  : share === 0.5
+                    ? 45
+                    : 30
+                : share === 1
+                  ? half * 1.4
+                  : share === 0.5
+                    ? half
+                    : quarter;
+            governor.frame(at, true);
+            const now = governor.state().share;
+            if (now < 1) stepped = true;
+            else if (stepped) backToFull = true;
+          }
+          expect(stepped).toBe(true);
+          expect(backToFull, `quarter ${quarter} ms`).toBe(false);
+        }
+      });
+    }
+  }
+});
+
+/**
+ * The session's average is seeded at the median of its first three counted
+ * frames, so a hitch there is not the start the spike limit defends. A pair
+ * of hitches (300 ms, then 0.26-60 s) in the first chained intervals of a
+ * session, after none, one or two of the device's own frames, on devices at
+ * 16.7-49 ms never thins: the first hitch is a lone gap and ignored, the
+ * second is one of three counted frames. What reverses it: starting at the
+ * first counted frame alone, which thins a 45 ms device from a second frame
+ * of 400 ms, 40 ms from 2 s and 33.3 ms from 5 s, and the half never comes
+ * back (it sits above `fastMs`).
+ */
+describe("a long-frame pair at the start of a session", () => {
+  for (const device of [16.7, 25, 1000 / 30, 40, 45, 49]) {
+    it(`does not thin at ${device.toFixed(1)} ms`, () => {
+      for (const second of [
+        260, 400, 1_000, 2_000, 5_000, 10_000, 30_000, 60_000,
+      ]) {
+        for (const lead of [0, 1, 2]) {
+          const governor = createWoodsGovernor();
+          let at = 0;
+          governor.frame(at, true);
+          for (let i = 0; i < lead; i += 1) {
+            at += device;
+            governor.frame(at, true);
+          }
+          at += 300;
+          governor.frame(at, true);
+          at += second;
+          governor.frame(at, true);
+          const end = at + 120_000;
+          let thinned = false;
+          while (at < end) {
+            at += device;
+            governor.frame(at, true);
+            if (governor.state().share < 1) thinned = true;
+          }
+          expect(thinned, `second frame ${second} ms after ${lead}`).toBe(
+            false,
+          );
+        }
+      }
+    });
+  }
+});
+
+/**
+ * One long frame (2.5-3.5 times the device's, under `gapMs`) as the first
+ * counted frame of a session, on a device just under the line (48-49.5 ms,
+ * the woods 30 % of the frame), then the device's own frame or one up to
+ * 10 % longer (jitter): the median of the first three counted frames is the
+ * second, so the device keeps its full woods. What reverses it: seeding at
+ * the first frame (or at the second only when it is `spikeLimit` times
+ * shorter), which keeps the long frame as the seed; its decay holds the
+ * average over 50 ms for the two slow seconds at 49 and 49.5 ms, and the
+ * half (above `fastMs`) never comes back.
+ */
+describe("a single long first counted frame on a near-line device", () => {
+  for (const device of [48, 49, 49.5]) {
+    it(`does not thin at ${device} ms`, () => {
+      for (const first of [2.5, 3, 3.5]) {
+        for (const next of [1, 1.05, 1.1]) {
+          const governor = createWoodsGovernor();
+          let at = 0;
+          let i = 0;
+          let thinned = false;
+          governor.frame(at, true);
+          while (at < 120_000) {
+            const ms = device * (0.7 + 0.3 * governor.state().share);
+            at += i === 0 ? device * first : i === 1 ? ms * next : ms;
+            i += 1;
+            governor.frame(at, true);
+            if (governor.state().share < 1) thinned = true;
+          }
+          expect(thinned, `first frame x${first}, next x${next}`).toBe(false);
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A short second counted frame on a slow device must not become its
+ * full-woods baseline. At 300-2000 ms a frame the first interval is a lone
+ * gap and ignored, so the second counted frame is the third interval; here
+ * it is 0.45-0.85 times the device's frame (natural jitter on a slow phone).
+ * The median of the first three counted frames is the device's own frame,
+ * so thinning that pays (woods 35-80 % of the frame) reaches the quarter
+ * without a rest. What reverses it: seeding at the smaller of the first two
+ * (the rule after a step) or the smallest of three, which takes the short
+ * frame as the baseline, judges the half worthless and rests 300 s at full
+ * woods (82-92 of 144 jittered cases at 0.7).
+ */
+describe("a short second counted frame on a slow device", () => {
+  for (const full of [300, 600, 1000, 2000]) {
+    it(`reaches the quarter without a rest at ${full} ms`, () => {
+      for (const w of [0.35, 0.5, 0.8]) {
+        for (const short of [0.45, 0.5, 0.7, 0.85]) {
+          const governor = createWoodsGovernor();
+          let at = 0;
+          let i = 0;
+          let rested = false;
+          governor.frame(at, true);
+          while (at < 600_000) {
+            const ms = full * (1 - w + w * governor.state().share);
+            at += i === 2 ? ms * short : ms;
+            i += 1;
+            governor.frame(at, true);
+            rested ||= governor.state().mode === "resting";
+          }
+          expect(rested, `woods ${w * 100} %, second frame x${short}`).toBe(
+            false,
+          );
+          expect(governor.state().share).toBe(0.25);
+        }
+      }
+    });
+  }
+});
+
+/**
+ * The same pair right after a step, from the second, third or fourth
+ * interval on (the first is the step's own and skipped): a half that pays
+ * (full 55-80 ms, the half at 35-48 ms) keeps paying; it never goes back to
+ * full woods for a rest. Swept over second hitches of 0.4-30 s. What
+ * reverses it: a fresh average starting at the 300 ms frame alone, which
+ * sent 30 of these 48 to full woods with a 300 s rest.
+ */
+describe("a long-frame pair right after a step", () => {
+  /** Whether the governor ever rests when the pair starts `offset` intervals after the step to the half. */
+  const restsAfterPair = (
+    full: number,
+    half: number,
+    second: number,
+    offset: number,
+  ): boolean => {
+    const byShare = (share: number): number =>
+      share === 1 ? full : share === 0.5 ? half : half * 0.8;
+    const governor = createWoodsGovernor();
+    let at = 0;
+    let frames = 0;
+    let stepAt = Number.POSITIVE_INFINITY;
+    let pairAt = Number.POSITIVE_INFINITY;
+    let share = 1;
+    let rested = false;
+    governor.frame(at, true);
+    while (at < 120_000) {
+      if (share === 0.5 && pairAt === Number.POSITIVE_INFINITY) {
+        pairAt = stepAt + offset;
+      }
+      const pair = [300, second][frames - pairAt];
+      at += pair ?? byShare(share);
+      frames += 1;
+      governor.frame(at, true);
+      const state = governor.state();
+      rested ||= state.mode === "resting";
+      if (state.share !== share) {
+        share = state.share;
+        stepAt = frames;
+      }
+    }
+    return rested;
+  };
+  for (const full of [55, 60, 80]) {
+    it(`keeps a half that pays at ${full} ms`, () => {
+      for (const half of [35, 40, 45, 48]) {
+        for (const second of [400, 1_000, 5_000, 30_000]) {
+          for (const offset of [1, 2, 3]) {
+            expect(
+              restsAfterPair(full, half, second, offset),
+              `half ${half} ms, second ${second} ms at ${offset}`,
+            ).toBe(false);
+          }
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A regular stutter whose mean is well over the line (every 2nd-4th frame
+ * 120-245 ms on a 16.7 or 25 ms device, a mean of 60 ms or more) thins: the
+ * spike limit must not hide it. What reverses it: a limit of 3 times the
+ * average, which leaves a 16.7 ms device with every 4th frame at 200 or
+ * 245 ms (a mean of 63 and 74 ms) at full woods for good.
+ */
+describe("a regular stutter over the line", () => {
+  for (const device of [16.7, 25]) {
+    it(`thins at ${device} ms with long frames every 2-4 frames`, () => {
+      for (const every of [2, 3, 4]) {
+        for (const long of [120, 200, 245]) {
+          const mean = (device * (every - 1) + long) / every;
+          if (mean < 60) continue;
+          const governor = createWoodsGovernor();
+          let at = 0;
+          let i = 0;
+          let thinned = false;
+          governor.frame(at, true);
+          while (at < 60_000 && !thinned) {
+            at += i++ % every === every - 1 ? long : device;
+            governor.frame(at, true);
+            thinned = governor.state().share < 1;
+          }
+          expect(thinned, `every ${every}, ${long} ms`).toBe(true);
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A 60 Hz device near the line mixes 33.3 and 50 ms frames (vsyncs; a mean
+ * of 44-49 ms with the woods at 30 % of it). Its first counted frame is a
+ * long warm-up (6-14 vsyncs) and its second a dropped vsync (66.7 ms), so
+ * neither is the device's own. The session's average starts at the median
+ * of its first three counted frames, the 66.7 ms one, which decays under
+ * the line before two slow seconds pass. What reverses it: seeding at the
+ * first frame (a single long frame that the spike limit then defends) thins
+ * 49 ms from 6 vsyncs, 48 ms from 10 and 47 ms from 14. An open limit: a
+ * mean of 49.5 ms still thins under the median, from every first frame here.
+ */
+describe("a dropped vsync after a long first counted frame near the line", () => {
+  const vsync = 1000 / 60;
+  /** 33.3 and 50 ms frames whose running mean follows the woods drawn. */
+  const mix = (mean: number) => {
+    let error = 0;
+    return (share: number): number => {
+      const target = mean * (0.7 + 0.3 * share);
+      const next = error + target > 2.5 * vsync ? 3 * vsync : 2 * vsync;
+      error += target - next;
+      return next;
+    };
+  };
+  for (const mean of [44, 46, 47, 48, 49]) {
+    it(`does not thin at a mean of ${mean} ms`, () => {
+      for (const first of [6, 8, 10, 12, 14]) {
+        const governor = createWoodsGovernor();
+        const next = mix(mean);
+        let at = 0;
+        let i = 0;
+        let thinned = false;
+        governor.frame(at, true);
+        while (at < 300_000) {
+          const share = governor.state().share;
+          at += i === 0 ? first * vsync : i === 1 ? 4 * vsync : next(share);
+          i += 1;
+          governor.frame(at, true);
+          if (governor.state().share < 1) thinned = true;
+        }
+        expect(thinned, `first frame ${first} vsyncs`).toBe(false);
+      }
+    });
+  }
+});
+
+/**
+ * A two-frame warm-up on a device near the line (40-49 ms, the woods 30 % of
+ * the frame): the first counted frame 2-4 times the device's, the second
+ * 1.25-2 times. The median of the first three counted frames is the second
+ * one, which decays under the line in time. What reverses it: seeding at the
+ * first frame, or at the second only when it is near the line, which thins
+ * 48 ms from a 4 times first frame and 49 ms from 3 times. An open limit:
+ * at 49 ms a second frame twice as long, and at 49.5 ms one 1.5 times as
+ * long, are themselves the median and thin.
+ */
+describe("a two-frame warm-up near the line", () => {
+  const thins = (device: number, first: number, second: number): boolean => {
+    const governor = createWoodsGovernor();
+    let at = 0;
+    let i = 0;
+    let thinned = false;
+    governor.frame(at, true);
+    while (at < 300_000) {
+      const ms = device * (0.7 + 0.3 * governor.state().share);
+      at += i === 0 ? device * first : i === 1 ? device * second : ms;
+      i += 1;
+      governor.frame(at, true);
+      if (governor.state().share < 1) thinned = true;
+    }
+    return thinned;
+  };
+  for (const device of [40, 44, 46, 47, 48, 49]) {
+    it(`does not thin at ${device} ms`, () => {
+      for (const first of [2, 3, 4]) {
+        for (const second of device < 49 ? [1.25, 1.5, 2] : [1.25, 1.5]) {
+          expect(
+            thins(device, first, second),
+            `first x${first}, second x${second}`,
+          ).toBe(false);
+        }
+      }
+    });
+  }
+});
+
+/**
+ * One short counted frame among a 100-200 ms device's first three (the
+ * first, second or third; 0.3-0.7 times the device's frame, or a flat
+ * 55 ms) is not its full-woods baseline: the median of the three is the
+ * device's own frame, so thinning that pays (woods 35-80 % of the frame)
+ * reaches the quarter without a rest. What reverses it: a short second frame
+ * near the line starting the average again (it rests at 100-200 ms with the
+ * woods at 35-50 %), and seeding at the first frame alone (a short first
+ * frame rests there too).
+ */
+describe("a short counted frame among a 100-200 ms device's first three", () => {
+  for (const full of [100, 120, 150, 200]) {
+    it(`reaches the quarter without a rest at ${full} ms`, () => {
+      for (const w of [0.35, 0.5, 0.8]) {
+        for (const position of [0, 1, 2]) {
+          for (const short of [0.3, 0.4, 0.5, 0.7]
+            .map((x) => x * full)
+            .concat(55)) {
+            const governor = createWoodsGovernor();
+            let at = 0;
+            let i = 0;
+            let rested = false;
+            governor.frame(at, true);
+            while (at < 600_000) {
+              const ms = full * (1 - w + w * governor.state().share);
+              at += i === position ? short : ms;
+              i += 1;
+              governor.frame(at, true);
+              rested ||= governor.state().mode === "resting";
+            }
+            expect(
+              rested,
+              `woods ${w * 100} %, frame ${position + 1} at ${short} ms`,
+            ).toBe(false);
+            expect(governor.state().share).toBe(0.25);
+          }
+        }
+      }
+    });
+  }
+});
+
+/**
+ * A pair of hitches at a session's start on a device over the line whose
+ * woods are cheap (100-150 ms, the woods 5-10 % of the frame, so a half
+ * saves under 15 %): the first hitch (300 ms) is a lone gap and ignored, the
+ * second (0.5-2 s) is a counted frame, and it must not become the full-woods
+ * baseline, or the useless thinning would look worthwhile and stay. The
+ * median of the first three counted frames is the device's own, so the woods
+ * come back in full. What reverses it: seeding at the first counted frame
+ * (or the largest of three), which keeps the woods thinned at 100-150 ms
+ * when the pair comes first; reseeding only on a frame `spikeLimit` times
+ * shorter misses the 150 ms device after a 500 ms hitch.
+ */
+describe("a hitch pair at a session's start on cheap woods over the line", () => {
+  for (const full of [100, 120, 150]) {
+    it(`ends at full woods at ${full} ms`, () => {
+      for (const w of [0.05, 0.1]) {
+        for (const second of [500, 1_000, 2_000]) {
+          for (const lead of [0, 1, 2]) {
+            const governor = createWoodsGovernor();
+            const start = [
+              ...Array.from({ length: lead }, () => full),
+              300,
+              second,
+            ];
+            let at = 0;
+            let i = 0;
+            governor.frame(at, true);
+            while (at < 900_000) {
+              const ms = full * (1 - w + w * governor.state().share);
+              at += start[i] ?? ms;
+              i += 1;
+              governor.frame(at, true);
+            }
+            expect(
+              governor.state().share,
+              `woods ${w * 100} %, hitch ${second} ms after ${lead}`,
+            ).toBe(1);
+          }
+        }
+      }
     });
   }
 });

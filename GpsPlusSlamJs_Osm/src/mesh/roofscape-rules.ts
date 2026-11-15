@@ -168,6 +168,17 @@ export interface PriorEntry {
   readonly xScale?: number;
 }
 
+/**
+ * How far past `priorRadiusM` a centre still counts, in metres. Two frames
+ * reach the same ground distance by different float paths: the prior
+ * multiplies a stretched frame's east-west difference by `xScale`, so a
+ * difference of `x1 * k - x0 * k` times `1 / k` can differ from `x1 - x0` by
+ * about 1e-14 m. Without this a neighbour exactly at the radius (whole-metre
+ * coordinates make that common) would vote in one frame and not in another.
+ * A micrometre is far above that noise and far below anything a map can mean.
+ */
+const PRIOR_EDGE_SLACK_M = 1e-6;
+
 /** A positive, finite scale, or 1. */
 const validScale = (k: number | undefined): number =>
   k !== undefined && Number.isFinite(k) && k > 0 ? k : 1;
@@ -364,8 +375,10 @@ function collapsePartVotes(
  * tagged, a neighbourhood whose outlines mostly state a height of three
  * storeys or more reads as flat-roofed too. Otherwise nothing is known and
  * roofs are invented. The neighbourhood is every centre within
- * `priorRadiusM`, found through a grid of that cell size, so the cost grows
- * with the density, not with the square of the count. The answer does not
+ * `priorRadiusM` (plus a micrometre, so float noise from a stretched frame
+ * never moves a neighbour exactly at the radius out of it), found through a
+ * grid of that cell size times the largest east-west stretch, so the cost
+ * grows with the density, not with the square of the count. The answer does not
  * depend on the order of `entries`.
  */
 export function neighbourhoodPriors(
@@ -385,12 +398,12 @@ export function neighbourhoodPriors(
   });
   collapsePartVotes(points, entries);
 
-  const radius = params.priorRadiusM;
+  const reach = params.priorRadiusM + PRIOR_EDGE_SLACK_M;
   // Cells wide enough that the 3 x 3 block around a point holds every point
-  // within the radius ON THE GROUND, however a frame stretches east-west.
+  // within reach ON THE GROUND, however a frame stretches east-west.
   let stretch = 1;
   for (const p of points) stretch = Math.max(stretch, 1 / p.xScale);
-  const cellOf = (v: number) => Math.floor(v / (radius * stretch));
+  const cellOf = (v: number) => Math.floor(v / (reach * stretch));
   const grid = new Map<string, PriorPoint[]>();
   for (const p of points) {
     if (!Number.isFinite(p.at.x) || !Number.isFinite(p.at.y)) continue;
@@ -423,7 +436,7 @@ export function neighbourhoodPriors(
     for (const other of candidates(self.at)) {
       const dx = (other.at.x - self.at.x) * self.xScale;
       const dy = other.at.y - self.at.y;
-      if (dx * dx + dy * dy <= radius * radius) {
+      if (dx * dx + dy * dy <= reach * reach) {
         countNeighbour(tally, other, params);
       }
     }

@@ -319,6 +319,65 @@ describe("the local roof prior", () => {
     ).toBe(true);
   });
 
+  it("keeps a neighbour exactly at the radius when a stretched frame and its xScale add float noise", () => {
+    // Why: a house exactly 200 m away (160 m east, 120 m north) voted in the
+    // true frame but not in a frame stretched east-west by 0.6000000000000003,
+    // where the distance (x1 * s - x0 * s) * (1 / s) comes back as
+    // 160.00000000000003 (x * s / s alone is exact). One lost vote left the
+    // count below the evidence floor and turned a flat-roofed neighbourhood
+    // into "no evidence", so the roof depended on where the frame lay.
+    const rows = [
+      { x: 0, y: 0, roof: "flat" },
+      { x: -105, y: -94, roof: "flat" },
+      { x: 0, y: 0, roof: "gabled" },
+      { x: 0, y: 0, roof: "flat" },
+      { x: 55, y: 26, roof: "flat" },
+    ];
+    const stretch = 0.6000000000000003;
+    const entries = (s: number): PriorEntry[] =>
+      rows.map((row, i) => ({
+        key: `way/${i}`,
+        tags: { building: "yes", "roof:shape": row.roof },
+        at: pt(row.x * s, row.y),
+        xScale: 1 / s,
+      }));
+    const plain = neighbourhoodPriors(entries(1), P);
+    const stretched = neighbourhoodPriors(entries(stretch), P);
+    expect(plain.get("way/1")).toMatchObject({ pitched: false });
+    for (const { key } of entries(1)) {
+      expect(stretched.get(key)).toEqual(plain.get(key));
+    }
+  });
+
+  it("finds a neighbour exactly at the radius across a grid cell edge in a stretched frame", () => {
+    // Why: the grid's cell size carries the same slack as the distance test.
+    // Four flat roofs at 600 m east and one at 800 m, stretched east-west by
+    // 1.1430612564086915: with cells of exactly the radius times the stretch,
+    // the four land in cell 2 (2.9999999999999996 cells) and the one in cell
+    // 4, out of each other's 3 x 3 search although the distance test keeps
+    // them, so every house loses its fifth vote and the flat neighbourhood
+    // reads as "no evidence". A slack in the distance test alone, in the cell
+    // alone, or in neither, fails here.
+    const rows = [600, 600, 600, 600, 800];
+    const stretch = 1.1430612564086915;
+    const entries = (s: number): PriorEntry[] =>
+      rows.map((x, i) => ({
+        key: `way/${i}`,
+        tags: { building: "yes", "roof:shape": "flat" },
+        at: pt(x * s, 0),
+        xScale: 1 / s,
+      }));
+    const plain = neighbourhoodPriors(entries(1), P);
+    const stretched = neighbourhoodPriors(entries(stretch), P);
+    expect(plain.get("way/0")).toMatchObject({
+      pitched: false,
+      why: "flat roofs nearby",
+    });
+    for (const { key } of entries(1)) {
+      expect(stretched.get(key), key).toEqual(plain.get(key));
+    }
+  });
+
   it("counts one vote per building, however many parts it has", () => {
     // Why: Park Slope has one building with four tagged skillion parts. As
     // four votes they flipped 150 flat-roofed brownstones around it.
