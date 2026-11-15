@@ -313,6 +313,14 @@ const EXEMPT = new Map([
     'GpsPlusSlamJs_TourViewer/public/prototypes/character-library-1/maker.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/hud-agg-1-one-slot/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-player-3-creator-decides/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
 ]);
 
 const RANGE_IN_HTML = /<input\b[^>]*\btype\s*=\s*["']?range\b/is;
