@@ -558,10 +558,11 @@ test("the radius slider writes its number, one step in the history", async ({
 /**
  * A finger's touches by the browser's own touch input (CDP), so the page
  * gets real pointer events of type "touch": down at `from`, moved by
- * `dx`, `dy` in `steps`. Each event carries its own time, `stepMs` after
- * the one before (as a quick finger's, 16 ms): the strip's rule reads the
- * events' times (the 250 ms hold), so a busy test machine that delivers
- * them far apart still gives the page a quick swipe.
+ * `dx`, `dy` in `steps`, and the lift. Each event carries its own time,
+ * `stepMs` after the one before (as a quick finger's, 16 ms), which the
+ * strip's rule reads (the 250 ms hold). Sent in a burst (`sendTouches`),
+ * the moves of a frame reach the page as one: the rule's following of a
+ * touch across many moves is unit-tested (`dock-strip.wire.test.ts`).
  * @param {{ x: number, y: number }} from
  * @param {number} dx
  * @param {number} dy

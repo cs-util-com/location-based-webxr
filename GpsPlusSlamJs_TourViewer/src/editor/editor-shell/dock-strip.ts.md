@@ -100,6 +100,11 @@ stop();
 - `dock-strip.test.ts` - the gesture rule's cases and its slop and hold
   swept, `scrolledToShow`'s cases and a property that the tab always ends
   in sight.
+- `dock-strip.wire.test.ts` (jsdom) - `wireStripScroll` across a touch's
+  moves, with stamped events: a quick swipe whose deciding move came late
+  still scrolls (the hold is the rest, kept from an earlier move), follows
+  later moves and cancels the library once; a rest past the hold drags; a
+  lift under the slop shows the tab.
 - `editor3d-phone.spec.js` - a finger's swipe along the phone's strip at
   several distances, a tap, a pull across it, the shown tab and a focused
   one in sight.
