@@ -122,7 +122,7 @@ function clip(id: string): TourObject {
     widthM: 1.6,
     createdAtIso: "2026-10-13T00:00:00.000Z",
     geo: { lat: 48.52, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
-  } as TourObject;
+  };
 }
 
 /** The model's notes and codes: what the rail lists besides the stations
