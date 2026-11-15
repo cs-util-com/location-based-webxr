@@ -1685,7 +1685,7 @@ test.describe("the desktop controls", () => {
   test("an urban link without light keys opens in urban's veil, veil=0 switches it off, and a scheme switch keeps what was set", async ({
     page,
   }) => {
-    // WHY: urban is tuned with its own light (veil L* 78, EV -2), read as
+    // WHY: urban is tuned with its own light (veil L* 72, EV -2), read as
     // the DEFAULTS of the link, so an old urban link that states nothing
     // gets it and the link stays clean. The page reads the scheme from the
     // store before the light, which only a booted page can show.
@@ -1697,7 +1697,7 @@ test.describe("the desktop controls", () => {
 
     await page.goto(`${AT_FIXTURE}&scheme=urban`);
     await waitForRefresh(page);
-    await expect(veil).toHaveValue("78");
+    await expect(veil).toHaveValue("72");
     await expect(ev).toHaveValue("-2");
     expect(lightParam()).toBeNull();
 

@@ -366,13 +366,13 @@ describe("a colour scheme's light defaults", () => {
   // still wins, and every other scheme keeps the shipped look.
   const URBAN = lightDefaultsFor("urban");
 
-  it("gives urban the veil at L* 78 and EV -2, and every other scheme the shipped look", () => {
+  it("gives urban the veil at L* 72 and EV -2, and every other scheme the shipped look", () => {
     expect(URBAN).toEqual({
       ...DEFAULT_LIGHT_SETTINGS,
-      hazeVeilLightness: 78,
+      hazeVeilLightness: 72,
       exposureEv: -2,
     });
-    expect(veilOf(URBAN)).toEqual({ lightness: 78, tint: HAZE_VEIL_TINT });
+    expect(veilOf(URBAN)).toEqual({ lightness: 72, tint: HAZE_VEIL_TINT });
     for (const name of ["today", "architect", "night", "no-such-scheme"]) {
       expect(lightDefaultsFor(name)).toBe(DEFAULT_LIGHT_SETTINGS);
     }
@@ -404,7 +404,7 @@ describe("a colour scheme's light defaults", () => {
       serializeLightSettings({ ...URBAN, hazeVeilLightness: 0 }, URBAN),
     ).toBe("v1:veil=0");
     // Against the shipped defaults the urban look states its two values.
-    expect(serializeLightSettings(URBAN)).toBe("v1:ev=-2,veil=78");
+    expect(serializeLightSettings(URBAN)).toBe("v1:ev=-2,veil=72");
   });
 
   it("round-trips any setting against the urban defaults (fixed seed)", () => {
@@ -446,7 +446,7 @@ describe("a colour scheme's light defaults", () => {
       DEFAULT_LIGHT_SETTINGS,
     );
     // A veil switched off on urban stays off on the move to another scheme
-    // (0 differs from urban's 78, so it was set) ...
+    // (0 differs from urban's 72, so it was set) ...
     const off = { ...URBAN, hazeVeilLightness: 0 };
     const away = rebaseLightSettings(off, URBAN, DEFAULT_LIGHT_SETTINGS);
     expect(away).toEqual(DEFAULT_LIGHT_SETTINGS);

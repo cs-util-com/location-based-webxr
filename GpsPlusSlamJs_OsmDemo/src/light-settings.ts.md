@@ -42,10 +42,14 @@ hazeVeilLightness, hazeVeilTint }`.
   defaults a link is read and written against under that scheme: the
   shipped look with the scheme's own values over it, or
   `DEFAULT_LIGHT_SETTINGS` itself for a scheme without any (every scheme
-  but urban) and for an unknown name. Urban's are the veil at L* 78 (tint
+  but urban) and for an unknown name. Urban's are the veil at L* 72 (tint
   -4) and EV -2: its walls were chosen under that light, and it brings the
   far field toward the reference city's haze, at the price of paler far
-  accents and a few points less near contrast. So an urban link without
+  accents and a few points less near contrast. 72 is a notch below the
+  78 first chosen, which read as foggy weather; measured on the Midtown
+  south view at the shipped haze, 72 keeps near contrast 50.9 and far b*
+  -4.0, against 49.3 and -4.4 at 78 and 53.1 and -3.2 at 60, with the far
+  black level at L* 25.0 (28.2 at 78). So an urban link without
   `veil` or `ev` opens in that light, `veil=0` switches the veil off, and a
   stated `ev` wins. Other schemes, and AR (its own renderer and lighting;
   the veil never reaches its fog), are unchanged.

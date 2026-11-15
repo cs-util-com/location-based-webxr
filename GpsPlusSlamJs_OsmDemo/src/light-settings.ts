@@ -88,7 +88,7 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
  */
 const SCHEME_LIGHT: Partial<Record<ColourSchemeName, Partial<LightSettings>>> =
   {
-    urban: { hazeVeilLightness: 78, exposureEv: -2 },
+    urban: { hazeVeilLightness: 72, exposureEv: -2 },
   };
 
 /**
