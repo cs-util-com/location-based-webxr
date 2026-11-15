@@ -34,6 +34,11 @@ import {
   type AssetShelfDeps,
 } from "./asset-shelf.js";
 import { assetShelfReducer, selectShelfRows } from "./asset-shelf-slice.js";
+import {
+  createOptimizerHost,
+  OPTIMIZER_SILENCE_MS,
+  type OptimizerWorker,
+} from "./optimizer-client.js";
 import { fakeOptimizer } from "./test-support/fake-optimizer.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
@@ -164,6 +169,48 @@ describe("the shelf's runner", () => {
     await settle();
     expect(row(A)).toMatchObject({ status: "failed", retryable: true });
     expect(row(A)?.reason).toMatch(/stopped unexpectedly/);
+  });
+
+  // Why: a Worker killed out of memory may never fire its error event, and
+  // the card then showed "in progress" for good. Through the real client
+  // with a Worker that never answers, the card must leave "running" once
+  // the watchdog fires, be tried once more like any crash, and then fail
+  // with words and Retry.
+  it("a Worker that never answers fails its card with words after the watchdog, never stays running", async () => {
+    vi.useFakeTimers();
+    try {
+      const workers: OptimizerWorker[] = [];
+      const silent = createOptimizerHost(() => {
+        const w: OptimizerWorker = {
+          onmessage: null,
+          onerror: null,
+          postMessage: () => {},
+          terminate: vi.fn(),
+        };
+        workers.push(w);
+        return w;
+      });
+      const { shelf, row } = setup({
+        optimizers: ASSET_OPTIMIZERS,
+        host: silent,
+      });
+      const tick = (ms: number) => vi.advanceTimersByTimeAsync(ms);
+      shelf.add(image(A), "a.png", 1000, "added");
+      await tick(0);
+      expect(row(A)?.status).toBe("running");
+      await tick(OPTIMIZER_SILENCE_MS - 1);
+      expect(row(A)?.status).toBe("running");
+      await tick(1);
+      // the first silence counts as a crash: tried again on a fresh Worker
+      expect(workers).toHaveLength(2);
+      expect(workers[0]!.terminate).toHaveBeenCalled();
+      expect(row(A)?.status).toBe("running");
+      await tick(OPTIMIZER_SILENCE_MS);
+      expect(row(A)).toMatchObject({ status: "failed", retryable: true });
+      expect(row(A)?.reason).toMatch(/stopped answering/);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // Why: a file over the entry cap can come in only to be made smaller;

@@ -107,11 +107,12 @@ export function optimizerShrinks(
   return (kind) => table[kind] !== null;
 }
 
-/** The Worker died under a run (out of memory shows as its error event):
- *  the job counts one attempt and is tried again while attempts remain. */
+/** The Worker died under a run (out of memory shows as its error event,
+ *  or as a Worker gone silent): the job counts one attempt and is tried
+ *  again while attempts remain. `words` say how it was noticed. */
 export class OptimizerCrashed extends Error {
-  constructor() {
-    super("the optimizer stopped unexpectedly");
+  constructor(words = "the optimizer stopped unexpectedly") {
+    super(words);
     this.name = "OptimizerCrashed";
   }
 }
