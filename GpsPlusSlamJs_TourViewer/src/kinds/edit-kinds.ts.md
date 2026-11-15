@@ -55,10 +55,10 @@ there.
     background, and a short text's role, turn, ground style and floor
     arrow placement. It is the only chip mechanism: pressing the chip
     already in use (an absent field's fallback among them) writes
-    nothing, for every kind. `when?` (`{ field, value }`) shows a field only while
-    another choice of the block has that value (its fallback counted):
-    a video's Starts within only while its start is `near`, a floor
-    arrow's placement only while its ground style is `floor`. A video's
+    nothing, for every kind. `when?` (`{ field, value }`) shows a field
+    only while another choice of the block has that value (its fallback
+    counted): a video's Starts within only while its start is `near`, a
+    floor arrow's placement only while its ground style is `floor`. A video's
     start and its distance are offered in the views its trigger starts
     (`VIDEO_TRIGGERED_VIEWS`: every world view but stand-here, which
     starts when the visitor stands on its spot); its sound, loop and

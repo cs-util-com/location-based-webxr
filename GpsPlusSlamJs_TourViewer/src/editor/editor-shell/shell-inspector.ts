@@ -1462,7 +1462,8 @@ export interface InspectorState {
    *  way up. None given: no crumb, and Back goes to the list. */
   readonly crumb?: readonly InspectorCrumb[];
   /** A story's cards go to their step on a press, never open in place
-   *  (a phone: `phoneSheets`); none said: they open in place. */
+   *  (a phone either way round: `cardsDrill`); none said: they open in
+   *  place. */
   readonly drill?: boolean;
 }
 

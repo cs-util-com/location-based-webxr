@@ -426,8 +426,8 @@ function extentOf(
   };
 }
 
-/** A short text as its panel shows it: its view, and its role and turn
- *  (null: the reader's default). */
+/** A short text as its panel shows it: its view, and its chip choices,
+ *  each with the value in use. */
 interface InspectorShortText {
   readonly view: string;
   /** Its chip choices in that view, the one in use pressed (`block-fields.ts`
