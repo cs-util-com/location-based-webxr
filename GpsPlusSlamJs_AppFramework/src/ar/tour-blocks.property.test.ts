@@ -222,10 +222,10 @@ describe("a video's look fields (properties)", () => {
           // matte half on screen: the video is skipped, not shown without it.
           const skips = field === 'alpha';
           expect(lenient.length).toBe(skips ? 0 : 1);
-          expect(
-            lenient.every((kept) => !(field in (kept as object))) &&
-              lenient.every((kept) => kept.kind === 'video')
-          ).toBe(true);
+          for (const kept of lenient) {
+            expect(kept).not.toHaveProperty(field);
+            expect(kept.kind).toBe('video');
+          }
           expect(drops).toEqual([
             expect.objectContaining(
               skips

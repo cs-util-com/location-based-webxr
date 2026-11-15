@@ -1009,7 +1009,7 @@ function toastBoxes(page) {
   );
 }
 
-// Why: an undo or a redo says so in a toast for six seconds, and the
+// Why: an undo or a redo says so in a toast for eight seconds (`UNDO_MS`), and the
 // next gesture follows at once. On a short screen (a phone held sideways)
 // the toasts stood over the middle of the 3D view, where the gizmo of the
 // selection stands, and took the press meant for it. The toasts must keep

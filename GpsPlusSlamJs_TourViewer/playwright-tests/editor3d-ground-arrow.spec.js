@@ -230,7 +230,7 @@ for (const viewport of VIEWPORTS) {
 
     // Picked on the ground just in front of the arrow: the point is set
     // in the station's frame and the pick ends.
-    // The point's refusal toast lingers over the 3D view (6 s) and takes a
+    // The point's refusal toast lingers over the 3D view (8 s, `UNDO_MS`) and takes a
     // click meant for the ground on a phone on its side: it goes first.
     await expect(pointRefusals).toHaveCount(0, { timeout: 15_000 });
     const middle = await partOnPage(page, "middle");
