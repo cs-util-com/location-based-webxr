@@ -16,6 +16,8 @@ import {
   SHEET_SHARE,
   SHELL_DOCK_LAYOUT,
   phoneSheets,
+  cardsDrill,
+  CARDS_DRILL_SHORT_PX,
   sheetRelease,
   wirePhoneSheets,
   type PhoneSheets,
@@ -81,6 +83,37 @@ describe("the layout", () => {
   it("tells a phone by the width", () => {
     expect(phoneSheets(PHONE_SHEET_PX)).toBe(true);
     expect(phoneSheets(PHONE_SHEET_PX + 1)).toBe(false);
+  });
+});
+
+// Why: a story's step cards open in place on a desktop and drill into the
+// step on a phone, in either orientation: a phone on its side is wide
+// enough for the desktop layout yet too short to read a card opened in
+// place, as the chosen step-cards prototype has it. Swept over common
+// phone sizes on their side and over short and ordinary desktop windows.
+describe("cardsDrill", () => {
+  it("drills on a phone either way round, opens in place on a desktop", () => {
+    for (const [w, h] of [
+      [390, 844],
+      [360, 740],
+      [844, 390],
+      [915, 412],
+      [740, 360],
+      [932, 430],
+    ] as const) {
+      expect(cardsDrill(w, h), `${String(w)} x ${String(h)}`).toBe(true);
+    }
+    for (const [w, h] of [
+      [1280, 800],
+      [1366, 768],
+      [1024, 600],
+      [1920, 1080],
+      [800, 600],
+    ] as const) {
+      expect(cardsDrill(w, h), `${String(w)} x ${String(h)}`).toBe(false);
+    }
+    expect(cardsDrill(1280, CARDS_DRILL_SHORT_PX)).toBe(true);
+    expect(cardsDrill(1280, CARDS_DRILL_SHORT_PX + 1)).toBe(false);
   });
 });
 

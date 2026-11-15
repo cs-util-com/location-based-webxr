@@ -1418,6 +1418,49 @@ describe("a story's folder in the tree", () => {
     shell.hide();
   });
 
+  // Why: the story's pill is how a creator finds out whether the story
+  // works. Pressed while valid it says so; pressed with a problem it goes
+  // to the step the Problems tab's row goes to (the loop's first) and says
+  // what is wrong, so the press is never silent and never a dead end.
+  it("says the story is valid, or goes to its problem, from the pill", () => {
+    const { deps, select, shell } = withStory();
+    select("story:legend");
+    expect(inspectorAct("story-check").textContent).toBe("Story valid");
+    inspectorAct("story-check").click();
+    expect(deps.say).toHaveBeenLastCalledWith(
+      "The story is valid: every path of it can reach the end.",
+    );
+    shell.hide();
+    const loop = withStory([
+      {
+        id: "l1",
+        kind: "longText",
+        view: "card",
+        title: "The siege",
+        body: "In 1632",
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        advance: { mode: "tap" },
+      },
+      {
+        id: "c1",
+        kind: "choice",
+        prompt: "Again?",
+        options: [
+          { id: "o1", label: "Yes", goto: "l1" },
+          { id: "o2", label: "Once more", goto: "l1" },
+        ],
+      },
+    ]);
+    loop.select("story:legend");
+    expect(inspectorAct("story-check").textContent).toBe("1 problem");
+    inspectorAct("story-check").click();
+    expect(loop.store.getState().editorView.selected).toBe("l1");
+    expect(loop.deps.say).toHaveBeenLastCalledWith(
+      expect.stringContaining("loop that no answer can leave"),
+    );
+    loop.shell.hide();
+  });
+
   // Why: a step can go between two others: the gap before a card opens
   // the story's menu for that place, and its add carries the place.
   it("inserts a step before a card from the gap above it", () => {

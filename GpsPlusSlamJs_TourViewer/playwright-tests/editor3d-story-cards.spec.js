@@ -10,8 +10,11 @@ import { answerHosts, openSampleIn3d } from "./editor3d-fixture.js";
  * page: a choice whose answer goes back must read "goes back to step 1"
  * on its card, one that ends "ends the story", and the preview must play
  * the story through the visitor's own panel, the jump back and the end
- * included. A desktop opens a card in place; a phone drills into the
- * step. Both sizes are pinned, as the cards and the preview differ there.
+ * included. A desktop opens a card in place; a phone, upright or on its
+ * side, drills into the step. Every size is pinned, as the cards and the
+ * preview differ there, and so is what the chosen step-cards prototype
+ * set out: the "Story valid" pill on the line under the story's name, and
+ * the cards stacked with a small even gap.
  */
 
 // One after another: software-drawn 3D views share the CPU badly.
@@ -31,9 +34,18 @@ function selected(page) {
   );
 }
 
+// `phone`: the panels are sheets; `drill`: a card goes into its step
+// rather than opening in place, as on a phone either way round.
 const SIZES = [
-  { name: "a desktop", width: 1280, height: 800, phone: false },
-  { name: "a phone", width: 390, height: 844, phone: true },
+  { name: "a desktop", width: 1280, height: 800, phone: false, drill: false },
+  { name: "a phone", width: 390, height: 844, phone: true, drill: true },
+  {
+    name: "a phone on its side",
+    width: 844,
+    height: 390,
+    phone: false,
+    drill: true,
+  },
 ];
 
 for (const size of SIZES) {
@@ -66,7 +78,9 @@ for (const size of SIZES) {
     // Step 1, a long text; Back comes up to the story again.
     await inspector.locator('[data-act="add-entry"]').click();
     await menu.locator('[data-kind="longText"]').click();
-    await expect(inspector.locator(".sub")).toHaveText("Long text, entry 1");
+    await expect(inspector.locator(".sub > span:first-child")).toHaveText(
+      "Long text, entry 1",
+    );
     // The way up shows on every size: Back, and the crumb's levels.
     await expect(back).toBeVisible();
     await expect(
@@ -112,6 +126,36 @@ for (const size of SIZES) {
       "ends the story",
     ]);
     await expect(inspector.locator(".scard.bad")).toHaveCount(0);
+    // The pill says the story is valid, on the line under its name, beside
+    // where the story sits and inside the details.
+    const pill = inspector.locator('.sub [data-act="story-check"]');
+    await expect(pill).toHaveText("Story valid");
+    const pillBox = await pill.boundingBox();
+    const whereBox = await inspector
+      .locator(".sub > span:first-child")
+      .boundingBox();
+    const sheet = await inspector.boundingBox();
+    expect(pillBox).not.toBeNull();
+    expect(whereBox).not.toBeNull();
+    if (pillBox !== null && whereBox !== null && sheet !== null) {
+      expect(pillBox.x).toBeGreaterThanOrEqual(whereBox.x + whereBox.width);
+      expect(
+        Math.abs(
+          pillBox.y + pillBox.height / 2 - (whereBox.y + whereBox.height / 2),
+        ),
+      ).toBeLessThanOrEqual(3);
+      expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(
+        sheet.x + sheet.width,
+      );
+    }
+    // The cards stack with the prototype's small gap: 2 to 8 px apart.
+    const top = await inspector.locator(".scard").nth(0).boundingBox();
+    const next = await inspector.locator(".scard").nth(1).boundingBox();
+    if (top !== null && next !== null) {
+      const gap = next.y - (top.y + top.height);
+      expect(gap).toBeGreaterThanOrEqual(2);
+      expect(gap).toBeLessThanOrEqual(8);
+    }
     // The cards sit inside the details with a margin on both sides.
     const panel = await inspector.boundingBox();
     const first = await cards.nth(0).boundingBox();
@@ -127,7 +171,7 @@ for (const size of SIZES) {
     // A card opens in place on a desktop; on a phone it is the step.
     const storyId = await selected(page);
     await cards.nth(1).locator(".chead").click();
-    if (size.phone) {
+    if (size.drill) {
       await expect(inspector.locator(".sub")).toContainText("Choice");
       await back.click();
       expect(await selected(page)).toBe(storyId);

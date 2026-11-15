@@ -248,6 +248,7 @@ describe("drawInspector", () => {
   ) =>
     ({
       kind: "storyEntry",
+      check: [],
       id: block.id,
       stationId: "gate",
       rowKind: "text",
@@ -267,6 +268,7 @@ describe("drawInspector", () => {
   } as const;
   const STORY = {
     kind: "story",
+    check: [],
     storyId: "legend",
     stationId: "gate",
     title: "The <b>legend</b>",
@@ -305,6 +307,32 @@ describe("drawInspector", () => {
     ],
   } as const satisfies InspectorModel;
 
+  // Why: the inspector says at a glance whether the story is valid, on the
+  // line under its name (the head is too narrow to share), from the
+  // Problems tab's rows (`InspectorModel` `check`), the way the chosen
+  // prototype's pill does: "Story valid" in green, or the count of what
+  // needs fixing in red, a press of either being `story-check`.
+  it("says whether the story is valid, and how many problems", () => {
+    const pill = () =>
+      dock.body.querySelector<HTMLButtonElement>(
+        '.sub [data-act="story-check"]',
+      );
+    drawInspector(dock, STORY, FOLD, pictures);
+    expect(pill()?.textContent).toBe("Story valid");
+    expect(pill()?.classList.contains("bad")).toBe(false);
+    expect(pill()?.title).toBe("Every path of the story can reach the end");
+    const loop = { what: "A loop", select: "intro" };
+    for (const [check, words] of [
+      [[loop], "1 problem"],
+      [[loop, { ...loop, select: "way" }], "2 problems"],
+    ] as const) {
+      drawInspector(dock, { ...STORY, check }, FOLD, pictures);
+      expect(pill()?.textContent).toBe(words);
+      expect(pill()?.classList.contains("bad")).toBe(true);
+      expect(pill()?.title).toBe("Show what needs fixing");
+    }
+  });
+
   // Why: a story's parts left the station's inspector for a story's own: a
   // story's title is typed in the head, its steps are cards in order with
   // the way to add one, and its Delete says what goes with it. Names are
@@ -316,7 +344,7 @@ describe("drawInspector", () => {
     );
     expect(title?.defaultValue).toBe("The <b>legend</b>");
     expect(title?.getAttribute("aria-label")).toBe("Name of the story");
-    expect(dock.body.querySelector(".sub")?.textContent).toBe(
+    expect(dock.body.querySelector(".sub > span")?.textContent).toBe(
       "1 The old gate / Story",
     );
     expect(
@@ -417,6 +445,7 @@ describe("drawInspector", () => {
         opened: [
           {
             kind: "storyStep",
+            check: [],
             stepKind: "choice",
             id: "way",
             stationId: "gate",
@@ -476,6 +505,7 @@ describe("drawInspector", () => {
       dock,
       {
         kind: "storyStep",
+        check: [],
         stepKind: "choice",
         id: "way",
         stationId: "gate",
@@ -526,6 +556,7 @@ describe("drawInspector", () => {
       dock,
       {
         kind: "storyStep",
+        check: [],
         stepKind: "choice",
         id: "way",
         stationId: "gate",
@@ -611,6 +642,7 @@ describe("drawInspector", () => {
       dock,
       {
         kind: "storyStep",
+        check: [],
         stepKind: "quiz",
         id: "age",
         stationId: "gate",
@@ -1467,6 +1499,7 @@ describe("drawInspector", () => {
       dock,
       {
         kind: "storyStep",
+        check: [],
         stepKind: "choice",
         id: "way",
         stationId: "gate",

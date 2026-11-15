@@ -13,6 +13,11 @@ loads or when it failed to load; docked, `editor-shell.ts` syncs no sheet.
 - `PHONE_SHEET_PX` - 700; at this width and under the panels are sheets. The
   same number stands in the `width <= 700px` rules of `editor-shell.css`.
 - `phoneSheets(widthPx)` - whether that is so.
+- `cardsDrill(widthPx, heightPx)` - whether a story's step cards go into
+  their step on a press rather than open in place: a phone width
+  (`phoneSheets`) or a height of `CARDS_DRILL_SHORT_PX` (500) or less, a
+  phone on its side (and a desktop window that short). Swept in the tests
+  over phone sizes on their side and short and ordinary desktop windows.
 - `SheetKind` - `"tree"` or `"details"`.
 - `SHEET_SHARE` - the part a sheet first takes: 0.62 and 0.66.
 - `SHEET_LIMITS` - what a drag leaves: 0.3 to 0.8; under 0.2 the sheet goes.
