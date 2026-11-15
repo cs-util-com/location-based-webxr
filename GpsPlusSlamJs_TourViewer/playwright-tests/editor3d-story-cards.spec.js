@@ -34,6 +34,18 @@ function selected(page) {
   );
 }
 
+/**
+ * The box of what `locator` finds, failing the test when it has none, so
+ * a measurement never passes by being skipped.
+ * @param {import("@playwright/test").Locator} locator
+ */
+async function boxOf(locator) {
+  const box = await locator.boundingBox();
+  expect(box, "a box to measure").not.toBeNull();
+  if (box === null) throw new Error("no box to measure");
+  return box;
+}
+
 // `phone`: the panels are sheets; `drill`: a card goes into its step
 // rather than opening in place, as on a phone either way round.
 const SIZES = [
@@ -130,43 +142,29 @@ for (const size of SIZES) {
     // where the story sits and inside the details.
     const pill = inspector.locator('.sub [data-act="story-check"]');
     await expect(pill).toHaveText("Story valid");
-    const pillBox = await pill.boundingBox();
-    const whereBox = await inspector
-      .locator(".sub > span:first-child")
-      .boundingBox();
-    const sheet = await inspector.boundingBox();
-    expect(pillBox).not.toBeNull();
-    expect(whereBox).not.toBeNull();
-    if (pillBox !== null && whereBox !== null && sheet !== null) {
-      expect(pillBox.x).toBeGreaterThanOrEqual(whereBox.x + whereBox.width);
-      expect(
-        Math.abs(
-          pillBox.y + pillBox.height / 2 - (whereBox.y + whereBox.height / 2),
-        ),
-      ).toBeLessThanOrEqual(3);
-      expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(
-        sheet.x + sheet.width,
-      );
-    }
+    const pillBox = await boxOf(pill);
+    const whereBox = await boxOf(inspector.locator(".sub > span:first-child"));
+    const sheet = await boxOf(inspector);
+    expect(pillBox.x).toBeGreaterThanOrEqual(whereBox.x + whereBox.width);
+    expect(
+      Math.abs(
+        pillBox.y + pillBox.height / 2 - (whereBox.y + whereBox.height / 2),
+      ),
+    ).toBeLessThanOrEqual(3);
+    expect(pillBox.x + pillBox.width).toBeLessThanOrEqual(
+      sheet.x + sheet.width,
+    );
     // The cards stack with the prototype's small gap: 2 to 8 px apart.
-    const top = await inspector.locator(".scard").nth(0).boundingBox();
-    const next = await inspector.locator(".scard").nth(1).boundingBox();
-    if (top !== null && next !== null) {
-      const gap = next.y - (top.y + top.height);
-      expect(gap).toBeGreaterThanOrEqual(2);
-      expect(gap).toBeLessThanOrEqual(8);
-    }
+    const top = await boxOf(cards.nth(0));
+    const next = await boxOf(cards.nth(1));
+    const gap = next.y - (top.y + top.height);
+    expect(gap).toBeGreaterThanOrEqual(2);
+    expect(gap).toBeLessThanOrEqual(8);
     // The cards sit inside the details with a margin on both sides.
-    const panel = await inspector.boundingBox();
-    const first = await cards.nth(0).boundingBox();
-    expect(panel).not.toBeNull();
-    expect(first).not.toBeNull();
-    if (panel !== null && first !== null) {
-      expect(first.x - panel.x).toBeGreaterThanOrEqual(8);
-      expect(
-        panel.x + panel.width - (first.x + first.width),
-      ).toBeGreaterThanOrEqual(8);
-    }
+    expect(top.x - sheet.x).toBeGreaterThanOrEqual(8);
+    expect(sheet.x + sheet.width - (top.x + top.width)).toBeGreaterThanOrEqual(
+      8,
+    );
 
     // A card opens in place on a desktop; on a phone it is the step.
     const storyId = await selected(page);
@@ -203,13 +201,10 @@ for (const size of SIZES) {
     await answers.nth(1).click();
     await expect(preview.getByText("The story has ended.")).toBeVisible();
     // The dialog stays inside the window, whole on a phone.
-    const box = await preview.boundingBox();
-    expect(box).not.toBeNull();
-    if (box !== null) {
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(size.width + 0.5);
-      if (size.phone) expect(box.width).toBeCloseTo(size.width, 0);
-    }
+    const box = await boxOf(preview);
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(size.width + 0.5);
+    if (size.phone) expect(box.width).toBeCloseTo(size.width, 0);
     // Nothing of the editor covers it: its Close is what a tap there hits.
     const close = preview.getByRole("button", { name: "Close" });
     expect(
