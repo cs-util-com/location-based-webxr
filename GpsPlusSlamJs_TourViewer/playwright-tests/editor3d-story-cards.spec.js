@@ -221,3 +221,206 @@ for (const size of SIZES) {
     expect(await selected(page)).toBe(storyId);
   });
 }
+
+/**
+ * The step ids of the story `title` in the old gate, in order.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} title
+ * @returns {Promise<string[]>}
+ */
+async function stepsOf(page, title) {
+  const gate = (await tourNow(page)).stations.find(
+    (/** @type {any} */ s) => s.id === "gate",
+  );
+  const story = gate.children.find((/** @type {any} */ c) => c.title === title);
+  return story.children.map((/** @type {any} */ c) => c.id);
+}
+
+/**
+ * Touches for CDP from `at` on: down, then each of `moves` (`[ms, dy]`
+ * after the press), with the events' own times, so the hold the page
+ * reads is the gesture's and not the page's lag.
+ * @param {{ x: number, y: number }} at
+ * @param {readonly (readonly [number, number])[]} moves
+ * @param {number} start seconds since the epoch, as CDP takes them
+ */
+function fingerOf(at, moves, start) {
+  return [
+    { type: "touchStart", touchPoints: [at], timestamp: start },
+    ...moves.map(([ms, dy]) => ({
+      type: "touchMove",
+      touchPoints: [{ x: at.x, y: at.y + dy }],
+      timestamp: start + ms / 1000,
+    })),
+  ];
+}
+
+/**
+ * Sends touches in one burst, in order, and waits for them all.
+ * @param {import("@playwright/test").CDPSession} cdp
+ * @param {readonly object[]} touches
+ */
+async function sendTouches(cdp, touches) {
+  await Promise.all(
+    touches.map((t) => cdp.send("Input.dispatchTouchEvent", t)),
+  );
+}
+
+// The prototype's footer and grip, measured: a footer button's height and
+// a grip's size and place left of the step's number (a phone's are a
+// finger's).
+const FOOT = {
+  desktop: { button: 30, grip: [22, 40], gripLeft: 4, gripTop: 4, toNum: 9 },
+  phone: { button: 42, grip: [26, 44], gripLeft: 2, gripTop: 6, toNum: 8 },
+};
+
+for (const size of SIZES) {
+  test.describe(`on ${size.name}, a story's footer and its step grips`, () => {
+    // A finger where the size is a phone's, a mouse on the desktop.
+    test.use({ hasTouch: size.drill });
+
+    // Why: the chosen step-cards prototype keeps Add step and Preview in
+    // a footer at the panel's foot, in sight however far the cards scroll,
+    // and moves a step by dragging its grip, the drop's slot shown as a
+    // line. On a phone the grip must not steal a flick that scrolls the
+    // cards: a finger rests on it first. One drop is one undo step.
+    test("stays at the panel's foot while the cards scroll, and a grip drags a step to its new place", async ({
+      page,
+    }) => {
+      test.slow();
+      await page.setViewportSize({ width: size.width, height: size.height });
+      await answerHosts(page);
+      await openSampleIn3d(page);
+      const inspector = page.locator("#shell-inspector");
+      const body = page.locator("#inspector-body");
+      const menu = page.locator("#tree-add-menu");
+      const back = page.locator('#shell-inspector [data-act="back"]');
+      await page
+        .locator("#shell-tree .card", { hasText: "The old gate" })
+        .locator(".pick")
+        .click();
+      await inspector.locator('[data-act="add-content"]').click();
+      await menu.locator('[data-kind="story"]').click();
+      const name = inspector.locator('[data-field="story-title"]');
+      await name.fill("The legend");
+      await name.press("Enter");
+      for (let n = 1; n <= 3; n++) {
+        await inspector.locator('[data-act="add-entry"]').click();
+        await menu.locator('[data-kind="longText"]').click();
+        await back.click();
+        await expect(inspector.locator(".scard")).toHaveCount(n);
+      }
+      const cards = inspector.locator(".scard");
+      const want = size.phone ? FOOT.phone : FOOT.desktop;
+
+      // The footer: flush with the body's foot at either end of the
+      // cards' scroll, Add step and Preview side by side 8 px apart, 12 px
+      // in from the panel's sides, a button row's height.
+      const foot = inspector.locator(".sfoot");
+      const add = foot.locator('[data-act="add-entry"]');
+      const play = foot.locator('[data-act="preview-story"]');
+      /** @type {number[]} */
+      const room = [];
+      for (const end of ["top", "bottom"]) {
+        await body.evaluate((b, to) => {
+          b.scrollTop = to === "top" ? 0 : b.scrollHeight;
+        }, end);
+        const shown = await boxOf(body);
+        const f = await boxOf(foot);
+        const a = await boxOf(add);
+        const p = await boxOf(play);
+        expect(
+          Math.abs(f.y + f.height - (shown.y + shown.height)),
+          end,
+        ).toBeLessThanOrEqual(1);
+        expect(a.height).toBeCloseTo(want.button, 0);
+        expect(Math.abs(a.y - p.y)).toBeLessThanOrEqual(1);
+        expect(p.x - (a.x + a.width)).toBeCloseTo(8, 0);
+        expect(a.x - f.x).toBeCloseTo(12, 0);
+        expect(f.x + f.width - (p.x + p.width)).toBeCloseTo(12, 0);
+        room.push(shown.height - f.height);
+      }
+      // What the footer leaves for the cards: at least one card whole.
+      await body.evaluate((b) => {
+        b.scrollTop = 0;
+      });
+      const card = await boxOf(cards.nth(0));
+      test.info().annotations.push({
+        type: "room for the cards",
+        description: `${String(room[0])} px of the body's ${String((await boxOf(body)).height)} px; a card is ${String(card.height)} px`,
+      });
+      expect(room[0]).toBeGreaterThanOrEqual(card.height);
+
+      // A grip left of each step's number, a finger's size on a phone.
+      const grip = cards.nth(0).locator(".grip");
+      const g = await boxOf(grip);
+      const num = await boxOf(cards.nth(0).locator(".num"));
+      expect(g.width).toBeCloseTo(want.grip[0], 0);
+      expect(g.height).toBeCloseTo(want.grip[1], 0);
+      // The card's 1 px border, then the grip's margin.
+      expect(g.x - card.x).toBeCloseTo(want.gripLeft + 1, 0);
+      expect(g.y - card.y).toBeCloseTo(want.gripTop + 1, 0);
+      expect(num.x - (g.x + g.width)).toBeCloseTo(want.toNum, 0);
+
+      // Drag step 1 under step 3: the slot shows as a line under step 3
+      // while the step is held, the drop moves it, one undo puts it back.
+      const before = await stepsOf(page, "The legend");
+      const last = await boxOf(cards.nth(2));
+      const from = { x: g.x + g.width / 2, y: g.y + g.height / 2 };
+      const to = last.y + last.height - 4 - from.y;
+      const cdp = size.drill ? await page.context().newCDPSession(page) : null;
+      if (cdp === null) {
+        await page.mouse.move(from.x, from.y);
+        await page.mouse.down();
+        await page.mouse.move(from.x, from.y + to, { steps: 6 });
+      } else {
+        // A flick that starts on the grip moves nothing.
+        const flick = Date.now() / 1000;
+        await sendTouches(cdp, [
+          ...fingerOf(
+            from,
+            [1, 2, 3, 4, 5].map((i) => [i * 16, i * 12]),
+            flick,
+          ),
+          { type: "touchEnd", touchPoints: [], timestamp: flick + 0.1 },
+        ]);
+        await expect(inspector.locator(".scard.dragging")).toHaveCount(0);
+        expect(await stepsOf(page, "The legend")).toEqual(before);
+        await body.evaluate((b) => {
+          b.scrollTop = 0;
+        });
+        // A finger that rests 300 ms on the grip, then moves.
+        await sendTouches(
+          cdp,
+          fingerOf(
+            from,
+            [
+              [100, 1],
+              [300, 2],
+              [320, to / 2],
+              [340, to],
+            ],
+            Date.now() / 1000,
+          ),
+        );
+      }
+      await expect(cards.nth(0)).toHaveClass(/\bdragging\b/);
+      await expect(cards.nth(2)).toHaveClass(/\bdrop-after\b/);
+      const line = await cards
+        .nth(2)
+        .evaluate((c) => getComputedStyle(c, "::after").height);
+      expect(line).toBe("3px");
+      if (cdp === null) await page.mouse.up();
+      else
+        await sendTouches(cdp, [
+          { type: "touchEnd", touchPoints: [], timestamp: Date.now() / 1000 },
+        ]);
+      await expect
+        .poll(() => stepsOf(page, "The legend"))
+        .toEqual([before[1], before[2], before[0]]);
+      await expect(inspector.locator(".scard.dragging")).toHaveCount(0);
+      await page.locator("#studio-undo").dispatchEvent("click");
+      await expect.poll(() => stepsOf(page, "The legend")).toEqual(before);
+    });
+  });
+}
