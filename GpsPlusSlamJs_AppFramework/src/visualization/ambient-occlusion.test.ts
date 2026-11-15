@@ -583,6 +583,71 @@ describe('createAmbientOcclusion', () => {
     expect(fake.draws).toEqual([]);
   });
 
+  // Why this test matters: a render that throws leaves the pass holding a
+  // half-finished AO, so a later reapply would multiply it onto a frame. It
+  // must refuse and draw nothing; the caller then renders again.
+  it('refuses to reapply after a render that threw', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    expect(ao.render()).toBe(true);
+    vi.spyOn(ao.pass!, 'render').mockImplementation(() => {
+      throw new Error('context lost');
+    });
+    expect(() => ao.render()).toThrow('context lost');
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+  });
+
+  // Why this test matters: while the AO is off, frames are drawn without
+  // computing it, so the AO held from before describes an older view. After
+  // switching it back on, reapply must refuse until a render computed a new
+  // one, or it would multiply a stale AO onto the frame.
+  it('refuses to reapply after being switched off and on until it renders again', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    ao.render();
+    ao.enabled = false;
+    expect(ao.render()).toBe(false);
+    ao.enabled = true;
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+    ao.render();
+    expect(ao.reapply()).toBe(true);
+    // Setting the value it already has keeps the AO it holds.
+    ao.enabled = true;
+    expect(ao.reapply()).toBe(true);
+  });
+
+  // Why this test matters: the refusal is about the DRAWING BUFFER the AO was
+  // computed at, not the scaled AO target. At scale 0.5 a buffer of 401 and
+  // one of 402 pixels round to the same 201-pixel target, yet the frame is a
+  // different size, so the AO no longer lines up with it.
+  it('refuses to reapply once the drawing buffer changed, even at an unchanged scaled target', () => {
+    const fake = recordingRenderer({ x: 401, y: 300 });
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+      resolutionScale: 0.5,
+    });
+    ao.render();
+    expect(ao.reapply()).toBe(true);
+    fake.size = { x: 402, y: 300 };
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+  });
+
   it('rejects options outside their range', () => {
     const base = {
       renderer: asRenderer(recordingRenderer()),

@@ -65,9 +65,10 @@ export function measureLightReadouts(deps: LightMeasureDeps): LightMeasurement {
   // grid object out (the shipped see-through faces and the outlines): the
   // second read then multiplies the same AO again instead of computing it.
   const aoUnchanged = !grid.some((o) => seenByAo(o, deps.hiddenFromAo));
-  // Whether the canvas holds the view as found: true once the last read
-  // drew the grid as it is restored (and from the start without a grid).
-  let showsView = grid.length === 0;
+  // Whether the canvas holds the view as found: set once the reads finished,
+  // true when the last read drew the grid as it is restored or no grid is
+  // shown. A read that threw leaves it false, so a frame is requested.
+  let showsView = false;
   try {
     for (const o of grid) o.visible = false;
     deps.drawScene();
@@ -82,8 +83,8 @@ export function measureLightReadouts(deps: LightMeasureDeps): LightMeasurement {
         deps.ambientOcclusion.render();
       }
       margin = meanChroma(deps.readFrame()) - meanChroma(without);
-      showsView = true;
     }
+    showsView = withMargin || grid.length === 0;
     return { litLuma, margin };
   } finally {
     for (const o of grid) o.visible = true;

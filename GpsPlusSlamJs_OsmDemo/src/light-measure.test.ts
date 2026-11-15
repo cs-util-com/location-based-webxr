@@ -164,4 +164,36 @@ describe("measureLightReadouts", () => {
     expect(grid.map((o) => o.visible)).toEqual([true, true]);
     expect(counts.frames).toBe(1);
   });
+
+  // Why this test matters: without a grid a finished read leaves the view on
+  // the canvas, but a read that threw may have left a partly drawn frame, so
+  // a frame must be requested then too.
+  it("redraws when a render throws without a grid", () => {
+    const { deps, counts } = counting([]);
+    const failing: LightMeasureDeps = {
+      ...deps,
+      drawScene: () => {
+        throw new Error("context lost");
+      },
+    };
+    expect(() => measureLightReadouts(failing)).toThrow("context lost");
+    expect(counts.frames).toBe(1);
+  });
+
+  // Why this test matters: the AO's input is decided by every mesh UNDER a
+  // grid object, not by the object itself. A group holding an opaque mesh is
+  // seen by the AO's normal pass, so its AO must be computed again.
+  it("recomputes the AO when a grid group holds a mesh the AO sees", () => {
+    const group = new THREE.Group();
+    group.add(
+      new THREE.Mesh(
+        new THREE.BufferGeometry(),
+        new THREE.MeshStandardMaterial(),
+      ),
+    );
+    const { deps, counts } = counting([group]);
+    measureLightReadouts(deps);
+    expect(counts.aoRenders).toBe(2);
+    expect(counts.aoReapplies).toBe(0);
+  });
 });

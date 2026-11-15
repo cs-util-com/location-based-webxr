@@ -281,9 +281,10 @@ export interface AmbientOcclusion {
    * normal/depth pass sees has changed since (the camera, the drawing
    * buffer, every object it does not leave out), for instance a redraw that
    * toggles only left-out objects. Returns false and draws nothing while
-   * off, after dispose, before any AO was computed, or once the drawing
-   * buffer no longer has the size it was computed at; the caller then
-   * renders.
+   * off, after dispose, before any AO was computed (or when the last
+   * `render` threw, or since the AO was switched off and on), or once the
+   * drawing buffer no longer has the size it was computed at; the caller
+   * then renders.
    */
   reapply(): boolean;
   dispose(): void;
@@ -345,6 +346,8 @@ export function createAmbientOcclusion(
   /** Whether the pass holds a finished AO at its current size. */
   let computed = false;
   const bufferSize = new THREE.Vector2();
+  /** The drawing buffer the AO was last computed at. */
+  const computedAt = new THREE.Vector2();
   const hidden: Array<[THREE.Object3D, boolean]> = [];
 
   const build = (width: number, height: number): GTAOPass => {
@@ -424,6 +427,7 @@ export function createAmbientOcclusion(
     if (!enabled || disposed) return false;
     const [width, height] = targetSize();
     computed = false;
+    computedAt.copy(bufferSize);
     if (pass === null) pass = build(width, height);
     else if (pass.width !== width || pass.height !== height) {
       pass.setSize(width, height);
@@ -463,8 +467,8 @@ export function createAmbientOcclusion(
 
   const reapply = (): boolean => {
     if (!enabled || disposed || pass === null || !computed) return false;
-    const [width, height] = targetSize();
-    if (pass.width !== width || pass.height !== height) return false;
+    renderer.getDrawingBufferSize(bufferSize);
+    if (!bufferSize.equals(computedAt)) return false;
     const built = pass;
     const target = renderer.getRenderTarget();
     holdingState(target, () => blendOnto(built, target));
@@ -492,7 +496,10 @@ export function createAmbientOcclusion(
       return enabled;
     },
     set enabled(on: boolean) {
-      enabled = on === true;
+      const next = on === true;
+      // Frames drawn while off computed no AO, so the one held is stale.
+      if (next !== enabled) computed = false;
+      enabled = next;
     },
     get built() {
       return pass !== null;

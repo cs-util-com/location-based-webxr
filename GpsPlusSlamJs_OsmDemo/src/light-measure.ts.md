@@ -44,7 +44,7 @@ test. The two measures themselves are `light-readouts.ts`.
   margin read the canvas holds the frame with the grid shown, which is the
   restored state, and without a grid read 1 is the view itself. A frame is
   requested only when the grid is shown and the brightness alone was read,
-  or when a render threw.
+  or when a render or read threw (with or without a grid).
 - The grid is restored as found (`finally`).
 - Synchronous: each readback reads exactly the frame just drawn.
 
@@ -74,15 +74,24 @@ After:
 - One measurement, AO on: one long task of 2.34-2.36 s (AO off
   1.86-1.89 s). Readout observable 2.4-2.7 s after the click with AO on,
   2.1-2.2 s off.
+- Noise: the AO-off task changed no work and still reads 1.86-1.89 s
+  after against 1.7-1.8 s before, so differences of about 5-10 % between
+  runs are noise.
+- Most of the click-to-readout gain (4.2-4.4 s to 2.4-2.7 s with AO on)
+  is the skipped redraw (about 1.5 s); the reused AO saves the rest, one AO
+  computation of about 0.4-0.5 s.
 - Readouts unchanged: lit 24.5 and margin 1.59 with AO on, 26.0 and 1.99
   off, before and after.
 
 What was NOT done, and why:
 
 - **A smaller render target**: swept over the drawing-buffer scale (AO on,
-  lit / margin): 1.0 gives 24.466 / 1.587 at 2.95 s; 0.75 gives 24.563 /
-  1.579 at 2.04 s; 0.5 gives 24.621 / 1.491 at 1.19 s; 0.35 gives 24.618 /
-  1.414; 0.25 gives 24.255 / 1.408. AO off: 26.010 / 1.993, 26.160 / 1.978,
+  lit / margin): 1.0 gives 24.466 / 1.587; 0.75 gives 24.563 / 1.579; 0.5
+  gives 24.621 / 1.491; 0.35 gives 24.618 / 1.414; 0.25 gives 24.255 /
+  1.408. (The sweep also logged times of 2.95, 2.04 and 1.19 s for the first
+  three scales; at 1.0 that matches neither the before nor the after task
+  above, what its clock covered was not recorded, so they are comparable
+  only with each other, and none were logged at 0.35 and 0.25.) AO off: 26.010 / 1.993, 26.160 / 1.978,
   26.271 / 1.959, 26.364 / 1.937, 26.489 / 1.902. Already at 0.75 the
   displayed brightness moves by one step (24.5 to 24.6, 26.0 to 26.2) and
   the margin by 0.01, so no scale keeps the numbers the light is tuned by.
@@ -113,11 +122,14 @@ const { litLuma, margin } = measureLightReadouts({
   renders, one AO render, one reapply, two readbacks, no redraw); the AO
   recomputed when it sees the grid and when a reapply is refused; the
   brightness alone with one redraw; no grid; restore and redraw when a
-  render throws; the numbers equal `light-readouts.ts`'s measures of fixed
+  render throws, with and without a grid; a grid group holding a mesh the
+  AO sees; the numbers equal `light-readouts.ts`'s measures of fixed
   frames.
 - `light-measure.property.test.ts`: over random grids and `withMargin`,
   reads equal renders, each read carries exactly one AO, the AO is computed
   twice only when it sees the grid, a redraw exactly when needed, every
   visibility restored.
 - The readouts against the e2e sweep's own measures on the same view:
-  `playwright-tests/scene-3d.spec.js` (the June noon parity step).
+  `playwright-tests/scene-3d.spec.js` (the June noon parity step), which
+  boots with `ao=off`. The AO-on readouts above (lit 24.5, margin 1.59)
+  rest on ad-hoc runs and are not gated.
