@@ -118,10 +118,132 @@ test("pictures: WebP of the asked size, smaller, above the quality floor, over s
   // desktop is several times faster, so this is a floor, not the proof.
   for (const source of ["real", "synthetic"]) {
     const chosen = rows.find(
-      (r) => r.source === source && r.side === 1600 && r.quality === 0.75,
+      (r) => r.source === source && r.side === 1600 && r.quality === 0.6,
     );
     expect(chosen?.ms).toBeLessThan(10_000);
   }
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Why this test matters: it is the measurement behind the question
+ * whether flat-colour pictures (cartoons, drawings, many AI-made figures)
+ * need another setting than photos. It sweeps lossy WebP over qualities
+ * and lossless WebP (Chromium writes lossless at quality 1) over three
+ * sides, on the real photo, the generated grainy test picture and two
+ * generated cartoons (flat colours, and the same figure shaded), and holds
+ * the facts the answer rests on, with margin below what was measured:
+ *
+ * - lossless costs several times the bytes of quality 0.9 on every
+ *   source, so it is no general setting;
+ * - the photo setting alone already makes a cartoon a small file, a
+ *   fraction of the photo's, so a flat-colour setting has no bytes to
+ *   save;
+ * - what a higher quality buys on the flat cartoon is cleaner edges and
+ *   text (PSNR up, the near-worst error down), for a few KiB;
+ * - the common-colour share tells the flat cartoon from the photos at
+ *   any threshold over a wide range, but the shaded cartoon sits with
+ *   the photos at full colour depth and moves across with fewer bits:
+ *   the measure is sure only of pictures that really are flat.
+ */
+test("pictures, flat colour against photo: size and error over lossy and lossless, qualities and sides", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const errors = await openCheck(page);
+  const { rows, shares } = await page.evaluate(async () => {
+    const check = /** @type {any} */ (window).assetOptimizerCheck;
+    const sources = {
+      photo: await check.sample("photo"),
+      synthetic: await check.testPicture(2400, 1800),
+      flat: await check.cartoonPicture(2400, 1800, false),
+      shaded: await check.cartoonPicture(2400, 1800, true),
+    };
+    const rows = [];
+    const shares = /** @type {Record<string, Record<number, number>>} */ ({});
+    for (const [source, original] of Object.entries(sources)) {
+      shares[source] = {};
+      for (const bits of [4, 5, 8]) {
+        shares[source][bits] = await check.colourShare(original, 16, bits);
+      }
+      for (const side of [1024, 1600, 2048]) {
+        for (const quality of [0.4, 0.6, 0.75, 0.9, 1]) {
+          const result = await check.optimizePicture(original, side, quality);
+          const score = await check.comparePicture(original, result.blob);
+          rows.push({
+            source,
+            side,
+            quality,
+            originalKiB: Math.round(original.size / 1024),
+            kib: Math.round(result.blob.size / 1024),
+            bytes: result.blob.size,
+            percent: +((100 * result.blob.size) / original.size).toFixed(1),
+            psnr: Number.isFinite(score.psnr) ? +score.psnr.toFixed(1) : null,
+            nearWorst: score.nearWorst,
+            ssim: +score.ssim.toFixed(4),
+          });
+        }
+      }
+    }
+    return { rows, shares };
+  });
+  console.log(JSON.stringify({ flatColourSweep: rows, colourShares: shares }));
+  /** @param {string} source @param {number} side @param {number} quality */
+  const at = (source, side, quality) => {
+    const row = rows.find(
+      (r) => r.source === source && r.side === side && r.quality === quality,
+    );
+    if (!row) throw new Error(`no row for ${source} ${side} ${quality}`);
+    return row;
+  };
+  const sources = ["photo", "synthetic", "flat", "shaded"];
+  for (const source of sources) {
+    for (const side of [1024, 1600, 2048]) {
+      // Quality 1 is lossless: the same pixels as the scaled original.
+      expect(at(source, side, 1).psnr).toBeNull();
+      // Measured 2.9 (shaded) to 8.9 (synthetic) times at 1600 px.
+      expect(at(source, side, 1).bytes).toBeGreaterThan(
+        2.5 * at(source, side, 0.9).bytes,
+      );
+    }
+  }
+  // The photo setting on the cartoons: measured 15 and 17 KiB against the
+  // photo's 145 KiB.
+  for (const cartoon of ["flat", "shaded"]) {
+    expect(at(cartoon, 1600, 0.6).bytes).toBeLessThan(
+      0.2 * at("photo", 1600, 0.6).bytes,
+    );
+  }
+  // Quality 0.9 on the flat cartoon: measured PSNR 44.2 against 40.8 dB,
+  // near-worst error 28 against 40.
+  expect(at("flat", 1600, 0.9).psnr).toBeGreaterThan(
+    /** @type {number} */ (at("flat", 1600, 0.6).psnr) + 2,
+  );
+  expect(at("flat", 1600, 0.9).nearWorst).toBeLessThan(
+    at("flat", 1600, 0.6).nearWorst,
+  );
+  // The common-colour share (16 colours): measured 0.999 for the flat
+  // cartoon at every depth; at 8 bits 0.05 (photo), 0.03 (synthetic) and
+  // 0.19 (shaded).
+  for (const bits of [4, 5, 8]) {
+    expect(shares.flat[bits]).toBeGreaterThan(0.95);
+  }
+  for (const source of ["photo", "synthetic", "shaded"]) {
+    expect(shares[source][8]).toBeLessThan(0.3);
+  }
+  // The threshold sweep, for the record: which sources read as flat at
+  // each threshold and depth.
+  const sweep = [];
+  for (const threshold of [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]) {
+    for (const bits of [4, 5, 8]) {
+      sweep.push({
+        threshold,
+        bits,
+        flat: sources.filter((s) => shares[s][bits] >= threshold),
+      });
+    }
+  }
+  console.log(JSON.stringify({ thresholdSweep: sweep }));
   expect(errors).toEqual([]);
 });
 
@@ -169,25 +291,49 @@ test("sounds: Ogg Opus of exactly the original's length and timing, over bitrate
     const cases = [];
     for (const rate of [44100, 48000]) {
       for (const seconds of [1, 7.3]) {
-        for (const bps of [16000, 24000, 32000]) {
-          cases.push({ kind: "speech", rate, seconds, bps });
+        // 6 kbps: the lowest step the check page offers (Opus's floor).
+        for (const bps of [6000, 16000, 24000, 32000]) {
+          cases.push({ kind: "speech", rate, seconds, bps, channels: 1 });
         }
       }
     }
     for (const bps of [48000, 64000, 96000]) {
-      cases.push({ kind: "music", rate: 44100, seconds: 7.3, bps });
+      cases.push({
+        kind: "music",
+        rate: 44100,
+        seconds: 7.3,
+        bps,
+        channels: 2,
+      });
     }
+    // Music made mono, a step of the check page.
+    cases.push({
+      kind: "music",
+      rate: 44100,
+      seconds: 7.3,
+      bps: 16000,
+      channels: 1,
+    });
     const out = [];
     for (const c of cases) {
       const source = check.testSound(c.kind, c.seconds, c.rate);
-      const result = await check.optimizeSound(source, c.bps);
+      const result = await check.optimizeSound(source, c.bps, c.channels);
       const head = new Uint8Array(await result.blob.slice(0, 47).arrayBuffer());
       const before = await check.decode(source);
       const after = await check.decode(result.blob);
+      // A sound made mono is compared with the original's own downmix.
+      const reference =
+        after.length === 1 && before.length === 2
+          ? before[0].map(
+              (/** @type {number} */ v, /** @type {number} */ i) =>
+                (v + before[1][i]) / 2,
+            )
+          : before[0];
       const span = Math.min(24_000, before[0].length - 2_000);
-      const lag = check.bestLag(before[0], after[0], 1_000, span, 960);
+      const lag = check.bestLag(reference, after[0], 1_000, span, 960);
       out.push({
         ...c,
+        askedChannels: c.channels,
         originalBytes: source.size,
         bytes: result.blob.size,
         extension: result.extension,
@@ -210,7 +356,7 @@ test("sounds: Ogg Opus of exactly the original's length and timing, over bitrate
   for (const row of rows) {
     expect(row.extension).toBe("opus");
     expect([row.ogg, row.opusHead]).toEqual(["OggS", "OpusHead"]);
-    expect(row.channels).toBe(row.kind === "speech" ? 1 : 2);
+    expect(row.channels).toBe(row.askedChannels);
     // Exact to the sample, as the editor decodes it.
     expect(row.framesAfter).toBe(row.framesBefore);
     // An <audio> element (FFmpeg's Ogg demuxer, as ffprobe shows for an

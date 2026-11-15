@@ -11,13 +11,25 @@ import { describe, expect, it } from "vitest";
 
 import {
   bestLag,
+  cartoonPicturePixels,
+  commonColourShare,
   lumaOf,
+  pictureErrors,
   seeded,
   ssim,
   testPicturePixels,
   testSoundPlanes,
   wavOf,
 } from "./asset-optimizer-check.js";
+
+/** The distinct colours of RGBA pixels. */
+const coloursOf = (rgba: Uint8ClampedArray) => {
+  const seen = new Set<number>();
+  for (let i = 0; i < rgba.length; i += 4) {
+    seen.add((rgba[i]! << 16) | (rgba[i + 1]! << 8) | rgba[i + 2]!);
+  }
+  return seen.size;
+};
 
 describe("the check's test files", () => {
   it("are the same for the same seed and differ for another", () => {
@@ -28,6 +40,24 @@ describe("the check's test files", () => {
     const a = seeded(3);
     const b = seeded(3);
     expect([a(), a()]).toEqual([b(), b()]);
+  });
+
+  // The flat-colour samples stand in for cartoon and AI-made pictures: the
+  // flat one must really be a few colours (its anti-aliased edges add
+  // some, on few pixels), the shaded one must not, so the two bracket the
+  // case the picture presets are chosen for.
+  it("draw a cartoon figure flat or shaded, the same for the same seed", () => {
+    const flat = cartoonPicturePixels(160, 120, { shaded: false });
+    const again = cartoonPicturePixels(160, 120, { shaded: false });
+    // Compared by hand: a deep equality of typed arrays this size takes
+    // seconds.
+    expect(flat.every((v, i) => v === again[i])).toBe(true);
+    expect(flat).toHaveLength(160 * 120 * 4);
+    const shaded = cartoonPicturePixels(160, 120, { shaded: true });
+    expect(coloursOf(shaded)).toBeGreaterThan(4 * coloursOf(flat));
+    const alpha = flat.filter((_, i) => i % 4 === 3);
+    expect(alpha.every((a) => a === 255)).toBe(true);
+    expect(() => cartoonPicturePixels(0, 10, { shaded: false })).toThrow();
   });
 
   it("make speech mono and music stereo, of the length asked", () => {
@@ -65,6 +95,47 @@ describe("the check's measures", () => {
     expect(lightScore).toBeLessThan(1);
     expect(heavyScore).toBeLessThan(lightScore);
     expect(() => ssim(luma, luma, 64, 47)).toThrow();
+  });
+
+  // PSNR and the near-worst pixel error are the quality proxies of the
+  // flat-colour sweep: PSNR must be infinite for the same pixels and match
+  // the textbook value for a known error, and the near-worst error must
+  // see a few damaged pixels that PSNR averages away.
+  it("pixel errors: infinite PSNR for the same, the textbook value for a known error", () => {
+    const a = cartoonPicturePixels(64, 48, { shaded: true });
+    expect(pictureErrors(a, a)).toEqual({ psnr: Infinity, nearWorst: 0 });
+    const shifted = a.map((v, i) =>
+      i % 4 === 3 ? v : v > 127 ? v - 10 : v + 10,
+    );
+    const known = pictureErrors(a, shifted);
+    expect(known.psnr).toBeCloseTo(20 * Math.log10(255 / 10), 6);
+    expect(known.nearWorst).toBe(10);
+    const spots = a.slice();
+    for (let p = 0; p < 20; p++) {
+      spots[p * 4 * 97] = spots[p * 4 * 97]! > 127 ? 0 : 255;
+    }
+    const spotted = pictureErrors(a, spots);
+    expect(spotted.psnr).toBeGreaterThan(30);
+    expect(spotted.nearWorst).toBeGreaterThan(100);
+    expect(() => pictureErrors(a, a.subarray(4))).toThrow();
+  });
+
+  // The share of pixels in a picture's most common colours is the measure
+  // a flat-colour classifier would read; the page shows it and the
+  // optimizer e2e sweeps its threshold. It must say nearly 1 for the flat
+  // cartoon and much less for the grainy photo-like picture, at every
+  // colour depth it is read at.
+  it("common-colour share: nearly all for a flat cartoon, little for a grainy picture", () => {
+    const flat = cartoonPicturePixels(200, 150, { shaded: false });
+    const grainy = testPicturePixels(200, 150);
+    for (const bits of [4, 5, 8]) {
+      expect(commonColourShare(flat, 16, bits)).toBeGreaterThan(0.95);
+      expect(commonColourShare(grainy, 16, bits)).toBeLessThan(0.7);
+    }
+    const one = new Uint8ClampedArray(40).fill(200);
+    expect(commonColourShare(one, 1, 8)).toBe(1);
+    expect(() => commonColourShare(flat, 0, 8)).toThrow();
+    expect(() => commonColourShare(flat, 16, 9)).toThrow();
   });
 
   it("finds a known shift between two sounds, either way", () => {

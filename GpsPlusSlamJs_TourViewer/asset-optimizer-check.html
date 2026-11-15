@@ -89,32 +89,69 @@
     </p>
     <p id="status" role="status" aria-live="polite"></p>
 
-    <h2>Pictures</h2>
-    <p>
-      Chosen: longest side 1600 px, WebP at quality 0.75. Either side: quality
-      0.6 and 0.9, and sides 1280 and 2048 px. Zoom into the pictures to compare
-      detail; SSIM (1 is identical) compares each with the original scaled to
-      the same size.
-    </p>
-    <input id="picture-file" type="file" accept="image/*" />
-    <button id="picture-test" type="button">
-      Use a sample photo (2400 x 1800)
-    </button>
-    <div id="picture-results" class="results"></div>
+    <section id="pictures">
+      <h2>Pictures</h2>
+      <p>
+        Chosen (the photo setting): longest side 1600 px, WebP at quality 0.6.
+        Its steps: quality 0.5, 0.75 and 0.9, and sides 1280 and 2048 px at 0.6.
+        Next to them, the flat-colour candidates for cartoons and drawings:
+        quality 0.9, and lossless WebP. Zoom into the pictures to compare
+        detail, text and edges. Each result is compared with the original scaled
+        to the same size: SSIM (1 is identical), PSNR (higher is closer; "exact"
+        is lossless) and the near-worst pixel error (0 to 255, the error that
+        only 1 pixel in 1000 exceeds, which shows fringes at edges and smeared
+        text).
+      </p>
+      <p>
+        The original's card also says how flat it is: the share of its pixels in
+        its 16 most common colours (a cartoon of flat colours is near 100 %, a
+        photo far below).
+      </p>
+      <input id="picture-file" type="file" accept="image/*" />
+      <button id="picture-test" type="button">
+        Use a sample photo (2400 x 1800)
+      </button>
+      <button id="picture-flat" type="button">
+        Flat-colour cartoon (generated, 2400 x 1800)
+      </button>
+      <button id="picture-shaded" type="button">
+        Shaded cartoon (generated, 2400 x 1800)
+      </button>
+      <div id="picture-results" class="results"></div>
+    </section>
 
-    <h2>Sounds</h2>
-    <p>
-      Chosen: speech (a mono sound) as Opus at 24 kbps, music (stereo) at 64
-      kbps. Either side: 16 and 32 kbps for speech, 48 and 96 kbps for music.
-      Listen with headphones; decoded, the length must stay the same to the
-      sample (a player shows an Opus file about 7 ms longer: its pre-skip).
-    </p>
-    <input id="sound-file" type="file" accept="audio/*" />
-    <button id="sound-speech-de" type="button">German speech (20 s)</button>
-    <button id="sound-speech-en" type="button">English speech (20 s)</button>
-    <button id="sound-piano" type="button">Piano (15 s)</button>
-    <button id="sound-orchestra" type="button">Orchestra (15 s)</button>
-    <div id="sound-results" class="results"></div>
+    <section id="sounds">
+      <h2>Sounds</h2>
+      <p>
+        Chosen: speech (a mono sound) as Opus at 24 kbps, music (stereo) at 64
+        kbps. The steps go far down, to find where a difference becomes audible:
+      </p>
+      <ul>
+        <li>
+          speech: 32, 24 (chosen), 16, 12, 8 and 6 kbps, about 234, 176, 117,
+          88, 59 and 44 KiB a minute (6 kbps is the lowest Opus takes);
+        </li>
+        <li>
+          music in stereo: 96, 64 (chosen), 48, 32, 24 and 16 kbps, about 703,
+          469, 352, 234, 176 and 117 KiB a minute;
+        </li>
+        <li>music made mono: 32, 24, 16 and 12 kbps.</li>
+      </ul>
+      <p>
+        Each result shows its real size. Opus always codes at 48 kHz here: a
+        lower sample rate saves nothing at the same bitrate (16 kbps from a 16
+        kHz and from a 48 kHz sound gave the same bytes), so the steps lower the
+        bitrate, and at the lowest ones Opus narrows the sound's band itself.
+        Listen with headphones; decoded, the length must stay the same to the
+        sample (a player shows an Opus file about 7 ms longer: its pre-skip).
+      </p>
+      <input id="sound-file" type="file" accept="audio/*" />
+      <button id="sound-speech-de" type="button">German speech (20 s)</button>
+      <button id="sound-speech-en" type="button">English speech (20 s)</button>
+      <button id="sound-piano" type="button">Piano (15 s)</button>
+      <button id="sound-orchestra" type="button">Orchestra (15 s)</button>
+      <div id="sound-results" class="results"></div>
+    </section>
 
     <h2>3D models</h2>
     <p>
@@ -140,7 +177,10 @@
       import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
       import {
         bestLag,
+        cartoonPicturePixels,
+        commonColourShare,
         lumaOf,
+        pictureErrors,
         ssim,
         testPicturePixels,
         testSoundPlanes,
@@ -178,11 +218,17 @@
           picture: { ...OPTIMIZER_SETTINGS.picture, maxSidePx, quality },
         });
 
-      const optimizeSound = (source, bitsPerSecond) =>
+      /** `channels` (1 or 2) overrides the music setting's; a mono source
+       *  is speech, always one channel. */
+      const optimizeSound = (
+        source,
+        bitsPerSecond,
+        channels = OPTIMIZER_SETTINGS.music.channels,
+      ) =>
         run("audio", source, {
           ...OPTIMIZER_SETTINGS,
           speech: { ...OPTIMIZER_SETTINGS.speech, bitsPerSecond },
-          music: { ...OPTIMIZER_SETTINGS.music, bitsPerSecond },
+          music: { ...OPTIMIZER_SETTINGS.music, bitsPerSecond, channels },
         });
 
       /** The real sample files (SOURCES.md next to them). */
@@ -347,6 +393,67 @@
         return canvas.convertToBlob({ type: "image/jpeg", quality: 0.92 });
       }
 
+      /** A PNG of the generated cartoon figure, flat or shaded. */
+      async function cartoonPicture(width, height, shaded) {
+        const canvas = new OffscreenCanvas(width, height);
+        const pixels = cartoonPicturePixels(width, height, { shaded });
+        canvas
+          .getContext("2d")
+          .putImageData(new ImageData(pixels, width, height), 0, 0);
+        return canvas.convertToBlob({ type: "image/png" });
+      }
+
+      /** The RGBA pixels of `blob`, upright, scaled to `width` x `height`
+       *  when given (`quality` "pixelated" keeps the colours unblended). */
+      async function pixelsOf(blob, width, height, quality = "high") {
+        const bitmap = await createImageBitmap(
+          blob,
+          width
+            ? {
+                resizeWidth: width,
+                resizeHeight: height,
+                resizeQuality: quality,
+                imageOrientation: "from-image",
+              }
+            : { imageOrientation: "from-image" },
+        );
+        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+        const context = canvas.getContext("2d");
+        context.drawImage(bitmap, 0, 0);
+        bitmap.close();
+        return context.getImageData(0, 0, canvas.width, canvas.height).data;
+      }
+
+      /** `optimized` against `original` scaled to its size: SSIM, PSNR and
+       *  the near-worst pixel error. */
+      async function comparePicture(original, optimized) {
+        const small = await createImageBitmap(optimized);
+        const { width, height } = small;
+        small.close();
+        const before = await pixelsOf(original, width, height);
+        const after = await pixelsOf(optimized, width, height);
+        return {
+          ssim: ssim(lumaOf(before), lumaOf(after), width, height),
+          ...pictureErrors(before, after),
+        };
+      }
+
+      /** The share of `blob`'s pixels in its `top` most common colours at
+       *  `bits` bits a channel, read on a copy of at most 256 px a side
+       *  (nearest pixel, so no colour is blended). */
+      async function colourShare(blob, top = 16, bits = 8) {
+        const bitmap = await createImageBitmap(blob);
+        const scale = Math.min(1, 256 / Math.max(bitmap.width, bitmap.height));
+        const width = Math.max(1, Math.round(bitmap.width * scale));
+        const height = Math.max(1, Math.round(bitmap.height * scale));
+        bitmap.close();
+        return commonColourShare(
+          await pixelsOf(blob, width, height, "pixelated"),
+          top,
+          bits,
+        );
+      }
+
       /** A WAV of a test sound. */
       function testSound(kind, seconds, sampleRate, seed = 1) {
         const planes = testSoundPlanes(kind, seconds, sampleRate, seed);
@@ -423,13 +530,25 @@
         parent.append(figure);
       }
 
+      const share = (part, whole) => {
+        const percent = (100 * part) / whole;
+        return `${percent.toFixed(percent < 10 ? 1 : 0)} % of the original`;
+      };
+
+      /** The photo setting (chosen) and its steps, then the flat-colour
+       *  candidates; quality 1 is Chromium's lossless WebP. */
       const PICTURE_VARIANTS = [
-        { side: 1600, quality: 0.75, chosen: true },
-        { side: 1600, quality: 0.6 },
-        { side: 1600, quality: 0.9 },
-        { side: 1280, quality: 0.75 },
-        { side: 2048, quality: 0.75 },
+        { label: "photo setting", side: 1600, quality: 0.6, chosen: true },
+        { side: 1600, quality: 0.5 },
+        { side: 1600, quality: 0.75 },
+        { side: 1280, quality: 0.6 },
+        { side: 2048, quality: 0.6 },
+        { label: "flat-colour candidate", side: 1600, quality: 0.9 },
+        { label: "flat-colour candidate, lossless", side: 1600, quality: 1 },
       ];
+
+      const settingsOf = (v) =>
+        `${v.side} px, ${v.quality === 1 ? "lossless" : `quality ${v.quality}`}`;
 
       async function showPictures(source) {
         const out = document.getElementById("picture-results");
@@ -437,34 +556,59 @@
         const original = document.createElement("img");
         original.src = URL.createObjectURL(source);
         original.alt = "The original picture";
-        card(out, false, original, ["Original", kib(source.size)]);
+        const flat = await colourShare(source);
+        card(out, false, original, [
+          "Original",
+          kib(source.size),
+          `${(100 * flat).toFixed(1)} % of its pixels in its 16 most common colours`,
+        ]);
+        let made = 0;
         for (const v of PICTURE_VARIANTS) {
-          say(`Making the ${v.side} px, ${v.quality} picture...`);
+          made++;
+          say(
+            `Making picture ${made} of ${PICTURE_VARIANTS.length}: ${settingsOf(v)}...`,
+          );
           const result = await optimizePicture(source, v.side, v.quality);
-          const score = await pictureSsim(source, result.blob);
+          const score = await comparePicture(source, result.blob);
           const img = document.createElement("img");
           img.src = URL.createObjectURL(result.blob);
-          img.alt = `The picture at ${v.side} px, quality ${v.quality}`;
+          img.alt = `The picture at ${settingsOf(v)}`;
           card(out, v.chosen === true, img, [
-            `${v.side} px, quality ${v.quality}`,
+            v.label ? `${settingsOf(v)} (${v.label})` : settingsOf(v),
             `${result.width} x ${result.height}`,
             kib(result.blob.size),
-            `${((100 * result.blob.size) / source.size).toFixed(0)} % of the original`,
-            `SSIM ${score.toFixed(4)}`,
+            share(result.blob.size, source.size),
+            `SSIM ${score.ssim.toFixed(4)}`,
+            Number.isFinite(score.psnr)
+              ? `PSNR ${score.psnr.toFixed(1)} dB`
+              : "PSNR exact",
+            `near-worst error ${score.nearWorst}`,
             `${result.ms} ms`,
           ]);
         }
-        say("Pictures done.");
+        say(`Pictures done: ${PICTURE_VARIANTS.length} results.`);
       }
+
+      /** Speech (a mono source) and music (stereo, and made mono) steps,
+       *  down to Opus's lowest bitrate; the chosen ones are the shelf's. */
+      const SPEECH_VARIANTS = [32000, 24000, 16000, 12000, 8000, 6000].map(
+        (bps) => ({ bps, channels: 1, chosen: bps === 24000 }),
+      );
+      const MUSIC_VARIANTS = [
+        ...[96000, 64000, 48000, 32000, 24000, 16000].map((bps) => ({
+          bps,
+          channels: 2,
+          chosen: bps === 64000,
+        })),
+        ...[32000, 24000, 16000, 12000].map((bps) => ({ bps, channels: 1 })),
+      ];
 
       async function showSounds(source) {
         const out = document.getElementById("sound-results");
         out.replaceChildren();
         const planes = await decode(source);
         const speech = planes.length === 1;
-        const variants = speech
-          ? [{ bps: 24000, chosen: true }, { bps: 16000 }, { bps: 32000 }]
-          : [{ bps: 64000, chosen: true }, { bps: 48000 }, { bps: 96000 }];
+        const variants = speech ? SPEECH_VARIANTS : MUSIC_VARIANTS;
         const frames = planes[0].length;
         const original = document.createElement("audio");
         original.controls = true;
@@ -474,24 +618,27 @@
           kib(source.size),
           `${frames} samples at 48 kHz`,
         ]);
+        let made = 0;
         for (const v of variants) {
-          say(`Making the ${v.bps / 1000} kbps sound...`);
-          const result = await optimizeSound(source, v.bps);
+          made++;
+          const settings = `Opus ${v.bps / 1000} kbps ${v.channels === 1 ? "mono" : "stereo"}`;
+          say(`Making sound ${made} of ${variants.length}: ${settings}...`);
+          const result = await optimizeSound(source, v.bps, v.channels);
           const after = (await decode(result.blob))[0].length;
           const audio = document.createElement("audio");
           audio.controls = true;
           audio.src = URL.createObjectURL(result.blob);
           card(out, v.chosen === true, audio, [
-            `Opus ${v.bps / 1000} kbps`,
+            v.chosen ? `${settings} (chosen)` : settings,
             kib(result.blob.size),
-            `${((100 * result.blob.size) / source.size).toFixed(1)} % of the original`,
+            share(result.blob.size, source.size),
             after === frames
               ? "the original's length to the sample"
               : `${after} samples: NOT the original's length`,
             `${result.ms} ms to make`,
           ]);
         }
-        say("Sounds done.");
+        say(`Sounds done: ${variants.length} results.`);
       }
 
       const MODEL_VARIANTS = [
@@ -542,26 +689,53 @@
       const testModel = async (name = "rock") =>
         (await fetch(`./prototypes/model-lod-1/${name}.glb`)).blob();
 
-      const guard = (task) => () =>
-        task().catch((error) => say(`Failed: ${error.message}`));
+      /** `task` with a failure said in words; while it runs, the controls
+       *  of `sectionId`'s section are disabled and the section is busy, so
+       *  a second run cannot start under the first. */
+      const guard = (task, sectionId) => () => {
+        const section = sectionId ? document.getElementById(sectionId) : null;
+        const controls = section
+          ? [...section.querySelectorAll("button, input")]
+          : [];
+        for (const control of controls) control.disabled = true;
+        section?.setAttribute("aria-busy", "true");
+        return task()
+          .catch((error) => say(`Failed: ${error.message}`))
+          .finally(() => {
+            for (const control of controls) control.disabled = false;
+            section?.removeAttribute("aria-busy");
+          });
+      };
       document
         .getElementById("picture-file")
         .addEventListener("change", (event) => {
           const file = event.target.files?.[0];
-          if (file) void guard(() => showPictures(file))();
+          if (file) void guard(() => showPictures(file), "pictures")();
         });
       document.getElementById("picture-test").addEventListener(
         "click",
         guard(async () => {
           say("Loading the sample photo...");
           await showPictures(await sample("photo"));
-        }),
+        }, "pictures"),
       );
+      for (const [id, shaded] of [
+        ["picture-flat", false],
+        ["picture-shaded", true],
+      ]) {
+        document.getElementById(id).addEventListener(
+          "click",
+          guard(async () => {
+            say("Drawing the cartoon...");
+            await showPictures(await cartoonPicture(2400, 1800, shaded));
+          }, "pictures"),
+        );
+      }
       document
         .getElementById("sound-file")
         .addEventListener("change", (event) => {
           const file = event.target.files?.[0];
-          if (file) void guard(() => showSounds(file))();
+          if (file) void guard(() => showSounds(file), "sounds")();
         });
       for (const name of ["speech-de", "speech-en", "piano", "orchestra"]) {
         document.getElementById(`sound-${name}`).addEventListener(
@@ -569,7 +743,7 @@
           guard(async () => {
             say("Loading the sample sound...");
             await showSounds(await sample(name));
-          }),
+          }, "sounds"),
         );
       }
 
@@ -591,8 +765,11 @@
         optimizeSound,
         sample,
         testPicture,
+        cartoonPicture,
         testSound,
         pictureSsim,
+        comparePicture,
+        colourShare,
         decode,
         durationMs,
         optimizeModel,

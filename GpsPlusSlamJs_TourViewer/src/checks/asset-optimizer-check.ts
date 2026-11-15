@@ -9,6 +9,8 @@
  * @see asset-optimizer-check.ts.md
  */
 
+import { clamp01 } from "../landing/clamp01.js";
+
 /** A seeded generator (mulberry32): the same seed, the same test file. */
 export function seeded(seed: number): () => number {
   let a = seed >>> 0;
@@ -99,6 +101,202 @@ export function testPicturePixels(
     }
   }
   return px;
+}
+
+type Rgb = readonly [number, number, number];
+
+/** The words of the cartoon's label, as [start, length] pairs per line,
+ *  in units of the picture's shorter side. */
+function labelWords(seed: number): number[][][] {
+  const random = seeded(seed);
+  return [0, 1, 2, 3].map(() => {
+    const words: number[][] = [];
+    for (let x = 0; x < 0.26;) {
+      const length = 0.02 + random() * 0.05;
+      words.push([x, Math.min(length, 0.26 - x)]);
+      x += length + 0.012;
+    }
+    return words;
+  });
+}
+
+
+/** The colour of the cartoon at (x, y), in units of the picture's
+ *  shorter side from its centre. */
+function cartoonAt(
+  x: number,
+  y: number,
+  shaded: boolean,
+  words: number[][][],
+): Rgb {
+  // Shading: a light from the upper left over everything, and a rounding
+  // of each disc towards its rim, as many AI-made figures have.
+  const light = shaded ? 0.72 + 0.4 * clamp01(0.55 - 0.5 * (x + y)) : 1;
+  const tone = (c: Rgb, round = 0): Rgb =>
+    shaded
+      ? [
+          c[0] * light * (1 - 0.25 * round),
+          c[1] * light * (1 - 0.25 * round),
+          c[2] * light * (1 - 0.25 * round),
+        ]
+      : c;
+  const disc = (cx: number, cy: number, r: number) =>
+    Math.hypot(x - cx, y - cy) / r;
+  const OUTLINE: Rgb = [30, 25, 35];
+  const edge = 0.008;
+  let c: Rgb = y < 0.25 ? tone([150, 205, 240]) : tone([110, 190, 90]);
+  if (disc(0.6, -0.35, 0.09) < 1)
+    c = tone([255, 215, 80], disc(0.6, -0.35, 0.09));
+  for (const [cx, cy, r] of [
+    [-0.5, -0.38, 0.06],
+    [-0.43, -0.4, 0.075],
+    [-0.36, -0.37, 0.055],
+  ] as const) {
+    if (disc(cx, cy, r) < 1) c = tone([250, 250, 250]);
+  }
+  // The label: a white board with four lines of dark "words".
+  const lx = -0.62;
+  const ly = 0.05;
+  if (x >= lx && x < lx + 0.3 && y >= ly && y < ly + 0.2) {
+    c = [245, 245, 240];
+    words.forEach((line, row) => {
+      const top = ly + 0.03 + row * 0.04;
+      if (y < top || y >= top + 0.014) return;
+      for (const [start, length] of line) {
+        const u = x - lx - 0.02 - start!;
+        if (u >= 0 && u < length!) c = [40, 40, 60];
+      }
+    });
+  }
+  // The body: an ellipse with an outline.
+  const body = Math.hypot(x / 0.17, (y - 0.2) / 0.22);
+  if (body < 1) {
+    c = (1 - body) * 0.17 < edge ? OUTLINE : tone([230, 110, 60], body);
+  }
+  const head = disc(0, -0.12, 0.14);
+  if (head < 1) {
+    c = (1 - head) * 0.14 < edge ? OUTLINE : tone([250, 205, 170], head);
+    if (y < -0.17 && head < 0.97) c = tone([90, 55, 35]);
+    for (const side of [-1, 1]) {
+      const eye = disc(side * 0.05, -0.12, 0.028);
+      if (eye < 1) c = eye < 0.45 ? [20, 20, 30] : [255, 255, 255];
+    }
+    const mouth = disc(0, -0.08, 0.055);
+    if (y > -0.065 && mouth < 1 && mouth > 0.8) c = [150, 40, 50];
+  }
+  return c;
+}
+
+/** RGBA pixels of a cartoon figure: a few flat colours (sky, ground,
+ *  sun, clouds, a figure with black outlines, a label of dark "words")
+ *  with anti-aliased edges (2 x 2 samples a pixel), or with `shaded` the
+ *  same figure lit and rounded as many AI-made pictures are, so it has
+ *  smooth gradients instead of flat areas. */
+export function cartoonPicturePixels(
+  width: number,
+  height: number,
+  { shaded, seed = 1 }: { readonly shaded: boolean; readonly seed?: number },
+): Uint8ClampedArray {
+  wholeAtLeast(width, 1, "the width");
+  wholeAtLeast(height, 1, "the height");
+  const words = labelWords(seed);
+  const unit = Math.min(width, height);
+  const px = new Uint8ClampedArray(width * height * 4);
+  for (let py = 0; py < height; py++) {
+    for (let pxl = 0; pxl < width; pxl++) {
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      for (const [dx, dy] of [
+        [0.25, 0.25],
+        [0.75, 0.25],
+        [0.25, 0.75],
+        [0.75, 0.75],
+      ] as const) {
+        const c = cartoonAt(
+          (pxl + dx - width / 2) / unit,
+          (py + dy - height / 2) / unit,
+          shaded,
+          words,
+        );
+        r += c[0];
+        g += c[1];
+        b += c[2];
+      }
+      const i = (py * width + pxl) * 4;
+      px[i] = r / 4;
+      px[i + 1] = g / 4;
+      px[i + 2] = b / 4;
+      px[i + 3] = 255;
+    }
+  }
+  return px;
+}
+
+/** How two RGBA pictures of one size differ, over their colour channels:
+ *  the PSNR in dB (Infinity for the same pixels) and the near-worst
+ *  error, the 99.9th percentile of each pixel's largest channel error
+ *  (0..255), which sees ringing at edges and smeared text that PSNR
+ *  averages away. */
+export function pictureErrors(
+  a: Uint8ClampedArray,
+  b: Uint8ClampedArray,
+): { readonly psnr: number; readonly nearWorst: number } {
+  if (a.length !== b.length || a.length === 0 || a.length % 4 !== 0) {
+    throw new Error("the pictures are not of one size");
+  }
+  const pixels = a.length / 4;
+  const histogram = new Uint32Array(256);
+  let squares = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    let worst = 0;
+    for (let c = 0; c < 3; c++) {
+      const d = Math.abs(a[i + c]! - b[i + c]!);
+      squares += d * d;
+      if (d > worst) worst = d;
+    }
+    histogram[worst]!++;
+  }
+  const mse = squares / (pixels * 3);
+  let nearWorst = 0;
+  let seen = 0;
+  while (nearWorst < 255) {
+    seen += histogram[nearWorst]!;
+    if (seen >= 0.999 * pixels) break;
+    nearWorst++;
+  }
+  return {
+    psnr: mse === 0 ? Infinity : 10 * Math.log10((255 * 255) / mse),
+    nearWorst,
+  };
+}
+
+/** The share of RGBA pixels (0..1) whose colour, read at `bits` bits a
+ *  channel, is one of the `top` most common: nearly 1 for a picture of a
+ *  few flat colours, low for a photo's grain and gradients. Fewer bits
+ *  merge near colours, so a smooth gradient counts as flatter. */
+export function commonColourShare(
+  rgba: Uint8ClampedArray,
+  top: number,
+  bits: number,
+): number {
+  wholeAtLeast(top, 1, "the number of colours");
+  wholeAtLeast(bits, 1, "the bits a channel");
+  if (bits > 8) throw new Error("the bits a channel must be at most 8");
+  if (rgba.length === 0 || rgba.length % 4 !== 0) {
+    throw new Error("no RGBA pixels");
+  }
+  const shift = 8 - bits;
+  const counts = new Map<number, number>();
+  for (let i = 0; i < rgba.length; i += 4) {
+    const key =
+      ((rgba[i]! >> shift) << 16) |
+      ((rgba[i + 1]! >> shift) << 8) |
+      (rgba[i + 2]! >> shift);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const most = [...counts.values()].sort((a, b) => b - a).slice(0, top);
+  return most.reduce((sum, n) => sum + n, 0) / (rgba.length / 4);
 }
 
 export type TestSoundKind = "speech" | "music";
