@@ -12,7 +12,7 @@
 ## Invariants
 
 - Seeded (mulberry32 with fixed seeds 1 and 2): the same meshes always give the same answer, so a dropped file always gets the same default level.
-- `max` never exceeds the true largest distance; with 20 000 samples a side it reads within a few percent of it on the scanned models (spike findings).
+- `max` never exceeds the true largest distance; with 20 000 samples a side it reads within a few percent of it on the scanned models.
 - Positions and indices are any `ArrayLike<number>`; nothing is validated (an internal kernel: its caller passes indices it produced).
 
 ## Tests

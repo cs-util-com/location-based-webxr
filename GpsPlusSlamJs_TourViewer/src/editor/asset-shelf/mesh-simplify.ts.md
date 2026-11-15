@@ -19,7 +19,7 @@
 - Triangles degenerate from the start (two corners at one position) die at step -1 and are in no level.
 - The metric is normalized to the bounding box diagonal; `stepError` is the square root of the quadric cost, a ranking, not a distance: the deviation in model units is measured by `mesh-distance.ts`.
 - Pure and synchronous: typed arrays, no allocation per collapse. It runs in the optimizer's Worker.
-- meshoptimizer (MIT) was the reference this was measured against in the spike; no code is translated from it.
+- meshoptimizer (MIT) was the reference it was measured against; no code is translated from it.
 
 ## Examples
 
