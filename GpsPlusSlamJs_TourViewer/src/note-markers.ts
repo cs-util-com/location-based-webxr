@@ -35,6 +35,8 @@ export interface NoteOnScreen {
   readonly facing: number;
   /** The camera's distance to the note's surface point (m). */
   readonly distanceM: number;
+  /** Whether the model's own body hides the note's point (absent: seen). */
+  readonly occluded?: boolean;
 }
 
 /** Where one disc goes this frame. */
@@ -73,6 +75,44 @@ export const NOTE_DISC_RADIUS_PX = 14;
 /** Rounds of the push: enough to part a few neighbours, not a guarantee
  *  for a crowd (a disc held at the edge cannot give way). */
 const PUSH_ROUNDS = 6;
+/** A disc whose point the model hides is dimmed by this factor (the
+ *  chosen page's 0.45), still never below `NOTE_MIN_OPACITY`. */
+export const NOTE_OCCLUDED_DIM = 0.45;
+/** A ray to a note's point that meets the model this share of its size
+ *  (`sizeM`) short of the point is a cover; nearer is the point's own
+ *  surface. The page's 2 %; swept 0.5-5 % in the tests. */
+export const NOTE_OCCLUSION_SLACK_SHARE = 0.02;
+/** A note's cover is tested at most this often (s): the ray walks the
+ *  model's triangles, and the disc's easing carries the change. */
+export const NOTE_OCCLUSION_INTERVAL_S = 0.25;
+
+const coverRay = new THREE.Raycaster();
+const coverHits: THREE.Intersection[] = [];
+const coverDir = new THREE.Vector3();
+
+/**
+ * Whether `model` hides `surface` from `eye`: a ray from the eye meets the
+ * model more than `slackM` short of the point. The model's own extras
+ * that take no ray (its shadow) never cover.
+ */
+export function noteHidden(
+  model: THREE.Object3D,
+  eye: THREE.Vector3,
+  surface: THREE.Vector3,
+  slackM: number,
+): boolean {
+  const dist = coverDir.subVectors(surface, eye).length();
+  if (!(dist > 0) || !Number.isFinite(dist)) return false;
+  coverRay.set(eye, coverDir.divideScalar(dist));
+  coverRay.near = 0;
+  coverRay.far = dist;
+  coverHits.length = 0;
+  coverRay.intersectObject(model, true, coverHits);
+  const first = coverHits[0];
+  coverHits.length = 0;
+  const slack = Number.isFinite(slackM) && slackM > 0 ? slackM : 0;
+  return first !== undefined && first.distance < dist - slack;
+}
 
 /** The key of note `index` of `blockId`. */
 export function noteKey(blockId: string, index: number): string {
@@ -89,10 +129,12 @@ function smooth(a: number, b: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-/** How visible a note is that faces the camera by `facing` (-1..1). */
-export function noteOpacity(facing: number): number {
+/** How visible a note is that faces the camera by `facing` (-1..1), and
+ *  is hidden by its model's body when `occluded`. */
+export function noteOpacity(facing: number, occluded = false): number {
   if (!Number.isFinite(facing)) return NOTE_MIN_OPACITY;
-  return Math.max(NOTE_MIN_OPACITY, smooth(-0.2, 0.3, facing));
+  const shown = smooth(-0.2, 0.3, facing) * (occluded ? NOTE_OCCLUDED_DIM : 1);
+  return Math.max(NOTE_MIN_OPACITY, shown);
 }
 
 /**
@@ -123,7 +165,7 @@ export function layoutNoteMarkers(
   let best: string | null = null;
   let bestD = Infinity;
   for (const p of placed) {
-    if (!p.on || p.note.facing <= 0.25) continue;
+    if (!p.on || p.note.occluded === true || p.note.facing <= 0.25) continue;
     const d = Math.hypot(p.x - w / 2, p.y - h * 0.45);
     if (d < bestD) {
       bestD = d;
@@ -174,7 +216,7 @@ export function layoutNoteMarkers(
     y: p.y,
     surfaceX: p.note.surface.x,
     surfaceY: p.note.surface.y,
-    opacity: noteOpacity(p.note.facing),
+    opacity: noteOpacity(p.note.facing, p.note.occluded === true),
     label:
       p.note.key === openKey ||
       (openKey === null &&
@@ -183,12 +225,31 @@ export function layoutNoteMarkers(
   }));
 }
 
+/** Whether note `key` of `handle` at `surface` is hidden from `eye`. */
+type CoverTest = (
+  key: string,
+  handle: ModelViewHandle,
+  eye: THREE.Vector3,
+  surface: THREE.Vector3,
+) => boolean;
+
+/** The cover of `handle`'s note at `surface`, tested now. */
+const coverNow: CoverTest = (_key, handle, eye, surface) =>
+  noteHidden(
+    handle.model,
+    eye,
+    surface,
+    NOTE_OCCLUSION_SLACK_SHARE * (handle.block.sizeM ?? 1),
+  );
+
 /** The notes of `handles` as `camera` sees them on a `width` x `height`
- *  screen. */
+ *  screen; `cover` says which the model hides (by default a ray test per
+ *  note, now). */
 export function notesOnScreen(
   handles: readonly ModelViewHandle[],
   camera: THREE.Camera,
   screen: { readonly width: number; readonly height: number },
+  cover: CoverTest = coverNow,
 ): NoteOnScreen[] {
   camera.updateMatrixWorld();
   const eye = camera.getWorldPosition(new THREE.Vector3());
@@ -207,8 +268,10 @@ export function notesOnScreen(
       const marker = toPx(points.marker);
       const toEye = eye.clone().sub(points.surface);
       const distanceM = toEye.length();
+      const key = noteKey(handle.blockId, index);
       out.push({
-        key: noteKey(handle.blockId, index),
+        key,
+        occluded: cover(key, handle, eye, points.surface),
         surface,
         marker,
         behind: surface.z > 1 || marker.z > 1,
@@ -261,6 +324,23 @@ export function createNoteMarkers(
   const doc = dom.layer.ownerDocument;
   const els = new Map<string, MarkerEls>();
   const owners = new Map<string, { handle: ModelViewHandle; index: number }>();
+  // Each note's last cover test and the time since it (s): a note is
+  // tested again once `NOTE_OCCLUSION_INTERVAL_S` has passed.
+  const covers = new Map<string, { hidden: boolean; ageS: number }>();
+  let frameDtS = 0;
+  const coverThrottled: CoverTest = (key, handle, eye, surface) => {
+    const last = covers.get(key);
+    if (last !== undefined) {
+      last.ageS += frameDtS;
+      if (last.ageS < NOTE_OCCLUSION_INTERVAL_S) return last.hidden;
+      last.ageS = 0;
+      last.hidden = coverNow(key, handle, eye, surface);
+      return last.hidden;
+    }
+    const hidden = coverNow(key, handle, eye, surface);
+    covers.set(key, { hidden, ageS: 0 });
+    return hidden;
+  };
 
   const make = (key: string, title: string, number: number): MarkerEls => {
     const button = doc.createElement("button");
@@ -300,6 +380,7 @@ export function createNoteMarkers(
     el?.leader.remove();
     els.delete(key);
     owners.delete(key);
+    covers.delete(key);
   };
 
   return {
@@ -322,11 +403,12 @@ export function createNoteMarkers(
       }
       for (const key of [...els.keys()]) if (!wanted.has(key)) remove(key);
       dom.leaders.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      frameDtS = Number.isFinite(dtS) && dtS > 0 ? dtS : 0;
       const placements =
         camera === null || width === 0 || height === 0
           ? []
           : layoutNoteMarkers(
-              notesOnScreen(handles, camera, { width, height }),
+              notesOnScreen(handles, camera, { width, height }, coverThrottled),
               { width, height },
               openKey,
             );
