@@ -222,7 +222,7 @@ const MAX_CELLS = 256;
  *  reads whole; so the grid holds at most this many entries a triangle,
  *  however long its triangles are. Ordinary triangles, about two to a
  *  cell, cover at most a few cells each. */
-export const TRIANGLE_CELLS = 32;
+const TRIANGLE_CELLS = 32;
 
 /** A uniform grid over one mesh's triangles, for nearest-point queries. */
 export class SurfaceGrid {
