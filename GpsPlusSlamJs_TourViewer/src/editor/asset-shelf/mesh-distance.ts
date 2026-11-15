@@ -107,15 +107,15 @@ export function pointTri2(
   const nx = aby * acz - abz * acy;
   const ny = abz * acx - abx * acz;
   const nz = abx * acy - aby * acx;
-  if (!(nx * nx + ny * ny + nz * nz > 0)) {
-    // a zero-area triangle (or one so thin its area underflows): the
-    // region formulas below would divide by zero, so its segments decide
-    return Math.min(
+  const segments = (): number =>
+    Math.min(
       segment2(px, py, pz, ax, ay, az, bx, by, bz),
       segment2(px, py, pz, bx, by, bz, cx, cy, cz),
       segment2(px, py, pz, ax, ay, az, cx, cy, cz),
     );
-  }
+  // a zero-area triangle (or one so thin its area underflows): the
+  // region formulas below would divide by zero, so its segments decide
+  if (!(nx * nx + ny * ny + nz * nz > 0)) return segments();
   const apx = px - ax;
   const apy = py - ay;
   const apz = pz - az;
@@ -174,7 +174,10 @@ export function pointTri2(
       qz = az + abz * v + acz * w;
     }
   }
-  return (px - qx) ** 2 + (py - qy) ** 2 + (pz - qz) ** 2;
+  const d = (px - qx) ** 2 + (py - qy) ** 2 + (pz - qz) ** 2;
+  // a sliver whose area squares to a subnormal passes the guard, but its
+  // region products can still underflow to 0/0: its segments decide then
+  return d >= 0 ? d : segments();
 }
 
 /** The squared distance from a point to the segment from a to b (a point

@@ -48,6 +48,20 @@ describe("pointTri2", () => {
     ).toBe(0);
   });
 
+  // Why: an area this small still squares to a positive (subnormal)
+  // number, so the zero-area guard lets it through, yet the region
+  // products underflow to zero and the interior division read 0/0. The
+  // property found it; a NaN would be skipped by every nearest search.
+  it("never reads NaN for a sliver whose region products underflow", () => {
+    const sliver = [
+      0, -4.736700232267324e-78, 0, 0, 3.2046759087022053e-77, 0,
+      -1.373463448095496e-85, 1.5196073303672403e-90, 0,
+    ];
+    const d = pointTri2(0, 0, 0, sliver, 0, 3, 6);
+    expect(d).toBeGreaterThanOrEqual(0);
+    expect(d).toBeLessThan(1e-150);
+  });
+
   // Why: the closest point can never be farther than any corner.
   it("is never farther than the nearest corner (property)", () => {
     const c = fc.double({ min: -5, max: 5, noNaN: true });
