@@ -104,6 +104,18 @@ export function pointTri2(
   const acx = cx - ax;
   const acy = cy - ay;
   const acz = cz - az;
+  const nx = aby * acz - abz * acy;
+  const ny = abz * acx - abx * acz;
+  const nz = abx * acy - aby * acx;
+  if (!(nx * nx + ny * ny + nz * nz > 0)) {
+    // a zero-area triangle (or one so thin its area underflows): the
+    // region formulas below would divide by zero, so its segments decide
+    return Math.min(
+      segment2(px, py, pz, ax, ay, az, bx, by, bz),
+      segment2(px, py, pz, bx, by, bz, cx, cy, cz),
+      segment2(px, py, pz, ax, ay, az, cx, cy, cz),
+    );
+  }
   const apx = px - ax;
   const apy = py - ay;
   const apz = pz - az;
@@ -163,6 +175,38 @@ export function pointTri2(
     }
   }
   return (px - qx) ** 2 + (py - qy) ** 2 + (pz - qz) ** 2;
+}
+
+/** The squared distance from a point to the segment from a to b (a point
+ *  when a and b coincide). */
+function segment2(
+  px: number,
+  py: number,
+  pz: number,
+  ax: number,
+  ay: number,
+  az: number,
+  bx: number,
+  by: number,
+  bz: number,
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dz = bz - az;
+  const length2 = dx * dx + dy * dy + dz * dz;
+  const t =
+    length2 > 0
+      ? Math.min(
+          1,
+          Math.max(
+            0,
+            ((px - ax) * dx + (py - ay) * dy + (pz - az) * dz) / length2,
+          ),
+        )
+      : 0;
+  return (
+    (px - ax - t * dx) ** 2 + (py - ay - t * dy) ** 2 + (pz - az - t * dz) ** 2
+  );
 }
 
 /** The smallest extent of the grid's box, as a share of its largest. */

@@ -25,6 +25,29 @@ describe("pointTri2", () => {
     expect(pointTri2(1, 1, 0, TRI, 0, 3, 6)).toBeCloseTo(0.5); // edge bc
   });
 
+  // Why: scans carry zero-area slivers; the interior formula divides by
+  // the area there, and a NaN distance would be skipped by every search,
+  // so a point over a sliver's edge read the wrong nearest triangle.
+  it("measures a zero-area triangle as its longest segment", () => {
+    const line = [0, 0, 0, 2, 0, 0, 1, 0, 0];
+    expect(pointTri2(1, 1, 0, line, 0, 3, 6)).toBeCloseTo(1);
+    const point = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+    expect(pointTri2(0, 3, 0, point, 0, 3, 6)).toBeCloseTo(9);
+    // the property's shrunk counterexample: two corners equal, the third
+    // a hair away, the point between
+    expect(
+      pointTri2(
+        0,
+        0,
+        5.4803692748773836e-307,
+        [0, 0, 0, 0, 0, 0, 0, 0, 4.5075944800480685e-18],
+        0,
+        3,
+        6,
+      ),
+    ).toBe(0);
+  });
+
   // Why: the closest point can never be farther than any corner.
   it("is never farther than the nearest corner (property)", () => {
     const c = fc.double({ min: -5, max: 5, noNaN: true });

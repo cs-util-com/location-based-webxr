@@ -7,7 +7,7 @@
 - `surfaceDistance(PA, IA, PB, IB, samples = 20000, gridA = null)` returns `{ mean, max }` in model units: `samples` points by area on each mesh, each measured to the nearest point of the other. `max` estimates the Hausdorff distance from below. `gridA` is a `SurfaceGrid` of mesh A reused by a caller comparing many levels against one full mesh. Two empty meshes read `{ 0, 0 }`; one empty against a non-empty one reads `Infinity`.
 - `SurfaceGrid(P, I)` with `nearest(x, y, z)`: a uniform grid of triangles, about two triangles a cell (each extent counted as at least 1 % of the largest, so a flat mesh gets finite cells; at most 256 cells an axis), searched in growing shells until no nearer triangle can lie outside the shell.
 - `samplePoints(P, I, n, seed)`: `n` points uniform by area, xyz each.
-- `pointTri2(px, py, pz, P, a, b, c)`: the squared distance from a point to a triangle (`a`, `b`, `c` offsets into `P`), by the closest-point regions.
+- `pointTri2(px, py, pz, P, a, b, c)`: the squared distance from a point to a triangle (`a`, `b`, `c` offsets into `P`), by the closest-point regions; a zero-area triangle (whose area may underflow) by its three segments, never NaN.
 
 ## Invariants
 
@@ -17,4 +17,4 @@
 
 ## Tests
 
-- `mesh-distance.test.ts`: `pointTri2` in every region and, as a property, never farther than the nearest corner; zero for a mesh against itself and repeatable; a sphere lifted by h reads close to h and never above it; a reused grid gives the same answer; a flat mesh measured without the grid blowing up; an empty mesh reads infinitely far.
+- `mesh-distance.test.ts`: `pointTri2` in every region, on zero-area triangles (the shrunk counterexample of the property included) and, as a property, never farther than the nearest corner; zero for a mesh against itself and repeatable; a sphere lifted by h reads close to h and never above it; a reused grid gives the same answer; a flat mesh measured without the grid blowing up; an empty mesh reads infinitely far.
