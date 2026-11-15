@@ -670,3 +670,51 @@ describe("a stand-here video", () => {
     expect(player.calls).toEqual([]);
   });
 });
+
+describe("the hint before a video starts", () => {
+  /** Every line the card says while the visitor walks in from 30 m to the
+   *  video, out again and back, by 0.25 m steps. */
+  async function linesOnTheWay(
+    block: Partial<TourVideoBlock>,
+  ): Promise<string[]> {
+    const { part, shown } = await video({ block });
+    const lines = new Set<string>();
+    let t = 0;
+    const step = (x: number): void => {
+      t += 0.1;
+      part.update?.(at(x, t));
+      const line = shown.host?.querySelector(".narration-card-line");
+      if (line?.textContent) lines.add(line.textContent);
+    };
+    for (let x = 30; x >= 0; x -= 0.25) step(x);
+    for (let x = 0; x <= 30; x += 0.25) step(x);
+    for (let x = 30; x >= 0; x -= 0.25) step(x);
+    return [...lines];
+  }
+
+  // Why: the control for the case below. It proves this walk reads the
+  // card's line at all, so the case below fails for its own reason.
+  it("a tap start says to tap it", async () => {
+    expect(await linesOnTheWay({ start: "tap" })).toContain(
+      "Tap the video to play",
+    );
+  });
+
+  // Why: a known defect, kept as executable documentation. The rules say a
+  // near start tells the visitor how far to come ("Walk closer to start ·
+  // N m"), but the card only opens once the visitor is there, and for a
+  // near start "there" and the start share one reach: by the time the
+  // card can say it, the clip already plays. The open question is whether
+  // to remove that hint or give it a place outside the card. This test
+  // asserts the designed behaviour and is expected to fail today; when it
+  // turns red, the hint reaches visitors, and `it.fails` becomes `it`.
+  it.fails.each([1, 6, 20])(
+    "a near start within %i m says to walk closer before it starts",
+    async (withinM) => {
+      const lines = await linesOnTheWay({ start: "near", withinM });
+      expect(lines.some((l) => l.startsWith("Walk closer to start"))).toBe(
+        true,
+      );
+    },
+  );
+});
