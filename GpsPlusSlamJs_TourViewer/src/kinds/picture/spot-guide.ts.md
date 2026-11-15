@@ -6,8 +6,9 @@ The pure rules of the in-world guide that leads a visitor to the spot a
 picture was taken from: what each view's card says, where the card stands
 beside the spot, which way it turns, and how much of the decal, the light
 column and the card shows for where the visitor is and how far the picture
-has taken over. No three.js objects; `spot-guide-look.ts` builds the
-meshes, `viewpoint-world.ts` feeds the shade in each frame.
+has taken over. Pure functions that build no three.js objects (the
+viewpoint's yaw comes from `viewpoint-looks.ts`, which loads three, so
+the module does too); `spot-guide-look.ts` builds the meshes, `viewpoint-world.ts` feeds the shade in each frame.
 
 ## Public API
 

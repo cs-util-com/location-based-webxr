@@ -11,7 +11,12 @@ for every guided view; the rules are `spot-guide.ts`'s.
 ## Public API
 
 - `spotGuideLook(viewpoint, view, year, picture, painters)` -
-  `{ group, show(shade, viewer, seconds) }`.
+  `{ group, tappable, show(shade, viewer, seconds) }`. `group` holds what
+  takes no tap (the column); `tappable` holds the decal's group
+  (`picture-spot-mark`) and the card's stand (`picture-spot-stand`), so a
+  part puts only those in its tap target and a pick that boxes the target
+  (the near-miss fallback of `editor3d/object-pick.ts`) does not span the
+  3.4 m column.
   - `picture-spot-decal`: a `SPOT_DECAL_M` plane painted by
     `painters.spotDecal()`, flat 2 cm over the ground at the spot, turned
     by `viewpointYaw` so its arrow points the way to face; no depth write,
@@ -21,7 +26,10 @@ for every guided view; the rules are `spot-guide.ts`'s.
     `uTime`); no depth write, both sides. It takes no tap.
   - `picture-spot-card` on `picture-spot-post`: the card painted by
     `painters.card` (the year, the view's two lines, the picture small
-    where the view shows it), on a dark post, standing at `spotCardPlace`.
+    where the view shows it, turned upright when `picture.flipped` says
+    its image is stored upside down), on a dark post, standing at
+    `spotCardPlace`. A ray cast ignores visibility, so the card and the
+    post take no ray while their stand is hidden (given way on the spot).
   - `show` sets the decal's, the column's and the card's opacity from the
     shade, hides the card and its post below 0.01 and the column below
     0.003, ripples the column by `seconds`, and turns the card to `viewer`
@@ -42,6 +50,8 @@ for every guided view; the rules are `spot-guide.ts`'s.
 Through `viewpoint-world.test.ts`: the names per view, the guide at the
 viewpoint under random item and folder poses and sizes, the shade on the
 way in and on the spot, the card facing the visitor, what the card is
-painted with, sharpen's card without the picture, the column held still on
-reduced motion. The look itself is checked side by side against the
+painted with (the picture's orientation too), sharpen's card without the
+picture, the column held still on reduced motion, the tap target holding
+the card and the decal but not the column, and the hidden card taking no
+ray. The look itself is checked side by side against the
 prototype in screenshots.

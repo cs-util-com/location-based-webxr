@@ -3,7 +3,9 @@
  * north, up, east, the ground at height 0): the decal on the ground at
  * the spot, turned so its arrow points the way to face; the soft light
  * column standing on it; and the card on its post beside the spot,
- * turned to the visitor every frame. What shows how much is
+ * turned to the visitor every frame. The column takes no tap; the decal
+ * and the card are the guide's tappable parts, apart from it so that a
+ * pick boxing them does not span the column. What shows how much is
  * `spot-guide.ts`'s; the part feeds its shade in.
  *
  * @see spot-guide-look.ts.md
@@ -15,6 +17,7 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
+  type Object3D,
   MeshStandardMaterial,
   PlaneGeometry,
   ShaderMaterial,
@@ -53,16 +56,20 @@ void main() {
   #include <colorspace_fragment>
 }`;
 
-/** The picture a card shows small: its image and its aspect (height
- *  over width). */
+/** The picture a card shows small: its image, its aspect (height over
+ *  width), and whether the image is stored upside down. */
 export interface SpotGuidePicture {
   readonly image: CanvasImageSource;
   readonly aspect: number;
+  readonly flipped: boolean;
 }
 
 export interface SpotGuideLook {
-  /** The whole guide, in the viewpoint's frame. */
+  /** What takes no tap (the column), in the viewpoint's frame. */
   readonly group: Group;
+  /** The decal and the card on its post, in the same frame: what a tap
+   *  on the guide hits. The card takes none while it has given way. */
+  readonly tappable: readonly Object3D[];
   /** Shows a frame: the shade, the visitor in the viewpoint's frame (the
    *  card turns to them) and the clock that ripples the column. */
   show(
@@ -102,6 +109,7 @@ export function spotGuideLook(
   decal.rotation.x = -Math.PI / 2;
   decal.renderOrder = 2;
   const turned = new Group();
+  turned.name = "picture-spot-mark";
   turned.position.set(px, 0.02, pz);
   turned.rotation.y = viewpointYaw(viewpoint);
   turned.add(decal);
@@ -167,13 +175,23 @@ export function spotGuideLook(
   post.position.y = SPOT_CARD.postM / 2;
   const place = spotCardPlace(viewpoint);
   const stand = new Group();
+  stand.name = "picture-spot-stand";
   stand.position.set(place.x, 0, place.z);
   stand.add(post, card);
+  // A ray cast ignores visibility: the card and its post take a tap only
+  // while they show.
+  for (const mesh of [card, post]) {
+    const cast = mesh.raycast.bind(mesh);
+    mesh.raycast = (raycaster, hits) => {
+      if (stand.visible) cast(raycaster, hits);
+    };
+  }
 
-  group.add(turned, beam, stand);
+  group.add(beam);
   let turn = stand.rotation.y;
   return {
     group,
+    tappable: [turned, stand],
     show(shade, viewer, seconds) {
       decalMaterial.opacity = shade.decal;
       beamMaterial.uniforms["uAlpha"]!.value = shade.beam;

@@ -39,7 +39,9 @@ export interface TagWords {
 
 /** A small card's words and size: the year large in amber, a first line
  *  and a quieter second, under an optional thumbnail of the picture
- *  `aspect` high per unit wide. Painted at `ppm` px a metre. */
+ *  `aspect` high per unit wide (`flipped` when its image is stored
+ *  upside down, as a texture decoded for the GPU pre-flipped is). Painted
+ *  at `ppm` px a metre. */
 export interface CardWords {
   readonly widthM: number;
   readonly heightM: number;
@@ -47,7 +49,12 @@ export interface CardWords {
   readonly line1: string;
   readonly line2?: string | undefined;
   readonly thumb?:
-    { readonly image: CanvasImageSource; readonly aspect: number } | undefined;
+    | {
+        readonly image: CanvasImageSource;
+        readonly aspect: number;
+        readonly flipped?: boolean | undefined;
+      }
+    | undefined;
   readonly ppm?: number | undefined;
 }
 
@@ -282,6 +289,11 @@ function paintCard(doc: Document, words: CardWords): HTMLCanvasElement {
     g.save();
     roundRect(g, pad, y, tw, th, 0.008 * ppm);
     g.clip();
+    if (thumb.flipped === true) {
+      // Mirrored about the thumbnail's middle row, inside the clip.
+      g.translate(0, 2 * y + th);
+      g.scale(1, -1);
+    }
     g.drawImage(thumb.image, pad, y, tw, th);
     g.restore();
     y += th + 0.035 * ppm;

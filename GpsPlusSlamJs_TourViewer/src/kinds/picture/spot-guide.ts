@@ -1,5 +1,6 @@
 /**
- * The rules of the spot guide (pure): what leads a visitor to the spot a
+ * The rules of the spot guide (pure functions; no scene objects, though the
+ * yaw it borrows from `viewpoint-looks.ts` loads three): what leads a visitor to the spot a
  * viewpoint picture lines up from, in the world. A decal on the ground at
  * the spot (footprints in a ring, an arrow the way to face), a soft light
  * column standing on it, and a card on a post beside it saying what to do

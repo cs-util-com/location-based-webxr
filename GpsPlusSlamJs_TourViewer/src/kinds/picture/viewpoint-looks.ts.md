@@ -35,7 +35,9 @@ materials only; `viewpoint-world.ts` decides what shows how much.
   the picture's plane at the subject's depth and samples it there, a dark
   box past the edges with a 4 % fade. `plane` is that plane in the
   viewpoint's frame; the part copies it into world space every frame. A
-  0.36 x 0.09 m plate (`picture-portal-plate`) hangs 5 cm under the frame.
+  0.36 x 0.09 m plate (`picture-portal-plate`) hangs 5 cm under the frame,
+  or, when the frame stands too low for that, 1 cm above the ground over
+  the frame's foot.
 
 ## Invariants
 

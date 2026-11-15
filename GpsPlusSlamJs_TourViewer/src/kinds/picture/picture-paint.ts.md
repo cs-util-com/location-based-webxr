@@ -24,7 +24,9 @@ the plates of the viewer and the window) and the spot decal. The parts take them
   - `shadow()` - a 128 px radial fade, its alpha the shadow;
   - `card(words)` - `words.ppm` (560 by default) px a metre,
     `widthM` x `heightM`, a dark rounded card: an optional thumbnail
-    (rounded, clipped, `aspect` high per unit wide), the year in amber and
+    (rounded, clipped, `aspect` high per unit wide, mirrored upright
+    inside its clip when `thumb.flipped` says the image is stored upside
+    down, as a texture decoded pre-flipped for the GPU is), the year in amber and
     one or two lines; the tag is this card;
   - `spotDecal()` - 512 px: a dark disc, the amber ring, a dashed inner
     ring, two pale soles and the arrow at the top (the way to face).
@@ -38,6 +40,8 @@ the plates of the viewer and the window) and the spot decal. The parts take them
 
 ## Tests
 
-The word cuts are `plate.test.ts`'s; the painted look is checked on the
+The word cuts are `plate.test.ts`'s; `picture-paint.test.ts` records the
+card's 2D calls on a fake document to pin the thumbnail's orientation
+(mirrored inside its clip only when flipped). The painted look is checked on the
 picture check page and in the side-by-side screenshots against the
 prototype.

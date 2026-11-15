@@ -15,10 +15,12 @@ import type {
   TourPictureViewpoint,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
+  Box3,
   type BufferGeometry,
   Group,
   PerspectiveCamera,
   Quaternion,
+  Raycaster,
   Texture,
   Vector3,
   type Material,
@@ -380,6 +382,82 @@ describe("viewpointWorld", () => {
     part.dispose();
   });
 
+  // The decoder hands the GPU a picture stored upside down (and marks its
+  // texture not to flip again); the card draws the stored image, so it
+  // must be told to turn it.
+  it("tells the card when its picture is stored upside down", async () => {
+    const stored = texture();
+    stored.flipY = false;
+    const turned = await placed(picture("thenNow"), envOf("play"), stored);
+    expect(turned.painted.cards[0]?.thumb?.flipped).toBe(true);
+    turned.part.dispose();
+    const upright = await placed(picture("thenNow"), envOf("play"));
+    expect(upright.painted.cards[0]?.thumb?.flipped).toBe(false);
+    upright.part.dispose();
+  });
+
+  // A tap on the guide opens the picture; the light column is light, and
+  // the card once it has given way is not there. The near-miss pick boxes
+  // each tap target, so the column (3.4 m) must not be in it either.
+  it("takes a tap on the card and the decal only, while they show", async () => {
+    const { part, station } = await placed(picture("thenNow"), envOf("play"));
+    const target = part.tapTarget;
+    if (target === undefined) throw new Error("no tap target");
+    expect(target.getObjectByName("picture-spot-beam")).toBeUndefined();
+    for (const name of [
+      "picture-spot-card",
+      "picture-spot-post",
+      "picture-spot-decal",
+    ]) {
+      expect(target.getObjectByName(name), name).toBeDefined();
+    }
+    tick(part, station, 1, [0, 1.6, -7]);
+    station.updateMatrixWorld(true);
+    const guided = target.children.filter((c) =>
+      c.name.startsWith("picture-spot"),
+    );
+    expect(guided.length).toBe(2);
+    for (const c of guided) {
+      const box = new Box3().setFromObject(c);
+      expect(box.max.y - box.min.y, c.name).toBeLessThan(2);
+    }
+    const card = named(part.object, "picture-spot-card");
+    const hits = (): number => {
+      station.updateMatrixWorld(true);
+      const at = card.getWorldPosition(new Vector3());
+      const front = new Vector3(0, 0, 1).applyQuaternion(
+        card.getWorldQuaternion(new Quaternion()),
+      );
+      const ray = new Raycaster(
+        at.clone().addScaledVector(front, 0.5),
+        front.clone().negate(),
+      );
+      return ray.intersectObject(card, false).length;
+    };
+    expect(hits()).toBe(1);
+    // On the spot the card has given way: a tap passes where it stood.
+    tick(part, station, 2, [0, 1.6, 0]);
+    expect(card.parent?.visible).toBe(false);
+    expect(hits()).toBe(0);
+    part.dispose();
+  });
+
+  // A low viewpoint's window can stand close to the ground: its plate
+  // must not sink into it.
+  it("keeps the window's plate above the ground", async () => {
+    const { part, station } = await placed(
+      picture("window", { viewpoint: { ...VIEWPOINT, position: [0, 0.4, 0] } }),
+      envOf("play"),
+    );
+    tick(part, station, 0, [0, 0.4, 0]);
+    station.updateMatrixWorld(true);
+    const plate = named(part.object, "picture-portal-plate");
+    const box = new Box3().setFromObject(plate);
+    const foot = station.worldToLocal(box.min.clone());
+    expect(foot.y).toBeGreaterThanOrEqual(0);
+    part.dispose();
+  });
+
   it("keeps the picture a surprise on sharpen's card", async () => {
     const { part, painted } = await placed(picture("sharpen"), envOf("play"));
     expect(painted.cards[0]?.line1).toBe(SPOT_CARD_LINES.sharpen[0]);
@@ -424,7 +502,15 @@ describe("viewpointWorld", () => {
 
   // The verdict: the viewer fades out as the picture fades in.
   it("lets the viewer give way to the picture", async () => {
-    const { part, station } = await placed(picture("viewer"), envOf("play"));
+    const { part, station, painted } = await placed(
+      picture("viewer"),
+      envOf("play"),
+    );
+    // Its plate names the year, as every guide's card does.
+    expect(painted.cards[0]).toMatchObject({
+      year: "1902",
+      line1: "Step up to it",
+    });
     const stand = named<Group>(part.object, "picture-viewer");
     const standOpacity = (): number =>
       (stand.getObjectByProperty("type", "Mesh") as Mesh<never, Material>)

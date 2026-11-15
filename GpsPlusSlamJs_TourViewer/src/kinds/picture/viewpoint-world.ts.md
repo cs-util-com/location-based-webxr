@@ -34,8 +34,8 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 - `viewer`: the viewer stand and its plate fade out as the picture fades
   in (`VIEWER_FADE`); its halo pulses, softer far away, and goes with it.
   The plate's words are generic ("Step up to it", "and see it as it was"),
-  since a picture has no short name for them. The editor shows the stand
-  and a half picture.
+  since a picture has no short name for them; it names the year, as every
+  guide's card does. The editor shows the stand and a half picture.
 - `finder`: corner marks; the crop's fill fades in by `FINDER_FADE` and the
   ink turns amber on the spot.
 - `window`: the standing frame (`portalLook`), always shown, its plate
@@ -44,8 +44,16 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 - Every view but the viewer: the spot guide (`spot-guide-look.ts`), shaded
   by `spotGuideShade` with the view's take-over: then and now its distance
   ramp (0 in the editor), the finder its on-spot ramp, sharpen its picture's
-  opacity, the window 1. The guide sits in the tap target, so a tap on its
-  card or decal opens the sheet; the column takes none.
+  opacity, the window 1. The guide's card (on its post) and decal sit in
+  the tap target, so a tap on them opens the sheet; the column is not in
+  it, and the card takes no tap once it has given way. Its card shows the
+  picture upright: a texture decoded pre-flipped (`flipY` false) is
+  stored upside down, and the card is told so.
+- In the editor the guide is part of the item's drawing, so the folder
+  outline and the group span (`editor3d/folder-outline.ts`,
+  `editor3d/editor3d-editing.ts`, which box the item's objects) grow to
+  hold it. That is intended: the prototype shows the guide in its editor
+  too, and the creator places the picture by where the spot is.
 - What pulses (the column's ripple, the halo) reads a clock held at 0 when
   `env.reduceMotion` says so.
 - The screen hints of the prototype ("Walk to the marker", "Turn this
@@ -76,6 +84,9 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
 random poses and sizes, sharpen by place and facing, the editor's half
 picture, the viewer giving way with its plate and halo, the guide standing
 at the viewpoint under random item and folder poses and sizes, the guide
-on the way in and on the spot, sharpen's card without the picture, the
+on the way in and on the spot, the card told of an upside-down picture,
+the tap target without the column and the hidden card taking no ray, the
+window's plate above the ground for a low viewpoint, sharpen's card
+without the picture, the
 column held still on reduced motion, the slider's arrival, fade-in, take-over and
 departure, the window's shader plane, the sheet, disposal.

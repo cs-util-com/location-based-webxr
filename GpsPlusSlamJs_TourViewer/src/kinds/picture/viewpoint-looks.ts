@@ -575,7 +575,16 @@ export function portalLook(
   const pw = PORTAL_PLATE.widthM;
   const plate = new Mesh(new PlaneGeometry(pw, pw / 4), plateMat);
   plate.name = "picture-portal-plate";
-  plate.position.set(0, -oh / 2 - (PORTAL_PLATE.gapM + pw / 8), 0.01);
+  // Under the frame, or just above the ground when the frame stands too
+  // low for it (the plate then overlaps the frame's foot, in front).
+  plate.position.set(
+    0,
+    Math.max(
+      -oh / 2 - (PORTAL_PLATE.gapM + pw / 8),
+      -group.position.y + pw / 8 + 0.01,
+    ),
+    0.01,
+  );
   group.add(plate);
   // Two posts with feet when the frame clears the ground (a low
   // viewpoint's may not).

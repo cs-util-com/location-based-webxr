@@ -208,6 +208,7 @@ export function viewpointWorld(
     texture: Texture,
     aspect: number,
     painters: PicturePainters,
+    root: Group,
     tappable: Object3D[],
   ): ((reading: Reading, takeover: number) => void) => {
     if (!isSpotGuideView(view)) return () => undefined;
@@ -217,10 +218,14 @@ export function viewpointWorld(
       viewpoint,
       guideView,
       block.year,
-      drawn === null || drawn === undefined ? null : { image: drawn, aspect },
+      drawn === null || drawn === undefined
+        ? null
+        : // Decoded for the GPU pre-flipped, it is stored upside down.
+          { image: drawn, aspect, flipped: texture.flipY === false },
       painters,
     );
-    tappable.push(guide.group);
+    root.add(guide.group);
+    tappable.push(...guide.tappable);
     return ({ reach, viewer, seconds }, takeover) => {
       guide.show(
         spotGuideShade(guideView, reach.distanceM, takeover),
@@ -251,7 +256,7 @@ export function viewpointWorld(
         }),
       );
     const tappable: Object3D[] = [];
-    const guide = withGuide(texture, aspect, painters, tappable);
+    const guide = withGuide(texture, aspect, painters, root, tappable);
     if (view === "finder") {
       const crop = Math.min(
         1,
@@ -334,7 +339,7 @@ export function viewpointWorld(
     if (view === "viewer") {
       const stand = viewerStand(
         viewpoint,
-        card(VIEWER_PLATE.paintM, ...VIEWER_PLATE_LINES, 500),
+        card(VIEWER_PLATE.paintM, ...VIEWER_PLATE_LINES, 500, block.year),
       );
       root.add(stand.group);
       const halo = stand.halo.material;
