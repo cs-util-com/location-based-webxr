@@ -7,6 +7,7 @@ import {
   answerHosts,
   capture,
   capturing,
+  layoutOf,
   openSampleIn3d,
 } from "./editor3d-fixture.js";
 import { stationBlocks } from "./tour-fixture.mjs";
@@ -62,11 +63,11 @@ function chip(page, act) {
   return page.locator(`#shell-inspector .isec.video [data-act="${act}"]`);
 }
 
-test("a video added at a station stands there as a screen, and its panel sets its view, its start and its background, one step each", async ({
-  page,
-}, testInfo) => {
-  test.slow();
-  await page.setViewportSize({ width: 1280, height: 800 });
+/**
+ * Opens the sample in the 3D view and adds the test clip at the gate.
+ * @param {import("@playwright/test").Page} page
+ */
+async function addVideoAtGate(page) {
   await answerHosts(page);
   await openSampleIn3d(page);
   const gate = page.locator('#tree-body .card[data-station="gate"]');
@@ -79,13 +80,20 @@ test("a video added at a station stands there as a screen, and its panel sets it
   await (
     await chooser
   ).setFiles({ name: "clip.webm", mimeType: "video/webm", buffer: CLIP });
-
-  // Added free, as a screen with a width, and selected: its panel shows.
   // The add reads the clip's length and mints its poster first, each with
   // its own wait (a recorded WebM states no length): seconds, not frames.
   await expect
     .poll(async () => (await gateVideo(page))?.view, { timeout: 30_000 })
     .toBe("screen");
+}
+
+test("a video added at a station stands there as a screen, and its panel sets its view, its start and its background, one step each", async ({
+  page,
+}, testInfo) => {
+  test.slow();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  // Added free, as a screen with a width, and selected: its panel shows.
+  await addVideoAtGate(page);
   const added = await gateVideo(page);
   expect(added.widthM).toBeGreaterThan(0);
   expect(added.pose).toBeDefined();
@@ -198,6 +206,104 @@ test("a video added at a station stands there as a screen, and its panel sets it
     ]) {
       await page.setViewportSize({ width, height });
       await capture(page, testInfo.outputPath(`video-${width}x${height}.png`));
+    }
+  }
+});
+
+// Why: the window and stand-here views reach the creator only through the
+// panel's chips. A stand-here video is seen from a viewpoint, so the switch
+// must give it one in the same undo step, the panel must show the same
+// viewpoint section a picture's viewpoint views show (under the video's own
+// section, its fields in order), and a stand-here video has no start to
+// choose: it starts when its picture has developed.
+test("a video switched to the window and to stand-here: a window keeps its start, a stand-here video gains a viewpoint in one step and shows its section under the video's", async ({
+  page,
+}, testInfo) => {
+  test.slow();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await addVideoAtGate(page);
+
+  await chip(page, "video-view:window").click();
+  await expect.poll(async () => (await gateVideo(page))?.view).toBe("window");
+  await expect(page.locator("#shell-inspector .isec.video")).toContainText(
+    "Plays inside a real window",
+  );
+  await expect(chip(page, "video-set:start:enter")).toHaveCount(1);
+  await expect(page.locator("#shell-inspector .isec.pviewpoint")).toHaveCount(
+    0,
+  );
+  expect((await gateVideo(page)).viewpoint).toBeUndefined();
+  await capture(page, testInfo.outputPath("video-window-1280x800.png"));
+
+  const before = await revision(page);
+  await chip(page, "video-view:standHere").click();
+  await expect
+    .poll(async () => (await gateVideo(page))?.view)
+    .toBe("standHere");
+  const standing = await gateVideo(page);
+  expect(standing.viewpoint?.position).toHaveLength(3);
+  expect(await revision(page)).toBe(before + 1);
+  await expect(chip(page, "video-set:start:enter")).toHaveCount(0);
+
+  const section = page.locator("#shell-inspector .isec.pviewpoint");
+  await expect(section).toBeVisible();
+  await expect(section.locator(".note.use")).toContainText(
+    "Used by Stand here",
+  );
+  await expect(section.locator('[data-act="video-look-from"]')).toHaveCount(1);
+  const fields = [
+    "vp-north",
+    "vp-up",
+    "vp-east",
+    "vp-facing",
+    "vp-pitch",
+    "vp-lens",
+    "vp-distance",
+  ].map((f) => `#shell-inspector .isec.pviewpoint [data-field="${f}"]`);
+  const l = await layoutOf(page, [
+    "#shell-inspector .isec.video",
+    "#shell-inspector .isec.pviewpoint",
+    ...fields,
+  ]);
+  const video = l["#shell-inspector .isec.video"]?.[0]?.box;
+  const vp = l["#shell-inspector .isec.pviewpoint"]?.[0]?.box;
+  expect(video).toBeTruthy();
+  expect(vp).toBeTruthy();
+  // Under the video's section, in its column and as wide.
+  expect(vp.y).toBeGreaterThanOrEqual(video.y + video.height - 1);
+  expect(Math.abs(vp.x - video.x)).toBeLessThanOrEqual(1);
+  expect(Math.abs(vp.width - video.width)).toBeLessThanOrEqual(1);
+  // The seven fields top to bottom, in their order, inside the section.
+  let lastY = vp.y;
+  for (const f of fields) {
+    const box = l[f]?.[0]?.box;
+    expect(box, f).toBeTruthy();
+    expect(box.y, f).toBeGreaterThan(lastY);
+    expect(box.x, f).toBeGreaterThanOrEqual(vp.x);
+    expect(box.x + box.width, f).toBeLessThanOrEqual(vp.x + vp.width + 1);
+    lastY = box.y;
+  }
+  await capture(page, testInfo.outputPath("video-standhere-1280x800.png"));
+
+  // One undo takes the view and its viewpoint back together.
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await gateVideo(page))?.view).toBe("window");
+  expect((await gateVideo(page)).viewpoint).toBeUndefined();
+
+  if (capturing) {
+    await page.keyboard.press("Control+Shift+z");
+    await expect
+      .poll(async () => (await gateVideo(page))?.view)
+      .toBe("standHere");
+    for (const [width, height] of [
+      [390, 844],
+      [844, 390],
+    ]) {
+      await page.setViewportSize({ width, height });
+      await capture(
+        page,
+        testInfo.outputPath(`video-standhere-${width}x${height}.png`),
+      );
     }
   }
 });

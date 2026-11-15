@@ -43,11 +43,32 @@ independent.
   follows the drag, but the video in the 3D view does not resize until the
   drag ends.
 
-## Waiting for the viewpoint work
+## The window and stand-here views (built)
 
-The window view, the stand-here view and the viewpoint fields (position,
-heading, field of view, "Look from viewpoint") come with the viewpoint
-work. They are not gaps in this item.
+The window and the stand-here views are built: the format, the visitor's
+looks (`src/kinds/video/video-look.ts.md`, `src/kinds/video/stand-here.ts.md`)
+and the editor (the viewpoint section shared with the picture panel,
+`src/editor/kind-panels/viewpoint-part.ts.md`; a switch to stand-here
+gives the video a viewpoint in front of it in the same undo step; the 3D
+view draws its field-of-view lines and looks from it). A finished video
+stays finished on leaving and coming back; a tap replays it. Left for
+later:
+
+- **Dragging a video's viewpoint in the 3D view.** A picture's viewpoint
+  has a handle to drag; a video's is typed in the inspector or stood in
+  front of the video again. The handle is picture-only
+  (`src/placement/placeables.ts`).
+- **The window's measures follow its width.** The prototype's window
+  surround, reveals and sill are fixed sizes around a fixed opening; here
+  they scale with the video's width.
+- **No caption plate under the window's sill.** Captions are the card's
+  strip on the phone, as for the other views.
+- **The guide names no building.** The prototype says "Face the guild
+  house"; the card's line says "Face the video", since a tour names no
+  building.
+- **The near-start hint.** A near start shows no "Walk closer" hint before
+  it starts; `video-world.test.ts` holds it as an expected failure until
+  it is decided whether the hint goes or gets a home outside the card.
 
 ## Visitor side compared with the prototype (from the code)
 
