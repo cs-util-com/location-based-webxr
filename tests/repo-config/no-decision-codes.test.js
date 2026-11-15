@@ -16,10 +16,11 @@
 //    shared-helper rule's code; its deliberate copies now carry the plain
 //    marker "deliberate copy (shared-helper rule" instead, so they stay one
 //    search away (`duplicate-helpers.test.js` names it).
-//  - Every other code is counted, and the count must equal BACKLOG exactly. A
-//    new code anywhere raises the count and fails; a rewrite lowers it and
-//    fails until BACKLOG is lowered with it, so the ceiling can only fall.
-//    This is a single number, not a list of permitted sites.
+//  - Every other code is counted, and the count may not exceed BACKLOG. A new
+//    code anywhere raises the count above it and fails; a rewrite lowers it
+//    and stays green, so parallel branches that each remove a few codes do
+//    not fail each other. Lower BACKLOG when a rewrite lands, so the ceiling
+//    only falls. This is a single number, not a list of permitted sites.
 //
 // Unlike most guards here, the listing includes UNTRACKED files
 // (`git ls-files --cached --others --exclude-standard`): a guard that reads
@@ -44,8 +45,10 @@ import { readTracked, repoRoot } from './tracked-tree.js';
 const RETIRED = ['H3'].map((suffix) => `DEC-${suffix}`);
 
 /**
- * The exact number of remaining code occurrences. Lower it when a rewrite
- * removes some; never raise it - write the rule in plain words instead.
+ * The most code occurrences the tree may carry: a ceiling, not an exact
+ * count, so a branch that rewrites some codes in plain words stays green
+ * without touching this file. Lower it when a rewrite removes some; never
+ * raise it - write the rule in plain words instead.
  */
 const BACKLOG = 2930;
 
@@ -157,10 +160,10 @@ describe('decision-code guard', () => {
       expect(retired).toEqual([]);
     });
 
-    it('carries exactly the counted backlog of other codes', () => {
+    it('carries no more than the counted backlog of other codes', () => {
       // Above BACKLOG: a new code was added - write the rule in plain words.
-      // Below BACKLOG: a rewrite removed some - lower BACKLOG to the new count.
-      expect(hits.length).toBe(BACKLOG);
+      // Below it is fine; lower BACKLOG to the new count when a rewrite lands.
+      expect(hits.length).toBeLessThanOrEqual(BACKLOG);
     });
   });
 });
