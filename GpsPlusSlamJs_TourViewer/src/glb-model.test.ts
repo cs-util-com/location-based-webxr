@@ -8,7 +8,7 @@
  * scale is part of what is measured.
  */
 import { describe, expect, it } from "vitest";
-import type { BufferGeometry, Camera, Mesh, Object3D } from "three";
+import type { Camera, Mesh, Object3D } from "three";
 import { PerspectiveCamera } from "three";
 
 import { optimizeModel } from "./editor/asset-shelf/model-step.js";
@@ -70,7 +70,7 @@ function frame(mesh: Mesh, camera: Camera, height = 1000): void {
     renderer as never,
     null as never,
     camera,
-    mesh.geometry as BufferGeometry,
+    mesh.geometry,
     mesh.material as never,
     null as never,
   );

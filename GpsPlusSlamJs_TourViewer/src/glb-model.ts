@@ -112,12 +112,12 @@ function pixelsPerDiagonal(
   const scale = mesh.matrixWorld.getMaxScaleOnAxis();
   const diagonal = box.min.distanceTo(box.max) * scale;
   const { x, y, z } = sphere.center;
-  const cx = m[0]! * x + m[4]! * y + m[8]! * z + m[12]!;
-  const cy = m[1]! * x + m[5]! * y + m[9]! * z + m[13]!;
-  const cz = m[2]! * x + m[6]! * y + m[10]! * z + m[14]!;
+  const cx = m[0] * x + m[4] * y + m[8] * z + m[12];
+  const cy = m[1] * x + m[5] * y + m[9] * z + m[13];
+  const cz = m[2] * x + m[6] * y + m[10] * z + m[14];
   const e = camera.matrixWorld.elements;
   const depth =
-    Math.hypot(cx - e[12]!, cy - e[13]!, cz - e[14]!) - sphere.radius * scale;
+    Math.hypot(cx - e[12], cy - e[13], cz - e[14]) - sphere.radius * scale;
   const height =
     renderer.getRenderTarget()?.height ?? renderer.domElement.height;
   return (
