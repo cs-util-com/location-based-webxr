@@ -8,8 +8,15 @@
  * scale is part of what is measured.
  */
 import { describe, expect, it } from "vitest";
-import type { Camera, Mesh, Object3D } from "three";
-import { PerspectiveCamera } from "three";
+import type { Camera, Intersection, Mesh, Object3D } from "three";
+import { PerspectiveCamera, Raycaster, Vector3 } from "three";
+
+import {
+  type GltfObject,
+  appendView,
+  readGlb,
+  writeGlb,
+} from "./editor/asset-shelf/glb-file.js";
 
 import { optimizeModel } from "./editor/asset-shelf/model-step.js";
 import { OPTIMIZER_SETTINGS } from "./editor/asset-shelf/optimizer-settings.js";
@@ -60,6 +67,30 @@ function onlyMesh(scene: Object3D): Mesh {
   return meshes[0]!;
 }
 
+/** The field made smaller once: every test that reads a chain shares it,
+ *  so the optimizer, the costly part, runs once per file. */
+let made: Promise<Blob> | null = null;
+const optimizedField = () => (made ??= bumpyField().then(optimized));
+
+/** The optimized field's file with `change` made to its JSON (and
+ *  views), as a file the loader reads. */
+async function changed(
+  change: (json: GltfObject, add: (bytes: Uint8Array) => number) => void,
+): Promise<Blob> {
+  const read = readGlb(
+    new Uint8Array(await (await optimizedField()).arrayBuffer()),
+  );
+  if (!read.ok) throw new Error(read.reason);
+  change(read.parts.json, (bytes) => appendView(read.parts, bytes));
+  return blobOf(writeGlb(read.parts));
+}
+
+function lodOf(mesh: Mesh) {
+  return mesh.geometry.userData["lod"] as {
+    levels: { start: number; count: number }[];
+  };
+}
+
 /** What a frame does before drawing `mesh` from `camera`. */
 function frame(mesh: Mesh, camera: Camera, height = 1000): void {
   const renderer = {
@@ -86,7 +117,7 @@ function cameraAt(distance: number): PerspectiveCamera {
 
 describe("loadGlbModel", { timeout: 30_000 }, () => {
   it("draws a saved chain: the finest level first and up close, a coarser one far away", async () => {
-    const scene = await loadGlbModel(await optimized(await bumpyField()));
+    const scene = await loadGlbModel(await optimizedField());
     scene.updateMatrixWorld(true);
     const mesh = onlyMesh(scene);
     const geometry = mesh.geometry;
@@ -114,6 +145,130 @@ describe("loadGlbModel", { timeout: 30_000 }, () => {
       start: 0,
       count: lod.levels[0]!.count,
     });
+  });
+
+  // Why: three draws the shadow pass with the geometry's draw range too,
+  // and a geometry several meshes share holds the range the last of them
+  // set; the shadow must be cast by the level this mesh draws.
+  it("casts its shadow with the level it draws", async () => {
+    const mesh = onlyMesh(await loadGlbModel(await optimizedField()));
+    mesh.parent!.updateMatrixWorld(true);
+    const { levels } = lodOf(mesh);
+    const last = levels.at(-1)!;
+    frame(mesh, cameraAt(500));
+    mesh.geometry.setDrawRange(0, 3); // another mesh drew last
+    mesh.onBeforeShadow(
+      null as never,
+      null as never,
+      cameraAt(500),
+      cameraAt(500),
+      mesh.geometry,
+      null as never,
+      null as never,
+    );
+    expect(mesh.geometry.drawRange).toEqual({
+      start: last.start,
+      count: last.count,
+    });
+  });
+
+  // Why: a pick (a raycast) reads the draw range as well; it must hit the
+  // author's level whatever level the last frame drew, and leave the
+  // frame's range as it was.
+  it("is picked at the author's level whatever level it draws", async () => {
+    const mesh = onlyMesh(await loadGlbModel(await optimizedField()));
+    mesh.parent!.updateMatrixWorld(true);
+    const { levels } = lodOf(mesh);
+    const last = levels.at(-1)!;
+    const pick = (): Intersection[] => {
+      const hits: Intersection[] = [];
+      for (const [x, z] of [
+        [0.31, 0.27],
+        [0.52, 0.66],
+        [0.73, 0.41],
+      ] as const) {
+        new Raycaster(
+          new Vector3(x, 5, z),
+          new Vector3(0, -1, 0),
+        ).intersectObject(mesh, false, hits);
+      }
+      return hits;
+    };
+    const atAuthors = pick().map((h) => h.distance);
+    frame(mesh, cameraAt(500));
+    expect(mesh.geometry.drawRange.start).toBe(last.start);
+    expect(pick().map((h) => h.distance)).toEqual(atAuthors);
+    expect(mesh.geometry.drawRange).toEqual({
+      start: last.start,
+      count: last.count,
+    });
+  });
+
+  // Why: an instanced mesh draws every instance with one range, so a
+  // level picked for the instance at its origin would thin the near ones;
+  // it draws the author's level, never through the chain.
+  it("draws an instanced mesh at the author's level", async () => {
+    const blob = await changed((json, add) => {
+      const accessors = json["accessors"] as GltfObject[];
+      const view = add(
+        new Uint8Array(Float32Array.of(0, 0, 0, 400, 0, 0).buffer),
+      );
+      accessors.push({
+        bufferView: view,
+        componentType: 5126,
+        count: 2,
+        type: "VEC3",
+      });
+      const nodes = json["nodes"] as GltfObject[];
+      const node = nodes.find((n) => n["mesh"] !== undefined)!;
+      node["extensions"] = {
+        EXT_mesh_gpu_instancing: {
+          attributes: { TRANSLATION: accessors.length - 1 },
+        },
+      };
+      json["extensionsUsed"] = [
+        ...((json["extensionsUsed"] as string[] | undefined) ?? []),
+        "EXT_mesh_gpu_instancing",
+      ];
+    });
+    const mesh = onlyMesh(await loadGlbModel(blob));
+    expect((mesh as { isInstancedMesh?: boolean }).isInstancedMesh).toBe(true);
+    const range = { ...mesh.geometry.drawRange };
+    frame(mesh, cameraAt(500));
+    expect(mesh.geometry.drawRange).toEqual(range);
+    expect(range.start).toBe(0);
+  });
+
+  // Why: the chain must be an index list; a float accessor named as the
+  // chain is no index, and the file draws as if it had no chain.
+  it("ignores a chain that is no integer list", async () => {
+    let authors = 0;
+    const blob = await changed((json, add) => {
+      const accessors = json["accessors"] as GltfObject[];
+      const prim = (
+        (json["meshes"] as GltfObject[])[0]!["primitives"] as GltfObject[]
+      )[0]!;
+      const lod = (prim["extras"] as GltfObject)["lod"] as {
+        indices: number;
+        levels: { start: number; count: number }[];
+      };
+      const last = lod.levels.at(-1)!;
+      const count = last.start + last.count;
+      authors = accessors[prim["indices"] as number]!["count"] as number;
+      const view = add(new Uint8Array(new Float32Array(count).buffer));
+      accessors.push({
+        bufferView: view,
+        componentType: 5126,
+        count,
+        type: "SCALAR",
+      });
+      lod.indices = accessors.length - 1;
+    });
+    const mesh = onlyMesh(await loadGlbModel(blob));
+    expect(mesh.geometry.index!.count).toBe(authors);
+    expect(mesh.geometry.drawRange).toEqual({ start: 0, count: Infinity });
+    frame(mesh, cameraAt(500));
+    expect(mesh.geometry.drawRange).toEqual({ start: 0, count: Infinity });
   });
 
   it("loads a file without saved levels as before", async () => {
