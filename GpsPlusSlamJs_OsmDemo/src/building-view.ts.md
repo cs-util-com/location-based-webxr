@@ -682,8 +682,16 @@ field ask that raised the default was literally about zooming further out.
   written AFTER the render, with this frame's draws and triangles.
 - **Desktop:** auto is off, so the share stays 1; the readout still shows the
   measured frame time and p95.
+- **The perf log** (`perf-log.ts`, `perf-log-panel.ts`): with `perfReadout`
+  the view also creates a bounded frame recorder, hands it to the woods meter
+  (every frame and share change reach it) and mounts a "Copy perf log"
+  button (`data-testid="perf-log-copy"`) under the readout. A click builds
+  the report from the recorder, the governor's state, the readout line, the
+  last draw cost, the invented trees, the device (canvas, WebGL context) and
+  the three query knobs. Without `perfReadout` neither exists, so nothing is
+  recorded. `dispose()` removes the button.
 - Tested: the numbers in `woods-readout.test.ts`; the readout's presence,
-  absence and frame time in `playwright-tests/scene-3d.spec.js` ("the woods governor's frame readout").
+  absence and frame time in `playwright-tests/scene-3d.spec.js` ("the woods governor's frame readout"), and the copied log in the same describe.
 
 ### Measuring the woods on a phone
 
@@ -691,4 +699,6 @@ Open the branch preview's OsmDemo at the place, with `&perf=1` added, drag
 and orbit for some seconds, then read the line: `frame` (smoothed
 counted-frame ms), `p95` (last 10 s), `woods N % (mode)`, the invented trees
 drawn, draws and triangles. Repeat with `&woodsauto=off` for the full woods,
-and with `&treeform=trunk` for the trunk form.
+and with `&treeform=trunk` for the trunk form. After each run, tap "Copy perf
+log" and paste the text: it holds the whole session's frame intervals, share
+changes, the device and the knobs, and no location.
