@@ -51,13 +51,17 @@ the library default is off.
      order"). A bad file is read once more with
      `cache: "no-cache"`, since the browser's HTTP cache may hold an older
      copy than the host now stores (the host replaces bad tiles); a good
-     copy is served, a 404 continues as below. That re-read happens at most
+     copy is served, a 404 continues as below. That re-read is allowed
      once per tile per session, speculative reads included: a tile that
      stays bad (its replace is bounded to once a day) would otherwise cost
      two downloads on every read. The allowance is spent only once the
      re-read produced a verdict (an answer, a host error, a network error
      or no headers in time); a re-read the fill wait had no time left for,
      or one the caller aborted, leaves it for the next read of the tile.
+     Since it is not claimed before the attempt, it is not a hard bound:
+     concurrent reads of one bad tile can each download it twice. That is
+     narrow in the documented wiring, where `CachingSource` shares one read
+     per tile among its callers.
      When the file is still bad, one `console.warn` line names why (a
      remark bounded to one line of 200 characters; once per tile per
      session, speculative reads included, since a ring warm often reaches
@@ -67,8 +71,10 @@ the library default is off.
      and the host is sent one fire-and-forget
      `POST /report/v{schema}/{tile}?etag=<the ETag of the copy judged>` (the
      re-read's, or the first read's when the re-read failed) per tile per
-     session (none without an ETag, none for a speculative read; a failed
-     report is ignored). The tile is marked reported before the report is
+     session, speculative reads included for the same reason as the
+     warning, since a tile never reported is never replaced (none without
+     an ETag; a failed report is ignored; the host bounds reports per
+     address and per day). The tile is marked reported before the report is
      sent, so a report the host answers with 429 (its per-IP or global
      report limit) is not retried in that session: a wave of distinct bad
      tiles loses most of its reports. That is deliberate, since the race
@@ -109,7 +115,9 @@ the library default is off.
 
 **Read-only fetches** do step 1 only: a `speculative` fetch (a ring warm,
 nobody waiting on it) and any fetch while fills are refused. A speculative
-fetch also sends no refresh and no report: it asks the host for nothing.
+fetch also sends no refresh. It does make the re-read past the browser
+cache and send the one report of a bad stored file, both once per tile per
+session, as above: a ring warm is often the only read that sees a tile.
 
 **Timings.** `transportMs` is the delivering read's own round trip; the time
 from the first ask to that read (the wait for the host's fill, polls
@@ -196,7 +204,8 @@ const source = new CachingSource(
   per tile per session (speculative reads included), an empty or
   whitespace remark served, the refused remark logged on one bounded line,
   a fresh copy on the re-read served with
-  no report, a speculative bad read sending no report, a body without
+  no report, a speculative bad read reporting the tile once with no second
+  report from a later foreground read, a body without
   `elements`, the request time limit (a stalled host and a body that stalls
   after its headers go to the race; the caller's abort still aborts; the
   default is the race's deadline; each answer of the fill wait beginning
@@ -210,6 +219,7 @@ const source = new CachingSource(
   network error or no headers in time spending it; the warning once per
   tile, speculative reads included; header
   timers only below the request limit; no
-  request after an overshooting sleep; no fill asked with no wait left), the poll timings (`slotWaitMs` for the wait), the bounded wait,
+  request after an overshooting sleep, which still counts as a refusal so
+  the next fetch only reads; no fill asked with no wait left), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.

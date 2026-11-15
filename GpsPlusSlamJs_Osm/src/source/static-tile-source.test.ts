@@ -499,9 +499,9 @@ describe("StaticTileSource", () => {
     expect(calls.map((c) => `${c.method} ${c.cache ?? ""}`)).toEqual([
       "GET ",
       "GET no-cache",
-      "GET ",
-      "GET ",
       "POST ",
+      "GET ",
+      "GET ",
     ]);
   });
 
@@ -571,22 +571,37 @@ describe("StaticTileSource", () => {
     ]);
   });
 
-  it("a speculative read of a bad tile sends no report", async () => {
-    // Why this test matters: a speculative read (a ring warm) asks the host
-    // for nothing. A report queues work on the host, so warming tiles nobody
-    // looks at must not send one; the tile still goes to the race.
+  it("a speculative read of a bad tile reports it once, and a later foreground read sends no second report", async () => {
+    // Why this test matters: a ring warm often reaches a tile first, and the
+    // cache in front keeps that read's result, so no foreground read may
+    // ever see the tile. A report skipped there would leave a bad tile on
+    // the host for good. The report stays once per tile per session.
     const partial = JSON.stringify({
       ...JSON.parse(PAYLOAD),
       remark: "runtime error: Query timed out",
     });
     const stored = (): Response =>
       new Response(partial, { status: 200, headers: { etag: '"e1"' } });
+    const reportUrl = `${REPORT_URL}?etag=${encodeURIComponent('"e1"')}`;
     const { source, fallback, calls } = setup({
-      [`GET ${TILE_URL}`]: [stored(), stored()],
+      [`GET ${TILE_URL}`]: [stored(), stored(), stored()],
+      [`POST ${reportUrl}`]: [json(202, { status: "checking" })],
     });
     await source.fetchTile(TILE, { speculative: true });
     expect(fallback.calls).toHaveLength(1);
-    expect(calls.map((c) => c.method)).toEqual(["GET", "GET"]);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET ${TILE_URL}`,
+      `GET ${TILE_URL}`,
+      `POST ${reportUrl}`,
+    ]);
+    await source.fetchTile(TILE);
+    expect(fallback.calls).toHaveLength(2);
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      `GET ${TILE_URL}`,
+      `GET ${TILE_URL}`,
+      `POST ${reportUrl}`,
+      `GET ${TILE_URL}`,
+    ]);
   });
 
   it("rejects a stored body without an elements array, and a bad tile is no refusal", async () => {
@@ -935,6 +950,38 @@ describe("StaticTileSource", () => {
       }
     });
   }
+
+  describe("a sleep that leaves no wait for the next poll", () => {
+    for (const overshootMs of [1_000, 1_001, 6_000]) {
+      it(`a sleep overshooting by ${overshootMs} ms counts as a refusal: the next fetch only reads`, async () => {
+        // Why this test matters: no poll could start, so nothing was sent and
+        // nothing was learnt about the host, yet the caller backs off as after
+        // any refusal. Without that, every tile would ask for a fill again
+        // right after a wait the host could not answer in.
+        const { source, fallback, calls } = setup(
+          {
+            [`GET ${TILE_URL}`]: [
+              new Response("nf", { status: 404 }),
+              new Response("nf", { status: 404 }),
+              new Response("nf", { status: 404 }),
+            ],
+            [`POST ${FILL_URL}`]: [json(202, { status: "queued" })],
+          },
+          { maxWaitMs: 11_000, oversleepMs: [0, overshootMs] },
+        );
+        await source.fetchTile(TILE);
+        expect(fallback.calls).toHaveLength(1);
+        await source.fetchTile(TILE);
+        expect(fallback.calls).toHaveLength(2);
+        expect(calls.map((c) => c.method)).toEqual([
+          "GET",
+          "POST",
+          "GET",
+          "GET",
+        ]);
+      });
+    }
+  });
 
   // The first, bad read of a poll with 1 000 ms left uses `readMs` of it on
   // the clock; the re-read past the browser cache answers after `headersMs`

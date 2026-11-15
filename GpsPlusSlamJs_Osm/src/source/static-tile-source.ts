@@ -448,12 +448,13 @@ export class StaticTileSource implements OsmDataSource {
     if (judged === undefined) return undefined;
     const { stored, transportMs, decodeStart, checked } = judged;
     if (checked instanceof BadStoredTile) {
-      // Warned once per tile, speculative reads included: a ring warm often
-      // reaches a tile first and the cache in front keeps its result, so no
-      // later read may ever see the tile. A speculative read still asks the
-      // host for nothing, a report included.
+      // Warned and reported once per tile, speculative reads included: a
+      // ring warm often reaches a tile first and the cache in front keeps
+      // its result, so no later read may ever see the tile, and a tile
+      // never reported is never replaced. The host bounds reports per
+      // address and per day.
       this.warnOnce(tile, checked);
-      if (!speculative) this.reportBad(tile, stored.etag);
+      this.reportBad(tile, stored.etag);
       throw checked;
     }
     const payload = checked;
@@ -512,6 +513,9 @@ export class StaticTileSource implements OsmDataSource {
     // answer, a host error, a network error or no headers in time): with no
     // wait left, or after a caller abort, nothing was learnt about the
     // host's copy, so a later read of the tile may still look past the cache.
+    // As it is not claimed before the attempt, concurrent reads of one bad
+    // tile can each make the re-read; a caching source in front, which
+    // shares one read per tile, keeps that rare.
     if (!(judged.checked instanceof BadStoredTile)) return judged;
     if (this.rereadPastCache.has(tile)) return judged;
     let fresh: typeof first | undefined;
@@ -575,7 +579,7 @@ export class StaticTileSource implements OsmDataSource {
    * Asks the host, once per tile and without waiting, to refetch a stored
    * tile whose data is old; the old file is served meanwhile. Skipped while
    * the host refuses fills and for speculative reads (nobody waits on them,
-   * so they ask the host for nothing); a failed ask is ignored.
+   * so they ask for no refetch); a failed ask is ignored.
    */
   private refreshIfOld(tile: string, osmBase: string | undefined): void {
     const base = Date.parse(osmBase ?? "");
