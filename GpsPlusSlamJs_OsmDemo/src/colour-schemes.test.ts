@@ -332,6 +332,33 @@ describe("the urban scheme (real-albedo grey ladder)", () => {
     expect(urban.brightnessTrim).toBe(1.6);
   });
 
+  it("tells towers from walk-ups, reads material tags and jitters each building", () => {
+    // Why this test matters: a tower is not a walk-up (city look exploration
+    // 2026-11-15, direction B). Towers from 40 m draw glass, dark stone,
+    // limestone and steel; a mapped material picks its real albedo; a seeded
+    // 3 L* jitter breaks up runs of one tone. The values are the design's, so
+    // a retune is a deliberate edit here, not drift.
+    const city = urban.city;
+    expect(city.towerWalls).toEqual([
+      0x4d565c, 0x5d6469, 0x42474d, 0x605e5b, 0x6b6d70, 0xb1aaa0, 0x9d9b96,
+      0x838789,
+    ]);
+    expect(city.towerFromM).toBe(40);
+    expect(city.honourMaterialTags).toBe(true);
+    expect([...city.materialWalls]).toEqual([
+      ["glass", 0x4d565c],
+      ["brick", 0x8f695e],
+      ["concrete", 0x979692],
+      ["stone", 0xb3aa9d],
+      ["sandstone", 0xb39c87],
+      ["granite", 0x817b78],
+      ["metal", 0x888c8e],
+      ["plaster", 0xbeb5a7],
+      ["wood", 0x826856],
+    ]);
+    expect(city.wallJitterL).toBe(3);
+  });
+
   it("keeps the default's land use, trees and barriers", () => {
     // Why this test matters: the look changes buildings, roads and ground
     // only; vegetation and land use stay today's, so a comparison with today

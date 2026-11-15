@@ -94,6 +94,9 @@ mitreLimit? }` (city objects plan 2026-11-07-2315 M4a, review MINOR 4):
   a flat lid (`BuildingVolume.roofMethods`: "flat" or "prism", also for a
   pitched tag the ladder could not build; M7 review MINOR 4);
   `"class"` the class colours (`buildingColour`, `roofColour`) as before M7.
+  Under `"seeded"` each building also passes its height to the palette's
+  tower rule: the tallest `totalHeightM` among the volumes sharing its key
+  (a part: its outline's), so a podium and its tower stay one colour.
   RangeError for any other value.
 - No other error modes: a feature that cannot be built is skipped, as in
   every builder.
@@ -196,3 +199,15 @@ use.
   pitched tones or the tagged `roof:colour` on every invented roof, and the
   AR shell attributes one value per vertex) and
   `site-invented-roofs.test.ts`.
+
+## Height and material aware walls (city look exploration 2026-11-15, direction B)
+
+- The tower rule of `building-palette.ts` needs the height, which only this
+  file knows: the tallest volume per building key (`totalHeightM`, tagged,
+  derived from `building:levels`, or the guessed default of at most 11 m,
+  which only a tagged `min_height` raises).
+- The default scheme has the rule off (`towerFromM` infinite), so the
+  identity digests are unchanged.
+- Tested in `city.test.ts` ("the tower rule": a tall and a low house, a
+  height from levels, a podium and tower of one outline sharing the tower
+  list).

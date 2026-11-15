@@ -479,6 +479,11 @@ export const CONTRAST: ColourScheme = {
  * (drawn raw, so the hex is the reflectance). The walls' mean reflectance is
  * about 0.25 against today's 0.59, which the trim of 1.6 makes up. Tags
  * honoured; land use, trees and barriers stay the default's.
+ *
+ * Height, use and material aware (direction B): a building of 40 m or more
+ * draws from glass, dark stone, limestone and steel tones; a mapped
+ * `building:material` picks its real albedo (after a colour tag, before
+ * the height); every wall then takes a seeded lightness shift of up to 3 L*.
  */
 export const URBAN: ColourScheme = {
   label: "Urban greys",
@@ -505,6 +510,30 @@ export const URBAN: ColourScheme = {
       // dark stone or glass
       0x4d5055, 0x575a5c,
     ],
+    towerWalls: [
+      // glass blue-grey
+      0x4d565c, 0x5d6469, 0x42474d,
+      // dark stone
+      0x605e5b, 0x6b6d70,
+      // light limestone
+      0xb1aaa0, 0x9d9b96,
+      // steel grey
+      0x838789,
+    ],
+    towerFromM: 40,
+    honourMaterialTags: true,
+    materialWalls: new Map([
+      ["glass", 0x4d565c],
+      ["brick", 0x8f695e],
+      ["concrete", 0x979692],
+      ["stone", 0xb3aa9d],
+      ["sandstone", 0xb39c87],
+      ["granite", 0x817b78],
+      ["metal", 0x888c8e],
+      ["plaster", 0xbeb5a7],
+      ["wood", 0x826856],
+    ]),
+    wallJitterL: 3,
     flatRoofs: [
       // bitumen
       0x4a4b4e, 0x565452, 0x4a4645,

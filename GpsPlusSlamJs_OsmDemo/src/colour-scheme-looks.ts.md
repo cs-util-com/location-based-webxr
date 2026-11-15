@@ -114,3 +114,18 @@ to be swept on the rendered look rather than here: the trim (1.6; above
 about 2 the roads blow out, they take the trim too), the ladder's depth (if
 it reads dirty, shift it up 6-8 L* before trimming further), the warm share
 (25%; 10-40%) and the cream chroma (8-13).
+
+### Height, use and material aware (direction B, 2026-11-15)
+
+- `towerWalls`: glass blue-grey `0x4d565c`, `0x5d6469`, `0x42474d`; dark
+  stone `0x605e5b`, `0x6b6d70`; light limestone `0xb1aaa0`, `0x9d9b96`;
+  steel grey `0x838789`, drawn by every building of `towerFromM` = 40 m or
+  more.
+- `honourMaterialTags` with `materialWalls`: glass, brick, concrete, stone,
+  sandstone, granite, metal, plaster, wood, each at its real albedo; a
+  colour tag still wins, a material beats the height.
+- `wallJitterL` 3: every wall shifted by a seeded amount of up to 3 L*.
+- The rules live in the library (`building-palette.ts`); the default has
+  them off. Values to sweep on the rendered look: `towerFromM` 25-60 m (at
+  25 m low walk-ups start to draw tower tones) and the jitter.
+- Tested in `colour-schemes.test.ts` ("tells towers from walk-ups ...").
