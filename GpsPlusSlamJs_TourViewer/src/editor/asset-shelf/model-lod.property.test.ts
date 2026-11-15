@@ -5,7 +5,9 @@
  * level must index only vertices the compacted buffer has, the levels
  * must lie end to end with falling triangle counts and non-falling
  * errors, and an automatic level must keep its deviation within the
- * budget, measured again from the written file. Random bumpy height
+ * budget, measured again from the written file. Each coarser level keeps
+ * at most `1 / LOD_CHAIN_RATIO` of the one before (a last level the order
+ * cannot take that far excepted), so a few levels reach far views. Random bumpy height
  * fields (open borders) and spheres (closed) at random budgets reach
  * shapes and orders the hand-picked cases do not.
  */
@@ -20,7 +22,11 @@ import {
   writeGlb,
 } from "./glb-file.js";
 import { surfaceDistance } from "./mesh-distance.js";
-import { simplifyModel } from "./model-lod.js";
+import {
+  LOD_CHAIN_LEVELS,
+  LOD_CHAIN_RATIO,
+  simplifyModel,
+} from "./model-lod.js";
 import { buildModel } from "./test-support/glb-fixtures.js";
 import { heightField, sphere, type TestMesh } from "./test-support/meshes.js";
 
@@ -125,6 +131,14 @@ describe("simplifyModel (property)", () => {
             previous = level;
           }
           expect(at).toBe(chain.length);
+          expect(lod.levels.length).toBeLessThanOrEqual(1 + LOD_CHAIN_LEVELS);
+          const top = lod.levels[0]!.count / 3;
+          lod.levels.forEach((level, k) => {
+            if (k === 0 || k === lod.levels.length - 1) return;
+            expect(level.count / 3).toBeLessThanOrEqual(
+              Math.floor(top / LOD_CHAIN_RATIO ** k),
+            );
+          });
           // no degenerate triangle in any level
           for (let t = 0; t < chain.length; t += 3) {
             const [a, b, c] = [chain[t]!, chain[t + 1]!, chain[t + 2]!];

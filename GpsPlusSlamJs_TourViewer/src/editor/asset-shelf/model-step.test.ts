@@ -9,15 +9,21 @@
 import { describe, expect, it } from "vitest";
 import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
 
-import { readGlb, writeGlb } from "./glb-file.js";
+import {
+  type GltfObject,
+  listOf,
+  objectOf,
+  readGlb,
+  writeGlb,
+} from "./glb-file.js";
 import { optimizeModel } from "./model-step.js";
 import { OPTIMIZER_SETTINGS } from "./optimizer-settings.js";
 import { fakePictureDevice } from "./test-support/fake-picture-device.js";
 import {
   boxSpec,
   buildModel,
+  bumpyField,
   largestShift,
-  realModel,
   worldPositions,
 } from "./test-support/glb-fixtures.js";
 
@@ -29,14 +35,49 @@ function control(signal = new AbortController().signal) {
 const blobOf = (bytes: Uint8Array) =>
   new Blob([bytes as Uint8Array<ArrayBuffer>], { type: "model/gltf-binary" });
 
-// a scanned model's levels of detail take seconds to order and measure
+/** The saved levels of the file's one primitive, and its index count. */
+function levelsOf(bytes: Uint8Array): {
+  readonly levels: readonly { start: number; count: number }[] | null;
+  readonly indices: number;
+} {
+  const read = readGlb(bytes);
+  if (!read.ok) throw new Error(read.reason);
+  const { json } = read.parts;
+  const mesh = objectOf((listOf(json, "meshes") ?? [])[0])!;
+  const prim = objectOf((listOf(mesh, "primitives") ?? [])[0])!;
+  const lod = objectOf(objectOf(prim["extras"])?.["lod"]);
+  const accessor = objectOf(
+    (listOf(json, "accessors") ?? [])[prim["indices"] as number],
+  ) as GltfObject;
+  return {
+    levels: (lod?.["levels"] as { start: number; count: number }[]) ?? null,
+    indices: accessor["count"] as number,
+  };
+}
+
+async function answerOf(source: Uint8Array, keepAbove: number) {
+  const answer = await optimizeModel(
+    blobOf(source),
+    {
+      ...OPTIMIZER_SETTINGS,
+      // every triangle kept, so the chain has all its levels
+      model: { ...OPTIMIZER_SETTINGS.model, detailShare: 1 },
+      keepAbove,
+    },
+    control(),
+    fakePictureDevice().device,
+  );
+  if (answer.type !== "done") throw new Error(answer.type);
+  return new Uint8Array(await answer.blob.arrayBuffer());
+}
+
 describe("optimizeModel", { timeout: 30_000 }, () => {
   // Why: with every triangle kept (the slider at its top), the stored
   // geometry must draw the same points within the quantize budget; the
   // default level's thinning, and the smaller file it gives, are pinned by
   // the next test (at share 1 the saved chain adds its index lists).
   it("answers a smaller .glb the tour accepts, drawing the same model", async () => {
-    const before = realModel("rock");
+    const before = await bumpyField(24);
     const run = control();
     const answer = await optimizeModel(
       blobOf(before),
@@ -91,11 +132,14 @@ describe("optimizeModel", { timeout: 30_000 }, () => {
     );
   });
 
-  // Why: dropped as it is, a scan is thinned to its default level of
+  // Why: dropped as it is, a model is thinned to its default level of
   // detail, and the shelf hears how far that level deviates and what the
-  // slider's stops would give; the run's progress only moves forward.
-  it("thins a scan to its default level within the budget, and reports it", async () => {
-    const before = realModel("rock");
+  // slider's stops would give; the run's progress only moves forward. A
+  // textureless model with a 16-bit index list is where the saved chain
+  // weighs most against the file, and the whole file, chain included,
+  // must still be under the shelf's line.
+  it("thins a model to its default level within the budget, and reports it", async () => {
+    const before = await bumpyField(48, true);
     const run = control();
     const answer = await optimizeModel(
       blobOf(before),
@@ -120,6 +164,30 @@ describe("optimizeModel", { timeout: 30_000 }, () => {
     expect(out.length).toBeLessThan(before.length * 0.9);
     expect(run.seen).toEqual([...run.seen].sort((a, b) => a - b));
     expect(run.seen.at(-1)).toBe(1);
+  });
+
+  // Why: the shelf keeps the original when the made file is above
+  // `keepAbove` of it, so a chain that lifts the file over that line would
+  // cost the file every other saving; coarser levels are dropped, the
+  // coarsest first, down to none, until it is under the line, and the
+  // author's level is never touched.
+  it("drops coarser levels, then the whole chain, rather than cross the shelf's line", async () => {
+    const before = await bumpyField(48, true);
+    const full = await answerOf(before, 1);
+    const all = levelsOf(full);
+    expect(all.levels!.length).toBeGreaterThan(2);
+    const line = (full.length - 1) / before.length;
+    const trimmed = await answerOf(before, line);
+    const some = levelsOf(trimmed);
+    expect(trimmed.length).toBeLessThanOrEqual(before.length * line);
+    expect(some.levels!.length).toBeLessThan(all.levels!.length);
+    expect(some.levels!.length).toBeGreaterThan(1);
+    expect(some.levels).toEqual(all.levels!.slice(0, some.levels!.length));
+    expect(some.indices).toBe(all.indices);
+    expect(checkGlbInert(trimmed).ok).toBe(true);
+    const none = levelsOf(await answerOf(before, 0.01));
+    expect(none.levels).toBeNull();
+    expect(none.indices).toBe(all.indices);
   });
 
   it("keeps a model with an extension it does not know, and says why", async () => {

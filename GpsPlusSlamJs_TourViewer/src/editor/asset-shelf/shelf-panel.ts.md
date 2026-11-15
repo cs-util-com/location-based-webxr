@@ -143,7 +143,11 @@ shelf runner (`asset-shelf.ts`); every word comes from
   thumb on the stop asked for; once settled a toast says the outcome:
   "rock.glb now has 5,000 triangles." or "rock.glb was not changed."
   and the reason (a rejection reads as "It could not be made."), and the
-  thumb stands on the level the tour holds. "Default detail" in the
+  thumb stands on the level the tour holds. A request the author's own
+  later act stopped ("use the original", a delete; outcome `stopped`)
+  gets no toast. A range that had the keyboard focus gets it back once
+  the request settles (disabling it dropped the focus), so the arrow
+  keys step on, unless the author put the focus elsewhere meanwhile; each step is its own request. "Default detail" in the
   card's buttons goes back to the default level while another is
   chosen. A level that can no longer be changed (its original let go at
   the last save) shows its readout and says why, with no range.
@@ -213,6 +217,7 @@ card, and nothing drawn after `destroy`. The words are `shelf-panel-model.test.t
 `detailView`, `detailReadout`) and its slider: the readout and label, the
 readout following a drag with nothing asked and the thumb kept through a
 redraw, the request on letting go with its busy state and toast, a
-refusal and a rejection said with the thumb back, the default level by
+refusal and a rejection said with the thumb back, a stopped request
+said not at all, the focus given back to the range but not taken from another control, the default level by
 its button and by its stop, nothing asked on the same stop, and a fixed
 level said with no range.

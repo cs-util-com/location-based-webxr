@@ -127,7 +127,7 @@ function rolesOf(json: GltfObject, meshes: readonly Mesh[]): Map<number, Role> {
 
 /** Accessors read by animations, skins, morph targets and node
  *  extensions. */
-function otherReaders(json: GltfObject): number[] {
+export function otherReaders(json: GltfObject): number[] {
   const found: number[] = [];
   const add = (value: unknown) => {
     const index = indexOf(value);

@@ -6,6 +6,7 @@
 
 - `QuantizeSettings`: `{ positionBits: 8 | 16, normalBits: 8 | 16, texcoordBits: 8 | 16, maxPositionError }` (a share of the box diagonal). `ModelSettings` (`optimizer-settings.ts`) carries them.
 - `quantizeModel(parts, settings): QuantizeReport`: changes `parts` in place; reports how many accessors became integers per attribute (`positions`, `normals`, `tangents`, `texcoords`, `indices`) and the largest errors (`positionError` as a share of the diagonal, `normalErrorDeg`, `texcoordError`).
+- `otherReaders(json)`: every accessor index something besides a primitive's attributes and indices reads (animation samplers, skins' inverse bind matrices, morph targets, node extensions), once per reader. The level-of-detail pass (`model-lod.ts`) counts its accessor uses with it too.
 
 ## What it does
 

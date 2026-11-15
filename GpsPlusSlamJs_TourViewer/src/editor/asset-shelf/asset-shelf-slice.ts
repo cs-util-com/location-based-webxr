@@ -55,11 +55,58 @@ export interface ShelfDetail {
   readonly triangles: number;
   readonly trianglesBefore: number;
   /** Its largest deviation, as a share of `size` (the model's box
-   *  diagonal, in model units). */
+   *  diagonal: in model units, a skinned model's in its rest pose). */
   readonly deviation: number;
   readonly size: number;
   /** The slider's stops, from every triangle down. */
   readonly choices: readonly LodChoice[];
+}
+
+const finiteAtLeast0 = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0;
+const share01 = (v: unknown): v is number => finiteAtLeast0(v) && v <= 1;
+const count = (v: unknown): v is number =>
+  finiteAtLeast0(v) && Number.isInteger(v);
+
+/** `value` as a level of detail (one the draft kept, read back), or
+ *  undefined when any part of it does not read: shares in 0..1, whole
+ *  triangle counts and finite deviations and size, never negative. */
+export function shelfDetailOf(value: unknown): ShelfDetail | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const d = value as Partial<Record<keyof ShelfDetail, unknown>>;
+  const choices = Array.isArray(d.choices) ? (d.choices as unknown[]) : null;
+  const read =
+    (d.share === null || share01(d.share)) &&
+    count(d.triangles) &&
+    count(d.trianglesBefore) &&
+    finiteAtLeast0(d.deviation) &&
+    finiteAtLeast0(d.size) &&
+    choices !== null &&
+    choices.every((c) => {
+      const o = c as Partial<Record<keyof LodChoice, unknown>> | null;
+      return (
+        typeof o === "object" &&
+        o !== null &&
+        share01(o.share) &&
+        count(o.triangles) &&
+        finiteAtLeast0(o.deviation)
+      );
+    });
+  if (!read) return undefined;
+  return {
+    share: d.share as number | null,
+    triangles: d.triangles as number,
+    trianglesBefore: d.trianglesBefore as number,
+    deviation: d.deviation as number,
+    size: d.size as number,
+    choices: (choices as LodChoice[]).map(
+      ({ share, triangles, deviation }) => ({
+        share,
+        triangles,
+        deviation,
+      }),
+    ),
+  };
 }
 
 /** One file on the shelf. */
@@ -189,12 +236,13 @@ const assetShelfSlice = createSlice({
       delete entries[action.payload.id];
       return { ...state, entries };
     },
-    /** An undo of a removal: the entry as it was. */
+    /** An undo of a removal: the entry as it was, but never busy with a
+     *  re-make: the removal stopped any. */
     entryRestored(
       state,
       action: PayloadAction<{ readonly entry: ShelfEntry }>,
     ) {
-      const { entry } = action.payload;
+      const { detailBusy: _stopped, ...entry } = action.payload.entry;
       if (state.entries[entry.id] !== undefined) return state;
       return { ...state, entries: { ...state.entries, [entry.id]: entry } };
     },
@@ -280,7 +328,8 @@ const assetShelfSlice = createSlice({
     jobRetried: (state, action: PayloadAction<{ readonly id: string }>) =>
       withJob(state, action.payload.id, jobRetried),
     /** A reload put back a smaller file the draft kept: the entry stands
-     *  optimized, in place of the one the open listed (its arrival kept). */
+     *  optimized, in place of the one the open listed (its arrival kept),
+     *  with the made model's level of detail the draft kept with it. */
     optimizedRestored(
       state,
       action: PayloadAction<{
@@ -290,6 +339,7 @@ const assetShelfSlice = createSlice({
         readonly originalBytes: number;
         readonly optimizedBytes: number;
         readonly originalHeld: boolean;
+        readonly detail?: ShelfDetail;
       }>,
     ) {
       const p = action.payload;
@@ -305,6 +355,7 @@ const assetShelfSlice = createSlice({
         originalBytes: p.originalBytes,
         optimizedBytes: p.optimizedBytes,
         originalHeld: p.originalHeld,
+        ...(p.detail === undefined ? {} : { detail: p.detail }),
         seq: was?.seq ?? state.nextSeq,
       };
       return {

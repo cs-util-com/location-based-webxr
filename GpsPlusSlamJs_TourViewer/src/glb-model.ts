@@ -8,7 +8,9 @@
  *
  * A primitive the asset shelf gave coarser levels (`extras.lod`, read by
  * `glb-lod.ts`) draws through its chain: each frame picks the coarsest
- * level whose deviation stays under a pixel on screen.
+ * level whose deviation stays under a pixel on screen. The shadow pass
+ * casts the level the frame picked; a pick (raycast) hits the author's
+ * level; an instanced mesh always draws the author's level.
  *
  * @see glb-model.ts.md
  */
@@ -16,6 +18,7 @@ import type {
   BufferAttribute,
   BufferGeometry,
   Camera,
+  Intersection,
   Mesh,
   Object3D,
   WebGLRenderer,
@@ -59,8 +62,41 @@ async function useSavedLevels(
       chains.set(geometry, await chainOf(geometry, accessor));
     }
     const levels = chains.get(geometry);
-    if (levels) mesh.onBeforeRender = levelPicker(mesh, levels);
+    if (levels) drawThroughChain(mesh, levels);
   }
+}
+
+/** Hooks `mesh` to its chain. The draw range lives on the geometry, which
+ *  several meshes may share and which the shadow pass and a raycast read
+ *  too, so each of those sets the range it needs before it reads it. */
+function drawThroughChain(mesh: Mesh, levels: readonly LodLevel[]): void {
+  const authors = levels[0]!;
+  // One range for every instance: a level picked for the instance at the
+  // origin would thin the near ones, so an instanced mesh draws the
+  // author's level.
+  const instanced = (mesh as { isInstancedMesh?: boolean }).isInstancedMesh;
+  let picked = authors;
+  mesh.onBeforeRender = (renderer, _scene, camera, geometry) => {
+    picked = instanced
+      ? authors
+      : levels[
+          pickLevel(levels, pixelsPerDiagonal(mesh, camera, renderer, geometry))
+        ]!;
+    geometry.setDrawRange(picked.start, picked.count);
+  };
+  mesh.onBeforeShadow = (_r, _s, _c, _sc, geometry) => {
+    geometry.setDrawRange(picked.start, picked.count);
+  };
+  const raycast = mesh.raycast.bind(mesh);
+  mesh.raycast = (raycaster, hits: Intersection[]) => {
+    const { start, count } = mesh.geometry.drawRange;
+    mesh.geometry.setDrawRange(authors.start, authors.count);
+    try {
+      raycast(raycaster, hits);
+    } finally {
+      mesh.geometry.setDrawRange(start, count);
+    }
+  };
 }
 
 /** Sets `geometry`'s index to its saved chain, drawing the finest level;
@@ -74,7 +110,12 @@ async function chainOf(
   const chain = (await accessor(lod.indices).catch(
     () => null,
   )) as BufferAttribute | null;
-  if (!chain || chain.itemSize !== 1 || !levelsFit(lod.levels, chain.count)) {
+  if (
+    !chain ||
+    chain.itemSize !== 1 ||
+    !isIndexList(chain.array) ||
+    !levelsFit(lod.levels, chain.count)
+  ) {
     return null;
   }
   const finest = lod.levels[0]!;
@@ -83,16 +124,14 @@ async function chainOf(
   return lod.levels;
 }
 
-/** The frame hook: sets the draw range of the level this view needs. */
-function levelPicker(
-  mesh: Mesh,
-  levels: readonly LodLevel[],
-): Mesh["onBeforeRender"] {
-  return (renderer, _scene, camera, geometry) => {
-    const k = pixelsPerDiagonal(mesh, camera, renderer, geometry);
-    const level = levels[pickLevel(levels, k)]!;
-    geometry.setDrawRange(level.start, level.count);
-  };
+/** An index list is unsigned integers; a float accessor named as the
+ *  chain is refused. */
+function isIndexList(array: unknown): boolean {
+  return (
+    array instanceof Uint8Array ||
+    array instanceof Uint16Array ||
+    array instanceof Uint32Array
+  );
 }
 
 /** Pixels the mesh's world-space box diagonal covers, at the distance

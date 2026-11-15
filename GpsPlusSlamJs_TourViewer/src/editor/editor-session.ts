@@ -172,6 +172,7 @@ import {
 import {
   assetShelfActions,
   assetShelfReducer,
+  type ShelfDetail,
 } from "./asset-shelf/asset-shelf-slice.js";
 import {
   createOptimizerHost,
@@ -436,6 +437,9 @@ interface EditorRestore {
     /** A file brought in whose original the creator chose ("use the
      *  original"): on the shelf as that choice left it, not queued. */
     readonly originalChosen?: true;
+    /** A smaller file's level of detail (a made model's): its slider
+     *  offered again. */
+    readonly detail?: ShelfDetail;
   }[];
 }
 
@@ -460,6 +464,9 @@ interface AssetSwap {
   /** The creator's "use the original": the draft remembers it, so a
    *  reload does not queue the file to be made smaller again. */
   readonly originalChosen?: true;
+  /** A made model's level of detail: the draft keeps it with the file,
+   *  so a reload offers the slider again. */
+  readonly detail?: ShelfDetail;
 }
 
 /** A smaller file now stands in for the asset's (`swapAsset`).
@@ -748,11 +755,13 @@ export interface EditorSessionDraft extends DraftObjectWrites {
   /** A smaller file for an asset (its new record), under the same id:
    *  written before the table and the document take it; whether it
    *  landed. `blob` undefined: back to what stands without one (the file
-   *  on disk's bytes for its asset). */
+   *  on disk's bytes for its asset). `detail`: a made model's level of
+   *  detail, kept with the smaller file. */
   swapAsset(
     asset: TourAsset,
     blob: Blob | undefined,
     originalChosen?: boolean,
+    detail?: ShelfDetail,
   ): Promise<boolean>;
 }
 
@@ -1913,6 +1922,7 @@ export function createEditorSession(input: {
       judged.asset,
       file.blob,
       file.originalChosen === true,
+      file.detail,
     );
     const final = judgedSwap(id, file);
     if (final === null) {
@@ -3729,6 +3739,7 @@ export function createEditorSession(input: {
       asset.path,
       { originalBytes, optimizedBytes: blob.size },
       load === undefined ? undefined : { asset: original.asset, load },
+      file.detail,
     );
   }
 
