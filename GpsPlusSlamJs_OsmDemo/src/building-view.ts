@@ -29,6 +29,7 @@ import {
 import { enableSunShadows } from "gps-plus-slam-app-framework/visualization/sun-shadow";
 import {
   createAmbientOcclusion,
+  hiddenFromAoNormals,
   type AmbientOcclusion,
 } from "gps-plus-slam-app-framework/visualization/ambient-occlusion";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
@@ -73,7 +74,7 @@ import {
   gainOf,
   type LightSettings,
 } from "./light-settings.js";
-import { litSurfaceLuma, meanChroma } from "./light-readouts.js";
+import { measureLightReadouts } from "./light-measure.js";
 import { applyArShadowCasting } from "./ar-sun-shadow.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
 import { createQuestBeacons } from "./quest-beacon.js";
@@ -1693,50 +1694,42 @@ export class BuildingView {
    * `withMargin` is false, which skips the second render). Renders
    * synchronously and reads with `gl.readPixels` straight after each render,
    * so each read is exactly the frame just drawn with the grid as set. The
-   * grid's mesh and outlines are restored as found, also when a render
-   * throws.
+   * order of the work, the AO reused across the grid toggle and the frame
+   * it saves are `light-measure.ts`'s; the grid is restored as found, also
+   * when a render throws.
    */
   measureLight({ withMargin = true }: { withMargin?: boolean } = {}): {
     litLuma: number;
     margin: number | null;
   } {
-    const read = (): Uint8Array => {
-      this.prepareFrame();
-      this.renderer.render(this.scene, this.camera);
+    return measureLightReadouts({
+      grid: [this.cellMesh, this.cellOutlines],
+      withMargin,
+      drawScene: () => {
+        this.prepareFrame();
+        this.renderer.render(this.scene, this.camera);
+      },
       // The view as it is seen, AO included.
-      this.ao.render();
-      const gl = this.renderer.getContext();
-      const pixels = new Uint8Array(
-        gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
-      );
-      gl.readPixels(
-        0,
-        0,
-        gl.drawingBufferWidth,
-        gl.drawingBufferHeight,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixels,
-      );
-      return pixels;
-    };
-    const grid = [this.cellMesh, this.cellOutlines].filter(
-      (o): o is NonNullable<typeof o> => o !== undefined && o.visible,
-    );
-    try {
-      for (const o of grid) o.visible = false;
-      const without = read();
-      const litLuma = litSurfaceLuma(without);
-      let margin: number | null = null;
-      if (withMargin && grid.length > 0) {
-        for (const o of grid) o.visible = true;
-        margin = meanChroma(read()) - meanChroma(without);
-      }
-      return { litLuma, margin };
-    } finally {
-      for (const o of grid) o.visible = true;
-      this.requestFrame();
-    }
+      ambientOcclusion: this.ao,
+      hiddenFromAo: hiddenFromAoNormals,
+      readFrame: () => {
+        const gl = this.renderer.getContext();
+        const pixels = new Uint8Array(
+          gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
+        );
+        gl.readPixels(
+          0,
+          0,
+          gl.drawingBufferWidth,
+          gl.drawingBufferHeight,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          pixels,
+        );
+        return pixels;
+      },
+      requestFrame: () => this.requestFrame(),
+    });
   }
 
   /** Before every render: the haze and the sky light on buildings. */

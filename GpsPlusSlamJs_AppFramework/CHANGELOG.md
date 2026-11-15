@@ -4,6 +4,12 @@
 
 ### Added
 
+- **The AO can be reapplied without recomputing it**
+  (`visualization/ambient-occlusion`): `AmbientOcclusion.reapply()`
+  multiplies the AO the last `render` computed onto the frame just drawn,
+  the blend alone, and returns false (drawing nothing) while off, after
+  dispose, before an AO was computed, after a `render` that threw, since
+  the AO was switched off and on, or once the drawing buffer changed size.
 - **An answer can end the story** (`ar/tour-story`): a choice option may
   carry `end: true` instead of a `goto`, so two branches that never meet
   again each end on their own. `end` is `true` or absent and never beside a

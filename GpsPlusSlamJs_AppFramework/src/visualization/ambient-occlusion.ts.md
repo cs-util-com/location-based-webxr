@@ -63,6 +63,18 @@ resolutionScale?, noiseSeed?, enabled?, displayExponent? })` returns `AmbientOcc
     renderer's current target. Returns whether it drew. Builds the pass on
     the first enabled call (so an app that boots with the AO off never
     constructs it) and re-sizes it when the drawing buffer changes.
+  - `reapply()`: multiplies the AO the last `render` computed onto the
+    frame just drawn, without recomputing it (the blend alone, with the
+    shadow maps held as in `render`). Right only when nothing the
+    normal/depth pass sees has changed since: the camera, the drawing
+    buffer and every object it does not leave out. A redraw that toggles
+    only left-out objects (a see-through overlay, lines) qualifies; OsmDemo's
+    light dialog uses it for the heat grid's second read. Returns false and
+    draws nothing while off, after dispose, before any AO was computed
+    (or when the last `render` threw, or since `enabled` was switched off
+    and on: frames drawn while off computed none), or once the drawing
+    buffer (not the scaled AO target) no longer has the size the AO was
+    computed at; the caller then calls `render`.
   - `built`, `pass` (read-only; `null` before the first enabled `render` and
     after `dispose`), `params` (the merged, frozen parameters).
   - `dispose()`: frees the pass, its GTAO and blend materials (three's own
@@ -152,7 +164,12 @@ ao.dispose();
   the shader's factor and fade held to `aoBlendFactor`'s expression (source
   text, so a change to one twin that misses the other fails); the targets sized from the drawing
   buffer and the resolution scale; the seeded noise in the pass; lazy build,
-  switch-off, dispose; the `RangeError`s.
+  switch-off, dispose; the `RangeError`s; `reapply` drawing the blend alone
+  with the last AO (no pass render, the shadow maps held), and refusing
+  before any AO, while off, after a resize and after dispose, after a
+  render that threw, after a switch off and on until the next render, and
+  after a drawing-buffer change that leaves the scaled target unchanged
+  (scale 0.5, 401 to 402 pixels).
 - `ambient-occlusion.property.test.ts`: the blend factor only darkens, never
   below the AO, is exactly 1 past the fade and at intensity 0, never grows
   darker with distance; the exclusion rule over random material mixes; the
