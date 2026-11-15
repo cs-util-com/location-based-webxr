@@ -115,13 +115,8 @@ function originalOf(bytes: Uint8Array) {
 }
 
 type Point = readonly [number, number, number] | readonly number[];
-const sub = (a: Point, b: Point) => [
-  a[0] - b[0],
-  a[1] - b[1],
-  a[2] - b[2],
-];
-const dot = (a: Point, b: Point) =>
-  a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const sub = (a: Point, b: Point) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a: Point, b: Point) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
 /** The distance from `p` to triangle `abc` (Ericson's closest point on a
  *  triangle, by its Voronoi regions). */
