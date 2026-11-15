@@ -372,6 +372,48 @@ describe("a free video's part", () => {
     }
   });
 
+  // Why: a visitor who turned captions off (or on) for one video wants
+  // the same for every video of every tour, as with the sound switch; a
+  // page whose storage is missing or throws still switches this one.
+  it("remembers the CC choice for every video, and still switches without storage", async () => {
+    const captions = "WEBVTT\n\n00:01.000 --> 00:03.000\nThe gate";
+    const lineOf = (host: HTMLElement) =>
+      host.querySelector(".narration-card-line")?.textContent;
+    const storage = memoryStorage();
+    const first = await video({ storage, block: { captions } });
+    first.part.update?.(at(1, 0));
+    const firstHost = first.shown.host as HTMLElement;
+    firstHost.querySelector<HTMLElement>(".video-card-cc")?.click();
+    expect(lineOf(firstHost)).toBe("Captions off for every video");
+    expect(loadVisitorPrefs(storage)).toEqual({ videoCaptions: "off" });
+    const second = await video({ storage, block: { captions } });
+    second.part.update?.(at(1, 0));
+    second.player.currentTime = 2;
+    second.part.update?.(at(1, 1));
+    const host = second.shown.host as HTMLElement;
+    const cc = host.querySelector<HTMLElement>(".video-card-cc");
+    expect(cc?.getAttribute("aria-pressed")).toBe("false");
+    expect(host.querySelector<HTMLElement>(".video-card-caption")?.hidden).toBe(
+      true,
+    );
+    const broken: PrefsStorage = {
+      getItem: () => {
+        throw new Error("blocked");
+      },
+      setItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    const lone = await video({ storage: broken, block: { captions } });
+    lone.part.update?.(at(1, 0));
+    const loneHost = lone.shown.host as HTMLElement;
+    const loneCc = loneHost.querySelector<HTMLElement>(".video-card-cc");
+    expect(loneCc?.getAttribute("aria-pressed")).toBe("true");
+    loneCc?.click();
+    expect(loneCc?.getAttribute("aria-pressed")).toBe("false");
+    expect(lineOf(loneHost)).toBe("Captions off");
+  });
+
   it("stays still and silent in the editor", async () => {
     const { part, player, shown } = await video({ mode: "edit" });
     part.update?.(at(1, 0));

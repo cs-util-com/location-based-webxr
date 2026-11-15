@@ -10,7 +10,7 @@
  * refuses is muted and said. While the visitor is there its card
  * (`video-card.ts`) is on the page's screen with play, the sound switch
  * (remembered for every video), the hint and, with captions, a CC switch
- * over a caption strip; a porthole's tap opens the clip large in that
+ * (remembered the same way) over a caption strip; a porthole's tap opens the clip large in that
  * card. A looping video plays again on the element itself. A stand-here
  * video ignores the trigger: footprints stand at its viewpoint, and its
  * projection develops from a faint ghost while the visitor stands on them
@@ -67,12 +67,14 @@ import {
   lookDwell,
   startFires,
   VIDEO_SOUND_REFUSED_MS,
+  videoCaptionsChoice,
   videoHint,
   videoReachM,
   videoSoundChoice,
   videoStartOf,
   videoStep,
   videoThere,
+  withVideoCaptions,
   withVideoSound,
   type VideoAction,
   type VideoEvent,
@@ -259,9 +261,13 @@ export function videoWorld(
     anchor.add(spot.object);
     object.add(anchor);
   }
-  // Captions, on until the visitor's CC turns them off; none offered
-  // when the text reads to no cue.
+  // Captions, as the visitor's remembered CC choice says (on when he
+  // never chose), read again whenever the card opens, so a choice made
+  // on another video holds here too; none offered when the text reads
+  // to no cue.
   const cues = readCaptions(block.captions).cues;
+  const rememberedCaptions = (): boolean =>
+    videoCaptionsChoice(loadVisitorPrefs(deps.storage())) !== "off";
   let captionsOn = true;
   const captions: VideoCaptionControls | undefined =
     cues.length === 0
@@ -274,6 +280,15 @@ export function videoWorld(
           on: () => captionsOn,
           toggle: () => {
             captionsOn = !captionsOn;
+            const storage = deps.storage();
+            const kept = saveVisitorPrefs(
+              storage,
+              withVideoCaptions(
+                loadVisitorPrefs(storage),
+                captionsOn ? "on" : "off",
+              ),
+            );
+            note = `Captions ${captionsOn ? "on" : "off"}${kept ? " for every video" : ""}`;
           },
         };
 
@@ -373,6 +388,7 @@ export function videoWorld(
   };
   const openCard = (): void => {
     if (env.screen === undefined || closeCard !== null) return;
+    if (captions !== undefined) captionsOn = rememberedCaptions();
     const element = overlay && player !== null ? deps.element(player) : null;
     closeCard = env.screen.show((host) => {
       card = videoCard(

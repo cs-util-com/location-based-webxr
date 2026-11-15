@@ -74,9 +74,14 @@ starts. Without a viewpoint it develops wherever the visitor stands.
 - A `loop: "on"` video sets the element's own `loop`, so it plays again
   without an `ended` (it never reaches `finished`).
 - Captions are read once (`video-captions.ts`); with at least one cue the
-  card gets a CC switch, on at first and for this video only (not
-  remembered), and a strip showing `captionAt` the player's time. With
-  none (absent, unreadable) no CC is offered.
+  card gets a CC switch and a strip showing `captionAt` the player's time.
+  With none (absent, unreadable) no CC is offered. The switch is the
+  visitor's remembered `videoCaptions` choice (on when he never chose),
+  read again each time the card opens, so a choice made on one video
+  holds for the next; a click flips it, stores it in the same preferences
+  as the sound choice and says "Captions on/off for every video". With no
+  storage, or one that throws, it flips for this video only and the line
+  says "Captions on/off".
 - A porthole's tap opens the card with the clip large and starts it if it
   does not play; Close returns to the plain card.
 - The viewer is handed to the look in the part's own frame (the object's
@@ -97,7 +102,7 @@ part?.update?.({ seconds, viewer, facing });
 - `video-world.test.ts` - with a fake player and screen: each trigger, the
   sound paths (creator, untouched page, refusal, a refused muted start, a
   slow muted load, remembered choice), the loop, the captions strip and
-  CC, leave
+  CC, the remembered CC choice (and a storage that throws), leave
   and return, finished then replay, the porthole, the silent editor, a
   posed cutout's turn and dispose, and the ground of a screen and a cutout
   in folders of scale 0.5 to 10, at rest, while a folder's scale is

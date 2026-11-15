@@ -9,12 +9,14 @@ import {
   VIDEO_LOOK_DEG,
   VIDEO_LOOK_DWELL_S,
   VIDEO_MARGIN_M,
+  videoCaptionsChoice,
   videoHint,
   videoReachM,
   videoSoundChoice,
   videoStartOf,
   videoStep,
   videoThere,
+  withVideoCaptions,
   withVideoSound,
 } from "./video-rules.js";
 
@@ -165,6 +167,24 @@ describe("whether it starts with its sound", () => {
     expect(videoSoundChoice(null)).toBeNull();
     expect(videoSoundChoice([1])).toBeNull();
     expect(withVideoSound("junk", "off")).toEqual({ videoSound: "off" });
+  });
+
+  // Why: the captions choice is remembered like the sound choice, under
+  // its own key of the same stored preferences; neither may erase the
+  // other, nor any key a newer app wrote.
+  it("keeps the visitor's captions choice beside the sound choice and every other key", () => {
+    const stored = { views: { video: { world: "screen" } }, videoSound: "on" };
+    const off = withVideoCaptions(stored, "off");
+    expect(off).toEqual({ ...stored, videoCaptions: "off" });
+    expect(stored).not.toHaveProperty("videoCaptions");
+    expect(videoCaptionsChoice(off)).toBe("off");
+    expect(videoSoundChoice(off)).toBe("on");
+    expect(videoCaptionsChoice(withVideoSound(off, "off"))).toBe("off");
+    expect(withVideoCaptions(off, null)).toEqual(stored);
+    expect(videoCaptionsChoice({ videoCaptions: true })).toBeNull();
+    expect(videoCaptionsChoice(null)).toBeNull();
+    expect(videoCaptionsChoice([1])).toBeNull();
+    expect(withVideoCaptions(7, "on")).toEqual({ videoCaptions: "on" });
   });
 });
 

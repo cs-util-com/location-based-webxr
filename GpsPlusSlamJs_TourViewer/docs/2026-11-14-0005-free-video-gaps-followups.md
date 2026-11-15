@@ -34,10 +34,14 @@ independent.
   the feathered ellipse, with no hint. Whether a visitor should ever see such
   a note (or whether a tour with that cutout should refuse to be shared) is
   open.
-- **Remembering the CC choice.** Captions are on at first and the switch
-  holds for one video only. The prototype remembers the visitor's sound
-  choice for every video. The same rule for captions is plausible but was
-  not asked for.
+- **Remembering the CC choice - built.** The CC switch is remembered for
+  every video of every tour, under `videoCaptions` in the same stored
+  preferences as the sound choice (`videoCaptionsChoice` /
+  `withVideoCaptions` in `src/kinds/video/video-rules.ts`), read again
+  each time a video's card opens. Without storage it holds for that video
+  only. Still open: the design's rule that a start whose sound the browser
+  refused switches captions on for that clip whatever the stored choice;
+  today a visitor who stored "off" gets a muted clip without words then.
 - **A live 3D preview while dragging the width slider.** The slider writes
   the width once, on release, like the 3D view's white dots. The number
   follows the drag, but the video in the 3D view does not resize until the

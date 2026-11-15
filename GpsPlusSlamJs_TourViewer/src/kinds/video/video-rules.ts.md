@@ -44,6 +44,9 @@ drives these each frame.
 - `videoSoundChoice(stored)` / `withVideoSound(stored, choice)` - read and
   write the `videoSound` key of the visitor's stored preferences
   (`visitor-prefs.ts`), keeping every other key.
+- `videoCaptionsChoice(stored)` / `withVideoCaptions(stored, choice)` - the
+  same for the `videoCaptions` key (the CC switch); both pairs share one
+  reader and one writer, so the two keys follow one rule.
 - `videoHint(start, state, distanceM, reachM)` - "Tap the video to play",
   "Walk closer to start · N m" (N at least 1), or null.
 
