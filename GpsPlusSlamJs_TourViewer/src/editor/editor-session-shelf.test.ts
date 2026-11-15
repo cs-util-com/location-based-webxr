@@ -361,7 +361,7 @@ describe("a made model's level of detail across a reload", () => {
     };
     const settle = () => new Promise((r) => setTimeout(r, 0));
     const first = await openEditor();
-    const glb = await buildModel({ meshes: [boxSpec("box")] });
+    const glb = new Uint8Array(await buildModel({ meshes: [boxSpec("box")] }));
     const added = await first.editor.addFile(new Blob([glb]), "box.glb");
     if (added.kind === "refused") throw new Error(added.reason);
     const id = added.asset.id;

@@ -96,7 +96,13 @@ function authorOf(name: keyof typeof MADE, share?: number) {
 }
 
 const drawn = (levels: readonly Level[], px: number, budget: number) =>
-  levels[pickLevel(levels, px, budget)]!.count / 3;
+  levels[
+    pickLevel(
+      levels.map((l) => ({ start: 0, ...l })),
+      px,
+      budget,
+    )
+  ]!.count / 3;
 
 describe.runIf(RUN)(
   "level-of-detail chain sweep (opt-in, LOD_CHAIN_SWEEP=1)",
