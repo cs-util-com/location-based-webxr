@@ -476,8 +476,13 @@ test("models: the default level of detail keeps fewer triangles, its box within 
       expect(Math.abs(after.min[i] - before.min[i])).toBeLessThanOrEqual(bound);
       expect(Math.abs(after.max[i] - before.max[i])).toBeLessThanOrEqual(bound);
     }
+    // The whole file, its saved coarser levels included: the level of
+    // detail must never cost the file the gain the other steps made.
     expect(row.bytes).toBeLessThan(row.originalBytes * 0.9);
     expect(row.ssim).toBeGreaterThanOrEqual(MODEL_SSIM_FLOOR);
+    // The default setting, simplifying included, under the phone's 10 s per
+    // model (a desktop is several times faster, so a floor, not the proof).
+    expect(row.ms).toBeLessThan(10_000);
   }
   expect(errors).toEqual([]);
 });
