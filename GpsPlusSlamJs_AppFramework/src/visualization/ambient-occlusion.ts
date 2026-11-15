@@ -455,12 +455,14 @@ export function createAmbientOcclusion(
           0,
           false
         );
-        computed = true;
       } finally {
         for (const [object, visible] of hidden) object.visible = visible;
         hidden.length = 0;
       }
       blendOnto(built, target);
+      // Only after the blend: `reapply` promises an AO a render both computed
+      // and put on screen, so a throw in either step leaves nothing to reapply.
+      computed = true;
     });
     return true;
   };

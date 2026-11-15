@@ -167,7 +167,8 @@ ao.dispose();
   switch-off, dispose; the `RangeError`s; `reapply` drawing the blend alone
   with the last AO (no pass render, the shadow maps held), and refusing
   before any AO, while off, after a resize and after dispose, after a
-  render that threw, after a switch off and on until the next render, and
+  render that threw (in the pass or in the blend), after a switch off and
+  on until the next render, and
   after a drawing-buffer change that leaves the scaled target unchanged
   (scale 0.5, 401 to 402 pixels).
 - `ambient-occlusion.property.test.ts`: the blend factor only darkens, never

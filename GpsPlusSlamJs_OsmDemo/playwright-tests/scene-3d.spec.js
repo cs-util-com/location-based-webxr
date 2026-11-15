@@ -3042,10 +3042,16 @@ test.describe("the ambient occlusion", () => {
           el.dispatchEvent(new Event("change", { bubbles: true }));
         }, on);
         await expect(view).toHaveAttribute("data-ao", on ? "on" : "off");
-        await page.locator("#light-check").click();
-        await expect(page.locator("#light-readout")).toContainText(
-          "Heat grid adds",
-        );
+        // The check reads the heat grid only once it is built; a click that
+        // lands before then reports without it, so the click is retried
+        // (within the usual repaint budget) until the margin line appears.
+        await expect(async () => {
+          await page.locator("#light-check").click();
+          await expect(page.locator("#light-readout")).toContainText(
+            "Heat grid adds",
+            { timeout: 2_000 },
+          );
+        }).toPass(REPAINT);
         const text = (await page.locator("#light-readout").textContent()) ?? "";
         return Number(/adds ([\d.-]+)/.exec(text)?.[1]);
       };
@@ -3220,11 +3226,13 @@ test.describe("the woods governor's frame readout (?perf=1)", () => {
     const button = page.getByTestId("perf-log-copy");
     await expect(button).toHaveText("Copy perf log");
     await button.click();
-    await expect(button).toHaveText("Copied");
+    // The clipboard's content is the outcome; the "Copied" label returns to
+    // idle after 2.5 s, so asserting it would race that reset on a slow run.
+    const readClipboard = () =>
+      page.evaluate(() => navigator.clipboard.readText());
+    await expect.poll(readClipboard, REPAINT).toContain("== JSON ==");
     // A Windows clipboard hands the text back with CRLF line ends.
-    const report = (
-      await page.evaluate(() => navigator.clipboard.readText())
-    ).replace(/\r\n/g, "\n");
+    const report = (await readClipboard()).replace(/\r\n/g, "\n");
     // Kept with the run, so a desktop sample of the log is at hand.
     await test.info().attach("perf-log.txt", {
       body: report,
@@ -3245,8 +3253,12 @@ test.describe("the woods governor's frame readout (?perf=1)", () => {
     const json = JSON.parse(
       report.split("\n== JSON ==\n")[1]?.split("\n")[0] ?? "",
     );
-    expect(json.format).toBe("osmdemo-perf-log/1");
+    expect(json.format).toBe("osmdemo-perf-log/2");
     expect(json.now.mode).toBe("off");
     expect(json.device.devicePixelRatio).toBeGreaterThan(0);
+    // Each burst carries what its first frame drew, read from the renderer.
+    expect(
+      json.timeline.bursts.some((burst) => burst.drawCost?.calls > 0),
+    ).toBe(true);
   });
 });

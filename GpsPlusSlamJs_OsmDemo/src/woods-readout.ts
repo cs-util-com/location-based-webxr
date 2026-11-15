@@ -19,6 +19,7 @@
  * @see woods-readout.ts.md
  */
 
+import { percentileOfSorted } from "gps-plus-slam-app-framework/utils/percentile";
 import {
   createWoodsGovernor,
   type TreeForm,
@@ -81,7 +82,7 @@ export function createFrameWindow(windowMs = 10_000): FrameWindow {
     p95() {
       if (entries.length === 0) return undefined;
       const sorted = entries.map((entry) => entry.ms).sort((a, b) => a - b);
-      return sorted[Math.ceil(0.95 * sorted.length) - 1];
+      return percentileOfSorted(sorted, 0.95);
     },
   };
 }

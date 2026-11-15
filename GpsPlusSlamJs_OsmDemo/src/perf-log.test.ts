@@ -90,7 +90,7 @@ describe("createPerfRecorder", () => {
       [116, 16],
       [5033, 33],
     ]);
-    expect(timeline.bursts).toEqual([100, 5000]);
+    expect(timeline.bursts.map((b) => b.atMs)).toEqual([100, 5000]);
     expect(timeline.intervalCount).toBe(2);
   });
 
@@ -102,7 +102,76 @@ describe("createPerfRecorder", () => {
     recorder.frame(Number.POSITIVE_INFINITY, true);
     recorder.frame(26, true);
     expect(recorder.snapshot().intervals).toEqual([[26, 16]]);
-    expect(recorder.snapshot().bursts).toEqual([10]);
+    expect(recorder.snapshot().bursts.map((b) => b.atMs)).toEqual([10]);
+  });
+
+  // The governor ignores a frame not after the last one entirely, so the
+  // recorder must too: a log that measured the next interval from the
+  // ignored time would not replay to the governor's share changes.
+  it("ignores a frame not after the last one, as the governor does", () => {
+    const recorder = createPerfRecorder();
+    recorder.frame(100, false);
+    recorder.frame(116, true);
+    recorder.frame(90, true);
+    recorder.frame(80, false);
+    recorder.frame(132, true);
+    const timeline = recorder.snapshot();
+    expect(timeline.intervals).toEqual([
+      [116, 16],
+      [132, 16],
+    ]);
+    expect(timeline.bursts.map((b) => b.atMs)).toEqual([100]);
+  });
+
+  // WHY THIS TEST MATTERS. A steady slow stretch after a zoom-out and one
+  // long frame read the same as timing alone; the draw cost per burst tells
+  // them apart. The burst keeps the cost of its first frame, and its
+  // slowest interval keeps the cost of the frame drawn just before it, the
+  // frame that interval measured.
+  it("keeps the draw cost at each burst start and at its slowest frame", () => {
+    const recorder = createPerfRecorder();
+    recorder.frame(0, false);
+    recorder.drawn({ calls: 10, triangles: 1000 });
+    recorder.frame(16, true);
+    recorder.drawn({ calls: 40, triangles: 9000 });
+    recorder.frame(116, true);
+    recorder.drawn({ calls: 12, triangles: 1200 });
+    recorder.frame(132, true);
+    recorder.drawn({ calls: 12, triangles: 1200 });
+    recorder.frame(5000, false);
+    recorder.drawn({ calls: 7, triangles: 700 });
+    expect(recorder.snapshot().bursts).toEqual([
+      {
+        atMs: 0,
+        drawCost: { calls: 10, triangles: 1000 },
+        slowest: {
+          atMs: 116,
+          ms: 100,
+          drawCost: { calls: 40, triangles: 9000 },
+        },
+      },
+      { atMs: 5000, drawCost: { calls: 7, triangles: 700 }, slowest: null },
+    ]);
+  });
+
+  it("hands out snapshots that later frames do not change", () => {
+    const recorder = createPerfRecorder();
+    recorder.frame(0, false);
+    const before = recorder.snapshot();
+    recorder.drawn({ calls: 3, triangles: 30 });
+    recorder.frame(16, true);
+    expect(before.bursts).toEqual([{ atMs: 0, drawCost: null, slowest: null }]);
+  });
+
+  // The raw mean counts a hidden tab's one long interval, so the report
+  // says how many intervals over the governor's gap it includes.
+  it("counts the intervals longer than the gap the governor leaves out", () => {
+    const recorder = createPerfRecorder(undefined, 250);
+    recorder.frame(0, false);
+    recorder.frame(16, true);
+    recorder.frame(60_016, true);
+    recorder.frame(60_032, true);
+    expect(recorder.snapshot().longGapCount).toBe(1);
   });
 
   it("keeps the share changes with their mode and average", () => {
@@ -138,7 +207,7 @@ describe("createPerfRecorder", () => {
     const summary = summarizeFrames(timeline);
     expect(summary.frames).toBe(3);
     expect(summary.retained).toBe(2);
-    expect(summary.meanMs).toBe(20);
+    expect(summary.rawMeanMs).toBe(20);
   });
 });
 
@@ -148,6 +217,13 @@ describe("percentile", () => {
     expect(percentile([10, 20, 30, 40], 0.5)).toBe(20);
     expect(percentile([10, 20, 30, 40], 0.95)).toBe(40);
     expect(percentile([7], 0.99)).toBe(7);
+  });
+
+  // 0.95 * 11 is 10.45: the nearest rank rounds UP (rank 11), where a
+  // rounding rule would give rank 10.
+  it("takes the rank upwards, not to the nearest integer", () => {
+    const values = Array.from({ length: 11 }, (_, i) => i + 1);
+    expect(percentile(values, 0.95)).toBe(11);
   });
 });
 
@@ -190,7 +266,13 @@ describe("buildPerfReport", () => {
       [16, 16],
       [48, 32],
     ]);
-    expect(json.timeline.bursts).toEqual([0]);
+    expect(json.timeline.bursts).toEqual([
+      {
+        atMs: 0,
+        drawCost: null,
+        slowest: { atMs: 48, ms: 32, drawCost: null },
+      },
+    ]);
     expect(json.settings.query).toEqual({
       woodsauto: null,
       treeform: "trunk",
@@ -240,11 +322,111 @@ describe("buildPerfReport", () => {
   });
 });
 
+describe("buildPerfReport, the replay and the draw cost", () => {
+  // The governor-relevant fields, each with a value no other field has, so
+  // a report that put one in another's place fails here.
+  it("pins every summary number to its own value", () => {
+    const recorder = createPerfRecorder();
+    recorder.frame(0, false);
+    let t = 0;
+    for (let i = 1; i <= 100; i++) {
+      t += i;
+      recorder.frame(t, true);
+    }
+    const report = buildPerfReport(input({ timeline: recorder.snapshot() }));
+    const json = reportJson(report) as { summary: Record<string, unknown> };
+    expect(json.summary).toEqual({
+      frames: 100,
+      retained: 100,
+      rawMeanMs: 50.5,
+      longGaps: 0,
+      p50Ms: 50,
+      p95Ms: 95,
+      p99Ms: 99,
+      replayable: true,
+    });
+    expect(report).toContain(
+      "raw mean 50.5 ms (0 over 250 ms included) · p50 50.0 ms · p95 95.0 ms · p99 99.0 ms",
+    );
+    expect(report).toContain("replayable yes");
+  });
+
+  // After the first dropped entry the timeline no longer starts at the
+  // session's start, so a replay through the governor would not match.
+  it("says the log is not replayable once a ring dropped an entry", () => {
+    const replayable = (report: string): unknown =>
+      (reportJson(report) as { summary: { replayable: unknown } }).summary
+        .replayable;
+    const recorder = createPerfRecorder({
+      intervals: 1,
+      bursts: 10,
+      shareChanges: 10,
+    });
+    recorder.frame(0, false);
+    recorder.frame(16, true);
+    expect(
+      replayable(buildPerfReport(input({ timeline: recorder.snapshot() }))),
+    ).toBe(true);
+    recorder.frame(32, true);
+    const report = buildPerfReport(input({ timeline: recorder.snapshot() }));
+    expect(replayable(report)).toBe(false);
+    expect(report).toContain("replayable no");
+  });
+
+  it("carries each burst's draw cost in the JSON and the newest in the text", () => {
+    const recorder = createPerfRecorder();
+    recorder.frame(1000, false);
+    recorder.drawn({ calls: 109, triangles: 1_760_000 });
+    recorder.frame(1100.04, true);
+    recorder.drawn({ calls: 109, triangles: 1_760_000 });
+    const report = buildPerfReport(input({ timeline: recorder.snapshot() }));
+    const json = reportJson(report) as {
+      format: string;
+      timeline: { bursts: unknown[] };
+    };
+    expect(json.format).toBe("osmdemo-perf-log/2");
+    expect(json.timeline.bursts).toEqual([
+      {
+        atMs: 1000,
+        drawCost: { calls: 109, triangles: 1_760_000 },
+        slowest: {
+          atMs: 1100,
+          ms: 100,
+          drawCost: { calls: 109, triangles: 1_760_000 },
+        },
+      },
+    ]);
+    expect(report).toContain("== Bursts ==");
+    expect(report).toContain(
+      "at 1.0 s: start 109 draws / 1,760,000 tri · slowest 100.0 ms at 1.1 s after 109 draws / 1,760,000 tri",
+    );
+  });
+
+  // A query value is free text from the link: a URL-encoded newline must
+  // not start a line of its own that a reader takes for part of the report.
+  it("keeps a knob value with a newline on its own line", () => {
+    const report = buildPerfReport(
+      input({
+        settings: {
+          ...input().settings,
+          query: { woodsauto: "x\n== JSON ==\n{}", treeform: null, perf: "1" },
+        },
+      }),
+    );
+    expect(report).toContain(
+      "query woodsauto=x == JSON == {} treeform=(unset)",
+    );
+    expect(report.split("\n").filter((l) => l === "== JSON ==")).toHaveLength(
+      1,
+    );
+  });
+});
+
 describe("reportJson", () => {
   // A Windows clipboard returns CRLF; a pasted copy must still parse.
   it("reads a copy with CRLF line ends", () => {
     const report = buildPerfReport(input()).replace(/\n/g, "\r\n");
-    expect(reportJson(report)).toMatchObject({ format: "osmdemo-perf-log/1" });
+    expect(reportJson(report)).toMatchObject({ format: "osmdemo-perf-log/2" });
   });
 
   it("throws on a text without the JSON block", () => {
