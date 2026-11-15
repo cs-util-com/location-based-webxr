@@ -153,7 +153,8 @@ export const PLAY_KINDS = {
     },
     assets: (block) =>
       block.poster === undefined ? [block.video] : [block.video, block.poster],
-    // Stands free in the station as a screen, a cutout or a porthole.
+    // Stands free in the station as a screen, a cutout, a porthole, a
+    // window or a stand-here projection.
     world: (block, env) => videoWorld(block, env),
   },
   audio: AUDIO_PLAY,
