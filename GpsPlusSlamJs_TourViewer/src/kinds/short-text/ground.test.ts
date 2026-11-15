@@ -318,23 +318,32 @@ describe("a ground arrow's tap", () => {
     }
   });
 
-  it("leaves a tap elsewhere to the next handler", () => {
-    for (const toleranceDeg of TOLERANCES_DEG) {
-      const said: string[] = [];
-      const env = worldEnv("play", [], none, { say: (t) => said.push(t) });
-      const { part, scene, camera } = shown({ description: "Left." }, env);
-      // The sky high up, and the ground well to the side of the arrow.
-      for (const ndc of [{ x: 0, y: 0.95 }, ndcOf(camera, 6, 0, 3)]) {
-        const sheet: unknown[] = [];
-        routeVisitorTap(ndc as never, {
-          character: () => false,
-          model: () => false,
-          part: () => tapAt(scene, camera, ndc, part, toleranceDeg),
-          pinSheet: { close: () => undefined, tapped: (t) => sheet.push(t) },
-        });
-        expect(sheet, `${String(toleranceDeg)} deg`).toEqual([ndc]);
+  it("leaves a tap elsewhere to the next handler, for every style", () => {
+    // Why every style: each draws other marks (a light's glow pool reaches
+    // wider than its lens), and any of them could swallow the tap.
+    for (const style of TOUR_GROUND_STYLES) {
+      for (const toleranceDeg of TOLERANCES_DEG) {
+        const said: string[] = [];
+        const env = worldEnv("play", [], none, { say: (t) => said.push(t) });
+        const { part, scene, camera } = shown(
+          { style, description: "Left." },
+          env,
+        );
+        // The sky high up, and the ground well to the side of the arrow.
+        for (const ndc of [{ x: 0, y: 0.95 }, ndcOf(camera, 6, 0, 3)]) {
+          const sheet: unknown[] = [];
+          routeVisitorTap(ndc as never, {
+            character: () => false,
+            model: () => false,
+            part: () => tapAt(scene, camera, ndc, part, toleranceDeg),
+            pinSheet: { close: () => undefined, tapped: (t) => sheet.push(t) },
+          });
+          expect(sheet, `${style} at ${String(toleranceDeg)} deg`).toEqual([
+            ndc,
+          ]);
+        }
+        expect(said).toEqual([]);
       }
-      expect(said).toEqual([]);
     }
   });
 
@@ -343,7 +352,7 @@ describe("a ground arrow's tap", () => {
     // but a raycast still meets hidden meshes; the empty spot beside the
     // arrow's start must stay free for the next handler. Node paints no
     // caption (no canvas), so the test hides the plate as that layout does.
-    for (const toleranceDeg of [0, 1]) {
+    for (const toleranceDeg of TOLERANCES_DEG) {
       const said: string[] = [];
       const env = worldEnv("play", [], none, { say: (t) => said.push(t) });
       const { part, scene, camera } = shown(
@@ -360,6 +369,7 @@ describe("a ground arrow's tap", () => {
           part,
           toleranceDeg,
         ),
+        `${String(toleranceDeg)} deg`,
       ).toBe(false);
       expect(said).toEqual([]);
     }
