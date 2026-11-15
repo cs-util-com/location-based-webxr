@@ -4,7 +4,7 @@
 
 Decode an image Blob into an **upright** `THREE.Texture` via
 `createImageBitmap` — the shared owner of the ImageBitmap orientation
-contract (promoted from the RecorderApp 2026-08-26, DEC-H3, so consumers do
+contract (promoted from the RecorderApp 2026-08-26, so consumers do
 not copy it).
 
 ## Public API

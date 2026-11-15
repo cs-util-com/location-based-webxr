@@ -18,7 +18,7 @@ cloud density).
 - Not the one-argument easing curve `smoothstep(t)` of OsmDemo's `easing.ts`
   or the Landing page; the duplicate-helper guard's exemption for the name
   is keyed to this file and carries that reason.
-- Promoted from a private copy in `occlusion-mesh.ts` on 2026-09-23 (DEC-H3:
+- Promoted from a private copy in `occlusion-mesh.ts` on 2026-09-23 (shared-helper rule:
   a one-liner once per package), when the atmosphere needed it twice.
 
 ## Examples

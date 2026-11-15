@@ -10,7 +10,7 @@
  * which a displacement would get wrong for every out-and-back.
  *
  * The fixes come through `deviceSamples` (`device-gps-quality.ts`), the ONE
- * device-only filter of the store's GPS history (DEC-H3): a synthetic code
+ * device-only filter of the store's GPS history: a synthetic code
  * vote's odometry is the code's corner, not a place anybody walked.
  *
  * @see walked-distance-tracker.ts.md

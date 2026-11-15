@@ -192,7 +192,7 @@ const result = mintQrLevel({
 ```
 
 - `waitingFor(reason)` is exported: the visitor hint
-  (`qr-debug-readout.ts`) reads the same copy (plan §66, DEC-H3).
+  (`qr-debug-readout.ts`) reads the same copy (plan §66).
 
 - `authorStatusLine(..., sizeCheckPending?)` adds "Take a step sideways to
   check the print size." to the ready line while the print-size check has no

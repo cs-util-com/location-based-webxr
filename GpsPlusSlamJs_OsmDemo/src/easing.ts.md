@@ -39,7 +39,7 @@ than a coincidence, and the ground treatment now moves with it.
 `visualization/occlusion-mesh.ts` defines `smoothstep(edge0, edge1, x)` — the
 three-argument GLSL form, mirroring the shader beside it. The two shapes are
 related but not interchangeable, and a cross-package import edge for a one-liner
-is not worth its cost (owner decision DEC-H3, 2026-08-24: pure one-liners live
+is not worth its cost (deliberate copy (shared-helper rule): pure one-liners live
 once per package).
 
 ## Example

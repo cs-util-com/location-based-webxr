@@ -41,12 +41,12 @@ where the prefetch starts. Plans:
 
 ## Invariants & assumptions
 
-- **Tied to the HUD (§8 D9, DEC-H3).** `foundM` / `foundExitM` are the
+- **Tied to the HUD (§8 D9).** `foundM` / `foundExitM` are the
   station's wayfinding target `distanceMin` / `distanceMax`: the arrow hides
   as "arrived" exactly where the station is found, and comes back one band
   out. The band's floor is the HUD's field-validated deadband (1.5 m in
   AnchorStarter and WayfindingHudDemo). One hysteresis convention in
-  absolute metres, the HUD's own (DEC-H3), not a second fractional one.
+  absolute metres, the HUD's own, not a second fractional one.
 - `foundM < foundExitM <= activateM` for every input; all
   finite; never smaller than the authored radii; the band and the
   activation monotone in the accuracy; `foundM` independent of it.

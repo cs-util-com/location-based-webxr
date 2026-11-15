@@ -730,7 +730,7 @@ const meshes = (root: THREE.Object3D): THREE.Mesh[] => {
 };
 
 describe("litCopy and tileMeshes (shared with the relief carrier)", () => {
-  // Why (review 2026-10-02-1235 minor 8, DEC-H3): the globe's tiles and the relief's
+  // Why (review 2026-10-02-1235 minor 8): the globe's tiles and the relief's
   // both need "a clone of the template with its compile hooks" and "every
   // mesh under a tile model"; one implementation each, used by both.
   it("clones the template with its compile hooks and program key", () => {

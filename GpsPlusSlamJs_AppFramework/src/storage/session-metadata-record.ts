@@ -13,7 +13,7 @@
  * Recorder's desktop replay. The replay decides whether to migrate a
  * recording from `odomCoordVersion`, so two writers of this record must agree
  * on it - which is shared behaviour, and shared behaviour has one
- * implementation (DEC-H3). The build info, which each app stamps at its own
+ * implementation. The build info, which each app stamps at its own
  * build, is injected rather than read here.
  *
  * WHAT IT DOES NOT DO: decide anything. It is a record builder plus the one

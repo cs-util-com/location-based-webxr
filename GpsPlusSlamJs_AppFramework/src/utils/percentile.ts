@@ -1,5 +1,5 @@
 /**
- * The framework's one nearest-rank percentile (DEC-H3; globe zoom
+ * The framework's one nearest-rank percentile (globe zoom
  * performance plan 2026-10-03-2017, PERF-0).
  *
  * Three private copies used to carry this rule: the AR sun check's spread,

@@ -2,7 +2,7 @@
  * The parallax size tally and the measured-size offer (QR size consensus
  * plan 2026-09-27-0350, §11-§13, S3a): one counting rule for every app that
  * reads a code's size from parallax - the QR demo's report and the
- * TourViewer's print check (DEC-H3). See qr-parallax-size-tally.ts.md.
+ * TourViewer's print check. See qr-parallax-size-tally.ts.md.
  */
 
 import type { QrParallaxSize } from './qr-size-parallax.js';

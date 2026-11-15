@@ -1,7 +1,7 @@
 /**
  * Occluder mesh worker client — builds the {@link OccluderMeshDriver} backed by
  * an app's mesh worker (a ~10-line shell over `runMeshRequest`). Lifted from
- * the RecorderApp 2026-10-13 (Tour Viewer polish round M5a, DEC-H3).
+ * the RecorderApp 2026-10-13 (Tour Viewer polish round M5a).
  *
  * The app passes the factory that creates its `Worker` (its URL resolves
  * against the app's source); this adapts it to the driver's

@@ -32,8 +32,9 @@
 //    path into CI, which is the coupling the pnpm-override rule keeps out.
 //    **The primary repo therefore carries its own copy** at
 //    `GpsPlusSlamJs_Investigation/src/regression/orphan-doc-comments.test.ts`,
-//    scoped to the published library. A deliberate copy per root is DEC-H3's
-//    answer for a package that cannot reach shared code, the same trade
+//    scoped to the published library. A per-root
+//    deliberate copy (shared-helper rule) is that rule's answer for a
+//    package that cannot reach shared code, the same trade
 //    `duplicate-helpers.test.js` documents for itself — so **if you change the
 //    detector, change both.**
 //  - **A `@typedef` / `@callback` block is exempt.** It declares a type by

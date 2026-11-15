@@ -23,8 +23,9 @@
  * `visualization/occlusion-mesh.ts` has a `smoothstep(edge0, edge1, x)` — the
  * three-argument GLSL form, mirroring a shader it sits beside. Folding these
  * together would make one of the two read wrongly for its own context, and a
- * cross-package import edge for a one-liner is not worth it (owner decision
- * DEC-H3, 2026-08-24).
+ * cross-package import edge for a one-liner is not worth it. This is a
+ * deliberate copy (shared-helper rule: shared behaviour has one
+ * implementation, a dependency-free one-liner may exist once per package).
  *
  * @see easing.ts.md
  */

@@ -1,6 +1,6 @@
 /**
  * The AR session-end STATE teardown every consumer app needs (unified
- * 2026-08-26 per DEC-H3 when the third app grew the same sequence):
+ * 2026-08-26 per the shared-helper rule when the third app grew the same sequence):
  *
  * 1. `endSession()` — closes the recording; without it a re-entry's second
  *    `startSession` piles onto a live one.

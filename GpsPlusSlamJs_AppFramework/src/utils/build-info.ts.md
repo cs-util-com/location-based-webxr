@@ -9,7 +9,7 @@ the Tour Viewer's troubleshooting recording started writing a `session.json`
 of its own
 ([authoring recording plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md)
 §7a, M1a review finding 2): the names are a contract between the build and
-this reader, so they have one reader (DEC-H3). The build half is
+this reader, so they have one reader. The build half is
 [`scripts/build-metadata-define.mjs`](../../scripts/build-metadata-define.mjs.md).
 
 Deep import only: `gps-plus-slam-app-framework/utils/build-info` (not on the

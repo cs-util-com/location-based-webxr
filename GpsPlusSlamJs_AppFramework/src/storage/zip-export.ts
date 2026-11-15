@@ -246,7 +246,7 @@ export async function exportSessionHandleAsZip(
       // subdir (e.g. `../actions/000001.json`) and overwrite framework-owned
       // files inside the ZIP. These used to be three inline checks that the
       // validator absorbed from community PR #321 was LAXER than (its
-      // review, 2026-08-26); one module now serves every writer (DEC-H3).
+      // review, 2026-08-26); one module now serves every writer.
       // The COMPOSED path is what reaches the archive, so that is what is
       // validated (M1 review #4: validating the relative half alone let a
       // drive-lettered or backslashed subdir through).

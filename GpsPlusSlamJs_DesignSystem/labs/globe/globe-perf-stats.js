@@ -1,7 +1,7 @@
 /**
  * The seam between the globe lab's frame-hitch recorder and the framework's
  * statistics (globe zoom frame-hitch plan 2026-10-03-2017, PERF-0 and
- * PERF-1; DEC-H3: one implementation): the whole-run histogram, the
+ * PERF-1: one implementation): the whole-run histogram, the
  * attribution join, the idle calibration, the target check, the on-screen
  * summary and the export all come from `/fw/utils/`.
  *

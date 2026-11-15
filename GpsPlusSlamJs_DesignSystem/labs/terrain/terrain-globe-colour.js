@@ -22,7 +22,7 @@
  * Plus the measuring tools the comparison page reports with: box means on
  * the lab's post grid (summed-area table) and CIE76 colour difference.
  *
- * Dependency-free except the lab's own colour curves and sun (DEC-H3), so
+ * Dependency-free except the lab's own colour curves and sun, so
  * it runs under `node --test`. The shader mirrors `detailRatio` and
  * `globeAlbedoColour` (`terrain-material.js`).
  *

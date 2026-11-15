@@ -48,8 +48,8 @@ groundM }` (null heights skipped): the hypotenuse of the horizontal
     The first rule (the height above the HIGHEST ground nearby) went
     negative under a ridge and floored the near plane at 1 m (F2a's browser
     run, 2026-10-05).
-  - `smoothstep(t)` - the Hermite ease, clamped (the package's one copy,
-    DEC-H3's per-package rule).
+  - `smoothstep(t)` - the Hermite ease, clamped (the package's one
+    deliberate copy (shared-helper rule: a one-liner once per package)).
   - `clipPlanes(ellipsoid, position, { clearanceM?, peakM? })` and `GLOBE_CLIP` (round-2 plan
     2026-09-26-2055 M3b) - the near and far planes while the intro drives
     the camera, for a position in the ellipsoid's frame, whatever the

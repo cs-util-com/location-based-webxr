@@ -32,7 +32,7 @@
   charging for dropped votes both wastes the budget and over-reports what
   landed. The acceptance test itself stays app-side — it is app state — but
   the ORDER is part of this contract.
-- **Shared rather than copied** (DEC-H3). The TourViewer grew this in its M4
+- **Shared rather than copied**. The TourViewer grew this in its M4
   review; the RecorderApp wired the same controller with the same vote count
   and no budget at all until PR #385 caught it. That asymmetry mattered more
   in the recorder, whose alignment is what `qr-anchor-mint` mints every other

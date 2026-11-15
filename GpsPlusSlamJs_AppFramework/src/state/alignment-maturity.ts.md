@@ -7,7 +7,7 @@ session GPS extent) and the pure pick behind "the FIRST MATURE alignment at or
 after a moment" - the one rule through which an object seen or placed at that
 moment gets its global position.
 
-Three callers fold the same pick (DEC-H3, one implementation):
+Three callers fold the same pick (one implementation):
 
 - the Recorder's QR mint (`../ar/qr/qr-mint-alignment-tracker.ts`, owner
   decision D28 revised): a code through the first mature alignment at or

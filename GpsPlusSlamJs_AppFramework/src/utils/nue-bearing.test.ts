@@ -1,6 +1,6 @@
 /**
  * The geographic bearing of an NUE direction (lifted from OsmDemo's
- * `ar-origin.ts` with its tests, 2026-09-24, DEC-H3: the AR sun check needs
+ * `ar-origin.ts` with its tests, 2026-09-24: the AR sun check needs
  * the same conversion, and a second copy is how conventions drift).
  *
  * WHY THESE TESTS MATTER: the NUE axis order (x north, z east) is easy to

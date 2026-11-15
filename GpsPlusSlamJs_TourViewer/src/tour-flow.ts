@@ -127,7 +127,7 @@ export function contentSegment(content: ArStatusInput["content"]): string {
 
 /** The placement trigger (DEC-F3): the tracking-quality `ok` state, read
  *  through the framework's onboarding mapping so the threshold and the
- *  coaching copy stay one contract (DEC-H3). At the first GPS fix the
+ *  coaching copy stay one contract. At the first GPS fix the
  *  alignment is the identity - no heading - so an earlier trigger would
  *  start the scene up to 180° wrong. One exemption (QR-first M1): a code
  *  that placed the tour (`codePlacedTour` below) places
@@ -218,7 +218,7 @@ export function placementSegment(
     case "idle":
       return "";
     case "waiting-ready":
-      // The framework's coaching line for the phase (DEC-H3: shared copy),
+      // The framework's coaching line for the phase (shared copy),
       // or a generic wait before the slice has reported at all.
       return readiness === null
         ? "Waiting for tracking to warm up…"

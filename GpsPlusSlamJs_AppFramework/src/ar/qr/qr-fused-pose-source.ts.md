@@ -6,7 +6,7 @@ The fused QR pose per code, for apps (QR near-frontal pose plan
 2026-09-23-2314, §60-§61, b4b-3): one `createFusedQrPoseTracker` per decoded
 payload, fed by the entries the app reads for it. Moved here from the QR
 demo so the demo, the TourViewer and (b6) the recorder share ONE
-implementation (DEC-H3).
+implementation.
 
 ## Public API
 

@@ -29,10 +29,15 @@ drawing surface, was the pointer still, and was it the primary button
   walk then kept the scene repainting under the dialog's own measurements (the
   light dialog e2e failed intermittently on exactly that). A press elsewhere
   records no origin (`pickOrigin`), and a release elsewhere is refused, so a
-  gesture that starts or ends on a control never picks. The same holds for
-  every other DOM child of the container that takes pointer events: the
-  loading overlay's box no longer picks the scene behind it (the perf readouts
-  set `pointer-events: none`, so a click there still reaches the canvas).
+  gesture that starts or ends on a control never picks. The light dialog is
+  the only DOM child of the container that takes pointer events. Every other
+  one sets `pointer-events: none` on purpose and so is never the event
+  target: a click on it reaches the canvas and still picks. These are the
+  loading overlay (`loading-overlay.ts`: clicking the view under it is how a
+  user retries a slow load), the `?perf=1` frame readout
+  (`building-view.ts`) and the perf stats panels (the framework's
+  `perf-stats-overlay.ts`). A new child that takes pointer events falls
+  under this guard: a press or release on it never picks.
 - **The secondary button never picks** (R13-7, DEC-R13-8). Before this module,
   `building-view.ts` picked on `pointerup` without reading `event.button`, so a
   right-click ordered the NPC _and_ opened the browser's context menu. The

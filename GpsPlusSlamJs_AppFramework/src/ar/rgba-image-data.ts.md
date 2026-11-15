@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The single implementation (DEC-H3) of "wrap an RGBA frame in `ImageData`, adopting the array when possible and copying only when necessary". Used by the JPEG encoder (`camera-blit-capture.ts` `rgbaImageToJpegBlob`) and the QR front end's default conversion (`qr/qr-frontend.ts`).
+The single implementation of "wrap an RGBA frame in `ImageData`, adopting the array when possible and copying only when necessary". Used by the JPEG encoder (`camera-blit-capture.ts` `rgbaImageToJpegBlob`) and the QR front end's default conversion (`qr/qr-frontend.ts`).
 
 ## Public API
 

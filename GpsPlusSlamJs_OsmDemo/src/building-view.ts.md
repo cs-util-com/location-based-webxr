@@ -49,8 +49,10 @@ map scored.
   `gl.readPixels` straight after each render, so each read is the frame just
   drawn with the grid as set: the lit-surface brightness with the heat grid's
   mesh and outlines hidden, and the chroma they add (`null` when no grid is
-  drawn or `withMargin` is false, which skips the second render). The grid
-  is restored as found, also when a render throws.
+  drawn or `withMargin` is false, which skips the second render). The order
+  of that work, the AO reused across the grid toggle and the redraw it
+  saves live in `light-measure.ts` (its sidecar carries the measured cost).
+  The grid is restored as found, also when a render throws.
 - **The sun:** `initialSun` (constructor option, the angles the sky is built
   for) and `setSunAngles(angles)`. The view only draws
   the angles it is given; WHERE the sun is (the real sun for a place and a

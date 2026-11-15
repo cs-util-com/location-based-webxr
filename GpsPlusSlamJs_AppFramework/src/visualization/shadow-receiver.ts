@@ -1,6 +1,6 @@
 /**
  * The shadow-receiver recipe (W4 AR shadows plan 2026-09-26-0549, §6:
- * OsmDemo's `createShadowPlane` promoted to the framework per DEC-H3): a
+ * OsmDemo's `createShadowPlane` promoted to the framework per the shared-helper rule): a
  * `ShadowMaterial` that draws ONLY the shadow, as darkening over the camera
  * image, and never casts. One recipe for the flat fallback plane and for the
  * occlusion mesh's receiver skin.

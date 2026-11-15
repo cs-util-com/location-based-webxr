@@ -39,7 +39,9 @@ was none, and a leave guard asking about a tour with nothing to save.
 - `tour-document-draft.ts`: a stored station pose against the opened
   tour's (`changedStations`, what the draft offers as moved).
 
-One implementation per package (DEC-H3); no equivalent existed in either
+One implementation per package (deliberate copy (shared-helper rule): shared
+behaviour has one implementation, a dependency-free one-liner may exist once
+per package); no equivalent existed in either
 workspace root (`summary-model.ts`'s `samePose` compares within a
 tolerance, a different contract).
 

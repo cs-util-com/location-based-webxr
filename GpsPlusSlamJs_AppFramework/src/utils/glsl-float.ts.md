@@ -17,7 +17,7 @@ atmosphere).
   expression is a compile error, which three.js only logs while the material
   silently stops drawing.
 - Nine significant digits keep small coefficients (5.8e-3/km, 1e-9).
-- Unified 2026-09-23 (DEC-H3): `occlusion-mesh.ts` had a private
+- Unified 2026-09-23: `occlusion-mesh.ts` had a private
   `toFixed(4)` copy that rounded anything below 5e-5 to zero and passed NaN
   through. Its constants are all ≥ 1e-2, so its output only changed in
   digits, not value.

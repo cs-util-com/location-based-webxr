@@ -1,6 +1,6 @@
 /**
  * The one "copy to the clipboard, and say how it went" sequence (Tour
- * Viewer follow-up F7, root CLAUDE.md DEC-H3 and its async-UI rule).
+ * Viewer follow-up F7, the shared-helper rule and the async-UI rule).
  *
  * Why these tests matter: the Tour Viewer alone ran this sequence twice,
  * and five more copies live in other apps. One of them stuck at "Copying…"

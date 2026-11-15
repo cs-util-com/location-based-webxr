@@ -130,7 +130,7 @@ export const VIEWER_KEEP_ALIVE_FADE_MS = 120_000;
  *
  * Re-exported from the framework rather than declared here since PR #385:
  * the RecorderApp wired the same controller with the same vote count and NO
- * budget, so this was shared behaviour living in one app (DEC-H3). The name
+ * budget, so this was shared behaviour living in one app. The name
  * stays because the status line and this module's tests read it.
  */
 export { MAX_VOTED_LOCKS_PER_CODE };

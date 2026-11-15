@@ -6,7 +6,7 @@ names, and one request for a position that never leaves a button stuck.
 
 Moved here from the OSM demo (`GpsPlusSlamJs_OsmDemo/src/locate-state.ts`)
 when the globe lab's pin needed the same contract (round-2 plan
-2026-09-26-2055 M3g; DEC-H3: shared behaviour has one home). The OSM demo's
+2026-09-26-2055 M3g: shared behaviour has one home). The OSM demo's
 Leaflet control imports the labels and the mapping; the globe lab (served
 through the design system's `/fw/` route) uses all of it.
 

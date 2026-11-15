@@ -27,8 +27,8 @@ credit, sourceCredits, ancestorFallback }` and `ReliefSourceConstants`
     All rights reserved.", linked to the COP-DEM collection page.
   - `awsTerrariumRelief(constants)`, `mapterhornRelief(constants)`:
     frozen descriptions. The URL and the attribution text are the caller's
-    (the Osm library's `TERRARIUM_*` / `MAPTERHORN_*` constants; one home,
-    DEC-H3); this module imports neither the Osm library nor the
+    (the Osm library's `TERRARIUM_*` / `MAPTERHORN_*` constants; one
+    home); this module imports neither the Osm library nor the
     framework. RangeError for a template without `{z}`/`{x}`/`{y}` or an
     empty attribution. AWS has no source credits and no ancestor
     fallback (it has every tile to z12); Mapterhorn has the Copernicus

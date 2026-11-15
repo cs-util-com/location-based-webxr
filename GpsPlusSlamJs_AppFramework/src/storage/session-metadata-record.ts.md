@@ -11,7 +11,7 @@ this?" question is answered from.
 Two apps write it: the Recorder (at Stop) and the Tour Viewer's
 troubleshooting recording (at "Save the recording"). It moved here from
 `GpsPlusSlamJs_RecorderApp/src/recording/` on 2026-09-28 for that reason
-(DEC-H3: shared behaviour has one implementation), with the build info
+(shared behaviour has one implementation), with the build info
 injected instead of read from the Recorder's `utils/build-info`. Plan:
 [2026-09-28-0953 authoring recording plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-09-28-0953-tour-viewer-authoring-recording-anchoring-and-editing-plan.md)
 §3.1, decision 2 of M1a.
