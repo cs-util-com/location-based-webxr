@@ -89,16 +89,23 @@ export function mountPerfLogPanel(
     fallback = undefined;
   };
 
-  const showFallback = (text: string, cause: unknown): void => {
-    log.warn("Could not copy the perf log:", cause);
+  /** Replaces any earlier fallback with one alert line saying `message`. */
+  const showError = (message: string): void => {
     clearFallback();
     error = document.createElement("div");
     error.dataset["testid"] = "perf-log-error";
     error.setAttribute("role", "alert");
     error.style.cssText =
       "background:rgba(120,0,0,0.8);padding:2px 6px;border-radius:4px;";
-    error.textContent =
-      "The clipboard refused the copy: select the text below and copy it.";
+    error.textContent = message;
+    panel.append(error);
+  };
+
+  const showFallback = (text: string, cause: unknown): void => {
+    log.warn("Could not copy the perf log:", cause);
+    showError(
+      "The clipboard refused the copy: select the text below and copy it.",
+    );
     fallback = document.createElement("textarea");
     fallback.dataset["testid"] = "perf-log-fallback";
     fallback.readOnly = true;
@@ -107,7 +114,7 @@ export function mountPerfLogPanel(
     fallback.style.cssText =
       "width:min(90vw, 480px);font:inherit;color:#fff;" +
       "background:rgba(0,0,0,0.8);border:1px solid rgba(255,255,255,0.4);";
-    panel.append(error, fallback);
+    panel.append(fallback);
     fallback.focus();
     fallback.select();
   };
@@ -119,8 +126,13 @@ export function mountPerfLogPanel(
     try {
       text = report();
     } catch (cause) {
+      // An older fallback holds an older log: it goes, so nothing on screen
+      // reads as the current one.
       log.warn("Could not build the perf log:", cause);
       button.textContent = "Perf log failed";
+      showError(
+        `Could not build the perf log: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
       return;
     }
     void copyWithFeedback(button, text, write, {

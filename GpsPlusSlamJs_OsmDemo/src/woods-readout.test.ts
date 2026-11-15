@@ -146,12 +146,43 @@ describe("createWoodsMeter", () => {
       meter.frame(t, t > 0);
     }
     const timeline = recorder.snapshot();
-    expect(timeline.bursts).toEqual([0]);
+    expect(timeline.bursts.map((burst) => burst.atMs)).toEqual([0]);
     expect(timeline.intervalCount).toBeGreaterThan(100);
     expect(timeline.shareChanges).toHaveLength(1);
     const change = timeline.shareChanges[0];
     expect(change).toMatchObject({ from: 1, to: 0.5, mode: "thinned" });
     expect(change?.averageMs).toBeGreaterThan(50);
     expect(meter.state()).toMatchObject({ share: 0.5, mode: "thinned" });
+  });
+
+  // A meter that recorded only step-downs would leave a log in which the
+  // woods never come back: the step up must reach the recorder too.
+  it("records a step down and the step back up", () => {
+    const recorder = createPerfRecorder();
+    const meter = createWoodsMeter(true, recorder);
+    let t = 0;
+    meter.frame(t, false);
+    while (meter.share() === 1 && t < 10_000) {
+      t += 100;
+      meter.frame(t, true);
+    }
+    // An idle pause longer than the rest, then fast frames for 13 s.
+    t += 400_000;
+    meter.frame(t, false);
+    for (let i = 0; i < 13_000 / 16; i++) {
+      t += 16;
+      meter.frame(t, true);
+    }
+    expect(
+      recorder.snapshot().shareChanges.map(({ from, to, mode }) => ({
+        from,
+        to,
+        mode,
+      })),
+    ).toEqual([
+      { from: 1, to: 0.5, mode: "thinned" },
+      { from: 0.5, to: 1, mode: "full" },
+    ]);
+    expect(meter.share()).toBe(1);
   });
 });

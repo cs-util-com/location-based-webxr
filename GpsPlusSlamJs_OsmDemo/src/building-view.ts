@@ -649,6 +649,10 @@ export class BuildingView {
    * recorded then.
    */
   private readonly perfLog: PerfLogPanel | undefined;
+  /** The perf log's recorder, fed each frame's draw cost after its render. */
+  private readonly perfRecorder: PerfRecorder | undefined;
+  /** Whether the woods governor may thin (`options.woodsAuto`), for the log. */
+  private readonly woodsAuto: boolean;
   /** True while the frame callback runs, so `requestFrame` can tell chained. */
   private inFrame = false;
   /** Whether the frame now queued was requested from within a frame. */
@@ -659,7 +663,9 @@ export class BuildingView {
     this.sunAngles = options.initialSun;
     const recorder =
       options.perfReadout === true ? createPerfRecorder() : undefined;
-    this.woods = createWoodsMeter(options.woodsAuto ?? false, recorder);
+    this.perfRecorder = recorder;
+    this.woodsAuto = options.woodsAuto ?? false;
+    this.woods = createWoodsMeter(this.woodsAuto, recorder);
     this.perfLog =
       recorder === undefined
         ? undefined
@@ -1975,6 +1981,7 @@ export class BuildingView {
       calls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
     };
+    this.perfRecorder?.drawn(this.lastDrawCost);
     // AFTER the cost capture: the AO's own renders reset those counters, and
     // the cost reported is the scene's.
     this.ao.render();
@@ -2026,7 +2033,7 @@ export class BuildingView {
       ),
       settings: {
         query: pickQueryKnobs(window.location.search),
-        governorOn: state.mode !== "off",
+        governorOn: this.woodsAuto,
         governor: WOODS_GOVERNOR,
       },
       timeline: recorder.snapshot(),
