@@ -58,8 +58,9 @@ import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
  *   CLAUDE.md "Throwaway UX prototypes": kept, linked from nothing) are
  *   standalone drafts wired to nothing: their sliders (a landing draft's
  *   size, the 3D editor drafts' station radius, the editor panel drafts'
- *   radius and size) change only the draft's own labels and stations,
- *   and nothing outside the draft is touched.
+ *   radius and size, the one-slot HUD draft's then-and-now divider, the
+ *   creator-decides quiz draft's six thresholds) change only the draft's
+ *   own labels and stations, and nothing outside the draft is touched.
  * - The OSM demo's HUD prototypes ARE opened on a phone: their gallery asks
  *   for each to be judged there. So the swipe this guard exists for can
  *   happen in them, and the exemption rests on what it costs instead: their
