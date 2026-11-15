@@ -45,7 +45,9 @@ async function opened(browser, query) {
   return page;
 }
 
-test("the near clouds draw only with clouds=new", async ({ browser }) => {
+test("the near clouds' driver is there only with clouds=new", async ({
+  browser,
+}) => {
   test.setTimeout(600_000);
   const plain = await opened(browser, "");
   try {
