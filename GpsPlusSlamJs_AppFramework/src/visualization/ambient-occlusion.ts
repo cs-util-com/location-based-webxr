@@ -275,6 +275,17 @@ export interface AmbientOcclusion {
    * whether it drew; nothing at all happens while off or after dispose.
    */
   render(): boolean;
+  /**
+   * Multiply the AO the last `render` computed onto the frame just drawn,
+   * without recomputing it: the blend alone. Right only when nothing the
+   * normal/depth pass sees has changed since (the camera, the drawing
+   * buffer, every object it does not leave out), for instance a redraw that
+   * toggles only left-out objects. Returns false and draws nothing while
+   * off, after dispose, before any AO was computed, or once the drawing
+   * buffer no longer has the size it was computed at; the caller then
+   * renders.
+   */
+  reapply(): boolean;
   dispose(): void;
 }
 
@@ -331,6 +342,8 @@ export function createAmbientOcclusion(
   let pass: GTAOPass | null = null;
   let blend: THREE.ShaderMaterial | null = null;
   let quad: FullScreenQuad | null = null;
+  /** Whether the pass holds a finished AO at its current size. */
+  let computed = false;
   const bufferSize = new THREE.Vector2();
   const hidden: Array<[THREE.Object3D, boolean]> = [];
 
@@ -356,19 +369,67 @@ export function createAmbientOcclusion(
     return built;
   };
 
+  const targetSize = (): [number, number] => {
+    renderer.getDrawingBufferSize(bufferSize);
+    return [
+      Math.max(1, Math.round(bufferSize.x * scale)),
+      Math.max(1, Math.round(bufferSize.y * scale)),
+    ];
+  };
+
+  /**
+   * Runs `draw` with the shadow maps held (the AO's own draws must neither
+   * re-render nor consume them) and restores the shadow flags, `autoClear`
+   * and the target that was current, also when a draw throws.
+   */
+  const holdingState = (
+    target: THREE.WebGLRenderTarget | null,
+    draw: () => void
+  ): void => {
+    const shadows = renderer.shadowMap;
+    const autoUpdate = shadows.autoUpdate;
+    const needsUpdate = shadows.needsUpdate;
+    const autoClear = renderer.autoClear;
+    try {
+      shadows.autoUpdate = false;
+      shadows.needsUpdate = false;
+      draw();
+    } finally {
+      shadows.autoUpdate = autoUpdate;
+      shadows.needsUpdate = needsUpdate;
+      renderer.autoClear = autoClear;
+      renderer.setRenderTarget(target);
+    }
+  };
+
+  /** Multiplies the pass's AO onto `target`, without a clear. */
+  const blendOnto = (
+    built: GTAOPass,
+    target: THREE.WebGLRenderTarget | null
+  ): void => {
+    const u = blend!.uniforms;
+    u['tAo']!.value = built.pdRenderTarget.texture;
+    u['tDepth']!.value = built.depthTexture;
+    u['cameraNear']!.value = camera.near;
+    u['cameraFar']!.value = camera.far;
+    u['intensity']!.value = params.intensity;
+    u['fadeStart']!.value = params.fadeStartM;
+    u['fadeEnd']!.value = params.fadeEndM;
+    renderer.setRenderTarget(target);
+    renderer.autoClear = false;
+    quad!.render(renderer);
+  };
+
   const render = (): boolean => {
     if (!enabled || disposed) return false;
-    renderer.getDrawingBufferSize(bufferSize);
-    const width = Math.max(1, Math.round(bufferSize.x * scale));
-    const height = Math.max(1, Math.round(bufferSize.y * scale));
+    const [width, height] = targetSize();
+    computed = false;
     if (pass === null) pass = build(width, height);
     else if (pass.width !== width || pass.height !== height) {
       pass.setSize(width, height);
     }
+    const built = pass;
     const target = renderer.getRenderTarget();
-    const shadows = renderer.shadowMap;
-    const autoUpdate = shadows.autoUpdate;
-    const needsUpdate = shadows.needsUpdate;
     hidden.length = 0;
     scene.traverse((object) => {
       if (object.visible && hiddenFromAoNormals(object)) {
@@ -376,46 +437,43 @@ export function createAmbientOcclusion(
         object.visible = false;
       }
     });
-    const autoClear = renderer.autoClear;
-    try {
-      shadows.autoUpdate = false;
-      shadows.needsUpdate = false;
-      // NULL BUFFERS, AN ASSUMPTION ABOUT three.js: with `output` at
-      // `OUTPUT.Off` the pass draws only into its own normal, AO and denoise
-      // targets and never reads the write or read buffer it is handed. A
-      // three.js update that starts reading them there throws on the first AO
-      // frame, an uncaught page error the browser e2e fails on loudly.
-      pass.render(
-        renderer,
-        null as unknown as THREE.WebGLRenderTarget,
-        null as unknown as THREE.WebGLRenderTarget,
-        0,
-        false
-      );
-      const u = blend!.uniforms;
-      u['tAo']!.value = pass.pdRenderTarget.texture;
-      u['tDepth']!.value = pass.depthTexture;
-      u['cameraNear']!.value = camera.near;
-      u['cameraFar']!.value = camera.far;
-      u['intensity']!.value = params.intensity;
-      u['fadeStart']!.value = params.fadeStartM;
-      u['fadeEnd']!.value = params.fadeEndM;
-      renderer.setRenderTarget(target);
-      renderer.autoClear = false;
-      quad!.render(renderer);
-    } finally {
-      for (const [object, visible] of hidden) object.visible = visible;
-      hidden.length = 0;
-      shadows.autoUpdate = autoUpdate;
-      shadows.needsUpdate = needsUpdate;
-      renderer.autoClear = autoClear;
-      renderer.setRenderTarget(target);
-    }
+    holdingState(target, () => {
+      try {
+        // NULL BUFFERS, AN ASSUMPTION ABOUT three.js: with `output` at
+        // `OUTPUT.Off` the pass draws only into its own normal, AO and denoise
+        // targets and never reads the write or read buffer it is handed. A
+        // three.js update that starts reading them there throws on the first AO
+        // frame, an uncaught page error the browser e2e fails on loudly.
+        built.render(
+          renderer,
+          null as unknown as THREE.WebGLRenderTarget,
+          null as unknown as THREE.WebGLRenderTarget,
+          0,
+          false
+        );
+        computed = true;
+      } finally {
+        for (const [object, visible] of hidden) object.visible = visible;
+        hidden.length = 0;
+      }
+      blendOnto(built, target);
+    });
+    return true;
+  };
+
+  const reapply = (): boolean => {
+    if (!enabled || disposed || pass === null || !computed) return false;
+    const [width, height] = targetSize();
+    if (pass.width !== width || pass.height !== height) return false;
+    const built = pass;
+    const target = renderer.getRenderTarget();
+    holdingState(target, () => blendOnto(built, target));
     return true;
   };
 
   const dispose = (): void => {
     disposed = true;
+    computed = false;
     if (pass !== null) {
       // three's own dispose leaves the GTAO and blend materials behind.
       pass.gtaoMaterial.dispose();
@@ -444,6 +502,7 @@ export function createAmbientOcclusion(
     },
     params,
     render,
+    reapply,
     dispose,
   };
 }

@@ -521,6 +521,68 @@ describe('createAmbientOcclusion', () => {
     expect(fake.draws).toEqual([]);
   });
 
+  // Why this test matters: a caller that draws the same view twice with only
+  // objects the normal pass leaves out toggled (the light dialog's heat grid
+  // margin) gets the identical AO for free. Recomputing it cost about a third
+  // of the dialog's measurement on a software rasteriser, so reapply must
+  // draw the blend alone, with the AO it last computed, and nothing else.
+  it('reapplies the AO it last computed with the blend alone', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    expect(ao.render()).toBe(true);
+    const blendDraw = fake.draws.at(-1)!;
+    const passRender = vi.spyOn(ao.pass!, 'render');
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(true);
+    expect(passRender).not.toHaveBeenCalled();
+    expect(fake.draws).toHaveLength(1);
+    expect(fake.draws[0]!.target).toBeNull();
+    expect(fake.draws[0]!.material).toBe(blendDraw.material);
+    const u = (fake.draws[0]!.material as THREE.ShaderMaterial).uniforms;
+    expect(u['tAo']!.value).toBe(ao.pass!.pdRenderTarget.texture);
+    expect(u['tDepth']!.value).toBe(ao.pass!.depthTexture);
+    // The shadow maps stay out of the blend here too, and come back as found.
+    expect(fake.draws[0]!.shadowAutoUpdate).toBe(false);
+    expect(fake.draws[0]!.shadowNeedsUpdate).toBe(false);
+    expect(fake.shadowMap).toEqual({ autoUpdate: true, needsUpdate: true });
+    expect(fake.autoClear).toBe(true);
+    expect(fake.getRenderTarget()).toBeNull();
+  });
+
+  // Why this test matters: reapplying is only right while the AO it holds
+  // describes this frame. Before any AO, while off, after dispose or once the
+  // drawing buffer changed size it must draw nothing and say so, so the
+  // caller falls back to render.
+  it('refuses to reapply without a computed AO of this size', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+    ao.render();
+    fake.draws.length = 0;
+    ao.enabled = false;
+    expect(ao.reapply()).toBe(false);
+    ao.enabled = true;
+    fake.size = { x: 401, y: 300 };
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+    ao.render();
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(true);
+    ao.dispose();
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+  });
+
   it('rejects options outside their range', () => {
     const base = {
       renderer: asRenderer(recordingRenderer()),
