@@ -12,7 +12,12 @@ import fc from "fast-check";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
-import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
+import {
+  choiceFallback,
+  KIND_EDIT,
+  type FieldSpec,
+} from "../kinds/edit-kinds.js";
+import { PIN_DEFAULT_ORIENTATION } from "../kinds/short-text/pin.js";
 import { textCounterLine, wireTextCounter } from "../pin-text.js";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
@@ -102,6 +107,7 @@ describe("blockFields", () => {
       blockFields(PIN).map((f) => [f.name, f.label, f.max, f.prose, f.value]),
     ).toEqual([
       ["description", "Description", 160, true, ""],
+      ["readAtM", "Reads at", undefined, false, ""],
       ["lang", "Language", undefined, false, ""],
     ]);
     expect(
@@ -159,6 +165,7 @@ describe("storyBlockFields", () => {
     expect(rows(PIN)).toEqual([
       ["caption", 40, true],
       ["description", 160, false],
+      ["readAtM", undefined, false],
       ["lang", undefined, false],
     ]);
     expect(rows(CHARACTER).map((r) => r[0])).toEqual(["name", "caption"]);
@@ -548,8 +555,37 @@ describe("choice fields", () => {
       kind: "refused",
     });
     expect(blockFieldEdit(chose.after, "role", "").kind).toBe("refused");
-    // A pin does not turn: its turn is no field of its view.
-    expect(blockFieldEdit(PIN, "orientation", "face")).toEqual({
+    // A pin turns as a sign does; an edge hint does not: its turn is
+    // no field of its view.
+    expect(blockFieldEdit(PIN, "orientation", "face")).toMatchObject({
+      kind: "edited",
+      after: { orientation: "face" },
+    });
+    const hint = { ...PIN, view: "edgeHint" } as unknown as TourObject;
+    expect(blockFieldEdit(hint, "orientation", "face")).toEqual({
+      kind: "unchanged",
+    });
+  });
+
+  // Why: a pin without a turn stands upright toward the visitor (a flat
+  // head kept still would be seen edge-on from the side); a sign without
+  // one keeps its pose. The chip pressed must say what the reader does,
+  // and pressing it must write nothing.
+  it("read a missing turn by the view: upright for a pin, fixed for a sign", () => {
+    const turnOf = (block: TourObject) =>
+      blockChoices(block).find((c) => c.name === "orientation")?.value;
+    const sign = { ...PIN, view: "sign" } as unknown as TourObject;
+    expect(turnOf(PIN)).toBe("upright");
+    expect(turnOf(sign)).toBe("world");
+    expect(turnOf(PIN)).toBe(PIN_DEFAULT_ORIENTATION);
+    expect(blockFieldEdit(PIN, "orientation", "upright")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(PIN, "orientation", "world")).toMatchObject({
+      kind: "edited",
+      after: { orientation: "world" },
+    });
+    expect(blockFieldEdit(sign, "orientation", "world")).toEqual({
       kind: "unchanged",
     });
   });
@@ -879,14 +915,12 @@ describe("every kind's chip choices", () => {
           const shown = blockChoices(block as unknown as TourObject).find(
             (c) => c.name === spec.name,
           );
-          expect(shown?.value).toBe(choice.fallback);
+          // The view's own fallback where it has one (a pin's turn).
+          const fallback = choiceFallback(choice, view);
+          expect(shown?.value).toBe(fallback);
           const before = JSON.stringify(block);
           expect(
-            blockFieldEdit(
-              block as unknown as TourObject,
-              spec.name,
-              choice.fallback,
-            ),
+            blockFieldEdit(block as unknown as TourObject, spec.name, fallback),
           ).toEqual({ kind: "unchanged" });
           expect(JSON.stringify(block)).toBe(before);
         });

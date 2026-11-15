@@ -40,14 +40,12 @@ import {
   glyphCanvas,
   PLATE_PX_PER_EM,
   SHORT_TEXT_ACCENT,
+  SHORT_TEXT_DEFAULT_READ_AT_M,
   SHORT_TEXT_DEFAULT_ROLE,
   signPlate,
 } from "./plate.js";
 
 type TourShortTextBlock = TourBlockOfKind["shortText"];
-
-/** A short text's reading distance where it names none (m). */
-const SHORT_TEXT_DEFAULT_READ_AT_M = 4;
 
 /** The sign's build, in metres. */
 const SIGN = {

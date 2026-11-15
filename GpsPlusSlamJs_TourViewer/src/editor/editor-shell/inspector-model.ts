@@ -61,7 +61,11 @@ import {
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import { facingDegOf } from "../../character-views.js";
 
-import { blockLabel, KIND_EDIT } from "../../kinds/edit-kinds.js";
+import {
+  blockLabel,
+  KIND_EDIT,
+  shortTextPoints,
+} from "../../kinds/edit-kinds.js";
 import { objectTitle } from "../../object-describe.js";
 import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
@@ -1348,7 +1352,7 @@ export function buildInspector(input: {
                     },
                   }
                 : {}),
-              ...(item.view === "sign" || item.view === "ground"
+              ...(shortTextPoints(item.view)
                 ? {
                     point: {
                       id: item.id,

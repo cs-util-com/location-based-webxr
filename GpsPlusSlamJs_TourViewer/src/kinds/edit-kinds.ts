@@ -135,6 +135,13 @@ export interface ChoiceSpec {
   readonly values: readonly FieldChoice[];
   /** The value a block without the field has. */
   readonly fallback: string;
+  /** A view whose reader falls back to another value, by view. */
+  readonly fallbackByView?: Readonly<Record<string, string>>;
+}
+
+/** The value a block in `view` without the field has. */
+export function choiceFallback(choice: ChoiceSpec, view: string): string {
+  return choice.fallbackByView?.[view] ?? choice.fallback;
 }
 
 /** How a kind is added from nothing: its line in the tree's type menu (and,
@@ -371,7 +378,7 @@ export const KIND_EDIT = {
           unit: "m",
           required: false,
         },
-        views: ["sign", "ground"],
+        views: ["pin", "sign", "ground"],
       },
       {
         name: "role",
@@ -383,15 +390,22 @@ export const KIND_EDIT = {
         name: "orientation",
         label: "Turns",
         prose: false,
-        choice: { values: SHORT_TEXT_TURNS, fallback: "world" },
-        views: ["sign", "ground"],
+        // A pin's head stands upright toward the visitor without one
+        // (`PIN_DEFAULT_ORIENTATION`); a sign and a ground arrow keep
+        // their pose.
+        choice: {
+          values: SHORT_TEXT_TURNS,
+          fallback: "world",
+          fallbackByView: { pin: "upright" },
+        },
+        views: ["pin", "sign", "ground"],
       },
       {
         name: "pointsTo",
         label: "Points to",
         prose: false,
         typed: "point",
-        views: ["sign", "ground"],
+        views: ["pin", "sign", "ground"],
       },
       { name: "lang", label: "Language", prose: false, typed: "tag" },
       {
@@ -580,6 +594,15 @@ export type TextAddKind = Exclude<AddKind, FileAddKind>;
 export function isFileAddKind(kind: AddKind): kind is FileAddKind {
   const add: KindAdd = KIND_EDIT[kind].add;
   return add.file !== undefined;
+}
+
+/** Whether a short text in `view` points somewhere: the views its
+ *  `pointsTo` field lists (a pin's and a sign's arrow turn toward the
+ *  point, a ground arrow runs to it). */
+export function shortTextPoints(view: string): boolean {
+  const fields: readonly FieldSpec[] = KIND_EDIT.shortText.fields;
+  const views = fields.find((f) => f.name === "pointsTo")?.views;
+  return views?.includes(view) === true;
 }
 
 /** A kind's word inside a sentence ("the delete of the long text"): its

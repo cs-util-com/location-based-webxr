@@ -379,6 +379,7 @@ export async function renderStationBlocks(
           ? block
           : ({ ...block, view: deps.viewOf(block) } as TourBlock),
         paths,
+        deps.worldPart !== undefined,
       ),
       pose: {
         positionNue: block.pose.position,
@@ -525,11 +526,17 @@ function drawnObject(object: TourObject): Drawn {
 
 /** A station's free block as drawn: a picture's file is the tour's asset
  *  of its `image`. A block in a view no drawing here has goes to the
- *  world door (`worldPart`). */
+ *  world door (`worldPart`), and so does a pin where the page has a door
+ *  (its head on a stem, `kinds/short-text/pin.ts`); without one a pin is
+ *  the plain label, so it never vanishes. */
 function drawnBlock(
   block: TourBlock,
   paths: ReadonlyMap<string, string>,
+  door: boolean,
 ): Drawn {
+  if (door && block.kind === "shortText" && block.view === "pin") {
+    return { id: block.id, as: "world", block };
+  }
   const drawn = drawnByView(block, (image) => paths.get(image) ?? null);
   return drawn.as === "door" ? { id: block.id, as: "world", block } : drawn;
 }

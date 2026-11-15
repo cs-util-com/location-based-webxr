@@ -1181,15 +1181,17 @@ export function createViewerPlacement(deps: {
     // What a kind's world part reads its files through: the visitor's,
     // with its sounds and screen, a placed model read through the same
     // cache as the station's story, a cutaway clipping by a plane.
+    const reducedMotion = globalThis.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    );
     const env = worldEnv("play", manifest.assets, loadContent, {
       ...(deps.worldSound === undefined ? {} : { sound: deps.worldSound }),
       ...(deps.worldScreen === undefined ? {} : { screen: deps.worldScreen }),
       ...(deps.worldSay === undefined ? {} : { say: deps.worldSay }),
       parseModel: (blob) => seams.loadGlbModel(blob),
       enableClipping: () => seams.enableClipping(),
-      reduceMotion: () =>
-        globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ===
-        true,
+      // One query, read each frame by the parts that move.
+      reduceMotion: () => reducedMotion?.matches === true,
     });
     const rendererDeps = (parent: Object3D, alive: () => boolean) => ({
       assets: manifest.assets,

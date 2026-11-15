@@ -97,7 +97,7 @@ export interface ViewPlacement {
    *  nothing shows it (a `card`), so it gets no handles. */
   readonly posed: boolean;
   /** Turning it shows; false for what always faces the camera or the
-   *  viewer (a pin's label, a sound's icon and circle, a reading sign's
+   *  viewer (a sound's icon and circle, a reading sign's
    *  plate): no turn knob, and turning keys do nothing. */
   readonly turns: boolean;
   /** Its height is its own; false for a station, whose height is the
@@ -166,10 +166,10 @@ type ViewsOf<K extends TourBlockKind> = (typeof TOUR_KINDS)[K]["views"][number];
 
 /** THE block table: one row per kind and view of the format. */
 export const BLOCK_PLACEMENT = {
-  // A sign keeps its pose's turn unless it is told to turn to the
+  // A sign and a pin keep their pose's turn unless told to turn to the
   // visitor; a hint at the edge is a ring and a tag on the screen.
   shortText: {
-    pin: FACING,
+    pin: TURNING,
     sign: TURNING,
     edgeHint: FACING,
     ground: {

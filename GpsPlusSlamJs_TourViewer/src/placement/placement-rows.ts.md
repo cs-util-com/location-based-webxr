@@ -9,7 +9,7 @@ folder and a station), what the 3D editor's handles do with it:
   the pose, but nothing in the world shows it, so the block gets no
   handles.
 - `turns` - turning it shows. False for what faces the camera or the
-  viewer (a pin's label, a sound's icon and circle, a reading sign's
+  viewer (a sound's icon and circle, a reading sign's
   plate): no turn knob, and turning keys do nothing.
 - `lifts` - its height is its own. False for a station, whose height is
   the ground's.
@@ -53,7 +53,7 @@ a porthole, a window or a stand-here projection free, a card in a story).
 
 ## The rows
 
-- `shortText`: `pin` posed, facing (the label faces the camera); `card` poseless.
+- `shortText`: `pin` posed and turning (like a sign it keeps its pose's turn unless its `orientation` turns it to the visitor); `card` poseless.
 - `longText`: `lectern` posed, turning (the stand keeps its turn about up);
   `reading` posed, facing (the plate turns to the viewer); `card` poseless.
 - `picture`: `plane`, `framed` and `cutout` posed, turning, `size` on `widthM`
@@ -105,7 +105,7 @@ a porthole, a window or a stand-here projection free, a card in a story).
 
 ## Short text views
 
-`sign` turns (its heading is the creator's, a turning gizmo); `edgeHint` faces the camera like a pin.
+`sign` and `pin` turn (their heading is the creator's, a turning gizmo); `edgeHint` faces the camera.
 `ground` turns, bends, and its dots set `readAtM` as a `scale` (1 to 40,
 the format's bounds) on the ring `GROUND.ringA` + `GROUND.ringB` per unit
 (0.75 m at 6), the drawing's own constants. A ground arrow with no

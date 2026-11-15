@@ -15,7 +15,7 @@
  * (`editor3d-model-parts.ts`), and the click on its surface the
  * inspector waits for is answered here: a note or a section written where
  * the ray meets the model (`SceneEditingDeps.models`). So is "Pick in
- * 3D" of a sign or a ground arrow (`editorView.pointPick`): the next
+ * 3D" of a pin, a sign or a ground arrow (`editorView.pointPick`): the next
  * click sets where it points, on another item's surface or else on the
  * ground; its point is a handle of the gizmo too, dragged on its level.
  * Both write the point in the station's frame (`PlaceEdit` "point").
@@ -44,6 +44,7 @@ import {
 } from "../editor/editor-view.js";
 import type { ModelEdit } from "../editor/model-edits.js";
 import { showSoundIcons } from "../kinds/audio/sound-icon.js";
+import { shortTextPoints } from "../kinds/edit-kinds.js";
 import {
   CHARACTER_CHECK_KEY,
   type CharacterCheck,
@@ -280,14 +281,13 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       : v.applyMatrix4(deps.layerToWorld.clone().invert());
   };
 
-  /** A sign or a ground arrow of the tour by its id (a short text that
-   *  points), or null. */
+  /** A pin, a sign or a ground arrow of the tour by its id (a short text
+   *  that points), or null. */
   const pointerOf = (id: string) => {
     for (const station of deps.tour()?.stations ?? []) {
       const block = posedEntryOf(station, id)?.block;
       if (block === undefined) continue;
-      return block.kind === "shortText" &&
-        (block.view === "sign" || block.view === "ground")
+      return block.kind === "shortText" && shortTextPoints(block.view)
         ? block
         : null;
     }
@@ -314,7 +314,7 @@ export function createSceneEditing(deps: SceneEditingDeps) {
   };
 
   /** The selection as a gesture's target, read as a placeable (its
-   *  handles are its row's, and a sign's or a ground arrow's point);
+   *  handles are its row's, and a pointing short text's point);
    *  null for a code, a card or one the tour lacks. */
   const targetOf = (selection: string): GestureTarget | null => {
     const tour = deps.tour();

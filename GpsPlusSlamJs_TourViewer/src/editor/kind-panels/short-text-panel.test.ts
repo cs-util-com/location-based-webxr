@@ -67,9 +67,13 @@ describe("a short text's panel", () => {
     expect(panel.sync({ ...other, itemKind: "model" })).toBeNull();
   });
 
-  it("offers a turn only on a sign, and presses the reader's defaults", () => {
+  it("offers a turn on a pin and a sign, and presses the reader's defaults", () => {
     const pin = drawn(st("pin"));
-    expect(pin.pressed).toEqual(["short-view:pin", "short-role:label"]);
+    expect(pin.pressed).toEqual([
+      "short-view:pin",
+      "short-role:label",
+      "short-turn:upright",
+    ]);
     const sign = drawn(st("sign", { role: "warning" }));
     expect(sign.pressed).toEqual([
       "short-view:sign",
@@ -139,9 +143,9 @@ describe("a short text's point", () => {
         '[data-act="short-point:clear"]',
       )?.disabled,
     ).toBe(true);
-    // A pin and an edge hint point nowhere: no boxes there.
-    const pin = drawn(st("pin"));
-    expect(pin.box.querySelector(".xyz")).toBeNull();
+    // An edge hint points nowhere: no boxes there.
+    const hint = drawn(st("edgeHint"));
+    expect(hint.box.querySelector(".xyz")).toBeNull();
   });
 
   it("shows the pick armed, with how to cancel it", () => {
@@ -351,7 +355,7 @@ describe("a short text's chip already in use", () => {
   it("does not write a choice its view does not read", () => {
     const block = vi.fn();
     const panel = createShortTextPanel({ view: vi.fn(), block });
-    expect(panel.act("short-turn:face", item(st("pin")), "t")).toBe(false);
+    expect(panel.act("short-turn:face", item(st("edgeHint")), "t")).toBe(false);
     expect(panel.act("short-floor:upright", item(st("ground")), "t")).toBe(
       false,
     );

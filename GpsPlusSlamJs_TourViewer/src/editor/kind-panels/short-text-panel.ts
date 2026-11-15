@@ -1,7 +1,7 @@
 /**
  * A short text's panel in the item inspector: how it stands (a pin, a
  * sign, a hint at the screen's edge, an arrow on the ground), its role,
- * and for a sign or a ground arrow how it turns, each a group of chips;
+ * and for a pin, a sign or a ground arrow how it turns, each a group of chips;
  * for a ground arrow also its style, a floor arrow's placement and
  * caption switch, and its two colours with the sun check. A view chip writes the view
  * (`editBlockView`); every other chip is one of the block's choices
@@ -9,7 +9,7 @@
  * `kinds/edit-kinds.ts`), drawn with the one in use pressed and written
  * through the block's field edit, so the choices, their words and their
  * fallbacks live in one place, and the chip already pressed writes
- * nothing. For a sign or a ground arrow it also holds where the text
+ * nothing. For a pin, a sign or a ground arrow it also holds where the text
  * points: three boxes x, y and z (the station's frame, metres), "Pick in
  * 3D" (the 3D view's next click sets it) and "Clear". The boxes send
  * their text as typed through the same field edit, so the format's
@@ -118,7 +118,7 @@ function pointButton(act: string, label: string): HTMLButtonElement {
   return b;
 }
 
-/** Where a sign or a ground arrow points: its three boxes, "Pick in 3D"
+/** Where a pin, a sign or a ground arrow points: its three boxes, "Pick in 3D"
  *  and "Clear". A box writes on change (and on Enter) once all three
  *  are filled, or all three emptied; the same text is not sent twice
  *  until a box is typed in again, so a refusal is said once. */
