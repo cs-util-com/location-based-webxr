@@ -10,14 +10,19 @@
  * named in `primitive.extras.lod` (no glTF extension: a viewer that does
  * not read it draws the author's level).
  *
+ * A skinned primitive's deviation is measured in its poses
+ * (`skin-pose.ts`): the rest pose and up to three poses of its clips, the
+ * largest deviation in any pose deciding. Without a clip only the rest
+ * pose can be measured, so its default level keeps at least
+ * `SKINNED_REST_SHARE` of its triangles.
+ *
  * Left as they are, so nothing a viewer shows can change unseen:
- * - a skinned or animated model, whole: its deviation would have to be
- *   measured in its poses, not in its rest shape, and this version does
- *   not do that;
- * - a primitive with morph targets, joints or weights, a mode other than
- *   triangles, an accessor another primitive (or anything else) also
- *   reads, an attribute this code cannot read, extras that are no object,
- *   or levels already saved;
+ * - a skinned primitive whose poses do not read (its nodes, clips or skin
+ *   malformed, a joint its skin does not have, no skin binding it);
+ * - a primitive with morph targets, a mode other than triangles, an
+ *   accessor another primitive (or anything else) also reads, an
+ *   attribute this code cannot read, extras that are no object, or levels
+ *   already saved;
  * - a primitive under the triangle floor.
  *
  * Runs in the optimizer's Worker, between the texture pass and
@@ -45,6 +50,12 @@ import {
   stepsFor,
   weldVertices,
 } from "./mesh-simplify.js";
+import {
+  jointMatrices,
+  type Poses,
+  posesOf,
+  skinPositions,
+} from "./skin-pose.js";
 
 export interface LodSettings {
   /** The default level's largest deviation allowed, as a share of the
@@ -67,7 +78,8 @@ export interface LodChoice {
 }
 
 export interface LodReport {
-  /** Why the whole model was left as it is, or null. */
+  /** Why part of the model was left as it is (a skinned primitive that
+   *  could not be posed), or null. */
   readonly skipped: string | null;
   /** Primitives given levels. */
   readonly primitives: number;
@@ -104,6 +116,15 @@ const CHAIN_MIN_TRIANGLES = 64;
 const SEARCH_ROUNDS = 8;
 /** Retries, each 15 % finer, when the search's level fails the check. */
 const CHECK_RETRIES = 4;
+/** The share of a skinned primitive's triangles its default level keeps
+ *  at least when the model has no clip (only its rest pose measured). */
+const SKINNED_REST_SHARE = 0.5;
+/** What a change of skin weights costs in the simplifier's order, against
+ *  a move of the whole box diagonal: collapses across bones are ordered
+ *  late, so the levels the poses allow come early in the order. */
+const SKIN_WEIGHT = 1;
+const NOT_POSED =
+  "a skinned mesh could not be posed (its bones, skin or clips do not read), so it was left as it is";
 
 const ELEMENT_ARRAY_BUFFER = 34963;
 const UINT16 = 5123;
@@ -138,12 +159,114 @@ function accessorUses(json: GltfObject): Map<number, number> {
   return uses;
 }
 
+/** One shape a primitive's levels are measured in. */
+interface Shape {
+  /** Positions, in input vertex order. */
+  readonly positions: Float32Array;
+  /** Its box diagonal. */
+  readonly diag: number;
+}
+
 interface Candidate {
   readonly prim: GltfObject;
   /** Accessor index by attribute name. */
   readonly attributes: ReadonlyMap<string, number>;
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
+  /** A skinned primitive's shape in each pose; empty for a still one,
+   *  which is measured as it is. */
+  readonly shapes: readonly Shape[];
+  /** Whether `shapes` holds a clip's pose. */
+  readonly fromClips: boolean;
+  /** Skin weights, 4 a vertex per set; none for a still primitive. */
+  readonly weights: readonly Float64Array[];
+}
+
+function diagonalOf(p: Float32Array): number {
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i++) {
+    lo[i % 3] = Math.min(lo[i % 3]!, p[i]!);
+    hi[i % 3] = Math.max(hi[i % 3]!, p[i]!);
+  }
+  return Math.hypot(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!);
+}
+
+/** How a model's primitives may be posed: the skins of the nodes that
+ *  draw each mesh (-1 for a node without one, -2 for one that does not
+ *  read), and its poses, read once on first use. */
+interface Posing {
+  readonly skinsOfMesh: ReadonlyMap<number, ReadonlySet<number>>;
+  readonly poses: () => Poses | null;
+}
+
+function posingOf(parts: GlbParts): Posing {
+  const skinsOfMesh = new Map<number, Set<number>>();
+  for (const value of listOf(parts.json, "nodes") ?? []) {
+    const node = objectOf(value);
+    const mesh = indexOf(node?.["mesh"]);
+    if (node === null || mesh === null) continue;
+    const skin =
+      node["skin"] === undefined ? -1 : (indexOf(node["skin"]) ?? -2);
+    skinsOfMesh.set(mesh, (skinsOfMesh.get(mesh) ?? new Set()).add(skin));
+  }
+  let poses: Poses | null | undefined;
+  return {
+    skinsOfMesh,
+    poses: () => {
+      if (poses === undefined) poses = posesOf(parts);
+      return poses;
+    },
+  };
+}
+
+/** A primitive's skin sets (`JOINTS_n` with `WEIGHTS_n`) as accessor
+ *  index pairs; null when one lacks its partner or is no 4-vector. */
+function skinSetsOf(
+  parts: GlbParts,
+  attributes: ReadonlyMap<string, number>,
+): [number, number][] | null {
+  const sets: [number, number][] = [];
+  for (const name of attributes.keys()) {
+    const joint = name.startsWith("JOINTS_");
+    if (!joint && !name.startsWith("WEIGHTS_")) continue;
+    const n = name.slice(name.indexOf("_") + 1);
+    const joints = attributes.get(`JOINTS_${n}`);
+    const weights = attributes.get(`WEIGHTS_${n}`);
+    if (joints === undefined || weights === undefined) return null;
+    if (joint) sets.push([joints, weights]);
+  }
+  const vec4 = (i: number) => readAccessor(parts, i)!.size === 4;
+  return sets.every(([j, w]) => vec4(j) && vec4(w)) ? sets : null;
+}
+
+/** A skinned primitive's shape in each pose, or null when it cannot be
+ *  posed: no one skin binds its mesh, or the poses or the skin do not
+ *  read, or a pose collapses it to a point. */
+function posedShapes(
+  parts: GlbParts,
+  mesh: number,
+  positions: Float32Array,
+  sets: readonly [number, number][],
+  posing: Posing,
+): Pick<Candidate, "shapes" | "fromClips" | "weights"> | null {
+  const skins = posing.skinsOfMesh.get(mesh);
+  const skin = skins?.size === 1 ? [...skins][0]! : -1;
+  const poses = skin < 0 ? null : posing.poses();
+  if (poses === null) return null;
+  const joints = sets.map(([j]) => readAccessor(parts, j)!.values);
+  const weights = sets.map(([, w]) => readAccessor(parts, w)!.values);
+  const shapes: Shape[] = [];
+  for (const worlds of poses.worlds) {
+    const matrices = jointMatrices(parts, skin, worlds);
+    if (matrices === null) return null;
+    const posed = skinPositions(positions, joints, weights, matrices);
+    if (posed === null) return null;
+    const diag = diagonalOf(posed);
+    if (!(diag > 0) || !Number.isFinite(diag)) return null;
+    shapes.push({ positions: posed, diag });
+  }
+  return { shapes, fromClips: poses.fromClips, weights };
 }
 
 /** The primitive's attributes, when each is read by it alone and can be
@@ -159,20 +282,22 @@ function attributesOf(
   for (const [name, value] of Object.entries(attributes)) {
     const index = indexOf(value);
     if (index === null || uses.get(index) !== 1) return null;
-    if (name.startsWith("JOINTS_") || name.startsWith("WEIGHTS_")) return null;
     if (readAccessor(parts, index) === null) return null;
     found.set(name, index);
   }
   return found;
 }
 
-/** `prim` as a primitive this pass may give levels, or null. */
+/** `prim` (of mesh `mesh`) as a primitive this pass may give levels;
+ *  null, or "not posed" for a skinned one that cannot be posed. */
 function candidateOf(
   parts: GlbParts,
+  mesh: number,
   prim: GltfObject,
   uses: ReadonlyMap<number, number>,
   minTriangles: number,
-): Candidate | null {
+  posing: Posing,
+): Candidate | "not posed" | null {
   if ((prim["mode"] ?? 4) !== 4) return null;
   const targets = prim["targets"];
   if (Array.isArray(targets) && targets.length > 0) return null;
@@ -190,12 +315,15 @@ function candidateOf(
   const vertices = data.count;
   const indices = indicesOf(parts, prim, uses, vertices);
   if (indices === null || indices.length / 3 < minTriangles) return null;
-  return {
-    prim,
-    attributes,
-    positions: Float32Array.from(data.values),
-    indices,
-  };
+  const sets = skinSetsOf(parts, attributes);
+  if (sets === null) return null;
+  const positions = Float32Array.from(data.values);
+  const posed =
+    sets.length === 0
+      ? { shapes: [], fromClips: false, weights: [] }
+      : posedShapes(parts, mesh, positions, sets, posing);
+  if (posed === null) return "not posed";
+  return { prim, attributes, positions, indices, ...posed };
 }
 
 /** The primitive's triangle list (0, 1, 2, ... when it has none), or
@@ -256,10 +384,16 @@ function order(parts: GlbParts, c: Candidate): Ordered {
     {
       positions,
       indices: weld.indices,
-      attributes:
-        uv === undefined
+      attributes: [
+        ...(uv === undefined
           ? []
-          : [{ data: remapAttribute(uv, 2, weld), size: 2, weight: 1 }],
+          : [{ data: remapAttribute(uv, 2, weld), size: 2, weight: 1 }]),
+        ...c.weights.map((w) => ({
+          data: remapAttribute(Float32Array.from(w), 4, weld),
+          size: 4,
+          weight: SKIN_WEIGHT,
+        })),
+      ],
     },
     {
       ...(normal === undefined
@@ -267,23 +401,35 @@ function order(parts: GlbParts, c: Candidate): Ordered {
         : { normals: remapAttribute(normal, 3, weld) }),
     },
   );
-  const grid = new SurfaceGrid(positions, weld.indices);
+  const shapes =
+    c.shapes.length === 0
+      ? [{ positions, diag: prog.diag }]
+      : c.shapes.map((s) => ({
+          positions: remapAttribute(s.positions, 3, weld),
+          diag: s.diag,
+        }));
+  const grids = shapes.map((s) => new SurfaceGrid(s.positions, weld.indices));
   const measured = new Map<string, number>();
+  // the largest deviation in any of the shapes, each against its own size
   const deviation = (steps: number, samples: number) => {
     if (steps <= 0) return 0;
     const key = `${steps}:${samples}`;
     let d = measured.get(key);
     if (d === undefined) {
       const level = levelIndices(prog, steps);
-      d =
-        surfaceDistance(
-          positions,
-          weld.indices,
-          positions,
-          level,
-          samples,
-          grid,
-        ).max / prog.diag;
+      d = Math.max(
+        ...shapes.map(
+          (s, k) =>
+            surfaceDistance(
+              s.positions,
+              weld.indices,
+              s.positions,
+              level,
+              samples,
+              grids[k],
+            ).max / s.diag,
+        ),
+      );
       measured.set(key, d);
     }
     return d;
@@ -331,10 +477,22 @@ function automaticSteps(o: Ordered, budget: number): number {
   return found > 0 && within(found, LOD_CHECK_SAMPLES) ? found : 0;
 }
 
-function authorSteps(o: Ordered, settings: LodSettings): number {
+/** The most steps that keep at least `share` of the triangles. */
+function stepsKeeping(prog: Progressive, share: number): number {
+  const least = Math.ceil(share * prog.triangleCount);
+  let s = stepsTo(prog, least);
+  while (s > 0 && prog.stepAlive[s]! < least) s--;
+  return s;
+}
+
+function authorSteps(o: Ordered, c: Candidate, settings: LodSettings): number {
   const share = settings.detailShare;
   if (share === undefined || !Number.isFinite(share)) {
-    return automaticSteps(o, settings.lodBudget);
+    const steps = automaticSteps(o, settings.lodBudget);
+    const restOnly = c.weights.length > 0 && !c.fromClips;
+    return restOnly
+      ? Math.min(steps, stepsKeeping(o.prog, SKINNED_REST_SHARE))
+      : steps;
   }
   const kept = Math.min(1, Math.max(0, share));
   return stepsTo(o.prog, Math.round(kept * o.prog.triangleCount));
@@ -459,17 +617,6 @@ function choicesOf(o: Ordered): LodChoice[] {
   });
 }
 
-/** Whole-model reasons to leave it as it is, or null. */
-function modelSkip(json: GltfObject): string | null {
-  if ((listOf(json, "skins") ?? []).length > 0) {
-    return "it is skinned, and its deviation would have to be measured in its poses";
-  }
-  if ((listOf(json, "animations") ?? []).length > 0) {
-    return "it is animated, and its deviation would have to be measured in its poses";
-  }
-  return null;
-}
-
 const NOTHING: Omit<LodReport, "skipped" | "automatic"> = {
   primitives: 0,
   trianglesBefore: 0,
@@ -489,21 +636,26 @@ export function simplifyModel(
   const automatic =
     settings.detailShare === undefined ||
     !Number.isFinite(settings.detailShare);
-  const skipped = modelSkip(parts.json);
-  if (skipped !== null) return { ...NOTHING, skipped, automatic };
   const uses = accessorUses(parts.json);
-  const candidates = (listOf(parts.json, "meshes") ?? [])
-    .flatMap((mesh) => listOf(objectOf(mesh) ?? {}, "primitives") ?? [])
-    .map(objectOf)
-    .filter((prim): prim is GltfObject => prim !== null)
-    .map((prim) => candidateOf(parts, prim, uses, settings.lodMinTriangles))
-    .filter((c): c is Candidate => c !== null);
-  let report: LodReport = { ...NOTHING, skipped: null, automatic };
+  const posing = posingOf(parts);
+  const found = (listOf(parts.json, "meshes") ?? []).flatMap((mesh, m) =>
+    (listOf(objectOf(mesh) ?? {}, "primitives") ?? [])
+      .map(objectOf)
+      .filter((prim): prim is GltfObject => prim !== null)
+      .map((prim) =>
+        candidateOf(parts, m, prim, uses, settings.lodMinTriangles, posing),
+      ),
+  );
+  const candidates = found.filter(
+    (c): c is Candidate => c !== null && c !== "not posed",
+  );
+  const skipped = found.includes("not posed") ? NOT_POSED : null;
+  let report: LodReport = { ...NOTHING, skipped, automatic };
   let choices: LodChoice[] = [];
   candidates.forEach((c, i) => {
     const o = order(parts, c);
     if (o.prog.triangleCount === 0) return;
-    const levels = chainOf(o, authorSteps(o, settings));
+    const levels = chainOf(o, authorSteps(o, c, settings));
     const { lists, keep } = compact(o, levels, c.positions.length / 3);
     const mine = choicesOf(o);
     choices =

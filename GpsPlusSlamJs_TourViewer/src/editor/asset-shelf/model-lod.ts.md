@@ -9,7 +9,7 @@
   - `lodBudget`: the default level's largest deviation, as a share of the primitive's bounding box diagonal (0.0025 in `OPTIMIZER_SETTINGS`);
   - `lodMinTriangles`: a primitive with fewer triangles is left as it is (2 000);
   - `detailShare?`: the author's share of triangles kept (0..1, clamped), overriding the budget. Left out, or not a finite number, the budget decides.
-- `LodReport`: `skipped` (why the whole model was left as it is, or null), `primitives`, `trianglesBefore`, `trianglesAfter` (of the primitives given levels), `deviation` (the author's level's, as a share of the size, the largest over the primitives), `size` (the largest primitive's box diagonal, model units), `automatic`, and `choices`: the slider's stops (`LOD_SHARES`), each `{ share, triangles, deviation }`, summed over the primitives (triangles) or their largest (deviation).
+- `LodReport`: `skipped` (why the whole model was left as it is, or null: a skinned mesh that could not be posed), `primitives`, `trianglesBefore`, `trianglesAfter` (of the primitives given levels), `deviation` (the author's level's, as a share of the size, the largest over the primitives), `size` (the largest primitive's box diagonal, model units), `automatic`, and `choices`: the slider's stops (`LOD_SHARES`), each `{ share, triangles, deviation }`, summed over the primitives (triangles) or their largest (deviation).
 - Constants: `LOD_CHAIN_LEVELS` (4); internal to the module: `LOD_STOP_SAMPLES` (2 000, the slider's stops: an estimate shown before the author picks one), `LOD_SEARCH_SAMPLES` (5 000), `LOD_CHECK_SAMPLES` (20 000), `LOD_SHARES`.
 
 ## What is saved
@@ -38,10 +38,24 @@
 - **The chain:** up to `LOD_CHAIN_LEVELS` levels at a half, a quarter, an eighth and a sixteenth of the author's triangles, stopping under 64 triangles or when the order allows no coarser level. Each level's error is measured with the quick probe against the full mesh, and never reads below a finer level's (sampling noise is clamped), so the renderer may walk the chain one way.
 - Deviations are cached per (steps, samples), so the search, the slider's stops and the chain share their measurements.
 
+## Skinned and animated models
+
+- **A skinned primitive is measured in its poses.** `skin-pose.ts` gives the rest pose and up to three poses sampled from the clips (each clip at a third, two thirds and its end, spread evenly over all clips). A level's deviation is the largest over those poses, each against the full mesh skinned into the same pose and as a share of that pose's box diagonal. So a level that is fine at rest and tears where the model bends is refused, by the same search and check as a still model.
+- **The ordering keeps skin weights apart.** The progressive simplifier gets the four weights of `WEIGHTS_0` as an attribute (weight `SKIN_WEIGHT`, 1), so it prefers to collapse vertices that move alike. The ordering itself is still built in the rest shape; only the measurement is posed.
+- **No clips:** only the rest pose can be measured, and how the model will bend is unknown, so the automatic level keeps at least `SKINNED_REST_SHARE` (half) of the triangles. The author's share overrides that, as for any model.
+- **An unskinned mesh in an animated file** is measured at rest: node animation moves it rigidly, which a relative deviation does not change. An animated non-uniform scale would stretch it and is not measured.
+- **Cost:** four poses cost about four to five times the time of a still primitive of the same size (measured on a 1 280-triangle tube: 13 s against 2.7 s on a loaded desktop).
+- **Limits, stated plainly:**
+  - The test model is synthetic: a smooth tube of 1 280 triangles with two bones and one bending clip. No real skinned tour model has been run through the pass yet; many bones, sharp weight changes, or several clips are not covered by a test.
+  - Poses between the sampled times are not measured, so a clip whose worst bend falls between them can still show a larger deviation there.
+  - A cubic spline clip is sampled linearly between its key values.
+  - Morph targets are not posed (a primitive with them is left as it is anyway).
+  - The renderer picks a level from the mesh's bind-space box, so a pose that grows the model on screen keeps the level picked for its rest size.
+
 ## Left as they are
 
-- **A skinned or animated model, whole** (`skipped` says which). Its deviation would have to be measured in its poses, not in its rest shape, and no such tour model exists yet to test that on. Not one byte of it changes.
-- A primitive with morph targets, `JOINTS_n` or `WEIGHTS_n`, a mode other than triangles (4), an attribute or index accessor that anything else also reads (another primitive, a node extension), an accessor `readAccessor` cannot read, non-float or non-finite positions, an index naming a vertex it does not have, extras that are no object, or `extras.lod` already there (an optimized file optimized again keeps its levels).
+- **A model with a skinned mesh that cannot be posed, whole** (`skipped` says so): its bones, skin or clips do not read (`skin-pose.ts`), a mesh is used by nodes with different skins, or a `JOINTS_n` has no matching `WEIGHTS_n`. Not one byte of it changes, since a level judged in a pose it cannot compute might tear.
+- A primitive with morph targets, a mode other than triangles (4), an attribute or index accessor that anything else also reads (another primitive, a node extension), an accessor `readAccessor` cannot read, non-float or non-finite positions, an index naming a vertex it does not have, extras that are no object, or `extras.lod` already there (an optimized file optimized again keeps its levels).
 - A primitive under `lodMinTriangles`.
 - A primitive without indices gets `0, 1, 2, ...` and then a saved index list.
 
@@ -52,6 +66,7 @@
 
 ## Tests
 
-- `model-lod.test.ts`: a scanned rock taken to its default level within the budget, its vertices compacted and a chain saved, measured again from the file as glTF-Transform reads it; the author's share followed and its deviation reported; share 1 keeps every triangle; a model under the floor untouched; a skinned and an animated model untouched to the byte; a primitive with morph targets, or whose positions another mesh shares, left alone; a primitive with levels not simplified again; the Khronos validator's verdict and the primitive's own extras kept.
+- `model-lod.test.ts`: a scanned rock taken to its default level within the budget, its vertices compacted and a chain saved, measured again from the file as glTF-Transform reads it; the author's share followed and its deviation reported; share 1 keeps every triangle; a model under the floor untouched; a skinned tube whose rest-only level tears when bent: its posed level stays within the budget at rest and at 30, 45, 60 and 90 degrees; a skinned model without clips keeps at least half its triangles unless the author's share says otherwise; an animated unskinned model given levels; a skinned model whose joint or skin does not read left untouched to the byte, with `skipped` saying so; a primitive with morph targets, or whose positions another mesh shares, left alone; a primitive with levels not simplified again; the Khronos validator's verdict and the primitive's own extras kept.
 - `model-lod.property.test.ts`: for random height fields and spheres, random budgets and random author's shares, every level indexes the compacted buffer, the levels lie end to end with falling counts and non-falling errors, no level has a degenerate triangle, and an automatic level stays within its budget, measured again from the written file.
+- `skin-pose.test.ts`, `skin-pose.property.test.ts`: the poses themselves (see `skin-pose.ts.md`).
 - `model-step.test.ts`: the pass inside the step, its report on the answer.

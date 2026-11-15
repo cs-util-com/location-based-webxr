@@ -25,16 +25,21 @@ import {
   simplifyModel,
 } from "./model-lod.js";
 import {
+  bendingTube,
+  bendTube,
   boxSpec,
   buildModel,
   io,
   type MeshSpec,
   realModel,
+  tubeSpec,
   validatorErrors,
 } from "./test-support/glb-fixtures.js";
 import { heightField, sphere } from "./test-support/meshes.js";
 
 const SETTINGS: LodSettings = { lodBudget: 0.0025, lodMinTriangles: 2000 };
+/** The bending tube has 1 280 triangles. */
+const TUBE_SETTINGS: LodSettings = { lodBudget: 0.0025, lodMinTriangles: 500 };
 
 function partsOf(bytes: Uint8Array): GlbParts {
   const read = readGlb(bytes);
@@ -107,6 +112,34 @@ function originalOf(bytes: Uint8Array) {
       readAccessor(parts, prim["indices"] as number)!.values,
     ),
   };
+}
+
+function diagonalOf(p: Float32Array): number {
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < p.length; i++) {
+    lo[i % 3] = Math.min(lo[i % 3]!, p[i]!);
+    hi[i % 3] = Math.max(hi[i % 3]!, p[i]!);
+  }
+  return Math.hypot(hi[0]! - lo[0]!, hi[1]! - lo[1]!, hi[2]! - lo[2]!);
+}
+
+/** A level of the tube against the whole tube, both bent by `degrees`, as
+ *  a share of the bent tube's box diagonal. */
+function posedDeviation(
+  tube: MeshSpec,
+  positions: Float32Array,
+  level: Uint32Array,
+  degrees: number,
+): number {
+  const whole = bendTube(tube.positions, degrees);
+  const d = surfaceDistance(
+    whole,
+    tube.indices!,
+    bendTube(positions, degrees),
+    level,
+  );
+  return d.max / diagonalOf(whole);
 }
 
 // ordering and measuring a scanned model takes seconds, more on a loaded
@@ -239,22 +272,99 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
     expect(JSON.stringify(parts.json)).toBe(before);
   });
 
-  // Why (a stated limit of this version): a skinned or animated model's
-  // deviation would have to be measured in its poses, not its rest shape,
-  // and no such tour model exists yet to test that on. Such a file passes
-  // through untouched: not one byte of its JSON or its buffers changes.
-  it.each([
-    ["skinned", { skinned: true }],
-    ["animated", { animated: true }],
-  ])("leaves a %s model untouched", async (kind, extra) => {
-    const parts = partsOf(await buildModel({ meshes: [rockSpec()], ...extra }));
-    const json = JSON.stringify(parts.json);
-    const views = parts.views.map((v) => Array.from(v).join());
+  // Why: a skinned model's shape changes with its bones. A tube's straight
+  // side is flat at rest, so a level judged at rest only drops the rings
+  // the bend needs, and the bent tube then cuts its corner. The pass must
+  // measure the deviation in the clip's poses and refuse that level; it is
+  // judged here at the clip's poses and at one in between (45 degrees, not
+  // a pose the pass samples), by a skinning written in the test.
+  it("refuses a level that is fine at rest but tears when a skinned model bends", async () => {
+    const tube = tubeSpec();
+    const plain = partsOf(await buildModel({ meshes: [tube] }));
+    const restOnly = simplifyModel(plain, TUBE_SETTINGS);
+    const restLevel = await readBack(writeGlb(plain));
+    expect(
+      posedDeviation(tube, restLevel.positions, restLevel.level, 0),
+    ).toBeLessThanOrEqual(TUBE_SETTINGS.lodBudget * 1.25);
+    // the rest-only level tears when bent
+    expect(
+      posedDeviation(tube, restLevel.positions, restLevel.level, 90),
+    ).toBeGreaterThan(TUBE_SETTINGS.lodBudget * 4);
+
+    const parts = partsOf(await bendingTube({ clip: true }));
+    const report = simplifyModel(parts, TUBE_SETTINGS);
+    expect(report.primitives).toBe(1);
+    expect(report.trianglesAfter).toBeLessThan(report.trianglesBefore * 0.9);
+    expect(report.trianglesAfter).toBeGreaterThan(restOnly.trianglesAfter);
+    expect(report.deviation).toBeLessThanOrEqual(TUBE_SETTINGS.lodBudget);
+    const bytes = writeGlb(parts);
+    expect(await validatorErrors(bytes)).toEqual([]);
+    const saved = await readBack(bytes);
+    for (const degrees of [0, 30, 45, 60, 90]) {
+      expect(
+        posedDeviation(tube, saved.positions, saved.level, degrees),
+      ).toBeLessThanOrEqual(TUBE_SETTINGS.lodBudget * 1.25);
+    }
+  });
+
+  // Why: a skinned model without a clip may still be posed by whoever
+  // shows it, and the rest pose is all the pass can measure; so its
+  // default level keeps at least half its triangles. The author's share
+  // still overrides that.
+  it("keeps at least half of a skinned model without clips at its default level", async () => {
+    const parts = partsOf(await bendingTube({ clip: false }));
+    const report = simplifyModel(parts, TUBE_SETTINGS);
+    expect(report.primitives).toBe(1);
+    expect(report.trianglesAfter).toBeGreaterThanOrEqual(
+      Math.ceil(report.trianglesBefore * 0.5),
+    );
+    expect(report.trianglesAfter).toBeLessThan(report.trianglesBefore);
+    const chosen = partsOf(await bendingTube({ clip: false }));
+    expect(
+      simplifyModel(chosen, { ...TUBE_SETTINGS, detailShare: 0.2 })
+        .trianglesAfter,
+    ).toBeLessThanOrEqual(Math.round(report.trianglesBefore * 0.2));
+  });
+
+  // Why: a clip that only moves a node moves the model rigidly, which does
+  // not change its shape, so an animated model is given levels like a
+  // still one.
+  it("gives an animated, unskinned model levels within the budget", async () => {
+    const parts = partsOf(
+      await buildModel({ meshes: [rockSpec()], animated: true }),
+    );
     const report = simplifyModel(parts, SETTINGS);
-    expect(report.skipped).toContain(kind);
+    expect(report.primitives).toBe(1);
+    expect(report.deviation).toBeLessThanOrEqual(SETTINGS.lodBudget);
+  });
+
+  // Why: the bones are untrusted input; a vertex bound to a joint the skin
+  // does not have, or a skinned primitive no skin binds, cannot be posed,
+  // so it is left exactly as it is rather than measured wrongly.
+  it.each([
+    [
+      "names a joint its skin does not have",
+      (json: GltfObject) => {
+        const skin = (json["skins"] as GltfObject[])[0]!;
+        skin["joints"] = (skin["joints"] as number[]).slice(0, 1);
+        delete skin["inverseBindMatrices"];
+      },
+    ],
+    [
+      "is bound by no skin",
+      (json: GltfObject) => {
+        for (const node of json["nodes"] as GltfObject[]) delete node["skin"];
+        delete json["skins"];
+      },
+    ],
+  ])("leaves a skinned primitive that %s as it is", async (_, damage) => {
+    const parts = partsOf(await bendingTube({ clip: true }));
+    damage(parts.json);
+    const json = JSON.stringify(parts.json);
+    const report = simplifyModel(parts, TUBE_SETTINGS);
     expect(report.primitives).toBe(0);
+    expect(report.skipped).toMatch(/posed/);
     expect(JSON.stringify(parts.json)).toBe(json);
-    expect(parts.views.map((v) => Array.from(v).join())).toEqual(views);
   });
 
   // Why: these primitives cannot be cut down safely: a morph target's

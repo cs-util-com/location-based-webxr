@@ -304,12 +304,16 @@ const COMPONENT_BYTES: Readonly<Record<number, number>> = {
   5126: 4,
 };
 
-/** Components per element, for the types an optimizer reads. */
+/** Components per element, for the types an optimizer reads. A MAT4 (a
+ *  skin's inverse bind matrices) has no column padding in any component
+ *  type, so it reads as 16 values; MAT2 and MAT3 can be padded and are not
+ *  read. */
 const TYPE_SIZE: Readonly<Record<string, number>> = {
   SCALAR: 1,
   VEC2: 2,
   VEC3: 3,
   VEC4: 4,
+  MAT4: 16,
 };
 
 export interface AccessorData {
@@ -369,7 +373,7 @@ function layoutOf(
 }
 
 /** Accessor `index`'s values, or null when it cannot be read here (no
- *  such accessor, sparse, a matrix type, no buffer view, or elements past
+ *  such accessor, sparse, a MAT2 or MAT3, no buffer view, or elements past
  *  the end of its view). */
 export function readAccessor(
   parts: GlbParts,

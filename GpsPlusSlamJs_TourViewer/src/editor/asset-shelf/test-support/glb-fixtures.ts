@@ -281,6 +281,172 @@ export async function buildModel(spec: ModelSpec): Promise<Uint8Array> {
   return io.writeBinary(doc);
 }
 
+/** The bending tube's shape: an open tube of radius 0.2 along y from 0 to
+ *  2, `rings` rings of `segments` vertices (plus a texture seam copy),
+ *  bound to two bones, one at y = 0 and one at the bend, y = 1. */
+export const TUBE = { radius: 0.2, length: 2, bend: 1 } as const;
+
+/** The upper bone's weight at height `y`: 0 below the bend's band
+ *  (0.8 to 1.2), 1 above it, smooth in between. */
+export function tubeWeight(y: number): number {
+  const u = Math.min(1, Math.max(0, (y - 0.8) / 0.4));
+  return u * u * (3 - 2 * u);
+}
+
+/** The tube as a plain mesh, its straight sides at rest. */
+export function tubeSpec(rings = 41, segments = 16): MeshSpec {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  for (let r = 0; r < rings; r++) {
+    const y = (TUBE.length * r) / (rings - 1);
+    for (let s = 0; s <= segments; s++) {
+      const a = (2 * Math.PI * s) / segments;
+      positions.push(TUBE.radius * Math.cos(a), y, TUBE.radius * Math.sin(a));
+      normals.push(Math.cos(a), 0, Math.sin(a));
+      uvs.push(s / segments, r / (rings - 1));
+    }
+  }
+  const indices: number[] = [];
+  const side = segments + 1;
+  for (let r = 0; r + 1 < rings; r++) {
+    for (let s = 0; s < segments; s++) {
+      const a = r * side + s;
+      const b = a + 1;
+      const c = a + side;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+  return {
+    name: "tube",
+    positions: Float32Array.from(positions),
+    normals: Float32Array.from(normals),
+    texcoords: Float32Array.from(uvs),
+    indices: Uint32Array.from(indices),
+  };
+}
+
+/** `positions` of the tube bent by `degrees` about z at the bend, by a
+ *  linear blend of the two bones written here independently of the code
+ *  under test (the weights are a function of height, so it poses any
+ *  subset of the tube's vertices). */
+export function bendTube(
+  positions: Float32Array,
+  degrees: number,
+): Float32Array {
+  const a = (degrees * Math.PI) / 180;
+  const [c, s] = [Math.cos(a), Math.sin(a)];
+  const out = new Float32Array(positions.length);
+  for (let i = 0; i < positions.length; i += 3) {
+    const [x, y, z] = [positions[i]!, positions[i + 1]!, positions[i + 2]!];
+    const w = tubeWeight(y);
+    const dy = y - TUBE.bend;
+    const rx = c * x - s * dy;
+    const ry = s * x + c * dy + TUBE.bend;
+    out[i] = (1 - w) * x + w * rx;
+    out[i + 1] = (1 - w) * y + w * ry;
+    out[i + 2] = z;
+  }
+  return out;
+}
+
+/**
+ * The tube as a skinned model: a root bone at the origin and an upper
+ * bone at the bend (its child), the tube's node bound to both, and, with
+ * `clip`, a 1 s clip "bend" turning the upper bone about z through
+ * `degrees` (0, 45 and 90 when left out), keys evenly spaced, linear
+ * unless `interpolation` says otherwise (a cubic spline's tangents are
+ * 0). Synthetic: two bones, one clip, a smooth
+ * cylinder; a real character has many bones, several clips and weights
+ * over four joints.
+ */
+export async function bendingTube(options: {
+  readonly clip: boolean;
+  readonly degrees?: readonly number[];
+  readonly interpolation?: "LINEAR" | "STEP" | "CUBICSPLINE";
+}): Promise<Uint8Array> {
+  const doc = new Document();
+  doc.createBuffer();
+  const scene = doc.createScene();
+  const spec = tubeSpec();
+  const prim = doc
+    .createPrimitive()
+    .setAttribute("POSITION", accessor(doc, "VEC3", spec.positions))
+    .setAttribute("NORMAL", accessor(doc, "VEC3", spec.normals!))
+    .setAttribute("TEXCOORD_0", accessor(doc, "VEC2", spec.texcoords!))
+    .setIndices(accessor(doc, "SCALAR", spec.indices!))
+    .setMaterial(doc.createMaterial("m"));
+  const count = spec.positions.length / 3;
+  const joints = new Uint8Array(count * 4);
+  const weights = new Float32Array(count * 4);
+  for (let i = 0; i < count; i++) {
+    const w = tubeWeight(spec.positions[3 * i + 1]!);
+    joints.set([0, 1, 0, 0], 4 * i);
+    weights.set([1 - w, w, 0, 0], 4 * i);
+  }
+  prim.setAttribute("JOINTS_0", accessor(doc, "VEC4", joints));
+  prim.setAttribute("WEIGHTS_0", accessor(doc, "VEC4", weights));
+  const root = doc.createNode("root-bone");
+  const upper = doc.createNode("upper-bone").setTranslation([0, TUBE.bend, 0]);
+  root.addChild(upper);
+  const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  const upperInverse = [...identity];
+  upperInverse[13] = -TUBE.bend;
+  const skin = doc
+    .createSkin()
+    .addJoint(root)
+    .addJoint(upper)
+    .setSkeleton(root)
+    .setInverseBindMatrices(
+      accessor(
+        doc,
+        "SCALAR",
+        Float32Array.from([...identity, ...upperInverse]),
+      ).setType("MAT4"),
+    );
+  const node = doc
+    .createNode("tube")
+    .setMesh(doc.createMesh("tube").addPrimitive(prim))
+    .setSkin(skin);
+  scene.addChild(root).addChild(node);
+  if (options.clip) {
+    const quarter = (deg: number) => {
+      const h = (deg * Math.PI) / 360;
+      return [0, 0, Math.sin(h), Math.cos(h)];
+    };
+    const degrees = options.degrees ?? [0, 45, 90];
+    const interpolation = options.interpolation ?? "LINEAR";
+    const keys = degrees.map((d) =>
+      interpolation === "CUBICSPLINE"
+        ? [0, 0, 0, 0, ...quarter(d), 0, 0, 0, 0]
+        : quarter(d),
+    );
+    const sampler = doc
+      .createAnimationSampler()
+      .setInput(
+        accessor(
+          doc,
+          "SCALAR",
+          Float32Array.from(degrees, (_, k) => k / (degrees.length - 1)),
+        ),
+      )
+      .setOutput(accessor(doc, "VEC4", Float32Array.from(keys.flat())))
+      .setInterpolation(interpolation);
+    doc
+      .createAnimation("bend")
+      .addSampler(sampler)
+      .addChannel(
+        doc
+          .createAnimationChannel()
+          .setTargetNode(upper)
+          .setTargetPath("rotation")
+          .setSampler(sampler),
+      );
+  }
+  return io.writeBinary(doc);
+}
+
 /** Each drawn primitive's positions in world space, per mesh name, as
  *  glTF-Transform reads them (normalized integers turned back into their
  *  values, node transforms applied). Instances of one mesh are sorted so
