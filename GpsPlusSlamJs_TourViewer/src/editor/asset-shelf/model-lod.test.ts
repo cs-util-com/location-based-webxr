@@ -512,6 +512,45 @@ describe("simplifyModel", { timeout: 30_000 }, () => {
     expect(lodOf(primitiveOf(parts, 1)) !== undefined).toBe(simplified === 1);
   });
 
+  // Why: an accessor a clip's sampler or a skin's inverse bind matrices
+  // also read would be cut down under them (a clip reading a shorter
+  // list, a skin losing its matrices), so a primitive sharing one is left
+  // as it is.
+  it.each([
+    [
+      "a clip's sampler",
+      (json: GltfObject, attribute: number) => {
+        const anim = (json["animations"] as GltfObject[])[0]!;
+        (anim["samplers"] as GltfObject[])[0]!["output"] = attribute;
+      },
+    ],
+    [
+      "a skin's inverse bind matrices",
+      (json: GltfObject, attribute: number) => {
+        json["skins"] = [{ joints: [0], inverseBindMatrices: attribute }];
+      },
+    ],
+  ])(
+    "leaves a primitive whose accessor %s also reads as it is",
+    async (_, share) => {
+      const parts = partsOf(
+        await buildModel({ meshes: [rockSpec("a", 3)], animated: true }),
+      );
+      const attributes = primitiveOf(parts)["attributes"] as Record<
+        string,
+        number
+      >;
+      share(parts.json, attributes["NORMAL"]!);
+      const json = JSON.stringify(parts.json);
+      const report = simplifyModel(parts, {
+        ...SETTINGS,
+        lodMinTriangles: 500,
+      });
+      expect(report.primitives).toBe(0);
+      expect(JSON.stringify(parts.json)).toBe(json);
+    },
+  );
+
   // Why: running the pass twice (a second optimization of an already
   // optimized file) must not simplify the author's level again.
   it("leaves a primitive that already has levels as it is", async () => {

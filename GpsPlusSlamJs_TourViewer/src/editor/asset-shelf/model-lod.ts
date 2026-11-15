@@ -50,6 +50,7 @@ import {
   stepsFor,
   weldVertices,
 } from "./mesh-simplify.js";
+import { otherReaders } from "./model-quantize.js";
 import {
   jointMatrices,
   type Poses,
@@ -139,29 +140,24 @@ const FLOAT = 5126;
 /** Index 65 535 is WebGL 2's primitive restart for 16-bit lists. */
 const MAX_UINT16_INDEX = 65534;
 
-/** How often each accessor is read, by anything in the model. */
+/** How often each accessor is read, by anything in the model: the
+ *  primitives' attributes, indices and saved chains, and every other
+ *  reader (clips, skins, morph targets, node extensions). */
 function accessorUses(json: GltfObject): Map<number, number> {
   const uses = new Map<number, number>();
   const add = (value: unknown) => {
-    if (typeof value === "number") {
-      const i = indexOf(value);
-      if (i !== null) uses.set(i, (uses.get(i) ?? 0) + 1);
-    } else if (Array.isArray(value)) value.forEach(add);
-    else if (objectOf(value) !== null)
-      Object.values(value as object).forEach(add);
+    const i = indexOf(value);
+    if (i !== null) uses.set(i, (uses.get(i) ?? 0) + 1);
   };
   for (const mesh of listOf(json, "meshes") ?? []) {
     for (const p of listOf(objectOf(mesh) ?? {}, "primitives") ?? []) {
       const prim = objectOf(p);
-      add(prim?.["attributes"]);
+      Object.values(objectOf(prim?.["attributes"]) ?? {}).forEach(add);
       add(prim?.["indices"]);
-      add(prim?.["targets"]);
       add(objectOf(objectOf(prim?.["extras"])?.["lod"])?.["indices"]);
     }
   }
-  for (const node of listOf(json, "nodes") ?? []) {
-    add(objectOf(node)?.["extensions"]);
-  }
+  otherReaders(json).forEach(add);
   return uses;
 }
 

@@ -87,7 +87,7 @@ to halving with 4 levels.
 ## Left as they are
 
 - **A model with a skinned mesh that cannot be posed, whole** (`skipped` says so): its bones, skin or clips do not read (`skin-pose.ts`), a mesh is used by nodes with different skins, or a `JOINTS_n` has no matching `WEIGHTS_n`. Not one byte of it changes, since a level judged in a pose it cannot compute might tear.
-- A primitive with morph targets, a mode other than triangles (4), an attribute or index accessor that anything else also reads (another primitive, a node extension), an accessor `readAccessor` cannot read, an attribute whose count is not the positions' (the rest of the model is still given levels), non-float or non-finite positions, an index naming a vertex it does not have, extras that are no object, or `extras.lod` already there (an optimized file optimized again keeps its levels).
+- A primitive with morph targets, a mode other than triangles (4), an attribute or index accessor that anything else also reads (another primitive, a clip's sampler, a skin's inverse bind matrices, a morph target, a node extension; counted with `otherReaders` from `model-quantize.ts`), an accessor `readAccessor` cannot read, an attribute whose count is not the positions' (the rest of the model is still given levels), non-float or non-finite positions, an index naming a vertex it does not have, extras that are no object, or `extras.lod` already there (an optimized file optimized again keeps its levels).
 - A primitive under `lodMinTriangles`.
 - A primitive without indices gets `0, 1, 2, ...` and then a saved index list.
 
