@@ -634,3 +634,103 @@ test("models: the default level of detail keeps fewer triangles, its box within 
   }
   expect(errors).toEqual([]);
 });
+
+// Why this test matters: on a phone every variant looked the same in small
+// fixed tiles, so the models are compared in one large view whose buttons
+// swap only the model. If a switch moved the camera, or dropped the
+// wireframe look, the jump at the same spot that shows a removed triangle
+// would be gone. The phone layouts are pinned, and screenshots of both are
+// kept with the run for a person to look at.
+test("models, the large view: a switch keeps the camera, the wireframe stays on, phone layouts", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(600_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors = await openCheck(page);
+  await page.getByRole("button", { name: "Utility box" }).click();
+  await expect(page.locator("#status")).toHaveText(/^Models done/, {
+    timeout: 540_000,
+  });
+  const read = () =>
+    page.evaluate(() =>
+      /** @type {any} */ (window).assetOptimizerCheck.modelView(),
+    );
+  const buttons = page.locator("#model-variants button");
+  await expect(buttons).toHaveCount(7);
+  await expect(buttons.first()).toHaveAttribute("aria-pressed", "true");
+  const facts = page.locator("#model-facts");
+  await expect(facts).toContainText("Original");
+
+  // The view at full width (the body's 16 px padding either side), its
+  // buttons under it.
+  const canvas = page.locator("#model-canvas");
+  // In view, so the drag below lands on it.
+  await canvas.scrollIntoViewIfNeeded();
+  const view = /** @type {NonNullable<any>} */ (await canvas.boundingBox());
+  expect(view.width).toBeGreaterThanOrEqual(390 - 32 - 1);
+  expect(view.height).toBeGreaterThanOrEqual(300);
+  const bar = /** @type {NonNullable<any>} */ (
+    await page.locator("#model-variants").boundingBox()
+  );
+  expect(bar.y).toBeGreaterThanOrEqual(view.y + view.height);
+  await page.screenshot({ path: testInfo.outputPath("models-phone.png") });
+
+  // Orbit by a drag, then switch: the camera stays exactly where it is.
+  const framed = await read();
+  await page.mouse.move(view.x + view.width / 2, view.y + view.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    view.x + view.width / 2 + 90,
+    view.y + view.height / 2 + 40,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  const orbited = await read();
+  expect(orbited.position).not.toEqual(framed.position);
+  await page.getByRole("button", { name: "Every triangle" }).click();
+  await expect(buttons.nth(2)).toHaveAttribute("aria-pressed", "true");
+  await expect(facts).toContainText("full mesh, no thinning");
+  const switched = await read();
+  expect(switched.shownLabel).toBe("every triangle, 1024 px textures");
+  expect(switched.position).toEqual(orbited.position);
+  expect(switched.target).toEqual(orbited.target);
+
+  // The wireframe look: wire lines on, textures off, and it stays on
+  // through the next switches.
+  expect(switched.wires).toBe(0);
+  await page.getByLabel("Wireframe and flat light").check();
+  const wired = await read();
+  expect(wired.wires).toBeGreaterThan(0);
+  expect(wired.textured).toBe(0);
+  for (const name of ["Quarter", "512 px", "Original"]) {
+    await page.getByRole("button", { name, exact: true }).click();
+    const now = await read();
+    expect(now.state.wireframe).toBe(true);
+    expect(now.wires).toBeGreaterThan(0);
+    expect(now.textured).toBe(0);
+    expect(now.position).toEqual(orbited.position);
+  }
+  await expect(page.getByLabel("Wireframe and flat light")).toBeChecked();
+
+  // Which mesh each step keeps is said: the texture steps keep the
+  // chosen, thinned mesh, so they show its triangle count.
+  await page.getByRole("button", { name: "Chosen", exact: true }).click();
+  const chosen = await facts.textContent();
+  await page.getByRole("button", { name: "512 px", exact: true }).click();
+  await expect(facts).toContainText("default detail mesh");
+  const triangles = (/** @type {string | null} */ text) =>
+    Number(/(\d+) triangles/.exec(text ?? "")?.[1]);
+  expect(triangles(await facts.textContent())).toBe(triangles(chosen));
+
+  // Landscape: the view still fits the screen's height, buttons in reach.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect
+    .poll(async () => (await canvas.boundingBox())?.height ?? 0)
+    .toBeLessThanOrEqual(390 * 0.7 + 1);
+  expect((await canvas.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(
+    844 - 32 - 1,
+  );
+  await canvas.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("models-landscape.png") });
+  expect(errors).toEqual([]);
+});

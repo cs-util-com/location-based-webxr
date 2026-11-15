@@ -69,6 +69,39 @@
         min-height: 1.4em;
       }
 
+      #model-canvas {
+        display: block;
+        width: 100%;
+        height: min(100vw, 70vh);
+        border-radius: 6px;
+        background: #808080;
+        touch-action: none;
+      }
+      .variant-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 8px 0 4px;
+      }
+      .variant-bar button {
+        margin: 0;
+      }
+      .variant-bar button[aria-pressed="true"] {
+        outline: 3px solid #3a7bd5;
+        outline-offset: 1px;
+        font-weight: 600;
+      }
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 44px;
+      }
+      #model-facts {
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+
       @media (width >= 680px) {
         .results {
           grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -153,17 +186,51 @@
       <div id="sound-results" class="results"></div>
     </section>
 
-    <h2>3D models</h2>
-    <p>
-      Chosen: textures at most 1024 px (colour as JPEG 0.85, data maps as JPEG
-      0.92 or kept PNG), 16-bit positions, 8-bit normals, 16-bit texture
-      coordinates. Either side: 512 and 2048 px textures, and 8-bit positions
-      with a 1 % error budget. Each result is drawn by three.js from the same
-      camera as the original; SSIM (1 is identical) compares the two drawings.
-    </p>
-    <input id="model-file" type="file" accept=".glb,model/gltf-binary" />
-    <button id="model-test" type="button">Use the test rock</button>
-    <div id="model-results" class="results"></div>
+    <section id="models">
+      <h2>3D models</h2>
+      <p>
+        Chosen: textures at most 1024 px (colour as JPEG 0.85, data maps as JPEG
+        0.92 or kept PNG), 16-bit positions, 8-bit normals, 16-bit texture
+        coordinates, and the default level of detail: triangles thinned as far
+        as the shape stays within 0.25 % of the model's size. The texture and
+        position steps (512 and 2048 px textures, 8-bit positions with a 1 %
+        error budget) keep that thinned mesh, so they show the chosen triangle
+        count; "every triangle" and "a quarter of the triangles" change only the
+        mesh.
+      </p>
+      <p>
+        One large view: drag to turn, pinch or scroll to zoom. The buttons under
+        it swap only the model; the camera stays where you put it, so a change
+        shows as a jump at the same spot. "Wireframe and flat light" draws every
+        triangle over plain grey with the textures off, so removed geometry is
+        visible; it stays on while you switch. SSIM (1 is identical) compares a
+        drawing of each result with the original's, from one fixed camera.
+      </p>
+      <input id="model-file" type="file" accept=".glb,model/gltf-binary" />
+      <button id="model-rock" type="button">Scanned rock</button>
+      <button id="model-bust" type="button">Marble bust (a face)</button>
+      <button id="model-box" type="button">
+        Utility box (straight edges, lettering)
+      </button>
+      <div id="model-view" hidden>
+        <canvas
+          id="model-canvas"
+          role="img"
+          aria-label="The shown model: drag to turn, pinch or scroll to zoom"
+        ></canvas>
+        <div
+          id="model-variants"
+          class="variant-bar"
+          role="group"
+          aria-label="Shown model"
+        ></div>
+        <label class="toggle">
+          <input id="model-wire" type="checkbox" />
+          Wireframe and flat light
+        </label>
+        <p id="model-facts" aria-live="polite"></p>
+      </div>
+    </section>
 
     <script type="module">
       import { ASSET_OPTIMIZERS } from "./src/editor/asset-shelf/asset-optimizers.ts";
@@ -174,6 +241,7 @@
       import { OPTIMIZER_SETTINGS } from "./src/editor/asset-shelf/optimizer-settings.ts";
       import * as THREE from "three";
       import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+      import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
       import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
       import {
         bestLag,
@@ -186,11 +254,18 @@
         testSoundPlanes,
         wavOf,
       } from "./src/checks/asset-optimizer-check.ts";
+      import {
+        INITIAL_MODEL_VIEW,
+        framePose,
+        modelViewReducer,
+      } from "./src/checks/model-compare-view.ts";
       import photoUrl from "./playwright-tests/fixtures/asset-optimizer/photo-oberammergau-street.jpg?url";
       import speechDeUrl from "./playwright-tests/fixtures/asset-optimizer/speech-de-frau-holle.mp3?url";
       import speechEnUrl from "./playwright-tests/fixtures/asset-optimizer/speech-en-the-raven.mp3?url";
       import pianoUrl from "./playwright-tests/fixtures/asset-optimizer/music-piano-schubert-d664.flac?url";
       import orchestraUrl from "./playwright-tests/fixtures/asset-optimizer/music-orchestra-egmont.flac?url";
+      import bustUrl from "./playwright-tests/fixtures/asset-optimizer/model-marble-bust.glb?url";
+      import boxUrl from "./playwright-tests/fixtures/asset-optimizer/model-utility-box.glb?url";
 
       const host = createOptimizerHost(spawnOptimizerWorker);
       const status = document.getElementById("status");
@@ -346,19 +421,19 @@
         sun.position.set(1, 2, 1.5);
         scene.add(sun);
         scene.add(await loadModel(blob));
-        const min = new THREE.Vector3(...box.min);
-        const max = new THREE.Vector3(...box.max);
-        const center = min.clone().add(max).multiplyScalar(0.5);
-        const radius = max.distanceTo(min) / 2;
+        const radius =
+          new THREE.Vector3(...box.max).distanceTo(
+            new THREE.Vector3(...box.min),
+          ) / 2;
         const camera = new THREE.PerspectiveCamera(
           40,
           1,
           radius / 50,
           radius * 10,
         );
-        const away = new THREE.Vector3(1, 0.7, 1.2).normalize();
-        camera.position.copy(center).addScaledVector(away, radius * 2.6);
-        camera.lookAt(center);
+        const pose = framePose(box.min, box.max);
+        camera.position.set(...pose.position);
+        camera.lookAt(...pose.target);
         renderer.render(scene, camera);
         const gl = renderer.getContext();
         const pixels = new Uint8ClampedArray(VIEW * VIEW * 4);
@@ -641,53 +716,299 @@
         say(`Sounds done: ${variants.length} results.`);
       }
 
+      /** The chosen setting and its steps. `mesh` says which mesh a step
+       *  keeps: the texture and position steps run on the chosen, thinned
+       *  mesh (the default level of detail), so they show its triangles. */
       const MODEL_VARIANTS = [
-        { label: "1024 px, 16-bit, default detail", model: {}, chosen: true },
-        { label: "every triangle", model: { detailShare: 1 } },
-        { label: "a quarter of the triangles", model: { detailShare: 0.25 } },
-        { label: "512 px textures", model: { textureMaxSidePx: 512 } },
-        { label: "2048 px textures", model: { textureMaxSidePx: 2048 } },
         {
+          button: "Chosen",
+          label: "chosen: 1024 px textures, 16-bit positions",
+          mesh: "default detail mesh",
+          model: {},
+          chosen: true,
+        },
+        {
+          button: "Every triangle",
+          label: "every triangle, 1024 px textures",
+          mesh: "full mesh, no thinning",
+          model: { detailShare: 1 },
+        },
+        {
+          button: "Quarter",
+          label: "a quarter of the triangles, 1024 px textures",
+          mesh: "a quarter of the triangles",
+          model: { detailShare: 0.25 },
+        },
+        {
+          button: "512 px",
+          label: "512 px textures",
+          mesh: "default detail mesh",
+          model: { textureMaxSidePx: 512 },
+        },
+        {
+          button: "2048 px",
+          label: "2048 px textures",
+          mesh: "default detail mesh",
+          model: { textureMaxSidePx: 2048 },
+        },
+        {
+          button: "8-bit",
           label: "8-bit positions, 1 % budget",
+          mesh: "default detail mesh",
           model: { positionBits: 8, maxPositionError: 0.01 },
         },
       ];
 
-      async function showModels(source) {
-        const out = document.getElementById("model-results");
-        out.replaceChildren();
-        for (const v of MODEL_VARIANTS) {
-          say(`Making the ${v.label} model...`);
-          const result = await compareModel(source, v.model);
-          if (out.childElementCount === 0) {
-            const original = document.createElement("img");
-            original.src = result.drawnBefore;
-            original.alt = "The original model";
-            card(out, false, original, [
-              "Original",
-              kib(source.size),
-              `${result.before.triangles} triangles`,
-              `textures up to ${result.before.textureSide} px`,
-            ]);
+      /** The one large view: three.js resources (not state) and the
+       *  shown models; what is shown, the wireframe look and the camera
+       *  pose are `state`, changed only through `modelViewReducer`. */
+      const view = {
+        state: INITIAL_MODEL_VIEW,
+        entries: [],
+        renderer: null,
+        scene: null,
+        camera: null,
+        controls: null,
+        shown: null,
+      };
+
+      /** The wireframe look's materials, shared by every model. */
+      const FLAT = new THREE.MeshStandardMaterial({
+        color: 0xc8c8c8,
+        flatShading: true,
+        roughness: 1,
+        metalness: 0,
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
+      });
+      const WIRE = new THREE.LineBasicMaterial({ color: 0x1a1a1a });
+
+      function setUpView() {
+        if (view.renderer) return;
+        const canvas = document.getElementById("model-canvas");
+        view.renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        view.renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+        view.scene = new THREE.Scene();
+        view.scene.background = new THREE.Color(0x808080);
+        view.scene.add(new THREE.HemisphereLight(0xffffff, 0x606060, 1.2));
+        const sun = new THREE.DirectionalLight(0xffffff, 2);
+        sun.position.set(1, 2, 1.5);
+        view.scene.add(sun);
+        view.camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
+        view.controls = new OrbitControls(view.camera, canvas);
+        view.controls.addEventListener("change", () => {
+          dispatchView({ type: "camera", camera: poseOfCamera() });
+        });
+        new ResizeObserver(() => renderView()).observe(canvas);
+        document
+          .getElementById("model-wire")
+          .addEventListener("change", (event) =>
+            dispatchView({ type: "wireframe", on: event.target.checked }),
+          );
+      }
+
+      const poseOfCamera = () => ({
+        position: view.camera.position.toArray(),
+        target: view.controls.target.toArray(),
+      });
+
+      function dispatchView(action) {
+        view.state = modelViewReducer(view.state, action);
+        renderView();
+      }
+
+      /** `object`'s meshes in the wireframe look or textured as loaded;
+       *  the wire lines are made the first time they are asked for. */
+      function lookOf(object, wireframe) {
+        object.traverse((node) => {
+          if (!node.isMesh) return;
+          node.userData.textured ??= node.material;
+          if (wireframe && !node.userData.wire) {
+            const lines = new THREE.LineSegments(
+              new THREE.WireframeGeometry(node.geometry),
+              WIRE,
+            );
+            node.add(lines);
+            node.userData.wire = lines;
           }
-          const img = document.createElement("img");
-          img.src = result.drawnAfter;
-          img.alt = `The model at ${v.label}`;
-          card(out, v.chosen === true, img, [
-            v.label,
-            kib(result.blob.size),
-            `${((100 * result.blob.size) / source.size).toFixed(0)} % of the original`,
-            `${result.after.triangles} triangles`,
-            `textures up to ${result.after.textureSide} px`,
-            `SSIM ${result.ssim.toFixed(4)}`,
-            `${result.ms} ms`,
-          ]);
+          node.material = wireframe ? FLAT : node.userData.textured;
+          if (node.userData.wire) node.userData.wire.visible = wireframe;
+        });
+      }
+
+      function factsOf(entry, original) {
+        const lines = [
+          entry.label,
+          entry.mesh,
+          kib(entry.blob.size),
+          entry === original
+            ? null
+            : share(entry.blob.size, original.blob.size),
+          `${entry.facts.triangles} triangles`,
+          `textures up to ${entry.facts.textureSide} px`,
+          entry.ssim === null ? null : `SSIM ${entry.ssim.toFixed(4)}`,
+          entry.ms === null ? null : `${entry.ms} ms to make`,
+        ];
+        return lines.filter((line) => line !== null).join(" - ");
+      }
+
+      /** Draws `view.state`: the shown model swapped in (the camera is not
+       *  touched), its look, the pressed button and its facts. */
+      function renderView() {
+        if (!view.renderer || view.entries.length === 0) return;
+        const { shown, wireframe } = view.state;
+        const entry = view.entries[shown];
+        if (view.shown !== entry.object) {
+          if (view.shown) view.scene.remove(view.shown);
+          view.scene.add(entry.object);
+          view.shown = entry.object;
         }
-        say("Models done.");
+        lookOf(entry.object, wireframe);
+        document.getElementById("model-wire").checked = wireframe;
+        document
+          .querySelectorAll("#model-variants button")
+          .forEach((button, i) =>
+            button.setAttribute("aria-pressed", String(i === shown)),
+          );
+        document.getElementById("model-facts").textContent = factsOf(
+          entry,
+          view.entries[0],
+        );
+        const canvas = view.renderer.domElement;
+        const { clientWidth: width, clientHeight: height } = canvas;
+        if (width === 0 || height === 0) return;
+        const ratio = view.renderer.getPixelRatio();
+        if (canvas.width !== Math.round(width * ratio)) {
+          view.renderer.setSize(width, height, false);
+        }
+        view.camera.aspect = width / height;
+        view.camera.updateProjectionMatrix();
+        view.renderer.render(view.scene, view.camera);
+      }
+
+      function disposeObject(object) {
+        object.traverse((node) => {
+          node.geometry?.dispose();
+          const material = node.userData.textured ?? node.material;
+          if (material && material !== FLAT && material !== WIRE) {
+            for (const slot of TEXTURE_SLOTS) material[slot]?.dispose();
+            material.dispose();
+          }
+        });
+      }
+
+      /** Puts `entries` (the original first) into the view, the camera
+       *  framed on the original's box. */
+      function setModels(entries) {
+        setUpView();
+        for (const old of view.entries) {
+          if (view.shown === old.object) view.scene.remove(old.object);
+          disposeObject(old.object);
+        }
+        view.shown = null;
+        view.entries = entries;
+        const bar = document.getElementById("model-variants");
+        bar.replaceChildren(
+          ...entries.map((entry, index) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.textContent = entry.button;
+            button.title = entry.label;
+            button.addEventListener("click", () =>
+              dispatchView({ type: "show", index }),
+            );
+            return button;
+          }),
+        );
+        const { min, max } = entries[0].facts;
+        const pose = framePose(min, max);
+        const diagonal = new THREE.Vector3(...max).distanceTo(
+          new THREE.Vector3(...min),
+        );
+        view.camera.near = diagonal / 400;
+        view.camera.far = diagonal * 50;
+        view.camera.position.set(...pose.position);
+        view.controls.target.set(...pose.target);
+        view.controls.minDistance = diagonal * 0.05;
+        view.controls.maxDistance = diagonal * 5;
+        document.getElementById("model-view").hidden = false;
+        dispatchView({ type: "loaded", count: entries.length, camera: pose });
+        view.controls.update();
+      }
+
+      async function showModels(source) {
+        const original = await modelFacts(source);
+        const entries = [
+          {
+            button: "Original",
+            label: "Original",
+            mesh: "as loaded",
+            blob: source,
+            facts: original,
+            ssim: null,
+            ms: null,
+          },
+        ];
+        let made = 0;
+        for (const v of MODEL_VARIANTS) {
+          made++;
+          say(
+            `Making model ${made} of ${MODEL_VARIANTS.length}: ${v.label}...`,
+          );
+          const result = await compareModel(source, v.model);
+          entries.push({
+            ...v,
+            blob: result.blob,
+            facts: result.after,
+            ssim: result.ssim,
+            ms: result.ms,
+          });
+        }
+        say("Loading the models into the view...");
+        for (const entry of entries) entry.object = await loadModel(entry.blob);
+        setModels(entries);
+        say(`Models done: the original and ${MODEL_VARIANTS.length} variants.`);
       }
 
       const testModel = async (name = "rock") =>
         (await fetch(`./prototypes/model-lod-1/${name}.glb`)).blob();
+
+      /** The view's sample models: the scanned rock and the two Poly Haven
+       *  models (SOURCES.md next to the fixtures). */
+      async function sampleModel(name) {
+        if (name === "rock") return testModel("rock");
+        const url = { bust: bustUrl, box: boxUrl }[name];
+        if (!url) throw new Error(`no sample model named ${name}`);
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(
+            `the model ${name} did not load (${response.status})`,
+          );
+        }
+        return response.blob();
+      }
+
+      /** What the view shows, for the e2e: its state, the camera as
+       *  three.js has it, and how many of the shown model's meshes have
+       *  their wire lines drawn and their own (textured) material on. */
+      function modelView() {
+        let wires = 0;
+        let textured = 0;
+        view.shown?.traverse((node) => {
+          if (!node.isMesh) return;
+          if (node.userData.wire?.visible) wires++;
+          if (node.material !== FLAT) textured++;
+        });
+        return {
+          state: view.state,
+          position: view.camera?.position.toArray() ?? null,
+          target: view.controls?.target.toArray() ?? null,
+          shownLabel: view.entries[view.state.shown]?.label ?? null,
+          wires,
+          textured,
+        };
+      }
 
       /** `task` with a failure said in words; while it runs, the controls
        *  of `sectionId`'s section are disabled and the section is busy, so
@@ -751,12 +1072,17 @@
         .getElementById("model-file")
         .addEventListener("change", (event) => {
           const file = event.target.files?.[0];
-          if (file) void guard(() => showModels(file))();
+          if (file) void guard(() => showModels(file), "models")();
         });
-      document.getElementById("model-test").addEventListener(
-        "click",
-        guard(async () => showModels(await testModel())),
-      );
+      for (const name of ["rock", "bust", "box"]) {
+        document.getElementById(`model-${name}`).addEventListener(
+          "click",
+          guard(async () => {
+            say("Loading the sample model...");
+            await showModels(await sampleModel(name));
+          }, "models"),
+        );
+      }
 
       // For the e2e (playwright-tests/editor-asset-optimizers.spec.js).
       window.assetOptimizerCheck = {
@@ -776,6 +1102,8 @@
         modelFacts,
         compareModel,
         testModel,
+        sampleModel,
+        modelView,
       };
       say("Ready.");
     </script>
