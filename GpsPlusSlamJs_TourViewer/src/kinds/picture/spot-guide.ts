@@ -16,6 +16,7 @@
  */
 import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-kinds";
 
+import { clamp01 } from "../../landing/clamp01.js";
 import { smoothstep } from "../../smoothstep.js";
 import { viewpointYaw } from "./viewpoint-looks.js";
 
@@ -80,8 +81,6 @@ const DECAL_DIM: Readonly<Record<SpotGuideView, number>> = {
   sharpen: 0.7,
   window: 0.6,
 };
-
-const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
 /** The card's size (m) for a picture `aspect` high per unit wide: a
  *  padded thumbnail over the year and the two lines; without the
