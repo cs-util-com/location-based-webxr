@@ -30,8 +30,9 @@
 //
 // Limits: it matches the DEC- form only. Shorter plan labels (milestone and
 // review numbers such as M5a or R14) are too generic to match without
-// flagging ordinary identifiers, so they are not guarded. Binary files and
-// files over 2 MiB are not read.
+// flagging ordinary identifiers, so they are not guarded. The match is
+// case-sensitive: a lower-case spelling such as dec-h3 passes. Binary files
+// and files over 2 MiB are not read.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -101,6 +102,21 @@ export function scanForCodes(files, root, read) {
   return hits;
 }
 
+/**
+ * One `"<count>  <file>"` line per file of `hits`, the most codes first and
+ * ties by path: the ceiling's failure message, so it names where codes are.
+ *
+ * @param {readonly { file: string, code: string }[]} hits
+ * @returns {string[]}
+ */
+export function countsByFile(hits) {
+  const counts = new Map();
+  for (const { file } of hits) counts.set(file, (counts.get(file) ?? 0) + 1);
+  return [...counts]
+    .sort(([fileA, a], [fileB, b]) => b - a || (fileA < fileB ? -1 : fileA > fileB ? 1 : 0))
+    .map(([file, count]) => `${count}  ${file}`);
+}
+
 describe('decision-code guard', () => {
   // Built from parts so this file carries no code of its own.
   const code = (suffix) => `DEC-${suffix}`;
@@ -120,6 +136,24 @@ describe('decision-code guard', () => {
     it('does not match words that merely start the same way', () => {
       // A code needs the dash and an upper-case part right after it.
       expect(findDecisionCodes('DECEMBER, decimal, DEC- alone, dec-h3, xDEC-H3')).toEqual([]);
+    });
+  });
+
+  describe('countsByFile', () => {
+    // The ceiling's failure names the files, so a new code is found from the
+    // failure alone instead of by diffing a 2,900-hit scan by hand.
+    it('counts the codes per file, the most first, ties by path', () => {
+      const hits = [
+        { file: 'b.md', code: code('A1') },
+        { file: 'a.md', code: code('A1') },
+        { file: 'c.md', code: code('A1') },
+        { file: 'c.md', code: code('B2') },
+      ];
+      expect(countsByFile(hits)).toEqual(['2  c.md', '1  a.md', '1  b.md']);
+    });
+
+    it('is empty for no hits', () => {
+      expect(countsByFile([])).toEqual([]);
     });
   });
 
@@ -149,9 +183,11 @@ describe('decision-code guard', () => {
   describe('the tree', () => {
     /** @type {{ file: string, code: string }[]} */
     let hits;
+    // Reads every text file of the tree: seconds on a quiet machine, so the
+    // default hook timeout is too tight for one under gate load.
     beforeAll(() => {
       hits = scanForCodes(listPublicFiles(repoRoot), repoRoot, readTracked);
-    });
+    }, 30_000);
 
     it('carries no retired code', () => {
       // A non-empty result names the file: state the rule in plain words. For
@@ -163,7 +199,8 @@ describe('decision-code guard', () => {
     it('carries no more than the counted backlog of other codes', () => {
       // Above BACKLOG: a new code was added - write the rule in plain words.
       // Below it is fine; lower BACKLOG to the new count when a rewrite lands.
-      expect(hits.length).toBeLessThanOrEqual(BACKLOG);
+      // The message lists the codes per file, so the new one is found there.
+      expect(hits.length, `codes per file:\n${countsByFile(hits).join('\n')}`).toBeLessThanOrEqual(BACKLOG);
     });
   });
 });
