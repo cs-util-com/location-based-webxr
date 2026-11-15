@@ -199,6 +199,8 @@ describe("newPin", () => {
       kind: "shortText",
       view: "pin",
       caption: "New pin 1",
+      // Written, so the file says how it turns whatever reads it.
+      orientation: "upright",
       createdAtIso: AT,
       station: "s",
     });
@@ -335,6 +337,7 @@ describe("newStoryEntry", () => {
       kind: "shortText",
       view: "card",
       caption: "New pin 2",
+      orientation: "upright",
       advance: { mode: "tap" },
     });
     expect(newStoryEntry(station([]), story, "longText", "t")).toMatchObject({

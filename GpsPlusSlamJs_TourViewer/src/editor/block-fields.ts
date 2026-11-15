@@ -24,6 +24,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-short-text";
 
 import {
+  choiceFallback,
   KIND_EDIT,
   type ChoiceSpec,
   type FieldSpec,
@@ -142,7 +143,7 @@ function ownFields(block: AnyBlock): readonly FieldSpec[] {
     const other = inView.find((s) => s.name === field)?.choice;
     if (other === undefined) return false;
     const set = textOf(block, field);
-    return (set === "" ? other.fallback : set) === value;
+    return (set === "" ? choiceFallback(other, block.view) : set) === value;
   });
 }
 
@@ -277,7 +278,7 @@ export function blockChoices(block: AnyBlock): BlockChoice[] {
       {
         name: spec.name,
         label: spec.label,
-        value: own === "" ? spec.choice.fallback : own,
+        value: own === "" ? choiceFallback(spec.choice, block.view) : own,
         values: spec.choice.values,
       },
     ];
@@ -574,7 +575,7 @@ function choiceSpecFieldEdit<B extends AnyBlock>(
     return { kind: "refused", reason: `${label} is one of: ${words}.` };
   }
   const own = textOf(block, name);
-  if (value === (own === "" ? choice.fallback : own)) {
+  if (value === (own === "" ? choiceFallback(choice, block.view) : own)) {
     return { kind: "unchanged" };
   }
   const rest = { ...(block as unknown as Record<string, unknown>) };

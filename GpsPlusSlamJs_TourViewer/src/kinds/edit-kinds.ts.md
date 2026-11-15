@@ -50,7 +50,9 @@ there.
     loudness curve).
     prose) and its `near` start's distance. A field may instead be a
     `choice` (`ChoiceSpec`: its values in the creator's words and the
-    fallback an absent one means), drawn by the kind's panel, not typed:
+    fallback an absent one means, `fallbackByView` where a view's
+    reader means another: a pin's turn is `upright`, read through
+    `choiceFallback(choice, view)`), drawn by the kind's panel, not typed:
     a video's start, its sound, its loop (a switch) and a cutout's
     background, and a short text's role, turn, ground style and floor
     arrow placement. It is the only chip mechanism: pressing the chip
@@ -195,7 +197,7 @@ row removed.
 
 ## Choice fields
 
-The short text's chip fields are `choice`s (values `FieldChoice`: value and label): `role` (`SHORT_TEXT_ROLES`, fallback `label`) and, for a pin, a sign or a ground arrow, `orientation` (`SHORT_TEXT_TURNS`, fallback `world`), plus the number field `readAtM` (1-40 m, pins, signs and ground arrows). A ground arrow also has `style` (fallback `ribbon`) and `floorPlacement` (fallback `lying`, only for a floor arrow) as chips, `bendDeg` (a number, -60 to 60 degrees), `captionOnArrow` (`flag`: a switch, written as true or left out) and `color` / `darkColor` (`colour`: `#rrggbb`, picked in colour wells); `orientation` turns its plate. A short text also has `pointsTo` (`typed: "point"`, pins, signs and ground arrows; `shortTextPoints(view)` reads that list for the panel and the 3D pick) and `lang` (`typed: "tag"`, every view), each typed on one line and checked by the format's reader (`block-fields.ts`).
+The short text's chip fields are `choice`s (values `FieldChoice`: value and label): `role` (`SHORT_TEXT_ROLES`, fallback `label`) and, for a pin, a sign or a ground arrow, `orientation` (`SHORT_TEXT_TURNS`, fallback `world`, for a pin `upright`), plus the number field `readAtM` (1-40 m, pins, signs and ground arrows). A ground arrow also has `style` (fallback `ribbon`) and `floorPlacement` (fallback `lying`, only for a floor arrow) as chips, `bendDeg` (a number, -60 to 60 degrees), `captionOnArrow` (`flag`: a switch, written as true or left out) and `color` / `darkColor` (`colour`: `#rrggbb`, picked in colour wells); `orientation` turns its plate. A short text also has `pointsTo` (`typed: "point"`, pins, signs and ground arrows; `shortTextPoints(view)` reads that list for the panel and the 3D pick) and `lang` (`typed: "tag"`, every view), each typed on one line and checked by the format's reader (`block-fields.ts`).
 
 ## A block's name by its view
 

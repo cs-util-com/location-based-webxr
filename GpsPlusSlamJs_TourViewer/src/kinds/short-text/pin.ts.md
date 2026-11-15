@@ -19,6 +19,10 @@ covering what is behind it.
   height, the head's height, the stem's radius and the ground mark's size
   for a reading distance, clamped to the format's 1..40 m.
 - `PIN`: the measures below.
+- `PIN_DEFAULT_ORIENTATION` (`"upright"`): how a pin without an
+  `orientation` turns; the editor's Turns chip shows the same for a pin
+  (`kinds/edit-kinds.ts` `fallbackByView`, held to it by
+  `editor/block-fields.test.ts`).
 
 ## Invariants & assumptions
 
@@ -28,9 +32,10 @@ covering what is behind it.
   stem's top.
 - The stem's radius is 0.07 letter heights, at least 11 mm; the ground
   mark 2.4 letter heights, at least 0.22 m.
-- Orientation, like the sign: absent and `world` keep the pose's turn (the
-  row is turning, `placement/placement-rows.ts`); `upright` turns the
-  head about the stem toward the visitor; `face` also tilts it toward the
+- Orientation: `world` keeps the pose's turn (the row is turning,
+  `placement/placement-rows.ts`); `upright`, and an absent one, turns
+  the head about the stem toward the visitor (a flat head kept still is
+  seen edge-on from the side; a sign without one keeps its pose); `face` also tilts it toward the
   visitor's eyes (the pitch from the head to the viewer's position, not
   the camera's tilt). Turning is eased (`turnRate` 7/s).
 - The head has two faces, so a `world` pin reads from behind.
@@ -41,12 +46,14 @@ covering what is behind it.
   its point) fails four direction tests.
 - The pulse: one swell every 2.8 s from 0.7 to 2.2 times its size, fading
   from 0.55 to nothing; still (at a fixed phase) in the editor and when
-  the visitor asked for less motion (`env.reduceMotion`).
+  the visitor asked for less motion (`env.reduceMotion`, asked every
+  frame, so switching it on mid-walk stops the pulse at once).
 - All materials are unlit, transparent and write no depth, so the mark
   never hides the camera image as an opaque square; without a canvas (in
   Node) the plate and the halo are plain colours and everything still
   lays out.
-- `dispose` frees every geometry, material and texture it made.
+- `dispose` frees every geometry, material and texture it made,
+  each once.
 
 ## Example
 
@@ -66,4 +73,7 @@ part.dispose();
 orientation's turn and tilt, both faces, the arrow's world direction
 (past, right, left, behind) for every orientation and from behind a
 `world` pin, no arrow without a point, the pulse moving in play and still
-under reduce-motion and in the editor, and dispose.
+under reduce-motion (also switched on while it stands) and in the
+editor, and dispose: every geometry, material and painted texture (a
+stubbed drawing context lets the three paint) fires its dispose event
+exactly once.

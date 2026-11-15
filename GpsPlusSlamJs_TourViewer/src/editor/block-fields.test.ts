@@ -12,7 +12,12 @@ import fc from "fast-check";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
-import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
+import {
+  choiceFallback,
+  KIND_EDIT,
+  type FieldSpec,
+} from "../kinds/edit-kinds.js";
+import { PIN_DEFAULT_ORIENTATION } from "../kinds/short-text/pin.js";
 import { textCounterLine, wireTextCounter } from "../pin-text.js";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
@@ -561,6 +566,29 @@ describe("choice fields", () => {
       kind: "unchanged",
     });
   });
+
+  // Why: a pin without a turn stands upright toward the visitor (a flat
+  // head kept still would be seen edge-on from the side); a sign without
+  // one keeps its pose. The chip pressed must say what the reader does,
+  // and pressing it must write nothing.
+  it("read a missing turn by the view: upright for a pin, fixed for a sign", () => {
+    const turnOf = (block: TourObject) =>
+      blockChoices(block).find((c) => c.name === "orientation")?.value;
+    const sign = { ...PIN, view: "sign" } as unknown as TourObject;
+    expect(turnOf(PIN)).toBe("upright");
+    expect(turnOf(sign)).toBe("world");
+    expect(turnOf(PIN)).toBe(PIN_DEFAULT_ORIENTATION);
+    expect(blockFieldEdit(PIN, "orientation", "upright")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(PIN, "orientation", "world")).toMatchObject({
+      kind: "edited",
+      after: { orientation: "world" },
+    });
+    expect(blockFieldEdit(sign, "orientation", "world")).toEqual({
+      kind: "unchanged",
+    });
+  });
 });
 
 describe("a ground arrow's own fields", () => {
@@ -887,14 +915,12 @@ describe("every kind's chip choices", () => {
           const shown = blockChoices(block as unknown as TourObject).find(
             (c) => c.name === spec.name,
           );
-          expect(shown?.value).toBe(choice.fallback);
+          // The view's own fallback where it has one (a pin's turn).
+          const fallback = choiceFallback(choice, view);
+          expect(shown?.value).toBe(fallback);
           const before = JSON.stringify(block);
           expect(
-            blockFieldEdit(
-              block as unknown as TourObject,
-              spec.name,
-              choice.fallback,
-            ),
+            blockFieldEdit(block as unknown as TourObject, spec.name, fallback),
           ).toEqual({ kind: "unchanged" });
           expect(JSON.stringify(block)).toBe(before);
         });

@@ -98,8 +98,8 @@ for (const viewport of VIEWPORTS) {
     }
     await row.click();
 
-    // A pin: its view pressed, the reader's default role, and like a sign
-    // it keeps its own turn.
+    // A pin: its view pressed, the reader's default role, and its
+    // reader's turn: upright toward the visitor.
     await expect(chip(page, "Shows as", "Pin")).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -108,7 +108,7 @@ for (const viewport of VIEWPORTS) {
       "aria-pressed",
       "true",
     );
-    await expect(chip(page, "Turns", "Fixed")).toHaveAttribute(
+    await expect(chip(page, "Turns", "Upright")).toHaveAttribute(
       "aria-pressed",
       "true",
     );

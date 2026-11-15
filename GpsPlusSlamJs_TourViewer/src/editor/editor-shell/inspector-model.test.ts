@@ -865,7 +865,7 @@ describe("buildInspector", () => {
           {
             name: "orientation",
             label: "Turns",
-            value: "world",
+            value: "upright",
             values: [
               { value: "world", label: "Fixed" },
               { value: "upright", label: "Upright" },
@@ -873,7 +873,7 @@ describe("buildInspector", () => {
             ],
           },
         ],
-        // A pin turns its head toward the point it points to.
+        // A pin's arrow turns toward the point it points to.
         point: { id: "pin-1", at: null, picking: false },
       },
       video: null,

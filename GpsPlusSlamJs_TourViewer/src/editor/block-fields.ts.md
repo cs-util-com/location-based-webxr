@@ -71,7 +71,8 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
     cannot be empty.") for a field the block needs emptied;
   - a choice field (`FieldSpec` `choice`, the one chip mechanism of
     every kind): `edited` with the value, `unchanged` for the one in
-    use (an absent field's fallback among them) or a choice of another
+    use (an absent field's fallback for its view among them,
+    `choiceFallback`) or a choice of another
     view, `refused` ("Starts is one of: On arrival, ...") for a value it
     does not offer, a blank among them;
   - for a number field: `edited` with the typed decimal (a comma as its

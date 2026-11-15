@@ -8,11 +8,21 @@
  * arrow pointing straight away from its target; the arrow test below
  * checks the direction in the world, not an angle.
  */
-import { Box3, Group, Vector3, type Mesh, type Object3D } from "three";
-import { describe, expect, it } from "vitest";
+import {
+  Box3,
+  CanvasTexture,
+  Group,
+  Vector3,
+  type EventDispatcher,
+  type Mesh,
+  type MeshBasicMaterial,
+  type Object3D,
+  type Texture,
+} from "three";
+import { describe, expect, it, vi } from "vitest";
 
-import { worldEnv, type WorldPart } from "../../world-part.js";
-import { PIN, pinMeasures, pinPart } from "./pin.js";
+import { worldEnv, type WorldEnv, type WorldPart } from "../../world-part.js";
+import { PIN, PIN_DEFAULT_ORIENTATION, pinMeasures, pinPart } from "./pin.js";
 
 const none = () => Promise.reject(new Error("none"));
 const env = worldEnv("play", [], none);
@@ -89,14 +99,14 @@ describe("a pin", () => {
   it.each([undefined, "world", "upright", "face"])(
     "orientation %s: keeps its turn, turns about up, or also tilts to the eyes",
     (orientation) => {
-      // Why: `world` (and none) keeps the creator's turn; `upright`
+      // Why: `world` keeps the creator's turn; `upright` (and none)
       // turns about the stem; `face` also tilts the head toward the eyes.
       const part = standing(
         orientation === undefined ? {} : { orientation },
         [5, 1.6, 0],
       );
       const head = named(part, "pin-head");
-      const turns = orientation === "upright" || orientation === "face";
+      const turns = orientation !== "world";
       expect(head.rotation.y).toBeCloseTo(turns ? Math.PI / 2 : 0, 5);
       // For `face` the eyes are below the head: it tips its face down
       // to them; the others never tilt.
@@ -106,6 +116,19 @@ describe("a pin", () => {
       part.dispose();
     },
   );
+
+  it("turns its head toward a visitor at its side when it has no turn", () => {
+    // Why: a flat head kept still is seen edge-on from the side,
+    // unreadable. Without a turn it must stand upright toward the
+    // visitor, as the reader's fallback says.
+    expect(PIN_DEFAULT_ORIENTATION).toBe("upright");
+    const part = standing({}, [5, 1.6, 0]);
+    part.object.updateMatrixWorld(true);
+    const head = named(part, "pin-head");
+    const facing = new Vector3(0, 0, 1).transformDirection(head.matrixWorld);
+    expect(facing.x).toBeGreaterThan(0.99);
+    part.dispose();
+  });
 
   it("shows its text on both faces, so a fixed pin reads from behind", () => {
     // Why: a `world` pin is passed from every side.
@@ -197,11 +220,100 @@ describe("a pin", () => {
     expect(scaleAt(edit, t0)).toBeCloseTo(scaleAt(edit, tHalf), 10);
   });
 
-  it("frees what it made", () => {
-    // Why: stations are drawn and freed again as the visitor walks.
-    const part = standing({ pointsTo: [1, 0, -3], description: "Open daily." });
-    expect(() => {
+  it("follows the reduced-motion setting while it stands", () => {
+    // Why: a visitor may switch reduced motion on during a walk; the
+    // pulse must stop then, not only at the next station.
+    let calm = false;
+    const at = worldEnv("play", [], none, { reduceMotion: () => calm });
+    const part = pin({}, at);
+    new Group().add(part.object);
+    const pulse = named(part, "pin-pulse");
+    const scaleAt = (seconds: number) => {
+      part.update?.({ seconds, viewer: [0, 1.6, 5] });
+      return pulse.scale.x;
+    };
+    const t0 = 10;
+    const tHalf = t0 + PIN.pulsePeriodS / 2;
+    expect(scaleAt(t0)).not.toBeCloseTo(scaleAt(tHalf), 2);
+    calm = true;
+    expect(scaleAt(t0 + PIN.pulsePeriodS)).toBeCloseTo(
+      scaleAt(tHalf + PIN.pulsePeriodS),
+      10,
+    );
+    part.dispose();
+  });
+
+  it("frees each geometry, material and texture it made, once", () => {
+    // Why: stations are drawn and freed again as the visitor walks; a
+    // part that leaks one texture per station fills the phone's GPU. A
+    // drawing context that answers every call lets the plate, the glyph
+    // and the halo paint, so their textures exist to be freed.
+    const store: Record<string | symbol, unknown> = {};
+    const g = new Proxy(store, {
+      get: (own, key) => {
+        if (key in own) return own[key];
+        if (key === "measureText") {
+          return (text: string) => ({
+            width: text.length * 10,
+            actualBoundingBoxAscent: 8,
+            actualBoundingBoxDescent: 2,
+          });
+        }
+        if (key === "createRadialGradient" || key === "createLinearGradient") {
+          return () => ({ addColorStop: () => undefined });
+        }
+        return () => undefined;
+      },
+    });
+    vi.stubGlobal("document", {
+      createElement: () => ({ width: 0, height: 0, getContext: () => g }),
+    });
+    const made: Texture[] = [];
+    const at: WorldEnv = {
+      ...env,
+      canvasTexture: (canvas) => {
+        const t = new CanvasTexture(canvas);
+        made.push(t);
+        return t;
+      },
+    };
+    try {
+      const part = pin(
+        { pointsTo: [1, 0, -3], description: "Open daily." },
+        at,
+      );
+      new Group().add(part.object);
+      part.update?.({ seconds: 1, viewer: [0, 1.6, 5] });
+      const freed = new Map<object, number>();
+      const watch = (thing: EventDispatcher<{ dispose: object }>) => {
+        if (freed.has(thing)) return;
+        freed.set(thing, 0);
+        thing.addEventListener("dispose", () => {
+          freed.set(thing, (freed.get(thing) ?? 0) + 1);
+        });
+      };
+      let meshes = 0;
+      part.object.traverse((o) => {
+        const mesh = o as Mesh;
+        if (mesh.isMesh !== true) return;
+        meshes++;
+        watch(mesh.geometry);
+        for (const material of [mesh.material].flat()) {
+          watch(material);
+          const map = (material as MeshBasicMaterial).map;
+          if (map !== null) watch(map);
+        }
+      });
+      // The plate, its halo and its glyph: three painted textures, each
+      // on a mesh of the part.
+      expect(made).toHaveLength(3);
+      expect(made.every((t) => freed.has(t))).toBe(true);
+      // Head (two faces), stem, disc, ring, pulse and two arrows.
+      expect(meshes).toBe(8);
       part.dispose();
-    }).not.toThrow();
+      expect([...freed.entries()].filter(([, n]) => n !== 1)).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

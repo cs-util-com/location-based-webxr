@@ -6,9 +6,10 @@
  *
  * Its reading distance sets both the letter height and how high the head
  * floats (1.7 m plus 10 cm per metre read), so a pin read from far clears
- * a crowd. Its head turns by its `orientation`: `world` (and none) keeps
- * its pose's turn, `upright` turns about the stem toward the visitor, and
- * `face` also tilts it to the visitor's eyes. A pin that points somewhere
+ * a crowd. Its head turns by its `orientation`: `world` keeps its pose's
+ * turn, `upright` (and none, `PIN_DEFAULT_ORIENTATION`) turns about the
+ * stem toward the visitor, and `face` also tilts it to the visitor's
+ * eyes. A pin that points somewhere
  * (`pointsTo`) shows the sign's turning arrow in place of its role icon,
  * on both faces of the head.
  *
@@ -78,6 +79,11 @@ export const PIN = {
   turnRate: 7,
   glyphRate: 8,
 } as const;
+
+/** How a pin without an `orientation` turns: upright toward the
+ *  visitor, since a flat head kept still is seen edge-on from the side
+ *  (the editor's chip shows the same, `kinds/edit-kinds.ts`). */
+export const PIN_DEFAULT_ORIENTATION = "upright";
 
 /** A pin's measures for a reading distance (clamped to the format's). */
 export function pinMeasures(readAtM: number): {
@@ -257,9 +263,11 @@ export function pinPart(block: TourShortTextBlock, env: WorldEnv): WorldPart {
     }
   }
 
-  const turns = block.orientation === "upright" || block.orientation === "face";
-  const tilts = block.orientation === "face";
-  const moves = env.mode === "play" && env.reduceMotion?.() !== true;
+  const orientation = block.orientation ?? PIN_DEFAULT_ORIENTATION;
+  const turns = orientation !== "world";
+  const tilts = orientation === "face";
+  // Asked each frame: a visitor may switch reduced motion on mid-walk.
+  const moves = () => env.mode === "play" && env.reduceMotion?.() !== true;
   let lastSeconds: number | null = null;
   let yaw: number | null = null;
   let pitch: number | null = null;
@@ -274,7 +282,7 @@ export function pinPart(block: TourShortTextBlock, env: WorldEnv): WorldPart {
           ? Number.POSITIVE_INFINITY
           : Math.min(0.1, frame.seconds - lastSeconds);
       lastSeconds = frame.seconds;
-      const phase = moves
+      const phase = moves()
         ? (frame.seconds % PIN.pulsePeriodS) / PIN.pulsePeriodS
         : 0.35;
       pulse.scale.setScalar(0.7 + phase * 1.5);

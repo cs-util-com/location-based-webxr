@@ -72,7 +72,7 @@ describe("a short text's panel", () => {
     expect(pin.pressed).toEqual([
       "short-view:pin",
       "short-role:label",
-      "short-turn:world",
+      "short-turn:upright",
     ]);
     const sign = drawn(st("sign", { role: "warning" }));
     expect(sign.pressed).toEqual([

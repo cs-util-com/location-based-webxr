@@ -5,10 +5,11 @@
 A pin's label where a page draws a pin without the world door: the
 framework's text sprite on a pill. A station's pin in the phone's AR and
 the desktop editor's 3D view is the world door's head on a stem
-(`kinds/short-text/pin.ts`); this label stays for what has no door (an
-object's renderer, a creator's previews, the editor's drawings), one
-recipe through `seams.ts` and `editor3d/editor3d-drawings.ts`, so such a
-pin reads the same everywhere.
+(`kinds/short-text/pin.ts`); this label stays for what has no door: an
+object's renderer (`renderTourObjects`, which a creator's previews use
+while placing a pin), through `seams.ts`. The editor's drawings still
+hand it to the station renderer as its required label maker, but a pin
+there goes through the door.
 
 ## Public API
 
