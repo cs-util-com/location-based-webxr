@@ -67,6 +67,8 @@ function bruteForceFlat(entries: readonly PriorEntry[], self: PriorEntry) {
   let flat = 0;
   for (const other of entries) {
     const d = Math.hypot(other.at.x - self.at.x, other.at.y - self.at.y);
+    // 1e-6 matches `PRIOR_EDGE_SLACK_M`, which stays unexported: `./mesh/*`
+    // is public package API.
     if (d > P.priorRadiusM + 1e-6) continue;
     const roof = other.tags["roof:shape"];
     if (roof === undefined) continue;
