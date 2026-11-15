@@ -14,12 +14,22 @@ import {
   Mesh,
   MeshBasicMaterial,
   type Object3D,
+  PerspectiveCamera,
+  Scene,
+  Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
 
 import { TOUR_GROUND_STYLES } from "gps-plus-slam-app-framework/ar/tour-short-text";
 
-import { worldEnv, type WorldEnv, type WorldPart } from "../../world-part.js";
+import { pickObject, PICK_TOLERANCE_DEG } from "../../object-pick.js";
+import { routeVisitorTap } from "../../visitor-stations.js";
+import {
+  tapShownWorldPart,
+  worldEnv,
+  type WorldEnv,
+  type WorldPart,
+} from "../../world-part.js";
 import { groundPart } from "./ground.js";
 import {
   GROUND,
@@ -223,5 +233,149 @@ describe("a ground arrow", () => {
     }
     expect(Math.abs(plateOf(still).rotation.y)).toBeCloseTo(Math.PI, 5);
     expect(Math.abs(plateOf(turning).rotation.y)).not.toBeCloseTo(Math.PI, 1);
+  });
+});
+
+describe("a ground arrow's tap", () => {
+  // Why: the arrow shows only its caption; its description was decided
+  // to reach the visitor as a toast on a tap. The tap is cast like every
+  // other part's (`pickObject`, its angular tolerance), so it must land
+  // on the arrow and its plate, and a tap elsewhere must stay free for
+  // the next handler (the pin sheet), whatever plausible tolerance the
+  // pick uses.
+  const TOLERANCES_DEG = [0, 1, PICK_TOLERANCE_DEG, 6, 10];
+
+  function shown(fields: Record<string, unknown>, env: WorldEnv) {
+    const part = ground({ pointsTo: [0, 0, 8], ...fields }, env);
+    const scene = new Scene();
+    const station = new Group();
+    station.name = "station-content:s";
+    scene.add(station);
+    station.add(part.object);
+    part.update?.({ seconds: 0, viewer: [0, 1.6, -2] });
+    scene.updateMatrixWorld(true);
+    const camera = new PerspectiveCamera(60, 9 / 16, 0.05, 200);
+    camera.position.set(0, 1.6, -2);
+    camera.lookAt(0, 0, 3);
+    camera.updateMatrixWorld(true);
+    return { part, scene, camera };
+  }
+
+  /** `point` (the part's frame) on the screen, in NDC. */
+  const ndcOf = (
+    camera: PerspectiveCamera,
+    x: number,
+    y: number,
+    z: number,
+  ) => {
+    const p = new Vector3(x, y, z).project(camera);
+    return { x: p.x, y: p.y };
+  };
+
+  function tapAt(
+    scene: Scene,
+    camera: PerspectiveCamera,
+    ndc: { x: number; y: number },
+    part: WorldPart,
+    toleranceDeg: number,
+  ): boolean {
+    return tapShownWorldPart(
+      scene,
+      (targets, at) => pickObject(camera, targets, { ndc: at, toleranceDeg }),
+      ndc,
+      [part],
+    );
+  }
+
+  it("says the description when the arrow or its plate is tapped", () => {
+    for (const style of TOUR_GROUND_STYLES) {
+      for (const toleranceDeg of TOLERANCES_DEG) {
+        const said: string[] = [];
+        const env = worldEnv("play", [], none, { say: (t) => said.push(t) });
+        const { part, scene, camera } = shown(
+          { style, description: "  Up the stairs, then left. " },
+          env,
+        );
+        const marks = boxOf(arrowOf(part)).getCenter(new Vector3());
+        const plate = boxOf(plateOf(part)).getCenter(new Vector3());
+        for (const at of [marks, plate]) {
+          expect(
+            tapAt(
+              scene,
+              camera,
+              ndcOf(camera, at.x, at.y, at.z),
+              part,
+              toleranceDeg,
+            ),
+            `${style} at ${toleranceDeg} deg`,
+          ).toBe(true);
+        }
+        expect(said).toEqual([
+          "Up the stairs, then left.",
+          "Up the stairs, then left.",
+        ]);
+      }
+    }
+  });
+
+  it("leaves a tap elsewhere to the next handler", () => {
+    for (const toleranceDeg of TOLERANCES_DEG) {
+      const said: string[] = [];
+      const env = worldEnv("play", [], none, { say: (t) => said.push(t) });
+      const { part, scene, camera } = shown({ description: "Left." }, env);
+      // The sky high up, and the ground well to the side of the arrow.
+      for (const ndc of [{ x: 0, y: 0.95 }, ndcOf(camera, 6, 0, 3)]) {
+        const sheet: unknown[] = [];
+        routeVisitorTap(ndc as never, {
+          character: () => false,
+          model: () => false,
+          part: () => tapAt(scene, camera, ndc, part, toleranceDeg),
+          pinSheet: { close: () => undefined, tapped: (t) => sheet.push(t) },
+        });
+        expect(sheet, `${String(toleranceDeg)} deg`).toEqual([ndc]);
+      }
+      expect(said).toEqual([]);
+    }
+  });
+
+  it("does not take a tap where a hidden plate would stand", () => {
+    // Why: with its caption painted on a floor arrow the plate is hidden,
+    // but a raycast still meets hidden meshes; the empty spot beside the
+    // arrow's start must stay free for the next handler. Node paints no
+    // caption (no canvas), so the test hides the plate as that layout does.
+    for (const toleranceDeg of [0, 1]) {
+      const said: string[] = [];
+      const env = worldEnv("play", [], none, { say: (t) => said.push(t) });
+      const { part, scene, camera } = shown(
+        { style: "floor", captionOnArrow: true, description: "Left." },
+        env,
+      );
+      plateOf(part).visible = false;
+      const at = boxOf(plateOf(part).children[0]!).getCenter(new Vector3());
+      expect(
+        tapAt(
+          scene,
+          camera,
+          ndcOf(camera, at.x, at.y, at.z),
+          part,
+          toleranceDeg,
+        ),
+      ).toBe(false);
+      expect(said).toEqual([]);
+    }
+  });
+
+  it("takes no tap without a description, in the editor or with no toast", () => {
+    const said: string[] = [];
+    const say = (t: string) => said.push(t);
+    for (const part of [
+      ground({ description: "   " }, worldEnv("play", [], none, { say })),
+      ground({}, worldEnv("play", [], none, { say })),
+      ground({ description: "Left." }, worldEnv("edit", [], none, { say })),
+      ground({ description: "Left." }, playEnv),
+    ]) {
+      expect(part.tap).toBeUndefined();
+    }
+    expect(said).toEqual([]);
   });
 });

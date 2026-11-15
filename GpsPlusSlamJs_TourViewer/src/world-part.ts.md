@@ -35,12 +35,14 @@ the reading sign (`reading-sign.ts`) are world parts too.
   asks for; a no-op where the page gives none), `sound(id, channel)` (a
   `world-sound.ts` `SoundHandle` for an audio asset on the `"voice"` or
   `"background"` channel; in the editor always the silent handle), and
-  `screen?` (the page's `WorldScreen`, in `play` only), and
+  `screen?` (the page's `WorldScreen`, in `play` only), `say?(text)`
+  (the page's toast, shown and announced, in `play` only: a ground
+  arrow's description on a tap), and
   `reduceMotion?()` (the visitor asked for less motion; none: motion is
   allowed; a ground arrow's hover and light read it each frame).
 - `WorldEnvOptions` - what a page gives its env, every field optional:
   `sound` (the page's `createWorldSound`; none: silence), `screen` (handed
-  on in `play` only), `parseModel(blob)` (a glb as a model, `glb-model.ts`;
+  on in `play` only), `say` (the same), `parseModel(blob)` (a glb as a model, `glb-model.ts`;
   none: a model is refused), `enableClipping()` (none: ignored) and
   `reduceMotion()` (the viewer passes the `prefers-reduced-motion` query).
 - `WorldScreen` - `show(build)`: `build(host)` fills a fresh panel and
@@ -74,7 +76,8 @@ the reading sign (`reading-sign.ts`) are world parts too.
   asset id is read through `load` by the path the tour's `assets` name for
   it; a model through `options.parseModel` after that; a sound is made by
   `options.sound` and reads its file the same way; `options.screen` is
-  handed on in `play` only, so an editor part never opens a panel.
+  handed on in `play` only, so an editor part never opens a panel, and
+  `options.say` likewise, so an editor part never shows a toast.
 - `tickWorldParts(scene, viewer, nowMs, parts = mountedWorldParts())` - every
   camera frame (`main.ts` `hooks.tickStations`): each shown part with an
   `update` gets `{ seconds: nowMs / 1000, viewer }`, the camera's world

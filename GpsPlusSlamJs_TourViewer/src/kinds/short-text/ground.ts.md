@@ -9,7 +9,11 @@ one of five styles, with a caption plate beside the start.
 ## Public API
 
 - `groundPart(block, env): WorldPart` - builds the arrow. `object` holds two
-  children: the marks (first) and the plate (second). No `tapTarget`.
+  children: the marks (first) and the plate (second). In `play`, with
+  `env.say` and a non-blank description, a tap says the description
+  (trimmed) as the page's toast; `tapTarget` is the whole object while the
+  plate shows and the marks alone while it is hidden (its caption on a floor
+  arrow), as a raycast meets hidden meshes. Otherwise it takes no tap.
 
 ## The styles
 
@@ -63,6 +67,10 @@ part.update?.({ seconds, viewer });
 `ground.test.ts` - per style: above the ground and within the stop; straight
 ahead with no point; plate only when too near; bend side and plate side;
 record colours and defaults; motion in play, none in edit or under reduced
-motion; relayout when the spot moves; only the plate turns. The maths is in
+motion; relayout when the spot moves; only the plate turns; the tap: reached
+on the marks and the plate for every style, a tap on the sky, on the ground
+beside it or where a hidden plate stood is left to the next handler (the pin
+sheet), each across pick tolerances 0-10 degrees; no tap without a
+description, in the editor or without a toast. The maths is in
 `ground-route.property.test.ts`. The look is checked side by side against the
 prototype in the editor e2e.

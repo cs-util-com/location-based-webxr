@@ -943,6 +943,11 @@ const worldSound = createWorldSound({
 });
 const viewer = createViewerPlacement({
   worldSound,
+  // What a part says on a tap (a ground arrow's description).
+  worldSay: (text) => {
+    walkToast.say([text]);
+    walkToast.announce(text);
+  },
   // Where a narration circle opens its player card.
   worldScreen: screenIn(element("narration-card-root"), {
     onError: () => {
