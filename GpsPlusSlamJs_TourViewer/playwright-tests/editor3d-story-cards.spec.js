@@ -269,9 +269,12 @@ async function sendTouches(cdp, touches) {
 // The prototype's footer and grip, measured: a footer button's height and
 // a grip's size and place left of the step's number (a phone's are a
 // finger's).
+// On its side a phone keeps the desktop's buttons, which leave the cards
+// more of its short height, and a finger's grip.
 const FOOT = {
-  desktop: { button: 30, grip: [22, 40], gripLeft: 4, gripTop: 4, toNum: 9 },
-  phone: { button: 42, grip: [26, 44], gripLeft: 2, gripTop: 6, toNum: 8 },
+  desktop: { button: 30, grip: [22, 40], gripLeft: 4, gripTop: 12, toNum: 9 },
+  side: { button: 30, grip: [26, 44], gripLeft: 4, gripTop: 12, toNum: 9 },
+  phone: { button: 42, grip: [26, 44], gripLeft: 2, gripTop: 14, toNum: 8 },
 };
 
 for (const size of SIZES) {
@@ -287,7 +290,9 @@ for (const size of SIZES) {
     test("stays at the panel's foot while the cards scroll, and a grip drags a step to its new place", async ({
       page,
     }) => {
-      test.slow();
+      // Three steps built through the page, then a drag and its undo: on a
+      // desktop's software-drawn 3D view that took 1.3 to 2.2 minutes here.
+      test.setTimeout(180_000);
       await page.setViewportSize({ width: size.width, height: size.height });
       await answerHosts(page);
       await openSampleIn3d(page);
@@ -311,7 +316,11 @@ for (const size of SIZES) {
         await expect(inspector.locator(".scard")).toHaveCount(n);
       }
       const cards = inspector.locator(".scard");
-      const want = size.phone ? FOOT.phone : FOOT.desktop;
+      const want = size.phone
+        ? FOOT.phone
+        : size.drill
+          ? FOOT.side
+          : FOOT.desktop;
 
       // The footer: flush with the body's foot at either end of the
       // cards' scroll, Add step and Preview side by side 8 px apart, 12 px
@@ -338,6 +347,8 @@ for (const size of SIZES) {
         expect(p.x - (a.x + a.width)).toBeCloseTo(8, 0);
         expect(a.x - f.x).toBeCloseTo(12, 0);
         expect(f.x + f.width - (p.x + p.width)).toBeCloseTo(12, 0);
+        // A phone's two halves; elsewhere Add step takes what Preview leaves.
+        if (size.phone) expect(a.width).toBeCloseTo(p.width, 0);
         room.push(shown.height - f.height);
       }
       // What the footer leaves for the cards: at least one card whole.

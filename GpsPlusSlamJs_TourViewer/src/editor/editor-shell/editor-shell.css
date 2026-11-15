@@ -4141,7 +4141,7 @@ body[data-view="3d"] #view3d .view3d-canvas {
   place-items: center;
   width: 22px;
   height: 40px;
-  margin: 4px 0 0 4px;
+  margin: 12px 0 0 4px;
   border-radius: 4px;
   color: var(--s-dim);
   cursor: grab;
@@ -4246,11 +4246,17 @@ body[data-view="3d"] #view3d .view3d-canvas {
   background: #f0b257;
 }
 
-@media (max-width: 700px) {
+/* A finger's grip wherever the cards drill (a phone either way round). */
+@media (max-width: 700px), (max-height: 500px) {
   .scard .grip {
     width: 26px;
     height: 44px;
-    margin: 6px 0 0 2px;
+  }
+}
+
+@media (max-width: 700px) {
+  .scard .grip {
+    margin: 14px 0 0 2px;
   }
 
   .scard .crow > .chead {
@@ -4261,7 +4267,9 @@ body[data-view="3d"] #view3d .view3d-canvas {
     scroll-padding-bottom: 68px;
   }
 
+  /* A phone's two halves, as the prototype's bottom bar has them. */
   .sfoot .act {
+    flex: 1;
     min-height: 42px;
   }
 }
