@@ -662,6 +662,9 @@ async function main(): Promise<void> {
     initial: initialLight,
     onChange: (settings) => {
       buildingView.setLightSettings(settings);
+      // The haze start moves the fog's near, which the draw readout names.
+      // Declared further down; this runs on user input only, after boot.
+      paintRenderDistance();
       writeLightUrl(serializeLightSettings(settings));
     },
     measure: (withMargin) => {

@@ -48,7 +48,8 @@ WebGL.
 - **The element ids are the contract with the page and the e2e:**
   - `#light-dialog`;
   - `#light-<field>`, one range input per `LightSettings` field, with its
-    range from `LIGHT_SETTING_RANGES`;
+    range from `LIGHT_SETTING_RANGES` (the two haze sliders,
+    `#light-hazeVisibilityKm` and `#light-hazeStartRatio`, come last);
   - `#light-ao`, the ambient occlusion checkbox (only when offered);
   - `#light-readout`;
   - `#light-back`, `#light-check`, `#light-copy`, `#light-reset` and

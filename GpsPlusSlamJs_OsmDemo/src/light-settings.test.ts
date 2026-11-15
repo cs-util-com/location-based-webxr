@@ -13,6 +13,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   BUILDING_SKY_LIGHT,
+  HAZE_START_RATIO,
+  HAZE_VISIBILITY_KM,
   NATURAL_LIGHT_ADAPTATION,
   NATURAL_LIGHT_COMPENSATION_EV,
   NOON_SURFACE_GAIN,
@@ -40,7 +42,12 @@ describe("DEFAULT_LIGHT_SETTINGS", () => {
       buildingSkyLight: BUILDING_SKY_LIGHT,
       exposureAdaptation: NATURAL_LIGHT_ADAPTATION,
       exposureEv: NATURAL_LIGHT_COMPENSATION_EV,
+      hazeVisibilityKm: HAZE_VISIBILITY_KM,
+      hazeStartRatio: HAZE_START_RATIO,
     });
+    // Today's haze: 45 km, its boundary fade from 0.66 of the draw distance.
+    expect(HAZE_VISIBILITY_KM).toBe(45);
+    expect(HAZE_START_RATIO).toBe(0.66);
     for (const f of FIELDS) {
       const r = LIGHT_SETTING_RANGES[f];
       expect(DEFAULT_LIGHT_SETTINGS[f]).toBeGreaterThanOrEqual(r.min);
@@ -167,6 +174,75 @@ describe("parseLightSettings and serializeLightSettings", () => {
       serializeLightSettings({ ...DEFAULT_LIGHT_SETTINGS, gainMax: 2 }),
     ).toBe("v1:gain=2");
   });
+
+  // WHY (city look, haze inside the city): the haze is tuned by two keys,
+  // `vis` (the visibility, km) and `haze` (where the boundary fade starts, as
+  // a share of the draw distance). A link without them must keep today's
+  // haze, and one that states them must get exactly those values, inside the
+  // sliders' bounds only.
+  it("reads and writes the haze keys, inside their bounds", () => {
+    const d = DEFAULT_LIGHT_SETTINGS;
+    expect(parseLightSettings("?light=v1:vis=15,haze=0.2")).toEqual({
+      ...d,
+      hazeVisibilityKm: 15,
+      hazeStartRatio: 0.2,
+    });
+    expect(
+      serializeLightSettings({ ...d, hazeVisibilityKm: 9, hazeStartRatio: 0 }),
+    ).toBe("v1:vis=9,haze=0");
+    expect(parseLightSettings("?light=v1:gain=1.8")).toEqual({
+      ...d,
+      gainMax: 1.8,
+    });
+    // Out of range or not a number: today's haze, per field.
+    for (const bad of ["vis=8", "vis=61", "vis=0", "haze=-0.1", "haze=0.91"]) {
+      expect(parseLightSettings(`?light=v1:${bad}`), bad).toEqual(d);
+    }
+    expect(parseLightSettings("?light=v1:vis=x,haze=0.3")).toEqual({
+      ...d,
+      hazeStartRatio: 0.3,
+    });
+    const v = LIGHT_SETTING_RANGES.hazeVisibilityKm;
+    const h = LIGHT_SETTING_RANGES.hazeStartRatio;
+    expect([v.min, v.max]).toEqual([9, 60]);
+    expect([h.min, h.max]).toEqual([0, 0.9]);
+  });
+
+  // WHY: a haze tried in the dialog and shared must come back exactly, and
+  // must not drag any other field away from today's look with it.
+  it("round-trips any haze alone, writing only the haze keys", () => {
+    const grid = (f: "hazeVisibilityKm" | "hazeStartRatio") => {
+      const r = LIGHT_SETTING_RANGES[f];
+      return fc
+        .integer({ min: 0, max: Math.round((r.max - r.min) / r.step) })
+        .map((k) => Number((r.min + k * r.step).toFixed(3)));
+    };
+    fc.assert(
+      fc.property(
+        grid("hazeVisibilityKm"),
+        grid("hazeStartRatio"),
+        (vis, start) => {
+          const s = {
+            ...DEFAULT_LIGHT_SETTINGS,
+            hazeVisibilityKm: vis,
+            hazeStartRatio: start,
+          };
+          const value = serializeLightSettings(s);
+          const keys = (value ?? "v1:")
+            .slice(3)
+            .split(",")
+            .filter((p) => p !== "")
+            .map((p) => p.split("=")[0]);
+          expect(keys.every((k) => k === "vis" || k === "haze")).toBe(true);
+          const back = parseLightSettings(
+            value === null ? "" : `?light=${encodeURIComponent(value)}`,
+          );
+          expect(back).toEqual(s);
+        },
+      ),
+      { numRuns: 200, seed: 20261115 },
+    );
+  });
 });
 
 describe("describeLightSettings", () => {
@@ -180,9 +256,12 @@ describe("describeLightSettings", () => {
       buildingSkyLight: 1.3,
       exposureAdaptation: 0.6,
       exposureEv: -2.5,
+      hazeVisibilityKm: 15,
+      hazeStartRatio: 0.2,
     });
     expect(line).toBe(
-      "light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5",
+      "light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5, " +
+        "haze 15 km from 0.2 of the draw distance",
     );
   });
 });

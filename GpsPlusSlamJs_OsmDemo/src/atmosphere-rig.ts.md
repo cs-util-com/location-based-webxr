@@ -23,6 +23,25 @@ colour that matched the sky at one time of day.
     fog colour, the haze), which a change on the sky alone left stale until
     the sun moved; on the fallback it re-derives the fallback's lights.
     Validated before any change (`RangeError`).
+  - `setHaze({ visibilityKm, startRatio })` and the `hazeStartRatio`
+    getter: the light dialog's haze. The visibility is the air's, so it goes
+    to the SKY (`configure({ visibilityKm })` rebuilds its tables) and the
+    haze on the city re-reads it in the sync; the city therefore fades
+    toward a sky drawn for the same air. An unchanged visibility touches
+    nothing (every dialog change re-applies every setting). On the fallback
+    it re-derives the fallback's colours. The start is only held here;
+    `building-view.ts` writes `fog.near = startRatio x fog.far` from it.
+    Validated before any change: a visibility that is not a positive finite
+    number, or a start outside [0, 1), is a `RangeError`.
+  - `HAZE_VISIBILITY_KM` (45) and `HAZE_START_RATIO` (0.66): the shipped
+    haze, and the light dialog's defaults.
+  - **What the two values are, in the haze's own terms.** The haze on a
+    material is `keep = exp(-sigma d) x (1 - smoothstep(near, far, d))`
+    (`atmosphere-haze.ts`). The visibility sets `sigma`, the physical term,
+    which acts from the camera on at every distance; the start sets `near`,
+    the boundary fade that makes the haze complete at the far plane. So
+    "haze inside the city" is mostly the visibility; the start adds an
+    artificial ramp on top.
   - `prepareFrame(camera)` — call before every render: hazes materials built
     since the last frame (and would heal one whose `onBeforeCompile` a later
     installer re-assigned); in the fallback, keeps the sky dome on the
@@ -170,7 +189,11 @@ renderer.render(scene, camera);
   every sun change, the sun light from the model, the EV contract, the haze
   synced, late materials hazed and replaced hooks healed, disposal; the
   fallback's dome, hemisphere light, fog and sun, the dome on the camera, its
-  clean-up, and that other errors are not swallowed.
+  clean-up, and that other errors are not swallowed. `setHaze`: the sky is
+  built at today's visibility and the start is today's until set; the sky's
+  visibility and the haze's extinction move together; an unchanged
+  visibility does not reconfigure the sky; bad values change nothing; the
+  fallback's horizon follows the visibility.
 - The night floor (same file): off by day and at -2.9 deg, full at -30 deg,
   cool, one light, untouched by an exposure change, the same in the fallback,
   removed on dispose. `atmosphere-rig.property.test.ts`: the weight is in

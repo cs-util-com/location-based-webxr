@@ -12,6 +12,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { HAZE_START_RATIO } from "./atmosphere-rig.js";
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(path.join(here, "building-view.ts"), "utf8");
 const AO_MODULE = "visualization/ambient-occlusion";
@@ -51,9 +53,11 @@ describe("BuildingView's ambient occlusion", () => {
   // is what keeps the fogged distance and the sky bit-identical with AO on. A
   // fade end moved past where the fog starts at the SHORTEST render distance
   // would darken fog and break the light gates' sky and horizon colours.
+  // At the SHIPPED haze start: the light dialog may lower it for a tuning
+  // look, and the gates run at the defaults.
   it("fades out before the nearest the fog ever starts", () => {
     const farPlane = numberAfter(/export const FAR_PLANE_M = ([\d.]+);/);
-    const fogRatio = numberAfter(/const FOG_NEAR_RATIO = ([\d.]+);/);
+    const fogRatio = HAZE_START_RATIO;
     const fadeStart = numberAfter(/const AO_FADE = \{ fadeStartM: ([\d.]+),/);
     const fadeEnd = numberAfter(/const AO_FADE = \{[^}]*fadeEndM: ([\d.]+) \}/);
     expect(fadeStart).toBeLessThan(fadeEnd);

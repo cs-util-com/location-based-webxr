@@ -19,6 +19,8 @@
 
 import {
   BUILDING_SKY_LIGHT,
+  HAZE_START_RATIO,
+  HAZE_VISIBILITY_KM,
   NATURAL_LIGHT_ADAPTATION,
   NATURAL_LIGHT_COMPENSATION_EV,
   NOON_SURFACE_GAIN,
@@ -41,6 +43,16 @@ export interface LightSettings {
   readonly exposureAdaptation: number;
   /** The EV compensation on top of the auto-exposure. */
   readonly exposureEv: number;
+  /**
+   * The air's meteorological visibility, km: the sky's and the haze's on the
+   * city (`AtmosphereRig.setHaze`). Lower brings the haze into the city.
+   */
+  readonly hazeVisibilityKm: number;
+  /**
+   * Where the haze's boundary fade starts, as a share of the draw distance
+   * (0 at the camera). The physical haze acts at every distance either way.
+   */
+  readonly hazeStartRatio: number;
 }
 
 /** Today's look: the shipped constants, read from where they live. */
@@ -51,6 +63,8 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
   buildingSkyLight: BUILDING_SKY_LIGHT,
   exposureAdaptation: NATURAL_LIGHT_ADAPTATION,
   exposureEv: NATURAL_LIGHT_COMPENSATION_EV,
+  hazeVisibilityKm: HAZE_VISIBILITY_KM,
+  hazeStartRatio: HAZE_START_RATIO,
 };
 
 /** The sliders' ranges and steps (the dialog's inputs and the URL's bounds). */
@@ -68,6 +82,11 @@ export const LIGHT_SETTING_RANGES: {
   buildingSkyLight: { min: 0.5, max: 5, step: 0.05 },
   exposureAdaptation: { min: 0.5, max: 1, step: 0.05 },
   exposureEv: { min: -4, max: 0, step: 0.05 },
+  // 9 km is the hazy end of the reference city measured (9-21 km); 60 the
+  // look-dev noon preset, so the slider also clears the air.
+  hazeVisibilityKm: { min: 9, max: 60, step: 1 },
+  // Below 1, so the fade never starts at the far plane itself.
+  hazeStartRatio: { min: 0, max: 0.9, step: 0.01 },
 };
 
 /** Each field's key in the URL; never rename one (shared links use them). */
@@ -78,6 +97,8 @@ const KEYS: { readonly [K in keyof LightSettings]: string } = {
   buildingSkyLight: "sky",
   exposureAdaptation: "adapt",
   exposureEv: "ev",
+  hazeVisibilityKm: "vis",
+  hazeStartRatio: "haze",
 };
 const FIELDS = Object.keys(KEYS) as (keyof LightSettings)[];
 
@@ -140,8 +161,17 @@ export function describeLightSettings(s: LightSettings): string {
   return (
     `light: gain ${round(s.gainMax)} (${round(s.gainFromDeg)}° to ${round(s.gainFullDeg)}°), ` +
     `sky light ${round(s.buildingSkyLight)}, adaptation ${round(s.exposureAdaptation)}, ` +
-    `EV ${round(s.exposureEv)}`
+    `EV ${round(s.exposureEv)}, ` +
+    `haze ${round(s.hazeVisibilityKm)} km from ${round(s.hazeStartRatio)} of the draw distance`
   );
+}
+
+/** The haze these settings describe (`AtmosphereRig.setHaze`). */
+export function hazeOf(s: LightSettings): {
+  readonly visibilityKm: number;
+  readonly startRatio: number;
+} {
+  return { visibilityKm: s.hazeVisibilityKm, startRatio: s.hazeStartRatio };
 }
 
 /** The surface gain ramp these settings describe (`surfaceGainAt`). */

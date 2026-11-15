@@ -8,7 +8,8 @@ The light settings the owner tunes in OsmDemo's light dialog (plan
 - the noon surface gain's ramp (maximum, start and full elevation);
 - the sky light on buildings;
 - the sky's auto-exposure adaptation;
-- the EV compensation.
+- the EV compensation;
+- the haze: the air's visibility and where the haze's boundary fade starts.
 
 The defaults ARE the shipped look, and the values travel in the URL so a
 tuned look can be shared and pasted back.
@@ -16,7 +17,7 @@ tuned look can be shared and pasted back.
 ## Public API
 
 - `LightSettings`: `{ gainMax, gainFromDeg, gainFullDeg, buildingSkyLight,
-exposureAdaptation, exposureEv }`.
+exposureAdaptation, exposureEv, hazeVisibilityKm, hazeStartRatio }`.
 - `DEFAULT_LIGHT_SETTINGS`: built from `NOON_SURFACE_GAIN`,
   `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION` and
   `NATURAL_LIGHT_COMPENSATION_EV` (`atmosphere-rig.ts`), so it cannot drift
@@ -25,7 +26,8 @@ exposureAdaptation, exposureEv }`.
   means today's default.
 - `LIGHT_SETTING_RANGES`: each field's slider min, max and step.
 - `parseLightSettings(search)`: from `?light=v1:gain=1.8,ev=-2.5` (keyed,
-  versioned pairs; the keys are gain, from, full, sky, adapt, ev). Never
+  versioned pairs; the keys are gain, from, full, sky, adapt, ev, vis,
+  haze). Never
   throws. A missing, unknown, non-numeric or out-of-range field falls back to
   its default, a ramp that does not rise falls back to the default ramp, and
   another version or a bare list is ignored.
@@ -36,7 +38,17 @@ exposureAdaptation, exposureEv }`.
 - The adaptation's range is 0.5-1: measured, lowering it barely changes
   noon and mostly darkens dawn and dusk (plan §8).
 - `describeLightSettings(settings)`: the Copy line, e.g.
-  `light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5`.
+  `light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5,
+haze 45 km from 0.66 of the draw distance`.
+- **The haze (city look, haze inside the city).** `vis`, the meteorological
+  visibility in km (default `HAZE_VISIBILITY_KM` 45, range 9-60 step 1: 9 is
+  the hazy end of the reference city's estimate of 9-21 km, 60 the look-dev
+  noon preset), and `haze`, where the boundary fade starts as a share of the
+  draw distance (default `HAZE_START_RATIO` 0.66, range 0-0.9 step 0.01). A
+  link without them keeps today's haze; the shipped look is unchanged.
+  `hazeOf(settings)` gives `{ visibilityKm, startRatio }` for
+  `AtmosphereRig.setHaze`. What the two mean in the haze shader is in
+  `atmosphere-rig.ts.md`.
 - `gainOf(settings)`: the ramp for `surfaceGainAt(elevationRad, ramp)` in
   `atmosphere-rig.ts`.
 
@@ -84,4 +96,6 @@ writeLight(browserPlaceUrl(window), serializeLightSettings(settings));
 - any valid setting round-trips through the URL (a property test);
 - the defaults write nothing and read from nothing;
 - bad fields fall back one by one;
+- the haze keys are read and written inside their bounds, and any haze
+  alone round-trips writing only `vis` and `haze` (a property test);
 - the Copy line names every value.

@@ -147,9 +147,20 @@ const SUN_INTENSITY = 1.1;
  * Meteorological visibility, km. The middle of the look-dev presets (dawn 30,
  * golden 45, noon 60): at the 2400 m far plane the air keeps ~80 % of the
  * light, so distance reads as haze without hiding the plate. A taste value,
- * set on the page, not measured here.
+ * set on the page, not measured here. The shipped default of the light
+ * dialog's haze visibility, which `setHaze` changes.
  */
-const VISIBILITY_KM = 45;
+export const HAZE_VISIBILITY_KM = 45;
+
+/**
+ * Where the haze's boundary fade starts, as a share of the draw distance
+ * (`fog.near = ratio x fog.far`; `building-view.ts` applies it and says why
+ * it is a ratio). The physical term `exp(-sigma d)` hazes every distance
+ * from the camera on; this fade only adds to it, so the haze still
+ * COMPLETES at the far plane. The shipped default of the light dialog's
+ * haze start, which `setHaze` changes.
+ */
+export const HAZE_START_RATIO = 0.66;
 
 /**
  * The sky's cloud cover, 0…1 (the share of the sky clouded): the look-dev
@@ -252,6 +263,28 @@ export function nightFloorWeight(elevationRad: number): number {
   return Math.min(1, Math.max(0, t));
 }
 
+/** The light dialog's haze, as `AtmosphereRig.setHaze` takes it. */
+interface HazeSetting {
+  readonly visibilityKm: number;
+  readonly startRatio: number;
+}
+
+/** `setHaze`'s validation: the setting unchanged, or a RangeError. */
+function assertHaze(haze: HazeSetting): HazeSetting {
+  const { visibilityKm, startRatio } = haze;
+  if (!(Number.isFinite(visibilityKm) && visibilityKm > 0)) {
+    throw new RangeError(
+      `haze visibility must be a positive finite number, got ${visibilityKm}`,
+    );
+  }
+  if (!(Number.isFinite(startRatio) && startRatio >= 0 && startRatio < 1)) {
+    throw new RangeError(
+      `haze start must be in [0, 1) of the draw distance, got ${startRatio}`,
+    );
+  }
+  return haze;
+}
+
 /** What the rig uses of `SkyAtmosphere` (the seam its tests stub). */
 export type SkyLike = Pick<
   SkyAtmosphere,
@@ -307,11 +340,14 @@ export class AtmosphereRig {
   /** The exposure the light dialog set (`setExposure`); the shipped look by default. */
   private exposureEv: number = NATURAL_LIGHT_COMPENSATION_EV;
   private adaptation: number = NATURAL_LIGHT_ADAPTATION;
+  /** The air's visibility the light dialog set (`setHaze`), km. */
+  private visibilityKm: number = HAZE_VISIBILITY_KM;
+  private startRatio: number = HAZE_START_RATIO;
 
   constructor(options: AtmosphereRigOptions) {
     this.scene = options.scene;
     this.sun = options.sun;
-    this.haze = new AtmosphereHaze({ visibilityKm: VISIBILITY_KM });
+    this.haze = new AtmosphereHaze({ visibilityKm: this.visibilityKm });
     this.nightFloor = new THREE.AmbientLight(NIGHT_FLOOR.colour, 0);
     this.nightFloor.name = NIGHT_FLOOR_NAME;
     this.scene.add(this.nightFloor);
@@ -324,7 +360,7 @@ export class AtmosphereRig {
       sky = create({
         renderer: options.renderer,
         scene: this.scene,
-        visibilityKm: VISIBILITY_KM,
+        visibilityKm: this.visibilityKm,
         sunIntensity: SUN_INTENSITY,
       });
     } catch (error) {
@@ -419,6 +455,36 @@ export class AtmosphereRig {
   }
 
   /**
+   * The haze the light dialog tunes: the air's meteorological visibility
+   * and where the boundary fade starts (a share of the draw distance, read
+   * back as {@link hazeStartRatio} by whoever sets the fog's near and far).
+   * The visibility is the SKY's: the sky's tables are rebuilt with it and
+   * the haze on the city re-reads it, so the city fades toward a sky drawn
+   * for the same air. An unchanged visibility touches nothing. Validated
+   * before any change.
+   *
+   * @throws RangeError for a visibility that is not a positive finite
+   *   number, or a start outside [0, 1).
+   */
+  setHaze(haze: HazeSetting): void {
+    const { visibilityKm, startRatio } = assertHaze(haze);
+    this.startRatio = startRatio;
+    if (visibilityKm === this.visibilityKm) return;
+    this.visibilityKm = visibilityKm;
+    if (this.sky !== undefined) {
+      this.sky.configure({ visibilityKm });
+      if (this.sunSet) this.syncFromSky(this.sky);
+    } else if (this.lastDirection !== undefined) {
+      this.applyFallback(this.lastDirection);
+    }
+  }
+
+  /** Where the haze's boundary fade starts, as a share of the draw distance. */
+  get hazeStartRatio(): number {
+    return this.startRatio;
+  }
+
+  /**
    * Call before every render. Hazes materials built since the last frame
    * (buildings, cells, routes are rebuilt all the time). It would also heal
    * a material whose `onBeforeCompile` a LATER installer re-assigned; none
@@ -497,7 +563,7 @@ export class AtmosphereRig {
     const parts = this.fallback;
     if (parts === undefined) return;
     const sky = fallbackSky(direction, {
-      visibilityKm: VISIBILITY_KM,
+      visibilityKm: this.visibilityKm,
       sunIntensity: SUN_INTENSITY,
       exposureCompensationEv: this.exposureEv,
       autoExposureAdaptation: this.adaptation,

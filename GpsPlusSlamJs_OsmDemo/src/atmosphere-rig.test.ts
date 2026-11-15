@@ -18,6 +18,8 @@ import { describe, expect, it } from "vitest";
 import {
   AtmosphereRig,
   BUILDING_SKY_LIGHT,
+  HAZE_START_RATIO,
+  HAZE_VISIBILITY_KM,
   NATURAL_LIGHT_ADAPTATION,
   NATURAL_LIGHT_COMPENSATION_EV,
   NIGHT_FLOOR,
@@ -44,7 +46,7 @@ class StubSky {
   sun = new THREE.Vector3(0, 1, 0);
   ev = Number.NaN;
   disposed = false;
-  readonly visibilityKm = 60;
+  visibilityKm = 60;
   readonly sharedUniforms = {
     atmMieExtinction: { value: 0.05 },
     atmSunDirection: { value: new THREE.Vector3(0, 1, 0) },
@@ -58,9 +60,13 @@ class StubSky {
   configure(change: {
     sunDirection?: { x: number; y: number; z: number };
     cloudCover?: number;
+    visibilityKm?: number;
   }): void {
     this.calls.push("configure");
     if (change.cloudCover !== undefined) this.cloudCover = change.cloudCover;
+    if (change.visibilityKm !== undefined) {
+      this.visibilityKm = change.visibilityKm;
+    }
     if (change.sunDirection) {
       this.sun
         .set(
@@ -302,6 +308,76 @@ describe("AtmosphereRig.setExposure (light dialog, plan 2026-09-24-2140)", () =>
     );
     expect(sky.ev).toBe(NATURAL_LIGHT_COMPENSATION_EV);
     expect(sky.adaptation).toBe(NATURAL_LIGHT_ADAPTATION);
+  });
+});
+
+describe("AtmosphereRig.setHaze (light dialog, haze inside the city)", () => {
+  // WHY: the shipped look must not move. The sky is built at today's
+  // visibility and the haze starts at today's share of the draw distance
+  // until the dialog says otherwise.
+  it("starts at today's haze", () => {
+    let built: number | undefined;
+    const view = new AtmosphereRig({
+      renderer: {} as unknown as THREE.WebGLRenderer,
+      scene: new THREE.Scene(),
+      sun: new THREE.DirectionalLight(),
+      createSky: (o) => {
+        built = o.visibilityKm;
+        return new StubSky() as unknown as SkyLike;
+      },
+    });
+    expect(built).toBe(HAZE_VISIBILITY_KM);
+    expect(view.hazeStartRatio).toBe(HAZE_START_RATIO);
+  });
+
+  // WHY: the visibility is the AIR's, so the sky and the haze on the city
+  // must change together (the rig's one invariant); a haze-only change would
+  // fade the city toward a sky drawn for other air.
+  it("moves the sky's visibility and the haze on the city together", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    const before = view.haze.uniforms.atmHazeExtinction.value.x;
+    view.setHaze({ visibilityKm: 15, startRatio: 0.2 });
+    expect(sky.visibilityKm).toBe(15);
+    expect(view.haze.uniforms.atmHazeExtinction.value.x).toBeGreaterThan(
+      before * 2,
+    );
+    expect(view.hazeStartRatio).toBe(0.2);
+  });
+
+  // WHY: every dialog change re-applies all settings; a visibility that did
+  // not change must not rebuild the sky's tables on every exposure drag.
+  it("leaves the sky alone when the visibility is unchanged", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setHaze({ visibilityKm: 15, startRatio: 0.66 });
+    const calls = sky.calls.length;
+    view.setHaze({ visibilityKm: 15, startRatio: 0.3 });
+    expect(sky.calls.length).toBe(calls);
+    expect(view.hazeStartRatio).toBe(0.3);
+  });
+
+  it("refuses a value it cannot use, changing nothing", () => {
+    const { view, sky } = rig();
+    for (const bad of [
+      { visibilityKm: 0, startRatio: 0.5 },
+      { visibilityKm: Number.NaN, startRatio: 0.5 },
+      { visibilityKm: 20, startRatio: 1 },
+      { visibilityKm: 20, startRatio: -0.1 },
+    ]) {
+      expect(() => view.setHaze(bad)).toThrow(RangeError);
+    }
+    expect(sky.visibilityKm).toBe(60);
+    expect(view.hazeStartRatio).toBe(HAZE_START_RATIO);
+  });
+
+  // WHY: on the fallback the same slider must reach the fallback's colours.
+  it("re-derives the fallback's horizon from the new visibility", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(25, 200));
+    const before = (scene.fog as THREE.Fog).color.clone();
+    view.setHaze({ visibilityKm: 9, startRatio: HAZE_START_RATIO });
+    expect((scene.fog as THREE.Fog).color.equals(before)).toBe(false);
   });
 });
 

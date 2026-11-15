@@ -24,6 +24,8 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   buildingSkyLight: "Sky light on buildings",
   exposureEv: "Overall exposure (EV)",
   exposureAdaptation: "Auto-exposure strength (mostly dawn and dusk darkness)",
+  hazeVisibilityKm: "Haze: visibility (km, lower is hazier)",
+  hazeStartRatio: "Haze: fade starts at (share of the draw distance)",
 };
 
 /** One measurement of the view as it stands. */

@@ -92,6 +92,24 @@ describe("createLightDialog", () => {
     expect(dialog.open).toBe(false);
   });
 
+  // WHY (city look, haze inside the city): the two haze values are tuned
+  // here like every other light value, within the URL's bounds, and an
+  // untouched dialog shows today's haze.
+  it("offers the haze visibility and start, at today's values", () => {
+    const { $, slide, onChange } = setup();
+    const vis = $<HTMLInputElement>("light-hazeVisibilityKm");
+    const start = $<HTMLInputElement>("light-hazeStartRatio");
+    expect([vis.min, vis.max, vis.value]).toEqual(["9", "60", "45"]);
+    expect([start.min, start.max, start.value]).toEqual(["0", "0.9", "0.66"]);
+    slide("hazeVisibilityKm", 15);
+    slide("hazeStartRatio", 0.2);
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVisibilityKm: 15,
+      hazeStartRatio: 0.2,
+    });
+  });
+
   // WHY (review, 2026-09-24): the dialog opens by its button or the l key, so
   // focus is OUTSIDE it and a panel-only Escape did nothing. Focus moves in on
   // open and back to the opener on close, and the opener says whether it is
