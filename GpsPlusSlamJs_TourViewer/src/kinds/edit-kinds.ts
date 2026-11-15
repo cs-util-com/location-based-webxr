@@ -103,9 +103,6 @@ export interface FieldSpec {
   readonly number?: NumberSpec;
   /** Only in these views (the ones that read it); none: in every view. */
   readonly views?: readonly string[];
-  /** One of these values, chosen on the kind's panel's chips rather than
-   *  typed (none: typed). */
-  readonly choices?: readonly FieldChoice[];
   /** A switch on the kind's panel: written as true, or left out (its
    *  reader's default, off). */
   readonly flag?: true;
@@ -116,9 +113,9 @@ export interface FieldSpec {
    *  point as three numbers in metres, or a language tag. */
   readonly typed?: "point" | "tag";
   /** One of a few values, set by chips the kind's panel draws
-   *  (`editor/kind-panels`), not a box the dock types: unlike `choices`,
-   *  an absent field reads as its `fallback`, so the chip in use is
-   *  always pressed and pressing it again writes nothing. */
+   *  (`editor/kind-panels`), not a box the dock types: an absent field
+   *  reads as its `fallback`, so the chip in use is always pressed and
+   *  pressing it again writes nothing. */
   readonly choice?: ChoiceSpec;
   /** Only while another of the block's choices has this value (its
    *  fallback counted for an absent one): a setting that does nothing
@@ -135,10 +132,7 @@ export interface FieldChoice {
 /** The values a choice field takes, in the creator's words, and what an
  *  absent one means. */
 export interface ChoiceSpec {
-  readonly values: readonly {
-    readonly value: string;
-    readonly label: string;
-  }[];
+  readonly values: readonly FieldChoice[];
   /** The value a block without the field has. */
   readonly fallback: string;
 }
@@ -368,12 +362,17 @@ export const KIND_EDIT = {
         },
         views: ["sign", "ground"],
       },
-      { name: "role", label: "Role", prose: false, choices: SHORT_TEXT_ROLES },
+      {
+        name: "role",
+        label: "Role",
+        prose: false,
+        choice: { values: SHORT_TEXT_ROLES, fallback: "label" },
+      },
       {
         name: "orientation",
         label: "Turns",
         prose: false,
-        choices: SHORT_TEXT_TURNS,
+        choice: { values: SHORT_TEXT_TURNS, fallback: "world" },
         views: ["sign", "ground"],
       },
       {
@@ -388,7 +387,7 @@ export const KIND_EDIT = {
         name: "style",
         label: "Ground style",
         prose: false,
-        choices: GROUND_STYLES,
+        choice: { values: GROUND_STYLES, fallback: "ribbon" },
         views: ["ground"],
       },
       {
@@ -407,8 +406,9 @@ export const KIND_EDIT = {
         name: "floorPlacement",
         label: "Floor arrow",
         prose: false,
-        choices: GROUND_FLOOR_PLACEMENTS,
+        choice: { values: GROUND_FLOOR_PLACEMENTS, fallback: "lying" },
         views: ["ground"],
+        when: { field: "style", value: "floor" },
       },
       {
         name: "captionOnArrow",

@@ -10,8 +10,21 @@
 import fc from "fast-check";
 import { describe, expect, it, vi } from "vitest";
 
+import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
+
+import { blockChoices } from "../block-fields.js";
 import type { PanelItem } from "./kind-panel.js";
 import { composedPoint, createShortTextPanel } from "./short-text-panel.js";
+
+/** A short text in `view` as the inspector model hands it over: its
+ *  choices read from a block holding `own` (`blockChoices`). */
+function st(
+  view: string,
+  own: Readonly<Record<string, string>> = {},
+): NonNullable<PanelItem["shortText"]> {
+  const block = { id: "t", kind: "shortText", view, caption: "Gate", ...own };
+  return { view, choices: blockChoices(block as unknown as TourObject) };
+}
 
 function item(shortText: NonNullable<PanelItem["shortText"]>): PanelItem {
   return {
@@ -50,18 +63,14 @@ describe("a short text's panel", () => {
   it("draws nothing for another kind", () => {
     const panel = createShortTextPanel({ view: vi.fn(), block: vi.fn() });
     expect(panel.sync(null)).toBeNull();
-    const { shortText: _parts, ...other } = item({
-      view: "pin",
-      role: null,
-      orientation: null,
-    });
+    const { shortText: _parts, ...other } = item(st("pin"));
     expect(panel.sync({ ...other, itemKind: "model" })).toBeNull();
   });
 
   it("offers a turn only on a sign, and presses the reader's defaults", () => {
-    const pin = drawn({ view: "pin", role: null, orientation: null });
+    const pin = drawn(st("pin"));
     expect(pin.pressed).toEqual(["short-view:pin", "short-role:label"]);
-    const sign = drawn({ view: "sign", role: "warning", orientation: null });
+    const sign = drawn(st("sign", { role: "warning" }));
     expect(sign.pressed).toEqual([
       "short-view:sign",
       "short-role:warning",
@@ -73,7 +82,7 @@ describe("a short text's panel", () => {
     const view = vi.fn();
     const block = vi.fn();
     const panel = createShortTextPanel({ view, block });
-    const at = item({ view: "sign", role: null, orientation: null });
+    const at = item(st("sign"));
     expect(panel.act("short-view:edgeHint", at, "t")).toBe(true);
     expect(panel.act("short-role:instruction", at, "t")).toBe(true);
     expect(panel.act("short-turn:face", at, "t")).toBe(true);
@@ -92,9 +101,7 @@ describe("a short text's point", () => {
     at: readonly [number, number, number] | null,
     picking = false,
   ): NonNullable<PanelItem["shortText"]> => ({
-    view: "sign",
-    role: null,
-    orientation: null,
+    ...st("sign"),
     point: { id: "t", at, picking },
   });
   const boxes = (box: HTMLElement) =>
@@ -133,7 +140,7 @@ describe("a short text's point", () => {
       )?.disabled,
     ).toBe(true);
     // A pin and an edge hint point nowhere: no boxes there.
-    const pin = drawn({ view: "pin", role: null, orientation: null });
+    const pin = drawn(st("pin"));
     expect(pin.box.querySelector(".xyz")).toBeNull();
   });
 
@@ -235,18 +242,20 @@ describe("a short text's point", () => {
 });
 
 describe("a ground arrow's panel", () => {
-  const ground = (
-    own: Partial<
-      NonNullable<NonNullable<PanelItem["shortText"]>["ground"]>
-    > = {},
-  ) => ({
-    view: "ground",
-    role: null,
-    orientation: null,
+  const ground = ({
+    style,
+    floorPlacement,
+    ...own
+  }: Partial<NonNullable<NonNullable<PanelItem["shortText"]>["ground"]>> & {
+    readonly style?: string;
+    readonly floorPlacement?: string;
+  } = {}) => ({
+    ...st("ground", {
+      ...(style === undefined ? {} : { style }),
+      ...(floorPlacement === undefined ? {} : { floorPlacement }),
+    }),
     ground: {
       id: "t",
-      style: null,
-      floorPlacement: null,
       captionOnArrow: false,
       color: null,
       darkColor: null,
@@ -316,5 +325,36 @@ describe("a ground arrow's panel", () => {
     expect(plain.box.textContent).toContain("Sun check");
     const pale = drawn(ground({ darkColor: "#d0d0d0" }));
     expect(pale.box.querySelector(".sunwarn")?.textContent).toContain("3 : 1");
+  });
+});
+
+describe("a short text's chip already in use", () => {
+  // Why: the chip pressed for a block without the field is the format's
+  // fallback; pressing it again must write nothing (no undo step, no
+  // changed file), as the video's chips already do. One chip sort used to
+  // write the shown default.
+  it("writes nothing for the pressed role, turn, style and placement", () => {
+    const block = vi.fn();
+    const panel = createShortTextPanel({ view: vi.fn(), block });
+    const floor = item(st("ground", { style: "floor" }));
+    for (const act of [
+      "short-role:label",
+      "short-turn:world",
+      "short-style:floor",
+      "short-floor:lying",
+    ]) {
+      expect(panel.act(act, floor, "t")).toBe(true);
+    }
+    expect(block).not.toHaveBeenCalled();
+  });
+
+  it("does not write a choice its view does not read", () => {
+    const block = vi.fn();
+    const panel = createShortTextPanel({ view: vi.fn(), block });
+    expect(panel.act("short-turn:face", item(st("pin")), "t")).toBe(false);
+    expect(panel.act("short-floor:upright", item(st("ground")), "t")).toBe(
+      false,
+    );
+    expect(block).not.toHaveBeenCalled();
   });
 });

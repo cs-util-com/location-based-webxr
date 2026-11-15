@@ -815,8 +815,22 @@ describe("buildInspector", () => {
       model: null,
       // Only a free long text has the writer.
       longText: null,
-      // A short text's view, role and turn, for its panel.
-      shortText: { view: "pin", role: null, orientation: null },
+      // A short text's view and its choices in that view, for its panel.
+      shortText: {
+        view: "pin",
+        choices: [
+          {
+            name: "role",
+            label: "Role",
+            value: "label",
+            values: [
+              { value: "instruction", label: "Instruction" },
+              { value: "label", label: "Label" },
+              { value: "warning", label: "Warning" },
+            ],
+          },
+        ],
+      },
       video: null,
       // B2c: its other text fields, by the format's caps.
       fields: [

@@ -12,6 +12,7 @@ import fc from "fast-check";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
+import { KIND_EDIT, type FieldSpec } from "../kinds/edit-kinds.js";
 import { textCounterLine, wireTextCounter } from "../pin-text.js";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
@@ -529,15 +530,14 @@ describe("number fields", () => {
 describe("choice fields", () => {
   // Why: a short text's role and turn are chosen on chips, never typed;
   // the edit must write only a choice of the kind's row, so a file the
-  // editor saves always reads back with them, and a blank one returns
-  // to the reader's default rather than writing an empty word.
+  // editor saves always reads back with them, and never an empty word.
   it("are not boxes to type in", () => {
     const names = blockFields(PIN).map((f) => f.name);
     expect(names).not.toContain("role");
     expect(names).not.toContain("orientation");
   });
 
-  it("write a choice, refuse anything else, and clear on a blank", () => {
+  it("write a choice and refuse anything else, a blank among them", () => {
     const chose = blockFieldEdit(PIN, "role", "warning");
     expect(chose).toMatchObject({ kind: "edited", after: { role: "warning" } });
     if (chose.kind !== "edited") throw new Error("not edited");
@@ -547,11 +547,9 @@ describe("choice fields", () => {
     expect(blockFieldEdit(PIN, "role", "shout")).toMatchObject({
       kind: "refused",
     });
-    const cleared = blockFieldEdit(chose.after, "role", "");
-    expect(cleared.kind).toBe("edited");
-    if (cleared.kind !== "edited") throw new Error("not edited");
-    expect("role" in cleared.after).toBe(false);
-    expect(blockFieldEdit(PIN, "orientation", "")).toEqual({
+    expect(blockFieldEdit(chose.after, "role", "").kind).toBe("refused");
+    // A pin does not turn: its turn is no field of its view.
+    expect(blockFieldEdit(PIN, "orientation", "face")).toEqual({
       kind: "unchanged",
     });
   });
@@ -823,4 +821,60 @@ describe("choice fields with a fallback (ChoiceSpec)", () => {
       kind: "unchanged",
     });
   });
+});
+
+describe("every kind's chip choices", () => {
+  // Why: a kind's chips are one mechanism. The chip shown pressed on a
+  // block without the field is its fallback, so pressing it again must
+  // write nothing: no undo step, and a document that stays as it was. A
+  // second chip sort that wrote the shown default made an empty undo
+  // step and a changed file for the same tap the other sort ignored.
+  const BLOCKS: Readonly<Record<string, Record<string, unknown>>> = {
+    shortText: PIN as unknown as Record<string, unknown>,
+    video: VIDEO as unknown as Record<string, unknown>,
+  };
+
+  it("has a block to press for every kind that offers chips", () => {
+    const withChips = Object.entries(KIND_EDIT)
+      .filter(([, row]) =>
+        (row.fields as readonly FieldSpec[]).some((f) => f.choice),
+      )
+      .map(([kind]) => kind);
+    expect(withChips.sort()).toEqual(Object.keys(BLOCKS).sort());
+  });
+
+  it("writes nothing for a pin's role chip shown pressed by default", () => {
+    expect(blockFieldEdit(PIN, "role", "label")).toEqual({ kind: "unchanged" });
+  });
+
+  for (const [kind, base] of Object.entries(BLOCKS)) {
+    const fields: readonly FieldSpec[] =
+      KIND_EDIT[kind as keyof typeof KIND_EDIT].fields;
+    for (const spec of fields) {
+      const choice = spec.choice;
+      if (choice === undefined) continue;
+      for (const view of spec.views ?? [base["view"] as string]) {
+        it(`leaves a ${kind}'s ${spec.name} as it was when its shown default is pressed (${view})`, () => {
+          const block = { ...base, view } as Record<string, unknown>;
+          delete block[spec.name];
+          if (spec.when !== undefined) {
+            block[spec.when.field] = spec.when.value;
+          }
+          const shown = blockChoices(block as unknown as TourObject).find(
+            (c) => c.name === spec.name,
+          );
+          expect(shown?.value).toBe(choice.fallback);
+          const before = JSON.stringify(block);
+          expect(
+            blockFieldEdit(
+              block as unknown as TourObject,
+              spec.name,
+              choice.fallback,
+            ),
+          ).toEqual({ kind: "unchanged" });
+          expect(JSON.stringify(block)).toBe(before);
+        });
+      }
+    }
+  }
 });

@@ -69,10 +69,11 @@ required, prose, number }`: the block's own field name (the inspector's `data-fi
     "A body takes at most 32000 UTF-16 units." - the unit's word is the
     rule's) for a text over its cap, counted in the field's unit, or ("A body
     cannot be empty.") for a field the block needs emptied;
-  - a choice field (`FieldSpec` `choice`): `edited` with the value,
-    `unchanged` for the one in use (an absent field's fallback among
-    them) or a choice of another view, `refused` ("Starts is one of: On
-    arrival, ...") for a value it does not offer;
+  - a choice field (`FieldSpec` `choice`, the one chip mechanism of
+    every kind): `edited` with the value, `unchanged` for the one in
+    use (an absent field's fallback among them) or a choice of another
+    view, `refused` ("Starts is one of: On arrival, ...") for a value it
+    does not offer, a blank among them;
   - for a number field: `edited` with the typed decimal (a comma as its
     point, `typedNumber`) as a number, or without the field for a blank
     optional one; `unchanged` for the same number or a field outside the
@@ -124,7 +125,7 @@ if (out.kind === "edited")
 
 ## Choice fields
 
-`blockFields` leaves a choice, a switch (`flag`) and a colour field out (its panel shows them). A switch writes true for `"true"` and is left out for anything else; a colour takes `#rrggbb` (lower-cased), refuses any other text, and is left out when blank. `blockFieldEdit` writes one of its `choices`, refuses any other value with the choices' labels, and deletes the field on a blank value (back to the reader's default).
+`blockFields` leaves a choice, a switch (`flag`) and a colour field out (its panel shows them). A switch writes true for `"true"` and is left out for anything else; a colour takes `#rrggbb` (lower-cased), refuses any other text, and is left out when blank. A choice is written as above; the test "every kind's chip choices" presses the shown default of every kind's every choice field and requires `unchanged`.
 
 ## Typed fields (a point, a language)
 

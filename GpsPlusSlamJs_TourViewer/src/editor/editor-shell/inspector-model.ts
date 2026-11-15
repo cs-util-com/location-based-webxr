@@ -415,15 +415,15 @@ function extentOf(
  *  (null: the reader's default). */
 interface InspectorShortText {
   readonly view: string;
-  readonly role: string | null;
-  readonly orientation: string | null;
+  /** Its chip choices in that view, the one in use pressed (`block-fields.ts`
+   *  `blockChoices`): its role, and as its view reads them how it turns,
+   *  a ground arrow's style and a floor arrow's placement. */
+  readonly choices: readonly BlockChoice[];
   /** A ground arrow's own look, as written (null: the reader's
    *  default), and the block's id its colour wells write to; absent in
    *  any other view. */
   readonly ground?: {
     readonly id: string;
-    readonly style: string | null;
-    readonly floorPlacement: string | null;
     readonly captionOnArrow: boolean;
     readonly color: string | null;
     readonly darkColor: string | null;
@@ -1312,14 +1312,11 @@ export function buildInspector(input: {
         ? {
             shortText: {
               view: item.view,
-              role: item.role ?? null,
-              orientation: item.orientation ?? null,
+              choices: blockChoices(item),
               ...(item.view === "ground"
                 ? {
                     ground: {
                       id: item.id,
-                      style: item.style ?? null,
-                      floorPlacement: item.floorPlacement ?? null,
                       captionOnArrow: item.captionOnArrow === true,
                       color: item.color ?? null,
                       darkColor: item.darkColor ?? null,
