@@ -176,8 +176,9 @@ export function pointTri2(
   }
   const d = (px - qx) ** 2 + (py - qy) ** 2 + (pz - qz) ** 2;
   // a sliver whose area squares to a subnormal passes the guard, but its
-  // region products can still underflow to 0/0: its segments decide then
-  return d >= 0 ? d : segments();
+  // region products can still underflow: to 0/0, or to an area sum whose
+  // reciprocal overflows to Infinity. Its segments decide then.
+  return Number.isFinite(d) ? d : segments();
 }
 
 /** The squared distance from a point to the segment from a to b (a point

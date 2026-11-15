@@ -62,6 +62,19 @@ describe("pointTri2", () => {
     expect(d).toBeLessThan(1e-150);
   });
 
+  // Why: the same underflow can leave the interior's area sum a nonzero
+  // subnormal, whose reciprocal overflows to Infinity; an infinite
+  // distance passes a plain >= 0 check and makes the nearest search skip
+  // the triangle the point lies on.
+  it("never reads Infinity for a tiny triangle whose area sum underflows", () => {
+    const s = 1e-78;
+    const tiny = [0, 0, 0, 2 * s, s, s, s, 2 * s, s];
+    // the point at the centroid
+    const d = pointTri2(s, s, (2 * s) / 3, tiny, 0, 3, 6);
+    expect(Number.isFinite(d)).toBe(true);
+    expect(d).toBeLessThan(1e-150);
+  });
+
   // Why: the closest point can never be farther than any corner.
   it("is never farther than the nearest corner (property)", () => {
     const c = fc.double({ min: -5, max: 5, noNaN: true });
