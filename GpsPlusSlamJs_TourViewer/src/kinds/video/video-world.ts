@@ -48,6 +48,7 @@ import {
   standHereGuide,
   standHereTarget,
 } from "./stand-here.js";
+import { videoCap, type CapSeat, type VideoCap } from "./video-cap.js";
 import { captionAt, readCaptions } from "./video-captions.js";
 import {
   videoCard,
@@ -114,7 +115,17 @@ export interface VideoDeps {
   storage(): PrefsStorage | undefined;
   /** The player as a page element, for a porthole's card; null: none. */
   element(player: ClipPlayer): HTMLElement | null;
+  /** The play cap every free video of the page shares (`video-cap.ts`). */
+  readonly cap: VideoCap;
 }
+
+/**
+ * The page's one play cap. A module value, not store state: it counts
+ * the page's playing `<video>` elements, a resource like the elements
+ * themselves, and a phone's decoders are the page's, whichever station
+ * a video stands in.
+ */
+const PAGE_CAP = videoCap();
 
 /** The browser's: a `<video>`, its frames, `createImageBitmap`, object
  *  URLs, `navigator.userActivation` and `localStorage`. */
@@ -171,6 +182,7 @@ function browserVideoDeps(): VideoDeps {
       typeof HTMLElement !== "undefined" && player instanceof HTMLElement
         ? player
         : null,
+    cap: PAGE_CAP,
   };
 }
 
@@ -188,6 +200,10 @@ const viewerLocal = new Vector3();
 
 /** The note when the browser kept a wanted sound off. */
 export const SOUND_REFUSED_NOTE = "The browser kept the sound off";
+
+/** The card's line while it waits for a place under the play cap; its
+ *  look stays as it is (the poster, or the frame it was paused on). */
+export const VIDEO_WAITING_NOTE = "Waiting for another video to stop";
 
 /** The note when the browser refused to play it at all, even muted. */
 const PLAY_REFUSED_NOTE = "The browser did not start it. Tap to play";
@@ -292,11 +308,41 @@ export function videoWorld(
           },
         };
 
+  /** The event that waits for a place under the cap (its start, its
+   *  return, the visitor's tap), sent again once the cap lets it play. */
+  let pending: VideoEvent | null = null;
+  const seat: CapSeat = {
+    granted: () => {
+      const waited = pending;
+      pending = null;
+      if (waited !== null && !gone) event(waited);
+      card?.render();
+    },
+    // Another video took the sound: muted where it is, still playing.
+    muted: () => {
+      if (player !== null) player.muted = true;
+    },
+  };
+  /** The player muted or not, and the cap told who is heard. */
+  const setMuted = (muted: boolean): void => {
+    const p = player;
+    if (p === null) return;
+    p.muted = muted;
+    if (muted) deps.cap.quiet(seat);
+    else deps.cap.heard(seat);
+  };
+  /** It neither plays nor waits any more: its place goes to the next. */
+  const release = (): void => {
+    pending = null;
+    deps.cap.leave(seat);
+  };
   const startPlaying = (): void => {
     const p = player;
     if (p === null) return;
     playAskedAt = seconds;
     if (note === PLAY_REFUSED_NOTE) note = null;
+    // Before `play()`: a start with sound mutes the one heard so far.
+    if (!p.muted) deps.cap.heard(seat);
     p.play().catch(() => {
       refused();
     });
@@ -311,9 +357,10 @@ export function videoWorld(
     if (p.muted) {
       state = "paused";
       note = PLAY_REFUSED_NOTE;
+      release();
       return;
     }
-    p.muted = true;
+    setMuted(true);
     note = SOUND_REFUSED_NOTE;
     p.play().catch(() => {
       refused();
@@ -351,9 +398,25 @@ export function videoWorld(
         return;
     }
   };
+  /**
+   * One event through the playing rule. A step that would set it playing
+   * asks the cap first; while no place is free it changes nothing and
+   * waits as `pending`. A leave gives up a wait as well as a place; a
+   * step that stops it playing frees its place.
+   */
   const event = (e: VideoEvent): void => {
     const step = videoStep(state, e);
+    const starts =
+      step.action === "play" ||
+      step.action === "resume" ||
+      step.action === "replay";
+    if (starts && !deps.cap.ask(seat)) {
+      pending = e;
+      return;
+    }
+    if (starts) pending = null;
     state = step.state;
+    if (e === "leave" || state !== "playing") release();
     apply(step.action);
   };
 
@@ -366,7 +429,7 @@ export function videoWorld(
     // A start that wanted sound before the page was touched: this tap
     // touches it, and turns the sound on rather than pausing.
     if (state === "playing" && blocked && p !== null && p.muted) {
-      p.muted = false;
+      setMuted(false);
       blocked = false;
       note = null;
       return;
@@ -377,7 +440,7 @@ export function videoWorld(
     const p = player;
     if (p === null) return;
     const on = p.muted;
-    p.muted = !on;
+    setMuted(!on);
     blocked = false;
     const storage = deps.storage();
     const kept = saveVisitorPrefs(
@@ -402,7 +465,7 @@ export function videoWorld(
           timeMs: () => (player?.currentTime ?? 0) * 1000,
           durationMs: () => durationOf(player) * 1000,
           line: () =>
-            note ??
+            (pending !== null ? VIDEO_WAITING_NOTE : note) ??
             (standHere
               ? standHereGuide(develop, spotM, viewpoint !== undefined)
               : videoHint(start, state, distanceM, reachM)),
@@ -610,6 +673,7 @@ export function videoWorld(
     dispose() {
       gone = true;
       shutCard();
+      release();
       const p = player;
       player = null;
       if (p !== null) {

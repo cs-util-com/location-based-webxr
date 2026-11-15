@@ -13,6 +13,7 @@
  */
 import type { TourVideoBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { Texture, Vector3, type Mesh, type Object3D } from "three";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -27,8 +28,10 @@ import {
   VIDEO_LOOK_DWELL_S,
   withVideoSound,
 } from "./video-rules.js";
+import { videoCap, type VideoCap } from "./video-cap.js";
 import {
   SOUND_REFUSED_NOTE,
+  VIDEO_WAITING_NOTE,
   videoWorld,
   type ClipPlayer,
   type VideoDeps,
@@ -99,6 +102,8 @@ interface Setup {
   readonly activated?: boolean;
   readonly storage?: PrefsStorage;
   readonly refuse?: FakePlayer["refuse"];
+  /** The play cap it shares with other videos; none: its own. */
+  readonly cap?: VideoCap;
   /** Done to the part before its clip's size is known. */
   readonly beforeReady?: (part: WorldPart) => void;
 }
@@ -145,6 +150,7 @@ async function video(setup: Setup = {}) {
     activated: () => setup.activated ?? true,
     storage: () => storage,
     element: () => null,
+    cap: setup.cap ?? videoCap(),
   };
   const block = {
     id: "v",
@@ -592,6 +598,174 @@ describe("a free video's ground", () => {
       expect(offGround(part.object, 3), "before a frame").toEqual([]);
     });
   }
+});
+
+describe("videos that share the play cap", () => {
+  const lineOf = (host: HTMLElement | null) =>
+    host?.querySelector(".narration-card-line")?.textContent ?? "";
+  const plays = (p: FakePlayer) => !p.paused;
+  const heard = (p: FakePlayer) => !p.paused && !p.muted;
+
+  // Why: a phone decodes only a few clips at once; the first two to start
+  // play, and a third waits on its poster - saying so in its card's line,
+  // the only words a waiting video has - until one of them stops.
+  it("plays the first two to start, and a third waits until one stops", async () => {
+    const cap = videoCap();
+    const [a, b, c] = await Promise.all([
+      video({ cap }),
+      video({ cap }),
+      video({ cap }),
+    ]);
+    for (const v of [a, b, c]) v.part.update?.(at(1, 0));
+    expect([a, b, c].map((v) => plays(v.player))).toEqual([true, true, false]);
+    expect(c.player.calls).toEqual([]);
+    expect(lineOf(c.shown.host)).toBe(VIDEO_WAITING_NOTE);
+    // The visitor pauses the first: its place goes to the one that waits.
+    a.part.tap?.();
+    expect(c.player.calls).toEqual(["play muted"]);
+    expect(c.player.currentTime).toBe(0);
+    c.part.update?.(at(1, 1));
+    expect(lineOf(c.shown.host)).toBe("");
+    // The paused one now waits for its own turn back.
+    a.part.tap?.();
+    expect(plays(a.player)).toBe(false);
+    b.player.end();
+    expect(plays(a.player)).toBe(true);
+    expect(a.player.calls.at(-1)).toBe("play muted");
+  });
+
+  // Why: the design's rule for sound - a second start with sound takes
+  // it from the first - must not cost the first its place in the clip:
+  // it is muted where it is, never paused, rewound or restarted.
+  it("gives the sound to the newest start with it, and the other plays on muted where it was", async () => {
+    const cap = videoCap();
+    const a = await video({ cap, block: { sound: "on" } });
+    const b = await video({ cap, block: { sound: "on" } });
+    a.part.update?.(at(1, 0));
+    expect(heard(a.player)).toBe(true);
+    a.player.currentTime = 5;
+    b.part.update?.(at(1, 1));
+    expect(heard(b.player)).toBe(true);
+    expect(a.player.muted).toBe(true);
+    expect(a.player.paused).toBe(false);
+    expect(a.player.currentTime).toBe(5);
+    expect(a.player.calls).toEqual(["play sound"]);
+    // The visitor's sound switch on the first takes it back.
+    a.shown.host?.querySelector<HTMLElement>(".video-card-sound")?.click();
+    expect(heard(a.player)).toBe(true);
+    expect(b.player.muted).toBe(true);
+    expect(b.player.paused).toBe(false);
+  });
+
+  // Why: a turn is for a video the visitor is at; one he walked away from
+  // while it waited must not start behind his back, and asks again when
+  // he comes back.
+  it("drops a waiting video's turn when the visitor leaves it", async () => {
+    const cap = videoCap();
+    const a = await video({ cap });
+    const b = await video({ cap });
+    const c = await video({ cap, block: { start: "near", withinM: 4 } });
+    c.part.object.position.set(20, 0, 0);
+    for (const v of [a, b, c]) v.part.update?.(at(19, 0));
+    expect(c.player.calls).toEqual([]);
+    c.part.update?.(at(10, 1));
+    a.part.tap?.();
+    expect(c.player.calls).toEqual([]);
+    c.part.update?.(at(19, 2));
+    expect(c.player.calls).toEqual(["play muted"]);
+  });
+
+  // Why: a stand-here projection is a decoder like any other; the design
+  // makes no exception for it.
+  it("counts a stand-here video like the others", async () => {
+    const cap = videoCap();
+    const a = await video({ cap });
+    const b = await video({ cap });
+    const here = await video({ cap, block: { view: "standHere" } });
+    a.part.update?.(at(1, 0));
+    b.part.update?.(at(1, 0));
+    for (let s = 0; s <= 120; s++) here.part.update?.(at(1, s / 30));
+    expect(here.player.calls).toEqual([]);
+    a.part.dispose();
+    expect(here.player.calls).toEqual(["play muted"]);
+  });
+
+  // Why: the cap's promise, over any mix of videos, triggers and visitor
+  // walks and taps: never more than two playing, never two heard. The
+  // limit is swept from 1 to 3, since 2 is a guess about phones.
+  it("never plays more than its limit nor lets two be heard, wherever the visitor goes", async () => {
+    const spec = fc.record({
+      x: fc.integer({ min: -30, max: 30 }),
+      start: fc.constantFrom("enter", "near", "look", "tap"),
+      sound: fc.constantFrom("on", "off"),
+      view: fc.constantFrom("screen", "porthole", "standHere"),
+      loop: fc.constantFrom("on", "off"),
+    });
+    const move = fc.oneof(
+      fc.record({
+        kind: fc.constant("walk" as const),
+        x: fc.integer({ min: -40, max: 40 }),
+        turn: fc.constantFrom(-1, 1),
+      }),
+      fc.record({ kind: fc.constant("tap" as const), i: fc.nat(5) }),
+      fc.record({ kind: fc.constant("end" as const), i: fc.nat(5) }),
+      fc.record({ kind: fc.constant("sound" as const), i: fc.nat(5) }),
+    );
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 3 }),
+        fc.array(spec, { minLength: 2, maxLength: 5 }),
+        fc.array(move, { maxLength: 40 }),
+        async (limit, specs, moves) => {
+          const cap = videoCap(limit);
+          const videos = await Promise.all(
+            specs.map(async (s) => {
+              const v = await video({
+                cap,
+                block: {
+                  start: s.start,
+                  sound: s.sound,
+                  view: s.view,
+                  loop: s.loop,
+                },
+              });
+              v.part.object.position.set(s.x, 0, 0);
+              return v;
+            }),
+          );
+          let t = 0;
+          let viewer = 0;
+          let facing: readonly [number, number, number] = [1, 0, 0];
+          for (const m of moves) {
+            const v =
+              m.kind === "walk" ? undefined : videos[m.i % videos.length];
+            if (m.kind === "walk") {
+              viewer = m.x;
+              facing = [m.turn, 0, 0];
+            } else if (m.kind === "tap") v?.part.tap?.();
+            else if (m.kind === "end" && v !== undefined && !v.player.paused) {
+              v.player.end();
+            } else if (m.kind === "sound") {
+              v?.shown.host
+                ?.querySelector<HTMLElement>(".video-card-sound")
+                ?.click();
+            }
+            for (let k = 0; k < 3; k++) {
+              t += 0.4;
+              for (const each of videos) {
+                each.part.update?.(at(viewer, t, facing));
+              }
+            }
+            const players = videos.map((each) => each.player);
+            expect(players.filter(plays).length).toBeLessThanOrEqual(limit);
+            expect(players.filter(heard).length).toBeLessThanOrEqual(1);
+          }
+          for (const each of videos) each.part.dispose();
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
 });
 
 /** Frames from `from` to `to` seconds at 30 a second, the viewer `x` m

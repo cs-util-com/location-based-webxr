@@ -21,7 +21,10 @@ starts. Without a viewpoint it develops wherever the visitor stands.
 - `ClipPlayer` - what the part uses of a `<video>` element.
 - `VideoDeps` - the page: `makePlayer`, `clipTexture`, `posterTexture`,
   `url` / `revoke`, `activated` (the page was touched), `storage` (the
-  visitor's preferences), `element` (the player as a page element).
+  visitor's preferences), `element` (the player as a page element), `cap`
+  (the play cap the page's videos share).
+- `VIDEO_WAITING_NOTE` - the card's line while it waits for a place under
+  the play cap.
 - `SOUND_REFUSED_NOTE` - the card's line when the browser kept a wanted
   sound off.
 - `videoWorld(block, env, deps?)` -> `WorldPart | null`: null in the card
@@ -71,6 +74,18 @@ starts. Without a viewpoint it develops wherever the visitor stands.
   visitor's tap is the next try. A muted start that is only slow to load is
   left to its own promise and still counts as playing.
 - The sound switch stores the visitor's choice for every video.
+- The play cap (`video-cap.ts`, `deps.cap`; the browser's is one per
+  page): every step of the playing rule that would set it playing (its
+  start, a return, a tap's resume or replay) asks the cap first. While no
+  place is free it changes nothing: the look stays as it is (the poster
+  before a first start, the frame it was paused on), the event is kept as
+  pending and sent again once the cap lets it play, and the card's line
+  says `VIDEO_WAITING_NOTE`. Leaving gives up the wait; every step that
+  stops it playing (pause, leave, end, a refused muted start) and
+  `dispose` free its place. A start or resume with sound, the sound switch
+  on and the tap that turns a blocked sound on tell the cap it is heard;
+  the video heard before has only its `muted` set, so it plays on where it
+  was. No new element is drawn for any of this.
 - A `loop: "on"` video sets the element's own `loop`, so it plays again
   without an `ended` (it never reaches `finished`).
 - Captions are read once (`video-captions.ts`); with at least one cue the

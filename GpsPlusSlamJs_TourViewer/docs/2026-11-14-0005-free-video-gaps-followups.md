@@ -21,10 +21,15 @@ independent.
   standing at the station, through the camera. The editor places items only
   in its 3D view. This needs its own design (who holds the phone, how a
   placement is confirmed) before any build.
-- **A cap on videos playing at once.** Nothing limits how many free videos
-  of one station play together. Each is a decoder and a texture upload per
-  frame, which a phone notices. A cap needs a rule for which one wins (the
-  nearest, or the last started), and measurements on a phone to set it.
+- **A cap on videos playing at once - built.** At most two free videos
+  play at once and one is heard (`src/kinds/video/video-cap.ts.md`). The
+  first to start keep playing and a later start waits in line on its
+  poster (or paused frame), its card's line saying so; the newest start
+  with sound takes the sound and the other plays on muted. Every view
+  counts, stand-here included. The cap is one per page, not per station:
+  the decoders are the phone's. Still open: the value 2 is the design's
+  guess, to be measured on a mid-range phone; a visitor's tap on a third
+  video waits like a trigger's start rather than taking a place.
 - **Lowering other audio under a video's voice.** A video with sound plays
   over a narration or another item's sound at full level. Ducking needs one
   place that knows every audio source of the station; `voice-focus.ts` is
