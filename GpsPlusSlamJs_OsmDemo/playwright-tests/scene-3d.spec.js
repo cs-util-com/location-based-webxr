@@ -3042,10 +3042,16 @@ test.describe("the ambient occlusion", () => {
           el.dispatchEvent(new Event("change", { bubbles: true }));
         }, on);
         await expect(view).toHaveAttribute("data-ao", on ? "on" : "off");
-        await page.locator("#light-check").click();
-        await expect(page.locator("#light-readout")).toContainText(
-          "Heat grid adds",
-        );
+        // The check reads the heat grid only once it is built; a click that
+        // lands before then reports without it, so the click is retried
+        // (within the usual repaint budget) until the margin line appears.
+        await expect(async () => {
+          await page.locator("#light-check").click();
+          await expect(page.locator("#light-readout")).toContainText(
+            "Heat grid adds",
+            { timeout: 2_000 },
+          );
+        }).toPass(REPAINT);
         const text = (await page.locator("#light-readout").textContent()) ?? "";
         return Number(/adds ([\d.-]+)/.exec(text)?.[1]);
       };
