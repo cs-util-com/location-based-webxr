@@ -235,6 +235,9 @@ export function videoPreview(
       gone = true;
       if (playing) video.pause();
       video.removeAttribute("src");
+      // Without a src, `load()` is what makes the element drop the clip
+      // it buffered (only removing the attribute keeps it).
+      video.load();
       video.removeAttribute("poster");
       for (const u of made) urls.revoke(u);
       made.length = 0;

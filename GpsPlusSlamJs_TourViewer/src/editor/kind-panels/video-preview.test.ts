@@ -191,9 +191,15 @@ describe("the inspector's video preview", () => {
     const { d, made, revoked } = deps();
     const q = videoPreview(document, "content/v.mp4", "content/p.jpg", d);
     await settle();
+    const video = parts(q.root).video;
+    const load = vi.spyOn(video, "load").mockImplementation(() => undefined);
     q.dispose();
     expect(revoked).toEqual(made);
     expect(made).toHaveLength(2);
+    // Taking the src away alone leaves the element holding the clip it
+    // buffered: `load()` with no src is what makes it let go.
+    expect(video.hasAttribute("src")).toBe(false);
+    expect(load).toHaveBeenCalledTimes(1);
   });
 
   // Why: a clip that was read but cannot be decoded here (a codec this

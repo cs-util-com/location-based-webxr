@@ -19,7 +19,9 @@ poster without leaving the editor.
     it through a canvas at the clip's own size (quality 0.85). It gives null
     when the clip shows no picture or the canvas refuses;
   - `objectUrl` (optional) - `create` / `revoke`, for tests.
-- `dispose()` stops the clip and revokes every object URL it made.
+- `dispose()` stops the clip, takes its src away and calls `load()`, so
+  the element lets go of what it buffered, and revokes every object URL
+  it made.
 
 ## Invariants & assumptions
 
