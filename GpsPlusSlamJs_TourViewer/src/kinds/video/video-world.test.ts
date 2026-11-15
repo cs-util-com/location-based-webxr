@@ -419,18 +419,19 @@ function shadowHeights(object: Object3D): number[] {
   return heights;
 }
 
-/** Every shadow of `object` lies on the station's ground. A shadow sits
- *  0.012 above its ground in the look's own (reference) metres, so in the
- *  world that gap is 0.012 times everything the look is drawn larger by
+/** What of `object`'s shadows is off the station's ground (none: all
+ *  on it). A shadow sits 0.012 above its ground in the look's own
+ *  (reference) metres, so in the world that gap is 0.012 times everything the look is drawn larger by
  *  (`drawnScale`). The 1e-6 is float noise: every misplacement seen so
  *  far was a metre or more, and a fixed tolerance instead (0.05 was used)
  *  fails a correct ground above a drawn scale of about 4.2. */
-function expectOnGround(object: Object3D, drawnScale: number, label: string) {
+function offGround(object: Object3D, drawnScale: number): string[] {
   const heights = shadowHeights(object);
-  expect(heights.length, label).toBeGreaterThan(0);
-  for (const y of heights) {
-    expect(Math.abs(y - 0.012 * drawnScale), label).toBeLessThan(1e-6);
-  }
+  if (heights.length === 0) return ["no shadow drawn"];
+  const want = 0.012 * drawnScale;
+  return heights
+    .filter((y) => Math.abs(y - want) >= 1e-6)
+    .map((y) => `a shadow at ${String(y)} m, not ${String(want)} m`);
 }
 
 describe("a free video's ground", () => {
@@ -459,7 +460,9 @@ describe("a free video's ground", () => {
         part.object.position.set(0, liftM, 0);
         drawInherited(part.object, scale);
         part.update?.(at(0, 0));
-        expectOnGround(part.object, scale, `scale ${String(scale)}`);
+        expect(offGround(part.object, scale), `scale ${String(scale)}`).toEqual(
+          [],
+        );
       });
     }
 
@@ -485,7 +488,9 @@ describe("a free video's ground", () => {
         part.object.position.set(0, 2 * scale, 0);
         drawInherited(part.object, scale);
         part.update?.(at(0, 0));
-        expectOnGround(part.object, scale, `scale ${String(scale)}`);
+        expect(offGround(part.object, scale), `scale ${String(scale)}`).toEqual(
+          [],
+        );
         expect(part.tapTarget, `scale ${String(scale)}`).toBe(tap);
       }
     });
@@ -514,11 +519,10 @@ describe("a free video's ground", () => {
         for (const widthM of [3.2, 0.8, 6, 0.1, 1.6]) {
           drawAtExtent(part.object, widthM);
           part.update?.(at(0, 0));
-          expectOnGround(
-            part.object,
-            (folder * widthM) / 1.6,
+          expect(
+            offGround(part.object, (folder * widthM) / 1.6),
             `width ${String(widthM)}`,
-          );
+          ).toEqual([]);
           expect(part.tapTarget, `width ${String(widthM)}`).toBe(tap);
         }
       });
@@ -543,7 +547,7 @@ describe("a free video's ground", () => {
           drawInherited(p.object, 3);
         },
       });
-      expectOnGround(part.object, 3, "before a frame");
+      expect(offGround(part.object, 3), "before a frame").toEqual([]);
     });
   }
 });
