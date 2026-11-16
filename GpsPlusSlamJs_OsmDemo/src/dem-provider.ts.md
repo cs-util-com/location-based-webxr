@@ -55,8 +55,9 @@ fallbackTimeoutMs?, publishTimeoutMs?, onUpgrade? }): RacingElevationProvider` �
     have to stay apart all the way to the DOM. Neither is `pinned` into the
     resting line: their licences accept a credit one tap away (the reasoning
     and sources are in [`attribution-view.ts.md`](./attribution-view.ts.md)).
-    The composed `DEM_ATTRIBUTION` constant that used to live here is gone — nothing rendered it once the line took entries, and an
-    exported string with only a test for a reader is a dead export.
+    The composed `DEM_ATTRIBUTION` constant that used to live here is gone —
+    nothing rendered it once the line took entries, and an exported string
+    with only a test for a reader is a dead export.
 
 ## Why the deadlines exist, and what each one bounds
 
