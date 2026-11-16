@@ -1,5 +1,10 @@
 # Model import, direction 1: two guided steps
 
+**Liked:** this is the direction the model import builds on. Fixed since
+the first version: pictures and shared textures are reused instead of
+being encoded once per use, switching models no longer crashes the page,
+and "Use the standard" now moves on to the review.
+
 A throwaway UX prototype of what a tour creator meets after dropping a `.glb`
 on the editor's asset shelf. It is linked from nothing in the app.
 

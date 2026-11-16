@@ -1,5 +1,8 @@
 # Model import, direction 2: one bench, everything live
 
+**Not chosen:** too colourful; direction 1 reads clearer. Kept in the
+gallery for anyone who prefers it.
+
 A throwaway UX prototype for the step after a creator drops a 3D model
 on the editor's asset shelf: making it light enough for visitors'
 phones. Linked from nothing in the app.

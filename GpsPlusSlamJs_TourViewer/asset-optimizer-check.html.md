@@ -8,7 +8,7 @@ It is a Vite build entry (`vite.config.ts`), reachable on a deployed branch prev
 
 ## Outdated: the model part
 
-The model part (the large view, its sliders and options) is being redesigned: three model import prototypes are coming in the prototype gallery (`public/prototypes/`, anchor `#2026-11-16-model-import`). The page says so in a note at the top of its model section, linked to that anchor. Until one is chosen the part stays as it is, a research tool and not the design; superseded parts are marked, not removed.
+The model part (the large view, its sliders and options) is being redesigned: three model import prototypes are in the prototype gallery (`public/prototypes/`, anchor `#2026-11-16-model-import`). The page says so in a note at the top of its model section, linked to that anchor. Until one is chosen the part stays as it is, a research tool and not the design; superseded parts are marked, not removed.
 
 ## What it shows
 

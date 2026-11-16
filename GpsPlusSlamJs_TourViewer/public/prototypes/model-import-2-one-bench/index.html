@@ -23,7 +23,18 @@
 
       body {
         display: grid;
-        grid-template-rows: auto minmax(0, 1fr);
+        grid-template-rows: auto auto minmax(0, 1fr);
+      }
+
+      .shell-status {
+        margin: 0;
+        padding: 8px 16px;
+        border-bottom: 1px solid #d8d0c2;
+        background: #fffdf9;
+        color: #2c3a45;
+        font:
+          14px system-ui,
+          sans-serif;
       }
 
       .shell-samples {
@@ -111,6 +122,9 @@
     </style>
   </head>
   <body>
+    <p class="shell-status">
+      <strong>Not chosen:</strong> too colourful; direction 1 reads clearer.
+    </p>
     <nav class="shell-samples" aria-label="Sample models">
       <span>Try a model:</span>
       <button type="button" data-sample="rock">Rock</button>
