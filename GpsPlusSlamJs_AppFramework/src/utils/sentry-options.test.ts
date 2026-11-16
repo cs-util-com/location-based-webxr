@@ -13,10 +13,28 @@
  * drift.
  */
 
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+import * as Sentry from '@sentry/browser';
 import { getDefaultIntegrations } from '@sentry/browser';
 import type { Breadcrumb, BrowserOptions, ErrorEvent } from '@sentry/browser';
-import { TRACES_SAMPLE_RATE, sentryOptions } from './sentry-options';
+import type * as SentryModule from '@sentry/browser';
+import {
+  SENTRY_TEST_MESSAGE,
+  TRACES_SAMPLE_RATE,
+  sentryOptions,
+  startErrorReporting,
+  startWorkerErrorReporting,
+  strictSentryOptions,
+  wantsTestReport,
+  workerSentryOptions,
+} from './sentry-options';
+
+// Only the two calls that would start the SDK or send a report are replaced;
+// the integration list is still resolved by the real SDK.
+vi.mock('@sentry/browser', async (importOriginal) => {
+  const actual = await importOriginal<typeof SentryModule>();
+  return { ...actual, init: vi.fn(), captureException: vi.fn() };
+});
 
 type TransactionEvent = Parameters<
   NonNullable<BrowserOptions['beforeSendTransaction']>
@@ -192,5 +210,158 @@ describe('sentryOptions', () => {
     // Moving the project to another region changes this host; the privacy
     // page names the region, so the two have to change together.
     expect(options.dsn).toContain('.ingest.us.sentry.io/');
+  });
+});
+
+// Why these tests matter: the Tour Viewer and the map demo are used by
+// visitors, and the privacy page says what their reports carry: errors only,
+// no traces, the app's name, and nothing of the tour or the place. These
+// values are that promise; changing one must be a decision made together with
+// the privacy text.
+describe('strictSentryOptions', () => {
+  const options = strictSentryOptions('tour-viewer', OWN, 'gps.csutil.com');
+
+  it('sends errors only: no tracing, no session, no locale', () => {
+    const names = runningIntegrationNames(options);
+    expect(names).not.toContain('BrowserTracing');
+    expect(names).not.toContain('BrowserSession');
+    expect(names).not.toContain('CultureContext');
+    expect(names).toEqual(
+      expect.arrayContaining(['GlobalHandlers', 'LinkedErrors', 'Dedupe'])
+    );
+    expect(options.tracesSampleRate).toBeUndefined();
+    expect(options.sendDefaultPii).toBe(false);
+  });
+
+  it("tags every report with the app's name, in the Recorder's project", () => {
+    expect(options.initialScope).toEqual({ tags: { app: 'tour-viewer' } });
+    expect(options.dsn).toBe(sentryOptions(OWN).dsn);
+    expect(options.environment).toBe('production');
+  });
+
+  it('keeps only the log lines that are warnings or errors', () => {
+    const line = (level: Breadcrumb['level']): Breadcrumb => ({
+      category: 'log',
+      level,
+      message: '[Tour] opened station 3',
+    });
+    expect(options.beforeBreadcrumb?.(line('info'))).toBeNull();
+    expect(options.beforeBreadcrumb?.(line('debug'))).toBeNull();
+    expect(options.beforeBreadcrumb?.(line('warning'))).not.toBeNull();
+    expect(options.beforeBreadcrumb?.(line('error'))).not.toBeNull();
+    expect(
+      options.beforeBreadcrumb?.({ category: 'console', message: 'x' })
+    ).toBeNull();
+  });
+
+  it('removes a camera target, an H3 cell, an OSM id and a file name from a report', () => {
+    const event: ErrorEvent = {
+      type: undefined,
+      event_id: 'a3f2504e04f8911d39a0c0305e82c330',
+      request: {
+        url: 'https://gps.csutil.com/osm/?clat=48.137154&clng=11.576124',
+      },
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'build failed for cell 8d1f8d3a1c3a43f, way/123456789',
+          },
+        ],
+      },
+      breadcrumbs: [
+        {
+          category: 'log',
+          level: 'warning',
+          message: '[Shelf] Skipping "Altstadt Rundgang.zip"',
+        },
+      ],
+    };
+    const text = JSON.stringify(options.beforeSend?.(event, {}));
+    for (const secret of [
+      '48.137154',
+      '11.576124',
+      '8d1f8d3a1c3a43f',
+      '123456789',
+      'Altstadt',
+    ]) {
+      expect(text).not.toContain(secret);
+    }
+    expect(text).toContain('a3f2504e04f8911d39a0c0305e82c330');
+  });
+});
+
+describe('workerSentryOptions', () => {
+  it("tags a worker's reports with the app and the thread", () => {
+    const options = workerSentryOptions('osm-demo', OWN, 'gps.csutil.com');
+    expect(options.initialScope).toEqual({
+      tags: { app: 'osm-demo', thread: 'worker' },
+    });
+    expect(runningIntegrationNames(options)).not.toContain('BrowserTracing');
+  });
+});
+
+// Why these tests matter: a dev server must send nothing, and the test flag
+// is how a deployed build is checked end to end; it must send exactly one
+// report and nothing else.
+describe('startErrorReporting', () => {
+  beforeEach(() => {
+    vi.mocked(Sentry.init).mockClear();
+    vi.mocked(Sentry.captureException).mockClear();
+  });
+
+  it('does nothing outside a production build', () => {
+    expect(
+      startErrorReporting({
+        app: 'osm-demo',
+        prod: false,
+        search: '?sentry-test',
+      })
+    ).toBe(false);
+    expect(startWorkerErrorReporting({ app: 'osm-demo', prod: false })).toBe(
+      false
+    );
+    expect(Sentry.init).not.toHaveBeenCalled();
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('starts the strict profile and sends no report without the flag', () => {
+    expect(
+      startErrorReporting({ app: 'osm-demo', prod: true, search: '' })
+    ).toBe(true);
+    expect(Sentry.init).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(Sentry.init).mock.calls[0]?.[0]?.initialScope).toEqual({
+      tags: { app: 'osm-demo' },
+    });
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('sends one test report when the page address carries the flag', () => {
+    startErrorReporting({
+      app: 'tour-viewer',
+      prod: true,
+      search: '?lat=1&sentry-test',
+    });
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    const sent = vi.mocked(Sentry.captureException).mock.calls[0]?.[0];
+    expect(sent).toBeInstanceOf(Error);
+    expect((sent as Error).message).toBe(SENTRY_TEST_MESSAGE);
+  });
+
+  it('starts the worker profile in a worker', () => {
+    expect(startWorkerErrorReporting({ app: 'tour-viewer', prod: true })).toBe(
+      true
+    );
+    expect(vi.mocked(Sentry.init).mock.calls[0]?.[0]?.initialScope).toEqual({
+      tags: { app: 'tour-viewer', thread: 'worker' },
+    });
+  });
+
+  it('reads the flag only as a query parameter', () => {
+    expect(wantsTestReport('?sentry-test')).toBe(true);
+    expect(wantsTestReport('?a=1&sentry-test=1')).toBe(true);
+    expect(wantsTestReport('?sentry-testing')).toBe(false);
+    expect(wantsTestReport('')).toBe(false);
+    expect(wantsTestReport(undefined)).toBe(false);
   });
 });

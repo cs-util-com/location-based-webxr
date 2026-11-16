@@ -2,8 +2,11 @@
 
 ## Purpose
 
-The Sentry configuration of the site's apps, in one place: the options
-(`sentryOptions`) and the call that starts the SDK with them (`initSentry`).
+The Sentry configuration of the site's apps, in one place: the Recorder's
+options (`sentryOptions`) and the call that starts the SDK with them
+(`initSentry`), and the strict profile of the apps visitors use, the Tour
+Viewer and the map demo (`strictSentryOptions`, `workerSentryOptions`,
+`startErrorReporting`, `startWorkerErrorReporting`).
 It moved here from the Recorder (`src/utils/sentry.ts`) so the other apps
 use the same DSN, environment rule and scrubber instead of a copy; the
 Recorder's behaviour did not change in the move, and its tests moved with it
@@ -41,6 +44,71 @@ The Recorder's options, as a pure function so a unit test can pin them.
 reports, links to other hosts keep only the host (see `sentry-scrub.ts.md`).
 `pageHostname` defaults to `location.hostname` and picks the
 `environment` label (`error-report-environment.ts`).
+
+### `strictSentryOptions(app, ownHost?, pageHostname?): BrowserOptions`
+
+The options of the apps visitors use. Same DSN, environment rule and
+`sendDefaultPii: false` as the Recorder, and:
+
+- `initialScope.tags.app` - the app's name (`tour-viewer`, `osm-demo`), so
+  their reports are told apart from each other and from the Recorder's in
+  the one project. A separate Sentry project per app would need an account
+  step and its own DSN; nothing in the code asked for one, and a tag filters
+  just as well.
+- No tracing: no `browserTracingIntegration`, no `tracesSampleRate`. A
+  visitor's page load sends nothing unless something goes wrong.
+- The same dropped defaults (`BrowserSession`, `CultureContext`).
+- Every hook scrubs with the strict profile of `sentry-scrub.ts`, which also
+  removes quoted text (file, station and tour names, snippets of a file in a
+  parse error) and runs of six or more digits (OSM ids).
+- Breadcrumbs: console ones are dropped, and the framework logger's (`log`)
+  only at warning level and above: info and debug lines say what the
+  visitor is doing (which station, which file) and are not needed to read an
+  error. Clicks, fetches and navigations stay, scrubbed.
+
+### `workerSentryOptions(app, ownHost?, pageHostname?): BrowserOptions`
+
+`strictSentryOptions` plus a `thread: worker` tag, for `Sentry.init` inside a
+Web Worker. A worker has its own global scope, so the page's `Sentry.init`
+does not reach it.
+
+### `startErrorReporting({ app, prod, search? }): boolean`
+
+Starts the strict profile on a page, first thing in its entry module, and
+returns whether it did. Does nothing unless `prod` (pass
+`import.meta.env.PROD`). When `search` (default `location.search`) carries the
+`sentry-test` flag (`SENTRY_TEST_PARAM`), it sends one harmless test report
+(`captureException` of an `Error` with `SENTRY_TEST_MESSAGE`, thrown
+nowhere), so a deployed build can be checked end to end: the report arrives,
+with its `app` tag, `environment`, release and a readable stack.
+
+```ts
+import { startErrorReporting } from 'gps-plus-slam-app-framework/utils/sentry-options';
+
+startErrorReporting({
+  app: 'osm-demo',
+  prod: import.meta.env.PROD,
+});
+```
+
+### `startWorkerErrorReporting({ app, prod }): boolean`
+
+The same inside a Web Worker, with `workerSentryOptions`.
+
+**Why the worker starts its own SDK rather than forwarding to the page.**
+The SDK's own worker support (`webWorkerIntegration` on the page,
+`registerWebWorker` in the worker) forwards only debug ids and unhandled
+promise rejections; a worker's logger warnings (`log.warn` becomes
+`captureMessage`) and its errors caught and logged inside the worker would
+not arrive, and a hand-written forwarder would be a second message protocol
+to keep. Started in the worker, the framework logger there reports exactly
+as it does on the page, and uncaught errors are caught by the SDK's global
+handlers where they happen, with the worker's own stack. An error the
+worker catches and replies with is reported once, by the page that logs it.
+
+### `wantsTestReport(search): boolean`
+
+Whether a query string carries the test flag; never throws.
 
 ### `SENTRY_DSN`
 
@@ -151,7 +219,11 @@ places, links, names or files and were read one by one):
 ## Configuration of the build
 
 The Sentry Vite plugin in each app's Vite config (the Recorder's
-`config/vite.config.ts`) uploads source maps during production builds. It
+`config/vite.config.ts`, the Tour Viewer's and the map demo's
+`vite.config.ts`) uploads source maps during production builds. The Tour
+Viewer and the map demo build them `hidden` (no `sourceMappingURL` comment,
+so a visitor's browser never fetches them) and run the plugin for their
+Web Worker bundles too, which gives those bundles debug ids. It
 is loaded only when the `SENTRY_AUTH_TOKEN` environment variable is set, so
 a build without the token (local, CI) uploads nothing and does not fail.
 
@@ -166,6 +238,13 @@ a build without the token (local, CI) uploads nothing and does not fail.
   `http.query` and `http.fragment` attributes, a standalone span is
   scrubbed, console breadcrumbs are dropped, and the DSN's region is the
   one the privacy page names.
+- The same file pins the strict profile: no tracing, session or culture
+  integration, the `app` tag and the Recorder's DSN, info and debug log
+  breadcrumbs dropped, a report with a camera target, an H3 cell, an OSM id
+  and a quoted file name comes out without them, the worker's `thread` tag,
+  and `startErrorReporting` / `startWorkerErrorReporting`: nothing outside
+  production, one test report only with the flag (the SDK's `init` and
+  `captureException` are mocked).
 - `sentry-scrub.test.ts`, `sentry-scrub.property.test.ts` - the scrubber.
 - Whether reports really arrive is checked in the Sentry dashboard after a
-  deploy; no test sends one.
+  deploy (the `sentry-test` flag sends one); no test sends one.
