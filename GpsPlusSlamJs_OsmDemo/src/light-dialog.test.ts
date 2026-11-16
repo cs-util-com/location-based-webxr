@@ -20,6 +20,7 @@ import { veilLightnessBounds } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   lightDefaultsFor,
+  parseLightLink,
   type LightSettings,
 } from "./light-settings.js";
 
@@ -376,6 +377,22 @@ describe("createLightDialog", () => {
     bySlider.$("light-reset").click();
     bySlider.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
     expect(bySlider.dialog.settings).toEqual(DEFAULT_LIGHT_SETTINGS);
+  });
+
+  it("keeps a link-stated value that equals the scheme's default across a switch", () => {
+    // Why this test matters: `veil=0` under today equals today's default, so
+    // the value alone reads as untouched and a switch to urban would bring
+    // urban's veil back over what the link stated. The link's own key list
+    // says it was set.
+    const link = parseLightLink("?light=v1:veil=0", DEFAULT_LIGHT_SETTINGS);
+    const { dialog } = setup({
+      initial: link.settings,
+      defaults: DEFAULT_LIGHT_SETTINGS,
+      stated: link.stated,
+    });
+    const urban = lightDefaultsFor("urban");
+    dialog.setDefaults(urban);
+    expect(dialog.settings).toEqual({ ...urban, hazeVeilLightness: 0 });
   });
 
   it("resets every value to the shipped look", () => {

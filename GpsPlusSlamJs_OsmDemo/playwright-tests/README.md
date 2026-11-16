@@ -8,6 +8,13 @@ config's `reuseExistingServer` takes whatever answers on port 5186, which in a
 second worktree is the other checkout's dev server: the suite then tests that
 code, and fails when that server goes away mid-run.
 
+`CI=1` also turns on `forbidOnly` and switches the reporter to the CI pair
+(`github` and `json`), so a failing run leaves no HTML report. Read the
+trace instead: `CI=1` retries a failed test once (twice in the full tier),
+and the first retry records it
+(`trace: on-first-retry`), next to the failure's screenshot and video under
+`test-results/`.
+
 ## CI lanes
 
 On CI the suite runs as three parallel jobs, one per lane of `e2e-lanes.js`

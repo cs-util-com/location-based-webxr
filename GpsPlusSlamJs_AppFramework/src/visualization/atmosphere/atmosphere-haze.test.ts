@@ -531,7 +531,7 @@ describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
     const f = compile(material, 'standard').fragmentShader;
     const boundaryAt = f.indexOf('float atmBoundary');
     const rimAt = f.indexOf(
-      'atmBoundary = max(atmBoundary, atmHazeRimOn * smoothstep('
+      'atmBoundary = max(atmBoundary, smoothstep(atmHazeRim.z, atmHazeRim.w,'
     );
     const keepAt = f.indexOf('vec3 atmHazeKeep');
     expect(boundaryAt).toBeGreaterThan(0);
@@ -541,6 +541,25 @@ describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
       'cameraPosition + (vec4(vAtmViewPosition, 0.0) * viewMatrix).xyz'
     );
     expect(f.indexOf('if (atmHazeMode > 0.5)')).toBeLessThan(rimAt);
+  });
+
+  // WHY: GLSL ES leaves smoothstep undefined when its edges do not rise,
+  // and a NaN from it is not masked by a weight of 0 (0 * NaN is NaN, and
+  // max() with a NaN may return it). So with no rim set the term is not
+  // evaluated at all, and the uniform's edges rise even before any setRim,
+  // for every consumer of the haze.
+  it('never evaluates the rim term while the rim is off, and its default edges rise', () => {
+    const h = haze();
+    const [, , inner, outer] = h.uniforms.atmHazeRim.value.toArray();
+    expect(outer).toBeGreaterThan(inner);
+    const material = new THREE.MeshStandardMaterial();
+    h.apply(material);
+    const f = compile(material, 'standard').fragmentShader;
+    const guardAt = f.indexOf('if (atmHazeRimOn > 0.5) {');
+    const rimAt = f.indexOf('smoothstep(atmHazeRim.z, atmHazeRim.w,');
+    expect(guardAt).toBeGreaterThan(0);
+    expect(rimAt).toBeGreaterThan(guardAt);
+    expect(f).not.toContain('atmHazeRimOn * smoothstep');
   });
 
   it('refuses radii that do not rise or a centre that is not finite, changing nothing', () => {

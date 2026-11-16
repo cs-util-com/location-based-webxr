@@ -140,6 +140,11 @@ it reads dirty, shift it up 6-8 L* before trimming further), the warm share
   and granite (52) up to 54, 12 above the ground, the low end of the brick
   and salmon facades lit in the reference (L* 49-69), where real brick
   albedo alone (L* 38-47) would sit on the ground.
+- The ordinary `walls` are exempt from that floor on purpose: eight of
+  urban's tones (a mid grey, a cool blue-grey, brick, brownstone and
+  dark stone) sit 2-9 L* from the ground, and holding them clear would
+  empty that band of the ladder; walls are lit differently from flat
+  ground, and the look was judged as it is.
 - `wallJitterL` 3: every wall shifted by a seeded amount of up to 3 L*.
 - The rules live in the library (`building-palette.ts`); the default has
   them off. Values to sweep on the rendered look: `towerFromM` 25-60 m (at

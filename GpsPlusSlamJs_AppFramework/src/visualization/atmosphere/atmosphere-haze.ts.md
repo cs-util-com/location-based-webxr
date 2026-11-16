@@ -85,7 +85,10 @@ observerAltitudeKm)`, `hazeTransmittance(distanceM, extinctionPerM)`,
   its own tone mapping first. Fog mode ignores it.
 - THE RIM IS OFF BY DEFAULT and only ever raises the boundary fade
   (`max`), on the world position's horizontal distance from the centre;
-  with `atmHazeRimOn` 0 the shader's result is unchanged.
+  with `atmHazeRimOn` 0 the shader's result is unchanged. The rim term is
+  branched on `atmHazeRimOn`, never weighted by it: GLSL ES leaves
+  `smoothstep` undefined for edges that do not rise, and a NaN would pass a
+  weight of 0. The uniform's default edges (0, 1) rise anyway.
 
 ## Examples
 

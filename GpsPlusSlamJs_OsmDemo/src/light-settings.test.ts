@@ -35,6 +35,7 @@ import {
   describeLightSettings,
   gainOf,
   lightDefaultsFor,
+  parseLightLink,
   parseLightSettings,
   rebaseLightSettings,
   serializeLightSettings,
@@ -116,6 +117,35 @@ describe("surfaceGainAt with settings", () => {
     expect(() =>
       surfaceGainAt(0.5, { max: 2, fromDeg: 30, fullDeg: 30 }),
     ).toThrow(RangeError);
+  });
+});
+
+describe("parseLightLink: the fields a link states", () => {
+  // WHY: a stated value can equal the scheme's default, and only the key
+  // list can tell it from an unstated one; a scheme switch keeps stated
+  // fields (light-dialog's rebase).
+  it("names each key it accepted, and the settings are parseLightSettings'", () => {
+    const search = "?light=v1:veil=0,gain=2,ev=nope,tint=999";
+    const link = parseLightLink(search, DEFAULT_LIGHT_SETTINGS);
+    expect([...link.stated].sort()).toEqual(["gainMax", "hazeVeilLightness"]);
+    expect(link.settings).toEqual(
+      parseLightSettings(search, DEFAULT_LIGHT_SETTINGS),
+    );
+  });
+
+  it("states the three veil colour fields of a vcol, and nothing for no link", () => {
+    expect(
+      [
+        ...parseLightLink("?light=v1:vcol=fec", DEFAULT_LIGHT_SETTINGS).stated,
+      ].sort(),
+    ).toEqual(["hazeVeilLightness", "hazeVeilTint", "hazeVeilTintA"]);
+    expect(parseLightLink("", DEFAULT_LIGHT_SETTINGS).stated.size).toBe(0);
+    expect(parseLightLink("?light=v9:veil=3").stated.size).toBe(0);
+  });
+
+  it("drops the ramp's ends when a crossed ramp falls back", () => {
+    const link = parseLightLink("?light=v1:from=30,full=10,veil=5");
+    expect([...link.stated]).toEqual(["hazeVeilLightness"]);
   });
 });
 

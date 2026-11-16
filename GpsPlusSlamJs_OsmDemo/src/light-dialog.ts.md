@@ -16,6 +16,11 @@ WebGL.
   - `deps.opener?`: the button that opens it. It gets `aria-controls` and
     `aria-expanded`, and focus back on close.
   - `deps.initial`: the starting `LightSettings` (from the URL).
+  - `deps.stated?`: the fields the URL stated (`parseLightLink`), kept on a
+    scheme switch even where a value equals the scheme's default.
+    This lasts one session: the URL writer states only fields that differ
+    from the scheme's defaults, so after a reload a stated default is no
+    longer in the link.
   - `deps.defaults?`: what Reset returns to, the colour scheme's light
     (`lightDefaultsFor`); the shipped look when left out.
   - `deps.onChange(settings)`: called on every slider `input`, on Reset and
@@ -48,8 +53,9 @@ WebGL.
     (`rebaseLightSettings`: an untouched value follows, a set one stays),
     shows and applies the result through `onChange`. The page calls it on a
     colour scheme switch. The dialog remembers which fields the viewer set
-    (those the initial settings state against the defaults, and every
-    slider moved since), and passes them as `touched`, so a value that
+    (the link's `stated` fields, those the initial settings state against
+    the defaults, and every slider moved since), and passes them as
+    `touched`, so a value that
     happens to equal one scheme's default still stays on the way back;
     Reset forgets them.
 - `HEAT_GRID_MARGIN_BOUND = 5`: the DEC-R4-5 bound that the check compares
@@ -126,7 +132,8 @@ WebGL.
 const dialog = createLightDialog({
   parent: el("scene"),
   opener: el("light-open"),
-  initial: parseLightSettings(location.search),
+  initial: link.settings, // const link = parseLightLink(location.search)
+  stated: link.stated,
   onChange: (s) => view.setLightSettings(s),
   measure: (withMargin) => ({
     ...view.measureLight({ withMargin }),

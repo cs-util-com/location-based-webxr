@@ -637,6 +637,23 @@ describe("AtmosphereRig.setHazeVeil (city look, a bright bluish veil)", () => {
     expect((scene.fog as THREE.Fog).color.equals(horizon)).toBe(true);
   });
 
+  // WHY: the rise reaches the sky last, after the haze and the veil were
+  // set; a rise the sky refuses must be refused before any of it changes.
+  it("refuses a rise that is not a number in 0..90, changing nothing", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setHazeVeil({ lightness: 70, tint: -4, riseDeg: 3 });
+    const set = view.haze.veil;
+    const skyVeil = sky.horizonVeil;
+    for (const riseDeg of [Number.NaN, -1, 91, Number.POSITIVE_INFINITY]) {
+      expect(() =>
+        view.setHazeVeil({ lightness: 80, tint: -6, riseDeg }),
+      ).toThrow(RangeError);
+      expect(view.haze.veil).toEqual(set);
+      expect(sky.horizonVeil).toEqual(skyVeil);
+    }
+  });
+
   it("refuses a veil it cannot show, changing nothing", () => {
     const { view } = rig();
     view.setHazeVeil({ lightness: 70, tint: -4 });

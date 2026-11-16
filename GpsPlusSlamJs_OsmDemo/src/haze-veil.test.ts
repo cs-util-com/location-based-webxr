@@ -326,3 +326,22 @@ describe("an off-grid lightness (a hand-written link)", () => {
     expect(refused).toEqual([]);
   }, 60_000);
 });
+
+describe("veilSceneColour validates the rise too", () => {
+  // WHY: the rise is the last thing the rig hands on (to the sky), so the
+  // veil's own check must cover it, or a bad rise is refused only after the
+  // haze already changed.
+  it("refuses a rise outside 0..90 or not finite, and takes one inside", () => {
+    const base = { lightness: 72, tint: -4 };
+    for (const riseDeg of [Number.NaN, -0.5, 90.5, Number.NEGATIVE_INFINITY]) {
+      expect(() =>
+        veilSceneColour({ ...base, riseDeg }, TONE_MAPPING_EXPOSURE),
+      ).toThrow(RangeError);
+    }
+    for (const riseDeg of [0, 10, 90]) {
+      expect(
+        veilSceneColour({ ...base, riseDeg }, TONE_MAPPING_EXPOSURE),
+      ).toEqual(veilSceneColour(base, TONE_MAPPING_EXPOSURE));
+    }
+  });
+});

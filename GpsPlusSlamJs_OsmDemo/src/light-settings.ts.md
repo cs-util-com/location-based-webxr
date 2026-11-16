@@ -34,6 +34,12 @@ hazeVeilLightness, hazeVeilTint, hazeVeilTintA, hazeVeilRiseDeg }`.
   throws. A missing, unknown, non-numeric or out-of-range field falls back to
   its value in `defaults`, a ramp that does not rise falls back to their
   ramp, and another version or a bare list is ignored.
+- `parseLightLink(search, defaults = DEFAULT_LIGHT_SETTINGS)`: the same
+  settings, plus `stated`, the fields whose value came from the link (an
+  accepted key, or a `vcol`'s three; a refused key or a crossed ramp's ends
+  are not stated). A stated value can equal the scheme's default, which the
+  value alone cannot show; the page hands the set to the light dialog, so a
+  scheme switch keeps it.
 - `serializeLightSettings(settings, defaults = DEFAULT_LIGHT_SETTINGS)`: the
   `?light=` value with only the fields that differ from `defaults`, or
   `null` at them (the URL stays clean). Keyed, so an old link keeps every
