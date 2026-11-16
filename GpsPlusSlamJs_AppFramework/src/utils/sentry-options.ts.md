@@ -68,9 +68,15 @@ The options of the apps visitors use. Same DSN, environment rule and
 - Every hook scrubs with the strict profile of `sentry-scrub.ts`, which also
   removes quoted text (file, station and tour names, snippets of a file in a
   parse error) and runs of six or more digits (OSM ids). The service's own
-  ids (event, trace and span ids, and the bundles' debug ids in
-  `debug_meta`, which find the source maps) are left as they are; see
-  `scrubDeep` in `sentry-scrub.ts.md`.
+  ids are left as they are, but only where the SDK writes them (the
+  module-private `EVENT_ID_PATHS`): `event_id`, `contexts.trace`'s
+  `trace_id`, `span_id` and `parent_span_id`, the same three on each of
+  `spans[]`, and `debug_meta.images[].debug_id`, by which the service finds
+  a bundle's source map; for a standalone span (`SPAN_ID_PATHS`) its own
+  three ids at the top. The same names anywhere else, breadcrumbs included,
+  are scrubbed as usual; see `keepIdsAt` in `sentry-scrub.ts.md`. The
+  `sentry.event` breadcrumb's `event_id` is not exempt: it is 32 hex digits
+  and is cut only if all of them are digits.
 - Breadcrumbs: console ones are dropped, and the framework logger's (`log`)
   only at warning level and above: info and debug lines say what the
   visitor is doing (which station, which file) and are not needed to read an
@@ -264,7 +270,9 @@ token path; what was checked by hand, and what was not, is in
   object built by the SDK's own `eventFromException` is dropped (the input
   event left unchanged), a debug id, event id and trace ids holding long
   digit runs kept while the rest is scrubbed and a bundle's `code_file` still
-  reads as its frame's file name, the worker's `thread` tag,
+  reads as its frame's file name, the same id-shaped values under the same
+  names in tags, a context of the app's own and breadcrumb data scrubbed, a
+  transaction's span ids and a standalone span's own ids kept, the worker's `thread` tag,
   and `startErrorReporting` / `startWorkerErrorReporting`: nothing outside
   production, one test report only with the flag (the SDK's `init` and
   `captureException` are mocked).

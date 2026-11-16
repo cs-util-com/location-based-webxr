@@ -370,6 +370,54 @@ describe("strictSentryOptions, the error service's own ids", () => {
     });
   });
 
+  it('scrubs the same id-shaped values under the same names elsewhere', () => {
+    // App code can name a field `span_id`; only the SDK's own places are
+    // exempt, so such a value is scrubbed as any other long number.
+    const event: ErrorEvent = {
+      type: undefined,
+      tags: { span_id: SPAN_ID },
+      contexts: { place: { event_id: EVENT_ID, trace: { span_id: SPAN_ID } } },
+      breadcrumbs: [{ category: 'fetch', data: { debug_id: DEBUG_ID } }],
+    };
+    const text = JSON.stringify(options.beforeSend?.(event, {}));
+    for (const id of [SPAN_ID, EVENT_ID, DEBUG_ID]) {
+      expect(text).not.toContain(id);
+    }
+    const crumb = options.beforeBreadcrumb?.(
+      { category: 'fetch', data: { span_id: SPAN_ID } },
+      {}
+    );
+    expect(JSON.stringify(crumb)).not.toContain(SPAN_ID);
+  });
+
+  it("keeps a transaction's span ids and a standalone span's own ids", () => {
+    const transaction = {
+      type: 'transaction',
+      spans: [
+        {
+          trace_id: TRACE_ID,
+          span_id: SPAN_ID,
+          parent_span_id: PARENT_SPAN_ID,
+          start_timestamp: 1,
+        },
+      ],
+    } as unknown as TransactionEvent;
+    expect(options.beforeSendTransaction?.(transaction, {})).toEqual(
+      transaction
+    );
+    const span = {
+      trace_id: TRACE_ID,
+      span_id: SPAN_ID,
+      parent_span_id: PARENT_SPAN_ID,
+      start_timestamp: 1,
+      data: { span_id: SPAN_ID },
+    } as unknown as SpanJson;
+    expect(options.beforeSendSpan?.(span)).toEqual({
+      ...span,
+      data: { span_id: REDACTED },
+    });
+  });
+
   it("still scrubs the rest, and a bundle's file the same way as its frame", () => {
     const out = options.beforeSend?.(eventWithIds(), {});
     // The service pairs a frame with its bundle by this file name, so the

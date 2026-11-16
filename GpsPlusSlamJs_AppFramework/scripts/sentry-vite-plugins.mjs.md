@@ -6,7 +6,8 @@ The error service's Vite plugins (`@sentry/vite-plugin`) for the apps that
 report errors: the Tour Viewer and the map demo import it by relative path
 from their `vite.config.ts`, the Recorder from its `config/vite.config.ts`.
 One copy, so the three builds upload, tag and delete their source maps the
-same way, and none deploys its maps.
+same way. With `SENTRY_AUTH_TOKEN` none deploys its maps; without it their
+hidden maps stay in the output folder, unreferenced by any bundle.
 
 Node-only and build-time, so it lives in `scripts/` and is not published.
 

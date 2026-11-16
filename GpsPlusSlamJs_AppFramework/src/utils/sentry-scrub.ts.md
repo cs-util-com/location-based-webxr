@@ -95,16 +95,19 @@ dependency on the SDK, so its rules are tested on their own.
   a pair (a GeoJSON `[lon, lat, alt]`). Two keys that scrub to the same text
   both stay: the later one gets the first free ` #2`, ` #3` suffix. The
   input is never changed. `options` is passed on to `scrubText`.
-  - The error service's own ids are kept as they are: a string under
-    `event_id`, `trace_id`, `span_id`, `parent_span_id` or `debug_id` that
-    has an id's shape (16 or 32 hex digits, or a UUID). The SDK fills them
-    before the hooks run, and the strict long-number rule would cut an id
-    that happens to hold six or more digits in a row: a cut `debug_id` in
-    `debug_meta.images` silently loses that bundle's source map (about 1 in
-    40 debug ids hold such a group). Any other value under these names is
-    scrubbed as usual. A bundle's `code_file` in `debug_meta` is scrubbed
-    like any link, deliberately: it is the frame's file name, and the
-    service pairs the two by that name, so both must read the same.
+  - `options.keepIdsAt` names exact paths (keys joined by `.`, `[]` for
+    any array element, such as `debug_meta.images[].debug_id`) whose value is
+    kept as it is when it has an id's shape: 16 or 32 hex digits, or a UUID.
+    The strict long-number rule would otherwise cut an id that happens to
+    hold six or more digits in a row; a cut `debug_id` silently loses that
+    bundle's source map (about 1 in 40 debug ids hold such a group). The
+    exemption is by path, never by key name: a value under `span_id` or
+    `debug_id` anywhere else (breadcrumb data, tags, a context of the app's
+    own) is scrubbed as usual, as is a value at an exempt path that is not
+    shaped like an id. `sentry-options.ts` passes the paths the SDK writes
+    its ids to. A bundle's `code_file` in `debug_meta` is scrubbed like any
+    link, deliberately: it is the frame's file name, and the service pairs
+    the two by that name, so both must read the same.
 
 ## Parameters and why these values
 
@@ -186,8 +189,8 @@ scrubText('https://drive.google.com/file/d/1AbC.../view', 'gps.csutil.com');
 ## Tests
 
 - `sentry-scrub.test.ts` - each kind of line the app can produce, ids and
-  numbers kept, the service's ids kept in the strict profile (only in an
-  id's shape), input not mutated, cycles, the depth limit, labelled fields,
+  numbers kept, ids kept only at the exempt paths and only in an id's
+  shape, input not mutated, cycles, the depth limit, labelled fields,
   and linear time: 2 MB inputs a rescanning rule could not finish within the
   test timeout, so no clock is read.
 - `sentry-scrub.property.test.ts` - no coordinate pair survives (3 to 8

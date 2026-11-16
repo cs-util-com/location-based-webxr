@@ -146,6 +146,32 @@ function withoutExtra<T extends { extra?: unknown }>(event: T): T {
   return rest as T;
 }
 
+/**
+ * Where the SDK writes its own ids into an error or a transaction: the
+ * report's id, the trace context, each span of a transaction, and each
+ * bundle's debug id, by which the service finds the bundle's source map. The
+ * strict long-number rule would cut an id holding six or more digits in a
+ * row (a debug id does about 1 in 40 times); only these exact paths are
+ * exempt, so the same names anywhere else are scrubbed as usual.
+ */
+const EVENT_ID_PATHS: ReadonlySet<string> = new Set([
+  'event_id',
+  'contexts.trace.trace_id',
+  'contexts.trace.span_id',
+  'contexts.trace.parent_span_id',
+  'spans[].trace_id',
+  'spans[].span_id',
+  'spans[].parent_span_id',
+  'debug_meta.images[].debug_id',
+]);
+
+/** The same for a span sent on its own: its ids stand at the top. */
+const SPAN_ID_PATHS: ReadonlySet<string> = new Set([
+  'trace_id',
+  'span_id',
+  'parent_span_id',
+]);
+
 /** Whether the strict profile keeps a breadcrumb at all. */
 function keepsStrictBreadcrumb(breadcrumb: Sentry.Breadcrumb): boolean {
   if (breadcrumb.category === 'console') return false;
@@ -172,6 +198,7 @@ export function strictSentryOptions(
   pageHostname: string | undefined = globalThis.location?.hostname
 ): BrowserOptions {
   const strict = { strict: true } as const;
+  const strictEvent = { strict: true, keepIdsAt: EVENT_ID_PATHS } as const;
   return {
     dsn: SENTRY_DSN,
     environment: errorReportEnvironment(pageHostname),
@@ -183,9 +210,10 @@ export function strictSentryOptions(
       defaults.filter(
         (integration) => !DROPPED_DEFAULT_INTEGRATIONS.has(integration.name)
       ),
-    beforeSend: (event) => scrubDeep(withoutExtra(event), ownHost, strict),
-    beforeSendTransaction: (event) => scrubDeep(event, ownHost, strict),
-    beforeSendSpan: (span) => scrubDeep(span, ownHost, strict),
+    beforeSend: (event) => scrubDeep(withoutExtra(event), ownHost, strictEvent),
+    beforeSendTransaction: (event) => scrubDeep(event, ownHost, strictEvent),
+    beforeSendSpan: (span) =>
+      scrubDeep(span, ownHost, { strict: true, keepIdsAt: SPAN_ID_PATHS }),
     beforeBreadcrumb: (breadcrumb) =>
       keepsStrictBreadcrumb(breadcrumb)
         ? scrubDeep(breadcrumb, ownHost, strict)

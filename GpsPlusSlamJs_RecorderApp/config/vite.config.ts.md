@@ -38,17 +38,6 @@ Enables access from:
 - Chrome DevTools port forwarding
 - ngrok tunneling for HTTPS
 
-## Path Alias
-
-- `@app/*` → `src/*`
-- `gps-plus-slam-app-framework` → `../../GpsPlusSlamJs_AppFramework/src` (source alias — imports AppFramework source directly instead of a built package, enabling HMR across both packages)
-
-### resolve.dedupe
-
-`resolve.dedupe: ['three']` ensures Vite resolves the `three` package from RecorderApp's `node_modules`, not from AppFramework's directory. This is necessary because AppFramework declares `three` as a `peerDependency` (no local install), and the source alias causes Vite to try resolving `three` from the AppFramework path.
-
-See [2026-03-30-separate-public-repo-plan.md §3.5](../../GpsPlusSlamJs_Docs/docs/2026-03-30-separate-public-repo-plan.md) for the full source-alias vs built-package trade-off analysis.
-
 ## Plugins
 
 ### Sentry Vite Plugin
