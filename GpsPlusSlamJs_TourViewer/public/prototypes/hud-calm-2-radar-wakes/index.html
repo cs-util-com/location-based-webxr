@@ -1,0 +1,1124 @@
+<!doctype html>
+<!-- Prototype: calm HUD round 2, direction 2 - The radar wakes when you stop. Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<title>Calm HUD 2 - The radar wakes when you stop</title>
+<style>
+:root{
+  --accent:#fb923c; --accent-ink:#1f1105;
+  --play:#2dd4bf; --play-ink:#04201c;
+  --ink:#f3f5f7; --muted:#b3bcc6;
+  --plate:rgba(10,14,19,.84); --line:rgba(255,255,255,.22);
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:15px/1.4 var(--sans);background:#101317;color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+
+/* ---------- the phone ---------- */
+.device{position:fixed;inset:0;overflow:hidden;background:#000;container-type:size}
+#cam{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+/* ---------- demo strip (not part of the design, not measured) ---------- */
+.strip{position:absolute;z-index:70;top:env(safe-area-inset-top);left:0;right:0;height:32px;display:flex;align-items:center;gap:4px;padding:3px 6px;background:rgba(0,0,0,.6);font:600 11.5px/1 var(--sans)}
+.strip button{appearance:none;flex:none;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.09);border-radius:7px;min-width:30px;height:26px;padding:0 6px;cursor:pointer;color:#fff;font:700 13px/1 var(--sans)}
+.strip button.on{background:#0f766e;border-color:#14b8a6}
+.strip .bt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e5ebf0;padding:0 2px}
+.readout{position:absolute;z-index:69;left:6px;right:6px;top:calc(34px + env(safe-area-inset-top));padding:4px 7px;border-radius:7px;background:rgba(0,0,0,.66);font:600 10.5px/1.35 ui-monospace,Consolas,monospace;color:#d7fbf3;pointer-events:none}
+.readout.bad{background:rgba(160,20,20,.8);color:#fff}
+
+/* ---------- the HUD ---------- */
+.hud{position:absolute;inset:0;pointer-events:none;--radar:132px;--top:calc(42px + env(safe-area-inset-top))}
+.hud.measuring{--top:calc(84px + env(safe-area-inset-top))}
+.hud > *{pointer-events:auto}
+.exit{position:absolute;top:var(--top);left:calc(12px + env(safe-area-inset-left));appearance:none;width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(10,14,19,.7);display:grid;place-items:center;padding:0;cursor:pointer}
+.exit svg{width:16px;height:16px}
+.radar-wrap{position:absolute;top:var(--top);right:calc(12px + env(safe-area-inset-right));display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
+#radar{display:block;width:var(--radar);height:var(--radar);border-radius:50%;touch-action:manipulation;cursor:pointer;pointer-events:auto;border:0;padding:0;background:transparent}
+#radar canvas{display:block;width:100%;height:100%}
+.range{pointer-events:none;padding:5px 10px;border-radius:12px;background:var(--plate);border:2px solid var(--line);font-size:13px;font-weight:650}
+.foot{position:absolute;left:0;right:0;bottom:calc(16px + env(safe-area-inset-bottom));display:flex;justify-content:center;pointer-events:none}
+.foot > *{pointer-events:auto}
+.transport{appearance:none;width:64px;height:64px;border-radius:50%;border:0;padding:5px;cursor:pointer;background:conic-gradient(var(--play) calc(var(--p,0) * 1turn),rgba(255,255,255,.22) 0);box-shadow:0 8px 20px rgba(0,0,0,.35);animation:rise .3s cubic-bezier(.2,.8,.2,1)}
+.transport span{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;background:rgba(10,14,19,.9);color:#fff}
+.transport svg{width:22px;height:22px}
+.story{display:flex;align-items:center;gap:8px;max-width:min(360px,calc(100cqw - 24px));min-height:56px;padding:6px 6px 6px 14px;border-radius:999px;background:var(--plate);border:2px solid rgba(45,212,191,.7);box-shadow:0 8px 20px rgba(0,0,0,.35);animation:rise .3s cubic-bezier(.2,.8,.2,1)}
+.story .t{flex:1;min-width:0}
+.story b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.story small{display:block;font-size:12.5px;color:var(--muted);font-weight:600}
+.story .next{appearance:none;min-height:44px;padding:0 16px;border-radius:999px;border:0;background:var(--play);color:var(--play-ink);font-weight:800;cursor:pointer}
+.story .next[disabled]{background:rgba(255,255,255,.14);color:#cfd6dd;cursor:default}
+.story .x{appearance:none;flex:none;width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:transparent;font-size:20px;line-height:1;cursor:pointer}
+@keyframes rise{from{transform:translateY(14px);opacity:0}}
+.ovl{outline:3px solid #ef4444!important;outline-offset:1px}
+
+/* first-run card: once, gone on the first touch */
+.try{position:absolute;z-index:60;left:50%;top:56%;transform:translate(-50%,-50%);width:max-content;max-width:min(320px,calc(100cqw - 40px));padding:14px 16px;border-radius:16px;background:rgba(0,0,0,.78);border:2px solid rgba(255,255,255,.22);font-size:14px;line-height:1.45;text-align:center;transition:opacity .4s;pointer-events:none}
+.try b{color:var(--accent)}
+.try.gone{opacity:0}
+.ripple{position:absolute;z-index:66;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.4);pointer-events:none;animation:rip .7s ease-out forwards}
+@keyframes rip{from{transform:scale(.4);opacity:1}to{transform:scale(1.25);opacity:0}}
+
+/* ---------- settings panel (not part of the design) ---------- */
+.demo{position:fixed;z-index:90;top:calc(36px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:min(370px,calc(100vw - 16px));max-height:calc(100vh - 46px);overflow-y:auto;background:rgba(14,18,23,.97);border:1px solid rgba(255,255,255,.16);border-radius:14px;font-size:13px;color:#e8edf2;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px 12px}
+.demo h4{margin:12px 0 5px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#a9b4bf}
+.demo p,.demo ul{margin:0 0 6px;line-height:1.45;color:#c9d2db}
+.demo ul{padding-left:18px}
+.demo b{color:#fff}
+.demo code{word-break:break-all;font-size:11.5px}
+.demo .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.demo .row{display:grid;grid-template-columns:96px 1fr 1fr 1fr;gap:5px;align-items:center;margin-top:5px}
+.demo button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#fff;border-radius:9px;padding:7px 8px;text-align:left;cursor:pointer;font-size:12.5px;min-height:36px}
+.demo .row button{text-align:center}
+.demo button.on{background:#0f766e;border-color:#14b8a6}
+.demo table{width:100%;border-collapse:collapse;font:11.5px/1.35 ui-monospace,Consolas,monospace}
+.demo td,.demo th{padding:3px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:right}
+.demo td:first-child,.demo th:first-child{text-align:left}
+.demo .close{display:block;width:100%;margin:10px 0 2px;text-align:center}
+
+@media (min-width:960px) and (min-height:720px){
+  body{display:flex;align-items:center;justify-content:center;gap:36px;padding:30px;background:radial-gradient(1200px 700px at 30% 20%,#26303a,#12151a)}
+  .device{position:relative;inset:auto;flex:none;width:390px;height:min(844px,calc(100vh - 60px));border-radius:46px;border:12px solid #0a0c0f;box-shadow:0 0 0 2px #2d333b,0 40px 90px rgba(0,0,0,.6)}
+  .strip{border-radius:34px 34px 0 0;padding:3px 18px}
+  .demo{position:static;transform:none;width:390px;max-height:min(844px,calc(100vh - 60px));display:block!important}
+  .demo .close,#menuBtn{display:none}
+}
+@container (orientation:landscape) and (max-height:520px){
+  .hud{--radar:112px;--top:calc(40px + env(safe-area-inset-top))}
+  .hud.measuring{--top:calc(76px + env(safe-area-inset-top))}
+  .foot{bottom:calc(12px + env(safe-area-inset-bottom))}
+  .transport{width:58px;height:58px}
+  .try{top:58%}
+}
+@media (prefers-reduced-motion:reduce){ .transport,.story{animation:none} }
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+</head>
+<body>
+<main class="device" id="device">
+  <canvas id="cam" aria-label="Simulated camera view of an old town square"></canvas>
+
+  <div class="strip" id="strip">
+    <button id="prevBtn" type="button" aria-label="Previous beat">&lsaquo;</button>
+    <button id="nextBtn" type="button" aria-label="Next beat">&rsaquo;</button>
+    <span class="bt" id="beatTitle">Walk freely</span>
+    <button id="measureBtn" type="button" aria-label="Show the measuring hook" title="Measure">&#8982;</button>
+    <button id="menuBtn" type="button" aria-label="Settings and beats">&#9776;</button>
+  </div>
+  <div class="readout" id="readout" hidden>-</div>
+
+  <div class="hud" id="hud">
+    <button class="exit" id="exitBtn" type="button" data-hud="exit" aria-label="Exit AR"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+    <div class="radar-wrap" id="radarWrap" data-hud="radar">
+      <button id="radar" type="button" aria-label="Radar - tap to change the range"><canvas id="radarCanvas"></canvas></button>
+      <div class="range" id="rangeLabel" data-hud="range" hidden>Range: auto</div>
+    </div>
+    <div class="foot" id="foot"></div>
+  </div>
+
+  <div class="try" id="try"><b>Walk up to the orange beam.</b><br>Drag sideways to turn, drag up to walk (or W A S D).<br>Stop for a moment and the radar wakes up.</div>
+</main>
+
+<aside class="demo" id="demo" hidden aria-label="Settings and beats">
+  <p><b>The radar wakes when you stop.</b> While you walk, the screen is yours: the radar sleeps as a faint ring. Stand still for a moment and it wakes. Outside a station it shows the stations. Inside one it shows the station's things at their true places: white is still to see, grey is seen.</p>
+
+  <h4>Beats</h4>
+  <div class="grid" id="beatBtns"></div>
+
+  <h4>Timings to try</h4>
+  <div class="row"><span>Stand still</span><button type="button" data-cfg="still" data-v="2">2 s</button><button type="button" data-cfg="still" data-v="3">3 s</button><button type="button" data-cfg="still" data-v="5">5 s</button></div>
+  <div class="row"><span>Fade</span><button type="button" data-cfg="fade" data-v="0.4">0.4 s</button><button type="button" data-cfg="fade" data-v="0.8">0.8 s</button><button type="button" data-cfg="fade" data-v="1.5">1.5 s</button></div>
+  <div class="row"><span>Walking from</span><button type="button" data-cfg="walk" data-v="0.3">0.3 m/s</button><button type="button" data-cfg="walk" data-v="0.5">0.5 m/s</button><button type="button" data-cfg="walk" data-v="0.8">0.8 m/s</button></div>
+  <div class="row"><span>At the edge</span><button type="button" data-cfg="edge" data-v="on">wakes</button><button type="button" data-cfg="edge" data-v="off">stays asleep</button><span></span></div>
+  <div class="row"><span>Between stations</span><button type="button" data-cfg="between" data-v="wake">sleeps too</button><button type="button" data-cfg="between" data-v="always">always on</button><span></span></div>
+  <div class="row"><span>Beam</span><button type="button" data-cfg="beam" data-v="built">as built</button><button type="button" data-cfg="beam" data-v="gem">round 1</button><span></span></div>
+  <p style="margin-top:6px">The same values work as URL options: <code>?still=3&amp;fade=0.8&amp;walk=0.5&amp;edge=on&amp;between=wake&amp;beam=built</code>.</p>
+
+  <h4>What "seen" means here</h4>
+  <ul>
+    <li><b>Short text, picture:</b> in view and near (8 m, 10 m) for 1.5 s, 2 s.</li>
+    <li><b>Model:</b> in view within 10 m for 3 s.</li>
+    <li><b>Long text:</b> its last page was shown (tap it to turn pages).</li>
+    <li><b>Video, sound:</b> played to its end. Stopped part way, it stays white.</li>
+    <li><b>A character who starts a story:</b> that story played to its end.</li>
+  </ul>
+
+  <h4>What the HUD holds</h4>
+  <ul>
+    <li>Exit, top left. The radar, top right (asleep while you walk).</li>
+    <li>At the foot, one thing at most: the story's step control while a story runs, or one play/pause for what is playing.</li>
+    <li>Everything else stands in the world: texts, captions, titles, the beam.</li>
+  </ul>
+
+  <h4>Measured (this orientation; max per beat)</h4>
+  <table id="statTable"><thead><tr><th>beat</th><th>HUD %</th><th>el</th><th>overlaps</th><th>worst ms</th></tr></thead><tbody></tbody></table>
+  <p style="margin-top:6px">HUD % counts the pixels under every HUD element shown (the radar only while awake). The strip at the top and this panel are not counted.</p>
+  <button class="close" id="demoClose" type="button">Close</button>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+
+const $ = (s) => document.querySelector(s);
+const device = $('#device');
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const QS = new URLSearchParams(location.search);
+const num = (v, d, lo, hi) => { const n = Number(v); return v !== null && Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+const SPEED = num(QS.get('speed'), 1, 0.25, 8);
+const SHOTS = QS.has('shots');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const wrapPi = (a) => ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+
+/* ======================================================================
+   The three timings this direction rests on (and three looks to compare)
+   ====================================================================== */
+const CFG = {
+  still: num(QS.get('still'), 3, 0.5, 15),     // s without walking before the radar wakes
+  fade: num(QS.get('fade'), 0.8, 0.1, 4),      // s for a full fade, in or out
+  walk: num(QS.get('walk'), 0.5, 0.1, 2),      // m/s of the smoothed pose speed that counts as walking
+  edge: QS.get('edge') === 'off' ? 'off' : 'on',
+  between: QS.get('between') === 'always' ? 'always' : 'wake',
+  beam: QS.get('beam') === 'gem' ? 'gem' : 'built',
+};
+const ASLEEP_ALPHA = 0.14;  // the faint ring that says where the radar is
+const EDGE_WAKE_S = 3.5;    // how long the edge switch stays awake
+const TAP_WAKE_S = 6;       // a tap on the sleeping radar wakes it this long
+const FIT = 1.5;            // in a station the range is its radius times this
+
+/* ======================================================================
+   The sample tour (invented). x = east, z = south, metres.
+   ====================================================================== */
+const STATIONS = [
+  { id: 'A', n: 1, title: 'The well court', x: 0, z: -60, r: 18 },
+  { id: 'B', n: 2, title: 'The hall steps', x: 55, z: -122, r: 20 },
+];
+const stById = (id) => STATIONS.find((s) => s.id === id);
+const rel = (st, x, z) => ({ x: stById(st).x + x, z: stById(st).z + z });
+const ITEMS = [
+  // A: one story; its first item is Greta, who greets once on entry
+  { id: 'greta', st: 'A', kind: 'character', story: 'well', title: 'Greta', ...rel('A', 0, 9), coat: 0x0f766e },
+  { id: 'aSign', st: 'A', kind: 'shortText', title: "The mason's mark", text: ['Every stone of the rim', 'carries its mason\'s mark.'], ...rel('A', 8, -2) },
+  { id: 'aSound', st: 'A', kind: 'audio', title: 'The bucket chain', len: 18, reach: 10, ...rel('A', 9.6, -3.6) },
+  { id: 'aLong', st: 'A', kind: 'longText', title: 'How the court was built', pages: [
+    ['How the court was built', 'The houses came first. The', 'well came when the old', 'spring dried up in 1611.'],
+    ['Forty men dug for a summer.', 'They hit water at nineteen', 'metres and lined the shaft', 'with stone from the river.'],
+    ['The court grew around it:', 'a bakery, a smithy and,', 'for a while, a small school', 'in the house with the arch.']], ...rel('A', -9, -3) },
+  { id: 'aPic', st: 'A', kind: 'picture', title: 'The court in 1890', year: '1890', ...rel('A', -11, 6) },
+  { id: 'aVid', st: 'A', kind: 'video', title: 'Drawing water, 1938', len: 16, reach: 12, ...rel('A', 3, -13) },
+  { id: 'aModel', st: 'A', kind: 'model', title: 'The stone lion', ...rel('A', -5, -12) },
+  // B: three stories, each starting with a character; a tap on one enters it
+  { id: 'baker', st: 'B', kind: 'character', story: 'bread', title: 'Jonas, the baker', ...rel('B', -6, 7), coat: 0xb45309 },
+  { id: 'ringer', st: 'B', kind: 'character', story: 'bell', title: 'Ida, the bell ringer', ...rel('B', 0, 9), coat: 0x6d28d9 },
+  { id: 'mason', st: 'B', kind: 'character', story: 'arch', title: 'Karl, the mason', ...rel('B', 6, 7), coat: 0x475569 },
+  { id: 'bSign', st: 'B', kind: 'shortText', title: 'The guild board', text: ['Six guilds met on', 'these steps each May.'], ...rel('B', 10, -4) },
+  { id: 'bLong', st: 'B', kind: 'longText', title: 'The fair rights of 1412', pages: [
+    ['The fair rights of 1412', 'The town bought the right', 'to hold a fair twice a year,', 'for a price of 300 silver.'],
+    ['The fair drew traders from', 'three days away. The hall', 'was built to store their', 'goods between market days.']], ...rel('B', -12, -2) },
+  { id: 'bPic', st: 'B', kind: 'picture', title: 'Fair day, 1902', year: '1902', ...rel('B', -6, -12) },
+  { id: 'bVid', st: 'B', kind: 'video', title: 'Casting the bell, 1951', len: 14, reach: 12, ...rel('B', 8, -12) },
+  { id: 'bSound', st: 'B', kind: 'audio', title: "The hall's echo", len: 16, reach: 10, ...rel('B', 0, -5) },
+  { id: 'bModel', st: 'B', kind: 'model', title: 'The guild staff', ...rel('B', 14, 3) },
+];
+const itById = (id) => ITEMS.find((i) => i.id === id);
+const STORIES = {
+  well: { title: 'The well', entry: 'greta', steps: [
+    { who: 'greta', lines: ['Welcome to the well court!', 'This well kept the street alive for three hundred years.', 'Come, I will show you the stone the masons left.'] },
+    { stone: true, lines: ['The rim stone, carved 1611: "Water for all who ask."'] },
+    { who: 'greta', lines: ['Thank you for listening. Have a look around.'] }] },
+  bread: { title: 'Bread for the fair', entry: 'baker', steps: [
+    { who: 'baker', lines: ['On fair days I baked from midnight on.', 'Four hundred loaves, gone before noon.'] }] },
+  bell: { title: 'The cracked bell', entry: 'ringer', steps: [
+    { who: 'ringer', lines: ['The old bell cracked in the frost of 1949.', 'For two years the steps were silent.'] }] },
+  arch: { title: 'Raising the arch', entry: 'mason', steps: [
+    { who: 'mason', lines: ['The arch stood on a wooden frame for a month.', 'Then we pulled the frame, and it held.'] }] },
+};
+const LINE_S = 3.4; // a spoken line's length (the voice is simulated)
+
+/* ======================================================================
+   State
+   ====================================================================== */
+let T = 0;
+function freshItems() {
+  const o = {};
+  for (const it of ITEMS) o[it.id] = { seen: false, dwell: 0, page: 0, t: 0, playing: false, pausedBy: null, startedAt: -9 };
+  return o;
+}
+function fresh() {
+  return {
+    pos: { x: 0, z: -14 }, yaw: 0, pitch: -0.04,
+    here: null, zoom: 0, visited: {}, greeted: {},
+    it: freshItems(), story: null, storyDone: {}, media: null,
+    speed: 0, stillFor: 99, wakeUntil: -1, radarAlpha: 1, rangeStep: 0, rangePeekUntil: -1,
+    auto: null, turn: null, yawTarget: null, paused: false,
+  };
+}
+let S = fresh();
+let beat = 0;
+
+const dist = (p, q = S.pos) => Math.hypot(p.x - q.x, p.z - q.z);
+function relAngle(p, from = S.pos, yaw = S.yaw) {
+  const dx = p.x - from.x, dz = p.z - from.z;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  return Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz);
+}
+const yawToward = (p, from = S.pos) => Math.atan2(-(p.x - from.x), -(p.z - from.z));
+const inStation = (it) => S.here === it.st;
+
+/* ---------- the story ---------- */
+function stepOf() { return S.story ? STORIES[S.story.id].steps[S.story.step] : null; }
+function startStory(id) {
+  for (const it of ITEMS) if (S.it[it.id].playing) pause(it.id, 'story');
+  S.story = { id, step: 0, line: 0, t: 0, paused: null, ended: false };
+}
+function storyNext() {
+  const st = S.story; if (!st) return;
+  const steps = STORIES[st.id].steps;
+  if (st.step + 1 >= steps.length) { endStory(true); return; }
+  st.step++; st.line = 0; st.t = 0;
+}
+function endStory(finished) {
+  const st = S.story; if (!st) return;
+  if (finished) { S.storyDone[st.id] = true; S.it[STORIES[st.id].entry].seen = true; }
+  S.story = null;
+}
+function stepDone() { const st = S.story, s = stepOf(); return !!s && st.line >= s.lines.length - 1 && st.t >= LINE_S; }
+
+/* ---------- playable things: one plays at a time ---------- */
+function play(id) {
+  for (const it of ITEMS) if (it.id !== id && S.it[it.id].playing) pause(it.id, 'other');
+  const t = S.it[id], it = itById(id);
+  if (t.t >= it.len) t.t = 0;
+  t.playing = true; t.pausedBy = null; t.startedAt = T; S.media = id;
+}
+function pause(id, by) { const t = S.it[id]; if (!t.playing) return; t.playing = false; t.pausedBy = by; }
+function toggle(id) { if (S.it[id].playing) pause(id, 'tap'); else play(id); }
+
+function tapItem(id) {
+  const it = itById(id);
+  if (!inStation(it)) return; // from outside, things are only objects
+  const t = S.it[id];
+  switch (it.kind) {
+    case 'character': {
+      const sid = it.story;
+      if (S.story && S.story.id === sid) { if (S.story.paused) S.story.paused = null; return; }
+      if (S.story && !S.story.paused) return; // one story at a time: the one running keeps the screen
+      if (S.story) endStory(false); // a story left behind in another station gives way
+      startStory(sid); // a finished story replays only on a tap
+      return;
+    }
+    case 'video': case 'audio': toggle(id); return; // during a story it plays with its in-world control only
+    case 'longText': t.page = (t.page + 1) % it.pages.length; if (t.page === it.pages.length - 1) t.seen = true; return;
+    default: return; // signs, pictures, models are read by looking
+  }
+}
+
+/* ======================================================================
+   The faked camera: an invented old town
+   ====================================================================== */
+const canvas = $('#cam');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'low-power' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+{
+  const c = document.createElement('canvas'); c.width = 8; c.height = 256; const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, '#7ea6cf'); grd.addColorStop(0.55, '#c9d9e6'); grd.addColorStop(1, '#e8ece9');
+  g.fillStyle = grd; g.fillRect(0, 0, 8, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; scene.background = t;
+}
+scene.fog = new THREE.Fog(0xd5dfe6, 90, 380);
+const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 900);
+camera.rotation.order = 'YXZ';
+scene.add(new THREE.HemisphereLight(0xeef4ff, 0x6d6252, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0d4, 1.6); sun.position.set(-70, 120, 50); scene.add(sun);
+
+function rng(seed) { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
+const rand = rng(20261116);
+const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), lam(0x8d8678));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+function cobbles(repeat) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#a29886'; g.fillRect(0, 0, 128, 128);
+  const r = rng(5);
+  for (let y = 0; y < 128; y += 16) for (let x = (y / 16) % 2 ? 8 : 0; x < 128; x += 16) {
+    const v = 150 + Math.floor(r() * 30); g.fillStyle = `rgb(${v},${v - 8},${v - 22})`; g.fillRect(x + 1, y + 1, 14, 14);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat);
+  return new THREE.MeshLambertMaterial({ map: t });
+}
+for (const st of STATIONS) {
+  const plaza = new THREE.Mesh(new THREE.CircleGeometry(st.r + 10, 64), cobbles(20));
+  plaza.rotation.x = -Math.PI / 2; plaza.position.set(st.x, 0.02, st.z); scene.add(plaza);
+}
+// the lane from the start, through A, to B
+const PATH = [{ x: 0, z: 10 }, { x: 0, z: -60 }, { x: 55, z: -122 }];
+{
+  const m = lam(0x6b6862);
+  for (let i = 0; i < PATH.length - 1; i++) {
+    const a = PATH[i], b = PATH[i + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
+    const grp = new THREE.Group(); grp.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); grp.position.set((a.x + b.x) / 2, 0.015, (a.z + b.z) / 2);
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(9, len), m); s.rotation.x = -Math.PI / 2; grp.add(s); scene.add(grp);
+  }
+}
+function segDist(p, a, b) {
+  const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz;
+  const t = clamp(((p.x - a.x) * dx + (p.z - a.z) * dz) / L, 0, 1);
+  return Math.hypot(p.x - (a.x + dx * t), p.z - (a.z + dz * t));
+}
+// houses, as two instanced meshes (two draw calls for the whole town)
+{
+  const spots = [];
+  for (let gx = -90; gx <= 150; gx += 13) for (let gz = -200; gz <= 40; gz += 13) {
+    const p = { x: gx + (rand() - 0.5) * 4, z: gz + (rand() - 0.5) * 4 };
+    if (STATIONS.some((s) => dist(p, s) < s.r + 17)) continue;
+    if (segDist(p, PATH[0], PATH[1]) < 12 || segDist(p, PATH[1], PATH[2]) < 12) continue;
+    if (p.z > -4 && Math.abs(p.x) < 30) continue; // the start stays open
+    spots.push(p);
+  }
+  const fc = document.createElement('canvas'); fc.width = 128; fc.height = 128; const g = fc.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 128);
+  for (let f = 0; f < 3; f++) for (let w = 0; w < 3; w++) { g.fillStyle = '#46525c'; g.fillRect(14 + w * 38, 128 - (f + 1) * 40 + 9, 22, 20); }
+  const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace;
+  const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
+  const roof = new THREE.ConeGeometry(0.75, 1, 4); roof.rotateY(Math.PI / 4); roof.translate(0, 0.5, 0);
+  const houses = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({ map: ft }), spots.length);
+  const roofs = new THREE.InstancedMesh(roof, lam(0xffffff), spots.length);
+  const FAC = [0xe8d8bf, 0xd9b99a, 0xc9d1c3, 0xe5c7a8, 0xd2c1b0, 0xe9e1cf], ROOF = [0x9c4a32, 0x7f3b2a, 0x6b4a3a, 0x8a5a44];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
+  spots.forEach((p, i) => {
+    const h = 7 + Math.floor(rand() * 3) * 3.4, w = 9 + rand() * 3;
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 0.4 - 0.2);
+    m4.compose(new THREE.Vector3(p.x, 0, p.z), q, new THREE.Vector3(w, h, 9)); houses.setMatrixAt(i, m4); houses.setColorAt(i, col.setHex(FAC[i % FAC.length]));
+    m4.compose(new THREE.Vector3(p.x, h, p.z), q, new THREE.Vector3(w * 1.02, 3, 9.2)); roofs.setMatrixAt(i, m4); roofs.setColorAt(i, col.setHex(ROOF[i % ROOF.length]));
+  });
+  scene.add(houses, roofs);
+}
+const stone = lam(0xb5a488), dark = lam(0x2b2f33), bronze = lam(0x7a5a33);
+// the well at A, the hall steps at B
+{
+  const A = stById('A');
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 0.9, 24, 1, true), stone); rim.position.set(A.x, 0.45, A.z);
+  rim.material = stone.clone(); rim.material.side = THREE.DoubleSide;
+  const water = new THREE.Mesh(new THREE.CircleGeometry(1.25, 24), lam(0x2f4f5c)); water.rotation.x = -Math.PI / 2; water.position.set(A.x, 0.3, A.z);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.18, 0.18), lam(0x5b4330)); beam.position.set(A.x, 2.3, A.z);
+  for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.3, 0.18), lam(0x5b4330)); p.position.set(A.x + s * 1.5, 1.15, A.z); scene.add(p); }
+  scene.add(rim, water, beam);
+  const B = stById('B');
+  for (let k = 0; k < 4; k++) { const s = new THREE.Mesh(new THREE.BoxGeometry(22 - k * 2, 0.3, 2.2), stone); s.position.set(B.x, 0.15 + k * 0.3, B.z - 17 - k * 2.2); scene.add(s); }
+  const hall = new THREE.Mesh(new THREE.BoxGeometry(24, 13, 10), lam(0xd8c6a6)); hall.position.set(B.x, 6.5 + 1.2, B.z - 31); scene.add(hall);
+}
+
+/* ---------- words in the world: Canvas 2D textures, never HTML ---------- */
+function textCanvas(lines, { w = 512, title = null, plate = 'rgba(250,247,240,.96)', ink = '#1c2228', size = 34 } = {}) {
+  const c = document.createElement('canvas'); const g = c.getContext('2d');
+  const lh = size * 1.32, pad = 26, th = title ? size * 1.25 + 10 : 0;
+  c.width = w; c.height = Math.ceil(pad * 2 + th + lines.length * lh);
+  g.fillStyle = plate; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 22); g.fill();
+  g.fillStyle = ink; g.textBaseline = 'top';
+  if (title) { g.font = `800 ${size * 1.05}px system-ui,sans-serif`; g.fillText(title, pad, pad); }
+  g.font = `600 ${size}px system-ui,sans-serif`;
+  lines.forEach((l, i) => g.fillText(l, pad, pad + th + i * lh));
+  return c;
+}
+function wrapWords(text, maxChars) {
+  const out = []; let line = '';
+  for (const w of text.split(' ')) { if ((line + ' ' + w).trim().length > maxChars) { out.push(line); line = w; } else line = (line + ' ' + w).trim(); }
+  if (line) out.push(line); return out;
+}
+function bubbleCanvas(text, who) {
+  const lines = wrapWords(text, 24);
+  const c = document.createElement('canvas'); const g = c.getContext('2d'); const size = 34, lh = 44, pad = 24;
+  c.width = 520; c.height = pad * 2 + 34 + lines.length * lh + 26;
+  g.fillStyle = 'rgba(255,255,255,.97)'; g.beginPath(); g.roundRect(0, 0, c.width, c.height - 26, 26); g.fill();
+  g.beginPath(); g.moveTo(230, c.height - 27); g.lineTo(260, c.height); g.lineTo(290, c.height - 27); g.fill();
+  g.fillStyle = '#0f766e'; g.font = '800 26px system-ui,sans-serif'; g.textBaseline = 'top'; g.fillText(who, pad, pad - 2);
+  g.fillStyle = '#14191f'; g.font = `650 ${size}px system-ui,sans-serif`;
+  lines.forEach((l, i) => g.fillText(l, pad, pad + 34 + i * lh));
+  return c;
+}
+function spriteFrom(c, heightM) {
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
+  sp.scale.set(heightM * c.width / c.height, heightM, 1); sp.renderOrder = 5; return sp;
+}
+function planeFrom(c, widthM) {
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(widthM, widthM * c.height / c.width), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
+  return m;
+}
+function setPlaneCanvas(mesh, c, widthM) {
+  mesh.material.map.dispose();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; mesh.material.map = t; mesh.material.needsUpdate = true;
+  mesh.geometry.dispose(); mesh.geometry = new THREE.PlaneGeometry(widthM, widthM * c.height / c.width);
+}
+
+/* ---------- the station's things ---------- */
+const world = {};
+const hitMeshes = [];
+const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false });
+function addHit(id, grp, w, h, d) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), hitMat); m.position.y = h / 2; m.userData.id = id; grp.add(m); hitMeshes.push(m); }
+function faceStation(grp, it) { const s = stById(it.st); grp.rotation.y = Math.atan2(s.x - it.x, s.z - it.z); }
+for (const it of ITEMS) {
+  const grp = new THREE.Group(); grp.position.set(it.x, 0, it.z); scene.add(grp);
+  const w = { grp };
+  switch (it.kind) {
+    case 'character': {
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.85, 4, 10), lam(it.coat)); body.position.y = 0.95;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 12), lam(0xe8c4a0)); head.position.y = 1.72;
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), lam(0xd9ad86)); nose.position.set(0, 1.72, 0.2);
+      const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 0.16, 14), lam(0x2b2f33)); hat.position.y = 1.9;
+      grp.add(body, head, nose, hat);
+      w.bubble = null; w.bubbleKey = '';
+      if (it.st === 'B') { // the story's title stands on a plaque at their feet, in the world
+        const plaque = planeFrom(textCanvas([STORIES[it.story].title], { w: 420, size: 30, plate: 'rgba(30,36,42,.92)', ink: '#f3f5f7' }), 0.9);
+        plaque.position.set(0, 0.45, 0.45); plaque.rotation.x = -0.5; grp.add(plaque);
+      }
+      grp.rotation.y = Math.atan2(0, 1);
+      addHit(it.id, grp, 1.0, 2.2, 1.0); break;
+    }
+    case 'shortText': {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 10), dark); post.position.y = 0.75;
+      const board = planeFrom(textCanvas(it.text, { title: it.title, w: 560, size: 32 }), 1.25); board.position.y = 1.75;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.62, 0.04), dark); back.position.set(0, 1.75, -0.03);
+      grp.add(post, back, board); faceStation(grp, it); addHit(it.id, grp, 1.4, 2.2, 0.6); break;
+    }
+    case 'longText': {
+      const stand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.12), dark); stand.position.y = 0.52;
+      const tray = new THREE.Group(); tray.position.y = 1.12; tray.rotation.x = -0.6;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.78, 0.04), lam(0x3b2f28)); back.position.z = -0.025;
+      const page = planeFrom(textCanvas(it.pages[0].slice(1), { title: it.pages[0][0], w: 560, size: 30 }), 0.92);
+      tray.add(back, page); grp.add(stand, tray); faceStation(grp, it);
+      w.page = page; w.pageShown = 0; addHit(it.id, grp, 1.2, 1.8, 1.0); break;
+    }
+    case 'picture': {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 180; const g = c.getContext('2d');
+      g.fillStyle = '#d9c6a0'; g.fillRect(0, 0, 256, 180); g.fillStyle = '#7d6440';
+      for (let i = 0; i < 6; i++) g.fillRect(10 + i * 41, 60 - (i % 3) * 14, 34, 100 + (i % 3) * 14);
+      g.fillStyle = '#5b4528'; g.fillRect(0, 150, 256, 30);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.15, 0.06), dark); frame.position.y = 1.75;
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 1.0), new THREE.MeshBasicMaterial({ map: t })); pic.position.set(0, 1.75, 0.035);
+      const cap = planeFrom(textCanvas([it.title], { w: 420, size: 30 }), 0.95); cap.position.set(0, 1.0, 0.04);
+      for (const x of [-0.6, 0.6]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.06), dark); l.position.set(x, 0.65, -0.1); grp.add(l); }
+      grp.add(frame, pic, cap); faceStation(grp, it); addHit(it.id, grp, 1.8, 2.4, 0.8); break;
+    }
+    case 'video': {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 144;
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.32, 0.08), lam(0x59616b)); back.position.y = 1.95;
+      const scr = new THREE.Mesh(new THREE.PlaneGeometry(2.04, 1.15), new THREE.MeshBasicMaterial({ map: t })); scr.position.set(0, 1.95, 0.045);
+      // title and description stand under the screen, in the world
+      const cap = planeFrom(textCanvas(['Tap the screen to play or pause.'], { title: it.title, w: 560, size: 28 }), 1.5); cap.position.set(0, 1.0, 0.05);
+      for (const x of [-0.85, 0.85]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.3, 0.07), dark); l.position.set(x, 0.65, -0.05); grp.add(l); }
+      grp.add(back, scr, cap); faceStation(grp, it);
+      w.screen = { c, t, last: -99 }; addHit(it.id, grp, 2.4, 2.8, 0.8); break;
+    }
+    case 'audio': {
+      const N = 90, pos = new Float32Array(N * 3), seed = [];
+      for (let k = 0; k < N; k++) seed.push({ a: rand() * 6.28, r: rand() * 0.9, y: rand() * 3.4, v: 0.4 + rand() * 0.6 });
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ color: 0xbffcf0, size: 0.13, transparent: true, opacity: 0.9, depthWrite: false });
+      const pts = new THREE.Points(geo, mat); grp.add(pts);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.15, 48), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+      const cap = spriteFrom(textCanvas([it.title], { w: 420, size: 30, plate: 'rgba(10,14,19,.82)', ink: '#ccfbf1' }), 0.32); cap.position.y = 3.7;
+      grp.add(ring, cap);
+      w.plume = { pts, pos, seed, mat, ringMat }; w.cap = cap;
+      addHit(it.id, grp, 2.0, 3.6, 2.0); break;
+    }
+    case 'model': {
+      const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.0, 2.0), stone); plinth.position.y = 0.5;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 1.4), it.st === 'A' ? stone : bronze); body.position.y = 1.4;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), it.st === 'A' ? stone : bronze); head.position.set(0, 1.95, 0.6);
+      const cap = planeFrom(textCanvas([it.title], { w: 420, size: 30 }), 0.9); cap.position.set(0, 0.55, 1.02);
+      grp.add(plinth, body, head, cap); faceStation(grp, it); addHit(it.id, grp, 1.8, 2.6, 2.4); break;
+    }
+  }
+  world[it.id] = w;
+}
+// the rim stone the well's story shows (story content, not a free item: not on the radar)
+const wellStone = planeFrom(textCanvas(['"Water for all who ask."'], { title: 'Rim stone, 1611', w: 560, size: 32 }), 1.3);
+wellStone.position.set(stById('A').x, 1.35, stById('A').z + 1.5); wellStone.visible = false; scene.add(wellStone);
+
+/* ---------- the beam: the station's pin from afar ---------- */
+const beams = {};
+for (const st of STATIONS) {
+  const grp = new THREE.Group(); grp.position.set(st.x, 0, st.z); scene.add(grp);
+  // as built: a six-sided orange column 4 to 26 m up, opacity .28, wider with distance, and a ground ring at the station's radius
+  const builtMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
+  const built = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 22, 6, 1, true), builtMat); built.position.y = 15;
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(st.r - 0.25, st.r, 96), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+  // round 1: an 8 cm column from the ground to 26 m, opacity .35, a white gem 5 m up
+  const gemMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.35, depthWrite: false });
+  const thin = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 26, 8, 1, true), gemMat); thin.position.y = 13;
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0xffffff })); gem.position.y = 5;
+  grp.add(built, ring, thin, gem);
+  beams[st.id] = { grp, built, builtMat, ring, ringMat, thin, gem, gemMat, a: 1 };
+}
+
+/* ---------- input: drag sideways to turn, drag up to walk, tap to use ---------- */
+let drag = null;
+const keys = new Set();
+canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, t0: performance.now(), moved: 0 }; canvas.setPointerCapture(e.pointerId); dismissTry(); });
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.moved += Math.abs(dx) + Math.abs(dy);
+  S.yaw += dx * 0.0055; S.yawTarget = null; S.turn = null;
+  if (!S.auto) { const f = -dy * 0.03; S.pos.x += -Math.sin(S.yaw) * f; S.pos.z += -Math.cos(S.yaw) * f; }
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+canvas.addEventListener('pointerup', (e) => { if (drag && drag.moved < 8 && performance.now() - drag.t0 < 500) worldTap(e.clientX, e.clientY); drag = null; });
+canvas.addEventListener('pointercancel', () => { drag = null; });
+addEventListener('keydown', (e) => { keys.add(e.code); dismissTry(); });
+addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+const ray = new THREE.Raycaster();
+function worldTap(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
+  const hit = ray.intersectObjects(hitMeshes, false)[0];
+  if (hit) tapItem(hit.object.userData.id);
+}
+function screenOf(p, y = 1.5) {
+  const v = new THREE.Vector3(p.x, y, p.z).project(camera), r = device.getBoundingClientRect();
+  return { x: (v.x + 1) / 2 * r.width, y: (1 - v.y) / 2 * r.height, front: v.z < 1 };
+}
+function ripple(x, y) { const d = document.createElement('div'); d.className = 'ripple'; d.style.left = x + 'px'; d.style.top = y + 'px'; device.appendChild(d); setTimeout(() => d.remove(), 800); }
+function rippleOn(el) { const r = el.getBoundingClientRect(), dr = device.getBoundingClientRect(); ripple(r.left - dr.left + r.width / 2, r.top - dr.top + r.height / 2); }
+function hfov() { return 2 * Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect); }
+const inView = (p) => Math.abs(relAngle(p)) < hfov() / 2;
+
+/* ======================================================================
+   The radar: when it shows, and what range it draws
+   ====================================================================== */
+function radarAwakeTarget() {
+  if (!S.here && CFG.between === 'always') return true;
+  return S.stillFor >= CFG.still || T < S.wakeUntil;
+}
+function wake(sec) { S.wakeUntil = Math.max(S.wakeUntil, T + sec); }
+const OUT_STEPS = [null, 30, 100, 300];
+const IN_STEPS = [null, 10, 30, 100];
+function niceUp(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const k of [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (k * p >= v - 1e-9) return k * p;
+  return 10 * p;
+}
+let adaptiveM = 300;
+function outRange() {
+  const ds = STATIONS.filter((s) => !S.visited[s.id] || s.id === S.here).map((s) => dist(s)).sort((a, b) => a - b);
+  const want = ds.length ? clamp(niceUp((ds[Math.min(1, ds.length - 1)]) * 1.2), 10, 600) : adaptiveM;
+  if (want > adaptiveM || want < adaptiveM * 0.65) adaptiveM = want;
+  const step = OUT_STEPS[S.rangeStep % OUT_STEPS.length];
+  return step ?? adaptiveM;
+}
+function inRange(st) { const step = IN_STEPS[S.rangeStep % IN_STEPS.length]; return step ?? Math.round(st.r * FIT); }
+let lastStation = STATIONS[0];
+function rangeNow() {
+  const st = S.here ? stById(S.here) : lastStation;
+  const a = outRange(), b = inRange(st), z = ease(clamp(S.zoom, 0, 1));
+  return Math.exp(lerp(Math.log(a), Math.log(b), z));
+}
+function rangeWord() {
+  if (S.here) { const s = IN_STEPS[S.rangeStep % IN_STEPS.length]; return s ? `Range: ${s} m` : `Range: this station, ${inRange(stById(S.here))} m`; }
+  const s = OUT_STEPS[S.rangeStep % OUT_STEPS.length]; return s ? `Range: ${s} m` : `Range: auto, ${Math.round(adaptiveM)} m`;
+}
+$('#radar').addEventListener('click', (e) => {
+  dismissTry();
+  if (S.radarAlpha < 0.5) wake(TAP_WAKE_S); // asleep: a tap wakes it, it does not step
+  else { S.rangeStep = (S.rangeStep + 1) % 4; S.rangePeekUntil = T + 2; wake(3); }
+  if (e.isTrusted) rippleOn($('#radar'));
+});
+
+/* ---------- drawing (throttled like the app: at most 15 a second) ---------- */
+const radarCanvas = $('#radarCanvas');
+let radarMarks = { n: 0, merged: 0 };
+const ITEM_R = 5.5;
+function drawRadar() {
+  const w = radarCanvas.clientWidth; if (!w) return;
+  const dpr = Math.min(Math.max(devicePixelRatio, 1), 2), px = Math.round(w * dpr);
+  if (radarCanvas.width !== px) { radarCanvas.width = px; radarCanvas.height = px; }
+  const g = radarCanvas.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, w);
+  const c = w / 2, R = c - 4, range = rangeNow(), ez = ease(clamp(S.zoom, 0, 1));
+  const circle = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); };
+  const map = (d) => R * Math.sqrt(Math.min(d, range) / range);
+  const xyOf = (p) => { const a = relAngle(p), r = map(dist(p)); return [c + Math.sin(a) * r, c - Math.cos(a) * r, dist(p) > range]; };
+  // the plate, as built
+  circle(c, c, R + 3); g.fillStyle = 'rgba(10,14,19,.68)'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = 'rgba(255,255,255,.28)'; g.stroke();
+  // two rings near a twelfth and a third of the range, the outer one labelled
+  g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,.12)';
+  const rings = [niceUp(range / 12), niceUp(range / 3)];
+  for (const m of rings) { circle(c, c, map(m)); g.stroke(); }
+  g.fillStyle = 'rgba(255,255,255,.5)'; g.font = `600 ${Math.max(9, w * 0.075)}px system-ui,sans-serif`; g.textAlign = 'left';
+  g.fillText(`${rings[1]} m`, c + map(rings[1]) * 0.72 + 1, c + map(rings[1]) * 0.72 + 2);
+  // north, heading-up
+  g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `700 ${Math.max(9, w * 0.072)}px system-ui,sans-serif`; g.textAlign = 'center';
+  g.fillText('N', c + Math.sin(S.yaw) * (R - 7), c - Math.cos(S.yaw) * (R - 7) + 3.5);
+  // the view cone
+  { const half = hfov() / 2, grd = g.createRadialGradient(c, c, 0, c, c, R);
+    grd.addColorStop(0, 'rgba(255,255,255,.26)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.beginPath(); g.moveTo(c, c); g.arc(c, c, R, -Math.PI / 2 - half, -Math.PI / 2 + half); g.closePath(); g.fillStyle = grd; g.fill(); }
+  g.save(); circle(c, c, R); g.clip();
+  // stations (outside)
+  const sAl = 1 - smooth(0, 0.6, ez);
+  if (sAl > 0.02) {
+    const next = STATIONS.find((s) => !S.visited[s.id]);
+    for (const s of STATIONS) {
+      if (S.here === s.id) continue;
+      const [x0, y0, beyond] = xyOf(s); let x = x0, y = y0;
+      if (beyond) { const a = relAngle(s); x = c + Math.sin(a) * (R - 9); y = c - Math.cos(a) * (R - 9); }
+      g.globalAlpha = sAl;
+      if (s === next) {
+        if (!REDUCE) { const q = (T % 1.4) / 1.4; circle(x, y, 8.5 + q * 9); g.strokeStyle = `rgba(251,146,60,${0.6 * (1 - q)})`; g.lineWidth = 2; g.stroke(); }
+        circle(x, y, 8.5); g.fillStyle = '#fb923c'; g.fill(); g.fillStyle = '#1f1105'; g.font = '800 10px system-ui,sans-serif'; g.fillText(String(s.n), x, y + 3.6);
+      } else if (S.visited[s.id]) {
+        // visited: grey; a white centre while something there is still unseen (no number, no count)
+        circle(x, y, 6.5); g.fillStyle = '#8b949d'; g.fill();
+        if (ITEMS.some((i) => i.st === s.id && !S.it[i.id].seen)) { circle(x, y, 2.6); g.fillStyle = '#f3f5f7'; g.fill(); }
+      } else {
+        circle(x, y, 6.5); g.fillStyle = 'rgba(10,14,19,.85)'; g.fill(); g.strokeStyle = '#f3f5f7'; g.lineWidth = 2; g.stroke();
+        g.fillStyle = '#f3f5f7'; g.font = '800 8.5px system-ui,sans-serif'; g.fillText(String(s.n), x, y + 3);
+      }
+      g.globalAlpha = 1;
+    }
+  }
+  // the station's boundary: its dot grows into its true outline as you cross the edge
+  const st = S.here ? stById(S.here) : lastStation;
+  const bAl = S.here ? 1 : smooth(0.05, 0.6, ez);
+  if (bAl > 0.02) {
+    g.beginPath();
+    for (let k = 0; k <= 64; k++) { const a = k / 64 * Math.PI * 2, [x, y] = xyOf({ x: st.x + Math.cos(a) * st.r, z: st.z + Math.sin(a) * st.r }); if (k) g.lineTo(x, y); else g.moveTo(x, y); }
+    g.globalAlpha = bAl * Math.max(ez, 0.25); g.fillStyle = 'rgba(255,255,255,.05)'; g.fill(); g.setLineDash([5, 4]); g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.5)'; g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+  }
+  // the station's things (inside), at their true places; touching marks merge, never move
+  radarMarks = { n: 0, merged: 0 };
+  const iAl = smooth(0.4, 1, ez);
+  if (iAl > 0.02) {
+    const marks = ITEMS.filter((i) => i.st === st.id).map((i) => { const [x, y, beyond] = xyOf(i); return { x, y, beyond, seen: S.it[i.id].seen, a: relAngle(i) }; });
+    for (const m of marks) if (m.beyond) { m.x = c + Math.sin(m.a) * (R - ITEM_R - 1); m.y = c - Math.cos(m.a) * (R - ITEM_R - 1); }
+    const parent = marks.map((_, i) => i), find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+    for (let i = 0; i < marks.length; i++) for (let j = i + 1; j < marks.length; j++) if (Math.hypot(marks[i].x - marks[j].x, marks[i].y - marks[j].y) < ITEM_R * 2 + 2) parent[find(i)] = find(j);
+    const groups = new Map();
+    marks.forEach((m, i) => { const k = find(i); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(m); });
+    g.globalAlpha = iAl;
+    for (const grp of groups.values()) {
+      radarMarks.n++;
+      if (grp.length === 1) {
+        const m = grp[0];
+        circle(m.x, m.y, ITEM_R + 1.5); g.fillStyle = 'rgba(10,14,19,.9)'; g.fill();
+        circle(m.x, m.y, ITEM_R);
+        if (m.beyond) { g.strokeStyle = m.seen ? '#8b949d' : '#f3f5f7'; g.lineWidth = 2.5; g.stroke(); }
+        else { g.fillStyle = m.seen ? '#8b949d' : '#f3f5f7'; g.fill(); }
+        continue;
+      }
+      // a merged mark sits where its members' true places average; its share of white is what is still unseen
+      radarMarks.merged++;
+      const x = grp.reduce((s, m) => s + m.x, 0) / grp.length, y = grp.reduce((s, m) => s + m.y, 0) / grp.length;
+      const r = ITEM_R + 3.5, unseen = grp.filter((m) => !m.seen).length;
+      circle(x, y, r + 1.5); g.fillStyle = 'rgba(10,14,19,.9)'; g.fill();
+      const cut = -Math.PI / 2 + unseen / grp.length * Math.PI * 2;
+      if (unseen) { g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, -Math.PI / 2, cut); g.closePath(); g.fillStyle = '#f3f5f7'; g.fill(); }
+      if (unseen < grp.length) { g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, cut, Math.PI * 1.5); g.closePath(); g.fillStyle = '#8b949d'; g.fill(); }
+      g.fillStyle = '#10151b'; g.font = '800 10px system-ui,sans-serif'; g.textAlign = 'center'; g.fillText(String(grp.length), x, y + 3.6);
+    }
+    g.globalAlpha = 1;
+  }
+  g.restore();
+  // you
+  circle(c, c, 4); g.fillStyle = '#fff'; g.fill();
+}
+let lastRadarDraw = -1e9;
+
+/* ======================================================================
+   The simulation (every frame)
+   ====================================================================== */
+const last = { x: 0, z: 0 };
+function sim(dt) {
+  if (waiters.length) { const due = waiters.filter((w) => T >= w.end); waiters = waiters.filter((w) => T < w.end); for (const w of due) w.res(); }
+  last.x = S.pos.x; last.z = S.pos.z;
+  if (S.auto) {
+    const a = S.auto, dx = a.x - S.pos.x, dz = a.z - S.pos.z, d = Math.hypot(dx, dz), step = a.speed * dt;
+    if (d <= step) { S.pos.x = a.x; S.pos.z = a.z; S.auto = null; S.yawTarget = null; a.res(); }
+    else { S.pos.x += dx / d * step; S.pos.z += dz / d * step; if (a.face && !drag) S.yawTarget = yawToward(a, S.pos); }
+  } else {
+    let f = 0; if (keys.has('KeyW') || keys.has('ArrowUp')) f = 1.4; if (keys.has('KeyS') || keys.has('ArrowDown')) f = -0.8;
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) { S.yaw += 1.5 * dt; S.yawTarget = null; }
+    if (keys.has('KeyD') || keys.has('ArrowRight')) { S.yaw -= 1.5 * dt; S.yawTarget = null; }
+    if (f) { S.pos.x += -Math.sin(S.yaw) * f * dt; S.pos.z += -Math.cos(S.yaw) * f * dt; }
+  }
+  if (S.turn) { const k = clamp((T - S.turn.t0) / S.turn.dur, 0, 1); S.yaw = lerp(S.turn.from, S.turn.to, ease(k)); if (k >= 1) { const r = S.turn.res; S.turn = null; r(); } }
+  else if (S.yawTarget != null && !drag) S.yaw += wrapPi(S.yawTarget - S.yaw) * (1 - Math.exp(-dt * 3));
+
+  // walking: the pose's speed, smoothed over about half a second; turning on the spot is standing still
+  if (dt > 0) {
+    const inst = Math.hypot(S.pos.x - last.x, S.pos.z - last.z) / dt;
+    S.speed += (inst - S.speed) * (1 - Math.exp(-dt / 0.5));
+    S.stillFor = S.speed > CFG.walk ? 0 : S.stillFor + dt;
+  }
+
+  // the station edge (2 m of hysteresis on the way out)
+  const prev = S.here;
+  if (S.here) { if (dist(stById(S.here)) > stById(S.here).r + 2) S.here = null; }
+  if (!S.here) for (const s of STATIONS) if (dist(s) <= s.r) { S.here = s.id; break; }
+  if (S.here !== prev) onEdge(prev, S.here);
+  S.zoom = clamp(S.zoom + (S.here ? 1 : -1) * dt / 1.0, 0, 1);
+
+  // the radar's fade
+  const target = radarAwakeTarget() ? 1 : ASLEEP_ALPHA, k = dt / CFG.fade;
+  S.radarAlpha = target > S.radarAlpha ? Math.min(target, S.radarAlpha + k) : Math.max(target, S.radarAlpha - k);
+
+  // the story: lines advance by themselves while it runs; it pauses when its station is left
+  const st = S.story;
+  if (st && !st.paused) {
+    const step = stepOf(), entry = itById(STORIES[st.id].entry);
+    if (S.here !== entry.st) st.paused = 'left';
+    else { st.t += dt; if (st.t >= LINE_S && st.line < step.lines.length - 1) { st.line++; st.t = 0; } }
+  }
+
+  // things that play, and what leaving their place does
+  for (const it of ITEMS) {
+    const t = S.it[it.id];
+    if (t.playing) { t.t += dt; if (t.t >= it.len) { t.t = it.len; t.playing = false; t.pausedBy = 'end'; t.seen = true; } }
+    if (!it.reach) continue;
+    const d = dist(it);
+    if (t.playing && d > it.reach + 1) pause(it.id, 'leave');
+    else if (!t.playing && t.pausedBy === 'leave' && d <= it.reach && !S.story) { t.playing = true; t.pausedBy = null; } // a paused one carries on at return
+  }
+
+  // seen by looking (signs, pictures, models): in view, near, for a moment
+  for (const it of ITEMS) {
+    const t = S.it[it.id]; if (t.seen || !inStation(it)) continue;
+    const need = { shortText: [8, 1.5], picture: [10, 2], model: [10, 3] }[it.kind];
+    if (!need) continue;
+    if (dist(it) <= need[0] && inView(it)) { t.dwell += dt; if (t.dwell >= need[1]) t.seen = true; }
+  }
+}
+function onEdge(from, to) {
+  S.rangeStep = 0;
+  if (to) {
+    lastStation = stById(to); S.visited[to] = true;
+    // the one deliberate start by nearness: a single story whose first item is a character greets once per visit
+    const stories = Object.entries(STORIES).filter(([, s]) => itById(s.entry).st === to);
+    if (stories.length === 1 && !S.greeted[to] && !S.story) { S.greeted[to] = true; startStory(stories[0][0]); }
+  }
+  if (CFG.edge === 'on') wake(EDGE_WAKE_S);
+}
+
+/* ======================================================================
+   World looks (every frame)
+   ====================================================================== */
+function updateWorld(dt) {
+  // beams: one per station still ahead; the one you stand in fades out
+  for (const st of STATIONS) {
+    const b = beams[st.id], want = S.here === st.id || S.visited[st.id] ? 0 : 1;
+    b.a += (want - b.a) * (1 - Math.exp(-dt * 2));
+    const built = CFG.beam === 'built', d = dist(st);
+    b.built.visible = built && b.a > 0.01; b.ring.visible = built && b.a > 0.01;
+    b.thin.visible = !built && b.a > 0.01; b.gem.visible = !built && b.a > 0.01;
+    const r = clamp(d * 0.005, 0.05, 0.6); b.built.scale.set(r, 1, r);
+    b.builtMat.opacity = 0.28 * b.a; b.ringMat.opacity = 0.45 * b.a; b.gemMat.opacity = 0.35 * b.a;
+    b.gem.rotation.y += dt * 0.8; b.gem.material.opacity = b.a; b.gem.material.transparent = true;
+  }
+  const story = S.story, step = stepOf();
+  wellStone.visible = !!story && story.id === 'well' && !!step?.stone && !story.paused;
+  for (const it of ITEMS) {
+    const w = world[it.id], t = S.it[it.id];
+    if (it.kind === 'character') {
+      // a character turns toward you once you are in their station: an invitation, never a badge
+      const want = inStation(it) && dist(it) < 18 ? Math.atan2(S.pos.x - it.x, S.pos.z - it.z) : Math.atan2(stById(it.st).x - it.x + 0.001, stById(it.st).z - it.z + 6);
+      w.grp.rotation.y += wrapPi(want - w.grp.rotation.y) * (1 - Math.exp(-dt * 2.2));
+      // the spoken line stands in a bubble over their head (the words are only here, never in the HUD)
+      let text = null;
+      if (story && STORIES[story.id].entry === it.id) {
+        if (story.paused) text = '...';
+        else if (step.who === it.id) text = step.lines[story.line];
+      }
+      const key = text ?? '';
+      if (key !== w.bubbleKey) {
+        w.bubbleKey = key;
+        if (w.bubble) { w.grp.remove(w.bubble); w.bubble.material.map.dispose(); w.bubble.material.dispose(); w.bubble = null; }
+        if (text) { w.bubble = spriteFrom(bubbleCanvas(text, it.title), 0.62); w.bubble.position.y = 2.6; w.grp.add(w.bubble); }
+      }
+      if (w.bubble) { const d = Math.max(3, dist(it)), s = Math.min(1.6, d / 5); w.bubble.scale.set(0.62 * s * w.bubble.material.map.image.width / w.bubble.material.map.image.height, 0.62 * s, 1); w.bubble.position.y = 2.25 + 0.31 * s; }
+    }
+    if (it.kind === 'longText' && w.pageShown !== t.page) {
+      w.pageShown = t.page; const p = it.pages[t.page];
+      setPlaneCanvas(w.page, textCanvas([...p.slice(1), `page ${t.page + 1} of ${it.pages.length} - tap to turn`], { title: p[0], w: 560, size: 30 }), 0.92);
+    }
+    if (it.kind === 'audio') {
+      const p = w.plume, level = !inStation(it) ? 0.18 : t.playing ? 1 : 0.55;
+      const speed = t.playing ? 1.4 : 0.6;
+      for (let k = 0; k < p.seed.length; k++) { const s = p.seed[k]; s.y += s.v * speed * dt; if (s.y > 3.4) s.y = 0; const r = s.r * (1 - s.y / 5); p.pos[k * 3] = Math.cos(s.a + s.y) * r; p.pos[k * 3 + 1] = s.y; p.pos[k * 3 + 2] = Math.sin(s.a + s.y) * r; }
+      p.pts.geometry.attributes.position.needsUpdate = true;
+      p.mat.opacity = 0.9 * level; p.ringMat.opacity = 0.15 + 0.45 * level;
+      w.cap.visible = inStation(it) && dist(it) < 14;
+    }
+    if (it.kind === 'video') drawScreen(w.screen, it, t);
+  }
+}
+function drawScreen(sc, it, t) {
+  const frame = t.playing ? Math.floor(T * 8) : (t.pausedBy === 'end' ? -2 : t.t > 0 ? -3 : -1);
+  if (frame === sc.last) return; sc.last = frame;
+  const g = sc.c.getContext('2d');
+  if (t.t > 0 && t.pausedBy !== 'end') {
+    g.fillStyle = '#cdbb94'; g.fillRect(0, 0, 256, 144);
+    const off = (t.t * 30) % 44;
+    g.fillStyle = '#6d5638'; for (let i = -1; i < 7; i++) { const x = i * 44 - off; g.fillRect(x, 50 + (i % 2) * 10, 34, 70); }
+    g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 134, 256, 10); g.fillStyle = '#2dd4bf'; g.fillRect(0, 134, 256 * (t.t / it.len), 10);
+    if (!t.playing) { g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 0, 256, 134); g.fillStyle = '#fff'; g.fillRect(108, 46, 14, 44); g.fillRect(134, 46, 14, 44); }
+  } else {
+    g.fillStyle = '#1b2026'; g.fillRect(0, 0, 256, 144);
+    g.fillStyle = '#fff'; g.beginPath(); g.moveTo(110, 44); g.lineTo(150, 72); g.lineTo(110, 100); g.closePath(); g.fill();
+    g.font = '600 15px system-ui,sans-serif'; g.textAlign = 'center'; g.fillText(t.pausedBy === 'end' ? 'Watched - tap to play again' : 'Tap to play', 128, 128);
+  }
+  sc.t.needsUpdate = true;
+}
+
+/* ======================================================================
+   The HUD (page layer)
+   ====================================================================== */
+const PAUSE = '<svg viewBox="0 0 18 18"><rect x="4" y="3" width="3.6" height="12" rx="1" fill="currentColor"/><rect x="10.4" y="3" width="3.6" height="12" rx="1" fill="currentColor"/></svg>';
+const PLAY = '<svg viewBox="0 0 18 18"><path d="M5 3l10 6-10 6z" fill="currentColor"/></svg>';
+let footKey = '';
+/** The foot holds one thing at most: the story's step control, else one play/pause. */
+function footModel() {
+  if (S.story && !S.story.paused) return { k: 'story' };
+  const id = S.media; if (!id) return null;
+  const it = itById(id), t = S.it[id];
+  if (!inStation(it) || dist(it) > it.reach + 1) return null;      // never outlives its place
+  if (t.playing || t.pausedBy === 'tap') return { k: 'media', id };
+  return null;
+}
+function renderFoot() {
+  const m = footModel(), el = $('#foot');
+  const key = m ? `${m.k}:${m.id ?? S.story?.id}` : '';
+  if (key !== footKey) {
+    footKey = key;
+    if (!m) el.innerHTML = '';
+    else if (m.k === 'media') el.innerHTML = `<button class="transport" type="button" data-hud="transport" data-act="toggle" aria-label="Pause"><span></span></button>`;
+    else el.innerHTML = `<div class="story" data-hud="story"><div class="t"><b></b><small></small></div><button class="next" type="button" data-act="next">Next</button><button class="x" type="button" data-act="leave" aria-label="Leave the story">&times;</button></div>`;
+  }
+  if (m?.k === 'media') {
+    const it = itById(m.id), t = S.it[m.id], b = el.firstElementChild, want = t.playing ? 'pause' : 'play';
+    b.style.setProperty('--p', (t.t / it.len).toFixed(3));
+    if (b.dataset.s !== want) { b.dataset.s = want; b.firstElementChild.innerHTML = t.playing ? PAUSE : PLAY; b.setAttribute('aria-label', `${t.playing ? 'Pause' : 'Play'} ${it.title}`); }
+  } else if (m?.k === 'story') {
+    const st = S.story, def = STORIES[st.id], box = el.firstElementChild;
+    setText(box.querySelector('b'), def.title);
+    setText(box.querySelector('small'), `Story · step ${st.step + 1} of ${def.steps.length}`);
+    const nx = box.querySelector('.next'), last = st.step === def.steps.length - 1;
+    setText(nx, last ? 'Done' : 'Next'); nx.disabled = !stepDone();
+  }
+}
+$('#foot').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  if (b.dataset.act === 'toggle' && S.media) toggle(S.media);
+  else if (b.dataset.act === 'next') storyNext();
+  else if (b.dataset.act === 'leave') endStory(false);
+});
+const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+function ui() {
+  $('#radarWrap').style.opacity = S.radarAlpha.toFixed(3);
+  const peek = T < S.rangePeekUntil && S.radarAlpha > 0.5;
+  $('#rangeLabel').hidden = !peek; if (peek) setText($('#rangeLabel'), rangeWord());
+  renderFoot();
+  setText($('#beatTitle'), beat ? `${beat}/8 · ${BEATS[beat - 1].name}` : 'Walk freely');
+}
+
+/* ======================================================================
+   The measuring hook (behind the ruler toggle)
+   ====================================================================== */
+const stats = {};
+let measuring = QS.has('measure'), worstFrame = 0, frameWorstWindow = 0;
+function orientKey() { const r = device.getBoundingClientRect(); return r.width > r.height ? 'landscape' : 'portrait'; }
+function visibleHud() {
+  return [...device.querySelectorAll('[data-hud]')].filter((el) => {
+    if (el.closest('[hidden]')) return false;
+    const cs = getComputedStyle(el); if (cs.display === 'none' || Number(cs.opacity) < 0.35) return false;
+    const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+  });
+}
+function measure() {
+  const dr = device.getBoundingClientRect(), W = dr.width, H = dr.height;
+  const boxes = visibleHud().map((el) => {
+    const tgt = el.dataset.hud === 'radar' ? $('#radar') : el, r = tgt.getBoundingClientRect();
+    return { el, x: r.left - dr.left, y: r.top - dr.top, w: r.width, h: r.height, round: el.dataset.hud === 'radar' || el.dataset.hud === 'exit' || el.dataset.hud === 'transport' };
+  });
+  const step = 4; let cov = 0;
+  for (let y = step / 2; y < H; y += step) for (let x = step / 2; x < W; x += step) for (const b of boxes) {
+    if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) continue;
+    if (b.round && Math.hypot(x - b.x - b.w / 2, y - b.y - b.h / 2) > b.w / 2) continue;
+    cov++; break;
+  }
+  const pct = cov * step * step / (W * H) * 100;
+  for (const el of device.querySelectorAll('.ovl')) el.classList.remove('ovl');
+  let ov = 0;
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const A = boxes[i], B = boxes[j];
+    if (A.el.contains(B.el) || B.el.contains(A.el)) continue;
+    const ix = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x), iy = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y);
+    if (ix > 2 && iy > 2) { ov++; if (measuring) { A.el.classList.add('ovl'); B.el.classList.add('ovl'); } }
+  }
+  const m = { pct, count: boxes.length, ov, names: boxes.map((b) => b.el.dataset.hud), marks: radarMarks.n, merged: radarMarks.merged, worst: frameWorstWindow };
+  const ro = $('#readout');
+  ro.hidden = !measuring; $('#hud').classList.toggle('measuring', measuring);
+  if (measuring) {
+    const walking = S.speed > CFG.walk;
+    setText(ro, `HUD ${pct.toFixed(1)}% · ${m.count} el · ${ov ? ov + ' overlap' : 'no overlap'} · radar ${S.radarAlpha > 0.5 ? 'awake' : 'asleep'} · ${walking ? `walking ${S.speed.toFixed(1)} m/s` : `still ${Math.min(S.stillFor, 99).toFixed(1)} s`} · marks ${m.marks}${m.merged ? ` (${m.merged} merged)` : ''} · worst frame ${m.worst.toFixed(0)} ms`);
+    ro.classList.toggle('bad', ov > 0 || m.worst > 50);
+  }
+  if (beat) {
+    const k = orientKey(); stats[k] ??= {}; const s = (stats[k][beat] ??= { pct: 0, count: 0, ov: 0, worst: 0 });
+    s.pct = Math.max(s.pct, pct); s.count = Math.max(s.count, m.count); s.ov = Math.max(s.ov, ov); s.worst = Math.max(s.worst, m.worst);
+    renderStats();
+  }
+  return m;
+}
+let statKey = '';
+function renderStats() {
+  const k = orientKey(), st = stats[k] ?? {}, key = k + JSON.stringify(st); if (key === statKey) return; statKey = key;
+  $('#statTable tbody').innerHTML = BEATS.map((b, i) => { const s = st[i + 1]; return `<tr><td>${i + 1} ${b.name.split(' ').slice(0, 3).join(' ')}</td><td>${s ? s.pct.toFixed(1) : '-'}</td><td>${s ? s.count : '-'}</td><td>${s ? s.ov : '-'}</td><td>${s ? s.worst.toFixed(0) : '-'}</td></tr>`; }).join('');
+}
+
+/* ======================================================================
+   The fixed demonstration: eight beats
+   ====================================================================== */
+let waiters = [];
+const wait = (sec) => new Promise((res) => waiters.push({ end: T + sec, res }));
+const walkTo = (p, speed = 1.3, face = true) => new Promise((res) => { S.auto = { x: p.x, z: p.z, speed, face, res }; });
+const turnBy = (rad, dur) => new Promise((res) => { S.yawTarget = null; S.turn = { from: S.yaw, to: S.yaw + rad, t0: T, dur, res }; });
+const turnTo = (p, dur = 1.2) => turnBy(wrapPi(yawToward(p) - S.yaw), dur);
+let markRes = null;
+function mark(name) {
+  window.HC.lastMark = `b${beat}-${name}`;
+  if (!SHOTS) return Promise.resolve();
+  S.paused = true;
+  return new Promise((res) => { markRes = () => { S.paused = false; res(); }; });
+}
+const tapWorld = (id) => { const it = itById(id), s = screenOf(it, 1.6); if (s.front) ripple(s.x, s.y); tapItem(id); };
+const tapEl = (sel) => { const el = device.querySelector(sel); if (!el) return; rippleOn(el); el.click(); };
+const standStill = () => wait(CFG.still + CFG.fade + 0.3);
+const A = stById('A'), B = stById('B');
+const A_IN = { x: 0, z: -47 }, A_OUT = { x: 22, z: -86 }, B_IN = { x: 49, z: -117 };
+const NEAR_PAIR = { x: 4.5, z: -64.5 };
+function base(n) {
+  S = fresh(); lastStation = A;
+  if (n >= 2) { S.pos = { ...A_IN }; S.yaw = yawToward(itById('greta')); S.here = 'A'; S.visited.A = true; S.greeted.A = true; S.zoom = 1; S.stillFor = 0; }
+  if (n === 2) startStory('well');
+  if (n === 3) { startStory('well'); S.story.line = 2; S.story.t = LINE_S; }
+  if (n >= 4) { S.storyDone.well = true; S.it.greta.seen = true; }
+  if (n >= 5) { S.it.aPic.seen = true; S.it.aLong.seen = true; S.it.aLong.page = 2; S.it.aModel.seen = true; S.pos = { x: -6, z: -66 }; }
+  if (n >= 6) { S.it.aVid.t = 6; S.it.aVid.pausedBy = 'tap'; S.media = 'aVid'; S.pos = { x: 0, z: -68 }; }
+  if (n >= 7) { S.pos = { ...NEAR_PAIR }; S.yaw = yawToward(itById('aSign')); }
+  if (n >= 8) { S.pos = { x: 30, z: -94 }; S.here = null; S.zoom = 0; S.visited.A = true; S.yaw = yawToward(B); }
+  S.radarAlpha = ASLEEP_ALPHA;
+}
+const BEATS = [
+  { name: 'Walk up to the beam', setup() { base(1); S.pos = { x: 0, z: -10 }; S.yaw = 0; S.stillFor = 0; S.speed = 1.3; },
+    async run() { await walkTo({ x: 0, z: -24 }, 1.3); await mark('approach'); await walkTo({ x: 0, z: -43.5 }, 1.3); await wait(0.7); await mark('edge'); await walkTo(A_IN, 1.3); await wait(2); } },
+  { name: 'Stand still: the radar wakes', setup() { base(2); },
+    async run() { await standStill(); await mark('awake'); await wait(4); } },
+  { name: 'Follow the story', setup() { base(3); },
+    async run() { await wait(0.6); tapEl('[data-act=next]'); await turnTo(A, 1.2); await wait(0.6); await mark('story'); await wait(1.4); tapEl('[data-act=next]'); await turnTo(itById('greta'), 1.0); await wait(LINE_S + 0.4); tapEl('[data-act=next]'); await wait(1); } },
+  { name: 'Look around: grey is seen', setup() { base(4); },
+    async run() {
+      await walkTo({ x: -8, z: -58 }, 1.3); await turnTo(itById('aPic'), 0.9); await wait(2.4);
+      await walkTo({ x: -7, z: -62.5 }, 1.3); await turnTo(itById('aLong'), 0.8); for (let k = 0; k < 3; k++) { tapWorld('aLong'); await wait(1.2); }
+      await walkTo({ x: -4, z: -66 }, 1.3); await turnTo(itById('aModel'), 0.8); await wait(3.4);
+      await turnTo(itById('aSign'), 1.2); await standStill(); await mark('consumed'); await wait(2);
+    } },
+  { name: 'Video: pause it from the HUD', setup() { base(5); },
+    async run() {
+      await walkTo({ x: 1.5, z: -68 }, 1.3); await turnTo(itById('aVid'), 0.8); await wait(0.6); tapWorld('aVid'); await wait(3);
+      await turnBy(Math.PI * 0.85, 2.4); await wait(1.2); await mark('away'); tapEl('[data-act=toggle]'); await wait(1.2); await mark('paused'); await wait(1.5);
+    } },
+  { name: 'Two things close together', setup() { base(6); },
+    async run() { await walkTo(NEAR_PAIR, 1.3); await turnTo(itById('aSign'), 0.8); await standStill(); await mark('merged'); tapEl('#radar'); await wait(1.2); await mark('split'); await wait(1.5); tapEl('#radar'); await wait(0.5); tapEl('#radar'); await wait(0.5); tapEl('#radar'); await wait(1); } },
+  { name: 'Leave with things unseen', setup() { base(7); },
+    async run() { await walkTo({ x: 13.1, z: -75.5 }, 1.4); await wait(0.3); await mark('edge'); await walkTo(A_OUT, 1.4); await standStill(); await mark('stations'); await wait(1.5); } },
+  { name: 'Station B: talk to one of three', setup() { base(8); },
+    async run() { await walkTo(B_IN, 1.4); await turnTo(itById('ringer'), 1.0); await standStill(); await mark('three'); tapWorld('baker'); await turnTo(itById('baker'), 0.8); await wait(1.6); await mark('story'); await wait(LINE_S * 2); tapEl('[data-act=next]'); await wait(1); } },
+];
+let runId = 0;
+function cancelScripts() { runId++; waiters = []; S.auto = null; S.turn = null; markRes = null; S.paused = false; }
+async function gotoBeat(n) {
+  cancelScripts(); dismissTry();
+  const my = runId; beat = n;
+  BEATS[n - 1].setup();
+  const k = orientKey(); stats[k] ??= {}; stats[k][n] = { pct: 0, count: 0, ov: 0, worst: 0 };
+  ui();
+  await BEATS[n - 1].run();
+  if (my !== runId) return false;
+  window.HC.done = n; return true;
+}
+
+/* ======================================================================
+   Controls
+   ====================================================================== */
+const tryEl = $('#try');
+let tryTimer = setTimeout(dismissTry, 12000);
+function dismissTry() { tryEl.classList.add('gone'); clearTimeout(tryTimer); }
+$('#prevBtn').onclick = () => gotoBeat(Math.max(1, (beat || 1) - 1));
+$('#nextBtn').onclick = () => gotoBeat(Math.min(8, beat + 1));
+$('#menuBtn').onclick = () => { $('#demo').hidden = !$('#demo').hidden; };
+$('#demoClose').onclick = () => { $('#demo').hidden = true; };
+$('#measureBtn').onclick = () => { measuring = !measuring; $('#measureBtn').classList.toggle('on', measuring); measure(); };
+$('#measureBtn').classList.toggle('on', measuring);
+$('#exitBtn').onclick = () => {};
+{
+  const bb = $('#beatBtns');
+  BEATS.forEach((b, i) => { const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = `${i + 1}. ${b.name}`; btn.onclick = () => { gotoBeat(i + 1); if (innerWidth < 960) $('#demo').hidden = true; }; bb.appendChild(btn); });
+  const free = document.createElement('button'); free.type = 'button'; free.textContent = 'Start again, walk freely'; free.style.gridColumn = '1/-1';
+  free.onclick = () => { cancelScripts(); beat = 0; S = fresh(); lastStation = A; if (innerWidth < 960) $('#demo').hidden = true; };
+  bb.appendChild(free);
+}
+function syncCfg() { for (const b of document.querySelectorAll('[data-cfg]')) b.classList.toggle('on', String(CFG[b.dataset.cfg]) === b.dataset.v); }
+for (const b of document.querySelectorAll('[data-cfg]')) b.onclick = () => { const k = b.dataset.cfg; CFG[k] = typeof CFG[k] === 'number' ? Number(b.dataset.v) : b.dataset.v; syncCfg(); };
+syncCfg();
+
+/* ======================================================================
+   The frame loop
+   ====================================================================== */
+let lastNow = performance.now(), lastMeasure = 0, lastW = 0, lastH = 0, worstSince = performance.now();
+function frame(now) {
+  const rawMs = now - lastNow; lastNow = now;
+  worstFrame = Math.max(worstFrame, rawMs);
+  if (now - worstSince > 2000) { frameWorstWindow = worstFrame; worstFrame = 0; worstSince = now; }
+  const dt = Math.min(0.05, rawMs / 1000) * SPEED;
+  const w = device.clientWidth, h = device.clientHeight;
+  if (w !== lastW || h !== lastH) { lastW = w; lastH = h; renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w > h ? 50 : 64; camera.updateProjectionMatrix(); }
+  if (!S.paused) { T += dt; sim(dt); updateWorld(dt); }
+  camera.position.set(S.pos.x, 1.6, S.pos.z); camera.rotation.set(S.pitch, S.yaw, 0);
+  renderer.render(scene, camera);
+  if (now - lastRadarDraw >= 1000 / 15 || S.paused) { lastRadarDraw = now; drawRadar(); }
+  ui();
+  if (now - lastMeasure > 150) { lastMeasure = now; measure(); }
+  requestAnimationFrame(frame);
+}
+window.HC = {
+  lastMark: null, done: 0, stats, CFG,
+  goto: (n) => gotoBeat(n),
+  resume: () => { if (markRes) { const r = markRes; markRes = null; r(); } },
+  measure: () => measure(),
+  state: () => S,
+};
+// the page opens outside the station, at its first moment: the beam ahead, nothing playing
+S.stillFor = 0;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
