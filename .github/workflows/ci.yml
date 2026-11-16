@@ -41,15 +41,40 @@ permissions:
 
 # A newer push to a pull request's branch cancels its superseded run. Pushes to
 # `main` are releases and every one of them runs to the end, so each gets a
-# group of its own: GitHub keeps only one PENDING run per group, and with one
-# group for `main` the middle of three quick merges would lose its run. The
-# group starts with `github.workflow`, which in a called workflow is the
-# CALLING workflow's name: the full-ci label's run (ci-full-label.yml) gets a
-# group of its own and no longer cancels the pull request's run, which left a
-# cancelled check on the pull request.
+# group of its own (its run id), as do a dispatch and the nightly run: GitHub
+# keeps only one PENDING run per group, and with one group for `main` the
+# middle of three quick merges would lose its run.
+#
+# A pull request's group has a fixed prefix, not `github.workflow`: in the
+# full-ci label's call (ci-full-label.yml) that names the calling workflow,
+# and the label run must share the pull request's group. The full set holds
+# everything the tier run checks, so the label run cancels the pull request's
+# still-running tier run, which would otherwise hold about 14 of the account's 20
+# concurrent jobs for nothing and make other runs queue. That leaves the tier
+# run's jobs cancelled on the pull request and its `CI result` skipped (see
+# that job); the full run's checks carry the `full-ci /` prefix. A called workflow takes its
+# caller's `github` context, so in the label run the event is `pull_request`
+# and the ref is the pull request's merge ref.
+#
+# GitHub does not guarantee the order of runs in one group, and the newer run
+# cancels the older. The label is set seconds after the pull request opens, so
+# the `opened` run may queue after the label run, with a payload taken before
+# the label existed: it would cancel the full set and run only the tier. An
+# `opened` run has nothing older to supersede, so it never cancels; it waits
+# for the full run instead, and then runs its whole tier after it, which
+# wastes job slots. That is rare: the label usually enters the group about 10 s
+# after the opened run, which it then cancels. A later push (`synchronize`) to
+# a labelled pull request cancels the full run, and its new run reads the
+# label and runs the full set again (E2E_TIER).
+#
+# Only a label event carries `github.event.label`, and only the full-ci label
+# may cancel: the caller job's `if` already starts nothing for another label,
+# and this holds even if GitHub placed the called workflow in the group before
+# evaluating that `if`. It reads the label, not the event's action, so this
+# file names no label event (ci-jobs.test.js).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'opened' && (!github.event.label || github.event.label.name == 'full-ci') }}
 
 jobs:
   deadcode:
@@ -336,10 +361,18 @@ jobs:
   # One result for the whole run, with a stable name for a branch rule or a
   # reader: red unless every job concluded "success", so a cancelled,
   # timed-out or skipped job reads red too, not only a failed one.
+  # `!cancelled()` asks whether the RUN was cancelled: after a failed or
+  # timed-out job this still runs and reads red. A cancelled run (superseded
+  # by a newer push, or a tier run superseded by the full-ci run) skips it, so
+  # it neither leaves a red `CI result` over the run that replaced it nor keeps
+  # the cancelled run waiting for a runner in the concurrency group. The
+  # trade-off: a skipped check counts as passing, so if `CI result` is ever
+  # made a required check, a cancelled run satisfies it. The repository's
+  # rules require none of these checks today.
   ci-result:
     name: CI result
     needs: [deadcode, test]
-    if: ${{ always() }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

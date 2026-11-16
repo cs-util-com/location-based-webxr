@@ -140,12 +140,21 @@ describe('a red script makes its job red, and one result job says whether all pa
     expect(testJob).not.toHaveProperty('continue-on-error');
   });
 
-  it('has a result job that waits for every other job, always runs, and is red unless all succeeded', () => {
+  // The result job runs after a failed or timed-out job (`!cancelled()` asks
+  // whether the RUN was cancelled, not a job), so those still read red. In a
+  // cancelled run it is skipped: with `always()` it ran there, saw cancelled
+  // needs and left a red `CI result` on a pull request whose full-ci run had
+  // superseded the tier run, and it kept that cancelled run waiting for a
+  // runner in the concurrency group while the full run sat pending. The cost:
+  // a skipped check counts as passing for a required check, so if `CI result`
+  // is ever made one, a cancelled run satisfies it. Today the repository's
+  // rules require none of these checks.
+  it('has a result job that waits for every other job, runs unless the run was cancelled, and is red unless all succeeded', () => {
     expect(resultJob, RESULT_JOB).toBeDefined();
     expect(resultJob.name).toBe('CI result');
     const others = Object.keys(workflow.jobs).filter((id) => id !== RESULT_JOB);
     expect([...resultJob.needs].sort()).toEqual(others.sort());
-    expect(resultJob.if).toBe('${{ always() }}');
+    expect(resultJob.if).toBe('${{ !cancelled() }}');
     expect(resultJob['timeout-minutes']).toBeGreaterThan(0);
     const run = resultJob.steps.map((s) => s.run ?? '').join('\n');
     // Every need must have concluded "success": a cancelled, timed-out or
@@ -183,17 +192,51 @@ describe('the workflow stays inside the free plan and never hangs', () => {
 
   // GitHub keeps only ONE pending run per concurrency group, so pushes to
   // main must not share one: of three quick merges the middle one would lose
-  // its run. A pull request groups by its ref, so a newer push cancels the old
-  // run; every other event gets a group of its own. The group starts with
-  // `github.workflow`, which in the full-ci label's call of this workflow is
-  // the CALLING workflow's name: the label run gets a group of its own and no
-  // longer cancels the pull request's run, which left a cancelled check on
-  // the pull request.
-  it('cancels a superseded pull request run on the same branch, and gives every push to main its own run', () => {
+  // its run. Every event but a pull request gets a group of its own (its run
+  // id), so a push to main, a dispatch and the nightly run are never cancelled.
+  // A pull request groups by its ref under a fixed prefix, NOT
+  // `github.workflow`: in the full-ci label's call of this workflow that would
+  // name the calling workflow, a group of its own. Sharing the group is the
+  // point: the full set contains everything the tier run checks, so the label
+  // run cancels the pull request's still-running tier run, which would
+  // otherwise hold about 14 of the account's 20 concurrent jobs for nothing. The
+  // tier run's jobs then show as cancelled on the pull request and its `CI
+  // result` as skipped, which is accepted.
+  it('cancels a superseded pull request run, the tier run when full-ci starts, and gives every push to main its own run', () => {
     expect(workflow.concurrency.group).toBe(
-      "${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
+      "ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
     );
-    expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name == 'pull_request' }}");
+    expect(workflow.concurrency.group).not.toContain('github.workflow');
+  });
+
+  // GitHub does not guarantee the order of runs in one group, and the newer
+  // run cancels the older. The label is set seconds after the pull request is
+  // opened, so the `opened` run may queue after the full-ci run: its payload
+  // was taken before the label existed, so it would run only the tier and
+  // cancel the full set. An `opened` run therefore never cancels a running
+  // one (there is nothing older for it to supersede); it waits instead, and
+  // then runs the whole tier after the full run, a rare waste of job slots.
+  // Every other pull request event, the full-ci label's included, cancels the
+  // older run, and no other event cancels anything.
+  //
+  // A label event carries `github.event.label`; any label other than full-ci
+  // never cancels, even if GitHub placed the called workflow in the group
+  // before it evaluated the caller job's `if`. The check reads the label's
+  // presence rather than the event's action, so this file still names no
+  // label event (see the label test below).
+  it('lets the full-ci run and later pushes cancel the older run, but never the opened run or another label', () => {
+    expect(workflow.concurrency['cancel-in-progress']).toBe(
+      "${{ github.event_name == 'pull_request' && github.event.action != 'opened' && (!github.event.label || github.event.label.name == 'full-ci') }}"
+    );
+  });
+
+  // A caller and its called workflow must not share a concurrency group
+  // (GitHub's reusable-workflow docs): the call would cancel itself. The group
+  // lives in ci.yml alone, which applies it in the label's call too.
+  it('keeps the concurrency group out of the full-ci caller', () => {
+    const label = parse(readFileSync(join(ROOT, '.github/workflows/ci-full-label.yml'), 'utf8'));
+    expect(label).not.toHaveProperty('concurrency');
+    for (const job of Object.values(label.jobs)) expect(job).not.toHaveProperty('concurrency');
   });
 });
 
@@ -389,7 +432,7 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
   // full-ci: a skipped job is a check of the same name on the same commit,
   // and a skipped "Dead code" would sit over the red one before it. So this
   // workflow does not listen to labels at all; ci-full-label.yml does, and
-  // calls it for full-ci only, in a concurrency group of its own.
+  // calls it for full-ci only.
   it('starts no job on any other label, and runs the whole workflow on full-ci', () => {
     const label = parse(readFileSync(join(ROOT, '.github/workflows/ci-full-label.yml'), 'utf8'));
     expect(label.on.pull_request.types).toEqual(['labeled']);
@@ -399,7 +442,7 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
     expect(call.uses).toBe('./.github/workflows/ci.yml');
     expect(workflow.on).toHaveProperty('workflow_call');
     expect(raw).not.toContain('labeled');
-    expect(resultJob.if).toBe('${{ always() }}');
+    expect(resultJob.if).toBe('${{ !cancelled() }}');
   });
 
   it('dispatches the full set nightly on the newest rNNN branch whose ci.yml can be dispatched', () => {
