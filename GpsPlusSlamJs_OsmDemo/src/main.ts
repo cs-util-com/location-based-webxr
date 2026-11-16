@@ -437,6 +437,8 @@ async function main(): Promise<void> {
     // The map reports a selection; it does not know the panel exists.
     onCellClick: (cell) => store.dispatch(actions.cellSelected(cell)),
     onRegionClick: (region) => store.dispatch(actions.regionSelected(region)),
+    // The page's legal link joins the map's one footer line, after "Credits".
+    legalLink: el<HTMLAnchorElement>("legal-link"),
   });
   // ONE REGISTRY FOR THE WHOLE DEMO (§1.4 step 5). Built here so §3's look
   // presets and §6's event clock reuse it rather than each attaching their own

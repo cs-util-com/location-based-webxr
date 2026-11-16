@@ -7,50 +7,66 @@ import { describe, expect, it } from "vitest";
 import { AttributionView, type AttributionEntry } from "./attribution-view.js";
 
 /**
- * WHY THESE TESTS MATTER (round three, G5, DEC-W1).
+ * WHY THESE TESTS MATTER.
  *
  * This is the one surface in the demo with an obligation attached rather than a
- * preference. ODbL requires the OpenStreetMap credit to be reasonably visible
- * wherever the data is shown, and this repo has recorded — in `map-view.ts` and
- * `main.ts` — that the elevation credits are required "the same as the OSM
- * one", which is precisely why they were put in the always-visible attribution
- * bar rather than in the collapsible header.
+ * preference. The OSMF attribution guidelines ask for "OpenStreetMap" to be
+ * credited without the user having to interact, as a link to its copyright
+ * page; the elevation sources (CC BY and similar licences) may be credited "in
+ * any reasonable manner", which includes a link to a page carrying the
+ * attribution - here, the Credits view one tap away beside the map.
  *
- * The thirteenth session asked for that bar to become one thin line with "one
- * word per attribution" and an expander. The first plan for it put the
- * elevation credits behind the tap and argued that only ODbL was in play; that
- * was false, and the cold review caught it. What ships instead keeps a SHORT
- * NAME for every source permanently visible and moves only the long text behind
- * the expander — which satisfies the owner's request more literally, not less.
- *
- * So the assertion that carries the weight is the first one: every source is
- * named without anyone interacting. A test that only checked the expanded state
- * would pass on a control that hides a credit until tapped.
+ * So the line is "© OpenStreetMap | Credits | Legal": the OSM credit pinned and
+ * linked, every other credit in the Credits view, and the legal notice beside
+ * them. The assertion that carries the weight is the first one: the OSM credit
+ * is in the resting line with no interaction. A test that only checked the
+ * expanded state would pass on a control that hides it until tapped.
  */
 const OSM: AttributionEntry = {
-  short: "OpenStreetMap",
+  short: "© OpenStreetMap",
   full: "© OpenStreetMap contributors",
   href: "https://www.openstreetmap.org/copyright",
+  pinned: true,
 };
 const MAPTERHORN: AttributionEntry = {
   short: "Mapterhorn",
   full: "Elevation data © Mapterhorn (national LiDAR sources, Copernicus GLO-30)",
+  href: "https://mapterhorn.com/attribution/",
 };
 const AWS: AttributionEntry = {
   short: "Mapzen/AWS",
   full: "Elevation data © Mapzen / AWS Open Data Terrain Tiles, sourced from SRTM, NED and others",
 };
 
-const view = (): AttributionView => new AttributionView();
+/** The page's own legal link, as `index.html` carries it. */
+function legalLink(): HTMLAnchorElement {
+  const link = document.createElement("a");
+  link.id = "legal-link";
+  link.href = "/legal/";
+  link.textContent = "Legal";
+  link.setAttribute("aria-label", "Legal notice and privacy");
+  document.body.append(link);
+  return link;
+}
 
-/** What a user can read without touching anything. */
-const restingText = (v: AttributionView): string =>
-  [...v.element.querySelectorAll(".map-attribution-short")]
-    .map((node) => node.textContent)
-    .join(" · ");
+/** A view mounted in the document, so focus behaves as in the page. */
+function view(): AttributionView {
+  const v = new AttributionView();
+  document.body.append(v.element);
+  return v;
+}
 
-const detailText = (v: AttributionView): string =>
-  v.element.querySelector(".map-attribution-full")?.textContent ?? "";
+const line = (v: AttributionView): HTMLElement => {
+  const el = v.element.querySelector(".map-attribution-line");
+  if (!(el instanceof HTMLElement)) throw new Error("no line");
+  return el;
+};
+
+const panel = (v: AttributionView): HTMLElement => {
+  const el = v.element.querySelector(".map-attribution-full");
+  if (!(el instanceof HTMLElement)) throw new Error("no panel");
+  return el;
+};
 
 const toggle = (v: AttributionView): HTMLButtonElement => {
   const button = v.element.querySelector(".map-attribution-toggle");
@@ -58,174 +74,210 @@ const toggle = (v: AttributionView): HTMLButtonElement => {
   return button;
 };
 
-describe("AttributionView", () => {
-  it("names EVERY source in the resting line, with no interaction", () => {
-    // THE LICENCE ASSERTION. Not "the credits exist somewhere in the DOM" —
-    // `textContent` matches hidden nodes, which is exactly how the previous
-    // e2e guard would have kept passing over an invisible credit.
+const escape = (target: Element): KeyboardEvent => {
+  const event = new KeyboardEvent("keydown", {
+    key: "Escape",
+    bubbles: true,
+    cancelable: true,
+  });
+  target.dispatchEvent(event);
+  return event;
+};
+
+describe("AttributionView: the resting line", () => {
+  it("reads '© OpenStreetMap | Credits | Legal' with no interaction", () => {
+    // THE LICENCE ASSERTION, on the rendered line itself (separators
+    // included), not on the whole control's `textContent`, which would also
+    // match text hidden in the closed Credits view.
     const v = view();
+    const link = legalLink();
+    v.adoptLegalLink(link);
     v.setEntries([OSM, MAPTERHORN, AWS]);
 
-    expect(restingText(v)).toBe("OpenStreetMap · Mapterhorn · Mapzen/AWS");
-    // THE RENDERED LINE, separators included. `restingText` reads only the
-    // name spans and joins them with a separator it supplies itself, so it
-    // would pass with `SEPARATOR` set to "" — the assertion that LOOKS like it
-    // covers the separator is checking a string the test built.
-    expect(v.element.querySelector(".map-attribution-line")?.textContent).toBe(
-      "OpenStreetMap · Mapterhorn · Mapzen/AWS",
-    );
-    expect(v.element.querySelector(".map-attribution-full")).toHaveProperty(
-      "hidden",
-      true,
-    );
+    expect(line(v).textContent).toBe("© OpenStreetMap | Credits | Legal");
+    expect(panel(v).hidden).toBe(true);
+    link.remove();
   });
 
-  it("reveals the full credit text only when expanded", () => {
-    const v = view();
-    v.setEntries([OSM, MAPTERHORN, AWS]);
-
-    const details = v.element.querySelector(".map-attribution-full");
-    expect(details).toHaveProperty("hidden", true);
-
-    toggle(v).click();
-    expect(details).toHaveProperty("hidden", false);
-    expect(detailText(v)).toContain("© OpenStreetMap contributors");
-    expect(detailText(v)).toContain("Copernicus GLO-30");
-    expect(detailText(v)).toContain("SRTM, NED and others");
-
-    toggle(v).click();
-    expect(details).toHaveProperty("hidden", true);
-  });
-
-  it("tracks the expanded state in `aria-expanded`", () => {
-    // The control is a disclosure; `hidden` alone says nothing to a screen
-    // reader about what the button does or which state it is in.
-    const v = view();
-    v.setEntries([OSM]);
-
-    expect(toggle(v).getAttribute("aria-expanded")).toBe("false");
-    toggle(v).click();
-    expect(toggle(v).getAttribute("aria-expanded")).toBe("true");
-  });
-
-  it("points the toggle at the panel it reveals", () => {
-    // `aria-expanded` says what STATE the control is in and never what it
-    // controls. Without `aria-controls` a screen-reader user has no
-    // programmatic route from the button to the revealed content.
-    const v = view();
-    v.setEntries([OSM]);
-
-    const panel = v.element.querySelector(".map-attribution-full");
-    expect(panel?.id).toBeTruthy();
-    expect(toggle(v).getAttribute("aria-controls")).toBe(panel?.id);
-  });
-
-  it("KEEPS the expanded state across a re-render", () => {
-    // THE REASON THIS CONTROL EXISTS AT ALL (F5). Leaflet's own attribution
-    // control rebuilds its innerHTML on every `addAttribution` — which fires on
-    // every terrain apply, repeatedly during normal use — so an expander living
-    // inside it would collapse itself mid-session at random. Owning the
-    // rendering is only worth it if re-rendering preserves what the user did.
-    const v = view();
-    v.setEntries([OSM, MAPTERHORN]);
-    toggle(v).click();
-    expect(toggle(v).getAttribute("aria-expanded")).toBe("true");
-
-    v.setEntries([OSM, MAPTERHORN, AWS]);
-
-    expect(toggle(v).getAttribute("aria-expanded")).toBe("true");
-    expect(v.element.querySelector(".map-attribution-full")).toHaveProperty(
-      "hidden",
-      false,
-    );
-    expect(restingText(v)).toBe("OpenStreetMap · Mapterhorn · Mapzen/AWS");
-  });
-
-  it("drops a source when it stops being on screen", () => {
-    // Removal matters as much as addition: crediting a DEM source whose tiles
-    // all failed would be a claim about what is being shown.
-    const v = view();
-    v.setEntries([OSM, MAPTERHORN, AWS]);
-    v.setEntries([OSM]);
-
-    expect(restingText(v)).toBe("OpenStreetMap");
-    expect(detailText(v)).not.toContain("Mapterhorn");
-  });
-
-  it("links the short name when the source has a canonical page, and not otherwise", () => {
+  it("links the pinned OSM credit to the copyright page, opened safely", () => {
+    // OSMF: the text "OpenStreetMap" as a link to openstreetmap.org/copyright
+    // is how the attribution also names the ODbL.
     const v = view();
     v.setEntries([OSM, MAPTERHORN]);
 
-    const links = [...v.element.querySelectorAll(".map-attribution-short a")];
+    const links = [...line(v).querySelectorAll("a")];
     expect(links).toHaveLength(1);
+    expect(links[0]?.textContent).toBe("© OpenStreetMap");
     expect(links[0]?.getAttribute("href")).toBe(
       "https://www.openstreetmap.org/copyright",
     );
-    // A cross-origin link opened from the map must not hand the opener over.
     expect(links[0]?.getAttribute("rel")).toContain("noopener");
   });
 
-  it("renders sheet-derived text through `textContent`, never as markup", () => {
-    // The same rule `legend-view.ts` follows and for the same reason: this app
-    // renders externally-authored strings, and the credit text is a string from
-    // a library constant that could one day carry a character with meaning in
-    // HTML. Avoiding the sink beats escaping through one.
+  it("keeps the unpinned credits out of the line and in the Credits view", () => {
     const v = view();
-    v.setEntries([{ short: "<b>x</b>", full: "<img src=x onerror=boom>" }]);
+    v.setEntries([OSM, MAPTERHORN, AWS]);
 
-    expect(v.element.querySelector("b")).toBeNull();
-    expect(v.element.querySelector("img")).toBeNull();
-    expect(restingText(v)).toBe("<b>x</b>");
+    expect(line(v).textContent).not.toContain("Mapterhorn");
+    expect(line(v).textContent).not.toContain("Mapzen");
+    expect(panel(v).textContent).toContain("Copernicus GLO-30");
+    expect(panel(v).textContent).toContain("SRTM, NED and others");
   });
 
-  it("shows nothing at all when there is nothing to credit", () => {
-    // Not a stray separator or an empty "Attributions" button hanging in the
-    // corner of the map.
+  it("hides the pipes from screen readers", () => {
+    // Three links in a row read best with a visual separator, but "vertical
+    // line" announced between them is noise.
+    const v = view();
+    const link = legalLink();
+    v.adoptLegalLink(link);
+    v.setEntries([OSM]);
+
+    const separators = [...line(v).querySelectorAll(".map-attribution-sep")];
+    expect(separators).toHaveLength(2);
+    for (const sep of separators) {
+      expect(sep.getAttribute("aria-hidden")).toBe("true");
+      expect(sep.textContent).toBe(" | ");
+    }
+    link.remove();
+  });
+
+  it("adopts the page's legal link rather than building a second one", () => {
+    // The link lives in `index.html` so the page works, and the repo-config
+    // check finds it, without this script; the line only moves it.
+    const v = view();
+    const link = legalLink();
+    v.adoptLegalLink(link);
+    v.setEntries([OSM]);
+
+    expect(line(v).contains(link)).toBe(true);
+    expect(document.querySelectorAll("#legal-link")).toHaveLength(1);
+    expect(link.getAttribute("href")).toBe("/legal/");
+    // The visible word is part of the accessible name (WCAG 2.5.3).
+    expect(link.getAttribute("aria-label")).toMatch(/^Legal/);
+    link.remove();
+  });
+
+  it("shows nothing at all when there is nothing to credit and no legal link", () => {
     const v = view();
     v.setEntries([]);
-
     expect(v.element.hidden).toBe(true);
+
+    // The legal link alone still earns the line a place.
+    const link = legalLink();
+    v.adoptLegalLink(link);
+    expect(v.element.hidden).toBe(false);
+    expect(line(v).textContent).toBe("Credits | Legal");
+    link.remove();
   });
 });
 
-describe("the expander label (H3, fourteenth session)", () => {
-  /**
-   * Why these tests matter: the owner asked for the word "Attributions" to
-   * become "…" so the resting line stays thin. A one-character label is a real
-   * accessibility hazard — a screen reader announces "button, horizontal
-   * ellipsis" — so the visible text and the ACCESSIBLE name have to diverge
-   * here, and the accessible name is the part that must stay descriptive.
-   *
-   * The width floor is the second half. Shrinking the label shrinks the box,
-   * and this control has already been under the 24 px tap floor once; a height
-   * floor alone would let it pass at 24 × 12.
-   */
-  it("shows an ellipsis but is still ANNOUNCED as what it does", () => {
+describe("AttributionView: the Credits view", () => {
+  it("opens and closes from 'Credits', tracking aria-expanded", () => {
     const v = view();
-    v.setEntries([OSM]);
+    v.setEntries([OSM, MAPTERHORN, AWS]);
     const button = toggle(v);
 
-    expect(button.textContent).toBe("…");
-    // Not "contains" — an aria-label that merely mentions attributions while
-    // the name is still the ellipsis would pass a looser assertion.
-    expect(button.getAttribute("aria-label")).toMatch(/attribution/i);
-    // The disclosure contract from round three must survive the relabel: these
-    // two are what make the ellipsis mean anything to a screen reader at all.
+    expect(button.textContent).toBe("Credits");
     expect(button.getAttribute("aria-expanded")).toBe("false");
-    expect(button.getAttribute("aria-controls")).toBeTruthy();
+    button.click();
+    expect(panel(v).hidden).toBe(false);
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    button.click();
+    expect(panel(v).hidden).toBe(true);
+    expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("keeps the accessible name stable while the state changes", () => {
-    // `aria-expanded` carries the state; the NAME must not also change, or the
-    // control announces as two different buttons depending on where it is.
+  it("points the toggle at the view it reveals", () => {
     const v = view();
     v.setEntries([OSM]);
-    const button = toggle(v);
-    const name = button.getAttribute("aria-label");
 
-    button.click();
-    expect(button.getAttribute("aria-expanded")).toBe("true");
-    expect(button.getAttribute("aria-label")).toBe(name);
-    expect(button.textContent).toBe("…");
+    expect(panel(v).id).toBeTruthy();
+    expect(toggle(v).getAttribute("aria-controls")).toBe(panel(v).id);
+  });
+
+  it("makes every credit with a page a real link, and leaves the rest as text", () => {
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN, AWS]);
+    toggle(v).click();
+
+    const rows = [...panel(v).querySelectorAll(".map-attribution-credit")];
+    expect(rows.map((row) => row.textContent)).toEqual([
+      OSM.full,
+      MAPTERHORN.full,
+      AWS.full,
+    ]);
+    const hrefs = rows.map(
+      (row) => row.querySelector("a")?.getAttribute("href") ?? null,
+    );
+    expect(hrefs).toEqual([OSM.href, MAPTERHORN.href, null]);
+    for (const link of panel(v).querySelectorAll("a")) {
+      expect(link.getAttribute("rel")).toContain("noopener");
+    }
+  });
+
+  it("closes on Escape from inside it and returns focus to 'Credits'", () => {
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN]);
+    toggle(v).click();
+    const link = panel(v).querySelector("a");
+    if (!(link instanceof HTMLAnchorElement)) throw new Error("no link");
+    link.focus();
+
+    const event = escape(link);
+
+    expect(panel(v).hidden).toBe(true);
+    expect(toggle(v).getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle(v));
+    // Handled here, so a page-level Escape handler does not also act on it.
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves Escape alone while closed", () => {
+    // A closed Credits view has nothing to close; swallowing the key would
+    // break whatever else on the page listens for it.
+    const v = view();
+    v.setEntries([OSM]);
+
+    const event = escape(toggle(v));
+    expect(event.defaultPrevented).toBe(false);
+    expect(panel(v).hidden).toBe(true);
+  });
+
+  it("KEEPS the open state across a re-render", () => {
+    // The reason the demo owns this control: Leaflet's rebuilds its innerHTML
+    // on every credit change, which happens on every terrain apply.
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN]);
+    toggle(v).click();
+
+    v.setEntries([OSM, MAPTERHORN, AWS]);
+
+    expect(toggle(v).getAttribute("aria-expanded")).toBe("true");
+    expect(panel(v).hidden).toBe(false);
+    expect(panel(v).textContent).toContain("SRTM");
+  });
+
+  it("drops a source when it stops being on screen", () => {
+    // Crediting a DEM source whose tiles all failed would be a claim about
+    // what is being shown.
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN, AWS]);
+    v.setEntries([OSM]);
+
+    expect(panel(v).textContent).not.toContain("Mapterhorn");
+    expect(line(v).textContent).toContain("© OpenStreetMap");
+  });
+
+  it("renders credit text through `textContent`, never as markup", () => {
+    // Credits are externally-authored strings; avoiding the HTML sink beats
+    // escaping through one.
+    const v = view();
+    v.setEntries([
+      { short: "<b>x</b>", full: "<img src=x onerror=boom>", pinned: true },
+    ]);
+
+    expect(v.element.querySelector("b")).toBeNull();
+    expect(v.element.querySelector("img")).toBeNull();
+    expect(line(v).textContent).toContain("<b>x</b>");
   });
 });

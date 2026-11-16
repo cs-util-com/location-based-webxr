@@ -854,66 +854,51 @@
         display: none;
       }
 
-      /* THE ATTRIBUTION LINE (G5, DEC-W1). One thin line by default: a short
-         name per source, always visible, plus a blue "Attributions" control
-         that reveals the full credit text.
+      /* THE MAP FOOTER: one line, "© OpenStreetMap | Credits | Legal".
 
-         WHAT MAY NOT COLLAPSE, and why this is not a preference. ODbL requires
-         the OpenStreetMap credit wherever the data is shown, and this repo
-         records the two elevation credits as required "the same as the OSM
-         one" -- which is why they were put in this always-visible bar and not
-         in the collapsible header. So the SHORT NAMES stay outside the
-         expander; only the long sentences move behind it. The owner asked for
-         "one word per attribution" in a thin line, and one short name each is
-         exactly that.
+         "© OpenStreetMap" stays visible without interaction and links to the
+         copyright page, as the OSMF attribution guidelines ask. "Credits"
+         opens the full list, every source linked where it has a page; the
+         elevation sources' licences accept a credit one tap away. "Legal" is
+         the site-wide legal notice and privacy page. The reasoning and its
+         sources are in `attribution-view.ts.md`.
 
          The control is the demo's own, not Leaflet's -- see
          `attribution-view.ts` for why -- and keeps the
          `leaflet-control-attribution` class so Leaflet's own styling still
          applies underneath these rules. */
-      /* NO `max-width` HERE, and its absence is deliberate (PR review of this
-         milestone, finding 2). A 60vw cap looked like prudence and was the one
-         thing breaking the milestone's own acceptance criterion: Leaflet's
-         corner is absolutely positioned inside the map pane, so the box is
-         ALREADY bounded by the map's width, and 60vw of a 390 px phone is a
-         224 px content box against ~318 px of resting content -- so the "one
-         thin line" wrapped to two, on exactly the viewport the e2e runs at. On
-         desktop the map is ~50vw, so the cap never bound there and the rule was
-         inert where it was harmless and harmful where it was not. */
+      /* NO `max-width` HERE, and its absence is deliberate: Leaflet's corner
+         is absolutely positioned inside the map pane, so the box is already
+         bounded by the map's width, and a viewport cap wrapped the line to two
+         on a 390 px phone. */
+      /* A REAL TAP TARGET for every item: 1.5 rem = 24 px tall, the WCAG 2.2
+         SC 2.5.8 floor. Not 44 px: the line is meant to stay thin. */
+      .map-attribution-line a,
       .map-attribution-toggle {
-        /* A REAL TAP TARGET, and this is the third time in two days the same
-           lesson has been paid for. `font: inherit` resolves to Leaflet's
-           0.75 rem, so with `padding: 0` this control shipped at roughly
-           65 x 17 px -- under WCAG 2.2 SC 2.5.8's 24 x 24 floor, and smaller
-           than the header caret whose size the owner complained about twice.
-           It is the only new touch control in the milestone whose whole subject
-           is a control being wrong on a phone.
-
-           1.5 rem = 24 px, NOT the 2.75 rem the header toggle uses, and that is
-           a judgement rather than an oversight: the owner asked for a thin line,
-           and a 44 px control is most of the height they asked to get rid of.
-           24 px is the accessibility floor, and unlike the caret this control
-           has a large easy-to-hit sibling in the resting line beside it. */
+        display: inline-block;
         min-height: 1.5rem;
-        /* AND A WIDTH FLOOR (H3). The label became a single "…", so the box no
-           longer gets its width from the text -- without this the control
-           shrinks to roughly 24 x 12 and satisfies a height-only floor while
-           being unpressable. WCAG 2.2 SC 2.5.8 is 24 px in BOTH directions and
-           only one of them was ever pinned. */
+        line-height: 1.5rem;
+        vertical-align: bottom;
+      }
+      .map-attribution-toggle {
+        /* And a width floor, so 24 px holds in both directions. */
         min-width: 1.5rem;
-        margin-left: 0.35rem;
-        padding: 0 0.25rem;
+        padding: 0;
         border: 0;
         background: none;
-        /* Leaflet's own attribution link colour, so the control reads as the
-           link the feedback asked for rather than as a stray button. */
+        /* Leaflet's own attribution link colour, so "Credits" reads as one of
+           the three links in the line rather than as a stray button. */
         color: #0078a8;
         font: inherit;
         text-decoration: underline;
         cursor: pointer;
       }
+      /* The pipes are decoration (hidden from screen readers in the markup). */
+      .map-attribution-sep {
+        opacity: 0.6;
+      }
 
-      /* The three lines the feedback said it may expand to.
+      /* The Credits view, one row per source.
          NO `max-width` and NO `color`: both were duplicates of what Leaflet's
          own `.leaflet-control-attribution` already gives this subtree, and the
          comment that used to sit here claimed the width cap was what kept a long
@@ -975,10 +960,11 @@
           max-height: calc(var(--sheet-height, 45%) - 1rem);
         }
       }
-      /* The site-wide legal notice and privacy page: a small fixed link in
-         the bottom-left corner, out of the header and out of the grid, so it
-         moves no control. Leaflet keeps that corner of the map free. */
-      #legal-link {
+      /* The site-wide legal notice and privacy page. The map moves this link
+         into its footer line ("... | Credits | Legal", `attribution-view.ts`);
+         until it does, or if the script never runs, it waits in the
+         bottom-left corner so the page still offers it. */
+      body > #legal-link {
         position: fixed;
         left: 0.5rem;
         bottom: 0.4rem;
@@ -988,14 +974,6 @@
         background: rgb(11 11 13 / 70%);
         color: #9db8ff;
         font-size: 11px;
-      }
-      /* A narrow phone cannot fit the link beside the map's credit line, so
-         it sits on its own line above it, and the footer the panels stop
-         above grows to hold both lines. */
-      @media (width <= 480px) {
-        #legal-link {
-          bottom: 26px;
-        }
       }
 
       /* THE COMMAND BAR AND ITS PANELS.
@@ -1345,7 +1323,7 @@
       }
 
       /* PHONES: the map is a sheet at the bottom, so the slot covers the
-         sheet and stops above the footer line (legal link, attribution).
+         sheet and stops above the map's footer line.
          It leaves the map's right column free, so locate and AR stay
          reachable while a panel is open. */
       @media (width <= 860px) {
@@ -1402,13 +1380,6 @@
         #map .leaflet-top.leaflet-left {
           right: 0;
           left: auto;
-        }
-      }
-      /* The footer the panels stop above holds both lines on a narrow phone
-         (after the `:root` tokens at the top, which would otherwise win). */
-      @media (width <= 480px) {
-        :root {
-          --hud-foot: 48px;
         }
       }
       /* Narrow: the bar takes two rows, where (place, category, cells) and
@@ -1841,8 +1812,12 @@
            underneath is what you consult while choosing a time. -->
       <aside id="geo-event-picker" class="plate" hidden></aside>
     </main>
-    <a id="legal-link" href="/legal/" data-testid="legal-link"
-      >Legal notice and privacy</a
+    <a
+      id="legal-link"
+      href="/legal/"
+      data-testid="legal-link"
+      aria-label="Legal notice and privacy"
+      >Legal</a
     >
     <script type="module" src="/src/main.ts"></script>
   </body>

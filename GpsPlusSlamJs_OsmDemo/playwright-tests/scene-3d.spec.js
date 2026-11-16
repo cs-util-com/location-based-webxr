@@ -1058,19 +1058,20 @@ test.describe("the 3D view", () => {
       );
       expect(counts.terrain).toBeGreaterThan(0);
 
-      // Attribution is required wherever the data is shown, exactly as for OSM —
-      // and it lives in the map's attribution line rather than the header,
-      // because the header collapses and a credit that can be collapsed away does
-      // not satisfy the obligation (DEC-R2-4).
+      // Attribution is required wherever the data is shown. The elevation
+      // credits live in the map footer's Credits view, one tap from the line,
+      // and only while terrain is on screen.
       //
-      // VISIBLE, not merely present in `textContent` (round three, F10). The
-      // line has an expander now, so a `toContainText` assertion here would
-      // match a credit hidden behind it and report the obligation as met.
+      // VISIBLE once opened, not merely present in `textContent`, which also
+      // matches the closed view and would report the credit as shown.
+      const credits = page.locator("#map .map-attribution-toggle");
+      await credits.click();
       await expect(
         page
-          .locator("#map .map-attribution-short")
+          .locator("#map .map-attribution-credit")
           .filter({ hasText: /Mapzen/ }),
       ).toBeVisible();
+      await credits.click();
 
       // And the terrain is actually doing something, not merely fetched. The
       // relief is in the status line because a viewer needs it for the same

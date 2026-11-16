@@ -116,6 +116,12 @@ Everything that can be wrong in an interesting way is pure and unit-tested:
 OSM data is ODbL. Both the basemap and the derived grid are shown here, so the
 `© OpenStreetMap contributors` attribution on the map is required, not optional.
 
+The map has one footer line at its bottom right, "© OpenStreetMap | Credits |
+Legal": the OSM credit always visible and linked to its copyright page,
+"Credits" opening every source's credit (the elevation tiles included), each
+linked, and "Legal" the site's legal notice and privacy page. What each
+provider requires is in `src/attribution-view.ts.md`.
+
 ## Network
 
 Fetches live Overpass on first use and caches to OPFS (falling back to memory).

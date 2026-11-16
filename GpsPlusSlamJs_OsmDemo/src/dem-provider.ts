@@ -88,8 +88,18 @@ export const FAST_DEM_SOURCE_ID = "aws-open-data";
  * it is given — the sidecar files that gap as library follow-up.
  */
 export const DEM_ATTRIBUTION_ENTRIES: readonly AttributionEntry[] = [
-  { short: "Mapterhorn", full: MAPTERHORN_ATTRIBUTION },
-  { short: "Mapzen/AWS", full: TERRARIUM_ATTRIBUTION },
+  // Each links the page that lists its sources and their licences, which is
+  // what the Credits view promises: every provider a real link.
+  {
+    short: "Mapterhorn",
+    full: MAPTERHORN_ATTRIBUTION,
+    href: "https://mapterhorn.com/attribution/",
+  },
+  {
+    short: "Mapzen/AWS",
+    full: TERRARIUM_ATTRIBUTION,
+    href: "https://github.com/tilezen/joerd/blob/master/docs/attribution.md",
+  },
 ];
 
 /**

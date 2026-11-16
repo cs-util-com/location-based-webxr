@@ -1150,75 +1150,63 @@ test.describe("the phone layout", () => {
       await expectNoPanelOpen(page);
     });
 
-    await test.step("keeps every credit VISIBLE", async () => {
-      // Attribution is required wherever the data is shown, so it may not be
-      // folded away. It lives in the map's own line (DEC-R2-4), which is always
-      // on screen.
+    await test.step("keeps the footer to one line, the OSM credit VISIBLE", async () => {
+      // One line at the map's bottom right: "© OpenStreetMap | Credits | Legal".
+      // The OSMF attribution guidelines ask for the OpenStreetMap credit
+      // without interaction, so it is pinned in the line; the elevation credits
+      // are in the Credits view one tap away, which their licences accept.
       //
-      // MIGRATED FROM `toContainText` TO VISIBILITY (round three, G5/F10), and
-      // this is the most important line in the step. `toContainText` matches on
-      // `textContent`, which includes CSS-hidden nodes — so once the line grew
-      // an expander, the old assertions kept passing over credits nobody could
-      // see. The guard for the one rule in this app with legal weight would
-      // have stopped guarding SILENTLY, which is worse than not having it.
-      //
-      // Verified by construction: these locators resolve to the short names in
-      // the resting line, and the expanded panel is asserted separately below.
-      const shortNames = page.locator("#map .map-attribution-short");
-      await expect(shortNames).toHaveText([
-        "OpenStreetMap",
-        "Mapterhorn",
-        "Mapzen/AWS",
-      ]);
-      // BOTH DEM sources, by name. The composition falls back per tile, so a
-      // session may stand on either — a credit naming only one of them stops
-      // satisfying the obligation the moment the other serves a tile. And each
-      // is asserted VISIBLE, not merely present.
-      for (const name of ["OpenStreetMap", "Mapterhorn", "Mapzen/AWS"]) {
-        await expect(shortNames.filter({ hasText: name })).toBeVisible();
-      }
+      // VISIBILITY, not `toContainText` on the control: `textContent` includes
+      // CSS-hidden nodes, so it would match a credit nobody can see.
+      const line = page.locator("#map .map-attribution-line");
+      await expect(line).toHaveText("© OpenStreetMap | Credits | Legal");
+      const osm = line.locator("a.map-attribution-short");
+      await expect(osm).toBeVisible();
+      await expect(osm).toHaveAttribute(
+        "href",
+        "https://www.openstreetmap.org/copyright",
+      );
+      // The page's legal link moved into the line; no second corner remains.
+      const legal = page.locator("#legal-link");
+      await expect(legal).toHaveCount(1);
+      await expect(line.locator("#legal-link")).toBeVisible();
+      await expect(legal).toHaveAttribute("href", "/legal/");
 
-      // THE THIN LINE THE FEEDBACK ASKED FOR: the long credit text starts
-      // hidden, and only the short names are on screen.
       const full = page.locator("#map .map-attribution-full");
       await expect(full).toBeHidden();
 
-      // AND IT IS ACTUALLY ONE LINE, at the 390 px width this describe runs at.
-      // That is the milestone's acceptance criterion and nothing tested it —
-      // which is how a `max-width: 60vw` "safety" cap shipped that wrapped the
-      // bar to two lines on a phone while every other assertion stayed green.
-      // Two line-heights at Leaflet's 0.75 rem/1.4 is ~34 px, so 26 px
-      // separates one line from two without pinning an exact height.
-      const restingBox = await page
-        .locator("#map .map-attribution-line")
-        .boundingBox();
-      expect(restingBox?.height ?? 0).toBeLessThan(26);
+      // AND IT IS ACTUALLY ONE LINE at the 390 px width this describe runs at.
+      // Two lines of 24 px targets would be ~48 px; 34 px separates the two
+      // without pinning an exact height.
+      const restingBox = await line.boundingBox();
+      expect(restingBox?.height ?? 0).toBeLessThan(34);
 
-      // THE EXPANDER IS BIG ENOUGH TO PRESS. It shipped at roughly 65 x 17 px —
-      // `font: inherit` resolves to Leaflet's 0.75 rem and the rule set
-      // `padding: 0` — which is under WCAG 2.2 SC 2.5.8's 24 px floor and
-      // SMALLER than the header caret the owner complained about twice. The one
-      // new touch control in the milestone about a control being wrong on a
-      // phone. 24 rather than 44 is deliberate: the request was for a thin line.
-      const toggleBox = await page
-        .locator("#map .map-attribution-toggle")
-        .boundingBox();
-      expect(toggleBox?.height ?? 0).toBeGreaterThanOrEqual(24);
-      // BOTH DIRECTIONS, since H3 replaced the label with a single "…" and the
-      // box stopped getting its width from the text. A height-only floor would
-      // pass at 24 x 12, which is the shape this control would now take.
-      expect(toggleBox?.width ?? 0).toBeGreaterThanOrEqual(24);
+      // EVERY ITEM IS BIG ENOUGH TO PRESS: WCAG 2.2 SC 2.5.8's 24 px floor, in
+      // both directions. 24 rather than 44 is deliberate: the line stays thin.
+      const toggle = page.locator("#map .map-attribution-toggle");
+      for (const target of [osm, toggle, legal]) {
+        const box = await target.boundingBox();
+        expect(box?.height ?? 0).toBeGreaterThanOrEqual(24);
+        expect(box?.width ?? 0).toBeGreaterThanOrEqual(24);
+      }
 
-      await page.locator("#map .map-attribution-toggle").click();
+      // CREDITS lists every source, each a link where it has a page.
+      await toggle.click();
       await expect(full).toBeVisible();
       await expect(full).toContainText(/Copernicus/i);
       await expect(full).toContainText(/SRTM/i);
       await expect(full).toContainText("OpenStreetMap contributors");
-      await page.locator("#map .map-attribution-toggle").click();
-      await expect(full).toBeHidden();
+      await expect(full.locator("a")).toHaveCount(3);
 
-      // AND LEAFLET'S COURTESY LINK IS GONE — the one credit here that is not a
-      // licence term, which the session asked to drop.
+      // ESCAPE closes it and puts focus back on "Credits".
+      await full.locator("a").first().focus();
+      await page.keyboard.press("Escape");
+      await expect(full).toBeHidden();
+      await expect(toggle).toBeFocused();
+      await expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+      // AND LEAFLET'S COURTESY LINK IS GONE: the one credit here that is not a
+      // licence term.
       await expect(
         page.locator("#map .leaflet-control-attribution a[href*='leafletjs']"),
       ).toHaveCount(0);
