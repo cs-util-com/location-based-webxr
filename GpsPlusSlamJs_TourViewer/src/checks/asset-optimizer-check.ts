@@ -481,3 +481,41 @@ export function bestLag(
   }
   return best;
 }
+
+/** A model file's bytes by kind: `textures` are the buffer views its
+ *  images name (a view two images share counts once), `geometry` is the
+ *  rest (vertices, indices, the saved coarser levels, the JSON). Throws
+ *  with words on a file that is no GLB or whose images name a buffer view
+ *  it does not have. */
+export function glbByteShares(bytes: Uint8Array): {
+  readonly total: number;
+  readonly textures: number;
+  readonly geometry: number;
+} {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (bytes.length < 20 || view.getUint32(0, true) !== 0x46546c67) {
+    throw new Error("the file is no GLB");
+  }
+  const jsonLength = view.getUint32(12, true);
+  const json = JSON.parse(
+    new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)),
+  ) as { bufferViews?: { byteLength?: number }[]; images?: unknown[] };
+  const views = json.bufferViews ?? [];
+  const named = new Set<number>();
+  for (const image of json.images ?? []) {
+    const index = (image as { bufferView?: unknown } | null)?.bufferView;
+    if (index === undefined) continue;
+    if (
+      typeof index !== "number" ||
+      typeof views[index]?.byteLength !== "number"
+    ) {
+      throw new Error(
+        `an image names buffer view ${JSON.stringify(index)}, not in the file`,
+      );
+    }
+    named.add(index);
+  }
+  let textures = 0;
+  for (const index of named) textures += views[index]!.byteLength!;
+  return { total: bytes.length, textures, geometry: bytes.length - textures };
+}

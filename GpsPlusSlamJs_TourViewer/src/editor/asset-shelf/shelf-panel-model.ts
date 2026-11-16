@@ -470,13 +470,23 @@ export interface DetailView {
 const DETAIL_FIXED =
   "Its detail can no longer be changed: the original was let go at the last save.";
 
-/** A made model's detail slider: its stops (the shares the optimizer
- *  measured, and the default level as a stop of its own while it is the
- *  tour's), the stop the tour holds, and whether it can be moved; null
- *  for a row with no detail. */
-export function detailView(row: ShelfRow): DetailView | null {
-  const d = row.detail;
-  if (d === undefined) return null;
+/** A level of detail as the slider reads it: the measured stops, the
+ *  share the tour holds (null: the default level) and that level's
+ *  triangles and deviation. */
+export interface DetailLevels {
+  readonly choices: readonly DetailStop[];
+  readonly share: number | null;
+  readonly triangles: number;
+  readonly deviation: number;
+}
+
+/** The detail slider's stops, fewest triangles first: the shares the
+ *  optimizer measured, and the default level as a stop of its own while
+ *  it is the one held; `at` is the held stop. */
+export function detailStops(d: DetailLevels): {
+  readonly stops: readonly DetailStop[];
+  readonly at: number;
+} {
   const stops: DetailStop[] = d.choices.map((c) => ({
     share: c.share,
     triangles: c.triangles,
@@ -490,9 +500,17 @@ export function detailView(row: ShelfRow): DetailView | null {
     0,
     stops.findIndex((s) => s.share === d.share),
   );
+  return { stops, at };
+}
+
+/** A made model's detail slider: its stops (`detailStops`), the stop
+ *  the tour holds, and whether it can be moved; null for a row with no
+ *  detail. */
+export function detailView(row: ShelfRow): DetailView | null {
+  const d = row.detail;
+  if (d === undefined) return null;
   return {
-    stops,
-    at,
+    ...detailStops(d),
     isDefault: d.share === null,
     adjustable: d.adjustable,
     busy: d.busy,

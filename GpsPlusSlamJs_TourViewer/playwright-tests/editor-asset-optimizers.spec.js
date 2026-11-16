@@ -636,47 +636,76 @@ test("models: the default level of detail keeps fewer triangles, its box within 
 });
 
 // Why this test matters: on a phone every variant looked the same in small
-// fixed tiles, so the models are compared in one large view whose buttons
-// swap only the model. If a switch moved the camera, or dropped the
-// wireframe look, the jump at the same spot that shows a removed triangle
-// would be gone. The phone layouts are pinned, and screenshots of both are
-// kept with the run for a person to look at.
-test("models, the large view: a switch keeps the camera, the wireframe stays on, phone layouts", async ({
+// fixed tiles, so the models are compared in one large view with two
+// sliders (geometry, then texture) that change only the model. If a slider
+// moved the camera, or dropped the wireframe look, the jump at the same
+// spot that shows a removed triangle would be gone; the size must be in
+// view with the sliders, since it is what the sliders are traded against.
+// The phone layouts are pinned, and screenshots of both are kept with the
+// run for a person to look at.
+test("models, the large view: the sliders keep the camera, the wireframe stays on, phone layouts", async ({
   page,
 }, testInfo) => {
   test.setTimeout(600_000);
   await page.setViewportSize({ width: 390, height: 844 });
   const errors = await openCheck(page);
   await page.getByRole("button", { name: "Utility box" }).click();
-  await expect(page.locator("#status")).toHaveText(/^Models done/, {
+  await expect(page.locator("#status")).toHaveText("Model ready.", {
     timeout: 540_000,
   });
   const read = () =>
     page.evaluate(() =>
       /** @type {any} */ (window).assetOptimizerCheck.modelView(),
     );
-  const buttons = page.locator("#model-variants button");
-  await expect(buttons).toHaveCount(7);
-  await expect(buttons.first()).toHaveAttribute("aria-pressed", "true");
-  const facts = page.locator("#model-facts");
-  await expect(facts).toContainText("Original");
+  /** Waits until the variant the sliders name is the one drawn. */
+  const settled = async () => {
+    await expect
+      .poll(async () => (await read()).busy, { timeout: 300_000 })
+      .toBe(false);
+    return read();
+  };
+  const geometry = page.getByLabel("Geometry: triangles kept up close");
+  const texture = page.getByLabel("Texture: largest side");
+  // The caption names the original's texture size; the sliders start on
+  // the default level and the shelf's 1024 px.
+  await expect(page.locator("#model-caption")).toContainText(
+    "textures up to 2048 px",
+  );
+  const first = await read();
+  const defaultStop = first.stops.findIndex(
+    (/** @type {any} */ s) => s.share === null,
+  );
+  expect(first.state.geometry).toBe(defaultStop);
+  await expect(page.locator("#model-geometry-out")).toContainText("(default)");
+  await expect(page.locator("#model-texture-out")).toHaveText(
+    "1024 px (default)",
+  );
+  await expect(page.locator("#model-size-share")).toContainText(
+    "% of the original",
+  );
 
-  // The view at full width (the body's 16 px padding either side), its
-  // buttons under it.
+  // The view at full width (the body's 16 px padding either side); under
+  // it the size, then the geometry slider above the texture slider.
   const canvas = page.locator("#model-canvas");
   // In view, so the drag below lands on it.
   await canvas.scrollIntoViewIfNeeded();
   const view = /** @type {NonNullable<any>} */ (await canvas.boundingBox());
   expect(view.width).toBeGreaterThanOrEqual(390 - 32 - 1);
   expect(view.height).toBeGreaterThanOrEqual(300);
-  const bar = /** @type {NonNullable<any>} */ (
-    await page.locator("#model-variants").boundingBox()
-  );
-  expect(bar.y).toBeGreaterThanOrEqual(view.y + view.height);
+  const box = async (/** @type {import("@playwright/test").Locator} */ l) =>
+    /** @type {NonNullable<any>} */ (await l.boundingBox());
+  const size = await box(page.locator("#model-size-bytes"));
+  const geometryBox = await box(geometry);
+  const textureBox = await box(texture);
+  expect(size.y).toBeGreaterThanOrEqual(view.y + view.height);
+  expect(geometryBox.y).toBeGreaterThan(size.y);
+  expect(textureBox.y).toBeGreaterThan(geometryBox.y);
+  expect(geometryBox.width).toBeGreaterThanOrEqual(390 - 32 - 1);
+  expect(geometryBox.height).toBeGreaterThanOrEqual(44);
   await page.screenshot({ path: testInfo.outputPath("models-phone.png") });
 
-  // Orbit by a drag, then switch: the camera stays exactly where it is.
-  const framed = await read();
+  // Orbit by a drag, then move the geometry slider to every triangle: the
+  // camera stays exactly where it is, and the file grows.
   await page.mouse.move(view.x + view.width / 2, view.y + view.height / 2);
   await page.mouse.down();
   await page.mouse.move(
@@ -686,25 +715,34 @@ test("models, the large view: a switch keeps the camera, the wireframe stays on,
   );
   await page.mouse.up();
   const orbited = await read();
-  expect(orbited.position).not.toEqual(framed.position);
-  await page.getByRole("button", { name: "Every triangle" }).click();
-  await expect(buttons.nth(2)).toHaveAttribute("aria-pressed", "true");
-  await expect(facts).toContainText("full mesh, no thinning");
-  const switched = await read();
-  expect(switched.shownLabel).toBe("every triangle, 1024 px textures");
-  expect(switched.position).toEqual(orbited.position);
-  expect(switched.target).toEqual(orbited.target);
+  expect(orbited.position).not.toEqual(first.position);
+  await geometry.focus();
+  await page.keyboard.press("End");
+  const full = await settled();
+  expect(full.triangles).toBe(full.stops.at(-1).triangles);
+  expect(full.triangles).toBeGreaterThan(first.triangles);
+  expect(full.bytes).toBeGreaterThan(first.bytes);
+  expect(full.position).toEqual(orbited.position);
+  expect(full.target).toEqual(orbited.target);
 
   // The wireframe look: wire lines on, textures off, and it stays on
-  // through the next switches.
-  expect(switched.wires).toBe(0);
+  // through the texture slider and the original.
+  expect(full.wires).toBe(0);
   await page.getByLabel("Wireframe and flat light").check();
   const wired = await read();
   expect(wired.wires).toBeGreaterThan(0);
   expect(wired.textured).toBe(0);
-  for (const name of ["Quarter", "512 px", "Original"]) {
-    await page.getByRole("button", { name, exact: true }).click();
-    const now = await read();
+  await texture.focus();
+  await page.keyboard.press("Home");
+  const small = await settled();
+  await expect(page.locator("#model-texture-out")).toHaveText("128 px");
+  expect(small.textureSide).toBe(128);
+  expect(small.bytes).toBeLessThan(full.bytes);
+  await page.getByLabel("Show the original").check();
+  const original = await read();
+  expect(original.shownKey).toBe("original");
+  await expect(page.locator("#model-size-share")).toHaveText("the original");
+  for (const now of [small, original]) {
     expect(now.state.wireframe).toBe(true);
     expect(now.wires).toBeGreaterThan(0);
     expect(now.textured).toBe(0);
@@ -712,17 +750,13 @@ test("models, the large view: a switch keeps the camera, the wireframe stays on,
   }
   await expect(page.getByLabel("Wireframe and flat light")).toBeChecked();
 
-  // Which mesh each step keeps is said: the texture steps keep the
-  // chosen, thinned mesh, so they show its triangle count.
-  await page.getByRole("button", { name: "Chosen", exact: true }).click();
-  const chosen = await facts.textContent();
-  await page.getByRole("button", { name: "512 px", exact: true }).click();
-  await expect(facts).toContainText("default detail mesh");
-  const triangles = (/** @type {string | null} */ text) =>
-    Number(/(\d+) triangles/.exec(text ?? "")?.[1]);
-  expect(triangles(await facts.textContent())).toBe(triangles(chosen));
+  // The 8-bit option is said to be about the vertex positions, not the
+  // textures, so nobody reads it as a texture setting.
+  await expect(
+    page.locator("label", { has: page.locator("#model-positions8") }),
+  ).toContainText("vertex positions");
 
-  // Landscape: the view still fits the screen's height, buttons in reach.
+  // Landscape: the view still fits the screen's height.
   await page.setViewportSize({ width: 844, height: 390 });
   await expect
     .poll(async () => (await canvas.boundingBox())?.height ?? 0)

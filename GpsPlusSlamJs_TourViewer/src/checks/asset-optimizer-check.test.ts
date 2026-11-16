@@ -13,6 +13,7 @@ import {
   bestLag,
   cartoonPicturePixels,
   commonColourShare,
+  glbByteShares,
   lumaOf,
   pictureErrors,
   seeded,
@@ -21,6 +22,7 @@ import {
   testSoundPlanes,
   wavOf,
 } from "./asset-optimizer-check.js";
+import { handGlb } from "../editor/asset-shelf/test-support/hand-glb.js";
 
 /** The distinct colours of RGBA pixels. */
 const coloursOf = (rgba: Uint8ClampedArray) => {
@@ -148,5 +150,43 @@ describe("the check's measures", () => {
       expect(found.correlation).toBeGreaterThan(0.99);
     }
     expect(() => bestLag(a!, a!, 0, 100, 200)).toThrow();
+  });
+});
+
+describe("a model file's bytes by kind", () => {
+  // Why this test matters: which slider comes first, and what the size
+  // panel says each part costs, rest on this split; a view two images
+  // share must count once, and a file whose views do not read must say so
+  // rather than report a wrong share.
+  it("counts the image views once as textures and the rest as geometry", () => {
+    const glb = handGlb(
+      {
+        asset: { version: "2.0" },
+        buffers: [{ byteLength: 136 }],
+        bufferViews: [
+          { buffer: 0, byteOffset: 0, byteLength: 36 },
+          { buffer: 0, byteOffset: 36, byteLength: 100 },
+        ],
+        images: [{ bufferView: 0 }, { bufferView: 0 }, { uri: "x.png" }],
+      },
+      new Uint8Array(136),
+    );
+    expect(glbByteShares(glb)).toEqual({
+      total: glb.length,
+      textures: 36,
+      geometry: glb.length - 36,
+    });
+    const none = handGlb({ asset: { version: "2.0" } });
+    expect(glbByteShares(none)).toEqual({
+      total: none.length,
+      textures: 0,
+      geometry: none.length,
+    });
+    const broken = handGlb({
+      asset: { version: "2.0" },
+      images: [{ bufferView: 4 }],
+    });
+    expect(() => glbByteShares(broken)).toThrow(/buffer view/);
+    expect(() => glbByteShares(new Uint8Array(8))).toThrow(/GLB/);
   });
 });

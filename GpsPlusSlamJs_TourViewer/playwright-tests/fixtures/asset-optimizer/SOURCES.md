@@ -4,11 +4,15 @@ Real recordings, a real photo and two scanned 3D models for `editor-asset-optimi
 the asset optimizer check page (`asset-optimizer-check.html`), which
 imports them by URL. Every file is in the public domain or under CC0, each
 verified on its own source page (the recordings and the photo on
-2026-11-13, the models on 2026-11-15). Trims and crops were made with
+2026-11-13, the models on 2026-11-15, their larger texture downloads on
+2026-11-16). Trims and crops were made with
 FFmpeg, the models packed with glTF Transform; the commands are given per
 file.
 
-Total: 5,836,840 bytes (about 5.6 MiB) for seven files.
+Total: 15,804,200 bytes (about 15.1 MiB) for seven files. The two models are
+most of it: they carry textures larger than the editor keeps (4096 and
+2048 px against its 1024 px), so the check page's texture steps compare
+real resolutions.
 
 ## speech-de-frau-holle.mp3 (German speech, mono)
 
@@ -103,14 +107,14 @@ Total: 5,836,840 bytes (about 5.6 MiB) for seven files.
   silhouette and a carved face, 17,456 triangles.
 - Author: Rico Cilliers, Poly Haven.
 - Source page: https://polyhaven.com/a/marble_bust_01
-- File: the 1k glTF download listed by https://api.polyhaven.com/files/marble_bust_01
-  (`marble_bust_01.gltf`, its `.bin` and three 1024 px JPEG textures:
+- File: the 4k glTF download listed by https://api.polyhaven.com/files/marble_bust_01
+  (`marble_bust_01.gltf`, its `.bin` and three 4096 px JPEG textures:
   colour, normal, roughness).
 - Licence: CC0 1.0. Evidence: https://polyhaven.com/license states "Our
   assets are all licensed as CC0", with no attribution required.
 - Packed into one binary glTF, the files unchanged, with glTF Transform
   (`@gltf-transform/core` 4.5.1, `NodeIO.read` then `NodeIO.write` to
-  `.glb`). 897,296 bytes.
+  `.glb`). 5,787,044 bytes.
 
 ## model-utility-box.glb (straight edges and lettering, 3D model)
 
@@ -119,11 +123,12 @@ Total: 5,836,840 bytes (about 5.6 MiB) for seven files.
   and painted numbers, 4,404 triangles.
 - Author: James Ray Cock, Poly Haven.
 - Source page: https://polyhaven.com/a/utility_box_01
-- File: the 1k glTF download listed by https://api.polyhaven.com/files/utility_box_01
-  (`utility_box_01.gltf`, its `.bin` and three 1024 px JPEG textures:
+- File: the 2k glTF download listed by https://api.polyhaven.com/files/utility_box_01 (the
+  4k one is 25.7 MB)
+  (`utility_box_01.gltf`, its `.bin` and three 2048 px JPEG textures:
   colour, normal, and ambient occlusion, roughness and metalness in one).
 - Licence: CC0 1.0. Evidence as for the bust.
-- Packed as the bust. 1,976,044 bytes.
+- Packed as the bust. 7,053,656 bytes.
 
 The third model the check page offers, the scanned rock, is the level of
 detail prototype's (`public/prototypes/model-lod-1/rock.glb`, Poly Haven,
