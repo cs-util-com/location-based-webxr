@@ -23,6 +23,7 @@ import {
   addedLines,
   findHits,
   formatHits,
+  gitHead,
   gitMergeBase,
   isSkippedPath,
   matchLine,
@@ -31,7 +32,8 @@ import {
 } from './internal-references.js';
 import { repoRoot } from './tracked-tree.js';
 
-// Tokens from parts, so these lines are not hits themselves.
+// Tokens from parts, so these lines are not hits themselves. Every number
+// and code is made up: none names a real branch, pull request or decision.
 const OWNER = ['the', 'owner'].join(' ');
 const OWNERS = `${'own'}er's`;
 const DEC = (suffix) => `${'DE'}C-${suffix}`;
@@ -46,20 +48,31 @@ describe('matchLine', () => {
     [`// ${OWNER.toUpperCase()} CHOSE THIS`, 'owner reference'],
     [`* the ${'own'}er’s phone`, 'owner reference'],
     [`* ${OWNERS} report`, 'owner reference'],
-    [`(${DEC('PE-10')})`, 'decision code'],
-    [`see ${DEC('R12-5')}.`, 'decision code'],
-    [`${DEC('W1')}:`, 'decision code'],
-    [`since ${BRANCH(1316)}, the strip`, 'work-branch number'],
-    [`fixed in ${BRANCH(497)}`, 'work-branch number'],
-    [`(${PR(983)} review)`, 'pull-request number'],
-    [`dropped (#${983}).`, 'pull-request number'],
-    [`(#${42})`, 'pull-request number'],
+    [`// ${'own'}er decision 2099-01-01`, 'owner reference'],
+    [`* (${'Own'}er feedback - a sharper map)`, 'owner reference'],
+    [`the ${'own'}er pick, the ${'own'}er verdict`, 'owner reference'],
+    [`// ${'own'}er chose the fold`, 'owner reference'],
+    [`// ${'own'}er asked for it`, 'owner reference'],
+    [['laut der', 'Eigentümerin'].join(' '), 'owner reference'],
+    [`(${DEC('XY-1')})`, 'decision code'],
+    [`see ${DEC('XY7-2')}.`, 'decision code'],
+    [`${DEC('XY')}:`, 'decision code'],
+    [`since ${BRANCH(4242)}, the strip`, 'work-branch number'],
+    [`(${PR(4242)} review)`, 'pull-request number'],
+    [`${'P'}R#4242 without the space`, 'pull-request number'],
+    [`see ${'p'}r #4242`, 'pull-request number'],
+    [`dropped (#${4242}).`, 'pull-request number'],
+    [`three rounds (#${4242}, #${4243})`, 'pull-request number'],
+    [`the #${4242} review found it`, 'pull-request number'],
+    [`the #${4242}'s review found it`, 'pull-request number'],
+    [`see ${'pull'}/4242`, 'pull-request number'],
+    [`github.com/cs-util-com/location-based-webxr/${'pull'}/4242`, 'pull-request number'],
   ])('flags %j as %s', (line, name) => {
     expect(matchLine(line)).toContain(name);
   });
 
   it('flags a review pointer, and its branch number with it', () => {
-    expect(matchLine(`// (${REVIEW(1149)} #4)`)).toEqual([
+    expect(matchLine(`// (${REVIEW(4242)} #4)`)).toEqual([
       'work-branch number',
       'review reference',
     ]);
@@ -70,42 +83,55 @@ describe('matchLine', () => {
   it.each([
     'three.js r185 (MIT licence)',
     "three r184's dispose",
-    `'${BRANCH(943)}-gps-plus-slam.csutil.workers.dev'`,
+    `'${BRANCH(4242)}-gps-plus-slam.csutil.workers.dev'`,
     'the second case (#1) and (#7)',
     'color: #333; background: #ff0000;',
-    'r12 and r99 are too short; xr1316 and r1316x are identifiers',
+    'a grey (#333), black (#000), white (#000000), mid grey (#808080)',
+    'the hole (#171b26) and (#ff6b6b), a list item (#1, #2)',
+    'r7 and r42 are too short; xr4242 and r4242x are identifiers',
     'the owners of this file, an ownership rule, owner',
-    'DECEMBER, decimal, dec-pe-10, DEC- alone',
-    'PR#983 without the space, issue 983',
+    'a lock owner, the file owner callback, owner decisions',
+    'maintained by the company (the "Project Owner"), the copyright owner',
+    'Bewohner und Eigentümer dieses Hauses',
+    'DECEMBER, decimal, dec-xy-1, DEC- alone',
+    'issue 4242, #4242 alone, a review of #4242',
+    'upstream github.com/mrdoob/three.js/pull/4242 and pullback/4242',
     'review round 2',
   ])('passes %j', (line) => {
     expect(matchLine(line)).toEqual([]);
   });
 
   it('skips licence texts, lockfiles, vendored copies and binaries', () => {
-    const line = `${OWNER} ${DEC('A1')}`;
+    const line = `${OWNER} ${DEC('XY-3')}`;
     for (const file of [
       'LICENSE',
       'GpsPlusSlamJs_AppFramework/NOTICE',
       'GpsPlusSlamJs_QrTrackingDemo/THIRD_PARTY_NOTICES.md',
       'GpsPlusSlamJs_TourViewer/public/third-party-licenses/three.txt',
       'pnpm-lock.yaml',
-      'GpsPlusSlamJs_Globe/src/vendor/plugin.ts',
       'a/b/image.png',
     ]) {
       expect(isSkippedPath(file), file).toBe(true);
       expect(matchLine(line, file), file).toEqual([]);
     }
-    expect(matchLine(line, 'GpsPlusSlamJs_Osm/src/a.ts')).toEqual([
-      'owner reference',
-      'decision code',
-    ]);
+    for (const file of [
+      'GpsPlusSlamJs_Osm/src/a.ts',
+      // Project-written code in a folder named vendor is read.
+      'GpsPlusSlamJs_Globe/src/vendor/plugin.ts.md',
+      // Only the exact upper-case licence names are skipped.
+      'src/ui/notice.ts',
+      'src/LICENSE.ts',
+      'docs/License',
+    ]) {
+      expect(isSkippedPath(file), file).toBe(false);
+      expect(matchLine(line, file), file).toEqual(['owner reference', 'decision code']);
+    }
   });
 
   it('lets the lock files speak of a lock owner, and nothing else', () => {
     const file = 'scripts/test-timing/gate-lock.mjs';
     expect(matchLine(`// once ${OWNER} is gone`, file)).toEqual([]);
-    expect(matchLine(`// (${PR(338)})`, file)).toEqual(['pull-request number']);
+    expect(matchLine(`// (${PR(4243)})`, file)).toEqual(['pull-request number']);
   });
 });
 
@@ -185,9 +211,37 @@ describe('resolveBase', () => {
   it('names why there is no base, in CI and locally', () => {
     const ci = resolveBase({ env: { GITHUB_ACTIONS: 'true' }, mergeBaseWith: () => null });
     expect(ci.base).toBeNull();
-    expect(ci.reason).toMatch(/push to main/);
+    expect(ci.reason).toMatch(/shallow checkout has no main line/);
     const local = resolveBase({ env: {}, mergeBaseWith: () => null });
     expect(local.reason).toMatch(/origin2\/main, origin\/main, main/);
+  });
+
+  // Why: on a push to main the checkout's main ref is HEAD, so the merge
+  // base is HEAD and the diff is empty; a pass there would check nothing.
+  it('skips by name in CI when the base is HEAD itself', () => {
+    const head = 'a'.repeat(40);
+    const merged = resolveBase({
+      env: { GITHUB_ACTIONS: 'true' },
+      mergeBaseWith: () => head,
+      head,
+    });
+    expect(merged.base).toBeNull();
+    expect(merged.reason).toMatch(/is HEAD itself in this CI run: a push to main/);
+    const fromEnv = resolveBase({
+      env: { GITHUB_ACTIONS: 'true', E2E_TIER_BASE: head },
+      mergeBaseWith: () => null,
+      head,
+    });
+    expect(fromEnv.base).toBeNull();
+    expect(fromEnv.reason).toMatch(/E2E_TIER_BASE/);
+  });
+
+  it('keeps a base equal to HEAD outside CI, and another base in CI', () => {
+    const head = 'a'.repeat(40);
+    expect(resolveBase({ env: {}, mergeBaseWith: () => head, head }).base).toBe(head);
+    const other = 'b'.repeat(40);
+    const ci = resolveBase({ env: { GITHUB_ACTIONS: 'true' }, mergeBaseWith: () => other, head });
+    expect(ci.base).toBe(other);
   });
 });
 
@@ -216,6 +270,11 @@ describe('addedLines on a throwaway repository', () => {
           'user.name=t',
           '-c',
           'core.autocrlf=false',
+          // A developer's global config must not break the throwaway repo.
+          '-c',
+          'commit.gpgsign=false',
+          '-c',
+          `core.hooksPath=${join(dir, 'no-hooks')}`,
           ...args,
         ],
         {
@@ -226,7 +285,7 @@ describe('addedLines on a throwaway repository', () => {
     try {
       git('init', '-q', '-b', 'main');
       writeFileSync(join(dir, 'old.md'), `kept: ${OWNER} said so\n`);
-      writeFileSync(join(dir, 'moved.md'), `moved: ${DEC('Q1')}\nline two\nline three\n`);
+      writeFileSync(join(dir, 'moved.md'), `moved: ${DEC('XY-4')}\nline two\nline three\n`);
       git('add', '.');
       git('commit', '-q', '-m', 'base');
       const base = git('rev-parse', 'HEAD');
@@ -234,11 +293,11 @@ describe('addedLines on a throwaway repository', () => {
       git('mv', 'moved.md', 'renamed.md');
       writeFileSync(
         join(dir, 'old.md'),
-        `kept: ${OWNER} said so\nclean line\nsince ${BRANCH(1320)}\n`,
+        `kept: ${OWNER} said so\nclean line\nsince ${BRANCH(4242)}\n`,
       );
       git('add', '.');
       git('commit', '-q', '-m', 'branch');
-      writeFileSync(join(dir, 'new.md'), `first\n(${PR(983)})\n`);
+      writeFileSync(join(dir, 'new.md'), `first\n(${PR(4243)})\n`);
 
       expect(gitMergeBase(dir)('main')).toBe(git('rev-parse', 'HEAD'));
       const hits = findHits(addedLines(dir, base));
@@ -253,7 +312,11 @@ describe('addedLines on a throwaway repository', () => {
 });
 
 describe('the branch', () => {
-  const resolved = resolveBase({ env: process.env, mergeBaseWith: gitMergeBase(repoRoot) });
+  const resolved = resolveBase({
+    env: process.env,
+    mergeBaseWith: gitMergeBase(repoRoot),
+    head: gitHead(repoRoot),
+  });
 
   if (resolved.base === null) {
     // Loud and named: a skipped guard must never look like a clean one.

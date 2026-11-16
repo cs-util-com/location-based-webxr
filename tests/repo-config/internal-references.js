@@ -30,12 +30,26 @@ import { firstMergeBase, MAIN_LINES } from '../../scripts/test-changed/select.mj
 const PATTERNS = Object.freeze([
   {
     // A person who decides: a public reader cannot ask them, and the line
-    // should state the rule itself. Case-insensitive, word-bounded; the
-    // typographic apostrophe too. The two lock files say it of a lock's
+    // should state the rule itself. The word with the definite article, its
+    // possessive (the typographic apostrophe too), the word followed by what
+    // that person did (a decision, a pick, a verdict and so on), and the
+    // German word with an article. Case-insensitive, word-bounded. A legal
+    // role named with another word before it, as in the contributor
+    // agreement, does not match. The two lock files say it of a lock's
     // process (the measured false positives), so they are skipped for this
     // pattern only.
     name: 'owner reference',
-    regex: new RegExp(`\\b(?:the\\s+${'own'}er|${'own'}er['’]s)\\b`, 'i'),
+    regex: new RegExp(
+      [
+        `the\\s+${'own'}er`,
+        `${'own'}er['’]s`,
+        `${'own'}er\\s+(?:decision|feedback|pick|verdict|answer|choice|call|chose|asked|said)`,
+        '(?:der|des|dem|den|die)\\s+Eigentümer(?:in|s)?',
+      ]
+        .map((alternative) => `\\b${alternative}\\b`)
+        .join('|'),
+      'i',
+    ),
     skipPath: /^scripts\/test-timing\/(?:gate-lock|run-gate)\.[^/]*$/,
   },
   {
@@ -54,10 +68,26 @@ const PATTERNS = Object.freeze([
   },
   {
     // A pull-request number: the PR's discussion is not the code's
-    // documentation. The bare parenthesised form needs two digits or more,
-    // because one digit is an item of a numbered list in the same comment.
+    // documentation. Case-insensitive. The forms, in order: the word with or
+    // without a space before the number; a bare number in parentheses, alone
+    // or first in a list; a number followed by "review"; a pull path, as a
+    // bare word or in a link to this repository (a link to another project's
+    // pull request is documentation and passes). The parenthesised form
+    // needs two digits or more, because one digit is an item of a numbered
+    // list in the same comment; it stops at five digits and skips a run of
+    // one repeated digit, because a CSS colour in decimal digits only (a
+    // grey such as three repeated digits, or any six-digit colour) reads the
+    // same.
     name: 'pull-request number',
-    regex: new RegExp(`\\b${'P'}R #\\d+\\b|\\(#\\d{2,}\\)`),
+    regex: new RegExp(
+      [
+        `\\b${'P'}R ?#\\d+`,
+        '\\((?!#(\\d)\\1*[,)])#\\d{2,5}[,)]',
+        "#\\d{3,}(?:'s)? review",
+        '(?:location-based-webxr/|(?<![\\w./-]))pull/\\d+',
+      ].join('|'),
+      'i',
+    ),
   },
   {
     // A pointer to a review round of a work branch.
@@ -68,13 +98,14 @@ const PATTERNS = Object.freeze([
 
 /**
  * Paths no pattern reads: third-party and licence texts (their words are not
- * ours to change), lockfiles, vendored copies and binary files.
+ * ours to change), lockfiles and binary files. The licence names are exact
+ * and upper-case, so a source file such as `notice.ts` is still read. There
+ * is no `vendor/` rule: the one such folder holds project-written code.
  */
 const SKIPPED_PATHS = [
-  /(?:^|\/)(?:LICEN[CS]E|NOTICE|COPYING|THIRD[_-]PARTY[^/]*)(?:\.[^/]*)?$/i,
+  /(?:^|\/)(?:LICEN[CS]E|NOTICE|COPYING|THIRD[_-]PARTY[^/]*)$/,
   /(?:^|\/)third-party-licenses\//,
   /(?:^|\/)(?:pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$/,
-  /(?:^|\/)vendor\//,
   /\.(?:png|jpe?g|gif|webp|avif|ico|bmp|glb|gltf|bin|ktx2|hdr|exr|zip|gz|br|pdf|woff2?|ttf|otf|eot|mp3|mp4|webm|wav|ogg|pbf|mvt|wasm|onnx)$/i,
 ];
 
@@ -170,22 +201,59 @@ export function parseAddedLines(diff) {
  * (`E2E_TIER_BASE`: the pull request's base, or a dispatch's merge base with
  * main) wins; locally, the merge base with the first main line that exists.
  * Never a silent "nothing to check": no base is a reason, which the guard
- * reports as a named skip.
+ * reports as a named skip. In CI a base that is HEAD itself is one too: on a
+ * push to main the checkout's own main ref is HEAD, so the diff would be
+ * empty and the pass would mean nothing.
  *
- * @param {{ env: Record<string, string | undefined>, mergeBaseWith: (mainLine: string) => string | null }} input
+ * @param {{
+ *   env: Record<string, string | undefined>,
+ *   mergeBaseWith: (mainLine: string) => string | null,
+ *   head?: string | null,
+ * }} input `head` is the full commit id of HEAD, when known
  * @returns {BaseResult}
  */
-export function resolveBase({ env, mergeBaseWith }) {
+export function resolveBase({ env, mergeBaseWith, head = null }) {
   const fromEnv = env[TIER_BASE_ENV];
-  if (fromEnv) return { base: fromEnv, source: TIER_BASE_ENV };
-  const merged = firstMergeBase(mergeBaseWith);
-  if (merged) return { base: merged, source: `merge base with ${MAIN_LINES.join(' / ')}` };
-  return {
-    base: null,
-    reason: env.GITHUB_ACTIONS
-      ? `no ${TIER_BASE_ENV} in this CI run (a push to main, whose lines were checked on their pull request) and the shallow checkout has no main line`
-      : `no ${TIER_BASE_ENV} and no merge base with any of ${MAIN_LINES.join(', ')}`,
-  };
+  const merged = fromEnv ? null : firstMergeBase(mergeBaseWith);
+  /** @type {{ base: string, source: string } | null} */
+  let found = null;
+  if (fromEnv) found = { base: fromEnv, source: TIER_BASE_ENV };
+  else if (merged) found = { base: merged, source: `merge base with ${MAIN_LINES.join(' / ')}` };
+  if (found === null) {
+    return {
+      base: null,
+      reason: env.GITHUB_ACTIONS
+        ? `no ${TIER_BASE_ENV} in this CI run and the shallow checkout has no main line`
+        : `no ${TIER_BASE_ENV} and no merge base with any of ${MAIN_LINES.join(', ')}`,
+    };
+  }
+  if (env.GITHUB_ACTIONS && head !== null && found.base === head) {
+    return {
+      base: null,
+      reason: `the base (${found.source}) is HEAD itself in this CI run: a push to main, whose lines were checked on their pull request`,
+    };
+  }
+  return found;
+}
+
+/**
+ * The full commit id of HEAD in `root`, or null.
+ *
+ * @param {string} root
+ * @returns {string | null}
+ */
+export function gitHead(root) {
+  try {
+    return (
+      execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim() || null
+    );
+  } catch {
+    return null;
+  }
 }
 
 /**

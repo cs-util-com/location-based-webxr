@@ -15,15 +15,22 @@ import { matchLine } from './internal-references.js';
  * The substrings every pattern needs one of: a line containing none of them
  * cannot match (the first property), whatever else it holds.
  */
-const TOKEN_CORE = /owner|DEC-|r\d|#\d/i;
+const TOKEN_CORE = /owner|eigent|DEC-|r\d|#\d|pull\//i;
 
-// Built from parts, so this file carries no hit of its own.
+// Built from parts, so this file carries no hit of its own. The numbers and
+// codes are made up.
 const TOKENS = [
   ['the', 'owner'].join(' '),
-  `${'DE'}C-PE-10`,
-  `${'r'}1320`,
-  `${'P'}R #983`,
-  `(#${'983'})`,
+  ['owner', 'decision'].join(' '),
+  ['die', 'Eigentümerin'].join(' '),
+  `${'DE'}C-XY-1`,
+  `${'r'}4242`,
+  `${'P'}R #4242`,
+  `${'P'}R#4242`,
+  `(#${'4242'})`,
+  `(#${'4242'},`,
+  `#${'4242'} review`,
+  `${'pull'}/4242`,
 ];
 
 describe('matchLine properties', () => {
