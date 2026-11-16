@@ -1245,6 +1245,58 @@ test.describe("the phone layout", () => {
         page.locator("#map .leaflet-control-attribution a[href*='leafletjs']"),
       ).toHaveCount(0);
     });
+
+    await test.step("keeps every credit reachable on a landscape phone with the sheet at its floor", async () => {
+      // The Credits view grows upward from the line, inside the map's
+      // `overflow: hidden`. On a landscape phone with the sheet dragged to
+      // its 20 % floor the map is a strip of about 80 px, and a view taller
+      // than that had its top credits cut off with no way to reach them.
+      // It scrolls inside the map instead: every credit link can be brought
+      // into view, and the open control stays inside the map's box.
+      await page.setViewportSize({ width: 800, height: 360 });
+      await page
+        .locator("main")
+        .evaluate((main) => main.style.setProperty("--sheet-height", "20%"));
+      const toggle = page.locator("#map .map-attribution-toggle");
+      const full = page.locator("#map .map-attribution-full");
+      await toggle.click();
+      await expect(full).toBeVisible();
+      const mapBox = await page.locator("#map").boundingBox();
+      const control = page.locator(
+        "#map .leaflet-control-attribution.map-attribution",
+      );
+      // Vertically inside `outer`, with 1 px of slack for rounding.
+      const inside = (box, what, outer = mapBox) => {
+        expect(box, what).not.toBeNull();
+        if (box && outer) {
+          expect(box.y, `${what}: top`).toBeGreaterThanOrEqual(outer.y - 1);
+          expect(box.y + box.height, `${what}: bottom`).toBeLessThanOrEqual(
+            outer.y + outer.height + 1,
+          );
+        }
+      };
+      inside(await control.boundingBox(), "the open control");
+      // The view's own scroll, never `scrollIntoView`: that would also scroll
+      // the map's clipped box and hide exactly the defect this step guards.
+      const links = full.locator("a");
+      await expect(links).toHaveCount(3);
+      for (const [edge, link] of [
+        ["top", links.first()],
+        ["bottom", links.last()],
+      ]) {
+        await full.evaluate((el, toTop) => {
+          el.scrollTop = toTop ? 0 : el.scrollHeight;
+        }, edge === "top");
+        // Inside the view's visible box, not only the map's.
+        inside(
+          await link.boundingBox(),
+          `the ${edge} credit link`,
+          await full.boundingBox(),
+        );
+      }
+      await toggle.click();
+      await expect(full).toBeHidden();
+    });
   });
 });
 

@@ -97,6 +97,12 @@ found to require on-map visibility, set `pinned: true` on its entry in
   starts with that word (WCAG 2.5.3).
 - **Tap targets:** every link and the button are at least 24 x 24 px (WCAG 2.2
   SC 2.5.8), set in `index.html`; the line stays one line at 390 px.
+- **The open Credits view stays inside the map.** It grows upward from the
+  line, so `index.html` bounds it by the map's height (`#map` is a size
+  container in the mobile layout) and lets it scroll: on a landscape phone
+  with the sheet at its floor the map is about 70 px tall, and an unbounded
+  view put its top credits out of reach. `boot-and-shell.spec.js` scrolls it
+  there and checks the first and last credit.
 - **Built with `textContent`, never a template string.** Credit strings are
   externally-authored text; avoiding the HTML sink beats escaping through one.
 - **Hidden only when there is neither a credit nor a legal link.**
