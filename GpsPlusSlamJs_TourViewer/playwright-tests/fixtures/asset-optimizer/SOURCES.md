@@ -1,12 +1,19 @@
 # Asset optimizer fixtures - sources and licences
 
-Real recordings and a real photo for `editor-asset-optimizers.spec.js` and
+Real recordings, a real photo and two scanned 3D models for `editor-asset-optimizers.spec.js` and
 the asset optimizer check page (`asset-optimizer-check.html`), which
 imports them by URL. Every file is in the public domain or under CC0, each
-verified on its own source page on 2026-11-13. Trims and crops were made
-with FFmpeg; the commands are given per file.
+verified on its own source page (the recordings and the photo on
+2026-11-13, the models on 2026-11-15, their larger texture downloads on
+2026-11-16). Trims and crops were made with
+FFmpeg, the models packed with glTF Transform; the commands are given per
+file.
 
-Total: 2,963,500 bytes (about 2.8 MiB) for five files.
+Total: 5,997,392 bytes (about 5.7 MiB) for seven files. The two models carry
+2048 px textures, twice the side the editor keeps (1024 px), so the check
+page's texture steps compare real resolutions. Each file stays under the
+repository's 2 MiB per-file ceiling (`tests/repo-config/max-file-size.test.js`):
+the 4k textures of the bust alone are 5.4 MB, so no 4k sample fits.
 
 ## speech-de-frau-holle.mp3 (German speech, mono)
 
@@ -94,3 +101,40 @@ Total: 2,963,500 bytes (about 2.8 MiB) for five files.
   `ffmpeg -i <file> -vf crop=2400:1800:2116:1584 -q:v 3`.
   818,612 bytes. Its longest side is larger than every side the tests ask
   for, so each of them scales the picture down.
+
+## model-marble-bust.glb (scanned figure with a face, 3D model)
+
+- Subject: "Marble Bust 01", a Renaissance-style male bust: a clear
+  silhouette and a carved face, 17,456 triangles.
+- Author: Rico Cilliers, Poly Haven.
+- Source page: https://polyhaven.com/a/marble_bust_01
+- File: the 4k glTF download listed by https://api.polyhaven.com/files/marble_bust_01
+  (`marble_bust_01.gltf`, its `.bin` and three 4096 px JPEG textures:
+  colour, normal, and ambient occlusion, roughness and metalness packed
+  in one).
+- Licence: CC0 1.0. Evidence: https://polyhaven.com/license states "Our
+  assets are all licensed as CC0", with no attribution required.
+- Packed into one binary glTF with glTF Transform (`@gltf-transform/core`
+  4.5.1, `NodeIO.read` then `NodeIO.write` to `.glb`), each texture first
+  scaled to 2048 px and re-encoded as JPEG with FFmpeg
+  (`ffmpeg -i <texture> -vf scale=2048:-1 -q:v 3`), so the file fits the
+  2 MiB ceiling. 1,651,408 bytes.
+
+## model-utility-box.glb (straight edges and lettering, 3D model)
+
+- Subject: "Utility Box 01", a street electrical cabinet: flat panels,
+  straight edges, a "DANGER KEEP OUT" sign, a "WARNING HIGH VOLTAGE" label
+  and painted numbers, 4,404 triangles.
+- Author: James Ray Cock, Poly Haven.
+- Source page: https://polyhaven.com/a/utility_box_01
+- File: the 2k glTF download listed by https://api.polyhaven.com/files/utility_box_01 (the
+  4k one is 25.7 MB)
+  (`utility_box_01.gltf`, its `.bin` and three 2048 px JPEG textures:
+  colour, normal, and ambient occlusion, roughness and metalness in one).
+- Licence: CC0 1.0. Evidence as for the bust.
+- Packed as the bust, its textures re-encoded at their own 2048 px with
+  `-q:v 3`. 1,382,484 bytes.
+
+The third model the check page offers, the scanned rock, is the level of
+detail prototype's (`public/prototypes/model-lod-1/rock.glb`, Poly Haven,
+CC0, credited on that prototype's page).
