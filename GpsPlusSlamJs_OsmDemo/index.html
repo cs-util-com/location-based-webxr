@@ -976,6 +976,7 @@
              the sheet's height is explicit, so size containment changes
              nothing, and its z-index already makes it a stacking context,
              which the containment would otherwise add on the desktop. */
+          /* stylelint-disable-next-line csstree/validator -- container-type is valid CSS; the bundled css-tree grammar predates it (false positive). */
           container-type: size;
         }
         #sheet-handle {
