@@ -1,14 +1,13 @@
 # worker/osm-store-warn.ts - the worker's tile-store warnings, on the logger
 
 - Purpose: the framework's `OpfsOsmBlobStore` no longer imports the logger
-  (so it loads in the design system's no-build labs; round-5 plan
-  `2026-10-01-0945-globe-round-5-fly-in-and-terrain-blend-plan.md` §3.6) and
-  warns through an injected `warn`. This is the worker's `warn`: the
+  (so it loads in the design system's no-build labs, which cannot load the
+  logger's error-report dependency) and warns through an injected `warn`. This is the worker's `warn`: the
   framework logger tagged `OsmBlobStore`, so a failed cache write or listing
   is logged to the console and kept in the worker's log buffer, as before.
-  It is NOT reported to Sentry: the logger's Sentry calls do nothing until
-  `Sentry.init` runs, and this demo initialises Sentry nowhere (only the
-  RecorderApp does), the worker least of all.
+  Whether a warning also reaches an error report depends on the app starting
+  error reporting (see the page's entry, `main.ts`, and the worker's start,
+  `demo-worker.ts`); this module neither starts nor assumes it.
 - Public API: `osmStoreWarn(message, details)` (an `OsmBlobStoreWarn`).
 - Invariants: `demo-worker.ts` opens its store with
   `openOsmStore({ warn: osmStoreWarn })`. The globe lab's prefetch cannot

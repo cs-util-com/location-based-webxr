@@ -1442,6 +1442,9 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
       expect(entry?.message).toContain("night");
       expect(entry?.message).toContain("at assertClosed");
       expect(entry?.message).not.toContain(String(COLOGNE.lat));
+      // The message is on screen already; the log keeps the choices and the
+      // frames, nothing the build said (it may one day name a place).
+      expect(entry?.message).not.toContain("not closed");
     });
 
     it("logs any other refresh failure by its stack, without its message", async () => {
@@ -1463,6 +1466,33 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
       const entry = getLogBuffer().at(-1);
       expect(entry?.level).toBe(LogLevel.ERROR);
       expect(entry?.message).toContain("The refresh failed");
+      expect(entry?.message).not.toContain("8a0000000000fff");
+    });
+
+    // Why this test matters: Firefox and Safari write a stack as bare
+    // `fn@url:line:col` frames, without the message and without V8's
+    // "    at " prefix. Keeping only V8 frames dropped every one of theirs.
+    it("keeps the frames of a stack in the Firefox and Safari format", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      clearLogBuffer();
+      const error = new Error("Cell 8a0000000000fff has no usable boundary");
+      error.stack =
+        "scoreRing@https://example.test/worker.js:10:5\nrefresh@https://example.test/main.js:20:7\n";
+      const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+      await createRefreshCycle({
+        store: demo.store,
+        actions: demo.actions,
+        anchors: createAnchorHolder(COLOGNE),
+        worker: { call: () => Promise.reject(error) },
+        onMesh: () => {},
+      })();
+      const entry = getLogBuffer().at(-1);
+      expect(entry?.message).toContain(
+        "scoreRing@https://example.test/worker.js:10:5",
+      );
+      expect(entry?.message).toContain(
+        "refresh@https://example.test/main.js:20:7",
+      );
       expect(entry?.message).not.toContain("8a0000000000fff");
     });
   });

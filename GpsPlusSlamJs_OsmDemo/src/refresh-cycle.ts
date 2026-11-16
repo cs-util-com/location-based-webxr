@@ -292,8 +292,9 @@ const log = createLogger("OsmRefresh");
  * Logs a failed refresh with its stack, and hands a failed city build's
  * choices to `onBuildFailed`. The log is tagged with the build's choices and
  * nothing else: never a cell or a position, which would put where the user
- * is into the log buffer. For the same reason any other failure is logged
- * WITHOUT its message (a data error can name its cell): its name and stack.
+ * is into the log buffer. For the same reason every failure is logged
+ * WITHOUT its message (a data error can name its cell; a failed build's is
+ * on screen already): its name and stack frames.
  */
 function reportFailedBuild(
   error: unknown,
@@ -304,17 +305,24 @@ function reportFailedBuild(
     log.error("The refresh failed", withoutMessage(error));
     return;
   }
-  log.error("The city build failed", { failedBuild }, error);
+  log.error("The city build failed", { failedBuild }, withoutMessage(error));
   onBuildFailed?.(failedBuild);
 }
 
-/** An error's name and stack frames, its message left out. */
+/**
+ * An error's name and stack frames, its message left out. V8 opens a stack
+ * with the message (which can run over several lines) and prefixes every
+ * frame with "    at ", so there only those lines are kept; Firefox and
+ * Safari list bare `fn@url:line:col` frames without the message, so there
+ * every line is.
+ */
 function withoutMessage(error: unknown): string {
   if (!(error instanceof Error)) return typeof error;
-  const frames = error.stack
-    ?.split("\n")
-    .filter((line) => /^\s+at /.test(line));
-  return [error.name, ...(frames ?? [])].join("\n");
+  const lines = (error.stack ?? "")
+    .split("\n")
+    .filter((line) => line.trim() !== "");
+  const v8 = lines.filter((line) => /^\s+at /.test(line));
+  return [error.name, ...(v8.length > 0 ? v8 : lines)].join("\n");
 }
 
 /** The error of a failed build as the page throws one, its stack the worker's. */

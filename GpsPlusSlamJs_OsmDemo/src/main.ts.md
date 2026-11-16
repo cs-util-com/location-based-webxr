@@ -265,7 +265,7 @@ None. Entry point only, loaded by `index.html`.
     AR included; `onMesh` ends the switch on the echo, `onBuildFailed` reverts
     its own failed build.
   - **The status line** counts the invented roofs beside the guessed heights,
-    and names the buildings drawn without their roof when there are some
+    and names the buildings simplified or left out when there are some
     (`fallback-note.ts`): one building that could not be built no longer
     fails the city, so this is where a viewer learns of it.
 

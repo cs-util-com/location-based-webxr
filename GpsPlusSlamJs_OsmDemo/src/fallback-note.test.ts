@@ -14,13 +14,11 @@ describe("fallbackBuildingsNote", () => {
   });
 
   it("names one building in the singular", () => {
-    expect(fallbackBuildingsNote(1)).toBe("1 building drawn without its roof");
+    expect(fallbackBuildingsNote(1)).toBe("1 building simplified or left out");
   });
 
   it("names many buildings in the plural", () => {
-    expect(fallbackBuildingsNote(3)).toBe(
-      "3 buildings drawn without their roof",
-    );
+    expect(fallbackBuildingsNote(3)).toBe("3 buildings simplified or left out");
   });
 
   it("reads a count that is not a positive number as none", () => {

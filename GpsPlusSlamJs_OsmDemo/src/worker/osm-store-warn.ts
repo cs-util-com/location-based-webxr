@@ -2,10 +2,10 @@
  * Where the worker's OPFS tile store reports a failed write or listing: the
  * framework logger, tagged `OsmBlobStore`, so the failure is logged to the
  * console and kept in the worker's log buffer, as before the store stopped
- * importing the logger itself (round-5 plan 2026-10-01-0945 §3.6: the store
- * must load in the no-build labs, which cannot load Sentry). It does NOT
- * reach Sentry: the logger's Sentry calls do nothing until `Sentry.init`
- * runs, and this demo initialises Sentry nowhere, the worker least of all.
+ * importing the logger itself (the store must load in the design system's
+ * no-build labs, which cannot load the logger's error-report dependency).
+ * Whether a warning also reaches an error report depends on the app starting
+ * error reporting (see the page's entry and the worker's start).
  *
  * Its own module so a test can pin both halves: that this function reaches
  * the logger, and that `demo-worker.ts` passes it to the store.

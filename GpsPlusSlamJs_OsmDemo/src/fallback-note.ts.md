@@ -5,13 +5,15 @@
 The one status-line phrase that names the buildings the city build could not
 draw as built (`TransferableMesh.fallbackBuildings`, from
 `City.fallbackBuildings` in the Osm package): a roof drawn as a flat lid
-because its mesh did not close, or an outline drawn plain (or skipped)
-because its build threw.
+because its mesh did not close, a house drawn plain because planning its
+roof hit a defect, or an outline drawn plain (or skipped) because its build
+threw. Skipped buildings are not drawn at all, so the note says "simplified
+or left out", true for both.
 
 ## Public API
 
-- `fallbackBuildingsNote(count: number): string` - `"1 building drawn without
-its roof"`, `"N buildings drawn without their roof"`, or `""` when `count`
+- `fallbackBuildingsNote(count: number): string` - `"1 building simplified
+or left out"`, `"N buildings simplified or left out"`, or `""` when `count`
   is 0, negative or not a number.
 
 ## Invariants & assumptions
@@ -29,7 +31,7 @@ its roof"`, `"N buildings drawn without their roof"`, or `""` when `count`
 
 ```ts
 fallbackBuildingsNote(0); // ""
-fallbackBuildingsNote(3); // "3 buildings drawn without their roof"
+fallbackBuildingsNote(3); // "3 buildings simplified or left out"
 ```
 
 ## Tests
