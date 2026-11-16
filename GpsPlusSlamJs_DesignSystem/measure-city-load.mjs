@@ -36,6 +36,13 @@ const LOAD_TIMEOUT_MS = 300_000;
 /** How often the page's state is read (ms). */
 const POLL_MS = 250;
 
+/**
+ * The project's tile host (the Osm library's `OSM_TILES_BASE_URL`), which
+ * both apps' city loaders ask before the Overpass race. Written out here:
+ * this package does not depend on the Osm package by name.
+ */
+const TILE_HOST = "osm-tiles.csutil.workers.dev";
+const isTileHost = (url) => url.hostname === TILE_HOST;
 const isOverpass = (url) =>
   /(^|\.)overpass-api\.de$|^overpass\.private\.coffee$|^overpass\.kumi\.systems$/.test(
     url.hostname,
@@ -59,17 +66,21 @@ const zoomOf = (url) =>
       .at(-3),
   );
 
-/** Every Overpass and height request of a load, with its start and end. */
+/**
+ * Every tile-host, Overpass and height request of a load, with its start
+ * and end.
+ */
 function recordNetwork(context, t0) {
   const log = [];
   const open = new Map();
   context.on("request", (request) => {
     const url = new URL(request.url());
     const dem = demOf(url);
-    if (!isOverpass(url) && dem === null) return;
+    const tileHost = isTileHost(url);
+    if (!tileHost && !isOverpass(url) && dem === null) return;
     if (request.method() === "OPTIONS") return;
     const entry = {
-      kind: dem === null ? "overpass" : "dem",
+      kind: tileHost ? "tile-host" : dem === null ? "overpass" : "dem",
       host: url.hostname,
       source: dem,
       zoom: dem === null ? null : zoomOf(url),
@@ -119,6 +130,7 @@ function summarise(entries) {
 }
 
 function networkLines(log) {
+  const tileHost = log.filter((e) => e.kind === "tile-host");
   const overpass = log.filter((e) => e.kind === "overpass");
   const byDem = {};
   for (const e of log.filter((x) => x.kind === "dem")) {
@@ -126,6 +138,7 @@ function networkLines(log) {
     (byDem[key] ??= []).push(e);
   }
   return [
+    `- tile host requests: ${summarise(tileHost)}`,
     `- Overpass requests: ${summarise(overpass)}`,
     ...Object.entries(byDem)
       .sort()

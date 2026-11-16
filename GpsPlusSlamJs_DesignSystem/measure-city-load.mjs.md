@@ -19,7 +19,9 @@
   - OsmDemo: `/?lat=&lng=`; it reads the status line for the first cells,
     the first city (`N volumes`) and the last ring (no `widening`), and the
     page's own per-ring breakdown (`click ring ...`, `console.info`);
-  - for both, every Overpass and height-tile request (`context.on`, so a
+  - for both, every tile-host (`osm-tiles.csutil.workers.dev`, the Osm
+    library's `OSM_TILES_BASE_URL`, asked before the race), Overpass and
+    height-tile request (`context.on`, so a
     worker's requests count too) with its start and end, and the main
     thread's long tasks (PerformanceObserver).
 - Invariants & assumptions:

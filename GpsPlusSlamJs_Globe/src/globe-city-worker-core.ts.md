@@ -25,7 +25,9 @@ filed follow-up.
     typed structurally: only what the core reads);
   - `userAgent`: how the app names itself to the Overpass operators;
   - `staticTilesBaseUrl` (optional): a static tile host asked before the
-    race (the Osm library's `staticTiles` option); absent, the race alone;
+    race (the Osm library's `staticTiles` option); absent, the race alone.
+    The Tour Viewer's shell passes the library's `OSM_TILES_BASE_URL`
+    (the lab's no-build copy sets the same option itself);
   - `now` (default `performance.now`): the clock of `buildMs`.
 - `handle(data)` takes the page's messages:
   - `{ kind: "load", id, target, zoom, deepZoom?, heightsUrl?, firstRings? }`:

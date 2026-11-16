@@ -7,6 +7,7 @@ import {
 } from "../../scripts/e2e/tier.mjs";
 
 import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
+import { laneTestMatch } from "./e2e-lanes.js";
 
 /**
  * Playwright configuration for the OSM affordance demo.
@@ -26,8 +27,12 @@ import { browserLaunchArgs } from "../../scripts/e2e/browser-launch.mjs";
  */
 const captureArtifacts = process.env.PLAYWRIGHT_CAPTURE === "1";
 
+/** A CI lane's spec files (E2E_LANE, e2e-lanes.js); every spec without one. */
+const testMatch = laneTestMatch(process.env);
+
 export default defineConfig({
   testDir: ".",
+  ...(testMatch ? { testMatch } : {}),
   // REFUSE TO RUN AGAINST A DEV SERVER OLDER THAN THE LAST LIBRARY BUILD.
   // `reuseExistingServer` below asks only whether the URL responds, and a server
   // that predates a rebuild of a linked workspace library still rewrites imports
