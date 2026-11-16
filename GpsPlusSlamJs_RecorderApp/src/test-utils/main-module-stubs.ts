@@ -22,7 +22,9 @@
  */
 import { vi } from 'vitest';
 
-vi.mock('../utils/sentry', () => ({ initSentry: vi.fn() }));
+vi.mock('gps-plus-slam-app-framework/utils/sentry-options', () => ({
+  initSentry: vi.fn(),
+}));
 
 vi.mock('gps-plus-slam-app-framework/utils/logger', () => ({
   createLogger: () => ({

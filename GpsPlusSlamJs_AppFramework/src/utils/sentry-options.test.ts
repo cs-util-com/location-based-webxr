@@ -16,7 +16,7 @@
 import { describe, it, expect } from 'vitest';
 import { getDefaultIntegrations } from '@sentry/browser';
 import type { Breadcrumb, BrowserOptions, ErrorEvent } from '@sentry/browser';
-import { TRACES_SAMPLE_RATE, sentryOptions } from './sentry';
+import { TRACES_SAMPLE_RATE, sentryOptions } from './sentry-options';
 
 type TransactionEvent = Parameters<
   NonNullable<BrowserOptions['beforeSendTransaction']>

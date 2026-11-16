@@ -3,8 +3,8 @@
 ## Purpose
 
 Says which environment an error report comes from, by the page's host
-name, for the `environment` option of the Recorder's error reporting
-(`sentry.ts`). Branch previews deploy the same production build as the
+name, for the `environment` option of the apps' error reporting
+(`sentry-options.ts`). Branch previews deploy the same production build as the
 live site and send reports too; the label keeps their reports, and those
 of a production build run on this machine, apart from the live site's.
 
@@ -63,4 +63,4 @@ errorReportEnvironment(location.hostname);
   `production` exactly for the listed hosts; every branch label in front
   of the worker's address is a preview; letter case never changes the
   answer.
-- `sentry.test.ts` - the options carry the label for each kind of host.
+- `sentry-options.test.ts` - the options carry the label for each kind of host.

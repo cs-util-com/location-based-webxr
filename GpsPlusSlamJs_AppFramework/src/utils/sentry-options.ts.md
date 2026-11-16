@@ -1,37 +1,51 @@
-# Sentry Error Tracking Module
+# `sentry-options.ts` - the error-reporting configuration
 
 ## Purpose
 
-Builds the recorder's reduced error-reporting configuration
-(`sentryOptions`) and starts the SDK with it (`initSentry`). What a report
-carries is described on the site's privacy page (`/legal/`, source in
+The Sentry configuration of the site's apps, in one place: the options
+(`sentryOptions`) and the call that starts the SDK with them (`initSentry`).
+It moved here from the Recorder (`src/utils/sentry.ts`) so the other apps
+use the same DSN, environment rule and scrubber instead of a copy; the
+Recorder's behaviour did not change in the move, and its tests moved with it
+unchanged but for the import. What a report carries is described on the
+site's privacy page (`/legal/`, source in
 `GpsPlusSlamJs_Landing/legal/index.html`); the configuration and that text
 change in the same commit.
+
+Deep-imported (`gps-plus-slam-app-framework/utils/sentry-options`), never
+through the `/utils` barrel: the barrel feeds the package root, and this
+module starts a third-party SDK.
 
 ## Public API
 
 ### `initSentry(): void`
 
-Initializes the Sentry SDK with `sentryOptions()`. Called as early as
-possible in `main.ts`, and only in production builds (`import.meta.env.PROD`):
-the dev server sends nothing. Every production build sends, branch
-previews included (each preview deploys the same build as the live site),
-and so does a production build served on this machine (`vite preview`, run by
-hand; the e2e suite runs the dev server and sends nothing); the `environment` label below keeps their reports apart.
+Initializes the Sentry SDK with `sentryOptions()`. The Recorder calls it as
+early as possible in its `main.ts`, and only in production builds
+(`import.meta.env.PROD`): the dev server sends nothing. Every production
+build sends, branch previews included (each preview deploys the same build
+as the live site), and so does a production build served on this machine
+(`vite preview`, run by hand; the e2e suite runs the dev server and sends
+nothing); the `environment` label below keeps their reports apart.
 
 ```ts
-import { initSentry } from './utils/sentry';
+import { initSentry } from 'gps-plus-slam-app-framework/utils/sentry-options';
 
-initSentry();
+if (import.meta.env.PROD) initSentry();
 ```
 
 ### `sentryOptions(ownHost?, pageHostname?): BrowserOptions`
 
-The options, as a pure function so a unit test can pin them. `ownHost`
-defaults to `location.host`; links to it keep their path in reports, links
-to other hosts keep only the host (see `sentry-scrub.ts.md`).
-`pageHostname` defaults to `location.hostname` and picks the `environment`
-label (`error-report-environment.ts`).
+The Recorder's options, as a pure function so a unit test can pin them.
+`ownHost` defaults to `location.host`; links to it keep their path in
+reports, links to other hosts keep only the host (see `sentry-scrub.ts.md`).
+`pageHostname` defaults to `location.hostname` and picks the
+`environment` label (`error-report-environment.ts`).
+
+### `SENTRY_DSN`
+
+The one project every app reports to. Hardcoded: a DSN is not secret, and
+one build serves every deployment.
 
 ### `TRACES_SAMPLE_RATE`
 
@@ -136,13 +150,14 @@ places, links, names or files and were read one by one):
 
 ## Configuration of the build
 
-The Sentry Vite plugin in `config/vite.config.ts` uploads source maps during
-production builds. This requires the `SENTRY_AUTH_TOKEN` environment
-variable to be set in CI/CD.
+The Sentry Vite plugin in each app's Vite config (the Recorder's
+`config/vite.config.ts`) uploads source maps during production builds. It
+is loaded only when the `SENTRY_AUTH_TOKEN` environment variable is set, so
+a build without the token (local, CI) uploads nothing and does not fail.
 
 ## Tests
 
-- `sentry.test.ts` pins the reduced configuration: the environment label
+- `sentry-options.test.ts` pins the reduced configuration: the environment label
   for the three kinds of host, no default personal data, the trace sample rate, no console logging integration and no Logs,
   no session and no culture integration among the integrations the SDK
   really runs (resolved from its own `getDefaultIntegrations` the way

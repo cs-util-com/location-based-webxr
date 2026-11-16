@@ -2,7 +2,7 @@
  * Error-report scrubber: removes links, file ids and coordinates from the
  * text of an error report before it leaves the device.
  *
- * Pure and dependency-free, so `sentry.ts` can run it from Sentry's
+ * Pure and dependency-free, so `sentry-options.ts` can run it from Sentry's
  * `beforeSend`, `beforeSendTransaction` and `beforeBreadcrumb` hooks and the
  * rules can be tested without the SDK.
  *

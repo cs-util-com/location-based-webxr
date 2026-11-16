@@ -3,7 +3,7 @@
 ## Purpose
 
 Removes links, file ids and coordinates from the text of an error report
-before it leaves the device. `sentry.ts` runs it from Sentry's
+before it leaves the device. `sentry-options.ts` runs it from Sentry's
 `beforeSend`, `beforeSendTransaction`, `beforeSendSpan` and
 `beforeBreadcrumb` hooks; it has no
 dependency on the SDK, so its rules are tested on their own.
@@ -103,7 +103,7 @@ dependency on the SDK, so its rules are tested on their own.
 - It does not remove names a person typed (scenario, session and reference
   point names, chosen folder and file names). The framework logger writes
   them into log lines, so they can appear in a report; the privacy page
-  says so (see the audit in `sentry.ts.md`).
+  says so (see the audit in `sentry-options.ts.md`).
 - A coordinate pair where both numbers have fewer than three decimals, or
   where one is a whole number, passes when it carries no label.
 - A link inside a word with no separator before it (`x/api?id=1`), or with
@@ -141,4 +141,4 @@ scrubText('https://drive.google.com/file/d/1AbC.../view', 'gps.csutil.com');
   idempotence on random strings and on 2,000 strings built from report
   fragments (links, ids, queries, pairs, labels and punctuation), plain
   text unchanged. All were checked once at 100 times their run count.
-- `sentry.test.ts` - the hooks that apply it.
+- `sentry-options.test.ts` - the hooks that apply it.

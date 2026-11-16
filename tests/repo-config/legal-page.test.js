@@ -218,7 +218,7 @@ describe('the site build serves the legal page', () => {
 
 describe("the page's error-report paragraph matches the Recorder", () => {
   it('names the data region the Recorder sends error reports to', () => {
-    const sentry = read('GpsPlusSlamJs_RecorderApp/src/utils/sentry.ts');
+    const sentry = read('GpsPlusSlamJs_AppFramework/src/utils/sentry-options.ts');
     const region = sentry.match(/\.ingest\.([a-z]+)\.sentry\.io\//)?.[1];
     expect(region, 'the Recorder DSN names no data region').toBeDefined();
     expect(visibleText(PAGE)).toContain(`Sentry's ${region?.toUpperCase()} data region`);
