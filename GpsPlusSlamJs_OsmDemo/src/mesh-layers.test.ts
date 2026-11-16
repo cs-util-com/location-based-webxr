@@ -147,6 +147,7 @@ function emptyMesh(): TransferableMesh {
     approximateRoofs: 0,
     inventedRoofCount: 0,
     barriers: 0,
+    fallbackBuildings: 0,
   };
 }
 

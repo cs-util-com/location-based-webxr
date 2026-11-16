@@ -57,6 +57,7 @@ import {
   serializeLightSettings,
 } from "./light-settings.js";
 import { describeDrawCost } from "./draw-cost.js";
+import { fallbackBuildingsNote } from "./fallback-note.js";
 import { readWoodsKnobs } from "./woods-readout.js";
 import {
   describeGeoEvent,
@@ -3140,6 +3141,12 @@ async function main(): Promise<void> {
       mesh === undefined
         ? ""
         : `${mesh.volumes} volumes (${mesh.parts} parts, ${mesh.guessedHeights} guessed building heights, ${mesh.inventedRoofCount} invented roofs)`,
+      // Buildings drawn simpler than planned (a roof that could not be built,
+      // drawn as a lid or plain): one such building no longer fails the city,
+      // so this note is where a viewer learns of it. Shown only when some are.
+      mesh === undefined
+        ? ""
+        : fallbackBuildingsNote(latestMesh?.fallbackBuildings ?? 0),
       // Reported only when there are some, like the plate and POI counts: a
       // zero would be noise at every site with no mapped walls, and the
       // interesting reading is "this walled site drew none".

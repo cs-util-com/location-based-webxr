@@ -30,8 +30,16 @@ union, and two runtime guards. No behaviour.
     older worker degrades to the composed-id-only HUD label.
 - `WorkerEnvelope` — what the main thread posts, including `{ kind: 'abort',
 target }`.
-- `WorkerReply` - `{ id, ok: true, value } | { id, ok: false, message, failedBuild? }`;
-  `failedBuild` (`MeshBuildChoices`) is set only for a failed city build.
+- `WorkerReply` - `{ id, ok: true, value } | { id, ok: false, message, failedBuild?, stack? }`;
+  `failedBuild` (`MeshBuildChoices`) is set only for a failed city build,
+  `stack` whenever the worker's error had one.
+- `MeshUpdate` - `full` (a `TransferableMesh`), `regions` (the slabs and
+  the underground outlines only), or `failed` (`message`, `stack?`,
+  `failedBuild`): the city build failed and the pass still carries its
+  snapshot, so the page keeps the map and reports the failure as non-fatal
+  rather than losing both.
+- `TransferableMesh.fallbackBuildings` - the buildings not drawn as built
+  (`City.fallbackBuildings`), for the status line.
 - `MeshBuildChoices` - what the user chose to build (`colourScheme`,
   `inventedRoofs`, `markings`, all required; each later build switch adds its field). `isMeshBuildChoices(value)` guards it and refuses a reply missing any.
 - `MeshBuildError` - the error class that carries `failedBuild` in the worker

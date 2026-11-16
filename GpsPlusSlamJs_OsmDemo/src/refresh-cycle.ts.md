@@ -6,7 +6,15 @@
 
 - `createRefreshCycle({ store, actions, worker, onMesh, anchors, … })` → `LatestOnly<void>`
   - Takes **no arguments** when called. Reads `position` and `category` from the store at call time.
-  - Dispatches `fetchStarted` → (`snapshotReady` | `fetchFailed`).
+  - Dispatches `fetchStarted` → (`snapshotReady` | `fetchFailed`), and for a
+    failed city build (a `failed` mesh update) `snapshotReady` then
+    `nonFatalError`: the map keeps the pass's snapshot, the 3D view keeps the
+    city it drew last, and the error on screen ends the widening. The worker
+    retries the full build on the next pass, since the page never drew it.
+  - Every failure is logged through the framework logger (`OsmRefresh`, at
+    ERROR): a failed build with the worker's stack, tagged with the build's
+    choices only; any other failure by its name and stack WITHOUT its message,
+    because a data error can name its cell. Never a cell or a position.
   - Coalesced through `latestOnly`: at most one run in flight, only the newest waiting intent survives, never rejects.
   - Optional callbacks: `geoidUndulationM` (the datum, read at post time), `onTimings` and `onClickSummary` (the click-path breakdown), and `onBusyChange`.
   - **`onBusyChange(busy)` is the only honest "a refresh is in progress" the demo has**, and the obvious alternative is wrong: this cycle dispatches `fetchStarted` ONCE, above the ring loop, while every ring's `snapshotReady` resets the phase to idle — so `loading.phase` is idle for most of a wait that can run to a minute. Passed straight to `latestOnly`, so it fires on transitions only and a supersession is silent. See `latest-only.ts.md`.
@@ -63,7 +71,9 @@ subscribe(
 
 ## Tests
 
-`refresh-cycle.test.ts`, against a fake pipeline and a real store — the phase sequence is observable _during_ the fetch (two independent witnesses); intent is read at call time, not captured; overlapping refreshes coalesce to the most recent intent; a data failure clears the snapshot and reports the message; a thrown non-`Error` still reports; the next successful refresh recovers; and `renderSafely` reports a view failure **without** discarding the snapshot, does not touch the store on success, and lets one failing view fail without stopping the next.
+`refresh-cycle.test.ts`, against a fake pipeline and a real store — the phase sequence is observable _during_ the fetch (two independent witnesses); intent is read at call time, not captured; overlapping refreshes coalesce to the most recent intent; a data failure clears the snapshot and reports the message; a thrown non-`Error` still reports; the next successful refresh recovers; a failed city build keeps the snapshot, reports non-fatally, draws nothing
+and is logged with the worker's stack and its choices; any other failure is
+logged without its message; and `renderSafely` reports a view failure **without** discarding the snapshot, does not touch the store on success, and lets one failing view fail without stopping the next.
 
 ## `onTimings` — the nine-stage breakdown
 

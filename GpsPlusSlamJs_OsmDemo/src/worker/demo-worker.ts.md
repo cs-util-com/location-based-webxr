@@ -175,9 +175,15 @@ The `update` handler checks the request's scheme name against
 `colour-schemes.ts` before any work, hands it to the planner (part of the
 build key) and to `buildCity` as `colours` (even the default, which the
 library's identity test proves byte-identical), and stamps the mesh with it.
-A full build that throws is rethrown as a `MeshBuildError` carrying the build's
-choices, which the reply posts as `failedBuild`, so the page can tell its own
-switch's failure from an Overpass error without reading the message.
+A full build that throws is answered as a `failed` mesh update carrying the
+message, the stack and the build's choices (`failedBuild`), beside the pass's
+snapshot, so the page keeps the map and can tell its own switch's failure from
+an Overpass error without reading the message. (It was a thrown
+`MeshBuildError`, which rejected the whole update and lost the snapshot; an
+unknown scheme name, checked before any work, still is one.) Every failure
+reply carries the error's `stack`. One building that cannot be built no longer
+fails the build at all (`buildings.ts.md` in the Osm package): it is counted,
+and the mesh carries the count as `fallbackBuildings`.
 
 Full build or regions only is `needsFullBuild(inputs, drawnBuildKey)` from
 `mesh-planner.ts`: the page sends the `buildKey` of the mesh it draws, and

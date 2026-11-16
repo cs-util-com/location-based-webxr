@@ -16,7 +16,8 @@ cancellation that reaches the worker, and cleanup.
     arrives through.
   - `call(kind, payload, { signal? })` — resolves with the worker's value, rejects
     with `Error(message)` on `ok: false` (a `MeshBuildError` when the reply
-    carries a well-formed `failedBuild`; a malformed one is dropped), rejects
+    carries a well-formed `failedBuild`; a malformed one is dropped; its
+    `stack` is the worker's when the reply carries one as a string), rejects
     with `RpcAbortError` if the
     signal fires. Typed by `WorkerCalls[kind]`.
   - `fail(message)` — records a fatal worker failure. Rejects every pending call
@@ -80,7 +81,8 @@ const { snapshot, mesh } = await client.call("update", { position, category });
 failure-to-rejection, foreign messages, abort reaching the worker, no-post for a
 pre-aborted signal, listener cleanup, dispose, and three for `fail` (pending
 calls rejected, transport not terminated, and a call arriving _after_ the fatal
-rejected rather than posted). The abort-post and listener-removal assertions were
+rejected rather than posted), plus the worker's stack on the rejection (and
+the page's own when the reply carries none). The abort-post and listener-removal assertions were
 **mutation-checked**: deleting either line fails exactly one test and nothing
 else. The post-fatal test is likewise mutation-checked — removing the `fatal`
 guard in `call()` makes it time out.

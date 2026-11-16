@@ -28,6 +28,7 @@
  */
 
 import { PROGRESSIVE_RADII, SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
+import { createLogger } from "gps-plus-slam-app-framework/utils/logger";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";
 import {
@@ -42,6 +43,7 @@ import type { AnchorHolder } from "./scene-anchor.js";
 import { selectLayers, selectOsmView, type DemoStore } from "./osm-store.js";
 import {
   failedBuildOf,
+  MeshBuildError,
   type MeshBuildChoices,
   type MeshUpdate,
   type UpdateResult,
@@ -141,7 +143,7 @@ export interface RefreshCycleOptions extends StoreAccess {
    * in place by the time that subscriber runs — hence "before", and hence a
    * callback rather than a return value.
    */
-  readonly onMesh: (mesh: MeshUpdate) => void;
+  readonly onMesh: (mesh: DrawableMeshUpdate) => void;
   /**
    * Where the scene is anchored — READ, never decided here.
    *
@@ -281,13 +283,47 @@ function postTimeReads(options: RefreshCycleOptions): {
   });
 }
 
-/** Hands a failed city build's choices to `onBuildFailed`; other errors pass. */
+/** A mesh update the page draws: every kind but a failed build. */
+type DrawableMeshUpdate = Exclude<MeshUpdate, { kind: "failed" }>;
+
+const log = createLogger("OsmRefresh");
+
+/**
+ * Logs a failed refresh with its stack, and hands a failed city build's
+ * choices to `onBuildFailed`. The log is tagged with the build's choices and
+ * nothing else: never a cell or a position, which would put where the user
+ * is into the log buffer. For the same reason any other failure is logged
+ * WITHOUT its message (a data error can name its cell): its name and stack.
+ */
 function reportFailedBuild(
   error: unknown,
   onBuildFailed: ((failed: MeshBuildChoices) => void) | undefined,
 ): void {
   const failedBuild = failedBuildOf(error);
-  if (failedBuild !== undefined) onBuildFailed?.(failedBuild);
+  if (failedBuild === undefined) {
+    log.error("The refresh failed", withoutMessage(error));
+    return;
+  }
+  log.error("The city build failed", { failedBuild }, error);
+  onBuildFailed?.(failedBuild);
+}
+
+/** An error's name and stack frames, its message left out. */
+function withoutMessage(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error;
+  const frames = error.stack
+    ?.split("\n")
+    .filter((line) => /^\s+at /.test(line));
+  return [error.name, ...(frames ?? [])].join("\n");
+}
+
+/** The error of a failed build as the page throws one, its stack the worker's. */
+function failedBuildError(
+  failed: Extract<MeshUpdate, { kind: "failed" }>,
+): MeshBuildError {
+  const error = new MeshBuildError(failed.message, failed.failedBuild);
+  if (failed.stack !== undefined) error.stack = failed.stack;
+  return error;
 }
 
 /** The fields whose value is not `undefined`, so absent stays absent. */
@@ -442,6 +478,19 @@ export function createRefreshCycle(
           // status line. Clocked around BOTH, because the ordering constraint
           // above means they are one indivisible step from the user's point of
           // view: the frame the user sees is the one after this pair.
+          //
+          // A FAILED CITY BUILD KEEPS THE MAP. The snapshot is sound (scoring
+          // and the map do not depend on the mesh), so it is published and
+          // the failure reported beside it as non-fatal: the error is on
+          // screen, which ends the widening, and the 3D view keeps the city it
+          // drew last until a build succeeds (the worker retries the full
+          // build on the next pass, because the page never drew this one).
+          if (mesh.kind === "failed") {
+            reportFailedBuild(failedBuildError(mesh), options.onBuildFailed);
+            store.dispatch(actions.snapshotReady(snapshot));
+            store.dispatch(actions.nonFatalError(mesh.message));
+            return;
+          }
           const drawStart = nowMs();
           onMesh(mesh);
           store.dispatch(actions.snapshotReady(snapshot));

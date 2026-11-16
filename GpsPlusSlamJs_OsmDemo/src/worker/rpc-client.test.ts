@@ -105,6 +105,39 @@ describe("createRpcClient", () => {
     await expect(promise).rejects.toThrow("Overpass 429");
   });
 
+  it("rejects with the worker's stack, where the fault is", async () => {
+    // Why this test matters: a failure rebuilt on the page has a stack that
+    // points into the RPC listener, so a logged error said nothing about
+    // where the worker failed. The reply carries the worker's stack.
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport);
+    const promise = client.call("update", {
+      position: { lat: 50.94, lng: 6.96 },
+      category: "walkable",
+    });
+    const stack = "Error: boom\n    at buildMesh (demo-worker.ts:1:1)";
+    fake.reply({ id: fake.posted[0]?.id, ok: false, message: "boom", stack });
+    const error = await promise.catch((caught: unknown) => caught);
+    expect((error as Error).stack).toBe(stack);
+  });
+
+  it("keeps the page's own stack when the reply carries none", async () => {
+    const fake = fakeTransport();
+    const client = createRpcClient(fake.transport);
+    const promise = client.call("update", {
+      position: { lat: 50.94, lng: 6.96 },
+      category: "walkable",
+    });
+    fake.reply({
+      id: fake.posted[0]?.id,
+      ok: false,
+      message: "boom",
+      stack: 7,
+    });
+    const error = await promise.catch((caught: unknown) => caught);
+    expect((error as Error).stack).toContain("boom");
+  });
+
   it("carries a failed city build's choices as a field, not in the text", async () => {
     // Why this test matters: the colour-scheme switch reverts only when the
     // build it waits for failed. Reading that from the message text broke as

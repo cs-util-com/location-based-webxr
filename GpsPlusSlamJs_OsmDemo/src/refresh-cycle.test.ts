@@ -18,7 +18,12 @@ import {
   ZERO_STAGE_TIMINGS,
   ZERO_WORKER_TIMINGS,
 } from "./snapshot-timings-fixture.js";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import {
+  LogLevel,
+  clearLogBuffer,
+  getLogBuffer,
+} from "gps-plus-slam-app-framework/utils/logger";
 
 import {
   PROGRESSIVE_RADII,
@@ -112,6 +117,7 @@ const NO_MESH: TransferableMesh = {
   guessedHeights: 0,
   approximateRoofs: 0,
   inventedRoofCount: 0,
+  fallbackBuildings: 0,
   barriers: 0,
 };
 
@@ -1360,5 +1366,104 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
     order.length = 0;
     await failing(new Error("Overpass answered 429"))();
     expect(order).toEqual(["error"]);
+  });
+
+  describe("a failed city build", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      clearLogBuffer();
+    });
+
+    const CHOICES = {
+      colourScheme: "night",
+      inventedRoofs: true,
+      markings: false,
+    };
+
+    /** A cycle whose worker answers with `mesh` and the pass's snapshot. */
+    function failingMesh(onBuildFailed?: (failed: unknown) => void) {
+      const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+      const drawn: string[] = [];
+      const refresh = createRefreshCycle({
+        store: demo.store,
+        actions: demo.actions,
+        anchors: createAnchorHolder(COLOGNE),
+        worker: {
+          call: (_kind, payload) =>
+            Promise.resolve({
+              snapshot: snapshotAt(payload.category, payload.radius),
+              mesh: {
+                kind: "failed" as const,
+                message:
+                  "building the city failed: the stitched roof is not closed",
+                stack:
+                  "SkeletonFailure: the stitched roof is not closed\n    at assertClosed (skeleton-mesh.ts:1:1)",
+                failedBuild: CHOICES,
+              },
+              workerTimings: ZERO_WORKER_TIMINGS,
+            }),
+        },
+        onMesh: (mesh) => drawn.push(mesh.kind),
+        ...(onBuildFailed === undefined ? {} : { onBuildFailed }),
+      });
+      return { demo, drawn, refresh };
+    }
+
+    // Why this test matters: a failed build used to reject the whole update,
+    // and the store's `fetchFailed` cleared the snapshot with it, so the map
+    // lost its cells and the cell rectangle because the 3D city could not be
+    // built. The snapshot does not depend on the mesh: it must survive.
+    it("keeps the snapshot and reports the failure as non-fatal", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const failed: unknown[] = [];
+      const { demo, drawn, refresh } = failingMesh((f) => failed.push(f));
+      await refresh();
+      const view = selectOsmView(demo.store.getState());
+      expect(view.snapshot).toBeDefined();
+      expect(view.loading).toEqual({
+        phase: "error",
+        message: "building the city failed: the stitched roof is not closed",
+      });
+      expect(drawn).toEqual([]);
+      expect(failed).toEqual([CHOICES]);
+    });
+
+    // Why this test matters: the error used to reach only the toast, as a
+    // message without a stack. It is logged with the worker's stack, tagged
+    // with the build's choices and nothing that says where the user is.
+    it("logs the failure with the worker's stack and the build's choices", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      clearLogBuffer();
+      const { refresh } = failingMesh();
+      await refresh();
+      const entry = getLogBuffer().at(-1);
+      expect(entry?.level).toBe(LogLevel.ERROR);
+      expect(entry?.tag).toBe("OsmRefresh");
+      expect(entry?.message).toContain("night");
+      expect(entry?.message).toContain("at assertClosed");
+      expect(entry?.message).not.toContain(String(COLOGNE.lat));
+    });
+
+    it("logs any other refresh failure by its stack, without its message", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      clearLogBuffer();
+      const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+      await createRefreshCycle({
+        store: demo.store,
+        actions: demo.actions,
+        anchors: createAnchorHolder(COLOGNE),
+        worker: {
+          call: () =>
+            Promise.reject(
+              new Error("Cell 8a0000000000fff has no usable boundary"),
+            ),
+        },
+        onMesh: () => {},
+      })();
+      const entry = getLogBuffer().at(-1);
+      expect(entry?.level).toBe(LogLevel.ERROR);
+      expect(entry?.message).toContain("The refresh failed");
+      expect(entry?.message).not.toContain("8a0000000000fff");
+    });
   });
 });

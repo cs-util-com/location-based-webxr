@@ -5,7 +5,10 @@
   `2026-10-01-0945-globe-round-5-fly-in-and-terrain-blend-plan.md` §3.6) and
   warns through an injected `warn`. This is the worker's `warn`: the
   framework logger tagged `OsmBlobStore`, so a failed cache write or listing
-  is logged, buffered and reported as a Sentry Issue exactly as before.
+  is logged to the console and kept in the worker's log buffer, as before.
+  It is NOT reported to Sentry: the logger's Sentry calls do nothing until
+  `Sentry.init` runs, and this demo initialises Sentry nowhere (only the
+  RecorderApp does), the worker least of all.
 - Public API: `osmStoreWarn(message, details)` (an `OsmBlobStoreWarn`).
 - Invariants: `demo-worker.ts` opens its store with
   `openOsmStore({ warn: osmStoreWarn })`. The globe lab's prefetch cannot
