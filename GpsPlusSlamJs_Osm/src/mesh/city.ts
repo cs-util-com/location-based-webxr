@@ -203,6 +203,14 @@ export interface City {
   readonly furniture: readonly FurniturePlacement[];
   /** The painted land use over `window`, only with `groundTint: true`. */
   readonly groundTint?: GroundTint;
+  /**
+   * Buildings not drawn as built, because their own build failed
+   * (`BuildBuildingsOptions.onFallback`): an invented roof drawn as a flat
+   * lid, an outline drawn as its plain volume, or one skipped. Counted over
+   * every building built, `withinM` or not. One building's failure never
+   * fails the city.
+   */
+  readonly fallbackBuildings: number;
 }
 
 /**
@@ -253,9 +261,13 @@ export function buildCity(
     withinM === undefined ||
     (Math.abs(p.x) <= withinM && Math.abs(p.y) <= withinM);
   const all = [...features];
+  let fallbackBuildings = 0;
   const built = buildBuildings(all, {
     ...ground,
     inventedRoofs: options.inventedRoofs !== false,
+    onFallback: () => {
+      fallbackBuildings += 1;
+    },
   });
   const volumes = withinWindow(built, inside);
   const barriers = buildBarriers(all, ground).filter((b) =>
@@ -367,6 +379,7 @@ export function buildCity(
     roadCount,
     zebraStripeCount,
     pedestrianAreaCount,
+    fallbackBuildings,
   };
   return { ...city, ...cityGroundTint(all, ground, options, colours) };
 }

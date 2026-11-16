@@ -12,8 +12,10 @@ import { SkeletonFailure } from "./roof-skeleton.js";
  *
  * Why this test matters: a refused ring (`SkeletonFailure`) is an expected
  * outcome and gives a lid; any other error is a defect in the skeleton or
- * the planner, and swallowing it would turn every such bug into silently
- * flat roofs that no test notices.
+ * the planner. A defect must not fail the whole plan (one house would fail
+ * the city and the obstacle index), and it must not pass silently either
+ * (every such bug would become plain buildings no one notices): that house
+ * gets no plan, and `onDefect` hears of it once.
  */
 
 const thrown: { error: Error | undefined } = { error: undefined };
@@ -56,10 +58,26 @@ describe("planInventedRoofs, skeleton errors", () => {
     }
   });
 
-  it("lets any other error through", () => {
-    thrown.error = new TypeError("a defect");
+  it("reports any other error once and leaves only that house without a plan", () => {
+    const defect = new TypeError("a defect");
+    thrown.error = defect;
+    const onDefect = vi.fn();
     try {
-      expect(() => planInventedRoofs([house()])).toThrow(TypeError);
+      const plans = planInventedRoofs([house()], { onDefect });
+      expect(plans.has(house().key)).toBe(false);
+      expect(onDefect).toHaveBeenCalledTimes(1);
+      expect(onDefect).toHaveBeenCalledWith(defect, house().key);
+    } finally {
+      thrown.error = undefined;
+    }
+  });
+
+  it("reports nothing for a refused ring", () => {
+    thrown.error = new SkeletonFailure("parallel walls");
+    const onDefect = vi.fn();
+    try {
+      planInventedRoofs([house()], { onDefect });
+      expect(onDefect).not.toHaveBeenCalled();
     } finally {
       thrown.error = undefined;
     }

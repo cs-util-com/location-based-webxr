@@ -170,6 +170,13 @@ export interface TransferableMesh {
   /** Volumes whose pitched roof was invented (`roofIsInvented`). */
   readonly inventedRoofCount: number;
   /**
+   * Buildings not drawn as built (`City.fallbackBuildings`): a roof drawn as
+   * a flat lid because its mesh did not close, or an outline drawn plain or
+   * skipped because its build threw. The status line names them, so one
+   * building that could not be built is visible without failing the city.
+   */
+  readonly fallbackBuildings: number;
+  /**
    * Solid barriers drawn (DEC-R11-2).
    *
    * **Counted because DEC-R11-11 gave up the other way of checking.** Barriers
@@ -232,6 +239,20 @@ export type MeshUpdate =
        * `needsFullBuild` says no.
        */
       readonly underground: readonly Float32Array[];
+    }
+  | {
+      /**
+       * The city build failed, and the pass still has its SNAPSHOT: the map,
+       * the cells and the cell rectangle are drawn from it. A failed build
+       * used to reject the whole update, and the page cleared the snapshot
+       * with it, so one city that could not be built blanked the map too.
+       * `message` and `stack` are the build error's; `failedBuild` the
+       * choices it was built with, as on a failed reply.
+       */
+      readonly kind: "failed";
+      readonly message: string;
+      readonly stack?: string;
+      readonly failedBuild: MeshBuildChoices;
     };
 
 /** One finished data cycle. */
@@ -745,6 +766,11 @@ export type WorkerReply =
        * without reading the message.
        */
       readonly failedBuild?: MeshBuildChoices;
+      /**
+       * The worker-side stack of the error, when it had one: a stack rebuilt
+       * on the page would point into the RPC client, not at the fault.
+       */
+      readonly stack?: string;
     };
 
 /**

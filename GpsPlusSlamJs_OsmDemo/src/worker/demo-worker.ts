@@ -507,6 +507,7 @@ function buildMesh(
     // and that is the common case the approximation trade rests on.
     approximateRoofs: volumes.filter((v) => v.roofIsApproximate).length,
     inventedRoofCount: volumes.filter((v) => v.roofIsInvented).length,
+    fallbackBuildings: city.fallbackBuildings,
     barriers: barriers.length,
   };
 }
@@ -624,8 +625,10 @@ function meshUpdateFor(
       underground: packUnderground(snapshot.undergroundOutlines, options.frame),
     };
   }
-  // A FAILED BUILD CARRIES ITS CHOICES as a field of the reply, so the
-  // dropdown reverts a switch only when the build it waits for failed.
+  // A FAILED BUILD CARRIES ITS CHOICES, so the dropdown reverts a switch
+  // only when the build it waits for failed. It is a mesh update, not a
+  // thrown error: the pass's snapshot still reaches the page, which keeps
+  // the map while it reports the failure.
   try {
     return {
       kind: "full",
@@ -646,11 +649,14 @@ function meshUpdateFor(
       },
     };
   } catch (error) {
-    throw new MeshBuildError(
-      `building the city failed: ${error instanceof Error ? error.message : String(error)}`,
-      choices,
-      error,
-    );
+    return {
+      kind: "failed",
+      message: `building the city failed: ${error instanceof Error ? error.message : String(error)}`,
+      ...(error instanceof Error && error.stack !== undefined
+        ? { stack: error.stack }
+        : {}),
+      failedBuild: choices,
+    };
   }
 }
 
@@ -684,8 +690,9 @@ async function handle<K extends WorkerCallKind>(
       // OPFS where available, memory otherwise - built in `osm-tile-cache.ts`,
       // the one place the globe's arrival prefetch builds it too, so the two
       // can never warm and read different caches. Its failures go to the
-      // framework logger (a Sentry Issue), as before the store stopped
-      // importing the logger itself.
+      // framework logger, as before the store stopped importing the logger
+      // itself; whether they reach an error report depends on whether the
+      // app starts error reporting.
       const store = await openOsmStore({ warn: osmStoreWarn });
       const loaded = await loadRuleTable({ store });
       // The static tile host only on an explicit true (main reads `tiles=off`).
@@ -1452,6 +1459,9 @@ self.addEventListener("message", (event: MessageEvent) => {
           ok: false,
           message: error instanceof Error ? error.message : String(error),
           ...(failedBuild === undefined ? {} : { failedBuild }),
+          ...(error instanceof Error && error.stack !== undefined
+            ? { stack: error.stack }
+            : {}),
         });
       },
     )

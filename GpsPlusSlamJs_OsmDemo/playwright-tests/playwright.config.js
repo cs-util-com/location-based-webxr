@@ -32,7 +32,7 @@ const testMatch = laneTestMatch(process.env);
 
 export default defineConfig({
   testDir: ".",
-  ...(testMatch ? { testMatch } : {}),
+  testMatch,
   // REFUSE TO RUN AGAINST A DEV SERVER OLDER THAN THE LAST LIBRARY BUILD.
   // `reuseExistingServer` below asks only whether the URL responds, and a server
   // that predates a rebuild of a linked workspace library still rewrites imports

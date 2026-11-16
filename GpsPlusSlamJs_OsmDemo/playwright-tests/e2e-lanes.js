@@ -59,15 +59,18 @@ export function specsOfLane(lane) {
 const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * The config's `testMatch` for the lane `E2E_LANE` names, or `undefined`
- * (Playwright's default, every spec) when none is set.
+ * The config's `testMatch` for the lane `E2E_LANE` names, or every
+ * `*.spec.js` / `*.spec.mjs` file when none is set: the files the lane table
+ * must name (`tests/repo-config/e2e-pr-tier.test.js`), not Playwright's
+ * default, which would also run a `*.spec.ts` or `*.test.js` that no lane
+ * runs in CI.
  *
  * @param {Record<string, string | undefined>} env
- * @returns {RegExp[] | undefined}
+ * @returns {RegExp[]}
  * @throws {RangeError} from `laneSpecs`, so a stale lane stops the run
  */
 export function laneTestMatch(env) {
   const specs = laneSpecs(env, { LANES, specsOfLane });
-  if (specs === null) return undefined;
+  if (specs === null) return [/\.spec\.m?js$/];
   return specs.map((name) => new RegExp(`(^|[\\\\/])${escapeRegExp(name)}$`));
 }

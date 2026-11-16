@@ -14,6 +14,11 @@ OSM features to building volumes, honouring `building:part`.
     outline not drawn because what stands inside it fills it, and a
     multi-polygon outline are drawn exactly as with the option off
     (`site-invented-roofs.test.ts` compares the bytes on every fixture).
+  - **`onFallback(error)`** (optional): called at most once per outline
+    key, with the first error that key met: a defect its invented-roof plan
+    survived (the planner's `onDefect`), an invented roof whose mesh threw,
+    or an outline whose build threw. A later error for a key already
+    reported is not reported. `buildCity` counts these.
 - `inventedRoofTotals(features, frame): Map<OsmFeatureKey, number>` - the
   invented height (base to top) of every building that takes an invented roof
   or lid, from the same planner and the same input as `buildBuildings`, for
@@ -81,6 +86,22 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     after.
 
 ## Invariants & assumptions
+
+- **One building never breaks the city** (2026-11-16). Each outline is built
+  in its own try block (`isolated`): when its build throws, it is drawn as
+  its plain volume from the tags, or skipped when that throws too, and
+  `onFallback` hears of it. An invented roof whose mesh throws, for any
+  reason (a roof that did not close, or a defect in its walls, soffits,
+  build or placement), is drawn as a flat lid at the PLANNED top instead, so
+  the obstacle index, which reads the plan, still matches the screen; when
+  that lid throws too, the outline falls back to its plain volume and is
+  still reported once. The planner already grants only roofs whose eave-0
+  mesh closed, and draws that mesh, so this is the last guard. The planner
+  isolates each house itself (`invented-roofs.ts.md`): a defect while
+  planning one leaves it without a plan, so it is drawn plain here and the
+  obstacle index takes its tagged height. A try block costs nothing while
+  nothing throws; no city-build benchmark measured it. Not isolated: the
+  parts and the tall structures (a defect there still propagates).
 
 - **The base sits at the LOWEST terrain height under the outer ring, and the walls
   are lengthened to match (DEC-R2-19).** Previously one sample was taken at the
@@ -296,6 +317,16 @@ const batch = mergeMeshes(volumes.map((v) => v.mesh));
   relations; Midtown and Park Slope 0), every other volume byte-identical to
   the off build, every invented top drawn at `topHeightM`, and
   `inventedRoofTotals` equal to the drawn heights, on all 12 sites.
+- `buildings.isolation.test.ts` - the mesh call mocked to throw: a
+  `SkeletonFailure` and any other error both draw a lid at the planned top
+  (the height the obstacle index holds), `onFallback` hears each once and a
+  house whose plan and build both had a defect once, the neighbour is drawn
+  as built, and `buildCity` counts the fallback.
+- `invented-roofs.planner-isolation.test.ts` - a defect injected into one
+  house's skeleton or roof mesh: the planner, `buildBuildings` and the
+  obstacle index all survive, the house is drawn as another roof, a lid or
+  its plain volume, the index holds the drawn height, and `onFallback`
+  hears of it once.
 - `part-coverage.test.ts` — the covered share (courtyards, overlaps, two outers,
   frame independence as a property).
 - `s3db-parts.test.ts` — a half-filled outline drawn (synthetic and Tower

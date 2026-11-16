@@ -264,7 +264,10 @@ None. Entry point only, loaded by `index.html`.
     worker's key. The refresh cycle and the agent cycle read it at post time,
     AR included; `onMesh` ends the switch on the echo, `onBuildFailed` reverts
     its own failed build.
-  - **The status line** counts the invented roofs beside the guessed heights.
+  - **The status line** counts the invented roofs beside the guessed heights,
+    and names the buildings simplified or left out when there are some
+    (`fallback-note.ts`): one building that could not be built no longer
+    fails the city, so this is where a viewer learns of it.
 
 - **The colour scheme** (colour schemes plan 2026-11-10-0841):
   - **`?scheme=<name>`** boots in that scheme through `resolveColourScheme`

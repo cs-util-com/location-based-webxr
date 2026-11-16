@@ -131,11 +131,13 @@ export function createRpcClient(
     if (data.ok) {
       entry.resolve(data.value);
     } else {
-      entry.reject(
-        isMeshBuildChoices(data.failedBuild)
-          ? new MeshBuildError(data.message, data.failedBuild)
-          : new Error(data.message),
-      );
+      const error = isMeshBuildChoices(data.failedBuild)
+        ? new MeshBuildError(data.message, data.failedBuild)
+        : new Error(data.message);
+      // THE WORKER'S STACK, where the fault is: the one built here would
+      // point into this listener.
+      if (typeof data.stack === "string") error.stack = data.stack;
+      entry.reject(error);
     }
   });
 
