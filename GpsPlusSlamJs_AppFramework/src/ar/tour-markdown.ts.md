@@ -137,8 +137,11 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
   holds those characters.
 - **Totality and linear time.** Any string reads. The bracket stack's
   "no links inside links" rule is a floor index, link destinations are
-  scanned with a precomputed parenthesis index, and adjacent literal text
-  is appended to one node, so no input shape rescans what was read.
+  scanned with a precomputed parenthesis index, the emphasis openers'
+  bottom per closer class is a delimiter's creation position (a delimiter
+  as the bound stops no walk once a match removes it, which made
+  `[_*1__[` repeated quadratic), and adjacent literal text is appended to
+  one node, so no input shape rescans what was read.
   The walk steps per character are the same at 8 k and 128 k characters
   on every adversarial shape in the linearity test. The count includes
   the block parser's line scans (indentation, blank and thematic break
