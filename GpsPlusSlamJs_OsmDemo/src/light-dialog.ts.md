@@ -16,7 +16,11 @@ WebGL.
   - `deps.opener?`: the button that opens it. It gets `aria-controls` and
     `aria-expanded`, and focus back on close.
   - `deps.initial`: the starting `LightSettings` (from the URL).
-  - `deps.onChange(settings)`: called on every slider `input` and on Reset.
+  - `deps.defaults?`: what Reset returns to, the colour scheme's light
+    (`lightDefaultsFor`); the shipped look when left out.
+  - `deps.onChange(settings)`: called on every slider `input`, on Reset and
+    on `setDefaults`, except the haze visibility, which is applied on
+    `change` (release).
     `main.ts` applies the settings to the view and writes the URL.
   - `deps.measure(withMargin)`: a `LightReadout` for the view as it stands:
     `litLuma`, `margin | null` (only measured when `withMargin`) and `view`
@@ -39,7 +43,11 @@ WebGL.
     focuses the first slider.
   - `refresh()`: re-reads the brightness when open. The page calls it on
     every sun move.
-  - `settings` and `dispose()`.
+  - `settings`, `defaults` and `dispose()`.
+  - `setDefaults(next)`: moves onto a new scheme's defaults
+    (`rebaseLightSettings`: an untouched value follows, a set one stays),
+    shows and applies the result through `onChange`. The page calls it on a
+    colour scheme switch.
 - `HEAT_GRID_MARGIN_BOUND = 5`: the DEC-R4-5 bound that the check compares
   against.
 
@@ -48,7 +56,10 @@ WebGL.
 - **The element ids are the contract with the page and the e2e:**
   - `#light-dialog`;
   - `#light-<field>`, one range input per `LightSettings` field, with its
-    range from `LIGHT_SETTING_RANGES`;
+    range from `LIGHT_SETTING_RANGES` (the haze sliders come last:
+    `#light-hazeVisibilityKm`, `#light-hazeStartRatio`, then the veil's
+    `#light-hazeVeilLightness`, 0 = the sky's colour, and
+    `#light-hazeVeilTint`);
   - `#light-ao`, the ambient occlusion checkbox (only when offered);
   - `#light-readout`;
   - `#light-back`, `#light-check`, `#light-copy`, `#light-reset` and
@@ -56,6 +67,11 @@ WebGL.
 - **The gain ramp always rises.** A start dragged past the end moves the
   end, and the other way round, so the view never receives a ramp that
   `surfaceGainAt` refuses.
+- **The haze visibility is applied on `change` (release), not on `input`.**
+  A new visibility rebuilds the sky's tables, which a drag applied on every
+  step did at every whole km. Its `<output>` still follows the thumb on
+  `input`. Every other value is cheap (uniforms, a fog distance) and stays
+  live.
 - **The brightness is read on `change` (release), not on `input`,** and
   without the margin's second render. Each reading is a full-frame readback
   (plan §7 item 4).
@@ -118,9 +134,13 @@ dialog.toggle();
     focus in on open and back to the opener; `aria-expanded`;
   - a slider reaching `onChange` and showing its value;
   - the ramp kept rising in both directions;
+  - the haze visibility applied on release with its readout live, the
+    other values live on the drag;
+  - the veil's two sliders, off by default and applied live;
   - the brightness alone on release, the margin only on the check;
   - `refresh()` while open and while closed;
-  - Reset;
+  - Reset, to the shipped look and to a scheme's own defaults, and
+    `setDefaults` carrying a set value onto the new scheme;
   - the check's in-progress state, its result on both sides of the bound,
     the ground mode, no grid, and a measurement that throws;
   - the default `nextFrame` measuring only after the frame's task;

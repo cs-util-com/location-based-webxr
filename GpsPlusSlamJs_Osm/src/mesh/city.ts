@@ -277,6 +277,9 @@ export function buildCity(
   //
   // Under the seeded palette a part passes its OUTLINE's key, so an untagged
   // cathedral draws one wall tone and one roof tone across all its parts.
+  // The tower rule reads the height of the same building, its tallest volume,
+  // so a podium and its tower stay one colour too.
+  const tallestByKey = tallestVolumeByKey(volumes);
   const drawn = [
     ...volumes.map((volume) => {
       const tags = tagsByKey.get(volume.feature) ?? {};
@@ -294,6 +297,7 @@ export function buildCity(
               volume.parentFeature ?? volume.feature,
               drawsPitchedRoof(volume),
               colours,
+              tallestByKey.get(volume.parentFeature ?? volume.feature),
             )
           : {
               wall: buildingColour(tags, outline),
@@ -402,6 +406,19 @@ function cityFurniture(
     window: options.window,
     ...(options.furniture === undefined ? {} : { kinds: options.furniture }),
   }).filter((f) => inside(f.position));
+}
+
+/** The tallest `totalHeightM` per building key (a part: its outline's). */
+function tallestVolumeByKey(
+  volumes: readonly BuildingVolume[],
+): Map<string, number> {
+  const tallest = new Map<string, number>();
+  for (const volume of volumes) {
+    const k = volume.parentFeature ?? volume.feature;
+    const h = volume.heights.totalHeightM;
+    tallest.set(k, Math.max(h, tallest.get(k) ?? h));
+  }
+  return tallest;
 }
 
 /**

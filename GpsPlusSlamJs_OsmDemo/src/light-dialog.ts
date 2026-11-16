@@ -10,6 +10,7 @@
 import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
+  rebaseLightSettings,
   type LightSettings,
 } from "./light-settings.js";
 
@@ -24,7 +25,21 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   buildingSkyLight: "Sky light on buildings",
   exposureEv: "Overall exposure (EV)",
   exposureAdaptation: "Auto-exposure strength (mostly dawn and dusk darkness)",
+  hazeVisibilityKm: "Haze: visibility (km, lower is hazier)",
+  hazeStartRatio: "Haze: fade starts at (share of the draw distance)",
+  hazeVeilLightness:
+    "Haze: veil lightness (L* on screen, 0 = the sky's colour)",
+  hazeVeilTint: "Haze: veil tint (b* on screen, below 0 is bluer)",
 };
+
+/**
+ * The values applied when the slider is released, not while it is dragged:
+ * a new haze visibility rebuilds the sky's tables, which a drag would do at
+ * every step. Their readout still follows the thumb.
+ */
+const APPLIED_ON_RELEASE: ReadonlySet<keyof LightSettings> = new Set([
+  "hazeVisibilityKm",
+]);
 
 /** One measurement of the view as it stands. */
 interface LightReadout {
@@ -41,6 +56,11 @@ export interface LightDialogDeps {
   /** The button that opens it: told whether it is expanded, and focused again on close. */
   readonly opener?: HTMLElement;
   readonly initial: LightSettings;
+  /**
+   * What Reset returns to: the colour scheme's light (`lightDefaultsFor`),
+   * the shipped look when left out. `setDefaults` moves it later.
+   */
+  readonly defaults?: LightSettings;
   /** Applies a setting live (the view, the URL). */
   readonly onChange: (settings: LightSettings) => void;
   /**
@@ -72,6 +92,14 @@ export interface LightDialog {
   /** Re-reads the brightness when open (the page calls it on a sun move). */
   refresh(): void;
   readonly settings: LightSettings;
+  /** The defaults Reset returns to and the light link is written against. */
+  readonly defaults: LightSettings;
+  /**
+   * Moves onto new defaults (the page calls it on a colour scheme switch):
+   * a value still at the old default takes the new one, a value the viewer
+   * set keeps it (`rebaseLightSettings`), and the result is applied.
+   */
+  setDefaults(next: LightSettings): void;
   dispose(): void;
 }
 
@@ -93,6 +121,7 @@ const afterPaint = (callback: () => void) => {
 export function createLightDialog(deps: LightDialogDeps): LightDialog {
   const nextFrame = deps.nextFrame ?? afterPaint;
   let settings = deps.initial;
+  let defaults = deps.defaults ?? DEFAULT_LIGHT_SETTINGS;
 
   const panel = document.createElement("section");
   panel.id = "light-dialog";
@@ -194,21 +223,29 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     deps.onChange(settings);
   };
 
+  const applyField = (field: keyof LightSettings, input: HTMLInputElement) => {
+    let next: LightSettings = { ...settings, [field]: Number(input.value) };
+    // The ramp must rise: a start dragged past the end moves the end.
+    if (!(next.gainFullDeg > next.gainFromDeg)) {
+      next =
+        field === "gainFromDeg"
+          ? { ...next, gainFullDeg: next.gainFromDeg + 1 }
+          : { ...next, gainFromDeg: next.gainFullDeg - 1 };
+    }
+    apply(next);
+  };
   for (const [field, input] of inputs) {
+    const onRelease = APPLIED_ON_RELEASE.has(field);
     input.addEventListener("input", () => {
-      let next: LightSettings = { ...settings, [field]: Number(input.value) };
-      // The ramp must rise: a start dragged past the end moves the end.
-      if (!(next.gainFullDeg > next.gainFromDeg)) {
-        next =
-          field === "gainFromDeg"
-            ? { ...next, gainFullDeg: next.gainFromDeg + 1 }
-            : { ...next, gainFromDeg: next.gainFullDeg - 1 };
-      }
-      apply(next);
+      if (onRelease) values.get(field)!.value = input.value;
+      else applyField(field, input);
     });
     // The brightness on release, not on every drag event: each reading is a
     // full-frame readback (plan §7 item 4).
-    input.addEventListener("change", brightness);
+    input.addEventListener("change", () => {
+      if (onRelease) applyField(field, input);
+      brightness();
+    });
   }
 
   // Applied at once (the view redraws one frame); the brightness it now
@@ -219,7 +256,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   });
 
   reset.addEventListener("click", () => {
-    apply(DEFAULT_LIGHT_SETTINGS);
+    apply(defaults);
     brightness();
   });
 
@@ -313,6 +350,14 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     },
     get settings() {
       return settings;
+    },
+    get defaults() {
+      return defaults;
+    },
+    setDefaults(next) {
+      const from = defaults;
+      defaults = next;
+      apply(rebaseLightSettings(settings, from, next));
     },
     dispose() {
       document.removeEventListener("keydown", onKey);

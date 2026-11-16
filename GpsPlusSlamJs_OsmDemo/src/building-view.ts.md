@@ -43,8 +43,12 @@ map scored.
 - **The light dialog** (plan 2026-09-24-2140): `setLightSettings(settings)`
   holds the settings (`light-settings.ts`) and applies them: the surface
   gain's ramp through `aimSun`, the exposure through the rig's
-  `setExposure`, and the sky light on buildings before every render (one
-  private `prepareFrame` for every render path).
+  `setExposure`, the haze through the rig's `setHaze` (its start then
+  written to the view's own fog, `fog.near = hazeStartRatio x fog.far`; the
+  view's fog object, not `scene.fog`, because an AR session swaps that), and
+  the sky light on buildings before every render (one private
+  `prepareFrame` for every render path). `setFarPlane` reads the same ratio
+  back from the rig, so the render-distance dial keeps a lowered start.
   `measureLight({ withMargin = true })` renders and reads with
   `gl.readPixels` straight after each render, so each read is the frame just
   drawn with the grid as set: the lit-surface brightness with the heat grid's
@@ -508,7 +512,9 @@ location; `building-view-content.test.ts` pins the four invariants above.
   past the fade window (`AO_FADE`, 700-1400 m of view depth), which ends
   before the nearest the fog ever starts (`FOG_NEAR_M`, 1584 m at the
   shortest render distance), so the fogged distance and the sky keep
-  their colour bit for bit.
+  their colour bit for bit. That holds at the shipped haze start; a start
+  the light dialog lowers below 1400 m lets the AO reach into the boundary
+  fade (a tuning look; the light gates run at the defaults).
 - **Display exponent 1** (`AO_DISPLAY_EXPONENT`): the linear factor is
   multiplied straight onto the tone-mapped, sRGB-encoded canvas, so the
   creases read darker than with the framework's default 1 / 2.2, which

@@ -65,6 +65,16 @@ export interface CityColourScheme
   readonly pitchedRoofs: readonly Rgb[];
   /** Seeded flat roof tones (`FLAT_ROOF_TONES`). */
   readonly flatRoofs: readonly Rgb[];
+  /** Wall tones at or above `towerFromM` (the default: `walls`). */
+  readonly towerWalls: readonly Rgb[];
+  /** The tower rule's height in metres, above 0 (the default: infinite, off). */
+  readonly towerFromM: number;
+  /** Read `building:material` into `materialWalls` (the default: false). */
+  readonly honourMaterialTags: boolean;
+  /** Wall tone per lower-case `building:material` (the default: none). */
+  readonly materialWalls: ReadonlyMap<string, Rgb>;
+  /** Seeded per-building wall L* shift, 0..`MAX_WALL_JITTER_L` (default 0). */
+  readonly wallJitterL: number;
   /** Per `highway` class. */
   readonly roads: ReadonlyMap<string, Rgb>;
   /** Per `surface` value. */
@@ -91,14 +101,29 @@ export const DEFAULT_CITY_COLOUR_SCHEME: CityColourScheme = Object.freeze({
   landUse: DEFAULT_LAND_USE_RGB,
 });
 
-const BOOLEAN_FIELDS = ["honourColourTags", "roadsBySurface"] as const;
+/**
+ * The largest `wallJitterL`: 20 L* either way already moves a mid grey across
+ * a third of the ladder, so anything above it is a typo, not a look.
+ */
+const MAX_WALL_JITTER_L = 20;
+
+const BOOLEAN_FIELDS = [
+  "honourColourTags",
+  "roadsBySurface",
+  "honourMaterialTags",
+] as const;
 const COLOUR_FIELDS = [
   "ground",
   "sidewalk",
   "defaultRoad",
   "markings",
 ] as const;
-const LIST_FIELDS = ["walls", "pitchedRoofs", "flatRoofs"] as const;
+const LIST_FIELDS = [
+  "walls",
+  "pitchedRoofs",
+  "flatRoofs",
+  "towerWalls",
+] as const;
 const MAP_FIELDS = [
   "roads",
   "roadSurfaces",
@@ -126,7 +151,11 @@ function rgbText(value: unknown): string {
  * `DEFAULT_CITY_COLOUR_SCHEME`, booleans as booleans, every colour an
  * integer in 0..0xffffff, every tone list non-empty, and every map a `Map`
  * holding exactly the default's keys (a missing key is a colour the scheme
- * forgot; an extra one is a typo that would never be read). Throws
+ * forgot; an extra one is a typo that would never be read). `towerFromM` is
+ * a number above 0 (infinite allowed), `wallJitterL` a finite number in
+ * 0..`MAX_WALL_JITTER_L`, and `materialWalls` a `Map` of free keys, each a
+ * non-empty trimmed lower-case string (the form the palette looks up, so any
+ * other key would never be read) with a colour value. Throws
  * `RangeError` naming the first problem; returns the value unchanged.
  */
 export function validateCityColourScheme(scheme: unknown): CityColourScheme {
@@ -148,7 +177,55 @@ export function validateCityColourScheme(scheme: unknown): CityColourScheme {
   }
   for (const field of LIST_FIELDS) validateList(field, s[field]);
   for (const field of MAP_FIELDS) validateMap(field, s[field]);
+  validateWallRules(s);
   return scheme as CityColourScheme;
+}
+
+/** `towerFromM`, `wallJitterL` and `materialWalls`, as documented above. */
+function validateWallRules(s: Record<string, unknown>): void {
+  const towerFromM = s["towerFromM"];
+  if (typeof towerFromM !== "number" || !(towerFromM > 0)) {
+    throw new RangeError(
+      `colour scheme towerFromM must be a number above 0, got ${rgbText(towerFromM)}`,
+    );
+  }
+  const jitter = s["wallJitterL"];
+  if (
+    typeof jitter !== "number" ||
+    !Number.isFinite(jitter) ||
+    jitter < 0 ||
+    jitter > MAX_WALL_JITTER_L
+  ) {
+    throw new RangeError(
+      `colour scheme wallJitterL must be 0..${MAX_WALL_JITTER_L}, got ${rgbText(jitter)}`,
+    );
+  }
+  validateMaterialWalls(s["materialWalls"]);
+}
+
+function validateMaterialWalls(map: unknown): void {
+  if (!(map instanceof Map)) {
+    throw new RangeError("colour scheme materialWalls must be a Map");
+  }
+  for (const [key, value] of map as Map<unknown, unknown>) {
+    // The palette reads only the first entry of a `;` list, so a key holding
+    // one could never match.
+    if (
+      typeof key !== "string" ||
+      key === "" ||
+      key !== key.trim().toLowerCase() ||
+      key.includes(";")
+    ) {
+      throw new RangeError(
+        `colour scheme materialWalls key "${String(key)}" must be non-empty, trimmed, lower case and one value (no ";")`,
+      );
+    }
+    if (!isRgb(value)) {
+      throw new RangeError(
+        `colour scheme materialWalls "${key}" must be a colour, got ${rgbText(value)}`,
+      );
+    }
+  }
 }
 
 function validateList(field: string, list: unknown): void {

@@ -32,6 +32,7 @@ import {
   NIGHT,
   NORDIC,
   PASTEL,
+  URBAN,
 } from "./colour-scheme-looks.js";
 import {
   DEFAULT_GROUND_SLOPE_COLOURS,
@@ -125,6 +126,7 @@ export const COLOUR_SCHEMES = Object.freeze({
   night: NIGHT,
   mono: MONO,
   contrast: CONTRAST,
+  urban: URBAN,
 } satisfies Record<string, ColourScheme>);
 
 export type ColourSchemeName = keyof typeof COLOUR_SCHEMES;

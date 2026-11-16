@@ -1,6 +1,7 @@
 /**
  * A picture device for the model optimizer's tests: it "decodes" a JPEG
- * or PNG header's size and "encodes" a header of the asked size and type,
+ * or PNG header's size and "encodes" a header of the asked size and type
+ * (JPEG, PNG or WebP),
  * `bytesPerPixel` per pixel long, so the tour's size check reads the
  * result like a real picture. Every call is recorded. Test-only.
  */
@@ -28,6 +29,23 @@ function sizeOf(bytes: Uint8Array): { width: number; height: number } {
   }
   throw new Error("not a picture");
 }
+
+/** The first 30 bytes of a lossy WebP of `w` x `h`: its RIFF header and
+ *  the start of its VP8 frame, which is what a header reader needs. */
+function webpHeader(w: number, h: number): Uint8Array {
+  const out = new Uint8Array(30);
+  const view = new DataView(out.buffer);
+  out.set(new TextEncoder().encode("RIFF"), 0);
+  view.setUint32(4, 22, true);
+  out.set(new TextEncoder().encode("WEBPVP8 "), 8);
+  out.set([0x9d, 0x01, 0x2a], 23);
+  view.setUint16(26, w, true);
+  view.setUint16(28, h, true);
+  return out;
+}
+
+const HEADERS: Readonly<Record<string, (w: number, h: number) => Uint8Array>> =
+  { "image/png": pngHeader, "image/webp": webpHeader };
 
 export function fakePictureDevice(bytesPerPixel = 0.1): {
   device: PictureDevice<FakePicture>;
@@ -57,8 +75,7 @@ export function fakePictureDevice(bytesPerPixel = 0.1): {
       },
       encode(_picture, w, h, format) {
         encoded.push({ w, h, type: format.type, quality: format.quality });
-        const header =
-          format.type === "image/png" ? pngHeader(w, h) : jpegHeader(w, h);
+        const header = (HEADERS[format.type] ?? jpegHeader)(w, h);
         const bytes = new Uint8Array(
           Math.max(header.length, Math.round(w * h * bytesPerPixel)),
         );

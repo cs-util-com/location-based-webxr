@@ -45,6 +45,7 @@ and the phone's progress pill. Pure functions over the shelf's rows
   kinds or no known length.
 - `formatLength(metres)`: whole µm under a millimetre, mm with one decimal under a metre, m with two above (the level-of-detail prototype's); 0 for a non-finite or negative length. `formatCount(n)`: thousands marked ("10,000").
 - `detailReadout(triangles, trianglesBefore, deviation, size)`: a level's words: its share of the triangles ("25 %"), "2,500 of 10,000 triangles" and "Largest deviation: 1.8 mm (0.90 % of the model's size)", the deviation being a share of the model's box diagonal `size` (metres).
+- `detailStops(levels)`: the slider's stops and held stop from a level of detail (`choices`, `share`, `triangles`, `deviation`), the same rule `detailView` uses; the optimizer check page builds its geometry slider from it, so the page and the shelf cannot disagree on the stops.
 - `detailView(row)`: a made model's slider: `stops` (the measured shares, plus the default level as a stop of its own, `share` null, while it is the tour's), fewest triangles first; `at`, the stop the tour holds; `isDefault`, `adjustable`, `busy`, and `note` (why a fixed level cannot change; null while it can). Null for a row with no detail.
 - `shapeKey(rows)`: everything a full draw depends on (the swaps, a
   video's poster and length, a character's files, a model's detail too) except the progress, so the panel moves bars alone between real changes.

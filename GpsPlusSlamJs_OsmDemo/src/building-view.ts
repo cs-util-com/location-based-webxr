@@ -83,6 +83,8 @@ import {
 import {
   DEFAULT_LIGHT_SETTINGS,
   gainOf,
+  hazeOf,
+  veilOf,
   type LightSettings,
 } from "./light-settings.js";
 import { measureLightReadouts } from "./light-measure.js";
@@ -114,6 +116,7 @@ import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import type { HazeModeSwitch } from "./ar-scene-environment.js";
 import {
   AtmosphereRig,
+  HAZE_START_RATIO,
   surfaceGainAt,
   TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
@@ -212,7 +215,8 @@ export function groundPositionFor(centreEnu: {
 }
 
 /**
- * Where the haze starts, as a fraction of the far plane.
+ * Where the haze starts at the 1x far plane, in metres: the shipped start RATIO
+ * times `FAR_PLANE_M`. The ratio, not this distance, is what the view keeps.
  *
  * A RATIO RATHER THAN A SECOND DISTANCE, and the shape is deliberate.
  * `ar-scene-environment.ts` records removing exactly the alternative: "This was
@@ -221,20 +225,22 @@ export function groundPositionFor(centreEnu: {
  * unbreakable rather than merely watched." The same argument applies here, and
  * it is what lets `setFarPlane` move both with nothing left to keep in step.
  *
- * NOT EXPORTED: nothing outside this module reads it, and the workspace
- * dead-code check rejects an export with no reader -- as it did for
- * `ENTRY_GROUND_COLOUR` earlier on this branch. `FOG_NEAR_M` below is the
- * exported face of the same relationship.
+ * The ratio is `HAZE_START_RATIO` (0.66, `atmosphere-rig.ts`), and the light
+ * dialog can lower it (`AtmosphereRig.setHaze`); the view reads it back from
+ * the rig on every far-plane or light change, so it is still one number.
+ * This constant is only its value at the 1x far plane (1584 m at
+ * 2400 m); it moves with neither the dial nor the dialog.
  */
-const FOG_NEAR_RATIO = 0.66;
-
-export const FOG_NEAR_M = FAR_PLANE_M * FOG_NEAR_RATIO;
+export const FOG_NEAR_M = FAR_PLANE_M * HAZE_START_RATIO;
 
 /**
  * Where the ambient occlusion fades out, in metres of view depth: the look
- * chosen on the design system's look-dev page. It ends before the nearest the
- * fog ever starts (`FOG_NEAR_M`, at the shortest render distance), so the
- * fogged distance keeps exactly the colour it has without AO.
+ * chosen on the design system's look-dev page. At the shipped haze start it
+ * ends before the nearest the fog ever starts (`FOG_NEAR_M`, at the shortest
+ * render distance), so the fogged distance keeps exactly the colour it has
+ * without AO. A haze start the light dialog lowers below 1400 m lets the AO
+ * reach into the boundary fade; that is a tuning look, not the shipped one
+ * (the light gates run at the defaults).
  */
 const AO_FADE = { fadeStartM: 700, fadeEndM: 1400 } as const;
 
@@ -543,6 +549,8 @@ export class BuildingView {
   private brightnessTrim = 1;
   /** The light dialog's settings (plan 2026-09-24-2140); the shipped look by default. */
   private lightSettings: LightSettings = DEFAULT_LIGHT_SETTINGS;
+  /** The desktop view's distance haze (`scene.fog` outside AR). */
+  private readonly viewFog = new THREE.Fog(0x000000, FOG_NEAR_M, FAR_PLANE_M);
   /** The flat plane's vertex positions, kept so terrain can be re-applied. */
   private flatGround: Float32Array | undefined;
   /** The current field, so a mode switch and the ramp can re-read it. */
@@ -745,7 +753,7 @@ export class BuildingView {
     // that matched the sky at one time of day); black until then. The fog is
     // also what enables the rig's physical haze in three's shaders, and its
     // near/far are where that haze completes.
-    this.scene.fog = new THREE.Fog(0x000000, FOG_NEAR_M, FAR_PLANE_M);
+    this.scene.fog = this.viewFog;
 
     this.content.add(this.group);
     // THE BEACONS JOIN THE CONTENT ROOT ONCE, HERE. An earlier version of this
@@ -1069,7 +1077,7 @@ export class BuildingView {
     this.camera.far = farPlaneM;
     this.camera.updateProjectionMatrix();
     if (this.scene.fog instanceof THREE.Fog) {
-      this.scene.fog.near = farPlaneM * FOG_NEAR_RATIO;
+      this.scene.fog.near = farPlaneM * this.atmosphere.hazeStartRatio;
       this.scene.fog.far = farPlaneM;
     }
   }
@@ -1704,7 +1712,8 @@ export class BuildingView {
    * ramp (applied through `aimSun`, as the sun does), the exposure through
    * the rig (which re-derives the sun light, fog and haze), and the sky light
    * on buildings (applied before every render). Held, so rebuilt meshes and
-   * later sun changes keep them.
+   * later sun changes keep them. The haze and its veil go to the rig, and its start is
+   * re-applied to the fog at the current draw distance.
    */
   setLightSettings(settings: LightSettings): void {
     this.lightSettings = settings;
@@ -1712,6 +1721,12 @@ export class BuildingView {
       ev: settings.exposureEv,
       adaptation: settings.exposureAdaptation,
     });
+    this.atmosphere.setHaze(hazeOf(settings));
+    this.atmosphere.setHazeVeil(veilOf(settings));
+    // The view's OWN fog, not `scene.fog`: an AR session swaps in its stock
+    // fog and restores this one after, so a change made meanwhile still
+    // lands where the desktop view will draw it.
+    this.viewFog.near = this.viewFog.far * this.atmosphere.hazeStartRatio;
     this.aimSun();
     this.requestFrame();
   }

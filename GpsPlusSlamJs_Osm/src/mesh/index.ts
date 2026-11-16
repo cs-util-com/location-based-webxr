@@ -120,6 +120,7 @@ export {
 } from "./chunk-meshes.js";
 
 export { linearToSrgb, srgbToLinear } from "./srgb.js";
+export { labToRgb, rgbToLab, type Lab } from "./cielab.js";
 
 export type { AreaPlate, BuildPlatesOptions } from "./plates.js";
 export { buildAreaPlates, isPlateArea } from "./plates.js";

@@ -92,8 +92,12 @@ None. Entry point only, loaded by `index.html`.
   sun keeping its phase.
 - **The light dialog** (`light-dialog.ts`, plan 2026-09-24-2140) is opened by
   the `#light-open` button in `#sun-group` and by the `l` hotkey. The
-  settings are read from `?light=` once at boot and applied only when they
-  differ from the shipped look. Every change goes to
+  settings are read from `?light=` once at boot, against the colour scheme's
+  own light (`lightDefaultsFor`: urban opens with its veil and EV -2 when
+  the link does not say otherwise), and applied only when they differ from
+  the shipped look. A scheme switch moves the dialog onto the new scheme's
+  defaults (`setDefaults`), and the link is written against them. Every
+  change goes to
   `buildingView.setLightSettings` and, sampled at 400 ms like the camera,
   to `writeLight` (browsers refuse `replaceState` past a rate a drag
   reaches). A sun move refreshes the dialog's brightness. Its margin check
