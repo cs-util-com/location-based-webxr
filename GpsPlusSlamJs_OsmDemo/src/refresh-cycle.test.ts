@@ -1495,5 +1495,31 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
       );
       expect(entry?.message).not.toContain("8a0000000000fff");
     });
+
+    // Why this test matters: a V8 stack can carry no "    at " frames at all
+    // (an error built far from any frame, or a stack cut to its first
+    // line), and V8 always opens it with "Name: message". Keeping every
+    // line then put the message, which may name a place, into the log.
+    it("drops the message from a V8 stack that has no frames", async () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      clearLogBuffer();
+      const error = new RangeError(
+        "No tiles near Heidelberg Altstadt\nnor around Neckarwiese",
+      );
+      error.stack =
+        "RangeError: No tiles near Heidelberg Altstadt\nnor around Neckarwiese\n";
+      const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+      await createRefreshCycle({
+        store: demo.store,
+        actions: demo.actions,
+        anchors: createAnchorHolder(COLOGNE),
+        worker: { call: () => Promise.reject(error) },
+        onMesh: () => {},
+      })();
+      const entry = getLogBuffer().at(-1);
+      expect(entry?.message).toContain("RangeError");
+      expect(entry?.message).not.toContain("Heidelberg");
+      expect(entry?.message).not.toContain("Neckarwiese");
+    });
   });
 });

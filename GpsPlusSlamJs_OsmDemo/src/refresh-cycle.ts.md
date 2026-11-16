@@ -16,7 +16,8 @@
     build's choices only; any other failure by its name and stack frames. The
     message is never logged (a data error can name its cell; a failed build's
     is on screen already), in V8's stack format and in Firefox's and Safari's
-    alike. Never a cell or a position.
+    alike; a V8 stack without frames keeps none of its message lines. Never
+    a cell or a position.
   - Coalesced through `latestOnly`: at most one run in flight, only the newest waiting intent survives, never rejects.
   - Optional callbacks: `geoidUndulationM` (the datum, read at post time), `onTimings` and `onClickSummary` (the click-path breakdown), and `onBusyChange`.
   - **`onBusyChange(busy)` is the only honest "a refresh is in progress" the demo has**, and the obvious alternative is wrong: this cycle dispatches `fetchStarted` ONCE, above the ring loop, while every ring's `snapshotReady` resets the phase to idle — so `loading.phase` is idle for most of a wait that can run to a minute. Passed straight to `latestOnly`, so it fires on transitions only and a supersession is silent. See `latest-only.ts.md`.

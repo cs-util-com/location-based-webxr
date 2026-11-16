@@ -314,7 +314,8 @@ function reportFailedBuild(
  * with the message (which can run over several lines) and prefixes every
  * frame with "    at ", so there only those lines are kept; Firefox and
  * Safari list bare `fn@url:line:col` frames without the message, so there
- * every line is.
+ * every line is, except any that is the message after all: a V8 stack with
+ * no frames still opens with "Name: message".
  */
 function withoutMessage(error: unknown): string {
   if (!(error instanceof Error)) return typeof error;
@@ -322,7 +323,12 @@ function withoutMessage(error: unknown): string {
     .split("\n")
     .filter((line) => line.trim() !== "");
   const v8 = lines.filter((line) => /^\s+at /.test(line));
-  return [error.name, ...(v8.length > 0 ? v8 : lines)].join("\n");
+  if (v8.length > 0) return [error.name, ...v8].join("\n");
+  const message = new Set(error.message.split("\n").map((line) => line.trim()));
+  const frames = lines.filter(
+    (line) => !line.startsWith(`${error.name}:`) && !message.has(line.trim()),
+  );
+  return [error.name, ...frames].join("\n");
 }
 
 /** The error of a failed build as the page throws one, its stack the worker's. */
