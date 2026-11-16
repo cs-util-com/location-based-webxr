@@ -3,7 +3,8 @@
  * device (`picture-step.ts`): the longest side at most the settings'
  * limit, never enlarged, and written as a format every glTF viewer reads
  * without an extension (JPEG or PNG):
- * - a colour texture (base colour, emission) as JPEG at the colour
+ * - a colour texture (base colour, emission) as JPEG (or WebP, when the
+ *   settings ask for it, named through EXT_texture_webp) at the colour
  *   quality, unless a material blends or cuts by its alpha (then PNG);
  * - a data texture (normals, roughness and metalness, occlusion, and any
  *   texture a material extension names) as JPEG at the data quality, or
@@ -111,21 +112,23 @@ const JPEG = "image/jpeg";
 const PNG = "image/png";
 
 /** The format `use` of a `mime` source is written as: alpha first (PNG,
- *  so it survives), then data (a PNG stays lossless, else JPEG at the data
- *  quality), then colour (JPEG at the colour quality). An image used as
- *  colour and as data takes the data rule. */
+ *  so it survives), then data (a PNG stays lossless, else the lossy type
+ *  at the data quality), then colour (the lossy type at the colour
+ *  quality). The lossy type is the settings' `textureType`, JPEG when
+ *  left out. An image used as colour and as data takes the data rule. */
 export function textureFormat(
   use: ImageUse,
   mime: string,
   settings: ModelSettings,
 ): PictureFormat {
+  const lossy = settings.textureType ?? JPEG;
   if (use.alpha) return { type: PNG, quality: 1 };
   if (use.data) {
     return mime === PNG
       ? { type: PNG, quality: 1 }
-      : { type: JPEG, quality: settings.dataQuality };
+      : { type: lossy, quality: settings.dataQuality };
   }
-  return { type: JPEG, quality: settings.colourQuality };
+  return { type: lossy, quality: settings.colourQuality };
 }
 
 /** An image the pass may rewrite: in the binary chunk, JPEG or PNG, used
@@ -209,6 +212,31 @@ async function rewrite<P extends DecodedPicture>(
   }
 }
 
+const WEBP = "image/webp";
+const WEBP_EXTENSION = "EXT_texture_webp";
+
+/** Points every texture of an image in `webp` at it through
+ *  EXT_texture_webp (in place of its core `source`, which must be JPEG or
+ *  PNG) and lists the extension as used and required: a viewer without it
+ *  could not draw those textures at all. */
+function nameWebpImages(json: GltfObject, webp: ReadonlySet<number>): void {
+  if (webp.size === 0) return;
+  for (const item of listOf(json, "textures") ?? []) {
+    const texture = objectOf(item);
+    const source = indexOf(texture?.["source"]);
+    if (texture === null || source === null || !webp.has(source)) continue;
+    delete texture["source"];
+    texture["extensions"] = {
+      ...objectOf(texture["extensions"]),
+      [WEBP_EXTENSION]: { source },
+    };
+  }
+  for (const key of ["extensionsUsed", "extensionsRequired"]) {
+    const list = (listOf(json, key) ?? []).filter((n) => n !== WEBP_EXTENSION);
+    json[key] = [...list, WEBP_EXTENSION];
+  }
+}
+
 /** Makes `parts`' textures smaller (changed in place). Progress runs
  *  from `from` to `to` of the whole job. */
 export async function shrinkTextures<P extends DecodedPicture>(
@@ -224,6 +252,7 @@ export async function shrinkTextures<P extends DecodedPicture>(
   let bytesBefore = 0;
   let bytesAfter = 0;
   let largestSide = 0;
+  const webp = new Set<number>();
   for (let i = 0; i < images.length; i++) {
     if (control.signal.aborted) throw stoppedError();
     const image = objectOf(images[i]);
@@ -241,6 +270,7 @@ export async function shrinkTextures<P extends DecodedPicture>(
     if (result !== null && "bytes" in result) {
       image["bufferView"] = appendView(parts, result.bytes);
       image["mimeType"] = result.type;
+      if (result.type === WEBP) webp.add(i);
       changed++;
       bytesAfter += result.bytes.length;
     } else {
@@ -250,6 +280,7 @@ export async function shrinkTextures<P extends DecodedPicture>(
       span.from + ((span.to - span.from) * (i + 1)) / images.length,
     );
   }
+  nameWebpImages(parts.json, webp);
   return {
     changed,
     kept: images.length - changed,
