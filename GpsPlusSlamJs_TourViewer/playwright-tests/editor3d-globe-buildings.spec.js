@@ -170,6 +170,9 @@ test("the buildings load in their worker on the relief's ground, the relief take
   expect(Math.abs(city.parityM)).toBeLessThan(0.5);
   expect(city.reliefGroundM).toBeCloseTo(SQUARE_GROUND_M, 0);
   expect(cityRequests.overpass).toBeGreaterThan(from.overpass);
+  // The project's tile host was asked first (it answers 404 here, so the
+  // race above delivered the fixture).
+  expect(cityRequests.tileHost).toBeGreaterThan(from.tileHost);
   console.log(
     `city: ${String(city.tiles)} tiles, ${String(city.buildings)} buildings, ${String(city.objects)} objects, ${String(Math.round(city.geometryBytes / 1024))} KiB geometry, parity ${String(city.parityM)} m`,
   );

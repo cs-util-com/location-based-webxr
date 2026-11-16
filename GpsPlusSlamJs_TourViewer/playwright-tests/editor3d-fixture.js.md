@@ -16,7 +16,14 @@ stats.
   plain tile for OpenStreetMap, and the globe's whole-Earth imagery refused
   (or, with `globeAssets: "serve"`, answered by the dev server's
   `/globe-assets/` route, for the editor on the globe view); returns
-  `{ asks }`, the count of imagery asks.
+  `{ asks }`, the count of imagery asks. The globe view's city worker is
+  answered on the page's context: Overpass with `overpass` (no buildings
+  by default), the project's tile host (`OSM_TILES_BASE_URL`, taken from
+  the Osm package) with a 404 for every tile and fill, so the library
+  hands each tile to the race at once, and the heights with the same flat
+  ground. Nothing leaves the machine.
+- `cityRequests` - `{ overpass, tileHost }`, the city worker's requests
+  answered so far in this test process (height tiles are not counted).
 - `openSample(page)` - `/edit.html` on the 2D map (`startOnMap` of
   `editor-menus.js`: the 3D view is the default), ready, the switch
   disabled without a tour, then the sample tour open (three rows in the
