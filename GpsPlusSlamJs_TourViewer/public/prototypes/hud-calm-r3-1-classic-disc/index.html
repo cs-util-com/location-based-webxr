@@ -1,0 +1,1727 @@
+<!doctype html>
+<!-- Prototype: calm HUD round 3, variant 1 - Classic disc. Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="color-scheme" content="dark">
+<title>Calm HUD 3.1 - Classic disc</title>
+<style>
+:root{
+  --accent:#fb923c; --accent-ink:#1f1105;
+  --play:#2dd4bf; --play-ink:#04201c;
+  --ink:#f3f5f7; --muted:#b3bcc6;
+  --plate:rgba(10,14,19,.86); --line:rgba(255,255,255,.22);
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{font:15px/1.4 var(--sans);background:#101317;color:var(--ink);overflow:hidden;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit}
+
+/* ---------- the phone ---------- */
+.device{position:fixed;inset:0;overflow:hidden;background:#000;container-type:size}
+#cam{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+
+/* ---------- demo strip (not part of the design, not measured) ---------- */
+.strip{position:absolute;z-index:70;top:env(safe-area-inset-top);left:0;right:0;height:32px;display:flex;align-items:center;gap:4px;padding:3px 6px;background:rgba(0,0,0,.6);font:600 11.5px/1 var(--sans)}
+.strip button{appearance:none;flex:none;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.09);border-radius:7px;min-width:30px;height:26px;padding:0 6px;cursor:pointer;color:#fff;font:700 13px/1 var(--sans)}
+.strip button.on{background:#0f766e;border-color:#14b8a6}
+.strip .bt{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#e5ebf0;padding:0 2px}
+.readout{position:absolute;z-index:69;left:6px;right:6px;top:calc(34px + env(safe-area-inset-top));padding:4px 7px;border-radius:7px;background:rgba(0,0,0,.66);font:600 10.5px/1.35 ui-monospace,Consolas,monospace;color:#d7fbf3;pointer-events:none}
+.readout.bad{background:rgba(160,20,20,.8);color:#fff}
+
+/* ---------- the HUD ---------- */
+.hud{position:absolute;inset:0;pointer-events:none;--radar:132px;--top:calc(42px + env(safe-area-inset-top));--pillw:320px;--fs:14.5px;--lines:1}
+.hud.measuring{--top:calc(84px + env(safe-area-inset-top))}
+.hud > *{pointer-events:auto}
+.exit{position:absolute;top:var(--top);left:calc(12px + env(safe-area-inset-left));appearance:none;width:44px;height:44px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(10,14,19,.7);display:grid;place-items:center;padding:0;cursor:pointer}
+.exit svg{width:16px;height:16px}
+.radar-wrap{position:absolute;top:var(--top);right:calc(12px + env(safe-area-inset-right));display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none}
+/* the radar itself is a three.js object attached to the camera; this button is only its tap target */
+#radar{display:block;width:var(--radar);height:var(--radar);border-radius:50%;touch-action:manipulation;cursor:pointer;pointer-events:auto;border:0;padding:0;background:transparent}
+#radar:focus-visible{outline:3px solid #fff;outline-offset:2px}
+#radarCanvas{display:block;width:100%;height:100%}
+.range{pointer-events:none;padding:5px 10px;border-radius:12px;background:var(--plate);border:2px solid var(--line);font-size:13px;font-weight:650}
+
+/* the transport: one compact pill with play/pause, the speaker's dot and the current words */
+.foot{position:absolute;left:0;right:0;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;justify-content:center;pointer-events:none}
+.pill{pointer-events:auto;display:flex;align-items:center;gap:8px;width:min(var(--pillw),calc(100cqw - 24px));min-height:48px;padding:3px 8px 3px 3px;border-radius:24px;background:var(--plate);border:2px solid rgba(255,255,255,.16);box-shadow:0 6px 16px rgba(0,0,0,.3);transition:opacity .45s ease,transform .45s ease}
+.pill.off{opacity:0;transform:translateY(10px);pointer-events:none}
+.pp{flex:none;appearance:none;width:40px;height:40px;border-radius:50%;border:0;padding:3px;cursor:pointer;background:conic-gradient(var(--play) calc(var(--p,0) * 1turn),rgba(255,255,255,.2) 0)}
+.pp span{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;background:#0b0f14;color:#fff}
+.pp svg{width:14px;height:14px}
+.who{flex:none;width:10px;height:10px;border-radius:50%;box-shadow:0 0 0 2px rgba(255,255,255,.85)}
+.words{flex:1;min-width:0;font-size:var(--fs);line-height:1.3;font-weight:600;color:var(--ink);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--lines);line-clamp:var(--lines);overflow:hidden;transition:opacity .35s}
+.words .u{color:rgba(243,245,247,.42)}
+.words .n{color:var(--muted);font-weight:800}
+.words.idle{color:var(--muted);font-weight:600;font-size:calc(var(--fs) - 1.5px)}
+.nx{flex:none;appearance:none;min-height:34px;padding:0 13px;border-radius:999px;border:0;background:var(--play);color:var(--play-ink);font-weight:800;font-size:13.5px;cursor:pointer}
+.lv{flex:none;appearance:none;width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,.28);background:transparent;font-size:17px;line-height:1;padding:0;cursor:pointer}
+.hint{flex:none;appearance:none;width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,244,207,.55);background:rgba(208,138,42,.18);color:#fff4cf;display:grid;place-items:center;padding:0;cursor:pointer;animation:hintIn .6s ease-out}
+.hint svg{width:18px;height:18px}
+.hint[aria-pressed="true"]{background:#d08a2a;color:#1f1105;border-color:#fff4cf}
+@keyframes hintIn{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+.ovl{outline:3px solid #ef4444!important;outline-offset:1px}
+
+/* first-run card: once, gone on the first touch */
+.try{position:absolute;z-index:60;left:50%;top:56%;transform:translate(-50%,-50%);width:max-content;max-width:min(320px,calc(100cqw - 40px));padding:14px 16px;border-radius:16px;background:rgba(0,0,0,.78);border:2px solid rgba(255,255,255,.22);font-size:14px;line-height:1.45;text-align:center;transition:opacity .4s;pointer-events:none}
+.try b{color:var(--accent)}
+.try.gone{opacity:0}
+.ripple{position:absolute;z-index:66;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px rgba(0,0,0,.4);pointer-events:none;animation:rip .7s ease-out forwards}
+@keyframes rip{from{transform:scale(.4);opacity:1}to{transform:scale(1.25);opacity:0}}
+
+/* ---------- settings panel (not part of the design) ---------- */
+.demo{position:fixed;z-index:90;top:calc(36px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);width:min(370px,calc(100vw - 16px));max-height:calc(100vh - 46px);overflow-y:auto;background:rgba(14,18,23,.97);border:1px solid rgba(255,255,255,.16);border-radius:14px;font-size:13px;color:#e8edf2;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px 12px}
+.demo h4{margin:12px 0 5px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#a9b4bf}
+.demo p,.demo ul{margin:0 0 6px;line-height:1.45;color:#c9d2db}
+.demo ul{padding-left:18px}
+.demo b{color:#fff}
+.demo code{word-break:break-all;font-size:11.5px}
+.demo .grid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.demo .row{display:grid;grid-template-columns:96px 1fr 1fr 1fr;gap:5px;align-items:center;margin-top:5px}
+.demo button{border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.07);color:#fff;border-radius:9px;padding:7px 8px;text-align:left;cursor:pointer;font-size:12.5px;min-height:36px}
+.demo .row button{text-align:center}
+.demo button.on{background:#0f766e;border-color:#14b8a6}
+.demo table{width:100%;border-collapse:collapse;font:11.5px/1.35 ui-monospace,Consolas,monospace}
+.demo td,.demo th{padding:3px 4px;border-bottom:1px solid rgba(255,255,255,.08);text-align:right}
+.demo td:first-child,.demo th:first-child{text-align:left}
+.demo .arow{display:grid;grid-template-columns:92px repeat(3,1fr);gap:4px;align-items:center;margin-top:4px;font-size:12px}
+.demo .arow button{text-align:center;font-size:11px;padding:4px;min-height:34px}
+.demo .arow select{width:100%;min-width:0;font-size:11px;padding:4px 2px}
+.demo select{font:inherit;font-size:11.5px;width:100%;background:#1b222a;color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:7px;padding:4px}
+.demo .close{display:block;width:100%;margin:10px 0 2px;text-align:center}
+
+@media (min-width:960px) and (min-height:720px){
+  body{display:flex;align-items:center;justify-content:center;gap:36px;padding:30px;background:radial-gradient(1200px 700px at 30% 20%,#26303a,#12151a)}
+  .device{position:relative;inset:auto;flex:none;width:390px;height:min(844px,calc(100vh - 60px));border-radius:46px;border:12px solid #0a0c0f;box-shadow:0 0 0 2px #2d333b,0 40px 90px rgba(0,0,0,.6)}
+  .strip{border-radius:34px 34px 0 0;padding:3px 18px}
+  .demo{position:static;transform:none;width:390px;max-height:min(844px,calc(100vh - 60px));display:block!important}
+  .demo .close,#menuBtn{display:none}
+}
+@container (orientation:landscape) and (max-height:520px){
+  .hud{--radar:112px;--top:calc(40px + env(safe-area-inset-top))}
+  .hud.measuring{--top:calc(76px + env(safe-area-inset-top))}
+  .foot{bottom:calc(10px + env(safe-area-inset-bottom))}
+  .try{top:58%}
+}
+@media (prefers-reduced-motion:reduce){ .pill{transition:none} }
+</style>
+<script type="importmap">
+  { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+</head>
+<body>
+<main class="device" id="device">
+  <canvas id="cam" aria-label="Simulated camera view of an old town square"></canvas>
+
+  <div class="strip" id="strip">
+    <button id="prevBtn" type="button" aria-label="Previous beat">&lsaquo;</button>
+    <button id="nextBtn" type="button" aria-label="Next beat">&rsaquo;</button>
+    <span class="bt" id="beatTitle">Walk freely</span>
+    <button id="measureBtn" type="button" aria-label="Show the measuring hook" title="Measure">&#8982;</button>
+    <button id="menuBtn" type="button" aria-label="Settings and beats">&#9776;</button>
+  </div>
+  <div class="readout" id="readout" hidden>-</div>
+
+  <div class="hud" id="hud">
+    <button class="exit" id="exitBtn" type="button" data-hud="exit" aria-label="Exit AR"><svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+    <div class="radar-wrap" id="radarWrap" data-hud="radar">
+      <button id="radar" type="button" aria-label="Radar - tap to change the range"><canvas id="radarCanvas" hidden></canvas></button>
+      <div class="range" id="rangeLabel" data-hud="range" hidden>Range: auto</div>
+    </div>
+    <div class="foot">
+      <div class="pill off" id="pill" data-hud="transport">
+        <button class="pp" id="ppBtn" type="button" data-act="toggle" aria-label="Pause"><span></span></button>
+        <span class="who" id="whoDot"></span>
+        <div class="words" id="words" aria-live="off"></div>
+        <button class="nx" id="nxBtn" type="button" data-act="next" hidden>Next</button>
+        <button class="hint" id="hintBtn" type="button" data-act="hint" aria-label="Show the way to the story's next place" aria-pressed="false" hidden><svg viewBox="0 0 20 20"><path d="M2.5 7.5h9a2.5 2.5 0 1 0-2.5-2.5M2.5 11h12.5a2.5 2.5 0 1 1-2.5 2.5M2.5 14.5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button class="lv" id="lvBtn" type="button" data-act="leave" aria-label="Leave the story" hidden>&times;</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="try" id="try"><b>Walk up to the orange beam.</b><br>Drag sideways to turn, drag up to walk (or W A S D).<br>Stop for a moment and the radar wakes up.</div>
+</main>
+
+<aside class="demo" id="demo" hidden aria-label="Settings and beats">
+  <p><b>Classic disc.</b> A round radar at true scale: everything inside its range sits where it is, everything beyond waits on the rim in its true direction. It sleeps while you walk and wakes when you stop. At the foot, one small pill: play/pause, who speaks, and the words being said.</p>
+
+  <h4>Beats</h4>
+  <div class="grid" id="beatBtns"></div>
+
+  <h4>Settings to try</h4>
+  <div class="row"><span>Stand still</span><button type="button" data-cfg="still" data-v="2">2 s</button><button type="button" data-cfg="still" data-v="3">3 s</button><button type="button" data-cfg="still" data-v="5">5 s</button></div>
+  <div class="row"><span>Range outside</span><button type="button" data-cfg="range" data-v="auto">auto</button><button type="button" data-cfg="range" data-v="100">100 m</button><button type="button" data-cfg="range" data-v="300">300 m</button></div>
+  <div class="row"><span>Range inside</span><button type="button" data-cfg="fit" data-v="1.2">radius x1.2</button><button type="button" data-cfg="fit" data-v="1.5">x1.5</button><button type="button" data-cfg="fit" data-v="2">x2</button></div>
+  <div class="row"><span>Rim merge</span><button type="button" data-cfg="merge" data-v="15">15&deg;</button><button type="button" data-cfg="merge" data-v="25">25&deg;</button><button type="button" data-cfg="merge" data-v="40">40&deg;</button></div>
+  <div class="row"><span>Strip lines</span><button type="button" data-cfg="lines" data-v="1">one</button><button type="button" data-cfg="lines" data-v="2">two</button><span></span></div>
+  <div class="row"><span>Strip size</span><button type="button" data-cfg="strip" data-v="s">small</button><button type="button" data-cfg="strip" data-v="m">medium</button><button type="button" data-cfg="strip" data-v="l">large</button></div>
+  <div class="row"><span>Speaker name</span><button type="button" data-cfg="name" data-v="off">dot only</button><button type="button" data-cfg="name" data-v="on">dot + name</button><span></span></div>
+  <div class="row"><span>Bubble</span><button type="button" data-cfg="bubble" data-v="dots">dots</button><button type="button" data-cfg="bubble" data-v="words">words</button><button type="button" data-cfg="bubble" data-v="off">none</button></div>
+  <div class="row"><span>Fade</span><button type="button" data-cfg="fade" data-v="0.4">0.4 s</button><button type="button" data-cfg="fade" data-v="0.8">0.8 s</button><button type="button" data-cfg="fade" data-v="1.5">1.5 s</button></div>
+  <div class="row"><span>Show the way after</span><button type="button" data-cfg="hint" data-v="30">30 s</button><button type="button" data-cfg="hint" data-v="60">60 s</button><button type="button" data-cfg="hint" data-v="120">120 s</button></div>
+  <div class="row"><span>Radar</span><button type="button" data-cfg="radar" data-v="disc">three.js disc</button><button type="button" data-cfg="radar" data-v="canvas">page 2 canvas</button><span></span></div>
+  <p style="margin-top:6px">The same values work as URL options: <code>?still=3&amp;range=auto&amp;fit=1.5&amp;merge=25&amp;lines=1&amp;strip=m&amp;name=off&amp;bubble=dots&amp;fade=0.8&amp;radar=disc</code>. "page 2 canvas" is the previous page's radar, kept here only to measure it in the same scene.</p>
+
+  <h4>Author settings (the visitor's page obeys them live)</h4>
+  <p>Two switches at four levels, "radar at all" at tour and station only. Each says "as above" until it is set; the nearest level that says something wins: item over story over station over tour. Tap a switch to cycle it.</p>
+  <div id="authorRows"></div>
+  <div class="grid" id="authorPresets" style="margin-top:6px"></div>
+  <p style="margin-top:6px">URL: <code>?author=b-off,lion-off,well-nohint,radar-b-off</code></p>
+
+  <h4>What "seen" means here</h4>
+  <ul>
+    <li><b>Short text, picture:</b> in view and near (8 m, 10 m) for 1.5 s, 2 s.</li>
+    <li><b>Model:</b> in view within 10 m for 3 s.</li>
+    <li><b>Long text:</b> its last page was shown (tap it to turn pages).</li>
+    <li><b>Video, sound:</b> played to its end. Stopped part way, it stays white.</li>
+    <li><b>A character who starts a story:</b> that story played to its end.</li>
+  </ul>
+
+  <h4>What the HUD holds</h4>
+  <ul>
+    <li>Exit, top left. The radar, top right (asleep while you walk).</li>
+    <li>At the foot, one pill at most: play/pause, the speaker's dot, the words being said now. During a story it also carries Next and leave.</li>
+    <li>Everything written stands in the world: signs, long texts, captions, titles, the beam.</li>
+  </ul>
+
+  <h4>Measured (this orientation; max per beat)</h4>
+  <table id="statTable"><thead><tr><th>beat</th><th>HUD %</th><th>el</th><th>overlaps</th><th>worst ms</th></tr></thead><tbody></tbody></table>
+  <p style="margin-top:6px">HUD % counts the pixels under every HUD element shown (the radar only while awake). The strip at the top and this panel are not counted. <code>HC.bench({ radar: 'disc' })</code> and <code>HC.bench({ radar: 'canvas' })</code> run the scripted 20 s walk and return the frame times.</p>
+  <button class="close" id="demoClose" type="button">Close</button>
+</aside>
+
+<script type="module">
+import * as THREE from 'three';
+
+const $ = (s) => document.querySelector(s);
+const device = $('#device');
+const REDUCE = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const QS = new URLSearchParams(location.search);
+const num = (v, d, lo, hi) => { const n = Number(v); return v !== null && Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+const pick = (v, allowed, d) => (allowed.includes(v) ? v : d);
+const SPEED = num(QS.get('speed'), 1, 0.25, 8);
+const SHOTS = QS.has('shots');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const wrapPi = (a) => ((a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+
+/* ======================================================================
+   Every default this page rests on is a setting (README: what to try instead)
+   ====================================================================== */
+const CFG = {
+  still: num(QS.get('still'), 3, 0.5, 15),     // s without walking before the radar wakes
+  fade: num(QS.get('fade'), 0.8, 0.1, 4),      // s for a full radar fade, in or out
+  walk: num(QS.get('walk'), 0.5, 0.1, 2),      // m/s of the smoothed pose speed that counts as walking
+  range: pick(QS.get('range'), ['auto', '30', '100', '300'], 'auto'), // the outside range at every edge
+  fit: num(QS.get('fit'), 1.5, 1, 3),          // inside a station the range is its radius times this
+  merge: num(QS.get('merge'), 25, 5, 90),      // degrees: rim marks closer than this merge into one arc
+  lines: num(QS.get('lines'), 1, 1, 2),        // the strip's line count
+  strip: pick(QS.get('strip'), ['s', 'm', 'l'], 'm'),
+  name: pick(QS.get('name'), ['off', 'on'], 'off'),
+  bubble: pick(QS.get('bubble'), ['dots', 'words', 'off'], 'dots'),
+  hold: num(QS.get('hold'), 1.2, 0, 5),        // s a subtitle stays after its cue ends, to bridge short gaps
+  radar: pick(QS.get('radar'), ['disc', 'canvas'], 'disc'),
+  hint: num(QS.get('hint'), 60, 5, 600),       // s a story waits for you at its next place before "show the way" is offered
+  arrive: num(QS.get('arrive'), 4, 1.5, 10),   // m from a step's place that counts as being there
+  edge: QS.get('edge') === 'off' ? 'off' : 'on',
+  between: QS.get('between') === 'always' ? 'always' : 'wake',
+  beam: QS.get('beam') === 'gem' ? 'gem' : 'built',
+};
+CFG.lines = Math.round(CFG.lines);
+const STRIP = { s: { w: 280, fs: 13.5 }, m: { w: 320, fs: 14.5 }, l: { w: 360, fs: 16 } };
+const ASLEEP_ALPHA = 0.14;  // the faint disc that says where the radar is
+const EDGE_WAKE_S = 3.5;    // how long the edge switch stays awake
+const TAP_WAKE_S = 6;       // a tap on the sleeping radar wakes it this long
+const GREET_M = 12;         // the single story's greeting waits until you are this near its character
+const LINE_GAP = 0.5;       // s of silence between two spoken lines
+
+/* ======================================================================
+   The sample tour (invented). x = east, z = south, metres.
+   ====================================================================== */
+const STATIONS = [
+  { id: 'A', n: 1, title: 'The well court', x: 0, z: -60, r: 18 },
+  { id: 'B', n: 2, title: 'The hall steps', x: 55, z: -122, r: 20 },
+];
+const stById = (id) => STATIONS.find((s) => s.id === id);
+const rel = (st, x, z) => ({ x: stById(st).x + x, z: stById(st).z + z });
+const ITEMS = [
+  // A: one story; its first item is Greta, who greets once on entry
+  { id: 'greta', st: 'A', kind: 'character', story: 'well', title: 'Greta', ...rel('A', 0, 9), coat: 0x0f766e },
+  { id: 'aSign', st: 'A', kind: 'shortText', title: "The mason's mark", text: ['Every stone of the rim', 'carries its mason\'s mark.'], ...rel('A', 8, -2) },
+  { id: 'aSound', st: 'A', kind: 'audio', title: 'The bucket chain', len: 18, reach: 10, ...rel('A', 9.6, -3.6) },
+  { id: 'aLong', st: 'A', kind: 'longText', title: 'How the court was built', pages: [
+    ['How the court was built', 'The houses came first. The', 'well came when the old', 'spring dried up in 1611.'],
+    ['Forty men dug for a summer.', 'They hit water at nineteen', 'metres and lined the shaft', 'with stone from the river.'],
+    ['The court grew around it:', 'a bakery, a smithy and,', 'for a while, a small school', 'in the house with the arch.']], ...rel('A', -9, -3) },
+  { id: 'aPic', st: 'A', kind: 'picture', title: 'The court in 1890', year: '1890', ...rel('A', -11, 6) },
+  { id: 'aVid', st: 'A', kind: 'video', title: 'Drawing water, 1938', len: 16, reach: 12, ...rel('A', 3, -13) },
+  { id: 'aModel', st: 'A', kind: 'model', title: 'The stone lion', ...rel('A', -5, -12) },
+  // B: three stories, each starting with a character; a tap on one enters it
+  { id: 'baker', st: 'B', kind: 'character', story: 'bread', title: 'Jonas, the baker', ...rel('B', -6, 7), coat: 0xb45309 },
+  { id: 'ringer', st: 'B', kind: 'character', story: 'bell', title: 'Ida, the bell ringer', ...rel('B', 0, 9), coat: 0x6d28d9 },
+  { id: 'mason', st: 'B', kind: 'character', story: 'arch', title: 'Karl, the mason', ...rel('B', 6, 7), coat: 0x475569 },
+  { id: 'bSign', st: 'B', kind: 'shortText', title: 'The guild board', text: ['Six guilds met on', 'these steps each May.'], ...rel('B', 10, -4) },
+  { id: 'bLong', st: 'B', kind: 'longText', title: 'The fair rights of 1412', pages: [
+    ['The fair rights of 1412', 'The town bought the right', 'to hold a fair twice a year,', 'for a price of 300 silver.'],
+    ['The fair drew traders from', 'three days away. The hall', 'was built to store their', 'goods between market days.']], ...rel('B', -12, -2) },
+  { id: 'bPic', st: 'B', kind: 'picture', title: 'Fair day, 1902', year: '1902', ...rel('B', -6, -12) },
+  { id: 'bVid', st: 'B', kind: 'video', title: 'Casting the bell, 1951', len: 14, reach: 12, ...rel('B', 8, -12) },
+  { id: 'bSound', st: 'B', kind: 'audio', title: "The hall's echo", len: 16, reach: 10, ...rel('B', 0, -5) },
+  { id: 'bModel', st: 'B', kind: 'model', title: 'The guild staff', ...rel('B', 14, 3) },
+];
+const itById = (id) => ITEMS.find((i) => i.id === id);
+const STORIES = {
+  well: { title: 'Water for all', entry: 'greta', steps: [
+    { who: 'greta', lines: ['Welcome to the well court!', 'This well kept the street alive for three hundred years.', 'Come, I will show you the stone the masons left.'] },
+    // a step with a place speaks once you are there; until then the story waits for you (and, after a while, offers the way)
+    { who: 'greta', stone: true, at: { x: 0, z: -58.5 }, lines: ['Look at the rim. The masons carved their promise into it.'] },
+    { who: 'greta', lines: ['Thank you for listening. Have a look around.'] }] },
+  bread: { title: 'Bread for the fair', entry: 'baker', steps: [
+    { who: 'baker', lines: ['On fair days I baked from midnight on.', 'Four hundred loaves, gone before noon.'] }] },
+  bell: { title: 'The cracked bell', entry: 'ringer', steps: [
+    { who: 'ringer', lines: ['The old bell cracked in the frost of 1949.', 'For two years the steps were silent.'] }] },
+  arch: { title: 'Raising the arch', entry: 'mason', steps: [
+    { who: 'mason', lines: ['The arch stood on a wooden frame for a month.', 'Then we pulled the frame, and it held.'] },
+    { who: 'mason', at: { x: 55, z: -139.5 }, lines: ['From the first step you can see where each stone meets the next.'] }] },
+};
+
+/* ---------- author settings, as the visitor's page obeys them ----------
+   Two switches at four levels (tour, station, story, item), and "radar at all" at tour and station only.
+   null means "as above": the nearest level that says something wins, item over story over station over tour. */
+const AUTH = {
+  tour: { radarAll: true, shown: true, hints: true },
+  station: Object.fromEntries(STATIONS.map((s) => [s.id, { radarAll: null, shown: null, hints: null }])),
+  story: Object.fromEntries(Object.keys(STORIES).map((k) => [k, { shown: null, hints: null }])),
+  item: Object.fromEntries(ITEMS.map((i) => [i.id, { shown: null, hints: null }])),
+};
+function resolveAuth(key, { item = null, story = null, station = null } = {}) {
+  for (const v of [item && AUTH.item[item]?.[key], story && AUTH.story[story]?.[key], station && AUTH.station[station]?.[key]]) if (v === true || v === false) return v;
+  return AUTH.tour[key];
+}
+const storyStation = (sid) => itById(STORIES[sid].entry).st;
+const shownOnRadar = (it) => resolveAuth('shown', { item: it.id, story: it.story ?? null, station: it.st });
+const radarOn = () => resolveAuth('radarAll', { station: S.here });
+const hintsFor = (st) => resolveAuth('hints', { item: STORIES[st.id].steps[st.step].at?.item ?? null, story: st.id, station: storyStation(st.id) });
+const AUTH_PRESETS = {
+  'b-off': { label: "Station B's things off the radar", set: ['station', 'B', 'shown', false] },
+  'lion-off': { label: 'Hide the stone lion (A)', set: ['item', 'aModel', 'shown', false] },
+  'well-nohint': { label: 'No hints in "Water for all"', set: ['story', 'well', 'hints', false] },
+  'radar-b-off': { label: 'No radar at station B', set: ['station', 'B', 'radarAll', false] },
+};
+for (const p of (QS.get('author') ?? '').split(',')) { const e = AUTH_PRESETS[p]?.set; if (e) AUTH[e[0]][e[1]][e[2]] = e[3]; }
+
+/* ---------- timed words: what a voice's word-boundary events would give ----------
+   The voice is simulated. Each word starts at `at` seconds into its line; its length
+   follows its letters, with a pause after a comma or a full stop (about 155 words a minute). */
+function timeLine(text) {
+  const words = []; let t = 0;
+  for (const w of text.split(' ')) {
+    words.push({ w, at: t });
+    t += 0.11 + 0.055 * w.replace(/[^\p{L}\p{N}]/gu, '').length + (/[,;:]$/.test(w) ? 0.22 : /[.!?]$/.test(w) ? 0.38 : 0);
+  }
+  return { text, words, dur: t };
+}
+const SPOKEN = Object.fromEntries(Object.entries(STORIES).map(([id, s]) => [id, s.steps.map((st) => st.lines.map(timeLine))]));
+const lineOf = (st) => SPOKEN[st.id][st.step][st.line];
+
+/* ---------- subtitles of the video and sound items, as WebVTT ---------- */
+const VTT = {
+  aVid: `WEBVTT
+
+00:00.500 --> 00:03.800
+Morning on the well court, spring 1938.
+
+00:04.300 --> 00:08.200
+Each house sent one bucket before the bakery opened.
+
+00:09.000 --> 00:12.400
+The chain was oiled once a week, by turns.
+
+00:13.000 --> 00:15.600
+A year later, a pump replaced it.`,
+  aSound: `WEBVTT
+
+00:00.000 --> 00:02.500
+[a chain runs over a wooden wheel]
+
+00:03.000 --> 00:07.000
+Listen: the old chain, recorded before it was taken down.
+
+00:08.500 --> 00:12.500
+Nineteen metres of iron, one link for every family.
+
+00:14.000 --> 00:17.000
+[the bucket meets the water]`,
+  bVid: `WEBVTT
+
+00:00.600 --> 00:04.000
+The mould was dug into the ground beside the hall.
+
+00:04.600 --> 00:08.600
+Bronze at eleven hundred degrees, poured in one go.
+
+00:09.400 --> 00:13.200
+Three days later, the new bell rang for the first time.`,
+  bSound: `WEBVTT
+
+00:00.000 --> 00:03.000
+[footsteps on stone, a door closes]
+
+00:03.800 --> 00:08.400
+Clap once under the arch and the hall answers twice.
+
+00:09.200 --> 00:14.600
+Traders used the echo to call prices across the steps.`,
+};
+function parseVtt(src) {
+  const sec = (s) => s.split(':').reduce((a, p) => a * 60 + Number(p), 0);
+  const cues = [];
+  for (const block of src.split(/\r?\n\r?\n/)) {
+    const lines = block.split(/\r?\n/), i = lines.findIndex((l) => l.includes('-->'));
+    if (i < 0) continue;
+    const [a, b] = lines[i].split('-->').map((s) => sec(s.trim().split(' ')[0]));
+    const text = lines.slice(i + 1).join(' ').trim();
+    if (Number.isFinite(a) && Number.isFinite(b) && b > a && text) cues.push({ start: a, end: b, text });
+  }
+  return cues;
+}
+const CUES = Object.fromEntries(Object.entries(VTT).map(([id, v]) => [id, parseVtt(v)]));
+/** The cue to show at time t: the one running, or the last one for `hold` seconds after it ended. */
+function cueAt(cues, t) {
+  let shown = null;
+  for (const c of cues) { if (t >= c.start && t < c.end) return c; if (t >= c.end && t < c.end + CFG.hold) shown = c; }
+  return shown;
+}
+
+/* ======================================================================
+   State
+   ====================================================================== */
+let T = 0;
+function freshItems() {
+  const o = {};
+  for (const it of ITEMS) o[it.id] = { seen: false, dwell: 0, page: 0, t: 0, playing: false, pausedBy: null };
+  return o;
+}
+function fresh() {
+  return {
+    pos: { x: 0, z: -14 }, yaw: 0, pitch: -0.04,
+    here: null, zoom: 0, visited: {}, greeted: {},
+    it: freshItems(), story: null, storyDone: {}, media: null,
+    speed: 0, stillFor: 99, wakeUntil: -1, radarAlpha: 1, rangeStep: 0, rangePeekUntil: -1,
+    greetPending: null, auto: null, turn: null, yawTarget: null, paused: false,
+  };
+}
+let S = fresh();
+let beat = 0;
+
+const dist = (p, q = S.pos) => Math.hypot(p.x - q.x, p.z - q.z);
+function relAngle(p, from = S.pos, yaw = S.yaw) {
+  const dx = p.x - from.x, dz = p.z - from.z;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  return Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz);
+}
+const yawToward = (p, from = S.pos) => Math.atan2(-(p.x - from.x), -(p.z - from.z));
+const inStation = (it) => S.here === it.st;
+
+/* ---------- the story ---------- */
+function stepOf() { return S.story ? STORIES[S.story.id].steps[S.story.step] : null; }
+function startStory(id) {
+  for (const it of ITEMS) if (S.it[it.id].playing) pause(it.id, 'story');
+  S.story = { id, step: 0, line: 0, t: 0, paused: null, arrived: false, idle: 0 };
+}
+/** The step has a place and you are not there yet: nothing is said until you are. */
+function waitingFor(st = S.story) { return !!st && !!STORIES[st.id].steps[st.step].at && !st.arrived; }
+function storyNext() {
+  const st = S.story; if (!st) return;
+  const steps = STORIES[st.id].steps;
+  if (st.step + 1 >= steps.length) { endStory(true); return; }
+  st.step++; st.line = 0; st.t = 0; st.arrived = false; st.idle = 0;
+}
+function endStory(finished) {
+  const st = S.story; if (!st) return;
+  if (finished) { S.storyDone[st.id] = true; S.it[STORIES[st.id].entry].seen = true; }
+  S.story = null;
+}
+function stepDone() { const st = S.story, s = stepOf(); return !!s && !waitingFor(st) && st.line >= s.lines.length - 1 && st.t >= lineOf(st).dur + LINE_GAP; }
+/** Seconds of speech left in the running step. */
+function stepRemaining() {
+  const st = S.story; if (!st || waitingFor(st)) return 0;
+  const lines = SPOKEN[st.id][st.step];
+  let left = Math.max(0, lines[st.line].dur + LINE_GAP - st.t);
+  for (let k = st.line + 1; k < lines.length; k++) left += lines[k].dur + LINE_GAP;
+  return left;
+}
+
+/* ---------- playable things: one plays at a time ---------- */
+function play(id) {
+  for (const it of ITEMS) if (it.id !== id && S.it[it.id].playing) pause(it.id, 'other');
+  const t = S.it[id], it = itById(id);
+  if (t.t >= it.len) t.t = 0;
+  t.playing = true; t.pausedBy = null; S.media = id;
+}
+function pause(id, by) { const t = S.it[id]; if (!t.playing) return; t.playing = false; t.pausedBy = by; }
+function toggle(id) { if (S.it[id].playing) pause(id, 'tap'); else play(id); }
+
+function tapItem(id) {
+  const it = itById(id);
+  if (!inStation(it)) return; // from outside, things are only objects
+  const t = S.it[id];
+  switch (it.kind) {
+    case 'character': {
+      const sid = it.story;
+      if (S.story && S.story.id === sid) { if (S.story.paused) S.story.paused = null; return; }
+      if (S.story && !S.story.paused) return; // one story at a time: the one running keeps the screen
+      if (S.story) endStory(false); // a story left behind in another station gives way
+      startStory(sid); // a finished story replays only on a tap
+      return;
+    }
+    case 'video': case 'audio': toggle(id); return; // during a story it plays with its in-world control only
+    case 'longText': t.page = (t.page + 1) % it.pages.length; if (t.page === it.pages.length - 1) t.seen = true; return;
+    default: return; // signs, pictures, models are read by looking
+  }
+}
+
+/* ======================================================================
+   The faked camera: an invented old town
+   ====================================================================== */
+const canvas = $('#cam');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true, powerPreference: 'low-power' });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+{
+  const c = document.createElement('canvas'); c.width = 8; c.height = 256; const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, '#7ea6cf'); grd.addColorStop(0.55, '#c9d9e6'); grd.addColorStop(1, '#e8ece9');
+  g.fillStyle = grd; g.fillRect(0, 0, 8, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; scene.background = t;
+}
+scene.fog = new THREE.Fog(0xd5dfe6, 90, 380);
+const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 900);
+camera.rotation.order = 'YXZ';
+scene.add(camera); // the radar is the camera's child, so the camera must be in the scene graph
+scene.add(new THREE.HemisphereLight(0xeef4ff, 0x6d6252, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0d4, 1.6); sun.position.set(-70, 120, 50); scene.add(sun);
+
+function rng(seed) { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
+const rand = rng(20261116);
+const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), lam(0x8d8678));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+function cobbles(repeat) {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#a29886'; g.fillRect(0, 0, 128, 128);
+  const r = rng(5);
+  for (let y = 0; y < 128; y += 16) for (let x = (y / 16) % 2 ? 8 : 0; x < 128; x += 16) {
+    const v = 150 + Math.floor(r() * 30); g.fillStyle = `rgb(${v},${v - 8},${v - 22})`; g.fillRect(x + 1, y + 1, 14, 14);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat);
+  return new THREE.MeshLambertMaterial({ map: t });
+}
+for (const st of STATIONS) {
+  const plaza = new THREE.Mesh(new THREE.CircleGeometry(st.r + 10, 64), cobbles(20));
+  plaza.rotation.x = -Math.PI / 2; plaza.position.set(st.x, 0.02, st.z); scene.add(plaza);
+}
+// the lane from the start, through A, to B
+const PATH = [{ x: 0, z: 10 }, { x: 0, z: -60 }, { x: 55, z: -122 }];
+{
+  const m = lam(0x6b6862);
+  for (let i = 0; i < PATH.length - 1; i++) {
+    const a = PATH[i], b = PATH[i + 1], len = Math.hypot(b.x - a.x, b.z - a.z);
+    const grp = new THREE.Group(); grp.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); grp.position.set((a.x + b.x) / 2, 0.015, (a.z + b.z) / 2);
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(9, len), m); s.rotation.x = -Math.PI / 2; grp.add(s); scene.add(grp);
+  }
+}
+function segDist(p, a, b) {
+  const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz;
+  const t = clamp(((p.x - a.x) * dx + (p.z - a.z) * dz) / L, 0, 1);
+  return Math.hypot(p.x - (a.x + dx * t), p.z - (a.z + dz * t));
+}
+// houses, as two instanced meshes (two draw calls for the whole town)
+{
+  const spots = [];
+  for (let gx = -90; gx <= 150; gx += 13) for (let gz = -200; gz <= 40; gz += 13) {
+    const p = { x: gx + (rand() - 0.5) * 4, z: gz + (rand() - 0.5) * 4 };
+    if (STATIONS.some((s) => dist(p, s) < s.r + 17)) continue;
+    if (segDist(p, PATH[0], PATH[1]) < 12 || segDist(p, PATH[1], PATH[2]) < 12) continue;
+    if (p.z > -4 && Math.abs(p.x) < 30) continue; // the start stays open
+    spots.push(p);
+  }
+  const fc = document.createElement('canvas'); fc.width = 128; fc.height = 128; const g = fc.getContext('2d');
+  g.fillStyle = '#fff'; g.fillRect(0, 0, 128, 128);
+  for (let f = 0; f < 3; f++) for (let w = 0; w < 3; w++) { g.fillStyle = '#46525c'; g.fillRect(14 + w * 38, 128 - (f + 1) * 40 + 9, 22, 20); }
+  const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace;
+  const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
+  const roof = new THREE.ConeGeometry(0.75, 1, 4); roof.rotateY(Math.PI / 4); roof.translate(0, 0.5, 0);
+  const houses = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({ map: ft }), spots.length);
+  const roofs = new THREE.InstancedMesh(roof, lam(0xffffff), spots.length);
+  const FAC = [0xe8d8bf, 0xd9b99a, 0xc9d1c3, 0xe5c7a8, 0xd2c1b0, 0xe9e1cf], ROOF = [0x9c4a32, 0x7f3b2a, 0x6b4a3a, 0x8a5a44];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
+  spots.forEach((p, i) => {
+    const h = 7 + Math.floor(rand() * 3) * 3.4, w = 9 + rand() * 3;
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 0.4 - 0.2);
+    m4.compose(new THREE.Vector3(p.x, 0, p.z), q, new THREE.Vector3(w, h, 9)); houses.setMatrixAt(i, m4); houses.setColorAt(i, col.setHex(FAC[i % FAC.length]));
+    m4.compose(new THREE.Vector3(p.x, h, p.z), q, new THREE.Vector3(w * 1.02, 3, 9.2)); roofs.setMatrixAt(i, m4); roofs.setColorAt(i, col.setHex(ROOF[i % ROOF.length]));
+  });
+  scene.add(houses, roofs);
+}
+const stone = lam(0xb5a488), dark = lam(0x2b2f33), bronze = lam(0x7a5a33);
+// the well at A, the hall steps at B
+{
+  const A = stById('A');
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 0.9, 24, 1, true), stone); rim.position.set(A.x, 0.45, A.z);
+  rim.material = stone.clone(); rim.material.side = THREE.DoubleSide;
+  const water = new THREE.Mesh(new THREE.CircleGeometry(1.25, 24), lam(0x2f4f5c)); water.rotation.x = -Math.PI / 2; water.position.set(A.x, 0.3, A.z);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.18, 0.18), lam(0x5b4330)); beam.position.set(A.x, 2.3, A.z);
+  for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.3, 0.18), lam(0x5b4330)); p.position.set(A.x + s * 1.5, 1.15, A.z); scene.add(p); }
+  scene.add(rim, water, beam);
+  const B = stById('B');
+  for (let k = 0; k < 4; k++) { const s = new THREE.Mesh(new THREE.BoxGeometry(22 - k * 2, 0.3, 2.2), stone); s.position.set(B.x, 0.15 + k * 0.3, B.z - 17 - k * 2.2); scene.add(s); }
+  const hall = new THREE.Mesh(new THREE.BoxGeometry(24, 13, 10), lam(0xd8c6a6)); hall.position.set(B.x, 6.5 + 1.2, B.z - 31); scene.add(hall);
+}
+
+/* ---------- words in the world: Canvas 2D textures, never HTML ---------- */
+function textCanvas(lines, { w = 512, title = null, plate = 'rgba(250,247,240,.96)', ink = '#1c2228', size = 34 } = {}) {
+  const c = document.createElement('canvas'); const g = c.getContext('2d');
+  const lh = size * 1.32, pad = 26, th = title ? size * 1.25 + 10 : 0;
+  c.width = w; c.height = Math.ceil(pad * 2 + th + lines.length * lh);
+  g.fillStyle = plate; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 22); g.fill();
+  g.fillStyle = ink; g.textBaseline = 'top';
+  if (title) { g.font = `800 ${size * 1.05}px system-ui,sans-serif`; g.fillText(title, pad, pad); }
+  g.font = `600 ${size}px system-ui,sans-serif`;
+  lines.forEach((l, i) => g.fillText(l, pad, pad + th + i * lh));
+  return c;
+}
+function wrapWords(text, maxChars) {
+  const out = []; let line = '';
+  for (const w of text.split(' ')) { if ((line + ' ' + w).trim().length > maxChars) { out.push(line); line = w; } else line = (line + ' ' + w).trim(); }
+  if (line) out.push(line); return out;
+}
+function bubbleCanvas(text, who) {
+  const lines = wrapWords(text, 24);
+  const c = document.createElement('canvas'); const g = c.getContext('2d'); const size = 34, lh = 44, pad = 24;
+  c.width = 520; c.height = pad * 2 + 34 + lines.length * lh + 26;
+  g.fillStyle = 'rgba(255,255,255,.97)'; g.beginPath(); g.roundRect(0, 0, c.width, c.height - 26, 26); g.fill();
+  g.beginPath(); g.moveTo(230, c.height - 27); g.lineTo(260, c.height); g.lineTo(290, c.height - 27); g.fill();
+  g.fillStyle = '#0f766e'; g.font = '800 26px system-ui,sans-serif'; g.textBaseline = 'top'; g.fillText(who, pad, pad - 2);
+  g.fillStyle = '#14191f'; g.font = `650 ${size}px system-ui,sans-serif`;
+  lines.forEach((l, i) => g.fillText(l, pad, pad + 34 + i * lh));
+  return c;
+}
+/** A small bubble with three dots in the speaker's colour: says WHO speaks, the words are in the strip. */
+function dotsCanvas(coat, paused) {
+  const c = document.createElement('canvas'); c.width = 200; c.height = 120; const g = c.getContext('2d');
+  g.fillStyle = 'rgba(255,255,255,.97)'; g.beginPath(); g.roundRect(0, 0, 200, 94, 40); g.fill();
+  g.beginPath(); g.moveTo(84, 93); g.lineTo(100, 120); g.lineTo(116, 93); g.fill();
+  g.fillStyle = paused ? '#9aa3ad' : '#' + coat.toString(16).padStart(6, '0');
+  for (const x of [56, 100, 144]) { g.beginPath(); g.arc(x, 47, 14, 0, Math.PI * 2); g.fill(); }
+  return c;
+}
+function spriteFrom(c, heightM) {
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
+  sp.scale.set(heightM * c.width / c.height, heightM, 1); sp.renderOrder = 5; return sp;
+}
+function planeFrom(c, widthM) {
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(widthM, widthM * c.height / c.width), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
+  return m;
+}
+function setPlaneCanvas(mesh, c, widthM) {
+  mesh.material.map.dispose();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; mesh.material.map = t; mesh.material.needsUpdate = true;
+  mesh.geometry.dispose(); mesh.geometry = new THREE.PlaneGeometry(widthM, widthM * c.height / c.width);
+}
+
+/* ---------- the station's things ---------- */
+const world = {};
+const hitMeshes = [];
+const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false });
+function addHit(id, grp, w, h, d) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), hitMat); m.position.y = h / 2; m.userData.id = id; grp.add(m); hitMeshes.push(m); }
+function faceStation(grp, it) { const s = stById(it.st); grp.rotation.y = Math.atan2(s.x - it.x, s.z - it.z); }
+for (const it of ITEMS) {
+  const grp = new THREE.Group(); grp.position.set(it.x, 0, it.z); scene.add(grp);
+  const w = { grp };
+  switch (it.kind) {
+    case 'character': {
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.85, 4, 10), lam(it.coat)); body.position.y = 0.95;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 12), lam(0xe8c4a0)); head.position.y = 1.72;
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), lam(0xd9ad86)); nose.position.set(0, 1.72, 0.2);
+      const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 0.16, 14), lam(0x2b2f33)); hat.position.y = 1.9;
+      grp.add(body, head, nose, hat);
+      w.bubble = null; w.bubbleKey = '';
+      if (it.st === 'B') { // the story's title stands on a plaque at their feet, in the world
+        const plaque = planeFrom(textCanvas([STORIES[it.story].title], { w: 420, size: 30, plate: 'rgba(30,36,42,.92)', ink: '#f3f5f7' }), 0.9);
+        plaque.position.set(0, 0.45, 0.45); plaque.rotation.x = -0.5; grp.add(plaque);
+      }
+      addHit(it.id, grp, 1.0, 2.2, 1.0); break;
+    }
+    case 'shortText': {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 10), dark); post.position.y = 0.75;
+      const board = planeFrom(textCanvas(it.text, { title: it.title, w: 560, size: 32 }), 1.25); board.position.y = 1.75;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.62, 0.04), dark); back.position.set(0, 1.75, -0.03);
+      grp.add(post, back, board); faceStation(grp, it); addHit(it.id, grp, 1.4, 2.2, 0.6); break;
+    }
+    case 'longText': {
+      const stand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.12), dark); stand.position.y = 0.52;
+      const tray = new THREE.Group(); tray.position.y = 1.12; tray.rotation.x = -0.6;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.78, 0.04), lam(0x3b2f28)); back.position.z = -0.025;
+      const page = planeFrom(textCanvas(it.pages[0].slice(1), { title: it.pages[0][0], w: 560, size: 30 }), 0.92);
+      tray.add(back, page); grp.add(stand, tray); faceStation(grp, it);
+      w.page = page; w.pageShown = 0; addHit(it.id, grp, 1.2, 1.8, 1.0); break;
+    }
+    case 'picture': {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 180; const g = c.getContext('2d');
+      g.fillStyle = '#d9c6a0'; g.fillRect(0, 0, 256, 180); g.fillStyle = '#7d6440';
+      for (let i = 0; i < 6; i++) g.fillRect(10 + i * 41, 60 - (i % 3) * 14, 34, 100 + (i % 3) * 14);
+      g.fillStyle = '#5b4528'; g.fillRect(0, 150, 256, 30);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.15, 0.06), dark); frame.position.y = 1.75;
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 1.0), new THREE.MeshBasicMaterial({ map: t })); pic.position.set(0, 1.75, 0.035);
+      const cap = planeFrom(textCanvas([it.title], { w: 420, size: 30 }), 0.95); cap.position.set(0, 1.0, 0.04);
+      for (const x of [-0.6, 0.6]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.06), dark); l.position.set(x, 0.65, -0.1); grp.add(l); }
+      grp.add(frame, pic, cap); faceStation(grp, it); addHit(it.id, grp, 1.8, 2.4, 0.8); break;
+    }
+    case 'video': {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 144;
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.32, 0.08), lam(0x59616b)); back.position.y = 1.95;
+      const scr = new THREE.Mesh(new THREE.PlaneGeometry(2.04, 1.15), new THREE.MeshBasicMaterial({ map: t })); scr.position.set(0, 1.95, 0.045);
+      // title and description stand under the screen, in the world
+      const cap = planeFrom(textCanvas(['Tap the screen to play or pause.'], { title: it.title, w: 560, size: 28 }), 1.5); cap.position.set(0, 1.0, 0.05);
+      for (const x of [-0.85, 0.85]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.3, 0.07), dark); l.position.set(x, 0.65, -0.05); grp.add(l); }
+      grp.add(back, scr, cap); faceStation(grp, it);
+      w.screen = { c, t, last: -99 }; addHit(it.id, grp, 2.4, 2.8, 0.8); break;
+    }
+    case 'audio': {
+      const N = 90, pos = new Float32Array(N * 3), seed = [];
+      for (let k = 0; k < N; k++) seed.push({ a: rand() * 6.28, r: rand() * 0.9, y: rand() * 3.4, v: 0.4 + rand() * 0.6 });
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ color: 0xbffcf0, size: 0.13, transparent: true, opacity: 0.9, depthWrite: false });
+      const pts = new THREE.Points(geo, mat); grp.add(pts);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.15, 48), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+      const cap = spriteFrom(textCanvas([it.title], { w: 420, size: 30, plate: 'rgba(10,14,19,.82)', ink: '#ccfbf1' }), 0.32); cap.position.y = 3.7;
+      grp.add(ring, cap);
+      w.plume = { pts, pos, seed, mat, ringMat }; w.cap = cap;
+      addHit(it.id, grp, 2.0, 3.6, 2.0); break;
+    }
+    case 'model': {
+      const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.0, 2.0), stone); plinth.position.y = 0.5;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 1.4), it.st === 'A' ? stone : bronze); body.position.y = 1.4;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), it.st === 'A' ? stone : bronze); head.position.set(0, 1.95, 0.6);
+      const cap = planeFrom(textCanvas([it.title], { w: 420, size: 30 }), 0.9); cap.position.set(0, 0.55, 1.02);
+      grp.add(plinth, body, head, cap); faceStation(grp, it); addHit(it.id, grp, 1.8, 2.6, 2.4); break;
+    }
+  }
+  world[it.id] = w;
+}
+// the rim stone the well's story shows (story content, not a free item: not on the radar)
+const wellStone = planeFrom(textCanvas(['"Water for all who ask."'], { title: 'Rim stone, 1611', w: 560, size: 32 }), 1.3);
+wellStone.position.set(stById('A').x, 1.35, stById('A').z + 1.5); wellStone.visible = false; scene.add(wellStone);
+
+/* ---------- the beam: the station's pin from afar ---------- */
+const beams = {};
+for (const st of STATIONS) {
+  const grp = new THREE.Group(); grp.position.set(st.x, 0, st.z); scene.add(grp);
+  // as built: a six-sided orange column 4 to 26 m up, opacity .28, wider with distance, and a ground ring at the station's radius
+  const builtMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
+  const built = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 22, 6, 1, true), builtMat); built.position.y = 15;
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(st.r - 0.25, st.r, 96), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+  // round 1: an 8 cm column from the ground to 26 m, opacity .35, a white gem 5 m up
+  const gemMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.35, depthWrite: false });
+  const thin = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 26, 8, 1, true), gemMat); thin.position.y = 13;
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.5), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true })); gem.position.y = 5;
+  grp.add(built, ring, thin, gem);
+  beams[st.id] = { grp, built, builtMat, ring, ringMat, thin, gem, gemMat, a: 1 };
+}
+
+/* ---------- "show the way": one short drift of light along the ground toward the story's next place ----------
+   The look is round 2's wind, taken over as it was: it starts in view, bends round your shoulder when the
+   place is behind you, ends 1.2 m short of a near place and at most `reach` metres out (a far one gets a direction). */
+const DRIFT = { n: 64, dur: 3.0, speed: 2.4, reach: 9, spread: 1.7, depth: [1.8, 3.8], size: 0.07 };
+const MOTE_V = `attribute float aA;attribute float aS;uniform float uViewH,uSize;varying float vA;
+void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);gl_Position=projectionMatrix*mv;
+gl_PointSize=clamp(uSize*aS*uViewH*0.5*projectionMatrix[1][1]/max(0.1,-mv.z),3.0,34.0);vA=aA;}`;
+// a warm white core with a darker rim, so a mote still reads against bright paving in daylight
+const MOTE_F = `uniform vec3 uCore,uRim;varying float vA;void main(){float d=length(gl_PointCoord-0.5);
+float a=smoothstep(0.5,0.18,d)*vA;if(a<0.01)discard;float k=smoothstep(0.36,0.08,d);
+gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
+#include <colorspace_fragment>
+}`;
+const DR = { active: false, t: 0, count: 0, p0: new Float32Array(DRIFT.n * 3), p1: new Float32Array(DRIFT.n * 3), p2: new Float32Array(DRIFT.n * 3), birth: new Float32Array(DRIFT.n), life: new Float32Array(DRIFT.n), ph: new Float32Array(DRIFT.n) };
+const motePos = new Float32Array(DRIFT.n * 3), moteA = new Float32Array(DRIFT.n), moteS = new Float32Array(DRIFT.n);
+const moteGeo = new THREE.BufferGeometry();
+moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos, 3));
+moteGeo.setAttribute('aA', new THREE.BufferAttribute(moteA, 1));
+moteGeo.setAttribute('aS', new THREE.BufferAttribute(moteS, 1));
+const viewH = { value: 800 };
+const motes = new THREE.Points(moteGeo, new THREE.ShaderMaterial({
+  uniforms: { uViewH: viewH, uSize: { value: DRIFT.size }, uCore: { value: new THREE.Color('#fff4cf') }, uRim: { value: new THREE.Color('#d08a2a') } },
+  vertexShader: MOTE_V, fragmentShader: MOTE_F, transparent: true, depthWrite: false,
+}));
+motes.frustumCulled = false; motes.renderOrder = 15; motes.visible = false; motes.raycast = () => undefined; scene.add(motes);
+function showTheWay(T) {
+  if (DR.active || !T) return;
+  const L = DRIFT, me = S.pos, yaw = S.yaw;
+  DR.active = true; DR.t = 0; DR.count++; motes.visible = true;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  let dx = T.x - me.x, dz = T.z - me.z;
+  const dT = Math.hypot(dx, dz);
+  if (dT < 0.5) { dx = fx; dz = fz; } else { dx /= dT; dz /= dT; }
+  const reach = clamp(dT - 1.2, 2.5, L.reach), qx = me.x + dx * reach, qz = me.z + dz * reach, nx = -dz, nz = dx;
+  const dot = fx * dx + fz * dz, side = Math.sign(rx * dx + rz * dz) || 1;
+  for (let i = 0; i < L.n; i++) {
+    // the spread is kept inside the view at that depth: on a phone held upright, 1.7 m to each side already leaves it
+    const depth = L.depth[0] + rand() * (L.depth[1] - L.depth[0]), halfW = depth * Math.tan((camera.fov * Math.PI) / 360) * camera.aspect;
+    const lat = (rand() * 2 - 1) * Math.min(L.spread, 0.75 * halfW);
+    const p0x = me.x + fx * depth + rx * lat, p0z = me.z + fz * depth + rz * lat, p0y = 0.2 + rand() * 0.6;
+    const end = (rand() * 2 - 1) * (0.5 + 0.08 * reach), p2x = qx + nx * end, p2z = qz + nz * end, p2y = 0.12 + rand() * 0.35;
+    // the bend: toward the place if it lies ahead or to the side; round the visitor's shoulder if it lies behind
+    let p1x, p1z;
+    if (dot > -0.25) { const k = 0.5 * Math.hypot(p2x - p0x, p2z - p0z); p1x = p0x + (fx * 0.35 + dx * 0.65) * k; p1z = p0z + (fz * 0.35 + dz * 0.65) * k; }
+    else { p1x = me.x + rx * side * (2.4 + rand() * 0.8) + fx * (0.8 + rand() * 0.6); p1z = me.z + rz * side * (2.4 + rand() * 0.8) + fz * (0.8 + rand() * 0.6); }
+    DR.p0.set([p0x, p0y, p0z], i * 3); DR.p1.set([p1x, 0.45 + rand() * 0.45, p1z], i * 3); DR.p2.set([p2x, p2y, p2z], i * 3);
+    const len = Math.hypot(p1x - p0x, p1z - p0z) + Math.hypot(p2x - p1x, p2z - p1z), life = clamp(len / L.speed, 1.0, L.dur - 0.25);
+    DR.life[i] = life; DR.birth[i] = rand() * Math.max(0.05, L.dur - 0.25 - life) * 0.85; DR.ph[i] = rand() * 6.283; moteS[i] = 0.7 + rand() * 0.6;
+  }
+}
+function updateDrift(dt) {
+  if (!DR.active) return;
+  DR.t += dt;
+  const L = DRIFT, g = 1 - smooth(L.dur - 0.45, L.dur, DR.t);
+  if (DR.t >= L.dur) { DR.active = false; motes.visible = false; return; }
+  for (let i = 0; i < L.n; i++) {
+    const age = DR.t - DR.birth[i], u0 = age / DR.life[i], i3 = i * 3;
+    let x = 0, y = -50, z = 0, a = 0;
+    if (u0 > 0 && u0 < 1) {
+      const u = u0 * u0 * (3 - 2 * u0), v = 1 - u; // slow start: the motes gather in view before they leave it
+      x = v * v * DR.p0[i3] + 2 * v * u * DR.p1[i3] + u * u * DR.p2[i3];
+      y = v * v * DR.p0[i3 + 1] + 2 * v * u * DR.p1[i3 + 1] + u * u * DR.p2[i3 + 1];
+      z = v * v * DR.p0[i3 + 2] + 2 * v * u * DR.p1[i3 + 2] + u * u * DR.p2[i3 + 2];
+      const w = Math.sin(DR.ph[i] + age * 5.5) * 0.12, tx = DR.p2[i3] - DR.p0[i3], tz = DR.p2[i3 + 2] - DR.p0[i3 + 2], tl = Math.hypot(tx, tz) || 1;
+      x += (-tz / tl) * w; z += (tx / tl) * w; y += Math.sin(DR.ph[i] * 2 + age * 4) * 0.07;
+      a = smooth(0, 0.22, age) * (1 - smooth(0.62, 1, u0)) * g;
+    }
+    motePos[i3] = x; motePos[i3 + 1] = y; motePos[i3 + 2] = z; moteA[i] = a;
+  }
+  moteGeo.attributes.position.needsUpdate = true; moteGeo.attributes.aA.needsUpdate = true; moteGeo.attributes.aS.needsUpdate = true;
+}
+
+/* ---------- input: drag sideways to turn, drag up to walk, tap to use ---------- */
+let drag = null;
+const keys = new Set();
+canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, t0: performance.now(), moved: 0 }; canvas.setPointerCapture(e.pointerId); dismissTry(); });
+canvas.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.moved += Math.abs(dx) + Math.abs(dy);
+  S.yaw += dx * 0.0055; S.yawTarget = null; S.turn = null;
+  if (!S.auto) { const f = -dy * 0.03; S.pos.x += -Math.sin(S.yaw) * f; S.pos.z += -Math.cos(S.yaw) * f; }
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+canvas.addEventListener('pointerup', (e) => { if (drag && drag.moved < 8 && performance.now() - drag.t0 < 500) worldTap(e.clientX, e.clientY); drag = null; });
+canvas.addEventListener('pointercancel', () => { drag = null; });
+addEventListener('keydown', (e) => { keys.add(e.code); dismissTry(); });
+addEventListener('keyup', (e) => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+const ray = new THREE.Raycaster();
+function worldTap(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
+  const hit = ray.intersectObjects(hitMeshes, false)[0];
+  if (hit) tapItem(hit.object.userData.id);
+}
+function screenOf(p, y = 1.5) {
+  const v = new THREE.Vector3(p.x, y, p.z).project(camera), r = device.getBoundingClientRect();
+  return { x: (v.x + 1) / 2 * r.width, y: (1 - v.y) / 2 * r.height, front: v.z < 1 };
+}
+function ripple(x, y) { const d = document.createElement('div'); d.className = 'ripple'; d.style.left = x + 'px'; d.style.top = y + 'px'; device.appendChild(d); setTimeout(() => d.remove(), 800); }
+function rippleOn(el) { const r = el.getBoundingClientRect(), dr = device.getBoundingClientRect(); ripple(r.left - dr.left + r.width / 2, r.top - dr.top + r.height / 2); }
+function hfov() { return 2 * Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect); }
+const inView = (p) => Math.abs(relAngle(p)) < hfov() / 2;
+
+/* ======================================================================
+   The radar: when it shows, and what range it draws (linear, rim-clamped)
+   ====================================================================== */
+function radarAwakeTarget() {
+  if (!S.here && CFG.between === 'always') return true;
+  return S.stillFor >= CFG.still || T < S.wakeUntil;
+}
+function wake(sec) { S.wakeUntil = Math.max(S.wakeUntil, T + sec); }
+const OUT_STEPS = [null, 30, 100, 300];
+const IN_STEPS = [null, 10, 30, 100];
+function outStart() { return CFG.range === 'auto' ? 0 : OUT_STEPS.indexOf(Number(CFG.range)); }
+function niceUp(v) {
+  const p = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const k of [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (k * p >= v - 1e-9) return k * p;
+  return 10 * p;
+}
+let adaptiveM = 300;
+function outRange() {
+  // as built: the second-nearest station still to find, times 1.2, rounded up, clamped 10-600 m, shrinking only below 65 %
+  const ds = STATIONS.filter((s) => !S.visited[s.id] || s.id === S.here).map((s) => dist(s)).sort((a, b) => a - b);
+  const want = ds.length ? clamp(niceUp((ds[Math.min(1, ds.length - 1)]) * 1.2), 10, 600) : adaptiveM;
+  if (want > adaptiveM || want < adaptiveM * 0.65) adaptiveM = want;
+  const step = OUT_STEPS[S.rangeStep % OUT_STEPS.length];
+  return step ?? adaptiveM;
+}
+function inRange(st) { const step = IN_STEPS[S.rangeStep % IN_STEPS.length]; return step ?? Math.round(st.r * CFG.fit); }
+let lastStation = STATIONS[0];
+function rangeNow() {
+  const st = S.here ? stById(S.here) : lastStation;
+  const a = outRange(), b = inRange(st), z = ease(clamp(S.zoom, 0, 1));
+  return Math.exp(lerp(Math.log(a), Math.log(b), z));
+}
+function rangeWord() {
+  if (S.here) { const s = IN_STEPS[S.rangeStep % IN_STEPS.length]; return s ? `Range: ${s} m` : `Range: this station, ${inRange(stById(S.here))} m`; }
+  const s = OUT_STEPS[S.rangeStep % OUT_STEPS.length]; return s ? `Range: ${s} m` : `Range: auto, ${Math.round(adaptiveM)} m`;
+}
+$('#radar').addEventListener('click', (e) => {
+  dismissTry();
+  if (S.radarAlpha < 0.5) wake(TAP_WAKE_S); // asleep: a tap wakes it, it does not step
+  else { S.rangeStep = (S.rangeStep + 1) % 4; S.rangePeekUntil = T + 2; wake(3); }
+  if (e.isTrusted) rippleOn($('#radar'));
+});
+
+/* ---------- where the radar sits on screen (read on resize and layout changes only) ---------- */
+const radarBox = { cx: 0, cy: 0, size: 0, W: 0, H: 0 };
+function readRadarBox() {
+  const dr = device.getBoundingClientRect(), r = $('#radar').getBoundingClientRect();
+  radarBox.W = dr.width; radarBox.H = dr.height; radarBox.size = r.width;
+  radarBox.cx = r.left - dr.left + r.width / 2; radarBox.cy = r.top - dr.top + r.height / 2;
+}
+
+/* ---------- groups of marks on the rim: one direction, one mark ----------
+   Marks beyond the range sit on the rim at their true bearing. Neighbours closer than
+   CFG.merge degrees chain into one cluster; a cluster of one stays a hollow circle,
+   a cluster of more becomes one thicker arc spanning them. Pure; angles in radians. */
+function rimClusters(list, mergeRad) {
+  if (!list.length) return [];
+  const s = [...list].sort((p, q) => p.a - q.a);
+  let gi = s.length - 1, gmax = -1;
+  for (let i = 0; i < s.length; i++) { // start after the widest gap, so a cluster across +-180 deg stays whole
+    const nx = s[(i + 1) % s.length], gap = s.length === 1 ? 2 * Math.PI : ((nx.a - s[i].a) + 2 * Math.PI) % (2 * Math.PI);
+    if (gap > gmax) { gmax = gap; gi = i; }
+  }
+  const order = s.slice(gi + 1).concat(s.slice(0, gi + 1));
+  const out = []; let cur = [order[0]], a0 = order[0].a, a1 = order[0].a;
+  for (let i = 1; i < order.length; i++) {
+    const gap = ((order[i].a - order[i - 1].a) + 2 * Math.PI) % (2 * Math.PI);
+    if (gap <= mergeRad) { cur.push(order[i]); a1 += gap; } else { out.push({ marks: cur, a0, a1 }); cur = [order[i]]; a0 = a1 = order[i].a; }
+  }
+  out.push({ marks: cur, a0, a1 });
+  return out;
+}
+
+/* ======================================================================
+   The radar as a three.js building block: a group attached to the camera,
+   one pixel = one unit, redrawn by the renderer every frame. No canvas, no text.
+   ====================================================================== */
+const COL = { white: 0xf3f5f7, grey: 0x8b949d, dark: 0x0a0e13, orange: 0xfb923c };
+const ITEM_R = 5.5, ST_R = 6.5, NEXT_R = 8.5;
+const radar3 = (() => {
+  const root = new THREE.Group(); camera.add(root);
+  const layerA = { base: 1, st: 1, it: 1, bd: 1 };
+  const mats = [];
+  const M = (color, base, layer, extra = {}) => {
+    const m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: base, depthTest: false, depthWrite: false, ...extra });
+    m.userData.base = base; m.userData.layer = layer; mats.push(m); return m;
+  };
+  const geos = new Map();
+  const G = (key, make) => { let g = geos.get(key); if (!g) { g = make(); geos.set(key, g); } return g; };
+  const disc = (r) => G(`d${r}`, () => new THREE.CircleGeometry(r, 36));
+  const ring = (ri, ro) => G(`r${ri}/${ro}`, () => new THREE.RingGeometry(ri, ro, 40));
+  const arc = (ri, ro, deg) => G(`a${ri}/${ro}/${deg}`, () => new THREE.RingGeometry(ri, ro, Math.max(4, Math.ceil(deg / 4)), 1, 0, deg * Math.PI / 180));
+  function cone(R, halfDeg) { // the view cone: white at the centre fading to nothing at the rim (vertex alpha)
+    return G(`c${R}/${halfDeg}`, () => {
+      const h = halfDeg * Math.PI / 180, g = new THREE.CircleGeometry(R, 24, Math.PI / 2 - h, 2 * h);
+      const n = g.attributes.position.count, col = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) col.set([1, 1, 1, i === 0 ? 0.26 : 0], i * 4);
+      g.setAttribute('color', new THREE.BufferAttribute(col, 4)); return g;
+    });
+  }
+  function dashed(r, w) { // the station's outline as 40 dashes, built once per radius (half-pixel steps)
+    return G(`b${r}/${w}`, () => {
+      const pos = [], idx = [], n = 40, duty = 0.55, sub = 3;
+      for (let k = 0; k < n; k++) {
+        const base = pos.length / 3;
+        for (let s = 0; s <= sub; s++) {
+          const a = (k + duty * s / sub) / n * Math.PI * 2;
+          pos.push(Math.cos(a) * (r - w / 2), Math.sin(a) * (r - w / 2), 0, Math.cos(a) * (r + w / 2), Math.sin(a) * (r + w / 2), 0);
+        }
+        for (let s = 0; s < sub; s++) { const i = base + s * 2; idx.push(i, i + 1, i + 2, i + 1, i + 3, i + 2); }
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); return g;
+    });
+  }
+  const one = (geo, mat, order) => { const m = new THREE.Mesh(geo, mat); m.renderOrder = order; m.frustumCulled = false; root.add(m); return m; };
+  // the plate writes 1 into the stencil, so the station outline (which reaches past the rim) is clipped to the disc
+  const plateMat = M(COL.dark, 0.68, 'base', { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.AlwaysStencilFunc, stencilZPass: THREE.ReplaceStencilOp });
+  const clip = { stencilWrite: true, stencilRef: 1, stencilFunc: THREE.EqualStencilFunc, stencilFail: THREE.KeepStencilOp, stencilZFail: THREE.KeepStencilOp, stencilZPass: THREE.KeepStencilOp };
+  const mt = {
+    rim: M(COL.white, 0.28, 'base'), rings: M(COL.white, 0.14, 'base'), cone: M(COL.white, 1, 'base', { vertexColors: true }),
+    north: M(COL.white, 0.7, 'base'), you: M(COL.white, 1, 'base'),
+    bdFill: M(COL.white, 0.05, 'bd', clip), bdLine: M(COL.white, 0.5, 'bd', clip),
+    stOrange: M(COL.orange, 1, 'st'), stWhite: M(COL.white, 1, 'st'), stGrey: M(COL.grey, 1, 'st'), stDark: M(COL.dark, 0.85, 'st'), stPulse: M(COL.orange, 0.6, 'st'),
+    itWhite: M(COL.white, 1, 'it'), itGrey: M(COL.grey, 1, 'it'), itHalo: M(COL.dark, 0.9, 'it'),
+  };
+  const plate = one(disc(1), plateMat, 1000), rim = one(disc(1), mt.rim, 1001);
+  const ringA = one(disc(1), mt.rings, 1002), ringB = one(disc(1), mt.rings, 1002);
+  const coneM = one(disc(1), mt.cone, 1002), north = one(new THREE.PlaneGeometry(2.5, 7), mt.north, 1007);
+  const bdFill = one(disc(1), mt.bdFill, 1003), bdLine = one(disc(1), mt.bdLine, 1003);
+  const you = one(disc(4), mt.you, 1009);
+  const pools = [];
+  const pool = (order) => { const p = { order, list: [], n: 0 }; pools.push(p); return p; };
+  const P = { halo: pool(1004), grey: pool(1005), white: pool(1006), top: pool(1007), arcs: pool(1008) };
+  function put(p, geo, mat, x, y, rotZ = 0, s = 1) {
+    let m = p.list[p.n];
+    if (!m) { m = one(geo, mat, p.order); p.list.push(m); }
+    m.geometry = geo; m.material = mat; m.position.set(x, y, 0); m.rotation.z = rotZ; m.scale.setScalar(s); m.visible = true; p.n++;
+    return m;
+  }
+  let lastR = -1;
+  const stats = { marks: 0, merged: 0, arcs: 0, rim: 0 };
+  /** Heading-up: angle a is clockwise from straight ahead; +y is up on screen. */
+  const at = (a, r) => [Math.sin(a) * r, Math.cos(a) * r];
+  function drawRim(clusters, R, markR, colourOf, hollowMat) {
+    for (const c of clusters) {
+      if (c.marks.length === 1) { const [x, y] = at(c.marks[0].a, R - markR - 1.5); put(P.white, ring(markR - 2.5, markR), hollowMat(c.marks[0]), x, y); stats.rim++; continue; }
+      const pad = (markR + 1) / R, deg = Math.max(4, Math.round((c.a1 - c.a0 + 2 * pad) * 180 / Math.PI));
+      // RingGeometry runs counter-clockwise from +x; our angles run clockwise from up
+      put(P.arcs, arc(R - 6.5, R - 0.5, deg), colourOf(c.marks), 0, 0, Math.PI / 2 - c.a1 - pad);
+      stats.arcs++;
+    }
+  }
+  function update() {
+    root.visible = CFG.radar === 'disc' && radarBox.size > 0 && radarOn();
+    if (!root.visible) { stats.marks = stats.merged = stats.arcs = stats.rim = 0; return; }
+    const size = radarBox.size, R = size / 2 - 4;
+    const wpp = 2 * Math.tan(camera.fov * Math.PI / 360) / radarBox.H; // world metres per CSS pixel, 1 m in front of the camera
+    root.position.set((radarBox.cx - radarBox.W / 2) * wpp, (radarBox.H / 2 - radarBox.cy) * wpp, -1);
+    root.scale.setScalar(wpp);
+    if (R !== lastR) {
+      lastR = R;
+      plate.geometry = disc(R + 3.75); rim.geometry = ring(R + 2.25, R + 3.75);
+      ringA.geometry = ring(R / 3 - 0.75, R / 3 + 0.75); ringB.geometry = ring(2 * R / 3 - 0.75, 2 * R / 3 + 0.75);
+    }
+    const range = rangeNow(), ez = ease(clamp(S.zoom, 0, 1));
+    layerA.st = 1 - smooth(0, 0.6, ez); layerA.it = smooth(0.4, 1, ez);
+    layerA.bd = (S.here ? 1 : smooth(0.05, 0.6, ez)) * Math.max(ez, 0.25);
+    for (const m of mats) m.opacity = m.userData.base * layerA[m.userData.layer] * S.radarAlpha;
+    coneM.geometry = cone(R, Math.round(hfov() * 90 / Math.PI));
+    { const a = relAngle({ x: S.pos.x, z: S.pos.z - 1000 }), [x, y] = at(a, R - 4); north.position.set(x, y, 0); north.rotation.z = -a; }
+    for (const p of pools) p.n = 0;
+    stats.marks = 0; stats.merged = 0; stats.arcs = 0; stats.rim = 0;
+    const lin = (d) => R * Math.min(d, range) / range; // linear: one metre is the same length anywhere on the disc
+    const mergeRad = CFG.merge * Math.PI / 180;
+    // stations, outside a station
+    if (layerA.st > 0.02) {
+      const next = STATIONS.find((s) => !S.visited[s.id]);
+      const beyond = [];
+      for (const s of STATIONS) {
+        if (S.here === s.id) continue;
+        const a = relAngle(s), d = dist(s), info = { a, s, next: s === next };
+        if (d > range) { beyond.push(info); continue; }
+        const r = Math.min(lin(d), R - (info.next ? NEXT_R : ST_R) - 1.5), [x, y] = at(a, r);
+        if (info.next) {
+          if (!REDUCE) { const q = (T % 1.4) / 1.4; mt.stPulse.opacity = 0.6 * (1 - q) * layerA.st * S.radarAlpha; put(P.halo, ring(0.86, 1), mt.stPulse, x, y, 0, NEXT_R + q * 9); }
+          put(P.white, disc(NEXT_R), mt.stOrange, x, y);
+        } else if (S.visited[s.id]) {
+          put(P.grey, disc(ST_R), mt.stGrey, x, y);
+          if (ITEMS.some((i) => i.st === s.id && shownOnRadar(i) && !S.it[i.id].seen)) put(P.top, disc(2.6), mt.stWhite, x, y);
+        } else {
+          put(P.grey, disc(ST_R), mt.stDark, x, y); put(P.white, ring(ST_R - 1, ST_R + 1), mt.stWhite, x, y);
+        }
+      }
+      drawRim(rimClusters(beyond, mergeRad), R, NEXT_R, (ms) => (ms.some((m) => m.next) ? mt.stOrange : mt.stWhite), (m) => (m.next ? mt.stOrange : S.visited[m.s.id] ? mt.stGrey : mt.stWhite));
+    }
+    // the station's outline: its dot grows into its true outline as you cross the edge (clipped to the disc)
+    const st = S.here ? stById(S.here) : lastStation;
+    bdFill.visible = bdLine.visible = layerA.bd > 0.02;
+    if (bdLine.visible) {
+      const a = relAngle(st), [x, y] = at(a, R * dist(st) / range), rr = Math.max(1, Math.round(R * st.r / range * 2) / 2);
+      bdFill.geometry = disc(rr); bdLine.geometry = dashed(rr, 2);
+      bdFill.position.set(x, y, 0); bdLine.position.set(x, y, 0);
+    }
+    // the station's things, inside: true places, unseen on top; beyond the range on the rim
+    if (layerA.it > 0.02) {
+      const inside = [], beyond = [];
+      for (const i of ITEMS) {
+        if (i.st !== st.id || !shownOnRadar(i)) continue; // the author's "shown on the radar", resolved per item
+        const a = relAngle(i), d = dist(i), m = { a, seen: S.it[i.id].seen };
+        if (d > range) beyond.push(m);
+        else { const [x, y] = at(a, Math.min(lin(d), R - ITEM_R - 1.5)); m.x = x; m.y = y; inside.push(m); }
+      }
+      stats.marks = inside.length + beyond.length;
+      for (const m of inside) put(P.halo, disc(ITEM_R + 1.5), mt.itHalo, m.x, m.y);
+      for (const m of inside) put(m.seen ? P.grey : P.white, disc(ITEM_R), m.seen ? mt.itGrey : mt.itWhite, m.x, m.y);
+      // two marks on almost the same spot: one slightly larger ring says there is more than one (no number, no shift)
+      const ringed = new Set();
+      for (let i = 0; i < inside.length; i++) for (let j = i + 1; j < inside.length; j++) {
+        if (Math.hypot(inside[i].x - inside[j].x, inside[i].y - inside[j].y) >= ITEM_R) continue;
+        stats.merged++;
+        if (ringed.has(i)) continue; ringed.add(i);
+        put(P.top, ring(ITEM_R + 2, ITEM_R + 3.5), mt.itWhite, inside[i].x, inside[i].y);
+      }
+      drawRim(rimClusters(beyond, mergeRad), R, ITEM_R, (ms) => (ms.every((m) => m.seen) ? mt.itGrey : mt.itWhite), (m) => (m.seen ? mt.itGrey : mt.itWhite));
+    }
+    for (const p of pools) for (let i = p.n; i < p.list.length; i++) p.list[i].visible = false;
+  }
+  return { update, stats, root };
+})();
+
+/* ---------- page 2's radar, kept only to measure it against the disc in the same scene ---------- */
+const radarCanvas = $('#radarCanvas');
+let radarMarks = { n: 0, merged: 0 };
+function drawRadarCanvas() {
+  const w = radarCanvas.clientWidth; if (!w) return;
+  const dpr = Math.min(Math.max(devicePixelRatio, 1), 2), px = Math.round(w * dpr);
+  if (radarCanvas.width !== px) { radarCanvas.width = px; radarCanvas.height = px; }
+  const g = radarCanvas.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, w);
+  const c = w / 2, R = c - 4, range = rangeNow(), ez = ease(clamp(S.zoom, 0, 1));
+  const circle = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); };
+  const map = (d) => R * Math.sqrt(Math.min(d, range) / range);
+  const xyOf = (p) => { const a = relAngle(p), r = map(dist(p)); return [c + Math.sin(a) * r, c - Math.cos(a) * r, dist(p) > range]; };
+  circle(c, c, R + 3); g.fillStyle = 'rgba(10,14,19,.68)'; g.fill(); g.lineWidth = 1.5; g.strokeStyle = 'rgba(255,255,255,.28)'; g.stroke();
+  g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,.12)';
+  const rings = [niceUp(range / 12), niceUp(range / 3)];
+  for (const m of rings) { circle(c, c, map(m)); g.stroke(); }
+  g.fillStyle = 'rgba(255,255,255,.5)'; g.font = `600 ${Math.max(9, w * 0.075)}px system-ui,sans-serif`; g.textAlign = 'left';
+  g.fillText(`${rings[1]} m`, c + map(rings[1]) * 0.72 + 1, c + map(rings[1]) * 0.72 + 2);
+  g.fillStyle = 'rgba(255,255,255,.7)'; g.font = `700 ${Math.max(9, w * 0.072)}px system-ui,sans-serif`; g.textAlign = 'center';
+  g.fillText('N', c + Math.sin(S.yaw) * (R - 7), c - Math.cos(S.yaw) * (R - 7) + 3.5);
+  { const half = hfov() / 2, grd = g.createRadialGradient(c, c, 0, c, c, R);
+    grd.addColorStop(0, 'rgba(255,255,255,.26)'); grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.beginPath(); g.moveTo(c, c); g.arc(c, c, R, -Math.PI / 2 - half, -Math.PI / 2 + half); g.closePath(); g.fillStyle = grd; g.fill(); }
+  g.save(); circle(c, c, R); g.clip();
+  const sAl = 1 - smooth(0, 0.6, ez);
+  if (sAl > 0.02) {
+    const next = STATIONS.find((s) => !S.visited[s.id]);
+    for (const s of STATIONS) {
+      if (S.here === s.id) continue;
+      const [x0, y0, beyond] = xyOf(s); let x = x0, y = y0;
+      if (beyond) { const a = relAngle(s); x = c + Math.sin(a) * (R - 9); y = c - Math.cos(a) * (R - 9); }
+      g.globalAlpha = sAl;
+      if (s === next) {
+        if (!REDUCE) { const q = (T % 1.4) / 1.4; circle(x, y, 8.5 + q * 9); g.strokeStyle = `rgba(251,146,60,${0.6 * (1 - q)})`; g.lineWidth = 2; g.stroke(); }
+        circle(x, y, 8.5); g.fillStyle = '#fb923c'; g.fill(); g.fillStyle = '#1f1105'; g.font = '800 10px system-ui,sans-serif'; g.fillText(String(s.n), x, y + 3.6);
+      } else if (S.visited[s.id]) {
+        circle(x, y, 6.5); g.fillStyle = '#8b949d'; g.fill();
+        if (ITEMS.some((i) => i.st === s.id && shownOnRadar(i) && !S.it[i.id].seen)) { circle(x, y, 2.6); g.fillStyle = '#f3f5f7'; g.fill(); }
+      } else {
+        circle(x, y, 6.5); g.fillStyle = 'rgba(10,14,19,.85)'; g.fill(); g.strokeStyle = '#f3f5f7'; g.lineWidth = 2; g.stroke();
+        g.fillStyle = '#f3f5f7'; g.font = '800 8.5px system-ui,sans-serif'; g.fillText(String(s.n), x, y + 3);
+      }
+      g.globalAlpha = 1;
+    }
+  }
+  const st = S.here ? stById(S.here) : lastStation;
+  const bAl = S.here ? 1 : smooth(0.05, 0.6, ez);
+  if (bAl > 0.02) {
+    g.beginPath();
+    for (let k = 0; k <= 64; k++) { const a = k / 64 * Math.PI * 2, [x, y] = xyOf({ x: st.x + Math.cos(a) * st.r, z: st.z + Math.sin(a) * st.r }); if (k) g.lineTo(x, y); else g.moveTo(x, y); }
+    g.globalAlpha = bAl * Math.max(ez, 0.25); g.fillStyle = 'rgba(255,255,255,.05)'; g.fill(); g.setLineDash([5, 4]); g.lineWidth = 2; g.strokeStyle = 'rgba(255,255,255,.5)'; g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+  }
+  radarMarks = { n: 0, merged: 0 };
+  const iAl = smooth(0.4, 1, ez);
+  if (iAl > 0.02) {
+    const marks = ITEMS.filter((i) => i.st === st.id && shownOnRadar(i)).map((i) => { const [x, y, beyond] = xyOf(i); return { x, y, beyond, seen: S.it[i.id].seen, a: relAngle(i) }; });
+    for (const m of marks) if (m.beyond) { m.x = c + Math.sin(m.a) * (R - ITEM_R - 1); m.y = c - Math.cos(m.a) * (R - ITEM_R - 1); }
+    g.globalAlpha = iAl;
+    for (const m of marks) { circle(m.x, m.y, ITEM_R + 1.5); g.fillStyle = 'rgba(10,14,19,.9)'; g.fill(); }
+    for (const pass of [true, false]) for (const m of marks) {
+      if (m.seen !== pass) continue;
+      circle(m.x, m.y, ITEM_R);
+      if (m.beyond) { g.strokeStyle = m.seen ? '#8b949d' : '#f3f5f7'; g.lineWidth = 2.5; g.stroke(); }
+      else { g.fillStyle = m.seen ? '#8b949d' : '#f3f5f7'; g.fill(); }
+    }
+    radarMarks.n = marks.length;
+    const ringed = new Set();
+    for (let i = 0; i < marks.length; i++) for (let j = i + 1; j < marks.length; j++) {
+      if (Math.hypot(marks[i].x - marks[j].x, marks[i].y - marks[j].y) >= ITEM_R) continue;
+      radarMarks.merged++;
+      if (ringed.has(i)) continue; ringed.add(i);
+      circle(marks[i].x, marks[i].y, ITEM_R + 3); g.strokeStyle = '#f3f5f7'; g.lineWidth = 1.5; g.stroke();
+    }
+    g.globalAlpha = 1;
+  }
+  g.restore();
+  circle(c, c, 4); g.fillStyle = '#fff'; g.fill();
+}
+let lastRadarDraw = -1e9;
+function applyRadarMode() { radarCanvas.hidden = CFG.radar !== 'canvas'; readRadarBox(); }
+
+/* ======================================================================
+   The simulation (every frame)
+   ====================================================================== */
+const last = { x: 0, z: 0 };
+function sim(dt) {
+  if (waiters.length) { const due = waiters.filter((w) => T >= w.end); waiters = waiters.filter((w) => T < w.end); for (const w of due) w.res(); }
+  last.x = S.pos.x; last.z = S.pos.z;
+  if (S.auto) {
+    const a = S.auto, dx = a.x - S.pos.x, dz = a.z - S.pos.z, d = Math.hypot(dx, dz), step = a.speed * dt;
+    if (d <= step) { S.pos.x = a.x; S.pos.z = a.z; S.auto = null; S.yawTarget = null; a.res(); }
+    else { S.pos.x += dx / d * step; S.pos.z += dz / d * step; if (a.face && !drag) S.yawTarget = yawToward(a, S.pos); }
+  } else {
+    let f = 0; if (keys.has('KeyW') || keys.has('ArrowUp')) f = 1.4; if (keys.has('KeyS') || keys.has('ArrowDown')) f = -0.8;
+    if (keys.has('KeyA') || keys.has('ArrowLeft')) { S.yaw += 1.5 * dt; S.yawTarget = null; }
+    if (keys.has('KeyD') || keys.has('ArrowRight')) { S.yaw -= 1.5 * dt; S.yawTarget = null; }
+    if (f) { S.pos.x += -Math.sin(S.yaw) * f * dt; S.pos.z += -Math.cos(S.yaw) * f * dt; }
+  }
+  if (S.turn) { const k = clamp((T - S.turn.t0) / S.turn.dur, 0, 1); S.yaw = lerp(S.turn.from, S.turn.to, ease(k)); if (k >= 1) { const r = S.turn.res; S.turn = null; r(); } }
+  else if (S.yawTarget != null && !drag) S.yaw += wrapPi(S.yawTarget - S.yaw) * (1 - Math.exp(-dt * 3));
+
+  // walking: the pose's speed, smoothed over about half a second; turning on the spot is standing still
+  if (dt > 0) {
+    const inst = Math.hypot(S.pos.x - last.x, S.pos.z - last.z) / dt;
+    S.speed += (inst - S.speed) * (1 - Math.exp(-dt / 0.5));
+    S.stillFor = S.speed > CFG.walk ? 0 : S.stillFor + dt;
+  }
+
+  // the station edge (2 m of hysteresis on the way out)
+  const prev = S.here;
+  if (S.here) { if (dist(stById(S.here)) > stById(S.here).r + 2) S.here = null; }
+  if (!S.here) for (const s of STATIONS) if (dist(s) <= s.r) { S.here = s.id; break; }
+  if (S.here !== prev) onEdge(prev, S.here);
+  S.zoom = clamp(S.zoom + (S.here ? 1 : -1) * dt / 1.0, 0, 1);
+
+  // the one greeting: a single story's character greets once per visit, when you are near enough to listen
+  if (S.greetPending && !S.story) {
+    const sid = S.greetPending, by = itById(STORIES[sid].entry);
+    if (dist(by) <= GREET_M) { S.greeted[by.st] = true; S.greetPending = null; startStory(sid); }
+  }
+
+  // the radar's fade
+  const target = radarAwakeTarget() ? 1 : ASLEEP_ALPHA, k = dt / CFG.fade;
+  S.radarAlpha = target > S.radarAlpha ? Math.min(target, S.radarAlpha + k) : Math.max(target, S.radarAlpha - k);
+
+  // the story: lines advance by themselves at their timed length; it pauses when its station is left
+  const st = S.story;
+  if (st && !st.paused) {
+    const step = stepOf(), entry = itById(STORIES[st.id].entry);
+    if (S.here !== entry.st) st.paused = 'left';
+    else if (waitingFor(st)) { if (dist(step.at) <= CFG.arrive) { st.arrived = true; st.t = 0; st.idle = 0; } else st.idle += dt; }
+    else { st.t += dt; if (st.t >= lineOf(st).dur + LINE_GAP && st.line < step.lines.length - 1) { st.line++; st.t = 0; } }
+  }
+
+  // things that play, and what leaving their place does
+  for (const it of ITEMS) {
+    const t = S.it[it.id];
+    if (t.playing) { t.t += dt; if (t.t >= it.len) { t.t = it.len; t.playing = false; t.pausedBy = 'end'; t.seen = true; } }
+    if (!it.reach) continue;
+    const d = dist(it);
+    if (t.playing && d > it.reach + 1) pause(it.id, 'leave');
+    else if (!t.playing && t.pausedBy === 'leave' && d <= it.reach && !S.story) { t.playing = true; t.pausedBy = null; } // a paused one carries on at return
+  }
+
+  // seen by looking (signs, pictures, models): in view, near, for a moment
+  for (const it of ITEMS) {
+    const t = S.it[it.id]; if (t.seen || !inStation(it)) continue;
+    const need = { shortText: [8, 1.5], picture: [10, 2], model: [10, 3] }[it.kind];
+    if (!need) continue;
+    if (dist(it) <= need[0] && inView(it)) { t.dwell += dt; if (t.dwell >= need[1]) t.seen = true; }
+  }
+}
+function onEdge(from, to) {
+  S.rangeStep = to ? 0 : outStart();
+  if (!to) S.greetPending = null;
+  if (to) {
+    lastStation = stById(to); S.visited[to] = true;
+    // the one deliberate start by nearness: a single story whose first item is a character greets once per visit
+    const stories = Object.entries(STORIES).filter(([, s]) => itById(s.entry).st === to);
+    if (stories.length === 1 && !S.greeted[to]) S.greetPending = stories[0][0]; // starts once you are within GREET_M of its character
+  }
+  if (CFG.edge === 'on') wake(EDGE_WAKE_S);
+}
+
+/* ======================================================================
+   World looks (every frame)
+   ====================================================================== */
+function updateWorld(dt) {
+  updateDrift(dt);
+  // beams: one per station still ahead; the one you stand in fades out
+  for (const st of STATIONS) {
+    const b = beams[st.id], want = S.here === st.id || S.visited[st.id] ? 0 : 1;
+    b.a += (want - b.a) * (1 - Math.exp(-dt * 2));
+    const built = CFG.beam === 'built', d = dist(st);
+    b.built.visible = built && b.a > 0.01; b.ring.visible = built && b.a > 0.01;
+    b.thin.visible = !built && b.a > 0.01; b.gem.visible = !built && b.a > 0.01;
+    const r = clamp(d * 0.005, 0.05, 0.6); b.built.scale.set(r, 1, r);
+    b.builtMat.opacity = 0.28 * b.a; b.ringMat.opacity = 0.45 * b.a; b.gemMat.opacity = 0.35 * b.a;
+    b.gem.rotation.y += dt * 0.8; b.gem.material.opacity = b.a;
+  }
+  const story = S.story, step = stepOf();
+  wellStone.visible = !!story && story.id === 'well' && !!step?.stone && !story.paused;
+  for (const it of ITEMS) {
+    const w = world[it.id], t = S.it[it.id];
+    if (it.kind === 'character') {
+      // a character turns toward you once you are in their station: an invitation, never a badge
+      const want = inStation(it) && dist(it) < 18 ? Math.atan2(S.pos.x - it.x, S.pos.z - it.z) : Math.atan2(stById(it.st).x - it.x + 0.001, stById(it.st).z - it.z + 6);
+      w.grp.rotation.y += wrapPi(want - w.grp.rotation.y) * (1 - Math.exp(-dt * 2.2));
+      // over the speaker: three dots in their colour (the words are in the strip), or the words, or nothing
+      let key = '', make = null;
+      if (story && STORIES[story.id].entry === it.id && CFG.bubble !== 'off') {
+        if (story.paused) { key = 'p'; make = () => dotsCanvas(it.coat, true); }
+        else if (step.who === it.id && !waitingFor(story)) {
+          if (CFG.bubble === 'dots') { key = 'd'; make = () => dotsCanvas(it.coat, false); }
+          else { const text = step.lines[story.line]; key = 'w' + text; make = () => bubbleCanvas(text, it.title); }
+        }
+      }
+      if (key !== w.bubbleKey) {
+        w.bubbleKey = key;
+        if (w.bubble) { w.grp.remove(w.bubble); w.bubble.material.map.dispose(); w.bubble.material.dispose(); w.bubble = null; }
+        if (make) { w.bubble = spriteFrom(make(), key === 'p' || key === 'd' ? 0.3 : 0.62); w.bubble.position.y = 2.4; w.grp.add(w.bubble); }
+      }
+      if (w.bubble) {
+        const h0 = w.bubbleKey.startsWith('w') ? 0.62 : 0.3, d = Math.max(3, dist(it)), s = Math.min(1.6, d / 5);
+        const img = w.bubble.material.map.image, bob = w.bubbleKey === 'd' && !REDUCE ? Math.sin(T * 5) * 0.025 : 0;
+        w.bubble.scale.set(h0 * s * img.width / img.height, h0 * s, 1);
+        w.bubble.position.y = Math.min(2.2 + h0 * s / 2, bubbleCeiling(dist(it)) - h0 * s / 2) + bob;
+      }
+    }
+    if (it.kind === 'longText' && w.pageShown !== t.page) {
+      w.pageShown = t.page; const p = it.pages[t.page];
+      setPlaneCanvas(w.page, textCanvas([...p.slice(1), `page ${t.page + 1} of ${it.pages.length} - tap to turn`], { title: p[0], w: 560, size: 30 }), 0.92);
+    }
+    if (it.kind === 'audio') {
+      const p = w.plume, level = !inStation(it) ? 0.18 : t.playing ? 1 : 0.55;
+      const speed = t.playing ? 1.4 : 0.6;
+      for (let k = 0; k < p.seed.length; k++) { const s = p.seed[k]; s.y += s.v * speed * dt; if (s.y > 3.4) s.y = 0; const r = s.r * (1 - s.y / 5); p.pos[k * 3] = Math.cos(s.a + s.y) * r; p.pos[k * 3 + 1] = s.y; p.pos[k * 3 + 2] = Math.sin(s.a + s.y) * r; }
+      p.pts.geometry.attributes.position.needsUpdate = true;
+      p.mat.opacity = 0.9 * level; p.ringMat.opacity = 0.15 + 0.45 * level;
+      w.cap.visible = inStation(it) && dist(it) < 14;
+    }
+    if (it.kind === 'video') drawScreen(w.screen, it, t);
+  }
+}
+/** The highest a bubble may reach at horizontal distance d and stay in view, clear of the top HUD row. */
+function bubbleCeiling(d) {
+  const halfV = camera.fov * Math.PI / 360;
+  return 1.6 + Math.max(0.3, d) * Math.tan(halfV * 0.6);
+}
+function drawScreen(sc, it, t) {
+  const frame = t.playing ? Math.floor(T * 8) : (t.pausedBy === 'end' ? -2 : t.t > 0 ? -3 : -1);
+  if (frame === sc.last) return; sc.last = frame;
+  const g = sc.c.getContext('2d');
+  if (t.t > 0 && t.pausedBy !== 'end') {
+    g.fillStyle = '#cdbb94'; g.fillRect(0, 0, 256, 144);
+    const off = (t.t * 30) % 44;
+    g.fillStyle = '#6d5638'; for (let i = -1; i < 7; i++) { const x = i * 44 - off; g.fillRect(x, 50 + (i % 2) * 10, 34, 70); }
+    g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 134, 256, 10); g.fillStyle = '#2dd4bf'; g.fillRect(0, 134, 256 * (t.t / it.len), 10);
+    if (!t.playing) { g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 0, 256, 134); g.fillStyle = '#fff'; g.fillRect(108, 46, 14, 44); g.fillRect(134, 46, 14, 44); }
+  } else {
+    g.fillStyle = '#1b2026'; g.fillRect(0, 0, 256, 144);
+    g.fillStyle = '#fff'; g.beginPath(); g.moveTo(110, 44); g.lineTo(150, 72); g.lineTo(110, 100); g.closePath(); g.fill();
+    g.font = '600 15px system-ui,sans-serif'; g.textAlign = 'center'; g.fillText(t.pausedBy === 'end' ? 'Watched - tap to play again' : 'Tap to play', 128, 128);
+  }
+  sc.t.needsUpdate = true;
+}
+
+/* ======================================================================
+   The HUD (page layer): the pill at the foot
+   ====================================================================== */
+const PAUSE = '<svg viewBox="0 0 18 18"><rect x="4" y="3" width="3.6" height="12" rx="1" fill="currentColor"/><rect x="10.4" y="3" width="3.6" height="12" rx="1" fill="currentColor"/></svg>';
+const PLAY = '<svg viewBox="0 0 18 18"><path d="M5 3l10 6-10 6z" fill="currentColor"/></svg>';
+const hex = (n) => '#' + n.toString(16).padStart(6, '0');
+const KIND_DOT = { video: '#e5e7eb', audio: '#2dd4bf' };
+/** The pill holds one source at most: the running story's voice, else the video or sound in reach. */
+function stripModel() {
+  const st = S.story;
+  if (st && st.paused !== 'left') {
+    const def = STORIES[st.id], step = stepOf(), who = itById(step.who ?? def.entry), n = def.steps.length;
+    const base = { k: 'story', key: st.id, playing: !st.paused, colour: hex(who.coat), name: who.title.split(',')[0], last: st.step === n - 1 };
+    // waiting for you at the step's place: nothing is said, the pill names the story quietly, and after CFG.hint s it offers the way
+    if (waitingFor(st)) return { ...base, waiting: true, title: def.title, done: false, p: st.step / n, hint: st.idle >= CFG.hint && hintsFor(st) };
+    const line = lineOf(st);
+    let wi = 0; while (wi < line.words.length && line.words[wi].at <= st.t) wi++;
+    const p = (st.step + (st.line + Math.min(1, st.t / (line.dur + LINE_GAP))) / step.lines.length) / n;
+    return { ...base, line, wi, done: stepDone(), p, hint: false };
+  }
+  const id = S.media; if (!id) return null;
+  const it = itById(id), t = S.it[id];
+  if (!inStation(it) || dist(it) > it.reach + 1) return null;      // never outlives its place
+  if (!(t.playing || t.pausedBy === 'tap')) return null;
+  return { k: 'media', key: id, playing: t.playing, colour: KIND_DOT[it.kind], title: it.title, cue: cueAt(CUES[id], t.t), t: t.t, p: t.t / it.len };
+}
+/* the words are cut into chunks of CFG.lines lines that fit; the chunk holding the current word shows */
+const mctx = document.createElement('canvas').getContext('2d');
+const chunkCache = new Map();
+function chunks(words, maxW, font) {
+  const key = `${font}|${maxW}|${CFG.lines}|${words.join(' ')}`;
+  let out = chunkCache.get(key); if (out) return out;
+  mctx.font = font; const space = mctx.measureText(' ').width;
+  const lines = []; let start = 0, w = 0;
+  words.forEach((word, i) => {
+    const ww = mctx.measureText(word).width;
+    if (i > start && w + space + ww > maxW) { lines.push([start, i]); start = i; w = ww; } else w += (i > start ? space : 0) + ww;
+  });
+  lines.push([start, words.length]);
+  out = [];
+  for (let i = 0; i < lines.length; i += CFG.lines) out.push([lines[i][0], lines[Math.min(lines.length, i + CFG.lines) - 1][1]]);
+  chunkCache.set(key, out); return out;
+}
+let pillKey = '', lastModel = null;
+function renderPill() {
+  const m = stripModel(), pill = $('#pill');
+  pill.classList.toggle('off', !m);
+  if (!m) return; // keeps the last words while it fades out
+  lastModel = m;
+  const sz = STRIP[CFG.strip], fs = sz.fs, pw = Math.min(sz.w, lastW - 24);
+  const nx = m.k === 'story' && m.done, lv = m.k === 'story';
+  // words width: pill minus padding, border, play/pause, dot, gaps and the story's buttons (no layout read)
+  const maxW = pw - 4 - 11 - 40 - 10 - 16 - (nx ? 8 + 62 : 0) - (lv ? 8 + 30 : 0) - (m.hint ? 8 + 34 : 0) - 2;
+  const font = `600 ${fs}px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif`;
+  let html = '', idle = false, key;
+  const named = CFG.name === 'on' && m.k === 'story' ? `<span class="n">${esc(m.name)}</span> ` : '';
+  if (m.k === 'story' && m.waiting) {
+    idle = true; key = `w|${m.title}`;
+    if (key !== pillKey) html = esc(m.title);
+  } else if (m.k === 'story') {
+    const words = m.line.words.map((w) => w.w), cs = chunks(words, maxW - (named ? 60 : 0), font);
+    const cur = Math.max(0, Math.min(words.length - 1, m.wi - 1));
+    const ci = Math.max(0, cs.findIndex(([a, b]) => cur >= a && cur < b)), [a, b] = cs[ci];
+    key = `s|${m.line.text}|${ci}|${m.wi}|${m.playing}`;
+    if (key !== pillKey) html = named + esc(words.slice(a, Math.min(b, m.wi)).join(' ')) + (m.wi < b ? `${m.wi > a ? ' ' : ''}<span class="u">${esc(words.slice(Math.max(a, m.wi), b).join(' '))}</span>` : '');
+  } else if (m.cue) {
+    const words = m.cue.text.split(' '), cs = chunks(words, maxW, font);
+    const ci = Math.min(cs.length - 1, Math.floor(clamp((m.t - m.cue.start) / (m.cue.end - m.cue.start), 0, 0.999) * cs.length));
+    key = `c|${m.cue.text}|${ci}`;
+    if (key !== pillKey) html = esc(words.slice(cs[ci][0], cs[ci][1]).join(' '));
+  } else {
+    idle = true; key = `i|${m.title}`; // nothing said right now: the pill names what is playing, quietly
+    if (key !== pillKey) html = esc(m.title);
+  }
+  key += `|${nx}|${lv}|${m.hint}|${m.colour}|${fs}|${CFG.lines}`;
+  if (key !== pillKey) {
+    pillKey = key;
+    const el = $('#words'); el.innerHTML = html; el.classList.toggle('idle', idle);
+    $('#whoDot').style.background = m.colour;
+    $('#nxBtn').hidden = !nx; $('#lvBtn').hidden = !lv; $('#hintBtn').hidden = !m.hint; $('#nxBtn').textContent = m.last ? 'Done' : 'Next';
+    const hud = $('#hud'); hud.style.setProperty('--pillw', sz.w + 'px'); hud.style.setProperty('--fs', fs + 'px'); hud.style.setProperty('--lines', String(CFG.lines));
+  }
+  const hb = $('#hintBtn'), pressed = String(DR.active);
+  if (hb.getAttribute('aria-pressed') !== pressed) hb.setAttribute('aria-pressed', pressed);
+  const pp = $('#ppBtn'), want = m.playing ? 'pause' : 'play', p = m.p.toFixed(3);
+  if (pp.dataset.p !== p) { pp.dataset.p = p; pp.style.setProperty('--p', p); }
+  const label = `${m.playing ? 'Pause' : 'Play'} ${m.k === 'story' ? m.name : m.title}`;
+  if (pp.dataset.s !== want || pp.getAttribute('aria-label') !== label) { pp.dataset.s = want; pp.firstElementChild.innerHTML = m.playing ? PAUSE : PLAY; pp.setAttribute('aria-label', label); }
+}
+$('#pill').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const m = lastModel; if (!m) return;
+  if (b.dataset.act === 'toggle') {
+    if (m.k === 'story' && S.story) S.story.paused = S.story.paused ? null : 'tap';
+    else if (S.media) toggle(S.media);
+  } else if (b.dataset.act === 'next') storyNext();
+  else if (b.dataset.act === 'leave') endStory(false);
+  else if (b.dataset.act === 'hint') showTheWay(stepOf()?.at);
+});
+const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+function ui() {
+  const rw = $('#radarWrap'), on = radarOn();
+  if (rw.hidden === on) { rw.hidden = !on; readRadarBox(); } // the author's "radar at all"
+  rw.style.opacity = S.radarAlpha.toFixed(3);
+  const peek = T < S.rangePeekUntil && S.radarAlpha > 0.5;
+  $('#rangeLabel').hidden = !peek; if (peek) setText($('#rangeLabel'), rangeWord());
+  renderPill();
+  setText($('#beatTitle'), beat ? `${beat}/${BEATS.length} · ${BEATS[beat - 1].name}` : 'Walk freely');
+}
+
+/* ======================================================================
+   The measuring hook (behind the ruler toggle)
+   ====================================================================== */
+const stats = {};
+let measuring = QS.has('measure'), worstFrame = 0, frameWorstWindow = 0;
+function orientKey() { const r = device.getBoundingClientRect(); return r.width > r.height ? 'landscape' : 'portrait'; }
+function visibleHud() {
+  return [...device.querySelectorAll('[data-hud]')].filter((el) => {
+    if (el.closest('[hidden]')) return false;
+    const cs = getComputedStyle(el); if (cs.display === 'none' || Number(cs.opacity) < 0.35) return false;
+    const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+  });
+}
+function measure() {
+  const dr = device.getBoundingClientRect(), W = dr.width, H = dr.height;
+  const boxes = visibleHud().map((el) => {
+    const tgt = el.dataset.hud === 'radar' ? $('#radar') : el, r = tgt.getBoundingClientRect();
+    return { el, x: r.left - dr.left, y: r.top - dr.top, w: r.width, h: r.height, round: el.dataset.hud === 'radar' || el.dataset.hud === 'exit' };
+  });
+  const step = 4; let cov = 0;
+  for (let y = step / 2; y < H; y += step) for (let x = step / 2; x < W; x += step) for (const b of boxes) {
+    if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h) continue;
+    if (b.round && Math.hypot(x - b.x - b.w / 2, y - b.y - b.h / 2) > b.w / 2) continue;
+    cov++; break;
+  }
+  const pct = cov * step * step / (W * H) * 100;
+  for (const el of device.querySelectorAll('.ovl')) el.classList.remove('ovl');
+  let ov = 0;
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const A = boxes[i], B = boxes[j];
+    if (A.el.contains(B.el) || B.el.contains(A.el)) continue;
+    const ix = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x), iy = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y);
+    if (ix > 2 && iy > 2) { ov++; if (measuring) { A.el.classList.add('ovl'); B.el.classList.add('ovl'); } }
+  }
+  const rs = CFG.radar === 'disc' ? radar3.stats : { marks: radarMarks.n, merged: radarMarks.merged, arcs: 0, rim: 0 };
+  const m = { pct, count: boxes.length, ov, names: boxes.map((b) => b.el.dataset.hud), marks: rs.marks, merged: rs.merged, arcs: rs.arcs, rim: rs.rim, worst: frameWorstWindow };
+  const ro = $('#readout');
+  ro.hidden = !measuring;
+  if ($('#hud').classList.contains('measuring') !== measuring) { $('#hud').classList.toggle('measuring', measuring); readRadarBox(); }
+  if (measuring) {
+    const walking = S.speed > CFG.walk;
+    setText(ro, `HUD ${pct.toFixed(1)}% · ${m.count} el · ${ov ? ov + ' overlap' : 'no overlap'} · radar ${S.radarAlpha > 0.5 ? 'awake' : 'asleep'} · ${walking ? `walking ${S.speed.toFixed(1)} m/s` : `still ${Math.min(S.stillFor, 99).toFixed(1)} s`} · marks ${m.marks}${m.merged ? ` (${m.merged} stacked)` : ''}${m.arcs ? ` · ${m.arcs} rim arc` : ''} · worst frame ${m.worst.toFixed(0)} ms`);
+    ro.classList.toggle('bad', ov > 0 || m.worst > 50);
+  }
+  if (beat) {
+    const k = orientKey(); stats[k] ??= {}; const s = (stats[k][beat] ??= { pct: 0, count: 0, ov: 0, worst: 0 });
+    s.pct = Math.max(s.pct, pct); s.count = Math.max(s.count, m.count); s.ov = Math.max(s.ov, ov); s.worst = Math.max(s.worst, m.worst);
+    renderStats();
+  }
+  return m;
+}
+let statKey = '';
+function renderStats() {
+  const k = orientKey(), st = stats[k] ?? {}, key = k + JSON.stringify(st); if (key === statKey) return; statKey = key;
+  $('#statTable tbody').innerHTML = BEATS.map((b, i) => { const s = st[i + 1]; return `<tr><td>${i + 1} ${b.name.split(' ').slice(0, 3).join(' ')}</td><td>${s ? s.pct.toFixed(1) : '-'}</td><td>${s ? s.count : '-'}</td><td>${s ? s.ov : '-'}</td><td>${s ? s.worst.toFixed(0) : '-'}</td></tr>`; }).join('');
+}
+
+/* ---------- the frame-cost bench: one scripted 20 s walk, the same for both radars ----------
+   From 8 m outside station A's edge, walking in at 1.3 m/s while swinging the view
+   0.9 rad either side; the radar is held awake so it draws its full content. */
+let bench = null;
+function runBench(opts = {}) {
+  return new Promise((res) => {
+    cancelScripts(); beat = 0; S = fresh(); lastStation = A;
+    CFG.radar = opts.radar === 'canvas' ? 'canvas' : 'disc'; applyRadarMode(); syncCfg();
+    bench = { t0: T, sec: opts.seconds ?? 20, withMeasure: !!opts.measure, f: [], res };
+  });
+}
+function benchPose() {
+  const k = T - bench.t0;
+  S.pos.x = 0; S.pos.z = -34 - 1.3 * k; S.yaw = 0.9 * Math.sin(k * 0.7); S.wakeUntil = T + 1;
+}
+function summarize(xs) {
+  const s = [...xs].sort((a, b) => a - b), q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+  return { median: +q(0.5).toFixed(3), p95: +q(0.95).toFixed(3), worst: +s[s.length - 1].toFixed(3) };
+}
+function finishBench() {
+  const f = bench.f.slice(5), res = bench.res; bench = null; // the first frames carry the reset
+  const redraws = f.filter((x) => x.redraw).map((x) => x.at), gaps = redraws.slice(1).map((t, i) => t - redraws[i]);
+  res({
+    radar: CFG.radar, frames: f.length,
+    frameInterval: summarize(f.map((x) => x.interval)), frameWork: summarize(f.map((x) => x.work)),
+    radarWork: summarize(f.map((x) => x.radar)), radarDraw: summarize(f.filter((x) => x.redraw).map((x) => x.radar)), render: summarize(f.map((x) => x.render)),
+    radarUpdatesPerSecond: +(redraws.length / ((f[f.length - 1].at - f[0].at) / 1000)).toFixed(1),
+    radarUpdateGap: gaps.length ? summarize(gaps) : null,
+  });
+}
+function measureCost(n = 20) { const t0 = performance.now(); for (let i = 0; i < n; i++) measure(); return +((performance.now() - t0) / n).toFixed(3); }
+
+/* ======================================================================
+   The fixed demonstration: eight beats
+   ====================================================================== */
+let waiters = [];
+const wait = (sec) => new Promise((res) => waiters.push({ end: T + sec, res }));
+const walkTo = (p, speed = 1.3, face = true) => new Promise((res) => { S.auto = { x: p.x, z: p.z, speed, face, res }; });
+const turnBy = (rad, dur) => new Promise((res) => { S.yawTarget = null; S.turn = { from: S.yaw, to: S.yaw + rad, t0: T, dur, res }; });
+const turnTo = (p, dur = 1.2) => turnBy(wrapPi(yawToward(p) - S.yaw), dur);
+let markRes = null;
+function mark(name) {
+  window.HC.lastMark = `b${beat}-${name}`;
+  if (!SHOTS) return Promise.resolve();
+  S.paused = true;
+  return new Promise((res) => { markRes = () => { S.paused = false; res(); }; });
+}
+const tapWorld = (id) => { const it = itById(id), s = screenOf(it, 1.6); if (s.front) ripple(s.x, s.y); tapItem(id); };
+const tapEl = (sel) => { const el = device.querySelector(sel); if (!el || el.hidden) return; rippleOn(el); el.click(); };
+const standStill = () => wait(CFG.still + CFG.fade + 0.3);
+const A = stById('A'), B = stById('B');
+const A_IN = { x: 0, z: -47 }, A_OUT = { x: 22, z: -86 }, B_IN = { x: 49, z: -119.5 };
+const NEAR_PAIR = { x: 4.5, z: -64.5 };
+function base(n) {
+  if (n === 9) { // inside the well story, waiting at its stone for a while, looking the other way
+    base(2); S.story.step = 1; S.story.idle = CFG.hint - 4; S.it.aPic.seen = true;
+    S.pos = { x: -10, z: -50 }; S.yaw = yawToward(itById('aPic')); return;
+  }
+  S = fresh(); lastStation = A; S.rangeStep = outStart();
+  if (n >= 2) { S.pos = { ...A_IN }; S.yaw = yawToward(itById('greta')); S.here = 'A'; S.visited.A = true; S.greeted.A = true; S.zoom = 1; S.stillFor = 0; S.rangeStep = 0; }
+  if (n === 2) startStory('well');
+  if (n === 3) { startStory('well'); S.story.line = 2; S.story.t = lineOf(S.story).dur + LINE_GAP; }
+  if (n >= 4) { S.storyDone.well = true; S.it.greta.seen = true; }
+  if (n >= 5) { S.it.aPic.seen = true; S.it.aLong.seen = true; S.it.aLong.page = 2; S.it.aModel.seen = true; S.pos = { x: -6, z: -66 }; }
+  if (n >= 6) { S.it.aVid.t = 6; S.it.aVid.pausedBy = 'tap'; S.media = 'aVid'; S.pos = { x: 0, z: -68 }; }
+  if (n >= 7) { S.pos = { ...NEAR_PAIR }; S.yaw = yawToward(itById('aSign')); }
+  if (n >= 8) { S.pos = { x: 30, z: -94 }; S.here = null; S.zoom = 0; S.visited.A = true; S.yaw = yawToward(B); S.rangeStep = outStart(); }
+  S.radarAlpha = ASLEEP_ALPHA;
+}
+const BEATS = [
+  { name: 'Walk up to the beam', setup() { base(1); S.pos = { x: 0, z: -10 }; S.yaw = 0; S.stillFor = 0; S.speed = 1.3; },
+    async run() { await walkTo({ x: 0, z: -24 }, 1.3); await mark('approach'); await walkTo({ x: 0, z: -43.5 }, 1.3); await wait(0.7); await mark('edge'); await walkTo(A_IN, 1.3); await wait(2); } },
+  { name: 'Stand still: the radar wakes', setup() { base(2); },
+    async run() { await standStill(); await mark('awake'); await wait(1); tapEl('#radar'); await wait(0.8); await mark('rim'); await wait(2.4); } },
+  { name: 'Follow the story', setup() { base(3); },
+    async run() { await wait(0.6); tapEl('[data-act=next]'); await turnTo(A, 1.2); await walkTo({ x: 2, z: -55.2 }, 1.3); await turnTo({ x: 0, z: -58.5 }, 0.6); await wait(1.8); await mark('story'); await wait(stepRemaining() + 0.4); tapEl('[data-act=next]'); await turnTo(itById('greta'), 1.0); await wait(stepRemaining() + 0.4); tapEl('[data-act=next]'); await wait(1); } },
+  { name: 'Look around: grey is seen', setup() { base(4); },
+    async run() {
+      await walkTo({ x: -8, z: -58 }, 1.3); await turnTo(itById('aPic'), 0.9); await wait(2.4);
+      await walkTo({ x: -7, z: -62.5 }, 1.3); await turnTo(itById('aLong'), 0.8); for (let k = 0; k < 3; k++) { tapWorld('aLong'); await wait(1.2); }
+      await walkTo({ x: -4, z: -66 }, 1.3); await turnTo(itById('aModel'), 0.8); await wait(3.4);
+      await turnTo(itById('aSign'), 1.2); await standStill(); await mark('consumed'); await wait(2);
+    } },
+  { name: 'Video: pause it from the HUD', setup() { base(5); },
+    async run() {
+      await walkTo({ x: 1.5, z: -68 }, 1.3); await turnTo(itById('aVid'), 0.8); await wait(0.6); tapWorld('aVid'); await wait(3);
+      await turnBy(Math.PI * 0.85, 2.4); await wait(1.2); await mark('away'); tapEl('[data-act=toggle]'); await wait(1.2); await mark('paused'); await wait(1.5);
+    } },
+  { name: 'Close together, and the rim', setup() { base(6); },
+    async run() { await walkTo(NEAR_PAIR, 1.3); await turnTo(itById('aSign'), 0.8); await standStill(); await mark('merged'); tapEl('#radar'); await wait(1.2); await mark('split'); await wait(1.5); tapEl('#radar'); await wait(0.5); tapEl('#radar'); await wait(0.5); tapEl('#radar'); await wait(1); } },
+  { name: 'Leave with things unseen', setup() { base(7); },
+    async run() { await walkTo({ x: 13.1, z: -75.5 }, 1.4); await wait(0.3); await mark('edge'); await walkTo(A_OUT, 1.4); await standStill(); await mark('stations'); await wait(1.5); } },
+  { name: 'Station B: talk to one of three', setup() { base(8); },
+    async run() { await walkTo(B_IN, 1.4); await turnTo(itById('ringer'), 1.0); await standStill(); await mark('three'); tapWorld('baker'); await turnTo(itById('baker'), 0.8); await wait(1.6); await mark('story'); await wait(stepRemaining() + 0.3); tapEl('[data-act=next]'); await wait(1); } },
+  { name: 'Lost in a story: show the way', setup() { base(9); },
+    async run() {
+      await wait(4.5); await mark('offered'); tapEl('[data-act=hint]'); await wait(0.8); await mark('wind'); await wait(2.7);
+      await walkTo({ x: 2, z: -55.2 }, 1.3); await turnTo({ x: 0, z: -58.5 }, 0.8); await wait(1); await wait(stepRemaining() + 0.4); tapEl('[data-act=next]'); await wait(1);
+    } },
+];
+let runId = 0;
+function cancelScripts() { runId++; waiters = []; S.auto = null; S.turn = null; markRes = null; S.paused = false; }
+async function gotoBeat(n) {
+  cancelScripts(); dismissTry();
+  const my = runId; beat = n;
+  BEATS[n - 1].setup();
+  const k = orientKey(); stats[k] ??= {}; stats[k][n] = { pct: 0, count: 0, ov: 0, worst: 0 };
+  ui();
+  await BEATS[n - 1].run();
+  if (my !== runId) return false;
+  window.HC.done = n; return true;
+}
+
+/* ======================================================================
+   Controls
+   ====================================================================== */
+const tryEl = $('#try');
+let tryTimer = setTimeout(dismissTry, 12000);
+function dismissTry() { tryEl.classList.add('gone'); clearTimeout(tryTimer); }
+$('#prevBtn').onclick = () => gotoBeat(Math.max(1, (beat || 1) - 1));
+$('#nextBtn').onclick = () => gotoBeat(Math.min(BEATS.length, beat + 1));
+$('#menuBtn').onclick = () => { $('#demo').hidden = !$('#demo').hidden; };
+$('#demoClose').onclick = () => { $('#demo').hidden = true; };
+$('#measureBtn').onclick = () => { measuring = !measuring; $('#measureBtn').classList.toggle('on', measuring); measure(); };
+$('#measureBtn').classList.toggle('on', measuring);
+$('#exitBtn').onclick = () => {};
+{
+  const bb = $('#beatBtns');
+  BEATS.forEach((b, i) => { const btn = document.createElement('button'); btn.type = 'button'; btn.textContent = `${i + 1}. ${b.name}`; btn.onclick = () => { gotoBeat(i + 1); if (innerWidth < 960) $('#demo').hidden = true; }; bb.appendChild(btn); });
+  const free = document.createElement('button'); free.type = 'button'; free.textContent = 'Start again, walk freely'; free.style.gridColumn = '1/-1';
+  free.onclick = () => { cancelScripts(); beat = 0; S = fresh(); S.rangeStep = outStart(); lastStation = A; if (innerWidth < 960) $('#demo').hidden = true; };
+  bb.appendChild(free);
+}
+function syncCfg() { for (const b of document.querySelectorAll('[data-cfg]')) b.classList.toggle('on', String(CFG[b.dataset.cfg]) === b.dataset.v); }
+for (const b of document.querySelectorAll('[data-cfg]')) b.onclick = () => {
+  const k = b.dataset.cfg; CFG[k] = typeof CFG[k] === 'number' ? Number(b.dataset.v) : b.dataset.v; syncCfg();
+  if (k === 'radar') applyRadarMode();
+  if (k === 'range' && !S.here) S.rangeStep = outStart();
+  pillKey = ''; chunkCache.clear();
+};
+syncCfg();
+/* the author settings, flipped live: each switch cycles "as above" -> yes -> no (the tour's has two states only) */
+{
+  const KEYS = { radarAll: 'radar at all', shown: 'on radar', hints: 'hints' };
+  const rows = [['Tour', 'tour', null, ['radarAll', 'shown', 'hints']], ...STATIONS.map((s) => [`Station ${s.id}`, 'station', s.id, ['radarAll', 'shown', 'hints']]),
+    ...Object.entries(STORIES).map(([k, s]) => [s.title, 'story', k, [null, 'shown', 'hints']]), ['Item', 'item', '*', [null, 'shown', 'hints']]];
+  let itemId = 'aModel';
+  const ctxOf = (lvl, id) => lvl === 'tour' ? {} : lvl === 'station' ? { station: id } : lvl === 'story' ? { story: id, station: storyStation(id) } : { item: id, story: itById(id).story ?? null, station: itById(id).st };
+  const host = $('#authorRows');
+  function render() {
+    host.innerHTML = rows.map(([label, lvl, id, keys]) => {
+      const rid = id === '*' ? itemId : id;
+      const head = id === '*' ? `<select id="authItem" aria-label="Item">${ITEMS.map((i) => `<option value="${i.id}"${i.id === itemId ? ' selected' : ''}>${esc(i.title)}, ${i.st}</option>`).join('')}</select>` : `<span>${esc(label)}</span>`;
+      return `<div class="arow">${head}${keys.map((k) => {
+        if (!k) return '<span></span>';
+        const v = lvl === 'tour' ? AUTH.tour[k] : AUTH[lvl][rid][k], eff = resolveAuth(k, ctxOf(lvl, rid));
+        const w = v === null ? `as above (${eff ? 'yes' : 'no'})` : v ? 'yes' : 'no';
+        return `<button type="button" class="${v === null ? '' : 'on'}" data-al="${lvl}" data-aid="${rid ?? ''}" data-ak="${k}">${KEYS[k]}: ${w}</button>`;
+      }).join('')}</div>`;
+    }).join('');
+    $('#authItem').onchange = (e) => { itemId = e.target.value; render(); };
+  }
+  host.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ak]'); if (!b) return;
+    const { al, aid, ak } = b.dataset;
+    if (al === 'tour') AUTH.tour[ak] = !AUTH.tour[ak];
+    else { const o = AUTH[al][aid], cur = o[ak]; o[ak] = cur === null ? true : cur === true ? false : null; }
+    pillKey = ''; render();
+  });
+  const pr = $('#authorPresets');
+  for (const p of Object.values(AUTH_PRESETS)) { const b = document.createElement('button'); b.type = 'button'; b.textContent = p.label; b.onclick = () => { const [l, i, k, v] = p.set; AUTH[l][i][k] = v; pillKey = ''; render(); }; pr.appendChild(b); }
+  const rs = document.createElement('button'); rs.type = 'button'; rs.textContent = 'Reset to "as above"';
+  rs.onclick = () => { Object.assign(AUTH.tour, { radarAll: true, shown: true, hints: true }); for (const l of ['station', 'story', 'item']) for (const o of Object.values(AUTH[l])) for (const k of Object.keys(o)) o[k] = null; pillKey = ''; render(); };
+  pr.appendChild(rs);
+  render();
+}
+
+/* ======================================================================
+   The frame loop
+   ====================================================================== */
+let lastNow = performance.now(), lastMeasure = 0, lastW = 0, lastH = 0, worstSince = performance.now();
+function frame(now) {
+  const rawMs = now - lastNow; lastNow = now;
+  worstFrame = Math.max(worstFrame, rawMs);
+  if (now - worstSince > 2000) { frameWorstWindow = worstFrame; worstFrame = 0; worstSince = now; }
+  const dt = Math.min(0.05, rawMs / 1000) * SPEED;
+  const w = device.clientWidth, h = device.clientHeight;
+  if (w !== lastW || h !== lastH) { lastW = w; lastH = h; renderer.setSize(w, h, false); viewH.value = h * renderer.getPixelRatio(); camera.aspect = w / h; camera.fov = w > h ? 50 : 64; camera.updateProjectionMatrix(); readRadarBox(); chunkCache.clear(); pillKey = ''; }
+  if (bench) benchPose();
+  if (!S.paused) { T += dt; sim(dt); updateWorld(dt); }
+  if (bench) benchPose();
+  camera.position.set(S.pos.x, 1.6, S.pos.z); camera.rotation.set(S.pitch, S.yaw, 0);
+  const r0 = performance.now();
+  let redraw = false;
+  if (CFG.radar === 'disc') { radar3.update(); redraw = true; }
+  else if (now - lastRadarDraw >= 1000 / 15 || S.paused) { lastRadarDraw = now; drawRadarCanvas(); redraw = true; }
+  const r1 = performance.now();
+  renderer.render(scene, camera);
+  const r2 = performance.now();
+  ui();
+  if ((!bench || bench.withMeasure) && now - lastMeasure > 150) { lastMeasure = now; measure(); }
+  if (bench) {
+    bench.f.push({ at: now, interval: rawMs, work: performance.now() - now, radar: r1 - r0, render: r2 - r1, redraw });
+    if (T - bench.t0 >= bench.sec) finishBench();
+  }
+  requestAnimationFrame(frame);
+}
+window.HC = {
+  lastMark: null, done: 0, stats, CFG,
+  goto: (n) => gotoBeat(n),
+  resume: () => { if (markRes) { const r = markRes; markRes = null; r(); } },
+  measure: () => measure(),
+  measureCost,
+  bench: (opts) => runBench(opts),
+  state: () => S,
+  auth: AUTH,
+  drift: () => {
+    let lit = 0, onScreen = 0;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < DRIFT.n; i++) if (moteA[i] > 0.1) { lit++; v.set(motePos[i * 3], motePos[i * 3 + 1], motePos[i * 3 + 2]).project(camera); if (Math.abs(v.x) < 1 && Math.abs(v.y) < 1 && v.z < 1) onScreen++; }
+    return { active: DR.active, count: DR.count, t: +DR.t.toFixed(2), lit, onScreen };
+  },
+  radarStats: () => ({ ...radar3.stats }),
+};
+// the page opens outside the station, at its first moment: the beam ahead, nothing playing
+S.stillFor = 0; S.rangeStep = outStart();
+applyRadarMode();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
