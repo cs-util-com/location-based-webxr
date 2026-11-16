@@ -57,7 +57,8 @@ button{font:inherit;color:inherit}
 .words{flex:1;min-width:0;font-size:var(--fs);line-height:1.3;font-weight:600;color:var(--ink);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--lines);line-clamp:var(--lines);overflow:hidden;transition:opacity .35s}
 .words .u{color:rgba(243,245,247,.42)}
 .words .n{color:var(--muted);font-weight:800}
-.words.idle{color:var(--muted);font-weight:600;font-size:calc(var(--fs) - 1.5px)}
+.words.idle{color:var(--muted);font-weight:600;font-size:calc(var(--fs) - 1.5px);transition:none}
+.words.fade{opacity:0;transition:opacity var(--hold,1.2s) ease-in}
 .nx{flex:none;appearance:none;min-height:34px;padding:0 13px;border-radius:999px;border:0;background:var(--play);color:var(--play-ink);font-weight:800;font-size:13.5px;cursor:pointer}
 .lv{flex:none;appearance:none;width:30px;height:30px;border-radius:50%;border:2px solid rgba(255,255,255,.28);background:transparent;font-size:17px;line-height:1;padding:0;cursor:pointer}
 .hint{flex:none;appearance:none;width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,244,207,.55);background:rgba(208,138,42,.18);color:#fff4cf;display:grid;place-items:center;padding:0;cursor:pointer;animation:hintIn .6s ease-out}
@@ -171,7 +172,7 @@ button{font:inherit;color:inherit}
   <p>Two switches at four levels, "radar at all" at tour and station only. Each says "as above" until it is set; the nearest level that says something wins: item over story over station over tour. Tap a switch to cycle it.</p>
   <div id="authorRows"></div>
   <div class="grid" id="authorPresets" style="margin-top:6px"></div>
-  <p style="margin-top:6px">URL: <code>?author=b-off,lion-off,well-nohint,radar-b-off</code></p>
+  <p style="margin-top:6px">URL: <code>?author=b-off,lion-off,well-nohint,radar-b-off,stone-nohint</code></p>
 
   <h4>What "seen" means here</h4>
   <ul>
@@ -282,7 +283,7 @@ const STORIES = {
   well: { title: 'Water for all', entry: 'greta', steps: [
     { who: 'greta', lines: ['Welcome to the well court!', 'This well kept the street alive for three hundred years.', 'Come, I will show you the stone the masons left.'] },
     // a step with a place speaks once you are there; until then the story waits for you (and, after a while, offers the way)
-    { who: 'greta', stone: true, at: { x: 0, z: -58.5 }, lines: ['Look at the rim. The masons carved their promise into it.'] },
+    { who: 'greta', stone: true, at: { x: 0, z: -58.5, item: 'wellStone' }, lines: ['Look at the rim. The masons carved their promise into it.'] },
     { who: 'greta', lines: ['Thank you for listening. Have a look around.'] }] },
   bread: { title: 'Bread for the fair', entry: 'baker', steps: [
     { who: 'baker', lines: ['On fair days I baked from midnight on.', 'Four hundred loaves, gone before noon.'] }] },
@@ -290,8 +291,15 @@ const STORIES = {
     { who: 'ringer', lines: ['The old bell cracked in the frost of 1949.', 'For two years the steps were silent.'] }] },
   arch: { title: 'Raising the arch', entry: 'mason', steps: [
     { who: 'mason', lines: ['The arch stood on a wooden frame for a month.', 'Then we pulled the frame, and it held.'] },
-    { who: 'mason', at: { x: 55, z: -139.5 }, lines: ['From the first step you can see where each stone meets the next.'] }] },
+    { who: 'mason', at: { x: 55, z: -139.5, item: 'archStep' }, lines: ['From the first step you can see where each stone meets the next.'] }] },
 };
+/* the places a story sends you to: story content, not free items (never on the radar), yet each is an item
+   to the author settings, so "hints allowed" can be set on it; a step names its place by `at.item` */
+const PLACES = [
+  { id: 'wellStone', st: 'A', story: 'well', title: 'The rim stone (story place)' },
+  { id: 'archStep', st: 'B', story: 'arch', title: "The arch's keystone (story place)" },
+];
+const authItem = (id) => itById(id) ?? PLACES.find((p) => p.id === id);
 
 /* ---------- author settings, as the visitor's page obeys them ----------
    Two switches at four levels (tour, station, story, item), and "radar at all" at tour and station only.
@@ -300,7 +308,7 @@ const AUTH = {
   tour: { radarAll: true, shown: true, hints: true },
   station: Object.fromEntries(STATIONS.map((s) => [s.id, { radarAll: null, shown: null, hints: null }])),
   story: Object.fromEntries(Object.keys(STORIES).map((k) => [k, { shown: null, hints: null }])),
-  item: Object.fromEntries(ITEMS.map((i) => [i.id, { shown: null, hints: null }])),
+  item: Object.fromEntries([...ITEMS, ...PLACES].map((i) => [i.id, { shown: null, hints: null }])),
 };
 function resolveAuth(key, { item = null, story = null, station = null } = {}) {
   for (const v of [item && AUTH.item[item]?.[key], story && AUTH.story[story]?.[key], station && AUTH.station[station]?.[key]]) if (v === true || v === false) return v;
@@ -315,6 +323,7 @@ const AUTH_PRESETS = {
   'lion-off': { label: 'Hide the stone lion (A)', set: ['item', 'aModel', 'shown', false] },
   'well-nohint': { label: 'No hints in "Water for all"', set: ['story', 'well', 'hints', false] },
   'radar-b-off': { label: 'No radar at station B', set: ['station', 'B', 'radarAll', false] },
+  'stone-nohint': { label: 'No hint to the rim stone (item)', set: ['item', 'wellStone', 'hints', false] },
 };
 for (const p of (QS.get('author') ?? '').split(',')) { const e = AUTH_PRESETS[p]?.set; if (e) AUTH[e[0]][e[1]][e[2]] = e[3]; }
 
@@ -1050,7 +1059,11 @@ const radar3 = (() => {
     bdFill.visible = bdLine.visible = layerA.bd > 0.02;
     if (bdLine.visible) {
       const a = relAngle(st), [x, y] = at(a, R * dist(st) / range), rr = Math.max(1, Math.round(R * st.r / range * 2) / 2);
-      bdFill.geometry = disc(rr); bdLine.geometry = dashed(rr, 2);
+      // one unit disc, scaled; the dashed line comes from a ladder of a few radii (powers of two), scaled to rr,
+      // so the edge zoom builds no geometry per radius and the dash keeps a width of 1.4-2.8 px
+      const ref = 2 ** Math.round(Math.log2(rr));
+      bdFill.geometry = disc(1); bdFill.scale.setScalar(rr);
+      bdLine.geometry = dashed(ref, 2); bdLine.scale.setScalar(rr / ref);
       bdFill.position.set(x, y, 0); bdLine.position.set(x, y, 0);
     }
     // the station's things, inside: true places, unseen on top; beyond the range on the rim
@@ -1374,7 +1387,11 @@ let pillKey = '', lastModel = null;
 function renderPill() {
   const m = stripModel(), pill = $('#pill');
   pill.classList.toggle('off', !m);
+  if (pill.inert !== !m) pill.inert = !m; // a hidden pill's buttons take no focus and no tap
   if (!m) return; // keeps the last words while it fades out
+  // a subtitle cue that has ended fades over its hold time; the title shown when no cue runs does not (see .words.idle)
+  const wEl = $('#words'), fading = m.k === 'media' && !!m.cue && m.t >= m.cue.end;
+  if (wEl.classList.contains('fade') !== fading) wEl.classList.toggle('fade', fading);
   lastModel = m;
   const sz = STRIP[CFG.strip], fs = sz.fs, pw = Math.min(sz.w, lastW - 24);
   const nx = m.k === 'story' && m.done, lv = m.k === 'story';
@@ -1407,7 +1424,7 @@ function renderPill() {
     const el = $('#words'); el.innerHTML = html; el.classList.toggle('idle', idle);
     $('#whoDot').style.background = m.colour;
     $('#nxBtn').hidden = !nx; $('#lvBtn').hidden = !lv; $('#hintBtn').hidden = !m.hint; $('#nxBtn').textContent = m.last ? 'Done' : 'Next';
-    const hud = $('#hud'); hud.style.setProperty('--pillw', sz.w + 'px'); hud.style.setProperty('--fs', fs + 'px'); hud.style.setProperty('--lines', String(CFG.lines));
+    const hud = $('#hud'); hud.style.setProperty('--pillw', sz.w + 'px'); hud.style.setProperty('--fs', fs + 'px'); hud.style.setProperty('--lines', String(CFG.lines)); hud.style.setProperty('--hold', CFG.hold + 's');
   }
   const hb = $('#hintBtn'), pressed = String(DR.active);
   if (hb.getAttribute('aria-pressed') !== pressed) hb.setAttribute('aria-pressed', pressed);
@@ -1641,14 +1658,14 @@ syncCfg();
   const rows = [['Tour', 'tour', null, ['radarAll', 'shown', 'hints']], ...STATIONS.map((s) => [`Station ${s.id}`, 'station', s.id, ['radarAll', 'shown', 'hints']]),
     ...Object.entries(STORIES).map(([k, s]) => [s.title, 'story', k, [null, 'shown', 'hints']]), ['Item', 'item', '*', [null, 'shown', 'hints']]];
   let itemId = 'aModel';
-  const ctxOf = (lvl, id) => lvl === 'tour' ? {} : lvl === 'station' ? { station: id } : lvl === 'story' ? { story: id, station: storyStation(id) } : { item: id, story: itById(id).story ?? null, station: itById(id).st };
+  const ctxOf = (lvl, id) => lvl === 'tour' ? {} : lvl === 'station' ? { station: id } : lvl === 'story' ? { story: id, station: storyStation(id) } : { item: id, story: authItem(id).story ?? null, station: authItem(id).st };
   const host = $('#authorRows');
   function render() {
     host.innerHTML = rows.map(([label, lvl, id, keys]) => {
       const rid = id === '*' ? itemId : id;
-      const head = id === '*' ? `<select id="authItem" aria-label="Item">${ITEMS.map((i) => `<option value="${i.id}"${i.id === itemId ? ' selected' : ''}>${esc(i.title)}, ${i.st}</option>`).join('')}</select>` : `<span>${esc(label)}</span>`;
+      const head = id === '*' ? `<select id="authItem" aria-label="Item">${[...ITEMS, ...PLACES].map((i) => `<option value="${i.id}"${i.id === itemId ? ' selected' : ''}>${esc(i.title)}, ${i.st}</option>`).join('')}</select>` : `<span>${esc(label)}</span>`;
       return `<div class="arow">${head}${keys.map((k) => {
-        if (!k) return '<span></span>';
+        if (!k || (id === '*' && k === 'shown' && !itById(rid))) return '<span></span>'; // a story place is never on the radar
         const v = lvl === 'tour' ? AUTH.tour[k] : AUTH[lvl][rid][k], eff = resolveAuth(k, ctxOf(lvl, rid));
         const w = v === null ? `as above (${eff ? 'yes' : 'no'})` : v ? 'yes' : 'no';
         return `<button type="button" class="${v === null ? '' : 'on'}" data-al="${lvl}" data-aid="${rid ?? ''}" data-ak="${k}">${KEYS[k]}: ${w}</button>`;
@@ -1694,7 +1711,8 @@ function frame(now) {
   renderer.render(scene, camera);
   const r2 = performance.now();
   ui();
-  if ((!bench || bench.withMeasure) && now - lastMeasure > 150) { lastMeasure = now; measure(); }
+  // the measuring hook forces a layout and walks a 4 px grid, so it runs only while the hook is on (or a bench asks for it)
+  if ((bench ? bench.withMeasure : measuring) && now - lastMeasure > 150) { lastMeasure = now; measure(); }
   if (bench) {
     bench.f.push({ at: now, interval: rawMs, work: performance.now() - now, radar: r1 - r0, render: r2 - r1, redraw });
     if (T - bench.t0 >= bench.sec) finishBench();

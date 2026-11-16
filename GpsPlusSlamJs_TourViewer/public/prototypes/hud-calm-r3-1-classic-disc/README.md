@@ -9,7 +9,7 @@ A throwaway, standalone prototype. Nothing in the app links to it, and it does n
 - **Circles only.** The radar holds circles, rings and arcs. No icons, no numbers, no letters. North is a short tick on the rim. The range is said in words only for 2 s after a tap, in a label under the disc, outside it.
 - **No stutter.** The radar is a three.js object hung on the camera, drawn in the same render as the world, every frame. Nothing is redrawn on a 2D canvas. See "The stutter, measured" below.
 - **At the foot, one small pill.** A play/pause of 40 px with its progress ring, the speaker's colour dot, and one line of words. Round 2's larger story card is gone.
-- **The words line.** It shows what is being said now: a character's words as they are spoken (spoken words in full white, the rest of the line dimmer), or a video's or a sound's subtitle cue. It stays while the thing is out of view and while the sound is muted, because it is the HUD's job to carry words that the world cannot show you at that moment. It keeps no history: a line replaces the one before, and the line fades 1.2 s after its cue ends. Signs, captions and long texts stay in the world only, never in the line.
+- **The words line.** It shows what is being said now: a character's words as they are spoken (spoken words in full white, the rest of the line dimmer), or a video's or a sound's subtitle cue. It stays while the thing is out of view and while the sound is muted, because it is the HUD's job to carry words that the world cannot show you at that moment. It keeps no history: a line replaces the one before, and a subtitle cue's words fade out over the 1.2 s after the cue ends; then the pill names what is playing, quietly and without a fade. Signs, captions and long texts stay in the world only, never in the line.
 - **Show the way.** Inside a story, when the story waits for you at its next place and nothing has moved on for 60 s, a small round button appears in the pill. A tap sends a short drift of light along the ground toward that place. See below.
 
 ## The timings, and what to try
@@ -46,6 +46,8 @@ The question was whether round 2's radar stutters because drawing it is slow or 
 
 **What it does not say.** None of this was measured on a phone, and the built radar's own measurement (1.3-1.5 ms a draw on desktop) is on a different machine. If a phone shows frame drops while the radar draws, that is a second cause this page cannot find.
 
+**A confound, now removed.** The measuring hook's `measure()` used to run every 150 ms even with the hook off, here and on round 2's page 2. It forced a layout through `getComputedStyle` and walked about 20,000 grid points. It now runs only while the hook is on (the ruler button, or `?measure` in the URL), which is off by default; `HC.bench({ measure: true })` still includes it on purpose. The stutter's cause was measured in headless runs as the 12-13 Hz redraw cadence; this loop could have added to it on a phone, and a check on a 60 Hz phone settles it.
+
 ## Show the way: the hint
 
 The look is round 2's wind, page 4: a short drift of warm light motes that starts in front of you, low over the ground, and flows toward the story's next place. If that place is behind you, the drift bends round your shoulder; if it is near, it ends a little short of it; if it is far, it gives a direction and stops 9 m out. It lasts 3 s and then is gone. Nothing stays in the world, and nothing is added to the radar.
@@ -69,12 +71,14 @@ Each switch at every level below the tour starts at "as above". **The nearest le
 
 Examples: station B set to "not on the radar" hides all of B's things, but one item at B set to "yes" still shows. A story with hints off never offers "show the way", even when the tour allows hints. "Radar at all: no" at station B removes the radar while you are inside B, and it comes back when you leave.
 
-In the panel each button cycles "as above", yes, no; the button says what it resolves to. Four presets set one switch each, and URL `?author=b-off,lion-off,well-nohint,radar-b-off` sets them from the start (any subset).
+The places a story sends you to (the rim stone, the arch's keystone) are not free items and are never on the radar, but each is an item to these settings, so "hints allowed" can be set on it: the item level decides whether "show the way" is offered for that step. They are at the end of the panel's item list.
+
+In the panel each button cycles "as above", yes, no; the button says what it resolves to. Five presets set one switch each (the fifth: no hint to the rim stone, at item level), and URL `?author=b-off,lion-off,well-nohint,radar-b-off,stone-nohint` sets them from the start (any subset).
 
 ## Words and cues
 
 - **Characters' words** are timed per word, as a voice's word-boundary events would give them: each word's length follows its letters, with a pause after a comma or a full stop (about 155 words a minute). The line shows the sentence that is being spoken, cut to the pill's width at word boundaries without reading the layout; the spoken part is full white, the rest at 42 %.
-- **Video and sound subtitles** are WebVTT cue lists, one per item ("Drawing water, 1938" and "The bucket chain" at A, "Casting the bell, 1951" and "The hall's echo" at B). The cue that is playing now is the line; between cues the line holds 1.2 s, then fades.
+- **Video and sound subtitles** are WebVTT cue lists, one per item ("Drawing water, 1938" and "The bucket chain" at A, "Casting the bell, 1951" and "The hall's echo" at B). The cue that is playing now is the line; when a cue ends, its words fade out over the hold time (1.2 s), and a cue that starts within it replaces them at full strength.
 - **The dot's colour** is the speaker's coat, or white for a video or sound.
 
 ## What the HUD holds

@@ -741,8 +741,10 @@
 
       <h4>Author settings (what the tour's author chose)</h4>
       <p>
-        Each switch says "as above" until set. The nearest level wins: item over
-        story over station over tour. "Radar" exists on the tour and stations
+        Each switch says "as above" until set. The page starts on the preset
+        "Starting example": the story "Water for all" is off the band and
+        Greta, who starts it, is on it; "Every switch as above" clears that.
+        The nearest level wins: item over story over station over tour. "Radar" exists on the tour and stations
         only. The band and the hint obey at once.
       </p>
       <div class="grid" id="presetBtns"></div>
@@ -1273,7 +1275,8 @@
       /* ======================================================================
    Author settings: tour, station, story, item. null = as above. The nearest level wins.
    ====================================================================== */
-      function defaultAuth() {
+      /** Every switch "as above"; with `example`, the demo's starting preset on top (the well's find off the band, Greta on it). */
+      function defaultAuth(example = true) {
         const a = {
           tour: { radar: true, shown: true, hints: true },
           station: {},
@@ -1285,9 +1288,11 @@
         for (const id of Object.keys(STORIES))
           a.story[id] = { shown: null, hints: null };
         for (const it of ITEMS) a.item[it.id] = { shown: null, hints: null };
-        // the demo's own choices: the well's story hides its find, but Greta, who starts it, stays on the band
-        a.story.well.shown = false;
-        a.item.greta.shown = true;
+        // the starting preset: the well's story hides its find, but Greta, who starts it, stays on the band
+        if (example) {
+          a.story.well.shown = false;
+          a.item.greta.shown = true;
+        }
         return a;
       }
       let AUTH = defaultAuth();
@@ -2392,7 +2397,11 @@
       function updateBand() {
         const on = radarOn() && LAY.ok;
         band.visible = on;
-        $("#radar").hidden = !radarOn();
+        const hide = !radarOn();
+        if ($("#radar").hidden !== hide) {
+          $("#radar").hidden = hide;
+          layoutDirty = true; // a hidden band measures 0 px wide: lay it out again once it shows
+        }
         if (!on) {
           bandStats.n = 0;
           return;
@@ -3098,7 +3107,8 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
         }
         if (T < S.rangePeekUntil && S.radarAlpha > 0.5)
           return { k: "ctx", key: `r:${rangeWord()}`, text: rangeWord() };
-        if (st) {
+        // a story's place belongs to its station: once the visitor has left it the line goes, and it comes back on return
+        if (st && (!st.paused || S.here === itById(STORIES[st.id].entry).st)) {
           const def = STORIES[st.id];
           return {
             k: "ctx",
@@ -3212,16 +3222,14 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
         ctl.hidden = !m.ctl;
         if (m.ctl) {
           ctl.style.setProperty("--p", (m.p ?? 0).toFixed(3));
+          // the control's name says what it acts on: "Pause: Greta", "Play: The hall's echo"
+          const label = `${{ pause: "Pause", play: "Play", next: "Next", done: "Done" }[m.ctl]}: ${m.k === "voice" ? m.who : m.title}`;
           if (ctl.dataset.s !== m.ctl) {
             ctl.dataset.s = m.ctl;
             ctl.firstElementChild.innerHTML = ICON[m.ctl];
-            ctl.setAttribute(
-              "aria-label",
-              { pause: "Pause", play: "Play", next: "Next", done: "Done" }[
-                m.ctl
-              ],
-            );
           }
+          if (ctl.getAttribute("aria-label") !== label)
+            ctl.setAttribute("aria-label", label);
         }
         $("#leaveBtn").hidden = !S.story || !!S.story.paused;
         const offer = hintOffered() && m.k !== "media";
@@ -3460,9 +3468,15 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
           },
         },
         {
-          name: "Reset to the demo's settings",
+          name: "Starting example: the well's find off the band",
           run: () => {
             AUTH = defaultAuth();
+          },
+        },
+        {
+          name: "Every switch as above",
+          run: () => {
+            AUTH = defaultAuth(false);
           },
         },
       ];
@@ -3926,7 +3940,8 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
         updateBand();
         renderer.render(scene, camera);
         ui();
-        if (now - lastMeasure > 150) {
+        // the measuring hook forces a layout and walks a 4 px grid, so it runs only while the hook is on
+        if (measuring && now - lastMeasure > 150) {
           lastMeasure = now;
           measure();
         }

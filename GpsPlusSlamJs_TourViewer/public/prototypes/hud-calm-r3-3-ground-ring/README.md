@@ -17,11 +17,12 @@ It keeps the direction of round 2, page 2 (the radar wakes when you stop) and ch
 ## The HUD: Exit and one line
 
 - **Exit**, top left.
+- **"Ring range"**, for the keyboard and screen readers: a named button that is out of sight until it has focus, then shows at the top. It does what a tap on the ring does (the first wakes the ring, the next step its range), so the range is not reachable only by tapping the 3D ring.
 - **One line at the foot**, shown only while something speaks, plays or waits for you:
   - **A person speaks:** their first name in bold, then the words of the current sentence, each word lighting up as it is spoken (timed words), then a small pause button whose ring fills with the step's progress.
   - **A video or a sound plays:** its title, then its current subtitle from its cue list, then play/pause with the progress ring.
   - **A story waits for you at its next place:** a dot in the teller's colour, the story's title and "step n of m", then the hint when it is offered, then leave (x).
-- **Only the current sentence or cue, never a history.** One or two lines (a setting). The words fade 0.8 s after a cue ends; with nothing playing, the whole line fades away.
+- **Only the current sentence or cue, never a history.** One or two lines (a setting). A sentence or cue longer than that is cut at word boundaries into parts that fit, measured once per sentence, and shown in turns: a spoken sentence shows the part holding the word being said, a cue its parts in step with its time. Nothing is cut off at the end. The words fade 0.8 s after a cue ends; with nothing playing, the whole line fades away.
 - **The words do not need the source in view, or sound.** The subtitle of a video keeps running when you turn away from the screen, and a person's words show whether or not the phone is muted.
 - **Play/pause sits where its context is:** at the end of the line that names what it controls. It is 40 px, smaller than the 58 px of page 2, and its aria-label names the thing ("Pause Drawing water, 1938").
 - **Signs and long texts stay in 3D only.** The line never repeats a text that stands in the world. The speech bubbles of page 2 are gone, because they would now say the same thing twice; a soft ring in the speaker's colour lies at their feet while they speak, so the line's dot points at a person in the world.
@@ -32,6 +33,7 @@ Inside a story, when you walk away from the story's next place, a button "Show t
 
 - **Why this name:** it says what you get, in words everyone reads the same way. An icon alone would have to be learned, and this button appears rarely, so the words cost little. It is not called after the wind because the wind is only how it looks; another look could replace it without renaming the button.
 - **When it is offered:** once the distance to the next place has grown more than 10 m above its smallest value since the last step. Wandering around the square does not trigger it; walking away does. It stays offered until you reach the place, and is offered again only at the next step: never volunteered over and over.
+- **Away from the station too.** The distance is tracked while you are outside the story's station, because walking off the wrong way is when the way is needed, and at 20 m the threshold is often only crossed past the station's edge. Outside the station the story's line stays hidden (its words never follow you) until the hint is offered; then the line comes back with the story's title, "Show the way" and leave, so the way back is one tap.
 - **Only where hints are allowed** (see the author settings). A story with hints off shows the line without the button.
 
 ## Author settings: four levels, the nearest wins
@@ -55,16 +57,16 @@ The settings panel has an "Author settings" section where every switch on every 
 
 ## The parameters, and what to try
 
-Every default is a setting: in the panel, as a URL option, or both.
+Every default above the line "Words linger" is a setting, in the panel, as a URL option, or both. The last two (words linger, word timing) are fixed in this page.
 
 - **Stand still** (`wake`): 3 s. Try 2 s and 5 s. Long enough that waiting at a crossing does not wake it, short enough that someone who stops to wonder gets the map before they ask.
-- **Fade**: 0.8 s. Try 0.4 s and 1.5 s. Slow enough not to pop into the corner of the eye.
-- **Walking from**: 0.5 m/s of smoothed pose speed. Try 0.3 and 0.8. Must be checked against recorded walks; real pose jitter is not simulated.
+- **Fade** (`fade`): 0.8 s. Try 0.4 s and 1.5 s. Slow enough not to pop into the corner of the eye.
+- **Walking from** (`walk`): 0.5 m/s of smoothed pose speed. Try 0.3 and 0.8. Must be checked against recorded walks; real pose jitter is not simulated.
 - **Range in a station** (`range`): the station's radius times 1.5. Try 1.2 (fills the ring, the edge falls outside) and 2 (the station's edge visible as a circle).
 - **Ring ahead** (`ahead`): 1.6 m. Try 1.2 m (under the phone when looking almost straight down) and 2.0 m (seen with less of a nod, but smaller and flatter).
 - **Ring radius** (`ring`): 0.45 m. Try 0.35 m and 0.6 m. 0.55 m filled a portrait screen when looking down; smaller makes close marks merge sooner.
 - **Line size** (`strip`): medium (14 px). Try small and large; large for reading while walking in sun.
-- **Line height** (`lines`): 2 lines. Try 1 line: calmer, but a long sentence then shows only its start.
+- **Line height** (`lines`): 2 lines. Try 1 line: calmer, but a long sentence then turns over to its next part more often.
 - **Hint after walking away** (`hint`): 10 m. Try 5 m (offered at the first wrong turn, on a small square) and 20 m (only once clearly lost).
 - **Words linger**: 0.8 s after a cue ends, so a short cue can still be read.
 - **Word timing**: a word every 0.36 s, with 0.28 s after punctuation. Real timings would come from the recording or the speech engine.
@@ -80,6 +82,8 @@ Measured with the same scripted 20 s walk on both pages (W held throughout, A fr
 What this says about the stutter on page 2: the redraw cost about 0.4 ms a frame, so its cost did not cause it. The measurement does show the cadence: the radar redraws on its own 15 Hz clock, apart from the frames, so on a 60 Hz phone the map moves in steps of four frames while the world turns smoothly behind it. That is the likely cause, but this headless run at 20-30 frames a second cannot show it; a phone recording at 60 Hz would. The ring has no clock of its own: it moves with every frame.
 
 Headless frame times say nothing about a phone's GPU. The readout's worst frame is red here for that reason.
+
+**A confound, now removed.** The measuring hook's `measure()` used to run every 150 ms even with the hook off, here and on page 2. It forced a layout through `getComputedStyle` and walked about 20,000 grid points. It now runs only while the hook is on (the ruler button, or `?measure` in the URL), which is off by default. The stutter's cause was measured in headless runs as the 12-13 Hz redraw cadence; this loop could have added to it on a phone, and a check on a 60 Hz phone settles it.
 
 ## What "seen" means here
 

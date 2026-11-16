@@ -16,7 +16,7 @@ A throwaway, standalone prototype. Nothing in the app links to it, and it does n
 ## The five points, one by one
 
 1. **No distance distortion.** The square-root scale of page 2 is gone. The scale is linear from 0 m to the range, and the range is a fixed number of metres around you: the station's radius times 1.5 inside, the built adaptive range outside, or a tapped step.
-2. **The stutter.** Page 2 drew its radar on a 2D canvas at most 15 times a second. Here the band is a three.js group, a child of the camera, rebuilt every frame from the pose: no canvas, no DOM write, no layout read in the frame (the band's size is read again only after a resize). The measurement below names what the stutter was.
+2. **The stutter.** Page 2 drew its radar on a 2D canvas at most 15 times a second. Here the band is a three.js group, a child of the camera, rebuilt every frame from the pose: no canvas and no layout read in the frame (the band's size is read again only after a resize, or when the band shows again). The frame still writes to the DOM where something changed: the band's opacity and the caption line. The measurement below names what the stutter was.
 3. **Circles only.** The band holds discs and rings, nothing else. Stations carry no numbers.
 4. **Play/pause.** It is 36 px, sits at the left of the line it controls, and its progress ring belongs to the words beside it, so it never stands alone without context.
 5. **Spoken words and subtitles in the HUD.** The caption line shows what sounds now, by priority:
@@ -41,8 +41,8 @@ Two switches exist on four levels, and a third on two:
 - **"On the radar"** (is this thing a circle on the band?) and **"hints"** (may the hint lead to it?): tour, station, story, item.
 - **"Radar"** (is there a band at all?): tour and station only.
 - **Every switch except the tour's says "as above" until it is set. The nearest level wins: item over story over station over tour.** An item belongs to a story when it starts the story or when the story sends you to it.
-- **Example in the demo:** the story "Water for all" sets "on the radar: no", because the rim stone is a thing to find. Greta, who starts that story, sets "on the radar: yes" on herself, and wins over her story: she is on the band and the stone is not.
-- **In the settings panel** a tester flips any switch (as above, yes, no) and the band and the hint obey at once. Each item shows what applies to it and from which level. Presets: station B's items off the band; the lion at station A off the band; no hints in "The cracked bell"; reset.
+- **The starting preset:** the page opens on "Starting example", not on "as above" everywhere. In it, the story "Water for all" sets "on the radar: no", because the rim stone is a thing to find. Greta, who starts that story, sets "on the radar: yes" on herself, and wins over her story: she is on the band and the stone is not. The preset "Every switch as above" clears both.
+- **In the settings panel** a tester flips any switch (as above, yes, no) and the band and the hint obey at once. Each item shows what applies to it and from which level. Presets: station B's items off the band; the lion at station A off the band; no hints in "The cracked bell"; the starting example; every switch as above.
 - The authoring side (an editor that shows, at every item, what applies and from where) is a later step and is not on this page.
 
 ## The timings and sizes, and what to try
@@ -81,6 +81,7 @@ Three runs of each condition, frame intervals in ms (median / 95th percentile / 
 - **What they also say:** page 2's radar redrew 12.6 to 13.3 times a second while the view moved 60 times a second (the 15 Hz cap falls on every fourth or fifth frame). A heading-up radar turns with every turn of the phone, so its picture jumped in steps of 75-80 ms against a smooth view behind it. That step is the stutter that this measurement supports: an update rate, not a slow frame.
 - **What this page changes:** the band moves with the camera in every frame it renders, so it cannot lag the view by a step.
 - **What it cannot say:** a phone's GPU and a canvas texture upload are not measured here (headless software rendering). If the phone's radar also dropped frames, the phone's own frame line must show it; this page's readout shows the worst frame live.
+- **A confound, now removed:** the measuring hook's `measure()` used to run every 150 ms even with the hook off, here and on page 2. It forced a layout through `getComputedStyle` and walked about 20,000 grid points. It now runs only while the hook is on (the ruler button, or `?measure` in the URL), which is off by default. The stutter's cause was measured in headless runs as the 12-13 Hz redraw cadence; this loop could have added to it on a phone, and a check on a 60 Hz phone settles it.
 
 ## What "seen" means here
 
@@ -113,7 +114,7 @@ Everything else stands in the world: signs, long texts, captions under pictures 
 - **Aim-to-ask:** none. Nothing reacts to the crosshair.
 - **A 2D copy of a 3D text:** none. Signs and long texts are only in the world. Spoken words and subtitles are only in the caption line: the 3D speech bubble is gone, so nothing is shown twice.
 - **Radar marks drifting from their true positions:** every circle is at its true bearing and a linear distance size, and is never pushed apart. The only displacement is the clamp of things behind you to the band's ends, drawn hollow, and "all round" removes it.
-- **A card outliving its place:** the caption line of a video or sound shows only within its reach; leave it and the thing pauses and the line goes. A story's line goes when you leave its station (the story pauses and carries on when you tap its character again).
+- **A card outliving its place:** the caption line of a video or sound shows only within its reach; leave it and the thing pauses and the line goes. A story's line goes when you leave its station, its place line included (the story pauses; back at the station the line says so, and the story carries on when you tap its character again).
 - **Two stacked panels:** the HUD has one line. The measuring hook checks for overlaps in every beat.
 - **Anything starting by nearness alone for a visitor standing still:** only Greta's greeting at station A, once. Station B's characters only turn toward you.
 - **A hint volunteered repeatedly:** the hint is a button, offered after 8 s still in a search, never shown in the world by itself, and offered again only after another full wait. The first-run card shows once.

@@ -187,6 +187,31 @@
           transform 0.45s;
         pointer-events: auto;
       }
+      /* the ring's range for keyboard and screen readers: out of sight until focused, so the HUD stays Exit and one line */
+      .ring-key {
+        position: absolute;
+        top: var(--top);
+        left: 50%;
+        transform: translateX(-50%);
+        min-height: 44px;
+        padding: 0 16px;
+        border-radius: 22px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        background: rgba(10, 14, 19, 0.85);
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        pointer-events: auto;
+        clip-path: inset(50%);
+        opacity: 0;
+      }
+      .ring-key:focus-visible {
+        clip-path: none;
+        opacity: 1;
+        outline: 3px solid #fff;
+        outline-offset: 2px;
+      }
       .line.off {
         opacity: 0;
         transform: translate(-50%, 10px);
@@ -608,6 +633,14 @@
             />
           </svg>
         </button>
+        <button
+          class="ring-key"
+          id="ringBtn"
+          type="button"
+          aria-label="Ring at your feet: wake it, then change its range"
+        >
+          Ring range
+        </button>
         <div class="line off" id="line" data-hud="line" aria-live="polite">
           <span class="dot" id="lineDot"></span>
           <div class="txt">
@@ -704,10 +737,22 @@
         ><button type="button" data-cfg="hint" data-v="10">10 m</button
         ><button type="button" data-cfg="hint" data-v="20">20 m</button>
       </div>
+      <div class="row">
+        <span>Ring fade</span
+        ><button type="button" data-cfg="fade" data-v="0.4">0.4 s</button
+        ><button type="button" data-cfg="fade" data-v="0.8">0.8 s</button
+        ><button type="button" data-cfg="fade" data-v="1.5">1.5 s</button>
+      </div>
+      <div class="row">
+        <span>Walking from</span
+        ><button type="button" data-cfg="walk" data-v="0.3">0.3 m/s</button
+        ><button type="button" data-cfg="walk" data-v="0.5">0.5 m/s</button
+        ><button type="button" data-cfg="walk" data-v="0.8">0.8 m/s</button>
+      </div>
       <p style="margin-top: 6px">
         The same values work as URL options:
         <code
-          >?wake=3&amp;range=1.5&amp;ahead=1.6&amp;strip=m&amp;lines=2&amp;hint=10</code
+          >?wake=3&amp;range=1.5&amp;ahead=1.6&amp;strip=m&amp;lines=2&amp;hint=10&amp;fade=0.8&amp;walk=0.5</code
         >, and
         <code>&amp;preset=bHidden,lionHidden,breadNoHints,noRadarB</code> for
         the author settings.
@@ -804,8 +849,8 @@
    ====================================================================== */
       const CFG = {
         wake: num(QS.get("wake"), 3, 0.5, 15), // s standing still before the ring wakes
-        fade: 0.8, // s for a full fade of the ring
-        walk: 0.5, // m/s of smoothed pose speed that counts as walking
+        fade: num(QS.get("fade"), 0.8, 0.1, 5), // s for a full fade of the ring
+        walk: num(QS.get("walk"), 0.5, 0.1, 2), // m/s of smoothed pose speed that counts as walking
         fit: num(QS.get("range"), 1.5, 1, 3), // in a station the range is its radius times this
         ahead: num(QS.get("ahead"), 1.6, 0.8, 3), // m from the visitor's feet to the ring's centre
         ringR: num(QS.get("ring"), 0.45, 0.3, 1), // m, the ring's radius on the ground
@@ -2832,26 +2877,29 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
                   st.t = 0;
                 } else stepSpoken();
               }
-            } else if (st.phase === "walk") {
-              const d = dist(stepTarget());
-              if (d <= ARRIVE_M) {
-                st.phase = "speak";
-                st.line = 0;
-                st.t = 0;
+            }
+          }
+          // a step's place is tracked away from the station too: walking off the wrong way is when the way is needed,
+          // and a 20 m threshold is often only reached past the station's edge
+          if (st.phase === "walk") {
+            const d = dist(stepTarget());
+            if (d <= ARRIVE_M) {
+              st.phase = "speak";
+              st.line = 0;
+              st.t = 0;
+              st.offered = false;
+              stopDrift();
+            } else {
+              st.minD = Math.min(st.minD, d);
+              // offered once you walk away from it, and only where the author allows hints; it stays until the step is reached
+              if (
+                !st.offered &&
+                hintsAllowed(stepTarget()) &&
+                d - st.minD > CFG.hint
+              )
+                st.offered = true;
+              if (st.offered && !hintsAllowed(stepTarget()))
                 st.offered = false;
-                stopDrift();
-              } else {
-                st.minD = Math.min(st.minD, d);
-                // offered once you walk away from it, and only where the author allows hints; it stays until the step is reached
-                if (
-                  !st.offered &&
-                  hintsAllowed(stepTarget()) &&
-                  d - st.minD > CFG.hint
-                )
-                  st.offered = true;
-                if (st.offered && !hintsAllowed(stepTarget()))
-                  st.offered = false;
-              }
             }
           }
         }
@@ -3071,12 +3119,54 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
           )
             return { k: "media", id };
         }
-        if (S.story && !S.story.away) return { k: "story" };
+        // away from its station a story shows only to offer the way back, never to repeat its words
+        if (
+          S.story &&
+          (!S.story.away || (S.story.phase === "walk" && S.story.offered))
+        )
+          return { k: "story" };
         if (T < S.noteUntil) return { k: "note" };
         return null;
       }
       let wordsKey = "",
-        wordsLeftAt = -9;
+        wordsLeftAt = -9,
+        wordsChunks = null,
+        wordsChunk = -1;
+      const lineCtx = document.createElement("canvas").getContext("2d");
+      const fontOf = (el) => {
+        const cs = getComputedStyle(el);
+        return `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      };
+      /** Cuts words into chunks of CFG.lines lines that fit the line's text box (read once per new line or cue),
+       *  so a long line is shown in turns, the chunk holding the current word, and is never cut off. */
+      function chunkWords(list, lead) {
+        const maxW = $("#line .txt").clientWidth * 0.97;
+        if (!(maxW > 40)) return [[0, list.length]];
+        lineCtx.font = fontOf($("#lineWho"));
+        const leadW = lead ? lineCtx.measureText(lead).width + 6 : 0;
+        lineCtx.font = fontOf($("#lineWords"));
+        const sp = lineCtx.measureText(" ").width,
+          out = [];
+        let start = 0,
+          line = 1,
+          w = leadW;
+        list.forEach((word, i) => {
+          const ww = lineCtx.measureText(word).width;
+          if (i > start && w + sp + ww > maxW) {
+            if (line >= CFG.lines) {
+              out.push([start, i]);
+              start = i;
+              line = 1;
+              w = leadW + ww;
+            } else {
+              line++;
+              w = ww;
+            }
+          } else w += (i > start ? sp : 0) + ww;
+        });
+        out.push([start, list.length]);
+        return out;
+      }
       function renderLine() {
         const m = lineModel(),
           el = $("#line");
@@ -3098,6 +3188,7 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
           text = "",
           key = "",
           wordT = -1,
+          cueFrac = 0,
           timedLine = null;
         if (m.k === "media") {
           const it = itById(m.id),
@@ -3112,6 +3203,7 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
             : it.cues.find((q) => t.t >= q.a && t.t < q.b + CFG.linger);
           text = c ? c.text : "";
           key = c ? `${m.id}:${c.a}` : "";
+          if (c) cueFrac = clamp((t.t - c.a) / (c.b - c.a), 0, 0.999);
         } else if (m.k === "story") {
           const st = S.story,
             def = storyOf(st.id),
@@ -3153,22 +3245,52 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
         if (key) {
           wordsLeftAt = T;
         }
-        if (key && key !== wordsKey) {
-          wordsKey = key;
-          if (timedLine)
-            words.innerHTML = timedLine.words
-              .map((w) => `<i>${w.w.replace(/[<>&]/g, "")}</i>`)
-              .join(" ");
-          else {
-            words.textContent = text;
-            words.className = m.k === "story" ? "words meta" : "words";
-          }
-          if (timedLine) words.className = "words";
+        const list = timedLine
+          ? timedLine.words.map((w) => w.w)
+          : m.k === "media"
+            ? text.split(" ")
+            : null;
+        const fullKey = key && `${key}|${CFG.lines}|${CFG.strip}|${device.clientWidth}`;
+        if (key && fullKey !== wordsKey) {
+          wordsKey = fullKey;
+          wordsChunk = -1;
+          // a spoken line or a subtitle cue is cut into chunks that fit the line; a story's step note is short and shown whole
+          wordsChunks = list ? chunkWords(list, whoT) : null;
+          if (!list) words.textContent = text;
+          words.className =
+            m.k === "story" && !timedLine ? "words meta" : "words";
         }
-        if (timedLine) {
-          const spans = words.children;
-          for (let i = 0; i < spans.length; i++)
-            spans[i].classList.toggle("on", wordT >= timedLine.words[i].t);
+        if (key && wordsChunks) {
+          let ci;
+          if (timedLine) {
+            let cur = 0;
+            timedLine.words.forEach((w, i) => {
+              if (wordT >= w.t) cur = i;
+            });
+            ci = Math.max(
+              0,
+              wordsChunks.findIndex(([a, b]) => cur >= a && cur < b),
+            );
+          } else
+            ci = Math.min(
+              wordsChunks.length - 1,
+              Math.floor(cueFrac * wordsChunks.length),
+            );
+          const [a, b] = wordsChunks[ci];
+          if (ci !== wordsChunk) {
+            wordsChunk = ci;
+            if (timedLine)
+              words.innerHTML = list
+                .slice(a, b)
+                .map((w) => `<i>${w.replace(/[<>&]/g, "")}</i>`)
+                .join(" ");
+            else words.textContent = list.slice(a, b).join(" ");
+          }
+          if (timedLine) {
+            const spans = words.children;
+            for (let i = 0; i < spans.length; i++)
+              spans[i].classList.toggle("on", wordT >= timedLine.words[a + i].t);
+          }
         }
         words.classList.toggle("quiet", !key && T - wordsLeftAt > 0.05);
         hint.hidden = !showHint;
@@ -3188,6 +3310,8 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
           );
         }
       }
+      // the same step as a tap on the ring: the first wakes it, the next change its range (the line says the new range)
+      $("#ringBtn").addEventListener("click", () => ringTap());
       $("#line").addEventListener("click", (e) => {
         const b = e.target.closest("[data-act]");
         if (!b) return;
@@ -3907,7 +4031,8 @@ gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
         updateRing(S.paused ? 0 : dt);
         renderer.render(scene, camera);
         ui();
-        if (now - lastMeasure > 150) {
+        // the measuring hook forces a layout and walks a 4 px grid, so it runs only while the hook is on
+        if (measuring && now - lastMeasure > 150) {
           lastMeasure = now;
           measure();
         }
