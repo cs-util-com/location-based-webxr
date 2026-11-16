@@ -57,9 +57,10 @@
 
         /* The HUD's tokens (the command bar, the panels and the dock below). */
         --hud-bar-h: 52px;
-        /* The one-line map footer (24 px) plus 4 px of real clearance, so a
-           panel above it never sits flush on its links. */
-        --hud-foot: 28px;
+        /* The one-line map footer (its 1.5rem tap targets) plus 4 px of real
+           clearance, so a panel above it never sits flush on its links.
+           Written from the same 1.5rem, so the two cannot drift apart. */
+        --hud-foot: calc(1.5rem + 4px);
         --hud-slot-w: 320px;
         --hud-map-column: 64px;
         --hud-surface: linear-gradient(
@@ -896,8 +897,12 @@
         cursor: pointer;
       }
       /* A REAL TAP TARGET for every item: 1.5 rem = 24 px tall, the WCAG 2.2
-         SC 2.5.8 floor. Not 44 px: the line is meant to stay thin. */
+         SC 2.5.8 floor. Not 44 px: the line is meant to stay thin. The
+         Credits rows too: each link is a row of its own, not a word inside a
+         sentence, so the inline exception does not cover it, and the rows
+         sit closer than 24 px, so the spacing exception does not either. */
       .map-attribution-line a,
+      .map-attribution-credit a,
       .map-attribution-toggle {
         display: inline-block;
         min-height: 1.5rem;

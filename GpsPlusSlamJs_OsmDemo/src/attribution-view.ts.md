@@ -96,7 +96,10 @@ found to require on-map visibility, set `pinned: true` on its entry in
   Its visible text is "Legal"; its `aria-label` "Legal notice and privacy"
   starts with that word (WCAG 2.5.3).
 - **Tap targets:** every link and the button are at least 24 x 24 px (WCAG 2.2
-  SC 2.5.8), set in `index.html`; the line stays one line at 390 px.
+  SC 2.5.8), set in `index.html`; the line stays one line at 390 px. The
+  Credits rows' links are at least 24 px tall too: each is a row of its own,
+  closer than 24 px to the next, so neither the inline nor the spacing
+  exception applies.
 - **The open Credits view stays inside the map.** It grows upward from the
   line, so `index.html` bounds it by the map's height (`#map` is a size
   container in the mobile layout) and lets it scroll: on a landscape phone

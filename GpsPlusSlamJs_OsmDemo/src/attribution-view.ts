@@ -95,6 +95,8 @@ export class AttributionView {
   private readonly details: HTMLElement;
   private readonly toggle: HTMLButtonElement;
   private legal: HTMLAnchorElement | undefined;
+  /** The pipe in front of the adopted legal link, removed with it. */
+  private legalSeparator: HTMLElement | undefined;
   /** The last list rendered, compared by value to skip unchanged ones. */
   private entries: readonly AttributionEntry[] = [];
   /**
@@ -159,11 +161,16 @@ export class AttributionView {
    *
    * Adopted rather than created: the link stays in `index.html`, so the page
    * offers it even if this script never runs, and there is one link, not two.
+   * Idempotent: adopting the same link again changes nothing, and another
+   * link replaces the first with its separator.
    */
   adoptLegalLink(link: HTMLAnchorElement): void {
+    if (link === this.legal) return;
+    if (this.legal?.parentElement === this.line) this.legal.remove();
+    this.legalSeparator?.remove();
     this.legal = link;
-    link.classList.add("map-attribution-legal");
-    this.line.append(separator(), link);
+    this.legalSeparator = separator();
+    this.line.append(this.legalSeparator, link);
     this.updateVisibility();
   }
 

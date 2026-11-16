@@ -1209,7 +1209,7 @@ test.describe("the phone layout", () => {
 
       // AND IT IS ACTUALLY ONE LINE at the 390 px width this describe runs at.
       // One line of 24 px targets is 24 px. The bound stays that tight because
-      // the HUD clears the footer by `--hud-foot` (28 px) alone: a taller line
+      // the HUD clears the footer by `--hud-foot` (24 px plus 4) alone: a taller line
       // would slide under the drawer, and the layout spec's 1 px overlap
       // tolerance would not catch a few px of it.
       const restingBox = await line.boundingBox();
@@ -1231,6 +1231,12 @@ test.describe("the phone layout", () => {
       await expect(full).toContainText(/SRTM/i);
       await expect(full).toContainText("OpenStreetMap contributors");
       await expect(full.locator("a")).toHaveCount(3);
+      // Each credit link is a row of its own, so it gets the same 24 px floor
+      // as the line's items (no inline or spacing exception applies).
+      for (const link of await full.locator("a").all()) {
+        const box = await link.boundingBox();
+        expect(box?.height ?? 0).toBeGreaterThanOrEqual(24);
+      }
 
       // ESCAPE closes it and puts focus back on "Credits".
       await full.locator("a").first().focus();
@@ -1786,6 +1792,18 @@ test.describe("the desktop controls", () => {
     await expect(vis).toHaveValue("15");
     await expect(ev).not.toHaveValue("-2");
     await expect.poll(lightParam).toBe("v1:vis=15");
+
+    // A STATED VALUE EQUAL TO THE STARTING SCHEME'S LIGHT IS STILL STATED.
+    // veil=0 is the shipped look's own veil, so the boot applies nothing and
+    // the view starts as it would without the link; the link's key list is
+    // what keeps the veil off when urban, whose veil is on, takes over.
+    await page.goto(`${AT_FIXTURE}&light=v1:veil=0`);
+    await waitForRefresh(page);
+    await expect(veil).toHaveValue("0");
+    await setting(page, "#colour-scheme", (c) => c.selectOption("urban"));
+    await expect(veil).toHaveValue("0");
+    await expect(ev).toHaveValue("-2");
+    await expect.poll(lightParam).toBe("v1:veil=0");
   });
 });
 
