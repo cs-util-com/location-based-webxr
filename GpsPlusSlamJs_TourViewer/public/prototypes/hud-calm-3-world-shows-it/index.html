@@ -1,0 +1,1560 @@
+<!doctype html>
+<!-- Prototype: calm HUD round 2, direction 3 "The world shows it". Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>The World Shows It</title>
+<style>
+:root {
+  --ink: #f3f5f7;
+  --muted: #b3bcc6;
+  --plate: rgb(10 13 18 / 78%);
+  --line: rgb(255 255 255 / 16%);
+  --beam: #fb923c;
+  --tap: 48px;
+  --font: corbel, "Noto Sans", system-ui, -apple-system, "Segoe UI", roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+.dev [hidden] { display: none; }
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #101318;
+  color: var(--ink);
+  font: 15px/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+
+  font: inherit;
+
+  color: inherit;
+
+  cursor: pointer;
+
+}
+p { margin: 0; }
+
+.dev {
+
+  position: fixed;
+
+  inset: 0;
+
+  overflow: hidden;
+
+  user-select: none;
+
+}
+#gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  cursor: grab;
+  outline: 0;
+}
+
+#gl:active { cursor: grabbing; }
+
+/* the fake camera feed: a lens vignette over the 3D square */
+.feed {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 45%, transparent 60%, rgb(0 0 0 / 26%) 100%);
+}
+
+/* ================= the HUD: Exit; the radar (stations only, always); the transport while something
+   plays; the story chip while a story runs. Nothing about items: the world shows those ================= */
+.exit {
+  position: absolute;
+  z-index: 30;
+  top: calc(14px + env(safe-area-inset-top));
+  left: calc(14px + env(safe-area-inset-left));
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 72%);
+  background: rgb(10 13 18 / 70%);
+  display: grid;
+  place-items: center;
+}
+
+.exit svg {
+
+  width: 20px;
+
+  height: 20px;
+
+}
+.radar {
+  position: absolute;
+  z-index: 26;
+  top: calc(64px + env(safe-area-inset-top));
+  right: calc(14px + env(safe-area-inset-right));
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+}
+
+.transport {
+  position: absolute;
+  z-index: 27;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: conic-gradient(#fff calc(var(--p, 0) * 1turn), rgb(255 255 255 / 22%) 0);
+  display: grid;
+  place-items: center;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 30%);
+  animation: fade-in 0.3s ease;
+}
+
+.transport::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: rgb(10 13 18 / 88%);
+}
+
+.transport svg {
+
+  position: relative;
+
+  width: 24px;
+
+  height: 24px;
+
+}
+.chip {
+  position: absolute;
+  z-index: 27;
+  left: calc(14px + env(safe-area-inset-left));
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  max-width: calc(50% - 46px);
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 2px 5px 5px;
+  border-radius: 24px;
+  background: var(--plate);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 28%);
+  animation: fade-in 0.4s ease;
+}
+
+.chip .face {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.chip .title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.chip .leave {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 10%);
+  font-size: 22px;
+  line-height: 1;
+}
+
+@keyframes fade-in { from { opacity: 0; } }
+
+/* the measuring hook: any two HUD boxes that overlap get a red outline (only while measuring) */
+.measuring .ovl {
+  outline: 3px solid #ff2d2d;
+  outline-offset: 0;
+}
+/* ================= demo chrome: dashed, not part of the design, not measured ================= */
+.chrome {
+  position: absolute;
+  z-index: 40;
+  top: calc(12px + env(safe-area-inset-top));
+  right: calc(10px + env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1.5px dashed rgb(255 255 255 / 55%);
+  border-radius: 22px;
+  background: rgb(0 0 0 / 50%);
+}
+
+.chrome button {
+  height: 36px;
+  min-width: 34px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.chrome button:active,
+.chrome button[aria-pressed="true"] { background: rgb(255 255 255 / 20%); }
+
+.chrome .beat-name {
+  min-width: 112px;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 650;
+}
+
+.chrome .info-btn { font: italic 700 16px/1 Georgia, serif; }
+.chrome svg {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+}
+.readout {
+  position: absolute;
+  z-index: 40;
+  left: 50%;
+  bottom: calc(92px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  padding: 4px 9px;
+  border: 1.5px dashed rgb(255 255 255 / 45%);
+  border-radius: 10px;
+  background: rgb(0 0 0 / 60%);
+  font: 11px/1.35 ui-monospace, consolas, monospace;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  white-space: pre;
+}
+
+.try {
+  position: absolute;
+  z-index: 40;
+  left: 50%;
+  top: 38%;
+  transform: translateX(-50%);
+  width: 320px;
+  max-width: calc(100% - 48px);
+  padding: 9px 13px;
+  border: 1.5px dashed rgb(255 255 255 / 45%);
+  border-radius: 14px;
+  background: rgb(0 0 0 / 58%);
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: #fff;
+  text-align: center;
+  transition: opacity 0.8s;
+  pointer-events: none;
+}
+
+.try.gone { opacity: 0; }
+
+.rip {
+  position: absolute;
+  z-index: 45;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px rgb(0 0 0 / 35%);
+  pointer-events: none;
+  animation: rip 0.7s ease-out forwards;
+}
+
+@keyframes rip {
+  from {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+.info {
+  position: absolute;
+  z-index: 50;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 430px;
+  overflow: auto;
+  padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+  background: rgb(14 18 23 / 97%);
+  border-left: 1px solid var(--line);
+  font-size: 14px;
+  line-height: 1.45;
+  user-select: text;
+}
+
+.info h1 {
+
+  margin: 0 0 4px;
+
+  font-size: 19px;
+
+}
+.info h3 {
+  margin: 14px 0 4px;
+  font-size: 11.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.info p,
+.info li { color: #dfe4ea; }
+
+.info ol,
+.info ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+.info .close {
+  position: sticky;
+  top: 0;
+  float: right;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 10%);
+  font-size: 22px;
+}
+
+.info .knob {
+
+  display: flex;
+
+  flex-wrap: wrap;
+
+  align-items: center;
+
+  gap: 5px;
+
+  margin: 6px 0;
+
+}
+.info .knob span {
+  min-width: 112px;
+  font-weight: 600;
+  color: #fff;
+}
+.info .knob button,
+.info .beats button {
+  min-height: 36px;
+  padding: 4px 10px;
+  border: 1px solid rgb(255 255 255 / 30%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 6%);
+  font-size: 13px;
+}
+
+.info .knob button[aria-pressed="true"] {
+
+  border-color: #fff;
+
+  background: rgb(255 255 255 / 18%);
+
+}
+.info .beats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.info table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 12px/1.4 ui-monospace, consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.info td,
+.info th {
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+.info td:first-child,
+.info th:first-child { text-align: left; }
+
+.exited {
+  position: absolute;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 14px;
+  background: #0d1015;
+  text-align: center;
+  font-size: 16px;
+}
+
+.exited .back {
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 22px;
+  background: #fff;
+  color: #1d232b;
+  font-weight: 700;
+}
+
+@media (orientation: landscape) and (height <= 520px) {
+  .radar {
+    top: calc(60px + env(safe-area-inset-top));
+    width: 112px;
+    height: 112px;
+  }
+  .transport { bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .chip {
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    max-width: 300px;
+  }
+  .try { top: 30%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dev *,
+  .dev *::before,
+  .dev *::after {
+    animation: none;
+    transition: none;
+  }
+}
+</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.185.1/build/three.module.js"}}</script>
+</head>
+<body>
+<main class="dev" id="dev">
+  <canvas id="gl" tabindex="0" aria-label="The square, standing in for the camera view"></canvas>
+  <div class="feed" aria-hidden="true"></div>
+
+  <!-- the HUD (everything with data-hud is measured) -->
+  <button type="button" class="exit" id="exit" data-hud aria-label="Exit AR"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  <canvas class="radar" id="radar" data-hud width="248" height="248" aria-label="Radar of the stations; tap to change its range"></canvas>
+  <div class="chip" id="chip" data-hud hidden><span class="face"></span><span class="title"></span><button type="button" class="leave" aria-label="Leave this story">&times;</button></div>
+  <button type="button" class="transport" id="transport" data-hud hidden aria-label="Pause"></button>
+
+  <!-- demo chrome -->
+  <div class="chrome" id="chrome">
+    <button type="button" id="prev" aria-label="Previous beat">&#9664;</button>
+    <button type="button" class="beat-name" id="beat-name" aria-label="Replay this beat">1/10 Outside</button>
+    <button type="button" id="next" aria-label="Next beat">&#9654;</button>
+    <button type="button" class="info-btn" id="info-btn" aria-label="About this page">i</button>
+    <button type="button" id="measure-btn" aria-pressed="false" aria-label="Show the measuring numbers"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><rect x="2.5" y="8" width="19" height="8" rx="1.5"/><path d="M7 8v3M11 8v4M15 8v3M19 8v4"/></svg></button>
+  </div>
+  <div class="readout" id="readout" hidden></div>
+  <p class="try" id="try">Drag sideways to look, up and down to walk (WASD on a keyboard). Things you have not seen shimmer softly; tap people and things. Or press &#9654; for the next beat.</p>
+  <aside class="info" id="info" hidden></aside>
+  <div class="exited" id="exited" hidden><p>You left AR.</p><button type="button" class="back" id="back-in">Back into AR</button></div>
+</main>
+
+<script type="module">
+import * as THREE from "three";
+
+/* ---------------- tune here ---------------- */
+const EYE = 1.6;
+const PITCH = -0.05;
+const LOOK_GAIN = 0.0048; // radians per CSS pixel
+const DRAG_WALK = 0.035; // metres per CSS pixel of vertical drag
+const TAP_PX = 10, TAP_MS = 420;
+const WORDS_PER_S = 2.7; // how fast a guide's words appear in the bubble
+const HOLD_FAR_M = 14; // a guide stops mid-sentence once you are this far away...
+const RESUME_M = 10; // ...and goes on once you are back this close
+const SEEN_LOOK_S = 1.5; // a sign or a picture is seen after this long in view, near enough to read
+// the shimmer: strength (how far towards warm gold) and period (one slow pass, then a rest), per preset
+const GLINTS = { faint: { s: 0.3, p: 6 }, soft: { s: 0.5, p: 4.5 }, clear: { s: 0.68, p: 3.5 } };
+const PASSES = 2; // passes of light per showing; then it rests until it may show again
+// the creator's distance is "reach" (8, 12 or 18 m); each kind scales it by how far away it can be made out
+const REACH_K = { character: 1.5, video: 1.2, long: 1, picture: 1, audio: 1, model: 0.9, short: 0.8 };
+const NOTICE_S = 1.5; // held this long near the middle of the view, after one whole pass of light, a shimmering thing counts as noticed and settles
+const NOTICE_NDC = 0.45; // "near the middle": within this share of the half-screen from the centre
+const REARM_S = 20; // a settled but unseen thing may shimmer again after this long out of view...
+const MAX_ASKS = 2; // ...but a thing shows its shimmer twice at most, so PASSES * MAX_ASKS passes ever
+const HAND_S = 5; // a person points on for this long after an ending
+const DRIFT_MAX_M = 9; // a sound's motes drift at most this far towards the next thing
+const COL = { beam: "#fb923c", unseen: "#ffffff", seen: "#8b939c", ink: "#1d232b", paper: "#fffdf8", gold: "#ffc24a", play: "#7dd3fc" };
+const KN = { glint: "soft", style: "sweep", reach: 12, beam: "round", drift: false, voice: true };
+{ // the address may set the knobs: ?glint=faint|soft|clear&style=sweep|breathe&reach=8|12|18&beam=round|built&drift=on
+  const q = new URLSearchParams(location.search);
+  if (GLINTS[q.get("glint")]) { KN.glint = q.get("glint"); }
+  if (["sweep", "breathe"].includes(q.get("style"))) { KN.style = q.get("style"); }
+  if ([8, 12, 18].includes(+q.get("reach"))) { KN.reach = +q.get("reach"); }
+  if (["round", "built"].includes(q.get("beam"))) { KN.beam = q.get("beam"); }
+  KN.drift = q.get("drift") === "on";
+  KN.voice = q.get("voice") !== "off";
+}
+
+const STATIONS = {
+  A: { id: "A", name: "The Well", c: [0, -2], rIn: 18, rOut: 20 },
+  B: { id: "B", name: "The Old Gate", c: [24, -80], rIn: 16, rOut: 18 },
+};
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const damp = (dt, tau) => 1 - Math.exp(-dt / tau);
+const angDiff = (a, b) => { let d = (b - a) % (Math.PI * 2); if (d > Math.PI) { d -= Math.PI * 2; } if (d < -Math.PI) { d += Math.PI * 2; } return d; };
+const faceTo = (p, q) => Math.atan2(q[0] - p[0], q[1] - p[1]); // yaw that turns local +Z towards q
+const $ = (s) => document.querySelector(s);
+
+/* ---------------- renderer, camera, the square ---------------- */
+const canvas = $("#gl");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog("#dfe6ea", 80, 260);
+const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 600);
+camera.rotation.order = "YXZ";
+
+// a plain environment only: sky light, one sun, no shadows
+scene.add(new THREE.HemisphereLight(0xffffff, 0xb9ae98, 1.8));
+const sun = new THREE.DirectionalLight(0xfff2e0, 1.3); sun.position.set(30, 60, 20); scene.add(sun);
+
+(function sky() {
+  const g = new THREE.SphereGeometry(400, 24, 12);
+  const c = new Float32Array(g.attributes.position.count * 3);
+  const top = new THREE.Color("#86b6df"), mid = new THREE.Color("#dbe7ef"), low = new THREE.Color("#efe8da"), o = new THREE.Color();
+  for (let i = 0; i < g.attributes.position.count; i++) {
+    const h = g.attributes.position.getY(i) / 400;
+    if (h >= 0) { o.lerpColors(mid, top, Math.min(1, h / 0.5)); } else { o.lerpColors(mid, low, Math.min(1, -h / 0.1)); }
+    c.set([o.r, o.g, o.b], i * 3);
+  }
+  g.setAttribute("color", new THREE.BufferAttribute(c, 3));
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  m.renderOrder = -10; scene.add(m);
+})();
+
+(function ground() {
+  const S = 512, cv = document.createElement("canvas"); cv.width = cv.height = S;
+  const g = cv.getContext("2d"); let s = 11;
+  const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+  g.fillStyle = "#b9b09e"; g.fillRect(0, 0, S, S);
+  const n = 12, k = S / n;
+  for (let x = 0; x < n; x++) {
+    for (let z = 0; z < n; z++) { const v = 196 + rnd() * 22; g.fillStyle = `rgb(${v} ${v - 7} ${v - 20})`; g.fillRect(x * k + 1.5, z * k + 1.5, k - 3, k - 3); }
+  }
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(40, 40);
+  t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(340, 340).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: t }));
+  m.position.z = -30; scene.add(m);
+})();
+
+const mats = new Map();
+const mat = (c) => { if (!mats.has(c)) { mats.set(c, new THREE.MeshLambertMaterial({ color: c })); } return mats.get(c); };
+const box = (w, h, d, c, x, y, z, ry = 0, parent = scene) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c)); m.position.set(x, y, z); m.rotation.y = ry; parent.add(m); return m; };
+const cyl = (r0, r1, h, c, x, y, z, n = 16, parent = scene) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, h, n), mat(c)); m.position.set(x, y, z); parent.add(m); return m; };
+
+(function town() {
+  const colors = ["#e7dcc8", "#d9e2e6", "#efd9c6", "#e6e2d2", "#dcc9b6", "#f0e8d8", "#e3d3c8", "#d6cbb8"];
+  let i = 0;
+  const house = (x, z, w, d, h, ry) => {
+    const c = colors[i++ % colors.length];
+    box(w, h, d, c, x, h / 2, z, ry);
+    box(w + 0.4, 0.5, d + 0.4, "#8a6d5a", x, h + 0.25, z, ry);
+    const fx = Math.sin(ry), fz = Math.cos(ry);
+    for (let fl = 0; fl < Math.floor(h / 3.2); fl++) {
+      for (let k = -1; k <= 1; k++) {
+        const off = k * (w / 3.2), ox = Math.cos(ry) * off, oz = -Math.sin(ry) * off, door = fl === 0 && k === 0;
+        box(1.0, 1.4, 0.1, door ? "#5a3d2c" : "#5d6d7e", x + ox + fx * (d / 2 + 0.03), door ? 1.2 : 2 + fl * 3.2, z + oz + fz * (d / 2 + 0.03), ry);
+      }
+    }
+  };
+  // the square of the well
+  for (let x = -40; x <= 40; x += 13) { house(x, 48, 12, 8, 8 + ((x * 7) & 7), Math.PI); }
+  for (const x of [-40, -27, -14]) { house(x, -50, 12, 8, 9 + ((x * 5) & 7), 0); }
+  house(44, -50, 10, 8, 10, 0);
+  for (let z = -38; z <= 40; z += 13) { house(-48, z, 12, 8, 8 + ((z * 3) & 7), Math.PI / 2); house(50, z, 12, 8, 9 + ((z * 11) & 5), -Math.PI / 2); }
+  // the road to the gate and its houses
+  for (const z of [-64, -77, -90]) { house(2, z, 11, 8, 8 + ((z * 3) & 5), Math.PI / 2); house(48, z, 11, 8, 9 + ((z * 7) & 5), -Math.PI / 2); }
+  // trees
+  for (const [x, z, s] of [[-22, -24, 1], [18, 22, 1.2], [-26, 24, 1.1], [34, -30, 1], [-34, -8, 0.9], [8, -60, 1], [40, -62, 1.1]]) {
+    cyl(0.18 * s, 0.28 * s, 3 * s, "#7d6650", x, 1.5 * s, z, 8);
+    const crown = new THREE.Mesh(new THREE.IcosahedronGeometry(2.2 * s, 1), mat("#6f9e62")); crown.position.set(x, 4 * s, z); scene.add(crown);
+  }
+  // far skyline
+  for (let k = 0; k < 14; k++) { const a = (k / 14) * Math.PI * 2; box(18, 10 + (k * 5) % 12, 14, "#b8c0c6", Math.cos(a) * 140, 6, -30 + Math.sin(a) * 140, a); }
+  // the well, the first station's middle
+  cyl(1.2, 1.3, 0.8, "#b9b2a4", 2, 0.4, -6.5, 20); cyl(1.0, 1.0, 0.05, "#3e5866", 2, 0.82, -6.5, 20);
+  box(0.14, 2.2, 0.14, "#5a3d2c", 0.9, 1.1, -6.5); box(0.14, 2.2, 0.14, "#5a3d2c", 3.1, 1.1, -6.5); box(2.5, 0.14, 0.14, "#5a3d2c", 2, 2.2, -6.5);
+  // the south steps, the baker's corner, the lamp post
+  box(9, 0.18, 1.2, "#c9c0ae", 1.5, 0.09, 12.2); box(9, 0.36, 0.6, "#c9c0ae", 1.5, 0.18, 12.9);
+  box(3.2, 2.6, 2.2, "#d9b98f", 16, 1.3, 6.2); box(3.8, 0.12, 1.4, "#b8433a", 16, 2.7, 4.9);
+  cyl(0.07, 0.09, 3.6, "#2d3136", 13.5, 1.8, -12, 8); box(0.5, 0.4, 0.5, "#f1e6c6", 13.5, 3.75, -12);
+  // the old gate: two towers, an arch, walls
+  const G = -92;
+  box(3.2, 10, 3.2, "#a99a84", 18, 5, G); box(3.2, 10, 3.2, "#a99a84", 30, 5, G); box(9, 2, 2.4, "#a99a84", 24, 8.6, G);
+  box(10, 5, 1.6, "#b4a68f", 11.4, 2.5, G); box(10, 5, 1.6, "#b4a68f", 36.6, 2.5, G);
+  box(6, 0.9, 0.9, "#b4a68f", 11, 0.45, -82); // the low wall with the mason's mark
+  // the merchant's stall
+  box(2.2, 0.9, 1.0, "#8a6a4e", 31.8, 0.45, -80.6); box(2.6, 0.1, 1.6, "#3f6f8f", 31.8, 2.3, -80.6);
+  for (const dx of [-1.15, 1.15]) { box(0.08, 2.3, 0.08, "#5a3d2c", 31.8 + dx, 1.15, -79.9); }
+})();
+
+/* ---------------- words in the world: Canvas 2D textures ---------------- */
+function canvasTex(cw, ch) {
+  const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return { cv, g: cv.getContext("2d"), t };
+}
+function wrap(g, text, maxW) {
+  const lines = []; let cur = "";
+  for (const w of text.split(/\s+/).filter(Boolean)) { const t = cur ? cur + " " + w : w; if (cur && g.measureText(t).width > maxW) { lines.push(cur); cur = w; } else { cur = t; } }
+  if (cur) { lines.push(cur); }
+  return lines;
+}
+function roundRect(g, x, y, w, h, r) { g.beginPath(); g.roundRect(x, y, w, h, r); }
+
+/* ---------------- the station pin: the beam into the sky ---------------- */
+// "round": the beam the first round showed (8 cm, 26 m, a white gem at 5 m). "built": today's
+// beacon in the app (six-sided, 4 m to 26 m, opacity 0.28, width grows with distance, ring on the ground).
+const beams = {};
+function makeBeam(st) {
+  const g = new THREE.Group(); g.position.set(st.c[0], 0, st.c[1]); scene.add(g);
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.8), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, depthWrite: false })); gem.scale.y = 1.4; gem.position.y = 5;
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 26, 6, 1, true), new THREE.MeshBasicMaterial({ color: COL.beam, transparent: true, opacity: 0.35, depthWrite: false })); col.position.y = 16;
+  const built = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 22, 6, 1, true), new THREE.MeshBasicMaterial({ color: COL.beam, transparent: true, opacity: 0.28, depthWrite: false })); built.position.y = 15;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(st.rIn - 0.25, st.rIn + 0.25, 96).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: COL.beam, transparent: true, opacity: 0.55, depthWrite: false })); ring.position.y = 0.04;
+  g.add(gem, col, built, ring);
+  for (const m of [gem, col, built, ring]) { m.raycast = () => undefined; }
+  beams[st.id] = { g, gem, col, built, ring, a: 1 };
+}
+makeBeam(STATIONS.A); makeBeam(STATIONS.B);
+
+/* ---------------- people ---------------- */
+function makeFigure({ coat, skin = "#e0b48f", hat, hatColor = "#3b2f27", trousers = "#3a3f46" }) {
+  const root = new THREE.Group();
+  const pivot = (x, y, z, parent) => { const p = new THREE.Group(); p.position.set(x, y, z); parent.add(p); return p; };
+  const legL = pivot(0.1, 0.86, 0, root), legR = pivot(-0.1, 0.86, 0, root);
+  box(0.13, 0.86, 0.15, trousers, 0, -0.43, 0, 0, legL); box(0.13, 0.86, 0.15, trousers, 0, -0.43, 0, 0, legR);
+  const torso = cyl(0.19, 0.27, 0.72, coat, 0, 1.22, 0, 14, root);
+  if (hat === "dress") { torso.scale.set(1.15, 1, 1.15); cyl(0.27, 0.42, 0.62, coat, 0, 0.62, 0, 14, root); }
+  const head = pivot(0, 1.64, 0, root);
+  const skull = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), mat(skin)); head.add(skull);
+  box(0.035, 0.05, 0.06, skin, 0, -0.005, 0.13, 0, head); // nose: shows where the face looks
+  box(0.03, 0.03, 0.02, "#22262b", 0.048, 0.035, 0.118, 0, head); box(0.03, 0.03, 0.02, "#22262b", -0.048, 0.035, 0.118, 0, head);
+  if (hat === "cap" || hat === "dress") { const c = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(hatColor)); c.position.y = 0.02; head.add(c); }
+  if (hat === "helmet") { const c = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.2, 14), mat("#8a9096")); c.position.y = 0.13; head.add(c); }
+  if (hat === "scarf") { const c = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.045, 8, 16), mat(hatColor)); c.rotation.x = Math.PI / 2; c.position.y = -0.13; head.add(c); }
+  const armL = pivot(0.27, 1.5, 0, root), armR = pivot(-0.27, 1.5, 0, root);
+  box(0.09, 0.6, 0.09, coat, 0, -0.3, 0, 0, armL); box(0.09, 0.6, 0.09, coat, 0, -0.3, 0, 0, armR);
+  box(0.08, 0.08, 0.08, skin, 0, -0.62, 0, 0, armL); box(0.08, 0.08, 0.08, skin, 0, -0.62, 0, 0, armR);
+  return { root, head, armL, armR, legL, legR };
+}
+
+/* ---------------- the items ---------------- */
+// "next" is the creator's hand-off: the item this one's ending turns the visitor towards.
+// The "Next" line drawn on a seen sign, picture, note or lectern is worked out from that chain when it
+// is shown (handLine), so it never names a thing already seen.
+// "clue" is how an ending names an item by its landmark.
+const ITEMS = [
+  // station A: one story, which begins with Greta
+  { id: "greta", st: "A", kind: "character", name: "Greta", pos: [0.2, -4.2], homeYaw: 0, coat: "#b5523b", hat: "scarf", hatColor: "#e6c35c", pitch: 1.25, next: "lecternA", clue: "Greta by the well",
+    again: "There is more to see all round the square. Take your time.", done: "You have seen everything here. The old gate is next: follow the orange light." },
+  { id: "lecternA", st: "A", kind: "long", name: "The well's history", pos: [-2.4, -6.6], next: "videoA", clue: "the lectern by the well",
+    pages: [["Water for the town", "The well was dug in 1602. For three hundred years it was the town's only clean water. Women carried it home in yokes, two buckets at a time."], ["The roof and the storm", "A wooden roof kept the leaves out until the storm of 1910 took it. The water comes from the hills now, but the well stays."]] },
+  { id: "videoA", st: "A", kind: "video", name: "Market day, 1958", pos: [-11, -3], desc: "Two minutes of film from the town archive.", dur: 24, next: "audioA", clue: "a film of market day" },
+  { id: "audioA", st: "A", kind: "audio", name: "Song of the well-diggers", pos: [-10, 6.5], dur: 18, prop: "bench", next: "pictureA", clue: "a song by the old bench" },
+  { id: "pictureA", st: "A", kind: "picture", name: "The square in 1890", pos: [1.5, 10.6], caption: "The square in 1890. The well still had its roof.", next: "signA", clue: "an old picture by the steps" },
+  { id: "signA", st: "A", kind: "short", name: "The baker's corner", pos: [13, 4.6], text: "Bread has been baked on this corner since 1788. Its sign was a golden pretzel.", next: "modelA", clue: "the baker's corner" },
+  { id: "modelA", st: "A", kind: "model", name: "The tower", pos: [11.5, -11], note: "The tower lost its top floor in the storm of 1910.", prop: "tower", next: null, clue: "a model of the tower" },
+  // station B: three stories, each begins with a person standing where it starts
+  { id: "mason", st: "B", kind: "character", name: "Anton, the mason", short: "Anton", pos: [17.5, -87], coat: "#6b7a8f", hat: "cap", hatColor: "#4a3b2c", pitch: 0.85, next: "modelB", clue: "Anton by the left tower" },
+  { id: "merchant", st: "B", kind: "character", name: "Mira, the merchant", short: "Mira", pos: [29.6, -79.8], coat: "#7a5a9a", hat: "dress", hatColor: "#d8c3a0", pitch: 1.15, next: "pictureB", clue: "Mira at her stall" },
+  { id: "watchman", st: "B", kind: "character", name: "Jakob, the watchman", short: "Jakob", pos: [24, -89], coat: "#3f5b45", hat: "helmet", pitch: 0.7, next: "audioB", clue: "Jakob under the arch" },
+  { id: "signB", st: "B", kind: "short", name: "The mason's mark", pos: [11, -81.2], low: true, text: "Every stone of the gate carries this sign: a hammer over a star.", next: null, clue: "the mason's mark on the low wall" },
+  { id: "lecternB", st: "B", kind: "long", name: "The gate", pos: [33.5, -86.5], next: "signB", clue: "the lectern by the right tower",
+    pages: [["Built to be seen", "The gate took forty years to build. It was never meant to keep an army out, only to show every visitor how rich the town was."], ["Shut for a century", "After the fire of 1802 the gate was shut. It opened again only in 1902, for a parade."]] },
+  { id: "pictureB", st: "B", kind: "picture", name: "The toll board", pos: [33.6, -73.2], caption: "The toll board of 1702: three pennies a cart.", next: "lecternB", clue: "the old toll board" },
+  { id: "videoB", st: "B", kind: "video", name: "Rebuilding, 1961", pos: [13.5, -73.5], desc: "The towers repaired, stone by stone.", dur: 20, next: "lecternB", clue: "a film of the rebuilding" },
+  { id: "audioB", st: "B", kind: "audio", name: "The night bell", pos: [28.8, -88.8], dur: 14, prop: "bell", next: "signB", clue: "the night bell" },
+  { id: "modelB", st: "B", kind: "model", name: "The gate", pos: [20.4, -73.6], note: "Each tower holds 3,000 stones.", prop: "gate", next: "videoB", clue: "a model of the gate" },
+];
+const byId = Object.fromEntries(ITEMS.map((it) => [it.id, it]));
+const STORIES = [
+  { id: "water", st: "A", title: "Water for the town", steps: ["greta", "lecternA"],
+    intro: "Welcome to the well! I'm Greta. Our story starts at the lectern, just beside me.",
+    outro: "That is the story of the well. There is more all round the square." },
+  { id: "build", st: "B", title: "Building the gate", steps: ["mason", "modelB"],
+    intro: "You found me! I cut the stones of this gate, every one of them. See the model of it, there by the road.", outro: "Forty years of work, in one little model." },
+  { id: "toll", st: "B", title: "Toll day", steps: ["merchant", "pictureB"],
+    intro: "Every cart paid at this gate, and I counted the coins. The old toll board stands right behind my stall.", outro: "Three pennies a cart. Imagine that." },
+  { id: "night", st: "B", title: "The night the gate shut", steps: ["watchman", "audioB"],
+    intro: "I kept this gate. One winter night the bell rang, and we shut it for good. The bell still hangs by the tower.", outro: "After that night the gate stayed shut for a hundred years." },
+];
+const storyOf = (it) => STORIES.find((s) => s.steps[0] === it.id) ?? null;
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+const hits = []; // invisible proxies a tap can find, each carries its item's id
+function proxy(it, geom, x, y, z, parent) { const m = new THREE.Mesh(geom, new THREE.MeshBasicMaterial()); m.visible = false; m.position.set(x, y, z); m.userData.id = it.id; parent.add(m); hits.push(m); return m; }
+
+/** a paper plate: title, body, and the creator's hand-off line in italics at its foot */
+function plate(wM, hM, title, body, hand, { cw = 640, size = 32, bg = "#f4ecd8", handK = 0.9 } = {}) {
+  const ch = Math.round(cw * hM / wM), T = canvasTex(cw, ch), g = T.g, pad = cw * 0.06;
+  const draw = (hand) => {
+  g.fillStyle = bg; g.fillRect(0, 0, cw, ch);
+  g.strokeStyle = "#6b5a44"; g.lineWidth = cw * 0.02; g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, cw - g.lineWidth, ch - g.lineWidth);
+  g.fillStyle = "#2a241c"; g.textBaseline = "top";
+  let y = pad;
+  if (title) { g.font = `700 ${size * 1.12}px Georgia, serif`; g.fillText(title, pad, y); y += size * 1.55; }
+  g.font = `${size}px Georgia, serif`;
+  for (const l of wrap(g, body, cw - pad * 2)) { g.fillText(l, pad, y); y += size * 1.28; }
+  if (hand) {
+    g.font = `italic ${size * handK}px Georgia, serif`; g.fillStyle = "#7a4a1c";
+    const lh = size * handK * 1.25, hl = wrap(g, hand, cw - pad * 2); let hy = ch - pad - hl.length * lh;
+    for (const l of hl) { g.fillText(l, pad, hy); hy += lh; }
+  }
+  T.t.needsUpdate = true;
+  };
+  draw(hand);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(wM, hM), new THREE.MeshBasicMaterial({ map: T.t, toneMapped: false }));
+  m.userData.draw = draw; return m;
+}
+
+// the video screens (the end card names the next thing and which way it lies)
+function drawVideo(it) {
+  const g = it.screenTex.g, w = 256, h = 144, p = it.prog / it.dur;
+  g.setTransform(2, 0, 0, 2, 0, 0); g.textAlign = "left"; g.textBaseline = "alphabetic";
+  if (it.state === "playing" || it.state === "paused") {
+    const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, `hsl(${30 + p * 160} 30% 52%)`); gr.addColorStop(1, `hsl(${200 + p * 60} 25% 30%)`); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.fillStyle = "rgb(40 30 20 / 60%)"; for (let i = 0; i < 7; i++) { g.fillRect(((i * 41 + it.prog * 14) % (w + 30)) - 30, 70 + (i % 3) * 10, 22, 38); }
+    g.fillStyle = "rgb(0 0 0 / 50%)"; g.fillRect(0, h - 7, w, 7); g.fillStyle = "#fff"; g.fillRect(0, h - 7, w * p, 7);
+    if (it.state === "paused") { g.fillStyle = "rgb(0 0 0 / 45%)"; g.fillRect(0, 0, w, h); g.fillStyle = "#fff"; g.fillRect(112, 50, 12, 44); g.fillRect(134, 50, 12, 44); }
+  } else if (it.state === "done") {
+    g.fillStyle = "#2b3138"; g.fillRect(0, 0, w, h);
+    g.fillStyle = "#9aa4ae"; g.font = "600 12px system-ui, sans-serif"; g.fillText("Watched · tap to play again", 14, 22);
+    const T = it.handTo;
+    if (T) {
+      const side = handSide(it, T), label = T.beam ? "the old gate: follow the light" : T.clue;
+      g.fillStyle = "#fff"; g.font = "700 15px system-ui, sans-serif";
+      const tx = side < 0 ? 58 : 14, lines = wrap(g, cap(label), w - 76).slice(0, 2); g.fillText("Next", tx, 62); lines.forEach((l, i) => g.fillText(l, tx, 86 + i * 21));
+      g.fillStyle = COL.gold; g.beginPath();
+      const ax = side > 0 ? 226 : side < 0 ? 30 : 128, ay = side === 0 ? 122 : 74;
+      if (side !== 0) { const s = Math.sign(side); g.moveTo(ax + s * 16, ay); g.lineTo(ax - s * 6, ay - 16); g.lineTo(ax - s * 6, ay + 16); }
+      else { g.moveTo(ax, ay + 12); g.lineTo(ax - 14, ay - 4); g.lineTo(ax + 14, ay - 4); }
+      g.closePath(); g.fill();
+      if (side === 0) { g.font = "600 11px system-ui, sans-serif"; g.fillStyle = COL.gold; g.textAlign = "center"; g.fillText("behind this screen", 128, 140); g.textAlign = "left"; }
+    }
+  } else {
+    g.fillStyle = "#2b3138"; g.fillRect(0, 0, w, h); g.fillStyle = "#fff";
+    g.beginPath(); g.moveTo(112, 46); g.lineTo(112, 94); g.lineTo(150, 70); g.closePath(); g.fill();
+    g.font = "600 14px system-ui, sans-serif"; g.textAlign = "center"; g.fillText("Tap to play", 128, 124); g.textAlign = "left";
+  }
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  it.screenTex.t.needsUpdate = true;
+}
+// which side of a screen a target lies on, seen from the front: +1 right, -1 left, 0 behind it
+function handSide(it, T) {
+  const tp = targetPos(T), dx = tp.x - it.pos[0], dz = tp.z - it.pos[1], th = it.g.rotation.y;
+  const lx = dx * Math.cos(th) - dz * Math.sin(th), lz = dx * Math.sin(th) + dz * Math.cos(th);
+  if (lz < 0 && Math.abs(lx) < -lz * 0.6) { return 0; }
+  return lx >= 0 ? 1 : -1;
+}
+function drawPicture(g, w, h) {
+  const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, "#d9c7a2"); gr.addColorStop(1, "#a58a62"); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  g.fillStyle = "#6e5638"; for (let i = 0; i < 6; i++) { const bx = i * 60 - 10, bh = 70 + (i * 37) % 50; g.fillRect(bx, h * 0.62 - bh, 54, bh); }
+  g.fillStyle = "#4f3c26"; g.fillRect(w * 0.42, h * 0.48, 50, 34); g.fillRect(w * 0.42 - 6, h * 0.44, 62, 8);
+  g.fillStyle = "#8a7150"; g.fillRect(0, h * 0.62, w, h * 0.38);
+}
+function drawLectern(it) {
+  const g = it.pageTex.g, w = it.pageTex.cv.width, h = it.pageTex.cv.height, [title, body] = it.pages[it.page], last = it.page === it.pages.length - 1;
+  g.fillStyle = "#f6efdd"; g.fillRect(0, 0, w, h);
+  g.fillStyle = "#2a241c"; g.textBaseline = "top"; g.font = "700 38px Georgia, serif"; g.fillText(title, 30, 26);
+  g.font = "30px Georgia, serif"; let y = 82; for (const l of wrap(g, body, w - 60)) { g.fillText(l, 30, y); y += 38; }
+  const hand = last && it.seen ? handLine(it) : ""; if (hand) { g.font = "italic 27px Georgia, serif"; g.fillStyle = "#7a4a1c"; y += 8; for (const l of wrap(g, hand, w - 60)) { g.fillText(l, 30, y); y += 33; } }
+  g.font = "600 24px system-ui, sans-serif"; g.fillStyle = "#6b5a44"; g.textAlign = "right";
+  g.fillText(!last ? `${it.page + 1}/${it.pages.length} · tap to turn` : `${it.page + 1}/${it.pages.length}`, w - 28, h - 40); g.textAlign = "left";
+  it.pageTex.t.needsUpdate = true;
+}
+
+const SPARK_V = `attribute vec4 aSeed;uniform float uT,uViewH,uStrength,uHeight,uRadius,uSwirl,uSize;varying float vA;
+void main(){float life=fract(aSeed.x+uT*(0.45+0.4*aSeed.y)/uHeight);float ang=aSeed.z*6.2832+uT*uSwirl*(0.4+aSeed.w);
+float r=uRadius*(0.25+0.75*aSeed.w)*(1.0-0.5*life);vec3 p=vec3(cos(ang)*r,0.3+life*uHeight,sin(ang)*r);
+vec4 mv=modelViewMatrix*vec4(p,1.0);gl_Position=projectionMatrix*mv;
+gl_PointSize=clamp(uSize*uViewH*0.5*projectionMatrix[1][1]/max(0.1,-mv.z),2.0,7.0);
+vA=uStrength*smoothstep(0.0,0.15,life)*(1.0-smoothstep(0.65,1.0,life));}`;
+const SPARK_F = `uniform vec3 uColor;varying float vA;void main(){float d=length(gl_PointCoord-0.5);float a=smoothstep(0.5,0.12,d)*vA;if(a<0.01)discard;
+gl_FragColor=vec4(mix(uColor,vec3(1.0),smoothstep(0.22,0.0,d)*0.5),a);
+#include <colorspace_fragment>
+}`;
+const viewH = { value: 800 };
+function sparks(n, h, r) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+  const seed = new Float32Array(n * 4); for (let i = 0; i < n * 4; i++) { seed[i] = Math.random(); }
+  g.setAttribute("aSeed", new THREE.BufferAttribute(seed, 4));
+  const m = new THREE.ShaderMaterial({ uniforms: { uT: { value: Math.random() * 10 }, uViewH: viewH, uStrength: { value: 0.6 }, uHeight: { value: h }, uRadius: { value: r }, uSwirl: { value: 0.6 }, uSize: { value: 0.05 }, uColor: { value: new THREE.Color(COL.gold) } }, vertexShader: SPARK_V, fragmentShader: SPARK_F, transparent: true, depthWrite: false });
+  const p = new THREE.Points(g, m); p.frustumCulled = false; p.raycast = () => undefined; return p;
+}
+
+function buildItem(it) {
+  const st = STATIONS[it.st];
+  it.page = 0; it.state = "ready"; it.prog = 0;
+  const g = new THREE.Group(); g.position.set(it.pos[0], 0, it.pos[1]);
+  g.rotation.y = it.homeYaw ?? faceTo(it.pos, st.c); scene.add(g); it.g = g;
+  if (it.kind === "character") {
+    it.fig = makeFigure(it); g.add(it.fig.root); it.yaw = g.rotation.y; it.homeYaw = it.yaw; it.headYaw = 0;
+    proxy(it, new THREE.CylinderGeometry(0.5, 0.5, 1.95, 8), 0, 0.98, 0, g);
+    it.bubble = makeBubble(); it.anchorY = 1.25;
+  } else if (it.kind === "short") {
+    const y = it.low ? 0.95 : 1.45;
+    if (!it.low) { box(0.07, 1.1, 0.07, "#3c4044", 0, 0.55, -0.04, 0, g); }
+    box(1.06, 0.8, 0.04, "#4d3f30", 0, y, -0.03, 0, g);
+    const p = plate(1.0, 0.74, it.name, it.text, "", { size: 30 }); p.position.set(0, y, 0); g.add(p); it.handPlate = p;
+    proxy(it, new THREE.BoxGeometry(1.1, 0.9, 0.3), 0, y, 0, g);
+    it.anchor = [0, y, 0]; it.readM = 6;
+  } else if (it.kind === "long") {
+    cyl(0.06, 0.09, 1.0, "#4d3f30", 0, 0.5, 0, 8, g); box(0.5, 0.06, 0.4, "#4d3f30", 0, 0.03, 0, 0, g);
+    const board = new THREE.Group(); board.position.set(0, 1.12, 0); board.rotation.x = -0.6; g.add(board);
+    box(0.98, 0.72, 0.04, "#4d3f30", 0, 0, -0.03, 0, board);
+    it.pageTex = canvasTex(640, 460); drawLectern(it);
+    const pg = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 0.66), new THREE.MeshBasicMaterial({ map: it.pageTex.t, toneMapped: false })); board.add(pg);
+    proxy(it, new THREE.BoxGeometry(1.1, 1.4, 0.9), 0, 0.8, 0, g); it.anchor = [0, 1.12, 0];
+  } else if (it.kind === "picture") {
+    box(0.08, 1.0, 0.08, "#3c4044", 0, 0.5, -0.05, 0, g); box(1.44, 1.0, 0.05, "#3a3026", 0, 1.48, -0.04, 0, g);
+    const T = canvasTex(340, 230); drawPicture(T.g, 340, 230); T.t.needsUpdate = true;
+    const pm = new THREE.Mesh(new THREE.PlaneGeometry(1.32, 0.9), new THREE.MeshBasicMaterial({ map: T.t, toneMapped: false })); pm.position.set(0, 1.48, 0); g.add(pm);
+    const cp = plate(1.2, 0.36, "", it.caption, "", { size: 24, cw: 800 }); cp.position.set(0, 0.78, 0.02); g.add(cp); it.handPlate = cp;
+    proxy(it, new THREE.BoxGeometry(1.5, 1.6, 0.3), 0, 1.2, 0, g);
+    it.anchor = [0, 1.4, 0]; it.readM = 9;
+  } else if (it.kind === "video") {
+    box(0.1, 1.4, 0.1, "#3c4044", 0, 0.7, -0.05, 0, g); box(2.02, 1.18, 0.06, "#20242a", 0, 1.95, -0.05, 0, g);
+    it.screenTex = canvasTex(512, 288); drawVideo(it);
+    const scr = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.07), new THREE.MeshBasicMaterial({ map: it.screenTex.t, toneMapped: false })); scr.position.set(0, 1.95, 0); g.add(scr);
+    const pl = plate(1.5, 0.36, it.name, it.desc, "", { size: 26, cw: 640 }); pl.position.set(0, 1.12, 0.02); g.add(pl);
+    proxy(it, new THREE.BoxGeometry(2.1, 1.3, 0.4), 0, 1.95, 0, g); it.anchor = [0, 1.9, 0];
+  } else if (it.kind === "audio") {
+    if (it.prop === "bench") { box(1.8, 0.08, 0.5, "#8a6a4e", 0, 0.46, 0, 0, g); box(1.8, 0.5, 0.07, "#8a6a4e", 0, 0.74, -0.24, 0, g); for (const dx of [-0.75, 0.75]) { box(0.08, 0.46, 0.42, "#5a3d2c", dx, 0.23, 0, 0, g); } }
+    else { box(0.12, 2.4, 0.12, "#5a3d2c", -0.6, 1.2, 0, 0, g); box(0.12, 2.4, 0.12, "#5a3d2c", 0.6, 1.2, 0, 0, g); box(1.4, 0.12, 0.14, "#5a3d2c", 0, 2.4, 0, 0, g); const bell = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.34, 0.5, 16, 1, true), new THREE.MeshLambertMaterial({ color: "#b08d3c", side: THREE.DoubleSide })); bell.position.y = 2.05; g.add(bell); }
+    const pl = plate(0.62, 0.2, "", it.name, "", { size: 34, cw: 512 }); pl.position.set(0, it.prop === "bench" ? 1.08 : 0.9, it.prop === "bench" ? -0.2 : 0.07); g.add(pl);
+    it.spark = sparks(90, 2.4, 0.8); g.add(it.spark);
+    proxy(it, new THREE.BoxGeometry(2.0, 1.6, 1.0), 0, 0.8, 0, g); it.anchor = [0, 1.0, 0];
+  } else if (it.kind === "model") {
+    box(0.9, 0.9, 0.9, "#a9a294", 0, 0.45, 0, 0, g);
+    if (it.prop === "tower") { box(0.34, 0.7, 0.34, "#cbb9a0", 0, 1.25, 0, 0, g); const c = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.36, 4), mat("#5e6f7d")); c.position.y = 1.78; c.rotation.y = Math.PI / 4; g.add(c); }
+    else { box(0.2, 0.6, 0.2, "#cbb9a0", -0.25, 1.2, 0, 0, g); box(0.2, 0.6, 0.2, "#cbb9a0", 0.25, 1.2, 0, 0, g); box(0.7, 0.16, 0.22, "#cbb9a0", 0, 1.46, 0, 0, g); }
+    const note = plate(1.0, 0.56, it.name, it.note, "", { size: 28, cw: 640, bg: "#fffdf8", handK: 1.2 }); it.handPlate = note; note.position.set(0, 2.5, 0); note.material.transparent = true; note.material.opacity = 0; note.visible = false; note.userData.noGlint = true; g.add(note); it.notePlate = note;
+    proxy(it, new THREE.BoxGeometry(1.1, 2.0, 1.1), 0, 1.0, 0, g); it.anchor = [0, 1.3, 0];
+  }
+  glintify(it);
+}
+
+/* ---------------- the shimmer: on the object itself, never on the screen ----------------
+   Every visible mesh of an item gets its own copy of its material with one small patch: a soft band of
+   warm light that travels slowly up the object ("sweep"), or the whole object warming and cooling
+   gently ("breathe"). It never switches on or off: its strength eases in when the item comes into view
+   and near enough, and eases out once the visitor has looked at it (noticed) or has seen it. One GL
+   program is shared by every patched material of a type, and the patch adds no draw call. */
+const GLINT_COL = new THREE.Vector3(1.0, 0.8, 0.36); // a warm gold, as output colour
+function glintify(it) {
+  const u = { uGlint: { value: 0 }, uBand: { value: 0 }, uWidth: { value: 0.4 }, uSweep: { value: 1 }, uGlintCol: { value: GLINT_COL } };
+  it.gu = u; it.g.updateMatrixWorld(true);
+  const bb = new THREE.Box3(), tmp = new THREE.Box3();
+  it.g.traverse((o) => {
+    if (!o.isMesh || !o.visible || o.userData.noGlint) { return; }
+    const m = o.material.clone();
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, u);
+      sh.vertexShader = "varying vec3 vGlintW;\n" + sh.vertexShader.replace("#include <project_vertex>", "#include <project_vertex>\nvGlintW = (modelMatrix * vec4(transformed, 1.0)).xyz;");
+      sh.fragmentShader = "uniform float uGlint, uBand, uWidth, uSweep;\nuniform vec3 uGlintCol;\nvarying vec3 vGlintW;\n" + sh.fragmentShader.replace("#include <dithering_fragment>",
+        "float gq = (vGlintW.y + 0.35 * (vGlintW.x + vGlintW.z) - uBand) / uWidth;\nfloat gk = uGlint * mix(1.0, exp(-gq * gq), uSweep);\ngl_FragColor.rgb = mix(gl_FragColor.rgb, uGlintCol, gk);\n#include <dithering_fragment>");
+    };
+    m.customProgramCacheKey = () => "glint";
+    o.material = m;
+    tmp.setFromObject(o); bb.union(tmp);
+  });
+  // the band runs along y + 0.35 (x + z): from the foot to the top, slightly slanted
+  let lo = Infinity, hi = -Infinity;
+  for (const x of [bb.min.x, bb.max.x]) { for (const y of [bb.min.y, bb.max.y]) { for (const z of [bb.min.z, bb.max.z]) { const c = y + 0.35 * (x + z); lo = Math.min(lo, c); hi = Math.max(hi, c); } } }
+  it.cLo = lo; it.cHi = hi; it.bw = Math.max(0.22, (bb.max.y - bb.min.y) * 0.2); u.uWidth.value = it.bw;
+  it.t0 = 0; // when its shimmer last began: the first pass starts the moment it shows, so two things never shimmer in step
+}
+
+/* ---------------- speech bubbles: a person's words, in 3D, over the person ---------------- */
+const BUB_W = 640, BUB_H = 380;
+function makeBubble() {
+  const T = canvasTex(BUB_W, BUB_H);
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, BUB_H / BUB_W), new THREE.MeshBasicMaterial({ map: T.t, transparent: true, depthWrite: false, depthTest: false, toneMapped: false, opacity: 0 }));
+  mesh.renderOrder = 20; mesh.visible = false; mesh.raycast = () => undefined; scene.add(mesh);
+  return { T, mesh, a: 0, key: "" };
+}
+function drawBubble(it) {
+  const b = it.bubble, L = it.line; if (!L) { return; }
+  const text = L.held ? "…" : L.words.slice(0, L.shown).join(" ");
+  const tag = L.held ? "" : W.t < L.resumedUntil ? " · as I was saying" : "";
+  const key = text + "|" + tag; if (key === b.key) { return; } b.key = key;
+  const g = b.T.g; g.clearRect(0, 0, BUB_W, BUB_H);
+  g.font = "600 33px system-ui, sans-serif"; const lines = wrap(g, text, BUB_W - 70).slice(-6);
+  const lh = 41, top = 18, nameH = 40, bh = Math.max(lines.length, 1) * lh + nameH + 34, bw = L.held ? 170 : BUB_W - 16;
+  const bx = (BUB_W - bw) / 2, by = BUB_H - 34 - bh;
+  g.fillStyle = "rgb(0 0 0 / 22%)"; roundRect(g, bx + 3, by + 6, bw, bh, 30); g.fill();
+  g.fillStyle = COL.paper; roundRect(g, bx, by, bw, bh, 30); g.fill();
+  g.beginPath(); g.moveTo(BUB_W / 2 - 22, by + bh - 1); g.lineTo(BUB_W / 2, BUB_H - 4); g.lineTo(BUB_W / 2 + 22, by + bh - 1); g.closePath(); g.fill();
+  g.textBaseline = "top"; g.fillStyle = it.coat; g.font = "800 27px system-ui, sans-serif";
+  if (L.held) { g.font = "800 44px system-ui, sans-serif"; g.fillStyle = COL.ink; g.textAlign = "center"; g.fillText("…", BUB_W / 2, by + 16); g.textAlign = "left"; }
+  else {
+    g.fillText((it.short ?? it.name) + tag, bx + 30, by + top);
+    g.fillStyle = COL.ink; g.font = "600 33px system-ui, sans-serif";
+    lines.forEach((l, i) => g.fillText(l, bx + 30, by + top + nameH + i * lh));
+  }
+  b.T.t.needsUpdate = true;
+}
+
+/* ---------------- a sound's ending: its own motes drift on towards the next thing ---------------- */
+const DRIFT_N = 46;
+const drift = (() => {
+  const g = new THREE.BufferGeometry(), pos = new Float32Array(DRIFT_N * 3);
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({ color: COL.gold, size: 0.13, transparent: true, opacity: 0, depthWrite: false });
+  const p = new THREE.Points(g, m); p.frustumCulled = false; p.visible = false; p.raycast = () => undefined; scene.add(p);
+  const seeds = []; for (let i = 0; i < DRIFT_N; i++) { seeds.push([Math.random(), Math.random(), Math.random()]); }
+  return { p, pos, seeds, fx: 0, fz: 0, tx: 0, tz: 0, t0: -99, dur: 5 };
+})();
+function startDrift(it, T) {
+  const tp = targetPos(T), dx = tp.x - it.pos[0], dz = tp.z - it.pos[1], d = Math.hypot(dx, dz) || 1, m = Math.min(d, DRIFT_MAX_M);
+  Object.assign(drift, { fx: it.pos[0], fz: it.pos[1], tx: it.pos[0] + (dx / d) * m, tz: it.pos[1] + (dz / d) * m, t0: W.t });
+}
+function updateDrift() {
+  const k = (W.t - drift.t0) / drift.dur;
+  if (k < 0 || k > 1.35) { drift.p.visible = false; return; }
+  drift.p.visible = true;
+  const nx = -(drift.tz - drift.fz), nz = drift.tx - drift.fx, nl = Math.hypot(nx, nz) || 1;
+  for (let i = 0; i < DRIFT_N; i++) {
+    const s = drift.seeds[i], f = clamp(k * (0.75 + 0.45 * s[0]) - s[1] * 0.25, 0, 1), side = Math.sin(f * 5 + s[2] * 6.28) * 0.45;
+    drift.pos[i * 3] = drift.fx + (drift.tx - drift.fx) * f + (nx / nl) * side;
+    drift.pos[i * 3 + 1] = 0.45 + s[2] * 0.8 + Math.sin(f * Math.PI) * 0.5;
+    drift.pos[i * 3 + 2] = drift.fz + (drift.tz - drift.fz) * f + (nz / nl) * side;
+  }
+  drift.p.geometry.attributes.position.needsUpdate = true;
+  drift.p.material.opacity = 0.9 * Math.min(1, k * 5) * (1 - clamp((k - 1) / 0.35, 0, 1));
+}
+// optional (off by default): the same ending as a soft two-note sound, panned to the side the next thing lies on
+let actx = null;
+function soundDrift(T) {
+  if (!KN.drift) { return; }
+  try {
+    actx ??= new AudioContext(); if (actx.state === "suspended") { actx.resume(); }
+    const tp = targetPos(T), rel = angDiff(me.yaw, yawTo(tp.x, tp.z)), pan = clamp(-Math.sin(rel) * 1.2, -1, 1), t = actx.currentTime;
+    const p = actx.createStereoPanner(); p.pan.setValueAtTime(0, t); p.pan.linearRampToValueAtTime(pan, t + 1.2); p.connect(actx.destination);
+    for (const [f, at] of [[660, 0], [880, 0.35]]) {
+      const o = actx.createOscillator(), gn = actx.createGain(); o.type = "sine"; o.frequency.value = f;
+      gn.gain.setValueAtTime(0, t + at); gn.gain.linearRampToValueAtTime(0.05, t + at + 0.08); gn.gain.exponentialRampToValueAtTime(0.0005, t + at + 1.1);
+      o.connect(gn); gn.connect(p); o.start(t + at); o.stop(t + at + 1.2);
+    }
+  } catch { /* the sound is a bonus */ }
+}
+
+/* ---------------- a person's voice (the browser's speech; the words are also in the bubble) ---------------- */
+function speak(it, text) {
+  if (!KN.voice) { return; }
+  try { const u = new SpeechSynthesisUtterance(text); u.pitch = it.pitch ?? 1; u.rate = 1.0; u.lang = "en-GB"; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* the voice is a bonus */ }
+}
+function hush() { try { speechSynthesis.cancel(); } catch { /* none */ } }
+
+/* ---------------- state ---------------- */
+const me = { x: 0, z: 42, yaw: 0 };
+const W = { t: 0, station: null, greeted: false, story: null, hudPaused: [], later: [] };
+let beat = 1;
+const dist2 = (x, z) => Math.hypot(x - me.x, z - me.z);
+const dist = (it) => dist2(it.pos[0], it.pos[1]);
+const yawTo = (x, z) => Math.atan2(-(x - me.x), -(z - me.z));
+const st2 = (st) => ITEMS.filter((it) => it.st === st);
+const unseenIn = (st) => st2(st).filter((it) => !it.seen);
+const playing = () => ITEMS.filter((it) => it.state === "playing");
+const targetPos = (T) => (T.beam ? { x: STATIONS[T.beam].c[0], z: STATIONS[T.beam].c[1] } : { x: T.pos[0], z: T.pos[1] });
+
+function resetItem(it) {
+  Object.assign(it, { seen: false, lookT: 0, state: "ready", prog: 0, page: 0, noteOn: false, line: null, greetPending: false, hand: null, handTo: null,
+    env: 0, settled: false, asks: 0, noticeT: 0, outT: 0, t0: 0, passes: 0, pIdx: 0, showing: false });
+  if (it.kind === "character") { it.yaw = it.homeYaw; it.headYaw = 0; it.bubble.a = 0; it.bubble.mesh.visible = false; it.bubble.key = ""; }
+  if (it.kind === "long") { drawLectern(it); }
+  if (it.kind === "video") { drawVideo(it); }
+  if (it.kind === "model") { it.notePlate.visible = false; it.notePlate.material.opacity = 0; }
+  it.gu.uGlint.value = 0;
+}
+function resetWorld() {
+  hush();
+  Object.assign(me, { x: 0, z: 42, yaw: 0 });
+  Object.assign(W, { t: 0, station: null, greeted: false, story: null, hudPaused: [], later: [], nSeen: -1 });
+  for (const it of ITEMS) { resetItem(it); }
+  for (const s of STORIES) { s.done = false; }
+  drift.t0 = -99; drift.p.visible = false;
+}
+
+/* ---------------- the hand-off: where an ending turns the visitor ---------------- */
+// Follows the creator's chain past what is already seen. When the chain runs out it falls back to the
+// nearest unseen thing of the station, and when nothing is left, to the next station's light.
+function handTarget(it) {
+  let cur = it;
+  for (let guard = 0; guard < 20 && cur; guard++) {
+    const n = cur.next ? byId[cur.next] : null;
+    if (!n) { break; }
+    if (!n.seen && n !== it) { return n; }
+    cur = n;
+  }
+  const left = unseenIn(it.st).filter((o) => o !== it).sort((a, b) => dist(a) - dist(b));
+  if (left.length) { return left[0]; }
+  return it.st === "A" ? { beam: "B", clue: "the old gate" } : null;
+}
+// the words an ending names its next thing with, worked out when shown
+function handLine(it) {
+  const T = handTarget(it);
+  if (!T) { return "That is all of it here. Thank you for walking with us."; }
+  return T.beam ? `Next: ${T.clue}. Follow its orange light.` : `Next: ${T.clue}.`;
+}
+// redraws every "Next" line, so a line shown earlier never names a thing seen since
+function refreshHands() {
+  for (const it of ITEMS) {
+    if (it.handPlate) { it.handPlate.userData.draw(it.seen ? handLine(it) : ""); }
+    if (it.kind === "long") { drawLectern(it); }
+  }
+}
+function handOff(it) {
+  const T = handTarget(it); it.handTo = T;
+  if (!T) { return; }
+  if (it.kind === "character") { const tp = targetPos(T); it.hand = { x: tp.x, z: tp.z, up: !!T.beam, until: W.t + HAND_S }; }
+  if (it.kind === "video") { drawVideo(it); soundDrift(T); }
+  if (it.kind === "audio") { startDrift(it, T); soundDrift(T); }
+}
+
+/* ---------------- lines: a person speaks, word by word ---------------- */
+function say(it, text, { onEnd } = {}) {
+  it.line = { words: text.split(" "), shown: 1, acc: 1, held: false, doneAt: null, onEnd, resumedUntil: 0 };
+  it.hand = null; it.bubble.key = ""; speak(it, text); drawBubble(it);
+}
+function updateLine(it, dt) {
+  const L = it.line; if (!L) { return; }
+  const d = dist(it);
+  if (!L.held && L.doneAt == null && d > HOLD_FAR_M) { L.held = true; hush(); }
+  else if (L.held && d < RESUME_M) { L.held = false; L.resumedUntil = W.t + 2.2; speak(it, "As I was saying, " + L.words.slice(L.shown).join(" ")); }
+  if (!L.held) {
+    L.acc += dt * WORDS_PER_S; L.shown = Math.min(L.words.length, Math.floor(L.acc));
+    if (L.shown === L.words.length && L.doneAt == null) { L.doneAt = W.t; }
+    if (L.doneAt != null && W.t - L.doneAt > 1.6 + L.words.length * 0.05) { it.line = null; L.onEnd?.(); return; }
+  }
+  drawBubble(it);
+}
+
+/* ---------------- stories ---------------- */
+function enterStory(s) {
+  if (W.story && W.story.s !== s) { const old = byId[W.story.s.steps[0]]; old.line = null; }
+  W.story = { s, step: 0, doneAt: null };
+  const ch = byId[s.steps[0]];
+  say(ch, s.intro, { onEnd: () => { ch.seen = true; if (W.story?.s === s && W.story.step === 0) { W.story.step = 1; } handOff(ch); } });
+}
+function leaveStory() { if (!W.story) { return; } const ch = byId[W.story.s.steps[0]]; if (ch.line) { ch.line = null; hush(); } W.story = null; }
+function updateStory() {
+  const S = W.story; if (!S) { return; }
+  if (S.doneAt == null && S.step >= 1 && byId[S.s.steps[S.step]].seen) {
+    S.doneAt = W.t; S.s.done = true; const ch = byId[S.s.steps[0]], stepIt = byId[S.s.steps[1]];
+    if (dist(ch) < 12 && !ch.line) { say(ch, S.s.outro, { onEnd: () => { ch.handTo = handTarget(stepIt); const tp = ch.handTo && targetPos(ch.handTo); if (tp) { ch.hand = { x: tp.x, z: tp.z, up: !!ch.handTo.beam, until: W.t + HAND_S }; } } }); }
+  }
+  if (S.doneAt != null && W.t - S.doneAt > 3 && !byId[S.s.steps[0]].line) { W.story = null; }
+}
+
+/* ---------------- playing, tapping ---------------- */
+function play(it) { if (it.state === "done") { it.prog = 0; } it.state = "playing"; it.settled = true; W.hudPaused = W.hudPaused.filter((x) => x !== it); }
+function pause(it) { if (it.state === "playing") { it.state = "paused"; } }
+function tapItem(it) {
+  it.settled = true; // a thing you touch has been noticed
+  if (it.kind === "character") {
+    const s = storyOf(it);
+    if (s && !s.done && W.story?.s !== s) { enterStory(s); return; } // talking to a story's first person enters it
+    if (it.line) { return; }
+    if (s && !s.done) { const step = byId[s.steps[1]]; say(it, `${cap(step.clue)}, just over there.`, { onEnd: () => { const tp = targetPos(step); it.hand = { x: tp.x, z: tp.z, up: false, until: W.t + HAND_S }; } }); return; }
+    const T = handTarget(it);
+    const text = T && !T.beam ? (it.again ?? `There is ${T.clue}, over there.`) : (it.done ?? "That is all of the gate. Thank you for walking with us.");
+    say(it, text, { onEnd: () => handOff(it) });
+    return;
+  }
+  if (it.kind === "video" || it.kind === "audio") { if (it.state === "playing") { pause(it); } else { play(it); } return; }
+  if (it.kind === "long") { it.page = (it.page + 1) % it.pages.length; if (it.page === it.pages.length - 1) { it.seen = true; } drawLectern(it); return; }
+  if (it.kind === "model") { it.noteOn = true; it.seen = true; }
+}
+function transportTap() {
+  const now = playing().filter((it) => it.st === W.station);
+  if (now.length) { for (const it of now) { pause(it); } W.hudPaused = now; }
+  else { for (const it of W.hudPaused) { play(it); } W.hudPaused = []; }
+}
+
+/* ---------------- entering and leaving a station ---------------- */
+function enterStation(id) {
+  W.station = id;
+  if (id === "A" && !W.greeted) { W.greeted = true; byId.greta.greetPending = true; } // the one deliberate start by arriving: once per visit, within earshot
+}
+function leaveStation(id) {
+  // nothing is said: the station's light comes back, still orange while anything is unseen
+  W.station = null;
+  for (const it of st2(id)) { pause(it); it.line = null; }
+  hush(); W.hudPaused = [];
+  if (W.story?.s.st === id) { W.story = null; }
+}
+
+/* ---------------- geometry helpers ---------------- */
+const v3 = new THREE.Vector3();
+function toScreen(x, y, z) {
+  v3.set(x, y, z).applyMatrix4(camera.matrixWorldInverse); const front = v3.z < 0;
+  v3.set(x, y, z).project(camera);
+  return { x: (v3.x * 0.5 + 0.5) * innerWidth, y: (-v3.y * 0.5 + 0.5) * innerHeight, front, ndc: [v3.x, v3.y] };
+}
+function inView(x, y, z, k = 0.92) { const s = toScreen(x, y, z); return s.front && Math.abs(s.ndc[0]) < k && Math.abs(s.ndc[1]) < 0.95; }
+function anchorWorld(it) { const a = it.anchor ?? [0, it.anchorY ?? 1.2, 0]; v3.set(a[0], a[1], a[2]).applyMatrix4(it.g.matrixWorld); return [v3.x, v3.y, v3.z]; }
+function sizeToPx(mesh, wPx, d) { const s = (wPx * 2 * d * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / innerHeight; mesh.scale.set(s, s, 1); }
+
+/* ---------------- the frame ---------------- */
+const keys = new Set();
+let last = performance.now(), maxFrame = 0, frameN = 0, radarDrawAt = 0;
+function frame(now) {
+  const real = Math.min(0.1, (now - last) / 1000); last = now; maxFrame = Math.max(maxFrame * 0.995, real * 1000); frameN++;
+  const dt = real * demoMult; W.t += dt;
+  if (keys.size) {
+    if (keys.has("a") || keys.has("arrowleft")) { me.yaw += 1.3 * real; }
+    if (keys.has("d") || keys.has("arrowright")) { me.yaw -= 1.3 * real; }
+    const f = (keys.has("w") || keys.has("arrowup") ? 1 : 0) - (keys.has("s") || keys.has("arrowdown") ? 1 : 0);
+    if (f) { step(f * 1.6 * real); }
+  }
+  runScript(dt);
+  for (const l of W.later.splice(0)) { if (W.t >= l.at) { l.fn(); } else { W.later.push(l); } }
+
+  // stations, with a margin so a jitter on the line does not flip it
+  for (const st of Object.values(STATIONS)) {
+    const d = dist2(st.c[0], st.c[1]);
+    if (W.station !== st.id && d < st.rIn && !W.station) { enterStation(st.id); }
+    else if (W.station === st.id && d > st.rOut) { leaveStation(st.id); }
+  }
+
+  camera.position.set(me.x, EYE, me.z); camera.rotation.set(PITCH, me.yaw, 0); camera.updateMatrixWorld();
+  scene.updateMatrixWorld();
+
+  const busy = ITEMS.find((o) => o.line && !o.line.held && o.line.doneAt == null) ?? null;
+  for (const it of ITEMS) { updateItem(it, dt, real); updateGlint(it, dt, real, busy); }
+  const nSeen = ITEMS.reduce((n, it) => n + (it.seen ? 1 : 0), 0);
+  if (nSeen !== W.nSeen) { W.nSeen = nSeen; refreshHands(); }
+  updateStory();
+  updateBeams(real);
+  updateDrift();
+  renderHud(now);
+  renderer.render(scene, camera);
+  if (measuring && frameN % 8 === 0) { measureHud(); }
+  requestAnimationFrame(frame);
+}
+function step(m) { me.x = clamp(me.x - Math.sin(me.yaw) * m, -42, 46); me.z = clamp(me.z - Math.cos(me.yaw) * m, -89, 44); }
+
+function updateItem(it, dt, real) {
+  const here = W.station === it.st;
+  if (it.kind === "short" || it.kind === "picture") {
+    // seen: in the middle of the view, near enough to read, for a moment
+    const a = anchorWorld(it);
+    if (!it.seen && here && dist(it) < it.readM && inView(a[0], a[1], a[2], 0.7)) { it.lookT += dt; if (it.lookT > SEEN_LOOK_S) { it.seen = true; } }
+  }
+  if (it.kind === "video" || it.kind === "audio") {
+    if (it.state === "playing") { it.prog += dt; if (it.prog >= it.dur) { it.prog = it.dur; it.state = "done"; it.seen = true; handOff(it); } }
+    if (it.kind === "video") { const key = it.state + Math.floor(it.prog * 8) + (it.handTo?.id ?? it.handTo?.beam ?? ""); if (key !== it.vKey) { it.vKey = key; drawVideo(it); } }
+    if (it.kind === "audio") {
+      const u = it.spark.material.uniforms, on = it.state === "playing";
+      u.uT.value += real * (on ? 1.6 : 0.7); u.uSwirl.value = on ? 1.2 : 0.5;
+      u.uStrength.value += ((on ? 1 : it.seen ? 0.25 : 0.6) - u.uStrength.value) * damp(real, 0.4);
+      u.uColor.value.lerp(new THREE.Color(on ? COL.play : it.seen ? COL.seen : COL.gold), damp(real, 0.4));
+    }
+  }
+  if (it.kind === "model") {
+    const o = it.noteOn && dist(it) < 9 ? 1 : 0, m = it.notePlate.material; m.opacity += (o - m.opacity) * damp(real, 0.3); it.notePlate.visible = m.opacity > 0.01;
+    if (dist(it) >= 9) { it.noteOn = false; }
+    it.notePlate.quaternion.copy(camera.quaternion);
+    { const q = it.g.quaternion.clone().invert(); it.notePlate.quaternion.premultiply(q); }
+  }
+  if (it.kind === "character") { updateCharacter(it, dt, real); }
+}
+
+function updateGlint(it, dt, real, busy) {
+  const G = GLINTS[KN.glint], u = it.gu, a = anchorWorld(it), d = dist(it), reach = KN.reach * REACH_K[it.kind];
+  const inV = inView(a[0], a[1], a[2], 0.98), central = inView(a[0], a[1], a[2], NOTICE_NDC);
+  // a settled item may show its shimmer once more, after it has been out of view for a while; never a third time
+  if (it.settled && !inView(a[0], a[1], a[2], 1.1)) { it.outT += dt; if (it.outT > REARM_S && it.asks < MAX_ASKS && !it.seen) { it.settled = false; it.passes = 0; } } else { it.outT = 0; }
+  const want = W.station === it.st && !it.seen && !it.settled && it.asks < MAX_ASKS && inV && d < reach && (!busy || busy === it) && it.line == null ? 1 : 0;
+  const settle = () => { it.settled = true; it.asks++; it.noticeT = 0; it.outT = 0; };
+  // every pass that begins is counted, also one cut short by turning away; after PASSES it rests
+  if (want && !it.showing) { if (it.passes >= PASSES) { settle(); } else { it.showing = true; it.t0 = W.t; it.pIdx = 0; it.passes++; } }
+  const k = Math.floor((W.t - it.t0) / G.p);
+  if (want && !it.settled && k > it.pIdx) { it.pIdx = k; it.passes++; }
+  // the last pass has ended: it rests from here and its band is already gone, so it may drop at once
+  if (want && !it.settled && it.passes >= PASSES && (W.t - it.t0) / G.p - k >= 0.6) { settle(); it.env = 0; }
+  const on = want && !it.settled ? 1 : 0;
+  it.env += (on - it.env) * damp(real, on > it.env ? 0.9 : 0.7);
+  if (!on && it.env < 0.004) { it.showing = false; } // faded out: the next showing starts a new pass
+  const passed = W.t - it.t0 > G.p * 0.6; // one whole pass has been shown
+  if (on && central) { it.noticeT += dt; if (it.noticeT > NOTICE_S && passed) { settle(); } }
+  else if (!central) { it.noticeT = 0; }
+  if (it.env < 0.004) { u.uGlint.value = 0; return; }
+  const ph = ((W.t - it.t0) / G.p) % 1;
+  if (KN.style === "sweep") {
+    // the band travels up the object in the first 60 % of a period, then rests below it
+    const s = clamp(ph / 0.6, 0, 1), e = s * s * (3 - 2 * s);
+    u.uSweep.value = 1; u.uBand.value = it.cLo - 2.4 * it.bw + (it.cHi - it.cLo + 4.8 * it.bw) * e; u.uGlint.value = it.env * G.s * (ph < 0.6 ? 1 : 0);
+  } else {
+    u.uSweep.value = 0; u.uGlint.value = it.env * G.s * (0.5 + 0.5 * Math.sin(ph * Math.PI * 2)) * 0.8;
+  }
+}
+
+function updateCharacter(it, dt, real) {
+  if (it.greetPending && dist(it) < 12) { it.greetPending = false; enterStory(STORIES[0]); }
+  const F = it.fig, H = it.hand && W.t < it.hand.until ? it.hand : null;
+  const toMe = faceTo(it.pos, [me.x, me.z]);
+  let want = it.homeYaw, headTo = toMe;
+  if (H) { const toT = faceTo(it.pos, [H.x, H.z]); want = toMe + clamp(angDiff(toMe, toT), -1.4, 1.4); headTo = toT; } // turns towards it, never its back on you
+  else if (it.line || dist(it) < 7) { want = toMe; }
+  it.yaw += angDiff(it.yaw, want) * damp(real, 0.4);
+  const headWant = clamp(angDiff(it.yaw, headTo), -1.2, 1.2) * (H || dist(it) < 16 ? 1 : 0);
+  it.headYaw += (headWant - it.headYaw) * damp(real, 0.25);
+  it.g.rotation.y = it.yaw; F.head.rotation.y = it.headYaw;
+  // arms: a wave in the first moments of a greeting, a point while handing on, small gestures while talking
+  const L = it.line, talking = L && !L.held && L.doneAt == null, tt = W.t;
+  let rx = 0, rz = 0, lx = 0;
+  if (L && L.acc < 5 && it.id === "greta" && W.story?.step === 0) { rz = -2.5 + Math.sin(tt * 9) * 0.3; }
+  else if (H) { rx = H.up ? -2.3 : -1.45; }
+  else if (talking) { rx = -0.35 + Math.sin(tt * 3.1) * 0.25; lx = -0.2 + Math.sin(tt * 2.3 + 1) * 0.2; }
+  const k = damp(real, 0.18);
+  F.armR.rotation.x += (rx - F.armR.rotation.x) * k; F.armR.rotation.z += (rz - F.armR.rotation.z) * k; F.armL.rotation.x += (lx - F.armL.rotation.x) * k;
+  F.head.position.y = 1.64 + (talking ? Math.abs(Math.sin(tt * 6)) * 0.012 : 0);
+  updateLine(it, dt);
+  // the bubble: over the head, always facing you, a steady size on the screen
+  const b = it.bubble, show = !!it.line;
+  b.a += ((show ? 1 : 0) - b.a) * damp(real, 0.2); b.mesh.visible = b.a > 0.01; b.mesh.material.opacity = b.a;
+  if (b.mesh.visible) {
+    const d = Math.max(1, dist(it)); const wPx = Math.min(innerWidth * 0.86, 430, innerHeight * 0.55);
+    sizeToPx(b.mesh, wPx, d); const h = b.mesh.scale.y * (BUB_H / BUB_W);
+    b.mesh.position.set(it.pos[0], 1.95 + h / 2, it.pos[1]); b.mesh.quaternion.copy(camera.quaternion);
+  }
+}
+
+// the station's light: orange while it holds anything unseen, a pale thin light once all of it is seen
+const stationDone = (id) => unseenIn(id).length === 0;
+const BEAM_ON = new THREE.Color(COL.beam), BEAM_DONE = new THREE.Color("#d9d4ca");
+function updateBeams(real) {
+  for (const st of Object.values(STATIONS)) {
+    const B = beams[st.id], want = W.station === st.id ? 0 : 1, round = KN.beam === "round", done = stationDone(st.id);
+    B.a += (want - B.a) * damp(real, 0.6);
+    B.gem.visible = B.col.visible = round && B.a > 0.01; B.built.visible = B.ring.visible = !round && B.a > 0.01;
+    const c = done ? BEAM_DONE : BEAM_ON;
+    for (const m of [B.col.material, B.built.material, B.ring.material]) { m.color.lerp(c, damp(real, 0.5)); }
+    B.gem.material.opacity = (done ? 0.45 : 0.95) * B.a; B.col.material.opacity = (done ? 0.2 : 0.35) * B.a; B.gem.rotation.y += real;
+    const r = clamp(dist2(st.c[0], st.c[1]) * 0.0015, 0.05, 0.6); B.built.scale.set(r, 1, r); B.built.material.opacity = (done ? 0.14 : 0.28) * B.a; B.ring.material.opacity = (done ? 0.25 : 0.55) * B.a;
+  }
+}
+
+/* ---------------- the HUD ---------------- */
+const chipEl = $("#chip"), trEl = $("#transport"), radarEl = $("#radar");
+const ICON = {
+  pause: '<svg viewBox="0 0 24 24" fill="#fff"><rect x="6" y="5" width="4.2" height="14" rx="1"/><rect x="13.8" y="5" width="4.2" height="14" rx="1"/></svg>',
+  play: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
+};
+let hudKey = "";
+function renderHud(now) {
+  // the chip: which story, and who you entered it through
+  const S = W.story;
+  chipEl.hidden = !S;
+  if (S) { const ch = byId[S.s.steps[0]]; const k = S.s.id + (S.doneAt != null); if (chipEl.dataset.k !== k) { chipEl.dataset.k = k; chipEl.querySelector(".face").style.background = ch.coat; chipEl.querySelector(".title").textContent = S.doneAt != null ? `${S.s.title}: done` : S.s.title; } }
+  // one transport for whatever plays in this station
+  const now2 = playing().filter((it) => it.st === W.station), held = W.hudPaused.filter((it) => it.state === "paused");
+  const showT = !!W.station && (now2.length > 0 || held.length > 0);
+  trEl.hidden = !showT;
+  if (showT) {
+    const it = now2[now2.length - 1] ?? held[0], key = now2.length ? "pause" : "play";
+    if (hudKey !== key) { hudKey = key; trEl.innerHTML = ICON[key]; trEl.setAttribute("aria-label", key === "pause" ? "Pause" : "Play"); }
+    trEl.style.setProperty("--p", (it.prog / it.dur).toFixed(3));
+  }
+  if (now - radarDrawAt > 66) { radarDrawAt = now; drawRadar(now); } // at most 15 times a second
+}
+// the radar: stations only, never an item. Heading-up, true positions; a station beyond the range sits on the rim.
+const RANGES = [null, 30, 100, 300];
+let rangeStep = 0, autoRange = 60, rangeShownUntil = 0;
+function pickAuto() {
+  if (W.station) { return 40; }
+  let d = Infinity; for (const st of Object.values(STATIONS)) { d = Math.min(d, dist2(st.c[0], st.c[1])); }
+  const want = [40, 60, 100, 200, 300].find((r) => r >= d * 1.2) ?? 300;
+  if (want > autoRange || want < autoRange * 0.6) { autoRange = want; } // hysteresis: the scale does not breathe while you walk
+  return autoRange;
+}
+function drawRadar(now) {
+  const g = radarEl.getContext("2d"), S = radarEl.width, c = S / 2, R = c - 10, range = RANGES[rangeStep] ?? pickAuto(), k = R / range;
+  g.clearRect(0, 0, S, S);
+  g.fillStyle = "rgb(10 13 18 / 66%)"; g.beginPath(); g.arc(c, c, c - 2, 0, 7); g.fill();
+  g.strokeStyle = "rgb(255 255 255 / 55%)"; g.lineWidth = 4; g.beginPath(); g.arc(c, c, c - 4, 0, 7); g.stroke();
+  const sy = Math.sin(me.yaw), cy = Math.cos(me.yaw);
+  const map = (x, z) => { const dx = x - me.x, dz = z - me.z; const f = -dx * sy - dz * cy, r = dx * cy - dz * sy; return [c + r * k, c - f * k, Math.hypot(r, f)]; };
+  g.save(); g.beginPath(); g.arc(c, c, c - 6, 0, 7); g.clip();
+  for (const st of Object.values(STATIONS)) {
+    const [x, y, d] = map(st.c[0], st.c[1]), col = stationDone(st.id) ? COL.seen : COL.beam;
+    if (W.station === st.id || d < st.rIn * 1.6) { g.strokeStyle = col; g.globalAlpha = 0.85; g.lineWidth = 6; g.beginPath(); g.arc(x, y, st.rIn * k, 0, 7); g.stroke(); g.globalAlpha = 1; }
+    if (W.station === st.id) { continue; }
+    if (d * k < R - 12) { g.fillStyle = col; g.beginPath(); g.arc(x, y, 11, 0, 7); g.fill(); g.lineWidth = 4; g.strokeStyle = "rgb(10 13 18 / 90%)"; g.stroke(); }
+    else { const a = Math.atan2(y - c, x - c); g.fillStyle = col; g.beginPath(); g.arc(c + Math.cos(a) * (R - 6), c + Math.sin(a) * (R - 6), 9, 0, 7); g.fill(); }
+  }
+  g.restore();
+  g.fillStyle = "#fff"; g.beginPath(); g.moveTo(c, c - 13); g.lineTo(c + 9, c + 9); g.lineTo(c, c + 4); g.lineTo(c - 9, c + 9); g.closePath(); g.fill();
+  if (now < rangeShownUntil) { g.font = "700 24px system-ui, sans-serif"; g.textAlign = "center"; g.fillStyle = "#fff"; g.fillText(RANGES[rangeStep] ? `${RANGES[rangeStep]} m` : "auto", c, S - 30); g.textAlign = "left"; }
+}
+radarEl.addEventListener("click", () => { rangeStep = (rangeStep + 1) % RANGES.length; rangeShownUntil = performance.now() + 1500; });
+trEl.addEventListener("click", () => { userTouched(); transportTap(); });
+chipEl.querySelector(".leave").addEventListener("click", () => { userTouched(); leaveStory(); });
+
+/* ---------------- input ---------------- */
+let drag = null;
+canvas.addEventListener("pointerdown", (e) => { canvas.setPointerCapture(e.pointerId); drag = { x: e.clientX, y: e.clientY, lx: e.clientX, ly: e.clientY, t: performance.now(), moved: false }; });
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) { return; } const dx = e.clientX - drag.lx, dy = e.clientY - drag.ly; drag.lx = e.clientX; drag.ly = e.clientY;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > TAP_PX) { drag.moved = true; userTouched(true); }
+  if (drag.moved) { me.yaw += dx * LOOK_GAIN; step(-dy * DRAG_WALK); }
+});
+canvas.addEventListener("pointerup", (e) => { if (drag && !drag.moved && performance.now() - drag.t < TAP_MS) { worldTap(e.clientX, e.clientY); } drag = null; });
+canvas.addEventListener("pointercancel", () => { drag = null; });
+canvas.addEventListener("wheel", (e) => { e.preventDefault(); userTouched(true); step(-e.deltaY * 0.01); }, { passive: false });
+addEventListener("keydown", (e) => { const k = e.key.toLowerCase(); if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) { keys.add(k); userTouched(true); } });
+addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+const ray = new THREE.Raycaster();
+function worldTap(x, y) {
+  ray.setFromCamera({ x: (x / innerWidth) * 2 - 1, y: -(y / innerHeight) * 2 + 1 }, camera);
+  const hit = ray.intersectObjects(hits, false).find((h) => { const it = byId[h.object.userData.id]; return it.st === W.station && h.distance < 30; });
+  if (hit) { tapItem(byId[hit.object.userData.id]); }
+}
+
+/* ---------------- the demonstration: ten beats ---------------- */
+const BEATS = ["Outside", "Walk in: Greta greets", "Look round: things glint", "Film: pause from the HUD", "Film ends, hands on", "Seen some: what is left", "Leave with things unseen", "The gate: talk to enter", "A story step hands on", "All seen: nothing glints"];
+const face = (x, z) => { me.yaw = yawTo(x, z); };
+let demoMult = 1;
+
+function seen(...ids) { for (const id of ids) { byId[id].seen = true; } }
+function preState(n) {
+  resetWorld();
+  const A = () => { W.station = "A"; W.greeted = true; };
+  const allA = ITEMS.filter((it) => it.st === "A").map((it) => it.id);
+  if (n === 1) { me.x = 0; me.z = 42; face(0, -2); }
+  if (n === 2) { me.x = 0.4; me.z = 24; face(0.4, 0); }
+  if (n === 3) { A(); seen("greta"); W.story = { s: STORIES[0], step: 1, doneAt: null }; me.x = 0; me.z = 3; face(-2.4, -6.6); }
+  if (n === 4) { A(); seen("greta", "lecternA"); STORIES[0].done = true; me.x = -6.5; me.z = -1.6; face(-11, -3); }
+  if (n === 5) { A(); seen("greta", "lecternA"); STORIES[0].done = true; const v = byId.videoA; v.state = "playing"; v.prog = v.dur - 3.5; v.settled = true; me.x = -6.8; me.z = -0.6; face(-11, -3); }
+  if (n === 6) { A(); seen("greta", "lecternA", "videoA", "pictureA", "signA"); byId.videoA.state = "done"; byId.videoA.prog = byId.videoA.dur; STORIES[0].done = true; me.x = -2; me.z = 3; face(1.5, 12); }
+  if (n === 7) { A(); seen("greta", "lecternA", "videoA", "pictureA", "signA"); STORIES[0].done = true; me.x = 4; me.z = -8; face(10, -30); }
+  if (n === 8) { W.greeted = true; seen(...allA); STORIES[0].done = true; me.x = 24; me.z = -54; face(24, -80); }
+  if (n === 9) { W.greeted = true; seen(...allA); W.station = "B"; seen("mason"); W.story = { s: STORIES[1], step: 1, doneAt: null }; me.x = 21.2; me.z = -77.2; face(20.4, -73.6); }
+  if (n === 10) { A(); seen(...allA); STORIES[0].done = true; me.x = 2.5; me.z = 2.4; face(0.2, -4.2); }
+  for (const it of ITEMS) { if (it.kind === "video") { drawVideo(it); } }
+}
+
+let script = [], cur = null;
+const demo = { running: false, held: false, stopAt: null };
+const S = {
+  wait: (s) => ({ s, step(dt) { return (this.s -= dt) <= 0; } }),
+  turn: (total, dur) => ({ left: dur, rate: total / dur, step(dt) { const d = Math.min(dt, this.left); me.yaw += this.rate * d; this.left -= d; return this.left <= 1e-6; } }),
+  face: (x, z, dur = 1) => ({ step(dt) { const d = angDiff(me.yaw, yawTo(x, z)); const s = Math.min(Math.abs(d), Math.max(Math.abs(d) * dt * (4 / dur), 0.5 * dt)); me.yaw += Math.sign(d) * s; return Math.abs(d) - s < 0.01; } }),
+  walk: (pts, speed, look) => ({ i: 0, step(dt) {
+    let left = dt * speed;
+    while (left > 0 && this.i < pts.length) {
+      const [tx, tz] = pts[this.i], dx = tx - me.x, dz = tz - me.z, d = Math.hypot(dx, dz);
+      if (d < 1e-3) { this.i++; continue; }
+      if (!look) { me.yaw += angDiff(me.yaw, Math.atan2(-dx, -dz)) * Math.min(1, dt * 4); }
+      const m = Math.min(left, d); me.x += (dx / d) * m; me.z += (dz / d) * m; left -= m; if (m >= d - 1e-6) { this.i++; }
+    }
+    return this.i >= pts.length;
+  } }),
+  tapAt: (fn) => ({ step() { const p = fn(); if (p) { ripple(p.x, p.y); worldTap(p.x, p.y); } return true; } }),
+  tapEl: (sel) => ({ step() { const el = $(sel); if (el && !el.hidden) { const r = el.getBoundingClientRect(); ripple(r.left + r.width / 2, r.top + r.height / 2); el.click(); } return true; } }),
+  until: (fn, max = 30) => ({ t: 0, step(dt) { this.t += dt; return fn() || this.t > max; } }),
+  mark: (name) => ({ step() { if (demo.stopAt === name) { demo.held = true; } return !demo.held; } }),
+};
+const pointing = (id) => () => { const h = byId[id].hand; return !!h && W.t > h.until - HAND_S + 1.2; };
+// for the screenshots: the moment a shimmering thing has its band of light half way up
+const midPass = (id) => () => { const it = byId[id], ph = ((W.t - it.t0) / GLINTS[KN.glint].p) % 1; return it.env > 0.4 && ph > 0.26 && ph < 0.5; };
+const at = (id) => () => { const it = byId[id], a = anchorWorld(it), s = toScreen(a[0], a[1], a[2]); return s.front ? s : null; };
+
+function beatScript(n) {
+  switch (n) {
+    case 1: return [S.wait(1.5), S.mark("outside"), S.turn(0.5, 2.5), S.turn(-0.5, 2.5), S.walk([[0.4, 26]], 1.3), S.mark("edge")];
+    case 2: return [S.walk([[0.6, 7]], 1.3), S.face(0.2, -4.2, 1), S.wait(4), S.mark("greet"), S.until(pointing("greta")), S.mark("handoff"), S.wait(4)];
+    case 3: return [S.until(midPass("lecternA"), 8), S.mark("lectern"), S.face(-11, -3, 1.5), S.until(midPass("videoA"), 8), S.mark("film"), S.until(() => byId.videoA.settled, 10), S.mark("settled"), S.wait(2)];
+    case 4: return [S.wait(0.8), S.tapAt(at("videoA")), S.wait(3.2), S.mark("film"), S.turn(2.6, 2.2), S.wait(1.2), S.tapEl("#transport"), S.wait(1.4), S.mark("paused"), S.wait(2)];
+    case 5: return [S.wait(4.5), S.mark("card"), S.wait(1.5), S.face(-10, 6.5, 1.5), S.until(midPass("audioA"), 8), S.mark("bench"), S.wait(3)];
+    case 6: return [S.wait(1.5), S.mark("quiet"), S.face(-10, 6.5, 2.5), S.until(midPass("audioA"), 8), S.mark("song"), S.walk([[6, -2]], 1.6), S.face(11.5, -11, 1.5), S.until(midPass("modelA"), 8), S.mark("model"), S.wait(2)];
+    case 7: return [S.walk([[8.6, -23.8]], 1.6), S.face(0, -2, 1.5), S.wait(1.5), S.mark("beam"), S.wait(3)];
+    case 8: return [S.walk([[24, -71.5]], 1.4), S.face(24, -86, 1), S.until(midPass("watchman"), 8), S.mark("three"), S.face(17.5, -87, 2), S.until(midPass("mason"), 8), S.mark("mason"), S.walk([[21, -80.5]], 1.2), S.face(17.5, -87, 0.6), S.tapAt(at("mason")), S.wait(5), S.mark("entered"), S.until(pointing("mason")), S.mark("handoff"), S.wait(4)];
+    case 9: return [S.wait(0.8), S.tapAt(at("modelB")), S.wait(2), S.mark("note"), S.face(17.5, -87, 1), S.until(() => !!byId.mason.line), S.wait(2), S.mark("outro"), S.until(pointing("mason")), S.mark("handoff"), S.wait(4)];
+    case 10: return [S.wait(1), S.turn(Math.PI * 2, 10), S.mark("quiet"), S.face(0.2, -4.2, 0.6), S.tapAt(at("greta")), S.wait(10), S.mark("light"), S.walk([[6, -26]], 2.2), S.face(0, -2, 1.4), S.wait(1.5), S.mark("pale"), S.wait(2)];
+  }
+  return [];
+}
+function runScript(dt) {
+  while (true) {
+    if (!cur) { cur = script.shift(); if (!cur) { demo.running = false; return; } }
+    if (cur.step(dt)) { cur = null; dt = 0; continue; }
+    return;
+  }
+}
+function jump(n, { run = true } = {}) {
+  beat = clamp(n, 1, BEATS.length); rec[beat] = { hud: 0, el: 0, ov: 0 };
+  preState(beat); script = run ? beatScript(beat) : []; cur = null; demo.running = run; demo.held = false;
+  $("#beat-name").textContent = `${beat}/${BEATS.length} ${BEATS[beat - 1]}`;
+  renderInfo();
+}
+function userTouched(moving) { if (moving && demo.running) { script = []; cur = null; demo.running = false; $("#beat-name").textContent = `${beat}/${BEATS.length} free walk`; } }
+function ripple(x, y) { const d = document.createElement("div"); d.className = "rip"; d.style.left = x + "px"; d.style.top = y + "px"; $("#dev").append(d); setTimeout(() => d.remove(), 800); }
+
+$("#prev").addEventListener("click", () => jump(beat - 1));
+$("#next").addEventListener("click", () => jump(beat >= BEATS.length ? 1 : beat + 1));
+$("#beat-name").addEventListener("click", () => jump(beat));
+$("#exit").addEventListener("click", () => { hush(); $("#exited").hidden = false; });
+$("#back-in").addEventListener("click", () => { $("#exited").hidden = true; });
+
+/* ---------------- the measuring hook (behind the ruler toggle) ---------------- */
+let measuring = false, hudNow = { hud: 0, el: 0, ov: 0 };
+const rec = {};
+function hudBoxes() {
+  return [...document.querySelectorAll("[data-hud]")].filter((el) => {
+    if (el.hidden) { return false; }
+    const cs = getComputedStyle(el); if (cs.display === "none" || cs.visibility === "hidden" || +cs.opacity < 0.05) { return false; }
+    const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0;
+  }).map((el) => ({ el, r: el.getBoundingClientRect() }));
+}
+const glinting = () => ITEMS.filter((it) => it.gu.uGlint.value > 0.01 || it.env > 0.05).map((it) => it.id);
+function measureHud() {
+  const bx = hudBoxes(), W0 = innerWidth, H0 = innerHeight, St = 4; let cov = 0;
+  for (let y = St / 2; y < H0; y += St) { for (let x = St / 2; x < W0; x += St) { for (const b of bx) { if (x >= b.r.left && x < b.r.right && y >= b.r.top && y < b.r.bottom) { cov++; break; } } } }
+  const total = Math.ceil(W0 / St) * Math.ceil(H0 / St);
+  document.querySelectorAll(".ovl").forEach((e) => e.classList.remove("ovl"));
+  let ov = 0;
+  for (let i = 0; i < bx.length; i++) {
+    for (let j = i + 1; j < bx.length; j++) {
+      const a = bx[i].r, b = bx[j].r, w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (w > 2 && h > 2) { ov++; bx[i].el.classList.add("ovl"); bx[j].el.classList.add("ovl"); }
+    }
+  }
+  hudNow = { hud: (cov / total) * 100, el: bx.length, ov };
+  const R = rec[beat]; if (R) { R.hud = Math.max(R.hud, hudNow.hud); R.el = Math.max(R.el, hudNow.el); R.ov = Math.max(R.ov, ov); }
+  const inf = renderer.info.render, gl = glinting();
+  $("#readout").textContent = `HUD ${hudNow.hud.toFixed(1)}% · ${hudNow.el} el · ${ov} overlap\nglinting ${gl.length}: ${gl.join(" ") || "-"}\nslowest frame ${maxFrame.toFixed(0)} ms · ${inf.calls} draws\n${innerWidth}x${innerHeight} · ${KN.glint} ${KN.style} ${KN.reach} m`;
+  if (!$("#info").hidden) { renderTable(); }
+}
+$("#measure-btn").addEventListener("click", () => {
+  measuring = !measuring; $("#measure-btn").setAttribute("aria-pressed", String(measuring));
+  $("#readout").hidden = !measuring; $("#dev").classList.toggle("measuring", measuring);
+  if (measuring) { measureHud(); }
+});
+
+/* ---------------- the page's own notes and knobs ---------------- */
+const KNOBS = [
+  { key: "glint", label: "Shimmer", opts: [["faint", `faint (${GLINTS.faint.s}, every ${GLINTS.faint.p} s)`], ["soft", `soft (${GLINTS.soft.s}, every ${GLINTS.soft.p} s)`], ["clear", `clear (${GLINTS.clear.s}, every ${GLINTS.clear.p} s)`]] },
+  { key: "style", label: "Its motion", opts: [["sweep", "a band of light passes up"], ["breathe", "the whole thing warms and cools"]] },
+  { key: "reach", label: "Shows within", opts: [[8, "8 m"], [12, "12 m"], [18, "18 m"]] },
+  { key: "beam", label: "Station pin", opts: [["round", "the beam with a gem"], ["built", "today's beacon"]] },
+  { key: "drift", label: "Ending sound", opts: [[false, "off"], [true, "a soft drift"]] },
+  { key: "voice", label: "Voice", opts: [[true, "on"], [false, "off"]] },
+];
+function syncUrl() {
+  try { const q = new URLSearchParams(location.search); for (const k of ["glint", "style", "reach", "beam"]) { q.set(k, String(KN[k])); } q.set("drift", KN.drift ? "on" : "off"); history.replaceState(null, "", "?" + q.toString()); } catch { /* the address is a convenience */ }
+}
+function renderInfo() {
+  const el = $("#info"); if (el.hidden) { return; }
+  el.innerHTML = `<button type="button" class="close" aria-label="Close">&times;</button>
+  <h1>The world shows it</h1>
+  <p>Nothing on the screen tells you what is left. A thing you have not seen yet carries a faint, slow shimmer on itself, only while it is in view and near, and it settles once you have looked at it. Each thing's ending hands you on to the next: a person turns and points, a text's last line names it, a film's end card shows which way, a song's light drifts that way. The radar shows stations only.</p>
+  <h3>Try the shimmer</h3>
+  <p class="small">Start with soft, the default, outdoors. If you cannot make it out on the pale signs in sun, try clear; faint is for a dim place or a dark object.</p>
+  ${KNOBS.slice(0, 3).map(knobRow).join("")}
+  <p class="small">Also by address: <code>?glint=faint|soft|clear&amp;style=sweep|breathe&amp;reach=8|12|18</code></p>
+  <h3>What "seen" means here</h3>
+  <ul><li><b>A person</b>: their first words have played to the end.</li><li><b>A short text, a picture</b>: it has been in the middle of your view, near enough to read, for ${SEEN_LOOK_S} s.</li><li><b>A long text</b>: you turned to its last page.</li><li><b>A film, a sound</b>: it played to its end.</li><li><b>A model</b>: you tapped it and its note opened.</li></ul>
+  <p>"Noticed" is not "seen": the shimmer settles after you have held a thing near the middle of your view for ${NOTICE_S} s and its light has passed over it once, or after you touched it. Either way it shows at most ${PASSES} passes, then rests. A thing settled but not seen may show its shimmer once more after ${REARM_S} s out of view, never a third time: ${PASSES * MAX_ASKS} passes at most, ever.</p>
+  <h3>On the screen, and only then</h3>
+  <ul><li>Exit, always.</li><li>The radar, stations only (orange while a station holds something unseen, grey once all of it is seen). A tap steps its range.</li><li>Play/pause, while something of this station plays, so you can stop it without looking at it.</li><li>The story you are in, with the face colour of the person you entered it through, and a leave button.</li></ul>
+  <h3>Stories</h3>
+  <p>At the well the one story begins with Greta; she greets you once when you walk in (the only thing that starts by arriving). At the gate three people stand where their stories begin; talking to one of them enters that story. This replaces today's picker of story titles.</p>
+  <h3>Leaving</h3>
+  <p>Nothing is said. The station's light comes back behind you, still orange while anything there is unseen; once all of it is seen it turns pale.</p>
+  <h3>The strongest case against it</h3>
+  <ul><li>A shimmer reacts to where you look, which is close to the rejected "HUD that follows the gaze", even though it lives on the object.</li><li>In bright sun on a real camera image, a warm sheen may be too faint on pale stone and too loud on dark wood; only a phone outdoors can tell.</li><li>The chain is creator work: an item without a good ending, or one met out of order, hands on to nothing better than the nearest unseen thing.</li><li>A visitor who never turns round never sees the shimmer behind them; the light outside the station is the only reminder.</li></ul>
+  <h3>Other knobs</h3>
+  ${KNOBS.slice(3).map(knobRow).join("")}
+  <h3>Beats</h3>
+  <div class="beats">${BEATS.map((b, i) => `<button type="button" data-beat="${i + 1}">${i + 1} ${b}</button>`).join("")}</div>
+  <h3>Numbers per beat (the most seen during the beat; switch the ruler on to record)</h3>
+  <div id="tbl"></div>`;
+  el.querySelector(".close").addEventListener("click", () => { el.hidden = true; });
+  el.querySelectorAll("[data-k]").forEach((b) => b.addEventListener("click", () => { const k = KNOBS.find((x) => x.key === b.dataset.k); KN[k.key] = k.opts[+b.dataset.i][0]; if (!KN.voice) { hush(); } syncUrl(); renderInfo(); }));
+  el.querySelectorAll("[data-beat]").forEach((b) => b.addEventListener("click", () => { el.hidden = true; jump(+b.dataset.beat); }));
+  renderTable();
+}
+function knobRow(k) { return `<div class="knob"><span>${k.label}</span>${k.opts.map(([v, l], i) => `<button type="button" data-k="${k.key}" data-i="${i}" aria-pressed="${KN[k.key] === v}">${l}</button>`).join("")}</div>`; }
+function renderTable() {
+  const t = $("#tbl"); if (!t) { return; }
+  t.innerHTML = `<table><tr><th>beat</th><th>HUD %</th><th>el</th><th>overlap</th></tr>${BEATS.map((b, i) => { const r = rec[i + 1]; return `<tr><td>${i + 1} ${b}</td><td>${r ? r.hud.toFixed(1) : "-"}</td><td>${r ? r.el : "-"}</td><td>${r ? r.ov : "-"}</td></tr>`; }).join("")}</table>`;
+}
+$("#info-btn").addEventListener("click", () => { const el = $("#info"); el.hidden = !el.hidden; renderInfo(); });
+setTimeout(() => $("#try").classList.add("gone"), 9000);
+
+/* ---------------- size ---------------- */
+function resize() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  // a phone camera's long side sees about 64 degrees, whichever way the phone is held
+  camera.fov = w < h ? 64 : THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(32)) * h / w));
+  camera.updateProjectionMatrix(); viewH.value = h * renderer.getPixelRatio();
+  for (const it of ITEMS) { if (it.bubble) { it.bubble.key = ""; } }
+}
+addEventListener("resize", resize); resize();
+
+/* ---------------- build, and the automation hook (screenshots, numbers) ---------------- */
+for (const it of ITEMS) { buildItem(it); }
+Object.assign(demo, {
+  jump(n, { stopAt = null, speed = 1 } = {}) { this.stopAt = stopAt; demoMult = speed; jump(n); },
+  release() { this.held = false; this.stopAt = null; },
+  idle() { return !this.running || this.held; },
+  measure(on = true) { if (on !== measuring) { $("#measure-btn").click(); } },
+  numbers() { return { beat, rec: JSON.parse(JSON.stringify(rec)), now: hudNow, maxFrame, station: W.station, seen: ITEMS.filter((it) => it.seen).map((it) => it.id), glinting: glinting(), settled: ITEMS.filter((it) => it.settled).map((it) => it.id) }; },
+});
+window.demo = demo;
+const qBeat = +new URLSearchParams(location.search).get("beat");
+jump(qBeat >= 1 && qBeat <= BEATS.length ? qBeat : 1);
+requestAnimationFrame((t) => { last = t; frame(t); });
+</script>
+</body>
+</html>
