@@ -7,7 +7,11 @@
  *   INSIDE the subset. Outside it, "shown as typed" is the specified
  *   behaviour and nothing is compared.
  * - Totality: a body is whatever a creator or a hand-edited file holds, so
- *   the parser must read any string, up to a megabyte, without throwing.
+ *   the parser must read any string, up to a megabyte, without throwing:
+ *   arbitrary strings and repeated chunks up to 64 k characters as
+ *   properties, a megabyte as fixed bodies of the shapes that grow with
+ *   the length. Linear time is held by the walk-step count in
+ *   tour-markdown.linearity.test.ts, never by a timeout here.
  * - The plain text `P`: read-along offsets and the stale-check hash refer to
  *   it, so formatting (emphasis, a heading's level) must never move it, the
  *   escaper must round-trip plain text through it, and every offset must
@@ -762,24 +766,52 @@ describe('tour markdown (properties)', () => {
     );
   });
 
-  it('reads bodies up to a megabyte built from repeated arbitrary chunks', () => {
-    // The invariant helper asserts; the parse itself must not throw.
+  it('reads long bodies built from repeated arbitrary chunks', () => {
+    // Why: repetition builds the long runs of one construct (a thousand
+    // open brackets, a list line after a list line) that short strings
+    // never hold. Capped at 64 k characters: the megabyte claim is carried
+    // by the fixed bodies below and linear time by the walk-step count in
+    // tour-markdown.linearity.test.ts, so a draw up to a megabyte only
+    // bought a run time that rose with the machine's load (and, once, met
+    // a quadratic shape that now has its own linearity case).
     expect.hasAssertions();
     fc.assert(
       fc.property(
         fc.string({
-          unit: fc.constantFrom(...'#*_-+>[]()!\\ \n.1az'.split('')),
+          unit: fc.constantFrom(...MARKDOWN_CHUNK_ALPHABET.split('')),
           minLength: 1,
           maxLength: 24,
         }),
-        fc.integer({ min: 1, max: 1_000_000 }),
+        fc.integer({ min: 1, max: 64_000 }),
         (chunk, size) => {
           const body = chunk.repeat(Math.ceil(size / chunk.length));
           assertPlainTextInvariants(parseTourMarkdown(body));
         }
-      ),
-      { numRuns: 12 }
+      )
     );
+  });
+
+  // Why: a body is whatever a file holds, so a megabyte must read without
+  // throwing or exhausting the stack, with P intact. Fixed bodies, one per
+  // shape that grows a structure with the body's length: every mark mixed,
+  // emphasis nested half a million deep, pictures nested in pictures, and
+  // a quote and list line after another.
+  const MB = 1_000_000;
+  it.each<[string, () => string]>([
+    ['every mark, repeated', () => repeatTo(MARKDOWN_CHUNK_ALPHABET, MB)],
+    [
+      'emphasis nested to the middle',
+      () => `${'*'.repeat(MB / 2 - 1)}a${'*'.repeat(MB / 2 - 1)}`,
+    ],
+    [
+      'pictures nested in pictures',
+      () => `${'!['.repeat(MB / 14)}a${'](asset:a)'.repeat(MB / 14)}`,
+    ],
+    ['quote and list lines', () => repeatTo('> - - 1. > a\n', MB)],
+  ])('reads a megabyte of %s', (_name, body) => {
+    // The invariant helper asserts; the parse itself must not throw.
+    expect.hasAssertions();
+    assertPlainTextInvariants(parseTourMarkdown(body()));
   });
 
   it('keeps P when emphasis is removed and heading levels change', () => {
@@ -815,6 +847,14 @@ describe('tour markdown (properties)', () => {
     );
   });
 });
+
+/** The marks the long-body tests build their bodies from. */
+const MARKDOWN_CHUNK_ALPHABET = '#*_-+>[]()!\\ \n.1az';
+
+/** `seed` repeated to exactly `size` characters. */
+function repeatTo(seed: string, size: number): string {
+  return seed.repeat(Math.ceil(size / seed.length)).slice(0, size);
+}
 
 /** Drops every emphasis marker and moves each heading to another level. */
 function withoutFormatting(blocks: readonly ModelBlock[]): ModelBlock[] {

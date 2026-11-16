@@ -857,6 +857,9 @@ interface Delimiter {
   next: Delimiter | null;
   readonly canOpen: boolean;
   readonly canClose: boolean;
+  /** Order of creation in the subject: the stack keeps this order, so a
+   *  position bounds a walk down it even once its delimiter is removed. */
+  readonly position: number;
 }
 
 interface Bracket {
@@ -889,6 +892,8 @@ interface InlineParser {
   pos: number;
   readonly root: InlineNode;
   delimiters: Delimiter | null;
+  /** Delimiters created so far: the next one's `position`. */
+  delimiterCount: number;
   brackets: Bracket | null;
   bracketCount: number;
   /** Link openers below this index are inactive (no links in links). */
@@ -1086,6 +1091,7 @@ function parseDelimiterRun(ip: InlineParser, cc: number): void {
     next: null,
     canOpen: run.canOpen,
     canClose: run.canClose,
+    position: ip.delimiterCount++,
   };
   if (ip.delimiters !== null) ip.delimiters.next = delimiter;
   ip.delimiters = delimiter;
@@ -1102,14 +1108,21 @@ function openersBottomIndex(closer: Delimiter): number {
   return base + (closer.canOpen ? 3 : 0) + (closer.original % 3);
 }
 
-function findOpener(
-  closer: Delimiter,
-  bottom: Delimiter | null,
-  stackBottom: Delimiter | null
-): Delimiter | null {
+/** A delimiter's position as a walk bound; -1 for the stack's bottom. */
+function positionOf(d: Delimiter | null): number {
+  return d === null ? -1 : d.position;
+}
+
+/** The nearest opener for `closer` above position `bottom`. The bound is a
+ *  position, not a delimiter: the delimiter that set it may since have
+ *  been removed by a match, and a walk looking for it would then run to
+ *  the stack's bottom on every closer of its class (quadratic on `[_*1__[`
+ *  repeated). Nothing at or below it can match that class, removed or
+ *  not, since whether a delimiter can match never changes. */
+function findOpener(closer: Delimiter, bottom: number): Delimiter | null {
   for (
     let opener = closer.previous;
-    opener !== null && opener !== stackBottom && opener !== bottom;
+    opener !== null && opener.position > bottom;
     opener = opener.previous
   ) {
     walkSteps++;
@@ -1173,9 +1186,8 @@ function processEmphasis(
   ip: InlineParser,
   stackBottom: Delimiter | null
 ): void {
-  const openersBottom: (Delimiter | null)[] = new Array<Delimiter | null>(
-    12
-  ).fill(stackBottom);
+  const floor = positionOf(stackBottom);
+  const openersBottom: number[] = new Array<number>(12).fill(floor);
   let closer = firstAbove(ip, stackBottom);
   while (closer !== null) {
     walkSteps++;
@@ -1184,18 +1196,14 @@ function processEmphasis(
       continue;
     }
     const index = openersBottomIndex(closer);
-    const opener = findOpener(
-      closer,
-      openersBottom[index] ?? null,
-      stackBottom
-    );
+    const opener = findOpener(closer, openersBottom[index] ?? floor);
     if (opener !== null) {
       closer = applyEmphasis(ip, opener, closer);
       continue;
     }
     const old = closer;
     closer = closer.next;
-    openersBottom[index] = old.previous;
+    openersBottom[index] = positionOf(old.previous);
     if (!old.canOpen) removeDelimiter(ip, old);
   }
   while (ip.delimiters !== null && ip.delimiters !== stackBottom) {
@@ -1413,6 +1421,7 @@ function parseInlineSubject(s: string): InlineNode {
     pos: 0,
     root: inlineNode('root'),
     delimiters: null,
+    delimiterCount: 0,
     brackets: null,
     bracketCount: 0,
     bracketFloor: 0,

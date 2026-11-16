@@ -34,6 +34,11 @@ const PATTERNS: Record<string, string> = {
   'closers of the other kind': '*a b_ ',
   'closers of the other kind, reversed': '_a b* ',
   'intraword underscores': '_a_b',
+  // A `__` closer whose openers' bottom a later `_` pair removes from the
+  // stack: a bound kept as that delimiter, rather than its position, was
+  // never met again, and each closer walked every unclosed `*` below it.
+  // Found by the megabyte property, at 53 s for 650 k characters.
+  'closers past a removed bottom': '[_*1__[',
   'open brackets': '[',
   'open picture brackets': '![',
   'link openings': '[a](',

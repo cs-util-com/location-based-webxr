@@ -137,8 +137,11 @@ per-file dist entry, deep-imported as `gps-plus-slam-app-framework/ar/tour-markd
   holds those characters.
 - **Totality and linear time.** Any string reads. The bracket stack's
   "no links inside links" rule is a floor index, link destinations are
-  scanned with a precomputed parenthesis index, and adjacent literal text
-  is appended to one node, so no input shape rescans what was read.
+  scanned with a precomputed parenthesis index, the emphasis openers'
+  bottom per closer class is a delimiter's creation position (a delimiter
+  as the bound stops no walk once a match removes it, which made
+  `[_*1__[` repeated quadratic), and adjacent literal text is appended to
+  one node, so no input shape rescans what was read.
   The walk steps per character are the same at 8 k and 128 k characters
   on every adversarial shape in the linearity test. The count includes
   the block parser's line scans (indentation, blank and thematic break
@@ -217,8 +220,12 @@ const hash = await textHashOf(text); // 'sha256:...'
   arbitrary strings, short (up to about 10 pieces, with no-break and
   ideographic spaces at line ends) and long (up to 300 pieces; the bodies
   compared average about 130 characters), skipping by name the bodies that
-  reach a spec departure above; totality up to 1 MB; `P` invariants under
-  removed formatting and through the escaper.
+  reach a spec departure above; totality and `P` invariants on arbitrary
+  strings, on repeated-chunk bodies up to 64 k characters, and on fixed
+  1 MB bodies (every mark mixed, emphasis nested half a million deep,
+  pictures nested in pictures, quote and list lines); `P` invariants under
+  removed formatting and through the escaper. Linear time is the
+  linearity test's, never a timeout's.
 - `tour-markdown.diagnostics.test.ts` - each diagnostic kind with its exact
   range, escapes and destinations ignored, ranges through list markers and
   later lines, CRLF line numbers, and the parse left unchanged.
