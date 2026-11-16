@@ -368,6 +368,36 @@ function uniqueKey(out: Record<string, unknown>, key: string): string {
   return `${key} #${index}`;
 }
 
+/**
+ * The fields the error service sets its own ids in: the report's id, the
+ * trace and span ids, and a bundle's debug id in `debug_meta`, by which a
+ * stack is matched to its source map. The SDK fills them before the hooks run.
+ */
+const SERVICE_ID_KEYS: ReadonlySet<string> = new Set([
+  'event_id',
+  'trace_id',
+  'span_id',
+  'parent_span_id',
+  'debug_id',
+]);
+
+/**
+ * An id's shape: 16 or 32 hex digits (span; event, trace), or a UUID (debug
+ * id). Such a value holds no link, label or quote, but a run of six or more
+ * digits in it would be cut by the strict profile.
+ */
+const SERVICE_ID =
+  /^(?:[0-9a-f]{16}|[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
+
+/** Whether `item` is one of the service's own ids, kept as it is. */
+function isServiceId(key: string, item: unknown): boolean {
+  return (
+    SERVICE_ID_KEYS.has(key) &&
+    typeof item === 'string' &&
+    SERVICE_ID.test(item)
+  );
+}
+
 function isPlainObject(value: object): value is Record<string, unknown> {
   const proto: unknown = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
@@ -383,8 +413,10 @@ function isPlainObject(value: object): value is Record<string, unknown> {
  * field name (`lat`, `latLng`) holds is replaced by {@link REDACTED}, unless it
  * is empty, and so is an array of two numbers that read as a coordinate pair
  * (`center: [48.137, 11.575]`), under any key. A single number under an
- * ordinary key is passed through: nothing tells it from a measurement. A
- * subtree deeper than {@link MAX_DEPTH} is replaced too. The input is never
+ * ordinary key is passed through: nothing tells it from a measurement. The
+ * error service's own ids ({@link SERVICE_ID_KEYS}) are kept as they are
+ * when they have an id's shape. A subtree deeper than {@link MAX_DEPTH} is
+ * replaced too. The input is never
  * changed. `options` is passed on to {@link scrubText}.
  */
 export function scrubDeep<T>(
@@ -400,6 +432,10 @@ export function scrubDeep<T>(
     for (const [key, item] of Object.entries(node)) {
       const isEmpty = item === null || item === undefined;
       // Keys are text too: a serialised object can be keyed by a place.
+      if (isServiceId(key, item)) {
+        out[key] = item;
+        continue;
+      }
       out[uniqueKey(out, scrubText(key, ownHost, options))] =
         !isEmpty && isCoordinateKey(key) ? REDACTED : walk(item, depth + 1);
     }

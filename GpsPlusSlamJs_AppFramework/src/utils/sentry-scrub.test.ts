@@ -421,6 +421,28 @@ describe('scrubText', () => {
 });
 
 describe('scrubDeep', () => {
+  // Why this test matters: the error service links a report to its trace and
+  // a bundle to its source map by these ids, and the strict long-number rule
+  // would cut an id that happens to hold six or more digits in a row. Only a
+  // value with an id's shape is kept: other text under the same name is not.
+  it("keeps the error service's ids when they have an id's shape", () => {
+    const ids = {
+      event_id: '98765432109876543210987654321098',
+      trace_id: '12345678901234567890123456789012',
+      span_id: '1234567890123456',
+      parent_span_id: '9876543210987654',
+      debug_id: '12345678-9ABC-4def-8123-456789012345',
+    };
+    expect(scrubDeep({ deep: [ids] }, OWN, { strict: true })).toEqual({
+      deep: [ids],
+    });
+    expect(
+      scrubDeep({ span_id: 'way/123456789', debug_id: 'lat=48.1371' }, OWN, {
+        strict: true,
+      })
+    ).toEqual({ span_id: `way/${REDACTED}`, debug_id: `lat=${REDACTED}` });
+  });
+
   it('removes everything under a coordinate key, an array or an object too', () => {
     // A position is often held as `[lat, lon]` or `{ value }`: the field name
     // is what says so, whatever shape the value has.

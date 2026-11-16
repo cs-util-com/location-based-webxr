@@ -315,6 +315,74 @@ describe('strictSentryOptions', () => {
   });
 });
 
+// Why these tests matter: the SDK fills `debug_meta` with each bundle's debug
+// id before `beforeSend` runs, and the error service finds a bundle's source
+// map by that id. A UUID can hold a group of six or more digits, which the
+// strict long-number rule removes, and that frame then loses its readable
+// stack without any error. The service's own ids must reach it as they were,
+// while everything else in the report is still scrubbed.
+describe("strictSentryOptions, the error service's own ids", () => {
+  const options = strictSentryOptions('tour-viewer', OWN, 'gps.csutil.com');
+  // Real ids can be all digits in a group of 8 or 12 (about 1 in 40 debug
+  // ids), and a 16-digit span id is all digits about 1 in 2,000 times.
+  const DEBUG_ID = '12345678-9abc-4def-8123-456789012345';
+  const SPAN_ID = '1234567890123456';
+  const PARENT_SPAN_ID = '9876543210987654';
+  const TRACE_ID = '12345678901234567890123456789012';
+  const EVENT_ID = '98765432109876543210987654321098';
+  const BUNDLE = 'https://gps.csutil.com/tour/assets/index-Bx1.js?v=123456789';
+
+  function eventWithIds(): ErrorEvent {
+    return {
+      type: undefined,
+      event_id: EVENT_ID,
+      contexts: {
+        trace: {
+          trace_id: TRACE_ID,
+          span_id: SPAN_ID,
+          parent_span_id: PARENT_SPAN_ID,
+        },
+      },
+      debug_meta: {
+        images: [{ type: 'sourcemap', code_file: BUNDLE, debug_id: DEBUG_ID }],
+      },
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'build failed for way/123456789',
+            stacktrace: { frames: [{ filename: BUNDLE, lineno: 1, colno: 2 }] },
+          },
+        ],
+      },
+    };
+  }
+
+  it('keeps the debug id, the event id and the trace ids unchanged', () => {
+    const out = options.beforeSend?.(eventWithIds(), {}) as ErrorEvent;
+    expect(out.debug_meta?.images?.[0]?.debug_id).toBe(DEBUG_ID);
+    expect(out.event_id).toBe(EVENT_ID);
+    expect(out.contexts?.trace).toEqual({
+      trace_id: TRACE_ID,
+      span_id: SPAN_ID,
+      parent_span_id: PARENT_SPAN_ID,
+    });
+  });
+
+  it("still scrubs the rest, and a bundle's file the same way as its frame", () => {
+    const out = options.beforeSend?.(eventWithIds(), {}) as ErrorEvent;
+    expect(out.exception?.values?.[0]?.value).not.toContain('123456789');
+    // The service pairs a frame with its bundle by this file name, so the
+    // two must read the same after the scrub.
+    const frame = out.exception?.values?.[0]?.stacktrace?.frames?.[0];
+    const image = out.debug_meta?.images?.[0];
+    expect(image && 'code_file' in image ? image.code_file : undefined).toBe(
+      frame?.filename
+    );
+    expect(frame?.filename).not.toContain('123456789');
+  });
+});
+
 // Why these tests matter: an unhandled rejection with a plain object carries
 // that object, whole, in `extra.__serialized__`: numbers under any key, keys
 // of any text. The apps visitors use set no `extra` of their own, so the
