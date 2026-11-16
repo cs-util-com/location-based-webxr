@@ -43,7 +43,8 @@ The Recorder's options, as a pure function so a unit test can pin them.
 `ownHost` defaults to `location.host`; links to it keep their path in
 reports, links to other hosts keep only the host (see `sentry-scrub.ts.md`).
 `pageHostname` defaults to `location.hostname` and picks the
-`environment` label (`error-report-environment.ts`).
+`environment` label (`error-report-environment.ts`). Every report carries
+the tag `app: recorder` (`initialScope`), as the other apps carry theirs.
 
 ### `strictSentryOptions(app, ownHost?, pageHostname?): BrowserOptions`
 
@@ -58,6 +59,12 @@ The options of the apps visitors use. Same DSN, environment rule and
 - No tracing: no `browserTracingIntegration`, no `tracesSampleRate`. A
   visitor's page load sends nothing unless something goes wrong.
 - The same dropped defaults (`BrowserSession`, `CultureContext`).
+- `beforeSend` drops the event's `extra` before scrubbing. These apps set
+  none; the SDK fills it with the object a promise was rejected with
+  (`extra.__serialized__`), free-form data no scrubber rule is written for.
+  The exception text the SDK writes from that object ("Object captured as
+  promise rejection with keys: ...") stays and is scrubbed. The Recorder's
+  profile keeps `extra`; `scrubDeep` scrubs its keys and its numeric pairs.
 - Every hook scrubs with the strict profile of `sentry-scrub.ts`, which also
   removes quoted text (file, station and tour names, snippets of a file in a
   parse error) and runs of six or more digits (OSM ids).
@@ -74,7 +81,9 @@ does not reach it.
 
 ### `startErrorReporting({ app, prod, search? }): boolean`
 
-Starts the strict profile on a page, first thing in its entry module, and
+Starts the strict profile on a page, in the first statement of its entry
+module (ES imports run first, so an error thrown while an imported module
+loads is not reported), and
 returns whether it did. Does nothing unless `prod` (pass
 `import.meta.env.PROD`). When `search` (default `location.search`) carries the
 `sentry-test` flag (`SENTRY_TEST_PARAM`), it sends one harmless test report
@@ -223,9 +232,15 @@ The Sentry Vite plugin in each app's Vite config (the Recorder's
 `vite.config.ts`) uploads source maps during production builds. The Tour
 Viewer and the map demo build them `hidden` (no `sourceMappingURL` comment,
 so a visitor's browser never fetches them) and run the plugin for their
-Web Worker bundles too, which gives those bundles debug ids. It
-is loaded only when the `SENTRY_AUTH_TOKEN` environment variable is set, so
-a build without the token (local, CI) uploads nothing and does not fail.
+Web Worker bundles too, which gives those bundles debug ids; both take the
+plugins from the framework's `scripts/sentry-vite-plugins.mjs`, which also
+deletes the maps from the resolved output folder after the upload, so they
+are not deployed, and turns the plugin's build telemetry off. The Recorder
+keeps its own call and its maps. The plugin is loaded only when the
+`SENTRY_AUTH_TOKEN` environment variable is set, so a build without the
+token (local, CI) uploads nothing and does not fail. No gate runs the
+token path; what was checked by hand, and what was not, is in
+`scripts/sentry-vite-plugins.mjs.md`.
 
 ## Tests
 
@@ -237,11 +252,15 @@ a build without the token (local, CI) uploads nothing and does not fail.
   comes out without them, a trace's span is scrubbed including its
   `http.query` and `http.fragment` attributes, a standalone span is
   scrubbed, console breadcrumbs are dropped, and the DSN's region is the
-  one the privacy page names.
+  one the privacy page names, the `app: recorder` tag, and a rejected
+  object the SDK itself serialised (`eventFromException`) loses its
+  coordinate pair.
 - The same file pins the strict profile: no tracing, session or culture
   integration, the `app` tag and the Recorder's DSN, info and debug log
   breadcrumbs dropped, a report with a camera target, an H3 cell, an OSM id
-  and a quoted file name comes out without them, the worker's `thread` tag,
+  and a quoted file name comes out without them, the `extra` of a rejected
+  object built by the SDK's own `eventFromException` is dropped (the input
+  event left unchanged), the worker's `thread` tag,
   and `startErrorReporting` / `startWorkerErrorReporting`: nothing outside
   production, one test report only with the flag (the SDK's `init` and
   `captureException` are mocked).

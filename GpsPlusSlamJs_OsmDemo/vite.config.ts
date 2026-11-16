@@ -2,35 +2,26 @@ import { defineConfig } from "vite";
 import { resolve } from "node:path";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 
+import { sentrySourceMapPlugins } from "../GpsPlusSlamJs_AppFramework/scripts/sentry-vite-plugins.mjs";
+
 /**
  * Uploads the source maps to the error service during a production build
- * (the commit becomes the release), and gives each bundle a debug id so a
- * report's stack maps back to the source. Only when SENTRY_AUTH_TOKEN is set:
- * a build without it (local, CI, a contributor's) uploads nothing and does
- * not fail. One upload failure does not fail the build either. Same project
- * as the Recorder; the reports carry an app tag.
+ * (the commit becomes the release), gives each bundle a debug id so a
+ * report's stack maps back to the source, then deletes the maps so they are
+ * not deployed. Only when SENTRY_AUTH_TOKEN is set: a build without it
+ * (local, CI, a contributor's) runs none of it and does not fail. Same
+ * project as the Recorder; the reports carry an app tag.
  */
-const sentryPlugins = () =>
-  process.env.SENTRY_AUTH_TOKEN
-    ? [
-        sentryVitePlugin({
-          org: "cs-util-com",
-          project: "js-gps-recorder",
-          errorHandler: (error) => {
-            console.warn("Sentry source-map upload failed:", error.message);
-          },
-        }),
-      ]
-    : [];
+const sentry = sentrySourceMapPlugins(sentryVitePlugin);
 
 // Minimal Vite config: gps-plus-slam-osm and the app framework both resolve
 // through the pnpm workspace symlinks; Leaflet and three come from
 // node_modules. No aliases.
 export default defineConfig({
-  plugins: sentryPlugins(),
+  plugins: sentry.plugins,
   // The city build runs in a Web Worker, bundled separately: it needs the
   // plugin too for its debug id (the page's instance uploads its map).
-  worker: { plugins: sentryPlugins },
+  worker: { plugins: sentry.workerPlugins },
   server: {
     // Pinned to IPv4 rather than left as the `localhost` default: on Windows
     // `localhost` resolves to ::1 first, so Playwright's webServer poll of

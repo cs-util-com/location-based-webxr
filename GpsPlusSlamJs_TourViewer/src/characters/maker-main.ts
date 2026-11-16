@@ -64,9 +64,10 @@ import { CUT_PHASES, type PhaseState } from "./sheet-analyze.js";
 import type { FrameCheck } from "./sheet-check.js";
 import { startErrorReporting } from "gps-plus-slam-app-framework/utils/sentry-options";
 
-// Error reporting starts before the character maker does anything else
-// (production builds only; the sentry-test page flag sends one harmless test
-// report). What a report may carry: the framework's utils/sentry-options.ts.md.
+// Error reporting starts in this module's first statement (production builds
+// only; the sentry-test page flag sends one harmless test report). ES imports
+// run first, so an error thrown while an imported module loads is not
+// reported. What a report may carry: the framework's utils/sentry-options.ts.md.
 startErrorReporting({
   app: "tour-viewer",
   prod: import.meta.env.PROD,
