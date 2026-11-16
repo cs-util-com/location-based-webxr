@@ -4,7 +4,7 @@
 
 ## Public API
 
-- `Vec3`, `CameraPose` (`{ position, target }`), `ModelViewState` (`{ stops, geometry, texture, webp, positions8, original, wireframe, camera }`), `ModelViewToggle`, `ModelViewAction`.
+- `Vec3`, `CameraPose` (`{ position, target }`), `ModelViewState` (`{ stops, geometry, texture, webp, positions8, original, wireframe, camera }`), `ModelViewAction`.
 - `TEXTURE_STEPS`: the texture slider's steps, left to right so right means more, as on the geometry slider: 128, 256, 512, 1024, 2048 px and original size (a limit of 16384 px no texture reaches; the optimizer never enlarges). `DEFAULT_TEXTURE_STEP`: the step of the shelf's own limit (`OPTIMIZER_SETTINGS.model.textureMaxSidePx`, 1024).
 - `INITIAL_MODEL_VIEW`: nothing loaded, the texture slider on the shelf's limit, every option off, no camera.
 - `modelViewReducer(state, action)`:

@@ -64,7 +64,7 @@ export interface ModelViewState {
   readonly camera: CameraPose | null;
 }
 
-export type ModelViewToggle = "webp" | "positions8" | "original" | "wireframe";
+type ModelViewToggle = "webp" | "positions8" | "original" | "wireframe";
 
 export type ModelViewAction =
   /** A new model: its geometry stops, the default level's stop, the

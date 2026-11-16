@@ -473,7 +473,7 @@ const DETAIL_FIXED =
 /** A level of detail as the slider reads it: the measured stops, the
  *  share the tour holds (null: the default level) and that level's
  *  triangles and deviation. */
-export interface DetailLevels {
+interface DetailLevels {
   readonly choices: readonly DetailStop[];
   readonly share: number | null;
   readonly triangles: number;
