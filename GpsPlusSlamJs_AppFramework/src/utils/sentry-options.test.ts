@@ -32,6 +32,7 @@ import {
   wantsTestReport,
   workerSentryOptions,
 } from './sentry-options';
+import { REDACTED } from './sentry-scrub';
 
 // Only the two calls that would start the SDK or send a report are replaced;
 // the integration list is still resolved by the real SDK.
@@ -370,16 +371,21 @@ describe("strictSentryOptions, the error service's own ids", () => {
   });
 
   it("still scrubs the rest, and a bundle's file the same way as its frame", () => {
-    const out = options.beforeSend?.(eventWithIds(), {}) as ErrorEvent;
-    expect(out.exception?.values?.[0]?.value).not.toContain('123456789');
+    const out = options.beforeSend?.(eventWithIds(), {});
     // The service pairs a frame with its bundle by this file name, so the
     // two must read the same after the scrub.
-    const frame = out.exception?.values?.[0]?.stacktrace?.frames?.[0];
-    const image = out.debug_meta?.images?.[0];
-    expect(image && 'code_file' in image ? image.code_file : undefined).toBe(
-      frame?.filename
-    );
-    expect(frame?.filename).not.toContain('123456789');
+    const scrubbedBundle = BUNDLE.replace('?v=123456789', `?${REDACTED}`);
+    expect(out).toMatchObject({
+      debug_meta: { images: [{ code_file: scrubbedBundle }] },
+      exception: {
+        values: [
+          {
+            value: `build failed for way/${REDACTED}`,
+            stacktrace: { frames: [{ filename: scrubbedBundle }] },
+          },
+        ],
+      },
+    });
   });
 });
 
