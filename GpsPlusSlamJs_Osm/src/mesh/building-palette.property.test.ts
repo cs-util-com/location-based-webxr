@@ -2,12 +2,14 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  DEFAULT_PALETTE_COLOURS,
   FLAT_ROOF_TONES,
   PITCHED_ROOF_TONES,
   WALL_TONES,
   allPaletteColours,
   seededBuildingColours,
 } from "./building-palette.js";
+import { rgbToLab } from "./cielab.js";
 
 const chroma = (rgb: number): number => {
   const c = [(rgb >> 16) & 0xff, (rgb >> 8) & 0xff, rgb & 0xff];
@@ -106,6 +108,70 @@ describe("building palette (properties)", () => {
         );
         expect(part).toEqual(outline);
       }),
+    );
+  });
+});
+
+/**
+ * WHY (city look exploration 2026-11-15, direction B): the lightness jitter
+ * must stay inside the scheme's stated range, or a scheme's value ladder
+ * would blur into its neighbours; and it must be a pure function of the
+ * building's key, or a building would flicker between rebuilds and two
+ * devices would draw it differently. The half an L* unit of slack is the
+ * rounding to 8-bit channels (one channel step is at most about 0.4 L*).
+ */
+describe("wall lightness jitter (properties)", () => {
+  it("stays within plus or minus wallJitterL of the picked tone, stable per key", () => {
+    fc.assert(
+      fc.property(
+        fc.string(),
+        fc.integer({ min: 0, max: 0xffffff }),
+        // Up to the scheme's cap (MAX_WALL_JITTER_L, 20).
+        fc.double({ min: 0, max: 20, noNaN: true }),
+        fc.double({ min: 0, max: 300, noNaN: true }),
+        (key, tone, jitter, heightM) => {
+          const colours = {
+            ...DEFAULT_PALETTE_COLOURS,
+            walls: [tone],
+            towerWalls: [tone],
+            towerFromM: 40,
+            wallJitterL: jitter,
+          };
+          const a = seededBuildingColours(
+            {},
+            undefined,
+            key,
+            false,
+            colours,
+            heightM,
+          );
+          const d = rgbToLab(a.wall).l - rgbToLab(tone).l;
+          expect(Math.abs(d)).toBeLessThanOrEqual(jitter + 0.5);
+          expect(
+            seededBuildingColours({}, undefined, key, false, colours, heightM),
+          ).toEqual(a);
+        },
+      ),
+      { numRuns: 1000 },
+    );
+  });
+
+  it("changes nothing at a jitter of 0, byte for byte", () => {
+    fc.assert(
+      fc.property(
+        fc.string(),
+        fc.integer({ min: 0, max: 0xffffff }),
+        (key, tone) => {
+          const colours = {
+            ...DEFAULT_PALETTE_COLOURS,
+            walls: [tone],
+            wallJitterL: 0,
+          };
+          expect(
+            seededBuildingColours({}, undefined, key, false, colours).wall,
+          ).toBe(tone);
+        },
+      ),
     );
   });
 });

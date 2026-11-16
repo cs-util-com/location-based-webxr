@@ -211,11 +211,11 @@ function markingsDistance(scheme: ColourScheme): number {
  */
 const MIN_MARKINGS_DISTANCE = 15;
 
-describe("the ten schemes", () => {
-  it("are the plan's ten, in its order", () => {
+describe("the schemes", () => {
+  it("are the plan's ten in its order, then the later looks", () => {
     // Why this test matters: the dropdown order and the link names are the
-    // owner's vocabulary for rating them (D5); a renamed key breaks every
-    // `?scheme=` link he has sent.
+    // vocabulary for rating them (D5); a renamed key breaks every
+    // `?scheme=` link already sent, so a new look is appended, never inserted.
     expect(COLOUR_SCHEME_NAMES).toEqual([
       "today",
       "architect",
@@ -227,6 +227,7 @@ describe("the ten schemes", () => {
       "night",
       "mono",
       "contrast",
+      "urban",
     ]);
   });
 
@@ -240,6 +241,52 @@ describe("the ten schemes", () => {
         leastDistance(scheme),
         `${name}: ${JSON.stringify(groupLightness(scheme))}`,
       ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+    }
+  });
+
+  it("keep EVERY tower wall tone apart from roads and ground", () => {
+    // Why this test matters: a tower draws ONE tone of `towerWalls` on all
+    // its walls, so a tone near the ground is a whole tower lost against it,
+    // however comfortable the list's mean: a mean check passed while two
+    // tones sat within 2 L* of urban's ground. Each tone is held to the floor
+    // PLUS the scheme's wall jitter, which shifts a wall by up to
+    // `wallJitterL` L* either way.
+    for (const name of COLOUR_SCHEME_NAMES) {
+      const { city } = COLOUR_SCHEMES[name];
+      // The tower rule is off at an infinite height.
+      if (!Number.isFinite(city.towerFromM)) continue;
+      const { roads, ground } = groupLightness(COLOUR_SCHEMES[name]);
+      for (const rgb of city.towerWalls) {
+        const l = lightness(rgb);
+        const least = Math.min(Math.abs(l - roads), Math.abs(l - ground));
+        expect(
+          least,
+          `${name} tower 0x${rgb.toString(16)}: ${l.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}, jitter ${city.wallJitterL}`,
+        ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE + city.wallJitterL);
+      }
+    }
+  });
+
+  it("keep EVERY material wall tone apart from roads and ground", () => {
+    // Why this test matters: a material-tagged building draws exactly ONE
+    // tone, its material's, on every wall, so a mean over the materials says
+    // nothing about any one building: a glass tone 2 L* from the ground hid
+    // behind a comfortable group mean. Each tone is held to the floor PLUS
+    // the scheme's wall jitter: every wall is shifted by up to `wallJitterL`
+    // L* either way, so a tone exactly at the floor renders a building that
+    // much closer to the ground.
+    for (const name of COLOUR_SCHEME_NAMES) {
+      const { city } = COLOUR_SCHEMES[name];
+      if (!city.honourMaterialTags) continue;
+      const { roads, ground } = groupLightness(COLOUR_SCHEMES[name]);
+      for (const [material, rgb] of city.materialWalls) {
+        const l = lightness(rgb);
+        const least = Math.min(Math.abs(l - roads), Math.abs(l - ground));
+        expect(
+          least,
+          `${name} ${material}: ${l.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}, jitter ${city.wallJitterL}`,
+        ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE + city.wallJitterL);
+      }
     }
   });
 
@@ -275,7 +322,7 @@ describe("the ten schemes", () => {
     const honouring = COLOUR_SCHEME_NAMES.filter(
       (name) => COLOUR_SCHEMES[name].city.honourColourTags,
     );
-    expect(honouring).toEqual(["today", "mediterranean", "nordic"]);
+    expect(honouring).toEqual(["today", "mediterranean", "nordic", "urban"]);
     expect(COLOUR_SCHEMES.map.city.roadsBySurface).toBe(false);
   });
 
@@ -294,5 +341,76 @@ describe("the ten schemes", () => {
     // noon, the model must not glare.
     expect(COLOUR_SCHEMES.night.brightnessTrim).toBeGreaterThan(1);
     expect(COLOUR_SCHEMES.architect.brightnessTrim).toBeLessThan(1);
+  });
+});
+
+describe("the urban scheme (real-albedo grey ladder)", () => {
+  const urban = COLOUR_SCHEMES.urban;
+
+  it("is a ladder of real facade, roof and asphalt reflectances", () => {
+    // Why this test matters: the look's point is a value ladder at real
+    // albedos (walls from dark stone to limestone, aged asphalt, a neutral
+    // ground). The hex proxy pins the targets the look was designed to, so a
+    // retune that drifts back to one bright beige band fails here.
+    const { buildings, roads, ground } = groupLightness(urban);
+    expect(buildings).toBeGreaterThan(53);
+    expect(buildings).toBeLessThan(57);
+    expect(roads).toBeGreaterThan(10);
+    expect(roads).toBeLessThan(14);
+    expect(ground).toBeGreaterThan(40);
+    expect(ground).toBeLessThan(44);
+    expect(leastDistance(urban)).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+    const walls = urban.city.walls.map(lightness);
+    // A ladder, not a band: the walls span at least 30 L*.
+    expect(Math.max(...walls) - Math.min(...walls)).toBeGreaterThanOrEqual(30);
+  });
+
+  it("honours colour tags, colours roads by class, and trims up for its darker walls", () => {
+    // Why this test matters: the tags carry real facade colours where mapped;
+    // one asphalt family needs the surface colours off; the walls' mean
+    // reflectance is well below today's, so the trim compensates.
+    expect(urban.city.honourColourTags).toBe(true);
+    expect(urban.city.roadsBySurface).toBe(false);
+    expect(urban.city.walls).toHaveLength(20);
+    expect(urban.city.flatRoofs).toHaveLength(6);
+    expect(urban.city.pitchedRoofs).toHaveLength(7);
+    expect(urban.city.ground).toBe(0x626462);
+    expect(urban.brightnessTrim).toBe(1.6);
+  });
+
+  it("tells towers from walk-ups, reads material tags and jitters each building", () => {
+    // Why this test matters: a tower is not a walk-up (city look exploration
+    // 2026-11-15, direction B). Towers from 40 m draw glass, dark stone,
+    // limestone and steel; a mapped material picks its real albedo; a seeded
+    // 3 L* jitter breaks up runs of one tone. The values are the design's, so
+    // a retune is a deliberate edit here, not drift.
+    const city = urban.city;
+    expect(city.towerWalls).toEqual([
+      0x40484c, 0x7d858b, 0x3c4146, 0x484744, 0x828487, 0xb1aaa0, 0x9d9b96,
+      0x838789,
+    ]);
+    expect(city.towerFromM).toBe(40);
+    expect(city.honourMaterialTags).toBe(true);
+    expect([...city.materialWalls]).toEqual([
+      ["glass", 0x3d474d],
+      ["brick", 0x9f786c],
+      ["concrete", 0x979692],
+      ["stone", 0xb3aa9d],
+      ["sandstone", 0xb39c87],
+      ["granite", 0x86807d],
+      ["metal", 0x888c8e],
+      ["plaster", 0xbeb5a7],
+      ["wood", 0x977c6a],
+    ]);
+    expect(city.wallJitterL).toBe(3);
+  });
+
+  it("keeps the default's land use, trees and barriers", () => {
+    // Why this test matters: the look changes buildings, roads and ground
+    // only; vegetation and land use stay today's, so a comparison with today
+    // isolates the palette.
+    expect(urban.city.landUse).toBe(DEFAULT_CITY_COLOUR_SCHEME.landUse);
+    expect(urban.city.trees).toBe(DEFAULT_CITY_COLOUR_SCHEME.trees);
+    expect(urban.city.barriers).toBe(DEFAULT_CITY_COLOUR_SCHEME.barriers);
   });
 });

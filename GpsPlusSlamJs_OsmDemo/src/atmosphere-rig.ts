@@ -32,6 +32,11 @@ import {
 } from "gps-plus-slam-app-framework/visualization/atmosphere/sky-atmosphere";
 import * as THREE from "three";
 
+import {
+  type HazeVeil,
+  veilDisplayLinear,
+  veilSceneColour,
+} from "./haze-veil.js";
 import type { SunAngles, Vector3Like } from "./sun-position.js";
 import { sunDirection } from "./sun-position.js";
 
@@ -147,9 +152,27 @@ const SUN_INTENSITY = 1.1;
  * Meteorological visibility, km. The middle of the look-dev presets (dawn 30,
  * golden 45, noon 60): at the 2400 m far plane the air keeps ~80 % of the
  * light, so distance reads as haze without hiding the plate. A taste value,
- * set on the page, not measured here.
+ * set on the page, not measured here. The shipped default of the light
+ * dialog's haze visibility, which `setHaze` changes.
  */
-const VISIBILITY_KM = 45;
+export const HAZE_VISIBILITY_KM = 45;
+
+/**
+ * Where the haze's boundary fade starts, as a share of the draw distance
+ * (`fog.near = ratio x fog.far`; `building-view.ts` applies it and says why
+ * it is a ratio). The physical term `exp(-sigma d)` hazes every distance
+ * from the camera on; this fade only adds to it, so the haze still
+ * COMPLETES at the far plane. The shipped default of the light dialog's
+ * haze start, which `setHaze` changes.
+ */
+export const HAZE_START_RATIO = 0.66;
+
+/**
+ * Where the haze starts covering the ground's rim, as a share of the
+ * ground's extent from its centre (`setGroundRim`); it is complete at the
+ * extent itself, where the ground stops. Applied only while a veil is on.
+ */
+export const HAZE_RIM_INNER_RATIO = 0.6;
 
 /**
  * The sky's cloud cover, 0…1 (the share of the sky clouded): the look-dev
@@ -252,6 +275,28 @@ export function nightFloorWeight(elevationRad: number): number {
   return Math.min(1, Math.max(0, t));
 }
 
+/** The light dialog's haze, as `AtmosphereRig.setHaze` takes it. */
+interface HazeSetting {
+  readonly visibilityKm: number;
+  readonly startRatio: number;
+}
+
+/** `setHaze`'s validation: the setting unchanged, or a RangeError. */
+function assertHaze(haze: HazeSetting): HazeSetting {
+  const { visibilityKm, startRatio } = haze;
+  if (!(Number.isFinite(visibilityKm) && visibilityKm > 0)) {
+    throw new RangeError(
+      `haze visibility must be a positive finite number, got ${visibilityKm}`,
+    );
+  }
+  if (!(Number.isFinite(startRatio) && startRatio >= 0 && startRatio < 1)) {
+    throw new RangeError(
+      `haze start must be in [0, 1) of the draw distance, got ${startRatio}`,
+    );
+  }
+  return haze;
+}
+
 /** What the rig uses of `SkyAtmosphere` (the seam its tests stub). */
 export type SkyLike = Pick<
   SkyAtmosphere,
@@ -260,6 +305,7 @@ export type SkyLike = Pick<
   | "setAutoExposureAdaptation"
   | "applySunLight"
   | "horizonColour"
+  | "setHorizonVeil"
   | "sharedUniforms"
   | "visibilityKm"
   | "dispose"
@@ -307,11 +353,20 @@ export class AtmosphereRig {
   /** The exposure the light dialog set (`setExposure`); the shipped look by default. */
   private exposureEv: number = NATURAL_LIGHT_COMPENSATION_EV;
   private adaptation: number = NATURAL_LIGHT_ADAPTATION;
+  /** The air's visibility the light dialog set (`setHaze`), km. */
+  private visibilityKm: number = HAZE_VISIBILITY_KM;
+  private startRatio: number = HAZE_START_RATIO;
+  /** The haze veil the light dialog set (`setHazeVeil`); none by default. */
+  private veil: HazeVeil | null = null;
+  /** The ground's centre and extent (`setGroundRim`), once the view set it. */
+  private groundRim:
+    | { readonly centre: { x: number; z: number }; readonly extentM: number }
+    | undefined;
 
   constructor(options: AtmosphereRigOptions) {
     this.scene = options.scene;
     this.sun = options.sun;
-    this.haze = new AtmosphereHaze({ visibilityKm: VISIBILITY_KM });
+    this.haze = new AtmosphereHaze({ visibilityKm: this.visibilityKm });
     this.nightFloor = new THREE.AmbientLight(NIGHT_FLOOR.colour, 0);
     this.nightFloor.name = NIGHT_FLOOR_NAME;
     this.scene.add(this.nightFloor);
@@ -324,7 +379,7 @@ export class AtmosphereRig {
       sky = create({
         renderer: options.renderer,
         scene: this.scene,
-        visibilityKm: VISIBILITY_KM,
+        visibilityKm: this.visibilityKm,
         sunIntensity: SUN_INTENSITY,
       });
     } catch (error) {
@@ -419,6 +474,97 @@ export class AtmosphereRig {
   }
 
   /**
+   * The haze the light dialog tunes: the air's meteorological visibility
+   * and where the boundary fade starts (a share of the draw distance, read
+   * back as {@link hazeStartRatio} by whoever sets the fog's near and far).
+   * The visibility is the SKY's: the sky's tables are rebuilt with it and
+   * the haze on the city re-reads it, so the city fades toward a sky drawn
+   * for the same air. An unchanged visibility touches nothing. Validated
+   * before any change.
+   *
+   * @throws RangeError for a visibility that is not a positive finite
+   *   number, or a start outside [0, 1).
+   */
+  setHaze(haze: HazeSetting): void {
+    const { visibilityKm, startRatio } = assertHaze(haze);
+    this.startRatio = startRatio;
+    if (visibilityKm === this.visibilityKm) return;
+    this.visibilityKm = visibilityKm;
+    if (this.sky !== undefined) {
+      this.sky.configure({ visibilityKm });
+      if (this.sunSet) this.syncFromSky(this.sky);
+    } else if (this.lastDirection !== undefined) {
+      this.applyFallback(this.lastDirection);
+    }
+  }
+
+  /**
+   * The haze veil the light dialog tunes (`haze-veil.ts`): the colour a
+   * fully hazed distance shows, in place of the sky's colour in that
+   * direction; null gives the sky's colour back. The haze gets the scene
+   * colour that the renderer's exposure tone maps to the veil. Uniforms
+   * only: the sky is not rebuilt, and the physical path leaves the scene fog
+   * (which AR swaps for its own) alone. On the fallback, whose haze is the
+   * stock fog, the veil is the fog colour. Validated before any change.
+   *
+   * @throws RangeError for a veil `veilSceneColour` refuses.
+   */
+  setHazeVeil(veil: HazeVeil | null): void {
+    const scene =
+      veil === null ? null : veilSceneColour(veil, TONE_MAPPING_EXPOSURE);
+    this.veil = veil;
+    this.haze.setVeil(scene);
+    this.sky?.setHorizonVeil(scene, veil?.riseDeg ?? 0);
+    this.applyRim();
+    if (this.fallback !== undefined && this.lastDirection !== undefined) {
+      this.applyFallback(this.lastDirection);
+    }
+  }
+
+  /**
+   * Where the ground is and how far it reaches from its centre, metres, in
+   * the scene's horizontal plane (x, z). While a veil is on, the haze covers
+   * the ground's rim fully (from `HAZE_RIM_INNER_RATIO` of the extent to the
+   * extent), so the tile's edge vanishes into the veil the way the horizon
+   * does; without a veil the haze is the shipped one. Validated first.
+   *
+   * @throws RangeError for a centre that is not finite or an extent that is
+   *   not positive and finite.
+   */
+  setGroundRim(centre: { x: number; z: number }, extentM: number): void {
+    if (!(Number.isFinite(centre.x) && Number.isFinite(centre.z))) {
+      throw new RangeError(
+        `the ground's centre must be finite, got ${centre.x}, ${centre.z}`,
+      );
+    }
+    if (!(Number.isFinite(extentM) && extentM > 0)) {
+      throw new RangeError(
+        `the ground's extent must be positive, got ${extentM}`,
+      );
+    }
+    this.groundRim = { centre: { x: centre.x, z: centre.z }, extentM };
+    this.applyRim();
+  }
+
+  private applyRim(): void {
+    const rim = this.groundRim;
+    if (this.veil === null || rim === undefined) {
+      this.haze.setRim(null);
+      return;
+    }
+    this.haze.setRim(
+      rim.centre,
+      rim.extentM * HAZE_RIM_INNER_RATIO,
+      rim.extentM,
+    );
+  }
+
+  /** Where the haze's boundary fade starts, as a share of the draw distance. */
+  get hazeStartRatio(): number {
+    return this.startRatio;
+  }
+
+  /**
    * Call before every render. Hazes materials built since the last frame
    * (buildings, cells, routes are rebuilt all the time). It would also heal
    * a material whose `onBeforeCompile` a LATER installer re-assigned; none
@@ -497,14 +643,18 @@ export class AtmosphereRig {
     const parts = this.fallback;
     if (parts === undefined) return;
     const sky = fallbackSky(direction, {
-      visibilityKm: VISIBILITY_KM,
+      visibilityKm: this.visibilityKm,
       sunIntensity: SUN_INTENSITY,
       exposureCompensationEv: this.exposureEv,
       autoExposureAdaptation: this.adaptation,
     });
     this.sun.color.setRGB(...sky.sun.colour);
     this.sun.intensity = sky.sun.intensity;
-    this.setFogColour(new THREE.Color(...sky.horizon));
+    this.setFogColour(
+      new THREE.Color(
+        ...(this.veil === null ? sky.horizon : veilDisplayLinear(this.veil)),
+      ),
+    );
     // Radiance-coloured, so π turns it into the irradiance three's
     // hemisphere term expects; the zenith's hue is an approximation of the
     // whole sky's (it is a fallback).

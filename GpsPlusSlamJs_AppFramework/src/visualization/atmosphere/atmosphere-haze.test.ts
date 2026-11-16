@@ -429,3 +429,131 @@ describe('AtmosphereHaze with a CHAINING installer after it (M3 review, finding 
     expect(shader.vertexShader).toContain('// installer');
   });
 });
+
+describe('AtmosphereHaze.setVeil (a haze colour of its own)', () => {
+  // WHY: an app may want its distance to fade toward a colour it chooses
+  // rather than toward the sky in the view direction (OsmDemo's light dialog
+  // tunes a bright veil while the sky stays as it is). Off by default, so
+  // every existing haze renders exactly as before: the shader mixes with a
+  // weight of 0, which returns the sky colour unchanged.
+  it('is off by default, and a set veil is a scene-linear colour with weight 1', () => {
+    const h = haze();
+    expect(h.uniforms.atmHazeVeilOn.value).toBe(0);
+    expect(h.veil).toBeNull();
+    h.setVeil([0.5, 0.6, 0.7]);
+    expect(h.uniforms.atmHazeVeilOn.value).toBe(1);
+    expect(h.uniforms.atmHazeVeil.value.toArray()).toEqual([0.5, 0.6, 0.7]);
+    expect(h.veil).toEqual([0.5, 0.6, 0.7]);
+    h.setVeil(null);
+    expect(h.uniforms.atmHazeVeilOn.value).toBe(0);
+    expect(h.veil).toBeNull();
+  });
+
+  // WHY: a sync copies the atmosphere's state; the veil is the app's, so a
+  // sun move or an exposure change must not drop it.
+  it('survives a sync, and reaches patched materials through shared uniforms', () => {
+    const h = haze();
+    const material = new THREE.MeshStandardMaterial();
+    h.apply(material);
+    const shader = compile(material, 'standard');
+    h.setVeil([0.2, 0.3, 0.4]);
+    h.sync({ sharedUniforms: sharedUniforms(), visibilityKm: 20 });
+    expect(shader.uniforms.atmHazeVeilOn.value).toBe(1);
+    expect(shader.uniforms.atmHazeVeil).toBe(h.uniforms.atmHazeVeil);
+  });
+
+  // WHY: the veil replaces the sky's in-scatter colour, so it must enter
+  // AFTER the sky-view lookup and before the blend that uses it; in the
+  // stock-fog branch (AR) it has no part at all.
+  it('mixes into the in-scatter colour after the sky lookup, only in atmosphere mode', () => {
+    const h = haze();
+    const material = new THREE.MeshStandardMaterial();
+    h.apply(material);
+    const f = compile(material, 'standard').fragmentShader;
+    const lookupAt = f.indexOf('vec3 atmHazeSky = texture2D(');
+    const veilAt = f.indexOf(
+      'atmHazeSky = mix(atmHazeSky, atmHazeVeil, atmHazeVeilOn);'
+    );
+    const blendAt = f.indexOf(
+      'gl_FragColor.rgb = gl_FragColor.rgb * atmHazeKeep'
+    );
+    expect(lookupAt).toBeGreaterThan(0);
+    expect(veilAt).toBeGreaterThan(lookupAt);
+    expect(blendAt).toBeGreaterThan(veilAt);
+    expect(f.indexOf('if (atmHazeMode > 0.5)')).toBeLessThan(veilAt);
+  });
+
+  it('refuses a colour that is not three finite values of at least 0, changing nothing', () => {
+    const h = haze();
+    h.setVeil([0.1, 0.1, 0.1]);
+    for (const bad of [
+      [Number.NaN, 0, 0],
+      [0, -0.01, 0],
+      [0, 0, Number.POSITIVE_INFINITY],
+    ] as const) {
+      expect(() => h.setVeil(bad)).toThrow(RangeError);
+    }
+    expect(h.veil).toEqual([0.1, 0.1, 0.1]);
+  });
+});
+
+describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
+  // WHY: a ground that stops (a tile of a few km) shows its edge against the
+  // void unless the haze has fully covered it there. The rim makes the
+  // boundary fade complete by a distance from the ground's centre, whatever
+  // the draw distance. Off by default, so every existing haze is unchanged.
+  it('is off by default, and a set rim is its centre and its two radii', () => {
+    const h = haze();
+    expect(h.uniforms.atmHazeRimOn.value).toBe(0);
+    expect(h.rim).toBeNull();
+    h.setRim({ x: 10, z: -20 }, 1800, 2400);
+    expect(h.uniforms.atmHazeRimOn.value).toBe(1);
+    expect(h.uniforms.atmHazeRim.value.toArray()).toEqual([
+      10, -20, 1800, 2400,
+    ]);
+    expect(h.rim).toEqual({
+      centre: { x: 10, z: -20 },
+      innerM: 1800,
+      outerM: 2400,
+    });
+    h.setRim(null);
+    expect(h.uniforms.atmHazeRimOn.value).toBe(0);
+    expect(h.rim).toBeNull();
+  });
+
+  // WHY: the rim only raises the boundary fade, so it can never make a near
+  // thing clearer than the draw distance's own fade would; and it measures
+  // in the world (the ground's frame), not from the camera.
+  it('raises the boundary fade by the world distance from the centre, in atmosphere mode only', () => {
+    const h = haze();
+    const material = new THREE.MeshStandardMaterial();
+    h.apply(material);
+    const f = compile(material, 'standard').fragmentShader;
+    const boundaryAt = f.indexOf('float atmBoundary');
+    const rimAt = f.indexOf(
+      'atmBoundary = max(atmBoundary, atmHazeRimOn * smoothstep('
+    );
+    const keepAt = f.indexOf('vec3 atmHazeKeep');
+    expect(boundaryAt).toBeGreaterThan(0);
+    expect(rimAt).toBeGreaterThan(boundaryAt);
+    expect(keepAt).toBeGreaterThan(rimAt);
+    expect(f).toContain(
+      'cameraPosition + (vec4(vAtmViewPosition, 0.0) * viewMatrix).xyz'
+    );
+    expect(f.indexOf('if (atmHazeMode > 0.5)')).toBeLessThan(rimAt);
+  });
+
+  it('refuses radii that do not rise or a centre that is not finite, changing nothing', () => {
+    const h = haze();
+    h.setRim({ x: 0, z: 0 }, 100, 200);
+    expect(() => h.setRim({ x: 0, z: 0 }, 200, 200)).toThrow(RangeError);
+    expect(() => h.setRim({ x: 0, z: 0 }, -1, 200)).toThrow(RangeError);
+    expect(() => h.setRim({ x: Number.NaN, z: 0 }, 100, 200)).toThrow(
+      RangeError
+    );
+    expect(() =>
+      h.setRim({ x: 0, z: 0 }, 100, Number.POSITIVE_INFINITY)
+    ).toThrow(RangeError);
+    expect(h.rim).toEqual({ centre: { x: 0, z: 0 }, innerM: 100, outerM: 200 });
+  });
+});

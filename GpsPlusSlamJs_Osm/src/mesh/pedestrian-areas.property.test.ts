@@ -41,54 +41,71 @@ function measure(mesh: MeshData): { area: number; leastUp: number } {
   return { area, leastUp };
 }
 
+/**
+ * A random star-shaped ring around a centre (simple by construction), its
+ * centre offset, and the cut spacing; the mesh must cover the ring's own
+ * area with every triangle facing up.
+ */
+const starAtSpacing = fc.tuple(
+  fc.array(fc.integer({ min: 30, max: 400 }), {
+    minLength: 3,
+    maxLength: 12,
+  }),
+  fc.integer({ min: -300, max: 300 }),
+  fc.integer({ min: 2, max: 48 }),
+);
+
 describe("pedestrian area properties", () => {
   it("cover the polygon's own area, facing up, at any spacing", () => {
-    // A random star-shaped ring around a centre: simple by construction.
     fc.assert(
-      fc.property(
-        fc.array(fc.integer({ min: 30, max: 400 }), {
-          minLength: 3,
-          maxLength: 12,
-        }),
-        fc.integer({ min: -300, max: 300 }),
-        fc.integer({ min: 2, max: 48 }),
-        (radii, offset, spacingM) => {
-          const centre = offset / 10;
-          const ring = radii.map((r, i) => {
-            const angle = (i / radii.length) * Math.PI * 2;
-            return {
-              x: centre + (r / 10) * Math.cos(angle),
-              y: centre + (r / 10) * Math.sin(angle),
-            };
-          });
-          let twice = 0;
-          ring.forEach((a, i) => {
-            const b = ring[(i + 1) % ring.length] ?? a;
-            twice += a.x * b.y - b.x * a.y;
-          });
-          const closed = [...ring, ring[0] ?? { x: 0, y: 0 }];
-          const feature = {
-            type: "way",
-            id: 1,
-            tags: { highway: "pedestrian", area: "yes" },
-            geometry: closed.map((q) => at(q.x, q.y)),
-          } as unknown as OsmFeature;
-          const built = buildPedestrianAreas([feature], {
-            frame: FRAME,
-            window: WIDE,
-            spacingM,
-          });
-          expect(built).toHaveLength(1);
-          const { area, leastUp } = measure(
-            (built[0] as { mesh: MeshData }).mesh,
-          );
-          const expected = Math.abs(twice) / 2;
-          expect(Math.abs(area - expected)).toBeLessThan(
-            1e-3 * expected + 0.01,
-          );
-          expect(leastUp).toBeGreaterThan(0);
-        },
-      ),
+      fc.property(starAtSpacing, (star) => expectCoveredFacingUp(star)),
     );
   });
+
+  // Why: this run drew a zero-area triangle. A fan triangle of about a
+  // square millimetre passed the sliver check on its own points, and then
+  // one corner merged into a neighbour's shared vertex a fraction of a
+  // millimetre away, which laid all three corners on one line. The check
+  // must hold for the corners the mesh actually stores.
+  it("draws no flat triangle where a corner merges into a shared cut point", () => {
+    expectCoveredFacingUp([[30, 30, 30, 370, 172, 319], 292, 2]);
+  });
 });
+
+/** The property itself, for one drawn star. */
+function expectCoveredFacingUp([radii, offset, spacingM]: [
+  number[],
+  number,
+  number,
+]): void {
+  const centre = offset / 10;
+  const ring = radii.map((r, i) => {
+    const angle = (i / radii.length) * Math.PI * 2;
+    return {
+      x: centre + (r / 10) * Math.cos(angle),
+      y: centre + (r / 10) * Math.sin(angle),
+    };
+  });
+  let twice = 0;
+  ring.forEach((a, i) => {
+    const b = ring[(i + 1) % ring.length] ?? a;
+    twice += a.x * b.y - b.x * a.y;
+  });
+  const closed = [...ring, ring[0] ?? { x: 0, y: 0 }];
+  const feature = {
+    type: "way",
+    id: 1,
+    tags: { highway: "pedestrian", area: "yes" },
+    geometry: closed.map((q) => at(q.x, q.y)),
+  } as unknown as OsmFeature;
+  const built = buildPedestrianAreas([feature], {
+    frame: FRAME,
+    window: WIDE,
+    spacingM,
+  });
+  expect(built).toHaveLength(1);
+  const { area, leastUp } = measure((built[0] as { mesh: MeshData }).mesh);
+  const expected = Math.abs(twice) / 2;
+  expect(Math.abs(area - expected)).toBeLessThan(1e-3 * expected + 0.01);
+  expect(leastUp).toBeGreaterThan(0);
+}

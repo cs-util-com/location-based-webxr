@@ -1863,3 +1863,55 @@ describe('SkyAtmosphere live noise in the march (round-3 plan §19 item 5)', () 
     ).toBe(u);
   });
 });
+
+describe('SkyAtmosphere horizon veil', () => {
+  const materials = (setupResult: ReturnType<typeof setup>) => {
+    setupResult.atmosphere.setSun(UP);
+    const sky = setupResult.atmosphere.sky.material as THREE.ShaderMaterial;
+    const bake = (setupResult.device.bakedScene!.children[0] as THREE.Mesh)
+      .material as THREE.ShaderMaterial;
+    return { sky, bake };
+  };
+
+  // WHY: the veil is a colour on SCREEN for the visible sky only. In the
+  // bake it would light every surface's image-based light with it, so the
+  // whole city would brighten with a taste knob meant for the horizon.
+  it('reaches the visible sky only, and null takes it off', () => {
+    const s = setup();
+    const { sky, bake } = materials(s);
+    s.atmosphere.setHorizonVeil([0.2, 0.3, 0.4], 4);
+    expect(sky.uniforms.atmSkyVeilOn!.value).toBe(1);
+    expect((sky.uniforms.atmSkyVeil!.value as THREE.Vector3).toArray()).toEqual(
+      [0.2, 0.3, 0.4]
+    );
+    expect(sky.uniforms.atmSkyVeilRise!.value).toBeCloseTo(
+      Math.sin((4 * Math.PI) / 180),
+      12
+    );
+    expect(bake.uniforms.atmSkyVeilOn!.value).toBe(0);
+    expect(s.atmosphere.horizonVeil).toEqual({
+      colour: [0.2, 0.3, 0.4],
+      riseDeg: 4,
+    });
+    s.atmosphere.setHorizonVeil(null);
+    expect(sky.uniforms.atmSkyVeilOn!.value).toBe(0);
+    expect(s.atmosphere.horizonVeil).toBeNull();
+  });
+
+  it('refuses a colour or rise it cannot draw, and keeps the last one', () => {
+    const s = setup();
+    const { sky } = materials(s);
+    s.atmosphere.setHorizonVeil([0.2, 0.3, 0.4], 4);
+    expect(() => s.atmosphere.setHorizonVeil([0.2, -1, 0.4], 4)).toThrow(
+      RangeError
+    );
+    expect(() =>
+      s.atmosphere.setHorizonVeil([0.2, 0.3, Number.NaN], 4)
+    ).toThrow(RangeError);
+    expect(() => s.atmosphere.setHorizonVeil([0.2, 0.3, 0.4], 95)).toThrow(
+      RangeError
+    );
+    expect(sky.uniforms.atmSkyVeilOn!.value).toBe(1);
+    expect(s.atmosphere.horizonVeil?.riseDeg).toBe(4);
+  });
+});

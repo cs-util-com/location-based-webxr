@@ -16,8 +16,10 @@ import {
   createLightDialog,
   type LightDialogDeps,
 } from "./light-dialog.js";
+import { veilLightnessBounds } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
+  lightDefaultsFor,
   type LightSettings,
 } from "./light-settings.js";
 
@@ -90,6 +92,123 @@ describe("createLightDialog", () => {
       new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
     );
     expect(dialog.open).toBe(false);
+  });
+
+  // WHY (city look, haze inside the city): the two haze values are tuned
+  // here like every other light value, within the URL's bounds, and an
+  // untouched dialog shows today's haze.
+  it("offers the haze visibility and start, at today's values", () => {
+    const { $, slide, onChange } = setup();
+    const vis = $<HTMLInputElement>("light-hazeVisibilityKm");
+    const start = $<HTMLInputElement>("light-hazeStartRatio");
+    expect([vis.min, vis.max, vis.value]).toEqual(["9", "60", "45"]);
+    expect([start.min, start.max, start.value]).toEqual(["0", "0.9", "0.66"]);
+    slide("hazeVisibilityKm", 15);
+    slide("hazeStartRatio", 0.2);
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVisibilityKm: 15,
+      hazeStartRatio: 0.2,
+    });
+  });
+
+  // WHY: the veil is tuned here like the haze; at its default (lightness 0)
+  // the haze keeps the sky's colour, so an untouched dialog changes nothing.
+  it("offers the haze veil, off by default, and applies it live", () => {
+    const { $, slide, onChange } = setup();
+    const l = $<HTMLInputElement>("light-hazeVeilLightness");
+    const t = $<HTMLInputElement>("light-hazeVeilTint");
+    const a = $<HTMLInputElement>("light-hazeVeilTintA");
+    expect([l.min, l.max, l.value]).toEqual(["0", "90", "0"]);
+    expect([t.min, t.max, t.value]).toEqual(["-24", "40", "-4"]);
+    expect([a.min, a.max, a.value]).toEqual(["-10", "10", "0"]);
+    expect(l.parentElement!.textContent).toContain("0 = the sky");
+    expect(a.parentElement!.textContent).toContain("a*");
+    slide("hazeVeilLightness", 76);
+    slide("hazeVeilTint", -6);
+    slide("hazeVeilTintA", 2);
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVeilLightness: 76,
+      hazeVeilTint: -6,
+      hazeVeilTintA: 2,
+    });
+  });
+
+  // WHY: a colour can only be shown up to a lightness that stays below the
+  // tone curve's knee. A slider asking for more must never silently draw
+  // something else: the dialog says the veil is held, and at which L*, and
+  // the note goes once the colour can be shown as asked. Reset clears it.
+  it("says when the veil's lightness is held for its colour", () => {
+    const { $, slide } = setup();
+    const note = $<HTMLElement>("light-veil-note");
+    expect(note.hidden).toBe(true);
+    slide("hazeVeilLightness", 90);
+    slide("hazeVeilTint", 40);
+    const max = veilLightnessBounds(0, 40)!.max;
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain(`L* ${max}`);
+    expect(note.textContent).toContain("knee");
+    slide("hazeVeilLightness", 60);
+    expect(note.hidden).toBe(true);
+    // Too dark for a strong yellow: held at the colour's floor.
+    slide("hazeVeilLightness", 10);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain(`L* ${veilLightnessBounds(0, 40)!.min}`);
+    $("light-reset").click();
+    expect(note.hidden).toBe(true);
+  });
+
+  // WHY: a hand-written link may state a lightness off the 0.1 grid that the
+  // screen does not show exactly; the view draws the nearest grid point, and
+  // the note must name that cause rather than the knee or the gamut.
+  it("names the grid when an off-grid lightness is drawn at its nearest tenth", () => {
+    const { $ } = setup({
+      initial: {
+        ...DEFAULT_LIGHT_SETTINGS,
+        hazeVeilLightness: 28.22,
+        hazeVeilTint: -21,
+        hazeVeilTintA: -10,
+      },
+    });
+    const note = $<HTMLElement>("light-veil-note");
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toBe(
+      "Veil shown at L* 28.2: the nearest lightness the screen shows exactly in this colour.",
+    );
+  });
+
+  // WHY: a new visibility rebuilds the sky's tables, so a drag that applied
+  // every step rebuilt them at every whole km. The value is applied once, on
+  // release; its readout still follows the thumb while it moves.
+  it("applies the haze visibility on release, its readout live", () => {
+    const { $, onChange } = setup();
+    const vis = $<HTMLInputElement>("light-hazeVisibilityKm");
+    const out = vis.parentElement!.querySelector("output")!;
+    vis.value = "20";
+    vis.dispatchEvent(new Event("input"));
+    expect(out.value).toBe("20");
+    expect(onChange).not.toHaveBeenCalled();
+    vis.value = "15";
+    vis.dispatchEvent(new Event("input"));
+    vis.dispatchEvent(new Event("change"));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVisibilityKm: 15,
+    });
+  });
+
+  // WHY: every other value is cheap to apply, so it stays live on the drag.
+  it("applies the other values while they are dragged", () => {
+    const { $, onChange } = setup();
+    const start = $<HTMLInputElement>("light-hazeStartRatio");
+    start.value = "0.3";
+    start.dispatchEvent(new Event("input"));
+    expect(onChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeStartRatio: 0.3,
+    });
   });
 
   // WHY (review, 2026-09-24): the dialog opens by its button or the l key, so
@@ -211,6 +330,52 @@ describe("createLightDialog", () => {
     const back = onChange.mock.calls.at(-1)![0];
     expect(back.gainFullDeg).toBe(10);
     expect(back.gainFromDeg).toBe(9);
+  });
+
+  it("resets to the scheme's defaults, and moves onto a new scheme's", () => {
+    // Why this test matters: urban is tuned with its own light, so Reset
+    // must land on urban's light while urban is shown, and a scheme switch
+    // must carry what the viewer set while the untouched rest follows.
+    const urban = lightDefaultsFor("urban");
+    const { dialog, onChange, slide, $ } = setup({
+      initial: urban,
+      defaults: urban,
+    });
+    expect(dialog.defaults).toBe(urban);
+    slide("gainMax", 2);
+    $("light-reset").click();
+    expect(onChange).toHaveBeenLastCalledWith(urban);
+    slide("hazeVisibilityKm", 15);
+    dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    expect(dialog.defaults).toBe(DEFAULT_LIGHT_SETTINGS);
+    const moved = { ...DEFAULT_LIGHT_SETTINGS, hazeVisibilityKm: 15 };
+    expect(dialog.settings).toEqual(moved);
+    expect(onChange).toHaveBeenLastCalledWith(moved);
+    expect($<HTMLInputElement>("light-hazeVeilLightness").value).toBe("0");
+  });
+
+  it("keeps a veil switched off on urban across urban, today and back to urban", () => {
+    // Why this test matters: 0 is today's default, so the value alone reads
+    // as untouched under today and the way back to urban would bring the veil
+    // again; the dialog remembers that the viewer set it, by the link or the
+    // slider, until Reset.
+    const urban = lightDefaultsFor("urban");
+    const off = { ...urban, hazeVeilLightness: 0 };
+    const fromLink = setup({ initial: off, defaults: urban });
+    fromLink.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    fromLink.dialog.setDefaults(urban);
+    expect(fromLink.dialog.settings).toEqual(off);
+    fromLink.dialog.dispose();
+
+    const bySlider = setup({ initial: urban, defaults: urban });
+    bySlider.slide("hazeVeilLightness", 0);
+    bySlider.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    bySlider.dialog.setDefaults(urban);
+    expect(bySlider.dialog.settings).toEqual(off);
+    // Reset forgets it: the next switch moves every value again.
+    bySlider.$("light-reset").click();
+    bySlider.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    expect(bySlider.dialog.settings).toEqual(DEFAULT_LIGHT_SETTINGS);
   });
 
   it("resets every value to the shipped look", () => {

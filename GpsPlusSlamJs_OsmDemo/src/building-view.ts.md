@@ -43,8 +43,12 @@ map scored.
 - **The light dialog** (plan 2026-09-24-2140): `setLightSettings(settings)`
   holds the settings (`light-settings.ts`) and applies them: the surface
   gain's ramp through `aimSun`, the exposure through the rig's
-  `setExposure`, and the sky light on buildings before every render (one
-  private `prepareFrame` for every render path).
+  `setExposure`, the haze through the rig's `setHaze` (its start then
+  written to the view's own fog, `fog.near = hazeStartRatio x fog.far`; the
+  view's fog object, not `scene.fog`, because an AR session swaps that), and
+  the sky light on buildings before every render (one private
+  `prepareFrame` for every render path). `setFarPlane` reads the same ratio
+  back from the rig, so the render-distance dial keeps a lowered start.
   `measureLight({ withMargin = true })` renders and reads with
   `gl.readPixels` straight after each render, so each read is the frame just
   drawn with the grid as set: the lit-surface brightness with the heat grid's
@@ -411,6 +415,10 @@ file owns the material swap and when the colours are refreshed.
     single anchor. `setTerrain` therefore takes the window centre SEPARATELY from
     the field, because the field is `undefined` in exactly that case. Raised in
     review on #269.
+  - **Wherever the plane moves, the haze's rim moves with it**
+    (`atmosphere.setGroundRim(centre, TERRAIN_EXTENT_M)` in `moveGroundTo`,
+    and at the origin when the plane is built), so under a veil the plane's
+    edge fades into the haze instead of floating against the void.
 - **It is a GROUND MODE, not a layer (W6, DEC-R5-4).** It used to be
   `terrainDebug` in `ALL_LAYERS`, applied from the layer set in `main.ts`, with a
   bespoke `layer-order.ts` entry returning 0 and a bespoke "greyed out under No
@@ -508,7 +516,9 @@ location; `building-view-content.test.ts` pins the four invariants above.
   past the fade window (`AO_FADE`, 700-1400 m of view depth), which ends
   before the nearest the fog ever starts (`FOG_NEAR_M`, 1584 m at the
   shortest render distance), so the fogged distance and the sky keep
-  their colour bit for bit.
+  their colour bit for bit. That holds at the shipped haze start; a start
+  the light dialog lowers below 1400 m lets the AO reach into the boundary
+  fade (a tuning look; the light gates run at the defaults).
 - **Display exponent 1** (`AO_DISPLAY_EXPONENT`): the linear factor is
   multiplied straight onto the tone-mapped, sRGB-encoded canvas, so the
   creases read darker than with the framework's default 1 / 2.2, which

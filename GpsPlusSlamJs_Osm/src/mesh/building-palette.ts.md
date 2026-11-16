@@ -14,7 +14,7 @@ of `feature-colours.ts`.
 - `WALL_TONES` - six warm plaster and sandstone tones.
 - `PITCHED_ROOF_TONES` - five clay tones, then two slate greys.
 - `FLAT_ROOF_TONES` - four bitumen and gravel greys.
-- `seededBuildingColours(tags, outline, key, pitched) → { wall, roof }`
+- `seededBuildingColours(tags, outline, key, pitched, colours?, heightM?) → { wall, roof }`
   - `wall`: `building:colour` (the part's, then the outline's), else a wall
     tone picked by `key`.
   - `roof`: `roofColour(tags, outline)`, else a pitched tone (`pitched`) or a
@@ -22,7 +22,8 @@ of `feature-colours.ts`.
   - `key` is the building's feature key, or its OUTLINE's for a
     `building:part`, so all parts of one building share both colours.
   - Never throws; a non-string key reads as the empty string.
-- `allPaletteColours()` - every tone, for the chroma check.
+- `allPaletteColours()` - every tone (walls, tower walls, material walls,
+  both roof lists, before any jitter), for the chroma check.
 
 ## Invariants & assumptions
 
@@ -35,8 +36,9 @@ of `feature-colours.ts`.
   (pitched) and 29.8 (flat) over the property test's nine id ranges. The V2 prototype
   picked with its own `seededRandom`, so the tones match V2 but which house
   gets which tone does not.
-- **`building:material` is not read** under this palette (owner, Q3 of that
-  plan); the class palette still reads it.
+- **`building:material` is not read under the default palette** (Q3 of
+  that plan); a scheme opts in with `honourMaterialTags`, and the class
+  palette still reads it.
 - **Every tone is muted**: chroma (max minus min channel, 0-255) at most 58,
   the first clay, against the affordance heat ramp's floor of 80 (DEC-R4-5).
   The tones are sRGB; `buildCity` converts building chunks to linear light.
@@ -103,3 +105,41 @@ buildCity(features, ground, { palette: "class" }); // the colours before M7
 - `honourColourTags` false ignores `building:colour` and `roof:colour`, so a
   stylised scheme paints every building from its own tones (owner D7).
 - Tested in `colour-scheme.test.ts` and `colour-scheme.property.test.ts`.
+
+## Height, use and material aware walls (city look exploration 2026-11-15, direction B)
+
+- `seededBuildingColours(tags, outline, key, pitched, colours?, heightM?)`:
+  `heightM` is the building's height for the tower rule (`buildCity`
+  passes its tallest volume); absent, NaN or infinite reads as not a tower.
+- `PaletteColours` gains five fields, all off in the default:
+  - `towerWalls` - wall tones at or above `towerFromM` (default: `WALL_TONES`).
+  - `towerFromM` - metres (default: infinite).
+  - `honourMaterialTags` and `materialWalls` - a tone per `building:material`
+    value (default: false, empty). The tag is read the part's first, then the
+    outline's, as its first `;` entry, trimmed and lower case; a value the
+    map does not name falls through.
+  - `wallJitterL` - the largest seeded CIE L* shift of a wall, either way
+    (default: 0).
+- **Precedence of the wall**: colour tag (when `honourColourTags`), then
+  material (when `honourMaterialTags`), then the tower list (at or above
+  `towerFromM`), then `walls`. The roof is untouched by all of them.
+- **The jitter comes last**, on whichever tone won, a mapped colour tag
+  included: L* is shifted by `(2u - 1) x wallJitterL` with
+  `u = mixedUnit(key, "wallL")`, in CIE L*a*b* (`cielab.ts`), and converted
+  back to the nearest 8-bit sRGB colour (out-of-gamut channels clamped). So
+  the shift is stable per building key (parts share their outline's), within
+  `wallJitterL` plus at most half an L* unit of 8-bit rounding (sampled by
+  the property test up to the cap of 20, not proven), and a
+  jitter of 0 returns the tone itself without the Lab round trip.
+- **The default stays byte-identical**: with the rules off the pick is the
+  one before them; the golden digests of `colour-identity.test.ts` hold.
+- Q3 (material tags do not steer the default palette) still holds for the
+  default; a scheme opts in, like the colour-tag flag.
+- Tests: `building-palette.test.ts` ("under scheme rules": the default's
+  values and its indifference to height and material, the tower boundary at
+  exactly `towerFromM`, a missing or unreadable height, material over height
+  and the part over its outline, tag normalisation, an unnamed material, the
+  flag off, colour tag over material, the roof untouched, the jitter on
+  every rule's pick and on a colour tag); `building-palette.property.test.ts`
+  (the jitter within `wallJitterL` + 0.5 L* and stable per key for any key,
+  tone, jitter 0-20 and height; a jitter of 0 byte for byte).
