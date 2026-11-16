@@ -141,7 +141,7 @@ it reads dirty, shift it up 6-8 L* before trimming further), the warm share
   and salmon facades lit in the reference (L* 49-69), where real brick
   albedo alone (L* 38-47) would sit on the ground.
 - The ordinary `walls` are exempt from that floor on purpose: eight of
-  urban's tones (the mid greys and cool blue-greys, brick, brownstone and
+  urban's tones (a mid grey, a cool blue-grey, brick, brownstone and
   dark stone) sit 2-9 L* from the ground, and holding them clear would
   empty that band of the ladder; walls are lit differently from flat
   ground, and the look was judged as it is.

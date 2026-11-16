@@ -18,6 +18,9 @@ WebGL.
   - `deps.initial`: the starting `LightSettings` (from the URL).
   - `deps.stated?`: the fields the URL stated (`parseLightLink`), kept on a
     scheme switch even where a value equals the scheme's default.
+    This lasts one session: the URL writer states only fields that differ
+    from the scheme's defaults, so after a reload a stated default is no
+    longer in the link.
   - `deps.defaults?`: what Reset returns to, the colour scheme's light
     (`lightDefaultsFor`); the shipped look when left out.
   - `deps.onChange(settings)`: called on every slider `input`, on Reset and

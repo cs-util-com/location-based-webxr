@@ -40,7 +40,8 @@ mapping turns into exactly that, because the haze blends before tone mapping.
   `neutralToneMap` at `exposure` turns into `veilDisplayLinear(veil)`.
   Throws `RangeError` for a lightness outside (0, 100], a non-finite tint,
   a rise outside 0..90 degrees (the framework's horizon veil's range, so
-  the rig refuses it before anything changes), an exposure that is not positive and finite, or a colour the screen
+  the rig refuses it before anything changes), an exposure that is not
+  positive and finite, or a colour the screen
   cannot show (above the knee, or out of gamut; the cap rule).
 
 ## The cap rule
