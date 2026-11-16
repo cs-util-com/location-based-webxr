@@ -16,12 +16,24 @@ export interface HazeVeil {
   readonly lightness: number;
   /** CIE b*: below 0 is bluer, above 0 warmer. */
   readonly tint: number;
+  /**
+   * How far up the sky the veil reaches, degrees above the horizon where it
+   * has fallen to 1/e (the framework's horizon veil); 0 or absent leaves the
+   * sky its own colour.
+   */
+  readonly riseDeg?: number;
 }
 
 type Rgb = readonly [number, number, number];
 
 /** The default tint: a slightly blue veil, the far field's reference hue. */
 export const HAZE_VEIL_TINT = -4;
+
+/**
+ * The default rise: how far up the sky the veil reaches, degrees above the
+ * horizon where it has fallen to 1/e (`HazeVeil.riseDeg`).
+ */
+export const HAZE_VEIL_RISE_DEG = 4;
 
 /** Neutral's compression knee (three's `StartCompression`, 0.8 - 0.04). */
 const KNEE = 0.76;

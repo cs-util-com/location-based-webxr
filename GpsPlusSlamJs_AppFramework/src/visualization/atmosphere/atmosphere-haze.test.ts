@@ -496,3 +496,64 @@ describe('AtmosphereHaze.setVeil (a haze colour of its own)', () => {
     expect(h.veil).toEqual([0.1, 0.1, 0.1]);
   });
 });
+
+describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
+  // WHY: a ground that stops (a tile of a few km) shows its edge against the
+  // void unless the haze has fully covered it there. The rim makes the
+  // boundary fade complete by a distance from the ground's centre, whatever
+  // the draw distance. Off by default, so every existing haze is unchanged.
+  it('is off by default, and a set rim is its centre and its two radii', () => {
+    const h = haze();
+    expect(h.uniforms.atmHazeRimOn.value).toBe(0);
+    expect(h.rim).toBeNull();
+    h.setRim({ x: 10, z: -20 }, 1800, 2400);
+    expect(h.uniforms.atmHazeRimOn.value).toBe(1);
+    expect(h.uniforms.atmHazeRim.value.toArray()).toEqual([
+      10, -20, 1800, 2400,
+    ]);
+    expect(h.rim).toEqual({
+      centre: { x: 10, z: -20 },
+      innerM: 1800,
+      outerM: 2400,
+    });
+    h.setRim(null);
+    expect(h.uniforms.atmHazeRimOn.value).toBe(0);
+    expect(h.rim).toBeNull();
+  });
+
+  // WHY: the rim only raises the boundary fade, so it can never make a near
+  // thing clearer than the draw distance's own fade would; and it measures
+  // in the world (the ground's frame), not from the camera.
+  it('raises the boundary fade by the world distance from the centre, in atmosphere mode only', () => {
+    const h = haze();
+    const material = new THREE.MeshStandardMaterial();
+    h.apply(material);
+    const f = compile(material, 'standard').fragmentShader;
+    const boundaryAt = f.indexOf('float atmBoundary');
+    const rimAt = f.indexOf(
+      'atmBoundary = max(atmBoundary, atmHazeRimOn * smoothstep('
+    );
+    const keepAt = f.indexOf('vec3 atmHazeKeep');
+    expect(boundaryAt).toBeGreaterThan(0);
+    expect(rimAt).toBeGreaterThan(boundaryAt);
+    expect(keepAt).toBeGreaterThan(rimAt);
+    expect(f).toContain(
+      'cameraPosition + (vec4(vAtmViewPosition, 0.0) * viewMatrix).xyz'
+    );
+    expect(f.indexOf('if (atmHazeMode > 0.5)')).toBeLessThan(rimAt);
+  });
+
+  it('refuses radii that do not rise or a centre that is not finite, changing nothing', () => {
+    const h = haze();
+    h.setRim({ x: 0, z: 0 }, 100, 200);
+    expect(() => h.setRim({ x: 0, z: 0 }, 200, 200)).toThrow(RangeError);
+    expect(() => h.setRim({ x: 0, z: 0 }, -1, 200)).toThrow(RangeError);
+    expect(() => h.setRim({ x: Number.NaN, z: 0 }, 100, 200)).toThrow(
+      RangeError
+    );
+    expect(() =>
+      h.setRim({ x: 0, z: 0 }, 100, Number.POSITIVE_INFINITY)
+    ).toThrow(RangeError);
+    expect(h.rim).toEqual({ centre: { x: 0, z: 0 }, innerM: 100, outerM: 200 });
+  });
+});

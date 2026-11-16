@@ -3,8 +3,9 @@
  * 2026-09-24-2140-osm-demo-light-settings-dialog-plan): the noon surface
  * gain's ramp, the sky light on buildings, the sky's auto-exposure
  * adaptation, the EV compensation, the haze's visibility and start
- * (`HAZE_VISIBILITY_KM`, `HAZE_START_RATIO`), and the haze veil's lightness
- * and tint (`veil`, `tint`; `haze-veil.ts`). The defaults ARE the shipped look, so
+ * (`HAZE_VISIBILITY_KM`, `HAZE_START_RATIO`), and the haze veil's lightness,
+ * tint and rise up the sky (`veil`, `tint`, `rise`; `haze-veil.ts`). The
+ * defaults ARE the shipped look, so
  * an untouched dialog changes nothing; the values travel in the URL
  * (`?light=v1:gain=1.8,ev=-2.5`, only the fields that differ) so a tuned
  * look can be shared and pasted back. This is a deliberate exception to
@@ -29,7 +30,11 @@ import {
   type SurfaceGainRamp,
 } from "./atmosphere-rig.js";
 import type { ColourSchemeName } from "./colour-schemes.js";
-import { HAZE_VEIL_TINT, type HazeVeil } from "./haze-veil.js";
+import {
+  HAZE_VEIL_RISE_DEG,
+  HAZE_VEIL_TINT,
+  type HazeVeil,
+} from "./haze-veil.js";
 
 export interface LightSettings {
   /** The building and road colour factor at a high sun. */
@@ -64,6 +69,12 @@ export interface LightSettings {
   readonly hazeVeilLightness: number;
   /** The haze veil's tint, CIE b* on screen; below 0 is bluer. */
   readonly hazeVeilTint: number;
+  /**
+   * How far up the sky the veil reaches, degrees above the horizon (where
+   * it has fallen to 1/e); 0 leaves the sky its own colour. Only drawn while
+   * a veil is on.
+   */
+  readonly hazeVeilRiseDeg: number;
 }
 
 /** Today's look: the shipped constants, read from where they live. */
@@ -78,6 +89,7 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
   hazeStartRatio: HAZE_START_RATIO,
   hazeVeilLightness: 0,
   hazeVeilTint: HAZE_VEIL_TINT,
+  hazeVeilRiseDeg: HAZE_VEIL_RISE_DEG,
 };
 
 /**
@@ -129,6 +141,7 @@ export const LIGHT_SETTING_RANGES: {
   // it for every slider value); 0 is "no veil".
   hazeVeilLightness: { min: 0, max: 80, step: 1 },
   hazeVeilTint: { min: -12, max: 4, step: 0.5 },
+  hazeVeilRiseDeg: { min: 0, max: 20, step: 0.5 },
 };
 
 /** Each field's key in the URL; never rename one (shared links use them). */
@@ -143,6 +156,7 @@ const KEYS: { readonly [K in keyof LightSettings]: string } = {
   hazeStartRatio: "haze",
   hazeVeilLightness: "veil",
   hazeVeilTint: "tint",
+  hazeVeilRiseDeg: "rise",
 };
 const FIELDS = Object.keys(KEYS) as (keyof LightSettings)[];
 
@@ -228,7 +242,8 @@ export function describeLightSettings(s: LightSettings): string {
     `EV ${round(s.exposureEv)}, ` +
     `haze ${round(s.hazeVisibilityKm)} km from ${round(s.hazeStartRatio)} of the draw distance` +
     (s.hazeVeilLightness > 0
-      ? `, veil L* ${round(s.hazeVeilLightness)} b* ${round(s.hazeVeilTint)}`
+      ? `, veil L* ${round(s.hazeVeilLightness)} b* ${round(s.hazeVeilTint)}` +
+        ` up to ${round(s.hazeVeilRiseDeg)}° of sky`
       : "")
   );
 }
@@ -244,7 +259,11 @@ export function hazeOf(s: LightSettings): {
 /** The haze veil these settings describe, or null for the sky's colour. */
 export function veilOf(s: LightSettings): HazeVeil | null {
   return s.hazeVeilLightness > 0
-    ? { lightness: s.hazeVeilLightness, tint: s.hazeVeilTint }
+    ? {
+        lightness: s.hazeVeilLightness,
+        tint: s.hazeVeilTint,
+        riseDeg: s.hazeVeilRiseDeg,
+      }
     : null;
 }
 

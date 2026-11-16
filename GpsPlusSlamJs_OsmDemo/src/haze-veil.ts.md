@@ -11,7 +11,10 @@ mapping turns into exactly that, because the haze blends before tone mapping.
 
 ## Public API
 
-- `HazeVeil` - `{ lightness, tint }`: L\* (above 0) and b\* on screen.
+- `HazeVeil` - `{ lightness, tint, riseDeg? }`: L\* (above 0) and b\* on
+  screen, and how far up the sky the veil reaches (degrees above the
+  horizon; absent or 0 = the sky keeps its colour).
+- `HAZE_VEIL_RISE_DEG` - the default rise of the light settings.
 - `HAZE_VEIL_TINT` - -4, the default tint (the reference's far b\* is about
   -4).
 - `neutralToneMap(rgb, exposure)` - a mirror of three's

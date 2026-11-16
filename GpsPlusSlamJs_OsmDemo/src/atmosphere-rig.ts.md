@@ -46,10 +46,23 @@ colour that matched the sky at one time of day.
     after tone mapping, the veil's display colour IS the fog colour, and
     `null` gives the fog back to the fallback's horizon. Validated before
     any change (`RangeError` from `veilSceneColour`).
-    - **The sky stays the sky.** The veil changes only what geometry fades
-      toward; the visible sky behind it keeps its own colour, so a bright
-      veil against a darker horizon shows the seam the reference does not.
-      Deliberately not hidden by changing the sky model.
+    - **The veil reaches up the sky by `riseDeg`.** Geometry alone fading
+      toward a bright veil left a hard step against the darker sky at the
+      horizon (measured about 14 L* at veil 72). So the rig also passes the
+      veil to the visible sky (`SkyAtmosphere.setHorizonVeil(colour,
+riseDeg)`): full at and below the horizon, falling off over a few
+      degrees above it (`horizon-veil.ts` in the framework). The sky model
+      itself is unchanged; higher up the sky keeps its own colour. A veil
+      without `riseDeg` (or 0) leaves the sky as it was.
+    - **The ground's rim fades into the veil too.** The ground plane is
+      finite, and with the draw distance past its edge its rim showed as a
+      floating tile against the void. `setGroundRim(centre, extentM)`
+      (called by `building-view.ts` wherever the plane moves) gives the
+      haze a radial fade around the plane's centre, from
+      `HAZE_RIM_INNER_RATIO` (0.6) of its extent to the edge
+      (`AtmosphereHaze.setRim`). It is on only while a veil is set: without
+      one the rim would fade into the sky's own colour, which is not what
+      the look without a veil showed before. Validated before any change.
   - `HAZE_VISIBILITY_KM` (45) and `HAZE_START_RATIO` (0.66): the shipped
     haze, and the light dialog's defaults.
   - **What the two values are, in the haze's own terms.** The haze on a
@@ -210,7 +223,9 @@ renderer.render(scene, camera);
   built at today's visibility and the start is today's until set; the sky's
   visibility and the haze's extinction move together; an unchanged
   visibility does not reconfigure the sky; bad values change nothing; the
-  fallback's horizon follows the visibility. `setHazeVeil`: none by
+  fallback's horizon follows the visibility. The veil up the sky and the
+  rim: the sky gets the veil and its rise, the rim follows the ground and
+  is on only while a veil is set, bad rims are refused. `setHazeVeil`: none by
   default; the haze gets the veil's scene colour while the sky and the
   fog are untouched; it survives a sun move and an exposure change; the
   fallback's fog takes the veil's display colour and returns to the

@@ -9,6 +9,10 @@ fragment shaders, and the visible sky's vertex/fragment pair.
 ## Public API
 
 - `ATMOSPHERE_COMMON_GLSL` — needs uniform `atmMieExtinction`.
+- The sky fragment shader takes `atmSkyVeil` (scene-linear colour),
+  `atmSkyVeilOn` (0 or 1) and `atmSkyVeilRise` and, before tone mapping,
+  mixes the sky toward the veil by `atmHorizonVeilWeight(dir.y, rise)`
+  (`horizon-veil.ts`). Off (`atmSkyVeilOn` 0) it renders what it did.
 - `ATMOSPHERE_LUT_VERTEX_GLSL` — full-screen triangle.
 - `TRANSMITTANCE_LUT_FRAGMENT_GLSL`, `MULTI_SCATTERING_LUT_FRAGMENT_GLSL`,
   `SKY_VIEW_LUT_FRAGMENT_GLSL`.

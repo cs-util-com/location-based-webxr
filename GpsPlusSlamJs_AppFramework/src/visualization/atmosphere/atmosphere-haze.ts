@@ -114,6 +114,8 @@ uniform float atmObserverRadius;
 uniform float atmRadianceToScene;
 uniform vec3 atmHazeVeil;
 uniform float atmHazeVeilOn;
+uniform vec4 atmHazeRim;
+uniform float atmHazeRimOn;
 ${ATMOSPHERE_COMMON_GLSL}
 #endif`;
 
@@ -135,6 +137,11 @@ if (atmHazeMode > 0.5) {
   #else
     float atmBoundary = smoothstep(fogNear, fogFar, vFogDepth);
   #endif
+  // The world's edge (setRim): the fade completes by the rim's outer radius
+  // from its centre, measured in the world's horizontal plane.
+  vec3 atmWorld = cameraPosition + (vec4(vAtmViewPosition, 0.0) * viewMatrix).xyz;
+  atmBoundary = max(atmBoundary, atmHazeRimOn * smoothstep(atmHazeRim.z, atmHazeRim.w,
+    length(atmWorld.xz - atmHazeRim.xy)));
   vec3 atmHazeKeep = exp(-atmHazeExtinction * length(vAtmViewPosition)) * (1.0 - atmBoundary);
   gl_FragColor.rgb = gl_FragColor.rgb * atmHazeKeep + atmHazeSky * (1.0 - atmHazeKeep);
 }
@@ -175,6 +182,20 @@ export interface HazeUniforms {
   atmHazeVeil: THREE.IUniform<THREE.Vector3>;
   /** 1 while a veil is set, else 0. */
   atmHazeVeilOn: THREE.IUniform<number>;
+  /** The rim: centre x, centre z, inner and outer radius, metres. */
+  atmHazeRim: THREE.IUniform<THREE.Vector4>;
+  /** 1 while a rim is set, else 0. */
+  atmHazeRimOn: THREE.IUniform<number>;
+}
+
+/** The edge of a world that ends (`AtmosphereHaze.setRim`). */
+export interface HazeRim {
+  /** The centre in the world's horizontal plane (x, z), metres. */
+  readonly centre: { readonly x: number; readonly z: number };
+  /** Where the fade toward the rim starts, metres from the centre. */
+  readonly innerM: number;
+  /** Where it is complete, metres from the centre. */
+  readonly outerM: number;
 }
 
 /** What the haze reads from an atmosphere (`SkyAtmosphere` satisfies it). */
@@ -229,6 +250,7 @@ export class AtmosphereHaze {
   private requested: 'atmosphere' | 'fog' = 'atmosphere';
   private skyView: THREE.Texture | undefined;
   private veilColour: Rgb | null = null;
+  private rimState: HazeRim | null = null;
 
   constructor(options: AtmosphereHazeOptions) {
     mieExtinctionForVisibility(options.visibilityKm);
@@ -251,6 +273,8 @@ export class AtmosphereHaze {
       atmRadianceToScene: { value: 0 },
       atmHazeVeil: { value: new THREE.Vector3() },
       atmHazeVeilOn: { value: 0 },
+      atmHazeRim: { value: new THREE.Vector4() },
+      atmHazeRimOn: { value: 0 },
     };
     this.updateExtinction();
   }
@@ -333,6 +357,52 @@ export class AtmosphereHaze {
   /** The veil colour set by {@link setVeil}, or `null` (the sky's colour). */
   get veil(): Rgb | null {
     return this.veilColour;
+  }
+
+  /**
+   * The edge of a world that ends: a ground of a few km stops, and its edge
+   * shows against the void unless the haze has covered it there. With a rim
+   * the boundary fade also rises from `innerM` to complete at `outerM`,
+   * measured from `centre` in the world's horizontal plane (x, z), so the
+   * ground's edge and anything standing beyond it are fully hazed whatever
+   * the draw distance. It only ever raises the fade. `null`, the default,
+   * takes it off. Only atmosphere mode draws it. A sync keeps it.
+   *
+   * @throws RangeError for a centre that is not finite, or radii that are not
+   *   finite, start below 0 or do not rise (nothing changes).
+   */
+  setRim(
+    centre: { readonly x: number; readonly z: number } | null,
+    innerM = 0,
+    outerM = 0
+  ): void {
+    if (centre === null) {
+      this.rimState = null;
+      this.uniforms.atmHazeRimOn.value = 0;
+      return;
+    }
+    if (!(Number.isFinite(centre.x) && Number.isFinite(centre.z))) {
+      throw new RangeError(
+        `the rim's centre must be finite, got ${centre.x}, ${centre.z}`
+      );
+    }
+    if (
+      !(Number.isFinite(innerM) && Number.isFinite(outerM)) ||
+      innerM < 0 ||
+      !(outerM > innerM)
+    ) {
+      throw new RangeError(
+        `the rim's radii must be finite, from 0, and rise, got ${innerM}, ${outerM}`
+      );
+    }
+    this.rimState = { centre: { x: centre.x, z: centre.z }, innerM, outerM };
+    this.uniforms.atmHazeRim.value.set(centre.x, centre.z, innerM, outerM);
+    this.uniforms.atmHazeRimOn.value = 1;
+  }
+
+  /** The rim set by {@link setRim}, or `null` (none). */
+  get rim(): HazeRim | null {
+    return this.rimState;
   }
 
   /** Scale the physical extinction (a demo's taste knob). */

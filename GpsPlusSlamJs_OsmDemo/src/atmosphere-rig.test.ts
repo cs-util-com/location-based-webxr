@@ -31,6 +31,7 @@ import {
   TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
   type SkyLike,
+  HAZE_RIM_INNER_RATIO,
 } from "./atmosphere-rig.js";
 import { veilDisplayLinear, veilSceneColour } from "./haze-veil.js";
 import { sunDirection, type SunAngles } from "./sun-position.js";
@@ -97,6 +98,15 @@ class StubSky {
       (3 + this.sun.y) *
       2 ** (this.ev - NATURAL_LIGHT_COMPENSATION_EV) *
       (this.adaptation / NATURAL_LIGHT_ADAPTATION);
+  }
+
+  /** The horizon veil the rig set (not a call: a uniform, nothing rebuilt). */
+  horizonVeil: { colour: readonly number[]; riseDeg: number } | null = null;
+  setHorizonVeil(
+    colour: readonly [number, number, number] | null,
+    riseDeg = 0,
+  ): void {
+    this.horizonVeil = colour === null ? null : { colour, riseDeg };
   }
 
   horizonColour(): THREE.Color {
@@ -635,5 +645,58 @@ describe("AtmosphereRig.setHazeVeil (city look, a bright bluish veil)", () => {
       RangeError,
     );
     expect(view.haze.veil).toEqual(set);
+  });
+});
+
+describe("AtmosphereRig: the veil up the sky and at the ground's rim", () => {
+  // WHY: the far ground is hazed toward the veil; the sky right above it
+  // must take the same colour at the horizon, or the two meet in a step.
+  // The sky gets the very scene colour the haze gets, and the veil's rise.
+  it("hands the sky the haze's veil colour and the rise, and takes it off with the veil", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setHazeVeil({ lightness: 72, tint: -4, riseDeg: 3 });
+    expect(sky.horizonVeil).toEqual({
+      colour: veilSceneColour(
+        { lightness: 72, tint: -4 },
+        TONE_MAPPING_EXPOSURE,
+      ),
+      riseDeg: 3,
+    });
+    view.setHazeVeil({ lightness: 72, tint: -4 });
+    expect(sky.horizonVeil?.riseDeg).toBe(0);
+    view.setHazeVeil(null);
+    expect(sky.horizonVeil).toBeNull();
+  });
+
+  // WHY: the ground is a tile of a few km and stops; with a veil on, its
+  // edge must vanish into the veil like the horizon does. Scoped to the
+  // veil, so the shipped look (no veil) keeps its haze exactly.
+  it("hazes the ground's rim fully while a veil is on, and only then", () => {
+    const { view } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setGroundRim({ x: 100, z: -50 }, 2400);
+    expect(view.haze.rim).toBeNull();
+    view.setHazeVeil({ lightness: 72, tint: -4 });
+    expect(view.haze.rim).toEqual({
+      centre: { x: 100, z: -50 },
+      innerM: 2400 * HAZE_RIM_INNER_RATIO,
+      outerM: 2400,
+    });
+    view.setGroundRim({ x: 0, z: 0 }, 2400);
+    expect(view.haze.rim?.centre).toEqual({ x: 0, z: 0 });
+    view.setHazeVeil(null);
+    expect(view.haze.rim).toBeNull();
+  });
+
+  it("refuses a ground extent that is not positive, changing nothing", () => {
+    const { view } = rig();
+    view.setHazeVeil({ lightness: 72, tint: -4 });
+    view.setGroundRim({ x: 0, z: 0 }, 2400);
+    expect(() => view.setGroundRim({ x: 0, z: 0 }, 0)).toThrow(RangeError);
+    expect(() => view.setGroundRim({ x: Number.NaN, z: 0 }, 2400)).toThrow(
+      RangeError,
+    );
+    expect(view.haze.rim?.outerM).toBe(2400);
   });
 });

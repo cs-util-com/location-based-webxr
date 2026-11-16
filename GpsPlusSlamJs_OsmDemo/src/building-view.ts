@@ -867,6 +867,8 @@ export class BuildingView {
     // cannot identify the hit, and the click reads as a dead control.
     this.ground.userData["ground"] = true;
     this.scene.add(this.ground);
+    // Until a terrain moves it, the ground sits at the origin.
+    this.atmosphere.setGroundRim({ x: 0, z: 0 }, TERRAIN_EXTENT_M);
 
     // FAR PLANE 2400 m — 4000, then 1200, now 2400. See `FAR_PLANE_M` for why
     // each move was right at the time; the short version is that W20's chunking
@@ -1165,6 +1167,7 @@ export class BuildingView {
     if (centreEnu === undefined) return;
     const at = groundPositionFor(centreEnu);
     this.ground.position.set(at.x, at.y, at.z);
+    this.atmosphere.setGroundRim({ x: at.x, z: at.z }, TERRAIN_EXTENT_M);
   }
 
   /**

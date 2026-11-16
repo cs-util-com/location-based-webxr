@@ -18,7 +18,7 @@ tuned look can be shared and pasted back.
 
 - `LightSettings`: `{ gainMax, gainFromDeg, gainFullDeg, buildingSkyLight,
 exposureAdaptation, exposureEv, hazeVisibilityKm, hazeStartRatio,
-hazeVeilLightness, hazeVeilTint }`.
+hazeVeilLightness, hazeVeilTint, hazeVeilRiseDeg }`.
 - `DEFAULT_LIGHT_SETTINGS`: built from `NOON_SURFACE_GAIN`,
   `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION`,
   `NATURAL_LIGHT_COMPENSATION_EV`, `HAZE_VISIBILITY_KM` and
@@ -29,7 +29,7 @@ hazeVeilLightness, hazeVeilTint }`.
 - `LIGHT_SETTING_RANGES`: each field's slider min, max and step.
 - `parseLightSettings(search, defaults = DEFAULT_LIGHT_SETTINGS)`: from
   `?light=v1:gain=1.8,ev=-2.5` (keyed, versioned pairs; the keys are gain,
-  from, full, sky, adapt, ev, vis, haze, veil, tint). Never
+  from, full, sky, adapt, ev, vis, haze, veil, tint, rise). Never
   throws. A missing, unknown, non-numeric or out-of-range field falls back to
   its value in `defaults`, a ramp that does not rise falls back to their
   ramp, and another version or a bare list is ignored.
@@ -80,10 +80,13 @@ haze 45 km from 0.66 of the draw distance`.
   the shipped default, an old link and a link with only a `tint` all render
   today's look, except under urban, whose own default is a veil (above). 80 is the brightest lightness every tint can show below the tone
   curve's compression knee (at b* -12 the last is 81). `veilOf(settings)`
-  gives `{ lightness, tint }` for `AtmosphereRig.setHazeVeil`, or `null` at
-  lightness 0. Why L* and b* rather than a mix factor toward a colour:
-  `haze-veil.ts.md`. The Copy line adds `, veil L* 78 b* -5` only when a
-  veil is set.
+  gives `{ lightness, tint, riseDeg }` for `AtmosphereRig.setHazeVeil`, or
+  `null` at lightness 0. `rise`, how far up the sky the veil reaches in
+  degrees above the horizon (default `HAZE_VEIL_RISE_DEG`, range 0-20 step
+  0.5, 0 = the sky keeps its own colour); it matters only while a veil is
+  set. Why L* and b* rather than a mix factor toward a colour:
+  `haze-veil.ts.md`. The Copy line adds `, veil L* 78 b* -5 up to 4° of sky` only
+  when a veil is set.
 - `gainOf(settings)`: the ramp for `surfaceGainAt(elevationRad, ramp)` in
   `atmosphere-rig.ts`.
 

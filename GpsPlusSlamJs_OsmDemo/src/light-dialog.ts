@@ -30,6 +30,7 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   hazeVeilLightness:
     "Haze: veil lightness (L* on screen, 0 = the sky's colour)",
   hazeVeilTint: "Haze: veil tint (b* on screen, below 0 is bluer)",
+  hazeVeilRiseDeg: "Haze: veil up the sky (° above the horizon, 0 = none)",
 };
 
 /**

@@ -20,7 +20,7 @@ import {
   NOON_SURFACE_GAIN,
   surfaceGainAt,
 } from "./atmosphere-rig.js";
-import { HAZE_VEIL_TINT } from "./haze-veil.js";
+import { HAZE_VEIL_RISE_DEG, HAZE_VEIL_TINT } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
@@ -50,6 +50,7 @@ describe("DEFAULT_LIGHT_SETTINGS", () => {
       hazeStartRatio: HAZE_START_RATIO,
       hazeVeilLightness: 0,
       hazeVeilTint: HAZE_VEIL_TINT,
+      hazeVeilRiseDeg: HAZE_VEIL_RISE_DEG,
     });
     // No veil: the haze takes the sky's colour, as it always has.
     expect(veilOf(DEFAULT_LIGHT_SETTINGS)).toBeNull();
@@ -267,7 +268,15 @@ describe("the haze veil keys", () => {
     const d = DEFAULT_LIGHT_SETTINGS;
     const s = parseLightSettings("?light=v1:veil=80,tint=-6.5");
     expect(s).toEqual({ ...d, hazeVeilLightness: 80, hazeVeilTint: -6.5 });
-    expect(veilOf(s)).toEqual({ lightness: 80, tint: -6.5 });
+    expect(veilOf(s)).toEqual({
+      lightness: 80,
+      tint: -6.5,
+      riseDeg: HAZE_VEIL_RISE_DEG,
+    });
+    // The rise travels as `rise`, and reaches the veil the sky draws.
+    expect(
+      veilOf(parseLightSettings("?light=v1:veil=80,rise=8"))?.riseDeg,
+    ).toBe(8);
     expect(serializeLightSettings({ ...d, hazeVeilLightness: 72 })).toBe(
       "v1:veil=72",
     );
@@ -277,6 +286,8 @@ describe("the haze veil keys", () => {
       "tint=-12.5",
       "tint=4.5",
       "veil=x",
+      "rise=-0.5",
+      "rise=20.5",
     ]) {
       expect(parseLightSettings(`?light=v1:${bad}`), bad).toEqual(d);
     }
@@ -284,6 +295,8 @@ describe("the haze veil keys", () => {
     const t = LIGHT_SETTING_RANGES.hazeVeilTint;
     expect([v.min, v.max, v.step]).toEqual([0, 80, 1]);
     expect([t.min, t.max, t.step]).toEqual([-12, 4, 0.5]);
+    const r = LIGHT_SETTING_RANGES.hazeVeilRiseDeg;
+    expect([r.min, r.max, r.step]).toEqual([0, 20, 0.5]);
   });
 
   // WHY: a tint on its own is not a veil; the haze keeps the sky's colour
@@ -340,6 +353,7 @@ describe("describeLightSettings", () => {
       hazeStartRatio: 0.2,
       hazeVeilLightness: 0,
       hazeVeilTint: -4,
+      hazeVeilRiseDeg: 4,
     });
     expect(line).toBe(
       "light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5, " +
@@ -355,7 +369,9 @@ describe("describeLightSettings", () => {
       hazeVeilLightness: 78,
       hazeVeilTint: -5,
     });
-    expect(line.endsWith(", veil L* 78 b* -5")).toBe(true);
+    expect(
+      line.endsWith(`, veil L* 78 b* -5 up to ${HAZE_VEIL_RISE_DEG}° of sky`),
+    ).toBe(true);
   });
 });
 
@@ -372,7 +388,11 @@ describe("a colour scheme's light defaults", () => {
       hazeVeilLightness: 72,
       exposureEv: -2,
     });
-    expect(veilOf(URBAN)).toEqual({ lightness: 72, tint: HAZE_VEIL_TINT });
+    expect(veilOf(URBAN)).toEqual({
+      lightness: 72,
+      tint: HAZE_VEIL_TINT,
+      riseDeg: HAZE_VEIL_RISE_DEG,
+    });
     for (const name of ["today", "architect", "night", "no-such-scheme"]) {
       expect(lightDefaultsFor(name)).toBe(DEFAULT_LIGHT_SETTINGS);
     }

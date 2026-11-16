@@ -168,6 +168,13 @@ export const HAZE_VISIBILITY_KM = 45;
 export const HAZE_START_RATIO = 0.66;
 
 /**
+ * Where the haze starts covering the ground's rim, as a share of the
+ * ground's extent from its centre (`setGroundRim`); it is complete at the
+ * extent itself, where the ground stops. Applied only while a veil is on.
+ */
+export const HAZE_RIM_INNER_RATIO = 0.6;
+
+/**
  * The sky's cloud cover, 0…1 (the share of the sky clouded): the look-dev
  * page's golden-hour preset. OsmDemo adopted the physical sky without its
  * clouds (cover 0) until the owner's first look at the r718 preview asked
@@ -298,6 +305,7 @@ export type SkyLike = Pick<
   | "setAutoExposureAdaptation"
   | "applySunLight"
   | "horizonColour"
+  | "setHorizonVeil"
   | "sharedUniforms"
   | "visibilityKm"
   | "dispose"
@@ -350,6 +358,10 @@ export class AtmosphereRig {
   private startRatio: number = HAZE_START_RATIO;
   /** The haze veil the light dialog set (`setHazeVeil`); none by default. */
   private veil: HazeVeil | null = null;
+  /** The ground's centre and extent (`setGroundRim`), once the view set it. */
+  private groundRim:
+    | { readonly centre: { x: number; z: number }; readonly extentM: number }
+    | undefined;
 
   constructor(options: AtmosphereRigOptions) {
     this.scene = options.scene;
@@ -502,9 +514,49 @@ export class AtmosphereRig {
       veil === null ? null : veilSceneColour(veil, TONE_MAPPING_EXPOSURE);
     this.veil = veil;
     this.haze.setVeil(scene);
+    this.sky?.setHorizonVeil(scene, veil?.riseDeg ?? 0);
+    this.applyRim();
     if (this.fallback !== undefined && this.lastDirection !== undefined) {
       this.applyFallback(this.lastDirection);
     }
+  }
+
+  /**
+   * Where the ground is and how far it reaches from its centre, metres, in
+   * the scene's horizontal plane (x, z). While a veil is on, the haze covers
+   * the ground's rim fully (from `HAZE_RIM_INNER_RATIO` of the extent to the
+   * extent), so the tile's edge vanishes into the veil the way the horizon
+   * does; without a veil the haze is the shipped one. Validated first.
+   *
+   * @throws RangeError for a centre that is not finite or an extent that is
+   *   not positive and finite.
+   */
+  setGroundRim(centre: { x: number; z: number }, extentM: number): void {
+    if (!(Number.isFinite(centre.x) && Number.isFinite(centre.z))) {
+      throw new RangeError(
+        `the ground's centre must be finite, got ${centre.x}, ${centre.z}`,
+      );
+    }
+    if (!(Number.isFinite(extentM) && extentM > 0)) {
+      throw new RangeError(
+        `the ground's extent must be positive, got ${extentM}`,
+      );
+    }
+    this.groundRim = { centre: { x: centre.x, z: centre.z }, extentM };
+    this.applyRim();
+  }
+
+  private applyRim(): void {
+    const rim = this.groundRim;
+    if (this.veil === null || rim === undefined) {
+      this.haze.setRim(null);
+      return;
+    }
+    this.haze.setRim(
+      rim.centre,
+      rim.extentM * HAZE_RIM_INNER_RATIO,
+      rim.extentM,
+    );
   }
 
   /** Where the haze's boundary fade starts, as a share of the draw distance. */
