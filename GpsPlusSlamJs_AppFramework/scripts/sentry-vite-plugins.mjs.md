@@ -2,11 +2,11 @@
 
 ## Purpose
 
-The error service's Vite plugins (`@sentry/vite-plugin`) for the apps
-visitors use: the Tour Viewer and the map demo import it by relative path
-from their `vite.config.ts`. One copy, so the two builds upload, tag and
-delete their source maps the same way. The Recorder keeps its own call in
-`config/vite.config.ts` (public maps, no deletion).
+The error service's Vite plugins (`@sentry/vite-plugin`) for the apps that
+report errors: the Tour Viewer and the map demo import it by relative path
+from their `vite.config.ts`, the Recorder from its `config/vite.config.ts`.
+One copy, so the three builds upload, tag and delete their source maps the
+same way, and none deploys its maps.
 
 Node-only and build-time, so it lives in `scripts/` and is not published.
 
@@ -45,7 +45,8 @@ Node-only and build-time, so it lives in `scripts/` and is not published.
   stacks for that build. The deletion itself can fail too, and the plugin
   only logs that, so this module alone does not keep a map out of the
   deploy: the site build's `scripts/source-maps-deploy.mjs` check fails a
-  build with the token that left a `.map` under `tour/` or `osm/`.
+  build with the token that left a `.map` under `recorder/`, `tour/` or
+  `osm/`.
 - An output folder that is the project root, holds it, or is a filesystem
   root deletes nothing (the glob would reach every map below it,
   node_modules included); the site build's check then fails on the maps

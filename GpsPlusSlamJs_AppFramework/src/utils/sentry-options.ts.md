@@ -232,14 +232,13 @@ places, links, names or files and were read one by one):
 
 The Sentry Vite plugin in each app's Vite config (the Recorder's
 `config/vite.config.ts`, the Tour Viewer's and the map demo's
-`vite.config.ts`) uploads source maps during production builds. The Tour
-Viewer and the map demo build them `hidden` (no `sourceMappingURL` comment,
+`vite.config.ts`) uploads source maps during production builds. All three
+apps build them `hidden` (no `sourceMappingURL` comment,
 so a visitor's browser never fetches them) and run the plugin for their
-Web Worker bundles too, which gives those bundles debug ids; both take the
+Web Worker bundles too, which gives those bundles debug ids; all three take the
 plugins from the framework's `scripts/sentry-vite-plugins.mjs`, which also
 deletes the maps from the resolved output folder after the upload, so they
-are not deployed, and turns the plugin's build telemetry off. The Recorder
-keeps its own call and its maps. The plugin is loaded only when the
+are not deployed, and turns the plugin's build telemetry off. The plugin is loaded only when the
 `SENTRY_AUTH_TOKEN` environment variable is set, so a build without the
 token (local, CI) uploads nothing and does not fail. No gate runs the
 token path; what was checked by hand, and what was not, is in

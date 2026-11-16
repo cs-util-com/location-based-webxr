@@ -10,24 +10,24 @@
 // single vite build: the app's package is found from its config's folder,
 // and its `dist-site` folder from the base the site build gives that package.
 
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { describe, it, expect } from "vitest";
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { describe, it, expect } from 'vitest';
 
-import { SOURCE_MAP_FREE_APPS } from "../../scripts/source-maps-deploy.mjs";
-import { readTracked, repoRoot, trackedFiles } from "./tracked-tree.js";
+import { SOURCE_MAP_FREE_APPS } from '../../scripts/source-maps-deploy.mjs';
+import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
 
 const BUILD_SITE = readFileSync(
-  join(repoRoot, "scripts", "build-site.mjs"),
-  "utf-8",
+  join(repoRoot, 'scripts', 'build-site.mjs'),
+  'utf-8',
 );
 
 /** The package name of the nearest `package.json` at or above `dir`. */
 function packageNameOf(dir) {
-  for (let at = dir; at !== "." && at !== ""; at = dirname(at)) {
-    const manifest = join(repoRoot, at, "package.json");
+  for (let at = dir; at !== '.' && at !== ''; at = dirname(at)) {
+    const manifest = join(repoRoot, at, 'package.json');
     if (existsSync(manifest))
-      return JSON.parse(readFileSync(manifest, "utf-8")).name;
+      return JSON.parse(readFileSync(manifest, 'utf-8')).name;
   }
   throw new Error(`No package.json above ${dir}`);
 }
@@ -51,10 +51,10 @@ function siteFoldersByPackage() {
 function uploadingApps() {
   const builds = siteFoldersByPackage();
   return trackedFiles(
-    "*vite.config.ts",
-    "*vite.config.mts",
-    "*vite.config.js",
-    "*vite.config.mjs",
+    '*vite.config.ts',
+    '*vite.config.mts',
+    '*vite.config.js',
+    '*vite.config.mjs',
   )
     .filter((file) => /\bsentrySourceMapPlugins\(/.test(readTracked(file)))
     .map((file) => {
@@ -66,16 +66,16 @@ function uploadingApps() {
     });
 }
 
-describe("SOURCE_MAP_FREE_APPS", () => {
-  it("lists exactly the apps whose Vite config uploads and deletes its maps", () => {
+describe('SOURCE_MAP_FREE_APPS', () => {
+  it('lists exactly the apps whose Vite config uploads and deletes its maps', () => {
     const folders = uploadingApps().map((build) => build.folder);
     expect(folders.length).toBeGreaterThan(0);
     expect([...folders].sort()).toEqual([...SOURCE_MAP_FREE_APPS].sort());
   });
 
-  it("is checked after every one of those apps is built", () => {
+  it('is checked after every one of those apps is built', () => {
     const check = BUILD_SITE.indexOf(
-      "assertNoSourceMapsDeployed({ siteDir: distSite })",
+      'assertNoSourceMapsDeployed({ siteDir: distSite })',
     );
     expect(check).toBeGreaterThan(-1);
     for (const build of uploadingApps()) {
