@@ -159,7 +159,9 @@ export function planInventedRoofs(
           params,
           noteDefect,
         }),
-      options.onDefect,
+      options.onDefect === undefined
+        ? undefined
+        : (error) => options.onDefect?.(error, footprint.key),
     );
     if (plan !== undefined) plans.set(footprint.key, plan);
   });
@@ -213,11 +215,12 @@ export interface PlanOptions {
   readonly frame?: EnuFrame;
   readonly params?: RoofscapeParams;
   /**
-   * Hears, once per footprint, of a defect its plan survived: any throw that
-   * is not a refused ring, while planning it or checking its mesh. That
-   * footprint then has another roof, a lid or no plan. Absent: silently.
+   * Hears, once per footprint, of a defect its plan survived (with the
+   * footprint's key): any throw that is not a refused ring, while planning
+   * it or checking its mesh. That footprint then has another roof, a lid or
+   * no plan. Absent: silently.
    */
-  readonly onDefect?: (error: unknown) => void;
+  readonly onDefect?: (error: unknown, key: OsmFeatureKey) => void;
 }
 
 /** A tenth of a millimetre: a building's own coordinates are rounded to it. */

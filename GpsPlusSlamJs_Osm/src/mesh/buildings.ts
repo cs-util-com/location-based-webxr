@@ -66,7 +66,6 @@ import {
 } from "./invented-roofs.js";
 import type { InventedFootprint, InventedPlan } from "./invented-roofs.js";
 import type { RoofscapeParams } from "./roofscape-rules.js";
-import { SkeletonFailure } from "./roof-skeleton.js";
 
 /** One extruded volume, with the provenance to trace it back to OSM. */
 export interface BuildingVolume {
@@ -161,12 +160,13 @@ export interface BuildBuildingsOptions {
    */
   readonly inventedRoofs?: boolean;
   /**
-   * Called once per outline not drawn as built: an invented roof whose mesh
-   * did not close (drawn as a flat lid at the planned top), or an outline
-   * whose build threw (drawn as its plain volume from the tags, or skipped
-   * when that throws too). With the error, for a consumer's log;
-   * `buildCity` counts these. Absent: the building is still isolated,
-   * silently.
+   * Called at most once per outline key, with the first error that key met:
+   * a defect its invented-roof plan survived (the planner's `onDefect`), an
+   * invented roof whose mesh threw (drawn as a flat lid at the planned top),
+   * or an outline whose build threw (drawn as its plain volume from the
+   * tags, or skipped when that throws too). A later error for a key already
+   * reported is not reported. For a consumer's log; `buildCity` counts
+   * these. Absent: the building is still isolated, silently.
    */
   readonly onFallback?: (error: unknown) => void;
 }
@@ -183,6 +183,7 @@ function outlineVolumes(
   options: BuildBuildingsOptions,
 ): BuildingVolume[] {
   const volumes: BuildingVolume[] = [];
+  const report = reportOncePerKey(options.onFallback);
   const invented =
     options.inventedRoofs === true
       ? planInventedRoofs(
@@ -190,9 +191,7 @@ function outlineVolumes(
           {
             frame: options.frame,
             // A house whose plan survived a defect is not drawn as planned.
-            ...(options.onFallback === undefined
-              ? {}
-              : { onDefect: options.onFallback }),
+            ...(report === undefined ? {} : { onDefect: report }),
           },
         )
       : undefined;
@@ -228,9 +227,11 @@ function outlineVolumes(
     const plain = (): BuildingVolume =>
       volumeFor(outline.feature, outline.polygons, undefined, options, ground);
     const plan = invented?.get(key);
+    const onError =
+      report === undefined ? undefined : (error: unknown) => report(error, key);
     const volume =
       plan === undefined
-        ? isolated(plain, undefined, options)
+        ? isolated(plain, undefined, onError)
         : isolated(
             () =>
               inventedVolume(
@@ -238,10 +239,10 @@ function outlineVolumes(
                 outline.polygons,
                 plan,
                 ground,
-                options.onFallback,
+                onError,
               ),
             plain,
-            options,
+            onError,
           );
     if (volume !== undefined) volumes.push(volume);
   }
@@ -249,10 +250,28 @@ function outlineVolumes(
 }
 
 /**
+ * `onFallback` called at most once per key, with the first error reported
+ * for it; `undefined` when there is none to call. One building is one
+ * report, whichever stage (the planner, the roof mesh, the build) met a
+ * defect first, so `buildCity` counts buildings.
+ */
+function reportOncePerKey(
+  onFallback: ((error: unknown) => void) | undefined,
+): ((error: unknown, key: OsmFeatureKey) => void) | undefined {
+  if (onFallback === undefined) return undefined;
+  const reported = new Set<OsmFeatureKey>();
+  return (error, key) => {
+    if (reported.has(key)) return;
+    reported.add(key);
+    onFallback(error);
+  };
+}
+
+/**
  * ONE BUILDING NEVER BREAKS THE CITY. `build`'s volume; when it throws, the
  * `fallback`'s (the plain volume from the tags); when there is none or it
- * throws too, nothing: the building is skipped. Either way
- * `options.onFallback` hears of it once, with the first error.
+ * throws too, nothing: the building is skipped. Either way `onError` hears
+ * of it, with the first error.
  *
  * A roof that could not be built once failed the whole city build, the map's
  * snapshot with it. A try block costs nothing while nothing throws.
@@ -260,12 +279,12 @@ function outlineVolumes(
 function isolated(
   build: () => BuildingVolume,
   fallback: (() => BuildingVolume) | undefined,
-  options: BuildBuildingsOptions,
+  onError: ((error: unknown) => void) | undefined,
 ): BuildingVolume | undefined {
   try {
     return build();
   } catch (error) {
-    options.onFallback?.(error);
+    onError?.(error);
     if (fallback === undefined) return undefined;
     try {
       return fallback();
@@ -1080,7 +1099,7 @@ function inventedVolume(
   polygons: EnuPoint[][][],
   plan: InventedPlan,
   ground: { lowest: number; rise: number },
-  /** Hears of a roof drawn as a lid because its mesh did not close. */
+  /** Hears of a roof drawn as a lid because its mesh threw. */
   onFallback?: (error: unknown) => void,
 ): BuildingVolume {
   const resolved = resolveHeights(feature.tags);
@@ -1107,11 +1126,11 @@ function inventedVolume(
   try {
     roofed = inventedRoofMesh(plan, ground);
   } catch (error) {
-    if (!(error instanceof SkeletonFailure)) throw error;
-    // THE LAST GUARD: the planner grants only roofs whose mesh closed where
-    // it checked them, so this one did there and not here. A flat lid at
-    // the planned top keeps the drawn top where the obstacle index puts it,
-    // which the plain volume from the tags would not.
+    // THE LAST GUARD, for ANY throw while meshing the roof (a roof that did
+    // not close, or a defect in its walls, soffits, build or placement): the
+    // planner grants only roofs whose mesh closed where it checked them. A
+    // flat lid at the planned top keeps the drawn top where the obstacle
+    // index puts it, which the plain volume from the tags would not.
     let lid: BuildingVolume;
     try {
       lid = inventedVolume(

@@ -66,7 +66,7 @@ describe("planInventedRoofs, skeleton errors", () => {
       const plans = planInventedRoofs([house()], { onDefect });
       expect(plans.has(house().key)).toBe(false);
       expect(onDefect).toHaveBeenCalledTimes(1);
-      expect(onDefect).toHaveBeenCalledWith(defect);
+      expect(onDefect).toHaveBeenCalledWith(defect, house().key);
     } finally {
       thrown.error = undefined;
     }

@@ -14,9 +14,11 @@ OSM features to building volumes, honouring `building:part`.
     outline not drawn because what stands inside it fills it, and a
     multi-polygon outline are drawn exactly as with the option off
     (`site-invented-roofs.test.ts` compares the bytes on every fixture).
-  - **`onFallback(error)`** (optional): called once per outline not drawn as
-    built, with the error, including a house whose plan survived a defect
-    (the planner's `onDefect`). `buildCity` counts these.
+  - **`onFallback(error)`** (optional): called at most once per outline
+    key, with the first error that key met: a defect its invented-roof plan
+    survived (the planner's `onDefect`), an invented roof whose mesh threw,
+    or an outline whose build threw. A later error for a key already
+    reported is not reported. `buildCity` counts these.
 - `inventedRoofTotals(features, frame): Map<OsmFeatureKey, number>` - the
   invented height (base to top) of every building that takes an invented roof
   or lid, from the same planner and the same input as `buildBuildings`, for
@@ -88,8 +90,9 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
 - **One building never breaks the city** (2026-11-16). Each outline is built
   in its own try block (`isolated`): when its build throws, it is drawn as
   its plain volume from the tags, or skipped when that throws too, and
-  `onFallback` hears of it. An invented roof whose mesh does not close
-  (`SkeletonFailure`) is drawn as a flat lid at the PLANNED top instead, so
+  `onFallback` hears of it. An invented roof whose mesh throws, for any
+  reason (a roof that did not close, or a defect in its walls, soffits,
+  build or placement), is drawn as a flat lid at the PLANNED top instead, so
   the obstacle index, which reads the plan, still matches the screen; when
   that lid throws too, the outline falls back to its plain volume and is
   still reported once. The planner already grants only roofs whose eave-0
@@ -315,9 +318,10 @@ const batch = mergeMeshes(volumes.map((v) => v.mesh));
   the off build, every invented top drawn at `topHeightM`, and
   `inventedRoofTotals` equal to the drawn heights, on all 12 sites.
 - `buildings.isolation.test.ts` - the mesh call mocked to throw: a
-  `SkeletonFailure` draws a lid at the planned top, any other error the
-  plain volume, `onFallback` hears each once, the neighbour is drawn as
-  built, and `buildCity` counts the fallback.
+  `SkeletonFailure` and any other error both draw a lid at the planned top
+  (the height the obstacle index holds), `onFallback` hears each once and a
+  house whose plan and build both had a defect once, the neighbour is drawn
+  as built, and `buildCity` counts the fallback.
 - `invented-roofs.planner-isolation.test.ts` - a defect injected into one
   house's skeleton or roof mesh: the planner, `buildBuildings` and the
   obstacle index all survive, the house is drawn as another roof, a lid or
