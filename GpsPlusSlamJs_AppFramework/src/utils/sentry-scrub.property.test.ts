@@ -353,6 +353,19 @@ const numericPair = fc
     latFirst ? [Number(lat), Number(lon)] : [Number(lon), Number(lat)]
   );
 
+/** Two numbers within ±180 that, written as text, read as a pair. */
+function readsAsPair(value: unknown[]): value is [number, number] {
+  const [a, b] = value;
+  return (
+    value.length === 2 &&
+    typeof a === 'number' &&
+    typeof b === 'number' &&
+    Math.abs(a) <= 180 &&
+    Math.abs(b) <= 180 &&
+    LOOKS_LIKE_PAIR.test(`${a}, ${b}`)
+  );
+}
+
 /**
  * Every array of two numbers anywhere in `value` that reads as a pair: both
  * within ±180 (the range the scrubber claims) and, written as text, a pair by
@@ -360,17 +373,7 @@ const numericPair = fc
  */
 function numericPairsIn(value: unknown, out: number[][] = []): number[][] {
   if (Array.isArray(value)) {
-    const [a, b] = value;
-    if (
-      value.length === 2 &&
-      typeof a === 'number' &&
-      typeof b === 'number' &&
-      Math.abs(a) <= 180 &&
-      Math.abs(b) <= 180 &&
-      LOOKS_LIKE_PAIR.test(`${a}, ${b}`)
-    ) {
-      out.push([a, b]);
-    }
+    if (readsAsPair(value)) out.push(value);
     value.forEach((item) => numericPairsIn(item, out));
   } else if (value !== null && typeof value === 'object') {
     Object.values(value).forEach((item) => numericPairsIn(item, out));
