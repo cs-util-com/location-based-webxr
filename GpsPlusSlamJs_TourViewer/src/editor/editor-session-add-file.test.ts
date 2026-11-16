@@ -235,22 +235,20 @@ describe("adding an item from a file", () => {
     await session.close();
   });
 
-  it("refuses a video at a station with words, and takes it at the end of a story", async () => {
+  it("places a video at a station, and takes one at the end of a story", async () => {
     const session = await openedTour();
     const { editor, add, childIds } = setup(session);
     const video = new Blob(["fake-mp4-bytes"]);
-    const refused = await add(
-      "video",
-      { kind: "station", stationId: STATION },
-      video,
-      "flood.mp4",
-      "vid",
-    );
-    expect(refused).toEqual({
-      kind: "refused",
-      reason: "A video plays in a story: add it to one.",
-    });
-    expect(childIds()).not.toContain("vid");
+    expect(
+      await add(
+        "video",
+        { kind: "station", stationId: STATION },
+        video,
+        "flood.mp4",
+        "free-vid",
+      ),
+    ).toEqual({ kind: "added", id: "free-vid" });
+    expect(childIds()).toContain("free-vid");
     const story = editor.addStory(STATION);
     if (story.kind !== "added") throw new Error("no story");
     expect(
@@ -1160,6 +1158,48 @@ describe("the tour's cover, a video's poster and a character's file on the shelf
       }),
     ]);
     expect(editor.replaceCount("sir")).toBe(0);
+    await session.close();
+  });
+});
+
+describe("a free video's poster from one of its frames", () => {
+  // Why: the inspector's "Use current frame" makes the frame the creator
+  // paused on the video's poster (what a porthole shows before a tap, and
+  // what shows while the clip loads). The picture comes in as a file of
+  // the tour and the video names it, as one undo step; anything that is
+  // not a free video is refused with words, changing nothing.
+  it("makes the picture the video's poster as one undo step, refusing anything else", async () => {
+    const session = await openedTour();
+    const { editor, add, manifest } = setup(session);
+    await add(
+      "video",
+      { kind: "station", stationId: STATION },
+      new Blob(["fake-mp4-bytes"]),
+      "flood.mp4",
+      "vid",
+    );
+    const posterOf = () =>
+      (
+        manifest()
+          .stations.flatMap((s) => s.children)
+          .find((c) => c.id === "vid") as { poster?: string } | undefined
+      )?.poster;
+    const before = editor.revision();
+    expect(await editor.setVideoPoster("vid", png(64, 36))).toEqual({
+      kind: "edited",
+      backedUp: true,
+    });
+    expect(editor.revision()).toBe(before + 1);
+    const poster = posterOf();
+    expect(manifest().assets.find((a) => a.id === poster)?.kind).toBe("image");
+    const refused = [
+      await editor.setVideoPoster("t1", png(8, 8)),
+      await editor.setVideoPoster("gone", png(8, 8)),
+    ];
+    expect(refused.map((r) => r.kind)).toEqual(["refused", "refused"]);
+    expect(editor.revision()).toBe(before + 1);
+    expect(editor.undo().kind).not.toBe("refused");
+    expect(posterOf()).toBeUndefined();
     await session.close();
   });
 });

@@ -26,6 +26,7 @@ import {
   movedToStation,
   storyList,
 } from "./station-children-moves.js";
+import { VIDEO_DEFAULT_WIDTH_M } from "./kinds/video/video-rules.js";
 
 const POSE = { position: [1, 0, 2], rotation: [0, 0, 0, 1] } as const;
 const TAP = { mode: "tap" } as const;
@@ -172,20 +173,34 @@ describe("movedChild", () => {
 
   // Why: no free host draws a video yet, so out of its story it would be
   // an item nobody sees; it stays, as a model without a size does.
-  it("refuses a video out of a story, and offers it no way out", () => {
-    const video = {
-      id: "v",
-      kind: "video",
-      view: "card",
-      video: "clip",
-      pose: POSE,
-      advance: TAP,
-    } as unknown as TourStoryChild;
-    const holder = station([story("a", [video])]);
-    expect(movedChild(holder, "v", { place: "free" })).toEqual({
-      refused: "cannotStandFree",
+  // Why: a story's video card stands free as a screen; a card has no
+  // width, so the screen takes a new video's, and a width the author
+  // already gave it is kept.
+  it("moves a video out of a story as a screen, its width kept or the default", () => {
+    const video = (widthM?: number) =>
+      ({
+        id: "v",
+        kind: "video",
+        view: "card",
+        video: "clip",
+        pose: POSE,
+        advance: TAP,
+        ...(widthM === undefined ? {} : { widthM }),
+      }) as unknown as TourStoryChild;
+    const holder = station([story("a", [video()])]);
+    expect(childMayGo(holder, "v", FREE_LIST)).toBe(true);
+    const out = movedChild(holder, "v", { place: "free" });
+    if (!("station" in out)) throw new Error(out.refused);
+    expect(out.station.children[1]).toMatchObject({
+      view: "screen",
+      widthM: VIDEO_DEFAULT_WIDTH_M,
     });
-    expect(childMayGo(holder, "v", FREE_LIST)).toBe(false);
+    expect(out.floored).toBe(true);
+    const kept = movedChild(station([story("a", [video(3)])]), "v", {
+      place: "free",
+    });
+    if (!("station" in kept)) throw new Error(kept.refused);
+    expect(kept.station.children[1]).toMatchObject({ widthM: 3 });
   });
 
   it("moves a block between two stories, keeping its advance", () => {

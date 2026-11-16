@@ -15,7 +15,7 @@
  * - a tour none of whose codes can place it (no level with a printed size
  *   and a stored position) does not get the flag at all: the viewer asks
  *   for the location anyway (`visitor-screen.ts` `tourCodesUsable`, r857
- *   review #4). The rule is the viewer's own, never a copy (DEC-H3).
+ *   review #4). The rule is the viewer's own, never a copy.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -69,7 +69,7 @@ const USABLE = level({ physicalSizeM: 0.2, geo: AT });
 describe("checkNoGps", () => {
   it("reaches as far as a code event does: 40 m walked", () => {
     // Why: the same drift argument ties notes to a code event within 40 m
-    // walked (`visit-settle.ts`); one number for one argument (DEC-H3).
+    // walked (`visit-settle.ts`); one number for one argument.
     expect(NO_GPS_CODE_REACH_M).toBe(CODE_EVENT_REACH_M);
     expect(NO_GPS_CODE_REACH_M).toBe(40);
   });
@@ -134,7 +134,7 @@ describe("checkNoGps", () => {
   });
 
   it("tripwire: stays wired to the viewer's own rule for any set of levels", () => {
-    // Why (DEC-H3): the editor's warning and the viewer's decision must
+    // Why: the editor's warning and the viewer's decision must
     // never disagree. This compares `checkNoGps` with the very function it
     // calls, so it cannot catch a wrong rule - only a rewiring that stops
     // calling it, or a changed "unreadable" argument. The fixed cases

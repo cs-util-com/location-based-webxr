@@ -19,13 +19,16 @@
  * @see woods-readout.ts.md
  */
 
+import { percentileOfSorted } from "gps-plus-slam-app-framework/utils/percentile";
 import {
   createWoodsGovernor,
   type TreeForm,
   type WoodsGovernorMode,
+  type WoodsGovernorState,
 } from "gps-plus-slam-osm/three";
 
 import { describeDrawCost, type DrawCost } from "./draw-cost.js";
+import type { PerfRecorder } from "./perf-log.js";
 
 export interface WoodsKnobs {
   /** Whether the governor may thin the woods: a phone, and not switched off. */
@@ -79,7 +82,7 @@ export function createFrameWindow(windowMs = 10_000): FrameWindow {
     p95() {
       if (entries.length === 0) return undefined;
       const sorted = entries.map((entry) => entry.ms).sort((a, b) => a - b);
-      return sorted[Math.ceil(0.95 * sorted.length) - 1];
+      return percentileOfSorted(sorted, 0.95);
     },
   };
 }
@@ -126,9 +129,19 @@ export interface WoodsMeter {
   share(): number;
   /** The readout line for the trees drawn and the last frame's cost. */
   describe(inventedTrees: number, drawCost: DrawCost | undefined): string;
+  /** The governor's state now: share, mode and smoothed interval. */
+  state(): WoodsGovernorState;
 }
 
-export function createWoodsMeter(auto: boolean): WoodsMeter {
+/**
+ * The meter; `recorder` (the `?perf=1` log, `perf-log.ts`) receives every
+ * frame and every share change, and is absent when the log is off, so
+ * nothing is recorded then.
+ */
+export function createWoodsMeter(
+  auto: boolean,
+  recorder?: PerfRecorder,
+): WoodsMeter {
   const governor = createWoodsGovernor({ auto });
   const intervals = createFrameWindow();
   let lastMs: number | undefined;
@@ -139,13 +152,23 @@ export function createWoodsMeter(auto: boolean): WoodsMeter {
       // a frame time; the first frame of a burst follows an idle pause.
       if (chained && lastMs !== undefined) intervals.add(atMs, atMs - lastMs);
       if (Number.isFinite(atMs)) lastMs = atMs;
+      recorder?.frame(atMs, chained);
       governor.frame(atMs, chained);
-      const next = governor.state().share;
+      const state = governor.state();
+      const next = state.share;
       if (next === share) return undefined;
+      recorder?.shareChange({
+        atMs,
+        from: share,
+        to: next,
+        mode: state.mode,
+        averageMs: state.averageMs,
+      });
       share = next;
       return next;
     },
     share: () => share,
+    state: () => governor.state(),
     describe(inventedTrees, drawCost) {
       const state = governor.state();
       return describeWoodsReadout({

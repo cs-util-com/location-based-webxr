@@ -3,7 +3,7 @@
  * summary map (`summary-model.ts`) each named a photo on their own, and
  * the two rules had drifted: a caption of blanks read "Photo" on the map
  * and a blank title in the list. The desktop editor is the third page
- * that names objects (M6 E1 plan review #3, root CLAUDE.md DEC-H3), so
+ * that names objects (M6 E1 plan review #3, the shared-helper rule), so
  * the rule lives once, here - and the 3D editor's tree and inspector name
  * blocks by it too.
  */

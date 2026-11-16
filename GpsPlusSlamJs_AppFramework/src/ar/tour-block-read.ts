@@ -114,6 +114,43 @@ export function problem(ctx: TourBlockReadContext, message: string): never {
   return ctx.fail(message);
 }
 
+/** A value a later minor may allow in an optional field: fails a file of
+ *  this minor, drops the field alone (reported through `onDropped`) from
+ *  a newer one, where {@link problem} would skip the whole block. */
+export function dropped<T extends object>(
+  ctx: TourBlockReadContext,
+  field: string,
+  reason: string
+): Partial<T> {
+  if (!ctx.lenient) return ctx.fail(reason);
+  ctx.onDropped?.({ kind: 'field', block: ctx.id, field, reason });
+  return {};
+}
+
+/** One of `choices` in an optional `field`, absent when the block has
+ *  none. A value that is not a string fails at every minor (no later minor
+ *  can make it a word); an unknown word is {@link dropped}, or with
+ *  `unknown: "skip"` a {@link problem} that skips the whole block (a
+ *  field the block cannot be shown right without). */
+export function choice<F extends string, C extends string>(
+  v: TourBlockFields,
+  field: F,
+  choices: readonly C[],
+  ctx: TourBlockReadContext,
+  unknown: 'drop' | 'skip' = 'drop'
+): Partial<Record<F, C>> {
+  const value = v[field];
+  if (value === undefined) return {};
+  const message = `"${ctx.at}.${field}" must be one of ${choices.join(', ')}`;
+  if (typeof value !== 'string') return ctx.fail(message);
+  if ((choices as readonly string[]).includes(value)) {
+    return { [field]: value } as Record<F, C>;
+  }
+  return unknown === 'skip'
+    ? problem(ctx, message)
+    : dropped(ctx, field, message);
+}
+
 export function requiredText(
   v: TourBlockFields,
   field: string,

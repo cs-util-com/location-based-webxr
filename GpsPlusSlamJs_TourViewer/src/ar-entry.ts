@@ -680,7 +680,7 @@ export function wireArEntry(deps: {
    *  a failure on the error line, with the address bar as the way out). */
   function copyLink(): void {
     copying = true;
-    // The framework's one copy sequence (F7, DEC-H3): the write inside the
+    // The framework's one copy sequence (F7): the write inside the
     // chain, so a page without a clipboard fails instead of sticking at
     // "Copying…" (M4 review #1).
     void copyWithFeedback(

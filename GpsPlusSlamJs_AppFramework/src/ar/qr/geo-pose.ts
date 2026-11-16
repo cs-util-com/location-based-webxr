@@ -5,7 +5,7 @@
  * the SAME shape - lat, lon, absolute altitude, a NUE unit quaternion and/or
  * a compass heading - and two copies of the heading/rotation consistency
  * rule would drift exactly where a wrong answer mis-places content
- * silently (DEC-H3). Moved out of `qr-level.ts` for the guided-setup plan
+ * silently. Moved out of `qr-level.ts` for the guided-setup plan
  * (2026-09-08); the level's tests pin the messages, so the caller passes
  * the document path the message names and the error to throw.
  */

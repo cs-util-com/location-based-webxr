@@ -6,6 +6,7 @@ import {
   describeWoodsReadout,
   readWoodsKnobs,
 } from "./woods-readout.js";
+import { createPerfRecorder } from "./perf-log.js";
 
 /**
  * The woods governor's link knobs and its `?perf=1` readout: what the owner
@@ -133,5 +134,55 @@ describe("createWoodsMeter", () => {
     expect(meter.describe(3, undefined)).toBe(
       "frame 16.0 ms · p95 16.0 ms · woods 100 % (off) · 3 invented trees",
     );
+  });
+
+  // WHY THIS TEST MATTERS. The `?perf=1` log is fed by the meter, so a share
+  // change reaches it with the governor's mode and average at that moment,
+  // and the frames it records follow the same chained rule.
+  it("feeds a perf recorder its frames and each share change", () => {
+    const recorder = createPerfRecorder();
+    const meter = createWoodsMeter(true, recorder);
+    for (let t = 0; t <= 8_000; t += meter.share() === 1 ? 60 : 40) {
+      meter.frame(t, t > 0);
+    }
+    const timeline = recorder.snapshot();
+    expect(timeline.bursts.map((burst) => burst.atMs)).toEqual([0]);
+    expect(timeline.intervalCount).toBeGreaterThan(100);
+    expect(timeline.shareChanges).toHaveLength(1);
+    const change = timeline.shareChanges[0];
+    expect(change).toMatchObject({ from: 1, to: 0.5, mode: "thinned" });
+    expect(change?.averageMs).toBeGreaterThan(50);
+    expect(meter.state()).toMatchObject({ share: 0.5, mode: "thinned" });
+  });
+
+  // A meter that recorded only step-downs would leave a log in which the
+  // woods never come back: the step up must reach the recorder too.
+  it("records a step down and the step back up", () => {
+    const recorder = createPerfRecorder();
+    const meter = createWoodsMeter(true, recorder);
+    let t = 0;
+    meter.frame(t, false);
+    while (meter.share() === 1 && t < 10_000) {
+      t += 100;
+      meter.frame(t, true);
+    }
+    // An idle pause longer than the rest, then fast frames for 13 s.
+    t += 400_000;
+    meter.frame(t, false);
+    for (let i = 0; i < 13_000 / 16; i++) {
+      t += 16;
+      meter.frame(t, true);
+    }
+    expect(
+      recorder.snapshot().shareChanges.map(({ from, to, mode }) => ({
+        from,
+        to,
+        mode,
+      })),
+    ).toEqual([
+      { from: 1, to: 0.5, mode: "thinned" },
+      { from: 0.5, to: 1, mode: "full" },
+    ]);
+    expect(meter.share()).toBe(1);
   });
 });

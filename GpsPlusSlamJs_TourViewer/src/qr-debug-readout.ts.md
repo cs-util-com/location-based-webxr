@@ -15,7 +15,7 @@ so a field session where "the tour did not place" needs to say why:
 
 - `type FusedTallies = Map<string, FusedPoseTally>` - per decoded text, the
   framework's `createFusedPoseTally` (the QR demo's `?qrperf` counts by the
-  same rule, DEC-H3).
+  same rule).
 - `tallyEvaluation(tallies, text, result)` - count one new evaluation.
 - `codeLabel(text)` - the text's last 12 characters (for codes 2 and up
   they carry the `n` token; code 1 has none), `…`-prefixed when cut; the full launch URL does not fit a line.

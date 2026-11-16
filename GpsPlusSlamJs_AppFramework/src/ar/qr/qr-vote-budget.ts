@@ -2,7 +2,7 @@
  * The per-code synthetic-vote budget — ONE implementation, shared by every
  * app that wires `createQrTrackingController`'s `dispatchVotes`.
  *
- * Why it is shared (DEC-H3: shared behaviour carrying a contract is unified):
+ * Why it is shared (shared behaviour carrying a contract is unified):
  * `onLocked` fires on EVERY successful detection once locked, not once per
  * lock transition. At the camera-frame cadence that is a fresh vote batch
  * several times a second, for as long as a code stays in view — so a visitor

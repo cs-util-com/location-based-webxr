@@ -15,7 +15,7 @@ Native `BarcodeDetector` only; the OpenCV `QRCodeDetector` fallback was removed
   chained one, what the chain would have picked - `agree`, `disagree` or `reject`, plan §42 S4); `RgbaImage = { data, width, height }`.
 - `BarcodeDetectorFrontEnd` — `new (detector: BarcodeDetectorLike, toSource?, orderCorners?)`; `orderCorners` (a `CornerOrderer`, returning `{ corners, source, audit? }`) defaults to the finder-pattern canonicalizer.
   Wraps native `BarcodeDetector`; `toSource` converts `RgbaImage` →
-  `ImageBitmapSource` (injectable for tests). The default wraps the frame in `ImageData` **without copying** when the array is plain-`ArrayBuffer`-backed (what `captureToRgba` returns, an owned copy already) and copies only otherwise, e.g. shared memory (QR perf plan 2026-09-23, M3: the second ~3 MB copy per decode bought nothing). The rule itself lives once, in `../rgba-image-data.ts` (DEC-H3), shared with the JPEG encoder.
+  `ImageBitmapSource` (injectable for tests). The default wraps the frame in `ImageData` **without copying** when the array is plain-`ArrayBuffer`-backed (what `captureToRgba` returns, an owned copy already) and copies only otherwise, e.g. shared memory (QR perf plan 2026-09-23, M3: the second ~3 MB copy per decode bought nothing). The rule itself lives once, in `../rgba-image-data.ts`, shared with the JPEG encoder.
 - `createBarcodeDetectorFrontEnd(ctor?, toSource?)` — feature-detect factory (`toSource` overrides the default conversion, e.g. the QR demo's timed, copying pre-fix baseline); `null` when no
   `BarcodeDetector` constructor exists. There is **no OpenCV fallback** — the
   caller must handle the unsupported-browser case (see the follow-up below).

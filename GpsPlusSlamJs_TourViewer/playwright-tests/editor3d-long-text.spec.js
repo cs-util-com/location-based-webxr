@@ -9,6 +9,8 @@ import {
   answerHosts,
   boxIn,
   capture,
+  DOCK_PHONE_TABS_PX,
+  dockPhoneGroupPx,
   dockSettled,
   layoutOf,
   noApproach,
@@ -399,12 +401,16 @@ test("docked, the details closed from the writer after a resize take the new win
 });
 
 /**
- * On a phone the writer is the details' sheet: the window's width, the
- * height the sheet takes of the view, the canvas ending at its top. The
- * prototype shows no phone, so this follows the phone's sheet: nothing can
- * be wider there and there is no room for the preview beside it.
+ * On a phone the writer is the details' tab of the phone's one group:
+ * the group's width (the window's upright, under the map; at the
+ * window's right sideways), down to the bottom bar under the group's
+ * strip, the canvas ending at the group (upright) or beside it. The
+ * prototype shows no phone, so this follows the phone's group: nothing
+ * can be wider there and there is no room for the preview beside it.
+ * (Until the panels docked on a phone, this was the details' sheet, two
+ * thirds of the view high.)
  */
-test("on a phone the writer stands in the sheet, under the map, a wider one left behind", async ({
+test("on a phone the writer stands in the group, under the map, a wider one left behind", async ({
   page,
 }) => {
   test.setTimeout(BUDGET_MS);
@@ -425,17 +431,33 @@ test("on a phone the writer stands in the sheet, under the map, a wider one left
     await page.setViewportSize(size);
     await dockSettled(page, size.width);
     const foot = size.height - 24;
-    await expect.poll(async () => (await rectOf(dock)).width).toBe(size.width);
+    const upright = size.height > size.width;
+    const groupPx = upright
+      ? size.width
+      : dockPhoneGroupPx(size.width, size.height);
+    await expect
+      .poll(async () => Math.round((await rectOf(dock)).width))
+      .toBe(groupPx);
     const sheet = await rectOf(dock);
-    expect(sheet.x).toBe(0);
+    expect(sheet.x + sheet.width).toBeCloseTo(size.width, 0);
     expect(sheet.y + sheet.height).toBeCloseTo(foot, 0);
-    expect(sheet.height).toBeCloseTo((foot - 40) * 0.66, 0);
+    if (upright) {
+      expect(sheet.height).toBeCloseTo(
+        dockPhoneGroupPx(size.width, size.height) - DOCK_PHONE_TABS_PX,
+        0,
+      );
+    }
+    // The map ends at the group: above its strip (a splitter between,
+    // at most 2 px), or left of it.
     await expect
       .poll(async () => {
         const map = await rectOf(page.locator("#view3d .view3d-canvas"));
-        return Math.round(map.y + map.height);
+        const gap = upright
+          ? sheet.y - DOCK_PHONE_TABS_PX - (map.y + map.height)
+          : sheet.x - (map.x + map.width);
+        return gap >= -0.5 && gap <= 2;
       })
-      .toBe(Math.round(sheet.y));
+      .toBe(true);
     await expect(dock.locator('[data-act="lt-wide"]')).toBeHidden();
     await expect(dock.locator('[data-act="lt-preview"]')).toBeHidden();
     await expect(page.locator(".lw-pv")).toBeHidden();

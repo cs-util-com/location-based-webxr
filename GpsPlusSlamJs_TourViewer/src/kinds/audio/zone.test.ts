@@ -1,4 +1,10 @@
-import { PerspectiveCamera, Raycaster, Vector3 } from "three";
+import {
+  Mesh,
+  PerspectiveCamera,
+  Raycaster,
+  ShaderMaterial,
+  Vector3,
+} from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,7 +12,12 @@ import {
   recordingEnv,
 } from "../../test-support/audio-world-env.js";
 import { SOUND_ICON } from "./sound-icon.js";
-import { RANGE_RING, rangeRingWidthM, zonePart } from "./zone.js";
+import {
+  RANGE_RING,
+  ZONE_GLOW_ALPHA,
+  rangeRingWidthM,
+  zonePart,
+} from "./zone.js";
 
 const at = (x: number, seconds = 0) => ({
   seconds,
@@ -28,6 +39,33 @@ describe("an ambient zone in the world", () => {
     expect(sounds[0]?.levels).toEqual([0.5, 0.25, 0]);
     part.dispose();
     expect(sounds[0]?.calls).toContain("dispose");
+  });
+
+  it("dims its glow while its sound is lowered under a narration, and brightens back", () => {
+    // Why: the glow is the sound's mark; a glow at full strength over a
+    // sound the visitor hears at 30 % says the wrong thing. It follows
+    // the very factor the ear hears, glide included.
+    const { env, sounds } = recordingEnv();
+    const part = zonePart(audioBlock("zone", { maxM: 10 }), env);
+    const glow = part.object.children.find(
+      (c): c is Mesh<never, ShaderMaterial> =>
+        c instanceof Mesh && c.material instanceof ShaderMaterial,
+    );
+    const alpha = (): unknown => glow?.material.uniforms["uAlpha"]?.value;
+    part.update?.(at(0));
+    expect(alpha()).toBeCloseTo(ZONE_GLOW_ALPHA, 9);
+    const sound = sounds[0];
+    if (sound === undefined) throw new Error("no sound");
+    sound.lower = 0.3;
+    part.update?.(at(0, 1));
+    expect(alpha()).toBeCloseTo(ZONE_GLOW_ALPHA * 0.3, 9);
+    sound.lower = 0.65;
+    part.update?.(at(0, 2));
+    expect(alpha()).toBeCloseTo(ZONE_GLOW_ALPHA * 0.65, 9);
+    sound.lower = 1;
+    part.update?.(at(0, 3));
+    expect(alpha()).toBeCloseTo(ZONE_GLOW_ALPHA, 9);
+    part.dispose();
   });
 
   it("measures its distance on the ground, from where it stands", () => {

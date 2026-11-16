@@ -4,7 +4,7 @@
  * objects cast, the test pole and the shadow-receiving plane. The light, the
  * rig and the map policy are the framework's (`visualization/sun-shadow`,
  * `visualization/sun-shadow-rig`), and so is the frame-time ring
- * (`utils/frame-times`, moved there on 2026-10-03, DEC-H3).
+ * (`utils/frame-times`, moved there on 2026-10-03).
  *
  * @see ar-sun-shadow.ts.md
  */

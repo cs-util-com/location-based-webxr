@@ -13,9 +13,11 @@ import fc from "fast-check";
 import type { TourPictureBlock } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
   Box3,
+  Euler,
   Group,
   type Mesh,
   type MeshBasicMaterial,
+  Quaternion,
   Texture,
   Vector3,
   type Object3D,
@@ -25,7 +27,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakePicturePainters } from "../../test-support/fake-picture-painters.js";
 import { screenIn, type WorldEnv, type WorldMode } from "../../world-part.js";
 import { CUTOUT_BACK_OPACITY, cutoutFacingFade } from "./cutout.js";
-import { PICTURE_REFERENCE_WIDTH_M } from "./framed.js";
+import {
+  FRAMED_ARRIVAL_S,
+  FRAMED_RISE_M,
+  FRAMED_SHADOW_LIFT_M,
+  FRAMED_SHADOW_OPACITY,
+  framedDevelop,
+  framedRise,
+  PICTURE_REFERENCE_WIDTH_M,
+} from "./framed.js";
 import { pictureWorld } from "./world.js";
 
 function picture(
@@ -340,5 +350,231 @@ describe("cutoutFacingFade", () => {
       expect(seen(d)).toBeGreaterThanOrEqual(last - 1e-12);
       last = seen(d);
     }
+  });
+});
+
+describe("a framed print's arrival and its shadow", () => {
+  /** The print's develop as its shader is handed it: the material's own
+   *  hook run on a stand-in of three's basic shader. */
+  function developOf(root: Object3D) {
+    const material = (named(root, "picture-print") as Mesh)
+      .material as MeshBasicMaterial;
+    const shader = {
+      uniforms: {} as Record<string, { value: number }>,
+      vertexShader: "",
+      fragmentShader:
+        "#include <common>\nvoid main() {\n#include <map_fragment>\n}",
+    };
+    material.onBeforeCompile(shader as never, undefined as never);
+    return { shader, value: () => shader.uniforms["uDevelop"]?.value };
+  }
+
+  function frameY(root: Object3D): number {
+    return new Box3()
+      .setFromObject(named(root, "picture-frame")!)
+      .getCenter(new Vector3()).y;
+  }
+
+  async function framed(mode: WorldMode, fields: Partial<TourPictureBlock>) {
+    const fake = fakePicturePainters();
+    const part = pictureWorld(picture("framed", fields), envOf(mode), {
+      decode: () => Promise.resolve(texture()),
+      painters: fake.painters,
+    });
+    await part?.ready;
+    // The renderer stands the part at its pose.
+    part!.object.position.y = fields.pose?.position[1] ?? 0;
+    part!.object.updateMatrixWorld(true);
+    return { part: part!, root: part!.object, fake };
+  }
+
+  it("lays a soft shadow on the ground under a hanging print, taking no tap", async () => {
+    // Why: the prototype's print stands on the ground through its shadow;
+    // a shadow at the print's own height would float, and one in the tap
+    // target would open the sheet from the ground.
+    for (const widthM of [0.8, 1.6, 3.2]) {
+      const { part, root, fake } = await framed("edit", {
+        widthM,
+        pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
+      });
+      part.update?.({ seconds: 0, viewer: [0, 1.6, 5] });
+      root.updateMatrixWorld(true);
+      const shadow = named(root, "picture-framed-shadow") as Mesh;
+      expect(shadow, `width ${String(widthM)}`).toBeDefined();
+      expect(fake.painted.shadows).toBe(1);
+      const box = new Box3().setFromObject(shadow);
+      const size = box.getSize(new Vector3());
+      // On the ground, 12 mm above it, flat.
+      expect(box.min.y).toBeCloseTo(FRAMED_SHADOW_LIFT_M, 6);
+      expect(size.y).toBeCloseTo(0, 6);
+      // 1.2 x the frame's outer width, as deep as the prototype's 0.9 m at
+      // the reference width, scaled with the print.
+      const frame = new Box3()
+        .setFromObject(named(root, "picture-back")!)
+        .getSize(new Vector3());
+      expect(size.x).toBeCloseTo(frame.x * 1.2, 6);
+      expect(size.z).toBeCloseTo((0.9 * widthM) / PICTURE_REFERENCE_WIDTH_M, 6);
+      const material = shadow.material as MeshBasicMaterial;
+      expect(material.opacity).toBeCloseTo(FRAMED_SHADOW_OPACITY, 6);
+      expect(material.depthWrite).toBe(false);
+      // Beside the part's tap target, never in it.
+      expect(shadow.parent?.name).toBe("picture-framed-floor");
+      let inTap = false;
+      part.tapTarget!.traverse((o) => {
+        inTap ||= o === shadow;
+      });
+      expect(inTap).toBe(false);
+      const hits: unknown[] = [];
+      shadow.raycast(undefined as never, hits as never);
+      expect(hits).toEqual([]);
+      part.dispose();
+    }
+  });
+
+  // Why: the tap target's bounds are what a pick falls back to and what
+  // the editor outlines; a shadow inside them stretched both to the
+  // ground under a hanging print.
+  it("keeps the shadow out of the tap target's bounds", async () => {
+    const { part, root } = await framed("edit", {
+      widthM: 0.8,
+      pose: { position: [0, 4, 0], rotation: [0, 0, 0, 1] },
+    });
+    part.update?.({ seconds: 0, viewer: [0, 1.6, 5] });
+    root.updateMatrixWorld(true);
+    const tap = new Box3().setFromObject(part.tapTarget!);
+    expect(tap.isEmpty()).toBe(false);
+    expect(tap.min.y).toBeGreaterThan(1);
+    part.dispose();
+    expect(named(root, "picture-framed-shadow")).toBeUndefined();
+  });
+
+  // Why: a print hung with a pitch or a roll must not tilt its shadow
+  // off the ground: the shadow keeps only the part's turn about the
+  // vertical, lies flat and stays on the ground, over a range of tilts.
+  it("keeps the shadow level and on the ground under a pitched or rolled print", async () => {
+    for (const [pitch, roll] of [
+      [0.35, 0],
+      [0, -0.3],
+      [-0.5, 0.25],
+    ] as const) {
+      const yaw = 0.6;
+      const { part, root } = await framed("edit", {
+        pose: { position: [0, 3, 0], rotation: [0, 0, 0, 1] },
+      });
+      root.quaternion.setFromEuler(new Euler(pitch, yaw, roll, "YXZ"));
+      root.updateMatrixWorld(true);
+      part.update?.({ seconds: 0, viewer: [0, 1.6, 5] });
+      root.updateMatrixWorld(true);
+      const shadow = named(root, "picture-framed-shadow") as Mesh;
+      const q = shadow.getWorldQuaternion(new Quaternion());
+      const normal = new Vector3(0, 0, 1).applyQuaternion(q);
+      const label = `pitch ${String(pitch)} roll ${String(roll)}`;
+      expect(normal.y, label).toBeCloseTo(1, 6);
+      // Its width runs along the part's turn about the vertical.
+      const across = new Vector3(1, 0, 0).applyQuaternion(q);
+      expect(across.x, label).toBeCloseTo(Math.cos(yaw), 6);
+      expect(across.z, label).toBeCloseTo(-Math.sin(yaw), 6);
+      const box = new Box3().setFromObject(shadow);
+      expect(box.min.y, label).toBeCloseTo(FRAMED_SHADOW_LIFT_M, 6);
+      expect(box.max.y - box.min.y, label).toBeCloseTo(0, 6);
+      part.dispose();
+    }
+  });
+
+  it("follows the ground when the print is moved up or down", async () => {
+    const { part, root } = await framed("edit", {
+      pose: { position: [0, 0.6, 0], rotation: [0, 0, 0, 1] },
+    });
+    part.update?.({ seconds: 0, viewer: [0, 1.6, 5] });
+    root.position.y = 2.4;
+    root.updateMatrixWorld(true);
+    part.update?.({ seconds: 0.1, viewer: [0, 1.6, 5] });
+    root.updateMatrixWorld(true);
+    const box = new Box3().setFromObject(named(root, "picture-framed-shadow")!);
+    expect(box.min.y).toBeCloseTo(FRAMED_SHADOW_LIFT_M, 6);
+  });
+
+  it("rises 12 cm and develops once, as the visitor arrives", async () => {
+    // Why: the chosen page's print comes up out of the ground and its
+    // picture comes out of the paper; it is the station's arrival, so it
+    // plays once from the first frame it is shown.
+    const { part, root } = await framed("play", {
+      pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
+    });
+    const develop = developOf(root);
+    expect(develop.shader.fragmentShader).toMatch(
+      /#include <common>\s*uniform float uDevelop;/,
+    );
+    expect(develop.shader.fragmentShader).toMatch(
+      /#include <map_fragment>[\s\S]*uDevelop[\s\S]*\}$/,
+    );
+    const view = { viewer: [0, 1.6, 5] as [number, number, number] };
+    part.update?.({ seconds: 20, ...view });
+    root.updateMatrixWorld(true);
+    const sunk = frameY(root);
+    expect(develop.value()).toBe(0);
+    let lastY = sunk;
+    let lastDevelop = 0;
+    for (let t = 0.1; t <= FRAMED_ARRIVAL_S + 1e-9; t += 0.1) {
+      part.update?.({ seconds: 20 + t, ...view });
+      root.updateMatrixWorld(true);
+      // Never sinks back, never undevelops on the way.
+      expect(frameY(root)).toBeGreaterThanOrEqual(lastY - 1e-12);
+      expect(develop.value()!).toBeGreaterThanOrEqual(lastDevelop - 1e-12);
+      lastY = frameY(root);
+      lastDevelop = develop.value()!;
+    }
+    part.update?.({ seconds: 20 + FRAMED_ARRIVAL_S, ...view });
+    root.updateMatrixWorld(true);
+    expect(frameY(root) - sunk).toBeCloseTo(FRAMED_RISE_M, 6);
+    expect(develop.value()).toBe(1);
+    // Arrived, it stays so.
+    part.update?.({ seconds: 99, ...view });
+    root.updateMatrixWorld(true);
+    expect(frameY(root) - sunk).toBeCloseTo(FRAMED_RISE_M, 6);
+    expect(develop.value()).toBe(1);
+  });
+
+  it("stands arrived in the editor", async () => {
+    // Why: a creator places the print where it will stand; a rising one
+    // would be placed 12 cm off.
+    const { part, root } = await framed("edit", {});
+    const develop = developOf(root);
+    root.updateMatrixWorld(true);
+    const before = frameY(root);
+    expect(develop.value()).toBe(1);
+    part.update?.({ seconds: 3, viewer: [0, 1.6, 5] });
+    root.updateMatrixWorld(true);
+    expect(frameY(root)).toBeCloseTo(before, 9);
+    expect(develop.value()).toBe(1);
+  });
+});
+
+describe("framedRise and framedDevelop", () => {
+  it("start sunk and undeveloped, end risen and developed, monotone between", () => {
+    expect(framedRise(0)).toBeCloseTo(-FRAMED_RISE_M, 12);
+    expect(framedRise(1)).toBeCloseTo(0, 12);
+    expect(framedDevelop(0)).toBe(0);
+    expect(framedDevelop(1)).toBe(1);
+    // The rise is done before the picture is: it comes up, then develops.
+    expect(framedRise(0.7)).toBeCloseTo(0, 12);
+    expect(framedDevelop(0.3)).toBe(0);
+    fc.assert(
+      fc.property(
+        fc.double({ min: -1, max: 2, noNaN: true }),
+        fc.double({ min: -1, max: 2, noNaN: true }),
+        (a, b) => {
+          const [lo, hi] = a <= b ? [a, b] : [b, a];
+          expect(framedRise(hi)).toBeGreaterThanOrEqual(framedRise(lo));
+          expect(framedDevelop(hi)).toBeGreaterThanOrEqual(framedDevelop(lo));
+          expect(framedDevelop(lo)).toBeGreaterThanOrEqual(0);
+          expect(framedDevelop(hi)).toBeLessThanOrEqual(1);
+          expect(framedRise(lo)).toBeGreaterThanOrEqual(-FRAMED_RISE_M);
+          expect(framedRise(hi)).toBeLessThanOrEqual(0);
+        },
+      ),
+    );
+    expect(framedRise(Number.NaN)).toBe(0);
+    expect(framedDevelop(Number.NaN)).toBe(1);
   });
 });

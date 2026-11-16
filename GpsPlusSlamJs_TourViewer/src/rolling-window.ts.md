@@ -9,7 +9,7 @@ A time window, unlike the framework's `utils/frame-times` (the last N
 frames as percentiles, which the mesh cursor's readout uses): "the last
 2 s" means the same at 30 and at 60 frames a second, and the worst forgets
 a slow frame once it is 2 s old. Promote it to the framework when a second
-app needs it (DEC-H3).
+app needs it.
 
 ## Public API
 

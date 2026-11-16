@@ -14,7 +14,21 @@ drawn model; `model-visitor.ts` drives the handles.
 - `ModelViewEnv { enableClipping(): void }` - what a cutaway needs from
   the page: the renderer's local clipping switch.
 - `mountModelView(model, block, baseScale, env?) -> ModelViewHandle`
-  - `placed`: nothing changes but the clip (see below).
+  - Every view: a soft contact shadow (`model-contact-shadow`) hangs on
+    the model, flat at its lowest point at rest (`MODEL_SHADOW_LIFT_M`,
+    12 mm, above it), centred under its footprint; each side spans
+    `contactShadowSpan(side, larger footprint side)` = `max(side, 0.6 x
+larger) x 1.25` (the footprint, never the height: a 10 m tower on a
+    1 m foot gets a 1.25 m blob) (`MODEL_SHADOW_FLOOR_SHARE`, `MODEL_SHADOW_SPREAD`, the chosen
+    page's 3.3 m x 2.5 m blob under its 2.7 m bell frame; swept 1.1-1.6
+    in the tests). Opacity `MODEL_SHADOW_OPACITY` 0.85, under the ghost
+    `MODEL_SHADOW_GHOST_OPACITY` 0.35 (its feet already fade). The radial
+    fade is one module-level `DataTexture` (64 px, the page's stops; no
+    canvas, never freed); each view owns its material and plane, since the
+    station's fade writes each material's opacity. It takes no ray (so it
+    never covers a note or takes a tap), draws first (`renderOrder` -1),
+    and moves, turns and scales with the model, a toy included.
+  - `placed`: nothing changes but the clip (see below) and the shadow.
   - `ghost`: every mesh's material is replaced by the shared ghost shader
     (a fresnel glass with a soft ground fade and an appear-in by
     `uAppear`; the ground is the model's lowest point in the world,
@@ -37,6 +51,9 @@ height)`, held at 1 mm at least so a flat model never asks GLSL for the
   - `notePoints()` - each note's surface point, its marker point (out
     along its normal by `clamp(0.13 * native size * scale, 0.04, 4)`)
     and its world normal.
+  - `drawnSizeM()` - the model's native size times its world scale now
+    (a folder's scale included): what the note cover's slack is a share
+    of.
   - `section()` / `setSection(i)` - the current section; `setSection`
     wraps and ignores a non-integer.
   - `toyFactor()`, `pinchToy(fromPx, toPx)`, `moveToy(dx, dz)` (world
@@ -101,7 +118,10 @@ view.update(dtS, camera);
 
 ## Tests
 
-`model-views.test.ts`: placed untouched; the ghost's materials and their
+`model-views.test.ts`: placed untouched; the contact shadow's place,
+size, opacity per view, no ray and its removal, its span swept over
+spreads and footprints, a property that the span is the held side times
+exactly the spread, a tower's shadow by its foot; the ghost's materials and their
 return; the facing cut and its easing; sections in a rotated parent and after the parent moves; note
 points; notes after a file swap; the clip held in hotspots; the toy's
 factor, cap, move, reach (swept over tour sizes 0.1-500 m, and after a

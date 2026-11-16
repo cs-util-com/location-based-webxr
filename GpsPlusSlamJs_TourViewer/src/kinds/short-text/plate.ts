@@ -1,7 +1,8 @@
 /**
  * A short text's plate: its words laid out and painted on a canvas, as a
- * sign's board shows them. The role's accent band across the top, the
- * role's icon left of the caption, the caption in bold and the
+ * sign's board or a pin's head shows them (`SIGN_PLATE`, `PIN_PLATE`):
+ * a sign's board has the role's accent band across the top, a pin's
+ * head a pointer below it. The role's icon left of the caption, the caption in bold and the
  * description smaller and quieter under it. Laid out in canvas pixels at
  * a fixed number of pixels per letter height (`PLATE_PX_PER_EM`), so the
  * world size is the layout times the letter height a reading distance
@@ -29,6 +30,9 @@ export const SHORT_TEXT_ACCENT: Readonly<Record<TourShortTextRole, string>> = {
 /** A short text's role where it names none. */
 export const SHORT_TEXT_DEFAULT_ROLE: TourShortTextRole = "label";
 
+/** A short text's reading distance where it names none (m). */
+export const SHORT_TEXT_DEFAULT_READ_AT_M = 4;
+
 /** The plate's paint. */
 const FILL = "rgba(17,21,27,0.95)";
 const CAPTION_INK = "#f7f4ec";
@@ -37,14 +41,42 @@ const ICON_INK = "#13171c";
 const FONT =
   'system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
-/** The sign plate's proportions, in letter heights. */
-const SIGN = {
+/** A plate's proportions, in letter heights: the caption's weight, its
+ *  widest line, the padding, the corner radius, the accent band across
+ *  the top and the pointer under the board (each as a share of a
+ *  letter height; 0: none). */
+export interface PlateStyle {
+  readonly weight: number;
+  readonly maxEm: number;
+  readonly padX: number;
+  readonly padY: number;
+  readonly radius: number;
+  readonly band: number;
+  readonly pointer: number;
+}
+
+/** A sign's board: square corners, the role's band across the top. */
+export const SIGN_PLATE: PlateStyle = {
   weight: 650,
   maxEm: 8.6,
   padX: 0.55,
   padY: 0.42,
   radius: 0.12,
-} as const;
+  band: 0.17,
+  pointer: 0,
+};
+
+/** A pin's head: a rounded tag with a pointer under it, toward its stem,
+ *  and no band (its ring on the ground carries the role's colour). */
+export const PIN_PLATE: PlateStyle = {
+  weight: 650,
+  maxEm: 9.5,
+  padX: 0.5,
+  padY: 0.34,
+  radius: 0.5,
+  band: 0,
+  pointer: 0.42,
+};
 /** Description letters against the caption's. */
 const DESC_EM = 0.62;
 /** The most description lines shown; the last ends in " ...". */
@@ -99,6 +131,7 @@ export function wrapText(
 
 /** A plate's layout, in canvas px. */
 export interface PlateLayout {
+  readonly style: PlateStyle;
   readonly font: string;
   readonly descFont: string;
   readonly lines: readonly string[];
@@ -109,6 +142,9 @@ export interface PlateLayout {
   readonly bodyH: number;
   readonly margin: number;
   readonly band: number;
+  /** The pointer's height under the board (0: none); the canvas holds it
+   *  below the board's bottom margin. */
+  readonly pointer: number;
   /** The role icon's centre on the canvas. */
   readonly iconX: number;
   readonly iconY: number;
@@ -123,16 +159,26 @@ export function layoutSignPlate(
   description: string | undefined,
   measure: Measure,
 ): PlateLayout {
-  const font = `${String(SIGN.weight)} ${String(P)}px ${FONT}`;
+  return layoutPlate(SIGN_PLATE, caption, description, measure);
+}
+
+/** The plate of `caption` and `description` in `style`. */
+export function layoutPlate(
+  style: PlateStyle,
+  caption: string,
+  description: string | undefined,
+  measure: Measure,
+): PlateLayout {
+  const font = `${String(style.weight)} ${String(P)}px ${FONT}`;
   const descFont = `450 ${String(Math.round(DESC_EM * P))}px ${FONT}`;
-  const lines = wrapText(caption, SIGN.maxEm * P, (t) => measure(font, t));
+  const lines = wrapText(caption, style.maxEm * P, (t) => measure(font, t));
   const capW = Math.max(1, ...lines.map((l) => measure(font, l)));
   let descLines: string[] = [];
   let descW = 0;
   if (description !== undefined && description.trim() !== "") {
     descLines = wrapText(
       description,
-      Math.min((SIGN.maxEm + 2) * P, Math.max(capW, 8 * P)),
+      Math.min((style.maxEm + 2) * P, Math.max(capW, 8 * P)),
       (t) => measure(descFont, t),
     );
     if (descLines.length > DESC_MAX_LINES) {
@@ -148,12 +194,14 @@ export function layoutSignPlate(
   const capH = lh * (lines.length - 1) + 1.02 * P;
   const descH = descLines.length > 0 ? gap + dlh * descLines.length : 0;
   const margin = Math.round(0.36 * P);
-  const band = 0.17 * P;
+  const band = style.band * P;
+  const pointer = Math.round(style.pointer * P);
   const iconW = 1.22 * P;
-  const bodyW = Math.ceil(SIGN.padX * P * 2 + iconW + Math.max(capW, descW));
-  const bodyH = Math.ceil(SIGN.padY * P * 2 + capH + descH + band);
-  const contentTop = margin + band + SIGN.padY * P;
+  const bodyW = Math.ceil(style.padX * P * 2 + iconW + Math.max(capW, descW));
+  const bodyH = Math.ceil(style.padY * P * 2 + capH + descH + band);
+  const contentTop = margin + band + style.padY * P;
   return {
+    style,
     font,
     descFont,
     lines,
@@ -162,10 +210,11 @@ export function layoutSignPlate(
     bodyH,
     margin,
     band,
-    iconX: margin + SIGN.padX * P + 0.47 * P,
+    pointer,
+    iconX: margin + style.padX * P + 0.47 * P,
     iconY: contentTop + 0.5 * P + (lh * (lines.length - 1)) / 2,
     canvasW: bodyW + 2 * margin,
-    canvasH: bodyH + 2 * margin,
+    canvasH: bodyH + 2 * margin + pointer,
   };
 }
 
@@ -237,16 +286,28 @@ function paintRoleIcon(
 }
 
 /** Paints `lay` onto `g` (a canvas of the layout's size): the shadowed
- *  board, its top sheen, the accent band, the rim, the icon (none where
- *  a turning glyph takes its place) and the words. */
-function paintSignPlate(
+ *  board and its pointer, its top sheen, the accent band, the rim, the
+ *  icon (none where a turning glyph takes its place) and the words. */
+function paintPlate(
   g: Paint,
   lay: PlateLayout,
   role: TourShortTextRole,
   options: { readonly icon: boolean },
 ): void {
   const { margin: x0, margin: y0, bodyW, bodyH } = lay;
-  const radius = Math.min(SIGN.radius * P, bodyH / 2);
+  const { style } = lay;
+  const radius = Math.min(style.radius * P, bodyH / 2);
+  // The pointer: a triangle from just inside the board's bottom edge to
+  // its tip under the board's centre.
+  const pointer = (): void => {
+    const cx = x0 + bodyW / 2;
+    g.beginPath();
+    g.moveTo(cx - 0.32 * P, y0 + bodyH - 2);
+    g.lineTo(cx, y0 + bodyH + lay.pointer);
+    g.lineTo(cx + 0.32 * P, y0 + bodyH - 2);
+    g.closePath();
+    g.fill();
+  };
   g.clearRect(0, 0, lay.canvasW, lay.canvasH);
   g.save();
   g.shadowColor = "rgba(0,0,0,0.36)";
@@ -256,6 +317,7 @@ function paintSignPlate(
   g.beginPath();
   g.roundRect(x0, y0, bodyW, bodyH, radius);
   g.fill();
+  if (lay.pointer > 0) pointer();
   g.restore();
   g.save();
   g.beginPath();
@@ -266,8 +328,10 @@ function paintSignPlate(
   sheen.addColorStop(0.55, "rgba(255,255,255,0)");
   g.fillStyle = sheen;
   g.fillRect(x0, y0, bodyW, bodyH);
-  g.fillStyle = SHORT_TEXT_ACCENT[role];
-  g.fillRect(x0, y0, bodyW, lay.band);
+  if (lay.band > 0) {
+    g.fillStyle = SHORT_TEXT_ACCENT[role];
+    g.fillRect(x0, y0, bodyW, lay.band);
+  }
   g.restore();
   const lw = 0.03 * P;
   g.lineWidth = lw;
@@ -281,9 +345,15 @@ function paintSignPlate(
     Math.max(1, radius - lw / 2),
   );
   g.stroke();
+  // Over the rim where the pointer leaves the board, so the join carries
+  // no line.
+  if (lay.pointer > 0) {
+    g.fillStyle = FILL;
+    pointer();
+  }
   if (options.icon) paintRoleIcon(g, role, lay.iconX, lay.iconY, 0.42 * P);
-  const left = x0 + SIGN.padX * P + 1.22 * P;
-  const top = y0 + lay.band + SIGN.padY * P;
+  const left = x0 + style.padX * P + 1.22 * P;
+  const top = y0 + lay.band + style.padY * P;
   const lh = 1.17 * P;
   const capH = lh * (lay.lines.length - 1) + 1.02 * P;
   g.textBaseline = "alphabetic";
@@ -331,19 +401,36 @@ export function canvasMeasure(): Measure {
   };
 }
 
-/** The sign plate of a text, laid out and painted: its canvas is null on
- *  a page with none (the layout still sizes the board). */
+/** A plate laid out and painted. */
+export interface Plate {
+  readonly layout: PlateLayout;
+  readonly canvas: HTMLCanvasElement | null;
+}
+
+/** The plate of a text in `style`, laid out and painted: its canvas is
+ *  null on a page with none (the layout still sizes the board). */
+export function paintedPlate(
+  style: PlateStyle,
+  caption: string,
+  description: string | undefined,
+  role: TourShortTextRole,
+  options: { readonly icon: boolean },
+): Plate {
+  const layout = layoutPlate(style, caption, description, canvasMeasure());
+  const made = makeCanvas(layout.canvasW, layout.canvasH);
+  if (made === null) return { layout, canvas: null };
+  paintPlate(made.g, layout, role, options);
+  return { layout, canvas: made.canvas };
+}
+
+/** The sign plate of a text (`paintedPlate` in `SIGN_PLATE`). */
 export function signPlate(
   caption: string,
   description: string | undefined,
   role: TourShortTextRole,
   options: { readonly icon: boolean },
-): { readonly layout: PlateLayout; readonly canvas: HTMLCanvasElement | null } {
-  const layout = layoutSignPlate(caption, description, canvasMeasure());
-  const made = makeCanvas(layout.canvasW, layout.canvasH);
-  if (made === null) return { layout, canvas: null };
-  paintSignPlate(made.g, layout, role, options);
-  return { layout, canvas: made.canvas };
+): Plate {
+  return paintedPlate(SIGN_PLATE, caption, description, role, options);
 }
 
 /** The turning glyph: a disc in the role's accent with a dark arrow

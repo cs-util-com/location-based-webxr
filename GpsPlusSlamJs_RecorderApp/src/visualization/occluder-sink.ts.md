@@ -5,7 +5,7 @@
 The recorder's persistent occluder for live AR (`main.ts`) and replay
 (`replay/replay-mode.ts`): the framework's `createOccluderSink`
 (`gps-plus-slam-app-framework/visualization/occluder-sink`, lifted there from this file
-2026-10-13, Tour Viewer polish round M5a, DEC-H3) fed from the recorder's validated
+2026-10-13, Tour Viewer polish round M5a) fed from the recorder's validated
 `occupancy` option group, with the recorder's own mesh worker. The policy, teardown and
 invariants are the framework module's (its sidecar).
 

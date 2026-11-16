@@ -35,6 +35,7 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import { Quaternion } from "three";
 
+import { wrapAngle } from "./angle-easing.js";
 import { objectPoseNue } from "./content-placement.js";
 
 /**
@@ -168,8 +169,6 @@ function yawFrom(reference: Quaternion, rotation: Quaternion): number | null {
   return 2 * Math.atan2(delta.y, delta.w);
 }
 
-const wrap = (a: number): number => Math.atan2(Math.sin(a), Math.cos(a));
-
 /** `sqrt(k) / sum(1 / a)`: the horizontal error expected from `visits`
  *  weighted by 1/accuracy if each errs by about its accuracy,
  *  independently. */
@@ -243,7 +242,9 @@ function weightedRotation(visits: readonly UsableVisit[]): {
   const turn = new Quaternion(0, Math.sin(mean / 2), 0, Math.cos(mean / 2));
   return {
     rotation: turn.multiply(reference).normalize(),
-    yawOffsets: yaws.flatMap((yaw) => (yaw === null ? [] : [wrap(yaw - mean)])),
+    yawOffsets: yaws.flatMap((yaw) =>
+      yaw === null ? [] : [wrapAngle(yaw - mean)],
+    ),
   };
 }
 

@@ -1,7 +1,7 @@
 /**
  * How a tour object is named on every page that lists or labels one (the
  * object list, the summary map, the desktop editor's rail, map, tree and
- * inspector; M6 E1 plan review #3, root CLAUDE.md DEC-H3): its title, and
+ * inspector; M6 E1 plan review #3, the shared-helper rule): its title, and
  * its distance to the nearest code. The one naming rule: no page names a
  * block on its own. Pure.
  *

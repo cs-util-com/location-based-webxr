@@ -290,7 +290,7 @@ function main(): void {
           // The store lives for the whole page while startSession() fires on
           // EVERY `running` transition — without the shared teardown a
           // re-entry blends the dead session's odometry-origin GPS pairs
-          // into the new alignment solve (DEC-H3; PR #363 review caught the
+          // into the new alignment solve (PR #363 review caught the
           // call missing while the import landed).
           teardownArSessionState(store);
         },

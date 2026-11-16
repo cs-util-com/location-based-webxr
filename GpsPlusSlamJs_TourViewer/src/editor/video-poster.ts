@@ -49,7 +49,7 @@ const POSTER_TIMEOUT_MS = 10_000;
 const LENGTH_TIMEOUT_MS = 2_000;
 /** A seek far past any clip's end: the browser reads a recorded clip's
  *  length to clamp it, and says so in "durationchange". */
-const FAR_PAST_THE_END_S = 1e9;
+export const FAR_PAST_THE_END_S = 1e9;
 
 function drawOnCanvas(
   video: PosterVideo,

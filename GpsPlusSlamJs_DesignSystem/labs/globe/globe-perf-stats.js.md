@@ -1,7 +1,7 @@
 # labs/globe/globe-perf-stats.js - the seam to the framework's frame statistics
 
 - Purpose: globe zoom frame-hitch plan 2026-10-03-2017 (PERF-0, PERF-1;
-  DEC-H3: one implementation). The lab's recorder takes its whole-run
+  one implementation). The lab's recorder takes its whole-run
   histogram, attribution join, idle calibration, target check, on-screen
   summary and export from the framework (`/fw/utils/frame-run.js`,
   `frame-run-report.js`, `frame-target.js`), through this one file.

@@ -17,7 +17,7 @@
  * {@link PICK_TOLERANCE_DEG}. The value, the sweep behind it and what would
  * reverse it are in the sidecar.
  *
- * The raycast is the framework's `raycastPointer` (DEC-H3); this module
+ * The raycast is the framework's `raycastPointer`; this module
  * maps the hit back to the object it belongs to and adds the tolerance.
  *
  * @see object-pick.ts.md

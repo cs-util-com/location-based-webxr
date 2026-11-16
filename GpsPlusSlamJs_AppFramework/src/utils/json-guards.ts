@@ -1,8 +1,8 @@
 /**
  * The two type guards every hand-edited-JSON parser in this package needs
  * (`qr/qr-level.ts`, `qr/geo-pose.ts`, `tour-manifest.ts`): a JSON object
- * and a finite number. One copy per package (DEC-H3) - the M1 review of the
- * guided-setup plan found three.
+ * and a finite number, in one module so the package keeps one implementation
+ * of each (three had grown in this package).
  */
 
 /** A non-null object (a JSON object or array; callers narrow further). */

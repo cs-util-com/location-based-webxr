@@ -475,6 +475,49 @@ body:not(.shelf-folded) #shell-shelf {
   padding-left: 14px;
 }
 
+/* A made model's detail: the slider of the level-of-detail prototype,
+   its share floated right, the stop's triangles and deviation in a box. */
+.as-detail {
+  margin: 8px 0 0;
+}
+
+.as-detail-label {
+  display: block;
+  margin: 0 0 4px;
+  color: var(--s-text);
+  font-size: 12px;
+}
+
+.as-detail-out {
+  float: right;
+  color: var(--s-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.as-detail-range {
+  display: block;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--s-accent);
+}
+
+.as-detail-range:disabled {
+  cursor: progress;
+}
+
+.as-detail-stats {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgb(255 255 255 / 4%);
+  color: var(--s-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.as-detail-note {
+  margin: 6px 0 0;
+}
+
 .as-confirm {
   margin: 0 7px 7px;
   padding: 8px 9px;

@@ -7,7 +7,7 @@
  * Exists because the wayfinding HUD mirrors a design-system animation whose
  * easing is the token `--ease-out: cubic-bezier(0, 0, 0.2, 1)`; a
  * hand-picked `easeOutCubic` would look right and drift from the CSS in
- * every frame between. SHARED behaviour per DEC-H3 (the root CLAUDE.md): a
+ * every frame between. SHARED behaviour per the shared-helper rule (the root CLAUDE.md): a
  * solver, not a one-liner, and the easing every future CSS-mirroring
  * animation in the framework needs. Deep-imported
  * (`gps-plus-slam-app-framework/utils/cubic-bezier-easing`), NOT on the

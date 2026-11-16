@@ -244,7 +244,7 @@ draft and logs `tourAuthoring/settled`.
   the end alignment (`alignment`, `alignmentInfo`,
   `alignmentGpsExtentM`) - never the pick's geo with the end's block. The
   marker is the framework's `qrMintHeadingMarker` (the Recorder mint's
-  rule, DEC-H3): `alignmentGpsExtentM` and `headingUncertain` (under 10 m)
+  rule): `alignmentGpsExtentM` and `headingUncertain` (under 10 m)
   when the extent is known, nothing when it is not. It matters since D33: a
   visit that never matures re-mints through an alignment that may span under
   10 m, and the moved-code rule (`moved-code-rule.ts`) never settles a

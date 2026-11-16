@@ -78,6 +78,7 @@ describe("createAddPalette", () => {
       "Short textin 2 The old gate",
       "Long textin 2 The old gate",
       "Picturein 2 The old gate",
+      "Videoin 2 The old gate",
       "Soundin 2 The old gate",
       "3D modelin 2 The old gate",
       "New stationat the centre of the view",
@@ -100,7 +101,7 @@ describe("createAddPalette", () => {
   it("moves the row Enter adds with the arrows, round at either end", () => {
     const { field, options } = opened();
     key(field, "ArrowUp");
-    expect(field.getAttribute("aria-activedescendant")).toBe(options()[5]?.id);
+    expect(field.getAttribute("aria-activedescendant")).toBe(options()[6]?.id);
     key(field, "ArrowDown");
     key(field, "ArrowDown");
     expect(options()[1]?.getAttribute("aria-selected")).toBe("true");
@@ -110,7 +111,7 @@ describe("createAddPalette", () => {
 
   it("adds a row clicked", () => {
     const { options, box } = opened();
-    options()[5]?.click();
+    options()[6]?.click();
     expect(add).toHaveBeenCalledWith({ kind: "station" });
     expect(box.hidden).toBe(true);
   });
@@ -198,6 +199,7 @@ describe("the palette's kind chips and marks", () => {
     "Short text",
     "Long text",
     "Picture",
+    "Video",
     "Sound",
     "3D model",
     "New station",
@@ -217,6 +219,7 @@ describe("the palette's kind chips and marks", () => {
       "Short text",
       "Long text",
       "Picture",
+      "Video",
       "Sound",
       "3D model",
       "Station",

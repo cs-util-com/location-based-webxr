@@ -2,7 +2,7 @@
 
 - Purpose: the device block of the globe lab's exports, for both the
   frame-hitch recorder (`globe-perf.js`, DEC-PERF-1) and the Debug panel
-  (`globe-debug.js`, DEC-G6-6). One implementation (DEC-H3), moved out of
+  (`globe-debug.js`, DEC-G6-6). One implementation, moved out of
   `globe-perf.js` unchanged.
 - Public API: `deviceBlock({ renderer, params, relief, extra })` -> plain
   strings, numbers and booleans:

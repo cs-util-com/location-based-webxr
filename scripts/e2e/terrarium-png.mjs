@@ -3,7 +3,7 @@
  * as real PNG bytes, so a page under test runs its whole tile path (fetch,
  * decode, sample) against terrain whose answer is known.
  *
- * ONE ENCODER FOR THE WORKSPACE (DEC-H3, 2026-08-24). OsmDemo's suite and
+ * ONE ENCODER FOR THE WORKSPACE (2026-08-24). OsmDemo's suite and
  * the design system's terrain lab both need it, and it carries a contract:
  * Terrarium's fixed-point layout, where one step in the red byte is 256 m.
  * Two copies of that would be two chances to be off by one carry, which

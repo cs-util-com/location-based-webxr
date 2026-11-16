@@ -1,7 +1,7 @@
 /**
  * The Google Drive file id of a link, in any spelling Drive or this app
  * hands out - the one parser (Tour Viewer M0c follow-up F3; root
- * `CLAUDE.md` DEC-H3: shared behaviour lives once, here).
+ * the shared-helper rule: shared behaviour lives once, here).
  *
  * @see drive-file-id.ts.md
  */

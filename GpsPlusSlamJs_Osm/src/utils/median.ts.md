@@ -3,9 +3,10 @@
 ## Purpose
 
 The **one** median implementation in `GpsPlusSlamJs_Osm`. The package has no
-dependency on `gps-plus-slam-app-framework`, so under the helper-unification
-rule (DEC-H3) it keeps its own copy rather than gaining a dependency for
-eight lines — but exactly one copy, which
+dependency on `gps-plus-slam-app-framework`, so it keeps a
+deliberate copy (shared-helper rule: shared behaviour has one implementation,
+a dependency-free one-liner may exist once per package) rather than gaining a
+dependency for eight lines — but exactly one copy, which
 `tests/repo-config/duplicate-helpers.test.js` enforces as a `perPackage`
 entry.
 

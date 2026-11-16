@@ -396,7 +396,7 @@ function usableExtent(m: number | undefined): m is number {
  * `mintQuality`. Empty when the extent is unknown, non-finite or negative,
  * so the level says nothing rather than a default (absent = unknown).
  *
- * Exported as THE marker rule (DEC-H3): the Tour Viewer's authoring settle
+ * Exported as THE marker rule: the Tour Viewer's authoring settle
  * re-mints a code through an alignment of its own choosing and marks it
  * with this (review R7 of D33).
  */

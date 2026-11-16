@@ -68,7 +68,7 @@ import {
   type QrLevelLookupState,
 } from './qr-level-source';
 import { QR_LAUNCH_HOSTS } from './qr-launch-hosts';
-// Shared with the TourViewer rather than re-decided here (DEC-H3): the
+// Shared with the TourViewer rather than re-decided here: the
 // controller votes on every locked FRAME, so an unbudgeted code pins the
 // alignment centroid to the poster.
 import { createQrVoteBudget } from 'gps-plus-slam-app-framework/ar/qr/qr-vote-budget';

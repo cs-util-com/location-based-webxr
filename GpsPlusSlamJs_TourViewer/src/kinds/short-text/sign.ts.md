@@ -32,3 +32,5 @@ part.update?.({ seconds, viewer });
 ## Tests
 
 `sign.test.ts`: standing on the ground and rising with the reading distance, the post count (property over widths), each orientation, eased turning, the glyph turning toward `pointsTo`. `placement.contract.test.ts` holds the sign as a turning view.
+
+The turn and the glyph ease with `easeAngle` (`angle-easing.ts`) at `smoothingAlpha` rates.

@@ -5,7 +5,7 @@
 What an edit and a delete do to the lists a Finish writes (Tour
 Viewer M6 E0c): the rules the phone's object list (`object-editing.ts`)
 used inline, lifted so the desktop editor (`src/editor/`) applies the same
-ones - the E2 plan review's #8 (root `CLAUDE.md` DEC-H3). Pure, generic
+ones - the E2 plan review's #8 (the shared-helper rule). Pure, generic
 over the page's own entry type (`EditEntry`: an object, and whatever the
 page keeps with it - a photo's bytes, a visit's frame).
 

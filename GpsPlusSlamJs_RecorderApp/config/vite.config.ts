@@ -5,7 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 // The build stamp (commit, versions, build time) every recording's
 // session.json carries: the framework's one define block, shared with the
-// Tour Viewer (DEC-H3), read in the page by its utils/build-info.
+// Tour Viewer, read in the page by its utils/build-info.
 import { createBuildMetadataDefine } from '../../GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs';
 
 export default defineConfig({

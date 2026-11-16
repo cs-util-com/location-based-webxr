@@ -18,13 +18,19 @@ import { shellIcon, type ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 
 import { el } from "../editor-shell/inspector-fields.js";
 import type { AssetPlace } from "./asset-places.js";
+import type { DetailOutcome } from "./asset-shelf.js";
 import type { ShelfRow } from "./asset-shelf-slice.js";
 import type { UseInChoice, UseInGroup } from "./use-in-choices.js";
 import {
   cardKindLine,
   cardMore,
   cardWarning,
+  detailReadout,
+  detailView,
   formatBytes,
+  formatCount,
+  type DetailStop,
+  type DetailView,
   cardState,
   filteredRows,
   pillView,
@@ -115,6 +121,12 @@ export interface ShelfPanelDeps {
   readonly subscribe: (listener: () => void) => () => void;
   readonly retry: (id: string) => boolean;
   readonly useOriginal: (id: string) => Promise<boolean>;
+  /** Re-makes a model at a share of its triangles (null: the default
+   *  level) and says the outcome (`AssetShelf.setDetail`). */
+  readonly setDetail: (
+    id: string,
+    share: number | null,
+  ) => Promise<DetailOutcome>;
   readonly remove: (id: string) => (() => void) | null;
   /** A file in use deleted with every use of it: `plan` says in plain
    *  words what the delete does ("Deletes 2 items, removes it from 1
@@ -214,6 +226,32 @@ interface PanelState {
   readonly goingBack: Set<string>;
   /** Files whose "Replace everywhere" is under way. */
   readonly replacing: Set<string>;
+  /** Models being re-made at another detail, by the share asked for. */
+  readonly detailing: Map<string, number | null>;
+}
+
+/** The detail readout's share: "80 % (default)" or "25 %". */
+function stopShare(stop: DetailStop, trianglesBefore: number): string {
+  const share = detailReadout(stop.triangles, trianglesBefore, 0, 0).share;
+  return stop.share === null ? `${share} (default)` : share;
+}
+
+/** Fills a detail's lines for `stop`. */
+function fillDetailStats(
+  stats: HTMLElement,
+  detail: NonNullable<ShelfRow["detail"]>,
+  stop: DetailStop,
+): void {
+  const words = detailReadout(
+    stop.triangles,
+    detail.trianglesBefore,
+    stop.deviation,
+    detail.size,
+  );
+  stats.replaceChildren(
+    el("div", "", words.triangles),
+    el("div", "", words.deviation),
+  );
 }
 
 /** "Replace in 5 places...": the replace's offer with its count (items,
@@ -366,6 +404,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     confirm: null,
     goingBack: new Set(),
     replacing: new Set(),
+    detailing: new Map(),
   };
   let drawnKey: string | null = null;
   /** The thumbnails' object URLs by file id, with the bytes each was
@@ -721,6 +760,10 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       }
       more.append(files);
     }
+    const view = detailView(row);
+    if (view !== null && row.status === "optimized") {
+      more.append(detailEl(row, view));
+    }
     const buttons = el("div", "btnrow");
     if (
       deps.useIn !== undefined &&
@@ -741,6 +784,11 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       if (going) b.setAttribute("aria-busy", "true");
       buttons.append(b);
     }
+    if (view?.adjustable === true && !view.isDefault) {
+      const b = button("btn small", "detaildefault", "Default detail", "back");
+      b.disabled = view.busy || state.detailing.has(row.id);
+      buttons.append(b);
+    }
     if (row.placesInUse > 0) {
       buttons.append(button("btn small", "uses", "Show where", "jump"));
     }
@@ -759,6 +807,54 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     }
     if (buttons.childElementCount > 0) more.append(buttons);
     return more;
+  }
+
+  /** A made model's detail: the prototype's slider (fewest triangles on
+   *  the left) with its share, and the triangles and largest deviation of
+   *  the stop under the thumb; a fixed level says why instead. */
+  function detailEl(row: ShelfRow, view: DetailView): HTMLElement {
+    const detail = row.detail!;
+    const box = el("div", "as-detail");
+    const pending = state.detailing.get(row.id);
+    const busy = view.busy || state.detailing.has(row.id);
+    const asked = state.detailing.has(row.id)
+      ? view.stops.findIndex((s) => s.share === pending)
+      : -1;
+    const at = asked >= 0 ? asked : view.at;
+    const stop = view.stops[at]!;
+    const out = el(
+      "span",
+      "as-detail-out",
+      busy ? "Applying..." : stopShare(stop, detail.trianglesBefore),
+    );
+    const stats = el("div", "as-detail-stats");
+    fillDetailStats(stats, detail, stop);
+    const caption = "Quality, share of triangles kept ";
+    if (!view.adjustable) {
+      const label = el("div", "as-detail-label", caption);
+      label.append(out);
+      box.append(label, stats, el("p", "as-detail-note", view.note ?? ""));
+      return box;
+    }
+    const range = el("input", "as-detail-range");
+    range.type = "range";
+    range.id = `as-detail-${row.id}`;
+    range.dataset["act"] = "detail";
+    range.min = "0";
+    range.max = String(view.stops.length - 1);
+    range.step = "1";
+    range.value = String(at);
+    range.disabled = busy;
+    if (busy) range.setAttribute("aria-busy", "true");
+    range.setAttribute(
+      "aria-valuetext",
+      stopShare(stop, detail.trianglesBefore),
+    );
+    const label = el("label", "as-detail-label", caption);
+    label.htmlFor = range.id;
+    label.append(out);
+    box.append(label, range, stats);
+    return box;
   }
 
   function confirmEl(row: ShelfRow): HTMLElement {
@@ -903,11 +999,12 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     document.body.classList.toggle("shelf-folded", folded);
     document.body.classList.toggle("shelf-sheet", phone && state.sheet);
     fold.setAttribute("aria-expanded", String(!folded));
-    const pressed = phone
-      ? state.sheet
-      : deps.dock?.active() === true
+    const pressed =
+      deps.dock?.active() === true
         ? deps.dock.shown()
-        : !folded;
+        : phone
+          ? state.sheet
+          : !folded;
     toggle.setAttribute("aria-pressed", String(pressed));
     toggle.querySelector(".as-badge")?.remove();
     const badge = badgeEl(rows);
@@ -983,6 +1080,7 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       state.confirm ?? "",
       [...state.goingBack].join(","),
       [...state.replacing].join(","),
+      [...state.detailing].map(([id, s]) => `${id}=${String(s)}`).join(","),
     ].join("\u0003");
     if (key === drawnKey) live(rows);
     else full(rows);
@@ -1121,6 +1219,85 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     );
   }
 
+  /** A model re-made at `share` (null: the default level), the slider
+   *  locked until the shelf settled it; the outcome is said in a toast. */
+  async function setDetail(row: ShelfRow, share: number | null): Promise<void> {
+    if (state.detailing.has(row.id)) return;
+    // the slider is disabled while it runs, which drops the focus: an
+    // author stepping with the arrow keys gets it back when it settles
+    const focused =
+      document.activeElement instanceof HTMLElement &&
+      document.activeElement.classList.contains("as-detail-range");
+    state.detailing.set(row.id, share);
+    redraw();
+    let outcome: DetailOutcome;
+    try {
+      outcome = await deps.setDetail(row.id, share);
+    } catch {
+      outcome = { kind: "refused", reason: "It could not be made." };
+    } finally {
+      state.detailing.delete(row.id);
+      redraw();
+      // only while nothing else took the focus in the meantime
+      const free =
+        document.activeElement === null ||
+        document.activeElement === document.body;
+      const card = focused && free ? withData(root, "aid", row.id) : null;
+      card?.querySelector<HTMLElement>("input.as-detail-range")?.focus();
+    }
+    if (outcome.kind === "stopped") return;
+    if (outcome.kind === "refused") {
+      deps.toast(`${row.name} was not changed. ${outcome.reason}`);
+      return;
+    }
+    const triangles = rowOf(row.id)?.detail?.triangles;
+    deps.toast(
+      triangles === undefined
+        ? `${row.name} was changed.`
+        : `${row.name} now has ${formatCount(triangles)} triangles.`,
+    );
+  }
+
+  /** The detail slider `target` is, with its row, view and the stop under
+   *  its thumb; null for anything else. */
+  function detailAt(target: EventTarget | null) {
+    if (
+      !(target instanceof HTMLInputElement) ||
+      !target.classList.contains("as-detail-range")
+    ) {
+      return null;
+    }
+    const aid = target.closest<HTMLElement>("[data-aid]")?.dataset["aid"];
+    const row = aid === undefined ? undefined : rowOf(aid);
+    const view = row === undefined ? null : detailView(row);
+    const index = Number(target.value);
+    const stop = view?.stops[index];
+    if (row?.detail === undefined || view === null || stop === undefined) {
+      return null;
+    }
+    return { range: target, row, detail: row.detail, view, index, stop };
+  }
+
+  /** While dragging: the readout follows the thumb, nothing is asked. */
+  function onDetailInput(event: Event): void {
+    const at = detailAt(event.target);
+    if (at === null) return;
+    const box = at.range.closest(".as-detail");
+    const words = stopShare(at.stop, at.detail.trianglesBefore);
+    const out = box?.querySelector(".as-detail-out");
+    if (out) out.textContent = words;
+    const stats = box?.querySelector<HTMLElement>(".as-detail-stats");
+    if (stats) fillDetailStats(stats, at.detail, at.stop);
+    at.range.setAttribute("aria-valuetext", words);
+  }
+
+  /** Let go: the stop is asked for, unless it is the one the tour holds. */
+  function onDetailChange(event: Event): void {
+    const at = detailAt(event.target);
+    if (at === null || at.index === at.view.at) return;
+    void setDetail(at.row, at.stop.share);
+  }
+
   /** The panel's own buttons, by their `data-act`. */
   const panelActs: Readonly<Record<string, () => void>> = {
     fold: () => {
@@ -1162,6 +1339,9 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     },
     useorig: (row) => {
       void useOriginal(row);
+    },
+    detaildefault: (row) => {
+      void setDetail(row, null);
     },
     replace: (row) => {
       void replace(row);
@@ -1224,13 +1404,16 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function onToggle(): void {
-    if (deps.phone()) {
+    // Docked (a phone docks too), the toggle switches the Files tab.
+    if (deps.dock?.active() === true) {
+      if (deps.dock.shown()) {
+        deps.dock.hide();
+        redraw();
+      } else open();
+    } else if (deps.phone()) {
       state.sheet = !state.sheet;
       redraw();
-    } else if (deps.dock?.active() === true && deps.dock.shown()) {
-      deps.dock.hide();
-      redraw();
-    } else if (railShown() || deps.dock?.active() === true) {
+    } else if (railShown()) {
       open();
     } else {
       setFolded(true);
@@ -1238,12 +1421,18 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function onPill(): void {
+    if (deps.dock?.active() === true) {
+      open();
+      return;
+    }
     state.sheet = true;
     redraw();
   }
 
   root.addEventListener("click", onClick);
   root.addEventListener("keydown", onKey);
+  root.addEventListener("input", onDetailInput);
+  root.addEventListener("change", onDetailChange);
   toggle.addEventListener("click", onToggle);
   pill.addEventListener("click", onPill);
   const unsubscribe = deps.subscribe(draw);
@@ -1260,6 +1449,8 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       closePop(false);
       root.removeEventListener("click", onClick);
       root.removeEventListener("keydown", onKey);
+      root.removeEventListener("input", onDetailInput);
+      root.removeEventListener("change", onDetailChange);
       toggle.removeEventListener("click", onToggle);
       pill.removeEventListener("click", onPill);
     },

@@ -23,7 +23,8 @@
  *   items it holds, its scale (how much larger it draws its items and
  *   their distances), and where its origin stands in its station's frame
  *   with its heading there, and how far that stands off the ground.
- * - A story (`story:<id>`): its title, its place and its numbered entries.
+ * - A story (`story:<id>`): its title, its place and its steps as cards
+ *   (`story-cards.ts`), with the inspectors of the cards open in place.
  * - A story's block: its texts, how it moves on and, for a character, what
  *   is set of him; a story's choice or quiz: a summary, read here and not
  *   edited.
@@ -60,7 +61,11 @@ import {
 import type { ModelFocus, ModelPick } from "../editor-view.js";
 import { facingDegOf } from "../../character-views.js";
 
-import { KIND_EDIT } from "../../kinds/edit-kinds.js";
+import {
+  blockLabel,
+  KIND_EDIT,
+  shortTextPoints,
+} from "../../kinds/edit-kinds.js";
 import { objectTitle } from "../../object-describe.js";
 import { readingSheetContent } from "../../reading-sign.js";
 import { stationTitle } from "../../station-run.js";
@@ -71,13 +76,19 @@ import {
   posedEntryOf,
 } from "../../placement/placeables.js";
 import type { ExtentSpec } from "../../placement/placement-rows.js";
+import type { SliderTrack } from "./range-slider.js";
 import {
+  blockChoices,
   blockFields,
   storyBlockFields,
+  type BlockChoice,
   type BlockField,
 } from "../block-fields.js";
 import { FOLDER_PREFIX, STORY_PREFIX } from "../editor-model.js";
+import { storyCards, type StoryCard } from "./story-cards.js";
+import { viewpointFacts, type ViewpointFacts } from "../picture-viewpoint.js";
 import { folderName } from "../folder-commands.js";
+import { pictureFieldMark } from "../kind-panels/picture-panel.js";
 import {
   FREE_LIST,
   childMayGo,
@@ -88,7 +99,7 @@ import {
 } from "../../station-children-moves.js";
 import { eastNorthOf, tourCentre } from "../tour-origin.js";
 import type { InspectorFile } from "./inspector-file.js";
-import { outsideItems } from "./tour-problems.js";
+import { outsideItems, storyProblems } from "./tour-problems.js";
 import {
   gotoChoices,
   gotoValue,
@@ -200,9 +211,20 @@ interface InspectorMoves {
   }[];
 }
 
+/** A story's check, as its "Story valid" / "N problems" pill shows it:
+ *  the Problems tab's rows for the story (`tour-problems.ts`
+ *  `storyProblems`), each with what it is and what a press selects;
+ *  none: the story is valid. */
+type StoryCheck = readonly {
+  readonly what: string;
+  readonly select: string;
+}[];
+
 /** A story, selected by `story:<id>`. */
 interface StoryInspector {
   readonly kind: "story";
+  /** The story's check (the pill). */
+  readonly check: StoryCheck;
   readonly storyId: string;
   readonly stationId: string;
   /** Where it may move in its station (the inspector's Earlier, Later
@@ -212,17 +234,18 @@ interface StoryInspector {
   readonly title: string;
   /** Its station, numbered as the tree numbers it. */
   readonly sub: string;
-  readonly entries: readonly {
-    readonly id: string;
-    readonly kind: TreeRowKind;
-    readonly title: string;
-    readonly place: number;
-  }[];
+  /** Its steps as cards, in order (`story-cards.ts`). */
+  readonly cards: readonly StoryCard[];
+  /** The inspectors of the cards open in place (`openCards`), in the
+   *  story's order; none: every card is closed. */
+  readonly opened?: readonly InspectorModel[];
 }
 
 /** A block of a story, as its inspector shows it. */
 interface StoryEntryInspector {
   readonly kind: "storyEntry";
+  /** Its story's check (the pill). */
+  readonly check: StoryCheck;
   readonly id: string;
   readonly stationId: string;
   /** Where it may move in its station (the inspector's Earlier, Later
@@ -280,6 +303,8 @@ interface InspectorStepForm {
  *  (`form`), another quiz read only. */
 interface StoryStepInspector {
   readonly kind: "storyStep";
+  /** Its story's check (the pill). */
+  readonly check: StoryCheck;
   readonly stepKind: "choice" | "quiz";
   readonly id: string;
   readonly stationId: string;
@@ -379,6 +404,9 @@ export interface InspectorExtent {
   readonly value: number;
   readonly min: number;
   readonly max: number;
+  /** The slider beside the number (`ExtentSpec.slider`); null: typed
+   *  only. */
+  readonly slider: SliderTrack | null;
 }
 
 /** `item`'s size its row's `spec` names, with the tour's value; null for
@@ -398,15 +426,35 @@ function extentOf(
     value,
     min: spec.min,
     max: spec.max,
+    slider: spec.slider ?? null,
   };
 }
 
-/** A short text as its panel shows it: its view, and its role and turn
- *  (null: the reader's default). */
+/** A short text as its panel shows it: its view, and its chip choices,
+ *  each with the value in use. */
 interface InspectorShortText {
   readonly view: string;
-  readonly role: string | null;
-  readonly orientation: string | null;
+  /** Its chip choices in that view, the one in use pressed (`block-fields.ts`
+   *  `blockChoices`): its role, and as its view reads them how it turns,
+   *  a ground arrow's style and a floor arrow's placement. */
+  readonly choices: readonly BlockChoice[];
+  /** A ground arrow's own look, as written (null: the reader's
+   *  default), and the block's id its colour wells write to; absent in
+   *  any other view. */
+  readonly ground?: {
+    readonly id: string;
+    readonly captionOnArrow: boolean;
+    readonly color: string | null;
+    readonly darkColor: string | null;
+  };
+  /** Where a sign or a ground arrow points (the station's frame, m;
+   *  null: nowhere), the block's id its boxes write to, and whether
+   *  "Pick in 3D" is armed; absent in a view that points nowhere. */
+  readonly point?: {
+    readonly id: string;
+    readonly at: readonly [number, number, number] | null;
+    readonly picking: boolean;
+  };
 }
 
 /** A model's own parts as its inspector edits them. */
@@ -441,6 +489,36 @@ interface InspectorPicture {
   readonly showTag: boolean;
   /** Its image's tour path; null when the tour lacks the asset. */
   readonly imagePath: string | null;
+  /** Its viewpoint as the panel types it; null: it has none. */
+  readonly viewpoint: ViewpointFacts | null;
+}
+
+/** The tour path of the file `id`; null for no id or a file not listed. */
+function assetPath(
+  assets: readonly TourAsset[],
+  id: string | undefined,
+): string | null {
+  return id === undefined
+    ? null
+    : (assets.find((a) => a.id === id)?.path ?? null);
+}
+
+/** A free video as its panel shows it (`kind-panels/video-panel.ts`). */
+export interface InspectorVideo {
+  /** The block's id (the poster's edit names it). */
+  readonly blockId: string;
+  readonly view: string;
+  /** Its choices in that view (`block-fields.ts` `blockChoices`). */
+  readonly choices: readonly BlockChoice[];
+  /** Its WebVTT captions as typed; "" for none. */
+  readonly captions: string;
+  /** The clip's tour path, for the inspector's preview; null when the
+   *  tour lists no such file. */
+  readonly clipPath: string | null;
+  /** Its poster's tour path; null for none. */
+  readonly posterPath: string | null;
+  /** Its viewpoint as the inspector shows it; null for none. */
+  readonly viewpoint: ViewpointFacts | null;
 }
 
 /** A long text as its writer shows it (`long-text-writer.ts`). */
@@ -508,6 +586,9 @@ interface ItemInspector {
   readonly shortText?: InspectorShortText;
   /** A long text's writer's data; null for any other item. */
   readonly longText: InspectorLongText | null;
+  /** A free video's view and its choices (how it starts, its sound, a
+   *  cutout's background); null for any other item. */
+  readonly video: InspectorVideo | null;
   /** In its station's frame (m), its folders composed in: where it stands
    *  from the anchor; null for an item with no place in the world (a
    *  video). */
@@ -1026,12 +1107,13 @@ function storyChildInspector(
   if (isTourStoryBlock(child)) {
     return {
       kind: "storyEntry",
+      check: storyCheck(story),
       id: child.id,
       stationId: station.id,
       moves: movesOf(child.id, stations),
       rowKind: storyRows({ children: [child] })[0]?.kind ?? "text",
       title: objectTitle(child),
-      sub: `${KIND_EDIT[child.kind].label}, ${entry}`,
+      sub: `${blockLabel(child)}, ${entry}`,
       block: storyEntry(child),
       advance: {
         mode: child.advance.mode,
@@ -1041,6 +1123,7 @@ function storyChildInspector(
   }
   const common = {
     kind: "storyStep",
+    check: storyCheck(story),
     id: child.id,
     stationId: station.id,
     moves: movesOf(child.id, stations),
@@ -1066,6 +1149,11 @@ function storyChildInspector(
   };
 }
 
+/** The story's check: the Problems tab's rows for it. */
+function storyCheck(story: TourStory): StoryCheck {
+  return storyProblems(story).map(({ what, select }) => ({ what, select }));
+}
+
 /** The inspector of the story `storyId`, or null for a gone one. */
 function storyInspector(
   storyId: string,
@@ -1076,12 +1164,13 @@ function storyInspector(
     if (story === undefined) continue;
     return {
       kind: "story",
+      check: storyCheck(story),
       storyId,
       stationId: station.id,
       moves: movesOf(storyId, stations),
       title: story.title,
       sub: "Story",
-      entries: storyRows(story),
+      cards: storyCards(story.children),
     };
   }
   return null;
@@ -1155,11 +1244,16 @@ export function buildInspector(input: {
    *  none. */
   readonly modelFocus?: ModelFocus | null;
   readonly modelPick?: ModelPick | null;
+  /** "Pick in 3D" armed for the selected short text. */
+  readonly pointPick?: boolean;
   /** Changes whenever the tour's read-along texts do; none given: "". */
   readonly timingsStamp?: string;
   /** The selected free item's file is not in the tour on disk yet, so it
    *  is offered no story (`freeItemUnsaved`); none given: it is. */
   readonly selectedFileUnsaved?: boolean;
+  /** A selected story's cards open in place, by child id; none given:
+   *  every card is closed. */
+  readonly openCards?: readonly string[];
 }): InspectorModel | null {
   const { selected, stations, groundAt } = input;
   if (selected === null) return null;
@@ -1201,7 +1295,19 @@ export function buildInspector(input: {
     };
   }
   if (selected.startsWith(STORY_PREFIX)) {
-    return storyInspector(selected.slice(STORY_PREFIX.length), stations);
+    const story = storyInspector(selected.slice(STORY_PREFIX.length), stations);
+    const open = input.openCards ?? [];
+    if (story?.kind !== "story" || open.length === 0) return story;
+    const opened = story.cards.flatMap((card) => {
+      if (!open.includes(card.id)) return [];
+      const model = buildInspector({
+        ...input,
+        selected: card.id,
+        openCards: [],
+      });
+      return model === null ? [] : [model];
+    });
+    return opened.length === 0 ? story : { ...story, opened };
   }
   if (selected.startsWith(FOLDER_PREFIX)) {
     return folderInspector(selected, stations, groundAt);
@@ -1219,18 +1325,42 @@ export function buildInspector(input: {
       kind: "item",
       itemKind: item.kind,
       title: objectTitle(item),
-      sub: `${KIND_EDIT[item.kind].label} in ${stationTitle(station, index + 1)}`,
+      sub: `${blockLabel(item)} in ${stationTitle(station, index + 1)}`,
       stationId: station.id,
       moves: movesOf(item.id, stations, input.selectedFileUnsaved === true),
       text: item.kind === "shortText" ? item.caption : null,
       extent: extentOf(item, place?.extent ?? null),
-      fields: blockFields(item),
+      fields:
+        item.kind === "picture"
+          ? blockFields(item).map((f) => {
+              const mark = pictureFieldMark(item.view, f.name);
+              return mark === null ? f : { ...f, mark };
+            })
+          : blockFields(item),
       ...(item.kind === "shortText"
         ? {
             shortText: {
               view: item.view,
-              role: item.role ?? null,
-              orientation: item.orientation ?? null,
+              choices: blockChoices(item),
+              ...(item.view === "ground"
+                ? {
+                    ground: {
+                      id: item.id,
+                      captionOnArrow: item.captionOnArrow === true,
+                      color: item.color ?? null,
+                      darkColor: item.darkColor ?? null,
+                    },
+                  }
+                : {}),
+              ...(shortTextPoints(item.view)
+                ? {
+                    point: {
+                      id: item.id,
+                      at: item.pointsTo ?? null,
+                      picking: input.pointPick === true,
+                    },
+                  }
+                : {}),
             },
           }
         : {}),
@@ -1276,6 +1406,21 @@ export function buildInspector(input: {
               pictures: textPictures(input.assets),
             }
           : null,
+      video:
+        item.kind === "video"
+          ? {
+              blockId: item.id,
+              view: item.view,
+              choices: blockChoices(item),
+              captions: item.captions ?? "",
+              clipPath: assetPath(input.assets, item.video),
+              posterPath: assetPath(input.assets, item.poster),
+              viewpoint:
+                item.viewpoint === undefined
+                  ? null
+                  : viewpointFacts(item.viewpoint),
+            }
+          : null,
       offset:
         inStation === null
           ? null
@@ -1296,6 +1441,10 @@ export function buildInspector(input: {
               showTag: item.showTag !== false,
               imagePath:
                 input.assets.find((a) => a.id === item.image)?.path ?? null,
+              viewpoint:
+                item.viewpoint === undefined
+                  ? null
+                  : viewpointFacts(item.viewpoint),
             },
           }
         : {}),

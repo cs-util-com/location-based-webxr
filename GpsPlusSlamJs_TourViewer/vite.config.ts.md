@@ -12,7 +12,7 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
 - `define`: the build stamp, from the framework's
   `createBuildMetadataDefine(appDir)`
   (`../GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs`, the same
-  block the RecorderApp uses, DEC-H3): `__BUILD_COMMIT__`, `__BUILD_TIME__`,
+  block the RecorderApp uses): `__BUILD_COMMIT__`, `__BUILD_TIME__`,
   `__APP_VERSION__`, `__LIB_VERSION__`, `__FW_VERSION__`, each bare and as
   `globalThis.__NAME__`.
 - `build.rollupOptions.input`: `index.html` (the app) and

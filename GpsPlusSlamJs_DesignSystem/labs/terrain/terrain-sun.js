@@ -34,7 +34,7 @@
  * `SUN_GLSL` is the shader's copy of these functions, line for line; this
  * file is the reference CI runs. Dependency-free except the far field's
  * colour curves, style B's light and the Globe package's sky level
- * (DEC-H3; `node --test` resolves `/globe/` with `test-route-loader.mjs`).
+ * (`node --test` resolves `/globe/` with `test-route-loader.mjs`).
  *
  * @see terrain-sun.js.md
  */
@@ -56,7 +56,7 @@ export const MIN_SUN_Z = Math.sin(2 * DEG);
 
 // The sky fill's parameters and level (DEC-GL5-11) are the Globe
 // package's (`/globe/sky-level.js`), the one implementation the globe's
-// surface reads too (DEC-H3), re-exported above.
+// surface reads too, re-exported above.
 
 /**
  * A unit vector (east, north, up) toward a sun at an elevation and an
@@ -206,7 +206,7 @@ export function sunLight(
  * `intensity` x light, through the Neutral tone mapping, back to sRGB.
  * `intensity` defaults to the globe's (`GLOBE_SUN.intensity`); a page's
  * `sunIntensity` key passes its own. The far field's `farColour` is the
- * one implementation (DEC-H3).
+ * one implementation.
  */
 export function sunLitColour(
   albedoSrgb,

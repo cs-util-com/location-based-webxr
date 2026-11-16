@@ -410,6 +410,108 @@ export function pillView(rows: readonly ShelfRow[]): {
   return null;
 }
 
+/** A length in metres as the detail's readout says it: whole µm under a
+ *  millimetre, mm with one decimal under a metre, m with two above. */
+export function formatLength(metres: number): string {
+  const m = Number.isFinite(metres) && metres > 0 ? metres : 0;
+  if (m < 0.001) return `${(m * 1e6).toFixed(0)} µm`;
+  if (m < 1) return `${(m * 1000).toFixed(1)} mm`;
+  return `${m.toFixed(2)} m`;
+}
+
+/** A count with thousands marked: "10,000". */
+export function formatCount(n: number): string {
+  return (Number.isFinite(n) ? n : 0).toLocaleString("en-US");
+}
+
+/** The detail's readout for a level: its share of the triangles, its
+ *  triangles, and its largest deviation (a share of the size) in length
+ *  and in percent of the model's size (its box diagonal, `size` metres). */
+export function detailReadout(
+  triangles: number,
+  trianglesBefore: number,
+  deviation: number,
+  size: number,
+): {
+  readonly share: string;
+  readonly triangles: string;
+  readonly deviation: string;
+} {
+  const share = trianglesBefore > 0 ? triangles / trianglesBefore : 0;
+  const d = Number.isFinite(deviation) && deviation > 0 ? deviation : 0;
+  return {
+    share: `${String(percent(share))} %`,
+    triangles: `${formatCount(triangles)} of ${formatCount(trianglesBefore)} triangles`,
+    deviation: `Largest deviation: ${formatLength(d * size)} (${(d * 100).toFixed(2)} % of the model's size)`,
+  };
+}
+
+/** A stop of the detail slider; `share` null is the default level. */
+export interface DetailStop {
+  readonly share: number | null;
+  readonly triangles: number;
+  readonly deviation: number;
+}
+
+export interface DetailView {
+  /** Fewest triangles first, so right means more. */
+  readonly stops: readonly DetailStop[];
+  /** The stop of the level the tour holds. */
+  readonly at: number;
+  readonly isDefault: boolean;
+  readonly adjustable: boolean;
+  readonly busy: boolean;
+  /** Why the level can no longer be changed; null while it can. */
+  readonly note: string | null;
+}
+
+/** Why a model's level is fixed: the original it is made from went with
+ *  the save that wrote the made file. */
+const DETAIL_FIXED =
+  "Its detail can no longer be changed: the original was let go at the last save.";
+
+/** A made model's detail slider: its stops (the shares the optimizer
+ *  measured, and the default level as a stop of its own while it is the
+ *  tour's), the stop the tour holds, and whether it can be moved; null
+ *  for a row with no detail. */
+export function detailView(row: ShelfRow): DetailView | null {
+  const d = row.detail;
+  if (d === undefined) return null;
+  const stops: DetailStop[] = d.choices.map((c) => ({
+    share: c.share,
+    triangles: c.triangles,
+    deviation: c.deviation,
+  }));
+  if (d.share === null) {
+    stops.push({ share: null, triangles: d.triangles, deviation: d.deviation });
+  }
+  stops.sort((a, b) => a.triangles - b.triangles);
+  const at = Math.max(
+    0,
+    stops.findIndex((s) => s.share === d.share),
+  );
+  return {
+    stops,
+    at,
+    isDefault: d.share === null,
+    adjustable: d.adjustable,
+    busy: d.busy,
+    note: d.adjustable ? null : DETAIL_FIXED,
+  };
+}
+
+function detailKey(detail: ShelfRow["detail"]): string {
+  if (detail === undefined) return "";
+  return [
+    detail.share ?? "",
+    detail.triangles,
+    detail.deviation,
+    detail.adjustable,
+    detail.busy,
+    detail.choices.length,
+  ].join(":");
+}
+
 /** What a full draw depends on: everything but the progress, which a
  *  live update moves alone. */
 export function shapeKey(rows: readonly ShelfRow[]): string {
@@ -430,6 +532,7 @@ export function shapeKey(rows: readonly ShelfRow[]): string {
         r.swaps,
         r.posterId ?? "",
         r.seconds ?? "",
+        detailKey(r.detail),
         (r.character?.files ?? [])
           .map((f) => `${f.id}:${f.name}:${String(f.bytes)}`)
           .join(","),

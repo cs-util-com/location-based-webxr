@@ -57,3 +57,25 @@ a gesture (an item's move and turn; a station's move, turn and radius;
 reach 1, 20 and 200 m against a 25 m found radius; ground amplitude 0 and
 50 m) written through the real session and undone restores the saved
 manifest exactly.
+
+## Bend
+
+`{ kind: "bend", ref, deg }` (a ground arrow's knob) goes through
+`editBlockField(id, "bendDeg", String(deg))`, so the knob is checked by
+the same rule as a typed bend (whole range +-60 degrees) and is one undo
+step with the same wording.
+
+## Point
+
+`{ kind: "point", ref, at }` (a short text's point, set by "Pick in 3D"
+or dragged by its handle; `at` in the station's frame, metres) goes
+through `editBlockField(id, "pointsTo", at.join(" "))`: the same path as
+the inspector's three boxes, so the format's strict reader is the only
+judge (each number within 1000 m of the station) and the refusal reads
+the same.
+
+## A viewpoint ref
+
+- A pose edit for `{ kind: "viewpoint", id }` calls `editor.moveViewpoint(id, geo)`: one session call, one undo step, never the picture's own pose and never a station to join (the viewpoint stays in its station's frame).
+- An extent edit for it is refused with "A viewpoint has no size to change." rather than resizing the picture.
+- Tested in `place-edits.test.ts` ("moves a picture's viewpoint through its own call, and sizes none").

@@ -1,7 +1,7 @@
 /**
  * The fused QR pose per code, for apps (QR near-frontal pose plan §60-§61,
  * b4b-3; moved here from the QR demo so the demo, the TourViewer and later
- * the recorder share ONE implementation - DEC-H3).
+ * the recorder share ONE implementation).
  *
  * Why these tests matter: this is what an app shows and votes with. It must
  * give the joint rotation once the window is stable and nothing (the app

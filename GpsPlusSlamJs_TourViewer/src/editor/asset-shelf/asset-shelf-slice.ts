@@ -43,6 +43,71 @@ import {
   type ShelfJob,
   type ShelfPhase,
 } from "./asset-jobs.js";
+import type { LodChoice } from "./model-lod.js";
+
+/** A made model's level of detail (`model-lod.ts`'s report): what the
+ *  shelf's detail slider shows and moves. */
+export interface ShelfDetail {
+  /** The author's share of the triangles, or null for the default level
+   *  (the fewest within the deviation budget). */
+  readonly share: number | null;
+  /** Triangles in the level drawn up close, and in the original. */
+  readonly triangles: number;
+  readonly trianglesBefore: number;
+  /** Its largest deviation, as a share of `size` (the model's box
+   *  diagonal: in model units, a skinned model's in its rest pose). */
+  readonly deviation: number;
+  readonly size: number;
+  /** The slider's stops, from every triangle down. */
+  readonly choices: readonly LodChoice[];
+}
+
+const finiteAtLeast0 = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0;
+const share01 = (v: unknown): v is number => finiteAtLeast0(v) && v <= 1;
+const count = (v: unknown): v is number =>
+  finiteAtLeast0(v) && Number.isInteger(v);
+
+/** `value` as a level of detail (one the draft kept, read back), or
+ *  undefined when any part of it does not read: shares in 0..1, whole
+ *  triangle counts and finite deviations and size, never negative. */
+export function shelfDetailOf(value: unknown): ShelfDetail | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const d = value as Partial<Record<keyof ShelfDetail, unknown>>;
+  const choices = Array.isArray(d.choices) ? (d.choices as unknown[]) : null;
+  const read =
+    (d.share === null || share01(d.share)) &&
+    count(d.triangles) &&
+    count(d.trianglesBefore) &&
+    finiteAtLeast0(d.deviation) &&
+    finiteAtLeast0(d.size) &&
+    choices !== null &&
+    choices.every((c) => {
+      const o = c as Partial<Record<keyof LodChoice, unknown>> | null;
+      return (
+        typeof o === "object" &&
+        o !== null &&
+        share01(o.share) &&
+        count(o.triangles) &&
+        finiteAtLeast0(o.deviation)
+      );
+    });
+  if (!read) return undefined;
+  return {
+    share: d.share as number | null,
+    triangles: d.triangles as number,
+    trianglesBefore: d.trianglesBefore as number,
+    deviation: d.deviation as number,
+    size: d.size as number,
+    choices: (choices as LodChoice[]).map(
+      ({ share, triangles, deviation }) => ({
+        share,
+        triangles,
+        deviation,
+      }),
+    ),
+  };
+}
 
 /** One file on the shelf. */
 export interface ShelfEntry extends ShelfJob {
@@ -63,6 +128,10 @@ export interface ShelfEntry extends ShelfJob {
   /** A video's: the poster minted with it, and its length in seconds. */
   readonly posterId?: string;
   readonly seconds?: number;
+  /** A made model's level of detail, and whether the author's request
+   *  for another one is under way. */
+  readonly detail?: ShelfDetail;
+  readonly detailBusy?: boolean;
 }
 
 /** What a video brought in carries beyond its asset (`AssetShelf.add`). */
@@ -122,6 +191,10 @@ function withJob(
   };
 }
 
+function withEntry(state: AssetShelfState, entry: ShelfEntry): AssetShelfState {
+  return { ...state, entries: { ...state.entries, [entry.id]: entry } };
+}
+
 const assetShelfSlice = createSlice({
   name: "assetShelf",
   initialState: initialAssetShelfState,
@@ -163,12 +236,13 @@ const assetShelfSlice = createSlice({
       delete entries[action.payload.id];
       return { ...state, entries };
     },
-    /** An undo of a removal: the entry as it was. */
+    /** An undo of a removal: the entry as it was, but never busy with a
+     *  re-make: the removal stopped any. */
     entryRestored(
       state,
       action: PayloadAction<{ readonly entry: ShelfEntry }>,
     ) {
-      const { entry } = action.payload;
+      const { detailBusy: _stopped, ...entry } = action.payload.entry;
       if (state.entries[entry.id] !== undefined) return state;
       return { ...state, entries: { ...state.entries, [entry.id]: entry } };
     },
@@ -189,12 +263,49 @@ const assetShelfSlice = createSlice({
         readonly id: string;
         readonly optimizedBytes: number;
         readonly originalHeld: boolean;
+        readonly detail?: ShelfDetail;
       }>,
     ) =>
       withJob(state, action.payload.id, jobOptimized, {
         optimizedBytes: action.payload.optimizedBytes,
         originalHeld: action.payload.originalHeld,
+        ...(action.payload.detail === undefined
+          ? {}
+          : { detail: action.payload.detail }),
       }),
+    /** The author asked for another level of detail of a made model. */
+    detailAsked(state, action: PayloadAction<{ readonly id: string }>) {
+      const entry = state.entries[action.payload.id];
+      if (entry?.phase !== "optimized" || entry.detail === undefined) {
+        return state;
+      }
+      return withEntry(state, { ...entry, detailBusy: true });
+    },
+    /** That level landed: the tour holds the new file. */
+    detailApplied(
+      state,
+      action: PayloadAction<{
+        readonly id: string;
+        readonly optimizedBytes: number;
+        readonly detail: ShelfDetail;
+      }>,
+    ) {
+      const { id, optimizedBytes, detail } = action.payload;
+      const entry = state.entries[id];
+      if (entry?.detailBusy !== true) return state;
+      return withEntry(state, {
+        ...entry,
+        optimizedBytes,
+        detail,
+        detailBusy: false,
+      });
+    },
+    /** It did not: the tour keeps the file it has. */
+    detailSettled(state, action: PayloadAction<{ readonly id: string }>) {
+      const entry = state.entries[action.payload.id];
+      if (entry?.detailBusy !== true) return state;
+      return withEntry(state, { ...entry, detailBusy: false });
+    },
     jobKept: (
       state,
       action: PayloadAction<{ readonly id: string; readonly reason: string }>,
@@ -217,7 +328,8 @@ const assetShelfSlice = createSlice({
     jobRetried: (state, action: PayloadAction<{ readonly id: string }>) =>
       withJob(state, action.payload.id, jobRetried),
     /** A reload put back a smaller file the draft kept: the entry stands
-     *  optimized, in place of the one the open listed (its arrival kept). */
+     *  optimized, in place of the one the open listed (its arrival kept),
+     *  with the made model's level of detail the draft kept with it. */
     optimizedRestored(
       state,
       action: PayloadAction<{
@@ -227,6 +339,7 @@ const assetShelfSlice = createSlice({
         readonly originalBytes: number;
         readonly optimizedBytes: number;
         readonly originalHeld: boolean;
+        readonly detail?: ShelfDetail;
       }>,
     ) {
       const p = action.payload;
@@ -242,6 +355,7 @@ const assetShelfSlice = createSlice({
         originalBytes: p.originalBytes,
         optimizedBytes: p.optimizedBytes,
         originalHeld: p.originalHeld,
+        ...(p.detail === undefined ? {} : { detail: p.detail }),
         seq: was?.seq ?? state.nextSeq,
       };
       return {
@@ -274,7 +388,12 @@ const assetShelfSlice = createSlice({
       });
       if (next === state) return state;
       const entries = { ...next.entries };
-      const { optimizedBytes: _gone, ...rest } = entries[id]!;
+      const {
+        optimizedBytes: _gone,
+        detail: _level,
+        detailBusy: _asked,
+        ...rest
+      } = entries[id]!;
       entries[id] = rest;
       return { ...next, entries };
     },
@@ -327,6 +446,13 @@ export interface ShelfRow {
   /** A video's poster (an image asset id) and length, when known. */
   readonly posterId?: string;
   readonly seconds?: number;
+  /** A made model's level of detail: `adjustable` while the slider can
+   *  re-make it (the original is kept, `canUseOriginal`), `busy` while
+   *  it does. */
+  readonly detail?: ShelfDetail & {
+    readonly adjustable: boolean;
+    readonly busy: boolean;
+  };
   /** A character's row: named after him, its id his first file's, its
    *  sizes his files' together; its places are where his files are used
    *  (`characterFileUses`), never his own declaration. */
@@ -392,6 +518,10 @@ export const selectShelfRows = createSelector(
     };
     const fileRow = (e: ShelfEntry): ShelfRow => {
       const position = queued.indexOf(e.id);
+      const canUseOriginal =
+        e.phase === "optimized" &&
+        e.originalHeld &&
+        assetBytesPending(doc, e.id);
       return {
         id: e.id,
         kind: e.kind,
@@ -409,11 +539,17 @@ export const selectShelfRows = createSelector(
         queuePosition: position < 0 ? null : position,
         placesInUse: usedIn(e.id),
         swaps: doc.assetSwaps[e.id] ?? 0,
-        canUseOriginal:
-          e.phase === "optimized" &&
-          e.originalHeld &&
-          assetBytesPending(doc, e.id),
+        canUseOriginal,
         ...lookOf(e),
+        ...(e.detail === undefined || e.phase !== "optimized"
+          ? {}
+          : {
+              detail: {
+                ...e.detail,
+                adjustable: canUseOriginal,
+                busy: e.detailBusy === true,
+              },
+            }),
       };
     };
     const held = charactersByFile(shelf, doc);

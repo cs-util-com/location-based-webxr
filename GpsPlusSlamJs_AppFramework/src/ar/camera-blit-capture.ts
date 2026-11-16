@@ -552,7 +552,7 @@ export interface RgbaFrame {
  * Encode a top-left-origin RGBA frame as a JPEG Blob - OffscreenCanvas
  * where the browser has it (off the main-thread canvas path), a DOM canvas
  * otherwise. The ONE encoder behind the blit capture and the Tour Viewer's
- * placed photos (DEC-H3; the viewer used to carry a copy).
+ * placed photos (the viewer used to carry a copy).
  *
  * The data must be exactly `width * height * 4` bytes; `ImageData` throws
  * on anything else, and that is reported as a rejection, never a

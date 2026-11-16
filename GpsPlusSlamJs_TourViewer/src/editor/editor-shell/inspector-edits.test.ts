@@ -286,8 +286,12 @@ describe("inspectorEdit", () => {
       selection: "model-1",
       deg: -90,
     });
-    // A pin faces the visitor (its row does not turn): no turn to write.
-    expect(edit("pin-1", "heading", "-90")).toEqual({ kind: "none" });
+    // A pin keeps its turn, as a sign does: the typed heading turns it.
+    expect(edit("pin-1", "heading", "-90")).toEqual({
+      kind: "turn",
+      selection: "pin-1",
+      deg: -90,
+    });
     // The short way round: 350 from 30 is a turn of -40.
     expect(edit("station:a", "heading", "350")).toMatchObject({ deg: -40 });
   });
@@ -723,5 +727,85 @@ describe("inspectorEdit: a turned folder", () => {
     expect(typed("title", "Benches")).toEqual({ kind: "none" });
     expect(typed("size", "2")).toEqual({ kind: "none" });
     expect(typed("scale", "2", "folder:nope")).toEqual({ kind: "none" });
+  });
+});
+
+describe("inspectorEdit: a picture's viewpoint", () => {
+  const VIEWPOINT = {
+    position: [6, 1.6, 0],
+    rotation: [0, 0, 0, 1],
+    hfovDeg: 56,
+    distanceM: 6,
+  } as const;
+  const stations = [
+    {
+      ...STATIONS[0],
+      ...stationContent([
+        {
+          id: "pic",
+          kind: "picture",
+          view: "thenNow",
+          image: "img",
+          widthM: 1,
+          viewpoint: VIEWPOINT,
+          createdAtIso: AT,
+          pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
+        },
+        {
+          id: "vid",
+          kind: "video",
+          view: "standHere",
+          video: "clip",
+          transcript: "Hello",
+          widthM: 2,
+          viewpoint: VIEWPOINT,
+          createdAtIso: AT,
+          pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
+        },
+        {
+          id: "bare",
+          kind: "picture",
+          view: "plane",
+          image: "img",
+          widthM: 1,
+          createdAtIso: AT,
+          pose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
+        },
+      ]),
+    },
+  ] as unknown as TourStation[];
+  const typed = (selected: string, field: string, value: string) =>
+    inspectorEdit({ selected, stations, origin: ORIGIN, field, value });
+
+  // Why: a typed viewpoint value must reach the viewpoint, not the
+  // picture's own pose: "North 2" moves where the visitor stands, and the
+  // lens typed past its bound is kept inside it.
+  it("writes one typed value into the picture's viewpoint", () => {
+    expect(typed("pic", "vp-north", "2")).toEqual({
+      kind: "viewpoint",
+      id: "pic",
+      viewpoint: { ...VIEWPOINT, position: [2, 1.6, 0] },
+    });
+    expect(typed("pic", "vp-lens", "500")).toMatchObject({
+      kind: "viewpoint",
+      viewpoint: { hfovDeg: 120 },
+    });
+  });
+
+  // Why: a stand-here video's viewpoint is typed with the same fields as
+  // a picture's, and must reach the video's viewpoint the same way.
+  it("writes one typed value into a video's viewpoint", () => {
+    expect(typed("vid", "vp-east", "3")).toEqual({
+      kind: "viewpoint",
+      id: "vid",
+      viewpoint: { ...VIEWPOINT, position: [6, 1.6, 3] },
+    });
+  });
+
+  it("writes nothing for the value it holds, a picture without one, or a field it does not know, and says a word in words", () => {
+    expect(typed("pic", "vp-lens", "56")).toEqual({ kind: "none" });
+    expect(typed("bare", "vp-north", "2")).toEqual({ kind: "none" });
+    expect(typed("pic", "vp-roll", "2")).toEqual({ kind: "none" });
+    expect(typed("pic", "vp-north", "far")).toMatchObject({ kind: "invalid" });
   });
 });

@@ -1,6 +1,6 @@
 # sky-level.ts - the sky's level for the fill light
 
-- Purpose: the one implementation (DEC-H3) of the sky fill's level
+- Purpose: the one implementation of the sky fill's level
   (DEC-GL5-11), the light the sky gives a face the sun does not reach. The
   globe's surface patch (`globe-surface-material.ts`, and through it the
   relief's tiles in `globe-terrain.ts`) and the terrain lab

@@ -32,6 +32,7 @@ import type * as TourDocument from "../../tour-document.js";
 import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import type { DockHost, mountDockHost } from "./dock-host.js";
+import type { DockPanelId } from "./dock-layout.js";
 import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
 import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
 import {
@@ -92,6 +93,7 @@ const ground: { m: number | null } = { m: null };
 function fakeView() {
   return {
     flyTo: vi.fn(() => true),
+    lookFrom: vi.fn(() => true),
     frame: vi.fn(),
     setTop: vi.fn(),
     zoom: vi.fn(),
@@ -722,6 +724,28 @@ describe("the inspector's typed fields", () => {
     }
   });
 
+  // Why: Enter commits a field and leaving it commits it again. A
+  // refused text stays in the field, so the second commit sent the same
+  // refused text a second time and the creator read the same refusal
+  // twice. A refusal is said once; a changed text is sent again.
+  it("send a refused text once when Enter is followed by leaving the field", () => {
+    const { select, edits, shell } = setUp();
+    edits.text.mockReturnValue("refused");
+    select("pb");
+    const input = typeInto("title", "A pin text the page refuses");
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    input.blur();
+    expect(edits.text).toHaveBeenCalledTimes(1);
+    expect(input.value).toBe("A pin text the page refuses");
+    input.focus();
+    input.value = "A shorter pin text";
+    input.blur();
+    expect(edits.text).toHaveBeenCalledTimes(2);
+    shell.hide();
+  });
+
   it("show the tour's value again when the page writes the edit", () => {
     const { select, edits, shell } = setUp();
     edits.block.mockReturnValue("written");
@@ -1226,14 +1250,14 @@ describe("a story character's chips", () => {
 // another's job (a + that added to the station, a name that folded a
 // selected station) puts a creator's work in the wrong place.
 describe("a story's folder in the tree", () => {
-  function withStory() {
+  function withStory(steps?: readonly unknown[]) {
     const set = setUp();
     const gate = {
       ...station("c", 0.0008),
       ...stationContent([
         storyOf(
           "legend",
-          [
+          (steps as Parameters<typeof storyOf>[1] | undefined) ?? [
             {
               id: "l1",
               kind: "longText",
@@ -1380,12 +1404,237 @@ describe("a story's folder in the tree", () => {
     shell.hide();
   });
 
-  it("goes from a story's entry row to the entry, unfolding its folder", () => {
+  // Why: a step card dragged by its grip moves the step in its story
+  // through the page's move command, once per drop (one undo step), to
+  // the slot it was dropped at; a flick that starts on a grip, as a
+  // finger scrolling the cards does, moves nothing.
+  it("moves a step to where its card is dropped, and not for a flick", () => {
+    const { deps, select, shell } = withStory();
+    select("story:legend");
+    const cards = [
+      ...document.querySelectorAll<HTMLElement>("#shell-inspector .scard"),
+    ];
+    expect(cards).toHaveLength(3);
+    for (const [i, card] of cards.entries()) {
+      vi.spyOn(card, "getBoundingClientRect").mockReturnValue({
+        top: 100 + i * 40,
+        bottom: 140 + i * 40,
+        height: 40,
+        left: 0,
+        right: 200,
+        width: 200,
+      } as DOMRect);
+    }
+    const grip = cards[0]?.querySelector(".grip") as HTMLElement;
+    const touch = (to: EventTarget, type: string, y: number, at: number) => {
+      const event = new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        clientY: y,
+        button: 0,
+      });
+      Object.defineProperty(event, "pointerId", { value: 7 });
+      Object.defineProperty(event, "pointerType", { value: "touch" });
+      Object.defineProperty(event, "timeStamp", { value: at });
+      to.dispatchEvent(event);
+    };
+    // Rested, then past the last card: the end of the story.
+    touch(grip, "pointerdown", 120, 1000);
+    touch(window, "pointermove", 121, 1300);
+    touch(window, "pointermove", 215, 1320);
+    expect(cards[0]?.classList.contains("dragging")).toBe(true);
+    expect(cards[2]?.classList.contains("drop-after")).toBe(true);
+    touch(window, "pointerup", 215, 1340);
+    expect(deps.stations.moveChild).toHaveBeenCalledTimes(1);
+    expect(deps.stations.moveChild).toHaveBeenCalledWith("l1", {
+      place: "story",
+      story: "legend",
+      index: 3,
+    });
+    // A flick from the grip: no move.
+    touch(grip, "pointerdown", 120, 2000);
+    touch(window, "pointermove", 215, 2016);
+    touch(window, "pointerup", 215, 2032);
+    expect(deps.stations.moveChild).toHaveBeenCalledTimes(1);
+    shell.hide();
+  });
+
+  // Why: the story's preview is the page's (the visitor's panel in a
+  // dialog): the inspector's button hands it the story and the button the
+  // focus goes back to.
+  it("hands a story's preview to the page", () => {
+    const { deps, select, shell } = withStory();
+    const previewStory = vi.fn();
+    Object.assign(deps, { previewStory });
+    select("story:legend");
+    const button = inspectorAct("preview-story");
+    button.click();
+    expect(previewStory).toHaveBeenCalledWith("legend", button);
+    shell.hide();
+  });
+
+  // Why: the story's pill is how a creator finds out whether the story
+  // works. Pressed while valid it says so; pressed with a problem it goes
+  // to the step the Problems tab's row goes to (the loop's first) and says
+  // what is wrong, so the press is never silent and never a dead end.
+  it("says the story is valid, or goes to its problem, from the pill", () => {
+    const { deps, select, shell } = withStory();
+    select("story:legend");
+    expect(inspectorAct("story-check").textContent).toBe("Story valid");
+    inspectorAct("story-check").click();
+    expect(deps.say).toHaveBeenLastCalledWith(
+      "The story is valid: every path of it can reach the end.",
+    );
+    shell.hide();
+    const loop = withStory([
+      {
+        id: "l1",
+        kind: "longText",
+        view: "card",
+        title: "The siege",
+        body: "In 1632",
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        advance: { mode: "tap" },
+      },
+      {
+        id: "c1",
+        kind: "choice",
+        prompt: "Again?",
+        options: [
+          { id: "o1", label: "Yes", goto: "l1" },
+          { id: "o2", label: "Once more", goto: "l1" },
+        ],
+      },
+    ]);
+    loop.select("story:legend");
+    expect(inspectorAct("story-check").textContent).toBe("1 problem");
+    inspectorAct("story-check").click();
+    expect(loop.store.getState().editorView.selected).toBe("l1");
+    expect(loop.deps.say).toHaveBeenLastCalledWith(
+      expect.stringContaining("loop that no answer can leave"),
+    );
+    loop.shell.hide();
+  });
+
+  // Why: a step can go between two others: the gap before a card opens
+  // the story's menu for that place, and its add carries the place.
+  it("inserts a step before a card from the gap above it", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    const { edits, select, shell } = withStory();
+    select("story:legend");
+    inspectorAct("insert:1").click();
+    expect(
+      document.querySelector("#tree-add-menu .mhead")?.textContent,
+    ).toContain("as step 2");
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="quiz"]')
+      ?.click();
+    expect(edits.addStepToStory).toHaveBeenLastCalledWith("legend", "quiz", 1);
+    inspectorAct("insert:0").click();
+    document
+      .querySelector<HTMLElement>('#tree-add-menu [data-kind="longText"]')
+      ?.click();
+    expect(edits.addToStory).toHaveBeenLastCalledWith("legend", "longText", 0);
+    shell.hide();
+  });
+
+  // Why: on a phone (700 px or less) a step's card is the way into its
+  // step, as the entries' rows were: a press selects the step, unfolding
+  // its folder, and Back comes up to the story again.
+  it("goes from a story's card to its step on a phone, unfolding its folder", () => {
+    vi.stubGlobal("innerWidth", 390);
     const { store, select, shell } = withStory();
     select("story:legend");
-    inspectorAct("goto:l1").click();
+    inspectorAct("card:l1").click();
     expect(store.getState().editorView.selected).toBe("l1");
     expect(store.getState().editorView.openStories).toEqual(["legend"]);
+    select("story:legend");
+    inspectorAct("card-show:l1").click();
+    expect(store.getState().editorView.selected).toBe("l1");
+    shell.hide();
+  });
+
+  // Why: on a desktop a card opens in place, the story staying selected,
+  // and every control inside it is its step's: a typed question writes
+  // that step, its Delete deletes that step. A jump chip opens the step it
+  // names beside it, and a second press on a head closes its card.
+  it("opens a card in place on a desktop, its controls its step's", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    const { store, edits, deps, select, shell } = withStory();
+    select("story:legend");
+    inspectorAct("card:c1").click();
+    expect(store.getState().editorView.selected).toBe("story:legend");
+    const question = document.querySelector<HTMLTextAreaElement>(
+      '#shell-inspector [data-card="c1"] [data-field="step:prompt"]',
+    );
+    if (question === null) throw new Error("no question");
+    question.focus();
+    question.value = "Up or down?";
+    question.blur();
+    expect(edits.storyStep).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: "c1", prompt: "Up or down?" }),
+    );
+    inspectorAct("card-show:l1").click();
+    const open = () =>
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          "#shell-inspector .scard.open",
+        ),
+      ].map((c) => c.dataset["card"]);
+    expect(open()).toEqual(["l1", "c1"]);
+    document
+      .querySelector<HTMLElement>(
+        '#shell-inspector [data-card="c1"] [data-act="delete"]',
+      )
+      ?.click();
+    expect(deps.stations.remove).toHaveBeenCalledWith("c1");
+    expect(store.getState().editorView.selected).toBe("story:legend");
+    inspectorAct("card:c1").click();
+    expect(open()).toEqual(["l1"]);
+    shell.hide();
+  });
+
+  // Why: a loop no answer can leave is warned on its cards, and its fix
+  // is one click: the loop's last choice's last answer ends the story,
+  // written as the whole step (one undo step).
+  it("lets a loop's last answer end the story in one click", () => {
+    vi.stubGlobal("innerWidth", 1280);
+    const { edits, select, shell } = withStory([
+      {
+        id: "l1",
+        kind: "longText",
+        view: "card",
+        title: "The siege",
+        body: "In 1632",
+        pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        advance: { mode: "tap" },
+      },
+      {
+        id: "c1",
+        kind: "choice",
+        prompt: "Again?",
+        options: [
+          { id: "o1", label: "Yes", goto: "l1" },
+          { id: "o2", label: "Sure", goto: "l1" },
+        ],
+      },
+    ]);
+    select("story:legend");
+    expect(
+      document.querySelectorAll("#shell-inspector .scard.bad"),
+    ).toHaveLength(2);
+    const fix = inspectorAct("card-fix:c1");
+    expect(fix.textContent).toBe('Let "Sure" end the story');
+    fix.click();
+    expect(edits.storyStep).toHaveBeenLastCalledWith({
+      id: "c1",
+      kind: "choice",
+      prompt: "Again?",
+      options: [
+        { id: "o1", label: "Yes", goto: "l1" },
+        { id: "o2", label: "Sure", end: true },
+      ],
+    });
     shell.hide();
   });
 
@@ -2549,8 +2798,8 @@ describe("a phone's keyboard over the panels", () => {
 describe("docked folds and counts", () => {
   /** A docking whose list and details share one group: one fold for both,
    *  as when a creator drags one into the other's group. */
-  function sharedGroupDock() {
-    let shut = false;
+  function sharedGroupDock(kept = false) {
+    let shut = kept;
     let onChange = () => undefined as void;
     const host = {
       fold: vi.fn((_id: string, folded: boolean) => {
@@ -2567,9 +2816,10 @@ describe("docked folds and counts", () => {
       badge: vi.fn(),
       content: () => document.createElement("div"),
       groupShown: () => !shut,
-      activeIn: () => null,
+      activeIn: vi.fn((_id: DockPanelId): DockPanelId | null => null),
       conceal: vi.fn(),
-      hideGroupOf: vi.fn(),
+      hidePane: vi.fn(),
+      restored: () => kept,
       keyboard: vi.fn(),
       dispose: vi.fn(),
     } satisfies DockHost;
@@ -2618,9 +2868,114 @@ describe("docked folds and counts", () => {
     shell.hide();
   });
 
+  // Why: the docking refuses a fold it cannot make (a floating group, a
+  // size not yet known). The store must not keep the fold then: the
+  // details were marked folded with no rail to unfold them by.
+  it("a fold the docking refuses leaves the store unfolded", async () => {
+    const { store, host, shell } = await docked();
+    host.fold.mockImplementation(() => undefined);
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "inspector", folded: true }),
+    );
+    expect(host.fold).toHaveBeenCalledWith("details", true);
+    expect(host.folded()).toBe(false);
+    expect(store.getState().editorView.foldedDocks).toEqual({
+      tree: false,
+      inspector: false,
+    });
+    // A later fold the docking takes still reaches it.
+    host.fold.mockRestore();
+    store.dispatch(
+      editorViewActions.dockFolded({ dock: "inspector", folded: true }),
+    );
+    expect(host.folded()).toBe(true);
+    expect(store.getState().editorView.foldedDocks.inspector).toBe(true);
+    shell.hide();
+  });
+
+  // Why: where the details share a group with the list (a phone's one
+  // group), a tap on a row must bring the details forward, and so must a
+  // tap on another row while the list is the tab in front. The details'
+  // own draw unhides them, so a check made after it never saw them hidden
+  // and the details stayed behind the list. Another tab in front (Files at
+  // a desk) stays there for a new selection: the picks draw the details
+  // behind it.
+  it("a selection, and a new one from the list in front, bring the details forward", async () => {
+    const { host, shell, select } = await docked();
+    select("station:a");
+    expect(host.reveal).toHaveBeenLastCalledWith("details");
+    host.reveal.mockClear();
+    select("station:a");
+    expect(host.reveal).not.toHaveBeenCalled();
+    host.activeIn.mockReturnValue("files");
+    select("station:b");
+    expect(host.reveal).not.toHaveBeenCalled();
+    host.activeIn.mockReturnValue("list");
+    select("station:a");
+    expect(host.reveal).toHaveBeenLastCalledWith("details");
+    shell.hide();
+  });
+
   // Why: the shelf hands its count to the shell before the docking has
   // loaded; a count dropped then would leave the Files tab silent about
   // files that failed until the next change.
+  // Why: docked, a folded rail shows the tour's problem count on the
+  // Problems tab it holds; the count must follow the tour as it changes
+  // and go when the problems are fixed.
+  it("gives the docking the tour's problem count as it changes", async () => {
+    const { store, shell, host } = await docked();
+    expect(host.badge).not.toHaveBeenCalledWith("problems", expect.anything());
+    const far = station("c", 0.0008);
+    const open = (stations: TourStation[]) => {
+      store.dispatch(
+        tourDocumentActions.opened({
+          manifest: { ...createEmptyTourManifest(), stations },
+        }),
+      );
+    };
+    open([
+      {
+        ...far,
+        ...stationContent([
+          {
+            ...(stationBlocks(far)[0] as object),
+            id: "far",
+            pose: { position: [40, 1.5, 0], rotation: [0, 0, 0, 1] },
+          } as unknown as TourBlock,
+        ]),
+      },
+    ]);
+    expect(host.badge).toHaveBeenLastCalledWith("problems", {
+      count: 1,
+      bad: false,
+      label: "0 errors, 1 warning, 0 notes",
+    });
+    open([station("a", 0)]);
+    expect(host.badge).toHaveBeenLastCalledWith("problems", null);
+    shell.hide();
+  });
+
+  // Why: a kept layout is the creator's own arrangement. Its folds must
+  // reach the store when the panels dock, not be undone by the store's
+  // (unfolded) sides - else a reload would unfold every kept rail.
+  it("takes a kept layout's folds into the store rather than undoing them", async () => {
+    const made = setUp();
+    const dock = sharedGroupDock(true);
+    made.shell.hide();
+    Object.assign(made.deps, { dock: dock.load });
+    expect(made.store.getState().editorView.foldedDocks.tree).toBe(false);
+    made.shell.show(made.view);
+    await vi.waitFor(() => {
+      expect(made.shell.docked()).toBe(true);
+    });
+    expect(dock.host.fold).not.toHaveBeenCalled();
+    expect(made.store.getState().editorView.foldedDocks).toMatchObject({
+      tree: true,
+      inspector: true,
+    });
+    made.shell.hide();
+  });
+
   it("keeps a tab's count for when the panels dock", async () => {
     const made = setUp();
     const dock = sharedGroupDock();
@@ -2633,5 +2988,43 @@ describe("docked folds and counts", () => {
       expect(dock.host.badge).toHaveBeenCalledWith("files", badge);
     });
     made.shell.hide();
+  });
+});
+
+describe("framing an item the page just made", () => {
+  // Why: choosing an item flies the view to it; one just added from a file
+  // lands where the creator may not be looking, so the page frames it the
+  // same way - on the item, else on its station - and with no view shown
+  // nothing happens.
+  it("flies to the item, else to its station, and does nothing hidden", () => {
+    const { store, shell, view } = setUp();
+    const at = station("c", 0.0008);
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...at,
+              ...stationContent([
+                {
+                  ...(stationBlocks(at)[0] as object),
+                  id: "new-video",
+                } as unknown as TourBlock,
+              ]),
+            },
+          ],
+        },
+      }),
+    );
+    shell.frame("new-video");
+    expect(view.flyTo).toHaveBeenLastCalledWith("new-video");
+    view.flyTo.mockReturnValue(false);
+    shell.frame("new-video");
+    expect(view.flyTo).toHaveBeenLastCalledWith("station:c");
+    view.flyTo.mockClear();
+    shell.hide();
+    shell.frame("new-video");
+    expect(view.flyTo).not.toHaveBeenCalled();
   });
 });

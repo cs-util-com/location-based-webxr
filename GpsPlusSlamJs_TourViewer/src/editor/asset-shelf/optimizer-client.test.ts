@@ -11,6 +11,8 @@ import { describe, expect, it, vi } from "vitest";
 import { OptimizerCrashed } from "./asset-optimizers.js";
 import {
   createOptimizerHost,
+  OPTIMIZER_SILENCE_MS,
+  type OptimizerPage,
   type OptimizerWorker,
 } from "./optimizer-client.js";
 import type {
@@ -141,6 +143,143 @@ describe("the optimizer's Worker client", () => {
     await expect(c).resolves.toEqual({ kind: "kept", reason: "r" });
   });
 
+  // Why: a Worker killed for running out of memory does not reliably fire
+  // its error event in Chrome, so without a watchdog the run never
+  // settles and its card shows "in progress" until the author stops it.
+  // A Worker that sends nothing for OPTIMIZER_SILENCE_MS is treated as a
+  // crash; one that keeps sending progress is never cut off, however long
+  // its run.
+  it("treats a Worker silent for OPTIMIZER_SILENCE_MS as crashed, and progress keeps it alive", async () => {
+    vi.useFakeTimers();
+    try {
+      const workers: FakeWorker[] = [];
+      const host = createOptimizerHost(() => {
+        const w = fakeWorker();
+        workers.push(w);
+        return w;
+      });
+      const run = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+      const outcome = run.then(
+        () => "settled",
+        (err: unknown) => err,
+      );
+      const job = workers[0]!.posted[0]!.job;
+      // a long run that reports progress is not cut off
+      for (let i = 0; i < 3; i++) {
+        await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS - 1);
+        workers[0]!.answer({ type: "progress", job, fraction: i / 3 });
+      }
+      expect(workers[0]!.terminated).toBe(false);
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS);
+      const err = await outcome;
+      expect(err).toBeInstanceOf(OptimizerCrashed);
+      expect((err as Error).message).toMatch(/stopped answering/);
+      expect(workers[0]!.terminated).toBe(true);
+      // the next run gets a fresh Worker, and a settled run leaves no
+      // watchdog behind
+      const next = host.run("image", 2, OPTIMIZER_SETTINGS, control());
+      expect(workers).toHaveLength(2);
+      workers[1]!.answer({
+        type: "kept",
+        job: workers[1]!.posted[0]!.job,
+        reason: "r",
+      });
+      await expect(next).resolves.toEqual({ kind: "kept", reason: "r" });
+      await vi.advanceTimersByTimeAsync(2 * OPTIMIZER_SILENCE_MS);
+      expect(workers[1]!.terminated).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Why: a new run is no sign that the Worker lives. Were it to restart
+  // the wait, a Worker that died without a word would be kept "alive" by
+  // every file the author adds, and no card would ever leave "in progress".
+  it("does not restart a silent Worker's wait for a new run", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = fakeWorker();
+      const host = createOptimizerHost(() => w, null);
+      const first = host
+        .run("image", 1, OPTIMIZER_SETTINGS, control())
+        .catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS - 10);
+      const second = host
+        .run("image", 2, OPTIMIZER_SETTINGS, control())
+        .catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(await first).toBeInstanceOf(OptimizerCrashed);
+      expect(await second).toBeInstanceOf(OptimizerCrashed);
+      expect(w.terminated).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Why: a payload the browser cannot copy (a DataCloneError) throws from
+  // postMessage. The run must reject with that error at once and leave no
+  // pending run behind: a phantom one would never be answered, and the
+  // watchdog would then kill a healthy Worker for it.
+  it("rejects a run whose message cannot be posted, and keeps no phantom run", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = fakeWorker();
+      let refuse = true;
+      const post = w.postMessage.bind(w);
+      w.postMessage = (message, transfer) => {
+        if (refuse && message.type === "run") {
+          throw new DOMException("cannot be cloned", "DataCloneError");
+        }
+        post(message, transfer);
+      };
+      const host = createOptimizerHost(() => w, null);
+      await expect(
+        host.run("image", 1, OPTIMIZER_SETTINGS, control()),
+      ).rejects.toMatchObject({ name: "DataCloneError" });
+      await vi.advanceTimersByTimeAsync(2 * OPTIMIZER_SILENCE_MS);
+      expect(w.terminated).toBe(false);
+      refuse = false;
+      const next = host.run("image", 2, OPTIMIZER_SETTINGS, control());
+      w.answer({ type: "kept", job: w.posted.at(-1)!.job, reason: "r" });
+      await expect(next).resolves.toEqual({ kind: "kept", reason: "r" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Why: a browser throttles and freezes a background tab's timers, and on
+  // resume a timer that came due while frozen can fire before the Worker's
+  // queued progress is read, killing a healthy run. The wait therefore
+  // pauses while the page is hidden and starts afresh when it is shown.
+  it("pauses the wait while the page is hidden and restarts it when shown", async () => {
+    vi.useFakeTimers();
+    try {
+      class Page extends EventTarget implements OptimizerPage {
+        visibilityState: DocumentVisibilityState = "visible";
+      }
+      const page = new Page();
+      const w = fakeWorker();
+      const host = createOptimizerHost(() => w, page);
+      const run = host
+        .run("model", 1, OPTIMIZER_SETTINGS, control())
+        .catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS - 10);
+      page.visibilityState = "hidden";
+      page.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(3 * OPTIMIZER_SILENCE_MS);
+      expect(w.terminated).toBe(false);
+      page.visibilityState = "visible";
+      page.dispatchEvent(new Event("visibilitychange"));
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS - 10);
+      expect(w.terminated).toBe(false);
+      await vi.advanceTimersByTimeAsync(10);
+      expect(await run).toBeInstanceOf(OptimizerCrashed);
+      expect(w.terminated).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("close stops every run and the Worker; a spawn that throws rejects the run", async () => {
     const w = fakeWorker();
     const host = createOptimizerHost(() => w);
@@ -223,5 +362,80 @@ describe("the optimizer's Worker client", () => {
     w.answer({ type: "done", job: b!, blob, extension: "opus" });
     await expect(image).resolves.toMatchObject({ width: 1600, height: 1200 });
     await expect(audio).resolves.toMatchObject({ extension: "opus" });
+  });
+
+  // Why: a model's report is what the shelf shows about its passes; it is
+  // advisory, so one that does not read is dropped and the checked file
+  // still lands (a run never fails on words about it).
+  it("carries a model's report through, and drops one that does not read", async () => {
+    const w = fakeWorker();
+    const host = createOptimizerHost(() => w);
+    const good = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+    const bad = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+    const badLod = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+    const [a, b, c] = w.posted.map((m) => m.job);
+    const blob = new Blob(["s"]);
+    const model = {
+      textures: {
+        changed: 1,
+        kept: 0,
+        bytesBefore: 9,
+        bytesAfter: 4,
+        largestSide: 8,
+      },
+      quantize: {
+        positions: 1,
+        normals: 0,
+        tangents: 0,
+        texcoords: 0,
+        indices: 1,
+        positionError: 0,
+        normalErrorDeg: 0,
+        texcoordError: 0,
+      },
+      lod: {
+        skipped: null,
+        primitives: 1,
+        trianglesBefore: 9000,
+        trianglesAfter: 3000,
+        deviation: 0.002,
+        size: 1.5,
+        automatic: true,
+        choices: [{ share: 1, triangles: 9000, deviation: 0 }],
+      },
+    };
+    w.answer({ type: "done", job: a!, blob, extension: "glb", model });
+    // a level-of-detail report whose slider stop does not read
+    w.onmessage?.({
+      data: {
+        type: "done",
+        job: c,
+        blob,
+        extension: "glb",
+        model: {
+          ...model,
+          lod: { ...model.lod, choices: [{ share: 1, triangles: "many" }] },
+        },
+      },
+    } as MessageEvent);
+    w.onmessage?.({
+      data: { type: "done", job: b, blob, extension: "glb", model: 3 },
+    } as MessageEvent);
+    await expect(good).resolves.toEqual({
+      kind: "optimized",
+      blob,
+      extension: "glb",
+      model,
+    });
+    await expect(bad).resolves.toEqual({
+      kind: "optimized",
+      blob,
+      extension: "glb",
+    });
+    await expect(badLod).resolves.toEqual({
+      kind: "optimized",
+      blob,
+      extension: "glb",
+    });
   });
 });

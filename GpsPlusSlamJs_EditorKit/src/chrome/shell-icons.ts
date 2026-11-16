@@ -86,6 +86,10 @@ const PATHS = {
   tiles:
     '<path d="M1.8 4.2 5.8 2.6l4.4 1.6 4-1.6v9.2l-4 1.6-4.4-1.6-4 1.6z"/><path d="M5.8 2.6v9.2M10.2 4.2v9.2"/>',
   perf: '<path d="M1.5 8.6h2.8l1.6-4.2 2.5 8 1.8-5.4 1.1 1.6h3.2"/>',
+  // A docked group floated over the 3D view, and docked back beside it.
+  float:
+    '<rect x="2" y="5" width="9" height="8.5" rx="1"/><path d="M5 5V2.5h8.5V11H11"/>',
+  dock: '<rect x="2" y="2.5" width="12" height="11" rx="1"/><path d="M9 2.5v11"/><path d="M5 8h2.5M6.3 6.7L7.5 8 6.3 9.3"/>',
 } as const;
 
 export type ShellIcon = keyof typeof PATHS;

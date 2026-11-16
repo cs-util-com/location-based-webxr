@@ -13,7 +13,7 @@ and `fitBounds` padding - so the screens stay visually consistent.
 ([sidecar](../../../GpsPlusSlamJs_AppFramework/src/visualization/osm-tile-layer.ts.md)),
 because the summary map's shell moved there too
 ([summary-map-shell.ts.md](../../../GpsPlusSlamJs_AppFramework/src/visualization/summary-map-shell.ts.md),
-DEC-H3, Tour Viewer authoring plan 2026-09-28-0953 §3.3) and draws the
+Tour Viewer authoring plan 2026-09-28-0953 §3.3) and draws the
 basemap itself. The views import it from there. The three tile-policy values
 were already in `gps-plus-slam-app-framework/utils/osm-tiles` since
 2026-09-22.

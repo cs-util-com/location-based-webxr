@@ -33,7 +33,7 @@ it against one pixel cap (`ar/tour-media.ts` `TOUR_MAX_IMAGE_PIXELS`).
   the probe is cut there (a header read from a file's first bytes).
 - Never throws, never reads past the buffer; a zero or unsafe size is
   `null`.
-- **Unify note (DEC-H3):** the JPEG, PNG and WebP readers follow the
+- **Unify note:** the JPEG, PNG and WebP readers follow the
   Globe's fetch-script reader (`GpsPlusSlamJs_Globe/src/image-header.ts`,
   which also reads a WebP's alpha). The Globe does not depend on the
   framework, so it keeps its copy for now; moving it onto this one is filed

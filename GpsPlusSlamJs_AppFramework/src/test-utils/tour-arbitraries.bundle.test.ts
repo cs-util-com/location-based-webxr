@@ -62,8 +62,10 @@ describe('the built tour arbitraries', () => {
     // The checks above are the guard against an inlined copy. The size
     // bound only catches gross growth: measured, the entry built to
     // about 92 KB, 105 KB once the sign, edge-hint and picture viewpoint
-    // fields joined the format, and 477 KB with fast-check inlined (on
-    // which all three checks above fail too).
-    expect(code.length).toBeLessThan(150_000);
+    // fields joined the format, 109 KB with the video's world fields, and
+    // 477 KB with fast-check inlined (on which all three checks above fail
+    // too). The bound sits about 10 % above the measured size, so a jump
+    // of a few dozen KB shows here.
+    expect(code.length).toBeLessThan(120_000);
   });
 });

@@ -5,7 +5,7 @@
 One counting rule for a QR code's size from parallax (QR size consensus plan
 `GpsPlusSlamJs_Docs/docs/2026-09-27-0350-qr-size-consensus-plan.md`,
 §11-§13, S3a), shared by the QR demo's `?qrperf` report and the
-TourViewer's print check (DEC-H3), and the rule for offering a measured size
+TourViewer's print check, and the rule for offering a measured size
 in place of a typed one.
 
 ## Public API

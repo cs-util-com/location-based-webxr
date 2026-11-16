@@ -19,7 +19,7 @@ alignment, refused correct codes on long meanders
 alignment, so the picks are folded here while it evolves.
 
 The rule is the framework's (`gps-plus-slam-app-framework/state/alignment-maturity`,
-DEC-H3: the Recorder's QR mint and the GPS anchor's `'mature-alignment'`
+shared-helper rule: the Recorder's QR mint and the GPS anchor's `'mature-alignment'`
 start-up fold the same pick). This module keys it by object, measurement and
 sighting and keeps each event's time and walked distance; `visit-settle.ts` decides what to do
 with them.
@@ -33,7 +33,7 @@ one live object that moves a scene node from its own placement on, while
 the settle needs, per visit, one pick per object, per measurement and per
 sighting, read together at the visit's end and then thrown away, with the
 sightings' times for "the sighting nearest each note". So the rule is
-shared (DEC-H3) and applied through this per-visit tracker; no copy of it
+shared and applied through this per-visit tracker; no copy of it
 lives here.
 
 ## Public API

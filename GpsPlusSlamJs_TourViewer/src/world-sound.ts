@@ -56,6 +56,10 @@ export interface SoundHandle {
   /** Background: the loudness asked for, 0 to 1, at page time `seconds`;
    *  0 pauses it. Voice: no effect. */
   level(gain: number, seconds: number): void;
+  /** Background: how far it is lowered under a voice as of its last
+   *  `level`, 1 (not at all) gliding to `BACKGROUND_UNDER_VOICE`.
+   *  Voice: 1. */
+  lowered(): number;
   /** Stops and lets the file go. */
   dispose(): void;
 }
@@ -102,6 +106,7 @@ export const SILENT_SOUND: SoundHandle = {
   durationMs: () => 0,
   seek: () => undefined,
   level: () => undefined,
+  lowered: () => 1,
   dispose: () => undefined,
 };
 
@@ -232,6 +237,7 @@ export function createWorldSound(deps: WorldSoundDeps): WorldSound {
     return {
       ...SILENT_SOUND,
       playing: () => element !== null && !element.paused,
+      lowered: () => lower,
       level(gain, seconds) {
         want = clamp01(gain);
         if (want <= 0) refused = false;

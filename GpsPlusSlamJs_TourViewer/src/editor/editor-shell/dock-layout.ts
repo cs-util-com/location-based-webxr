@@ -7,14 +7,12 @@
  */
 import type { ShellIcon } from "gps-plus-slam-editor-kit/chrome";
 
-/** From this window width up (CSS px) the editor's panels dock around the
- *  3D view, a phone held sideways (844 px) included; below it a phone's
- *  sheets show them (`phone-sheet.ts`, `PHONE_SHEET_PX` is one less). */
-export const DOCK_MIN_PX = 701;
-
-/** Whether the panels dock at this window width. */
+/** Whether the panels dock at this window width: at every width, a
+ *  phone held upright included (its sheets, `phone-sheet.ts`, show the
+ *  panels only while the docking loads or when it failed to); not in a
+ *  window with no width yet. */
 export function docksAt(widthPx: number): boolean {
-  return Number.isFinite(widthPx) && widthPx >= DOCK_MIN_PX;
+  return Number.isFinite(widthPx) && widthPx > 0;
 }
 
 /** The bottom panel's four tabs, one docked panel each. */
@@ -182,14 +180,19 @@ export function writerWidthPx(widthPx: number, wide: boolean): number {
 export const KEYBOARD_ROOM_PX = 390;
 
 /** Whether a keyboard of `keyboardPx` over a window of `heightPx`
- *  leaves less than `KEYBOARD_ROOM_PX`; never without a keyboard. */
+ *  leaves less than `KEYBOARD_ROOM_PX` for the group in use, whose top
+ *  stands `belowTopPx` below the layout's (a phone's group held upright,
+ *  under the 3D view; 0 for one at the top, as is a nonsense value);
+ *  never without a keyboard. */
 export function keyboardMaximizes(
   heightPx: number,
   keyboardPx: number,
+  belowTopPx = 0,
 ): boolean {
   if (!Number.isFinite(heightPx) || !Number.isFinite(keyboardPx)) return false;
   if (keyboardPx <= 0) return false;
-  return heightPx - keyboardPx < KEYBOARD_ROOM_PX;
+  const below = Number.isFinite(belowTopPx) ? Math.max(0, belowTopPx) : 0;
+  return heightPx - keyboardPx - below < KEYBOARD_ROOM_PX;
 }
 
 /** The bottom group's height when first shown: 220 px, at most about a
@@ -198,6 +201,67 @@ export function keyboardMaximizes(
 export function bottomStartPx(heightPx: number): number {
   const third = Math.floor(Math.max(0, heightPx) / 3);
   return Math.max(90, Math.min(220, third));
+}
+
+/** A phone held upright or sideways (`dock-save.ts`'s form factors). */
+export type PhoneShape = "upright" | "sideways";
+
+/** The phone group's first size (px) in a layout of `widthPx` by
+ *  `heightPx`: upright its height, 46 % of the layout's; sideways its
+ *  width, 38 % of the layout's and at most 320 (the prototype's). 0 for
+ *  a size that is not a positive number. */
+export function phoneGroupPx(
+  shape: PhoneShape,
+  widthPx: number,
+  heightPx: number,
+): number {
+  const axis = shape === "upright" ? heightPx : widthPx;
+  if (!Number.isFinite(axis) || axis <= 0) return 0;
+  return shape === "upright"
+    ? Math.round(axis * 0.46)
+    : Math.round(Math.min(320, axis * 0.38));
+}
+
+/**
+ * A phone's default layout in a layout of `widthPx` by `heightPx`: the
+ * 3D view and ONE group holding every other panel as a tab, in the
+ * order List, Details, Files, then the bottom panel's four; below the
+ * view held upright (the desk's side columns become one bottom group),
+ * beside it held sideways. The list is the shown tab, as the phone's
+ * sheets opened the list first; `shown` "details" shows the details
+ * instead (a phone turned with something selected).
+ */
+export function phoneDockLayout(
+  shape: PhoneShape,
+  widthPx: number,
+  heightPx: number,
+  shown: "list" | "details" = "list",
+): readonly DockStep[] {
+  const px = phoneGroupPx(shape, widthPx, heightPx);
+  const rest: readonly DockPanelId[] = [
+    "details",
+    "files",
+    ...BOTTOM_PANEL_IDS,
+  ];
+  return [
+    { id: "view" },
+    shape === "upright"
+      ? {
+          id: "list",
+          against: { id: "view", direction: "below" },
+          heightPx: px,
+        }
+      : {
+          id: "list",
+          against: { id: "view", direction: "right" },
+          widthPx: px,
+        },
+    ...rest.map((id): DockStep =>
+      id === shown
+        ? { id, against: { id: "list", direction: "within" } }
+        : { id, against: { id: "list", direction: "within" }, inactive: true },
+    ),
+  ];
 }
 
 /**

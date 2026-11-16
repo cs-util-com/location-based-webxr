@@ -6,7 +6,7 @@
  *
  * Whether the codes can place the tour is the VIEWER's rule
  * (`visitor-screen.ts` `tourCodesUsable`), reused rather than restated
- * (root CLAUDE.md DEC-H3): the flag holds only when it says yes.
+ * (the shared-helper rule): the flag holds only when it says yes.
  *
  * Stations are reached by their radius alone (D16) and carry no code of
  * their own (D9), so without location what can fail is the position: it is
@@ -29,7 +29,7 @@ import { CODE_EVENT_REACH_M } from "../visit-settle.js";
 /**
  * How far a station may be from the nearest placing code before the
  * editor warns: the reach a code event has for the notes walked from it
- * (`visit-settle.ts`, 40 m walked), the same drift argument (DEC-H3).
+ * (`visit-settle.ts`, 40 m walked), the same drift argument.
  */
 export const NO_GPS_CODE_REACH_M = CODE_EVENT_REACH_M;
 

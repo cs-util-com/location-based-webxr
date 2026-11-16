@@ -814,8 +814,8 @@ export async function expectCanvasFillsContainer(page) {
  *
  * DECLARED HERE as heights rather than checked in as a binary, because the
  * interesting part is the ENCODING and a base64 blob hides it; the bytes come
- * from the workspace's one Terrarium encoder (`scripts/e2e/terrarium-png.mjs`,
- * DEC-H3). Terrarium stores height as
+ * from the workspace's one Terrarium encoder (`scripts/e2e/terrarium-png.mjs`).
+ * Terrarium stores height as
  * `(r * 256 + g + b / 256) - 32768`, so `r = 128, g = 0` is exactly 0 m and each
  * step of `g` is one metre.
  *

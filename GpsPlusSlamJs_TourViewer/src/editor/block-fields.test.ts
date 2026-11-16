@@ -12,10 +12,17 @@ import fc from "fast-check";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
+import {
+  choiceFallback,
+  KIND_EDIT,
+  type FieldSpec,
+} from "../kinds/edit-kinds.js";
+import { PIN_DEFAULT_ORIENTATION } from "../kinds/short-text/pin.js";
 import { textCounterLine, wireTextCounter } from "../pin-text.js";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 
 import {
+  blockChoices,
   blockFieldEdit,
   blockFieldPlaceholder,
   blockFields,
@@ -98,7 +105,11 @@ describe("blockFields", () => {
   it("lists each kind's fields with the format's caps, in the inspector's order", () => {
     expect(
       blockFields(PIN).map((f) => [f.name, f.label, f.max, f.prose, f.value]),
-    ).toEqual([["description", "Description", 160, true, ""]]);
+    ).toEqual([
+      ["description", "Description", 160, true, ""],
+      ["readAtM", "Reads at", undefined, false, ""],
+      ["lang", "Language", undefined, false, ""],
+    ]);
     expect(
       blockFields(PICTURE).map((f) => [f.name, f.label, f.max, f.prose]),
     ).toEqual([
@@ -154,6 +165,8 @@ describe("storyBlockFields", () => {
     expect(rows(PIN)).toEqual([
       ["caption", 40, true],
       ["description", 160, false],
+      ["readAtM", undefined, false],
+      ["lang", undefined, false],
     ]);
     expect(rows(CHARACTER).map((r) => r[0])).toEqual(["name", "caption"]);
     expect(
@@ -524,15 +537,14 @@ describe("number fields", () => {
 describe("choice fields", () => {
   // Why: a short text's role and turn are chosen on chips, never typed;
   // the edit must write only a choice of the kind's row, so a file the
-  // editor saves always reads back with them, and a blank one returns
-  // to the reader's default rather than writing an empty word.
+  // editor saves always reads back with them, and never an empty word.
   it("are not boxes to type in", () => {
     const names = blockFields(PIN).map((f) => f.name);
     expect(names).not.toContain("role");
     expect(names).not.toContain("orientation");
   });
 
-  it("write a choice, refuse anything else, and clear on a blank", () => {
+  it("write a choice and refuse anything else, a blank among them", () => {
     const chose = blockFieldEdit(PIN, "role", "warning");
     expect(chose).toMatchObject({ kind: "edited", after: { role: "warning" } });
     if (chose.kind !== "edited") throw new Error("not edited");
@@ -542,12 +554,377 @@ describe("choice fields", () => {
     expect(blockFieldEdit(PIN, "role", "shout")).toMatchObject({
       kind: "refused",
     });
-    const cleared = blockFieldEdit(chose.after, "role", "");
-    expect(cleared.kind).toBe("edited");
-    if (cleared.kind !== "edited") throw new Error("not edited");
-    expect("role" in cleared.after).toBe(false);
-    expect(blockFieldEdit(PIN, "orientation", "")).toEqual({
+    expect(blockFieldEdit(chose.after, "role", "").kind).toBe("refused");
+    // A pin turns as a sign does; an edge hint does not: its turn is
+    // no field of its view.
+    expect(blockFieldEdit(PIN, "orientation", "face")).toMatchObject({
+      kind: "edited",
+      after: { orientation: "face" },
+    });
+    const hint = { ...PIN, view: "edgeHint" } as unknown as TourObject;
+    expect(blockFieldEdit(hint, "orientation", "face")).toEqual({
       kind: "unchanged",
     });
   });
+
+  // Why: a pin without a turn stands upright toward the visitor (a flat
+  // head kept still would be seen edge-on from the side); a sign without
+  // one keeps its pose. The chip pressed must say what the reader does,
+  // and pressing it must write nothing.
+  it("read a missing turn by the view: upright for a pin, fixed for a sign", () => {
+    const turnOf = (block: TourObject) =>
+      blockChoices(block).find((c) => c.name === "orientation")?.value;
+    const sign = { ...PIN, view: "sign" } as unknown as TourObject;
+    expect(turnOf(PIN)).toBe("upright");
+    expect(turnOf(sign)).toBe("world");
+    expect(turnOf(PIN)).toBe(PIN_DEFAULT_ORIENTATION);
+    expect(blockFieldEdit(PIN, "orientation", "upright")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(PIN, "orientation", "world")).toMatchObject({
+      kind: "edited",
+      after: { orientation: "world" },
+    });
+    expect(blockFieldEdit(sign, "orientation", "world")).toEqual({
+      kind: "unchanged",
+    });
+  });
+});
+
+describe("a ground arrow's own fields", () => {
+  const GROUND = {
+    ...(PIN as unknown as Record<string, unknown>),
+    view: "ground",
+  } as unknown as TourObject;
+
+  it("types its bend as a number within the format's bounds, and nothing it picks on the panel", () => {
+    // Why: the bend is a number the dock types; its style, placement,
+    // caption switch and colours are the panel's (chips, a box, colour
+    // wells), so the dock must not draw a text box for them too.
+    const names = blockFields(GROUND).map((f) => f.name);
+    expect(names).toContain("bendDeg");
+    expect(names).toContain("readAtM");
+    for (const own of [
+      "style",
+      "floorPlacement",
+      "captionOnArrow",
+      "color",
+      "darkColor",
+    ]) {
+      expect(names).not.toContain(own);
+    }
+    expect(blockFieldEdit(GROUND, "bendDeg", "-30")).toEqual({
+      kind: "edited",
+      after: { ...GROUND, bendDeg: -30 },
+    });
+    expect(blockFieldEdit(GROUND, "bendDeg", "61").kind).toBe("refused");
+  });
+
+  it("writes the caption switch as true or leaves it out, never as a text", () => {
+    // Why: the format reads `captionOnArrow` as a boolean; the text "true"
+    // would be refused by the reader and lose the block's look.
+    const on = blockFieldEdit(GROUND, "captionOnArrow", "true");
+    expect(on).toEqual({
+      kind: "edited",
+      after: { ...GROUND, captionOnArrow: true },
+    });
+    const after = on.kind === "edited" ? on.after : GROUND;
+    expect(blockFieldEdit(after, "captionOnArrow", "")).toEqual({
+      kind: "edited",
+      after: GROUND,
+    });
+    expect(blockFieldEdit(GROUND, "captionOnArrow", "")).toEqual({
+      kind: "unchanged",
+    });
+  });
+
+  it("takes a colour as #rrggbb only, and leaves it out when cleared", () => {
+    // Why: the reader takes six hex digits; anything else would be
+    // refused when the tour is read back.
+    expect(blockFieldEdit(GROUND, "color", "#5fe3c9")).toEqual({
+      kind: "edited",
+      after: { ...GROUND, color: "#5fe3c9" },
+    });
+    expect(blockFieldEdit(GROUND, "darkColor", "red").kind).toBe("refused");
+    expect(blockFieldEdit(GROUND, "color", "")).toEqual({ kind: "unchanged" });
+    const set = {
+      ...(GROUND as unknown as Record<string, unknown>),
+      color: "#5fe3c9",
+    } as unknown as TourObject;
+    expect(blockFieldEdit(set, "color", "")).toEqual({
+      kind: "edited",
+      after: GROUND,
+    });
+  });
+});
+
+describe("a short text's point and language", () => {
+  const view = (v: string, own: Record<string, unknown> = {}) =>
+    ({
+      ...(PIN as unknown as Record<string, unknown>),
+      view: v,
+      ...own,
+    }) as unknown as TourObject;
+  const edited = (out: ReturnType<typeof blockFieldEdit>) => {
+    if (out.kind !== "edited") throw new Error(`not edited: ${out.kind}`);
+    return out.after as unknown as Record<string, unknown>;
+  };
+
+  it("leaves the point to the panel's boxes, and types the language in every view", () => {
+    // Why: the point is typed in the short text's panel as three boxes
+    // x, y and z (`kind-panels/short-text-panel.ts`), as the chosen
+    // prototype has it; a dock line as well would be a second place to
+    // type it. The language matters to every view's line breaking and
+    // font.
+    const names = (v: string) => blockFields(view(v)).map((f) => f.name);
+    for (const v of ["pin", "sign", "edgeHint", "ground"]) {
+      expect(names(v)).not.toContain("pointsTo");
+    }
+    for (const v of ["pin", "sign", "edgeHint", "ground"]) {
+      expect(names(v)).toContain("lang");
+    }
+  });
+
+  it("writes a point given as three numbers", () => {
+    // Why: the format stores three numbers in the station's frame; the
+    // panel's boxes and the 3D view's pick send them as one text,
+    // separated by spaces (", " read too), a comma alone still being a
+    // decimal point as in every number box.
+    const sign = view("sign");
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", "2 1.2 -19.6")).pointsTo,
+    ).toEqual([2, 1.2, -19.6]);
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", " 2, 1.2, -19.6 ")).pointsTo,
+    ).toEqual([2, 1.2, -19.6]);
+    expect(
+      edited(blockFieldEdit(sign, "pointsTo", "1,5 0 -3")).pointsTo,
+    ).toEqual([1.5, 0, -3]);
+    const set = view("sign", { pointsTo: [2, 1.2, -19.6] });
+    expect(blockFieldEdit(set, "pointsTo", "2 1.2 -19.6")).toEqual({
+      kind: "unchanged",
+    });
+    expect("pointsTo" in edited(blockFieldEdit(set, "pointsTo", ""))).toBe(
+      false,
+    );
+    expect(blockFieldEdit(sign, "pointsTo", "")).toEqual({ kind: "unchanged" });
+  });
+
+  it("refuses a point that is not three numbers within the format's reach", () => {
+    // Why: the reader fails a file with two numbers, and drops a point
+    // over 1000 m from its station; the editor must not write either.
+    const sign = view("sign");
+    for (const bad of [
+      "2 1",
+      "2 1 3 4",
+      "a b c",
+      "1,2,3",
+      "1001 0 0",
+      "0 0 -1000.5",
+    ]) {
+      expect(blockFieldEdit(sign, "pointsTo", bad), bad).toEqual({
+        kind: "refused",
+        reason: expect.stringContaining("1000 m"),
+      });
+    }
+    expect(blockFieldEdit(sign, "pointsTo", "1000 -1000 0").kind).toBe(
+      "edited",
+    );
+  });
+
+  it("writes a language tag the format keeps, trimmed, and refuses one it would not", () => {
+    // Why: the reader keeps only a BCP-47 shaped tag of at most 35
+    // characters; anything else would be dropped or fail the file.
+    const pin = view("pin");
+    expect(edited(blockFieldEdit(pin, "lang", " pt-BR ")).lang).toBe("pt-BR");
+    expect(edited(blockFieldEdit(pin, "lang", "de")).lang).toBe("de");
+    for (const bad of [
+      "english!",
+      "d",
+      "de_DE",
+      `de-${"a".repeat(8)}-${"b".repeat(8)}-${"c".repeat(8)}-${"d".repeat(8)}`,
+    ]) {
+      const out = blockFieldEdit(pin, "lang", bad);
+      expect(out.kind, bad).toBe("refused");
+    }
+    const set = view("pin", { lang: "de" });
+    expect(blockFields(set).find((f) => f.name === "lang")?.value).toBe("de");
+    expect("lang" in edited(blockFieldEdit(set, "lang", " "))).toBe(false);
+    expect(blockFieldEdit(set, "lang", "de")).toEqual({ kind: "unchanged" });
+  });
+
+  it("hints at what to type in the empty language field", () => {
+    // Why: the field does not say on its own how a tag is written; the
+    // hint is the one place that does.
+    const fields = blockFields(view("sign"));
+    const hint = (n: string) =>
+      blockFieldPlaceholder(fields.find((f) => f.name === n)!);
+    expect(hint("lang")).toMatch(/^Optional, such as /);
+  });
+});
+
+// Why: the creator sets how a free video starts, with what sound and a
+// cutout's background as chips (the kind's panel), never as a typed box;
+// a press of a value the format does not take must be refused before it
+// reaches the file, and the chip already in use (an absent field's
+// fallback among them) must write nothing, or it would be an empty undo
+// step.
+describe("choice fields with a fallback (ChoiceSpec)", () => {
+  const SCREEN = {
+    ...VIDEO,
+    view: "screen",
+    widthM: 1.6,
+  } as unknown as TourObject;
+  const CUTOUT = {
+    ...SCREEN,
+    view: "cutout",
+    start: "near",
+    sound: "on",
+  } as unknown as TourObject;
+
+  it("lists a video's choices in its view, with their fallbacks in use", () => {
+    expect(blockChoices(SCREEN).map((c) => [c.name, c.value])).toEqual([
+      ["start", "enter"],
+      ["sound", "off"],
+      ["loop", "off"],
+    ]);
+    expect(blockChoices(CUTOUT).map((c) => [c.name, c.value])).toEqual([
+      ["start", "near"],
+      ["sound", "on"],
+      ["loop", "off"],
+      ["alpha", "none"],
+    ]);
+    // A story's card reads none of them.
+    expect(blockChoices(VIDEO)).toEqual([]);
+  });
+
+  // Why: a window starts as a screen does, so it offers the same choices;
+  // a stand-here video starts when the visitor stands on its spot, so a
+  // start chip there would be a setting that does nothing.
+  it("offers a window the screen's choices, and a stand-here video no start", () => {
+    const named = (view: string) =>
+      blockChoices({ ...SCREEN, view } as unknown as TourObject).map(
+        (c) => c.name,
+      );
+    expect(named("window")).toEqual(["start", "sound", "loop"]);
+    expect(named("standHere")).toEqual(["sound", "loop"]);
+    const near = { ...SCREEN, view: "standHere", start: "near" };
+    expect(
+      blockFields(near as unknown as TourObject).map((f) => f.name),
+    ).toEqual(["title", "transcript", "captions"]);
+  });
+
+  it("keeps the choices out of the fields the dock types", () => {
+    expect(blockFields(CUTOUT).map((f) => f.name)).toEqual([
+      "title",
+      "transcript",
+      "captions",
+      "withinM",
+    ]);
+  });
+
+  // Why: "Starts within" is a near start's distance; shown for another
+  // start it reads as a setting that does something, and a number typed
+  // there would be written to a field the viewer ignores.
+  it("shows a near start's distance only while the start is near", () => {
+    const names = (b: TourObject) => blockFields(b).map((f) => f.name);
+    expect(names(SCREEN)).not.toContain("withinM");
+    for (const start of ["enter", "look", "tap"]) {
+      const other = { ...SCREEN, start } as unknown as TourObject;
+      expect(names(other)).not.toContain("withinM");
+      expect(blockFieldEdit(other, "withinM", "5")).toEqual({
+        kind: "unchanged",
+      });
+    }
+    const near = { ...SCREEN, start: "near" } as unknown as TourObject;
+    expect(names(near)).toContain("withinM");
+    const edit = blockFieldEdit(near, "withinM", "5");
+    expect(edit.kind === "edited" && edit.after).toMatchObject({ withinM: 5 });
+  });
+
+  it("offers the loop as a choice in the world views", () => {
+    expect(blockChoices(SCREEN).find((c) => c.name === "loop")).toMatchObject({
+      value: "off",
+    });
+    const edit = blockFieldEdit(SCREEN, "loop", "on");
+    expect(edit.kind === "edited" && edit.after).toMatchObject({ loop: "on" });
+  });
+
+  it("writes a choice, and nothing for the one in use", () => {
+    const edit = blockFieldEdit(SCREEN, "start", "look");
+    expect(edit.kind === "edited" && edit.after).toMatchObject({
+      start: "look",
+    });
+    expect(blockFieldEdit(SCREEN, "sound", "off")).toEqual({
+      kind: "unchanged",
+    });
+    expect(blockFieldEdit(CUTOUT, "sound", "on")).toEqual({
+      kind: "unchanged",
+    });
+  });
+
+  it("refuses a value the choice does not offer, and writes no choice of another view", () => {
+    expect(blockFieldEdit(SCREEN, "start", "later")).toEqual({
+      kind: "refused",
+      reason:
+        "Starts is one of: On arrival, When near, When looked at, On a tap.",
+    });
+    expect(blockFieldEdit(SCREEN, "alpha", "stacked")).toEqual({
+      kind: "unchanged",
+    });
+  });
+});
+
+describe("every kind's chip choices", () => {
+  // Why: a kind's chips are one mechanism. The chip shown pressed on a
+  // block without the field is its fallback, so pressing it again must
+  // write nothing: no undo step, and a document that stays as it was. A
+  // second chip sort that wrote the shown default made an empty undo
+  // step and a changed file for the same tap the other sort ignored.
+  const BLOCKS: Readonly<Record<string, Record<string, unknown>>> = {
+    shortText: PIN as unknown as Record<string, unknown>,
+    video: VIDEO as unknown as Record<string, unknown>,
+  };
+
+  it("has a block to press for every kind that offers chips", () => {
+    const withChips = Object.entries(KIND_EDIT)
+      .filter(([, row]) =>
+        (row.fields as readonly FieldSpec[]).some((f) => f.choice),
+      )
+      .map(([kind]) => kind);
+    expect(withChips.sort()).toEqual(Object.keys(BLOCKS).sort());
+  });
+
+  it("writes nothing for a pin's role chip shown pressed by default", () => {
+    expect(blockFieldEdit(PIN, "role", "label")).toEqual({ kind: "unchanged" });
+  });
+
+  for (const [kind, base] of Object.entries(BLOCKS)) {
+    const fields: readonly FieldSpec[] =
+      KIND_EDIT[kind as keyof typeof KIND_EDIT].fields;
+    for (const spec of fields) {
+      const choice = spec.choice;
+      if (choice === undefined) continue;
+      for (const view of spec.views ?? [base["view"] as string]) {
+        it(`leaves a ${kind}'s ${spec.name} as it was when its shown default is pressed (${view})`, () => {
+          const block = { ...base, view } as Record<string, unknown>;
+          delete block[spec.name];
+          if (spec.when !== undefined) {
+            block[spec.when.field] = spec.when.value;
+          }
+          const shown = blockChoices(block as unknown as TourObject).find(
+            (c) => c.name === spec.name,
+          );
+          // The view's own fallback where it has one (a pin's turn).
+          const fallback = choiceFallback(choice, view);
+          expect(shown?.value).toBe(fallback);
+          const before = JSON.stringify(block);
+          expect(
+            blockFieldEdit(block as unknown as TourObject, spec.name, fallback),
+          ).toEqual({ kind: "unchanged" });
+          expect(JSON.stringify(block)).toBe(before);
+        });
+      }
+    }
+  }
 });

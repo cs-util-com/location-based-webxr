@@ -14,7 +14,7 @@ OsmDemo's pieces of the AR sun shadow prototype (plan
 The light, the rig and the map policy are the framework's
 (`visualization/sun-shadow`, `visualization/sun-shadow-rig`), and so is the
 frame-time ring the session reads (`utils/frame-times`, moved there from
-this file on 2026-10-03 for the globe frame recorder, DEC-H3). The AR wiring
+this file on 2026-10-03 for the globe frame recorder). The AR wiring
 lives in `ar-mode.ts`.
 
 ## Public API

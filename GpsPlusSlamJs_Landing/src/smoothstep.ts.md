@@ -41,7 +41,8 @@ lines carried two separate duplications, and the named half of one of them was
 already guarded.
 
 **Not shared with the framework**, deliberately: this package does not depend
-on it (DEC-H3), and `AppFramework`'s `visualization/occlusion-mesh.ts` carries
+on it (deliberate copy (shared-helper rule): shared behaviour has one
+implementation, a dependency-free one-liner may exist once per package), and `AppFramework`'s `visualization/occlusion-mesh.ts` carries
 the three-argument GLSL form `smoothstep(edge0, edge1, x)` that mirrors a
 shader line for line — related, not interchangeable.
 

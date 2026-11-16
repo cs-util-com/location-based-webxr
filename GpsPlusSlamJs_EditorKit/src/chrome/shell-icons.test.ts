@@ -27,6 +27,8 @@ describe("placeShellIcons", () => {
   // this one set; a name missing here would draw an empty icon.
   it("has an icon for every docked panel and a chevron each way", () => {
     for (const name of [
+      "float",
+      "dock",
       "details",
       "problems",
       "history",

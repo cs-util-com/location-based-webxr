@@ -3,7 +3,7 @@
 - Purpose: one recipe for every surface that should show a virtual shadow
   over the camera image in AR, and nothing else (W4 AR shadows plan
   2026-09-26-0549, §6; OsmDemo's `createShadowPlane` promoted to the
-  framework per DEC-H3). It serves the flat fallback plane and the
+  framework per the shared-helper rule). It serves the flat fallback plane and the
   occlusion mesh's receiver skin (`occlusion-mesh.ts`).
 - Public API:
   - `SHADOW_RECEIVER_DEPTH_OFFSET` (-2): the polygon offset (factor and

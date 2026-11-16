@@ -14,23 +14,28 @@ are not part of the page's first load.
 
 ## Public API
 
-- `mountDockHost({ box, onChange })` -> `DockHost`. `box` is `#view3d`;
-  the layout is a `.dock-host` element in it (below the accent line) and
-  `box` carries the `docked` class while it lives. `onChange()` runs
-  whenever a panel is shown, hidden or chosen, by the library's own
-  controls or by this host.
+- `mountDockHost({ box, onChange, storage? })` -> `DockHost`. `box` is
+  `#view3d`; the layout is a `.dock-host` element in it (below the accent
+  line) and `box` carries the `docked` class while it lives. `onChange()`
+  runs whenever a panel is shown, hidden or chosen, by the library's own
+  controls or by this host. `storage` (the browser's; `null` or absent:
+  nothing kept) is where the layout is kept per form factor
+  (`dock-save.ts`).
 - `DockHost`:
+  - `restored()` - whether the layout came from a kept one rather than the
+    default (the shell then takes its folds into the store).
   - `reveal(id)` - shows a panel: its group visible and unfolded, the
     panel its group's shown tab. The page's one way to unfold a group:
     the store learns of it through `onChange` (`editor-shell.ts`).
-  - `hideGroupOf(id)` - the group holding `id` out of sight: hidden when
-    it holds only the bottom panel's panes (its toggles show it again),
-    else folded to its rail, so a group dragged anywhere stays reachable.
+  - `hidePane(id)` - `id` out of sight: its group hidden when it holds
+    only the bottom panel's panes (their toggles show it again), else
+    `id` concealed as by `conceal` (a pane dragged into another group
+    takes only itself away; alone there, its group folds to its rail).
   - `groupShown(id)` - the group holding `id` shows, unfolded.
   - `conceal(id, instead?)` - takes a shown panel out of sight: `instead`
     shown in its place when its group holds it, else the group's next
     panel; alone in its group, the group out of sight as by
-    `hideGroupOf`. The shelf's toggle pressed again uses it with Files
+    the group hidden (only bottom panes) or folded to its rail. The shelf's toggle pressed again uses it with Files
     and Details, wherever Files was dragged.
   - `activeIn(id)` - the shown tab of the group holding `id`.
   - `fold(id, folded)` / `folded(id)` - the group holding `id` folded to
@@ -53,8 +58,12 @@ are not part of the page's first load.
   - `keyboard(px)` - an on-screen keyboard of `px` (0: none) came, changed
     or went: the groups are laid out for the box now rather than on the next
     frame (the phone keyboard calls it before scrolling a field into sight).
-    While `keyboardMaximizes(innerHeight, px)` (what the keyboard leaves is
-    under `KEYBOARD_ROOM_PX`), the shown group whose panel holds the focus
+    While `keyboardMaximizes(innerHeight, px, belowTop)` (what the keyboard
+    leaves the group in use, counted from its top, is under
+    `KEYBOARD_ROOM_PX`: a short window, or a phone's group held upright
+    under the 3D view at any keyboard; maximized, the group keeps the top
+    it had before, so standing at the top does not end it), the shown
+    group whose panel holds the focus
     is maximized with its tab strip hidden; a focus coming into the layout
     while the keyboard is up (a `focusin`) maximizes the group it lands in.
     While one is maximized the other groups are hidden and their panels out
@@ -89,7 +98,50 @@ are not part of the page's first load.
 
 ## Invariants & assumptions
 
-- The default layout is `defaultDockLayout` (`dock-layout.ts`). The 3D
+- The layout is kept per form factor (`dockFormFactor`: the desk, a phone
+  upright, a phone sideways) under `dockSaveKey(formFactor)`, with the
+  folds of its groups (and the size each had before folding). It is
+  taken at each change (a drag, a fold, a tab chosen) and written
+  `KEEP_DELAY_MS` after the last (`createDockKeeper`); a pending one is
+  written at once when the window turns to another form factor and on
+  `dispose`. Nothing is taken while a group is maximized or once the
+  window has taken another form factor, so the layout written is the one
+  of before the turn. On mount the window's
+  form factor's kept layout is loaded when `readSavedDock` accepts it and
+  the library loads it with every panel; otherwise the layout is cleared
+  and the default laid out, never an empty one. A resize into another
+  form factor clears the layout and lays out that form factor's kept one
+  (or the default), refolding its kept folds; then the list's and the
+  details' groups take the folds they had before the turn
+  (`foldsAfterTurn`, `dock-rail.ts`), a shared group folded only when
+  both were. Decision (2026-11-14): folds follow the session across a
+  turn, sizes and arrangement stay per form factor, so a fold kept from
+  long ago (the approach's) never comes back over a station just picked.
+  A kept layout laid out at
+  another size than it was kept at (`keptAtSize`) is fitted as after a
+  window resize (below), not scaled in proportion.
+- A tab's Shift+F10 or ContextMenu key opens "Move to..." (`dock-move.ts`)
+  for its panel: into another group, or left of, right of or below the 3D
+  view. The library's tab menu offers the same entry for a mouse. The move
+  is the library's `moveTo`; the panel is then revealed and the focus put
+  on its tab. The library's own context menu, which the key would also
+  open, is suppressed for a moment.
+- The default layout is `defaultDockLayout` (`dock-layout.ts`) at a desk
+  and `phoneDockLayout` on a phone (upright or sideways): the 3D view and
+  one tabbed group of all seven panels, below the view upright and beside
+  it sideways, the list shown. The host marks its root `dock-phone` (and
+  `dock-upright`) for the styles' finger sizes. On a phone the layout is
+  not refitted after a resize (no side columns to keep at a width): the
+  library keeps each group's share.
+- On a phone each group in the grid has a Float button beside its fold
+  (`moveOf`, `dock-rail.ts`): the group floats over the 3D view; a
+  floating group's Dock button docks it back below the view (upright) or
+  beside it (sideways). The desk's strips are unchanged.
+- Every horizontal tab strip scrolls sideways when its tabs do not fit
+  (`dock-strip.ts`: a swipe scrolls, a tap shows, a pull across or a move
+  after a hold drags; the library's overflow list is off). The shown tab
+  is scrolled into sight whenever it changes (a frame after the layout),
+  and a tab the keyboard focuses at once. The 3D
   view is added with `renderer: "always"`, so it keeps its canvas and
   drawing context whatever shows. Every other panel is added with
   `renderer: "onlyWhenVisible"`: its content stands inside its group,
@@ -153,8 +205,11 @@ are not part of the page's first load.
   writer's width while it shows), the 3D view the rest. A side group hidden
   meanwhile, or hidden before its first width was laid out, takes it when
   it next shows. The bottom group likewise takes `bottomStartPx` of the new
-  layout, now or when it next shows. A folded group keeps its rail. A size
-  dragged by hand therefore lasts until the next window resize.
+  layout, now or when it next shows, while its group holds only the bottom
+  panel's panes (Problems dragged into the right column leaves that
+  column's height alone). A folded group keeps its rail. A size dragged
+  by hand therefore lasts until the next window resize, or a reload at
+  another window size.
 - A fold takes the focus out of the group's panel: it goes to the group's
   fold button, which keeps it while it unfolds; where the unfolded group
   shows no strip (the list alone), to the panel's own head's fold button
@@ -171,7 +226,13 @@ are not part of the page's first load.
 - During a splitter drag the canvas is held at its size in px and fitted
   once on release (each resize reallocates the drawing buffers).
 - A group's fold button is drawn once the 3D view is in the layout (the
-  first groups are made before it), hidden until then.
+  first groups are made before it), hidden until then. A group's buttons
+  are drawn as it is made, before its panels are in it, so every layout
+  change (`settle`) draws them again.
+- The tab handlers (`tabOf`, `showTabSoon`) are set up before the
+  docking's change handlers: the docking may change its active panel while
+  the layout is still being made, and a handler reaching an uninitialized
+  binding would throw out of the mount.
 - Defensive: an unknown panel id throws; a fold of a group already in
   that state, of the 3D view's or a floating group, or of one whose size
   is unknown, does nothing; `dispose` is idempotent.
@@ -188,6 +249,13 @@ dock.dispose();
 
 ## Tests
 
+- The kept layout's checks are `dock-save.ts`'s and the move menu is
+  `dock-move.ts`'s, unit tested there; the spec covers a rearranged layout
+  coming back on the next open, a broken one giving the default, the desk
+  and a phone sideways keeping their own, a change just before the window
+  turns kept, a kept layout opened in a wider window at that window's side
+  widths, the 3D view's canvas staying in its panel and drawing while the
+  window turns, the keyboard move, and the problem count on a folded rail.
 - No unit test of its own: it is DOM and library glue, covered by the
   layout e2e (`playwright-tests/editor3d-docking.spec.js`) at four window
   sizes; its data is `dock-layout.ts`'s, unit and property tested.

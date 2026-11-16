@@ -8,7 +8,7 @@
  * the shell. The map gives a cover per column, and the cover becomes a
  * threshold through the noise's own quantiles, the rule the global cover
  * uses; the disc fades it to clear at its edge. One implementation for both
- * shaders (DEC-H3).
+ * shaders.
  */
 import { describe, expect, it } from 'vitest';
 

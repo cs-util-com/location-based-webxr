@@ -2,7 +2,7 @@
  * The lock counts of one stream of fused QR pose results (QR near-frontal
  * pose plan §66): how many were stable, why the rest were not, and which
  * were re-reads. The QR demo's `?qrperf` report and the TourViewer's debug
- * readout count by this one rule (DEC-H3). See qr-fused-pose-tally.ts.md.
+ * readout count by this one rule. See qr-fused-pose-tally.ts.md.
  */
 
 import type { QrFusedPose } from './qr-fused-pose.js';

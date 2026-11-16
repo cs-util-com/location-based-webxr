@@ -14,6 +14,8 @@ interface RecordedSound extends SoundHandle {
   isWanted: boolean;
   time: number;
   duration: number;
+  /** What `lowered()` answers: 1, or less while a test plays a voice. */
+  lower: number;
 }
 
 export function recordingEnv(mode: WorldMode = "play") {
@@ -35,6 +37,8 @@ export function recordingEnv(mode: WorldMode = "play") {
         isWanted: false,
         time: 0,
         duration: 30_000,
+        lower: 1,
+        lowered: () => s.lower,
         play() {
           s.calls.push("play");
           s.isPlaying = true;
