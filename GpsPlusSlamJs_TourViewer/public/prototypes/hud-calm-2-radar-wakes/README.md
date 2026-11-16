@@ -1,5 +1,7 @@
 # Calm HUD round 2, direction 2: the radar wakes when you stop
 
+> **Chosen direction.** Round 3 continues this page: [classic disc](../hud-calm-r3-1-classic-disc/README.md), [compass band](../hud-calm-r3-2-compass-band/README.md) and [ground ring](../hud-calm-r3-3-ground-ring/README.md), each with a linear radar scale.
+
 A throwaway, standalone prototype. Nothing in the app links to it, and it does not use the app's code. It is one HTML file: three.js 0.185.1 by import map, metres, Y up, words in the world drawn as Canvas 2D textures.
 
 ## The idea
@@ -68,6 +70,7 @@ Everything else stands in the world. Texts are on boards and lecterns. Captions 
 - **A hint volunteered repeatedly:** the first-run card ("Walk up to the orange beam...") shows once and goes at the first touch or after 12 s. Waking the radar is a state, not a hint: it shows the same map whenever you stop, with nothing added.
 - **`backdrop-filter`, thin light strokes:** none. Plates are solid with 2 px borders. The radar keeps its built look.
 - **Any frame over 50 ms:** the town is two instanced draw calls. The radar redraws at 15 Hz on a small canvas. The readout's worst frame shows the measurement. Headless screenshots run on a software renderer, so their frame times say nothing about a phone.
+- **The stutter, measured in round 3:** its cause was measured in headless runs as this radar's 12-13 Hz redraw cadence (the 15 Hz cap falls on every fourth or fifth frame of a 60 Hz view), not the cost of a draw. The measuring hook's `measure()` also ran every 150 ms with the hook off, forcing a layout through `getComputedStyle` and walking about 20,000 grid points; that possible confound is now removed, and it runs only while the hook is on (the ruler button, or `?measure` in the URL). A check on a 60 Hz phone settles it.
 - **A demo that opens already inside a story:** the page opens outside station A, on the lane, with the beam ahead.
 
 ## The look is not the direction

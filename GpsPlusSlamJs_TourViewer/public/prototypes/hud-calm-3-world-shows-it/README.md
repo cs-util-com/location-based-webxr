@@ -1,5 +1,7 @@
 # Calm HUD, round 2, direction 3: The world shows it
 
+> **Not chosen.** Everything glowing in the world was not liked. Round 3 does not use this page's mechanism.
+
 A throwaway UX prototype, one self-contained page (`index.html`, three.js 0.185.1 by import map). It is not wired to the app and nothing in the app links to it.
 
 ## The direction

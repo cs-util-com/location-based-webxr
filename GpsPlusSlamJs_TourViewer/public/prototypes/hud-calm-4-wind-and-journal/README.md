@@ -1,5 +1,7 @@
 # Calm HUD, round 2, direction 4: Call the wind, keep a journal
 
+> **Partly carried on.** Its wind became the hint of round 3 ([classic disc](../hud-calm-r3-1-classic-disc/README.md), [compass band](../hud-calm-r3-2-compass-band/README.md), [ground ring](../hud-calm-r3-3-ground-ring/README.md)), named "Show the way" rather than "Call the wind".
+
 A throwaway UX prototype, one self-contained page (`index.html`, three.js 0.185.1 by import map). It is not wired to the app and nothing in the app links to it.
 
 ## The direction

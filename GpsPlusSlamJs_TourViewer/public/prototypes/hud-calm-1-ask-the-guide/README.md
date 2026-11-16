@@ -1,5 +1,7 @@
 # Calm HUD, round 2, direction 1: Ask the guide
 
+> **Not chosen.** Asking a guide needs too much author text for every item. Round 3 uses a generic hint instead, and does not use this page's mechanism.
+
 A throwaway UX prototype, one self-contained page (`index.html`, three.js 0.185.1 by import map). It is not wired to the app and nothing in the app links to it.
 
 ## The direction

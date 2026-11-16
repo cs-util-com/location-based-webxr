@@ -800,7 +800,12 @@
           transition: none !important;
         }
       }
-    </style>
+    
+/* the gallery's verdict on this page: a calm note on top, hidden with its x */
+.proto-note{position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:1000;width:max-content;max-width:calc(100vw - 32px);display:flex;align-items:center;gap:6px;padding:4px 4px 4px 14px;border-radius:18px;background:rgba(10,14,19,.9);border:2px solid rgba(255,255,255,.25);color:#e6ebf0;font:500 13px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.proto-note a{color:#9fd8ff}
+.proto-note button{flex:none;appearance:none;border:0;background:transparent;color:inherit;font-size:18px;width:32px;height:32px;border-radius:50%;cursor:pointer}
+</style>
     <script type="importmap">
       {
         "imports": {
@@ -810,6 +815,7 @@
     </script>
   </head>
   <body>
+<div class="proto-note" role="note"><span><b>Partly carried on.</b> Its wind became the hint of round 3: <a href="../hud-calm-r3-1-classic-disc/index.html">classic disc</a>, <a href="../hud-calm-r3-2-compass-band/index.html">compass band</a>, <a href="../hud-calm-r3-3-ground-ring/index.html">ground ring</a>, named "Show the way".</span><button type="button" aria-label="Hide this note" onclick="this.parentElement.remove()">&times;</button></div>
     <main class="dev" id="dev">
       <canvas
         id="gl"
