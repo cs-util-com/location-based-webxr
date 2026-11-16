@@ -16,6 +16,7 @@ import {
   createLightDialog,
   type LightDialogDeps,
 } from "./light-dialog.js";
+import { veilLightnessBounds } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   lightDefaultsFor,
@@ -117,16 +118,47 @@ describe("createLightDialog", () => {
     const { $, slide, onChange } = setup();
     const l = $<HTMLInputElement>("light-hazeVeilLightness");
     const t = $<HTMLInputElement>("light-hazeVeilTint");
-    expect([l.min, l.max, l.value]).toEqual(["0", "80", "0"]);
-    expect([t.min, t.max, t.value]).toEqual(["-12", "4", "-4"]);
+    const a = $<HTMLInputElement>("light-hazeVeilTintA");
+    expect([l.min, l.max, l.value]).toEqual(["0", "90", "0"]);
+    expect([t.min, t.max, t.value]).toEqual(["-24", "40", "-4"]);
+    expect([a.min, a.max, a.value]).toEqual(["-10", "10", "0"]);
     expect(l.parentElement!.textContent).toContain("0 = the sky");
+    expect(a.parentElement!.textContent).toContain("a*");
     slide("hazeVeilLightness", 76);
     slide("hazeVeilTint", -6);
+    slide("hazeVeilTintA", 2);
     expect(onChange).toHaveBeenLastCalledWith({
       ...DEFAULT_LIGHT_SETTINGS,
       hazeVeilLightness: 76,
       hazeVeilTint: -6,
+      hazeVeilTintA: 2,
     });
+  });
+
+  // WHY: a colour can only be shown up to a lightness that stays below the
+  // tone curve's knee. A slider asking for more must never silently draw
+  // something else: the dialog says the veil is held, and at which L*, and
+  // the note goes once the colour can be shown as asked. Reset clears it.
+  it("says when the veil's lightness is held for its colour", () => {
+    const { $, slide } = setup();
+    const note = $<HTMLElement>("light-veil-note");
+    expect(note.hidden).toBe(true);
+    slide("hazeVeilLightness", 90);
+    slide("hazeVeilTint", 40);
+    const max = veilLightnessBounds(0, 40)!.max;
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain(`L* ${max}`);
+    expect(note.textContent).toContain("knee");
+    slide("hazeVeilLightness", 60);
+    expect(note.hidden).toBe(true);
+    // Too dark for a strong yellow: held at the colour's floor.
+    slide("hazeVeilLightness", 10);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain(
+      `L* ${veilLightnessBounds(0, 40)!.min}`,
+    );
+    $("light-reset").click();
+    expect(note.hidden).toBe(true);
   });
 
   // WHY: a new visibility rebuilds the sky's tables, so a drag that applied

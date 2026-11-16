@@ -20,7 +20,13 @@ import {
   NOON_SURFACE_GAIN,
   surfaceGainAt,
 } from "./atmosphere-rig.js";
-import { HAZE_VEIL_RISE_DEG, HAZE_VEIL_TINT } from "./haze-veil.js";
+import { rgbToLab } from "gps-plus-slam-osm";
+
+import {
+  HAZE_VEIL_RISE_DEG,
+  HAZE_VEIL_TINT,
+  veilLightnessBounds,
+} from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
@@ -50,10 +56,14 @@ describe("DEFAULT_LIGHT_SETTINGS", () => {
       hazeStartRatio: HAZE_START_RATIO,
       hazeVeilLightness: 0,
       hazeVeilTint: HAZE_VEIL_TINT,
+      hazeVeilTintA: 0,
       hazeVeilRiseDeg: HAZE_VEIL_RISE_DEG,
     });
     // No veil: the haze takes the sky's colour, as it always has.
     expect(veilOf(DEFAULT_LIGHT_SETTINGS)).toBeNull();
+    // The veil reaches 10 degrees up the sky by default (it read better at
+    // the horizon than 4).
+    expect(HAZE_VEIL_RISE_DEG).toBe(10);
     // Today's haze: 45 km, its boundary fade from 0.66 of the draw distance.
     expect(HAZE_VISIBILITY_KM).toBe(45);
     expect(HAZE_START_RATIO).toBe(0.66);
@@ -266,13 +276,30 @@ describe("the haze veil keys", () => {
   // must get exactly those values, inside the sliders' bounds only.
   it("reads and writes them, inside their bounds", () => {
     const d = DEFAULT_LIGHT_SETTINGS;
-    const s = parseLightSettings("?light=v1:veil=80,tint=-6.5");
-    expect(s).toEqual({ ...d, hazeVeilLightness: 80, hazeVeilTint: -6.5 });
+    const s = parseLightSettings("?light=v1:veil=80,tint=-6.5,tinta=2");
+    expect(s).toEqual({
+      ...d,
+      hazeVeilLightness: 80,
+      hazeVeilTint: -6.5,
+      hazeVeilTintA: 2,
+    });
     expect(veilOf(s)).toEqual({
       lightness: 80,
       tint: -6.5,
+      tintA: 2,
       riseDeg: HAZE_VEIL_RISE_DEG,
     });
+    // An old link without `tinta` keeps a* 0, its colour unchanged.
+    expect(parseLightSettings("?light=v1:veil=72,tint=-6").hazeVeilTintA).toBe(
+      0,
+    );
+    expect(
+      serializeLightSettings({
+        ...d,
+        hazeVeilLightness: 72,
+        hazeVeilTintA: -3,
+      }),
+    ).toBe("v1:veil=72,tinta=-3");
     // The rise travels as `rise`, and reaches the veil the sky draws.
     expect(
       veilOf(parseLightSettings("?light=v1:veil=80,rise=8"))?.riseDeg,
@@ -282,9 +309,12 @@ describe("the haze veil keys", () => {
     );
     for (const bad of [
       "veil=-1",
-      "veil=81",
-      "tint=-12.5",
-      "tint=4.5",
+      "veil=91",
+      "tint=-24.5",
+      "tint=40.5",
+      "tinta=-10.5",
+      "tinta=10.5",
+      "tinta=x",
       "veil=x",
       "rise=-0.5",
       "rise=20.5",
@@ -293,8 +323,10 @@ describe("the haze veil keys", () => {
     }
     const v = LIGHT_SETTING_RANGES.hazeVeilLightness;
     const t = LIGHT_SETTING_RANGES.hazeVeilTint;
-    expect([v.min, v.max, v.step]).toEqual([0, 80, 1]);
-    expect([t.min, t.max, t.step]).toEqual([-12, 4, 0.5]);
+    const a = LIGHT_SETTING_RANGES.hazeVeilTintA;
+    expect([v.min, v.max, v.step]).toEqual([0, 90, 1]);
+    expect([t.min, t.max, t.step]).toEqual([-24, 40, 0.5]);
+    expect([a.min, a.max, a.step]).toEqual([-10, 10, 0.5]);
     const r = LIGHT_SETTING_RANGES.hazeVeilRiseDeg;
     expect([r.min, r.max, r.step]).toEqual([0, 20, 0.5]);
   });
@@ -302,7 +334,74 @@ describe("the haze veil keys", () => {
   // WHY: a tint on its own is not a veil; the haze keeps the sky's colour
   // until a lightness is set.
   it("is off at lightness 0, whatever the tint", () => {
-    expect(veilOf({ ...DEFAULT_LIGHT_SETTINGS, hazeVeilTint: -10 })).toBeNull();
+    expect(
+      veilOf({
+        ...DEFAULT_LIGHT_SETTINGS,
+        hazeVeilTint: -10,
+        hazeVeilTintA: 4,
+      }),
+    ).toBeNull();
+  });
+
+  // WHY: a link may ask for a lightness its colour cannot show below the
+  // tone curve's knee (a strong yellow at L* 90). The settings keep what the
+  // link states, so it round-trips, and the veil the view draws is held at
+  // that colour's bound: never a colour other than the one named.
+  it("holds the drawn veil at the colour's lightness bound, keeping the stated value", () => {
+    const s = parseLightSettings("?light=v1:veil=90,tint=40");
+    expect(s.hazeVeilLightness).toBe(90);
+    const veil = veilOf(s)!;
+    const max = veilLightnessBounds(0, 40)!.max;
+    expect(veil.lightness).toBe(max);
+    expect(max).toBeLessThan(90);
+    expect(veilOf({ ...s, hazeVeilLightness: 60 })!.lightness).toBe(60);
+  });
+
+  // WHY: a colour picked elsewhere is a hex code; `vcol` reads one as L*, a*
+  // and b* (each snapped to its slider and held in its range), the explicit
+  // keys win over it, a bad hex is ignored, and it is never written back
+  // (the three keys are).
+  it("reads a hex veil colour as L*, a* and b*", () => {
+    const d = DEFAULT_LIGHT_SETTINGS;
+    const s = parseLightSettings("?light=v1:vcol=f2e6c8");
+    const lab = rgbToLab(0xf2e6c8);
+    const snap = (v: number) => Math.round(v * 2) / 2 + 0;
+    // Its L* of 91.5 is past the slider's 90, so it is held there.
+    expect(lab.l).toBeGreaterThan(90);
+    expect(s).toEqual({
+      ...d,
+      hazeVeilLightness: 90,
+      hazeVeilTintA: snap(lab.a),
+      hazeVeilTint: snap(lab.b),
+    });
+    expect(serializeLightSettings(s)).not.toContain("vcol");
+    expect(
+      parseLightSettings("?light=v1:vcol=f2e6c8,tint=-4").hazeVeilTint,
+    ).toBe(-4);
+    // Pure yellow's b* (about 93) is held at the slider's end.
+    expect(parseLightSettings("?light=v1:vcol=FFFF00").hazeVeilTint).toBe(40);
+    // The 3-digit form doubles each digit, as in CSS: fec is ffeecc.
+    expect(parseLightSettings("?light=v1:vcol=fec")).toEqual(
+      parseLightSettings("?light=v1:vcol=ffeecc"),
+    );
+    expect(parseLightSettings("?light=v1:vcol=fec")).not.toEqual(d);
+    // A hex brighter than its colour can show is read as asked and held
+    // where it is drawn: the settings keep L*, the drawn veil its bound.
+    const bright = parseLightSettings("?light=v1:vcol=fec");
+    expect(veilOf(bright)!.lightness).toBe(
+      veilLightnessBounds(bright.hazeVeilTintA, bright.hazeVeilTint)!.max,
+    );
+    expect(veilOf(bright)!.lightness).toBeLessThan(bright.hazeVeilLightness);
+    for (const bad of [
+      "vcol=f2e6c",
+      "vcol=zzzzzz",
+      "vcol=",
+      "vcol=#f2e6c8",
+      "vcol=fe",
+      "vcol=f2e6c8a",
+    ]) {
+      expect(parseLightSettings(`?light=v1:${bad}`), bad).toEqual(d);
+    }
   });
 
   // WHY: a veil tried in the dialog and shared must come back exactly, and
@@ -353,6 +452,7 @@ describe("describeLightSettings", () => {
       hazeStartRatio: 0.2,
       hazeVeilLightness: 0,
       hazeVeilTint: -4,
+      hazeVeilTintA: 0,
       hazeVeilRiseDeg: 4,
     });
     expect(line).toBe(
@@ -372,6 +472,15 @@ describe("describeLightSettings", () => {
     expect(
       line.endsWith(`, veil L* 78 b* -5 up to ${HAZE_VEIL_RISE_DEG}° of sky`),
     ).toBe(true);
+    // a* only when set; a held lightness names what is shown.
+    const held = describeLightSettings({
+      ...DEFAULT_LIGHT_SETTINGS,
+      hazeVeilLightness: 90,
+      hazeVeilTint: 40,
+      hazeVeilTintA: 2,
+    });
+    const max = veilLightnessBounds(2, 40)!.max;
+    expect(held).toContain(`, veil L* 90 (shown at ${max}) a* 2 b* 40 up to`);
   });
 });
 
@@ -391,6 +500,7 @@ describe("a colour scheme's light defaults", () => {
     expect(veilOf(URBAN)).toEqual({
       lightness: 72,
       tint: HAZE_VEIL_TINT,
+      tintA: 0,
       riseDeg: HAZE_VEIL_RISE_DEG,
     });
     for (const name of ["today", "architect", "night", "no-such-scheme"]) {
@@ -497,6 +607,8 @@ describe("a colour scheme's light defaults", () => {
           const steps = Math.round((r.max - r.min) / r.step);
           s[f] = Number((r.min + (k % (steps + 1)) * r.step).toFixed(3));
         }
+        // A valid setting (its ramp rises), as every writer produces.
+        fc.pre(s.gainFullDeg > s.gainFromDeg);
         const moved = rebaseLightSettings(s, URBAN, DEFAULT_LIGHT_SETTINGS);
         for (const f of FIELDS) {
           expect(moved[f]).toBe(
@@ -505,6 +617,49 @@ describe("a colour scheme's light defaults", () => {
         }
       }),
       { seed: 20261115, numRuns: 300 },
+    );
+  });
+
+  // WHY: the parser and the dialog both keep the gain ramp rising; a rebase
+  // must too. A set ramp start kept against an end that follows the new
+  // scheme can cross it, and `surfaceGainAt` refuses such a ramp. The kept
+  // (set) end wins and the followed end moves, as in the dialog.
+  it("keeps the gain ramp rising across a rebase", () => {
+    const from = {
+      ...DEFAULT_LIGHT_SETTINGS,
+      gainFromDeg: 18,
+      gainFullDeg: 40,
+    };
+    const to = { ...DEFAULT_LIGHT_SETTINGS, gainFromDeg: 5, gainFullDeg: 20 };
+    const keptStart = rebaseLightSettings(
+      { ...from, gainFromDeg: 30 },
+      from,
+      to,
+    );
+    expect([keptStart.gainFromDeg, keptStart.gainFullDeg]).toEqual([30, 31]);
+    const lowEnd = { ...from, gainFromDeg: 5, gainFullDeg: 35 };
+    const keptEnd = rebaseLightSettings(
+      { ...lowEnd, gainFullDeg: 10 },
+      lowEnd,
+      { ...to, gainFromDeg: 25, gainFullDeg: 50 },
+    );
+    expect([keptEnd.gainFromDeg, keptEnd.gainFullDeg]).toEqual([9, 10]);
+    // Any rebase of a rising ramp rises (fixed seed).
+    const deg = fc.integer({ min: 0, max: 60 });
+    fc.assert(
+      fc.property(deg, deg, deg, deg, deg, deg, (a, b, c, d, e, f) => {
+        fc.pre(a < b + 1 && c < d + 1 && e < f + 1);
+        const ramp = (lo: number, hi: number) => ({
+          ...DEFAULT_LIGHT_SETTINGS,
+          gainFromDeg: lo,
+          gainFullDeg: hi + 1,
+        });
+        const out = rebaseLightSettings(ramp(a, b), ramp(c, d), ramp(e, f));
+        expect(out.gainFullDeg).toBeGreaterThan(out.gainFromDeg);
+        expect(out.gainFromDeg).toBeGreaterThanOrEqual(0);
+        expect(out.gainFullDeg).toBeLessThanOrEqual(90);
+      }),
+      { seed: 20261116, numRuns: 500 },
     );
   });
 });

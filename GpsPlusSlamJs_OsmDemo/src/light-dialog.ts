@@ -11,6 +11,7 @@ import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
   rebaseLightSettings,
+  veilOf,
   type LightSettings,
 } from "./light-settings.js";
 
@@ -29,7 +30,10 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   hazeStartRatio: "Haze: fade starts at (share of the draw distance)",
   hazeVeilLightness:
     "Haze: veil lightness (L* on screen, 0 = the sky's colour)",
-  hazeVeilTint: "Haze: veil tint (b* on screen, below 0 is bluer)",
+  hazeVeilTint:
+    "Haze: veil blue-yellow (b* on screen, below 0 bluer, above 0 yellower)",
+  hazeVeilTintA:
+    "Haze: veil green-red (a* on screen, below 0 greener, above 0 redder)",
   hazeVeilRiseDeg: "Haze: veil up the sky (° above the horizon, 0 = none)",
 };
 
@@ -152,6 +156,14 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   head.append(back, heading);
   panel.append(head);
 
+  // Says when the veil's lightness is held for its colour (`veilOf`), so a
+  // slider never silently draws a colour other than the one it names.
+  const veilNote = document.createElement("p");
+  veilNote.id = "light-veil-note";
+  veilNote.className = "light-note";
+  veilNote.hidden = true;
+  veilNote.setAttribute("aria-live", "polite");
+
   const inputs = new Map<keyof LightSettings, HTMLInputElement>();
   const values = new Map<keyof LightSettings, HTMLOutputElement>();
   for (const field of Object.keys(LABELS) as (keyof LightSettings)[]) {
@@ -172,6 +184,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     panel.append(label);
     inputs.set(field, input);
     values.set(field, value);
+    if (field === "hazeVeilTintA") panel.append(veilNote);
   }
 
   let aoBox: HTMLInputElement | undefined;
@@ -213,6 +226,14 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     for (const [field, input] of inputs) {
       input.value = String(s[field]);
       values.get(field)!.value = String(s[field]);
+    }
+    const drawn = veilOf(s)?.lightness;
+    veilNote.hidden = drawn === undefined || drawn === s.hazeVeilLightness;
+    if (drawn !== undefined) {
+      veilNote.textContent =
+        drawn < s.hazeVeilLightness
+          ? `Veil shown at L* ${drawn}: brighter, this colour would pass the tone curve's knee.`
+          : `Veil shown at L* ${drawn}: darker, this colour is outside the screen's colours.`;
     }
   };
   const failed = (error: unknown) => `Could not measure: ${messageOf(error)}`;

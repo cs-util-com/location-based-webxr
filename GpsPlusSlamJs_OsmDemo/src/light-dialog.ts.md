@@ -62,8 +62,15 @@ WebGL.
   - `#light-<field>`, one range input per `LightSettings` field, with its
     range from `LIGHT_SETTING_RANGES` (the haze sliders come last:
     `#light-hazeVisibilityKm`, `#light-hazeStartRatio`, then the veil's
-    `#light-hazeVeilLightness`, 0 = the sky's colour, and
-    `#light-hazeVeilTint` and `#light-hazeVeilRiseDeg`);
+    `#light-hazeVeilLightness`, 0 = the sky's colour,
+    `#light-hazeVeilTint` (b\*), `#light-hazeVeilTintA` (a\*) and
+    `#light-hazeVeilRiseDeg`);
+  - `#light-veil-note`, after the a\* slider: hidden unless the veil's
+    lightness is held for its colour (`veilOf` gives a lightness other than
+    the slider's), then naming the L\* shown and why (the tone curve's knee
+    above, the screen's colours below). The slider keeps the asked value,
+    so the URL still states it; the view never draws a colour other than
+    the one named;
   - `#light-ao`, the ambient occlusion checkbox (only when offered);
   - `#light-readout`;
   - `#light-back`, `#light-check`, `#light-copy`, `#light-reset` and
@@ -140,7 +147,9 @@ dialog.toggle();
   - the ramp kept rising in both directions;
   - the haze visibility applied on release with its readout live, the
     other values live on the drag;
-  - the veil's sliders, off by default and applied live;
+  - the veil's sliders (L\*, b\*, a\*), off by default and applied live;
+  - the held-veil note: shown with the held L\* above the knee and below
+    the gamut, hidden once the colour can be shown as asked and on Reset;
   - the brightness alone on release, the margin only on the check;
   - `refresh()` while open and while closed;
   - Reset, to the shipped look and to a scheme's own defaults, and

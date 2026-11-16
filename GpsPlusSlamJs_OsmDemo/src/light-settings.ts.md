@@ -18,7 +18,7 @@ tuned look can be shared and pasted back.
 
 - `LightSettings`: `{ gainMax, gainFromDeg, gainFullDeg, buildingSkyLight,
 exposureAdaptation, exposureEv, hazeVisibilityKm, hazeStartRatio,
-hazeVeilLightness, hazeVeilTint, hazeVeilRiseDeg }`.
+hazeVeilLightness, hazeVeilTint, hazeVeilTintA, hazeVeilRiseDeg }`.
 - `DEFAULT_LIGHT_SETTINGS`: built from `NOON_SURFACE_GAIN`,
   `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION`,
   `NATURAL_LIGHT_COMPENSATION_EV`, `HAZE_VISIBILITY_KM` and
@@ -29,7 +29,8 @@ hazeVeilLightness, hazeVeilTint, hazeVeilRiseDeg }`.
 - `LIGHT_SETTING_RANGES`: each field's slider min, max and step.
 - `parseLightSettings(search, defaults = DEFAULT_LIGHT_SETTINGS)`: from
   `?light=v1:gain=1.8,ev=-2.5` (keyed, versioned pairs; the keys are gain,
-  from, full, sky, adapt, ev, vis, haze, veil, tint, rise). Never
+  from, full, sky, adapt, ev, vis, haze, veil, tint, tinta, rise, and the
+  read-only `vcol` shorthand). Never
   throws. A missing, unknown, non-numeric or out-of-range field falls back to
   its value in `defaults`, a ramp that does not rise falls back to their
   ramp, and another version or a bare list is ignored.
@@ -59,6 +60,10 @@ hazeVeilLightness, hazeVeilTint, hazeVeilRiseDeg }`.
   still states. A value alone cannot tell a veil switched off on urban (0)
   from `today`'s default of 0, so the light dialog passes the fields the
   viewer set as `touched`, and those keep their value whatever it is.
+  The gain ramp stays rising, as in the parser and the dialog: when a kept
+  end and a followed end cross, the kept end wins and the followed one
+  moves to 1 degree past it; a ramp that crosses with both ends kept (no
+  writer produces one) falls back to `to`'s ramp.
 - The adaptation's range is 0.5-1: measured, lowering it barely changes
   noon and mostly darkens dawn and dusk (plan §8).
 - `describeLightSettings(settings)`: the Copy line, e.g.
@@ -74,19 +79,42 @@ haze 45 km from 0.66 of the draw distance`.
   `AtmosphereRig.setHaze`. What the two mean in the haze shader is in
   `atmosphere-rig.ts.md`.
 - **The haze veil (city look, a bright bluish veil).** `veil`, the veil's
-  lightness as CIE L* on screen (default 0 = no veil, range 0-80 step 1),
-  and `tint`, its CIE b* (default `HAZE_VEIL_TINT` -4, range -12..4 step
-  0.5; a* is 0). At lightness 0 the haze keeps the sky's colour exactly, so
-  the shipped default, an old link and a link with only a `tint` all render
-  today's look, except under urban, whose own default is a veil (above). 80 is the brightest lightness every tint can show below the tone
-  curve's compression knee (at b* -12 the last is 81). `veilOf(settings)`
-  gives `{ lightness, tint, riseDeg }` for `AtmosphereRig.setHazeVeil`, or
-  `null` at lightness 0. `rise`, how far up the sky the veil reaches in
-  degrees above the horizon (default `HAZE_VEIL_RISE_DEG`, range 0-20 step
-  0.5, 0 = the sky keeps its own colour); it matters only while a veil is
+  lightness as CIE L* on screen (default 0 = no veil, range 0-90 step 1),
+  `tint`, its CIE b* (default `HAZE_VEIL_TINT` -4, range -24..40 step 0.5:
+  below 0 bluer, above 0 yellower), and `tinta`, its CIE a* (default 0,
+  range -10..10 step 0.5: below 0 greener, above 0 redder; an old link
+  without it keeps a* 0, its colour unchanged). At lightness 0 the haze
+  keeps the sky's colour exactly, so the shipped default, an old link and a
+  link with only a tint all render today's look, except under urban, whose
+  own default is a veil (above). Not every colour can be shown at every
+  lightness (`haze-veil.ts.md`, "The cap rule"): the settings keep the
+  lightness a link states, so it round-trips, and `veilOf(settings)` gives
+  `{ lightness, tint, tintA, riseDeg }` for `AtmosphereRig.setHazeVeil`
+  with the lightness held at the colour's bound (`clampHazeVeil`), or
+  `null` at lightness 0. 90 is neutral's bound (L* 89.7).
+  `vcol=rrggbb` or `vcol=rgb` (each digit doubled, as in CSS: `fec` is
+  `ffeecc`), a read-only shorthand for a low-resolution colour: an sRGB
+  hex read as L*, a* and b*. A stated `veil`, `tint` or `tinta` wins
+  over it, a malformed hex (another length, a `#`, a non-hex digit) is
+  ignored, and it is never written (the three keys are, so Copy and Reset
+  behave as for a slider link). **When the asked colour exceeds the cap**,
+  three things hold it, each visible: (1) each of L*, a* and b* is snapped
+  to its slider's step and held in its range, so a lightness above 90
+  reads as 90 and an a* or b* past its range end is held at that end,
+  which changes the hue of a very saturated colour (pure yellow's b* of
+  about 93 reads as 40, pure red's a* of about 80 as 10); (2) the drawn
+  lightness is held at that colour's bound (the cap rule), so `vcol=fec`
+  (L* 94.6, b* 18.6) is kept as L* 90 and drawn at its bound, 84.4;
+  (3) the light dialog's note and the Copy line's ` (shown at ...)` say
+  so. A colour is never drawn other than the dialog states.
+  `rise`, how far up the sky the veil reaches in
+  degrees above the horizon (default `HAZE_VEIL_RISE_DEG` 10, range 0-20
+  step 0.5, 0 = the sky keeps its own colour; 10 read better at the horizon
+  than the 4 first shipped); it matters only while a veil is
   set. Why L* and b* rather than a mix factor toward a colour:
-  `haze-veil.ts.md`. The Copy line adds `, veil L* 78 b* -5 up to 4° of sky` only
-  when a veil is set.
+  `haze-veil.ts.md`. The Copy line adds `, veil L* 78 b* -5 up to 10° of sky` only
+  when a veil is set, with ` a* 2` when a* is not 0 and ` (shown at 80.7)`
+  after the lightness when it is held.
 - `gainOf(settings)`: the ramp for `surfaceGainAt(elevationRad, ramp)` in
   `atmosphere-rig.ts`.
 
@@ -137,10 +165,14 @@ writeLight(browserPlaceUrl(window), serializeLightSettings(settings, defaults));
 - bad fields fall back one by one;
 - the haze keys are read and written inside their bounds, and any haze
   alone round-trips writing only `vis` and `haze` (a property test);
-- the veil keys: read and written inside their bounds, out-of-range and
-  non-numeric values ignored, `veilOf` null at lightness 0 whatever the
-  tint, and any veil alone round-trips writing only `veil` and `tint` (a
-  property test, fixed seed);
+- the veil keys: read and written inside their bounds (`tinta` too, an old
+  link without it at a* 0), out-of-range and non-numeric values ignored,
+  `veilOf` null at lightness 0 whatever the tints, a stated lightness kept
+  while the drawn one is held at the colour's bound, `vcol` read, overridden
+  by a stated key, held in range and never written, and any veil alone
+  round-trips writing only `veil` and `tint` (a property test, fixed seed);
+- a rebase keeps the gain ramp rising: a kept start or end wins, and any
+  rebase of rising ramps rises (a property test, fixed seed);
 - the Copy line names every value, and the veil only when one is set.
 - a scheme's own light: urban's veil and EV inside the ranges and every
   other scheme at the shipped look; an urban link without the keys read in
