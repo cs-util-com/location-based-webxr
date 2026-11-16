@@ -3123,7 +3123,14 @@ test.describe("the ambient occlusion", () => {
     // owner tunes the light by. Late, because it switches the cells on, which
     // the steps above compare without.
     await test.step("reports the heat grid's margin with the AO on and off", async () => {
+      // Map cells are not the 3D grid (see `marginFor`): wait for the scene's
+      // chroma to move and settle, or the readout measures no grid at all.
+      const withoutCells = await settledChroma(page);
       await enableCellLayer(page);
+      await expect
+        .poll(() => meanChroma(page), { timeout: 30000 })
+        .not.toBe(withoutCells);
+      await settledChroma(page);
       const heatMargin = async (on) => {
         if (await dialog.isHidden()) await page.locator("body").press("l");
         await box.evaluate((el, checked) => {
