@@ -1496,7 +1496,7 @@ test.describe("the cell layer toggle", () => {
     });
   });
 
-  test("leaves the switch usable when the refresh fails, draws no cell, and takes both loading channels down", async ({
+  test("leaves the switch usable when the refresh fails, and draws no cell", async ({
     page,
   }) => {
     // THE FAILURE PATH, which `CLAUDE.md` requires alongside the success one.
@@ -1510,7 +1510,7 @@ test.describe("the cell layer toggle", () => {
     // not exist, so the evaluate was a no-op and the test silently re-ran the
     // success path. An unfailable test, in the file where this round has been
     // cataloguing unfailable tests.)
-    const counts = await stubNetwork(page, { overpassStatus: 400 });
+    await stubNetwork(page, { overpassStatus: 400 });
     await page.goto(AT_FIXTURE);
     await waitForRefresh(page);
     await expect(page.locator("#status")).toContainText(/unavailable|Failed/);
@@ -1580,42 +1580,72 @@ test.describe("the cell layer toggle", () => {
       await expect(page.locator("#map path.affordance-cell")).toHaveCount(0);
     });
 
-    await test.step("a site pick that fetches nothing still takes both loading channels down", async () => {
-      // THE OUTCOME WHERE A STUCK INDICATOR WOULD HURT MOST: the user waited, and
-      // got nothing. An indicator left running would say the app is still trying
-      // when it has stopped.
-      //
-      // WHAT THIS TEST LEARNED THE HARD WAY. Its first draft expected an ERROR
-      // TOAST here, on the assumption that a failed query fails the refresh. It
-      // does not: the pipeline tolerates a tile it could not fetch, publishes
-      // what it has, and reports the shortfall in the status line - which is why
-      // `waitForRefresh` watches for `unavailable` alongside `cells`. So the
-      // honest assertion is that the refresh ENDS and both channels clear, not
-      // that an error appears.
-      //
-      // 400 rather than 503 deliberately (see `fixtures.js`): a non-retryable
-      // status escapes the retry loop at once, so this costs a second rather than
-      // several of exponential backoff.
-      const AFTER_ANNOUNCE = { timeout: 8_000 };
-      counts.holdOverpass();
-      await page.selectOption("#site", "porto-ribeira");
-
-      const overlay = page.locator("#loading-overlay");
-      await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
-
-      counts.releaseOverpass();
-
-      await expect(overlay).toBeHidden(AFTER_ANNOUNCE);
-      await expect(page.locator("#status")).not.toHaveClass(
-        /is-loading/,
-        AFTER_ANNOUNCE,
-      );
-    });
-
     // NOTE ON WHAT THIS STILL DOES NOT COVER. `refresh()` does not reject here:
     // `update` collects refused tiles into `missingTiles` rather than throwing,
     // so an HTTP 400 is a SUCCESSFUL, empty refresh (`refresh-cycle.ts.md` says
     // so). The `finally`-versus-`then` distinction is unreachable from a browser
     // and is unit-tested on `withLayerBusy` instead.
+  });
+
+  test("a site pick that fetches nothing takes both loading channels down when its refresh ends", async ({
+    page,
+  }) => {
+    // THE OUTCOME WHERE A STUCK INDICATOR WOULD HURT MOST: the user waited, and
+    // got nothing. An indicator left running would say the app is still trying
+    // when it has stopped.
+    //
+    // WHAT THIS TEST LEARNED THE HARD WAY, twice.
+    //
+    // Its first draft expected an ERROR TOAST, on the assumption that a failed
+    // query fails the refresh. It does not: the pipeline tolerates a tile it
+    // could not fetch, publishes what it has, and reports the shortfall in the
+    // status line. So the honest assertion is that the refresh ENDS and both
+    // channels clear, not that an error appears.
+    //
+    // Its second form gave the status dot 8 s from the toast going down. But the
+    // toast goes down on the FIRST ring and the dot only when the LAST of five
+    // has published (`setRefreshBusy` in `main.ts`), and on a loaded CI runner
+    // each empty ring took about 2 s, almost all of it the reply waiting for the
+    // page's busy main thread. Four rings in an 8 s budget failed every retry
+    // on some runs and passed on others: a measurement of the machine, not of
+    // the indicator. So the dot is now judged against the end of the refresh as
+    // the app states it (the last ring drops `widening…`), never against a
+    // clock, and the class must be gone at that point.
+    //
+    // A TEST OF ITS OWN, not a step of the toggle failure test: it needs none of
+    // that test's setup, and a retry no longer re-runs the toggle scenario.
+    //
+    // 400 rather than 503 deliberately (see `fixtures.js`): a non-retryable
+    // status escapes the retry loop at once, so each ring's fetch costs no
+    // exponential backoff.
+    const AFTER_ANNOUNCE = { timeout: 8_000 };
+    // The status line once the LAST ring has published: a cell count and no
+    // `widening…` marker. The fetching message carries no count, so this cannot
+    // match while a refresh is still running.
+    const FINAL_RING = /^(?![\s\S]*widening)[\s\S]*\b\d+ cells\b/;
+    const counts = await stubNetwork(page, { overpassStatus: 400 });
+    await page.goto(AT_FIXTURE);
+    await waitForRefresh(page);
+
+    const status = page.locator("#status");
+    const overlay = page.locator("#loading-overlay");
+    counts.holdOverpass();
+    await page.selectOption("#site", "porto-ribeira");
+
+    // BOTH CHANNELS UP while the query is held, so "down" below means cleared
+    // rather than never set. The hold is what makes this deterministic: the
+    // refresh cannot pass its fetch, let alone its last ring.
+    await expect(overlay).toBeVisible(AFTER_ANNOUNCE);
+    await expect(status).toHaveClass(/is-loading/);
+    await expect(status).not.toHaveText(FINAL_RING);
+
+    counts.releaseOverpass();
+
+    await expect(overlay).toBeHidden(AFTER_ANNOUNCE);
+    // The refresh's own end, which `waitForRefresh` also waits on with this
+    // limit. A refresh that never ends fails here, which is a stuck indicator
+    // too.
+    await expect(status).toHaveText(FINAL_RING, { timeout: 30_000 });
+    await expect(status).not.toHaveClass(/is-loading/, AFTER_ANNOUNCE);
   });
 });

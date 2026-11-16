@@ -40,6 +40,7 @@
  */
 import {
   MemoryBlobStore,
+  OSM_TILES_BASE_URL,
   TERRAIN_EXTENT_M,
   TERRARIUM_URL_TEMPLATE,
   browserPngDecoder,
@@ -86,7 +87,14 @@ async function start(id, target, heights, firstRings) {
   const plan = cityDataPlan(target, { heights });
   let built = false;
   const load = loadCityData(plan, {
-    source: createCityTileSource(store, { userAgent: USER_AGENT }),
+    // The project's tile host first, as the Tour Editor's city and OsmDemo
+    // do: a 404 asks for a fill, waited for up to 60 s when nothing is
+    // queued ahead; a refusal or an error hands the tile to the Overpass
+    // race at once.
+    source: createCityTileSource(store, {
+      userAgent: USER_AGENT,
+      staticTiles: { baseUrl: OSM_TILES_BASE_URL },
+    }),
     heightFetch: createCachingTileFetch({ store }),
     decodePng: browserPngDecoder(),
     firstRings,

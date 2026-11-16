@@ -43,8 +43,12 @@ map scored.
 - **The light dialog** (plan 2026-09-24-2140): `setLightSettings(settings)`
   holds the settings (`light-settings.ts`) and applies them: the surface
   gain's ramp through `aimSun`, the exposure through the rig's
-  `setExposure`, and the sky light on buildings before every render (one
-  private `prepareFrame` for every render path).
+  `setExposure`, the haze through the rig's `setHaze` (its start then
+  written to the view's own fog, `fog.near = hazeStartRatio x fog.far`; the
+  view's fog object, not `scene.fog`, because an AR session swaps that), and
+  the sky light on buildings before every render (one private
+  `prepareFrame` for every render path). `setFarPlane` reads the same ratio
+  back from the rig, so the render-distance dial keeps a lowered start.
   `measureLight({ withMargin = true })` renders and reads with
   `gl.readPixels` straight after each render, so each read is the frame just
   drawn with the grid as set: the lit-surface brightness with the heat grid's
@@ -508,7 +512,9 @@ location; `building-view-content.test.ts` pins the four invariants above.
   past the fade window (`AO_FADE`, 700-1400 m of view depth), which ends
   before the nearest the fog ever starts (`FOG_NEAR_M`, 1584 m at the
   shortest render distance), so the fogged distance and the sky keep
-  their colour bit for bit.
+  their colour bit for bit. That holds at the shipped haze start; a start
+  the light dialog lowers below 1400 m lets the AO reach into the boundary
+  fade (a tuning look; the light gates run at the defaults).
 - **Display exponent 1** (`AO_DISPLAY_EXPONENT`): the linear factor is
   multiplied straight onto the tone-mapped, sRGB-encoded canvas, so the
   creases read darker than with the framework's default 1 / 2.2, which
@@ -684,12 +690,15 @@ field ask that raised the default was literally about zooming further out.
   measured frame time and p95.
 - **The perf log** (`perf-log.ts`, `perf-log-panel.ts`): with `perfReadout`
   the view also creates a bounded frame recorder, hands it to the woods meter
-  (every frame and share change reach it) and mounts a "Copy perf log"
-  button (`data-testid="perf-log-copy"`) under the readout. A click builds
-  the report from the recorder, the governor's state, the readout line, the
-  last draw cost, the invented trees, the device (canvas, WebGL context) and
-  the three query knobs. Without `perfReadout` neither exists, so nothing is
-  recorded. `dispose()` removes the button.
+  (every frame and share change reach it), hands it each frame's draws and
+  triangles right after the scene's render (`drawn`, the same capture as the
+  readout's, before the AO's renders reset the counters), and mounts a "Copy
+  perf log" button (`data-testid="perf-log-copy"`) under the readout. A
+  click builds the report from the recorder, the governor's state, whether
+  the governor may thin (`woodsAuto`, the knobs' `auto`), the readout line,
+  the last draw cost, the invented trees, the device (canvas, WebGL context)
+  and the three query knobs. Without `perfReadout` neither exists, so
+  nothing is recorded. `dispose()` removes the button.
 - Tested: the numbers in `woods-readout.test.ts`; the readout's presence,
   absence and frame time in `playwright-tests/scene-3d.spec.js` ("the woods governor's frame readout"), and the copied log in the same describe.
 
@@ -700,5 +709,7 @@ and orbit for some seconds, then read the line: `frame` (smoothed
 counted-frame ms), `p95` (last 10 s), `woods N % (mode)`, the invented trees
 drawn, draws and triangles. Repeat with `&woodsauto=off` for the full woods,
 and with `&treeform=trunk` for the trunk form. After each run, tap "Copy perf
-log" and paste the text: it holds the whole session's frame intervals, share
-changes, the device and the knobs, and no location.
+log" and paste the text: it holds the newest 3000 frame intervals, 1000
+bursts with their draw cost and 500 share changes (it says how many older
+ones were dropped, and whether it is still whole enough to replay), the
+device and the knobs, and no location.

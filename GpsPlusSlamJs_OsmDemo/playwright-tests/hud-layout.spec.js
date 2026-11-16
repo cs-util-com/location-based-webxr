@@ -565,7 +565,15 @@ test.describe("the command bar at 1280 x 720", () => {
     await page.keyboard.press("Escape");
     await page.locator("#category").click({ timeout: 5000 });
     await page.keyboard.press("Escape");
-    await page.locator("#layer-cells").click({ timeout: 5000 });
+    // THE CELLS SWITCH IN TWO HALVES. The 5 s guard is about interception,
+    // and a trial click proves that alone: it runs every actionability check,
+    // the hit test included, and stops before the press. The press itself
+    // then gets no short limit, because switching cells on starts a refresh
+    // that keeps the page's main thread busy, and Playwright's after-click
+    // wait answers only once the page does: the click was done and checked,
+    // and the 5 s still ran out on a loaded runner.
+    await page.locator("#layer-cells").click({ trial: true, timeout: 5000 });
+    await page.locator("#layer-cells").click();
     await expect(page.locator("#layer-cells")).toBeChecked();
     // The switch stays disabled while the cells it asked for are built.
     await expect(page.locator("#layer-cells")).toBeEnabled({ timeout: 60_000 });

@@ -6,6 +6,10 @@
  * Playwright config matches `*.smoke.spec.mjs` only.
  */
 import { expect } from "@playwright/test";
+// By its page path, resolved through the dev server's route table
+// (`test-route-loader.mjs`, which the Playwright config imports): the Osm
+// library's own constant, so a moved tile host stays intercepted.
+import { OSM_TILES_BASE_URL } from "/osm-lib/source/static-tile-source.js";
 
 /**
  * Opens the lab at `hash`, waits until it is ready without an error and
@@ -198,12 +202,25 @@ export const gridAround = (c, half, n) => {
   return points;
 };
 
+/** The project's tile host, which the city worker asks before the race. */
+export const TILES_HOSTNAME = new URL(OSM_TILES_BASE_URL).hostname;
+
+/**
+ * The tile host's answer in every smoke: 404 for every tile and fill (not
+ * stored, the fill refused), so the library hands each tile to the race at
+ * once and the Overpass routes and counts keep their meaning.
+ */
+export const tileHostNotStored = (route, cors) =>
+  route.fulfill({ status: 404, headers: cors, body: "" });
+
 /**
  * Whether a request is the city data the pin's arrival prefetch fetches:
- * an Overpass endpoint (OsmDemo's pool, `overpass-source.ts`) or a DEM tile
- * (Mapterhorn or the AWS Terrarium bucket).
+ * the project's tile host, an Overpass endpoint (OsmDemo's pool,
+ * `overpass-source.ts`) or a DEM tile (Mapterhorn or the AWS Terrarium
+ * bucket).
  */
 const isCityData = (url) =>
+  url.hostname === TILES_HOSTNAME ||
   /(^|\.)overpass-api\.de$|^overpass\.private\.coffee$|^overpass\.kumi\.systems$/.test(
     url.hostname,
   ) ||
@@ -214,15 +231,16 @@ const isCityData = (url) =>
 
 /**
  * Answers the pin's arrival prefetch (round-5 plan 2026-10-01-0945 §3.6)
- * here, so no smoke ever sends a request to the donated Overpass servers or
- * the DEM hosts: Overpass with an empty tile, a DEM tile with a few bytes,
+ * here, so no smoke ever sends a request to the donated Overpass servers,
+ * the project's tile host or the DEM hosts: the tile host with a 404
+ * (`tileHostNotStored`), Overpass with an empty tile, a DEM tile with a few bytes,
  * a CORS preflight with its headers (cross-origin, so the browser checks
  * them on a fulfilled response too). Everything else is left to the page.
  * `holdOverpass` keeps the Overpass answers back until `release()`, for a
  * test that needs a cold load in flight. Returns the requests seen.
  */
 export async function routeCityData(page, { holdOverpass = false } = {}) {
-  const seen = { overpass: 0, dem: 0 };
+  const seen = { tileHost: 0, overpass: 0, dem: 0 };
   let release = () => {};
   const released = holdOverpass
     ? new Promise((resolve) => {
@@ -240,6 +258,10 @@ export async function routeCityData(page, { holdOverpass = false } = {}) {
       return route.fulfill({ status: 204, headers: cors });
     }
     const url = new URL(request.url());
+    if (url.hostname === TILES_HOSTNAME) {
+      seen.tileHost += 1;
+      return tileHostNotStored(route, cors);
+    }
     if (/overpass/.test(url.hostname + url.pathname)) {
       seen.overpass += 1;
       await released;
@@ -270,11 +292,13 @@ const isOverpassHost = (url) =>
 
 /**
  * Routes the city's data for a smoke, on the CONTEXT (so the city worker's
- * requests are answered too): Overpass with `overpass` (an Overpass JSON
+ * requests are answered too): the project's tile host with a 404
+ * (`tileHostNotStored`), Overpass with `overpass` (an Overpass JSON
  * object, every tile the same), every height tile (Mapterhorn or the AWS
  * bucket) with the relief's synthetic tile generated in the page
  * (the Globe package's `src/test-utils/synthetic-heights.ts`), so the city and the relief read
- * the same numbers. Returns the requests seen. (Moved from
+ * the same numbers. Returns the requests seen, `first` naming the host the
+ * city's data was asked of first (`tileHost` or `overpass`). (Moved from
  * `globe-city.smoke.spec.mjs` when a second spec needed it, round-4 plan
  * 2026-10-11-0122.)
  */
@@ -284,10 +308,11 @@ export async function routeCityFixture(context, page, overpass) {
     "Access-Control-Allow-Methods": "GET, POST",
     "Access-Control-Allow-Headers": "*",
   };
-  const seen = { overpass: 0, heights: 0 };
+  const seen = { tileHost: 0, overpass: 0, heights: 0, first: null };
   const body = JSON.stringify(overpass);
   await context.route(
     (url) =>
+      url.hostname === TILES_HOSTNAME ||
       isOverpassHost(url) ||
       url.hostname === "tiles.mapterhorn.com" ||
       (url.hostname === "s3.amazonaws.com" &&
@@ -298,8 +323,14 @@ export async function routeCityFixture(context, page, overpass) {
         return route.fulfill({ status: 204, headers: cors });
       }
       const url = new URL(request.url());
+      if (url.hostname === TILES_HOSTNAME) {
+        seen.tileHost += 1;
+        seen.first ??= "tileHost";
+        return tileHostNotStored(route, cors);
+      }
       if (isOverpassHost(url)) {
         seen.overpass += 1;
+        seen.first ??= "overpass";
         return route.fulfill({
           status: 200,
           headers: { ...cors, "Content-Type": "application/json" },

@@ -13,7 +13,7 @@
 - `MODEL_OPTIMIZER`: the `model` row; hands the `.glb` to the Worker's model step (`model-step.ts`).
 - `ASSET_OPTIMIZERS`: this build's table - `image` the picture row, `audio` the sound row (`sound-optimizer.ts`), `model` the model row, `video` null.
 - `optimizerShrinks(table)`: `(kind) => boolean`, whether a file of the kind can be made smaller here; `editor-session.ts` passes it to `readTourFile` as `shrinks`.
-- `OptimizerCrashed`: the error a dead Worker turns into.
+- `OptimizerCrashed(words?)`: the error a dead Worker turns into, by its error event (`the optimizer stopped unexpectedly`) or by the client's watchdog when it went silent (`optimizer-client.ts`).
 
 ## Invariants
 

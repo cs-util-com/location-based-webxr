@@ -131,6 +131,89 @@ describe("mountPerfLogPanel", () => {
     panel.dispose();
     expect(container.children).toHaveLength(0);
   });
+
+  // The fallback is only useful if the text is ready to copy at once: on a
+  // phone, focused and fully selected, with the reason announced.
+  it("focuses and selects the whole fallback text, and announces the reason", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { button, container } = mount(undefined);
+    button.click();
+    await flush();
+    const box = container.querySelector<HTMLTextAreaElement>(
+      '[data-testid="perf-log-fallback"]',
+    );
+    expect(document.activeElement).toBe(box);
+    expect(box?.selectionStart).toBe(0);
+    expect(box?.selectionEnd).toBe("THE REPORT".length);
+    expect(
+      container
+        .querySelector('[data-testid="perf-log-error"]')
+        ?.getAttribute("role"),
+    ).toBe("alert");
+    warn.mockRestore();
+  });
+
+  // A second copy restarts the confirmation: the first copy's timer must
+  // not turn the second "Copied" back to idle early.
+  it("restarts the confirmation on a second copy", async () => {
+    vi.useFakeTimers();
+    const { button } = mount(() => Promise.resolve());
+    button.click();
+    await flush();
+    vi.advanceTimersByTime(2000);
+    button.click();
+    await flush();
+    vi.advanceTimersByTime(1000);
+    expect(button.textContent).toBe(COPY_PERF_LOG_LABELS.done);
+    vi.advanceTimersByTime(2000);
+    expect(button.textContent).toBe(COPY_PERF_LOG_LABELS.idle);
+  });
+
+  it("clears its confirmation timer on dispose", async () => {
+    vi.useFakeTimers();
+    const { button, panel } = mount(() => Promise.resolve());
+    button.click();
+    await flush();
+    panel.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(button.textContent).toBe(COPY_PERF_LOG_LABELS.done);
+  });
+
+  // A report that throws must not leave an older fallback box standing,
+  // whose stale text would read as the current log; the failure is shown.
+  it("clears an older fallback and shows the error when the report throws", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let broken = false;
+    mountPerfLogPanel(
+      container,
+      () => {
+        if (broken) throw new Error("no timeline");
+        return "THE REPORT";
+      },
+      { write: undefined },
+    );
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="perf-log-copy"]',
+    );
+    button?.click();
+    await flush();
+    expect(
+      container.querySelector('[data-testid="perf-log-fallback"]'),
+    ).not.toBeNull();
+    broken = true;
+    button?.click();
+    await flush();
+    expect(button?.textContent).toBe("Perf log failed");
+    expect(
+      container.querySelector('[data-testid="perf-log-fallback"]'),
+    ).toBeNull();
+    const error = container.querySelector('[data-testid="perf-log-error"]');
+    expect(error?.getAttribute("role")).toBe("alert");
+    expect(error?.textContent).toContain("no timeline");
+    warn.mockRestore();
+  });
 });
 
 function env(overrides: Partial<PerfDeviceEnv> = {}): PerfDeviceEnv {
@@ -214,5 +297,12 @@ describe("readPerfDevice", () => {
     expect(device.gpuRenderer).toBeNull();
     expect(device.canvasCss).toBeNull();
     expect(device.pointer).toBe("none");
+  });
+
+  it("reads a zero core count as hidden", () => {
+    const device = readPerfDevice(
+      env({ navigator: { userAgent: "UA", hardwareConcurrency: 0 } }),
+    );
+    expect(device.hardwareConcurrency).toBeNull();
   });
 });

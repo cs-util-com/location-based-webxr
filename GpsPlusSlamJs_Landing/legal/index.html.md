@@ -86,6 +86,13 @@ sentry.ts.md` (configuration and the audit of what log lines carry);
   - the map demo's hosts: the OSM package's `source/overpass-source.ts`
     and `elevation/terrarium.ts`, the demo's `dem-provider.ts` and the
     Leaflet stylesheet in its `index.html`;
+  - the tile host `osm-tiles.csutil.workers.dev` (map demo, unless
+    `tiles=off`, and the Tour Editor's 3D map): the OSM package's
+    `source/static-tile-source.ts` (`OSM_TILES_BASE_URL`; read first, a
+    fill asked for a missing cell, the browser's own Overpass race when the
+    host cannot help) and `GpsPlusSlamJs_OsmTiles/README.md` (one H3
+    resolution-7 cell per file, filled once and then served to everyone
+    from R2);
   - the developer test pages: `/lookdev/` is the design system's look-dev
     build (`build-lookdev.mjs`), whose modules reach OpenStreetMap tiles,
     Overpass, Mapterhorn and the AWS terrain tiles; the Recorder's

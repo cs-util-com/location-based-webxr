@@ -381,7 +381,10 @@ function floatsOf(parts: GlbParts, index: number | undefined, size: number) {
   return data?.size === size ? Float32Array.from(data.values) : undefined;
 }
 
-function order(parts: GlbParts, c: Candidate): Ordered {
+/** `beat` is called after the ordering and after each pose's
+ *  measurement, so a long primitive keeps the Worker heard (the page
+ *  counts a silent one as crashed). */
+function order(parts: GlbParts, c: Candidate, beat: () => void): Ordered {
   const normal = floatsOf(parts, c.attributes.get("NORMAL"), 3);
   const uv = floatsOf(parts, c.attributes.get("TEXCOORD_0"), 2);
   // every other attribute must match exactly for two copies to merge
@@ -423,9 +426,11 @@ function order(parts: GlbParts, c: Candidate): Ordered {
         : { normals: remapAttribute(normal, 3, weld) }),
     },
   );
+  beat();
   const shapes = posed.length === 0 ? [positions] : posed;
   const size = posed.length === 0 ? prog.diag : rest;
   const grids = shapes.map((s) => new SurfaceGrid(s, weld.indices));
+  beat();
   const measured = new Map<string, number>();
   const deviation = (steps: number, samples: number) => {
     if (steps <= 0) return 0;
@@ -434,11 +439,18 @@ function order(parts: GlbParts, c: Candidate): Ordered {
     if (d === undefined) {
       const level = levelIndices(prog, steps);
       d = Math.max(
-        ...shapes.map(
-          (s, k) =>
-            surfaceDistance(s, weld.indices, s, level, samples, grids[k]).max /
-            size,
-        ),
+        ...shapes.map((s, k) => {
+          const max = surfaceDistance(
+            s,
+            weld.indices,
+            s,
+            level,
+            samples,
+            grids[k],
+          ).max;
+          beat();
+          return max / size;
+        }),
       );
       measured.set(key, d);
     }
@@ -726,7 +738,9 @@ const NOTHING: Omit<LodReport, "skipped" | "automatic"> = {
 };
 
 /** Gives `parts`' primitives levels of detail (changed in place).
- *  `progress`, when given, hears the share of primitives done. */
+ *  `progress`, when given, hears the share of primitives done: after
+ *  each primitive, and that same share again during one, after each step
+ *  of its ordering and measurement. */
 export function simplifyModel(
   parts: GlbParts,
   settings: LodSettings,
@@ -752,7 +766,7 @@ export function simplifyModel(
   let report: LodReport = { ...NOTHING, skipped, automatic };
   let choices: LodChoice[] = [];
   candidates.forEach((c, i) => {
-    const o = order(parts, c);
+    const o = order(parts, c, () => progress?.(i / candidates.length));
     if (o.prog.triangleCount === 0) return;
     const levels = chainOf(o, authorSteps(o, c, settings));
     const { lists, keep } = compact(o, levels, c.positions.length / 3);

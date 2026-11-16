@@ -163,6 +163,9 @@ test("the city builds at Bern from a link, through the Osm library, where its la
   );
   expect(errors).toEqual([]);
   expect(probe.phase).toBe("ready");
+  // The project's tile host is asked before the race (it answers 404 here,
+  // so the race delivered the fixture).
+  expect(seen.first).toBe("tileHost");
   expect(probe.counts.volumes).toBe(CELLS.length);
   expect(probe.drawn).toBe(true);
   expect(probe.vertices.length).toBeGreaterThan(100);

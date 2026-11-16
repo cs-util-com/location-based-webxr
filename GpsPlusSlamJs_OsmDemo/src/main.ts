@@ -53,6 +53,7 @@ import {
 import { createLightDialog } from "./light-dialog.js";
 import {
   describeLightSettings,
+  lightDefaultsFor,
   parseLightSettings,
   serializeLightSettings,
 } from "./light-settings.js";
@@ -643,9 +644,15 @@ async function main(): Promise<void> {
   // THE LIGHT DIALOG (plan 2026-09-24-2140): the owner tunes the noon
   // lighting live and pastes the result back. The settings travel in the URL
   // (`?light=`, a deliberate exception to DEC-R12-5, see url-state.ts); the
-  // shipped look writes nothing.
+  // shipped look writes nothing. The link is read and written against the
+  // colour scheme's own light (`lightDefaultsFor`): an urban link that states
+  // nothing opens in urban's veil, and a stated value still wins.
   const lightUrl = browserPlaceUrl(window);
-  const initialLight = parseLightSettings(window.location.search);
+  const initialLight = parseLightSettings(
+    window.location.search,
+    lightDefaultsFor(selectColourScheme(store.getState())),
+  );
+  // The view starts at the shipped look, so only a difference from it is sent.
   if (serializeLightSettings(initialLight) !== null) {
     buildingView.setLightSettings(initialLight);
   }
@@ -660,9 +667,14 @@ async function main(): Promise<void> {
     parent: el("scene"),
     opener: lightOpen,
     initial: initialLight,
+    defaults: lightDefaultsFor(selectColourScheme(store.getState())),
     onChange: (settings) => {
       buildingView.setLightSettings(settings);
-      writeLightUrl(serializeLightSettings(settings));
+      // The haze start moves the fog's near, which the draw readout names.
+      // Declared further down; this runs on user input or a scheme switch
+      // only, after boot.
+      paintRenderDistance();
+      writeLightUrl(serializeLightSettings(settings, lightDialog.defaults));
     },
     measure: (withMargin) => {
       // A grid still building would be measured as the previous one, or as
@@ -3387,6 +3399,8 @@ async function main(): Promise<void> {
     shownScheme = scheme;
     schemeSwitch.show(scheme);
     writeScheme(schemeUrl, schemeLinkValue(scheme));
+    // The scheme's own light follows it; what the viewer set stays.
+    lightDialog.setDefaults(lightDefaultsFor(scheme));
     void refresh();
   });
 

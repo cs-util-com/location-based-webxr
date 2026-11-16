@@ -217,6 +217,12 @@ function segment2(
 const FLAT_SHARE = 0.01;
 /** The most cells along one axis. */
 const MAX_CELLS = 256;
+/** The most cells one triangle is filed in. A triangle whose box covers
+ *  more goes to the grid's list of large triangles, which every query
+ *  reads whole; so the grid holds at most this many entries a triangle,
+ *  however long its triangles are. Ordinary triangles, about two to a
+ *  cell, cover at most a few cells each. */
+const TRIANGLE_CELLS = 32;
 
 /** A uniform grid over one mesh's triangles, for nearest-point queries. */
 export class SurfaceGrid {
@@ -224,12 +230,19 @@ export class SurfaceGrid {
   private readonly lo: [number, number, number];
   private readonly n: [number, number, number];
   private readonly cells = new Map<number, number[]>();
+  /** The triangles whose box covers more than `maxCells` cells. */
+  private readonly large: number[] = [];
+  /** Each large triangle's bounding box: min xyz, then max xyz. */
+  private readonly largeBox: number[] = [];
   private readonly mark: Int32Array;
   private stamp = 0;
 
+  /** `maxCells` (default `TRIANGLE_CELLS`) is the most cells a triangle
+   *  is filed in; a test lowers it to send triangles to the large list. */
   constructor(
     private readonly P: Positions,
     private readonly I: Indices,
+    maxCells = TRIANGLE_CELLS,
   ) {
     const T = I.length / 3;
     const lo: [number, number, number] = [Infinity, Infinity, Infinity];
@@ -272,6 +285,13 @@ export class SurfaceGrid {
       }
       const a = mn.map((x, k) => this.ci(x, k));
       const b = mx.map((x, k) => this.ci(x, k));
+      const covered =
+        (b[0]! - a[0]! + 1) * (b[1]! - a[1]! + 1) * (b[2]! - a[2]! + 1);
+      if (covered > maxCells) {
+        this.large.push(t);
+        this.largeBox.push(mn[0]!, mn[1]!, mn[2]!, mx[0]!, mx[1]!, mx[2]!);
+        continue;
+      }
       for (let i = a[0]!; i <= b[0]!; i++) {
         for (let j = a[1]!; j <= b[1]!; j++) {
           for (let l = a[2]!; l <= b[2]!; l++) {
@@ -286,6 +306,27 @@ export class SurfaceGrid {
     this.mark = new Int32Array(T);
   }
 
+  /** The triangle references the grid holds: over all its cells, and its
+   *  list of large triangles. */
+  get entries(): number {
+    let n = this.large.length;
+    for (const list of this.cells.values()) n += list.length;
+    return n;
+  }
+
+  /** The squared distance from p to triangle t. */
+  private tri2(px: number, py: number, pz: number, t: number): number {
+    return pointTri2(
+      px,
+      py,
+      pz,
+      this.P,
+      this.I[3 * t]! * 3,
+      this.I[3 * t + 1]! * 3,
+      this.I[3 * t + 2]! * 3,
+    );
+  }
+
   private ci(x: number, k: number): number {
     return Math.min(
       this.n[k]! - 1,
@@ -297,9 +338,23 @@ export class SurfaceGrid {
   nearest(px: number, py: number, pz: number): number {
     const c = [this.ci(px, 0), this.ci(py, 1), this.ci(pz, 2)] as const;
     const [n0, n1, n2] = this.n;
+    // the large triangles are in no cell: each is measured directly, and
+    // the shell search below only has to beat the nearest of them
     let best = Infinity;
+    const box = this.largeBox;
+    for (let k = 0; k < this.large.length; k++) {
+      // a triangle is no nearer than its box: skip it when the box is
+      // already no nearer than the best (exact, never a missed triangle)
+      const dx = Math.max(box[6 * k]! - px, 0, px - box[6 * k + 3]!);
+      const dy = Math.max(box[6 * k + 1]! - py, 0, py - box[6 * k + 4]!);
+      const dz = Math.max(box[6 * k + 2]! - pz, 0, pz - box[6 * k + 5]!);
+      if (dx * dx + dy * dy + dz * dz >= best) continue;
+      const d = this.tri2(px, py, pz, this.large[k]!);
+      if (d < best) best = d;
+    }
     this.stamp++;
-    const maxR = Math.max(n0, n1, n2);
+    // no shells to search when every triangle is a large one
+    const maxR = this.cells.size === 0 ? -1 : Math.max(n0, n1, n2);
     for (let r = 0; r <= maxR; r++) {
       // the cells on the shell of radius r
       for (let i = c[0] - r; i <= c[0] + r; i++) {
@@ -319,15 +374,7 @@ export class SurfaceGrid {
             for (const t of list) {
               if (this.mark[t] === this.stamp) continue;
               this.mark[t] = this.stamp;
-              const d = pointTri2(
-                px,
-                py,
-                pz,
-                this.P,
-                this.I[3 * t]! * 3,
-                this.I[3 * t + 1]! * 3,
-                this.I[3 * t + 2]! * 3,
-              );
+              const d = this.tri2(px, py, pz, t);
               if (d < best) best = d;
             }
           }

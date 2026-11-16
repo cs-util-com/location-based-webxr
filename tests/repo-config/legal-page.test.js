@@ -65,8 +65,8 @@ function visibleText(html) {
  * the new hash the failure prints. For a typo fix, update only the hash.
  */
 const PINNED = {
-  date: '2026-10-25',
-  sha256: '53a068b437a4ad6325d27aa166dc7a9265efe13b4387d98373c298b48732d6a1',
+  date: '2026-11-16',
+  sha256: 'd7b0bc9978ed13534e847de365b729613439cfff3d483c8c71005c22b84876fa',
 };
 
 describe('the legal page date and text', () => {

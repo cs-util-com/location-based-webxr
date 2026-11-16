@@ -82,30 +82,72 @@ function footprints(
   });
 }
 
+/**
+ * How far the mesh may move a raised corner: `WELD_M` in `skeleton-mesh.ts`
+ * (kept private there; change both together).
+ *
+ * WHY THE DRAWN TOP MAY SIT UP TO THIS BELOW THE PLAN, and no closer bound
+ * holds. Near-coincident skeleton events leave corners a hair apart on a
+ * ridge, and the stitch welds every raised corner within this distance into
+ * one, so the apex can land on a neighbouring event's corner just below it.
+ * Two seeds failed a 0.5 mm closeness this way (drawn 0.55 mm and 1.15 mm
+ * below the plan, with the unwelded apex exactly at the planned top): float32
+ * at these heights is under a micrometre, and nothing rose above the plan.
+ * The weld cannot RAISE the top, because no raised corner stands above the
+ * last event, so the bound is one-sided.
+ */
+const WELD_M = 0.003;
+
+/** Float32 rounds a height by at most half an ulp (2^-24 relative); twice that. */
+const float32Slack = (heightM: number): number => Math.abs(heightM) * 2 ** -23;
+
+/**
+ * The drawn top lies within the weld below the planned top and never above
+ * it (beyond float32 rounding), and the plan rises no more than the limit.
+ */
+function expectTopsWithinWeld(
+  houses: readonly Parameters<typeof ringOf>[0][],
+): void {
+  for (const plan of planInventedRoofs(footprints(houses)).values()) {
+    if (plan.kind !== "roof") continue;
+    expect(plan.totalM - plan.eaveM).toBeLessThanOrEqual(P.maxRiseM + 1e-9);
+    const { positions } = inventedRoofMesh(plan, { lowest: 0, rise: 0 });
+    let top = -Infinity;
+    for (let i = 1; i < positions.length; i += 3) {
+      top = Math.max(top, positions[i] as number);
+    }
+    expect(top).toBeLessThanOrEqual(plan.totalM + float32Slack(plan.totalM));
+    expect(top).toBeGreaterThanOrEqual(plan.totalM - WELD_M);
+  }
+}
+
+const neighbourhoods = fc.array(houseArb, { minLength: 1, maxLength: 4 });
+
 describe("invented roofs, as properties", () => {
-  it("draws every roof's top at its planned top, never past the rise limit", () => {
+  it("draws every roof's top at its planned top within the weld, never above it or past the rise limit", () => {
     fc.assert(
-      fc.property(
-        fc.array(houseArb, { minLength: 1, maxLength: 4 }),
-        (houses) => {
-          for (const plan of planInventedRoofs(footprints(houses)).values()) {
-            if (plan.kind !== "roof") continue;
-            expect(plan.totalM - plan.eaveM).toBeLessThanOrEqual(
-              P.maxRiseM + 1e-9,
-            );
-            const { positions } = inventedRoofMesh(plan, {
-              lowest: 0,
-              rise: 0,
-            });
-            let top = -Infinity;
-            for (let i = 1; i < positions.length; i += 3) {
-              top = Math.max(top, positions[i] as number);
-            }
-            expect(top).toBeCloseTo(plan.totalM, 3);
-          }
-        },
-      ),
-      { numRuns: 60 },
+      fc.property(neighbourhoods, (houses) => expectTopsWithinWeld(houses)),
+      {
+        numRuns: 60,
+      },
+    );
+  });
+
+  // Why: the two runs that failed the former 0.5 mm closeness, pinned so the
+  // weld's effect on the apex stays covered whatever the random seed is.
+  it.each([
+    { seed: 1833751998 },
+    {
+      seed: -1555903445,
+      path: "1:3:2:6:3:2:3:2:2:2:3:2:3:3:3:2:2:2:2:2:2:2:3:5:2:2:3:3:2:2:3:3:3:2:2:2:2:2:3:5:7:2:2:6:6:6:6:6:6:6:6:6",
+    },
+  ])("keeps the drawn top within the weld on the replayed run $seed", (run) => {
+    fc.assert(
+      fc.property(neighbourhoods, (houses) => expectTopsWithinWeld(houses)),
+      {
+        numRuns: 60,
+        ...run,
+      },
     );
   });
 

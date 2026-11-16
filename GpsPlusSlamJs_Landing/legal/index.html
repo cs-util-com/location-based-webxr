@@ -283,6 +283,16 @@
             load map images from OpenStreetMap (OpenStreetMap Foundation), which
             then receives your IP address and the map area shown.
           </li>
+          <li>
+            <b>Creators only:</b> the editor's 3D map loads map data such as
+            buildings and paths from osm-tiles.csutil.workers.dev, a file store
+            we run on Cloudflare. It receives your IP address and the map area
+            requested (an H3 cell, a hexagon of about 5 km²). An area it does
+            not hold yet is fetched there from the public Overpass servers named
+            under the map demo, then stored and served to anyone who asks for it
+            later. When it cannot be fetched there, your browser asks those
+            Overpass servers itself, with the same data.
+          </li>
         </ul>
         <p>What stays on your phone or computer:</p>
         <ul>
@@ -408,6 +418,14 @@
             the area or file requested.
           </li>
           <li>
+            It asks for map data from osm-tiles.csutil.workers.dev first, a file
+            store we run on Cloudflare. It receives your IP address and the map
+            area requested (an H3 cell, a hexagon of about 5 km²). An area it
+            does not hold yet is fetched there from the Overpass servers above,
+            then stored and served to anyone who asks for it later. With
+            <code>tiles=off</code> in the demo's address it is not asked.
+          </li>
+          <li>
             It keeps downloaded map data and terrain heights in your browser so
             that a revisit loads faster, and remembers whether you unfolded its
             AR readout.
@@ -463,7 +481,7 @@
              agree. The date is not set at build time: a build changes
              nothing a reader is told. -->
         <p class="updated" data-testid="last-updated">
-          Last updated: 2026-10-25.
+          Last updated: 2026-11-16.
         </p>
       </section>
     </main>

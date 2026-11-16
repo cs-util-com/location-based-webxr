@@ -39,6 +39,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tourPlan = await import(
   pathToFileURL(join(ROOT, 'GpsPlusSlamJs_TourViewer/playwright-tests/e2e-plan.js')).href
 );
+const osmLanes = await import(
+  pathToFileURL(join(ROOT, 'GpsPlusSlamJs_OsmDemo/playwright-tests/e2e-lanes.js')).href
+);
 const SKIP = new Set(['node_modules', 'dist', 'test-results', 'playwright-report', '.vite']);
 
 /** @param {string} dir @returns {string[]} spec files under dir, absolute */
@@ -280,19 +283,33 @@ describe('the per-PR browser tier', () => {
     expect(byPackage).toEqual(EXPECTED);
   });
 
-  // Each Tour Viewer lane is its own CI job, and a tier job that selects no
-  // test fails ("No tests found"): so every lane must hold a tagged test.
-  // A spec that moves lanes, or a lane whose last tag goes, fails here first.
-  it('gives every Tour Viewer CI lane at least one tier test', () => {
+  // Each Tour Viewer and OsmDemo lane is its own CI job, and a tier job that
+  // selects no test fails ("No tests found"): so every lane must hold a
+  // tagged test. A spec that moves lanes, or a lane whose last tag goes,
+  // fails here first.
+  it.each([
+    ['GpsPlusSlamJs_TourViewer', tourPlan],
+    ['GpsPlusSlamJs_OsmDemo', osmLanes],
+  ])('gives every %s CI lane at least one tier test', (pkg, plan) => {
     const taggedSpecs = new Set(
-      (byPackage.GpsPlusSlamJs_TourViewer ?? []).map((entry) =>
-        entry.slice(0, entry.indexOf(':')).split('/').pop(),
-      ),
+      (byPackage[pkg] ?? []).map((entry) => entry.slice(0, entry.indexOf(':')).split('/').pop()),
     );
-    for (const lane of tourPlan.LANES) {
-      const held = tourPlan.specsOfLane(lane).filter((name) => taggedSpecs.has(name));
+    for (const lane of plan.LANES) {
+      const held = plan.specsOfLane(lane).filter((name) => taggedSpecs.has(name));
       expect(held.length, `lane ${lane}`).toBeGreaterThan(0);
     }
+  });
+
+  // Why: each OsmDemo lane's config matches only its own spec files, so a
+  // file the lane table does not name runs in no CI job, and the run stays
+  // green.
+  it('names every OsmDemo spec file in exactly one lane', () => {
+    const dir = join(ROOT, 'GpsPlusSlamJs_OsmDemo/playwright-tests');
+    const onDisk = readdirSync(dir)
+      .filter((f) => /\.spec\.m?js$/.test(f))
+      .sort();
+    expect(Object.keys(osmLanes.SPECS).sort()).toEqual(onDisk);
+    expect(osmLanes.LANES.flatMap((lane) => osmLanes.specsOfLane(lane)).sort()).toEqual(onDisk);
   });
 
   // A config that does not read the tier runs its whole suite on every PR

@@ -603,6 +603,30 @@ describe('createAmbientOcclusion', () => {
     expect(fake.draws).toEqual([]);
   });
 
+  // Why this test matters: `reapply` promises the AO the last render both
+  // computed AND blended. A blend that throws after the pass finished must
+  // leave nothing to reapply either, or a later frame gets an AO no render
+  // ever put on screen.
+  it('refuses to reapply after a render whose blend threw', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    expect(ao.render()).toBe(true);
+    vi.spyOn(ao.pass!, 'render').mockImplementation(() => {});
+    const draw = fake.render;
+    fake.render = () => {
+      throw new Error('blend failed');
+    };
+    expect(() => ao.render()).toThrow('blend failed');
+    fake.render = draw;
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+  });
+
   // Why this test matters: while the AO is off, frames are drawn without
   // computing it, so the AO held from before describes an older view. After
   // switching it back on, reapply must refuse until a render computed a new

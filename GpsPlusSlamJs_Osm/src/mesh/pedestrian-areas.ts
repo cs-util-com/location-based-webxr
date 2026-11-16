@@ -126,6 +126,9 @@ function areaMesh(
   const sample = options.groundHeightM;
   // Pieces of neighbouring triangles share their cut points: one vertex each.
   const vertices = new Map<string, number>();
+  // Where each vertex is drawn: the first point of its key, as float32.
+  const stored = new Map<number, EnuPoint>();
+  const drawnAt = (index: number): EnuPoint => stored.get(index) as EnuPoint;
   const vertex = (p: EnuPoint): number => {
     const key = `${p.x.toFixed(4)},${p.y.toFixed(4)}`;
     let index = vertices.get(key);
@@ -141,6 +144,7 @@ function areaMesh(
         0,
       );
       vertices.set(key, index);
+      stored.set(index, { x: Math.fround(p.x), y: Math.fround(p.y) });
     }
     return index;
   };
@@ -153,7 +157,7 @@ function areaMesh(
         points[indices[t + 2] as number] as EnuPoint,
       ];
       for (const piece of cutToCells(ccw(triangle), spacingM)) {
-        fan(piece, vertex, builder);
+        fan(piece, vertex, drawnAt, builder);
       }
     }
   }
@@ -164,6 +168,7 @@ function areaMesh(
 function fan(
   piece: readonly EnuPoint[],
   vertex: (p: EnuPoint) => number,
+  drawnAt: (index: number) => EnuPoint,
   builder: MeshBuilder,
 ): void {
   const origin = piece[0] as EnuPoint;
@@ -174,19 +179,26 @@ function fan(
     const ia = vertex(origin);
     const ib = vertex(b);
     const ic = vertex(c);
-    // Two corners merged into one shared vertex: nothing to draw.
-    if (ia === ib || ib === ic || ia === ic) continue;
+    // Checked again on the corners as drawn: a merge into a shared vertex
+    // (up to 0.1 mm away) or float32 can flatten a sliver, or turn it over.
+    if (ccwArea(drawnAt(ia), drawnAt(ib), drawnAt(ic)) < MIN_TRIANGLE_AREA_M2) {
+      continue;
+    }
     // Counter-clockwise in ENU, handed over reversed: `MeshBuilder`
     // reflects north onto -z (see roads.ts's ribbon winding).
     builder.triangle(ia, ic, ib);
   }
 }
 
+/** Signed area, positive when counter-clockwise in ENU. */
+function ccwArea(a: EnuPoint, b: EnuPoint, c: EnuPoint): number {
+  return ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2;
+}
+
 /** The triangle counter-clockwise in ENU. */
 function ccw(t: EnuPoint[]): EnuPoint[] {
   const [a, b, c] = t as [EnuPoint, EnuPoint, EnuPoint];
-  const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-  return cross >= 0 ? t : [a, c, b];
+  return ccwArea(a, b, c) >= 0 ? t : [a, c, b];
 }
 
 /**
