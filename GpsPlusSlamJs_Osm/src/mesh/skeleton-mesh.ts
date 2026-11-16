@@ -32,6 +32,13 @@ import {
  * 6 mm 2 did; see `skeleton-mesh.ts.md`.
  */
 const WELD_M = 0.003;
+/**
+ * The furthest the cluster weld may move a corner: a few weld distances,
+ * room for the several-millimetre apex a nudge spreads, and no more. A chain
+ * of nearby corners is otherwise unbounded, and a corner pulled centimetres
+ * away would draw a shape the skeleton never had.
+ */
+const MAX_CLUSTER_MOVE_M = 4 * WELD_M;
 /** A corner this near a triangle's edge lies on that edge. */
 const ON_EDGE_M = 0.002;
 /** The 27 cells around a cell, as (dx, dy, dz) offsets. */
@@ -267,7 +274,9 @@ class Corners {
    * eave height (71 of 555 random 4- to 9-pointed stars, 2026-11-16).
    *
    * The highest corner keeps the apex at the roof's top, and nothing is
-   * drawn above it: a cluster's corners move at most its width.
+   * drawn above it: a cluster's corners move at most its width. A corner
+   * that would move more than `MAX_CLUSTER_MOVE_M` refuses the roof
+   * (`SkeletonFailure`): the caller's next rung follows.
    */
   cluster(raised: readonly Corner[]): void {
     const parent = raised.map((_, i) => i);
@@ -311,7 +320,13 @@ class Corners {
       if (best === undefined || p.y > best.y) top.set(r, p);
     });
     raised.forEach((p, i) => {
-      this.representative.set(p, top.get(root(i)) as Corner);
+      const drawnAt = top.get(root(i)) as Corner;
+      if (gap(p, drawnAt) > MAX_CLUSTER_MOVE_M) {
+        throw new SkeletonFailure(
+          "a weld cluster is wider than the weld allows",
+        );
+      }
+      this.representative.set(p, drawnAt);
     });
     for (const p of top.values()) this.add(p);
   }

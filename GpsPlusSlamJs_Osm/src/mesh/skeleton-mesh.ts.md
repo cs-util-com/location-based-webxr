@@ -117,6 +117,13 @@ const { mesh, surfaceVertices } = skeletonMesh(roof, {
 
 ## Tests
 
+- `skeleton-mesh.test.ts`: the cluster weld on hand-built pyramids whose
+  apexes form a chain 2.9 mm apart: a short chain closes as one apex; a long
+  one, which would move a corner 43.5 mm, refuses the roof. The bound is
+  `MAX_CLUSTER_MOVE_M` = 4 weld distances (12 mm); the random-star
+  properties pass with it at 2, 3 and 4 weld distances (2026-11-16), so the
+  verdict does not hinge on the value.
+
 - `mesh-orientation.test.ts`: the skeleton roof among the shapes, outward
   normals and winding.
 - The mesh properties in `roof-skeleton.property.test.ts`: normals up on
