@@ -59,6 +59,26 @@ function externalLink(href: string, text: string): HTMLAnchorElement {
   return link;
 }
 
+/** Equal by value, field by field and in order. */
+function sameEntries(
+  a: readonly AttributionEntry[],
+  b: readonly AttributionEntry[],
+): boolean {
+  return (
+    a.length === b.length &&
+    a.every((x, i) => {
+      const y = b[i];
+      return (
+        y !== undefined &&
+        x.short === y.short &&
+        x.full === y.full &&
+        x.href === y.href &&
+        (x.pinned === true) === (y.pinned === true)
+      );
+    })
+  );
+}
+
 function separator(): HTMLElement {
   const sep = document.createElement("span");
   sep.className = "map-attribution-sep";
@@ -75,7 +95,8 @@ export class AttributionView {
   private readonly details: HTMLElement;
   private readonly toggle: HTMLButtonElement;
   private legal: HTMLAnchorElement | undefined;
-  private entryCount = 0;
+  /** The last list rendered, compared by value to skip unchanged ones. */
+  private entries: readonly AttributionEntry[] = [];
   /**
    * Held rather than read back off the DOM, so `setEntries` can restore it.
    * A re-render that silently closed the view would be the exact defect this
@@ -151,9 +172,22 @@ export class AttributionView {
    *
    * Idempotent and order-preserving, and it RESTORES the open state rather
    * than resetting it.
+   *
+   * An unchanged list (equal by value) touches nothing: `MapView` passes the
+   * same list on every terrain apply, and re-rendering would detach a focused
+   * link and drop focus to `<body>`, out of reach of the Escape handler. A
+   * changed list that re-renders under focus moves it to the same credit's new
+   * link, or to "Credits" when that credit is gone.
    */
   setEntries(entries: readonly AttributionEntry[]): void {
-    this.entryCount = entries.length;
+    if (sameEntries(this.entries, entries)) return;
+    this.entries = [...entries];
+
+    const focused = document.activeElement;
+    const container = [this.pinned, this.details].find(
+      (el) => focused !== null && el.contains(focused),
+    );
+    const focusedHref = focused?.getAttribute("href") ?? null;
 
     // `textContent`, never a template string: a credit is exactly the kind of
     // externally-authored text that acquires an ampersand or an angle bracket
@@ -183,11 +217,18 @@ export class AttributionView {
 
     this.updateVisibility();
     this.setExpanded(this.expanded);
+
+    if (container !== undefined) {
+      const same = [...container.querySelectorAll("a")].find(
+        (a) => focusedHref !== null && a.getAttribute("href") === focusedHref,
+      );
+      (same ?? this.toggle).focus();
+    }
   }
 
   /** Hidden only when there is neither a credit nor a legal link to show. */
   private updateVisibility(): void {
-    this.element.hidden = this.entryCount === 0 && this.legal === undefined;
+    this.element.hidden = this.entries.length === 0 && this.legal === undefined;
   }
 
   private setExpanded(next: boolean): void {

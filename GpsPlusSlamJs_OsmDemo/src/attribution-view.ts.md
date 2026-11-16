@@ -14,7 +14,10 @@ legal notice and privacy page.
     `leaflet-control-attribution` and `map-attribution`.
   - `.setEntries(entries: readonly AttributionEntry[]): void` replaces the
     credited sources. Idempotent, order-preserving, and it **restores** the
-    Credits view's open state rather than resetting it.
+    Credits view's open state rather than resetting it. A list equal by value
+    to the last one touches nothing (`MapView` passes the same list on every
+    terrain apply); a changed list that re-renders under focus moves focus to
+    the same credit's new link, or to "Credits" when that credit is gone.
   - `.adoptLegalLink(link: HTMLAnchorElement): void` moves the page's own
     legal link to the end of the line, after a separator.
 - `AttributionEntry` is `{ short, full, href?, pinned? }`.
@@ -77,6 +80,9 @@ found to require on-map visibility, set `pinned: true` on its entry in
   inside Leaflet's control would be destroyed mid-session at random.
 - **The open state survives a re-render**, because that is the only reason
   owning the control pays for itself.
+- **Focus never falls to `<body>`.** A re-render detaches the focused link,
+  and Escape only reaches the control's handler from inside it, so an
+  unchanged list skips the re-render and a changed one restores focus.
 - **Keyboard:** "Credits" is a real `<button>` with `aria-expanded` and
   `aria-controls`. Escape anywhere inside the control closes an open view and
   returns focus to "Credits"; while closed, Escape is left to the page. It is a
@@ -122,6 +128,8 @@ attribution.setEntries([
   adopted legal link; open/close with `aria-expanded` and `aria-controls`;
   every credit with a page a link; Escape closing and returning focus, and
   leaving the key alone while closed; the open state across a re-render;
+  focus kept on an unchanged list and restored on a changed one, with Escape
+  still closing the view;
   removal of a source; the `textContent` rule; hiding when empty.
 - `dem-provider.test.ts`: each elevation entry has an `https` link and is not
   pinned.

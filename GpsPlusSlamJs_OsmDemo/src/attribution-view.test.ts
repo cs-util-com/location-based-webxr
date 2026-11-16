@@ -257,6 +257,53 @@ describe("AttributionView: the Credits view", () => {
     expect(panel(v).textContent).toContain("SRTM");
   });
 
+  it("leaves focus and the view untouched when the same credits arrive again", () => {
+    // `MapView.setTerrainAttribution` passes the same list on every terrain
+    // apply. A re-render then would detach the focused link and drop focus to
+    // <body>, where Escape no longer reaches this control's handler: the open
+    // view could not be closed by keyboard. Equal by VALUE, so fresh copies
+    // count as unchanged.
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN]);
+    toggle(v).click();
+    const link = panel(v).querySelector("a");
+    if (!(link instanceof HTMLAnchorElement)) throw new Error("no link");
+    link.focus();
+
+    v.setEntries([{ ...OSM }, { ...MAPTERHORN }]);
+
+    expect(link.isConnected).toBe(true);
+    expect(document.activeElement).toBe(link);
+    escape(link);
+    expect(panel(v).hidden).toBe(true);
+    expect(document.activeElement).toBe(toggle(v));
+  });
+
+  it("keeps focus inside the control when a changed list re-renders under it", () => {
+    // A real change must re-render; focus then moves to the same credit's new
+    // link, or to "Credits" when that credit is gone, never to <body>.
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN]);
+    toggle(v).click();
+    const links = panel(v).querySelectorAll("a");
+    const mapterhorn = links[1];
+    if (!(mapterhorn instanceof HTMLAnchorElement)) throw new Error("no link");
+    mapterhorn.focus();
+
+    v.setEntries([OSM, MAPTERHORN, AWS]);
+
+    const active = document.activeElement;
+    expect(active).not.toBe(mapterhorn);
+    expect(panel(v).contains(active)).toBe(true);
+    expect(active?.getAttribute("href")).toBe(MAPTERHORN.href);
+
+    v.setEntries([OSM, AWS]);
+    expect(document.activeElement).toBe(toggle(v));
+    if (document.activeElement === null) throw new Error("no focus");
+    escape(document.activeElement);
+    expect(panel(v).hidden).toBe(true);
+  });
+
   it("drops a source when it stops being on screen", () => {
     // Crediting a DEM source whose tiles all failed would be a claim about
     // what is being shown.
