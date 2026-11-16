@@ -268,9 +268,11 @@ jobs:
 
       # The checkout holds one commit; the tier diffs against the base commit's
       # tree, so that one commit is fetched too. The API answers the merge base
-      # because a shallow checkout cannot.
+      # because a shallow checkout cannot. A dispatch of the full set fetches it
+      # as well: the tier ignores it there, but the repo-config guard on added
+      # lines (tests/repo-config/internal-references.test.js) reads it.
       - name: Fetch the tier's base
-        if: ${{ env.E2E_TIER_BASE != '' || (github.event_name == 'workflow_dispatch' && inputs.tier == 'pr') }}
+        if: ${{ env.E2E_TIER_BASE != '' || github.event_name == 'workflow_dispatch' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

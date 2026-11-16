@@ -369,7 +369,9 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
     const fetch = testJob.steps.find((s) => String(s.run ?? '').includes('git fetch'));
     expect(fetch?.run).toContain('"$base"');
     expect(fetch?.if).toContain("env.E2E_TIER_BASE != ''");
-    expect(fetch?.if).toContain("github.event_name == 'workflow_dispatch' && inputs.tier == 'pr'");
+    // Every dispatch, the full set included: the guard on added lines
+    // (internal-references.test.js) needs the base whatever the tier.
+    expect(fetch?.if).toContain("|| github.event_name == 'workflow_dispatch' }}");
   });
 
   it("defaults a dispatch's base to the merge base with main, read from the API", () => {
