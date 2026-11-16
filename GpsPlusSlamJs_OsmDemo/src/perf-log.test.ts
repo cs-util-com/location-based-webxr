@@ -174,6 +174,32 @@ describe("createPerfRecorder", () => {
     expect(recorder.snapshot().longGapCount).toBe(1);
   });
 
+  // The governor leaves out only a gap after a frame that was not one, so a
+  // phone steady at 300 ms frames is slow, not hundreds of hitches: the
+  // count must say what the governor actually dropped.
+  it("counts a steady slow stretch as one lone gap, as the governor does", () => {
+    const recorder = createPerfRecorder(undefined, 250);
+    recorder.frame(0, false);
+    for (let i = 1; i <= 20; i++) recorder.frame(i * 300, true);
+    expect(recorder.snapshot().longGapCount).toBe(1);
+  });
+
+  // A render that throws never calls `drawn()`; the next long frame must not
+  // be labelled with the cost of a frame drawn before it.
+  it("labels no slowest frame with a cost from before a frame that drew nothing", () => {
+    const recorder = createPerfRecorder();
+    recorder.frame(0, false);
+    recorder.drawn({ calls: 5, triangles: 50 });
+    recorder.frame(16, true);
+    // The frame at 16 threw before it was drawn.
+    recorder.frame(200, true);
+    expect(recorder.snapshot().bursts[0]?.slowest).toEqual({
+      atMs: 200,
+      ms: 184,
+      drawCost: null,
+    });
+  });
+
   it("keeps the share changes with their mode and average", () => {
     const recorder = createPerfRecorder();
     recorder.shareChange({
@@ -346,7 +372,7 @@ describe("buildPerfReport, the replay and the draw cost", () => {
       replayable: true,
     });
     expect(report).toContain(
-      "raw mean 50.5 ms (0 over 250 ms included) · p50 50.0 ms · p95 95.0 ms · p99 99.0 ms",
+      "raw mean 50.5 ms (0 lone gaps over 250 ms included) · p50 50.0 ms · p95 95.0 ms · p99 99.0 ms",
     );
     expect(report).toContain("replayable yes");
   });
@@ -371,6 +397,30 @@ describe("buildPerfReport, the replay and the draw cost", () => {
     const report = buildPerfReport(input({ timeline: recorder.snapshot() }));
     expect(replayable(report)).toBe(false);
     expect(report).toContain("replayable no");
+  });
+
+  // The replay reads the report's rounded times; a time finer than 0.1 ms
+  // could then replay differently, so the log must not promise it.
+  it("says the log is not replayable when a frame time is finer than 0.1 ms", () => {
+    const recorder = createPerfRecorder();
+    recorder.frame(0, false);
+    recorder.frame(16.04, true);
+    const report = buildPerfReport(input({ timeline: recorder.snapshot() }));
+    expect(
+      (reportJson(report) as { summary: { replayable: unknown } }).summary
+        .replayable,
+    ).toBe(false);
+    expect(report).toContain(
+      "replayable no (frame times are finer than 0.1 ms",
+    );
+  });
+
+  // The heading counts the lines it lists, not the cap on them.
+  it("heads the bursts with the number it lists", () => {
+    const recorder = createPerfRecorder();
+    for (const atMs of [0, 1000, 2000]) recorder.frame(atMs, false);
+    const report = buildPerfReport(input({ timeline: recorder.snapshot() }));
+    expect(report).toContain("the newest 3 of 3;");
   });
 
   it("carries each burst's draw cost in the JSON and the newest in the text", () => {

@@ -107,7 +107,10 @@ export interface PerfTimeline {
   readonly intervalCount: number;
   /** The sum of every chained interval since load (for the raw mean). */
   readonly intervalSumMs: number;
-  /** The intervals since load longer than `gapMs`, kept or dropped. */
+  /**
+   * The intervals since load the governor leaves out, kept or dropped: one
+   * longer than `gapMs` after one that was not.
+   */
   readonly longGapCount: number;
   /** The governor's gap: one interval longer says nothing of the device. */
   readonly gapMs: number;
@@ -152,12 +155,17 @@ export function createPerfRecorder(
   let count = 0;
   let sum = 0;
   let longGaps = 0;
+  let gapBefore = false;
 
   const interval = (atMs: number, ms: number): void => {
     intervals.push([atMs, ms]);
     count += 1;
     sum += ms;
-    if (ms > gapMs) longGaps += 1;
+    // The governor's rule: a gap is left out only when the interval before
+    // it was not one, so a steady slow stretch counts once, not per frame.
+    const gap = ms > gapMs;
+    if (gap && !gapBefore) longGaps += 1;
+    gapBefore = gap;
     if (current !== undefined && ms > (current.slowest?.ms ?? 0)) {
       current.slowest = { atMs, ms, drawCost: lastCost };
     }
@@ -176,9 +184,13 @@ export function createPerfRecorder(
       if (!chained || before === undefined) {
         current = { atMs, drawCost: null, slowest: null };
         bursts.push(current);
-        return;
+      } else {
+        interval(atMs, atMs - before);
       }
-      interval(atMs, atMs - before);
+      // The cost read above was the frame before this one. Cleared, so a
+      // render that throws before `drawn()` leaves no older frame's cost
+      // to be read as this one's.
+      lastCost = null;
     },
     drawn(cost) {
       lastCost = { calls: cost.calls, triangles: cost.triangles };
@@ -225,17 +237,25 @@ export interface FrameSummary {
    * leaves out (a tab coming back) are in it, `longGaps` says how many.
    */
   readonly rawMeanMs: number | undefined;
-  /** Intervals since load longer than the governor's `gapMs`. */
+  /**
+   * Intervals since load the governor leaves out as lone gaps: longer than
+   * its `gapMs`, after one that was not.
+   */
   readonly longGaps: number;
   readonly p50Ms: number | undefined;
   readonly p95Ms: number | undefined;
   readonly p99Ms: number | undefined;
   /**
    * Whether the timeline is whole since load, so replaying it through the
-   * governor gives its share changes: false after any ring dropped one.
+   * governor gives its share changes: false after any ring dropped one, and
+   * false when a frame time is finer than the report's 0.1 ms, since the
+   * replay reads the rounded times and could then differ.
    */
   readonly replayable: boolean;
 }
+
+/** Whether the report's 0.1 ms rounding leaves a time exactly as it was. */
+const onGrid = (atMs: number): boolean => Math.round(atMs * 10) / 10 === atMs;
 
 export function summarizeFrames(timeline: PerfTimeline): FrameSummary {
   const sorted = timeline.intervals.map(([, ms]) => ms).sort((a, b) => a - b);
@@ -253,7 +273,9 @@ export function summarizeFrames(timeline: PerfTimeline): FrameSummary {
     replayable:
       timeline.droppedIntervals === 0 &&
       timeline.droppedBursts === 0 &&
-      timeline.droppedShareChanges === 0,
+      timeline.droppedShareChanges === 0 &&
+      timeline.intervals.every(([atMs]) => onGrid(atMs)) &&
+      timeline.bursts.every((burst) => onGrid(burst.atMs)),
   };
 }
 
@@ -375,13 +397,18 @@ function summaryLines(input: PerfReportInput, summary: FrameSummary): string[] {
     "== Summary ==",
     `taken at ${ms(input.nowMs)} ms after page start`,
     `frames ${summary.frames} chained (${summary.retained} kept, ${timeline.droppedIntervals} dropped)` +
-      ` · raw mean ${ms(summary.rawMeanMs)} ms (${summary.longGaps} over ${timeline.gapMs} ms included)` +
+      ` · raw mean ${ms(summary.rawMeanMs)} ms (${summary.longGaps} lone gaps over ${timeline.gapMs} ms included)` +
       ` · p50 ${ms(summary.p50Ms)} ms · p95 ${ms(summary.p95Ms)} ms · p99 ${ms(summary.p99Ms)} ms`,
     `bursts ${timeline.bursts.length + timeline.droppedBursts}` +
       ` · share changes ${timeline.shareChanges.length + timeline.droppedShareChanges}`,
     summary.replayable
       ? "replayable yes (the timeline is whole since load)"
-      : "replayable no (a ring dropped its oldest entries)",
+      : timeline.droppedIntervals +
+            timeline.droppedBursts +
+            timeline.droppedShareChanges >
+          0
+        ? "replayable no (a ring dropped its oldest entries)"
+        : "replayable no (frame times are finer than 0.1 ms, so a replay is within the rounding)",
     `woods ${percent(now.share)} (${now.mode}) · governor average ${ms(now.averageMs)} ms`,
   ];
 }
@@ -469,7 +496,7 @@ export function buildPerfReport(input: PerfReportInput): string {
     `${cost === "-" ? "draw cost -" : cost} · ${now.inventedTrees.toLocaleString("en-US")} invented trees`,
     "",
     "== Bursts ==",
-    `the newest ${BURST_LINES} of ${timeline.bursts.length + timeline.droppedBursts}; the JSON has every kept one`,
+    `the newest ${Math.min(BURST_LINES, timeline.bursts.length)} of ${timeline.bursts.length + timeline.droppedBursts}; the JSON has every kept one`,
     ...timeline.bursts.slice(-BURST_LINES).map(burstLine),
     "",
     ...deviceLines(device),
@@ -486,7 +513,9 @@ export function buildPerfReport(input: PerfReportInput): string {
 
 /**
  * The JSON block of a report; throws when there is none or it is broken.
- * CRLF line ends (a pasted copy from a Windows clipboard) read as LF.
+ * CRLF line ends (a pasted copy from a Windows clipboard) read as LF. It
+ * checks no format version: a reader that relies on the shape checks
+ * `format` (`osmdemo-perf-log/2`) itself first.
  */
 export function reportJson(report: string): unknown {
   const text = report.replace(/\r\n/g, "\n");

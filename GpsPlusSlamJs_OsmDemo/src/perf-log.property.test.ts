@@ -224,6 +224,28 @@ describe("perf log properties", () => {
     );
   });
 
+  // THE PRIVACY PROMISE, at its source: whatever the link carries, the
+  // knobs read from it are exactly the three named ones. Kept beside the
+  // sentinel property below: a fourth key added to `QueryKnobs` would reach
+  // the report as a knob, and only a check of the key set notices that.
+  it("reads exactly the three knobs from any query", () => {
+    fc.assert(
+      fc.property(
+        fc.dictionary(fc.string(), fc.string(), { maxKeys: 8 }),
+        (params) => {
+          const knobs = pickQueryKnobs(
+            `?${new URLSearchParams(params).toString()}`,
+          );
+          expect(Object.keys(knobs).sort()).toEqual([
+            "perf",
+            "treeform",
+            "woodsauto",
+          ]);
+        },
+      ),
+    );
+  });
+
   // THE PRIVACY PROMISE, end to end: a value the link carries under any
   // other key (the place, the camera) never reaches the built report.
   it("a value under any other query key never reaches the report", () => {
@@ -248,10 +270,12 @@ describe("perf log properties", () => {
   // WHY THIS TEST MATTERS. The log exists so the governor can be judged
   // from a phone without the phone: replaying its frames through a fresh
   // governor (with the logged auto setting) must give exactly the logged
-  // share changes, mode and average included. A report that dropped,
-  // reordered or mislabelled any of those fields would replay differently.
-  // Times are whole milliseconds so the report's tenth-of-a-millisecond
-  // rounding is exact.
+  // share changes, mode and average included. A report that dropped or
+  // reordered a frame, or mislabelled a share change, would replay
+  // differently. The replay reads only the frame times, so it does not
+  // check the logged interval lengths (the unit tests pin those). Times are
+  // whole milliseconds so the report's tenth-of-a-millisecond rounding is
+  // exact.
   it("replaying the report through the governor gives its share changes", () => {
     fc.assert(
       fc.property(fc.boolean(), segments, (auto, segs) => {
