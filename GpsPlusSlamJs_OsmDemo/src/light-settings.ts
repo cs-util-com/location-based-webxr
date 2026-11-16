@@ -3,8 +3,9 @@
  * 2026-09-24-2140-osm-demo-light-settings-dialog-plan): the noon surface
  * gain's ramp, the sky light on buildings, the sky's auto-exposure
  * adaptation, the EV compensation, the haze's visibility and start
- * (`HAZE_VISIBILITY_KM`, `HAZE_START_RATIO`), and the haze veil's lightness
- * and tint (`veil`, `tint`; `haze-veil.ts`). The defaults ARE the shipped look, so
+ * (`HAZE_VISIBILITY_KM`, `HAZE_START_RATIO`), and the haze veil's lightness,
+ * tint and rise up the sky (`veil`, `tint`, `rise`; `haze-veil.ts`). The
+ * defaults ARE the shipped look, so
  * an untouched dialog changes nothing; the values travel in the URL
  * (`?light=v1:gain=1.8,ev=-2.5`, only the fields that differ) so a tuned
  * look can be shared and pasted back. This is a deliberate exception to
@@ -29,7 +30,14 @@ import {
   type SurfaceGainRamp,
 } from "./atmosphere-rig.js";
 import type { ColourSchemeName } from "./colour-schemes.js";
-import { HAZE_VEIL_TINT, type HazeVeil } from "./haze-veil.js";
+import { rgbToLab } from "gps-plus-slam-osm";
+
+import {
+  clampHazeVeil,
+  HAZE_VEIL_RISE_DEG,
+  HAZE_VEIL_TINT,
+  type HazeVeil,
+} from "./haze-veil.js";
 
 export interface LightSettings {
   /** The building and road colour factor at a high sun. */
@@ -62,8 +70,16 @@ export interface LightSettings {
    * no veil, the haze takes the sky's colour as it always did.
    */
   readonly hazeVeilLightness: number;
-  /** The haze veil's tint, CIE b* on screen; below 0 is bluer. */
+  /** The haze veil's tint, CIE b* on screen; below 0 bluer, above yellower. */
   readonly hazeVeilTint: number;
+  /** The haze veil's other tint, CIE a*; below 0 greener, above redder. */
+  readonly hazeVeilTintA: number;
+  /**
+   * How far up the sky the veil reaches, degrees above the horizon (where
+   * it has fallen to 1/e); 0 leaves the sky its own colour. Only drawn while
+   * a veil is on.
+   */
+  readonly hazeVeilRiseDeg: number;
 }
 
 /** Today's look: the shipped constants, read from where they live. */
@@ -78,6 +94,8 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
   hazeStartRatio: HAZE_START_RATIO,
   hazeVeilLightness: 0,
   hazeVeilTint: HAZE_VEIL_TINT,
+  hazeVeilTintA: 0,
+  hazeVeilRiseDeg: HAZE_VEIL_RISE_DEG,
 };
 
 /**
@@ -125,10 +143,15 @@ export const LIGHT_SETTING_RANGES: {
   hazeVisibilityKm: { min: 9, max: 60, step: 1 },
   // Below 1, so the fade never starts at the far plane itself.
   hazeStartRatio: { min: 0, max: 0.9, step: 0.01 },
-  // 80 keeps every tint below the tone curve's knee (at -12, L* 81 is the last; haze-veil.test.ts holds
-  // it for every slider value); 0 is "no veil".
-  hazeVeilLightness: { min: 0, max: 80, step: 1 },
-  hazeVeilTint: { min: -12, max: 4, step: 0.5 },
+  // 90 is where neutral meets the tone curve's knee (L* 89.7); a coloured
+  // veil reaches less, and is held at its own bound (`clampHazeVeil`, the
+  // dialog says so). 0 is "no veil".
+  hazeVeilLightness: { min: 0, max: 90, step: 1 },
+  // b* from a strong blue to a strong yellow, a* a milder red-green; every
+  // pair can show some lightness (haze-veil.test.ts).
+  hazeVeilTint: { min: -24, max: 40, step: 0.5 },
+  hazeVeilTintA: { min: -10, max: 10, step: 0.5 },
+  hazeVeilRiseDeg: { min: 0, max: 20, step: 0.5 },
 };
 
 /** Each field's key in the URL; never rename one (shared links use them). */
@@ -143,7 +166,32 @@ const KEYS: { readonly [K in keyof LightSettings]: string } = {
   hazeStartRatio: "haze",
   hazeVeilLightness: "veil",
   hazeVeilTint: "tint",
+  hazeVeilTintA: "tinta",
+  hazeVeilRiseDeg: "rise",
 };
+
+/**
+ * A read-only shorthand for the veil's colour: `vcol=f2e6c8` (or the
+ * 3-digit `vcol=fec`, each digit doubled as in CSS), an sRGB hex read as
+ * L*, a* and b*, each snapped to its slider and held in its range. Never written; the three keys it sets are, and a
+ * stated key wins over it.
+ */
+const HEX_KEY = "vcol";
+
+/** A 6-digit hex from a 3- or 6-digit one, or null for anything else. */
+function expandHex(hex: string): string | null {
+  if (/^[0-9a-f]{6}$/i.test(hex)) return hex;
+  if (/^[0-9a-f]{3}$/i.test(hex)) return hex.replace(/./g, "$&$&");
+  return null;
+}
+
+/** A value snapped to its slider's step and held in its range. */
+function snapTo(field: keyof LightSettings, v: number): number {
+  const r = LIGHT_SETTING_RANGES[field];
+  const k = Math.round((v - r.min) / r.step);
+  // `+ 0` turns a -0 (a hex just below a* 0) into 0, as a slider reads.
+  return round(Math.min(Math.max(r.min + k * r.step, r.min), r.max)) + 0;
+}
 const FIELDS = Object.keys(KEYS) as (keyof LightSettings)[];
 
 const LIGHT_PARAM = "light";
@@ -177,6 +225,13 @@ export function parseLightSettings(
       }),
   );
   const out: Record<keyof LightSettings, number> = { ...defaults };
+  const hex = expandHex(pairs.get(HEX_KEY) ?? "");
+  if (hex !== null) {
+    const lab = rgbToLab(Number.parseInt(hex, 16));
+    out.hazeVeilLightness = snapTo("hazeVeilLightness", lab.l);
+    out.hazeVeilTintA = snapTo("hazeVeilTintA", lab.a);
+    out.hazeVeilTint = snapTo("hazeVeilTint", lab.b);
+  }
   FIELDS.forEach((field) => {
     const text = pairs.get(KEYS[field]) ?? "";
     const v = text === "" ? Number.NaN : Number(text);
@@ -207,15 +262,38 @@ export function serializeLightSettings(
  * The settings moved from one scheme's defaults to another's: a field still
  * at `from`'s value was never set, so it takes `to`'s; a field that differs
  * was set, and keeps its value. What a link states, it still states.
+ *
+ * A value alone cannot say it was set when it equals `from`'s default (a
+ * veil switched off on urban, then shown under a scheme whose default is no
+ * veil), so a caller that knows which fields the viewer touched passes them
+ * as `touched`: those keep their value whatever it is.
  */
 export function rebaseLightSettings(
   s: LightSettings,
   from: LightSettings,
   to: LightSettings,
+  touched: ReadonlySet<keyof LightSettings> = new Set(),
 ): LightSettings {
   const out = { ...s } as Record<keyof LightSettings, number>;
+  const followed = new Set<keyof LightSettings>();
   for (const f of FIELDS) {
-    if (round(s[f]) === round(from[f])) out[f] = to[f];
+    if (!touched.has(f) && round(s[f]) === round(from[f])) {
+      out[f] = to[f];
+      followed.add(f);
+    }
+  }
+  // The ramp must rise, as the parser and the dialog keep it: a kept end
+  // wins and a followed end moves; a ramp that crosses with both ends kept
+  // (a setting no writer produces) falls back to `to`'s.
+  if (!(out.gainFullDeg > out.gainFromDeg)) {
+    if (followed.has("gainFullDeg") && !followed.has("gainFromDeg")) {
+      out.gainFullDeg = out.gainFromDeg + 1;
+    } else if (followed.has("gainFromDeg") && !followed.has("gainFullDeg")) {
+      out.gainFromDeg = out.gainFullDeg - 1;
+    } else {
+      out.gainFromDeg = to.gainFromDeg;
+      out.gainFullDeg = to.gainFullDeg;
+    }
   }
   return out;
 }
@@ -227,9 +305,17 @@ export function describeLightSettings(s: LightSettings): string {
     `sky light ${round(s.buildingSkyLight)}, adaptation ${round(s.exposureAdaptation)}, ` +
     `EV ${round(s.exposureEv)}, ` +
     `haze ${round(s.hazeVisibilityKm)} km from ${round(s.hazeStartRatio)} of the draw distance` +
-    (s.hazeVeilLightness > 0
-      ? `, veil L* ${round(s.hazeVeilLightness)} b* ${round(s.hazeVeilTint)}`
-      : "")
+    (s.hazeVeilLightness > 0 ? describeVeil(s) : "")
+  );
+}
+
+function describeVeil(s: LightSettings): string {
+  const shown = veilOf(s)!.lightness;
+  return (
+    `, veil L* ${round(s.hazeVeilLightness)}` +
+    (shown !== s.hazeVeilLightness ? ` (shown at ${round(shown)})` : "") +
+    (s.hazeVeilTintA !== 0 ? ` a* ${round(s.hazeVeilTintA)}` : "") +
+    ` b* ${round(s.hazeVeilTint)} up to ${round(s.hazeVeilRiseDeg)}° of sky`
   );
 }
 
@@ -241,11 +327,46 @@ export function hazeOf(s: LightSettings): {
   return { visibilityKm: s.hazeVisibilityKm, startRatio: s.hazeStartRatio };
 }
 
-/** The haze veil these settings describe, or null for the sky's colour. */
+/**
+ * The haze veil these settings describe, or null for the sky's colour. Its
+ * lightness is held at what its colour can show (`clampHazeVeil`), so the
+ * view always draws the colour named; the settings keep the stated value.
+ */
 export function veilOf(s: LightSettings): HazeVeil | null {
   return s.hazeVeilLightness > 0
-    ? { lightness: s.hazeVeilLightness, tint: s.hazeVeilTint }
+    ? clampHazeVeil({
+        lightness: s.hazeVeilLightness,
+        tint: s.hazeVeilTint,
+        tintA: s.hazeVeilTintA,
+        riseDeg: s.hazeVeilRiseDeg,
+      })
     : null;
+}
+
+/**
+ * Applies a link's settings at boot, never letting them break it: when
+ * `apply` throws (a value the view refuses), it warns and applies
+ * `fallback` in their place, so a partly applied setting is overwritten.
+ * Returns the settings now applied. `fallback` is the scheme's defaults,
+ * which the tests hold valid; an error from them is not caught.
+ */
+export function applyLightOrFallback(
+  settings: LightSettings,
+  fallback: LightSettings,
+  apply: (s: LightSettings) => void,
+  // eslint-disable-next-line no-console -- the one report of a refused link
+  warn: (message: string) => void = console.warn,
+): LightSettings {
+  try {
+    apply(settings);
+    return settings;
+  } catch (error) {
+    warn(
+      `light settings from the link could not be applied, using the defaults: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    apply(fallback);
+    return fallback;
+  }
 }
 
 /** The surface gain ramp these settings describe (`surfaceGainAt`). */

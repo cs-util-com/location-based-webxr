@@ -46,6 +46,7 @@ import { CLOUD_LIVE_NOISE_GLSL } from './cloud-live-noise.js';
 import { CLOUD_HEX, CLOUD_HEX_GLSL } from './cloud-hex.js';
 import { CLOUD_COLUMN_GLSL } from './cloud-column.js';
 import { CLOUD_SUN_GLSL } from './cloud-sun.js';
+import { HORIZON_VEIL_GLSL } from './horizon-veil.js';
 
 /** Sun illuminance the scattering LUTs are computed for. See the header. */
 export const ATMOSPHERE_RADIANCE_SCALE = 1000;
@@ -571,6 +572,11 @@ uniform float atmRadianceToScene;
 uniform float atmSunDiscEnabled;
 const float ATM_MAX_SCENE_RADIANCE = ${glslFloat(ATMOSPHERE_MAX_SCENE_RADIANCE)};
 uniform float atmClampHorizon;
+// The horizon veil (horizon-veil.ts): the visible sky's only, off in the bake.
+uniform vec3 atmSkyVeil;
+uniform float atmSkyVeilOn;
+uniform float atmSkyVeilRise;
+${HORIZON_VEIL_GLSL}
 varying vec3 vAtmWorldDirection;
 ${ATMOSPHERE_CLOUD_GLSL}
 // The sun disc behind the clouds (cloud-sun.ts): the REAL threshold in every
@@ -651,6 +657,10 @@ void main() {
   radiance = atmClouds(dir, r, radiance);
   // Finite in a half-float target, whatever the exposure (see the constant).
   gl_FragColor = vec4(min(radiance * atmRadianceToScene, vec3(ATM_MAX_SCENE_RADIANCE)), 1.0);
+  // Toward the veil at the horizon, in the units the haze blends in, so a
+  // ground hazed toward the same veil meets the sky without a step.
+  gl_FragColor.rgb = mix(gl_FragColor.rgb, atmSkyVeil,
+    atmSkyVeilOn * atmHorizonVeilWeight(dir.y, atmSkyVeilRise));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }

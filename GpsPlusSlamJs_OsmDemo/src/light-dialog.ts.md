@@ -47,7 +47,11 @@ WebGL.
   - `setDefaults(next)`: moves onto a new scheme's defaults
     (`rebaseLightSettings`: an untouched value follows, a set one stays),
     shows and applies the result through `onChange`. The page calls it on a
-    colour scheme switch.
+    colour scheme switch. The dialog remembers which fields the viewer set
+    (those the initial settings state against the defaults, and every
+    slider moved since), and passes them as `touched`, so a value that
+    happens to equal one scheme's default still stays on the way back;
+    Reset forgets them.
 - `HEAT_GRID_MARGIN_BOUND = 5`: the DEC-R4-5 bound that the check compares
   against.
 
@@ -58,8 +62,17 @@ WebGL.
   - `#light-<field>`, one range input per `LightSettings` field, with its
     range from `LIGHT_SETTING_RANGES` (the haze sliders come last:
     `#light-hazeVisibilityKm`, `#light-hazeStartRatio`, then the veil's
-    `#light-hazeVeilLightness`, 0 = the sky's colour, and
-    `#light-hazeVeilTint`);
+    `#light-hazeVeilLightness`, 0 = the sky's colour,
+    `#light-hazeVeilTint` (b\*), `#light-hazeVeilTintA` (a\*) and
+    `#light-hazeVeilRiseDeg`);
+  - `#light-veil-note`, after the a\* slider: hidden unless the veil's
+    lightness is held for its colour (`veilOf` gives a lightness other than
+    the slider's), then naming the L\* shown and why (above the colour's
+    run: the tone curve's knee or the screen's colours; below it: the
+    screen's colours; inside it but off the 0.1 grid, which only a
+    hand-written link states: the nearest lightness shown exactly). The slider keeps the asked value,
+    so the URL still states it; the view never draws a colour other than
+    the one named;
   - `#light-ao`, the ambient occlusion checkbox (only when offered);
   - `#light-readout`;
   - `#light-back`, `#light-check`, `#light-copy`, `#light-reset` and
@@ -136,7 +149,10 @@ dialog.toggle();
   - the ramp kept rising in both directions;
   - the haze visibility applied on release with its readout live, the
     other values live on the drag;
-  - the veil's two sliders, off by default and applied live;
+  - the veil's sliders (L\*, b\*, a\*), off by default and applied live;
+  - the held-veil note: shown with the held L\* above the knee and below
+    the gamut, hidden once the colour can be shown as asked and on Reset;
+    an off-grid link lightness named as drawn at its nearest tenth;
   - the brightness alone on release, the margin only on the check;
   - `refresh()` while open and while closed;
   - Reset, to the shipped look and to a scheme's own defaults, and

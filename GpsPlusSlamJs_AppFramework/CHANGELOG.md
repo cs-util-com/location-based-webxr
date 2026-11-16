@@ -4,6 +4,23 @@
 
 ### Added
 
+- **The haze can fade toward a colour of the app's own**
+  (`visualization/atmosphere`): `AtmosphereHaze.setVeil(colour)` sets a
+  scene-linear veil colour the distance fades toward in place of the sky's
+  colour (`null`, the default, gives the sky's colour back; read back by
+  `veil`), and `AtmosphereHaze.setRim(centre, innerM, outerM)` raises the
+  boundary fade from `innerM` to complete at `outerM` around `centre`, so
+  the edge of a ground that ends is fully hazed (`null` takes it off).
+  Both draw in atmosphere mode only and throw `RangeError` on a bad value
+  without changing anything.
+- **The sky meets a veiled ground without a step**
+  (`visualization/atmosphere`): `SkyAtmosphere.setHorizonVeil(colour, riseDeg)`
+  gives the visible sky the veil colour at and below the horizon, fading
+  back to its own colour with the height `riseDeg` (1/e there; 0 leaves
+  the sky as it is; `null` takes it off). Uniforms only; the bake never
+  draws it. The new `horizon-veil.ts` holds the weight as a CPU twin
+  (`horizonVeilRise`, `horizonVeilWeight`) and its GLSL
+  (`HORIZON_VEIL_GLSL`).
 - **The AO can be reapplied without recomputing it**
   (`visualization/ambient-occlusion`): `AmbientOcclusion.reapply()`
   multiplies the AO the last `render` computed onto the frame just drawn,

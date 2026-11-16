@@ -7,12 +7,31 @@
  * @see light-dialog.ts.md
  */
 
+import { veilLightnessBounds } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
   rebaseLightSettings,
+  veilOf,
   type LightSettings,
 } from "./light-settings.js";
+
+/**
+ * Why the veil is drawn at another lightness than the slider's: above its
+ * colour's run, below it, or inside it but off the 0.1 grid the run is
+ * checked on (`clampHazeVeil`). Only called for a held veil, whose colour
+ * has bounds.
+ */
+function heldBecause(s: LightSettings): string {
+  const { min, max } = veilLightnessBounds(s.hazeVeilTintA, s.hazeVeilTint)!;
+  if (s.hazeVeilLightness > max) {
+    return "brighter, this colour would pass the tone curve's knee or leave the screen's colours.";
+  }
+  if (s.hazeVeilLightness < min) {
+    return "darker, this colour is outside the screen's colours.";
+  }
+  return "the nearest lightness the screen shows exactly in this colour.";
+}
 
 /** The heat grid must add at least this much mean chroma (DEC-R4-5). */
 export const HEAT_GRID_MARGIN_BOUND = 5;
@@ -29,7 +48,11 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   hazeStartRatio: "Haze: fade starts at (share of the draw distance)",
   hazeVeilLightness:
     "Haze: veil lightness (L* on screen, 0 = the sky's colour)",
-  hazeVeilTint: "Haze: veil tint (b* on screen, below 0 is bluer)",
+  hazeVeilTint:
+    "Haze: veil blue-yellow (b* on screen, below 0 bluer, above 0 yellower)",
+  hazeVeilTintA:
+    "Haze: veil green-red (a* on screen, below 0 greener, above 0 redder)",
+  hazeVeilRiseDeg: "Haze: veil up the sky (° above the horizon, 0 = none)",
 };
 
 /**
@@ -122,6 +145,14 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   const nextFrame = deps.nextFrame ?? afterPaint;
   let settings = deps.initial;
   let defaults = deps.defaults ?? DEFAULT_LIGHT_SETTINGS;
+  // The fields the viewer set (by the link or a slider), so a scheme switch
+  // keeps them even where a value equals the next scheme's default; Reset
+  // clears it.
+  const touched = new Set<keyof LightSettings>(
+    (Object.keys(settings) as (keyof LightSettings)[]).filter(
+      (f) => settings[f] !== defaults[f],
+    ),
+  );
 
   const panel = document.createElement("section");
   panel.id = "light-dialog";
@@ -143,6 +174,14 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   head.append(back, heading);
   panel.append(head);
 
+  // Says when the veil's lightness is held for its colour (`veilOf`), so a
+  // slider never silently draws a colour other than the one it names.
+  const veilNote = document.createElement("p");
+  veilNote.id = "light-veil-note";
+  veilNote.className = "light-note";
+  veilNote.hidden = true;
+  veilNote.setAttribute("aria-live", "polite");
+
   const inputs = new Map<keyof LightSettings, HTMLInputElement>();
   const values = new Map<keyof LightSettings, HTMLOutputElement>();
   for (const field of Object.keys(LABELS) as (keyof LightSettings)[]) {
@@ -163,6 +202,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     panel.append(label);
     inputs.set(field, input);
     values.set(field, value);
+    if (field === "hazeVeilTintA") panel.append(veilNote);
   }
 
   let aoBox: HTMLInputElement | undefined;
@@ -205,6 +245,11 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
       input.value = String(s[field]);
       values.get(field)!.value = String(s[field]);
     }
+    const drawn = veilOf(s)?.lightness;
+    veilNote.hidden = drawn === undefined || drawn === s.hazeVeilLightness;
+    if (drawn !== undefined && drawn !== s.hazeVeilLightness) {
+      veilNote.textContent = `Veil shown at L* ${drawn}: ${heldBecause(s)}`;
+    }
   };
   const failed = (error: unknown) => `Could not measure: ${messageOf(error)}`;
   const brightness = () => {
@@ -232,6 +277,9 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
           ? { ...next, gainFullDeg: next.gainFromDeg + 1 }
           : { ...next, gainFromDeg: next.gainFullDeg - 1 };
     }
+    for (const f of Object.keys(next) as (keyof LightSettings)[]) {
+      if (f === field || next[f] !== settings[f]) touched.add(f);
+    }
     apply(next);
   };
   for (const [field, input] of inputs) {
@@ -256,6 +304,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   });
 
   reset.addEventListener("click", () => {
+    touched.clear();
     apply(defaults);
     brightness();
   });
@@ -357,7 +406,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     setDefaults(next) {
       const from = defaults;
       defaults = next;
-      apply(rebaseLightSettings(settings, from, next));
+      apply(rebaseLightSettings(settings, from, next, touched));
     },
     dispose() {
       document.removeEventListener("keydown", onKey);

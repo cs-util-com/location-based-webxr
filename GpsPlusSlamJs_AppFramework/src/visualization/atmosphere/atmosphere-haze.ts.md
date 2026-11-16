@@ -31,6 +31,13 @@ with the air's per-channel extinction, replacing the one-colour fog. An
     fades toward in place of the sky-view LUT colour (an app's look
     control); `null` (the default) is the sky's colour. Each channel must
     be finite and ≥ 0 (`RangeError`). Survives `sync`.
+  - `setRim(centre | null, innerM = 0, outerM = 0)` and `rim`: a radial
+    boundary fade around a horizontal centre (world x, z), complete at
+    `outerM`, for an app whose ground is a finite tile: its rim then fades
+    into the haze colour instead of standing against the void. `null` (the
+    default) switches it off. The centre must be finite and
+    `0 <= innerM < outerM` finite (`RangeError`, nothing changed). The fade
+    is the larger of the depth fade and the rim fade, so it only adds haze.
   - `uniforms` (the haze's own shared objects), `dispose()`.
 - `HazeAnchorError` — thrown at compile time when three's shader lacks an
   anchor the patch hooks.
@@ -76,6 +83,9 @@ observerAltitudeKm)`, `hazeTransmittance(distanceM, extinctionPerM)`,
   across view directions (the sky's colour varies with the sun's azimuth),
   and it is scene-linear: an app that states it as a screen colour inverts
   its own tone mapping first. Fog mode ignores it.
+- THE RIM IS OFF BY DEFAULT and only ever raises the boundary fade
+  (`max`), on the world position's horizontal distance from the centre;
+  with `atmHazeRimOn` 0 the shader's result is unchanged.
 
 ## Examples
 

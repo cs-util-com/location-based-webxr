@@ -5,13 +5,28 @@
 The haze veil of the city look: a fixed colour the distance haze fades toward
 in place of the sky's own colour in that direction, so the far city can read
 bright and bluish while the sky model stays as it is. The veil is stated as
-the colour a fully hazed distance SHOWS on screen, CIE L\* and b\* (a\* 0),
+the colour a fully hazed distance SHOWS on screen, CIE L\*, a\* and b\*,
 and converted here to the scene-linear colour that the renderer's tone
 mapping turns into exactly that, because the haze blends before tone mapping.
 
 ## Public API
 
-- `HazeVeil` - `{ lightness, tint }`: L\* (above 0) and b\* on screen.
+- `HazeVeil` - `{ lightness, tint, tintA?, riseDeg? }`: L\* (above 0), b\*
+  (`tint`) and a\* (`tintA`, absent = 0) on screen, and how far up the sky
+  the veil reaches (degrees above the horizon; absent or 0 = the sky keeps
+  its colour).
+- `veilLightnessBounds(tintA, tint)` - `{ min, max }`, the lightnesses (on
+  a 0.1 grid of L\* in (0, 100]) at which the screen can show that colour,
+  or `null` when it can show none. See "The cap rule" below.
+- `clampHazeVeil(veil)` - the veil with its lightness held inside those
+  bounds (its colour and rise kept; returned unchanged when shown as it
+  is). A lightness inside the run that the screen does not show exactly
+  (off the 0.1 grid, where the 8-bit rounding can miss) goes to its
+  nearest grid point. Throws `RangeError` for a colour no lightness can show.
+- `VEIL_DELTA_E_TOLERANCE` - 1, the CIE76 Delta E the rule allows between
+  the asked colour and its 8-bit colour.
+- `HAZE_VEIL_RISE_DEG` - 10, the default rise of the light settings (10
+  read better at the horizon than the 4 first shipped).
 - `HAZE_VEIL_TINT` - -4, the default tint (the reference's far b\* is about
   -4).
 - `neutralToneMap(rgb, exposure)` - a mirror of three's
@@ -24,8 +39,36 @@ mapping turns into exactly that, because the haze blends before tone mapping.
 - `veilSceneColour(veil, exposure)` - the scene-linear colour that
   `neutralToneMap` at `exposure` turns into `veilDisplayLinear(veil)`.
   Throws `RangeError` for a lightness outside (0, 100], a non-finite tint,
-  an exposure that is not positive and finite, or a colour whose brightest
-  channel reaches the knee.
+  an exposure that is not positive and finite, or a colour the screen
+  cannot show (above the knee, or out of gamut; the cap rule).
+
+## The cap rule
+
+A colour is shown when (1) its nearest 8-bit sRGB colour, out-of-gamut
+channels clipped, lies within `VEIL_DELTA_E_TOLERANCE` (CIE76 Delta E 1) of
+it, so a clipped colour is refused rather than drawn as another one, and
+(2) that colour's brightest display-linear channel is below the tone
+curve's knee (0.76), where the inverse is exact. For each (a\*, b\*),
+`veilLightnessBounds` is the unbroken run of such lightnesses (0.1 grid)
+that ends at the brightest one: near black, 8-bit rounding makes Delta E
+hover around 1 so isolated dark values can pass, and a run keeps every
+grid value between its ends shown as asked (tested over every slider
+colour). The run is checked on its grid only: between two grid points the
+8-bit rounding can miss (a hand-written link may state L\* to 3 decimals;
+a 0.001 scan of every half-step colour found 9051 such values in 269
+colours, all within 1.3 L\* of a run's bottom, e.g. a\* -10 b\* -21 L\*
+28.22), so `clampHazeVeil` draws such a value at its nearest grid point.
+The light settings keep the lightness a link states, and `veilOf` holds
+the drawn veil at the run's ends (or that grid point); the light dialog says so
+(`#light-veil-note`). Upper bounds: neutral 89.7, b\* -4 87.0, b\* -12
+81.7, b\* -24 73.9, b\* +20 84.3, b\* +40 80.7; strong yellow cannot be
+dark either (b\* +40 starts at L\* 30.2). Results are cached per colour.
+
+What would move it: a tolerance tighter than about 0.8 starts refusing
+colours for their 8-bit rounding alone (the old test's worst case was 0.8
+per component), so near-black and some saturated lightnesses would leave
+the run; a looser one (2 or more) would let a slightly clipped colour pass
+as shown. The knee is three's constant and pinned by a test.
 
 ## Why L\* and b\*, not a mix factor
 
@@ -46,8 +89,9 @@ setting.
   channels; the darkest display channel says which branch it took (at or
   above 0.04 the offset is 0.04, below it the toe's `x - 6.25 x^2` with
   `x = sqrt(y / 6.25)`). Above the compression knee (0.76) there is no such
-  inverse, so such a veil is refused; the light settings cap the lightness
-  at 80, the brightest value every tint can show (at b\* -12 the last is 81).
+  inverse, so such a veil is refused; the light settings hold the drawn
+  lightness at the colour's bound (the cap rule above), the slider itself
+  reaching 90 (neutral's bound).
 - **Constant across view directions.** The sky's colour varies with the sun's
   azimuth; the veil does not. It is a daytime look tool: at dusk or night a
   bright veil would glow.
@@ -69,8 +113,12 @@ haze.setVeil(veilSceneColour(veil, TONE_MAPPING_EXPOSURE));
 
 - the tone map's three regions against values worked by hand from three's
   GLSL;
-- every slider value (L\* 3 and up, every tint) shows its L\*, a\* and b\* on
-  screen within 0.8, through 8-bit sRGB;
+- every slider colour (L\* 3 and up, a\* and b\* every second unit,
+  exhaustive) is shown within Delta E 1 or held at its bound, and the same
+  over the whole half-step grid (property test, fixed seed);
+- every slider colour has one unbroken run of showable lightnesses, and one
+  step above it is refused; neutral, strong yellow and strong blue bounds;
 - the round trip holds at any exposure (property test, fixed seed);
-- brighter for more lightness, bluer for a lower tint;
-- the refusals.
+- brighter for more lightness, bluer for a lower tint, redder for a higher
+  a\*;
+- the refusals, a colour no lightness can show among them.

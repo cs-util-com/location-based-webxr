@@ -244,24 +244,26 @@ describe("the schemes", () => {
     }
   });
 
-  it("keep the tower walls apart from roads and ground too, by their mean", () => {
-    // Why this test matters: a tower draws its walls from `towerWalls`
-    // instead of `walls`, so the list is a building group of its own; a tower
-    // list as dark as the ground loses the towers against it, which the
-    // walls-only floor never saw. A MEAN-ONLY PROXY, like the walls' own
-    // check: a seeded pick spreads the list's tones over the towers, so one
-    // tone near the ground is one tower in several (colour-scheme-looks.ts.md).
+  it("keep EVERY tower wall tone apart from roads and ground", () => {
+    // Why this test matters: a tower draws ONE tone of `towerWalls` on all
+    // its walls, so a tone near the ground is a whole tower lost against it,
+    // however comfortable the list's mean: a mean check passed while two
+    // tones sat within 2 L* of urban's ground. Each tone is held to the floor
+    // PLUS the scheme's wall jitter, which shifts a wall by up to
+    // `wallJitterL` L* either way.
     for (const name of COLOUR_SCHEME_NAMES) {
       const { city } = COLOUR_SCHEMES[name];
       // The tower rule is off at an infinite height.
       if (!Number.isFinite(city.towerFromM)) continue;
       const { roads, ground } = groupLightness(COLOUR_SCHEMES[name]);
-      const mean = meanOf(city.towerWalls.map(lightness));
-      const least = Math.min(Math.abs(mean - roads), Math.abs(mean - ground));
-      expect(
-        least,
-        `${name} towerWalls: ${mean.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}`,
-      ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE);
+      for (const rgb of city.towerWalls) {
+        const l = lightness(rgb);
+        const least = Math.min(Math.abs(l - roads), Math.abs(l - ground));
+        expect(
+          least,
+          `${name} tower 0x${rgb.toString(16)}: ${l.toFixed(1)} against roads ${roads.toFixed(1)}, ground ${ground.toFixed(1)}, jitter ${city.wallJitterL}`,
+        ).toBeGreaterThanOrEqual(MIN_LIGHTNESS_DISTANCE + city.wallJitterL);
+      }
     }
   });
 
@@ -384,7 +386,7 @@ describe("the urban scheme (real-albedo grey ladder)", () => {
     // a retune is a deliberate edit here, not drift.
     const city = urban.city;
     expect(city.towerWalls).toEqual([
-      0x566066, 0x676e73, 0x4b5056, 0x6a6865, 0x75777a, 0xb1aaa0, 0x9d9b96,
+      0x40484c, 0x7d858b, 0x3c4146, 0x484744, 0x828487, 0xb1aaa0, 0x9d9b96,
       0x838789,
     ]);
     expect(city.towerFromM).toBe(40);

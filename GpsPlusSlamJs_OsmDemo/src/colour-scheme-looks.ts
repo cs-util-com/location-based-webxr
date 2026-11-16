@@ -511,10 +511,12 @@ export const URBAN: ColourScheme = {
       0x4d5055, 0x575a5c,
     ],
     towerWalls: [
-      // glass blue-grey
-      0x566066, 0x676e73, 0x4b5056,
-      // dark stone
-      0x6a6865, 0x75777a,
+      // Every tone keeps 11 L* (the floor plus the jitter) from the ground
+      // (L* 42) and the roads, so no tower meets the ground in lightness.
+      // glass blue-grey, dark and light
+      0x40484c, 0x7d858b, 0x3c4146,
+      // stone, dark and light
+      0x484744, 0x828487,
       // light limestone
       0xb1aaa0, 0x9d9b96,
       // steel grey

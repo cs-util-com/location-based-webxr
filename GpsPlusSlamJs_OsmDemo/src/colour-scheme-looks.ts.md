@@ -2,9 +2,8 @@
 
 ## Purpose
 
-The ten colour schemes beside today's look: the nine of the colour schemes
-plan (`GpsPlusSlamJs_Docs/docs/2026-11-10-0841-osm-demo-colour-schemes-plan.md`,
-section 4.5, D5) and `URBAN`, the real-albedo grey ladder of the city look
+The ten colour schemes beside today's look: nine drafts from the colour
+schemes plan and `URBAN`, the real-albedo grey ladder of the city look
 exploration of 2026-11-15 (direction A). They are drafts, rated on the phone through
 the `#colour-scheme` dropdown and the session tunes them. `colour-schemes.ts`
 puts them into the table after `today`.
@@ -28,7 +27,7 @@ puts them into the table after `today`.
   trunk, primary and their links), middle (secondary, tertiary), paths
   (pedestrian, footway, path, steps, cycleway, platform, track, bridleway),
   and minor (everything else). `primary` may take its own colour (the map).
-- Colour tags (D7): `URBAN` honours the tags but colours roads by class
+- Colour tags: `URBAN` honours the tags but colours roads by class
   (one asphalt family). `MEDITERRANEAN` and `NORDIC` honour `building:colour`,
   `roof:colour` and barrier colour tags and colour roads by surface, like
   today; the seven stylised schemes paint over the tags and colour roads by
@@ -117,15 +116,16 @@ it reads dirty, shift it up 6-8 L* before trimming further), the warm share
 
 ### Height, use and material aware (direction B, 2026-11-15)
 
-- `towerWalls`: glass blue-grey `0x566066`, `0x676e73`, `0x4b5056`; dark
-  stone `0x6a6865`, `0x75777a`; light limestone `0xb1aaa0`, `0x9d9b96`;
+- `towerWalls`: glass blue-grey `0x40484c`, `0x7d858b`, `0x3c4146`;
+  stone `0x484744`, `0x828487`; light limestone `0xb1aaa0`, `0x9d9b96`;
   steel grey `0x838789`, drawn by every building of `towerFromM` = 40 m or
-  more. The glass and dark-stone tones sit 4 L* above the exploration's
-  draft (hue and chroma kept), so the tower group's mean stays 8 L* clear
-  of the ground (`colour-schemes.test.ts`). That check is a MEAN-ONLY
-  PROXY: a tower draws one tone of the list by its seed, so a single tone
-  near the ground (glass `0x566066` is 2 L* from it) is one tower in
-  several, not every tower; the rendered look is the judge.
+  more. A tower draws ONE tone of the list on all its walls, so EVERY tone
+  is held 11 L* (the floor of 8 plus the wall jitter of 3) from the ground
+  (L* 42.1) and the roads (`colour-schemes.test.ts`, "keep EVERY tower wall
+  tone ..."). The exploration's mid greys (L* 40-50) sat inside that band,
+  so the glass and stone tones were split into a dark pair (L* 27-30) and a
+  light pair (L* 55), hue and chroma kept; a mean check had passed while
+  two tones sat within 2 L* of the ground.
 - `honourMaterialTags` with `materialWalls`: glass `0x3d474d`, brick
   `0x9f786c`, concrete `0x979692`, stone `0xb3aa9d`, sandstone `0xb39c87`,
   granite `0x86807d`, metal `0x888c8e`, plaster `0xbeb5a7`, wood

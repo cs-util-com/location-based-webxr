@@ -16,6 +16,7 @@ import {
   createLightDialog,
   type LightDialogDeps,
 } from "./light-dialog.js";
+import { veilLightnessBounds } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   lightDefaultsFor,
@@ -117,16 +118,64 @@ describe("createLightDialog", () => {
     const { $, slide, onChange } = setup();
     const l = $<HTMLInputElement>("light-hazeVeilLightness");
     const t = $<HTMLInputElement>("light-hazeVeilTint");
-    expect([l.min, l.max, l.value]).toEqual(["0", "80", "0"]);
-    expect([t.min, t.max, t.value]).toEqual(["-12", "4", "-4"]);
+    const a = $<HTMLInputElement>("light-hazeVeilTintA");
+    expect([l.min, l.max, l.value]).toEqual(["0", "90", "0"]);
+    expect([t.min, t.max, t.value]).toEqual(["-24", "40", "-4"]);
+    expect([a.min, a.max, a.value]).toEqual(["-10", "10", "0"]);
     expect(l.parentElement!.textContent).toContain("0 = the sky");
+    expect(a.parentElement!.textContent).toContain("a*");
     slide("hazeVeilLightness", 76);
     slide("hazeVeilTint", -6);
+    slide("hazeVeilTintA", 2);
     expect(onChange).toHaveBeenLastCalledWith({
       ...DEFAULT_LIGHT_SETTINGS,
       hazeVeilLightness: 76,
       hazeVeilTint: -6,
+      hazeVeilTintA: 2,
     });
+  });
+
+  // WHY: a colour can only be shown up to a lightness that stays below the
+  // tone curve's knee. A slider asking for more must never silently draw
+  // something else: the dialog says the veil is held, and at which L*, and
+  // the note goes once the colour can be shown as asked. Reset clears it.
+  it("says when the veil's lightness is held for its colour", () => {
+    const { $, slide } = setup();
+    const note = $<HTMLElement>("light-veil-note");
+    expect(note.hidden).toBe(true);
+    slide("hazeVeilLightness", 90);
+    slide("hazeVeilTint", 40);
+    const max = veilLightnessBounds(0, 40)!.max;
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain(`L* ${max}`);
+    expect(note.textContent).toContain("knee");
+    slide("hazeVeilLightness", 60);
+    expect(note.hidden).toBe(true);
+    // Too dark for a strong yellow: held at the colour's floor.
+    slide("hazeVeilLightness", 10);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain(`L* ${veilLightnessBounds(0, 40)!.min}`);
+    $("light-reset").click();
+    expect(note.hidden).toBe(true);
+  });
+
+  // WHY: a hand-written link may state a lightness off the 0.1 grid that the
+  // screen does not show exactly; the view draws the nearest grid point, and
+  // the note must name that cause rather than the knee or the gamut.
+  it("names the grid when an off-grid lightness is drawn at its nearest tenth", () => {
+    const { $ } = setup({
+      initial: {
+        ...DEFAULT_LIGHT_SETTINGS,
+        hazeVeilLightness: 28.22,
+        hazeVeilTint: -21,
+        hazeVeilTintA: -10,
+      },
+    });
+    const note = $<HTMLElement>("light-veil-note");
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toBe(
+      "Veil shown at L* 28.2: the nearest lightness the screen shows exactly in this colour.",
+    );
   });
 
   // WHY: a new visibility rebuilds the sky's tables, so a drag that applied
@@ -303,6 +352,30 @@ describe("createLightDialog", () => {
     expect(dialog.settings).toEqual(moved);
     expect(onChange).toHaveBeenLastCalledWith(moved);
     expect($<HTMLInputElement>("light-hazeVeilLightness").value).toBe("0");
+  });
+
+  it("keeps a veil switched off on urban across urban, today and back to urban", () => {
+    // Why this test matters: 0 is today's default, so the value alone reads
+    // as untouched under today and the way back to urban would bring the veil
+    // again; the dialog remembers that the viewer set it, by the link or the
+    // slider, until Reset.
+    const urban = lightDefaultsFor("urban");
+    const off = { ...urban, hazeVeilLightness: 0 };
+    const fromLink = setup({ initial: off, defaults: urban });
+    fromLink.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    fromLink.dialog.setDefaults(urban);
+    expect(fromLink.dialog.settings).toEqual(off);
+    fromLink.dialog.dispose();
+
+    const bySlider = setup({ initial: urban, defaults: urban });
+    bySlider.slide("hazeVeilLightness", 0);
+    bySlider.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    bySlider.dialog.setDefaults(urban);
+    expect(bySlider.dialog.settings).toEqual(off);
+    // Reset forgets it: the next switch moves every value again.
+    bySlider.$("light-reset").click();
+    bySlider.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    expect(bySlider.dialog.settings).toEqual(DEFAULT_LIGHT_SETTINGS);
   });
 
   it("resets every value to the shipped look", () => {

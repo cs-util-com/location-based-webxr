@@ -415,6 +415,10 @@ file owns the material swap and when the colours are refreshed.
     single anchor. `setTerrain` therefore takes the window centre SEPARATELY from
     the field, because the field is `undefined` in exactly that case. Raised in
     review on #269.
+  - **Wherever the plane moves, the haze's rim moves with it**
+    (`atmosphere.setGroundRim(centre, TERRAIN_EXTENT_M)` in `moveGroundTo`,
+    and at the origin when the plane is built), so under a veil the plane's
+    edge fades into the haze instead of floating against the void.
 - **It is a GROUND MODE, not a layer (W6, DEC-R5-4).** It used to be
   `terrainDebug` in `ALL_LAYERS`, applied from the layer set in `main.ts`, with a
   bespoke `layer-order.ts` entry returning 0 and a bespoke "greyed out under No
