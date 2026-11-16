@@ -110,7 +110,7 @@ worker catches and replies with is reported once, by the page that logs it.
 
 Whether a query string carries the test flag; never throws.
 
-### `SENTRY_DSN`
+### `SENTRY_DSN` (module-private)
 
 The one project every app reports to. Hardcoded: a DSN is not secret, and
 one build serves every deployment.

@@ -24,7 +24,7 @@ import { scrubDeep } from './sentry-scrub';
  * - keeps setup minimal (no per-deployment configuration).
  * The host names the data region; the privacy page names it too.
  */
-export const SENTRY_DSN =
+const SENTRY_DSN =
   'https://f45023a2803b24ca8cfe9e93362b909c@o369909.ingest.us.sentry.io/4510756888903680';
 
 /**
@@ -112,7 +112,7 @@ export function initSentry(): void {
  * build can be checked end to end (report arrives, carries its app tag,
  * release and readable stack) without breaking anything.
  */
-export const SENTRY_TEST_PARAM = 'sentry-test';
+const SENTRY_TEST_PARAM = 'sentry-test';
 
 /** The message of that test report. */
 export const SENTRY_TEST_MESSAGE =
