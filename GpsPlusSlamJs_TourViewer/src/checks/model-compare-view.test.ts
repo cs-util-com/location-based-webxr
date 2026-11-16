@@ -8,6 +8,7 @@ import {
   modelViewReducer,
   variantSettings,
   type CameraPose,
+  type GeometryStop,
   type ModelViewAction,
   type ModelViewState,
 } from "./model-compare-view.js";
@@ -15,14 +16,33 @@ import {
 const POSE: CameraPose = { position: [3, 2, 4], target: [0, 0.5, 0] };
 const MOVED: CameraPose = { position: [-1, 5, 2], target: [0.2, 0.4, 0] };
 
+/** Stops for `shares`, in slider order, with made-up counts. */
+const stopsOf = (shares: readonly (number | null)[]): GeometryStop[] =>
+  shares.map((share, i) => ({
+    share,
+    triangles: 100 * (i + 1),
+    deviation: 0.01 / (i + 1),
+  }));
+
+const SEVEN = stopsOf([0.05, 0.12, 0.25, 0.35, null, 0.5, 1]);
+
+const loadedWith = (
+  stops: readonly GeometryStop[],
+  geometry: number,
+  camera: CameraPose = POSE,
+): Extract<ModelViewAction, { type: "loaded" }> => ({
+  type: "loaded",
+  stops,
+  geometry,
+  trianglesBefore: 1000,
+  size: 2,
+  camera,
+  shownKey: "first",
+});
+
 /** Seven geometry stops, the default level the fifth, framed. */
 const loaded = (): ModelViewState =>
-  modelViewReducer(INITIAL_MODEL_VIEW, {
-    type: "loaded",
-    stops: 7,
-    geometry: 4,
-    camera: POSE,
-  });
+  modelViewReducer(INITIAL_MODEL_VIEW, loadedWith(SEVEN, 4));
 
 describe("model comparison view state", () => {
   // Why this test matters: the whole point of the view is to see a model
@@ -72,14 +92,13 @@ describe("model comparison view state", () => {
       name: "original",
       on: true,
     });
-    state = modelViewReducer(state, {
-      type: "loaded",
-      stops: 3,
-      geometry: 2,
-      camera: MOVED,
-    });
+    const three = stopsOf([0.25, 0.5, null]);
+    state = modelViewReducer(state, loadedWith(three, 2, MOVED));
     expect(state).toEqual({
-      stops: 3,
+      stops: three,
+      trianglesBefore: 1000,
+      size: 2,
+      shownKey: "first",
       geometry: 2,
       texture: 3,
       webp: true,
@@ -105,20 +124,25 @@ describe("model comparison view state", () => {
     expect(modelViewReducer(state, { type: "camera", camera: bad })).toBe(
       state,
     );
+    const three = stopsOf([0.25, 0.5, null]);
     for (const [stops, geometry] of [
-      [0, 0],
-      [3, 3],
-      [3, -1],
+      [[], 0],
+      [three, 3],
+      [three, -1],
+      [stopsOf([0, null]), 1],
+      [stopsOf([1.5, null]), 1],
+      [[{ share: null, triangles: Number.NaN, deviation: 0 }], 0],
+      [[{ share: null, triangles: 10, deviation: -1 }], 0],
     ] as const) {
-      expect(
-        modelViewReducer(state, {
-          type: "loaded",
-          stops,
-          geometry,
-          camera: POSE,
-        }),
-      ).toBe(state);
+      expect(modelViewReducer(state, loadedWith(stops, geometry))).toBe(state);
     }
+    expect(
+      modelViewReducer(state, { ...loadedWith(three, 0), size: Number.NaN }),
+    ).toBe(state);
+    expect(
+      modelViewReducer(state, { ...loadedWith(three, 0), shownKey: "" }),
+    ).toBe(state);
+    expect(modelViewReducer(state, { type: "shown", key: "" })).toBe(state);
     expect(
       modelViewReducer(INITIAL_MODEL_VIEW, { type: "geometry", index: 0 }),
     ).toBe(INITIAL_MODEL_VIEW);
@@ -136,6 +160,21 @@ describe("model comparison view state", () => {
     );
     expect(INITIAL_MODEL_VIEW.texture).toBe(DEFAULT_TEXTURE_STEP);
   });
+
+  // Why this test matters: which variant is drawn is state the e2e and
+  // the readouts read; the page records each swap, and nothing else may
+  // change it (a slider move asks for a variant, it does not draw one).
+  it("records the drawn variant only through its own action", () => {
+    let state = loaded();
+    expect(state.shownKey).toBe("first");
+    state = modelViewReducer(state, { type: "geometry", index: 0 });
+    expect(state.shownKey).toBe("first");
+    state = modelViewReducer(state, { type: "shown", key: "original" });
+    expect(state.shownKey).toBe("original");
+    expect(modelViewReducer(state, { type: "shown", key: "original" })).toBe(
+      state,
+    );
+  });
 });
 
 describe("variantSettings", () => {
@@ -149,18 +188,19 @@ describe("variantSettings", () => {
   it("maps the sliders and options to the optimizer's model settings", () => {
     const at = (patch: Partial<ModelViewState>): ModelViewState => ({
       ...INITIAL_MODEL_VIEW,
-      stops: shares.length,
+      stops: stopsOf(shares),
       geometry: 3,
       ...patch,
     });
-    expect(variantSettings(at({}), shares)?.model).toEqual({
+    expect(variantSettings(at({}))?.model).toEqual({
       textureMaxSidePx: 1024,
     });
+    expect(variantSettings(at({ geometry: 2, texture: 5 }))?.model).toEqual({
+      detailShare: 0.25,
+      textureMaxSidePx: 16384,
+    });
     expect(
-      variantSettings(at({ geometry: 2, texture: 5 }), shares)?.model,
-    ).toEqual({ detailShare: 0.25, textureMaxSidePx: 16384 });
-    expect(
-      variantSettings(at({ webp: true, positions8: true }), shares)?.model,
+      variantSettings(at({ webp: true, positions8: true }))?.model,
     ).toEqual({
       textureMaxSidePx: 1024,
       textureType: "image/webp",
@@ -170,20 +210,18 @@ describe("variantSettings", () => {
     const keys = new Set<string>();
     for (let geometry = 0; geometry < shares.length; geometry++) {
       for (let texture = 0; texture < TEXTURE_STEPS.length; texture++) {
-        keys.add(variantSettings(at({ geometry, texture }), shares)!.key);
+        keys.add(variantSettings(at({ geometry, texture }))!.key);
       }
     }
     expect(keys.size).toBe(shares.length * TEXTURE_STEPS.length);
     // The original view and the wireframe look draw the same variant.
-    expect(variantSettings(at({ original: true }), shares)?.key).toBe(
-      variantSettings(at({ wireframe: true }), shares)?.key,
+    expect(variantSettings(at({ original: true }))?.key).toBe(
+      variantSettings(at({ wireframe: true }))?.key,
     );
   });
 
-  it("is null before a model is loaded or when the stops do not match", () => {
-    expect(variantSettings(INITIAL_MODEL_VIEW, [])).toBeNull();
-    const state = { ...INITIAL_MODEL_VIEW, stops: 2, geometry: 0 };
-    expect(variantSettings(state, [0.5, null, 1])).toBeNull();
+  it("is null before a model is loaded", () => {
+    expect(variantSettings(INITIAL_MODEL_VIEW)).toBeNull();
   });
 });
 

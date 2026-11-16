@@ -1,8 +1,9 @@
 /**
  * A 3D model's embedded textures made smaller with the picture step's
  * device (`picture-step.ts`): the longest side at most the settings'
- * limit, never enlarged, and written as a format every glTF viewer reads
- * without an extension (JPEG or PNG):
+ * limit, never enlarged, and written as JPEG or PNG, which every glTF
+ * viewer reads without an extension, or as WebP through EXT_texture_webp
+ * when the settings ask for it:
  * - a colour texture (base colour, emission) as JPEG (or WebP, when the
  *   settings ask for it, named through EXT_texture_webp) at the colour
  *   quality, unless a material blends or cuts by its alpha (then PNG);

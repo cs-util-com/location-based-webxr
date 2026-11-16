@@ -3,7 +3,8 @@
  * (`asset-optimizer-check.html`): where its two sliders stand (geometry:
  * the triangles kept near; texture: the largest texture side), its
  * options (WebP textures, 8-bit vertex positions, showing the original),
- * whether the wireframe look is on, and where the camera is. A pure
+ * whether the wireframe look is on, where the camera is, the loaded
+ * model's geometry stops and which variant is drawn. A pure
  * reducer, so the view's promises are tested without a browser: no slider
  * or checkbox ever moves the camera, and the wireframe look stays on
  * across every change.
@@ -45,9 +46,23 @@ export const DEFAULT_TEXTURE_STEP = Math.max(
   ),
 );
 
+/** One stop of the geometry slider: the level's share of the triangles
+ *  (null: the default level, chosen by the optimizer's budget), its
+ *  triangles and its deviation in metres. */
+export interface GeometryStop {
+  readonly share: number | null;
+  readonly triangles: number;
+  readonly deviation: number;
+}
+
 export interface ModelViewState {
-  /** The geometry slider's stops (0 until a model is loaded). */
-  readonly stops: number;
+  /** The geometry slider's stops, fewest triangles first (none until a
+   *  model is loaded). */
+  readonly stops: readonly GeometryStop[];
+  /** The loaded model's triangles and size (its box diagonal, metres),
+   *  which the geometry readout measures against. */
+  readonly trianglesBefore: number;
+  readonly size: number;
   /** The geometry stop, fewest triangles first. */
   readonly geometry: number;
   /** The texture step, an index into `TEXTURE_STEPS`. */
@@ -62,18 +77,26 @@ export interface ModelViewState {
   readonly wireframe: boolean;
   /** Null until the first model is framed. */
   readonly camera: CameraPose | null;
+  /** The variant drawn: "original", a `variantSettings` key, or null
+   *  before a model is shown. While the asked variant is made, the one
+   *  before stays drawn, so this can differ from the asked key. */
+  readonly shownKey: string | null;
 }
 
 type ModelViewToggle = "webp" | "positions8" | "original" | "wireframe";
 
 export type ModelViewAction =
-  /** A new model: its geometry stops, the default level's stop, the
-   *  camera framed anew; the variant shown, not the original. */
+  /** A new model: its geometry stops, the default level's stop, its
+   *  triangles and size, the camera framed anew, and the variant drawn
+   *  first; the variant shown, not the original. */
   | {
       readonly type: "loaded";
-      readonly stops: number;
+      readonly stops: readonly GeometryStop[];
       readonly geometry: number;
+      readonly trianglesBefore: number;
+      readonly size: number;
       readonly camera: CameraPose;
+      readonly shownKey: string;
     }
   | { readonly type: "geometry"; readonly index: number }
   | { readonly type: "texture"; readonly index: number }
@@ -83,10 +106,14 @@ export type ModelViewAction =
       readonly on: boolean;
     }
   /** The viewer orbited or zoomed. */
-  | { readonly type: "camera"; readonly camera: CameraPose };
+  | { readonly type: "camera"; readonly camera: CameraPose }
+  /** The page swapped in another variant (or the original). */
+  | { readonly type: "shown"; readonly key: string };
 
 export const INITIAL_MODEL_VIEW: ModelViewState = {
-  stops: 0,
+  stops: [],
+  trianglesBefore: 0,
+  size: 0,
   geometry: 0,
   texture: DEFAULT_TEXTURE_STEP,
   webp: false,
@@ -94,6 +121,7 @@ export const INITIAL_MODEL_VIEW: ModelViewState = {
   original: false,
   wireframe: false,
   camera: null,
+  shownKey: null,
 };
 
 const finitePose = (pose: CameraPose): boolean =>
@@ -102,10 +130,19 @@ const finitePose = (pose: CameraPose): boolean =>
 const inRange = (index: number, count: number): boolean =>
   Number.isInteger(index) && index >= 0 && index < count;
 
+const nonNegative = (value: number): boolean =>
+  Number.isFinite(value) && value >= 0;
+
+const validStop = (stop: GeometryStop): boolean =>
+  (stop.share === null || (stop.share > 0 && stop.share <= 1)) &&
+  nonNegative(stop.triangles) &&
+  nonNegative(stop.deviation);
+
 /**
  * The next state. An action that does not apply (an index out of range
- * or not an integer, no stops, a pose with a non-finite number) returns
- * `state` itself, unchanged.
+ * or not an integer, no stops or a stop with a share outside (0, 1] or a
+ * negative or non-finite count, a pose with a non-finite number, an
+ * empty key) returns `state` itself, unchanged.
  */
 export function modelViewReducer(
   state: ModelViewState,
@@ -113,17 +150,24 @@ export function modelViewReducer(
 ): ModelViewState {
   switch (action.type) {
     case "loaded":
-      if (!inRange(action.geometry, action.stops)) return state;
-      if (!finitePose(action.camera)) return state;
+      if (!inRange(action.geometry, action.stops.length)) return state;
+      if (!action.stops.every(validStop)) return state;
+      if (!nonNegative(action.trianglesBefore) || !nonNegative(action.size)) {
+        return state;
+      }
+      if (!finitePose(action.camera) || action.shownKey === "") return state;
       return {
         ...state,
         stops: action.stops,
         geometry: action.geometry,
+        trianglesBefore: action.trianglesBefore,
+        size: action.size,
         original: false,
         camera: action.camera,
+        shownKey: action.shownKey,
       };
     case "geometry":
-      if (!inRange(action.index, state.stops)) return state;
+      if (!inRange(action.index, state.stops.length)) return state;
       return action.index === state.geometry
         ? state
         : { ...state, geometry: action.index };
@@ -140,6 +184,10 @@ export function modelViewReducer(
       return finitePose(action.camera)
         ? { ...state, camera: action.camera }
         : state;
+    case "shown":
+      return action.key === "" || action.key === state.shownKey
+        ? state
+        : { ...state, shownKey: action.key };
   }
 }
 
@@ -148,22 +196,20 @@ const POSITION8_ERROR = 0.01;
 
 /**
  * The optimizer settings of the variant the sliders and options name,
- * and the key the page caches its result under. `shares` are the
- * geometry stops' shares (null: the default level, which leaves the
- * level to the optimizer's budget). Null before a model is loaded or when
- * `shares` does not match the state's stops. Showing the original and
- * the wireframe look change what is drawn, not the variant.
+ * and the key the page caches its result under. The geometry stop's
+ * share is the level kept near; the default stop (share null) leaves the
+ * level to the optimizer's budget. Null before a model is loaded.
+ * Showing the original and the wireframe look change what is drawn, not
+ * the variant.
  */
 export function variantSettings(
   state: ModelViewState,
-  shares: readonly (number | null)[],
 ): { readonly key: string; readonly model: Partial<ModelSettings> } | null {
-  if (state.stops === 0 || shares.length !== state.stops) return null;
-  const share = shares[state.geometry];
+  const stop = state.stops[state.geometry];
   const step = TEXTURE_STEPS[state.texture];
-  if (share === undefined || step === undefined) return null;
+  if (stop === undefined || step === undefined) return null;
   const model: Partial<ModelSettings> = {
-    ...(share === null ? {} : { detailShare: share }),
+    ...(stop.share === null ? {} : { detailShare: stop.share }),
     textureMaxSidePx: step.side,
     ...(state.webp ? { textureType: "image/webp" as const } : {}),
     ...(state.positions8

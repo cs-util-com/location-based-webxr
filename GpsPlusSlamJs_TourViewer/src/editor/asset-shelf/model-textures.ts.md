@@ -1,6 +1,6 @@
 # model-textures.ts
 
-**Purpose:** a 3D model's embedded textures made smaller with the picture step's device (`picture-step.ts`), in a format every glTF viewer reads without an extension.
+**Purpose:** a 3D model's embedded textures made smaller with the picture step's device (`picture-step.ts`), as JPEG or PNG, which every glTF viewer reads without an extension, or, when the settings ask for it, as WebP named through `EXT_texture_webp`.
 
 ## Public API
 

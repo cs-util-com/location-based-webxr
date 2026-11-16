@@ -40,9 +40,23 @@ describe("model comparison view state, over any sequence of actions", () => {
       fc.record({ type: fc.constant("camera" as const), camera: pose }),
       fc.record({
         type: fc.constant("loaded" as const),
-        stops: fc.integer({ min: 0, max: 8 }),
+        stops: fc.array(
+          fc.record({
+            share: fc.option(fc.double({ min: 0.01, max: 1, noNaN: true })),
+            triangles: fc.nat(),
+            deviation: fc.double({ min: 0, max: 1, noNaN: true }),
+          }),
+          { maxLength: 8 },
+        ),
         geometry: fc.integer({ min: -1, max: 8 }),
+        trianglesBefore: fc.nat(),
+        size: fc.double({ min: 0, max: 100, noNaN: true }),
         camera: pose,
+        shownKey: fc.string({ minLength: 1, maxLength: 8 }),
+      }),
+      fc.record({
+        type: fc.constant("shown" as const),
+        key: fc.string({ maxLength: 8 }),
       }),
     );
     fc.assert(
@@ -61,10 +75,14 @@ describe("model comparison view state, over any sequence of actions", () => {
             broken.push(`${a.type} changed the wireframe look`);
           }
           if (
-            next.stops > 0 &&
-            (next.geometry < 0 || next.geometry >= next.stops)
+            next.stops.length > 0 &&
+            (next.geometry < 0 || next.geometry >= next.stops.length)
           ) {
-            broken.push(`geometry ${next.geometry} of ${next.stops}`);
+            broken.push(`geometry ${next.geometry} of ${next.stops.length}`);
+          }
+          const swaps = a.type === "shown" || a.type === "loaded";
+          if (!swaps && next.shownKey !== state.shownKey) {
+            broken.push(`${a.type} changed the drawn variant`);
           }
           if (next.texture < 0 || next.texture >= TEXTURE_STEPS.length) {
             broken.push(`texture ${next.texture}`);

@@ -33,7 +33,7 @@ export interface ModelSettings {
   readonly dataQuality: number;
   /** The lossy format a texture is written in: JPEG (the default, read by
    *  every glTF viewer) or WebP (through the EXT_texture_webp extension; at
-   *  the same quality numbers 14 to 30 % fewer texture bytes on the check
+   *  the same quality numbers 14 to 28 % fewer texture bytes on the check
    *  page's samples at 1024 px, and about 40 % fewer at the same PSNR). Alpha and lossless maps stay PNG either way. */
   readonly textureType?: "image/jpeg" | "image/webp";
   /** Bits of a quantized position, normal (and tangent), texture

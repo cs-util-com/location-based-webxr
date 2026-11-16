@@ -95,7 +95,7 @@ describe("imageUses and textureFormat", () => {
   });
 
   // Why: WebP in place of JPEG is the one texture setting that measured a
-  // real saving (14 to 30 % of the texture bytes at the shelf's quality
+  // real saving (14 to 28 % of the texture bytes at the shelf's quality
   // numbers on the check page's samples, about 40 % at the same PSNR). It replaces only the lossy JPEG choices: alpha
   // and a lossless data map stay PNG, whatever the setting.
   it("writes WebP where it would write JPEG when the settings ask for WebP", () => {
@@ -188,6 +188,26 @@ describe("shrinkTextures", () => {
     const written = writeGlb(parts);
     expect(checkGlbInert(written).ok).toBe(true);
     expect(readGlb(written).ok).toBe(true);
+  });
+
+  // Why: a model that already names EXT_texture_webp (one made by this
+  // pass before, or by another tool) must still list it once: a repeated
+  // entry in extensionsRequired is invalid glTF.
+  it("lists EXT_texture_webp once when the file already names it", async () => {
+    const parts = await partsOf({
+      baseColor: "jpeg",
+      textureSize: [2048, 2048],
+    });
+    const json = parts.json as {
+      extensionsUsed?: string[];
+      extensionsRequired?: string[];
+    };
+    json.extensionsUsed = ["EXT_texture_webp"];
+    json.extensionsRequired = ["EXT_texture_webp"];
+    const webp = { ...SETTINGS, textureType: "image/webp" as const };
+    await shrinkTextures(parts, webp, fakePictureDevice().device, control());
+    expect(json.extensionsUsed).toEqual(["EXT_texture_webp"]);
+    expect(json.extensionsRequired).toEqual(["EXT_texture_webp"]);
   });
 
   it("keeps a cut-out colour texture as PNG so its alpha survives", async () => {

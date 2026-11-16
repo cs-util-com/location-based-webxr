@@ -9,7 +9,7 @@ verified on its own source page (the recordings and the photo on
 FFmpeg, the models packed with glTF Transform; the commands are given per
 file.
 
-Total: 6,004,828 bytes (about 5.7 MiB) for seven files. The two models carry
+Total: 5,997,392 bytes (about 5.7 MiB) for seven files. The two models carry
 2048 px textures, twice the side the editor keeps (1024 px), so the check
 page's texture steps compare real resolutions. Each file stays under the
 repository's 2 MiB per-file ceiling (`tests/repo-config/max-file-size.test.js`):
@@ -110,7 +110,8 @@ the 4k textures of the bust alone are 5.4 MB, so no 4k sample fits.
 - Source page: https://polyhaven.com/a/marble_bust_01
 - File: the 4k glTF download listed by https://api.polyhaven.com/files/marble_bust_01
   (`marble_bust_01.gltf`, its `.bin` and three 4096 px JPEG textures:
-  colour, normal, roughness).
+  colour, normal, and ambient occlusion, roughness and metalness packed
+  in one).
 - Licence: CC0 1.0. Evidence: https://polyhaven.com/license states "Our
   assets are all licensed as CC0", with no attribution required.
 - Packed into one binary glTF with glTF Transform (`@gltf-transform/core`

@@ -716,6 +716,28 @@ test("models, the large view: the sliders keep the camera, the wireframe stays o
   await page.mouse.up();
   const orbited = await read();
   expect(orbited.position).not.toEqual(first.position);
+
+  // Texture steps down and back up: the GPU holds only the drawn variant,
+  // so its texture count is back where it started, and the fixed SSIM
+  // drawings leave nothing behind. A variant swapped out and shown again
+  // (the first one, here) is uploaded anew and drawn textured. The one
+  // texture a renderer keeps is three's own lookup table for its
+  // physically based materials (DFG), uploaded once per renderer.
+  const drawBase = first.gpu.draw.textures;
+  expect(drawBase).toBeLessThanOrEqual(1);
+  expect(first.gpu.draw.geometries).toBe(0);
+  expect(first.gpu.view.textures).toBeGreaterThan(0);
+  await texture.focus();
+  for (const key of ["ArrowLeft", "ArrowLeft", "ArrowRight", "ArrowRight"]) {
+    await page.keyboard.press(key);
+    await settled();
+  }
+  const back = await read();
+  expect(back.shownKey).toBe(first.shownKey);
+  expect(back.textured).toBeGreaterThan(0);
+  expect(back.gpu.view.textures).toBe(first.gpu.view.textures);
+  expect(back.gpu.draw).toMatchObject({ textures: drawBase, geometries: 0 });
+  expect(back.position).toEqual(orbited.position);
   await geometry.focus();
   await page.keyboard.press("End");
   const full = await settled();
@@ -724,6 +746,7 @@ test("models, the large view: the sliders keep the camera, the wireframe stays o
   expect(full.bytes).toBeGreaterThan(first.bytes);
   expect(full.position).toEqual(orbited.position);
   expect(full.target).toEqual(orbited.target);
+  expect(full.gpu.view.textures).toBe(first.gpu.view.textures);
 
   // The wireframe look: wire lines on, textures off, and it stays on
   // through the texture slider and the original.
@@ -766,5 +789,72 @@ test("models, the large view: the sliders keep the camera, the wireframe stays o
   );
   await canvas.scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("models-landscape.png") });
+
+  // A variant still being made when another model is loaded: it is
+  // dropped without a word, never compared with the new model, and the
+  // new model's controls come back enabled.
+  await page.evaluate(() => {
+    const status = /** @type {HTMLElement} */ (
+      document.getElementById("status")
+    );
+    const said = /** @type {string[]} */ ([]);
+    /** @type {any} */ (window).said = said;
+    new MutationObserver(() => said.push(status.textContent ?? "")).observe(
+      status,
+      { childList: true, characterData: true, subtree: true },
+    );
+    const slider = /** @type {HTMLInputElement} */ (
+      document.getElementById("model-texture")
+    );
+    slider.value = "1";
+    slider.dispatchEvent(new Event("change"));
+    /** @type {HTMLElement} */ (document.getElementById("model-rock")).click();
+  });
+  await expect(page.locator("#status")).toHaveText("Model ready.", {
+    timeout: 540_000,
+  });
+  const rock = await settled();
+  expect(rock.shownKey).toBe(rock.askedKey);
+  await expect(geometry).toBeEnabled();
+  await expect(page.getByLabel("Show the original")).toBeEnabled();
+  const said = await page.evaluate(() => /** @type {any} */ (window).said);
+  expect(
+    said.filter((/** @type {string} */ t) => t.startsWith("Failed")),
+  ).toEqual([]);
+  expect(rock.gpu.draw).toMatchObject({ textures: drawBase, geometries: 0 });
+  expect(errors).toEqual([]);
+});
+
+// Why this test matters: the WebP option writes the textures through
+// EXT_texture_webp; a file the tour's check refused, or one drawn wrong, or
+// no smaller than the JPEG default, would make the option a trap rather
+// than a saving. The box carries 2048 px textures, so the 1024 px limit
+// applies to both.
+test("models: WebP textures on the box: the tour accepts it, 1024 px, drawn as before, fewer bytes than JPEG", async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  const errors = await openCheck(page);
+  const { jpeg, webp } = await page.evaluate(async () => {
+    const check = /** @type {any} */ (window).assetOptimizerCheck;
+    const source = await check.sampleModel("box");
+    const row = async (/** @type {object} */ model) => {
+      const result = await check.compareModel(source, model);
+      return {
+        bytes: result.blob.size,
+        after: result.after,
+        ssim: result.ssim,
+      };
+    };
+    return {
+      jpeg: await row({}),
+      webp: await row({ textureType: "image/webp" }),
+    };
+  });
+  console.log(JSON.stringify({ webpBox: { jpeg, webp } }));
+  expect(webp.after.inert).toBe(true);
+  expect(webp.after.textureSide).toBe(1024);
+  expect(webp.ssim).toBeGreaterThanOrEqual(MODEL_SSIM_FLOOR);
+  expect(webp.bytes).toBeLessThan(jpeg.bytes);
   expect(errors).toEqual([]);
 });
