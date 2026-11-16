@@ -1208,10 +1208,12 @@ test.describe("the phone layout", () => {
       await expect(full).toBeHidden();
 
       // AND IT IS ACTUALLY ONE LINE at the 390 px width this describe runs at.
-      // Two lines of 24 px targets would be ~48 px; 34 px separates the two
-      // without pinning an exact height.
+      // One line of 24 px targets is 24 px. The bound stays that tight because
+      // the HUD clears the footer by `--hud-foot` (28 px) alone: a taller line
+      // would slide under the drawer, and the layout spec's 1 px overlap
+      // tolerance would not catch a few px of it.
       const restingBox = await line.boundingBox();
-      expect(restingBox?.height ?? 0).toBeLessThan(34);
+      expect(restingBox?.height ?? 0).toBeLessThan(26);
 
       // EVERY ITEM IS BIG ENOUGH TO PRESS: WCAG 2.2 SC 2.5.8's 24 px floor, in
       // both directions. 24 rather than 44 is deliberate: the line stays thin.

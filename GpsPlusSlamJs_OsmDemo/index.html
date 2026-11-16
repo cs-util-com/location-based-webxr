@@ -57,7 +57,9 @@
 
         /* The HUD's tokens (the command bar, the panels and the dock below). */
         --hud-bar-h: 52px;
-        --hud-foot: 24px;
+        /* The one-line map footer (24 px) plus 4 px of real clearance, so a
+           panel above it never sits flush on its links. */
+        --hud-foot: 28px;
         --hud-slot-w: 320px;
         --hud-map-column: 64px;
         --hud-surface: linear-gradient(
