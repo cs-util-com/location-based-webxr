@@ -8,10 +8,11 @@
  * refusal, error or timeout it hands the tile to the `fallback` source (the
  * race) at once and stops asking for fills for a while; stored files are
  * still read, unless the host gave no answer at all (a network error or a
- * request past its time limit), in which case it is not asked anything for
- * that while. The two never run for one tile at the same time. A stored file
- * that is not a complete Overpass answer goes to the race too, and is
- * reported to the host once.
+ * request with no headers within its time limit), in which case it is not
+ * asked anything for that while; a body that breaks off after its headers
+ * is a refusal of that tile only. The two never run for one tile at the same
+ * time. A stored file that is not a complete Overpass answer goes to the
+ * race too, and is reported to the host once.
  *
  * @see static-tile-source.ts.md
  */
@@ -309,9 +310,10 @@ export class StaticTileSource implements OsmDataSource {
    * but a skip or a bad stored file is remembered as a refusal, a
    * `NoWaitLeft` included: no request went out, so nothing was learnt about
    * the host, but the caller backs off the same way. A failure that is none
-   * of this source's own (a network error, a request past its limit, a body
-   * that broke off) means the host gave no answer: it is not asked at all
-   * for the same while.
+   * of this source's own (a network error, or no headers within the request
+   * limit) means the host gave no answer: it is not asked at all for the
+   * same while. A body that broke off after its headers is a `HostDeclined`
+   * (see `readStored`), so only a refusal.
    */
   private afterHostFailed(
     error: unknown,
@@ -382,11 +384,15 @@ export class StaticTileSource implements OsmDataSource {
       headersBy?.signal,
     );
     try {
-      return await this.fetchImpl(url, {
+      const response = await this.fetchImpl(url, {
         ...(init.method === undefined ? {} : { method: init.method }),
         ...(init.cache === undefined ? {} : { cache: init.cache }),
         ...(limited === undefined ? {} : { signal: limited }),
       });
+      // An HTTP answer, whatever its status: the host is there, even if a
+      // request running beside this one got none and marked it unreachable.
+      this.unreachableUntil = 0;
+      return response;
     } finally {
       clearTimeout(timer);
     }
@@ -584,8 +590,10 @@ export class StaticTileSource implements OsmDataSource {
 
   /**
    * The stored file's text and ETag, `undefined` on a 404, a throw on any
-   * other status. A body-read failure (a `TypeError` from `text()`) is a
-   * host failure, like a network drop: the two cannot be told apart here.
+   * other status. A body that fails after a 200 (it ran past the request
+   * limit on a slow link, or the stream dropped) is a `HostDeclined`: the
+   * host answered, so this tile is refused, but the host is not taken for
+   * unreachable. A caller abort stays an abort.
    */
   private async readStored(
     tile: string,
@@ -615,7 +623,16 @@ export class StaticTileSource implements OsmDataSource {
     // The host sends `Content-Encoding` (gzip from the operator, or the
     // edge's own compression of a raw file), so the browser has already
     // decoded it: the text is the Overpass answer as sent.
-    return { text: await response.text(), etag: response.headers.get("etag") };
+    let text: string;
+    try {
+      text = await response.text();
+    } catch (error) {
+      if (isAbort(error) || signal?.aborted === true) throw error;
+      throw new HostDeclined(
+        `tile ${tile} body failed: ${error instanceof Error ? error.name : "unknown"}`,
+      );
+    }
+    return { text, etag: response.headers.get("etag") };
   }
 
   /**
