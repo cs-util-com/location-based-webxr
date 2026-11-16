@@ -82,11 +82,14 @@ raster basemap.
   - **This class owns the attribution line; Leaflet's control is switched off**
     (`attributionControl: false`, round three, DEC-W1). Leaflet's own control
     rebuilds its `innerHTML` on every credit change — which happens on every
-    terrain apply — so the expander the thirteenth session asked for could not
-    survive inside it. Switching it off also disposes of its courtesy "Leaflet"
-    prefix link, which the same session asked to drop, without needing
+    terrain apply - so a Credits view could not survive inside it. Switching
+    it off also disposes of its courtesy "Leaflet" prefix link, which the same session asked to drop, without needing
     `setPrefix(false)` as a second mechanism. See
     [`attribution-view.ts.md`](./attribution-view.ts.md).
+  - **One footer line, "© OpenStreetMap | Credits | Legal".** The OSM credit is
+    pinned; the elevation credits join the Credits view through
+    `setTerrainAttribution`; the page's legal link, passed as
+    `options.legalLink`, is moved to the end of the line.
   - **It is registered FIRST of this corner's controls**, because Leaflet
     _prepends_ into a bottom corner — so the first control added ends up lowest,
     with the AR and locate buttons stacking above the credit rather than over

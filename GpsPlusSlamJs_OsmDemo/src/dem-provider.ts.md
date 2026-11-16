@@ -49,12 +49,15 @@ fallbackTimeoutMs?, publishTimeoutMs?, onUpgrade? }): RacingElevationProvider` �
 - `DEM_ATTRIBUTION_ENTRIES` — the credits `main.ts` hands the map's attribution
   line while terrain is on screen. Names **both** sources unconditionally,
   because the fallback can serve any tile the primary lacks.
-  - **Two entries, not one composed string** (round three, DEC-W1). Each carries
-    a `short` name that stays permanently visible and a `full` sentence that
-    lives behind the line's expander, so the two sources have to stay apart all
-    the way to the DOM. The composed `DEM_ATTRIBUTION` constant that used to
-    live here is gone — nothing rendered it once the line took entries, and an
-    exported string with only a test for a reader is a dead export.
+  - **Two entries, not one composed string.** Each is its own row of the
+    footer line's Credits view, its `full` sentence a link (`href`) to the
+    page that lists that provider's sources and licences, so the two sources
+    have to stay apart all the way to the DOM. Neither is `pinned` into the
+    resting line: their licences accept a credit one tap away (the reasoning
+    and sources are in [`attribution-view.ts.md`](./attribution-view.ts.md)).
+    The composed `DEM_ATTRIBUTION` constant that used to live here is gone —
+    nothing rendered it once the line took entries, and an exported string
+    with only a test for a reader is a dead export.
 
 ## Why the deadlines exist, and what each one bounds
 

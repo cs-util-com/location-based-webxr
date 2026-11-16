@@ -396,13 +396,9 @@ describe("createDemProvider", () => {
     // Attribution is an obligation to BOTH upstreams the moment the fallback
     // can serve a tile, so the displayed credits must name each of them.
     //
-    // ASSERTED ON THE ENTRIES, not on a composed string (round three, DEC-W1).
-    // The attribution line shows a visible SHORT NAME per source and hides only
-    // the long sentence, so the two credits have to stay apart all the way to
-    // the DOM — and both halves of each entry matter now: the short name is
-    // what a user reads without tapping, the full text is what the licence
-    // wording lives in. A composed string could satisfy an assertion here and
-    // still render as one undifferentiated blob.
+    // ASSERTED ON THE ENTRIES, not on a composed string: the Credits view lists
+    // one row per source, each a link to the page naming its sources and
+    // licences, so the two credits have to stay apart all the way to the DOM.
     expect(DEM_ATTRIBUTION_ENTRIES.map((entry) => entry.short)).toEqual([
       "Mapterhorn",
       "Mapzen/AWS",
@@ -410,5 +406,11 @@ describe("createDemProvider", () => {
     const full = DEM_ATTRIBUTION_ENTRIES.map((entry) => entry.full).join(" ");
     expect(full).toContain("Mapterhorn");
     expect(full).toContain("Mapzen");
+    // Every provider a real link in the Credits view, and none pinned into the
+    // resting line: their licences accept a credit one tap away.
+    for (const entry of DEM_ATTRIBUTION_ENTRIES) {
+      expect(entry.href).toMatch(/^https:\/\//);
+      expect(entry.pinned).toBeUndefined();
+    }
   });
 });

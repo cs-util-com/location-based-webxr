@@ -53,13 +53,15 @@ import {
 const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
 
 /**
- * The OSM credit as the attribution line renders it: a permanently visible
- * short name, with the full sentence behind the expander (DEC-W1).
+ * The OSM credit as the footer line renders it: pinned, so "© OpenStreetMap"
+ * is visible without interaction and links to the copyright page, as the OSMF
+ * attribution guidelines ask; the full sentence is in the Credits view.
  */
 const OSM_ENTRY: AttributionEntry = {
-  short: "OpenStreetMap",
+  short: "© OpenStreetMap",
   full: OSM_ATTRIBUTION,
   href: "https://www.openstreetmap.org/copyright",
+  pinned: true,
 };
 
 export interface MapViewOptions {
@@ -78,6 +80,11 @@ export interface MapViewOptions {
    * the same reason it does in the 3D raycast.
    */
   readonly onRegionClick?: (region: string) => void;
+  /**
+   * The page's legal notice link, moved into the footer line after
+   * "Credits". Optional so a map without a page around it still renders.
+   */
+  readonly legalLink?: HTMLAnchorElement;
 }
 
 export class MapView {
@@ -221,6 +228,9 @@ export class MapView {
       },
     });
     new AttributionControl({ position: "bottomright" }).addTo(this.map);
+    if (options.legalLink !== undefined) {
+      this.attribution.adoptLegalLink(options.legalLink);
+    }
     this.attribution.setEntries([OSM_ENTRY]);
 
     // NO `attribution` OPTION HERE ANY MORE. It fed Leaflet's control, which is
@@ -304,18 +314,18 @@ export class MapView {
   }
 
   /**
-   * Adds or removes the elevation sources' credits in the attribution line.
+   * Adds or removes the elevation sources' credits in the map's footer line.
    *
    * WHY IT LIVES HERE RATHER THAN IN THE HEADER (DEC-R2-4). The header became
-   * collapsible, and **attribution may not be collapsed away** — it is required
-   * wherever the data is shown. The attribution line is always visible and is
-   * where a credit conventionally goes.
+   * collapsible; the footer line is always on the map, where a credit
+   * conventionally goes, with the Credits view one tap from it.
    *
-   * WHAT "NOT COLLAPSED AWAY" MEANS SINCE ROUND THREE (DEC-W1). The line got an
-   * expander, and the elevation credits stay OUTSIDE it: each source keeps a
-   * permanently visible short name and only its long sentence is behind the
-   * tap. These credits are required "the same as the OSM one", so a design that
-   * hid them until tapped would contradict the paragraph above.
+   * WHERE IN THE LINE. The elevation credits are listed, each linked, in the
+   * Credits view one tap from "Credits"; only the OSM credit is pinned into
+   * the resting line, because the OSMF guidelines ask for it without
+   * interaction while the elevation sources' licences (CC BY and similar)
+   * accept a link to a resource carrying the attribution. The reasoning and
+   * its sources are in `attribution-view.ts.md`.
    *
    * An EMPTY list removes them, which matters: crediting a DEM source whose
    * tiles all failed would be a claim about what is on screen. Idempotent, so a

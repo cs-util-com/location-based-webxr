@@ -100,7 +100,6 @@ const FLOATING = [
   "#command-bar",
   "#toast-root .toast",
   "#legend-plate",
-  "#legal-link",
   "#map .leaflet-control-attribution",
   "#map .leaflet-control-zoom",
   ".locate-control",
