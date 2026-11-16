@@ -21,6 +21,7 @@ import {
   tourBlockMinor,
   tourBlockRefs,
   tourKindsMinor,
+  tourSeenFromViewpoint,
 } from './tour-kinds';
 import { TOUR_MANIFEST_MINOR } from './tour-manifest';
 
@@ -468,6 +469,107 @@ describe("a newer minor's picture viewpoint", () => {
     );
     expect(fields).not.toHaveProperty('viewpoint');
     expect(fields).toMatchObject({ image: 'photo', widthM: 1 });
+    expect(drops).toEqual([
+      '"block.viewpoint.position" must be three numbers within 10000 m',
+    ]);
+  });
+});
+
+// Why: the editor draws a viewpoint's lines, looks from it and gives a
+// block its first one by this one answer, so a picture and a video must
+// both be asked here and nothing else may say yes.
+describe('tourSeenFromViewpoint', () => {
+  it('is true for the picture viewpoint views and a stand-here video only', () => {
+    for (const kind of tourBlockKinds()) {
+      for (const view of TOUR_KINDS[kind].views) {
+        const expected =
+          (kind === 'picture' &&
+            ['thenNow', 'sharpen', 'finder', 'window', 'viewer'].includes(
+              view
+            )) ||
+          (kind === 'video' && view === 'standHere');
+        expect(tourSeenFromViewpoint(kind, view), `${kind} ${view}`).toBe(
+          expected
+        );
+      }
+    }
+    expect(tourSeenFromViewpoint('model', 'standHere')).toBe(false);
+  });
+});
+
+describe('a video seen through a window or from a spot', () => {
+  const read = (
+    view: string | null,
+    fields: Record<string, unknown>,
+    lenient = false
+  ) => {
+    const drops: string[] = [];
+    const ctx = contextFor('v');
+    const read = TOUR_KINDS.video.read(
+      { id: 'v', kind: 'video', view, video: 'clip', widthM: 1.6, ...fields },
+      view,
+      lenient
+        ? { ...ctx, lenient: true, onDropped: (d) => drops.push(d.reason) }
+        : ctx
+    );
+    return { read, drops };
+  };
+  const VIEWPOINT = {
+    position: [6, 1.6, 0],
+    rotation: [0, 0, 0, 1],
+    hfovDeg: 56,
+    distanceM: 6,
+  };
+
+  it('stands free in a window and in front of a spot too', () => {
+    // Why: both views are a station's own, so they are free and world
+    // views; `screen` stays the floor, so a newer view still draws.
+    expect(TOUR_KINDS.video.views).toEqual([
+      'screen',
+      'cutout',
+      'porthole',
+      'window',
+      'standHere',
+      'card',
+    ]);
+    expect(TOUR_KINDS.video.freeViews).toEqual(
+      TOUR_KINDS.video.views.filter((v) => v !== 'card')
+    );
+    expect(TOUR_KINDS.video.worldViews).toEqual(TOUR_KINDS.video.freeViews);
+    expect(TOUR_KINDS.video.floor).toBe('screen');
+    expect(TOUR_KINDS.video.sinceMinor).toBe(0);
+  });
+
+  it('keeps a viewpoint in every view, after its other fields', () => {
+    // Why: stand-here develops from its viewpoint, and a creator trying
+    // views must find the spot where it was after a switch; the field
+    // goes last, as the writer puts it, so a file round-trips.
+    for (const view of [...TOUR_KINDS.video.views, null]) {
+      const { read: fields } = read(view, { loop: 'on', viewpoint: VIEWPOINT });
+      expect(fields).toMatchObject({ viewpoint: VIEWPOINT });
+      expect(Object.keys(fields).at(-1)).toBe('viewpoint');
+    }
+  });
+
+  it('reads stand-here without a viewpoint: it then develops at once', () => {
+    expect(read('standHere', {}).read).not.toHaveProperty('viewpoint');
+  });
+
+  it('refuses a broken viewpoint in a file of its own minor', () => {
+    // Why: the same rules as a picture's, from the same reader.
+    expect(() =>
+      read('standHere', { viewpoint: { ...VIEWPOINT, hfovDeg: 9 } })
+    ).toThrow('"block.viewpoint.hfovDeg" must be a number of degrees');
+  });
+
+  it("drops just the viewpoint of a newer minor's file, and says so", () => {
+    const { read: fields, drops } = read(
+      'standHere',
+      { viewpoint: { hfovDeg: 60 } },
+      true
+    );
+    expect(fields).not.toHaveProperty('viewpoint');
+    expect(fields).toMatchObject({ video: 'clip', widthM: 1.6 });
     expect(drops).toEqual([
       '"block.viewpoint.position" must be three numbers within 10000 m',
     ]);

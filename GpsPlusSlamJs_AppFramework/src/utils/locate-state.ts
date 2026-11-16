@@ -4,7 +4,7 @@
  *
  * WHY IT LIVES HERE. It began as the OSM demo's `locate-state.ts`; the
  * globe lab's pin (round-2 plan 2026-09-26-2055 M3g) needed the same
- * contract, and DEC-H3 gives shared behaviour one home. The OSM demo
+ * contract, and the shared-helper rule gives shared behaviour one home. The OSM demo
  * imports the labels and the mapping from here; its Leaflet control is
  * still its own (it asks Leaflet, not the browser, for the position).
  *

@@ -13,7 +13,7 @@
  * the fused GPS+SLAM path)."
  *
  * THE SHELL LIVES IN THE FRAMEWORK since 2026-10-01
- * (`gps-plus-slam-app-framework/visualization/summary-map-shell`, DEC-H3,
+ * (`gps-plus-slam-app-framework/visualization/summary-map-shell`,
  * Tour Viewer authoring plan 2026-09-28-0953 §3.3): the map, the basemap,
  * the shared trajectory layers, the fullscreen toggle and the cleanup. This
  * file is what the RECORDER adds to it - its reference-point markers, its

@@ -91,6 +91,21 @@ rotation [x, y, z, w], hfovDeg 10-120, distanceM 1-500 }` in the
   picture's pose never moves where it lines up; the camera looks along its
   local -Z. Like a sound's world fields, `showTag` and `viewpoint` are
   kept in every view, so a view switch loses nothing.
+- A video's `start`, `sound`, `alpha` and `loop` read through `choice`
+  (`tour-block-read.ts`): an unknown `start`, `sound` or `loop` word in a
+  newer minor's file drops that field alone and keeps the video; an
+  unknown `alpha` skips the whole video, since shown without its packing
+  a newer clip's matte half would stand on screen. Its `widthM` takes the
+  picture's bounds.
+- A video stands free in every view but `card`: `screen`, `cutout`,
+  `porthole`, `window` (a window in a stone wall it plays behind) and
+  `standHere` (a projection that develops as the visitor stands on its
+  spot and faces it; `TOUR_VIDEO_VIEWPOINT_VIEWS`). Its `viewpoint` is the
+  picture's record, read by the same reader (`blockViewpoint`), kept in
+  every view and written last; stand-here without one develops at once.
+  `tourSeenFromViewpoint(kind, view)` answers for both kinds whether a
+  block is drawn from its viewpoint.
+  Both views are minor 0 of format 5, as every video view.
 - A viewpoint view WITHOUT a viewpoint is read, not refused: the viewer
   draws it as its floor, a `plane`, and the editor never writes one (its
   view switch gives the picture a viewpoint). A broken viewpoint fails a
@@ -112,7 +127,7 @@ a synthetic list). `tour-blocks.test.ts` and `tour-blocks.property.test.ts`
 cover what each row reads; `item-contract.test.ts` in the Tour Viewer holds
 every kind to what its views owe.
 
-A short text's views are `pin`, `sign`, `edgeHint` (all free and
+A short text's views are `pin`, `sign`, `edgeHint`, `ground` (all free and
 drawn in the world) and `card`; its look fields (role, orientation,
 reading distance, a point it points to, language, the ground view's style,
 bend and colours) are read by `tour-short-text.ts` in every view, so a

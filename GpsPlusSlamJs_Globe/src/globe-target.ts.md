@@ -28,7 +28,7 @@
     `fixWaitExpired`; before that `{ target: null, source: "waiting" }`.
 - Invariants: `target` is null exactly when `source` is `waiting`; a
   parsed target is always in range.
-- DEC-H3: OsmDemo's `?lat=&lng=` parser (`start-position.ts`) reads a
+- Shared-helper rule: OsmDemo's `?lat=&lng=` parser (`start-position.ts`) reads a
   different input form. If phase 5 wants `?at=` in OsmDemo, it reuses this
   parser rather than adding a third.
 - Tests: `globe-target.test.ts` (examples, the absent cases, a round-trip

@@ -55,7 +55,7 @@ describe('OcclusionMesh shadow receiver: construction', () => {
   // The receiver is the promoted createShadowPlane recipe on the occluder's
   // own geometry: ShadowMaterial, transparent, no depth write, no fog, the
   // same negative polygon offset, receives and never casts. Comparing with
-  // the plane's material, flag by flag, is the DEC-H3 guard: one recipe.
+  // the plane's material, flag by flag, is the shared-helper guard: one recipe.
   it('builds the receiver from the construction option with the plane recipe', () => {
     const parent = new THREE.Group();
     const occluder = new OcclusionMesh(parent, {

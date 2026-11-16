@@ -14,7 +14,7 @@
  * alignment, so the picks are folded here while it evolves; nothing is
  * dispatched or persisted (a replay re-solves the same alignments).
  *
- * The rule itself is the framework's (DEC-H3: the QR mint, the GPS anchor's
+ * The rule itself is the framework's (the QR mint, the GPS anchor's
  * `'mature-alignment'` start-up and this settle fold the same pick); this
  * module only keys it by object, measurement and sighting, and keeps the
  * events' times and walked distances for "the code event nearest each note"

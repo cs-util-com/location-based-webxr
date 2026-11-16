@@ -27,7 +27,7 @@
  * imagery's: `classSweep` measures how far it drifts.
  *
  * Dependency-free except the lab's own colour curves, style B's lines and
- * the sun term (DEC-H3), so it runs under `node --test`. The shader
+ * the sun term, so it runs under `node --test`. The shader
  * (`terrain-material.js`, `globeClasses`) mirrors `classAlbedo` line for
  * line.
  *

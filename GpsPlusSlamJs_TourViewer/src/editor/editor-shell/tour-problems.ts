@@ -16,6 +16,7 @@ import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose
 import {
   isStory,
   tourStories,
+  type TourStory,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
@@ -143,6 +144,23 @@ function moveInside(
   };
 }
 
+/** The story's own problems, as the Problems tab lists them and the story
+ *  inspector counts them ("Story valid" or "N problems"): a loop no answer
+ *  can leave, its row going to the loop's first step. */
+export function storyProblems(story: TourStory): TourProblem[] {
+  const trap = storyTrap(story.children);
+  const first = story.children[trap?.steps[0] ?? -1];
+  if (trap === null || first === undefined) return [];
+  return [
+    {
+      severity: "warning",
+      what: trap.message,
+      who: story.title,
+      select: first.id,
+    },
+  ];
+}
+
 /** The tour's problems, one group per station that has any. */
 export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
   const groups: ProblemGroup[] = [];
@@ -167,15 +185,7 @@ export function tourProblems(stations: readonly TourStation[]): ProblemGroup[] {
       ],
     }));
     for (const story of tourStories(station)) {
-      const trap = storyTrap(story.children);
-      const first = story.children[trap?.steps[0] ?? -1];
-      if (trap === null || first === undefined) continue;
-      problems.push({
-        severity: "warning",
-        what: trap.message,
-        who: story.title,
-        select: first.id,
-      });
+      problems.push(...storyProblems(story));
     }
     if (!hasContent(station)) {
       problems.push({

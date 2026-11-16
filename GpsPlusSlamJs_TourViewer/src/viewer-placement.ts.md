@@ -238,10 +238,11 @@ them.
 
 - The renderer deps carry `worldPart`: `play-kinds.ts` `worldPartOf` with a
   `world-part.ts` `worldEnv("play", manifest.assets, loadContent, options)`,
-  `options` being `{ sound, screen, parseModel, enableClipping }` (the optional `worldSound` dep,
+  `options` being `{ sound, screen, say, parseModel, enableClipping }` (the optional `worldSound` dep,
   `main.ts`'s `createWorldSound`, absent: silent; the optional
   `worldScreen` dep, `main.ts`'s `screenIn(#narration-card-root)`, absent:
-  no panel; `seams.loadGlbModel` and `seams.enableClipping`), so a
+  no panel; the optional `worldSay` dep, `main.ts`'s walk toast, shown and
+  announced, absent: a part says nothing; `seams.loadGlbModel` and `seams.enableClipping`), so a
   kind's row decides its part in the world and reads its files through the
   visitor's prefetch; a placed model stands this way too.
 - The optional `openReading(block)` dep (`main.ts`: the reading sheet) is

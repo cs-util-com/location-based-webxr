@@ -521,6 +521,157 @@ describe('createAmbientOcclusion', () => {
     expect(fake.draws).toEqual([]);
   });
 
+  // Why this test matters: a caller that draws the same view twice with only
+  // objects the normal pass leaves out toggled (the light dialog's heat grid
+  // margin) gets the identical AO for free. Recomputing it cost about a third
+  // of the dialog's measurement on a software rasteriser, so reapply must
+  // draw the blend alone, with the AO it last computed, and nothing else.
+  it('reapplies the AO it last computed with the blend alone', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    expect(ao.render()).toBe(true);
+    const blendDraw = fake.draws.at(-1)!;
+    const passRender = vi.spyOn(ao.pass!, 'render');
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(true);
+    expect(passRender).not.toHaveBeenCalled();
+    expect(fake.draws).toHaveLength(1);
+    expect(fake.draws[0]!.target).toBeNull();
+    expect(fake.draws[0]!.material).toBe(blendDraw.material);
+    const u = (fake.draws[0]!.material as THREE.ShaderMaterial).uniforms;
+    expect(u['tAo']!.value).toBe(ao.pass!.pdRenderTarget.texture);
+    expect(u['tDepth']!.value).toBe(ao.pass!.depthTexture);
+    // The shadow maps stay out of the blend here too, and come back as found.
+    expect(fake.draws[0]!.shadowAutoUpdate).toBe(false);
+    expect(fake.draws[0]!.shadowNeedsUpdate).toBe(false);
+    expect(fake.shadowMap).toEqual({ autoUpdate: true, needsUpdate: true });
+    expect(fake.autoClear).toBe(true);
+    expect(fake.getRenderTarget()).toBeNull();
+  });
+
+  // Why this test matters: reapplying is only right while the AO it holds
+  // describes this frame. Before any AO, while off, after dispose or once the
+  // drawing buffer changed size it must draw nothing and say so, so the
+  // caller falls back to render.
+  it('refuses to reapply without a computed AO of this size', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+    ao.render();
+    fake.draws.length = 0;
+    ao.enabled = false;
+    expect(ao.reapply()).toBe(false);
+    ao.enabled = true;
+    fake.size = { x: 401, y: 300 };
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+    ao.render();
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(true);
+    ao.dispose();
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+  });
+
+  // Why this test matters: a render that throws leaves the pass holding a
+  // half-finished AO, so a later reapply would multiply it onto a frame. It
+  // must refuse and draw nothing; the caller then renders again.
+  it('refuses to reapply after a render that threw', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    expect(ao.render()).toBe(true);
+    vi.spyOn(ao.pass!, 'render').mockImplementation(() => {
+      throw new Error('context lost');
+    });
+    expect(() => ao.render()).toThrow('context lost');
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+  });
+
+  // Why this test matters: `reapply` promises the AO the last render both
+  // computed AND blended. A blend that throws after the pass finished must
+  // leave nothing to reapply either, or a later frame gets an AO no render
+  // ever put on screen.
+  it('refuses to reapply after a render whose blend threw', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    expect(ao.render()).toBe(true);
+    vi.spyOn(ao.pass!, 'render').mockImplementation(() => {});
+    const draw = fake.render;
+    fake.render = () => {
+      throw new Error('blend failed');
+    };
+    expect(() => ao.render()).toThrow('blend failed');
+    fake.render = draw;
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+  });
+
+  // Why this test matters: while the AO is off, frames are drawn without
+  // computing it, so the AO held from before describes an older view. After
+  // switching it back on, reapply must refuse until a render computed a new
+  // one, or it would multiply a stale AO onto the frame.
+  it('refuses to reapply after being switched off and on until it renders again', () => {
+    const fake = recordingRenderer();
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+    });
+    ao.render();
+    ao.enabled = false;
+    expect(ao.render()).toBe(false);
+    ao.enabled = true;
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+    ao.render();
+    expect(ao.reapply()).toBe(true);
+    // Setting the value it already has keeps the AO it holds.
+    ao.enabled = true;
+    expect(ao.reapply()).toBe(true);
+  });
+
+  // Why this test matters: the refusal is about the DRAWING BUFFER the AO was
+  // computed at, not the scaled AO target. At scale 0.5 a buffer of 401 and
+  // one of 402 pixels round to the same 201-pixel target, yet the frame is a
+  // different size, so the AO no longer lines up with it.
+  it('refuses to reapply once the drawing buffer changed, even at an unchanged scaled target', () => {
+    const fake = recordingRenderer({ x: 401, y: 300 });
+    const ao = createAmbientOcclusion({
+      renderer: asRenderer(fake),
+      scene: appLikeScene(),
+      camera: camera(),
+      resolutionScale: 0.5,
+    });
+    ao.render();
+    expect(ao.reapply()).toBe(true);
+    fake.size = { x: 402, y: 300 };
+    fake.draws.length = 0;
+    expect(ao.reapply()).toBe(false);
+    expect(fake.draws).toEqual([]);
+  });
+
   it('rejects options outside their range', () => {
     const base = {
       renderer: asRenderer(recordingRenderer()),

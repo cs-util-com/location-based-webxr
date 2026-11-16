@@ -78,9 +78,9 @@ function state(overrides: Partial<ObjectListState>): ObjectListState {
 
 describe("objectListModel on the page", () => {
   // Why: every item must be findable here, so no kind or view drops a
-  // row; a card stands nowhere, so its row says no distance and offers
-  // no Move.
-  it("gives a free character and a card a row, the card without a distance", () => {
+  // row; a free video stands in the world (no free item is a card any
+  // more), so its row says its distance, and only a pin offers Move.
+  it("gives a free character and a free video a row, each with its distance", () => {
     const ann: TourObject = {
       id: "ann",
       kind: "character",
@@ -93,8 +93,9 @@ describe("objectListModel on the page", () => {
     const card: TourObject = {
       id: "c",
       kind: "video",
-      view: "card",
+      view: "screen",
       video: "clip",
+      widthM: 1.6,
       geo: pin("c").geo,
     };
     const codes = [pin("code").geo];
@@ -103,7 +104,7 @@ describe("objectListModel on the page", () => {
     );
     expect(model.rows.map((r) => r.id)).toEqual(["a", "ann", "c"]);
     expect(model.heading).toBe("Objects in this tour (3)");
-    expect(model.rows[2]?.detail).not.toMatch(/from the code/);
+    expect(model.rows[2]?.detail).toMatch(/from the code/);
     expect(model.rows[0]?.detail).toMatch(/from the code/);
     const inAr = objectListModel(
       state({ inAr: true, selectedId: "c", entries: [entry(card)] }),

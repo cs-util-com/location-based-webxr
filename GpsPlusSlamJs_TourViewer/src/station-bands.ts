@@ -6,7 +6,7 @@
  * no floor of its own (D16: whether a station is reached "depends only on
  * the tour's settings, how close one must be") - and around it one
  * hysteresis band shared with the wayfinding HUD's arrival deadband
- * (`distanceMin` / `distanceMax`, absolute metres; DEC-H3 keeps one
+ * (`distanceMin` / `distanceMax`, absolute metres; the shared-helper rule keeps one
  * hysteresis convention in this codebase, not a second fractional one).
  *
  * How precise the position is - a code's, the GPS's with a number, or

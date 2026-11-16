@@ -13,7 +13,7 @@
  * The details are cosmetic, so a READER never fails a tour over one: a
  * value that does not pass is dropped, with its reason, and the tour opens
  * without it. The same checks are exported for the editor's fields, so
- * what the editor accepts is exactly what a reader keeps (DEC-H3).
+ * what the editor accepts is exactly what a reader keeps.
  *
  * @see tour-details.ts.md
  */

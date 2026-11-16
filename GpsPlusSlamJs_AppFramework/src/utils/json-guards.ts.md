@@ -3,8 +3,8 @@
 ## Purpose
 
 The two type guards every hand-edited-JSON parser in the package needs: a
-JSON object and a finite number. One copy per package (DEC-H3); the M1
-review of the guided-setup plan (2026-09-08) found three.
+JSON object and a finite number, in one module so the package keeps one
+implementation of each (three had grown in this package by 2026-09-08).
 
 ## Public API
 

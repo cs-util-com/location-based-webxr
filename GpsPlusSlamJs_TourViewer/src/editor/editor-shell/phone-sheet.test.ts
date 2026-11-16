@@ -16,6 +16,9 @@ import {
   SHEET_SHARE,
   SHELL_DOCK_LAYOUT,
   phoneSheets,
+  cardsDrill,
+  CARDS_DRILL_SHORT_PX,
+  steadyHeight,
   sheetRelease,
   wirePhoneSheets,
   type PhoneSheets,
@@ -81,6 +84,37 @@ describe("the layout", () => {
   it("tells a phone by the width", () => {
     expect(phoneSheets(PHONE_SHEET_PX)).toBe(true);
     expect(phoneSheets(PHONE_SHEET_PX + 1)).toBe(false);
+  });
+});
+
+// Why: a story's step cards open in place on a desktop and drill into the
+// step on a phone, in either orientation: a phone on its side is wide
+// enough for the desktop layout yet too short to read a card opened in
+// place, as the chosen step-cards prototype has it. Swept over common
+// phone sizes on their side and over short and ordinary desktop windows.
+describe("cardsDrill", () => {
+  it("drills on a phone either way round, opens in place on a desktop", () => {
+    for (const [w, h] of [
+      [390, 844],
+      [360, 740],
+      [844, 390],
+      [915, 412],
+      [740, 360],
+      [932, 430],
+    ] as const) {
+      expect(cardsDrill(w, h), `${String(w)} x ${String(h)}`).toBe(true);
+    }
+    for (const [w, h] of [
+      [1280, 800],
+      [1366, 768],
+      [1024, 600],
+      [1920, 1080],
+      [800, 600],
+    ] as const) {
+      expect(cardsDrill(w, h), `${String(w)} x ${String(h)}`).toBe(false);
+    }
+    expect(cardsDrill(1280, CARDS_DRILL_SHORT_PX)).toBe(true);
+    expect(cardsDrill(1280, CARDS_DRILL_SHORT_PX + 1)).toBe(false);
   });
 });
 
@@ -192,5 +226,43 @@ describe("wirePhoneSheets", () => {
     sheets.sync("tree");
     gripOf(tree).dispatchEvent(pointer("pointermove", 200));
     expect(tree.style.height).toBe("");
+  });
+});
+
+// Why: a browser whose keyboard resizes the page shrinks its height while
+// a field is typed in; read as the page's height, that closed an open
+// card (its field focused) on a desktop or tablet the moment the keyboard
+// came up. The height a card's drill reads must ignore the keyboard, and
+// still follow a phone turned on its side.
+describe("steadyHeight", () => {
+  it("keeps the tallest height at a width, so a keyboard changes nothing", () => {
+    const height = steadyHeight();
+    for (const [w, tall, typing] of [
+      [1280, 800, 380],
+      [1024, 768, 420],
+      [915, 412, 180],
+    ] as const) {
+      expect(height(w, tall)).toBe(tall);
+      expect(height(w, typing), `${String(w)} typing`).toBe(tall);
+      expect(cardsDrill(w, height(w, typing))).toBe(cardsDrill(w, tall));
+      expect(height(w, tall)).toBe(tall);
+    }
+  });
+
+  it("starts over when the width changes, as when a phone turns", () => {
+    const height = steadyHeight();
+    expect(height(412, 915)).toBe(915);
+    expect(height(915, 412)).toBe(412);
+    expect(cardsDrill(915, height(915, 412))).toBe(true);
+    expect(height(412, 915)).toBe(915);
+    // A window made taller at its width is taken at once.
+    expect(height(412, 1000)).toBe(1000);
+  });
+
+  it("ignores a height that is not a number", () => {
+    const height = steadyHeight();
+    expect(height(800, 600)).toBe(600);
+    expect(height(800, Number.NaN)).toBe(600);
+    expect(height(800, Infinity)).toBe(600);
   });
 });

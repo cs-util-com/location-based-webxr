@@ -316,7 +316,7 @@ ${GLOBE_FADE_GLSL}`;
 
 /**
  * The clouds' sample and shade, shared by the surface and the cloud shell
- * (`globe-cloud-shell.ts`; DEC-H3): from the geodetic normal `vGeoNormal`
+ * (`globe-cloud-shell.ts`): from the geodetic normal `vGeoNormal`
  * the latitude and longitude (the longitude's gradients by whichever of two
  * wraps changes less across the pixel, Tarini's method), the clouds read
  * `uCloudLonOffset` further west so they drift east, and their blue-grey
@@ -392,7 +392,7 @@ roughnessFactor = mix( roughnessFactor, uWaterRoughness, globeWater * ( 1.0 - gl
  * The twilight look (DEC-GL4-8 item 3) on a diffuse colour, by the sun's
  * height `globeNdl` (the cosine of its zenith angle at the normal): a faint
  * blue-grey night side and a soft band just past the terminator. Shared by
- * the surface and the cloud shell (DEC-H3).
+ * the surface and the cloud shell.
  */
 export const GLOBE_TWILIGHT_GLSL = /* glsl */ `
 totalEmissiveRadiance += uTwilight * diffuseColor.rgb * ( vec3( 0.06, 0.09, 0.16 ) * ( 1.0 - smoothstep( -0.25, 0.05, globeNdl ) ) + vec3( 0.35, 0.3, 0.3 ) * smoothstep( -0.12, 0.0, globeNdl ) * ( 1.0 - smoothstep( 0.0, 0.12, globeNdl ) ) );`;

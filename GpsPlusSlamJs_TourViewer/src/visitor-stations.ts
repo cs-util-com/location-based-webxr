@@ -102,6 +102,7 @@ import { stationTitle } from "./station-run.js";
 import { beckonNext } from "./character-views.js";
 import type { CharacterBeckon } from "./character-look.js";
 import { createRollingWindow, type RollingWindow } from "./rolling-window.js";
+import { reducedMotionReader } from "./reduced-motion.js";
 import {
   sampleFrameTimes,
   walkRadarDebugLines,
@@ -567,8 +568,7 @@ export function wireVisitorStations(deps: {
           projection0: () => seams.xrProjection0(),
           aspect: () => win.innerWidth / win.innerHeight,
           devicePixelRatio: () => win.devicePixelRatio,
-          reduceMotion: () =>
-            win.matchMedia("(prefers-reduced-motion: reduce)").matches,
+          reduceMotion: reducedMotionReader(win),
           observeSize: (onChange) => {
             const Observer = win.ResizeObserver as
               typeof ResizeObserver | undefined;

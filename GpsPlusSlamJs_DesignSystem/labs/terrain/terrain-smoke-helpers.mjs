@@ -2,8 +2,8 @@
 /**
  * The terrain lab smokes' shared helpers (terrain plan 2026-09-27-0605 §5,
  * §9 finding 4): the request routing that keeps every tile on this machine,
- * the boot, and the hash and pixel helpers. One copy for every terrain spec
- * (DEC-H3), so a change of the routing cannot leave one spec testing the
+ * the boot, and the hash and pixel helpers. One copy for every terrain spec,
+ * so a change of the routing cannot leave one spec testing the
  * network.
  */
 import { expect } from "@playwright/test";

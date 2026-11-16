@@ -17,8 +17,10 @@ document's story actions (`storyAdded`, `storyRenamed`, `storyDeleted`,
   all go through it.
 - `withStoryTitle(holder, id, title)` -> the holder renamed, or null.
 - `withoutStory(holder, id)` -> the holder without it, or null.
-- `withStoryChild(holder, id, child)` -> the holder with the child at the
-  end of that story, or null.
+- `withStoryChild(holder, id, child, at?)` -> the holder with the child
+  in that story before the child at `at` (0-based; at the end without
+  one; an `at` outside the story or not a whole number is held to its
+  ends), or null.
 - `withStoryStep(holder, step)` -> the holder with the story's choice or
   quiz of that id replaced by `step`, or null: no such child, another
   kind, or a step the format refuses. The check is the format's own strict

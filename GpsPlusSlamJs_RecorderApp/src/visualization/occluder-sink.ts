@@ -1,7 +1,7 @@
 /**
  * The recorder's persistent occluder (live AR and replay): the framework's
  * `createOccluderSink` - lifted there from this file 2026-10-13 (Tour Viewer
- * polish round M5a, DEC-H3) - fed from the recorder's validated `occupancy`
+ * polish round M5a) - fed from the recorder's validated `occupancy`
  * option group, with the recorder's own mesh worker.
  *
  * @see occluder-sink.ts.md for detailed documentation

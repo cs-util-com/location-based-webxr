@@ -431,6 +431,86 @@ describe("renderTourObjects", () => {
     ).toBe("1 placed object");
   });
 
+  it("draws a short text by its view: only a pin is a label", async () => {
+    // Why this test matters: a tour's objects carry every world view of a
+    // short text, and the creator's previews draw them through this
+    // renderer. A sign, an edge hint or a ground arrow drawn as a pin's
+    // label would show the creator something the visitor never sees; the
+    // station renderer's rules apply, and with no world door here those
+    // views are left out quietly.
+    const { scene, children } = fakeScene();
+    const pin = mintPin({
+      id: "p",
+      label: "Gate",
+      worldNuePosition: { x: 5, y: 400, z: 0 },
+      zero: ZERO,
+      nowIso: NOW,
+    })!;
+    const others: TourObject[] = (["sign", "edgeHint", "ground"] as const).map(
+      (view) => ({ ...pin, id: view, view, caption: view }),
+    );
+    const labels: string[] = [];
+    const rendered = await renderTourObjects([pin, ...others], {
+      scene,
+      zero: ZERO,
+      makeLabel: (text) => {
+        labels.push(text);
+        return { object: new Object3D(), dispose: () => undefined };
+      },
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    });
+    expect(labels).toEqual(["Gate"]);
+    expect(rendered.count).toBe(1);
+    expect(rendered.skipped).toEqual([]);
+    expect(children[0]?.children).toHaveLength(1);
+  });
+
+  it("draws a picture by its view: a plane, or a viewpoint view without its viewpoint", async () => {
+    // Why this test matters: a tour's objects carry every world view of a
+    // picture, and the creator's previews draw them through this
+    // renderer. A framed print, a cut-out or a picture lined up from its
+    // viewpoint drawn as a bare plane would show the creator something the
+    // visitor never sees; the station renderer's rules apply (a viewpoint
+    // view without a viewpoint is a plane, as the format reads it), and
+    // with no world door here the other views are left out quietly.
+    const { scene, children } = fakeScene();
+    const photo = mintPhoto({
+      id: "plane",
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      alignmentMatrix: IDENTITY,
+      zero: ZERO,
+      imageWidth: 4,
+      imageHeight: 3,
+      nowIso: NOW,
+    })!;
+    const viewpoint = {
+      position: [0, 1.6, 4],
+      rotation: [0, 0, 0, 1],
+      hfovDeg: 60,
+      distanceM: 4,
+    } as const;
+    const others: TourObject[] = [
+      { ...photo, id: "framed", view: "framed" },
+      { ...photo, id: "cutout", view: "cutout" },
+      { ...photo, id: "lined-up", view: "thenNow", viewpoint },
+      { ...photo, id: "no-viewpoint", view: "window" },
+    ];
+    const loaded: string[] = [];
+    const rendered = await renderTourObjects([photo, ...others], {
+      scene,
+      zero: ZERO,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: (name) => {
+        loaded.push(name);
+        return Promise.resolve(new Texture());
+      },
+    });
+    expect(rendered.count).toBe(2);
+    expect(rendered.skipped).toEqual([]);
+    expect(loaded).toHaveLength(2);
+    expect(children[0]?.children).toHaveLength(2);
+  });
+
   it("places pins and photos at the caller's pose in the caller's frame when it passes one", async () => {
     // Why this test matters (authoring plan 2026-09-28-0953, M2c): the
     // creator's previews of the running visit go under the AR world group
@@ -714,7 +794,9 @@ describe("renderTourStation", () => {
     let partDisposed = 0;
     const counted = (block: TourBlock) => {
       const part = door(block);
-      if (part === null) return null;
+      // Only the model's part is counted; the pin's head is freed with
+      // the station as any other part.
+      if (part === null || block.kind !== "model") return part;
       const dispose = part.dispose.bind(part);
       part.dispose = () => {
         partDisposed += 1;
@@ -865,21 +947,22 @@ describe("renderTourStation", () => {
 
       // A later block throws: the part is freed with the construction, and
       // its rejection is still handled.
-      let throwingLabel = 0;
+      let throwingPin = 0;
       await expect(
         renderTourStation(stationAt("s", stationGeo, [model, pin]), {
           assets: [],
           scene: new Group(),
           zero: ZERO,
-          makeLabel: () => {
-            throwingLabel += 1;
+          makeLabel: labelStub,
+          loadPhotoTexture: slowPhoto,
+          worldPart: (block) => {
+            if (block.kind !== "shortText") return failing(false)();
+            throwingPin += 1;
             throw new Error("no canvas");
           },
-          loadPhotoTexture: slowPhoto,
-          worldPart: failing(false),
         }),
       ).rejects.toThrow("no canvas");
-      expect(throwingLabel).toBe(1);
+      expect(throwingPin).toBe(1);
       await new Promise((resolve) => setTimeout(resolve, 10));
       expect(unhandled).toEqual([]);
     } finally {
@@ -1203,6 +1286,61 @@ describe("renderTourStation", () => {
     for (const part of parts) expect(mountedWorldParts()).not.toContain(part);
   });
 
+  // Why: a pin block has its own look in the world (a head on a stem
+  // over a ring, `kinds/short-text/pin.ts`), which the page's world door
+  // builds. Only a page without a door (no kinds' rows to ask) falls
+  // back to the plain label, so a pin never vanishes.
+  it("stands a pin block through the world door where there is one, and as a label where not", async () => {
+    const base = {
+      geo: { lat: ZERO.lat, lon: ZERO.lon, alt: 0, rotation: yaw(0) },
+      children: [],
+    };
+    const station = withFreeBlocks(base, [
+      {
+        id: "here",
+        kind: "shortText",
+        view: "pin",
+        caption: "This way to the guild house",
+        pose: { position: [1, 0, 2], rotation: yaw(0) },
+      },
+    ]);
+    const labels: string[] = [];
+    const deps = {
+      assets: [],
+      scene: new Group(),
+      zero: ZERO,
+      makeLabel: (text: string) => {
+        labels.push(text);
+        return labelStub(text);
+      },
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+    };
+    const plain = await renderTourStation({ ...base, ...station }, deps);
+    expect(labels).toEqual(["This way to the guild house"]);
+    plain.dispose();
+    labels.length = 0;
+    const doors: string[] = [];
+    const drawn = await renderTourStation(
+      { ...base, ...station },
+      {
+        ...deps,
+        worldPart: (block) => {
+          doors.push(block.id);
+          return worldPartOf(
+            block,
+            worldEnv("play", [], () => Promise.reject(new Error("none"))),
+          );
+        },
+      },
+    );
+    expect(labels).toEqual([]);
+    expect(doors).toEqual(["here"]);
+    expect(
+      drawn.root.getObjectByName("short-text-pin")?.userData["objectId"],
+    ).toBe("here");
+    drawn.dispose();
+  });
+
   // Why: a part stands as its block's pose says, pitch and roll included:
   // only the stand and the sign are set upright, by their own arm, so a
   // kind that wants a tilt (a plaque on a slope) gets it.
@@ -1424,12 +1562,16 @@ describe("renderTourStation", () => {
             throw new Error("no canvas");
           },
           loadPhotoTexture: () => Promise.resolve(new Texture()),
-          worldPart: () => ({
-            object: new Object3D(),
-            dispose: () => {
-              throw new Error("broken part");
-            },
-          }),
+          // The pin's head is the later block that cannot be made.
+          worldPart: (block) => {
+            if (block.kind === "shortText") throw new Error("no canvas");
+            return {
+              object: new Object3D(),
+              dispose: () => {
+                throw new Error("broken part");
+              },
+            };
+          },
         },
       ),
     ).rejects.toThrow("no canvas");

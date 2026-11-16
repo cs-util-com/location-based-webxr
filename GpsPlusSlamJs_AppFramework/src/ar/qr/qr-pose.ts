@@ -367,8 +367,8 @@ export function reprojectionErrorPx(
  * Rotate a vector by a unit quaternion in FULL double precision. (The core
  * library carries the same expansion as a module-PRIVATE helper,
  * `orientation-heading.ts`'s `rotateVectorByQuat` — deliberately not
- * importable since quality-review A-7, hence this per-package copy, allowed
- * under DEC-H3; both files cross-reference so a third copy is never
+ * importable since quality-review A-7, hence this per-package
+ * deliberate copy (shared-helper rule); both files cross-reference so a third copy is never
  * re-derived.)
  *
  * v' = v + 2·qv×(qv×v + w·v). Deliberately not gl-matrix (`transformPoint`

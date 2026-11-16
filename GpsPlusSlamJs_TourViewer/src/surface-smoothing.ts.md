@@ -32,7 +32,8 @@ different surface.
   stays on one great circle). The framework's `clampedAlpha(rate, dt) = min(rate * dt, 1)`
   (`visualization/lerp-utils.ts`) is the linear approximation of this and is only roughly
   independent; it is left as it is for its four framework users. `1 - exp(-dt / tau)` is a
-  one-liner, so it exists here once for the package (DEC-H3), as it does inline in the
+  one-liner, so it exists here once for the package as a
+  deliberate copy (shared-helper rule: a one-liner once per package), as it does inline in the
   framework's elevation estimator, the Landing scene and the Globe.
 - **The snap tests the LAG** (smoothed point to target), not the per-frame jump, so it
   does not depend on the frame rate; it is relative to the target's distance from the

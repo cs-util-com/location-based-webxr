@@ -2,7 +2,7 @@
 
 ## Purpose
 
-One 0..1 "compass influence" number → the SET of library settings that together mean "the compass has this much say". Shared behaviour with a contract (root reuse rule, DEC-H3), deep-imported as `gps-plus-slam-app-framework/utils/compass-influence-mapping` by every app with a compass-influence slider: the OSM demo (since 2026-08-20; the module moved out of it on 2026-09-02) and the recorder's in-recording field wheel (2026-09-02). Not re-exported through the `utils` barrel, by the same rule as `escape-html`.
+One 0..1 "compass influence" number → the SET of library settings that together mean "the compass has this much say". Shared behaviour with a contract (root reuse rule), deep-imported as `gps-plus-slam-app-framework/utils/compass-influence-mapping` by every app with a compass-influence slider: the OSM demo (since 2026-08-20; the module moved out of it on 2026-09-02) and the recorder's in-recording field wheel (2026-09-02). Not re-exported through the `utils` barrel, by the same rule as `escape-html`.
 
 ## Public API
 

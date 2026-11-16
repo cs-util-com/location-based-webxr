@@ -640,19 +640,33 @@ describe('children: a file of a newer minor (lenient)', () => {
     const read = children(
       [
         { ...text, view: 'captions' },
-        { ...video, view: 'hologram' },
+        { ...video, view: 'hologram', widthM: 1 },
         storyOf('a', [{ ...pin, view: 'hologram' }]),
       ],
       { lenient: true, drops }
     );
     expect(read[0]).toMatchObject({ id: 'intro', view: 'reading' });
-    expect(read[1]).toMatchObject({ id: 'film', view: 'card' });
+    expect(read[1]).toMatchObject({ id: 'film', view: 'screen' });
     expect(read[2]).toMatchObject({
       id: 'a',
       children: [{ id: 'sign', view: 'card' }],
     });
     expect(read).toHaveLength(3);
     expect(drops).toEqual([]);
+  });
+
+  it('a free video in an unknown view without a width is skipped: its screen would have no size', () => {
+    // Why: a video's floor (`screen`) needs a width, as a placed model
+    // needs a size; inventing one would stand a clip at a size nobody chose.
+    const drops: TourChildDrop[] = [];
+    const read = children([{ ...video, view: 'hologram' }], {
+      lenient: true,
+      drops,
+    });
+    expect(read).toEqual([]);
+    expect(drops).toEqual([
+      expect.objectContaining({ kind: 'block', block: 'film' }),
+    ]);
   });
 
   it('an unknown advance mode is a tap', () => {

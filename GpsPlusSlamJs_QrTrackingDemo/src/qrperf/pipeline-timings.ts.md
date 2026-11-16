@@ -14,7 +14,7 @@ Rolling collector behind the `?qrperf` report: per-stage duration summaries and 
 
 ## Invariants & assumptions
 
-- Median is the framework's shared `interpolatingMedian` (`gps-plus-slam-app-framework/utils/median`, DEC-H3), and the p95 its shared `nearestRankPercentile` (`gps-plus-slam-app-framework/utils/percentile`, moved there from this file on 2026-10-03 for the globe frame recorder, DEC-H3).
+- Median is the framework's shared `interpolatingMedian` (`gps-plus-slam-app-framework/utils/median`), and the p95 its shared `nearestRankPercentile` (`gps-plus-slam-app-framework/utils/percentile`, moved there from this file on 2026-10-03 for the globe frame recorder).
 - `min <= median <= p95 <= max` and `n <= windowSize` for any input (seeded property test).
 - `longFrames` counts `xr-frame` intervals longer than 1.5x and 2x their own median - relative on purpose, because a 30 fps and a 60 fps session differ by 2x (cold review finding 10).
 - Rates count only events after `nowMs - rateWindowMs`; older timestamps are dropped at snapshot time, so memory stays bounded.

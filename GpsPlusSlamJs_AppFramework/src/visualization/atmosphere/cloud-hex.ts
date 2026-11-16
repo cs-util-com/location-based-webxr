@@ -216,7 +216,7 @@ export function hexCoverThresholds(
  * The cover thresholds of a sample of a noise field: for each cover, the
  * (1 - cover) quantile of `values` (sorted in place), +Infinity at cover 0
  * (a clear sky, as `cloudThresholdForCover`). Shared by the hex and the
- * live tables (DEC-H3: one implementation).
+ * live tables (one implementation).
  */
 export function quantileThresholds(
   values: Float64Array,
@@ -310,7 +310,7 @@ export function hexCloudThreshold(cover: number): number {
  * those at k / 512 (k = 1..16, the last equal to the table's 1 / 32).
  * Linear between the table's covers, below 1 / 32 between the low tail's (a
  * cover under 1 / 512 takes the tail's first); +Infinity at 0 (a clear
- * sky). Shared by the hex and the live fields (DEC-H3). RangeError for a
+ * sky). Shared by the hex and the live fields. RangeError for a
  * cover outside [0, 1].
  */
 export function coverTableThreshold(

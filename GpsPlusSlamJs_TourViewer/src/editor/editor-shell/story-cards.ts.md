@@ -1,0 +1,70 @@
+# story-cards.ts
+
+## Purpose
+
+A story's steps as the story inspector's cards, pure: what each step is,
+how a block moves on, where each answer of a choice leads (a jump chip
+the editor can follow), a quiz's right answer and where the story goes
+after it, and the loop warning on the steps of a loop no answer can
+leave, with its one fix on the loop's last choice. `shell-inspector.ts`
+draws them; `inspector-model.ts` puts them on the story's inspector.
+
+## Public API
+
+- `storyCards(steps)` -> `StoryCard[]`, one per step, in order:
+  - `id`, `number` (1-based), `kind` (the tree row's kind: a block's
+    look, `choice`, `quiz`);
+  - `tag`: "Asks" (a choice), "Quiz", or "Shows <a kind>" for a block
+    (`kindWithArticle`);
+  - `title`: a choice's prompt, a quiz's question, a block's name as the
+    tree shows it (`storyRows`);
+  - `line`: "The visitor picks one of <n> answers." /
+    "<n> points for the right answer, then the story goes on."; null for
+    a block;
+  - `chips`: a block's moves-on chip (`advanceChip`); none for a step;
+  - `answers`: a choice's answers, each with its `jump`; a quiz's answers
+    with `right` and no jump, then "After the answer" with the quiz's way
+    on;
+  - `issue`: the loop's message (`storyTrap`) on each step of the loop;
+  - `fix`: `Let "<label>" end the story` on the loop's last choice
+    (its last answer's words, "the last answer" when blank), else null.
+- `StoryCardJump { text, type, to }`: the chip's words (`stepJumpText`),
+  its kind (`next`, `jump`, `back`, `end`, `missing`) and the id of the
+  step it leads to (null for the end or a gone step).
+- `STEP_GRIP_ARM` (frozen `{ holdMs: 150, tolerancePx: 6, movePx: 4 }`):
+  when a press on a card's grip drags it (`createTreeDrag`'s `arm`). A
+  finger rests 150 ms within 6 px first, so a flick that scrolls the cards
+  and starts on a grip moves nothing; a mouse drags from 4 px, so a click
+  marks nothing. Short of the dock tabs' 250 ms hold and the page's
+  500 ms long press, so neither runs out under a drag. Swept in
+  `tree-drag-arm.test.ts` over holds 100-250 ms and tolerances 4-8 px:
+  flicks never drag, a 300 ms rest always does, and a slow drift turns
+  from a drag to none near tolerancePx / holdMs (between 0.6 and 0.7 px a
+  frame at 150 ms and 6 px). The grip lets a finger pan (`touch-action:
+pan-y`), so a flick from it scrolls the cards; once a rested finger
+  drags, the drag holds them still.
+- `advanceChip(advance)` (module-private): "After <s> s", "On a tap",
+  "When the line ends".
+
+## Invariants and assumptions
+
+- Pure; the steps are never changed. The graph is `story-steps.ts`'s, so
+  the chips, the jump picker and the Problems list never disagree.
+- A quiz whose answer is not a single pick (a typed answer) shows only
+  its "After the answer".
+- The fix is offered only where a click can fix it: a loop with no
+  choice (which the format cannot build today) carries the warning only.
+
+## Examples
+
+```ts
+const cards = storyCards(story.children);
+cards[1].answers[0].jump; // { text: "goes back to step 1", type: "back", to: "t1" }
+```
+
+## Tests
+
+`story-cards.test.ts`: the tags, titles and lines of a block, a choice
+and a quiz, each answer's jump chip, a quiz's right mark and "After the
+answer", and the loop warning on every step of the loop with the fix on
+its last choice only.

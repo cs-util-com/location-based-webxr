@@ -1,6 +1,6 @@
 /**
  * Copy text to the clipboard from a button, and say how it went (Tour
- * Viewer follow-up F7, root CLAUDE.md DEC-H3 and its async-UI rule): busy
+ * Viewer follow-up F7, the shared-helper rule and the async-UI rule): busy
  * and disabled before the write, the real outcome after, the button usable
  * again in every case. The write runs INSIDE the promise chain, so one
  * that throws before it returns a promise (no clipboard on an http page,

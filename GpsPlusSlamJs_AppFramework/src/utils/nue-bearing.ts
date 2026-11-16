@@ -1,7 +1,7 @@
 /**
  * The geographic bearing of a direction in the GPS-world NUE frame, degrees
- * clockwise from north. Lifted from OsmDemo's `ar-origin.ts` (2026-09-24,
- * DEC-H3): the AR sun check needs the same conversion, and one shared copy
+ * clockwise from north. Lifted from OsmDemo's `ar-origin.ts` (2026-09-24):
+ * the AR sun check needs the same conversion, and one shared copy
  * keeps the axis convention in one place.
  *
  * THE FRAME IS THE WHOLE RISK, so it is stated rather than implied: the

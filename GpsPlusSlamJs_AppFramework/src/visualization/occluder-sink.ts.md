@@ -4,7 +4,7 @@
 
 The ONE persistent-occluder wiring: the RecorderApp's live AR and replay, and the Tour
 Viewer's mesh cursor. Lifted here from the RecorderApp 2026-10-13 (Tour Viewer polish round
-M5a, DEC-H3), with plain options in place of the recorder's option group and the worker
+M5a), with plain options in place of the recorder's option group and the worker
 supplied by the app. Extracted in the RecorderApp 2026-07-04 (code-health plan step 5) from two
 structurally identical ~40-line blocks that had to be edited in lockstep — the review log
 repeatedly flagged "keep both sites parallel", which was the tell that they should be one

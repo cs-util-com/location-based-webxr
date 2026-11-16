@@ -10,7 +10,7 @@ import { selectGpsPositions, selectZeroReference } from './app-selectors';
  * Why this test matters: three consumer apps ended AR sessions without any
  * state teardown, so a re-entry blended the dead session's odometry-origin
  * GPS pairs into the new session's alignment solve (found across the
- * PR #359 and M3/M4 review rounds). This is the ONE shared sequence (DEC-H3
+ * PR #359 and M3/M4 review rounds). This is the ONE shared sequence (shared-helper
  * unification) — proven against the real slices: recording closed, pairs
  * dropped, the ZERO preserved (scene content is placed relative to it).
  */

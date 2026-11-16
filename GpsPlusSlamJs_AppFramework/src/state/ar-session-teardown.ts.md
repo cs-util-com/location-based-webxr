@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The AR session-end STATE teardown every consumer app shares (DEC-H3
+The AR session-end STATE teardown every consumer app shares (shared-helper
 unification, 2026-08-26, when the third app grew the same sequence):
 close the recording, drop the session's odometry↔GPS pairs and solved
 alignment (zero PRESERVED), clear the coordinator's cached orientation.

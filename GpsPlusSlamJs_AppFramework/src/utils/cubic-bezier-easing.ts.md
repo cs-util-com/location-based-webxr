@@ -28,7 +28,7 @@
   - Deep import only (`gps-plus-slam-app-framework/utils/cubic-bezier-easing`),
     not on the `/utils` barrel - one curve must not drag the logger in. A
     per-file tsdown entry advertises the subpath.
-  - SHARED behaviour under DEC-H3: a `shared` CANONICAL entry in the webxr
+  - SHARED behaviour under the shared-helper rule: a `shared` CANONICAL entry in the webxr
     root's `tests/repo-config/duplicate-helpers.test.js` stops a second
     named copy.
 - Example:

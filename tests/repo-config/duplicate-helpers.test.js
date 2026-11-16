@@ -8,8 +8,10 @@
 // means the repo had a copy-paste detector and four toasts, five `clamp01`s and
 // four `smoothstep`s at the same time.
 //
-// THE RULE IT ENFORCES (owner decision DEC-H3, 2026-08-24): shared BEHAVIOUR is
-// unified across packages; a pure one-liner may exist once per package. So the
+// THE RULE IT ENFORCES (the shared-helper rule, 2026-08-24): shared BEHAVIOUR
+// is unified across packages; a pure one-liner may exist once per package.
+// A copy kept on purpose says so in its comment or sidecar with the marker
+// "deliberate copy (shared-helper rule", so every such copy is one search away. So the
 // guard has two shapes, `shared` and `perPackage`, and which one a name gets is
 // the decision, not an implementation detail.
 //
@@ -71,7 +73,7 @@ import { readTracked, repoRoot, trackedFiles } from "./tracked-tree.js";
  * 2026-09-22, all in `GpsPlusSlamJs_Investigation`: five hand-rolled
  * `escapeHtml` copies (rule `shared`), seven `median` definitions in that one
  * package (rule `perPackage`), and an unacknowledged `weightedMedian`. Only the
- * escapers were folded — they carry a character class, which DEC-H3 names as
+ * escapers were folded — they carry a character class, which the shared-helper rule names as
  * shared behaviour; the medians are a separate judgement about what "the"
  * median should even mean per call site.
  *

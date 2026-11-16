@@ -107,6 +107,16 @@ function station(
   };
 }
 
+/** A ground arrow at scale `scale`, bent `bendDeg`, as its row has it. */
+function arrow(scale: number, bendDeg = 0): GestureTarget {
+  return {
+    ...LECTERN,
+    ref: block("arrow"),
+    extent: dots(blockPlacement("shortText", "ground")?.extent, scale),
+    bendDeg,
+  };
+}
+
 function at(x: number, y: number): ScreenPoint {
   return { x, y };
 }
@@ -317,6 +327,93 @@ describe("a dot", () => {
   it("is no handle of a pin or a photo", () => {
     const { world } = flatWorld();
     expect(startGesture("dot", PIN, at(1, 0), world)).toBeNull();
+  });
+});
+
+// Why: the ground arrow's two handles write its own fields - the dots its
+// one scale (readAtM), the knob behind its start its bend - each as one
+// edit on release, and only a placeable that bends has the knob.
+describe("a ground arrow's handles", () => {
+  it("sets the scale from the dot's distance on its linear ring", () => {
+    const { world } = flatWorld();
+    const g = startGesture("dot", arrow(6), at(0, 0.75), world);
+    g?.move(at(0, 1.05), false);
+    expect(g?.preview().value).toBe(10);
+    expect(g?.edit()).toEqual({
+      kind: "extent",
+      ref: block("arrow"),
+      value: 10,
+    });
+  });
+
+  it("bends by the knob's sweep about the start (screen y is south)", () => {
+    const { world } = flatWorld();
+    // Behind the start of an arrow heading north: due south, (0, +1).
+    const g = startGesture("bend", arrow(6, 0), at(0, 1), world);
+    // Swept clockwise seen from above to south-west: +45 degrees.
+    g?.move(at(-1, 1), false);
+    expect(g?.preview().bendDeg).toBe(45);
+    expect(g?.edit()).toEqual({ kind: "bend", ref: block("arrow"), deg: 45 });
+    const back = startGesture("bend", arrow(6, 0), at(0, 1), world);
+    back?.move(at(0, 1), false);
+    expect(back?.edit()).toBeNull();
+  });
+
+  it("is no handle of what does not bend, nor of a locked arrow", () => {
+    const { world } = flatWorld();
+    expect(startGesture("bend", LECTERN, at(0, 1), world)).toBeNull();
+    expect(
+      startGesture("bend", { ...arrow(6), locked: true }, at(0, 1), world),
+    ).toBeNull();
+  });
+});
+
+// Why: a sign's or a ground arrow's point has its own handle in the 3D
+// view (the prototype's white diamond). Dragging it must move the point
+// level with where it was grabbed, write it in the station's frame as one
+// edit, and stay out of a locked station and of a text that points
+// nowhere.
+describe("a short text's point handle", () => {
+  /** A sign whose point stands at (10, 2, -20) in the world; its station
+   *  frame here is the world moved 100 m east. */
+  const pointing = (locked = false): GestureTarget => ({
+    ...LECTERN,
+    ref: block("sign"),
+    locked,
+    point: {
+      at: { x: 10, y: 2, z: -20 },
+      local: (w) => [w.x - 100, w.y, w.z],
+    },
+  });
+
+  it("drags the point on its own level from where it was grabbed, and writes it in the station's frame", () => {
+    const { world } = flatWorld();
+    // Grabbed 1 m east of the point.
+    const g = startGesture("point", pointing(), at(11, -20), world);
+    expect(g?.preview().pointAt).toEqual({ x: 10, y: 2, z: -20 });
+    g?.move(at(16, -25), false);
+    expect(g?.preview().pointAt).toEqual({ x: 15, y: 2, z: -25 });
+    expect(g?.edit()).toEqual({
+      kind: "point",
+      ref: block("sign"),
+      at: [-85, 2, -25],
+    });
+  });
+
+  it("writes nothing for a drag that ends where it began", () => {
+    const { world } = flatWorld();
+    const g = startGesture("point", pointing(), at(10, -20), world);
+    g?.move(at(14, -20), false);
+    g?.move(at(10, -20), false);
+    expect(g?.edit()).toBeNull();
+  });
+
+  it("is no handle of what points nowhere, nor of a locked one", () => {
+    const { world } = flatWorld();
+    expect(startGesture("point", LECTERN, at(0, 0), world)).toBeNull();
+    expect(
+      startGesture("point", pointing(true), at(10, -20), world),
+    ).toBeNull();
   });
 });
 

@@ -1,6 +1,6 @@
 /**
  * The sky's level for the fill light (DEC-GL5-11), the one implementation
- * the terrain lab's relief and the globe's surface both read (DEC-H3).
+ * the terrain lab's relief and the globe's surface both read.
  * The terrain lab's `node --test` files load it through the design
  * system's route loader.
  *

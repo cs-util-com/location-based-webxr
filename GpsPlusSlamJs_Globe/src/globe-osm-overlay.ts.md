@@ -271,7 +271,7 @@ ceilingWaitS }`: the street map's loading state for an interface to
       outcome whose `retry` is below its ask's.
 - Invariants & assumptions:
   - The URL and the attribution are the caller's: the framework's
-    `osm-tiles.ts` (DEC-H3, held by `tests/repo-config/osm-tile-url-copies.test.js`).
+    `osm-tiles.ts` (held by `tests/repo-config/osm-tile-url-copies.test.js`).
     This module imports neither the framework's tile constants nor the
     Osm library (the Globe package depends on the framework only for its
     atmosphere and cloud modules, and not on the Osm library); the globe

@@ -326,8 +326,9 @@ describe("buildInspector", () => {
       expect(model).not.toHaveProperty("story");
     });
 
-    it("shows a story's title, its place and its numbered entries", () => {
-      expect(inStory("story:legend")).toEqual({
+    it("shows a story's title, its place and its steps as cards", () => {
+      const model = inStory("story:legend");
+      expect(model).toMatchObject({
         kind: "story",
         storyId: "legend",
         stationId: "b",
@@ -340,14 +341,72 @@ describe("buildInspector", () => {
         },
         title: "The legend",
         sub: "Story",
-        entries: [
-          { id: "intro", kind: "text", title: "The siege", place: 1 },
-          { id: "wendel", kind: "character", title: "Wendel", place: 2 },
-          { id: "way", kind: "choice", title: "Choice: Which way?", place: 3 },
-          { id: "age", kind: "quiz", title: "Quiz: How old?", place: 4 },
-          { id: "year", kind: "quiz", title: "Quiz: Which year?", place: 5 },
-        ],
       });
+      if (model?.kind !== "story") throw new Error("no story");
+      expect(model).not.toHaveProperty("opened");
+      expect(
+        model.cards.map((c) => [c.id, c.kind, c.number, c.tag, c.title]),
+      ).toEqual([
+        ["intro", "text", 1, "Shows a long text", "The siege"],
+        ["wendel", "character", 2, "Shows a character", "Wendel"],
+        ["way", "choice", 3, "Asks", "Which way?"],
+        ["age", "quiz", 4, "Quiz", "How old?"],
+        ["year", "quiz", 5, "Quiz", "Which year?"],
+      ]);
+    });
+
+    // Why: the "Story valid" / "N problems" pill reads these rows, and they
+    // must be the Problems tab's own (`storyProblems`), not a second rule
+    // set: on the story and on each of its steps (a phone drills into one),
+    // valid while every path can reach the end, and naming the loop's first
+    // step once every answer of a choice goes back.
+    it("checks a story with the Problems tab's rows, on it and its steps", () => {
+      for (const selected of ["story:legend", "intro", "way"]) {
+        expect(inStory(selected)).toMatchObject({ check: [] });
+      }
+      const trapped = structuredClone(STORY_STATION);
+      const story = trapped.children[0] as unknown as {
+        children: {
+          id: string;
+          options?: { goto?: string; end?: boolean }[];
+        }[];
+      };
+      for (const option of story.children[2]?.options ?? []) {
+        option.goto = "intro";
+        delete option.end;
+      }
+      for (const selected of ["story:legend", "intro", "way"]) {
+        const model = buildInspector({
+          selected,
+          stations: [STATIONS[0]!, trapped],
+          assets: [],
+          codes: CODES,
+        });
+        expect(model).toMatchObject({
+          check: [{ select: "intro", what: expect.stringContaining("loop") }],
+        });
+      }
+    });
+
+    // Why: a card opened in place edits its step with the step's own
+    // controls, so the story's inspector carries the step's inspector for
+    // each open card, in the story's order; an id the story lacks opens
+    // nothing.
+    it("carries the inspectors of the cards open in place", () => {
+      const model = buildInspector({
+        selected: "story:legend",
+        stations: [STATIONS[0]!, STORY_STATION],
+        assets: [],
+        codes: CODES,
+        openCards: ["way", "gone", "intro"],
+      });
+      if (model?.kind !== "story") throw new Error("no story");
+      expect(
+        model.opened?.map((m) => [m.kind, "id" in m ? m.id : null]),
+      ).toEqual([
+        ["storyEntry", "intro"],
+        ["storyStep", "way"],
+      ]);
     });
 
     it("shows a story's block by its texts and how it moves on", () => {
@@ -736,6 +795,39 @@ describe("buildInspector", () => {
     });
   });
 
+  it("names a short text by the view it shows as", () => {
+    // Why: a sign or an edge hint headed "Pin in ..." told the creator
+    // it was still a pin after choosing otherwise.
+    const as = (view: "pin" | "sign" | "edgeHint") => {
+      const [first, ...rest] = STATIONS;
+      if (first === undefined) throw new Error("no station");
+      const station = {
+        ...first,
+        ...stationContent([
+          {
+            id: "t",
+            kind: "shortText",
+            view,
+            caption: "Gate",
+            createdAtIso: AT,
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+        ]),
+      };
+      const model = buildInspector({
+        selected: "t",
+        stations: [station, ...rest],
+        assets: [],
+        codes: [],
+        unlockedStations: [],
+      });
+      return model !== null && "sub" in model ? model.sub : null;
+    };
+    expect(as("sign")).toBe("Sign in Market Square");
+    expect(as("edgeHint")).toBe("Edge hint in Market Square");
+    expect(as("pin")).toBe("Pin in Market Square");
+  });
+
   it("shows an item's kind, its station, its offset and its size", () => {
     expect(inspect("pin-1")).toEqual({
       kind: "item",
@@ -756,8 +848,35 @@ describe("buildInspector", () => {
       model: null,
       // Only a free long text has the writer.
       longText: null,
-      // A short text's view, role and turn, for its panel.
-      shortText: { view: "pin", role: null, orientation: null },
+      // A short text's view and its choices in that view, for its panel.
+      shortText: {
+        view: "pin",
+        choices: [
+          {
+            name: "role",
+            label: "Role",
+            value: "label",
+            values: [
+              { value: "instruction", label: "Instruction" },
+              { value: "label", label: "Label" },
+              { value: "warning", label: "Warning" },
+            ],
+          },
+          {
+            name: "orientation",
+            label: "Turns",
+            value: "upright",
+            values: [
+              { value: "world", label: "Fixed" },
+              { value: "upright", label: "Upright" },
+              { value: "face", label: "Faces you" },
+            ],
+          },
+        ],
+        // A pin's arrow turns toward the point it points to.
+        point: { id: "pin-1", at: null, picking: false },
+      },
+      video: null,
       // B2c: its other text fields, by the format's caps.
       fields: [
         {
@@ -769,11 +888,27 @@ describe("buildInspector", () => {
           unit: "codePoints",
           required: false,
         },
+        {
+          name: "readAtM",
+          label: "Reads at",
+          value: "",
+          number: { unit: "m", scale: 1 },
+          prose: false,
+          required: false,
+        },
+        {
+          name: "lang",
+          label: "Language",
+          value: "",
+          prose: false,
+          required: false,
+          typed: { example: "en or pt-BR" },
+        },
       ],
       offset: { northM: 4, upM: 1.5, eastM: -2 },
       headingDeg: 0,
-      // A pin faces the visitor: its gizmo has no round arrow.
-      turns: false,
+      // A pin stands in the world and keeps its turn, as a sign does.
+      turns: true,
       folder: null,
       groundOffM: null,
     });
@@ -853,9 +988,9 @@ describe("inspectorHint", () => {
     expect(inspectorHint(inspect("station:a", ["a"]))).toBe(
       "Market Square - drag the middle to move (its items follow), a white dot for the radius, the round arrow to turn",
     );
-    // A pin faces the visitor, so its gizmo has no round arrow to name.
+    // A pin keeps its turn, so its gizmo names the round arrow too.
     expect(inspectorHint(inspect("pin-1"))).toBe(
-      "Fountain, 1612 - drag the middle to move along the ground",
+      "Fountain, 1612 - drag the middle to move along the ground, the round arrow to turn",
     );
     expect(inspectorHint(inspect("model-1"))).toBe(
       "3D model - drag the middle to move along the ground, the round arrow to turn, a white dot to resize",
@@ -888,6 +1023,44 @@ describe("inspectorHint", () => {
       extent: { field: "widthM", label: "Width", value: 1.5, max: 50 },
     });
     expect(inspectorHint(photo)).toMatch(/, a white dot to resize$/);
+    // A picture has no slider: its width is typed. A video standing as a
+    // screen has one beside the number, on the track set by feel.
+    expect(photo).toMatchObject({ extent: { slider: null } });
+    const screen = buildInspector({
+      selected: "clip",
+      stations: [
+        {
+          ...STATIONS[0]!,
+          ...stationContent([
+            {
+              id: "clip",
+              kind: "video",
+              view: "screen",
+              video: "v",
+              poster: "p",
+              widthM: 2,
+              createdAtIso: AT,
+              pose: { position: [1, 1, 0], rotation: [0, 0, 0, 1] },
+            },
+          ]),
+        },
+      ],
+      assets: [
+        { id: "v", path: "content/v.mp4", kind: "video" },
+        { id: "p", path: "content/p.jpg", kind: "image" },
+      ],
+      codes: CODES,
+      unlockedStations: [],
+    });
+    // The inspector's preview reads the clip and its poster by their paths.
+    expect(screen).toMatchObject({
+      video: { clipPath: "content/v.mp4", posterPath: "content/p.jpg" },
+      extent: {
+        field: "widthM",
+        value: 2,
+        slider: { min: 0.3, max: 6, step: 0.05 },
+      },
+    });
     expect(inspectorHint(inspect("level-1"))).toBe(
       "Code 1 - read-only here; F frames it, Esc deselects",
     );
@@ -1033,6 +1206,17 @@ describe("buildInspector: the values the inspector edits", () => {
       codes: CODES,
       ...more,
     });
+
+  // Why: a picture's words say under each field where its view shows
+  // them, so the inspector must carry that mark with each field.
+  it("marks a picture's fields with where its view shows them", () => {
+    const model = at("photo-1");
+    const fields = model?.kind === "item" ? model.fields : [];
+    expect(fields.find((f) => f.name === "caption")?.mark).toBe(
+      "Not used by Plane.",
+    );
+    expect(fields.every((f) => f.mark !== undefined)).toBe(true);
+  });
 
   // Why: the title box shows what the creator typed, never the stand-in
   // the tree shows for an untitled station - typing into "Station 2"

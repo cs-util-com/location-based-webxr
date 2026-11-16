@@ -28,7 +28,7 @@ The landing page's one `clamp01`: clamps a number into `[0, 1]`.
 - **A deliberate copy of the framework's `utils/clamp01.ts`**, same contract.
   This package does not depend on `gps-plus-slam-app-framework` (its
   dependencies are three, animejs, postprocessing and uqr) and will not gain
-  that dependency to share four lines. Owner decision DEC-H3, 2026-08-24: shared
+  that dependency to share four lines. Deliberate copy (shared-helper rule): shared
   behaviour is unified across packages; pure one-liners live once per package.
 - **Domain-named clamps stay where they are.** `clampDpr` (`capability.ts`) and
   `clampRad` (`scene/gyro-parallax.ts`) are not this function under another

@@ -4,6 +4,12 @@
 
 ### Added
 
+- **The AO can be reapplied without recomputing it**
+  (`visualization/ambient-occlusion`): `AmbientOcclusion.reapply()`
+  multiplies the AO the last `render` computed onto the frame just drawn,
+  the blend alone, and returns false (drawing nothing) while off, after
+  dispose, before an AO was computed, after a `render` that threw, since
+  the AO was switched off and on, or once the drawing buffer changed size.
 - **An answer can end the story** (`ar/tour-story`): a choice option may
   carry `end: true` instead of a `goto`, so two branches that never meet
   again each end on their own. `end` is `true` or absent and never beside a
@@ -28,9 +34,75 @@
   reported as a `folderTitle` drop.
 - `TourChildDrop` names a plain folder's scale other than 1, read as 1,
   as a `folderScale` drop.
+- **A short text has more world views than a pin** (`ar/tour-kinds`): `sign`
+  (a sign on posts) and `edgeHint` (a hint that keeps to the screen's edge
+  while its spot is out of view), beside `pin` and `ground` (an arrow on
+  the ground toward the point it points to).
+- **A short text's look fields** (`ar/tour-short-text`, a new deep entry):
+  `role` (`instruction`, `label`, `warning`), `orientation` (`world`,
+  `upright`, `face`), `readAtM` (the distance its words read from, 1 to
+  40 m; `shortTextLetterHeightM`), `pointsTo` (a point in its station's
+  frame, within 1000 m), `lang` (a BCP-47 tag), and the ground arrow's
+  `style` (`ribbon`, `vanes`, `footprints`, `lights`, `floor`),
+  `bendDeg` (up to 60 degrees either way), `floorPlacement` (`lying`,
+  `hovering`, `upright`), `captionOnArrow`, `color` and `darkColor`
+  (`#rrggbb`). Every field is optional and read in every view. A value
+  of the wrong type fails at every minor; an unknown word or an
+  out-of-range value fails a file of this minor and is dropped, alone,
+  from a newer one.
+- **A picture has more world views than a plane** (`ar/tour-kinds`):
+  `framed` (a print in a frame with a plate), `cutout` (a cut-out standing
+  on the ground) and the viewpoint views `thenNow`, `sharpen`, `finder`,
+  `window` and `viewer`, which line the picture up with the place from one
+  spot; without a viewpoint a viewpoint view is drawn as a `plane`.
+  `TOUR_PICTURE_WORLD_VIEWS` (with its type `TourPictureWorldView`) lists
+  the world views and `TOUR_PICTURE_VIEWPOINT_VIEWS` the viewpoint ones.
+- **A picture's own fields** (`ar/tour-kinds`): `credit` (up to 200
+  characters) and `year` (text, up to 24), shown on a plate and in its
+  sheet; `showTag` (a cut-out's tag at its foot, absent: shown); and
+  `viewpoint` (`TourPictureViewpoint`: the eye point and the camera's turn
+  in the station's frame, the lens's `hfovDeg` from
+  `TOUR_PICTURE_MIN_HFOV_DEG` to `TOUR_PICTURE_MAX_HFOV_DEG`, 10 to 120,
+  and the subject's `distanceM` from `TOUR_PICTURE_MIN_DISTANCE_M` to
+  `TOUR_PICTURE_MAX_DISTANCE_M`, 1 to 500 m). Every field is optional and
+  kept in every view. A viewpoint that breaks a rule fails a file of this
+  minor; a newer one's drops only the viewpoint and keeps the picture.
+- **A video stands in the world** (`ar/tour-kinds`): its views are
+  `screen`, `cutout`, `porthole`, `window` (the clip deep in an opening of
+  a wall) and `standHere` (a projection that develops while the visitor
+  stands on its spot) beside the story's `card`, so a free
+  video is no longer story-only. Its world fields: `widthM` (required in a
+  world view, kept in a card), `start` (`TOUR_VIDEO_STARTS`: `enter`,
+  `near`, `look`, `tap`; absent: `enter`), `withinM` (a `near` start's
+  distance, `TOUR_VIDEO_MIN_WITHIN_M` to `TOUR_VIDEO_MAX_WITHIN_M`, 1 to
+  20 m), `sound` (`TOUR_VIDEO_SOUNDS`; absent: `off`), `alpha`
+  (`TOUR_VIDEO_ALPHAS`: `none` or `stacked`; absent: `none`) and `loop`
+  (`TOUR_VIDEO_LOOPS`; absent: `off`); in every view `captions` (WebVTT
+  text) and `poster` (an image asset shown while the clip waits).
+  A video's `widthM` takes the picture's bounds (`TOUR_PICTURE_MIN_WIDTH_M`
+  to `TOUR_PICTURE_MAX_WIDTH_M`, 0.05 to 50 m). As with a short text's
+  look fields, a `start`, `sound`, `alpha` or `loop` of the wrong type
+  fails at every minor, and an unknown word fails a file of this minor. In
+  a newer one an unknown `start`, `sound` or `loop` is dropped, alone, and
+  the video still shows; an unknown `alpha` skips the whole video, since
+  shown without it a newer clip's matte half would stand on screen.
+- **A video has a viewpoint** (`ar/tour-kinds`): `viewpoint`, a picture's
+  viewpoint (`TourPictureViewpoint`, the same rules), the spot to stand on.
+  It is read by the views in `TOUR_VIDEO_VIEWPOINT_VIEWS` (`standHere`) and
+  kept in every other view, so a view switch loses nothing.
+  `tourSeenFromViewpoint(kind, view)` says whether a block of a kind in a
+  view is drawn from its viewpoint (a picture in
+  `TOUR_PICTURE_VIEWPOINT_VIEWS`, a video in `TOUR_VIDEO_VIEWPOINT_VIEWS`).
 
 ### Changed
 
+- `TourPin` (`ar/tour-manifest`) is a short text in any of its world
+  views (`pin`, `sign`, `edgeHint`, `ground`), as `tourObjects` yields
+  it; it was typed as `pin` alone.
+- `TourPicture` (`ar/tour-manifest`) is a picture in any of its world
+  views (`TourPictureWorldView`), and a free video among the
+  `TourObject`s stands in `screen`, `cutout` or `porthole` with its
+  `widthM`, as `tourObjects` yields them.
 - **Every container is a folder** (`ar/tour-story`): a story is
   `{ kind: 'folder', role: 'story', title, children }` (was
   `kind: 'story'`), read and written in that shape. A folder without a
@@ -936,7 +1008,7 @@ Requires `gps-plus-slam-js` ≥ 1.26.0. The version matches the core library's 1
   `buildSessionMetadataRecord`, `writeSessionMetadata` and `sanitizedPageUrl`,
   the builder of a recording's `session.json` (`odomCoordVersion: 5`, the H3
   coverage, the build stamp), moved here from the RecorderApp so a second
-  writer agrees with it on the coordinate era (DEC-H3). The build info is
+  writer agrees with it on the coordinate era. The build info is
   injected (`getBuildInfo`, which may throw: that drops only the `build`
   field), and `pageUrl` is left out rather than `undefined` when absent.
 - **`utils/build-info`** (deep import): `getBuildInfo()` and `BuildInfo`, the
@@ -1015,7 +1087,7 @@ Requires `gps-plus-slam-js` ≥ 1.26.0. The version matches the core library's 1
   the owner switched without the replay measurement §23 had planned (no
   usable recordings existed). New: `createFusedQrPoseSource` on `/ar/qr`
   (and deep-importable), one fused tracker per code over the entries an app
-  reads - the QR demo's former local copy, now shared (DEC-H3). Behaviour
+  reads - the QR demo's former local copy, now shared. Behaviour
   changes for the TourViewer: after a tracking restart the old frame's
   detections stop counting (the entries are per frame epoch); the 3 cm
   translation-spread gate is gone (position agreement is policed by the
@@ -1503,7 +1575,7 @@ Requires `gps-plus-slam-js` ≥ 1.22.0.
 - **Google Drive tours through the CORS proxy** — share-link normalization,
   range-probe and remote byte-source hardening, with `410 Gone` no longer
   conflated with the two other conditions it had been folded into.
-- **Shared helpers unified (DEC-H3)** — `utils/median` (the weighted-median
+- **Shared helpers unified** — `utils/median` (the weighted-median
   family) and the new `utils/bearing-degrees` replace copies that had drifted
   apart; see the fixes below for what the drift had cost.
 
@@ -1566,7 +1638,7 @@ Requires `gps-plus-slam-js` ≥ 1.20 (the `resetGpsSessionData` carrier).
   AR session-end STATE teardown (close the recording, drop the session's
   odometry↔GPS pairs via the core's `resetGpsSessionData` while keeping
   the zero, clear the coordinator cache). Unified from three identical
-  app sequences (DEC-H3); requires gps-plus-slam-js ≥ 1.20.
+  app sequences; requires gps-plus-slam-js ≥ 1.20.
 - **`decodeFrameTexture` promoted from the recorder** —
   `visualization/frame-texture-decoder` decodes an image Blob into an
   UPRIGHT `THREE.Texture` (the ImageBitmap orientation contract: browsers

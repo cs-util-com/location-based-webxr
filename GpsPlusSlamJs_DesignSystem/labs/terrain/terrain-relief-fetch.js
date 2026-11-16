@@ -2,7 +2,7 @@
  * The relief region's height tiles, fetched on the page's thread (terrain
  * plan 2026-09-27-0605 §9 finding 4: a worker's requests are outside the
  * smokes' routing). One implementation for the terrain lab and the globe
- * lab's detail region (DEC-H3).
+ * lab's detail region.
  *
  * @see terrain-relief-fetch.js.md
  */

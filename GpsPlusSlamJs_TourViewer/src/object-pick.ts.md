@@ -47,7 +47,7 @@ with an angular tolerance around it.
   measured to the bounding sphere's EDGE: at 2-5 m it selected a
   neighbour on 26-57 % of taps the exact ray found empty, even at 1°.
 - The raycast is the framework's `raycastPointer`
-  (`visualization/pointer-picking`, DEC-H3), which sets the raycaster's
+  (`visualization/pointer-picking`), which sets the raycaster's
   camera - three's `Sprite.raycast` requires it.
 - The camera's and the objects' world matrices must be current; in an
   immersive session the render loop keeps them so.

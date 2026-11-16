@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The framework's one nearest-rank percentile (DEC-H3), beside the median
+The framework's one nearest-rank percentile, beside the median
 family in `median.ts`. Created on 2026-10-03 for the globe frame recorder
 (plan `GpsPlusSlamJs_Docs/docs/2026-10-03-2017-globe-zoom-frame-hitches-performance-plan.md`,
 PERF-0 and review Minor 9), folding three private copies:

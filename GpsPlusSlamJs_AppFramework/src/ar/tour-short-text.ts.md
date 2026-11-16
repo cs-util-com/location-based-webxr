@@ -38,10 +38,12 @@ default.
 
 - A value of the wrong type (a reading distance that is not a positive
   number, a point that is not three finite numbers, a bend that is not a
-  number) fails at every minor: no revision makes it valid.
+  number, anything but a string for a role, a turn, a style, a
+  placement, a tag or a colour, anything but true or false for
+  `captionOnArrow`) fails at every minor: no revision makes it valid.
+  Only an unknown string is forward-compatible.
 - A value a later minor may allow (an unknown role or style, a distance or
-  a bend out of range, a malformed tag or colour, a non-boolean flag)
-  fails a file of this reader's own minor, and in a newer file drops just
+  a bend out of range, a malformed tag or colour string) fails a file of this reader's own minor, and in a newer file drops just
   that field (`onDropped`), so the block still shows with the default: an
   older reader draws a newer style as the ribbon.
 - No field depends on the view; a field a view does not read is kept.

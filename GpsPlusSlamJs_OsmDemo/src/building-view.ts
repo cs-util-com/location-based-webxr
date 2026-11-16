@@ -29,6 +29,7 @@ import {
 import { enableSunShadows } from "gps-plus-slam-app-framework/visualization/sun-shadow";
 import {
   createAmbientOcclusion,
+  hiddenFromAoNormals,
   type AmbientOcclusion,
 } from "gps-plus-slam-app-framework/visualization/ambient-occlusion";
 import { disposeObject3D } from "gps-plus-slam-app-framework/visualization/three-dispose";
@@ -44,9 +45,20 @@ import {
   TERRAIN_SPACING_M,
   type Heightfield,
 } from "gps-plus-slam-osm";
-import { applyWoodsShare } from "gps-plus-slam-osm/three";
+import { applyWoodsShare, WOODS_GOVERNOR } from "gps-plus-slam-osm/three";
 import { heightRampColours } from "./height-ramp.js";
 import { createWoodsMeter, type WoodsMeter } from "./woods-readout.js";
+import {
+  buildPerfReport,
+  createPerfRecorder,
+  pickQueryKnobs,
+  type PerfRecorder,
+} from "./perf-log.js";
+import {
+  mountPerfLogPanel,
+  readBrowserDevice,
+  type PerfLogPanel,
+} from "./perf-log-panel.js";
 import {
   DEFAULT_CELL_PRESET,
   cellPreset,
@@ -75,7 +87,7 @@ import {
   veilOf,
   type LightSettings,
 } from "./light-settings.js";
-import { litSurfaceLuma, meanChroma } from "./light-readouts.js";
+import { measureLightReadouts } from "./light-measure.js";
 import { applyArShadowCasting } from "./ar-sun-shadow.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
 import { createQuestBeacons } from "./quest-beacon.js";
@@ -639,6 +651,16 @@ export class BuildingView {
   private inventedTrees = 0;
   /** The `?perf=1` line, mounted only when asked for. */
   private readonly perfReadout: HTMLElement | undefined;
+  /**
+   * The `?perf=1` "Copy perf log" button and the bounded frame log it
+   * copies (`perf-log.ts`); both absent without the knob, so nothing is
+   * recorded then.
+   */
+  private readonly perfLog: PerfLogPanel | undefined;
+  /** The perf log's recorder, fed each frame's draw cost after its render. */
+  private readonly perfRecorder: PerfRecorder | undefined;
+  /** Whether the woods governor may thin (`options.woodsAuto`), for the log. */
+  private readonly woodsAuto: boolean;
   /** True while the frame callback runs, so `requestFrame` can tell chained. */
   private inFrame = false;
   /** Whether the frame now queued was requested from within a frame. */
@@ -647,7 +669,15 @@ export class BuildingView {
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
     this.sunAngles = options.initialSun;
-    this.woods = createWoodsMeter(options.woodsAuto ?? false);
+    const recorder =
+      options.perfReadout === true ? createPerfRecorder() : undefined;
+    this.perfRecorder = recorder;
+    this.woodsAuto = options.woodsAuto ?? false;
+    this.woods = createWoodsMeter(this.woodsAuto, recorder);
+    this.perfLog =
+      recorder === undefined
+        ? undefined
+        : mountPerfLogPanel(this.container, () => this.perfLogReport(recorder));
     this.perfReadout =
       options.perfReadout === true
         ? mountPerfReadout(this.container)
@@ -1708,50 +1738,42 @@ export class BuildingView {
    * `withMargin` is false, which skips the second render). Renders
    * synchronously and reads with `gl.readPixels` straight after each render,
    * so each read is exactly the frame just drawn with the grid as set. The
-   * grid's mesh and outlines are restored as found, also when a render
-   * throws.
+   * order of the work, the AO reused across the grid toggle and the frame
+   * it saves are `light-measure.ts`'s; the grid is restored as found, also
+   * when a render throws.
    */
   measureLight({ withMargin = true }: { withMargin?: boolean } = {}): {
     litLuma: number;
     margin: number | null;
   } {
-    const read = (): Uint8Array => {
-      this.prepareFrame();
-      this.renderer.render(this.scene, this.camera);
+    return measureLightReadouts({
+      grid: [this.cellMesh, this.cellOutlines],
+      withMargin,
+      drawScene: () => {
+        this.prepareFrame();
+        this.renderer.render(this.scene, this.camera);
+      },
       // The view as it is seen, AO included.
-      this.ao.render();
-      const gl = this.renderer.getContext();
-      const pixels = new Uint8Array(
-        gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
-      );
-      gl.readPixels(
-        0,
-        0,
-        gl.drawingBufferWidth,
-        gl.drawingBufferHeight,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        pixels,
-      );
-      return pixels;
-    };
-    const grid = [this.cellMesh, this.cellOutlines].filter(
-      (o): o is NonNullable<typeof o> => o !== undefined && o.visible,
-    );
-    try {
-      for (const o of grid) o.visible = false;
-      const without = read();
-      const litLuma = litSurfaceLuma(without);
-      let margin: number | null = null;
-      if (withMargin && grid.length > 0) {
-        for (const o of grid) o.visible = true;
-        margin = meanChroma(read()) - meanChroma(without);
-      }
-      return { litLuma, margin };
-    } finally {
-      for (const o of grid) o.visible = true;
-      this.requestFrame();
-    }
+      ambientOcclusion: this.ao,
+      hiddenFromAo: hiddenFromAoNormals,
+      readFrame: () => {
+        const gl = this.renderer.getContext();
+        const pixels = new Uint8Array(
+          gl.drawingBufferWidth * gl.drawingBufferHeight * 4,
+        );
+        gl.readPixels(
+          0,
+          0,
+          gl.drawingBufferWidth,
+          gl.drawingBufferHeight,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          pixels,
+        );
+        return pixels;
+      },
+      requestFrame: () => this.requestFrame(),
+    });
   }
 
   /** Before every render: the haze and the sky light on buildings. */
@@ -1974,6 +1996,7 @@ export class BuildingView {
       calls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles,
     };
+    this.perfRecorder?.drawn(this.lastDrawCost);
     // AFTER the cost capture: the AO's own renders reset those counters, and
     // the cost reported is the scene's.
     this.ao.render();
@@ -2012,6 +2035,30 @@ export class BuildingView {
       this.inventedTrees,
       this.lastDrawCost,
     );
+  }
+
+  /** The `?perf=1` log as copied: the session so far, built on each click. */
+  private perfLogReport(recorder: PerfRecorder): string {
+    const state = this.woods.state();
+    return buildPerfReport({
+      nowMs: performance.now(),
+      device: readBrowserDevice(
+        this.renderer.domElement,
+        this.renderer.getContext(),
+      ),
+      settings: {
+        query: pickQueryKnobs(window.location.search),
+        governorOn: this.woodsAuto,
+        governor: WOODS_GOVERNOR,
+      },
+      timeline: recorder.snapshot(),
+      now: {
+        ...state,
+        readout: this.perfReadout?.textContent ?? "",
+        drawCost: this.lastDrawCost,
+        inventedTrees: this.inventedTrees,
+      },
+    });
   }
 
   /**
@@ -2676,6 +2723,7 @@ export class BuildingView {
     // call and order — by `building-view-content.test.ts`.
     this.questBeacons.dispose();
     this.perfReadout?.remove();
+    this.perfLog?.dispose();
     this.container.removeEventListener("pointerdown", this.onPointerStart);
     this.container.removeEventListener("pointerup", this.onPointerDown);
     this.controls.dispose();

@@ -3,7 +3,7 @@
  * plan §11-§13, S3a).
  *
  * Why these tests matter: both the QR demo's report and the TourViewer's
- * print check count parallax sizes by ONE rule (DEC-H3): a window read while
+ * print check count parallax sizes by ONE rule: a window read while
  * the code turned never counts (parallax needs a still code), a refused one
  * never counts, and consecutive windows share most of their views, so only
  * INDEPENDENT windows are evidence. The offer must stay silent on a correct

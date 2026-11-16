@@ -7,6 +7,7 @@ import {
   keepRejections,
   openSampleIn3d,
   rejections,
+  showList,
 } from "./editor3d-fixture.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
@@ -92,10 +93,13 @@ for (const viewport of VIEWPORTS) {
       await page
         .locator(`#tree-body [data-select="station:${station}"]`)
         .click();
+      // A phone shows the station's details in the list's place.
+      await showList(page);
     }
     await row.click();
 
-    // A pin: its view pressed, the reader's default role, no turn.
+    // A pin: its view pressed, the reader's default role, and its
+    // reader's turn: upright toward the visitor.
     await expect(chip(page, "Shows as", "Pin")).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -104,9 +108,10 @@ for (const viewport of VIEWPORTS) {
       "aria-pressed",
       "true",
     );
-    await expect(
-      page.locator("#shell-inspector").getByRole("group", { name: "Turns" }),
-    ).toHaveCount(0);
+    await expect(chip(page, "Turns", "Upright")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     // A sign, a warning, turning to the visitor.
     await chip(page, "Shows as", "Sign").click();
@@ -127,7 +132,7 @@ for (const viewport of VIEWPORTS) {
       .toBe("face");
     await capture(page, `test-results/short-text-sign-${size}.png`);
 
-    // An edge hint: the turn is a sign's only.
+    // An edge hint: the turn is a sign's and a pin's only.
     await chip(page, "Shows as", "Edge hint").click();
     await expect
       .poll(async () => (await shortTextNow(page, block.id))?.view)

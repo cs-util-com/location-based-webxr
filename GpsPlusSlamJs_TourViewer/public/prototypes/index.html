@@ -94,6 +94,75 @@
         display: block;
         margin-bottom: 0.75rem;
       }
+      /* Every section opens with the date it was made and carries an id of
+         that date and a slug, so a link such as #2026-11-15-calm-hud says
+         where a section is; the list below the intro is newest first. */
+      h2 {
+        scroll-margin-top: 12px;
+      }
+      h2 > time,
+      .toc time {
+        color: var(--dim);
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        margin-right: 0.35em;
+      }
+      h2 > a.anchor {
+        display: inline;
+        height: auto;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        padding: 0 0.25em;
+        color: var(--dim);
+        font-weight: 400;
+      }
+      h2 > a.anchor:hover,
+      h2 > a.anchor:focus-visible {
+        color: var(--accent);
+      }
+      h2:target {
+        color: var(--accent);
+      }
+      .toc {
+        margin: 1rem 0 0;
+        padding: 12px 16px;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+      }
+      .toc-title {
+        margin: 0 0 0.4rem;
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .toc ol {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        font-size: 0.92rem;
+        line-height: 1.35;
+      }
+      .toc li + li {
+        margin-top: 0.3rem;
+      }
+      .toc a,
+      p a {
+        display: inline;
+        height: auto;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        padding: 0;
+        color: var(--accent);
+      }
+      p a {
+        text-decoration: underline;
+      }
+      .toc a:hover,
+      .toc a:focus-visible {
+        text-decoration: underline;
+      }
     </style>
   </head>
   <body>
@@ -108,7 +177,112 @@
         for anyone who would rather build one of them.
       </p>
 
-      <h2>The entry and setup page (for a new creator)</h2>
+      <nav class="toc" aria-labelledby="toc-title">
+        <p id="toc-title" class="toc-title">Sections, newest first</p>
+        <ol>
+          <li>
+            <a href="#2026-11-15-quiz-player"><time datetime="2026-11-15">2026-11-15</time> Playing a quiz (the visitor, in AR)</a>
+          </li>
+          <li>
+            <a href="#2026-11-15-calm-hud"><time datetime="2026-11-15">2026-11-15</time> One calm HUD for every item in a station (the visitor, in AR)</a>
+          </li>
+          <li>
+            <a href="#2026-11-13-optimizer-check"><time datetime="2026-11-13">2026-11-13</time> The asset shelf's optimizers, seen and heard</a>
+          </li>
+          <li>
+            <a href="#2026-11-11-docking-panels"><time datetime="2026-11-11">2026-11-11</time> The editor's docking panels</a>
+          </li>
+          <li>
+            <a href="#2026-11-11-editor-panels"><time datetime="2026-11-11">2026-11-11</time> The editor's panels around the 3D view</a>
+          </li>
+          <li>
+            <a href="#2026-11-09-item-folders"><time datetime="2026-11-09">2026-11-09</time> Grouping a station&#39;s items into folders</a>
+          </li>
+          <li>
+            <a href="#2026-11-08-model-lod"><time datetime="2026-11-08">2026-11-08</time> Lighter 3D models (levels of detail)</a>
+          </li>
+          <li>
+            <a href="#2026-11-08-narration-spot"><time datetime="2026-11-08">2026-11-08</time> A narration placed in the world (circle, card, ambient glow)</a>
+          </li>
+          <li>
+            <a href="#2026-11-06-importing-files"><time datetime="2026-11-06">2026-11-06</time> Bringing pictures and models into the editor</a>
+          </li>
+          <li>
+            <a href="#2026-11-06-world-items"><time datetime="2026-11-06">2026-11-06</time> Items standing free in the world (video, audio, a character)</a>
+          </li>
+          <li>
+            <a href="#2026-11-03-globe-sea-clouds"><time datetime="2026-11-03">2026-11-03</time> The globe over the sea: sun glitter, haze and cumulus clouds</a>
+          </li>
+          <li>
+            <a href="#2026-11-03-bottom-bar"><time datetime="2026-11-03">2026-11-03</time> The editor&#39;s bottom bar and panel</a>
+          </li>
+          <li>
+            <a href="#2026-11-03-station-list"><time datetime="2026-11-03">2026-11-03</time> The editor&#39;s station list, context panel and adding content</a>
+          </li>
+          <li>
+            <a href="#2026-11-01-long-text-editor"><time datetime="2026-11-01">2026-11-01</time> Writing a long text and its voice (the tour editor)</a>
+          </li>
+          <li>
+            <a href="#2026-10-31-narrated-text"><time datetime="2026-10-31">2026-10-31</time> A narrated text for the visitor (the voice, in AR)</a>
+          </li>
+          <li>
+            <a href="#2026-10-30-editor-approach"><time datetime="2026-10-30">2026-10-30</time> Opening a tour in the editor on the globe (the approach)</a>
+          </li>
+          <li>
+            <a href="#2026-10-29-story-editor"><time datetime="2026-10-29">2026-10-29</time> The story editor (a station&#39;s steps, choices and quizzes)</a>
+          </li>
+          <li>
+            <a href="#2026-10-29-guide-character"><time datetime="2026-10-29">2026-10-29</time> Your own guide character from an image AI (four poses in one picture)</a>
+          </li>
+          <li>
+            <a href="#2026-10-26-ground-styles"><time datetime="2026-10-26">2026-10-26</time> Ground views, third set (five styles, placed handles, a bend)</a>
+          </li>
+          <li>
+            <a href="#2026-10-25-ground-views-fixed"><time datetime="2026-10-25">2026-10-25</time> Ground view, fixed in the world (the short-text block)</a>
+          </li>
+          <li>
+            <a href="#2026-10-25-landing-round-3"><time datetime="2026-10-25">2026-10-25</time> Landing ideas, third set (the Tour Viewer's landing and start)</a>
+          </li>
+          <li>
+            <a href="#2026-10-25-landing-round-2"><time datetime="2026-10-25">2026-10-25</time> Landing, round 2 (the Tour Viewer's landing and start)</a>
+          </li>
+          <li>
+            <a href="#2026-10-22-station-blocks"><time datetime="2026-10-22">2026-10-22</time> Station content blocks (one kind of content, several views)</a>
+          </li>
+          <li>
+            <a href="#2026-10-21-visitor-walk"><time datetime="2026-10-21">2026-10-21</time> The visitor's walk in AR (from AR start to the tour's end)</a>
+          </li>
+          <li>
+            <a href="#2026-10-19-3d-editor-round-3"><time datetime="2026-10-19">2026-10-19</time> The 3D editor, round 3 (after round 2 was tried)</a>
+          </li>
+          <li>
+            <a href="#2026-10-19-3d-editor-round-2"><time datetime="2026-10-19">2026-10-19</time> The 3D editor, round 2 (after round 1 was tried)</a>
+          </li>
+          <li>
+            <a href="#2026-10-18-3d-editor"><time datetime="2026-10-18">2026-10-18</time> The 3D editor on the globe (stations, items, codes)</a>
+          </li>
+          <li>
+            <a href="#2026-10-13-desktop-editor"><time datetime="2026-10-13">2026-10-13</time> The desktop editor (on a computer, after the phone)</a>
+          </li>
+          <li>
+            <a href="#2026-10-12-visitor-start"><time datetime="2026-10-12">2026-10-12</time> The visitor's start page (after scanning a poster)</a>
+          </li>
+          <li>
+            <a href="#2026-10-11-scan-overlay"><time datetime="2026-10-11">2026-10-11</time> Starting a tour as a visitor (the scan overlay)</a>
+          </li>
+          <li>
+            <a href="#2026-10-11-authoring-hud"><time datetime="2026-10-11">2026-10-11</time> Creating the tour in AR (the authoring HUD)</a>
+          </li>
+          <li>
+            <a href="#2026-10-11-setup-page"><time datetime="2026-10-11">2026-10-11</time> The entry and setup page (for a new creator)</a>
+          </li>
+        </ol>
+      </nav>
+
+      <h2 id="2026-10-11-setup-page">
+        <time datetime="2026-10-11">2026-10-11</time> The entry and setup page (for a new creator)
+        <a class="anchor" href="#2026-10-11-setup-page" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="landing-1-editorial/"
@@ -154,210 +328,10 @@
         </li>
       </ul>
 
-      <h2>Landing ideas, third set (the Tour Viewer's landing and start)</h2>
-      <p>
-        Made 2026-10-25. Six pages that combine what worked in the second set:
-        the motivation first, then what a visitor sees, what making looks like,
-        the steps in the order of the story, the setup as stacked sections and
-        example uses at the end. Each has the same switch (and
-        <code>?ar=1</code> / <code>?ar=0</code>) and a folded notes panel at its
-        end. R3-2 and R3-5 load three.js after the first paint.
-      </p>
-      <ul>
-        <li>
-          <a href="landing-r3-0-strip-or-cards/"
-            ><strong>R3-0 - Strip or cards</strong
-            ><span
-              >A side-by-side page, not a landing page: the four-phone strip and
-              the three cards, one after the other, each filled with the same
-              animated drawn phones, to choose the layout by seeing both.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r3-1-drawn-phone-strip/"
-            ><strong>R3-1 - Drawn phone strip</strong
-            ><span
-              >The drawn style: a calm drawn phone shows what a visitor sees,
-              then making a tour as a numbered strip of animated phones (place,
-              add, hang the code, a visitor sees it). Weakness: on a phone only
-              one strip frame shows at a time.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r3-2-route-alive-phone/"
-            ><strong>R3-2 - The route comes alive, with the making phone</strong
-            ><span
-              >The 3D park and its self-drawing route as the hero, joined by a
-              phone that shows the making side, one scroll step at a time; the
-              camera always stops before the phone acts. Weakness: eight steps
-              is a long scroll on a phone; three.js takes most of the script
-              budget.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r3-3-two-phones-one-station/"
-            ><strong>R3-3 - Two phones, one station</strong
-            ><span
-              >The same station shown twice, side by side: being made and being
-              seen, moving in step through the story. Weakness: the phones are
-              drawn sideways, while a maker probably holds the phone
-              upright.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r3-4-makers-story/"
-            ><strong>R3-4 - The maker's story, made concrete</strong
-            ><span
-              >Text first, in the second person (&quot;You know a story about a
-              place&quot;): five story parts, each with a drawn screen of the
-              real step that plays once after its text. Weakness: the longest
-              read, about seven phone screens before the setup.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r3-5-calm-route-cards/"
-            ><strong>R3-5 - Calm route, cards below</strong
-            ><span
-              >The quietest page: the 3D park draws its route once and stops,
-              then three cards with drawn phones that play in turn, then the
-              setup in the order of the story. Weakness: what a visitor sees
-              comes last of the three cards.</span
-            ></a
-          >
-        </li>
-      </ul>
-
-      <h2>Landing, round 2 (the Tour Viewer's landing and start)</h2>
-      <p>
-        Made 2026-10-25. Ten directions for the Tour Viewer's own page as the
-        landing and the start at once: a would-be maker (a guide, a museum, a
-        teacher, a town office) learns what an AR tour is and how to start, and
-        a visitor with a code gets straight in. Each page has a switch (and
-        <code>?ar=1</code> / <code>?ar=0</code>) that shows it as on an Android
-        phone with Chrome or as on a computer or iPhone, and a folded notes
-        panel at its end with its direction, cost, weaknesses and the values it
-        rests on. R2-2, R2-5 and R2-9 load three.js after the first paint.
-      </p>
-      <ul>
-        <li>
-          <a href="landing-r2-1-l5-extended/"
-            ><strong>R2-1 - L5 extended</strong
-            ><span
-              >The current setup page kept and grown: a moving intro, a looping
-              strip of what a visitor sees, an example tour and three plain
-              steps before the six-step route. Weakness: a long page, and AR is
-              only drawn, never shown in depth.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-2-route-alive-3d/"
-            ><strong>R2-2 - The route comes alive</strong
-            ><span
-              >A small 3D model of a made-up park: the route draws itself, pins
-              rise, and scrolling takes the camera down to eye height inside a
-              phone. Weakness: three.js takes most of the script budget, and the
-              long scroll section delays the steps on a phone.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-3-through-the-phone/"
-            ><strong>R2-3 - Through the phone</strong
-            ><span
-              >The hero is the view through a phone held up on site: the tour
-              stays on its spot while the phone sways, then the same view shows
-              placing a station and the printed code. Weakness: the drawn phone
-              is small, so the text inside it is tiny on a phone.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-4-two-doors/"
-            ><strong>R2-4 - Two doors</strong
-            ><span
-              >One question first, take a tour or make one, as two big sign-like
-              colour blocks, each opening its own short path. Weakness: AR is
-              explained by two small pictures, and the visitor door is as loud
-              as the maker's.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-5-creator-story-clay/"
-            ><strong>R2-5 - Clay story</strong
-            ><span
-              >The maker's story in a soft 3D clay world, one beat per scroll:
-              walk out, drop stations, hang a code, visitors arrive. Weakness:
-              about five screens before step 1, and the visitor's own view is
-              only implied.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-6-poster-first/"
-            ><strong>R2-6 - Poster first</strong
-            ><span
-              >The printed poster is the hero; scrolling reads it part by part,
-              as a visitor and then as the maker who fills it in, and it prints
-              as an A4 example. Weakness: no 3D, so AR is shown by one flat
-              drawing.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-7-try-in-30-seconds/"
-            ><strong>R2-7 - Try it in 30 seconds</strong
-            ><span
-              >A playground on the first screen: place three stops on a drawn
-              park, write a line, then watch it as a visitor. Weakness: a drawn
-              map is not the camera, and the phone keyboard hides the map while
-              typing.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-8-use-case-gallery/"
-            ><strong>R2-8 - Use-case gallery</strong
-            ><span
-              >Six invented example tours in ink and one spot colour, with a
-              "With the tour / Without" switch, then "Make yours". Weakness: no
-              moving picture of AR, and in the swipe row a reader may never
-              reach the last example.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-9-developer-landing-forked/"
-            ><strong>R2-9 - Developer landing, forked</strong
-            ><span
-              >The developer landing's dusk 3D world and glass panels, every
-              chapter rewritten for makers; the phone frame shows the AR content
-              only through its screen. Weakness: dark, costly on a phone
-              (blurred glass over a moving canvas), and close in idea to
-              R2-5.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="landing-r2-10-calm-control/"
-            ><strong>R2-10 - Calm control</strong
-            ><span
-              >No 3D and no motion: one plain, readable page like a good
-              public-service page, with questions answered and step 1 on the
-              page itself. Weakness: it may read as dull, and one still picture
-              may not make AR clear.</span
-            ></a
-          >
-        </li>
-      </ul>
-
-      <h2>Creating the tour in AR (the authoring HUD)</h2>
+      <h2 id="2026-10-11-authoring-hud">
+        <time datetime="2026-10-11">2026-10-11</time> Creating the tour in AR (the authoring HUD)
+        <a class="anchor" href="#2026-10-11-authoring-hud" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="hud-1-chips/"
@@ -387,7 +361,10 @@
         </li>
       </ul>
 
-      <h2>Starting a tour as a visitor (the scan overlay)</h2>
+      <h2 id="2026-10-11-scan-overlay">
+        <time datetime="2026-10-11">2026-10-11</time> Starting a tour as a visitor (the scan overlay)
+        <a class="anchor" href="#2026-10-11-scan-overlay" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="scan-1-centre-card/"
@@ -415,7 +392,11 @@
           >
         </li>
       </ul>
-      <h2>The visitor's start page (after scanning a poster)</h2>
+
+      <h2 id="2026-10-12-visitor-start">
+        <time datetime="2026-10-12">2026-10-12</time> The visitor's start page (after scanning a poster)
+        <a class="anchor" href="#2026-10-12-visitor-start" aria-label="Link to this section">#</a>
+      </h2>
       <p>
         Made 2026-10-12; the app took V4. A small "Prototype state" control in a
         corner switches between the page's states: loading the tour, location
@@ -460,7 +441,11 @@
           >
         </li>
       </ul>
-      <h2>The desktop editor (on a computer, after the phone)</h2>
+
+      <h2 id="2026-10-13-desktop-editor">
+        <time datetime="2026-10-13">2026-10-13</time> The desktop editor (on a computer, after the phone)
+        <a class="anchor" href="#2026-10-13-desktop-editor" aria-label="Link to this section">#</a>
+      </h2>
       <p>
         Made 2026-10-13; the app takes E1. All three are "full map, floating
         panels" and differ in where the list of codes and notes and the editing
@@ -496,7 +481,11 @@
           >
         </li>
       </ul>
-      <h2>The 3D editor on the globe (stations, items, codes)</h2>
+
+      <h2 id="2026-10-18-3d-editor">
+        <time datetime="2026-10-18">2026-10-18</time> The 3D editor on the globe (stations, items, codes)
+        <a class="anchor" href="#2026-10-18-3d-editor" aria-label="Link to this section">#</a>
+      </h2>
       <p>
         Made 2026-10-18, before the 3D editor is built. Four directions on a
         faked town (a drawn street map, box buildings, a hill), all with the
@@ -545,7 +534,11 @@
           >
         </li>
       </ul>
-      <h2>The 3D editor, round 2 (after round 1 was tried)</h2>
+
+      <h2 id="2026-10-19-3d-editor-round-2">
+        <time datetime="2026-10-19">2026-10-19</time> The 3D editor, round 2 (after round 1 was tried)
+        <a class="anchor" href="#2026-10-19-3d-editor-round-2" aria-label="Link to this section">#</a>
+      </h2>
       <p>
         Made 2026-10-19 from the four pages above. All four now share one frame:
         the stations as story cards in a panel docked on the left, an inspector
@@ -595,7 +588,11 @@
           >
         </li>
       </ul>
-      <h2>The 3D editor, round 3 (after round 2 was tried)</h2>
+
+      <h2 id="2026-10-19-3d-editor-round-3">
+        <time datetime="2026-10-19">2026-10-19</time> The 3D editor, round 3 (after round 2 was tried)
+        <a class="anchor" href="#2026-10-19-3d-editor-round-3" aria-label="Link to this section">#</a>
+      </h2>
       <p>
         Made 2026-10-19: two converged pages with the same frame and rules,
         differing only in where they start. Section headers fold, one click in
@@ -620,7 +617,11 @@
           >
         </li>
       </ul>
-      <h2>The visitor's walk in AR (from AR start to the tour's end)</h2>
+
+      <h2 id="2026-10-21-visitor-walk">
+        <time datetime="2026-10-21">2026-10-21</time> The visitor's walk in AR (from AR start to the tour's end)
+        <a class="anchor" href="#2026-10-21-visitor-walk" aria-label="Link to this section">#</a>
+      </h2>
       <p>
         Made 2026-10-21. Four directions for being guided from station to
         station: every state of the walk (tracking, waiting for a position, a
@@ -668,7 +669,11 @@
           >
         </li>
       </ul>
-      <h2>Station content blocks (one kind of content, several views)</h2>
+
+      <h2 id="2026-10-22-station-blocks">
+        <time datetime="2026-10-22">2026-10-22</time> Station content blocks (one kind of content, several views)
+        <a class="anchor" href="#2026-10-22-station-blocks" aria-label="Link to this section">#</a>
+      </h2>
       <p>
         Made 2026-10-22. Eight pages, one kind of station content each, every
         view drawing the same data on the same plain square: a visitor mode
@@ -678,7 +683,7 @@
         "ground view" pages (made 2026-10-25) are the short-text page with only
         its arrow on the ground replaced, one direction each, and a button that
         draws everything 1 m off. Nine more ground views, each laid out once and
-        fixed in the world, follow in the next section.
+        fixed in the world, are in the <a href="#2026-10-25-ground-views-fixed">fixed ground views</a> section.
       </p>
       <ul>
         <li>
@@ -821,45 +826,372 @@
           >
         </li>
       </ul>
-      <h2>Opening a tour in the editor on the globe (the approach)</h2>
+
+      <h2 id="2026-10-25-landing-round-2">
+        <time datetime="2026-10-25">2026-10-25</time> Landing, round 2 (the Tour Viewer's landing and start)
+        <a class="anchor" href="#2026-10-25-landing-round-2" aria-label="Link to this section">#</a>
+      </h2>
       <p>
-        Made 2026-10-30: three directions for what the creator sees while the
-        editor flies in from space to the tour and the map loads. Any drag,
-        scroll or key takes over at once; a restored draft skips the flight. A
-        strip at the bottom of each page switches the network case (fast,
-        normal, slow, a part that never finishes, a part that fails).
+        Made 2026-10-25. Ten directions for the Tour Viewer's own page as the
+        landing and the start at once: a would-be maker (a guide, a museum, a
+        teacher, a town office) learns what an AR tour is and how to start, and
+        a visitor with a code gets straight in. Each page has a switch (and
+        <code>?ar=1</code> / <code>?ar=0</code>) that shows it as on an Android
+        phone with Chrome or as on a computer or iPhone, and a folded notes
+        panel at its end with its direction, cost, weaknesses and the values it
+        rests on. R2-2, R2-5 and R2-9 load three.js after the first paint.
       </p>
       <ul>
         <li>
-          <a href="editor-approach-1-quiet-camera/"
-            ><strong>Quiet camera</strong
+          <a href="landing-r2-1-l5-extended/"
+            ><strong>R2-1 - L5 extended</strong
             ><span
-              >The flight is the progress: one calm line of text, the camera
-              circles while it waits.</span
+              >The current setup page kept and grown: a moving intro, a looping
+              strip of what a visitor sees, an example tour and three plain
+              steps before the six-step route. Weakness: a long page, and AR is
+              only drawn, never shown in depth.</span
             ></a
           >
         </li>
         <li>
-          <a href="editor-approach-2-arrival-board/"
-            ><strong>Arrival board</strong
+          <a href="landing-r2-2-route-alive-3d/"
+            ><strong>R2-2 - The route comes alive</strong
             ><span
-              >A plain-words loading board in the left rail that turns into the
-              station tree.</span
+              >A small 3D model of a made-up park: the route draws itself, pins
+              rise, and scrolling takes the camera down to eye height inside a
+              phone. Weakness: three.js takes most of the script budget, and the
+              long scroll section delays the steps on a phone.</span
             ></a
           >
         </li>
         <li>
-          <a href="editor-approach-3-work-while-flying/"
-            ><strong>Work while it flies</strong
+          <a href="landing-r2-3-through-the-phone/"
+            ><strong>R2-3 - Through the phone</strong
             ><span
-              >The editor is live from the first second; a flight strip, and a
-              click on a station sends the flight there.</span
+              >The hero is the view through a phone held up on site: the tour
+              stays on its spot while the phone sways, then the same view shows
+              placing a station and the printed code. Weakness: the drawn phone
+              is small, so the text inside it is tiny on a phone.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r2-4-two-doors/"
+            ><strong>R2-4 - Two doors</strong
+            ><span
+              >One question first, take a tour or make one, as two big sign-like
+              colour blocks, each opening its own short path. Weakness: AR is
+              explained by two small pictures, and the visitor door is as loud
+              as the maker's.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r2-5-creator-story-clay/"
+            ><strong>R2-5 - Clay story</strong
+            ><span
+              >The maker's story in a soft 3D clay world, one beat per scroll:
+              walk out, drop stations, hang a code, visitors arrive. Weakness:
+              about five screens before step 1, and the visitor's own view is
+              only implied.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r2-6-poster-first/"
+            ><strong>R2-6 - Poster first</strong
+            ><span
+              >The printed poster is the hero; scrolling reads it part by part,
+              as a visitor and then as the maker who fills it in, and it prints
+              as an A4 example. Weakness: no 3D, so AR is shown by one flat
+              drawing.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r2-7-try-in-30-seconds/"
+            ><strong>R2-7 - Try it in 30 seconds</strong
+            ><span
+              >A playground on the first screen: place three stops on a drawn
+              park, write a line, then watch it as a visitor. Weakness: a drawn
+              map is not the camera, and the phone keyboard hides the map while
+              typing.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r2-8-use-case-gallery/"
+            ><strong>R2-8 - Use-case gallery</strong
+            ><span
+              >Six invented example tours in ink and one spot colour, with a
+              "With the tour / Without" switch, then "Make yours". Weakness: no
+              moving picture of AR, and in the swipe row a reader may never
+              reach the last example.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r2-9-developer-landing-forked/"
+            ><strong>R2-9 - Developer landing, forked</strong
+            ><span
+              >The developer landing's dusk 3D world and glass panels, every
+              chapter rewritten for makers; the phone frame shows the AR content
+              only through its screen. Weakness: dark, costly on a phone
+              (blurred glass over a moving canvas), and close in idea to
+              R2-5.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r2-10-calm-control/"
+            ><strong>R2-10 - Calm control</strong
+            ><span
+              >No 3D and no motion: one plain, readable page like a good
+              public-service page, with questions answered and step 1 on the
+              page itself. Weakness: it may read as dull, and one still picture
+              may not make AR clear.</span
             ></a
           >
         </li>
       </ul>
-      <h2>
-        Your own guide character from an image AI (four poses in one picture)
+
+      <h2 id="2026-10-25-landing-round-3">
+        <time datetime="2026-10-25">2026-10-25</time> Landing ideas, third set (the Tour Viewer's landing and start)
+        <a class="anchor" href="#2026-10-25-landing-round-3" aria-label="Link to this section">#</a>
+      </h2>
+      <p>
+        Made 2026-10-25. Six pages that combine what worked in the second set:
+        the motivation first, then what a visitor sees, what making looks like,
+        the steps in the order of the story, the setup as stacked sections and
+        example uses at the end. Each has the same switch (and
+        <code>?ar=1</code> / <code>?ar=0</code>) and a folded notes panel at its
+        end. R3-2 and R3-5 load three.js after the first paint.
+      </p>
+      <ul>
+        <li>
+          <a href="landing-r3-0-strip-or-cards/"
+            ><strong>R3-0 - Strip or cards</strong
+            ><span
+              >A side-by-side page, not a landing page: the four-phone strip and
+              the three cards, one after the other, each filled with the same
+              animated drawn phones, to choose the layout by seeing both.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r3-1-drawn-phone-strip/"
+            ><strong>R3-1 - Drawn phone strip</strong
+            ><span
+              >The drawn style: a calm drawn phone shows what a visitor sees,
+              then making a tour as a numbered strip of animated phones (place,
+              add, hang the code, a visitor sees it). Weakness: on a phone only
+              one strip frame shows at a time.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r3-2-route-alive-phone/"
+            ><strong>R3-2 - The route comes alive, with the making phone</strong
+            ><span
+              >The 3D park and its self-drawing route as the hero, joined by a
+              phone that shows the making side, one scroll step at a time; the
+              camera always stops before the phone acts. Weakness: eight steps
+              is a long scroll on a phone; three.js takes most of the script
+              budget.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r3-3-two-phones-one-station/"
+            ><strong>R3-3 - Two phones, one station</strong
+            ><span
+              >The same station shown twice, side by side: being made and being
+              seen, moving in step through the story. Weakness: the phones are
+              drawn sideways, while a maker probably holds the phone
+              upright.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r3-4-makers-story/"
+            ><strong>R3-4 - The maker's story, made concrete</strong
+            ><span
+              >Text first, in the second person (&quot;You know a story about a
+              place&quot;): five story parts, each with a drawn screen of the
+              real step that plays once after its text. Weakness: the longest
+              read, about seven phone screens before the setup.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="landing-r3-5-calm-route-cards/"
+            ><strong>R3-5 - Calm route, cards below</strong
+            ><span
+              >The quietest page: the 3D park draws its route once and stops,
+              then three cards with drawn phones that play in turn, then the
+              setup in the order of the story. Weakness: what a visitor sees
+              comes last of the three cards.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2 id="2026-10-25-ground-views-fixed">
+        <time datetime="2026-10-25">2026-10-25</time> Ground view, fixed in the world (the short-text block)
+        <a class="anchor" href="#2026-10-25-ground-views-fixed" aria-label="Link to this section">#</a>
+      </h2>
+      <p>
+        Made 2026-10-25. Nine more ground views for the short-text block, each a
+        copy of the knee ribbon page with only that view replaced. Here
+        everything on the ground is laid out once from the record and never
+        moves or changes shape while the visitor walks around it; only the small
+        caption plate may turn. Each page adds a Sun button (direct sun on pale
+        paving) to the 1 m error button, and section 0 of its notes says what it
+        costs and where it fails.
+      </p>
+      <ul>
+        <li>
+          <a href="station-blocks-2g-ground-laid-ribbon/"
+            ><strong>Short text, ground view: laid ribbon</strong
+            ><span
+              >The knee ribbon, laid out once along the block's turn and never
+              re-shaped, with a calm light that runs along it toward the target.
+              Look first from straight behind at 6 m: there it is a short
+              ladder, and the light carries the direction.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2h-ground-chevron-vanes/"
+            ><strong>Short text, ground view: chevron vanes</strong
+            ><span
+              >No ribbon: a straight row of separate chevrons at knee height,
+              pitched nose-up so they show more of themselves to someone behind
+              them. Look first from the target side: there the undersides stack
+              into chevrons that seem to point away.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2i-ground-chevron-track/"
+            ><strong>Short text, ground view: chevron track</strong
+            ><span
+              >The ribbon pressed onto the paving: a low dark track with raised
+              chevrons and a raised head. Look first with the 1 m error toward
+              the wall: the head runs into the step.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2j-ground-footprints/"
+            ><strong>Short text, ground view: footprints</strong
+            ><span
+              >Bare-foot prints on the paving: a pair to stand on, a walking
+              line, and a last pair facing the target, with a soft light
+              stepping through them. Look first from the walk-in end, then from
+              12 m behind, where they shrink to a speck.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2k-ground-guide-lights/"
+            ><strong>Short text, ground view: guide lights</strong
+            ><span
+              >Small round lights set into the paving in a line that ends in a
+              V, with a pulse running toward the target. Look first with Sun on:
+              the rings, not the light, carry it on pale stone.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2l-ground-floor-arrow/"
+            ><strong>Short text, ground view: floor arrow</strong
+            ><span
+              >One short, solid cast arrow at the block's spot that says
+              &quot;that way&quot; and does not draw the way. Look first from
+              straight behind at 12 m, where it is still an arrow.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2m-ground-stakes/"
+            ><strong>Short text, ground view: stakes</strong
+            ><span
+              >Two rows of short stakes with pennants that close in toward the
+              target like a funnel. Look first from behind, then from the side,
+              where it is a row of little flags all pointing at the
+              target.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2n-ground-runner/"
+            ><strong>Short text, ground view: runner</strong
+            ><span
+              >A woven carpet runner on the paving with the caption woven into a
+              panel at its start, plus the small plate that turns. Look first
+              from behind the start, then from the far end, where the woven
+              caption is upside down.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2o-ground-arc/"
+            ><strong>Short text, ground view: arc</strong
+            ><span
+              >A thin rail in one arc from the block's spot to a ring before the
+              target, with crossed chevrons riding along it. Look first from the
+              side, further than 6 m away (closer, it is a straight incline),
+              then from straight behind, where it is a vertical line.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2 id="2026-10-26-ground-styles">
+        <time datetime="2026-10-26">2026-10-26</time> Ground views, third set (five styles, placed handles, a bend)
+        <a class="anchor" href="#2026-10-26-ground-styles" aria-label="Link to this section">#</a>
+      </h2>
+      <p>
+        Made 2026-10-26. Two pages with one ground view in five styles a creator
+        picks per block (ribbon, vanes, footprints, lights and the floor arrow,
+        which can lie, hover or stand upright and can carry its caption). The
+        arrow runs from the block's spot toward its target and stops 2 m short;
+        one scale sets the letters and the arrow's length together, by default
+        from the target's distance. The handles sit in the world, on a circle
+        round the start: four dots for the size, and a control for the bend.
+        Hovering pieces float a little, never under reduced motion; each style's
+        two colours are free, with a warning when the dark one would vanish in
+        sun. The two pages differ only in how the arrow is bent.
+      </p>
+      <ul>
+        <li>
+          <a href="station-blocks-2p-ground-styles-bend-knob/"
+            ><strong>Ground styles, bend with a knob</strong
+            ><span
+              >A turn knob behind the start bends the arrow: clockwise bends it
+              to the right. Look first in creator mode on the guild block: turn
+              the knob and back, then drag a size dot.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="station-blocks-2q-ground-styles-bend-drag/"
+            ><strong>Ground styles, bend by dragging the middle</strong
+            ><span
+              >A handle in the middle of the arrow is dragged sideways to bend
+              it, so the knob only ever turns. Look first in creator mode on the
+              guild block in portrait: drag the handle right and left, then open
+              the editor at phone width, where the bend spans a few
+              pixels.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2 id="2026-10-29-guide-character">
+        <time datetime="2026-10-29">2026-10-29</time> Your own guide character from an image AI (four poses in one picture)
+        <a class="anchor" href="#2026-10-29-guide-character" aria-label="Link to this section">#</a>
       </h2>
       <ul>
         <li>
@@ -901,34 +1233,321 @@
           >
         </li>
       </ul>
-      <h2>Grouping a station&#39;s items into folders</h2>
+
+      <h2 id="2026-10-29-story-editor">
+        <time datetime="2026-10-29">2026-10-29</time> The story editor (a station&#39;s steps, choices and quizzes)
+        <a class="anchor" href="#2026-10-29-story-editor" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
-          <a href="editor-folders-1-tree-first/"
-            ><strong>Tree first</strong
+          <a href="story-editor-1-step-cards/"
+            ><strong>Step cards</strong
             ><span
-              >Pick rows in the station tree (checkboxes on a phone) and group them; the folder is a tree row, and selecting it shows one gizmo at its pivot in 3D.</span
+              >A vertical list of cards in visitor order, each showing what the
+              visitor sees and opening in place to edit; jumps as chips with a
+              margin line.</span
             ></a
           >
         </li>
         <li>
-          <a href="editor-folders-2-scene-first/"
-            ><strong>Scene first</strong
+          <a href="story-editor-1-step-cards-r2/"
+            ><strong>Step cards, round two</strong
             ><span
-              >Box-select or long-press items in the 3D view and group them; the first click takes the whole folder, a second click goes inside to move one item.</span
+              >On a phone a tapped step fills the screen and Back goes up one level; on a desktop cards open in place; a choice can go back to an earlier step or end the story, with a warning only for a loop no answer can leave.</span
             ></a
           >
         </li>
         <li>
-          <a href="editor-folders-3-pin-to-anchor/"
-            ><strong>Pin to an anchor</strong
+          <a href="story-editor-2-flow-graph/"
+            ><strong>Flow graph</strong
             ><span
-              >Start from one item, such as a 3D model, and pin others beside it; moving the anchor carries what is pinned to it.</span
+              >Every step and every jump drawn from Start to End; branches step
+              out into side columns; drag an answer&#39;s dot to change where it
+              goes.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="story-editor-3-inline-script/"
+            ><strong>Inline script</strong
+            ><span
+              >The story reads like a play script: the guide&#39;s lines, media
+              inline, choices as reply buttons, branches as named sections;
+              write to add a line.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-visitor-1-story-card/"
+            ><strong>Quiz: story card</strong
+            ><span
+              >The question sits in the story card, answers replace Continue, the guide reacts there.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-visitor-2-guide-asks/"
+            ><strong>Quiz: the guide asks</strong
+            ><span
+              >The figure asks in its bubble, answers grow as signs in the world, a typed answer goes on a slate.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-visitor-3-find-it-here/"
+            ><strong>Quiz: find it here</strong
+            ><span
+              >A riddle about the place shrinks to a slip while you look around; answering is pick, then confirm.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-world-1-fan/"
+            ><strong>Quiz in 3D: the fan</strong
+            ><span
+              >The card asks, the answers rise as signs in a fan around you; walk around them on the phone.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-world-2-on-the-things/"
+            ><strong>Quiz in 3D: on the things</strong
+            ><span
+              >Each answer is a marker on a thing in the place, the tower, the fountain, the door; tap the thing.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-world-3-walk-to-it/"
+            ><strong>Quiz in 3D: walk to it</strong
+            ><span
+              >Each answer is a flag in its own circle; step in, or tap it from afar, and confirm.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-world-4-card-unfolds/"
+            ><strong>Quiz in 3D: the card unfolds</strong
+            ><span
+              >The answer rows lift out of the story card and stand as tablets in the space in front of you.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-world-5-creator-places/"
+            ><strong>Quiz in 3D: the creator places the answers</strong
+            ><span
+              >Place four answer markers by drag, where you stand or where you aim; a spacing slider warns when two answers stand closer than the phone can tell apart, and the walk shows how often a neighbour is read instead.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-world-6-find-first/"
+            ><strong>Quiz in 3D: find the answers first</strong
+            ><span
+              >The answers hide like eggs by the things they name; a glint grows as you near, a hint points after a while, and the question opens once all are found.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-world-7-answer-scenes/"
+            ><strong>Quiz in 3D: answers as small scenes</strong
+            ><span
+              >Each answer is a little scene on a plinth (a picture, a model, a few words); after the pick a consequence plays in the place instead of a bare "Correct!".</span
+            ></a
+          >
+        </li>
+        <li class="group">
+          <strong>Quiz: find, then stand at the answer (A/B/C)</strong>
+          <span
+            >Three ways to choose by standing at the answer, all on the stage&#39;s compact HUD: a pill of found-dots, the guide&#39;s line as a short toast, and the story card, Skip and the notes behind an &quot;i&quot;. A B C at the top left of each page switches between them; add ?hud=card to see the full card instead.</span
+          >
+          <ul>
+            <li>
+              <a href="quiz-world-9-ground-dwell/"
+                ><strong>A - stand in the ring</strong
+                ><span
+                  >Find the answers as on the page before, then stand still in one answer's ring on the ground until it closes; it locks in with a pulse, a short seal lets a walk away take it back, then the ring turns teal or breaks. The question lies on the ground.</span
+                ></a
+              >
+            </li>
+            <li>
+              <a href="quiz-world-10-object-charges/"
+                ><strong>B - answers that listen</strong
+                ><span
+                  >The eggs are found as on the find-then-go-back page; then the question flies into them and you answer by standing by one: it wakes, fills with light, rises and opens, and a short countdown lets a step away take it back. No rings.</span
+                ></a
+              >
+            </li>
+            <li>
+              <a href="quiz-world-11-light-pillars/"
+                ><strong>C - stand in the light</strong
+                ><span
+                  >Find the answers as on the go-back page; then the question rises as a sign in the middle and each answer stands as a pillar of light. Stand in one until the light has poured down to fill it, and the answer locks in.</span
+                ></a
+              >
+            </li>
+          </ul>
+        </li>
+        <li>
+          <a href="quiz-world-8-find-then-return/"
+            ><strong>Quiz in 3D: find them, then go back</strong
+            ><span
+              >The answers hide like eggs as on the find-first page; once all are found, walk back to the one you think is right and tap it within its ring. Found answers stay marked in place and listed with their way and distance.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="quiz-world-stage/"
+            ><strong>Quiz in 3D: the shared stage</strong
+            ><span
+              >The walkable place the quiz pages run on, with a trivial sample item, edit and play, and a cost readout.</span
             ></a
           >
         </li>
       </ul>
-      <h2>The editor&#39;s station list, context panel and adding content</h2>
+
+      <h2 id="2026-10-30-editor-approach">
+        <time datetime="2026-10-30">2026-10-30</time> Opening a tour in the editor on the globe (the approach)
+        <a class="anchor" href="#2026-10-30-editor-approach" aria-label="Link to this section">#</a>
+      </h2>
+      <p>
+        Made 2026-10-30: three directions for what the creator sees while the
+        editor flies in from space to the tour and the map loads. Any drag,
+        scroll or key takes over at once; a restored draft skips the flight. A
+        strip at the bottom of each page switches the network case (fast,
+        normal, slow, a part that never finishes, a part that fails).
+      </p>
+      <ul>
+        <li>
+          <a href="editor-approach-1-quiet-camera/"
+            ><strong>Quiet camera</strong
+            ><span
+              >The flight is the progress: one calm line of text, the camera
+              circles while it waits.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="editor-approach-2-arrival-board/"
+            ><strong>Arrival board</strong
+            ><span
+              >A plain-words loading board in the left rail that turns into the
+              station tree.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="editor-approach-3-work-while-flying/"
+            ><strong>Work while it flies</strong
+            ><span
+              >The editor is live from the first second; a flight strip, and a
+              click on a station sends the flight there.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2 id="2026-10-31-narrated-text">
+        <time datetime="2026-10-31">2026-10-31</time> A narrated text for the visitor (the voice, in AR)
+        <a class="anchor" href="#2026-10-31-narrated-text" aria-label="Link to this section">#</a>
+      </h2>
+      <p>
+        Made 2026-10-31. Three directions for a long text that carries a voice
+        reading it: how a visitor notices the voice before opening anything,
+        what happens when the captions strip and the full text are both open,
+        how loading, a missing file, a locked phone and a call look, and whether
+        a speed control is needed. No real audio plays: a fake clock drives the
+        words, and a debug strip at the bottom switches the states.
+      </p>
+      <ul>
+        <li>
+          <a href="narration-1-quiet-voice/"
+            ><strong>The quiet voice</strong
+            ><span
+              >The voice is a gentle extra: the sign gains only a small speaker
+              mark and the length, one surface at a time (the strip folds out
+              into the sheet), every audio problem one calm line. Look first:
+              tap the sign, play, then "Full text".</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="narration-2-audio-guide/"
+            ><strong>The audio guide</strong
+            ><span
+              >Listening first, like a museum guide: the sign says "Listen", one
+              tap starts the voice and a mini-player that stays while you walk,
+              in front of the full text too. Look first: tap the sign, then try
+              the missing-file and call states.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="narration-3-sign-speaks/"
+            ><strong>The sign speaks</strong
+            ><span
+              >The sign in the world has "Read" and "Listen" halves, and the
+              spoken sentence runs on a plate under it, so you keep looking at
+              the street. Look first: Listen, then walk away from the sign and
+              watch the caption move to the screen.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2 id="2026-11-01-long-text-editor">
+        <time datetime="2026-11-01">2026-11-01</time> Writing a long text and its voice (the tour editor)
+        <a class="anchor" href="#2026-11-01-long-text-editor" aria-label="Link to this section">#</a>
+      </h2>
+      <p>
+        Made 2026-11-01. Three directions for the creator's side of a long text:
+        where the body is written and previewed, how parts that will be shown as
+        typed (a pasted table, web page code) are pointed out, how the visitor's
+        view is chosen, how a voice and its timing are added with every mismatch
+        listed, and what an edit that puts the voice out of line looks like. No
+        real audio plays; a debug strip at the bottom triggers the cases.
+      </p>
+      <ul>
+        <li>
+          <a href="longtext-editor-1-in-the-inspector/"
+            ><strong>Everything in the inspector</strong
+            ><span
+              >The text is written in the right-hand panel with a small toolbar;
+              a phone-sized sheet pops over the 3D view as the preview, and the
+              voice is a folding section at the panel's foot. Look first: paste
+              a table, then import the subtitle file with two mismatches.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="longtext-editor-2-writing-desk/"
+            ><strong>The writing desk</strong
+            ><span
+              >"Write" turns the 3D view into a desk: the text with a margin of
+              notes, a full-height phone preview in step, and a timeline where
+              sentences the voice no longer matches drop out of line. Look
+              first: edit a word, then line the voice up again.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="longtext-editor-3-preview-first/"
+            ><strong>Edit what the visitor sees</strong
+            ><span
+              >The creator writes straight into the reading sheet as the visitor
+              will see it, Markdown hidden behind a switch; adding a voice is a
+              three-step guided flow with a check. Look first: click the sign,
+              type, then "Add a voice".</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2 id="2026-11-03-station-list">
+        <time datetime="2026-11-03">2026-11-03</time> The editor&#39;s station list, context panel and adding content
+        <a class="anchor" href="#2026-11-03-station-list" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="editor-panel-1-explorer/"
@@ -971,7 +1590,11 @@
           >
         </li>
       </ul>
-      <h2>The editor&#39;s bottom bar and panel</h2>
+
+      <h2 id="2026-11-03-bottom-bar">
+        <time datetime="2026-11-03">2026-11-03</time> The editor&#39;s bottom bar and panel
+        <a class="anchor" href="#2026-11-03-bottom-bar" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="editor-bottom-panel-1-tabs/"
@@ -994,7 +1617,11 @@
           >
         </li>
       </ul>
-      <h2>The globe over the sea: sun glitter, haze and cumulus clouds</h2>
+
+      <h2 id="2026-11-03-globe-sea-clouds">
+        <time datetime="2026-11-03">2026-11-03</time> The globe over the sea: sun glitter, haze and cumulus clouds
+        <a class="anchor" href="#2026-11-03-globe-sea-clouds" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="globe-look-1-glitter-haze/"
@@ -1166,7 +1793,11 @@
           >
         </li>
       </ul>
-      <h2>Items standing free in the world (video, audio, a character)</h2>
+
+      <h2 id="2026-11-06-world-items">
+        <time datetime="2026-11-06">2026-11-06</time> Items standing free in the world (video, audio, a character)
+        <a class="anchor" href="#2026-11-06-world-items" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="world-items-1-real-objects/"
@@ -1193,26 +1824,11 @@
           >
         </li>
       </ul>
-      <h2>A narration placed in the world (circle, card, ambient glow)</h2>
-      <ul>
-        <li>
-          <a href="audio-narration-spot-1/"
-            ><strong>Narration spot</strong
-            ><span
-              >One circle with rising light; the player card opens only inside it, plays on a tap, pauses when you leave and carries on when you return. Three looks (motes, curtain, plume), an ambient glow nearby, a walk-through and an edit view.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="audio-narration-spot-2/"
-            ><strong>Narration spot, more looks</strong
-            ><span
-              >The plume and four new looks of the narration circle (embers, a helix, fireflies, sonar rings), each one particle draw in the narration orange, with a cost readout per look.</span
-            ></a
-          >
-        </li>
-      </ul>
-      <h2>Bringing pictures and models into the editor</h2>
+
+      <h2 id="2026-11-06-importing-files">
+        <time datetime="2026-11-06">2026-11-06</time> Bringing pictures and models into the editor
+        <a class="anchor" href="#2026-11-06-importing-files" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="editor-import-1-drop-into-scene/"
@@ -1255,7 +1871,34 @@
           >
         </li>
       </ul>
-      <h2>Lighter 3D models (levels of detail)</h2>
+
+      <h2 id="2026-11-08-narration-spot">
+        <time datetime="2026-11-08">2026-11-08</time> A narration placed in the world (circle, card, ambient glow)
+        <a class="anchor" href="#2026-11-08-narration-spot" aria-label="Link to this section">#</a>
+      </h2>
+      <ul>
+        <li>
+          <a href="audio-narration-spot-1/"
+            ><strong>Narration spot</strong
+            ><span
+              >One circle with rising light; the player card opens only inside it, plays on a tap, pauses when you leave and carries on when you return. Three looks (motes, curtain, plume), an ambient glow nearby, a walk-through and an edit view.</span
+            ></a
+          >
+        </li>
+        <li>
+          <a href="audio-narration-spot-2/"
+            ><strong>Narration spot, more looks</strong
+            ><span
+              >The plume and four new looks of the narration circle (embers, a helix, fireflies, sonar rings), each one particle draw in the narration orange, with a cost readout per look.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2 id="2026-11-08-model-lod">
+        <time datetime="2026-11-08">2026-11-08</time> Lighter 3D models (levels of detail)
+        <a class="anchor" href="#2026-11-08-model-lod" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="model-lod-1/"
@@ -1266,409 +1909,42 @@
           >
         </li>
       </ul>
-      <h2>The story editor (a station&#39;s steps, choices and quizzes)</h2>
+
+      <h2 id="2026-11-09-item-folders">
+        <time datetime="2026-11-09">2026-11-09</time> Grouping a station&#39;s items into folders
+        <a class="anchor" href="#2026-11-09-item-folders" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
-          <a href="story-editor-1-step-cards/"
-            ><strong>Step cards</strong
+          <a href="editor-folders-1-tree-first/"
+            ><strong>Tree first</strong
             ><span
-              >A vertical list of cards in visitor order, each showing what the
-              visitor sees and opening in place to edit; jumps as chips with a
-              margin line.</span
+              >Pick rows in the station tree (checkboxes on a phone) and group them; the folder is a tree row, and selecting it shows one gizmo at its pivot in 3D.</span
             ></a
           >
         </li>
         <li>
-          <a href="story-editor-1-step-cards-r2/"
-            ><strong>Step cards, round two</strong
+          <a href="editor-folders-2-scene-first/"
+            ><strong>Scene first</strong
             ><span
-              >On a phone a tapped step fills the screen and Back goes up one level; on a desktop cards open in place; a choice can go back to an earlier step or end the story, with a warning only for a loop no answer can leave.</span
+              >Box-select or long-press items in the 3D view and group them; the first click takes the whole folder, a second click goes inside to move one item.</span
             ></a
           >
         </li>
         <li>
-          <a href="story-editor-2-flow-graph/"
-            ><strong>Flow graph</strong
+          <a href="editor-folders-3-pin-to-anchor/"
+            ><strong>Pin to an anchor</strong
             ><span
-              >Every step and every jump drawn from Start to End; branches step
-              out into side columns; drag an answer&#39;s dot to change where it
-              goes.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="story-editor-3-inline-script/"
-            ><strong>Inline script</strong
-            ><span
-              >The story reads like a play script: the guide&#39;s lines, media
-              inline, choices as reply buttons, branches as named sections;
-              write to add a line.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-visitor-1-story-card/"
-            ><strong>Quiz: story card</strong
-            ><span
-              >The question sits in the story card, answers replace Continue, the guide reacts there.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-visitor-2-guide-asks/"
-            ><strong>Quiz: the guide asks</strong
-            ><span
-              >The figure asks in its bubble, answers grow as signs in the world, a typed answer goes on a slate.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-visitor-3-find-it-here/"
-            ><strong>Quiz: find it here</strong
-            ><span
-              >A riddle about the place shrinks to a slip while you look around; answering is pick, then confirm.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-world-1-fan/"
-            ><strong>Quiz in 3D: the fan</strong
-            ><span
-              >The card asks, the answers rise as signs in a fan around you; walk around them on the phone.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-world-2-on-the-things/"
-            ><strong>Quiz in 3D: on the things</strong
-            ><span
-              >Each answer is a marker on a thing in the place, the tower, the fountain, the door; tap the thing.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-world-3-walk-to-it/"
-            ><strong>Quiz in 3D: walk to it</strong
-            ><span
-              >Each answer is a flag in its own circle; step in, or tap it from afar, and confirm.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-world-4-card-unfolds/"
-            ><strong>Quiz in 3D: the card unfolds</strong
-            ><span
-              >The answer rows lift out of the story card and stand as tablets in the space in front of you.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-world-5-creator-places/"
-            ><strong>Quiz in 3D: the creator places the answers</strong
-            ><span
-              >Place four answer markers by drag, where you stand or where you aim; a spacing slider warns when two answers stand closer than the phone can tell apart, and the walk shows how often a neighbour is read instead.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-world-6-find-first/"
-            ><strong>Quiz in 3D: find the answers first</strong
-            ><span
-              >The answers hide like eggs by the things they name; a glint grows as you near, a hint points after a while, and the question opens once all are found.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-world-7-answer-scenes/"
-            ><strong>Quiz in 3D: answers as small scenes</strong
-            ><span
-              >Each answer is a little scene on a plinth (a picture, a model, a few words); after the pick a consequence plays in the place instead of a bare "Correct!".</span
-            ></a
-          >
-        </li>
-        <li class="group">
-          <strong>Quiz: find, then stand at the answer (A/B/C)</strong>
-          <span
-            >Three ways to choose by standing at the answer, all on the stage&#39;s compact HUD: a pill of found-dots, the guide&#39;s line as a short toast, and the story card, Skip and the notes behind an &quot;i&quot;. A B C at the top left of each page switches between them; add ?hud=card to see the full card instead.</span
-          >
-          <ul>
-            <li>
-              <a href="quiz-world-9-ground-dwell/"
-                ><strong>A - stand in the ring</strong
-                ><span
-                  >Find the answers as on the page before, then stand still in one answer's ring on the ground until it closes; it locks in with a pulse, a short seal lets a walk away take it back, then the ring turns teal or breaks. The question lies on the ground.</span
-                ></a
-              >
-            </li>
-            <li>
-              <a href="quiz-world-10-object-charges/"
-                ><strong>B - answers that listen</strong
-                ><span
-                  >The eggs are found as on the find-then-go-back page; then the question flies into them and you answer by standing by one: it wakes, fills with light, rises and opens, and a short countdown lets a step away take it back. No rings.</span
-                ></a
-              >
-            </li>
-            <li>
-              <a href="quiz-world-11-light-pillars/"
-                ><strong>C - stand in the light</strong
-                ><span
-                  >Find the answers as on the go-back page; then the question rises as a sign in the middle and each answer stands as a pillar of light. Stand in one until the light has poured down to fill it, and the answer locks in.</span
-                ></a
-              >
-            </li>
-          </ul>
-        </li>
-        <li>
-          <a href="quiz-world-8-find-then-return/"
-            ><strong>Quiz in 3D: find them, then go back</strong
-            ><span
-              >The answers hide like eggs as on the find-first page; once all are found, walk back to the one you think is right and tap it within its ring. Found answers stay marked in place and listed with their way and distance.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="quiz-world-stage/"
-            ><strong>Quiz in 3D: the shared stage</strong
-            ><span
-              >The walkable place the quiz pages run on, with a trivial sample item, edit and play, and a cost readout.</span
+              >Start from one item, such as a 3D model, and pin others beside it; moving the anchor carries what is pinned to it.</span
             ></a
           >
         </li>
       </ul>
-      <h2>Ground view, fixed in the world (the short-text block)</h2>
-      <p>
-        Made 2026-10-25. Nine more ground views for the short-text block, each a
-        copy of the knee ribbon page with only that view replaced. Here
-        everything on the ground is laid out once from the record and never
-        moves or changes shape while the visitor walks around it; only the small
-        caption plate may turn. Each page adds a Sun button (direct sun on pale
-        paving) to the 1 m error button, and section 0 of its notes says what it
-        costs and where it fails.
-      </p>
-      <ul>
-        <li>
-          <a href="station-blocks-2g-ground-laid-ribbon/"
-            ><strong>Short text, ground view: laid ribbon</strong
-            ><span
-              >The knee ribbon, laid out once along the block's turn and never
-              re-shaped, with a calm light that runs along it toward the target.
-              Look first from straight behind at 6 m: there it is a short
-              ladder, and the light carries the direction.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2h-ground-chevron-vanes/"
-            ><strong>Short text, ground view: chevron vanes</strong
-            ><span
-              >No ribbon: a straight row of separate chevrons at knee height,
-              pitched nose-up so they show more of themselves to someone behind
-              them. Look first from the target side: there the undersides stack
-              into chevrons that seem to point away.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2i-ground-chevron-track/"
-            ><strong>Short text, ground view: chevron track</strong
-            ><span
-              >The ribbon pressed onto the paving: a low dark track with raised
-              chevrons and a raised head. Look first with the 1 m error toward
-              the wall: the head runs into the step.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2j-ground-footprints/"
-            ><strong>Short text, ground view: footprints</strong
-            ><span
-              >Bare-foot prints on the paving: a pair to stand on, a walking
-              line, and a last pair facing the target, with a soft light
-              stepping through them. Look first from the walk-in end, then from
-              12 m behind, where they shrink to a speck.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2k-ground-guide-lights/"
-            ><strong>Short text, ground view: guide lights</strong
-            ><span
-              >Small round lights set into the paving in a line that ends in a
-              V, with a pulse running toward the target. Look first with Sun on:
-              the rings, not the light, carry it on pale stone.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2l-ground-floor-arrow/"
-            ><strong>Short text, ground view: floor arrow</strong
-            ><span
-              >One short, solid cast arrow at the block's spot that says
-              &quot;that way&quot; and does not draw the way. Look first from
-              straight behind at 12 m, where it is still an arrow.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2m-ground-stakes/"
-            ><strong>Short text, ground view: stakes</strong
-            ><span
-              >Two rows of short stakes with pennants that close in toward the
-              target like a funnel. Look first from behind, then from the side,
-              where it is a row of little flags all pointing at the
-              target.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2n-ground-runner/"
-            ><strong>Short text, ground view: runner</strong
-            ><span
-              >A woven carpet runner on the paving with the caption woven into a
-              panel at its start, plus the small plate that turns. Look first
-              from behind the start, then from the far end, where the woven
-              caption is upside down.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2o-ground-arc/"
-            ><strong>Short text, ground view: arc</strong
-            ><span
-              >A thin rail in one arc from the block's spot to a ring before the
-              target, with crossed chevrons riding along it. Look first from the
-              side, further than 6 m away (closer, it is a straight incline),
-              then from straight behind, where it is a vertical line.</span
-            ></a
-          >
-        </li>
-      </ul>
-      <h2>Ground views, third set (five styles, placed handles, a bend)</h2>
-      <p>
-        Made 2026-10-26. Two pages with one ground view in five styles a creator
-        picks per block (ribbon, vanes, footprints, lights and the floor arrow,
-        which can lie, hover or stand upright and can carry its caption). The
-        arrow runs from the block's spot toward its target and stops 2 m short;
-        one scale sets the letters and the arrow's length together, by default
-        from the target's distance. The handles sit in the world, on a circle
-        round the start: four dots for the size, and a control for the bend.
-        Hovering pieces float a little, never under reduced motion; each style's
-        two colours are free, with a warning when the dark one would vanish in
-        sun. The two pages differ only in how the arrow is bent.
-      </p>
-      <ul>
-        <li>
-          <a href="station-blocks-2p-ground-styles-bend-knob/"
-            ><strong>Ground styles, bend with a knob</strong
-            ><span
-              >A turn knob behind the start bends the arrow: clockwise bends it
-              to the right. Look first in creator mode on the guild block: turn
-              the knob and back, then drag a size dot.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="station-blocks-2q-ground-styles-bend-drag/"
-            ><strong>Ground styles, bend by dragging the middle</strong
-            ><span
-              >A handle in the middle of the arrow is dragged sideways to bend
-              it, so the knob only ever turns. Look first in creator mode on the
-              guild block in portrait: drag the handle right and left, then open
-              the editor at phone width, where the bend spans a few
-              pixels.</span
-            ></a
-          >
-        </li>
-      </ul>
-      <h2>A narrated text for the visitor (the voice, in AR)</h2>
-      <p>
-        Made 2026-10-31. Three directions for a long text that carries a voice
-        reading it: how a visitor notices the voice before opening anything,
-        what happens when the captions strip and the full text are both open,
-        how loading, a missing file, a locked phone and a call look, and whether
-        a speed control is needed. No real audio plays: a fake clock drives the
-        words, and a debug strip at the bottom switches the states.
-      </p>
-      <ul>
-        <li>
-          <a href="narration-1-quiet-voice/"
-            ><strong>The quiet voice</strong
-            ><span
-              >The voice is a gentle extra: the sign gains only a small speaker
-              mark and the length, one surface at a time (the strip folds out
-              into the sheet), every audio problem one calm line. Look first:
-              tap the sign, play, then "Full text".</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="narration-2-audio-guide/"
-            ><strong>The audio guide</strong
-            ><span
-              >Listening first, like a museum guide: the sign says "Listen", one
-              tap starts the voice and a mini-player that stays while you walk,
-              in front of the full text too. Look first: tap the sign, then try
-              the missing-file and call states.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="narration-3-sign-speaks/"
-            ><strong>The sign speaks</strong
-            ><span
-              >The sign in the world has "Read" and "Listen" halves, and the
-              spoken sentence runs on a plate under it, so you keep looking at
-              the street. Look first: Listen, then walk away from the sign and
-              watch the caption move to the screen.</span
-            ></a
-          >
-        </li>
-      </ul>
-      <h2>Writing a long text and its voice (the tour editor)</h2>
-      <p>
-        Made 2026-11-01. Three directions for the creator's side of a long text:
-        where the body is written and previewed, how parts that will be shown as
-        typed (a pasted table, web page code) are pointed out, how the visitor's
-        view is chosen, how a voice and its timing are added with every mismatch
-        listed, and what an edit that puts the voice out of line looks like. No
-        real audio plays; a debug strip at the bottom triggers the cases.
-      </p>
-      <ul>
-        <li>
-          <a href="longtext-editor-1-in-the-inspector/"
-            ><strong>Everything in the inspector</strong
-            ><span
-              >The text is written in the right-hand panel with a small toolbar;
-              a phone-sized sheet pops over the 3D view as the preview, and the
-              voice is a folding section at the panel's foot. Look first: paste
-              a table, then import the subtitle file with two mismatches.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="longtext-editor-2-writing-desk/"
-            ><strong>The writing desk</strong
-            ><span
-              >"Write" turns the 3D view into a desk: the text with a margin of
-              notes, a full-height phone preview in step, and a timeline where
-              sentences the voice no longer matches drop out of line. Look
-              first: edit a word, then line the voice up again.</span
-            ></a
-          >
-        </li>
-        <li>
-          <a href="longtext-editor-3-preview-first/"
-            ><strong>Edit what the visitor sees</strong
-            ><span
-              >The creator writes straight into the reading sheet as the visitor
-              will see it, Markdown hidden behind a switch; adding a voice is a
-              three-step guided flow with a check. Look first: click the sign,
-              type, then "Add a voice".</span
-            ></a
-          >
-        </li>
-      </ul>
-      <h2>The editor's panels around the 3D view</h2>
+
+      <h2 id="2026-11-11-editor-panels">
+        <time datetime="2026-11-11">2026-11-11</time> The editor's panels around the 3D view
+        <a class="anchor" href="#2026-11-11-editor-panels" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="editor-panels-1-clear-area/"
@@ -1704,7 +1980,11 @@
           >
         </li>
       </ul>
-      <h2>The editor's docking panels</h2>
+
+      <h2 id="2026-11-11-docking-panels">
+        <time datetime="2026-11-11">2026-11-11</time> The editor's docking panels
+        <a class="anchor" href="#2026-11-11-docking-panels" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="editor-docking-1-dockview/"
@@ -1719,7 +1999,31 @@
           >
         </li>
       </ul>
-      <h2>One calm HUD for every item in a station (the visitor, in AR)</h2>
+
+      <h2 id="2026-11-13-optimizer-check">
+        <time datetime="2026-11-13">2026-11-13</time> The asset shelf's optimizers, seen and heard
+        <a class="anchor" href="#2026-11-13-optimizer-check" aria-label="Link to this section">#</a>
+      </h2>
+      <ul>
+        <li>
+          <a href="../asset-optimizer-check.html"
+            ><strong>Pictures and sounds before and after</strong
+            ><span
+              >Not a prototype but a check page: the editor's own picture and
+              sound optimizers run on a file you choose, or on a test photo,
+              voice or piece of music, at the chosen setting (1600 px WebP at
+              0.75; Opus at 24 kbps for speech, 64 kbps for music) and one step
+              either side, next to the original. Look first: the test photo
+              zoomed in, then the test voice with headphones.</span
+            ></a
+          >
+        </li>
+      </ul>
+
+      <h2 id="2026-11-15-calm-hud">
+        <time datetime="2026-11-15">2026-11-15</time> One calm HUD for every item in a station (the visitor, in AR)
+        <a class="anchor" href="#2026-11-15-calm-hud" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="hud-agg-1-one-slot/"
@@ -1776,7 +2080,11 @@
           >
         </li>
       </ul>
-      <h2>Playing a quiz (the visitor, in AR)</h2>
+
+      <h2 id="2026-11-15-quiz-player">
+        <time datetime="2026-11-15">2026-11-15</time> Playing a quiz (the visitor, in AR)
+        <a class="anchor" href="#2026-11-15-quiz-player" aria-label="Link to this section">#</a>
+      </h2>
       <ul>
         <li>
           <a href="quiz-player-1-card-answers/"

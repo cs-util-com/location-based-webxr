@@ -55,7 +55,7 @@ export function createSizeTally(): {
   add(sample: SizeSample): void;
   summary(): SizeTallySummary;
 } {
-  // The counting rule is the framework's (DEC-H3, shared with the
+  // The counting rule is the framework's (shared with the
   // TourViewer's print check); this tally adds the depth half and the report.
   const parallax = createQrParallaxSizeTally();
   const RUN = "run";

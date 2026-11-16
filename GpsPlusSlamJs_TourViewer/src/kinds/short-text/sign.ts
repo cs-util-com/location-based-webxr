@@ -33,20 +33,19 @@ import {
   type Texture,
 } from "three";
 
+import { easeAngle } from "../../angle-easing.js";
 import { smoothingAlpha } from "../../surface-smoothing.js";
 import type { WorldEnv, WorldPart } from "../../world-part.js";
 import {
   glyphCanvas,
   PLATE_PX_PER_EM,
   SHORT_TEXT_ACCENT,
+  SHORT_TEXT_DEFAULT_READ_AT_M,
   SHORT_TEXT_DEFAULT_ROLE,
   signPlate,
 } from "./plate.js";
 
 type TourShortTextBlock = TourBlockOfKind["shortText"];
-
-/** A short text's reading distance where it names none (m). */
-const SHORT_TEXT_DEFAULT_READ_AT_M = 4;
 
 /** The sign's build, in metres. */
 const SIGN = {
@@ -85,12 +84,6 @@ export function signMeasures(
         ? [-boardW / 2 + inset, boardW / 2 - inset]
         : [0],
   };
-}
-
-/** `a` and `b` the short way round, `a` moved toward `b` by `k`. */
-function easeAngle(a: number, b: number, k: number): number {
-  const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
-  return a + d * k;
 }
 
 const local = new Vector3();

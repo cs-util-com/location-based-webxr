@@ -4,8 +4,10 @@
  * where the camera saw the place, whatever the picture's own pose (the
  * creator moves the item, the overlay must not move), show by where the
  * visitor stands and looks, give way between the viewer and the picture,
- * hand a lined-up visitor the then-and-now slider and take it back, and
- * free what they made.
+ * hand a lined-up visitor the then-and-now slider and take it back, lead
+ * the visitor to the spot in the world (the decal, the light column and
+ * the card on its post, standing at the viewpoint whatever the pose) and
+ * get out of the way there, and free what they made.
  */
 import fc from "fast-check";
 import type {
@@ -13,18 +15,23 @@ import type {
   TourPictureViewpoint,
 } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import {
+  Box3,
   type BufferGeometry,
   Group,
   PerspectiveCamera,
   Quaternion,
+  Raycaster,
   Texture,
   Vector3,
   type Material,
+  type MeshBasicMaterial,
   type Mesh,
   type Object3D,
   type ShaderMaterial,
 } from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { fakePicturePainters } from "../../test-support/fake-picture-painters.js";
 
 import {
   screenIn,
@@ -32,7 +39,10 @@ import {
   type WorldMode,
   type WorldPart,
 } from "../../world-part.js";
+import { drawnAspect } from "./picture-decode.js";
+import { SPOT_CARD_LINES, spotCardPlace } from "./spot-guide.js";
 import { THEN_NOW_TIMING } from "./then-now-fade.js";
+import { thenNowFeatherMap } from "./then-now-feather.js";
 import { EDITOR_PICTURE_ALPHA, viewpointWorld } from "./viewpoint-world.js";
 
 /** Looking east (+Z in north-up-east) from 1.6 m over the station's anchor. */
@@ -63,7 +73,11 @@ function picture(
   };
 }
 
-function envOf(mode: WorldMode, screenHost?: HTMLElement): WorldEnv {
+function envOf(
+  mode: WorldMode,
+  screenHost?: HTMLElement,
+  reduceMotion?: () => boolean,
+): WorldEnv {
   return {
     mode,
     loadAsset: () => Promise.resolve(new Blob(["png"])),
@@ -76,6 +90,7 @@ function envOf(mode: WorldMode, screenHost?: HTMLElement): WorldEnv {
       throw new Error("no sound here");
     },
     ...(screenHost === undefined ? {} : { screen: screenIn(screenHost) }),
+    ...(reduceMotion === undefined ? {} : { reduceMotion }),
   };
 }
 
@@ -94,9 +109,16 @@ async function placed(
   block: TourPictureBlock,
   env: WorldEnv,
   tex = texture(),
-): Promise<{ part: WorldPart; station: Group; tex: typeof tex }> {
+  painters = fakePicturePainters(),
+): Promise<{
+  part: WorldPart;
+  station: Group;
+  tex: typeof tex;
+  painted: typeof painters.painted;
+}> {
   const part = viewpointWorld(block, env, {
     decode: () => Promise.resolve(tex),
+    painters: painters.painters,
   });
   if (part === null) throw new Error("no part");
   const station = new Group();
@@ -105,7 +127,7 @@ async function placed(
   part.object.position.set(...block.pose.position);
   part.object.quaternion.set(...block.pose.rotation);
   await part.ready;
-  return { part, station, tex };
+  return { part, station, tex, painted: painters.painted };
 }
 
 /** A camera at `at` (station frame) looking along `yawDeg` from east. */
@@ -164,7 +186,7 @@ describe("viewpointWorld", () => {
     }
   });
 
-  it("builds each view's look with the spot marker", async () => {
+  it("builds each view's look with its way to the spot", async () => {
     const expected = {
       thenNow: "picture-viewpoint-plane",
       sharpen: "picture-viewpoint-plane",
@@ -178,7 +200,30 @@ describe("viewpointWorld", () => {
         envOf("edit"),
       );
       expect(part.object.getObjectByName(mesh), view).toBeDefined();
-      expect(part.object.getObjectByName("picture-spot"), view).toBeDefined();
+      // The viewer is its own mark: its stand, halo and plate.
+      const guided = view !== "viewer";
+      for (const name of [
+        "picture-spot-decal",
+        "picture-spot-beam",
+        "picture-spot-card",
+        "picture-spot-post",
+      ]) {
+        expect(part.object.getObjectByName(name) !== undefined, view).toBe(
+          guided,
+        );
+      }
+      for (const name of ["picture-viewer-halo", "picture-viewer-plate"]) {
+        expect(part.object.getObjectByName(name) !== undefined, view).toBe(
+          !guided,
+        );
+      }
+      expect(
+        part.object.getObjectByName("picture-portal-plate") !== undefined,
+        view,
+      ).toBe(view === "window");
+      // The editor's field-of-view lines take the image's aspect from
+      // the part once it is read (the fake image is 200 x 100).
+      expect(drawnAspect(part.object), view).toBe(0.5);
       part.dispose();
     }
   });
@@ -222,6 +267,220 @@ describe("viewpointWorld", () => {
     );
   });
 
+  // The guide stands where the viewpoint is, in the station's frame: the
+  // item's own pose and size and the station's (a folder's) pose and scale
+  // must leave the decal under the spot and the card beside it.
+  it("stands the guide at the viewpoint whatever the pose and scale", async () => {
+    const vec = fc.tuple(
+      fc.double({ min: -20, max: 20, noNaN: true }),
+      fc.double({ min: -2, max: 2, noNaN: true }),
+      fc.double({ min: -20, max: 20, noNaN: true }),
+    );
+    const turn = fc.double({ min: -Math.PI, max: Math.PI, noNaN: true });
+    const size = fc.double({ min: 0.2, max: 5, noNaN: true });
+    const up = new Vector3(0, 1, 0);
+    await fc.assert(
+      fc.asyncProperty(
+        fc.constantFrom("thenNow", "finder", "sharpen", "window" as const),
+        fc.record({ position: vec, turn, size }),
+        fc.record({ position: vec, turn, size }),
+        turn,
+        async (view, item, folder, vpTurn) => {
+          const q = new Quaternion().setFromAxisAngle(up, item.turn);
+          const look = new Quaternion().setFromAxisAngle(up, vpTurn);
+          const viewpoint: TourPictureViewpoint = {
+            ...VIEWPOINT,
+            position: [2, 1.6, -3],
+            rotation: [look.x, look.y, look.z, look.w],
+          };
+          const { part, station } = await placed(
+            picture(view, {
+              viewpoint,
+              pose: { position: item.position, rotation: [q.x, q.y, q.z, q.w] },
+            }),
+            envOf("play"),
+          );
+          station.position.set(...folder.position);
+          station.quaternion.setFromAxisAngle(up, folder.turn);
+          station.scale.setScalar(folder.size);
+          part.object.scale.setScalar(item.size);
+          tick(part, station, 0, [0, 1.6, -8]);
+          station.updateMatrixWorld(true);
+          const world = (o: Object3D): Vector3 =>
+            o.getWorldPosition(new Vector3());
+          const tol = 1e-6 * Math.max(1, folder.size);
+          expect(
+            world(named(part.object, "picture-spot-decal")).distanceTo(
+              station.localToWorld(new Vector3(2, 0.02, -3)),
+            ),
+          ).toBeLessThan(tol);
+          expect(
+            world(named(part.object, "picture-spot-beam")).distanceTo(
+              station.localToWorld(new Vector3(2, 1.7, -3)),
+            ),
+          ).toBeLessThan(tol);
+          const place = spotCardPlace(viewpoint);
+          expect(
+            world(named(part.object, "picture-spot-post")).distanceTo(
+              station.localToWorld(new Vector3(place.x, 0.54, place.z)),
+            ),
+          ).toBeLessThan(tol);
+          part.dispose();
+        },
+      ),
+      { numRuns: 25 },
+    );
+  });
+
+  it("guides the visitor in and gives way on the spot", async () => {
+    const { part, station, painted } = await placed(
+      picture("thenNow"),
+      envOf("play"),
+    );
+    const card = named<Mesh<BufferGeometry, Material>>(
+      part.object,
+      "picture-spot-card",
+    );
+    const beam = named<Mesh<never, ShaderMaterial>>(
+      part.object,
+      "picture-spot-beam",
+    );
+    const holder = card.parent;
+    if (holder === null) throw new Error("the card hangs on nothing");
+    // 7 m before the spot, on the way in.
+    tick(part, station, 1, [0, 1.6, -7]);
+    expect(card.material.opacity).toBe(1);
+    expect(holder.visible).toBe(true);
+    expect(beam.material.uniforms["uAlpha"]?.value).toBe(1);
+    expect(beam.material.uniforms["uTime"]?.value).toBe(1);
+    expect(opacity(part.object, "picture-spot-decal")).toBe(1);
+    // The card turns its face to the visitor.
+    station.updateMatrixWorld(true);
+    const front = new Vector3(0, 0, 1).applyQuaternion(
+      holder.getWorldQuaternion(new Quaternion()),
+    );
+    const toViewer = station
+      .localToWorld(new Vector3(0, 1.6, -7))
+      .sub(holder.getWorldPosition(new Vector3()))
+      .setY(0)
+      .normalize();
+    expect(front.dot(toViewer)).toBeCloseTo(1, 6);
+    // On the spot: the card and the column are gone, the decal dims.
+    tick(part, station, 2, [0, 1.6, 0]);
+    expect(holder.visible).toBe(false);
+    expect(beam.material.uniforms["uAlpha"]?.value).toBe(0);
+    expect(opacity(part.object, "picture-spot-decal")).toBeCloseTo(0.4, 6);
+    // Its card shows the picture small, the year and what to do.
+    expect(painted.cards[0]).toMatchObject({
+      year: "1902",
+      line1: SPOT_CARD_LINES.thenNow[0],
+      line2: SPOT_CARD_LINES.thenNow[1],
+    });
+    expect(painted.cards[0]?.thumb?.aspect).toBe(0.5);
+    expect(painted.decals).toBe(1);
+    // A tap on the card or the decal opens the sheet.
+    expect(part.tapTarget?.getObjectByName("picture-spot-card")).toBeDefined();
+    expect(part.tapTarget?.getObjectByName("picture-spot-decal")).toBeDefined();
+    part.dispose();
+  });
+
+  // The decoder hands the GPU a picture stored upside down (and marks its
+  // texture not to flip again); the card draws the stored image, so it
+  // must be told to turn it.
+  it("tells the card when its picture is stored upside down", async () => {
+    const stored = texture();
+    stored.flipY = false;
+    const turned = await placed(picture("thenNow"), envOf("play"), stored);
+    expect(turned.painted.cards[0]?.thumb?.flipped).toBe(true);
+    turned.part.dispose();
+    const upright = await placed(picture("thenNow"), envOf("play"));
+    expect(upright.painted.cards[0]?.thumb?.flipped).toBe(false);
+    upright.part.dispose();
+  });
+
+  // A tap on the guide opens the picture; the light column is light, and
+  // the card once it has given way is not there. The near-miss pick boxes
+  // each tap target, so the column (3.4 m) must not be in it either.
+  it("takes a tap on the card and the decal only, while they show", async () => {
+    const { part, station } = await placed(picture("thenNow"), envOf("play"));
+    const target = part.tapTarget;
+    if (target === undefined) throw new Error("no tap target");
+    expect(target.getObjectByName("picture-spot-beam")).toBeUndefined();
+    for (const name of [
+      "picture-spot-card",
+      "picture-spot-post",
+      "picture-spot-decal",
+    ]) {
+      expect(target.getObjectByName(name), name).toBeDefined();
+    }
+    tick(part, station, 1, [0, 1.6, -7]);
+    station.updateMatrixWorld(true);
+    const guided = target.children.filter((c) =>
+      c.name.startsWith("picture-spot"),
+    );
+    expect(guided.length).toBe(2);
+    for (const c of guided) {
+      const box = new Box3().setFromObject(c);
+      expect(box.max.y - box.min.y, c.name).toBeLessThan(2);
+    }
+    const card = named(part.object, "picture-spot-card");
+    const hits = (): number => {
+      station.updateMatrixWorld(true);
+      const at = card.getWorldPosition(new Vector3());
+      const front = new Vector3(0, 0, 1).applyQuaternion(
+        card.getWorldQuaternion(new Quaternion()),
+      );
+      const ray = new Raycaster(
+        at.clone().addScaledVector(front, 0.5),
+        front.clone().negate(),
+      );
+      return ray.intersectObject(card, false).length;
+    };
+    expect(hits()).toBe(1);
+    // On the spot the card has given way: a tap passes where it stood.
+    tick(part, station, 2, [0, 1.6, 0]);
+    expect(card.parent?.visible).toBe(false);
+    expect(hits()).toBe(0);
+    part.dispose();
+  });
+
+  // A low viewpoint's window can stand close to the ground: its plate
+  // must not sink into it.
+  it("keeps the window's plate above the ground", async () => {
+    const { part, station } = await placed(
+      picture("window", { viewpoint: { ...VIEWPOINT, position: [0, 0.4, 0] } }),
+      envOf("play"),
+    );
+    tick(part, station, 0, [0, 0.4, 0]);
+    station.updateMatrixWorld(true);
+    const plate = named(part.object, "picture-portal-plate");
+    const box = new Box3().setFromObject(plate);
+    const foot = station.worldToLocal(box.min.clone());
+    expect(foot.y).toBeGreaterThanOrEqual(0);
+    part.dispose();
+  });
+
+  it("keeps the picture a surprise on sharpen's card", async () => {
+    const { part, painted } = await placed(picture("sharpen"), envOf("play"));
+    expect(painted.cards[0]?.line1).toBe(SPOT_CARD_LINES.sharpen[0]);
+    expect(painted.cards[0]?.thumb).toBeUndefined();
+    part.dispose();
+  });
+
+  it("holds the column still for a visitor who asked for less motion", async () => {
+    const { part, station } = await placed(
+      picture("finder"),
+      envOf("play", undefined, () => true),
+    );
+    tick(part, station, 3, [0, 1.6, -7]);
+    const beam = named<Mesh<never, ShaderMaterial>>(
+      part.object,
+      "picture-spot-beam",
+    );
+    expect(beam.material.uniforms["uTime"]?.value).toBe(0);
+    part.dispose();
+  });
+
   it("shows sharpen by where the visitor stands and looks", async () => {
     const { part, station } = await placed(picture("sharpen"), envOf("play"));
     tick(part, station, 0, [0, 1.6, 0]);
@@ -245,7 +504,15 @@ describe("viewpointWorld", () => {
 
   // The verdict: the viewer fades out as the picture fades in.
   it("lets the viewer give way to the picture", async () => {
-    const { part, station } = await placed(picture("viewer"), envOf("play"));
+    const { part, station, painted } = await placed(
+      picture("viewer"),
+      envOf("play"),
+    );
+    // Its plate names the year, as every guide's card does.
+    expect(painted.cards[0]).toMatchObject({
+      year: "1902",
+      line1: "Step up to it",
+    });
     const stand = named<Group>(part.object, "picture-viewer");
     const standOpacity = (): number =>
       (stand.getObjectByProperty("type", "Mesh") as Mesh<never, Material>)
@@ -253,10 +520,100 @@ describe("viewpointWorld", () => {
     tick(part, station, 0, [0, 1.6, -8]);
     expect(standOpacity()).toBe(1);
     expect(opacity(part.object, "picture-viewpoint-plane")).toBe(0);
+    // Its plate reads with the stand; its halo glows, softer far away.
+    expect(opacity(part.object, "picture-viewer-plate")).toBe(1);
+    const farHalo = opacity(part.object, "picture-viewer-halo");
+    expect(farHalo).toBeGreaterThan(0);
+    tick(part, station, 0, [0, 1.6, -3]);
+    expect(opacity(part.object, "picture-viewer-halo")).toBeCloseTo(
+      2 * farHalo,
+      6,
+    );
     tick(part, station, 1, [0, 1.6, 0]);
     expect(standOpacity()).toBe(0);
     expect(opacity(part.object, "picture-viewpoint-plane")).toBe(1);
+    expect(opacity(part.object, "picture-viewer-plate")).toBe(0);
+    expect(opacity(part.object, "picture-viewer-halo")).toBe(0);
     part.dispose();
+  });
+
+  it("puts a plate on the viewer's column, facing the spot, fading with it", async () => {
+    // Why: the chosen page's viewer says what it is for on its column: the
+    // year, and to step up to it; it gives way with the viewer.
+    const { part, station, painted } = await placed(
+      picture("viewer"),
+      envOf("play"),
+    );
+    // The viewer is its own mark: its plate is its only card.
+    expect(painted.cards).toHaveLength(1);
+    expect(painted.cards[0]).toMatchObject({
+      year: "1902",
+      line1: "Step up to it",
+      line2: "and see it as it was",
+    });
+    const plate = named(part.object, "picture-viewer-plate");
+    expect(
+      named<Group>(part.object, "picture-viewer").getObjectById(plate.id),
+    ).toBe(plate);
+    station.updateMatrixWorld(true);
+    // In the viewpoint's frame (the part's): 0.95 m up, 0.34 m ahead of
+    // the spot (east, +Z), turned to face back at it and tipped up to the
+    // eye.
+    const at = part.object.worldToLocal(plate.getWorldPosition(new Vector3()));
+    expect(at.y).toBeCloseTo(0.95, 6);
+    expect(at.z).toBeCloseTo(0.34, 6);
+    expect(at.x).toBeCloseTo(0, 6);
+    const facing = new Vector3(0, 0, 1)
+      .transformDirection(plate.matrixWorld)
+      .applyQuaternion(station.getWorldQuaternion(new Quaternion()).invert());
+    expect(facing.z).toBeLessThan(-0.9);
+    expect(facing.y).toBeGreaterThan(0.3);
+    const size = new Box3().setFromObject(plate).getSize(new Vector3());
+    expect(size.x).toBeCloseTo(0.34, 6);
+    tick(part, station, 0, [0, 1.6, -8]);
+    expect(opacity(part.object, "picture-viewer-plate")).toBe(1);
+    tick(part, station, 1, [0, 1.6, 0]);
+    expect(opacity(part.object, "picture-viewer-plate")).toBe(0);
+    part.dispose();
+  });
+
+  it("hangs a plate under the window's frame", async () => {
+    // Why: the chosen page's window names what it shows under its frame:
+    // the year, the caption's first phrase, and to look through.
+    const { part, station, painted } = await placed(
+      picture("window"),
+      envOf("play"),
+    );
+    // The guide's card is the other one.
+    expect(
+      painted.cards.find((c) => c.line2 === "Look through the frame"),
+    ).toMatchObject({ year: "1902", line1: "The square on market day" });
+    station.updateMatrixWorld(true);
+    const frame = new Box3().setFromObject(
+      named(part.object, "picture-portal-frame"),
+    );
+    const plate = new Box3().setFromObject(
+      named(part.object, "picture-portal-plate"),
+    );
+    const size = plate.getSize(new Vector3());
+    // 0.36 m wide, a quarter as tall, 5 cm under the frame, centred.
+    expect(Math.max(size.x, size.z)).toBeCloseTo(0.36, 6);
+    expect(size.y).toBeCloseTo(0.09, 6);
+    expect(frame.min.y - plate.max.y).toBeCloseTo(0.05, 6);
+    expect(plate.getCenter(new Vector3()).x).toBeCloseTo(
+      frame.getCenter(new Vector3()).x,
+      6,
+    );
+    part.dispose();
+  });
+
+  it("paints no plate for the views without one, only the guide's card", async () => {
+    for (const view of ["thenNow", "sharpen", "finder"] as const) {
+      const { part, painted } = await placed(picture(view), envOf("play"));
+      expect(painted.cards, view).toHaveLength(1);
+      expect(painted.cards[0]?.line1, view).toBe(SPOT_CARD_LINES[view][0]);
+      part.dispose();
+    }
   });
 
   it("hands a lined-up visitor the then-and-now slider and takes it back", async () => {
@@ -290,6 +647,96 @@ describe("viewpointWorld", () => {
     tick(part, station, 10, [0, 1.6, -8]);
     expect(host.querySelector("input[type=range]")).toBeNull();
     part.dispose();
+  });
+
+  it("softens each viewpoint picture at its edges by the chosen widths", async () => {
+    // Why: on the chosen page then and now and the viewer melt into today
+    // over 0.035 of the width, sharpen over 0.02.
+    const widths = { thenNow: 0.035, viewer: 0.035, sharpen: 0.02 } as const;
+    for (const [view, feather] of Object.entries(widths)) {
+      const { part } = await placed(
+        picture(view as keyof typeof widths),
+        envOf("play"),
+      );
+      const plane = named(part.object, "picture-viewpoint-plane");
+      const material = plane.material as MeshBasicMaterial;
+      expect(material.alphaMap, view).toBe(thenNowFeatherMap(feather));
+      part.dispose();
+    }
+  });
+
+  // The feather map is shared by every part: one part going must not free
+  // the GPU texture another part still draws with.
+  it("leaves the shared feather map alive when a part goes", async () => {
+    const map = thenNowFeatherMap();
+    let freed = 0;
+    const count = (): void => {
+      freed += 1;
+    };
+    map.addEventListener("dispose", count);
+    const first = await placed(picture("thenNow"), envOf("play"));
+    const second = await placed(picture("viewer"), envOf("play"));
+    first.part.dispose();
+    expect(freed).toBe(0);
+    const plane = named(second.part.object, "picture-viewpoint-plane");
+    expect((plane.material as MeshBasicMaterial).alphaMap).toBe(map);
+    second.part.dispose();
+    expect(freed).toBe(0);
+    map.removeEventListener("dispose", count);
+  });
+
+  // The chosen page lays a soft shadow under the viewer and under the
+  // standing window; on the ground it takes no tap and stretches no tap
+  // bounds, and the viewer's goes with the viewer.
+  it("lays the viewer's and the window's shadows on the ground", async () => {
+    const viewer = await placed(picture("viewer"), envOf("play"));
+    expect(viewer.painted.shadows).toBe(1);
+    const vs = named(viewer.part.object, "picture-viewer-shadow");
+    expect(viewer.part.tapTarget?.getObjectById(vs.id)).toBeUndefined();
+    tick(viewer.part, viewer.station, 0, [0, 1.6, -8]);
+    viewer.station.updateMatrixWorld(true);
+    // Under the stand, 0.42 m ahead of the spot (east, +Z), in the
+    // viewpoint's frame (the station's: the anchor undoes the part's pose).
+    const vAt = viewer.station.worldToLocal(vs.getWorldPosition(new Vector3()));
+    expect(vAt.x).toBeCloseTo(0, 6);
+    expect(vAt.y).toBeCloseTo(0.012, 6);
+    expect(vAt.z).toBeCloseTo(0.42, 6);
+    const vSize = new Box3().setFromObject(vs).getSize(new Vector3());
+    expect(vSize.x).toBeCloseTo(0.9, 6);
+    expect(vSize.z).toBeCloseTo(0.9, 6);
+    expect(opacity(viewer.part.object, "picture-viewer-shadow")).toBeCloseTo(
+      0.3,
+      6,
+    );
+    tick(viewer.part, viewer.station, 1, [0, 1.6, 0]);
+    expect(opacity(viewer.part.object, "picture-viewer-shadow")).toBe(0);
+    viewer.part.dispose();
+
+    const win = await placed(picture("window"), envOf("play"));
+    expect(win.painted.shadows).toBe(1);
+    const ws = named(win.part.object, "picture-portal-shadow");
+    expect(win.part.tapTarget?.getObjectById(ws.id)).toBeUndefined();
+    tick(win.part, win.station, 0, [0, 1.6, 0]);
+    win.station.updateMatrixWorld(true);
+    // Under the window's opening, as the prototype lays it.
+    const frame = named(win.part.object, "picture-portal").getWorldPosition(
+      new Vector3(),
+    );
+    const shadow = new Box3().setFromObject(ws);
+    const centre = shadow.getCenter(new Vector3());
+    expect(centre.x).toBeCloseTo(frame.x, 6);
+    expect(centre.z).toBeCloseTo(frame.z, 6);
+    expect(win.station.worldToLocal(centre.clone()).y).toBeCloseTo(0.012, 6);
+    // 1.15 x the frame's outer width (1.12 m) across, 0.8 m deep: the
+    // window faces east, so across is north-south (X).
+    const size = shadow.getSize(new Vector3());
+    expect(size.x).toBeCloseTo(1.12 * 1.15, 6);
+    expect(size.z).toBeCloseTo(0.8, 6);
+    expect(opacity(win.part.object, "picture-portal-shadow")).toBeCloseTo(
+      0.22,
+      6,
+    );
+    win.part.dispose();
   });
 
   it("points the window's shader at the picture's plane in the world", async () => {

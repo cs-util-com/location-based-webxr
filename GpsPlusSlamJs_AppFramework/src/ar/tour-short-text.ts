@@ -6,17 +6,21 @@
  * colours). Every field is optional and read in every view, so a view
  * switch keeps it; the renderer gives each absent field its default.
  *
- * Read by one rule each: a value of the wrong type fails at every minor;
- * a value a later minor may allow (a new role, a wider bend) fails a file
- * of this reader's own minor and is dropped, alone, from a newer one.
+ * Read by one rule each: a value of the wrong type fails at every minor
+ * (a number or null where a word belongs, anything but true or false for
+ * a switch); a value a later minor may allow (an unknown word such as a
+ * new role, a wider bend) fails a file of this reader's own minor and is
+ * dropped, alone, from a newer one.
  *
  * @see tour-short-text.ts.md
  */
 
 import { isFiniteNumber } from '../utils/json-guards.js';
-import type {
-  TourBlockFields,
-  TourBlockReadContext,
+import {
+  choice,
+  dropped,
+  type TourBlockFields,
+  type TourBlockReadContext,
 } from './tour-block-read.js';
 
 /** What a short text is for: it tells the visitor to do something, names
@@ -120,39 +124,6 @@ export function shortTextLetterHeightM(readAtM: number): number {
   return clamped * LETTER_M_PER_READ_M;
 }
 
-/** A value a later minor may allow: fails a file of this minor, drops the
- *  field alone from a newer one. */
-function dropped<T extends object>(
-  ctx: TourBlockReadContext,
-  field: string,
-  reason: string
-): Partial<T> {
-  if (!ctx.lenient) return ctx.fail(reason);
-  ctx.onDropped?.({ kind: 'field', block: ctx.id, field, reason });
-  return {};
-}
-
-function choice<F extends string, C extends string>(
-  v: TourBlockFields,
-  field: F,
-  choices: readonly C[],
-  ctx: TourBlockReadContext
-): Partial<Record<F, C>> {
-  const value = v[field];
-  if (value === undefined) return {};
-  if (
-    typeof value === 'string' &&
-    (choices as readonly string[]).includes(value)
-  ) {
-    return { [field]: value } as Record<F, C>;
-  }
-  return dropped(
-    ctx,
-    field,
-    `"${ctx.at}.${field}" must be one of ${choices.join(', ')}`
-  );
-}
-
 function matching<F extends string>(
   v: TourBlockFields,
   field: F,
@@ -163,10 +134,12 @@ function matching<F extends string>(
 ): Partial<Record<F, string>> {
   const value = v[field];
   if (value === undefined) return {};
-  if (typeof value === 'string' && value.length <= max && pattern.test(value)) {
+  const message = `"${ctx.at}.${field}" must be ${what}`;
+  if (typeof value !== 'string') return ctx.fail(message);
+  if (value.length <= max && pattern.test(value)) {
     return { [field]: value } as Record<F, string>;
   }
-  return dropped(ctx, field, `"${ctx.at}.${field}" must be ${what}`);
+  return dropped(ctx, field, message);
 }
 
 function readAt(v: TourBlockFields, ctx: TourBlockReadContext) {
@@ -225,11 +198,7 @@ function flag(v: TourBlockFields, ctx: TourBlockReadContext) {
   const value = v.captionOnArrow;
   if (value === undefined) return {};
   if (typeof value === 'boolean') return { captionOnArrow: value };
-  return dropped(
-    ctx,
-    'captionOnArrow',
-    `"${ctx.at}.captionOnArrow" must be true or false`
-  );
+  return ctx.fail(`"${ctx.at}.captionOnArrow" must be true or false`);
 }
 
 /** A short text's look fields, in the order a writer writes them. */

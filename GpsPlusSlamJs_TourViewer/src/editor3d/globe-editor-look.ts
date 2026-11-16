@@ -224,6 +224,40 @@ export function aimView(
   };
 }
 
+/**
+ * The globe view standing at `at` and looking at `ahead` (a picture's
+ * viewpoint and where the picture hangs from it): the heading and the
+ * pitch of the line between them, the ground taken as flat over that
+ * short a way. A point straight above or below is looked at heading
+ * north. RangeError for a place that is not finite.
+ */
+export function lookFromView(
+  at: { readonly lat: number; readonly lng: number; readonly heightM: number },
+  ahead: {
+    readonly lat: number;
+    readonly lng: number;
+    readonly heightM: number;
+  },
+): GlobeViewPose {
+  const values = [at.lat, at.lng, at.heightM, ahead.lat, ahead.lng];
+  if (![...values, ahead.heightM].every(Number.isFinite)) {
+    throw new RangeError(
+      `a view from a viewpoint needs finite places, got ${JSON.stringify([at, ahead])}`,
+    );
+  }
+  const north = (ahead.lat - at.lat) * M_PER_DEG_LAT;
+  const east = (ahead.lng - at.lng) * M_PER_DEG_LAT * Math.cos(at.lat * DEG);
+  const ground = Math.hypot(north, east);
+  const heading = ground < 1e-9 ? 0 : Math.atan2(east, north) / DEG;
+  return {
+    lat: at.lat,
+    lng: at.lng,
+    altitudeKm: at.heightM / 1000,
+    headingDeg: ((heading % 360) + 360) % 360,
+    pitchDeg: Math.atan2(ahead.heightM - at.heightM, ground) / DEG,
+  };
+}
+
 /** The arrow keys `steppedView` reads. */
 export type StepKey = "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown";
 

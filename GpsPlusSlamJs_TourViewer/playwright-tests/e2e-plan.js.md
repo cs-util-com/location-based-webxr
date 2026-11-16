@@ -53,9 +53,11 @@ cannot reach.
   opens the editor's default 3D view; `dom` otherwise. Caveat: the creator's
   landing plays its small hero film behind several `dom` specs; their
   subject is the page, so they stay `dom`.
-- **The area criterion:** `editor` opens only `edit.html`; `viewer` opens
-  only other pages; `both` opens the editor and another page.
-- **What `pathArea` calls editor-only:** `edit.html`, `src/editor/`,
+- **The area criterion:** `editor` opens only the editor's pages
+  (`EDITOR_PAGES`: `edit.html` and `asset-optimizer-check.html`, the check
+  page that runs the editor's own optimizers); `viewer` opens only other
+  pages; `both` opens an editor page and another page.
+- **What `pathArea` calls editor-only:** the editor's pages, `src/editor/`,
   `src/editor3d/`, the editor kit's `src/chrome/` (its only folder today;
   a new kit folder is `null` until classified), and the editor-only spec
   helpers `editor3d-fixture.js`, `editor-menus.js` and `editor-tours.js`. **Viewer-only:** `index.html` and `src/landing/`,

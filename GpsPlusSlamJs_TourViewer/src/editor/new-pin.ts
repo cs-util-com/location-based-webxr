@@ -151,6 +151,8 @@ export function newPin(input: NewItemInput): TourPin {
     kind: "shortText",
     view: "pin",
     caption: `New pin ${nextNumber(input.station, "shortText")}`,
+    // Written, not left to the reader's fallback: the file says it.
+    orientation: "upright",
     createdAtIso: input.nowIso,
     geo: freeGeo(input),
     station: input.station.id,
@@ -362,7 +364,11 @@ interface KindAddRow<K extends TextAddKind> {
 export const KIND_ADD: { readonly [K in TextAddKind]: KindAddRow<K> } = {
   shortText: {
     item: newPin,
-    entry: (n) => ({ kind: "shortText", caption: `New pin ${String(n)}` }),
+    entry: (n) => ({
+      kind: "shortText",
+      caption: `New pin ${String(n)}`,
+      orientation: "upright",
+    }),
   },
   longText: {
     item: newLongText,

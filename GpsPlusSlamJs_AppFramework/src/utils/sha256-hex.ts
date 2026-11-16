@@ -1,6 +1,6 @@
 /**
  * Lowercase hex, and the SHA-256 of bytes as lowercase hex, through
- * WebCrypto. One copy for this package and the Tour Viewer (DEC-H3): the
+ * WebCrypto. One copy for this package and the Tour Viewer: the
  * printed code's identity (`qr-payload/qr-code-id.ts`), a tour archive's
  * file hashes and a signing key's fingerprint (tour kit plan K1), and the
  * Tour Viewer's file-opened tour key (`tour-file-key.ts`) all call it.

@@ -221,10 +221,8 @@ describe("a gesture and its undo", () => {
             const tour = before?.stations ?? [];
             const station = tour.find((s) => s.id === stationIdOf("a"));
             if (station === undefined) throw new Error("no station a");
-            // The item turns here although a pin's row faces the camera:
-            // what is under test is the undo of a turn written through the
-            // session, which a turning row (a lectern, a picture) writes
-            // the same way.
+            // The item turns, as a pin's row says: what is under test is
+            // the undo of a turn written through the session.
             const target: GestureTarget = what.startsWith("item")
               ? {
                   ref: { kind: "block", id: "a" },

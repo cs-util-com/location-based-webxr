@@ -2,8 +2,8 @@
  * The ONE persistent-occluder wiring: the RecorderApp's live AR and replay
  * and the Tour Viewer's mesh cursor. Extracted 2026-07-04 in the RecorderApp
  * (code-health plan step 5) from two structurally identical ~40-line blocks;
- * lifted into the framework 2026-10-13 (Tour Viewer polish round M5a,
- * DEC-H3) with plain options in place of the recorder's option group and the
+ * lifted into the framework 2026-10-13 (Tour Viewer polish round M5a)
+ * with plain options in place of the recorder's option group and the
  * worker supplied by the app (a `new Worker(new URL(...))` resolves against
  * the app's own source).
  *

@@ -9,7 +9,7 @@
  * `zip-export.ts` already applied inline (`.` segments), and skipped empty
  * segments and trailing slashes. This module carries the union of both rule
  * sets and `zip-export.ts` calls it, so a writer cannot drift from the
- * validator it claims to share (DEC-H3). The PR's `reserved` parameter is
+ * validator it claims to share. The PR's `reserved` parameter is
  * gone: a manifest is an ordinary entry (DEC-N12), and nothing in
  * production ever passed a reserved name (M1 review #13).
  */

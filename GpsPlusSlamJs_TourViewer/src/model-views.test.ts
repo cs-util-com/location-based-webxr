@@ -8,11 +8,17 @@
  * its place" would no longer be the tour's model. The notes live on the
  * block, so they must survive a replaced model file.
  */
+import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { TOY_MAX_SIZE_M } from "./model-gestures.js";
 import {
+  contactShadowSpan,
+  MODEL_SHADOW_FLOOR_SHARE,
+  MODEL_SHADOW_GHOST_OPACITY,
+  MODEL_SHADOW_OPACITY,
+  MODEL_SHADOW_SPREAD,
   mountModelView,
   mountedModelViews,
   sectionColour,
@@ -67,7 +73,8 @@ function cameraAt(
 }
 
 describe("mountModelView", () => {
-  // Why: placed is the model as it is - nothing added, nothing swapped.
+  // Why: placed is the model as it is - nothing swapped, and nothing
+  // added to its meshes (its contact shadow hangs on the model itself).
   it("leaves a placed model as it is", () => {
     const { model, mesh, material } = standing();
     const view = mountModelView(model, block("placed"), 1.5);
@@ -519,6 +526,164 @@ describe("mountModelView", () => {
     expect(() => mountModelView(model, block("placed"), Number.NaN)).toThrow(
       RangeError,
     );
+  });
+});
+
+/** The contact shadow `mountModelView` hung on `model`, if any. */
+function shadowOf(model: THREE.Object3D): THREE.Mesh | undefined {
+  return model.children.find((c) => c.name === "model-contact-shadow") as
+    THREE.Mesh | undefined;
+}
+
+describe("the contact shadow", () => {
+  // Why: a model at full scale with nothing under it floats over the
+  // camera image; the chosen page lays a soft dark blob under its feet.
+  // It lies flat at the model's lowest point, under its footprint's
+  // centre, a little wider than the footprint, takes no tap, and goes
+  // with the view.
+  it("lays a soft shadow flat under a placed model's feet, and takes it away again", () => {
+    const { parent, model } = standing([0, 7, 0]);
+    const view = mountModelView(model, block("placed"), 1.5);
+    const shadow = shadowOf(model);
+    expect(shadow).toBeDefined();
+    parent.updateMatrixWorld(true);
+    const at = shadow!.getWorldPosition(new THREE.Vector3());
+    expect(at.x).toBeCloseTo(0, 6);
+    expect(at.z).toBeCloseTo(0, 6);
+    // Just above the ground the model stands on (y 7), never under it.
+    expect(at.y).toBeGreaterThan(7);
+    expect(at.y).toBeLessThan(7.03);
+    // Flat: its plane's normal points up.
+    const up = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(shadow!.getWorldQuaternion(new THREE.Quaternion()))
+      .normalize();
+    expect(up.y).toBeCloseTo(1, 6);
+    // Wider than the 3 m x 1.5 m footprint, by the spread.
+    const box = new THREE.Box3().setFromObject(shadow!);
+    expect(box.max.x - box.min.x).toBeCloseTo(3 * MODEL_SHADOW_SPREAD, 6);
+    expect(box.max.z - box.min.z).toBeCloseTo(
+      Math.max(1.5, MODEL_SHADOW_FLOOR_SHARE * 3) * MODEL_SHADOW_SPREAD,
+      6,
+    );
+    const material = shadow!.material as THREE.MeshBasicMaterial;
+    expect(material.transparent).toBe(true);
+    expect(material.depthWrite).toBe(false);
+    expect(material.opacity).toBe(MODEL_SHADOW_OPACITY);
+    expect(material.map).not.toBeNull();
+    const hits: THREE.Intersection[] = [];
+    shadow!.raycast(
+      new THREE.Raycaster(
+        new THREE.Vector3(0, 9, 0),
+        new THREE.Vector3(0, -1, 0),
+      ),
+      hits,
+    );
+    expect(hits).toHaveLength(0);
+    let freed = 0;
+    material.addEventListener("dispose", () => {
+      freed += 1;
+    });
+    view.dispose();
+    expect(shadowOf(model)).toBeUndefined();
+    expect(freed).toBe(1);
+  });
+
+  // Why: the glass ghost's feet fade into the ground, so its shadow is
+  // lighter (the page's 0.35 against 0.85); every other view stands the
+  // model as solid and keeps the full shadow. Each view has its own
+  // material, because the station's fade writes each one's opacity.
+  it("gives every view a shadow, lighter under the ghost, never a shared material", () => {
+    const seen = new Set<THREE.Material>();
+    for (const v of [
+      "placed",
+      "ghost",
+      "hotspots",
+      "cutaway",
+      "toy",
+    ] as const) {
+      const { model } = standing();
+      const view = mountModelView(model, block(v), 1.5);
+      const shadow = shadowOf(model);
+      expect(shadow, v).toBeDefined();
+      const material = shadow!.material as THREE.MeshBasicMaterial;
+      expect(material.opacity, v).toBe(
+        v === "ghost" ? MODEL_SHADOW_GHOST_OPACITY : MODEL_SHADOW_OPACITY,
+      );
+      expect(seen.has(material), v).toBe(false);
+      seen.add(material);
+      view.dispose();
+    }
+  });
+
+  // Why: the shadow's span per side is the footprint's, held at a floor
+  // share of the footprint's larger side (a long thin bench still casts a
+  // blob both ways), times the spread. Swept over the spread a page could
+  // pick (1.1-1.6) and over footprints from a coin to a long beam: the
+  // shadow always covers the footprint and never outgrows twice its
+  // larger side.
+  it("covers the footprint and stays within twice its larger side, over spreads and shapes", () => {
+    const footprints: [number, number][] = [
+      [2, 1],
+      [0.1, 0.1],
+      [3, 3],
+      [0.3, 4],
+    ];
+    for (const spread of [1.1, 1.25, 1.4, 1.6]) {
+      for (const [x, z] of footprints) {
+        const larger = Math.max(x, z);
+        for (const span of [x, z]) {
+          const shown = contactShadowSpan(span, larger, spread);
+          expect(shown).toBeGreaterThan(span);
+          expect(shown).toBeLessThanOrEqual(2 * larger + 1e-9);
+          expect(shown).toBeGreaterThanOrEqual(
+            MODEL_SHADOW_FLOOR_SHARE * larger,
+          );
+        }
+      }
+    }
+    expect(contactShadowSpan(Number.NaN, 1)).toBe(0);
+    expect(contactShadowSpan(1, 0)).toBe(0);
+  });
+
+  // Why: the spread is a plain factor; a span computed with any other
+  // factor (or none) fails here, where the sweep's bounds would pass it.
+  it("is the held span times exactly the spread, for any span and spread", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 0, max: 50, noNaN: true }),
+        fc.double({ min: 0.01, max: 50, noNaN: true }),
+        fc.double({ min: 1, max: 2, noNaN: true }),
+        (span, larger, spread) => {
+          const held = Math.max(span, MODEL_SHADOW_FLOOR_SHARE * larger);
+          expect(contactShadowSpan(span, larger, spread) / held).toBeCloseTo(
+            spread,
+            9,
+          );
+          expect(contactShadowSpan(span, larger)).toBeCloseTo(
+            held * MODEL_SHADOW_SPREAD,
+            9,
+          );
+        },
+      ),
+      { seed: 11, numRuns: 300 },
+    );
+  });
+
+  // Why: a tower 10 m tall on a 1 m square stands on a blob the size of
+  // its foot; held by its height, it got a 7.5 m pool of dark around it.
+  it("lays a tower's shadow by its footprint, not its height", () => {
+    const parent = new THREE.Group();
+    const model = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 1));
+    mesh.position.y = 5;
+    model.add(mesh);
+    parent.add(model);
+    parent.updateMatrixWorld(true);
+    mountModelView(model, block("placed", { sizeM: 10 }), 1);
+    parent.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(shadowOf(model)!);
+    expect(box.max.x - box.min.x).toBeCloseTo(MODEL_SHADOW_SPREAD, 6);
+    expect(box.max.z - box.min.z).toBeCloseTo(MODEL_SHADOW_SPREAD, 6);
   });
 });
 

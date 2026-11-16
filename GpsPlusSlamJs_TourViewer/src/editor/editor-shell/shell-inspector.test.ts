@@ -41,6 +41,7 @@ const NO_PLACE = {
   extent: null,
   model: null,
   longText: null,
+  video: null,
   offset: null,
   headingDeg: null,
   turns: false,
@@ -247,6 +248,7 @@ describe("drawInspector", () => {
   ) =>
     ({
       kind: "storyEntry",
+      check: [],
       id: block.id,
       stationId: "gate",
       rowKind: "text",
@@ -257,73 +259,295 @@ describe("drawInspector", () => {
     }) as const;
   const FOLD = { folded: false, positionOpen: false };
 
-  // Why: a story's parts left the station's inspector for a story's own: a
-  // story's title is typed in the head, its entries are listed in order
-  // with the way to add one, and its Delete says what goes with it. Names
-  // are the file's, never markup.
-  it("draws a story: its typed title, its numbered entries, its commands", () => {
-    drawInspector(
-      dock,
+  const CARD = {
+    line: null,
+    chips: [],
+    answers: [],
+    issue: null,
+    fix: null,
+  } as const;
+  const STORY = {
+    kind: "story",
+    check: [],
+    storyId: "legend",
+    stationId: "gate",
+    title: "The <b>legend</b>",
+    sub: "1 The old gate / Story",
+    cards: [
       {
-        kind: "story",
-        storyId: "legend",
-        stationId: "gate",
-        title: "The <b>legend</b>",
-        sub: "1 The old gate / Story",
-        entries: [
-          { id: "intro", kind: "text", title: "The <i>siege</i>", place: 1 },
-          { id: "way", kind: "choice", title: "Choice: Which?", place: 2 },
+        ...CARD,
+        id: "intro",
+        number: 1,
+        kind: "text",
+        tag: "Shows a long text",
+        title: "The <i>siege</i>",
+        chips: ["On a tap"],
+      },
+      {
+        ...CARD,
+        id: "way",
+        number: 2,
+        kind: "choice",
+        tag: "Asks",
+        title: "Which?",
+        line: "The visitor picks one of 2 answers.",
+        answers: [
+          {
+            label: "Again",
+            right: null,
+            jump: { text: "goes back to step 1", type: "back", to: "intro" },
+          },
+          {
+            label: "Stop",
+            right: null,
+            jump: { text: "ends the story", type: "end", to: null },
+          },
         ],
       },
-      FOLD,
-      pictures,
-    );
+    ],
+  } as const satisfies InspectorModel;
+
+  // Why: the inspector says at a glance whether the story is valid, on the
+  // line under its name (the head is too narrow to share), from the
+  // Problems tab's rows (`InspectorModel` `check`), the way the chosen
+  // prototype's pill does: "Story valid" in green, or the count of what
+  // needs fixing in red, a press of either being `story-check`.
+  it("says whether the story is valid, and how many problems", () => {
+    const pill = () =>
+      dock.body.querySelector<HTMLButtonElement>(
+        '.sub [data-act="story-check"]',
+      );
+    drawInspector(dock, STORY, FOLD, pictures);
+    expect(pill()?.textContent).toBe("Story valid");
+    expect(pill()?.classList.contains("bad")).toBe(false);
+    expect(pill()?.title).toBe("Every path of the story can reach the end");
+    const loop = { what: "A loop", select: "intro" };
+    for (const [check, words] of [
+      [[loop], "1 problem"],
+      [[loop, { ...loop, select: "way" }], "2 problems"],
+    ] as const) {
+      drawInspector(dock, { ...STORY, check }, FOLD, pictures);
+      expect(pill()?.textContent).toBe(words);
+      expect(pill()?.classList.contains("bad")).toBe(true);
+      expect(pill()?.title).toBe("Show what needs fixing");
+    }
+  });
+
+  // Why: a story's parts left the station's inspector for a story's own: a
+  // story's title is typed in the head, its steps are cards in order with
+  // the way to add one, and its Delete says what goes with it. Names are
+  // the file's, never markup.
+  it("draws a story: its typed title, its step cards, its commands", () => {
+    drawInspector(dock, STORY, FOLD, pictures);
     const title = dock.head.querySelector<HTMLInputElement>(
       '[data-field="story-title"]',
     );
     expect(title?.defaultValue).toBe("The <b>legend</b>");
     expect(title?.getAttribute("aria-label")).toBe("Name of the story");
-    expect(dock.body.querySelector(".sub")?.textContent).toBe(
+    expect(dock.body.querySelector(".sub > span")?.textContent).toBe(
       "1 The old gate / Story",
     );
-    expect(dock.body.querySelector('[data-act="contents"]')?.textContent).toBe(
-      "Entries2, played in order",
-    );
     expect(
-      [...dock.body.querySelectorAll<HTMLElement>(".kids .kid")].map((k) => [
-        k.dataset["act"],
-        k.querySelector(".meta")?.textContent,
-        k.querySelector(".nm")?.textContent,
+      [...dock.body.querySelectorAll<HTMLElement>(".scard")].map((k) => [
+        k.dataset["card"],
+        k.querySelector<HTMLElement>(".chead")?.dataset["act"],
+        k.querySelector(".num")?.textContent,
+        k.querySelector(".kindtag")?.textContent,
+        k.querySelector(".ttl")?.textContent,
       ]),
     ).toEqual([
-      ["goto:intro", "1", "The <i>siege</i>"],
-      ["goto:way", "2", "Choice: Which?"],
+      ["intro", "card:intro", "1", "Shows a long text", "The <i>siege</i>"],
+      ["way", "card:way", "2", "Asks", "Which?"],
     ]);
     expect(dock.body.querySelector("b, i")).toBeNull();
     expect(
       dock.body.querySelector('[data-act="add-entry"]')?.textContent,
-    ).toContain("Add entry...");
+    ).toContain("Add step...");
+    expect(
+      dock.body.querySelector('[data-act="preview-story"]')?.textContent,
+    ).toContain("Preview the story");
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete story and its 2 entries...");
   });
 
-  it("says an empty story has no entries, and needs no words on its Delete", () => {
+  // Why: each answer says where it leads as a chip, and a chip naming a
+  // step is a button that shows it (`card-show:<id>`); the end is words.
+  // A card on a desktop says it opens in place (aria-expanded), on a
+  // phone it is a way into its step and says nothing of opening.
+  it("draws a choice's answers with their jump chips", () => {
+    drawInspector(dock, STORY, FOLD, pictures);
+    const way = dock.body.querySelector<HTMLElement>('[data-card="way"]');
+    expect(
+      [...(way?.querySelectorAll<HTMLElement>(".ans") ?? [])].map((a) => [
+        a.querySelector(".albl")?.textContent,
+        a.querySelector(".jump")?.tagName,
+        a.querySelector(".jump")?.textContent,
+        a.querySelector<HTMLElement>(".jump")?.dataset["act"],
+      ]),
+    ).toEqual([
+      ["Again", "BUTTON", "goes back to step 1", "card-show:intro"],
+      ["Stop", "SPAN", "ends the story", undefined],
+    ]);
+    expect(way?.querySelector(".chead")?.getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    drawInspector(dock, STORY, { ...FOLD, drill: true }, pictures);
+    expect(
+      dock.body
+        .querySelector('[data-card="way"] .chead')
+        ?.hasAttribute("aria-expanded"),
+    ).toBe(false);
+  });
+
+  // Why: a step can go between two others: on a desktop a gap above each
+  // card adds before it, named by the step it comes before; a phone has
+  // no hover, and adds at the end.
+  it("draws a gap to insert a step above each card on a desktop only", () => {
+    drawInspector(dock, STORY, FOLD, pictures);
+    expect(
+      [...dock.body.querySelectorAll<HTMLElement>(".gap .insert")].map((b) => [
+        b.dataset["act"],
+        b.getAttribute("aria-label"),
+        b.nextElementSibling,
+      ]),
+    ).toEqual([
+      ["insert:0", "Insert a step before step 1", null],
+      ["insert:1", "Insert a step before step 2", null],
+    ]);
+    expect(
+      dock.body
+        .querySelector(".gap")
+        ?.nextElementSibling?.getAttribute("data-card"),
+    ).toBe("intro");
+    drawInspector(dock, STORY, { ...FOLD, drill: true }, pictures);
+    expect(dock.body.querySelector(".gap")).toBeNull();
+  });
+
+  // Why: the chosen step-cards prototype keeps "Add step" and "Preview the
+  // story" at the panel's foot while the cards scroll: one footer, the
+  // dock body's last part (after Delete and Move to station), Add first
+  // and wide, Preview the primary; an empty story has nothing to preview.
+  it("puts Add step and Preview the story in a footer at the body's foot", () => {
+    const foot = () => dock.body.lastElementChild as HTMLElement | null;
+    const buttons = () =>
+      [...(foot()?.querySelectorAll<HTMLElement>("button") ?? [])].map((b) => [
+        b.dataset["act"],
+        b.className,
+        b.textContent,
+      ]);
+    drawInspector(dock, STORY, FOLD, pictures);
+    expect(foot()?.className).toBe("acts sfoot");
+    expect(buttons()).toEqual([
+      ["add-entry", "act wide", "Add step..."],
+      ["preview-story", "act pri", "Preview the story"],
+    ]);
+    expect(dock.body.querySelectorAll('[data-act="add-entry"]')).toHaveLength(
+      1,
+    );
+    drawInspector(dock, { ...STORY, cards: [] }, FOLD, pictures);
+    expect(buttons()).toEqual([["add-entry", "act wide", "Add step..."]]);
+  });
+
+  // Why: a card is dragged by its grip alone (the head opens the card, the
+  // rest of it scrolls the list on a phone), so the grip sits beside the
+  // head, not in it (a button holds no button), names its step for the
+  // drag (`data-drag`), and is hidden from a screen reader: the step's
+  // Earlier and Later are the keyboard's way to move it.
+  it("gives each card a grip beside its head, on a desktop and a phone", () => {
+    for (const drill of [false, true]) {
+      drawInspector(dock, STORY, { ...FOLD, drill }, pictures);
+      expect(
+        [...dock.body.querySelectorAll<HTMLElement>(".scard")].map((k) => {
+          const row = k.firstElementChild as HTMLElement;
+          const grip = row.querySelector<HTMLElement>(".grip");
+          return [
+            row.className,
+            [...row.children].map((c) => c.className),
+            grip?.tagName,
+            grip?.dataset["drag"],
+            grip?.getAttribute("aria-hidden"),
+            grip?.title,
+          ];
+        }),
+      ).toEqual(
+        ["intro", "way"].map((id) => [
+          "crow",
+          ["grip", "chead"],
+          "SPAN",
+          id,
+          "true",
+          "Drag to reorder",
+        ]),
+      );
+    }
+  });
+
+  // Why: the loop warning is said on every step of the loop, and only the
+  // loop's last choice carries the one-click fix, named by the answer it
+  // changes; a card open in place draws its step's own controls inside
+  // itself, so the shell can tell whose they are (`data-card`).
+  it("draws the loop warning with its fix, and an open card's controls", () => {
+    const [intro, way] = STORY.cards;
     drawInspector(
       dock,
       {
-        kind: "story",
-        storyId: "legend",
-        stationId: "gate",
-        title: "Empty",
-        sub: "1 The old gate / Story",
-        entries: [],
+        ...STORY,
+        cards: [
+          { ...intro, issue: "Steps 1 and 2 go round in a loop" },
+          {
+            ...way,
+            issue: "Steps 1 and 2 go round in a loop",
+            fix: 'Let "Stop" end the story',
+          },
+        ],
+        opened: [
+          {
+            kind: "storyStep",
+            check: [],
+            stepKind: "choice",
+            id: "way",
+            stationId: "gate",
+            title: "Which?",
+            sub: "Choice, entry 2",
+            heading: "Answers",
+            lines: ["Again - goes to The siege"],
+          },
+        ],
       },
       FOLD,
       pictures,
     );
-    expect(dock.body.querySelector(".kids")).toBeNull();
-    expect(dock.body.textContent).toContain("No entries yet.");
+    expect(
+      [...dock.body.querySelectorAll<HTMLElement>(".scard")].map((k) => [
+        k.classList.contains("bad"),
+        k.classList.contains("open"),
+        k.querySelector<HTMLElement>(".fix")?.dataset["act"] ?? null,
+      ]),
+    ).toEqual([
+      [true, false, null],
+      [true, true, "card-fix:way"],
+    ]);
+    expect(dock.body.querySelector(".fix")?.textContent).toBe(
+      'Let "Stop" end the story',
+    );
+    const open = dock.body.querySelector('[data-card="way"]');
+    expect(open?.querySelector(".cbody .steplines")?.textContent).toBe(
+      "Again - goes to The siege",
+    );
+    expect(open?.querySelector('.cbody [data-act="delete"]')).not.toBeNull();
+  });
+
+  it("says an empty story has no steps, and needs no words on its Delete", () => {
+    drawInspector(
+      dock,
+      { ...STORY, title: "Empty", cards: [] },
+      FOLD,
+      pictures,
+    );
+    expect(dock.body.querySelector(".scard")).toBeNull();
+    expect(dock.body.querySelector('[data-act="preview-story"]')).toBeNull();
+    expect(dock.body.textContent).toContain("This story has no steps yet.");
     expect(
       dock.body.querySelector('[data-act="delete"]')?.textContent,
     ).toContain("Delete story");
@@ -340,6 +564,7 @@ describe("drawInspector", () => {
       dock,
       {
         kind: "storyStep",
+        check: [],
         stepKind: "choice",
         id: "way",
         stationId: "gate",
@@ -390,6 +615,7 @@ describe("drawInspector", () => {
       dock,
       {
         kind: "storyStep",
+        check: [],
         stepKind: "choice",
         id: "way",
         stationId: "gate",
@@ -475,6 +701,7 @@ describe("drawInspector", () => {
       dock,
       {
         kind: "storyStep",
+        check: [],
         stepKind: "quiz",
         id: "age",
         stationId: "gate",
@@ -595,6 +822,34 @@ describe("drawInspector", () => {
     expect(button?.textContent).toContain("Benches");
     drawInspector(dock, placed, FOLD, pictures);
     expect(dock.body.querySelector('[data-act^="select:"]')).toBeNull();
+  });
+
+  // Why: a field the item's view shows somewhere (or not at all) says so
+  // under it, so a creator knows where the words go before typing them.
+  it("says under a field how the item's view uses it", () => {
+    drawInspector(
+      dock,
+      {
+        ...NO_PLACE,
+        fields: [
+          {
+            name: "caption",
+            label: "Caption",
+            value: "",
+            required: false,
+            prose: true,
+            max: 1200,
+            unit: "codePoints",
+            mark: "Not used by Plane.",
+          },
+        ],
+      },
+      FOLD,
+      pictures,
+    );
+    expect(dock.body.querySelector(".note.use")?.textContent).toBe(
+      "Not used by Plane.",
+    );
   });
 
   // Why: a sound's radius, reach and volume are numbers (block-fields.ts
@@ -1303,6 +1558,7 @@ describe("drawInspector", () => {
       dock,
       {
         kind: "storyStep",
+        check: [],
         stepKind: "choice",
         id: "way",
         stationId: "gate",
@@ -1824,6 +2080,14 @@ describe("the crumb and the way up", () => {
     expect(
       dock.head.querySelector('[data-act="back"]')?.getAttribute("aria-label"),
     ).toBe("Back to 1 The old gate");
+    // The tree's select-mode tick is `.cb`, hidden outside select mode:
+    // a crumb carrying that class vanished on a desktop.
+    expect(parts.every((b) => b.classList.contains("crumb"))).toBe(true);
+    expect(parts.some((b) => b.classList.contains("cb"))).toBe(false);
+    // Back up to a level, not to the list: a docked layout shows it too.
+    expect(
+      dock.head.querySelector('[data-act="back"]')?.classList.contains("up"),
+    ).toBe(true);
   });
 });
 
@@ -1835,6 +2099,9 @@ describe("the head's way back", () => {
       const first = dock.head.firstElementChild as HTMLElement;
       expect(first.dataset["act"]).toBe("back");
       expect(first.getAttribute("aria-label")).toBe("Back to the list");
+      // Back to the list only repeats Deselect where the list stays in
+      // view, so it is a phone's alone.
+      expect(first.classList.contains("up")).toBe(false);
     }
   });
 });

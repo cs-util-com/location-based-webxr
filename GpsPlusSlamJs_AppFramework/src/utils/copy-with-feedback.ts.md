@@ -3,7 +3,7 @@
 ## Purpose
 
 The one "copy to the clipboard from a button, and say how it went"
-sequence (Tour Viewer follow-up F7; root `CLAUDE.md` DEC-H3 and its
+sequence (Tour Viewer follow-up F7; the shared-helper rule and its
 async-UI rule): busy and disabled before the write, the real outcome after,
 the button usable again in every case.
 
@@ -30,7 +30,7 @@ the button usable again in every case.
   `onFailed(error)` (e.g. put advice on the page's error line, or set the
   label back to idle).
 - The button is enabled again in `finally`, whatever happened.
-- Deep-import it; never through the `/utils` barrel (DEC-H3).
+- Deep-import it; never through the `/utils` barrel.
 
 ## Examples
 

@@ -5,7 +5,7 @@
 The lock counts of ONE stream of fused QR pose results (QR near-frontal
 pose plan §66): how many were stable, why the rest were not, and which were
 re-reads. The QR demo's `?qrperf` report (`fused-tally.ts`) and the
-TourViewer's `?debug=1` readout count by this one rule (DEC-H3), so their
+TourViewer's `?debug=1` readout count by this one rule, so their
 numbers compare.
 
 ## Public API

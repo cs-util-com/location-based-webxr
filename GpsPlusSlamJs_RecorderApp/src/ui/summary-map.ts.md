@@ -8,7 +8,7 @@ Leaflet-based 2D map displayed in the session summary panel after a recording en
 
 **The shell lives in the framework since 2026-10-01**
 ([summary-map-shell.ts.md](../../../GpsPlusSlamJs_AppFramework/src/visualization/summary-map-shell.ts.md),
-DEC-H3, Tour Viewer authoring plan 2026-09-28-0953 §3.3): the map, the OSM
+Tour Viewer authoring plan 2026-09-28-0953 §3.3): the map, the OSM
 basemap, the shared trajectory layers, the fullscreen toggle and the cleanup,
 shared with the Tour Viewer's summary after Finish. This file is the
 recorder's part: its reference-point markers (`drawExtra`), its Tailwind

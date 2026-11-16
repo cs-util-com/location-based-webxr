@@ -5,6 +5,7 @@ import {
   silencedFocus,
   whileShown,
 } from "./sound-setting.js";
+import { BACKGROUND_UNDER_VOICE } from "./kinds/audio/sound-reach.js";
 import { createVoiceFocus } from "./voice-focus.js";
 import {
   createWorldSound,
@@ -260,6 +261,29 @@ describe("a background sound in the world", () => {
     expect(el?.paused).toBe(false);
     bg.level(0, 13);
     expect(el?.paused).toBe(true);
+  });
+
+  it("tells how far it is lowered under a voice, gliding, and a voice never is", async () => {
+    // Why: the zone's glow dims with its sound, so it reads the very
+    // factor the ear hears: 1, gliding down to the level under a voice
+    // and back. A voice and the silent handle are never lowered.
+    const { sound } = setup();
+    const bg = sound.sound(LOAD, "background");
+    expect(bg.lowered()).toBe(1);
+    bg.level(0.8, 0);
+    await flush();
+    expect(bg.lowered()).toBe(1);
+    const voice = sound.sound(LOAD, "voice");
+    voice.play();
+    await flush();
+    bg.level(0.8, 0.1);
+    const midway = bg.lowered();
+    expect(midway).toBeLessThan(1);
+    expect(midway).toBeGreaterThan(BACKGROUND_UNDER_VOICE);
+    bg.level(0.8, 10);
+    expect(bg.lowered()).toBeCloseTo(BACKGROUND_UNDER_VOICE, 6);
+    expect(voice.lowered()).toBe(1);
+    expect(SILENT_SOUND.lowered()).toBe(1);
   });
 
   it("with sound off is neither read nor played until sound is on", async () => {

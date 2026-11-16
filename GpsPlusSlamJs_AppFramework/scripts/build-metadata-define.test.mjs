@@ -5,7 +5,7 @@
 // (`src/utils/build-info.ts`) agree only by the five constant names, and a
 // mismatch stamps no build at all - silently, since the session.json
 // builder swallows the reader's throw. The Recorder and the Tour Viewer both
-// build with this block (2026-09-28, DEC-H3), so it is pinned here once.
+// build with this block (2026-09-28), so it is pinned here once.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
