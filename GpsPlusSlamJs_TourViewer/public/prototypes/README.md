@@ -9,7 +9,7 @@ wired into its logic: every interaction is faked.
   (`/tour/item-lab.html?kind=stamp-1`); its `README.md` says how to add one.
   Pages and files here are linked from nothing in the app.
 
-- `index.html` - the list.
+- `index.html` - the list: one section per round, its heading `<time>YYYY-MM-DD</time> Title` with the id `YYYY-MM-DD-slug` and a "#" link to itself, sections oldest first, a newest-first contents list at the top (`src/prototypes-index.test.ts` holds it to that).
 - `landing-1-editorial/` ... `landing-5-map-path/` - the creator's entry
   and setup page, five visual directions. The app took L5.
 - `landing-r3-0-strip-or-cards/` ... `landing-r3-5-calm-route-cards/` - the

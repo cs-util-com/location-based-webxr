@@ -146,7 +146,8 @@
       .toc li + li {
         margin-top: 0.3rem;
       }
-      .toc a {
+      .toc a,
+      p a {
         display: inline;
         height: auto;
         background: none;
@@ -154,6 +155,9 @@
         border-radius: 0;
         padding: 0;
         color: var(--accent);
+      }
+      p a {
+        text-decoration: underline;
       }
       .toc a:hover,
       .toc a:focus-visible {

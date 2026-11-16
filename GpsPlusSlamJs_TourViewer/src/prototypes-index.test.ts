@@ -22,6 +22,7 @@ const ID_PATTERN = /^(\d{4}-\d{2}-\d{2})-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 interface Section {
   readonly id: string | undefined;
   readonly text: string;
+  readonly inner: string;
 }
 
 function textOf(html: string): string {
@@ -35,6 +36,7 @@ function readSections(html: string): Section[] {
   return [...html.matchAll(/<h2(\s[^>]*)?>([\s\S]*?)<\/h2>/g)].map((m) => ({
     id: /\bid="([^"]*)"/.exec(m[1] ?? "")?.[1],
     text: textOf(m[2] ?? ""),
+    inner: m[2] ?? "",
   }));
 }
 
@@ -65,13 +67,17 @@ describe("prototype gallery index", () => {
 
   it("starts every heading with the date of its id", () => {
     for (const s of sections) {
-      expect(s.text.startsWith(`${dateOf(s.id ?? "")} `), s.text).toBe(true);
+      const date = dateOf(s.id ?? "");
+      expect(s.text.startsWith(`${date} `), s.text).toBe(true);
+      expect(s.inner, s.text).toContain(`<time datetime="${date}">`);
     }
   });
 
   it("gives every heading a copyable link to itself", () => {
-    for (const id of ids) {
-      expect(html).toContain(`<a class="anchor" href="#${id}"`);
+    for (const s of sections) {
+      expect(s.inner, s.text).toContain(
+        `<a class="anchor" href="#${s.id ?? ""}"`,
+      );
     }
   });
 
@@ -84,5 +90,14 @@ describe("prototype gallery index", () => {
     const toc = readTocTargets(html);
     expect([...toc].sort()).toEqual([...ids].sort());
     expect(toc).toEqual([...ids].reverse());
+  });
+
+  // An in-text link to another section ("are in the fixed ground views
+  // section") goes dead silently when that section's slug is renamed.
+  it("points every in-page link at a section that exists", () => {
+    const known = new Set(ids);
+    for (const m of html.matchAll(/href="#([^"]+)"/g)) {
+      expect(known.has(m[1] ?? ""), m[0]).toBe(true);
+    }
   });
 });
