@@ -684,8 +684,9 @@ async function handle<K extends WorkerCallKind>(
       // OPFS where available, memory otherwise - built in `osm-tile-cache.ts`,
       // the one place the globe's arrival prefetch builds it too, so the two
       // can never warm and read different caches. Its failures go to the
-      // framework logger (a Sentry Issue), as before the store stopped
-      // importing the logger itself.
+      // framework logger, as before the store stopped importing the logger
+      // itself; whether they reach an error report depends on whether the
+      // app starts error reporting.
       const store = await openOsmStore({ warn: osmStoreWarn });
       const loaded = await loadRuleTable({ store });
       // The static tile host only on an explicit true (main reads `tiles=off`).

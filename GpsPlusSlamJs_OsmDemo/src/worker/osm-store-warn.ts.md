@@ -5,9 +5,8 @@
   logger's error-report dependency) and warns through an injected `warn`. This is the worker's `warn`: the
   framework logger tagged `OsmBlobStore`, so a failed cache write or listing
   is logged to the console and kept in the worker's log buffer, as before.
-  Whether a warning also reaches an error report depends on the app starting
-  error reporting (see the page's entry, `main.ts`, and the worker's start,
-  `demo-worker.ts`); this module neither starts nor assumes it.
+  Whether a warning also reaches an error report depends on whether the app
+  starts error reporting; this module neither starts nor assumes it.
 - Public API: `osmStoreWarn(message, details)` (an `OsmBlobStoreWarn`).
 - Invariants: `demo-worker.ts` opens its store with
   `openOsmStore({ warn: osmStoreWarn })`. The globe lab's prefetch cannot

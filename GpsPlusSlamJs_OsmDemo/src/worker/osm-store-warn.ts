@@ -4,8 +4,8 @@
  * console and kept in the worker's log buffer, as before the store stopped
  * importing the logger itself (the store must load in the design system's
  * no-build labs, which cannot load the logger's error-report dependency).
- * Whether a warning also reaches an error report depends on the app starting
- * error reporting (see the page's entry and the worker's start).
+ * Whether a warning also reaches an error report depends on whether the app
+ * starts error reporting; this module neither starts nor assumes it.
  *
  * Its own module so a test can pin both halves: that this function reaches
  * the logger, and that `demo-worker.ts` passes it to the store.

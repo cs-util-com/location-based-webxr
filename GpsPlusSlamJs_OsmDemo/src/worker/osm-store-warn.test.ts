@@ -3,7 +3,8 @@
  * logger so it can load in the design system's no-build labs (round-5 plan
  * 2026-10-01-0945 §3.6), and now warns through whatever its constructor is
  * given, `console.warn` by default. OsmDemo's worker must keep its store
- * failures on the framework logger (log buffer and Sentry Issue), and
+ * failures on the framework logger (its log buffer, and an error report
+ * when the app starts error reporting), and
  * nothing else would notice if it stopped: a failed cache write is silent
  * by design. So both halves are pinned here:
  * - `osmStoreWarn` reaches the logger (its buffer, under the store's tag);
