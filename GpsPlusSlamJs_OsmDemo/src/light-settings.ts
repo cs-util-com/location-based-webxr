@@ -201,6 +201,17 @@ const VERSION = "v1:";
 /** Rounds to the precision a slider can produce, so a round trip is exact. */
 const round = (v: number) => Number(v.toFixed(3));
 
+/** A light link read: its settings, and the fields it stated. */
+export interface LightLink {
+  readonly settings: LightSettings;
+  /**
+   * The fields whose value came from the link (an accepted key, or a
+   * `vcol`'s three), so a scheme switch keeps them even where a value
+   * equals the scheme's default (`rebaseLightSettings`' `touched`).
+   */
+  readonly stated: ReadonlySet<keyof LightSettings>;
+}
+
 /**
  * The settings in a URL's search string: `?light=v1:key=value,…`. Never
  * throws: a missing, unknown, non-numeric or out-of-range field falls back
@@ -213,8 +224,22 @@ export function parseLightSettings(
   search: string,
   defaults: LightSettings = DEFAULT_LIGHT_SETTINGS,
 ): LightSettings {
+  return parseLightLink(search, defaults).settings;
+}
+
+/**
+ * {@link parseLightSettings}, with the fields the link stated: a field that
+ * fell back to its default (refused, or a crossed ramp) is not stated.
+ */
+export function parseLightLink(
+  search: string,
+  defaults: LightSettings = DEFAULT_LIGHT_SETTINGS,
+): LightLink {
+  const stated = new Set<keyof LightSettings>();
   const raw = new URLSearchParams(search).get(LIGHT_PARAM);
-  if (raw === null || !raw.startsWith(VERSION)) return defaults;
+  if (raw === null || !raw.startsWith(VERSION)) {
+    return { settings: defaults, stated };
+  }
   const pairs = new Map(
     raw
       .slice(VERSION.length)
@@ -231,18 +256,24 @@ export function parseLightSettings(
     out.hazeVeilLightness = snapTo("hazeVeilLightness", lab.l);
     out.hazeVeilTintA = snapTo("hazeVeilTintA", lab.a);
     out.hazeVeilTint = snapTo("hazeVeilTint", lab.b);
+    stated.add("hazeVeilLightness").add("hazeVeilTintA").add("hazeVeilTint");
   }
   FIELDS.forEach((field) => {
     const text = pairs.get(KEYS[field]) ?? "";
     const v = text === "" ? Number.NaN : Number(text);
     const r = LIGHT_SETTING_RANGES[field];
-    if (Number.isFinite(v) && v >= r.min && v <= r.max) out[field] = round(v);
+    if (Number.isFinite(v) && v >= r.min && v <= r.max) {
+      out[field] = round(v);
+      stated.add(field);
+    }
   });
   if (!(out.gainFullDeg > out.gainFromDeg)) {
     out.gainFromDeg = defaults.gainFromDeg;
     out.gainFullDeg = defaults.gainFullDeg;
+    stated.delete("gainFromDeg");
+    stated.delete("gainFullDeg");
   }
-  return out;
+  return { settings: out, stated };
 }
 
 /**

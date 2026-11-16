@@ -55,7 +55,7 @@ import {
   applyLightOrFallback,
   describeLightSettings,
   lightDefaultsFor,
-  parseLightSettings,
+  parseLightLink,
   serializeLightSettings,
 } from "./light-settings.js";
 import { describeDrawCost } from "./draw-cost.js";
@@ -650,15 +650,18 @@ async function main(): Promise<void> {
   // nothing opens in urban's veil, and a stated value still wins.
   const lightUrl = browserPlaceUrl(window);
   const schemeLight = lightDefaultsFor(selectColourScheme(store.getState()));
-  let initialLight = parseLightSettings(window.location.search, schemeLight);
+  const lightLink = parseLightLink(window.location.search, schemeLight);
+  let initialLight = lightLink.settings;
   // The view starts at the shipped look, so only a difference from it is
   // sent. A value the view refuses opens the scheme's light, with a warning,
-  // rather than stopping the boot.
+  // rather than stopping the boot; the link then states nothing.
   if (serializeLightSettings(initialLight) !== null) {
     initialLight = applyLightOrFallback(initialLight, schemeLight, (s) =>
       buildingView.setLightSettings(s),
     );
   }
+  const statedLight =
+    initialLight === lightLink.settings ? lightLink.stated : new Set<never>();
   // Sampled like the camera (400 ms): a drag is a stream of input events,
   // and browsers refuse replaceState past a rate a fast drag reaches.
   const LIGHT_URL_SAMPLE_MS = 400;
@@ -671,6 +674,7 @@ async function main(): Promise<void> {
     opener: lightOpen,
     initial: initialLight,
     defaults: lightDefaultsFor(selectColourScheme(store.getState())),
+    stated: statedLight,
     onChange: (settings) => {
       buildingView.setLightSettings(settings);
       // The haze start moves the fog's near, which the draw readout names.

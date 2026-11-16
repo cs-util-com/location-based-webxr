@@ -175,7 +175,11 @@ export function clampHazeVeil(veil: HazeVeil): HazeVeil {
 }
 
 function assertVeil(veil: HazeVeil, exposure: number): void {
-  const { lightness, tint, tintA = 0 } = veil;
+  const { lightness, tint, tintA = 0, riseDeg = 0 } = veil;
+  // The framework's horizon veil takes 0..90 degrees (`horizonVeilRise`).
+  if (!(Number.isFinite(riseDeg) && riseDeg >= 0 && riseDeg <= 90)) {
+    throw new RangeError(`veil rise must be in 0..90 degrees, got ${riseDeg}`);
+  }
   if (!(Number.isFinite(lightness) && lightness > 0 && lightness <= 100)) {
     throw new RangeError(
       `veil lightness must be in (0, 100], got ${lightness}`,
@@ -199,7 +203,8 @@ function assertVeil(veil: HazeVeil, exposure: number): void {
  * One offset serves all three channels (Neutral subtracts the same offset
  * from each), found from the darkest channel.
  *
- * @throws RangeError for a lightness outside (0, 100], a non-finite tint, an
+ * @throws RangeError for a lightness outside (0, 100], a non-finite tint, a
+ *   rise outside 0..90 degrees, an
  *   exposure that is not positive and finite, or a colour the screen cannot
  *   show exactly: its brightest channel reaches the compression knee (no
  *   exact inverse there), or it lies outside the sRGB gamut

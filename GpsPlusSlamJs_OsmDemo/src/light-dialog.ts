@@ -84,6 +84,11 @@ export interface LightDialogDeps {
    * the shipped look when left out. `setDefaults` moves it later.
    */
   readonly defaults?: LightSettings;
+  /**
+   * The fields the page's link stated (`parseLightLink`): a scheme switch
+   * keeps them, even where a value equals the scheme's default.
+   */
+  readonly stated?: ReadonlySet<keyof LightSettings>;
   /** Applies a setting live (the view, the URL). */
   readonly onChange: (settings: LightSettings) => void;
   /**
@@ -147,12 +152,13 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   let defaults = deps.defaults ?? DEFAULT_LIGHT_SETTINGS;
   // The fields the viewer set (by the link or a slider), so a scheme switch
   // keeps them even where a value equals the next scheme's default; Reset
-  // clears it.
-  const touched = new Set<keyof LightSettings>(
-    (Object.keys(settings) as (keyof LightSettings)[]).filter(
+  // clears it. A link's value equal to the default is known only by its key.
+  const touched = new Set<keyof LightSettings>([
+    ...(deps.stated ?? []),
+    ...(Object.keys(settings) as (keyof LightSettings)[]).filter(
       (f) => settings[f] !== defaults[f],
     ),
-  );
+  ]);
 
   const panel = document.createElement("section");
   panel.id = "light-dialog";
