@@ -26,18 +26,26 @@ const KEEP = {
   distance: { falloff: 50 },
 };
 
-/** A fresh flow for a model whose bigger lever is `first`. */
-export function initialFlow(first) {
+/** A fresh flow for a model whose bigger lever is `first`. `defaults` may
+ *  start a choice elsewhere for this model (compact points are on when
+ *  their error cannot be seen); unknown names are ignored. */
+export function initialFlow(first, defaults = {}) {
   const order =
     first === "shape"
       ? ["shape", "pictures", "distance"]
       : ["pictures", "shape", "distance"];
+  const choices = { ...START_CHOICES };
+  for (const [name, value] of Object.entries(defaults ?? {})) {
+    if (name in START_CHOICES && typeof value === typeof choices[name]) {
+      choices[name] = value;
+    }
+  }
   return {
     recommended: first,
     order,
     current: order[0],
     status: { pictures: "todo", shape: "todo", distance: "todo" },
-    choices: { ...START_CHOICES },
+    choices,
     showOriginal: false,
     shapeLook: false,
     accepted: false,
@@ -45,8 +53,13 @@ export function initialFlow(first) {
 }
 
 /** The first step after `from` in the order that is still to do, else
- *  "review". */
+ *  "review". The optional last step always leads to the review: going on
+ *  from it to a step the author left open looked as if the whole import
+ *  had started again. */
 function nextOpen(flow, status, from) {
+  if (from === "distance") {
+    return "review";
+  }
   const at = flow.order.indexOf(from);
   for (let i = 1; i <= flow.order.length; i++) {
     const id = flow.order[(at + i) % flow.order.length];

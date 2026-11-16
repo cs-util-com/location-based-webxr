@@ -7,8 +7,9 @@
 // shelf (model-quantize.ts, model-textures.ts and model-lod.ts): positions
 // as 16-bit (or 8-bit) integers in 4-byte strides, normals and tangents as
 // 8-bit, texture coordinates as 16-bit when they lie in 0..1, index lists
-// 16-bit below 65 535 vertices, and two coarser levels (a quarter and a
-// sixteenth of the triangles) saved after the author's level.
+// 16-bit below 65 535 vertices. The page proposes more coarser levels than
+// the shelf saves today (it saves two, a quarter and a sixteenth): see
+// LEVEL_RULE.
 
 const JPEG = "image/jpeg";
 const PNG = "image/png";
@@ -33,12 +34,116 @@ export const TEXTURE_STEPS = [
   { id: "128", label: "128 px", side: 128 },
 ];
 
-/** The coarser levels saved after the author's level, as shares of it. */
-export const CHAIN_SHARES = [1, 1 / 4, 1 / 16];
+/** How the distance levels are chosen. Candidates halve the triangles of
+ *  the one before, from the author's level down to the fewest the
+ *  simplifier reaches (and never below `minTriangles`). A candidate is
+ *  saved when its largest deviation has grown by `minGrowth` over the
+ *  last saved level: a level that deviates barely more than the one
+ *  before would take over at almost the same distance, so it would cost
+ *  bytes and save no drawing. When that leaves fewer than `minLevels`,
+ *  the growth asked for is lowered step by step (to 1.2, then to any
+ *  growth at all), so a model that can be reduced gets at least six.
+ *  At most `maxLevels` are saved. */
+export const LEVEL_RULE = {
+  ratio: 0.5,
+  minGrowth: 1.4,
+  minLevels: 6,
+  maxLevels: 10,
+  minTriangles: 8,
+};
 
 /** A phone held upright, for the switching distances: its screen height
  *  in device pixels. The preview camera's field of view is used with it. */
 export const PHONE_SCREEN_PX = 2000;
+
+/** The candidate triangle counts for the distance levels below an author's
+ *  level of `top` triangles, largest first (`top` itself included), down
+ *  to `floor` (the fewest the simplifier reaches). */
+export function levelTargets(top, floor, rule = LEVEL_RULE) {
+  const least = Math.max(1, floor, rule.minTriangles);
+  const out = [Math.max(1, Math.round(top))];
+  let t = out[0];
+  while (out.length < 64) {
+    t = Math.round(t * rule.ratio);
+    if (t < least) {
+      break;
+    }
+    out.push(t);
+  }
+  return out;
+}
+
+/** Which measured candidates ({ count, error }, largest count first, the
+ *  author's level first) are saved, by LEVEL_RULE. Returns their indices.
+ *  Candidates whose count does not drop, or whose error does not grow,
+ *  are never saved: they would never be drawn. */
+export function chooseLevels(candidates, rule = LEVEL_RULE) {
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    return [];
+  }
+  const pick = (growth) => {
+    const kept = [0];
+    for (
+      let i = 1;
+      i < candidates.length && kept.length < rule.maxLevels;
+      i++
+    ) {
+      const last = candidates[kept[kept.length - 1]];
+      const c = candidates[i];
+      const grew =
+        last.error > 0 ? c.error >= last.error * growth : c.error > 0;
+      if (c.count < last.count && c.error > last.error && grew) {
+        kept.push(i);
+      }
+    }
+    return kept;
+  };
+  let kept = pick(rule.minGrowth);
+  for (const growth of [1.2, 1]) {
+    if (kept.length >= rule.minLevels) {
+      break;
+    }
+    kept = pick(growth);
+  }
+  return kept;
+}
+
+/** The positions stored as 8-bit integers the way the preview stores them
+ *  (one grid over the bounding box's longest side, centred on the box),
+ *  and the largest distance any point moves. */
+export function compactPositions(positions, center, maxExtent) {
+  const out = new Float32Array(positions.length);
+  if (!(maxExtent > 0)) {
+    out.set(positions);
+    return { positions: out, maxError: 0 };
+  }
+  const scale = maxExtent / 2 / 127;
+  let worst = 0;
+  for (let i = 0; i + 2 < positions.length; i += 3) {
+    let d2 = 0;
+    for (let c = 0; c < 3; c++) {
+      const q = Math.max(
+        -127,
+        Math.min(127, Math.round((positions[i + c] - center[c]) / scale)),
+      );
+      out[i + c] = center[c] + q * scale;
+      d2 += (out[i + c] - positions[i + c]) ** 2;
+    }
+    worst = Math.max(worst, d2);
+  }
+  return { positions: out, maxError: Math.sqrt(worst) };
+}
+
+/** Compact points are on by default when the error they add stays below
+ *  `visiblePx` on the phone screen for a visitor `closestM` metres away,
+ *  the closest a visitor usually stands to a placed model. */
+export const COMPACT_RULE = { closestM: 1, visiblePx: 1 };
+
+/** A length in metres as pixels on the phone at `distance` metres. */
+export function screenPixels(metres, distance, fovDeg) {
+  const tan = Math.tan((fovDeg * Math.PI) / 180 / 2);
+  return (metres * PHONE_SCREEN_PX) / (2 * tan * distance);
+}
 
 const GLB_MAGIC = 0x46546c67;
 const JSON_CHUNK = 0x4e4f534a;

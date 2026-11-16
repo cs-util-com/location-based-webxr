@@ -11,21 +11,25 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { stepsFor, levelIndices } from "../model-lod-1/lod-simplify.js";
 import {
-  CHAIN_SHARES,
+  COMPACT_RULE,
+  LEVEL_RULE,
   SHELF,
   TEXTURE_STEPS,
   WEBP,
   byteShares,
+  compactPositions,
   formatBytes,
   formatLength,
   geometryBytes,
   imageSide,
   levelAt,
+  levelTargets,
   overheadBytes,
   pictureEntries,
   pixelBudget,
   readGlb,
   recommendFirst,
+  screenPixels,
   switchDistance,
   textureFormat,
 } from "./size-model.js";
@@ -148,9 +152,13 @@ function workerClient() {
   const worker = new Worker(WORKER_URL, { type: "module" });
   const pending = new Map();
   let next = 1;
-  const failAll = (message) => {
+  const failAll = (message, cancelled = false) => {
     for (const p of pending.values()) {
-      p.reject(new Error(message));
+      const error = new Error(message);
+      // A job cut short because its model is being replaced is not a
+      // failure the author needs to hear about.
+      error.cancelled = cancelled;
+      p.reject(error);
     }
     pending.clear();
   };
@@ -183,7 +191,7 @@ function workerClient() {
     },
     stop() {
       worker.terminate();
-      failAll("stopped");
+      failAll("stopped", true);
     },
   };
 }
@@ -310,19 +318,31 @@ export function mountModelImport(host, options = {}) {
   function levelCounts(m, quality) {
     if (!m.prog) {
       const t = Math.round((m.sourceTriangles * quality) / 100);
+      // Halving levels add up to at most twice the author's level.
       return {
-        triangles: Math.round(t * (1 + 1 / 4 + 1 / 16)),
+        triangles: 2 * t,
         vertices: Math.round((m.sourceVertices * quality) / 100),
       };
     }
     const top = Math.round((m.total * quality) / 100);
     let triangles = 0;
-    let prev = Infinity;
-    for (const share of CHAIN_SHARES) {
-      const alive = m.prog.stepAlive[stepsFor(m.prog, Math.round(top * share))];
-      if (alive < prev) {
-        triangles += alive;
-        prev = alive;
+    if (m.chain?.top === top) {
+      // The measured levels, as they would be saved.
+      for (const level of m.chain.levels) {
+        triangles += level.count / 3;
+      }
+    } else {
+      // Until they are measured: every halving candidate, at most
+      // LEVEL_RULE.maxLevels of them (an upper bound).
+      let prev = Infinity;
+      let n = 0;
+      for (const target of levelTargets(top, m.prog.minTriangles)) {
+        const alive = m.prog.stepAlive[stepsFor(m.prog, target)];
+        if (alive < prev && n < LEVEL_RULE.maxLevels) {
+          triangles += alive;
+          prev = alive;
+          n++;
+        }
       }
     }
     const vertices =
@@ -406,7 +426,7 @@ export function mountModelImport(host, options = {}) {
       });
       m.cache.set(job.key, r);
     } catch (error) {
-      if (m !== model) {
+      if (m !== model || error.cancelled) {
         return;
       }
       m.cache.set(job.key, { failed: true, message: error.message });
@@ -421,7 +441,7 @@ export function mountModelImport(host, options = {}) {
       return;
     }
     m.encoding = true;
-    while (m === model && m.queue.length > 0) {
+    while (m === model && !m.leaving && m.queue.length > 0) {
       const job = m.queue.shift();
       if (m.cache.has(job.key)) {
         continue;
@@ -474,38 +494,61 @@ export function mountModelImport(host, options = {}) {
       bitmaps.forEach((b) => b?.close());
       return;
     }
-    const old = [];
-    m.pictures.forEach((p, i) =>
-      old.push(...setMineImage(m, p.index, bitmaps[i])),
-    );
+    const old = new Set();
+    m.pictures.forEach((p, i) => {
+      for (const b of setMineImage(m, p.index, bitmaps[i])) {
+        old.add(b);
+      }
+    });
     old.forEach((b) => b.close());
     m.appliedPictures = `${texture}|${webp}`;
     renderSizes(m);
   }
 
-  /** Points every texture of image `index` in "yours" at `bitmap` (null:
-   *  the original's own picture). Returns the bitmaps it replaced. */
+  /** Gives every texture of image `index` in "yours" a fresh texture drawn
+   *  from `bitmap` (null: the original's own picture), and disposes the one
+   *  it replaces. Returns the bitmaps no texture uses any more.
+   *
+   *  A texture is never given a new `source` after it was drawn: three.js
+   *  keeps its GPU texture per source, so a swapped source makes it upload
+   *  the new picture into the old source's GPU texture (the original's, as
+   *  "yours" starts out sharing it), whose storage is fixed at the old size.
+   *  A smaller picture then fills only a corner of it (pictures in the wrong
+   *  place, every smaller size looking alike, the original changing too),
+   *  and disposing the texture later fails on the lost entry ("reading
+   *  'usedTimes'"). */
   function setMineImage(m, index, bitmap) {
     const replaced = [];
     for (const entry of m.mineTextures) {
       if (entry.image !== index) {
         continue;
       }
-      const prev = entry.texture.userData.bitmap;
-      if (prev) {
-        replaced.push(prev);
+      const next = entry.original.clone();
+      if (bitmap) {
+        next.source = new THREE.Source(bitmap);
       }
-      entry.texture.source = bitmap
-        ? new THREE.Source(bitmap)
-        : entry.original.source;
-      entry.texture.userData.bitmap = bitmap;
-      entry.texture.needsUpdate = true;
+      next.needsUpdate = true;
+      for (const slot of entry.slots) {
+        m.mineMaterial[slot] = next;
+      }
+      entry.texture.dispose();
+      if (entry.bitmap) {
+        replaced.push(entry.bitmap);
+      }
+      entry.texture = next;
+      entry.bitmap = bitmap;
     }
     return replaced;
   }
 
   // ---- shape: the live level, the 8-bit points, the distance chain ----
   function writeIndex(geometry, array) {
+    if (array.length > geometry.index.array.length) {
+      // More levels than the buffer was made for: a larger one.
+      geometry.setIndex(
+        new THREE.BufferAttribute(new Uint32Array(array.length), 1),
+      );
+    }
     const attr = geometry.index;
     attr.array.set(array, 0);
     attr.clearUpdateRanges();
@@ -557,7 +600,12 @@ export function mountModelImport(host, options = {}) {
   }
 
   async function requestChain(m) {
-    if (m !== model || !m.level || m.chainPending === m.level.top) {
+    if (
+      m !== model ||
+      m.leaving ||
+      !m.level ||
+      m.chainPending === m.level.top
+    ) {
       return;
     }
     const top = m.level.top;
@@ -575,6 +623,7 @@ export function mountModelImport(host, options = {}) {
         m.mineGeometry.setDrawRange(0, r.levels[0].count);
       }
       renderShapeText(m);
+      updateSize();
     } catch (error) {
       showError(m, error);
     } finally {
@@ -590,19 +639,9 @@ export function mountModelImport(host, options = {}) {
       return;
     }
     const attr = m.mineGeometry.attributes.position;
-    if (!flow.choices.positions8) {
-      attr.array.set(m.positions);
-    } else {
-      const c = m.box.getCenter(new THREE.Vector3()).toArray();
-      const scale = m.maxExtent / 2 / 127;
-      for (let i = 0; i < m.positions.length; i++) {
-        const q = Math.max(
-          -127,
-          Math.min(127, Math.round((m.positions[i] - c[i % 3]) / scale)),
-        );
-        attr.array[i] = c[i % 3] + q * scale;
-      }
-    }
+    attr.array.set(
+      flow.choices.positions8 ? m.compactShape.positions : m.positions,
+    );
     attr.needsUpdate = true;
     renderShapeText(m);
   }
@@ -667,8 +706,6 @@ export function mountModelImport(host, options = {}) {
     return v > 65 ? "sooner" : "standard";
   }
 
-  const LEVEL_NAMES = ["all your triangles", "a quarter", "a sixteenth"];
-
   function renderStrip(m, d, budget, pick) {
     const { near, far } = distanceRange(m);
     const pos = (x) =>
@@ -680,27 +717,35 @@ export function mountModelImport(host, options = {}) {
       const from = i === 0 ? 0 : pos(starts[i]);
       const to = i + 1 < levels.length ? pos(starts[i + 1]) : 100;
       const seg = document.createElement("span");
-      seg.className =
-        `mi-strip-seg mi-strip-l${i}` + (i === pick ? " is-on" : "");
+      seg.className = "mi-strip-seg" + (i === pick ? " is-on" : "");
+      // Darkest for all triangles, lighter with every coarser level.
+      const ink = Math.round(100 - (70 * i) / Math.max(1, levels.length - 1));
+      seg.style.background = `color-mix(in srgb, var(--mi-shape) ${ink}%, #ffffff)`;
+      seg.style.color = ink > 60 ? "#ffffff" : "var(--mi-ink)";
       seg.style.left = from + "%";
       seg.style.width = Math.max(0, to - from) + "%";
+      seg.textContent = to - from >= 6 ? String(i + 1) : "";
+      seg.title = `Level ${i + 1}: ${(l.count / 3).toLocaleString("en-US")} triangles, off by up to ${formatLength(l.error)}${i === 0 ? "" : `, from ${formatLength(starts[i])}`}`;
       return seg;
     });
     const marker = document.createElement("span");
     marker.className = "mi-strip-marker";
     marker.style.left = pos(d) + "%";
     ui.strip.replaceChildren(...parts, marker);
-    const sentences = levels.map((l, i) => {
-      const n = (l.count / 3).toLocaleString("en-US");
-      const name = LEVEL_NAMES[i] ?? `level ${i + 1}`;
-      if (i === 0) {
-        return `${name} (${n})`;
-      }
-      return `${name} (${n}) from ${formatLength(starts[i])}`;
-    });
+    const level = levels[pick];
+    const tris = (level.count / 3).toLocaleString("en-US");
+    const all = (levels[0].count / 3).toLocaleString("en-US");
+    const off =
+      pick === 0
+        ? ""
+        : `, its surface off by up to ${formatLength(level.error)}`;
+    const next =
+      pick + 1 < levels.length
+        ? ` The next takes over from ${formatLength(starts[pick + 1])}.`
+        : " This is the coarsest.";
     ui.distanceFact.innerHTML =
-      `A visitor here sees <b>${LEVEL_NAMES[pick] ?? "level " + (pick + 1)}</b>. ` +
-      `Close up: ${sentences.join(", then ")}.`;
+      `${levels.length} levels. A visitor here sees <b>level ${pick + 1}</b>: ` +
+      `${tris} of ${all} triangles${off}.${next}`;
   }
 
   // ---- size card and per-step texts ----
@@ -827,8 +872,17 @@ export function mountModelImport(host, options = {}) {
   function renderPos8(m, total) {
     const c16 = shapeBytes(m, { ...flow.choices, positions8: false });
     const c8 = shapeBytes(m, { ...flow.choices, positions8: true });
-    const move = m.maxExtent / 254 / 2;
-    ui.pos8Save.textContent = `(saves ${formatBytes(c16 - c8)}, ${Math.round((100 * (c16 - c8)) / total)} %; points move by up to ${formatLength(move)})`;
+    const px = compactPixels(m);
+    const near = `${COMPACT_RULE.closestM} m`;
+    const verdict = m.compactOk
+      ? `under ${COMPACT_RULE.visiblePx} pixel on a phone from ${near}, so it is on to start with`
+      : `${px.toFixed(1)} pixels on a phone from ${near}, where a visitor may stand, so it is off to start with`;
+    ui.pos8Save.textContent = `(saves ${formatBytes(c16 - c8)}, ${Math.round((100 * (c16 - c8)) / total)} %; points move by up to ${formatLength(m.compactError)}: ${verdict})`;
+  }
+
+  /** The compact points' measured error as pixels at the closest view. */
+  function compactPixels(m) {
+    return screenPixels(m.compactError, COMPACT_RULE.closestM, FOV);
   }
 
   // ---- the panel: stepper, advice, steps, review ----
@@ -1218,7 +1272,7 @@ export function mountModelImport(host, options = {}) {
   }
 
   function showError(m, error) {
-    if (m !== model && m !== null) {
+    if ((m !== model && m !== null) || error?.cancelled) {
       return;
     }
     ui.error.hidden = false;
@@ -1238,8 +1292,8 @@ export function mountModelImport(host, options = {}) {
       g.dispose();
     }
     for (const entry of m.mineTextures) {
-      entry.texture.userData.bitmap?.close();
       entry.texture.dispose();
+      entry.bitmap?.close();
     }
     m.mineMaterial.dispose();
     disposeMaterial(m.originalMaterial);
@@ -1268,12 +1322,21 @@ export function mountModelImport(host, options = {}) {
         const assoc = gltf.parser.associations.get(tex);
         const json = gltf.parser.json;
         const image = json.textures?.[assoc?.textures]?.source ?? null;
-        const clone = tex.clone();
-        clone.source = tex.source;
-        byTexture.set(tex, clone);
-        entries.push({ image, texture: clone, original: tex });
+        // A clone shares the original's source (and so its GPU texture)
+        // until a smaller picture replaces it with a texture of its own.
+        const entry = {
+          image,
+          texture: tex.clone(),
+          original: tex,
+          bitmap: null,
+          slots: [],
+        };
+        byTexture.set(tex, entry);
+        entries.push(entry);
       }
-      mineMaterial[slot] = byTexture.get(tex);
+      const entry = byTexture.get(tex);
+      entry.slots.push(slot);
+      mineMaterial[slot] = entry.texture;
     }
     return entries;
   }
@@ -1320,6 +1383,13 @@ export function mountModelImport(host, options = {}) {
     group.add(originalMesh, mineMesh);
     const ext = box.getSize(new THREE.Vector3());
     const uv = geometry.attributes.uv;
+    const maxExtent = Math.max(ext.x, ext.y, ext.z);
+    const center = box.getCenter(new THREE.Vector3()).toArray();
+    const compactError = compactPositions(
+      flatten(geometry.attributes.position),
+      center,
+      maxExtent,
+    ).maxError;
     return {
       label,
       glb,
@@ -1342,7 +1412,12 @@ export function mountModelImport(host, options = {}) {
       mineTextures,
       box,
       size: ext.length(),
-      maxExtent: Math.max(ext.x, ext.y, ext.z),
+      maxExtent,
+      center,
+      compactError,
+      compactOk:
+        screenPixels(compactError, COMPACT_RULE.closestM, FOV) <
+        COMPACT_RULE.visiblePx,
       sourceTriangles:
         (geometry.index
           ? geometry.index.count
@@ -1390,6 +1465,8 @@ export function mountModelImport(host, options = {}) {
     const original = base.clone();
     original.setIndex(new THREE.BufferAttribute(r.lod0, 1));
     const mine = base.clone();
+    // Halving levels add up to under twice the author's level; writeIndex
+    // grows the buffer if rounding ever needs more.
     mine.setIndex(
       new THREE.BufferAttribute(new Uint32Array(r.lod0.length * 2), 1),
     );
@@ -1399,6 +1476,7 @@ export function mountModelImport(host, options = {}) {
     Object.assign(m, {
       prog: r.prog,
       positions: r.position,
+      compactShape: compactPositions(r.position, m.center, m.maxExtent),
       mineGeometry: mine,
       total: r.lod0.length / 3,
       vertexCount: r.position.length / 3,
@@ -1449,6 +1527,13 @@ export function mountModelImport(host, options = {}) {
     const id = ++loadId;
     ui.error.hidden = true;
     showBusy("Opening the model", 0.01);
+    // The outgoing model stays on screen until the new one is parsed, but
+    // its helper threads stop here: nothing it asks for from now on may
+    // reach the new model's threads, which do not hold its shape.
+    if (model) {
+      model.leaving = true;
+    }
+    clearTimeout(chainTimer);
     workers?.shape.stop();
     workers?.pictures.stop();
     workers = { shape: workerClient(), pictures: workerClient() };
@@ -1464,7 +1549,9 @@ export function mountModelImport(host, options = {}) {
       model = m;
       scene.add(m.group);
       frame0(m);
-      flow = initialFlow(recommendFirst(m.shares).first);
+      flow = initialFlow(recommendFirst(m.shares).first, {
+        positions8: m.compactOk,
+      });
       ui.modelName.textContent = label;
       ui.quality.disabled = true;
       timings.quality.length = 0;
@@ -1532,6 +1619,18 @@ export function mountModelImport(host, options = {}) {
       picturesMeasured: model
         ? model.jobsTotal > 0 && model.jobsDone >= model.jobsTotal
         : false,
+      /** The picture choice the 3D view shows ("1024|false"). */
+      picturesShown: model?.appliedPictures ?? null,
     }),
+    /** Measuring hook: puts the camera at `position` looking at `target`
+     *  (arrays of three numbers, in the model's units). */
+    view(position, target) {
+      controls.target.fromArray(target);
+      camera.position.fromArray(position);
+      camera.updateProjectionMatrix();
+    },
+    /** Measuring hook: the model's bounding box as [min, max]. */
+    bounds: () =>
+      model ? [model.box.min.toArray(), model.box.max.toArray()] : null,
   };
 }

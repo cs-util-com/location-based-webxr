@@ -518,23 +518,20 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  opacity: 0.45;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  border-left: 2px solid var(--mi-bg);
+  opacity: 0.55;
+}
+
+.mi-strip-seg:first-child {
+  border-left: 0;
 }
 
 .mi-strip-seg.is-on {
   opacity: 1;
-}
-
-.mi-strip-l0 {
-  background: var(--mi-shape);
-}
-
-.mi-strip-l1 {
-  background: #6f97c4;
-}
-
-.mi-strip-l2 {
-  background: #a9c1dc;
 }
 
 .mi-strip-marker {

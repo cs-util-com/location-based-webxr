@@ -2,8 +2,9 @@
 // the page never freezes. Three jobs:
 // - "build": join split points and order every collapse once (the
 //   progressive simplifier of the model-lod-1 prototype), with progress;
-// - "chain": the author's level and its two coarser levels, each with its
-//   largest deviation from the full model, for the distance step;
+// - "chain": the author's level and its coarser levels (LEVEL_RULE in
+//   size-model.js), each with its largest deviation from the full model,
+//   for the distance step;
 // - "encode": one picture made smaller in the shelf's format, its bytes
 //   returned so the page shows the real size.
 import {
@@ -15,8 +16,8 @@ import {
   surfaceDistance,
   surfaceGrid,
 } from "../model-lod-1/lod-simplify.js";
+import { chooseLevels, levelTargets } from "./size-model.js";
 
-const SHARES = [1, 1 / 4, 1 / 16];
 const ERROR_SAMPLES = 2500;
 
 /** The model this helper holds, after "build". */
@@ -126,18 +127,25 @@ function chain(m) {
   if (held === null) {
     throw new Error("the shape is not ready yet");
   }
+  // Every candidate is measured, then LEVEL_RULE picks the saved ones.
+  const candidates = [];
+  for (const target of levelTargets(m.top, held.prog.minTriangles)) {
+    const steps = stepsFor(held.prog, target);
+    const ix = levelIndices(held.prog, steps);
+    const last = candidates[candidates.length - 1];
+    if (last && ix.length >= last.count) {
+      continue;
+    }
+    candidates.push({ ix, count: ix.length, error: errorOf(steps, ix) });
+  }
   const parts = [];
   const levels = [];
   let start = 0;
-  for (const share of SHARES) {
-    const steps = stepsFor(held.prog, Math.round(m.top * share));
-    const ix = levelIndices(held.prog, steps);
-    if (levels.length && ix.length >= levels[levels.length - 1].count) {
-      continue;
-    }
-    levels.push({ start, count: ix.length, error: errorOf(steps, ix) });
-    parts.push(ix);
-    start += ix.length;
+  for (const i of chooseLevels(candidates)) {
+    const c = candidates[i];
+    levels.push({ start, count: c.count, error: c.error });
+    parts.push(c.ix);
+    start += c.count;
   }
   const all = new Uint32Array(start);
   let at = 0;

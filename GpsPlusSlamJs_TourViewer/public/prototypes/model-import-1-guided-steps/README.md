@@ -44,8 +44,11 @@ wireframe, so a shape change is visible even on a busy texture.
   line carries "Start with the shape instead" (or "Swap back").
 - Each step has two ways out: "Next" (keep my choice) and "Keep them as they
   are" (reset this step's choices and mark it kept). The distance step's
-  second button is "Use the standard". "Next" goes to the next step still to
-  do, else to the review.
+  second button is "Use the standard". Each of these resets only its own
+  step's choices. "Next" goes to the next step still to do, else to the
+  review; the distance step always goes on to the review, because it is
+  optional and wrapping back to the pictures from there looked like a
+  restart.
 - The flow state (order, current step, per-step status, choices, the two
   view toggles) lives in a pure reducer, `import-flow.js`, so it can become
   a store slice unchanged. The scene, the helper threads and picture blobs
@@ -63,13 +66,75 @@ show from there. Leaving the step restores the close camera.
 
 "Detail drops" (1-100, continuous, later and sharper to sooner and lighter)
 sets the error a phone screen may show, from about 0.13 px to about 8 px
-with 1 px at the middle. The saved levels are the author's level and two
-coarser ones (a quarter and a sixteenth), as the shelf saves them; each
-level's largest deviation is measured in a helper thread, and the switching
-distance follows from the error, the budget and a 2000 px phone screen. A
-strip under the sliders shows where each level takes over and a marker for
-the current distance; the sentence below it names the level a visitor there
-sees. This step costs nothing in file size, and the page says so.
+with 1 px at the middle. Each level's largest deviation is measured in a
+helper thread, and the switching distance follows from the error, the budget
+and a 2000 px phone screen. A strip under the sliders shows every level as a
+numbered segment from where it takes over, and a marker for the current
+distance; each segment's tooltip gives its triangles, its deviation and its
+start distance, and the sentence below names the level a visitor there sees.
+This step costs nothing in file size, and the page says so.
+
+### How many levels (`LEVEL_RULE` in `size-model.js`)
+
+The helper measures candidates at halving triangle counts, from the author's
+level down to the fewest triangles the simplifier can reach (at least 8).
+`chooseLevels` keeps a candidate only when its count drops and its measured
+deviation grows by at least 1.4 times the last kept level's: a level whose
+error barely grows would take over almost where the previous one does, so it
+earns nothing on screen. If that leaves fewer than 6 levels, the growth
+factor relaxes to 1.2 and then to any growth; at most 10 levels are kept.
+With the standard budget the rock and the bust get 6 levels each; the
+utility box gets 3, because its simplifier stops collapsing at about 660
+triangles, so the next halving brings no fewer triangles and the model
+allows no more.
+
+What would change the outcome: a higher minimum, a lower growth factor or a
+maximum below 6 changes the rock's and the bust's counts (how far each is
+from flipping was not swept); no value of the minimum or the growth factor
+changes the box, only a lower simplifier floor would. The shelf saves two coarser levels
+today, so this count is a proposal the shelf would need to adopt.
+
+## Compact points: on when nobody could see it
+
+"Store the points more compactly" (8-bit positions) starts on only when its
+measured error is under what anyone could see: at most 1 pixel on a phone
+screen (2000 px across the 40 degree view the page uses) from 1 m, the closest a visitor is
+assumed to stand (`COMPACT_RULE` in `size-model.js`). The error is measured
+on the model's own points when it is opened (`compactPositions`), shown next
+to the checkbox, and the checkbox stays. When the rule says off, the page
+says so and why.
+
+All three samples start with it off: the rock moves up to 0.48 mm (1.3 px
+from 1 m), the bust 1.7 mm (4.6 px) and the box 3.5 mm (9.6 px). The rock
+would flip to on with a closest distance above about 1.3 m or a threshold
+above 1.3 px; the bust needs 4.6 m or 4.6 px; the box 9.6 m or 9.6 px.
+
+## Fixed after the first look
+
+- **Picture sizes affecting each other, 512 and 256 looking the same, a
+  second ear on the neck at 1024.** A changed picture was written into the
+  existing three.js texture with a new `Source`. three.js picks the GPU
+  texture by a cache key that ignores the source, so the new, smaller
+  picture was uploaded into the old picture's GPU texture, whose storage is
+  fixed at the old size: the upload failed and only a corner was filled.
+  Each change now makes a fresh texture (a clone of the original, keeping
+  its colour space, flip, wrapping and UV channel), puts it on every slot
+  that used the old one, and disposes the old one. Measured on the bust's
+  face and neck against the original (mean absolute RGB difference): 128 px
+  4.3, 256 px 3.2, 512 px 2.2, 1024 px 1.3; before the fix every size read
+  about 8.1.
+- **"Cannot read properties of undefined (reading 'usedTimes')" on a model
+  switch after a picture change.** The same reuse: disposing the reused
+  texture looked its GPU entry up under the new source, where there was
+  none. Fresh textures remove it. A shape change followed by a switch also
+  showed "Something went wrong: stopped": the helper threads are stopped on
+  every load, and their cancelled jobs are no longer reported as errors.
+- **"The shape is not ready yet" after moving a slider while the next
+  model opens.** The outgoing model stays on screen until the new one is
+  parsed, and its delayed request for the coarser levels went to the new
+  model's helper thread, which does not hold its shape. The outgoing model
+  is now marked as leaving when a load starts, its pending request is
+  cancelled, and it asks the helper threads for nothing more.
 
 ## The marble bust's eyes
 
@@ -134,8 +199,11 @@ leave untouched. The flow handles that without special-casing the model:
     status.
   - `options.onBack()`: called when the review's Back is used.
   - The controller: `load(blob, label)`, `destroy()`, `getState()` (the
-    flow), `getResult()`, `goTo(step)`, `set(name, value)` and `stats()`
-    (the measuring hook: live update times, element count, build time).
+    flow), `getResult()`, `goTo(step)`, `set(name, value)`, `stats()`
+    (the measuring hook: live update times, element count, build time, and
+    `picturesShown`, the picture setting the view currently draws),
+    `view(position, target)` (puts the camera, for repeatable screenshots)
+    and `bounds()` (the model's box).
 - `import-flow.js`: the pure flow reducer (`initialFlow`, `flowReducer`).
 - `size-model.js`: pure byte arithmetic (where a `.glb`'s bytes are, the
   shelf's picture format rule and geometry layout, the switching distance).
@@ -159,7 +227,7 @@ qualities, same keep-if-not-smaller rule, PNG kept for alpha and PNG data
 maps), so the picture bytes are measured; the geometry bytes are computed
 from the shelf's quantized layout (16-bit or 8-bit positions, 8-bit normals,
 16-bit texture coordinates, 16-bit indices below 65 535 points) over the
-author's level and its two coarser levels; the description is the original's
+author's level and its coarser levels; the description is the original's
 plus a few hundred bytes. That is why the readout is below 100 % before
 anything is changed: the shelf always stores the shape compactly. Wired into
 the shelf, the readout would use the optimizer's real output instead.
