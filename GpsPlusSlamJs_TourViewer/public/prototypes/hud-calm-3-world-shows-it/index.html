@@ -153,8 +153,8 @@ p { margin: 0; }
   min-height: var(--tap);
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5px 4px 5px 6px;
+  gap: 5px;
+  padding: 5px 2px 5px 5px;
   border-radius: 24px;
   background: var(--plate);
   box-shadow: 0 4px 14px rgb(0 0 0 / 28%);
@@ -163,20 +163,20 @@ p { margin: 0; }
 
 .chip .face {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  border: 3px solid #fff;
+  border: 2px solid #fff;
 }
 
 .chip .title {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.15;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -503,13 +503,14 @@ const HOLD_FAR_M = 14; // a guide stops mid-sentence once you are this far away.
 const RESUME_M = 10; // ...and goes on once you are back this close
 const SEEN_LOOK_S = 1.5; // a sign or a picture is seen after this long in view, near enough to read
 // the shimmer: strength (how far towards warm gold) and period (one slow pass, then a rest), per preset
-const GLINTS = { faint: { s: 0.22, p: 6 }, soft: { s: 0.36, p: 4.5 }, clear: { s: 0.55, p: 3.5 } };
+const GLINTS = { faint: { s: 0.3, p: 6 }, soft: { s: 0.5, p: 4.5 }, clear: { s: 0.68, p: 3.5 } };
+const PASSES = 2; // passes of light per showing; then it rests until it may show again
 // the creator's distance is "reach" (8, 12 or 18 m); each kind scales it by how far away it can be made out
 const REACH_K = { character: 1.5, video: 1.2, long: 1, picture: 1, audio: 1, model: 0.9, short: 0.8 };
 const NOTICE_S = 1.5; // held this long near the middle of the view, after one whole pass of light, a shimmering thing counts as noticed and settles
 const NOTICE_NDC = 0.45; // "near the middle": within this share of the half-screen from the centre
-const REARM_S = 20; // a noticed but unseen thing may shimmer again after this long out of view...
-const MAX_ASKS = 2; // ...but a thing asks twice at most
+const REARM_S = 20; // a settled but unseen thing may shimmer again after this long out of view...
+const MAX_ASKS = 2; // ...but a thing shows its shimmer twice at most, so PASSES * MAX_ASKS passes ever
 const HAND_S = 5; // a person points on for this long after an ending
 const DRIFT_MAX_M = 9; // a sound's motes drift at most this far towards the next thing
 const COL = { beam: "#fb923c", unseen: "#ffffff", seen: "#8b939c", ink: "#1d232b", paper: "#fffdf8", gold: "#ffc24a", play: "#7dd3fc" };
@@ -683,32 +684,31 @@ function makeFigure({ coat, skin = "#e0b48f", hat, hatColor = "#3b2f27", trouser
 
 /* ---------------- the items ---------------- */
 // "next" is the creator's hand-off: the item this one's ending turns the visitor towards.
-// "hand" is the creator's last line on the item itself, the one that names it in words (in 3D).
+// The "Next" line drawn on a seen sign, picture, note or lectern is worked out from that chain when it
+// is shown (handLine), so it never names a thing already seen.
 // "clue" is how an ending names an item by its landmark.
 const ITEMS = [
   // station A: one story, which begins with Greta
   { id: "greta", st: "A", kind: "character", name: "Greta", pos: [0.2, -4.2], homeYaw: 0, coat: "#b5523b", hat: "scarf", hatColor: "#e6c35c", pitch: 1.25, next: "lecternA", clue: "Greta by the well",
     again: "There is more to see all round the square. Take your time.", done: "You have seen everything here. The old gate is next: follow the orange light." },
   { id: "lecternA", st: "A", kind: "long", name: "The well's history", pos: [-2.4, -6.6], next: "videoA", clue: "the lectern by the well",
-    pages: [["Water for the town", "The well was dug in 1602. For three hundred years it was the town's only clean water. Women carried it home in yokes, two buckets at a time."], ["The roof and the storm", "A wooden roof kept the leaves out until the storm of 1910 took it. The water comes from the hills now, but the well stays."]],
-    hand: "Next: a film of market day, a few steps past the well." },
+    pages: [["Water for the town", "The well was dug in 1602. For three hundred years it was the town's only clean water. Women carried it home in yokes, two buckets at a time."], ["The roof and the storm", "A wooden roof kept the leaves out until the storm of 1910 took it. The water comes from the hills now, but the well stays."]] },
   { id: "videoA", st: "A", kind: "video", name: "Market day, 1958", pos: [-11, -3], desc: "Two minutes of film from the town archive.", dur: 24, next: "audioA", clue: "a film of market day" },
   { id: "audioA", st: "A", kind: "audio", name: "Song of the well-diggers", pos: [-10, 6.5], dur: 18, prop: "bench", next: "pictureA", clue: "a song by the old bench" },
-  { id: "pictureA", st: "A", kind: "picture", name: "The square in 1890", pos: [1.5, 10.6], caption: "The square in 1890. The well still had its roof.", hand: "Next: the sign at the baker's corner.", next: "signA", clue: "an old picture by the steps" },
-  { id: "signA", st: "A", kind: "short", name: "The baker's corner", pos: [13, 4.6], text: "Bread has been baked on this corner since 1788. Its sign was a golden pretzel.", hand: "Next: a model of the tower, by the lamp post.", next: "modelA", clue: "the baker's corner" },
-  { id: "modelA", st: "A", kind: "model", name: "The tower", pos: [11.5, -11], note: "The tower lost its top floor in the storm of 1910.", hand: "That was the well. The old gate is next: follow the orange light.", prop: "tower", next: null, clue: "a model of the tower" },
+  { id: "pictureA", st: "A", kind: "picture", name: "The square in 1890", pos: [1.5, 10.6], caption: "The square in 1890. The well still had its roof.", next: "signA", clue: "an old picture by the steps" },
+  { id: "signA", st: "A", kind: "short", name: "The baker's corner", pos: [13, 4.6], text: "Bread has been baked on this corner since 1788. Its sign was a golden pretzel.", next: "modelA", clue: "the baker's corner" },
+  { id: "modelA", st: "A", kind: "model", name: "The tower", pos: [11.5, -11], note: "The tower lost its top floor in the storm of 1910.", prop: "tower", next: null, clue: "a model of the tower" },
   // station B: three stories, each begins with a person standing where it starts
   { id: "mason", st: "B", kind: "character", name: "Anton, the mason", short: "Anton", pos: [17.5, -87], coat: "#6b7a8f", hat: "cap", hatColor: "#4a3b2c", pitch: 0.85, next: "modelB", clue: "Anton by the left tower" },
   { id: "merchant", st: "B", kind: "character", name: "Mira, the merchant", short: "Mira", pos: [29.6, -79.8], coat: "#7a5a9a", hat: "dress", hatColor: "#d8c3a0", pitch: 1.15, next: "pictureB", clue: "Mira at her stall" },
   { id: "watchman", st: "B", kind: "character", name: "Jakob, the watchman", short: "Jakob", pos: [24, -89], coat: "#3f5b45", hat: "helmet", pitch: 0.7, next: "audioB", clue: "Jakob under the arch" },
-  { id: "signB", st: "B", kind: "short", name: "The mason's mark", pos: [11, -81.2], low: true, text: "Every stone of the gate carries this sign: a hammer over a star.", hand: "That is the whole gate. Thank you for walking with us.", next: null, clue: "the mason's mark on the low wall" },
+  { id: "signB", st: "B", kind: "short", name: "The mason's mark", pos: [11, -81.2], low: true, text: "Every stone of the gate carries this sign: a hammer over a star.", next: null, clue: "the mason's mark on the low wall" },
   { id: "lecternB", st: "B", kind: "long", name: "The gate", pos: [33.5, -86.5], next: "signB", clue: "the lectern by the right tower",
-    pages: [["Built to be seen", "The gate took forty years to build. It was never meant to keep an army out, only to show every visitor how rich the town was."], ["Shut for a century", "After the fire of 1802 the gate was shut. It opened again only in 1902, for a parade."]],
-    hand: "Last of all: the mason's mark, on the low wall by the road." },
-  { id: "pictureB", st: "B", kind: "picture", name: "The toll board", pos: [33.6, -73.2], caption: "The toll board of 1702: three pennies a cart.", hand: "Next: the lectern by the right tower.", next: "lecternB", clue: "the old toll board" },
+    pages: [["Built to be seen", "The gate took forty years to build. It was never meant to keep an army out, only to show every visitor how rich the town was."], ["Shut for a century", "After the fire of 1802 the gate was shut. It opened again only in 1902, for a parade."]] },
+  { id: "pictureB", st: "B", kind: "picture", name: "The toll board", pos: [33.6, -73.2], caption: "The toll board of 1702: three pennies a cart.", next: "lecternB", clue: "the old toll board" },
   { id: "videoB", st: "B", kind: "video", name: "Rebuilding, 1961", pos: [13.5, -73.5], desc: "The towers repaired, stone by stone.", dur: 20, next: "lecternB", clue: "a film of the rebuilding" },
   { id: "audioB", st: "B", kind: "audio", name: "The night bell", pos: [28.8, -88.8], dur: 14, prop: "bell", next: "signB", clue: "the night bell" },
-  { id: "modelB", st: "B", kind: "model", name: "The gate", pos: [20.4, -73.6], note: "Each tower holds 3,000 stones.", hand: "Next: a film of the rebuilding, by the houses along the road.", prop: "gate", next: "videoB", clue: "a model of the gate" },
+  { id: "modelB", st: "B", kind: "model", name: "The gate", pos: [20.4, -73.6], note: "Each tower holds 3,000 stones.", prop: "gate", next: "videoB", clue: "a model of the gate" },
 ];
 const byId = Object.fromEntries(ITEMS.map((it) => [it.id, it]));
 const STORIES = [
@@ -729,8 +729,9 @@ const hits = []; // invisible proxies a tap can find, each carries its item's id
 function proxy(it, geom, x, y, z, parent) { const m = new THREE.Mesh(geom, new THREE.MeshBasicMaterial()); m.visible = false; m.position.set(x, y, z); m.userData.id = it.id; parent.add(m); hits.push(m); return m; }
 
 /** a paper plate: title, body, and the creator's hand-off line in italics at its foot */
-function plate(wM, hM, title, body, hand, { cw = 640, size = 32, bg = "#f4ecd8" } = {}) {
+function plate(wM, hM, title, body, hand, { cw = 640, size = 32, bg = "#f4ecd8", handK = 0.9 } = {}) {
   const ch = Math.round(cw * hM / wM), T = canvasTex(cw, ch), g = T.g, pad = cw * 0.06;
+  const draw = (hand) => {
   g.fillStyle = bg; g.fillRect(0, 0, cw, ch);
   g.strokeStyle = "#6b5a44"; g.lineWidth = cw * 0.02; g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, cw - g.lineWidth, ch - g.lineWidth);
   g.fillStyle = "#2a241c"; g.textBaseline = "top";
@@ -739,12 +740,15 @@ function plate(wM, hM, title, body, hand, { cw = 640, size = 32, bg = "#f4ecd8" 
   g.font = `${size}px Georgia, serif`;
   for (const l of wrap(g, body, cw - pad * 2)) { g.fillText(l, pad, y); y += size * 1.28; }
   if (hand) {
-    g.font = `italic ${size * 0.9}px Georgia, serif`; g.fillStyle = "#7a4a1c";
-    const hl = wrap(g, hand, cw - pad * 2); let hy = ch - pad - hl.length * size * 1.15;
-    for (const l of hl) { g.fillText(l, pad, hy); hy += size * 1.15; }
+    g.font = `italic ${size * handK}px Georgia, serif`; g.fillStyle = "#7a4a1c";
+    const lh = size * handK * 1.25, hl = wrap(g, hand, cw - pad * 2); let hy = ch - pad - hl.length * lh;
+    for (const l of hl) { g.fillText(l, pad, hy); hy += lh; }
   }
   T.t.needsUpdate = true;
-  return new THREE.Mesh(new THREE.PlaneGeometry(wM, hM), new THREE.MeshBasicMaterial({ map: T.t, toneMapped: false }));
+  };
+  draw(hand);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(wM, hM), new THREE.MeshBasicMaterial({ map: T.t, toneMapped: false }));
+  m.userData.draw = draw; return m;
 }
 
 // the video screens (the end card names the next thing and which way it lies)
@@ -797,7 +801,7 @@ function drawLectern(it) {
   g.fillStyle = "#f6efdd"; g.fillRect(0, 0, w, h);
   g.fillStyle = "#2a241c"; g.textBaseline = "top"; g.font = "700 38px Georgia, serif"; g.fillText(title, 30, 26);
   g.font = "30px Georgia, serif"; let y = 82; for (const l of wrap(g, body, w - 60)) { g.fillText(l, 30, y); y += 38; }
-  if (last && it.hand) { g.font = "italic 27px Georgia, serif"; g.fillStyle = "#7a4a1c"; y += 8; for (const l of wrap(g, it.hand, w - 60)) { g.fillText(l, 30, y); y += 33; } }
+  const hand = last && it.seen ? handLine(it) : ""; if (hand) { g.font = "italic 27px Georgia, serif"; g.fillStyle = "#7a4a1c"; y += 8; for (const l of wrap(g, hand, w - 60)) { g.fillText(l, 30, y); y += 33; } }
   g.font = "600 24px system-ui, sans-serif"; g.fillStyle = "#6b5a44"; g.textAlign = "right";
   g.fillText(!last ? `${it.page + 1}/${it.pages.length} · tap to turn` : `${it.page + 1}/${it.pages.length}`, w - 28, h - 40); g.textAlign = "left";
   it.pageTex.t.needsUpdate = true;
@@ -836,7 +840,7 @@ function buildItem(it) {
     const y = it.low ? 0.95 : 1.45;
     if (!it.low) { box(0.07, 1.1, 0.07, "#3c4044", 0, 0.55, -0.04, 0, g); }
     box(1.06, 0.8, 0.04, "#4d3f30", 0, y, -0.03, 0, g);
-    const p = plate(1.0, 0.74, it.name, it.text, it.hand, { size: 30 }); p.position.set(0, y, 0); g.add(p);
+    const p = plate(1.0, 0.74, it.name, it.text, "", { size: 30 }); p.position.set(0, y, 0); g.add(p); it.handPlate = p;
     proxy(it, new THREE.BoxGeometry(1.1, 0.9, 0.3), 0, y, 0, g);
     it.anchor = [0, y, 0]; it.readM = 6;
   } else if (it.kind === "long") {
@@ -850,7 +854,7 @@ function buildItem(it) {
     box(0.08, 1.0, 0.08, "#3c4044", 0, 0.5, -0.05, 0, g); box(1.44, 1.0, 0.05, "#3a3026", 0, 1.48, -0.04, 0, g);
     const T = canvasTex(340, 230); drawPicture(T.g, 340, 230); T.t.needsUpdate = true;
     const pm = new THREE.Mesh(new THREE.PlaneGeometry(1.32, 0.9), new THREE.MeshBasicMaterial({ map: T.t, toneMapped: false })); pm.position.set(0, 1.48, 0); g.add(pm);
-    const cp = plate(1.2, 0.36, "", it.caption, it.hand, { size: 24, cw: 800 }); cp.position.set(0, 0.78, 0.02); g.add(cp);
+    const cp = plate(1.2, 0.36, "", it.caption, "", { size: 24, cw: 800 }); cp.position.set(0, 0.78, 0.02); g.add(cp); it.handPlate = cp;
     proxy(it, new THREE.BoxGeometry(1.5, 1.6, 0.3), 0, 1.2, 0, g);
     it.anchor = [0, 1.4, 0]; it.readM = 9;
   } else if (it.kind === "video") {
@@ -869,7 +873,7 @@ function buildItem(it) {
     box(0.9, 0.9, 0.9, "#a9a294", 0, 0.45, 0, 0, g);
     if (it.prop === "tower") { box(0.34, 0.7, 0.34, "#cbb9a0", 0, 1.25, 0, 0, g); const c = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.36, 4), mat("#5e6f7d")); c.position.y = 1.78; c.rotation.y = Math.PI / 4; g.add(c); }
     else { box(0.2, 0.6, 0.2, "#cbb9a0", -0.25, 1.2, 0, 0, g); box(0.2, 0.6, 0.2, "#cbb9a0", 0.25, 1.2, 0, 0, g); box(0.7, 0.16, 0.22, "#cbb9a0", 0, 1.46, 0, 0, g); }
-    const note = plate(1.0, 0.5, it.name, it.note, it.hand, { size: 28, cw: 640, bg: "#fffdf8" }); note.position.set(0, 2.5, 0); note.material.transparent = true; note.material.opacity = 0; note.visible = false; note.userData.noGlint = true; g.add(note); it.notePlate = note;
+    const note = plate(1.0, 0.56, it.name, it.note, "", { size: 28, cw: 640, bg: "#fffdf8", handK: 1.2 }); it.handPlate = note; note.position.set(0, 2.5, 0); note.material.transparent = true; note.material.opacity = 0; note.visible = false; note.userData.noGlint = true; g.add(note); it.notePlate = note;
     proxy(it, new THREE.BoxGeometry(1.1, 2.0, 1.1), 0, 1.0, 0, g); it.anchor = [0, 1.3, 0];
   }
   glintify(it);
@@ -1001,7 +1005,7 @@ const targetPos = (T) => (T.beam ? { x: STATIONS[T.beam].c[0], z: STATIONS[T.bea
 
 function resetItem(it) {
   Object.assign(it, { seen: false, lookT: 0, state: "ready", prog: 0, page: 0, noteOn: false, line: null, greetPending: false, hand: null, handTo: null,
-    env: 0, settled: false, asks: 0, noticeT: 0, outT: 0, t0: 0 });
+    env: 0, settled: false, asks: 0, noticeT: 0, outT: 0, t0: 0, passes: 0, pIdx: 0, showing: false });
   if (it.kind === "character") { it.yaw = it.homeYaw; it.headYaw = 0; it.bubble.a = 0; it.bubble.mesh.visible = false; it.bubble.key = ""; }
   if (it.kind === "long") { drawLectern(it); }
   if (it.kind === "video") { drawVideo(it); }
@@ -1011,7 +1015,7 @@ function resetItem(it) {
 function resetWorld() {
   hush();
   Object.assign(me, { x: 0, z: 42, yaw: 0 });
-  Object.assign(W, { t: 0, station: null, greeted: false, story: null, hudPaused: [], later: [] });
+  Object.assign(W, { t: 0, station: null, greeted: false, story: null, hudPaused: [], later: [], nSeen: -1 });
   for (const it of ITEMS) { resetItem(it); }
   for (const s of STORIES) { s.done = false; }
   drift.t0 = -99; drift.p.visible = false;
@@ -1031,6 +1035,19 @@ function handTarget(it) {
   const left = unseenIn(it.st).filter((o) => o !== it).sort((a, b) => dist(a) - dist(b));
   if (left.length) { return left[0]; }
   return it.st === "A" ? { beam: "B", clue: "the old gate" } : null;
+}
+// the words an ending names its next thing with, worked out when shown
+function handLine(it) {
+  const T = handTarget(it);
+  if (!T) { return "That is all of it here. Thank you for walking with us."; }
+  return T.beam ? `Next: ${T.clue}. Follow its orange light.` : `Next: ${T.clue}.`;
+}
+// redraws every "Next" line, so a line shown earlier never names a thing seen since
+function refreshHands() {
+  for (const it of ITEMS) {
+    if (it.handPlate) { it.handPlate.userData.draw(it.seen ? handLine(it) : ""); }
+    if (it.kind === "long") { drawLectern(it); }
+  }
 }
 function handOff(it) {
   const T = handTarget(it); it.handTo = T;
@@ -1151,6 +1168,8 @@ function frame(now) {
 
   const busy = ITEMS.find((o) => o.line && !o.line.held && o.line.doneAt == null) ?? null;
   for (const it of ITEMS) { updateItem(it, dt, real); updateGlint(it, dt, real, busy); }
+  const nSeen = ITEMS.reduce((n, it) => n + (it.seen ? 1 : 0), 0);
+  if (nSeen !== W.nSeen) { W.nSeen = nSeen; refreshHands(); }
   updateStory();
   updateBeams(real);
   updateDrift();
@@ -1190,13 +1209,21 @@ function updateItem(it, dt, real) {
 function updateGlint(it, dt, real, busy) {
   const G = GLINTS[KN.glint], u = it.gu, a = anchorWorld(it), d = dist(it), reach = KN.reach * REACH_K[it.kind];
   const inV = inView(a[0], a[1], a[2], 0.98), central = inView(a[0], a[1], a[2], NOTICE_NDC);
-  // a settled item may ask once more, after it has been out of view for a while; never a third time
-  if (it.settled && !inView(a[0], a[1], a[2], 1.1)) { it.outT += dt; if (it.outT > REARM_S && it.asks < MAX_ASKS && !it.seen) { it.settled = false; } } else { it.outT = 0; }
+  // a settled item may show its shimmer once more, after it has been out of view for a while; never a third time
+  if (it.settled && !inView(a[0], a[1], a[2], 1.1)) { it.outT += dt; if (it.outT > REARM_S && it.asks < MAX_ASKS && !it.seen) { it.settled = false; it.passes = 0; } } else { it.outT = 0; }
   const want = W.station === it.st && !it.seen && !it.settled && it.asks < MAX_ASKS && inV && d < reach && (!busy || busy === it) && it.line == null ? 1 : 0;
-  if (want && it.env < 0.02) { it.t0 = W.t; }
-  it.env += (want - it.env) * damp(real, want > it.env ? 0.9 : 0.7);
+  const settle = () => { it.settled = true; it.asks++; it.noticeT = 0; it.outT = 0; };
+  // every pass that begins is counted, also one cut short by turning away; after PASSES it rests
+  if (want && !it.showing) { if (it.passes >= PASSES) { settle(); } else { it.showing = true; it.t0 = W.t; it.pIdx = 0; it.passes++; } }
+  const k = Math.floor((W.t - it.t0) / G.p);
+  if (want && !it.settled && k > it.pIdx) { it.pIdx = k; it.passes++; }
+  // the last pass has ended: it rests from here and its band is already gone, so it may drop at once
+  if (want && !it.settled && it.passes >= PASSES && (W.t - it.t0) / G.p - k >= 0.6) { settle(); it.env = 0; }
+  const on = want && !it.settled ? 1 : 0;
+  it.env += (on - it.env) * damp(real, on > it.env ? 0.9 : 0.7);
+  if (!on && it.env < 0.004) { it.showing = false; } // faded out: the next showing starts a new pass
   const passed = W.t - it.t0 > G.p * 0.6; // one whole pass has been shown
-  if (want && central) { it.noticeT += dt; if (it.noticeT > NOTICE_S && passed) { it.settled = true; it.asks++; it.noticeT = 0; it.outT = 0; } }
+  if (on && central) { it.noticeT += dt; if (it.noticeT > NOTICE_S && passed) { settle(); } }
   else if (!central) { it.noticeT = 0; }
   if (it.env < 0.004) { u.uGlint.value = 0; return; }
   const ph = ((W.t - it.t0) / G.p) % 1;
@@ -1471,11 +1498,12 @@ function renderInfo() {
   <h1>The world shows it</h1>
   <p>Nothing on the screen tells you what is left. A thing you have not seen yet carries a faint, slow shimmer on itself, only while it is in view and near, and it settles once you have looked at it. Each thing's ending hands you on to the next: a person turns and points, a text's last line names it, a film's end card shows which way, a song's light drifts that way. The radar shows stations only.</p>
   <h3>Try the shimmer</h3>
+  <p class="small">Start with soft, the default, outdoors. If you cannot make it out on the pale signs in sun, try clear; faint is for a dim place or a dark object.</p>
   ${KNOBS.slice(0, 3).map(knobRow).join("")}
   <p class="small">Also by address: <code>?glint=faint|soft|clear&amp;style=sweep|breathe&amp;reach=8|12|18</code></p>
   <h3>What "seen" means here</h3>
   <ul><li><b>A person</b>: their first words have played to the end.</li><li><b>A short text, a picture</b>: it has been in the middle of your view, near enough to read, for ${SEEN_LOOK_S} s.</li><li><b>A long text</b>: you turned to its last page.</li><li><b>A film, a sound</b>: it played to its end.</li><li><b>A model</b>: you tapped it and its note opened.</li></ul>
-  <p>"Noticed" is not "seen": the shimmer settles after you have held a thing near the middle of your view for ${NOTICE_S} s and its light has passed over it once, or after you touched it. A thing noticed but not seen may shimmer once more after ${REARM_S} s out of view, never a third time.</p>
+  <p>"Noticed" is not "seen": the shimmer settles after you have held a thing near the middle of your view for ${NOTICE_S} s and its light has passed over it once, or after you touched it. Either way it shows at most ${PASSES} passes, then rests. A thing settled but not seen may show its shimmer once more after ${REARM_S} s out of view, never a third time: ${PASSES * MAX_ASKS} passes at most, ever.</p>
   <h3>On the screen, and only then</h3>
   <ul><li>Exit, always.</li><li>The radar, stations only (orange while a station holds something unseen, grey once all of it is seen). A tap steps its range.</li><li>Play/pause, while something of this station plays, so you can stop it without looking at it.</li><li>The story you are in, with the face colour of the person you entered it through, and a leave button.</li></ul>
   <h3>Stories</h3>
