@@ -90,7 +90,7 @@ function footprints(
  * holds. Near-coincident skeleton events leave corners a hair apart on a
  * ridge, and the stitch welds every raised corner within this distance into
  * one, so the apex can land on a neighbouring event's corner just below it.
- * Two seeds failed a 0.5 mm closeness this way (drawn 0.55 mm and 1.15 mm
+ * Two neighbourhoods failed a 0.5 mm closeness this way (drawn 0.62 mm and 1.15 mm
  * below the plan, with the unwelded apex exactly at the planned top): float32
  * at these heights is under a micrometre, and nothing rose above the plan.
  * The weld cannot RAISE the top, because no raised corner stands above the
@@ -117,7 +117,9 @@ function expectTopsWithinWeld(
       top = Math.max(top, positions[i] as number);
     }
     expect(top).toBeLessThanOrEqual(plan.totalM + float32Slack(plan.totalM));
-    expect(top).toBeGreaterThanOrEqual(plan.totalM - WELD_M);
+    expect(top).toBeGreaterThanOrEqual(
+      plan.totalM - WELD_M - float32Slack(plan.totalM),
+    );
   }
 }
 
@@ -133,22 +135,41 @@ describe("invented roofs, as properties", () => {
     );
   });
 
-  // Why: the two runs that failed the former 0.5 mm closeness, pinned so the
-  // weld's effect on the apex stays covered whatever the random seed is.
+  // Why: the two neighbourhoods that failed the former 0.5 mm closeness
+  // (drawn 0.62 mm and 1.15 mm below the plan), pinned as literal houses so
+  // they keep testing the same ground whatever later happens to the arbitrary.
   it.each([
-    { seed: 1833751998 },
     {
-      seed: -1555903445,
-      path: "1:3:2:6:3:2:3:2:2:2:3:2:3:3:3:2:2:2:2:2:2:2:3:5:2:2:3:3:2:2:3:3:3:2:2:2:2:2:3:5:7:2:2:6:6:6:6:6:6:6:6:6",
+      name: "an L beside a square",
+      houses: [
+        {
+          x: 0,
+          y: 48,
+          w: 8.525300000000001,
+          h: 8.543500000000003,
+          turn: 0,
+          notch: true,
+        },
+        {
+          x: 0,
+          y: 43,
+          w: 6.39395,
+          h: 9.271750000000003,
+          turn: 0,
+          notch: false,
+        },
+      ],
     },
-  ])("keeps the drawn top within the weld on the replayed run $seed", (run) => {
-    fc.assert(
-      fc.property(neighbourhoods, (houses) => expectTopsWithinWeld(houses)),
-      {
-        numRuns: 60,
-        ...run,
-      },
-    );
+    {
+      name: "an L between two overlapping squares",
+      houses: [
+        { x: 1, y: 0, w: 4, h: 4, turn: 0, notch: true },
+        { x: 3, y: 0, w: 4, h: 4, turn: 0, notch: false },
+        { x: 0, y: 0, w: 4, h: 4, turn: 0, notch: false },
+      ],
+    },
+  ])("keeps the drawn top within the weld for $name", ({ houses }) => {
+    expectTopsWithinWeld(houses);
   });
 
   it("plans the same whatever order the footprints arrive in", () => {

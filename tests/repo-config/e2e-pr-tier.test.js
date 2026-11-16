@@ -302,14 +302,29 @@ describe('the per-PR browser tier', () => {
 
   // Why: each OsmDemo lane's config matches only its own spec files, so a
   // file the lane table does not name runs in no CI job, and the run stays
-  // green.
+  // green. Read recursively: a spec in a subfolder is named by its path
+  // there, which no lane names, so it fails here instead of running nowhere.
   it('names every OsmDemo spec file in exactly one lane', () => {
     const dir = join(ROOT, 'GpsPlusSlamJs_OsmDemo/playwright-tests');
-    const onDisk = readdirSync(dir)
-      .filter((f) => /\.spec\.m?js$/.test(f))
+    const onDisk = specFiles(dir)
+      .map((file) => relative(dir, file).split('\\').join('/'))
       .sort();
     expect(Object.keys(osmLanes.SPECS).sort()).toEqual(onDisk);
     expect(osmLanes.LANES.flatMap((lane) => osmLanes.specsOfLane(lane)).sort()).toEqual(onDisk);
+  });
+
+  // Why: the test above reads only *.spec.(m)js files. Without a lane the
+  // config must run exactly those, not Playwright's default (which also takes
+  // *.spec.ts and *.test.js), or a file of another name would run locally and
+  // in no CI lane.
+  it('runs only *.spec.(m)js files in the OsmDemo when no lane is set', () => {
+    const match = osmLanes.laneTestMatch({});
+    expect(match).toHaveLength(1);
+    const [pattern] = match;
+    expect(pattern.test('a.spec.js')).toBe(true);
+    expect(pattern.test('sub/a.spec.mjs')).toBe(true);
+    expect(pattern.test('a.spec.ts')).toBe(false);
+    expect(pattern.test('a.test.js')).toBe(false);
   });
 
   // A config that does not read the tier runs its whole suite on every PR
