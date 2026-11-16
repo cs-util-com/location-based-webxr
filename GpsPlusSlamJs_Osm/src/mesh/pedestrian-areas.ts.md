@@ -33,8 +33,10 @@ liftM? }`. `liftM` defaults to `pedestrianAreaLiftM()` (minus one road rank
 - **Cut along the terrain's post lines:** each triangle is clipped
   (Sutherland-Hodgman) to every `spacingM` cell it overlaps, so each piece lies
   in one cell and every vertex is sampled on the ground. An intersection is
-  added only on a strict crossing; pieces and fan triangles under 1 mm^2, and
-  fan triangles whose corners merged into one vertex, are dropped.
+  added only on a strict crossing; pieces and fan triangles under 1 mm^2 are
+  dropped, and a fan triangle is checked again on its corners AS DRAWN (the
+  shared vertex each merged into, rounded to float32), so a sliver that a
+  merge flattened or turned over is dropped too.
 - Cut points are shared between neighbouring pieces through a key map
   (0.1 mm). A ground that is not a number reads as 0.
 - Every triangle faces up (counter-clockwise in ENU, handed over reversed
@@ -61,5 +63,6 @@ const areas = buildPedestrianAreas(features, { frame, window, groundHeightM });
   spacing equal to the terrain's, the lift under the paths, the drawn set,
   unclosed rings, option refusals, and the shared predicate with the tint.
 - `pedestrian-areas.property.test.ts` - a random star polygon at spacings
-  2-48 m covers exactly its own area, every triangle facing up.
+  2-48 m covers exactly its own area, every triangle facing up; one pinned
+  run where a corner's merge into a shared cut point flattened a sliver.
 - `testdata/sites/site-roads.test.ts` - the scene counts, pinned.

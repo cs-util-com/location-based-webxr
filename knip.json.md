@@ -121,6 +121,8 @@ entirely after confirming they were only transitively pulled in.
   `/fw/visualization/atmosphere/cloud-live-noise.js` and
   `/globe/globe-cloud-shell-volume.js` (the spherical cloud volume's field
   test) and `/globe/globe-sources.js` (its smoke, the cloud map's file)
+  and `/osm-lib/source/static-tile-source.js` (the globe smokes' helpers,
+  for the tile host's name)
   are imported by lab tests through `test-route-loader.mjs`, which
   resolves them with the dev server's route table; knip has no such
   mapping. Each is an exact string and fails its test at once if moved.
