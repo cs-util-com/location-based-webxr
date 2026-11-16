@@ -145,6 +145,19 @@ describe('the multi-app site build', () => {
     expect(SCRIPT.slice(guard)).toMatch(/appDirs:\s*siteAppDirs\(distSite\)/);
   });
 
+  it('checks for left-over source maps after both apps that upload them', () => {
+    // The upload plugin only logs a failed delete, so without this call a
+    // build with the token deploys the maps behind a green build.
+    const check = SCRIPT.indexOf('assertNoSourceMapsDeployed({ siteDir: distSite })');
+    const tour = SCRIPT.indexOf('--base=/tour/');
+    const osm = SCRIPT.indexOf('--base=/osm/');
+    for (const [name, at] of Object.entries({ check, tour, osm })) {
+      expect(at, `${name} is missing`).toBeGreaterThan(-1);
+    }
+    expect(tour).toBeLessThan(check);
+    expect(osm).toBeLessThan(check);
+  });
+
   it('keeps the header comment honest about which apps it deploys', () => {
     // The header draws the output tree, and it is the only place a reader
     // learns what the deployed site contains. A new app whose build is added

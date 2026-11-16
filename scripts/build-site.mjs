@@ -65,6 +65,7 @@ import {
   siteAppDirs,
   copyGlobeAssets,
 } from './globe-assets-deploy.mjs';
+import { assertNoSourceMapsDeployed } from './source-maps-deploy.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distSite = join(repoRoot, 'dist-site');
@@ -390,6 +391,11 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'osm'), '/osm/');
+
+// The Tour Viewer and the map demo upload their source maps when
+// SENTRY_AUTH_TOKEN is set and delete them afterwards; a failed delete is only
+// logged by the upload plugin, so this is what fails such a build.
+assertNoSourceMapsDeployed({ siteDir: distSite });
 
 // The blog is not a Vite app: it is markdown from the project WIKI repository
 // (a separate repo — see GpsPlusSlamJs_Landing/scripts/blog/) rendered to
