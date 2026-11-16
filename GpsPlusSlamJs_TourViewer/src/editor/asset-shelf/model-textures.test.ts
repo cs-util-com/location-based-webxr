@@ -93,6 +93,27 @@ describe("imageUses and textureFormat", () => {
       quality: SETTINGS.dataQuality,
     });
   });
+
+  // Why: WebP in place of JPEG is the one texture setting that measured a
+  // real saving (14 to 28 % of the texture bytes at the shelf's quality
+  // numbers on the check page's samples, about 40 % at the same PSNR). It replaces only the lossy JPEG choices: alpha
+  // and a lossless data map stay PNG, whatever the setting.
+  it("writes WebP where it would write JPEG when the settings ask for WebP", () => {
+    const webp = { ...SETTINGS, textureType: "image/webp" as const };
+    const colour = { colour: true, data: false, alpha: false };
+    const data = { colour: false, data: true, alpha: false };
+    const alpha = { colour: true, data: false, alpha: true };
+    expect(textureFormat(colour, "image/png", webp)).toEqual({
+      type: "image/webp",
+      quality: SETTINGS.colourQuality,
+    });
+    expect(textureFormat(data, "image/jpeg", webp)).toEqual({
+      type: "image/webp",
+      quality: SETTINGS.dataQuality,
+    });
+    expect(textureFormat(data, "image/png", webp).type).toBe("image/png");
+    expect(textureFormat(alpha, "image/jpeg", webp).type).toBe("image/png");
+  });
 });
 
 describe("shrinkTextures", () => {
@@ -125,6 +146,68 @@ describe("shrinkTextures", () => {
     const images = parts.json["images"] as { mimeType: string }[];
     expect(images.map((i) => i.mimeType)).toEqual(["image/jpeg", "image/png"]);
     expect(checkGlbInert(writeGlb(parts)).ok).toBe(true);
+  });
+
+  // Why: a WebP image is only valid glTF through EXT_texture_webp. The
+  // texture must name it there (not as its core source, which a viewer
+  // without the extension would try to read as JPEG or PNG) and the file
+  // must list the extension as used and required, or three.js and the
+  // tour's own check read a model whose textures do not load.
+  it("names a WebP texture through EXT_texture_webp and marks the extension required", async () => {
+    const parts = await partsOf({
+      baseColor: "jpeg",
+      normalMap: "png",
+      textureSize: [2048, 2048],
+    });
+    const webp = { ...SETTINGS, textureType: "image/webp" as const };
+    const fake = fakePictureDevice();
+    const report = await shrinkTextures(parts, webp, fake.device, control());
+    expect(fake.encoded.map((e) => e.type)).toEqual([
+      "image/webp",
+      "image/png",
+    ]);
+    expect(report).toMatchObject({ changed: 2, largestSide: 1024 });
+    const json = parts.json as {
+      images: { mimeType: string }[];
+      textures: { source?: number; extensions?: Record<string, unknown> }[];
+      extensionsUsed?: string[];
+      extensionsRequired?: string[];
+    };
+    expect(json.images.map((i) => i.mimeType)).toEqual([
+      "image/webp",
+      "image/png",
+    ]);
+    const colour = json.textures.find(
+      (t) => t.extensions?.["EXT_texture_webp"] !== undefined,
+    );
+    expect(colour?.source).toBeUndefined();
+    expect(colour?.extensions).toEqual({ EXT_texture_webp: { source: 0 } });
+    expect(json.textures.filter((t) => t.source === 1)).toHaveLength(1);
+    expect(json.extensionsUsed).toContain("EXT_texture_webp");
+    expect(json.extensionsRequired).toContain("EXT_texture_webp");
+    const written = writeGlb(parts);
+    expect(checkGlbInert(written).ok).toBe(true);
+    expect(readGlb(written).ok).toBe(true);
+  });
+
+  // Why: a model that already names EXT_texture_webp (one made by this
+  // pass before, or by another tool) must still list it once: a repeated
+  // entry in extensionsRequired is invalid glTF.
+  it("lists EXT_texture_webp once when the file already names it", async () => {
+    const parts = await partsOf({
+      baseColor: "jpeg",
+      textureSize: [2048, 2048],
+    });
+    const json = parts.json as {
+      extensionsUsed?: string[];
+      extensionsRequired?: string[];
+    };
+    json.extensionsUsed = ["EXT_texture_webp"];
+    json.extensionsRequired = ["EXT_texture_webp"];
+    const webp = { ...SETTINGS, textureType: "image/webp" as const };
+    await shrinkTextures(parts, webp, fakePictureDevice().device, control());
+    expect(json.extensionsUsed).toEqual(["EXT_texture_webp"]);
+    expect(json.extensionsRequired).toEqual(["EXT_texture_webp"]);
   });
 
   it("keeps a cut-out colour texture as PNG so its alpha survives", async () => {

@@ -7,6 +7,7 @@ import { loadSite } from "../test-utils/load-fixtures.js";
 import { buildCity, cityGround } from "./city.js";
 import { enuFrameAt } from "./enu.js";
 import { barrierColour } from "./barrier-colours.js";
+import { DEFAULT_CITY_COLOUR_SCHEME } from "./colour-scheme.js";
 import {
   FLAT_ROOF_TONES,
   PITCHED_ROOF_TONES,
@@ -731,6 +732,82 @@ describe("buildCity's seeded palette", () => {
       buildCity([house(9, brick)], { frame }, { window: W, palette: "class" }),
     );
     expect(classic).toEqual(new Set([key(buildingColour(brick))]));
+  });
+
+  /**
+   * WHY (city look exploration 2026-11-15, direction B): the tower rule
+   * needs the building's height, which only `buildCity` knows; a height
+   * that never arrived would draw every building from the plain list and no
+   * palette test would notice. And one building stays one colour: a podium
+   * and its tower, parts of one outline, draw from the list the TALLEST part
+   * selects, as a cathedral's parts share one tone.
+   */
+  describe("the tower rule", () => {
+    const scheme = {
+      ...DEFAULT_CITY_COLOUR_SCHEME,
+      walls: [0x111111],
+      towerWalls: [0x222222],
+      towerFromM: 40,
+    };
+    const walls = (city: ReturnType<typeof buildCity>): Set<string> => {
+      const all = triples(city);
+      const flat = new Set(FLAT_ROOF_TONES.map(key));
+      return new Set([...all].filter((t) => !flat.has(t)));
+    };
+
+    it("draws a tall building from the tower list and a low one from the walls", () => {
+      const tall = buildCity(
+        [house(9, { building: "yes", height: "60" })],
+        { frame },
+        { window: W, colours: scheme },
+      );
+      const low = buildCity(
+        [house(9, { building: "yes", height: "12" })],
+        { frame },
+        { window: W, colours: scheme },
+      );
+      expect(walls(tall)).toEqual(new Set([key(0x222222)]));
+      expect(walls(low)).toEqual(new Set([key(0x111111)]));
+    });
+
+    it("reads a height derived from building:levels", () => {
+      const city = buildCity(
+        [house(9, { building: "yes", "building:levels": "15" })],
+        { frame },
+        { window: W, colours: scheme },
+      );
+      expect(walls(city)).toEqual(new Set([key(0x222222)]));
+    });
+
+    it("gives every part of one outline the list its tallest part selects", () => {
+      const parent = house(1, { building: "office" });
+      const half = (
+        id: number,
+        height: string,
+        west: number,
+        east: number,
+      ) => ({
+        type: "way" as const,
+        id,
+        tags: { "building:part": "yes", height },
+        geometry: [
+          { lat: 50.9413, lng: west },
+          { lat: 50.9413, lng: east },
+          { lat: 50.9418, lng: east },
+          { lat: 50.9418, lng: west },
+          { lat: 50.9413, lng: west },
+        ],
+      });
+      const city = buildCity(
+        [parent, half(2, "15", 6.9583, 6.9588), half(3, "90", 6.9588, 6.9593)],
+        { frame },
+        { window: W, colours: scheme },
+      );
+      expect(
+        city.volumes.filter((v) => v.parentFeature === "way/1"),
+      ).toHaveLength(2);
+      expect(walls(city)).toEqual(new Set([key(0x222222)]));
+    });
   });
 
   it("refuses a palette it does not know", () => {

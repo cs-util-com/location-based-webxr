@@ -99,6 +99,9 @@ mitreLimit? }` (city objects plan 2026-11-07-2315 M4a, review MINOR 4):
   a flat lid (`BuildingVolume.roofMethods`: "flat" or "prism", also for a
   pitched tag the ladder could not build; M7 review MINOR 4);
   `"class"` the class colours (`buildingColour`, `roofColour`) as before M7.
+  Under `"seeded"` each building also passes its height to the palette's
+  tower rule: the tallest `totalHeightM` among the volumes sharing its key
+  (a part: its outline's), so a podium and its tower stay one colour.
   RangeError for any other value.
 - No other error modes: a feature that cannot be built is skipped, as in
   every builder, and a building whose build throws is counted in
@@ -204,3 +207,22 @@ use.
   pitched tones or the tagged `roof:colour` on every invented roof, and the
   AR shell attributes one value per vertex) and
   `site-invented-roofs.test.ts`.
+
+## Height and material aware walls (city look exploration 2026-11-15, direction B)
+
+- The tower rule of `building-palette.ts` needs the height, which only this
+  file knows: the tallest volume per building key (`totalHeightM`). That
+  height is tagged, derived from `building:levels`, guessed (6 m plus the
+  roof, raised by `min_height` or by `roof:height` / `roof:levels`,
+  `resolveRoofHeightM`), or, with invented roofs on, invented: a refused
+  lid takes a seeded height from its neighbours' quartiles
+  (`refusedHeightM` in `roofscape-rules.ts`), and that neighbourhood prior
+  can reach tower heights (often 40 m or more in Midtown).
+- Near a tile window's edge the neighbourhood behind that prior changes
+  between rebuilds, so an invented building's tower status (and so its wall
+  list) can flip from one rebuild to the next.
+- The default scheme has the rule off (`towerFromM` infinite), so the
+  identity digests are unchanged.
+- Tested in `city.test.ts` ("the tower rule": a tall and a low house, a
+  height from levels, a podium and tower of one outline sharing the tower
+  list).

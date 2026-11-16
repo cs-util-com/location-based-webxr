@@ -83,7 +83,7 @@ describe("the picture step", () => {
       height: 1200,
     });
     expect(d.asked).toEqual([
-      { w: 1600, h: 1200, type: "image/webp", quality: 0.75 },
+      { w: 1600, h: 1200, type: "image/webp", quality: 0.6 },
     ]);
     expect(d.closed).toBe(1);
     expect(c.progress).toHaveBeenLastCalledWith(1);

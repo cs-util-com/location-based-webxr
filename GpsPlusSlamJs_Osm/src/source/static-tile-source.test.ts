@@ -436,6 +436,122 @@ describe("StaticTileSource", () => {
     expect(fallback.calls).toHaveLength(1);
   });
 
+  describe("a host that does not answer at all", () => {
+    // Why these tests matter: a refusal only stops fills, and reads still go
+    // out. A host that never answers (a black-holed address) would then hold
+    // every cold tile for the full request limit before the race, one tile
+    // after another. After a network error or a timeout, so no HTTP answer,
+    // the host is left alone for the refusal memory, reads included.
+    const stalled = (): Reply => (init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        signal?.addEventListener("abort", () => {
+          reject(signal.reason as Error);
+        });
+      });
+
+    it("after one read times out, the next tile goes to the race without asking the host", async () => {
+      const { source, fallback, calls } = setup(
+        { [`GET ${TILE_URL}`]: [stalled(), stalled()] },
+        { requestTimeoutMs: 20 },
+      );
+      await source.fetchTile(TILE);
+      expect(calls).toHaveLength(1);
+      const next = await source.fetchTile(TILE);
+      expect(next.sourceId).toBe("overpass:test");
+      expect(calls).toHaveLength(1);
+      expect(fallback.calls).toHaveLength(2);
+    });
+
+    it("after a network error, speculative reads skip the host too", async () => {
+      const { source, fallback, calls } = setup({
+        [`GET ${TILE_URL}`]: [new TypeError("Failed to fetch")],
+      });
+      await source.fetchTile(TILE);
+      await source.fetchTile(TILE, { speculative: true });
+      expect(calls).toHaveLength(1);
+      expect(fallback.calls).toHaveLength(2);
+      expect(fallback.calls[1]?.options?.speculative).toBe(true);
+    });
+
+    it("reads the host again once the refusal memory has passed", async () => {
+      const { source, calls, advance } = setup(
+        {
+          [`GET ${TILE_URL}`]: [
+            new TypeError("Failed to fetch"),
+            new Response(PAYLOAD, { status: 200 }),
+          ],
+        },
+        { refusalMemoryMs: 60_000 },
+      );
+      await source.fetchTile(TILE);
+      advance(59_999);
+      await source.fetchTile(TILE);
+      expect(calls).toHaveLength(1);
+      advance(2);
+      const result = await source.fetchTile(TILE);
+      expect(result.sourceId).toBe("static:tiles.example.dev");
+      expect(calls).toHaveLength(2);
+    });
+
+    for (const [name, reply] of [
+      ["a refused fill (HTTP 429)", json(429, { status: "rate" })],
+      ["a host error on the read (HTTP 500)", null],
+    ] as const) {
+      it(`${name} is an answer: stored files are still read afterwards`, async () => {
+        // The converse: an HTTP answer proves the host is there, so only
+        // fills are refused, as before.
+        const script: Record<string, Reply[]> =
+          reply === null
+            ? {
+                [`GET ${TILE_URL}`]: [
+                  new Response("x", { status: 500 }),
+                  new Response(PAYLOAD, { status: 200 }),
+                ],
+              }
+            : {
+                [`GET ${TILE_URL}`]: [
+                  new Response("nf", { status: 404 }),
+                  new Response(PAYLOAD, { status: 200 }),
+                ],
+                [`POST ${FILL_URL}`]: [reply],
+              };
+        const { source } = setup(script);
+        await source.fetchTile(TILE);
+        const next = await source.fetchTile(TILE);
+        expect(next.sourceId).toBe("static:tiles.example.dev");
+      });
+    }
+
+    it("a poll with no answer before the fill wait ends is not taken for an unreachable host", async () => {
+      // The fill wait's own deadline cut the poll: the host had answered the
+      // read and the fill ask, so stored files are still read afterwards.
+      const late = (init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          signal?.addEventListener("abort", () => {
+            reject(signal.reason as Error);
+          });
+        });
+      const { source } = setup(
+        {
+          [`GET ${TILE_URL}`]: [
+            new Response("nf", { status: 404 }),
+            new Response("nf", { status: 404 }),
+            late,
+            new Response(PAYLOAD, { status: 200 }),
+          ],
+          [`POST ${FILL_URL}`]: [json(202, { status: "queued" })],
+        },
+        { maxWaitMs: 10_030 },
+      );
+      const first = await source.fetchTile(TILE);
+      expect(first.sourceId).toBe("overpass:test");
+      const next = await source.fetchTile(TILE);
+      expect(next.sourceId).toBe("static:tiles.example.dev");
+    });
+  });
+
   it("falls back when a stored file is not valid JSON", async () => {
     const { source, fallback } = setup({
       [`GET ${TILE_URL}`]: [new Response("<html>", { status: 200 })],

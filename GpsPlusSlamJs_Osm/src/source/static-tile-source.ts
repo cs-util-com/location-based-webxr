@@ -7,7 +7,9 @@
  * someone waits on and only when no other fill is ahead of it. On any
  * refusal, error or timeout it hands the tile to the `fallback` source (the
  * race) at once and stops asking for fills for a while; stored files are
- * still read. The two never run for one tile at the same time. A stored file
+ * still read, unless the host gave no answer at all (a network error or a
+ * request past its time limit), in which case it is not asked anything for
+ * that while. The two never run for one tile at the same time. A stored file
  * that is not a complete Overpass answer goes to the race too, and is
  * reported to the host once.
  *
@@ -59,7 +61,11 @@ export interface StaticTileSourceOptions {
    * neither of which is part of the fill wait.
    */
   readonly maxWaitMs?: number;
-  /** How long no fill is asked for after the host said no. Default 10 min. */
+  /**
+   * How long no fill is asked for after the host said no, and nothing at
+   * all after it did not answer (a network error or a timeout). Default
+   * 10 min.
+   */
   readonly refusalMemoryMs?: number;
   /**
    * A stored tile whose data is older than this is served and the host is
@@ -86,6 +92,16 @@ const DEFAULT_REFRESH_AFTER_MS = 30 * 86_400_000;
  */
 class HostDeclined extends Error {
   override readonly name = "HostDeclined";
+}
+
+/**
+ * The fill wait ended before the host's answer to a request of it began.
+ * The host answered earlier requests of this tile, so this is the wait
+ * running out, not the host gone: a refusal like a `HostDeclined`, never a
+ * sign that the host cannot be reached.
+ */
+class FillWaitSpent extends Error {
+  override readonly name = "FillWaitSpent";
 }
 
 /**
@@ -155,6 +171,17 @@ async function fillBody(
   }
 }
 
+/** A failure this source decided on, after (or instead of) a host answer. */
+function isOwnVerdict(error: unknown): boolean {
+  return (
+    error instanceof HostDeclined ||
+    error instanceof HostSkipped ||
+    error instanceof BadStoredTile ||
+    error instanceof NoWaitLeft ||
+    error instanceof FillWaitSpent
+  );
+}
+
 function isAbort(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
@@ -211,6 +238,13 @@ export class StaticTileSource implements OsmDataSource {
   private readonly requestTimeoutMs: number;
   /** Until when no fill is asked for (epoch ms); 0 while the host is trusted. */
   private refusedUntil = 0;
+  /**
+   * Until when the host is not asked at all (epoch ms): set when a request
+   * got no HTTP answer (a network error or the per-request limit), so a
+   * host that does not answer costs one request limit per refusal memory,
+   * not one per tile.
+   */
+  private unreachableUntil = 0;
   /** Tiles whose refresh was already asked for in this session. */
   private readonly refreshAsked = new Set<string>();
   /** Tiles already reported bad in this session. */
@@ -255,6 +289,9 @@ export class StaticTileSource implements OsmDataSource {
     options?: FetchTileOptions,
   ): Promise<OsmTileResult> {
     if (options?.signal?.aborted === true) throw abortError();
+    if (this.now() < this.unreachableUntil) {
+      return this.fallback.fetchTile(tile, options);
+    }
     // A speculative fetch (a ring warm) has nobody waiting on it, and a
     // refused host is not asked for fills; both still read stored files,
     // which cost the host nothing to serve.
@@ -271,7 +308,10 @@ export class StaticTileSource implements OsmDataSource {
    * An abort rethrown; any other failure: the race, at once. Every failure
    * but a skip or a bad stored file is remembered as a refusal, a
    * `NoWaitLeft` included: no request went out, so nothing was learnt about
-   * the host, but the caller backs off the same way.
+   * the host, but the caller backs off the same way. A failure that is none
+   * of this source's own (a network error, a request past its limit, a body
+   * that broke off) means the host gave no answer: it is not asked at all
+   * for the same while.
    */
   private afterHostFailed(
     error: unknown,
@@ -281,6 +321,9 @@ export class StaticTileSource implements OsmDataSource {
     if (isAbort(error) || options?.signal?.aborted === true) throw error;
     if (!(error instanceof HostSkipped || error instanceof BadStoredTile)) {
       this.refusedUntil = this.now() + this.refusalMemoryMs;
+    }
+    if (!isOwnVerdict(error)) {
+      this.unreachableUntil = this.now() + this.refusalMemoryMs;
     }
     return this.fallback.fetchTile(tile, options);
   }
@@ -329,7 +372,7 @@ export class StaticTileSource implements OsmDataSource {
       headersBy = controller;
       timer = setTimeout(() => {
         controller.abort(
-          new DOMException("no answer within the fill wait", "TimeoutError"),
+          new FillWaitSpent(`no answer within the fill wait for ${url}`),
         );
       }, left);
     }

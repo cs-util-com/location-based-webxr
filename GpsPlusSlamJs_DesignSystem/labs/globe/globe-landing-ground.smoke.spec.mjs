@@ -15,7 +15,11 @@
  */
 import { expect, test } from "@playwright/test";
 
-import { bootGlobe } from "./globe-smoke-helpers.mjs";
+import {
+  bootGlobe,
+  TILES_HOSTNAME,
+  tileHostNotStored,
+} from "./globe-smoke-helpers.mjs";
 
 const LUCERNE = { lat: 47.0502, lng: 8.3093 };
 /**
@@ -159,6 +163,14 @@ test("the owner's screenshots: landed 150 m up at Lucerne and near Pilatus", asy
     // A fresh page each: a hash change alone would not reload the lab.
     const context = await browser.newContext();
     const page = await context.newPage();
+    // The city worker asks the project's tile host first: answered "not
+    // stored" here, so the shots never reach the real host and the
+    // Overpass route below serves the city.
+    await page.route(
+      (url) => url.hostname === TILES_HOSTNAME,
+      (route) =>
+        tileHostNotStored(route, { "Access-Control-Allow-Origin": "*" }),
+    );
     await page.route(
       (url) =>
         /overpass/.test(url.hostname + url.pathname) ||

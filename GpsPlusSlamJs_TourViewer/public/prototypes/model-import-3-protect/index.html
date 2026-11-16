@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Model import: protect what matters</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #141b22;
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      .shell-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+        padding: 6px 16px;
+        background: #0c1117;
+        color: #f4efe6;
+        font:
+          13px system-ui,
+          sans-serif;
+      }
+
+      .shell-bar button,
+      .shell-bar label {
+        min-height: 32px;
+        padding: 0 12px;
+        border: 2px solid #3c4c5a;
+        border-radius: 8px;
+        background: #1d2731;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .shell-bar label {
+        display: inline-flex;
+        align-items: center;
+        margin-left: auto;
+      }
+
+      .shell-bar button[aria-pressed="true"] {
+        border-color: #f4efe6;
+        background: #f4efe6;
+        color: #141b22;
+        font-weight: 700;
+      }
+
+      .shell-bar input {
+        display: none;
+      }
+
+      #app {
+        min-height: 0;
+      }
+
+      .shell-done {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        padding: 16px;
+        background: #141b22;
+        color: #f4efe6;
+        font:
+          15px system-ui,
+          sans-serif;
+      }
+
+      .shell-done[hidden] {
+        display: none;
+      }
+
+      .shell-done pre {
+        max-width: min(640px, 100%);
+        max-height: 50vh;
+        overflow: auto;
+        padding: 12px;
+        border-radius: 10px;
+        background: #26333f;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+
+      .shell-done button {
+        min-height: 44px;
+        padding: 0 18px;
+        border: 0;
+        border-radius: 10px;
+        background: #f29b1d;
+        color: #141b22;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="shell-bar" aria-label="Samples">
+      <span>Sample:</span>
+      <button type="button" data-sample="rock">Rock</button>
+      <button type="button" data-sample="bust">Marble bust</button>
+      <button type="button" data-sample="box">Utility box</button>
+      <label>Open your own .glb<input type="file" accept=".glb,model/gltf-binary" /></label>
+    </nav>
+    <main id="app"></main>
+    <div class="shell-done" hidden>
+      <div>
+        <p>The editor would now make the file with these settings:</p>
+        <pre></pre>
+        <button type="button">Back to the model</button>
+      </div>
+    </div>
+    <script type="module">
+      import { mountModelProtect } from "./protect.js";
+
+      const SAMPLES = {
+        rock: { url: "../model-lod-1/rock.glb", name: "Rock" },
+        bust: { url: "./model-marble-bust.glb", name: "Marble bust" },
+        box: { url: "./model-utility-box.glb", name: "Utility box" },
+      };
+      const done = document.querySelector(".shell-done");
+      const app = mountModelProtect(document.getElementById("app"), {
+        onAccept(settings) {
+          const shown = JSON.parse(
+            JSON.stringify(settings, (key, value) =>
+              value instanceof Float32Array
+                ? `${value.length} vertex weights`
+                : value,
+            ),
+          );
+          done.querySelector("pre").textContent = JSON.stringify(shown, null, 2);
+          done.hidden = false;
+        },
+        onBack() {
+          history.back();
+        },
+      });
+      done.querySelector("button").addEventListener("click", () => {
+        done.hidden = true;
+      });
+      window.modelProtect = app;
+
+      const buttons = [...document.querySelectorAll("[data-sample]")];
+      function open(id) {
+        const sample = SAMPLES[id] ?? SAMPLES.rock;
+        for (const b of buttons) {
+          b.setAttribute("aria-pressed", String(b.dataset.sample === id));
+        }
+        app.load(sample.url, sample.name).catch(() => {});
+      }
+      for (const b of buttons) {
+        b.addEventListener("click", () => open(b.dataset.sample));
+      }
+      document.querySelector(".shell-bar input").addEventListener("change", (e) => {
+        const file = e.target.files?.[0];
+        if (file) {
+          for (const b of buttons) {
+            b.setAttribute("aria-pressed", "false");
+          }
+          app.load(file, file.name).catch(() => {});
+        }
+      });
+      open(new URLSearchParams(location.search).get("sample") ?? "rock");
+    </script>
+  </body>
+</html>

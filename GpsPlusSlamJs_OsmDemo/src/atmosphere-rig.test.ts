@@ -18,6 +18,8 @@ import { describe, expect, it } from "vitest";
 import {
   AtmosphereRig,
   BUILDING_SKY_LIGHT,
+  HAZE_START_RATIO,
+  HAZE_VISIBILITY_KM,
   NATURAL_LIGHT_ADAPTATION,
   NATURAL_LIGHT_COMPENSATION_EV,
   NIGHT_FLOOR,
@@ -29,7 +31,9 @@ import {
   TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
   type SkyLike,
+  HAZE_RIM_INNER_RATIO,
 } from "./atmosphere-rig.js";
+import { veilDisplayLinear, veilSceneColour } from "./haze-veil.js";
 import { sunDirection, type SunAngles } from "./sun-position.js";
 
 /** A sun at an elevation and an azimuth, degrees (the rig does not care how it was chosen). */
@@ -44,7 +48,7 @@ class StubSky {
   sun = new THREE.Vector3(0, 1, 0);
   ev = Number.NaN;
   disposed = false;
-  readonly visibilityKm = 60;
+  visibilityKm = 60;
   readonly sharedUniforms = {
     atmMieExtinction: { value: 0.05 },
     atmSunDirection: { value: new THREE.Vector3(0, 1, 0) },
@@ -58,9 +62,13 @@ class StubSky {
   configure(change: {
     sunDirection?: { x: number; y: number; z: number };
     cloudCover?: number;
+    visibilityKm?: number;
   }): void {
     this.calls.push("configure");
     if (change.cloudCover !== undefined) this.cloudCover = change.cloudCover;
+    if (change.visibilityKm !== undefined) {
+      this.visibilityKm = change.visibilityKm;
+    }
     if (change.sunDirection) {
       this.sun
         .set(
@@ -90,6 +98,15 @@ class StubSky {
       (3 + this.sun.y) *
       2 ** (this.ev - NATURAL_LIGHT_COMPENSATION_EV) *
       (this.adaptation / NATURAL_LIGHT_ADAPTATION);
+  }
+
+  /** The horizon veil the rig set (not a call: a uniform, nothing rebuilt). */
+  horizonVeil: { colour: readonly number[]; riseDeg: number } | null = null;
+  setHorizonVeil(
+    colour: readonly [number, number, number] | null,
+    riseDeg = 0,
+  ): void {
+    this.horizonVeil = colour === null ? null : { colour, riseDeg };
   }
 
   horizonColour(): THREE.Color {
@@ -305,6 +322,76 @@ describe("AtmosphereRig.setExposure (light dialog, plan 2026-09-24-2140)", () =>
   });
 });
 
+describe("AtmosphereRig.setHaze (light dialog, haze inside the city)", () => {
+  // WHY: the shipped look must not move. The sky is built at today's
+  // visibility and the haze starts at today's share of the draw distance
+  // until the dialog says otherwise.
+  it("starts at today's haze", () => {
+    let built: number | undefined;
+    const view = new AtmosphereRig({
+      renderer: {} as unknown as THREE.WebGLRenderer,
+      scene: new THREE.Scene(),
+      sun: new THREE.DirectionalLight(),
+      createSky: (o) => {
+        built = o.visibilityKm;
+        return new StubSky() as unknown as SkyLike;
+      },
+    });
+    expect(built).toBe(HAZE_VISIBILITY_KM);
+    expect(view.hazeStartRatio).toBe(HAZE_START_RATIO);
+  });
+
+  // WHY: the visibility is the AIR's, so the sky and the haze on the city
+  // must change together (the rig's one invariant); a haze-only change would
+  // fade the city toward a sky drawn for other air.
+  it("moves the sky's visibility and the haze on the city together", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    const before = view.haze.uniforms.atmHazeExtinction.value.x;
+    view.setHaze({ visibilityKm: 15, startRatio: 0.2 });
+    expect(sky.visibilityKm).toBe(15);
+    expect(view.haze.uniforms.atmHazeExtinction.value.x).toBeGreaterThan(
+      before * 2,
+    );
+    expect(view.hazeStartRatio).toBe(0.2);
+  });
+
+  // WHY: every dialog change re-applies all settings; a visibility that did
+  // not change must not rebuild the sky's tables on every exposure drag.
+  it("leaves the sky alone when the visibility is unchanged", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setHaze({ visibilityKm: 15, startRatio: 0.66 });
+    const calls = sky.calls.length;
+    view.setHaze({ visibilityKm: 15, startRatio: 0.3 });
+    expect(sky.calls.length).toBe(calls);
+    expect(view.hazeStartRatio).toBe(0.3);
+  });
+
+  it("refuses a value it cannot use, changing nothing", () => {
+    const { view, sky } = rig();
+    for (const bad of [
+      { visibilityKm: 0, startRatio: 0.5 },
+      { visibilityKm: Number.NaN, startRatio: 0.5 },
+      { visibilityKm: 20, startRatio: 1 },
+      { visibilityKm: 20, startRatio: -0.1 },
+    ]) {
+      expect(() => view.setHaze(bad)).toThrow(RangeError);
+    }
+    expect(sky.visibilityKm).toBe(60);
+    expect(view.hazeStartRatio).toBe(HAZE_START_RATIO);
+  });
+
+  // WHY: on the fallback the same slider must reach the fallback's colours.
+  it("re-derives the fallback's horizon from the new visibility", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(25, 200));
+    const before = (scene.fog as THREE.Fog).color.clone();
+    view.setHaze({ visibilityKm: 9, startRatio: HAZE_START_RATIO });
+    expect((scene.fog as THREE.Fog).color.equals(before)).toBe(false);
+  });
+});
+
 describe("AtmosphereRig on a device without float render targets", () => {
   // The fallback must LIGHT the scene and colour the fog; a black sky, or an
   // exception that takes the whole view with it, is the failure it replaces.
@@ -490,5 +577,126 @@ describe("AtmosphereRig night floor (r1155, owner: Nachts Grundhelligkeit)", () 
       view.dispose();
       expect(floorOf(scene)).toBeUndefined();
     }
+  });
+});
+
+describe("AtmosphereRig.setHazeVeil (city look, a bright bluish veil)", () => {
+  // WHY: the shipped look must not move: until the dialog sets a veil, the
+  // haze takes the sky's colour, exactly as before.
+  it("starts with no veil", () => {
+    const { view } = rig();
+    expect(view.haze.veil).toBeNull();
+    expect(view.haze.uniforms.atmHazeVeilOn.value).toBe(0);
+  });
+
+  // WHY: the veil is a colour on SCREEN; the haze blends before tone
+  // mapping, so the rig hands it the scene colour that shows it at the
+  // renderer's exposure. Uniforms only: the sky is neither rebuilt nor
+  // re-read, and the fog object (which AR swaps for its own) is untouched.
+  it("sets the haze colour, and touches neither the sky nor the fog", () => {
+    const { view, sky, scene } = rig();
+    view.setSun(sunAt(25, 200));
+    const calls = sky.calls.length;
+    const fog = (scene.fog as THREE.Fog).color.clone();
+    const veil = { lightness: 80, tint: -4 };
+    view.setHazeVeil(veil);
+    expect(view.haze.veil).toEqual(
+      veilSceneColour(veil, TONE_MAPPING_EXPOSURE),
+    );
+    expect(sky.calls.length).toBe(calls);
+    expect((scene.fog as THREE.Fog).color.equals(fog)).toBe(true);
+    view.setHazeVeil(null);
+    expect(view.haze.veil).toBeNull();
+  });
+
+  // WHY: a sun move or an exposure change re-syncs the haze from the sky;
+  // the veil is the dialog's and must survive both.
+  it("keeps the veil through a sun move and an exposure change", () => {
+    const { view } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setHazeVeil({ lightness: 75, tint: -6 });
+    const set = view.haze.veil;
+    view.setSun(sunAt(40, 180));
+    view.setExposure({ ev: -2, adaptation: 0.8 });
+    expect(view.haze.veil).toEqual(set);
+  });
+
+  // WHY: on the fallback the haze is three's stock fog, whose colour is the
+  // scene fog's; the veil must reach it there, and leave it for the
+  // fallback's horizon again when cleared.
+  it("colours the fallback's fog, and gives it back to the horizon", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(25, 200));
+    const horizon = (scene.fog as THREE.Fog).color.clone();
+    const veil = { lightness: 80, tint: -4 };
+    view.setHazeVeil(veil);
+    const fog = (scene.fog as THREE.Fog).color;
+    const want = veilDisplayLinear(veil);
+    expect([fog.r, fog.g, fog.b]).toEqual([...want]);
+    view.setHazeVeil(null);
+    expect((scene.fog as THREE.Fog).color.equals(horizon)).toBe(true);
+  });
+
+  it("refuses a veil it cannot show, changing nothing", () => {
+    const { view } = rig();
+    view.setHazeVeil({ lightness: 70, tint: -4 });
+    const set = view.haze.veil;
+    expect(() => view.setHazeVeil({ lightness: 99, tint: -4 })).toThrow(
+      RangeError,
+    );
+    expect(view.haze.veil).toEqual(set);
+  });
+});
+
+describe("AtmosphereRig: the veil up the sky and at the ground's rim", () => {
+  // WHY: the far ground is hazed toward the veil; the sky right above it
+  // must take the same colour at the horizon, or the two meet in a step.
+  // The sky gets the very scene colour the haze gets, and the veil's rise.
+  it("hands the sky the haze's veil colour and the rise, and takes it off with the veil", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setHazeVeil({ lightness: 72, tint: -4, riseDeg: 3 });
+    expect(sky.horizonVeil).toEqual({
+      colour: veilSceneColour(
+        { lightness: 72, tint: -4 },
+        TONE_MAPPING_EXPOSURE,
+      ),
+      riseDeg: 3,
+    });
+    view.setHazeVeil({ lightness: 72, tint: -4 });
+    expect(sky.horizonVeil?.riseDeg).toBe(0);
+    view.setHazeVeil(null);
+    expect(sky.horizonVeil).toBeNull();
+  });
+
+  // WHY: the ground is a tile of a few km and stops; with a veil on, its
+  // edge must vanish into the veil like the horizon does. Scoped to the
+  // veil, so the shipped look (no veil) keeps its haze exactly.
+  it("hazes the ground's rim fully while a veil is on, and only then", () => {
+    const { view } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setGroundRim({ x: 100, z: -50 }, 2400);
+    expect(view.haze.rim).toBeNull();
+    view.setHazeVeil({ lightness: 72, tint: -4 });
+    expect(view.haze.rim).toEqual({
+      centre: { x: 100, z: -50 },
+      innerM: 2400 * HAZE_RIM_INNER_RATIO,
+      outerM: 2400,
+    });
+    view.setGroundRim({ x: 0, z: 0 }, 2400);
+    expect(view.haze.rim?.centre).toEqual({ x: 0, z: 0 });
+    view.setHazeVeil(null);
+    expect(view.haze.rim).toBeNull();
+  });
+
+  it("refuses a ground extent that is not positive, changing nothing", () => {
+    const { view } = rig();
+    view.setHazeVeil({ lightness: 72, tint: -4 });
+    view.setGroundRim({ x: 0, z: 0 }, 2400);
+    expect(() => view.setGroundRim({ x: 0, z: 0 }, 0)).toThrow(RangeError);
+    expect(() => view.setGroundRim({ x: Number.NaN, z: 0 }, 2400)).toThrow(
+      RangeError,
+    );
+    expect(view.haze.rim?.outerM).toBe(2400);
   });
 });

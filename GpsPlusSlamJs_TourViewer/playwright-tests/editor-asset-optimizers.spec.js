@@ -118,10 +118,132 @@ test("pictures: WebP of the asked size, smaller, above the quality floor, over s
   // desktop is several times faster, so this is a floor, not the proof.
   for (const source of ["real", "synthetic"]) {
     const chosen = rows.find(
-      (r) => r.source === source && r.side === 1600 && r.quality === 0.75,
+      (r) => r.source === source && r.side === 1600 && r.quality === 0.6,
     );
     expect(chosen?.ms).toBeLessThan(10_000);
   }
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Why this test matters: it is the measurement behind the question
+ * whether flat-colour pictures (cartoons, drawings, many AI-made figures)
+ * need another setting than photos. It sweeps lossy WebP over qualities
+ * and lossless WebP (Chromium writes lossless at quality 1) over three
+ * sides, on the real photo, the generated grainy test picture and two
+ * generated cartoons (flat colours, and the same figure shaded), and holds
+ * the facts the answer rests on, with margin below what was measured:
+ *
+ * - lossless costs several times the bytes of quality 0.9 on every
+ *   source, so it is no general setting;
+ * - the photo setting alone already makes a cartoon a small file, a
+ *   fraction of the photo's, so a flat-colour setting has no bytes to
+ *   save;
+ * - what a higher quality buys on the flat cartoon is cleaner edges and
+ *   text (PSNR up, the near-worst error down), for a few KiB;
+ * - the common-colour share tells the flat cartoon from the photos at
+ *   any threshold over a wide range, but the shaded cartoon sits with
+ *   the photos at full colour depth and moves across with fewer bits:
+ *   the measure is sure only of pictures that really are flat.
+ */
+test("pictures, flat colour against photo: size and error over lossy and lossless, qualities and sides", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  const errors = await openCheck(page);
+  const { rows, shares } = await page.evaluate(async () => {
+    const check = /** @type {any} */ (window).assetOptimizerCheck;
+    const sources = {
+      photo: await check.sample("photo"),
+      synthetic: await check.testPicture(2400, 1800),
+      flat: await check.cartoonPicture(2400, 1800, false),
+      shaded: await check.cartoonPicture(2400, 1800, true),
+    };
+    const rows = [];
+    const shares = /** @type {Record<string, Record<number, number>>} */ ({});
+    for (const [source, original] of Object.entries(sources)) {
+      shares[source] = {};
+      for (const bits of [4, 5, 8]) {
+        shares[source][bits] = await check.colourShare(original, 16, bits);
+      }
+      for (const side of [1024, 1600, 2048]) {
+        for (const quality of [0.4, 0.6, 0.75, 0.9, 1]) {
+          const result = await check.optimizePicture(original, side, quality);
+          const score = await check.comparePicture(original, result.blob);
+          rows.push({
+            source,
+            side,
+            quality,
+            originalKiB: Math.round(original.size / 1024),
+            kib: Math.round(result.blob.size / 1024),
+            bytes: result.blob.size,
+            percent: +((100 * result.blob.size) / original.size).toFixed(1),
+            psnr: Number.isFinite(score.psnr) ? +score.psnr.toFixed(1) : null,
+            nearWorst: score.nearWorst,
+            ssim: +score.ssim.toFixed(4),
+          });
+        }
+      }
+    }
+    return { rows, shares };
+  });
+  console.log(JSON.stringify({ flatColourSweep: rows, colourShares: shares }));
+  /** @param {string} source @param {number} side @param {number} quality */
+  const at = (source, side, quality) => {
+    const row = rows.find(
+      (r) => r.source === source && r.side === side && r.quality === quality,
+    );
+    if (!row) throw new Error(`no row for ${source} ${side} ${quality}`);
+    return row;
+  };
+  const sources = ["photo", "synthetic", "flat", "shaded"];
+  for (const source of sources) {
+    for (const side of [1024, 1600, 2048]) {
+      // Quality 1 is lossless: the same pixels as the scaled original.
+      expect(at(source, side, 1).psnr).toBeNull();
+      // Measured 2.9 (shaded) to 8.9 (synthetic) times at 1600 px.
+      expect(at(source, side, 1).bytes).toBeGreaterThan(
+        2.5 * at(source, side, 0.9).bytes,
+      );
+    }
+  }
+  // The photo setting on the cartoons: measured 15 and 17 KiB against the
+  // photo's 145 KiB.
+  for (const cartoon of ["flat", "shaded"]) {
+    expect(at(cartoon, 1600, 0.6).bytes).toBeLessThan(
+      0.2 * at("photo", 1600, 0.6).bytes,
+    );
+  }
+  // Quality 0.9 on the flat cartoon: measured PSNR 44.2 against 40.8 dB,
+  // near-worst error 28 against 40.
+  expect(at("flat", 1600, 0.9).psnr).toBeGreaterThan(
+    /** @type {number} */ (at("flat", 1600, 0.6).psnr) + 2,
+  );
+  expect(at("flat", 1600, 0.9).nearWorst).toBeLessThan(
+    at("flat", 1600, 0.6).nearWorst,
+  );
+  // The common-colour share (16 colours): measured 0.999 for the flat
+  // cartoon at every depth; at 8 bits 0.05 (photo), 0.03 (synthetic) and
+  // 0.19 (shaded).
+  for (const bits of [4, 5, 8]) {
+    expect(shares.flat[bits]).toBeGreaterThan(0.95);
+  }
+  for (const source of ["photo", "synthetic", "shaded"]) {
+    expect(shares[source][8]).toBeLessThan(0.3);
+  }
+  // The threshold sweep, for the record: which sources read as flat at
+  // each threshold and depth.
+  const sweep = [];
+  for (const threshold of [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]) {
+    for (const bits of [4, 5, 8]) {
+      sweep.push({
+        threshold,
+        bits,
+        flat: sources.filter((s) => shares[s][bits] >= threshold),
+      });
+    }
+  }
+  console.log(JSON.stringify({ thresholdSweep: sweep }));
   expect(errors).toEqual([]);
 });
 
@@ -169,25 +291,49 @@ test("sounds: Ogg Opus of exactly the original's length and timing, over bitrate
     const cases = [];
     for (const rate of [44100, 48000]) {
       for (const seconds of [1, 7.3]) {
-        for (const bps of [16000, 24000, 32000]) {
-          cases.push({ kind: "speech", rate, seconds, bps });
+        // 6 kbps: the lowest step the check page offers (Opus's floor).
+        for (const bps of [6000, 16000, 24000, 32000]) {
+          cases.push({ kind: "speech", rate, seconds, bps, channels: 1 });
         }
       }
     }
     for (const bps of [48000, 64000, 96000]) {
-      cases.push({ kind: "music", rate: 44100, seconds: 7.3, bps });
+      cases.push({
+        kind: "music",
+        rate: 44100,
+        seconds: 7.3,
+        bps,
+        channels: 2,
+      });
     }
+    // Music made mono, a step of the check page.
+    cases.push({
+      kind: "music",
+      rate: 44100,
+      seconds: 7.3,
+      bps: 16000,
+      channels: 1,
+    });
     const out = [];
     for (const c of cases) {
       const source = check.testSound(c.kind, c.seconds, c.rate);
-      const result = await check.optimizeSound(source, c.bps);
+      const result = await check.optimizeSound(source, c.bps, c.channels);
       const head = new Uint8Array(await result.blob.slice(0, 47).arrayBuffer());
       const before = await check.decode(source);
       const after = await check.decode(result.blob);
+      // A sound made mono is compared with the original's own downmix.
+      const reference =
+        after.length === 1 && before.length === 2
+          ? before[0].map(
+              (/** @type {number} */ v, /** @type {number} */ i) =>
+                (v + before[1][i]) / 2,
+            )
+          : before[0];
       const span = Math.min(24_000, before[0].length - 2_000);
-      const lag = check.bestLag(before[0], after[0], 1_000, span, 960);
+      const lag = check.bestLag(reference, after[0], 1_000, span, 960);
       out.push({
         ...c,
+        askedChannels: c.channels,
         originalBytes: source.size,
         bytes: result.blob.size,
         extension: result.extension,
@@ -210,7 +356,7 @@ test("sounds: Ogg Opus of exactly the original's length and timing, over bitrate
   for (const row of rows) {
     expect(row.extension).toBe("opus");
     expect([row.ogg, row.opusHead]).toEqual(["OggS", "OpusHead"]);
-    expect(row.channels).toBe(row.kind === "speech" ? 1 : 2);
+    expect(row.channels).toBe(row.askedChannels);
     // Exact to the sample, as the editor decodes it.
     expect(row.framesAfter).toBe(row.framesBefore);
     // An <audio> element (FFmpeg's Ogg demuxer, as ffprobe shows for an
@@ -486,5 +632,229 @@ test("models: the default level of detail keeps fewer triangles, its box within 
     // model (a desktop is several times faster, so a floor, not the proof).
     expect(row.ms).toBeLessThan(10_000);
   }
+  expect(errors).toEqual([]);
+});
+
+// Why this test matters: on a phone every variant looked the same in small
+// fixed tiles, so the models are compared in one large view with two
+// sliders (geometry, then texture) that change only the model. If a slider
+// moved the camera, or dropped the wireframe look, the jump at the same
+// spot that shows a removed triangle would be gone; the size must be in
+// view with the sliders, since it is what the sliders are traded against.
+// The phone layouts are pinned, and screenshots of both are kept with the
+// run for a person to look at.
+test("models, the large view: the sliders keep the camera, the wireframe stays on, phone layouts", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(600_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const errors = await openCheck(page);
+  await page.getByRole("button", { name: "Utility box" }).click();
+  await expect(page.locator("#status")).toHaveText("Model ready.", {
+    timeout: 540_000,
+  });
+  const read = () =>
+    page.evaluate(() =>
+      /** @type {any} */ (window).assetOptimizerCheck.modelView(),
+    );
+  /** Waits until the variant the sliders name is the one drawn. */
+  const settled = async () => {
+    await expect
+      .poll(async () => (await read()).busy, { timeout: 300_000 })
+      .toBe(false);
+    return read();
+  };
+  const geometry = page.getByLabel("Geometry: triangles kept up close");
+  const texture = page.getByLabel("Texture: largest side");
+  // The caption names the original's texture size; the sliders start on
+  // the default level and the shelf's 1024 px.
+  await expect(page.locator("#model-caption")).toContainText(
+    "textures up to 2048 px",
+  );
+  const first = await read();
+  const defaultStop = first.stops.findIndex(
+    (/** @type {any} */ s) => s.share === null,
+  );
+  expect(first.state.geometry).toBe(defaultStop);
+  await expect(page.locator("#model-geometry-out")).toContainText("(default)");
+  await expect(page.locator("#model-texture-out")).toHaveText(
+    "1024 px (default)",
+  );
+  await expect(page.locator("#model-size-share")).toContainText(
+    "% of the original",
+  );
+
+  // The view at full width (the body's 16 px padding either side); under
+  // it the size, then the geometry slider above the texture slider.
+  const canvas = page.locator("#model-canvas");
+  // In view, so the drag below lands on it.
+  await canvas.scrollIntoViewIfNeeded();
+  const view = /** @type {NonNullable<any>} */ (await canvas.boundingBox());
+  expect(view.width).toBeGreaterThanOrEqual(390 - 32 - 1);
+  expect(view.height).toBeGreaterThanOrEqual(300);
+  const box = async (/** @type {import("@playwright/test").Locator} */ l) =>
+    /** @type {NonNullable<any>} */ (await l.boundingBox());
+  const size = await box(page.locator("#model-size-bytes"));
+  const geometryBox = await box(geometry);
+  const textureBox = await box(texture);
+  expect(size.y).toBeGreaterThanOrEqual(view.y + view.height);
+  expect(geometryBox.y).toBeGreaterThan(size.y);
+  expect(textureBox.y).toBeGreaterThan(geometryBox.y);
+  expect(geometryBox.width).toBeGreaterThanOrEqual(390 - 32 - 1);
+  expect(geometryBox.height).toBeGreaterThanOrEqual(44);
+  await page.screenshot({ path: testInfo.outputPath("models-phone.png") });
+
+  // Orbit by a drag, then move the geometry slider to every triangle: the
+  // camera stays exactly where it is, and the file grows.
+  await page.mouse.move(view.x + view.width / 2, view.y + view.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    view.x + view.width / 2 + 90,
+    view.y + view.height / 2 + 40,
+    { steps: 6 },
+  );
+  await page.mouse.up();
+  const orbited = await read();
+  expect(orbited.position).not.toEqual(first.position);
+
+  // Texture steps down and back up: the GPU holds only the drawn variant,
+  // so its texture count is back where it started, and the fixed SSIM
+  // drawings leave nothing behind. A variant swapped out and shown again
+  // (the first one, here) is uploaded anew and drawn textured. The one
+  // texture a renderer keeps is three's own lookup table for its
+  // physically based materials (DFG), uploaded once per renderer.
+  const drawBase = first.gpu.draw.textures;
+  expect(drawBase).toBeLessThanOrEqual(1);
+  expect(first.gpu.draw.geometries).toBe(0);
+  expect(first.gpu.view.textures).toBeGreaterThan(0);
+  await texture.focus();
+  for (const key of ["ArrowLeft", "ArrowLeft", "ArrowRight", "ArrowRight"]) {
+    await page.keyboard.press(key);
+    await settled();
+  }
+  const back = await read();
+  expect(back.shownKey).toBe(first.shownKey);
+  expect(back.textured).toBeGreaterThan(0);
+  expect(back.gpu.view.textures).toBe(first.gpu.view.textures);
+  expect(back.gpu.draw).toMatchObject({ textures: drawBase, geometries: 0 });
+  expect(back.position).toEqual(orbited.position);
+  await geometry.focus();
+  await page.keyboard.press("End");
+  const full = await settled();
+  expect(full.triangles).toBe(full.stops.at(-1).triangles);
+  expect(full.triangles).toBeGreaterThan(first.triangles);
+  expect(full.bytes).toBeGreaterThan(first.bytes);
+  expect(full.position).toEqual(orbited.position);
+  expect(full.target).toEqual(orbited.target);
+  expect(full.gpu.view.textures).toBe(first.gpu.view.textures);
+
+  // The wireframe look: wire lines on, textures off, and it stays on
+  // through the texture slider and the original.
+  expect(full.wires).toBe(0);
+  await page.getByLabel("Wireframe and flat light").check();
+  const wired = await read();
+  expect(wired.wires).toBeGreaterThan(0);
+  expect(wired.textured).toBe(0);
+  await texture.focus();
+  await page.keyboard.press("Home");
+  const small = await settled();
+  await expect(page.locator("#model-texture-out")).toHaveText("128 px");
+  expect(small.textureSide).toBe(128);
+  expect(small.bytes).toBeLessThan(full.bytes);
+  await page.getByLabel("Show the original").check();
+  const original = await read();
+  expect(original.shownKey).toBe("original");
+  await expect(page.locator("#model-size-share")).toHaveText("the original");
+  for (const now of [small, original]) {
+    expect(now.state.wireframe).toBe(true);
+    expect(now.wires).toBeGreaterThan(0);
+    expect(now.textured).toBe(0);
+    expect(now.position).toEqual(orbited.position);
+  }
+  await expect(page.getByLabel("Wireframe and flat light")).toBeChecked();
+
+  // The 8-bit option is said to be about the vertex positions, not the
+  // textures, so nobody reads it as a texture setting.
+  await expect(
+    page.locator("label", { has: page.locator("#model-positions8") }),
+  ).toContainText("vertex positions");
+
+  // Landscape: the view still fits the screen's height.
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect
+    .poll(async () => (await canvas.boundingBox())?.height ?? 0)
+    .toBeLessThanOrEqual(390 * 0.7 + 1);
+  expect((await canvas.boundingBox())?.width ?? 0).toBeGreaterThanOrEqual(
+    844 - 32 - 1,
+  );
+  await canvas.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("models-landscape.png") });
+
+  // A variant still being made when another model is loaded: it is
+  // dropped without a word, never compared with the new model, and the
+  // new model's controls come back enabled.
+  await page.evaluate(() => {
+    const status = /** @type {HTMLElement} */ (
+      document.getElementById("status")
+    );
+    const said = /** @type {string[]} */ ([]);
+    /** @type {any} */ (window).said = said;
+    new MutationObserver(() => said.push(status.textContent ?? "")).observe(
+      status,
+      { childList: true, characterData: true, subtree: true },
+    );
+    const slider = /** @type {HTMLInputElement} */ (
+      document.getElementById("model-texture")
+    );
+    slider.value = "1";
+    slider.dispatchEvent(new Event("change"));
+    /** @type {HTMLElement} */ (document.getElementById("model-rock")).click();
+  });
+  await expect(page.locator("#status")).toHaveText("Model ready.", {
+    timeout: 540_000,
+  });
+  const rock = await settled();
+  expect(rock.shownKey).toBe(rock.askedKey);
+  await expect(geometry).toBeEnabled();
+  await expect(page.getByLabel("Show the original")).toBeEnabled();
+  const said = await page.evaluate(() => /** @type {any} */ (window).said);
+  expect(
+    said.filter((/** @type {string} */ t) => t.startsWith("Failed")),
+  ).toEqual([]);
+  expect(rock.gpu.draw).toMatchObject({ textures: drawBase, geometries: 0 });
+  expect(errors).toEqual([]);
+});
+
+// Why this test matters: the WebP option writes the textures through
+// EXT_texture_webp; a file the tour's check refused, or one drawn wrong, or
+// no smaller than the JPEG default, would make the option a trap rather
+// than a saving. The box carries 2048 px textures, so the 1024 px limit
+// applies to both.
+test("models: WebP textures on the box: the tour accepts it, 1024 px, drawn as before, fewer bytes than JPEG", async ({
+  page,
+}) => {
+  test.setTimeout(600_000);
+  const errors = await openCheck(page);
+  const { jpeg, webp } = await page.evaluate(async () => {
+    const check = /** @type {any} */ (window).assetOptimizerCheck;
+    const source = await check.sampleModel("box");
+    const row = async (/** @type {object} */ model) => {
+      const result = await check.compareModel(source, model);
+      return {
+        bytes: result.blob.size,
+        after: result.after,
+        ssim: result.ssim,
+      };
+    };
+    return {
+      jpeg: await row({}),
+      webp: await row({ textureType: "image/webp" }),
+    };
+  });
+  console.log(JSON.stringify({ webpBox: { jpeg, webp } }));
+  expect(webp.after.inert).toBe(true);
+  expect(webp.after.textureSide).toBe(1024);
+  expect(webp.ssim).toBeGreaterThanOrEqual(MODEL_SSIM_FLOOR);
+  expect(webp.bytes).toBeLessThan(jpeg.bytes);
   expect(errors).toEqual([]);
 });

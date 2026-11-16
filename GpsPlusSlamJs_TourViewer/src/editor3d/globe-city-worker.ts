@@ -2,7 +2,8 @@
  * The globe editor's city worker: the Globe package's worker core
  * (`gps-plus-slam-globe/city-worker`) wired to the Osm library and to the
  * browser's tile store. All logic lives in the core; this file only hands it
- * the library, the store and the worker's `postMessage`.
+ * the library, the store, the project's tile host and the worker's
+ * `postMessage`.
  *
  * Vite bundles this module when it is referenced as
  * `new Worker(new URL("./globe-city-worker.ts", import.meta.url), { type: "module" })`
@@ -15,6 +16,7 @@ import { openPersistentOsmStore } from "gps-plus-slam-app-framework/osm-bridge";
 import { createCityWorkerCore } from "gps-plus-slam-globe/city-worker";
 import {
   MemoryBlobStore,
+  OSM_TILES_BASE_URL,
   TERRAIN_EXTENT_M,
   TERRARIUM_URL_TEMPLATE,
   browserPngDecoder,
@@ -53,6 +55,11 @@ const core = createCityWorkerCore({
     buildCity,
   },
   userAgent: CITY_WORKER_USER_AGENT,
+  // The project's tile host first (the library's `StaticTileSource`), as
+  // OsmDemo does: a 404 asks for a fill, waited for up to 60 s when nothing
+  // is queued ahead; a refusal or an error hands the tile to the Overpass
+  // race at once. Always on: the sidecar says why there is no switch.
+  staticTilesBaseUrl: OSM_TILES_BASE_URL,
 });
 
 ctx.onmessage = (event): void => {

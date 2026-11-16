@@ -55,6 +55,14 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   ONE rebuild or re-bake (a preset change); validates everything before
   changing anything. `setSun`, `setVisibilityKm` and `setClouds` delegate
   to it.
+- `setHorizonVeil(colour | null, riseDeg = 0)` and `horizonVeil`: mix the
+  VISIBLE sky toward a scene-linear colour near the horizon, fully at and
+  below it and falling off over `riseDeg` degrees above it
+  (`horizon-veil.ts`), so a haze veil on the ground meets a sky of its own
+  colour at the horizon. The environment bake never gets it (its own
+  uniforms stay off), so the scene's image-based light is unchanged.
+  `null` or a rise of 0 switches it off. Validated before any change
+  (channels finite and ≥ 0, rise in 0..90; `RangeError`). Uniforms only.
 - `setExposureCompensation(ev)` — EV on top of the auto-exposure; no GPU work.
 - `autoExposureAdaptation` (getter) and `setAutoExposureAdaptation(a)` — the
   auto-exposure's adaptation (default 0.75), recomputed at the last
