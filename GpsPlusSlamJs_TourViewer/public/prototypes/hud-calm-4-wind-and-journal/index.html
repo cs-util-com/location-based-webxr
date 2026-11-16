@@ -1,0 +1,3970 @@
+<!doctype html>
+<!-- Prototype: calm HUD round 2, direction 4 "Call the wind, keep a journal". Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <title>Wind and Journal</title>
+    <style>
+      :root {
+        --ink: #f3f5f7;
+        --muted: #b3bcc6;
+        --plate: rgb(10 13 18 / 78%);
+        --line: rgb(255 255 255 / 16%);
+        --beam: #fb923c;
+        --paper: #f7f1e3;
+        --paper-ink: #2a241c;
+        --paper-muted: #6b5f4e;
+        --tap: 48px;
+        --font:
+          corbel, "Noto Sans", system-ui, -apple-system, "Segoe UI", roboto,
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #101318;
+        color: var(--ink);
+        font: 15px/1.4 var(--font);
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      button {
+        font: inherit;
+        color: inherit;
+        cursor: pointer;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      .dev {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      #gl {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+        cursor: grab;
+        outline: 0;
+      }
+
+      #gl:active {
+        cursor: grabbing;
+      }
+
+      /* the fake camera feed: a lens vignette over the 3D square */
+      .feed {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+          ellipse at 50% 45%,
+          transparent 60%,
+          rgb(0 0 0 / 26%) 100%
+        );
+      }
+
+      /* ================= the HUD: Exit and the journal at the top left; the radar (stations only) at the
+   top right; the story chip, the transport and the wind in one row at the bottom ================= */
+      .exit,
+      .journal-btn {
+        position: absolute;
+        z-index: 30;
+        top: calc(14px + env(safe-area-inset-top));
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+      }
+
+      .exit {
+        left: calc(14px + env(safe-area-inset-left));
+        border: 2px solid rgb(255 255 255 / 72%);
+        background: rgb(10 13 18 / 70%);
+      }
+
+      .exit svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .journal-btn {
+        left: calc(66px + env(safe-area-inset-left));
+        border: 0;
+        background: var(--plate);
+        box-shadow: 0 4px 14px rgb(0 0 0 / 28%);
+        animation: fade-in 0.4s ease;
+      }
+
+      .journal-btn svg {
+        width: 24px;
+        height: 24px;
+      }
+
+      /* once, when a station's page is written on leaving it: a single small lift, never a badge */
+      .journal-btn.wrote {
+        animation: wrote 1s ease;
+      }
+
+      @keyframes wrote {
+        0%,
+        100% {
+          transform: none;
+          background: var(--plate);
+        }
+        35% {
+          transform: translateY(-4px) scale(1.12);
+          background: rgb(247 241 227 / 92%);
+          color: #1d232b;
+        }
+      }
+
+      .radar {
+        position: absolute;
+        z-index: 26;
+        top: calc(64px + env(safe-area-inset-top));
+        right: calc(14px + env(safe-area-inset-right));
+        width: 112px;
+        height: 112px;
+        border-radius: 50%;
+        pointer-events: none;
+      }
+
+      .wind {
+        position: absolute;
+        z-index: 27;
+        right: calc(16px + env(safe-area-inset-right));
+        bottom: calc(22px + env(safe-area-inset-bottom));
+        width: var(--tap);
+        height: var(--tap);
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: var(--plate);
+        box-shadow: 0 4px 14px rgb(0 0 0 / 28%);
+        display: grid;
+        place-items: center;
+        animation: fade-in 0.4s ease;
+      }
+
+      .wind svg {
+        width: 30px;
+        height: 30px;
+      }
+
+      .wind[aria-pressed="true"] {
+        background: rgb(255 246 220 / 94%);
+        color: #6b4511;
+      }
+
+      .transport {
+        position: absolute;
+        z-index: 27;
+        left: 50%;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        width: 56px;
+        height: 56px;
+        margin-left: -28px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: conic-gradient(
+          #fff calc(var(--p, 0) * 1turn),
+          rgb(255 255 255 / 22%) 0
+        );
+        display: grid;
+        place-items: center;
+        box-shadow: 0 4px 14px rgb(0 0 0 / 30%);
+        animation: fade-in 0.3s ease;
+      }
+
+      .transport::before {
+        content: "";
+        position: absolute;
+        inset: 4px;
+        border-radius: 50%;
+        background: rgb(10 13 18 / 88%);
+      }
+
+      .transport svg {
+        position: relative;
+        width: 24px;
+        height: 24px;
+      }
+
+      .chip {
+        position: absolute;
+        z-index: 27;
+        left: calc(14px + env(safe-area-inset-left));
+        bottom: calc(22px + env(safe-area-inset-bottom));
+        max-width: calc(50% - 46px);
+        min-height: var(--tap);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 4px 5px 6px;
+        border-radius: 24px;
+        background: var(--plate);
+        box-shadow: 0 4px 14px rgb(0 0 0 / 28%);
+        animation: fade-in 0.4s ease;
+      }
+
+      .chip .face {
+        flex: none;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 3px solid #fff;
+      }
+
+      .chip .title {
+        flex: 1;
+        min-width: 0;
+        font-size: 13.5px;
+        font-weight: 700;
+        line-height: 1.2;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      .chip .leave {
+        flex: none;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: rgb(255 255 255 / 10%);
+        font-size: 22px;
+        line-height: 1;
+      }
+
+      .journal-open [data-hud] {
+        visibility: hidden;
+      }
+
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+        }
+      }
+
+      /* ================= the journal: an off-AR page over the paused view ================= */
+      .paused {
+        position: absolute;
+        z-index: 48;
+        inset: 0;
+        background: rgb(14 16 20 / 82%);
+        display: grid;
+        place-items: center;
+        animation: fade-in 0.25s ease;
+      }
+
+      .journal {
+        position: relative;
+        width: calc(100% - 24px);
+        max-width: 560px;
+        max-height: calc(
+          100% - 28px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+        );
+        display: flex;
+        flex-direction: column;
+        border-radius: 18px;
+        background: var(--paper);
+        color: var(--paper-ink);
+        box-shadow: 0 18px 50px rgb(0 0 0 / 45%);
+        overflow: hidden;
+        user-select: text;
+      }
+
+      .journal header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 10px 4px 18px;
+      }
+
+      .journal header h2 {
+        flex: 1;
+        margin: 0;
+        font:
+          700 21px/1.2 Georgia,
+          serif;
+      }
+
+      .journal .pause-note {
+        font-size: 12.5px;
+        color: var(--paper-muted);
+      }
+
+      .journal .jclose {
+        flex: none;
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: rgb(42 36 28 / 8%);
+        font-size: 24px;
+        line-height: 1;
+        color: var(--paper-ink);
+      }
+
+      .jtabs {
+        display: flex;
+        gap: 6px;
+        padding: 6px 16px 8px;
+        overflow-x: auto;
+      }
+
+      .jtabs button {
+        min-height: 40px;
+        padding: 6px 14px;
+        border: 2px solid rgb(42 36 28 / 22%);
+        border-radius: 20px;
+        background: transparent;
+        color: var(--paper-ink);
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .jtabs button[aria-selected="true"] {
+        border-color: var(--paper-ink);
+        background: var(--paper-ink);
+        color: var(--paper);
+      }
+
+      .jtabs .star {
+        margin-left: 6px;
+        color: #d8681c;
+      }
+
+      .jtabs button[aria-selected="true"] .star {
+        color: #ffb37a;
+      }
+
+      .jpage {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 4px 18px 10px;
+      }
+
+      .jpage h3 {
+        margin: 4px 0 0;
+        font:
+          700 19px/1.25 Georgia,
+          serif;
+      }
+
+      .jpage .when {
+        font-size: 13px;
+        color: var(--paper-muted);
+      }
+
+      .more,
+      .all-seen {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 12px 0 4px;
+        padding: 10px 12px;
+        border-radius: 12px;
+        font-weight: 700;
+      }
+
+      .more {
+        background: rgb(216 104 28 / 12%);
+        color: #8a3d0c;
+      }
+
+      .mstar {
+        font-size: 30px;
+        line-height: 1;
+        color: #d8681c;
+      }
+
+      .all-seen {
+        background: rgb(42 36 28 / 6%);
+        color: var(--paper-muted);
+      }
+
+      .all-seen svg {
+        flex: none;
+        width: 26px;
+        height: 26px;
+      }
+
+      .more small,
+      .all-seen small {
+        display: block;
+        font-weight: 500;
+        font-size: 13px;
+        color: var(--paper-muted);
+      }
+
+      .jpage h4 {
+        margin: 14px 0 6px;
+        font-size: 11.5px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--paper-muted);
+      }
+
+      .jlist {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 8px;
+      }
+
+      .jlist li {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .jlist .thumb {
+        flex: none;
+        width: 46px;
+        height: 46px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+      }
+
+      .thumb svg {
+        width: 30px;
+        height: 30px;
+      }
+
+      .jlist .face {
+        flex: none;
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: 3px solid var(--paper);
+        box-shadow: 0 0 0 2px rgb(42 36 28 / 25%);
+      }
+
+      .jlist b {
+        display: block;
+        font-size: 15px;
+        line-height: 1.25;
+      }
+
+      .jlist span {
+        display: block;
+        font-size: 13px;
+        line-height: 1.3;
+        color: var(--paper-muted);
+      }
+
+      .jempty {
+        margin: 8px 0;
+        color: var(--paper-muted);
+      }
+
+      .jback {
+        margin: 4px 16px calc(14px + env(safe-area-inset-bottom));
+        min-height: 48px;
+        border: 0;
+        border-radius: 24px;
+        background: var(--paper-ink);
+        color: var(--paper);
+        font-weight: 700;
+      }
+
+      /* the measuring hook: any two HUD boxes that overlap get a red outline (only while measuring) */
+      .measuring .ovl {
+        outline: 3px solid #ff2d2d;
+        outline-offset: 0;
+      }
+
+      /* ================= demo chrome: dashed, not part of the design, not measured ================= */
+      .chrome {
+        position: absolute;
+        z-index: 40;
+        top: calc(12px + env(safe-area-inset-top));
+        right: calc(10px + env(safe-area-inset-right));
+        max-width: calc(
+          100% - 132px - env(safe-area-inset-left) - env(safe-area-inset-right)
+        );
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 3px;
+        border: 1.5px dashed rgb(255 255 255 / 55%);
+        border-radius: 22px;
+        background: rgb(0 0 0 / 50%);
+      }
+
+      .chrome button {
+        height: 36px;
+        min-width: 34px;
+        padding: 0 7px;
+        border: 0;
+        border-radius: 18px;
+        background: transparent;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .chrome button:active,
+      .chrome button[aria-pressed="true"] {
+        background: rgb(255 255 255 / 20%);
+      }
+
+      .chrome .beat-name {
+        min-width: 0;
+        flex: 0 1 auto;
+        max-width: 34vw;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 650;
+      }
+
+      .chrome .info-btn {
+        font:
+          italic 700 16px/1 Georgia,
+          serif;
+      }
+
+      .chrome svg {
+        width: 18px;
+        height: 18px;
+        vertical-align: middle;
+      }
+
+      .readout {
+        position: absolute;
+        z-index: 40;
+        left: 50%;
+        bottom: calc(92px + env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        padding: 4px 9px;
+        border: 1.5px dashed rgb(255 255 255 / 45%);
+        border-radius: 10px;
+        background: rgb(0 0 0 / 60%);
+        font:
+          11px/1.35 ui-monospace,
+          consolas,
+          monospace;
+        color: #fff;
+        font-variant-numeric: tabular-nums;
+        pointer-events: none;
+        white-space: pre;
+      }
+
+      .try {
+        position: absolute;
+        z-index: 40;
+        left: 50%;
+        top: 38%;
+        transform: translateX(-50%);
+        width: 320px;
+        max-width: calc(100% - 48px);
+        padding: 9px 13px;
+        border: 1.5px dashed rgb(255 255 255 / 45%);
+        border-radius: 14px;
+        background: rgb(0 0 0 / 58%);
+        font-size: 13.5px;
+        line-height: 1.4;
+        color: #fff;
+        text-align: center;
+        transition: opacity 0.8s;
+        pointer-events: none;
+      }
+
+      .try.gone {
+        opacity: 0;
+      }
+
+      .rip {
+        position: absolute;
+        z-index: 49;
+        width: 46px;
+        height: 46px;
+        margin: -23px 0 0 -23px;
+        border-radius: 50%;
+        border: 3px solid #fff;
+        box-shadow: 0 0 0 2px rgb(0 0 0 / 35%);
+        pointer-events: none;
+        animation: rip 0.7s ease-out forwards;
+      }
+
+      @keyframes rip {
+        from {
+          transform: scale(0.5);
+          opacity: 1;
+        }
+        to {
+          transform: scale(1.5);
+          opacity: 0;
+        }
+      }
+
+      .info {
+        position: absolute;
+        z-index: 50;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 430px;
+        overflow: auto;
+        padding: 14px 16px calc(20px + env(safe-area-inset-bottom));
+        background: rgb(14 18 23 / 97%);
+        border-left: 1px solid var(--line);
+        font-size: 14px;
+        line-height: 1.45;
+        user-select: text;
+      }
+
+      .info h1 {
+        margin: 0 0 4px;
+        font-size: 19px;
+      }
+
+      .info h3 {
+        margin: 14px 0 4px;
+        font-size: 11.5px;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .info p,
+      .info li {
+        color: #dfe4ea;
+      }
+
+      .info ol,
+      .info ul {
+        margin: 4px 0;
+        padding-left: 20px;
+      }
+
+      .info .close {
+        position: sticky;
+        top: 0;
+        float: right;
+        width: 44px;
+        height: 44px;
+        border: 0;
+        border-radius: 50%;
+        background: rgb(255 255 255 / 10%);
+        font-size: 22px;
+      }
+
+      .info .knob {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 5px;
+        margin: 6px 0;
+      }
+
+      .info .knob span {
+        min-width: 112px;
+        font-weight: 600;
+        color: #fff;
+      }
+
+      .info .knob button,
+      .info .beats button {
+        min-height: 36px;
+        padding: 4px 10px;
+        border: 1px solid rgb(255 255 255 / 30%);
+        border-radius: 10px;
+        background: rgb(255 255 255 / 6%);
+        font-size: 13px;
+      }
+
+      .info .knob button[aria-pressed="true"] {
+        border-color: #fff;
+        background: rgb(255 255 255 / 18%);
+      }
+
+      .info .beats {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+      }
+
+      .info table {
+        width: 100%;
+        border-collapse: collapse;
+        font:
+          12px/1.4 ui-monospace,
+          consolas,
+          monospace;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .info td,
+      .info th {
+        padding: 3px 4px;
+        border-bottom: 1px solid var(--line);
+        text-align: right;
+      }
+
+      .info td:first-child,
+      .info th:first-child {
+        text-align: left;
+      }
+
+      .exited {
+        position: absolute;
+        z-index: 60;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        align-content: center;
+        gap: 14px;
+        background: #0d1015;
+        text-align: center;
+        font-size: 16px;
+      }
+
+      .exited .back {
+        min-height: 44px;
+        padding: 8px 18px;
+        border: 0;
+        border-radius: 22px;
+        background: #fff;
+        color: #1d232b;
+        font-weight: 700;
+      }
+
+      @media (orientation: landscape) and (height <= 520px) {
+        .radar {
+          top: calc(60px + env(safe-area-inset-top));
+          width: 100px;
+          height: 100px;
+        }
+        .wind {
+          bottom: calc(14px + env(safe-area-inset-bottom));
+        }
+        .transport {
+          bottom: calc(10px + env(safe-area-inset-bottom));
+        }
+        .chip {
+          bottom: calc(14px + env(safe-area-inset-bottom));
+          max-width: 300px;
+        }
+        .try {
+          top: 30%;
+        }
+        .journal {
+          max-width: 640px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation: none !important;
+          transition: none !important;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="dev" id="dev">
+      <canvas
+        id="gl"
+        tabindex="0"
+        aria-label="The square, standing in for the camera view"
+      ></canvas>
+      <div class="feed" aria-hidden="true"></div>
+
+      <!-- the HUD (everything with data-hud is measured) -->
+      <button
+        type="button"
+        class="exit"
+        id="exit"
+        data-hud
+        aria-label="Exit AR"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#fff"
+          stroke-width="3"
+          stroke-linecap="round"
+        >
+          <path d="M6 6l12 12M18 6L6 18" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        class="journal-btn"
+        id="journal-btn"
+        data-hud
+        hidden
+        aria-label="Open the journal"
+      >
+        <svg viewBox="0 0 24 24">
+          <path
+            d="M4 4.5A1.5 1.5 0 0 1 5.5 3H11a1 1 0 0 1 1 1v16.5c-1-.9-2.3-1.3-3.6-1.3H5.5A1.5 1.5 0 0 1 4 17.7z"
+            fill="currentColor"
+          />
+          <path
+            d="M20 4.5A1.5 1.5 0 0 0 18.5 3H13a1 1 0 0 0-1 1v16.5c1-.9 2.3-1.3 3.6-1.3h2.9a1.5 1.5 0 0 0 1.5-1.5z"
+            fill="currentColor"
+            opacity=".62"
+          />
+        </svg>
+      </button>
+      <canvas
+        class="radar"
+        id="radar"
+        data-hud
+        width="224"
+        height="224"
+      ></canvas>
+      <div class="chip" id="chip" data-hud hidden>
+        <span class="face"></span><span class="title"></span
+        ><button type="button" class="leave" aria-label="Leave this story">
+          &times;
+        </button>
+      </div>
+      <button
+        type="button"
+        class="transport"
+        id="transport"
+        data-hud
+        hidden
+        aria-label="Pause"
+      ></button>
+      <button
+        type="button"
+        class="wind"
+        id="wind"
+        data-hud
+        hidden
+        aria-pressed="false"
+        aria-label="Call the wind towards something you have not seen yet"
+      >
+        <svg
+          viewBox="0 0 32 32"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.8"
+          stroke-linecap="round"
+        >
+          <path d="M4 12h14.5a3.5 3.5 0 1 0-3.5-3.5" />
+          <path d="M4 18h19a3.5 3.5 0 1 1-3.5 3.5" />
+          <path d="M4 24h8" />
+        </svg>
+      </button>
+
+      <!-- demo chrome -->
+      <div class="chrome" id="chrome">
+        <button type="button" id="prev" aria-label="Previous beat">
+          &#9664;
+        </button>
+        <button
+          type="button"
+          class="beat-name"
+          id="beat-name"
+          aria-label="Replay this beat"
+        >
+          1/10 Outside
+        </button>
+        <button type="button" id="next" aria-label="Next beat">&#9654;</button>
+        <button
+          type="button"
+          class="info-btn"
+          id="info-btn"
+          aria-label="About this page and its settings"
+        >
+          i
+        </button>
+        <button
+          type="button"
+          id="measure-btn"
+          aria-pressed="false"
+          aria-label="Show the measuring numbers"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#fff"
+            stroke-width="2.4"
+            stroke-linecap="round"
+          >
+            <rect x="2.5" y="8" width="19" height="8" rx="1.5" />
+            <path d="M7 8v3M11 8v4M15 8v3M19 8v4" />
+          </svg>
+        </button>
+      </div>
+      <div class="readout" id="readout" hidden></div>
+      <p class="try" id="try">
+        Drag sideways to look, up and down to walk (WASD on a keyboard). Tap
+        people and things. Inside a station, the wind button shows the way to
+        something you have not seen. Or press &#9654; for the next beat.
+      </p>
+
+      <!-- the journal, over the paused view -->
+      <div class="paused" id="paused" hidden>
+        <section
+          class="journal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="jtitle"
+        >
+          <header>
+            <h2 id="jtitle">Journal</h2>
+            <span class="pause-note">The view is paused</span
+            ><button
+              type="button"
+              class="jclose"
+              id="jclose"
+              aria-label="Close the journal"
+            >
+              &times;
+            </button>
+          </header>
+          <nav
+            class="jtabs"
+            id="jtabs"
+            role="tablist"
+            aria-label="Stations"
+          ></nav>
+          <div class="jpage" id="jpage" role="tabpanel"></div>
+          <button type="button" class="jback" id="jback">
+            Back to the view
+          </button>
+        </section>
+      </div>
+
+      <aside class="info" id="info" hidden></aside>
+      <div class="exited" id="exited" hidden>
+        <p>You left AR.</p>
+        <button type="button" class="back" id="back-in">Back into AR</button>
+      </div>
+    </main>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      /* ---------------- tune here ---------------- */
+      const EYE = 1.6;
+      const PITCH = -0.05;
+      const LOOK_GAIN = 0.0048; // radians per CSS pixel
+      const DRAG_WALK = 0.035; // metres per CSS pixel of vertical drag
+      const TAP_PX = 10,
+        TAP_MS = 420;
+      const WORDS_PER_S = 2.7; // how fast a person's words appear in the bubble
+      const HOLD_FAR_M = 14; // a person stops mid-sentence once you are this far away...
+      const RESUME_M = 10; // ...and goes on once you are back this close
+      const SEEN_LOOK_S = 1.5; // a sign or a picture is seen after this long in view, near enough to read
+      const RADAR_RANGE_M = 120; // the radar's rim, on a square-root scale
+      const COL = {
+        beam: "#fb923c",
+        ink: "#1d232b",
+        paper: "#fffdf8",
+        gold: "#ffc24a",
+        play: "#7dd3fc",
+        seen: "#8b939c",
+      };
+
+      /*
+       * The drift: three looks to try. Each is tuned on its own; the numbers are the point of the page.
+       *  dur    seconds from the tap until the last mote is gone (the whole drift, never repeated unasked)
+       *  speed  metres per second along the path
+       *  reach  the drift ends this far out at most, so a far item gets a direction, never its spot
+       *  n      motes or leaves
+       *  spread how wide the start is, sideways, in metres (the trail starts narrow, so it reads as one stream)
+       */
+      const DRIFT_LOOKS = {
+        motes: {
+          label: "light motes",
+          n: 64,
+          dur: 3.0,
+          speed: 2.4,
+          reach: 9,
+          spread: 1.7,
+          depth: [1.8, 3.8],
+          size: 0.07,
+          core: "#fff4cf",
+          rim: "#d08a2a",
+        },
+        leaves: {
+          label: "leaves",
+          n: 26,
+          dur: 3.2,
+          speed: 2.0,
+          reach: 8,
+          spread: 1.6,
+          depth: [1.8, 3.4],
+          size: 1,
+        },
+        trail: {
+          label: "a trail",
+          n: 52,
+          dur: 2.4,
+          speed: 3.2,
+          reach: 11,
+          spread: 0.35,
+          depth: [1.6, 2.1],
+          size: 0.06,
+          core: "#fffbe8",
+          rim: "#d8942e",
+        },
+      };
+      const qs = new URLSearchParams(location.search);
+      const KN = {
+        beam: "round",
+        voice: true,
+        drift: DRIFT_LOOKS[qs.get("drift")] ? qs.get("drift") : "motes",
+      };
+
+      const STATIONS = {
+        A: { id: "A", name: "The Well", c: [0, -2], rIn: 18, rOut: 20 },
+        B: { id: "B", name: "The Old Gate", c: [24, -80], rIn: 16, rOut: 18 },
+      };
+
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const damp = (dt, tau) => 1 - Math.exp(-dt / tau);
+      const smooth = (a, b, x) => {
+        const t = clamp((x - a) / (b - a), 0, 1);
+        return t * t * (3 - 2 * t);
+      };
+      const angDiff = (a, b) => {
+        let d = (b - a) % (Math.PI * 2);
+        if (d > Math.PI) {
+          d -= Math.PI * 2;
+        }
+        if (d < -Math.PI) {
+          d += Math.PI * 2;
+        }
+        return d;
+      };
+      const faceTo = (p, q) => Math.atan2(q[0] - p[0], q[1] - p[1]); // yaw that turns local +Z towards q
+      const $ = (s) => document.querySelector(s);
+      let seed = 7;
+      const rnd = () =>
+        (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296;
+
+      /* ---------------- renderer, camera, the square ---------------- */
+      const canvas = $("#gl");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.Fog("#dfe6ea", 80, 260);
+      const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 600);
+      camera.rotation.order = "YXZ";
+
+      // a plain environment only: sky light, one sun, no shadows
+      scene.add(new THREE.HemisphereLight(0xffffff, 0xb9ae98, 1.8));
+      const sun = new THREE.DirectionalLight(0xfff2e0, 1.3);
+      sun.position.set(30, 60, 20);
+      scene.add(sun);
+
+      (function sky() {
+        const g = new THREE.SphereGeometry(400, 24, 12);
+        const c = new Float32Array(g.attributes.position.count * 3);
+        const top = new THREE.Color("#86b6df"),
+          mid = new THREE.Color("#dbe7ef"),
+          low = new THREE.Color("#efe8da"),
+          o = new THREE.Color();
+        for (let i = 0; i < g.attributes.position.count; i++) {
+          const h = g.attributes.position.getY(i) / 400;
+          if (h >= 0) {
+            o.lerpColors(mid, top, Math.min(1, h / 0.5));
+          } else {
+            o.lerpColors(mid, low, Math.min(1, -h / 0.1));
+          }
+          c.set([o.r, o.g, o.b], i * 3);
+        }
+        g.setAttribute("color", new THREE.BufferAttribute(c, 3));
+        const m = new THREE.Mesh(
+          g,
+          new THREE.MeshBasicMaterial({
+            vertexColors: true,
+            side: THREE.BackSide,
+            fog: false,
+            depthWrite: false,
+          }),
+        );
+        m.renderOrder = -10;
+        scene.add(m);
+      })();
+
+      (function ground() {
+        const S = 512,
+          cv = document.createElement("canvas");
+        cv.width = cv.height = S;
+        const g = cv.getContext("2d");
+        let s = 11;
+        const r = () =>
+          (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+        g.fillStyle = "#b9b09e";
+        g.fillRect(0, 0, S, S);
+        const n = 12,
+          k = S / n;
+        for (let x = 0; x < n; x++) {
+          for (let z = 0; z < n; z++) {
+            const v = 196 + r() * 22;
+            g.fillStyle = `rgb(${v} ${v - 7} ${v - 20})`;
+            g.fillRect(x * k + 1.5, z * k + 1.5, k - 3, k - 3);
+          }
+        }
+        const t = new THREE.CanvasTexture(cv);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(40, 40);
+        t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        const m = new THREE.Mesh(
+          new THREE.PlaneGeometry(340, 340).rotateX(-Math.PI / 2),
+          new THREE.MeshLambertMaterial({ map: t }),
+        );
+        m.position.z = -30;
+        scene.add(m);
+      })();
+
+      const mats = new Map();
+      const mat = (c) => {
+        if (!mats.has(c)) {
+          mats.set(c, new THREE.MeshLambertMaterial({ color: c }));
+        }
+        return mats.get(c);
+      };
+      const box = (w, h, d, c, x, y, z, ry = 0, parent = scene) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
+        m.position.set(x, y, z);
+        m.rotation.y = ry;
+        parent.add(m);
+        return m;
+      };
+      const cyl = (r0, r1, h, c, x, y, z, n = 16, parent = scene) => {
+        const m = new THREE.Mesh(
+          new THREE.CylinderGeometry(r0, r1, h, n),
+          mat(c),
+        );
+        m.position.set(x, y, z);
+        parent.add(m);
+        return m;
+      };
+
+      (function town() {
+        const colors = [
+          "#e7dcc8",
+          "#d9e2e6",
+          "#efd9c6",
+          "#e6e2d2",
+          "#dcc9b6",
+          "#f0e8d8",
+          "#e3d3c8",
+          "#d6cbb8",
+        ];
+        let i = 0;
+        const house = (x, z, w, d, h, ry) => {
+          const c = colors[i++ % colors.length];
+          box(w, h, d, c, x, h / 2, z, ry);
+          box(w + 0.4, 0.5, d + 0.4, "#8a6d5a", x, h + 0.25, z, ry);
+          const fx = Math.sin(ry),
+            fz = Math.cos(ry);
+          for (let fl = 0; fl < Math.floor(h / 3.2); fl++) {
+            for (let k = -1; k <= 1; k++) {
+              const off = k * (w / 3.2),
+                ox = Math.cos(ry) * off,
+                oz = -Math.sin(ry) * off,
+                door = fl === 0 && k === 0;
+              box(
+                1.0,
+                1.4,
+                0.1,
+                door ? "#5a3d2c" : "#5d6d7e",
+                x + ox + fx * (d / 2 + 0.03),
+                door ? 1.2 : 2 + fl * 3.2,
+                z + oz + fz * (d / 2 + 0.03),
+                ry,
+              );
+            }
+          }
+        };
+        // the square of the well
+        for (let x = -40; x <= 40; x += 13) {
+          house(x, 48, 12, 8, 8 + ((x * 7) & 7), Math.PI);
+        }
+        for (const x of [-40, -27, -14]) {
+          house(x, -50, 12, 8, 9 + ((x * 5) & 7), 0);
+        }
+        house(44, -50, 10, 8, 10, 0);
+        for (let z = -38; z <= 40; z += 13) {
+          house(-48, z, 12, 8, 8 + ((z * 3) & 7), Math.PI / 2);
+          house(50, z, 12, 8, 9 + ((z * 11) & 5), -Math.PI / 2);
+        }
+        // the road to the gate and its houses
+        for (const z of [-64, -77, -90]) {
+          house(2, z, 11, 8, 8 + ((z * 3) & 5), Math.PI / 2);
+          house(48, z, 11, 8, 9 + ((z * 7) & 5), -Math.PI / 2);
+        }
+        // trees
+        for (const [x, z, s] of [
+          [-22, -24, 1],
+          [18, 22, 1.2],
+          [-26, 24, 1.1],
+          [34, -30, 1],
+          [-34, -8, 0.9],
+          [8, -60, 1],
+          [40, -62, 1.1],
+        ]) {
+          cyl(0.18 * s, 0.28 * s, 3 * s, "#7d6650", x, 1.5 * s, z, 8);
+          const crown = new THREE.Mesh(
+            new THREE.IcosahedronGeometry(2.2 * s, 1),
+            mat("#6f9e62"),
+          );
+          crown.position.set(x, 4 * s, z);
+          scene.add(crown);
+        }
+        // far skyline
+        for (let k = 0; k < 14; k++) {
+          const a = (k / 14) * Math.PI * 2;
+          box(
+            18,
+            10 + ((k * 5) % 12),
+            14,
+            "#b8c0c6",
+            Math.cos(a) * 140,
+            6,
+            -30 + Math.sin(a) * 140,
+            a,
+          );
+        }
+        // the well, the first station's middle
+        cyl(1.2, 1.3, 0.8, "#b9b2a4", 2, 0.4, -6.5, 20);
+        cyl(1.0, 1.0, 0.05, "#3e5866", 2, 0.82, -6.5, 20);
+        box(0.14, 2.2, 0.14, "#5a3d2c", 0.9, 1.1, -6.5);
+        box(0.14, 2.2, 0.14, "#5a3d2c", 3.1, 1.1, -6.5);
+        box(2.5, 0.14, 0.14, "#5a3d2c", 2, 2.2, -6.5);
+        // the south steps, the baker's corner, the lamp post
+        box(9, 0.18, 1.2, "#c9c0ae", 1.5, 0.09, 12.2);
+        box(9, 0.36, 0.6, "#c9c0ae", 1.5, 0.18, 12.9);
+        box(3.2, 2.6, 2.2, "#d9b98f", 16, 1.3, 6.2);
+        box(3.8, 0.12, 1.4, "#b8433a", 16, 2.7, 4.9);
+        cyl(0.07, 0.09, 3.6, "#2d3136", 13.5, 1.8, -12, 8);
+        box(0.5, 0.4, 0.5, "#f1e6c6", 13.5, 3.75, -12);
+        // the old gate: two towers, an arch, walls
+        const G = -92;
+        box(3.2, 10, 3.2, "#a99a84", 18, 5, G);
+        box(3.2, 10, 3.2, "#a99a84", 30, 5, G);
+        box(9, 2, 2.4, "#a99a84", 24, 8.6, G);
+        box(10, 5, 1.6, "#b4a68f", 11.4, 2.5, G);
+        box(10, 5, 1.6, "#b4a68f", 36.6, 2.5, G);
+        box(6, 0.9, 0.9, "#b4a68f", 11, 0.45, -82); // the low wall with the mason's mark
+        // the merchant's stall
+        box(2.2, 0.9, 1.0, "#8a6a4e", 31.8, 0.45, -80.6);
+        box(2.6, 0.1, 1.6, "#3f6f8f", 31.8, 2.3, -80.6);
+        for (const dx of [-1.15, 1.15]) {
+          box(0.08, 2.3, 0.08, "#5a3d2c", 31.8 + dx, 1.15, -79.9);
+        }
+      })();
+
+      /* ---------------- words in the world: Canvas 2D textures ---------------- */
+      function canvasTex(cw, ch) {
+        const cv = document.createElement("canvas");
+        cv.width = cw;
+        cv.height = ch;
+        const t = new THREE.CanvasTexture(cv);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 4;
+        return { cv, g: cv.getContext("2d"), t };
+      }
+      function wrap(g, text, maxW) {
+        const lines = [];
+        let cur = "";
+        for (const w of text.split(/\s+/).filter(Boolean)) {
+          const t = cur ? cur + " " + w : w;
+          if (cur && g.measureText(t).width > maxW) {
+            lines.push(cur);
+            cur = w;
+          } else {
+            cur = t;
+          }
+        }
+        if (cur) {
+          lines.push(cur);
+        }
+        return lines;
+      }
+      function roundRect(g, x, y, w, h, r) {
+        g.beginPath();
+        g.roundRect(x, y, w, h, r);
+      }
+      /** a paper plate with a title and a body, drawn once */
+      function paperPlate(
+        wM,
+        hM,
+        title,
+        body,
+        { cw = 512, size = 34, bg = "#f4ecd8" } = {},
+      ) {
+        const ch = Math.round((cw * hM) / wM),
+          T = canvasTex(cw, ch),
+          g = T.g,
+          pad = cw * 0.06;
+        g.fillStyle = bg;
+        g.fillRect(0, 0, cw, ch);
+        g.strokeStyle = "#6b5a44";
+        g.lineWidth = cw * 0.02;
+        g.strokeRect(
+          g.lineWidth / 2,
+          g.lineWidth / 2,
+          cw - g.lineWidth,
+          ch - g.lineWidth,
+        );
+        g.fillStyle = "#2a241c";
+        g.font = `700 ${size * 1.12}px Georgia, serif`;
+        g.textBaseline = "top";
+        let y = pad;
+        if (title) {
+          g.fillText(title, pad, y);
+          y += size * 1.55;
+        }
+        g.font = `${size}px Georgia, serif`;
+        for (const l of wrap(g, body, cw - pad * 2)) {
+          g.fillText(l, pad, y);
+          y += size * 1.28;
+        }
+        T.t.needsUpdate = true;
+        return new THREE.Mesh(
+          new THREE.PlaneGeometry(wM, hM),
+          new THREE.MeshBasicMaterial({ map: T.t, toneMapped: false }),
+        );
+      }
+
+      /* ---------------- the station pin: the beam into the sky ---------------- */
+      // "round": the beam the first round showed (8 cm, 26 m, a white gem at 5 m). "built": today's
+      // beacon in the app (six-sided, 4 m to 26 m, opacity 0.28, width grows with distance, ring on the ground).
+      const beams = {};
+      function makeBeam(st) {
+        const g = new THREE.Group();
+        g.position.set(st.c[0], 0, st.c[1]);
+        scene.add(g);
+        const gem = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.8),
+          new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.95,
+            depthWrite: false,
+          }),
+        );
+        gem.scale.y = 1.4;
+        gem.position.y = 5;
+        const col = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.08, 0.08, 26, 6, 1, true),
+          new THREE.MeshBasicMaterial({
+            color: COL.beam,
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+          }),
+        );
+        col.position.y = 16;
+        const built = new THREE.Mesh(
+          new THREE.CylinderGeometry(1, 1, 22, 6, 1, true),
+          new THREE.MeshBasicMaterial({
+            color: COL.beam,
+            transparent: true,
+            opacity: 0.28,
+            depthWrite: false,
+          }),
+        );
+        built.position.y = 15;
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(st.rIn - 0.25, st.rIn + 0.25, 96).rotateX(
+            -Math.PI / 2,
+          ),
+          new THREE.MeshBasicMaterial({
+            color: COL.beam,
+            transparent: true,
+            opacity: 0.55,
+            depthWrite: false,
+          }),
+        );
+        ring.position.y = 0.04;
+        g.add(gem, col, built, ring);
+        for (const m of [gem, col, built, ring]) {
+          m.raycast = () => undefined;
+        }
+        beams[st.id] = { g, gem, col, built, ring, a: 1 };
+      }
+      makeBeam(STATIONS.A);
+      makeBeam(STATIONS.B);
+
+      /* ---------------- people ---------------- */
+      function makeFigure({
+        coat,
+        skin = "#e0b48f",
+        hat,
+        hatColor = "#3b2f27",
+        trousers = "#3a3f46",
+      }) {
+        const root = new THREE.Group();
+        const pivot = (x, y, z, parent) => {
+          const p = new THREE.Group();
+          p.position.set(x, y, z);
+          parent.add(p);
+          return p;
+        };
+        const legL = pivot(0.1, 0.86, 0, root),
+          legR = pivot(-0.1, 0.86, 0, root);
+        box(0.13, 0.86, 0.15, trousers, 0, -0.43, 0, 0, legL);
+        box(0.13, 0.86, 0.15, trousers, 0, -0.43, 0, 0, legR);
+        const torso = cyl(0.19, 0.27, 0.72, coat, 0, 1.22, 0, 14, root);
+        if (hat === "dress") {
+          torso.scale.set(1.15, 1, 1.15);
+          cyl(0.27, 0.42, 0.62, coat, 0, 0.62, 0, 14, root);
+        }
+        const head = pivot(0, 1.64, 0, root);
+        const skull = new THREE.Mesh(
+          new THREE.SphereGeometry(0.13, 16, 12),
+          mat(skin),
+        );
+        head.add(skull);
+        box(0.035, 0.05, 0.06, skin, 0, -0.005, 0.13, 0, head); // nose: shows where the face looks
+        box(0.03, 0.03, 0.02, "#22262b", 0.048, 0.035, 0.118, 0, head);
+        box(0.03, 0.03, 0.02, "#22262b", -0.048, 0.035, 0.118, 0, head);
+        if (hat === "cap" || hat === "dress") {
+          const c = new THREE.Mesh(
+            new THREE.SphereGeometry(
+              0.14,
+              16,
+              8,
+              0,
+              Math.PI * 2,
+              0,
+              Math.PI / 2,
+            ),
+            mat(hatColor),
+          );
+          c.position.y = 0.02;
+          head.add(c);
+        }
+        if (hat === "helmet") {
+          const c = new THREE.Mesh(
+            new THREE.ConeGeometry(0.17, 0.2, 14),
+            mat("#8a9096"),
+          );
+          c.position.y = 0.13;
+          head.add(c);
+        }
+        if (hat === "scarf") {
+          const c = new THREE.Mesh(
+            new THREE.TorusGeometry(0.12, 0.045, 8, 16),
+            mat(hatColor),
+          );
+          c.rotation.x = Math.PI / 2;
+          c.position.y = -0.13;
+          head.add(c);
+        }
+        const armL = pivot(0.27, 1.5, 0, root),
+          armR = pivot(-0.27, 1.5, 0, root);
+        box(0.09, 0.6, 0.09, coat, 0, -0.3, 0, 0, armL);
+        box(0.09, 0.6, 0.09, coat, 0, -0.3, 0, 0, armR);
+        box(0.08, 0.08, 0.08, skin, 0, -0.62, 0, 0, armL);
+        box(0.08, 0.08, 0.08, skin, 0, -0.62, 0, 0, armR);
+        return { root, head, armL, armR, legL, legR };
+      }
+
+      /* ---------------- the items ---------------- */
+      // "where" is how the journal records a seen item's place: by its landmark.
+      const ITEMS = [
+        // station A: one story, which begins with Greta
+        {
+          id: "greta",
+          st: "A",
+          kind: "character",
+          name: "Greta",
+          pos: [0.2, -4.2],
+          homeYaw: 0,
+          coat: "#b5523b",
+          hat: "scarf",
+          hatColor: "#e6c35c",
+          pitch: 1.25,
+          where: "by the well",
+          again:
+            "Lovely to see you again. The well has stood here for four hundred years.",
+        },
+        {
+          id: "lecternA",
+          st: "A",
+          kind: "long",
+          name: "The well's history",
+          pos: [-2.4, -6.6],
+          where: "the lectern beside the well",
+          pages: [
+            [
+              "Water for the town",
+              "The well was dug in 1602. For three hundred years it was the town's only clean water. Women carried it home in yokes, two buckets at a time.",
+            ],
+            [
+              "The roof and the storm",
+              "A wooden roof kept the leaves out until the storm of 1910 took it. The water comes from the hills now, but the well stays.",
+            ],
+          ],
+        },
+        {
+          id: "signA",
+          st: "A",
+          kind: "short",
+          name: "The baker's corner",
+          pos: [13, 4.6],
+          where: "at the baker's corner",
+          text: "Bread has been baked on this corner since 1788. Its sign was a golden pretzel.",
+        },
+        {
+          id: "pictureA",
+          st: "A",
+          kind: "picture",
+          name: "The square in 1890",
+          pos: [1.5, 10.6],
+          where: "by the south steps",
+          caption: "The square in 1890. The well still had its roof.",
+        },
+        {
+          id: "videoA",
+          st: "A",
+          kind: "video",
+          name: "Market day, 1958",
+          pos: [-11, -3],
+          where: "on the west side",
+          desc: "Two minutes of film from the town archive.",
+          dur: 24,
+        },
+        {
+          id: "audioA",
+          st: "A",
+          kind: "audio",
+          name: "Song of the well-diggers",
+          pos: [-10, 6.5],
+          where: "by the old bench",
+          dur: 18,
+          prop: "bench",
+        },
+        {
+          id: "modelA",
+          st: "A",
+          kind: "model",
+          name: "The tower",
+          pos: [11.5, -11],
+          where: "by the lamp post",
+          note: "The tower lost its top floor in the storm of 1910.",
+          prop: "tower",
+        },
+        // station B: three stories, each begins with a person standing where it starts
+        {
+          id: "mason",
+          st: "B",
+          kind: "character",
+          name: "Anton, the mason",
+          short: "Anton",
+          pos: [17.5, -87],
+          coat: "#6b7a8f",
+          hat: "cap",
+          hatColor: "#4a3b2c",
+          pitch: 0.85,
+          where: "by the left tower",
+          again: "Every stone here passed through my hands.",
+        },
+        {
+          id: "merchant",
+          st: "B",
+          kind: "character",
+          name: "Mira, the merchant",
+          short: "Mira",
+          pos: [29.6, -79.8],
+          coat: "#7a5a9a",
+          hat: "dress",
+          hatColor: "#d8c3a0",
+          pitch: 1.15,
+          where: "at her stall",
+          again: "Good day! Business is slow since the gate shut.",
+        },
+        {
+          id: "watchman",
+          st: "B",
+          kind: "character",
+          name: "Jakob, the watchman",
+          short: "Jakob",
+          pos: [24, -89],
+          coat: "#3f5b45",
+          hat: "helmet",
+          pitch: 0.7,
+          where: "under the arch",
+          again: "All quiet tonight.",
+        },
+        {
+          id: "signB",
+          st: "B",
+          kind: "short",
+          name: "The mason's mark",
+          pos: [11, -81.2],
+          low: true,
+          where: "on the low wall",
+          text: "Every stone of the gate carries this sign: a hammer over a star.",
+        },
+        {
+          id: "lecternB",
+          st: "B",
+          kind: "long",
+          name: "The gate",
+          pos: [33.5, -86.5],
+          where: "by the right tower",
+          pages: [
+            [
+              "Built to be seen",
+              "The gate took forty years to build. It was never meant to keep an army out, only to show every visitor how rich the town was.",
+            ],
+            [
+              "Shut for a century",
+              "After the fire of 1802 the gate was shut. It opened again only in 1902, for a parade.",
+            ],
+          ],
+        },
+        {
+          id: "pictureB",
+          st: "B",
+          kind: "picture",
+          name: "The toll board",
+          pos: [33.6, -73.2],
+          where: "beside the stall",
+          caption: "The toll board of 1702: three pennies a cart.",
+        },
+        {
+          id: "videoB",
+          st: "B",
+          kind: "video",
+          name: "Rebuilding, 1961",
+          pos: [13.5, -73.5],
+          where: "by the west houses",
+          desc: "The towers repaired, stone by stone.",
+          dur: 20,
+        },
+        {
+          id: "audioB",
+          st: "B",
+          kind: "audio",
+          name: "The night bell",
+          pos: [28.8, -88.8],
+          where: "by the right tower",
+          dur: 14,
+          prop: "bell",
+        },
+        {
+          id: "modelB",
+          st: "B",
+          kind: "model",
+          name: "The gate",
+          pos: [20.4, -73.6],
+          where: "by the road",
+          note: "Each tower holds 3,000 stones.",
+          prop: "gate",
+        },
+      ];
+      const byId = Object.fromEntries(ITEMS.map((it) => [it.id, it]));
+      const STORIES = [
+        {
+          id: "water",
+          st: "A",
+          title: "Water for the town",
+          steps: ["greta", "lecternA"],
+          intro:
+            "Welcome to the well! I'm Greta. Our story starts at the lectern beside me. And if you ever wonder what is left to see here, call the wind.",
+          outro:
+            "That is the story of the well. Look around as long as you like.",
+        },
+        {
+          id: "build",
+          st: "B",
+          title: "Building the gate",
+          steps: ["mason", "modelB"],
+          intro:
+            "You found me! I cut the stones of this gate, every one of them. Come and see the model of it, by the road.",
+          outro: "Forty years of work, in one little model.",
+        },
+        {
+          id: "toll",
+          st: "B",
+          title: "Toll day",
+          steps: ["merchant", "pictureB"],
+          intro:
+            "Every cart paid at this gate, and I counted the coins. The old toll board stands right beside my stall.",
+          outro: "Three pennies a cart. Imagine that.",
+        },
+        {
+          id: "night",
+          st: "B",
+          title: "The night the gate shut",
+          steps: ["watchman", "audioB"],
+          intro:
+            "I kept this gate. One winter night the bell rang, and we shut it for good. Listen to the bell by the tower.",
+          outro: "After that night the gate stayed shut for a hundred years.",
+        },
+      ];
+      const storyOf = (it) => STORIES.find((s) => s.steps[0] === it.id) ?? null;
+
+      const hits = []; // invisible proxies a tap can find, each carries its item's id
+      function proxy(it, geom, x, y, z, parent = scene) {
+        const m = new THREE.Mesh(geom, new THREE.MeshBasicMaterial());
+        m.visible = false;
+        m.position.set(x, y, z);
+        m.userData.id = it.id;
+        parent.add(m);
+        hits.push(m);
+        return m;
+      }
+
+      function drawVideo(it) {
+        const g = it.screenTex.g,
+          w = 256,
+          h = 144,
+          p = it.prog / it.dur;
+        if (it.state === "playing" || it.state === "paused") {
+          const gr = g.createLinearGradient(0, 0, w, h);
+          gr.addColorStop(0, `hsl(${30 + p * 160} 30% 52%)`);
+          gr.addColorStop(1, `hsl(${200 + p * 60} 25% 30%)`);
+          g.fillStyle = gr;
+          g.fillRect(0, 0, w, h);
+          g.fillStyle = "rgb(40 30 20 / 60%)";
+          for (let i = 0; i < 7; i++) {
+            g.fillRect(
+              ((i * 41 + it.prog * 14) % (w + 30)) - 30,
+              70 + (i % 3) * 10,
+              22,
+              38,
+            );
+          }
+          g.fillStyle = "rgb(0 0 0 / 50%)";
+          g.fillRect(0, h - 7, w, 7);
+          g.fillStyle = "#fff";
+          g.fillRect(0, h - 7, w * p, 7);
+          if (it.state === "paused") {
+            g.fillStyle = "rgb(0 0 0 / 45%)";
+            g.fillRect(0, 0, w, h);
+            g.fillStyle = "#fff";
+            g.fillRect(112, 50, 12, 44);
+            g.fillRect(134, 50, 12, 44);
+          }
+        } else {
+          g.fillStyle = "#2b3138";
+          g.fillRect(0, 0, w, h);
+          g.fillStyle = it.state === "done" ? "#9aa4ae" : "#fff";
+          g.beginPath();
+          g.moveTo(112, 46);
+          g.lineTo(112, 94);
+          g.lineTo(150, 70);
+          g.closePath();
+          g.fill();
+          g.font = "600 14px system-ui, sans-serif";
+          g.textAlign = "center";
+          g.fillText(
+            it.state === "done" ? "Tap to play again" : "Tap to play",
+            128,
+            124,
+          );
+        }
+        it.screenTex.t.needsUpdate = true;
+      }
+      function drawPicture(g, w, h) {
+        const gr = g.createLinearGradient(0, 0, 0, h);
+        gr.addColorStop(0, "#d9c7a2");
+        gr.addColorStop(1, "#a58a62");
+        g.fillStyle = gr;
+        g.fillRect(0, 0, w, h);
+        g.fillStyle = "#6e5638";
+        for (let i = 0; i < 6; i++) {
+          const bx = i * 60 - 10,
+            bh = 70 + ((i * 37) % 50);
+          g.fillRect(bx, h * 0.62 - bh, 54, bh);
+        }
+        g.fillStyle = "#4f3c26";
+        g.fillRect(w * 0.42, h * 0.48, 50, 34);
+        g.fillRect(w * 0.42 - 6, h * 0.44, 62, 8);
+        g.fillStyle = "#8a7150";
+        g.fillRect(0, h * 0.62, w, h * 0.38);
+      }
+      function drawLectern(it) {
+        const g = it.pageTex.g,
+          w = it.pageTex.cv.width,
+          h = it.pageTex.cv.height,
+          [title, body] = it.pages[it.page];
+        g.fillStyle = "#f6efdd";
+        g.fillRect(0, 0, w, h);
+        g.fillStyle = "#2a241c";
+        g.textBaseline = "top";
+        g.font = "700 38px Georgia, serif";
+        g.fillText(title, 30, 26);
+        g.font = "30px Georgia, serif";
+        let y = 82;
+        for (const l of wrap(g, body, w - 60)) {
+          g.fillText(l, 30, y);
+          y += 38;
+        }
+        g.font = "600 24px system-ui, sans-serif";
+        g.fillStyle = "#6b5a44";
+        g.textAlign = "right";
+        g.fillText(
+          it.page < it.pages.length - 1
+            ? `${it.page + 1}/${it.pages.length} · tap to turn`
+            : `${it.page + 1}/${it.pages.length}`,
+          w - 28,
+          h - 40,
+        );
+        g.textAlign = "left";
+        it.pageTex.t.needsUpdate = true;
+      }
+
+      // the audio item's own particles (the item itself, liked in round 1), not a marker
+      const SPARK_V = `attribute vec4 aSeed;uniform float uT,uViewH,uStrength,uHeight,uRadius,uSwirl,uSize;varying float vA;
+void main(){float life=fract(aSeed.x+uT*(0.45+0.4*aSeed.y)/uHeight);float ang=aSeed.z*6.2832+uT*uSwirl*(0.4+aSeed.w);
+float r=uRadius*(0.25+0.75*aSeed.w)*(1.0-0.5*life);vec3 p=vec3(cos(ang)*r,0.3+life*uHeight,sin(ang)*r);
+vec4 mv=modelViewMatrix*vec4(p,1.0);gl_Position=projectionMatrix*mv;
+gl_PointSize=clamp(uSize*uViewH*0.5*projectionMatrix[1][1]/max(0.1,-mv.z),2.0,7.0);
+vA=uStrength*smoothstep(0.0,0.15,life)*(1.0-smoothstep(0.65,1.0,life));}`;
+      const SPARK_F = `uniform vec3 uColor;varying float vA;void main(){float d=length(gl_PointCoord-0.5);float a=smoothstep(0.5,0.12,d)*vA;if(a<0.01)discard;
+gl_FragColor=vec4(mix(uColor,vec3(1.0),smoothstep(0.22,0.0,d)*0.5),a);
+#include <colorspace_fragment>
+}`;
+      const viewH = { value: 800 };
+      function sparks(n, h, r) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute(
+          "position",
+          new THREE.BufferAttribute(new Float32Array(n * 3), 3),
+        );
+        const sd = new Float32Array(n * 4);
+        for (let i = 0; i < n * 4; i++) {
+          sd[i] = Math.random();
+        }
+        g.setAttribute("aSeed", new THREE.BufferAttribute(sd, 4));
+        const m = new THREE.ShaderMaterial({
+          uniforms: {
+            uT: { value: Math.random() * 10 },
+            uViewH: viewH,
+            uStrength: { value: 0.6 },
+            uHeight: { value: h },
+            uRadius: { value: r },
+            uSwirl: { value: 0.6 },
+            uSize: { value: 0.05 },
+            uColor: { value: new THREE.Color(COL.gold) },
+          },
+          vertexShader: SPARK_V,
+          fragmentShader: SPARK_F,
+          transparent: true,
+          depthWrite: false,
+        });
+        const p = new THREE.Points(g, m);
+        p.frustumCulled = false;
+        p.raycast = () => undefined;
+        return p;
+      }
+      const C_GOLD = new THREE.Color(COL.gold),
+        C_PLAY = new THREE.Color(COL.play),
+        C_SEEN = new THREE.Color(COL.seen);
+
+      function buildItem(it) {
+        const st = STATIONS[it.st];
+        const g = new THREE.Group();
+        g.position.set(it.pos[0], 0, it.pos[1]);
+        g.rotation.y = it.homeYaw ?? faceTo(it.pos, st.c);
+        scene.add(g);
+        it.g = g;
+        if (it.kind === "character") {
+          it.fig = makeFigure(it);
+          g.add(it.fig.root);
+          it.yaw = g.rotation.y;
+          it.homeYaw = it.yaw;
+          it.headYaw = 0;
+          proxy(
+            it,
+            new THREE.CylinderGeometry(0.5, 0.5, 1.95, 8),
+            0,
+            0.98,
+            0,
+            g,
+          );
+          it.bubble = makeBubble();
+          it.anchorY = 1.25;
+        } else if (it.kind === "short") {
+          const y = it.low ? 0.9 : 1.45;
+          if (!it.low) {
+            box(0.07, 1.2, 0.07, "#3c4044", 0, 0.6, -0.04, 0, g);
+          }
+          box(0.96, 0.62, 0.04, "#4d3f30", 0, y, -0.03, 0, g);
+          const p = paperPlate(0.9, 0.56, it.name, it.text, { size: 30 });
+          p.position.set(0, y, 0);
+          g.add(p);
+          it.anchor = [0, y, 0];
+          it.readM = 6;
+        } else if (it.kind === "long") {
+          cyl(0.06, 0.09, 1.0, "#4d3f30", 0, 0.5, 0, 8, g);
+          box(0.5, 0.06, 0.4, "#4d3f30", 0, 0.03, 0, 0, g);
+          const board = new THREE.Group();
+          board.position.set(0, 1.12, 0);
+          board.rotation.x = -0.6;
+          g.add(board);
+          box(0.98, 0.72, 0.04, "#4d3f30", 0, 0, -0.03, 0, board);
+          it.pageTex = canvasTex(640, 460);
+          it.page = 0;
+          drawLectern(it);
+          const pg = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.92, 0.66),
+            new THREE.MeshBasicMaterial({
+              map: it.pageTex.t,
+              toneMapped: false,
+            }),
+          );
+          board.add(pg);
+          proxy(it, new THREE.BoxGeometry(1.1, 1.4, 0.9), 0, 0.8, 0, g);
+          it.anchor = [0, 1.12, 0];
+        } else if (it.kind === "picture") {
+          box(0.08, 1.0, 0.08, "#3c4044", 0, 0.5, -0.05, 0, g);
+          box(1.44, 1.0, 0.05, "#3a3026", 0, 1.48, -0.04, 0, g);
+          const T = canvasTex(340, 230);
+          drawPicture(T.g, 340, 230);
+          T.t.needsUpdate = true;
+          const pm = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.32, 0.9),
+            new THREE.MeshBasicMaterial({ map: T.t, toneMapped: false }),
+          );
+          pm.position.set(0, 1.48, 0);
+          g.add(pm);
+          const cap = paperPlate(1.1, 0.24, "", it.caption, {
+            size: 26,
+            cw: 640,
+          });
+          cap.position.set(0, 0.84, 0.02);
+          g.add(cap);
+          it.anchor = [0, 1.4, 0];
+          it.readM = 9;
+        } else if (it.kind === "video") {
+          box(0.1, 1.4, 0.1, "#3c4044", 0, 0.7, -0.05, 0, g);
+          box(2.02, 1.18, 0.06, "#20242a", 0, 1.95, -0.05, 0, g);
+          it.screenTex = canvasTex(256, 144);
+          it.state = "ready";
+          it.prog = 0;
+          drawVideo(it);
+          const scr = new THREE.Mesh(
+            new THREE.PlaneGeometry(1.9, 1.07),
+            new THREE.MeshBasicMaterial({
+              map: it.screenTex.t,
+              toneMapped: false,
+            }),
+          );
+          scr.position.set(0, 1.95, 0);
+          g.add(scr);
+          const pl = paperPlate(1.5, 0.36, it.name, it.desc, {
+            size: 26,
+            cw: 640,
+          });
+          pl.position.set(0, 1.12, 0.02);
+          g.add(pl);
+          proxy(it, new THREE.BoxGeometry(2.1, 1.3, 0.4), 0, 1.95, 0, g);
+          it.anchor = [0, 1.9, 0];
+        } else if (it.kind === "audio") {
+          if (it.prop === "bench") {
+            box(1.8, 0.08, 0.5, "#8a6a4e", 0, 0.46, 0, 0, g);
+            box(1.8, 0.5, 0.07, "#8a6a4e", 0, 0.74, -0.24, 0, g);
+            for (const dx of [-0.75, 0.75]) {
+              box(0.08, 0.46, 0.42, "#5a3d2c", dx, 0.23, 0, 0, g);
+            }
+          } else {
+            box(0.12, 2.4, 0.12, "#5a3d2c", -0.6, 1.2, 0, 0, g);
+            box(0.12, 2.4, 0.12, "#5a3d2c", 0.6, 1.2, 0, 0, g);
+            box(1.4, 0.12, 0.14, "#5a3d2c", 0, 2.4, 0, 0, g);
+            const bell = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.16, 0.34, 0.5, 16, 1, true),
+              mat("#b08d3c"),
+            );
+            bell.material.side = THREE.DoubleSide;
+            bell.position.y = 2.05;
+            g.add(bell);
+          }
+          const pl = paperPlate(0.62, 0.2, "", it.name, { size: 34, cw: 512 });
+          pl.position.set(
+            0,
+            it.prop === "bench" ? 1.08 : 0.9,
+            it.prop === "bench" ? -0.2 : 0.07,
+          );
+          g.add(pl);
+          it.spark = sparks(90, 2.4, 0.8);
+          g.add(it.spark);
+          proxy(it, new THREE.BoxGeometry(2.0, 1.6, 1.0), 0, 0.8, 0, g);
+          it.anchor = [0, 1.0, 0];
+        } else if (it.kind === "model") {
+          box(0.9, 0.9, 0.9, "#a9a294", 0, 0.45, 0, 0, g);
+          if (it.prop === "tower") {
+            box(0.34, 0.7, 0.34, "#cbb9a0", 0, 1.25, 0, 0, g);
+            const c = new THREE.Mesh(
+              new THREE.ConeGeometry(0.3, 0.36, 4),
+              mat("#5e6f7d"),
+            );
+            c.position.y = 1.78;
+            c.rotation.y = Math.PI / 4;
+            g.add(c);
+          } else {
+            box(0.2, 0.6, 0.2, "#cbb9a0", -0.25, 1.2, 0, 0, g);
+            box(0.2, 0.6, 0.2, "#cbb9a0", 0.25, 1.2, 0, 0, g);
+            box(0.7, 0.16, 0.22, "#cbb9a0", 0, 1.46, 0, 0, g);
+          }
+          const note = paperPlate(0.9, 0.36, it.name, it.note, {
+            size: 28,
+            cw: 640,
+            bg: "#fffdf8",
+          });
+          note.position.set(0, 2.45, 0);
+          note.material.transparent = true;
+          note.material.opacity = 0;
+          note.visible = false;
+          g.add(note);
+          it.notePlate = note;
+          proxy(it, new THREE.BoxGeometry(1.1, 2.0, 1.1), 0, 1.0, 0, g);
+          it.anchor = [0, 1.3, 0];
+        }
+      }
+
+      /* ---------------- speech bubbles: a person's words, in 3D, over the person ---------------- */
+      const BUB_W = 640,
+        BUB_H = 380;
+      function makeBubble() {
+        const T = canvasTex(BUB_W, BUB_H);
+        const mesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, BUB_H / BUB_W),
+          new THREE.MeshBasicMaterial({
+            map: T.t,
+            transparent: true,
+            depthWrite: false,
+            depthTest: false,
+            toneMapped: false,
+            opacity: 0,
+          }),
+        );
+        mesh.renderOrder = 20;
+        mesh.visible = false;
+        mesh.raycast = () => undefined;
+        scene.add(mesh);
+        return { T, mesh, a: 0, key: "" };
+      }
+      function drawBubble(it) {
+        const b = it.bubble,
+          L = it.line;
+        if (!L) {
+          return;
+        }
+        const text = L.held ? "…" : L.words.slice(0, L.shown).join(" ");
+        const tag = L.held
+          ? ""
+          : W.t < L.resumedUntil
+            ? " · as I was saying"
+            : "";
+        const key = text + "|" + tag;
+        if (key === b.key) {
+          return;
+        }
+        b.key = key;
+        const g = b.T.g;
+        g.clearRect(0, 0, BUB_W, BUB_H);
+        g.font = "600 33px system-ui, sans-serif";
+        const lines = wrap(g, text, BUB_W - 70).slice(-6);
+        const lh = 41,
+          top = 18,
+          nameH = 40,
+          bh = Math.max(lines.length, 1) * lh + nameH + 34,
+          bw = L.held ? 170 : BUB_W - 16;
+        const bx = (BUB_W - bw) / 2,
+          by = BUB_H - 34 - bh;
+        g.fillStyle = "rgb(0 0 0 / 22%)";
+        roundRect(g, bx + 3, by + 6, bw, bh, 30);
+        g.fill();
+        g.fillStyle = COL.paper;
+        roundRect(g, bx, by, bw, bh, 30);
+        g.fill();
+        g.beginPath();
+        g.moveTo(BUB_W / 2 - 22, by + bh - 1);
+        g.lineTo(BUB_W / 2, BUB_H - 4);
+        g.lineTo(BUB_W / 2 + 22, by + bh - 1);
+        g.closePath();
+        g.fill();
+        g.textBaseline = "top";
+        if (L.held) {
+          g.font = "800 44px system-ui, sans-serif";
+          g.fillStyle = COL.ink;
+          g.textAlign = "center";
+          g.fillText("…", BUB_W / 2, by + 16);
+          g.textAlign = "left";
+        } else {
+          g.fillStyle = it.coat;
+          g.font = "800 27px system-ui, sans-serif";
+          g.fillText((it.short ?? it.name) + tag, bx + 30, by + top);
+          g.fillStyle = COL.ink;
+          g.font = "600 33px system-ui, sans-serif";
+          lines.forEach((l, i) =>
+            g.fillText(l, bx + 30, by + top + nameH + i * lh),
+          );
+        }
+        b.T.t.needsUpdate = true;
+      }
+
+      /* ---------------- a person's voice (the browser's speech; the words are also in the bubble) ---------------- */
+      function speak(it, text) {
+        if (!KN.voice) {
+          return;
+        }
+        try {
+          const u = new SpeechSynthesisUtterance(text);
+          u.pitch = it.pitch ?? 1;
+          u.rate = 1.0;
+          u.lang = "en-GB";
+          speechSynthesis.cancel();
+          speechSynthesis.speak(u);
+        } catch {
+          /* the voice is a bonus */
+        }
+      }
+      function hush() {
+        try {
+          speechSynthesis.cancel();
+        } catch {
+          /* none */
+        }
+      }
+
+      /* ---------------- state ---------------- */
+      const me = { x: 0, z: 42, yaw: 0 };
+      const W = {
+        t: 0,
+        station: null,
+        greeted: false,
+        story: null,
+        hudPaused: [],
+        visited: {},
+        lastStation: null,
+        seenLog: [],
+        journal: false,
+        jTab: null,
+      };
+      let beat = 1;
+      const dist2 = (x, z) => Math.hypot(x - me.x, z - me.z);
+      const dist = (it) => dist2(it.pos[0], it.pos[1]);
+
+      function markSeen(it) {
+        if (!it.seen) {
+          it.seen = true;
+          W.seenLog.push(it.id);
+        }
+      }
+      function resetWorld() {
+        hush();
+        stopDrift();
+        Object.assign(me, { x: 0, z: 42, yaw: 0 });
+        Object.assign(W, {
+          t: 0,
+          station: null,
+          greeted: false,
+          story: null,
+          hudPaused: [],
+          visited: {},
+          lastStation: null,
+          seenLog: [],
+          journal: false,
+          jTab: null,
+        });
+        for (const it of ITEMS) {
+          Object.assign(it, {
+            seen: false,
+            lookT: 0,
+            state: "ready",
+            prog: 0,
+            page: 0,
+            noteOn: false,
+            line: null,
+            greetPending: false,
+          });
+          if (it.kind === "character") {
+            it.yaw = it.homeYaw;
+            it.headYaw = 0;
+            it.bubble.a = 0;
+            it.bubble.mesh.visible = false;
+            it.bubble.key = "";
+          }
+          if (it.kind === "long") {
+            drawLectern(it);
+          }
+          if (it.kind === "video") {
+            drawVideo(it);
+          }
+          if (it.kind === "model") {
+            it.notePlate.visible = false;
+            it.notePlate.material.opacity = 0;
+          }
+        }
+        for (const s of STORIES) {
+          s.done = false;
+          s.entered = false;
+        }
+        closeJournal(true);
+      }
+      const unseenIn = (st) => ITEMS.filter((it) => it.st === st && !it.seen);
+      const playing = () => ITEMS.filter((it) => it.state === "playing");
+
+      /* ---------------- lines: a person speaks, word by word ---------------- */
+      function say(it, text, { onEnd } = {}) {
+        it.line = {
+          words: text.split(" "),
+          shown: 1,
+          acc: 1,
+          held: false,
+          doneAt: null,
+          onEnd,
+          resumedUntil: 0,
+        };
+        it.bubble.key = "";
+        speak(it, text);
+        drawBubble(it);
+      }
+      function updateLine(it, dt) {
+        const L = it.line;
+        if (!L) {
+          return;
+        }
+        const d = dist(it);
+        if (!L.held && L.doneAt == null && d > HOLD_FAR_M) {
+          L.held = true;
+          hush();
+        } else if (L.held && d < RESUME_M) {
+          L.held = false;
+          L.resumedUntil = W.t + 2.2;
+          speak(it, "As I was saying, " + L.words.slice(L.shown).join(" "));
+        }
+        if (!L.held) {
+          L.acc += dt * WORDS_PER_S;
+          L.shown = Math.min(L.words.length, Math.floor(L.acc));
+          if (L.shown === L.words.length && L.doneAt == null) {
+            L.doneAt = W.t;
+          }
+          if (
+            L.doneAt != null &&
+            W.t - L.doneAt > 2.4 + L.words.length * 0.07
+          ) {
+            it.line = null;
+            L.onEnd?.();
+            return;
+          }
+        }
+        drawBubble(it);
+      }
+
+      /* ---------------- stories ---------------- */
+      function enterStory(s) {
+        if (W.story && W.story.s !== s) {
+          const old = byId[W.story.s.steps[0]];
+          old.line = null;
+        }
+        W.story = { s, step: 0, doneAt: null };
+        s.entered = true;
+        const ch = byId[s.steps[0]];
+        say(ch, s.intro, {
+          onEnd: () => {
+            markSeen(ch);
+            if (W.story?.s === s && W.story.step === 0) {
+              W.story.step = 1;
+            }
+          },
+        });
+      }
+      function leaveStory() {
+        if (!W.story) {
+          return;
+        }
+        const ch = byId[W.story.s.steps[0]];
+        if (ch.line) {
+          ch.line = null;
+          hush();
+        }
+        W.story = null;
+      }
+      function updateStory() {
+        const S = W.story;
+        if (!S) {
+          return;
+        }
+        if (S.doneAt == null && S.step >= 1 && byId[S.s.steps[S.step]].seen) {
+          S.doneAt = W.t;
+          S.s.done = true;
+          const ch = byId[S.s.steps[0]];
+          if (dist(ch) < 12 && !ch.line) {
+            say(ch, S.s.outro);
+          }
+        }
+        if (S.doneAt != null && W.t - S.doneAt > 3) {
+          W.story = null;
+        }
+      }
+
+      /* ---------------- playing things ---------------- */
+      function play(it) {
+        if (it.state === "done") {
+          it.prog = 0;
+        }
+        it.state = "playing";
+        W.hudPaused = W.hudPaused.filter((x) => x !== it);
+      }
+      function pause(it) {
+        if (it.state === "playing") {
+          it.state = "paused";
+        }
+      }
+      function tapItem(it) {
+        if (it.kind === "character") {
+          const s = storyOf(it);
+          if (s && !s.done && W.story?.s !== s) {
+            enterStory(s);
+            return;
+          } // talking to a story's first person enters it
+          if (!it.line) {
+            say(it, it.again);
+          }
+          return;
+        }
+        if (it.kind === "video" || it.kind === "audio") {
+          if (it.state === "playing") {
+            pause(it);
+          } else {
+            play(it);
+          }
+          return;
+        }
+        if (it.kind === "long") {
+          it.page = (it.page + 1) % it.pages.length;
+          if (it.page === it.pages.length - 1) {
+            markSeen(it);
+          }
+          drawLectern(it);
+          return;
+        }
+        if (it.kind === "model") {
+          it.noteOn = true;
+          markSeen(it);
+        }
+      }
+      function transportTap() {
+        const now = playing().filter((it) => it.st === W.station);
+        if (now.length) {
+          for (const it of now) {
+            pause(it);
+          }
+          W.hudPaused = now;
+        } else {
+          for (const it of W.hudPaused) {
+            play(it);
+          }
+          W.hudPaused = [];
+        }
+      }
+
+      /* ---------------- entering and leaving a station ---------------- */
+      function enterStation(id) {
+        W.station = id;
+        W.visited[id] = true;
+        W.lastStation = id;
+        if (id === "A" && !W.greeted) {
+          W.greeted = true;
+          byId.greta.greetPending = true;
+        } // the one deliberate start by arriving: once per visit, within earshot
+      }
+      function leaveStation(id) {
+        W.station = null;
+        for (const it of ITEMS) {
+          if (it.st === id) {
+            pause(it);
+            it.line = null;
+          }
+        }
+        hush();
+        W.hudPaused = [];
+        stopDrift();
+        if (W.story?.s.st === id) {
+          W.story = null;
+        }
+        // the journal page for this station is written now: one small lift of its button, whatever is left. Never a badge.
+        const jb = $("#journal-btn");
+        jb.classList.remove("wrote");
+        void jb.offsetWidth;
+        jb.classList.add("wrote");
+      }
+
+      /* ======================= the wind: a summoned drift toward the nearest unseen thing ======================= */
+      // Where it goes: the active story's next step first (the story wins), else the nearest unseen item of this
+      // station, else (everything here seen) the nearest other station that still has something unseen.
+      function windTarget() {
+        const S = W.story;
+        if (S && S.step >= 1 && !byId[S.s.steps[S.step]].seen) {
+          const it = byId[S.s.steps[S.step]];
+          return { x: it.pos[0], z: it.pos[1], id: it.id, kind: "item" };
+        }
+        const left = unseenIn(W.station).sort((a, b) => dist(a) - dist(b));
+        if (left.length) {
+          return {
+            x: left[0].pos[0],
+            z: left[0].pos[1],
+            id: left[0].id,
+            kind: "item",
+          };
+        }
+        const other = Object.values(STATIONS)
+          .filter((st) => st.id !== W.station && unseenIn(st.id).length)
+          .sort((a, b) => dist2(a.c[0], a.c[1]) - dist2(b.c[0], b.c[1]))[0];
+        if (other) {
+          return {
+            x: other.c[0],
+            z: other.c[1],
+            id: other.id,
+            kind: "station",
+          };
+        }
+        return { x: me.x, z: me.z, id: null, kind: "none" };
+      }
+
+      const MOTE_V = `attribute float aA;attribute float aS;uniform float uViewH,uSize;varying float vA;
+void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);gl_Position=projectionMatrix*mv;
+gl_PointSize=clamp(uSize*aS*uViewH*0.5*projectionMatrix[1][1]/max(0.1,-mv.z),3.0,34.0);vA=aA;}`;
+      // a warm white core with a darker rim, so a mote still reads against bright paving in daylight
+      const MOTE_F = `uniform vec3 uCore,uRim;varying float vA;void main(){float d=length(gl_PointCoord-0.5);
+float a=smoothstep(0.5,0.18,d)*vA;if(a<0.01)discard;float k=smoothstep(0.36,0.08,d);
+gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
+#include <colorspace_fragment>
+}`;
+      const MAXN = 64;
+      const DR = {
+        active: false,
+        t: 0,
+        look: null,
+        target: null,
+        n: 0,
+        p0: new Float32Array(MAXN * 3),
+        p1: new Float32Array(MAXN * 3),
+        p2: new Float32Array(MAXN * 3),
+        birth: new Float32Array(MAXN),
+        life: new Float32Array(MAXN),
+        ph: new Float32Array(MAXN),
+        spin: new Float32Array(MAXN * 3),
+        count: 0,
+      };
+      const moteGeo = new THREE.BufferGeometry();
+      const motePos = new Float32Array(MAXN * 3),
+        moteA = new Float32Array(MAXN),
+        moteS = new Float32Array(MAXN);
+      moteGeo.setAttribute("position", new THREE.BufferAttribute(motePos, 3));
+      moteGeo.setAttribute("aA", new THREE.BufferAttribute(moteA, 1));
+      moteGeo.setAttribute("aS", new THREE.BufferAttribute(moteS, 1));
+      const moteMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uViewH: viewH,
+          uSize: { value: 0.07 },
+          uCore: { value: new THREE.Color("#fff4cf") },
+          uRim: { value: new THREE.Color("#d08a2a") },
+        },
+        vertexShader: MOTE_V,
+        fragmentShader: MOTE_F,
+        transparent: true,
+        depthWrite: false,
+      });
+      const motes = new THREE.Points(moteGeo, moteMat);
+      motes.frustumCulled = false;
+      motes.renderOrder = 15;
+      motes.visible = false;
+      motes.raycast = () => undefined;
+      scene.add(motes);
+
+      const leafShape = new THREE.Shape();
+      leafShape.moveTo(0, -0.06);
+      leafShape.quadraticCurveTo(0.042, -0.01, 0, 0.06);
+      leafShape.quadraticCurveTo(-0.042, -0.01, 0, -0.06);
+      const leaves = new THREE.InstancedMesh(
+        new THREE.ShapeGeometry(leafShape, 4),
+        new THREE.MeshBasicMaterial({
+          side: THREE.DoubleSide,
+          toneMapped: false,
+        }),
+        MAXN,
+      );
+      leaves.frustumCulled = false;
+      leaves.renderOrder = 15;
+      leaves.visible = false;
+      leaves.raycast = () => undefined;
+      scene.add(leaves);
+      {
+        const lc = ["#c9781f", "#b04a24", "#d1a131", "#8d7a2e", "#a6611c"].map(
+          (c) => new THREE.Color(c),
+        );
+        for (let i = 0; i < MAXN; i++) {
+          leaves.setColorAt(i, lc[i % lc.length]);
+        }
+      }
+      const dummy = new THREE.Object3D();
+
+      function summonWind() {
+        if (DR.active || !W.station) {
+          return;
+        }
+        const L = DRIFT_LOOKS[KN.drift],
+          T = windTarget();
+        DR.active = true;
+        DR.t = 0;
+        DR.look = L;
+        DR.target = T;
+        DR.n = L.n;
+        const fx = -Math.sin(me.yaw),
+          fz = -Math.cos(me.yaw),
+          rx = Math.cos(me.yaw),
+          rz = -Math.sin(me.yaw);
+        let dx = T.x - me.x,
+          dz = T.z - me.z;
+        const dT = Math.hypot(dx, dz);
+        if (T.kind === "none" || dT < 0.5) {
+          dx = fx;
+          dz = fz;
+        } else {
+          dx /= dT;
+          dz /= dT;
+        }
+        // a far target gets a direction, never its spot: the drift ends at most `reach` metres out, and 1.2 m short of a near one
+        const reach = T.kind === "none" ? 1.5 : clamp(dT - 1.2, 2.5, L.reach);
+        const qx = me.x + dx * reach,
+          qz = me.z + dz * reach,
+          nx = -dz,
+          nz = dx;
+        const dot = fx * dx + fz * dz,
+          side = Math.sign(rx * dx + rz * dz) || 1;
+        for (let i = 0; i < L.n; i++) {
+          const depth = L.depth[0] + rnd() * (L.depth[1] - L.depth[0]),
+            lat = (rnd() * 2 - 1) * L.spread;
+          const p0x = me.x + fx * depth + rx * lat,
+            p0z = me.z + fz * depth + rz * lat,
+            p0y = 0.2 + rnd() * 0.6;
+          const end = (rnd() * 2 - 1) * (0.5 + 0.08 * reach);
+          const p2x = qx + nx * end,
+            p2z = qz + nz * end,
+            p2y = 0.12 + rnd() * 0.35;
+          // the bend: towards the target if it lies ahead or to the side; round the visitor's shoulder if it lies behind,
+          // so the motes never fly at the camera
+          let p1x, p1z;
+          if (dot > -0.25) {
+            const k = 0.5 * Math.hypot(p2x - p0x, p2z - p0z);
+            p1x = p0x + (fx * 0.35 + dx * 0.65) * k;
+            p1z = p0z + (fz * 0.35 + dz * 0.65) * k;
+          } else {
+            p1x =
+              me.x + rx * side * (2.4 + rnd() * 0.8) + fx * (0.8 + rnd() * 0.6);
+            p1z =
+              me.z + rz * side * (2.4 + rnd() * 0.8) + fz * (0.8 + rnd() * 0.6);
+          }
+          const p1y = 0.45 + rnd() * 0.45;
+          DR.p0.set([p0x, p0y, p0z], i * 3);
+          DR.p1.set([p1x, p1y, p1z], i * 3);
+          DR.p2.set([p2x, p2y, p2z], i * 3);
+          const len =
+            Math.hypot(p1x - p0x, p1z - p0z) + Math.hypot(p2x - p1x, p2z - p1z);
+          const life = clamp(len / L.speed, 1.0, L.dur - 0.25);
+          DR.life[i] = life;
+          DR.birth[i] =
+            rnd() *
+            Math.max(0.05, L.dur - 0.25 - life) *
+            (L === DRIFT_LOOKS.trail ? 1 : 0.85);
+          DR.ph[i] = rnd() * 6.283;
+          moteS[i] = 0.7 + rnd() * 0.6;
+          DR.spin.set([2 + rnd() * 5, 1 + rnd() * 4, 3 + rnd() * 6], i * 3);
+        }
+        const pts = L !== DRIFT_LOOKS.leaves;
+        motes.visible = pts;
+        leaves.visible = !pts;
+        if (pts) {
+          moteMat.uniforms.uSize.value = L.size;
+          moteMat.uniforms.uCore.value.set(L.core);
+          moteMat.uniforms.uRim.value.set(L.rim);
+          moteGeo.setDrawRange(0, L.n);
+        } else {
+          leaves.count = L.n;
+        }
+        DR.count++;
+      }
+      function stopDrift() {
+        DR.active = false;
+        motes.visible = false;
+        leaves.visible = false;
+      }
+      function updateDrift(dt) {
+        if (!DR.active) {
+          return;
+        }
+        DR.t += dt;
+        const L = DR.look,
+          g = 1 - smooth(L.dur - 0.45, L.dur, DR.t);
+        if (DR.t >= L.dur) {
+          stopDrift();
+          return;
+        }
+        const isLeaf = L === DRIFT_LOOKS.leaves;
+        for (let i = 0; i < L.n; i++) {
+          const age = DR.t - DR.birth[i],
+            u0 = age / DR.life[i];
+          let x = 0,
+            y = -50,
+            z = 0,
+            a = 0;
+          if (u0 > 0 && u0 < 1) {
+            const u = u0 * u0 * (3 - 2 * u0), // slow start: the motes gather in view before they leave it
+              v = 1 - u,
+              i3 = i * 3;
+            x = v * v * DR.p0[i3] + 2 * v * u * DR.p1[i3] + u * u * DR.p2[i3];
+            y =
+              v * v * DR.p0[i3 + 1] +
+              2 * v * u * DR.p1[i3 + 1] +
+              u * u * DR.p2[i3 + 1];
+            z =
+              v * v * DR.p0[i3 + 2] +
+              2 * v * u * DR.p1[i3 + 2] +
+              u * u * DR.p2[i3 + 2];
+            // a little flutter, sideways and up, so it reads as air rather than a conveyor belt
+            const w =
+              Math.sin(DR.ph[i] + age * (isLeaf ? 3.2 : 5.5)) *
+              (isLeaf ? 0.22 : 0.12);
+            const tx = DR.p2[i3] - DR.p0[i3],
+              tz = DR.p2[i3 + 2] - DR.p0[i3 + 2],
+              tl = Math.hypot(tx, tz) || 1;
+            x += (-tz / tl) * w;
+            z += (tx / tl) * w;
+            y += Math.sin(DR.ph[i] * 2 + age * 4) * 0.07;
+            a = smooth(0, 0.22, age) * (1 - smooth(0.62, 1, u0)) * g;
+          }
+          if (isLeaf) {
+            const i3 = i * 3;
+            dummy.position.set(x, y, z);
+            dummy.rotation.set(
+              DR.ph[i] + age * DR.spin[i3],
+              DR.ph[i] * 0.5 + age * DR.spin[i3 + 1],
+              age * DR.spin[i3 + 2],
+            );
+            dummy.scale.setScalar(Math.max(0.0001, a) * 1.25);
+            dummy.updateMatrix();
+            leaves.setMatrixAt(i, dummy.matrix);
+          } else {
+            motePos[i * 3] = x;
+            motePos[i * 3 + 1] = y;
+            motePos[i * 3 + 2] = z;
+            moteA[i] = a;
+          }
+        }
+        if (isLeaf) {
+          leaves.instanceMatrix.needsUpdate = true;
+        } else {
+          moteGeo.attributes.position.needsUpdate = true;
+          moteGeo.attributes.aA.needsUpdate = true;
+          moteGeo.attributes.aS.needsUpdate = true;
+        }
+      }
+
+      /* ---------------- geometry helpers ---------------- */
+      const v3 = new THREE.Vector3();
+      function toScreen(x, y, z) {
+        v3.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+        const front = v3.z < 0;
+        v3.set(x, y, z).project(camera);
+        return {
+          x: (v3.x * 0.5 + 0.5) * innerWidth,
+          y: (-v3.y * 0.5 + 0.5) * innerHeight,
+          front,
+          ndc: [v3.x, v3.y],
+        };
+      }
+      function inView(x, y, z, k = 0.92) {
+        const s = toScreen(x, y, z);
+        return s.front && Math.abs(s.ndc[0]) < k && Math.abs(s.ndc[1]) < 0.95;
+      }
+      function anchorWorld(it) {
+        const a = it.anchor ?? [0, it.anchorY ?? 1.2, 0];
+        v3.set(a[0], a[1], a[2]).applyMatrix4(it.g.matrixWorld);
+        return [v3.x, v3.y, v3.z];
+      }
+      function sizeToPx(mesh, wPx, d) {
+        const s =
+          (wPx * 2 * d * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) /
+          innerHeight;
+        mesh.scale.set(s, s, 1);
+      }
+
+      /* ---------------- the frame ---------------- */
+      const keys = new Set();
+      let last = performance.now(),
+        maxFrame = 0,
+        frameN = 0,
+        radarDrawAt = 0;
+      function frame(now) {
+        const real = Math.min(0.1, (now - last) / 1000);
+        last = now;
+        maxFrame = Math.max(maxFrame * 0.995, real * 1000);
+        frameN++;
+        // the script runs on real time, so a beat can open and close the journal; the world stops while it is open
+        runScript(real * demoMult);
+        if (W.journal) {
+          if (measuring && frameN % 8 === 0) {
+            measureHud();
+          }
+          requestAnimationFrame(frame);
+          return;
+        }
+        const dt = demo.held && demo.freeze ? 0 : real * demoMult; // a screenshot can hold the world still at a mark
+        W.t += dt;
+        if (keys.size) {
+          if (keys.has("a") || keys.has("arrowleft")) {
+            me.yaw += 1.3 * real;
+          }
+          if (keys.has("d") || keys.has("arrowright")) {
+            me.yaw -= 1.3 * real;
+          }
+          const f =
+            (keys.has("w") || keys.has("arrowup") ? 1 : 0) -
+            (keys.has("s") || keys.has("arrowdown") ? 1 : 0);
+          if (f) {
+            step(f * 1.6 * real);
+          }
+        }
+
+        // stations, with a margin so a jitter on the line does not flip it
+        for (const st of Object.values(STATIONS)) {
+          const d = dist2(st.c[0], st.c[1]);
+          if (W.station !== st.id && d < st.rIn && !W.station) {
+            enterStation(st.id);
+          } else if (W.station === st.id && d > st.rOut) {
+            leaveStation(st.id);
+          }
+        }
+
+        camera.position.set(me.x, EYE, me.z);
+        camera.rotation.set(PITCH, me.yaw, 0);
+        camera.updateMatrixWorld();
+        scene.updateMatrixWorld();
+
+        for (const it of ITEMS) {
+          updateItem(it, dt, real);
+        }
+        updateStory();
+        updateDrift(dt);
+        updateBeams(real);
+        renderHud(now);
+        renderer.render(scene, camera);
+        if (measuring && frameN % 8 === 0) {
+          measureHud();
+        }
+        requestAnimationFrame(frame);
+      }
+      function step(m) {
+        me.x = clamp(me.x - Math.sin(me.yaw) * m, -42, 46);
+        me.z = clamp(me.z - Math.cos(me.yaw) * m, -89, 44);
+      }
+
+      function updateItem(it, dt, real) {
+        const here = W.station === it.st;
+        if (it.kind === "short" || it.kind === "picture") {
+          // seen: in the middle of the view, near enough to read, for a moment
+          const a = anchorWorld(it);
+          if (
+            !it.seen &&
+            here &&
+            dist(it) < it.readM &&
+            inView(a[0], a[1], a[2], 0.7)
+          ) {
+            it.lookT += dt;
+            if (it.lookT > SEEN_LOOK_S) {
+              markSeen(it);
+            }
+          }
+        }
+        if (it.kind === "video" || it.kind === "audio") {
+          if (it.state === "playing") {
+            it.prog += dt;
+            if (it.prog >= it.dur) {
+              it.prog = it.dur;
+              it.state = "done";
+              markSeen(it);
+            }
+          }
+          if (it.kind === "video") {
+            const key = it.state + Math.floor(it.prog * 8);
+            if (key !== it.vKey) {
+              it.vKey = key;
+              drawVideo(it);
+            }
+          }
+          if (it.kind === "audio") {
+            const u = it.spark.material.uniforms,
+              on = it.state === "playing";
+            u.uT.value += real * (on ? 1.6 : 0.7);
+            u.uSwirl.value = on ? 1.2 : 0.5;
+            u.uStrength.value +=
+              ((on ? 1 : it.seen ? 0.25 : 0.6) - u.uStrength.value) *
+              damp(real, 0.4);
+            u.uColor.value.lerp(
+              on ? C_PLAY : it.seen ? C_SEEN : C_GOLD,
+              damp(real, 0.4),
+            );
+          }
+        }
+        if (it.kind === "model") {
+          const o = it.noteOn && dist(it) < 9 ? 1 : 0,
+            m = it.notePlate.material;
+          m.opacity += (o - m.opacity) * damp(real, 0.3);
+          it.notePlate.visible = m.opacity > 0.01;
+          if (dist(it) >= 9) {
+            it.noteOn = false;
+          }
+          it.notePlate.quaternion
+            .copy(camera.quaternion)
+            .premultiply(it.g.quaternion.clone().invert());
+        }
+        if (it.kind === "character") {
+          updateCharacter(it, dt, real);
+        }
+      }
+
+      function updateCharacter(it, dt, real) {
+        if (it.greetPending && dist(it) < 12) {
+          it.greetPending = false;
+          enterStory(STORIES[0]);
+        }
+        const F = it.fig,
+          toMe = faceTo(it.pos, [me.x, me.z]);
+        // a person turns to you while talking or when you come near; else keeps their post's way
+        const want = it.line || dist(it) < 7 ? toMe : it.homeYaw;
+        it.yaw += angDiff(it.yaw, want) * damp(real, 0.35);
+        const headWant =
+          clamp(angDiff(it.yaw, toMe), -1.2, 1.2) * (dist(it) < 16 ? 1 : 0);
+        it.headYaw += (headWant - it.headYaw) * damp(real, 0.25);
+        it.g.rotation.y = it.yaw;
+        F.head.rotation.y = it.headYaw;
+        const L = it.line,
+          talking = L && !L.held && L.doneAt == null,
+          tt = W.t;
+        let rx = 0,
+          rz = 0,
+          lx = 0;
+        if (L && L.acc < 5 && it.id === "greta" && !it.seen) {
+          rz = -2.5 + Math.sin(tt * 9) * 0.3;
+        } // the greeting's wave
+        else if (talking) {
+          rx = -0.35 + Math.sin(tt * 3.1) * 0.25;
+          lx = -0.2 + Math.sin(tt * 2.3 + 1) * 0.2;
+        }
+        const k = damp(real, 0.18);
+        F.armR.rotation.x += (rx - F.armR.rotation.x) * k;
+        F.armR.rotation.z += (rz - F.armR.rotation.z) * k;
+        F.armL.rotation.x += (lx - F.armL.rotation.x) * k;
+        F.head.position.y =
+          1.64 + (talking ? Math.abs(Math.sin(tt * 6)) * 0.012 : 0);
+        updateLine(it, dt);
+        // the bubble: over the head, always facing you, a steady size on the screen
+        const b = it.bubble,
+          show = !!it.line;
+        b.a += ((show ? 1 : 0) - b.a) * damp(real, 0.2);
+        b.mesh.visible = b.a > 0.01;
+        b.mesh.material.opacity = b.a;
+        if (b.mesh.visible) {
+          const d = Math.max(1, dist(it));
+          const wPx = Math.min(innerWidth * 0.86, 430, innerHeight * 0.55);
+          sizeToPx(b.mesh, wPx, d);
+          const h = b.mesh.scale.y * (BUB_H / BUB_W);
+          b.mesh.position.set(it.pos[0], 1.95 + h / 2, it.pos[1]);
+          b.mesh.quaternion.copy(camera.quaternion);
+        }
+      }
+
+      function updateBeams(real) {
+        for (const st of Object.values(STATIONS)) {
+          const B = beams[st.id],
+            want = W.station === st.id ? 0 : 1,
+            round = KN.beam === "round";
+          B.a += (want - B.a) * damp(real, 0.6);
+          B.gem.visible = B.col.visible = round && B.a > 0.01;
+          B.built.visible = B.ring.visible = !round && B.a > 0.01;
+          B.gem.material.opacity = 0.95 * B.a;
+          B.col.material.opacity = 0.35 * B.a;
+          B.gem.rotation.y += real;
+          const r = clamp(dist2(st.c[0], st.c[1]) * 0.0015, 0.05, 0.6);
+          B.built.scale.set(r, 1, r);
+          B.built.material.opacity = 0.28 * B.a;
+          B.ring.material.opacity = 0.55 * B.a;
+        }
+      }
+
+      /* ---------------- the HUD ---------------- */
+      const windEl = $("#wind"),
+        chipEl = $("#chip"),
+        trEl = $("#transport"),
+        radarEl = $("#radar"),
+        jBtn = $("#journal-btn");
+      const ICON = {
+        pause:
+          '<svg viewBox="0 0 24 24" fill="#fff"><rect x="6" y="5" width="4.2" height="14" rx="1"/><rect x="13.8" y="5" width="4.2" height="14" rx="1"/></svg>',
+        play: '<svg viewBox="0 0 24 24" fill="#fff"><path d="M8 5.5v13l10.5-6.5z"/></svg>',
+      };
+      let hudKey = "";
+      function renderHud(now) {
+        // the wind: only inside a station; pressed while its one drift runs, and it cannot be re-fired until that ends
+        windEl.hidden = !W.station;
+        windEl.setAttribute("aria-pressed", String(DR.active));
+        jBtn.hidden = !Object.keys(W.visited).length;
+        // the chip: which story, and who you entered it through
+        const S = W.story;
+        chipEl.hidden = !S;
+        if (S) {
+          const ch = byId[S.s.steps[0]];
+          const k = S.s.id + (S.doneAt != null);
+          if (chipEl.dataset.k !== k) {
+            chipEl.dataset.k = k;
+            chipEl.querySelector(".face").style.background = ch.coat;
+            chipEl.querySelector(".title").textContent =
+              S.doneAt != null ? `${S.s.title}: done` : S.s.title;
+          }
+        }
+        // one transport for whatever plays in this station
+        const now2 = playing().filter((it) => it.st === W.station),
+          held = W.hudPaused.filter((it) => it.state === "paused");
+        const showT = !!W.station && (now2.length > 0 || held.length > 0);
+        trEl.hidden = !showT;
+        if (showT) {
+          const it = now2[now2.length - 1] ?? held[0],
+            key = now2.length ? "pause" : "play";
+          if (hudKey !== key) {
+            hudKey = key;
+            trEl.innerHTML = ICON[key];
+            trEl.setAttribute("aria-label", key === "pause" ? "Pause" : "Play");
+          }
+          trEl.style.setProperty("--p", (it.prog / it.dur).toFixed(3));
+        }
+        if (now - radarDrawAt > 66) {
+          radarDrawAt = now;
+          drawRadar();
+        } // at most 15 times a second
+      }
+      // the radar: stations only, at their true bearings, heading-up, on a square-root scale
+      function drawRadar() {
+        const g = radarEl.getContext("2d"),
+          S = radarEl.width,
+          c = S / 2,
+          R = c - 12;
+        g.clearRect(0, 0, S, S);
+        g.fillStyle = "rgb(10 13 18 / 70%)";
+        g.beginPath();
+        g.arc(c, c, c - 2, 0, 7);
+        g.fill();
+        g.strokeStyle = "rgb(255 255 255 / 55%)";
+        g.lineWidth = 4;
+        g.beginPath();
+        g.arc(c, c, c - 4, 0, 7);
+        g.stroke();
+        const sy = Math.sin(me.yaw),
+          cy = Math.cos(me.yaw);
+        const scale = (d) =>
+          R * Math.sqrt(Math.min(d, RADAR_RANGE_M) / RADAR_RANGE_M);
+        for (const st of Object.values(STATIONS)) {
+          const dx = st.c[0] - me.x,
+            dz = st.c[1] - me.z,
+            f = -dx * sy - dz * cy,
+            r = dx * cy - dz * sy,
+            d = Math.hypot(r, f);
+          if (W.station === st.id) {
+            g.strokeStyle = "rgb(251 146 60 / 85%)";
+            g.lineWidth = 5;
+            g.beginPath();
+            g.arc(
+              c + (r / Math.max(d, 1e-6)) * scale(d),
+              c - (f / Math.max(d, 1e-6)) * scale(d),
+              scale(st.rIn),
+              0,
+              7,
+            );
+            g.stroke();
+            continue;
+          }
+          const k = scale(d) / Math.max(d, 1e-6),
+            x = c + r * k,
+            y = c - f * k;
+          g.fillStyle = COL.beam;
+          g.beginPath();
+          g.arc(x, y, 10, 0, 7);
+          g.fill();
+          g.lineWidth = 3.5;
+          g.strokeStyle = "rgb(10 13 18 / 90%)";
+          g.stroke();
+        }
+        g.fillStyle = "#fff";
+        g.beginPath();
+        g.moveTo(c, c - 14);
+        g.lineTo(c + 10, c + 10);
+        g.lineTo(c, c + 4);
+        g.lineTo(c - 10, c + 10);
+        g.closePath();
+        g.fill();
+      }
+      windEl.addEventListener("click", () => {
+        userTouched();
+        summonWind();
+      });
+      trEl.addEventListener("click", () => {
+        userTouched();
+        transportTap();
+      });
+      chipEl.querySelector(".leave").addEventListener("click", () => {
+        userTouched();
+        leaveStory();
+      });
+
+      /* ======================= the journal: one page per visited station, over the paused view ======================= */
+      const KIND_ICON = {
+        character: [
+          "#e9d7cf",
+          '<circle cx="16" cy="11" r="5.5" fill="#7a3b2c"/><path d="M6 27c0-5.5 4.5-9 10-9s10 3.5 10 9z" fill="#7a3b2c"/>',
+        ],
+        short: [
+          "#e8e0cc",
+          '<rect x="5" y="6" width="22" height="14" rx="2" fill="#5b4a35"/><rect x="15" y="20" width="2.6" height="8" fill="#5b4a35"/><rect x="8.5" y="10" width="15" height="2.4" rx="1" fill="#e8e0cc"/><rect x="8.5" y="14" width="10" height="2.4" rx="1" fill="#e8e0cc"/>',
+        ],
+        long: [
+          "#e6e0d2",
+          '<rect x="6" y="4" width="20" height="24" rx="2.5" fill="#5b4a35"/><rect x="9.5" y="8.5" width="13" height="2.4" rx="1" fill="#e6e0d2"/><rect x="9.5" y="13" width="13" height="2.4" rx="1" fill="#e6e0d2"/><rect x="9.5" y="17.5" width="13" height="2.4" rx="1" fill="#e6e0d2"/><rect x="9.5" y="22" width="8" height="2.4" rx="1" fill="#e6e0d2"/>',
+        ],
+        picture: [
+          "#e3dccb",
+          '<rect x="4" y="6" width="24" height="20" rx="2.5" fill="#5b4a35"/><path d="M7 23l6-8 4 5 3-3 5 6z" fill="#e3dccb"/><circle cx="21.5" cy="11.5" r="2.4" fill="#e3dccb"/>',
+        ],
+        video: [
+          "#d9e0e6",
+          '<rect x="3.5" y="6" width="25" height="17" rx="2.5" fill="#33414d"/><path d="M13.5 10.5v8l7-4z" fill="#d9e0e6"/><rect x="12" y="25" width="8" height="2.6" rx="1" fill="#33414d"/>',
+        ],
+        audio: [
+          "#e8e0c6",
+          '<path d="M12 23.5V7.5l13-3v15" fill="none" stroke="#5b4a35" stroke-width="3.2" stroke-linejoin="round"/><ellipse cx="9.5" cy="23.5" rx="4" ry="3.2" fill="#5b4a35"/><ellipse cx="22.5" cy="19.5" rx="4" ry="3.2" fill="#5b4a35"/>',
+        ],
+        model: [
+          "#e2ddd2",
+          '<path d="M16 4l11 6v12l-11 6-11-6V10z" fill="#5b4a35"/><path d="M16 16l11-6M16 16L5 10M16 16v12" stroke="#e2ddd2" stroke-width="2.4" fill="none"/>',
+        ],
+      };
+      const HOW = {
+        character: (it) => `You heard ${it.short ?? it.name}`,
+        short: () => "You read it",
+        long: () => "You read it to the last page",
+        picture: () => "You looked at it",
+        video: () => "You watched it to the end",
+        audio: () => "You listened to the end",
+        model: () => "You opened its note",
+      };
+      const esc = (s) =>
+        String(s).replace(
+          /[&<>"]/g,
+          (ch) =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[ch],
+        );
+
+      function openJournal() {
+        if (W.journal || !Object.keys(W.visited).length) {
+          return;
+        }
+        W.journal = true;
+        W.jTab = W.station ?? W.lastStation;
+        try {
+          speechSynthesis.pause();
+        } catch {
+          /* none */
+        }
+        $("#dev").classList.add("journal-open");
+        $("#paused").hidden = false;
+        renderJournal();
+        $("#jclose").focus({ preventScroll: true });
+      }
+      function closeJournal(silent = false) {
+        if (!W.journal && !silent) {
+          return;
+        }
+        W.journal = false;
+        $("#dev").classList.remove("journal-open");
+        $("#paused").hidden = true;
+        if (!silent) {
+          try {
+            speechSynthesis.resume();
+          } catch {
+            /* none */
+          }
+          last = performance.now();
+        }
+      }
+      function renderJournal() {
+        const ids = Object.keys(STATIONS).filter((id) => W.visited[id]);
+        $("#jtabs").innerHTML = ids
+          .map(
+            (id) =>
+              `<button type="button" role="tab" data-tab="${id}" aria-selected="${id === W.jTab}">${esc(STATIONS[id].name)}${unseenIn(id).length ? '<span class="star" aria-hidden="true">&#10043;</span>' : ""}</button>`,
+          )
+          .join("");
+        $("#jtabs")
+          .querySelectorAll("[data-tab]")
+          .forEach((b) =>
+            b.addEventListener("click", () => {
+              W.jTab = b.dataset.tab;
+              renderJournal();
+            }),
+          );
+        const id = W.jTab,
+          st = STATIONS[id],
+          more = unseenIn(id).length > 0;
+        const seenHere = W.seenLog
+          .map((x) => byId[x])
+          .filter((it) => it.st === id);
+        const stories = STORIES.filter((s) => s.st === id && s.entered);
+        const where =
+          W.station === id ? "You are here now." : "You walked on from here.";
+        $("#jpage").innerHTML =
+          `<h3>${esc(st.name)}</h3><p class="when">${where}</p>
+    ${
+      more
+        ? '<p class="more"><span class="mstar" aria-hidden="true">&#10043;</span><span>There is more here.<small>Call the wind while you are here, and it shows you the way.</small></span></p>'
+        : '<p class="all-seen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>You have seen everything here.</span></p>'
+    }
+    ${
+      stories.length
+        ? `<h4>Stories</h4><ul class="jlist">${stories
+            .map((s) => {
+              const ch = byId[s.steps[0]];
+              return `<li><span class="face" style="background:${ch.coat}"></span><span><b>${esc(s.title)}</b><span>Begun with ${esc(ch.short ?? ch.name)}, ${s.done ? "heard to the end" : "still under way"}</span></span></li>`;
+            })
+            .join("")}</ul>`
+        : ""
+    }
+    <h4>What you saw</h4>
+    ${
+      seenHere.length
+        ? `<ul class="jlist">${seenHere
+            .map((it) => {
+              const [bg, svg] = KIND_ICON[it.kind];
+              return `<li><span class="thumb" style="background:${bg}"><svg viewBox="0 0 32 32">${svg}</svg></span><span><b>${esc(it.name)}</b><span>${HOW[it.kind](it)}, ${esc(it.where)}.</span></span></li>`;
+            })
+            .join("")}</ul>`
+        : '<p class="jempty">Nothing yet. What you see here is written down as you go.</p>'
+    }`;
+      }
+      jBtn.addEventListener("click", () => {
+        userTouched();
+        openJournal();
+      });
+      $("#jclose").addEventListener("click", () => closeJournal());
+      $("#jback").addEventListener("click", () => closeJournal());
+      $("#paused").addEventListener("click", (e) => {
+        if (e.target.id === "paused") {
+          closeJournal();
+        }
+      });
+      addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && W.journal) {
+          closeJournal();
+        }
+      });
+
+      /* ---------------- input ---------------- */
+      let drag = null;
+      canvas.addEventListener("pointerdown", (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        drag = {
+          x: e.clientX,
+          y: e.clientY,
+          lx: e.clientX,
+          ly: e.clientY,
+          t: performance.now(),
+          moved: false,
+        };
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!drag) {
+          return;
+        }
+        const dx = e.clientX - drag.lx,
+          dy = e.clientY - drag.ly;
+        drag.lx = e.clientX;
+        drag.ly = e.clientY;
+        if (
+          !drag.moved &&
+          Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > TAP_PX
+        ) {
+          drag.moved = true;
+          userTouched(true);
+        }
+        if (drag.moved) {
+          me.yaw += dx * LOOK_GAIN;
+          step(-dy * DRAG_WALK);
+        }
+      });
+      canvas.addEventListener("pointerup", (e) => {
+        if (drag && !drag.moved && performance.now() - drag.t < TAP_MS) {
+          worldTap(e.clientX, e.clientY);
+        }
+        drag = null;
+      });
+      canvas.addEventListener("pointercancel", () => {
+        drag = null;
+      });
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          e.preventDefault();
+          userTouched(true);
+          step(-e.deltaY * 0.01);
+        },
+        { passive: false },
+      );
+      addEventListener("keydown", (e) => {
+        const k = e.key.toLowerCase();
+        if (
+          !W.journal &&
+          [
+            "w",
+            "a",
+            "s",
+            "d",
+            "arrowup",
+            "arrowdown",
+            "arrowleft",
+            "arrowright",
+          ].includes(k)
+        ) {
+          keys.add(k);
+          userTouched(true);
+        }
+      });
+      addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+
+      const ray = new THREE.Raycaster();
+      function worldTap(x, y) {
+        ray.setFromCamera(
+          { x: (x / innerWidth) * 2 - 1, y: -(y / innerHeight) * 2 + 1 },
+          camera,
+        );
+        const hit = ray
+          .intersectObjects(hits, false)
+          .find(
+            (h) =>
+              byId[h.object.userData.id].st === W.station && h.distance < 30,
+          );
+        if (hit) {
+          tapItem(byId[hit.object.userData.id]);
+        }
+      }
+
+      /* ---------------- the demonstration: ten beats ---------------- */
+      const BEATS = [
+        "Outside",
+        "Walk in: Greta greets",
+        "Call the wind",
+        "Film: pause from the HUD",
+        "Seen some, call again",
+        "The journal",
+        "Leave with things unseen",
+        "The gate: talk to enter",
+        "Call the wind in a story",
+        "All seen at the well",
+      ];
+      const yawTo = (x, z) => Math.atan2(-(x - me.x), -(z - me.z));
+      const face = (x, z) => {
+        me.yaw = yawTo(x, z);
+      };
+      let demoMult = 1;
+
+      function seen(...ids) {
+        for (const id of ids) {
+          markSeen(byId[id]);
+        }
+      }
+      function preState(n) {
+        resetWorld();
+        seed = 7 + n;
+        const A = () => {
+          W.station = "A";
+          W.visited.A = true;
+          W.lastStation = "A";
+          W.greeted = true;
+          STORIES[0].entered = true;
+        };
+        if (n === 1) {
+          me.x = 0;
+          me.z = 42;
+          face(0, -2);
+        }
+        if (n === 2) {
+          me.x = 0.4;
+          me.z = 24;
+          face(0.4, 0);
+        }
+        if (n === 3) {
+          A();
+          seen("greta", "lecternA");
+          STORIES[0].done = true;
+          me.x = -4;
+          me.z = 0;
+          me.yaw = 0;
+        }
+        if (n === 4) {
+          A();
+          seen("greta", "lecternA");
+          STORIES[0].done = true;
+          me.x = -6.5;
+          me.z = -1.6;
+          face(-11, -3);
+        }
+        if (n === 5 || n === 6) {
+          A();
+          seen("greta", "lecternA", "signA", "pictureA", "videoA");
+          byId.videoA.state = "done";
+          byId.videoA.prog = byId.videoA.dur;
+          drawVideo(byId.videoA);
+          STORIES[0].done = true;
+          me.x = -4.6;
+          me.z = 2.0;
+          me.yaw = 0;
+        }
+        if (n === 7) {
+          A();
+          seen("greta", "lecternA", "pictureA", "signA", "videoA");
+          STORIES[0].done = true;
+          me.x = 4;
+          me.z = -8;
+          face(10, -30);
+        }
+        if (n === 8) {
+          W.greeted = true;
+          W.visited.A = true;
+          W.lastStation = "A";
+          STORIES[0].entered = true;
+          seen(
+            "greta",
+            "lecternA",
+            "pictureA",
+            "signA",
+            "videoA",
+            "audioA",
+            "modelA",
+          );
+          STORIES[0].done = true;
+          me.x = 23;
+          me.z = -54;
+          face(24, -80);
+        }
+        if (n === 9) {
+          W.greeted = true;
+          W.visited.A = true;
+          STORIES[0].entered = true;
+          seen("greta", "lecternA", "pictureA", "signA", "videoA");
+          STORIES[0].done = true;
+          W.station = "B";
+          W.visited.B = true;
+          W.lastStation = "B";
+          seen("mason", "signB");
+          STORIES[1].entered = true;
+          W.story = { s: STORIES[1], step: 1, doneAt: null };
+          me.x = 21.5;
+          me.z = -80.5;
+          face(17.5, -87);
+        }
+        if (n === 10) {
+          A();
+          seen(...ITEMS.filter((it) => it.st === "A").map((it) => it.id));
+          STORIES[0].done = true;
+          me.x = 2.5;
+          me.z = 2.4;
+          face(0.2, -4.2);
+        }
+      }
+
+      let script = [],
+        cur = null;
+      const demo = { running: false, held: false, stopAt: null };
+      const S = {
+        wait: (s) => ({
+          s,
+          step(dt) {
+            return (this.s -= dt) <= 0;
+          },
+        }),
+        turn: (total, dur) => ({
+          left: dur,
+          rate: total / dur,
+          step(dt) {
+            const d = Math.min(dt, this.left);
+            me.yaw += this.rate * d;
+            this.left -= d;
+            return this.left <= 1e-6;
+          },
+        }),
+        face: (x, z, dur = 1) => ({
+          step(dt) {
+            const d = angDiff(me.yaw, yawTo(x, z));
+            const s = Math.min(
+              Math.abs(d),
+              Math.max(Math.abs(d) * dt * (4 / dur), 0.5 * dt),
+            );
+            me.yaw += Math.sign(d) * s;
+            return Math.abs(d) - s < 0.01;
+          },
+        }),
+        walk: (pts, speed, look) => ({
+          i: 0,
+          step(dt) {
+            if (W.journal) {
+              return false;
+            }
+            let left = dt * speed;
+            while (left > 0 && this.i < pts.length) {
+              const [tx, tz] = pts[this.i],
+                dx = tx - me.x,
+                dz = tz - me.z,
+                d = Math.hypot(dx, dz);
+              if (d < 1e-3) {
+                this.i++;
+                continue;
+              }
+              if (!look) {
+                me.yaw +=
+                  angDiff(me.yaw, Math.atan2(-dx, -dz)) * Math.min(1, dt * 4);
+              }
+              const m = Math.min(left, d);
+              me.x += (dx / d) * m;
+              me.z += (dz / d) * m;
+              left -= m;
+              if (m >= d - 1e-6) {
+                this.i++;
+              }
+            }
+            return this.i >= pts.length;
+          },
+        }),
+        tapAt: (fn) => ({
+          step() {
+            const p = fn();
+            if (p) {
+              ripple(p.x, p.y);
+              worldTap(p.x, p.y);
+            }
+            return true;
+          },
+        }),
+        tapEl: (sel) => ({
+          step() {
+            const el = $(sel);
+            if (el && !el.hidden) {
+              const r = el.getBoundingClientRect();
+              ripple(r.left + r.width / 2, r.top + r.height / 2);
+              el.click();
+            }
+            return true;
+          },
+        }),
+        mark: (name) => ({
+          step() {
+            if (demo.stopAt === name) {
+              demo.held = true;
+            }
+            return !demo.held;
+          },
+        }),
+      };
+      const at = (id) => () => {
+        const it = byId[id],
+          a = anchorWorld(it),
+          s = toScreen(a[0], a[1], a[2]);
+        return s.front ? s : null;
+      };
+
+      function beatScript(n) {
+        switch (n) {
+          case 1:
+            return [
+              S.wait(1.5),
+              S.mark("outside"),
+              S.turn(0.5, 2.5),
+              S.turn(-0.5, 2.5),
+              S.walk([[0.4, 26]], 1.3),
+              S.mark("edge"),
+            ];
+          case 2:
+            return [
+              S.walk([[0.6, 7]], 1.3),
+              S.face(0.2, -4.2, 1),
+              S.wait(5.5),
+              S.mark("greet"),
+              S.wait(9),
+            ];
+          case 3:
+            return [
+              S.wait(1.2),
+              S.tapEl("#wind"),
+              S.wait(0.8),
+              S.mark("drift"),
+              S.wait(2.2),
+              S.mark("after"),
+              S.face(-11, -3, 1.4),
+              S.wait(1.5),
+            ];
+          case 4:
+            return [
+              S.wait(0.8),
+              S.tapAt(at("videoA")),
+              S.wait(3.2),
+              S.mark("film"),
+              S.turn(2.6, 2.2),
+              S.wait(1.2),
+              S.tapEl("#transport"),
+              S.wait(1.4),
+              S.mark("paused"),
+              S.wait(2),
+            ];
+          case 5:
+            return [
+              S.wait(1),
+              S.tapEl("#wind"),
+              S.wait(0.8),
+              S.mark("drift"),
+              S.wait(2.5),
+            ];
+          case 6:
+            return [
+              S.wait(1),
+              S.tapEl("#journal-btn"),
+              S.wait(0.8),
+              S.mark("journal"),
+              S.wait(4),
+              S.tapEl("#jback"),
+              S.wait(1),
+            ];
+          case 7:
+            return [
+              S.walk([[8.6, -23.8]], 1.6),
+              S.wait(0.3),
+              S.mark("left"),
+              S.wait(1.5),
+              S.walk([[16, -42]], 1.6),
+              S.tapEl("#journal-btn"),
+              S.wait(0.8),
+              S.mark("journal"),
+              S.wait(4),
+              S.tapEl("#jback"),
+            ];
+          case 8:
+            return [
+              S.walk([[24, -59]], 1.4),
+              S.face(24, -84, 1),
+              S.wait(1.2),
+              S.mark("three"),
+              S.walk([[21, -80]], 1.2),
+              S.face(17.5, -87, 0.6),
+              S.tapAt(at("mason")),
+              S.wait(6),
+              S.mark("entered"),
+              S.wait(8),
+            ];
+          case 9:
+            return [
+              S.wait(1),
+              S.tapEl("#wind"),
+              S.wait(0.8),
+              S.mark("drift"),
+              S.wait(2.5),
+              S.face(20.4, -73.6, 1.4),
+              S.wait(1),
+            ];
+          case 10:
+            return [
+              S.wait(1),
+              S.tapEl("#wind"),
+              S.wait(0.8),
+              S.mark("drift"),
+              S.wait(2.5),
+              S.tapEl("#journal-btn"),
+              S.wait(0.8),
+              S.mark("journal"),
+              S.wait(4),
+              S.tapEl("#jback"),
+            ];
+        }
+        return [];
+      }
+      function runScript(dt) {
+        while (true) {
+          if (!cur) {
+            cur = script.shift();
+            if (!cur) {
+              demo.running = false;
+              return;
+            }
+          }
+          if (cur.step(dt)) {
+            cur = null;
+            dt = 0;
+            continue;
+          }
+          return;
+        }
+      }
+      function jump(n, { run = true } = {}) {
+        beat = clamp(n, 1, BEATS.length);
+        rec[beat] = { hud: 0, el: 0, ov: 0 };
+        preState(beat);
+        script = run ? beatScript(beat) : [];
+        cur = null;
+        demo.running = run;
+        demo.held = false;
+        $("#beat-name").textContent =
+          `${beat}/${BEATS.length} ${BEATS[beat - 1]}`;
+        renderInfo();
+      }
+      function userTouched(moving) {
+        if (moving && demo.running) {
+          script = [];
+          cur = null;
+          demo.running = false;
+          $("#beat-name").textContent = `${beat}/${BEATS.length} free walk`;
+        }
+      }
+      function ripple(x, y) {
+        const d = document.createElement("div");
+        d.className = "rip";
+        d.style.left = x + "px";
+        d.style.top = y + "px";
+        $("#dev").append(d);
+        setTimeout(() => d.remove(), 800);
+      }
+
+      $("#prev").addEventListener("click", () => jump(beat - 1));
+      $("#next").addEventListener("click", () =>
+        jump(beat >= BEATS.length ? 1 : beat + 1),
+      );
+      $("#beat-name").addEventListener("click", () => jump(beat));
+      $("#exit").addEventListener("click", () => {
+        hush();
+        $("#exited").hidden = false;
+      });
+      $("#back-in").addEventListener("click", () => {
+        $("#exited").hidden = true;
+      });
+
+      /* ---------------- the measuring hook (behind the ruler toggle) ---------------- */
+      let measuring = false,
+        hudNow = { hud: 0, el: 0, ov: 0 };
+      const rec = {};
+      function hudBoxes() {
+        return [...document.querySelectorAll("[data-hud]")]
+          .filter((el) => {
+            if (el.hidden) {
+              return false;
+            }
+            const cs = getComputedStyle(el);
+            if (
+              cs.display === "none" ||
+              cs.visibility === "hidden" ||
+              +cs.opacity < 0.05
+            ) {
+              return false;
+            }
+            const r = el.getBoundingClientRect();
+            return r.width > 0 && r.height > 0;
+          })
+          .map((el) => ({ el, r: el.getBoundingClientRect() }));
+      }
+      function measureHud() {
+        const bx = hudBoxes(),
+          W0 = innerWidth,
+          H0 = innerHeight,
+          St = 4;
+        let cov = 0;
+        for (let y = St / 2; y < H0; y += St) {
+          for (let x = St / 2; x < W0; x += St) {
+            for (const b of bx) {
+              if (
+                x >= b.r.left &&
+                x < b.r.right &&
+                y >= b.r.top &&
+                y < b.r.bottom
+              ) {
+                cov++;
+                break;
+              }
+            }
+          }
+        }
+        const total = Math.ceil(W0 / St) * Math.ceil(H0 / St);
+        document
+          .querySelectorAll(".ovl")
+          .forEach((e) => e.classList.remove("ovl"));
+        let ov = 0;
+        for (let i = 0; i < bx.length; i++) {
+          for (let j = i + 1; j < bx.length; j++) {
+            const a = bx[i].r,
+              b = bx[j].r,
+              w = Math.min(a.right, b.right) - Math.max(a.left, b.left),
+              h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+            if (w > 2 && h > 2) {
+              ov++;
+              bx[i].el.classList.add("ovl");
+              bx[j].el.classList.add("ovl");
+            }
+          }
+        }
+        hudNow = { hud: (cov / total) * 100, el: bx.length, ov };
+        const R = rec[beat];
+        if (R) {
+          R.hud = Math.max(R.hud, hudNow.hud);
+          R.el = Math.max(R.el, hudNow.el);
+          R.ov = Math.max(R.ov, ov);
+        }
+        const inf = renderer.info.render,
+          L = DRIFT_LOOKS[KN.drift];
+        $("#readout").textContent =
+          `HUD ${hudNow.hud.toFixed(1)}% · ${hudNow.el} el · ${ov} overlap${W.journal ? " · journal open" : ""}\nslowest frame ${maxFrame.toFixed(0)} ms · ${inf.calls} draws\ndrift ${KN.drift} ${L.dur} s · ${L.speed} m/s · ${L.n}${DR.active ? " (on)" : ""} · ${innerWidth}x${innerHeight}`;
+        if (!$("#info").hidden) {
+          renderTable();
+        }
+      }
+      $("#measure-btn").addEventListener("click", () => {
+        measuring = !measuring;
+        $("#measure-btn").setAttribute("aria-pressed", String(measuring));
+        $("#readout").hidden = !measuring;
+        $("#dev").classList.toggle("measuring", measuring);
+        if (measuring) {
+          measureHud();
+        }
+      });
+
+      /* ---------------- the page's own notes and settings ---------------- */
+      const KNOBS = [
+        {
+          key: "drift",
+          label: "The wind looks like",
+          opts: Object.entries(DRIFT_LOOKS).map(([k, L]) => [
+            k,
+            `${L.label} (${L.dur} s)`,
+          ]),
+        },
+        {
+          key: "beam",
+          label: "Station pin",
+          opts: [
+            ["round", "the beam with a gem"],
+            ["built", "today's beacon"],
+          ],
+        },
+        {
+          key: "voice",
+          label: "Voice",
+          opts: [
+            [true, "on"],
+            [false, "off"],
+          ],
+        },
+      ];
+      function renderInfo() {
+        const el = $("#info");
+        if (el.hidden) {
+          return;
+        }
+        el.innerHTML = `<button type="button" class="close" aria-label="Close">&times;</button>
+  <h1>Call the wind, keep a journal</h1>
+  <p>Nothing hints at what is left until you ask. Inside a station, the wind button at the bottom right sends one short drift along the ground toward the nearest thing you have not seen. It ends by itself and never comes again unless you ask. The journal at the top left keeps one page per station you visited: what you saw, and a mark while there is more here. It never counts and never names what you have not seen, and it opens over a paused view.</p>
+  <h3>What "seen" means here</h3>
+  <ul><li><b>A person</b>: their first words have played to the end.</li><li><b>A short text, a picture</b>: it has been in the middle of your view, near enough to read, for ${SEEN_LOOK_S} s.</li><li><b>A long text</b>: you turned to its last page.</li><li><b>A film, a sound</b>: it played to its end.</li><li><b>A model</b>: you tapped it and its note opened.</li></ul>
+  <h3>Where the wind goes</h3>
+  <ul><li>In a story: to the story's next thing.</li><li>Otherwise: to the nearest thing here you have not seen. It stops short of it, and at most ${DRIFT_LOOKS[KN.drift].reach} m out, so a far thing gets a direction, not its spot.</li><li>When you have seen everything here: toward the next station with something left.</li></ul>
+  <h3>On the screen, and only then</h3>
+  <ul><li>Exit, always.</li><li>The journal, once you have visited a station.</li><li>The radar, with stations only.</li><li>The wind, only inside a station.</li><li>Play/pause, while something of this station plays.</li><li>The story you are in, with the face colour of the person you entered it through, and a leave button.</li></ul>
+  <h3>Stories</h3>
+  <p>At the well the one story begins with Greta; she greets you once when you walk in, the only thing that starts by arriving. At the gate three people stand where their stories begin; talking to one enters that story. This replaces today's picker of story titles.</p>
+  <h3>The strongest case against it</h3>
+  <ul><li>A visitor who never calls the wind and never opens the journal can walk away with things unseen, and nothing says so.</li><li>The journal is a second place to look. A visitor who opens it often is studying a page, not the square.</li><li>A drift on a busy or very bright square is easy to miss. It cannot be made louder without becoming the cue that is always there.</li></ul>
+  <h3>Settings (also <code>?drift=motes</code>, <code>leaves</code> or <code>trail</code>)</h3>
+  ${KNOBS.map((k) => `<div class="knob"><span>${k.label}</span>${k.opts.map(([v, l], i) => `<button type="button" data-k="${k.key}" data-i="${i}" aria-pressed="${KN[k.key] === v}">${l}</button>`).join("")}</div>`).join("")}
+  <h3>Beats</h3>
+  <div class="beats">${BEATS.map((b, i) => `<button type="button" data-beat="${i + 1}">${i + 1} ${b}</button>`).join("")}</div>
+  <h3>Numbers per beat (the most seen during the beat; switch the ruler on to record)</h3>
+  <div id="tbl"></div>`;
+        el.querySelector(".close").addEventListener("click", () => {
+          el.hidden = true;
+        });
+        el.querySelectorAll("[data-k]").forEach((b) =>
+          b.addEventListener("click", () => {
+            const k = KNOBS.find((x) => x.key === b.dataset.k);
+            KN[k.key] = k.opts[+b.dataset.i][0];
+            if (!KN.voice) {
+              hush();
+            }
+            if (k.key === "drift") {
+              stopDrift();
+            }
+            renderInfo();
+          }),
+        );
+        el.querySelectorAll("[data-beat]").forEach((b) =>
+          b.addEventListener("click", () => {
+            el.hidden = true;
+            jump(+b.dataset.beat);
+          }),
+        );
+        renderTable();
+      }
+      function renderTable() {
+        const t = $("#tbl");
+        if (!t) {
+          return;
+        }
+        t.innerHTML = `<table><tr><th>beat</th><th>HUD %</th><th>el</th><th>overlap</th></tr>${BEATS.map(
+          (b, i) => {
+            const r = rec[i + 1];
+            return `<tr><td>${i + 1} ${b}</td><td>${r ? r.hud.toFixed(1) : "-"}</td><td>${r ? r.el : "-"}</td><td>${r ? r.ov : "-"}</td></tr>`;
+          },
+        ).join("")}</table>`;
+      }
+      $("#info-btn").addEventListener("click", () => {
+        const el = $("#info");
+        el.hidden = !el.hidden;
+        renderInfo();
+      });
+      setTimeout(() => $("#try").classList.add("gone"), 9000);
+
+      /* ---------------- size ---------------- */
+      function resize() {
+        const w = innerWidth,
+          h = innerHeight;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        // a phone camera's long side sees about 64 degrees, whichever way the phone is held
+        camera.fov =
+          w < h
+            ? 64
+            : THREE.MathUtils.radToDeg(
+                2 * Math.atan((Math.tan(THREE.MathUtils.degToRad(32)) * h) / w),
+              );
+        camera.updateProjectionMatrix();
+        viewH.value = h * renderer.getPixelRatio();
+        for (const it of ITEMS) {
+          if (it.bubble) {
+            it.bubble.key = "";
+          }
+        }
+        if (W.journal) {
+          renderer.render(scene, camera);
+        }
+      }
+      addEventListener("resize", resize);
+      resize();
+
+      /* ---------------- build, and the automation hook (screenshots, numbers) ---------------- */
+      for (const it of ITEMS) {
+        buildItem(it);
+      }
+      Object.assign(demo, {
+        jump(n, { stopAt = null, speed = 1, freeze = false } = {}) {
+          this.stopAt = stopAt;
+          this.freeze = freeze;
+          demoMult = speed;
+          jump(n);
+        },
+        release() {
+          this.held = false;
+          this.stopAt = null;
+        },
+        idle() {
+          return !this.running || this.held;
+        },
+        measure(on = true) {
+          if (on !== measuring) {
+            $("#measure-btn").click();
+          }
+        },
+        setDrift(k) {
+          if (DRIFT_LOOKS[k]) {
+            KN.drift = k;
+            stopDrift();
+          }
+        },
+        numbers() {
+          return {
+            beat,
+            rec: JSON.parse(JSON.stringify(rec)),
+            now: hudNow,
+            maxFrame,
+            station: W.station,
+            seen: [...W.seenLog],
+            journal: W.journal,
+            drift: {
+              look: KN.drift,
+              active: DR.active,
+              count: DR.count,
+              target: DR.target,
+              t: +DR.t.toFixed(2),
+              lit: [...moteA].filter((a) => a > 0.05).length,
+              sample: [...motePos.slice(0, 3)].map((v) => +v.toFixed(2)),
+            },
+          };
+        },
+      });
+      window.demo = demo;
+      const qBeat = +qs.get("beat");
+      jump(qBeat >= 1 && qBeat <= BEATS.length ? qBeat : 1);
+      requestAnimationFrame((t) => {
+        last = t;
+        frame(t);
+      });
+    </script>
+  </body>
+</html>
