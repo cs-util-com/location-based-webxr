@@ -6,7 +6,7 @@
  * @see sentry-vite-plugins.mjs.md
  */
 
-import { resolve } from 'node:path';
+import { isAbsolute, parse, relative, resolve } from 'node:path';
 
 /** The Sentry organisation and project every app of the site reports to. */
 const SENTRY_ORG = 'cs-util-com';
@@ -23,6 +23,23 @@ const SENTRY_PROJECT = 'js-gps-recorder';
  */
 export function sourceMapGlob(root, outDir) {
   return `${resolve(root, outDir).replaceAll('\\', '/')}/**/*.map`;
+}
+
+/**
+ * Whether a build's output folder is safe to delete source maps under: not
+ * the project root, not a folder that holds it, and not a filesystem root.
+ * The deletion glob reaches everything below the folder, so any of those
+ * would take the checkout's maps (node_modules included) with it.
+ *
+ * @param {string} root the Vite root (`config.root`)
+ * @param {string} outDir the build's output folder, absolute or relative
+ * @returns {boolean}
+ */
+function isSafeOutDir(root, outDir) {
+  const dir = resolve(root, outDir);
+  const rel = relative(dir, resolve(root));
+  const holdsRoot = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
+  return !holdsRoot && parse(dir).root !== dir;
 }
 
 /**
@@ -55,9 +72,9 @@ export function sentrySourceMapPlugins(createPlugin, env = process.env) {
   if (!env.SENTRY_AUTH_TOKEN) {
     return { plugins: [], workerPlugins: () => [] };
   }
-  /** @type {(glob: string) => void} */
+  /** @type {(glob: string | string[]) => void} */
   let settleMapsGlob = () => {};
-  /** @type {Promise<string>} */
+  /** @type {Promise<string | string[]>} */
   const mapsGlob = new Promise((settle) => {
     settleMapsGlob = settle;
   });
@@ -74,7 +91,14 @@ export function sentrySourceMapPlugins(createPlugin, env = process.env) {
     apply: /** @type {const} */ ('build'),
     /** @param {{ root: string, build: { outDir: string } }} config */
     configResolved(config) {
-      settleMapsGlob(sourceMapGlob(config.root, config.build.outDir));
+      const { root, build } = config;
+      // An unsafe folder deletes nothing; the site build's check then fails
+      // on the maps left behind (scripts/source-maps-deploy.mjs).
+      settleMapsGlob(
+        isSafeOutDir(root, build.outDir)
+          ? sourceMapGlob(root, build.outDir)
+          : []
+      );
     },
   };
   return {

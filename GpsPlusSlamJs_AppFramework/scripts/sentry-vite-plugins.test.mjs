@@ -49,12 +49,34 @@ describe('sentrySourceMapPlugins', () => {
     const root = resolve('/repo/GpsPlusSlamJs_TourViewer');
     probe.configResolved({ root, build: { outDir: '../dist-site/tour' } });
     const page = /** @type {any} */ (calls[0]);
+    // The literal, not sourceMapGlob(): a glob that ignored the outDir
+    // would satisfy a comparison against itself.
     await expect(page.sourcemaps.filesToDeleteAfterUpload).resolves.toBe(
-      sourceMapGlob(root, '../dist-site/tour')
+      `${resolve('/repo/dist-site/tour').replaceAll('\\', '/')}/**/*.map`
     );
     expect(page.org).toBe('cs-util-com');
     expect(page.project).toBe('js-gps-recorder');
     expect(page.telemetry).toBe(false);
+  });
+
+  // Why this test matters: the deletion glob is `<outDir>/**/*.map`. An
+  // outDir that is the project root, holds it, or is the filesystem root
+  // would make that glob reach every source map of the checkout (or the
+  // disk), node_modules included; such a build deletes nothing instead.
+  it.each([
+    ['the project root', '.'],
+    ['a folder holding the root', '..'],
+    ['the filesystem root', '/'],
+  ])('deletes nothing when the outDir is %s', async (_name, outDir) => {
+    const { create, calls } = fakeFactory();
+    const out = sentrySourceMapPlugins(create, { SENTRY_AUTH_TOKEN: 't' });
+    const [probe] = out.plugins;
+    probe.configResolved({
+      root: resolve('/repo/GpsPlusSlamJs_TourViewer'),
+      build: { outDir },
+    });
+    const page = /** @type {any} */ (calls[0]);
+    await expect(page.sourcemaps.filesToDeleteAfterUpload).resolves.toEqual([]);
   });
 
   it('gives the worker bundles their own instance, which deletes nothing', () => {
