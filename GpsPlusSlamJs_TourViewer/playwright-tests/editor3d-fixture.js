@@ -1,5 +1,6 @@
 // @ts-check
 import { expect } from "@playwright/test";
+import { OSM_TILES_BASE_URL } from "gps-plus-slam-osm/source";
 
 import {
   encodeRgbPng,
@@ -81,15 +82,24 @@ const isOverpassHost = (/** @type {URL} */ url) =>
   (url.hostname === "maps.mail.ru" && url.pathname.includes("/overpass/"));
 
 /**
+ * The project's tile host, which the city worker asks before the Overpass
+ * race. Taken from the package, so a moved host stays intercepted.
+ */
+const TILES_HOSTNAME = new URL(OSM_TILES_BASE_URL).hostname;
+
+/**
  * The buildings' data for the city worker, routed on the page's context.
  * A dedicated worker's requests DO pass the page's own routes, and a page
  * route wins over a context route, so the worker's height tiles are
  * answered by the page's Mapterhorn route in `answerHosts` and this
  * route's height branch is only the fallback for a page without one:
- * Overpass with `overpass`, Mapterhorn's heights with `flat`, and a
- * CORS preflight answered (the worker's requests are cross-origin, so the
- * browser checks the headers on a fulfilled response too). The requests
- * answered are counted in `cityRequests`.
+ * Overpass with `overpass`, Mapterhorn's heights with `flat`, the tile
+ * host with a 404 for every tile and fill (not stored, the fill refused:
+ * the library hands each tile to the race at once, so the Overpass
+ * fixture and its count keep their meaning), and a CORS preflight
+ * answered (the worker's requests are cross-origin, so the browser checks
+ * the headers on a fulfilled response too). The requests answered are
+ * counted in `cityRequests`.
  * @param {import("@playwright/test").Page} page
  * @param {Buffer} flat
  * @param {object} overpass
@@ -102,13 +112,20 @@ async function answerCityData(page, flat, overpass) {
   };
   const body = JSON.stringify(overpass);
   await page.context().route(
-    (url) => isOverpassHost(url) || url.hostname === "tiles.mapterhorn.com",
+    (url) =>
+      isOverpassHost(url) ||
+      url.hostname === TILES_HOSTNAME ||
+      url.hostname === "tiles.mapterhorn.com",
     (route) => {
       const request = route.request();
       if (request.method() === "OPTIONS") {
         return route.fulfill({ status: 204, headers: cors });
       }
       const url = new URL(request.url());
+      if (url.hostname === TILES_HOSTNAME) {
+        cityRequests.tileHost += 1;
+        return route.fulfill({ status: 404, headers: cors, body: "" });
+      }
       if (isOverpassHost(url)) {
         cityRequests.overpass += 1;
         return route.fulfill({
@@ -127,12 +144,13 @@ async function answerCityData(page, flat, overpass) {
 }
 
 /**
- * The city worker's Overpass requests answered so far (this test
- * process). Height tiles are not counted: the page's own Mapterhorn
- * route answers the worker's requests too, so a count could not tell
- * them from the relief's; the specs' height-parity check covers them.
+ * The city worker's Overpass and tile host requests answered so far
+ * (this test process). Height tiles are not counted: the page's own
+ * Mapterhorn route answers the worker's requests too, so a count could
+ * not tell them from the relief's; the specs' height-parity check covers
+ * them.
  */
-export const cityRequests = { overpass: 0 };
+export const cityRequests = { overpass: 0, tileHost: 0 };
 
 /**
  * Keep every promise the page leaves rejected, from before its first

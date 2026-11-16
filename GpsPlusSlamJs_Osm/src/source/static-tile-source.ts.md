@@ -35,6 +35,9 @@ the library default is off.
 - `sourceId` - `static:<host>`; `attribution` - the OSM attribution.
 - `OSM_TILES_BASE_URL` - the project's own host
   (`https://osm-tiles.csutil.workers.dev`); used only when a consumer passes it.
+  Every city loader of the workspace does: OsmDemo's worker (unless
+  `tiles=off`), the Tour Editor's globe city worker (through the Globe
+  core's `staticTilesBaseUrl`) and the design system's globe lab worker.
 
 ## Behaviour
 

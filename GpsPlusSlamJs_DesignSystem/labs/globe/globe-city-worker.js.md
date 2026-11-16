@@ -39,7 +39,10 @@ message }` when no city was delivered (heights still missing, no tile).
   to 12 m apart in towns; one source, never OsmDemo's Mapterhorn-first
   race); the
   library's `loadCityData` through its `createCityTileSource` (the globe's
-  user agent) and `createCachingTileFetch` (tiles and heights side by side,
+  user agent, and the project's tile host `OSM_TILES_BASE_URL` as its
+  `staticTiles` option: each tile is read from the host first; a 404, a
+  refused fill or an error hands it to the Overpass race at once, a 200 is
+  the tile and the race is never asked) and `createCachingTileFetch` (tiles and heights side by side,
   the first ring delivered first, a 20 s deadline per height tile, retries
   after 10, 30 and 60 s); `buildCity` within the terrain window (R12) with
   the roads, on each delivery, with the delivery's `window` (the loaded
@@ -55,7 +58,17 @@ message }` when no city was delivered (heights still missing, no tile).
   - The data parse (a cold res-7 tile is about 21 MB of JSON) runs here,
     never on the page's main thread.
   - It identifies itself to Overpass as `gps-plus-slam-globe`.
-- Tests: through `globe-city.smoke.spec.mjs` (fixture buildings, walls and
-  roads routed, the relief's synthetic heights) and
+  - The tile host is always on, with no switch: the worker's URL must stay
+    a literal for the look-dev build (`globe-lab.js`), so a flag on it is
+    not an option, and a hash flag would need a new field in the load
+    message for a debugging aid OsmDemo already has (`tiles=off`). The
+    library falls back to the race on its own and stops asking for fills
+    for 10 minutes after a refusal.
+- Tests: `globe-city-worker.test.mjs` (its source: the host is the Osm
+  library's constant and reaches the tile source; the worker imports the
+  library by its package name, which `node --test` here cannot load);
+  through `globe-city.smoke.spec.mjs` (fixture buildings, walls and
+  roads routed, the tile host answering 404, asked before Overpass, the
+  relief's synthetic heights) and
   `globe-arrival.smoke.spec.mjs` (the load as the pin's warm-up); the
   loader itself through the library's `city-data.test.ts`.
