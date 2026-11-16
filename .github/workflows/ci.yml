@@ -91,11 +91,13 @@ jobs:
   # took 3.4-4.1 h, and a red stage hid every package after it. Each job runs the SAME package gates a
   # developer runs (the root's `test:<package>` scripts), so every stage,
   # command and budget is unchanged; only the order and the machine differ.
-  # The Tour Viewer's gate runs without its browser stage, and its browser
-  # specs run as six lanes of `GpsPlusSlamJs_TourViewer/playwright-tests/
-  # e2e-plan.js` (`E2E_LANE`). `tests/repo-config/ci-jobs.test.js` holds this
-  # matrix to the cascade: every root stage in exactly one job, every lane in
-  # exactly one job, a time limit on each.
+  # The Tour Viewer's and OsmDemo's gates run without their browser stage, and
+  # their browser specs run as lanes (`E2E_LANE`): six of
+  # `GpsPlusSlamJs_TourViewer/playwright-tests/e2e-plan.js` and three of
+  # `GpsPlusSlamJs_OsmDemo/playwright-tests/e2e-lanes.js`.
+  # `tests/repo-config/ci-jobs.test.js` holds this matrix to the cascade: every
+  # root stage in exactly one job, every lane in exactly one job, a time limit
+  # on each.
   test:
     name: ${{ matrix.job }}
     runs-on: ubuntu-latest
@@ -125,12 +127,12 @@ jobs:
         # still writes its report (JSON in every package); this limit catches
         # the run that keeps printing. Each is about twice the slowest of 8 green full runs (Run
         # step, 2026-11-05): Tour page tests 25 of 13.2 min, Tour 3D 45 of 20.3,
-        # OsmDemo 55 of 30.3 (1.8 times), the design system 25 of 12.8, which
+        # the design system 25 of 12.8 (the OsmDemo lanes: see there), which
         # also fits a test timing out on all 3 attempts (9 min). Each leaves 25
         # min of the job (30 on the Tour 3D lanes) for setup (20 of them the
         # browser install's limit), earlier stages and the upload. A worker that
         # stopped answering takes 5 more, Playwright's wait before it force-kills
-        # one: the Tour 3D lanes have that room, OsmDemo and the Tour page lanes
+        # one: the Tour 3D lanes have that room, the page and OsmDemo lanes
         # only when setup took under about 17 min. A green process
         # coming near its limit reverses the value. A job of several packages
         # has its own sum in ci-jobs.test.js: one hang fits, two can outrun it.
@@ -150,13 +152,40 @@ jobs:
               GpsPlusSlamJs_DesignSystem/3d/test-results/
             e2e_limit: 25
             timeout: 75
-          # About 33 min, the longest job until the Tour lanes are measured.
-          - job: osm-demo
+          # OsmDemo's builds, static checks and unit tests; its browser specs
+          # run in the three lanes below. In one job the suite took about 27
+          # min of a 30 min job (2026-11-16), the longest of a run; the lanes
+          # hold about 12, 7 and 8 min of tests (e2e-lanes.js). The limits
+          # are 2.5 to 3.5 times that, room for a test's two retries of 3
+          # min each in the full set, plus contention.
+          - job: osm-demo-static-unit
             scripts: test:osm-demo
+            skip_browser: "1"
+            timeout: 30
+          - job: osm-demo-1
+            dir: GpsPlusSlamJs_OsmDemo
+            scripts: test:e2e
+            lane: osm-1
             browsers: true
             report: GpsPlusSlamJs_OsmDemo/test-results/
-            e2e_limit: 55
-            timeout: 80
+            e2e_limit: 30
+            timeout: 55
+          - job: osm-demo-2
+            dir: GpsPlusSlamJs_OsmDemo
+            scripts: test:e2e
+            lane: osm-2
+            browsers: true
+            report: GpsPlusSlamJs_OsmDemo/test-results/
+            e2e_limit: 25
+            timeout: 50
+          - job: osm-demo-3
+            dir: GpsPlusSlamJs_OsmDemo
+            scripts: test:e2e
+            lane: osm-3
+            browsers: true
+            report: GpsPlusSlamJs_OsmDemo/test-results/
+            e2e_limit: 25
+            timeout: 50
           # The Tour Viewer's builds, static checks and unit tests, about 5 min.
           - job: tour-static-unit
             scripts: test:tour
