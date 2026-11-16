@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@reduxjs/toolkit": "^2.12.0",
+    "@sentry/browser": "^10.73.0",
     "@zip.js/zip.js": "^2.11.2",
     "dockview": "8.7.1",
     "dockview-core": "8.7.1",
@@ -50,6 +51,7 @@
     "@gltf-transform/core": "^4.5.1",
     "@gltf-transform/extensions": "4.5.1",
     "@playwright/test": "^1.63.0",
+    "@sentry/vite-plugin": "^5.4.0",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^25.9.5",
     "@types/qrcode": "^1.5.6",

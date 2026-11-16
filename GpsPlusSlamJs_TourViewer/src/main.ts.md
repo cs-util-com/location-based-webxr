@@ -218,6 +218,10 @@ pasting the same URL into the input does the same interactively.
   at boot into `ctx.debug`: it unhides `#ar-debug` and is passed to the
   wizard, whose visitor link carries it on (QR near-frontal pose plan §66).
 
+## Error reporting
+
+The first statement after the imports is `startErrorReporting({ app: "tour-viewer", prod: import.meta.env.PROD })` (the framework's `utils/sentry-options.ts`): in a production build it starts the error service with the strict profile of the apps visitors use (errors only, no traces, an `app` tag, every report scrubbed of coordinates, map cells, long ids, quoted text and link paths). A dev server and the unit tests send nothing. The page flag `?sentry-test` sends one harmless test report. It runs after the imported modules have been evaluated, so an error thrown while a module loads is not reported.
+
 ## Tests
 
 Driven end-to-end by `playwright-tests/*.spec.js` (streaming, fallback,

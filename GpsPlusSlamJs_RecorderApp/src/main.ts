@@ -15,9 +15,9 @@
 // Guarded by PROD so the dev server sends nothing. Every production build
 // sends, branch previews included (they deploy the same build as the live
 // site): each report carries an environment label from the page's host
-// (production, preview or development; utils/error-report-environment.ts),
+// (production, preview or development; the framework's utils/error-report-environment.ts),
 // so previews' reports stay apart from the live site's.
-import { initSentry } from './utils/sentry';
+import { initSentry } from 'gps-plus-slam-app-framework/utils/sentry-options';
 if (import.meta.env.PROD) {
   initSentry();
 }

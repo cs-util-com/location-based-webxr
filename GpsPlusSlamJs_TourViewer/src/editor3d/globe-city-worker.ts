@@ -26,6 +26,11 @@ import {
   createCityTileSource,
   loadCityData,
 } from "gps-plus-slam-osm";
+import { startWorkerErrorReporting } from "gps-plus-slam-app-framework/utils/sentry-options";
+
+// The worker starts its own error reporting: the page's does not reach this
+// thread. Errors caught here and sent back in a reply are reported by the page.
+startWorkerErrorReporting({ app: "tour-viewer", prod: import.meta.env.PROD });
 
 /** How the editor identifies itself to the Overpass operators. */
 export const CITY_WORKER_USER_AGENT =

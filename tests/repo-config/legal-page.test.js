@@ -66,7 +66,7 @@ function visibleText(html) {
  */
 const PINNED = {
   date: '2026-11-16',
-  sha256: 'd7b0bc9978ed13534e847de365b729613439cfff3d483c8c71005c22b84876fa',
+  sha256: 'df970b08fe683a0048e3805195f2d64168de6e227305e59e879889b6c1405288',
 };
 
 describe('the legal page date and text', () => {
@@ -216,11 +216,26 @@ describe('the site build serves the legal page', () => {
   });
 });
 
-describe("the page's error-report paragraph matches the Recorder", () => {
-  it('names the data region the Recorder sends error reports to', () => {
-    const sentry = read('GpsPlusSlamJs_RecorderApp/src/utils/sentry.ts');
+describe("the page's error-report paragraphs match the configuration", () => {
+  it('names the data region the apps send error reports to', () => {
+    const sentry = read('GpsPlusSlamJs_AppFramework/src/utils/sentry-options.ts');
     const region = sentry.match(/\.ingest\.([a-z]+)\.sentry\.io\//)?.[1];
-    expect(region, 'the Recorder DSN names no data region').toBeDefined();
+    expect(region, 'the DSN names no data region').toBeDefined();
     expect(visibleText(PAGE)).toContain(`Sentry's ${region?.toUpperCase()} data region`);
+  });
+
+  // Why this matters: the Tour Viewer and the map demo are used by visitors.
+  // An app that starts error reporting without the page saying so would send
+  // reports nobody was told about; the call and the paragraph go together.
+  it('describes the error reports of every app that starts them', () => {
+    const text = visibleText(PAGE);
+    for (const [entry, call, paragraph] of [
+      ['GpsPlusSlamJs_RecorderApp/src/main.ts', 'initSentry()', 'When the Recorder runs into an error'],
+      ['GpsPlusSlamJs_TourViewer/src/main.ts', 'startErrorReporting(', 'When the Tour Viewer runs into an error'],
+      ['GpsPlusSlamJs_OsmDemo/src/main.ts', 'startErrorReporting(', 'The map demo sends error reports'],
+    ]) {
+      expect(read(entry), `${entry} no longer starts error reporting`).toContain(call);
+      expect(text, `the page does not describe ${entry}'s error reports`).toContain(paragraph);
+    }
   });
 });

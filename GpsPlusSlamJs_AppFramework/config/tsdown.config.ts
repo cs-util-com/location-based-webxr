@@ -314,6 +314,11 @@ const entryFiles = [
   'src/utils/fused-path.ts',
   'src/utils/list-formatter.ts',
   'src/utils/logger.ts',
+  // The apps' Sentry configuration (moved from the RecorderApp) - deep-imported
+  // by the Recorder, the OSM demo and the Tour Viewer (NOT via the `/utils`
+  // barrel: it starts a third-party SDK). Built per-file for the `./utils/*`
+  // wildcard.
+  'src/utils/sentry-options.ts',
   // The OSM basemap's URL, attribution and zoom ceiling — deep-imported by the
   // recorder's map views and by the OSM demo (NOT via the `/utils` barrel,
   // which feeds `src/index.ts`'s `export *` and would put three basemap

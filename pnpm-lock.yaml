@@ -507,6 +507,9 @@ importers:
 
   GpsPlusSlamJs_OsmDemo:
     dependencies:
+      '@sentry/browser':
+        specifier: ^10.73.0
+        version: 10.73.0
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
@@ -532,6 +535,9 @@ importers:
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
+      '@sentry/vite-plugin':
+        specifier: ^5.4.0
+        version: 5.4.0
       '@types/leaflet':
         specifier: ^1.9.22
         version: 1.9.22
@@ -899,6 +905,9 @@ importers:
       '@reduxjs/toolkit':
         specifier: ^2.12.0
         version: 2.12.0
+      '@sentry/browser':
+        specifier: ^10.73.0
+        version: 10.73.0
       '@zip.js/zip.js':
         specifier: ^2.11.2
         version: 2.11.2
@@ -945,6 +954,9 @@ importers:
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0
+      '@sentry/vite-plugin':
+        specifier: ^5.4.0
+        version: 5.4.0
       '@types/leaflet':
         specifier: ^1.9.22
         version: 1.9.22

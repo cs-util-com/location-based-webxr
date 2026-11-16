@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { REDACTED, scrubText } from './sentry-scrub';
+import { REDACTED, scrubDeep, scrubText } from './sentry-scrub';
 
 const OWN = 'gps.csutil.com';
 
@@ -43,7 +43,16 @@ const coordinate = (max: number, minDecimals = 3, maxDecimals = 8) =>
       return `${whole}.${digits}`;
     });
 
-const pairSeparator = fc.constantFrom(', ', ',', ' ', ';');
+const pairSeparator = fc.constantFrom(
+  ', ',
+  ',',
+  ' ',
+  ';',
+  ':',
+  ' | ',
+  '|',
+  ' - '
+);
 
 const label = fc.constantFrom(
   'lat',
@@ -301,6 +310,179 @@ describe('scrubText properties', () => {
       fc.property(plainText, (text) => {
         expect(scrubText(text, OWN)).toBe(text);
       })
+    );
+  });
+});
+
+/** A pair, written the ways the scrubber claims to catch. */
+const coordinatePair = fc
+  .tuple(coordinate(90), pairSeparator, coordinate(180), fc.boolean())
+  .map(([lat, sep, lon, latFirst]) =>
+    latFirst ? `${lat}${sep}${lon}` : `${lon}${sep}${lat}`
+  );
+
+/**
+ * What "looks like a coordinate pair" means to the check below: two decimal
+ * numbers next to each other, one of them with three or more decimals.
+ */
+const LOOKS_LIKE_PAIR =
+  /-?\d{1,3}\.\d{3,}\s*(?:,|;|\/|:|\||\s-\s|\s)\s*-?\d{1,3}\.\d+|-?\d{1,3}\.\d+\s*(?:,|;|\/|:|\||\s-\s|\s)\s*-?\d{1,3}\.\d{3,}/;
+
+/** Every string anywhere in `value`, keys included. */
+function stringsIn(value: unknown, out: string[] = []): string[] {
+  if (typeof value === 'string') out.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => stringsIn(item, out));
+  else if (value !== null && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      out.push(key);
+      stringsIn(item, out);
+    }
+  }
+  return out;
+}
+
+/** A string leaf carrying a coordinate pair among plain words. */
+const leafWithPair = fc
+  .tuple(plainText, coordinatePair, plainText)
+  .map(([before, pair, after]) => `${before} ${pair} ${after}`);
+
+/** A coordinate pair held as two numbers, the way a serialised object does. */
+const numericPair = fc
+  .tuple(coordinate(90), coordinate(180), fc.boolean())
+  .map(([lat, lon, latFirst]) =>
+    latFirst ? [Number(lat), Number(lon)] : [Number(lon), Number(lat)]
+  );
+
+/** Two numbers within ±180 that, written as text, read as a pair. */
+function readsAsPair(value: unknown[]): value is [number, number] {
+  const [a, b] = value;
+  return (
+    value.length === 2 &&
+    typeof a === 'number' &&
+    typeof b === 'number' &&
+    Math.abs(a) <= 180 &&
+    Math.abs(b) <= 180 &&
+    LOOKS_LIKE_PAIR.test(`${a}, ${b}`)
+  );
+}
+
+/**
+ * Every array of two numbers anywhere in `value` that reads as a pair: both
+ * within ±180 (the range the scrubber claims) and, written as text, a pair by
+ * {@link LOOKS_LIKE_PAIR}.
+ */
+function numericPairsIn(value: unknown, out: number[][] = []): number[][] {
+  if (Array.isArray(value)) {
+    if (readsAsPair(value)) out.push(value);
+    value.forEach((item) => numericPairsIn(item, out));
+  } else if (value !== null && typeof value === 'object') {
+    Object.values(value).forEach((item) => numericPairsIn(item, out));
+  }
+  return out;
+}
+
+/**
+ * An event-shaped value: nested objects and arrays, pairs in its leaves and
+ * in its keys (a serialised object can be keyed by anything), plain floats
+ * and pairs held as numbers.
+ */
+const eventWithPairs = fc.letrec((tie) => ({
+  node: fc.oneof(
+    { depthSize: 'small', withCrossShrink: true },
+    leafWithPair,
+    plainText,
+    fc.integer(),
+    fc.double({ min: -1000, max: 1000, noNaN: true }),
+    numericPair,
+    fc.array(tie('node'), { maxLength: 4 }),
+    fc.dictionary(
+      fc.oneof(
+        fc.constantFrom('message', 'value', 'data', 'url', 'extra', 'title'),
+        leafWithPair
+      ),
+      tie('node'),
+      { maxKeys: 4 }
+    )
+  ),
+})).node;
+
+// Why this matters: the Tour Viewer and the map demo hand the scrubber whole
+// events of any shape (breadcrumb data, exception values, contexts, the
+// object a promise was rejected with). Whatever string field or key a place
+// lands in, or as two numbers under whatever key, in either profile, no pair
+// may come out. Keys are drawn from the pair leaves too: with fixed keys the
+// check on keys could never fail.
+describe('scrubDeep properties', () => {
+  it('lets no coordinate pair through in any string field or key', () => {
+    fc.assert(
+      fc.property(eventWithPairs, fc.boolean(), (event, strict) => {
+        const out = scrubDeep(event, OWN, { strict });
+        for (const text of stringsIn(out)) {
+          expect(text).not.toMatch(LOOKS_LIKE_PAIR);
+        }
+        expect(numericPairsIn(out)).toEqual([]);
+      }),
+      { numRuns: 300 }
+    );
+  });
+});
+
+/** Report text with quotes of every kind mixed in. */
+const quotedReportText = fc
+  .array(
+    fc.oneof(
+      reportFragment,
+      fc.constantFrom('"', "'", '`', '"x y"', "can't", '8d1f8d3a1c3a43f'),
+      fc.bigInt({ min: 100000n, max: 99999999999n }).map(String)
+    ),
+    { maxLength: 10 }
+  )
+  .map((parts) => parts.join(''));
+
+// Why this matters: the strict profile adds rules for quoted text and long
+// digit runs; Sentry may run the breadcrumb hook and the event hook over the
+// same text, so a second pass must change nothing, and no H3 cell or OSM id
+// may survive whatever surrounds it.
+describe('scrubText properties, strict', () => {
+  const strict = { strict: true } as const;
+
+  it('is idempotent on text built from what reports carry, with quotes', () => {
+    fc.assert(
+      fc.property(quotedReportText, (text) => {
+        const once = scrubText(text, OWN, strict);
+        expect(scrubText(once, OWN, strict)).toBe(once);
+      }),
+      { numRuns: 2000 }
+    );
+  });
+
+  it('is idempotent on random text', () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 120 }), (text) => {
+        const once = scrubText(text, OWN, strict);
+        expect(scrubText(once, OWN, strict)).toBe(once);
+      })
+    );
+  });
+
+  it('never keeps an H3 cell or an OSM id', () => {
+    fc.assert(
+      fc.property(
+        plainText,
+        fc.stringMatching(/^8[0-9a-f]{14}$/),
+        fc.constantFrom('way/', 'node ', 'relation=', 'id: ', ''),
+        fc.bigInt({ min: 100000n, max: 99999999999n }),
+        plainText,
+        (before, cell, kind, id, after) => {
+          const out = scrubText(
+            `${before} ${cell} ${kind}${id} ${after}`,
+            OWN,
+            strict
+          );
+          expect(out).not.toContain(cell);
+          expect(out).not.toContain(String(id));
+        }
+      )
     );
   });
 });

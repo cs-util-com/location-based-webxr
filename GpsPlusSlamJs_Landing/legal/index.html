@@ -200,7 +200,8 @@
           for map images and map data of the area you are in, and the anchor
           starter writes a placed marker's position into its link. What does
           leave your device: ordinary web requests, to this website and to the
-          services named below, and, in the Recorder only, error reports.
+          services named below, and, in the Recorder, the Tour Viewer and the
+          map demo, error reports.
         </p>
         <p>
           Responsible for this website and the data described here: the operator
@@ -293,6 +294,28 @@
             later. When it cannot be fetched there, your browser asks those
             Overpass servers itself, with the same data.
           </li>
+          <li data-testid="error-reports-tour">
+            <b>Error reports.</b> When the Tour Viewer runs into an error or
+            logs a warning, it sends a report to Sentry (Functional Software,
+            Inc.), stored in Sentry's US data region, so that we can fix it. A
+            report holds the error message and where in the code it happened,
+            the app's name and version, the page address without its query, the
+            browser and device type, the app's recent warnings and errors, and
+            its recent steps (clicks on page elements, page changes and network
+            requests). Before a report leaves your device, the app removes from
+            it the query of every address, the path of links to other sites (the
+            site's name stays), file identifiers, coordinates written as a pair
+            or next to a label such as lat/lng, map cell identifiers, long
+            numbers such as the identifiers of buildings on the map, and any
+            text in quotation marks, which is where the names of tours, stations
+            and files appear. A name the app writes into a message without
+            quotation marks is not removed. The app tells Sentry not to store
+            your IP address; the address still reaches Sentry with the
+            connection. It sends no timings and nothing when no error occurs.
+            Reports are kept as long as the Recorder's (below). Error reporting
+            stores nothing on your device. We rely on our legitimate interest in
+            an app that works.
+          </li>
         </ul>
         <p>What stays on your phone or computer:</p>
         <ul>
@@ -372,11 +395,12 @@
             recordings, scenarios and reference points and the names of the
             folders and files you chose. Before a report leaves your device, the
             app removes from it the path of links to other sites (the site's
-            name stays), file identifiers and coordinates; it does not remove
-            those names. The app tells Sentry not to store your IP address; the
-            address still reaches Sentry with the connection. For one page load
-            in ten, the app also sends the timings of the page load and of its
-            network requests, with the same removals. Reports are kept for
+            name stays), file identifiers and coordinates written as a pair or
+            next to a label such as lat/lng; it does not remove those names. The
+            app tells Sentry not to store your IP address; the address still
+            reaches Sentry with the connection. For one page load in ten, the
+            app also sends the timings of the page load and of its network
+            requests, with the same removals. Reports are kept for
             <span class="placeholder" data-testid="retention-placeholder"
               >[Retention: number of days, to be confirmed in the error service
               account before this page goes live]</span
@@ -429,6 +453,13 @@
             It keeps downloaded map data and terrain heights in your browser so
             that a revisit loads faster, and remembers whether you unfolded its
             AR readout.
+          </li>
+          <li data-testid="error-reports-map">
+            <b>Error reports.</b> The map demo sends error reports to Sentry in
+            the same way as the Tour Viewer (above), with the same removals: the
+            position in the demo's address, coordinates written as a pair or
+            next to a label such as lat/lng, and map cell and building
+            identifiers are removed before a report leaves your device.
           </li>
         </ul>
 

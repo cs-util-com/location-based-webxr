@@ -42,7 +42,27 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   `dist-site/globe-assets/` (about 12.6 MB), shared with the look-dev
   labs, so the deployed `/tour/edit.html` resolves the same
   absolute paths. No visitor page's bundle names them
-  (`src/app-bundle.test.ts`).
+  (`src/app-bundle.test.ts`). Then the error service's Vite plugin
+  (`@sentry/vite-plugin`), created by the framework's shared
+  `scripts/sentry-vite-plugins.mjs`, only when `SENTRY_AUTH_TOKEN` is set:
+  in a production build it gives every bundle a debug id, sets the release
+  (the commit), uploads the source maps to the Recorder's project and then
+  deletes every `.map` under the resolved output folder (the site build's
+  `--outDir` included); the reports carry an `app: tour-viewer` tag (the
+  framework's `utils/sentry-options.ts.md`). No build telemetry. Without
+  the token (local, CI, a contributor) nothing runs and the build does not
+  fail; a failed upload only warns. The token path was run by hand once,
+  for the map demo's build only (its `vite.config.ts.md`); this build with
+  the token is not verified.
+- `worker.plugins`: the same plugin for the Web Worker bundles (the city
+  build, the asset optimizer, the character cut, the cloud bake), which
+  Vite bundles on their own: it gives them their debug ids. Their maps are
+  emitted into the page build's output folder, uploaded and deleted by the
+  page build's instance.
+- `build.sourcemap: "hidden"`: maps are written for the upload, but no
+  bundle carries a `sourceMappingURL` comment, so a visitor's browser never
+  fetches them. With the token they are deleted after the upload; a build
+  without the token keeps them beside the bundles.
 
 ## Invariants & assumptions
 

@@ -75,12 +75,27 @@ reads device storage or follows visitors across sites needs consent first.
     button: `GpsPlusSlamJs_TourViewer/edit.html`;
   - the Tour Viewer's storage, sensors and tour files: unchanged from the
     page this replaced (`GpsPlusSlamJs_TourViewer/legal.html.md` history);
-  - the Recorder's error reports: `GpsPlusSlamJs_RecorderApp/src/utils/
-sentry.ts.md` (configuration and the audit of what log lines carry);
-    the map tiles: the framework's `utils/osm-tiles.ts`; the Recorder no
+  - the Recorder's error reports: the framework's
+    `utils/sentry-options.ts.md` (`sentryOptions`; configuration and the
+    audit of what log lines carry) and `utils/sentry-scrub.ts.md`; the map tiles: the framework's `utils/osm-tiles.ts`; the Recorder no
     longer sends a session per page load nor locale and timezone, so it
     contacts the error service only for an error, a warning or a sampled
     trace;
+  - the Tour Viewer's and the map demo's error reports
+    (`error-reports-tour`, `error-reports-map`): the framework's
+    `utils/sentry-options.ts.md` (`strictSentryOptions`: errors only, no
+    tracing, an `app` tag, log breadcrumbs at warning and above, the same
+    DSN and region as the Recorder) and the strict profile of
+    `utils/sentry-scrub.ts.md` (quoted text, H3 cells, runs of six or more
+    digits, `clat`/`clng` and every coordinate label removed). The page
+    promises coordinates "written as a pair or next to a label such as
+    lat/lng", no more: a single unlabelled number, comma decimals, DMS with
+    primes and Web Mercator metres pass the scrubber, which is why no
+    paragraph says "every coordinate". The pages
+    start it in their entry modules and the city-build workers in their own
+    scope (`demo-worker.ts`, `globe-city-worker.ts`); "recent steps" are the
+    SDK's default click, navigation and fetch breadcrumbs. The retention is
+    the one project's, so the text points at the Recorder's placeholder;
   - the starter's link carries the marker's position: its
     `url-anchor-state.ts`;
   - the map demo's hosts: the OSM package's `source/overpass-source.ts`

@@ -298,6 +298,21 @@ describe('scrubText', () => {
     expect(scrubText('v 1.234 5.6.7', OWN)).toBe('v 1.234 5.6.7');
   });
 
+  // Why this test matters: a pair is not always joined by a comma. A log line
+  // or a serialised object can write it with a colon, a bar or a spaced
+  // hyphen, and the pair names a place just the same. Ordinary text with
+  // those separators (a clock time, a stack position, a range of short
+  // decimals) has no number with three decimals and stays.
+  it('removes a pair joined by a colon, a bar or a spaced hyphen', () => {
+    expect(scrubText('at 48.1371:11.5761', OWN)).toBe(`at ${REDACTED}`);
+    expect(scrubText('at 48.1371|11.5761', OWN)).toBe(`at ${REDACTED}`);
+    expect(scrubText('at 48.1371 | 11.5761', OWN)).toBe(`at ${REDACTED}`);
+    expect(scrubText('at 48.1371 - 11.5761', OWN)).toBe(`at ${REDACTED}`);
+    const kept =
+      'at 12:30, index-Bx81aQ.js:12:345, 1.5 - 2.5 s, a|b, v1.2:3.4, 2026-11-16';
+    expect(scrubText(kept, OWN)).toBe(kept);
+  });
+
   it('removes the value behind a label with an index or a unit', () => {
     expect(scrubText('lat1=48.1371 lon12: 11.5761', OWN)).toBe(
       `lat1=${REDACTED} lon12: ${REDACTED}`
@@ -486,6 +501,94 @@ describe('scrubDeep', () => {
     expect(out.breadcrumbs[0]?.data.status_code).toBe(200);
   });
 
+  // Why this test matters: an object the SDK serialises (a rejected promise's
+  // value lands in `extra.__serialized__`) can hold a place as two numbers
+  // under a key no label rule knows, and its keys are text too. Neither may
+  // reach the service as it is.
+  it('removes a pair of numbers under any key, and scrubs keys', () => {
+    const out = scrubDeep(
+      {
+        center: [48.137, 11.575],
+        reversed: [-122.4194, 37.7749],
+        whole: [48.137154, 11],
+        route: {
+          points: [
+            [48.137, 11.575],
+            [48.138, 11.576],
+          ],
+        },
+        size: [1920, 1080],
+        scale: [0.5, 0.25],
+        triple: [48.137, 11.575, 3],
+        far: [480.137, 11.575],
+        '48.137154, 11.576124': 1,
+        'cell 8d1f8d3a1c3a43f': 'x',
+        plain_key: 2,
+      },
+      OWN
+    );
+    expect(out).toEqual({
+      center: REDACTED,
+      reversed: REDACTED,
+      whole: REDACTED,
+      route: { points: [REDACTED, REDACTED] },
+      size: [1920, 1080],
+      scale: [0.5, 0.25],
+      triple: REDACTED,
+      far: [480.137, 11.575],
+      [REDACTED]: 1,
+      [`cell ${REDACTED}`]: 'x',
+      plain_key: 2,
+    });
+  });
+
+  // Why this test matters: GeoJSON writes a position with its altitude as
+  // three numbers (`[lon, lat, alt]`), which a two-number rule let through.
+  // The first two numbers are read by the same pair rule, so a triple of
+  // plain measurements, a triple ending in text and four numbers still pass.
+  it('removes three numbers whose first two read as a pair', () => {
+    const out = scrubDeep(
+      {
+        lonLatAlt: [11.575, 48.137, 512.3],
+        wholeAlt: [-122.4194, 37.7749, 12],
+        size: [1920, 1080, 3],
+        scale: [0.5, 0.25, 0.125],
+        far: [480.137, 11.575, 3],
+        withText: [1.5, 2.25, 'm'],
+        four: [1920, 1080, 3, 4],
+      },
+      OWN
+    );
+    expect(out).toEqual({
+      lonLatAlt: REDACTED,
+      wholeAlt: REDACTED,
+      size: [1920, 1080, 3],
+      scale: [0.5, 0.25, 0.125],
+      far: [480.137, 11.575, 3],
+      withText: [1.5, 2.25, 'm'],
+      four: [1920, 1080, 3, 4],
+    });
+  });
+
+  // Why this test matters: keys are scrubbed too, and two keys naming two
+  // places scrub to the same text. Written into one object, the second
+  // silently replaced the first, so a report lost a value without a trace.
+  it('keeps every value when keys scrub to the same text', () => {
+    const out = scrubDeep(
+      {
+        '48.137154, 11.576124': 'first',
+        '48.138001, 11.577001': 'second',
+        [REDACTED]: 'third',
+      },
+      OWN
+    );
+    expect(out).toEqual({
+      [REDACTED]: 'first',
+      [`${REDACTED} #2`]: 'second',
+      [`${REDACTED} #3`]: 'third',
+    });
+  });
+
   it('does not change its input', () => {
     const event = { message: 'at 48.137154, 11.576124' };
     scrubDeep(event, OWN);
@@ -504,5 +607,122 @@ describe('scrubDeep', () => {
     let deep: Record<string, unknown> = { text: 'lat=1.5' };
     for (let i = 0; i < 40; i++) deep = { next: deep };
     expect(JSON.stringify(scrubDeep(deep, OWN))).not.toContain('1.5');
+  });
+});
+
+// Why these tests matter: the map demo and the Tour Viewer write places in
+// forms the Recorder never did. The map demo keeps its camera target in the
+// page address as `clat` / `clng`, and both apps name map cells by their H3
+// index, which is a place as surely as a coordinate pair. These rules apply
+// to every app.
+describe('scrubText, map-app places', () => {
+  it("removes the map demo's camera target, written as clat / clng", () => {
+    expect(
+      scrubText('camera clat=48.137154 clng=11.576124 cdist=400', OWN)
+    ).toBe(`camera clat=${REDACTED} clng=${REDACTED} cdist=400`);
+    expect(scrubText('{"clat":48.1,"clon":11.5}', OWN)).toBe(
+      `{"clat":${REDACTED},"clon":${REDACTED}}`
+    );
+    // A word that merely ends in one still does not count.
+    expect(scrubText('eclat=5 flat=5', OWN)).toBe('eclat=5 flat=5');
+  });
+
+  it('removes an H3 cell index, and keeps the ids Sentry itself sends', () => {
+    expect(scrubText('build failed for cell 8d1f8d3a1c3a43f', OWN)).toBe(
+      `build failed for cell ${REDACTED}`
+    );
+    expect(scrubText('cells 871f8d3a5ffffff,881f8d3a51fffff', OWN)).toBe(
+      `cells ${REDACTED},${REDACTED}`
+    );
+    // A span id (16 hex), an event id (32 hex) and a commit (40 hex) are not
+    // cells, even when they start with an 8.
+    const ids =
+      '8bf92f3577b34da6 8a3f2504e04f8911d39a0c0305e82c33 8f9e0d1c2b3a49586776a5b4c3d2e1f00a1b2c3d';
+    expect(scrubText(ids, OWN)).toBe(ids);
+  });
+});
+
+describe('scrubDeep, map-app places', () => {
+  it('removes a value held under a clat / clng key', () => {
+    expect(
+      scrubDeep({ clat: 48.137154, clng: 11.576124, cdist: 400 }, OWN)
+    ).toEqual({ clat: REDACTED, clng: REDACTED, cdist: 400 });
+  });
+});
+
+// Why these tests matter: the strict profile is what the Tour Viewer and the
+// map demo send with, and their users are visitors, not developers. Beyond
+// the shared rules it removes what can carry tour content or a place in a
+// form no pattern recognises: quoted text (a file name, a station title, a
+// snippet of a file the browser quotes in its error) and long runs of digits
+// (an OSM id names one building). The Recorder keeps its old behaviour, so
+// the default is not strict.
+describe('scrubText, strict', () => {
+  const strict = { strict: true } as const;
+
+  it('removes quoted text, in double, single and back quotes', () => {
+    expect(
+      scrubText('Skipping "Altstadt Rundgang.zip": bad', OWN, strict)
+    ).toBe(`Skipping "${REDACTED}": bad`);
+    expect(scrubText("reading 'Marienplatz'", OWN, strict)).toBe(
+      `reading '${REDACTED}'`
+    );
+    expect(scrubText('station `Tor` threw', OWN, strict)).toBe(
+      `station \`${REDACTED}\` threw`
+    );
+    // The default keeps them, as the Recorder always has.
+    expect(scrubText('Skipping "a.zip"', OWN)).toBe('Skipping "a.zip"');
+  });
+
+  it('removes a run of six or more digits, which can be an OSM id', () => {
+    expect(scrubText('way/123456789 has no height', OWN, strict)).toBe(
+      `way/${REDACTED} has no height`
+    );
+    expect(scrubText('node 2345678 and relation=99999999', OWN, strict)).toBe(
+      `node ${REDACTED} and relation=${REDACTED}`
+    );
+    // Short numbers, a script position in a stack line and hashed names stay.
+    const kept = 'took 12345 ms at index-Bx81aQ.js:1:1234567 v2026111';
+    expect(scrubText(kept, OWN, strict)).toBe(kept);
+  });
+
+  it('keeps the shared rules', () => {
+    expect(scrubText('at 48.137154, 11.576124', OWN, strict)).toBe(
+      `at ${REDACTED}`
+    );
+    expect(
+      scrubText('https://overpass.example.org/api?data=x', OWN, strict)
+    ).toBe(`https://overpass.example.org/${REDACTED}`);
+    // The labels are read before quoted text goes: otherwise `"lat"` would
+    // lose its name first and its number would stay.
+    expect(scrubText('{"lat":48.13,"lng":11.57}', OWN, strict)).toBe(
+      `{"${REDACTED}":${REDACTED},"${REDACTED}":${REDACTED}}`
+    );
+  });
+
+  it('settles when removing quoted text joins two pieces', () => {
+    // The space inside the quotes kept the second link apart from the first;
+    // once it is gone they read as one foreign link on a second call, so the
+    // rules repeat until nothing changes.
+    const text = `https://${OWN}/a.js)can'tx: '0https://lat0.example.org/x?k=v`;
+    const once = scrubText(text, OWN, strict);
+    expect(scrubText(once, OWN, strict)).toBe(once);
+  });
+
+  it('scrubs every string of a nested value the same way', () => {
+    const out = scrubDeep(
+      {
+        message: 'Skipping "Station 3.jpg"',
+        values: [{ value: 'way/123456789' }],
+        count: 1234567,
+      },
+      OWN,
+      strict
+    );
+    expect(out).toEqual({
+      message: `Skipping "${REDACTED}"`,
+      values: [{ value: `way/${REDACTED}` }],
+      count: 1234567,
+    });
   });
 });
