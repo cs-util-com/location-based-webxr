@@ -525,7 +525,10 @@ function meshCloses(
 
 /**
  * The eave-0 mesh of every roof `meshCloses` passed, with the slope it was
- * checked at. Weak, so a plan dropped takes its mesh with it.
+ * checked at. Weak, so a plan dropped takes its mesh with it. Kept after
+ * `roofMeshAt` reads it, so a second build from the same plan draws the
+ * checked mesh too; the cost is that a city build holds every granted roof's
+ * eave-0 mesh until its plans are dropped at the end of that build.
  */
 const closedMeshes = new WeakMap<
   SkeletonRoof,

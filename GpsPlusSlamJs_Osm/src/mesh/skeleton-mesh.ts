@@ -29,9 +29,10 @@ import {
 /**
  * Two corners nearer than this are one corner. Swept with `ON_EDGE_M` on 4,000
  * random stars (2026-11-08): from 1 to 4 mm no star failed both nudges, at
- * 6 mm 2 did; see `skeleton-mesh.ts.md`.
+ * 6 mm 2 did; see `skeleton-mesh.ts.md`. Exported for the invented roofs'
+ * property test, whose drawn-top bound is this distance.
  */
-const WELD_M = 0.003;
+export const WELD_M = 0.003;
 /**
  * The furthest the cluster weld may move a corner: a few weld distances,
  * room for the several-millimetre apex a nudge spreads, and no more. A chain

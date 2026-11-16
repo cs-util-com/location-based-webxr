@@ -199,8 +199,12 @@ describe('decision-code guard', () => {
     it('carries no more than the counted backlog of other codes', () => {
       // Above BACKLOG: a new code was added - write the rule in plain words.
       // Below it is fine; lower BACKLOG to the new count when a rewrite lands.
-      // The message lists the codes per file, so the new one is found there.
-      expect(hits.length, `codes per file:\n${countsByFile(hits).join('\n')}`).toBeLessThanOrEqual(BACKLOG);
+      // The message lists the codes per file, so the new one is found there;
+      // the 40 files with the most, so a failure stays readable.
+      const counts = countsByFile(hits);
+      const shown = counts.slice(0, 40);
+      if (counts.length > shown.length) shown.push(`+${counts.length - shown.length} more`);
+      expect(hits.length, `codes per file:\n${shown.join('\n')}`).toBeLessThanOrEqual(BACKLOG);
     });
   });
 });
