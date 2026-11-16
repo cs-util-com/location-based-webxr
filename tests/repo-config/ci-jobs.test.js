@@ -2,12 +2,12 @@
 //
 // Why this test matters: one serial CI job took 3.4-4.1 h, and a red stage
 // hid every package after it. So CI no longer runs the root cascade (`pnpm test`) in one serial job; it runs the
-// same package gates in parallel jobs, and the Tour Viewer's browser specs in
-// lanes chosen by `E2E_LANE`. A split like that fails silently in three ways,
+// same package gates in parallel jobs, and the Tour Viewer's and OsmDemo's
+// browser specs in lanes chosen by `E2E_LANE`. A split like that fails silently in three ways,
 // each of which leaves CI green while checking less:
 // - a root cascade stage (a package gate) that no job runs, or that two run;
-// - a Tour Viewer lane that no job runs, or a job naming a lane the plan does
-//   not have (the runner refuses that one, but only on CI);
+// - a lane that no job runs, or a job naming a lane its plan does not have
+//   (the runner refuses that one, but only on CI);
 // - a job without a time limit, which sits under GitHub's 6 h hard limit and
 //   is cancelled with no report at all.
 // A `.github/**` change is checked locally only by this file, so CI itself
@@ -24,11 +24,25 @@ import { PROJECTS } from '../../scripts/test-timing/projects.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const workflow = parse(readFileSync(join(ROOT, '.github/workflows/ci.yml'), 'utf8'));
-const plan = await import(
-  pathToFileURL(join(ROOT, 'GpsPlusSlamJs_TourViewer/playwright-tests/e2e-plan.js')).href
-);
-
-const TOUR_DIR = 'GpsPlusSlamJs_TourViewer';
+/** @param {string} file - repo-relative */
+const load = (file) => import(pathToFileURL(join(ROOT, file)).href);
+/**
+ * The packages whose browser specs run in lanes: the folder, the root script
+ * of its gate (run without the browser stage), and the plan naming its lanes.
+ */
+const LANED = [
+  {
+    dir: 'GpsPlusSlamJs_TourViewer',
+    gate: 'test:tour',
+    plan: await load('GpsPlusSlamJs_TourViewer/playwright-tests/e2e-plan.js'),
+  },
+  {
+    dir: 'GpsPlusSlamJs_OsmDemo',
+    gate: 'test:osm-demo',
+    plan: await load('GpsPlusSlamJs_OsmDemo/playwright-tests/e2e-lanes.js'),
+  },
+];
+const GATES = LANED.map((p) => p.gate);
 const testJob = workflow.jobs.test;
 const RESULT_JOB = 'ci-result';
 const resultJob = workflow.jobs[RESULT_JOB];
@@ -71,31 +85,33 @@ describe('the CI jobs run every root cascade stage exactly once', () => {
   });
 });
 
-describe('the Tour Viewer runs its static checks and unit tests once, and its browser specs in lanes', () => {
+describe('a laned package runs its static checks and unit tests once, and its browser specs in lanes', () => {
   const laneEntries = entries.filter((e) => e.lane !== undefined);
 
-  it('runs every lane of the plan in exactly one job', () => {
-    expect(laneEntries.map((e) => e.lane).sort()).toEqual([...plan.LANES].sort());
-  });
-
-  it('runs a lane as the package\'s own e2e stage, with browsers, and uploads its report', () => {
-    for (const entry of laneEntries) {
-      expect(entry.dir, entry.job).toBe(TOUR_DIR);
+  it.each(LANED)('runs every lane of $dir in exactly one job, as its own e2e stage', ({ dir, plan }) => {
+    const own = laneEntries.filter((e) => e.dir === dir);
+    expect(own.map((e) => e.lane).sort()).toEqual([...plan.LANES].sort());
+    for (const entry of own) {
       expect(entry.scripts, entry.job).toBe('test:e2e');
       expect(entry.browsers, entry.job).toBe(true);
-      expect(entry.report, entry.job).toBe(`${TOUR_DIR}/test-results/`);
+      expect(entry.report, entry.job).toBe(`${dir}/test-results/`);
     }
   });
 
-  it('runs the Tour Viewer gate without its browser stage, since the lanes run that', () => {
-    const tour = entries.filter((e) => scriptList(e).includes('test:tour'));
-    expect(tour).toHaveLength(1);
-    expect(tour[0].skip_browser).toBe('1');
-    expect(scriptList(tour[0])).toEqual(['test:tour']);
+  it('runs lanes of the laned packages only', () => {
+    const dirs = LANED.map((p) => p.dir);
+    expect(laneEntries.filter((e) => !dirs.includes(e.dir ?? '.'))).toEqual([]);
+  });
+
+  it.each(LANED)('runs the $dir gate without its browser stage, since the lanes run that', ({ gate }) => {
+    const jobs = entries.filter((e) => scriptList(e).includes(gate));
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].skip_browser).toBe('1');
+    expect(scriptList(jobs[0])).toEqual([gate]);
   });
 
   it('skips browser stages in no other job', () => {
-    const others = entries.filter((e) => e.skip_browser && !scriptList(e).includes('test:tour'));
+    const others = entries.filter((e) => e.skip_browser && !scriptList(e).some((s) => GATES.includes(s)));
     expect(others).toEqual([]);
   });
 
@@ -142,10 +158,13 @@ describe('a red script makes its job red, and one result job says whether all pa
 describe('the workflow stays inside the free plan and never hangs', () => {
   // The result job is not counted: it starts only when the others are done,
   // so it never takes one of the shared concurrent job slots beside them.
-  it('has between 8 and 11 jobs per run (20 concurrent jobs are shared by the organisation)', () => {
+  // 14 since OsmDemo's lanes (11 before): one run leaves 6 of the 20 slots,
+  // so a second run beside it starts 6 jobs and queues 8 until the first
+  // run's short jobs end. More jobs per run trade queue time for wall clock.
+  it('has between 8 and 14 jobs per run (20 concurrent jobs are shared by the organisation)', () => {
     const count = entries.length + Object.keys(workflow.jobs).length - 2;
     expect(count).toBeGreaterThanOrEqual(8);
-    expect(count).toBeLessThanOrEqual(11);
+    expect(count).toBeLessThanOrEqual(14);
   });
 
   it('gives every job a time limit well under the 6 h hard limit', () => {

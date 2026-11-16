@@ -50,7 +50,10 @@ the invented roofscape) and the toggles plan
   key.
 - **The drawn top is the planned top**: `inventedRoofMesh`'s highest vertex
   is `lowest + rise + totalM` (unit test, property test, and every fixture in
-  `site-invented-roofs.test.ts`). Navigation relies on this.
+  `site-invented-roofs.test.ts`). Navigation relies on this. Exact up to the
+  mesh weld: the stitch in `skeleton-mesh.ts` may weld the apex onto a
+  near-coincident event corner up to 3 mm (`WELD_M`) BELOW it, never above, so
+  the obstacle index errs a few millimetres high, the safe side.
 - **Shared walls** are found by a segment grid (16 m cells, 1 m reach) and
   weighted 0: the roof stands vertical over them and the eave does not reach
   past them.
@@ -125,8 +128,9 @@ The warm delivery more than doubles, so the globe builds with
   staged delivery against the full one (shape, height over 1 cm and 50 cm)
   at three staged box sizes on all 12 sites, and that none survives the
   full delivery.
-- `invented-roofs.property.test.ts`: drawn top equals planned top within the
-  rise limit, order invariance, and the same plans under any translation of
+- `invented-roofs.property.test.ts`: drawn top at the planned top within the
+  weld and never above it, the rise limit, two replayed seeds that once
+  failed a 0.5 mm closeness, order invariance, and the same plans under any translation of
   the input, over random rotated rectangles and Ls.
 - `testdata/sites/site-invented-roof-frames.test.ts`: the same decisions
   and heights (within 1 cm) with the frame moved east, north, both, and by
