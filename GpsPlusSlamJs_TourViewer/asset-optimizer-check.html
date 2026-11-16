@@ -317,6 +317,7 @@
       import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
       import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
       import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
+      import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
       import {
         bestLag,
         cartoonPicturePixels,
@@ -343,6 +344,8 @@
         formatBytes,
         formatCount,
       } from "./src/editor/asset-shelf/shelf-panel-model.ts";
+
+      guardSlidersIn(document);
       import photoUrl from "./playwright-tests/fixtures/asset-optimizer/photo-oberammergau-street.jpg?url";
       import speechDeUrl from "./playwright-tests/fixtures/asset-optimizer/speech-de-frau-holle.mp3?url";
       import speechEnUrl from "./playwright-tests/fixtures/asset-optimizer/speech-en-the-raven.mp3?url";

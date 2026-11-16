@@ -9,10 +9,11 @@ verified on its own source page (the recordings and the photo on
 FFmpeg, the models packed with glTF Transform; the commands are given per
 file.
 
-Total: 15,804,200 bytes (about 15.1 MiB) for seven files. The two models are
-most of it: they carry textures larger than the editor keeps (4096 and
-2048 px against its 1024 px), so the check page's texture steps compare
-real resolutions.
+Total: 6,004,828 bytes (about 5.7 MiB) for seven files. The two models carry
+2048 px textures, twice the side the editor keeps (1024 px), so the check
+page's texture steps compare real resolutions. Each file stays under the
+repository's 2 MiB per-file ceiling (`tests/repo-config/max-file-size.test.js`):
+the 4k textures of the bust alone are 5.4 MB, so no 4k sample fits.
 
 ## speech-de-frau-holle.mp3 (German speech, mono)
 
@@ -112,9 +113,11 @@ real resolutions.
   colour, normal, roughness).
 - Licence: CC0 1.0. Evidence: https://polyhaven.com/license states "Our
   assets are all licensed as CC0", with no attribution required.
-- Packed into one binary glTF, the files unchanged, with glTF Transform
-  (`@gltf-transform/core` 4.5.1, `NodeIO.read` then `NodeIO.write` to
-  `.glb`). 5,787,044 bytes.
+- Packed into one binary glTF with glTF Transform (`@gltf-transform/core`
+  4.5.1, `NodeIO.read` then `NodeIO.write` to `.glb`), each texture first
+  scaled to 2048 px and re-encoded as JPEG with FFmpeg
+  (`ffmpeg -i <texture> -vf scale=2048:-1 -q:v 3`), so the file fits the
+  2 MiB ceiling. 1,651,408 bytes.
 
 ## model-utility-box.glb (straight edges and lettering, 3D model)
 
@@ -128,7 +131,8 @@ real resolutions.
   (`utility_box_01.gltf`, its `.bin` and three 2048 px JPEG textures:
   colour, normal, and ambient occlusion, roughness and metalness in one).
 - Licence: CC0 1.0. Evidence as for the bust.
-- Packed as the bust. 7,053,656 bytes.
+- Packed as the bust, its textures re-encoded at their own 2048 px with
+  `-q:v 3`. 1,382,484 bytes.
 
 The third model the check page offers, the scanned rock, is the level of
 detail prototype's (`public/prototypes/model-lod-1/rock.glb`, Poly Haven,
