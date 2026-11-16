@@ -16,7 +16,9 @@
     build's choices only; any other failure by its name and stack frames. The
     message is never logged (a data error can name its cell; a failed build's
     is on screen already), in V8's stack format and in Firefox's and Safari's
-    alike; a V8 stack without frames keeps none of its message lines. Never
+    alike; a V8 stack without frames keeps none of its message lines, also
+    when its header names another error than the one thrown (a worker's
+    stack on the page's error): every header-shaped line is dropped. Never
     a cell or a position.
   - Coalesced through `latestOnly`: at most one run in flight, only the newest waiting intent survives, never rejects.
   - Optional callbacks: `geoidUndulationM` (the datum, read at post time), `onTimings` and `onClickSummary` (the click-path breakdown), and `onBusyChange`.
