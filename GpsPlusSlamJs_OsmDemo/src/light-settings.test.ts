@@ -470,12 +470,20 @@ describe("a colour scheme's light defaults", () => {
     const off = { ...URBAN, hazeVeilLightness: 0 };
     const away = rebaseLightSettings(off, URBAN, DEFAULT_LIGHT_SETTINGS);
     expect(away).toEqual(DEFAULT_LIGHT_SETTINGS);
-    // ... but there 0 IS the default, so nothing says it was set, and the way
-    // back to urban brings the veil again. A known limit: the settings carry
-    // values, not which of them the viewer touched.
+    // ... but there 0 IS the default, so the value alone does not say it was
+    // set, and the way back to urban would bring the veil again ...
     expect(rebaseLightSettings(away, DEFAULT_LIGHT_SETTINGS, URBAN)).toEqual(
       URBAN,
     );
+    // ... unless the caller names the fields the viewer touched.
+    expect(
+      rebaseLightSettings(
+        away,
+        DEFAULT_LIGHT_SETTINGS,
+        URBAN,
+        new Set(["hazeVeilLightness"]),
+      ),
+    ).toEqual(off);
   });
 
   it("keeps every stated field across a rebase, and moves every other (fixed seed)", () => {

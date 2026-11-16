@@ -142,4 +142,4 @@ buildCity(features, ground, { palette: "class" }); // the colours before M7
   flag off, colour tag over material, the roof untouched, the jitter on
   every rule's pick and on a colour tag); `building-palette.property.test.ts`
   (the jitter within `wallJitterL` + 0.5 L* and stable per key for any key,
-  tone, jitter 0-10 and height; a jitter of 0 byte for byte).
+  tone, jitter 0-20 and height; a jitter of 0 byte for byte).

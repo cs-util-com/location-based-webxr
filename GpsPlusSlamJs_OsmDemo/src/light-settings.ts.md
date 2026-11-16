@@ -53,12 +53,12 @@ hazeVeilLightness, hazeVeilTint, hazeVeilRiseDeg }`.
   `veil` or `ev` opens in that light, `veil=0` switches the veil off, and a
   stated `ev` wins. Other schemes, and AR (its own renderer and lighting;
   the veil never reaches its fog), are unchanged.
-- `rebaseLightSettings(settings, from, to)`: the settings moved onto
-  another scheme's defaults. A field still at `from`'s value takes `to`'s; a
-  field that differs keeps its value, so what a link states it still
-  states. Known limit: the settings carry values, not which were touched,
-  so a veil switched off on urban (0) is the default on `today`, and the way
-  back to urban brings the veil again.
+- `rebaseLightSettings(settings, from, to, touched?)`: the settings moved
+  onto another scheme's defaults. A field still at `from`'s value takes
+  `to`'s; a field that differs keeps its value, so what a link states it
+  still states. A value alone cannot tell a veil switched off on urban (0)
+  from `today`'s default of 0, so the light dialog passes the fields the
+  viewer set as `touched`, and those keep their value whatever it is.
 - The adaptation's range is 0.5-1: measured, lowering it barely changes
   noon and mostly darkens dawn and dusk (plan §8).
 - `describeLightSettings(settings)`: the Copy line, e.g.

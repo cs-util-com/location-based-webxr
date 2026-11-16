@@ -123,6 +123,14 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   const nextFrame = deps.nextFrame ?? afterPaint;
   let settings = deps.initial;
   let defaults = deps.defaults ?? DEFAULT_LIGHT_SETTINGS;
+  // The fields the viewer set (by the link or a slider), so a scheme switch
+  // keeps them even where a value equals the next scheme's default; Reset
+  // clears it.
+  const touched = new Set<keyof LightSettings>(
+    (Object.keys(settings) as (keyof LightSettings)[]).filter(
+      (f) => settings[f] !== defaults[f],
+    ),
+  );
 
   const panel = document.createElement("section");
   panel.id = "light-dialog";
@@ -233,6 +241,9 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
           ? { ...next, gainFullDeg: next.gainFromDeg + 1 }
           : { ...next, gainFromDeg: next.gainFullDeg - 1 };
     }
+    for (const f of Object.keys(next) as (keyof LightSettings)[]) {
+      if (f === field || next[f] !== settings[f]) touched.add(f);
+    }
     apply(next);
   };
   for (const [field, input] of inputs) {
@@ -257,6 +268,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   });
 
   reset.addEventListener("click", () => {
+    touched.clear();
     apply(defaults);
     brightness();
   });
@@ -358,7 +370,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     setDefaults(next) {
       const from = defaults;
       defaults = next;
-      apply(rebaseLightSettings(settings, from, next));
+      apply(rebaseLightSettings(settings, from, next, touched));
     },
     dispose() {
       document.removeEventListener("keydown", onKey);

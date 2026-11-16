@@ -305,6 +305,30 @@ describe("createLightDialog", () => {
     expect($<HTMLInputElement>("light-hazeVeilLightness").value).toBe("0");
   });
 
+  it("keeps a veil switched off on urban across urban, today and back to urban", () => {
+    // Why this test matters: 0 is today's default, so the value alone reads
+    // as untouched under today and the way back to urban would bring the veil
+    // again; the dialog remembers that the viewer set it, by the link or the
+    // slider, until Reset.
+    const urban = lightDefaultsFor("urban");
+    const off = { ...urban, hazeVeilLightness: 0 };
+    const fromLink = setup({ initial: off, defaults: urban });
+    fromLink.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    fromLink.dialog.setDefaults(urban);
+    expect(fromLink.dialog.settings).toEqual(off);
+    fromLink.dialog.dispose();
+
+    const bySlider = setup({ initial: urban, defaults: urban });
+    bySlider.slide("hazeVeilLightness", 0);
+    bySlider.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    bySlider.dialog.setDefaults(urban);
+    expect(bySlider.dialog.settings).toEqual(off);
+    // Reset forgets it: the next switch moves every value again.
+    bySlider.$("light-reset").click();
+    bySlider.dialog.setDefaults(DEFAULT_LIGHT_SETTINGS);
+    expect(bySlider.dialog.settings).toEqual(DEFAULT_LIGHT_SETTINGS);
+  });
+
   it("resets every value to the shipped look", () => {
     const { dialog, onChange, slide, $ } = setup();
     slide("gainMax", 2);

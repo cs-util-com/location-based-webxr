@@ -221,15 +221,21 @@ export function serializeLightSettings(
  * The settings moved from one scheme's defaults to another's: a field still
  * at `from`'s value was never set, so it takes `to`'s; a field that differs
  * was set, and keeps its value. What a link states, it still states.
+ *
+ * A value alone cannot say it was set when it equals `from`'s default (a
+ * veil switched off on urban, then shown under a scheme whose default is no
+ * veil), so a caller that knows which fields the viewer touched passes them
+ * as `touched`: those keep their value whatever it is.
  */
 export function rebaseLightSettings(
   s: LightSettings,
   from: LightSettings,
   to: LightSettings,
+  touched: ReadonlySet<keyof LightSettings> = new Set(),
 ): LightSettings {
   const out = { ...s } as Record<keyof LightSettings, number>;
   for (const f of FIELDS) {
-    if (round(s[f]) === round(from[f])) out[f] = to[f];
+    if (!touched.has(f) && round(s[f]) === round(from[f])) out[f] = to[f];
   }
   return out;
 }

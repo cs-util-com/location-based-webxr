@@ -47,7 +47,11 @@ WebGL.
   - `setDefaults(next)`: moves onto a new scheme's defaults
     (`rebaseLightSettings`: an untouched value follows, a set one stays),
     shows and applies the result through `onChange`. The page calls it on a
-    colour scheme switch.
+    colour scheme switch. The dialog remembers which fields the viewer set
+    (those the initial settings state against the defaults, and every
+    slider moved since), and passes them as `touched`, so a value that
+    happens to equal one scheme's default still stays on the way back;
+    Reset forgets them.
 - `HEAT_GRID_MARGIN_BOUND = 5`: the DEC-R4-5 bound that the check compares
   against.
 

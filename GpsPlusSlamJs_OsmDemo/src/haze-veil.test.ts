@@ -11,6 +11,7 @@
  */
 import fc from "fast-check";
 import { linearToSrgb, rgbToLab } from "gps-plus-slam-osm";
+import { ShaderChunk } from "three";
 import { describe, expect, it } from "vitest";
 
 import { TONE_MAPPING_EXPOSURE } from "./atmosphere-rig.js";
@@ -56,6 +57,28 @@ describe("neutralToneMap (three's Khronos Neutral, mirrored)", () => {
     const c = neutralToneMap([0.3, 0.4, 0.5], 1);
     expect(c[0]).toBeCloseTo(0.26, 12);
     expect(c[2]).toBeCloseTo(0.46, 12);
+  });
+
+  // WHY: the mirror is a copy of three's GLSL, and an upgrade of three that
+  // changed the curve would leave it silently wrong. The constants it mirrors
+  // must still be the ones in three's shader source.
+  it("mirrors the constants of the three in use", () => {
+    const glsl = ShaderChunk.tonemapping_pars_fragment;
+    expect(glsl).toContain("const float StartCompression = 0.8 - 0.04;");
+    expect(glsl).toContain("const float Desaturation = 0.15;");
+    expect(glsl).toContain(
+      "float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;",
+    );
+  });
+
+  it("desaturates a colour above the knee", () => {
+    // Worked by hand: offset 0.04 gives (0.96, 0.56, 0.16), peak 0.96, new
+    // peak 1 - 0.0576 / 0.44, each channel scaled to it and mixed toward it
+    // by g = 1 - 1 / (0.15 (peak - newPeak) + 1).
+    const out = neutralToneMap([1, 0.6, 0.2], 1);
+    expect(out[0]).toBeCloseTo(0.8690909090909091, 12);
+    expect(out[1]).toBeCloseTo(0.5118412827829869, 12);
+    expect(out[2]).toBeCloseTo(0.1545916564750646, 12);
   });
 });
 
