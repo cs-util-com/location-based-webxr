@@ -3,13 +3,17 @@ import { describe, expect, it } from "vitest";
 
 import type { EnuFrame, EnuPoint } from "./enu.js";
 import { enuFrameAt } from "./enu.js";
+import type { ExtrudedBuilding } from "./extrude.js";
 import {
   inventedRoofMesh,
   inventedTotalM,
   planInventedRoofs,
   type InventedFootprint,
+  type InventedRoof,
 } from "./invented-roofs.js";
+import type { MeshData } from "./mesh-data.js";
 import { ROOFSCAPE_DEFAULTS } from "./roofscape-rules.js";
+import { skeletonMesh } from "./skeleton-mesh.js";
 import { mixedUnit } from "./stable-jitter.js";
 
 /**
@@ -23,7 +27,19 @@ import { mixedUnit } from "./stable-jitter.js";
  * positions are coarser than at 0 m; it is the checked eave-0 mesh lifted
  * there, and this file meshes every granted roof on every ground to pin
  * that the drawn mesh never throws.
+ *
+ * NOT THROWING IS NOT ENOUGH. A granted roof is drawn from the planner's
+ * cached eave-0 mesh, so `inventedRoofMesh` neither stitches nor checks it
+ * again, and a broken lift could never throw here. So the drawn roof is also
+ * compared with a fresh stitch of the same roof at an eave of 0 m, lifted
+ * and placed by hand: the same triangles, every corner within float32 slack
+ * of where the fresh stitch puts it, and closed above the eave. (The fresh
+ * stitch is at 0 m, not at the real eave, because at the real eave float32
+ * can refuse a roof that closes at 0 m, which is why the cache exists.)
  */
+
+/** How far a drawn corner may sit from the fresh stitch, metres (float32 at 600 m is 0.06 mm). */
+const SLACK_M = 1e-3;
 
 /** The ground heights the mesh is built on, metres. */
 const GROUNDS = [0, 31, 33, 100, 300, 600] as const;
@@ -162,13 +178,98 @@ function expectMeshedEverywhere(shape: Shape, seed: number): void {
   const house = footprint(shape, seed);
   const plan = planInventedRoofs([house]).get(house.key);
   if (plan?.kind !== "roof") return;
+  const fresh = skeletonMesh(plan.roof, { eaveM: 0, slope: plan.tan }).mesh;
   for (const lowest of GROUNDS) {
-    expect(() => inventedRoofMesh(plan, { lowest, rise: 0 })).not.toThrow();
+    const drawn = inventedRoofMesh(plan, { lowest, rise: 0 });
+    expectDrawnAsStitched(drawn, fresh, plan, lowest + plan.eaveM);
   }
 }
 
+/**
+ * The roof in `drawn` is `fresh` lifted to `eaveM` and placed by
+ * `plan.place`: the same triangles, the corners within `SLACK_M`, and every
+ * edge above the eave shared by exactly two triangles wound against each
+ * other (`skeletonMesh`'s closure rule).
+ */
+function expectDrawnAsStitched(
+  drawn: ExtrudedBuilding,
+  fresh: MeshData,
+  plan: InventedRoof,
+  eaveM: number,
+): void {
+  const start = drawn.roofVertices.start;
+  const count = fresh.positions.length / 3;
+  const inRoof = (v: number): boolean => v >= start && v < start + count;
+  const triangles: number[] = [];
+  for (let i = 0; i < drawn.indices.length; i += 3) {
+    const tri = [0, 1, 2].map((k) => drawn.indices[i + k] as number);
+    if (tri.every(inRoof)) triangles.push(...tri.map((v) => v - start));
+  }
+  expect(triangles.length / 3).toBe(fresh.triangleCount);
+  expect(triangles).toEqual([...fresh.indices]);
+
+  const { x, y, xScale } = plan.place;
+  let worst = 0;
+  for (let v = 0; v < count; v++) {
+    const at = (k: number): number =>
+      drawn.positions[(start + v) * 3 + k] as number;
+    const want = (k: number): number => fresh.positions[v * 3 + k] as number;
+    worst = Math.max(
+      worst,
+      Math.abs(at(0) - (want(0) * xScale + x)),
+      Math.abs(at(1) - (want(1) + eaveM)),
+      Math.abs(at(2) - (want(2) - y)),
+    );
+  }
+  expect(worst).toBeLessThan(SLACK_M);
+  expectClosedAbove(drawn.positions, start, triangles, eaveM);
+}
+
+/**
+ * `skeletonMesh`'s closure rule on the drawn roof: corners at one position
+ * are one corner, and every edge above the eave is used once in each
+ * direction.
+ */
+function expectClosedAbove(
+  positions: Float32Array,
+  start: number,
+  triangles: readonly number[],
+  eaveM: number,
+): void {
+  const ids = new Map<string, number>();
+  const id = (v: number): number => {
+    const o = (start + v) * 3;
+    const key = `${positions[o]},${positions[o + 1]},${positions[o + 2]}`;
+    const known = ids.get(key);
+    if (known !== undefined) return known;
+    ids.set(key, ids.size);
+    return ids.size - 1;
+  };
+  const eave = Math.fround(eaveM);
+  const raised = (v: number): boolean =>
+    (positions[(start + v) * 3 + 1] as number) > eave + 1e-6;
+  const uses = new Map<string, { count: number; raised: boolean }>();
+  for (let i = 0; i < triangles.length; i += 3) {
+    for (let k = 0; k < 3; k++) {
+      const p = triangles[i + k] as number;
+      const q = triangles[i + ((k + 1) % 3)] as number;
+      const edge = `${id(p)}>${id(q)}`;
+      const seen = uses.get(edge);
+      uses.set(edge, {
+        count: (seen?.count ?? 0) + 1,
+        raised: raised(p) || raised(q),
+      });
+    }
+  }
+  const faults = [...uses].filter(([edge, use]) => {
+    const [from, to] = edge.split(">");
+    return use.count > 1 || (use.raised && !uses.has(`${to}>${from}`));
+  });
+  expect(faults).toEqual([]);
+}
+
 describe("invented roofs, meshed on any ground", () => {
-  it("meshes every planned roof without throwing, on grounds from 0 to 600 m", () => {
+  it("draws every planned roof as its stitched, closed mesh, on grounds from 0 to 600 m", () => {
     fc.assert(
       fc.property(shapeArb, fc.integer({ min: 0, max: 1e6 }), (shape, seed) =>
         expectMeshedEverywhere(shape, seed),

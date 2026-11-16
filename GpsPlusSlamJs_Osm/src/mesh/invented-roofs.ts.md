@@ -92,8 +92,8 @@ the invented roofscape) and the toggles plan
   mesh check counts as "does not close". The planner runs before
   `buildBuildings` isolates each building and inside the obstacle index,
   which isolates nothing, so one defect once failed both. Not silent:
-  `PlanOptions.onDefect` hears of each such house once (`buildBuildings`
-  passes its `onFallback`).
+  `PlanOptions.onDefect` hears of each such house once, with its key
+  (`buildBuildings` passes its `onFallback`, once per key).
 - **Every roof granted is a roof whose mesh closes** (2026-11-16). The
   planner runs the closure check of `skeletonMesh` on each candidate roof
   (at an eave of 0 m) and moves on when it fails: a gabled roof falls back to the hipped or
@@ -155,8 +155,9 @@ The warm delivery more than doubles, so the globe builds with
   staged delivery against the full one (shape, height over 1 cm and 50 cm)
   at three staged box sizes on all 12 sites, and that none survives the
   full delivery.
-- `invented-roofs.closure.property.test.ts`: every granted roof meshes at
-  grounds 0 to 600 m over stars, Ls (equal-winged too), Ts and squares; a
+- `invented-roofs.closure.property.test.ts`: every granted roof is drawn,
+  at grounds 0 to 600 m, as a fresh eave-0 stitch of it lifted and placed
+  (the same triangles, corners within 1 mm, closed above the eave), over stars, Ls (equal-winged too), Ts and squares; a
   star whose gabled roof does not close is pinned as a hipped roof (with the
   closure check removed it plans the gable, and the test fails; the house is
   asserted to wish for gables, so the pin cannot pass vacuously). Both

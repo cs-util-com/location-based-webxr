@@ -135,7 +135,8 @@ const { mesh, surfaceVertices } = skeletonMesh(roof, {
   depend on the eave, and every skeleton it draws is closed. Nothing the check
   rejects is skipped any more.
 - `invented-roofs.closure.property.test.ts`: every roof the invented-roof
-  planner grants meshes at grounds 0 to 600 m, over stars, L, T and square
+  planner grants is drawn at grounds 0 to 600 m as its fresh eave-0 stitch
+  lifted (same triangles, corners within 1 mm, closed), over stars, L, T and square
   footprints; the eight-pointed star that shrank out of it before the cluster
   weld is pinned by name and must stay a hipped roof (without the cluster
   weld the planner check demotes it to a lid, and the test fails).
