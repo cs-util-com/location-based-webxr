@@ -50,6 +50,7 @@ button{font:inherit;color:inherit}
 .transport svg{width:22px;height:22px}
 .story{display:flex;align-items:center;gap:8px;max-width:min(360px,calc(100cqw - 24px));min-height:56px;padding:6px 6px 6px 14px;border-radius:999px;background:var(--plate);border:2px solid rgba(45,212,191,.7);box-shadow:0 8px 20px rgba(0,0,0,.35);animation:rise .3s cubic-bezier(.2,.8,.2,1)}
 .story .t{flex:1;min-width:0}
+.story .who{flex:none;width:14px;height:14px;border-radius:50%;border:2px solid #fff}
 .story b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .story small{display:block;font-size:12.5px;color:var(--muted);font-weight:600}
 .story .next{appearance:none;min-height:44px;padding:0 16px;border-radius:999px;border:0;background:var(--play);color:var(--play-ink);font-weight:800;cursor:pointer}
@@ -194,7 +195,8 @@ const CFG = {
 const ASLEEP_ALPHA = 0.14;  // the faint ring that says where the radar is
 const EDGE_WAKE_S = 3.5;    // how long the edge switch stays awake
 const TAP_WAKE_S = 6;       // a tap on the sleeping radar wakes it this long
-const FIT = 1.5;            // in a station the range is its radius times this
+const FIT = 1.5;
+const GREET_M = 12;          // the single story's greeting waits until you are this near its character            // in a station the range is its radius times this
 
 /* ======================================================================
    The sample tour (invented). x = east, z = south, metres.
@@ -232,7 +234,7 @@ const ITEMS = [
 ];
 const itById = (id) => ITEMS.find((i) => i.id === id);
 const STORIES = {
-  well: { title: 'The well', entry: 'greta', steps: [
+  well: { title: 'Water for all', entry: 'greta', steps: [
     { who: 'greta', lines: ['Welcome to the well court!', 'This well kept the street alive for three hundred years.', 'Come, I will show you the stone the masons left.'] },
     { stone: true, lines: ['The rim stone, carved 1611: "Water for all who ask."'] },
     { who: 'greta', lines: ['Thank you for listening. Have a look around.'] }] },
@@ -260,7 +262,7 @@ function fresh() {
     here: null, zoom: 0, visited: {}, greeted: {},
     it: freshItems(), story: null, storyDone: {}, media: null,
     speed: 0, stillFor: 99, wakeUntil: -1, radarAlpha: 1, rangeStep: 0, rangePeekUntil: -1,
-    auto: null, turn: null, yawTarget: null, paused: false,
+    greetPending: null, auto: null, turn: null, yawTarget: null, paused: false,
   };
 }
 let S = fresh();
@@ -710,30 +712,23 @@ function drawRadar() {
   if (iAl > 0.02) {
     const marks = ITEMS.filter((i) => i.st === st.id).map((i) => { const [x, y, beyond] = xyOf(i); return { x, y, beyond, seen: S.it[i.id].seen, a: relAngle(i) }; });
     for (const m of marks) if (m.beyond) { m.x = c + Math.sin(m.a) * (R - ITEM_R - 1); m.y = c - Math.cos(m.a) * (R - ITEM_R - 1); }
-    const parent = marks.map((_, i) => i), find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
-    for (let i = 0; i < marks.length; i++) for (let j = i + 1; j < marks.length; j++) if (Math.hypot(marks[i].x - marks[j].x, marks[i].y - marks[j].y) < ITEM_R * 2 + 2) parent[find(i)] = find(j);
-    const groups = new Map();
-    marks.forEach((m, i) => { const k = find(i); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(m); });
+    // every mark at its true place: grey first, white on top, so an unseen thing is never hidden by a seen one
     g.globalAlpha = iAl;
-    for (const grp of groups.values()) {
-      radarMarks.n++;
-      if (grp.length === 1) {
-        const m = grp[0];
-        circle(m.x, m.y, ITEM_R + 1.5); g.fillStyle = 'rgba(10,14,19,.9)'; g.fill();
-        circle(m.x, m.y, ITEM_R);
-        if (m.beyond) { g.strokeStyle = m.seen ? '#8b949d' : '#f3f5f7'; g.lineWidth = 2.5; g.stroke(); }
-        else { g.fillStyle = m.seen ? '#8b949d' : '#f3f5f7'; g.fill(); }
-        continue;
-      }
-      // a merged mark sits where its members' true places average; its share of white is what is still unseen
+    for (const m of marks) { circle(m.x, m.y, ITEM_R + 1.5); g.fillStyle = 'rgba(10,14,19,.9)'; g.fill(); }
+    for (const pass of [true, false]) for (const m of marks) {
+      if (m.seen !== pass) continue;
+      circle(m.x, m.y, ITEM_R);
+      if (m.beyond) { g.strokeStyle = m.seen ? '#8b949d' : '#f3f5f7'; g.lineWidth = 2.5; g.stroke(); }
+      else { g.fillStyle = m.seen ? '#8b949d' : '#f3f5f7'; g.fill(); }
+    }
+    // two marks on almost the same spot: a slightly larger white ring says there is more than one
+    radarMarks.n = marks.length;
+    const ringed = new Set();
+    for (let i = 0; i < marks.length; i++) for (let j = i + 1; j < marks.length; j++) {
+      if (Math.hypot(marks[i].x - marks[j].x, marks[i].y - marks[j].y) >= ITEM_R) continue;
       radarMarks.merged++;
-      const x = grp.reduce((s, m) => s + m.x, 0) / grp.length, y = grp.reduce((s, m) => s + m.y, 0) / grp.length;
-      const r = ITEM_R + 3.5, unseen = grp.filter((m) => !m.seen).length;
-      circle(x, y, r + 1.5); g.fillStyle = 'rgba(10,14,19,.9)'; g.fill();
-      const cut = -Math.PI / 2 + unseen / grp.length * Math.PI * 2;
-      if (unseen) { g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, -Math.PI / 2, cut); g.closePath(); g.fillStyle = '#f3f5f7'; g.fill(); }
-      if (unseen < grp.length) { g.beginPath(); g.moveTo(x, y); g.arc(x, y, r, cut, Math.PI * 1.5); g.closePath(); g.fillStyle = '#8b949d'; g.fill(); }
-      g.fillStyle = '#10151b'; g.font = '800 10px system-ui,sans-serif'; g.textAlign = 'center'; g.fillText(String(grp.length), x, y + 3.6);
+      if (ringed.has(i)) continue; ringed.add(i);
+      circle(marks[i].x, marks[i].y, ITEM_R + 3); g.strokeStyle = '#f3f5f7'; g.lineWidth = 1.5; g.stroke();
     }
     g.globalAlpha = 1;
   }
@@ -777,6 +772,12 @@ function sim(dt) {
   if (S.here !== prev) onEdge(prev, S.here);
   S.zoom = clamp(S.zoom + (S.here ? 1 : -1) * dt / 1.0, 0, 1);
 
+  // the one greeting: a single story's character greets once per visit, when you are near enough to listen
+  if (S.greetPending && !S.story) {
+    const sid = S.greetPending, by = itById(STORIES[sid].entry);
+    if (dist(by) <= GREET_M) { S.greeted[by.st] = true; S.greetPending = null; startStory(sid); }
+  }
+
   // the radar's fade
   const target = radarAwakeTarget() ? 1 : ASLEEP_ALPHA, k = dt / CFG.fade;
   S.radarAlpha = target > S.radarAlpha ? Math.min(target, S.radarAlpha + k) : Math.max(target, S.radarAlpha - k);
@@ -809,11 +810,12 @@ function sim(dt) {
 }
 function onEdge(from, to) {
   S.rangeStep = 0;
+  if (!to) S.greetPending = null;
   if (to) {
     lastStation = stById(to); S.visited[to] = true;
     // the one deliberate start by nearness: a single story whose first item is a character greets once per visit
     const stories = Object.entries(STORIES).filter(([, s]) => itById(s.entry).st === to);
-    if (stories.length === 1 && !S.greeted[to] && !S.story) { S.greeted[to] = true; startStory(stories[0][0]); }
+    if (stories.length === 1 && !S.greeted[to]) S.greetPending = stories[0][0]; // starts once you are within GREET_M of its character
   }
   if (CFG.edge === 'on') wake(EDGE_WAKE_S);
 }
@@ -853,7 +855,7 @@ function updateWorld(dt) {
         if (w.bubble) { w.grp.remove(w.bubble); w.bubble.material.map.dispose(); w.bubble.material.dispose(); w.bubble = null; }
         if (text) { w.bubble = spriteFrom(bubbleCanvas(text, it.title), 0.62); w.bubble.position.y = 2.6; w.grp.add(w.bubble); }
       }
-      if (w.bubble) { const d = Math.max(3, dist(it)), s = Math.min(1.6, d / 5); w.bubble.scale.set(0.62 * s * w.bubble.material.map.image.width / w.bubble.material.map.image.height, 0.62 * s, 1); w.bubble.position.y = 2.25 + 0.31 * s; }
+      if (w.bubble) { const d = Math.max(3, dist(it)), s = Math.min(1.6, d / 5); w.bubble.scale.set(0.62 * s * w.bubble.material.map.image.width / w.bubble.material.map.image.height, 0.62 * s, 1); w.bubble.position.y = Math.min(2.25 + 0.31 * s, bubbleCeiling(dist(it)) - 0.31 * s); }
     }
     if (it.kind === 'longText' && w.pageShown !== t.page) {
       w.pageShown = t.page; const p = it.pages[t.page];
@@ -869,6 +871,11 @@ function updateWorld(dt) {
     }
     if (it.kind === 'video') drawScreen(w.screen, it, t);
   }
+}
+/** The highest a bubble may reach at horizontal distance d and stay in view, clear of the top HUD row. */
+function bubbleCeiling(d) {
+  const halfV = camera.fov * Math.PI / 360;
+  return 1.6 + Math.max(0.3, d) * Math.tan(halfV * 0.6);
 }
 function drawScreen(sc, it, t) {
   const frame = t.playing ? Math.floor(T * 8) : (t.pausedBy === 'end' ? -2 : t.t > 0 ? -3 : -1);
@@ -910,7 +917,7 @@ function renderFoot() {
     footKey = key;
     if (!m) el.innerHTML = '';
     else if (m.k === 'media') el.innerHTML = `<button class="transport" type="button" data-hud="transport" data-act="toggle" aria-label="Pause"><span></span></button>`;
-    else el.innerHTML = `<div class="story" data-hud="story"><div class="t"><b></b><small></small></div><button class="next" type="button" data-act="next">Next</button><button class="x" type="button" data-act="leave" aria-label="Leave the story">&times;</button></div>`;
+    else el.innerHTML = `<div class="story" data-hud="story"><span class="who"></span><div class="t"><b></b><small></small></div><button class="next" type="button" data-act="next">Next</button><button class="x" type="button" data-act="leave" aria-label="Leave the story">&times;</button></div>`;
   }
   if (m?.k === 'media') {
     const it = itById(m.id), t = S.it[m.id], b = el.firstElementChild, want = t.playing ? 'pause' : 'play';
@@ -919,7 +926,9 @@ function renderFoot() {
   } else if (m?.k === 'story') {
     const st = S.story, def = STORIES[st.id], box = el.firstElementChild;
     setText(box.querySelector('b'), def.title);
-    setText(box.querySelector('small'), `Story · step ${st.step + 1} of ${def.steps.length}`);
+    const by = itById(def.entry);
+    box.querySelector('.who').style.background = '#' + by.coat.toString(16).padStart(6, '0');
+    setText(box.querySelector('small'), `With ${by.title.split(',')[0]} · step ${st.step + 1} of ${def.steps.length}`);
     const nx = box.querySelector('.next'), last = st.step === def.steps.length - 1;
     setText(nx, last ? 'Done' : 'Next'); nx.disabled = !stepDone();
   }
@@ -978,7 +987,7 @@ function measure() {
   ro.hidden = !measuring; $('#hud').classList.toggle('measuring', measuring);
   if (measuring) {
     const walking = S.speed > CFG.walk;
-    setText(ro, `HUD ${pct.toFixed(1)}% · ${m.count} el · ${ov ? ov + ' overlap' : 'no overlap'} · radar ${S.radarAlpha > 0.5 ? 'awake' : 'asleep'} · ${walking ? `walking ${S.speed.toFixed(1)} m/s` : `still ${Math.min(S.stillFor, 99).toFixed(1)} s`} · marks ${m.marks}${m.merged ? ` (${m.merged} merged)` : ''} · worst frame ${m.worst.toFixed(0)} ms`);
+    setText(ro, `HUD ${pct.toFixed(1)}% · ${m.count} el · ${ov ? ov + ' overlap' : 'no overlap'} · radar ${S.radarAlpha > 0.5 ? 'awake' : 'asleep'} · ${walking ? `walking ${S.speed.toFixed(1)} m/s` : `still ${Math.min(S.stillFor, 99).toFixed(1)} s`} · marks ${m.marks}${m.merged ? ` (${m.merged} stacked)` : ''} · worst frame ${m.worst.toFixed(0)} ms`);
     ro.classList.toggle('bad', ov > 0 || m.worst > 50);
   }
   if (beat) {
@@ -1013,7 +1022,7 @@ const tapWorld = (id) => { const it = itById(id), s = screenOf(it, 1.6); if (s.f
 const tapEl = (sel) => { const el = device.querySelector(sel); if (!el) return; rippleOn(el); el.click(); };
 const standStill = () => wait(CFG.still + CFG.fade + 0.3);
 const A = stById('A'), B = stById('B');
-const A_IN = { x: 0, z: -47 }, A_OUT = { x: 22, z: -86 }, B_IN = { x: 49, z: -117 };
+const A_IN = { x: 0, z: -47 }, A_OUT = { x: 22, z: -86 }, B_IN = { x: 49, z: -119.5 };
 const NEAR_PAIR = { x: 4.5, z: -64.5 };
 function base(n) {
   S = fresh(); lastStation = A;
