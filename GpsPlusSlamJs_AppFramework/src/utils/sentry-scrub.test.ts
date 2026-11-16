@@ -506,3 +506,120 @@ describe('scrubDeep', () => {
     expect(JSON.stringify(scrubDeep(deep, OWN))).not.toContain('1.5');
   });
 });
+
+// Why these tests matter: the map demo and the Tour Viewer write places in
+// forms the Recorder never did. The map demo keeps its camera target in the
+// page address as `clat` / `clng`, and both apps name map cells by their H3
+// index, which is a place as surely as a coordinate pair. These rules apply
+// to every app.
+describe('scrubText, map-app places', () => {
+  it("removes the map demo's camera target, written as clat / clng", () => {
+    expect(
+      scrubText('camera clat=48.137154 clng=11.576124 cdist=400', OWN)
+    ).toBe(`camera clat=${REDACTED} clng=${REDACTED} cdist=400`);
+    expect(scrubText('{"clat":48.1,"clon":11.5}', OWN)).toBe(
+      `{"clat":${REDACTED},"clon":${REDACTED}}`
+    );
+    // A word that merely ends in one still does not count.
+    expect(scrubText('eclat=5 flat=5', OWN)).toBe('eclat=5 flat=5');
+  });
+
+  it('removes an H3 cell index, and keeps the ids Sentry itself sends', () => {
+    expect(scrubText('build failed for cell 8d1f8d3a1c3a43f', OWN)).toBe(
+      `build failed for cell ${REDACTED}`
+    );
+    expect(scrubText('cells 871f8d3a5ffffff,881f8d3a51fffff', OWN)).toBe(
+      `cells ${REDACTED},${REDACTED}`
+    );
+    // A span id (16 hex), an event id (32 hex) and a commit (40 hex) are not
+    // cells, even when they start with an 8.
+    const ids =
+      '8bf92f3577b34da6 8a3f2504e04f8911d39a0c0305e82c33 8f9e0d1c2b3a49586776a5b4c3d2e1f00a1b2c3d';
+    expect(scrubText(ids, OWN)).toBe(ids);
+  });
+});
+
+describe('scrubDeep, map-app places', () => {
+  it('removes a value held under a clat / clng key', () => {
+    expect(
+      scrubDeep({ clat: 48.137154, clng: 11.576124, cdist: 400 }, OWN)
+    ).toEqual({ clat: REDACTED, clng: REDACTED, cdist: 400 });
+  });
+});
+
+// Why these tests matter: the strict profile is what the Tour Viewer and the
+// map demo send with, and their users are visitors, not developers. Beyond
+// the shared rules it removes what can carry tour content or a place in a
+// form no pattern recognises: quoted text (a file name, a station title, a
+// snippet of a file the browser quotes in its error) and long runs of digits
+// (an OSM id names one building). The Recorder keeps its old behaviour, so
+// the default is not strict.
+describe('scrubText, strict', () => {
+  const strict = { strict: true } as const;
+
+  it('removes quoted text, in double, single and back quotes', () => {
+    expect(
+      scrubText('Skipping "Altstadt Rundgang.zip": bad', OWN, strict)
+    ).toBe(`Skipping "${REDACTED}": bad`);
+    expect(scrubText("reading 'Marienplatz'", OWN, strict)).toBe(
+      `reading '${REDACTED}'`
+    );
+    expect(scrubText('station `Tor` threw', OWN, strict)).toBe(
+      `station \`${REDACTED}\` threw`
+    );
+    // The default keeps them, as the Recorder always has.
+    expect(scrubText('Skipping "a.zip"', OWN)).toBe('Skipping "a.zip"');
+  });
+
+  it('removes a run of six or more digits, which can be an OSM id', () => {
+    expect(scrubText('way/123456789 has no height', OWN, strict)).toBe(
+      `way/${REDACTED} has no height`
+    );
+    expect(scrubText('node 2345678 and relation=99999999', OWN, strict)).toBe(
+      `node ${REDACTED} and relation=${REDACTED}`
+    );
+    // Short numbers, a script position in a stack line and hashed names stay.
+    const kept = 'took 12345 ms at index-Bx81aQ.js:1:1234567 v2026111';
+    expect(scrubText(kept, OWN, strict)).toBe(kept);
+  });
+
+  it('keeps the shared rules', () => {
+    expect(scrubText('at 48.137154, 11.576124', OWN, strict)).toBe(
+      `at ${REDACTED}`
+    );
+    expect(
+      scrubText('https://overpass.example.org/api?data=x', OWN, strict)
+    ).toBe(`https://overpass.example.org/${REDACTED}`);
+    // The labels are read before quoted text goes: otherwise `"lat"` would
+    // lose its name first and its number would stay.
+    expect(scrubText('{"lat":48.13,"lng":11.57}', OWN, strict)).toBe(
+      `{"${REDACTED}":${REDACTED},"${REDACTED}":${REDACTED}}`
+    );
+  });
+
+  it('settles when removing quoted text joins two pieces', () => {
+    // The space inside the quotes kept the second link apart from the first;
+    // once it is gone they read as one foreign link on a second call, so the
+    // rules repeat until nothing changes.
+    const text = `https://${OWN}/a.js)can'tx: '0https://lat0.example.org/x?k=v`;
+    const once = scrubText(text, OWN, strict);
+    expect(scrubText(once, OWN, strict)).toBe(once);
+  });
+
+  it('scrubs every string of a nested value the same way', () => {
+    const out = scrubDeep(
+      {
+        message: 'Skipping "Station 3.jpg"',
+        values: [{ value: 'way/123456789' }],
+        count: 1234567,
+      },
+      OWN,
+      strict
+    );
+    expect(out).toEqual({
+      message: `Skipping "${REDACTED}"`,
+      values: [{ value: `way/${REDACTED}` }],
+      count: 1234567,
+    });
+  });
+});

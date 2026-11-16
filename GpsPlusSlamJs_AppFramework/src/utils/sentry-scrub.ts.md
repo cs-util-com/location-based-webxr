@@ -11,7 +11,7 @@ dependency on the SDK, so its rules are tested on their own.
 ## Public API
 
 - `REDACTED` - the string (`[redacted]`) every removed piece becomes.
-- `scrubText(text, ownHost): string` - scrubs one string:
+- `scrubText(text, ownHost, options?): string` - scrubs one string:
   - a link to `ownHost` keeps its path (stack traces need the script paths
     to find their source maps) but loses its query, its fragment and any
     id-like path segment;
@@ -31,7 +31,8 @@ dependency on the SDK, so its rules are tested on their own.
     its fragment and any id-like segment;
   - a number labelled `lat`, `latitude`, `lon`, `lng` or `longitude`
     (`lat=48.1`, `"latitude":48.1`, `lat: '48.1'`, quoted or not), also after
-    a prefix (`originLat`, `start_lng`) or with an index or a unit before a
+    a prefix (`originLat`, `start_lng`), with a `c` in front (`clat`, `clng`,
+    `clon`: the map demo's camera target in its page address) or with an index or a unit before a
     separator (`lat1=48.1`, `latDeg=48.1`), loses its value; `long` counts
     only with `:` or `=`, being an ordinary word, and not after a prefix
     (`isLong=1` stays); a word that merely ends
@@ -45,24 +46,44 @@ dependency on the SDK, so its rules are tested on their own.
     `48.1, 11.576124`, `48.1371/11.5761`, `48.1371;11.5761`,
     `48.1371%2C11.5761`, `48.1371+11.5761`) is removed: one of the two needs three or more
     decimals, the other a decimal point;
+  - an H3 cell index (15 hex digits starting with `8`, standing on its own)
+    is removed. Sentry's own ids are 16 (span), 32 (event, trace) or 40
+    (commit) hex digits and stay;
   - a string that is nothing but a query or a fragment (`?id=...`,
     `#station-2`; the SDK's `http.query` and `http.fragment` span
     attributes) becomes `[redacted]`.
   - Order: coordinate pairs, then labels (a label takes one number, and
-    `lat=48.1,11.57` holds two), then links, then the query-only rule. A
+    `lat=48.1,11.57` holds two), then H3 cells (removing a pair can leave a
+    cell standing on its own), then links, then the query-only rule. A
     `[redacted]` does not end a link: a coordinate removed from inside a link
     stays part of it, so its path and query after the marker go too
     (`?lat=48.1&key=abc`) and every pass reads the same link. The query-only
     rule runs last so that a string the other rules reduce to
     `?[redacted]` is not changed again.
-- `scrubDeep(value, ownHost): T` - a copy of `value` with every string
+  - `options.strict` (the `ScrubOptions` type) adds two rules for the apps
+    visitors use (the Tour Viewer and the map demo), applied after the shared
+    ones:
+    - quoted text on one line, in double, single or back quotes, loses its
+      content (`"[redacted]"`): a file or station name, or a snippet of a
+      file the browser quotes in a parse error. An apostrophe pairs with the
+      next single quote on its line and takes the text between with it;
+    - a run of six or more digits standing on its own (`way/123456789`,
+      `"id":2345678`) is removed: it can be an OSM id, which names one
+      building. Digits inside a word or a decimal number, and the column of a
+      stack line (`.js:1:1234567`), stay.
+    - Removing quoted text can join what a space kept apart (two links, a
+      label and its number), so the strict rules repeat until the text no
+      longer changes (`MAX_STRICT_PASSES = 8` bounds the loop; it settles in
+      two or three).
+- `scrubDeep(value, ownHost, options?): T` - a copy of `value` with every string
   scrubbed. Arrays and plain objects are copied, cycles kept as cycles;
   numbers, booleans and other objects pass through, so event ids,
   timestamps and status codes survive. Whatever a field named like a
   coordinate holds (`lat`, `latLng`, by the same rules as the text) becomes
   `[redacted]`, a whole array or object included, unless it is null or
   undefined: the SDK serialises a rejected plain object into the event, and
-  the text rules never see a number. The input is never changed.
+  the text rules never see a number. The input is never changed. `options`
+  is passed on to `scrubText`.
 
 ## Parameters and why these values
 
@@ -81,6 +102,9 @@ dependency on the SDK, so its rules are tested on their own.
   number": a pair of measurements where one has three decimals
   (`0.125 1.5`) is removed too, which removes more, never less. Labelled
   coordinates are removed at any precision.
+- Strict digit runs from 6 digits: OSM node ids passed six digits long ago,
+  so a real id is longer; five or fewer keep durations, counts and
+  coordinates in pixels readable. Four would eat years and port numbers.
 - `MAX_DEPTH = 24`: deeper subtrees are replaced by `[redacted]` rather than
   sent unread. Sentry events are far shallower; the limit only matters for
   a pathological breadcrumb payload.
@@ -88,7 +112,7 @@ dependency on the SDK, so its rules are tested on their own.
 ## Invariants
 
 - Idempotent: scrubbing twice changes nothing more than scrubbing once
-  (property test). Sentry runs the breadcrumb hook and the event hook over
+  (property test), in both profiles. Sentry runs the breadcrumb hook and the event hook over
   the same text.
 - Text with no digits, slashes, `=`, `:`, `?` or `#` comes back unchanged.
 - Removes more, never less, when `ownHost` is unknown: every link is then
@@ -113,6 +137,9 @@ dependency on the SDK, so its rules are tested on their own.
   they go.
 - A label with an encoded separator (`lat%3D48.1`) is not recognised outside
   a link; inside one it goes with the query.
+- The strict profile removes more than it needs to: a property name the
+  browser quotes (`reading 'foo'`) and the keys of a logged JSON object go
+  with the quoted text, which costs some debugging detail.
 - Object keys are not scrubbed, and numbers in an array under any other field
   name (`position: [48.1371, 11.5761]`) pass, having no name to read.
 
@@ -141,4 +168,8 @@ scrubText('https://drive.google.com/file/d/1AbC.../view', 'gps.csutil.com');
   idempotence on random strings and on 2,000 strings built from report
   fragments (links, ids, queries, pairs, labels and punctuation), plain
   text unchanged. All were checked once at 100 times their run count.
+  Added with the strict profile: no coordinate pair survives in any string
+  field of a nested event-shaped value, in either profile; strict
+  idempotence on report fragments with quotes, cells and long numbers mixed
+  in and on random strings; no H3 cell or OSM id survives strict.
 - `sentry-options.test.ts` - the hooks that apply it.

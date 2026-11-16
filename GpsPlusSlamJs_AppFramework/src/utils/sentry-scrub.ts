@@ -99,7 +99,8 @@ const LABELLED_VALUE = String.raw`((?:\d{1,2}|_?[Dd]eg(?:rees)?)["']?\s*[:=]\s*|
 const NOT_A_SHORT_RUN_ON = String.raw`(?!\d{1,3}[A-Za-z])`;
 
 /**
- * `lat`, `latitude`, `lon`, `lng` or `longitude` in any case, after anything
+ * `lat`, `latitude`, `lon`, `lng` or `longitude` in any case, also with a `c`
+ * in front (`clat`, `clng`: the map demo's camera target), after anything
  * but a letter (`lat`, `start_lat`, `0lat`); not inside a longer word
  * (`flat`, `salon`). A digit in front does not stop it, because another rule
  * may turn that digit into `]`, and the second pass must find what the first
@@ -108,7 +109,7 @@ const NOT_A_SHORT_RUN_ON = String.raw`(?!\d{1,3}[A-Za-z])`;
  * like any other text: the link rules still remove all that follows it.
  */
 const KEYED_COORDINATE = new RegExp(
-  String.raw`(?<![a-z])(lat|latitude|lon|lng|longitude|long(?=["']?\s*[:=]))${NOT_A_SHORT_RUN_ON}${LABELLED_VALUE}`,
+  String.raw`(?<![a-z])(c?(?:lat|latitude|lon|lng|longitude|long(?=["']?\s*[:=])))${NOT_A_SHORT_RUN_ON}${LABELLED_VALUE}`,
   'gi'
 );
 
@@ -129,6 +130,39 @@ const COORDINATE_PAIR = new RegExp(
   String.raw`(?<![\d.])(?:${PAIR_PRECISE}${PAIR_SEPARATOR}${PAIR_ANY}|${PAIR_ANY}${PAIR_SEPARATOR}${PAIR_PRECISE})(?!\d|\.\d)`,
   'g'
 );
+
+/**
+ * An H3 cell index: 15 hex digits starting with `8` (the usual text form of a
+ * cell), standing on its own. Sentry's own ids are 16 (span), 32 (event,
+ * trace) or 40 (commit) hex digits, so the length alone tells them apart.
+ */
+const H3_CELL = /(?<![A-Za-z0-9])8[0-9a-f]{14}(?![A-Za-z0-9])/gi;
+
+/**
+ * Strict profile: quoted text on one line, in double, single or back quotes.
+ * One scan from the left, so a quote with no partner stays as it is and a
+ * second pass finds the same spans. An apostrophe (`can't`) pairs with the
+ * next single quote on its line and takes the text between with it: more is
+ * removed, never less.
+ */
+const QUOTED = /(["'`])[^\n]*?\1/g;
+
+/**
+ * Strict profile: six or more digits standing on their own, which can be an
+ * OSM id (one building). Not inside a word or a decimal number, and not the
+ * column of a stack line (`.js:1:1234567`), which follows a digit and a colon.
+ */
+const LONG_DIGIT_RUN = /(?<![\w.]|\d:)\d{6,}(?!\w|[.:]\d)/g;
+
+/** Options of {@link scrubText} and {@link scrubDeep}. */
+export interface ScrubOptions {
+  /**
+   * Also removes quoted text and long digit runs. For apps whose users are
+   * visitors: their reports must carry no tour content and no map ids in a
+   * form the shared rules do not recognise.
+   */
+  readonly strict?: boolean;
+}
 
 /**
  * A value that is nothing but a query or a fragment: the SDK stores a
@@ -183,32 +217,17 @@ function scrubLink(
 }
 
 /**
- * Scrubs one piece of text.
- *
- * - A link to `ownHost` keeps its path (stack traces need the script paths)
- *   but loses its query, its fragment and any id-like path segment.
- * - A link to any other host keeps only the host: its path can name a shared
- *   file or, for map tiles, a place. A host with no scheme in front
- *   (`www.example.org/x`) counts as one.
- * - A link's user name and password are removed.
- * - A relative link loses its query, its fragment and any id-like segment.
- * - A latitude/longitude pair, or a number labelled lat/lon (also as
- *   `originLat` or `start_lat`), is removed.
- * - A string that is only a query or a fragment (`?id=...`) is removed. This
- *   rule runs last, so that a string the other rules turn into one
- *   (`?48.1371 11.5761` -> `?[redacted]`) is not changed again on a second
- *   pass.
- *
- * @param text any string; non-strings are the caller's concern
- * @param ownHost this site's host (`location.host`); when unknown every link
- *   is treated as foreign, which removes more, never less
+ * The rules every app shares; see {@link scrubText} for the list.
  */
-export function scrubText(text: string, ownHost: string | undefined): string {
-  const own = ownHost?.toLowerCase();
+function scrubShared(text: string, own: string | undefined): string {
   // Coordinates go BEFORE links, so the link rules see a link's final text,
   // markers included, and read it the same way on a second pass. Pairs go
   // before labels: a label takes one number, and `lat=48.1,11.57` holds two.
+  // Cells go after both: removing a pair can leave a cell standing on its own
+  // (`8d...3f0.0, 0.01` -> `8d...3f[redacted]`), and a cell needs a word
+  // boundary on both sides, which a removed cell never gives a pair or label.
   const scrubbed = scrubLabelled(text.replace(COORDINATE_PAIR, REDACTED))
+    .replace(H3_CELL, REDACTED)
     .replace(
       ABSOLUTE_URL,
       (_match, scheme: string, authority: string, rest: string) =>
@@ -232,6 +251,67 @@ export function scrubText(text: string, ownHost: string | undefined): string {
   return QUERY_OR_FRAGMENT_ONLY.test(scrubbed) ? REDACTED : scrubbed;
 }
 
+/**
+ * The most passes the strict profile makes. Each pass only replaces text, so
+ * the result settles after two or three; the limit only bounds the loop.
+ */
+const MAX_STRICT_PASSES = 8;
+
+/**
+ * One strict pass: the shared rules first, so a coordinate's label still
+ * stands next to its number (`{"lat":48.1}`) when they run, then quoted text
+ * and long digit runs.
+ */
+function strictPass(text: string, own: string | undefined): string {
+  const scrubbed = scrubShared(text, own)
+    .replace(QUOTED, (_match, quote: string) => quote + REDACTED + quote)
+    .replace(LONG_DIGIT_RUN, REDACTED);
+  return QUERY_OR_FRAGMENT_ONLY.test(scrubbed) ? REDACTED : scrubbed;
+}
+
+/**
+ * Scrubs one piece of text.
+ *
+ * - A link to `ownHost` keeps its path (stack traces need the script paths)
+ *   but loses its query, its fragment and any id-like path segment.
+ * - A link to any other host keeps only the host: its path can name a shared
+ *   file or, for map tiles, a place. A host with no scheme in front
+ *   (`www.example.org/x`) counts as one.
+ * - A link's user name and password are removed.
+ * - A relative link loses its query, its fragment and any id-like segment.
+ * - A latitude/longitude pair, or a number labelled lat/lon (also as
+ *   `originLat`, `start_lat` or `clat`), is removed.
+ * - An H3 cell index is removed.
+ * - A string that is only a query or a fragment (`?id=...`) is removed. This
+ *   rule runs last, so that a string the other rules turn into one
+ *   (`?48.1371 11.5761` -> `?[redacted]`) is not changed again on a second
+ *   pass.
+ * - With `strict`, quoted text and runs of six or more digits are removed
+ *   too. Removing a quote's text can join what a space kept apart (two links,
+ *   a label and a number), so the strict rules are repeated until the text
+ *   no longer changes; a second call therefore changes nothing.
+ *
+ * @param text any string; non-strings are the caller's concern
+ * @param ownHost this site's host (`location.host`); when unknown every link
+ *   is treated as foreign, which removes more, never less
+ * @param options `strict` adds the rules for visitor-facing apps
+ */
+export function scrubText(
+  text: string,
+  ownHost: string | undefined,
+  options: ScrubOptions = {}
+): string {
+  const own = ownHost?.toLowerCase();
+  if (!options.strict) return scrubShared(text, own);
+  let current = text;
+  for (let pass = 0; pass < MAX_STRICT_PASSES; pass++) {
+    const next = strictPass(current, own);
+    if (next === current) break;
+    current = next;
+  }
+  return current;
+}
+
 /** Whether a field of this name holds a coordinate, by the text rules. */
 function isCoordinateKey(key: string): boolean {
   const asText = `${key}=0`;
@@ -251,9 +331,13 @@ function isPlainObject(value: object): value is Record<string, unknown> {
  * timestamps and status codes survive, except that whatever a coordinate's
  * field name (`lat`, `latLng`) holds is replaced by {@link REDACTED}, unless it
  * is empty. A subtree deeper than {@link MAX_DEPTH} is replaced too. The input
- * is never changed.
+ * is never changed. `options` is passed on to {@link scrubText}.
  */
-export function scrubDeep<T>(value: T, ownHost: string | undefined): T {
+export function scrubDeep<T>(
+  value: T,
+  ownHost: string | undefined,
+  options: ScrubOptions = {}
+): T {
   const copies = new WeakMap<object, unknown>();
 
   const walkObject = (node: Record<string, unknown>, depth: number) => {
@@ -268,7 +352,7 @@ export function scrubDeep<T>(value: T, ownHost: string | undefined): T {
   };
 
   const walk = (node: unknown, depth: number): unknown => {
-    if (typeof node === 'string') return scrubText(node, ownHost);
+    if (typeof node === 'string') return scrubText(node, ownHost, options);
     if (node === null || typeof node !== 'object') return node;
     const seen = copies.get(node);
     if (seen !== undefined) return seen;
