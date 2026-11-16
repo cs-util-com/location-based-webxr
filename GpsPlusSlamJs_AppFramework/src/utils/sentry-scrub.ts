@@ -342,15 +342,30 @@ const COORDINATE_MAX = 180;
  * whatever field holds it: both finite and within ±180, and one of them with
  * {@link PAIR_MIN_DECIMALS} or more decimals, as for a pair in text. The other
  * may be whole (`[48.137154, 11]`): a number loses its `.0`, which text keeps.
+ * Three numbers count when their first two are such a pair: a position with
+ * its altitude (`[lon, lat, alt]`, as GeoJSON writes it).
  */
 function isCoordinatePair(node: readonly unknown[]): boolean {
-  if (node.length !== 2) return false;
+  if (node.length !== 2 && node.length !== 3) return false;
+  if (node.length === 3 && typeof node[2] !== 'number') return false;
   const [a, b] = node;
   if (typeof a !== 'number' || typeof b !== 'number') return false;
   const inRange = (n: number) =>
     Number.isFinite(n) && Math.abs(n) <= COORDINATE_MAX;
   if (!inRange(a) || !inRange(b)) return false;
   return Math.max(decimalsOf(a), decimalsOf(b)) >= PAIR_MIN_DECIMALS;
+}
+
+/**
+ * `key`, or, when `out` already holds it (two keys scrubbed to the same text,
+ * such as two places), `key` with the first free ` #2`, ` #3` suffix, so no
+ * value is lost.
+ */
+function uniqueKey(out: Record<string, unknown>, key: string): string {
+  if (!Object.hasOwn(out, key)) return key;
+  let index = 2;
+  while (Object.hasOwn(out, `${key} #${index}`)) index += 1;
+  return `${key} #${index}`;
 }
 
 function isPlainObject(value: object): value is Record<string, unknown> {
@@ -385,7 +400,7 @@ export function scrubDeep<T>(
     for (const [key, item] of Object.entries(node)) {
       const isEmpty = item === null || item === undefined;
       // Keys are text too: a serialised object can be keyed by a place.
-      out[scrubText(key, ownHost, options)] =
+      out[uniqueKey(out, scrubText(key, ownHost, options))] =
         !isEmpty && isCoordinateKey(key) ? REDACTED : walk(item, depth + 1);
     }
     return out;

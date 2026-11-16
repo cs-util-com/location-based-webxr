@@ -91,8 +91,10 @@ dependency on the SDK, so its rules are tested on their own.
   reads as a coordinate pair becomes `[redacted]` under ANY key (`center:
 [48.137, 11.575]`): both finite and within ±180, one with three or more
   decimals as JavaScript writes it, the other possibly whole (a number loses
-  its `.0`). The input is never changed. `options` is passed on to
-  `scrubText`.
+  its `.0`). So does an array of three numbers whose first two read as such
+  a pair (a GeoJSON `[lon, lat, alt]`). Two keys that scrub to the same text
+  both stay: the later one gets the first free ` #2`, ` #3` suffix. The
+  input is never changed. `options` is passed on to `scrubText`.
 
 ## Parameters and why these values
 

@@ -534,11 +534,58 @@ describe('scrubDeep', () => {
       route: { points: [REDACTED, REDACTED] },
       size: [1920, 1080],
       scale: [0.5, 0.25],
-      triple: [48.137, 11.575, 3],
+      triple: REDACTED,
       far: [480.137, 11.575],
       [REDACTED]: 1,
       [`cell ${REDACTED}`]: 'x',
       plain_key: 2,
+    });
+  });
+
+  // Why this test matters: GeoJSON writes a position with its altitude as
+  // three numbers (`[lon, lat, alt]`), which a two-number rule let through.
+  // The first two numbers are read by the same pair rule, so a triple of
+  // plain measurements, a triple ending in text and four numbers still pass.
+  it('removes three numbers whose first two read as a pair', () => {
+    const out = scrubDeep(
+      {
+        lonLatAlt: [11.575, 48.137, 512.3],
+        wholeAlt: [-122.4194, 37.7749, 12],
+        size: [1920, 1080, 3],
+        scale: [0.5, 0.25, 0.125],
+        far: [480.137, 11.575, 3],
+        withText: [1.5, 2.25, 'm'],
+        four: [1920, 1080, 3, 4],
+      },
+      OWN
+    );
+    expect(out).toEqual({
+      lonLatAlt: REDACTED,
+      wholeAlt: REDACTED,
+      size: [1920, 1080, 3],
+      scale: [0.5, 0.25, 0.125],
+      far: [480.137, 11.575, 3],
+      withText: [1.5, 2.25, 'm'],
+      four: [1920, 1080, 3, 4],
+    });
+  });
+
+  // Why this test matters: keys are scrubbed too, and two keys naming two
+  // places scrub to the same text. Written into one object, the second
+  // silently replaced the first, so a report lost a value without a trace.
+  it('keeps every value when keys scrub to the same text', () => {
+    const out = scrubDeep(
+      {
+        '48.137154, 11.576124': 'first',
+        '48.138001, 11.577001': 'second',
+        [REDACTED]: 'third',
+      },
+      OWN
+    );
+    expect(out).toEqual({
+      [REDACTED]: 'first',
+      [`${REDACTED} #2`]: 'second',
+      [`${REDACTED} #3`]: 'third',
     });
   });
 
