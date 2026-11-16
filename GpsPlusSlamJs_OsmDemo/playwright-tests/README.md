@@ -3,6 +3,19 @@
 Run with `pnpm run test:e2e` (never `npx playwright test` — the repo's timing
 wrapper owns the invocation). `pnpm run test:e2e:headed` to watch it.
 
+**Run it with `CI=1` when another checkout may be serving.** Without it the
+config's `reuseExistingServer` takes whatever answers on port 5186, which in a
+second worktree is the other checkout's dev server: the suite then tests that
+code, and fails when that server goes away mid-run.
+
+## CI lanes
+
+On CI the suite runs as three parallel jobs, one per lane of `e2e-lanes.js`
+(chosen by `E2E_LANE`; the config then matches only the lane's spec files). A
+new spec file needs a lane there, and each lane needs at least one `@pr` test;
+`tests/repo-config/e2e-pr-tier.test.js` checks both. Without `E2E_LANE` every
+spec runs, as locally.
+
 ## Getting a visual record — `PLAYWRIGHT_CAPTURE=1`
 
 By default artifacts are written **only on failure** (`screenshot: only-on-failure`,

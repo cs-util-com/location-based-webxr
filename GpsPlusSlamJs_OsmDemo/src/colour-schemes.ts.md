@@ -12,9 +12,10 @@ dialog (D4).
 - `ColourScheme` - `{label, city: CityColourScheme, ground: GroundColours, brightnessTrim}`.
   - `GroundColours` (module-internal, not exported) - `{slope: GroundSlopeColours (linear), plates: 0xrrggbb}`.
   - `brightnessTrim` in `MIN_BRIGHTNESS_TRIM` (0.5) .. `MAX_BRIGHTNESS_TRIM` (2).
-- `COLOUR_SCHEMES` - the table, in dropdown order: `today`, then the nine
+- `COLOUR_SCHEMES` - the table, in dropdown order: `today`, then the ten
   looks of `colour-scheme-looks.ts` (architect, blueprint, mediterranean,
-  nordic, pastel, map, night, mono, contrast); `ColourSchemeName` its keys;
+  nordic, pastel, map, night, mono, contrast, urban); a later look is
+  appended, never inserted, so no sent link changes meaning; `ColourSchemeName` its keys;
   `COLOUR_SCHEME_NAMES`; `DEFAULT_COLOUR_SCHEME` (`"today"`).
 - `validateColourScheme(scheme)` - `TypeError` (no label, malformed city
   scheme via the library's `validateCityColourScheme`) or `RangeError`

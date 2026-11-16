@@ -31,6 +31,11 @@ export interface ModelSettings {
   /** JPEG quality of a data texture (normal, roughness and metalness,
    *  occlusion), which shows losses sooner. */
   readonly dataQuality: number;
+  /** The lossy format a texture is written in: JPEG (the default, read by
+   *  every glTF viewer) or WebP (through the EXT_texture_webp extension; at
+   *  the same quality numbers 14 to 28 % fewer texture bytes on the check
+   *  page's samples at 1024 px, and about 40 % fewer at the same PSNR). Alpha and lossless maps stay PNG either way. */
+  readonly textureType?: "image/jpeg" | "image/webp";
   /** Bits of a quantized position, normal (and tangent), texture
    *  coordinate (`model-quantize.ts`). */
   readonly positionBits: 8 | 16;
@@ -62,8 +67,19 @@ export interface OptimizerSettings {
   readonly keepAbove: number;
 }
 
+/** A photo's setting, judged by eye on one sample street photo (the check
+ *  page, `asset-optimizer-check.html`): at 1600 px and quality 0.6 (about
+ *  18 % of the original) small text stayed readable zoomed in, at the
+ *  next smaller step (about 16 %) it did not. One photo was judged; see
+ *  the sidecar. */
+export const PHOTO_PICTURE: PictureSettings = {
+  maxSidePx: 1600,
+  type: "image/webp",
+  quality: 0.6,
+};
+
 export const OPTIMIZER_SETTINGS: OptimizerSettings = {
-  picture: { maxSidePx: 1600, type: "image/webp", quality: 0.75 },
+  picture: PHOTO_PICTURE,
   speech: { codec: "opus", bitsPerSecond: 24_000, channels: 1 },
   music: { codec: "opus", bitsPerSecond: 64_000, channels: 2 },
   model: {

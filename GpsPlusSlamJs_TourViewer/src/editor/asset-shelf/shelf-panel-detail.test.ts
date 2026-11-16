@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ShelfRow } from "./asset-shelf-slice.js";
 import {
   detailReadout,
+  detailStops,
   detailView,
   formatLength,
 } from "./shelf-panel-model.js";
@@ -104,6 +105,28 @@ describe("detailView", () => {
     expect(detailView(model({}, { detail: undefined } as never))).toBeNull();
     const { detail: _none, ...plain } = model();
     expect(detailView(plain)).toBeNull();
+  });
+});
+
+describe("detailStops", () => {
+  // Why this test matters: the optimizer check page builds its geometry
+  // slider from this alone, from a level-of-detail report rather than a
+  // shelf row, so it must give the shelf's stops for the same levels.
+  it("gives the same stops and held stop as detailView, from the levels alone", () => {
+    for (const patch of [{}, { share: 0.5, triangles: 5_000 }]) {
+      const row = model(patch);
+      const view = detailView(row)!;
+      expect(detailStops(row.detail!)).toEqual({
+        stops: view.stops,
+        at: view.at,
+      });
+    }
+    expect(
+      detailStops({ choices: [], share: null, triangles: 300, deviation: 0 }),
+    ).toEqual({
+      stops: [{ share: null, triangles: 300, deviation: 0 }],
+      at: 0,
+    });
   });
 });
 

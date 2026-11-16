@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Model import: one bench</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="./bench.css" />
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #f3efe7;
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+      }
+
+      .shell-status {
+        margin: 0;
+        padding: 8px 16px;
+        border-bottom: 1px solid #d8d0c2;
+        background: #fffdf9;
+        color: #2c3a45;
+        font:
+          14px system-ui,
+          sans-serif;
+      }
+
+      .shell-samples {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 10px;
+        padding: 6px 16px;
+        background: #1f2a33;
+        color: #fffdf9;
+        font:
+          13px system-ui,
+          sans-serif;
+      }
+
+      .shell-samples button {
+        min-height: 32px;
+        padding: 0 12px;
+        border: 2px solid #fffdf9;
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .shell-samples button[aria-pressed="true"] {
+        background: #fffdf9;
+        color: #1f2a33;
+        font-weight: 700;
+      }
+
+      .shell-samples label {
+        margin-left: auto;
+        cursor: pointer;
+      }
+
+      .shell-samples input {
+        display: none;
+      }
+
+      #bench {
+        min-height: 0;
+      }
+
+      .shell-done {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        place-items: center;
+        background: #f3efe7;
+        font:
+          16px system-ui,
+          sans-serif;
+      }
+
+      .shell-done[hidden] {
+        display: none;
+      }
+
+      .shell-done div {
+        max-width: 420px;
+        padding: 20px;
+        border: 2px solid #2c3a45;
+        border-radius: 12px;
+        background: #fffdf9;
+      }
+
+      .shell-done pre {
+        overflow: auto;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+
+      .shell-done button {
+        min-height: 44px;
+        padding: 0 16px;
+        border: 2px solid #2c3a45;
+        border-radius: 10px;
+        background: #fffdf9;
+        font: inherit;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <p class="shell-status">
+      <strong>Not chosen:</strong> too colourful; direction 1 reads clearer.
+    </p>
+    <nav class="shell-samples" aria-label="Sample models">
+      <span>Try a model:</span>
+      <button type="button" data-sample="rock">Rock</button>
+      <button type="button" data-sample="bust">Marble bust</button>
+      <button type="button" data-sample="box">Utility box</button>
+      <label
+        >Or open your own .glb<input
+          type="file"
+          accept=".glb,model/gltf-binary"
+      /></label>
+    </nav>
+    <main id="bench"></main>
+    <div class="shell-done" hidden>
+      <div>
+        <p>
+          <strong>This version goes to the tour.</strong> The editor would now
+          write it with these settings:
+        </p>
+        <pre></pre>
+        <button type="button">Back to the bench</button>
+      </div>
+    </div>
+    <script type="module">
+      import { createModelBench } from "./bench.js";
+
+      const SAMPLES = {
+        rock: { url: "../model-lod-1/rock.glb", name: "Rock" },
+        bust: { url: "./model-marble-bust.glb", name: "Marble bust" },
+        box: { url: "./model-utility-box.glb", name: "Utility box" },
+      };
+      const done = document.querySelector(".shell-done");
+      const bench = createModelBench(document.getElementById("bench"), {
+        onAccept(settings) {
+          done.querySelector("pre").textContent = JSON.stringify(
+            settings,
+            null,
+            2,
+          );
+          done.hidden = false;
+        },
+        onBack() {
+          history.back();
+        },
+      });
+      done.querySelector("button").addEventListener("click", () => {
+        done.hidden = true;
+      });
+      const buttons = document.querySelectorAll("[data-sample]");
+      function open(id) {
+        const sample = SAMPLES[id] ?? SAMPLES.rock;
+        for (const b of buttons) {
+          b.setAttribute("aria-pressed", String(b.dataset.sample === id));
+        }
+        void bench.load(sample.url, sample.name);
+      }
+      for (const b of buttons) {
+        b.addEventListener("click", () => open(b.dataset.sample));
+      }
+      document
+        .querySelector(".shell-samples input")
+        .addEventListener("change", (event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            for (const b of buttons) {
+              b.setAttribute("aria-pressed", "false");
+            }
+            void bench.load(file, file.name.replace(/\.glb$/i, ""));
+          }
+        });
+      // The measuring hook: element count and time per live update.
+      window.modelBench = bench;
+      open(new URLSearchParams(location.search).get("sample") ?? "rock");
+    </script>
+  </body>
+</html>

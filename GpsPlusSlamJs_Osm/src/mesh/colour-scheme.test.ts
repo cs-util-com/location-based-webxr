@@ -93,8 +93,52 @@ describe("validateCityColourScheme", () => {
       "a bad map colour",
       { ...d, barriers: new Map([...d.barriers, ["hedge", 0x1000000]]) },
     ],
+    ["a non-boolean material flag", { ...d, honourMaterialTags: "yes" }],
+    ["an empty tower list", { ...d, towerWalls: [] }],
+    ["a tower height of NaN", { ...d, towerFromM: Number.NaN }],
+    ["a tower height of 0", { ...d, towerFromM: 0 }],
+    ["a negative tower height", { ...d, towerFromM: -5 }],
+    ["a tower height as text", { ...d, towerFromM: "40" }],
+    ["a negative jitter", { ...d, wallJitterL: -1 }],
+    ["a NaN jitter", { ...d, wallJitterL: Number.NaN }],
+    ["a jitter above the cap", { ...d, wallJitterL: 25 }],
+    ["a plain object for the materials", { ...d, materialWalls: {} }],
+    [
+      "a material key that would never be read",
+      { ...d, materialWalls: new Map([["Brick", 0x8f695e]]) },
+    ],
+    [
+      "a material key holding a list (only a list's first entry is read)",
+      { ...d, materialWalls: new Map([["brick;glass", 0x8f695e]]) },
+    ],
+    [
+      "an empty material key",
+      { ...d, materialWalls: new Map([["", 0x8f695e]]) },
+    ],
+    [
+      "a bad material colour",
+      { ...d, materialWalls: new Map([["brick", -1]]) },
+    ],
   ])("refuses %s", (_name, scheme) => {
     expect(() => validateCityColourScheme(scheme)).toThrow(RangeError);
+  });
+
+  // WHY: the height, material and jitter rules take values the plain lists
+  // do not (a height that may be infinite, a free-keyed map); a scheme that
+  // uses them as intended must pass.
+  it("accepts a scheme that uses the tower, material and jitter rules", () => {
+    const rules = {
+      ...d,
+      towerWalls: [0x4d565c, 0x838789],
+      towerFromM: 40,
+      honourMaterialTags: true,
+      materialWalls: new Map([
+        ["glass", 0x4d565c],
+        ["brick", 0x8f695e],
+      ]),
+      wallJitterL: 3,
+    };
+    expect(validateCityColourScheme(rules)).toBe(rules);
   });
 
   // WHY: `buildCity` is the boundary; a bad scheme must stop the build there

@@ -1,0 +1,4063 @@
+<!doctype html>
+<!-- Prototype: calm HUD round 3, variant 3 - the ground ring. Throwaway; not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Calm HUD r3-3 - The ground ring</title>
+    <style>
+      :root {
+        --accent: #fb923c;
+        --play: #2dd4bf;
+        --play-ink: #04201c;
+        --ink: #f3f5f7;
+        --muted: #b3bcc6;
+        --plate: rgba(10, 14, 19, 0.86);
+        --line: rgba(255, 255, 255, 0.22);
+        --sans:
+          system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+          sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        font: 15px/1.4 var(--sans);
+        background: #101317;
+        color: var(--ink);
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button {
+        font: inherit;
+        color: inherit;
+      }
+
+      /* ---------- the phone ---------- */
+      .device {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+        background: #000;
+        container-type: size;
+      }
+      #cam {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+
+      /* ---------- demo strip (not part of the design, not measured) ---------- */
+      .strip {
+        position: absolute;
+        z-index: 70;
+        top: env(safe-area-inset-top);
+        left: 0;
+        right: 0;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 6px;
+        background: rgba(0, 0, 0, 0.6);
+        font: 600 11.5px/1 var(--sans);
+      }
+      .strip button {
+        appearance: none;
+        flex: none;
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.09);
+        border-radius: 7px;
+        min-width: 30px;
+        height: 26px;
+        padding: 0 6px;
+        cursor: pointer;
+        color: #fff;
+        font: 700 13px/1 var(--sans);
+      }
+      .strip button.on {
+        background: #0f766e;
+        border-color: #14b8a6;
+      }
+      .strip .bt {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #e5ebf0;
+        padding: 0 2px;
+      }
+      .readout {
+        position: absolute;
+        z-index: 69;
+        left: 6px;
+        right: 6px;
+        top: calc(34px + env(safe-area-inset-top));
+        padding: 4px 7px;
+        border-radius: 7px;
+        background: rgba(0, 0, 0, 0.66);
+        font:
+          600 10.5px/1.35 ui-monospace,
+          Consolas,
+          monospace;
+        color: #d7fbf3;
+        pointer-events: none;
+      }
+      .readout.bad {
+        background: rgba(160, 20, 20, 0.8);
+        color: #fff;
+      }
+
+      /* ---------- the HUD: Exit, and one line at the foot ---------- */
+      .hud {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        --top: calc(42px + env(safe-area-inset-top));
+        --fs: 14px;
+        --lines: 2;
+      }
+      .hud.measuring {
+        --top: calc(84px + env(safe-area-inset-top));
+      }
+      .hud.s {
+        --fs: 12.5px;
+      }
+      .hud.l {
+        --fs: 16px;
+      }
+      .hud.one {
+        --lines: 1;
+      }
+      .exit {
+        position: absolute;
+        top: var(--top);
+        left: calc(12px + env(safe-area-inset-left));
+        appearance: none;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        background: rgba(10, 14, 19, 0.7);
+        display: grid;
+        place-items: center;
+        padding: 0;
+        cursor: pointer;
+        pointer-events: auto;
+      }
+      .exit svg {
+        width: 16px;
+        height: 16px;
+      }
+      .line {
+        position: absolute;
+        left: 50%;
+        bottom: calc(14px + env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        width: min(560px, calc(100cqw - 24px));
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 4px 4px 12px;
+        border-radius: 24px;
+        background: var(--plate);
+        border: 2px solid var(--line);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+        transition:
+          opacity 0.45s,
+          transform 0.45s;
+        pointer-events: auto;
+      }
+      /* the ring's range for keyboard and screen readers: out of sight until focused, so the HUD stays Exit and one line */
+      .ring-key {
+        position: absolute;
+        top: var(--top);
+        left: 50%;
+        transform: translateX(-50%);
+        min-height: 44px;
+        padding: 0 16px;
+        border-radius: 22px;
+        border: 2px solid rgba(255, 255, 255, 0.4);
+        background: rgba(10, 14, 19, 0.85);
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        pointer-events: auto;
+        clip-path: inset(50%);
+        opacity: 0;
+      }
+      .ring-key:focus-visible {
+        clip-path: none;
+        opacity: 1;
+        outline: 3px solid #fff;
+        outline-offset: 2px;
+      }
+      .line.off {
+        opacity: 0;
+        transform: translate(-50%, 10px);
+        pointer-events: none;
+      }
+      .line .dot {
+        flex: none;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 2px solid #fff;
+        background: var(--play);
+      }
+      .line .txt {
+        flex: 1;
+        min-width: 0;
+        font-size: var(--fs);
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: var(--lines);
+        line-clamp: var(--lines);
+        overflow: hidden;
+        padding: 5px 0;
+      }
+      .line .who {
+        font-weight: 800;
+        margin-right: 6px;
+      }
+      .line .words {
+        color: #e6ebf0;
+        transition: opacity 0.4s;
+      }
+      .line .words.quiet {
+        opacity: 0;
+      }
+      .line .words i {
+        font-style: normal;
+        opacity: 0.42;
+        transition: opacity 0.15s;
+      }
+      .line .words i.on {
+        opacity: 1;
+      }
+      .line .meta {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .line button {
+        appearance: none;
+        flex: none;
+        cursor: pointer;
+        border: 0;
+      }
+      .line .hint {
+        min-height: 40px;
+        padding: 0 14px;
+        border-radius: 20px;
+        background: #fde68a;
+        color: #2a1d02;
+        font-weight: 800;
+        font-size: 13.5px;
+        white-space: nowrap;
+        animation: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+      }
+      .line .hint[aria-pressed="true"] {
+        background: rgba(253, 230, 138, 0.35);
+        color: #fff;
+      }
+      .line .pp {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        padding: 3px;
+        background: conic-gradient(
+          var(--play) calc(var(--p, 0) * 1turn),
+          rgba(255, 255, 255, 0.22) 0
+        );
+      }
+      .line .pp span {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        background: #0d1217;
+        color: #fff;
+      }
+      .line .pp svg {
+        width: 15px;
+        height: 15px;
+      }
+      .line .x {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: transparent;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        font-size: 19px;
+        line-height: 1;
+      }
+      @keyframes rise {
+        from {
+          transform: translateY(8px);
+          opacity: 0;
+        }
+      }
+      .ovl {
+        outline: 3px solid #ef4444 !important;
+        outline-offset: 1px;
+      }
+
+      .try {
+        position: absolute;
+        z-index: 60;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: max-content;
+        max-width: min(320px, calc(100cqw - 40px));
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: rgba(0, 0, 0, 0.78);
+        border: 2px solid rgba(255, 255, 255, 0.22);
+        font-size: 14px;
+        line-height: 1.45;
+        text-align: center;
+        transition: opacity 0.4s;
+        pointer-events: none;
+      }
+      .try b {
+        color: var(--accent);
+      }
+      .try.gone {
+        opacity: 0;
+      }
+      .ripple {
+        position: absolute;
+        z-index: 66;
+        width: 46px;
+        height: 46px;
+        margin: -23px 0 0 -23px;
+        border-radius: 50%;
+        border: 3px solid #fff;
+        box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4);
+        pointer-events: none;
+        animation: rip 0.7s ease-out forwards;
+      }
+      @keyframes rip {
+        from {
+          transform: scale(0.4);
+          opacity: 1;
+        }
+        to {
+          transform: scale(1.25);
+          opacity: 0;
+        }
+      }
+
+      /* ---------- settings panel (not part of the design) ---------- */
+      .demo {
+        position: fixed;
+        z-index: 90;
+        top: calc(36px + env(safe-area-inset-top));
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(390px, calc(100vw - 16px));
+        max-height: calc(100vh - 46px);
+        overflow-y: auto;
+        background: rgba(14, 18, 23, 0.97);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 14px;
+        font-size: 13px;
+        color: #e8edf2;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        padding: 10px 12px;
+      }
+      .demo h4 {
+        margin: 12px 0 5px;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #a9b4bf;
+      }
+      .demo h5 {
+        margin: 10px 0 3px;
+        font-size: 12px;
+        color: #fff;
+      }
+      .demo p,
+      .demo ul {
+        margin: 0 0 6px;
+        line-height: 1.45;
+        color: #c9d2db;
+      }
+      .demo ul {
+        padding-left: 18px;
+      }
+      .demo b {
+        color: #fff;
+      }
+      .demo code {
+        word-break: break-all;
+        font-size: 11.5px;
+      }
+      .demo .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 5px;
+      }
+      .demo .row {
+        display: grid;
+        grid-template-columns: 104px 1fr 1fr 1fr;
+        gap: 5px;
+        align-items: center;
+        margin-top: 5px;
+      }
+      .demo button {
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.07);
+        color: #fff;
+        border-radius: 9px;
+        padding: 6px 7px;
+        text-align: left;
+        cursor: pointer;
+        font-size: 12.5px;
+        min-height: 34px;
+      }
+      .demo .row button {
+        text-align: center;
+      }
+      .demo button.on {
+        background: #0f766e;
+        border-color: #14b8a6;
+      }
+      .demo .au {
+        display: grid;
+        grid-template-columns: 1fr 78px 78px;
+        gap: 4px;
+        align-items: center;
+        margin-top: 3px;
+      }
+      .demo .au.three {
+        grid-template-columns: 1fr 66px 66px 66px;
+      }
+      .demo .au button {
+        text-align: center;
+        padding: 4px 3px;
+        min-height: 30px;
+        font-size: 11.5px;
+      }
+      .demo .au button.yes {
+        background: #14532d;
+        border-color: #22c55e;
+      }
+      .demo .au button.no {
+        background: #7f1d1d;
+        border-color: #ef4444;
+      }
+      .demo .au .nm {
+        font-size: 12px;
+        line-height: 1.25;
+      }
+      .demo .au .nm small {
+        display: block;
+        color: #8f9ba7;
+        font-size: 10.5px;
+      }
+      .demo .au.head span {
+        font-size: 10.5px;
+        color: #a9b4bf;
+        text-align: center;
+      }
+      .demo table {
+        width: 100%;
+        border-collapse: collapse;
+        font:
+          11.5px/1.35 ui-monospace,
+          Consolas,
+          monospace;
+      }
+      .demo td,
+      .demo th {
+        padding: 3px 4px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        text-align: right;
+      }
+      .demo td:first-child,
+      .demo th:first-child {
+        text-align: left;
+      }
+      .demo .close {
+        display: block;
+        width: 100%;
+        margin: 10px 0 2px;
+        text-align: center;
+      }
+
+      @media (min-width: 960px) and (min-height: 720px) {
+        body {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 36px;
+          padding: 30px;
+          background: radial-gradient(
+            1200px 700px at 30% 20%,
+            #26303a,
+            #12151a
+          );
+        }
+        .device {
+          position: relative;
+          inset: auto;
+          flex: none;
+          width: 390px;
+          height: min(844px, calc(100vh - 60px));
+          border-radius: 46px;
+          border: 12px solid #0a0c0f;
+          box-shadow:
+            0 0 0 2px #2d333b,
+            0 40px 90px rgba(0, 0, 0, 0.6);
+        }
+        .strip {
+          border-radius: 34px 34px 0 0;
+          padding: 3px 18px;
+        }
+        .demo {
+          position: static;
+          transform: none;
+          width: 410px;
+          max-height: min(844px, calc(100vh - 60px));
+          display: block !important;
+        }
+        .demo .close,
+        #menuBtn {
+          display: none;
+        }
+      }
+      @container (orientation:landscape) and (max-height:520px) {
+        .hud {
+          --top: calc(40px + env(safe-area-inset-top));
+        }
+        .hud.measuring {
+          --top: calc(76px + env(safe-area-inset-top));
+        }
+        .line {
+          bottom: calc(8px + env(safe-area-inset-bottom));
+          width: min(520px, calc(100cqw - 140px));
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .line,
+        .line .hint {
+          animation: none;
+          transition: none;
+        }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="device" id="device">
+      <canvas
+        id="cam"
+        aria-label="Simulated camera view of an old town square"
+      ></canvas>
+
+      <div class="strip" id="strip">
+        <button id="prevBtn" type="button" aria-label="Previous beat">
+          &lsaquo;
+        </button>
+        <button id="nextBtn" type="button" aria-label="Next beat">
+          &rsaquo;
+        </button>
+        <span class="bt" id="beatTitle">Walk freely</span>
+        <button
+          id="lookBtn"
+          type="button"
+          aria-label="Look down at your feet"
+          title="Look down"
+        >
+          &#8681;
+        </button>
+        <button
+          id="measureBtn"
+          type="button"
+          aria-label="Show the measuring hook"
+          title="Measure"
+        >
+          &#8982;
+        </button>
+        <button id="menuBtn" type="button" aria-label="Settings and beats">
+          &#9776;
+        </button>
+      </div>
+      <div class="readout" id="readout" hidden>-</div>
+
+      <div class="hud" id="hud">
+        <button
+          class="exit"
+          id="exitBtn"
+          type="button"
+          data-hud="exit"
+          aria-label="Exit AR"
+        >
+          <svg viewBox="0 0 16 16">
+            <path
+              d="M3 3l10 10M13 3L3 13"
+              stroke="#fff"
+              stroke-width="2.4"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <button
+          class="ring-key"
+          id="ringBtn"
+          type="button"
+          aria-label="Ring at your feet: wake it, then change its range"
+        >
+          Ring range
+        </button>
+        <div class="line off" id="line" data-hud="line" aria-live="polite">
+          <span class="dot" id="lineDot"></span>
+          <div class="txt">
+            <span class="who" id="lineWho"></span
+            ><span class="words" id="lineWords"></span>
+          </div>
+          <button
+            class="hint"
+            id="hintBtn"
+            type="button"
+            data-act="hint"
+            aria-pressed="false"
+            hidden
+          >
+            Show the way
+          </button>
+          <button
+            class="pp"
+            id="ppBtn"
+            type="button"
+            data-act="pp"
+            aria-label="Pause"
+            hidden
+          >
+            <span></span>
+          </button>
+          <button
+            class="x"
+            id="leaveBtn"
+            type="button"
+            data-act="leave"
+            aria-label="Leave the story"
+            hidden
+          >
+            &times;
+          </button>
+        </div>
+      </div>
+
+      <div class="try" id="try">
+        <b>Walk up to the orange beam.</b><br />Drag sideways to turn, drag up
+        to walk (or W A S D).<br />Stop and look down: a ring at your feet shows
+        what is around (R / F or the &#8681; button to look down).
+      </div>
+    </main>
+
+    <aside class="demo" id="demo" hidden aria-label="Settings and beats">
+      <p>
+        <b>The ground ring.</b> The radar lies on the ground a little ahead of
+        you, as a thin ring, and you see it when you look down. It is a true
+        map: one metre on the ring is always the same many metres around you,
+        and anything beyond its range waits on the rim in its true direction. On
+        the screen there is only Exit and one line at the foot: who speaks or
+        what plays, the words, and play/pause at its end.
+      </p>
+
+      <h4>Beats</h4>
+      <div class="grid" id="beatBtns"></div>
+
+      <h4>Settings to try</h4>
+      <div class="row">
+        <span>Stand still</span
+        ><button type="button" data-cfg="wake" data-v="2">2 s</button
+        ><button type="button" data-cfg="wake" data-v="3">3 s</button
+        ><button type="button" data-cfg="wake" data-v="5">5 s</button>
+      </div>
+      <div class="row">
+        <span>Range in a station</span
+        ><button type="button" data-cfg="fit" data-v="1.2">radius x1.2</button
+        ><button type="button" data-cfg="fit" data-v="1.5">x1.5</button
+        ><button type="button" data-cfg="fit" data-v="2">x2</button>
+      </div>
+      <div class="row">
+        <span>Ring ahead</span
+        ><button type="button" data-cfg="ahead" data-v="1.2">1.2 m</button
+        ><button type="button" data-cfg="ahead" data-v="1.6">1.6 m</button
+        ><button type="button" data-cfg="ahead" data-v="2">2.0 m</button>
+      </div>
+      <div class="row">
+        <span>Line size</span
+        ><button type="button" data-cfg="strip" data-v="s">small</button
+        ><button type="button" data-cfg="strip" data-v="m">medium</button
+        ><button type="button" data-cfg="strip" data-v="l">large</button>
+      </div>
+      <div class="row">
+        <span>Line height</span
+        ><button type="button" data-cfg="lines" data-v="1">1 line</button
+        ><button type="button" data-cfg="lines" data-v="2">2 lines</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Hint after walking away</span
+        ><button type="button" data-cfg="hint" data-v="5">5 m</button
+        ><button type="button" data-cfg="hint" data-v="10">10 m</button
+        ><button type="button" data-cfg="hint" data-v="20">20 m</button>
+      </div>
+      <div class="row">
+        <span>Ring fade</span
+        ><button type="button" data-cfg="fade" data-v="0.4">0.4 s</button
+        ><button type="button" data-cfg="fade" data-v="0.8">0.8 s</button
+        ><button type="button" data-cfg="fade" data-v="1.5">1.5 s</button>
+      </div>
+      <div class="row">
+        <span>Walking from</span
+        ><button type="button" data-cfg="walk" data-v="0.3">0.3 m/s</button
+        ><button type="button" data-cfg="walk" data-v="0.5">0.5 m/s</button
+        ><button type="button" data-cfg="walk" data-v="0.8">0.8 m/s</button>
+      </div>
+      <p style="margin-top: 6px">
+        The same values work as URL options:
+        <code
+          >?wake=3&amp;range=1.5&amp;ahead=1.6&amp;strip=m&amp;lines=2&amp;hint=10&amp;fade=0.8&amp;walk=0.5</code
+        >, and
+        <code>&amp;preset=bHidden,lionHidden,breadNoHints,noRadarB</code> for
+        the author settings.
+      </p>
+
+      <h4>Author settings</h4>
+      <p>
+        What the tour's author decides. Every level says "as above" unless it is
+        set; the nearest level wins: item over story over station over tour. Tap
+        a switch to cycle as above / yes / no. The HUD obeys at once.
+      </p>
+      <div class="grid" id="presetBtns"></div>
+      <div id="authorBox"></div>
+
+      <h4>What "seen" means here</h4>
+      <ul>
+        <li>
+          <b>Short text, picture:</b> in view and near (8 m, 10 m) for 1.5 s, 2
+          s.
+        </li>
+        <li><b>Model:</b> in view within 10 m for 3 s.</li>
+        <li>
+          <b>Long text:</b> its last page was shown (tap it to turn pages).
+        </li>
+        <li>
+          <b>Video, sound:</b> played to its end. Stopped part way, it stays
+          white.
+        </li>
+        <li>
+          <b>A story's later step</b> (the rim stone, the oven, the bell): its
+          words were spoken there.
+        </li>
+        <li>
+          <b>A character who starts a story:</b> that story played to its end.
+        </li>
+      </ul>
+
+      <h4>Measured (this orientation; max per beat)</h4>
+      <table id="statTable">
+        <thead>
+          <tr>
+            <th>beat</th>
+            <th>HUD %</th>
+            <th>el</th>
+            <th>overlaps</th>
+            <th>worst ms</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p style="margin-top: 6px">
+        HUD % counts the pixels under the HUD shown on the screen. The ring
+        counts as "radar" while it is awake and in view, so the overlap check
+        also catches the line covering it. The strip at the top and this panel
+        are not counted.
+      </p>
+      <button class="close" id="demoClose" type="button">Close</button>
+    </aside>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      const $ = (s) => document.querySelector(s);
+      const device = $("#device");
+      const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const QS = new URLSearchParams(location.search);
+      const num = (v, d, lo, hi) => {
+        const n = Number(v);
+        return v !== null && Number.isFinite(n)
+          ? Math.max(lo, Math.min(hi, n))
+          : d;
+      };
+      const SPEED = num(QS.get("speed"), 1, 0.25, 8);
+      const SHOTS = QS.has("shots");
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const lerp = (a, b, t) => a + (b - a) * t;
+      const smooth = (a, b, v) => {
+        const t = clamp((v - a) / (b - a), 0, 1);
+        return t * t * (3 - 2 * t);
+      };
+      const ease = (t) =>
+        t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const wrapPi = (a) =>
+        ((((a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) -
+        Math.PI;
+      const rnd = (() => {
+        let s = 7;
+        return () =>
+          (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+      })();
+
+      /* ======================================================================
+   The parameters this variant rests on (every one can be tried)
+   ====================================================================== */
+      const CFG = {
+        wake: num(QS.get("wake"), 3, 0.5, 15), // s standing still before the ring wakes
+        fade: num(QS.get("fade"), 0.8, 0.1, 5), // s for a full fade of the ring
+        walk: num(QS.get("walk"), 0.5, 0.1, 2), // m/s of smoothed pose speed that counts as walking
+        fit: num(QS.get("range"), 1.5, 1, 3), // in a station the range is its radius times this
+        ahead: num(QS.get("ahead"), 1.6, 0.8, 3), // m from the visitor's feet to the ring's centre
+        ringR: num(QS.get("ring"), 0.45, 0.3, 1), // m, the ring's radius on the ground
+        strip: ["s", "m", "l"].includes(QS.get("strip"))
+          ? QS.get("strip")
+          : "m",
+        lines: QS.get("lines") === "1" ? 1 : 2,
+        hint: num(QS.get("hint"), 10, 2, 60), // m walked away from a story's next step before the hint is offered
+        linger: 0.8, // s the words stay after a line or cue has ended
+      };
+      const ASLEEP_ALPHA = 0.16;
+      const EDGE_WAKE_S = 3.5;
+      const TAP_WAKE_S = 6;
+      const GREET_M = 12;
+      const ARRIVE_M = 3; // a story's next step begins this near its place
+      const FOLLOW = 4; // 1/s, how fast the ring catches up with the visitor's step and turn
+      const MARK_R = 0.034; // m, a mark's radius on the ring
+
+      /* ======================================================================
+   The sample tour (invented). x = east, z = south, metres.
+   ====================================================================== */
+      const STATIONS = [
+        { id: "A", n: 1, title: "The well court", x: 0, z: -60, r: 18 },
+        { id: "B", n: 2, title: "The hall steps", x: 55, z: -122, r: 20 },
+      ];
+      const stById = (id) => STATIONS.find((s) => s.id === id);
+      const rel = (st, x, z) => ({ x: stById(st).x + x, z: stById(st).z + z });
+      const cue = (a, b, text) => ({ a, b, text });
+      const ITEMS = [
+        // A: one story; Greta greets once on entry, then sends you to the rim stone
+        {
+          id: "greta",
+          st: "A",
+          kind: "character",
+          story: "well",
+          title: "Greta",
+          ...rel("A", 0, 9),
+          coat: 0x0f766e,
+        },
+        {
+          id: "rimStone",
+          st: "A",
+          kind: "stone",
+          story: "well",
+          title: "The rim stone",
+          ...rel("A", 0, 1.7),
+        },
+        {
+          id: "aSign",
+          st: "A",
+          kind: "shortText",
+          title: "The mason's mark",
+          text: ["Every stone of the rim", "carries its mason's mark."],
+          ...rel("A", 8, -2),
+        },
+        {
+          id: "aSound",
+          st: "A",
+          kind: "audio",
+          title: "The bucket chain",
+          len: 16,
+          reach: 10,
+          ...rel("A", 9.6, -3.6),
+          cues: [
+            cue(0.8, 4.6, "(the chain rattles over the wheel)"),
+            cue(5.4, 9.4, "Hold it, hold it... now pull!"),
+            cue(10.4, 14.6, "(water splashes into the bucket)"),
+          ],
+        },
+        {
+          id: "aLong",
+          st: "A",
+          kind: "longText",
+          title: "How the court was built",
+          pages: [
+            [
+              "How the court was built",
+              "The houses came first. The",
+              "well came when the old",
+              "spring dried up in 1611.",
+            ],
+            [
+              "Forty men dug for a summer.",
+              "They hit water at nineteen",
+              "metres and lined the shaft",
+              "with stone from the river.",
+            ],
+            [
+              "The court grew around it:",
+              "a bakery, a smithy and,",
+              "for a while, a small school",
+              "in the house with the arch.",
+            ],
+          ],
+          ...rel("A", -9, -3),
+        },
+        {
+          id: "aPic",
+          st: "A",
+          kind: "picture",
+          title: "The court in 1890",
+          ...rel("A", -11, 6),
+        },
+        {
+          id: "aVid",
+          st: "A",
+          kind: "video",
+          title: "Drawing water, 1938",
+          len: 16,
+          reach: 12,
+          ...rel("A", 3, -13),
+          cues: [
+            cue(
+              0.4,
+              3.9,
+              "Every morning the women of the court came with two buckets.",
+            ),
+            cue(
+              4.3,
+              8.0,
+              "The chain was long: nineteen metres down to the water.",
+            ),
+            cue(8.5, 11.9, "A full bucket weighed as much as a small child."),
+            cue(12.4, 15.6, "In 1938 a pump took the place of the chain."),
+          ],
+        },
+        {
+          id: "aModel",
+          st: "A",
+          kind: "model",
+          title: "The stone lion",
+          ...rel("A", -5, -12),
+        },
+        // B: three stories, each starting with a character; a tap on one enters it
+        {
+          id: "baker",
+          st: "B",
+          kind: "character",
+          story: "bread",
+          title: "Jonas, the baker",
+          ...rel("B", -6, 7),
+          coat: 0xb45309,
+        },
+        {
+          id: "oven",
+          st: "B",
+          kind: "oven",
+          story: "bread",
+          title: "The old oven",
+          ...rel("B", -16, 1),
+        },
+        {
+          id: "ringer",
+          st: "B",
+          kind: "character",
+          story: "bell",
+          title: "Ida, the bell ringer",
+          ...rel("B", 0, 9),
+          coat: 0x6d28d9,
+        },
+        {
+          id: "bell",
+          st: "B",
+          kind: "bell",
+          story: "bell",
+          title: "The new bell",
+          ...rel("B", 3, -14),
+        },
+        {
+          id: "mason",
+          st: "B",
+          kind: "character",
+          story: "arch",
+          title: "Karl, the mason",
+          ...rel("B", 6, 7),
+          coat: 0x475569,
+        },
+        {
+          id: "bSign",
+          st: "B",
+          kind: "shortText",
+          title: "The guild board",
+          text: ["Six guilds met on", "these steps each May."],
+          ...rel("B", 10, -4),
+        },
+        {
+          id: "bLong",
+          st: "B",
+          kind: "longText",
+          title: "The fair rights of 1412",
+          pages: [
+            [
+              "The fair rights of 1412",
+              "The town bought the right",
+              "to hold a fair twice a year,",
+              "for a price of 300 silver.",
+            ],
+            [
+              "The fair drew traders from",
+              "three days away. The hall",
+              "was built to store their",
+              "goods between market days.",
+            ],
+          ],
+          ...rel("B", -12, -4),
+        },
+        {
+          id: "bPic",
+          st: "B",
+          kind: "picture",
+          title: "Fair day, 1902",
+          ...rel("B", -6, -12),
+        },
+        {
+          id: "bVid",
+          st: "B",
+          kind: "video",
+          title: "Casting the bell, 1951",
+          len: 14,
+          reach: 12,
+          ...rel("B", 9, -11),
+          cues: [
+            cue(
+              0.5,
+              4.2,
+              "The bronze was poured on a Sunday, after the last mass.",
+            ),
+            cue(4.8, 8.6, "It cooled in its pit for eleven days."),
+            cue(9.2, 13.4, "Then the whole street came to see it lifted."),
+          ],
+        },
+        {
+          id: "bSound",
+          st: "B",
+          kind: "audio",
+          title: "The hall's echo",
+          len: 14,
+          reach: 10,
+          ...rel("B", 0, -5),
+          cues: [
+            cue(0.6, 4.4, "(footsteps on stone, far away)"),
+            cue(5.2, 9.2, "Can you hear it? The hall answers twice."),
+            cue(9.8, 13.4, "(a clap, and its double echo)"),
+          ],
+        },
+        {
+          id: "bModel",
+          st: "B",
+          kind: "model",
+          title: "The guild staff",
+          ...rel("B", 14, 3),
+        },
+      ];
+      const itById = (id) => ITEMS.find((i) => i.id === id);
+
+      /* A character's lines carry timed words. Real data would come from the recording or the speech engine;
+   here a word starts every 0.36 s, with a short rest after punctuation. */
+      function timed(text) {
+        let t = 0.2;
+        const words = [];
+        for (const w of text.split(" ")) {
+          words.push({ w, t });
+          t += 0.36 + (/[.,!?:;]$/.test(w) ? 0.28 : 0);
+        }
+        return { text, words, end: t + 0.5 };
+      }
+      const STORIES = {
+        well: {
+          title: "Water for all",
+          entry: "greta",
+          steps: [
+            {
+              at: "greta",
+              who: "greta",
+              lines: [
+                "Welcome to the well court!",
+                "This well kept the street alive for three hundred years.",
+                "Come over to the well. The masons left a stone there.",
+              ],
+            },
+            {
+              at: "rimStone",
+              who: "greta",
+              lines: [
+                "This is the rim stone, carved in 1611.",
+                "It says: water for all who ask. Have a look around.",
+              ],
+            },
+          ],
+        },
+        bread: {
+          title: "Bread for the fair",
+          entry: "baker",
+          steps: [
+            {
+              at: "baker",
+              who: "baker",
+              lines: [
+                "On fair days I baked from midnight on.",
+                "Four hundred loaves, gone before noon.",
+                "Come, my old oven is over by the west houses.",
+              ],
+            },
+            {
+              at: "oven",
+              who: "baker",
+              lines: [
+                "This oven fed the whole fair.",
+                "Its fire did not go out from Friday to Monday.",
+              ],
+            },
+          ],
+        },
+        bell: {
+          title: "The cracked bell",
+          entry: "ringer",
+          steps: [
+            {
+              at: "ringer",
+              who: "ringer",
+              lines: [
+                "The old bell cracked in the frost of 1949.",
+                "The new one stands by the hall. Come and see.",
+              ],
+            },
+            {
+              at: "bell",
+              who: "ringer",
+              lines: [
+                "Two years of silence, and then this.",
+                "Touch it. It still rings a little.",
+              ],
+            },
+          ],
+        },
+        arch: {
+          title: "Raising the arch",
+          entry: "mason",
+          steps: [
+            {
+              at: "mason",
+              who: "mason",
+              lines: [
+                "The arch stood on a wooden frame for a month.",
+                "Then we pulled the frame, and it held.",
+              ],
+            },
+          ],
+        },
+      };
+      for (const s of Object.values(STORIES))
+        for (const st of s.steps) st.timed = st.lines.map(timed);
+      const storyOf = (id) => STORIES[id];
+      const stationOfStory = (id) => itById(STORIES[id].entry).st;
+
+      /* ======================================================================
+   Author settings: tour / station / story / item, the nearest wins
+   ====================================================================== */
+      function freshAuthor() {
+        const a = {
+          tour: { radar: true, shown: true, hints: true },
+          station: {},
+          story: {},
+          item: {},
+        };
+        for (const s of STATIONS)
+          a.station[s.id] = { radar: null, shown: null, hints: null };
+        for (const k of Object.keys(STORIES))
+          a.story[k] = { shown: null, hints: null };
+        for (const it of ITEMS) a.item[it.id] = { shown: null, hints: null };
+        return a;
+      }
+      let AUTH = freshAuthor();
+      /** "shown on the radar" or "hints allowed" for one item: item, then its story, then its station, then the tour. */
+      function resolveFor(key, it) {
+        const chain = [
+          ["item", AUTH.item[it.id]],
+          ["story", it.story ? AUTH.story[it.story] : null],
+          ["station", AUTH.station[it.st]],
+          ["tour", AUTH.tour],
+        ];
+        for (const [level, o] of chain)
+          if (o && o[key] !== null && o[key] !== undefined)
+            return { v: o[key], from: level };
+        return { v: true, from: "default" };
+      }
+      /** "radar at all": the station's switch while you stand in it, else the tour's. */
+      function radarAtAll() {
+        const st = S.here ? AUTH.station[S.here].radar : null;
+        return st ?? AUTH.tour.radar;
+      }
+      const PRESETS = {
+        bHidden: {
+          label: "Station B's things off the radar",
+          apply: (a) => {
+            a.station.B.shown = false;
+          },
+        },
+        lionHidden: {
+          label: "The lion at A off the radar",
+          apply: (a) => {
+            a.item.aModel.shown = false;
+          },
+        },
+        breadNoHints: {
+          label: "Bread story: no hints",
+          apply: (a) => {
+            a.story.bread.hints = false;
+          },
+        },
+        noRadarB: {
+          label: "No radar at all in B",
+          apply: (a) => {
+            a.station.B.radar = false;
+          },
+        },
+      };
+      for (const p of (QS.get("preset") ?? "").split(","))
+        PRESETS[p]?.apply(AUTH);
+
+      /* ======================================================================
+   State
+   ====================================================================== */
+      let T = 0;
+      function freshItems() {
+        const o = {};
+        for (const it of ITEMS)
+          o[it.id] = {
+            seen: false,
+            dwell: 0,
+            page: 0,
+            t: 0,
+            playing: false,
+            pausedBy: null,
+          };
+        return o;
+      }
+      function fresh() {
+        return {
+          pos: { x: 0, z: -14 },
+          yaw: 0,
+          pitch: -0.04,
+          pitchTo: null,
+          here: null,
+          zoom: 0,
+          visited: {},
+          greeted: {},
+          it: freshItems(),
+          story: null,
+          storyDone: {},
+          media: null,
+          speed: 0,
+          stillFor: 99,
+          wakeUntil: -1,
+          radarAlpha: ASLEEP_ALPHA,
+          rangeStep: 0,
+          note: "",
+          noteUntil: -1,
+          greetPending: null,
+          auto: null,
+          turn: null,
+          yawTarget: null,
+          paused: false,
+        };
+      }
+      let S = fresh();
+      let beat = 0;
+
+      const dist = (p, q = S.pos) => Math.hypot(p.x - q.x, p.z - q.z);
+      function relAngle(p, from = S.pos, yaw = S.yaw) {
+        const dx = p.x - from.x,
+          dz = p.z - from.z;
+        const fx = -Math.sin(yaw),
+          fz = -Math.cos(yaw),
+          rx = Math.cos(yaw),
+          rz = -Math.sin(yaw);
+        return Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz);
+      }
+      const yawToward = (p, from = S.pos) =>
+        Math.atan2(-(p.x - from.x), -(p.z - from.z));
+      const inStation = (it) => S.here === it.st;
+
+      /* ---------- the story: steps are places; the next one begins when you reach it ---------- */
+      function startStory(id) {
+        for (const it of ITEMS) if (S.it[it.id].playing) pause(it.id, "story");
+        S.story = {
+          id,
+          step: 0,
+          phase: "speak",
+          line: 0,
+          t: 0,
+          paused: null,
+          away: false,
+          minD: Infinity,
+          offered: false,
+        };
+      }
+      function stepTarget() {
+        const st = S.story;
+        return st ? itById(storyOf(st.id).steps[st.step].at) : null;
+      }
+      function stepSpoken() {
+        const st = S.story,
+          def = storyOf(st.id),
+          here = itById(def.steps[st.step].at);
+        if (here.kind !== "character") S.it[here.id].seen = true;
+        if (st.step + 1 >= def.steps.length) {
+          endStory(true);
+          return;
+        }
+        st.step++;
+        st.phase = "walk";
+        st.line = 0;
+        st.t = 0;
+        st.offered = false;
+        st.minD = dist(stepTarget());
+      }
+      function endStory(finished) {
+        const st = S.story;
+        if (!st) return;
+        if (finished) {
+          S.storyDone[st.id] = true;
+          S.it[storyOf(st.id).entry].seen = true;
+        }
+        S.story = null;
+        stopDrift();
+      }
+      function hintsAllowed(it) {
+        return resolveFor("hints", it).v;
+      }
+
+      /* ---------- playable things: one plays at a time ---------- */
+      function play(id) {
+        for (const it of ITEMS)
+          if (it.id !== id && S.it[it.id].playing) pause(it.id, "other");
+        if (S.story && S.story.phase === "speak" && !S.story.paused)
+          S.story.paused = "media";
+        const t = S.it[id],
+          it = itById(id);
+        if (t.t >= it.len) t.t = 0;
+        t.playing = true;
+        t.pausedBy = null;
+        S.media = id;
+      }
+      function pause(id, by) {
+        const t = S.it[id];
+        if (!t.playing) return;
+        t.playing = false;
+        t.pausedBy = by;
+      }
+      function toggle(id) {
+        if (S.it[id].playing) pause(id, "tap");
+        else play(id);
+      }
+
+      function tapItem(id) {
+        const it = itById(id);
+        if (!inStation(it)) return;
+        const t = S.it[id];
+        switch (it.kind) {
+          case "character": {
+            const sid = it.story;
+            if (S.story && S.story.id === sid) {
+              if (S.story.paused) S.story.paused = null;
+              return;
+            }
+            if (S.story && !S.story.paused && !S.story.away) return; // one story at a time
+            if (S.story) endStory(false);
+            startStory(sid);
+            return;
+          }
+          case "video":
+          case "audio":
+            toggle(id);
+            return;
+          case "longText":
+            t.page = (t.page + 1) % it.pages.length;
+            if (t.page === it.pages.length - 1) t.seen = true;
+            return;
+          default:
+            return;
+        }
+      }
+
+      /* ======================================================================
+   The faked camera: an invented old town (as round 2, page 2)
+   ====================================================================== */
+      const canvas = $("#cam");
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        antialias: true,
+        powerPreference: "low-power",
+      });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      const scene = new THREE.Scene();
+      {
+        const c = document.createElement("canvas");
+        c.width = 8;
+        c.height = 256;
+        const g = c.getContext("2d");
+        const grd = g.createLinearGradient(0, 0, 0, 256);
+        grd.addColorStop(0, "#7ea6cf");
+        grd.addColorStop(0.55, "#c9d9e6");
+        grd.addColorStop(1, "#e8ece9");
+        g.fillStyle = grd;
+        g.fillRect(0, 0, 8, 256);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        scene.background = t;
+      }
+      scene.fog = new THREE.Fog(0xd5dfe6, 90, 380);
+      const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 900);
+      camera.rotation.order = "YXZ";
+      scene.add(new THREE.HemisphereLight(0xeef4ff, 0x6d6252, 1.3));
+      const sun = new THREE.DirectionalLight(0xfff0d4, 1.6);
+      sun.position.set(-70, 120, 50);
+      scene.add(sun);
+
+      function rng(seed) {
+        let s = seed >>> 0;
+        return () =>
+          (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+      }
+      const rand = rng(20261116);
+      const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(1600, 1600),
+        lam(0x8d8678),
+      );
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+      function cobbles(repeat) {
+        const c = document.createElement("canvas");
+        c.width = 128;
+        c.height = 128;
+        const g = c.getContext("2d");
+        g.fillStyle = "#a29886";
+        g.fillRect(0, 0, 128, 128);
+        const r = rng(5);
+        for (let y = 0; y < 128; y += 16)
+          for (let x = (y / 16) % 2 ? 8 : 0; x < 128; x += 16) {
+            const v = 150 + Math.floor(r() * 30);
+            g.fillStyle = `rgb(${v},${v - 8},${v - 22})`;
+            g.fillRect(x + 1, y + 1, 14, 14);
+          }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(repeat, repeat);
+        return new THREE.MeshLambertMaterial({ map: t });
+      }
+      for (const st of STATIONS) {
+        const plaza = new THREE.Mesh(
+          new THREE.CircleGeometry(st.r + 10, 64),
+          cobbles(20),
+        );
+        plaza.rotation.x = -Math.PI / 2;
+        plaza.position.set(st.x, 0.02, st.z);
+        scene.add(plaza);
+      }
+      const PATH = [
+        { x: 0, z: 10 },
+        { x: 0, z: -60 },
+        { x: 55, z: -122 },
+      ];
+      {
+        const m = lam(0x6b6862);
+        for (let i = 0; i < PATH.length - 1; i++) {
+          const a = PATH[i],
+            b = PATH[i + 1],
+            len = Math.hypot(b.x - a.x, b.z - a.z);
+          const grp = new THREE.Group();
+          grp.rotation.y = Math.atan2(b.x - a.x, b.z - a.z);
+          grp.position.set((a.x + b.x) / 2, 0.015, (a.z + b.z) / 2);
+          const s = new THREE.Mesh(new THREE.PlaneGeometry(9, len), m);
+          s.rotation.x = -Math.PI / 2;
+          grp.add(s);
+          scene.add(grp);
+        }
+      }
+      function segDist(p, a, b) {
+        const dx = b.x - a.x,
+          dz = b.z - a.z,
+          L = dx * dx + dz * dz;
+        const t = clamp(((p.x - a.x) * dx + (p.z - a.z) * dz) / L, 0, 1);
+        return Math.hypot(p.x - (a.x + dx * t), p.z - (a.z + dz * t));
+      }
+      {
+        const spots = [];
+        for (let gx = -90; gx <= 150; gx += 13)
+          for (let gz = -200; gz <= 40; gz += 13) {
+            const p = {
+              x: gx + (rand() - 0.5) * 4,
+              z: gz + (rand() - 0.5) * 4,
+            };
+            if (STATIONS.some((s) => dist(p, s) < s.r + 17)) continue;
+            if (
+              segDist(p, PATH[0], PATH[1]) < 12 ||
+              segDist(p, PATH[1], PATH[2]) < 12
+            )
+              continue;
+            if (p.z > -4 && Math.abs(p.x) < 30) continue;
+            spots.push(p);
+          }
+        const fc = document.createElement("canvas");
+        fc.width = 128;
+        fc.height = 128;
+        const g = fc.getContext("2d");
+        g.fillStyle = "#fff";
+        g.fillRect(0, 0, 128, 128);
+        for (let f = 0; f < 3; f++)
+          for (let w = 0; w < 3; w++) {
+            g.fillStyle = "#46525c";
+            g.fillRect(14 + w * 38, 128 - (f + 1) * 40 + 9, 22, 20);
+          }
+        const ft = new THREE.CanvasTexture(fc);
+        ft.colorSpace = THREE.SRGBColorSpace;
+        const box = new THREE.BoxGeometry(1, 1, 1);
+        box.translate(0, 0.5, 0);
+        const roof = new THREE.ConeGeometry(0.75, 1, 4);
+        roof.rotateY(Math.PI / 4);
+        roof.translate(0, 0.5, 0);
+        const houses = new THREE.InstancedMesh(
+          box,
+          new THREE.MeshLambertMaterial({ map: ft }),
+          spots.length,
+        );
+        const roofs = new THREE.InstancedMesh(
+          roof,
+          lam(0xffffff),
+          spots.length,
+        );
+        const FAC = [
+            0xe8d8bf, 0xd9b99a, 0xc9d1c3, 0xe5c7a8, 0xd2c1b0, 0xe9e1cf,
+          ],
+          ROOF = [0x9c4a32, 0x7f3b2a, 0x6b4a3a, 0x8a5a44];
+        const m4 = new THREE.Matrix4(),
+          q = new THREE.Quaternion(),
+          col = new THREE.Color();
+        spots.forEach((p, i) => {
+          const h = 7 + Math.floor(rand() * 3) * 3.4,
+            w = 9 + rand() * 3;
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 0.4 - 0.2);
+          m4.compose(
+            new THREE.Vector3(p.x, 0, p.z),
+            q,
+            new THREE.Vector3(w, h, 9),
+          );
+          houses.setMatrixAt(i, m4);
+          houses.setColorAt(i, col.setHex(FAC[i % FAC.length]));
+          m4.compose(
+            new THREE.Vector3(p.x, h, p.z),
+            q,
+            new THREE.Vector3(w * 1.02, 3, 9.2),
+          );
+          roofs.setMatrixAt(i, m4);
+          roofs.setColorAt(i, col.setHex(ROOF[i % ROOF.length]));
+        });
+        scene.add(houses, roofs);
+      }
+      const stone = lam(0xb5a488),
+        dark = lam(0x2b2f33),
+        bronze = lam(0x7a5a33);
+      {
+        const A = stById("A");
+        const rim = new THREE.Mesh(
+          new THREE.CylinderGeometry(1.3, 1.4, 0.9, 24, 1, true),
+          stone.clone(),
+        );
+        rim.position.set(A.x, 0.45, A.z);
+        rim.material.side = THREE.DoubleSide;
+        const water = new THREE.Mesh(
+          new THREE.CircleGeometry(1.25, 24),
+          lam(0x2f4f5c),
+        );
+        water.rotation.x = -Math.PI / 2;
+        water.position.set(A.x, 0.3, A.z);
+        const beam = new THREE.Mesh(
+          new THREE.BoxGeometry(3.2, 0.18, 0.18),
+          lam(0x5b4330),
+        );
+        beam.position.set(A.x, 2.3, A.z);
+        for (const s of [-1, 1]) {
+          const p = new THREE.Mesh(
+            new THREE.BoxGeometry(0.18, 2.3, 0.18),
+            lam(0x5b4330),
+          );
+          p.position.set(A.x + s * 1.5, 1.15, A.z);
+          scene.add(p);
+        }
+        scene.add(rim, water, beam);
+        const B = stById("B");
+        for (let k = 0; k < 4; k++) {
+          const s = new THREE.Mesh(
+            new THREE.BoxGeometry(22 - k * 2, 0.3, 2.2),
+            stone,
+          );
+          s.position.set(B.x, 0.15 + k * 0.3, B.z - 17 - k * 2.2);
+          scene.add(s);
+        }
+        const hall = new THREE.Mesh(
+          new THREE.BoxGeometry(24, 13, 10),
+          lam(0xd8c6a6),
+        );
+        hall.position.set(B.x, 6.5 + 1.2, B.z - 31);
+        scene.add(hall);
+      }
+
+      /* ---------- words in the world: Canvas 2D textures (signs and long texts stay in 3D) ---------- */
+      function textCanvas(
+        lines,
+        {
+          w = 512,
+          title = null,
+          plate = "rgba(250,247,240,.96)",
+          ink = "#1c2228",
+          size = 34,
+        } = {},
+      ) {
+        const c = document.createElement("canvas");
+        const g = c.getContext("2d");
+        const lh = size * 1.32,
+          pad = 26,
+          th = title ? size * 1.25 + 10 : 0;
+        c.width = w;
+        c.height = Math.ceil(pad * 2 + th + lines.length * lh);
+        g.fillStyle = plate;
+        g.beginPath();
+        g.roundRect(0, 0, c.width, c.height, 22);
+        g.fill();
+        g.fillStyle = ink;
+        g.textBaseline = "top";
+        if (title) {
+          g.font = `800 ${size * 1.05}px system-ui,sans-serif`;
+          g.fillText(title, pad, pad);
+        }
+        g.font = `600 ${size}px system-ui,sans-serif`;
+        lines.forEach((l, i) => g.fillText(l, pad, pad + th + i * lh));
+        return c;
+      }
+      function spriteFrom(c, heightM) {
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        const sp = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: t,
+            transparent: true,
+            depthWrite: false,
+          }),
+        );
+        sp.scale.set((heightM * c.width) / c.height, heightM, 1);
+        sp.renderOrder = 5;
+        return sp;
+      }
+      function planeFrom(c, widthM) {
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return new THREE.Mesh(
+          new THREE.PlaneGeometry(widthM, (widthM * c.height) / c.width),
+          new THREE.MeshBasicMaterial({ map: t, transparent: true }),
+        );
+      }
+      function setPlaneCanvas(mesh, c, widthM) {
+        mesh.material.map.dispose();
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        mesh.material.map = t;
+        mesh.material.needsUpdate = true;
+        mesh.geometry.dispose();
+        mesh.geometry = new THREE.PlaneGeometry(
+          widthM,
+          (widthM * c.height) / c.width,
+        );
+      }
+
+      /* ---------- the station's things ---------- */
+      const world = {};
+      const hitMeshes = [];
+      const hitMat = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        colorWrite: false,
+      });
+      function addHit(id, grp, w, h, d) {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), hitMat);
+        m.position.y = h / 2;
+        m.userData.id = id;
+        grp.add(m);
+        hitMeshes.push(m);
+      }
+      function faceStation(grp, it) {
+        const s = stById(it.st);
+        grp.rotation.y = Math.atan2(s.x - it.x, s.z - it.z);
+      }
+      for (const it of ITEMS) {
+        const grp = new THREE.Group();
+        grp.position.set(it.x, 0, it.z);
+        scene.add(grp);
+        const w = { grp };
+        switch (it.kind) {
+          case "character": {
+            const body = new THREE.Mesh(
+              new THREE.CapsuleGeometry(0.3, 0.85, 4, 10),
+              lam(it.coat),
+            );
+            body.position.y = 0.95;
+            const head = new THREE.Mesh(
+              new THREE.SphereGeometry(0.21, 16, 12),
+              lam(0xe8c4a0),
+            );
+            head.position.y = 1.72;
+            const nose = new THREE.Mesh(
+              new THREE.SphereGeometry(0.05, 8, 6),
+              lam(0xd9ad86),
+            );
+            nose.position.set(0, 1.72, 0.2);
+            const hat = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.16, 0.26, 0.16, 14),
+              lam(0x2b2f33),
+            );
+            hat.position.y = 1.9;
+            // while this person speaks, a soft ring in their colour lies at their feet: it ties the line's dot to them
+            const talkMat = new THREE.MeshBasicMaterial({
+              color: it.coat,
+              transparent: true,
+              opacity: 0,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            });
+            const talk = new THREE.Mesh(
+              new THREE.RingGeometry(0.5, 0.62, 40),
+              talkMat,
+            );
+            talk.rotation.x = -Math.PI / 2;
+            talk.position.y = 0.05;
+            grp.add(body, head, nose, hat, talk);
+            w.talkMat = talkMat;
+            if (it.st === "B") {
+              const plaque = planeFrom(
+                textCanvas([STORIES[it.story].title], {
+                  w: 420,
+                  size: 30,
+                  plate: "rgba(30,36,42,.92)",
+                  ink: "#f3f5f7",
+                }),
+                0.9,
+              );
+              plaque.position.set(0, 0.45, 0.45);
+              plaque.rotation.x = -0.5;
+              grp.add(plaque);
+            }
+            addHit(it.id, grp, 1.0, 2.2, 1.0);
+            break;
+          }
+          case "stone": {
+            const plate = planeFrom(
+              textCanvas(['"Water for all who ask."'], {
+                title: "Rim stone, 1611",
+                w: 560,
+                size: 32,
+                plate: "rgba(214,201,174,.97)",
+              }),
+              1.1,
+            );
+            plate.position.set(0, 0.62, 0);
+            plate.rotation.x = -0.35;
+            grp.add(plate);
+            addHit(it.id, grp, 1.2, 1.0, 0.6);
+            break;
+          }
+          case "oven": {
+            const base = new THREE.Mesh(
+              new THREE.BoxGeometry(2.2, 0.8, 2.2),
+              lam(0x8a5a44),
+            );
+            base.position.y = 0.4;
+            const dome = new THREE.Mesh(
+              new THREE.SphereGeometry(
+                1.05,
+                18,
+                10,
+                0,
+                Math.PI * 2,
+                0,
+                Math.PI / 2,
+              ),
+              lam(0x9c4a32),
+            );
+            dome.position.y = 0.8;
+            const mouth = new THREE.Mesh(
+              new THREE.CircleGeometry(0.35, 16, 0, Math.PI),
+              lam(0x1b1410),
+            );
+            mouth.position.set(0, 0.85, 1.04);
+            const chim = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.16, 0.2, 1.4, 10),
+              lam(0x6b4a3a),
+            );
+            chim.position.set(0.4, 2.1, -0.3);
+            grp.add(base, dome, mouth, chim);
+            faceStation(grp, it);
+            addHit(it.id, grp, 2.4, 2.6, 2.4);
+            break;
+          }
+          case "bell": {
+            for (const x of [-0.9, 0.9]) {
+              const p = new THREE.Mesh(
+                new THREE.BoxGeometry(0.16, 2.6, 0.16),
+                lam(0x5b4330),
+              );
+              p.position.set(x, 1.3, 0);
+              grp.add(p);
+            }
+            const bar = new THREE.Mesh(
+              new THREE.BoxGeometry(2.0, 0.16, 0.16),
+              lam(0x5b4330),
+            );
+            bar.position.y = 2.6;
+            const bellM = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.28, 0.6, 0.9, 20, 1, true),
+              bronze.clone(),
+            );
+            bellM.material.side = THREE.DoubleSide;
+            bellM.position.y = 1.95;
+            grp.add(bar, bellM);
+            faceStation(grp, it);
+            addHit(it.id, grp, 2.0, 2.8, 1.0);
+            break;
+          }
+          case "shortText": {
+            const post = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.05, 0.05, 1.5, 10),
+              dark,
+            );
+            post.position.y = 0.75;
+            const board = planeFrom(
+              textCanvas(it.text, { title: it.title, w: 560, size: 32 }),
+              1.25,
+            );
+            board.position.y = 1.75;
+            const back = new THREE.Mesh(
+              new THREE.BoxGeometry(1.3, 0.62, 0.04),
+              dark,
+            );
+            back.position.set(0, 1.75, -0.03);
+            grp.add(post, back, board);
+            faceStation(grp, it);
+            addHit(it.id, grp, 1.4, 2.2, 0.6);
+            break;
+          }
+          case "longText": {
+            const stand = new THREE.Mesh(
+              new THREE.BoxGeometry(0.12, 1.05, 0.12),
+              dark,
+            );
+            stand.position.y = 0.52;
+            const tray = new THREE.Group();
+            tray.position.y = 1.12;
+            tray.rotation.x = -0.6;
+            const back = new THREE.Mesh(
+              new THREE.BoxGeometry(1.0, 0.78, 0.04),
+              lam(0x3b2f28),
+            );
+            back.position.z = -0.025;
+            const page = planeFrom(
+              textCanvas(it.pages[0].slice(1), {
+                title: it.pages[0][0],
+                w: 560,
+                size: 30,
+              }),
+              0.92,
+            );
+            tray.add(back, page);
+            grp.add(stand, tray);
+            faceStation(grp, it);
+            w.page = page;
+            w.pageShown = 0;
+            addHit(it.id, grp, 1.2, 1.8, 1.0);
+            break;
+          }
+          case "picture": {
+            const c = document.createElement("canvas");
+            c.width = 256;
+            c.height = 180;
+            const g = c.getContext("2d");
+            g.fillStyle = "#d9c6a0";
+            g.fillRect(0, 0, 256, 180);
+            g.fillStyle = "#7d6440";
+            for (let i = 0; i < 6; i++)
+              g.fillRect(
+                10 + i * 41,
+                60 - (i % 3) * 14,
+                34,
+                100 + (i % 3) * 14,
+              );
+            g.fillStyle = "#5b4528";
+            g.fillRect(0, 150, 256, 30);
+            const t = new THREE.CanvasTexture(c);
+            t.colorSpace = THREE.SRGBColorSpace;
+            const frame = new THREE.Mesh(
+              new THREE.BoxGeometry(1.6, 1.15, 0.06),
+              dark,
+            );
+            frame.position.y = 1.75;
+            const pic = new THREE.Mesh(
+              new THREE.PlaneGeometry(1.44, 1.0),
+              new THREE.MeshBasicMaterial({ map: t }),
+            );
+            pic.position.set(0, 1.75, 0.035);
+            const cap = planeFrom(
+              textCanvas([it.title], { w: 420, size: 30 }),
+              0.95,
+            );
+            cap.position.set(0, 1.0, 0.04);
+            for (const x of [-0.6, 0.6]) {
+              const l = new THREE.Mesh(
+                new THREE.BoxGeometry(0.06, 1.3, 0.06),
+                dark,
+              );
+              l.position.set(x, 0.65, -0.1);
+              grp.add(l);
+            }
+            grp.add(frame, pic, cap);
+            faceStation(grp, it);
+            addHit(it.id, grp, 1.8, 2.4, 0.8);
+            break;
+          }
+          case "video": {
+            const c = document.createElement("canvas");
+            c.width = 256;
+            c.height = 144;
+            const t = new THREE.CanvasTexture(c);
+            t.colorSpace = THREE.SRGBColorSpace;
+            const back = new THREE.Mesh(
+              new THREE.BoxGeometry(2.2, 1.32, 0.08),
+              lam(0x59616b),
+            );
+            back.position.y = 1.95;
+            const scr = new THREE.Mesh(
+              new THREE.PlaneGeometry(2.04, 1.15),
+              new THREE.MeshBasicMaterial({ map: t }),
+            );
+            scr.position.set(0, 1.95, 0.045);
+            const cap = planeFrom(
+              textCanvas(["Tap the screen to play or pause."], {
+                title: it.title,
+                w: 560,
+                size: 28,
+              }),
+              1.5,
+            );
+            cap.position.set(0, 1.0, 0.05);
+            for (const x of [-0.85, 0.85]) {
+              const l = new THREE.Mesh(
+                new THREE.BoxGeometry(0.07, 1.3, 0.07),
+                dark,
+              );
+              l.position.set(x, 0.65, -0.05);
+              grp.add(l);
+            }
+            grp.add(back, scr, cap);
+            faceStation(grp, it);
+            w.screen = { c, t, last: -99 };
+            addHit(it.id, grp, 2.4, 2.8, 0.8);
+            break;
+          }
+          case "audio": {
+            const N = 90,
+              pos = new Float32Array(N * 3),
+              seed = [];
+            for (let k = 0; k < N; k++)
+              seed.push({
+                a: rand() * 6.28,
+                r: rand() * 0.9,
+                y: rand() * 3.4,
+                v: 0.4 + rand() * 0.6,
+              });
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+            const mat = new THREE.PointsMaterial({
+              color: 0xbffcf0,
+              size: 0.13,
+              transparent: true,
+              opacity: 0.9,
+              depthWrite: false,
+            });
+            const pts = new THREE.Points(geo, mat);
+            grp.add(pts);
+            const ringMat = new THREE.MeshBasicMaterial({
+              color: 0x2dd4bf,
+              transparent: true,
+              opacity: 0.5,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            });
+            const ring = new THREE.Mesh(
+              new THREE.RingGeometry(0.9, 1.15, 48),
+              ringMat,
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.y = 0.05;
+            const cap = spriteFrom(
+              textCanvas([it.title], {
+                w: 420,
+                size: 30,
+                plate: "rgba(10,14,19,.82)",
+                ink: "#ccfbf1",
+              }),
+              0.32,
+            );
+            cap.position.y = 3.7;
+            grp.add(ring, cap);
+            w.plume = { pts, pos, seed, mat, ringMat };
+            w.cap = cap;
+            addHit(it.id, grp, 2.0, 3.6, 2.0);
+            break;
+          }
+          case "model": {
+            const plinth = new THREE.Mesh(
+              new THREE.BoxGeometry(1.4, 1.0, 2.0),
+              stone,
+            );
+            plinth.position.y = 0.5;
+            const body = new THREE.Mesh(
+              new THREE.BoxGeometry(0.7, 0.7, 1.4),
+              it.st === "A" ? stone : bronze,
+            );
+            body.position.y = 1.4;
+            const head = new THREE.Mesh(
+              new THREE.SphereGeometry(0.42, 14, 10),
+              it.st === "A" ? stone : bronze,
+            );
+            head.position.set(0, 1.95, 0.6);
+            const cap = planeFrom(
+              textCanvas([it.title], { w: 420, size: 30 }),
+              0.9,
+            );
+            cap.position.set(0, 0.55, 1.02);
+            grp.add(plinth, body, head, cap);
+            faceStation(grp, it);
+            addHit(it.id, grp, 1.8, 2.6, 2.4);
+            break;
+          }
+        }
+        world[it.id] = w;
+      }
+
+      /* ---------- the beam: the station's pin from afar (the built beacon) ---------- */
+      const beams = {};
+      for (const st of STATIONS) {
+        const grp = new THREE.Group();
+        grp.position.set(st.x, 0, st.z);
+        scene.add(grp);
+        const builtMat = new THREE.MeshBasicMaterial({
+          color: 0xfb923c,
+          transparent: true,
+          opacity: 0.28,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+        const built = new THREE.Mesh(
+          new THREE.CylinderGeometry(1, 1, 22, 6, 1, true),
+          builtMat,
+        );
+        built.position.y = 15;
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xfb923c,
+          transparent: true,
+          opacity: 0.45,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(st.r - 0.25, st.r, 96),
+          ringMat,
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.05;
+        grp.add(built, ring);
+        beams[st.id] = { grp, built, builtMat, ring, ringMat, a: 1 };
+      }
+
+      /* ======================================================================
+   THE GROUND RING: a three.js object in the world, updated every frame.
+   No canvas, no texture redraw: a few meshes and two instanced meshes
+   whose matrices and colours are written in place.
+   ====================================================================== */
+      const RING_ORDER = 30;
+      function flatMat(color, opacity) {
+        return new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          depthTest: false,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+        });
+      }
+      const ringGrp = new THREE.Group();
+      scene.add(ringGrp);
+      const ringC = { x: 0, z: -14 - CFG.ahead };
+      const R = {
+        plate: null,
+        rim: null,
+        half: null,
+        me: null,
+        wedge: null,
+        hit: null,
+        mats: {},
+      };
+      function buildRing() {
+        ringGrp.clear();
+        const r = CFG.ringR;
+        const flat = (geo) => {
+          geo.rotateX(-Math.PI / 2);
+          return geo;
+        };
+        R.mats = {
+          plate: flatMat(0x0a0e13, 0.4),
+          rim: flatMat(0xffffff, 0.85),
+          half: flatMat(0xffffff, 0.22),
+          me: flatMat(0x7dd3fc, 1),
+          wedge: flatMat(0xffffff, 0.1),
+        };
+        R.plate = new THREE.Mesh(
+          flat(new THREE.CircleGeometry(r, 64)),
+          R.mats.plate,
+        );
+        R.rim = new THREE.Mesh(
+          flat(new THREE.RingGeometry(r - 0.012, r, 96)),
+          R.mats.rim,
+        );
+        R.half = new THREE.Mesh(
+          flat(new THREE.RingGeometry(r * 0.5 - 0.004, r * 0.5 + 0.004, 72)),
+          R.mats.half,
+        );
+        R.me = new THREE.Mesh(
+          flat(new THREE.CircleGeometry(0.026, 20)),
+          R.mats.me,
+        );
+        R.wedge = new THREE.Mesh(
+          flat(new THREE.CircleGeometry(r * 0.96, 24, Math.PI / 2 - 0.5, 1)),
+          R.mats.wedge,
+        );
+        [R.plate, R.half, R.wedge, R.rim, R.me].forEach((m, i) => {
+          m.renderOrder = RING_ORDER + i;
+          m.raycast = () => undefined;
+          ringGrp.add(m);
+        });
+        R.hit = new THREE.Mesh(
+          flat(new THREE.CircleGeometry(r * 1.15, 24)),
+          hitMat,
+        );
+        R.hit.userData.ring = true;
+        ringGrp.add(R.hit);
+        R.st = makeLayer(8, RING_ORDER + 6);
+        R.items = makeLayer(80, RING_ORDER + 8);
+      }
+      /** A layer of marks: filled discs and hollow rims as two instanced meshes, drawn in the order added (later on top). */
+      function makeLayer(max, order) {
+        const discGeo = new THREE.CircleGeometry(1, 20);
+        discGeo.rotateX(-Math.PI / 2);
+        const ringGeo = new THREE.RingGeometry(0.62, 1, 20);
+        ringGeo.rotateX(-Math.PI / 2);
+        const md = flatMat(0xffffff, 1),
+          mh = flatMat(0xffffff, 1);
+        const disc = new THREE.InstancedMesh(discGeo, md, max),
+          hollow = new THREE.InstancedMesh(ringGeo, mh, max);
+        for (const m of [disc, hollow]) {
+          m.renderOrder = order;
+          m.frustumCulled = false;
+          m.raycast = () => undefined;
+          m.count = 0;
+          ringGrp.add(m);
+        }
+        hollow.renderOrder = order + 1;
+        const m4 = new THREE.Matrix4(),
+          col = new THREE.Color(),
+          q = new THREE.Quaternion(),
+          p = new THREE.Vector3(),
+          s = new THREE.Vector3();
+        return {
+          disc,
+          hollow,
+          md,
+          mh,
+          begin() {
+            disc.count = 0;
+            hollow.count = 0;
+          },
+          add(x, z, r, color, isHollow) {
+            const m = isHollow ? hollow : disc;
+            if (m.count >= max) return;
+            p.set(x, 0, z);
+            s.set(r, 1, r);
+            m4.compose(p, q, s);
+            m.setMatrixAt(m.count, m4);
+            m.setColorAt(m.count, col.setHex(color));
+            m.count++;
+          },
+          end(alpha) {
+            for (const m of [disc, hollow]) {
+              m.instanceMatrix.needsUpdate = true;
+              if (m.instanceColor) m.instanceColor.needsUpdate = true;
+              m.visible = alpha > 0.01 && m.count > 0;
+            }
+            md.opacity = alpha;
+            mh.opacity = alpha;
+          },
+        };
+      }
+      buildRing();
+
+      const OUT_STEPS = [null, 30, 100, 300];
+      const IN_STEPS = [null, 10, 30, 100];
+      function niceUp(v) {
+        const p = Math.pow(10, Math.floor(Math.log10(v)));
+        for (const k of [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10])
+          if (k * p >= v - 1e-9) return k * p;
+        return 10 * p;
+      }
+      let adaptiveM = 100;
+      function outRange() {
+        const ds = STATIONS.filter((s) => !S.visited[s.id] || s.id === S.here)
+          .map((s) => dist(s))
+          .sort((a, b) => a - b);
+        const want = ds.length
+          ? clamp(niceUp(ds[0] * 1.25), 30, 600)
+          : adaptiveM;
+        if (want > adaptiveM || want < adaptiveM * 0.65) adaptiveM = want;
+        return OUT_STEPS[S.rangeStep % 4] ?? adaptiveM;
+      }
+      function inRange(st) {
+        return IN_STEPS[S.rangeStep % 4] ?? Math.round(st.r * CFG.fit);
+      }
+      let lastStation = STATIONS[0];
+      function rangeNow() {
+        const st = S.here ? stById(S.here) : lastStation;
+        return Math.exp(
+          lerp(
+            Math.log(outRange()),
+            Math.log(inRange(st)),
+            ease(clamp(S.zoom, 0, 1)),
+          ),
+        );
+      }
+      function radarAwakeTarget() {
+        return S.stillFor >= CFG.wake || T < S.wakeUntil;
+      }
+      function wake(sec) {
+        S.wakeUntil = Math.max(S.wakeUntil, T + sec);
+      }
+      function ringTap() {
+        if (S.radarAlpha < 0.5) {
+          wake(TAP_WAKE_S);
+          return;
+        }
+        S.rangeStep = (S.rangeStep + 1) % 4;
+        wake(3);
+        const st = S.here ? stById(S.here) : null;
+        const m = st
+          ? (IN_STEPS[S.rangeStep] ?? Math.round(st.r * CFG.fit))
+          : (OUT_STEPS[S.rangeStep] ?? Math.round(adaptiveM));
+        S.note = `Ring: ${m} m around you${S.rangeStep === 0 ? (st ? ", this station" : ", auto") : ""}`;
+        S.noteUntil = T + 2;
+      }
+
+      const ringCost = []; // ms per frame spent updating the ring, the last 2 s
+      let ringMarks = { n: 0, rim: 0, hidden: 0 };
+      const C_UNSEEN = 0xf3f5f7,
+        C_SEEN = 0x8b949d,
+        C_NEXT_ST = 0xfb923c,
+        C_EDGE = 0x5d6670;
+      function updateRing(dt) {
+        const t0 = performance.now();
+        const r = CFG.ringR;
+        // follow the visitor a step ahead, with a short lag, so a turn of the phone does not swing it
+        const fx = -Math.sin(S.yaw),
+          fz = -Math.cos(S.yaw),
+          k = 1 - Math.exp(-dt * FOLLOW);
+        ringC.x += (S.pos.x + fx * CFG.ahead - ringC.x) * k;
+        ringC.z += (S.pos.z + fz * CFG.ahead - ringC.z) * k;
+        ringGrp.position.set(ringC.x, 0.035, ringC.z);
+        const on = radarAtAll();
+        const a = on ? S.radarAlpha : 0;
+        ringGrp.visible = a > 0.01;
+        R.mats.plate.opacity = 0.4 * a;
+        R.mats.rim.opacity = 0.85 * a;
+        R.mats.half.opacity = 0.22 * a;
+        R.mats.me.opacity = a;
+        R.mats.wedge.opacity = 0.1 * a;
+        R.wedge.rotation.y = S.yaw;
+        ringMarks = { n: 0, rim: 0, hidden: 0 };
+        if (!ringGrp.visible) {
+          R.st.begin();
+          R.st.end(0);
+          R.items.begin();
+          R.items.end(0);
+          ringCost.push(performance.now() - t0);
+          return;
+        }
+        const range = rangeNow(),
+          sc = r / range,
+          ez = ease(clamp(S.zoom, 0, 1));
+        const place = (p, mr) => {
+          // linear: the same metres per centimetre everywhere; beyond the range, on the rim in its true direction
+          let x = (p.x - S.pos.x) * sc,
+            z = (p.z - S.pos.z) * sc;
+          const d = Math.hypot(x, z),
+            lim = r - mr - 0.008;
+          const beyond = d > lim;
+          if (beyond) {
+            x *= lim / d;
+            z *= lim / d;
+          }
+          return { x, z, beyond };
+        };
+        // stations (outside a station)
+        R.st.begin();
+        const sAl = (1 - smooth(0, 0.6, ez)) * a;
+        if (sAl > 0.01) {
+          const next = STATIONS.find((s) => !S.visited[s.id]);
+          for (const s of STATIONS) {
+            if (S.here === s.id) continue;
+            const big = s === next ? MARK_R * 1.35 : MARK_R * 1.1,
+              m = place(s, big);
+            if (s === next) R.st.add(m.x, m.z, big, C_NEXT_ST, m.beyond);
+            else if (S.visited[s.id]) {
+              R.st.add(m.x, m.z, big, C_SEEN, m.beyond);
+              if (
+                ITEMS.some(
+                  (i) =>
+                    i.st === s.id &&
+                    !S.it[i.id].seen &&
+                    resolveFor("shown", i).v,
+                )
+              )
+                R.st.add(m.x, m.z, big * 0.42, C_UNSEEN, false);
+            } else R.st.add(m.x, m.z, big, C_UNSEEN, true);
+            ringMarks.n++;
+            if (m.beyond) ringMarks.rim++;
+          }
+        }
+        R.st.end(sAl);
+        // the station's things (inside), at their true places: grey first, white on top, the story's next step last
+        R.items.begin();
+        const iAl = smooth(0.4, 1, ez) * a;
+        if (iAl > 0.01) {
+          const st = S.here ? stById(S.here) : lastStation;
+          // the station's edge as a dotted circle, only the dots that fall inside the ring
+          for (let i = 0; i < 48; i++) {
+            const ang = (i / 48) * Math.PI * 2,
+              x = (st.x + Math.cos(ang) * st.r - S.pos.x) * sc,
+              z = (st.z + Math.sin(ang) * st.r - S.pos.z) * sc;
+            if (Math.hypot(x, z) < r - 0.02)
+              R.items.add(x, z, 0.006, C_EDGE, false);
+          }
+          const nextT =
+            S.story && S.story.phase === "walk" && !S.story.away
+              ? stepTarget()
+              : null;
+          const marks = [];
+          for (const it of ITEMS) {
+            if (it.st !== st.id) continue;
+            if (!resolveFor("shown", it).v) {
+              ringMarks.hidden++;
+              continue;
+            }
+            const isNext = nextT && it.id === nextT.id;
+            marks.push({
+              it,
+              pr: isNext ? 2 : S.it[it.id].seen ? 0 : 1,
+              col: isNext
+                ? itById(storyOf(S.story.id).entry).coat
+                : S.it[it.id].seen
+                  ? C_SEEN
+                  : C_UNSEEN,
+            });
+          }
+          marks.sort((p, q) => p.pr - q.pr);
+          for (const mk of marks) {
+            const m = place(mk.it, MARK_R);
+            R.items.add(m.x, m.z, MARK_R, mk.col, m.beyond);
+            ringMarks.n++;
+            if (m.beyond) ringMarks.rim++;
+          }
+        }
+        R.items.end(iAl);
+        ringCost.push(performance.now() - t0);
+      }
+      /** The ring's footprint on the screen, for the measuring hook (null when it is not in view). */
+      function ringScreenBox() {
+        if (!ringGrp.visible || S.radarAlpha < 0.35) return null;
+        const dr = device.getBoundingClientRect(),
+          v = new THREE.Vector3();
+        let x0 = Infinity,
+          y0 = Infinity,
+          x1 = -Infinity,
+          y1 = -Infinity,
+          any = false;
+        for (let i = 0; i < 24; i++) {
+          const ang = (i / 24) * Math.PI * 2;
+          v.set(
+            ringC.x + Math.cos(ang) * CFG.ringR,
+            0.035,
+            ringC.z + Math.sin(ang) * CFG.ringR,
+          ).project(camera);
+          if (v.z > 1) continue;
+          const x = ((v.x + 1) / 2) * dr.width,
+            y = ((1 - v.y) / 2) * dr.height;
+          if (x >= 0 && x <= dr.width && y >= 0 && y <= dr.height) any = true;
+          x0 = Math.min(x0, x);
+          y0 = Math.min(y0, y);
+          x1 = Math.max(x1, x);
+          y1 = Math.max(y1, y);
+        }
+        if (!any) return null;
+        x0 = Math.max(0, x0);
+        y0 = Math.max(0, y0);
+        x1 = Math.min(dr.width, x1);
+        y1 = Math.min(dr.height, y1);
+        return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      }
+
+      /* ======================================================================
+   The hint: one short drift of light along the ground toward the story's
+   next step (the drift of round 2, page 4, offered, never volunteered)
+   ====================================================================== */
+      const MOTE_V = `attribute float aA;attribute float aS;uniform float uViewH,uSize;varying float vA;
+void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);gl_Position=projectionMatrix*mv;
+gl_PointSize=clamp(uSize*aS*uViewH*0.5*projectionMatrix[1][1]/max(0.1,-mv.z),3.0,34.0);vA=aA;}`;
+      const MOTE_F = `uniform vec3 uCore,uRim;varying float vA;void main(){float d=length(gl_PointCoord-0.5);
+float a=smoothstep(0.5,0.18,d)*vA;if(a<0.01)discard;float k=smoothstep(0.36,0.08,d);
+gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
+#include <colorspace_fragment>
+}`;
+      const DRIFT = {
+        n: 64,
+        dur: 3.0,
+        speed: 2.4,
+        reach: 9,
+        spread: 1.7,
+        depth: [1.8, 3.8],
+        size: 0.07,
+      };
+      const DR = {
+        active: false,
+        t: 0,
+        p0: new Float32Array(192),
+        p1: new Float32Array(192),
+        p2: new Float32Array(192),
+        birth: new Float32Array(64),
+        life: new Float32Array(64),
+        ph: new Float32Array(64),
+        count: 0,
+      };
+      const moteGeo = new THREE.BufferGeometry();
+      const motePos = new Float32Array(192),
+        moteA = new Float32Array(64),
+        moteS = new Float32Array(64);
+      moteGeo.setAttribute("position", new THREE.BufferAttribute(motePos, 3));
+      moteGeo.setAttribute("aA", new THREE.BufferAttribute(moteA, 1));
+      moteGeo.setAttribute("aS", new THREE.BufferAttribute(moteS, 1));
+      const moteMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uViewH: { value: 800 },
+          uSize: { value: DRIFT.size },
+          uCore: { value: new THREE.Color("#fff4cf") },
+          uRim: { value: new THREE.Color("#d08a2a") },
+        },
+        vertexShader: MOTE_V,
+        fragmentShader: MOTE_F,
+        transparent: true,
+        depthWrite: false,
+      });
+      const motes = new THREE.Points(moteGeo, moteMat);
+      motes.frustumCulled = false;
+      motes.renderOrder = 15;
+      motes.visible = false;
+      motes.raycast = () => undefined;
+      scene.add(motes);
+      function showTheWay() {
+        const tgt = stepTarget();
+        if (DR.active || !tgt) return;
+        const L = DRIFT;
+        DR.active = true;
+        DR.t = 0;
+        DR.count++;
+        const fx = -Math.sin(S.yaw),
+          fz = -Math.cos(S.yaw),
+          rx = Math.cos(S.yaw),
+          rz = -Math.sin(S.yaw);
+        let dx = tgt.x - S.pos.x,
+          dz = tgt.z - S.pos.z;
+        const dT = Math.hypot(dx, dz);
+        dx /= dT || 1;
+        dz /= dT || 1;
+        // a far step gets a direction, never its spot: the drift ends at most `reach` metres out, and 1.2 m short of a near one
+        const reach = clamp(dT - 1.2, 2.5, L.reach),
+          qx = S.pos.x + dx * reach,
+          qz = S.pos.z + dz * reach,
+          nx = -dz,
+          nz = dx;
+        const dot = fx * dx + fz * dz,
+          side = Math.sign(rx * dx + rz * dz) || 1;
+        for (let i = 0; i < L.n; i++) {
+          const depth = L.depth[0] + rnd() * (L.depth[1] - L.depth[0]),
+            lat = (rnd() * 2 - 1) * L.spread;
+          const p0x = S.pos.x + fx * depth + rx * lat,
+            p0z = S.pos.z + fz * depth + rz * lat,
+            p0y = 0.5 + rnd() * 0.6;
+          const end = (rnd() * 2 - 1) * (0.5 + 0.08 * reach);
+          const p2x = qx + nx * end,
+            p2z = qz + nz * end,
+            p2y = 0.12 + rnd() * 0.35;
+          // toward the step if it lies ahead or to the side; round the visitor's shoulder if it lies behind, never at the camera
+          let p1x, p1z;
+          if (dot > -0.25) {
+            const kk = 0.5 * Math.hypot(p2x - p0x, p2z - p0z);
+            p1x = p0x + (fx * 0.35 + dx * 0.65) * kk;
+            p1z = p0z + (fz * 0.35 + dz * 0.65) * kk;
+          } else {
+            p1x =
+              S.pos.x +
+              rx * side * (2.4 + rnd() * 0.8) +
+              fx * (0.8 + rnd() * 0.6);
+            p1z =
+              S.pos.z +
+              rz * side * (2.4 + rnd() * 0.8) +
+              fz * (0.8 + rnd() * 0.6);
+          }
+          DR.p0.set([p0x, p0y, p0z], i * 3);
+          DR.p1.set([p1x, 0.45 + rnd() * 0.45, p1z], i * 3);
+          DR.p2.set([p2x, p2y, p2z], i * 3);
+          const len =
+              Math.hypot(p1x - p0x, p1z - p0z) +
+              Math.hypot(p2x - p1x, p2z - p1z),
+            life = clamp(len / L.speed, 1.0, L.dur - 0.25);
+          DR.life[i] = life;
+          DR.birth[i] = rnd() * Math.max(0.05, L.dur - 0.25 - life) * 0.85;
+          DR.ph[i] = rnd() * 6.283;
+          moteS[i] = 0.7 + rnd() * 0.6;
+        }
+        motes.visible = true;
+        moteGeo.setDrawRange(0, L.n);
+      }
+      function stopDrift() {
+        DR.active = false;
+        motes.visible = false;
+      }
+      function updateDrift(dt) {
+        if (!DR.active) return;
+        DR.t += dt;
+        const L = DRIFT,
+          g = 1 - smooth(L.dur - 0.45, L.dur, DR.t);
+        if (DR.t >= L.dur) {
+          stopDrift();
+          return;
+        }
+        const cam = camera.position;
+        for (let i = 0; i < L.n; i++) {
+          const age = DR.t - DR.birth[i],
+            u0 = age / DR.life[i];
+          let x = 0,
+            y = -50,
+            z = 0,
+            al = 0;
+          if (u0 > 0 && u0 < 1) {
+            const u = u0 * u0 * (3 - 2 * u0),
+              v = 1 - u,
+              i3 = i * 3;
+            x = v * v * DR.p0[i3] + 2 * v * u * DR.p1[i3] + u * u * DR.p2[i3];
+            y =
+              v * v * DR.p0[i3 + 1] +
+              2 * v * u * DR.p1[i3 + 1] +
+              u * u * DR.p2[i3 + 1];
+            z =
+              v * v * DR.p0[i3 + 2] +
+              2 * v * u * DR.p1[i3 + 2] +
+              u * u * DR.p2[i3 + 2];
+            const w = Math.sin(DR.ph[i] + age * 5.5) * 0.12,
+              tx = DR.p2[i3] - DR.p0[i3],
+              tz = DR.p2[i3 + 2] - DR.p0[i3 + 2],
+              tl = Math.hypot(tx, tz) || 1;
+            x += (-tz / tl) * w;
+            z += (tx / tl) * w;
+            y += Math.sin(DR.ph[i] * 2 + age * 4) * 0.07;
+            al = smooth(0, 0.22, age) * (1 - smooth(0.62, 1, u0)) * g;
+            // a mote never comes closer than 1.5 m to the camera
+            al *= smooth(1.2, 1.5, Math.hypot(x - cam.x, y - cam.y, z - cam.z));
+          }
+          motePos[i * 3] = x;
+          motePos[i * 3 + 1] = y;
+          motePos[i * 3 + 2] = z;
+          moteA[i] = al;
+        }
+        moteGeo.attributes.position.needsUpdate = true;
+        moteGeo.attributes.aA.needsUpdate = true;
+        moteGeo.attributes.aS.needsUpdate = true;
+      }
+
+      /* ---------- input: drag sideways to turn, drag up to walk, tap to use ---------- */
+      let drag = null;
+      const keys = new Set();
+      canvas.addEventListener("pointerdown", (e) => {
+        drag = { x: e.clientX, y: e.clientY, t0: performance.now(), moved: 0 };
+        canvas.setPointerCapture(e.pointerId);
+        dismissTry();
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!drag) return;
+        const dx = e.clientX - drag.x,
+          dy = e.clientY - drag.y;
+        drag.moved += Math.abs(dx) + Math.abs(dy);
+        S.yaw += dx * 0.0055;
+        S.yawTarget = null;
+        S.turn = null;
+        if (!S.auto) {
+          const f = -dy * 0.03;
+          S.pos.x += -Math.sin(S.yaw) * f;
+          S.pos.z += -Math.cos(S.yaw) * f;
+        }
+        drag.x = e.clientX;
+        drag.y = e.clientY;
+      });
+      canvas.addEventListener("pointerup", (e) => {
+        if (drag && drag.moved < 8 && performance.now() - drag.t0 < 500)
+          worldTap(e.clientX, e.clientY);
+        drag = null;
+      });
+      canvas.addEventListener("pointercancel", () => {
+        drag = null;
+      });
+      canvas.addEventListener(
+        "wheel",
+        (e) => {
+          S.pitchTo = null;
+          S.pitch = clamp(S.pitch - e.deltaY * 0.0015, -1.2, 0.3);
+          e.preventDefault();
+        },
+        { passive: false },
+      );
+      addEventListener("keydown", (e) => {
+        keys.add(e.code);
+        dismissTry();
+      });
+      addEventListener("keyup", (e) => keys.delete(e.code));
+      addEventListener("blur", () => keys.clear());
+      const ray = new THREE.Raycaster();
+      function worldTap(cx, cy) {
+        const r = canvas.getBoundingClientRect();
+        ray.setFromCamera(
+          new THREE.Vector2(
+            ((cx - r.left) / r.width) * 2 - 1,
+            -((cy - r.top) / r.height) * 2 + 1,
+          ),
+          camera,
+        );
+        if (
+          ringGrp.visible &&
+          S.radarAlpha > 0.1 &&
+          ray.intersectObject(R.hit, false)[0]
+        ) {
+          ringTap();
+          ripple(
+            cx - device.getBoundingClientRect().left,
+            cy - device.getBoundingClientRect().top,
+          );
+          return;
+        }
+        const hit = ray.intersectObjects(hitMeshes, false)[0];
+        if (hit) tapItem(hit.object.userData.id);
+      }
+      function screenOf(p, y = 1.5) {
+        const v = new THREE.Vector3(p.x, y, p.z).project(camera),
+          r = device.getBoundingClientRect();
+        return {
+          x: ((v.x + 1) / 2) * r.width,
+          y: ((1 - v.y) / 2) * r.height,
+          front: v.z < 1,
+        };
+      }
+      function ripple(x, y) {
+        const d = document.createElement("div");
+        d.className = "ripple";
+        d.style.left = x + "px";
+        d.style.top = y + "px";
+        device.appendChild(d);
+        setTimeout(() => d.remove(), 800);
+      }
+      function rippleOn(el) {
+        const r = el.getBoundingClientRect(),
+          dr = device.getBoundingClientRect();
+        ripple(r.left - dr.left + r.width / 2, r.top - dr.top + r.height / 2);
+      }
+      function hfov() {
+        return (
+          2 * Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect)
+        );
+      }
+      const inView = (p) => Math.abs(relAngle(p)) < hfov() / 2;
+
+      /* ======================================================================
+   The simulation (every frame)
+   ====================================================================== */
+      const last = { x: 0, z: 0 };
+      function sim(dt) {
+        if (waiters.length) {
+          const due = waiters.filter((w) => T >= w.end);
+          waiters = waiters.filter((w) => T < w.end);
+          for (const w of due) w.res();
+        }
+        last.x = S.pos.x;
+        last.z = S.pos.z;
+        if (S.auto) {
+          const a = S.auto,
+            dx = a.x - S.pos.x,
+            dz = a.z - S.pos.z,
+            d = Math.hypot(dx, dz),
+            step = a.speed * dt;
+          if (d <= step) {
+            S.pos.x = a.x;
+            S.pos.z = a.z;
+            S.auto = null;
+            S.yawTarget = null;
+            a.res();
+          } else {
+            S.pos.x += (dx / d) * step;
+            S.pos.z += (dz / d) * step;
+            if (a.face && !drag) S.yawTarget = yawToward(a, S.pos);
+          }
+        } else {
+          let f = 0;
+          if (keys.has("KeyW") || keys.has("ArrowUp")) f = 1.4;
+          if (keys.has("KeyS") || keys.has("ArrowDown")) f = -0.8;
+          if (keys.has("KeyA") || keys.has("ArrowLeft")) {
+            S.yaw += 1.5 * dt;
+            S.yawTarget = null;
+          }
+          if (keys.has("KeyD") || keys.has("ArrowRight")) {
+            S.yaw -= 1.5 * dt;
+            S.yawTarget = null;
+          }
+          if (keys.has("KeyR")) {
+            S.pitch = clamp(S.pitch + dt, -1.2, 0.3);
+            S.pitchTo = null;
+          }
+          if (keys.has("KeyF")) {
+            S.pitch = clamp(S.pitch - dt, -1.2, 0.3);
+            S.pitchTo = null;
+          }
+          if (f) {
+            S.pos.x += -Math.sin(S.yaw) * f * dt;
+            S.pos.z += -Math.cos(S.yaw) * f * dt;
+          }
+        }
+        if (S.turn) {
+          const k = clamp((T - S.turn.t0) / S.turn.dur, 0, 1);
+          S.yaw = lerp(S.turn.from, S.turn.to, ease(k));
+          if (k >= 1) {
+            const r = S.turn.res;
+            S.turn = null;
+            r();
+          }
+        } else if (S.yawTarget != null && !drag)
+          S.yaw += wrapPi(S.yawTarget - S.yaw) * (1 - Math.exp(-dt * 3));
+        if (S.pitchTo != null) {
+          S.pitch += (S.pitchTo - S.pitch) * (1 - Math.exp(-dt * 5));
+          if (Math.abs(S.pitchTo - S.pitch) < 0.002) {
+            S.pitch = S.pitchTo;
+            S.pitchTo = null;
+          }
+        }
+
+        if (dt > 0) {
+          const inst = Math.hypot(S.pos.x - last.x, S.pos.z - last.z) / dt;
+          S.speed += (inst - S.speed) * (1 - Math.exp(-dt / 0.5));
+          S.stillFor = S.speed > CFG.walk ? 0 : S.stillFor + dt;
+        }
+
+        const prev = S.here;
+        if (S.here) {
+          if (dist(stById(S.here)) > stById(S.here).r + 2) S.here = null;
+        }
+        if (!S.here)
+          for (const s of STATIONS)
+            if (dist(s) <= s.r) {
+              S.here = s.id;
+              break;
+            }
+        if (S.here !== prev) onEdge(S.here);
+        S.zoom = clamp(S.zoom + ((S.here ? 1 : -1) * dt) / 1.0, 0, 1);
+
+        if (S.greetPending && !S.story) {
+          const sid = S.greetPending,
+            by = itById(STORIES[sid].entry);
+          if (dist(by) <= GREET_M) {
+            S.greeted[by.st] = true;
+            S.greetPending = null;
+            startStory(sid);
+          }
+        }
+
+        const target = radarAwakeTarget() ? 1 : ASLEEP_ALPHA,
+          k = dt / CFG.fade;
+        S.radarAlpha =
+          target > S.radarAlpha
+            ? Math.min(target, S.radarAlpha + k)
+            : Math.max(target, S.radarAlpha - k);
+
+        // the story: lines advance while it speaks; between steps it waits for you at the next place
+        const st = S.story;
+        if (st) {
+          st.away = S.here !== stationOfStory(st.id);
+          if (!st.away) {
+            if (st.phase === "speak" && !st.paused) {
+              st.t += dt;
+              const L = storyOf(st.id).steps[st.step].timed[st.line];
+              if (st.t >= L.end + 0.35) {
+                if (st.line + 1 < storyOf(st.id).steps[st.step].timed.length) {
+                  st.line++;
+                  st.t = 0;
+                } else stepSpoken();
+              }
+            }
+          }
+          // a step's place is tracked away from the station too: walking off the wrong way is when the way is needed,
+          // and a 20 m threshold is often only reached past the station's edge
+          if (st.phase === "walk") {
+            const d = dist(stepTarget());
+            if (d <= ARRIVE_M) {
+              st.phase = "speak";
+              st.line = 0;
+              st.t = 0;
+              st.offered = false;
+              stopDrift();
+            } else {
+              st.minD = Math.min(st.minD, d);
+              // offered once you walk away from it, and only where the author allows hints; it stays until the step is reached
+              if (
+                !st.offered &&
+                hintsAllowed(stepTarget()) &&
+                d - st.minD > CFG.hint
+              )
+                st.offered = true;
+              if (st.offered && !hintsAllowed(stepTarget()))
+                st.offered = false;
+            }
+          }
+        }
+
+        for (const it of ITEMS) {
+          const t = S.it[it.id];
+          if (t.playing) {
+            t.t += dt;
+            if (t.t >= it.len) {
+              t.t = it.len;
+              t.playing = false;
+              t.pausedBy = "end";
+              t.seen = true;
+            }
+          }
+          if (!it.reach) continue;
+          const d = dist(it);
+          if (t.playing && d > it.reach + 1) pause(it.id, "leave");
+          else if (
+            !t.playing &&
+            t.pausedBy === "leave" &&
+            d <= it.reach &&
+            !(S.story && S.story.phase === "speak" && !S.story.paused)
+          ) {
+            t.playing = true;
+            t.pausedBy = null;
+          }
+        }
+
+        for (const it of ITEMS) {
+          const t = S.it[it.id];
+          if (t.seen || !inStation(it)) continue;
+          const need = {
+            shortText: [8, 1.5],
+            picture: [10, 2],
+            model: [10, 3],
+          }[it.kind];
+          if (!need) continue;
+          if (dist(it) <= need[0] && inView(it)) {
+            t.dwell += dt;
+            if (t.dwell >= need[1]) t.seen = true;
+          }
+        }
+        updateDrift(dt);
+      }
+      function onEdge(to) {
+        S.rangeStep = 0;
+        if (!to) S.greetPending = null;
+        if (to) {
+          lastStation = stById(to);
+          S.visited[to] = true;
+          const stories = Object.entries(STORIES).filter(
+            ([, s]) => itById(s.entry).st === to,
+          );
+          if (
+            stories.length === 1 &&
+            !S.greeted[to] &&
+            !S.storyDone[stories[0][0]]
+          )
+            S.greetPending = stories[0][0];
+        }
+        wake(EDGE_WAKE_S);
+      }
+
+      /* ======================================================================
+   World looks (every frame)
+   ====================================================================== */
+      function speakerNow() {
+        const st = S.story;
+        if (!st || st.away || st.phase !== "speak" || st.paused) return null;
+        return storyOf(st.id).steps[st.step].who;
+      }
+      function updateWorld(dt) {
+        for (const st of STATIONS) {
+          const b = beams[st.id],
+            want = S.here === st.id || S.visited[st.id] ? 0 : 1;
+          b.a += (want - b.a) * (1 - Math.exp(-dt * 2));
+          b.built.visible = b.ring.visible = b.a > 0.01;
+          const r = clamp(dist(st) * 0.005, 0.05, 0.6);
+          b.built.scale.set(r, 1, r);
+          b.builtMat.opacity = 0.28 * b.a;
+          b.ringMat.opacity = 0.45 * b.a;
+        }
+        const speaker = speakerNow();
+        for (const it of ITEMS) {
+          const w = world[it.id],
+            t = S.it[it.id];
+          if (it.kind === "character") {
+            const want =
+              inStation(it) && dist(it) < 18
+                ? Math.atan2(S.pos.x - it.x, S.pos.z - it.z)
+                : Math.atan2(
+                    stById(it.st).x - it.x + 0.001,
+                    stById(it.st).z - it.z + 6,
+                  );
+            w.grp.rotation.y +=
+              wrapPi(want - w.grp.rotation.y) * (1 - Math.exp(-dt * 2.2));
+            const on =
+              speaker === it.id
+                ? 0.55 + (REDUCE ? 0 : 0.15 * Math.sin(T * 5))
+                : 0;
+            w.talkMat.opacity +=
+              (on - w.talkMat.opacity) * (1 - Math.exp(-dt * 6));
+          }
+          if (it.kind === "longText" && w.pageShown !== t.page) {
+            w.pageShown = t.page;
+            const p = it.pages[t.page];
+            setPlaneCanvas(
+              w.page,
+              textCanvas(
+                [
+                  ...p.slice(1),
+                  `page ${t.page + 1} of ${it.pages.length} - tap to turn`,
+                ],
+                { title: p[0], w: 560, size: 30 },
+              ),
+              0.92,
+            );
+          }
+          if (it.kind === "audio") {
+            const p = w.plume,
+              level = !inStation(it) ? 0.18 : t.playing ? 1 : 0.55,
+              speed = t.playing ? 1.4 : 0.6;
+            for (let k = 0; k < p.seed.length; k++) {
+              const s = p.seed[k];
+              s.y += s.v * speed * dt;
+              if (s.y > 3.4) s.y = 0;
+              const r = s.r * (1 - s.y / 5);
+              p.pos[k * 3] = Math.cos(s.a + s.y) * r;
+              p.pos[k * 3 + 1] = s.y;
+              p.pos[k * 3 + 2] = Math.sin(s.a + s.y) * r;
+            }
+            p.pts.geometry.attributes.position.needsUpdate = true;
+            p.mat.opacity = 0.9 * level;
+            p.ringMat.opacity = 0.15 + 0.45 * level;
+            w.cap.visible = inStation(it) && dist(it) < 14;
+          }
+          if (it.kind === "video") drawScreen(w.screen, it, t);
+        }
+      }
+      function drawScreen(sc, it, t) {
+        const frame = t.playing
+          ? Math.floor(T * 8)
+          : t.pausedBy === "end"
+            ? -2
+            : t.t > 0
+              ? -3
+              : -1;
+        if (frame === sc.last) return;
+        sc.last = frame;
+        const g = sc.c.getContext("2d");
+        if (t.t > 0 && t.pausedBy !== "end") {
+          g.fillStyle = "#cdbb94";
+          g.fillRect(0, 0, 256, 144);
+          const off = (t.t * 30) % 44;
+          g.fillStyle = "#6d5638";
+          for (let i = -1; i < 7; i++) {
+            const x = i * 44 - off;
+            g.fillRect(x, 50 + (i % 2) * 10, 34, 70);
+          }
+          g.fillStyle = "rgba(0,0,0,.5)";
+          g.fillRect(0, 134, 256, 10);
+          g.fillStyle = "#2dd4bf";
+          g.fillRect(0, 134, 256 * (t.t / it.len), 10);
+          if (!t.playing) {
+            g.fillStyle = "rgba(0,0,0,.5)";
+            g.fillRect(0, 0, 256, 134);
+            g.fillStyle = "#fff";
+            g.fillRect(108, 46, 14, 44);
+            g.fillRect(134, 46, 14, 44);
+          }
+        } else {
+          g.fillStyle = "#1b2026";
+          g.fillRect(0, 0, 256, 144);
+          g.fillStyle = "#fff";
+          g.beginPath();
+          g.moveTo(110, 44);
+          g.lineTo(150, 72);
+          g.lineTo(110, 100);
+          g.closePath();
+          g.fill();
+          g.font = "600 15px system-ui,sans-serif";
+          g.textAlign = "center";
+          g.fillText(
+            t.pausedBy === "end"
+              ? "Watched - tap to play again"
+              : "Tap to play",
+            128,
+            128,
+          );
+        }
+        sc.t.needsUpdate = true;
+      }
+
+      /* ======================================================================
+   The HUD line: who speaks or what plays, the words, and its one control
+   ====================================================================== */
+      const PAUSE =
+        '<svg viewBox="0 0 18 18"><rect x="4" y="3" width="3.6" height="12" rx="1" fill="currentColor"/><rect x="10.4" y="3" width="3.6" height="12" rx="1" fill="currentColor"/></svg>';
+      const PLAY =
+        '<svg viewBox="0 0 18 18"><path d="M5 3l10 6-10 6z" fill="currentColor"/></svg>';
+      const hex = (n) => "#" + n.toString(16).padStart(6, "0");
+      const setText = (el, v) => {
+        if (el.textContent !== v) el.textContent = v;
+      };
+      const firstName = (it) => it.title.split(",")[0];
+      /** What the line shows: a playing (or tap-paused) thing within its reach wins; else the story of this station; else a short note. */
+      function lineModel() {
+        const id = S.media;
+        if (id) {
+          const it = itById(id),
+            t = S.it[id];
+          if (
+            inStation(it) &&
+            dist(it) <= it.reach + 1 &&
+            (t.playing || t.pausedBy === "tap")
+          )
+            return { k: "media", id };
+        }
+        // away from its station a story shows only to offer the way back, never to repeat its words
+        if (
+          S.story &&
+          (!S.story.away || (S.story.phase === "walk" && S.story.offered))
+        )
+          return { k: "story" };
+        if (T < S.noteUntil) return { k: "note" };
+        return null;
+      }
+      let wordsKey = "",
+        wordsLeftAt = -9,
+        wordsChunks = null,
+        wordsChunk = -1;
+      const lineCtx = document.createElement("canvas").getContext("2d");
+      const fontOf = (el) => {
+        const cs = getComputedStyle(el);
+        return `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      };
+      /** Cuts words into chunks of CFG.lines lines that fit the line's text box (read once per new line or cue),
+       *  so a long line is shown in turns, the chunk holding the current word, and is never cut off. */
+      function chunkWords(list, lead) {
+        const maxW = $("#line .txt").clientWidth * 0.97;
+        if (!(maxW > 40)) return [[0, list.length]];
+        lineCtx.font = fontOf($("#lineWho"));
+        const leadW = lead ? lineCtx.measureText(lead).width + 6 : 0;
+        lineCtx.font = fontOf($("#lineWords"));
+        const sp = lineCtx.measureText(" ").width,
+          out = [];
+        let start = 0,
+          line = 1,
+          w = leadW;
+        list.forEach((word, i) => {
+          const ww = lineCtx.measureText(word).width;
+          if (i > start && w + sp + ww > maxW) {
+            if (line >= CFG.lines) {
+              out.push([start, i]);
+              start = i;
+              line = 1;
+              w = leadW + ww;
+            } else {
+              line++;
+              w = ww;
+            }
+          } else w += (i > start ? sp : 0) + ww;
+        });
+        out.push([start, list.length]);
+        return out;
+      }
+      function renderLine() {
+        const m = lineModel(),
+          el = $("#line");
+        el.classList.toggle("off", !m);
+        if (!m) return;
+        const dot = $("#lineDot"),
+          who = $("#lineWho"),
+          words = $("#lineWords"),
+          hint = $("#hintBtn"),
+          pp = $("#ppBtn"),
+          x = $("#leaveBtn");
+        let showPP = false,
+          playing = false,
+          prog = 0,
+          showX = false,
+          showHint = false,
+          dotCol = null,
+          whoT = "",
+          text = "",
+          key = "",
+          wordT = -1,
+          cueFrac = 0,
+          timedLine = null;
+        if (m.k === "media") {
+          const it = itById(m.id),
+            t = S.it[m.id];
+          dotCol = "#2dd4bf";
+          whoT = it.title;
+          showPP = true;
+          playing = t.playing;
+          prog = t.t / it.len;
+          const c = !t.playing
+            ? null
+            : it.cues.find((q) => t.t >= q.a && t.t < q.b + CFG.linger);
+          text = c ? c.text : "";
+          key = c ? `${m.id}:${c.a}` : "";
+          if (c) cueFrac = clamp((t.t - c.a) / (c.b - c.a), 0, 0.999);
+        } else if (m.k === "story") {
+          const st = S.story,
+            def = storyOf(st.id),
+            by = itById(def.entry);
+          dotCol = hex(by.coat);
+          if (st.phase === "speak") {
+            const step = def.steps[st.step],
+              L = step.timed[st.line];
+            whoT = firstName(itById(step.who));
+            showPP = true;
+            playing = !st.paused;
+            const lineProg = (st.line + st.t / L.end) / step.timed.length;
+            prog = clamp(lineProg, 0, 1);
+            if (st.paused) {
+              text = "";
+              key = "";
+            } else {
+              timedLine = L;
+              wordT = st.t;
+              key = `${st.id}:${st.step}:${st.line}`;
+            }
+            showX = !!st.paused;
+          } else {
+            whoT = def.title;
+            text = `step ${st.step + 1} of ${def.steps.length}`;
+            key = `walk:${st.id}:${st.step}`;
+            showX = true;
+            showHint = st.offered;
+          }
+        } else {
+          dotCol = "rgba(255,255,255,.5)";
+          whoT = "";
+          text = S.note;
+          key = "note:" + S.note;
+        }
+        dot.style.background = dotCol;
+        setText(who, whoT);
+        // the words: the current line or cue only, no history; they fade when nothing speaks
+        if (key) {
+          wordsLeftAt = T;
+        }
+        const list = timedLine
+          ? timedLine.words.map((w) => w.w)
+          : m.k === "media"
+            ? text.split(" ")
+            : null;
+        const fullKey = key && `${key}|${CFG.lines}|${CFG.strip}|${device.clientWidth}`;
+        if (key && fullKey !== wordsKey) {
+          wordsKey = fullKey;
+          wordsChunk = -1;
+          // a spoken line or a subtitle cue is cut into chunks that fit the line; a story's step note is short and shown whole
+          wordsChunks = list ? chunkWords(list, whoT) : null;
+          if (!list) words.textContent = text;
+          words.className =
+            m.k === "story" && !timedLine ? "words meta" : "words";
+        }
+        if (key && wordsChunks) {
+          let ci;
+          if (timedLine) {
+            let cur = 0;
+            timedLine.words.forEach((w, i) => {
+              if (wordT >= w.t) cur = i;
+            });
+            ci = Math.max(
+              0,
+              wordsChunks.findIndex(([a, b]) => cur >= a && cur < b),
+            );
+          } else
+            ci = Math.min(
+              wordsChunks.length - 1,
+              Math.floor(cueFrac * wordsChunks.length),
+            );
+          const [a, b] = wordsChunks[ci];
+          if (ci !== wordsChunk) {
+            wordsChunk = ci;
+            if (timedLine)
+              words.innerHTML = list
+                .slice(a, b)
+                .map((w) => `<i>${w.replace(/[<>&]/g, "")}</i>`)
+                .join(" ");
+            else words.textContent = list.slice(a, b).join(" ");
+          }
+          if (timedLine) {
+            const spans = words.children;
+            for (let i = 0; i < spans.length; i++)
+              spans[i].classList.toggle("on", wordT >= timedLine.words[a + i].t);
+          }
+        }
+        words.classList.toggle("quiet", !key && T - wordsLeftAt > 0.05);
+        hint.hidden = !showHint;
+        hint.setAttribute("aria-pressed", String(DR.active));
+        pp.hidden = !showPP;
+        x.hidden = !showX;
+        if (showPP) {
+          pp.style.setProperty("--p", prog.toFixed(3));
+          const want = playing ? "pause" : "play";
+          if (pp.dataset.s !== want) {
+            pp.dataset.s = want;
+            pp.firstElementChild.innerHTML = playing ? PAUSE : PLAY;
+          }
+          pp.setAttribute(
+            "aria-label",
+            `${playing ? "Pause" : "Play"} ${whoT}`,
+          );
+        }
+      }
+      // the same step as a tap on the ring: the first wakes it, the next change its range (the line says the new range)
+      $("#ringBtn").addEventListener("click", () => ringTap());
+      $("#line").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-act]");
+        if (!b) return;
+        const m = lineModel();
+        if (!m) return;
+        if (b.dataset.act === "pp") {
+          if (m.k === "media") toggle(m.id);
+          else if (S.story) S.story.paused = S.story.paused ? null : "tap";
+        } else if (b.dataset.act === "leave") endStory(false);
+        else if (b.dataset.act === "hint") showTheWay();
+      });
+      function ui() {
+        const h = $("#hud");
+        h.classList.toggle("s", CFG.strip === "s");
+        h.classList.toggle("l", CFG.strip === "l");
+        h.classList.toggle("one", CFG.lines === 1);
+        renderLine();
+        setText(
+          $("#beatTitle"),
+          beat
+            ? `${beat}/${BEATS.length} · ${BEATS[beat - 1].name}`
+            : "Walk freely",
+        );
+        $("#lookBtn").classList.toggle("on", S.pitch < -0.4);
+      }
+
+      /* ======================================================================
+   The measuring hook (behind the ruler toggle)
+   ====================================================================== */
+      const stats = {};
+      let measuring = QS.has("measure");
+      const frameMs = []; // the last 2 s of frame intervals
+      function orientKey() {
+        const r = device.getBoundingClientRect();
+        return r.width > r.height ? "landscape" : "portrait";
+      }
+      const med = (a) => {
+        if (!a.length) return 0;
+        const s = [...a].sort((p, q) => p - q);
+        return s[Math.floor(s.length / 2)];
+      };
+      const worst = (a) => a.reduce((p, q) => Math.max(p, q), 0);
+      function visibleHud() {
+        return [...device.querySelectorAll("[data-hud]")].filter((el) => {
+          if (el.closest("[hidden]")) return false;
+          const cs = getComputedStyle(el);
+          if (cs.display === "none" || Number(cs.opacity) < 0.35) return false;
+          const r = el.getBoundingClientRect();
+          return r.width > 0 && r.height > 0;
+        });
+      }
+      function measure() {
+        const dr = device.getBoundingClientRect(),
+          W = dr.width,
+          H = dr.height;
+        const boxes = visibleHud().map((el) => {
+          const r = el.getBoundingClientRect();
+          return {
+            el,
+            name: el.dataset.hud,
+            x: r.left - dr.left,
+            y: r.top - dr.top,
+            w: r.width,
+            h: r.height,
+            round: el.dataset.hud === "exit",
+          };
+        });
+        const rb = ringScreenBox();
+        if (rb)
+          boxes.push({
+            el: null,
+            name: "radar",
+            ...rb,
+            round: false,
+            world: true,
+          });
+        const step = 4;
+        let cov = 0;
+        for (let y = step / 2; y < H; y += step)
+          for (let x = step / 2; x < W; x += step)
+            for (const b of boxes) {
+              if (b.world) continue; // the ring lies in the world: it is not screen the HUD takes
+              if (x < b.x || x > b.x + b.w || y < b.y || y > b.y + b.h)
+                continue;
+              if (
+                b.round &&
+                Math.hypot(x - b.x - b.w / 2, y - b.y - b.h / 2) > b.w / 2
+              )
+                continue;
+              cov++;
+              break;
+            }
+        const pct = ((cov * step * step) / (W * H)) * 100;
+        for (const el of device.querySelectorAll(".ovl"))
+          el.classList.remove("ovl");
+        let ov = 0;
+        for (let i = 0; i < boxes.length; i++)
+          for (let j = i + 1; j < boxes.length; j++) {
+            const A = boxes[i],
+              B = boxes[j];
+            if (A.el && B.el && (A.el.contains(B.el) || B.el.contains(A.el)))
+              continue;
+            const ix = Math.min(A.x + A.w, B.x + B.w) - Math.max(A.x, B.x),
+              iy = Math.min(A.y + A.h, B.y + B.h) - Math.max(A.y, B.y);
+            if (ix > 2 && iy > 2) {
+              ov++;
+              if (measuring) {
+                A.el?.classList.add("ovl");
+                B.el?.classList.add("ovl");
+              }
+            }
+          }
+        const m = {
+          pct,
+          count: boxes.filter((b) => !b.world).length,
+          ov,
+          names: boxes.map((b) => b.name),
+          marks: ringMarks.n,
+          rim: ringMarks.rim,
+          hidden: ringMarks.hidden,
+          worst: worst(frameMs),
+          median: med(frameMs),
+          ringMed: med(ringCost),
+          ringWorst: worst(ringCost),
+        };
+        const ro = $("#readout");
+        ro.hidden = !measuring;
+        $("#hud").classList.toggle("measuring", measuring);
+        if (measuring) {
+          const walking = S.speed > CFG.walk;
+          setText(
+            ro,
+            `HUD ${pct.toFixed(1)}% · ${m.count} el · ${ov ? ov + " overlap" : "no overlap"}${rb ? " · ring in view" : ""} · ring ${S.radarAlpha > 0.5 ? "awake" : "asleep"} · ${walking ? `walking ${S.speed.toFixed(1)} m/s` : `still ${Math.min(S.stillFor, 99).toFixed(1)} s`} · marks ${m.marks} (${m.rim} on rim${m.hidden ? `, ${m.hidden} off by author` : ""}) · frame ${m.median.toFixed(0)}/${m.worst.toFixed(0)} ms · ring ${m.ringMed.toFixed(3)}/${m.ringWorst.toFixed(3)} ms`,
+          );
+          ro.classList.toggle("bad", ov > 0 || m.worst > 50);
+        }
+        if (beat) {
+          const k = orientKey();
+          stats[k] ??= {};
+          const s = (stats[k][beat] ??= { pct: 0, count: 0, ov: 0, worst: 0 });
+          s.pct = Math.max(s.pct, pct);
+          s.count = Math.max(s.count, m.count);
+          s.ov = Math.max(s.ov, ov);
+          s.worst = Math.max(s.worst, m.worst);
+          renderStats();
+        }
+        return m;
+      }
+      let statKey = "";
+      function renderStats() {
+        const k = orientKey(),
+          st = stats[k] ?? {},
+          key = k + JSON.stringify(st);
+        if (key === statKey) return;
+        statKey = key;
+        $("#statTable tbody").innerHTML = BEATS.map((b, i) => {
+          const s = st[i + 1];
+          return `<tr><td>${i + 1} ${b.name.split(" ").slice(0, 3).join(" ")}</td><td>${s ? s.pct.toFixed(1) : "-"}</td><td>${s ? s.count : "-"}</td><td>${s ? s.ov : "-"}</td><td>${s ? s.worst.toFixed(0) : "-"}</td></tr>`;
+        }).join("");
+      }
+
+      /* ======================================================================
+   The fixed demonstration
+   ====================================================================== */
+      let waiters = [];
+      const wait = (sec) =>
+        new Promise((res) => waiters.push({ end: T + sec, res }));
+      const walkTo = (p, speed = 1.3, face = true) =>
+        new Promise((res) => {
+          S.auto = { x: p.x, z: p.z, speed, face, res };
+        });
+      const turnBy = (rad, dur) =>
+        new Promise((res) => {
+          S.yawTarget = null;
+          S.turn = { from: S.yaw, to: S.yaw + rad, t0: T, dur, res };
+        });
+      const turnTo = (p, dur = 1.2) =>
+        turnBy(wrapPi(yawToward(p) - S.yaw), dur);
+      const LOOK_DOWN = -0.74;
+      const lookDown = () => {
+        S.pitchTo = LOOK_DOWN;
+        return wait(0.9);
+      };
+      const lookUp = () => {
+        S.pitchTo = -0.04;
+        return wait(0.7);
+      };
+      let markRes = null;
+      function mark(name) {
+        window.HC.lastMark = `b${beat}-${name}`;
+        if (!SHOTS) return Promise.resolve();
+        S.paused = true;
+        return new Promise((res) => {
+          markRes = () => {
+            S.paused = false;
+            res();
+          };
+        });
+      }
+      const tapWorld = (id) => {
+        const it = itById(id),
+          s = screenOf(it, 1.6);
+        if (s.front) ripple(s.x, s.y);
+        tapItem(id);
+      };
+      const tapEl = (sel) => {
+        const el = device.querySelector(sel);
+        if (!el || el.hidden) return;
+        rippleOn(el);
+        el.click();
+      };
+      const tapRing = () => {
+        const v = new THREE.Vector3(ringC.x, 0.035, ringC.z).project(camera),
+          r = device.getBoundingClientRect();
+        ripple(((v.x + 1) / 2) * r.width, ((1 - v.y) / 2) * r.height);
+        ringTap();
+      };
+      const standStill = () => wait(CFG.wake + CFG.fade + 0.3);
+      const waitLines = (n = 99) =>
+        new Promise((res) => {
+          const tick = () => {
+            const st = S.story;
+            if (!st || st.phase !== "speak" || n-- <= 0) res();
+            else waiters.push({ end: T + 0.25, res: tick });
+          };
+          tick();
+        });
+      const A = stById("A"),
+        B = stById("B");
+      const A_IN = { x: 0, z: -47 },
+        A_OUT = { x: 22, z: -86 },
+        B_IN = { x: 49, z: -119.5 };
+      const NEAR_PAIR = { x: 4.5, z: -64.5 };
+      let authBackup = null;
+      function snapRing() {
+        ringC.x = S.pos.x - Math.sin(S.yaw) * CFG.ahead;
+        ringC.z = S.pos.z - Math.cos(S.yaw) * CFG.ahead;
+      }
+      function base(n) {
+        S = fresh();
+        lastStation = A;
+        if (n >= 2) {
+          S.pos = { ...A_IN };
+          S.yaw = yawToward(itById("greta"));
+          S.here = "A";
+          S.visited.A = true;
+          S.zoom = 1;
+          S.stillFor = 0;
+        }
+        if (n >= 3) {
+          S.greeted.A = true;
+          S.storyDone.well = true;
+          S.it.greta.seen = true;
+          S.it.rimStone.seen = true;
+          S.pos = { x: 0.6, z: -55.6 };
+          S.yaw = yawToward(itById("aModel"));
+        }
+        if (n >= 5) {
+          S.it.aPic.seen = true;
+          S.it.aLong.seen = true;
+          S.it.aLong.page = 2;
+          S.it.aModel.seen = true;
+          S.pos = { x: -6, z: -66 };
+        }
+        if (n >= 6) {
+          S.it.aVid.t = 6;
+          S.it.aVid.pausedBy = "tap";
+          S.media = "aVid";
+          S.pos = { x: 0, z: -68 };
+        }
+        if (n >= 7) {
+          S.pos = { ...NEAR_PAIR };
+          S.yaw = yawToward(itById("aSign"));
+        }
+        if (n >= 8) {
+          S.pos = { x: 30, z: -94 };
+          S.here = null;
+          S.zoom = 0;
+          S.yaw = yawToward(B);
+          S.media = null;
+        }
+        S.radarAlpha = ASLEEP_ALPHA;
+        snapRing();
+      }
+      function breadAtWalk() {
+        S.pos = { x: 49.5, z: -113.2 };
+        S.here = "B";
+        S.visited.B = true;
+        S.zoom = 1;
+        startStory("bread");
+        S.story.step = 1;
+        S.story.phase = "walk";
+        S.story.minD = dist(itById("oven"));
+        S.yaw = yawToward(itById("ringer"));
+        snapRing();
+      }
+      const BEATS = [
+        {
+          name: "Walk up to the beam",
+          setup() {
+            base(1);
+            S.pos = { x: 0, z: -10 };
+            S.yaw = 0;
+            S.stillFor = 0;
+            S.speed = 1.3;
+            S.pitch = -0.3; // a glance down while walking: the ring sleeps, faint
+            snapRing();
+          },
+          async run() {
+            await walkTo({ x: 0, z: -24 }, 1.3);
+            await mark("walking");
+            await lookDown();
+            await standStill();
+            await mark("stations");
+            await lookUp();
+            await walkTo({ x: 0, z: -43.5 }, 1.3);
+            await walkTo(A_IN, 1.3);
+            await wait(1);
+          },
+        },
+        {
+          name: "Greta greets once: her words in the line",
+          setup() {
+            base(2);
+            S.pos = { x: 0, z: -40.5 };
+            S.here = null;
+            S.zoom = 0;
+            S.yaw = 0;
+            snapRing();
+          },
+          async run() {
+            await walkTo(A_IN, 1.3);
+            await wait(2.6);
+            await mark("speaking");
+            await waitLines();
+            await walkTo({ x: 0.9, z: -56.2 }, 1.3);
+            await turnTo(itById("rimStone"), 0.8);
+            await wait(1.4);
+            await mark("step2");
+            await waitLines();
+            await wait(1.2);
+          },
+        },
+        {
+          name: "Stand still, look down: the ring wakes",
+          setup() {
+            base(3);
+          },
+          async run() {
+            await lookDown();
+            await standStill();
+            await mark("awake");
+            await wait(2);
+            await lookUp();
+          },
+        },
+        {
+          name: "Look around: grey is seen",
+          setup() {
+            base(4);
+            S.pos = { x: -4, z: -52 };
+            S.yaw = yawToward(itById("aPic"));
+            snapRing();
+          },
+          async run() {
+            await walkTo({ x: -8, z: -58 }, 1.3);
+            await turnTo(itById("aPic"), 0.9);
+            await wait(2.4);
+            await walkTo({ x: -7, z: -62.5 }, 1.3);
+            await turnTo(itById("aLong"), 0.8);
+            for (let k = 0; k < 3; k++) {
+              tapWorld("aLong");
+              await wait(1.2);
+            }
+            await walkTo({ x: -4, z: -66 }, 1.3);
+            await turnTo(itById("aModel"), 0.8);
+            await wait(3.4);
+            await turnTo(itById("aSign"), 1.2);
+            await lookDown();
+            await standStill();
+            await mark("consumed");
+            await wait(1.5);
+            await lookUp();
+          },
+        },
+        {
+          name: "Video: its subtitles while you look away",
+          setup() {
+            base(5);
+          },
+          async run() {
+            await walkTo({ x: 1.5, z: -68 }, 1.3);
+            await turnTo(itById("aVid"), 0.8);
+            await wait(0.6);
+            tapWorld("aVid");
+            await wait(2.2);
+            await turnBy(Math.PI * 0.85, 2.4);
+            await wait(1.4);
+            await mark("away");
+            tapEl("#ppBtn");
+            await wait(1.2);
+            await mark("paused");
+            await wait(1.5);
+          },
+        },
+        {
+          name: "Two things close together",
+          setup() {
+            base(6);
+          },
+          async run() {
+            await walkTo(NEAR_PAIR, 1.3);
+            await turnTo(itById("aSign"), 0.8);
+            tapWorld("aSound");
+            await lookDown();
+            await standStill();
+            await mark("merged");
+            tapRing();
+            await wait(1.2);
+            await mark("split");
+            await wait(1.5);
+            tapRing();
+            await wait(0.5);
+            tapRing();
+            await wait(0.5);
+            tapRing();
+            await wait(1);
+            await lookUp();
+          },
+        },
+        {
+          name: "Leave with things unseen",
+          setup() {
+            base(7);
+          },
+          async run() {
+            await walkTo({ x: 13.1, z: -75.5 }, 1.4);
+            await walkTo(A_OUT, 1.4);
+            await lookDown();
+            await standStill();
+            await mark("stations");
+            await wait(1.5);
+            await lookUp();
+          },
+        },
+        {
+          name: "Station B: talk to one of three",
+          setup() {
+            base(8);
+          },
+          async run() {
+            await walkTo(B_IN, 1.4);
+            await turnTo(itById("ringer"), 1.0);
+            await lookDown();
+            await standStill();
+            await mark("three");
+            await lookUp();
+            tapWorld("baker");
+            await turnTo(itById("baker"), 0.8);
+            await wait(2.2);
+            await mark("story");
+            await waitLines();
+          },
+        },
+        {
+          name: "Walked the wrong way: a hint",
+          setup() {
+            base(8);
+            breadAtWalk();
+          },
+          async run() {
+            await walkTo({ x: 64, z: -112 }, 1.3);
+            await wait(0.8);
+            await mark("offered");
+            tapEl("#hintBtn");
+            await wait(0.6);
+            await mark("wind");
+            await turnTo(itById("oven"), 1.4);
+            await walkTo({ x: 41.5, z: -119.5 }, 1.4);
+            await wait(2.4);
+            await mark("arrived");
+            await waitLines();
+          },
+        },
+        {
+          name: "Author settings at work",
+          setup() {
+            base(8);
+            authBackup = JSON.parse(JSON.stringify(AUTH));
+            PRESETS.bHidden.apply(AUTH);
+            PRESETS.breadNoHints.apply(AUTH);
+            renderAuthor();
+            S.pos = { ...B_IN };
+            S.here = "B";
+            S.visited.B = true;
+            S.zoom = 1;
+            S.yaw = yawToward(itById("ringer"));
+            snapRing();
+          },
+          async run() {
+            await lookDown();
+            await standStill();
+            await mark("hidden");
+            await lookUp();
+            breadAtWalk();
+            await walkTo({ x: 64, z: -112 }, 1.3);
+            await wait(1.2);
+            await mark("nohint");
+            await wait(1);
+          },
+        },
+      ];
+      let runId = 0;
+      function cancelScripts() {
+        runId++;
+        waiters = [];
+        S.auto = null;
+        S.turn = null;
+        markRes = null;
+        S.paused = false;
+        stopDrift();
+      }
+      async function gotoBeat(n) {
+        cancelScripts();
+        dismissTry();
+        if (authBackup) {
+          AUTH = authBackup;
+          authBackup = null;
+          renderAuthor();
+        }
+        const my = runId;
+        beat = n;
+        BEATS[n - 1].setup();
+        const k = orientKey();
+        stats[k] ??= {};
+        stats[k][n] = { pct: 0, count: 0, ov: 0, worst: 0 };
+        ui();
+        await BEATS[n - 1].run();
+        if (my !== runId) return false;
+        window.HC.done = n;
+        return true;
+      }
+
+      /* ======================================================================
+   Controls
+   ====================================================================== */
+      const tryEl = $("#try");
+      const tryTimer = setTimeout(dismissTry, 12000);
+      function dismissTry() {
+        tryEl.classList.add("gone");
+        clearTimeout(tryTimer);
+      }
+      $("#prevBtn").onclick = () => gotoBeat(Math.max(1, (beat || 1) - 1));
+      $("#nextBtn").onclick = () => gotoBeat(Math.min(BEATS.length, beat + 1));
+      $("#menuBtn").onclick = () => {
+        $("#demo").hidden = !$("#demo").hidden;
+      };
+      $("#demoClose").onclick = () => {
+        $("#demo").hidden = true;
+      };
+      $("#lookBtn").onclick = () => {
+        S.pitchTo = S.pitch < -0.4 ? -0.04 : LOOK_DOWN;
+        dismissTry();
+      };
+      $("#measureBtn").onclick = () => {
+        measuring = !measuring;
+        $("#measureBtn").classList.toggle("on", measuring);
+        measure();
+      };
+      $("#measureBtn").classList.toggle("on", measuring);
+      $("#exitBtn").onclick = () => {};
+      {
+        const bb = $("#beatBtns");
+        BEATS.forEach((b, i) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = `${i + 1}. ${b.name}`;
+          btn.onclick = () => {
+            gotoBeat(i + 1);
+            if (innerWidth < 960) $("#demo").hidden = true;
+          };
+          bb.appendChild(btn);
+        });
+        const free = document.createElement("button");
+        free.type = "button";
+        free.textContent = "Start again, walk freely";
+        free.style.gridColumn = "1/-1";
+        free.onclick = () => {
+          cancelScripts();
+          if (authBackup) {
+            AUTH = authBackup;
+            authBackup = null;
+            renderAuthor();
+          }
+          beat = 0;
+          S = fresh();
+          lastStation = A;
+          snapRing();
+          if (innerWidth < 960) $("#demo").hidden = true;
+        };
+        bb.appendChild(free);
+      }
+      function syncCfg() {
+        for (const b of document.querySelectorAll("[data-cfg]"))
+          b.classList.toggle("on", String(CFG[b.dataset.cfg]) === b.dataset.v);
+      }
+      for (const b of document.querySelectorAll("[data-cfg]"))
+        b.onclick = () => {
+          const k = b.dataset.cfg;
+          CFG[k] =
+            typeof CFG[k] === "number" ? Number(b.dataset.v) : b.dataset.v;
+          syncCfg();
+        };
+      syncCfg();
+
+      /* ---------- the author settings, visitor side ---------- */
+      const word = (v) => (v === null ? "as above" : v ? "yes" : "no");
+      const cls = (v) => (v === null ? "" : v ? "yes" : "no");
+      const cycle = (v) => (v === null ? true : v ? false : null);
+      function sw(path, v, allowNull = true) {
+        return `<button type="button" class="${cls(v)}" data-au="${path}">${allowNull ? word(v) : v ? "yes" : "no"}</button>`;
+      }
+      function renderAuthor() {
+        const box = $("#authorBox");
+        if (!box) return;
+        const from = (it, key) => {
+          const r = resolveFor(key, it);
+          return `${r.v ? "yes" : "no"} (${r.from})`;
+        };
+        let h =
+          '<h5>Tour</h5><div class="au three head"><span></span><span>radar at all</span><span>on the radar</span><span>hints</span></div>';
+        h += `<div class="au three"><span class="nm">The whole tour</span>${sw("tour.radar", AUTH.tour.radar, false)}${sw("tour.shown", AUTH.tour.shown, false)}${sw("tour.hints", AUTH.tour.hints, false)}</div>`;
+        h += "<h5>Stations</h5>";
+        for (const s of STATIONS) {
+          const o = AUTH.station[s.id];
+          h += `<div class="au three"><span class="nm">${s.id}: ${s.title}</span>${sw(`station.${s.id}.radar`, o.radar)}${sw(`station.${s.id}.shown`, o.shown)}${sw(`station.${s.id}.hints`, o.hints)}</div>`;
+        }
+        h +=
+          '<h5>Stories</h5><div class="au head"><span></span><span>on the radar</span><span>hints</span></div>';
+        for (const [k, s] of Object.entries(STORIES)) {
+          const o = AUTH.story[k];
+          h += `<div class="au"><span class="nm">${s.title}<small>station ${stationOfStory(k)}</small></span>${sw(`story.${k}.shown`, o.shown)}${sw(`story.${k}.hints`, o.hints)}</div>`;
+        }
+        h +=
+          '<h5>Items</h5><div class="au head"><span></span><span>on the radar</span><span>hints</span></div>';
+        for (const it of ITEMS) {
+          const o = AUTH.item[it.id];
+          h += `<div class="au"><span class="nm">${it.st}: ${firstName(it)}<small>on the radar ${from(it, "shown")}, hints ${from(it, "hints")}</small></span>${sw(`item.${it.id}.shown`, o.shown)}${sw(`item.${it.id}.hints`, o.hints)}</div>`;
+        }
+        box.innerHTML = h;
+      }
+      $("#authorBox").addEventListener("click", (e) => {
+        const b = e.target.closest("[data-au]");
+        if (!b) return;
+        const parts = b.dataset.au.split("."),
+          key = parts.pop();
+        const o = parts.reduce((acc, p) => acc[p], AUTH);
+        o[key] = parts[0] === "tour" ? !o[key] : cycle(o[key]);
+        renderAuthor();
+      });
+      {
+        const pb = $("#presetBtns");
+        for (const [k, p] of Object.entries(PRESETS)) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.textContent = p.label;
+          btn.onclick = () => {
+            p.apply(AUTH);
+            renderAuthor();
+          };
+          btn.dataset.preset = k;
+          pb.appendChild(btn);
+        }
+        const rs = document.createElement("button");
+        rs.type = "button";
+        rs.textContent = 'Everything back to "as above"';
+        rs.onclick = () => {
+          AUTH = freshAuthor();
+          renderAuthor();
+        };
+        pb.appendChild(rs);
+      }
+      renderAuthor();
+
+      /* ======================================================================
+   The frame loop
+   ====================================================================== */
+      let lastNow = performance.now(),
+        lastMeasure = 0,
+        lastW = 0,
+        lastH = 0;
+      function frame(now) {
+        const rawMs = now - lastNow;
+        lastNow = now;
+        frameMs.push(rawMs);
+        if (frameMs.length > 120) frameMs.shift();
+        if (ringCost.length > 120) ringCost.splice(0, ringCost.length - 120);
+        const dt = Math.min(0.05, rawMs / 1000) * SPEED;
+        const w = device.clientWidth,
+          h = device.clientHeight;
+        if (w !== lastW || h !== lastH) {
+          lastW = w;
+          lastH = h;
+          renderer.setSize(w, h, false);
+          camera.aspect = w / h;
+          camera.fov = w > h ? 50 : 64;
+          camera.updateProjectionMatrix();
+          moteMat.uniforms.uViewH.value = h * renderer.getPixelRatio();
+        }
+        if (!S.paused) {
+          T += dt;
+          sim(dt);
+          updateWorld(dt);
+        }
+        camera.position.set(S.pos.x, 1.6, S.pos.z);
+        camera.rotation.set(S.pitch, S.yaw, 0);
+        updateRing(S.paused ? 0 : dt);
+        renderer.render(scene, camera);
+        ui();
+        // the measuring hook forces a layout and walks a 4 px grid, so it runs only while the hook is on
+        if (measuring && now - lastMeasure > 150) {
+          lastMeasure = now;
+          measure();
+        }
+        requestAnimationFrame(frame);
+      }
+      window.HC = {
+        lastMark: null,
+        done: 0,
+        stats,
+        CFG,
+        goto: (n) => gotoBeat(n),
+        resume: () => {
+          if (markRes) {
+            const r = markRes;
+            markRes = null;
+            r();
+          }
+        },
+        measure: () => measure(),
+        state: () => S,
+        author: () => AUTH,
+        ringCost: () => [...ringCost],
+      };
+      S.stillFor = 0;
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>

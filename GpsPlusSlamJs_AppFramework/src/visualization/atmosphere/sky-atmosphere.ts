@@ -87,6 +87,7 @@ import {
   type CloudSlabReach,
 } from './cloud-slab.js';
 import type { CloudDiscCentre } from './cloud-coverage.js';
+import { horizonVeilRise } from './horizon-veil.js';
 import {
   type AtmosphereDevice,
   type AtmosphereUniforms,
@@ -409,6 +410,16 @@ export class SkyAtmosphere {
   private reach: CloudSlabReach | null = null;
   /** The slab's aerial strength (`setCloudAerial`), kept across modes; null all of it. */
   private aerial: number | null = null;
+  /**
+   * The horizon veil (`setHorizonVeil`): the VISIBLE sky's only. The bake
+   * has its own uniforms, always off, so the veil never lights a surface.
+   */
+  private readonly skyVeil = {
+    atmSkyVeil: { value: new THREE.Vector3() },
+    atmSkyVeilOn: { value: 0 },
+    atmSkyVeilRise: { value: 0 },
+  };
+  private horizonVeilState: { colour: Rgb; riseDeg: number } | null = null;
 
   constructor(options: SkyAtmosphereOptions) {
     try {
@@ -463,7 +474,8 @@ export class SkyAtmosphere {
         this.uniforms.atmRadianceToScene,
         1,
         this.visibleCloudThreshold,
-        this.cloudAnchored
+        this.cloudAnchored,
+        this.skyVeil
       )
     );
     this.sky.name = 'atmosphere-sky';
@@ -481,7 +493,12 @@ export class SkyAtmosphere {
       this.bakeScale,
       0,
       this.clouds.atmCloudThreshold,
-      { value: 0 }
+      { value: 0 },
+      {
+        atmSkyVeil: { value: new THREE.Vector3() },
+        atmSkyVeilOn: { value: 0 },
+        atmSkyVeilRise: { value: 0 },
+      }
     );
     // The glow stays out of the environment: in the bake it lit every
     // surface's image-based light too (+17 levels on lit ground at noon,
@@ -506,7 +523,8 @@ export class SkyAtmosphere {
     scale: THREE.IUniform<number>,
     clampHorizon: number,
     threshold: THREE.IUniform<number>,
-    anchored: THREE.IUniform<number>
+    anchored: THREE.IUniform<number>,
+    veil: Record<string, THREE.IUniform>
   ): THREE.ShaderMaterial {
     return new THREE.ShaderMaterial({
       name,
@@ -522,6 +540,7 @@ export class SkyAtmosphere {
         atmSunDiscEnabled: { value: sunDisc },
         atmClampHorizon: { value: clampHorizon },
         atmRadianceToScene: scale,
+        ...veil,
       },
       side: THREE.BackSide,
       depthWrite: false,
@@ -1151,6 +1170,47 @@ export class SkyAtmosphere {
     if (this.mode === 'slab' && this.cloudMesh !== undefined) {
       setCloudSlabAerial(this.cloudMesh, strength);
     }
+  }
+
+  /**
+   * The horizon veil (`horizon-veil.ts`): the visible sky takes a fixed
+   * colour at and below the horizon, fading back to its own colour above
+   * with the height `riseDeg` (1/e there; 0 leaves the sky as it is). The
+   * colour is scene-linear, the units the haze blends in, so the sky meets
+   * a ground hazed toward the same veil (`AtmosphereHaze.setVeil`) without
+   * a step. `null`, the default, takes it off. The bake never draws it.
+   * Uniforms only: nothing is rebuilt. Validated before anything changes.
+   *
+   * @throws RangeError for a colour that is not three finite values of at
+   *   least 0, or a rise `horizonVeilRise` refuses.
+   */
+  setHorizonVeil(
+    colour: readonly [number, number, number] | null,
+    riseDeg = 0
+  ): void {
+    if (colour === null) {
+      this.horizonVeilState = null;
+      this.skyVeil.atmSkyVeilOn.value = 0;
+      return;
+    }
+    if (!colour.every((c) => Number.isFinite(c) && c >= 0)) {
+      throw new RangeError(
+        `the horizon veil must be three finite values of at least 0, got ${colour.join(', ')}`
+      );
+    }
+    const rise = horizonVeilRise(riseDeg);
+    this.horizonVeilState = {
+      colour: [colour[0], colour[1], colour[2]],
+      riseDeg,
+    };
+    this.skyVeil.atmSkyVeil.value.set(colour[0], colour[1], colour[2]);
+    this.skyVeil.atmSkyVeilRise.value = rise;
+    this.skyVeil.atmSkyVeilOn.value = 1;
+  }
+
+  /** The horizon veil {@link setHorizonVeil} set, or `null` (none). */
+  get horizonVeil(): { colour: Rgb; riseDeg: number } | null {
+    return this.horizonVeilState;
   }
 
   /**
