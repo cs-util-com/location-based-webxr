@@ -15,7 +15,11 @@
 
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 import * as Sentry from '@sentry/browser';
-import { getDefaultIntegrations } from '@sentry/browser';
+import {
+  defaultStackParser,
+  eventFromException,
+  getDefaultIntegrations,
+} from '@sentry/browser';
 import type { Breadcrumb, BrowserOptions, ErrorEvent } from '@sentry/browser';
 import type * as SentryModule from '@sentry/browser';
 import {
@@ -141,6 +145,26 @@ describe('sentryOptions', () => {
     expect(text).not.toContain('48.137154');
     expect(text).not.toContain('11.576124');
     expect(text).toContain('a3f2504e04f8911d39a0c0305e82c330');
+  });
+
+  it("tags every report with the Recorder's app name", () => {
+    // The three apps share one project: the tag is what tells the
+    // Recorder's reports apart from the Tour Viewer's and the map demo's.
+    expect(options.initialScope).toEqual({ tags: { app: 'recorder' } });
+  });
+
+  it('removes a pair of numbers from a rejected object the SDK serialised', async () => {
+    const event = (await eventFromException(
+      defaultStackParser,
+      { center: [48.137, 11.575] },
+      undefined,
+      false
+    )) as ErrorEvent;
+    // The SDK puts the object itself into `extra`, so the test is real.
+    expect(JSON.stringify(event.extra)).toContain('48.137');
+    const text = JSON.stringify(options.beforeSend?.(event, {}));
+    expect(text).not.toContain('48.137');
+    expect(text).not.toContain('11.575');
   });
 
   it('scrubs the spans of a sampled trace', () => {
@@ -288,6 +312,39 @@ describe('strictSentryOptions', () => {
       expect(text).not.toContain(secret);
     }
     expect(text).toContain('a3f2504e04f8911d39a0c0305e82c330');
+  });
+});
+
+// Why these tests matter: an unhandled rejection with a plain object carries
+// that object, whole, in `extra.__serialized__`: numbers under any key, keys
+// of any text. The apps visitors use set no `extra` of their own, so the
+// strict profile drops it rather than trusting the scrubber with free-form
+// data; the exception text the SDK writes from it is still scrubbed.
+describe('strictSentryOptions, data the SDK serialises', () => {
+  const options = strictSentryOptions('tour-viewer', OWN, 'gps.csutil.com');
+
+  it('drops the extra data of an unhandled rejection with a plain object', async () => {
+    const event = (await eventFromException(
+      defaultStackParser,
+      { center: [48.137, 11.575], 'at 48.1371, 11.5761': 1 },
+      undefined,
+      false
+    )) as ErrorEvent;
+    expect(event.extra).toBeDefined();
+    // The strict beforeSend is synchronous; the type allows a promise.
+    const out = options.beforeSend?.(event, {}) as ErrorEvent | null;
+    expect(out).not.toBeNull();
+    expect(out?.extra).toBeUndefined();
+    const text = JSON.stringify(out);
+    expect(text).not.toContain('48.137');
+    expect(text).not.toContain('11.575');
+    expect(out?.exception?.values?.length).toBe(1);
+  });
+
+  it('does not change the event it was given', () => {
+    const event: ErrorEvent = { type: undefined, extra: { a: 1 } };
+    options.beforeSend?.(event, {});
+    expect(event.extra).toEqual({ a: 1 });
   });
 });
 

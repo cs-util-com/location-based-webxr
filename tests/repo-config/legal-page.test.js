@@ -66,7 +66,7 @@ function visibleText(html) {
  */
 const PINNED = {
   date: '2026-11-16',
-  sha256: 'bcd35af20ee4c63240195ad4b2e67c8cd612e1d4d9b63077f46615b5c0d1e51c',
+  sha256: 'df970b08fe683a0048e3805195f2d64168de6e227305e59e879889b6c1405288',
 };
 
 describe('the legal page date and text', () => {

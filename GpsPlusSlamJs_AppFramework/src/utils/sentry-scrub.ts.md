@@ -44,8 +44,12 @@ dependency on the SDK, so its rules are tested on their own.
   - a pair of decimal numbers that looks like a latitude/longitude pair
     (`48.137154, 11.576124`, `48.1371,11.5761`, `-33.86882 151.20929`,
     `48.1, 11.576124`, `48.1371/11.5761`, `48.1371;11.5761`,
-    `48.1371%2C11.5761`, `48.1371+11.5761`) is removed: one of the two needs three or more
-    decimals, the other a decimal point;
+    `48.1371%2C11.5761`, `48.1371+11.5761`, `48.1371:11.5761`,
+    `48.1371|11.5761`, `48.1371 - 11.5761`) is removed: one of the two needs
+    three or more decimals, the other a decimal point. A hyphen counts as a
+    separator only with a space on both sides; without them it is a minus
+    sign. Clock times (`12:30`), stack positions (`.js:12:345`) and ranges of
+    short decimals (`1.5 - 2.5`) stay, having no number with three decimals;
   - an H3 cell index (15 hex digits starting with `8`, standing on its own)
     is removed. Sentry's own ids are 16 (span), 32 (event, trace) or 40
     (commit) hex digits and stay;
@@ -76,14 +80,19 @@ dependency on the SDK, so its rules are tested on their own.
       longer changes (`MAX_STRICT_PASSES = 8` bounds the loop; it settles in
       two or three).
 - `scrubDeep(value, ownHost, options?): T` - a copy of `value` with every string
-  scrubbed. Arrays and plain objects are copied, cycles kept as cycles;
+  scrubbed, object keys included (a serialised object can be keyed by a
+  place). Arrays and plain objects are copied, cycles kept as cycles;
   numbers, booleans and other objects pass through, so event ids,
   timestamps and status codes survive. Whatever a field named like a
   coordinate holds (`lat`, `latLng`, by the same rules as the text) becomes
   `[redacted]`, a whole array or object included, unless it is null or
   undefined: the SDK serialises a rejected plain object into the event, and
-  the text rules never see a number. The input is never changed. `options`
-  is passed on to `scrubText`.
+  the text rules never see a number. An array of exactly two numbers that
+  reads as a coordinate pair becomes `[redacted]` under ANY key (`center:
+[48.137, 11.575]`): both finite and within ±180, one with three or more
+  decimals as JavaScript writes it, the other possibly whole (a number loses
+  its `.0`). The input is never changed. `options` is passed on to
+  `scrubText`.
 
 ## Parameters and why these values
 
@@ -140,8 +149,16 @@ dependency on the SDK, so its rules are tested on their own.
 - The strict profile removes more than it needs to: a property name the
   browser quotes (`reading 'foo'`) and the keys of a logged JSON object go
   with the quoted text, which costs some debugging detail.
-- Object keys are not scrubbed, and numbers in an array under any other field
-  name (`position: [48.1371, 11.5761]`) pass, having no name to read.
+- A single number under an ordinary key passes (`{ x: 48.1371 }`), as does
+  a place held as two numbers in separate fields (`{ x: 48.1371, y:
+11.5761 }`) or in an array longer than two: nothing tells them from
+  measurements.
+- Not recognised in text either: a single unlabelled number, a pair split
+  across two fields, comma decimals (`48,1371 11,5761`), DMS with primes
+  (`48°8′13″`), Web Mercator metres. The privacy page therefore promises
+  only coordinates "written as a pair or next to a label such as lat/lng".
+- Two numbers within ±180 with three decimals (`[0.125, 2]`, a scale) are
+  removed although they are no place: the price of catching `[48.137, 11]`.
 
 ## Examples
 
@@ -169,7 +186,10 @@ scrubText('https://drive.google.com/file/d/1AbC.../view', 'gps.csutil.com');
   fragments (links, ids, queries, pairs, labels and punctuation), plain
   text unchanged. All were checked once at 100 times their run count.
   Added with the strict profile: no coordinate pair survives in any string
-  field of a nested event-shaped value, in either profile; strict
+  field or key of a nested event-shaped value, nor as two numbers in an
+  array, in either profile (keys are drawn from the pair leaves too, so the
+  key check can fail: removing the key scrubbing, or the numeric-pair rule,
+  turns it red at once); strict
   idempotence on report fragments with quotes, cells and long numbers mixed
   in and on random strings; no H3 cell or OSM id survives strict.
 - `sentry-options.test.ts` - the hooks that apply it.

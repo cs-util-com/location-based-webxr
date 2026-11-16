@@ -66,6 +66,9 @@ export function sentryOptions(
     // the live site's.
     environment: errorReportEnvironment(pageHostname),
 
+    // One project serves every app of the site; the tag tells them apart.
+    initialScope: { tags: { app: 'recorder' } },
+
     // No default personal data: the SDK then tells the service not to infer
     // or store the sender's IP address.
     sendDefaultPii: false,
@@ -101,7 +104,8 @@ export function sentryOptions(
 
 /**
  * Initialize the Sentry SDK with the Recorder's {@link sentryOptions}.
- * Should be called as early as possible in the application lifecycle.
+ * Call it in the first statement of the entry module. ES imports run first,
+ * so an error thrown while an imported module loads is not reported.
  */
 export function initSentry(): void {
   Sentry.init(sentryOptions());
@@ -128,6 +132,19 @@ const STRICT_LOG_LEVELS: ReadonlySet<string> = new Set([
   'error',
   'fatal',
 ]);
+
+/**
+ * The event without its `extra` data. These apps set none themselves; the
+ * SDK fills it with whatever object a promise was rejected with
+ * (`__serialized__`), which is free-form data no scrubber rule is written
+ * for. The exception's text, which names the object's keys, stays and is
+ * scrubbed.
+ */
+function withoutExtra<T extends { extra?: unknown }>(event: T): T {
+  if (event.extra === undefined) return event;
+  const { extra: _dropped, ...rest } = event;
+  return rest as T;
+}
 
 /** Whether the strict profile keeps a breadcrumb at all. */
 function keepsStrictBreadcrumb(breadcrumb: Sentry.Breadcrumb): boolean {
@@ -166,7 +183,7 @@ export function strictSentryOptions(
       defaults.filter(
         (integration) => !DROPPED_DEFAULT_INTEGRATIONS.has(integration.name)
       ),
-    beforeSend: (event) => scrubDeep(event, ownHost, strict),
+    beforeSend: (event) => scrubDeep(withoutExtra(event), ownHost, strict),
     beforeSendTransaction: (event) => scrubDeep(event, ownHost, strict),
     beforeSendSpan: (span) => scrubDeep(span, ownHost, strict),
     beforeBreadcrumb: (breadcrumb) =>
@@ -222,7 +239,9 @@ function sendTestReport(): void {
 /**
  * Starts error reporting on a visitor-facing page with
  * {@link strictSentryOptions}, and sends a test report when the page address
- * carries {@link SENTRY_TEST_PARAM}. Call it first thing in the page's entry.
+ * carries {@link SENTRY_TEST_PARAM}. Call it in the first statement of the
+ * page's entry module. ES imports run first, so an error thrown while an
+ * imported module loads is not reported.
  *
  * @returns whether reporting was started (only in a production build)
  */

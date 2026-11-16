@@ -298,6 +298,21 @@ describe('scrubText', () => {
     expect(scrubText('v 1.234 5.6.7', OWN)).toBe('v 1.234 5.6.7');
   });
 
+  // Why this test matters: a pair is not always joined by a comma. A log line
+  // or a serialised object can write it with a colon, a bar or a spaced
+  // hyphen, and the pair names a place just the same. Ordinary text with
+  // those separators (a clock time, a stack position, a range of short
+  // decimals) has no number with three decimals and stays.
+  it('removes a pair joined by a colon, a bar or a spaced hyphen', () => {
+    expect(scrubText('at 48.1371:11.5761', OWN)).toBe(`at ${REDACTED}`);
+    expect(scrubText('at 48.1371|11.5761', OWN)).toBe(`at ${REDACTED}`);
+    expect(scrubText('at 48.1371 | 11.5761', OWN)).toBe(`at ${REDACTED}`);
+    expect(scrubText('at 48.1371 - 11.5761', OWN)).toBe(`at ${REDACTED}`);
+    const kept =
+      'at 12:30, index-Bx81aQ.js:12:345, 1.5 - 2.5 s, a|b, v1.2:3.4, 2026-11-16';
+    expect(scrubText(kept, OWN)).toBe(kept);
+  });
+
   it('removes the value behind a label with an index or a unit', () => {
     expect(scrubText('lat1=48.1371 lon12: 11.5761', OWN)).toBe(
       `lat1=${REDACTED} lon12: ${REDACTED}`
@@ -484,6 +499,47 @@ describe('scrubDeep', () => {
     expect(out.timestamp).toBe(event.timestamp);
     expect(out.contexts.trace.trace_id).toBe(event.contexts.trace.trace_id);
     expect(out.breadcrumbs[0]?.data.status_code).toBe(200);
+  });
+
+  // Why this test matters: an object the SDK serialises (a rejected promise's
+  // value lands in `extra.__serialized__`) can hold a place as two numbers
+  // under a key no label rule knows, and its keys are text too. Neither may
+  // reach the service as it is.
+  it('removes a pair of numbers under any key, and scrubs keys', () => {
+    const out = scrubDeep(
+      {
+        center: [48.137, 11.575],
+        reversed: [-122.4194, 37.7749],
+        whole: [48.137154, 11],
+        route: {
+          points: [
+            [48.137, 11.575],
+            [48.138, 11.576],
+          ],
+        },
+        size: [1920, 1080],
+        scale: [0.5, 0.25],
+        triple: [48.137, 11.575, 3],
+        far: [480.137, 11.575],
+        '48.137154, 11.576124': 1,
+        'cell 8d1f8d3a1c3a43f': 'x',
+        plain_key: 2,
+      },
+      OWN
+    );
+    expect(out).toEqual({
+      center: REDACTED,
+      reversed: REDACTED,
+      whole: REDACTED,
+      route: { points: [REDACTED, REDACTED] },
+      size: [1920, 1080],
+      scale: [0.5, 0.25],
+      triple: [48.137, 11.575, 3],
+      far: [480.137, 11.575],
+      [REDACTED]: 1,
+      [`cell ${REDACTED}`]: 'x',
+      plain_key: 2,
+    });
   });
 
   it('does not change its input', () => {

@@ -125,7 +125,16 @@ const CAMEL_KEYED_COORDINATE = new RegExp(
 
 const PAIR_PRECISE = String.raw`-?\d{1,3}\.\d{${PAIR_MIN_DECIMALS},}`;
 const PAIR_ANY = String.raw`-?\d{1,3}\.\d+`;
-const PAIR_SEPARATOR = String.raw`(?:\s*(?:,|;|\/|\+|%2[Cc]|%20)\s*|\s+)`;
+/**
+ * What joins the two numbers of a pair: a comma, semicolon, slash, plus,
+ * colon or bar (spaces around it allowed), a hyphen with a space on both
+ * sides (`48.1371 - 11.5761`; without the spaces it is a minus sign, which
+ * the plain-space rule already reads), their percent-encoded forms, or
+ * spaces alone. Clock times, stack positions (`.js:12:345`) and ranges of
+ * short decimals stay, because a pair still needs a number with
+ * {@link PAIR_MIN_DECIMALS} decimals.
+ */
+const PAIR_SEPARATOR = String.raw`(?:\s*(?:,|;|\/|\+|:|\||%2[Cc]|%20)\s*|\s+-\s+|\s+)`;
 const COORDINATE_PAIR = new RegExp(
   String.raw`(?<![\d.])(?:${PAIR_PRECISE}${PAIR_SEPARATOR}${PAIR_ANY}|${PAIR_ANY}${PAIR_SEPARATOR}${PAIR_PRECISE})(?!\d|\.\d)`,
   'g'
@@ -318,20 +327,50 @@ function isCoordinateKey(key: string): boolean {
   return scrubLabelled(asText) !== asText;
 }
 
+/** Decimals of a number as JavaScript writes it (`48.137` has three). */
+function decimalsOf(value: number): number {
+  const text = String(value);
+  const dot = text.indexOf('.');
+  return dot === -1 || text.includes('e') ? 0 : text.length - dot - 1;
+}
+
+/** The largest number a coordinate of a pair can be (a longitude). */
+const COORDINATE_MAX = 180;
+
+/**
+ * Whether an array is two numbers that read as a latitude/longitude pair,
+ * whatever field holds it: both finite and within ±180, and one of them with
+ * {@link PAIR_MIN_DECIMALS} or more decimals, as for a pair in text. The other
+ * may be whole (`[48.137154, 11]`): a number loses its `.0`, which text keeps.
+ */
+function isCoordinatePair(node: readonly unknown[]): boolean {
+  if (node.length !== 2) return false;
+  const [a, b] = node;
+  if (typeof a !== 'number' || typeof b !== 'number') return false;
+  const inRange = (n: number) =>
+    Number.isFinite(n) && Math.abs(n) <= COORDINATE_MAX;
+  if (!inRange(a) || !inRange(b)) return false;
+  return Math.max(decimalsOf(a), decimalsOf(b)) >= PAIR_MIN_DECIMALS;
+}
+
 function isPlainObject(value: object): value is Record<string, unknown> {
   const proto: unknown = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 
 /**
- * Returns a copy of `value` with every string scrubbed by {@link scrubText}.
+ * Returns a copy of `value` with every string scrubbed by {@link scrubText},
+ * object keys included.
  *
  * Arrays and plain objects are copied (cycles are kept as cycles); numbers,
  * booleans and other objects are passed through untouched, so event ids,
  * timestamps and status codes survive, except that whatever a coordinate's
  * field name (`lat`, `latLng`) holds is replaced by {@link REDACTED}, unless it
- * is empty. A subtree deeper than {@link MAX_DEPTH} is replaced too. The input
- * is never changed. `options` is passed on to {@link scrubText}.
+ * is empty, and so is an array of two numbers that read as a coordinate pair
+ * (`center: [48.137, 11.575]`), under any key. A single number under an
+ * ordinary key is passed through: nothing tells it from a measurement. A
+ * subtree deeper than {@link MAX_DEPTH} is replaced too. The input is never
+ * changed. `options` is passed on to {@link scrubText}.
  */
 export function scrubDeep<T>(
   value: T,
@@ -345,7 +384,8 @@ export function scrubDeep<T>(
     copies.set(node, out);
     for (const [key, item] of Object.entries(node)) {
       const isEmpty = item === null || item === undefined;
-      out[key] =
+      // Keys are text too: a serialised object can be keyed by a place.
+      out[scrubText(key, ownHost, options)] =
         !isEmpty && isCoordinateKey(key) ? REDACTED : walk(item, depth + 1);
     }
     return out;
@@ -358,6 +398,7 @@ export function scrubDeep<T>(
     if (seen !== undefined) return seen;
     if (depth > MAX_DEPTH) return REDACTED;
     if (Array.isArray(node)) {
+      if (isCoordinatePair(node)) return REDACTED;
       const out: unknown[] = [];
       copies.set(node, out);
       for (const item of node) out.push(walk(item, depth + 1));

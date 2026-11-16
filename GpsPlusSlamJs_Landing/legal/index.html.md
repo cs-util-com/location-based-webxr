@@ -87,7 +87,11 @@ reads device storage or follows visitors across sites needs consent first.
     tracing, an `app` tag, log breadcrumbs at warning and above, the same
     DSN and region as the Recorder) and the strict profile of
     `utils/sentry-scrub.ts.md` (quoted text, H3 cells, runs of six or more
-    digits, `clat`/`clng` and every coordinate label removed). The pages
+    digits, `clat`/`clng` and every coordinate label removed). The page
+    promises coordinates "written as a pair or next to a label such as
+    lat/lng", no more: a single unlabelled number, comma decimals, DMS with
+    primes and Web Mercator metres pass the scrubber, which is why no
+    paragraph says "every coordinate". The pages
     start it in their entry modules and the city-build workers in their own
     scope (`demo-worker.ts`, `globe-city-worker.ts`); "recent steps" are the
     SDK's default click, navigation and fetch breadcrumbs. The retention is

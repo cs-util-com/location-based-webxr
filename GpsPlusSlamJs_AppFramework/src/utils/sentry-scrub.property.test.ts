@@ -43,7 +43,16 @@ const coordinate = (max: number, minDecimals = 3, maxDecimals = 8) =>
       return `${whole}.${digits}`;
     });
 
-const pairSeparator = fc.constantFrom(', ', ',', ' ', ';');
+const pairSeparator = fc.constantFrom(
+  ', ',
+  ',',
+  ' ',
+  ';',
+  ':',
+  ' | ',
+  '|',
+  ' - '
+);
 
 const label = fc.constantFrom(
   'lat',
@@ -317,7 +326,7 @@ const coordinatePair = fc
  * numbers next to each other, one of them with three or more decimals.
  */
 const LOOKS_LIKE_PAIR =
-  /-?\d{1,3}\.\d{3,}\s*(?:,|;|\/|\s)\s*-?\d{1,3}\.\d+|-?\d{1,3}\.\d+\s*(?:,|;|\/|\s)\s*-?\d{1,3}\.\d{3,}/;
+  /-?\d{1,3}\.\d{3,}\s*(?:,|;|\/|:|\||\s-\s|\s)\s*-?\d{1,3}\.\d+|-?\d{1,3}\.\d+\s*(?:,|;|\/|:|\||\s-\s|\s)\s*-?\d{1,3}\.\d{3,}/;
 
 /** Every string anywhere in `value`, keys included. */
 function stringsIn(value: unknown, out: string[] = []): string[] {
@@ -337,16 +346,57 @@ const leafWithPair = fc
   .tuple(plainText, coordinatePair, plainText)
   .map(([before, pair, after]) => `${before} ${pair} ${after}`);
 
-/** An event-shaped value: nested objects and arrays, pairs in its leaves. */
+/** A coordinate pair held as two numbers, the way a serialised object does. */
+const numericPair = fc
+  .tuple(coordinate(90), coordinate(180), fc.boolean())
+  .map(([lat, lon, latFirst]) =>
+    latFirst ? [Number(lat), Number(lon)] : [Number(lon), Number(lat)]
+  );
+
+/**
+ * Every array of two numbers anywhere in `value` that reads as a pair: both
+ * within ±180 (the range the scrubber claims) and, written as text, a pair by
+ * {@link LOOKS_LIKE_PAIR}.
+ */
+function numericPairsIn(value: unknown, out: number[][] = []): number[][] {
+  if (Array.isArray(value)) {
+    const [a, b] = value;
+    if (
+      value.length === 2 &&
+      typeof a === 'number' &&
+      typeof b === 'number' &&
+      Math.abs(a) <= 180 &&
+      Math.abs(b) <= 180 &&
+      LOOKS_LIKE_PAIR.test(`${a}, ${b}`)
+    ) {
+      out.push([a, b]);
+    }
+    value.forEach((item) => numericPairsIn(item, out));
+  } else if (value !== null && typeof value === 'object') {
+    Object.values(value).forEach((item) => numericPairsIn(item, out));
+  }
+  return out;
+}
+
+/**
+ * An event-shaped value: nested objects and arrays, pairs in its leaves and
+ * in its keys (a serialised object can be keyed by anything), plain floats
+ * and pairs held as numbers.
+ */
 const eventWithPairs = fc.letrec((tie) => ({
   node: fc.oneof(
     { depthSize: 'small', withCrossShrink: true },
     leafWithPair,
     plainText,
     fc.integer(),
+    fc.double({ min: -1000, max: 1000, noNaN: true }),
+    numericPair,
     fc.array(tie('node'), { maxLength: 4 }),
     fc.dictionary(
-      fc.constantFrom('message', 'value', 'data', 'url', 'extra', 'title'),
+      fc.oneof(
+        fc.constantFrom('message', 'value', 'data', 'url', 'extra', 'title'),
+        leafWithPair
+      ),
       tie('node'),
       { maxKeys: 4 }
     )
@@ -354,16 +404,20 @@ const eventWithPairs = fc.letrec((tie) => ({
 })).node;
 
 // Why this matters: the Tour Viewer and the map demo hand the scrubber whole
-// events of any shape (breadcrumb data, exception values, contexts). Whatever
-// string field a place lands in, in either profile, no pair may come out.
+// events of any shape (breadcrumb data, exception values, contexts, the
+// object a promise was rejected with). Whatever string field or key a place
+// lands in, or as two numbers under whatever key, in either profile, no pair
+// may come out. Keys are drawn from the pair leaves too: with fixed keys the
+// check on keys could never fail.
 describe('scrubDeep properties', () => {
-  it('lets no coordinate pair through in any string field', () => {
+  it('lets no coordinate pair through in any string field or key', () => {
     fc.assert(
       fc.property(eventWithPairs, fc.boolean(), (event, strict) => {
         const out = scrubDeep(event, OWN, { strict });
         for (const text of stringsIn(out)) {
           expect(text).not.toMatch(LOOKS_LIKE_PAIR);
         }
+        expect(numericPairsIn(out)).toEqual([]);
       }),
       { numRuns: 300 }
     );
