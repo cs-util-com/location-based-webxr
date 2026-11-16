@@ -138,10 +138,14 @@ if (atmHazeMode > 0.5) {
     float atmBoundary = smoothstep(fogNear, fogFar, vFogDepth);
   #endif
   // The world's edge (setRim): the fade completes by the rim's outer radius
-  // from its centre, measured in the world's horizontal plane.
-  vec3 atmWorld = cameraPosition + (vec4(vAtmViewPosition, 0.0) * viewMatrix).xyz;
-  atmBoundary = max(atmBoundary, atmHazeRimOn * smoothstep(atmHazeRim.z, atmHazeRim.w,
-    length(atmWorld.xz - atmHazeRim.xy)));
+  // from its centre, measured in the world's horizontal plane. Branched, not
+  // weighted: smoothstep is undefined for edges that do not rise, and a NaN
+  // would survive a weight of 0.
+  if (atmHazeRimOn > 0.5) {
+    vec3 atmWorld = cameraPosition + (vec4(vAtmViewPosition, 0.0) * viewMatrix).xyz;
+    atmBoundary = max(atmBoundary, smoothstep(atmHazeRim.z, atmHazeRim.w,
+      length(atmWorld.xz - atmHazeRim.xy)));
+  }
   vec3 atmHazeKeep = exp(-atmHazeExtinction * length(vAtmViewPosition)) * (1.0 - atmBoundary);
   gl_FragColor.rgb = gl_FragColor.rgb * atmHazeKeep + atmHazeSky * (1.0 - atmHazeKeep);
 }
@@ -273,7 +277,8 @@ export class AtmosphereHaze {
       atmRadianceToScene: { value: 0 },
       atmHazeVeil: { value: new THREE.Vector3() },
       atmHazeVeilOn: { value: 0 },
-      atmHazeRim: { value: new THREE.Vector4() },
+      // Rising edges even while off (setRim keeps them rising).
+      atmHazeRim: { value: new THREE.Vector4(0, 0, 0, 1) },
       atmHazeRimOn: { value: 0 },
     };
     this.updateExtinction();
