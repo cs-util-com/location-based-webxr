@@ -86,17 +86,31 @@ the invented roofscape) and the toggles plan
   change its roof. Deliberate; bounding it would make a roof depend on where
   the window was cut.
 - Defensive: a ring the skeleton refuses (`SkeletonFailure`) gives a lid,
-  never a throw; any other error is a defect and propagates.
+  never a throw. **One house never breaks the plan**: any other throw while
+  planning one footprint leaves it without a plan (drawn as its plain
+  volume, indexed at its tagged height, the same in both), and a throw in a
+  mesh check counts as "does not close". The planner runs before
+  `buildBuildings` isolates each building and inside the obstacle index,
+  which isolates nothing, so one defect once failed both. Not silent:
+  `PlanOptions.onDefect` hears of each such house once (`buildBuildings`
+  passes its `onFallback`).
 - **Every roof granted is a roof whose mesh closes** (2026-11-16). The
   planner runs the closure check of `skeletonMesh` on each candidate roof
-  (at an eave of 0 m; no dependence on the eave was seen from 0 to 600 m)
-  and moves on when it fails: a gabled roof falls back to the hipped or
+  (at an eave of 0 m) and moves on when it fails: a gabled roof falls back to the hipped or
   shared one, and when none closes the building takes a lid. Without it a
   granted roof could throw at mesh time, and one such building failed the
   whole city build; the obstacle index reads the plan, so a roof drawn as
   something else would also disagree with the screen. `buildBuildings`
   still guards the real mesh (`buildings.ts.md`). Slivers of
   soffit under 1e-6 m2 are skipped.
+- **A granted roof is stitched once in the city build.** The eave-0 mesh the
+  check built is kept (a `WeakMap` keyed by the roof) and
+  `inventedRoofMesh` lifts it by the real eave instead of stitching again:
+  the drawn mesh is the checked one, its eave corners land exactly on the
+  wall tops, and its raised corners differ from a stitch at that eave only
+  by float32 rounding. The obstacle index cannot skip the check: whether a
+  roof is granted, so its height, depends on it, and the index must agree
+  with the city. So it stitches each granted roof once, as the city does.
 
 ## Examples
 
@@ -129,7 +143,11 @@ The warm delivery more than doubles, so the globe builds with
   overhang on free walls, cut at the rise limit, a stated height, gable
   share), the mesh (top, roof range, soffit winding).
 - `invented-roofs.errors.test.ts`: a `SkeletonFailure` leaves the building
-  flat, any other error from the skeleton propagates.
+  flat and reports nothing; any other error from the skeleton leaves that
+  house without a plan and is reported once through `onDefect`.
+- `invented-roofs.planner-isolation.test.ts`: a defect in one house's
+  skeleton or roof mesh fails neither the planner, the city build nor the
+  obstacle index, and both draw and index the same height for it.
 - `testdata/sites/site-invented-roof-sweep.test.ts`: the invented-roof
   counts at Park Slope, Midtown and Meggen with each planner parameter
   varied over a plausible range, the reversals pinned.
@@ -140,7 +158,10 @@ The warm delivery more than doubles, so the globe builds with
 - `invented-roofs.closure.property.test.ts`: every granted roof meshes at
   grounds 0 to 600 m over stars, Ls (equal-winged too), Ts and squares; a
   star whose gabled roof does not close is pinned as a hipped roof (with the
-  closure check removed it plans the gable, and the test fails).
+  closure check removed it plans the gable, and the test fails; the house is
+  asserted to wish for gables, so the pin cannot pass vacuously). Both
+  pinned stars plan the same style and height (within 1 cm) in two frames
+  about half a kilometre apart, as the city and the obstacle index plan them.
 - `invented-roofs.property.test.ts`: drawn top at the planned top within the
   weld and never above it, the rise limit, two replayed seeds that once
   failed a 0.5 mm closeness, order invariance, and the same plans under any translation of

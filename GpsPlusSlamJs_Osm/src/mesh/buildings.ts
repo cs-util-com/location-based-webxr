@@ -187,7 +187,13 @@ function outlineVolumes(
     options.inventedRoofs === true
       ? planInventedRoofs(
           inventedFootprints(outlines, parts, partsByOutline, claimed),
-          { frame: options.frame },
+          {
+            frame: options.frame,
+            // A house whose plan survived a defect is not drawn as planned.
+            ...(options.onFallback === undefined
+              ? {}
+              : { onDefect: options.onFallback }),
+          },
         )
       : undefined;
   for (const outline of outlines) {
@@ -1102,17 +1108,24 @@ function inventedVolume(
     roofed = inventedRoofMesh(plan, ground);
   } catch (error) {
     if (!(error instanceof SkeletonFailure)) throw error;
-    // THE LAST GUARD: the planner grants only roofs whose mesh closes at an
-    // eave of 0 m, so this one did there and not on this ground. A flat lid
-    // at the planned top keeps the drawn top where the obstacle index puts
-    // it, which the plain volume from the tags would not.
+    // THE LAST GUARD: the planner grants only roofs whose mesh closed where
+    // it checked them, so this one did there and not here. A flat lid at
+    // the planned top keeps the drawn top where the obstacle index puts it,
+    // which the plain volume from the tags would not.
+    let lid: BuildingVolume;
+    try {
+      lid = inventedVolume(
+        feature,
+        polygons,
+        { kind: "lid", why: "no closed roof", heightM: inventedTotalM(plan) },
+        ground,
+      );
+    } catch {
+      // Reported once, by `isolated`, which falls back to the plain volume.
+      throw error;
+    }
     onFallback?.(error);
-    return inventedVolume(
-      feature,
-      polygons,
-      { kind: "lid", why: "no closed roof", heightM: inventedTotalM(plan) },
-      ground,
-    );
+    return lid;
   }
   return assembleVolume(feature, polygons, undefined, heights, [roofed], {
     ground,

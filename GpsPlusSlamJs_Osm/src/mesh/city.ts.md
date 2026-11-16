@@ -20,11 +20,13 @@ the same ground.
   without a field. One derivation, so every layer stands on one surface.
 - `buildCity(features, ground, { window }) → City` - `{ volumes, barriers,
 buildings, trees, cosmeticTrees, furniture, roads, roadCount,
-fallbackBuildings, firstFallbackError? }`. `fallbackBuildings` counts the
+fallbackBuildings }`. `fallbackBuildings` counts the
   buildings not drawn as built (a roof drawn as a lid because its mesh did not
-  close, or an outline drawn plain or skipped because its build threw;
-  `buildings.ts.md`), over every building built, `withinM` or not;
-  `firstFallbackError` is the first such error, for a consumer to log. `window` (a lat/lng
+  close, a house drawn plain because planning its roof hit a defect, or an
+  outline drawn plain or skipped because its build threw; `buildings.ts.md`),
+  over every building built, `withinM` or not. A count only: the errors stay
+  in the build (a consumer that wants them passes `onFallback` to
+  `buildBuildings`). `window` (a lat/lng
   `Bbox`) is REQUIRED (city objects plan 2026-11-07-2315 section 4): the
   bounding box of the data the caller fetched; everything invented from a
   relation (the cosmetic trees today) stays inside it. RangeError without it.
@@ -148,7 +150,7 @@ for (const chunk of city.buildings) draw(chunk);
 
 ## Tests
 
-`buildings.isolation.test.ts` - `fallbackBuildings` and `firstFallbackError`.
+`buildings.isolation.test.ts` - `fallbackBuildings`.
 
 `city.test.ts` - volumes, barriers and trees built; street furniture of
 every kind by default, only the kinds asked for, none for `[]`, within

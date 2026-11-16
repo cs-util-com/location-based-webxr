@@ -57,6 +57,7 @@ import type {
   PriorEntry,
   RoofscapeParams,
 } from "./roofscape-rules.js";
+import type { SkeletonMesh } from "./skeleton-mesh.js";
 import { skeletonMesh } from "./skeleton-mesh.js";
 import { mixedUnit } from "./stable-jitter.js";
 import { dropClosingPoint } from "./triangulate.js";
@@ -152,11 +153,53 @@ export function planInventedRoofs(
   const walls = new SegmentGrid(footprints);
   const plans = new Map<OsmFeatureKey, InventedPlan>();
   footprints.forEach((footprint, i) => {
-    const local = locals[i] ?? IDENTITY;
-    const plan = planOne(footprint, local, priors, walls, params);
+    const plan = isolatedPlan(
+      (noteDefect) =>
+        planOne(footprint, locals[i] ?? IDENTITY, priors, walls, {
+          params,
+          noteDefect,
+        }),
+      options.onDefect,
+    );
     if (plan !== undefined) plans.set(footprint.key, plan);
   });
   return plans;
+}
+
+/**
+ * ONE HOUSE NEVER BREAKS THE PLAN. A throw while planning one footprint (a
+ * defect, not a refused ring: those are answered inside `planOne`) leaves it
+ * without a plan, so it is drawn as its plain volume and the obstacle index
+ * takes its tagged height, the same answer in both. The planner runs before
+ * `buildBuildings` isolates each building and inside the obstacle index,
+ * which isolates nothing, so without this one house failed both.
+ *
+ * Not silent: the house's first defect, here or in a mesh check that
+ * swallowed it (`meshCloses`), goes to `onDefect`, once per house.
+ */
+function isolatedPlan(
+  plan: (noteDefect: (error: unknown) => void) => InventedPlan | undefined,
+  onDefect: ((error: unknown) => void) | undefined,
+): InventedPlan | undefined {
+  const defects: unknown[] = [];
+  const noteDefect = (error: unknown): void => {
+    defects.push(error);
+  };
+  try {
+    return plan(noteDefect);
+  } catch (error) {
+    noteDefect(error);
+    return undefined;
+  } finally {
+    if (defects.length > 0) onDefect?.(defects[0]);
+  }
+}
+
+/** What every step of one footprint's plan reads. */
+interface PlanRun {
+  readonly params: RoofscapeParams;
+  /** Hears of a defect the plan survived (see `isolatedPlan`). */
+  readonly noteDefect: (error: unknown) => void;
 }
 
 /** How `planInventedRoofs` runs. */
@@ -169,6 +212,12 @@ export interface PlanOptions {
    */
   readonly frame?: EnuFrame;
   readonly params?: RoofscapeParams;
+  /**
+   * Hears, once per footprint, of a defect its plan survived: any throw that
+   * is not a refused ring, while planning it or checking its mesh. That
+   * footprint then has another roof, a lid or no plan. Absent: silently.
+   */
+  readonly onDefect?: (error: unknown) => void;
 }
 
 /** A tenth of a millimetre: a building's own coordinates are rounded to it. */
@@ -230,8 +279,9 @@ function planOne(
   local: Local,
   priors: ReturnType<typeof neighbourhoodPriors>,
   walls: SegmentGrid,
-  params: RoofscapeParams,
+  run: PlanRun,
 ): InventedPlan | undefined {
+  const { params } = run;
   const { key, tags } = footprint;
   if (footprint.outlineKey !== undefined || footprint.polygons.length !== 1) {
     return undefined;
@@ -257,7 +307,7 @@ function planOne(
       heightM: refusedHeightM(tags, area, key, prior, params),
     };
   }
-  return roofFor({ ...footprint, polygons }, local, area, walls, params);
+  return roofFor({ ...footprint, polygons }, local, area, walls, run);
 }
 
 /**
@@ -270,8 +320,9 @@ function roofFor(
   local: Local,
   area: number,
   walls: SegmentGrid,
-  params: RoofscapeParams,
+  run: PlanRun,
 ): InventedPlan | undefined {
+  const { params } = run;
   const { key, tags } = footprint;
   const rings = orientedRings(
     footprint.polygons[0] ?? [],
@@ -284,7 +335,7 @@ function roofFor(
     .near(placedRing(outer, place))
     .map((s) => ({ ...s, a: toLocal(s.a, local), b: toLocal(s.b, local) }));
   const shared = sharedWalls(outer, key, near, params);
-  const best = bestRoof(rings, shared, houseOf(tags, key, params), params);
+  const best = bestRoof(rings, shared, houseOf(tags, key, params), run);
   const eave = inventedEaveHeightM(tags, area, key);
   if (best === undefined) {
     return { kind: "lid", why: "no sound roof", heightM: eave };
@@ -389,8 +440,9 @@ function bestRoof(
   rings: Rings,
   shared: readonly boolean[],
   house: { readonly wantsGable: boolean; readonly tan: number },
-  params: RoofscapeParams,
+  run: PlanRun,
 ): BestRoof | undefined {
+  const { params } = run;
   const sharedSet = new Set<number>();
   shared.forEach((is, i) => {
     if (is) sharedSet.add(i);
@@ -399,7 +451,7 @@ function bestRoof(
   // a gabled roof whose mesh would not close becomes a hipped one, not a lid.
   for (const walls of verticalWalls(rings, shared, sharedSet, house, params)) {
     const fit = (over: Rings) =>
-      fitRoof(over, walls, sharedSet, house.tan, params);
+      fitRoof(over, walls, sharedSet, house.tan, run);
     const eaved = eaveRings(rings, walls.zero, params.overhangM);
     const best = (eaved === undefined ? undefined : fit(eaved)) ?? fit(rings);
     if (best !== undefined) return best;
@@ -444,21 +496,60 @@ function verticalWalls(
  * True when the roof's mesh closes (`skeletonMesh`'s check) at `tan`. The
  * planner grants no roof that would fail it at mesh time: that building
  * would be drawn as something other than its plan, and the obstacle index,
- * which reads the plan, would disagree with the screen.
+ * which reads the plan, would disagree with the screen. ANY throw counts as
+ * "does not close", a defect as much as an open mesh: the next roof, or a
+ * lid, follows for this house alone.
  *
- * Checked at an eave of 0 m: the planner does not know the ground, and the
- * check showed no dependence on the eave's height from 0 to 600 m
- * (`invented-roofs.closure.property.test.ts`). `inventedVolume` in
- * `buildings.ts` still guards the real mesh.
+ * Checked at an eave of 0 m, where the planner does not know the ground. The
+ * mesh it checked is kept (`closedMeshes`) and `inventedRoofMesh` draws that
+ * very mesh lifted to the real eave, so what is drawn is what was checked
+ * and a granted roof is stitched once in the city build, not twice.
  */
-function meshCloses(roof: SkeletonRoof, tan: number): boolean {
+function meshCloses(
+  roof: SkeletonRoof,
+  tan: number,
+  noteDefect: (error: unknown) => void,
+): boolean {
   try {
-    skeletonMesh(roof, { eaveM: 0, slope: tan });
+    const mesh = skeletonMesh(roof, { eaveM: 0, slope: tan });
+    closedMeshes.set(roof, { tan, mesh });
     return true;
   } catch (error) {
-    if (error instanceof SkeletonFailure) return false;
-    throw error;
+    if (!(error instanceof SkeletonFailure)) noteDefect(error);
+    return false;
   }
+}
+
+/**
+ * The eave-0 mesh of every roof `meshCloses` passed, with the slope it was
+ * checked at. Weak, so a plan dropped takes its mesh with it.
+ */
+const closedMeshes = new WeakMap<
+  SkeletonRoof,
+  { readonly tan: number; readonly mesh: SkeletonMesh }
+>();
+
+/**
+ * The roof's mesh with its eave at `eaveM`: the checked eave-0 mesh lifted
+ * by `eaveM` when there is one for this slope, else stitched here. Lifting
+ * moves every corner by the same height, so the welds and triangles are the
+ * checked ones, and the eave corners (0 before) land exactly on `eaveM`, as
+ * the wall tops do.
+ */
+function roofMeshAt(
+  roof: SkeletonRoof,
+  tan: number,
+  eaveM: number,
+): SkeletonMesh {
+  const closed = closedMeshes.get(roof);
+  if (closed === undefined || closed.tan !== tan) {
+    return skeletonMesh(roof, { eaveM, slope: tan });
+  }
+  const positions = Float32Array.from(closed.mesh.mesh.positions);
+  for (let i = 1; i < positions.length; i += 3) {
+    positions[i] = (positions[i] as number) + eaveM;
+  }
+  return { ...closed.mesh, mesh: { ...closed.mesh.mesh, positions } };
 }
 
 /**
@@ -471,19 +562,21 @@ function fitRoof(
   walls: VerticalWalls,
   sharedSet: ReadonlySet<number>,
   tan: number,
-  params: RoofscapeParams,
+  run: PlanRun,
 ): BestRoof | undefined {
+  const { params, noteDefect } = run;
   const whole = runSkeleton(over, walls.zero);
   if (whole === undefined) return undefined;
   const fitted = Math.min(tan, params.maxRiseM / whole.ridgeT);
   if (fitted >= params.tanFloor) {
-    return meshCloses(whole, fitted)
+    return meshCloses(whole, fitted, noteDefect)
       ? { style: walls.style, roofRings: over, roof: whole, tan: fitted }
       : undefined;
   }
   // Too wide for a whole roof: slopes up to the limit, a flat top after it.
   const cut = runSkeleton(over, sharedSet, params.maxRiseM / params.tanFloor);
-  if (cut === undefined || !meshCloses(cut, params.tanFloor)) return undefined;
+  if (cut === undefined || !meshCloses(cut, params.tanFloor, noteDefect))
+    return undefined;
   return { style: "cut", roofRings: over, roof: cut, tan: params.tanFloor };
 }
 
@@ -523,7 +616,7 @@ export function inventedRoofMesh(
   plan.rings.forEach((ring, r) => {
     addWalls(builder, ring, base, eave, r === 0);
   });
-  const roof = skeletonMesh(plan.roof, { eaveM: eave, slope: plan.tan });
+  const roof = roofMeshAt(plan.roof, plan.tan, eave);
   const roofStart = builder.vertexCount;
   builder.append(roof.mesh);
   addSoffits(builder, plan, eave);

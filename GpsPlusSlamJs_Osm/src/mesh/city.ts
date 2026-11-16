@@ -211,8 +211,6 @@ export interface City {
    * fails the city.
    */
   readonly fallbackBuildings: number;
-  /** The first of those failures, for a consumer's log; absent at 0. */
-  readonly firstFallbackError?: unknown;
 }
 
 /**
@@ -263,11 +261,13 @@ export function buildCity(
     withinM === undefined ||
     (Math.abs(p.x) <= withinM && Math.abs(p.y) <= withinM);
   const all = [...features];
-  const fallbackErrors: unknown[] = [];
+  let fallbackBuildings = 0;
   const built = buildBuildings(all, {
     ...ground,
     inventedRoofs: options.inventedRoofs !== false,
-    onFallback: (error) => fallbackErrors.push(error),
+    onFallback: () => {
+      fallbackBuildings += 1;
+    },
   });
   const volumes = withinWindow(built, inside);
   const barriers = buildBarriers(all, ground).filter((b) =>
@@ -379,8 +379,7 @@ export function buildCity(
     roadCount,
     zebraStripeCount,
     pedestrianAreaCount,
-    fallbackBuildings: fallbackErrors.length,
-    firstFallbackError: fallbackErrors[0],
+    fallbackBuildings,
   };
   return { ...city, ...cityGroundTint(all, ground, options, colours) };
 }

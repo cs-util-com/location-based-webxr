@@ -137,15 +137,12 @@ describe("buildCity counts the buildings not drawn as built", () => {
   it("counts none when every building is drawn as built", () => {
     const city = buildCity([HOUSE, NEIGHBOUR], { frame }, { window: W });
     expect(city.fallbackBuildings).toBe(0);
-    expect(city.firstFallbackError).toBeUndefined();
   });
 
-  it("counts a building drawn without its roof, and keeps the first error", () => {
-    const failure = new SkeletonFailure("the stitched roof is not closed");
-    mesh.fail = failure;
+  it("counts a building not drawn as built", () => {
+    mesh.fail = new SkeletonFailure("the stitched roof is not closed");
     const city = buildCity([HOUSE, NEIGHBOUR], { frame }, { window: W });
     expect(city.fallbackBuildings).toBe(1);
-    expect(city.firstFallbackError).toBe(failure);
     expect(city.volumes.map((v) => v.feature).sort()).toEqual([
       "way/1",
       "way/2",

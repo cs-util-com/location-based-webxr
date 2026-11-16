@@ -1,12 +1,16 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import type { EnuPoint } from "./enu.js";
+import type { EnuFrame, EnuPoint } from "./enu.js";
+import { enuFrameAt } from "./enu.js";
 import {
   inventedRoofMesh,
+  inventedTotalM,
   planInventedRoofs,
   type InventedFootprint,
 } from "./invented-roofs.js";
+import { ROOFSCAPE_DEFAULTS } from "./roofscape-rules.js";
+import { mixedUnit } from "./stable-jitter.js";
 
 /**
  * Every invented roof the planner grants can be meshed, at any ground height.
@@ -14,10 +18,11 @@ import {
  * WHY THIS FILE MATTERS. `inventedRoofMesh` checks the stitched roof is
  * closed and throws `SkeletonFailure` when it is not. The planner did not run
  * that check, so a roof it granted could throw at mesh time, and one throwing
- * building failed the whole city build. And the mesh is built at the real
- * eave height (the ground under the building plus its walls), where float32
- * positions are coarser than at 0 m, so a roof that closes at 0 m is not
- * proof that it closes on a hill.
+ * building failed the whole city build. The mesh is drawn at the real eave
+ * height (the ground under the building plus its walls), where float32
+ * positions are coarser than at 0 m; it is the checked eave-0 mesh lifted
+ * there, and this file meshes every granted roof on every ground to pin
+ * that the drawn mesh never throws.
  */
 
 /** The ground heights the mesh is built on, metres. */
@@ -209,10 +214,62 @@ describe("invented roofs, meshed on any ground", () => {
       turn: 3.1415926535897905,
     };
     const house = footprint(shape, 102);
+    // The house must wish for gables, or a hipped roof proves nothing.
+    expect(mixedUnit(house.key, "roofscape-gable")).toBeLessThan(
+      ROOFSCAPE_DEFAULTS.gableShare,
+    );
     const plan = planInventedRoofs([house]).get(house.key);
     expect(plan?.kind).toBe("roof");
     if (plan?.kind !== "roof") return;
     expect(plan.style).toBe("hip");
     expectMeshedEverywhere(shape, 102);
+  });
+});
+
+/** `house`, whose ring is in `from`'s metres, in `to`'s metres. */
+function moved(
+  house: InventedFootprint,
+  from: EnuFrame,
+  to: EnuFrame,
+): InventedFootprint {
+  const shift = (p: EnuPoint): EnuPoint => to.toEnu(from.toLatLng(p));
+  return {
+    ...house,
+    at: shift(house.at),
+    polygons: house.polygons.map((rings) =>
+      rings.map((ring) => ring.map(shift)),
+    ),
+  };
+}
+
+// The city plans in the scene's frame and the obstacle index in a frame over
+// the buildings; the closure check is sensitive to a fraction of a
+// millimetre, so a borderline roof could be granted in one frame and demoted
+// in the other, and an agent would then walk through a roof that is drawn.
+// The houses pinned above are exactly such borderline roofs.
+describe("the pinned houses, planned in two frames", () => {
+  const near = enuFrameAt({ lat: 47.05, lng: 8.35 });
+  const far = enuFrameAt({ lat: 47.0536, lng: 8.3553 });
+  const pinned: readonly (readonly [Shape, number])[] = [
+    [{ kind: "star", n: 8, outer: 6, inner: 0.6467924792197227, turn: 0 }, 0],
+    [
+      { kind: "star", n: 7, outer: 9.7, inner: 0.35, turn: 3.1415926535897905 },
+      102,
+    ],
+  ];
+
+  it.each(pinned)("plans the same roof in both frames: %o", (shape, seed) => {
+    const house = footprint(shape, seed);
+    const a = planInventedRoofs([house], { frame: near }).get(house.key);
+    const b = planInventedRoofs([moved(house, near, far)], {
+      frame: far,
+    }).get(house.key);
+    expect(a?.kind).toBe("roof");
+    expect(b?.kind).toBe(a?.kind);
+    if (a?.kind !== "roof" || b?.kind !== "roof") return;
+    expect(b.style).toBe(a.style);
+    // Within a centimetre, as the site frames test: the latitude scale of a
+    // building's own coordinates moves with the frame by a hair.
+    expect(Math.abs(inventedTotalM(b) - inventedTotalM(a))).toBeLessThan(0.01);
   });
 });
