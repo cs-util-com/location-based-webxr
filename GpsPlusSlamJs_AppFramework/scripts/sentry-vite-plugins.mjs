@@ -1,7 +1,7 @@
 /**
- * The error service's Vite plugins for the Tour Viewer and the map demo:
- * the page build's instance and the Web Worker builds' instances, created
- * only when SENTRY_AUTH_TOKEN is set.
+ * The error service's Vite plugins for the Recorder, the Tour Viewer and the
+ * map demo: the page build's instance and the Web Worker builds' instances,
+ * created only when SENTRY_AUTH_TOKEN is set.
  *
  * @see sentry-vite-plugins.mjs.md
  */

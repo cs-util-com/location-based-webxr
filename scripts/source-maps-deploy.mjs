@@ -11,10 +11,16 @@ import { join, relative } from 'node:path';
 
 /**
  * The `dist-site` folders of the apps whose builds upload their source maps
- * and then delete them (the Tour Viewer and the map demo, through
- * `GpsPlusSlamJs_AppFramework/scripts/sentry-vite-plugins.mjs`).
+ * and then delete them (the Recorder, the Tour Viewer and the map demo,
+ * through `GpsPlusSlamJs_AppFramework/scripts/sentry-vite-plugins.mjs`).
+ * `tests/repo-config/source-map-free-apps.test.js` ties it to the Vite
+ * configs that use that helper.
  */
-export const SOURCE_MAP_FREE_APPS = /** @type {const} */ (['tour', 'osm']);
+export const SOURCE_MAP_FREE_APPS = /** @type {const} */ ([
+  'recorder',
+  'tour',
+  'osm',
+]);
 
 /**
  * Throws when SENTRY_AUTH_TOKEN is set and a `*.map` file is left at any depth

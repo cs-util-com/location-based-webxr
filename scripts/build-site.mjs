@@ -392,7 +392,7 @@ run('pnpm', [
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'osm'), '/osm/');
 
-// The Tour Viewer and the map demo upload their source maps when
+// The Recorder, the Tour Viewer and the map demo upload their source maps when
 // SENTRY_AUTH_TOKEN is set and delete them afterwards; a failed delete is only
 // logged by the upload plugin, so this is what fails such a build.
 assertNoSourceMapsDeployed({ siteDir: distSite });

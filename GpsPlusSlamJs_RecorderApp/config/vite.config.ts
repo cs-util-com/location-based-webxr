@@ -7,6 +7,17 @@ import tailwindcss from '@tailwindcss/vite';
 // session.json carries: the framework's one define block, shared with the
 // Tour Viewer, read in the page by its utils/build-info.
 import { createBuildMetadataDefine } from '../../GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs';
+import { sentrySourceMapPlugins } from '../../GpsPlusSlamJs_AppFramework/scripts/sentry-vite-plugins.mjs';
+
+/**
+ * Uploads the source maps to the error service during a production build
+ * (the commit becomes the release), gives each bundle a debug id so a
+ * report's stack maps back to the source, then deletes the maps so they are
+ * not deployed. Only when SENTRY_AUTH_TOKEN is set: a build without it
+ * (local, CI, a contributor's) runs none of it and does not fail. The same
+ * helper as the Tour Viewer and the map demo.
+ */
+const sentry = sentrySourceMapPlugins(sentryVitePlugin);
 
 export default defineConfig({
   root: fileURLToPath(new URL('..', import.meta.url)),
@@ -18,7 +29,9 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    // Maps are built for the error service, but no bundle points at them, so
+    // a visitor's browser never fetches them.
+    sourcemap: 'hidden',
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('../index.html', import.meta.url)),
@@ -44,14 +57,10 @@ export default defineConfig({
     // `page.goto` - wait on a third-party host. See `styles/tailwind.css` for
     // what that cost and for the one behavioural difference the swap has.
     tailwindcss(),
-    // Upload source maps to Sentry during production builds.
-    // Only loaded when SENTRY_AUTH_TOKEN is set - without it the plugin
-    // errors during `vite build`. Local dev and public-repo contributors
-    // build without the token and get no Sentry source-map upload.
-    process.env.SENTRY_AUTH_TOKEN &&
-      sentryVitePlugin({
-        org: 'cs-util-com',
-        project: 'js-gps-recorder',
-      }),
+    ...sentry.plugins,
   ],
+  // The image-quality and occluder-mesh workers are bundled separately: they
+  // need the plugin too for their debug ids (the page's instance uploads and
+  // deletes their maps).
+  worker: { plugins: sentry.workerPlugins },
 });

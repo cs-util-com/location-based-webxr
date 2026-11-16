@@ -2,17 +2,18 @@
 
 ## Purpose
 
-The Tour Viewer and the map demo upload their source maps to the error
+The Recorder, the Tour Viewer and the map demo upload their source maps to the error
 service when `SENTRY_AUTH_TOKEN` is set, and delete them from their output
 folders afterwards
 (`GpsPlusSlamJs_AppFramework/scripts/sentry-vite-plugins.mjs`). The upload
 plugin only logs a failed delete, so without this check such a build stays
-green and deploys the maps. `scripts/build-site.mjs` calls it after both
+green and deploys the maps. `scripts/build-site.mjs` calls it after those
 apps are built.
 
 ## Public API
 
-- `SOURCE_MAP_FREE_APPS` - `['tour', 'osm']`, the `dist-site` folders checked.
+- `SOURCE_MAP_FREE_APPS` - `['recorder', 'tour', 'osm']`, the `dist-site`
+  folders checked.
 - `assertNoSourceMapsDeployed({ siteDir, env? })`
   - Without `env.SENTRY_AUTH_TOKEN` (default `process.env`): returns at once.
     Nothing was uploaded or deleted, and the maps are wanted.
@@ -22,10 +23,13 @@ apps are built.
 
 ## Invariants & assumptions
 
-- Only the two apps that delete their maps are checked: the Recorder
-  deploys its maps on purpose (`config/vite.config.ts`).
-- A new app that uploads and deletes its maps belongs in
-  `SOURCE_MAP_FREE_APPS`.
+- Only the apps that delete their maps are checked; the other apps' builds
+  write no maps for the error service.
+- The list is exactly the apps whose Vite config calls
+  `sentrySourceMapPlugins`: `tests/repo-config/source-map-free-apps.test.js`
+  derives that set from the configs and the site build's `--base` per
+  package, and fails on any difference, and on a check that runs before one
+  of those builds.
 
 ## Example
 
@@ -38,6 +42,7 @@ assertNoSourceMapsDeployed({ siteDir: distSite });
 `scripts/source-maps-deploy.test.mjs` (the root vitest config's
 `scripts/*.test.mjs`), on temp folders: green without maps and without the
 token, red with a map at any depth in either app (both named) and with a
-folder missing, and the Recorder's maps left alone.
-`tests/repo-config/build-site-wiring.test.js` pins that `build-site.mjs`
-calls it after both builds.
+folder missing, and another app's maps left alone.
+`tests/repo-config/build-site-wiring.test.js` and
+`tests/repo-config/source-map-free-apps.test.js` pin that `build-site.mjs`
+calls it after those builds.

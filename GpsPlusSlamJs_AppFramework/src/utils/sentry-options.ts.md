@@ -67,7 +67,16 @@ The options of the apps visitors use. Same DSN, environment rule and
   profile keeps `extra`; `scrubDeep` scrubs its keys and its numeric pairs.
 - Every hook scrubs with the strict profile of `sentry-scrub.ts`, which also
   removes quoted text (file, station and tour names, snippets of a file in a
-  parse error) and runs of six or more digits (OSM ids).
+  parse error) and runs of six or more digits (OSM ids). The service's own
+  ids are left as they are, but only where the SDK writes them (the
+  module-private `EVENT_ID_PATHS`): `event_id`, `contexts.trace`'s
+  `trace_id`, `span_id` and `parent_span_id`, the same three on each of
+  `spans[]`, and `debug_meta.images[].debug_id`, by which the service finds
+  a bundle's source map; for a standalone span (`SPAN_ID_PATHS`) its own
+  three ids at the top. The same names anywhere else, breadcrumbs included,
+  are scrubbed as usual; see `keepIdsAt` in `sentry-scrub.ts.md`. The
+  `sentry.event` breadcrumb's `event_id` is not exempt: it is 32 hex digits
+  and is cut only if all of them are digits.
 - Breadcrumbs: console ones are dropped, and the framework logger's (`log`)
   only at warning level and above: info and debug lines say what the
   visitor is doing (which station, which file) and are not needed to read an
@@ -229,14 +238,13 @@ places, links, names or files and were read one by one):
 
 The Sentry Vite plugin in each app's Vite config (the Recorder's
 `config/vite.config.ts`, the Tour Viewer's and the map demo's
-`vite.config.ts`) uploads source maps during production builds. The Tour
-Viewer and the map demo build them `hidden` (no `sourceMappingURL` comment,
+`vite.config.ts`) uploads source maps during production builds. All three
+apps build them `hidden` (no `sourceMappingURL` comment,
 so a visitor's browser never fetches them) and run the plugin for their
-Web Worker bundles too, which gives those bundles debug ids; both take the
+Web Worker bundles too, which gives those bundles debug ids; all three take the
 plugins from the framework's `scripts/sentry-vite-plugins.mjs`, which also
 deletes the maps from the resolved output folder after the upload, so they
-are not deployed, and turns the plugin's build telemetry off. The Recorder
-keeps its own call and its maps. The plugin is loaded only when the
+are not deployed, and turns the plugin's build telemetry off. The plugin is loaded only when the
 `SENTRY_AUTH_TOKEN` environment variable is set, so a build without the
 token (local, CI) uploads nothing and does not fail. No gate runs the
 token path; what was checked by hand, and what was not, is in
@@ -260,7 +268,11 @@ token path; what was checked by hand, and what was not, is in
   breadcrumbs dropped, a report with a camera target, an H3 cell, an OSM id
   and a quoted file name comes out without them, the `extra` of a rejected
   object built by the SDK's own `eventFromException` is dropped (the input
-  event left unchanged), the worker's `thread` tag,
+  event left unchanged), a debug id, event id and trace ids holding long
+  digit runs kept while the rest is scrubbed and a bundle's `code_file` still
+  reads as its frame's file name, the same id-shaped values under the same
+  names in tags, a context of the app's own and breadcrumb data scrubbed, a
+  transaction's span ids and a standalone span's own ids kept, the worker's `thread` tag,
   and `startErrorReporting` / `startWorkerErrorReporting`: nothing outside
   production, one test report only with the flag (the SDK's `init` and
   `captureException` are mocked).

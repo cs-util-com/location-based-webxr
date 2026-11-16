@@ -32,6 +32,7 @@ import {
   wantsTestReport,
   workerSentryOptions,
 } from './sentry-options';
+import { REDACTED } from './sentry-scrub';
 
 // Only the two calls that would start the SDK or send a report are replaced;
 // the integration list is still resolved by the real SDK.
@@ -312,6 +313,127 @@ describe('strictSentryOptions', () => {
       expect(text).not.toContain(secret);
     }
     expect(text).toContain('a3f2504e04f8911d39a0c0305e82c330');
+  });
+});
+
+// Why these tests matter: the SDK fills `debug_meta` with each bundle's debug
+// id before `beforeSend` runs, and the error service finds a bundle's source
+// map by that id. A UUID can hold a group of six or more digits, which the
+// strict long-number rule removes, and that frame then loses its readable
+// stack without any error. The service's own ids must reach it as they were,
+// while everything else in the report is still scrubbed.
+describe("strictSentryOptions, the error service's own ids", () => {
+  const options = strictSentryOptions('tour-viewer', OWN, 'gps.csutil.com');
+  // Real ids can be all digits in a group of 8 or 12 (about 1 in 40 debug
+  // ids), and a 16-digit span id is all digits about 1 in 2,000 times.
+  const DEBUG_ID = '12345678-9abc-4def-8123-456789012345';
+  const SPAN_ID = '1234567890123456';
+  const PARENT_SPAN_ID = '9876543210987654';
+  const TRACE_ID = '12345678901234567890123456789012';
+  const EVENT_ID = '98765432109876543210987654321098';
+  const BUNDLE = 'https://gps.csutil.com/tour/assets/index-Bx1.js?v=123456789';
+
+  function eventWithIds(): ErrorEvent {
+    return {
+      type: undefined,
+      event_id: EVENT_ID,
+      contexts: {
+        trace: {
+          trace_id: TRACE_ID,
+          span_id: SPAN_ID,
+          parent_span_id: PARENT_SPAN_ID,
+        },
+      },
+      debug_meta: {
+        images: [{ type: 'sourcemap', code_file: BUNDLE, debug_id: DEBUG_ID }],
+      },
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: 'build failed for way/123456789',
+            stacktrace: { frames: [{ filename: BUNDLE, lineno: 1, colno: 2 }] },
+          },
+        ],
+      },
+    };
+  }
+
+  it('keeps the debug id, the event id and the trace ids unchanged', () => {
+    const out = options.beforeSend?.(eventWithIds(), {}) as ErrorEvent;
+    expect(out.debug_meta?.images?.[0]?.debug_id).toBe(DEBUG_ID);
+    expect(out.event_id).toBe(EVENT_ID);
+    expect(out.contexts?.trace).toEqual({
+      trace_id: TRACE_ID,
+      span_id: SPAN_ID,
+      parent_span_id: PARENT_SPAN_ID,
+    });
+  });
+
+  it('scrubs the same id-shaped values under the same names elsewhere', () => {
+    // App code can name a field `span_id`; only the SDK's own places are
+    // exempt, so such a value is scrubbed as any other long number.
+    const event: ErrorEvent = {
+      type: undefined,
+      tags: { span_id: SPAN_ID },
+      contexts: { place: { event_id: EVENT_ID, trace: { span_id: SPAN_ID } } },
+      breadcrumbs: [{ category: 'fetch', data: { debug_id: DEBUG_ID } }],
+    };
+    const text = JSON.stringify(options.beforeSend?.(event, {}));
+    for (const id of [SPAN_ID, EVENT_ID, DEBUG_ID]) {
+      expect(text).not.toContain(id);
+    }
+    const crumb = options.beforeBreadcrumb?.(
+      { category: 'fetch', data: { span_id: SPAN_ID } },
+      {}
+    );
+    expect(JSON.stringify(crumb)).not.toContain(SPAN_ID);
+  });
+
+  it("keeps a transaction's span ids and a standalone span's own ids", () => {
+    const transaction = {
+      type: 'transaction',
+      spans: [
+        {
+          trace_id: TRACE_ID,
+          span_id: SPAN_ID,
+          parent_span_id: PARENT_SPAN_ID,
+          start_timestamp: 1,
+        },
+      ],
+    } as unknown as TransactionEvent;
+    expect(options.beforeSendTransaction?.(transaction, {})).toEqual(
+      transaction
+    );
+    const span = {
+      trace_id: TRACE_ID,
+      span_id: SPAN_ID,
+      parent_span_id: PARENT_SPAN_ID,
+      start_timestamp: 1,
+      data: { span_id: SPAN_ID },
+    } as unknown as SpanJson;
+    expect(options.beforeSendSpan?.(span)).toEqual({
+      ...span,
+      data: { span_id: REDACTED },
+    });
+  });
+
+  it("still scrubs the rest, and a bundle's file the same way as its frame", () => {
+    const out = options.beforeSend?.(eventWithIds(), {});
+    // The service pairs a frame with its bundle by this file name, so the
+    // two must read the same after the scrub.
+    const scrubbedBundle = BUNDLE.replace('?v=123456789', `?${REDACTED}`);
+    expect(out).toMatchObject({
+      debug_meta: { images: [{ code_file: scrubbedBundle }] },
+      exception: {
+        values: [
+          {
+            value: `build failed for way/${REDACTED}`,
+            stacktrace: { frames: [{ filename: scrubbedBundle }] },
+          },
+        ],
+      },
+    });
   });
 });
 

@@ -171,6 +171,14 @@ export interface ScrubOptions {
    * form the shared rules do not recognise.
    */
   readonly strict?: boolean;
+  /**
+   * For {@link scrubDeep}: the exact paths whose value is kept unchanged when
+   * it has an id's shape (see {@link SERVICE_ID}), written as keys joined by
+   * `.`, with `[]` for any array element (`debug_meta.images[].debug_id`).
+   * Only the places the error service's SDK writes its own ids belong here:
+   * a value under the same key name anywhere else is scrubbed as usual.
+   */
+  readonly keepIdsAt?: ReadonlySet<string>;
 }
 
 /**
@@ -368,6 +376,28 @@ function uniqueKey(out: Record<string, unknown>, key: string): string {
   return `${key} #${index}`;
 }
 
+/**
+ * An id's shape: 16 or 32 hex digits (span; event, trace), or a UUID (a
+ * bundle's debug id). Such a value holds no link, label or quote, but a run
+ * of six or more digits in it would be cut by the strict profile.
+ */
+const SERVICE_ID =
+  /^(?:[0-9a-f]{16}|[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
+
+/** Whether the value at `path` is an id kept as it is. */
+function isKeptId(
+  path: string,
+  item: unknown,
+  keepIdsAt: ReadonlySet<string> | undefined
+): boolean {
+  return (
+    keepIdsAt !== undefined &&
+    keepIdsAt.has(path) &&
+    typeof item === 'string' &&
+    SERVICE_ID.test(item)
+  );
+}
+
 function isPlainObject(value: object): value is Record<string, unknown> {
   const proto: unknown = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
@@ -384,7 +414,9 @@ function isPlainObject(value: object): value is Record<string, unknown> {
  * is empty, and so is an array of two numbers that read as a coordinate pair
  * (`center: [48.137, 11.575]`), under any key. A single number under an
  * ordinary key is passed through: nothing tells it from a measurement. A
- * subtree deeper than {@link MAX_DEPTH} is replaced too. The input is never
+ * value at one of `options.keepIdsAt`'s paths is kept as it is when it has
+ * an id's shape. A subtree deeper than {@link MAX_DEPTH} is
+ * replaced too. The input is never
  * changed. `options` is passed on to {@link scrubText}.
  */
 export function scrubDeep<T>(
@@ -394,19 +426,30 @@ export function scrubDeep<T>(
 ): T {
   const copies = new WeakMap<object, unknown>();
 
-  const walkObject = (node: Record<string, unknown>, depth: number) => {
+  const walkObject = (
+    node: Record<string, unknown>,
+    depth: number,
+    path: string
+  ) => {
     const out: Record<string, unknown> = {};
     copies.set(node, out);
     for (const [key, item] of Object.entries(node)) {
+      const itemPath = path === '' ? key : `${path}.${key}`;
+      if (isKeptId(itemPath, item, options.keepIdsAt)) {
+        out[key] = item;
+        continue;
+      }
       const isEmpty = item === null || item === undefined;
       // Keys are text too: a serialised object can be keyed by a place.
       out[uniqueKey(out, scrubText(key, ownHost, options))] =
-        !isEmpty && isCoordinateKey(key) ? REDACTED : walk(item, depth + 1);
+        !isEmpty && isCoordinateKey(key)
+          ? REDACTED
+          : walk(item, depth + 1, itemPath);
     }
     return out;
   };
 
-  const walk = (node: unknown, depth: number): unknown => {
+  const walk = (node: unknown, depth: number, path: string): unknown => {
     if (typeof node === 'string') return scrubText(node, ownHost, options);
     if (node === null || typeof node !== 'object') return node;
     const seen = copies.get(node);
@@ -416,11 +459,11 @@ export function scrubDeep<T>(
       if (isCoordinatePair(node)) return REDACTED;
       const out: unknown[] = [];
       copies.set(node, out);
-      for (const item of node) out.push(walk(item, depth + 1));
+      for (const item of node) out.push(walk(item, depth + 1, `${path}[]`));
       return out;
     }
-    return isPlainObject(node) ? walkObject(node, depth) : node;
+    return isPlainObject(node) ? walkObject(node, depth, path) : node;
   };
 
-  return walk(value, 0) as T;
+  return walk(value, 0, '') as T;
 }

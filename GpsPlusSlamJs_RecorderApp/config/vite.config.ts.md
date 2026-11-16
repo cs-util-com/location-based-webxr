@@ -38,32 +38,33 @@ Enables access from:
 - Chrome DevTools port forwarding
 - ngrok tunneling for HTTPS
 
-## Path Alias
-
-- `@app/*` → `src/*`
-- `gps-plus-slam-app-framework` → `../../GpsPlusSlamJs_AppFramework/src` (source alias — imports AppFramework source directly instead of a built package, enabling HMR across both packages)
-
-### resolve.dedupe
-
-`resolve.dedupe: ['three']` ensures Vite resolves the `three` package from RecorderApp's `node_modules`, not from AppFramework's directory. This is necessary because AppFramework declares `three` as a `peerDependency` (no local install), and the source alias causes Vite to try resolving `three` from the AppFramework path.
-
-See [2026-03-30-separate-public-repo-plan.md §3.5](../../GpsPlusSlamJs_Docs/docs/2026-03-30-separate-public-repo-plan.md) for the full source-alias vs built-package trade-off analysis.
-
 ## Plugins
 
 ### Sentry Vite Plugin
 
-Conditionally loaded — only active when `SENTRY_AUTH_TOKEN` is set. Without the
-token, the plugin is excluded from the build pipeline entirely (evaluates to
-`false` and is filtered out by Vite).
+Created by the framework's shared `scripts/sentry-vite-plugins.mjs` (imported
+by relative path), the same helper the Tour Viewer and the map demo use, and
+only when `SENTRY_AUTH_TOKEN` is set:
 
-- **org**: `cs-util-com`
-- **project**: `js-gps-recorder`
-- **Auth token**: Read from `SENTRY_AUTH_TOKEN` environment variable
+- With the token, in a production build: every bundle gets a debug id, the
+  commit becomes the release, the source maps are uploaded to the
+  `js-gps-recorder` project, and then every `.map` under the resolved output
+  folder (the site build's `--outDir` included) is deleted, so no map is
+  deployed. No build telemetry; a failed upload only warns, and the maps are
+  deleted anyway. The site build's `scripts/source-maps-deploy.mjs` fails a
+  build with the token that left a `.map` under `recorder/`.
+- Without the token (local dev, CI, a contributor): no plugin runs, nothing is
+  uploaded or deleted, and the build does not fail.
+- `worker.plugins`: the same plugin for the Web Worker bundles (image quality,
+  occluder mesh), for their debug ids; their maps land in the page build's
+  output folder and are uploaded and deleted by the page build's instance.
+- `build.sourcemap: 'hidden'`: the maps are written for the upload, but no
+  bundle carries a `sourceMappingURL` comment, so a visitor's browser never
+  fetches them. Without the token they stay in the output folder, unreferenced,
+  as in the other two apps.
 
-The plugin enables readable stack traces in Sentry error reports by uploading
-source maps alongside each deployment. Local dev builds and public-repo
-contributors build without the token — no source maps are uploaded.
+The token path is not run by any gate; see the helper's sidecar for what was
+checked by hand.
 
 ## Usage
 

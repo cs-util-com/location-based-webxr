@@ -421,6 +421,50 @@ describe('scrubText', () => {
 });
 
 describe('scrubDeep', () => {
+  // Why these tests matter: the error service links a report to its trace
+  // and a bundle to its source map by ids the SDK writes, and the strict
+  // long-number rule would cut one that happens to hold six or more digits
+  // in a row. The exemption is by exact path, so app code cannot slip a
+  // place past the scrubber by naming a field `span_id`; and only a value
+  // with an id's shape is kept, even at an exempt path.
+  describe('keepIdsAt', () => {
+    const SPAN_ID = '1234567890123456';
+    const DEBUG_ID = '12345678-9ABC-4def-8123-456789012345';
+    const keepIdsAt = new Set(['span_id', 'images[].debug_id']);
+
+    it('keeps an id-shaped value at an exempt path, in an array too', () => {
+      const value = { span_id: SPAN_ID, images: [{ debug_id: DEBUG_ID }] };
+      expect(scrubDeep(value, OWN, { strict: true, keepIdsAt })).toEqual(value);
+    });
+
+    it('scrubs the same names at any other path', () => {
+      const out = scrubDeep(
+        {
+          data: { span_id: SPAN_ID },
+          images: { debug_id: DEBUG_ID },
+          list: [{ span_id: SPAN_ID }],
+        },
+        OWN,
+        { strict: true, keepIdsAt }
+      );
+      expect(JSON.stringify(out)).not.toContain('1234567890123456');
+      expect(JSON.stringify(out)).not.toContain('12345678-');
+    });
+
+    it('scrubs a value at an exempt path that is not shaped like an id', () => {
+      expect(
+        scrubDeep(
+          { span_id: 'way/123456789', images: [{ debug_id: 'lat=48.1371' }] },
+          OWN,
+          { strict: true, keepIdsAt }
+        )
+      ).toEqual({
+        span_id: `way/${REDACTED}`,
+        images: [{ debug_id: `lat=${REDACTED}` }],
+      });
+    });
+  });
+
   it('removes everything under a coordinate key, an array or an object too', () => {
     // A position is often held as `[lat, lon]` or `{ value }`: the field name
     // is what says so, whatever shape the value has.
