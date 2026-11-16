@@ -343,6 +343,32 @@ export function veilOf(s: LightSettings): HazeVeil | null {
     : null;
 }
 
+/**
+ * Applies a link's settings at boot, never letting them break it: when
+ * `apply` throws (a value the view refuses), it warns and applies
+ * `fallback` in their place, so a partly applied setting is overwritten.
+ * Returns the settings now applied. `fallback` is the scheme's defaults,
+ * which the tests hold valid; an error from them is not caught.
+ */
+export function applyLightOrFallback(
+  settings: LightSettings,
+  fallback: LightSettings,
+  apply: (s: LightSettings) => void,
+  // eslint-disable-next-line no-console -- the one report of a refused link
+  warn: (message: string) => void = console.warn,
+): LightSettings {
+  try {
+    apply(settings);
+    return settings;
+  } catch (error) {
+    warn(
+      `light settings from the link could not be applied, using the defaults: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    apply(fallback);
+    return fallback;
+  }
+}
+
 /** The surface gain ramp these settings describe (`surfaceGainAt`). */
 export function gainOf(s: LightSettings): SurfaceGainRamp {
   return { max: s.gainMax, fromDeg: s.gainFromDeg, fullDeg: s.gainFullDeg };

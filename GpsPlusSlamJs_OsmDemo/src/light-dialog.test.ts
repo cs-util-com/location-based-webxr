@@ -159,6 +159,25 @@ describe("createLightDialog", () => {
     expect(note.hidden).toBe(true);
   });
 
+  // WHY: a hand-written link may state a lightness off the 0.1 grid that the
+  // screen does not show exactly; the view draws the nearest grid point, and
+  // the note must name that cause rather than the knee or the gamut.
+  it("names the grid when an off-grid lightness is drawn at its nearest tenth", () => {
+    const { $ } = setup({
+      initial: {
+        ...DEFAULT_LIGHT_SETTINGS,
+        hazeVeilLightness: 28.22,
+        hazeVeilTint: -21,
+        hazeVeilTintA: -10,
+      },
+    });
+    const note = $<HTMLElement>("light-veil-note");
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toBe(
+      "Veil shown at L* 28.2: the nearest lightness the screen shows exactly in this colour.",
+    );
+  });
+
   // WHY: a new visibility rebuilds the sky's tables, so a drag that applied
   // every step rebuilt them at every whole km. The value is applied once, on
   // release; its readout still follows the thumb while it moves.

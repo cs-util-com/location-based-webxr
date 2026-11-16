@@ -159,14 +159,26 @@ describe("veilSceneColour", () => {
   }, 60_000);
 
   // WHY: the bounds ARE the rule the dialog states. Every slider colour must
-  // have a lightness it can show, the lightnesses it can show must be one
-  // unbroken run (so holding at a bound never skips a showable value), and
-  // one step past the upper bound must be refused (the knee, or out of the
-  // screen's colours).
+  // have a lightness it can show, every lightness in its run must really be
+  // shown as asked (so holding at a bound never lands on a value the screen
+  // misses), and one step past the upper bound must be refused (the knee, or
+  // out of the screen's colours). Inside the run each point is judged
+  // independently of the bounds' own test: the scene colour is tone mapped
+  // back, rounded to 8 bits and measured (`deltaE`), so a bound that admitted
+  // a clipped colour or one past the knee fails here. The step above the
+  // bound can only be judged by the shared rule; it guards that the scene
+  // colour refuses exactly where the bounds stop.
   it("gives every slider colour one unbroken run of showable lightnesses", () => {
     // Collected rather than asserted one by one: tens of thousands of
     // expect calls cost more than the colour maths.
     const wrong: string[] = [];
+    const showsAsAsked = (veil: HazeVeil) => {
+      try {
+        return deltaE(veil) < VEIL_DELTA_E_TOLERANCE;
+      } catch {
+        return false;
+      }
+    };
     const shows = (veil: HazeVeil) => {
       try {
         veilSceneColour(veil, 1);
@@ -184,8 +196,8 @@ describe("veilSceneColour", () => {
         }
         const { min, max } = bounds;
         for (let tenth = Math.round(min * 10); tenth <= max * 10; tenth += 5) {
-          if (!shows({ lightness: tenth / 10, tint, tintA })) {
-            wrong.push(`${tintA} ${tint}: L* ${tenth / 10} refused`);
+          if (!showsAsAsked({ lightness: tenth / 10, tint, tintA })) {
+            wrong.push(`${tintA} ${tint}: L* ${tenth / 10} not shown`);
           }
         }
         const above = Number((max + 0.1).toFixed(1));
@@ -272,4 +284,45 @@ describe("veilSceneColour", () => {
       RangeError,
     );
   });
+});
+
+describe("an off-grid lightness (a hand-written link)", () => {
+  // WHY: a link may state the veil's lightness to 3 decimals, but the bounds
+  // are found on a 0.1 grid and the 8-bit rounding is not monotone between
+  // grid points, so a value inside a colour's run can still fail the exact
+  // re-test in `veilSceneColour` and throw out of the view's boot (a 0.001
+  // scan of every half-step colour found 9051 such values in 269 colours,
+  // all near a run's bottom; the last three colours below are among them).
+  // Every held veil must be one the scene colour accepts, off the grid too,
+  // and moved at most to the nearest grid point.
+  it("holds every 0.01 step inside a colour's run at a lightness the screen shows", () => {
+    const refused: string[] = [];
+    for (const [tintA, tint] of [
+      [0, -4],
+      [0, 0],
+      [0, -24],
+      [0, 40],
+      [6, 12],
+      [-10, -10],
+      [-10, -21],
+      [-9, -19],
+      [-9, -9],
+    ] as const) {
+      const { min, max } = veilLightnessBounds(tintA, tint)!;
+      for (let k = Math.round(min * 100); k <= max * 100; k++) {
+        const held = clampHazeVeil({ lightness: k / 100, tint, tintA });
+        if (Math.abs(held.lightness - k / 100) > 0.05 + 1e-9) {
+          refused.push(
+            `a* ${tintA} b* ${tint} L* ${k / 100} moved to ${held.lightness}`,
+          );
+        }
+        try {
+          veilSceneColour(held, TONE_MAPPING_EXPOSURE);
+        } catch {
+          refused.push(`a* ${tintA} b* ${tint} L* ${k / 100}`);
+        }
+      }
+    }
+    expect(refused).toEqual([]);
+  }, 60_000);
 });

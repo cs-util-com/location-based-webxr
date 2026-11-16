@@ -7,6 +7,7 @@
  * @see light-dialog.ts.md
  */
 
+import { veilLightnessBounds } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
@@ -14,6 +15,23 @@ import {
   veilOf,
   type LightSettings,
 } from "./light-settings.js";
+
+/**
+ * Why the veil is drawn at another lightness than the slider's: above its
+ * colour's run, below it, or inside it but off the 0.1 grid the run is
+ * checked on (`clampHazeVeil`). Only called for a held veil, whose colour
+ * has bounds.
+ */
+function heldBecause(s: LightSettings): string {
+  const { min, max } = veilLightnessBounds(s.hazeVeilTintA, s.hazeVeilTint)!;
+  if (s.hazeVeilLightness > max) {
+    return "brighter, this colour would pass the tone curve's knee or leave the screen's colours.";
+  }
+  if (s.hazeVeilLightness < min) {
+    return "darker, this colour is outside the screen's colours.";
+  }
+  return "the nearest lightness the screen shows exactly in this colour.";
+}
 
 /** The heat grid must add at least this much mean chroma (DEC-R4-5). */
 export const HEAT_GRID_MARGIN_BOUND = 5;
@@ -229,11 +247,8 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     }
     const drawn = veilOf(s)?.lightness;
     veilNote.hidden = drawn === undefined || drawn === s.hazeVeilLightness;
-    if (drawn !== undefined) {
-      veilNote.textContent =
-        drawn < s.hazeVeilLightness
-          ? `Veil shown at L* ${drawn}: brighter, this colour would pass the tone curve's knee.`
-          : `Veil shown at L* ${drawn}: darker, this colour is outside the screen's colours.`;
+    if (drawn !== undefined && drawn !== s.hazeVeilLightness) {
+      veilNote.textContent = `Veil shown at L* ${drawn}: ${heldBecause(s)}`;
     }
   };
   const failed = (error: unknown) => `Could not measure: ${messageOf(error)}`;

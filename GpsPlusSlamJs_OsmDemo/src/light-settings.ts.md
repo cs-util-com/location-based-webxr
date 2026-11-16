@@ -64,6 +64,12 @@ hazeVeilLightness, hazeVeilTint, hazeVeilTintA, hazeVeilRiseDeg }`.
   end and a followed end cross, the kept end wins and the followed one
   moves to 1 degree past it; a ramp that crosses with both ends kept (no
   writer produces one) falls back to `to`'s ramp.
+- `applyLightOrFallback(settings, fallback, apply, warn = console.warn)`:
+  the boot's guard. Calls `apply(settings)` and returns them; when that
+  throws (a value the view refuses), warns with the error's message, calls
+  `apply(fallback)` (the scheme's defaults, which overwrite anything the
+  refused settings had applied) and returns the fallback. An error from
+  the fallback itself is not caught: the defaults are held valid by tests.
 - The adaptation's range is 0.5-1: measured, lowering it barely changes
   noon and mostly darkens dawn and dusk (plan §8).
 - `describeLightSettings(settings)`: the Copy line, e.g.
@@ -174,6 +180,12 @@ writeLight(browserPlaceUrl(window), serializeLightSettings(settings, defaults));
 - a rebase keeps the gain ramp rising: a kept start or end wins, and any
   rebase of rising ramps rises (a property test, fixed seed);
 - the Copy line names every value, and the veil only when one is set.
+- an off-grid veil lightness a link states (L\* 28.22 at a\* -10 b\* -21,
+  which threw at boot before `clampHazeVeil` snapped it, and 2.55) is kept
+  as stated and drawn without a throw, under the shipped and the urban
+  defaults;
+- `applyLightOrFallback` applies the settings, or warns and applies the
+  fallback after them when they throw.
 - a scheme's own light: urban's veil and EV inside the ranges and every
   other scheme at the shipped look; an urban link without the keys read in
   urban's light, a stated value and `veil=0` winning; nothing written at

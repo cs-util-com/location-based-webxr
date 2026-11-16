@@ -9,7 +9,7 @@
  * back per field rather than throwing.
  */
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   BUILDING_SKY_LIGHT,
@@ -19,6 +19,7 @@ import {
   NATURAL_LIGHT_COMPENSATION_EV,
   NOON_SURFACE_GAIN,
   surfaceGainAt,
+  TONE_MAPPING_EXPOSURE,
 } from "./atmosphere-rig.js";
 import { rgbToLab } from "gps-plus-slam-osm";
 
@@ -26,6 +27,7 @@ import {
   HAZE_VEIL_RISE_DEG,
   HAZE_VEIL_TINT,
   veilLightnessBounds,
+  veilSceneColour,
 } from "./haze-veil.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
@@ -37,6 +39,7 @@ import {
   rebaseLightSettings,
   serializeLightSettings,
   veilOf,
+  applyLightOrFallback,
   type LightSettings,
 } from "./light-settings.js";
 
@@ -661,5 +664,65 @@ describe("a colour scheme's light defaults", () => {
       }),
       { seed: 20261116, numRuns: 500 },
     );
+  });
+});
+
+describe("a hand-written veil lightness off the slider's grid", () => {
+  // WHY: the boot reads `?light=` and hands `veilOf` to the rig, which
+  // derives the scene colour with `veilSceneColour`; a value the parser
+  // accepts must never make that throw. L* 28.22 at a* -10 b* -21 sits off
+  // the 0.1 grid near the bottom of that colour's run, where the 8-bit
+  // rounding missed and the boot threw; 2.55 is near the bottom of the
+  // default tint's run. The stated value is kept as written (it
+  // round-trips); only the drawn veil moves, to the nearest grid point.
+  it("draws an off-grid veil a link states, keeping the stated value", () => {
+    for (const [defaults, search, stated] of [
+      [
+        DEFAULT_LIGHT_SETTINGS,
+        "?light=v1:veil=28.22,tint=-21,tinta=-10",
+        28.22,
+      ],
+      [
+        lightDefaultsFor("urban"),
+        "?light=v1:veil=28.22,tint=-21,tinta=-10",
+        28.22,
+      ],
+      [DEFAULT_LIGHT_SETTINGS, "?light=v1:veil=2.55", 2.55],
+      [lightDefaultsFor("urban"), "?light=v1:veil=2.55", 2.55],
+    ] as const) {
+      const s = parseLightSettings(search, defaults);
+      expect(s.hazeVeilLightness).toBe(stated);
+      expect(() =>
+        veilSceneColour(veilOf(s)!, TONE_MAPPING_EXPOSURE),
+      ).not.toThrow();
+    }
+  });
+});
+
+describe("applyLightOrFallback", () => {
+  // WHY: the boot applies the link's settings with nothing around it, so a
+  // value the view refuses would stop the whole page. It must open the
+  // scheme's light instead, say so, and overwrite whatever the refused
+  // settings had already applied.
+  it("applies the settings, or warns and applies the fallback when they throw", () => {
+    const urban = lightDefaultsFor("urban");
+    const stated = { ...urban, hazeVisibilityKm: 15 };
+    const applied: LightSettings[] = [];
+    const warn = vi.fn();
+    expect(
+      applyLightOrFallback(stated, urban, (s) => applied.push(s), warn),
+    ).toBe(stated);
+    expect(applied).toEqual([stated]);
+    expect(warn).not.toHaveBeenCalled();
+
+    applied.length = 0;
+    const refusing = (s: LightSettings) => {
+      applied.push(s);
+      if (s === stated) throw new RangeError("veil refused");
+    };
+    expect(applyLightOrFallback(stated, urban, refusing, warn)).toBe(urban);
+    expect(applied).toEqual([stated, urban]);
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]![0]).toContain("veil refused");
   });
 });

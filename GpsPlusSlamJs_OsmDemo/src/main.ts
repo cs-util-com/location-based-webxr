@@ -52,6 +52,7 @@ import {
 } from "./url-state.js";
 import { createLightDialog } from "./light-dialog.js";
 import {
+  applyLightOrFallback,
   describeLightSettings,
   lightDefaultsFor,
   parseLightSettings,
@@ -648,13 +649,15 @@ async function main(): Promise<void> {
   // colour scheme's own light (`lightDefaultsFor`): an urban link that states
   // nothing opens in urban's veil, and a stated value still wins.
   const lightUrl = browserPlaceUrl(window);
-  const initialLight = parseLightSettings(
-    window.location.search,
-    lightDefaultsFor(selectColourScheme(store.getState())),
-  );
-  // The view starts at the shipped look, so only a difference from it is sent.
+  const schemeLight = lightDefaultsFor(selectColourScheme(store.getState()));
+  let initialLight = parseLightSettings(window.location.search, schemeLight);
+  // The view starts at the shipped look, so only a difference from it is
+  // sent. A value the view refuses opens the scheme's light, with a warning,
+  // rather than stopping the boot.
   if (serializeLightSettings(initialLight) !== null) {
-    buildingView.setLightSettings(initialLight);
+    initialLight = applyLightOrFallback(initialLight, schemeLight, (s) =>
+      buildingView.setLightSettings(s),
+    );
   }
   // Sampled like the camera (400 ms): a drag is a stream of input events,
   // and browsers refuse replaceState past a rate a fast drag reaches.

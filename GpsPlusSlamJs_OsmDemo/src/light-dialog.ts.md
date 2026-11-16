@@ -67,8 +67,10 @@ WebGL.
     `#light-hazeVeilRiseDeg`);
   - `#light-veil-note`, after the a\* slider: hidden unless the veil's
     lightness is held for its colour (`veilOf` gives a lightness other than
-    the slider's), then naming the L\* shown and why (the tone curve's knee
-    above, the screen's colours below). The slider keeps the asked value,
+    the slider's), then naming the L\* shown and why (above the colour's
+    run: the tone curve's knee or the screen's colours; below it: the
+    screen's colours; inside it but off the 0.1 grid, which only a
+    hand-written link states: the nearest lightness shown exactly). The slider keeps the asked value,
     so the URL still states it; the view never draws a colour other than
     the one named;
   - `#light-ao`, the ambient occlusion checkbox (only when offered);
@@ -150,6 +152,7 @@ dialog.toggle();
   - the veil's sliders (L\*, b\*, a\*), off by default and applied live;
   - the held-veil note: shown with the held L\* above the knee and below
     the gamut, hidden once the colour can be shown as asked and on Reset;
+    an off-grid link lightness named as drawn at its nearest tenth;
   - the brightness alone on release, the margin only on the check;
   - `refresh()` while open and while closed;
   - Reset, to the shipped look and to a scheme's own defaults, and

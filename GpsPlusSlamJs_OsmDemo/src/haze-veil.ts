@@ -151,7 +151,11 @@ export function veilLightnessBounds(
 /**
  * The veil with its lightness held inside the lightnesses its colour can
  * show (`veilLightnessBounds`); its colour (a*, b*) and rise are kept. A veil
- * already inside is returned as it is.
+ * shown as it is is returned as it is. The bounds hold on their 0.1 grid,
+ * and between two grid points the 8-bit rounding can still miss (a link may
+ * state L* to 3 decimals; it happens near the bottom of a run), so a
+ * lightness inside the run that is not shown exactly goes to its nearest
+ * grid point, which is.
  *
  * @throws RangeError for a colour no lightness can show.
  */
@@ -162,7 +166,11 @@ export function clampHazeVeil(veil: HazeVeil): HazeVeil {
       `no lightness can show a veil of a* ${veil.tintA ?? 0} b* ${veil.tint}`,
     );
   }
-  const lightness = Math.min(Math.max(veil.lightness, bounds.min), bounds.max);
+  const tintA = veil.tintA ?? 0;
+  const inRun = Math.min(Math.max(veil.lightness, bounds.min), bounds.max);
+  const lightness = showable(inRun, tintA, veil.tint)
+    ? inRun
+    : Math.min(Math.max(Number(inRun.toFixed(1)), bounds.min), bounds.max);
   return lightness === veil.lightness ? veil : { ...veil, lightness };
 }
 

@@ -19,8 +19,10 @@ mapping turns into exactly that, because the haze blends before tone mapping.
   a 0.1 grid of L\* in (0, 100]) at which the screen can show that colour,
   or `null` when it can show none. See "The cap rule" below.
 - `clampHazeVeil(veil)` - the veil with its lightness held inside those
-  bounds (its colour and rise kept; returned unchanged when already
-  inside). Throws `RangeError` for a colour no lightness can show.
+  bounds (its colour and rise kept; returned unchanged when shown as it
+  is). A lightness inside the run that the screen does not show exactly
+  (off the 0.1 grid, where the 8-bit rounding can miss) goes to its
+  nearest grid point. Throws `RangeError` for a colour no lightness can show.
 - `VEIL_DELTA_E_TOLERANCE` - 1, the CIE76 Delta E the rule allows between
   the asked colour and its 8-bit colour.
 - `HAZE_VEIL_RISE_DEG` - 10, the default rise of the light settings (10
@@ -50,9 +52,14 @@ curve's knee (0.76), where the inverse is exact. For each (a\*, b\*),
 `veilLightnessBounds` is the unbroken run of such lightnesses (0.1 grid)
 that ends at the brightest one: near black, 8-bit rounding makes Delta E
 hover around 1 so isolated dark values can pass, and a run keeps every
-value between its ends shown as asked (tested over every slider colour).
+grid value between its ends shown as asked (tested over every slider
+colour). The run is checked on its grid only: between two grid points the
+8-bit rounding can miss (a hand-written link may state L\* to 3 decimals;
+a 0.001 scan of every half-step colour found 9051 such values in 269
+colours, all within 1.3 L\* of a run's bottom, e.g. a\* -10 b\* -21 L\*
+28.22), so `clampHazeVeil` draws such a value at its nearest grid point.
 The light settings keep the lightness a link states, and `veilOf` holds
-the drawn veil at the run's ends; the light dialog says so
+the drawn veil at the run's ends (or that grid point); the light dialog says so
 (`#light-veil-note`). Upper bounds: neutral 89.7, b\* -4 87.0, b\* -12
 81.7, b\* -24 73.9, b\* +20 84.3, b\* +40 80.7; strong yellow cannot be
 dark either (b\* +40 starts at L\* 30.2). Results are cached per colour.
