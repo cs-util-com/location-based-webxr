@@ -53,6 +53,12 @@ describe('matchLine', () => {
     [`the ${'own'}er pick, the ${'own'}er verdict`, 'owner reference'],
     [`// ${'own'}er chose the fold`, 'owner reference'],
     [`// ${'own'}er asked for it`, 'owner reference'],
+    ...['question', 'request', 'approval', 'interview', 'decided', 'wants', 'approved'].map(
+      (word) => [`// ${'own'}er ${word} here`, 'owner reference'],
+    ),
+    [['den', 'Eigentümern'].join(' '), 'owner reference'],
+    [['die', 'Eigentümerinnen'].join(' '), 'owner reference'],
+    [['der', 'Eigentuemerin'].join(' '), 'owner reference'],
     [['laut der', 'Eigentümerin'].join(' '), 'owner reference'],
     [`(${DEC('XY-1')})`, 'decision code'],
     [`see ${DEC('XY7-2')}.`, 'decision code'],
@@ -67,6 +73,16 @@ describe('matchLine', () => {
     [`the #${4242}'s review found it`, 'pull-request number'],
     [`see ${'pull'}/4242`, 'pull-request number'],
     [`github.com/cs-util-com/location-based-webxr/${'pull'}/4242`, 'pull-request number'],
+    [`github.com/cs-util-com/gps-plus-slam/${'pull'}/4242`, 'pull-request number'],
+    [`${'P'}Rs #4242/#4243`, 'pull-request number'],
+    [`the #${4242} cold review`, 'pull-request number'],
+    [`the #${4242}’s review`, 'pull-request number'],
+    [`${'pull'} request #4242`, 'pull-request number'],
+    [`two rounds (#${4242} and #${4243})`, 'pull-request number'],
+    [`dropped (see #${4242}).`, 'pull-request number'],
+    [`Raised in review on #${4242}.`, 'pull-request number'],
+    [`found by a review bot on #${4242}`, 'pull-request number'],
+    [`a repeated number (#${4444}) is a number`, 'pull-request number'],
   ])('flags %j as %s', (line, name) => {
     expect(matchLine(line)).toContain(name);
   });
@@ -92,6 +108,7 @@ describe('matchLine', () => {
     'the owners of this file, an ownership rule, owner',
     'a lock owner, the file owner callback, owner decisions',
     'maintained by the company (the "Project Owner"), the copyright owner',
+    "the Project Owner's rights, the copyright owner’s licence, a dead owner's lock",
     'Bewohner und Eigentümer dieses Hauses',
     'DECEMBER, decimal, dec-xy-1, DEC- alone',
     'issue 4242, #4242 alone, a review of #4242',
@@ -226,7 +243,8 @@ describe('resolveBase', () => {
       head,
     });
     expect(merged.base).toBeNull();
-    expect(merged.reason).toMatch(/is HEAD itself in this CI run: a push to main/);
+    expect(merged.reason).toMatch(/is HEAD itself in this CI run/);
+    expect(merged.reason).toMatch(/a push to main or a dispatch on it/);
     const fromEnv = resolveBase({
       env: { GITHUB_ACTIONS: 'true', E2E_TIER_BASE: head },
       mergeBaseWith: () => null,
@@ -234,6 +252,19 @@ describe('resolveBase', () => {
     });
     expect(fromEnv.base).toBeNull();
     expect(fromEnv.reason).toMatch(/E2E_TIER_BASE/);
+  });
+
+  // Why: in CI an unreadable HEAD would hide the case above, and the guard
+  // would pass on an empty diff instead of saying it checked nothing.
+  it('skips by name in CI when HEAD cannot be read', () => {
+    const result = resolveBase({
+      env: { GITHUB_ACTIONS: 'true' },
+      mergeBaseWith: () => 'b'.repeat(40),
+      head: null,
+    });
+    expect(result.base).toBeNull();
+    expect(result.reason).toMatch(/HEAD could not be read/);
+    expect(resolveBase({ env: {}, mergeBaseWith: () => 'c', head: null }).base).toBe('c');
   });
 
   it('keeps a base equal to HEAD outside CI, and another base in CI', () => {

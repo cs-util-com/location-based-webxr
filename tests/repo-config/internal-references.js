@@ -31,20 +31,40 @@ const PATTERNS = Object.freeze([
   {
     // A person who decides: a public reader cannot ask them, and the line
     // should state the rule itself. The word with the definite article, its
-    // possessive (the typographic apostrophe too), the word followed by what
-    // that person did (a decision, a pick, a verdict and so on), and the
-    // German word with an article. Case-insensitive, word-bounded. A legal
-    // role named with another word before it, as in the contributor
-    // agreement, does not match. The two lock files say it of a lock's
-    // process (the measured false positives), so they are skipped for this
-    // pattern only.
+    // possessive (the typographic apostrophe too) unless another word stands
+    // right before it, the word followed by what that person did or asked
+    // (a decision, a pick, a verdict, a question and so on), and the German
+    // word with an article, in any of its endings and in the spelling
+    // without the umlaut. Case-insensitive, word-bounded. A role named with
+    // another word before it (the contributor agreement's project role, a
+    // copyright holder, a lock's process) does not match. The two lock files
+    // say it of a lock's process with the article too (the measured false
+    // positives), so they are skipped for this pattern only.
     name: 'owner reference',
     regex: new RegExp(
       [
         `the\\s+${'own'}er`,
-        `${'own'}er['’]s`,
-        `${'own'}er\\s+(?:decision|feedback|pick|verdict|answer|choice|call|chose|asked|said)`,
-        '(?:der|des|dem|den|die)\\s+Eigentümer(?:in|s)?',
+        `(?<!\\w\\s+)${'own'}er['’]s`,
+        `${'own'}er\\s+(?:${[
+          'decision',
+          'feedback',
+          'pick',
+          'verdict',
+          'answer',
+          'choice',
+          'call',
+          'question',
+          'request',
+          'approval',
+          'interview',
+          'chose',
+          'asked',
+          'said',
+          'decided',
+          'wants',
+          'approved',
+        ].join('|')})`,
+        '(?:der|des|dem|den|die)\\s+Eigent(?:ü|ue)mer(?:innen|in|n|s)?',
       ]
         .map((alternative) => `\\b${alternative}\\b`)
         .join('|'),
@@ -68,23 +88,28 @@ const PATTERNS = Object.freeze([
   },
   {
     // A pull-request number: the PR's discussion is not the code's
-    // documentation. Case-insensitive. The forms, in order: the word with or
-    // without a space before the number; a bare number in parentheses, alone
-    // or first in a list; a number followed by "review"; a pull path, as a
-    // bare word or in a link to this repository (a link to another project's
+    // documentation. Case-insensitive. The forms, in order: the abbreviation
+    // (or its plural) with or without a space before the number, and the
+    // words spelled out; a bare number in parentheses, alone, first in a
+    // list, first of a pair joined by "and", or after "see"; a number
+    // followed by "review" (possessive, "cold" and "re-" forms too), or after
+    // "review on" or "bot on"; a pull path, as a bare word or in a link to
+    // this repository or its private sibling (a link to another project's
     // pull request is documentation and passes). The parenthesised form
-    // needs two digits or more, because one digit is an item of a numbered
-    // list in the same comment; it stops at five digits and skips a run of
-    // one repeated digit, because a CSS colour in decimal digits only (a
-    // grey such as three repeated digits, or any six-digit colour) reads the
-    // same.
+    // needs two digits or more, because
+    // one digit is an item of a numbered list in the same comment; it stops
+    // at five digits and skips exactly three repeated digits, because a CSS
+    // colour in decimal digits only (the short grey, or any six-digit
+    // colour) reads the same.
     name: 'pull-request number',
     regex: new RegExp(
       [
-        `\\b${'P'}R ?#\\d+`,
-        '\\((?!#(\\d)\\1*[,)])#\\d{2,5}[,)]',
-        "#\\d{3,}(?:'s)? review",
-        '(?:location-based-webxr/|(?<![\\w./-]))pull/\\d+',
+        `\\b${'P'}Rs? ?#\\d+`,
+        `\\b${'pull'} requests? #\\d+`,
+        '\\((?:see )?(?!#(\\d)\\1\\1[,)])#\\d{2,5}(?:[,)]| and #\\d)',
+        "#\\d{3,}(?:['’]s)? (?:cold )?(?:re-?)?review",
+        '\\b(?:review|reviewed|bot) on #\\d{2,}',
+        '(?:(?:location-based-webxr|gps-plus-slam)/|(?<![\\w./-]))pull/\\d+',
       ].join('|'),
       'i',
     ),
@@ -202,14 +227,16 @@ export function parseAddedLines(diff) {
  * main) wins; locally, the merge base with the first main line that exists.
  * Never a silent "nothing to check": no base is a reason, which the guard
  * reports as a named skip. In CI a base that is HEAD itself is one too: on a
- * push to main the checkout's own main ref is HEAD, so the diff would be
- * empty and the pass would mean nothing.
+ * run on main's own commit the checkout's main ref is HEAD, so the diff would
+ * be empty and the pass would mean nothing. So is a HEAD that could not be
+ * read in CI, because that case could then not be told apart.
  *
  * @param {{
  *   env: Record<string, string | undefined>,
  *   mergeBaseWith: (mainLine: string) => string | null,
  *   head?: string | null,
- * }} input `head` is the full commit id of HEAD, when known
+ * }} input `head` is the full commit id of HEAD, or null when it could not be
+ *   read (in CI, a named skip)
  * @returns {BaseResult}
  */
 export function resolveBase({ env, mergeBaseWith, head = null }) {
@@ -227,10 +254,16 @@ export function resolveBase({ env, mergeBaseWith, head = null }) {
         : `no ${TIER_BASE_ENV} and no merge base with any of ${MAIN_LINES.join(', ')}`,
     };
   }
-  if (env.GITHUB_ACTIONS && head !== null && found.base === head) {
+  if (env.GITHUB_ACTIONS && head === null) {
     return {
       base: null,
-      reason: `the base (${found.source}) is HEAD itself in this CI run: a push to main, whose lines were checked on their pull request`,
+      reason: `HEAD could not be read in this CI run, so a base at HEAD (an empty diff) cannot be ruled out`,
+    };
+  }
+  if (env.GITHUB_ACTIONS && found.base === head) {
+    return {
+      base: null,
+      reason: `the base (${found.source}) is HEAD itself in this CI run: a run on main's own commit (a push to main or a dispatch on it), whose lines were checked on their pull request`,
     };
   }
   return found;

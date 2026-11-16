@@ -142,13 +142,11 @@ describe('a red script makes its job red, and one result job says whether all pa
 
   // The result job runs after a failed or timed-out job (`!cancelled()` asks
   // whether the RUN was cancelled, not a job), so those still read red. In a
-  // cancelled run it is skipped: with `always()` it ran there, saw cancelled
-  // needs and left a red `CI result` on a pull request whose full-ci run had
-  // superseded the tier run, and it kept that cancelled run waiting for a
-  // runner in the concurrency group while the full run sat pending. The cost:
-  // a skipped check counts as passing for a required check, so if `CI result`
-  // is ever made one, a cancelled run satisfies it. Today the repository's
-  // rules require none of these checks.
+  // cancelled run it never takes a runner and reads cancelled: with
+  // `always()` it ran there, saw cancelled needs and left a red `CI result`
+  // on a pull request whose full-ci run had superseded the tier run, and it
+  // kept that cancelled run waiting for a runner in the concurrency group
+  // while the full run sat pending.
   it('has a result job that waits for every other job, runs unless the run was cancelled, and is red unless all succeeded', () => {
     expect(resultJob, RESULT_JOB).toBeDefined();
     expect(resultJob.name).toBe('CI result');
@@ -200,8 +198,8 @@ describe('the workflow stays inside the free plan and never hangs', () => {
   // point: the full set contains everything the tier run checks, so the label
   // run cancels the pull request's still-running tier run, which would
   // otherwise hold about 14 of the account's 20 concurrent jobs for nothing. The
-  // tier run's jobs then show as cancelled on the pull request and its `CI
-  // result` as skipped, which is accepted.
+  // tier run's jobs and its `CI result` then show as cancelled on the pull
+  // request, which is accepted.
   it('cancels a superseded pull request run, the tier run when full-ci starts, and gives every push to main its own run', () => {
     expect(workflow.concurrency.group).toBe(
       "ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
@@ -442,7 +440,6 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
     expect(call.uses).toBe('./.github/workflows/ci.yml');
     expect(workflow.on).toHaveProperty('workflow_call');
     expect(raw).not.toContain('labeled');
-    expect(resultJob.if).toBe('${{ !cancelled() }}');
   });
 
   it('dispatches the full set nightly on the newest rNNN branch whose ci.yml can be dispatched', () => {

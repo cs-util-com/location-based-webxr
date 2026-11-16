@@ -8,10 +8,10 @@ The line matcher and the diff reader behind the repo-config guard `internal-refe
 
 Five patterns, each a small reviewed regex in `PATTERNS` with a why-comment:
 
-- **owner reference** - the word for whoever owns the project as a reference to a person who decides: with the definite article, as a possessive, or followed by what that person did (`decision`, `feedback`, `pick`, `verdict`, `answer`, `choice`, `call`, `chose`, `asked`, `said`), and the German word with an article. Case-insensitive, word-bounded. A legal role with another word before it (the contributor agreement's project role) does not match.
+- **owner reference** - the word for whoever owns the project as a reference to a person who decides: with the definite article; as a possessive, unless another word stands right before it; or followed by what that person did or asked (`decision`, `feedback`, `pick`, `verdict`, `answer`, `choice`, `call`, `question`, `request`, `approval`, `interview`, `chose`, `asked`, `said`, `decided`, `wants`, `approved`); and the German word with an article, in any of its endings (`-in`, `-innen`, `-n`, `-s`) and in the spelling without the umlaut. Case-insensitive, word-bounded. A role named with another word before it does not match, possessive included: the contributor agreement's project role, a copyright holder, a lock's process. The cost: a possessive after a plain preposition passes too; main has none.
 - **decision code** - the code form private plans number their decisions with (`DE` + `C-`, an upper-case part, an optional number). Case-sensitive. The older ceiling guard `no-decision-codes.test.js` counts these over the whole tree; this guard stops them on any added line.
 - **work-branch number** - an `r` followed by a branch number, as a word.
-- **pull-request number** - case-insensitive: the abbreviation followed by `#` and a number, with or without a space; a number after `#` in parentheses, alone or first in a list (two to five digits, and not one digit repeated, which is how a decimal-only CSS grey reads); `#` and three or more digits followed by `review` (or `'s review`); a `pull/` path with a number, as a bare word or in a link to this repository. A link to another project's pull request passes: it is documentation.
+- **pull-request number** - case-insensitive: the abbreviation or its plural followed by `#` and a number, with or without a space, and the words spelled out (`pull request #`, `pull requests #`); a number after `#` in parentheses, alone, first in a list, first of a pair joined by `and`, or after `see` (two to five digits, and not exactly three repeated digits, which is how the short decimal-only CSS grey reads); `#` and three or more digits followed by `review`, with the possessive (either apostrophe), `cold` or `re-` forms; `review on #`, `reviewed on #` or `bot on #` and two or more digits; a `pull/` path with a number, as a bare word or in a link to this repository or to its private sibling repository. A link to another project's pull request passes: it is documentation.
 - **review reference** - "review" followed by a branch number.
 
 ## Why only added lines
@@ -25,7 +25,8 @@ The existing lines (about 1,400 files on main on 2026-11-16) stay as they are, b
 - `E2E_TIER_BASE`, which CI's "Fetch the tier's base" step fills in and fetches (`.github/workflows/ci.yml`): on a pull request the base commit (the checkout is the merge commit, so the diff is exactly the pull request's change); on a dispatch, every tier, the merge base with main from the API. A local `test:changed --ref` sets it too.
 - Locally, the merge base of `HEAD` with the first of `origin2/main`, `origin/main`, `main` that has one (`MAIN_LINES` and `firstMergeBase` from `scripts/test-changed/select.mjs`).
 - Otherwise there is no base, and the guard is a **named skip**, never a pass: it writes `internal-references: SKIPPED - <reason>` to stderr and the skipped test's name carries the reason.
-- In CI (`GITHUB_ACTIONS`) a base that is HEAD itself is a named skip too. That is the push to main: `ci.yml` runs on a push only for main, the push has no `E2E_TIER_BASE`, and actions/checkout makes the checkout's `origin/main` ref equal HEAD, so the merge base is HEAD and the diff would be empty. Those lines were checked on their pull request. Outside CI a base equal to HEAD is kept, because the working tree's uncommitted and untracked lines are still read.
+- In CI (`GITHUB_ACTIONS`) a base that is HEAD itself is a named skip too. That is a run on main's own commit, a push to main or a dispatch on it: `ci.yml` runs on a push only for main, the push has no `E2E_TIER_BASE`, and actions/checkout makes the checkout's `origin/main` ref equal HEAD, so the merge base is HEAD and the diff would be empty; a dispatch on main resolves its base to main's own commit the same way. Those lines were checked on their pull request. Outside CI a base equal to HEAD is kept, because the working tree's uncommitted and untracked lines are still read.
+- In CI a HEAD that `gitHead` could not read (null) is a named skip as well, since the case above could then not be told apart from a real base. Outside CI it does not matter and the base is kept.
 
 When it runs, it writes one evidence line to stderr: `internal-references: diffing against <commit> (<source>): <n> added lines, <m> hits`.
 
@@ -43,6 +44,12 @@ Measured over every line of every tracked text file of main (1b1103375, 2026-11-
 - **pull-request number:** 1,071 lines before, 31 false positives (single-digit items of a numbered list, such as `(#1)`). After: 1,040 lines, 0. The parenthesised form needs two digits or more. With the further forms: 1,081 lines, 0 false positives; the 41 new lines are 36 `#<n> review` forms and 5 parenthesised lists, every one read. No lower-case, no-space or `pull/` form is on main yet. The colours in parentheses on main all carry a hex letter (`(#171b26)`); the repeated-digit and five-digit limits cover the decimal-only greys a later line might write.
 - **review reference:** 250 lines, 0 false positives; no exclusion.
 
+Re-measured with the widened forms over every tracked text file of main on 2026-11-16 (65d7ee36a), after the exclusions, old forms against new, each new hit read in full:
+
+- **owner reference:** 1,833 lines before, 1,860 after. 28 new lines (the question, request, approval, interview, wants forms), all references to the person; 1 line dropped, the possessive after another word, which was a false positive (a storage layout's process). The German endings and the spelling without the umlaut have no hit on main. Left unmatched: about 600 lines with the bare word, most of them the word at a line's end or before punctuation (about 320), then the plural `decisions` (31), `report` (24), `rule` (18), `reference` (18) and `taste` (17); the code senses (`of`, `is`, `has`) sit among them, which is why the list of following words stays explicit rather than open.
+- **pull-request number:** 1,081 lines before, 1,168 after. 87 new lines, all references to this repository's pull requests: 3 of the plural abbreviation, 84 of the `review on #` and `bot on #` forms. The spelled-out words, the `and` and `see` pairs, the `cold` and `re-` forms, the typographic apostrophe and the private sibling's link have no hit on main. The `#<digits>` lines still unmatched that were read are CSS colours, HTML entities, page anchors and upstream issue numbers.
+- **decision code**, **work-branch number** and **review reference** are unchanged (2,767, 863 and 250 lines).
+
 CSS colours, identifiers with an `r` and digits inside them, H3 resolution words and the licence files had no hits.
 
 ## How to fix a hit
@@ -55,7 +62,8 @@ The failure names the file, the line number and the pattern, never the line itse
 - `matchLine(text, file?)` - the names of the patterns a line matches; empty for a skipped path.
 - `isSkippedPath(file)` - true for the paths no pattern reads.
 - `parseAddedLines(diff)` - `{ file, line, text }` for every added line of a unified diff; hunk lengths decide what is content.
-- `resolveBase({ env, mergeBaseWith })` - `{ base, source }`, or `{ base: null, reason }`.
+- `resolveBase({ env, mergeBaseWith, head? })` - `{ base, source }`, or `{ base: null, reason }`. `head` is HEAD's full commit id, or null (the default) when it could not be read; in CI a null `head`, or a base equal to it, is a named skip.
+- `gitHead(root)` - HEAD's full commit id in `root`, or null when git cannot read it.
 - `gitMergeBase(root)` - the `mergeBaseWith` for a real checkout.
 - `addedLines(root, base)` - the working tree's added lines against `base`, untracked files included; throws when git cannot diff.
 - `findHits(lines)`, `formatHits(hits)` - the hits and the failure message.
