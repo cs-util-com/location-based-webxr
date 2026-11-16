@@ -285,6 +285,15 @@ import {
   type SaveTarget,
   type WritableFileHandle,
 } from "./save-target.js";
+import { startErrorReporting } from "gps-plus-slam-app-framework/utils/sentry-options";
+
+// Error reporting starts before the editor does anything else (production
+// builds only; the sentry-test page flag sends one harmless test report).
+// What a report may carry: the framework's utils/sentry-options.ts.md.
+startErrorReporting({
+  app: "tour-viewer",
+  prod: import.meta.env.PROD,
+});
 
 // A vertical swipe that starts on a slider scrolls its panel (a phone).
 guardSlidersIn(document);

@@ -1,8 +1,30 @@
 import { fileURLToPath } from "node:url";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { defineConfig } from "vite";
 
 import { globeAssetsRoute } from "./src/dev-server/globe-assets-route.js";
 import { createBuildMetadataDefine } from "../GpsPlusSlamJs_AppFramework/scripts/build-metadata-define.mjs";
+
+/**
+ * Uploads the source maps to the error service during a production build
+ * (the commit becomes the release), and gives each bundle a debug id so a
+ * report's stack maps back to the source. Only when SENTRY_AUTH_TOKEN is set:
+ * a build without it (local, CI, a contributor's) uploads nothing and does
+ * not fail. One upload failure does not fail the build either. Same project
+ * as the Recorder; the reports carry an app tag.
+ */
+const sentryPlugins = () =>
+  process.env.SENTRY_AUTH_TOKEN
+    ? [
+        sentryVitePlugin({
+          org: "cs-util-com",
+          project: "js-gps-recorder",
+          errorHandler: (error) => {
+            console.warn("Sentry source-map upload failed:", error.message);
+          },
+        }),
+      ]
+    : [];
 
 // Tour-viewer Vite config. AppFramework resolves through the pnpm workspace
 // symlink. Port allocation lives in ../docs/dev-server-ports.md — this
@@ -15,7 +37,11 @@ export default defineConfig({
     globeAssetsRoute(
       fileURLToPath(new URL("../GpsPlusSlamJs_Globe/assets", import.meta.url)),
     ),
+    ...sentryPlugins(),
   ],
+  // The city build and the other workers are bundled separately: they need
+  // the plugin too for their debug ids (the page's instance uploads the maps).
+  worker: { plugins: sentryPlugins },
   server: {
     port: 5187,
     // Listen on all interfaces so 127.0.0.1 (what the Playwright e2e config
@@ -30,6 +56,9 @@ export default defineConfig({
     fileURLToPath(new URL(".", import.meta.url)),
   ),
   build: {
+    // Maps are built for the error service, but no bundle points at them, so
+    // a visitor's browser never fetches them.
+    sourcemap: "hidden",
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL("index.html", import.meta.url)),

@@ -16,6 +16,10 @@
 
 Every import, cut, copy, paste, save, rename, delete, tidy and file action shows an in-progress state (`busy`, or the cut phases) and ends in a toast or a visible final state; a failure goes to an error toast and the control comes back.
 
+## Error reporting
+
+The first statement after the imports is `startErrorReporting({ app: "tour-viewer", prod: import.meta.env.PROD })` (the framework's `utils/sentry-options.ts`): in a production build it starts the error service with the strict profile of the apps visitors use (errors only, no traces, an `app` tag, every report scrubbed of coordinates, map cells, long ids, quoted text and link paths). A dev server and the unit tests send nothing. The page flag `?sentry-test` sends one harmless test report. It runs after the imported modules have been evaluated, so an error thrown while a module loads is not reported.
+
 ## Tests
 
 `playwright-tests/character-maker.spec.js` (the whole flow, the reload, the exchange file both ways, a cut failure, a JPEG refusal, a failed save, the layout at three viewports). The modules it uses have their own unit tests.

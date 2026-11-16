@@ -125,6 +125,15 @@ import {
   tourUnfinished,
   unfinishedNote,
 } from "./tour-unfinished.js";
+import { startErrorReporting } from "gps-plus-slam-app-framework/utils/sentry-options";
+
+// Error reporting starts before the viewer does anything else (production
+// builds only; the sentry-test page flag sends one harmless test report).
+// What a report may carry: the framework's utils/sentry-options.ts.md.
+startErrorReporting({
+  app: "tour-viewer",
+  prod: import.meta.env.PROD,
+});
 
 /** Keep at most this many archives cached (LRU) — see BoundedLocalCacheStore. */
 const MAX_CACHED_ARCHIVES = 5;

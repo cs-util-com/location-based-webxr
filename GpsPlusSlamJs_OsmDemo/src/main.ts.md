@@ -300,6 +300,10 @@ None. Entry point only, loaded by `index.html`.
 pnpm run dev   # http://localhost:5186
 ```
 
+## Error reporting
+
+The first statement after the imports is `startErrorReporting({ app: "osm-demo", prod: import.meta.env.PROD })` (the framework's `utils/sentry-options.ts`): in a production build it starts the error service with the strict profile of the apps visitors use (errors only, no traces, an `app` tag, every report scrubbed of coordinates, map cells, long ids, quoted text and link paths). A dev server and the unit tests send nothing. The page flag `?sentry-test` sends one harmless test report. It runs after the imported modules have been evaluated, so an error thrown while a module loads is not reported.
+
 ## Tests
 
 No unit tests — it is DOM wiring. It is covered end to end by

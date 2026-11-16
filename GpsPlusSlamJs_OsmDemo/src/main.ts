@@ -235,6 +235,15 @@ import type { SunAngles } from "./sun-position.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 import { createRpcClient, workerTransport } from "./worker/rpc-client.js";
 import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
+import { startErrorReporting } from "gps-plus-slam-app-framework/utils/sentry-options";
+
+// Error reporting starts before the app does anything else (production builds
+// only; the sentry-test page flag sends one harmless test report). What a
+// report may carry: the framework's utils/sentry-options.ts.md.
+startErrorReporting({
+  app: "osm-demo",
+  prod: import.meta.env.PROD,
+});
 
 /** The sun's angles at an instant and a place (the real sun, plan 2026-09-23-2149). */
 function sunAnglesAt(ms: number, place: SunPlace): SunAngles {

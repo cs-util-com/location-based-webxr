@@ -109,6 +109,10 @@ case "explain": {
 }
 ```
 
+## Error reporting
+
+The worker starts its own error reporting, `startWorkerErrorReporting({ app: "osm-demo", prod: import.meta.env.PROD })` (the framework's `utils/sentry-options.ts`), because the page's does not reach a worker's global scope: its uncaught errors and its logger warnings and errors are reported from here, tagged `thread: worker`. An error it catches and sends back in a reply is reported by the page that logs it, not twice. Production builds only.
+
 ## Tests
 
 No direct unit test — see the import warning above. It is covered by the e2e

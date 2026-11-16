@@ -115,6 +115,12 @@ import {
   type WorkerCalls,
   type WorkerNotice,
 } from "./protocol.js";
+import { startWorkerErrorReporting } from "gps-plus-slam-app-framework/utils/sentry-options";
+
+// The worker starts its own error reporting: the page's does not reach this
+// thread, and the logger here (osm-store-warn.ts) reports through it. Errors
+// caught and sent back in a reply are reported once, by the page.
+startWorkerErrorReporting({ app: "osm-demo", prod: import.meta.env.PROD });
 
 /** Everything the worker owns, built once on `init`. */
 interface WorkerState {

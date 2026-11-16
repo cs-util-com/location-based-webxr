@@ -52,6 +52,10 @@ const worker = new Worker(new URL("./globe-city-worker.ts", import.meta.url), {
 worker.postMessage({ kind: "load", id: 1, target: { lat, lng }, zoom: 12 });
 ```
 
+## Error reporting
+
+The worker starts its own error reporting, `startWorkerErrorReporting({ app: "tour-viewer", prod: import.meta.env.PROD })` (the framework's `utils/sentry-options.ts`), because the page's does not reach a worker's global scope: its uncaught errors and its logger warnings and errors are reported from here, tagged `thread: worker`. An error it catches and sends back in a reply is reported by the page that logs it, not twice. Production builds only.
+
 ## Tests
 
 `globe-city-worker.test.ts` (the real shell, core and library, only

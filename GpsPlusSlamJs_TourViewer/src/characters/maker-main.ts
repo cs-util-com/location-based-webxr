@@ -62,6 +62,15 @@ import type { RgbaImage } from "./rgba-image.js";
 import { composeSheet } from "./sheet-align.js";
 import { CUT_PHASES, type PhaseState } from "./sheet-analyze.js";
 import type { FrameCheck } from "./sheet-check.js";
+import { startErrorReporting } from "gps-plus-slam-app-framework/utils/sentry-options";
+
+// Error reporting starts before the character maker does anything else
+// (production builds only; the sentry-test page flag sends one harmless test
+// report). What a report may carry: the framework's utils/sentry-options.ts.md.
+startErrorReporting({
+  app: "tour-viewer",
+  prod: import.meta.env.PROD,
+});
 
 // ------------------------------------------------------------ page handles
 
