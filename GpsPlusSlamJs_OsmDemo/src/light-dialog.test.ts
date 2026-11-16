@@ -154,9 +154,7 @@ describe("createLightDialog", () => {
     // Too dark for a strong yellow: held at the colour's floor.
     slide("hazeVeilLightness", 10);
     expect(note.hidden).toBe(false);
-    expect(note.textContent).toContain(
-      `L* ${veilLightnessBounds(0, 40)!.min}`,
-    );
+    expect(note.textContent).toContain(`L* ${veilLightnessBounds(0, 40)!.min}`);
     $("light-reset").click();
     expect(note.hidden).toBe(true);
   });
