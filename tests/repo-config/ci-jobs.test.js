@@ -183,17 +183,43 @@ describe('the workflow stays inside the free plan and never hangs', () => {
 
   // GitHub keeps only ONE pending run per concurrency group, so pushes to
   // main must not share one: of three quick merges the middle one would lose
-  // its run. A pull request groups by its ref, so a newer push cancels the old
-  // run; every other event gets a group of its own. The group starts with
-  // `github.workflow`, which in the full-ci label's call of this workflow is
-  // the CALLING workflow's name: the label run gets a group of its own and no
-  // longer cancels the pull request's run, which left a cancelled check on
-  // the pull request.
-  it('cancels a superseded pull request run on the same branch, and gives every push to main its own run', () => {
+  // its run. Every event but a pull request gets a group of its own (its run
+  // id), so a push to main, a dispatch and the nightly run are never cancelled.
+  // A pull request groups by its ref under a fixed prefix, NOT
+  // `github.workflow`: in the full-ci label's call of this workflow that would
+  // name the calling workflow, a group of its own. Sharing the group is the
+  // point: the full set contains everything the tier run checks, so the label
+  // run cancels the pull request's still-running tier run, which would
+  // otherwise hold about 14 of the account's 20 concurrent jobs for nothing. The
+  // tier run then shows as cancelled on the pull request, which is accepted.
+  it('cancels a superseded pull request run, the tier run when full-ci starts, and gives every push to main its own run', () => {
     expect(workflow.concurrency.group).toBe(
-      "${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
+      "ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
     );
-    expect(workflow.concurrency['cancel-in-progress']).toBe("${{ github.event_name == 'pull_request' }}");
+    expect(workflow.concurrency.group).not.toContain('github.workflow');
+  });
+
+  // GitHub does not guarantee the order of runs in one group, and the newer
+  // run cancels the older. The label is set seconds after the pull request is
+  // opened, so the `opened` run may queue after the full-ci run: its payload
+  // was taken before the label existed, so it would run only the tier and
+  // cancel the full set. An `opened` run therefore never cancels a running
+  // one (there is nothing older for it to supersede); it waits instead.
+  // Every other pull request event, the label run's `labeled` included,
+  // cancels the older run, and no other event cancels anything.
+  it('lets the label run and later pushes cancel the older run, but never the opened run', () => {
+    expect(workflow.concurrency['cancel-in-progress']).toBe(
+      "${{ github.event_name == 'pull_request' && github.event.action != 'opened' }}"
+    );
+  });
+
+  // A caller and its called workflow must not share a concurrency group
+  // (GitHub's reusable-workflow docs): the call would cancel itself. The group
+  // lives in ci.yml alone, which applies it in the label's call too.
+  it('keeps the concurrency group out of the full-ci caller', () => {
+    const label = parse(readFileSync(join(ROOT, '.github/workflows/ci-full-label.yml'), 'utf8'));
+    expect(label).not.toHaveProperty('concurrency');
+    for (const job of Object.values(label.jobs)) expect(job).not.toHaveProperty('concurrency');
   });
 });
 
@@ -387,7 +413,7 @@ describe('the browser tier: the tagged tests per pull request, the full set on s
   // full-ci: a skipped job is a check of the same name on the same commit,
   // and a skipped "Dead code" would sit over the red one before it. So this
   // workflow does not listen to labels at all; ci-full-label.yml does, and
-  // calls it for full-ci only, in a concurrency group of its own.
+  // calls it for full-ci only.
   it('starts no job on any other label, and runs the whole workflow on full-ci', () => {
     const label = parse(readFileSync(join(ROOT, '.github/workflows/ci-full-label.yml'), 'utf8'));
     expect(label.on.pull_request.types).toEqual(['labeled']);
