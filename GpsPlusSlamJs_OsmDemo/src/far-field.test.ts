@@ -22,16 +22,11 @@ import {
   TERRAIN_SPACING_M,
 } from "./building-view.js";
 import { TERRAIN_EXTENT_M } from "gps-plus-slam-osm";
+import { HAZE_START_RATIO } from "./atmosphere-rig.js";
 import {
   DEFAULT_RENDER_MULTIPLIER,
   renderDistanceFor,
 } from "./render-distance.js";
-
-/**
- * The fog's near/far ratio, mirrored rather than imported: `FOG_NEAR_RATIO` is
- * module-private in `building-view.ts` and deliberately unexported.
- */
-const FOG_NEAR_RATIO_APPROX = 0.66;
 
 describe("the far field", () => {
   it("starts the haze INSIDE the far plane", () => {
@@ -125,7 +120,7 @@ describe("the far field", () => {
     // anyone who changes the fog ratio, the extent, or the default multiplier
     // has to come back and re-read that decision rather than discover the edge
     // on a phone.
-    const defaultFogNearM = defaultFarM * FOG_NEAR_RATIO_APPROX;
+    const defaultFogNearM = defaultFarM * HAZE_START_RATIO;
 
     // The band still begins inside the drawn distance — without this the fog
     // would never engage at all and geometry would vanish at the far plane.

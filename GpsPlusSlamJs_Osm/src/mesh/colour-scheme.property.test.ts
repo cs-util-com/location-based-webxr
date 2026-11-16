@@ -32,6 +32,18 @@ const scheme: fc.Arbitrary<CityColourScheme> = fc
     walls: fc.array(rgb, { minLength: 1, maxLength: 8 }),
     pitchedRoofs: fc.array(rgb, { minLength: 1, maxLength: 8 }),
     flatRoofs: fc.array(rgb, { minLength: 1, maxLength: 8 }),
+    towerWalls: fc.array(rgb, { minLength: 1, maxLength: 8 }),
+    towerFromM: fc.oneof(
+      fc.double({ min: 0.1, max: 1000, noNaN: true }),
+      fc.constant(Number.POSITIVE_INFINITY),
+    ),
+    honourMaterialTags: fc.boolean(),
+    materialWalls: fc
+      .array(fc.tuple(fc.stringMatching(/^[a-z_]{1,12}$/), rgb), {
+        maxLength: 6,
+      })
+      .map((entries) => new Map(entries)),
+    wallJitterL: fc.double({ min: 0, max: 20, noNaN: true }),
     pool: fc.array(rgb, { minLength: 1, maxLength: 30 }),
   })
   .map(({ pool, ...rest }) => {
@@ -59,7 +71,8 @@ describe("colour schemes, properties", () => {
   });
 
   // WHY: with the tag flag off no tag can leak a mapper's colour into a
-  // stylised scheme: every wall and roof is one of the scheme's tones.
+  // stylised scheme: every wall and roof is one of the scheme's tones (with
+  // the lightness jitter off, which moves a wall off its tone by design).
   it("with tags painted over, every building colour is a scheme tone", () => {
     fc.assert(
       fc.property(
@@ -71,7 +84,7 @@ describe("colour schemes, properties", () => {
           fc.constantFrom("#ff0000", "red", "#abc", "house", "junk"),
         ),
         (s, key, pitched, tags) => {
-          const over = { ...s, honourColourTags: false };
+          const over = { ...s, honourColourTags: false, wallJitterL: 0 };
           const { wall, roof } = seededBuildingColours(
             tags,
             tags,
