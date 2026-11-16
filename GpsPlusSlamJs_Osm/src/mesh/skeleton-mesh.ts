@@ -80,10 +80,35 @@ export function skeletonMesh(
   heights: SkeletonHeights,
 ): SkeletonMesh {
   const triangles = roofTriangles(roof, heights);
-  const corners = new Corners();
-  for (const t of triangles) {
-    for (const p of [t.a, t.b, t.c]) if (p.pinned) corners.pin(p);
+  try {
+    return stitched(triangles, heights, "nearest");
+  } catch (error) {
+    if (!(error instanceof SkeletonFailure)) throw error;
+    // A second chance, for the apex a nudge spread wider than the weld; see
+    // `Corners.cluster`. Only a roof the first stitch refused takes it, so
+    // every roof that closed before is drawn exactly as before.
+    return stitched(triangles, heights, "cluster");
   }
+}
+
+/** How raised corners weld: onto the nearest earlier one, or in clusters. */
+type WeldMode = "nearest" | "cluster";
+
+/** The triangles, welded and stitched by `mode`, checked closed. */
+function stitched(
+  triangles: readonly Triangle[],
+  heights: SkeletonHeights,
+  mode: WeldMode,
+): SkeletonMesh {
+  const corners = new Corners();
+  const raised: Corner[] = [];
+  for (const t of triangles) {
+    for (const p of [t.a, t.b, t.c]) {
+      if (p.pinned) corners.pin(p);
+      else raised.push(p);
+    }
+  }
+  if (mode === "cluster") corners.cluster(raised);
   const welded = triangles.map((t) => ({
     ...t,
     a: corners.weld(t.a),
@@ -218,6 +243,8 @@ const gap = (a: Vec3, b: Vec3): number =>
 class Corners {
   readonly all: Corner[] = [];
   private readonly cells = new Map<number, Corner[]>();
+  /** Each raised corner's cluster corner, set by `cluster`. */
+  private readonly representative = new Map<Corner, Corner>();
 
   /** Registers a wall-top corner as it is; equal ones are one. */
   pin(p: Corner): void {
@@ -225,13 +252,83 @@ class Corners {
   }
 
   /**
-   * The registered corner within `WELD_M` of `p`, or `p`, now registered.
-   * A raised corner never welds onto a wall top: near a sharp eave corner
-   * the two faces' copies of one event would otherwise land one on the wall
-   * top and one beside it, and the faces would no longer share an edge.
+   * Welds the raised corners in CLUSTERS and registers one corner per
+   * cluster: two corners nearer than `WELD_M` are one corner, and so,
+   * transitively, is every chain of such pairs. A cluster is drawn at its
+   * highest corner (the first in face order among equally high ones).
+   *
+   * TRANSITIVE, because a nearest-corner weld is not. Where many walls meet
+   * in one apex (a star, any roof symmetric about a point), the
+   * half-millimetre nudge of `roof-skeleton.ts` spreads that one apex into a
+   * cluster of events several millimetres wide, wider than `WELD_M`. Welding
+   * each corner onto the nearest one registered before it split the cluster
+   * into a few corners, depending on the order the faces came in; faces
+   * crossed between them and the closure check refused the roof at every
+   * eave height (71 of 555 random 4- to 9-pointed stars, 2026-11-16).
+   *
+   * The highest corner keeps the apex at the roof's top, and nothing is
+   * drawn above it: a cluster's corners move at most its width.
+   */
+  cluster(raised: readonly Corner[]): void {
+    const parent = raised.map((_, i) => i);
+    const root = (i: number): number => {
+      let r = i;
+      while (parent[r] !== r) r = parent[r] as number;
+      while (parent[i] !== r) {
+        const next = parent[i] as number;
+        parent[i] = r;
+        i = next;
+      }
+      return r;
+    };
+    // The lower index stays the root, so the result is the same however the
+    // grid below is walked.
+    const join = (i: number, j: number): void => {
+      const a = root(i);
+      const b = root(j);
+      if (a < b) parent[b] = a;
+      else if (b < a) parent[a] = b;
+    };
+    const grid = new Map<number, number[]>();
+    raised.forEach((p, i) => {
+      const cx = cellOf(p.x);
+      const cy = cellOf(p.y);
+      const cz = cellOf(p.z);
+      for (const [dx, dy, dz] of NEIGHBOUR_OFFSETS) {
+        for (const j of grid.get(cellKey(cx + dx, cy + dy, cz + dz)) ?? []) {
+          if (gap(p, raised[j] as Corner) < WELD_M) join(i, j);
+        }
+      }
+      const key = cellKey(cx, cy, cz);
+      const list = grid.get(key);
+      if (list === undefined) grid.set(key, [i]);
+      else list.push(i);
+    });
+    const top = new Map<number, Corner>();
+    raised.forEach((p, i) => {
+      const r = root(i);
+      const best = top.get(r);
+      if (best === undefined || p.y > best.y) top.set(r, p);
+    });
+    raised.forEach((p, i) => {
+      this.representative.set(p, top.get(root(i)) as Corner);
+    });
+    for (const p of top.values()) this.add(p);
+  }
+
+  /**
+   * The corner `p` is drawn as: a wall top as it is (the equal registered
+   * one); a raised corner as its cluster's after `cluster`, else as the
+   * registered raised corner within `WELD_M` of it, or itself, now
+   * registered. A raised corner never welds onto a wall top: near a sharp
+   * eave corner the two faces' copies of one event would otherwise land one
+   * on the wall top and one beside it, and the faces would no longer share
+   * an edge.
    */
   weld(p: Corner): Corner {
     if (p.pinned) return this.same(p) ?? p;
+    const clustered = this.representative.get(p);
+    if (clustered !== undefined) return clustered;
     const known = this.nearRaised(p, WELD_M);
     if (known !== undefined) return known;
     this.add(p);

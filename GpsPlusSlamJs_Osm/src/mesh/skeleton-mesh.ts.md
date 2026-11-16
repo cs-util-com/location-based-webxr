@@ -38,6 +38,22 @@ Turns a `SkeletonRoof` (`roof-skeleton.ts`) into triangles: heights from
     corner lies on both edges that meet there) is cut, and a sliver whose
     corner lies on its opposite edge reduces to nothing and is dropped: the
     neighbours across those edges close the gap between themselves.
+- **A second chance with a cluster weld** (2026-11-16). The nearest-corner
+  weld is not transitive: where many walls meet in one apex (a star-shaped
+  house, eight walls to one point), the half-millimetre nudge spreads the
+  apex into a cluster of skeleton nodes wider than `WELD_M`, each node welds
+  to a different neighbour, and faces fold across the cluster. Measured
+  through the invented-roof planner on 4- to 9-pointed stars (seed 7, 600 a
+  kind, grounds 0 to 600 m): 71 of 555 planned star roofs failed the check,
+  at every ground alike; L, T, square and equal-winged L footprints none.
+  When the first stitch fails, `skeletonMesh` stitches again with every
+  chain of raised corners less than `WELD_M` apart joined into one cluster
+  (union-find over the grid hash), each cluster welded onto its highest
+  corner: the apex stays at the top, and no corner moves further than its
+  cluster is wide. Stars failing: 71 to 2, and the planner demotes those
+  (see `invented-roofs.ts.md`). A roof that closed on the first stitch is
+  byte-identical, which is why the cluster weld is the second chance and not
+  the rule: as the rule it changed roofs that were already closed.
 - **The result is checked, and a failure is a `SkeletonFailure`.** Every edge
   above the eaves must be used by exactly two triangles, in opposite
   directions. A face with three corners on one line can still fold when its
@@ -70,6 +86,13 @@ Turns a `SkeletonRoof` (`roof-skeleton.ts`) into triangles: heights from
   - The verdict holds from 1 to 4 mm and turns above it: a weld that wide
     merges distinct corners of a narrow face. 3 mm sits in the middle of the
     clean range and still closes the hair-wide gaps simultaneous events leave.
+  - Swept again with the cluster weld and the planner check (2026-11-16;
+    600 each of stars, L, equal-winged L, T and squares, every planned roof
+    meshed at grounds 0, 31, 33, 100, 300, 600, 437.237, 1234.5678 and
+    -88.81 m): no roof failed at 1, 2, 3, 4 or 6 mm, and the planner granted
+    552 to 555 star roofs of 600 at every value. Not swept: the 0.5 mm nudge
+    itself, which sets how wide an apex cluster grows; a larger nudge is the
+    value most likely to reverse this verdict.
 - **Cost cuts with no change in output** (M2 review finding 2, 2026-11-08;
   the same hash over 10,512 roofs before and after, see `roof.ts.md`): the
   closure check keys an edge by two vertex ids, one string per vertex rather
@@ -104,6 +127,11 @@ const { mesh, surfaceVertices } = skeletonMesh(roof, {
   that range is nearly always a tiny number or a bound): the rung drawn must not
   depend on the eave, and every skeleton it draws is closed. Nothing the check
   rejects is skipped any more.
+- `invented-roofs.closure.property.test.ts`: every roof the invented-roof
+  planner grants meshes at grounds 0 to 600 m, over stars, L, T and square
+  footprints; the eight-pointed star that shrank out of it before the cluster
+  weld is pinned by name and must stay a hipped roof (without the cluster
+  weld the planner check demotes it to a lid, and the test fails).
 - `roof.test.ts`: an L drawn as a skeleton at eaves 40.3, 40.4, 123.45,
   -250.9, 499.9 and -0.7 m (40.4 and -250.9 were prisms before the fix).
 - `s3db-roof-tags.test.ts`: heights and coverage through `buildBuildings`.

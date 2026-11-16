@@ -86,7 +86,16 @@ the invented roofscape) and the toggles plan
   change its roof. Deliberate; bounding it would make a roof depend on where
   the window was cut.
 - Defensive: a ring the skeleton refuses (`SkeletonFailure`) gives a lid,
-  never a throw; any other error is a defect and propagates. Slivers of
+  never a throw; any other error is a defect and propagates.
+- **Every roof granted is a roof whose mesh closes** (2026-11-16). The
+  planner runs the closure check of `skeletonMesh` on each candidate roof
+  (at an eave of 0 m; no dependence on the eave was seen from 0 to 600 m)
+  and moves on when it fails: a gabled roof falls back to the hipped or
+  shared one, and when none closes the building takes a lid. Without it a
+  granted roof could throw at mesh time, and one such building failed the
+  whole city build; the obstacle index reads the plan, so a roof drawn as
+  something else would also disagree with the screen. `buildBuildings`
+  still guards the real mesh (`buildings.ts.md`). Slivers of
   soffit under 1e-6 m2 are skipped.
 
 ## Examples
@@ -128,6 +137,10 @@ The warm delivery more than doubles, so the globe builds with
   staged delivery against the full one (shape, height over 1 cm and 50 cm)
   at three staged box sizes on all 12 sites, and that none survives the
   full delivery.
+- `invented-roofs.closure.property.test.ts`: every granted roof meshes at
+  grounds 0 to 600 m over stars, Ls (equal-winged too), Ts and squares; a
+  star whose gabled roof does not close is pinned as a hipped roof (with the
+  closure check removed it plans the gable, and the test fails).
 - `invented-roofs.property.test.ts`: drawn top at the planned top within the
   weld and never above it, the rise limit, two replayed seeds that once
   failed a 0.5 mm closeness, order invariance, and the same plans under any translation of

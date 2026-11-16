@@ -395,18 +395,23 @@ function bestRoof(
   shared.forEach((is, i) => {
     if (is) sharedSet.add(i);
   });
-  const walls = verticalWalls(rings, shared, sharedSet, house, params);
-  if (walls === undefined) return undefined;
-  const fit = (over: Rings) =>
-    fitRoof(over, walls, sharedSet, house.tan, params);
-  const eaved = eaveRings(rings, walls.zero, params.overhangM);
-  return (eaved === undefined ? undefined : fit(eaved)) ?? fit(rings);
+  // The gabled walls first when the house has them, the plain ones after:
+  // a gabled roof whose mesh would not close becomes a hipped one, not a lid.
+  for (const walls of verticalWalls(rings, shared, sharedSet, house, params)) {
+    const fit = (over: Rings) =>
+      fitRoof(over, walls, sharedSet, house.tan, params);
+    const eaved = eaveRings(rings, walls.zero, params.overhangM);
+    const best = (eaved === undefined ? undefined : fit(eaved)) ?? fit(rings);
+    if (best !== undefined) return best;
+  }
+  return undefined;
 }
 
 /**
- * Which outer walls stand vertical: the shared ones if a run with them is
- * sound (else none), plus the chosen gable ends if the house wants gables
- * and a run with them is sound too. Undefined when no run at all is sound.
+ * Which outer walls stand vertical, best first: the shared ones if a run
+ * with them is sound (else none), and before them, if the house wants
+ * gables and a run with them is sound too, the same plus the chosen gable
+ * ends. Empty when no run at all is sound.
  */
 function verticalWalls(
   rings: Rings,
@@ -414,25 +419,46 @@ function verticalWalls(
   sharedSet: ReadonlySet<number>,
   house: { readonly wantsGable: boolean },
   params: RoofscapeParams,
-): VerticalWalls | undefined {
+): VerticalWalls[] {
   let zero: ReadonlySet<number> = sharedSet;
   let roof = runSkeleton(rings, zero);
   if (roof === undefined && zero.size > 0) {
     zero = new Set();
     roof = runSkeleton(rings, zero);
   }
-  if (roof === undefined) return undefined;
+  if (roof === undefined) return [];
   const plain: VerticalWalls = {
     zero,
     style: zero.size > 0 ? "shared" : "hip",
   };
-  if (!house.wantsGable) return plain;
+  if (!house.wantsGable) return [plain];
   const ends = chooseGableEnds(wingEnds(roof), rings[0] ?? [], shared, params);
-  if (ends.size === 0) return plain;
+  if (ends.size === 0) return [plain];
   const withEnds = new Set([...zero, ...ends]);
   return runSkeleton(rings, withEnds) === undefined
-    ? plain
-    : { zero: withEnds, style: "gable" };
+    ? [plain]
+    : [{ zero: withEnds, style: "gable" }, plain];
+}
+
+/**
+ * True when the roof's mesh closes (`skeletonMesh`'s check) at `tan`. The
+ * planner grants no roof that would fail it at mesh time: that building
+ * would be drawn as something other than its plan, and the obstacle index,
+ * which reads the plan, would disagree with the screen.
+ *
+ * Checked at an eave of 0 m: the planner does not know the ground, and the
+ * check showed no dependence on the eave's height from 0 to 600 m
+ * (`invented-roofs.closure.property.test.ts`). `inventedVolume` in
+ * `buildings.ts` still guards the real mesh.
+ */
+function meshCloses(roof: SkeletonRoof, tan: number): boolean {
+  try {
+    skeletonMesh(roof, { eaveM: 0, slope: tan });
+    return true;
+  } catch (error) {
+    if (error instanceof SkeletonFailure) return false;
+    throw error;
+  }
 }
 
 /**
@@ -451,11 +477,13 @@ function fitRoof(
   if (whole === undefined) return undefined;
   const fitted = Math.min(tan, params.maxRiseM / whole.ridgeT);
   if (fitted >= params.tanFloor) {
-    return { style: walls.style, roofRings: over, roof: whole, tan: fitted };
+    return meshCloses(whole, fitted)
+      ? { style: walls.style, roofRings: over, roof: whole, tan: fitted }
+      : undefined;
   }
   // Too wide for a whole roof: slopes up to the limit, a flat top after it.
   const cut = runSkeleton(over, sharedSet, params.maxRiseM / params.tanFloor);
-  if (cut === undefined) return undefined;
+  if (cut === undefined || !meshCloses(cut, params.tanFloor)) return undefined;
   return { style: "cut", roofRings: over, roof: cut, tan: params.tanFloor };
 }
 
