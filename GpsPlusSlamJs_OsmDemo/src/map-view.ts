@@ -317,8 +317,8 @@ export class MapView {
    * Adds or removes the elevation sources' credits in the map's footer line.
    *
    * WHY IT LIVES HERE RATHER THAN IN THE HEADER (DEC-R2-4). The header became
-   * collapsible, and attribution is required wherever the data is shown. The
-   * footer line is always on the map, where a credit conventionally goes.
+   * collapsible; the footer line is always on the map, where a credit
+   * conventionally goes, with the Credits view one tap from it.
    *
    * WHERE IN THE LINE. The elevation credits are listed, each linked, in the
    * Credits view one tap from "Credits"; only the OSM credit is pinned into

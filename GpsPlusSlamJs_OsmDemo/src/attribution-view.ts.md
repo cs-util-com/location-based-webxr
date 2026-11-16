@@ -53,8 +53,11 @@ It does not use MapTiler (the name "Mapterhorn" is easy to misread as it).
   `joerd` attribution document.** That document lists the required source
   credits (USGS, Copernicus EU-DEM, Geoscience Australia and others) and says
   attribution must "appear in a place that is reasonable to the medium",
-  pointing at the OSMF guidance as best practice. The long list cannot fit in
-  any map line, so it is linked from the Credits view.
+  pointing at the OSMF guidance as best practice. Following that best practice
+  (the OSMF examples) would pin the elevation credit visible on the map; the
+  requirement itself is only "reasonable to the medium", so keeping it one tap
+  away is a choice, not something the document demands. The long list cannot
+  fit in any map line, so it is linked from the Credits view.
 
 **This reverses an earlier record.** Before this line, the elevation sources
 kept a visible short name each, on the record that they were required "the

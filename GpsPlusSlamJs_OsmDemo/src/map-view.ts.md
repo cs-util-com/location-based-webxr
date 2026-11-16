@@ -82,8 +82,8 @@ raster basemap.
   - **This class owns the attribution line; Leaflet's control is switched off**
     (`attributionControl: false`, round three, DEC-W1). Leaflet's own control
     rebuilds its `innerHTML` on every credit change — which happens on every
-    terrain apply - so a Credits view could not survive inside it. Switching it off also disposes of its courtesy "Leaflet"
-    prefix link, which the same session asked to drop, without needing
+    terrain apply - so a Credits view could not survive inside it. Switching
+    it off also disposes of its courtesy "Leaflet" prefix link, which the same session asked to drop, without needing
     `setPrefix(false)` as a second mechanism. See
     [`attribution-view.ts.md`](./attribution-view.ts.md).
   - **One footer line, "© OpenStreetMap | Credits | Legal".** The OSM credit is

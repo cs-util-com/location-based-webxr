@@ -871,17 +871,10 @@
          is absolutely positioned inside the map pane, so the box is already
          bounded by the map's width, and a viewport cap wrapped the line to two
          on a 390 px phone. */
-      /* A REAL TAP TARGET for every item: 1.5 rem = 24 px tall, the WCAG 2.2
-         SC 2.5.8 floor. Not 44 px: the line is meant to stay thin. */
-      .map-attribution-line a,
       .map-attribution-toggle {
-        display: inline-block;
-        min-height: 1.5rem;
-        line-height: 1.5rem;
-        vertical-align: bottom;
-      }
-      .map-attribution-toggle {
-        /* And a width floor, so 24 px holds in both directions. */
+        /* A width floor, so 24 px holds in both directions. This rule comes
+           BEFORE the shared one below: its `font: inherit` resets
+           `line-height`, which the shared rule then sets again. */
         min-width: 1.5rem;
         padding: 0;
         border: 0;
@@ -892,6 +885,15 @@
         font: inherit;
         text-decoration: underline;
         cursor: pointer;
+      }
+      /* A REAL TAP TARGET for every item: 1.5 rem = 24 px tall, the WCAG 2.2
+         SC 2.5.8 floor. Not 44 px: the line is meant to stay thin. */
+      .map-attribution-line a,
+      .map-attribution-toggle {
+        display: inline-block;
+        min-height: 1.5rem;
+        line-height: 1.5rem;
+        vertical-align: bottom;
       }
       /* The pipes are decoration (hidden from screen readers in the markup). */
       .map-attribution-sep {

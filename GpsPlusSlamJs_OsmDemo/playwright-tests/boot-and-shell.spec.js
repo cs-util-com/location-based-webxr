@@ -1172,6 +1172,38 @@ test.describe("the phone layout", () => {
       await expect(line.locator("#legal-link")).toBeVisible();
       await expect(legal).toHaveAttribute("href", "/legal/");
 
+      // AND IT SITS IN THE LINE, not only in its DOM subtree. The fixed
+      // bottom-left fallback is scoped to `body > #legal-link`; were that
+      // scope lost, the moved link would still be a child of the line (every
+      // assertion above passes) while being drawn in the far corner.
+      // The box is the line's CONTROL, the block that draws the strip: the
+      // line itself is an inline span whose box is only its text run, shorter
+      // than the 24 px targets standing in it.
+      const lineBox = await page
+        .locator("#map .leaflet-control-attribution.map-attribution")
+        .boundingBox();
+      const legalBox = await legal.boundingBox();
+      const mapBox = await page.locator("#map").boundingBox();
+      expect(lineBox).not.toBeNull();
+      expect(legalBox).not.toBeNull();
+      expect(mapBox).not.toBeNull();
+      if (lineBox && legalBox && mapBox) {
+        // 1 px of slack for sub-pixel rounding.
+        expect(legalBox.x).toBeGreaterThanOrEqual(lineBox.x - 1);
+        expect(legalBox.y).toBeGreaterThanOrEqual(lineBox.y - 1);
+        expect(legalBox.x + legalBox.width).toBeLessThanOrEqual(
+          lineBox.x + lineBox.width + 1,
+        );
+        expect(legalBox.y + legalBox.height).toBeLessThanOrEqual(
+          lineBox.y + lineBox.height + 1,
+        );
+        // ...and the line is at the map's right edge (Leaflet's bottom-right
+        // corner), within a few px of margin.
+        expect(
+          Math.abs(mapBox.x + mapBox.width - (lineBox.x + lineBox.width)),
+        ).toBeLessThanOrEqual(4);
+      }
+
       const full = page.locator("#map .map-attribution-full");
       await expect(full).toBeHidden();
 

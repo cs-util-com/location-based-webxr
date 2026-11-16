@@ -2816,17 +2816,9 @@ async function main(): Promise<void> {
       // is measured from this field, so replacing it without re-deriving them
       // is what left them ~100 m under the AR city. See `drawQuestBeacons`.
       drawQuestBeacons();
-      // Attribution is REQUIRED wherever the data is shown, the same as the OSM
-      // one — and only shown while the data is actually in use, because
-      // crediting a source whose tiles all failed would be a claim about what
-      // is on screen.
-      //
-      // INTO LEAFLET S ATTRIBUTION CONTROL, not the header (DEC-R2-4). The
-      // header is collapsible now, and attribution may not be collapsed away.
-      // The control is always visible and is where a credit conventionally
-      // belongs, so it is the ONLY place this is shown — a second copy in the
-      // header would be the copy that does not satisfy the obligation, sitting
-      // next to the one that does.
+      // The elevation credits go into the map footer's Credits view, and only
+      // while terrain is in use; why that placement suffices is in
+      // `attribution-view.ts.md`.
       // BOTH sources, unconditionally: the composition falls back per tile, so
       // any session may be standing on either DEM. See `dem-provider.ts` for
       // why the credit is a constant rather than the provider's own field.
