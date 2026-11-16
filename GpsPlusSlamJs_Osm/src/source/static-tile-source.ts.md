@@ -113,8 +113,23 @@ the library default is off.
 3. Refusal, network error, a request past `requestTimeoutMs`, or the wait
    spent: the tile goes to
    `fallback` with the caller's options, at once, and no fill is asked for
-   during `refusalMemoryMs`. Stored files are still read in that time: a
-   refused fill says nothing about the files the host already holds.
+   during `refusalMemoryMs`. After an HTTP answer (a refusal, a host error)
+   or the fill wait running out, stored files are still read in that time:
+   a refused fill says nothing about the files the host already holds.
+   After NO answer (a network error, a request or body past
+   `requestTimeoutMs`), the host is not asked anything during
+   `refusalMemoryMs`, reads and speculative reads included: every tile
+   goes straight to `fallback`. A header timer of the fill wait (the wait
+   running out before an answer began) is `FillWaitSpent` inside the
+   source and counts as the wait spent, not as no answer: the host had
+   answered that tile's earlier requests.
+   - **Worst case for a host that never answers** (a black-holed address):
+     the first tile waits one `requestTimeoutMs` (45 s on the defaults)
+     before its race, and every later tile goes to the race at once until
+     `refusalMemoryMs` (10 min) has passed, when one tile pays the 45 s
+     again. The memory is per `StaticTileSource` instance: a consumer that
+     builds one per load (the globe city worker) pays it once per load.
+     Before this, each cold tile paid the 45 s, one after another.
 
 **Read-only fetches** do step 1 only: a `speculative` fetch (a ring warm,
 nobody waiting on it) and any fetch while fills are refused. A speculative
@@ -133,6 +148,10 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
   race begins and asserts nothing reaches the host after it.
 - **The fallback runs at most once per tile**, and a tile is always delivered
   by exactly one of the two (property test over random host answers).
+- **No answer, no further asks** for `refusalMemoryMs`: a test times one
+  read out and asserts the next tile reaches the race with no request to
+  the host; a refused fill, a host error and a poll cut by the fill wait
+  keep stored files readable.
 - **An abort is rethrown**, never turned into a fallback, and does not mark the
   host as refusing.
 - **`speculative` is forwarded** to the fallback untouched.
@@ -172,9 +191,20 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
   is the race's per-attempt deadline: the host sends stored bytes only, so
   at equal bandwidth it never needs longer than the race, which also waits
   for the operator to compute the answer.
+  - **Why the read keeps 45 s and has no shorter limit of its own**
+    (checked 2026-11-16): the limit covers the body, and the only numbers
+    at hand are body sizes and bandwidths: a stored tile of 4.3 MB was read
+    in 2.3 s on a good connection, and 3.1 MB at 2 Mbps takes about 12 s,
+    so 4.3 MB at 1 Mbps takes about 34 s. A shorter limit would cut dense
+    tiles on slow phone links and send them to the race, which then
+    downloads the same bytes from a slower operator. Nothing measured
+    supports a lower value, and the no-answer memory above already bounds
+    the black-holed case to one limit per memory. A separate, shorter limit
+    on the headers alone would be the safer cut, but needs a measurement of
+    the host's header latency on phones first.
 - A body that fails while it is read (`text()` rejecting with a
-  `TypeError`) is a host failure with the refusal remembered, exactly like a
-  network drop: the two cannot be told apart, and either way this read got
+  `TypeError`) is a host failure with the refusal remembered and the host
+  not asked at all for the memory, exactly like a network drop: the two cannot be told apart, and either way this read got
   nothing from the host.
 - Defensive: unknown statuses are refusals; a bad stored file goes to the
   race and is reported, with no refusal (it says nothing about other
@@ -223,6 +253,9 @@ const source = new CachingSource(
   tile, speculative reads included; header
   timers only below the request limit; no
   request after an overshooting sleep, which still counts as a refusal so
-  the next fetch only reads; no fill asked with no wait left), the poll timings (`slotWaitMs` for the wait), the bounded wait,
+  the next fetch only reads; no fill asked with no wait left), a host that
+  does not answer (a timed-out read or a network error skips the host for
+  the next tiles, speculative ones too, until the memory passes; a refused
+  fill, a 500 and a poll cut by the fill wait do not), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.

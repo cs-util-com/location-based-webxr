@@ -29,10 +29,14 @@ zoom, heightsUrl?, firstRings? }` and `{ kind: "abort", id }`; replies
   switch (off until objects M2b) are set in the core too.
 - Each city tile is asked of the tile host first (the library's
   `StaticTileSource`): a 200 is the tile, and the Overpass race is never
-  asked for it; a 404 asks the host to fill it, and a refused fill, an
-  error or a timeout hands the tile to the race at once, after which no
-  fill is asked for 10 minutes (stored tiles are still read). A fill the
-  host accepts is waited for up to 60 s.
+  asked for it; a 404 asks the host to fill it, and a fill the host
+  accepts with nothing queued ahead is waited for up to 60 s. A refused
+  fill, fills queued ahead, an error or a timeout hand the tile to the
+  race at once. After a refusal no fill is asked for 10 minutes (stored
+  tiles are still read); after no answer at all (a network error or a
+  timeout) the host is not asked anything for 10 minutes. Both hold
+  within one load only: the core builds a new source for each load, so
+  the next load asks the host again.
 - The host is always on, with no switch (OsmDemo's `tiles=off`). The
   worker's deps are fixed when it starts and it cannot read the page's
   URL, so a switch would need a new field in the core's load message, for

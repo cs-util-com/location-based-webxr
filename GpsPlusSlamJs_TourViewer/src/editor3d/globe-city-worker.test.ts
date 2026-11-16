@@ -72,6 +72,15 @@ const LOAD = {
   zoom: 12,
 };
 
+/** A progress reply counting at least one city tile fetched or warm. */
+function cityTileDelivered(message: Record<string, unknown>): boolean {
+  if (message["kind"] !== "progress") return false;
+  const counts = message["counts"] as
+    { overpass?: { fetched?: number; warm?: number } } | undefined;
+  const tiles = counts?.overpass;
+  return (tiles?.fetched ?? 0) + (tiles?.warm ?? 0) >= 1;
+}
+
 describe("globe-city-worker", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -140,11 +149,12 @@ describe("globe-city-worker", () => {
     const asked = network(200);
     await import("./globe-city-worker.js");
     scope.onmessage?.({ data: LOAD });
-    // A progress reply comes after a job settled: by then the first tile
-    // has been answered.
+    // Wait until a city tile has been delivered (a height tile settling
+    // posts progress too, so any progress reply alone would not do): by
+    // then the host has served it, and any race would already have run.
     await vi.waitFor(
       () => {
-        expect(posted.some((m) => m["kind"] === "progress")).toBe(true);
+        expect(posted.some(cityTileDelivered)).toBe(true);
       },
       { timeout: 10_000 },
     );

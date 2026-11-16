@@ -55,9 +55,10 @@ const core = createCityWorkerCore({
     buildCity,
   },
   userAgent: CITY_WORKER_USER_AGENT,
-  // The project's tile host first, the Overpass race on any 404, refusal
-  // or error (the library's `StaticTileSource`), as OsmDemo does. Always
-  // on: the sidecar says why the editor has no switch for it.
+  // The project's tile host first (the library's `StaticTileSource`), as
+  // OsmDemo does: a 404 asks for a fill, waited for up to 60 s when nothing
+  // is queued ahead; a refusal or an error hands the tile to the Overpass
+  // race at once. Always on: the sidecar says why there is no switch.
   staticTilesBaseUrl: OSM_TILES_BASE_URL,
 });
 

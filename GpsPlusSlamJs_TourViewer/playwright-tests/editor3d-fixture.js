@@ -30,7 +30,9 @@ export const SQUARE_GROUND_M = 515.5;
  * with `globeAssets: "serve"`, let the dev server answer it, still
  * counted: the editor on the globe view draws it). The globe view's
  * buildings are answered too, for their worker (`answerCityData`):
- * Overpass with `overpass` (an Overpass JSON
+ * the project's tile host with a 404 (not stored, so each tile goes to
+ * the race and the real host is never reached), Overpass with
+ * `overpass` (an Overpass JSON
  * object, every tile the same; no buildings by default), the heights
  * with the same flat ground. `groundM` stands that ground at another
  * height (m); `groundAt(col, row)` gives each tile pixel its own height

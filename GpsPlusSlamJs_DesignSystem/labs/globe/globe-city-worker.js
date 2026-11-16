@@ -87,8 +87,10 @@ async function start(id, target, heights, firstRings) {
   const plan = cityDataPlan(target, { heights });
   let built = false;
   const load = loadCityData(plan, {
-    // The project's tile host first, the Overpass race on any 404, refusal
-    // or error, as the Tour Editor's city and OsmDemo do.
+    // The project's tile host first, as the Tour Editor's city and OsmDemo
+    // do: a 404 asks for a fill, waited for up to 60 s when nothing is
+    // queued ahead; a refusal or an error hands the tile to the Overpass
+    // race at once.
     source: createCityTileSource(store, {
       userAgent: USER_AGENT,
       staticTiles: { baseUrl: OSM_TILES_BASE_URL },

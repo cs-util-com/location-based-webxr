@@ -40,9 +40,13 @@ message }` when no city was delivered (heights still missing, no tile).
   race); the
   library's `loadCityData` through its `createCityTileSource` (the globe's
   user agent, and the project's tile host `OSM_TILES_BASE_URL` as its
-  `staticTiles` option: each tile is read from the host first; a 404, a
-  refused fill or an error hands it to the Overpass race at once, a 200 is
-  the tile and the race is never asked) and `createCachingTileFetch` (tiles and heights side by side,
+  `staticTiles` option: each tile is read from the host first: a 200 is
+  the tile and the race is never asked; a 404 asks the host to fill it,
+  and a fill accepted with nothing queued ahead is waited for up to 60 s;
+  a refused fill, fills queued ahead, an error or a timeout hand it to the
+  Overpass race at once. After a refusal no fill is asked for 10 minutes,
+  and after no answer at all the host is not asked anything for 10
+  minutes, both within one load only: each load builds its own source) and `createCachingTileFetch` (tiles and heights side by side,
   the first ring delivered first, a 20 s deadline per height tile, retries
   after 10, 30 and 60 s); `buildCity` within the terrain window (R12) with
   the roads, on each delivery, with the delivery's `window` (the loaded

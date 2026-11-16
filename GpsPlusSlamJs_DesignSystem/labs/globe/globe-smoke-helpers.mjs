@@ -203,14 +203,14 @@ export const gridAround = (c, half, n) => {
 };
 
 /** The project's tile host, which the city worker asks before the race. */
-const TILES_HOSTNAME = new URL(OSM_TILES_BASE_URL).hostname;
+export const TILES_HOSTNAME = new URL(OSM_TILES_BASE_URL).hostname;
 
 /**
  * The tile host's answer in every smoke: 404 for every tile and fill (not
  * stored, the fill refused), so the library hands each tile to the race at
  * once and the Overpass routes and counts keep their meaning.
  */
-const tileHostNotStored = (route, cors) =>
+export const tileHostNotStored = (route, cors) =>
   route.fulfill({ status: 404, headers: cors, body: "" });
 
 /**
