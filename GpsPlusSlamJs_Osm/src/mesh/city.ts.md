@@ -19,7 +19,12 @@ the same ground.
   the field's `heightAt` at a position's ENU metres, or flat (no sampler)
   without a field. One derivation, so every layer stands on one surface.
 - `buildCity(features, ground, { window }) → City` - `{ volumes, barriers,
-buildings, trees, cosmeticTrees, furniture, roads, roadCount }`. `window` (a lat/lng
+buildings, trees, cosmeticTrees, furniture, roads, roadCount,
+fallbackBuildings, firstFallbackError? }`. `fallbackBuildings` counts the
+  buildings not drawn as built (a roof drawn as a lid because its mesh did not
+  close, or an outline drawn plain or skipped because its build threw;
+  `buildings.ts.md`), over every building built, `withinM` or not;
+  `firstFallbackError` is the first such error, for a consumer to log. `window` (a lat/lng
   `Bbox`) is REQUIRED (city objects plan 2026-11-07-2315 section 4): the
   bounding box of the data the caller fetched; everything invented from a
   relation (the cosmetic trees today) stays inside it. RangeError without it.
@@ -96,7 +101,8 @@ mitreLimit? }` (city objects plan 2026-11-07-2315 M4a, review MINOR 4):
   `"class"` the class colours (`buildingColour`, `roofColour`) as before M7.
   RangeError for any other value.
 - No other error modes: a feature that cannot be built is skipped, as in
-  every builder.
+  every builder, and a building whose build throws is counted in
+  `fallbackBuildings` instead of failing the city.
 
 ## Invariants & assumptions
 
@@ -138,6 +144,8 @@ for (const chunk of city.buildings) draw(chunk);
 ```
 
 ## Tests
+
+`buildings.isolation.test.ts` - `fallbackBuildings` and `firstFallbackError`.
 
 `city.test.ts` - volumes, barriers and trees built; street furniture of
 every kind by default, only the kinds asked for, none for `[]`, within

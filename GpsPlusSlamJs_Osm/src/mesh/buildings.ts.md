@@ -14,6 +14,8 @@ OSM features to building volumes, honouring `building:part`.
     outline not drawn because what stands inside it fills it, and a
     multi-polygon outline are drawn exactly as with the option off
     (`site-invented-roofs.test.ts` compares the bytes on every fixture).
+  - **`onFallback(error)`** (optional): called once per outline not drawn as
+    built, with the error. `buildCity` counts these.
 - `inventedRoofTotals(features, frame): Map<OsmFeatureKey, number>` - the
   invented height (base to top) of every building that takes an invented roof
   or lid, from the same planner and the same input as `buildBuildings`, for
@@ -81,6 +83,17 @@ parentFeature?, rings }` with rings as `x = lng, y = lat`.
     after.
 
 ## Invariants & assumptions
+
+- **One building never breaks the city** (2026-11-16). Each outline is built
+  in its own try block (`isolated`): when its build throws, it is drawn as
+  its plain volume from the tags, or skipped when that throws too, and
+  `onFallback` hears of it. An invented roof whose mesh does not close
+  (`SkeletonFailure`) is drawn as a flat lid at the PLANNED top instead, so
+  the obstacle index, which reads the plan, still matches the screen. The
+  planner already grants only roofs that close at an eave of 0 m, so this is
+  the last guard. A try block costs nothing while nothing throws; no
+  city-build benchmark measured it. Not isolated: the planner run itself,
+  the parts and the tall structures (a defect there still propagates).
 
 - **The base sits at the LOWEST terrain height under the outer ring, and the walls
   are lengthened to match (DEC-R2-19).** Previously one sample was taken at the
@@ -296,6 +309,10 @@ const batch = mergeMeshes(volumes.map((v) => v.mesh));
   relations; Midtown and Park Slope 0), every other volume byte-identical to
   the off build, every invented top drawn at `topHeightM`, and
   `inventedRoofTotals` equal to the drawn heights, on all 12 sites.
+- `buildings.isolation.test.ts` - the mesh call mocked to throw: a
+  `SkeletonFailure` draws a lid at the planned top, any other error the
+  plain volume, `onFallback` hears each once, the neighbour is drawn as
+  built, and `buildCity` counts the fallback and keeps the first error.
 - `part-coverage.test.ts` — the covered share (courtyards, overlaps, two outers,
   frame independence as a property).
 - `s3db-parts.test.ts` — a half-filled outline drawn (synthetic and Tower

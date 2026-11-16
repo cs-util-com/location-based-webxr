@@ -66,6 +66,7 @@ import {
 } from "./invented-roofs.js";
 import type { InventedFootprint, InventedPlan } from "./invented-roofs.js";
 import type { RoofscapeParams } from "./roofscape-rules.js";
+import { SkeletonFailure } from "./roof-skeleton.js";
 
 /** One extruded volume, with the provenance to trace it back to OSM. */
 export interface BuildingVolume {
@@ -159,6 +160,15 @@ export interface BuildBuildingsOptions {
    * by default.
    */
   readonly inventedRoofs?: boolean;
+  /**
+   * Called once per outline not drawn as built: an invented roof whose mesh
+   * did not close (drawn as a flat lid at the planned top), or an outline
+   * whose build threw (drawn as its plain volume from the tags, or skipped
+   * when that throws too). With the error, for a consumer's log;
+   * `buildCity` counts these. Absent: the building is still isolated,
+   * silently.
+   */
+  readonly onFallback?: (error: unknown) => void;
 }
 
 /**
@@ -209,20 +219,54 @@ function outlineVolumes(
       [outline, ...(partsByOutline.get(key) ?? [])],
       options,
     );
+    const plain = (): BuildingVolume =>
+      volumeFor(outline.feature, outline.polygons, undefined, options, ground);
     const plan = invented?.get(key);
-    volumes.push(
+    const volume =
       plan === undefined
-        ? volumeFor(
-            outline.feature,
-            outline.polygons,
-            undefined,
+        ? isolated(plain, undefined, options)
+        : isolated(
+            () =>
+              inventedVolume(
+                outline.feature,
+                outline.polygons,
+                plan,
+                ground,
+                options.onFallback,
+              ),
+            plain,
             options,
-            ground,
-          )
-        : inventedVolume(outline.feature, outline.polygons, plan, ground),
-    );
+          );
+    if (volume !== undefined) volumes.push(volume);
   }
   return volumes;
+}
+
+/**
+ * ONE BUILDING NEVER BREAKS THE CITY. `build`'s volume; when it throws, the
+ * `fallback`'s (the plain volume from the tags); when there is none or it
+ * throws too, nothing: the building is skipped. Either way
+ * `options.onFallback` hears of it once, with the first error.
+ *
+ * A roof that could not be built once failed the whole city build, the map's
+ * snapshot with it. A try block costs nothing while nothing throws.
+ */
+function isolated(
+  build: () => BuildingVolume,
+  fallback: (() => BuildingVolume) | undefined,
+  options: BuildBuildingsOptions,
+): BuildingVolume | undefined {
+  try {
+    return build();
+  } catch (error) {
+    options.onFallback?.(error);
+    if (fallback === undefined) return undefined;
+    try {
+      return fallback();
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 /**
@@ -1030,6 +1074,8 @@ function inventedVolume(
   polygons: EnuPoint[][][],
   plan: InventedPlan,
   ground: { lowest: number; rise: number },
+  /** Hears of a roof drawn as a lid because its mesh did not close. */
+  onFallback?: (error: unknown) => void,
 ): BuildingVolume {
   const resolved = resolveHeights(feature.tags);
   if (plan.kind === "lid") {
@@ -1051,14 +1097,27 @@ function inventedVolume(
     totalHeightM: inventedTotalM(plan),
     roofShape: plan.style === "gable" ? "gabled" : "hipped",
   };
-  return assembleVolume(
-    feature,
-    polygons,
-    undefined,
-    heights,
-    [inventedRoofMesh(plan, ground)],
-    { ground, roofIsInvented: true },
-  );
+  let roofed: ExtrudedBuilding;
+  try {
+    roofed = inventedRoofMesh(plan, ground);
+  } catch (error) {
+    if (!(error instanceof SkeletonFailure)) throw error;
+    // THE LAST GUARD: the planner grants only roofs whose mesh closes at an
+    // eave of 0 m, so this one did there and not on this ground. A flat lid
+    // at the planned top keeps the drawn top where the obstacle index puts
+    // it, which the plain volume from the tags would not.
+    onFallback?.(error);
+    return inventedVolume(
+      feature,
+      polygons,
+      { kind: "lid", why: "no closed roof", heightM: inventedTotalM(plan) },
+      ground,
+    );
+  }
+  return assembleVolume(feature, polygons, undefined, heights, [roofed], {
+    ground,
+    roofIsInvented: true,
+  });
 }
 
 /** One volume from its polygons' meshes, in polygon order. */
