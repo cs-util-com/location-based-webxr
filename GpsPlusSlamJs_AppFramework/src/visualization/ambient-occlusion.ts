@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { mulberry32 } from '../utils/mulberry32.js';
 import { smoothstep } from '../utils/smoothstep.js';
 
 /** The AO parameters, in view-space metres where they are lengths. */
@@ -92,7 +93,8 @@ export const AO_NOISE_SEED = 1;
 const AO_DISPLAY_EXPONENT = 1 / 2.2;
 
 /**
- * A seeded generator in [0, 1) (mulberry32).
+ * A seeded generator in [0, 1): the package's `mulberry32`, behind a check
+ * that the seed is an integer.
  *
  * @throws RangeError for a seed that is not an integer.
  */
@@ -100,14 +102,7 @@ export function aoNoiseRandom(seed: number): () => number {
   if (!Number.isInteger(seed)) {
     throw new RangeError(`AO noise seed must be an integer, got ${seed}`);
   }
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  return mulberry32(seed);
 }
 
 /**

@@ -26,6 +26,7 @@
 import * as THREE from 'three';
 
 import { glslFloat } from '../../utils/glsl-float.js';
+import { mulberry32 } from '../../utils/mulberry32.js';
 import { smoothstep } from '../../utils/smoothstep.js';
 import { CLOUD_LAYER } from './cloud-layer.js';
 import { coverTableThreshold, quantileThresholds } from './cloud-hex.js';
@@ -519,13 +520,7 @@ export function cloudLiveCoverThresholds(
 ): number[] {
   const samples = options.samples ?? 1_000_000;
   const spanKm = options.spanKm ?? 20_000;
-  let state = (options.seed ?? 1) >>> 0;
-  const next = () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = Math.imul(state ^ (state >>> 15), 1 | state);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+  const next = mulberry32(options.seed ?? 1);
   const basis = cloudLiveBasis({ originKm: [0, 0], rotationRad: 0 });
   const values = new Float64Array(samples);
   for (let i = 0; i < samples; i++) {
