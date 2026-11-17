@@ -203,6 +203,23 @@ function isAbort(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+/**
+ * A failed request's error as `request` rethrows it: a caller abort or this
+ * source's own verdict (the fill wait's end) unchanged, anything else (a
+ * network error, no headers within the request limit) a `NoAnswer` stamped
+ * with the time the request was sent.
+ */
+function asNoAnswer(
+  error: unknown,
+  signal: AbortSignal | undefined,
+  startedAt: number,
+): unknown {
+  if (isAbort(error) || signal?.aborted === true || isOwnVerdict(error)) {
+    return error;
+  }
+  return new NoAnswer(startedAt, error);
+}
+
 function requireBaseUrl(raw: string): string {
   let url: URL;
   try {
@@ -424,10 +441,7 @@ export class StaticTileSource implements OsmDataSource {
       this.lastAnswerAt = this.now();
       return response;
     } catch (error) {
-      if (isAbort(error) || signal?.aborted === true || isOwnVerdict(error)) {
-        throw error;
-      }
-      throw new NoAnswer(startedAt, error);
+      throw asNoAnswer(error, signal, startedAt);
     } finally {
       clearTimeout(timer);
     }
