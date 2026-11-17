@@ -794,8 +794,9 @@ describe('tour markdown (properties)', () => {
   // Why: a body is whatever a file holds, so a megabyte must read without
   // throwing or exhausting the stack, with P intact. Fixed bodies, one per
   // shape that grows a structure with the body's length: every mark mixed,
-  // emphasis nested half a million deep, pictures nested in pictures, and
-  // a quote and list line after another.
+  // emphasis nested about a quarter million levels deep (two stars a
+  // level), pictures nested in pictures, and a quote and list line after
+  // another.
   const MB = 1_000_000;
   it.each<[string, () => string]>([
     ['every mark, repeated', () => repeatTo(MARKDOWN_CHUNK_ALPHABET, MB)],
@@ -805,7 +806,11 @@ describe('tour markdown (properties)', () => {
     ],
     [
       'pictures nested in pictures',
-      () => `${'!['.repeat(MB / 14)}a${'](asset:a)'.repeat(MB / 14)}`,
+      // One level is `![` and `](asset:a)`: 12 characters.
+      () => {
+        const levels = Math.floor(MB / 12);
+        return `${'!['.repeat(levels)}a${'](asset:a)'.repeat(levels)}`;
+      },
     ],
     ['quote and list lines', () => repeatTo('> - - 1. > a\n', MB)],
   ])('reads a megabyte of %s', (_name, body) => {

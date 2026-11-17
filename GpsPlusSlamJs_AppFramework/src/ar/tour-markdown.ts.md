@@ -222,7 +222,7 @@ const hash = await textHashOf(text); // 'sha256:...'
   compared average about 130 characters), skipping by name the bodies that
   reach a spec departure above; totality and `P` invariants on arbitrary
   strings, on repeated-chunk bodies up to 64 k characters, and on fixed
-  1 MB bodies (every mark mixed, emphasis nested half a million deep,
+  1 MB bodies (every mark mixed, emphasis nested about a quarter million levels deep,
   pictures nested in pictures, quote and list lines); `P` invariants under
   removed formatting and through the escaper. Linear time is the
   linearity test's, never a timeout's.
@@ -236,4 +236,7 @@ const hash = await textHashOf(text); // 'sha256:...'
   hashes from Node's crypto, frozen.
 - `tour-markdown.linearity.test.ts` - walk steps per character at 8 k
   against 128 k characters on adversarial shapes (deterministic; timings
-  on a loaded machine spread too widely to bound).
+  on a loaded machine spread too widely to bound), plus two fixed-seed
+  properties over random repeated chunks: every mark at 8 k against
+  128 k, and the inline marks alone at 2 k against 32 k with more runs,
+  so a quadratic shape nobody listed is still found.

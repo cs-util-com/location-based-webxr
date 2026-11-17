@@ -463,6 +463,55 @@ describe('scrubDeep', () => {
         images: [{ debug_id: `lat=${REDACTED}` }],
       });
     });
+
+    // Why: a path is keys joined by `.` and `[]`, so a key that holds
+    // either could spell an exempt path from somewhere else. Such a key
+    // ends the path: nothing under it is exempt, at any depth.
+    describe('a key that holds path syntax', () => {
+      const realPaths = new Set([
+        'contexts.trace.span_id',
+        'spans[].span_id',
+        'a.b.span_id',
+      ]);
+
+      it('cannot forge a dotted path', () => {
+        const out = scrubDeep({ contexts: { 'trace.span_id': SPAN_ID } }, OWN, {
+          strict: true,
+          keepIdsAt: realPaths,
+        });
+        expect(JSON.stringify(out)).not.toContain(SPAN_ID);
+      });
+
+      it('cannot forge an array path', () => {
+        const out = scrubDeep({ 'spans[]': { span_id: SPAN_ID } }, OWN, {
+          strict: true,
+          keepIdsAt: realPaths,
+        });
+        expect(JSON.stringify(out)).not.toContain(SPAN_ID);
+      });
+
+      it('exempts nothing deeper under it either', () => {
+        const out = scrubDeep(
+          { 'a.b': { span_id: SPAN_ID }, a: { 'b]': [{ span_id: SPAN_ID }] } },
+          OWN,
+          {
+            strict: true,
+            keepIdsAt: new Set(['a.b.span_id', 'a.b][].span_id']),
+          }
+        );
+        expect(JSON.stringify(out)).not.toContain(SPAN_ID);
+      });
+
+      it('still keeps the real paths beside it', () => {
+        const value = {
+          contexts: { trace: { span_id: SPAN_ID }, 'trace.span_id': 'x' },
+          spans: [{ span_id: SPAN_ID }],
+        };
+        expect(
+          scrubDeep(value, OWN, { strict: true, keepIdsAt: realPaths })
+        ).toEqual(value);
+      });
+    });
   });
 
   it('removes everything under a coordinate key, an array or an object too', () => {

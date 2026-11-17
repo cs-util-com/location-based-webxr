@@ -35,16 +35,36 @@ function packageNameOf(dir) {
 /**
  * The `dist-site` folder the site build gives each package's vite build:
  * `--filter <name> exec vite build ... --base=/<folder>/`, with its index in
- * the script for the ordering check.
+ * the script for the ordering check. A build at the site root (`--base=/`,
+ * the Landing) gets the folder `''`.
  */
 function siteFoldersByPackage() {
   const builds = new Map();
   const viteBuild =
-    /'--filter',\s*'([^']+)',\s*'exec',\s*'vite',\s*'build',[^\]]*?'--base=\/([\w-]+)\/'/g;
+    /'--filter',\s*'([^']+)',\s*'exec',\s*'vite',\s*'build',[^\]]*?'--base=\/(?:([\w-]+)\/)?'/g;
   for (const match of BUILD_SITE.matchAll(viteBuild)) {
-    builds.set(match[1], { folder: match[2], at: match.index });
+    builds.set(match[1], { folder: match[2] ?? '', at: match.index });
   }
   return builds;
+}
+
+/**
+ * The site build of the package `name` whose Vite config `file` uploads its
+ * maps. Throws when the site build does not build it, or builds it at the
+ * site root: `SOURCE_MAP_FREE_APPS` names folders under the deploy, so a
+ * root app's maps would need a check of their own in
+ * `scripts/source-maps-deploy.mjs` before it can adopt the helper.
+ */
+function siteBuildOf(file, name, builds) {
+  const build = builds.get(name);
+  if (!build) throw new Error(`${file}: the site build does not build ${name}`);
+  if (build.folder === '')
+    throw new Error(
+      `${file}: ${name} is built at the site root (--base=/), which ` +
+        'SOURCE_MAP_FREE_APPS cannot name; give its maps a root check in ' +
+        'scripts/source-maps-deploy.mjs first',
+    );
+  return build;
 }
 
 /** The site-build folder of every app whose Vite config uploads its maps. */
@@ -57,13 +77,7 @@ function uploadingApps() {
     '*vite.config.mjs',
   )
     .filter((file) => /\bsentrySourceMapPlugins\(/.test(readTracked(file)))
-    .map((file) => {
-      const name = packageNameOf(dirname(file));
-      const build = builds.get(name);
-      if (!build)
-        throw new Error(`${file}: the site build does not build ${name}`);
-      return build;
-    });
+    .map((file) => siteBuildOf(file, packageNameOf(dirname(file)), builds));
 }
 
 describe('SOURCE_MAP_FREE_APPS', () => {
@@ -71,6 +85,16 @@ describe('SOURCE_MAP_FREE_APPS', () => {
     const folders = uploadingApps().map((build) => build.folder);
     expect(folders.length).toBeGreaterThan(0);
     expect([...folders].sort()).toEqual([...SOURCE_MAP_FREE_APPS].sort());
+  });
+
+  // Why: an app built at the site root has no folder to list, so the guard
+  // must say that, rather than claim the site build does not build it.
+  it('names a root build as such when its app uploads maps', () => {
+    const builds = siteFoldersByPackage();
+    expect(builds.get('gps-plus-slam-landing')?.folder).toBe('');
+    expect(() =>
+      siteBuildOf('Landing/vite.config.ts', 'gps-plus-slam-landing', builds),
+    ).toThrow(/is built at the site root \(--base=\/\)/);
   });
 
   it('is checked after every one of those apps is built', () => {

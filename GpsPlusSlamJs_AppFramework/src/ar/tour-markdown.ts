@@ -1167,7 +1167,16 @@ function applyEmphasis(
   return next;
 }
 
-/** The first delimiter above `stackBottom`, or null. */
+/**
+ * The first delimiter above `stackBottom`, or null.
+ *
+ * Here and in the drain loop of `processEmphasis`, `stackBottom` is
+ * compared by identity, which stays safe although the openers' bottoms are
+ * positions: `processEmphasis` is only called with a bracket's
+ * `previousDelimiter` or null, brackets close last-in first-out so that
+ * delimiter is still on the stack, and every removal during the pass is
+ * strictly above it.
+ */
 function firstAbove(
   ip: InlineParser,
   stackBottom: Delimiter | null
