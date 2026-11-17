@@ -481,10 +481,10 @@ describe('createQrTrackingController — the raw facts of the solve', () => {
     });
 
     controller.offerFrame(captured);
-    await new Promise((r) => setTimeout(r, 5));
-    await flush();
-
-    expect(solvePose).toHaveBeenCalled();
+    // Wait for the solve itself, not for a fixed time: the level fetch
+    // resolves on a later task, and a loaded runner can run that task after
+    // any short sleep (it once did, and the solve had not run yet).
+    await vi.waitFor(() => expect(solvePose).toHaveBeenCalled());
     expect(solvePose.mock.calls[0]?.[0]?.cameraPose).toEqual(capturePose);
     expect(raws[0]).toMatchObject({ cameraPose: capturePose, timestamp: 1234 });
   });
