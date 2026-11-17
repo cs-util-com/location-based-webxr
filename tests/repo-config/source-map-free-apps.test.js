@@ -93,7 +93,11 @@ describe('SOURCE_MAP_FREE_APPS', () => {
     const builds = siteFoldersByPackage();
     expect(builds.get('gps-plus-slam-landing')?.folder).toBe('');
     expect(() =>
-      siteBuildOf('Landing/vite.config.ts', 'gps-plus-slam-landing', builds),
+      siteBuildOf(
+        'GpsPlusSlamJs_Landing/vite.config.ts',
+        'gps-plus-slam-landing',
+        builds,
+      ),
     ).toThrow(/is built at the site root \(--base=\/\)/);
   });
 
