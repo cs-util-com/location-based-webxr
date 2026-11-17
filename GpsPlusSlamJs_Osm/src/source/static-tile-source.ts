@@ -141,13 +141,12 @@ class BadStoredTile extends Error {
  */
 class NoAnswer extends Error {
   override readonly name = "NoAnswer";
-  constructor(
-    readonly startedAt: number,
-    cause: unknown,
-  ) {
+  readonly startedAt: number;
+  constructor(startedAt: number, cause: unknown) {
     super(`no answer: ${cause instanceof Error ? cause.name : typeof cause}`, {
       cause,
     });
+    this.startedAt = startedAt;
   }
 }
 

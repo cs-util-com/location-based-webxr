@@ -885,6 +885,7 @@
         /* A width floor, so 24 px holds in both directions. This rule comes
            BEFORE the shared one below: its `font: inherit` resets
            `line-height`, which the shared rule then sets again. */
+        /* stylelint-disable-next-line csstree/validator -- max() is valid CSS; the bundled css-tree grammar rejects it here (false positive). */
         min-width: max(24px, 1.5rem);
         padding: 0;
         border: 0;
@@ -907,6 +908,7 @@
       .map-attribution-credit a,
       .map-attribution-toggle {
         display: inline-block;
+        /* stylelint-disable-next-line csstree/validator -- max() is valid CSS; the bundled css-tree grammar rejects it here (false positive). */
         min-height: max(24px, 1.5rem);
         line-height: 1.5rem;
         vertical-align: bottom;
