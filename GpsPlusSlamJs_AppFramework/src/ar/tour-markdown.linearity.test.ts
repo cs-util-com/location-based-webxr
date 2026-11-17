@@ -18,6 +18,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { __tourMarkdownWalkStepsForTests as walkStepsOf } from './tour-markdown';
+import { TOUR_MARKDOWN_CHUNK_ALPHABET as CHUNK_ALPHABET } from '../test-utils/tour-markdown-chunks';
 
 const SMALL = 8_000;
 const LARGE = 128_000;
@@ -65,17 +66,14 @@ const PATTERNS: Record<string, string> = {
   'one heading with closing hashes': '# a #',
 };
 
-/** The marks the long-body properties build their chunks from (the same
- *  alphabet as tour-markdown.property.test.ts). */
-const CHUNK_ALPHABET = '#*_-+>[]()!\\ \n.1az';
-
 function grow(seed: string, size: number): string {
   return seed.repeat(Math.ceil(size / seed.length)).slice(0, size);
 }
 
 /** The inline marks alone: the emphasis and bracket passes, where every
- *  quadratic shape found so far lived. */
-const INLINE_ALPHABET = '*_[]! a';
+ *  quadratic shape found so far lived. With `(` and `)` a link can close,
+ *  so the bracket pass's link-closing walk is searched too. */
+const INLINE_ALPHABET = '*_[]()! a';
 
 /** Steps per character at `large` over those at `small` characters. A body
  *  that costs no steps at either size counts as flat. */
@@ -120,15 +118,17 @@ describe('tour markdown parse work', () => {
 
   // Why: over every mark, only about 2 chunks in 1000 reached the
   // quadratic emphasis walk this parser once had, so 50 runs would miss a
-  // defect that rare. Over the inline marks alone about 15 in 1000 did,
-  // and the slope already shows from 2 k to 32 k characters at a fifth of
-  // the cost, so 250 runs here would find it with about 97 % odds.
+  // defect that rare. Over the inline marks alone about 4 in 1000 do (22 of
+  // 5 000 sampled chunks; 10 in 1000 without `(` and `)`, which dilute the
+  // emphasis marks but let a link close), and the slope already shows from
+  // 2 k to 32 k characters at a quarter of the cost, so 700 runs here find
+  // it with about 95 % odds (every seed of 1 to 4 and 7 did).
   it('stays linear on random chunks of the inline marks', () => {
     fc.assert(
       fc.property(chunkOf(INLINE_ALPHABET), (chunk) => {
         expect(slopeRatio(chunk, 2_000, 32_000)).toBeLessThan(MAX_SLOPE_RATIO);
       }),
-      { numRuns: 250, seed: 7 }
+      { numRuns: 700, seed: 7 }
     );
   });
 

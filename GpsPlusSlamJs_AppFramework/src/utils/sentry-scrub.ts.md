@@ -104,7 +104,8 @@ dependency on the SDK, so its rules are tested on their own.
     exemption is by path, never by key name. A key that holds `.`, `[` or
     `]` could spell another path (`contexts: { 'trace.span_id': id }`,
     `{ 'spans[]': { span_id: id } }`), so it ends the path: nothing under
-    it is exempt, at any depth. A value under `span_id` or
+    it is exempt, at any depth. So does an empty key, which at the root
+    would read as the root itself (`{ '': { contexts: ... } }`). A value under `span_id` or
     `debug_id` anywhere else (breadcrumb data, tags, a context of the app's
     own) is scrubbed as usual, as is a value at an exempt path that is not
     shaped like an id. `sentry-options.ts` passes the paths the SDK writes

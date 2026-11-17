@@ -177,7 +177,7 @@ export interface ScrubOptions {
    * `.`, with `[]` for any array element (`debug_meta.images[].debug_id`).
    * Only the places the error service's SDK writes its own ids belong here:
    * a value under the same key name anywhere else is scrubbed as usual, and
-   * so is everything under a key that holds `.`, `[` or `]`.
+   * so is everything under a key that holds `.`, `[` or `]`, or is empty.
    */
   readonly keepIdsAt?: ReadonlySet<string>;
 }
@@ -392,10 +392,11 @@ const PATH_SYNTAX = /[.[\]]/;
  * The path of `key` under `path`, or null, which no exemption matches.
  * Null from a key that holds `.`, `[` or `]` on, at any depth: such a key
  * could spell another path (`'trace.span_id'` would read as `trace`, then
- * `span_id`).
+ * `span_id`). An empty key ends the path too: at the root its path would
+ * be the root's own, so its children would read as the root's.
  */
 function childPath(path: string | null, key: string): string | null {
-  if (path === null || PATH_SYNTAX.test(key)) return null;
+  if (path === null || key === '' || PATH_SYNTAX.test(key)) return null;
   return path === '' ? key : `${path}.${key}`;
 }
 

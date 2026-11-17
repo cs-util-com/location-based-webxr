@@ -238,5 +238,8 @@ const hash = await textHashOf(text); // 'sha256:...'
   against 128 k characters on adversarial shapes (deterministic; timings
   on a loaded machine spread too widely to bound), plus two fixed-seed
   properties over random repeated chunks: every mark at 8 k against
-  128 k, and the inline marks alone at 2 k against 32 k with more runs,
-  so a quadratic shape nobody listed is still found.
+  128 k, and the inline marks alone (parentheses included, so links
+  close) at 2 k against 32 k with more runs, so a quadratic shape nobody
+  listed is still found. The first repeats chunks of the alphabet in
+  `test-utils/tour-markdown-chunks.ts`, shared with the property suite;
+  the inline one uses its own subset of it.

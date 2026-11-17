@@ -1304,6 +1304,17 @@ test.describe("the phone layout", () => {
           await full.boundingBox(),
         );
       }
+      // A WRAPPED footer keeps the bound too: the line takes the rows it
+      // needs and the view gives way, where a bound that assumed a one-row
+      // line let the open control grow past the map's top. A landscape
+      // phone's line fits on one row, so the control is narrowed by hand.
+      await control.evaluate((el) => el.style.setProperty("max-width", "8rem"));
+      const lineBox = await page
+        .locator("#map .map-attribution-line")
+        .boundingBox();
+      expect(lineBox?.height ?? 0, "the line wraps").toBeGreaterThan(30);
+      inside(await control.boundingBox(), "the open control, its line wrapped");
+      await control.evaluate((el) => el.style.removeProperty("max-width"));
       await toggle.click();
       await expect(full).toBeHidden();
     });

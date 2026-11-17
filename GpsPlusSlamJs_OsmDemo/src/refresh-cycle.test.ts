@@ -1527,15 +1527,16 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
     // page throws. Its first line then reads "OtherName: message", which a
     // check for this error's own name let through, message and all. A
     // name need not be one word either: a custom error may carry spaces or
-    // brackets in it.
+    // brackets in it. The frame after the header must survive: a check
+    // that dropped every line would pass the message checks too.
     for (const name of ["TypeError", "Mesh build [worker] Error"]) {
-      it(`drops the message from a frameless V8 stack written under another error's name (${name})`, async () => {
+      it(`drops the message from a stack header written under another error's name, keeping its frame (${name})`, async () => {
         vi.spyOn(console, "error").mockImplementation(() => {});
         clearLogBuffer();
         const error = new Error("No tiles near Heidelberg Altstadt");
-        // Header-only, as V8 writes a stack with no frames: the message
+        // The header as V8 writes it, then a bare frame: the message
         // differs from this error's own, so only the header check drops it.
-        error.stack = `${name}: No tiles near Heidelberg Altstadt, nor the Neckarwiese\n`;
+        error.stack = `${name}: No tiles near Heidelberg Altstadt, nor the Neckarwiese\nscoreRing@https://example.test/worker.js:10:5\n`;
         const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
         await createRefreshCycle({
           store: demo.store,
@@ -1545,7 +1546,9 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
           onMesh: () => {},
         })();
         const entry = getLogBuffer().at(-1);
-        expect(entry?.message).toContain("Error");
+        expect(entry?.message).toContain(
+          "scoreRing@https://example.test/worker.js:10:5",
+        );
         expect(entry?.message).not.toContain("Heidelberg");
         expect(entry?.message).not.toContain("Neckarwiese");
       });

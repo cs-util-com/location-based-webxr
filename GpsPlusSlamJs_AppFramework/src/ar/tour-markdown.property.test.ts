@@ -31,6 +31,7 @@ import {
   type TourMdBlock,
   type TourMdInline,
 } from './tour-markdown';
+import { TOUR_MARKDOWN_CHUNK_ALPHABET as MARKDOWN_CHUNK_ALPHABET } from '../test-utils/tour-markdown-chunks';
 
 // ---------------------------------------------------------------------------
 // A normalised tree both parsers are compared in
@@ -852,9 +853,6 @@ describe('tour markdown (properties)', () => {
     );
   });
 });
-
-/** The marks the long-body tests build their bodies from. */
-const MARKDOWN_CHUNK_ALPHABET = '#*_-+>[]()!\\ \n.1az';
 
 /** `seed` repeated to exactly `size` characters. */
 function repeatTo(seed: string, size: number): string {
