@@ -123,10 +123,15 @@ the library default is off.
    answer that arrives meanwhile (a request that was already running when
    another got none) clears that memory: the host has just answered. The
    converse holds too: a request that gets no answer only sets the memory
-   when it was sent at or after the host's last answer (`lastAnswerAt`). A
-   read that gives up at 45 s after another request was answered at 2 s
-   says nothing newer about the host, so it is only a refusal of its tile
-   (inside the source the failure is a `NoAnswer` carrying its send time).
+   when no other request was answered after it was sent (the source counts
+   the host's answers, `answers`, and each request keeps the count it was
+   sent at). A read that gives up at 45 s after another request was
+   answered at 2 s says nothing newer about the host, so it is only a
+   refusal of its tile (inside the source the failure is a `NoAnswer`
+   carrying its count). A count, not a send time, because the clock cannot
+   order a send and an answer in the same millisecond, and both orders
+   happen: a ring warm sent just before a cache hit's answer is overtaken,
+   while a fill POST sent right after its read's 404 is not.
    A header timer of the fill wait (the wait
    running out before an answer began) is `FillWaitSpent` inside the
    source and counts as the wait spent, not as no answer: the host had
@@ -271,6 +276,8 @@ const source = new CachingSource(
   the next tiles, speculative ones too, until the memory passes; a refused
   fill, a 500 and a poll cut by the fill wait do not; a failure of a
   request sent before another request's answer does not either, while one
-  sent after the last answer does), the poll timings (`slotWaitMs` for the wait), the bounded wait,
+  sent after the last answer does, in the same millisecond too: a ring warm
+  overtaken by an answer in its millisecond does not mark it, a fill POST
+  sent in its read's 404 millisecond does), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.

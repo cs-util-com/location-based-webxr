@@ -136,17 +136,18 @@ class BadStoredTile extends Error {
 
 /**
  * A request that got no HTTP answer at all (a network error, or no headers
- * within the request limit). `startedAt` (epoch ms) is when it was sent:
- * only a silence newer than the host's last answer says the host is gone.
+ * within the request limit). `answersAtSend` is how many HTTP answers the
+ * host had given when it was sent: only a silence that no later answer
+ * overtook says the host is gone.
  */
 class NoAnswer extends Error {
   override readonly name = "NoAnswer";
-  readonly startedAt: number;
-  constructor(startedAt: number, cause: unknown) {
+  readonly answersAtSend: number;
+  constructor(answersAtSend: number, cause: unknown) {
     super(`no answer: ${cause instanceof Error ? cause.name : typeof cause}`, {
       cause,
     });
-    this.startedAt = startedAt;
+    this.answersAtSend = answersAtSend;
   }
 }
 
@@ -207,17 +208,17 @@ function isAbort(error: unknown): boolean {
  * A failed request's error as `request` rethrows it: a caller abort or this
  * source's own verdict (the fill wait's end) unchanged, anything else (a
  * network error, no headers within the request limit) a `NoAnswer` stamped
- * with the time the request was sent.
+ * with the host's answer count when the request was sent.
  */
 function asNoAnswer(
   error: unknown,
   signal: AbortSignal | undefined,
-  startedAt: number,
+  answersAtSend: number,
 ): unknown {
   if (isAbort(error) || signal?.aborted === true || isOwnVerdict(error)) {
     return error;
   }
-  return new NoAnswer(startedAt, error);
+  return new NoAnswer(answersAtSend, error);
 }
 
 function requireBaseUrl(raw: string): string {
@@ -280,12 +281,13 @@ export class StaticTileSource implements OsmDataSource {
    */
   private unreachableUntil = 0;
   /**
-   * When the host last gave an HTTP answer (epoch ms). A request that got
-   * none marks the host unreachable only if it was sent at or after this:
-   * one already running when another got an answer says nothing newer
-   * about the host.
+   * How many HTTP answers the host has given. A request that got none marks
+   * the host unreachable only if this has not grown since it was sent: one
+   * already running when another got an answer says nothing newer about
+   * the host. A count, not a time: an answer in the same millisecond as a
+   * send is ordered right either way, and a clock jump changes nothing.
    */
-  private lastAnswerAt = -Infinity;
+  private answers = 0;
   /** Tiles whose refresh was already asked for in this session. */
   private readonly refreshAsked = new Set<string>();
   /** Tiles already reported bad in this session. */
@@ -366,7 +368,7 @@ export class StaticTileSource implements OsmDataSource {
       this.refusedUntil = this.now() + this.refusalMemoryMs;
     }
     const overtaken =
-      error instanceof NoAnswer && error.startedAt < this.lastAnswerAt;
+      error instanceof NoAnswer && error.answersAtSend < this.answers;
     if (!isOwnVerdict(error) && !overtaken) {
       this.unreachableUntil = this.now() + this.refusalMemoryMs;
     }
@@ -395,7 +397,7 @@ export class StaticTileSource implements OsmDataSource {
    * that starts just before the deadline can therefore take up to
    * `requestTimeoutMs` past it. A failure with no HTTP answer, other than a
    * caller abort or the fill wait's end, is rethrown as a `NoAnswer`
-   * stamped with the time the request was sent.
+   * stamped with the host's answer count when the request was sent.
    */
   private async request(
     url: string,
@@ -428,7 +430,7 @@ export class StaticTileSource implements OsmDataSource {
       AbortSignal.timeout(this.requestTimeoutMs),
       headersBy?.signal,
     );
-    const startedAt = this.now();
+    const answersAtSend = this.answers;
     try {
       const response = await this.fetchImpl(url, {
         ...(init.method === undefined ? {} : { method: init.method }),
@@ -438,10 +440,10 @@ export class StaticTileSource implements OsmDataSource {
       // An HTTP answer, whatever its status: the host is there, even if a
       // request running beside this one got none and marked it unreachable.
       this.unreachableUntil = 0;
-      this.lastAnswerAt = this.now();
+      this.answers++;
       return response;
     } catch (error) {
-      throw asNoAnswer(error, signal, startedAt);
+      throw asNoAnswer(error, signal, answersAtSend);
     } finally {
       clearTimeout(timer);
     }

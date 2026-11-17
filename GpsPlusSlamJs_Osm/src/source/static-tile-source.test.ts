@@ -665,6 +665,50 @@ describe("StaticTileSource", () => {
       expect(fallback.calls).toHaveLength(2);
     });
 
+    // Why these two matter: the clock cannot order a request against an
+    // answer that came in the same millisecond, and both orders happen. A
+    // ring warm can go out just before a cache hit is answered, in the same
+    // millisecond: the answer is newer, so the warm's silence is not news.
+    // A fill POST goes out right after its read's 404, in the same
+    // millisecond: no answer is newer than the POST, so its silence is.
+    // Counting answers, not comparing times, tells the two apart.
+    it("a ring warm sent in the same millisecond as another request's answer does not mark the host unreachable", async () => {
+      const warm = held();
+      const read = held();
+      const { source, calls } = setup({
+        [`GET ${TILE_URL}`]: [warm.reply],
+        [`GET ${TILE2_URL}`]: [
+          read.reply,
+          new Response(PAYLOAD, { status: 200 }),
+        ],
+      });
+      const pendingWarm = source.fetchTile(TILE, { speculative: true });
+      const pendingRead = source.fetchTile(TILE2);
+      await vi.waitFor(() => expect(calls).toHaveLength(2));
+      read.settle(new Response(PAYLOAD, { status: 200 }));
+      expect((await pendingRead).sourceId).toBe("static:tiles.example.dev");
+      warm.settle(new TypeError("Failed to fetch"));
+      expect((await pendingWarm).sourceId).toBe("overpass:test");
+      const next = await source.fetchTile(TILE2);
+      expect(next.sourceId).toBe("static:tiles.example.dev");
+      expect(calls).toHaveLength(3);
+    });
+
+    it("a fill ask sent in the same millisecond as its read's 404 that gets no answer marks the host unreachable", async () => {
+      const { source, fallback, calls } = setup({
+        [`GET ${TILE_URL}`]: [new Response("nf", { status: 404 })],
+        [`POST ${FILL_URL}`]: [new TypeError("Failed to fetch")],
+      });
+      expect((await source.fetchTile(TILE)).sourceId).toBe("overpass:test");
+      const next = await source.fetchTile(TILE2);
+      expect(next.sourceId).toBe("overpass:test");
+      expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+        `GET ${TILE_URL}`,
+        `POST ${FILL_URL}`,
+      ]);
+      expect(fallback.calls).toHaveLength(2);
+    });
+
     it("a poll with no answer before the fill wait ends is not taken for an unreachable host", async () => {
       // The fill wait's own deadline cut the poll: the host had answered the
       // read and the fill ask, so stored files are still read afterwards.
