@@ -23,9 +23,9 @@ other words; both run through the visitor's own narration
 (`narration-visitor.ts`), with a stand-in clock that stands still until
 moved (no sound plays) and a timing made in the page the way the
 prototype makes its own (`checkSegments`), opened at the prototype's
-demo position (`checkDemoMs`). `?view=captions` shows the captions strip
-(`captions-strip.ts` through `captions-follow.ts`) in place of the sheet;
-"Full text" opens the sheet. `?open=0` opens nothing until `show()` or
+demo position (`checkDemoMs`). `?view=captions` shows the narration box
+(`narration-box.ts` through `captions-follow.ts`, with a store holding
+only its slice) in place of the sheet. `?open=0` opens nothing until `show()` or
 `follow()`.
 
 ## Public API
@@ -39,11 +39,12 @@ demo position (`checkDemoMs`). `?view=captions` shows the captions strip
   whether the reading mark is registered) and `markRect()` (the marked
   sentence's first line box) and `opened()` (the links
   the sheet opened through its `openLink`, which only a yes in AR calls).
-  With a voice also: `follow()` (starts the strip), `at(ms)` (moves the
+  With a voice also: `follow()` (starts the box), `at(ms)` (moves the
   clock and lets the views follow), `demoMs`, `segments`, `voice()`
   (the verdict, how often the timing entry was read, the narration's
-  warnings, the sheet's marked word, the strip's state and its parts'
-  boxes, the clock), `voiceRect()` and `wordRect()` (the voice's marks'
+  warnings, the sheet's marked word, the box's state and its parts'
+  boxes (the box, its window, column, the speaker's name, the first
+  word, the scrollbar and its thumb), the clock), `voiceRect()` and `wordRect()` (the voice's marks'
   first line boxes); `voice()` is null without `?voice=`.
 - `CHECK_RICH_BODY` - the rich text.
 - `longTextCheckOptions(search)` - `{ rich, ar, voice, view, open }`
@@ -66,7 +67,7 @@ demo position (`checkDemoMs`). `?view=captions` shows the captions strip
 `playwright-tests/long-text-check.spec.js` (the layout at three viewports,
 the mark, and the rich text: pictures after a scroll, the link's question
 in AR, allowlisted tags only); `playwright-tests/narration-check.spec.js`
-(reading along, a stale track, the read on open, the strip's layout at
-three viewports); `src/checks/long-text-check.test.ts` (the query, the
+(reading along, a stale track, the read on open, the narration box's layout at
+three viewports, the speaker's name on the first words' line); `src/checks/long-text-check.test.ts` (the query, the
 rich body's forms, the check timing parsed and fitting its text, the
 demo position, the clock).

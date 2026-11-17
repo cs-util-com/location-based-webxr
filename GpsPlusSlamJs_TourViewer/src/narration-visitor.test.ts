@@ -1,9 +1,9 @@
 /**
  * Why this test matters: the visitor's narrated texts tie the open tour
- * to the sheet and the strip. A timing must be read only when its text
+ * to the sheet and the box. A timing must be read only when its text
  * opens (never when the tour opens, never twice), from the tour's own
- * wrap folder; the sheet and the strip must share ONE voice per text, so
- * the strip and the sheet never talk over each other; the strip must get
+ * wrap folder; the sheet and the box must share ONE voice per text, so
+ * the box and the sheet never talk over each other; the box must get
  * nothing until the read-along is known to fit, and nothing ever for a
  * stale one; and a new tour must let the old tour's voices go.
  */
@@ -143,25 +143,24 @@ describe("the visitor's narrated texts", () => {
     expect(visitor.verdictOf(block)).toBe("live");
   });
 
-  it("gives the sheet and the strip one voice per text, read from its asset", async () => {
+  it("gives the sheet and the box one voice per text, read from its asset", async () => {
     const { visitor, made, loads } = make(() => timingFile());
     const block = text("timing/hall.json");
     const sheet = visitor.sheetNarration(block);
     await sheet?.timing;
     await flush();
-    const strip = visitor.captions(block);
-    expect(strip).not.toBeNull();
-    expect(strip?.player).toBe(sheet?.player);
+    const box = visitor.captions(block);
+    expect(box).not.toBeNull();
+    expect(box?.player).toBe(sheet?.player);
     expect(made).toHaveLength(1);
     expect(loads).toEqual(["media/voice.ogg"]);
-    expect(strip?.plain).toBe(BODY);
-    expect(strip?.sentences.map((s) => BODY.slice(s.from, s.to))).toEqual([
-      "The hall burned.",
-      "It was built again.",
-    ]);
+    expect(box?.plain).toBe(BODY);
+    // A long text is read by the narrator, in a colour no character uses.
+    expect(box?.speaker).toEqual({ name: "Narrator", color: "#f9a8d4" });
+    expect(box?.title).toBe(block.title);
   });
 
-  it("gives the strip nothing while its timing is read, then the content", async () => {
+  it("gives the box nothing while its timing is read, then the content", async () => {
     const { visitor, reads } = make(() => timingFile());
     const block = text("timing/hall.json");
     const before = visitor.revision();
@@ -175,7 +174,7 @@ describe("the visitor's narrated texts", () => {
     expect(visitor.captions(block)?.key).toBe("hall");
   });
 
-  it("gives the strip nothing ever for a stale timing, and tells the console", async () => {
+  it("gives the box nothing ever for a stale timing, and tells the console", async () => {
     const { visitor, warn } = make(() =>
       timingFile("Another text altogether."),
     );

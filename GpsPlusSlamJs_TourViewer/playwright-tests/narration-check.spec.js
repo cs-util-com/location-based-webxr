@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 
 /**
  * Why these tests matter: a narrated text is read along in two places,
- * the reading sheet and the captions strip, and both are driven by a
+ * the reading sheet and the narration box, and both are driven by a
  * timing file checked against the text it was made for. In a real
  * browser (the Custom Highlight API, layout, the frame loop) these pin
  * through the check page `long-text-check.html?voice=...`:
@@ -12,11 +12,12 @@ import { expect, test } from "@playwright/test";
  * - a stale timing gives plain text with the voice, and says nothing about
  *   it to the visitor;
  * - a timing is read only when its text opens, and once;
- * - the captions strip lands where the narrated-text prototype put it
- *   (`public/prototypes/station-blocks-1-narrated-text/`, its `#caption`
- *   CSS numbers, copied here, not from the code under test), with its
- *   gaps, at a phone upright, a phone sideways and a desktop, and marks
- *   the voice's word.
+ * - the narration box lands where the scroll box prototype put it
+ *   (`public/prototypes/hud-calm-r5-1-scroll-box/`, its `.nbox` CSS
+ *   numbers, copied here, not from the code under test), with its gaps,
+ *   at a phone upright, a phone sideways and a desktop; the speaker's
+ *   name starts the first line, on the same line as the first words; and
+ *   it lights the voice's word.
  * The page's clock stands still until moved (no sound plays), so what is
  * pinned is the read-along against a known time, not the audio itself.
  */
@@ -165,104 +166,69 @@ test("a timing is read only when its text opens, and once", async ({
   expect(errors).toEqual([]);
 });
 
-/** The prototype's `#caption` box and type at each viewport. */
-function expectedStrip(viewport) {
+/** The scroll box prototype's `.nbox` at each viewport, for a text
+ *  longer than three lines: as wide as it may be (80 % of the width, at
+ *  most 720 px), centred, 18 px over the bottom (10 px on a phone
+ *  sideways), padding 9 / 10 / 11 / 14 inside a 1 px border, a window of
+ *  three 22 px lines, a 3 px scrollbar at its right edge. */
+function expectedBox(viewport) {
   const { width, height } = viewport;
-  if (width / height < 0.85) {
-    return {
-      left: 10,
-      right: width - 10,
-      bottom: height - 16,
-      pad: { top: 15, side: 18, bottom: 10 },
-      textSize: 22,
-      lines: 3,
-      play: 44,
-    };
-  }
-  if (height < 520) {
-    const w = Math.min(660, 0.8 * width);
-    return {
-      left: (width - w) / 2,
-      right: (width + w) / 2,
-      bottom: height - 8,
-      pad: { top: 11, side: 16, bottom: 7 },
-      textSize: 19,
-      lines: 2,
-      play: 48,
-    };
-  }
+  const w = Math.min(0.8 * width, 720);
+  const sideways = width > height && height <= 520;
   return {
-    left: (width - 780) / 2,
-    right: (width + 780) / 2,
-    bottom: height - 26,
-    pad: { top: 20, side: 26, bottom: 12 },
-    textSize: 27,
-    lines: 2,
-    play: 44,
+    left: (width - w) / 2,
+    right: (width + w) / 2,
+    bottom: height - (sideways ? 10 : 18),
+    pad: { top: 9, right: 10, bottom: 11, left: 14 },
+    rows: 3,
+    lineHeight: 22,
+    bar: 3,
   };
 }
 
 for (const viewport of VIEWPORTS) {
-  test(`the captions strip lands where the prototype put it, with its gaps, and marks the word (${viewport.name})`, async ({
+  test(`the narration box lands where the prototype put it, with its gaps, the name on the first line, and lights the word (${viewport.name})`, async ({
     page,
   }) => {
     const errors = await open(page, "?voice=timed&view=captions", viewport);
     await page.waitForFunction(
       () => window.__longTextCheck?.voice()?.captions?.shown === true,
     );
-    // The strip fades in: measure it where it comes to rest.
+    // The box fades in: measure it where it comes to rest.
     await page.waitForFunction(() =>
       document.getAnimations().every((a) => a.playState === "finished"),
     );
     const { k, segments } = await demo(page);
     const v = await voice(page);
     const p = v.captionParts;
-    const want = expectedStrip(viewport);
-    for (const name of [
-      "strip",
-      "text",
-      "row",
-      "play",
-      "back",
-      "title",
-      "sub",
-      "full",
-      "bar",
-    ]) {
-      if (p[name] === null) throw new Error(`the strip's ${name} is not drawn`);
+    const want = expectedBox(viewport);
+    for (const name of ["box", "win", "col", "who", "firstWord", "sbar"]) {
+      if (p[name] === null) throw new Error(`the box's ${name} is not drawn`);
     }
-    near(p.strip.left, want.left);
-    near(p.strip.right, want.right);
-    near(p.strip.bottom, want.bottom);
-    // The text inside the padding (and the 1 px border), at least as
-    // tall as its lines.
-    near(p.text.top - p.strip.top, 1 + want.pad.top);
-    near(p.text.left - p.strip.left, 1 + want.pad.side);
-    near(p.strip.right - p.text.right, 1 + want.pad.side);
-    expect(p.text.bottom - p.text.top).toBeGreaterThan(
-      want.textSize * 1.33 * want.lines - 0.5,
-    );
-    // The controls 10 px below the text, the bar 9 px below them, the
-    // padding under the bar.
-    near(p.row.top - p.text.bottom, 10);
-    near(p.play.right - p.play.left, want.play);
-    near(p.back.right - p.back.left, 40);
-    near(p.back.left - p.play.right, 8);
-    near(p.full.bottom - p.full.top, 34);
-    near(p.strip.right - 1 - want.pad.side, p.full.right);
-    near(p.bar.top - p.row.bottom, 9);
-    near(p.bar.bottom - p.bar.top, 3);
-    near(p.strip.bottom - p.bar.bottom, want.pad.bottom + 1);
-    // The demo's word is marked, and the chunk holds it.
+    near(p.box.left, want.left);
+    near(p.box.right, want.right);
+    near(p.box.bottom, want.bottom);
+    // The window inside the padding and the 1 px border, three lines high.
+    near(p.win.top - p.box.top, 1 + want.pad.top);
+    near(p.win.left - p.box.left, 1 + want.pad.left);
+    near(p.box.right - p.win.right, 1 + want.pad.right);
+    near(p.box.bottom - p.win.bottom, 1 + want.pad.bottom);
+    near(p.win.bottom - p.win.top, want.rows * want.lineHeight);
+    expect(v.captions?.rows).toBe(want.rows);
+    expect(v.captions?.lines).toBeGreaterThan(want.rows);
+    // The scrollbar at the window's right edge, 2 px in from top and bottom.
+    near(p.sbar.right, p.win.right);
+    near(p.sbar.right - p.sbar.left, want.bar);
+    near(p.sbar.top - p.win.top, 2);
+    near(p.win.bottom - p.sbar.bottom, 2);
+    // The one intended difference from the prototype: the speaker's name
+    // is not a line of its own but starts the words, on their first line.
+    near(p.who.top, p.firstWord.top, 3);
+    expect(p.who.right).toBeLessThanOrEqual(p.firstWord.left + 0.5);
+    near(p.who.left, p.col.left);
+    await expect(page.getByTestId("narration-box-who")).toHaveText("Narrator");
+    // The demo's word is lit, and follows the voice.
     expect(v.captions?.word).toBe(segments[k].text);
-    expect(v.captions?.chunk).toContain(segments[k].text);
-    await expect(page.getByTestId("captions-title")).toHaveText(
-      "The Guild House and the Burnt Hall",
-    );
-    await expect(page.getByTestId("captions-sub")).toContainText(
-      "Synthetic voice",
-    );
-    // The word follows the voice.
     await page.evaluate(
       (at) => window.__longTextCheck?.at(at),
       segments[k + 1].startMs + 10,
@@ -272,25 +238,12 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
-test("captions with a stale track show nothing, and Full text opens the sheet", async ({
-  page,
-}) => {
+test("a narrated text with a stale track shows no box", async ({ page }) => {
   const errors = await open(page, "?voice=stale&view=captions");
   await page.waitForFunction(
     () => window.__longTextCheck?.voice()?.verdict === "stale",
   );
   expect((await voice(page)).captions?.shown).toBe(false);
-  await expect(page.getByTestId("captions-strip")).toHaveClass(/cs-hide/u);
-
-  // With a timing that fits, "Full text" opens the sheet, reading along.
-  await page.goto("/long-text-check.html?voice=timed&view=captions");
-  await page.waitForFunction(
-    () => window.__longTextCheck?.voice()?.captions?.shown === true,
-  );
-  await page.getByTestId("captions-full").click();
-  await page.waitForFunction(
-    () => window.__longTextCheck?.state().sheet.mode === "live",
-  );
-  expect((await sheet(page)).sentence).toBe(2);
+  await expect(page.getByTestId("narration-box")).toHaveClass(/nb-off/u);
   expect(errors).toEqual([]);
 });

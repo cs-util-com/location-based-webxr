@@ -4,7 +4,7 @@
  * segment spoken now, the sentences it lies in, and whether a single word
  * may be marked - plus where each sentence starts in the voice, for a tap
  * on a sentence and for "previous sentence". Pure; every lookup is a
- * binary search, so the sheet and the captions strip may ask on every
+ * binary search, so the sheet and the narration box may ask on every
  * frame.
  *
  * @see read-along.ts.md

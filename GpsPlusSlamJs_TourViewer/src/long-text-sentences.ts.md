@@ -22,7 +22,7 @@ no element for it, and the ranges need none.
 - `plainSentences(plainText, leaves, lang = "en")` - the sentences of a
   plain text `P`, cut leaf by leaf (`plainTextOf(...).leaves`), as
   `{ from, to }` spans of `P`: the same cut `indexSentences` makes,
-  without a DOM (the captions strip follows the voice by it).
+  without a DOM (the editor's timing checks read it).
 - `indexSentences(doc, plainText, leaves, lang = "en")` - the sentences
   of a rendered body, cut from its plain text `P` leaf by leaf
   (`leaves` from `placeLeaves`, `long-text-leaves.ts`), so each

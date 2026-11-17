@@ -2,7 +2,7 @@
 
 ## Purpose
 
-A long text's voice: one audio element over the tour's audio file, fetched only when the visitor first presses play, and one clock that the reading sheet and the captions strip both follow, so they never drift apart.
+A long text's voice: one audio element over the tour's audio file, fetched only when the visitor first presses play, and one clock that the reading sheet and the narration box both follow, so they never drift apart.
 
 ## Public API
 

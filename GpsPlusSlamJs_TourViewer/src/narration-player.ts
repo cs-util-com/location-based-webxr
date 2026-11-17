@@ -1,7 +1,7 @@
 /**
  * A long text's narration voice: one audio element over the tour's audio
  * file, fetched only when the visitor first presses play, and one clock
- * the reading sheet and the captions strip both follow (`nowMs`,
+ * the reading sheet and the narration box both follow (`nowMs`,
  * `playing`, `onChange`), so the two never drift apart.
  *
  * @see narration-player.ts.md

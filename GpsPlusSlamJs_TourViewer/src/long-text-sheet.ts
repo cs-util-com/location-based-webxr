@@ -61,7 +61,7 @@ import {
 
 /** A text's voice, as the sheet plays it. */
 export interface SheetNarration {
-  /** The one clock the sheet and the captions strip share. */
+  /** The one clock the sheet and the narration box share. */
   readonly player: NarrationClock;
   /** The read-along when it fits the text, null when it does not (or
    *  there is none). The sheet is plain until it settles; a rejection
@@ -242,11 +242,10 @@ const ICONS = {
   },
 } as const satisfies Record<string, IconSpec>;
 
-export type SheetIconName = keyof typeof ICONS;
+type SheetIconName = keyof typeof ICONS;
 
-/** One of the prototype's icons as an inline SVG (the captions strip
- *  shares them). */
-export function sheetIcon(doc: Document, name: SheetIconName): SVGSVGElement {
+/** One of the prototype's icons as an inline SVG. */
+function sheetIcon(doc: Document, name: SheetIconName): SVGSVGElement {
   const spec: IconSpec = ICONS[name];
   const svg = doc.createElementNS(SVG_NS, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -283,7 +282,7 @@ export function sheetIcon(doc: Document, name: SheetIconName): SVGSVGElement {
 /** The voice's credit as the prototype shows it: "Synthetic voice" set
  *  apart, then the creator's credit; empty for a person's voice with no
  *  credit. */
-export function fillCredit(
+function fillCredit(
   into: HTMLElement,
   narration: Pick<SheetNarration, "synthetic" | "voiceCredit">,
 ): void {

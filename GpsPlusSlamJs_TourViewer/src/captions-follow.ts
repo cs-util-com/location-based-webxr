@@ -1,7 +1,7 @@
 /**
- * When the captions strip shows, and what: inside a station, the first
+ * When the narration box shows, and what: inside a station, the first
  * of its free long texts a visitor sees in the captions view, while its
- * read-along fits. Leaving the station pauses the voice, and coming back
+ * read-along fits. Never outside a station, whatever blocks it is given. Leaving the station pauses the voice, and coming back
  * carries it on. Called on every
  * camera frame.
  *
@@ -13,7 +13,7 @@ import type {
   TourLongTextBlock,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import type { CaptionsStrip } from "./captions-strip.js";
+import type { NarrationBox } from "./narration-box.js";
 import type { NarrationVisitor } from "./narration-visitor.js";
 import { shownView } from "./visitor-prefs.js";
 
@@ -38,7 +38,7 @@ export function captionsBlock(
 }
 
 export interface CaptionsFollowDeps {
-  readonly strip: Pick<CaptionsStrip, "show" | "hide">;
+  readonly box: Pick<NarrationBox, "show" | "hide">;
   readonly narration: Pick<
     NarrationVisitor,
     "verdictOf" | "captions" | "pauseAll" | "carryOn"
@@ -53,9 +53,9 @@ export interface CaptionsFollowDeps {
 }
 
 export interface CaptionsFollow {
-  /** Shows, moves or hides the strip; cheap enough for every frame. */
+  /** Shows, moves or hides the box; cheap enough for every frame. */
   sync(): void;
-  /** The AR session ended: the strip goes, the voice pauses. */
+  /** The AR session ended: the box goes, the voice pauses. */
   stop(): void;
 }
 
@@ -70,16 +70,18 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
         presentSeen = presentId;
         if (presentId !== null) deps.narration.carryOn(presentId);
       }
-      const block = captionsBlock(blocks, stored, (b) =>
-        deps.narration.verdictOf(b),
-      );
+      // The station's radius is the voice's: no station, no box.
+      const block =
+        presentId === null
+          ? null
+          : captionsBlock(blocks, stored, (b) => deps.narration.verdictOf(b));
       const content = block === null ? null : deps.narration.captions(block);
-      if (content === null) deps.strip.hide();
-      else deps.strip.show(content);
+      if (content === null) deps.box.hide();
+      else deps.box.show(content);
     },
     stop() {
       presentSeen = null;
-      deps.strip.hide();
+      deps.box.hide();
       deps.narration.pauseAll();
     },
   };
