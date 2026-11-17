@@ -85,24 +85,28 @@ describe("pointTri2", () => {
       0, 0, 0, 7.86781753728706e-12, 0, 0, -5, 0, 1.9976667954663626e-151,
     ];
     const d = pointTri2(-4.9999999999999885, 0, 0, sliver, 0, 3, 6);
-    // the point is 1.2e-14 from corner c: about 1.3e-28 squared
+    // the point lies about 2e-151 from edge ac (about 4e-302 squared); the
+    // bound is its distance to corner c, 1.2e-14 (about 1.3e-28 squared),
+    // which the segments never exceed, against the 25 the bug read
     expect(d).toBeLessThan(1e-27);
   });
 
-  // Why: a thin but real triangle (height 1e-3 of its edge) must keep its
+  // Why: a thin but real triangle (height 1e-4 of its edge) must keep its
   // interior: measured by its segments, a point inside it would read the
-  // square of its distance to the nearest edge. This pins the sliver
-  // threshold from above, which the corner property cannot (segments never
-  // exceed a corner), and checks every vertex order, so the threshold does
-  // not depend on which corner is thin.
-  it("measures a thin but real triangle by its interior, in every vertex order", () => {
-    const thin = [0, 0, 0, 1, 0, 0, 0.5, 0, 1e-3];
+  // square of its distance to the nearest edge (6.25e-10 here). This pins
+  // the squared sliver threshold from above, to below 1e-8, which the
+  // corner property cannot (segments never exceed a corner). It checks the
+  // three rotations (each corner as `a`), so the threshold does not depend
+  // on which corner is passed first; it does not pin the edge set (leaving
+  // `bc` out of the longest edge would only lower the threshold).
+  it("measures a thin but real triangle by its interior, with each corner as a", () => {
+    const thin = [0, 0, 0, 1, 0, 0, 0.5, 0, 1e-4];
     for (const [a, b, c] of [
       [0, 3, 6],
       [3, 6, 0],
       [6, 0, 3],
     ] as const) {
-      expect(pointTri2(0.5, 0, 2.5e-4, thin, a, b, c)).toBeLessThan(1e-12);
+      expect(pointTri2(0.5, 0, 2.5e-5, thin, a, b, c)).toBeLessThan(1e-12);
     }
   });
 

@@ -81,10 +81,15 @@ function samplePoints(
 /** The square of the height-to-longest-edge ratio h/L below which a
  *  triangle is measured by its segments (h/L = 1e-5). Both sides only
  *  over-read: the segments by at most h/2 below it, the region path's
- *  rounding noise by about eps * (L/h)^2 of L above it (more for points
- *  much farther than L), and the two balance near h/L = eps^(1/3), about
- *  6e-6. A corner property of 300 000 random runs passed from 1e-8 to
- *  1e-16 and failed at 1e-20. */
+ *  rounding noise by at most about eps * (L/h)^2 of L above it (more for
+ *  points much farther than L), and those two bounds balance near
+ *  h/L = eps^(1/3), about 6e-6. A corner property of 300 000 random runs
+ *  passed with this squared value from 1e-8 to 1e-16 (1e-10, the value
+ *  here, in two separate runs) and failed at 1e-20. The tests pin it from
+ *  above only (a thin real triangle at h/L = 1e-4 keeps its interior up to
+ *  1e-8); nothing pins it from below: random slivers from h/L = 5e-6 down
+ *  to 1e-10 measured by the region path read within about 5e-11 of L of
+ *  the honest band, so no committed case reads noise just under 1e-5. */
 const SLIVER2 = 1e-10;
 
 /** The squared distance from p to triangle (a, b, c), which are offsets
@@ -125,7 +130,9 @@ export function pointTri2(
   // a zero-area triangle, or a sliver whose height is under sqrt(SLIVER2)
   // of its longest edge: the region formulas below would divide by zero, or
   // subtract near-equal products and read rounding noise as a region, so
-  // its segments decide (an over-read of at most half that height)
+  // its segments decide (an over-read of at most half that height). The
+  // longest edge is taken over all three, `bc` included on purpose: the
+  // threshold must not depend on which corner is passed as `a`.
   const l2 = Math.max(
     abx * abx + aby * aby + abz * abz,
     acx * acx + acy * acy + acz * acz,
@@ -400,7 +407,8 @@ export class SurfaceGrid {
         }
       }
       // any point outside the searched cube is at least r cells away
-      // (strict: on a tie the search goes on, so no triangle is missed)
+      // (strict: on a tie the search goes on, so no triangle is missed, up
+      // to a triangle's own rounding)
       if (best < (r * this.cell) ** 2) break;
     }
     return Math.sqrt(best);
