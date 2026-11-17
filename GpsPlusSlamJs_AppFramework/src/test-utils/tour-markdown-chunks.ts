@@ -6,4 +6,4 @@
  *
  * @see tour-markdown-chunks.ts.md
  */
-export const TOUR_MARKDOWN_CHUNK_ALPHABET = '#*_-+>[]()!\ \n.1az';
+export const TOUR_MARKDOWN_CHUNK_ALPHABET = '#*_-+>[]()!\\ \n.1az';
