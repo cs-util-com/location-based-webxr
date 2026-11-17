@@ -14,19 +14,31 @@ answers it like film subtitles:
 
 - **A dark, solid plate across the full top width.** It carries the words
   as roll-up captions: 3 lines upright, 2 on its side. The word being
-  spoken is bright; the rest sit at about 60 %. Each line starts with a
+  spoken is white; the rest sit at 50 % white. Each line starts with a
   dot in the speaker's colour and the speaker's first name.
-- **The exit** sits at the plate's left end, **the "show the way" hint**
-  (small, only when offered) at its right end.
+- **The exit** sits at the plate's left end and is the only x-in-a-circle
+  on the screen. The plate's right end holds one small control at a time:
+  **the "show the way" hint** (only when offered), **Next** when a step
+  has finished, or **Leave**, a worded pill that ends the story, so a tap
+  meant to close never ends a story by mistake.
 - **A thin scrub bar along the plate's lower edge**, spanning one clip
   only (one story step, one video, one sound, one read-aloud text). Its
-  44 px handle is both the play/pause button and the drag thumb. A drag is
+  44 px handle is both the play/pause button and the drag thumb. Its
+  centre travels from 66 px off the left edge to 44 px off the right edge
+  (plus the safe-area insets), and the bar's ends are exactly that travel,
+  so at the end of a clip the thumb stays out of the edge-swipe zone. A drag is
   free in both directions and never starts or stops sound; a finished
   clip dragged back stays paused until a tap.
 - **The compass** sits below the plate's right end. Its look is the tour
   creator's choice (a tour setting): the disc by default, or a band. The
   one voice speaking now has a mark in its colour with a breathing ring;
-  there is never more than one speaker mark.
+  there is never more than one speaker mark. Nothing floats over the
+  speaking character by default (`bubble=dots` or `bubble=words` brings
+  the old bubble back for comparison), so the caption's dot and the
+  compass mark are the only "who speaks" signs.
+- **No card outlives its place.** A story paused by a tap, a drag or
+  another source is put away when you walk out of its station, exactly
+  like one that was playing; a tap on its character carries it on.
 
 ## What to look at
 
@@ -77,7 +89,9 @@ with 18 px text.
   overlaps among the controls, the number of speaker marks and the worst
   frame of the last 2 s. Off by default.
 - Further URL knobs: `linger` (s a finished video keeps its plate, 8),
-  `roll` (s per roll-up step, 0.28), `speed` (demo speed).
+  `roll` (s per roll-up step, 0.28), `dim` (the words not being said,
+  as a share of white, 0.5), `bubble` (off / dots / words, off),
+  `speed` (demo speed).
 
 ## What is faked
 
@@ -98,7 +112,7 @@ with 18 px text.
   change; captions re-render only on a line change; the sign redraws only
   on a word change; the video screen redraws 8 times a second), but no
   phone has measured it.
-- **Legibility in sunlight** of the 60 % words on the dark plate.
+- **Legibility in sunlight** of the 50 % words on the dark plate.
 - **Thumb reach** of the handle on a large phone held in one hand.
 - **The top block** measured 14.5 % of a 390x844 screen with a clip
   showing (budget 16.7 %). At 18 px text with 3 lines it is closer to the
@@ -114,9 +128,13 @@ with 18 px text.
 - **3 lines upright.** At 18 px text a 4th line would break the 1/6
   budget; 2 lines would lose the line before the spoken one, which is
   what lets a glance catch up.
-- **60 % for the other words.** Around 40 % the earlier line stops being
-  readable at a glance in daylight; around 80 % the spoken word no longer
-  stands out. Both ends are guesses until a phone test.
+- **50 % for the other words.** The spoken word is white, so at 60 %
+  (the first version) it stood out mostly by its position; at 50 % it
+  stands out in the screenshots while the line before it still reads.
+  Around 35-40 % the earlier line stops being readable at a glance in
+  daylight; at 60 % and above the spoken word needs its weight or colour
+  changed to stand out. Try `?dim=0.6` and `?dim=0.4`; both ends are
+  guesses until a phone test.
 - **Tap slop 8 px.** At 6 px a walking thumb turns many taps into tiny
   drags (which seek but do not pause); at 16 px a short deliberate nudge
   of the handle reads as a tap.

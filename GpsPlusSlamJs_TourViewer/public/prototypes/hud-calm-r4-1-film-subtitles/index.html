@@ -34,7 +34,7 @@ button{font:inherit;color:inherit}
 .readout.bad{background:rgba(160,20,20,.85);color:#fff}
 
 /* ---------- the HUD: one film plate across the top, the compass hanging below its right end ---------- */
-.hud{position:absolute;inset:0;pointer-events:none;--fs:16px;--lh:calc(var(--fs) * 1.4);--lines:3;--radar:132px;--bandw:min(232px,58cqw);--padt:8px;--caph:calc(var(--lines) * var(--lh));--plateh:calc(env(safe-area-inset-top) + var(--padt) + var(--caph) + 26px)}
+.hud{position:absolute;inset:0;pointer-events:none;--fs:16px;--dim:.5;--lh:calc(var(--fs) * 1.4);--lines:3;--radar:132px;--bandw:min(232px,58cqw);--padt:8px;--caph:calc(var(--lines) * var(--lh));--plateh:calc(env(safe-area-inset-top) + var(--padt) + var(--caph) + 26px)}
 .hud > *{pointer-events:auto}
 .plate{position:absolute;left:0;right:0;top:0;height:var(--plateh);background:var(--plate);border-bottom:2px solid rgba(255,255,255,.2);box-shadow:0 4px 14px rgba(0,0,0,.35);opacity:0;transition:opacity .35s ease;pointer-events:none}
 .hud.open .plate{opacity:1}
@@ -42,27 +42,28 @@ button{font:inherit;color:inherit}
 .exit svg{width:16px;height:16px}
 
 /* the words: roll-up captions, the line being said at the bottom, earlier lines above it */
-.caps{position:absolute;top:calc(env(safe-area-inset-top) + var(--padt));left:calc(66px + env(safe-area-inset-left));right:calc(64px + env(safe-area-inset-right));height:var(--caph);overflow:hidden;font-size:var(--fs);line-height:var(--lh);font-weight:600;opacity:0;transition:opacity .35s ease;pointer-events:none}
+.caps{position:absolute;top:calc(env(safe-area-inset-top) + var(--padt));left:calc(66px + env(safe-area-inset-left));right:calc(76px + env(safe-area-inset-right));height:var(--caph);overflow:hidden;font-size:var(--fs);line-height:var(--lh);font-weight:600;opacity:0;transition:opacity .35s ease;pointer-events:none}
 .hud.open .caps{opacity:1}
 .roll{transform:translateY(calc(-1 * var(--lh)))}
-.roll > div{height:var(--lh);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(255,255,255,.6)}
+.roll > div{height:var(--lh);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(255,255,255,var(--dim))}
 .roll .on{color:#fff}
-.roll .q{color:rgba(255,255,255,.6);font-weight:600}
+.roll .q{color:rgba(255,255,255,.62);font-weight:600}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:0;box-shadow:0 0 0 2px rgba(0,0,0,.6)}
 .nm{font-weight:800;color:rgba(255,255,255,.88)}
 
 /* the plate's right end: one small control at a time (show the way, next, leave the story) */
-.slot{position:absolute;z-index:2;top:calc(env(safe-area-inset-top) + 6px);right:calc(12px + env(safe-area-inset-right));width:44px;height:44px;display:grid;place-items:center;pointer-events:none}
+.slot{position:absolute;z-index:2;top:calc(env(safe-area-inset-top) + 6px);right:calc(12px + env(safe-area-inset-right));min-width:44px;height:44px;display:grid;place-items:center end;pointer-events:none}
 .slot button{pointer-events:auto;appearance:none;cursor:pointer;padding:0;display:grid;place-items:center}
 .hint{width:40px;height:40px;border-radius:50%;border:2px solid rgba(255,244,207,.6);background:rgba(208,138,42,.22);color:#fff4cf;animation:hint-in .6s ease-out}
 .hint svg{width:19px;height:19px}
 .hint[aria-pressed="true"]{background:#d08a2a;color:#1f1105;border-color:#fff4cf}
 .nx{min-width:44px;height:36px;border-radius:18px;border:0;background:var(--play);color:var(--play-ink);font-weight:800;font-size:13px}
-.lv{width:32px;height:32px;border-radius:50%;border:2px solid rgba(255,255,255,.3);background:transparent;font-size:17px;line-height:1}
+.slot .lv{height:32px;border-radius:16px;border:1.5px solid rgba(255,255,255,.35);background:transparent;color:rgba(255,255,255,.85);font-weight:700;font-size:12px;padding:0 10px;letter-spacing:.02em}
 @keyframes hint-in{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
 
 /* the scrub bar along the plate's lower edge, and its handle: play/pause and drag thumb in one */
-.bar{position:absolute;left:calc(66px + env(safe-area-inset-left));right:calc(14px + env(safe-area-inset-right));top:calc(var(--plateh) - 3px);height:4px;border-radius:2px;background:rgba(255,255,255,.24);opacity:0;transition:opacity .35s ease;pointer-events:none}
+/* the bar is the handle centre's travel: 66 px from the left (clear of the exit) to 44 px from the right, inside the safe area, so the thumb never reaches the edge-swipe zone */
+.bar{position:absolute;left:calc(66px + env(safe-area-inset-left));right:calc(44px + env(safe-area-inset-right));top:calc(var(--plateh) - 3px);height:4px;border-radius:2px;background:rgba(255,255,255,.24);opacity:0;transition:opacity .35s ease;pointer-events:none}
 .bar i{display:block;height:100%;border-radius:2px;background:var(--play);transform-origin:0 50%;transform:scaleX(0)}
 .hud.clip .bar{opacity:1}
 .handle{position:absolute;z-index:3;left:calc(44px + env(safe-area-inset-left));top:calc(var(--plateh) - 23px);width:44px;height:44px;border-radius:50%;border:2px solid #fff;background:var(--play);color:var(--play-ink);display:grid;place-items:center;padding:0;cursor:grab;touch-action:none;opacity:0;pointer-events:none;box-shadow:0 2px 8px rgba(0,0,0,.5);transition:opacity .35s ease}
@@ -141,7 +142,7 @@ button{font:inherit;color:inherit}
     <div class="slot" id="slot">
       <button class="hint" id="hintBtn" type="button" data-act="hint" data-hud="hint" aria-label="Show the way to the story's next place" aria-pressed="false" hidden><svg viewBox="0 0 20 20"><path d="M2.5 7.5h9a2.5 2.5 0 1 0-2.5-2.5M2.5 11h12.5a2.5 2.5 0 1 1-2.5 2.5M2.5 14.5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
       <button class="nx" id="nxBtn" type="button" data-act="next" data-hud="next" hidden>Next</button>
-      <button class="lv" id="lvBtn" type="button" data-act="leave" data-hud="leave" aria-label="Leave the story" hidden>&times;</button>
+      <button class="lv" id="lvBtn" type="button" data-act="leave" data-hud="leave" aria-label="Leave the story" hidden>Leave</button>
     </div>
     <div class="bar" id="bar"><i id="barFill"></i></div>
     <button class="handle" id="handle" type="button" data-hud="handle" aria-label="Pause"><span id="handleIcon"></span></button>
@@ -235,6 +236,7 @@ const CFG = {
   narr: pick(QS.get('narr'), ['hud', 'sign'], 'hud'),          // a read-aloud text: top line only, or the sign while legible
   hidden: pick(QS.get('hidden'), ['none', 'mark'], 'none'),    // an item kept off the radar that speaks: no mark, or a mark while it speaks
   linger: num(QS.get('linger'), 8, 0, 60),     // s a finished video or sound keeps its plate, so it can be dragged back
+  dim: num(QS.get('dim'), 0.5, 0.3, 0.8),      // the words not being said, as a share of white (the said word is white)
   roll: num(QS.get('roll'), 0.28, 0, 1),       // s one roll-up step takes
   still: num(QS.get('still'), 3, 0.5, 15),     // s without walking before the compass wakes
   fade: num(QS.get('fade'), 0.8, 0.1, 4),      // s for a full compass fade, in or out
@@ -243,7 +245,7 @@ const CFG = {
   fit: num(QS.get('fit'), 1.5, 1, 3),          // inside a station the disc's range is its radius times this
   merge: num(QS.get('merge'), 25, 5, 90),      // degrees: rim marks closer than this merge into one arc
   span: num(QS.get('span'), 90, 45, 180),      // degrees either side of ahead that the band shows
-  bubble: 'dots',                              // over the speaking character: three dots in their colour
+  bubble: pick(QS.get('bubble'), ['off', 'dots', 'words'], 'off'), // over the speaking character; off by default, the caption's dot and the compass mark already say who speaks
   hold: num(QS.get('hold'), 1.2, 0, 5),
   arrive: num(QS.get('arrive'), 4, 1.5, 10),   // m from a step's place that counts as being there
   edge: QS.get('edge') === 'off' ? 'off' : 'on',
@@ -1321,6 +1323,8 @@ function sim(dt) {
 
   // the story: its step's words run on one clock; it pauses when its station is left; a drag holds the clock
   const st = S.story;
+  // a story paused any other way (a tap, a drag, another source) is put away like one walked out of: no card outlives its place
+  if (st && st.paused && st.paused !== 'left' && S.scrubbing?.kind !== 'story' && S.here !== itById(STORIES[st.id].entry).st) st.paused = 'left';
   if (st && !st.paused) {
     const step = stepOf(), entry = itById(STORIES[st.id].entry);
     if (S.here !== entry.st) st.paused = 'left';
@@ -1686,7 +1690,7 @@ function applyLayout() {
   hud.style.setProperty('--lines', String(NL)); hud.style.setProperty('--fs', `${FS}px`);
   // auto never lets the top block (down to the handle's lower edge) pass 1/6 of a portrait screen: a short phone gets 2 lines
   if (CFG.lines === 'auto' && NL === 3 && $('#handle').getBoundingClientRect().bottom - dr.top > dr.height / 6) NL = 2;
-  hud.style.setProperty('--lines', String(NL)); hud.style.setProperty('--fs', `${FS}px`);
+  hud.style.setProperty('--lines', String(NL)); hud.style.setProperty('--fs', `${FS}px`); hud.style.setProperty('--dim', String(CFG.dim));
   hud.classList.toggle('band', AUTH.tour.look === 'band');
   $('#radar').setAttribute('aria-label', AUTH.tour.look === 'band' ? 'Compass band - tap to change the range' : 'Compass - tap to change the range');
   for (const b of document.querySelectorAll('[data-look]')) b.classList.toggle('on', b.dataset.look === AUTH.tour.look);
