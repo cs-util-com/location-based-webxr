@@ -75,6 +75,18 @@ describe("pointTri2", () => {
     expect(d).toBeLessThan(1e-150);
   });
 
+  // Why: a sliver this thin is no underflow case: every product is finite,
+  // but the region tests subtract near-equal products, read rounding noise
+  // as a sign, and fall into the interior branch with a garbage weight.
+  // The property found it reading corner a (25) for a point on corner c.
+  it("measures a sliver whose region tests read rounding noise by its segments", () => {
+    const sliver = [
+      0, 0, 0, 7.86781753728706e-12, 0, 0, -5, 0, 1.9976667954663626e-151,
+    ];
+    const d = pointTri2(-4.9999999999999885, 0, 0, sliver, 0, 3, 6);
+    expect(d).toBeLessThan(1e-12);
+  });
+
   // Why: the closest point can never be farther than any corner.
   it("is never farther than the nearest corner (property)", () => {
     const c = fc.double({ min: -5, max: 5, noNaN: true });
