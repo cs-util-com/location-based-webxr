@@ -64,8 +64,8 @@ export interface StaticTileSourceOptions {
   readonly maxWaitMs?: number;
   /**
    * How long no fill is asked for after the host said no, and nothing at
-   * all after it did not answer (a network error or a timeout). Default
-   * 10 min.
+   * all after it did not answer (a network error, or no headers within the
+   * request limit). Default 10 min.
    */
   readonly refusalMemoryMs?: number;
   /**
@@ -132,6 +132,23 @@ class HostSkipped extends Error {
  */
 class BadStoredTile extends Error {
   override readonly name = "BadStoredTile";
+}
+
+/**
+ * A request that got no HTTP answer at all (a network error, or no headers
+ * within the request limit). `startedAt` (epoch ms) is when it was sent:
+ * only a silence newer than the host's last answer says the host is gone.
+ */
+class NoAnswer extends Error {
+  override readonly name = "NoAnswer";
+  constructor(
+    readonly startedAt: number,
+    cause: unknown,
+  ) {
+    super(`no answer: ${cause instanceof Error ? cause.name : typeof cause}`, {
+      cause,
+    });
+  }
 }
 
 /** Releases a body nobody reads; a rejected cancel() changes nothing. */
@@ -241,11 +258,18 @@ export class StaticTileSource implements OsmDataSource {
   private refusedUntil = 0;
   /**
    * Until when the host is not asked at all (epoch ms): set when a request
-   * got no HTTP answer (a network error or the per-request limit), so a
-   * host that does not answer costs one request limit per refusal memory,
-   * not one per tile.
+   * got no HTTP answer (a network error, or no headers within the request
+   * limit), so a host that does not answer costs one request limit per
+   * refusal memory, not one per tile.
    */
   private unreachableUntil = 0;
+  /**
+   * When the host last gave an HTTP answer (epoch ms). A request that got
+   * none marks the host unreachable only if it was sent at or after this:
+   * one already running when another got an answer says nothing newer
+   * about the host.
+   */
+  private lastAnswerAt = -Infinity;
   /** Tiles whose refresh was already asked for in this session. */
   private readonly refreshAsked = new Set<string>();
   /** Tiles already reported bad in this session. */
@@ -310,10 +334,11 @@ export class StaticTileSource implements OsmDataSource {
    * but a skip or a bad stored file is remembered as a refusal, a
    * `NoWaitLeft` included: no request went out, so nothing was learnt about
    * the host, but the caller backs off the same way. A failure that is none
-   * of this source's own (a network error, or no headers within the request
-   * limit) means the host gave no answer: it is not asked at all for the
-   * same while. A body that broke off after its headers is a `HostDeclined`
-   * (see `readStored`), so only a refusal.
+   * of this source's own (a `NoAnswer`: a network error, or no headers
+   * within the request limit) means the host gave no answer: it is not
+   * asked at all for the same while, unless it answered another request
+   * after this one was sent. A body that broke off after its headers is a
+   * `HostDeclined` (see `readStored`), so only a refusal.
    */
   private afterHostFailed(
     error: unknown,
@@ -324,7 +349,9 @@ export class StaticTileSource implements OsmDataSource {
     if (!(error instanceof HostSkipped || error instanceof BadStoredTile)) {
       this.refusedUntil = this.now() + this.refusalMemoryMs;
     }
-    if (!isOwnVerdict(error)) {
+    const overtaken =
+      error instanceof NoAnswer && error.startedAt < this.lastAnswerAt;
+    if (!isOwnVerdict(error) && !overtaken) {
       this.unreachableUntil = this.now() + this.refusalMemoryMs;
     }
     return this.fallback.fetchTile(tile, options);
@@ -350,7 +377,9 @@ export class StaticTileSource implements OsmDataSource {
    * still read whole, at whatever bandwidth the per-request limit allows.
    * Nothing is sent once the deadline has passed (`NoWaitLeft`). A body
    * that starts just before the deadline can therefore take up to
-   * `requestTimeoutMs` past it.
+   * `requestTimeoutMs` past it. A failure with no HTTP answer, other than a
+   * caller abort or the fill wait's end, is rethrown as a `NoAnswer`
+   * stamped with the time the request was sent.
    */
   private async request(
     url: string,
@@ -383,6 +412,7 @@ export class StaticTileSource implements OsmDataSource {
       AbortSignal.timeout(this.requestTimeoutMs),
       headersBy?.signal,
     );
+    const startedAt = this.now();
     try {
       const response = await this.fetchImpl(url, {
         ...(init.method === undefined ? {} : { method: init.method }),
@@ -392,7 +422,13 @@ export class StaticTileSource implements OsmDataSource {
       // An HTTP answer, whatever its status: the host is there, even if a
       // request running beside this one got none and marked it unreachable.
       this.unreachableUntil = 0;
+      this.lastAnswerAt = this.now();
       return response;
+    } catch (error) {
+      if (isAbort(error) || signal?.aborted === true || isOwnVerdict(error)) {
+        throw error;
+      }
+      throw new NoAnswer(startedAt, error);
     } finally {
       clearTimeout(timer);
     }

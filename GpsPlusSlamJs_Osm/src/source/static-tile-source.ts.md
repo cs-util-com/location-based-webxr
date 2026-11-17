@@ -121,7 +121,13 @@ the library default is off.
    `refusalMemoryMs`, reads and speculative reads included: every tile
    goes straight to `fallback`, without even the read of step 1. Any HTTP
    answer that arrives meanwhile (a request that was already running when
-   another got none) clears that memory: the host has just answered. A header timer of the fill wait (the wait
+   another got none) clears that memory: the host has just answered. The
+   converse holds too: a request that gets no answer only sets the memory
+   when it was sent at or after the host's last answer (`lastAnswerAt`). A
+   read that gives up at 45 s after another request was answered at 2 s
+   says nothing newer about the host, so it is only a refusal of its tile
+   (inside the source the failure is a `NoAnswer` carrying its send time).
+   A header timer of the fill wait (the wait
    running out before an answer began) is `FillWaitSpent` inside the
    source and counts as the wait spent, not as no answer: the host had
    answered that tile's earlier requests.
@@ -263,6 +269,8 @@ const source = new CachingSource(
   the next fetch only reads; no fill asked with no wait left), a host that
   does not answer (a timed-out read or a network error skips the host for
   the next tiles, speculative ones too, until the memory passes; a refused
-  fill, a 500 and a poll cut by the fill wait do not), the poll timings (`slotWaitMs` for the wait), the bounded wait,
+  fill, a 500 and a poll cut by the fill wait do not; a failure of a
+  request sent before another request's answer does not either, while one
+  sent after the last answer does), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.

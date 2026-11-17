@@ -600,6 +600,71 @@ describe("StaticTileSource", () => {
       expect(calls).toHaveLength(3);
     });
 
+    /** A reply held open until the test settles it, at a clock it chose. */
+    const held = () => {
+      let settle: ((outcome: Response | Error) => void) | undefined;
+      const reply: Reply = () =>
+        new Promise<Response>((resolve, reject) => {
+          settle = (outcome) => {
+            if (outcome instanceof Error) reject(outcome);
+            else resolve(outcome);
+          };
+        });
+      return {
+        reply,
+        settle: (outcome: Response | Error) => settle?.(outcome),
+      };
+    };
+
+    it("a request that fails late does not override an answer that came while it ran", async () => {
+      // Why this test matters: read A goes out, read B goes out and is
+      // answered after 2 s, then A gives up at its 45 s limit. The host
+      // answered after A started, so A's silence says nothing new about it:
+      // marking the host unreachable then sent every tile to the race for
+      // the whole memory although the host had just answered.
+      const a = held();
+      const b = held();
+      const { source, calls, advance } = setup({
+        [`GET ${TILE_URL}`]: [a.reply],
+        [`GET ${TILE2_URL}`]: [b.reply, new Response(PAYLOAD, { status: 200 })],
+      });
+      const pendingA = source.fetchTile(TILE);
+      const pendingB = source.fetchTile(TILE2);
+      advance(2_000);
+      b.settle(new Response(PAYLOAD, { status: 200 }));
+      expect((await pendingB).sourceId).toBe("static:tiles.example.dev");
+      advance(43_000);
+      a.settle(new TypeError("Failed to fetch"));
+      expect((await pendingA).sourceId).toBe("overpass:test");
+      const next = await source.fetchTile(TILE2);
+      expect(next.sourceId).toBe("static:tiles.example.dev");
+      expect(calls).toHaveLength(3);
+    });
+
+    it("a request that started after the last answer and got none still marks the host unreachable", async () => {
+      // The converse: B is answered first, then A starts and gets no answer.
+      // That silence is newer than any answer, so the host is left alone.
+      const a = held();
+      const b = held();
+      const { source, fallback, calls, advance } = setup({
+        [`GET ${TILE_URL}`]: [a.reply],
+        [`GET ${TILE2_URL}`]: [b.reply, new Response(PAYLOAD, { status: 200 })],
+      });
+      const pendingB = source.fetchTile(TILE2);
+      advance(2_000);
+      b.settle(new Response(PAYLOAD, { status: 200 }));
+      await pendingB;
+      advance(1_000);
+      const pendingA = source.fetchTile(TILE);
+      advance(45_000);
+      a.settle(new TypeError("Failed to fetch"));
+      expect((await pendingA).sourceId).toBe("overpass:test");
+      const next = await source.fetchTile(TILE2);
+      expect(next.sourceId).toBe("overpass:test");
+      expect(calls).toHaveLength(2);
+      expect(fallback.calls).toHaveLength(2);
+    });
+
     it("a poll with no answer before the fill wait ends is not taken for an unreachable host", async () => {
       // The fill wait's own deadline cut the poll: the host had answered the
       // read and the fill ask, so stored files are still read afterwards.
