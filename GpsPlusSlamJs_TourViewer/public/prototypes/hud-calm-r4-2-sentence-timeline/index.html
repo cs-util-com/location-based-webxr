@@ -14,7 +14,7 @@
         --accent: #1d5fd6;
         --fs: 16px;
         --lines: 3;
-        --overlap: 34px;
+        --overlap: 40px;
         --inset: 94px;
       }
       * {
@@ -68,21 +68,16 @@
         display: flex;
         flex-direction: column;
       }
+      /* the card keeps its place and height while silent, so Exit, the hint and the compass never move */
       .cardwrap {
-        display: grid;
-        grid-template-rows: 0fr;
         opacity: 0;
-        transition:
-          grid-template-rows 0.3s ease,
-          opacity 0.25s ease;
+        transition: opacity 0.25s ease;
       }
       .cardwrap.on {
-        grid-template-rows: 1fr;
         opacity: 1;
       }
-      .cardin {
-        min-height: 0;
-        overflow: hidden;
+      .cardwrap:not(.on) .card {
+        pointer-events: none;
       }
       .card {
         pointer-events: auto;
@@ -225,9 +220,7 @@
         pointer-events: auto;
         display: block;
         flex: none;
-        transition: margin-top 0.3s ease;
-      }
-      .top.carded #compass {
+        /* the badge overlaps the card's lower right corner whether or not the card shows */
         margin-top: calc(-6px - var(--overlap));
       }
       /* phone landscape: the top edge is short, so the compass moves beside the card */
@@ -252,7 +245,7 @@
         background: var(--paper);
         border: 2px solid var(--line);
         border-radius: 22px;
-        padding: 4px 6px 4px 14px;
+        padding: 4px;
         font: 600 14px system-ui, sans-serif;
         white-space: nowrap;
         min-height: 44px;
@@ -270,8 +263,9 @@
       .story.next button {
         display: block;
       }
+      /* no step title on screen: the control shows only when there is a next step to go to */
       .story:not(.next) {
-        padding-right: 14px;
+        display: none;
       }
       /* demo chrome: not part of the HUD */
       .strip {
@@ -509,7 +503,7 @@
       <div class="hud">
         <div class="top" id="top">
           <div class="cardwrap" id="cardwrap">
-            <div class="cardin">
+            <div>
               <div class="card" id="card">
                 <div class="text" id="text">
                   <div class="page" id="pA"></div>
@@ -533,7 +527,7 @@
             <canvas id="compass" aria-label="Compass"></canvas>
           </div>
         </div>
-        <div class="story" id="story"><span id="stepT">Find the well court</span><button id="stepNext">Next</button></div>
+        <div class="story" id="story"><button id="stepNext">Next</button></div>
         <div class="toast" id="toast"></div>
       </div>
       <div class="finger" id="finger"></div>
@@ -560,13 +554,19 @@
         A light card on the top edge carries the words, 2-3 lines at a time. Under the words, one segment per sentence; the round
         play/pause handle rides on it and is also what you drag. Let go and it lands on the start of the sentence under it.
       </p>
-      <p>Drag on the scene to look around, drag up to walk; keys W A S D. Word timings are faked (letter count), not measured.</p>
+      <p>
+        Drag on the scene to look around, drag up to walk; keys W A S D. Tap a figure, film, bell, well or sign to start it (from
+        inside its place). Word timings are faked (letter count), not measured.
+      </p>
       <h3>Demonstration</h3>
       <div class="beats" id="beats"></div>
       <h3>Tester settings</h3>
       <div id="ctl"></div>
       <h3>Creator settings</h3>
-      <p>The nearest level that sets a value wins; "as above" passes it on.</p>
+      <p>
+        "On radar" and "hints" at tour, station, story and item; "radar at all" at tour and station. A switch says "as above"
+        until it is set, and the nearest level that says something wins: item over story over station over tour. Tap to cycle.
+      </p>
       <div id="auth"></div>
       <h3>Play a source</h3>
       <div class="plays" id="plays"></div>
@@ -585,14 +585,14 @@
         slop: 8,
         snap: true,
         hint: 'idle60',
-        q1: 'hud',
-        q5: 'nomark',
+        narr: 'hud',
+        hidden: 'nomark',
         measure: false,
         speed: Math.max(0.25, Math.min(8, Number(qs.get('speed')) || 1)),
       };
       const CONTROLS = [
         ['fs', 'Text size', [[14, '14 px'], [16, '16 px'], [18, '18 px']]],
-        ['lines', 'Lines', [[2, '2'], [3, '3']], 'landscape keeps 2'],
+        ['lines', 'Lines at most', [[2, '2'], [3, '3']], '3 only while the card fits the top 1/6'],
         ['slop', 'Tap slop', [[6, '6 px'], [8, '8 px'], [12, '12 px'], [16, '16 px']]],
         ['snap', 'Snap on release', [[true, 'on'], [false, 'off']]],
         [
@@ -605,7 +605,7 @@
           ],
         ],
         [
-          'q1',
+          'narr',
           'Narrated long text',
           [
             ['hud', 'words in the card, plate retired'],
@@ -613,7 +613,7 @@
           ],
         ],
         [
-          'q5',
+          'hidden',
           'Hidden item speaks',
           [
             ['nomark', 'not marked'],
@@ -625,11 +625,21 @@
       ];
       const LEAD = 0.25; // seconds a snapped seek starts before the sentence
       const RANGE = 40; // compass radius in metres
+      // URL keys mirror the settings, for example ?narr=plate&hidden=mark&lines=2; unknown values are ignored
+      for (const [k, , opts] of CONTROLS) {
+        if (k === 'speed' || !qs.has(k)) continue;
+        const hit = opts.find(([v]) => String(v) === qs.get(k));
+        if (hit) CFG[k] = hit[0];
+      }
 
       // ---------- creator (author) settings ----------
+      // Round 3's switches. null means "as above"; the tour always has a value.
+      const STORIES = { well: 'The well', steps: 'The hall steps' };
+      const STORY_OF_ST = { A: 'well', B: 'steps' };
       const AUTH = {
-        tour: { look: 'disc', subs: true, colors: true },
-        station: { A: { subs: null }, B: { subs: null } },
+        tour: { look: 'disc', radarAll: true, shown: true, hints: true },
+        station: { A: { radarAll: null, shown: null, hints: null }, B: { radarAll: null, shown: null, hints: null } },
+        story: { well: { shown: null, hints: null }, steps: { shown: null, hints: null } },
         item: {},
       };
 
@@ -662,8 +672,8 @@
         bPic: { name: 'Picture', st: 'B', x: 45, z: -126, kind: 'picture' },
         bModel: { name: 'Model', st: 'B', x: 66, z: -127, kind: 'model' },
       };
-      for (const id in ITEMS) AUTH.item[id] = { radar: null, subs: null };
-      AUTH.item.well.radar = false; // the creator keeps the well off the compass
+      for (const id in ITEMS) AUTH.item[id] = { shown: null, hints: null };
+      AUTH.item.well.shown = false; // the creator keeps the well off the radar
 
       const VTT = `WEBVTT
 
@@ -730,12 +740,12 @@
       };
 
       const STEPS = [
-        { title: 'Find the well court', kind: 'search', next: 'A' },
-        { title: 'Greta at the well', kind: 'listen' },
-        { title: 'Look around the well court', kind: 'explore' },
-        { title: 'Find the hall steps', kind: 'search', next: 'B' },
-        { title: 'Voices at the hall steps', kind: 'explore' },
-        { title: 'Explore freely', kind: 'explore' },
+        { kind: 'search', next: 'A', story: 'well' },
+        { kind: 'listen', story: 'well' },
+        { kind: 'explore', story: 'well' },
+        { kind: 'search', next: 'B', story: 'steps' },
+        { kind: 'explore', story: 'steps' },
+        { kind: 'explore', story: 'steps' },
       ];
 
       // ---------- helpers ----------
@@ -743,10 +753,6 @@
       const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
       const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
       const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-      function hexA(hex, a) {
-        const n = parseInt(hex.slice(1), 16);
-        return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
-      }
       function mulberry(seed) {
         return () => {
           seed |= 0;
@@ -830,17 +836,18 @@
       const SRC = {};
       for (const id in SOURCES) SRC[id] = buildSource(id, SOURCES[id]);
 
-      // ---------- author resolution ----------
-      function resolve(key, itemId) {
-        const it = itemId && AUTH.item[itemId];
-        if (it && it[key] != null) return { v: it[key], from: 'item' };
-        const st = itemId && ITEMS[itemId] && AUTH.station[ITEMS[itemId].st];
-        if (st && st[key] != null) return { v: st[key], from: 'station' };
-        if (AUTH.tour[key] != null) return { v: AUTH.tour[key], from: 'tour' };
-        return { v: true, from: 'default' };
+      // ---------- author resolution: item over story over station over tour ----------
+      function resolve(key, ctx) {
+        for (const lvl of ['item', 'story', 'station']) {
+          const id = ctx[lvl];
+          const v = id && AUTH[lvl][id] ? AUTH[lvl][id][key] : null;
+          if (v === true || v === false) return { v, from: lvl };
+        }
+        return { v: AUTH.tour[key], from: 'tour' };
       }
-      const onRadar = (id) => resolve('radar', id).v !== false;
-      const colorOf = (who) => (AUTH.tour.colors ? COL[who] || '#1f2430' : '#1f2430');
+      const itemCtx = (id) => ({ item: id, story: STORY_OF_ST[ITEMS[id].st], station: ITEMS[id].st });
+      const onRadar = (id) => resolve('shown', itemCtx(id)).v !== false;
+      const colorOf = (who) => COL[who] || '#1f2430';
 
       // ---------- three.js scene ----------
       const dev = $('dev');
@@ -990,6 +997,7 @@
         }
         if (it.kind !== 'char' && it.kind !== 'well' && it.kind !== 'model') faceStation(g, it);
         else if (it.kind === 'char') faceStation(g, it);
+        g.userData.item = id;
         scene.add(g);
         worldObj[id] = g;
       }
@@ -1056,10 +1064,10 @@
       function updatePlate() {
         const s = SRC.long;
         const narr = cur === 'long';
-        const key = CFG.q1 === 'plate' ? (narr ? 'p' + wordIndexAt(s, s.t) : 'p-idle') : 'h';
+        const key = CFG.narr === 'plate' ? (narr ? 'p' + wordIndexAt(s, s.t) : 'p-idle') : 'h';
         if (key === plateKey) return;
         plateKey = key;
-        if (CFG.q1 === 'plate') drawSign(plateTex, 'The hall steps', null, s.words, narr ? wordIndexAt(s, s.t) : -1);
+        if (CFG.narr === 'plate') drawSign(plateTex, 'The hall steps', null, s.words, narr ? wordIndexAt(s, s.t) : -1);
         else drawSign(plateTex, 'The hall steps', null);
       }
       let vidKey = '';
@@ -1167,6 +1175,7 @@
       function speak(id, opts = {}) {
         if (cur && cur !== id && SRC[cur].playing) SRC[cur].playing = false;
         const s = SRC[id];
+        for (const o of Object.values(SRC)) o.held = false; // the newest start wins over anything held
         if (opts.restart || s.finished) {
           s.t = opts.at || 0;
           s.wi = 0;
@@ -1184,7 +1193,31 @@
         shown.seg = -1;
         shown.subs = null;
       }
+      // Reach: walking out of a source's place holds it and its card goes; walking back in carries it on.
+      const stationDist = (id) => {
+        const st = STATIONS[ITEMS[SRC[id].item].st];
+        return Math.hypot(st.x - me.x, st.z - me.z) - st.r;
+      };
+      const REACH_OUT = 4; // metres past the place's edge before a source is held (a margin against GPS jitter)
+      function reach() {
+        if (cur && stationDist(cur) > REACH_OUT) {
+          const s = SRC[cur];
+          if (s.playing) {
+            s.playing = false;
+            s.held = true;
+          }
+          if (!drag) cur = null; // no card outlives its place
+        }
+        if (!cur)
+          for (const id in SRC)
+            if (SRC[id].held && stationDist(id) < 0) {
+              speak(id);
+              break;
+            }
+      }
+      const LINGER = 7; // seconds a finished item's card stays, so it can still be dragged back
       function voices(dt) {
+        reach();
         if (!cur) return;
         const s = SRC[cur];
         if (s.playing) {
@@ -1193,7 +1226,7 @@
             s.t = s.dur;
             s.playing = false;
             s.finished = true;
-            lingerUntil = simT + 2.5;
+            lingerUntil = simT + LINGER;
           }
         }
         if (s.finished && !drag && simT > lingerUntil) cur = null;
@@ -1207,7 +1240,8 @@
       let textW = 300;
       const mctx = document.createElement('canvas').getContext('2d');
       const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-      const effLines = () => (isLandscape ? Math.min(CFG.lines, 2) : CFG.lines);
+      let linesNow = 3;
+      const effLines = () => linesNow;
       const measureCache = new Map();
       function mw(text, bold) {
         const k = (bold ? 'b' : 'n') + CFG.fs + text;
@@ -1302,18 +1336,17 @@
         const s = SRC[cur];
         updateKnob(s);
         if (drag && drag.moved) return; // the preview owns the card while dragging
-        const subs = resolve('subs', s.item).v !== false;
-        const plateMode = cur === 'long' && CFG.q1 === 'plate' && signLegible;
-        const key = `${subs}|${plateMode}`;
+        const plateMode = cur === 'long' && CFG.narr === 'plate' && signLegible;
+        const key = String(plateMode);
         if (key !== shown.subs) {
           shown.subs = key;
           shown.chunk = -1;
         }
-        if (!subs || plateMode) {
+        if (plateMode) {
           if (shown.chunk !== -9) {
             shown.chunk = -9;
             const who = s.sentences[0].who;
-            const msg = !subs ? 'No subtitles here: the creator turned them off.' : 'The words are on the sign in front of you.';
+            const msg = 'The words are on the sign in front of you.';
             flip(`<b class="who" style="color:${colorOf(who)}">${esc(who)}</b><span class="off">${msg}</span>`);
             spans = [];
           }
@@ -1391,7 +1424,9 @@
         pause: '<svg viewBox="0 0 16 16"><rect x="3" y="2" width="3.6" height="12"/><rect x="9.4" y="2" width="3.6" height="12"/></svg>',
         again: '<svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 1 1-5.6 3.9l1.9.7A4 4 0 1 0 8 4v2.5L4.2 3.2 8 0z"/></svg>',
       };
-      let knobIcon = '';
+      let knobIcon = '',
+        lastKnobT = '',
+        lastFillT = '';
       function updateKnob(s) {
         const icon = s.finished ? 'again' : s.playing ? 'pause' : 'play';
         if (icon !== knobIcon) {
@@ -1399,7 +1434,11 @@
           knob.innerHTML = ICON[icon];
           knob.setAttribute('aria-label', icon === 'pause' ? 'Pause' : 'Play');
         }
-        if (!(drag && drag.moved)) knob.style.transform = `translateX(${tToX(s, s.t)}px)`;
+        // style writes only on change
+        if (!(drag && drag.moved)) {
+          const kt = `translateX(${tToX(s, s.t).toFixed(1)}px)`;
+          if (kt !== lastKnobT) knob.style.transform = lastKnobT = kt;
+        }
         const si = segAt(s, s.t);
         if (si !== shown.seg) {
           segEls.forEach((e, i) => {
@@ -1407,14 +1446,16 @@
             e.firstChild.style.transform = '';
           });
           shown.seg = si;
+          lastFillT = '';
         }
         const g = s.segs[si];
-        segEls[si].firstChild.style.transform = `scaleX(${clamp((s.t - g.t0) / (g.t1 - g.t0), 0, 1)})`;
+        const ft = `scaleX(${clamp((s.t - g.t0) / (g.t1 - g.t0), 0, 1).toFixed(3)})`;
+        if (ft !== lastFillT) segEls[si].firstChild.style.transform = lastFillT = ft;
       }
       let drag = null;
       function dragStart(x, onKnob) {
         if (!cur) return;
-        drag = { x0: x, x, moved: false, onKnob, si: -1, wi: -1 };
+        drag = { x0: x, x, moved: false, onKnob, si: -1, wi: -1, scripted: false };
       }
       function dragMove(x) {
         if (!drag) return;
@@ -1427,6 +1468,7 @@
         if (!drag.moved) return;
         const cx = clamp(x, 0, trackW);
         knob.style.transform = `translateX(${cx}px)`;
+        lastKnobT = '';
         const t = xToT(s, cx);
         const si = segAt(s, t);
         const wi = CFG.snap ? -1 : wordIndexAt(s, t);
@@ -1502,22 +1544,98 @@
       });
 
       // ---------- compass: one model, two looks (the creator's choice) ----------
-      const cmp = $('compass'),
-        cctx = cmp.getContext('2d');
+      // Drawn with three.js meshes as round 3's compass was, in a small WebGL canvas of its own so the badge can sit over the card.
+      const cmp = $('compass');
+      const cRen = new THREE.WebGLRenderer({ canvas: cmp, antialias: true, alpha: true });
+      cRen.setClearColor(0x000000, 0);
+      const cScene = new THREE.Scene();
+      const cCam = new THREE.OrthographicCamera(0, 100, 0, -100, -10, 10);
+      const ITEM_R = 5.5,
+        ST_R = 6.5,
+        NEXT_R = 8.5; // round 3's mark radii, CSS px
+      const PAPER = '#fbfaf7',
+        INK = '#1f2430',
+        NEXT_C = '#1d5fd6',
+        NORTH_C = '#c0262d';
+      const geoCache = new Map(),
+        matCache = new Map();
+      const G = (k, make) => {
+        let g = geoCache.get(k);
+        if (!g) geoCache.set(k, (g = make()));
+        return g;
+      };
+      const gDisc = (r) => G('d' + r, () => new THREE.CircleGeometry(r, 32));
+      const gRing = (ri, ro) => G(`r${ri}|${ro}`, () => new THREE.RingGeometry(ri, ro, 64));
+      // sectors and arcs are centred on +x and turned to a bearing by put()
+      const gSector = (r, half) => G(`s${r}|${half}`, () => new THREE.CircleGeometry(r, 24, -half, 2 * half));
+      const gArc = (ri, ro, half) => G(`a${ri}|${ro}|${half}`, () => new THREE.RingGeometry(ri, ro, 24, 1, -half, 2 * half));
+      const gTri = (w, h) =>
+        G(`t${w}|${h}`, () => new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(0, h / 2), new THREE.Vector2(-w / 2, -h / 2), new THREE.Vector2(w / 2, -h / 2)])));
+      const gRect = (w, h) => G(`q${w}|${h}`, () => new THREE.PlaneGeometry(w, h));
+      function rr(P, x, y, w, h, r) {
+        P.moveTo(x + r, y);
+        P.lineTo(x + w - r, y);
+        P.quadraticCurveTo(x + w, y, x + w, y + r);
+        P.lineTo(x + w, y + h - r);
+        P.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        P.lineTo(x + r, y + h);
+        P.quadraticCurveTo(x, y + h, x, y + h - r);
+        P.lineTo(x, y + r);
+        P.quadraticCurveTo(x, y, x + r, y);
+        return P;
+      }
+      const gPlate = (w, h) => G(`p${w}|${h}`, () => new THREE.ShapeGeometry(rr(new THREE.Shape(), 0, -h, w, h, 12), 6));
+      const gFrame = (w, h) =>
+        G(`f${w}|${h}`, () => {
+          const sh = rr(new THREE.Shape(), 0, -h, w, h, 12);
+          sh.holes.push(rr(new THREE.Path(), 2.5, -h + 2.5, w - 5, h - 5, 9.5));
+          return new THREE.ShapeGeometry(sh, 6);
+        });
+      const fanGeo = new THREE.BufferGeometry();
+      fanGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+      // every material is "transparent" so all marks sort in one list by draw order
+      const M = (hex, a = 1) => {
+        const k = hex + '|' + a;
+        let m = matCache.get(k);
+        if (!m)
+          matCache.set(
+            k,
+            (m = new THREE.MeshBasicMaterial({ color: new THREE.Color(hex), transparent: true, opacity: a, depthTest: false, depthWrite: false, side: THREE.DoubleSide })),
+          );
+        return m;
+      };
+      const pool = [];
+      let pi = 0;
+      // x, y in CSS px from the canvas's top left; rot turns clockwise on screen
+      function put(geo, mat, x, y, rot = 0) {
+        let m = pool[pi];
+        if (!m) {
+          m = new THREE.Mesh(geo, mat);
+          m.frustumCulled = false;
+          cScene.add(m);
+          pool.push(m);
+        }
+        m.geometry = geo;
+        m.material = mat;
+        m.position.set(x, -y, 0);
+        m.rotation.z = -rot;
+        m.renderOrder = pi++;
+        m.visible = true;
+        return m;
+      }
       let look = '',
         cW = 100,
-        cH = 100,
-        dpr = 1;
+        cH = 100;
       function setLook(l) {
         look = l;
-        dpr = Math.min(devicePixelRatio || 1, 2);
         [cW, cH] = l === 'disc' ? [100, 100] : [176, 44];
-        cmp.style.width = cW + 'px';
-        cmp.style.height = cH + 'px';
-        cmp.width = cW * dpr;
-        cmp.height = cH * dpr;
+        cRen.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+        cRen.setSize(cW, cH);
+        cCam.right = cW;
+        cCam.bottom = -cH;
+        cCam.updateProjectionMatrix();
         compassKey = '';
-        topEl.style.setProperty('--overlap', l === 'disc' ? '34px' : '0px');
+        topEl.style.setProperty('--overlap', l === 'disc' ? '40px' : '0px');
         topEl.style.setProperty('--inset', l === 'disc' && !isLandscape ? '94px' : '0px');
         topEl.style.setProperty('--side', cW + 26 + 'px');
         topEl.classList.toggle('wide', isLandscape);
@@ -1540,182 +1658,111 @@
         if (cur && SRC[cur].playing) {
           const s = SRC[cur];
           const it = ITEMS[s.item];
-          if (onRadar(s.item) || CFG.q5 === 'mark') {
+          if (onRadar(s.item) || CFG.hidden === 'mark') {
             const who = s.sentences[segAt(s, s.t)].who;
             spk = { rel: bearingTo(it.x, it.z), d: Math.hypot(it.x - me.x, it.z - me.z), color: colorOf(who), id: s.item };
           }
         }
         return { marks, spk, north: wrap(-me.h) };
       }
-      let compassKey = '';
+      let compassKey = '',
+        radarShown = true;
+      function hereStation() {
+        for (const s of Object.values(STATIONS)) if (Math.hypot(s.x - me.x, s.z - me.z) < s.r) return s.id;
+        return null;
+      }
       function drawCompass() {
+        // "radar at all": the creator can switch the compass off for the tour or a station; it keeps its place, hidden
+        const on = resolve('radarAll', { station: hereStation() }).v !== false;
+        if (on !== radarShown) {
+          radarShown = on;
+          cmp.style.visibility = on ? '' : 'hidden';
+          compassKey = '';
+        }
+        if (!on) return;
         const m = compassModel();
         // redraw only when something the compass shows has moved
         const sp = m.spk ? `${Math.round(m.spk.rel * 200)}${m.spk.color}` : '';
         const key = `${look}|${Math.round(me.x * 20)}|${Math.round(me.z * 20)}|${Math.round(me.h * 300)}|${sp}|${m.marks.length}|${STEPS[stepIdx].next}`;
         if (key === compassKey) return;
         compassKey = key;
-        const c = cctx;
-        c.setTransform(dpr, 0, 0, dpr, 0, 0);
-        c.clearRect(0, 0, cW, cH);
-        if (look === 'disc') drawDisc(c, m);
-        else drawBand(c, m);
+        pi = 0;
+        if (look === 'disc') drawDisc(m);
+        else drawBand(m);
+        for (let i = pi; i < pool.length; i++) pool[i].visible = false;
+        cRen.render(cScene, cCam);
       }
-      function drawDisc(c, m) {
+      function drawMark(k, x, y, m, rItem, aItem) {
+        if (k.kind === 'next') {
+          put(gDisc(NEXT_R + 2.5), M('#ffffff'), x, y);
+          put(gDisc(NEXT_R), M(NEXT_C), x, y);
+        } else if (k.kind === 'station') {
+          put(gDisc(ST_R), M(INK), x, y);
+          put(gDisc(ST_R - 3), M(PAPER), x, y);
+        } else {
+          const hit = m.spk && m.spk.id === k.id;
+          put(gDisc(rItem + 1.5), M(PAPER), x, y);
+          put(gDisc(hit ? rItem + 1 : rItem), M(hit ? m.spk.color : INK, hit ? 1 : aItem), x, y);
+        }
+      }
+      function drawDisc(m) {
         const R = cW / 2,
-          r0 = R - 2.5;
+          r0 = R - 2.5,
+          rIn = 11,
+          rOut = r0 - 11;
         const pos = (rel, d) => {
-          const rr = d > RANGE ? r0 - 8 : 9 + ((r0 - 18) * d) / RANGE;
-          return [R + Math.sin(rel) * rr, R - Math.cos(rel) * rr];
+          const r = d > RANGE ? r0 - 9 : rIn + ((rOut - rIn) * d) / RANGE;
+          return [R + Math.sin(rel) * r, R - Math.cos(rel) * r];
         };
-        c.beginPath();
-        c.arc(R, R, r0, 0, Math.PI * 2);
-        c.fillStyle = '#fbfaf7';
-        c.fill();
-        c.beginPath();
-        c.moveTo(R, R);
-        c.arc(R, R, r0 - 2, -Math.PI / 2 - 0.52, -Math.PI / 2 + 0.52);
-        c.closePath();
-        c.fillStyle = 'rgba(31,36,48,.10)';
-        c.fill();
-        c.beginPath();
-        c.arc(R, R, (r0 - 18) / 2 + 9, 0, Math.PI * 2);
-        c.strokeStyle = 'rgba(31,36,48,.25)';
-        c.lineWidth = 2;
-        c.stroke();
+        put(gDisc(r0), M(PAPER), R, R);
+        put(gSector(r0 - 2, 0.52), M(INK, 0.1), R, R, -Math.PI / 2); // what you face
+        const mid = (rIn + rOut) / 2;
+        put(gRing(mid - 1, mid + 1), M(INK, 0.25), R, R);
         if (m.spk) {
           // the speaker wedge: from the centre toward whoever speaks, in their colour
-          const a = m.spk.rel - Math.PI / 2;
-          c.beginPath();
-          c.moveTo(R, R);
-          c.arc(R, R, r0 - 3, a - 0.32, a + 0.32);
-          c.closePath();
-          c.fillStyle = hexA(m.spk.color, 0.42);
-          c.fill();
-          c.lineWidth = 2.5;
-          c.strokeStyle = m.spk.color;
-          c.stroke();
+          const rot = m.spk.rel - Math.PI / 2;
+          put(gSector(r0 - 3, 0.32), M(m.spk.color, 0.42), R, R, rot);
+          put(gArc(r0 - 6, r0 - 3, 0.32), M(m.spk.color), R, R, rot);
         }
-        for (const k of m.marks) {
-          const [x, y] = pos(k.rel, k.d);
-          c.beginPath();
-          if (k.kind === 'next') {
-            c.arc(x, y, 6.5, 0, Math.PI * 2);
-            c.fillStyle = '#1d5fd6';
-            c.fill();
-            c.lineWidth = 2.5;
-            c.strokeStyle = '#fff';
-            c.stroke();
-          } else if (k.kind === 'station') {
-            c.arc(x, y, 5, 0, Math.PI * 2);
-            c.lineWidth = 2.5;
-            c.strokeStyle = '#1f2430';
-            c.stroke();
-          } else {
-            const hit = m.spk && m.spk.id === k.id;
-            c.arc(x, y, k.d > RANGE ? 2.5 : hit ? 4.5 : 3.4, 0, Math.PI * 2);
-            c.fillStyle = hit ? m.spk.color : '#1f2430';
-            c.fill();
+        put(gRing(r0 - 1.25, r0 + 1.25), M(INK), R, R);
+        put(gTri(10, 9), M(NORTH_C), R + Math.sin(m.north) * (r0 - 6), R - Math.cos(m.north) * (r0 - 6), m.north);
+        for (const pass of ['item', 'station', 'next'])
+          for (const k of m.marks) {
+            if (k.kind !== pass) continue;
+            const [x, y] = pos(k.rel, k.d);
+            drawMark(k, x, y, m, ITEM_R, k.d > RANGE ? 0.55 : 1);
           }
-        }
-        // north tick
-        const na = m.north;
-        c.save();
-        c.translate(R, R);
-        c.rotate(na);
-        c.beginPath();
-        c.moveTo(0, -r0 + 1);
-        c.lineTo(-5, -r0 + 10);
-        c.lineTo(5, -r0 + 10);
-        c.closePath();
-        c.fillStyle = '#c0262d';
-        c.fill();
-        c.restore();
-        // the visitor
-        c.beginPath();
-        c.moveTo(R, R - 7);
-        c.lineTo(R - 5.5, R + 5);
-        c.lineTo(R + 5.5, R + 5);
-        c.closePath();
-        c.fillStyle = '#1f2430';
-        c.fill();
-        c.beginPath();
-        c.arc(R, R, r0, 0, Math.PI * 2);
-        c.lineWidth = 2.5;
-        c.strokeStyle = '#1f2430';
-        c.stroke();
+        put(gTri(11, 12), M(INK), R, R); // the visitor
       }
-      function drawBand(c, m) {
+      function drawBand(m) {
         const W = cW,
           H = cH,
-          half = W / 2 - 12;
+          half = W / 2 - 14,
+          y = H / 2 + 3;
         const px = (rel) => W / 2 + clamp(rel / (Math.PI / 2), -1, 1) * half;
-        c.beginPath();
-        c.roundRect(1.25, 1.25, W - 2.5, H - 2.5, 12);
-        c.fillStyle = '#fbfaf7';
-        c.fill();
+        put(gPlate(W, H), M(PAPER), 0, 0);
+        if (Math.abs(m.north) < Math.PI / 2) put(gRect(3, 9), M(NORTH_C), px(m.north), 8.5);
         if (m.spk) {
           const x = px(m.spk.rel);
-          c.beginPath();
-          c.moveTo(W / 2, H - 6);
-          c.lineTo(x - 9, 5);
-          c.lineTo(x + 9, 5);
-          c.closePath();
-          c.fillStyle = hexA(m.spk.color, 0.42);
-          c.fill();
-          c.lineWidth = 2.5;
-          c.strokeStyle = m.spk.color;
-          c.stroke();
+          fanGeo.attributes.position.array.set([W / 2, -(H - 6), 0, x - 9, -5, 0, x + 9, -5, 0]);
+          fanGeo.attributes.position.needsUpdate = true;
+          put(fanGeo, M(m.spk.color, 0.42), 0, 0);
+          put(gRect(18, 4), M(m.spk.color), x, 6);
           if (Math.abs(m.spk.rel) > Math.PI / 2) {
             const s = Math.sign(m.spk.rel);
-            c.beginPath();
-            c.moveTo(x + s * 7, H / 2 - 6);
-            c.lineTo(x + s * 13, H / 2);
-            c.lineTo(x + s * 7, H / 2 + 6);
-            c.lineWidth = 3;
-            c.stroke();
+            put(gTri(9, 10), M(m.spk.color), x + s * 8, H / 2 - 4, (s * Math.PI) / 2); // behind you: turn this way
           }
         }
-        if (Math.abs(m.north) < Math.PI / 2) {
-          c.fillStyle = '#c0262d';
-          c.fillRect(px(m.north) - 1.5, 4, 3, 9);
-        }
-        for (const k of m.marks) {
-          const beyond = Math.abs(k.rel) > Math.PI / 2;
-          const x = px(k.rel),
-            y = H / 2 + 5;
-          c.beginPath();
-          if (k.kind === 'next') {
-            c.moveTo(x, y + 7);
-            c.lineTo(x - 7, y - 6);
-            c.lineTo(x + 7, y - 6);
-            c.closePath();
-            c.fillStyle = '#1d5fd6';
-            c.fill();
-          } else if (k.kind === 'station') {
-            c.arc(x, y, beyond ? 3.5 : 5, 0, Math.PI * 2);
-            c.lineWidth = 2.5;
-            c.strokeStyle = '#1f2430';
-            c.stroke();
-          } else {
-            const hit = m.spk && m.spk.id === k.id;
-            c.arc(x, y, beyond ? 2 : k.d < RANGE ? 4 - (2 * k.d) / RANGE : 2.2, 0, Math.PI * 2);
-            c.fillStyle = hit ? m.spk.color : beyond ? 'rgba(31,36,48,.5)' : '#1f2430';
-            c.fill();
+        // round 3's band sizes: 7.5 px near, 3.5 px at the edge of range, 3.6 px behind
+        for (const pass of ['item', 'station', 'next'])
+          for (const k of m.marks) {
+            if (k.kind !== pass) continue;
+            const beyond = Math.abs(k.rel) > Math.PI / 2;
+            const r = beyond ? 3.6 : k.d < RANGE ? 7.5 - (4 * k.d) / RANGE : 3.5;
+            drawMark(k, px(k.rel), y, m, r, beyond ? 0.42 : k.d < RANGE ? 1 : 0.55);
           }
-        }
-        c.beginPath();
-        c.moveTo(W / 2, H - 3);
-        c.lineTo(W / 2 - 6, H - 11);
-        c.lineTo(W / 2 + 6, H - 11);
-        c.closePath();
-        c.fillStyle = '#1f2430';
-        c.fill();
-        c.beginPath();
-        c.roundRect(1.25, 1.25, W - 2.5, H - 2.5, 12);
-        c.lineWidth = 2.5;
-        c.strokeStyle = '#1f2430';
-        c.stroke();
+        put(gTri(12, 8), M(INK), W / 2, H - 7);
+        put(gFrame(W, H), M(INK), 0, 0);
       }
 
       // ---------- story, hint ----------
@@ -1723,7 +1770,8 @@
         lastProgress = 0,
         minD = Infinity,
         stillT = 0,
-        hintOffered = false;
+        hintOffered = false,
+        hintUsed = false; // offered once per episode: a new step starts the next one
       const hintBtn = $('hint'),
         storyEl = $('story');
       function step(n) {
@@ -1731,9 +1779,9 @@
         lastProgress = simT;
         minD = Infinity;
         stillT = 0;
+        hintUsed = false;
         setHint(false);
         const st = STEPS[n];
-        $('stepT').textContent = st.title;
         storyEl.classList.toggle('next', st.kind === 'explore' && n < STEPS.length - 1);
         beam.visible = !!st.next;
         if (st.next) beam.position.set(STATIONS[st.next].x, 35, STATIONS[st.next].z);
@@ -1754,7 +1802,11 @@
         }
         minD = Math.min(minD, d);
         stillT = me.spd < 0.25 ? stillT + dt : 0;
-        if (hintOffered) return;
+        if (resolve('hints', { station: st.next, story: st.story }).v === false) {
+          if (hintOffered) setHint(false);
+          return;
+        }
+        if (hintOffered || hintUsed) return;
         const fire =
           CFG.hint === 'idle60' ? simT - lastProgress > 60 : CFG.hint === 'still8' ? stillT > 8 : d - minD > 10;
         if (fire) setHint(true);
@@ -1766,6 +1818,7 @@
         const f = { x: me.x + Math.sin(me.h) * 2.5, z: me.z - Math.cos(me.h) * 2.5 };
         motes.show(f.x, f.z, s.x, s.z);
         setHint(false);
+        hintUsed = true;
         lastProgress = simT;
         minD = Infinity;
         stillT = 0;
@@ -1789,23 +1842,51 @@
       }
 
       // ---------- input: drag to look and walk, keys ----------
+      // a tap on a source in the world starts it, from inside its place only
+      const ray = new THREE.Raycaster(),
+        ndc = new THREE.Vector2();
+      const SRC_OF_ITEM = Object.fromEntries(Object.entries(SRC).map(([id, s]) => [s.item, id]));
+      const tapTargets = Object.keys(SRC_OF_ITEM).map((k) => worldObj[k]);
+      function tapWorld(clientX, clientY) {
+        const r = canvas.getBoundingClientRect();
+        ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+        ray.setFromCamera(ndc, camera);
+        const hit = ray.intersectObjects(tapTargets, true)[0];
+        let o = hit && hit.object;
+        while (o && !o.userData.item) o = o.parent;
+        if (!o) return false;
+        const id = SRC_OF_ITEM[o.userData.item];
+        if (stationDist(id) > 0) {
+          toast(`Walk into ${STATIONS[ITEMS[o.userData.item].st].name.toLowerCase()} to hear it`);
+          return false;
+        }
+        speak(id);
+        return true;
+      }
       let look0 = null;
       canvas.addEventListener('pointerdown', (e) => {
         userTouched();
         canvas.setPointerCapture(e.pointerId);
-        look0 = { x: e.clientX, y: e.clientY };
+        look0 = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
       });
       canvas.addEventListener('pointermove', (e) => {
         if (!look0) return;
+        if (!look0.moved && Math.hypot(e.clientX - look0.sx, e.clientY - look0.sy) <= CFG.slop) return; // still a tap
+        look0.moved = true;
         const dx = e.clientX - look0.x,
           dy = e.clientY - look0.y;
-        look0 = { x: e.clientX, y: e.clientY };
+        look0.x = e.clientX;
+        look0.y = e.clientY;
         me.h = wrap(me.h - dx * 0.005);
         const f = -dy * 0.035;
         me.x += Math.sin(me.h) * f;
         me.z -= Math.cos(me.h) * f;
       });
-      canvas.addEventListener('pointerup', () => (look0 = null));
+      canvas.addEventListener('pointerup', (e) => {
+        if (look0 && !look0.moved) tapWorld(e.clientX, e.clientY);
+        look0 = null;
+      });
+      canvas.addEventListener('pointercancel', () => (look0 = null));
       const keys = {};
       addEventListener('keydown', (e) => {
         if (/^(w|a|s|d|arrow)/i.test(e.key)) {
@@ -1902,8 +1983,11 @@
         try {
           await wait(0.35);
           dragStart(x0, true);
+          const mine = drag;
+          if (mine) mine.scripted = true;
           const t0 = simT;
           await until(() => {
+            if (drag !== mine) return true; // a person took over: leave their drag alone
             const k = clamp((simT - t0) / secs, 0, 1);
             const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
             const x = x0 + (x1 - x0) * e;
@@ -1912,12 +1996,28 @@
             return k >= 1;
           });
           await wait(0.6);
-          dragEnd();
+          if (drag && drag === mine) dragEnd();
           await wait(0.3);
         } finally {
           fingerEl.classList.remove('on');
-          if (drag) dragEnd();
+          if (drag && drag.scripted) dragEnd(); // end only the scripted drag, never a person's
         }
+      }
+      // A scripted tap on an item in the world, through the same path as a finger.
+      async function scriptedWorldTap(id) {
+        const it = ITEMS[id];
+        const v = new THREE.Vector3(it.x, 1.1, it.z).project(camera);
+        const r = canvas.getBoundingClientRect(),
+          dr = dev.getBoundingClientRect();
+        const cx = r.left + ((v.x + 1) / 2) * r.width,
+          cy = r.top + ((1 - v.y) / 2) * r.height;
+        fingerEl.style.left = cx - dr.left + 'px';
+        fingerEl.style.top = cy - dr.top + 'px';
+        fingerEl.classList.add('on');
+        await wait(0.5);
+        tapWorld(cx, cy);
+        await wait(0.3);
+        fingerEl.classList.remove('on');
       }
       async function scriptedTap() {
         if (!cur) return;
@@ -1944,6 +2044,7 @@
           s.t = 0;
           s.playing = false;
           s.finished = false;
+          s.held = false;
           s.wi = 0;
         }
         cur = null;
@@ -2068,6 +2169,24 @@
           },
         },
         {
+          name: 'Tap Greta to start her; walk out of the court (she holds, the card goes) and back (she carries on)',
+          setup() {
+            place(0, -50, 0);
+            step(2);
+            me.h = facing('greta');
+          },
+          async run() {
+            await wait(1);
+            await scriptedWorldTap('greta');
+            await wait(4);
+            await walkTo(0, -34, 2.4);
+            await wait(2.5);
+            await walkTo(0, -50, 2.4);
+            await faceItem('greta');
+            await wait(4);
+          },
+        },
+        {
           name: 'A search step: the hint button appears, then the way is shown',
           setup() {
             place(0, -56, 0);
@@ -2134,7 +2253,7 @@
           },
         },
         {
-          name: 'Your turn: drag to look, drag up to walk, or play a source from the settings',
+          name: 'Your turn: drag to look, drag up to walk, tap a figure or sign to hear it',
           setup() {
             place(52, -112, 0);
             step(5);
@@ -2228,54 +2347,86 @@
         if (k === 'fs') document.documentElement.style.setProperty('--fs', v + 'px');
         if (k === 'lines' || k === 'fs') applyLines();
         if (k === 'measure') $('mchip').classList.toggle('on', v);
+        compassKey = '';
         plateKey = '';
         shown.subs = null;
         shown.chunk = -1;
       }
       const auth = $('auth');
-      const resolvedNote = (key, id) => {
-        const r = resolve(key, id);
-        return `now: ${r.v === false ? 'no' : r.v === true ? 'yes' : r.v} (from ${r.from})`;
-      };
       seg(auth, 'Tour: compass look', [['disc', 'disc'], ['band', 'band']], () => AUTH.tour.look, (v) => {
         AUTH.tour.look = v;
         setLook(v);
       }, "creator's choice, tour only");
-      seg(auth, 'Tour: subtitles', [[true, 'on'], [false, 'off']], () => AUTH.tour.subs, (v) => (AUTH.tour.subs = v));
-      seg(auth, 'Tour: speaker colours', [[true, 'on'], [false, 'off']], () => AUTH.tour.colors, (v) => {
-        AUTH.tour.colors = v;
-        shown.chunk = -1;
-      });
-      for (const sid of ['A', 'B'])
-        seg(auth, `${STATIONS[sid].name}: subtitles`, [[null, 'as above'], [true, 'on'], [false, 'off']], () => AUTH.station[sid].subs, (v) => (AUTH.station[sid].subs = v));
       {
-        const row = document.createElement('div');
-        row.className = 'row';
-        row.innerHTML = '<span>Item</span>';
-        const sel = document.createElement('select');
-        for (const [id, it] of Object.entries(ITEMS)) sel.add(new Option(it.name, id));
-        sel.value = 'well';
-        row.appendChild(sel);
-        auth.appendChild(row);
-        const box = document.createElement('div');
-        auth.appendChild(box);
-        const draw = () => {
-          box.innerHTML = '';
-          const id = sel.value;
-          const r1 = seg(box, 'On the compass', [[null, 'as above'], [true, 'yes'], [false, 'no']], () => AUTH.item[id].radar, (v) => (AUTH.item[id].radar = v), resolvedNote('radar', id));
-          r1.refresh = draw;
-          const r2 = seg(box, 'Subtitles', [[null, 'as above'], [true, 'on'], [false, 'off']], () => AUTH.item[id].subs, (v) => (AUTH.item[id].subs = v), resolvedNote('subs', id));
-          r2.refresh = draw;
+        const NAMES = { radarAll: 'radar at all', shown: 'on radar', hints: 'hints' };
+        const STORY_ST = { well: 'A', steps: 'B' };
+        const rows = [
+          ['Tour', 'tour', null, ['radarAll', 'shown', 'hints']],
+          ...Object.values(STATIONS).map((st) => [st.name, 'station', st.id, ['radarAll', 'shown', 'hints']]),
+          ...Object.entries(STORIES).map(([k, t]) => [`Story: ${t}`, 'story', k, ['shown', 'hints']]),
+          ['Item', 'item', '*', ['shown', 'hints']],
+        ];
+        let authItem = 'well';
+        const ctxOf = (lvl, id) =>
+          lvl === 'tour' ? {} : lvl === 'station' ? { station: id } : lvl === 'story' ? { story: id, station: STORY_ST[id] } : itemCtx(id);
+        const host = document.createElement('div');
+        auth.appendChild(host);
+        const renderAuth = () => {
+          host.innerHTML = rows
+            .map(([label, lvl, id, keys]) => {
+              const rid = id === '*' ? authItem : id;
+              const head =
+                id === '*'
+                  ? `<select id="authItem" aria-label="Item">${Object.entries(ITEMS)
+                      .map(([k, it]) => `<option value="${k}"${k === authItem ? ' selected' : ''}>${esc(it.name)}</option>`)
+                      .join('')}</select>`
+                  : `<span>${esc(label)}</span>`;
+              const btns = keys
+                .map((k) => {
+                  const v = lvl === 'tour' ? AUTH.tour[k] : AUTH[lvl][rid][k];
+                  const eff = resolve(k, ctxOf(lvl, rid)).v !== false;
+                  const word = v === null ? `as above (${eff ? 'yes' : 'no'})` : v ? 'yes' : 'no';
+                  return `<button type="button" class="${v === null ? '' : 'sel'}" data-al="${lvl}" data-aid="${rid || ''}" data-ak="${k}">${NAMES[k]}: ${word}</button>`;
+                })
+                .join('');
+              return `<div class="row">${head}${btns}</div>`;
+            })
+            .join('');
+          $('authItem').addEventListener('change', (e) => {
+            authItem = e.target.value;
+            renderAuth();
+          });
         };
-        sel.addEventListener('change', draw);
-        draw();
+        host.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-ak]');
+          if (!b) return;
+          const { al, aid, ak } = b.dataset;
+          if (al === 'tour') AUTH.tour[ak] = !AUTH.tour[ak];
+          else {
+            const o = AUTH[al][aid];
+            o[ak] = o[ak] === null ? true : o[ak] === true ? false : null; // as above -> yes -> no
+          }
+          compassKey = '';
+          renderAuth();
+        });
+        renderAuth();
       }
       for (const id of Object.keys(SRC)) {
         const b = document.createElement('button');
         const s = SRC[id];
         b.textContent = `${ITEMS[s.item].name} (${Math.round(s.dur)} s)`;
+        b.title = 'Takes you into its place, facing it, and starts it';
         b.addEventListener('click', () => {
           userTouched();
+          if (stationDist(id) > 0) {
+            // a tester shortcut: stand 5 m from the item, toward its place's centre, facing it
+            const it = ITEMS[s.item],
+              st = STATIONS[it.st];
+            const dx = st.x - it.x,
+              dz = st.z - it.z,
+              L = Math.hypot(dx, dz) || 1;
+            place(it.x + (dx / L) * 5, it.z + (dz / L) * 5, Math.atan2(-dx / L, dz / L));
+          }
           speak(id, { restart: true });
         });
         $('plays').appendChild(b);
@@ -2283,8 +2434,13 @@
 
       // ---------- layout, sizes ----------
       let isLandscape = false;
+      // 3 lines only while the card fits the top 1/6 of the screen; measured on resize and on a setting change
+      const CARD_FIXED = 58; // borders 4 + padding 12 + scrub row 42
       function applyLines() {
-        document.documentElement.style.setProperty('--lines', effLines());
+        const H = dev.clientHeight || innerHeight;
+        const fits3 = (topEl.offsetTop + CARD_FIXED + 3 * CFG.fs * 1.35) / H <= 1 / 6;
+        linesNow = CFG.lines === 3 && fits3 ? 3 : 2;
+        document.documentElement.style.setProperty('--lines', linesNow);
       }
       new ResizeObserver(() => {
         const w = dev.clientWidth,
@@ -2315,7 +2471,7 @@
         const cr = $('card').getBoundingClientRect(),
           kr = cmp.getBoundingClientRect();
         const on = cardwrap.classList.contains('on');
-        const card = on ? (cr.bottom - dr.top) / dr.height : 0;
+        const card = (cr.bottom - dr.top) / dr.height; // the card's place is reserved even while it is hidden
         const all = (Math.max(on ? cr.bottom : 0, kr.bottom) - dr.top) / dr.height;
         measured[key] = { card: +(card * 100).toFixed(1), withCompass: +(all * 100).toFixed(1), cardShown: on };
         return measured;
@@ -2325,7 +2481,7 @@
         const m = measure();
         const k = Object.keys(m).pop();
         const r = m[k];
-        $('mchip').textContent = `${k}  top block ${r.cardShown ? r.card + '%' : '(card hidden)'}  with compass ${r.withCompass}%  limit 16.7%`;
+        $('mchip').textContent = `${k}  card ${r.card}%${r.cardShown ? '' : ' (hidden)'}  with compass ${r.withCompass}%  lines ${linesNow}  limit 16.7%`;
       }, 1000);
 
       // ---------- frame loop ----------
@@ -2385,6 +2541,7 @@ ${Object.entries(measured)
       }
       setLook(AUTH.tour.look);
       applyCfg('fs', CFG.fs);
+      applyCfg('measure', CFG.measure);
       requestAnimationFrame(frame);
       runFrom(Math.max(0, Math.min(BEATS.length - 1, (Number(qs.get('beat')) || 1) - 1)));
 
@@ -2402,6 +2559,8 @@ ${Object.entries(measured)
           playing: cur ? SRC[cur].playing : null,
           finished: cur ? SRC[cur].finished : null,
           hint: hintOffered,
+          lines: linesNow,
+          held: Object.keys(SRC).filter((k) => SRC[k].held),
         }),
         bench: () => ({ js: avgMax(workJs), withRender: avgMax(work), over50: [...workJs].filter((v) => v > 50).length }),
         benchReset: () => {
