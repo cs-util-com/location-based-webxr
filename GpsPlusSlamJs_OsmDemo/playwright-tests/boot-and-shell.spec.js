@@ -1267,6 +1267,10 @@ test.describe("the phone layout", () => {
       const full = page.locator("#map .map-attribution-full");
       await toggle.click();
       await expect(full).toBeVisible();
+      // A user can scroll it only with `overflow-y: auto`. The `scrollTop`
+      // writes below would move an `overflow: hidden` box just the same, so
+      // they alone do not prove the view scrolls for a person.
+      await expect(full).toHaveCSS("overflow-y", "auto");
       const mapBox = await page.locator("#map").boundingBox();
       const control = page.locator(
         "#map .leaflet-control-attribution.map-attribution",
