@@ -172,14 +172,17 @@ describe("AttributionView: the resting line", () => {
   });
 
   it("adopting another legal link replaces the first, separator and all", () => {
+    // Why this test matters: the view itself must take the old link out of
+    // the line. The test leaves the first link where adoption put it, so
+    // only the view's own removal can make it disappear.
     const v = view();
     const first = legalLink();
     v.adoptLegalLink(first);
-    first.remove();
     const second = legalLink();
     v.adoptLegalLink(second);
     v.setEntries([OSM]);
 
+    expect(first.parentElement).toBeNull();
     expect(line(v).contains(second)).toBe(true);
     expect(line(v).textContent).toBe("© OpenStreetMap | Credits | Legal");
     expect(line(v).querySelectorAll(".map-attribution-sep")).toHaveLength(2);
