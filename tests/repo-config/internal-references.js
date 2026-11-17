@@ -21,13 +21,6 @@ import { firstMergeBase, MAIN_LINES } from '../../scripts/test-changed/select.mj
  */
 
 /**
- * The reviewed list. Each regex is non-global (only `.test` is used, so no
- * `lastIndex` state leaks between lines). Built from string parts where a
- * literal would itself be a hit in this file's own added lines.
- *
- * @type {readonly Pattern[]}
- */
-/**
  * What a person who decides gave or did, as the word after the role word or
  * its possessive. Each one was read on main before it was added: every hit
  * was a pointer to that person, none a code sense.
@@ -60,6 +53,13 @@ const DECISION_VERBS = [
   'reported',
 ].join('|');
 
+/**
+ * The reviewed list. Each regex is non-global (only `.test` is used, so no
+ * `lastIndex` state leaks between lines). Built from string parts where a
+ * literal would itself be a hit in this file's own added lines.
+ *
+ * @type {readonly Pattern[]}
+ */
 const PATTERNS = Object.freeze([
   {
     // A person who decides: a public reader cannot ask them, and the line
@@ -116,8 +116,12 @@ const PATTERNS = Object.freeze([
     // needs two digits or more, because one digit is an item of a numbered
     // list in the same comment; it stops at five digits and skips exactly
     // three repeated digits, because a CSS colour in decimal digits only (the
-    // short grey, also first of a pair, or any six-digit colour) reads the
-    // same. A four-digit colour with alpha in decimal digits only is still
+    // short grey, or any six-digit colour) reads the same. The grey is
+    // skipped alone, first in a list, or in a pair of two greys; a pair whose
+    // second number is no grey is matched, so a grey cannot shield the
+    // number after it. A grey first in a list still passes whatever follows
+    // it: the cost of letting a CSS list (a gradient's colours) through. A
+    // four-digit colour with alpha in decimal digits only is still
     // matched: an accepted false positive, since it is the length of a pull
     // request number and main has none.
     name: 'pull-request number',
@@ -125,7 +129,7 @@ const PATTERNS = Object.freeze([
       [
         `\\b${'P'}Rs? ?#\\d+`,
         `\\b${'pull'} requests? #\\d+`,
-        '\\((?:see )?(?!#(\\d)\\1\\1(?!\\d))#\\d{2,5}(?:[,)]| and #\\d)',
+        '\\((?:see )?(?!#(\\d)\\1\\1(?:[,)]| and #(\\d)\\2\\2(?!\\d)))#\\d{2,5}(?:[,)]| and #\\d)',
         "#\\d{3,}(?:['’]s)? (?:cold )?(?:re-?)?review",
         '\\b(?:review|reviewed|bot) on #\\d{2,}',
         '(?:(?:location-based-webxr|gps-plus-slam)/|(?<![\\w./-]))pull/\\d+',

@@ -48,6 +48,9 @@ describe('matchLine', () => {
     [`// ${OWNER.toUpperCase()} CHOSE THIS`, 'owner reference'],
     [`* the ${'own'}er’s phone`, 'owner reference'],
     [`* ${OWNERS} report`, 'owner reference'],
+    // Only the ungated possessive matches this one: nothing stands before
+    // it and no decision noun follows, so dropping that alternative fails it.
+    [`${OWNERS} phone`, 'owner reference'],
     [`// ${'own'}er decision 2099-01-01`, 'owner reference'],
     [`* (${'Own'}er feedback - a sharper map)`, 'owner reference'],
     [`the ${'own'}er pick, the ${'own'}er verdict`, 'owner reference'],
@@ -88,6 +91,9 @@ describe('matchLine', () => {
     [`the #${4242}’s review`, 'pull-request number'],
     [`${'pull'} request #4242`, 'pull-request number'],
     [`two rounds (#${4242} and #${4243})`, 'pull-request number'],
+    // A grey first shields nothing: the pair is skipped only when both are.
+    [`two rounds (#${333} and #${334})`, 'pull-request number'],
+    [`two rounds (#${333} and #${4243})`, 'pull-request number'],
     [`dropped (see #${4242}).`, 'pull-request number'],
     [`Raised in review on #${4242}.`, 'pull-request number'],
     [`found by a review bot on #${4242}`, 'pull-request number'],
