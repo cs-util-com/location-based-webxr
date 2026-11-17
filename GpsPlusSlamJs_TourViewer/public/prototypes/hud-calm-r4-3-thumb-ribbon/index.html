@@ -1,0 +1,2101 @@
+<!doctype html>
+<!-- Prototype: calm HUD round 4, direction 3 - Thumb ribbon. Throwaway; not wired to the app. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex" />
+<meta name="color-scheme" content="dark" />
+<title>Calm HUD 4.3 - Thumb ribbon</title>
+<style>
+:root {
+  --play: #2dd4bf;
+  --play-ink: #04201c;
+  --ink: #fff;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body {
+  font: 15px/1.4 var(--sans);
+  background: #101317;
+  color: var(--ink);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; }
+
+/* ---------- the phone ---------- */
+.device { position: fixed; inset: 0; overflow: hidden; background: #000; container-type: size; }
+#cam { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+
+/* ---------- demo strip, at the FOOT on this page so the top edge belongs to the words (not part of the design) ---------- */
+.strip {
+  position: absolute; z-index: 70; left: 0; right: 0; bottom: env(safe-area-inset-bottom);
+  height: 34px; display: flex; align-items: center; gap: 4px; padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.6); font: 600 11.5px/1 var(--sans);
+}
+.strip button {
+  appearance: none; flex: none; border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.09); border-radius: 7px; min-width: 30px; height: 28px;
+  padding: 0 6px; cursor: pointer; color: #fff; font: 700 13px/1 var(--sans);
+}
+.strip button.on { background: #0f766e; border-color: #14b8a6; }
+.strip .bt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e5ebf0; padding: 0 2px; }
+.readout {
+  position: absolute; z-index: 69; left: 6px; right: 6px; bottom: calc(38px + env(safe-area-inset-bottom));
+  padding: 4px 7px; border-radius: 7px; background: rgba(0, 0, 0, 0.72);
+  font: 600 10.5px/1.35 ui-monospace, Consolas, monospace; color: #d7fbf3; pointer-events: none;
+}
+.readout.bad { background: rgba(160, 20, 20, 0.85); color: #fff; }
+
+/* ---------- the HUD ---------- */
+.hud {
+  position: absolute; inset: 0; pointer-events: none;
+  --fs: 16px; --lh: 22px; --rows: 3;
+  --t0: calc(env(safe-area-inset-top) + 6px);
+  --wordsH: calc(var(--rows) * var(--lh));
+  --barH: 44px;
+  --barTop: calc(var(--t0) + var(--wordsH) + 2px);
+  --rowTop: calc(var(--barTop) + var(--barH) + 6px);
+  --bandw: min(calc(100cqw - 148px), 440px);
+  --disc: 112px;
+  --textw: min(calc(100cqw - 24px), 560px);
+}
+.hud > * { pointer-events: auto; }
+
+/* the words: no plate, a short dark gradient from the top edge, shadowed white type */
+.scrim {
+  position: absolute; left: 0; right: 0; top: 0; height: calc(var(--rowTop) + 4px);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.62) 0%, rgba(0, 0, 0, 0.48) 55%, rgba(0, 0, 0, 0) 100%);
+  pointer-events: none; transition: opacity 0.5s;
+}
+.hud[data-back="plate"] .scrim {
+  left: 8px; right: 8px; top: calc(var(--t0) - 4px); height: calc(var(--wordsH) + var(--barH) + 8px);
+  background: rgba(10, 14, 19, 0.86); border: 2px solid rgba(255, 255, 255, 0.22); border-radius: 18px;
+}
+.lyrics {
+  position: absolute; top: var(--t0); left: 50%; width: var(--textw); height: var(--wordsH);
+  transform: translateX(-50%); overflow: hidden; touch-action: none; cursor: grab;
+  font-size: var(--fs); line-height: var(--lh); font-weight: 600; text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 7px rgba(0, 0, 0, 0.6);
+  transition: opacity 0.5s;
+}
+.lyrics.grab { cursor: grabbing; }
+.col { position: absolute; left: 0; right: 0; top: 0; transition: transform 0.32s cubic-bezier(0.2, 0.7, 0.2, 1); will-change: transform; }
+.col.drag { transition: none; }
+.ln { position: absolute; left: 0; right: 0; height: var(--lh); white-space: nowrap; overflow: hidden; opacity: 0; transition: opacity 0.3s; }
+.ln[data-r="cur"] { opacity: 1; }
+.ln[data-r="prev"], .ln[data-r="next"] { opacity: 0.5; }
+.ln .w { color: rgba(255, 255, 255, 0.58); transition: color 0.12s; }
+.ln .w.on { color: #fff; }
+.ln[data-r="prev"] .w { color: #fff; }
+.ln .w.fx { font-style: italic; color: rgba(204, 251, 241, 0.62); }
+.ln .w.fx.on { color: #ccfbf1; }
+.ln .nm { font-weight: 800; font-size: 0.84em; letter-spacing: 0.02em; margin-right: 0.45em; }
+.ln .nm::before { content: ""; display: inline-block; width: 0.55em; height: 0.55em; border-radius: 50%; background: currentColor; margin-right: 0.3em; vertical-align: 0.08em; }
+
+/* the scrub row: a track, and the play/pause handle that rides on it */
+.scrub { position: absolute; top: var(--barTop); left: 50%; width: var(--textw); height: var(--barH); transform: translateX(-50%); touch-action: none; transition: opacity 0.5s; }
+.track { position: absolute; left: 22px; right: 22px; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: rgba(255, 255, 255, 0.34); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); }
+.fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; transform-origin: 0 50%; border-radius: 2px; background: #fff; }
+.tick { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: rgba(255, 255, 255, 0.55); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3); }
+.handle {
+  position: absolute; left: 2px; top: 2px; width: 40px; height: 40px; border-radius: 50%;
+  appearance: none; border: 2px solid #fff; padding: 0; cursor: grab; touch-action: none;
+  background: var(--play); color: var(--play-ink); display: grid; place-items: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.55); will-change: transform;
+}
+.handle svg { width: 16px; height: 16px; }
+.handle.grab { cursor: grabbing; box-shadow: 0 0 0 6px rgba(45, 212, 191, 0.35), 0 2px 6px rgba(0, 0, 0, 0.55); }
+.quiet { opacity: 0 !important; pointer-events: none !important; }
+
+/* Exit, the compass, the hint */
+.exit {
+  position: absolute; top: var(--rowTop); left: calc(12px + env(safe-area-inset-left)); appearance: none;
+  width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4);
+  background: rgba(10, 14, 19, 0.7); display: grid; place-items: center; padding: 0; cursor: pointer;
+}
+.exit svg { width: 16px; height: 16px; }
+#radar {
+  position: absolute; top: calc(var(--rowTop) + 7px); left: 50%; width: var(--bandw); height: 30px;
+  transform: translateX(-50%); appearance: none; border: 0; padding: 0; margin: 0;
+  background: transparent; cursor: pointer; touch-action: manipulation;
+}
+.hud[data-look="disc"] #radar { top: var(--rowTop); left: auto; right: 12px; width: var(--disc); height: var(--disc); transform: none; border-radius: 50%; }
+.hint {
+  position: absolute; top: calc(var(--rowTop) + 4px); left: calc(50% + var(--bandw) / 2 + 6px);
+  appearance: none; width: 36px; height: 36px; border-radius: 50%; border: 2px solid rgba(255, 226, 160, 0.75);
+  background: rgba(10, 14, 19, 0.75); padding: 0; cursor: pointer; display: grid; place-items: center;
+  animation: rise 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.hud[data-look="disc"] .hint { left: auto; right: calc(12px + var(--disc) + 8px); }
+.hint[aria-pressed="true"] { background: rgba(255, 226, 160, 0.3); }
+.hint svg { width: 18px; height: 18px; }
+@keyframes rise { from { transform: translateY(-6px); opacity: 0; } }
+@container (orientation: landscape) and (max-height: 520px) {
+  .hud { --disc: 96px; --barH: 40px; }
+  .exit { top: var(--t0); }
+  .hud[data-look="disc"] #radar { top: var(--t0); }
+  .hud[data-look="disc"] .hint { top: calc(var(--t0) + var(--disc) + 6px); right: calc(12px + var(--disc) / 2 - 18px); }
+}
+.ovl { outline: 3px solid #ef4444 !important; outline-offset: 1px; }
+
+/* the "friend" who blocks the view for 4 s in beat 2 (a stand-in for looking away) */
+.friend { position: absolute; inset: 0; z-index: 40; pointer-events: none; transition: opacity 0.35s; }
+.friend .shoulder { position: absolute; left: -20%; right: -10%; top: 18%; bottom: -30%; border-radius: 48% 52% 0 0; background: radial-gradient(120% 90% at 40% 20%, #3b3530, #15120f 70%); }
+.friend p { position: absolute; left: 0; right: 0; top: 56%; margin: 0; text-align: center; color: #e9dfd2; font-size: 14px; }
+.friend.gone { opacity: 0; }
+.finger { position: absolute; z-index: 66; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: rgba(255, 255, 255, 0.42); border: 2px solid #fff; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35); pointer-events: none; }
+
+/* first-run card */
+.try {
+  position: absolute; z-index: 60; left: 50%; top: 58%; transform: translate(-50%, -50%);
+  width: max-content; max-width: min(330px, calc(100cqw - 40px)); padding: 14px 16px; border-radius: 16px;
+  background: rgba(0, 0, 0, 0.8); border: 2px solid rgba(255, 255, 255, 0.22); font-size: 14px;
+  line-height: 1.45; text-align: center; transition: opacity 0.4s; pointer-events: none;
+}
+.try b { color: #fb923c; }
+.try.gone { opacity: 0; }
+.ripple { position: absolute; z-index: 66; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.4); pointer-events: none; animation: rip 0.7s ease-out forwards; }
+@keyframes rip { from { transform: scale(0.4); opacity: 1; } to { transform: scale(1.25); opacity: 0; } }
+
+/* ---------- settings panel (not part of the design) ---------- */
+.demo {
+  position: fixed; z-index: 90; top: calc(8px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  width: min(400px, calc(100vw - 16px)); max-height: calc(100vh - 56px); overflow-y: auto;
+  background: rgba(14, 18, 23, 0.97); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 14px;
+  font-size: 13px; color: #e8edf2; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); padding: 10px 12px;
+}
+.demo h4 { margin: 12px 0 5px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #a9b4bf; }
+.demo p, .demo ul { margin: 0 0 6px; line-height: 1.45; color: #c9d2db; }
+.demo ul { padding-left: 18px; }
+.demo b { color: #fff; }
+.demo code { word-break: break-all; font-size: 11.5px; }
+.demo .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.demo .row { display: grid; grid-template-columns: 104px repeat(4, 1fr); gap: 5px; align-items: center; margin-top: 5px; }
+.demo .row > span:first-child { line-height: 1.2; }
+.demo button {
+  border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.07); color: #fff;
+  border-radius: 9px; padding: 7px 6px; text-align: left; cursor: pointer; font-size: 12.5px; min-height: 36px;
+}
+.demo .row button { text-align: center; }
+.demo button.on { background: #0f766e; border-color: #14b8a6; }
+.demo table { width: 100%; border-collapse: collapse; font: 11.5px/1.35 ui-monospace, Consolas, monospace; }
+.demo td, .demo th { padding: 3px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); text-align: right; }
+.demo td:first-child, .demo th:first-child { text-align: left; }
+.demo .close { display: block; width: 100%; margin: 10px 0 2px; text-align: center; }
+.demo .note { font-size: 12px; color: #9fb0bf; margin-top: 3px; }
+.auth { display: grid; grid-template-columns: 1fr 66px 66px 66px; gap: 4px; align-items: center; margin-top: 4px; }
+.auth .h { font-size: 11px; color: #a9b4bf; text-align: center; }
+.auth .n { font-size: 12.5px; line-height: 1.2; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.auth .n small { display: block; color: #93a0ad; font-size: 10.5px; }
+.auth button { min-height: 30px; padding: 3px 2px; text-align: center; font-size: 11.5px; }
+.auth button[data-v="yes"] { background: #0f766e; border-color: #14b8a6; }
+.auth button[data-v="no"] { background: #7f1d1d; border-color: #ef4444; }
+.auth .lvl1 { padding-left: 10px; }
+.auth .lvl2 { padding-left: 20px; }
+.demo details { margin-top: 6px; }
+.demo summary { cursor: pointer; color: #dbe3ea; font-weight: 650; }
+
+@media (min-width: 960px) and (min-height: 720px) {
+  body {
+    display: flex; align-items: center; justify-content: center; gap: 36px; padding: 30px;
+    background: radial-gradient(1200px 700px at 30% 20%, #26303a, #12151a);
+  }
+  .device {
+    position: relative; inset: auto; flex: none; width: 390px; height: min(844px, calc(100vh - 60px));
+    border-radius: 46px; border: 12px solid #0a0c0f; box-shadow: 0 0 0 2px #2d333b, 0 40px 90px rgba(0, 0, 0, 0.6);
+  }
+  .strip { border-radius: 0 0 34px 34px; padding: 3px 18px; }
+  .demo { position: static; transform: none; width: 420px; max-height: min(844px, calc(100vh - 60px)); display: block !important; }
+  .demo .close, #menuBtn { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .col, .ln, .ln .w { transition: none; }
+  .hint { animation: none; }
+}
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+</script>
+</head>
+<body>
+<main class="device" id="device">
+  <canvas id="cam" aria-label="Simulated camera view of an old town square"></canvas>
+
+  <div class="hud" id="hud" data-look="band" data-back="scrim">
+    <div class="scrim quiet" id="scrim"></div>
+    <div class="lyrics quiet" id="lyrics" data-hud="words" aria-label="What is being said - drag down to go back">
+      <div class="col" id="col"></div>
+    </div>
+    <div class="scrub quiet" id="scrub" data-hud="scrub">
+      <div class="track" id="track"><div class="fill" id="fill"></div><div id="ticks"></div></div>
+      <button class="handle" id="handle" type="button" aria-label="Pause - drag to go back"><span id="handleIcon"></span></button>
+    </div>
+    <button class="exit" id="exitBtn" type="button" data-hud="exit" aria-label="Exit AR">
+      <svg viewBox="0 0 16 16"><path d="M3 3l10 10M13 3L3 13" stroke="#fff" stroke-width="2.4" stroke-linecap="round" /></svg>
+    </button>
+    <button id="radar" type="button" data-hud="compass" aria-label="Compass - tap to wake it, tap again to change the range"></button>
+    <button class="hint" id="hintBtn" type="button" data-hud="hint" aria-label="Show the way" aria-pressed="false" hidden>
+      <svg viewBox="0 0 20 20"><path d="M3 14c3-1 4-5 8-5 2 0 3 1 5 1" stroke="#ffe2a0" stroke-width="2" fill="none" stroke-linecap="round" /><circle cx="4" cy="6" r="1.4" fill="#ffe2a0" /><circle cx="8.5" cy="4.5" r="1.2" fill="#ffe2a0" /><circle cx="13" cy="5.2" r="1" fill="#ffe2a0" /></svg>
+    </button>
+  </div>
+
+  <div class="friend gone" id="friend" hidden><div class="shoulder"></div><p>A friend asks you something.<br />For 4 s you see nothing and hear little.</p></div>
+  <div class="finger" id="finger" hidden></div>
+
+  <div class="try" id="try">
+    <b>Walk up to the orange beam.</b><br />Drag sideways to turn, drag up to walk (or W A S D).<br />When someone speaks, the words run at the top. Missed something? Drag the round button back, or pull the words down.
+  </div>
+
+  <div class="strip" id="strip">
+    <button id="prevBtn" type="button" aria-label="Previous beat">&lsaquo;</button>
+    <button id="nextBtn" type="button" aria-label="Next beat">&rsaquo;</button>
+    <span class="bt" id="beatTitle">Walk freely</span>
+    <button id="measureBtn" type="button" aria-label="Show the measuring hook" title="Measure">&#8982;</button>
+    <button id="menuBtn" type="button" aria-label="Settings and beats">&#9776;</button>
+  </div>
+  <div class="readout" id="readout" hidden>-</div>
+</main>
+
+<aside class="demo" id="demo" hidden aria-label="Settings and beats">
+  <p><b>Thumb ribbon.</b> No plate for the words: they stand on a short dark shade from the top edge, white and shadowed. The line being said sits in the middle, the line before above it, the next below. Under the words, the play/pause button rides on a bar: drag it back to hear a moment again, or pull the words themselves down. Under that, the compass, in the look the tour's creator chose; a coloured notch marks who speaks.</p>
+
+  <h4>Beats</h4>
+  <div class="grid" id="beatBtns"></div>
+
+  <h4>Tester settings (the visitor's side)</h4>
+  <div class="row"><span>Text size</span><button type="button" data-cfg="fs" data-v="14">14 px</button><button type="button" data-cfg="fs" data-v="16">16 px</button><button type="button" data-cfg="fs" data-v="18">18 px</button><span></span></div>
+  <div class="row"><span>Lines</span><button type="button" data-cfg="lines" data-v="auto">auto</button><button type="button" data-cfg="lines" data-v="2">2</button><button type="button" data-cfg="lines" data-v="3">3</button><span></span></div>
+  <p class="note">auto: 3 lines upright, 2 in landscape. With 2 lines the line being said is the lower one, the line before above it.</p>
+  <div class="row"><span>Tap slop</span><button type="button" data-cfg="slop" data-v="6">6 px</button><button type="button" data-cfg="slop" data-v="8">8 px</button><button type="button" data-cfg="slop" data-v="12">12 px</button><button type="button" data-cfg="slop" data-v="16">16 px</button></div>
+  <p class="note">A finger that moves less than this on the button is a tap (play/pause); more is a drag.</p>
+  <div class="row"><span>Behind the words</span><button type="button" data-cfg="back" data-v="scrim">shade</button><button type="button" data-cfg="back" data-v="plate">plate</button><span></span><span></span></div>
+  <p class="note">"plate" is for comparison only: the question of this page is whether the shade is enough in sun.</p>
+  <div class="row"><span>Offer the hint after</span><button type="button" data-cfg="trigger" data-v="progress">60 s, no progress</button><button type="button" data-cfg="trigger" data-v="still">8 s still</button><button type="button" data-cfg="trigger" data-v="away">10 m away</button><span></span></div>
+  <div class="row"><span>Narrated text</span><button type="button" data-cfg="narr" data-v="hud">words at the top</button><button type="button" data-cfg="narr" data-v="plate">on the sign while legible</button><span></span><span></span></div>
+  <div class="row"><span>Hidden item speaks</span><button type="button" data-cfg="hidden" data-v="hide">no mark</button><button type="button" data-cfg="hidden" data-v="mark">mark anyway</button><span></span><span></span></div>
+  <p class="note">URL options: <code>?fs=16&amp;lines=auto&amp;slop=8&amp;back=scrim&amp;trigger=progress&amp;narr=hud&amp;hidden=hide&amp;look=band</code></p>
+
+  <h4>Author settings (what the tour's creator chose)</h4>
+  <div class="row"><span>Compass look (tour)</span><button type="button" data-look="band">band</button><button type="button" data-look="disc">disc</button><span></span><span></span></div>
+  <p class="note">The creator's choice, one look at a time; no visitor switch. Each switch below says "as above" until set; the nearest level wins: item over story over station over tour.</p>
+  <div class="grid" id="presetBtns"></div>
+  <div id="authBox"></div>
+
+  <h4>Faked here</h4>
+  <ul>
+    <li>Every word's time is invented from its letters (about 150 words a minute, pauses after commas and full stops). A real tour needs timings from the voice or a subtitle file.</li>
+    <li>The camera, the town, GPS and walking are simulated; nothing here runs in AR.</li>
+  </ul>
+
+  <h4>Top block (measured, per viewport)</h4>
+  <table id="statTable"><thead><tr><th>viewport</th><th>words + bar</th><th>with compass</th><th>overlaps</th><th>worst ms</th></tr></thead><tbody></tbody></table>
+  <p class="note">Turn on the measuring hook (the ruler button). "words + bar" is the share of the screen's height from the top edge to the foot of the bar while something speaks; the brief's limit is about a sixth (16.7 %).</p>
+  <button class="close" id="demoClose" type="button">Close</button>
+</aside>
+
+<script type="module">
+import * as THREE from "three";
+
+const $ = (s) => document.querySelector(s);
+const device = $("#device");
+const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const QS = new URLSearchParams(location.search);
+const num = (v, d, lo, hi) => { const n = Number(v); return v !== null && Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; };
+const pick = (v, list, d) => (list.includes(v) ? v : d);
+const SPEED = num(QS.get("speed"), 1, 0.25, 8);
+const SHOTS = QS.has("shots");
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const ease = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+const wrapPi = (a) => ((((a + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) - Math.PI;
+const FONT = 'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif';
+
+/* ======================================================================
+   The parameters this page rests on (the tester settings and the fixed ones)
+   ====================================================================== */
+const CFG = {
+  fs: Number(pick(QS.get("fs"), ["14", "16", "18"], "16")), // px of the words
+  lines: pick(QS.get("lines"), ["auto", "2", "3"], "auto"),
+  slop: Number(pick(QS.get("slop"), ["6", "8", "12", "16"], "8")), // px a finger may move on the button and still tap
+  back: pick(QS.get("back"), ["scrim", "plate"], "scrim"),
+  trigger: pick(QS.get("trigger"), ["progress", "still", "away"], "progress"),
+  narr: pick(QS.get("narr"), ["hud", "plate"], "hud"),
+  hidden: pick(QS.get("hidden"), ["hide", "mark"], "hide"),
+};
+const USER = { narr: CFG.narr, hidden: CFG.hidden }; // what the tester chose; a beat that flips a switch gives it back
+const LOOK0 = pick(QS.get("look"), ["band", "disc"], "band");
+const STILL_S = 3; // s without walking before the compass wakes
+const FADE_S = 0.8; // s for a full compass fade
+const WALK_MS = 0.5; // m/s of the smoothed pose speed that counts as walking
+const FIT = 1.5; // in a station the compass range is its radius times this
+const SPAN = 180; // degrees the band covers
+const HINT = { progress: 60, still: 8, away: 10 }; // the three triggers: s without progress, s standing still, m walked away
+const ASLEEP_ALPHA = 0.14;
+const EDGE_WAKE_S = 3.5, TAP_WAKE_S = 6;
+const GREET_M = 12, FIND_M = 2.5;
+const LINE_GAP = 0.35; // s between two sentences of one step
+const FINISH_HOLD = 6; // s a finished video or sound keeps its words and bar, so it can still be dragged back
+const PLATE_M = 7; // The alternative: the sign carries the words while in view and nearer than this
+const MARK = { rNear: 7.5, rFar: 3.5, aFar: 0.55, aBeyond: 0.42, rBeyond: 3.6, endPad: 9 };
+
+/* ======================================================================
+   The sample tour (invented). x = east, z = south, metres.
+   ====================================================================== */
+const STATIONS = [
+  { id: "A", n: 1, title: "The well court", x: 0, z: -60, r: 18 },
+  { id: "B", n: 2, title: "The hall steps", x: 55, z: -122, r: 20 },
+];
+const stById = (id) => STATIONS.find((s) => s.id === id);
+const rel = (st, x, z) => ({ x: stById(st).x + x, z: stById(st).z + z });
+const NARR = [
+  "The houses came first.",
+  "The well came when the old spring dried up in 1611.",
+  "Forty men dug for a summer.",
+  "They hit water at nineteen metres and lined the shaft with stone from the river.",
+  "The court grew around it: a bakery, a smithy and, for a while, a small school in the house with the arch.",
+];
+const ITEMS = [
+  { id: "greta", st: "A", kind: "character", story: "well", title: "Greta", ...rel("A", 0, 9), coat: 0x0f766e, voice: 0x4ade80 },
+  { id: "aStone", st: "A", kind: "place", title: "The rim stone", ...rel("A", 1.6, 0.6) },
+  { id: "aSign", st: "A", kind: "shortText", title: "The mason's mark", text: ["Every stone of the rim", "carries its mason's mark."], ...rel("A", 8, -2) },
+  { id: "aSound", st: "A", kind: "audio", title: "The bucket chain", len: 18, reach: 10, ...rel("A", 9.6, -3.6) },
+  { id: "aLong", st: "A", kind: "longText", title: "How the court was built", reach: 10, narrated: true,
+    pages: [
+      ["How the court was built", "The houses came first. The", "well came when the old", "spring dried up in 1611."],
+      ["Forty men dug for a summer.", "They hit water at nineteen", "metres and lined the shaft", "with stone from the river."],
+      ["The court grew around it:", "a bakery, a smithy and,", "for a while, a small school", "in the house with the arch."],
+    ], ...rel("A", -9, -3) },
+  { id: "aPic", st: "A", kind: "picture", title: "The court in 1890", ...rel("A", -11, 6) },
+  { id: "aVid", st: "A", kind: "video", title: "Drawing water, 1938", len: 16, reach: 12, ...rel("A", 3, -13) },
+  { id: "aModel", st: "A", kind: "model", title: "The stone lion", ...rel("A", -5, -12) },
+  { id: "baker", st: "B", kind: "character", story: "bread", title: "Jonas, the baker", ...rel("B", -6, 7), coat: 0xb45309, voice: 0xfacc15 },
+  { id: "ringer", st: "B", kind: "character", story: "bell", title: "Ida, the bell ringer", ...rel("B", 0, 9), coat: 0x6d28d9, voice: 0xc4b5fd },
+  { id: "mason", st: "B", kind: "character", story: "arch", title: "Karl, the mason", ...rel("B", 6, 7), coat: 0x475569, voice: 0x7dd3fc },
+  { id: "bCrack", st: "B", kind: "place", title: "The bell piece", ...rel("B", -8, -14) },
+  { id: "bSign", st: "B", kind: "shortText", title: "The guild board", text: ["Six guilds met on", "these steps each May."], ...rel("B", 10, -4) },
+  { id: "bLong", st: "B", kind: "longText", title: "The fair rights of 1412",
+    pages: [
+      ["The fair rights of 1412", "The town bought the right", "to hold a fair twice a year,", "for a price of 300 silver."],
+      ["The fair drew traders from", "three days away. The hall", "was built to store their", "goods between market days."],
+    ], ...rel("B", -12, -2) },
+  { id: "bPic", st: "B", kind: "picture", title: "Fair day, 1902", ...rel("B", -6, -12) },
+  { id: "bVid", st: "B", kind: "video", title: "Casting the bell, 1951", len: 14, reach: 12, ...rel("B", 8, -12) },
+  { id: "bSound", st: "B", kind: "audio", title: "The hall's echo", len: 16, reach: 10, ...rel("B", 0, -5) },
+  { id: "bModel", st: "B", kind: "model", title: "The guild staff", ...rel("B", 14, 3) },
+];
+const itById = (id) => ITEMS.find((i) => i.id === id);
+
+/* ---------- spoken lines: each word carries an invented start time (s from the sentence's start) ---------- */
+const say = (text, w, end) => ({ text, words: text.split(" "), w, end });
+const STORIES = {
+  well: { title: "Water for all", entry: "greta", steps: [
+    { who: "greta", lines: [
+      say("Welcome to the well court!", [0, 0.55, 0.75, 0.95, 1.3], 2.0),
+      say("This well kept the street alive for three hundred years.", [0, 0.3, 0.65, 1.0, 1.2, 1.6, 2.05, 2.3, 2.65, 3.1], 3.8),
+      say("The masons left a stone on its rim. Go and find it.", [0, 0.2, 0.65, 0.95, 1.1, 1.5, 1.7, 1.9, 2.7, 2.95, 3.15, 3.45], 4.0),
+    ] },
+    { find: "aStone" },
+    { who: "greta", lines: [
+      say("You found it: water for all who ask.", [0, 0.3, 0.6, 1.1, 1.45, 1.7, 1.9, 2.15], 2.9),
+      say("Thank you for listening. Have a look around.", [0, 0.35, 0.55, 0.8, 1.7, 1.95, 2.1], 3.0),
+    ] },
+  ] },
+  bread: { title: "Bread for the fair", entry: "baker", steps: [
+    { who: "baker", lines: [
+      say("On fair days I baked from midnight on.", [0, 0.25, 0.55, 0.85, 1.0, 1.35, 1.6, 2.1], 2.8),
+      say("Four hundred loaves, gone before noon.", [0, 0.35, 0.8, 1.5, 1.85, 2.3], 3.0),
+    ] },
+  ] },
+  bell: { title: "The cracked bell", entry: "ringer", steps: [
+    { who: "ringer", lines: [
+      say("The old bell cracked in the frost of 1949.", [0, 0.2, 0.45, 0.8, 1.3, 1.45, 1.6, 2.0, 2.2], 3.4),
+      say("A piece of it lies by the steps. Find it for me.", [0, 0.15, 0.5, 0.65, 0.8, 1.05, 1.3, 1.45, 2.2, 2.5, 2.65, 2.85], 3.4),
+    ] },
+    { find: "bCrack" },
+    { who: "ringer", lines: [
+      say("That is the piece. For two years the steps were silent.", [0, 0.3, 0.45, 0.6, 1.4, 1.6, 1.85, 2.25, 2.45, 2.8, 3.05], 3.8),
+    ] },
+  ] },
+  arch: { title: "Raising the arch", entry: "mason", steps: [
+    { who: "mason", lines: [
+      say("The arch stood on a wooden frame for a month.", [0, 0.2, 0.5, 0.85, 1.0, 1.15, 1.5, 1.85, 2.0, 2.15], 2.9),
+      say("Then we pulled the frame, and it held.", [0, 0.3, 0.5, 0.85, 1.0, 1.6, 1.85, 2.0], 2.8),
+    ] },
+  ] },
+};
+const STORY_OF = {};
+for (const [sid, s] of Object.entries(STORIES)) { STORY_OF[s.entry] = sid; for (const st of s.steps) if (st.find) STORY_OF[st.find] = sid; }
+
+/* ---------- subtitles for the video and sound items, as WebVTT (cue times real, word times invented) ---------- */
+const VTT = {
+  aVid: `WEBVTT
+
+00:00.500 --> 00:04.000
+<v Narrator>Every morning the street queued at the well.
+
+00:04.500 --> 00:08.500
+<v Narrator>Two buckets each, and no more in a dry summer.
+
+00:09.000 --> 00:14.000
+<v A neighbour>We carried it up four floors. Nobody wasted a drop.`,
+  bVid: `WEBVTT
+
+00:00.400 --> 00:04.200
+<v Narrator>The new bell was cast on the square itself.
+
+00:04.800 --> 00:08.600
+<v Narrator>Half the town brought old pans for the bronze.
+
+00:09.200 --> 00:13.200
+<v The founder>Listen. That is the note it will ring for a hundred years.`,
+  aSound: `WEBVTT
+
+00:00.300 --> 00:03.500
+[a chain rattles over a wooden roller]
+
+00:04.000 --> 00:08.000
+<v A man>Steady now, she is full. Pull together.
+
+00:09.000 --> 00:13.000
+[a bucket knocks against the stone rim]
+
+00:13.500 --> 00:17.500
+<v A woman>Mind the rope, it is wet again.`,
+  bSound: `WEBVTT
+
+00:00.500 --> 00:04.000
+[footsteps on stone, echoing in a large hall]
+
+00:04.500 --> 00:09.000
+<v A trader>Wool from the hills, the best this side of the river.
+
+00:10.000 --> 00:15.000
+[voices, a cart, the echo fading]`,
+};
+function parseVtt(src) {
+  const ts = (s) => { const p = s.trim().split(":").map(Number); return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1]; };
+  const cues = [];
+  for (const block of src.replace(/\r/g, "").split(/\n\n+/)) {
+    const lines = block.split("\n"), i = lines.findIndex((l) => l.includes("-->"));
+    if (i < 0) continue;
+    const [a, b] = lines[i].split("-->");
+    let text = lines.slice(i + 1).join(" ").trim(), who = null;
+    const m = text.match(/^<v ([^>]+)>(.*)$/);
+    if (m) { who = m[1]; text = m[2].trim(); }
+    if (Number.isFinite(ts(a)) && Number.isFinite(ts(b)) && text) cues.push({ start: ts(a), end: ts(b), who, text });
+  }
+  return cues;
+}
+const CUES = Object.fromEntries(Object.entries(VTT).map(([k, v]) => [k, parseVtt(v)]));
+
+/** Invented word times: a word lasts by its letters (110 ms + 52 ms a letter, 170-640 ms), with a pause after a comma or a full stop. FAKED. */
+function fakeTimes(words) {
+  let t = 0;
+  const w = [];
+  for (const wd of words) {
+    w.push(t);
+    t += clamp(0.11 + 0.052 * wd.replace(/[^\p{L}\p{N}]/gu, "").length, 0.17, 0.64);
+    if (/[.!?\]]$/.test(wd)) t += 0.42;
+    else if (/[,;:]$/.test(wd)) t += 0.22;
+  }
+  return { w, end: t };
+}
+
+/* ======================================================================
+   Clips: what the bar spans. One clip = the item speaking now (a story step's lines, a video, a sound, a narration), never across story steps.
+   ====================================================================== */
+const hex = (n) => "#" + n.toString(16).padStart(6, "0");
+/** The speaker's colour lightened for text and marks on a dark ground. */
+const tint = (n, k = 0.45) => { const c = new THREE.Color(n).lerp(new THREE.Color(0xffffff), k); return { hex: "#" + c.getHexString(), num: c.getHex() }; };
+const TEAL = tint(0x2dd4bf, 0);
+const MEDIA_VOICE = tint(0xf9a8d4, 0); // videos, sounds and narrated signs speak in one colour that no character uses
+const firstName = (it) => it.title.split(",")[0];
+const CLIPS = new Map();
+function clipOf(key) {
+  if (CLIPS.has(key)) return CLIPS.get(key);
+  const words = [], sents = [];
+  let len = 0, color = MEDIA_VOICE;
+  const [kind, a, b] = key.split(":");
+  if (kind === "story") {
+    const step = STORIES[a].steps[Number(b)], who = itById(step.who);
+    color = tint(who.voice, 0);
+    let off = 0;
+    step.lines.forEach((ln, li) => {
+      sents.push(off);
+      ln.words.forEach((w, i) => words.push({ t: off + ln.w[i], text: w, s: li, name: li === 0 && i === 0 ? firstName(who) : null }));
+      off += ln.end + (li < step.lines.length - 1 ? LINE_GAP : 0);
+    });
+    len = off;
+  } else if (kind === "media") {
+    const it = itById(a);
+    let lastWho = "";
+    CUES[a].forEach((c, ci) => {
+      sents.push(c.start);
+      const ws = c.text.split(" "), ft = fakeTimes(ws), k = Math.min(1, ((c.end - c.start) * 0.94) / ft.end);
+      const who = c.who ?? it.title, fx = c.text.startsWith("[");
+      ws.forEach((w, i) => words.push({ t: c.start + ft.w[i] * k, text: w, s: ci, fx, name: i === 0 && who !== lastWho ? who : null }));
+      lastWho = who;
+    });
+    len = it.len;
+  } else if (kind === "narr") {
+    let off = 0.4;
+    NARR.forEach((sn, si) => {
+      sents.push(off);
+      const ws = sn.split(" "), ft = fakeTimes(ws);
+      ws.forEach((w, i) => words.push({ t: off + ft.w[i], text: w, s: si, name: si === 0 && i === 0 ? "Narrator" : null }));
+      off += ft.end + LINE_GAP;
+    });
+    len = off;
+  }
+  const c = { key, words, sents, len, color };
+  CLIPS.set(key, c);
+  return c;
+}
+itById("aLong").len = clipOf("narr:aLong").len;
+const mediaKey = (id) => (itById(id).narrated ? `narr:${id}` : `media:${id}`);
+/** Index of the last word started at time t (-1 before the first). */
+function wordAt(clip, t) {
+  let lo = 0, hi = clip.words.length - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (clip.words[m].t <= t + 1e-6) { r = m; lo = m + 1; } else hi = m - 1; }
+  return r;
+}
+
+/* ======================================================================
+   Author settings: tour, station, story, item. null = as above. The nearest level wins.
+   ====================================================================== */
+function defaultAuth(example = true) {
+  const a = { tour: { radar: true, shown: true, hints: true, look: LOOK0 }, station: {}, story: {}, item: {} };
+  for (const s of STATIONS) a.station[s.id] = { radar: null, shown: null, hints: null };
+  for (const id of Object.keys(STORIES)) a.story[id] = { shown: null, hints: null };
+  for (const it of ITEMS) a.item[it.id] = { shown: null, hints: null };
+  if (example) { a.story.well.shown = false; a.item.greta.shown = true; }
+  return a;
+}
+let AUTH = defaultAuth();
+function resolve(key, it) {
+  const chain = [["item", AUTH.item[it.id]]];
+  if (STORY_OF[it.id]) chain.push(["story", AUTH.story[STORY_OF[it.id]]]);
+  chain.push(["station", AUTH.station[it.st]], ["tour", AUTH.tour]);
+  for (const [lvl, o] of chain) if (o && o[key] !== null && o[key] !== undefined) return { v: o[key], from: lvl };
+  return { v: true, from: "tour" };
+}
+function radarOn() { const s = S.here ? AUTH.station[S.here].radar : null; return s !== null ? s : AUTH.tour.radar; }
+const shownOnCompass = (it) => resolve("shown", it).v;
+
+/* ======================================================================
+   State
+   ====================================================================== */
+let T = 0;
+function freshItems() {
+  const o = {};
+  for (const it of ITEMS) o[it.id] = { seen: false, dwell: 0, page: 0, t: 0, playing: false, pausedBy: null, endAt: -99 };
+  return o;
+}
+function fresh() {
+  return {
+    pos: { x: 0, z: -14 }, yaw: 0, pitch: -0.04, here: null, zoom: 0, visited: {}, greeted: {}, it: freshItems(),
+    story: null, storyDone: {}, media: null, speed: 0, stillFor: 99, wakeUntil: -1, radarAlpha: 1, rangeStep: 0,
+    hint: { progress: 0, still: 0, best: Infinity }, greetPending: null, auto: null, turn: null, yawTarget: null, paused: false,
+  };
+}
+let S = fresh();
+let beat = 0;
+const dist = (p, q = S.pos) => Math.hypot(p.x - q.x, p.z - q.z);
+function relAngle(p, from = S.pos, yaw = S.yaw) {
+  const dx = p.x - from.x, dz = p.z - from.z;
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+  return Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz);
+}
+const yawToward = (p, from = S.pos) => Math.atan2(-(p.x - from.x), -(p.z - from.z));
+const inStation = (it) => S.here === it.st;
+
+/* ---------- the story ---------- */
+const stepOf = () => (S.story ? STORIES[S.story.id].steps[S.story.step] : null);
+const storyKey = () => `story:${S.story.id}:${S.story.step}`;
+function resetHint() { S.hint.progress = 0; S.hint.still = 0; S.hint.best = Infinity; }
+function startStory(id) {
+  for (const it of ITEMS) if (S.it[it.id].playing) pause(it.id, "story");
+  S.story = { id, step: 0, t: 0, paused: null, hold: false };
+  resetHint();
+}
+function storyNext() {
+  const st = S.story;
+  if (!st) return;
+  if (st.step + 1 >= STORIES[st.id].steps.length) { endStory(true); return; }
+  st.step++; st.t = 0; st.hold = false;
+  resetHint();
+}
+function endStory(finished) {
+  const st = S.story;
+  if (!st) return;
+  if (finished) { S.storyDone[st.id] = true; S.it[STORIES[st.id].entry].seen = true; }
+  S.story = null;
+  stopDrift();
+}
+function stepDone() { const st = S.story, s = stepOf(); return !!s && !!s.lines && st.t >= clipOf(storyKey()).len - 1e-6; }
+const storySpeaking = () => !!S.story && !S.story.paused && !!stepOf()?.lines;
+
+/* ---------- playable things: one plays at a time ---------- */
+function play(id) {
+  for (const it of ITEMS) if (it.id !== id && S.it[it.id].playing) pause(it.id, "other");
+  const t = S.it[id], it = itById(id);
+  if (t.t >= it.len - 1e-6) t.t = 0;
+  t.playing = true; t.pausedBy = null; S.media = id;
+}
+function pause(id, by) { const t = S.it[id]; if (!t.playing) return; t.playing = false; t.pausedBy = by; }
+function toggle(id) { if (S.it[id].playing) pause(id, "tap"); else play(id); }
+function tapItem(id) {
+  const [base, part] = id.split(":"), it = itById(base);
+  if (!inStation(it)) return;
+  const t = S.it[base];
+  switch (it.kind) {
+    case "character": {
+      const sid = it.story;
+      if (S.story && S.story.id === sid) { if (S.story.paused) S.story.paused = null; return; }
+      if (S.story && !S.story.paused) return;
+      if (S.story) endStory(false);
+      startStory(sid);
+      return;
+    }
+    case "video":
+    case "audio":
+      if (storySpeaking()) return;
+      toggle(base);
+      return;
+    case "longText":
+      if (part === "listen" && it.narrated) { if (!storySpeaking()) toggle(base); return; }
+      t.page = (t.page + 1) % it.pages.length;
+      if (t.page === it.pages.length - 1) t.seen = true;
+      return;
+    default:
+      return;
+  }
+}
+
+/* ======================================================================
+   What speaks now: the one source the words, the bar and the speaker mark follow
+   ====================================================================== */
+const SRC = { on: false, kind: "", id: "", clip: null, t: 0, playing: false, finished: false, speaker: null, label: "" };
+function readSource() {
+  SRC.on = false;
+  const st = S.story;
+  if (st && !st.paused && stepOf()?.lines) {
+    const step = stepOf(), clip = clipOf(storyKey());
+    SRC.on = true; SRC.kind = "story"; SRC.id = st.id; SRC.clip = clip; SRC.t = st.t;
+    SRC.finished = st.t >= clip.len - 1e-6; SRC.playing = !st.hold && !SRC.finished;
+    SRC.speaker = step.who; SRC.label = firstName(itById(step.who));
+    SRC.last = st.step === STORIES[st.id].steps.length - 1;
+    return SRC;
+  }
+  const id = S.media;
+  if (id) {
+    const it = itById(id), t = S.it[id];
+    const fin = t.pausedBy === "end" && T - t.endAt < FINISH_HOLD;
+    if (inStation(it) && dist(it) <= it.reach + 1 && (t.playing || t.pausedBy === "tap" || fin)) {
+      SRC.on = true; SRC.kind = "media"; SRC.id = id; SRC.clip = clipOf(mediaKey(id)); SRC.t = t.t;
+      SRC.finished = t.pausedBy === "end"; SRC.playing = t.playing; SRC.speaker = id; SRC.label = it.title;
+    }
+  }
+  return SRC;
+}
+function setSourceT(t) {
+  if (!SRC.on) return;
+  const tt = clamp(t, 0, SRC.clip.len - 0.02);
+  if (SRC.kind === "story") S.story.t = tt;
+  else S.it[SRC.id].t = tt;
+  SRC.t = tt;
+}
+/** The handle's tap: play/pause; at the end of a story step it is Next (or Done); a finished video or sound plays again from the start. */
+function tapHandle() {
+  readSource();
+  if (!SRC.on) return;
+  if (SRC.kind === "story") { if (SRC.finished) storyNext(); else S.story.hold = !S.story.hold; }
+  else if (SRC.finished && SRC.t >= SRC.clip.len - 0.05) play(SRC.id);
+  else toggle(SRC.id);
+}
+/** Who the compass marks: only while something actually speaks, and not when the creator keeps that item off the compass. */
+function speakerNow() {
+  if (!SRC.on || !SRC.playing) return null;
+  const it = itById(SRC.speaker);
+  if (!shownOnCompass(it) && CFG.hidden === "hide") return null;
+  return { it, color: it.voice ? it.voice : MEDIA_VOICE.num };
+}
+
+/* ======================================================================
+   The faked camera: an invented old town (as in round 3)
+   ====================================================================== */
+const canvas = $("#cam");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "low-power" });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+{
+  const c = document.createElement("canvas"); c.width = 8; c.height = 256;
+  const g = c.getContext("2d"), grd = g.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, "#7ea6cf"); grd.addColorStop(0.55, "#c9d9e6"); grd.addColorStop(1, "#e8ece9");
+  g.fillStyle = grd; g.fillRect(0, 0, 8, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; scene.background = t;
+}
+scene.fog = new THREE.Fog(0xd5dfe6, 90, 380);
+const camera = new THREE.PerspectiveCamera(64, 1, 0.1, 900);
+camera.rotation.order = "YXZ";
+scene.add(camera);
+scene.add(new THREE.HemisphereLight(0xeef4ff, 0x6d6252, 1.3));
+const sun = new THREE.DirectionalLight(0xfff0d4, 1.6); sun.position.set(-70, 120, 50); scene.add(sun);
+function rng(seed) { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
+const rand = rng(20261117);
+const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(1600, 1600), lam(0x8d8678));
+ground.rotation.x = -Math.PI / 2; scene.add(ground);
+function cobbles(repeat) {
+  const c = document.createElement("canvas"); c.width = 128; c.height = 128;
+  const g = c.getContext("2d"); g.fillStyle = "#a29886"; g.fillRect(0, 0, 128, 128);
+  const r = rng(5);
+  for (let y = 0; y < 128; y += 16) for (let x = (y / 16) % 2 ? 8 : 0; x < 128; x += 16) {
+    const v = 150 + Math.floor(r() * 30); g.fillStyle = `rgb(${v},${v - 8},${v - 22})`; g.fillRect(x + 1, y + 1, 14, 14);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat, repeat);
+  return new THREE.MeshLambertMaterial({ map: t });
+}
+for (const st of STATIONS) {
+  const plaza = new THREE.Mesh(new THREE.CircleGeometry(st.r + 10, 64), cobbles(20));
+  plaza.rotation.x = -Math.PI / 2; plaza.position.set(st.x, 0.02, st.z); scene.add(plaza);
+}
+const PATH = [{ x: 0, z: 10 }, { x: 0, z: -60 }, { x: 55, z: -122 }];
+{
+  const m = lam(0x6b6862);
+  for (let i = 0; i < PATH.length - 1; i++) {
+    const a = PATH[i], b = PATH[i + 1], len = Math.hypot(b.x - a.x, b.z - a.z), grp = new THREE.Group();
+    grp.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); grp.position.set((a.x + b.x) / 2, 0.015, (a.z + b.z) / 2);
+    const s = new THREE.Mesh(new THREE.PlaneGeometry(9, len), m); s.rotation.x = -Math.PI / 2; grp.add(s); scene.add(grp);
+  }
+}
+function segDist(p, a, b) {
+  const dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz, t = clamp(((p.x - a.x) * dx + (p.z - a.z) * dz) / L, 0, 1);
+  return Math.hypot(p.x - (a.x + dx * t), p.z - (a.z + dz * t));
+}
+{
+  const spots = [];
+  for (let gx = -90; gx <= 150; gx += 13) for (let gz = -200; gz <= 40; gz += 13) {
+    const p = { x: gx + (rand() - 0.5) * 4, z: gz + (rand() - 0.5) * 4 };
+    if (STATIONS.some((s) => dist(p, s) < s.r + 17)) continue;
+    if (segDist(p, PATH[0], PATH[1]) < 12 || segDist(p, PATH[1], PATH[2]) < 12) continue;
+    if (p.z > -4 && Math.abs(p.x) < 30) continue;
+    spots.push(p);
+  }
+  const fc = document.createElement("canvas"); fc.width = 128; fc.height = 128;
+  const g = fc.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, 128, 128);
+  for (let f = 0; f < 3; f++) for (let w = 0; w < 3; w++) { g.fillStyle = "#46525c"; g.fillRect(14 + w * 38, 128 - (f + 1) * 40 + 9, 22, 20); }
+  const ft = new THREE.CanvasTexture(fc); ft.colorSpace = THREE.SRGBColorSpace;
+  const box = new THREE.BoxGeometry(1, 1, 1); box.translate(0, 0.5, 0);
+  const roof = new THREE.ConeGeometry(0.75, 1, 4); roof.rotateY(Math.PI / 4); roof.translate(0, 0.5, 0);
+  const houses = new THREE.InstancedMesh(box, new THREE.MeshLambertMaterial({ map: ft }), spots.length);
+  const roofs = new THREE.InstancedMesh(roof, lam(0xffffff), spots.length);
+  const FAC = [0xe8d8bf, 0xd9b99a, 0xc9d1c3, 0xe5c7a8, 0xd2c1b0, 0xe9e1cf], ROOF = [0x9c4a32, 0x7f3b2a, 0x6b4a3a, 0x8a5a44];
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), col = new THREE.Color();
+  spots.forEach((p, i) => {
+    const h = 7 + Math.floor(rand() * 3) * 3.4, w = 9 + rand() * 3;
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rand() * 0.4 - 0.2);
+    m4.compose(new THREE.Vector3(p.x, 0, p.z), q, new THREE.Vector3(w, h, 9)); houses.setMatrixAt(i, m4); houses.setColorAt(i, col.setHex(FAC[i % FAC.length]));
+    m4.compose(new THREE.Vector3(p.x, h, p.z), q, new THREE.Vector3(w * 1.02, 3, 9.2)); roofs.setMatrixAt(i, m4); roofs.setColorAt(i, col.setHex(ROOF[i % ROOF.length]));
+  });
+  scene.add(houses, roofs);
+}
+const stone = lam(0xb5a488), dark = lam(0x2b2f33), bronze = lam(0x7a5a33);
+{
+  const A = stById("A");
+  const rim = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 0.9, 24, 1, true), stone.clone());
+  rim.position.set(A.x, 0.45, A.z); rim.material.side = THREE.DoubleSide;
+  const water = new THREE.Mesh(new THREE.CircleGeometry(1.25, 24), lam(0x2f4f5c)); water.rotation.x = -Math.PI / 2; water.position.set(A.x, 0.3, A.z);
+  const beam = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.18, 0.18), lam(0x5b4330)); beam.position.set(A.x, 2.3, A.z);
+  for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.3, 0.18), lam(0x5b4330)); p.position.set(A.x + s * 1.5, 1.15, A.z); scene.add(p); }
+  scene.add(rim, water, beam);
+  const B = stById("B");
+  for (let k = 0; k < 4; k++) { const s = new THREE.Mesh(new THREE.BoxGeometry(22 - k * 2, 0.3, 2.2), stone); s.position.set(B.x, 0.15 + k * 0.3, B.z - 17 - k * 2.2); scene.add(s); }
+  const hall = new THREE.Mesh(new THREE.BoxGeometry(24, 13, 10), lam(0xd8c6a6)); hall.position.set(B.x, 7.7, B.z - 31); scene.add(hall);
+}
+
+/* ---------- words in the world: Canvas 2D textures, never HTML ---------- */
+function textCanvas(lines, { w = 512, title = null, plate = "rgba(250,247,240,.96)", ink = "#1c2228", size = 34, foot = null } = {}) {
+  const c = document.createElement("canvas"), g = c.getContext("2d");
+  const lh = size * 1.32, pad = 26, th = title ? size * 1.25 + 10 : 0, fh = foot ? size * 1.6 + 8 : 0;
+  c.width = w; c.height = Math.ceil(pad * 2 + th + lines.length * lh + fh);
+  g.fillStyle = plate; g.beginPath(); g.roundRect(0, 0, c.width, c.height, 22); g.fill();
+  g.fillStyle = ink; g.textBaseline = "top";
+  if (title) { g.font = `800 ${size * 1.05}px system-ui,sans-serif`; g.fillText(title, pad, pad); }
+  g.font = `600 ${size}px system-ui,sans-serif`;
+  lines.forEach((l, i) => g.fillText(l, pad, pad + th + i * lh));
+  if (foot) {
+    // the sign's two halves (from the chosen "sign speaks" narration): Read on the left, Listen on the right
+    const y = c.height - pad - size * 1.6, hw = (w - pad * 2 - 10) / 2;
+    g.font = `700 ${size * 0.86}px system-ui,sans-serif`;
+    foot.forEach((f, i) => {
+      const x = pad + i * (hw + 10);
+      g.fillStyle = f.on ? "#0f766e" : "rgba(28,34,40,.1)"; g.beginPath(); g.roundRect(x, y, hw, size * 1.6, 12); g.fill();
+      g.fillStyle = f.on ? "#fff" : "#1c2228"; g.textAlign = "center"; g.fillText(f.text, x + hw / 2, y + size * 0.36); g.textAlign = "left";
+    });
+  }
+  return c;
+}
+function spriteFrom(c, heightM) {
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
+  sp.scale.set((heightM * c.width) / c.height, heightM, 1); sp.renderOrder = 5; return sp;
+}
+function planeFrom(c, widthM) {
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.Mesh(new THREE.PlaneGeometry(widthM, (widthM * c.height) / c.width), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
+}
+function setPlaneCanvas(mesh, c, widthM) {
+  mesh.material.map.dispose();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  mesh.material.map = t; mesh.material.needsUpdate = true;
+  mesh.geometry.dispose(); mesh.geometry = new THREE.PlaneGeometry(widthM, (widthM * c.height) / c.width);
+}
+
+/* ---------- the station's things ---------- */
+const world = {};
+const hitMeshes = [];
+const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false });
+function addHit(id, grp, w, h, d, x = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), hitMat);
+  m.position.set(x, h / 2, 0); m.userData.id = id; grp.add(m); hitMeshes.push(m);
+}
+function faceStation(grp, it) { const s = stById(it.st); grp.rotation.y = Math.atan2(s.x - it.x, s.z - it.z); }
+function lecternCanvas(it, t, listening) {
+  const p = it.pages[t.page];
+  const foot = it.narrated ? [{ text: "Read: next page", on: false }, { text: listening === "on" ? "Listening" : listening === "paused" ? "Listen (paused)" : "Listen", on: listening === "on" }] : null;
+  return textCanvas([...p.slice(1), `page ${t.page + 1} of ${it.pages.length}`], { title: p[0], w: 560, size: 30, foot });
+}
+for (const it of ITEMS) {
+  const grp = new THREE.Group(); grp.position.set(it.x, 0, it.z); scene.add(grp);
+  const w = { grp };
+  switch (it.kind) {
+    case "character": {
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.85, 4, 10), lam(it.coat)); body.position.y = 0.95;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 12), lam(0xe8c4a0)); head.position.y = 1.72;
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), lam(0xd9ad86)); nose.position.set(0, 1.72, 0.2);
+      const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 0.16, 14), lam(0x2b2f33)); hat.position.y = 1.9;
+      grp.add(body, head, nose, hat);
+      w.head = head;
+      if (it.st === "B") {
+        const plaque = planeFrom(textCanvas([STORIES[it.story].title], { w: 420, size: 30, plate: "rgba(30,36,42,.92)", ink: "#f3f5f7" }), 0.9);
+        plaque.position.set(0, 0.45, 0.45); plaque.rotation.x = -0.5; grp.add(plaque);
+      }
+      addHit(it.id, grp, 1.0, 2.2, 1.0);
+      break;
+    }
+    case "place": {
+      if (it.st === "A") {
+        const tab = planeFrom(textCanvas(['"Water for all who ask."'], { title: "Rim stone, 1611", w: 560, size: 32 }), 0.9);
+        tab.position.set(0, 0.62, 0); tab.rotation.x = -0.35; grp.add(tab);
+        grp.rotation.y = Math.atan2(it.x - stById("A").x, it.z - stById("A").z) + Math.PI;
+      } else {
+        const piece = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 0.18, 7, 1, false, 0, 4.2), bronze); piece.position.y = 0.09; piece.rotation.z = 0.15;
+        const tag = planeFrom(textCanvas(["From the bell of 1412."], { title: "Bell bronze", w: 460, size: 30 }), 0.7);
+        tag.position.set(0, 0.35, 0.6); tag.rotation.x = -0.9; grp.add(piece, tag); faceStation(grp, it);
+      }
+      break;
+    }
+    case "shortText": {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.5, 10), dark); post.position.y = 0.75;
+      const board = planeFrom(textCanvas(it.text, { title: it.title, w: 560, size: 32 }), 1.25); board.position.y = 1.75;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.62, 0.04), dark); back.position.set(0, 1.75, -0.03);
+      grp.add(post, back, board); faceStation(grp, it); addHit(it.id, grp, 1.4, 2.2, 0.6);
+      break;
+    }
+    case "longText": {
+      const stand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.05, 0.12), dark); stand.position.y = 0.52;
+      const tray = new THREE.Group(); tray.position.y = 1.12; tray.rotation.x = -0.6;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.86, 0.04), lam(0x3b2f28)); back.position.z = -0.025;
+      const page = planeFrom(lecternCanvas(it, { page: 0 }, "off"), 0.92);
+      tray.add(back, page); grp.add(stand, tray); faceStation(grp, it);
+      w.page = page; w.pageKey = "";
+      if (it.narrated) {
+        // The alternative: a caption plate under the sign that carries the narrated words while the sign is legible
+        const plate = planeFrom(textCanvas([" "], { w: 640, size: 30, plate: "rgba(10,14,19,.9)", ink: "#fff" }), 1.3);
+        plate.position.set(0, 0.62, 0.32); plate.visible = false; grp.add(plate);
+        w.plate = plate; w.plateKey = "";
+        addHit(it.id, grp, 0.6, 1.8, 1.0, -0.3);
+        addHit(it.id + ":listen", grp, 0.6, 1.8, 1.0, 0.3);
+      } else addHit(it.id, grp, 1.2, 1.8, 1.0);
+      break;
+    }
+    case "picture": {
+      const c = document.createElement("canvas"); c.width = 256; c.height = 180;
+      const g = c.getContext("2d"); g.fillStyle = "#d9c6a0"; g.fillRect(0, 0, 256, 180); g.fillStyle = "#7d6440";
+      for (let i = 0; i < 6; i++) g.fillRect(10 + i * 41, 60 - (i % 3) * 14, 34, 100 + (i % 3) * 14);
+      g.fillStyle = "#5b4528"; g.fillRect(0, 150, 256, 30);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.15, 0.06), dark); frame.position.y = 1.75;
+      const pic = new THREE.Mesh(new THREE.PlaneGeometry(1.44, 1.0), new THREE.MeshBasicMaterial({ map: t })); pic.position.set(0, 1.75, 0.035);
+      const cap = planeFrom(textCanvas([it.title], { w: 420, size: 30 }), 0.95); cap.position.set(0, 1.0, 0.04);
+      for (const x of [-0.6, 0.6]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.3, 0.06), dark); l.position.set(x, 0.65, -0.1); grp.add(l); }
+      grp.add(frame, pic, cap); faceStation(grp, it); addHit(it.id, grp, 1.8, 2.4, 0.8);
+      break;
+    }
+    case "video": {
+      const c = document.createElement("canvas"); c.width = 256; c.height = 144;
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.32, 0.08), lam(0x59616b)); back.position.y = 1.95;
+      const scr = new THREE.Mesh(new THREE.PlaneGeometry(2.04, 1.15), new THREE.MeshBasicMaterial({ map: t })); scr.position.set(0, 1.95, 0.045);
+      const cap = planeFrom(textCanvas(["Tap the screen to play or pause."], { title: it.title, w: 560, size: 28 }), 1.5); cap.position.set(0, 1.0, 0.05);
+      for (const x of [-0.85, 0.85]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.3, 0.07), dark); l.position.set(x, 0.65, -0.05); grp.add(l); }
+      grp.add(back, scr, cap); faceStation(grp, it);
+      w.screen = { c, t, last: -99 };
+      addHit(it.id, grp, 2.4, 2.8, 0.8);
+      break;
+    }
+    case "audio": {
+      const N = 90, pos = new Float32Array(N * 3), seed = [];
+      for (let k = 0; k < N; k++) seed.push({ a: rand() * 6.28, r: rand() * 0.9, y: rand() * 3.4, v: 0.4 + rand() * 0.6 });
+      const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ color: 0xbffcf0, size: 0.13, transparent: true, opacity: 0.9, depthWrite: false });
+      const pts = new THREE.Points(geo, mat); grp.add(pts);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.5, depthWrite: false, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.15, 48), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+      const cap = spriteFrom(textCanvas([it.title], { w: 420, size: 30, plate: "rgba(10,14,19,.82)", ink: "#ccfbf1" }), 0.32); cap.position.y = 3.7;
+      grp.add(ring, cap);
+      w.plume = { pts, pos, seed, mat, ringMat }; w.cap = cap;
+      addHit(it.id, grp, 2.0, 3.6, 2.0);
+      break;
+    }
+    case "model": {
+      const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.0, 2.0), stone); plinth.position.y = 0.5;
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 1.4), it.st === "A" ? stone : bronze); body.position.y = 1.4;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 14, 10), it.st === "A" ? stone : bronze); head.position.set(0, 1.95, 0.6);
+      const cap = planeFrom(textCanvas([it.title], { w: 420, size: 30 }), 0.9); cap.position.set(0, 0.55, 1.02);
+      grp.add(plinth, body, head, cap); faceStation(grp, it); addHit(it.id, grp, 1.8, 2.6, 2.4);
+      break;
+    }
+  }
+  world[it.id] = w;
+}
+const beams = {};
+for (const st of STATIONS) {
+  const grp = new THREE.Group(); grp.position.set(st.x, 0, st.z); scene.add(grp);
+  const builtMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
+  const built = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 22, 6, 1, true), builtMat); built.position.y = 15;
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0xfb923c, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(new THREE.RingGeometry(st.r - 0.25, st.r, 96), ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.05;
+  grp.add(built, ring);
+  beams[st.id] = { built, builtMat, ring, ringMat, a: 1 };
+}
+
+/* ---------- input in the world: drag sideways to turn, drag up to walk, tap to use ---------- */
+let drag = null;
+const keys = new Set();
+canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY, t0: performance.now(), moved: 0 }; canvas.setPointerCapture(e.pointerId); dismissTry(); });
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.moved += Math.abs(dx) + Math.abs(dy);
+  S.yaw += dx * 0.0055; S.yawTarget = null; S.turn = null;
+  if (!S.auto) { const f = -dy * 0.03; S.pos.x += -Math.sin(S.yaw) * f; S.pos.z += -Math.cos(S.yaw) * f; }
+  drag.x = e.clientX; drag.y = e.clientY;
+});
+canvas.addEventListener("pointerup", (e) => { if (drag && drag.moved < 8 && performance.now() - drag.t0 < 500) worldTap(e.clientX, e.clientY); drag = null; });
+canvas.addEventListener("pointercancel", () => { drag = null; });
+addEventListener("keydown", (e) => { if (e.target.closest && e.target.closest("button")) return; keys.add(e.code); dismissTry(); });
+addEventListener("keyup", (e) => keys.delete(e.code));
+addEventListener("blur", () => keys.clear());
+const ray = new THREE.Raycaster();
+function worldTap(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  ray.setFromCamera(new THREE.Vector2(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1), camera);
+  const hit = ray.intersectObjects(hitMeshes, false)[0];
+  if (hit) tapItem(hit.object.userData.id);
+}
+function screenOf(p, y = 1.5) {
+  const v = new THREE.Vector3(p.x, y, p.z).project(camera), r = device.getBoundingClientRect();
+  return { x: ((v.x + 1) / 2) * r.width, y: ((1 - v.y) / 2) * r.height, front: v.z < 1 };
+}
+function ripple(x, y) { const d = document.createElement("div"); d.className = "ripple"; d.style.left = x + "px"; d.style.top = y + "px"; device.appendChild(d); setTimeout(() => d.remove(), 800); }
+function rippleOn(el) { const r = el.getBoundingClientRect(), dr = device.getBoundingClientRect(); ripple(r.left - dr.left + r.width / 2, r.top - dr.top + r.height / 2); }
+const hfov = () => 2 * Math.atan(Math.tan((camera.fov * Math.PI) / 360) * camera.aspect);
+const inView = (p) => Math.abs(relAngle(p)) < hfov() / 2;
+
+/* ======================================================================
+   The compass: ONE model (marks, wake state, range, speaker), two looks drawn by three.js (band, disc), one at a time
+   ====================================================================== */
+const radarAwakeTarget = () => S.stillFor >= STILL_S || T < S.wakeUntil;
+const wake = (sec) => { S.wakeUntil = Math.max(S.wakeUntil, T + sec); };
+const OUT_STEPS = [null, 30, 100, 300], IN_STEPS = [null, 10, 30, 100];
+function niceUp(v) { const p = Math.pow(10, Math.floor(Math.log10(v))); for (const k of [1, 1.25, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (k * p >= v - 1e-9) return k * p; return 10 * p; }
+let adaptiveM = 300;
+function outRange() {
+  const ds = STATIONS.filter((s) => !S.visited[s.id] || s.id === S.here).map((s) => dist(s)).sort((a, b) => a - b);
+  const want = ds.length ? clamp(niceUp(ds[Math.min(1, ds.length - 1)] * 1.2), 10, 600) : adaptiveM;
+  if (want > adaptiveM || want < adaptiveM * 0.65) adaptiveM = want;
+  return OUT_STEPS[S.rangeStep % OUT_STEPS.length] ?? adaptiveM;
+}
+const inRange = (st) => IN_STEPS[S.rangeStep % IN_STEPS.length] ?? Math.round(st.r * FIT);
+let lastStation = STATIONS[0];
+$("#radar").addEventListener("click", (e) => {
+  dismissTry();
+  if (S.radarAlpha < 0.5) wake(TAP_WAKE_S);
+  else { S.rangeStep = (S.rangeStep + 1) % 4; wake(3); }
+  if (e.isTrusted) rippleOn($("#radar"));
+});
+const COL = { white: 0xf3f5f7, grey: 0x8b949d, next: 0xfb923c };
+const MARKS = [];
+/** The marks every look draws: direction (rad, + is right), distance share of the range, colours. Linear scale; nothing pushed apart. */
+function compassMarks() {
+  MARKS.length = 0;
+  const ez = ease(clamp(S.zoom, 0, 1)), sAl = 1 - smooth(0, 0.6, ez), iAl = smooth(0.4, 1, ez);
+  if (sAl > 0.02) {
+    const range = outRange(), next = STATIONS.find((s) => !S.visited[s.id]);
+    for (const s of STATIONS) {
+      if (S.here === s.id) continue;
+      const d = dist(s);
+      const leftHere = S.visited[s.id] && ITEMS.some((i) => i.st === s.id && !S.it[i.id].seen && shownOnCompass(i));
+      MARKS.push({ id: s.id, a: relAngle(s), d, f: Math.min(d, range) / range, beyond: d > range, al: sAl,
+        color: s === next ? COL.next : S.visited[s.id] ? COL.grey : COL.white, hollow: d > range || (!S.visited[s.id] && s !== next),
+        core: leftHere, top: s === next ? 2 : S.visited[s.id] ? 0 : 1, pulse: s === next });
+    }
+  }
+  if (iAl > 0.02) {
+    const st = S.here ? stById(S.here) : lastStation, range = inRange(st);
+    for (const it of ITEMS) {
+      if (it.st !== st.id || !shownOnCompass(it) || it.kind === "place") continue;
+      const d = dist(it), seen = S.it[it.id].seen;
+      MARKS.push({ id: it.id, a: relAngle(it), d, f: Math.min(d, range) / range, beyond: d > range, al: iAl,
+        color: seen ? COL.grey : COL.white, hollow: d > range, core: false, top: seen ? 0 : 1 });
+    }
+  }
+  MARKS.sort((p, q) => p.top - q.top || p.d - q.d);
+  return MARKS;
+}
+function compassRange() { return S.here || S.zoom > 0.5 ? inRange(S.here ? stById(S.here) : lastStation) : outRange(); }
+
+// both looks hang 1 m in front of the camera, scaled so one unit is one CSS pixel; origin = the tap area's centre
+const hudMat = (color, opacity = 1) => new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthTest: false, depthWrite: false, fog: false });
+function roundRect(w, h, r) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r);
+  s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r);
+  s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y);
+  return new THREE.ShapeGeometry(s, 6);
+}
+const tri = (w, h) => { const s = new THREE.Shape(); s.moveTo(-w / 2, 0); s.lineTo(w / 2, 0); s.lineTo(0, -h); s.closePath(); return new THREE.ShapeGeometry(s); };
+const discGeo = new THREE.CircleGeometry(1, 28), ringGeo = new THREE.RingGeometry(0.6, 1, 28), thinRing = new THREE.RingGeometry(0.78, 1, 36);
+const tickGeo = new THREE.PlaneGeometry(2, 1);
+function makePool(group, n) {
+  const pool = [];
+  for (let i = 0; i < n; i++) {
+    const edge = new THREE.Mesh(discGeo, hudMat(0x0a0e13, 0.9)), fill = new THREE.Mesh(discGeo, hudMat(0xffffff, 1)), core = new THREE.Mesh(discGeo, hudMat(0xffffff, 1));
+    edge.visible = fill.visible = core.visible = false; group.add(edge, fill, core); pool.push({ edge, fill, core });
+  }
+  return pool;
+}
+function drawMark(P, x, y, m, A, k) {
+  const rad = m.beyond ? MARK.rBeyond : lerp(MARK.rNear, MARK.rFar, m.f);
+  const al = (m.beyond ? MARK.aBeyond : lerp(1, MARK.aFar, m.f)) * m.al * A, ro = 1003 + k * 3;
+  P.edge.visible = true; P.edge.position.set(x, y, 0); P.edge.scale.setScalar(rad + 1.5); P.edge.material.opacity = 0.85 * al; P.edge.renderOrder = ro;
+  P.fill.visible = true; P.fill.geometry = m.hollow ? ringGeo : discGeo; P.fill.position.set(x, y, 0); P.fill.scale.setScalar(rad);
+  P.fill.material.color.setHex(m.color); P.fill.material.opacity = al; P.fill.renderOrder = ro + 1;
+  P.core.visible = m.core;
+  if (m.core) { P.core.position.set(x, y, 0); P.core.scale.setScalar(rad * 0.4); P.core.material.color.setHex(COL.white); P.core.material.opacity = al; P.core.renderOrder = ro + 2; }
+  return rad;
+}
+const LAY = { ok: false, halfW: 0, h: 30, r: 56 };
+let layoutDirty = true;
+
+/* --- look 1: the band (round 3's, with the speaker's notch) --- */
+const bandG = new THREE.Group(); bandG.position.z = -1; camera.add(bandG);
+const bPlateBorder = new THREE.Mesh(new THREE.BufferGeometry(), hudMat(0xffffff, 0.22)); bPlateBorder.renderOrder = 1000;
+const bPlate = new THREE.Mesh(new THREE.BufferGeometry(), hudMat(0x0a0e13, 0.7)); bPlate.renderOrder = 1001;
+const bCaret = new THREE.Mesh(tri(10, 6), hudMat(0xffffff, 0.9)); bCaret.renderOrder = 1002;
+const bViewL = new THREE.Mesh(tickGeo, hudMat(0xffffff, 0.3)), bViewR = new THREE.Mesh(tickGeo, hudMat(0xffffff, 0.3)), bNorth = new THREE.Mesh(tickGeo, hudMat(0xffffff, 0.7));
+for (const m of [bViewL, bViewR, bNorth]) m.renderOrder = 1002;
+// the speaker: a notch above the band at their bearing, in their colour; at the band's end (behind you) an outward chevron in the same colour
+const bNotch = new THREE.Mesh(tri(12, 8), hudMat(0xffffff, 1)); bNotch.renderOrder = 1090;
+const bNotchEdge = new THREE.Mesh(tri(16, 10.5), hudMat(0x0a0e13, 0.9)); bNotchEdge.renderOrder = 1089;
+const bSpkRing = new THREE.Mesh(thinRing, hudMat(0xffffff, 1)); bSpkRing.renderOrder = 1091;
+const bChev = new THREE.Mesh((() => { const s = new THREE.Shape(); s.moveTo(0, 7); s.lineTo(7, 0); s.lineTo(0, -7); s.lineTo(-1.5, -4.5); s.lineTo(3, 0); s.lineTo(-1.5, 4.5); s.closePath(); return new THREE.ShapeGeometry(s); })(), hudMat(0xffffff, 1));
+bChev.renderOrder = 1091;
+const bPulse = new THREE.Mesh(ringGeo, hudMat(0xfb923c, 0.6)); bPulse.visible = false;
+bandG.add(bPlateBorder, bPlate, bCaret, bViewL, bViewR, bNorth, bNotchEdge, bNotch, bSpkRing, bChev, bPulse);
+const bPool = makePool(bandG, 24);
+function bandX(a) {
+  const half = Math.min(Math.PI, (SPAN * Math.PI) / 360), w = LAY.halfW - MARK.endPad;
+  if (Math.abs(a) <= half) return { x: (a / half) * w, end: false };
+  return { x: Math.sign(a) * w, end: true };
+}
+function layoutBandLook(r) {
+  for (const m of [bPlate, bPlateBorder]) m.geometry.dispose();
+  bPlateBorder.geometry = roundRect(r.width + 4, r.height + 4, (r.height + 4) / 2);
+  bPlate.geometry = roundRect(r.width, r.height, r.height / 2);
+  bCaret.position.set(0, -LAY.h / 2 + 1 + 6, 0); bCaret.rotation.z = 0;
+  for (const m of [bViewL, bViewR]) m.scale.set(1, LAY.h - 12, 1);
+  bNorth.scale.set(1.2, LAY.h - 6, 1);
+}
+function updateBandLook(A, marks, spk) {
+  bPlate.material.opacity = 0.7 * A; bPlateBorder.material.opacity = 0.22 * A; bCaret.material.opacity = 0.9 * A;
+  bCaret.position.y = -LAY.h / 2 + 7;
+  const hv = hfov() / 2;
+  bViewL.position.x = bandX(-hv).x; bViewR.position.x = bandX(hv).x;
+  bViewL.material.opacity = bViewR.material.opacity = 0.3 * A;
+  const nb = bandX(relAngle({ x: S.pos.x, z: S.pos.z - 100 }));
+  bNorth.visible = !nb.end; bNorth.position.x = nb.x; bNorth.material.opacity = 0.65 * A;
+  let k = 0; bPulse.visible = false;
+  for (const m of marks) {
+    if (k >= bPool.length) break;
+    const { x } = bandX(m.a), rad = drawMark(bPool[k], x, 0, m, A, k);
+    if (m.pulse && !REDUCE) {
+      const q = (T % 1.4) / 1.4;
+      bPulse.visible = true; bPulse.position.set(x, 0, 0); bPulse.scale.setScalar(rad + 1 + q * 6);
+      bPulse.material.opacity = 0.6 * (1 - q) * m.al * A; bPulse.renderOrder = 1003 + k * 3 + 2;
+    }
+    k++;
+  }
+  for (; k < bPool.length; k++) { const P = bPool[k]; P.edge.visible = P.fill.visible = P.core.visible = false; }
+  const on = !!spk;
+  bNotch.visible = bNotchEdge.visible = bSpkRing.visible = bChev.visible = on;
+  if (on) {
+    const b = bandX(relAngle(spk.it)), y = LAY.h / 2 + 9.5;
+    bNotch.position.set(b.x, y, 0); bNotchEdge.position.set(b.x, y + 1.6, 0);
+    bNotch.material.color.setHex(spk.color);
+    bSpkRing.position.set(b.x, 0, 0); bSpkRing.scale.setScalar(b.end ? 7 : 9.5); bSpkRing.material.color.setHex(spk.color);
+    bChev.visible = b.end;
+    if (b.end) { const s = Math.sign(b.x); bChev.position.set(s * (LAY.halfW + 9), 0, 0); bChev.scale.set(s, 1, 1); bChev.material.color.setHex(spk.color); }
+  }
+}
+
+/* --- look 2: the disc (heading-up, linear, rim-clamped; the speaker's circle gets a ring in their colour) --- */
+const discG = new THREE.Group(); discG.position.z = -1; camera.add(discG);
+const dBorder = new THREE.Mesh(discGeo, hudMat(0xffffff, 0.22)); dBorder.renderOrder = 1000;
+const dPlate = new THREE.Mesh(discGeo, hudMat(0x0a0e13, 0.7)); dPlate.renderOrder = 1001;
+const dCaret = new THREE.Mesh(tri(10, 7), hudMat(0xffffff, 0.9)); dCaret.renderOrder = 1002;
+const lineGeo = new THREE.PlaneGeometry(1, 1); lineGeo.translate(0, 0.5, 0);
+const dViewL = new THREE.Mesh(lineGeo, hudMat(0xffffff, 0.25)), dViewR = new THREE.Mesh(lineGeo, hudMat(0xffffff, 0.25)), dNorth = new THREE.Mesh(tickGeo, hudMat(0xffffff, 0.7));
+for (const m of [dViewL, dViewR, dNorth]) m.renderOrder = 1002;
+const dYou = new THREE.Mesh(discGeo, hudMat(0xffffff, 0.9)); dYou.renderOrder = 1002;
+const dSpkRing = new THREE.Mesh(thinRing, hudMat(0xffffff, 1)); dSpkRing.renderOrder = 1091;
+const dSpkEdge = new THREE.Mesh(ringGeo, hudMat(0x0a0e13, 0.85)); dSpkEdge.renderOrder = 1090;
+const dPulse = new THREE.Mesh(ringGeo, hudMat(0xfb923c, 0.6)); dPulse.visible = false;
+discG.add(dBorder, dPlate, dViewL, dViewR, dNorth, dCaret, dYou, dSpkEdge, dSpkRing, dPulse);
+const dPool = makePool(discG, 24);
+function discPos(a, f, beyond) { const r = beyond ? LAY.r - 6 : f * (LAY.r - 9); return { x: Math.sin(a) * r, y: Math.cos(a) * r }; }
+function layoutDiscLook(r) {
+  LAY.r = r.width / 2;
+  dPlate.scale.setScalar(LAY.r); dBorder.scale.setScalar(LAY.r + 2);
+  dCaret.position.set(0, LAY.r + 1, 0); dCaret.rotation.z = Math.PI;
+  dYou.scale.setScalar(2.5);
+  for (const m of [dViewL, dViewR]) m.scale.set(1.2, LAY.r - 4, 1);
+  dNorth.scale.set(1.4, 8, 1);
+}
+function updateDiscLook(A, marks, spk) {
+  dPlate.material.opacity = 0.7 * A; dBorder.material.opacity = 0.22 * A; dCaret.material.opacity = 0.9 * A; dYou.material.opacity = 0.9 * A;
+  const hv = hfov() / 2;
+  dViewL.rotation.z = hv; dViewR.rotation.z = -hv;
+  dViewL.material.opacity = dViewR.material.opacity = 0.25 * A;
+  const na = relAngle({ x: S.pos.x, z: S.pos.z - 100 });
+  dNorth.position.set(Math.sin(na) * (LAY.r - 5), Math.cos(na) * (LAY.r - 5), 0); dNorth.rotation.z = -na; dNorth.material.opacity = 0.65 * A;
+  let k = 0; dPulse.visible = false;
+  for (const m of marks) {
+    if (k >= dPool.length) break;
+    const p = discPos(m.a, m.f, m.beyond), rad = drawMark(dPool[k], p.x, p.y, m, A, k);
+    if (m.pulse && !REDUCE) {
+      const q = (T % 1.4) / 1.4;
+      dPulse.visible = true; dPulse.position.set(p.x, p.y, 0); dPulse.scale.setScalar(rad + 1 + q * 6);
+      dPulse.material.opacity = 0.6 * (1 - q) * m.al * A; dPulse.renderOrder = 1003 + k * 3 + 2;
+    }
+    k++;
+  }
+  for (; k < dPool.length; k++) { const P = dPool[k]; P.edge.visible = P.fill.visible = P.core.visible = false; }
+  const on = !!spk;
+  dSpkRing.visible = dSpkEdge.visible = on;
+  if (on) {
+    const range = compassRange(), d = dist(spk.it), p = discPos(relAngle(spk.it), Math.min(d, range) / range, d > range);
+    dSpkRing.position.set(p.x, p.y, 0); dSpkRing.scale.setScalar(10); dSpkRing.material.color.setHex(spk.color);
+    dSpkEdge.position.set(p.x, p.y, 0); dSpkEdge.scale.setScalar(12.5);
+  }
+}
+function layoutCompass() {
+  const dr = device.getBoundingClientRect(), r = $("#radar").getBoundingClientRect();
+  if (!r.width || !dr.height) { LAY.ok = false; return; }
+  const s = (2 * Math.tan((camera.fov * Math.PI) / 360)) / dr.height;
+  const cx = r.left - dr.left + r.width / 2 - dr.width / 2, cy = dr.height / 2 - (r.top - dr.top + r.height / 2);
+  for (const g of [bandG, discG]) { g.scale.set(s, s, 1); g.position.x = cx * s; g.position.y = cy * s; }
+  LAY.halfW = r.width / 2; LAY.h = r.height; LAY.ok = true;
+  if (AUTH.tour.look === "disc") layoutDiscLook(r); else layoutBandLook(r);
+}
+let compassUpdates = 0;
+function updateCompass() {
+  const look = AUTH.tour.look, on = radarOn() && LAY.ok;
+  const hide = !radarOn();
+  if ($("#radar").hidden !== hide) { $("#radar").hidden = hide; layoutDirty = true; }
+  bandG.visible = on && look === "band"; discG.visible = on && look === "disc";
+  if (!on) return;
+  compassUpdates++;
+  const marks = compassMarks(), spk = speakerNow();
+  if (look === "disc") updateDiscLook(S.radarAlpha, marks, spk); else updateBandLook(S.radarAlpha, marks, spk);
+}
+
+/* ======================================================================
+   The hint: three triggers as one switch; an icon at the compass's right end
+   ====================================================================== */
+function hintTarget() {
+  const st = S.story;
+  if (!st || st.paused) return null;
+  const step = stepOf();
+  if (!step || !step.find) return null;
+  const it = itById(step.find);
+  if (!resolve("hints", it).v || dist(it) <= FIND_M + 1) return null;
+  return it;
+}
+function hintOffered() {
+  const tgt = hintTarget();
+  if (!tgt) return false;
+  if (CFG.trigger === "progress") return S.hint.progress >= HINT.progress;
+  if (CFG.trigger === "still") return S.hint.still >= HINT.still;
+  return dist(tgt) - S.hint.best >= HINT.away;
+}
+const MOTE_V = `attribute float aA;attribute float aS;uniform float uViewH,uSize;varying float vA;
+void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);gl_Position=projectionMatrix*mv;
+gl_PointSize=clamp(uSize*aS*uViewH*0.5*projectionMatrix[1][1]/max(0.1,-mv.z),3.0,34.0);vA=aA;}`;
+const MOTE_F = `uniform vec3 uCore,uRim;varying float vA;void main(){float d=length(gl_PointCoord-0.5);
+float a=smoothstep(0.5,0.18,d)*vA;if(a<0.01)discard;float k=smoothstep(0.36,0.08,d);
+gl_FragColor=vec4(mix(uRim,uCore,k),a*mix(0.6,1.0,k));
+#include <colorspace_fragment>
+}`;
+const DRIFT = { n: 64, dur: 3.0, speed: 2.4, reach: 9, spread: 1.7, depth: [1.8, 3.8], size: 0.07 };
+const DR = { active: false, t: 0, p0: new Float32Array(192), p1: new Float32Array(192), p2: new Float32Array(192), birth: new Float32Array(64), life: new Float32Array(64), ph: new Float32Array(64) };
+const viewH = { value: 844 };
+const moteGeo = new THREE.BufferGeometry();
+const motePos = new Float32Array(192), moteA = new Float32Array(64), moteS = new Float32Array(64);
+moteGeo.setAttribute("position", new THREE.BufferAttribute(motePos, 3));
+moteGeo.setAttribute("aA", new THREE.BufferAttribute(moteA, 1));
+moteGeo.setAttribute("aS", new THREE.BufferAttribute(moteS, 1));
+const motes = new THREE.Points(moteGeo, new THREE.ShaderMaterial({
+  uniforms: { uViewH: viewH, uSize: { value: DRIFT.size }, uCore: { value: new THREE.Color("#fff4cf") }, uRim: { value: new THREE.Color("#d08a2a") } },
+  vertexShader: MOTE_V, fragmentShader: MOTE_F, transparent: true, depthWrite: false,
+}));
+motes.frustumCulled = false; motes.renderOrder = 15; motes.visible = false; motes.raycast = () => undefined; scene.add(motes);
+function summonHint() {
+  const tgt = hintTarget();
+  if (DR.active || !tgt) return;
+  const L = DRIFT;
+  DR.active = true; DR.t = 0;
+  const fx = -Math.sin(S.yaw), fz = -Math.cos(S.yaw), rx = Math.cos(S.yaw), rz = -Math.sin(S.yaw);
+  let dx = tgt.x - S.pos.x, dz = tgt.z - S.pos.z;
+  const dT = Math.hypot(dx, dz); dx /= dT; dz /= dT;
+  const reach = clamp(dT - 1.2, 2.5, L.reach), qx = S.pos.x + dx * reach, qz = S.pos.z + dz * reach, nx = -dz, nz = dx;
+  const dot = fx * dx + fz * dz, side = Math.sign(rx * dx + rz * dz) || 1;
+  for (let i = 0; i < L.n; i++) {
+    const depth = L.depth[0] + rand() * (L.depth[1] - L.depth[0]), lat = (rand() * 2 - 1) * L.spread;
+    const p0x = S.pos.x + fx * depth + rx * lat, p0z = S.pos.z + fz * depth + rz * lat, p0y = 0.2 + rand() * 0.6;
+    const end = (rand() * 2 - 1) * (0.5 + 0.08 * reach), p2x = qx + nx * end, p2z = qz + nz * end, p2y = 0.12 + rand() * 0.35;
+    let p1x, p1z;
+    if (dot > -0.25) { const kk = 0.5 * Math.hypot(p2x - p0x, p2z - p0z); p1x = p0x + (fx * 0.35 + dx * 0.65) * kk; p1z = p0z + (fz * 0.35 + dz * 0.65) * kk; }
+    else { p1x = S.pos.x + rx * side * (2.4 + rand() * 0.8) + fx * (0.8 + rand() * 0.6); p1z = S.pos.z + rz * side * (2.4 + rand() * 0.8) + fz * (0.8 + rand() * 0.6); }
+    DR.p0.set([p0x, p0y, p0z], i * 3); DR.p1.set([p1x, 0.45 + rand() * 0.45, p1z], i * 3); DR.p2.set([p2x, p2y, p2z], i * 3);
+    const len = Math.hypot(p1x - p0x, p1z - p0z) + Math.hypot(p2x - p1x, p2z - p1z);
+    DR.life[i] = clamp(len / L.speed, 1.0, L.dur - 0.25);
+    DR.birth[i] = rand() * Math.max(0.05, L.dur - 0.25 - DR.life[i]) * 0.85;
+    DR.ph[i] = rand() * 6.283; moteS[i] = 0.7 + rand() * 0.6;
+  }
+  motes.visible = true; moteGeo.setDrawRange(0, L.n);
+}
+function stopDrift() { DR.active = false; motes.visible = false; }
+function updateDrift(dt) {
+  if (!DR.active) return;
+  DR.t += dt;
+  const L = DRIFT, g = 1 - smooth(L.dur - 0.45, L.dur, DR.t);
+  if (DR.t >= L.dur) { stopDrift(); return; }
+  for (let i = 0; i < L.n; i++) {
+    const age = DR.t - DR.birth[i], u0 = age / DR.life[i], i3 = i * 3;
+    let x = 0, y = -50, z = 0, a = 0;
+    if (u0 > 0 && u0 < 1) {
+      const u = u0 * u0 * (3 - 2 * u0), v = 1 - u;
+      x = v * v * DR.p0[i3] + 2 * v * u * DR.p1[i3] + u * u * DR.p2[i3];
+      y = v * v * DR.p0[i3 + 1] + 2 * v * u * DR.p1[i3 + 1] + u * u * DR.p2[i3 + 1];
+      z = v * v * DR.p0[i3 + 2] + 2 * v * u * DR.p1[i3 + 2] + u * u * DR.p2[i3 + 2];
+      const w = Math.sin(DR.ph[i] + age * 5.5) * 0.12, tx = DR.p2[i3] - DR.p0[i3], tz = DR.p2[i3 + 2] - DR.p0[i3 + 2], tl = Math.hypot(tx, tz) || 1;
+      x += (-tz / tl) * w; z += (tx / tl) * w; y += Math.sin(DR.ph[i] * 2 + age * 4) * 0.07;
+      const near = Math.hypot(x - S.pos.x, z - S.pos.z);
+      a = smooth(0, 0.22, age) * (1 - smooth(0.62, 1, u0)) * g * smooth(1.2, 1.8, near);
+    }
+    motePos[i3] = x; motePos[i3 + 1] = y; motePos[i3 + 2] = z; moteA[i] = a;
+  }
+  moteGeo.attributes.position.needsUpdate = true; moteGeo.attributes.aA.needsUpdate = true; moteGeo.attributes.aS.needsUpdate = true;
+}
+
+/* ======================================================================
+   The simulation (every frame)
+   ====================================================================== */
+const last = { x: 0, z: 0 };
+function sim(dt) {
+  if (waiters.length) { const due = waiters.filter((w) => T >= w.end); waiters = waiters.filter((w) => T < w.end); for (const w of due) w.res(); }
+  last.x = S.pos.x; last.z = S.pos.z;
+  if (S.auto) {
+    const a = S.auto, dx = a.x - S.pos.x, dz = a.z - S.pos.z, d = Math.hypot(dx, dz), step = a.speed * dt;
+    if (d <= step) { S.pos.x = a.x; S.pos.z = a.z; S.auto = null; S.yawTarget = null; a.res(); }
+    else { S.pos.x += (dx / d) * step; S.pos.z += (dz / d) * step; if (a.face && !drag) S.yawTarget = yawToward(a, S.pos); }
+  } else {
+    let f = 0;
+    if (keys.has("KeyW") || keys.has("ArrowUp")) f = 1.4;
+    if (keys.has("KeyS") || keys.has("ArrowDown")) f = -0.8;
+    if (keys.has("KeyA") || keys.has("ArrowLeft")) { S.yaw += 1.5 * dt; S.yawTarget = null; }
+    if (keys.has("KeyD") || keys.has("ArrowRight")) { S.yaw -= 1.5 * dt; S.yawTarget = null; }
+    if (f) { S.pos.x += -Math.sin(S.yaw) * f * dt; S.pos.z += -Math.cos(S.yaw) * f * dt; }
+  }
+  if (S.turn) {
+    const k = clamp((T - S.turn.t0) / S.turn.dur, 0, 1);
+    S.yaw = lerp(S.turn.from, S.turn.to, ease(k));
+    if (k >= 1) { const r = S.turn.res; S.turn = null; r(); }
+  } else if (S.yawTarget != null && !drag) S.yaw += wrapPi(S.yawTarget - S.yaw) * (1 - Math.exp(-dt * 3));
+  let walking = false;
+  if (dt > 0) {
+    const inst = Math.hypot(S.pos.x - last.x, S.pos.z - last.z) / dt;
+    S.speed += (inst - S.speed) * (1 - Math.exp(-dt / 0.5));
+    walking = S.speed > WALK_MS;
+    S.stillFor = walking ? 0 : S.stillFor + dt;
+  }
+  const prev = S.here;
+  if (S.here && dist(stById(S.here)) > stById(S.here).r + 2) S.here = null;
+  if (!S.here) for (const s of STATIONS) if (dist(s) <= s.r) { S.here = s.id; break; }
+  if (S.here !== prev) onEdge(prev, S.here);
+  S.zoom = clamp(S.zoom + ((S.here ? 1 : -1) * dt) / 1.0, 0, 1);
+  if (S.greetPending && !S.story) {
+    const sid = S.greetPending, by = itById(STORIES[sid].entry);
+    if (dist(by) <= GREET_M) { S.greeted[by.st] = true; S.greetPending = null; startStory(sid); }
+  }
+  const target = radarAwakeTarget() ? 1 : ASLEEP_ALPHA, kf = dt / FADE_S;
+  S.radarAlpha = target > S.radarAlpha ? Math.min(target, S.radarAlpha + kf) : Math.max(target, S.radarAlpha - kf);
+
+  // the story: its step clip runs by itself unless held; a drag freezes the clock while the finger is down
+  const st = S.story;
+  if (st && !st.paused) {
+    const step = stepOf(), entry = itById(STORIES[st.id].entry);
+    if (S.here !== entry.st) st.paused = "left";
+    else if (step.lines && !st.hold && !SCRUB.active) st.t = Math.min(clipOf(storyKey()).len, st.t + dt);
+    else if (step.find) {
+      const it = itById(step.find), d = dist(it);
+      S.hint.progress += dt;
+      S.hint.still = walking ? 0 : S.hint.still + dt;
+      S.hint.best = Math.min(S.hint.best, d);
+      if (d <= FIND_M) { S.it[it.id].seen = true; stopDrift(); storyNext(); }
+    }
+  }
+  for (const it of ITEMS) {
+    const t = S.it[it.id];
+    if (!it.len) continue;
+    if (t.playing && !(SCRUB.active && SRC.kind === "media" && SRC.id === it.id)) {
+      t.t += dt;
+      if (t.t >= it.len) { t.t = it.len; t.playing = false; t.pausedBy = "end"; t.endAt = T; t.seen = true; }
+    }
+    const d = dist(it);
+    if (t.playing && d > it.reach + 1) pause(it.id, "leave");
+    else if (!t.playing && t.pausedBy === "leave" && d <= it.reach && !S.story) { t.playing = true; t.pausedBy = null; }
+  }
+  for (const it of ITEMS) {
+    const t = S.it[it.id];
+    if (t.seen || !inStation(it)) continue;
+    const need = { shortText: [8, 1.5], picture: [10, 2], model: [10, 3] }[it.kind];
+    if (!need) continue;
+    if (dist(it) <= need[0] && inView(it)) { t.dwell += dt; if (t.dwell >= need[1]) t.seen = true; }
+  }
+  updateDrift(dt);
+}
+function onEdge(from, to) {
+  S.rangeStep = 0;
+  if (!to) S.greetPending = null;
+  if (to) {
+    lastStation = stById(to); S.visited[to] = true;
+    const stories = Object.entries(STORIES).filter(([, s]) => itById(s.entry).st === to);
+    if (stories.length === 1 && !S.greeted[to]) S.greetPending = stories[0][0];
+  }
+  wake(EDGE_WAKE_S);
+}
+
+/* ======================================================================
+   World looks (every frame; canvases redraw only when their content changes)
+   ====================================================================== */
+function updateWorld(dt) {
+  for (const st of STATIONS) {
+    const b = beams[st.id], want = S.here === st.id || S.visited[st.id] ? 0 : 1;
+    b.a += (want - b.a) * (1 - Math.exp(-dt * 2));
+    b.built.visible = b.ring.visible = b.a > 0.01;
+    const r = clamp(dist(st) * 0.005, 0.05, 0.6);
+    b.built.scale.set(r, 1, r); b.builtMat.opacity = 0.28 * b.a; b.ringMat.opacity = 0.45 * b.a;
+  }
+  for (const it of ITEMS) {
+    const w = world[it.id], t = S.it[it.id];
+    if (it.kind === "character") {
+      const want = inStation(it) && dist(it) < 18 ? Math.atan2(S.pos.x - it.x, S.pos.z - it.z) : Math.atan2(stById(it.st).x - it.x + 0.001, stById(it.st).z - it.z + 6);
+      w.grp.rotation.y += wrapPi(want - w.grp.rotation.y) * (1 - Math.exp(-dt * 2.2));
+    }
+    if (it.kind === "longText") {
+      const listening = !it.narrated ? "off" : t.playing ? "on" : t.pausedBy === "tap" ? "paused" : "off";
+      const key = t.page + listening;
+      if (w.pageKey !== key) { w.pageKey = key; setPlaneCanvas(w.page, lecternCanvas(it, t, listening), 0.92); }
+      if (w.plate) updatePlate(it, w, t);
+    }
+    if (it.kind === "audio") {
+      const p = w.plume, level = !inStation(it) ? 0.18 : t.playing ? 1 : 0.55, speed = t.playing ? 1.4 : 0.6;
+      for (let k = 0; k < p.seed.length; k++) {
+        const s = p.seed[k];
+        s.y += s.v * speed * dt; if (s.y > 3.4) s.y = 0;
+        const r = s.r * (1 - s.y / 5);
+        p.pos[k * 3] = Math.cos(s.a + s.y) * r; p.pos[k * 3 + 1] = s.y; p.pos[k * 3 + 2] = Math.sin(s.a + s.y) * r;
+      }
+      p.pts.geometry.attributes.position.needsUpdate = true;
+      p.mat.opacity = 0.9 * level; p.ringMat.opacity = 0.15 + 0.45 * level;
+      w.cap.visible = inStation(it) && dist(it) < 14;
+    }
+    if (it.kind === "video") drawScreen(w.screen, it, t);
+  }
+}
+/** The alternative: the narrated words sit on a plate under the sign while it is in view and legible; otherwise they dock at the top. */
+const plateActive = (it) => CFG.narr === "plate" && SRC.on && SRC.id === it.id && inView(it) && dist(it) <= PLATE_M;
+function updatePlate(it, w, t) {
+  const on = plateActive(it);
+  w.plate.visible = on;
+  if (!on) return;
+  const clip = SRC.clip, cur = wordAt(clip, t.t), s = cur >= 0 ? clip.words[cur].s : 0, key = `${s}`;
+  if (w.plateKey === key) return;
+  w.plateKey = key;
+  const words = NARR[s].split(" "), lines = [];
+  let line = "";
+  for (const wd of words) { if ((line + " " + wd).length > 30 && line) { lines.push(line); line = wd; } else line = line ? line + " " + wd : wd; }
+  if (line) lines.push(line);
+  setPlaneCanvas(w.plate, textCanvas(lines, { w: 640, size: 30, plate: "rgba(10,14,19,.9)", ink: "#fff" }), 1.3);
+}
+function drawScreen(sc, it, t) {
+  const frame = t.playing ? Math.floor(T * 8) : t.pausedBy === "end" ? -2 : t.t > 0 ? -3 - Math.round(t.t * 4) : -1;
+  if (frame === sc.last) return;
+  sc.last = frame;
+  const g = sc.c.getContext("2d");
+  if (t.t > 0 && !(t.pausedBy === "end" && t.t >= it.len)) {
+    g.fillStyle = "#cdbb94"; g.fillRect(0, 0, 256, 144);
+    const off = (t.t * 30) % 44; g.fillStyle = "#6d5638";
+    for (let i = -1; i < 7; i++) { const x = i * 44 - off; g.fillRect(x, 50 + (i % 2) * 10, 34, 70); }
+    g.fillStyle = "rgba(0,0,0,.5)"; g.fillRect(0, 134, 256, 10); g.fillStyle = "#2dd4bf"; g.fillRect(0, 134, 256 * (t.t / it.len), 10);
+    if (!t.playing) { g.fillStyle = "rgba(0,0,0,.5)"; g.fillRect(0, 0, 256, 134); g.fillStyle = "#fff"; g.fillRect(108, 46, 14, 44); g.fillRect(134, 46, 14, 44); }
+  } else {
+    g.fillStyle = "#1b2026"; g.fillRect(0, 0, 256, 144); g.fillStyle = "#fff";
+    g.beginPath(); g.moveTo(110, 44); g.lineTo(150, 72); g.lineTo(110, 100); g.closePath(); g.fill();
+    g.font = "600 15px system-ui,sans-serif"; g.textAlign = "center";
+    g.fillText(t.pausedBy === "end" ? "Watched - tap to play again" : "Tap to play", 128, 128);
+  }
+  sc.t.needsUpdate = true;
+}
+
+/* ======================================================================
+   The words (lyrics view) and the scrub bar. DOM writes happen only when something changed.
+   ====================================================================== */
+const ICON = {
+  pause: '<svg viewBox="0 0 18 18"><rect x="4" y="3" width="3.6" height="12" rx="1" fill="currentColor"/><rect x="10.4" y="3" width="3.6" height="12" rx="1" fill="currentColor"/></svg>',
+  play: '<svg viewBox="0 0 18 18"><path d="M5.5 3l10 6-10 6z" fill="currentColor"/></svg>',
+  replay: '<svg viewBox="0 0 18 18"><path d="M4.5 9a4.5 4.5 0 1 0 1.6-3.4" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M3 3v4h4z" fill="currentColor"/></svg>',
+  next: '<svg viewBox="0 0 18 18"><path d="M4 9h9M9 4l5 5-5 5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  done: '<svg viewBox="0 0 18 18"><path d="M3.5 9.5l3.5 3.5 7.5-8" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+};
+const LY = { w: 300, lh: 22, rows: 3, center: 1, trackW: 300 };
+const LYR = { key: "", clip: null, lines: [], lineOf: [], lineEls: [], wordEls: [], lineT: [], cur: -2, row: -9, p: -9, ty: "" };
+const measureCtx = document.createElement("canvas").getContext("2d");
+function layoutHud(W, H) {
+  const hud = $("#hud"), land = W > H && H <= 520;
+  LY.rows = CFG.lines === "auto" ? (land ? 2 : 3) : Number(CFG.lines);
+  LY.lh = Math.round(CFG.fs * 1.38);
+  hud.style.setProperty("--rows", String(LY.rows));
+  hud.style.setProperty("--fs", CFG.fs + "px");
+  hud.style.setProperty("--lh", LY.lh + "px");
+  hud.dataset.look = AUTH.tour.look;
+  hud.dataset.back = CFG.back;
+  LY.w = $("#lyrics").clientWidth;
+  LY.trackW = $("#track").clientWidth;
+  LYR.key = "";
+}
+/** Breaks a clip into display lines: every sentence (or cue) starts a line; a long one wraps at word boundaries by measured width. */
+function buildLyrics(clip) {
+  const col = $("#col");
+  col.textContent = "";
+  measureCtx.font = `600 ${CFG.fs}px ${FONT}`;
+  const sp = measureCtx.measureText(" ").width, maxW = LY.w - 10;
+  const lines = [];
+  const sents = [];
+  clip.words.forEach((wd, i) => { if (i === 0 || wd.s !== clip.words[i - 1].s) sents.push([]); sents[sents.length - 1].push(i); });
+  for (const idx of sents) {
+    const name = clip.words[idx[0]].name;
+    measureCtx.font = `800 ${CFG.fs * 0.84}px ${FONT}`;
+    const nameW = name ? measureCtx.measureText(name).width + CFG.fs * 0.9 : 0;
+    measureCtx.font = `600 ${CFG.fs}px ${FONT}`;
+    const ws = idx.map((i) => measureCtx.measureText(clip.words[i].text).width);
+    const greedy = (limit) => {
+      const out = [];
+      let cur = null, w = 0;
+      idx.forEach((i, k) => {
+        if (!cur || (w + ws[k] > limit && cur.length)) { cur = []; out.push(cur); w = out.length === 1 ? nameW : 0; }
+        cur.push(i); w += ws[k] + sp;
+      });
+      return out;
+    };
+    const n = greedy(maxW).length;
+    let lo = maxW / n, hi = maxW;
+    for (let k = 0; k < 12; k++) { const mid = (lo + hi) / 2; if (greedy(mid).length > n) lo = mid; else hi = mid; }
+    greedy(hi).forEach((ws2, j) => lines.push({ words: ws2, name: j === 0 ? name : null }));
+  }
+  LYR.lines = lines; LYR.lineOf = []; LYR.lineEls = []; LYR.wordEls = []; LYR.lineT = [];
+  lines.forEach((ln, j) => {
+    const el = document.createElement("div");
+    el.className = "ln"; el.style.top = j * LY.lh + "px";
+    if (ln.name) { const b = document.createElement("b"); b.className = "nm"; b.textContent = ln.name; b.style.color = clip.color.hex; el.appendChild(b); }
+    for (const i of ln.words) {
+      const s = document.createElement("span");
+      s.className = clip.words[i].fx ? "w fx" : "w"; s.textContent = clip.words[i].text + " ";
+      el.appendChild(s); LYR.wordEls[i] = s; LYR.lineOf[i] = j;
+    }
+    col.appendChild(el); LYR.lineEls.push(el); LYR.lineT.push(clip.words[ln.words[0]].t);
+  });
+  // a tick on the bar where each sentence starts: aim points for a drag
+  const ticks = $("#ticks");
+  ticks.textContent = "";
+  for (const t0 of clip.sents.slice(1)) { const k = document.createElement("i"); k.className = "tick"; k.style.left = ((t0 / clip.len) * 100).toFixed(2) + "%"; ticks.appendChild(k); }
+  LYR.clip = clip; LYR.cur = -2; LYR.row = -9; LYR.p = -9; LYR.ty = "";
+}
+/** The fractional line position of time t, and back: what a drag on the words moves. */
+function lineFloatAt(t) {
+  const c = LYR.clip, cur = wordAt(c, t);
+  if (cur < 0) return 0;
+  const j = LYR.lineOf[cur], t0 = LYR.lineT[j], t1 = LYR.lineT[j + 1] ?? c.len;
+  return j + clamp((t - t0) / Math.max(0.05, t1 - t0), 0, 0.999);
+}
+function timeAtLine(p) {
+  const n = LYR.lineT.length, j = clamp(Math.floor(p), 0, n - 1), f = clamp(p - j, 0, 1);
+  const t0 = LYR.lineT[j], t1 = LYR.lineT[j + 1] ?? LYR.clip.len;
+  return t0 + f * (t1 - t0);
+}
+let handleState = "", handleLabel = "", fillK = -1, handleX = -1, quietNow = null;
+function setQuiet(q) {
+  if (quietNow === q) return;
+  quietNow = q;
+  for (const el of [$("#scrim"), $("#scrub")]) el.classList.toggle("quiet", q);
+}
+function renderSubs() {
+  const src = SRC;
+  if (!src.on) { setQuiet(true); $("#lyrics").classList.add("quiet"); return; }
+  setQuiet(false);
+  // The alternative: while the sign carries the words, the top shows only the bar
+  const onSign = src.kind === "media" && !!itById(src.id).narrated && plateActive(itById(src.id));
+  $("#lyrics").classList.toggle("quiet", onSign);
+  const clip = src.clip, key = clip.key + "|" + CFG.fs + "|" + LY.w + "|" + LY.lh;
+  if (key !== LYR.key) { LYR.key = key; buildLyrics(clip); }
+  const cur = wordAt(clip, src.t);
+  const textDrag = PD && PD.dragging && PD.mode === "text";
+  const p = textDrag ? PD.p : cur >= 0 ? LYR.lineOf[cur] : 0;
+  const row = Math.round(p);
+  if (row !== LYR.row) {
+    LYR.lineEls.forEach((el, j) => {
+      const r = j === row ? "cur" : j === row - 1 ? "prev" : j === row + 1 && LY.rows >= 3 ? "next" : "";
+      if (el.dataset.r !== r) el.dataset.r = r;
+    });
+    LYR.row = row;
+  }
+  if (cur !== LYR.cur) {
+    const lo = Math.min(cur, LYR.cur), hi = Math.max(cur, LYR.cur);
+    for (let i = Math.max(0, lo); i <= hi && i < LYR.wordEls.length; i++) LYR.wordEls[i].classList.toggle("on", i <= cur);
+    LYR.cur = cur;
+  }
+  const ty = `translateY(${((LY.center - p) * LY.lh).toFixed(1)}px)`;
+  if (ty !== LYR.ty) { $("#col").style.transform = ty; LYR.ty = ty; }
+  $("#col").classList.toggle("drag", textDrag);
+  // the bar and its handle
+  const k = clamp(src.t / clip.len, 0, 1);
+  if (Math.abs(k - fillK) > 0.0005) { $("#fill").style.transform = `scaleX(${k.toFixed(4)})`; fillK = k; }
+  const x = Math.round(k * LY.trackW * 2) / 2;
+  if (x !== handleX) { $("#handle").style.transform = `translateX(${x}px)`; handleX = x; }
+  const state = src.kind === "story" && src.finished ? (src.last ? "done" : "next") : src.kind === "media" && src.finished && src.t >= clip.len - 0.05 ? "replay" : src.playing ? "pause" : "play";
+  if (state !== handleState) { handleState = state; $("#handleIcon").innerHTML = ICON[state]; }
+  const label = `${{ pause: "Pause", play: "Play", replay: "Play again", next: "Next", done: "Done" }[state]}: ${src.label} - drag to go back`;
+  if (label !== handleLabel) { handleLabel = label; $("#handle").setAttribute("aria-label", label); }
+}
+
+/* ---------- pointer: the handle (tap = play/pause, drag = scrub), the bar (drag), the words (drag down = back) ---------- */
+const SCRUB = { active: false };
+let PD = null;
+function pdStart(mode, x, y, pointerId = -1) {
+  readSource();
+  if (!SRC.on) return false;
+  dismissTry();
+  const hr = $("#handle").getBoundingClientRect();
+  PD = { mode, x0: x, y0: y, pointerId, dragging: false, key: SRC.clip.key, wasFinished: SRC.finished, offset: mode === "handle" ? x - (hr.left + hr.width / 2) : 0 };
+  if (mode === "text") { PD.p0 = lineFloatAt(SRC.t); PD.p = PD.p0; }
+  if (mode === "handle") $("#handle").classList.add("grab");
+  return true;
+}
+function pdMove(x, y) {
+  if (!PD) return;
+  readSource();
+  if (!SRC.on || SRC.clip.key !== PD.key) { pdCancel(); return; }
+  const d = PD.mode === "text" ? Math.abs(y - PD.y0) : Math.hypot(x - PD.x0, y - PD.y0);
+  if (!PD.dragging && d > CFG.slop) { PD.dragging = true; SCRUB.active = true; if (PD.mode === "text") $("#lyrics").classList.add("grab"); }
+  if (!PD.dragging) return;
+  if (PD.mode === "text") {
+    // the words follow the finger: one line height of drag is one line of the text, and the playhead goes with it
+    PD.p = clamp(PD.p0 - (y - PD.y0) / LY.lh, 0, LYR.lineT.length - 0.001);
+    setSourceT(timeAtLine(PD.p));
+  } else {
+    const tr = $("#track").getBoundingClientRect();
+    setSourceT(((x - PD.offset - tr.left) / tr.width) * SRC.clip.len);
+  }
+}
+function pdEnd() {
+  if (!PD) return;
+  const p = PD;
+  PD = null; SCRUB.active = false;
+  $("#handle").classList.remove("grab"); $("#lyrics").classList.remove("grab");
+  if (!p.dragging) { if (p.mode === "handle") tapHandle(); return; }
+  // A drag never starts or stops sound; a finished item dragged back is paused there until a tap
+  readSource();
+  if (!SRC.on || SRC.clip.key !== p.key) return;
+  if (SRC.kind === "story") { if (p.wasFinished && S.story.t < SRC.clip.len - 0.02) S.story.hold = true; }
+  else { const t = S.it[SRC.id]; if (t.pausedBy === "end") { t.pausedBy = "tap"; t.playing = false; } }
+}
+function pdCancel() { PD = null; SCRUB.active = false; $("#handle").classList.remove("grab"); $("#lyrics").classList.remove("grab"); }
+for (const [sel, mode] of [["#handle", "handle"], ["#scrub", "track"], ["#lyrics", "text"]]) {
+  $(sel).addEventListener("pointerdown", (e) => {
+    if (mode === "track" && e.target.closest("#handle")) return;
+    e.stopPropagation();
+    if (pdStart(mode, e.clientX, e.clientY, e.pointerId)) e.currentTarget.setPointerCapture(e.pointerId);
+  });
+  $(sel).addEventListener("pointermove", (e) => { if (PD && PD.pointerId === e.pointerId) pdMove(e.clientX, e.clientY); });
+  $(sel).addEventListener("pointerup", (e) => { if (PD && PD.pointerId === e.pointerId) pdEnd(); });
+  $(sel).addEventListener("pointercancel", (e) => { if (PD && PD.pointerId === e.pointerId) pdCancel(); });
+}
+$("#handle").addEventListener("click", (e) => { if (e.detail === 0) tapHandle(); }); // keyboard: Enter / Space
+$("#handle").addEventListener("keydown", (e) => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault(); readSource();
+  if (SRC.on) setSourceT(SRC.t + (e.key === "ArrowLeft" ? -3 : 3));
+});
+$("#hintBtn").addEventListener("click", () => { summonHint(); });
+function ui() {
+  readSource();
+  $("#radar").style.opacity = S.radarAlpha.toFixed(3);
+  renderSubs();
+  const offer = hintOffered(), hb = $("#hintBtn");
+  if (hb.hidden !== !(offer || DR.active)) hb.hidden = !(offer || DR.active);
+  const pressed = String(DR.active);
+  if (hb.getAttribute("aria-pressed") !== pressed) hb.setAttribute("aria-pressed", pressed);
+  setText($("#beatTitle"), beat ? `${beat}/${BEATS.length} - ${BEATS[beat - 1].name}` : "Walk freely");
+}
+const setText = (el, v) => { if (el.textContent !== v) el.textContent = v; };
+
+/* ======================================================================
+   The measuring hook (off by default): the top block's share of the screen height
+   ====================================================================== */
+const stats = {};
+let measuring = QS.has("measure"), worstFrame = 0, frameWorstWindow = 0, BENCH = null;
+function measure() {
+  const dr = device.getBoundingClientRect(), H = dr.height;
+  const box = (el) => { if (el.hidden || el.closest(".quiet") || el.classList.contains("quiet")) return null; const r = el.getBoundingClientRect(); return r.width && r.height ? { el, top: r.top - dr.top, bottom: r.bottom - dr.top, left: r.left - dr.left, right: r.right - dr.left } : null; };
+  const words = box($("#lyrics")), bar = box($("#scrub")), others = ["#radar", "#exitBtn", "#hintBtn"].map((s) => box($(s))).filter(Boolean);
+  const speaking = !!bar;
+  const blockBottom = speaking ? Math.max(bar.bottom, words ? words.bottom : 0) : 0;
+  const allBottom = Math.max(blockBottom, ...others.map((b) => b.bottom));
+  const boxes = [words, bar, ...others].filter(Boolean);
+  for (const el of device.querySelectorAll(".ovl")) el.classList.remove("ovl");
+  let ov = 0;
+  for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+    const A = boxes[i], B = boxes[j], ix = Math.min(A.right, B.right) - Math.max(A.left, B.left), iy = Math.min(A.bottom, B.bottom) - Math.max(A.top, B.top);
+    if (ix > 2 && iy > 2) { ov++; A.el.classList.add("ovl"); B.el.classList.add("ovl"); }
+  }
+  const m = { block: (blockBottom / H) * 100, all: (allBottom / H) * 100, ov, worst: frameWorstWindow, speaking };
+  const ro = $("#readout");
+  ro.hidden = !measuring;
+  if (measuring) {
+    setText(ro, `${Math.round(dr.width)}x${Math.round(H)} - words + bar ${speaking ? m.block.toFixed(1) + "%" : "(nothing speaks)"} - with compass ${m.all.toFixed(1)}% - ${ov ? ov + " overlap" : "no overlap"} - compass ${!radarOn() ? "off (author)" : S.radarAlpha > 0.5 ? "awake" : "asleep"} - hint ${hintTarget() ? (hintOffered() ? "offered" : CFG.trigger) : "-"} - worst frame ${m.worst.toFixed(0)} ms`);
+    ro.classList.toggle("bad", ov > 0 || m.worst > 50 || m.block > 16.7);
+    const k = `${Math.round(dr.width)}x${Math.round(H)} ${AUTH.tour.look} ${CFG.fs}px ${LY.rows}L`;
+    const s = (stats[k] ??= { block: 0, all: 0, ov: 0, worst: 0 });
+    if (speaking) s.block = Math.max(s.block, m.block);
+    s.all = Math.max(s.all, m.all); s.ov = Math.max(s.ov, ov); s.worst = Math.max(s.worst, m.worst);
+    renderStats();
+  }
+  return m;
+}
+let statKey = "";
+function renderStats() {
+  const key = JSON.stringify(stats);
+  if (key === statKey) return;
+  statKey = key;
+  $("#statTable tbody").innerHTML = Object.entries(stats).map(([k, s]) => `<tr><td>${k}</td><td>${s.block ? s.block.toFixed(1) + "%" : "-"}</td><td>${s.all.toFixed(1)}%</td><td>${s.ov}</td><td>${s.worst.toFixed(0)}</td></tr>`).join("");
+}
+
+/* ======================================================================
+   The author settings panel (the creator's side: a tester flips them, the HUD obeys)
+   ====================================================================== */
+const WORD = (v) => (v === null || v === undefined ? "as above" : v ? "yes" : "no");
+const VAL = (v) => (v === null || v === undefined ? "inherit" : v ? "yes" : "no");
+const cell = (level, id, key, v, ci = true) => `<button type="button" data-lvl="${level}" data-id="${id}" data-key="${key}" data-v="${VAL(v)}" data-ci="${ci ? 1 : 0}">${WORD(v)}</button>`;
+function renderAuth() {
+  const rows = ['<div class="auth"><span></span><span class="h">compass</span><span class="h">on it</span><span class="h">hints</span>'];
+  rows.push(`<span class="n"><b>Tour</b></span>${cell("tour", "tour", "radar", AUTH.tour.radar, false)}${cell("tour", "tour", "shown", AUTH.tour.shown, false)}${cell("tour", "tour", "hints", AUTH.tour.hints, false)}`);
+  for (const s of STATIONS) {
+    const a = AUTH.station[s.id];
+    rows.push(`<span class="n lvl1">Station ${s.id}<small>${s.title}</small></span>${cell("station", s.id, "radar", a.radar)}${cell("station", s.id, "shown", a.shown)}${cell("station", s.id, "hints", a.hints)}`);
+    for (const [sid, def] of Object.entries(STORIES)) {
+      if (itById(def.entry).st !== s.id) continue;
+      const b = AUTH.story[sid];
+      rows.push(`<span class="n lvl2">Story: ${def.title}</span><span></span>${cell("story", sid, "shown", b.shown)}${cell("story", sid, "hints", b.hints)}`);
+    }
+  }
+  rows.push("</div>");
+  for (const s of STATIONS) {
+    rows.push(`<details><summary>Items at station ${s.id}</summary><div class="auth">`);
+    for (const it of ITEMS.filter((i) => i.st === s.id)) {
+      const a = AUTH.item[it.id], sh = resolve("shown", it), hi = resolve("hints", it);
+      rows.push(`<span class="n lvl1">${it.title}<small>on it: ${WORD(sh.v)} (${sh.from}) - hints: ${WORD(hi.v)} (${hi.from})</small></span><span></span>${cell("item", it.id, "shown", a.shown)}${cell("item", it.id, "hints", a.hints)}`);
+    }
+    rows.push("</div></details>");
+  }
+  const open = [...document.querySelectorAll("#authBox details")].map((d) => d.open);
+  $("#authBox").innerHTML = rows.join("");
+  document.querySelectorAll("#authBox details").forEach((d, i) => { d.open = !!open[i]; });
+  for (const b of document.querySelectorAll("[data-look]")) if (b.tagName === "BUTTON") b.classList.toggle("on", b.dataset.look === AUTH.tour.look);
+}
+$("#authBox").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-lvl]");
+  if (!b) return;
+  const { lvl, id, key } = b.dataset, o = lvl === "tour" ? AUTH.tour : AUTH[lvl][id];
+  o[key] = b.dataset.ci === "1" ? (o[key] === null ? true : o[key] === true ? false : null) : !o[key];
+  renderAuth();
+});
+function setLook(look) { AUTH.tour.look = look; layoutDirty = true; renderAuth(); }
+for (const b of document.querySelectorAll("button[data-look]")) b.addEventListener("click", () => setLook(b.dataset.look));
+const PRESETS = [
+  { name: "Station B: items off the compass", run: () => { AUTH.station.B.shown = false; } },
+  { name: "Station A: the sound off the compass", run: () => { AUTH.item.aSound.shown = false; } },
+  { name: "The cracked bell: no hints", run: () => { AUTH.story.bell.hints = false; } },
+  { name: "Starting example", run: () => { const look = AUTH.tour.look; AUTH = defaultAuth(); AUTH.tour.look = look; } },
+  { name: "Every switch as above", run: () => { const look = AUTH.tour.look; AUTH = defaultAuth(false); AUTH.tour.look = look; } },
+];
+for (const p of PRESETS) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = p.name;
+  b.onclick = () => { p.run(); renderAuth(); };
+  $("#presetBtns").appendChild(b);
+}
+
+/* ======================================================================
+   The fixed demonstration: ten beats
+   ====================================================================== */
+let waiters = [];
+const wait = (sec) => new Promise((res) => waiters.push({ end: T + sec, res }));
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+const walkTo = (p, speed = 1.3, face = true) => new Promise((res) => { S.auto = { x: p.x, z: p.z, speed, face, res }; });
+const turnBy = (rad, dur) => new Promise((res) => { S.yawTarget = null; S.turn = { from: S.yaw, to: S.yaw + rad, t0: T, dur, res }; });
+const turnTo = (p, dur = 1.2) => turnBy(wrapPi(yawToward(p) - S.yaw), dur);
+const until = (fn, max = 30) => new Promise((res) => { const t0 = T; const chk = () => (fn() || T - t0 > max ? res() : waiters.push({ end: T + 0.1, res: chk })); chk(); });
+let markRes = null;
+function mark(name) {
+  window.HC.lastMark = `b${beat}-${name}`;
+  if (!SHOTS) return Promise.resolve();
+  S.paused = true;
+  return new Promise((res) => { markRes = () => { S.paused = false; res(); }; });
+}
+const tapWorld = (id) => { const it = itById(id.split(":")[0]), s = screenOf(it, 1.6); if (s.front) ripple(s.x, s.y); tapItem(id); };
+const tapEl = (sel) => { const el = device.querySelector(sel); if (!el || el.hidden) return; rippleOn(el); if (sel === "#handle") tapHandle(); else el.click(); };
+const standStill = () => wait(STILL_S + FADE_S + 0.3);
+/** A visible finger drags the handle to time `toT`, or pulls the words down by `dy` px, through the same code a real finger uses. Real time, so it reads at any ?speed. */
+async function fingerDrag(mode, { toT = 0, dy = 0, ms = 1200 } = {}) {
+  readSource();
+  if (!SRC.on) return;
+  const dr = device.getBoundingClientRect(), f = $("#finger");
+  let x0, y0, x1, y1;
+  if (mode === "handle") {
+    const hr = $("#handle").getBoundingClientRect(), tr = $("#track").getBoundingClientRect();
+    x0 = hr.left + hr.width / 2; y0 = hr.top + hr.height / 2;
+    x1 = tr.left + (clamp(toT, 0, SRC.clip.len) / SRC.clip.len) * tr.width; y1 = y0 + 4;
+  } else {
+    const lr = $("#lyrics").getBoundingClientRect();
+    x0 = lr.left + lr.width * 0.42; y0 = lr.top + lr.height * 0.35; x1 = x0 + 6; y1 = y0 + dy;
+  }
+  f.hidden = false;
+  f.style.left = x0 - dr.left + "px"; f.style.top = y0 - dr.top + "px";
+  await sleep(250);
+  pdStart(mode, x0, y0);
+  const n = Math.max(8, Math.round(ms / 40));
+  for (let i = 1; i <= n; i++) {
+    const k = ease(i / n), x = lerp(x0, x1, k), y = lerp(y0, y1, k);
+    f.style.left = x - dr.left + "px"; f.style.top = y - dr.top + "px";
+    pdMove(x, y);
+    if (i === Math.round(n / 2)) await mark(mode === "handle" ? "drag-button" : "drag-words");
+    await sleep(ms / n);
+  }
+  await sleep(180);
+  pdEnd();
+  f.hidden = true;
+}
+async function friendBlocks(sec) {
+  const f = $("#friend");
+  f.hidden = false; await sleep(20); f.classList.remove("gone");
+  await wait(sec);
+  f.classList.add("gone"); await sleep(380); f.hidden = true;
+}
+const A = stById("A"), B = stById("B");
+const A_IN = { x: 0, z: -47 }, B_IN = { x: 49, z: -119.5 };
+function base(st, pos, faceId) {
+  S = fresh();
+  S.pos = { ...pos };
+  if (st) { S.here = st; S.visited[st] = true; S.greeted[st] = true; S.zoom = 1; lastStation = stById(st); if (st === "B") S.visited.A = true; }
+  else lastStation = A;
+  if (faceId) S.yaw = yawToward(itById(faceId));
+  S.radarAlpha = ASLEEP_ALPHA; S.stillFor = 0;
+}
+const doneA = () => { S.storyDone.well = true; S.it.greta.seen = true; S.it.aStone.seen = true; };
+const BEATS = [
+  { name: "Walk up to the beam",
+    setup() { base(null, { x: 0, z: -10 }); S.yaw = 0; S.speed = 1.3; },
+    async run() { await walkTo({ x: 0, z: -24 }, 1.3); await mark("approach"); await walkTo({ x: 0, z: -43.5 }, 1.3); await wait(0.7); await mark("edge"); await walkTo(A_IN, 1.3); await wait(2); } },
+  { name: "Greta greets; a friend talks; drag the button back",
+    setup() { base("A", A_IN, "greta"); startStory("well"); },
+    async run() {
+      await wait(2.7);
+      await friendBlocks(4);
+      await wait(0.5);
+      await mark("missed");
+      await fingerDrag("handle", { toT: clipOf("story:well:0").sents[1] + 0.05, ms: 1300 });
+      await wait(1.2);
+      await mark("again");
+      await until(stepDone);
+      await wait(0.8);
+    } },
+  { name: "Pull the words down to go back",
+    setup() { base("A", A_IN, "greta"); startStory("well"); S.story.t = clipOf("story:well:0").sents[2] + 2.4; },
+    async run() {
+      await wait(0.8);
+      await fingerDrag("text", { dy: LY.lh * 1.6, ms: 1500 });
+      await wait(1.2);
+      await mark("back");
+      await until(stepDone);
+      await wait(0.5);
+      tapEl("#handle");
+      await wait(1);
+    } },
+  { name: "The search, the hint, a voice from behind",
+    setup() {
+      base("A", { x: -3, z: -50 }, "aSign"); startStory("well"); storyNext();
+      S.hint.progress = HINT.progress - 3; S.hint.still = HINT.still - 2;
+    },
+    async run() {
+      await until(() => hintOffered(), 12);
+      await wait(0.8);
+      await mark("offer");
+      tapEl("#hintBtn");
+      await wait(1.4);
+      await mark("drift");
+      await wait(1.8);
+      await walkTo(itById("aStone"), 1.2);
+      await turnTo({ x: S.pos.x, z: S.pos.z - 10 }, 1.2);
+      await wait(1.4);
+      await mark("behind");
+      await until(stepDone);
+      await wait(0.5);
+      tapEl("#handle");
+      await wait(1);
+    } },
+  { name: "A video: turn away, pause, go back",
+    setup() { base("A", { x: 1.5, z: -68 }, "aVid"); doneA(); },
+    async run() {
+      await wait(0.6);
+      tapWorld("aVid");
+      await wait(5.5);
+      await turnBy(Math.PI * 0.85, 2.0);
+      await wait(1.2);
+      await mark("away");
+      tapEl("#handle");
+      await wait(0.8);
+      await fingerDrag("handle", { toT: 4.55, ms: 1200 });
+      await wait(0.6);
+      await mark("rewound");
+      tapEl("#handle");
+      await wait(3);
+    } },
+  { name: "A finished video, dragged back",
+    setup() { base("A", { x: 1.5, z: -68 }, "aVid"); doneA(); S.it.aVid.t = 13.2; play("aVid"); },
+    async run() {
+      await until(() => S.it.aVid.pausedBy === "end", 6);
+      await wait(1);
+      await mark("finished");
+      await fingerDrag("handle", { toT: 9.05, ms: 1200 });
+      await wait(1.2);
+      await mark("paused-there");
+      tapEl("#handle");
+      await wait(3);
+    } },
+  { name: "A sound kept off the compass speaks",
+    setup() { base("A", { x: 3.5, z: -60.5 }, "aSound"); doneA(); S.yaw += 1.2; AUTH.item.aSound.shown = false; renderAuth(); },
+    async run() {
+      await wait(0.4);
+      tapItem("aSound");
+      await wait(4.6);
+      await mark("no-mark");
+      CFG.hidden = "mark"; syncCfg();
+      await wait(2.5);
+      await mark("marked");
+      CFG.hidden = USER.hidden; syncCfg();
+      await wait(1);
+    } },
+  { name: "A narrated long text",
+    setup() { base("A", { x: -6.2, z: -59.2 }, "aLong"); doneA(); },
+    async run() {
+      await wait(0.6);
+      tapWorld("aLong:listen");
+      await wait(3.2);
+      await mark("top");
+      CFG.narr = "plate"; syncCfg();
+      await wait(3);
+      await mark("on-sign");
+      await turnBy(Math.PI * 0.75, 1.6);
+      await wait(1.6);
+      await mark("docked");
+      CFG.narr = USER.narr; syncCfg();
+      await wait(1);
+    } },
+  { name: "Station B: which of three speaks",
+    setup() { base("B", B_IN, "ringer"); doneA(); },
+    async run() {
+      await standStill();
+      tapWorld("baker");
+      await wait(1.2);
+      await mark("notch");
+      await turnTo(itById("mason"), 1.0);
+      await wait(1.2);
+      await mark("notch-side");
+      await until(stepDone);
+      await wait(0.4);
+      tapEl("#handle");
+      await wait(1);
+    } },
+  { name: "The creator's choice: the disc",
+    setup() { base("B", B_IN, "ringer"); doneA(); setLook("disc"); },
+    async run() {
+      await standStill();
+      tapWorld("ringer");
+      await wait(1.4);
+      await mark("disc");
+      await turnBy(Math.PI * 0.8, 1.4);
+      await wait(1.2);
+      await mark("disc-behind");
+      await until(stepDone);
+      await wait(1);
+    } },
+];
+let runId = 0;
+function cancelScripts() { runId++; waiters = []; S.auto = null; S.turn = null; markRes = null; S.paused = false; stopDrift(); pdCancel(); $("#finger").hidden = true; $("#friend").hidden = true; }
+async function gotoBeat(n) {
+  cancelScripts(); dismissTry();
+  const my = runId;
+  beat = n;
+  AUTH = defaultAuth();
+  CFG.narr = USER.narr; CFG.hidden = USER.hidden;
+  syncCfg(); renderAuth();
+  layoutDirty = true;
+  BEATS[n - 1].setup();
+  ui();
+  await BEATS[n - 1].run();
+  if (my !== runId) return false;
+  window.HC.done = n;
+  return true;
+}
+
+/* ======================================================================
+   Controls
+   ====================================================================== */
+const tryEl = $("#try");
+const tryTimer = setTimeout(dismissTry, 14000);
+function dismissTry() { tryEl.classList.add("gone"); clearTimeout(tryTimer); }
+$("#prevBtn").onclick = () => gotoBeat(Math.max(1, (beat || 1) - 1));
+$("#nextBtn").onclick = () => gotoBeat(Math.min(BEATS.length, beat + 1));
+$("#menuBtn").onclick = () => { $("#demo").hidden = !$("#demo").hidden; };
+$("#demoClose").onclick = () => { $("#demo").hidden = true; };
+$("#measureBtn").onclick = () => { measuring = !measuring; $("#measureBtn").classList.toggle("on", measuring); measure(); };
+$("#measureBtn").classList.toggle("on", measuring);
+$("#exitBtn").onclick = () => {};
+{
+  const bb = $("#beatBtns");
+  BEATS.forEach((b, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button"; btn.textContent = `${i + 1}. ${b.name}`;
+    btn.onclick = () => { gotoBeat(i + 1); if (innerWidth < 960) $("#demo").hidden = true; };
+    bb.appendChild(btn);
+  });
+  const free = document.createElement("button");
+  free.type = "button"; free.textContent = "Start again, walk freely"; free.style.gridColumn = "1/-1";
+  free.onclick = () => { cancelScripts(); beat = 0; S = fresh(); lastStation = A; if (innerWidth < 960) $("#demo").hidden = true; };
+  bb.appendChild(free);
+}
+function syncCfg() {
+  for (const b of document.querySelectorAll("[data-cfg]")) b.classList.toggle("on", String(CFG[b.dataset.cfg]) === b.dataset.v);
+  layoutDirty = true;
+}
+for (const b of document.querySelectorAll("[data-cfg]"))
+  b.onclick = () => {
+    const k = b.dataset.cfg;
+    CFG[k] = typeof CFG[k] === "number" ? Number(b.dataset.v) : b.dataset.v;
+    if (k === "narr" || k === "hidden") USER[k] = CFG[k];
+    syncCfg();
+  };
+syncCfg();
+renderAuth();
+
+/* ======================================================================
+   The frame loop: simulation, the compass, the HUD; layout reads only after a resize or a setting change
+   ====================================================================== */
+let lastNow = performance.now(), lastMeasure = 0, lastW = 0, lastH = 0, worstSince = performance.now();
+function frame(now) {
+  const rawMs = now - lastNow;
+  lastNow = now;
+  worstFrame = Math.max(worstFrame, rawMs);
+  if (now - worstSince > 2000) { frameWorstWindow = worstFrame; worstFrame = 0; worstSince = now; }
+  if (BENCH) BENCH.ms.push(rawMs);
+  const dt = Math.min(0.05, rawMs / 1000) * SPEED;
+  const w = device.clientWidth, h = device.clientHeight;
+  if (w !== lastW || h !== lastH) {
+    lastW = w; lastH = h;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.fov = w > h ? 50 : 64; camera.updateProjectionMatrix();
+    viewH.value = h * renderer.getPixelRatio();
+    layoutDirty = true;
+  }
+  if (layoutDirty) { layoutDirty = false; layoutHud(w, h); layoutCompass(); }
+  if (!S.paused) { T += dt; sim(dt); }
+  readSource();
+  if (!S.paused) updateWorld(dt);
+  camera.position.set(S.pos.x, 1.6, S.pos.z);
+  camera.rotation.set(S.pitch, S.yaw, 0);
+  updateCompass();
+  renderer.render(scene, camera);
+  ui();
+  if (measuring && now - lastMeasure > 250) { lastMeasure = now; measure(); }
+  requestAnimationFrame(frame);
+}
+addEventListener("resize", () => { layoutDirty = true; });
+window.HC = {
+  lastMark: null, done: 0, stats, CFG,
+  goto: (n) => gotoBeat(n),
+  resume: () => { if (markRes) { const r = markRes; markRes = null; r(); } },
+  measure: () => measure(),
+  state: () => S, source: () => ({ ...SRC, clip: SRC.clip && SRC.clip.key }), auth: () => AUTH, setLook,
+  bench: (sec = 20) => new Promise((res) => {
+    BENCH = { ms: [], u0: compassUpdates, t0: performance.now() };
+    setTimeout(() => {
+      const b = BENCH; BENCH = null;
+      const a = b.ms.slice(1).sort((p, q) => p - q), s = (performance.now() - b.t0) / 1000;
+      res({ frames: a.length, median: a[Math.floor(a.length / 2)], p95: a[Math.floor(a.length * 0.95)], worst: a[a.length - 1], compassUpdatesPerS: (compassUpdates - b.u0) / s });
+    }, sec * 1000);
+  }),
+};
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
