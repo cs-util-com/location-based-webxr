@@ -1525,27 +1525,30 @@ describe("the colour scheme (colour schemes plan 2026-11-10-0841)", () => {
     // Why this test matters: a failed build's error carries the worker's
     // stack, and the worker's error may have another name than the one the
     // page throws. Its first line then reads "OtherName: message", which a
-    // check for this error's own name let through, message and all.
-    it("drops the message from a frameless stack written under another error's name", async () => {
-      vi.spyOn(console, "error").mockImplementation(() => {});
-      clearLogBuffer();
-      const error = new Error("No tiles near Heidelberg Altstadt");
-      error.stack =
-        "TypeError: No tiles near Heidelberg Altstadt, nor the Neckarwiese\nscoreRing@https://example.test/worker.js:10:5\n";
-      const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
-      await createRefreshCycle({
-        store: demo.store,
-        actions: demo.actions,
-        anchors: createAnchorHolder(COLOGNE),
-        worker: { call: () => Promise.reject(error) },
-        onMesh: () => {},
-      })();
-      const entry = getLogBuffer().at(-1);
-      expect(entry?.message).toContain(
-        "scoreRing@https://example.test/worker.js:10:5",
-      );
-      expect(entry?.message).not.toContain("Heidelberg");
-      expect(entry?.message).not.toContain("Neckarwiese");
-    });
+    // check for this error's own name let through, message and all. A
+    // name need not be one word either: a custom error may carry spaces or
+    // brackets in it.
+    for (const name of ["TypeError", "Mesh build [worker] Error"]) {
+      it(`drops the message from a frameless V8 stack written under another error's name (${name})`, async () => {
+        vi.spyOn(console, "error").mockImplementation(() => {});
+        clearLogBuffer();
+        const error = new Error("No tiles near Heidelberg Altstadt");
+        // Header-only, as V8 writes a stack with no frames: the message
+        // differs from this error's own, so only the header check drops it.
+        error.stack = `${name}: No tiles near Heidelberg Altstadt, nor the Neckarwiese\n`;
+        const demo = createDemoStore({ start: COLOGNE, category: "walkable" });
+        await createRefreshCycle({
+          store: demo.store,
+          actions: demo.actions,
+          anchors: createAnchorHolder(COLOGNE),
+          worker: { call: () => Promise.reject(error) },
+          onMesh: () => {},
+        })();
+        const entry = getLogBuffer().at(-1);
+        expect(entry?.message).toContain("Error");
+        expect(entry?.message).not.toContain("Heidelberg");
+        expect(entry?.message).not.toContain("Neckarwiese");
+      });
+    }
   });
 });

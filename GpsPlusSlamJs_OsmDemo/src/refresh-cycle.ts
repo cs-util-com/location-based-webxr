@@ -317,8 +317,9 @@ function reportFailedBuild(
  * every line is, except any that is the message after all: a V8 stack with
  * no frames still opens with "Name: message". That name need not be this
  * error's own (a failed build carries the worker's stack, whose error may be
- * a `TypeError`), so any line that opens like a header is dropped; a frame
- * never does, as its name is followed by `@`.
+ * a `TypeError`, or a custom name with spaces or brackets), so any line
+ * with a ": " (or a closing ":") before its first `@` is dropped; a frame
+ * never has one, as its name is followed by `@` and the colons come after.
  */
 function withoutMessage(error: unknown): string {
   if (!(error instanceof Error)) return typeof error;
@@ -329,7 +330,7 @@ function withoutMessage(error: unknown): string {
   if (v8.length > 0) return [error.name, ...v8].join("\n");
   const message = new Set(error.message.split("\n").map((line) => line.trim()));
   const frames = lines.filter(
-    (line) => !/^[\w$.]+:(\s|$)/.test(line) && !message.has(line.trim()),
+    (line) => !/^[^@]*:(\s|$)/.test(line) && !message.has(line.trim()),
   );
   return [error.name, ...frames].join("\n");
 }
