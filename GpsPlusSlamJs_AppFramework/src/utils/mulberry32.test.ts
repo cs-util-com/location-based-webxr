@@ -48,7 +48,7 @@ describe('mulberry32 (properties)', () => {
           expect(x).toBeGreaterThanOrEqual(0);
           expect(x).toBeLessThan(1);
         }
-      }),
+      })
     );
   });
 });

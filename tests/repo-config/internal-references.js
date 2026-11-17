@@ -121,15 +121,17 @@ const PATTERNS = Object.freeze([
     // second number is no grey is matched, so a grey cannot shield the
     // number after it. A grey first in a list still passes whatever follows
     // it: the cost of letting a CSS list (a gradient's colours) through. A
-    // four-digit colour with alpha in decimal digits only is still
-    // matched: an accepted false positive, since it is the length of a pull
-    // request number and main has none.
+    // four-digit colour with alpha, or a short colour that is no grey, in
+    // decimal digits only, is still matched: an accepted false positive,
+    // since it reads exactly like a pull request number and main has none.
     name: 'pull-request number',
     regex: new RegExp(
       [
         `\\b${'P'}Rs? ?#\\d+`,
         `\\b${'pull'} requests? #\\d+`,
-        '\\((?:see )?(?!#(\\d)\\1\\1(?:[,)]| and #(\\d)\\2\\2(?!\\d)))#\\d{2,5}(?:[,)]| and #\\d)',
+        // Named groups: an index like `\1` counts across every alternative
+        // of the joined pattern, so a group added above would shift it.
+        '\\((?:see )?(?!#(?<grey>\\d)\\k<grey>\\k<grey>(?:[,)]| and #(?<pair>\\d)\\k<pair>\\k<pair>(?!\\d)))#\\d{2,5}(?:[,)]| and #\\d)',
         "#\\d{3,}(?:['’]s)? (?:cold )?(?:re-?)?review",
         '\\b(?:review|reviewed|bot) on #\\d{2,}',
         '(?:(?:location-based-webxr|gps-plus-slam)/|(?<![\\w./-]))pull/\\d+',

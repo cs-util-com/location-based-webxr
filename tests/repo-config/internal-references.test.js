@@ -98,12 +98,22 @@ describe('matchLine', () => {
     [`Raised in review on #${4242}.`, 'pull-request number'],
     [`found by a review bot on #${4242}`, 'pull-request number'],
     [`a repeated number (#${4444}) is a number`, 'pull-request number'],
-    // An accepted false positive: a four-digit colour with alpha in decimal
-    // digits only reads exactly like a pull-request number.
-    [`a colour with alpha (#${4243})`, 'pull-request number'],
   ])('flags %j as %s', (line, name) => {
     expect(matchLine(line)).toContain(name);
   });
+
+  // Why: these are colours, yet they are flagged, and the sidecar names them
+  // as the accepted cost of the parenthesised form. Pinned on their own so a
+  // change that starts letting them through is a visible decision, not a
+  // side effect: a decimal-only colour with alpha, and a short decimal-only
+  // colour that is no grey (with a leading zero, so the example cannot be
+  // read as a real pull-request number).
+  it.each([`a colour with alpha (#${4248})`, `a short colour (#0${12})`])(
+    'flags the decimal-only colour %j, an accepted false positive',
+    (line) => {
+      expect(matchLine(line)).toEqual(['pull-request number']);
+    },
+  );
 
   it('flags a review pointer, and its branch number with it', () => {
     expect(matchLine(`// (${REVIEW(4242)} #4)`)).toEqual([
@@ -121,7 +131,7 @@ describe('matchLine', () => {
     'the second case (#1) and (#7)',
     'color: #333; background: #ff0000;',
     'a grey (#333), black (#000), white (#000000), mid grey (#808080)',
-    'a pair of greys (#333 and #999), (#333, #999)',
+    'a pair of greys (#333 and #000), (#333, #000)',
     'the hole (#171b26) and (#ff6b6b), a list item (#1, #2)',
     'r7 and r42 are too short; xr4242 and r4242x are identifiers',
     'the owners of this file, an ownership rule, owner',
