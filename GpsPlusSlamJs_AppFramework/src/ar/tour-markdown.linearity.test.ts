@@ -14,6 +14,7 @@
  * characters, where a quadratic walk reads about 16.
  */
 
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { __tourMarkdownWalkStepsForTests as walkStepsOf } from './tour-markdown';
@@ -64,8 +65,33 @@ const PATTERNS: Record<string, string> = {
   'one heading with closing hashes': '# a #',
 };
 
+/** The marks the long-body properties build their chunks from (the same
+ *  alphabet as tour-markdown.property.test.ts). */
+const CHUNK_ALPHABET = '#*_-+>[]()!\\ \n.1az';
+
 function grow(seed: string, size: number): string {
   return seed.repeat(Math.ceil(size / seed.length)).slice(0, size);
+}
+
+/** The inline marks alone: the emphasis and bracket passes, where every
+ *  quadratic shape found so far lived. */
+const INLINE_ALPHABET = '*_[]! a';
+
+/** Steps per character at `large` over those at `small` characters. A body
+ *  that costs no steps at either size counts as flat. */
+function slopeRatio(seed: string, small = SMALL, large = LARGE): number {
+  const perCharSmall = walkStepsOf(grow(seed, small)) / small;
+  const perCharLarge = walkStepsOf(grow(seed, large)) / large;
+  if (perCharSmall > 0) return perCharLarge / perCharSmall;
+  return perCharLarge === 0 ? 1 : Number.POSITIVE_INFINITY;
+}
+
+function chunkOf(alphabet: string): fc.Arbitrary<string> {
+  return fc.string({
+    unit: fc.constantFrom(...alphabet.split('')),
+    minLength: 1,
+    maxLength: 12,
+  });
 }
 
 describe('tour markdown parse work', () => {
@@ -77,6 +103,34 @@ describe('tour markdown parse work', () => {
       expect(large / small).toBeLessThan(MAX_SLOPE_RATIO);
     });
   }
+
+  // Why: the named patterns hold only the shapes someone already thought
+  // of. A random chunk of the marks, repeated, finds a quadratic shape
+  // nobody listed, as a time-bounded property once did, but by steps, so a
+  // loaded machine cannot flake it. The seed is fixed so a red run names
+  // the same chunk every time.
+  it('stays linear on random chunks of the marks', () => {
+    fc.assert(
+      fc.property(chunkOf(CHUNK_ALPHABET), (chunk) => {
+        expect(slopeRatio(chunk)).toBeLessThan(MAX_SLOPE_RATIO);
+      }),
+      { numRuns: 50, seed: 7 }
+    );
+  });
+
+  // Why: over every mark, only about 2 chunks in 1000 reached the
+  // quadratic emphasis walk this parser once had, so 50 runs would miss a
+  // defect that rare. Over the inline marks alone about 15 in 1000 did,
+  // and the slope already shows from 2 k to 32 k characters at a fifth of
+  // the cost, so 250 runs here would find it with about 97 % odds.
+  it('stays linear on random chunks of the inline marks', () => {
+    fc.assert(
+      fc.property(chunkOf(INLINE_ALPHABET), (chunk) => {
+        expect(slopeRatio(chunk, 2_000, 32_000)).toBeLessThan(MAX_SLOPE_RATIO);
+      }),
+      { numRuns: 250, seed: 7 }
+    );
+  });
 
   it('counts the same for the same body, whatever was read before', () => {
     const body = grow(PATTERNS.prose ?? '', 2_000);
