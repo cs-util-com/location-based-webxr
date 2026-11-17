@@ -23,6 +23,8 @@ const TOKENS = [
   ['the', 'owner'].join(' '),
   ['owner', 'decision'].join(' '),
   ['owner', 'question'].join(' '),
+  ['owner', 'rule'].join(' '),
+  ['repo', `${'own'}er's`, 'decision'].join(' '),
   ['die', 'Eigentümerin'].join(' '),
   ['den', 'Eigentuemern'].join(' '),
   `${'P'}Rs #4242`,
