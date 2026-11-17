@@ -14,6 +14,9 @@ Turns a `SkeletonRoof` (`roof-skeleton.ts`) into triangles: heights from
   - `surfaceVertices`: vertices `[0, surfaceVertices)` are slopes and caps,
     the rest are vertical gables, so a caller colours by position, not by
     normal.
+- `WELD_M` (0.003, metres): two corners nearer than this are one corner
+  (see the weld under "Invariants and assumptions"). Exported for the
+  invented roofs' property test, whose drawn-top bound is this distance.
 
 ## Invariants and assumptions
 

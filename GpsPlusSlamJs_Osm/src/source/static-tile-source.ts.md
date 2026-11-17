@@ -121,7 +121,13 @@ the library default is off.
    `refusalMemoryMs`, reads and speculative reads included: every tile
    goes straight to `fallback`, without even the read of step 1. Any HTTP
    answer that arrives meanwhile (a request that was already running when
-   another got none) clears that memory: the host has just answered. A header timer of the fill wait (the wait
+   another got none) clears that memory: the host has just answered. The
+   converse holds too: a request that gets no answer only sets the memory
+   when it was sent at or after the host's last answer (`lastAnswerAt`). A
+   read that gives up at 45 s after another request was answered at 2 s
+   says nothing newer about the host, so it is only a refusal of its tile
+   (inside the source the failure is a `NoAnswer` carrying its send time).
+   A header timer of the fill wait (the wait
    running out before an answer began) is `FillWaitSpent` inside the
    source and counts as the wait spent, not as no answer: the host had
    answered that tile's earlier requests.
@@ -253,7 +259,7 @@ const source = new CachingSource(
   left; a late tile's body read whole past the wait's end but within the
   per-request limit; a poll's re-read bounded by the same deadline, and a
   re-read cut by it still reporting the first copy with no refusal; a
-  caller abort during the re-read staying an abort with no report; a
+  caller abort during the re-read staying an abort with no report; a caller abort during the body read staying an abort with no race and no refusal; a
   re-read with no wait left, or one the caller aborted, leaving the
   allowance for the next read; a re-read failing with a host error, a
   network error or no headers in time spending it; the warning once per
@@ -263,6 +269,8 @@ const source = new CachingSource(
   the next fetch only reads; no fill asked with no wait left), a host that
   does not answer (a timed-out read or a network error skips the host for
   the next tiles, speculative ones too, until the memory passes; a refused
-  fill, a 500 and a poll cut by the fill wait do not), the poll timings (`slotWaitMs` for the wait), the bounded wait,
+  fill, a 500 and a poll cut by the fill wait do not; a failure of a
+  request sent before another request's answer does not either, while one
+  sent after the last answer does), the poll timings (`slotWaitMs` for the wait), the bounded wait,
   the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.

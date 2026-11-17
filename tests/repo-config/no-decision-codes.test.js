@@ -199,8 +199,10 @@ describe('decision-code guard', () => {
     it('carries no more than the counted backlog of other codes', () => {
       // Above BACKLOG: a new code was added - write the rule in plain words.
       // Below it is fine; lower BACKLOG to the new count when a rewrite lands.
-      // The message lists the codes per file, so the new one is found there;
-      // the 40 files with the most, so a failure stays readable.
+      // The message lists the codes per file for the 40 files with the most,
+      // so a failure stays readable. A new code in a file with few codes is
+      // usually NOT among them: find it in the branch's diff (its added
+      // lines), not in this message.
       const counts = countsByFile(hits);
       const shown = counts.slice(0, 40);
       if (counts.length > shown.length) shown.push(`+${counts.length - shown.length} more`);

@@ -76,3 +76,38 @@ describe("MapView programmatic pans", () => {
     );
   });
 });
+
+describe("MapView attribution control", () => {
+  /** Runs the attribution control's `onAdd`, which the stub never calls. */
+  function addAttributionControl(): HTMLElement {
+    calls.length = 0;
+    buildView();
+    const extend = calls.find((c) => c.path === "L.Control.extend");
+    const spec = extend?.args[0] as { onAdd?: () => HTMLElement } | undefined;
+    expect(spec?.onAdd).toBeTypeOf("function");
+    calls.length = 0;
+    return (spec?.onAdd as () => HTMLElement)();
+  }
+
+  // Why this test matters: the open Credits view is a scroll container
+  // inside the map. Leaflet zooms on `wheel`, which the click guard does
+  // not stop, so without the scroll guard a mouse wheel over the open list
+  // scrolled it AND zoomed the map underneath.
+  it("keeps a wheel over the control from zooming the map", () => {
+    const element = addAttributionControl();
+    expect(calls).toContainEqual({
+      path: "L.DomEvent.disableScrollPropagation",
+      args: [element],
+    });
+  });
+
+  // Why this test matters: a tap on "Credits" must not also read as a tap
+  // on the map, which moves the user.
+  it("keeps a click on the control from reaching the map", () => {
+    const element = addAttributionControl();
+    expect(calls).toContainEqual({
+      path: "L.DomEvent.disableClickPropagation",
+      args: [element],
+    });
+  });
+});
