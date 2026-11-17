@@ -157,6 +157,35 @@ describe("AttributionView: the resting line", () => {
     link.remove();
   });
 
+  it("adopts the legal link idempotently: a second call leaves one separator", () => {
+    // Why this test matters: the line is built by appending, so a repeated
+    // adopt would leave a stray pipe in front of the link.
+    const v = view();
+    const link = legalLink();
+    v.adoptLegalLink(link);
+    v.adoptLegalLink(link);
+    v.setEntries([OSM]);
+
+    expect(line(v).textContent).toBe("© OpenStreetMap | Credits | Legal");
+    expect(line(v).querySelectorAll(".map-attribution-sep")).toHaveLength(2);
+    link.remove();
+  });
+
+  it("adopting another legal link replaces the first, separator and all", () => {
+    const v = view();
+    const first = legalLink();
+    v.adoptLegalLink(first);
+    first.remove();
+    const second = legalLink();
+    v.adoptLegalLink(second);
+    v.setEntries([OSM]);
+
+    expect(line(v).contains(second)).toBe(true);
+    expect(line(v).textContent).toBe("© OpenStreetMap | Credits | Legal");
+    expect(line(v).querySelectorAll(".map-attribution-sep")).toHaveLength(2);
+    second.remove();
+  });
+
   it("shows nothing at all when there is nothing to credit and no legal link", () => {
     const v = view();
     v.setEntries([]);
@@ -302,6 +331,54 @@ describe("AttributionView: the Credits view", () => {
     if (document.activeElement === null) throw new Error("no focus");
     escape(document.activeElement);
     expect(panel(v).hidden).toBe(true);
+  });
+
+  it("re-renders a list of the same length when only a pinned flag flips", () => {
+    // Why this test matters: the unchanged-list check compares by value, and a
+    // check that looked only at the length, or skipped `pinned`, would keep a
+    // credit out of the resting line that its terms now ask to be visible.
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN]);
+    expect(line(v).textContent).not.toContain("Mapterhorn");
+
+    v.setEntries([OSM, { ...MAPTERHORN, pinned: true }]);
+    expect(line(v).textContent).toContain("Mapterhorn");
+
+    v.setEntries([OSM, MAPTERHORN]);
+    expect(line(v).textContent).not.toContain("Mapterhorn");
+  });
+
+  it("restores focus on a pinned link in the resting line after a re-render", () => {
+    // The pinned links re-render too; focus on one must land on its new link,
+    // not on <body>.
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN]);
+    const pinned = line(v).querySelector("a.map-attribution-short");
+    if (!(pinned instanceof HTMLAnchorElement)) throw new Error("no link");
+    pinned.focus();
+
+    v.setEntries([OSM, MAPTERHORN, AWS]);
+
+    const active = document.activeElement;
+    expect(active).not.toBe(pinned);
+    expect(active?.classList.contains("map-attribution-short")).toBe(true);
+    expect(active?.getAttribute("href")).toBe(OSM.href);
+  });
+
+  it("never takes focus from outside the control on a re-render", () => {
+    // A credit change arrives while the user works elsewhere (a terrain
+    // apply); pulling focus into the footer would interrupt them.
+    const v = view();
+    v.setEntries([OSM, MAPTERHORN]);
+    toggle(v).click();
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    outside.focus();
+
+    v.setEntries([OSM, AWS]);
+
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
   });
 
   it("drops a source when it stops being on screen", () => {

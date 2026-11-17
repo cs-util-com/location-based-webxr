@@ -22,6 +22,9 @@ const BASE = "https://tiles.example.dev";
 const TILE_URL = `${BASE}/osm/v${OVERPASS_SCHEMA_VERSION}/${TILE}.json.gz`;
 const FILL_URL = `${BASE}/fill/v${OVERPASS_SCHEMA_VERSION}/${TILE}`;
 const REPORT_URL = `${BASE}/report/v${OVERPASS_SCHEMA_VERSION}/${TILE}`;
+/** A second tile: what the host learnt from one tile must hold for others. */
+const TILE2 = latLngToCell(50.95, 7.0, 7);
+const TILE2_URL = `${BASE}/osm/v${OVERPASS_SCHEMA_VERSION}/${TILE2}.json.gz`;
 
 /** A response whose body's cancel() rejects, as a torn stream's can. */
 function uncancellable(status: number): Response {
@@ -450,14 +453,16 @@ describe("StaticTileSource", () => {
         });
       });
 
+    // A different tile follows the failed one: the memory is the host's,
+    // not the tile's, so a per-tile memory would fail these.
     it("after one read times out, the next tile goes to the race without asking the host", async () => {
       const { source, fallback, calls } = setup(
-        { [`GET ${TILE_URL}`]: [stalled(), stalled()] },
+        { [`GET ${TILE_URL}`]: [stalled()], [`GET ${TILE2_URL}`]: [stalled()] },
         { requestTimeoutMs: 20 },
       );
       await source.fetchTile(TILE);
       expect(calls).toHaveLength(1);
-      const next = await source.fetchTile(TILE);
+      const next = await source.fetchTile(TILE2);
       expect(next.sourceId).toBe("overpass:test");
       expect(calls).toHaveLength(1);
       expect(fallback.calls).toHaveLength(2);
@@ -468,7 +473,7 @@ describe("StaticTileSource", () => {
         [`GET ${TILE_URL}`]: [new TypeError("Failed to fetch")],
       });
       await source.fetchTile(TILE);
-      await source.fetchTile(TILE, { speculative: true });
+      await source.fetchTile(TILE2, { speculative: true });
       expect(calls).toHaveLength(1);
       expect(fallback.calls).toHaveLength(2);
       expect(fallback.calls[1]?.options?.speculative).toBe(true);
@@ -522,6 +527,78 @@ describe("StaticTileSource", () => {
         expect(next.sourceId).toBe("static:tiles.example.dev");
       });
     }
+
+    /** A 200 whose body breaks off after `prefix` (a dropped stream). */
+    const brokenBody =
+      (prefix: string): Reply =>
+      () => {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            if (prefix !== "")
+              controller.enqueue(new TextEncoder().encode(prefix));
+            controller.error(new TypeError("network error"));
+          },
+        });
+        return Promise.resolve(new Response(body, { status: 200 }));
+      };
+
+    it("a body that fails after its headers is an answer: other tiles are still read", async () => {
+      // Why this test matters: on a slow link a dense tile's body can run past
+      // the request limit, or the stream can drop, after the host has already
+      // answered 200. That is a refusal of this tile, not a host that is gone:
+      // taking it for an unreachable host sent every tile of the load to the
+      // race for the whole refusal memory.
+      const { source, fallback, calls } = setup({
+        [`GET ${TILE_URL}`]: [brokenBody('{"elements":[')],
+        [`GET ${TILE2_URL}`]: [new Response(PAYLOAD, { status: 200 })],
+      });
+      const first = await source.fetchTile(TILE);
+      expect(first.sourceId).toBe("overpass:test");
+      const next = await source.fetchTile(TILE2);
+      expect(next.sourceId).toBe("static:tiles.example.dev");
+      expect(calls).toHaveLength(2);
+      expect(fallback.calls).toHaveLength(1);
+    });
+
+    it("a body that broke off is still a refusal: the next missing tile asks for no fill", async () => {
+      // The converse: the failed body is remembered like any refusal, so no
+      // fill is asked for during the refusal memory.
+      const { source, calls } = setup({
+        [`GET ${TILE_URL}`]: [brokenBody("")],
+        [`GET ${TILE2_URL}`]: [new Response("nf", { status: 404 })],
+      });
+      await source.fetchTile(TILE);
+      const next = await source.fetchTile(TILE2);
+      expect(next.sourceId).toBe("overpass:test");
+      expect(calls.map((c) => c.method)).toEqual(["GET", "GET"]);
+    });
+
+    it("an answer that arrives after another request's failure clears the no-answer memory", async () => {
+      // Why this test matters: two reads run at once; one gets no answer and
+      // marks the host unreachable, then the other's answer arrives. The host
+      // has just answered, so the next tile must ask it again rather than
+      // race for the whole refusal memory.
+      let answerLate: ((response: Response) => void) | undefined;
+      const late: Reply = () =>
+        new Promise<Response>((resolve) => {
+          answerLate = resolve;
+        });
+      const { source, calls } = setup({
+        [`GET ${TILE_URL}`]: [
+          new TypeError("Failed to fetch"),
+          new Response(PAYLOAD, { status: 200 }),
+        ],
+        [`GET ${TILE2_URL}`]: [late],
+      });
+      const pending = source.fetchTile(TILE2);
+      const failed = await source.fetchTile(TILE);
+      expect(failed.sourceId).toBe("overpass:test");
+      answerLate?.(new Response(PAYLOAD, { status: 200 }));
+      expect((await pending).sourceId).toBe("static:tiles.example.dev");
+      const next = await source.fetchTile(TILE);
+      expect(next.sourceId).toBe("static:tiles.example.dev");
+      expect(calls).toHaveLength(3);
+    });
 
     it("a poll with no answer before the fill wait ends is not taken for an unreachable host", async () => {
       // The fill wait's own deadline cut the poll: the host had answered the

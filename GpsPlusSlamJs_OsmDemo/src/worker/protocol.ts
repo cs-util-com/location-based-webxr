@@ -817,8 +817,8 @@ export interface MeshBuildChoices {
  */
 export class MeshBuildError extends Error {
   readonly failedBuild: MeshBuildChoices;
-  constructor(message: string, failedBuild: MeshBuildChoices, cause?: unknown) {
-    super(message, cause === undefined ? undefined : { cause });
+  constructor(message: string, failedBuild: MeshBuildChoices) {
+    super(message);
     this.name = "MeshBuildError";
     this.failedBuild = failedBuild;
   }

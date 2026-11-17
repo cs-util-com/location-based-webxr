@@ -40,6 +40,7 @@ const POLL_MS = 250;
  * The project's tile host (the Osm library's `OSM_TILES_BASE_URL`), which
  * both apps' city loaders ask before the Overpass race. Written out here:
  * this package does not depend on the Osm package by name.
+ * `tests/repo-config/osm-tiles-host-copy.test.js` holds the two together.
  */
 const TILE_HOST = "osm-tiles.csutil.workers.dev";
 const isTileHost = (url) => url.hostname === TILE_HOST;

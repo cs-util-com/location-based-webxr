@@ -116,10 +116,12 @@ the library default is off.
    during `refusalMemoryMs`. After an HTTP answer (a refusal, a host error)
    or the fill wait running out, stored files are still read in that time:
    a refused fill says nothing about the files the host already holds.
-   After NO answer (a network error, a request or body past
+   After NO answer (a network error, or no headers within
    `requestTimeoutMs`), the host is not asked anything during
    `refusalMemoryMs`, reads and speculative reads included: every tile
-   goes straight to `fallback`. A header timer of the fill wait (the wait
+   goes straight to `fallback`, without even the read of step 1. Any HTTP
+   answer that arrives meanwhile (a request that was already running when
+   another got none) clears that memory: the host has just answered. A header timer of the fill wait (the wait
    running out before an answer began) is `FillWaitSpent` inside the
    source and counts as the wait spent, not as no answer: the host had
    answered that tile's earlier requests.
@@ -149,9 +151,11 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
 - **The fallback runs at most once per tile**, and a tile is always delivered
   by exactly one of the two (property test over random host answers).
 - **No answer, no further asks** for `refusalMemoryMs`: a test times one
-  read out and asserts the next tile reaches the race with no request to
-  the host; a refused fill, a host error and a poll cut by the fill wait
-  keep stored files readable.
+  read out and asserts the next, different tile reaches the race with no
+  request to the host (so the memory is the host's, not the tile's); a
+  refused fill, a host error, a body that broke off after its headers and
+  a poll cut by the fill wait keep stored files readable, and an answer
+  arriving after another request's failure clears the memory.
 - **An abort is rethrown**, never turned into a fallback, and does not mark the
   host as refusing.
 - **`speculative` is forwarded** to the fallback untouched.
@@ -202,10 +206,13 @@ included) is `slotWaitMs`, so a queued fill never reads as a slow download.
     the black-holed case to one limit per memory. A separate, shorter limit
     on the headers alone would be the safer cut, but needs a measurement of
     the host's header latency on phones first.
-- A body that fails while it is read (`text()` rejecting with a
-  `TypeError`) is a host failure with the refusal remembered and the host
-  not asked at all for the memory, exactly like a network drop: the two cannot be told apart, and either way this read got
-  nothing from the host.
+- A body that fails while it is read (`text()` rejecting: the stream
+  dropped, or a dense tile ran past `requestTimeoutMs` on a slow link) is
+  a `HostDeclined`: the refusal is remembered, but the host sent its
+  headers, so it is not taken for unreachable and stored files of other
+  tiles are still read. Taking it for no answer sent every tile of a load
+  to the race for the whole memory, on exactly the slow links where the
+  host is the faster path. A caller abort during the read stays an abort.
 - Defensive: unknown statuses are refusals; a bad stored file goes to the
   race and is reported, with no refusal (it says nothing about other
   tiles); the response bodies of 404s, refusals and fire-and-forget asks are

@@ -111,6 +111,10 @@ the invented roofscape) and the toggles plan
   by float32 rounding. The obstacle index cannot skip the check: whether a
   roof is granted, so its height, depends on it, and the index must agree
   with the city. So it stitches each granted roof once, as the city does.
+  The kept meshes are not dropped after use: a second build from the same
+  plan draws the checked mesh again rather than a fresh stitch that could
+  differ. The price is peak memory, every granted roof's eave-0 mesh held
+  until the build drops its plans.
 
 ## Examples
 
@@ -164,8 +168,9 @@ The warm delivery more than doubles, so the globe builds with
   pinned stars plan the same style and height (within 1 cm) in two frames
   about half a kilometre apart, as the city and the obstacle index plan them.
 - `invented-roofs.property.test.ts`: drawn top at the planned top within the
-  weld and never above it, the rise limit, two replayed seeds that once
-  failed a 0.5 mm closeness, order invariance, and the same plans under any translation of
+  weld and never above it, the rise limit, two hand-written neighbourhoods
+  that once failed a 0.5 mm closeness (pinned as literal houses, not as
+  seeds), order invariance, and the same plans under any translation of
   the input, over random rotated rectangles and Ls.
 - `testdata/sites/site-invented-roof-frames.test.ts`: the same decisions
   and heights (within 1 cm) with the frame moved east, north, both, and by

@@ -9,6 +9,7 @@ import {
   type InventedPlan,
 } from "./invented-roofs.js";
 import { ROOFSCAPE_DEFAULTS } from "./roofscape-rules.js";
+import { WELD_M } from "./skeleton-mesh.js";
 
 /**
  * Properties of the invented roofs over random small neighbourhoods.
@@ -82,9 +83,9 @@ function footprints(
   });
 }
 
-/**
- * How far the mesh may move a raised corner: `WELD_M` in `skeleton-mesh.ts`
- * (kept private there; change both together).
+/*
+ * How far the mesh may move a raised corner: `WELD_M`, imported from
+ * `skeleton-mesh.ts` so the bound moves with the weld.
  *
  * WHY THE DRAWN TOP MAY SIT UP TO THIS BELOW THE PLAN, and no closer bound
  * holds. Near-coincident skeleton events leave corners a hair apart on a
@@ -96,7 +97,6 @@ function footprints(
  * The weld cannot RAISE the top, because no raised corner stands above the
  * last event, so the bound is one-sided.
  */
-const WELD_M = 0.003;
 
 /** Float32 rounds a height by at most half an ulp (2^-24 relative); twice that. */
 const float32Slack = (heightM: number): number => Math.abs(heightM) * 2 ** -23;

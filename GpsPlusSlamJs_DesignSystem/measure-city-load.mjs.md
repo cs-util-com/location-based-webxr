@@ -39,3 +39,7 @@
 - Tests: none of its own (an eyeball tool, like `measure-globe.mjs`). The
   fields it reads are the smokes' (`globe-city.smoke.spec.mjs`,
   `globe-arrival.smoke.spec.mjs`; OsmDemo's `fixtures.js` `waitForRefresh`).
+  Its hand copy of the tile host name is held to the Osm library's
+  constant by `tests/repo-config/osm-tiles-host-copy.test.js` (the script
+  cannot import it: no dependency on the Osm package, and its source is
+  TypeScript).
