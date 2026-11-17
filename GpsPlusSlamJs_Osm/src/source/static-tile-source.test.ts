@@ -1580,6 +1580,50 @@ describe("StaticTileSource", () => {
     expect(fallback.calls).toEqual([]);
   });
 
+  it("a caller abort during the body read stays an abort: no race, no refusal", async () => {
+    // Why this test matters: a body that fails after its headers is a
+    // refusal of the tile, but the caller giving up is not the host's
+    // fault. Taking the abort for a refusal would race a tile nobody wants
+    // and stop fills for the whole memory.
+    let reading: (() => void) | undefined;
+    const bodyStarted = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    const abortedMidBody: Reply = (init?: RequestInit) => {
+      const signal = init?.signal;
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          signal?.addEventListener("abort", () => {
+            controller.error(signal.reason);
+          });
+        },
+        pull() {
+          reading?.();
+          return new Promise<void>(() => {});
+        },
+      });
+      return Promise.resolve(new Response(body, { status: 200 }));
+    };
+    const { source, fallback, calls } = setup({
+      [`GET ${TILE_URL}`]: [
+        abortedMidBody,
+        new Response("nf", { status: 404 }),
+        new Response(PAYLOAD, { status: 200 }),
+      ],
+      [`POST ${FILL_URL}`]: [json(200, { status: "present" })],
+    });
+    const caller = new AbortController();
+    const pending = source.fetchTile(TILE, { signal: caller.signal });
+    await bodyStarted;
+    caller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(fallback.calls).toEqual([]);
+    // No refusal remembered: the next miss still asks for a fill.
+    const next = await source.fetchTile(TILE);
+    expect(next.sourceId).toBe("static:tiles.example.dev");
+    expect(calls.map((c) => c.method)).toEqual(["GET", "GET", "POST", "GET"]);
+  });
+
   it("refuses a base URL that is not http(s)", () => {
     expect(
       () =>

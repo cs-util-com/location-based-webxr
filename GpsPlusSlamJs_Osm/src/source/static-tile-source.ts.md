@@ -259,7 +259,7 @@ const source = new CachingSource(
   left; a late tile's body read whole past the wait's end but within the
   per-request limit; a poll's re-read bounded by the same deadline, and a
   re-read cut by it still reporting the first copy with no refusal; a
-  caller abort during the re-read staying an abort with no report; a
+  caller abort during the re-read staying an abort with no report; a caller abort during the body read staying an abort with no race and no refusal; a
   re-read with no wait left, or one the caller aborted, leaving the
   allowance for the next read; a re-read failing with a host error, a
   network error or no headers in time spending it; the warning once per
