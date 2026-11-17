@@ -78,11 +78,14 @@ function samplePoints(
   return out;
 }
 
-/** Twice the area over the longest edge squared (height over longest
- *  edge) below which a triangle is measured by its segments: 1e-6, a
- *  10 µm error on a 10 m model, while the region tests' rounding noise
- *  stays about 1e-10 of a decision for points within the model's size. */
-const SLIVER2 = 1e-12;
+/** The square of the height-to-longest-edge ratio h/L below which a
+ *  triangle is measured by its segments (h/L = 1e-5). Both sides only
+ *  over-read: the segments by at most h/2 below it, the region path's
+ *  rounding noise by about eps * (L/h)^2 of L above it (more for points
+ *  much farther than L), and the two balance near h/L = eps^(1/3), about
+ *  6e-6. A corner property of 300 000 random runs passed from 1e-8 to
+ *  1e-16 and failed at 1e-20. */
+const SLIVER2 = 1e-10;
 
 /** The squared distance from p to triangle (a, b, c), which are offsets
  *  into `P` (closest point on a triangle, Ericson's regions). */
@@ -119,10 +122,10 @@ export function pointTri2(
       segment2(px, py, pz, bx, by, bz, cx, cy, cz),
       segment2(px, py, pz, ax, ay, az, cx, cy, cz),
     );
-  // a zero-area triangle, or a sliver whose height is under SLIVER of its
-  // longest edge: the region formulas below would divide by zero, or
+  // a zero-area triangle, or a sliver whose height is under sqrt(SLIVER2)
+  // of its longest edge: the region formulas below would divide by zero, or
   // subtract near-equal products and read rounding noise as a region, so
-  // its segments decide (an error of at most that height)
+  // its segments decide (an over-read of at most half that height)
   const l2 = Math.max(
     abx * abx + aby * aby + abz * abz,
     acx * acx + acy * acy + acz * acz,
@@ -357,7 +360,8 @@ export class SurfaceGrid {
     const box = this.largeBox;
     for (let k = 0; k < this.large.length; k++) {
       // a triangle is no nearer than its box: skip it when the box is
-      // already farther than the best (exact, never a missed triangle).
+      // already farther than the best (exact up to the triangle's own
+      // rounding).
       // Not on a tie: at subnormal distances a triangle's own rounding can
       // read below its box's equal value.
       const dx = Math.max(box[6 * k]! - px, 0, px - box[6 * k + 3]!);
@@ -396,6 +400,7 @@ export class SurfaceGrid {
         }
       }
       // any point outside the searched cube is at least r cells away
+      // (strict: on a tie the search goes on, so no triangle is missed)
       if (best < (r * this.cell) ** 2) break;
     }
     return Math.sqrt(best);

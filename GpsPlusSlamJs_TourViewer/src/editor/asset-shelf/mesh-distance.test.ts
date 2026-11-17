@@ -75,16 +75,35 @@ describe("pointTri2", () => {
     expect(d).toBeLessThan(1e-150);
   });
 
-  // Why: a sliver this thin is no underflow case: every product is finite,
-  // but the region tests subtract near-equal products, read rounding noise
-  // as a sign, and fall into the interior branch with a garbage weight.
+  // Why: this sliver's squared area is the smallest subnormal, not zero, so
+  // the zero-area guard lets it through; the region tests then subtract
+  // near-equal products, read rounding noise as a sign, and fall into the
+  // interior branch with a garbage weight.
   // The property found it reading corner a (25) for a point on corner c.
   it("measures a sliver whose region tests read rounding noise by its segments", () => {
     const sliver = [
       0, 0, 0, 7.86781753728706e-12, 0, 0, -5, 0, 1.9976667954663626e-151,
     ];
     const d = pointTri2(-4.9999999999999885, 0, 0, sliver, 0, 3, 6);
-    expect(d).toBeLessThan(1e-12);
+    // the point is 1.2e-14 from corner c: about 1.3e-28 squared
+    expect(d).toBeLessThan(1e-27);
+  });
+
+  // Why: a thin but real triangle (height 1e-3 of its edge) must keep its
+  // interior: measured by its segments, a point inside it would read the
+  // square of its distance to the nearest edge. This pins the sliver
+  // threshold from above, which the corner property cannot (segments never
+  // exceed a corner), and checks every vertex order, so the threshold does
+  // not depend on which corner is thin.
+  it("measures a thin but real triangle by its interior, in every vertex order", () => {
+    const thin = [0, 0, 0, 1, 0, 0, 0.5, 0, 1e-3];
+    for (const [a, b, c] of [
+      [0, 3, 6],
+      [3, 6, 0],
+      [6, 0, 3],
+    ] as const) {
+      expect(pointTri2(0.5, 0, 2.5e-4, thin, a, b, c)).toBeLessThan(1e-12);
+    }
   });
 
   // Why: the closest point can never be farther than any corner.
