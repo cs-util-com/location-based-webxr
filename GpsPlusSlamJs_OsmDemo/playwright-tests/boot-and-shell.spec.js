@@ -1255,7 +1255,7 @@ test.describe("the phone layout", () => {
     await test.step("keeps every credit reachable on a landscape phone with the sheet at its floor", async () => {
       // The Credits view grows upward from the line, inside the map's
       // `overflow: hidden`. On a landscape phone with the sheet dragged to
-      // its 20 % floor the map is a strip of about 80 px, and a view taller
+      // its 20 % floor the map is a strip of 72 px, and a view taller
       // than that had its top credits cut off with no way to reach them.
       // It scrolls inside the map instead: every credit link can be brought
       // into view, and the open control stays inside the map's box.
