@@ -885,7 +885,7 @@
         /* A width floor, so 24 px holds in both directions. This rule comes
            BEFORE the shared one below: its `font: inherit` resets
            `line-height`, which the shared rule then sets again. */
-        min-width: 1.5rem;
+        min-width: max(24px, 1.5rem);
         padding: 0;
         border: 0;
         background: none;
@@ -896,8 +896,10 @@
         text-decoration: underline;
         cursor: pointer;
       }
-      /* A REAL TAP TARGET for every item: 1.5 rem = 24 px tall, the WCAG 2.2
-         SC 2.5.8 floor. Not 44 px: the line is meant to stay thin. The
+      /* A REAL TAP TARGET for every item: at least 24 px tall, the WCAG 2.2
+         SC 2.5.8 floor, also under a root font smaller than 16 px (hence
+         the `max`; 1.5rem grows with a larger one). Not 44 px: the line is
+         meant to stay thin. The
          Credits rows too: each link is a row of its own, not a word inside a
          sentence, so the inline exception does not cover it, and the rows
          sit closer than 24 px, so the spacing exception does not either. */
@@ -905,7 +907,7 @@
       .map-attribution-credit a,
       .map-attribution-toggle {
         display: inline-block;
-        min-height: 1.5rem;
+        min-height: max(24px, 1.5rem);
         line-height: 1.5rem;
         vertical-align: bottom;
       }
@@ -923,15 +925,30 @@
          on. */
       /* BOUNDED BY THE MAP, and scrolling inside it. The view grows upward
          from the line inside the map's `overflow: hidden`; on a landscape
-         phone with the sheet at its 20 % floor the map is about 70 px tall,
-         and an unbounded view lost its top credits there, out of reach.
-         `cqh` is the map's height (`#map` is a size container in the
-         mobile query below); 1.75rem leaves the 24 px line and a little
-         margin. Without a container, as on the desktop layout, `cqh` falls
-         back to the viewport's height: a bound that never binds there. */
+         phone with the sheet at its 20 % floor the map is 72 px tall, and
+         an unbounded view lost its top credits there, out of reach.
+         The whole control is a column no taller than the map (`cqh` is the
+         map's height: `#map` is a size container in the mobile query
+         below); the line keeps its height and the view takes what is
+         left, so the bound holds however many lines the footer wraps to.
+         Without a container, as on the desktop layout, `cqh` falls back to
+         the viewport's height: a bound that never binds there. */
+      .map-attribution {
+        display: flex;
+        flex-direction: column;
+        max-height: 100cqh;
+      }
+      /* `display: flex` above would otherwise override `hidden`, which
+         the control sets when it has nothing to show. */
+      .map-attribution[hidden] {
+        display: none;
+      }
+      .map-attribution-line {
+        flex: none;
+      }
       .map-attribution-full {
+        min-height: 0;
         padding-top: 0.15rem;
-        max-height: calc(100cqh - 1.75rem);
         overflow-y: auto;
         overscroll-behavior: contain;
       }
@@ -972,7 +989,7 @@
           height: var(--sheet-height, 45%);
           z-index: 500;
           border-top: 1px solid #2a2f3d;
-          /* The Credits view's bound (`.map-attribution-full`). Only here:
+          /* The Credits control's bound (`.map-attribution`). Only here:
              the sheet's height is explicit, so size containment changes
              nothing, and its z-index already makes it a stacking context,
              which the containment would otherwise add on the desktop. */
