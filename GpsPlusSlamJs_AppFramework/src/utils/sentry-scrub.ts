@@ -177,7 +177,7 @@ export interface ScrubOptions {
    * `.`, with `[]` for any array element (`debug_meta.images[].debug_id`).
    * Only the places the error service's SDK writes its own ids belong here:
    * a value under the same key name anywhere else is scrubbed as usual, and
-   * so is everything under a key that holds `.`, `[` or `]`.
+   * so is everything under a key that holds `.`, `[` or `]`, or is empty.
    */
   readonly keepIdsAt?: ReadonlySet<string>;
 }

@@ -130,7 +130,7 @@ the library default is off.
    refusal of its tile (inside the source the failure is a `NoAnswer`
    carrying its count). A count, not a send time, because the clock cannot
    order a send and an answer in the same millisecond, and both orders
-   happen: a ring warm sent just before a cache hit's answer is overtaken,
+   happen: a ring warm sent just before an edge cache hit's answer (a network answer) is overtaken,
    while a fill POST sent right after its read's 404 is not.
    A header timer of the fill wait (the wait
    running out before an answer began) is `FillWaitSpent` inside the

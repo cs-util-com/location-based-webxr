@@ -667,7 +667,7 @@ describe("StaticTileSource", () => {
 
     // Why these two matter: the clock cannot order a request against an
     // answer that came in the same millisecond, and both orders happen. A
-    // ring warm can go out just before a cache hit is answered, in the same
+    // ring warm can go out just before an edge cache hit is answered, in the same
     // millisecond: the answer is newer, so the warm's silence is not news.
     // A fill POST goes out right after its read's 404, in the same
     // millisecond: no answer is newer than the POST, so its silence is.

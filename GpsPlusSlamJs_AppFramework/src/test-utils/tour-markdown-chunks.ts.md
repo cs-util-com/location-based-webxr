@@ -4,7 +4,7 @@
 
 ## Public API
 
-- `TOUR_MARKDOWN_CHUNK_ALPHABET`: `#*_-+>[]()!\` plus a space, a newline, `.`, `1`, `a` and `z`; every block and inline mark the parser reads, with enough plain text between them to open and close blocks.
+- `TOUR_MARKDOWN_CHUNK_ALPHABET`: `#*_-+>[]()!\` plus a space, a newline, `.`, `1`, `a` and `z`; the block and inline marks of the accepted subset (the code span's backtick, the table's pipe, `<`, `&`, `~`, `^` and a setext `=` are not in it, so the long-body properties do not search those scanners), with enough plain text between them to open and close blocks.
 
 ## Invariants
 
