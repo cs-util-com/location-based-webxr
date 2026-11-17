@@ -94,6 +94,11 @@ raster basemap.
     _prepends_ into a bottom corner — so the first control added ends up lowest,
     with the AR and locate buttons stacking above the credit rather than over
     it. An e2e asserts that by bounding-box arithmetic.
+  - **Neither a click nor a wheel over the control reaches the map.** A tap on
+    "Credits" would otherwise move the user, and the open Credits view is a
+    scroll container: Leaflet zooms on `wheel`, which
+    `disableClickPropagation` does not stop, so the control also takes
+    `disableScrollPropagation`. `map-view.test.ts` pins both guards.
   - **`setTerrainAttribution` takes entries, not a string**, and an empty list
     is how the elevation credits are removed. The OSM credit is not the
     caller's to add or remove: this class always carries it.
@@ -123,7 +128,10 @@ const scale = view.render(cells, regions, "walkable", threshold, showBelow);
 
 ## Tests
 
-None directly (Leaflet needs a DOM); the data it draws is tested in
+`map-view.test.ts` runs the constructor against a recording Leaflet stub: the
+two programmatic pans are unanimated, and the attribution control stops both
+click and wheel propagation. Nothing renders there (Leaflet needs a browser
+DOM); the data it draws is tested in
 `demo-pipeline`, the colours in `heat-colours.test.ts`, the band classifier in
 `legend-model.test.ts`, the contributor ordering in `contributor-order.test.ts`,
 and the escaping in the framework’s `escape-html.test.ts`. What only a browser can show — that

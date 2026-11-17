@@ -224,6 +224,10 @@ export class MapView {
         // and reads as "the user clicked here to move" — the same guard
         // `locate-control.ts` needs for the same reason.
         L.DomEvent.disableClickPropagation(this.attribution.element);
+        // The open Credits view scrolls inside the map, and Leaflet zooms on
+        // `wheel`, which the click guard does not cover: without this a
+        // wheel over the list scrolls it and zooms the map at once.
+        L.DomEvent.disableScrollPropagation(this.attribution.element);
         return this.attribution.element;
       },
     });
