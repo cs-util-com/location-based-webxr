@@ -1,0 +1,2582 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Calm HUD r4 - Sentence timeline</title>
+    <style>
+      :root {
+        --ink: #14171d;
+        --line: #1f2430;
+        --paper: #fbfaf7;
+        --muted: #8a8e96;
+        --seg: #d4d0c6;
+        --accent: #1d5fd6;
+        --fs: 16px;
+        --lines: 3;
+        --overlap: 40px;
+        --inset: 94px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #23262c;
+        color: var(--ink);
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        -webkit-tap-highlight-color: transparent;
+      }
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 20px;
+        overflow: hidden;
+      }
+      .device {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+        background: #bfd6e6;
+        container-type: size;
+      }
+      #scene {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+      .hud {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      /* top block: the light card, then the row under it (Exit, hint, compass badge) */
+      .top {
+        position: absolute;
+        left: 8px;
+        right: 8px;
+        top: calc(8px + env(safe-area-inset-top));
+        max-width: 620px;
+        display: flex;
+        flex-direction: column;
+      }
+      /* the card keeps its place and height while silent, so Exit, the hint and the compass never move */
+      .cardwrap {
+        opacity: 0;
+        transition: opacity 0.25s ease;
+      }
+      .cardwrap.on {
+        opacity: 1;
+      }
+      .cardwrap:not(.on) .card {
+        pointer-events: none;
+      }
+      .card {
+        pointer-events: auto;
+        background: var(--paper);
+        border: 2px solid var(--line);
+        border-radius: 14px;
+        padding: 8px 12px 4px;
+      }
+      .text {
+        position: relative;
+        height: calc(var(--lines) * var(--fs) * 1.35);
+        overflow: hidden;
+      }
+      .page {
+        position: absolute;
+        inset: 0;
+        font-size: var(--fs);
+        line-height: 1.35;
+        font-weight: 500;
+        opacity: 0;
+        transition: opacity 0.22s ease;
+        overflow: hidden;
+      }
+      .page.show {
+        opacity: 1;
+      }
+      .page .who {
+        font-weight: 750;
+        margin-right: 0.25em;
+      }
+      .page .w.now {
+        text-decoration: underline;
+        text-decoration-thickness: 3px;
+        text-underline-offset: 3px;
+      }
+      .page.preview {
+        color: var(--muted);
+        transition-duration: 0.1s;
+      }
+      .page.preview .who {
+        color: var(--muted) !important;
+      }
+      .page.preview .w.at {
+        text-decoration: underline dotted;
+        text-decoration-thickness: 3px;
+        text-underline-offset: 3px;
+      }
+      .page .off {
+        color: var(--muted);
+        font-style: italic;
+      }
+      .scrub {
+        position: relative;
+        height: 42px;
+        margin-right: var(--inset);
+        touch-action: none;
+        cursor: pointer;
+      }
+      .track {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        top: 17px;
+        height: 8px;
+      }
+      .seg {
+        position: absolute;
+        top: 0;
+        height: 8px;
+        border-radius: 4px;
+        background: var(--seg);
+        overflow: hidden;
+      }
+      .seg .fill {
+        position: absolute;
+        inset: 0;
+        background: var(--line);
+        transform-origin: left center;
+        transform: scaleX(0);
+      }
+      .seg.done .fill {
+        transform: none;
+      }
+      .seg.aim {
+        background: #9aa3b2;
+      }
+      .knob {
+        position: absolute;
+        left: 0;
+        top: 1px;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--line);
+        border: 3px solid var(--paper);
+        display: grid;
+        place-items: center;
+        will-change: transform;
+      }
+      .knob svg {
+        width: 16px;
+        height: 16px;
+        fill: #fff;
+      }
+      .knob.drag {
+        background: #3b4252;
+      }
+      .under {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      .spacer {
+        flex: 1;
+      }
+      .btn {
+        pointer-events: auto;
+        min-width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: var(--paper);
+        border: 2px solid var(--line);
+        color: var(--ink);
+        font: 600 15px system-ui, sans-serif;
+        display: grid;
+        place-items: center;
+        padding: 0 12px;
+      }
+      .exit {
+        padding: 0;
+      }
+      #hint {
+        display: none;
+      }
+      #hint.on {
+        display: grid;
+      }
+      #compass {
+        pointer-events: auto;
+        display: block;
+        flex: none;
+        /* the badge overlaps the card's lower right corner whether or not the card shows */
+        margin-top: calc(-6px - var(--overlap));
+      }
+      /* phone landscape: the top edge is short, so the compass moves beside the card */
+      .top.wide {
+        max-width: min(620px, calc(100% - var(--side)));
+      }
+      .top.wide #compass {
+        position: absolute;
+        left: calc(100% + 10px);
+        top: 0;
+        margin-top: 0;
+      }
+      .story {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: calc(46px + env(safe-area-inset-bottom));
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--paper);
+        border: 2px solid var(--line);
+        border-radius: 22px;
+        padding: 4px;
+        font: 600 14px system-ui, sans-serif;
+        white-space: nowrap;
+        min-height: 44px;
+      }
+      .story button {
+        display: none;
+        height: 34px;
+        border-radius: 17px;
+        border: 0;
+        background: var(--line);
+        color: #fff;
+        font: 600 14px system-ui, sans-serif;
+        padding: 0 14px;
+      }
+      .story.next button {
+        display: block;
+      }
+      /* no step title on screen: the control shows only when there is a next step to go to */
+      .story:not(.next) {
+        display: none;
+      }
+      /* demo chrome: not part of the HUD */
+      .strip {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: calc(36px + env(safe-area-inset-bottom));
+        padding: 0 6px env(safe-area-inset-bottom);
+        background: rgba(18, 20, 26, 0.86);
+        color: #e8eaee;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font: 12px system-ui, sans-serif;
+        z-index: 20;
+      }
+      .strip button {
+        height: 28px;
+        min-width: 30px;
+        border-radius: 6px;
+        border: 1px solid #555b66;
+        background: #2c3038;
+        color: #e8eaee;
+        font: 12px system-ui, sans-serif;
+      }
+      .strip .lbl {
+        flex: 1;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .strip .tag {
+        color: #9aa3b2;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+      }
+      .companion {
+        position: absolute;
+        inset: 0;
+        z-index: 30;
+        background: #f2f3f5;
+        display: none;
+        flex-direction: column;
+        font: 15px system-ui, sans-serif;
+      }
+      .companion.on {
+        display: flex;
+      }
+      .companion header {
+        background: #2f6f4f;
+        color: #fff;
+        padding: calc(14px + env(safe-area-inset-top)) 16px 14px;
+        font-weight: 700;
+      }
+      .companion .msg {
+        margin: 16px;
+        max-width: 75%;
+        background: #fff;
+        border-radius: 12px;
+        padding: 10px 12px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+      }
+      .companion small {
+        margin: 0 16px;
+        color: #666;
+      }
+      .finger {
+        position: absolute;
+        z-index: 25;
+        width: 38px;
+        height: 38px;
+        margin: -19px 0 0 -19px;
+        border-radius: 50%;
+        border: 3px solid rgba(255, 255, 255, 0.95);
+        background: rgba(30, 30, 30, 0.35);
+        display: none;
+        pointer-events: none;
+      }
+      .finger.on {
+        display: block;
+      }
+      .mchip {
+        position: absolute;
+        left: 8px;
+        bottom: calc(96px + env(safe-area-inset-bottom));
+        z-index: 21;
+        background: #111;
+        color: #fff;
+        font: 11px ui-monospace, monospace;
+        padding: 4px 6px;
+        border-radius: 6px;
+        display: none;
+        white-space: pre;
+      }
+      .mchip.on {
+        display: block;
+      }
+      .toast {
+        position: absolute;
+        left: 50%;
+        top: 45%;
+        transform: translateX(-50%);
+        background: var(--paper);
+        border: 2px solid var(--line);
+        border-radius: 12px;
+        padding: 8px 14px;
+        font: 600 14px system-ui, sans-serif;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      .toast.on {
+        opacity: 1;
+      }
+      /* settings panel: beside the phone on a desktop, a sheet on a phone */
+      .demo {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        max-height: 70vh;
+        overflow: auto;
+        z-index: 40;
+        background: #1b1e24;
+        color: #e8eaee;
+        font: 13px system-ui, sans-serif;
+        padding: 12px 14px 20px;
+        display: none;
+        border-top: 1px solid #444;
+      }
+      .demo.open {
+        display: block;
+      }
+      .demo h2 {
+        font-size: 15px;
+        margin: 4px 0 6px;
+      }
+      .demo h3 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #9aa3b2;
+        margin: 14px 0 6px;
+      }
+      .demo p {
+        margin: 4px 0;
+        color: #c3c8d0;
+        line-height: 1.4;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px;
+        margin: 5px 0;
+      }
+      .row > span {
+        min-width: 112px;
+        color: #c3c8d0;
+      }
+      .row button,
+      .demo .beats button,
+      .demo .plays button {
+        border: 1px solid #4b5160;
+        background: #2a2e36;
+        color: #e8eaee;
+        border-radius: 6px;
+        padding: 5px 8px;
+        font: 12px system-ui, sans-serif;
+      }
+      .row button.sel {
+        background: #e8eaee;
+        color: #111;
+        border-color: #e8eaee;
+      }
+      .row em {
+        color: #9aa3b2;
+        font-style: normal;
+        font-size: 11px;
+      }
+      .demo .beats,
+      .demo .plays {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .demo .beats button.cur {
+        outline: 2px solid #8fb4ff;
+      }
+      .demo select {
+        background: #2a2e36;
+        color: #e8eaee;
+        border: 1px solid #4b5160;
+        border-radius: 6px;
+        padding: 4px;
+      }
+      .demo .close {
+        float: right;
+      }
+      .stats {
+        font: 11px ui-monospace, monospace;
+        color: #9aa3b2;
+        white-space: pre;
+      }
+      @media (min-width: 960px) and (min-height: 720px) {
+        .device {
+          width: 390px;
+          height: min(844px, calc(100vh - 24px));
+          border-radius: 28px;
+          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+        .demo {
+          position: static;
+          display: block;
+          width: 360px;
+          max-height: calc(100vh - 24px);
+          border: 1px solid #3a3f4a;
+          border-radius: 12px;
+        }
+        .demo .close,
+        #gear {
+          display: none;
+        }
+      }
+    </style>
+    <script type="importmap">
+      { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <div class="device" id="dev">
+      <canvas id="scene"></canvas>
+      <div class="hud">
+        <div class="top" id="top">
+          <div class="cardwrap" id="cardwrap">
+            <div>
+              <div class="card" id="card">
+                <div class="text" id="text">
+                  <div class="page" id="pA"></div>
+                  <div class="page" id="pB"></div>
+                </div>
+                <div class="scrub" id="scrub" aria-label="Timeline, one segment per sentence">
+                  <div class="track" id="track"></div>
+                  <div class="knob" id="knob" role="button" aria-label="Play or pause"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="under">
+            <button class="btn exit" id="exit" aria-label="Exit">
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                <path d="M3 3l12 12M15 3L3 15" stroke="#14171d" stroke-width="3" stroke-linecap="round" />
+              </svg>
+            </button>
+            <div class="spacer"></div>
+            <button class="btn" id="hint">Show the way</button>
+            <canvas id="compass" aria-label="Compass"></canvas>
+          </div>
+        </div>
+        <div class="story" id="story"><button id="stepNext">Next</button></div>
+        <div class="toast" id="toast"></div>
+      </div>
+      <div class="finger" id="finger"></div>
+      <div class="mchip" id="mchip"></div>
+      <div class="companion" id="companion">
+        <header>Messages</header>
+        <div class="msg"><b>Sam</b><br />Are you at the well yet? We are getting coffee after.</div>
+        <small>Another app covers the tour for a moment. The narration keeps playing underneath.</small>
+      </div>
+      <div class="strip">
+        <span class="tag">DEMO</span>
+        <button id="bPrev" aria-label="Previous beat">&lsaquo;</button>
+        <span class="lbl" id="beatLbl">Loading</span>
+        <button id="bNext" aria-label="Next beat">&rsaquo;</button>
+        <button id="bRun">Pause</button>
+        <button id="gear">Settings</button>
+      </div>
+    </div>
+
+    <aside class="demo" id="panel">
+      <button class="close" id="pClose">Close</button>
+      <h2>Sentence timeline</h2>
+      <p>
+        A light card on the top edge carries the words, 2-3 lines at a time. Under the words, one segment per sentence; the round
+        play/pause handle rides on it and is also what you drag. Let go and it lands on the start of the sentence under it.
+      </p>
+      <p>
+        Drag on the scene to look around, drag up to walk; keys W A S D. Tap a figure, film, bell, well or sign to start it (from
+        inside its place). Word timings are faked (letter count), not measured.
+      </p>
+      <h3>Demonstration</h3>
+      <div class="beats" id="beats"></div>
+      <h3>Tester settings</h3>
+      <div id="ctl"></div>
+      <h3>Creator settings</h3>
+      <p>
+        "On radar" and "hints" at tour, station, story and item; "radar at all" at tour and station. A switch says "as above"
+        until it is set, and the nearest level that says something wins: item over story over station over tour. Tap to cycle.
+      </p>
+      <div id="auth"></div>
+      <h3>Play a source</h3>
+      <div class="plays" id="plays"></div>
+      <h3>Measuring</h3>
+      <div class="stats" id="stats"></div>
+    </aside>
+
+    <script type="module">
+      import * as THREE from 'three';
+
+      // ---------- tester settings ----------
+      const qs = new URLSearchParams(location.search);
+      const CFG = {
+        fs: 16,
+        lines: 3,
+        slop: 8,
+        snap: true,
+        hint: 'idle60',
+        narr: 'hud',
+        hidden: 'nomark',
+        measure: false,
+        speed: Math.max(0.25, Math.min(8, Number(qs.get('speed')) || 1)),
+      };
+      const CONTROLS = [
+        ['fs', 'Text size', [[14, '14 px'], [16, '16 px'], [18, '18 px']]],
+        ['lines', 'Lines at most', [[2, '2'], [3, '3']], '3 only while the card fits the top 1/6'],
+        ['slop', 'Tap slop', [[6, '6 px'], [8, '8 px'], [12, '12 px'], [16, '16 px']]],
+        ['snap', 'Snap on release', [[true, 'on'], [false, 'off']]],
+        [
+          'hint',
+          'Hint appears after',
+          [
+            ['idle60', '60 s without progress'],
+            ['still8', 'standing still 8 s in a search'],
+            ['away10', 'walking 10 m away'],
+          ],
+        ],
+        [
+          'narr',
+          'Narrated long text',
+          [
+            ['hud', 'words in the card, plate retired'],
+            ['plate', 'on the plate while legible'],
+          ],
+        ],
+        [
+          'hidden',
+          'Hidden item speaks',
+          [
+            ['nomark', 'not marked'],
+            ['mark', 'marked'],
+          ],
+        ],
+        ['measure', 'Measuring hook', [[false, 'off'], [true, 'on']]],
+        ['speed', 'Demo speed', [[1, '1x'], [2, '2x'], [4, '4x']]],
+      ];
+      const LEAD = 0.25; // seconds a snapped seek starts before the sentence
+      const RANGE = 40; // compass radius in metres
+      // URL keys mirror the settings, for example ?narr=plate&hidden=mark&lines=2; unknown values are ignored
+      for (const [k, , opts] of CONTROLS) {
+        if (k === 'speed' || !qs.has(k)) continue;
+        const hit = opts.find(([v]) => String(v) === qs.get(k));
+        if (hit) CFG[k] = hit[0];
+      }
+
+      // ---------- creator (author) settings ----------
+      // Round 3's switches. null means "as above"; the tour always has a value.
+      const STORIES = { well: 'The well', steps: 'The hall steps' };
+      const STORY_OF_ST = { A: 'well', B: 'steps' };
+      const AUTH = {
+        tour: { look: 'disc', radarAll: true, shown: true, hints: true },
+        station: { A: { radarAll: null, shown: null, hints: null }, B: { radarAll: null, shown: null, hints: null } },
+        story: { well: { shown: null, hints: null }, steps: { shown: null, hints: null } },
+        item: {},
+      };
+
+      // ---------- world data (an invented town) ----------
+      const STATIONS = {
+        A: { id: 'A', name: 'The well court', x: 0, z: -60, r: 16 },
+        B: { id: 'B', name: 'The hall steps', x: 55, z: -122, r: 18 },
+      };
+      const COL = {
+        Greta: '#c2410c',
+        Narrator: '#334155',
+        Clockmaker: '#0f766e',
+        Baker: '#7c3aed',
+        Ringer: '#0369a1',
+        Mason: '#4d7c0f',
+        'Bell recording': '#a16207',
+        'The well': '#1d4ed8',
+        'Sign: The hall steps': '#374151',
+      };
+      const ITEMS = {
+        greta: { name: 'Greta', st: 'A', x: 5, z: -57, kind: 'char', color: COL.Greta },
+        aVid: { name: 'Film: the rebuilding', st: 'A', x: -8, z: -67, kind: 'video' },
+        bell: { name: 'Bell recording', st: 'A', x: 0, z: -43, kind: 'sound' },
+        well: { name: 'The well', st: 'A', x: -2, z: -61, kind: 'well' },
+        aSign: { name: 'Sign: The well court', st: 'A', x: 9, z: -66, kind: 'sign' },
+        baker: { name: 'Baker', st: 'B', x: 48, z: -117, kind: 'char', color: COL.Baker },
+        ringer: { name: 'Ringer', st: 'B', x: 61, z: -119, kind: 'char', color: COL.Ringer },
+        mason: { name: 'Mason', st: 'B', x: 56, z: -131, kind: 'char', color: COL.Mason },
+        bSign: { name: 'Sign: The hall steps', st: 'B', x: 63, z: -113, kind: 'sign' },
+        bPic: { name: 'Picture', st: 'B', x: 45, z: -126, kind: 'picture' },
+        bModel: { name: 'Model', st: 'B', x: 66, z: -127, kind: 'model' },
+      };
+      for (const id in ITEMS) AUTH.item[id] = { shown: null, hints: null };
+      AUTH.item.well.shown = false; // the creator keeps the well off the radar
+
+      const VTT = `WEBVTT
+
+00:00.500 --> 00:04.300
+<v Narrator>This film was made when the well court was rebuilt.
+
+00:04.500 --> 00:08.700
+<v Clockmaker>We took every stone out, numbered it, and put it back in the same place.
+
+00:08.900 --> 00:12.600
+<v Narrator>The clockmaker kept a notebook with a page for every stone.
+
+00:12.800 --> 00:17.000
+<v Clockmaker>Three hundred and twelve stones. Only one of them cracked.
+
+00:17.200 --> 00:21.200
+<v Narrator>That stone is the one with the brass ring, by the steps.`;
+
+      const SOURCES = {
+        greta: {
+          item: 'greta',
+          parts: [
+            [
+              'Greta',
+              "Welcome to the well court! I'm Greta, and I have looked after this well for forty years. Every story in this town starts here, so let me tell you how it began. Long ago the town had no water of its own, and people carried it up from the river in wooden buckets. Then a mason found a spring under this very square, and the well was built in a single summer.",
+            ],
+          ],
+        },
+        vid: { item: 'aVid', vtt: VTT },
+        bell: {
+          item: 'bell',
+          parts: [
+            [
+              'Bell recording',
+              '[The bell rings three times.] Listen. That is the old bell from the tower, recorded on the day it was hung again.',
+            ],
+          ],
+        },
+        well: {
+          item: 'well',
+          parts: [['The well', 'Throw a coin and listen. They say the well answers those who wait.']],
+        },
+        baker: {
+          item: 'baker',
+          parts: [['Baker', 'Fresh bread was sold on these steps every morning. The first loaf always went to the ringer.']],
+        },
+        ringer: {
+          item: 'ringer',
+          parts: [['Ringer', 'I rang the bell at six, and the baker had my loaf ready. A fair trade, I always said.']],
+        },
+        mason: {
+          item: 'mason',
+          parts: [['Mason', 'These steps took me two winters. Look at the third one, my name is carved under it.']],
+        },
+        long: {
+          item: 'bSign',
+          parts: [
+            [
+              'Sign: The hall steps',
+              'The hall steps were laid in the year the market moved up the hill. Before that, traders sold from carts on the muddy slope below. The town paid for the steps with a tax on every loaf sold in the square. Each step is a single block, cut from the quarry on the far side of the river. The blocks were floated down on rafts and dragged up the slope by oxen. The third step from the top carries the mark of the mason who set it. On market days, the steps were the best seats in town. Children sat on the top step to watch the ringer climb to the bell.',
+            ],
+          ],
+        },
+      };
+
+      const STEPS = [
+        { kind: 'search', next: 'A', story: 'well' },
+        { kind: 'listen', story: 'well' },
+        { kind: 'explore', story: 'well' },
+        { kind: 'search', next: 'B', story: 'steps' },
+        { kind: 'explore', story: 'steps' },
+        { kind: 'explore', story: 'steps' },
+      ];
+
+      // ---------- helpers ----------
+      const $ = (id) => document.getElementById(id);
+      const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+      const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+      function mulberry(seed) {
+        return () => {
+          seed |= 0;
+          seed = (seed + 0x6d2b79f5) | 0;
+          let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+          t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+          return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+      function segDist(px, pz, ax, az, bx, bz) {
+        const dx = bx - ax,
+          dz = bz - az;
+        const t = clamp(((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz), 0, 1);
+        return Math.hypot(px - ax - t * dx, pz - az - t * dz);
+      }
+      // Faked word timing: a word lasts by its letter count, plus a pause after punctuation.
+      function wordDur(w) {
+        const L = w.replace(/[^\p{L}\p{N}]/gu, '').length;
+        let t = 0.11 + 0.055 * L;
+        if (/[,;:]$/.test(w)) t += 0.22;
+        else if (/[.!?]\]?$/.test(w)) t += 0.38;
+        return t;
+      }
+      function parseVtt(text) {
+        const cues = [];
+        const ts = (s) => {
+          const p = s.trim().split(':').map(Number);
+          return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1];
+        };
+        for (const block of text.split(/\n\s*\n/)) {
+          const lines = block.split('\n');
+          const i = lines.findIndex((l) => l.includes('-->'));
+          if (i < 0) continue;
+          const [a, b] = lines[i].split('-->');
+          let body = lines.slice(i + 1).join(' ');
+          const m = body.match(/^<v ([^>]+)>/);
+          const who = m ? m[1] : 'Narrator';
+          body = body.replace(/<[^>]+>/g, '').trim();
+          if (body) cues.push({ who, start: ts(a), end: ts(b), text: body });
+        }
+        return cues;
+      }
+      // A source: sentences (the scrub segments) and words with faked times.
+      function buildSource(id, def) {
+        const sentences = [];
+        const words = [];
+        if (def.vtt) {
+          for (const c of parseVtt(def.vtt)) {
+            const ws = c.text.split(/\s+/);
+            const tot = ws.reduce((s, w) => s + wordDur(w), 0);
+            const k = (c.end - c.start) / tot;
+            let t = c.start;
+            const w0 = words.length;
+            for (const w of ws) {
+              const d = wordDur(w) * k;
+              words.push({ w, t0: t, t1: t + d, s: sentences.length });
+              t += d;
+            }
+            sentences.push({ who: c.who, start: c.start, end: c.end, w0, w1: words.length - 1 });
+          }
+        } else {
+          let t = 0.3;
+          for (const [who, text] of def.parts) {
+            for (const s of text.split(/(?<=[.!?]\]?)\s+/)) {
+              const w0 = words.length;
+              const start = t;
+              for (const w of s.split(/\s+/)) {
+                const d = wordDur(w);
+                words.push({ w, t0: t, t1: t + d, s: sentences.length });
+                t += d;
+              }
+              sentences.push({ who, start, end: t, w0, w1: words.length - 1 });
+              t += 0.15;
+            }
+          }
+        }
+        const dur = sentences[sentences.length - 1].end + 0.5;
+        const segs = sentences.map((s, i) => ({ t0: i ? s.start : 0, t1: i < sentences.length - 1 ? sentences[i + 1].start : dur }));
+        return { id, item: def.item, sentences, words, segs, dur, chunks: null, w2c: null, t: 0, playing: false, finished: false, wi: 0 };
+      }
+      const SRC = {};
+      for (const id in SOURCES) SRC[id] = buildSource(id, SOURCES[id]);
+
+      // ---------- author resolution: item over story over station over tour ----------
+      function resolve(key, ctx) {
+        for (const lvl of ['item', 'story', 'station']) {
+          const id = ctx[lvl];
+          const v = id && AUTH[lvl][id] ? AUTH[lvl][id][key] : null;
+          if (v === true || v === false) return { v, from: lvl };
+        }
+        return { v: AUTH.tour[key], from: 'tour' };
+      }
+      const itemCtx = (id) => ({ item: id, story: STORY_OF_ST[ITEMS[id].st], station: ITEMS[id].st });
+      const onRadar = (id) => resolve('shown', itemCtx(id)).v !== false;
+      const colorOf = (who) => COL[who] || '#1f2430';
+
+      // ---------- three.js scene ----------
+      const dev = $('dev');
+      const canvas = $('scene');
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xbfd6e6);
+      scene.fog = new THREE.Fog(0xbfd6e6, 70, 240);
+      const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 500);
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x7d8470, 1.2));
+      const sunL = new THREE.DirectionalLight(0xffffff, 1.5);
+      sunL.position.set(40, 80, 25);
+      scene.add(sunL);
+      const lam = (c) => new THREE.MeshLambertMaterial({ color: c });
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(700, 700), lam(0x9aa58a));
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+      const PATH = [
+        [0, 10],
+        [0, -60],
+        [55, -122],
+      ];
+      for (let i = 0; i < PATH.length - 1; i++) {
+        const [ax, az] = PATH[i],
+          [bx, bz] = PATH[i + 1];
+        const len = Math.hypot(bx - ax, bz - az);
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(6, len), lam(0xc9c2b4));
+        m.rotation.x = -Math.PI / 2;
+        m.rotation.z = -Math.atan2(bx - ax, -(bz - az));
+        m.position.set((ax + bx) / 2, 0.01, (az + bz) / 2);
+        scene.add(m);
+      }
+      for (const s of Object.values(STATIONS)) {
+        const m = new THREE.Mesh(new THREE.CircleGeometry(s.r, 40), lam(0xd9d1c1));
+        m.rotation.x = -Math.PI / 2;
+        m.position.set(s.x, 0.02, s.z);
+        scene.add(m);
+      }
+      {
+        const rnd = mulberry(7);
+        const spots = [];
+        for (let x = -130; x <= 170; x += 14)
+          for (let z = 30; z >= -230; z -= 14) {
+            const jx = x + (rnd() - 0.5) * 4,
+              jz = z + (rnd() - 0.5) * 4;
+            let near = false;
+            for (let i = 0; i < PATH.length - 1; i++)
+              if (segDist(jx, jz, ...PATH[i], ...PATH[i + 1]) < 11) near = true;
+            for (const s of Object.values(STATIONS)) if (Math.hypot(jx - s.x, jz - s.z) < s.r + 7) near = true;
+            if (!near) spots.push([jx, jz]);
+          }
+        const box = new THREE.BoxGeometry(1, 1, 1);
+        const houses = new THREE.InstancedMesh(box, lam(0xffffff), spots.length);
+        const mat = new THREE.Matrix4(),
+          col = new THREE.Color();
+        const tints = [0xe9dfcf, 0xd8c3a5, 0xc9b49a, 0xe2d6c2, 0xb9a48c, 0xd5cbbd];
+        spots.forEach(([x, z], i) => {
+          const h = 6 + rnd() * 9,
+            w = 8 + rnd() * 3,
+            d = 8 + rnd() * 3;
+          mat.compose(new THREE.Vector3(x, h / 2, z), new THREE.Quaternion(), new THREE.Vector3(w, h, d));
+          houses.setMatrixAt(i, mat);
+          houses.setColorAt(i, col.setHex(tints[i % tints.length]));
+        });
+        scene.add(houses);
+      }
+      function canvasTex(w, h) {
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return { c, x: c.getContext('2d'), t };
+      }
+      function faceStation(obj, it) {
+        const s = STATIONS[it.st];
+        obj.lookAt(s.x, obj.position.y, s.z);
+      }
+      const worldObj = {};
+      let vidTex = null,
+        plateTex = null;
+      for (const [id, it] of Object.entries(ITEMS)) {
+        const g = new THREE.Group();
+        g.position.set(it.x, 0, it.z);
+        if (it.kind === 'char') {
+          const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.9, 4, 10), lam(new THREE.Color(it.color)));
+          body.position.y = 0.8;
+          const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 12), lam(0xf0d2b4));
+          head.position.y = 1.62;
+          g.add(body, head);
+        } else if (it.kind === 'video') {
+          vidTex = canvasTex(256, 144);
+          const scr = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.8), new THREE.MeshBasicMaterial({ map: vidTex.t }));
+          scr.position.y = 2.2;
+          const post = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.4, 0.15), lam(0x444444));
+          post.position.y = 0.7;
+          g.add(scr, post);
+        } else if (it.kind === 'sound') {
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.8), lam(0x555555));
+          post.position.y = 0.9;
+          const bell = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.5, 20, 1, true), lam(0xb08d3c));
+          bell.material.side = THREE.DoubleSide;
+          bell.position.y = 2.0;
+          g.add(post, bell);
+        } else if (it.kind === 'well') {
+          const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.3, 0.8, 24, 1, true), lam(0x8d8478));
+          ring.material.side = THREE.DoubleSide;
+          ring.position.y = 0.4;
+          const water = new THREE.Mesh(new THREE.CircleGeometry(1.15, 24), lam(0x2f4f6f));
+          water.rotation.x = -Math.PI / 2;
+          water.position.y = 0.3;
+          g.add(ring, water);
+        } else if (it.kind === 'sign') {
+          const tx = canvasTex(512, 400);
+          if (id === 'bSign') plateTex = tx;
+          drawSign(tx, it.name.replace('Sign: ', ''), id === 'aSign' ? 'Water has been drawn here for four hundred years.' : null);
+          const plate = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.9), new THREE.MeshBasicMaterial({ map: tx.t }));
+          plate.position.y = 1.9;
+          const post = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 0.12), lam(0x5a4a3a));
+          post.position.y = 0.5;
+          g.add(plate, post);
+        } else if (it.kind === 'picture') {
+          const tx = canvasTex(256, 192);
+          const x = tx.x;
+          const gr = x.createLinearGradient(0, 0, 0, 192);
+          gr.addColorStop(0, '#f3c87a');
+          gr.addColorStop(1, '#b3533a');
+          x.fillStyle = gr;
+          x.fillRect(0, 0, 256, 192);
+          x.fillStyle = '#3d2a24';
+          x.fillRect(40, 110, 176, 82);
+          x.fillRect(110, 70, 36, 40);
+          tx.t.needsUpdate = true;
+          const pic = new THREE.Mesh(new THREE.PlaneGeometry(2.0, 1.5), new THREE.MeshBasicMaterial({ map: tx.t }));
+          pic.position.y = 1.9;
+          const frame = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.7, 0.06), lam(0x3a2f25));
+          frame.position.set(0, 1.9, -0.05);
+          g.add(pic, frame);
+        } else if (it.kind === 'model') {
+          const plinth = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), lam(0xbdb6aa));
+          plinth.position.y = 0.5;
+          const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.35, 0.12, 80, 10), lam(0x8a6f4a));
+          knot.position.y = 1.5;
+          g.add(plinth, knot);
+          g.userData.spin = knot;
+        }
+        if (it.kind !== 'char' && it.kind !== 'well' && it.kind !== 'model') faceStation(g, it);
+        else if (it.kind === 'char') faceStation(g, it);
+        g.userData.item = id;
+        scene.add(g);
+        worldObj[id] = g;
+      }
+      function wrapText(x, words, maxW) {
+        const lines = [];
+        let line = [],
+          w = 0;
+        const sp = x.measureText(' ').width;
+        for (const wd of words) {
+          const ww = x.measureText(wd.w).width;
+          if (line.length && w + ww > maxW) {
+            lines.push(line);
+            line = [];
+            w = 0;
+          }
+          line.push(wd);
+          w += ww + sp;
+        }
+        if (line.length) lines.push(line);
+        return lines;
+      }
+      function drawSign(tx, title, body, words, nowWi) {
+        const x = tx.x;
+        x.fillStyle = '#f4efe4';
+        x.fillRect(0, 0, 512, 400);
+        x.strokeStyle = '#3a2f25';
+        x.lineWidth = 10;
+        x.strokeRect(5, 5, 502, 390);
+        x.fillStyle = '#1d1a16';
+        x.font = '700 40px system-ui, sans-serif';
+        x.fillText(title, 26, 62);
+        x.font = '500 24px system-ui, sans-serif';
+        if (words) {
+          // the plate carries the narrated words, the spoken one underlined
+          const startS = words[nowWi] ? words[nowWi].s : 0;
+          const ws = words.filter((w) => w.s >= startS);
+          const lines = wrapText(x, ws, 460).slice(0, 9);
+          let y = 104;
+          for (const line of lines) {
+            let px = 26;
+            for (const wd of line) {
+              const ww = x.measureText(wd.w).width;
+              x.fillStyle = '#1d1a16';
+              x.fillText(wd.w, px, y);
+              if (words.indexOf(wd) === nowWi) x.fillRect(px, y + 5, ww, 4);
+              px += ww + x.measureText(' ').width;
+            }
+            y += 32;
+          }
+        } else if (body) {
+          const lines = wrapText(
+            x,
+            body.split(' ').map((w) => ({ w })),
+            460,
+          );
+          lines.forEach((l, i) => x.fillText(l.map((w) => w.w).join(' '), 26, 110 + i * 32));
+        } else {
+          x.fillStyle = '#6b645a';
+          x.fillText('Narrated: listen in the card above.', 26, 110);
+        }
+        tx.t.needsUpdate = true;
+      }
+      let plateKey = '';
+      function updatePlate() {
+        const s = SRC.long;
+        const narr = cur === 'long';
+        const key = CFG.narr === 'plate' ? (narr ? 'p' + wordIndexAt(s, s.t) : 'p-idle') : 'h';
+        if (key === plateKey) return;
+        plateKey = key;
+        if (CFG.narr === 'plate') drawSign(plateTex, 'The hall steps', null, s.words, narr ? wordIndexAt(s, s.t) : -1);
+        else drawSign(plateTex, 'The hall steps', null);
+      }
+      let vidKey = '';
+      function updateVideo() {
+        const s = SRC.vid;
+        const ci = segAt(s, s.t);
+        const key = `${ci}|${Math.floor(s.t * 4)}|${s.playing}`;
+        if (key === vidKey) return;
+        vidKey = key;
+        const x = vidTex.x;
+        x.fillStyle = `hsl(${30 + ci * 40},35%,${s.playing ? 55 : 40}%)`;
+        x.fillRect(0, 0, 256, 144);
+        x.fillStyle = 'rgba(0,0,0,.25)';
+        for (let i = 0; i < 6; i++) x.fillRect(((i * 47 + s.t * 18) % 300) - 30, 40 + (i % 3) * 22, 36, 18);
+        x.fillStyle = '#111';
+        x.fillRect(0, 134, 256, 10);
+        x.fillStyle = '#fff';
+        x.fillRect(0, 134, (256 * s.t) / s.dur, 10);
+        if (!s.playing) {
+          x.fillStyle = 'rgba(255,255,255,.85)';
+          x.fillRect(110, 52, 12, 34);
+          x.fillRect(134, 52, 12, 34);
+        }
+        vidTex.t.needsUpdate = true;
+      }
+      // beam over the next place
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.7, 0.7, 70, 20, 1, true),
+        new THREE.MeshBasicMaterial({ color: 0x5aa0ff, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide }),
+      );
+      beam.position.y = 35;
+      scene.add(beam);
+      // hint: a drift of motes from the visitor toward the next place (moves on the GPU)
+      const motes = (() => {
+        const N = 90;
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+        const u = new Float32Array(N);
+        for (let i = 0; i < N; i++) u[i] = i / (N - 1);
+        geo.setAttribute('u', new THREE.BufferAttribute(u, 1));
+        const mat = new THREE.ShaderMaterial({
+          transparent: true,
+          depthWrite: false,
+          uniforms: { uTime: { value: 0 }, uFade: { value: 0 } },
+          vertexShader: `attribute float u; uniform float uTime; varying float vA;
+            void main(){ vec4 mv = modelViewMatrix*vec4(position,1.0); float w = fract(u*3.0 - uTime*0.5);
+            vA = smoothstep(0.0,0.25,w)*(1.0-w); gl_PointSize = clamp(60.0/-mv.z, 3.0, 18.0); gl_Position = projectionMatrix*mv; }`,
+          fragmentShader: `uniform float uFade; varying float vA; void main(){ vec2 p = gl_PointCoord-0.5; float d = length(p);
+            if(d>0.5) discard; gl_FragColor = vec4(1.0,0.95,0.7, (1.0-d*2.0)*vA*uFade); }`,
+        });
+        const pts = new THREE.Points(geo, mat);
+        pts.frustumCulled = false;
+        scene.add(pts);
+        let until = 0;
+        return {
+          show(fx, fz, tx, tz) {
+            const p = geo.attributes.position.array;
+            const mx = (fx + tx) / 2 + (tz - fz) * 0.12,
+              mz = (fz + tz) / 2 - (tx - fx) * 0.12;
+            for (let i = 0; i < N; i++) {
+              const t = i / (N - 1),
+                a = (1 - t) * (1 - t),
+                b = 2 * (1 - t) * t,
+                c = t * t;
+              p[i * 3] = a * fx + b * mx + c * tx;
+              p[i * 3 + 1] = 1.1 + Math.sin(t * Math.PI) * 1.5;
+              p[i * 3 + 2] = a * fz + b * mz + c * tz;
+            }
+            geo.attributes.position.needsUpdate = true;
+            until = simT + 8;
+          },
+          tick(dt) {
+            mat.uniforms.uTime.value = simT;
+            const target = simT < until ? 1 : 0;
+            mat.uniforms.uFade.value += (target - mat.uniforms.uFade.value) * Math.min(1, dt * 3);
+          },
+        };
+      })();
+
+      // ---------- visitor ----------
+      const me = { x: 0, z: -24, h: 0, spd: 0 };
+      function updateCamera() {
+        camera.position.set(me.x, 1.6, me.z);
+        camera.rotation.set(-0.04, -me.h, 0, 'YXZ');
+      }
+      const bearingTo = (x, z) => wrap(Math.atan2(x - me.x, -(z - me.z)) - me.h);
+
+      // ---------- voices (one subtitle source at a time) ----------
+      let cur = null; // id of the source in the card
+      let lingerUntil = 0;
+      let simT = 0;
+      function segAt(s, t) {
+        const g = s.segs;
+        for (let i = 0; i < g.length; i++) if (t < g[i].t1) return i;
+        return g.length - 1;
+      }
+      function wordIndexAt(s, t) {
+        const w = s.words;
+        let i = clamp(s.wi, 0, w.length - 1);
+        while (i > 0 && w[i].t0 > t) i--;
+        while (i < w.length - 1 && w[i + 1].t0 <= t) i++;
+        s.wi = i;
+        return w[i].t0 <= t ? i : -1;
+      }
+      function speak(id, opts = {}) {
+        if (cur && cur !== id && SRC[cur].playing) SRC[cur].playing = false;
+        const s = SRC[id];
+        for (const o of Object.values(SRC)) o.held = false; // the newest start wins over anything held
+        if (opts.restart || s.finished) {
+          s.t = opts.at || 0;
+          s.wi = 0;
+        }
+        s.finished = false;
+        s.playing = opts.paused ? false : true;
+        setCurrent(id);
+      }
+      function setCurrent(id) {
+        if (cur === id) return;
+        cur = id;
+        buildScrub();
+        shown.chunk = -1;
+        shown.word = -2;
+        shown.seg = -1;
+        shown.subs = null;
+      }
+      // Reach: walking out of a source's place holds it and its card goes; walking back in carries it on.
+      const stationDist = (id) => {
+        const st = STATIONS[ITEMS[SRC[id].item].st];
+        return Math.hypot(st.x - me.x, st.z - me.z) - st.r;
+      };
+      const REACH_OUT = 4; // metres past the place's edge before a source is held (a margin against GPS jitter)
+      function reach() {
+        if (cur && stationDist(cur) > REACH_OUT) {
+          const s = SRC[cur];
+          if (s.playing) {
+            s.playing = false;
+            s.held = true;
+          }
+          if (!drag) cur = null; // no card outlives its place
+        }
+        if (!cur)
+          for (const id in SRC)
+            if (SRC[id].held && stationDist(id) < 0) {
+              speak(id);
+              break;
+            }
+      }
+      const LINGER = 7; // seconds a finished item's card stays, so it can still be dragged back
+      function voices(dt) {
+        reach();
+        if (!cur) return;
+        const s = SRC[cur];
+        if (s.playing) {
+          s.t += dt;
+          if (s.t >= s.dur) {
+            s.t = s.dur;
+            s.playing = false;
+            s.finished = true;
+            lingerUntil = simT + LINGER;
+          }
+        }
+        if (s.finished && !drag && simT > lingerUntil) cur = null;
+      }
+
+      // ---------- the card: paged chunks ----------
+      const textEl = $('text'),
+        pages = [$('pA'), $('pB')];
+      let front = 0;
+      const shown = { chunk: -1, word: -2, seg: -1, subs: null, preview: null, key: '' };
+      let textW = 300;
+      const mctx = document.createElement('canvas').getContext('2d');
+      const FONT = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+      let linesNow = 3;
+      const effLines = () => linesNow;
+      const measureCache = new Map();
+      function mw(text, bold) {
+        const k = (bold ? 'b' : 'n') + CFG.fs + text;
+        let v = measureCache.get(k);
+        if (v == null) {
+          mctx.font = `${bold ? 750 : 500} ${CFG.fs}px ${FONT}`;
+          v = mctx.measureText(text).width;
+          measureCache.set(k, v);
+        }
+        return v;
+      }
+      // Pack sentences into pages of N lines; a page starts at a sentence when it can, and at a new voice always.
+      function chunkSource(s) {
+        const W = textW - 6,
+          L = effLines(),
+          sp = mw(' ');
+        const chunks = [];
+        let c = null,
+          line = 0,
+          lw = 0;
+        const start = (who) => {
+          c = { who, w0: -1, w1: -1 };
+          chunks.push(c);
+          line = 0;
+          lw = mw(who, true) + sp * 1.25;
+        };
+        const fits = (sent) => {
+          let ln = line,
+            x = lw;
+          for (let i = sent.w0; i <= sent.w1; i++) {
+            const w = mw(s.words[i].w);
+            if (x > 0 && x + w > W) {
+              ln++;
+              x = 0;
+            }
+            x += w + sp;
+          }
+          return ln < L;
+        };
+        for (const sent of s.sentences) {
+          if (!c || c.who !== sent.who || (c.w0 >= 0 && !fits(sent))) start(sent.who);
+          for (let i = sent.w0; i <= sent.w1; i++) {
+            const w = mw(s.words[i].w);
+            if (lw > 0 && lw + w > W) {
+              line++;
+              lw = 0;
+              if (line >= L) start(sent.who);
+            }
+            if (c.w0 < 0) c.w0 = i;
+            c.w1 = i;
+            lw += w + sp;
+          }
+        }
+        const w2c = new Int16Array(s.words.length);
+        chunks.forEach((ch, k) => {
+          for (let i = ch.w0; i <= ch.w1; i++) w2c[i] = k;
+        });
+        s.chunks = chunks;
+        s.w2c = w2c;
+        s.chunkKey = `${W}|${L}|${CFG.fs}`;
+      }
+      let spans = [];
+      function flip(html, cls) {
+        const back = pages[1 - front];
+        back.innerHTML = html;
+        // the back page last rendered at opacity 0, so adding .show fades it in without a forced layout
+        back.className = 'page show ' + (cls || '');
+        pages[front].classList.remove('show');
+        front = 1 - front;
+        return back;
+      }
+      function renderChunk(s, k) {
+        const ch = s.chunks[k];
+        let h = `<b class="who" style="color:${colorOf(ch.who)}">${esc(ch.who)}</b>`;
+        for (let i = ch.w0; i <= ch.w1; i++) h += `<span class="w" data-i="${i}">${esc(s.words[i].w)}</span> `;
+        const el = flip(h);
+        spans = [];
+        for (const sp of el.querySelectorAll('.w')) spans[Number(sp.dataset.i)] = sp;
+      }
+      function renderPreview(s, si, wi) {
+        const sent = s.sentences[si];
+        let h = `<b class="who">&#x21BA; ${esc(sent.who)}</b>`;
+        for (let i = sent.w0; i <= sent.w1; i++) h += `<span class="w${i === wi ? ' at' : ''}">${esc(s.words[i].w)}</span> `;
+        flip(h, 'preview');
+        spans = [];
+      }
+      function updateCard() {
+        const on = !!cur;
+        cardwrap.classList.toggle('on', on);
+        topEl.classList.toggle('carded', on);
+        if (!on) return;
+        const s = SRC[cur];
+        updateKnob(s);
+        if (drag && drag.moved) return; // the preview owns the card while dragging
+        const plateMode = cur === 'long' && CFG.narr === 'plate' && signLegible;
+        const key = String(plateMode);
+        if (key !== shown.subs) {
+          shown.subs = key;
+          shown.chunk = -1;
+        }
+        if (plateMode) {
+          if (shown.chunk !== -9) {
+            shown.chunk = -9;
+            const who = s.sentences[0].who;
+            const msg = 'The words are on the sign in front of you.';
+            flip(`<b class="who" style="color:${colorOf(who)}">${esc(who)}</b><span class="off">${msg}</span>`);
+            spans = [];
+          }
+          return;
+        }
+        const ck = `${textW - 6}|${effLines()}|${CFG.fs}`;
+        if (s.chunkKey !== ck) {
+          chunkSource(s);
+          shown.chunk = -1;
+        }
+        const wi = wordIndexAt(s, s.t);
+        const k = wi < 0 ? 0 : s.w2c[wi];
+        if (k !== shown.chunk) {
+          shown.chunk = k;
+          shown.word = -2;
+          renderChunk(s, k);
+        }
+        const w = s.words[wi];
+        const now = wi >= 0 && s.t <= w.t1 + 0.25 && !s.finished ? wi : -1;
+        if (now !== shown.word) {
+          if (spans[shown.word]) spans[shown.word].classList.remove('now');
+          if (spans[now]) spans[now].classList.add('now');
+          shown.word = now;
+        }
+      }
+
+      // ---------- the scrub: one segment per sentence, the handle rides on it ----------
+      const cardwrap = $('cardwrap'),
+        topEl = $('top'),
+        track = $('track'),
+        knob = $('knob'),
+        scrubEl = $('scrub');
+      let segEls = [],
+        trackW = 200;
+      const GAP = 3;
+      function buildScrub() {
+        track.innerHTML = '';
+        segEls = [];
+        if (!cur) return;
+        for (let i = 0; i < SRC[cur].segs.length; i++) {
+          const d = document.createElement('div');
+          d.className = 'seg';
+          d.innerHTML = '<div class="fill"></div>';
+          track.appendChild(d);
+          segEls.push(d);
+        }
+        layoutSegs();
+      }
+      function layoutSegs() {
+        if (!cur) return;
+        const s = SRC[cur];
+        const n = s.segs.length;
+        const avail = Math.max(10, trackW - GAP * (n - 1));
+        let x = 0;
+        s.segs.forEach((g, i) => {
+          g.w = (avail * (g.t1 - g.t0)) / s.dur;
+          g.x = x;
+          x += g.w + GAP;
+          segEls[i].style.left = g.x + 'px';
+          segEls[i].style.width = Math.max(2, g.w) + 'px';
+        });
+        s.segs[n - 1].w += avail - (x - GAP); // absorb rounding
+        shown.seg = -1;
+      }
+      function tToX(s, t) {
+        const g = s.segs[segAt(s, t)];
+        return g.x + (g.w * clamp(t - g.t0, 0, g.t1 - g.t0)) / (g.t1 - g.t0);
+      }
+      function xToT(s, x) {
+        for (const g of s.segs) if (x <= g.x + g.w + GAP / 2) return g.t0 + clamp((x - g.x) / g.w, 0, 1) * (g.t1 - g.t0);
+        return s.dur;
+      }
+      const ICON = {
+        play: '<svg viewBox="0 0 16 16"><path d="M4 2l10 6-10 6z"/></svg>',
+        pause: '<svg viewBox="0 0 16 16"><rect x="3" y="2" width="3.6" height="12"/><rect x="9.4" y="2" width="3.6" height="12"/></svg>',
+        again: '<svg viewBox="0 0 16 16"><path d="M8 2a6 6 0 1 1-5.6 3.9l1.9.7A4 4 0 1 0 8 4v2.5L4.2 3.2 8 0z"/></svg>',
+      };
+      let knobIcon = '',
+        lastKnobT = '',
+        lastFillT = '';
+      function updateKnob(s) {
+        const icon = s.finished ? 'again' : s.playing ? 'pause' : 'play';
+        if (icon !== knobIcon) {
+          knobIcon = icon;
+          knob.innerHTML = ICON[icon];
+          knob.setAttribute('aria-label', icon === 'pause' ? 'Pause' : 'Play');
+        }
+        // style writes only on change
+        if (!(drag && drag.moved)) {
+          const kt = `translateX(${tToX(s, s.t).toFixed(1)}px)`;
+          if (kt !== lastKnobT) knob.style.transform = lastKnobT = kt;
+        }
+        const si = segAt(s, s.t);
+        if (si !== shown.seg) {
+          segEls.forEach((e, i) => {
+            e.classList.toggle('done', i < si);
+            e.firstChild.style.transform = '';
+          });
+          shown.seg = si;
+          lastFillT = '';
+        }
+        const g = s.segs[si];
+        const ft = `scaleX(${clamp((s.t - g.t0) / (g.t1 - g.t0), 0, 1).toFixed(3)})`;
+        if (ft !== lastFillT) segEls[si].firstChild.style.transform = lastFillT = ft;
+      }
+      let drag = null;
+      function dragStart(x, onKnob) {
+        if (!cur) return;
+        drag = { x0: x, x, moved: false, onKnob, si: -1, wi: -1, scripted: false };
+      }
+      function dragMove(x) {
+        if (!drag) return;
+        drag.x = x;
+        const s = SRC[cur];
+        if (!drag.moved && Math.abs(x - drag.x0) > CFG.slop) {
+          drag.moved = true;
+          knob.classList.add('drag');
+        }
+        if (!drag.moved) return;
+        const cx = clamp(x, 0, trackW);
+        knob.style.transform = `translateX(${cx}px)`;
+        lastKnobT = '';
+        const t = xToT(s, cx);
+        const si = segAt(s, t);
+        const wi = CFG.snap ? -1 : wordIndexAt(s, t);
+        if (si !== drag.si || wi !== drag.wi) {
+          if (segEls[drag.si]) segEls[drag.si].classList.remove('aim');
+          segEls[si].classList.add('aim');
+          drag.si = si;
+          drag.wi = wi;
+          renderPreview(s, si, wi);
+        }
+      }
+      function dragEnd() {
+        if (!drag) return;
+        const d = drag;
+        drag = null;
+        knob.classList.remove('drag');
+        if (!cur) return;
+        const s = SRC[cur];
+        if (segEls[d.si]) segEls[d.si].classList.remove('aim');
+        if (d.moved) {
+          const t = xToT(s, clamp(d.x, 0, trackW));
+          const target = CFG.snap ? Math.max(0, s.sentences[segAt(s, t)].start - LEAD) : t;
+          s.t = clamp(target, 0, s.dur - 0.05);
+          s.wi = 0;
+          // A drag never starts or stops sound; a finished item becomes paused at the new place.
+          if (s.finished) {
+            s.finished = false;
+            s.playing = false;
+          }
+          shown.chunk = -1;
+          shown.subs = null;
+        } else if (d.onKnob) {
+          tapKnob();
+        } else {
+          // a tap on a segment seeks to its sentence, keeping play or pause
+          const t = xToT(s, clamp(d.x, 0, trackW));
+          s.t = Math.max(0, s.sentences[segAt(s, t)].start - LEAD);
+          s.wi = 0;
+          if (s.finished) {
+            s.finished = false;
+            s.playing = false;
+          }
+        }
+      }
+      function tapKnob() {
+        if (!cur) return;
+        const s = SRC[cur];
+        if (s.finished) {
+          s.t = 0;
+          s.wi = 0;
+          s.finished = false;
+          s.playing = true;
+        } else s.playing = !s.playing;
+      }
+      let trackRect = null;
+      scrubEl.addEventListener('pointerdown', (e) => {
+        userTouched();
+        trackRect = track.getBoundingClientRect();
+        scrubEl.setPointerCapture(e.pointerId);
+        const x = e.clientX - trackRect.left;
+        const kx = cur ? tToX(SRC[cur], SRC[cur].t) : 0;
+        dragStart(x, Math.abs(x - kx) < 26);
+      });
+      scrubEl.addEventListener('pointermove', (e) => {
+        if (drag && trackRect) dragMove(e.clientX - trackRect.left);
+      });
+      scrubEl.addEventListener('pointerup', () => dragEnd());
+      scrubEl.addEventListener('pointercancel', () => {
+        drag = null;
+        knob.classList.remove('drag');
+        shown.chunk = -1;
+        shown.subs = null;
+      });
+
+      // ---------- compass: one model, two looks (the creator's choice) ----------
+      // Drawn with three.js meshes as round 3's compass was, in a small WebGL canvas of its own so the badge can sit over the card.
+      const cmp = $('compass');
+      const cRen = new THREE.WebGLRenderer({ canvas: cmp, antialias: true, alpha: true });
+      cRen.setClearColor(0x000000, 0);
+      const cScene = new THREE.Scene();
+      const cCam = new THREE.OrthographicCamera(0, 100, 0, -100, -10, 10);
+      const ITEM_R = 5.5,
+        ST_R = 6.5,
+        NEXT_R = 8.5; // round 3's mark radii, CSS px
+      const PAPER = '#fbfaf7',
+        INK = '#1f2430',
+        NEXT_C = '#1d5fd6',
+        NORTH_C = '#c0262d';
+      const geoCache = new Map(),
+        matCache = new Map();
+      const G = (k, make) => {
+        let g = geoCache.get(k);
+        if (!g) geoCache.set(k, (g = make()));
+        return g;
+      };
+      const gDisc = (r) => G('d' + r, () => new THREE.CircleGeometry(r, 32));
+      const gRing = (ri, ro) => G(`r${ri}|${ro}`, () => new THREE.RingGeometry(ri, ro, 64));
+      // sectors and arcs are centred on +x and turned to a bearing by put()
+      const gSector = (r, half) => G(`s${r}|${half}`, () => new THREE.CircleGeometry(r, 24, -half, 2 * half));
+      const gArc = (ri, ro, half) => G(`a${ri}|${ro}|${half}`, () => new THREE.RingGeometry(ri, ro, 24, 1, -half, 2 * half));
+      const gTri = (w, h) =>
+        G(`t${w}|${h}`, () => new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(0, h / 2), new THREE.Vector2(-w / 2, -h / 2), new THREE.Vector2(w / 2, -h / 2)])));
+      const gRect = (w, h) => G(`q${w}|${h}`, () => new THREE.PlaneGeometry(w, h));
+      function rr(P, x, y, w, h, r) {
+        P.moveTo(x + r, y);
+        P.lineTo(x + w - r, y);
+        P.quadraticCurveTo(x + w, y, x + w, y + r);
+        P.lineTo(x + w, y + h - r);
+        P.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        P.lineTo(x + r, y + h);
+        P.quadraticCurveTo(x, y + h, x, y + h - r);
+        P.lineTo(x, y + r);
+        P.quadraticCurveTo(x, y, x + r, y);
+        return P;
+      }
+      const gPlate = (w, h) => G(`p${w}|${h}`, () => new THREE.ShapeGeometry(rr(new THREE.Shape(), 0, -h, w, h, 12), 6));
+      const gFrame = (w, h) =>
+        G(`f${w}|${h}`, () => {
+          const sh = rr(new THREE.Shape(), 0, -h, w, h, 12);
+          sh.holes.push(rr(new THREE.Path(), 2.5, -h + 2.5, w - 5, h - 5, 9.5));
+          return new THREE.ShapeGeometry(sh, 6);
+        });
+      const fanGeo = new THREE.BufferGeometry();
+      fanGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(9), 3));
+      // every material is "transparent" so all marks sort in one list by draw order
+      const M = (hex, a = 1) => {
+        const k = hex + '|' + a;
+        let m = matCache.get(k);
+        if (!m)
+          matCache.set(
+            k,
+            (m = new THREE.MeshBasicMaterial({ color: new THREE.Color(hex), transparent: true, opacity: a, depthTest: false, depthWrite: false, side: THREE.DoubleSide })),
+          );
+        return m;
+      };
+      const pool = [];
+      let pi = 0;
+      // x, y in CSS px from the canvas's top left; rot turns clockwise on screen
+      function put(geo, mat, x, y, rot = 0) {
+        let m = pool[pi];
+        if (!m) {
+          m = new THREE.Mesh(geo, mat);
+          m.frustumCulled = false;
+          cScene.add(m);
+          pool.push(m);
+        }
+        m.geometry = geo;
+        m.material = mat;
+        m.position.set(x, -y, 0);
+        m.rotation.z = -rot;
+        m.renderOrder = pi++;
+        m.visible = true;
+        return m;
+      }
+      let look = '',
+        cW = 100,
+        cH = 100;
+      function setLook(l) {
+        look = l;
+        [cW, cH] = l === 'disc' ? [100, 100] : [176, 44];
+        cRen.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+        cRen.setSize(cW, cH);
+        cCam.right = cW;
+        cCam.bottom = -cH;
+        cCam.updateProjectionMatrix();
+        compassKey = '';
+        topEl.style.setProperty('--overlap', l === 'disc' ? '40px' : '0px');
+        topEl.style.setProperty('--inset', l === 'disc' && !isLandscape ? '94px' : '0px');
+        topEl.style.setProperty('--side', cW + 26 + 'px');
+        topEl.classList.toggle('wide', isLandscape);
+        requestAnimationFrame(() => {
+          trackW = track.clientWidth;
+          layoutSegs();
+        });
+      }
+      function compassModel() {
+        const marks = [];
+        const nextId = STEPS[stepIdx].next;
+        for (const s of Object.values(STATIONS))
+          marks.push({ rel: bearingTo(s.x, s.z), d: Math.hypot(s.x - me.x, s.z - me.z), kind: s.id === nextId ? 'next' : 'station' });
+        for (const [id, it] of Object.entries(ITEMS)) {
+          if (!onRadar(id)) continue;
+          const d = Math.hypot(it.x - me.x, it.z - me.z);
+          if (d < RANGE * 1.6) marks.push({ rel: bearingTo(it.x, it.z), d, kind: 'item', id });
+        }
+        let spk = null;
+        if (cur && SRC[cur].playing) {
+          const s = SRC[cur];
+          const it = ITEMS[s.item];
+          if (onRadar(s.item) || CFG.hidden === 'mark') {
+            const who = s.sentences[segAt(s, s.t)].who;
+            spk = { rel: bearingTo(it.x, it.z), d: Math.hypot(it.x - me.x, it.z - me.z), color: colorOf(who), id: s.item };
+          }
+        }
+        return { marks, spk, north: wrap(-me.h) };
+      }
+      let compassKey = '',
+        radarShown = true;
+      function hereStation() {
+        for (const s of Object.values(STATIONS)) if (Math.hypot(s.x - me.x, s.z - me.z) < s.r) return s.id;
+        return null;
+      }
+      function drawCompass() {
+        // "radar at all": the creator can switch the compass off for the tour or a station; it keeps its place, hidden
+        const on = resolve('radarAll', { station: hereStation() }).v !== false;
+        if (on !== radarShown) {
+          radarShown = on;
+          cmp.style.visibility = on ? '' : 'hidden';
+          compassKey = '';
+        }
+        if (!on) return;
+        const m = compassModel();
+        // redraw only when something the compass shows has moved
+        const sp = m.spk ? `${Math.round(m.spk.rel * 200)}${m.spk.color}` : '';
+        const key = `${look}|${Math.round(me.x * 20)}|${Math.round(me.z * 20)}|${Math.round(me.h * 300)}|${sp}|${m.marks.length}|${STEPS[stepIdx].next}`;
+        if (key === compassKey) return;
+        compassKey = key;
+        pi = 0;
+        if (look === 'disc') drawDisc(m);
+        else drawBand(m);
+        for (let i = pi; i < pool.length; i++) pool[i].visible = false;
+        cRen.render(cScene, cCam);
+      }
+      function drawMark(k, x, y, m, rItem, aItem) {
+        if (k.kind === 'next') {
+          put(gDisc(NEXT_R + 2.5), M('#ffffff'), x, y);
+          put(gDisc(NEXT_R), M(NEXT_C), x, y);
+        } else if (k.kind === 'station') {
+          put(gDisc(ST_R), M(INK), x, y);
+          put(gDisc(ST_R - 3), M(PAPER), x, y);
+        } else {
+          const hit = m.spk && m.spk.id === k.id;
+          put(gDisc(rItem + 1.5), M(PAPER), x, y);
+          put(gDisc(hit ? rItem + 1 : rItem), M(hit ? m.spk.color : INK, hit ? 1 : aItem), x, y);
+        }
+      }
+      function drawDisc(m) {
+        const R = cW / 2,
+          r0 = R - 2.5,
+          rIn = 11,
+          rOut = r0 - 11;
+        const pos = (rel, d) => {
+          const r = d > RANGE ? r0 - 9 : rIn + ((rOut - rIn) * d) / RANGE;
+          return [R + Math.sin(rel) * r, R - Math.cos(rel) * r];
+        };
+        put(gDisc(r0), M(PAPER), R, R);
+        put(gSector(r0 - 2, 0.52), M(INK, 0.1), R, R, -Math.PI / 2); // what you face
+        const mid = (rIn + rOut) / 2;
+        put(gRing(mid - 1, mid + 1), M(INK, 0.25), R, R);
+        if (m.spk) {
+          // the speaker wedge: from the centre toward whoever speaks, in their colour
+          const rot = m.spk.rel - Math.PI / 2;
+          put(gSector(r0 - 3, 0.32), M(m.spk.color, 0.42), R, R, rot);
+          put(gArc(r0 - 6, r0 - 3, 0.32), M(m.spk.color), R, R, rot);
+        }
+        put(gRing(r0 - 1.25, r0 + 1.25), M(INK), R, R);
+        put(gTri(10, 9), M(NORTH_C), R + Math.sin(m.north) * (r0 - 6), R - Math.cos(m.north) * (r0 - 6), m.north);
+        for (const pass of ['item', 'station', 'next'])
+          for (const k of m.marks) {
+            if (k.kind !== pass) continue;
+            const [x, y] = pos(k.rel, k.d);
+            drawMark(k, x, y, m, ITEM_R, k.d > RANGE ? 0.55 : 1);
+          }
+        put(gTri(11, 12), M(INK), R, R); // the visitor
+      }
+      function drawBand(m) {
+        const W = cW,
+          H = cH,
+          half = W / 2 - 14,
+          y = H / 2 + 3;
+        const px = (rel) => W / 2 + clamp(rel / (Math.PI / 2), -1, 1) * half;
+        put(gPlate(W, H), M(PAPER), 0, 0);
+        if (Math.abs(m.north) < Math.PI / 2) put(gRect(3, 9), M(NORTH_C), px(m.north), 8.5);
+        if (m.spk) {
+          const x = px(m.spk.rel);
+          fanGeo.attributes.position.array.set([W / 2, -(H - 6), 0, x - 9, -5, 0, x + 9, -5, 0]);
+          fanGeo.attributes.position.needsUpdate = true;
+          put(fanGeo, M(m.spk.color, 0.42), 0, 0);
+          put(gRect(18, 4), M(m.spk.color), x, 6);
+          if (Math.abs(m.spk.rel) > Math.PI / 2) {
+            const s = Math.sign(m.spk.rel);
+            put(gTri(9, 10), M(m.spk.color), x + s * 8, H / 2 - 4, (s * Math.PI) / 2); // behind you: turn this way
+          }
+        }
+        // round 3's band sizes: 7.5 px near, 3.5 px at the edge of range, 3.6 px behind
+        for (const pass of ['item', 'station', 'next'])
+          for (const k of m.marks) {
+            if (k.kind !== pass) continue;
+            const beyond = Math.abs(k.rel) > Math.PI / 2;
+            const r = beyond ? 3.6 : k.d < RANGE ? 7.5 - (4 * k.d) / RANGE : 3.5;
+            drawMark(k, px(k.rel), y, m, r, beyond ? 0.42 : k.d < RANGE ? 1 : 0.55);
+          }
+        put(gTri(12, 8), M(INK), W / 2, H - 7);
+        put(gFrame(W, H), M(INK), 0, 0);
+      }
+
+      // ---------- story, hint ----------
+      let stepIdx = 0,
+        lastProgress = 0,
+        minD = Infinity,
+        stillT = 0,
+        hintOffered = false,
+        hintUsed = false; // offered once per episode: a new step starts the next one
+      const hintBtn = $('hint'),
+        storyEl = $('story');
+      function step(n) {
+        stepIdx = n;
+        lastProgress = simT;
+        minD = Infinity;
+        stillT = 0;
+        hintUsed = false;
+        setHint(false);
+        const st = STEPS[n];
+        storyEl.classList.toggle('next', st.kind === 'explore' && n < STEPS.length - 1);
+        beam.visible = !!st.next;
+        if (st.next) beam.position.set(STATIONS[st.next].x, 35, STATIONS[st.next].z);
+        if (n === 1) speak('greta', { restart: true }); // Greta greets once, on arrival
+      }
+      function setHint(on) {
+        hintOffered = on;
+        hintBtn.classList.toggle('on', on);
+      }
+      function hints(dt) {
+        const st = STEPS[stepIdx];
+        if (!st.next) return;
+        const s = STATIONS[st.next];
+        const d = Math.hypot(s.x - me.x, s.z - me.z);
+        if (d < s.r * 0.7) {
+          step(stepIdx + 1);
+          return;
+        }
+        minD = Math.min(minD, d);
+        stillT = me.spd < 0.25 ? stillT + dt : 0;
+        if (resolve('hints', { station: st.next, story: st.story }).v === false) {
+          if (hintOffered) setHint(false);
+          return;
+        }
+        if (hintOffered || hintUsed) return;
+        const fire =
+          CFG.hint === 'idle60' ? simT - lastProgress > 60 : CFG.hint === 'still8' ? stillT > 8 : d - minD > 10;
+        if (fire) setHint(true);
+      }
+      function showTheWay() {
+        const st = STEPS[stepIdx];
+        if (!st.next) return;
+        const s = STATIONS[st.next];
+        const f = { x: me.x + Math.sin(me.h) * 2.5, z: me.z - Math.cos(me.h) * 2.5 };
+        motes.show(f.x, f.z, s.x, s.z);
+        setHint(false);
+        hintUsed = true;
+        lastProgress = simT;
+        minD = Infinity;
+        stillT = 0;
+      }
+      hintBtn.addEventListener('click', () => {
+        userTouched();
+        showTheWay();
+      });
+      $('stepNext').addEventListener('click', () => {
+        userTouched();
+        if (stepIdx < STEPS.length - 1) step(stepIdx + 1);
+      });
+      $('exit').addEventListener('click', () => toast('Exit (not part of this prototype)'));
+      let toastT = 0;
+      function toast(msg) {
+        const t = $('toast');
+        t.textContent = msg;
+        t.classList.add('on');
+        clearTimeout(toastT);
+        toastT = setTimeout(() => t.classList.remove('on'), 1800);
+      }
+
+      // ---------- input: drag to look and walk, keys ----------
+      // a tap on a source in the world starts it, from inside its place only
+      const ray = new THREE.Raycaster(),
+        ndc = new THREE.Vector2();
+      const SRC_OF_ITEM = Object.fromEntries(Object.entries(SRC).map(([id, s]) => [s.item, id]));
+      const tapTargets = Object.keys(SRC_OF_ITEM).map((k) => worldObj[k]);
+      function tapWorld(clientX, clientY) {
+        const r = canvas.getBoundingClientRect();
+        ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+        ray.setFromCamera(ndc, camera);
+        const hit = ray.intersectObjects(tapTargets, true)[0];
+        let o = hit && hit.object;
+        while (o && !o.userData.item) o = o.parent;
+        if (!o) return false;
+        const id = SRC_OF_ITEM[o.userData.item];
+        if (stationDist(id) > 0) {
+          toast(`Walk into ${STATIONS[ITEMS[o.userData.item].st].name.toLowerCase()} to hear it`);
+          return false;
+        }
+        speak(id);
+        return true;
+      }
+      let look0 = null;
+      canvas.addEventListener('pointerdown', (e) => {
+        userTouched();
+        canvas.setPointerCapture(e.pointerId);
+        look0 = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moved: false };
+      });
+      canvas.addEventListener('pointermove', (e) => {
+        if (!look0) return;
+        if (!look0.moved && Math.hypot(e.clientX - look0.sx, e.clientY - look0.sy) <= CFG.slop) return; // still a tap
+        look0.moved = true;
+        const dx = e.clientX - look0.x,
+          dy = e.clientY - look0.y;
+        look0.x = e.clientX;
+        look0.y = e.clientY;
+        me.h = wrap(me.h - dx * 0.005);
+        const f = -dy * 0.035;
+        me.x += Math.sin(me.h) * f;
+        me.z -= Math.cos(me.h) * f;
+      });
+      canvas.addEventListener('pointerup', (e) => {
+        if (look0 && !look0.moved) tapWorld(e.clientX, e.clientY);
+        look0 = null;
+      });
+      canvas.addEventListener('pointercancel', () => (look0 = null));
+      const keys = {};
+      addEventListener('keydown', (e) => {
+        if (/^(w|a|s|d|arrow)/i.test(e.key)) {
+          keys[e.key.toLowerCase()] = true;
+          userTouched();
+        }
+      });
+      addEventListener('keyup', (e) => (keys[e.key.toLowerCase()] = false));
+      function keyMove(dt) {
+        const fwd = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0);
+        const turn = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
+        me.h = wrap(me.h + turn * 1.2 * dt);
+        me.x += Math.sin(me.h) * fwd * 1.4 * dt;
+        me.z -= Math.cos(me.h) * fwd * 1.4 * dt;
+      }
+
+      // ---------- scripted demonstration ----------
+      let demoGen = 0,
+        demoRunning = false,
+        beatIdx = 0;
+      const preds = [];
+      let motion = null;
+      function until(pred) {
+        const g = demoGen;
+        return new Promise((res, rej) => preds.push({ pred, res, rej, g }));
+      }
+      const wait = (sec) => {
+        const t = simT + sec;
+        return until(() => simT >= t);
+      };
+      function walkTo(x, z, v = 2.0) {
+        motion = { kind: 'walk', x, z, v };
+        return until(() => !motion);
+      }
+      function turnTo(h) {
+        motion = { kind: 'turn', h };
+        return until(() => !motion);
+      }
+      const faceItem = (id) => turnTo(wrap(Math.atan2(ITEMS[id].x - me.x, -(ITEMS[id].z - me.z))));
+      function runMotion(dt) {
+        if (!motion) return;
+        if (motion.kind === 'turn') {
+          const d = wrap(motion.h - me.h);
+          const st = 1.6 * dt;
+          if (Math.abs(d) <= st) {
+            me.h = motion.h;
+            motion = null;
+          } else me.h = wrap(me.h + Math.sign(d) * st);
+        } else {
+          const dx = motion.x - me.x,
+            dz = motion.z - me.z,
+            d = Math.hypot(dx, dz);
+          const want = Math.atan2(dx, -dz);
+          const dh = wrap(want - me.h);
+          me.h = wrap(me.h + clamp(dh, -2 * dt, 2 * dt));
+          const st = motion.v * dt;
+          if (d <= st || d < 1e-6) {
+            me.x = motion.x;
+            me.z = motion.z;
+            motion = null;
+          } else {
+            me.x += (dx / d) * st;
+            me.z += (dz / d) * st;
+          }
+        }
+      }
+      function runPreds() {
+        for (let i = preds.length - 1; i >= 0; i--) {
+          const p = preds[i];
+          if (p.g !== demoGen) {
+            preds.splice(i, 1);
+            p.rej(new Error('cancel'));
+          } else if (p.pred()) {
+            preds.splice(i, 1);
+            p.res();
+          }
+        }
+      }
+      // A scripted drag uses the same code path as a finger, with a dot that shows where the finger is.
+      const fingerEl = $('finger');
+      async function scriptedDrag(targetT, secs = 1.4) {
+        if (!cur) return;
+        const s = SRC[cur];
+        const tr = track.getBoundingClientRect(),
+          dr = dev.getBoundingClientRect();
+        const x0 = tToX(s, s.t),
+          x1 = tToX(s, targetT);
+        const place = (x) => {
+          fingerEl.style.left = tr.left - dr.left + x + 'px';
+          fingerEl.style.top = tr.top - dr.top + 4 + 'px';
+        };
+        place(x0);
+        fingerEl.classList.add('on');
+        try {
+          await wait(0.35);
+          dragStart(x0, true);
+          const mine = drag;
+          if (mine) mine.scripted = true;
+          const t0 = simT;
+          await until(() => {
+            if (drag !== mine) return true; // a person took over: leave their drag alone
+            const k = clamp((simT - t0) / secs, 0, 1);
+            const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+            const x = x0 + (x1 - x0) * e;
+            place(x);
+            dragMove(x);
+            return k >= 1;
+          });
+          await wait(0.6);
+          if (drag && drag === mine) dragEnd();
+          await wait(0.3);
+        } finally {
+          fingerEl.classList.remove('on');
+          if (drag && drag.scripted) dragEnd(); // end only the scripted drag, never a person's
+        }
+      }
+      // A scripted tap on an item in the world, through the same path as a finger.
+      async function scriptedWorldTap(id) {
+        const it = ITEMS[id];
+        const v = new THREE.Vector3(it.x, 1.1, it.z).project(camera);
+        const r = canvas.getBoundingClientRect(),
+          dr = dev.getBoundingClientRect();
+        const cx = r.left + ((v.x + 1) / 2) * r.width,
+          cy = r.top + ((1 - v.y) / 2) * r.height;
+        fingerEl.style.left = cx - dr.left + 'px';
+        fingerEl.style.top = cy - dr.top + 'px';
+        fingerEl.classList.add('on');
+        await wait(0.5);
+        tapWorld(cx, cy);
+        await wait(0.3);
+        fingerEl.classList.remove('on');
+      }
+      async function scriptedTap() {
+        if (!cur) return;
+        const s = SRC[cur];
+        const tr = track.getBoundingClientRect(),
+          dr = dev.getBoundingClientRect();
+        fingerEl.style.left = tr.left - dr.left + tToX(s, s.t) + 'px';
+        fingerEl.style.top = tr.top - dr.top + 4 + 'px';
+        fingerEl.classList.add('on');
+        await wait(0.35);
+        tapKnob();
+        await wait(0.3);
+        fingerEl.classList.remove('on');
+      }
+      const companion = $('companion');
+      const place = (x, z, h) => {
+        me.x = x;
+        me.z = z;
+        me.h = h;
+        motion = null;
+      };
+      function resetVoices() {
+        for (const s of Object.values(SRC)) {
+          s.t = 0;
+          s.playing = false;
+          s.finished = false;
+          s.held = false;
+          s.wi = 0;
+        }
+        cur = null;
+        companion.classList.remove('on');
+      }
+      const facing = (id) => wrap(Math.atan2(ITEMS[id].x - me.x, -(ITEMS[id].z - me.z)));
+      const BEATS = [
+        {
+          name: 'Arrive at the well court, following the beam',
+          setup() {
+            place(0, -22, 0);
+            step(0);
+          },
+          async run() {
+            await wait(1.5);
+            await walkTo(0, -50);
+            await until(() => stepIdx === 1);
+          },
+        },
+        {
+          name: 'Greta greets you once; the speaker wedge points at her',
+          setup() {
+            place(0, -50, 0);
+            step(1);
+          },
+          async run() {
+            await faceItem('greta');
+            await wait(4);
+          },
+        },
+        {
+          name: 'A message covers the screen for 4 s, then a drag back to the missed sentence',
+          setup() {
+            place(0, -50, 0);
+            step(1);
+            me.h = facing('greta');
+            SRC.greta.t = 5;
+          },
+          async run() {
+            const s = SRC.greta;
+            const missed = segAt(s, s.t);
+            companion.classList.add('on');
+            await wait(4);
+            companion.classList.remove('on');
+            await wait(1);
+            await scriptedDrag(s.sentences[missed].start + 0.2);
+            await until(() => s.finished);
+            step(2);
+            await wait(1);
+          },
+        },
+        {
+          name: 'A film with subtitles: turn away, pause and rewind from the card',
+          setup() {
+            place(-2, -56, 0);
+            step(2);
+          },
+          async run() {
+            await walkTo(-2, -57);
+            await faceItem('aVid');
+            speak('vid', { restart: true });
+            await wait(5);
+            await turnTo(wrap(me.h + 2.8));
+            await wait(2.5);
+            await scriptedTap();
+            await wait(1.5);
+            const s = SRC.vid;
+            await scriptedDrag(s.sentences[Math.max(0, segAt(s, s.t) - 1)].start + 0.1);
+            await wait(1.2);
+            await scriptedTap();
+            await wait(1.5);
+            await faceItem('aVid');
+            await until(() => s.finished);
+          },
+        },
+        {
+          name: 'The finished film dragged back: it waits there, paused, until a tap',
+          setup() {
+            place(-2, -57, 0);
+            step(2);
+            me.h = facing('aVid');
+            speak('vid', { restart: true });
+            SRC.vid.t = SRC.vid.dur - 0.2;
+          },
+          async run() {
+            const s = SRC.vid;
+            await until(() => s.finished);
+            await wait(0.6);
+            await scriptedDrag(s.sentences[2].start + 0.5);
+            await wait(3);
+            await scriptedTap();
+            await wait(3.5);
+            await scriptedTap();
+            await wait(1);
+          },
+        },
+        {
+          name: 'An item speaks behind you: the wedge points back',
+          setup() {
+            place(0, -54, 0);
+            step(2);
+          },
+          async run() {
+            await walkTo(0, -54);
+            await turnTo(0);
+            speak('bell', { restart: true });
+            await until(() => SRC.bell.finished);
+            await wait(1);
+          },
+        },
+        {
+          name: 'An item the creator keeps off the compass speaks (see "Hidden item speaks")',
+          setup() {
+            place(0, -54, 0);
+            step(2);
+          },
+          async run() {
+            await turnTo(0.6);
+            speak('well', { restart: true });
+            await until(() => SRC.well.finished);
+            await wait(1);
+          },
+        },
+        {
+          name: 'Tap Greta to start her; walk out of the court (she holds, the card goes) and back (she carries on)',
+          setup() {
+            place(0, -50, 0);
+            step(2);
+            me.h = facing('greta');
+          },
+          async run() {
+            await wait(1);
+            await scriptedWorldTap('greta');
+            await wait(4);
+            await walkTo(0, -34, 2.4);
+            await wait(2.5);
+            await walkTo(0, -50, 2.4);
+            await faceItem('greta');
+            await wait(4);
+          },
+        },
+        {
+          name: 'A search step: the hint button appears, then the way is shown',
+          setup() {
+            place(0, -56, 0);
+            step(2);
+          },
+          async run() {
+            step(3);
+            await wait(1);
+            await walkTo(14, -72);
+            if (CFG.hint === 'idle60') {
+              lastProgress -= 60; // fast-forwarded: 60 s without progress
+              toast('Fast-forward: 60 s without progress');
+            } else if (CFG.hint === 'away10') {
+              await walkTo(4, -60);
+            }
+            await until(() => hintOffered);
+            await wait(1.5);
+            const b = hintBtn.getBoundingClientRect(),
+              dr = dev.getBoundingClientRect();
+            fingerEl.style.left = b.left - dr.left + b.width / 2 + 'px';
+            fingerEl.style.top = b.top - dr.top + b.height / 2 + 'px';
+            fingerEl.classList.add('on');
+            await wait(0.4);
+            showTheWay();
+            fingerEl.classList.remove('on');
+            await wait(2);
+            await walkTo(50, -110, 2.6);
+            await until(() => stepIdx === 4);
+          },
+        },
+        {
+          name: 'Three voices at the hall steps, one after the other',
+          setup() {
+            place(52, -111, Math.PI * 0.75);
+            step(4);
+          },
+          async run() {
+            for (const id of ['baker', 'ringer', 'mason']) {
+              await faceItem(id);
+              speak(id, { restart: true });
+              await until(() => SRC[id].finished);
+              await wait(0.8);
+            }
+          },
+        },
+        {
+          name: 'A narrated long text: the sign (see "Narrated long text"), then a skip forward',
+          setup() {
+            place(58, -110, 0);
+            step(4);
+          },
+          async run() {
+            await walkTo(58, -110);
+            await faceItem('bSign');
+            speak('long', { restart: true });
+            await wait(9);
+            await turnTo(wrap(me.h - 2.2));
+            await wait(5);
+            const s = SRC.long;
+            await scriptedDrag(s.sentences[Math.min(s.sentences.length - 1, segAt(s, s.t) + 3)].start + 0.3);
+            await wait(4);
+            await faceItem('bSign');
+            await wait(3);
+          },
+        },
+        {
+          name: 'Your turn: drag to look, drag up to walk, tap a figure or sign to hear it',
+          setup() {
+            place(52, -112, 0);
+            step(5);
+          },
+          async run() {
+            step(5);
+          },
+        },
+      ];
+      function setBeat(i) {
+        beatIdx = i;
+        $('beatLbl').textContent = `${i + 1}/${BEATS.length} ${BEATS[i].name}`;
+        beatBtns.forEach((b, k) => b.classList.toggle('cur', k === i));
+      }
+      async function runFrom(i) {
+        demoGen++;
+        const g = demoGen;
+        motion = null;
+        drag = null;
+        resetVoices();
+        BEATS[i].setup();
+        demoRunning = true;
+        $('bRun').textContent = 'Pause';
+        try {
+          for (let k = i; k < BEATS.length; k++) {
+            if (g !== demoGen) return;
+            setBeat(k);
+            await BEATS[k].run();
+          }
+          demoRunning = false;
+          $('bRun').textContent = 'Replay';
+        } catch (e) {
+          if (e.message !== 'cancel') console.error(e);
+        }
+      }
+      function userTouched() {
+        if (!demoRunning) return;
+        demoGen++;
+        demoRunning = false;
+        motion = null;
+        fingerEl.classList.remove('on');
+        companion.classList.remove('on');
+        $('bRun').textContent = 'Resume';
+      }
+      $('bRun').addEventListener('click', () => {
+        if (demoRunning) userTouched();
+        else runFrom($('bRun').textContent === 'Replay' ? 0 : beatIdx);
+      });
+      $('bPrev').addEventListener('click', () => runFrom(Math.max(0, beatIdx - 1)));
+      $('bNext').addEventListener('click', () => runFrom(Math.min(BEATS.length - 1, beatIdx + 1)));
+
+      // ---------- panel ----------
+      const panel = $('panel');
+      $('gear').addEventListener('click', () => panel.classList.add('open'));
+      $('pClose').addEventListener('click', () => panel.classList.remove('open'));
+      const beatBtns = BEATS.map((b, i) => {
+        const el = document.createElement('button');
+        el.textContent = `${i + 1}. ${b.name.split(':')[0]}`;
+        el.addEventListener('click', () => runFrom(i));
+        $('beats').appendChild(el);
+        return el;
+      });
+      function seg(parent, label, opts, get, set, note) {
+        const row = document.createElement('div');
+        row.className = 'row';
+        row.innerHTML = `<span>${esc(label)}</span>`;
+        const btns = opts.map(([v, l]) => {
+          const b = document.createElement('button');
+          b.textContent = l;
+          b.addEventListener('click', () => {
+            set(v);
+            btns.forEach((x, k) => x.classList.toggle('sel', opts[k][0] === get()));
+            if (row.refresh) row.refresh();
+          });
+          row.appendChild(b);
+          return b;
+        });
+        btns.forEach((x, k) => x.classList.toggle('sel', opts[k][0] === get()));
+        if (note) {
+          const em = document.createElement('em');
+          em.textContent = note;
+          row.appendChild(em);
+        }
+        parent.appendChild(row);
+        return row;
+      }
+      for (const [k, label, opts, note] of CONTROLS)
+        seg($('ctl'), label, opts, () => CFG[k], (v) => applyCfg(k, v), note);
+      function applyCfg(k, v) {
+        CFG[k] = v;
+        if (k === 'fs') document.documentElement.style.setProperty('--fs', v + 'px');
+        if (k === 'lines' || k === 'fs') applyLines();
+        if (k === 'measure') $('mchip').classList.toggle('on', v);
+        compassKey = '';
+        plateKey = '';
+        shown.subs = null;
+        shown.chunk = -1;
+      }
+      const auth = $('auth');
+      seg(auth, 'Tour: compass look', [['disc', 'disc'], ['band', 'band']], () => AUTH.tour.look, (v) => {
+        AUTH.tour.look = v;
+        setLook(v);
+      }, "creator's choice, tour only");
+      {
+        const NAMES = { radarAll: 'radar at all', shown: 'on radar', hints: 'hints' };
+        const STORY_ST = { well: 'A', steps: 'B' };
+        const rows = [
+          ['Tour', 'tour', null, ['radarAll', 'shown', 'hints']],
+          ...Object.values(STATIONS).map((st) => [st.name, 'station', st.id, ['radarAll', 'shown', 'hints']]),
+          ...Object.entries(STORIES).map(([k, t]) => [`Story: ${t}`, 'story', k, ['shown', 'hints']]),
+          ['Item', 'item', '*', ['shown', 'hints']],
+        ];
+        let authItem = 'well';
+        const ctxOf = (lvl, id) =>
+          lvl === 'tour' ? {} : lvl === 'station' ? { station: id } : lvl === 'story' ? { story: id, station: STORY_ST[id] } : itemCtx(id);
+        const host = document.createElement('div');
+        auth.appendChild(host);
+        const renderAuth = () => {
+          host.innerHTML = rows
+            .map(([label, lvl, id, keys]) => {
+              const rid = id === '*' ? authItem : id;
+              const head =
+                id === '*'
+                  ? `<select id="authItem" aria-label="Item">${Object.entries(ITEMS)
+                      .map(([k, it]) => `<option value="${k}"${k === authItem ? ' selected' : ''}>${esc(it.name)}</option>`)
+                      .join('')}</select>`
+                  : `<span>${esc(label)}</span>`;
+              const btns = keys
+                .map((k) => {
+                  const v = lvl === 'tour' ? AUTH.tour[k] : AUTH[lvl][rid][k];
+                  const eff = resolve(k, ctxOf(lvl, rid)).v !== false;
+                  const word = v === null ? `as above (${eff ? 'yes' : 'no'})` : v ? 'yes' : 'no';
+                  return `<button type="button" class="${v === null ? '' : 'sel'}" data-al="${lvl}" data-aid="${rid || ''}" data-ak="${k}">${NAMES[k]}: ${word}</button>`;
+                })
+                .join('');
+              return `<div class="row">${head}${btns}</div>`;
+            })
+            .join('');
+          $('authItem').addEventListener('change', (e) => {
+            authItem = e.target.value;
+            renderAuth();
+          });
+        };
+        host.addEventListener('click', (e) => {
+          const b = e.target.closest('[data-ak]');
+          if (!b) return;
+          const { al, aid, ak } = b.dataset;
+          if (al === 'tour') AUTH.tour[ak] = !AUTH.tour[ak];
+          else {
+            const o = AUTH[al][aid];
+            o[ak] = o[ak] === null ? true : o[ak] === true ? false : null; // as above -> yes -> no
+          }
+          compassKey = '';
+          renderAuth();
+        });
+        renderAuth();
+      }
+      for (const id of Object.keys(SRC)) {
+        const b = document.createElement('button');
+        const s = SRC[id];
+        b.textContent = `${ITEMS[s.item].name} (${Math.round(s.dur)} s)`;
+        b.title = 'Takes you into its place, facing it, and starts it';
+        b.addEventListener('click', () => {
+          userTouched();
+          if (stationDist(id) > 0) {
+            // a tester shortcut: stand 5 m from the item, toward its place's centre, facing it
+            const it = ITEMS[s.item],
+              st = STATIONS[it.st];
+            const dx = st.x - it.x,
+              dz = st.z - it.z,
+              L = Math.hypot(dx, dz) || 1;
+            place(it.x + (dx / L) * 5, it.z + (dz / L) * 5, Math.atan2(-dx / L, dz / L));
+          }
+          speak(id, { restart: true });
+        });
+        $('plays').appendChild(b);
+      }
+
+      // ---------- layout, sizes ----------
+      let isLandscape = false;
+      // 3 lines only while the card fits the top 1/6 of the screen; measured on resize and on a setting change
+      const CARD_FIXED = 58; // borders 4 + padding 12 + scrub row 42
+      function applyLines() {
+        const H = dev.clientHeight || innerHeight;
+        const fits3 = (topEl.offsetTop + CARD_FIXED + 3 * CFG.fs * 1.35) / H <= 1 / 6;
+        linesNow = CFG.lines === 3 && fits3 ? 3 : 2;
+        document.documentElement.style.setProperty('--lines', linesNow);
+      }
+      new ResizeObserver(() => {
+        const w = dev.clientWidth,
+          h = dev.clientHeight;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        const was = isLandscape;
+        isLandscape = w > h && h < 520;
+        applyLines();
+        if (was !== isLandscape && look) setLook(look);
+      }).observe(dev);
+      new ResizeObserver(() => {
+        textW = textEl.clientWidth;
+        const tw = track.clientWidth;
+        if (tw && tw !== trackW) {
+          trackW = tw;
+          layoutSegs();
+        }
+      }).observe(scrubEl);
+      new ResizeObserver(() => (textW = textEl.clientWidth || textW)).observe(textEl);
+
+      // ---------- measuring hook (off by default; it forces a layout once a second) ----------
+      const measured = {};
+      function measure() {
+        const dr = dev.getBoundingClientRect();
+        const key = `${Math.round(dr.width)}x${Math.round(dr.height)}`;
+        const cr = $('card').getBoundingClientRect(),
+          kr = cmp.getBoundingClientRect();
+        const on = cardwrap.classList.contains('on');
+        const card = (cr.bottom - dr.top) / dr.height; // the card's place is reserved even while it is hidden
+        const all = (Math.max(on ? cr.bottom : 0, kr.bottom) - dr.top) / dr.height;
+        measured[key] = { card: +(card * 100).toFixed(1), withCompass: +(all * 100).toFixed(1), cardShown: on };
+        return measured;
+      }
+      setInterval(() => {
+        if (!CFG.measure) return;
+        const m = measure();
+        const k = Object.keys(m).pop();
+        const r = m[k];
+        $('mchip').textContent = `${k}  card ${r.card}%${r.cardShown ? '' : ' (hidden)'}  with compass ${r.withCompass}%  lines ${linesNow}  limit 16.7%`;
+      }, 1000);
+
+      // ---------- frame loop ----------
+      const work = new Float32Array(120),
+        workJs = new Float32Array(120);
+      const avgMax = (a) => {
+        let s = 0,
+          mx = 0;
+        for (const v of a) {
+          s += v;
+          mx = Math.max(mx, v);
+        }
+        return { avg: +(s / a.length).toFixed(2), max: +mx.toFixed(1) };
+      };
+      let wk = 0,
+        last = performance.now(),
+        statT = 0;
+      let signLegible = false;
+      function frame(now) {
+        requestAnimationFrame(frame);
+        const w0 = performance.now();
+        let dt = clamp((now - last) / 1000, 0, 0.1); // a rAF stamp can precede the first performance.now()
+        last = now;
+        dt *= CFG.speed;
+        simT += dt;
+        const px = me.x,
+          pz = me.z;
+        keyMove(dt);
+        runMotion(dt);
+        me.spd += (Math.hypot(me.x - px, me.z - pz) / Math.max(dt, 1e-3) - me.spd) * Math.min(1, dt * 3);
+        voices(dt);
+        hints(dt);
+        runPreds();
+        updateCamera();
+        const sg = ITEMS.bSign;
+        signLegible = Math.hypot(sg.x - me.x, sg.z - me.z) < 14 && Math.abs(bearingTo(sg.x, sg.z)) < 0.55;
+        updatePlate();
+        updateVideo();
+        motes.tick(dt);
+        if (worldObj.bModel.userData.spin) worldObj.bModel.userData.spin.rotation.y += dt * 0.5;
+        drawCompass();
+        updateCard();
+        workJs[wk % workJs.length] = performance.now() - w0;
+        renderer.render(scene, camera);
+        work[wk++ % work.length] = performance.now() - w0;
+        if (now - statT > 1000) {
+          statT = now;
+          const a = avgMax(workJs),
+            b = avgMax(work);
+          $('stats').textContent = `Per frame, last 120 frames:
+JS work avg ${a.avg} ms, max ${a.max} ms
+with render submit avg ${b.avg} ms, max ${b.max} ms
+${Object.entries(measured)
+            .map(([k, v]) => `${k}: card ${v.card}%, with compass ${v.withCompass}%`)
+            .join('\n')}`;
+        }
+      }
+      setLook(AUTH.tour.look);
+      applyCfg('fs', CFG.fs);
+      applyCfg('measure', CFG.measure);
+      requestAnimationFrame(frame);
+      runFrom(Math.max(0, Math.min(BEATS.length - 1, (Number(qs.get('beat')) || 1) - 1)));
+
+      window.HC = {
+        goto: (n) => runFrom(n),
+        pause: userTouched,
+        set: (k, v) => applyCfg(k, v),
+        look: setLook,
+        measure,
+        state: () => ({
+          beat: beatIdx,
+          step: stepIdx,
+          cur,
+          t: cur ? +SRC[cur].t.toFixed(2) : null,
+          playing: cur ? SRC[cur].playing : null,
+          finished: cur ? SRC[cur].finished : null,
+          hint: hintOffered,
+          lines: linesNow,
+          held: Object.keys(SRC).filter((k) => SRC[k].held),
+        }),
+        bench: () => ({ js: avgMax(workJs), withRender: avgMax(work), over50: [...workJs].filter((v) => v > 50).length }),
+        benchReset: () => {
+          work.fill(0);
+          workJs.fill(0);
+        },
+        knob: () => {
+          const r = knob.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        },
+        xForSentence: (i) => {
+          const r = track.getBoundingClientRect();
+          const s = SRC[cur];
+          return { x: r.left + s.segs[i].x + s.segs[i].w / 2, y: r.top + 4 };
+        },
+      };
+    </script>
+  </body>
+</html>
