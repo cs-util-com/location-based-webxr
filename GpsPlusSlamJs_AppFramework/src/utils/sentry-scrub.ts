@@ -399,6 +399,11 @@ function childPath(path: string | null, key: string): string | null {
   return path === '' ? key : `${path}.${key}`;
 }
 
+/** The path of an array's elements under `path`, or null under null. */
+function elementPath(path: string | null): string | null {
+  return path === null ? null : `${path}[]`;
+}
+
 /** Whether the value at `path` is an id kept as it is. */
 function isKeptId(
   path: string | null,
@@ -475,7 +480,7 @@ export function scrubDeep<T>(
       if (isCoordinatePair(node)) return REDACTED;
       const out: unknown[] = [];
       copies.set(node, out);
-      const itemPath = path === null ? null : `${path}[]`;
+      const itemPath = elementPath(path);
       for (const item of node) out.push(walk(item, depth + 1, itemPath));
       return out;
     }
