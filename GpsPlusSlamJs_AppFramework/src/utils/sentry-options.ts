@@ -90,8 +90,9 @@ export function sentryOptions(
 
     beforeSend: (event) => scrubDeep(event, ownHost),
     beforeSendTransaction: (event) => scrubDeep(event, ownHost),
-    // Spans sent on their own (web-vital measurements) pass neither hook
-    // above.
+    // Every span: the SDK runs this on a transaction's root span and on each
+    // child span too, and spans sent on their own (web-vital measurements)
+    // pass neither hook above.
     beforeSendSpan: (span) => scrubDeep(span, ownHost),
 
     // Console breadcrumbs are dropped: the framework logger adds its own
@@ -165,7 +166,8 @@ const EVENT_ID_PATHS: ReadonlySet<string> = new Set([
   'debug_meta.images[].debug_id',
 ]);
 
-/** The same for a span sent on its own: its ids stand at the top. */
+/** The same for one span, which `beforeSendSpan` gets for every span of a
+ *  transaction and for a span sent on its own: its ids stand at the top. */
 const SPAN_ID_PATHS: ReadonlySet<string> = new Set([
   'trace_id',
   'span_id',

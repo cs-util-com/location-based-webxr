@@ -176,7 +176,8 @@ export interface ScrubOptions {
    * it has an id's shape (see {@link SERVICE_ID}), written as keys joined by
    * `.`, with `[]` for any array element (`debug_meta.images[].debug_id`).
    * Only the places the error service's SDK writes its own ids belong here:
-   * a value under the same key name anywhere else is scrubbed as usual.
+   * a value under the same key name anywhere else is scrubbed as usual, and
+   * so is everything under a key that holds `.`, `[` or `]`.
    */
   readonly keepIdsAt?: ReadonlySet<string>;
 }
@@ -384,13 +385,28 @@ function uniqueKey(out: Record<string, unknown>, key: string): string {
 const SERVICE_ID =
   /^(?:[0-9a-f]{16}|[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i;
 
+/** The characters a path is spelled with (see `ScrubOptions.keepIdsAt`). */
+const PATH_SYNTAX = /[.[\]]/;
+
+/**
+ * The path of `key` under `path`, or null, which no exemption matches.
+ * Null from a key that holds `.`, `[` or `]` on, at any depth: such a key
+ * could spell another path (`'trace.span_id'` would read as `trace`, then
+ * `span_id`).
+ */
+function childPath(path: string | null, key: string): string | null {
+  if (path === null || PATH_SYNTAX.test(key)) return null;
+  return path === '' ? key : `${path}.${key}`;
+}
+
 /** Whether the value at `path` is an id kept as it is. */
 function isKeptId(
-  path: string,
+  path: string | null,
   item: unknown,
   keepIdsAt: ReadonlySet<string> | undefined
 ): boolean {
   return (
+    path !== null &&
     keepIdsAt !== undefined &&
     keepIdsAt.has(path) &&
     typeof item === 'string' &&
@@ -429,12 +445,12 @@ export function scrubDeep<T>(
   const walkObject = (
     node: Record<string, unknown>,
     depth: number,
-    path: string
+    path: string | null
   ) => {
     const out: Record<string, unknown> = {};
     copies.set(node, out);
     for (const [key, item] of Object.entries(node)) {
-      const itemPath = path === '' ? key : `${path}.${key}`;
+      const itemPath = childPath(path, key);
       if (isKeptId(itemPath, item, options.keepIdsAt)) {
         out[key] = item;
         continue;
@@ -449,7 +465,7 @@ export function scrubDeep<T>(
     return out;
   };
 
-  const walk = (node: unknown, depth: number, path: string): unknown => {
+  const walk = (node: unknown, depth: number, path: string | null): unknown => {
     if (typeof node === 'string') return scrubText(node, ownHost, options);
     if (node === null || typeof node !== 'object') return node;
     const seen = copies.get(node);
@@ -459,7 +475,8 @@ export function scrubDeep<T>(
       if (isCoordinatePair(node)) return REDACTED;
       const out: unknown[] = [];
       copies.set(node, out);
-      for (const item of node) out.push(walk(item, depth + 1, `${path}[]`));
+      const itemPath = path === null ? null : `${path}[]`;
+      for (const item of node) out.push(walk(item, depth + 1, itemPath));
       return out;
     }
     return isPlainObject(node) ? walkObject(node, depth, path) : node;

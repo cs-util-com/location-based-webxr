@@ -72,7 +72,7 @@ The options of the apps visitors use. Same DSN, environment rule and
   module-private `EVENT_ID_PATHS`): `event_id`, `contexts.trace`'s
   `trace_id`, `span_id` and `parent_span_id`, the same three on each of
   `spans[]`, and `debug_meta.images[].debug_id`, by which the service finds
-  a bundle's source map; for a standalone span (`SPAN_ID_PATHS`) its own
+  a bundle's source map; for each span `beforeSendSpan` gets (`SPAN_ID_PATHS`) its own
   three ids at the top. The same names anywhere else, breadcrumbs included,
   are scrubbed as usual; see `keepIdsAt` in `sentry-scrub.ts.md`. The
   `sentry.event` breadcrumb's `event_id` is not exempt: it is 32 hex digits
@@ -175,9 +175,11 @@ reported.
 - `beforeSend`, `beforeSendTransaction` and `beforeSendSpan` pass the whole
   event or span through `scrubDeep` (links, file ids, coordinates, bare
   queries such as the `http.query` span attribute; `sentry-scrub.ts.md`).
-  `beforeSendSpan` is the only hook a standalone span passes: web-vital
-  measurements (layout shift, interaction delay) are sent that way, outside
-  any transaction.
+  `beforeSendSpan` sees every span: the SDK runs it on a transaction's root
+  span and on each of its child spans (before `beforeSendTransaction`), and
+  it is the only hook a standalone span passes: web-vital measurements
+  (layout shift, interaction delay) are sent that way, outside any
+  transaction.
 - `beforeBreadcrumb` drops console breadcrumbs (the framework logger adds
   its own breadcrumb for every log line, and the console also carries output
   of code this app does not audit, such as the core library) and scrubs

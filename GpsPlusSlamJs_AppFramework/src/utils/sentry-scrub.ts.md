@@ -101,7 +101,10 @@ dependency on the SDK, so its rules are tested on their own.
     The strict long-number rule would otherwise cut an id that happens to
     hold six or more digits in a row; a cut `debug_id` silently loses that
     bundle's source map (about 1 in 40 debug ids hold such a group). The
-    exemption is by path, never by key name: a value under `span_id` or
+    exemption is by path, never by key name. A key that holds `.`, `[` or
+    `]` could spell another path (`contexts: { 'trace.span_id': id }`,
+    `{ 'spans[]': { span_id: id } }`), so it ends the path: nothing under
+    it is exempt, at any depth. A value under `span_id` or
     `debug_id` anywhere else (breadcrumb data, tags, a context of the app's
     own) is scrubbed as usual, as is a value at an exempt path that is not
     shaped like an id. `sentry-options.ts` passes the paths the SDK writes
