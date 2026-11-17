@@ -60,9 +60,10 @@ button { font: inherit; color: inherit; }
   --barH: 44px;
   --barTop: calc(var(--t0) + var(--wordsH) + 2px);
   --rowTop: calc(var(--barTop) + var(--barH) + 6px);
-  --bandw: min(calc(100cqw - 148px), 440px);
+  --bandw: min(calc(100cqw - 104px), 440px);
   --disc: 112px;
   --textw: min(calc(100cqw - 24px), 560px);
+  --wordw: min(calc(100cqw - 128px), 560px); /* the words leave room for Exit at the top left, centred */
 }
 .hud > * { pointer-events: auto; }
 
@@ -77,7 +78,7 @@ button { font: inherit; color: inherit; }
   background: rgba(10, 14, 19, 0.86); border: 2px solid rgba(255, 255, 255, 0.22); border-radius: 18px;
 }
 .lyrics {
-  position: absolute; top: var(--t0); left: 50%; width: var(--textw); height: var(--wordsH);
+  position: absolute; top: var(--t0); left: 50%; width: var(--wordw); height: var(--wordsH);
   transform: translateX(-50%); overflow: hidden; touch-action: none; cursor: grab;
   font-size: var(--fs); line-height: var(--lh); font-weight: 600; text-align: center;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 7px rgba(0, 0, 0, 0.6);
@@ -88,20 +89,31 @@ button { font: inherit; color: inherit; }
 .col.drag { transition: none; }
 .ln { position: absolute; left: 0; right: 0; height: var(--lh); white-space: nowrap; overflow: hidden; opacity: 0; transition: opacity 0.3s; }
 .ln[data-r="cur"] { opacity: 1; }
-.ln[data-r="prev"], .ln[data-r="next"] { opacity: 0.5; }
-.ln .w { color: rgba(255, 255, 255, 0.58); transition: color 0.12s; }
+.ln[data-r="prev"] { opacity: 0.62; }
+.ln[data-r="next"] { opacity: 0.74; }
+.ln .w { color: rgba(255, 255, 255, 0.62); transition: color 0.12s; }
 .ln .w.on { color: #fff; }
 .ln[data-r="prev"] .w { color: #fff; }
 .ln .w.fx { font-style: italic; color: rgba(204, 251, 241, 0.62); }
 .ln .w.fx.on { color: #ccfbf1; }
 .ln .nm { font-weight: 800; font-size: 0.84em; letter-spacing: 0.02em; margin-right: 0.45em; }
+.ln .nm:empty { margin-right: 0; }
 .ln .nm::before { content: ""; display: inline-block; width: 0.55em; height: 0.55em; border-radius: 50%; background: currentColor; margin-right: 0.3em; vertical-align: 0.08em; }
 
 /* the scrub row: a track, and the play/pause handle that rides on it */
 .scrub { position: absolute; top: var(--barTop); left: 50%; width: var(--textw); height: var(--barH); transform: translateX(-50%); touch-action: none; transition: opacity 0.5s; }
-.track { position: absolute; left: 22px; right: 22px; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; background: rgba(255, 255, 255, 0.34); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); }
-.fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; transform-origin: 0 50%; border-radius: 2px; background: #fff; }
-.tick { position: absolute; top: -3px; width: 2px; height: 10px; margin-left: -1px; border-radius: 1px; background: rgba(255, 255, 255, 0.55); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3); }
+/* the bar carries its own dark backing, so it reads on bright sky without the shade */
+.track { position: absolute; left: 22px; right: 22px; top: 50%; height: 8px; margin-top: -4px; border-radius: 4px; background: rgba(10, 14, 19, 0.74); box-shadow: 0 0 0 2px rgba(10, 14, 19, 0.45); }
+.scrub.has-next .track { right: 104px; }
+.fill { position: absolute; left: 2px; top: 2px; bottom: 2px; width: calc(100% - 4px); transform-origin: 0 50%; border-radius: 2px; background: #fff; }
+.tick { position: absolute; top: -3px; width: 4px; height: 14px; margin-left: -2px; border-radius: 2px; background: #fff; box-shadow: 0 0 0 1.5px rgba(10, 14, 19, 0.85); }
+.stepnext {
+  position: absolute; right: 0; top: 50%; height: 36px; margin-top: -18px; padding: 0 14px; appearance: none; cursor: pointer;
+  border-radius: 18px; border: 2px solid rgba(255, 255, 255, 0.85); background: rgba(10, 14, 19, 0.82);
+  color: #fff; font: 700 14px/1 var(--sans, system-ui, sans-serif); display: flex; align-items: center; gap: 6px;
+}
+.stepnext[hidden] { display: none; }
+.stepnext svg { width: 14px; height: 14px; }
 .handle {
   position: absolute; left: 2px; top: 2px; width: 40px; height: 40px; border-radius: 50%;
   appearance: none; border: 2px solid #fff; padding: 0; cursor: grab; touch-action: none;
@@ -114,7 +126,7 @@ button { font: inherit; color: inherit; }
 
 /* Exit, the compass, the hint */
 .exit {
-  position: absolute; top: var(--rowTop); left: calc(12px + env(safe-area-inset-left)); appearance: none;
+  position: absolute; top: var(--t0); left: calc(12px + env(safe-area-inset-left)); appearance: none;
   width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4);
   background: rgba(10, 14, 19, 0.7); display: grid; place-items: center; padding: 0; cursor: pointer;
 }
@@ -137,7 +149,11 @@ button { font: inherit; color: inherit; }
 @keyframes rise { from { transform: translateY(-6px); opacity: 0; } }
 @container (orientation: landscape) and (max-height: 520px) {
   .hud { --disc: 96px; --barH: 40px; }
-  .exit { top: var(--t0); }
+  /* landscape: the band shares the bar's row, so nothing crosses the characters at mid-screen */
+  .scrub { left: 64px; width: calc(58cqw - 64px); transform: none; }
+  .hud[data-look="band"] .scrim { height: calc(var(--barTop) + var(--barH) + 12px); }
+  .hud[data-look="band"] #radar { top: calc(var(--barTop) + (var(--barH) - 30px) / 2); left: calc(58cqw + 10px); width: calc(42cqw - 74px); transform: none; }
+  .hud[data-look="band"] .hint { top: calc(var(--barTop) + (var(--barH) - 36px) / 2); left: calc(100cqw - 56px); }
   .hud[data-look="disc"] #radar { top: var(--t0); }
   .hud[data-look="disc"] .hint { top: calc(var(--t0) + var(--disc) + 6px); right: calc(12px + var(--disc) / 2 - 18px); }
 }
@@ -233,6 +249,7 @@ button { font: inherit; color: inherit; }
     </div>
     <div class="scrub quiet" id="scrub" data-hud="scrub">
       <div class="track" id="track"><div class="fill" id="fill"></div><div id="ticks"></div></div>
+      <button class="stepnext" id="stepNext" type="button" hidden><span id="stepNextLabel">Next</span><svg viewBox="0 0 14 14"><path d="M3 7h7M7 3l4 4-4 4" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round" /></svg></button>
       <button class="handle" id="handle" type="button" aria-label="Pause - drag to go back"><span id="handleIcon"></span></button>
     </div>
     <button class="exit" id="exitBtn" type="button" data-hud="exit" aria-label="Exit AR">
@@ -270,7 +287,7 @@ button { font: inherit; color: inherit; }
   <h4>Tester settings (the visitor's side)</h4>
   <div class="row"><span>Text size</span><button type="button" data-cfg="fs" data-v="14">14 px</button><button type="button" data-cfg="fs" data-v="16">16 px</button><button type="button" data-cfg="fs" data-v="18">18 px</button><span></span></div>
   <div class="row"><span>Lines</span><button type="button" data-cfg="lines" data-v="auto">auto</button><button type="button" data-cfg="lines" data-v="2">2</button><button type="button" data-cfg="lines" data-v="3">3</button><span></span></div>
-  <p class="note">auto: 3 lines upright, 2 in landscape. With 2 lines the line being said is the lower one, the line before above it.</p>
+  <p class="note">auto: 3 lines only while the words and the bar fit in the top sixth of the screen (read on resize or a setting change), else 2; always 2 in landscape. With 2 lines the line being said is the lower one, the line before above it.</p>
   <div class="row"><span>Tap slop</span><button type="button" data-cfg="slop" data-v="6">6 px</button><button type="button" data-cfg="slop" data-v="8">8 px</button><button type="button" data-cfg="slop" data-v="12">12 px</button><button type="button" data-cfg="slop" data-v="16">16 px</button></div>
   <p class="note">A finger that moves less than this on the button is a tap (play/pause); more is a drag.</p>
   <div class="row"><span>Behind the words</span><button type="button" data-cfg="back" data-v="scrim">shade</button><button type="button" data-cfg="back" data-v="plate">plate</button><span></span><span></span></div>
@@ -621,14 +638,14 @@ const storyKey = () => `story:${S.story.id}:${S.story.step}`;
 function resetHint() { S.hint.progress = 0; S.hint.still = 0; S.hint.best = Infinity; }
 function startStory(id) {
   for (const it of ITEMS) if (S.it[it.id].playing) pause(it.id, "story");
-  S.story = { id, step: 0, t: 0, paused: null, hold: false };
+  S.story = { id, step: 0, t: 0, paused: null, hold: false, heard: false };
   resetHint();
 }
 function storyNext() {
   const st = S.story;
   if (!st) return;
   if (st.step + 1 >= STORIES[st.id].steps.length) { endStory(true); return; }
-  st.step++; st.t = 0; st.hold = false;
+  st.step++; st.t = 0; st.hold = false; st.heard = false;
   resetHint();
 }
 function endStory(finished) {
@@ -640,6 +657,9 @@ function endStory(finished) {
 }
 function stepDone() { const st = S.story, s = stepOf(); return !!s && !!s.lines && st.t >= clipOf(storyKey()).len - 1e-6; }
 const storySpeaking = () => !!S.story && !S.story.paused && !!stepOf()?.lines;
+/** A step that is actually talking keeps other things from starting; a held or finished step steps aside for them. */
+const storyBusy = () => storySpeaking() && !S.story.hold && !stepDone();
+function storyStepsAside() { if (storySpeaking()) S.story.paused = "other"; }
 
 /* ---------- playable things: one plays at a time ---------- */
 function play(id) {
@@ -657,19 +677,23 @@ function tapItem(id) {
   switch (it.kind) {
     case "character": {
       const sid = it.story;
-      if (S.story && S.story.id === sid) { if (S.story.paused) S.story.paused = null; return; }
-      if (S.story && !S.story.paused) return;
+      if (S.story && S.story.id === sid) {
+        if (S.story.paused) { S.story.paused = null; S.story.hold = false; for (const o of ITEMS) if (S.it[o.id].playing) pause(o.id, "story"); }
+        return;
+      }
+      if (storyBusy()) return;
       if (S.story) endStory(false);
       startStory(sid);
       return;
     }
     case "video":
     case "audio":
-      if (storySpeaking()) return;
+      if (storyBusy()) return;
+      storyStepsAside();
       toggle(base);
       return;
     case "longText":
-      if (part === "listen" && it.narrated) { if (!storySpeaking()) toggle(base); return; }
+      if (part === "listen" && it.narrated) { if (!storyBusy()) { storyStepsAside(); toggle(base); } return; }
       t.page = (t.page + 1) % it.pages.length;
       if (t.page === it.pages.length - 1) t.seen = true;
       return;
@@ -711,17 +735,18 @@ function setSourceT(t) {
   else S.it[SRC.id].t = tt;
   SRC.t = tt;
 }
-/** The handle's tap: play/pause; at the end of a story step it is Next (or Done); a finished video or sound plays again from the start. */
+/** The handle's tap is always play/pause, and anything finished plays again from the start. Moving on is the Next button's job. */
 function tapHandle() {
   readSource();
   if (!SRC.on) return;
-  if (SRC.kind === "story") { if (SRC.finished) storyNext(); else S.story.hold = !S.story.hold; }
+  if (SRC.kind === "story") { if (SRC.finished) { S.story.t = 0; S.story.hold = false; } else S.story.hold = !S.story.hold; }
   else if (SRC.finished && SRC.t >= SRC.clip.len - 0.05) play(SRC.id);
   else toggle(SRC.id);
 }
 /** Who the compass marks: only while something actually speaks, and not when the creator keeps that item off the compass. */
 function speakerNow() {
   if (!SRC.on || !SRC.playing) return null;
+  if (SCRUB.active && PD && PD.wasFinished) return null; // a finished step only being dragged back is not speaking
   const it = itById(SRC.speaker);
   if (!shownOnCompass(it) && CFG.hidden === "hide") return null;
   return { it, color: it.voice ? it.voice : MEDIA_VOICE.num };
@@ -1503,11 +1528,16 @@ const LYR = { key: "", clip: null, lines: [], lineOf: [], lineEls: [], wordEls: 
 const measureCtx = document.createElement("canvas").getContext("2d");
 function layoutHud(W, H) {
   const hud = $("#hud"), land = W > H && H <= 520;
-  LY.rows = CFG.lines === "auto" ? (land ? 2 : 3) : Number(CFG.lines);
   LY.lh = Math.round(CFG.fs * 1.38);
-  hud.style.setProperty("--rows", String(LY.rows));
   hud.style.setProperty("--fs", CFG.fs + "px");
   hud.style.setProperty("--lh", LY.lh + "px");
+  // auto: 3 lines only while words + bar fit a sixth of the screen height, read once per resize or setting change; else 2
+  LY.rows = CFG.lines === "auto" ? 3 : Number(CFG.lines);
+  hud.style.setProperty("--rows", String(LY.rows));
+  if (CFG.lines === "auto") {
+    const bottom = $("#scrub").getBoundingClientRect().bottom - device.getBoundingClientRect().top; // from the screen top edge, status bar included
+    if (land || bottom > H / 6) { LY.rows = 2; hud.style.setProperty("--rows", "2"); }
+  }
   hud.dataset.look = AUTH.tour.look;
   hud.dataset.back = CFG.back;
   LY.w = $("#lyrics").clientWidth;
@@ -1523,17 +1553,20 @@ function buildLyrics(clip) {
   const lines = [];
   const sents = [];
   clip.words.forEach((wd, i) => { if (i === 0 || wd.s !== clip.words[i - 1].s) sents.push([]); sents[sents.length - 1].push(i); });
+  let lastName = null;
   for (const idx of sents) {
-    const name = clip.words[idx[0]].name;
+    const name = clip.words[idx[0]].name ?? lastName;
+    lastName = name;
     measureCtx.font = `800 ${CFG.fs * 0.84}px ${FONT}`;
     const nameW = name ? measureCtx.measureText(name).width + CFG.fs * 0.9 : 0;
+    const dotW = name ? CFG.fs * 0.6 : 0;
     measureCtx.font = `600 ${CFG.fs}px ${FONT}`;
     const ws = idx.map((i) => measureCtx.measureText(clip.words[i].text).width);
     const greedy = (limit) => {
       const out = [];
       let cur = null, w = 0;
       idx.forEach((i, k) => {
-        if (!cur || (w + ws[k] > limit && cur.length)) { cur = []; out.push(cur); w = out.length === 1 ? nameW : 0; }
+        if (!cur || (w + ws[k] > limit && cur.length)) { cur = []; out.push(cur); w = out.length === 1 ? nameW : dotW; }
         cur.push(i); w += ws[k] + sp;
       });
       return out;
@@ -1541,13 +1574,13 @@ function buildLyrics(clip) {
     const n = greedy(maxW).length;
     let lo = maxW / n, hi = maxW;
     for (let k = 0; k < 12; k++) { const mid = (lo + hi) / 2; if (greedy(mid).length > n) lo = mid; else hi = mid; }
-    greedy(hi).forEach((ws2, j) => lines.push({ words: ws2, name: j === 0 ? name : null }));
+    greedy(hi).forEach((ws2, j) => lines.push({ words: ws2, name: j === 0 ? name : null, dot: !!name }));
   }
   LYR.lines = lines; LYR.lineOf = []; LYR.lineEls = []; LYR.wordEls = []; LYR.lineT = [];
   lines.forEach((ln, j) => {
     const el = document.createElement("div");
     el.className = "ln"; el.style.top = j * LY.lh + "px";
-    if (ln.name) { const b = document.createElement("b"); b.className = "nm"; b.textContent = ln.name; b.style.color = clip.color.hex; el.appendChild(b); }
+    if (ln.dot) { const b = document.createElement("b"); b.className = "nm"; b.textContent = ln.name || ""; b.style.color = clip.color.hex; el.appendChild(b); }
     for (const i of ln.words) {
       const s = document.createElement("span");
       s.className = clip.words[i].fx ? "w fx" : "w"; s.textContent = clip.words[i].text + " ";
@@ -1573,7 +1606,15 @@ function timeAtLine(p) {
   const t0 = LYR.lineT[j], t1 = LYR.lineT[j + 1] ?? LYR.clip.len;
   return t0 + f * (t1 - t0);
 }
-let handleState = "", handleLabel = "", fillK = -1, handleX = -1, quietNow = null;
+let handleState = "", handleLabel = "", fillK = -1, handleX = -1, quietNow = null, nextShown = "", radarOp = "";
+function showNext(label) {
+  if (label === nextShown) return;
+  nextShown = label;
+  $("#stepNext").hidden = !label;
+  $("#scrub").classList.toggle("has-next", !!label);
+  if (label) setText($("#stepNextLabel"), label);
+  LY.trackW = $("#track").clientWidth; handleX = -1; fillK = -1;
+}
 function setQuiet(q) {
   if (quietNow === q) return;
   quietNow = q;
@@ -1581,7 +1622,7 @@ function setQuiet(q) {
 }
 function renderSubs() {
   const src = SRC;
-  if (!src.on) { setQuiet(true); $("#lyrics").classList.add("quiet"); return; }
+  if (!src.on) { setQuiet(true); $("#lyrics").classList.add("quiet"); showNext(""); return; }
   setQuiet(false);
   // The alternative: while the sign carries the words, the top shows only the bar
   const onSign = src.kind === "media" && !!itById(src.id).narrated && plateActive(itById(src.id));
@@ -1612,9 +1653,12 @@ function renderSubs() {
   if (Math.abs(k - fillK) > 0.0005) { $("#fill").style.transform = `scaleX(${k.toFixed(4)})`; fillK = k; }
   const x = Math.round(k * LY.trackW * 2) / 2;
   if (x !== handleX) { $("#handle").style.transform = `translateX(${x}px)`; handleX = x; }
-  const state = src.kind === "story" && src.finished ? (src.last ? "done" : "next") : src.kind === "media" && src.finished && src.t >= clip.len - 0.05 ? "replay" : src.playing ? "pause" : "play";
+  const state = src.finished && src.t >= clip.len - 0.05 ? "replay" : src.playing ? "pause" : "play";
   if (state !== handleState) { handleState = state; $("#handleIcon").innerHTML = ICON[state]; }
-  const label = `${{ pause: "Pause", play: "Play", replay: "Play again", next: "Next", done: "Done" }[state]}: ${src.label} - drag to go back`;
+  const label = `${{ pause: "Pause", play: "Play", replay: "Play again" }[state]}: ${src.label} - drag to go back`;
+  // Next sits beside the handle once a step has been heard to its end, and stays while it is replayed or dragged back
+  if (src.kind === "story" && src.finished && !SCRUB.active) S.story.heard = true; // reached by listening, not by a drag passing the end
+  showNext(src.kind === "story" && S.story.heard ? (src.last ? "Done" : "Next") : "");
   if (label !== handleLabel) { handleLabel = label; $("#handle").setAttribute("aria-label", label); }
 }
 
@@ -1626,6 +1670,8 @@ function pdStart(mode, x, y, pointerId = -1) {
   if (!SRC.on) return false;
   dismissTry();
   const hr = $("#handle").getBoundingClientRect();
+  // a pull that starts in the top 30 px is left to the system: Android may take it as its swipe down
+  if (mode === "text" && y - device.getBoundingClientRect().top < 30) return false;
   PD = { mode, x0: x, y0: y, pointerId, dragging: false, key: SRC.clip.key, wasFinished: SRC.finished, offset: mode === "handle" ? x - (hr.left + hr.width / 2) : 0 };
   if (mode === "text") { PD.p0 = lineFloatAt(SRC.t); PD.p = PD.p0; }
   if (mode === "handle") $("#handle").classList.add("grab");
@@ -1662,7 +1708,7 @@ function pdEnd() {
 function pdCancel() { PD = null; SCRUB.active = false; $("#handle").classList.remove("grab"); $("#lyrics").classList.remove("grab"); }
 for (const [sel, mode] of [["#handle", "handle"], ["#scrub", "track"], ["#lyrics", "text"]]) {
   $(sel).addEventListener("pointerdown", (e) => {
-    if (mode === "track" && e.target.closest("#handle")) return;
+    if (mode === "track" && e.target.closest("#handle, #stepNext")) return;
     e.stopPropagation();
     if (pdStart(mode, e.clientX, e.clientY, e.pointerId)) e.currentTarget.setPointerCapture(e.pointerId);
   });
@@ -1677,9 +1723,11 @@ $("#handle").addEventListener("keydown", (e) => {
   if (SRC.on) setSourceT(SRC.t + (e.key === "ArrowLeft" ? -3 : 3));
 });
 $("#hintBtn").addEventListener("click", () => { summonHint(); });
+$("#stepNext").addEventListener("click", () => { if (S.story && S.story.heard) storyNext(); });
 function ui() {
   readSource();
-  $("#radar").style.opacity = S.radarAlpha.toFixed(3);
+  const op = S.radarAlpha.toFixed(3);
+  if (op !== radarOp) { radarOp = op; $("#radar").style.opacity = op; }
   renderSubs();
   const offer = hintOffered(), hb = $("#hintBtn");
   if (hb.hidden !== !(offer || DR.active)) hb.hidden = !(offer || DR.active);
@@ -1817,7 +1865,7 @@ async function fingerDrag(mode, { toT = 0, dy = 0, ms = 1200 } = {}) {
     x1 = tr.left + (clamp(toT, 0, SRC.clip.len) / SRC.clip.len) * tr.width; y1 = y0 + 4;
   } else {
     const lr = $("#lyrics").getBoundingClientRect();
-    x0 = lr.left + lr.width * 0.42; y0 = lr.top + lr.height * 0.35; x1 = x0 + 6; y1 = y0 + dy;
+    x0 = lr.left + lr.width * 0.42; y0 = lr.top + lr.height * 0.6; x1 = x0 + 6; y1 = y0 + dy;
   }
   f.hidden = false;
   f.style.left = x0 - dr.left + "px"; f.style.top = y0 - dr.top + "px";
@@ -1870,7 +1918,7 @@ const BEATS = [
       await wait(0.8);
     } },
   { name: "Pull the words down to go back",
-    setup() { base("A", A_IN, "greta"); startStory("well"); S.story.t = clipOf("story:well:0").sents[2] + 2.4; },
+    setup() { base("A", A_IN, "greta"); startStory("well"); S.story.t = clipOf("story:well:0").sents[2] + 1.2; },
     async run() {
       await wait(0.8);
       await fingerDrag("text", { dy: LY.lh * 1.6, ms: 1500 });
@@ -1878,7 +1926,7 @@ const BEATS = [
       await mark("back");
       await until(stepDone);
       await wait(0.5);
-      tapEl("#handle");
+      tapEl("#stepNext");
       await wait(1);
     } },
   { name: "The search, the hint, a voice from behind",
@@ -1894,13 +1942,14 @@ const BEATS = [
       await wait(1.4);
       await mark("drift");
       await wait(1.8);
-      await walkTo(itById("aStone"), 1.2);
+      await walkTo({ x: itById("aStone").x + 1, z: itById("aStone").z + 2.2 }, 1.2); // about 2 m south of the stone and a step east, clear of the well frame
       await turnTo({ x: S.pos.x, z: S.pos.z - 10 }, 1.2);
       await wait(1.4);
       await mark("behind");
       await until(stepDone);
       await wait(0.5);
-      tapEl("#handle");
+      await mark("step-end");
+      tapEl("#stepNext");
       await wait(1);
     } },
   { name: "A video: turn away, pause, go back",
@@ -1973,7 +2022,7 @@ const BEATS = [
       await mark("notch-side");
       await until(stepDone);
       await wait(0.4);
-      tapEl("#handle");
+      tapEl("#stepNext");
       await wait(1);
     } },
   { name: "The creator's choice: the disc",
@@ -2083,6 +2132,7 @@ addEventListener("resize", () => { layoutDirty = true; });
 window.HC = {
   lastMark: null, done: 0, stats, CFG,
   goto: (n) => gotoBeat(n),
+  tap: (id) => tapItem(id),
   resume: () => { if (markRes) { const r = markRes; markRes = null; r(); } },
   measure: () => measure(),
   state: () => S, source: () => ({ ...SRC, clip: SRC.clip && SRC.clip.key }), auth: () => AUTH, setLook,
