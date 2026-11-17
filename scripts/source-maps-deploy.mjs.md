@@ -29,7 +29,9 @@ apps are built.
   `sentrySourceMapPlugins`: `tests/repo-config/source-map-free-apps.test.js`
   derives that set from the configs and the site build's `--base` per
   package, and fails on any difference, and on a check that runs before one
-  of those builds.
+  of those builds. An app built at the site root (`--base=/`, the Landing)
+  has no folder to list, and the test says so if it adopts the helper: its
+  maps would first need a root check here.
 
 ## Example
 
