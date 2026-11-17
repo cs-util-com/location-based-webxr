@@ -78,6 +78,12 @@ function samplePoints(
   return out;
 }
 
+/** Twice the area over the longest edge squared (height over longest
+ *  edge) below which a triangle is measured by its segments: 1e-6, a
+ *  10 µm error on a 10 m model, while the region tests' rounding noise
+ *  stays about 1e-10 of a decision for points within the model's size. */
+const SLIVER2 = 1e-12;
+
 /** The squared distance from p to triangle (a, b, c), which are offsets
  *  into `P` (closest point on a triangle, Ericson's regions). */
 export function pointTri2(
@@ -113,9 +119,16 @@ export function pointTri2(
       segment2(px, py, pz, bx, by, bz, cx, cy, cz),
       segment2(px, py, pz, ax, ay, az, cx, cy, cz),
     );
-  // a zero-area triangle (or one so thin its area underflows): the
-  // region formulas below would divide by zero, so its segments decide
-  if (!(nx * nx + ny * ny + nz * nz > 0)) return segments();
+  // a zero-area triangle, or a sliver whose height is under SLIVER of its
+  // longest edge: the region formulas below would divide by zero, or
+  // subtract near-equal products and read rounding noise as a region, so
+  // its segments decide (an error of at most that height)
+  const l2 = Math.max(
+    abx * abx + aby * aby + abz * abz,
+    acx * acx + acy * acy + acz * acz,
+    (cx - bx) ** 2 + (cy - by) ** 2 + (cz - bz) ** 2,
+  );
+  if (!(nx * nx + ny * ny + nz * nz > SLIVER2 * l2 * l2)) return segments();
   const apx = px - ax;
   const apy = py - ay;
   const apz = pz - az;
@@ -344,11 +357,13 @@ export class SurfaceGrid {
     const box = this.largeBox;
     for (let k = 0; k < this.large.length; k++) {
       // a triangle is no nearer than its box: skip it when the box is
-      // already no nearer than the best (exact, never a missed triangle)
+      // already farther than the best (exact, never a missed triangle).
+      // Not on a tie: at subnormal distances a triangle's own rounding can
+      // read below its box's equal value.
       const dx = Math.max(box[6 * k]! - px, 0, px - box[6 * k + 3]!);
       const dy = Math.max(box[6 * k + 1]! - py, 0, py - box[6 * k + 4]!);
       const dz = Math.max(box[6 * k + 2]! - pz, 0, pz - box[6 * k + 5]!);
-      if (dx * dx + dy * dy + dz * dz >= best) continue;
+      if (dx * dx + dy * dy + dz * dz > best) continue;
       const d = this.tri2(px, py, pz, this.large[k]!);
       if (d < best) best = d;
     }
