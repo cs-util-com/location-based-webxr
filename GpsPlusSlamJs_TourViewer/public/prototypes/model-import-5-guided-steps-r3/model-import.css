@@ -1,0 +1,811 @@
+/* Guided model import: a light, warm, solid look (no glass, no hairlines). */
+.mi {
+  --mi-bg: #f4f1ea;
+  --mi-card: #fffdf8;
+  --mi-ink: #1f2a26;
+  --mi-muted: #5d6762;
+  --mi-edge: #d9d3c5;
+  --mi-accent: #1f7a5a;
+  --mi-accent-ink: #fff;
+  --mi-pictures: #d9822b;
+  --mi-shape: #3a6ea5;
+  --mi-warn-bg: #fdf0d8;
+  --mi-warn-ink: #6b4a10;
+  --mi-radius: 14px;
+
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  width: 100%;
+  height: 100%;
+  background: var(--mi-bg);
+  color: var(--mi-ink);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.mi *,
+.mi *::before,
+.mi *::after {
+  box-sizing: border-box;
+}
+
+.mi button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.mi-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.mi-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* ---- overlays on the view ---- */
+.mi-size {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  min-width: 210px;
+  padding: 10px 14px 12px;
+  background: var(--mi-card);
+  border: 2px solid var(--mi-edge);
+  border-radius: var(--mi-radius);
+  box-shadow: 0 2px 8px rgb(60 50 30 / 12%);
+}
+
+.mi-size-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mi-muted);
+}
+
+.mi-size-now {
+  font-size: 34px;
+  font-weight: 750;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.mi-size-share {
+  font-size: 14px;
+  color: var(--mi-muted);
+}
+
+.mi-size.is-measuring .mi-size-now {
+  color: var(--mi-muted);
+}
+
+.mi-bar {
+  display: flex;
+  height: 10px;
+  margin: 8px 0 6px;
+  overflow: hidden;
+  background: #ebe6da;
+  border-radius: 5px;
+}
+
+.mi-bar span {
+  display: block;
+  height: 100%;
+  transition: width 0.2s ease;
+}
+
+.mi-bar-pictures,
+.mi-key-pictures {
+  background: var(--mi-pictures);
+}
+
+.mi-bar-shape,
+.mi-key-shape {
+  background: var(--mi-shape);
+}
+
+.mi-size-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.mi-key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.mi-key-shape {
+  margin-left: 8px;
+}
+
+.mi-compare {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  display: flex;
+  padding: 4px;
+  background: var(--mi-card);
+  border: 2px solid var(--mi-edge);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgb(60 50 30 / 15%);
+  transform: translateX(-50%);
+}
+
+.mi-compare[hidden] {
+  display: none;
+}
+
+.mi-compare button {
+  min-width: 104px;
+  min-height: 44px;
+  padding: 0 18px;
+  font-weight: 650;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+}
+
+.mi-compare button[aria-pressed="true"] {
+  color: var(--mi-accent-ink);
+  background: var(--mi-ink);
+}
+
+.mi-look {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--mi-card);
+  border: 2px solid var(--mi-edge);
+  border-radius: 999px;
+}
+
+.mi-look[aria-pressed="true"] {
+  color: var(--mi-accent-ink);
+  background: var(--mi-shape);
+  border-color: var(--mi-shape);
+}
+
+.mi-inset {
+  position: absolute;
+  right: 12px;
+  bottom: 80px;
+  width: 34%;
+  max-width: 260px;
+  aspect-ratio: 4 / 3;
+  border: 3px solid var(--mi-card);
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgb(60 50 30 / 25%);
+}
+
+.mi-inset span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--mi-card);
+  border-radius: 0 0 8px;
+}
+
+.mi-busy {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 80%;
+  max-width: 300px;
+  padding: 14px 16px;
+  background: var(--mi-card);
+  border: 2px solid var(--mi-edge);
+  border-radius: var(--mi-radius);
+  transform: translate(-50%, -50%);
+}
+
+.mi-busy-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.mi-progress {
+  height: 8px;
+  overflow: hidden;
+  background: #ebe6da;
+  border-radius: 4px;
+}
+
+.mi-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--mi-accent);
+  transition: width 0.15s linear;
+}
+
+.mi-hook {
+  position: absolute;
+  bottom: 2px;
+  left: 6px;
+  font-size: 11px;
+  color: var(--mi-muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+/* ---- the panel ---- */
+.mi-panel {
+  min-height: 0;
+  padding: 18px 20px 24px;
+  overflow-y: auto;
+  background: var(--mi-card);
+  border-left: 2px solid var(--mi-edge);
+}
+
+.mi-head h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.mi-kicker {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--mi-muted);
+}
+
+.mi-steps {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  padding: 0;
+  margin: 0 0 12px;
+  list-style: none;
+}
+
+.mi-chip {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.mi-chip-btn {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  height: 100%;
+  min-height: 48px;
+  padding: 6px 8px;
+  text-align: left;
+  background: var(--mi-bg);
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+
+.mi-chip.is-current .mi-chip-btn {
+  border-color: var(--mi-ink);
+}
+
+.mi-num {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--mi-accent-ink);
+  background: var(--mi-muted);
+  border-radius: 50%;
+}
+
+.mi-chip.is-done .mi-num,
+.mi-chip.is-kept .mi-num {
+  background: var(--mi-accent);
+}
+
+.mi-chip-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mi-chip-text b {
+  font-size: 14px;
+}
+
+.mi-chip-text small {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--mi-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.mi-swap {
+  display: flex;
+  flex: none;
+}
+
+.mi-swap-btn {
+  width: 32px;
+  font-size: 18px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+.mi-swap-btn:hover {
+  background: var(--mi-bg);
+}
+
+/* Why the steps come in this order: a quiet note, not a call to act. */
+.mi-advice {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--mi-muted);
+}
+
+.mi-advice .mi-link {
+  font-weight: 600;
+}
+
+/* The shape step's frame rate and load test. */
+.mi-load {
+  padding: 10px 12px;
+  margin: 10px 0;
+  background: var(--mi-bg);
+  border-radius: 10px;
+}
+
+.mi-load-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.mi-load-head output {
+  font-variant-numeric: tabular-nums;
+}
+
+.mi-load-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.mi-load-row .mi-switch {
+  margin: 8px 0;
+  font-weight: 600;
+}
+
+.mi-load-row select {
+  min-height: 36px;
+  padding: 0 8px;
+  font: inherit;
+  color: inherit;
+  background: var(--mi-card);
+  border: 2px solid var(--mi-edge);
+  border-radius: 8px;
+}
+
+.mi-load-fact {
+  margin: 0;
+  font-size: 13px;
+  color: var(--mi-muted);
+}
+
+.mi-step h3 {
+  margin: 0 0 6px;
+  font-size: 19px;
+}
+
+.mi-optional {
+  padding: 1px 8px;
+  margin-left: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mi-muted);
+  vertical-align: 2px;
+  background: var(--mi-bg);
+  border-radius: 999px;
+}
+
+.mi-lead {
+  margin: 0 0 12px;
+}
+
+.mi-sizes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.mi-sizes button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 56px;
+  padding: 6px 10px;
+  text-align: left;
+  background: var(--mi-bg);
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+
+.mi-sizes button[aria-checked="true"] {
+  color: var(--mi-accent-ink);
+  background: var(--mi-accent);
+}
+
+.mi-sizes small {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.mi-tag {
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+}
+
+.mi-switch {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 10px 0;
+  cursor: pointer;
+}
+
+.mi-switch input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--mi-accent);
+}
+
+.mi-switch small {
+  display: block;
+  color: var(--mi-muted);
+}
+
+.mi-tip,
+.mi-working {
+  margin: 8px 0;
+  font-size: 14px;
+  color: var(--mi-muted);
+}
+
+.mi-working:empty {
+  display: none;
+}
+
+.mi-slider-head {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-weight: 600;
+}
+
+.mi-slider-head output {
+  font-variant-numeric: tabular-nums;
+}
+
+.mi-range {
+  width: 100%;
+  height: 32px;
+  margin: 4px 0 0;
+  accent-color: var(--mi-accent);
+}
+
+.mi-ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--mi-muted);
+}
+
+.mi-fact {
+  margin: 10px 0;
+}
+
+.mi-caution {
+  padding: 10px 12px;
+  margin: 10px 0;
+  color: var(--mi-warn-ink);
+  background: var(--mi-warn-bg);
+  border-radius: 10px;
+}
+
+.mi-link {
+  padding: 0;
+  font-weight: 600;
+  color: var(--mi-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: none;
+  border: 0;
+}
+
+.mi-strip {
+  position: relative;
+  height: 22px;
+  margin: 14px 0 4px;
+  overflow: hidden;
+  background: var(--mi-bg);
+  border-radius: 6px;
+}
+
+.mi-strip-seg {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  border-left: 2px solid var(--mi-bg);
+  opacity: 0.55;
+}
+
+.mi-strip-seg:first-child {
+  border-left: 0;
+}
+
+.mi-strip-seg.is-on {
+  opacity: 1;
+}
+
+.mi-strip-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  margin-left: -2px;
+  background: var(--mi-ink);
+  border-radius: 2px;
+}
+
+.mi-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.mi-actions button {
+  min-height: 44px;
+  padding: 0 16px;
+  font-weight: 600;
+  background: var(--mi-bg);
+  border: 2px solid var(--mi-edge);
+  border-radius: 10px;
+}
+
+.mi-actions .mi-primary {
+  color: var(--mi-accent-ink);
+  background: var(--mi-accent);
+  border-color: var(--mi-accent);
+}
+
+.mi-review-size {
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+
+.mi-review-size b {
+  font-size: 26px;
+}
+
+.mi-summary {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.mi-summary li {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 2px solid var(--mi-bg);
+}
+
+.mi-summary small {
+  display: block;
+  color: var(--mi-muted);
+}
+
+.mi-accepted {
+  padding: 10px 12px;
+  margin: 12px 0 0;
+  background: #e5f1ea;
+  border-radius: 10px;
+}
+
+.mi-error {
+  padding: 10px 12px;
+  margin: 12px 0 0;
+  color: #7a1f1f;
+  background: #fbe3e3;
+  border-radius: 10px;
+}
+
+.mi [hidden] {
+  display: none;
+}
+
+.mi :focus-visible {
+  outline: 3px solid var(--mi-shape);
+  outline-offset: 2px;
+}
+
+/* ---- phone upright: view on top, panel below ---- */
+@media (width <= 760px) and (orientation: portrait) {
+  .mi {
+    grid-template-rows: 48% minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    font-size: 14px;
+  }
+
+  .mi-panel {
+    padding: 12px 14px 20px;
+    border-top: 2px solid var(--mi-edge);
+    border-left: 0;
+  }
+
+  .mi-head h2 {
+    margin-bottom: 8px;
+    font-size: 18px;
+  }
+
+  .mi-size {
+    top: 8px;
+    left: 8px;
+    min-width: 0;
+    padding: 6px 10px 8px;
+  }
+
+  .mi-size-now {
+    font-size: 26px;
+  }
+
+  .mi-size-share,
+  .mi-size-split {
+    font-size: 12px;
+  }
+
+  .mi-look {
+    top: 8px;
+    right: 8px;
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+
+  .mi-compare {
+    bottom: 8px;
+  }
+
+  .mi-compare button {
+    min-width: 88px;
+    min-height: 40px;
+  }
+
+  .mi-inset {
+    bottom: 64px;
+    width: 38%;
+  }
+
+  .mi-chip-text small {
+    display: none;
+  }
+}
+
+/* ---- phone sideways: view left, panel right ---- */
+@media (height <= 500px) and (orientation: landscape) {
+  .mi {
+    grid-template-columns: minmax(0, 1fr) 46%;
+    font-size: 14px;
+  }
+
+  .mi-panel {
+    padding: 10px 14px 16px;
+  }
+
+  .mi-head h2 {
+    margin-bottom: 8px;
+    font-size: 17px;
+  }
+
+  .mi-size {
+    top: 8px;
+    left: 8px;
+    min-width: 0;
+    padding: 6px 10px 8px;
+  }
+
+  .mi-size-now {
+    font-size: 24px;
+  }
+
+  .mi-size-split {
+    display: none;
+  }
+
+  .mi-look {
+    top: 8px;
+    right: 8px;
+    min-height: 34px;
+    font-size: 13px;
+  }
+
+  .mi-compare {
+    bottom: 8px;
+  }
+
+  .mi-compare button {
+    min-width: 84px;
+    min-height: 38px;
+  }
+
+  .mi-inset {
+    bottom: 60px;
+    width: 40%;
+  }
+
+  .mi-chip-text small {
+    display: none;
+  }
+}
+
+/* The pictures step's quality slider, under the size buttons. */
+.mi-quality {
+  margin-bottom: 4px;
+}
+
+.mi-quality .mi-slider-head {
+  margin-top: 0;
+}
+
+.mi-quality.is-working output {
+  color: var(--mi-muted);
+}
+
+.mi-quality-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--mi-muted);
+}
