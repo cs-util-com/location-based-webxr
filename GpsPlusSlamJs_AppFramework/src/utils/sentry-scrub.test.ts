@@ -490,6 +490,17 @@ describe('scrubDeep', () => {
         expect(JSON.stringify(out)).not.toContain(SPAN_ID);
       });
 
+      // An empty key at the root would join to the root's own path, so the
+      // object under it would pass for the event itself.
+      it('cannot forge a path through an empty key', () => {
+        const out = scrubDeep(
+          { '': { contexts: { trace: { span_id: SPAN_ID } } } },
+          OWN,
+          { strict: true, keepIdsAt: realPaths }
+        );
+        expect(JSON.stringify(out)).not.toContain(SPAN_ID);
+      });
+
       it('exempts nothing deeper under it either', () => {
         const out = scrubDeep(
           { 'a.b': { span_id: SPAN_ID }, a: { 'b]': [{ span_id: SPAN_ID }] } },
