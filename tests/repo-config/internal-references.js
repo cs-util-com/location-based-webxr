@@ -27,43 +27,60 @@ import { firstMergeBase, MAIN_LINES } from '../../scripts/test-changed/select.mj
  *
  * @type {readonly Pattern[]}
  */
+/**
+ * What a person who decides gave or did, as the word after the role word or
+ * its possessive. Each one was read on main before it was added: every hit
+ * was a pointer to that person, none a code sense.
+ */
+const DECISION_NOUNS = [
+  'decisions?',
+  'feedback',
+  'pick',
+  'verdict',
+  'answer',
+  'choice',
+  'call',
+  'question',
+  'request',
+  'approval',
+  'interview',
+  'report',
+  'rule',
+  'taste',
+  'default',
+  'bug',
+].join('|');
+const DECISION_VERBS = [
+  'chose',
+  'asked',
+  'said',
+  'decided',
+  'wants',
+  'approved',
+  'reported',
+].join('|');
+
 const PATTERNS = Object.freeze([
   {
     // A person who decides: a public reader cannot ask them, and the line
-    // should state the rule itself. The word with the definite article, its
+    // should state the rule itself. The word with the definite article; its
     // possessive (the typographic apostrophe too) unless another word stands
-    // right before it, the word followed by what that person did or asked
-    // (a decision, a pick, a verdict, a question and so on), and the German
-    // word with an article, in any of its endings and in the spelling
-    // without the umlaut. Case-insensitive, word-bounded. A role named with
-    // another word before it (the contributor agreement's project role, a
-    // copyright holder, a lock's process) does not match. The two lock files
-    // say it of a lock's process with the article too (the measured false
-    // positives), so they are skipped for this pattern only.
+    // right before it; the possessive after any word when what follows is
+    // one of the decision nouns; the word followed by a decision noun or
+    // verb; and the German word with an article, in any of its endings and
+    // in the spelling without the umlaut. Case-insensitive, word-bounded. A
+    // role named with another word before it (the contributor agreement's
+    // project role, a copyright holder, a lock's process) does not match
+    // unless a decision noun follows it. The two lock files say it of a
+    // lock's process with the article too (the measured false positives), so
+    // they are skipped for this pattern only.
     name: 'owner reference',
     regex: new RegExp(
       [
         `the\\s+${'own'}er`,
         `(?<!\\w\\s+)${'own'}er['’]s`,
-        `${'own'}er\\s+(?:${[
-          'decision',
-          'feedback',
-          'pick',
-          'verdict',
-          'answer',
-          'choice',
-          'call',
-          'question',
-          'request',
-          'approval',
-          'interview',
-          'chose',
-          'asked',
-          'said',
-          'decided',
-          'wants',
-          'approved',
-        ].join('|')})`,
+        `${'own'}er['’]s\\s+(?:${DECISION_NOUNS})`,
+        `${'own'}er\\s+(?:${DECISION_NOUNS}|${DECISION_VERBS})`,
         '(?:der|des|dem|den|die)\\s+Eigent(?:ü|ue)mer(?:innen|in|n|s)?',
       ]
         .map((alternative) => `\\b${alternative}\\b`)
@@ -96,17 +113,19 @@ const PATTERNS = Object.freeze([
     // "review on" or "bot on"; a pull path, as a bare word or in a link to
     // this repository or its private sibling (a link to another project's
     // pull request is documentation and passes). The parenthesised form
-    // needs two digits or more, because
-    // one digit is an item of a numbered list in the same comment; it stops
-    // at five digits and skips exactly three repeated digits, because a CSS
-    // colour in decimal digits only (the short grey, or any six-digit
-    // colour) reads the same.
+    // needs two digits or more, because one digit is an item of a numbered
+    // list in the same comment; it stops at five digits and skips exactly
+    // three repeated digits, because a CSS colour in decimal digits only (the
+    // short grey, also first of a pair, or any six-digit colour) reads the
+    // same. A four-digit colour with alpha in decimal digits only is still
+    // matched: an accepted false positive, since it is the length of a pull
+    // request number and main has none.
     name: 'pull-request number',
     regex: new RegExp(
       [
         `\\b${'P'}Rs? ?#\\d+`,
         `\\b${'pull'} requests? #\\d+`,
-        '\\((?:see )?(?!#(\\d)\\1\\1[,)])#\\d{2,5}(?:[,)]| and #\\d)',
+        '\\((?:see )?(?!#(\\d)\\1\\1(?!\\d))#\\d{2,5}(?:[,)]| and #\\d)',
         "#\\d{3,}(?:['’]s)? (?:cold )?(?:re-?)?review",
         '\\b(?:review|reviewed|bot) on #\\d{2,}',
         '(?:(?:location-based-webxr|gps-plus-slam)/|(?<![\\w./-]))pull/\\d+',

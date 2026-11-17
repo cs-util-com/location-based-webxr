@@ -56,6 +56,15 @@ describe('matchLine', () => {
     ...['question', 'request', 'approval', 'interview', 'decided', 'wants', 'approved'].map(
       (word) => [`// ${'own'}er ${word} here`, 'owner reference'],
     ),
+    ...['decisions', 'report', 'rule', 'taste', 'default', 'bug', 'reported'].map((word) => [
+      `// (${'own'}er ${word} 2099-01-01)`,
+      'owner reference',
+    ]),
+    // A possessive after another word is a hit when a decision noun follows.
+    [`the repo ${'own'}er's decision on the XY fold`, 'owner reference'],
+    [`the project ${'own'}er’s call`, 'owner reference'],
+    [`per the AR ${'own'}er's request`, 'owner reference'],
+    [`a site ${'own'}er's rule`, 'owner reference'],
     [['den', 'Eigentümern'].join(' '), 'owner reference'],
     [['die', 'Eigentümerinnen'].join(' '), 'owner reference'],
     [['der', 'Eigentuemerin'].join(' '), 'owner reference'],
@@ -83,6 +92,9 @@ describe('matchLine', () => {
     [`Raised in review on #${4242}.`, 'pull-request number'],
     [`found by a review bot on #${4242}`, 'pull-request number'],
     [`a repeated number (#${4444}) is a number`, 'pull-request number'],
+    // An accepted false positive: a four-digit colour with alpha in decimal
+    // digits only reads exactly like a pull-request number.
+    [`a colour with alpha (#${4243})`, 'pull-request number'],
   ])('flags %j as %s', (line, name) => {
     expect(matchLine(line)).toContain(name);
   });
@@ -103,12 +115,14 @@ describe('matchLine', () => {
     'the second case (#1) and (#7)',
     'color: #333; background: #ff0000;',
     'a grey (#333), black (#000), white (#000000), mid grey (#808080)',
+    'a pair of greys (#333 and #999), (#333, #999)',
     'the hole (#171b26) and (#ff6b6b), a list item (#1, #2)',
     'r7 and r42 are too short; xr4242 and r4242x are identifiers',
     'the owners of this file, an ownership rule, owner',
-    'a lock owner, the file owner callback, owner decisions',
+    'a lock owner, the file owner callback, an owner reference, owner decisionsX',
     'maintained by the company (the "Project Owner"), the copyright owner',
     "the Project Owner's rights, the copyright owner’s licence, a dead owner's lock",
+    "a dead owner's record, the file owner's process, an owner's decisionsX",
     'Bewohner und Eigentümer dieses Hauses',
     'DECEMBER, decimal, dec-xy-1, DEC- alone',
     'issue 4242, #4242 alone, a review of #4242',
