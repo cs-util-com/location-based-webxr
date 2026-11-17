@@ -636,11 +636,19 @@ function exclusion(
   };
   for (const ring of rings ?? []) {
     if (ring.length < 3) continue;
-    const xs = ring.map((p) => p.x);
-    const ys = ring.map((p) => p.y);
-    add(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), {
-      ring,
-    });
+    // A loop, not Math.min(...xs): a spread passes every point as an
+    // argument, and a long ring exceeds the engine's argument limit.
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    add(minX, minY, maxX, maxY, { ring });
   }
   for (const feature of features) {
     if (!isRoad(feature)) continue;
