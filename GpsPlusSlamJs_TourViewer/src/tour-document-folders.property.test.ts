@@ -156,6 +156,9 @@ const op: fc.Arbitrary<Op> = fc.oneof(
 
 describe("folder duplicate, delete and multi-ungroup over random sequences", () => {
   it("keep ids unique and folders whole, and undo and redo every step exactly", () => {
+    // Actions that landed, by kind, over all runs: a property that only
+    // ever met refusals would check nothing, so each kind must land.
+    const landed = { duplicate: 0, delete: 0, ungroup: 0 };
     fc.assert(
       fc.property(
         fc.integer({ min: 0, max: 359 }),
@@ -226,6 +229,16 @@ describe("folder duplicate, delete and multi-ungroup over random sequences", () 
                   what: "del",
                 }),
               );
+              if (next !== state) {
+                // Everything in it went, at any depth, and nothing else.
+                const held = documentObjects(state).filter(
+                  (x) => x.object.folder?.includes(spot.folderId) === true,
+                ).length;
+                const want = documentObjects(state).length - held;
+                if (documentObjects(next).length !== want) {
+                  broke.push(`delete of ${spot.folderId}: item count`);
+                }
+              }
             } else {
               const picked = [
                 ...new Set(o.picks.map((i) => at(i)?.folderId ?? "")),
@@ -245,6 +258,7 @@ describe("folder duplicate, delete and multi-ungroup over random sequences", () 
             }
             if (next !== state) {
               steps += 1;
+              landed[o.kind] += 1;
               // One action, one step on the undo stack (8 at most here,
               // far below the history limit).
               if (next.past.length !== state.past.length + 1) {
@@ -279,6 +293,9 @@ describe("folder duplicate, delete and multi-ungroup over random sequences", () 
       ),
       { numRuns: 30 },
     );
+    expect(landed.duplicate).toBeGreaterThan(0);
+    expect(landed.delete).toBeGreaterThan(0);
+    expect(landed.ungroup).toBeGreaterThan(0);
     // Each run replays up to 8 edits, their undos and redos, and two
     // saves: about 0.1 s, so 30 runs stay well inside the time given.
   }, 30_000);

@@ -4921,7 +4921,12 @@ function folderDuplicate(
   ) {
     return before;
   }
-  const renamed = (id: string): string => payload.newIds[id] ?? id;
+  // Only the copied folders and items are renamed: a new id offered for
+  // anything else (a folder above the copied one) is ignored, so no copy
+  // names a folder the tour lacks.
+  const copiedSet = new Set(copied);
+  const renamed = (id: string): string =>
+    copiedSet.has(id) ? (payload.newIds[id] ?? id) : id;
   // The copy's origin: the original's, in the world, moved east as an
   // item's copy is; back in the copy's holder (the original's), turned as
   // the original is.

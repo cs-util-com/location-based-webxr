@@ -263,7 +263,9 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
       // Past the refusals, the reducer refuses a folder it lacks, and a
       // folder another of them lifted past the format's bound.
       if (!took) return refused(places.length === 1 ? "gone" : "tooFar");
-      const freed = places.flatMap((p) => p.itemIds);
+      // Each place lists its items at every depth: a folder picked with a
+      // folder inside it would count the inner items twice.
+      const freed = [...new Set(places.flatMap((p) => p.itemIds))];
       const n = freed.length;
       deps.say(
         n === 1

@@ -466,7 +466,9 @@ geo?, what })` - a copy inserted after the original (any station the
       the world (`duplicateItemGeo`, turn and scale kept), with every
       folder and item in it copied: `newIds` maps each of their ids to a
       new one (the page mints them; each must be given, free in the tour
-      and distinct), the copied items naming the copied folders, a photo's
+      and distinct; a key for anything not copied, such as a folder
+      above the copied one, is ignored, so no copy names a folder the
+      tour lacks), the copied items naming the copied folders, a photo's
       picture under its copy's id (`copiedObject`), a titled folder named
       "<title> copy" (within the format's 80 code points; an untitled one
       stays untitled). One step. Refused: an unknown folder, a missing,

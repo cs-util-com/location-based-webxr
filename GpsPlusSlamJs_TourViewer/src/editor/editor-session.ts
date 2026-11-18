@@ -3413,7 +3413,7 @@ export function createEditorSession(input: {
           tourDocumentActions.folderDeleted({
             stationId: found.station.id,
             folderId,
-            what: `the delete of ${folderName(found.folder)}`,
+            what: `the delete of "${folderName(found.folder)}"`,
           }),
         ),
       )
@@ -3425,11 +3425,27 @@ export function createEditorSession(input: {
       if (state === null) return notInTour;
       const found = folderOf(state, folderId);
       if (found === null) return noSuchFolder;
-      const items = documentObjects(state)
-        .map((o) => o.object)
-        .filter((o) => o.folder?.includes(folderId) === true);
+      const itemsIn = (of: TourDocumentState) =>
+        documentObjects(of)
+          .map((o) => o.object)
+          .filter((o) => o.folder?.includes(folderId) === true);
+      const items = itemsIn(state);
       const read = await picturesOf(items);
       if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+      // The tour may have changed during the read: copy the folder as it
+      // is now, and only while it holds exactly the items whose pictures
+      // were read (a photo added meanwhile would be copied without one).
+      const now = mine();
+      if (now === null) return notInTour;
+      const current = folderOf(now, folderId);
+      if (current === null) return noSuchFolder;
+      const held = itemsIn(now).map((o) => o.id);
+      if (
+        held.length !== items.length ||
+        held.some((id, i) => id !== items[i]?.id)
+      ) {
+        return notApplied;
+      }
       // Every folder inside it and every item it holds gets a new id too:
       // ids are unique across the tour.
       const folderIds = (folder: TourFolder): string[] => [
@@ -3437,7 +3453,7 @@ export function createEditorSession(input: {
         ...folder.children.filter(isTourFolder).flatMap(folderIds),
       ];
       const newIds = Object.fromEntries(
-        [...folderIds(found.folder), ...items.map((o) => o.id)].map((id) => [
+        [...folderIds(current.folder), ...held].map((id) => [
           id,
           newObjectId(),
         ]),
@@ -3454,10 +3470,10 @@ export function createEditorSession(input: {
         took(() =>
           store.dispatch(
             tourDocumentActions.folderDuplicated({
-              stationId: found.station.id,
+              stationId: current.station.id,
               folderId,
               newIds,
-              what: `the copy of ${folderName(found.folder)}`,
+              what: `the copy of "${folderName(current.folder)}"`,
             }),
           ),
         )

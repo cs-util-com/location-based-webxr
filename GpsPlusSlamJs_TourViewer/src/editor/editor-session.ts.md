@@ -278,9 +278,13 @@ never state). Design:
       `{ kind: "duplicated", folderId }` (the copy's). Every folder and
       item in it gets a new id (`newObjectId`); each photo's picture is
       read first and held under its copy's id, so the save writes it.
+      The new ids are minted from the tour as it stands after that read.
       Refused for a folder the tour lacks, a picture that cannot be read,
-      and a copy taking an item beyond its station's reach
-      (`FOLDER_TOO_FAR`); the held pictures are dropped then.
+      a folder whose items changed during the read (`NOT_APPLIED`: a
+      photo added meanwhile has no picture read), and a copy taking an
+      item beyond its station's reach (`FOLDER_TOO_FAR`); the held
+      pictures are dropped then. Its step, like `deleteFolder`'s, names
+      the folder in quotes (`the copy of "Shots"`).
     - `scaleFolder(folderId, value)` - a plain folder's scale, 0.1 to 10
       times (`folderScaled`): its whole group grows about its origin;
       "unchanged" for the scale it has (none counts as 1); refused out of

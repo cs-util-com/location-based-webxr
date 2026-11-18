@@ -31,7 +31,9 @@ reorder, pivotToCentre }`:
     picked says `NOTHING_TO_GROUP`);
   - `ungroup(folderIds)` - the picked folders taken apart together as
     ONE step (one Undo brings them all back; duplicates counted once):
-    the ids of the items they held, or null, all or none (a folder gone
+    the ids of the items they held, each once (a folder picked with a
+    folder inside it lists the inner items once, in the result and the
+    line), or null, all or none (a folder gone
     from the tour says `gone`, one that would lift a folder or an item
     past the 10 km bound `tooFar`, as `ungroupRefusal` says; a store
     refusal of several says `tooFar`);

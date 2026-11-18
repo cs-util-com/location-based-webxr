@@ -1307,6 +1307,22 @@ describe("duplicating a folder", () => {
     expect(folderIn(saved(spare), "s2")?.children).toEqual([]);
   });
 
+  // Why: only the copied folder and what it holds take new ids. A new id
+  // offered for a folder ABOVE the copied one (or for anything else) must
+  // not rename that folder in the copies' paths: a copy naming a folder
+  // the tour lacks would sit in no folder at all.
+  it("renames only the copied folders and items, whatever else the new ids name", () => {
+    const start = opened(tour());
+    const after = reduce(
+      start,
+      duplicate("inner", { inner: "i2", b: "b2", outer: "o9", p: "p9" }),
+    );
+    expect(after).not.toBe(start);
+    expect(objectOf(after, "b2").folder).toEqual(["outer", "i2"]);
+    expect(folderIn(saved(after), "o9")).toBeUndefined();
+    expect(objectOf(after, "p").folder).toBeUndefined();
+  });
+
   // Why: a copy must never take an id the tour already gives something
   // (an item, a folder, a story), nor give two of its parts one id; and a
   // folder or station that is gone (an undo since the press) copies

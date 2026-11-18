@@ -733,6 +733,58 @@ describe("the editor session's station edits", () => {
     await session.close();
   });
 
+  // Why: Duplicate reads the folder's pictures first, and the tour may
+  // change during that read. The copy is made only of the folder as it
+  // is after the read, and only while it holds exactly the items whose
+  // pictures were read (an item moved in meanwhile has no picture read
+  // and, before, no new id: the store refused it and the creator was told
+  // the copy would go too far). A change refuses it, saying the tour
+  // changed. The step label names the folder in quotes, as the other
+  // folder steps do.
+  it("duplicateFolder refuses, saying the tour changed, when the folder's items change during the picture read", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["f"],
+        what: "group",
+      }),
+    );
+    const was = store.getState().tourDocument;
+    const copying = editor.duplicateFolder("grp");
+    store.dispatch(
+      tourDocumentActions.objectsFoldered({
+        ids: ["f"],
+        folderId: null,
+        what: "out",
+      }),
+    );
+    expect(store.getState().tourDocument).not.toBe(was);
+    const steps = store.getState().tourDocument.past.length;
+    expect(await copying).toEqual({
+      kind: "refused",
+      reason: "That change could not be made to the tour as it is now.",
+    });
+    expect(store.getState().tourDocument.past.length).toBe(steps);
+    // Asked again, it copies the folder as it is now, the step named.
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const copied = await editor.duplicateFolder("grp");
+    expect(copied.kind).toBe("duplicated");
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: 'the copy of "Shots"',
+    });
+    await session.close();
+  });
+
   // Why: a folder's Delete takes everything in it as ONE step, and its
   // Undo must bring a photo back with its picture even after a save wrote
   // the delete (the picture is kept for that, as for an item's delete).
@@ -759,7 +811,10 @@ describe("the editor session's station edits", () => {
     expect(steps()).toBe(was + 1);
     const gone = await savedTour((await editor.save({ keepScan: false })).blob);
     expect(tourObjects(gone).map((o) => o.id)).not.toContain("f");
-    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: 'the delete of "Shots"',
+    });
     const back = await editor.save({ keepScan: false });
     const tour = await savedTour(back.blob);
     expect(tourObjects(tour).find((o) => o.id === "f")?.folder).toEqual([

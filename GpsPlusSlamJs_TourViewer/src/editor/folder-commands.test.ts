@@ -214,6 +214,41 @@ describe("createFolderCommands - ungroup, move, rename", () => {
     expect(t.commands.ungroup(["yard", "nope"])).toBeNull();
   });
 
+  // Why: a folder's items are counted at every depth, so a folder picked
+  // together with a folder inside it must not count the inner items twice
+  // - not in the line, not in the rows the tree picks afterwards.
+  it("counts an item once when a folder and its nested folder are both ungrouped", () => {
+    const folder = (id: string, children: unknown[]) => ({
+      id,
+      kind: "folder",
+      title: id,
+      pose: { position: [1, 0, 0], rotation: [0, 0, 0, 1] },
+      children,
+    });
+    const wire = tourOf([], {
+      stations: [
+        {
+          id: "nest",
+          title: "The nest",
+          geo: { ...AT, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          ...stationContent([
+            folder("outer", [
+              pin("o", [0, 0, 1]),
+              folder("inner", [pin("e", [1, 0, 0])]),
+            ]),
+          ] as never),
+        },
+      ],
+    });
+    const t = setup(parseTourManifest(JSON.parse(serializeTourManifest(wire))));
+    const freed = t.commands.ungroup(["outer", "inner"]);
+    expect([...(freed ?? [])].sort()).toEqual(["e", "o"]);
+    expect(t.said).toEqual(["Ungrouped - 2 items stay where they are"]);
+  });
+
   // Why: a folder gone from the tour (an undo since the pick) is no
   // matter of stations; the line names what happened.
   it("refuses to ungroup a folder the tour lacks, saying it is gone", () => {
