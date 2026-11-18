@@ -780,7 +780,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     item or a station beside itself,
     ends a running search and unfolds the station
     the copy is in (`showRowsOf`: the copy's name matches what was typed
-    no better), selects the copy and says "Duplicated ...";
+    no better), selects the copy and says "Duplicated ..."; while a
+    folder, an item or a station reads its pictures a held "Duplicating..."
+    toast shows (`aria-busy`) and the store's `duplicating` makes another
+    Duplicate do nothing, so a second Ctrl+D makes no second copy; a
+    story's entry has no Duplicate (the bar offers none), so its Ctrl+D
+    does nothing;
   - `groundMenu` hands a right click's (a long press's) ground menu to the
     shell (`shell.groundMenu`);
   - `keysFree` is false in a field, in a menu, for the pattern's keys on a menu's button,

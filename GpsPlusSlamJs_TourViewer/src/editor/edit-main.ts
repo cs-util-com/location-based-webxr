@@ -1676,20 +1676,42 @@ function deleteStoryEntry(id: string, story: TourStory): void {
  * Copy a note, a story (`story:<id>`, right after itself), a folder with
  * everything in it (`folder:<id>`), or a station with its notes, beside
  * itself (the bar's Duplicate, the 3D view's Ctrl+D): one step; the copy
- * is selected and a toast names it. A photo's picture is read first; a
- * tour switched meanwhile drops the result.
+ * is selected and a toast names it. A photo's picture is read first,
+ * said by a held toast: another Duplicate meanwhile makes nothing; a tour
+ * switched meanwhile drops the result. A story's entry has no Duplicate
+ * (the bar offers none), so its Ctrl+D does nothing.
  */
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
-  if (mine === null) return;
+  if (mine === null || ui().duplicating) return;
   if (id.startsWith(STORY_PREFIX)) {
     duplicateStorySelection(id.slice(STORY_PREFIX.length));
     return;
   }
-  if (id.startsWith(FOLDER_PREFIX)) {
-    await duplicateFolderSelection(mine, id.slice(FOLDER_PREFIX.length));
-    return;
+  const tour = manifestToWrite(store.getState().tourDocument);
+  if (tour !== null && tourChildPlace(tour, id)?.story !== undefined) return;
+  store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
+  const working = toast("Duplicating…", undefined, null, false);
+  working.setAttribute("aria-busy", "true");
+  try {
+    if (id.startsWith(FOLDER_PREFIX)) {
+      await duplicateFolderSelection(mine, id.slice(FOLDER_PREFIX.length));
+    } else {
+      await duplicateItemSelection(mine, id);
+    }
+  } finally {
+    working.remove();
+    store.dispatch(
+      editorViewActions.duplicatingChanged({ duplicating: false }),
+    );
   }
+}
+
+/** A note or a station (`station:<id>`) copied beside itself. */
+async function duplicateItemSelection(
+  mine: EditorSession,
+  id: string,
+): Promise<void> {
   const called = itemCalled(id);
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
