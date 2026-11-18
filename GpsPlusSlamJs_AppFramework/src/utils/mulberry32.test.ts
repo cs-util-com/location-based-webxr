@@ -27,12 +27,16 @@ describe('mulberry32', () => {
     expect(mulberry32(-1)()).toBe(mulberry32(0xffffffff)());
     expect(mulberry32(-1)()).toBe(0.8964226141106337);
     expect(mulberry32(7.9)()).toBe(mulberry32(7)());
+    // Seeds of 2^32 and above wrap, as both earlier copies did.
+    expect(mulberry32(2 ** 32 + 7)()).toBe(mulberry32(7)());
   });
 
   it('gives each call its own state', () => {
+    // A shared or per-seed cached state would make b continue a's sequence.
     const a = mulberry32(5);
-    a();
-    expect(mulberry32(5)()).not.toBe(a());
+    const first = a();
+    const b = mulberry32(5);
+    expect([b(), b()]).toEqual([first, a()]);
   });
 });
 

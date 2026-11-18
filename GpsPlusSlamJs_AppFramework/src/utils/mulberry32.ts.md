@@ -28,8 +28,11 @@ The package's one seeded generator for production code: mulberry32, a small
   `CLOUD_LIVE_COVER_THRESHOLDS` is that table precomputed.
 - Validation is the caller's: this helper is total, so a caller that must
   refuse a non-integer seed (the ambient occlusion does) checks it first.
-- `test-utils/elevation-offset-scenarios.ts` keeps its own copy for the
-  test scenarios; production code never imports from `test-utils/`.
+- Test-only copies remain: `test-utils/elevation-offset-scenarios.ts`,
+  `test-utils/integrated-slam-drift.ts` and `test-utils/non-trivial-alignment.ts`,
+  plus local ones in `storage/autosave.property.test.ts`,
+  `cloud-live-noise.test.ts` and `cloud-live-noise.sweep.test.ts`. They may
+  import this file instead; production code never imports from `test-utils/`.
 
 ## Example
 

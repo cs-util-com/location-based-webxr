@@ -62,7 +62,8 @@ cos(row centre))` degrees wide; the tree stands at 0.15 + 0.7 * hash of the
 exceeded` above roughly 100-125 k elements; one forest covering the OSM
   demo's drawn window at Heidelberg reached that (2026-11-10). An excluded
   ring's bounds come from a loop for the same reason, never
-  `Math.min(...xs)`.- **The window**: wood and orchard areas are clipped to it (`clipToBbox`) before
+  `Math.min(...xs)`.
+- **The window**: wood and orchard areas are clipped to it (`clipToBbox`) before
   the point-in-polygon test (by crossing parity over all rings, so holes are
   outside), and every candidate is tested against it, rows included.
 - **Look**: wood trees `DEFAULT_TREE_HEIGHT_M * 1.5`, jittered 0.75 to 1.25 by
