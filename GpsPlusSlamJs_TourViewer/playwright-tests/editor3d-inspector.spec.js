@@ -19,6 +19,7 @@ import {
   dockSettled,
   openSampleIn3d,
   openZip,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
@@ -154,7 +155,7 @@ async function openTour(page, zip) {
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "two-pins.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -938,7 +939,7 @@ test("a picture's and a model's fields are typed in the inspector, a story's ent
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "blocks-tour.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -1091,7 +1092,7 @@ test("a picture's and a model's fields are typed in the inspector, a story's ent
   const next = await context.newPage();
   await answerHosts(next);
   await next.setViewportSize({ width: 1440, height: 900 });
-  await next.goto("/edit.html?globe=0");
+  await gotoEditor(next);
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, written, "blocks-tour.zip");
   await expect(next.locator("body")).toHaveAttribute("data-view", "3d", {

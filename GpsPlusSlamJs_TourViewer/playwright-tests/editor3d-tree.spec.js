@@ -29,6 +29,7 @@ import {
   openZip,
   shownIn,
   view3d,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
@@ -729,7 +730,7 @@ test("a station copied with its photo is saved with a picture of its own, and op
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const { zip, jpeg } = await photoTour(page);
   await openZip(page, zip, "one-photo.zip");
@@ -779,7 +780,7 @@ test("a station copied with its photo is saved with a picture of its own, and op
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
-  await next.goto("/edit.html?globe=0");
+  await gotoEditor(next);
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, readFileSync(saved), "one-photo.zip");
   await expect(next.locator("#tree-body .card")).toHaveCount(2, {
@@ -826,7 +827,7 @@ test("a long text added in place is saved and opens again as it was made", async
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const { zip } = await photoTour(page);
   await openZip(page, zip, "one-photo.zip");
@@ -858,7 +859,7 @@ test("a long text added in place is saved and opens again as it was made", async
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
-  await next.goto("/edit.html?globe=0");
+  await gotoEditor(next);
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, readFileSync(saved), "one-photo.zip");
   const again = card(next, "fountain");
@@ -1019,7 +1020,7 @@ test("add, reorder, split and delete come back whole from the draft after a relo
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const zip = await threePinTour();
   await openZip(page, zip, "three-pins.zip");
@@ -1069,7 +1070,7 @@ test("add, reorder, split and delete come back whole from the draft after a relo
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
-  await next.goto("/edit.html?globe=0");
+  await gotoEditor(next);
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, zip, "three-pins.zip");
   const offer = next.locator(".toast.draft-offer");
@@ -1106,7 +1107,7 @@ test("a station's picture is a strip under its row, and a tap on it selects the 
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const { zip } = await photoTour(page);
   await openZip(page, zip, "one-photo.zip");
@@ -1297,7 +1298,7 @@ test("a folded station is one line, its number and name side by side; unfolded i
     delete window.showOpenFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, await rowsTour(page), "rows.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -1505,7 +1506,7 @@ test("a story duplicated from the tree stands right after its original and comes
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const zip = readFileSync(
     new URL("../public/samples/marienplatz-tour.zip", import.meta.url),
@@ -1571,7 +1572,7 @@ test("a story duplicated from the tree stands right after its original and comes
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
-  await next.goto("/edit.html?globe=0");
+  await gotoEditor(next);
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, zip, "marienplatz-tour.zip");
   const offer = next.locator(".toast.draft-offer");

@@ -6,7 +6,12 @@ import {
   serializeTourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { SQUARE_GROUND_M, answerHosts, openZip } from "./editor3d-fixture.js";
+import {
+  SQUARE_GROUND_M,
+  answerHosts,
+  openZip,
+  gotoEditor,
+} from "./editor3d-fixture.js";
 
 /**
  * Why these tests matter: a station's items are moved in the tree - a free
@@ -204,7 +209,7 @@ async function openStories(page) {
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, await storiesTour(), "stories.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {

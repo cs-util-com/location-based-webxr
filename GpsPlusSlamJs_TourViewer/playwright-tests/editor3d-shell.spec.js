@@ -25,6 +25,7 @@ import {
   shownIn,
   styleIn,
   view3d,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 import { useWideFont } from "./wide-font.js";
 
@@ -994,9 +995,8 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   expect((await view3d(page)).distanceM).toBeCloseTo(far, 0);
 
   // The Performance tab: the whole frame's draw calls, never 0 with a
-  // tour drawn. This is the older 3D view (`openSampleIn3d`: `?globe=0`),
-  // whose stats carry no globe; the globe view's whole-frame count against
-  // its scene's own render is held in editor3d-globe.spec.js.
+  // tour drawn. The whole-frame count against the globe scene's own
+  // render is held in editor3d-globe.spec.js.
   await expect(page.locator("#shell-pane-perf .nums")).toContainText(
     /Draw calls[1-9]/,
   );
@@ -1616,7 +1616,7 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // The open dialog, the editor's first screen.
   const openModal = page.locator("#open-modal .modal");

@@ -3,7 +3,6 @@ import { expect, test } from "@playwright/test";
 
 import {
   GLOBE_VIEW,
-  OLDER_VIEW,
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
@@ -107,10 +106,7 @@ function iconPoint(page) {
   }, SOUND);
 }
 
-for (const [name, link] of [
-  ["the older view", OLDER_VIEW],
-  ["the globe", GLOBE_VIEW],
-]) {
+for (const [name, link] of [["the globe", GLOBE_VIEW]]) {
   test(`from the station's camera over uneven ground a click on an ambient sound's icon selects the sound, on ${name}`, async ({
     page,
   }) => {
@@ -275,7 +271,7 @@ test("an ambient sound's icon is seen where the relief stands in front of it", a
   test.setTimeout(240_000);
   await openSample3d(
     page,
-    OLDER_VIEW,
+    GLOBE_VIEW,
     () => SQUARE_GROUND_M + RELIEF_ABOVE_STATIONS_M,
   );
   await selectStation(page, STATION);
@@ -370,7 +366,7 @@ test("a free character shows on the screen from four camera headings round his s
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
-  await openSample3d(page, OLDER_VIEW);
+  await openSample3d(page, GLOBE_VIEW);
   await selectStation(page, "column");
   /** @type {Record<string, number>} */
   const cells = {};

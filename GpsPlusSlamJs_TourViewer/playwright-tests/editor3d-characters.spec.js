@@ -12,8 +12,8 @@ import {
   standAt,
 } from "./ar-fakes.js";
 import {
-  OLDER_VIEW,
   answerHosts,
+  gotoEditor,
   openSampleIn3d,
   openZip,
 } from "./editor3d-fixture.js";
@@ -194,7 +194,7 @@ test("the add menu's Character: made in the maker over the editor, standing in t
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
-  await next.goto("/edit.html?globe=0");
+  await gotoEditor(next);
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, saved, "sample-with-rita.zip");
   await expect(next.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -339,7 +339,7 @@ test("a character added with the add menu is drawn at a free spot, selected with
     (/** @type {any} */ s) => s.id === "gate",
   ).geo.alt;
   await answerHosts(page, { groundM: gateAlt - GEOID_N_M });
-  await page.goto(OLDER_VIEW);
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, blocks, "blocks-tour.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {

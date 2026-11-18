@@ -15,6 +15,7 @@ import {
   layoutOf,
   openZip,
   styleIn,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 
 /**
@@ -191,7 +192,7 @@ async function openFolders(page, zip) {
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "folders.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {

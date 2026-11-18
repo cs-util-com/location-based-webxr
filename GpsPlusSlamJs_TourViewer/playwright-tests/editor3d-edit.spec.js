@@ -24,6 +24,7 @@ import {
   openSample,
   openZip,
   view3d,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 import { save, viewCommand } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
@@ -995,7 +996,7 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const { zip, id } = await oneCodeTour();
   await openZip(page, zip, "one-code.zip");

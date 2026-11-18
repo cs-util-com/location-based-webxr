@@ -304,13 +304,14 @@ export async function reliefCarries(page) {
 /**
  * The editor page with the sample tour open on the 2D map (not in the 3D
  * view, the default: `openSampleIn3d`), for a spec that edits on the map
- * first or drives the view switch itself.
+ * first or drives the view switch itself. The 3D view it switches to is
+ * the globe, opened straight at the tour and without the clouds
+ * (`gotoEditor`).
  * @param {import("@playwright/test").Page} page
- * @param {string} [link] the page to open: the older view by default
  */
-export async function openSample(page, link = OLDER_VIEW) {
+export async function openSample(page) {
   await startOnMap(page.context());
-  await page.goto(link);
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // No tour, nothing to show in 3D: the switch waits for one.
   await expect(page.locator("#view-switch")).toBeDisabled();
@@ -319,18 +320,30 @@ export async function openSample(page, link = OLDER_VIEW) {
   await expect(page.locator("#rail .row-title")).toHaveCount(5);
 }
 
-/** The editor's link to the older 3D view (`?globe=0`), and its plain link
- * (the globe), for the tests that hold both. */
-export const OLDER_VIEW = "/edit.html?globe=0";
+/** The editor's link: its 3D view is the globe. */
 export const GLOBE_VIEW = "/edit.html";
 
 /**
- * The editor page with the sample tour open, as a creator gets it: in the
- * 3D view, its three stations placed.
+ * Load the editor page for a spec about the editor rather than the globe:
+ * every tour it opens shows at street level from its first frame
+ * (`noApproach`) and without the heavy clouds (`noClouds`), several times
+ * faster a frame in this software renderer. The caller answers the hosts
+ * (`answerHosts`) first and waits for the page.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function gotoEditor(page) {
+  await noApproach(page);
+  await noClouds(page);
+  await page.goto(GLOBE_VIEW);
+}
+
+/**
+ * The editor page with the sample tour open, as a creator gets it: on the
+ * globe, its three stations placed (loaded by `gotoEditor`).
  * @param {import("@playwright/test").Page} page
  */
 export async function openSampleIn3d(page) {
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
