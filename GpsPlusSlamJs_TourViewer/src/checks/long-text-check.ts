@@ -95,6 +95,7 @@ const CAPTION_PARTS = {
   win: ".nb-win",
   col: ".nb-col",
   who: '[data-testid="narration-box-who"]',
+  disc: '[data-testid="narration-box-disclosure"]',
   firstWord: ".nb-col .nb-w",
   sbar: ".nb-sbar",
   thumb: ".nb-sbar i",

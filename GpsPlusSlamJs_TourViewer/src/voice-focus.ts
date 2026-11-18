@@ -141,6 +141,10 @@ export function focusedPlayer(
       inner.seek(ms);
     },
     onChange: (listener) => inner.onChange(listener),
+    // A scrub's pause: still the running voice, so nothing it holds wakes.
+    hold: () => {
+      voice.hold();
+    },
     play() {
       held = false;
       focus.tapped(voice);

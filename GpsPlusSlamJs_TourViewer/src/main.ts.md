@@ -76,7 +76,8 @@ listed in `index.html.md`. The concerns and their modules:
   hands the sheet its voice in `openLongText` (the block found by id in
   the open tour), and gives the viewer placement and the view switch its
   `verdictOf`. In visitor mode it builds the narration box under
-  `#ar-root` (writing `narrationBox` in the page's store) and its follower; `hooks.tickStations` ticks the sheet's
+  `#ar-root` (writing `narrationBox` in the page's store) and its follower;
+  `hooks.tickStations` ticks the sheet's
   marks and syncs the follower each frame, and `hooks.stopStations` stops
   the follower and pauses every voice; `hooks.releaseTourMedia` (a
   tour's close) lets every voice go (`narration.reset()`).

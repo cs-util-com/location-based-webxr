@@ -123,6 +123,13 @@ describe("lines", () => {
     expect(lineIndices([], 22)).toEqual([]);
   });
 
+  // Why: the speaker's name opens line 0. A first word too long to fit
+  // beside it wraps under it, and is then on line 1, not line 0.
+  it("counts from the name's line when given its top", () => {
+    expect(lineIndices([22, 22, 44], 22, 0)).toEqual([1, 1, 2]);
+    expect(lineIndices([0, 22], 22, 0)).toEqual([0, 1]);
+  });
+
   it("starts each line at its first word, and closes with the total", () => {
     expect(lineStarts([0, 300, 600, 900], [0, 0, 1, 2], 1500)).toEqual([
       0, 600, 900, 1500,

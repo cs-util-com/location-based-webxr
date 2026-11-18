@@ -13,8 +13,8 @@
  * (`slots`).
  *
  * The voice (`NarrationClock`) is the clock; the box reads it every frame
- * and tells the page's store (`narration-box-slice.ts`) what it shows only
- * when that changes.
+ * and tells the page's store (`narration-box-slice.ts`) which text it
+ * shows and whether its voice plays, only when that changes.
  *
  * @see narration-box.ts.md
  */
@@ -25,8 +25,8 @@ import type { TourTiming } from "gps-plus-slam-app-framework/ar/tour-timing";
 import "./narration-box.css";
 import { wordsOf } from "./plain-words.js";
 import {
-  narrationBoxFollowed,
   narrationBoxHidden,
+  narrationBoxPlaying,
   narrationBoxScrubbing,
   narrationBoxShown,
 } from "./narration-box-slice.js";
@@ -61,7 +61,11 @@ export interface NarrationBoxContent {
   readonly plain: string;
   readonly timing: Pick<TourTiming, "segments">;
   readonly player: NarrationClock;
+  /** A synthetic voice: said on screen after the name, not only to a
+   *  screen reader. */
   readonly synthetic: boolean;
+  /** The voice's credit, shown after the name when there is one. */
+  readonly voiceCredit?: string;
 }
 
 export interface NarrationBoxDeps {
@@ -141,6 +145,17 @@ function div(doc: Document, className: string): HTMLDivElement {
   return el;
 }
 
+/** What is said after the speaker's name: a synthetic voice, and the
+ *  voice's credit when there is one; empty for neither. */
+function disclosure(c: NarrationBoxContent): string {
+  const credit = c.voiceCredit?.trim() ?? "";
+  const parts = [
+    ...(c.synthetic ? ["synthetic voice"] : []),
+    ...(credit === "" ? [] : [credit]),
+  ];
+  return parts.map((p) => ` · ${p}`).join("");
+}
+
 const pointerIdOf = (e: Event): number => {
   const id = (e as Partial<PointerEvent>).pointerId;
   return typeof id === "number" ? id : 0;
@@ -170,7 +185,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   const measure = doc.createElement("span");
   measure.className = "nb-measure";
   measure.setAttribute("aria-hidden", "true");
-  winEl.append(col, sbar, measure);
+  // Whether the voice plays, for a screen reader (the tap sign is gone
+  // after 0.75 s).
+  const live = doc.createElement("span");
+  live.className = "nb-live";
+  live.setAttribute("aria-live", "polite");
+  winEl.append(col, sbar, measure, live);
   mid.append(winEl);
   const slotR = div(doc, "nb-slot nb-slot-r");
   root.append(slotL, mid, slotR);
@@ -194,7 +214,10 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   let dragMs = 0;
   let resume = false;
   let ticking = false;
-  let told: { playing: boolean; word: number; line: number } | null = null;
+  /** The play state the store and the live region last heard, null for
+   *  none yet in this showing. */
+  let told: boolean | null = null;
+  let whoEl: HTMLElement | null = null;
   const signs = new Set<HTMLElement>();
 
   function totalMs(): number {
@@ -211,7 +234,16 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     who.dataset.testid = "narration-box-who";
     who.textContent = c.speaker.name;
     who.style.color = c.speaker.color;
-    const parts: (Node | string)[] = [who, " "];
+    whoEl = who;
+    const said = disclosure(c);
+    const disc = said === "" ? null : doc.createElement("span");
+    if (disc !== null) {
+      disc.className = "nb-disc";
+      disc.dataset.testid = "narration-box-disclosure";
+      disc.textContent = said;
+    }
+    const head: Node[] = disc === null ? [who] : [who, disc];
+    const parts: (Node | string)[] = [...head, " "];
     spans = [];
     let at = 0;
     for (const w of words) {
@@ -225,19 +257,25 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     }
     parts.push(c.plain.slice(at));
     col.replaceChildren(...parts);
-    // The bold name too, so the width rule measures what is drawn.
-    const whoCopy = who.cloneNode(true) as HTMLElement;
-    delete whoCopy.dataset.testid;
-    whoCopy.removeAttribute("class");
-    measure.replaceChildren(whoCopy, ` ${c.plain}`);
+    // The bold name and the disclosure too, so the width rule measures
+    // what is drawn.
+    const copies = head.map((n) => {
+      const copy = n.cloneNode(true) as HTMLElement;
+      delete copy.dataset.testid;
+      return copy;
+    });
+    measure.replaceChildren(...copies, ` ${c.plain}`);
     root.setAttribute(
       "aria-label",
       `${c.speaker.name} reads "${c.title}"${
         c.synthetic ? ", a synthetic voice" : ""
-      }. Tap to pause or play, drag up or down to move through the text.`,
+      }. Tap to pause or play, drag up or down to move through the text;` +
+        " with a keyboard, Space or Enter plays or pauses and the arrow" +
+        " keys move a line.",
     );
     litUpTo = -1;
     told = null;
+    live.textContent = "";
     dirty = true;
     root.classList.remove("nb-swap");
     void root.offsetWidth;
@@ -266,6 +304,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     lineOf = lineIndices(
       spans.map((s) => s.offsetTop),
       lh,
+      whoEl?.offsetTop,
     );
     lines = Math.max(1, ...lineOf.map((l) => l + 1));
     rows = Math.min(BOX_MAX_ROWS, lines);
@@ -314,13 +353,15 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     const g = thumbGeometry(scroll, lines, rows, rows * lh - 4);
     thumb.style.height = `${g.height.toFixed(1)}px`;
     thumb.style.transform = `translateY(${g.offset.toFixed(1)}px)`;
+    // A drag holds the voice for the finger only: it still counts as
+    // playing, so neither the store nor a screen reader hears of it.
     const playing = dragging ? resume : c.player.playing();
     const speaking = playing && !dragging ? "yes" : "no";
     if (root.dataset.speaking !== speaking) root.dataset.speaking = speaking;
-    const line = lineOf[Math.max(0, lit)] ?? 0;
-    if (told?.playing !== playing || told.word !== lit || told.line !== line) {
-      told = { playing, word: lit, line };
-      deps.store.dispatch(narrationBoxFollowed(told));
+    if (told !== playing) {
+      if (told !== null) live.textContent = playing ? "Playing" : "Paused";
+      told = playing;
+      deps.store.dispatch(narrationBoxPlaying(playing));
     }
   }
 
@@ -368,22 +409,33 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     tick();
   }
 
+  /** A drag holds a playing voice for the finger, keeping its place in
+   *  the voice channel (`hold`); a voice not playing is left alone, so one
+   *  the channel holds stays held. */
   function startDrag(c: NarrationBoxContent): void {
     dragging = true;
     resume = c.player.playing();
     dragMs = c.player.nowMs();
-    c.player.pause();
+    if (resume) {
+      if (c.player.hold === undefined) c.player.pause();
+      else c.player.hold();
+    }
     col.classList.add("nb-scrub");
     root.classList.add("nb-dragging");
     deps.store.dispatch(narrationBoxScrubbing(true));
   }
 
+  /** The finger lets go: the voice goes on from where the words are, or,
+   *  past the end, is paused for good (its channel handed back). */
   function endDrag(c: NarrationBoxContent): void {
     dragging = false;
     col.classList.remove("nb-scrub");
     root.classList.remove("nb-dragging");
     c.player.seek(dragMs);
-    if (resume && dragMs < totalMs()) c.player.play();
+    if (resume) {
+      if (dragMs < totalMs()) c.player.play();
+      else c.player.pause();
+    }
     resume = false;
     deps.store.dispatch(narrationBoxScrubbing(false));
     tick();
@@ -448,19 +500,26 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   const onResize = (): void => {
     dirty = true;
   };
-  const onVisibility = (): void => {
-    if (doc.hidden && shown) content?.player.pause();
-  };
+  // A hidden page is not the box's to silence: the page's sound gate
+  // pauses every voice and carries the held one on at the return.
   root.addEventListener("pointerdown", onDown);
   root.addEventListener("pointermove", onMove);
   root.addEventListener("pointerup", onUp);
   root.addEventListener("pointercancel", onUp);
   root.addEventListener("keydown", onKey);
   win?.addEventListener("resize", onResize);
-  doc.addEventListener("visibilitychange", onVisibility);
 
+  /** A drag cut off (the box hides, another text comes): the voice keeps
+   *  the dragged place but does not play on, and a voice the drag held is
+   *  paused properly, its channel handed back. */
   function cancelDrag(): void {
-    if (dragging && content !== null) endDrag(content);
+    if (dragging && content !== null) {
+      const c = content;
+      const held = resume;
+      resume = false;
+      endDrag(c);
+      if (held) c.player.pause();
+    }
     press = null;
   }
 
@@ -523,7 +582,6 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
       root.removeEventListener("pointercancel", onUp);
       root.removeEventListener("keydown", onKey);
       win?.removeEventListener("resize", onResize);
-      doc.removeEventListener("visibilitychange", onVisibility);
       for (const fx of signs) fx.remove();
       signs.clear();
       root.remove();

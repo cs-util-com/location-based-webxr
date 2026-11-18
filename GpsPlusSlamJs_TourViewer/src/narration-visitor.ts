@@ -252,6 +252,9 @@ export function createNarrationVisitor(
         timing,
         player,
         synthetic: narration.synthetic,
+        ...(narration.voiceCredit === undefined
+          ? {}
+          : { voiceCredit: narration.voiceCredit }),
       };
     },
     pauseAll(stationId) {

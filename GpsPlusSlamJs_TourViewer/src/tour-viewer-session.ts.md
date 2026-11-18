@@ -260,6 +260,6 @@ unchanged across the split (the split's behaviour-neutrality proof).
 ## The narration box's playback
 
 - The store also mounts `narrationBox` (`narration-box-slice.ts`): which
-  narrated text the bottom box shows, whether its voice plays or is held
-  by a scrub, and its lit word and line. Not persisted; the voice itself
+  narrated text the bottom box shows, and whether its voice plays or is
+  held by a scrub. Not persisted; the voice itself
   stays in its audio element.

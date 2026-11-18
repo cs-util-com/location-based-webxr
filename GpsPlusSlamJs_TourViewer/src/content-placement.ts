@@ -457,7 +457,7 @@ function drawnAsPlane(block: TourBlock | TourObject, view: string): boolean {
 }
 
 /** What a long text's world view draws: the reading sign for `reading`
- *  and a visitor's `captions` (the strip itself is the page's), the
+ *  and a visitor's `captions` (the box itself is the page's), the
  *  reading stand for `lectern`. */
 function longTextDrawnAs(view: string): "reading" | "lectern" {
   return view === "reading" || view === "captions" ? "reading" : "lectern";

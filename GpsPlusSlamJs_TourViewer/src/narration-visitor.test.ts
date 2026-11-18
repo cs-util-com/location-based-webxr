@@ -158,6 +158,10 @@ describe("the visitor's narrated texts", () => {
     // A long text is read by the narrator, in a colour no character uses.
     expect(box?.speaker).toEqual({ name: "Narrator", color: "#f9a8d4" });
     expect(box?.title).toBe(block.title);
+    // A synthetic voice and its credit are said on screen, not only to a
+    // screen reader: some voice services ask for a visible disclosure.
+    expect(box?.synthetic).toBe(true);
+    expect(box?.voiceCredit).toBe("Read by the archive");
   });
 
   it("gives the box nothing while its timing is read, then the content", async () => {

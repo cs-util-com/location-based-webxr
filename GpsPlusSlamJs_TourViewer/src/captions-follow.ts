@@ -1,9 +1,9 @@
 /**
  * When the narration box shows, and what: inside a station, the first
  * of its free long texts a visitor sees in the captions view, while its
- * read-along fits. Never outside a station, whatever blocks it is given. Leaving the station pauses the voice, and coming back
- * carries it on. Called on every
- * camera frame.
+ * read-along fits. Never outside a station, whatever blocks it is
+ * given. Leaving the station pauses the voice, and coming back carries
+ * it on. Called on every camera frame.
  *
  * @see captions-follow.ts.md
  */

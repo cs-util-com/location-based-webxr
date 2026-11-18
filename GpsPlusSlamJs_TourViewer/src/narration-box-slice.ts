@@ -1,12 +1,13 @@
 /**
  * The narration box's playback in the page's store: which narrated text
- * the box shows (`key`), whether its voice plays, whether a finger is
- * scrubbing it, and where it is (the lit word and the line it is on).
- * More than the box reads it: the compass's speaking sign and the story's
- * next step and quiz that will share the bottom area. The voice itself
- * (one audio element per text, `narration-player.ts`) stays outside, an
- * imperative resource and the clock; the box dispatches here only when
- * one of these values changes, never per frame.
+ * the box shows (`key`), whether its voice plays, and whether a finger is
+ * scrubbing it. It is the shared answer to "is a narration heard" for the
+ * views that will sit beside the box (the story's next step and a quiz in
+ * the same bottom area). Where the voice is (the lit word, its line) stays
+ * in the box until a reader needs it. The voice itself (one audio element
+ * per text, `narration-player.ts`) stays outside, an imperative resource
+ * and the clock; the box dispatches here only when one of these values
+ * changes: on a new text, a tap, a drag's start and end, the voice's end.
  *
  * Not recorded: no `narrationBox/*` action is among the page's persisted
  * prefixes (`tour-viewer-session.ts`).
@@ -23,31 +24,19 @@ export interface NarrationBoxState {
   readonly playing: boolean;
   /** A finger is dragging the words (the voice is held meanwhile). */
   readonly scrubbing: boolean;
-  /** The lit word's index in the text, -1 before the first. */
-  readonly word: number;
-  /** The line the lit word is on, from 0. */
-  readonly line: number;
 }
 
 const initialNarrationBoxState: NarrationBoxState = {
   key: null,
   playing: false,
   scrubbing: false,
-  word: -1,
-  line: 0,
 };
-
-interface NarrationBoxFollow {
-  readonly playing: boolean;
-  readonly word: number;
-  readonly line: number;
-}
 
 const narrationBoxSlice = createSlice({
   name: "narrationBox",
   initialState: initialNarrationBoxState,
   reducers: {
-    /** The box shows the text `key`; another text starts at its start. */
+    /** The box shows the text `key`; another text starts silent. */
     narrationBoxShown(state, action: PayloadAction<string>) {
       if (state.key === action.payload) return state;
       return { ...initialNarrationBoxState, key: action.payload };
@@ -55,19 +44,10 @@ const narrationBoxSlice = createSlice({
     narrationBoxHidden() {
       return initialNarrationBoxState;
     },
-    /** Where the voice is now; ignored while hidden or with a bad place. */
-    narrationBoxFollowed(state, action: PayloadAction<NarrationBoxFollow>) {
-      const { playing, word, line } = action.payload;
-      if (
-        state.key === null ||
-        !Number.isInteger(word) ||
-        !Number.isInteger(line) ||
-        word < -1 ||
-        line < 0
-      ) {
-        return state;
-      }
-      return { ...state, playing: playing === true, word, line };
+    /** Whether the shown text's voice plays; ignored while hidden. */
+    narrationBoxPlaying(state, action: PayloadAction<boolean>) {
+      if (state.key === null) return state;
+      return { ...state, playing: action.payload === true };
     },
     narrationBoxScrubbing(state, action: PayloadAction<boolean>) {
       if (state.key === null) return state;
@@ -80,7 +60,7 @@ export const narrationBoxReducer = narrationBoxSlice.reducer;
 export const {
   narrationBoxShown,
   narrationBoxHidden,
-  narrationBoxFollowed,
+  narrationBoxPlaying,
   narrationBoxScrubbing,
 } = narrationBoxSlice.actions;
 

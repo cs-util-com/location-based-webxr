@@ -1,6 +1,11 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
+/** The check page's voice credit (`CHECK_VOICE_CREDIT` in
+ *  `src/checks/long-text-check.ts`). */
+const CHECK_VOICE_CREDIT =
+  "Demo narration: a generated tone pattern standing in for a recorded voice";
+
 /**
  * Why these tests matter: a narrated text is read along in two places,
  * the reading sheet and the narration box, and both are driven by a
@@ -16,8 +21,9 @@ import { expect, test } from "@playwright/test";
  *   (`public/prototypes/hud-calm-r5-1-scroll-box/`, its `.nbox` CSS
  *   numbers, copied here, not from the code under test), with its gaps,
  *   at a phone upright, a phone sideways and a desktop; the speaker's
- *   name starts the first line, on the same line as the first words; and
- *   it lights the voice's word.
+ *   name starts the first line, the synthetic voice's disclosure and its
+ *   credit right after it, then the first words; the scrollbar's thumb
+ *   sits where the scroll is; and it lights the voice's word.
  * The page's clock stands still until moved (no sound plays), so what is
  * pinned is the read-along against a known time, not the audio itself.
  */
@@ -194,15 +200,31 @@ for (const viewport of VIEWPORTS) {
     await page.waitForFunction(
       () => window.__longTextCheck?.voice()?.captions?.shown === true,
     );
-    // The box fades in: measure it where it comes to rest.
+    // The box fades in: measure it where it comes to rest (the name's
+    // breathing while the voice plays never finishes, and moves nothing).
     await page.waitForFunction(() =>
-      document.getAnimations().every((a) => a.playState === "finished"),
+      document
+        .getAnimations()
+        .every(
+          (a) =>
+            a.playState === "finished" ||
+            a.effect?.getTiming().iterations === Infinity,
+        ),
     );
     const { k, segments } = await demo(page);
     const v = await voice(page);
     const p = v.captionParts;
     const want = expectedBox(viewport);
-    for (const name of ["box", "win", "col", "who", "firstWord", "sbar"]) {
+    for (const name of [
+      "box",
+      "win",
+      "col",
+      "who",
+      "disc",
+      "firstWord",
+      "sbar",
+      "thumb",
+    ]) {
       if (p[name] === null) throw new Error(`the box's ${name} is not drawn`);
     }
     near(p.box.left, want.left);
@@ -221,12 +243,42 @@ for (const viewport of VIEWPORTS) {
     near(p.sbar.right - p.sbar.left, want.bar);
     near(p.sbar.top - p.win.top, 2);
     near(p.win.bottom - p.sbar.bottom, 2);
-    // The one intended difference from the prototype: the speaker's name
-    // is not a line of its own but starts the words, on their first line.
-    near(p.who.top, p.firstWord.top, 3);
-    expect(p.who.right).toBeLessThanOrEqual(p.firstWord.left + 0.5);
+    // The thumb: its share of the 62 px track is the share of the lines
+    // shown (never under 14 px), its place the share scrolled.
+    const lines = v.captions?.lines ?? 0;
+    const track = want.rows * want.lineHeight - 4;
+    const thumbH = Math.max(14, (track * want.rows) / lines);
+    const scrolled = Math.min(
+      1,
+      Math.max(0, (v.captions?.scroll ?? 0) / (lines - want.rows)),
+    );
+    near(p.thumb.bottom - p.thumb.top, thumbH);
+    near(p.thumb.top - p.sbar.top, scrolled * (track - thumbH));
+    // The intended differences from the prototype: the speaker's name is
+    // not a line of its own but starts the words, on their first line,
+    // and the synthetic voice's disclosure and credit follow it there.
     near(p.who.left, p.col.left);
+    near(p.disc.top, p.who.top, 3);
+    expect(p.disc.left).toBeGreaterThanOrEqual(p.who.left);
     await expect(page.getByTestId("narration-box-who")).toHaveText("Narrator");
+    await expect(page.getByTestId("narration-box-disclosure")).toHaveText(
+      ` · synthetic voice · ${CHECK_VOICE_CREDIT}`,
+    );
+    // The first words run on right after it: on the disclosure's last
+    // line, or at the start of the next one when they do not fit there.
+    const discEnd = await page
+      .getByTestId("narration-box-disclosure")
+      .evaluate((el) => {
+        const r = [...el.getClientRects()].at(-1);
+        return r === undefined ? null : { top: r.top, right: r.right };
+      });
+    if (discEnd === null) throw new Error("the disclosure has no box");
+    if (Math.abs(p.firstWord.top - discEnd.top) < 3) {
+      expect(p.firstWord.left).toBeGreaterThanOrEqual(discEnd.right - 0.5);
+    } else {
+      near(p.firstWord.top, discEnd.top + want.lineHeight, 3);
+      near(p.firstWord.left, p.col.left);
+    }
     // The demo's word is lit, and follows the voice.
     expect(v.captions?.word).toBe(segments[k].text);
     await page.evaluate(

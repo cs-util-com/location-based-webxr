@@ -43,9 +43,10 @@ only its slice) in place of the sheet. `?open=0` opens nothing until `show()` or
   clock and lets the views follow), `demoMs`, `segments`, `voice()`
   (the verdict, how often the timing entry was read, the narration's
   warnings, the sheet's marked word, the box's state and its parts'
-  boxes (the box, its window, column, the speaker's name, the first
-  word, the scrollbar and its thumb), the clock), `voiceRect()` and `wordRect()` (the voice's marks'
-  first line boxes); `voice()` is null without `?voice=`.
+  boxes (the box, its window, column, the speaker's name, the
+  disclosure after it, the first word, the scrollbar and its thumb), the
+  clock), `voiceRect()` and `wordRect()` (the voice's marks' first line
+  boxes); `voice()` is null without `?voice=`.
 - `CHECK_RICH_BODY` - the rich text.
 - `longTextCheckOptions(search)` - `{ rich, ar, voice, view, open }`
   from the query (`text=rich`, `ar=1`, `voice=timed|stale`,
@@ -68,6 +69,7 @@ only its slice) in place of the sheet. `?open=0` opens nothing until `show()` or
 the mark, and the rich text: pictures after a scroll, the link's question
 in AR, allowlisted tags only); `playwright-tests/narration-check.spec.js`
 (reading along, a stale track, the read on open, the narration box's layout at
-three viewports, the speaker's name on the first words' line); `src/checks/long-text-check.test.ts` (the query, the
+three viewports, the speaker's name on the first words' line);
+`src/checks/long-text-check.test.ts` (the query, the
 rich body's forms, the check timing parsed and fitting its text, the
 demo position, the clock).

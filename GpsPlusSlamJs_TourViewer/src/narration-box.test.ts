@@ -25,8 +25,9 @@ import {
   selectNarrationBox,
   selectNarrationSpeaking,
 } from "./narration-box-slice.js";
-import type { NarrationClock } from "./narration-player.js";
+import type { NarrationClock, NarrationPlayer } from "./narration-player.js";
 import { cancelsXrSelect } from "./pin-sheet.js";
+import { createVoiceFocus, focusedPlayer } from "./voice-focus.js";
 
 /** 16 words; the stub layout puts 4 on a line, so 4 lines. */
 const TEXT =
@@ -59,6 +60,41 @@ class FakeClock implements NarrationClock {
   onChange(): () => void {
     return () => undefined;
   }
+}
+
+/** An audio player that tells its listeners of every change, as the
+ *  real one does, for the voice focus to follow. */
+function innerPlayer(): NarrationPlayer {
+  const listeners = new Set<() => void>();
+  const notify = (): void => {
+    for (const l of [...listeners]) l();
+  };
+  let on = false;
+  let at = 0;
+  return {
+    nowMs: () => at,
+    durationMs: () => 16 * WORD_MS,
+    playing: () => on,
+    play() {
+      on = true;
+      notify();
+    },
+    pause() {
+      on = false;
+      notify();
+    },
+    seek(ms) {
+      at = ms;
+      notify();
+    },
+    onChange(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    dispose() {
+      listeners.clear();
+    },
+  };
 }
 
 function wordTrack(): Pick<TourTiming, "segments"> {
@@ -145,11 +181,14 @@ describe("createNarrationBox", () => {
     expect(who?.tagName).toBe("B");
     expect(who?.textContent).toBe("Narrator");
     expect(who?.style.color).toBe("rgb(249, 168, 212)");
-    expect(box.element.querySelectorAll(".nb-who")).toHaveLength(1);
-    // The words follow it on the same line, with nothing in between.
-    expect(col?.textContent?.startsWith(`Narrator ${TEXT.slice(0, 3)}`)).toBe(
-      true,
-    );
+    expect(box.element.querySelectorAll(".nb-col .nb-who")).toHaveLength(1);
+    // The words follow it on the same line, after the synthetic voice's
+    // disclosure.
+    expect(
+      col?.textContent?.startsWith(
+        `Narrator · synthetic voice ${TEXT.slice(0, 3)}`,
+      ),
+    ).toBe(true);
     expect(box.element.getAttribute("aria-label")).toContain(
       '"The Guild House", a synthetic voice',
     );
@@ -282,7 +321,7 @@ describe("createNarrationBox", () => {
       actions.filter((a) => a === "narrationBox/narrationBoxShown"),
     ).toHaveLength(1);
     const follows = () =>
-      actions.filter((a) => a === "narrationBox/narrationBoxFollowed").length;
+      actions.filter((a) => a === "narrationBox/narrationBoxPlaying").length;
     const before = follows();
     box.tick();
     box.show(content);
@@ -294,8 +333,6 @@ describe("createNarrationBox", () => {
     expect(selectNarrationBox(store.getState())).toMatchObject({
       key: "text-1",
       playing: true,
-      word: 5,
-      line: 1,
     });
     box.hide();
     expect(selectNarrationBox(store.getState()).key).toBeNull();
@@ -341,12 +378,17 @@ describe("createNarrationBox", () => {
   });
 
   it("shows a text with no words without failing", () => {
-    const { box, content } = make();
+    const { box, clock, content } = make();
     box.show({ ...content, plain: "", timing: { segments: [] } });
     expect(box.state()).toMatchObject({ shown: true, lit: -1, lines: 1 });
     box.element.dispatchEvent(pointer("pointerdown", 1, 1));
     box.element.dispatchEvent(pointer("pointermove", 1, -200));
     box.element.dispatchEvent(pointer("pointerup", 1, -200));
+    // No words, one line spanning the whole voice: the drag still moves
+    // the voice (here past its end), and leaves it paused.
+    expect(box.state()).toMatchObject({ lit: -1, scrubbing: false });
+    expect(clock.now).toBe(clock.dur);
+    expect(clock.on).toBe(false);
   });
 
   it("goes away whole on dispose", () => {
@@ -358,5 +400,142 @@ describe("createNarrationBox", () => {
     expect(document.querySelector(".narration-box")).toBeNull();
     expect(document.querySelector(".nb-tapfx")).toBeNull();
     expect(selectNarrationBox(store.getState()).key).toBeNull();
+  });
+
+  // Why: leaving a station mid-drag, or a new text arriving, must not
+  // restart the old voice: the drag ends there, without its replay.
+  it("does not play the voice again when a drag is cut off by hide or a new text", () => {
+    for (const cut of ["hide", "show"] as const) {
+      const { box, clock, content } = make();
+      clock.now = 4 * WORD_MS;
+      clock.on = true;
+      box.show(content);
+      box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+      box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+      expect(clock.on).toBe(false);
+      if (cut === "hide") box.hide();
+      else box.show({ ...content, key: "text-2", player: new FakeClock() });
+      expect(clock.on).toBe(false);
+      expect(box.state().scrubbing).toBe(false);
+      box.element.dispatchEvent(pointer("pointerup", 100, 700 - LINE_PX));
+      expect(clock.on).toBe(false);
+      document.body.replaceChildren();
+    }
+  });
+
+  // Why: a drag only holds the voice for the finger; it must not hand the
+  // one voice channel to another voice meanwhile, nor take a held voice
+  // out of it.
+  it("keeps the voice channel through a drag (a voice it holds stays held)", () => {
+    const focus = createVoiceFocus();
+    const other = focusedPlayer(innerPlayer(), focus);
+    const voiced = focusedPlayer(innerPlayer(), focus);
+    other.play();
+    voiced.play(); // the text's voice holds the other one
+    expect(other.playing()).toBe(false);
+    const { box, content } = make();
+    box.show({ ...content, player: voiced });
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+    expect(voiced.playing()).toBe(false);
+    expect(other.playing()).toBe(false);
+    box.element.dispatchEvent(pointer("pointerup", 100, 700 - LINE_PX));
+    expect(voiced.playing()).toBe(true);
+    expect(other.playing()).toBe(false);
+    // The text's voice ending still carries the other one on.
+    voiced.pause();
+    expect(other.playing()).toBe(true);
+  });
+
+  it("keeps a held text voice held through a drag, to carry on later", () => {
+    const focus = createVoiceFocus();
+    const voiced = focusedPlayer(innerPlayer(), focus);
+    const clip = focusedPlayer(innerPlayer(), focus);
+    voiced.play();
+    clip.play(); // a clip holds the text's voice
+    expect(voiced.wanted()).toBe(true);
+    const { box, content } = make();
+    box.show({ ...content, player: voiced });
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+    box.element.dispatchEvent(pointer("pointerup", 100, 700 - LINE_PX));
+    expect(voiced.playing()).toBe(false);
+    expect(voiced.wanted()).toBe(true);
+    clip.pause(); // the clip ends: the text's voice carries on
+    expect(voiced.playing()).toBe(true);
+  });
+
+  // Why: some voice services ask for a visible disclosure and credit; it
+  // must be on screen, not only in the label a screen reader reads.
+  it("says a synthetic voice and its credit after the name, on the first line", () => {
+    const { box, content } = make();
+    box.show({ ...content, voiceCredit: "Read by the archive" });
+    const disc = box.element.querySelector<HTMLElement>(".nb-disc");
+    expect(disc?.textContent).toBe(" · synthetic voice · Read by the archive");
+    expect(disc?.previousElementSibling?.classList.contains("nb-who")).toBe(
+      true,
+    );
+    expect(disc?.tagName).not.toBe("B");
+    box.show({ ...content, key: "t2", synthetic: false, voiceCredit: "Ann" });
+    expect(box.element.querySelector(".nb-disc")?.textContent).toBe(" · Ann");
+    box.show({ ...content, key: "t3", synthetic: false });
+    expect(box.element.querySelector(".nb-disc")).toBeNull();
+  });
+
+  // Why: after the 0.75 s sign the box must still show, and tell a screen
+  // reader, whether the voice plays.
+  it("shows and announces whether the voice plays", () => {
+    const { box, clock, content } = make();
+    box.show(content);
+    expect(box.element.dataset.speaking).toBe("no");
+    const live = box.element.querySelector<HTMLElement>(".nb-live");
+    expect(live?.getAttribute("aria-live")).toBe("polite");
+    expect(live?.textContent).toBe("");
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointerup", 100, 700));
+    expect(clock.on).toBe(true);
+    expect(box.element.dataset.speaking).toBe("yes");
+    expect(live?.textContent).toBe("Playing");
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointerup", 100, 700));
+    expect(box.element.dataset.speaking).toBe("no");
+    expect(live?.textContent).toBe("Paused");
+    expect(box.element.getAttribute("aria-label")).toMatch(/arrow keys/u);
+  });
+
+  // Why: the page's own sound gate silences a hidden page and carries the
+  // voice on at the return; the box pausing it too would break that.
+  it("leaves a hidden page's voice to the page", () => {
+    const { box, clock, content } = make();
+    clock.on = true;
+    box.show(content);
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => false,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(clock.on).toBe(true);
+  });
+
+  // Why: every dispatch runs the AR store's subscribers; the store hears
+  // of the play state only, never of each word.
+  it("tells the store nothing as the words go by", () => {
+    const { box, clock, content, actions } = make();
+    clock.on = true;
+    box.show(content);
+    const before = actions.length;
+    for (let i = 1; i < 12; i += 1) {
+      clock.now = i * WORD_MS + 10;
+      box.tick();
+    }
+    expect(actions.length).toBe(before);
+    clock.on = false;
+    box.tick();
+    expect(actions.slice(before)).toEqual(["narrationBox/narrationBoxPlaying"]);
   });
 });

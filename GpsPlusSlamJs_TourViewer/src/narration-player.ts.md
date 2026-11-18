@@ -6,7 +6,7 @@ A long text's voice: one audio element over the tour's audio file, fetched only 
 
 ## Public API
 
-- `NarrationClock` - `nowMs()`, `durationMs()` (the file's once known, else the tour's `durationMs`, else 0), `playing()`, `play()`, `pause()`, `seek(ms)` (clamped; kept for when the file arrives), `onChange(listener)` returning an unsubscribe.
+- `NarrationClock` - `nowMs()`, `durationMs()` (the file's once known, else the tour's `durationMs`, else 0), `playing()`, `play()`, `pause()`, an optional `hold()` (a pause for a scrub that keeps the voice's place in the voice channel; `voice-focus.ts` gives it, `pause` stands in without), `seek(ms)` (clamped; kept for when the file arrives), `onChange(listener)` returning an unsubscribe.
 - `NarrationPlayer` - a clock plus `dispose()` (stops, revokes the object URL, drops listeners).
 - `createNarrationPlayer({ load, durationMs?, onError?, audio?, createUrl?, revokeUrl? })` - `load()` fetches the file; `audio` is a seam for tests.
 
