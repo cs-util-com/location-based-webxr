@@ -1,7 +1,7 @@
 /**
  * A long text's narration voice: one audio element over the tour's audio
  * file, fetched only when the visitor first presses play, and one clock
- * the reading sheet and the captions strip both follow (`nowMs`,
+ * the reading sheet and the narration box both follow (`nowMs`,
  * `playing`, `onChange`), so the two never drift apart.
  *
  * @see narration-player.ts.md
@@ -19,6 +19,10 @@ export interface NarrationClock {
   playing(): boolean;
   play(): void;
   pause(): void;
+  /** Pause for a moment (a finger scrubbing the words), keeping the
+   *  voice's place in the voice channel: `play` goes on, `pause` hands
+   *  the channel back. Without it, `pause` stands in. */
+  hold?(): void;
   /** Move to `ms`, clamped to the voice; before the file is fetched the
    *  place is kept for when it is. */
   seek(ms: number): void;

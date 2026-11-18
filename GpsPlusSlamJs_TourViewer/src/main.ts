@@ -43,7 +43,7 @@ import { createModelVisitor, mountModelVisitorDom } from "./model-visitor.js";
 import { pictureAssetPath } from "./long-text-pictures.js";
 import { createLongTextSheet } from "./long-text-sheet.js";
 import { createCaptionsFollow } from "./captions-follow.js";
-import { createCaptionsStrip } from "./captions-strip.js";
+import { createNarrationBox } from "./narration-box.js";
 import { createNarrationVisitor } from "./narration-visitor.js";
 import { createViewSwitch, switchBlocks } from "./view-switch.js";
 import {
@@ -912,7 +912,7 @@ function wireRecordingHousekeeping(): void {
 
 const escapeButton = element<HTMLButtonElement>("scan-escape");
 // The visitor's narrated texts (one voice per text, shared by its sheet
-// and its captions strip; each read-along read when its text opens).
+// and its narration box; each read-along read when its text opens).
 // Their voices are read through the stations' prefetch cache.
 // Sound on or off for every tour: off holds the running voice and lets
 // none start by itself (the list's sound button). A hidden page is silent
@@ -1130,7 +1130,7 @@ hooks.tickStations = () => {
   pinSheet.sync();
   // The view switch follows the present station.
   viewSwitch?.sync();
-  // A narrated text's voice: the sheet's marks and the captions strip.
+  // A narrated text's voice: the sheet's marks and the narration box.
   longTextSheet.tick();
   captionsFollow?.sync();
   // A model's view, its notes and its card.
@@ -1206,32 +1206,13 @@ function presentBlocks() {
     contentPlaced: ctx.stationContent?.showsAny() === true,
   });
 }
-// The captions strip (a visitor's view of a narrated text): "Full text"
-// opens the sheet of the text it shows.
-let captionsShown: string | null = null;
+// The narration box (a visitor's view of a narrated text): the words at
+// the bottom of the AR view, scrolled with the voice; it tells the page's
+// store what it shows (`narration-box-slice.ts`).
 const captionsFollow =
   mode === "visitor"
     ? createCaptionsFollow({
-        strip: (() => {
-          const strip = createCaptionsStrip({
-            host: element("ar-root"),
-            openFullText: () => {
-              const block = tourBlocksById(ctx.tourDocument.manifest()).get(
-                captionsShown ?? "",
-              );
-              if (block?.kind === "longText") openLongText(block);
-            },
-          });
-          return {
-            show: (content) => {
-              captionsShown = content.key;
-              strip.show(content);
-            },
-            hide: () => {
-              strip.hide();
-            },
-          };
-        })(),
+        box: createNarrationBox({ host: element("ar-root"), store: arStore }),
         narration,
         read: () => {
           const state = arStore.getState();

@@ -49,9 +49,7 @@ prototype's three modes:
   `paragraph`, `paragraphs`, `marked`, `word`, `following`),
   `dispose()` (closes and removes it), `element`.
 - `narrationMeta(words, durationMs, lang?)` - "1,928 words · 12 min
-  narration"; `sheetIcon(doc, name)` and `fillCredit(into, narration)` -
-  the prototype's icons and its credit line ("Synthetic voice" set apart),
-  shared with the captions strip; `LONG_TEXT_VOICE`, `LONG_TEXT_WORD` -
+  narration"; `LONG_TEXT_VOICE`, `LONG_TEXT_WORD` -
   the voice's highlight names.
 - `readMinutes(words)` - minutes to read at 200 words a minute, at least
   1 (the prototype's rule); `wordCount(body)` - the words of the body's

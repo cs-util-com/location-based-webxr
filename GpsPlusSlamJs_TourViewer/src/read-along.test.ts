@@ -1,5 +1,5 @@
 /**
- * Why this test matters: every mark the sheet and the captions strip draw
+ * Why this test matters: every mark the sheet and the narration box draw
  * comes from these lookups. An off-by-one in the time search marks the
  * word before the one spoken; a sentence found by the wrong end of a
  * segment marks the wrong sentence across a sentence boundary; and the

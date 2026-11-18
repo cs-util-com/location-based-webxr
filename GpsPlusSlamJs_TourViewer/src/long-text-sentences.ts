@@ -75,7 +75,7 @@ export function sentenceSpans(text: string, lang = "en"): TextSpan[] {
  * The sentences of a plain text `P`, cut leaf by leaf (`leaves` are its
  * paragraphs' and headings' stretches, `plainTextOf(...).leaves`), in
  * order: the same cut `indexSentences` makes, without a DOM - what the
- * captions strip follows the voice by.
+ * editor's timing checks read.
  */
 export function plainSentences(
   plainText: string,

@@ -15,9 +15,9 @@
  * visitor's own narration (`narration-visitor.ts`), with a stand-in clock
  * the page moves by `at(ms)` in place of a sound, and a timing made in
  * the page the way the prototype makes its own. `?view=captions` shows
- * the captions strip (`captions-strip.ts`, through `captions-follow.ts`)
- * in place of the sheet; `?open=0` opens nothing until `show()` (or
- * `follow()` for the strip).
+ * the narration box (`narration-box.ts`, through `captions-follow.ts`,
+ * with a store of its own slice) in place of the sheet; `?open=0` opens
+ * nothing until `show()` (or `follow()` for the box).
  *
  * @see long-text-check.ts.md
  */
@@ -26,19 +26,21 @@ import {
   plainTextOf,
   textHashOf,
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
+import { configureStore } from "@reduxjs/toolkit";
 import type { TourLongTextBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { TourTimingSegment } from "gps-plus-slam-app-framework/ar/tour-timing";
 
-import { wordsOf } from "../caption-chunks.js";
+import { wordsOf } from "../plain-words.js";
 import {
   createCaptionsFollow,
   type CaptionsFollow,
 } from "../captions-follow.js";
 import {
-  createCaptionsStrip,
-  type CaptionsStrip,
-  type CaptionsStripState,
-} from "../captions-strip.js";
+  createNarrationBox,
+  type NarrationBox,
+  type NarrationBoxViewState,
+} from "../narration-box.js";
+import { narrationBoxReducer } from "../narration-box-slice.js";
 import {
   createLongTextSheet,
   LONG_TEXT_MARK,
@@ -87,18 +89,16 @@ const PARTS = {
 
 type PartName = keyof typeof PARTS;
 
-/** The captions strip's parts the layout e2e measures, by selector. */
+/** The narration box's parts the layout e2e measures, by selector. */
 const CAPTION_PARTS = {
-  strip: '[data-testid="captions-strip"]',
-  text: '[data-testid="captions-text"]',
-  chunk: ".cs-chunk",
-  row: ".cs-row",
-  play: '[data-testid="captions-play"]',
-  back: '[data-testid="captions-back"]',
-  title: '[data-testid="captions-title"]',
-  sub: '[data-testid="captions-sub"]',
-  full: '[data-testid="captions-full"]',
-  bar: '[data-testid="captions-bar"]',
+  box: '[data-testid="narration-box"]',
+  win: ".nb-win",
+  col: ".nb-col",
+  who: '[data-testid="narration-box-who"]',
+  disc: '[data-testid="narration-box-disclosure"]',
+  firstWord: ".nb-col .nb-w",
+  sbar: ".nb-sbar",
+  thumb: ".nb-sbar i",
 } as const;
 
 type CaptionPartName = keyof typeof CAPTION_PARTS;
@@ -126,7 +126,7 @@ interface VoiceCheckState {
   readonly warnings: readonly string[];
   /** The marked word's text in the sheet, or null. */
   readonly wordText: string | null;
-  readonly captions: CaptionsStripState | null;
+  readonly captions: NarrationBoxViewState | null;
   readonly captionParts: Readonly<Record<CaptionPartName, PartRect | null>>;
   /** The stand-in clock (ms). */
   readonly nowMs: number;
@@ -141,7 +141,7 @@ interface LongTextCheck {
   markRect(): PartRect | null;
   /** The links the sheet opened (only ever after a yes in AR). */
   opened(): readonly string[];
-  /** Starts the captions strip following the visitor's rule
+  /** Starts the narration box following the visitor's rule
    *  (`?view=captions` only; at once unless `?open=0`). */
   follow(): void;
   /** Moves the stand-in clock to `ms` and lets the views follow. */
@@ -207,7 +207,7 @@ export interface LongTextCheckOptions {
   /** A voice whose read-along fits (`timed`) or not (`stale`). */
   readonly voice: "timed" | "stale" | null;
   readonly view: "reading" | "captions";
-  /** Open the sheet (or start the strip) at once. */
+  /** Open the sheet (or start the box) at once. */
   readonly open: boolean;
 }
 
@@ -411,12 +411,12 @@ async function checkVoice(body: string, stale: boolean): Promise<CheckVoice> {
 }
 
 /** The page's voice: the visitor's narration over the check timing, a
- *  stand-in clock, and the captions strip when asked for. */
+ *  stand-in clock, and the narration box when asked for. */
 interface CheckVoiceRun {
   readonly made: CheckVoice;
   readonly clock: NarrationPlayer;
   readonly narration: NarrationVisitor;
-  readonly strip: CaptionsStrip | null;
+  readonly box: NarrationBox | null;
   readonly follow: CaptionsFollow | null;
   reads(): number;
   warnings(): readonly string[];
@@ -426,7 +426,6 @@ function startVoice(
   host: HTMLElement,
   made: CheckVoice,
   view: LongTextCheckOptions["view"],
-  openFullText: () => void,
 ): CheckVoiceRun {
   let timingReads = 0;
   const warnings: string[] = [];
@@ -448,14 +447,21 @@ function startVoice(
     makePlayer: () => clock,
     warn: (message) => warnings.push(message),
   });
-  const strip =
-    view === "captions" ? createCaptionsStrip({ host, openFullText }) : null;
+  const narrationBox =
+    view === "captions"
+      ? createNarrationBox({
+          host,
+          store: configureStore({
+            reducer: { narrationBox: narrationBoxReducer },
+          }),
+        })
+      : null;
   const stored = withPreferredView(null, "longText", "world", "captions");
   const follow =
-    strip === null
+    narrationBox === null
       ? null
       : createCaptionsFollow({
-          strip,
+          box: narrationBox,
           narration,
           read: () => ({ blocks: [made.block], presentId: "check", stored }),
         });
@@ -463,7 +469,7 @@ function startVoice(
     made,
     clock,
     narration,
-    strip,
+    box: narrationBox,
     follow,
     reads: () => timingReads,
     warnings: () => [...warnings],
@@ -481,11 +487,11 @@ function voiceState(
     timingReads: run.reads(),
     warnings: run.warnings(),
     wordText: word === null ? null : run.made.plain.slice(word.from, word.to),
-    captions: run.strip?.state() ?? null,
+    captions: run.box?.state() ?? null,
     captionParts: Object.fromEntries(
       (Object.keys(CAPTION_PARTS) as CaptionPartName[]).map((name) => [
         name,
-        run.strip === null
+        run.box === null
           ? null
           : rectOf(host.querySelector(CAPTION_PARTS[name])),
       ]),
@@ -532,12 +538,7 @@ async function startCheck(host: HTMLElement): Promise<void> {
       ...(narration === undefined ? {} : { narration }),
     });
   };
-  run =
-    made === null
-      ? null
-      : startVoice(host, made, options.view, () => {
-          show();
-        });
+  run = made === null ? null : startVoice(host, made, options.view);
   let following = false;
   const sync = (): void => {
     sheet.tick();
