@@ -566,7 +566,7 @@ export const URBAN: ColourScheme = {
   brightnessTrim: 1.6,
 };
 
-/**
+/*
  * Low-sun looks, measured against a dusk reference (city look exploration,
  * dusk round). Each keeps urban's real-albedo ladder and its tower and
  * material rules (the settled direction: no invented facade detail, light
@@ -635,7 +635,7 @@ export const GOLDEN: ColourScheme = {
 /**
  * Dusk after rain: the sun just set, a slate-blue sky over a warm band at
  * the horizon. Urban's walls and roofs under a cool sky light; the asphalt
- * and the ground wet and dark, the water slate, the greens deep.
+ * and the paths wet and dark, the water slate, the greens deep.
  */
 export const DUSK: ColourScheme = {
   label: "Dusk after rain",
