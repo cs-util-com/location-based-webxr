@@ -18,12 +18,18 @@ The package's one seeded generator for production code: mulberry32, a small
 - **One in the workspace.** Production code imports this module (deep,
   never through the `utils` barrel); it used to exist twice here, inline in
   the live clouds' cover thresholds and as the ambient occlusion's noise
-  generator. The globe lab (`globe-stars.ts`, `globe-speed-dust.ts`,
-  `globe-cloud-bake.ts`) and the Tour Viewer (`asset-optimizer-check.ts`,
+  generator. The globe package (`globe-stars.ts`, `globe-speed-dust.ts`)
+  and the Tour Viewer (`asset-optimizer-check.ts`,
   `mesh-distance.ts`, `narration-look.ts`, `picture-paint.ts`) deep-import
   it as `gps-plus-slam-app-framework/utils/mulberry32` (a `tsdown` entry);
   their private copies drew the same sequence bit for bit, and each package
-  pins its outputs in its `seeded-draws.test.ts`.
+  pins its outputs in its `seeded-draws.test.ts`. The globe lab maps the
+  specifier in its import map (`labs/globe/index.html` in the design system).
+- **One kept copy:** the globe's `globe-cloud-bake.ts` keeps a private
+  `mulberry` (a deliberate copy under the shared-helper rule), because the
+  lab runs that bake in a module worker, where no import map applies and a
+  bare package specifier cannot resolve. Its blue noise is pinned in
+  `globe-cloud-bake.test.ts`.
   `tests/repo-config/duplicate-helpers.test.js` holds the name to this one
   definition.
 - **The sequence is a contract.** The ambient occlusion's denoise noise
