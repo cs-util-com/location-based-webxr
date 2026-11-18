@@ -1262,6 +1262,24 @@ describe('SkyAtmosphere staged rebuild (globe F2 plan 2026-10-03-1922, F2b)', ()
     expect(atmosphere.stepRebuild()).toBe('idle');
   });
 
+  // A staged page must not bake inside the setter (a full PMREM pass in a
+  // slider's input handler), and two changes before the next frame must
+  // cost one bake, not two: the balance only marks the bake due.
+  it('defers a sky balance change to one bake on the next step', () => {
+    const { atmosphere, device } = staged();
+    atmosphere.setSun(UP);
+    drain(atmosphere);
+    const bakes = device.reusedBakes;
+    atmosphere.setSkyBalance([0.8, 1, 1.3]);
+    atmosphere.setSkyBalance([0.7, 1, 1.4]);
+    expect(atmosphere.rebuildPending).toBe(true);
+    expect(device.reusedBakes).toBe(bakes);
+    expect(atmosphere.stepRebuild()).toBe('bake');
+    expect(device.reusedBakes).toBe(bakes + 1);
+    expect(device.bakes).toBe(0);
+    expect(atmosphere.stepRebuild()).toBe('idle');
+  });
+
   // The staged read measures exactly what the synchronous one does: the
   // same exposure and horizon from the same sky.
   it('exposes the staged sky exactly as the synchronous one', () => {

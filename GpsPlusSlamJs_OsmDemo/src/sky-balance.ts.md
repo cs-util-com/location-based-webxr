@@ -19,11 +19,17 @@ tint reaches the upper sky; a per-channel gain on its radiance does.
 ## Invariants & assumptions
 
 - Built on `veilDisplayLinear` (`haze-veil.ts`), so the Lab-to-linear path
-  is the veil's own: sRGB D65, 8-bit quantised (a gain step of about 0.5 %,
-  far below what shows).
+  is the veil's own: sRGB D65, 8-bit quantised: about 2 % per 8-bit code at
+  mid grey, up to about 1 % rounding.
 - Every gain the sliders reach (a* -20..20, b* -30..30) has channels of at
   least 0 (tested at the corners in `light-settings.test.ts`), which the
   framework requires.
+- The sliders' cool corner leaves the sRGB gamut: at a* -16 with b* below
+  about -27, and at a* -20 with b* below about -22, the red channel of
+  Lab(50, a*, b*) is negative and is clipped to 0, so the gain there is
+  slightly less cool than its Lab value says (no error, still valid). The
+  sliders keep their ranges because a narrower b* would also cut the
+  in-gamut blues at a* 0; the looks use values well inside the gamut.
 - The framework applies it before the horizon veil and the half-float
   clamp, in the visible sky AND the environment bake, and the haze takes
   the same gain (`AtmosphereRig.setSkyBalance`).

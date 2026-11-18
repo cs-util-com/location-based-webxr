@@ -1234,7 +1234,10 @@ export class SkyAtmosphere {
    * exposure where it was). `null`, the default, is no gain (1, 1, 1).
    * A change re-bakes the environment (staged: on the next step); the same
    * gain again does nothing. The haze takes its own copy
-   * (`AtmosphereHaze.setSkyBalance`). Validated before anything changes.
+   * (`AtmosphereHaze.setSkyBalance`). The dome's own clouds take the gain;
+   * the fly-through sheet and slab clouds do not, since they light from
+   * the raw sky-view table (`cloud-sheet.ts`). Validated before anything
+   * changes.
    *
    * @throws RangeError for a gain that is not three finite values of at
    *   least 0.

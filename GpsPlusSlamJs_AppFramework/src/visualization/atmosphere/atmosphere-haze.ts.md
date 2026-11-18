@@ -82,7 +82,9 @@ observerAltitudeKm)`, `hazeTransmittance(distanceM, extinctionPerM)`,
   unchanged material costs one comparison.
 
 - THE VEIL IS A MIX, OFF BY DEFAULT. The shader computes the sky colour as
-  always, then `atmHazeSky = mix(atmHazeSky, atmHazeVeil, atmHazeVeilOn)`;
+  always, then
+  `atmHazeSky = mix(atmHazeSky * atmHazeSkyBalance, atmHazeVeil, atmHazeVeilOn)`
+  (the sky balance `atmHazeSkyBalance` is (1, 1, 1) by default);
   with `atmHazeVeilOn` 0 the sky colour passes unchanged, so an app that
   never calls `setVeil` renders exactly what it did. The veil is constant
   across view directions (the sky's colour varies with the sun's azimuth),

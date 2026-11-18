@@ -73,7 +73,9 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   the same gain again, or a gain before the first sun, bakes nothing.
   Validated before any change (channels finite and ≥ 0; `RangeError`).
   The haze takes the same gain through `AtmosphereHaze.setSkyBalance`,
-  which the app calls too.
+  which the app calls too. The dome's own clouds take the gain; the
+  fly-through sheet and slab clouds do not, since they light from the raw
+  sky-view table (`cloud-sheet.ts`).
 - `setExposureCompensation(ev)` — EV on top of the auto-exposure; no GPU work.
 - `autoExposureAdaptation` (getter) and `setAutoExposureAdaptation(a)` — the
   auto-exposure's adaptation (default 0.75), recomputed at the last

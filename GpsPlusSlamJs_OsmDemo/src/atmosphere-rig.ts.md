@@ -39,7 +39,8 @@ colour that matched the sky at one time of day.
     haze (`AtmosphereHaze.setSkyBalance`), so the distance fades toward the
     balanced sky. The fallback dome has no radiance to balance; there only
     the unused haze uniform changes. A gain the framework refuses changes
-    nothing (the haze validates first).
+    nothing (the haze validates first). The stock `scene.fog` colour stays
+    unbalanced, as with `setHazeVeil`.
   - `setHazeVeil(veil | null)`: the light dialog's haze veil
     (`haze-veil.ts`), the colour a fully hazed distance SHOWS, in place of
     the sky's colour in that direction. The haze gets
