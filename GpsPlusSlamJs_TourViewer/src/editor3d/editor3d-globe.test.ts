@@ -1315,8 +1315,8 @@ describe("openGlobeEditor's wiring", () => {
     const view = await openAt(0);
     expect(typeof fakes.airOptions?.clouds).toBe("function");
     expect(fakes.cloudsOn).toEqual([]);
-    view.setClouds?.(false);
-    view.setClouds?.(true);
+    view.setClouds(false);
+    view.setClouds(true);
     expect(fakes.cloudsOn).toEqual([false, true]);
   });
 
@@ -1383,7 +1383,7 @@ describe("openGlobeEditor's wiring", () => {
       worker: "loading",
       reliefGroundM: DRAWN_M,
     });
-    view.setBuildings?.(false);
+    view.setBuildings(false);
     expect(fakes.cityAborts).toBe(1); // the running load is stopped
     expect(view.stats().city?.shown).toBe(false);
     expect(fakes.cloudsOptions?.extra?.()).toEqual([]);
@@ -1421,7 +1421,7 @@ describe("openGlobeEditor's wiring", () => {
     const view = open;
     expect(fakes.cityOptions).toEqual([]);
     expect(view.stats().city).toBeNull();
-    view.setBuildings?.(false);
+    view.setBuildings(false);
     // An edit that leaves the tour without a centre mounts nothing.
     tourDocument = {};
     listener();
@@ -1431,7 +1431,7 @@ describe("openGlobeEditor's wiring", () => {
     listener();
     expect(fakes.cityOptions).toHaveLength(1);
     expect(view.stats().city?.shown).toBe(false);
-    view.setBuildings?.(true);
+    view.setBuildings(true);
     view.setDistance(200);
     frameAt(16);
     expect(fakes.cityLoads.at(-1)).toMatchObject({
@@ -1860,7 +1860,7 @@ describe("openGlobeEditor's wiring", () => {
   // code behind the camera measured as large as one in front (or huge,
   // with a corner just behind). A code not wholly between the near and the
   // far plane cannot be measured and reads 0, also one wholly between the
-  // camera and the near plane (whose depth is below the view volume, not
+  // camera and the near plane (whose depth is below the depth range, not
   // above it: an upper-bound check alone measured it).
   it("measures a code's drawn side in front of the camera, and 0 behind it or nearer than the near plane", async () => {
     const view = await openAt(0);
