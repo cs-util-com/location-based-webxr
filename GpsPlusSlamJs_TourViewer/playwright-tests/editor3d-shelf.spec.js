@@ -486,7 +486,12 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
     },
     { name: "bell.wav", type: "audio/wav", bytes: [...silenceWav()] },
   ]);
-  await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 2);
+  // Two files are read one after the other while the globe draws in this
+  // software renderer (the toast "Adding 2 files..." stood past 5 s on a
+  // loaded machine); the shelf is revealed once both are in.
+  await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 2, {
+    timeout: 30_000,
+  });
   await expect(filesTab).toHaveAttribute("aria-selected", "true");
 
   // A desktop: the right column, under its tab strip, down to the list's

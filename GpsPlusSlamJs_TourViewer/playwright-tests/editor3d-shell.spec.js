@@ -75,6 +75,20 @@ const BG2 = "rgb(38, 40, 44)";
 const TEXT = "rgb(217, 219, 224)";
 
 /**
+ * How far a point lies from the line through two others (m).
+ * @param {number[]} from
+ * @param {number[]} through
+ * @param {number[]} point
+ */
+function offLine(from, through, point) {
+  const d = through.map((v, i) => v - (from[i] ?? 0));
+  const p = point.map((v, i) => v - (from[i] ?? 0));
+  const len = Math.hypot(...d);
+  const along = d.reduce((sum, v, i) => sum + v * (p[i] ?? 0), 0) / len;
+  return Math.sqrt(Math.max(0, Math.hypot(...p) ** 2 - along ** 2));
+}
+
+/**
  * The WCAG contrast ratio of two computed colours ("rgb(r, g, b)").
  * @param {string} fg
  * @param {string} bg
@@ -909,22 +923,19 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
     "Station 2 of 3",
   );
   await settled();
-  // Flown to: the view looks at the station's point. Read in one call:
-  // the globe's world follows the camera.
-  const { at, look } = await page.evaluate(() => {
+  // Flown to: the line of sight passes through the station's point (it
+  // meets the ground beyond the point where the point stands above it).
+  // Read in one call: the globe's world follows the camera.
+  const { at, look, eye } = await page.evaluate(() => {
     const hook = /** @type {any} */ (window).__tourEditor;
+    const stats = hook.view3d();
     return {
       at: hook.view3dPointOf("station:gate"),
-      look: hook.view3d().look,
+      look: stats.look,
+      eye: stats.camera,
     };
   });
-  expect(
-    Math.hypot(
-      ...look.map(
-        (/** @type {number} */ v, /** @type {number} */ i) => v - at[i],
-      ),
-    ),
-  ).toBeLessThan(0.5);
+  expect(offLine(eye, look, at)).toBeLessThan(0.5);
 
   // A double click on another card: selected once, not toggled back.
   const steps = card(page, "The town hall steps");

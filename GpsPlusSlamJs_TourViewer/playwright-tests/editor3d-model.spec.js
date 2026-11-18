@@ -32,7 +32,9 @@ const N_M = 45.68;
 /** The sample's arch (the file's metres): two pillars and a beam over
  *  them, 2.9 m wide and 3 m high, drawn at its size (3 m). */
 const BEAM = /** @type {const} */ ([0, 2.75, 0]);
-const PILLAR = /** @type {const} */ ([1.2, 1.25, 0]);
+/** A pillar's middle, on the side x names (+1 or -1). */
+const pillar = (/** @type {number} */ side) =>
+  /** @type {const} */ ([1.2 * side, 1.25, 0]);
 
 /**
  * The editor with the sample tour, the sample's arch placed as a model
@@ -276,10 +278,12 @@ test("a note is added by a click on the model, typed, placed again, focused from
   await expect(page.locator(".toast").last()).toBeVisible();
   expect((await modelNow(page)).annotations[0].title).toBe("Keystone");
 
-  // Placed again on a pillar: its words kept.
+  // Placed again on a pillar: its words kept. The pillar on the camera's
+  // side, the side the beam's top was entered on: the globe view looks
+  // along the beam from above, so the beam hides the far pillar's middle.
   await act(page, "note-place:0").click();
   await expect(act(page, "note-place:0")).toHaveText("Click the model...");
-  await clickModel(page, PILLAR);
+  await clickModel(page, pillar(x < 0 ? -1 : 1));
   await expect
     .poll(async () => (await modelNow(page)).annotations[0].position[1])
     .toBeLessThan(2.5);

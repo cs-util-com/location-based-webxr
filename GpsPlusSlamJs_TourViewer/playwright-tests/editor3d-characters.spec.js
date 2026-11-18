@@ -12,6 +12,7 @@ import {
   standAt,
 } from "./ar-fakes.js";
 import {
+  afterFrames,
   answerHosts,
   gotoEditor,
   openSampleIn3d,
@@ -410,9 +411,11 @@ test("a character added with the add menu is drawn at a free spot, selected with
   }
   expect(others, "other items drawn at the gate").toBeGreaterThan(0);
 
-  // Selected: the gizmo's handles show; its disc moves him, one step,
-  // from the framed view (the top view looks down where the camera
-  // stands, and leaves him off the screen).
+  // Selected: the gizmo's handles show; its disc moves him, one step.
+  // Brought closer with the zoom button, as a creator does: framed, he
+  // still stands among the gate's labels and figures, his disc a few
+  // pixels across (the top view looks down where the camera stands, and
+  // leaves him off the screen).
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -421,35 +424,41 @@ test("a character added with the add menu is drawn at a free spot, selected with
     )
     .not.toBeNull();
   const canvas = await page.locator("#view3d canvas").boundingBox();
-  const middle = await page.evaluate(() =>
-    /** @type {any} */ (window).__tourEditor.view3dHandle("middle"),
-  );
-  if (canvas === null || middle === null) throw new Error("no handle");
+  if (canvas === null) throw new Error("no canvas");
   // A point of his disc no other item covers: from some headings one of
   // the gate's figures stands in front of his feet, and a press over
   // another item is that item's (a tap selects it), never the disc's;
   // nor in reach of his turn knob (half its 42 px), which takes a press.
-  const grip = await page.evaluate(([who, at]) => {
-    const hook = /** @type {any} */ (window).__tourEditor;
-    const knob = hook.view3dHandle("knob");
-    const offKnob = (/** @type {number} */ x, /** @type {number} */ y) =>
-      knob === null || Math.hypot(knob[0] - x, knob[1] - y) > 30;
-    for (let r = 0; r <= 80; r += 4) {
-      for (let a = 0; a < 360; a += 15) {
-        const x = at[0] + r * Math.cos((a * Math.PI) / 180);
-        const y = at[1] + r * Math.sin((a * Math.PI) / 180);
-        const under = hook.view3dUnder(x, y);
-        if (
-          under?.onDisc === true &&
-          (under.pick ?? who) === who &&
-          offKnob(x, y)
-        ) {
-          return [x, y];
+  const gripOf = () =>
+    page.evaluate((who) => {
+      const hook = /** @type {any} */ (window).__tourEditor;
+      const at = hook.view3dHandle("middle");
+      if (at === null) return null;
+      const knob = hook.view3dHandle("knob");
+      const offKnob = (/** @type {number} */ x, /** @type {number} */ y) =>
+        knob === null || Math.hypot(knob[0] - x, knob[1] - y) > 30;
+      for (let r = 0; r <= 80; r += 4) {
+        for (let a = 0; a < 360; a += 15) {
+          const x = at[0] + r * Math.cos((a * Math.PI) / 180);
+          const y = at[1] + r * Math.sin((a * Math.PI) / 180);
+          const under = hook.view3dUnder(x, y);
+          if (
+            under?.onDisc === true &&
+            (under.pick ?? who) === who &&
+            offKnob(x, y)
+          ) {
+            return /** @type {[number, number]} */ ([x, y]);
+          }
         }
       }
-    }
-    return null;
-  }, /** @type {[string, [number, number]]} */ ([id, middle]));
+      return null;
+    }, id);
+  let grip = await gripOf();
+  for (let zooms = 0; grip === null && zooms < 6; zooms++) {
+    await page.locator("#zoom-in").click();
+    await afterFrames(page, 2);
+    grip = await gripOf();
+  }
   expect(grip, "a point of his disc no other item covers").not.toBeNull();
   if (grip === null) return;
   const from = { x: canvas.x + grip[0], y: canvas.y + grip[1] };
