@@ -44,7 +44,9 @@ WebGL.
     light setting: `onChange(settings)`, Copy, Reset and the light link never
     carry it; the page keeps it in the store, and `?ao=off` seeds it.
 - `LightDialog`:
-  - `open`, `toggle()` and `close()`. Opening refreshes the brightness and
+  - `open`, `toggle()` and `close()`. Opening shows the settings in force
+    on every slider and readout (a release-applied thumb left uncommitted
+    by a close mid-drag does not survive it), refreshes the brightness and
     focuses the first slider.
   - `refresh()`: re-reads the brightness when open. The page calls it on
     every sun move.
@@ -79,6 +81,11 @@ WebGL.
     hand-written link states: the nearest lightness shown exactly). The slider keeps the asked value,
     so the URL still states it; the view never draws a colour other than
     the one named;
+  - `#light-sky-note`, after the sky balance's b\* slider: hidden unless
+    the cast leaves the screen's colours and a channel of its gain is
+    clipped to 0 (the sliders' cool corner, where the red goes), then
+    saying the sky is shown less cool than named; for the same reason as
+    the veil's note;
   - `#light-ao`, the ambient occlusion checkbox (only when offered);
   - `#light-readout`;
   - `#light-back`, `#light-check`, `#light-copy`, `#light-reset` and
@@ -163,6 +170,9 @@ dialog.toggle();
   - the held-veil note: shown with the held L\* above the knee and below
     the gamut, hidden once the colour can be shown as asked and on Reset;
     an off-grid link lightness named as drawn at its nearest tenth;
+  - the clipped sky balance note: shown in the cool corner, hidden inside
+    the screen's colours and on Reset;
+  - opening on the committed settings after a thumb was left uncommitted;
   - the brightness alone on release, the margin only on the check;
   - `refresh()` while open and while closed;
   - Reset, to the shipped look and to a scheme's own defaults, and

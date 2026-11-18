@@ -12,6 +12,7 @@ import {
   DEFAULT_LIGHT_SETTINGS,
   LIGHT_SETTING_RANGES,
   rebaseLightSettings,
+  skyBalanceOf,
   veilOf,
   type LightSettings,
 } from "./light-settings.js";
@@ -196,6 +197,17 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
   veilNote.hidden = true;
   veilNote.setAttribute("aria-live", "polite");
 
+  // Says when the sky balance's cast leaves the screen's colours and a
+  // channel is clipped to 0 (in the sliders' cool corner, the red), for the
+  // same reason as the veil's note.
+  const skyNote = document.createElement("p");
+  skyNote.id = "light-sky-note";
+  skyNote.className = "light-note";
+  skyNote.hidden = true;
+  skyNote.setAttribute("aria-live", "polite");
+  skyNote.textContent =
+    "Sky colour shown less cool than named: this cast is outside the screen's colours, so its red is dropped.";
+
   const inputs = new Map<keyof LightSettings, HTMLInputElement>();
   const values = new Map<keyof LightSettings, HTMLOutputElement>();
   for (const field of Object.keys(LABELS) as (keyof LightSettings)[]) {
@@ -217,6 +229,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     inputs.set(field, input);
     values.set(field, value);
     if (field === "hazeVeilTintA") panel.append(veilNote);
+    if (field === "skyBalanceB") panel.append(skyNote);
   }
 
   let aoBox: HTMLInputElement | undefined;
@@ -264,6 +277,7 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     if (drawn !== undefined && drawn !== s.hazeVeilLightness) {
       veilNote.textContent = `Veil shown at L* ${drawn}: ${heldBecause(s)}`;
     }
+    skyNote.hidden = !(skyBalanceOf(s)?.some((c) => c === 0) ?? false);
   };
   const failed = (error: unknown) => `Could not measure: ${messageOf(error)}`;
   const brightness = () => {
@@ -383,6 +397,10 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     panel.hidden = false;
     document.addEventListener("keydown", onKey);
     setExpanded(true);
+    // A release-applied thumb may hold a value never committed (dragged,
+    // then closed before the release); the panel opens on the settings in
+    // force.
+    show(settings);
     copy.textContent = "Copy";
     brightness();
     inputs.get("gainMax")?.focus();

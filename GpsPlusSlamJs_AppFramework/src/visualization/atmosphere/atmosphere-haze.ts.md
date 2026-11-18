@@ -118,7 +118,9 @@ haze.setMode(inAr ? 'fog' : 'atmosphere');
   anchor error, subtree application (skips included), modes, sync after an
   atmosphere replacement (altitude derived), density, the veil (off by
   default, kept through a sync, mixed in after the sky lookup, bad colours
-  refused).
+  refused), the sky balance (neutral by default, applied to the sky lookup
+  before the veil, kept through a sync and shared with patched materials,
+  bad gains refused).
 - Pixels: the look-dev smoke asserts the haze changes the distant ridges
   several times more than the near city; that every changed ridge pixel
   moved TOWARD the sky just above it (direction, not only magnitude); and

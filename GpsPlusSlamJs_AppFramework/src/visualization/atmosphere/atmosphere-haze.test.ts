@@ -594,6 +594,25 @@ describe('AtmosphereHaze.setSkyBalance (the sky balance reaches the haze)', () =
     expect(h.skyBalance).toBeNull();
   });
 
+  // WHY: a sync copies the atmosphere's state (a sun move, an exposure
+  // change); the balance is the app's, so a sync must not drop it, and a
+  // patched material must read the haze's own uniform object, or a later
+  // setSkyBalance would never reach a material compiled before it.
+  it('survives a sync, and reaches patched materials through shared uniforms', () => {
+    const h = haze();
+    const material = new THREE.MeshStandardMaterial();
+    h.apply(material);
+    const shader = compile(material, 'standard');
+    h.setSkyBalance([0.8, 1, 1.2]);
+    h.sync({ sharedUniforms: sharedUniforms(), visibilityKm: 20 });
+    expect(shader.uniforms.atmHazeSkyBalance).toBe(
+      h.uniforms.atmHazeSkyBalance
+    );
+    expect(shader.uniforms.atmHazeSkyBalance.value.toArray()).toEqual([
+      0.8, 1, 1.2,
+    ]);
+  });
+
   it('applies to the sky lookup, and the veil replaces the balanced sky', () => {
     const h = haze();
     const material = new THREE.MeshStandardMaterial();
