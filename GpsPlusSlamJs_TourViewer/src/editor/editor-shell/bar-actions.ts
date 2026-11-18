@@ -46,6 +46,8 @@ export function barActions(model: InspectorModel | null): readonly BarButton[] {
   // A story stands nowhere in the world: nothing to copy or turn, but it
   // can be copied whole.
   if (model.kind === "story") return [BUTTONS.duplicate];
+  // A plain folder is copied whole, beside itself.
+  if (model.kind === "folder") return [BUTTONS.duplicate];
   // What else stands nowhere in the world: nothing at all (an item with
   // no place there, a video, neither).
   if (!["station", "item", "code"].includes(model.kind)) return [];

@@ -793,6 +793,26 @@ describe("buildInspector", () => {
       expect(inspectorHint(inStory("story:legend"))).toContain("The legend");
       expect(inStory("story:gone")).toBeNull();
     });
+
+    // Why: a story entry the world shows is moved by its disc in 3D, so
+    // its hint must say so; a card stands nowhere and keeps saying it has
+    // no place there.
+    it("hints that a posed story entry moves by its middle, and a card has no place", () => {
+      expect(inStory("wendel")).toMatchObject({
+        kind: "storyEntry",
+        placed: true,
+      });
+      expect(inspectorHint(inStory("wendel"))).toMatch(
+        / - drag the middle to move it; its step sets the rest$/,
+      );
+      expect(inStory("intro")).toMatchObject({
+        kind: "storyEntry",
+        placed: false,
+      });
+      expect(inspectorHint(inStory("intro"))).toMatch(
+        /it has no place in the 3D view; Esc deselects$/,
+      );
+    });
   });
 
   it("names a short text by the view it shows as", () => {

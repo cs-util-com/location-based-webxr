@@ -255,6 +255,7 @@ describe("drawInspector", () => {
       title: block.title,
       sub: "1 The old gate / The legend / Long text, entry 1",
       block,
+      placed: false,
       advance,
     }) as const;
   const FOLD = { folded: false, positionOpen: false };
@@ -1281,6 +1282,8 @@ describe("drawInspector", () => {
     expect(act("pivot-centre")?.textContent).toContain("Pivot to centre");
     expect(act("select-items")?.textContent).toContain("Select its items");
     expect(act("select-items")?.disabled).toBe(false);
+    // Its Delete takes everything in it (the page asks first, counting it).
+    expect(act("delete")?.textContent).toContain("Delete folder");
     show([]);
     expect(dock.body.querySelectorAll(".kids .kid")).toHaveLength(0);
     expect(act("select-items")?.disabled).toBe(true);

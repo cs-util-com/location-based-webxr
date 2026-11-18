@@ -472,3 +472,32 @@ describe("the phone draft's settings record", () => {
     expect(stored.createdStations?.map((f) => f.id)).toEqual(["s-new"]);
   });
 });
+
+describe("the phone draft keeps the versions a running save wrote", () => {
+  // Why: an undo back to what a running Finish writes makes the record
+  // match the written file, so the draft forgets it - and its stored
+  // base, which named that written version. A redo writes the record
+  // again; if it names only the opened version, a reopen after that save
+  // landed takes the hosted version for someone else's newer edit and
+  // drops the redone work. The editor's draft lost work this way before
+  // its fix; this pins whether the phone's does.
+  it("offers a record written again after a forget, once the save it outlived landed", async () => {
+    const ns = namespaces();
+    const { draft } = await wired(ns, tourOf([pin("a")]));
+    const saved = tourOf([pin("a", "two")]);
+    await draft.writeObject(pin("a", "two"));
+    draft.finished(["a"], saved);
+    await draft.writeObject(pin("a", "three"));
+    await flush();
+    // The undo back to the saved version: nothing differs, so forgotten.
+    await draft.forgetObject("a");
+    // The redo.
+    await draft.writeObject(pin("a", "three"));
+    await flush();
+    expect(ns.files(OLD).has(objectKey("a"))).toBe(true);
+    // The save landed; the saved file opens again.
+    const { ctx } = await wired(ns, saved);
+    expect(ctx.placementNote ?? "").not.toContain("newer");
+    expect(ns.files(OLD).has(objectKey("a"))).toBe(true);
+  });
+});

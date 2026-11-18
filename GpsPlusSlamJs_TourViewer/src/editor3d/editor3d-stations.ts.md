@@ -88,8 +88,8 @@ standing`). A distance, size or focal length that is not a positive
     `itemPointOf(id)` (an item's place, its station drawn or not; any free
     block, a part from the world door too, which a click selects and the
     view flies to although no gesture moves it: only world blocks get the
-    gizmo; a story's posed entry too, located the same way, never a
-    gesture's target),
+    gizmo; a story's posed entry too, located the same way, moved by its
+    disc alone),
     `codePointOf(levelId)` (a code's centre); each null for an id the
     tour does not have. `pointOf`, `itemPointOf` and `codePointOf` are in
     the layer's frame (`deps.parent`'s), see the invariant below;
@@ -369,4 +369,5 @@ relief standing above its station:
 
 - `viewpointOf(id)` gives `{ at, ahead, hfovDeg }` for a picture or a video with a viewpoint, in any view: where the viewpoint stands, a point along its line of sight in the layer's frame, and its lens (the 3D views lend it to their camera, `editor3d-lens.ts`). The 3D views' `lookFrom` reads it; null for anything else.
 - The field-of-view lines: while `view.selected` is a picture or a video seen from its viewpoint (`tourSeenFromViewpoint`: a picture's viewpoint views, a stand-here video) with a viewpoint, `update` draws one `LineSegments` named `viewpoint-frustum` in the layer's group: the eye to each corner of the frame at the picture's depth and the frame's edges (`viewpointFrustum`), turned into the layer's frame (`inLayer`). Its aspect is the image's once the drawn part has read it (`drawnAspect` on the part's object, kept per block in the station's `drawn` map), `FRUSTUM_DEFAULT_ASPECT` before. Drawn over everything (no depth test, the ring's render order, under the gizmo), in `VIEWPOINT_FRUSTUM_COLOUR`, never picked (its `raycast` is empty), hidden for any other selection, a picture in a posed view, or a station `setHidden` hides; `dispose` frees it. `selected` is optional: a view without it draws no lines.
+- For a `storyEntry` ref, `applyPreview` moves the entry's drawing (`drawnOf` reads the open story's root too) and `clearPreview` puts it back where its story has it (`tourStationStoryBlocks`).
 - `applyPreview` and `clearPreview` leave a picture alone for a `viewpoint` ref: the drag moves the gizmo only, and the picture is drawn at its new place once the edit is applied on release.

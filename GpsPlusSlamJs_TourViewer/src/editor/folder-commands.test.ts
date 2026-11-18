@@ -184,13 +184,68 @@ describe("createFolderCommands - group", () => {
 describe("createFolderCommands - ungroup, move, rename", () => {
   it("ungroups a folder, its items staying, said with the count", () => {
     const t = setup();
-    expect(t.commands.ungroup("yard")).toEqual(["a"]);
+    expect(t.commands.ungroup(["yard"])).toEqual(["a"]);
     expect(plainFolderOf(t.state(), "yard")).toBeNull();
     expect(folderOfItem(t.state(), "a")).toBeUndefined();
     expect(t.said).toEqual(["Ungrouped - 1 item stays where it is"]);
     t.commands.group(["p", "q"]);
     t.said.length = 0;
-    expect(t.commands.ungroup("made")).toEqual(["p", "q"]);
+    expect(t.commands.ungroup(["made"])).toEqual(["p", "q"]);
+    expect(t.said).toEqual(["Ungrouped - 2 items stay where they are"]);
+  });
+
+  // Why: several folders picked and ungrouped together are ONE step - one
+  // Undo must bring them all back, not only the last - and the line counts
+  // every item they held.
+  it("ungroups several folders as one step, said with the total count", () => {
+    const t = setup();
+    t.commands.group(["p", "q"]);
+    t.said.length = 0;
+    const steps = t.state().past.length;
+    expect(t.commands.ungroup(["yard", "made", "yard"])).toEqual([
+      "a",
+      "p",
+      "q",
+    ]);
+    expect(t.state().past.length).toBe(steps + 1);
+    expect(plainFolderOf(t.state(), "yard")).toBeNull();
+    expect(plainFolderOf(t.state(), "made")).toBeNull();
+    expect(t.said).toEqual(["Ungrouped - 3 items stay where they are"]);
+    expect(t.commands.ungroup(["yard", "nope"])).toBeNull();
+  });
+
+  // Why: a folder's items are counted at every depth, so a folder picked
+  // together with a folder inside it must not count the inner items twice
+  // - not in the line, not in the rows the tree picks afterwards.
+  it("counts an item once when a folder and its nested folder are both ungrouped", () => {
+    const folder = (id: string, children: unknown[]) => ({
+      id,
+      kind: "folder",
+      title: id,
+      pose: { position: [1, 0, 0], rotation: [0, 0, 0, 1] },
+      children,
+    });
+    const wire = tourOf([], {
+      stations: [
+        {
+          id: "nest",
+          title: "The nest",
+          geo: { ...AT, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          ...stationContent([
+            folder("outer", [
+              pin("o", [0, 0, 1]),
+              folder("inner", [pin("e", [1, 0, 0])]),
+            ]),
+          ] as never),
+        },
+      ],
+    });
+    const t = setup(parseTourManifest(JSON.parse(serializeTourManifest(wire))));
+    const freed = t.commands.ungroup(["outer", "inner"]);
+    expect([...(freed ?? [])].sort()).toEqual(["e", "o"]);
     expect(t.said).toEqual(["Ungrouped - 2 items stay where they are"]);
   });
 
@@ -198,7 +253,7 @@ describe("createFolderCommands - ungroup, move, rename", () => {
   // matter of stations; the line names what happened.
   it("refuses to ungroup a folder the tour lacks, saying it is gone", () => {
     const t = setup();
-    expect(t.commands.ungroup("nope")).toBeNull();
+    expect(t.commands.ungroup(["nope"])).toBeNull();
     expect(t.said).toEqual([folderRefusalLine("gone")]);
   });
 
@@ -232,7 +287,7 @@ describe("createFolderCommands - ungroup, move, rename", () => {
     });
     const t = setup(parseTourManifest(JSON.parse(serializeTourManifest(wire))));
     const before = t.state();
-    expect(t.commands.ungroup("outer")).toBeNull();
+    expect(t.commands.ungroup(["outer"])).toBeNull();
     expect(t.state()).toBe(before);
     expect(t.said).toEqual([folderRefusalLine("tooFar")]);
   });

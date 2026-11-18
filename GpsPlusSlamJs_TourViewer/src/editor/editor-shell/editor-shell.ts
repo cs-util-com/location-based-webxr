@@ -1832,17 +1832,17 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     deps.select(`${FOLDER_PREFIX}${id}`);
     startRename(id);
   }
-  /** Ungroup (Ctrl+Shift+G, the bar's Ungroup): each picked folder taken
-   *  apart, the items it held picked. */
+  /** Ungroup (Ctrl+Shift+G, the bar's Ungroup): the picked folders taken
+   *  apart together, as one step, the items they held picked. */
   function ungroupPicked(): void {
     const folders = pickedRows().filter((r) => r.startsWith(FOLDER_PREFIX));
     if (folders.length === 0) {
       deps.say("Pick a folder to ungroup it");
       return;
     }
-    const freed = folders.flatMap(
-      (r) => deps.folders.ungroup(r.slice(FOLDER_PREFIX.length)) ?? [],
-    );
+    const freed =
+      deps.folders.ungroup(folders.map((r) => r.slice(FOLDER_PREFIX.length))) ??
+      [];
     store.dispatch(editorViewActions.selectModeSet({ on: false }));
     pickRows(freed);
   }

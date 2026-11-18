@@ -49,12 +49,14 @@
  * tree, or one of its entries) also has its posed entries drawn in their
  * views' look where they stand (`storyEntries`), apart from its
  * station's free items so opening and closing it draws nothing else anew;
- * closed, they are freed. They pick as their ids and take no drag.
+ * closed, they are freed. They pick as their ids, and a drag of one
+ * (its disc) is previewed on that drawing (`drawnOf`).
  *
  * @see editor3d-stations.ts.md
  */
 import {
   tourStationBlocks,
+  tourStationStoryBlocks,
   tourStories,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 import * as THREE from "three";
@@ -965,12 +967,15 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     return null;
   };
 
-  /** Each drawn object of an item (its label or plane, a model). */
+  /** Each drawn object of an item (its label or plane, a model), its
+   *  open story's entries included. */
   const drawnOf = (entry: StationEntry, id: string): THREE.Object3D[] => {
     const found: THREE.Object3D[] = [];
-    entry.content?.rendered?.root.traverse((o) => {
+    const visit = (o: THREE.Object3D) => {
       if (o.userData["objectId"] === id) found.push(o);
-    });
+    };
+    entry.content?.rendered?.root.traverse(visit);
+    entry.content?.story?.rendered?.root.traverse(visit);
     return found;
   };
 
@@ -1162,8 +1167,11 @@ export function createStationsLayer(deps: StationsLayerDeps) {
     if (entry === null) return;
     // Any free block drawn (a part from the door too), as `itemPointOf`
     // reads them: whichever placeable a drag showed is put back the same
-    // way.
-    const item = tourFreeBlocks(entry.station).find((i) => i.id === id);
+    // way. A story's entry stands where its story has it.
+    const item =
+      p.ref.kind === "storyEntry"
+        ? tourStationStoryBlocks(entry.station).find((b) => b.id === id)
+        : tourFreeBlocks(entry.station).find((i) => i.id === id);
     if (item === undefined) return;
     poseDrawn(entry, id, item.pose, null);
   };

@@ -1245,7 +1245,8 @@ function itemParts(
 /** A plain folder's parts: its pivot, open under its own heading (its
  *  origin's offset, height and heading in its station's frame, and its
  *  scale to type; its items follow each), and Pivot to centre; then its
- *  items, each a row that selects it alone, and Select its items. */
+ *  items, each a row that selects it alone, Select its items and its
+ *  Delete (everything in it goes, asked first). */
 function folderParts(model: FolderModel): HTMLElement[] {
   const o = model.offset;
   const { scale } = model;
@@ -1284,6 +1285,7 @@ function folderParts(model: FolderModel): HTMLElement[] {
       action("select-items", "ul", "Select its items", {
         disabled: model.items.length === 0,
       }),
+      action("delete", "trash", "Delete folder", { key: DELETE_KEY }),
     ]),
     el(
       "div",

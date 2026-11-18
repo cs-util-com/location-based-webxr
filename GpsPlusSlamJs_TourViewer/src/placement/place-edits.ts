@@ -20,7 +20,10 @@
  *   the three numbers in the station's frame, checked there by the
  *   format's strict reader like the typed boxes).
  * - a picture's viewpoint through `moveViewpoint` (it has no dots: a size
- *   edit for it is refused).
+ *   edit for it is refused);
+ * - a story's posed entry through `moveStoryEntry`, written back into its
+ *   story (it is moved by its disc alone: a size, bend or point edit for
+ *   it is refused, and it joins no station).
  *
  * A refusal comes back with its words for the page to say.
  *
@@ -58,10 +61,16 @@ type PlaceEditSession = Pick<
   | "scaleFolder"
   | "editBlockField"
   | "moveViewpoint"
+  | "moveStoryEntry"
 >;
 
 /** Why a viewpoint takes no size edit (none of its handles sends one). */
 const VIEWPOINT_HAS_NO_SIZE = "A viewpoint has no size to change.";
+
+/** Why a story's entry takes no edit but its move in 3D (none of its
+ *  handles sends one). */
+const STORY_ENTRY_MOVES_ONLY =
+  "A story's entry is only moved here; set the rest in its step.";
 
 /** Applied, or refused with the reason the creator reads. */
 export type PlaceEditOutcome =
@@ -76,6 +85,15 @@ export function applyPlaceEdit(
   joinStation?: string,
 ): PlaceEditOutcome {
   const { ref } = edit;
+  if (ref.kind === "storyEntry") {
+    if (edit.kind !== "pose") {
+      return { kind: "refused", reason: STORY_ENTRY_MOVES_ONLY };
+    }
+    const moved = editor.moveStoryEntry(ref.id, edit.geo);
+    return moved.kind === "refused"
+      ? { kind: "refused", reason: moved.reason }
+      : { kind: "applied" };
+  }
   if (ref.kind === "viewpoint") {
     if (edit.kind !== "pose") {
       return { kind: "refused", reason: VIEWPOINT_HAS_NO_SIZE };

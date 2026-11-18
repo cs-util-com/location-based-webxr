@@ -99,8 +99,9 @@ content` (Chromium, the editor's browser; elsewhere it stays three
     times and dragged by a white dot from 0.2 to 5; "Pivot to centre"
     (`pivot-centre`); "Items (each movable alone)" with a `goto:<id>`
     row per item (or "No items in it yet."); "Select its items"
-    (`select-items`, disabled for an empty folder) and a note on how its
-    items move with it. Its items follow every typed field.
+    (`select-items`, disabled for an empty folder), "Delete folder"
+    (`delete`, with its key: the page asks first, counting everything
+    that goes with it) and a note on how its items move with it. Its items follow every typed field.
   - A story: its name to type in the head (`data-field="story-title"`, its
     count under it), its steps as cards (`.scards`, `story-cards.ts`),
     "Delete story" (with an entry count

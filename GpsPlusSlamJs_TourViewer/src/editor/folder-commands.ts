@@ -91,14 +91,6 @@ export function plainFolderOf(
 /** Said for Group with nothing picked: no folder rule refused it. */
 export const NOTHING_TO_GROUP = "Pick items to group them";
 
-/** Said for Delete on a plain folder: no delete of its own yet. */
-export const FOLDER_DELETE_NOT_YET =
-  "A folder cannot be deleted yet - ungroup it (Ctrl+Shift+G), then delete its items";
-
-/** Said for Ctrl+D on a plain folder: no copy of its own yet. */
-export const FOLDER_DUPLICATE_NOT_YET =
-  "A folder cannot be duplicated yet - duplicate its items instead";
-
 /** Said for a folder name over the format's cap, naming the cap. */
 export const FOLDER_NAME_TOO_LONG = `That name is too long for a folder - ${String(TOUR_FOLDER_TITLE_RULE.max)} characters at most`;
 
@@ -162,9 +154,11 @@ export interface FolderCommands {
   /** The picked items in a new folder at their centroid, named
    *  `nextFolderTitle`: its id, or null when refused (said why). */
   group(picked: readonly string[]): string | null;
-  /** The folder taken apart, its items and its own folders left where
-   *  they stand: the ids of the items it held, or null when refused. */
-  ungroup(folderId: string): readonly string[] | null;
+  /** The folders taken apart together, as ONE step (one Undo brings them
+   *  all back), their items and their own folders left where they stand:
+   *  the ids of the items they held, or null when refused - all of them
+   *  or none, said why. */
+  ungroup(folderIds: readonly string[]): readonly string[] | null;
   /** An item into the folder `folderId` (null: out of its folders, to its
    *  station's top), where it stands: whether it moved. */
   moveInto(itemId: string, folderId: string | null): boolean;
@@ -242,27 +236,43 @@ export function createFolderCommands(deps: FolderCommandDeps): FolderCommands {
       );
       return folderId;
     },
-    ungroup(folderId) {
-      const place = plainFolderOf(deps.getState(), folderId);
-      if (place === null) return refused("gone");
-      const why = ungroupRefusal(deps.getState(), place.stationId, folderId);
-      if (why !== null) return refused(why);
+    ungroup(folderIds) {
+      const state = deps.getState();
+      const places: PlainFolderPlace[] = [];
+      for (const folderId of new Set(folderIds)) {
+        const place = plainFolderOf(state, folderId);
+        if (place === null) return refused("gone");
+        const why = ungroupRefusal(state, place.stationId, folderId);
+        if (why !== null) return refused(why);
+        places.push(place);
+      }
+      const first = places[0];
+      if (first === undefined) return refused("gone");
       const took = edit(
         tourDocumentActions.folderUngrouped({
-          stationId: place.stationId,
-          folderId,
-          what: `the ungroup of "${folderName(place.folder)}"`,
+          folders: places.map((p) => ({
+            stationId: p.stationId,
+            folderId: p.folder.id,
+          })),
+          what:
+            places.length === 1
+              ? `the ungroup of "${folderName(first.folder)}"`
+              : `the ungroup of ${String(places.length)} folders`,
         }),
       );
-      // Past both refusals, the reducer refuses only a folder it lacks.
-      if (!took) return refused("gone");
-      const n = place.itemIds.length;
+      // Past the refusals, the reducer refuses a folder it lacks, and a
+      // folder another of them lifted past the format's bound.
+      if (!took) return refused(places.length === 1 ? "gone" : "tooFar");
+      // Each place lists its items at every depth: a folder picked with a
+      // folder inside it would count the inner items twice.
+      const freed = [...new Set(places.flatMap((p) => p.itemIds))];
+      const n = freed.length;
       deps.say(
         n === 1
           ? "Ungrouped - 1 item stays where it is"
           : `Ungrouped - ${String(n)} items stay where they are`,
       );
-      return place.itemIds;
+      return freed;
     },
     moveInto(itemId, folderId) {
       const state = deps.getState();

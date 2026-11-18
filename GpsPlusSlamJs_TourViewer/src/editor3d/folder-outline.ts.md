@@ -27,7 +27,9 @@ scene which items it groups and which folder the gizmo moves.
     the pivot's height) and the name tag (the tree's name of the folder,
     22 px high at any distance, its left end on the outline's front-left
     corner); both hidden without `gizmo`, without a drawn item or for a
-    folder the tour lacks;
+    folder the tour lacks. The folder's items and name are read from
+    the tour once per tour object and folder (the page hands the same
+    object while nothing changed), not every frame;
   - `count()` - how many boxes show (the page's checks read it, with
     `hull()` and `tag()`, as a `FolderOutlineShown` through
     `__tourEditor.view3dFolderOutlines`);

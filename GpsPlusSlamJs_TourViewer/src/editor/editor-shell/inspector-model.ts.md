@@ -73,7 +73,8 @@ origin?, groundAt? })` ->
     (`InspectorStoryBlock { id, kind, title, fields,
 character? }`, `kind` in the block model's words, `title` by `objectTitle`,
     `fields` by `storyBlockFields`; a character carries `InspectorCharacter {
-view, advance, facingDeg }`) and `advance { mode, afterS }`;
+view, advance, facingDeg }`), `advance { mode, afterS }` and `placed`
+    (its row is posed, so the 3D view moves it by its disc);
   - `StoryStepInspector` - `kind: "storyStep"`, `stepKind` "choice" or "quiz",
     `id`, `stationId`, `title`, `sub`, `heading` and `lines`: where each answer
     leads ("plays on", "goes to <entry>" or "ends the story"), or a quiz's
@@ -146,7 +147,8 @@ move it alone.` (one item: "1 item moves, turns and scales with it.
 - `inspectorHint(model | null)` - the bottom bar's hint: the handles the
   selection's gizmo has in the 3D view (a station: move, radius dot,
   turn; an item: move and turn, a size dot where it has an `extent` (a
-  model, a picture); a code: none,
+  model, a picture); a placed story entry: "drag the middle to move it;
+  its step sets the rest"; a code: none,
   read-only), or how to select when nothing is (and that a right click
   on the ground starts a station).
 - `MODEL_VIEW_CHOICES` - the format's world views with their labels, in
