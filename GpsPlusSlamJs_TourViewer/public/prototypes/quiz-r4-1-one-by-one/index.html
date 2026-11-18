@@ -1,0 +1,83 @@
+<!doctype html>
+<!-- Prototype: quiz round 4, variant 1 "One by one". Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Quiz 4.1 - One by one</title>
+    <link rel="stylesheet" href="one-by-one.css" />
+    <script type="importmap">
+      { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <canvas id="cam" aria-label="Simulated camera view of a town square"></canvas>
+
+    <div class="hud" id="hud">
+      <!-- The narration box (the calm HUD's round 5 look): a handle on its top edge folds it to a one-line pill. -->
+      <section class="nbox" id="nbox" tabindex="0" aria-roledescription="narration" aria-label="Mara speaks. Tap the words to pause or play, drag them up or down to move through what she says.">
+        <button class="handle" id="handle" type="button" aria-label="Fold the box">
+          <i></i><span id="handleText">Hide</span>
+        </button>
+        <div class="full" id="full">
+          <div class="win" id="win">
+            <div class="col" id="col"></div>
+            <div class="sbar" id="sbar"><i id="thumb"></i></div>
+          </div>
+          <div class="chips" id="chips" hidden></div>
+          <p class="hint" id="hint" hidden></p>
+        </div>
+        <div class="pline" id="pline">
+          <span class="pdots" id="pdots"></span>
+          <span class="ptext" id="ptext"></span>
+          <span class="pbar" id="pbar" hidden><i id="pbarFill"></i></span>
+        </div>
+      </section>
+      <div class="cue" id="cue" hidden aria-live="polite">
+        <svg viewBox="0 0 40 56" aria-hidden="true"><path class="under" d="M27 6L9 28l18 22" /><path class="over" d="M27 6L9 28l18 22" /></svg>
+        <span id="cueText">Turn left</span>
+      </div>
+      <div class="bubble" id="bubble" hidden></div>
+    </div>
+    <div id="flyLayer"></div>
+
+    <!-- Demo controls: not part of the design; the bottom edge belongs to the box. -->
+    <div class="strip" id="strip">
+      <select id="beat" aria-label="Jump to a beat"></select>
+      <button type="button" id="resetBtn" title="Start again">Reset</button>
+      <button type="button" id="weakBtn" aria-pressed="false" title="Force a weak position">Weak</button>
+      <button type="button" id="fastBtn" aria-pressed="false" title="Walk at 3.5 m/s">Fast</button>
+      <button type="button" id="menuBtn" aria-label="Settings and notes">&#9776;</button>
+    </div>
+    <div class="meter" id="meter">-</div>
+    <div class="pad" id="pad">
+      <button type="button" data-walk="1" aria-label="Walk forward (hold)">Walk</button>
+      <button type="button" data-walk="-1" aria-label="Walk back (hold)">Back</button>
+    </div>
+
+    <aside class="panel" id="panel" hidden aria-label="Settings and notes">
+      <p><b>One by one.</b> The question comes in the box at the bottom. Then the box folds to one line and the answers fly out one at a time, each to the thing it names. An answer whose place is out of view waits: the line says which way to turn, and it flies once you look there. Walk to an answer: it wakes, comes to eye level and fills; stay and it opens; step away to take it back.</p>
+      <h4>Try</h4>
+      <ul>
+        <li>Drag sideways on the view to turn; tap the ground to jump near an answer; hold Walk (Fast for 3.5 m/s). On a desktop: W A S D, Q E to turn, Shift to hurry.</li>
+        <li>Tap the handle on the box's top edge (or drag it down or up) to fold or open the box: the answers fly out or in each time.</li>
+        <li>Tap an answer in the world: close by it starts listening, far away it says "Walk closer".</li>
+        <li>With the box open, tap an answer there to choose it without walking.</li>
+      </ul>
+      <h4>Values</h4>
+      <div id="sliders"></div>
+      <div class="row"><span>Voice</span><button type="button" id="voiceBtn" aria-pressed="false">off</button></div>
+      <p class="note">URL options: <code>?beat=ask&amp;flight=2&amp;stagger=0.6&amp;ret=1&amp;dwell=4&amp;grace=3&amp;spacing=10&amp;at=0,25,0</code></p>
+      <h4>Faked here</h4>
+      <ul>
+        <li>The camera, the square and the position are simulated; the weak position is a switch.</li>
+        <li>The narration plays on invented word times; "Voice" adds the browser's text-to-speech without word sync.</li>
+      </ul>
+      <button class="close" id="panelClose" type="button">Close</button>
+    </aside>
+
+    <script type="module" src="one-by-one.js"></script>
+  </body>
+</html>
