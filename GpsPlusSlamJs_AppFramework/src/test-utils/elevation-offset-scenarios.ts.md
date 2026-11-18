@@ -7,7 +7,7 @@ Deterministic synthetic tick-stream generators for the elevation-offset estimato
 ## Public API
 
 - `ElevationScenario` — `{ name, ticks, baseSampleM }` (`baseSampleM` = the generator's ground-truth steady-state delta).
-- `mulberry32(seed)` / `gaussOf(rng)` — seeded PRNG (the package's `utils/mulberry32.ts`, re-exported) + Box–Muller normal; tests never touch `Math.random`.
+- `mulberry32(seed)` / `gaussOf(rng)`: seeded PRNG (the package's `utils/mulberry32.ts`, re-exported) + Box–Muller normal; tests never touch `Math.random`.
 - `SCENARIO_TICK_MS` — 1000 (the estimator's ~1 Hz cadence).
 - Generators (each `(seed) → ElevationScenario`):
   - `flatWalk` — constant −2 m delta, walking, good confidence.

@@ -1,5 +1,5 @@
 /**
- * The package's one seeded generator for production code (mulberry32).
+ * The workspace's one seeded generator for production code (mulberry32).
  *
  * Production code that needs reproducible randomness (a noise table built
  * from a seed, a precomputed quantile table) draws from this, never from

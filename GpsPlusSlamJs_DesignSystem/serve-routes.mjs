@@ -60,6 +60,7 @@ export const WORKER_IMPORTS = Object.freeze({
   "h3-js": "/vendor/h3-js/dist/browser/h3-js.es.js",
   "gps-plus-slam-osm": "/osm-lib/index.js",
   "gps-plus-slam-app-framework/osm-bridge": "/fw/osm-bridge/index.js",
+  "gps-plus-slam-app-framework/utils/mulberry32": "/fw/utils/mulberry32.js",
 });
 
 /** `import … from "x"`, `import "x"`, `export … from "x"`, `import("x")`. */

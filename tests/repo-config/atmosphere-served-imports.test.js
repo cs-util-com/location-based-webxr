@@ -208,7 +208,7 @@ function globeTerrainLabServed() {
     const source = readFileSync(join(GLOBE_TERRAIN_LAB, f), "utf8");
     for (const match of source.matchAll(SPECIFIER)) {
       if (!match[1].startsWith("/globe/")) continue;
-      const rel = match[1].slice("/globe/".length).replace(/.js$/, ".ts");
+      const rel = match[1].slice("/globe/".length).replace(/\.js$/, ".ts");
       served.add(join(GLOBE_SRC, ...rel.split("/")));
     }
   }

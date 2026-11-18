@@ -171,7 +171,7 @@ const CANONICAL = [
     name: "mulberry32",
     rule: "shared",
     home: "GpsPlusSlamJs_AppFramework/src/utils/mulberry32.ts",
-    why: "the draw sequence is a contract: a pinned star field, the speed dust, the cloud bake's blue noise and the optimizer check's test files all depend on it, and six private copies in two packages plus three in the framework's test utilities each carried the arithmetic once more; the globe's cloud bake keeps one under another name, because it runs in a module worker where the lab has no import map",
+    why: "the draw sequence is a contract: a pinned star field, the speed dust, the cloud bake's blue noise and the optimizer check's test files all depend on it, and six private copies in two packages plus three in the framework's test utilities each carried the arithmetic once more",
   },
   {
     name: "normalizeBearingDeg",

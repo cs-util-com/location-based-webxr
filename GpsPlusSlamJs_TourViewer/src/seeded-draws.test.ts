@@ -5,6 +5,9 @@
  * the same output (a sweep compares like with like, the same model gets
  * the same default level). These pins hold the exact outputs, so a change
  * to the generator's arithmetic shows up here rather than as a quiet drift.
+ * The optimizer check and the surface distance are pinned through their
+ * call sites; the grain and the motes only through the generator with
+ * their seeds, so a changed seed at either call site is not caught here.
  */
 import { createHash } from "node:crypto";
 
@@ -47,8 +50,9 @@ describe("seeded outputs", () => {
 
   it("the plate grain's and the motes' seeds draw the pinned sequence", () => {
     // picture-paint.ts seeds its grain with 3, narration-look.ts its motes
-    // with 17; both are drawn in a canvas or a shader, so the draws
-    // themselves are what is pinned here.
+    // with 17; both are drawn in a canvas or a shader and neither module
+    // exports its draws, so this pins the generator at those two seeds, not
+    // the call sites themselves.
     const grain = mulberry32(3);
     expect([grain(), grain(), grain()]).toEqual([
       0.7202267837710679, 0.03866216051392257, 0.4561921926215291,
