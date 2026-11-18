@@ -14,7 +14,8 @@ dialog (D4).
   - `brightnessTrim` in `MIN_BRIGHTNESS_TRIM` (0.5) .. `MAX_BRIGHTNESS_TRIM` (2).
 - `COLOUR_SCHEMES` - the table, in dropdown order: `today`, then the ten
   looks of `colour-scheme-looks.ts` (architect, blueprint, mediterranean,
-  nordic, pastel, map, night, mono, contrast, urban); a later look is
+  nordic, pastel, map, night, mono, contrast, urban, golden, dusk,
+  bluehour); a later look is
   appended, never inserted, so no sent link changes meaning; `ColourSchemeName` its keys;
   `COLOUR_SCHEME_NAMES`; `DEFAULT_COLOUR_SCHEME` (`"today"`).
 - `validateColourScheme(scheme)` - `TypeError` (no label, malformed city

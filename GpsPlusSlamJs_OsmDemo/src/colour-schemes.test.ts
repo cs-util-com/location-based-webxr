@@ -228,6 +228,9 @@ describe("the schemes", () => {
       "mono",
       "contrast",
       "urban",
+      "golden",
+      "dusk",
+      "bluehour",
     ]);
   });
 
@@ -322,7 +325,15 @@ describe("the schemes", () => {
     const honouring = COLOUR_SCHEME_NAMES.filter(
       (name) => COLOUR_SCHEMES[name].city.honourColourTags,
     );
-    expect(honouring).toEqual(["today", "mediterranean", "nordic", "urban"]);
+    expect(honouring).toEqual([
+      "today",
+      "mediterranean",
+      "nordic",
+      "urban",
+      "golden",
+      "dusk",
+      "bluehour",
+    ]);
     expect(COLOUR_SCHEMES.map.city.roadsBySurface).toBe(false);
   });
 

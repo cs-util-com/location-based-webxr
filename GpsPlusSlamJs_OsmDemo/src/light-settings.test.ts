@@ -23,6 +23,8 @@ import {
 } from "./atmosphere-rig.js";
 import { rgbToLab } from "gps-plus-slam-osm";
 
+import { skyBalanceGain } from "./sky-balance.js";
+
 import {
   HAZE_VEIL_RISE_DEG,
   HAZE_VEIL_TINT,
@@ -39,6 +41,7 @@ import {
   parseLightSettings,
   rebaseLightSettings,
   serializeLightSettings,
+  skyBalanceOf,
   veilOf,
   applyLightOrFallback,
   type LightSettings,
@@ -62,7 +65,11 @@ describe("DEFAULT_LIGHT_SETTINGS", () => {
       hazeVeilTint: HAZE_VEIL_TINT,
       hazeVeilTintA: 0,
       hazeVeilRiseDeg: HAZE_VEIL_RISE_DEG,
+      skyBalanceA: 0,
+      skyBalanceB: 0,
     });
+    // No sky balance: the sky is the model's colour, as it always was.
+    expect(skyBalanceOf(DEFAULT_LIGHT_SETTINGS)).toBeNull();
     // No veil: the haze takes the sky's colour, as it always has.
     expect(veilOf(DEFAULT_LIGHT_SETTINGS)).toBeNull();
     // The veil reaches 10 degrees up the sky by default (it read better at
@@ -487,6 +494,8 @@ describe("describeLightSettings", () => {
       hazeVeilTint: -4,
       hazeVeilTintA: 0,
       hazeVeilRiseDeg: 4,
+      skyBalanceA: 0,
+      skyBalanceB: 0,
     });
     expect(line).toBe(
       "light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5, " +
@@ -517,6 +526,71 @@ describe("describeLightSettings", () => {
   });
 });
 
+describe("the sky balance keys", () => {
+  // Why this test matters: the sky balance is the lever that moves the
+  // model's mauve twilight toward a slate-blue one; a tuned look must travel
+  // in a link like every other light value, and a look without one must
+  // write nothing new.
+  it("reads and writes skya and skyb, inside their bounds", () => {
+    const s = parseLightSettings("?light=v1:skya=-12,skyb=-8.5");
+    expect(s).toEqual({
+      ...DEFAULT_LIGHT_SETTINGS,
+      skyBalanceA: -12,
+      skyBalanceB: -8.5,
+    });
+    expect(serializeLightSettings(s)).toBe("v1:skya=-12,skyb=-8.5");
+    const r = LIGHT_SETTING_RANGES;
+    const out = parseLightSettings(
+      `?light=v1:skya=${r.skyBalanceA.max + 1},skyb=${r.skyBalanceB.min - 1}`,
+    );
+    expect(out.skyBalanceA).toBe(0);
+    expect(out.skyBalanceB).toBe(0);
+  });
+
+  it("gives the framework the gain of the stated cast, or null without one", () => {
+    expect(skyBalanceOf(DEFAULT_LIGHT_SETTINGS)).toBeNull();
+    expect(
+      skyBalanceOf({
+        ...DEFAULT_LIGHT_SETTINGS,
+        skyBalanceA: -12,
+        skyBalanceB: -8,
+      }),
+    ).toEqual(skyBalanceGain(-12, -8));
+  });
+
+  // WHY: every value the sliders reach must be a gain the framework draws
+  // (finite, at least 0), or a link could break the page.
+  it("gives a drawable gain at every corner of the sliders", () => {
+    const r = LIGHT_SETTING_RANGES;
+    for (const a of [r.skyBalanceA.min, r.skyBalanceA.max]) {
+      for (const b of [r.skyBalanceB.min, r.skyBalanceB.max]) {
+        const g = skyBalanceOf({
+          ...DEFAULT_LIGHT_SETTINGS,
+          skyBalanceA: a,
+          skyBalanceB: b,
+        })!;
+        for (const c of g) {
+          expect(Number.isFinite(c)).toBe(true);
+          expect(c).toBeGreaterThanOrEqual(0);
+        }
+      }
+    }
+  });
+
+  it("is named in the Copy line only when set", () => {
+    expect(describeLightSettings(DEFAULT_LIGHT_SETTINGS)).not.toContain(
+      "sky balance",
+    );
+    expect(
+      describeLightSettings({
+        ...DEFAULT_LIGHT_SETTINGS,
+        skyBalanceA: -12,
+        skyBalanceB: -8,
+      }).endsWith(", sky balance a* -12 b* -8"),
+    ).toBe(true);
+  });
+});
+
 describe("a colour scheme's light defaults", () => {
   // Why this test matters: the urban look is tuned WITH its light (a bright
   // veil at EV -2); the defaults a link is read against follow the scheme,
@@ -538,6 +612,53 @@ describe("a colour scheme's light defaults", () => {
     });
     for (const name of ["today", "architect", "night", "no-such-scheme"]) {
       expect(lightDefaultsFor(name)).toBe(DEFAULT_LIGHT_SETTINGS);
+    }
+  });
+
+  // Why this test matters: the low-sun looks are tuned WITH their light
+  // against a dusk reference (sky band L* 63, a* -3, b* -16 over a warm
+  // horizon band). After sunset the model's sky reads mauve, so dusk and
+  // blue hour carry a green-blue sky balance and a warm veil; golden hour
+  // carries none, because a cool balance on a sunlit sky turns it olive.
+  it("gives the low-sun looks their measured light, inside the sliders' ranges", () => {
+    expect(lightDefaultsFor("golden")).toEqual({
+      ...DEFAULT_LIGHT_SETTINGS,
+      exposureEv: -3,
+      hazeVisibilityKm: 60,
+    });
+    expect(skyBalanceOf(lightDefaultsFor("golden"))).toBeNull();
+    expect(lightDefaultsFor("dusk")).toEqual({
+      ...DEFAULT_LIGHT_SETTINGS,
+      exposureEv: -1.5,
+      skyBalanceA: -12,
+      skyBalanceB: -8,
+      hazeVeilLightness: 65,
+      hazeVeilTintA: 5,
+      hazeVeilTint: 22,
+      hazeVeilRiseDeg: 6,
+    });
+    expect(lightDefaultsFor("bluehour")).toEqual({
+      ...DEFAULT_LIGHT_SETTINGS,
+      exposureEv: -1.5,
+      skyBalanceA: -16,
+      skyBalanceB: -12,
+      hazeVeilLightness: 62,
+      hazeVeilTintA: 8,
+      hazeVeilTint: 24,
+      hazeVeilRiseDeg: 5,
+    });
+    for (const name of ["golden", "dusk", "bluehour"]) {
+      const light = lightDefaultsFor(name);
+      for (const field of FIELDS) {
+        const r = LIGHT_SETTING_RANGES[field];
+        expect(light[field], `${name} ${field}`).toBeGreaterThanOrEqual(r.min);
+        expect(light[field], `${name} ${field}`).toBeLessThanOrEqual(r.max);
+      }
+    }
+    // The veils are drawn as stated (no lightness bound held them back).
+    for (const name of ["dusk", "bluehour"]) {
+      const light = lightDefaultsFor(name);
+      expect(veilOf(light)!.lightness).toBe(light.hazeVeilLightness);
     }
   });
 

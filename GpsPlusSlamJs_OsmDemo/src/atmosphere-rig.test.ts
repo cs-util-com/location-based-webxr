@@ -109,6 +109,12 @@ class StubSky {
     this.horizonVeil = colour === null ? null : { colour, riseDeg };
   }
 
+  /** The sky balance the rig set (a re-bake in the real sky, not a call here). */
+  skyBalance: readonly number[] | null = null;
+  setSkyBalance(gain: readonly [number, number, number] | null): void {
+    this.skyBalance = gain;
+  }
+
   horizonColour(): THREE.Color {
     // Depends on the sun, so a fog colour taken once would go stale.
     return new THREE.Color(0.2, 0.3 + 0.1 * this.sun.y, 0.5);
@@ -715,5 +721,39 @@ describe("AtmosphereRig: the veil up the sky and at the ground's rim", () => {
       RangeError,
     );
     expect(view.haze.rim?.outerM).toBe(2400);
+  });
+});
+
+describe("AtmosphereRig.setSkyBalance (a colour cast on the sky)", () => {
+  // WHY: the cast must reach the visible sky (and through it the bake) AND
+  // the haze, or the distance fades toward a sky other than the one on
+  // screen; null must take it off both.
+  it("hands the same gain to the sky and the haze, and null takes it off", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(-1, 230));
+    view.setSkyBalance([0.8, 1, 1.2]);
+    expect(sky.skyBalance).toEqual([0.8, 1, 1.2]);
+    expect(view.haze.skyBalance).toEqual([0.8, 1, 1.2]);
+    view.setSkyBalance(null);
+    expect(sky.skyBalance).toBeNull();
+    expect(view.haze.skyBalance).toBeNull();
+  });
+
+  // WHY: the fallback sky is a dome of fixed colours with no radiance to
+  // balance; the setting must not break it.
+  it("is accepted on the fallback, where it changes nothing drawn", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(25, 200));
+    const fog = (scene.fog as THREE.Fog).color.clone();
+    view.setSkyBalance([0.8, 1, 1.2]);
+    expect((scene.fog as THREE.Fog).color.equals(fog)).toBe(true);
+  });
+
+  it("refuses a gain it cannot draw before anything changes", () => {
+    const { view, sky } = rig();
+    view.setSkyBalance([0.9, 1, 1.1]);
+    expect(() => view.setSkyBalance([1, Number.NaN, 1])).toThrow(RangeError);
+    expect(sky.skyBalance).toEqual([0.9, 1, 1.1]);
+    expect(view.haze.skyBalance).toEqual([0.9, 1, 1.1]);
   });
 });

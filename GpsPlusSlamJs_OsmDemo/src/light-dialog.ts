@@ -53,6 +53,10 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   hazeVeilTintA:
     "Haze: veil green-red (a* on screen, below 0 greener, above 0 redder)",
   hazeVeilRiseDeg: "Haze: veil up the sky (° above the horizon, 0 = none)",
+  skyBalanceA:
+    "Sky colour green-red (a* cast on the sky and its light, 0 = the model's)",
+  skyBalanceB:
+    "Sky colour blue-yellow (b* cast on the sky and its light, below 0 bluer)",
 };
 
 /**

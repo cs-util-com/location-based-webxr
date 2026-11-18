@@ -25,7 +25,8 @@ WebGL.
     (`lightDefaultsFor`); the shipped look when left out.
   - `deps.onChange(settings)`: called on every slider `input`, on Reset and
     on `setDefaults`, except the haze visibility, which is applied on
-    `change` (release).
+    `change` (release). The sky balance sliders apply live: each step
+    re-bakes the 64-texel environment cube, not the sky's tables.
     `main.ts` applies the settings to the view and writes the URL.
   - `deps.measure(withMargin)`: a `LightReadout` for the view as it stands:
     `litLuma`, `margin | null` (only measured when `withMargin`) and `view`

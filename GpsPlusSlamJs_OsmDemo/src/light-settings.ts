@@ -4,7 +4,8 @@
  * gain's ramp, the sky light on buildings, the sky's auto-exposure
  * adaptation, the EV compensation, the haze's visibility and start
  * (`HAZE_VISIBILITY_KM`, `HAZE_START_RATIO`), and the haze veil's lightness,
- * tint and rise up the sky (`veil`, `tint`, `rise`; `haze-veil.ts`). The
+ * tint and rise up the sky (`veil`, `tint`, `rise`; `haze-veil.ts`), and the
+ * sky balance's cast (`skya`, `skyb`; `sky-balance.ts`). The
  * defaults ARE the shipped look, so
  * an untouched dialog changes nothing; the values travel in the URL
  * (`?light=v1:gain=1.8,ev=-2.5`, only the fields that differ) so a tuned
@@ -38,6 +39,7 @@ import {
   HAZE_VEIL_TINT,
   type HazeVeil,
 } from "./haze-veil.js";
+import { skyBalanceGain } from "./sky-balance.js";
 
 export interface LightSettings {
   /** The building and road colour factor at a high sun. */
@@ -80,6 +82,13 @@ export interface LightSettings {
    * a veil is on.
    */
   readonly hazeVeilRiseDeg: number;
+  /**
+   * The sky balance's cast, CIE a* a mid grey takes through it
+   * (`sky-balance.ts`); with `skyBalanceB` 0 and this 0, no balance.
+   */
+  readonly skyBalanceA: number;
+  /** The sky balance's cast, CIE b*; below 0 bluer, above yellower. */
+  readonly skyBalanceB: number;
 }
 
 /** Today's look: the shipped constants, read from where they live. */
@@ -96,6 +105,8 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
   hazeVeilTint: HAZE_VEIL_TINT,
   hazeVeilTintA: 0,
   hazeVeilRiseDeg: HAZE_VEIL_RISE_DEG,
+  skyBalanceA: 0,
+  skyBalanceB: 0,
 };
 
 /**
@@ -107,6 +118,31 @@ export const DEFAULT_LIGHT_SETTINGS: LightSettings = {
 const SCHEME_LIGHT: Partial<Record<ColourSchemeName, Partial<LightSettings>>> =
   {
     urban: { hazeVeilLightness: 72, exposureEv: -2 },
+    // The low-sun looks (colour-scheme-looks.ts), tuned at the sun their
+    // links pin: after sunset a sky balance moves the model's mauve twilight
+    // toward the dusk reference's slate blue, and a warm veil carries its
+    // horizon band.
+    // Golden hour keeps the model's sky: a cool balance on a sunlit sky
+    // turns it olive, not blue (measured); clear air carries the colour.
+    golden: { exposureEv: -3, hazeVisibilityKm: 60 },
+    dusk: {
+      exposureEv: -1.5,
+      skyBalanceA: -12,
+      skyBalanceB: -8,
+      hazeVeilLightness: 65,
+      hazeVeilTintA: 5,
+      hazeVeilTint: 22,
+      hazeVeilRiseDeg: 6,
+    },
+    bluehour: {
+      exposureEv: -1.5,
+      skyBalanceA: -16,
+      skyBalanceB: -12,
+      hazeVeilLightness: 62,
+      hazeVeilTintA: 8,
+      hazeVeilTint: 24,
+      hazeVeilRiseDeg: 5,
+    },
   };
 
 /**
@@ -152,6 +188,10 @@ export const LIGHT_SETTING_RANGES: {
   hazeVeilTint: { min: -24, max: 40, step: 0.5 },
   hazeVeilTintA: { min: -10, max: 10, step: 0.5 },
   hazeVeilRiseDeg: { min: 0, max: 20, step: 0.5 },
+  // A strong cast either way; every corner is a drawable gain
+  // (light-settings.test.ts).
+  skyBalanceA: { min: -20, max: 20, step: 0.5 },
+  skyBalanceB: { min: -30, max: 30, step: 0.5 },
 };
 
 /** Each field's key in the URL; never rename one (shared links use them). */
@@ -168,6 +208,8 @@ const KEYS: { readonly [K in keyof LightSettings]: string } = {
   hazeVeilTint: "tint",
   hazeVeilTintA: "tinta",
   hazeVeilRiseDeg: "rise",
+  skyBalanceA: "skya",
+  skyBalanceB: "skyb",
 };
 
 /**
@@ -336,7 +378,10 @@ export function describeLightSettings(s: LightSettings): string {
     `sky light ${round(s.buildingSkyLight)}, adaptation ${round(s.exposureAdaptation)}, ` +
     `EV ${round(s.exposureEv)}, ` +
     `haze ${round(s.hazeVisibilityKm)} km from ${round(s.hazeStartRatio)} of the draw distance` +
-    (s.hazeVeilLightness > 0 ? describeVeil(s) : "")
+    (s.hazeVeilLightness > 0 ? describeVeil(s) : "") +
+    (skyBalanceOf(s) !== null
+      ? `, sky balance a* ${round(s.skyBalanceA)} b* ${round(s.skyBalanceB)}`
+      : "")
   );
 }
 
@@ -372,6 +417,16 @@ export function veilOf(s: LightSettings): HazeVeil | null {
         riseDeg: s.hazeVeilRiseDeg,
       })
     : null;
+}
+
+/**
+ * The sky balance's gain these settings describe (`skyBalanceGain`), or
+ * null for none (the sky the model draws).
+ */
+export function skyBalanceOf(
+  s: LightSettings,
+): readonly [number, number, number] | null {
+  return skyBalanceGain(s.skyBalanceA, s.skyBalanceB);
 }
 
 /**
