@@ -1,0 +1,1192 @@
+<!doctype html>
+<!-- Prototype: quiz round 4, variant 3 - the character throws. Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Character Throws Quiz</title>
+    <script type="importmap">
+      { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+    </script>
+    <style>
+      /* The narration box's look is copied from hud-calm-r5-1-scroll-box (the design system's surface tokens). */
+      :root {
+        --ink: #fff;
+        --accent: #f2971f;
+        --char: #e879f9; /* the asking character's colour */
+        --char-ink: #2a0631;
+        --right: #2dd4bf;
+        --wrong: #f87171;
+        --outline: rgb(10 6 14 / 0.85);
+        --surface-hi: rgb(52 58 80 / 0.35);
+        --surface-lo: rgb(20 24 36 / 0.35);
+        --surface-gradient: linear-gradient(160deg, var(--surface-hi), var(--surface-lo));
+        --edge-gradient: linear-gradient(160deg, rgb(255 255 255 / 0.3), rgb(255 255 255 / 0.08) 55%);
+        --raise: 2px 2px 2px rgb(0 0 0 / 0.46), -2px -2px 2px rgb(255 255 255 / 0.3);
+        --font-ui: "Corbel", "Noto Sans", ui-rounded, "Segoe UI", "Roboto", system-ui, sans-serif;
+        --radius-small: 10px;
+        --tap: 44px;
+        --fs: 16px;
+        --lh: 22px;
+        --rows: 3;
+        --tint: 0.72;
+        --grey: 0.55;
+      }
+      * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      html, body { margin: 0; height: 100%; }
+      body { font: 500 15px/1.4 var(--font-ui); background: #101317; color: var(--ink); overflow: hidden; -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent; }
+      button { font: inherit; color: inherit; touch-action: manipulation; }
+      .device { position: fixed; inset: 0; overflow: hidden; background: #000; container-type: size; }
+      #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+      #fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 30; }
+
+      /* ---------- the HUD ---------- */
+      .hud { position: absolute; inset: 0; pointer-events: none; z-index: 20; --top: calc(env(safe-area-inset-top) + 64px); }
+      .hud > * { pointer-events: auto; }
+      .exit { position: absolute; top: var(--top); left: calc(12px + env(safe-area-inset-left)); appearance: none; width: var(--tap); height: var(--tap); border-radius: 14px; border: 0;
+        background: var(--surface-gradient), rgb(20 24 36 / 0.5); box-shadow: var(--raise); display: grid; place-items: center; padding: 0; cursor: pointer; }
+      .exit svg { width: 14px; height: 14px; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; }
+
+      /* the narration box at the bottom edge */
+      .nbox { position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(80cqw, 560px);
+        padding: 9px 10px 10px 14px; border-radius: 12px; border: 1px solid transparent;
+        background: linear-gradient(160deg, rgb(52 58 80 / var(--tint)), rgb(20 24 36 / var(--tint))) padding-box, var(--edge-gradient) border-box;
+        box-shadow: var(--raise), 0 8px 22px rgb(0 0 0 / 0.22); user-select: none; -webkit-user-select: none; transition: width 0.3s ease, padding 0.3s ease; }
+      .nbox.collapsed { width: auto; max-width: min(80cqw, 560px); padding: 6px 8px 6px 12px; border-radius: 26px; }
+      .nbox.collapsed .open-part { display: none; }
+      .nbox:not(.collapsed) .pill { display: none; }
+      /* the grab handle on the top edge: tap it, or drag it down and up (never the words' own gestures) */
+      .grab { position: absolute; left: 50%; top: -32px; width: 104px; height: 32px; transform: translateX(-50%); display: grid; place-items: center; cursor: pointer; touch-action: none;
+        border-radius: 14px 14px 0 0; background: linear-gradient(180deg, rgb(52 58 80 / var(--tint)), rgb(36 40 56 / var(--tint))); border: 1px solid rgb(255 255 255 / 0.22); border-bottom: 0; }
+      .grab i { width: 48px; height: 7px; border-radius: 4px; background: #fff; box-shadow: 0 0 0 2px var(--outline); }
+      .grab:focus-visible { outline: 3px solid #fff; }
+      .win { position: relative; height: calc(var(--rows) * var(--lh)); overflow: hidden; padding-right: 12px; touch-action: none; cursor: pointer; }
+      .col { position: relative; font-size: var(--fs); line-height: var(--lh); text-align: left; will-change: transform; text-shadow: 0 1px 2px rgb(0 0 0 / 0.35); }
+      .col .nm { color: var(--char); font-weight: 700; margin-right: 2px; }
+      .w { color: rgb(255 255 255 / var(--grey)); transition: color 0.55s ease 0.12s; font-weight: 400; }
+      .w.on { color: #fff; }
+      .col.scrub .w { transition-duration: 0.12s; transition-delay: 0s; }
+      .sbar { position: absolute; top: 2px; bottom: 2px; right: 0; width: 3px; border-radius: 2px; background: rgb(255 255 255 / 0.12); }
+      .sbar i { position: absolute; left: 0; right: 0; top: 0; border-radius: 2px; background: rgb(255 255 255 / 0.55); will-change: transform; }
+      .sbar.none { opacity: 0; }
+      .tapfx { position: absolute; z-index: 50; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 50%; display: grid; place-items: center; background: rgb(20 24 36 / 0.6);
+        pointer-events: none; animation: tapfx 0.75s ease-out forwards; }
+      .tapfx svg { width: 20px; height: 20px; fill: #fff; }
+      @keyframes tapfx { 0% { opacity: 0; transform: scale(0.7); } 18% { opacity: 1; transform: scale(1); } 100% { opacity: 0; transform: scale(1.15); } }
+
+      /* the quiz area: a row under the words */
+      .quiz { margin-top: 8px; }
+      .chips { display: flex; gap: 6px; }
+      .qc { position: relative; overflow: hidden; flex: 1 1 0; min-width: 0; min-height: var(--tap); padding: 5px 8px; border-radius: var(--radius-small); text-align: left;
+        border: 2px solid rgb(255 255 255 / 0.28); background: rgb(255 255 255 / 0.07); font-size: 13.5px; font-weight: 700; line-height: 1.15; cursor: default; }
+      .qc .qf { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: color-mix(in srgb, var(--char) 45%, transparent); pointer-events: none; }
+      .qc .ql, .qc .qs { position: relative; display: block; }
+      .qc .qs { margin-top: 2px; font-size: 11.5px; font-weight: 600; color: rgb(255 255 255 / 0.8); }
+      .qc.away { visibility: hidden; }
+      .qc.pop { animation: pop 0.45s ease; }
+      @keyframes pop { 0% { transform: scale(0.7); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+      .qc.tappable { border-color: var(--char); background: color-mix(in srgb, var(--char) 16%, rgb(20 24 36 / 0.4)); cursor: pointer; }
+      .qc.held { border-color: #fff; background: color-mix(in srgb, var(--char) 55%, rgb(20 24 36 / 0.4)); cursor: pointer; }
+      .qc.right { border-color: var(--right); background: var(--right); color: #04201c; }
+      .qc.right .qs { color: #04201c; }
+      .qc.wrong { border-color: var(--wrong); background: rgb(248 113 113 / 0.2); color: #fecaca; }
+      .qc.other { opacity: 0.45; }
+      .hint { margin: 6px 0 0; font-size: 13px; line-height: 1.25; color: rgb(255 255 255 / 0.82); }
+      .hint.flash { animation: flash 0.9s ease; }
+      @keyframes flash { 30% { color: #fff; text-shadow: 0 0 8px var(--char); } }
+      .pts { display: inline-block; margin-left: 4px; padding: 0 8px; border-radius: 999px; background: #ffd391; color: #2a1a04; font-weight: 700; }
+      .pts.none { background: rgb(255 255 255 / 0.18); color: #fff; }
+
+      /* the collapsed box: only the character's name, its state, and the handle */
+      .pill { position: relative; display: flex; align-items: center; gap: 8px; min-height: 40px; overflow: hidden; border-radius: 22px; cursor: pointer; }
+      .pill .pfill { position: absolute; left: -12px; top: -6px; bottom: -6px; width: 0; background: color-mix(in srgb, var(--char) 42%, transparent); pointer-events: none; }
+      .pill .pdot { position: relative; flex: none; width: 13px; height: 13px; border-radius: 50%; border: 2px solid #fff; background: var(--char); }
+      .pill .pnm { position: relative; color: var(--char); font-weight: 700; font-size: 16px; }
+      .pill .pst { position: relative; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: rgb(255 255 255 / 0.9); }
+      .pill .ptb { position: relative; flex: none; height: 38px; padding: 0 14px; border-radius: 19px; border: 2px solid #fff; background: rgb(20 24 36 / 0.6); font-size: 14px; font-weight: 700; cursor: pointer; }
+
+      /* answers in flight, and the one edge cue */
+      #flyers { position: absolute; inset: 0; pointer-events: none; z-index: 35; }
+      .fly { position: absolute; left: 0; top: 0; padding: 7px 12px; border-radius: 999px; background: rgb(20 10 26 / 0.9); border: 3px solid var(--char); color: #fff;
+        font-size: 14px; font-weight: 700; white-space: nowrap; box-shadow: 0 0 0 2px var(--outline), 0 0 18px color-mix(in srgb, var(--char) 60%, transparent); will-change: transform; }
+      .cue { position: absolute; z-index: 25; width: 64px; padding: 10px 4px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; background: var(--char); color: var(--char-ink);
+        border: 3px solid var(--outline); font-size: 12px; font-weight: 800; line-height: 1.1; text-align: center; pointer-events: none; transform: translateY(-50%); transition: opacity 0.25s; }
+      .cue.left { left: 0; border-left: 0; border-radius: 0 18px 18px 0; }
+      .cue.right { right: 0; border-right: 0; border-radius: 18px 0 0 18px; }
+      .cue svg { width: 34px; height: 34px; fill: none; stroke: var(--char-ink); stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+      .bubble { position: absolute; z-index: 26; padding: 8px 14px; border-radius: 999px; background: rgb(20 10 26 / 0.92); border: 3px solid var(--char); box-shadow: 0 0 0 2px var(--outline);
+        font-size: 15px; font-weight: 700; white-space: nowrap; transform: translate(-50%, -100%); pointer-events: none; animation: bub 1.9s ease forwards; }
+      @keyframes bub { 0% { opacity: 0; } 12% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+
+      /* ---------- prototype tools (not part of the design) ---------- */
+      .strip { position: absolute; z-index: 70; top: env(safe-area-inset-top); left: 0; right: 0; padding: 4px 6px; background: rgb(0 0 0 / 0.66); font: 600 11.5px/1.3 system-ui, sans-serif; }
+      .strip .row { display: flex; align-items: center; gap: 4px; }
+      .strip button, .strip select { flex: none; height: 28px; border-radius: 7px; border: 1px solid rgb(255 255 255 / 0.25); background: rgb(255 255 255 / 0.09); color: #fff; font: 700 12px/1 system-ui, sans-serif; padding: 0 7px; }
+      .strip select { flex: 1 1 auto; min-width: 0; }
+      .strip button[aria-pressed="true"] { background: #b91c1c; border-color: #fca5a5; }
+      .strip .meter { flex: none; margin-left: auto; font: 600 10.5px/1.25 ui-monospace, Consolas, monospace; color: #d7fbf3; text-align: right; white-space: nowrap; }
+      .strip .cap { margin: 3px 2px 0; color: #dfe5ea; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .move { position: absolute; z-index: 40; right: 8px; top: 46%; display: flex; flex-direction: column; gap: 8px; }
+      .move button { width: 60px; height: 52px; border-radius: 14px; border: 2px dashed rgb(255 255 255 / 0.7); background: rgb(0 0 0 / 0.45); color: #fff; font: 700 13px/1 system-ui, sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+      .move button.on { background: rgb(255 255 255 / 0.3); }
+      .tools { position: absolute; z-index: 90; top: calc(env(safe-area-inset-top) + 66px); left: 50%; transform: translateX(-50%); width: min(400px, calc(100% - 16px)); max-height: calc(100% - 80px);
+        overflow-y: auto; padding: 10px 12px; border-radius: 14px; background: rgb(14 18 23 / 0.97); border: 1px solid rgb(255 255 255 / 0.16); font: 13px/1.45 system-ui, sans-serif; color: #e8edf2; }
+      .tools h4 { margin: 12px 0 4px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: #a9b4bf; }
+      .tools p, .tools li { color: #c9d2db; margin: 0 0 6px; }
+      .tools ul { padding-left: 18px; margin: 0 0 6px; }
+      .tools label { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; margin: 6px 0; }
+      .tools label input { grid-column: 1 / -1; width: 100%; }
+      .tools output { font: 600 12.5px ui-monospace, Consolas, monospace; }
+      .tools .close { width: 100%; min-height: 36px; margin-top: 8px; border-radius: 9px; border: 1px solid rgb(255 255 255 / 0.2); background: rgb(255 255 255 / 0.07); color: #fff; }
+      @container (orientation: landscape) and (max-height: 520px) {
+        .hud { --top: calc(env(safe-area-inset-top) + 50px); }
+        .nbox { bottom: calc(8px + env(safe-area-inset-bottom)); }
+        .strip .cap { -webkit-line-clamp: 1; }
+        .move { top: 30%; }
+        .move button { height: 44px; }
+      }
+      @media (prefers-reduced-motion: reduce) { .w { transition: none; } }
+    </style>
+  </head>
+  <body>
+    <main class="device" id="device">
+      <canvas id="view" aria-label="Simulated camera view of a town square"></canvas>
+      <canvas id="fx" aria-hidden="true"></canvas>
+      <div class="hud" id="hud">
+        <button class="exit" id="exit" type="button" aria-label="Exit AR"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13" /></svg></button>
+        <div class="cue" id="cue" hidden></div>
+        <div id="bubbles"></div>
+        <section class="nbox" id="nbox" aria-roledescription="narration">
+          <div class="grab" id="grab" role="button" tabindex="0" aria-label="Fold the box down or open it"><i></i></div>
+          <div class="open-part">
+            <div class="win" id="win" aria-label="Tap to pause or play, drag up or down to move through what is said"><div class="col" id="col"></div><div class="sbar" id="sbar"><i id="thumb"></i></div></div>
+            <div class="quiz" id="quiz" hidden></div>
+          </div>
+          <div class="pill" id="pill"><i class="pfill" id="pfill"></i><i class="pdot"></i><b class="pnm" id="pnm"></b><span class="pst" id="pst"></span><button class="ptb" id="ptb" type="button" hidden>Take back</button></div>
+        </section>
+      </div>
+      <div id="flyers"></div>
+
+      <div class="move" id="move" aria-label="Demo: move fast">
+        <button type="button" data-move="1">Walk</button>
+        <button type="button" data-move="-1">Back</button>
+      </div>
+      <header class="strip" id="strip">
+        <div class="row">
+          <select id="beat" aria-label="Beat"></select>
+          <button type="button" id="reset">Reset</button>
+          <button type="button" id="weak" aria-pressed="false">Weak position</button>
+          <button type="button" id="toolsBtn" aria-label="Sliders and notes">&#9881;</button>
+          <span class="meter" id="meter">-</span>
+        </div>
+        <p class="cap" id="cap"></p>
+      </header>
+      <aside class="tools" id="tools" hidden aria-label="Sliders and notes">
+        <p><b>The character throws.</b> Mara asks; the answers leave from her name in the box with a trail in her colour, land as short light pillars at the things they name, and the question rides on them. Walk to one: it wakes, comes to eye level, fills from below and opens. Tap the ground to jump, drag to look, hold Walk or Back (or W A S D) to move fast.</p>
+        <h4>Values to judge</h4>
+        <div id="sliders"></div>
+        <h4>Tap fallback and retry in this variant</h4>
+        <ul>
+          <li>The answers in the box are tappable only when the position is weak, or after 20 s of standing still. Otherwise the box says to walk.</li>
+          <li>A wrong answer gets no retry: Mara says the right one and the story goes on.</li>
+        </ul>
+        <p>The full notes and the format are in this folder's README.</p>
+        <button class="close" id="toolsClose" type="button">Close</button>
+      </aside>
+    </main>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      const $ = (id) => document.getElementById(id);
+      const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+      const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+      const ease = (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2);
+      const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+      // the choosing clock runs on frame time, the same clock as walking, so a stalled frame never lets the grace outrun a step away
+      let simT = 0;
+      const nowS = () => simT;
+      const params = new URLSearchParams(location.search);
+
+      /* ================= values the feel rests on (sliders in the notes, or ?flight=2.5 etc.) ================= */
+      const T = { flight: 2, stagger: 0.6, back: 1, dwell: 4, grace: 3, spacing: 10, fast: 3.5 };
+      const SLIDERS = [
+        ["flight", "Flight time per answer", 0.8, 4, 0.1, "s"],
+        ["stagger", "Stagger between answers (0 = all at once)", 0, 2, 0.1, "s"],
+        ["back", "Return time, as a share of the flight time", 0.5, 1, 0.05, "x"],
+        ["dwell", "Dwell: stand this long to choose", 2, 10, 0.5, "s"],
+        ["grace", "Grace: step away within this to take it back", 1, 6, 0.5, "s"],
+        ["spacing", "Spacing between answers (reach scales with it)", 5, 10, 0.5, "m"],
+        ["fast", "Fast move (Walk, Back, Shift)", 3, 4, 0.1, "m/s"],
+      ];
+      for (const [k, , lo, hi] of SLIDERS) if (params.has(k) && Number.isFinite(Number(params.get(k)))) T[k] = clamp(Number(params.get(k)), lo, hi);
+      const reach = () => 0.3 * T.spacing; // 3 m at 10 m spacing, 1.5 m at 5 m
+      const LET_GO = 1; // metres past the reach before an answer lets go (hysteresis)
+      const WAKE = 3; // metres past the reach where an answer notices the visitor
+      const ARM = 0.6; // s inside the reach before the charge starts
+      const DRAIN = 2; // a left charge falls this many times faster than it filled
+      const STEP_AWAY = 1.5; // m from where a held answer was taken: a step this long takes it back
+      const STILL_S = 20; // s of standing still before the answers come back to the box
+      const STILL_SPEED = 0.25;
+      const DIST = 10; // m from the start point to each answer
+      const EYE = 1.6;
+      const TOKEN_Y = 1.15;
+      const RISE_Y = 1.45; // a charging answer comes up to just under the eye
+      const COME = 0.5;
+      const KEEP = 2.1;
+      const R_TOK = 0.2;
+      const PILLAR_H = 8; // a third of the station beam's 24 m
+      const BEAM_H = 24;
+
+      /* ================= the tour data, as this variant assumes the format ================= */
+      const CHAR = { name: "Mara", color: "#e879f9" };
+      const QUIZ = {
+        speaker: CHAR.name,
+        question: "Which of these three was here first?",
+        points: 10,
+        correct: "fountain",
+        options: [
+          { id: "tree", label: "The plane tree", short: "Tree", thing: "tree" },
+          { id: "fountain", label: "The fountain", short: "Fountain", thing: "fountain" },
+          { id: "bench", label: "The bench", short: "Bench", thing: "bench" },
+        ],
+        says: {
+          right: "Right, the fountain. Its water ran here two hundred years before anyone planted the tree.",
+          wrong: "Not {answer}. It was the fountain: its water has run here since 1652, long before the tree and the bench.",
+        },
+      };
+      const LEAD = "Before this square had a hall, people met by the water to trade and to talk. Three things here are older than any house you see. Let me ask you something.";
+      const GOES_ON = "The square grew around that water. Come with me, the old gate is next, through the arch behind you.";
+      const OPTS = QUIZ.options;
+      const N = OPTS.length;
+      const CORRECT = OPTS.findIndex((o) => o.id === QUIZ.correct);
+
+      // answers at 10 m from the start, a chord of `spacing` apart: -sep, 0, +sep around the view
+      function anchor(i) {
+        const sep = 2 * Math.asin(clamp(T.spacing / (2 * DIST), 0, 1));
+        const a = (i - 1) * sep;
+        return { x: Math.sin(a) * DIST, z: -Math.cos(a) * DIST };
+      }
+      const thingAt = (i) => { const p = anchor(i); return { x: p.x * 1.15, z: p.z * 1.15 }; };
+
+      /* ================= state ================= */
+      const S = {};
+      const ans = OPTS.map(() => ({}));
+      function freshState() {
+        Object.assign(S, {
+          phase: "idle", // lead | ask | choose | result | story
+          boxOpen: true, offerTap: false, fallback: false, fallbackWhy: "", pendingOut: false,
+          at: -1, arm: 0, held: -1, heldBy: "", heldAt: 0, heldX: 0, heldZ: 0, blocked: new Set(),
+          weak: S.weak || false, still: 0, chosen: -1, right: null, log: [],
+        });
+        ans.forEach((A) => Object.assign(A, { where: "box", charge: 0, wake: 0, pillar: 0, pulse: -1, open: 0, pop: 0 }));
+      }
+      const log = (type, i, extra) => S.log.push({ type, i, t: performance.now(), ...extra });
+
+      /* ================= three.js: the square ================= */
+      const device = $("device");
+      const canvas = $("view");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 400);
+      camera.rotation.order = "YXZ";
+      scene.fog = new THREE.Fog(0xdfe6ec, 40, 150);
+      scene.add(new THREE.HemisphereLight(0xe4edf5, 0x6b5e50, 1.5));
+      const sunL = new THREE.DirectionalLight(0xfff1dc, 1.6);
+      sunL.position.set(-30, 60, 20);
+      scene.add(sunL);
+      function canvasTex(w, h, draw) {
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        draw(c.getContext("2d"), w, h);
+        const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+      }
+      scene.background = canvasTex(4, 256, (g, w, h) => {
+        const gr = g.createLinearGradient(0, 0, 0, h);
+        gr.addColorStop(0, "#6f9fd0"); gr.addColorStop(0.5, "#c3d7e6"); gr.addColorStop(1, "#e6ecef");
+        g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      });
+      {
+        const tex = canvasTex(256, 256, (g, w, h) => {
+          let s = 7; const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+          g.fillStyle = "#8b857a"; g.fillRect(0, 0, w, h);
+          for (let y = 0; y < h; y += 16) for (let x = (y / 16) % 2 ? -8 : 0; x < w; x += 16) {
+            const v = 150 + Math.floor(rnd() * 40); g.fillStyle = `rgb(${v} ${v - 6} ${v - 16})`; g.beginPath(); g.roundRect(x + 1.5, y + 1.5, 13, 13, 4); g.fill();
+          }
+        });
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(60, 60); tex.anisotropy = 4;
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(240, 240).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tex }));
+        scene.add(ground);
+      }
+      // houses round the square: two instanced draws
+      {
+        const spots = [];
+        for (let k = 0; k < 22; k++) { const a = (k / 22) * Math.PI * 2 + 0.1, r = 30 + ((k * 37) % 9); spots.push([Math.cos(a) * r, Math.sin(a) * r, a]); }
+        const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff }), spots.length);
+        const roofs = new THREE.InstancedMesh(new THREE.ConeGeometry(0.75, 1, 4), new THREE.MeshLambertMaterial({ color: 0xa04a30 }), spots.length);
+        const m = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color();
+        const cols = [0xf4efe6, 0xf0dcc0, 0xe6cfb0, 0xdfe3e0, 0xf3d9c6];
+        spots.forEach(([x, z, a], k) => {
+          const h = 8 + ((k * 53) % 8);
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -a);
+          m.compose(new THREE.Vector3(x, h / 2, z), q, new THREE.Vector3(9, h, 8)); walls.setMatrixAt(k, m); walls.setColorAt(k, c.setHex(cols[k % cols.length]));
+          q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -a + Math.PI / 4);
+          m.compose(new THREE.Vector3(x, h + 1.5, z), q, new THREE.Vector3(9, 3, 9)); roofs.setMatrixAt(k, m);
+        });
+        scene.add(walls, roofs);
+      }
+
+      /* ---------- the three named things, neutral shapes (their names live in the box only) ---------- */
+      const stoneMat = new THREE.MeshLambertMaterial({ color: 0xa7a197 });
+      const things = OPTS.map((o) => {
+        const g = new THREE.Group();
+        if (o.thing === "fountain") {
+          const basin = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.4, 0.6, 24), stoneMat); basin.position.y = 0.3;
+          const water = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 0.04, 24), new THREE.MeshLambertMaterial({ color: 0x6fb2d6 })); water.position.y = 0.6;
+          const col = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 1.8, 10), stoneMat); col.position.y = 1.1;
+          const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.25, 0.3, 14), stoneMat); bowl.position.y = 2.05;
+          g.add(basin, water, col, bowl);
+        } else if (o.thing === "tree") {
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 3, 8), new THREE.MeshLambertMaterial({ color: 0x7d6650 })); trunk.position.y = 1.5;
+          const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(2, 1), new THREE.MeshLambertMaterial({ color: 0x6f9e62, flatShading: true })); leaves.position.y = 4;
+          g.add(trunk, leaves);
+        } else {
+          const wood = new THREE.MeshLambertMaterial({ color: 0x8a6a4e });
+          const seat = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.08, 0.5), wood); seat.position.y = 0.46;
+          const back = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.5, 0.07), wood); back.position.set(0, 0.76, -0.24);
+          const legs = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.42, 0.4), new THREE.MeshLambertMaterial({ color: 0x3c4044 })); legs.position.y = 0.21; legs.scale.x = 1;
+          g.add(seat, back, legs);
+        }
+        scene.add(g);
+        return g;
+      });
+      function placeThings() {
+        things.forEach((g, i) => { const p = thingAt(i); g.position.set(p.x, 0, p.z); g.rotation.y = Math.atan2(-p.x, -p.z); });
+      }
+
+      /* ---------- the station pin: its own sky beam, orange, tall; answers never look like this ---------- */
+      function beamMaterial(color, op, fall) {
+        return new THREE.ShaderMaterial({
+          uniforms: { color: { value: new THREE.Color(color) }, op: { value: op }, fall: { value: fall } },
+          vertexShader: "varying float vH; uniform float h; void main(){ vH = uv.y; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
+          fragmentShader: "uniform vec3 color; uniform float op; uniform float fall; varying float vH; void main(){ float a = op * (pow(1.0 - vH, fall) * 0.85 + 0.08); gl_FragColor = vec4(color, a); }",
+          transparent: true, depthWrite: false, side: THREE.DoubleSide,
+        });
+      }
+      const STATION_AT = { x: -3, z: -26 };
+      const stationBeam = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, BEAM_H, 20, 1, true).translate(0, BEAM_H / 2, 0), beamMaterial(0xf2971f, 0.6, 0.35));
+      stationBeam.position.set(STATION_AT.x, 0, STATION_AT.z);
+      scene.add(stationBeam);
+
+      /* ---------- the asking character, standing near the start ---------- */
+      const mara = new THREE.Group();
+      mara.position.set(2.2, 0, -5.2);
+      {
+        const coat = new THREE.Mesh(new THREE.CapsuleGeometry(0.27, 0.95, 6, 14), new THREE.MeshLambertMaterial({ color: 0xc026d3 })); coat.position.y = 0.78;
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 18, 14), new THREE.MeshLambertMaterial({ color: 0xe8c4a8 })); head.position.y = 1.52;
+        mara.add(coat, head); mara.userData.head = head;
+      }
+      scene.add(mara);
+
+      /* ---------- another item of the station: it waits, dimmed, while the question is open ---------- */
+      const other = (() => {
+        const g = new THREE.Group(); g.position.set(3.2, 0, -15);
+        const disc = new THREE.Mesh(new THREE.CircleGeometry(1.6, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0.4, depthWrite: false }));
+        disc.position.y = 0.03; g.add(disc); scene.add(g);
+        let dim = 1;
+        return { update(dt, quiet) { dim += ((quiet ? 0.2 : 1) - dim) * Math.min(1, dt * 2); disc.material.opacity = 0.4 * dim; } };
+      })();
+
+      /* ---------- the answers in the world: a short pillar, rising particles, a pulse, the token that charges ---------- */
+      const CH = new THREE.Color(CHAR.color);
+      const dotTex = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 2, 32, 32, 30); gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(0.4, "rgba(255,255,255,0.8)"); gr.addColorStop(1, "rgba(255,255,255,0)"); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+      const PER = 22;
+      const sparkPos = new Float32Array(N * PER * 3);
+      const sparkSeed = Array.from({ length: N * PER }, (_, k) => [Math.random() * 6.28, 0.15 + Math.random() * 0.5, Math.random()]);
+      const sparks = new THREE.Points(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(sparkPos, 3)),
+        new THREE.PointsMaterial({ color: CH, size: 0.16, map: dotTex, transparent: true, depthWrite: false }));
+      sparks.frustumCulled = false;
+      scene.add(sparks);
+      function fillMaterial() {
+        return new THREE.ShaderMaterial({
+          uniforms: { level: { value: 0 }, tint: { value: CH.clone() }, time: { value: 0 } },
+          vertexShader: `varying float vY; varying vec3 vN; void main(){ vY = position.y / ${(R_TOK * 2.16).toFixed(3)} + 0.5; vN = normalize(normalMatrix * normal); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+          fragmentShader: `uniform float level; uniform vec3 tint; uniform float time; varying float vY; varying vec3 vN;
+            void main(){ float surface = level + 0.03 * sin(time * 6.0 + vN.x * 8.0); if (vY > surface) discard;
+              float edge = smoothstep(0.1, 0.0, surface - vY); float rim = pow(1.0 - abs(vN.z), 2.0);
+              vec3 c = mix(tint * 1.15, vec3(1.0), 0.05 + 0.85 * edge + 0.15 * rim); gl_FragColor = vec4(c, 0.93); }`,
+          transparent: true, depthWrite: false, side: THREE.DoubleSide,
+        });
+      }
+      function plateTexture(o) {
+        return canvasTex(512, 196, (g, w, h) => {
+          g.fillStyle = "rgba(14,10,22,0.9)"; g.beginPath(); g.roundRect(4, 4, w - 8, h - 8, 26); g.fill();
+          g.lineWidth = 8; g.strokeStyle = CHAR.color; g.stroke();
+          g.fillStyle = "#f5d0fe"; g.font = "600 32px Corbel, 'Noto Sans', system-ui, sans-serif"; g.textBaseline = "middle"; g.textAlign = "center";
+          g.fillText(QUIZ.question, w / 2, 58, w - 48);
+          g.fillStyle = "#fff"; g.font = "700 50px Corbel, 'Noto Sans', system-ui, sans-serif"; g.fillText(o.label, w / 2, 126, w - 48);
+        });
+      }
+      const PLATE_RATIO = 196 / 512;
+      const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+      const worlds = OPTS.map((o, i) => {
+        const root = new THREE.Group(); scene.add(root);
+        const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, PILLAR_H, 20, 1, true).translate(0, PILLAR_H / 2, 0), beamMaterial(CHAR.color, 0.75, 1.6));
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: CH, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+        ring.position.y = 0.04;
+        const hit = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 3.4, 8), hitMat); hit.position.y = 1.6; hit.userData.i = i;
+        root.add(pillar, ring, hit);
+        // the token: two halves (the top one is the lid that opens) and a fill shell
+        const tok = new THREE.Group(); scene.add(tok);
+        const mat = new THREE.MeshLambertMaterial({ color: CH.clone(), emissive: CH.clone(), emissiveIntensity: 0.2 });
+        const bottom = new THREE.Mesh(new THREE.SphereGeometry(R_TOK, 22, 10, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat);
+        const hinge = new THREE.Group(); hinge.position.z = -R_TOK;
+        const lid = new THREE.Mesh(new THREE.SphereGeometry(R_TOK, 22, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat); lid.position.z = R_TOK; hinge.add(lid);
+        const fillMat = fillMaterial();
+        const shell = new THREE.Mesh(new THREE.SphereGeometry(R_TOK * 1.08, 24, 16), fillMat);
+        const graceRing = new THREE.Group();
+        const gDark = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.055, 8, 48), new THREE.MeshBasicMaterial({ color: 0x14081a, transparent: true, opacity: 0.85 }));
+        const gLight = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.032, 8, 48), new THREE.MeshBasicMaterial({ color: 0xffffff })); gLight.position.z = 0.01;
+        graceRing.add(gDark, gLight);
+        const plate = new THREE.Mesh(new THREE.PlaneGeometry(1, PLATE_RATIO), new THREE.MeshBasicMaterial({ map: plateTexture(o), transparent: true, depthTest: false, depthWrite: false }));
+        plate.renderOrder = 20;
+        tok.add(bottom, hinge, shell, graceRing);
+        scene.add(plate);
+        return { root, pillar, ring, hit, tok, mat, hinge, shell, fillMat, graceRing, plate, plateOp: 0 };
+      });
+      const hitTargets = worlds.map((w) => w.hit);
+      function placeAnswers() {
+        worlds.forEach((w, i) => { const p = anchor(i); w.root.position.set(p.x, 0, p.z); });
+        placeThings();
+      }
+
+      /* ================= the visitor ================= */
+      const V = { x: 0, z: 0, yaw: 0, pitch: -0.06, speed: 0, keys: new Set(), hold: 0, path: null };
+      const yawTo = (x, z) => Math.atan2(V.x - x, V.z - z);
+      const distTo = (i) => { const p = anchor(i); return Math.hypot(p.x - V.x, p.z - V.z); };
+      function setPose(x, z, faceI) {
+        V.x = x; V.z = z; V.path = null; V.speed = 0;
+        if (faceI != null) { const p = anchor(faceI); V.yaw = yawTo(p.x, p.z); }
+      }
+      function walkTo(x, z, speed) { V.path = { x, z, speed }; }
+      function updateVisitor(dt) {
+        const x0 = V.x, z0 = V.z, k = V.keys;
+        const fwd = (k.has("w") || k.has("arrowup") ? 1 : 0) - (k.has("s") || k.has("arrowdown") ? 1 : 0) + V.hold;
+        const side = (k.has("d") ? 1 : 0) - (k.has("a") ? 1 : 0);
+        V.yaw += ((k.has("arrowleft") || k.has("q") ? 1 : 0) - (k.has("arrowright") || k.has("e") ? 1 : 0)) * dt * 1.6;
+        if (fwd || side) {
+          V.path = null;
+          const sp = (V.hold || k.has("shift") ? T.fast : 1.4) * dt;
+          V.x += (-Math.sin(V.yaw) * fwd + Math.cos(V.yaw) * side) * sp;
+          V.z += (-Math.cos(V.yaw) * fwd - Math.sin(V.yaw) * side) * sp;
+        } else if (V.path) {
+          const dx = V.path.x - V.x, dz = V.path.z - V.z, d = Math.hypot(dx, dz), step = V.path.speed * dt;
+          if (d <= step) { V.x = V.path.x; V.z = V.path.z; V.path = null; } else { V.x += (dx / d) * step; V.z += (dz / d) * step; }
+        }
+        V.x = clamp(V.x, -24, 24); V.z = clamp(V.z, -24, 24);
+        const sp = Math.hypot(V.x - x0, V.z - z0) / Math.max(dt, 1e-3);
+        V.speed += (sp - V.speed) * Math.min(1, dt / 0.25);
+        // a weak position wanders the camera a little, as the fused pose does
+        const wob = S.weak ? 0.25 : 0, tt = nowS();
+        camera.position.set(V.x + Math.sin(tt * 0.7) * wob, EYE, V.z + Math.cos(tt * 0.53) * wob);
+        camera.rotation.set(V.pitch, V.yaw, 0);
+      }
+
+      /* ================= the narration box: words, tap to pause, vertical drag to scrub ================= */
+      const nbox = $("nbox"), col = $("col"), win = $("win"), thumb = $("thumb"), sbar = $("sbar"), quizEl = $("quiz");
+      const pill = $("pill"), pst = $("pst"), pfill = $("pfill"), ptb = $("ptb");
+      $("pnm").textContent = CHAR.name;
+      document.documentElement.style.setProperty("--char", CHAR.color);
+      const NB = { words: [], lineOf: [], lineStart: [], nLines: 1, rows: 1, total: 0, t: 0, s: 0, playing: false, finished: false, onEnd: null, fired: false, lit: -1, lh: 22, dragging: false };
+      function fakeTimes(texts) {
+        let t = 0.35;
+        return texts.map((w) => {
+          const letters = w.replace(/[^\p{L}\p{N}]/gu, "").length;
+          const d = clamp(0.11 + 0.052 * letters, 0.17, 0.64), start = t;
+          t += d + (/[.!?]$/.test(w) ? 0.42 : /[,;:]$/.test(w) ? 0.22 : 0);
+          return { start, end: start + d };
+        });
+      }
+      function say(text, onEnd) {
+        const texts = text.split(/\s+/).filter(Boolean), times = fakeTimes(texts);
+        col.innerHTML = `<b class="nm" id="nm">${esc(CHAR.name)}</b> `;
+        NB.words = texts.map((w, i) => { const el = document.createElement("span"); el.className = "w"; el.textContent = w; col.append(el, " "); return { el, ...times[i] }; });
+        NB.total = NB.words.length ? NB.words[NB.words.length - 1].end + 0.3 : 0;
+        Object.assign(NB, { t: 0, lit: -1, playing: true, finished: false, onEnd, fired: false });
+        layoutWords();
+      }
+      function layoutWords() {
+        NB.lh = parseFloat(getComputedStyle(col).lineHeight) || 22;
+        const tops = [];
+        NB.lineOf = NB.words.map((w) => { const top = w.el.offsetTop; let k = tops.findIndex((x) => Math.abs(x - top) < NB.lh / 2); if (k < 0) { tops.push(top); k = tops.length - 1; } return k; });
+        NB.nLines = Math.max(1, tops.length);
+        NB.rows = Math.min(3, NB.nLines);
+        nbox.style.setProperty("--rows", String(NB.rows));
+        NB.lineStart = [];
+        NB.words.forEach((w, i) => { if (NB.lineStart[NB.lineOf[i]] === undefined) NB.lineStart[NB.lineOf[i]] = NB.lineOf[i] === 0 ? 0 : w.start; });
+        NB.lineStart[NB.nLines] = NB.total;
+        sbar.classList.toggle("none", NB.nLines <= NB.rows);
+      }
+      function wordAt(time) { let f = -1; for (let i = 0; i < NB.words.length; i++) { if (NB.words[i].start <= time) f = i; else break; } return f; }
+      const maxScroll = () => Math.max(0, NB.nLines - NB.rows);
+      const followTarget = () => clamp((NB.lineOf[Math.max(0, wordAt(NB.t))] ?? 0) - 1, 0, maxScroll());
+      function lineFloatAt(time) {
+        if (time >= NB.total) return NB.nLines;
+        let k = 0; while (k + 1 < NB.nLines && NB.lineStart[k + 1] <= time) k++;
+        const span = NB.lineStart[k + 1] - NB.lineStart[k];
+        return k + (span > 0 ? clamp((time - NB.lineStart[k]) / span, 0, 1) : 0);
+      }
+      function timeAtLine(x) { const v = clamp(x, 0, NB.nLines), k = Math.floor(v); return k >= NB.nLines ? NB.total : NB.lineStart[k] + (v - k) * (NB.lineStart[k + 1] - NB.lineStart[k]); }
+      function finishWords() {
+        NB.playing = false; NB.finished = true;
+        if (!NB.fired && NB.onEnd) { NB.fired = true; const f = NB.onEnd; setTimeout(f, 0); }
+      }
+      function skipWords() { NB.t = NB.total; finishWords(); }
+      function advanceWords(dt) {
+        if (!NB.playing || NB.dragging || !NB.words.length) return;
+        NB.t = Math.min(NB.total, NB.t + dt);
+        if (NB.t >= NB.total) finishWords();
+      }
+      function updateWords(dt) {
+        if (!NB.words.length) return;
+        const lit = wordAt(NB.t - 1e-6);
+        if (lit !== NB.lit) { const lo = Math.min(lit, NB.lit), hi = Math.max(lit, NB.lit); for (let i = Math.max(0, lo + 1); i <= hi; i++) NB.words[i].el.classList.toggle("on", i <= lit); NB.lit = lit; }
+        if (!NB.dragging) { const tg = followTarget(); NB.s += (tg - NB.s) * (1 - Math.exp(-dt * 9)); if (Math.abs(tg - NB.s) < 0.002) NB.s = tg; }
+        col.style.transform = `translateY(${(-NB.s * NB.lh).toFixed(2)}px)`;
+        const winH = NB.rows * NB.lh - 4, th = Math.max(14, (winH * NB.rows) / NB.nLines);
+        thumb.style.height = `${th.toFixed(1)}px`;
+        thumb.style.transform = `translateY(${(clamp(NB.s / Math.max(1, maxScroll()), 0, 1) * (winH - th)).toFixed(1)}px)`;
+      }
+      let press = null;
+      win.addEventListener("pointerdown", (e) => { press = { id: e.pointerId, x: e.clientX, y: e.clientY, s0: NB.s, line0: lineFloatAt(NB.t) }; win.setPointerCapture(e.pointerId); });
+      win.addEventListener("pointermove", (e) => {
+        if (!press || e.pointerId !== press.id) return;
+        const dy = press.y - e.clientY;
+        if (!NB.dragging && Math.hypot(e.clientX - press.x, dy) > 8) { NB.dragging = true; col.classList.add("scrub"); }
+        if (!NB.dragging) return;
+        const lines = dy / NB.lh;
+        NB.t = timeAtLine(press.line0 + lines); NB.finished = false;
+        const raw = press.s0 + lines, top = maxScroll();
+        NB.s = raw < 0 ? raw * 0.3 : raw > top ? top + (raw - top) * 0.3 : raw;
+      });
+      function endPress(e) {
+        if (!press || e.pointerId !== press.id) return;
+        const wasDrag = NB.dragging; press = null; NB.dragging = false; col.classList.remove("scrub");
+        if (wasDrag) { if (NB.t >= NB.total) finishWords(); return; }
+        if (e.type === "pointercancel") return;
+        if (NB.finished || NB.t >= NB.total) { NB.t = 0; NB.finished = false; NB.playing = true; } else NB.playing = !NB.playing;
+        log(NB.playing ? "play" : "pause");
+        const r = device.getBoundingClientRect(), fx = document.createElement("div");
+        fx.className = "tapfx"; fx.style.left = `${e.clientX - r.left}px`; fx.style.top = `${e.clientY - r.top}px`;
+        fx.innerHTML = NB.playing ? '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>' : '<svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>';
+        device.append(fx); setTimeout(() => fx.remove(), 900);
+      }
+      win.addEventListener("pointerup", endPress);
+      win.addEventListener("pointercancel", endPress);
+
+      /* ---------- the handle: tap it, or drag it down (fold) and up (open) ---------- */
+      const grab = $("grab");
+      let gpress = null;
+      grab.addEventListener("pointerdown", (e) => { gpress = { id: e.pointerId, y: e.clientY }; grab.setPointerCapture(e.pointerId); e.stopPropagation(); });
+      grab.addEventListener("pointerup", (e) => {
+        if (!gpress || e.pointerId !== gpress.id) return;
+        const dy = e.clientY - gpress.y; gpress = null;
+        if (Math.abs(dy) < 10) toggleBox();
+        else if (dy > 0 && S.boxOpen) closeBox("user");
+        else if (dy < 0 && !S.boxOpen) openBox("user");
+      });
+      grab.addEventListener("pointercancel", () => (gpress = null));
+      grab.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleBox(); } });
+      pill.addEventListener("click", (e) => { if (e.target.closest(".ptb")) return; openBox("user"); });
+      ptb.addEventListener("click", () => release("button"));
+      function toggleBox() { if (S.boxOpen) closeBox("user"); else openBox("user"); }
+
+      /* ================= the box and the answers: open brings them in, folding sends them out ================= */
+      function openBox(why) {
+        if (S.boxOpen) return;
+        S.boxOpen = true; log("open", -1, { why });
+        renderBox();
+        if (S.phase === "choose") bringIn();
+      }
+      function closeBox(why) {
+        if (!S.boxOpen) return;
+        S.boxOpen = false; log("close", -1, { why });
+        if (S.phase === "ask") { S.phase = "choose"; skipWords(); }
+        renderBox();
+        if (S.phase === "choose") sendOut();
+      }
+      function sendOut() { let k = 0; ans.forEach((A, i) => { if (A.where === "box" || A.where === "in") launch(i, "out", k++ * T.stagger); }); }
+      function bringIn(except = -1) { let k = 0; ans.forEach((A, i) => { if (i !== except && (A.where === "world" || A.where === "out")) launch(i, "in", k++ * T.stagger * T.back); }); }
+
+      let quizKey = "";
+      function renderBox() {
+        nbox.classList.toggle("collapsed", !S.boxOpen);
+        const showQuiz = S.boxOpen && (S.phase === "ask" || S.phase === "choose" || S.phase === "result");
+        quizEl.hidden = !showQuiz;
+        if (S.boxOpen && NB.words.length) layoutWords();
+        quizKey = "";
+        liveQuiz();
+      }
+      function hintText() {
+        if (S.phase === "result") return "";
+        if (S.phase === "ask") return "The answers go out to their places in a moment.";
+        if (S.held >= 0) return "Tap it again to take it back.";
+        if (S.offerTap) return S.fallbackWhy === "weak" ? "Your position is unsure, so tap your answer here." : "Can't walk there? Tap your answer here.";
+        return "Fold the box down to send the answers out, then walk to one.";
+      }
+      function buildQuiz() {
+        const done = S.phase === "result";
+        const chips = OPTS.map((o, i) => `<button type="button" class="qc" data-i="${i}"><i class="qf"></i><span class="ql">${esc(o.label)}</span><span class="qs"></span></button>`).join("");
+        const pts = done ? `<p class="hint">${S.right ? "Right" : "Not this time"} <span class="pts ${S.right ? "" : "none"}">+${S.right ? QUIZ.points : 0}</span></p>` : `<p class="hint" id="hint">${esc(hintText())}</p>`;
+        quizEl.innerHTML = `<div class="chips">${chips}</div>${pts}`;
+      }
+      function liveQuiz() {
+        if (quizEl.hidden) return;
+        const key = [S.phase, S.offerTap, S.held, S.chosen, S.fallbackWhy].join("|");
+        if (key !== quizKey) { quizKey = key; buildQuiz(); }
+        const now = nowS();
+        quizEl.querySelectorAll(".qc").forEach((b) => {
+          const i = +b.dataset.i, A = ans[i];
+          const inBox = A.where === "box" || (S.phase === "result" && i === S.chosen);
+          if (b.classList.contains("away") === inBox) b.classList.toggle("away", !inBox);
+          if (A.pop > 0 && inBox) { b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop"); A.pop = 0; }
+          let cls = "qc";
+          let status = "";
+          if (S.phase === "result") {
+            cls += i === CORRECT ? " right" : i === S.chosen ? " wrong" : " other";
+            status = i === CORRECT ? (i === S.chosen ? "Your answer, right" : "The right one") : i === S.chosen ? "Your answer" : "";
+          } else if (S.held === i) {
+            cls += " held"; status = `Take back - ${Math.max(0, Math.ceil(T.grace - (now - S.heldAt)))} s`;
+          } else if (A.charge > 0.001) {
+            status = `Filling ${Math.round(A.charge * 100)} %`;
+          }
+          if (S.phase === "choose" && S.offerTap && S.held !== i) cls += " tappable";
+          if (!inBox) cls += " away";
+          if (b.className !== cls) b.className = cls;
+          const qs = b.querySelector(".qs"); if (qs.textContent !== status) qs.textContent = status;
+          b.querySelector(".qf").style.width = `${S.held === i ? 100 : A.charge * 100}%`;
+        });
+      }
+      quizEl.addEventListener("click", (e) => {
+        const b = e.target.closest(".qc"); if (!b || S.phase !== "choose") return;
+        const i = +b.dataset.i;
+        if (ans[i].where !== "box") return;
+        if (S.held === i) return release("tap");
+        if (!S.offerTap) { const h = $("hint"); if (h) { h.classList.remove("flash"); void h.offsetWidth; h.classList.add("flash"); } return; }
+        if (S.held >= 0) release("switch");
+        hold(i, "tap");
+      });
+      let pillKey = "";
+      function livePill() {
+        if (S.boxOpen) return;
+        let txt = "", fill = 0, take = false;
+        const now = nowS();
+        if (S.phase === "choose") {
+          if (S.held >= 0) { txt = `${OPTS[S.held].label}: counts in ${Math.max(0, Math.ceil(T.grace - (now - S.heldAt)))} s`; fill = 1; take = true; }
+          else if (S.at >= 0 && ans[S.at].charge > 0) { txt = `${OPTS[S.at].label}: stay here`; fill = ans[S.at].charge; }
+          else if (S.weak) txt = "position unsure";
+          else txt = "walk to an answer";
+        } else if (S.phase === "lead" || S.phase === "ask" || S.phase === "story") txt = NB.playing ? "speaking" : "";
+        const key = `${txt}|${take}`;
+        if (key !== pillKey) { pillKey = key; pst.textContent = txt; ptb.hidden = !take; }
+        pfill.style.width = `calc(${(fill * 100).toFixed(1)}% + 24px * ${fill > 0 ? 1 : 0})`;
+      }
+
+      /* ================= the flights: from the character's name to the places, and back ================= */
+      const flyers = $("flyers"), fx = $("fx"), fxg = fx.getContext("2d");
+      const flights = [], ghosts = [];
+      let W = 1, H = 1;
+      const _v = new THREE.Vector3();
+      function project(x, y, z) {
+        _v.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+        if (_v.z > -0.1) { const side = _v.x < 0 ? -1 : 1; return { x: W / 2 + side * W * 1.25, y: H * 0.42, off: true, side }; }
+        _v.set(x, y, z).project(camera);
+        const px = ((_v.x + 1) / 2) * W, py = ((1 - _v.y) / 2) * H;
+        return { x: px, y: py, off: px < 0 || px > W || py < 0 || py > H, side: px < W / 2 ? -1 : 1 };
+      }
+      const devRect = () => device.getBoundingClientRect();
+      function nameRect() {
+        const r0 = devRect();
+        const el = S.boxOpen ? $("nm") : $("pnm");
+        const r = (el || nbox).getBoundingClientRect();
+        const w = win.getBoundingClientRect();
+        // the name scrolled out of the three rows: use the box's top-left corner instead
+        const y = S.boxOpen && w.height && (r.top < w.top - 2 || r.bottom > w.bottom + 2) ? w.top + 10 : r.top + r.height / 2;
+        return { x: r.left + Math.min(r.width / 2, 40) - r0.left, y: y - r0.top };
+      }
+      function tokenPoint(i) { const w = worlds[i]; return w.tok.visible ? w.tok.position : (() => { const p = anchor(i); return { x: p.x, y: TOKEN_Y, z: p.z }; })(); }
+      function resolve(end, i) {
+        if (end.type === "point") return end;
+        if (end.type === "world") { const p = tokenPoint(i); return project(p.x, p.y, p.z); }
+        const b = quizEl.querySelector(`.qc[data-i="${i}"]`);
+        if (b && !quizEl.hidden) { const r = b.getBoundingClientRect(), r0 = devRect(); return { x: r.left + r.width / 2 - r0.left, y: r.top + r.height / 2 - r0.top }; }
+        return nameRect();
+      }
+      function launch(i, dir, delay) {
+        const A = ans[i];
+        const cur = flights.find((f) => f.i === i);
+        let src;
+        if (cur) {
+          removeFlight(cur);
+          if (performance.now() < cur.t0) {
+            A.where = cur.dir === "out" ? "box" : "world";
+            if ((dir === "in" && A.where === "box") || (dir === "out" && A.where === "world")) return;
+          } else { src = { type: "point", x: cur.x, y: cur.y }; delay = 0; }
+        }
+        if (!src) src = dir === "out" ? { type: "point", ...nameRect() } : { type: "world" };
+        const el = document.createElement("div");
+        el.className = "fly"; el.textContent = OPTS[i].label; el.style.opacity = "0";
+        flyers.append(el);
+        A.where = dir === "out" ? "out" : "in";
+        const dur = (dir === "out" ? T.flight : T.flight * T.back) * 1000;
+        flights.push({ i, dir, t0: performance.now() + delay * 1000, dur, src, dst: dir === "out" ? { type: "world" } : { type: "chip" }, el, trail: [], x: NaN, y: NaN, started: false });
+      }
+      function removeFlight(f) { f.el.remove(); flights.splice(flights.indexOf(f), 1); if (f.trail.length > 1) ghosts.push({ pts: f.trail, t0: performance.now() }); }
+      function updateFlights(now) {
+        for (const f of [...flights]) {
+          const u = (now - f.t0) / f.dur;
+          if (u < 0) continue;
+          if (!f.started) { f.started = true; log("start", f.i, { dir: f.dir, due: f.t0 }); }
+          const a = resolve(f.src, f.i), b = resolve(f.dst, f.i), e = ease(clamp(u, 0, 1));
+          const lift = H * 0.16 + Math.abs(b.x - a.x) * 0.18;
+          const cx = (a.x + b.x) / 2, cy = Math.min(a.y, b.y) - lift;
+          const x = (1 - e) * (1 - e) * a.x + 2 * (1 - e) * e * cx + e * e * b.x;
+          const y = (1 - e) * (1 - e) * a.y + 2 * (1 - e) * e * cy + e * e * b.y;
+          const sc = f.dir === "out" ? 1 - 0.25 * e : 0.75 + 0.25 * e; // never below three quarters, so a label stays readable in flight
+          f.x = x; f.y = y;
+          f.el.style.opacity = "1";
+          f.el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%) scale(${sc.toFixed(3)})`;
+          f.trail.push([x, y]); if (f.trail.length > 26) f.trail.shift();
+          if (u >= 1) land(f);
+        }
+      }
+      function land(f) {
+        removeFlight(f);
+        const A = ans[f.i];
+        if (f.dir === "out") { A.where = "world"; A.pulse = 0; } else { A.where = "box"; A.pop = 1; }
+        log("land", f.i, { dir: f.dir, x: Math.round(f.x), y: Math.round(f.y) });
+      }
+      function drawTrails(now) {
+        fxg.setTransform(fx.width / W, 0, 0, fx.height / H, 0, 0);
+        fxg.clearRect(0, 0, W, H);
+        fxg.lineCap = "round"; fxg.lineJoin = "round";
+        const stroke = (pts, alpha) => {
+          if (pts.length < 2) return;
+          fxg.globalAlpha = alpha;
+          fxg.beginPath(); pts.forEach(([x, y], k) => (k ? fxg.lineTo(x, y) : fxg.moveTo(x, y)));
+          fxg.strokeStyle = "rgba(14,6,20,0.85)"; fxg.lineWidth = 8; fxg.stroke();
+          fxg.strokeStyle = CHAR.color; fxg.lineWidth = 4; fxg.stroke();
+        };
+        for (const f of flights) if (f.started) stroke(f.trail, 0.95);
+        for (const g of [...ghosts]) { const a = 1 - (now - g.t0) / 450; if (a <= 0) ghosts.splice(ghosts.indexOf(g), 1); else stroke(g.pts, 0.95 * a); }
+        fxg.globalAlpha = 1;
+      }
+
+      /* ================= choosing: walk to an answer, it notices you, charges at eye level, opens ================= */
+      function setAt(i) { if (S.at === i) return; S.at = i; S.arm = 0; }
+      function hold(i, by) { S.held = i; S.heldBy = by; S.heldAt = nowS(); S.heldX = V.x; S.heldZ = V.z; ans[i].charge = 1; log("hold", i, { by }); }
+      function release(why) {
+        const i = S.held; if (i < 0) return;
+        S.held = -1; ans[i].charge = 0;
+        if (S.heldBy === "walk" && ans[i].where === "world") { S.blocked.add(i); S.at = -1; }
+        log("release", i, { why });
+      }
+      function stepChoose(dt) {
+        const r = reach();
+        let near = -1, nd = Infinity;
+        for (let i = 0; i < N; i++) {
+          if (ans[i].where !== "world") continue;
+          const d = distTo(i);
+          if (S.blocked.has(i)) { if (d > r + LET_GO) S.blocked.delete(i); continue; }
+          if (d < nd) { nd = d; near = i; }
+        }
+        if (S.at >= 0) { if (ans[S.at].where !== "world" || S.blocked.has(S.at) || distTo(S.at) > r + LET_GO) setAt(-1); }
+        else if (near >= 0 && nd < r) setAt(near);
+        // a held answer at its object is taken back by a step away (or by walking to another)
+        if (S.held >= 0 && S.heldBy === "walk" && ans[S.held].where === "world") {
+          if (S.at !== S.held || Math.hypot(V.x - S.heldX, V.z - S.heldZ) > STEP_AWAY) release("step-away");
+        }
+        for (let i = 0; i < N; i++) {
+          const A = ans[i];
+          if (S.held === i || A.where !== "world") continue; // in the box a charge keeps its fill
+          if (i === S.at && !S.weak) {
+            S.arm += dt;
+            if (S.arm >= ARM) { A.charge = Math.min(1, A.charge + dt / T.dwell); if (A.charge >= 1) hold(i, "walk"); }
+          } else if (A.charge > 0) A.charge = Math.max(0, A.charge - (DRAIN * dt) / T.dwell);
+        }
+        if (S.held >= 0 && nowS() - S.heldAt >= T.grace) commit(S.held);
+      }
+      // the fallback: a weak position, or a visitor who has stood still for 20 s, brings the answers back to the box
+      function syncFallback(dt) {
+        const engaged = S.at >= 0 || S.held >= 0;
+        if (S.phase === "choose" && (!S.boxOpen || S.fallback) && !engaged && V.speed < STILL_SPEED) S.still += dt;
+        else if (V.speed > 0.6 || S.phase !== "choose") S.still = 0; // only moving ends a still spell; a tapped chip does not
+        const why = S.weak ? "weak" : S.still >= STILL_S ? "still" : "";
+        const fb = !!why;
+        if (S.phase !== "choose") { S.fallback = fb; return; }
+        if (fb !== S.fallback) {
+          S.fallback = fb; S.fallbackWhy = why || S.fallbackWhy;
+          log("fallback", -1, { on: fb, why });
+          if (fb) { S.offerTap = true; S.pendingOut = false; if (!S.boxOpen) openBox("fallback"); }
+          else { S.offerTap = false; S.pendingOut = true; }
+        } else if (fb) S.fallbackWhy = why;
+        if (S.pendingOut && S.held < 0) { S.pendingOut = false; if (S.boxOpen) closeBox("fallback-ends"); }
+      }
+      function commit(i) {
+        S.phase = "result"; S.chosen = i; S.right = i === CORRECT; S.held = -1; S.at = -1; S.offerTap = false;
+        ans[i].charge = 1;
+        log("commit", i, { right: S.right });
+        // the others fly back into the box; the chosen one stays open at its thing
+        S.boxOpen = true;
+        say(S.right ? QUIZ.says.right : QUIZ.says.wrong.replace("{answer}", OPTS[i].label.toLowerCase()), () => setTimeout(goesOn, 900));
+        renderBox();
+        bringIn(i);
+      }
+      function goesOn() {
+        if (S.phase !== "result") return;
+        S.phase = "story";
+        ans.forEach((A) => { if (A.where === "world") A.where = "gone"; });
+        renderBox();
+        say(GOES_ON, null);
+        log("goes-on");
+      }
+      function ask() {
+        S.phase = "ask"; S.boxOpen = true;
+        say(QUIZ.question, () => setTimeout(() => { if (S.phase === "ask") closeBox("question-read"); }, 1100));
+        renderBox();
+      }
+      function startLead() {
+        S.phase = "lead"; S.boxOpen = true;
+        say(LEAD, () => setTimeout(() => { if (S.phase === "lead") ask(); }, 500));
+        renderBox();
+      }
+
+      /* ---------- a tap on an answer object always does something visible ---------- */
+      const bubbles = $("bubbles"), live = [];
+      function bubble(i, text) {
+        for (const b of live.filter((x) => x.i === i)) { b.el.remove(); live.splice(live.indexOf(b), 1); }
+        const el = document.createElement("div"); el.className = "bubble"; el.textContent = text; bubbles.append(el);
+        live.push({ i, el, until: performance.now() + 1900 });
+        log("bubble", i, { text });
+      }
+      function tapAnswer(i) {
+        const A = ans[i];
+        if (S.phase !== "choose" || A.where !== "world") return;
+        const d = distTo(i);
+        if (S.held === i) { bubble(i, `Counts in ${Math.max(0, Math.ceil(T.grace - (nowS() - S.heldAt)))} s`); return; }
+        if (d < reach() && !S.weak) {
+          S.blocked.delete(i); setAt(i); S.arm = ARM;
+          if (A.charge < 0.04) A.charge = 0.04;
+          bubble(i, "Stay here");
+        } else if (S.weak) bubble(i, "Position unsure");
+        else bubble(i, `Walk closer - ${Math.max(1, Math.round(d - reach()))} m`);
+      }
+
+      /* ================= look, tap, jump ================= */
+      const ray = new THREE.Raycaster();
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      let drag = null;
+      canvas.addEventListener("pointerdown", (e) => { drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t: performance.now() }; canvas.setPointerCapture(e.pointerId); });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        V.yaw += (e.clientX - drag.x) * 0.0045; V.pitch = clamp(V.pitch + (e.clientY - drag.y) * 0.0035, -0.9, 0.7);
+        drag.x = e.clientX; drag.y = e.clientY;
+      });
+      canvas.addEventListener("pointerup", (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        const moved = Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0), quick = performance.now() - drag.t < 450;
+        drag = null;
+        if (moved >= 8 || !quick) return;
+        const r = canvas.getBoundingClientRect();
+        ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+        const hits = ray.intersectObjects(hitTargets.filter((h) => ans[h.userData.i].where === "world"), false);
+        if (hits.length) return tapAnswer(hits[0].object.userData.i);
+        const p = new THREE.Vector3();
+        if (ray.ray.intersectPlane(groundPlane, p)) jumpTo(p.x, p.z);
+      });
+      canvas.addEventListener("pointercancel", () => (drag = null));
+      // a jump near an answer lands just outside its reach, facing it, so the approach still plays
+      function jumpTo(x, z) {
+        let best = -1, bd = Infinity;
+        for (let i = 0; i < N; i++) { const a = anchor(i), d = Math.hypot(a.x - x, a.z - z); if (d < bd) { bd = d; best = i; } }
+        const edge = reach() + LET_GO + 0.6;
+        if (best >= 0 && bd < edge + 1.5 && ans[best].where !== "gone") {
+          const a = anchor(best);
+          let ux = x - a.x, uz = z - a.z, l = Math.hypot(ux, uz);
+          if (l < 0.2) { ux = V.x - a.x; uz = V.z - a.z; l = Math.hypot(ux, uz) || 1; }
+          setPose(a.x + (ux / l) * edge, a.z + (uz / l) * edge, best);
+        } else { V.x = clamp(x, -24, 24); V.z = clamp(z, -24, 24); V.path = null; }
+        V.speed = 2; // a jump counts as moving
+        log("jump", best, { x: V.x, z: V.z });
+      }
+      addEventListener("keydown", (e) => { if (e.target.closest?.("input,select")) return; V.keys.add(e.key.toLowerCase()); });
+      addEventListener("keyup", (e) => V.keys.delete(e.key.toLowerCase()));
+      addEventListener("blur", () => V.keys.clear());
+      document.querySelectorAll("[data-move]").forEach((b) => {
+        const on = (e) => { e.preventDefault(); V.hold = +b.dataset.move; b.classList.add("on"); b.setPointerCapture?.(e.pointerId); };
+        const off = () => { V.hold = 0; b.classList.remove("on"); };
+        b.addEventListener("pointerdown", on); b.addEventListener("pointerup", off); b.addEventListener("pointercancel", off); b.addEventListener("lostpointercapture", off);
+      });
+
+      /* ================= the world, every frame ================= */
+      const cue = $("cue");
+      let cueKey = "";
+      function updateWorld(t, dt) {
+        const k = 1 - Math.exp(-dt * 6);
+        const quiet = S.phase === "ask" || S.phase === "choose" || S.phase === "result";
+        other.update(dt, quiet);
+        const head = mara.userData.head;
+        mara.rotation.y = Math.atan2(V.x - mara.position.x, V.z - mara.position.z);
+        head.position.y = 1.52 + (NB.playing ? Math.abs(Math.sin(t * 7)) * 0.012 : 0);
+        const viewW = (d) => 2 * d * Math.tan(hfov / 2);
+        for (let i = 0; i < N; i++) {
+          const A = ans[i], w = worlds[i], a = anchor(i);
+          const inWorld = A.where === "world";
+          const chosenHere = S.phase === "result" && i === S.chosen && inWorld;
+          A.pillar += ((inWorld ? 1 : 0) - A.pillar) * (inWorld ? Math.min(1, dt * 7) : k);
+          const visible = A.pillar > 0.02;
+          w.root.visible = visible;
+          // the pulse on landing: a ring that spreads on the ground and a flare up the pillar
+          let flare = 0;
+          if (A.pulse >= 0) { A.pulse += dt / 1.1; if (A.pulse >= 1) A.pulse = -1; }
+          w.ring.visible = A.pulse >= 0;
+          if (A.pulse >= 0) { const p = A.pulse; w.ring.scale.setScalar(0.4 + 2.8 * p); w.ring.material.opacity = 1 - p; flare = 1 - p; }
+          w.pillar.scale.set(1 + 0.6 * flare, A.pillar, 1 + 0.6 * flare);
+          const pc = chosenHere ? (S.right ? 0x2dd4bf : 0xf87171) : null;
+          w.pillar.material.uniforms.color.value.set(pc ?? CHAR.color);
+          // close up, the pillar steps back so the charge at eye level is not seen through it
+          w.pillar.material.uniforms.op.value = (0.62 + 0.38 * flare) * Math.min(1, A.pillar * 1.5) * (1 - 0.85 * A.wake);
+          // the token: asleep at its thing, awake on approach, charging at eye level, open while held
+          const d = Math.hypot(a.x - V.x, a.z - V.z);
+          const held = S.held === i && inWorld;
+          const wakeT = inWorld && S.phase === "choose" && d < reach() + WAKE ? 1 : chosenHere ? 1 : 0;
+          A.wake += (wakeT - A.wake) * k;
+          A.open += ((held || chosenHere ? 1 : 0) - A.open) * k;
+          const c0 = inWorld ? A.charge : 0, c = c0 * c0 * (3 - 2 * c0);
+          const lift = held || chosenHere ? 1 : c;
+          const base = TOKEN_Y + A.wake * (0.15 + 0.05 * Math.sin(t * 1.5 + i * 1.7));
+          let gx = a.x, gz = a.z;
+          const reachOut = Math.max(lift, d < KEEP ? A.wake : 0);
+          if (reachOut > 0) {
+            const ux = d > 0.2 ? (a.x - V.x) / d : -Math.sin(V.yaw), uz = d > 0.2 ? (a.z - V.z) / d : -Math.cos(V.yaw);
+            const want = clamp(d - COME * lift, KEEP, Math.max(d, KEEP));
+            const at = d + (want - d) * reachOut;
+            gx = V.x + ux * at; gz = V.z + uz * at;
+          }
+          w.tok.visible = visible;
+          w.tok.position.set(gx, base + (Math.max(base, RISE_Y) - base) * lift, gz);
+          w.tok.rotation.y = Math.atan2(V.x - gx, V.z - gz);
+          w.tok.scale.setScalar((1 + 0.5 * A.wake) * Math.min(1, A.pillar * 1.4));
+          w.tok.rotation.z = held ? 0 : Math.sin(t * 41) * 0.05 * c;
+          w.hinge.rotation.x = -1.15 * A.open;
+          w.hinge.position.y = 0.04 * A.open;
+          const tint = chosenHere ? (S.right ? 0x2dd4bf : 0xf87171) : null;
+          w.mat.color.set(tint ?? CHAR.color).multiplyScalar(held || chosenHere ? 1 : 1 - 0.6 * c);
+          w.mat.emissive.set(tint ?? CHAR.color);
+          w.mat.emissiveIntensity = held ? 0.6 + 0.2 * Math.sin(t * 8) : 0.15 + 0.25 * A.wake + 0.4 * c;
+          w.shell.visible = c0 > 0.01 && A.open < 0.3;
+          w.fillMat.uniforms.level.value = c0; w.fillMat.uniforms.time.value = t;
+          w.graceRing.visible = held;
+          if (held) { const g = clamp((nowS() - S.heldAt) / T.grace, 0, 1); w.graceRing.scale.setScalar(0.55 + 0.75 * (1 - g)); }
+          // the question rides on the answer: a plate over the token once it is awake, never wider than about half the view
+          const plateT = visible && (A.wake > 0.3 || held) && (S.phase === "choose" || chosenHere) ? 1 : 0;
+          w.plateOp += (plateT - w.plateOp) * k;
+          w.plate.visible = w.plateOp > 0.02;
+          if (w.plate.visible) {
+            const dd = Math.max(0.6, Math.hypot(gx - V.x, gz - V.z));
+            const pw = viewW(dd) * (H > W ? 0.62 : 0.34);
+            w.plate.scale.set(pw, pw, 1);
+            w.plate.position.set(gx, w.tok.position.y + R_TOK * 1.6 + 0.1 + (pw * PLATE_RATIO) / 2, gz);
+            w.plate.quaternion.copy(camera.quaternion);
+            w.plate.material.opacity = w.plateOp;
+          }
+          // particles rising from the ground at a landed answer
+          for (let p = 0; p < PER; p++) {
+            const idx = (i * PER + p) * 3, [ang, rr, sd] = sparkSeed[i * PER + p];
+            if (!visible || A.wake > 0.5) { sparkPos[idx + 1] = -50; continue; }
+            const h = ((t * 0.45 + sd) % 1) * 3.2 * A.pillar;
+            sparkPos[idx] = a.x + Math.cos(ang + t * 0.3) * rr; sparkPos[idx + 1] = h; sparkPos[idx + 2] = a.z + Math.sin(ang + t * 0.3) * rr;
+          }
+        }
+        sparks.geometry.attributes.position.needsUpdate = true;
+        updateCue();
+      }
+      // one edge cue at a time: the nearest landed answer out of view, in the character's colour
+      function updateCue() {
+        let best = null;
+        if (!S.boxOpen && S.phase === "choose") {
+          for (let i = 0; i < N; i++) {
+            if (ans[i].where !== "world") continue;
+            const p = anchor(i), s = project(p.x, TOKEN_Y, p.z);
+            if (!s.off) continue;
+            const d = distTo(i);
+            if (!best || d < best.d - 0.01) best = { i, d, s };
+          }
+        }
+        if (!best) { if (!cue.hidden) { cue.hidden = true; cueKey = ""; } return; }
+        const side = best.s.side < 0 ? "left" : "right";
+        const key = `${best.i}|${side}|${Math.round(best.d)}`;
+        if (key !== cueKey) {
+          cueKey = key;
+          cue.className = `cue ${side}`;
+          cue.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${side === "left" ? "M15 4l-8 8 8 8" : "M9 4l8 8-8 8"}"/></svg><span>${esc(OPTS[best.i].short)}</span><span>${Math.round(best.d)} m</span>`;
+          cue.hidden = false;
+        }
+        const nb = nbox.getBoundingClientRect(), r0 = devRect();
+        cue.style.top = `${clamp(best.s.y, 140, nb.top - r0.top - 70).toFixed(0)}px`;
+      }
+      function updateBubbles(now) {
+        for (const b of [...live]) {
+          if (now > b.until) { b.el.remove(); live.splice(live.indexOf(b), 1); continue; }
+          const p = worlds[b.i].tok.position, s = project(p.x, p.y + 0.35, p.z);
+          b.el.style.left = `${clamp(s.x, 70, W - 70).toFixed(0)}px`; b.el.style.top = `${clamp(s.y, 120, H - 160).toFixed(0)}px`;
+        }
+      }
+
+      /* ================= the demo: beats, reset, weak position ================= */
+      const BEATS = {
+        "lead-in": "The narration leads to the question. Nothing to press: it arrives by itself.",
+        ask: "The question arrives in the box, Mara's name inline in her colour; the three answers wait under it.",
+        "fly-out": "The box folds to Mara's name; she throws the answers from her name, one after another, each with a trail in her colour. The fountain lands in view with a pulse.",
+        "off-screen": "Two answers landed out of view. One edge cue at a time, for the nearest: turn towards it.",
+        toggle: "Open the box with the handle: the answers fly back in. Fold it: they fly out again. Every time.",
+        approach: "Walk towards the fountain: its answer notices you, grows and floats, and the question rides on it.",
+        charge: "Standing within reach, the answer comes up to eye level and fills from below. The folded box mirrors the fill.",
+        undo: "Held in its grace, then a step away: it is taken back. Leaving during the charge drains it.",
+        grace: "Full: it opens, and a ring closes during the grace. Stay, and it counts.",
+        "result-right": "Chosen: the others fly back into the box, and Mara says the result there.",
+        "result-wrong": "A wrong answer: no retry. Mara names the right one and the story goes on.",
+        "goes-on": "The story continues in the same box; the answers are gone, the station's other items wake again.",
+        tap: "After 20 s of standing still the answers come back into the box, and only now can they be tapped: same grace, same take back.",
+        weak: "The position turns weak: the answers fly back into the box, a charge stops, and the tap choice is offered. Switch it off and they fly out again.",
+        still: "A visitor who stands still: in 4 s the 20 s are up, and the answers come back into the box.",
+        "open-during-charge": "Opening the box during a charge: the answer flies in keeping its fill; the chip shows it. Folding sends it out again, still filled.",
+      };
+      const beatSel = $("beat");
+      Object.keys(BEATS).forEach((b, k) => beatSel.add(new Option(`${k + 1}. ${b}`, b)));
+      let beatTok = 0;
+      function later(s, fn) { const tk = beatTok; setTimeout(() => { if (tk === beatTok) fn(); }, s * 1000); }
+      function reset() {
+        beatTok++;
+        for (const f of [...flights]) { f.el.remove(); }
+        flights.length = 0; ghosts.length = 0;
+        for (const b of live) b.el.remove();
+        live.length = 0;
+        freshState();
+        placeAnswers();
+        setPose(0, 0, 1); V.pitch = -0.06;
+        NB.words = []; col.innerHTML = "";
+        renderBox();
+      }
+      function snapOut() {
+        S.phase = "choose"; S.boxOpen = false;
+        say(QUIZ.question, null); skipWords();
+        ans.forEach((A) => { A.where = "world"; A.pillar = 1; });
+        renderBox();
+      }
+      const near = (i, f) => { const a = anchor(i), d = Math.hypot(a.x, a.z); return [a.x - (a.x / d) * f, a.z - (a.z / d) * f]; };
+      function setWeak(on) { S.weak = on; $("weak").setAttribute("aria-pressed", String(on)); log("weak", -1, { on }); }
+      function setBeat(name) {
+        if (!BEATS[name]) name = "lead-in";
+        const wasWeak = S.weak;
+        reset();
+        if (wasWeak) setWeak(false);
+        beatSel.value = name; $("cap").textContent = BEATS[name];
+        const r = reach();
+        const B = {
+          "lead-in": () => startLead(),
+          ask: () => ask(),
+          "fly-out": () => { ask(); skipWords(); closeBox("beat"); },
+          "off-screen": () => snapOut(),
+          toggle: () => { snapOut(); later(0.8, () => openBox("user")); later(0.8 + T.flight * T.back + 2 * T.stagger * T.back + 1.3, () => closeBox("user")); },
+          approach: () => { snapOut(); setPose(...near(1, r + WAKE + 1.5), 1); walkTo(...near(1, r + 0.4), 1.2); },
+          charge: () => { snapOut(); setPose(...near(1, r * 0.6), 1); setAt(1); S.arm = ARM; ans[1].charge = 0.35; },
+          undo: () => { snapOut(); setPose(...near(1, r * 0.6), 1); setAt(1); hold(1, "walk"); S.heldAt -= 0.4; later(0.9, () => walkTo(...near(1, r + LET_GO + 1.4), 1.6)); },
+          grace: () => { snapOut(); setPose(...near(1, r * 0.6), 1); setAt(1); hold(1, "walk"); S.heldAt -= 0.3; },
+          "result-right": () => { snapOut(); setPose(...near(1, r * 0.6), 1); commit(1); },
+          "result-wrong": () => { snapOut(); setPose(...near(2, r * 0.6), 2); commit(2); },
+          "goes-on": () => { snapOut(); setPose(...near(1, r * 0.6), 1); commit(1); skipWords(); },
+          tap: () => { snapOut(); S.still = STILL_S; },
+          weak: () => { snapOut(); later(0.6, () => setWeak(true)); },
+          still: () => { snapOut(); S.still = STILL_S - 4; },
+          "open-during-charge": () => { snapOut(); setPose(...near(1, r * 0.6), 1); setAt(1); S.arm = ARM; ans[1].charge = 0.4; later(1.0, () => openBox("user")); },
+        };
+        B[name]();
+        log("beat", -1, { name });
+        try { const u = new URL(location.href); u.searchParams.set("beat", name); history.replaceState(null, "", u); } catch { /* a sandboxed frame */ }
+      }
+      beatSel.addEventListener("change", () => setBeat(beatSel.value));
+      $("reset").addEventListener("click", () => setBeat("lead-in"));
+      $("weak").addEventListener("click", () => setWeak(!S.weak));
+      $("exit").addEventListener("click", () => { $("cap").textContent = "Exit would leave AR; it is not part of this prototype."; });
+      const tools = $("tools");
+      $("toolsBtn").addEventListener("click", () => (tools.hidden = !tools.hidden));
+      $("toolsClose").addEventListener("click", () => (tools.hidden = true));
+      for (const [key, label, lo, hi, step, unit] of SLIDERS) {
+        const l = document.createElement("label");
+        l.innerHTML = `<span>${label}</span><output>${T[key]} ${unit}</output><input type="range" min="${lo}" max="${hi}" step="${step}" value="${T[key]}" data-k="${key}">`;
+        l.querySelector("input").addEventListener("input", (e) => {
+          T[key] = +e.target.value; l.querySelector("output").textContent = `${T[key]} ${unit}`;
+          if (key === "spacing") placeAnswers();
+        });
+        $("sliders").append(l);
+      }
+
+      /* ================= frame loop ================= */
+      let hfov = 1;
+      function resize() {
+        W = device.clientWidth; H = device.clientHeight;
+        renderer.setSize(W, H, false);
+        const dpr = Math.min(devicePixelRatio || 1, 2);
+        fx.width = Math.round(W * dpr); fx.height = Math.round(H * dpr);
+        hfov = THREE.MathUtils.degToRad(W > H ? 62 : 40); // a phone camera: about 40 degrees across in portrait
+        camera.aspect = W / H; camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hfov / 2) / camera.aspect)); camera.updateProjectionMatrix();
+        if (NB.words.length) layoutWords();
+      }
+      new ResizeObserver(resize).observe(device);
+      resize();
+      let last = performance.now(), frameMs = 0, meterT = 0;
+      const meter = $("meter");
+      function frame(now) {
+        const dt = Math.min(0.1, (now - last) / 1000); last = now; simT += dt;
+        const t0 = performance.now(), t = now / 1000;
+        updateVisitor(dt);
+        camera.updateMatrixWorld();
+        if (S.phase === "choose") { syncFallback(dt); stepChoose(dt); } else syncFallback(dt);
+        advanceWords(dt);
+        updateWords(dt);
+        updateFlights(now);
+        updateWorld(t, dt);
+        updateBubbles(now);
+        liveQuiz();
+        livePill();
+        renderer.render(scene, camera);
+        drawTrails(now);
+        frameMs += (performance.now() - t0 - frameMs) * 0.1;
+        if ((meterT -= dt) <= 0) {
+          meterT = 0.4;
+          const inf = renderer.info.render;
+          meter.innerHTML = `${inf.calls} draws &middot; ${(inf.triangles / 1000).toFixed(1)}k tris<br>${frameMs.toFixed(1)} ms frame`;
+        }
+        requestAnimationFrame(frame);
+      }
+      freshState();
+      // compile every material once up front, so the first landing does not stall on a shader compile
+      worlds.forEach((w) => { w.root.visible = w.tok.visible = w.plate.visible = w.shell.visible = w.graceRing.visible = w.ring.visible = true; });
+      placeAnswers(); camera.updateMatrixWorld(); renderer.compile(scene, camera);
+      setBeat(params.get("beat") || "lead-in");
+      requestAnimationFrame(frame);
+
+      // for scripted checks: read the state, drive the page
+      window.__q = {
+        T, S, V, ans, NB, simT: () => simT, setBeat, setWeak, openBox, closeBox, tapAnswer, jumpTo, reach,
+        anchor, project: (i) => { const p = anchor(i); return project(p.x, TOKEN_Y, p.z); },
+        flights: () => flights.map((f) => ({ i: f.i, dir: f.dir, started: f.started })),
+        state: () => ({ phase: S.phase, boxOpen: S.boxOpen, where: ans.map((A) => A.where), charge: ans.map((A) => +A.charge.toFixed(2)), held: S.held, at: S.at, chosen: S.chosen, offerTap: S.offerTap, weak: S.weak, still: +S.still.toFixed(1), playing: NB.playing, frameMs: +frameMs.toFixed(2) }),
+      };
+    </script>
+  </body>
+</html>

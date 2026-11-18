@@ -1,0 +1,2141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Quiz round 4 - Tethered</title>
+    <style>
+      :root {
+        --font-ui: Corbel, "Noto Sans", "Segoe UI", system-ui, sans-serif;
+        --accent: #f2971f;
+        --fs: 16px;
+        --lh: 22px;
+        --rows: 3;
+        --tint: 0.72;
+        --grey: 0.55;
+        --box-radius: 12px;
+        --edge-gradient: linear-gradient(
+          160deg,
+          rgb(255 255 255 / 0.4),
+          rgb(255 255 255 / 0.06) 45%,
+          rgb(255 255 255 / 0.18)
+        );
+        --raise: inset 0 1px 0 rgb(255 255 255 / 0.18);
+        --spk: #ff9ec7;
+      }
+      @media (max-height: 500px) {
+        :root {
+          --rows: 2;
+        }
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #0b0f18;
+        color: #fff;
+        font-family: var(--font-ui);
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #gl {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+        touch-action: none;
+      }
+      #threads {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 3;
+      }
+
+      /* ---- demo strip (prototype controls, not part of the design) ---- */
+      .strip {
+        position: fixed;
+        top: calc(6px + env(safe-area-inset-top));
+        left: 8px;
+        right: 8px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        z-index: 6;
+        font-size: 13px;
+      }
+      .strip button,
+      .strip select,
+      #tools select {
+        font: inherit;
+        color: #fff;
+        background: rgb(20 24 36 / 0.84);
+        border: 1px solid rgb(255 255 255 / 0.28);
+        border-radius: 8px;
+        padding: 6px 9px;
+        min-height: 36px;
+      }
+      .strip button[aria-pressed="true"] {
+        background: #2c5c8c;
+        border-color: #a8d4ff;
+      }
+      #meter {
+        position: fixed;
+        right: 8px;
+        top: calc(50px + env(safe-area-inset-top));
+        z-index: 6;
+        pointer-events: none;
+        font: 11px/1.35 ui-monospace, Consolas, monospace;
+        background: rgb(0 0 0 / 0.55);
+        padding: 3px 6px;
+        border-radius: 6px;
+        text-align: right;
+      }
+      #tools {
+        position: fixed;
+        top: calc(50px + env(safe-area-inset-top));
+        left: 8px;
+        width: min(340px, calc(100vw - 16px));
+        max-height: 58vh;
+        overflow: auto;
+        overscroll-behavior: contain;
+        background: rgb(14 18 28 / 0.95);
+        border: 1px solid rgb(255 255 255 / 0.22);
+        border-radius: 10px;
+        padding: 10px 12px;
+        z-index: 7;
+        font-size: 13px;
+        display: none;
+      }
+      #tools.on {
+        display: block;
+      }
+      #tools .slider {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 4px 8px;
+        margin: 0 0 14px;
+      }
+      #tools .slider input {
+        grid-column: 1 / -1;
+        width: 100%;
+        height: 30px;
+      }
+      #tools p {
+        margin: 6px 0 10px;
+        color: #c8d0de;
+        line-height: 1.35;
+      }
+
+      /* ---- the narration box (round 5 scroll-box look) ---- */
+      .nbox {
+        position: fixed;
+        left: 50%;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        width: min(calc(100vw - 24px), 560px);
+        box-sizing: border-box;
+        display: grid;
+        grid-template-columns: 58px minmax(0, 1fr);
+        gap: 0 10px;
+        padding: 12px 10px 10px 10px;
+        border: 1.5px solid transparent;
+        border-radius: var(--box-radius);
+        background:
+          linear-gradient(
+              160deg,
+              rgb(52 58 80 / var(--tint)),
+              rgb(20 24 36 / var(--tint))
+            )
+            padding-box,
+          var(--edge-gradient) border-box;
+        box-shadow:
+          var(--raise),
+          0 8px 22px rgb(0 0 0 / 0.22);
+        z-index: 4;
+        touch-action: none;
+      }
+      .grab {
+        position: absolute;
+        left: 50%;
+        top: -22px;
+        transform: translateX(-50%);
+        width: 96px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        cursor: grab;
+        touch-action: none;
+      }
+      .grab i {
+        display: block;
+        width: 46px;
+        height: 7px;
+        border-radius: 4px;
+        background: #fff;
+        box-shadow: 0 0 0 2px rgb(0 0 0 / 0.7);
+      }
+      .slot-l {
+        display: flex;
+        align-items: flex-end;
+      }
+      .fold {
+        width: 58px;
+        min-height: 58px;
+        border-radius: 12px;
+        border: 3px solid rgb(255 255 255 / 0.85);
+        box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.6);
+        background: rgb(255 255 255 / 0.1);
+        color: #fff;
+        font: 600 11px/12px var(--font-ui);
+        padding: 4px 2px;
+        display: grid;
+        place-items: center;
+        gap: 2px;
+      }
+      .fold svg {
+        width: 30px;
+        height: 22px;
+      }
+      .fold:disabled {
+        opacity: 0.35;
+      }
+      .mid {
+        min-width: 0;
+      }
+      .who {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 15px;
+        line-height: 20px;
+        margin-bottom: 4px;
+      }
+      .who-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 2px solid #fff;
+        background: var(--spk);
+      }
+      .who b {
+        color: var(--spk);
+      }
+      .who .pts {
+        margin-left: auto;
+        font-weight: 700;
+        color: #fff;
+        background: rgb(255 255 255 / 0.14);
+        border-radius: 8px;
+        padding: 0 7px;
+      }
+      .win {
+        position: relative;
+        height: calc(var(--rows) * var(--lh));
+        overflow: hidden;
+        font-size: var(--fs);
+        line-height: var(--lh);
+      }
+      .col {
+        position: relative;
+        transition: transform 0.25s ease;
+      }
+      .w {
+        color: rgb(255 255 255 / var(--grey));
+      }
+      .w.on {
+        color: #fff;
+      }
+      .status {
+        font: 600 13px/18px var(--font-ui);
+        color: #eef2fa;
+        min-height: 18px;
+        margin: 4px 0 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .answers {
+        display: flex;
+        gap: 7px;
+        margin-top: 6px;
+      }
+      .answers[hidden] {
+        display: none;
+      }
+      .ans {
+        flex: 1 1 0;
+        min-width: 0;
+        position: relative;
+        overflow: hidden;
+        min-height: 50px;
+        padding: 5px 8px 9px;
+        border-radius: 10px;
+        border: 3px solid var(--hue);
+        box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.65);
+        background: rgb(16 20 30 / 0.8);
+        color: #fff;
+        font: 700 14px/17px var(--font-ui);
+        text-align: left;
+        transition: transform 0.25s ease;
+      }
+      .ans .fill {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: calc(var(--fill, 0) * 100%);
+        background: color-mix(in srgb, var(--hue) 55%, transparent);
+        pointer-events: none;
+      }
+      .ans .lbl,
+      .ans .sub {
+        position: relative;
+        display: block;
+      }
+      .ans .sub {
+        font: 600 12px/15px var(--font-ui);
+        color: #eef2fa;
+        min-height: 15px;
+      }
+      .ans .gbar {
+        position: absolute;
+        left: 6px;
+        right: 6px;
+        bottom: 3px;
+        height: 5px;
+        border-radius: 3px;
+        background: #fff;
+        box-shadow: 0 0 0 1.5px rgb(0 0 0 / 0.8);
+        transform-origin: left;
+        transform: scaleX(var(--grace, 0));
+        opacity: 0;
+      }
+      .ans[data-state="chosen"] .gbar {
+        opacity: 1;
+      }
+      .ans[data-state="chosen"] {
+        background: color-mix(in srgb, var(--hue) 60%, #000);
+      }
+      .ans[data-state="charging"] {
+        box-shadow:
+          0 0 0 1.5px rgb(0 0 0 / 0.65),
+          0 0 16px var(--hue);
+      }
+      .ans[data-state="wrong"] {
+        border-color: #80858f;
+        background: rgb(40 42 50 / 0.88);
+        color: #c9ccd3;
+      }
+      .ans[data-state="wrong"] .lbl {
+        text-decoration: line-through 3px;
+      }
+      .ans[data-state="right"] {
+        border-color: #fff;
+        background: color-mix(in srgb, var(--hue) 75%, #000);
+      }
+      .nbox.collapsed {
+        padding-top: 10px;
+      }
+      .nbox.collapsed .who,
+      .nbox.collapsed .win {
+        display: none;
+      }
+      .nbox.collapsed .status {
+        margin-top: 0;
+      }
+      .tapfx {
+        position: fixed;
+        width: 54px;
+        height: 54px;
+        margin: -27px 0 0 -27px;
+        border-radius: 50%;
+        background: rgb(0 0 0 / 0.55);
+        border: 3px solid #fff;
+        display: grid;
+        place-items: center;
+        font: 700 18px/1 var(--font-ui);
+        pointer-events: none;
+        z-index: 8;
+        animation: tapfx 0.7s ease-out forwards;
+      }
+      @keyframes tapfx {
+        from {
+          opacity: 1;
+          transform: scale(0.8);
+        }
+        to {
+          opacity: 0;
+          transform: scale(1.25);
+        }
+      }
+      .wlabel {
+        position: fixed;
+        z-index: 5;
+        transform: translate(-50%, -100%);
+        pointer-events: none;
+        font: 700 17px/1.2 var(--font-ui);
+        color: #fff;
+        background: rgb(12 14 22 / 0.9);
+        border: 3px solid var(--hue, #fff);
+        border-radius: 10px;
+        padding: 6px 11px;
+        white-space: nowrap;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="gl"></canvas>
+    <canvas id="threads"></canvas>
+
+    <div class="strip" id="strip">
+      <select id="beat" aria-label="Beat"></select>
+      <button id="btnReset" type="button">Reset</button>
+      <button id="btnGo" type="button" aria-pressed="false">Go fast</button>
+      <button id="btnWeak" type="button" aria-pressed="false">
+        Weak position
+      </button>
+      <button id="btnTools" type="button" aria-pressed="false">Values</button>
+    </div>
+    <div id="meter">-</div>
+    <aside id="tools" aria-label="Values to judge"></aside>
+
+    <section class="nbox" id="nbox" aria-label="Narration">
+      <div class="grab" id="grab" role="button" aria-label="Hide or show the box">
+        <i></i>
+      </div>
+      <div class="slot-l">
+        <button class="fold" id="fold" type="button" disabled>
+          <svg viewBox="0 0 30 22" aria-hidden="true">
+            <circle cx="5" cy="17" r="3.6" fill="#b48cff" stroke="#000" stroke-width="1.5" />
+            <circle cx="15" cy="6" r="3.6" fill="#5fd4e8" stroke="#000" stroke-width="1.5" />
+            <circle cx="25" cy="17" r="3.6" fill="#a6e05a" stroke="#000" stroke-width="1.5" />
+          </svg>
+          <span id="foldLabel">Send out</span>
+        </button>
+      </div>
+      <div class="mid">
+        <div class="who">
+          <span class="who-dot"></span><b id="whoName">Greta</b>
+          <span class="pts" id="pts" hidden></span>
+        </div>
+        <div class="win" id="win"><div class="col" id="col"></div></div>
+        <div class="status" id="status"></div>
+        <div class="answers" id="answers" hidden></div>
+      </div>
+    </section>
+
+    <script type="module">
+      import * as THREE from "three";
+
+      const $ = (s) => document.querySelector(s);
+      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+      const smooth = (x) => {
+        const t = clamp(x, 0, 1);
+        return t * t * (3 - 2 * t);
+      };
+      const ease = (x) => {
+        const t = clamp(x, 0, 1);
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      };
+      const approach = (v, target, step) =>
+        v < target ? Math.min(target, v + step) : Math.max(target, v - step);
+
+      // ---------- values to judge (each has a slider) ----------
+      const P = {
+        flight: 2,
+        stagger: 0.6,
+        ret: 1,
+        dwell: 4,
+        grace: 3,
+        spacing: 10,
+        reach: 3,
+        letgo: 1,
+        still: 20,
+        cue: "one",
+      };
+      const qs = new URLSearchParams(location.search);
+      for (const k of Object.keys(P)) {
+        if (qs.has(k)) {
+          P[k] = typeof P[k] === "number" ? Number(qs.get(k)) : qs.get(k);
+        }
+      }
+      // Reach plus let-go never exceeds half the spacing, so two answers can never both be in reach.
+      const reachEff = () => Math.max(0.5, Math.min(P.reach, P.spacing / 2 - P.letgo));
+
+      const ARM = 0.6; // s in reach before the fill starts (a tap in reach skips it)
+      const DRAIN = 2; // s for a full charge to drain after stepping away
+      const EYE = 1.6;
+      const WALK = 1.4;
+      const FAST = 3.5;
+      const HOVER = 1.2; // landed answer height
+      const RISE = 1.5; // eye-level height of a woken answer
+      const KEEP = 2.2; // a woken answer stops this far from the visitor
+      const BASE = 1.4; // landed size, so an answer 10 m away still reads
+      const WAKE_SCALE = 0.25;
+
+      const GRETA = { name: "Greta", color: "#ff9ec7" };
+      const TEXT = {
+        lead: "Here on the old market square, three things have watched the town grow for a long time. Look around you.",
+        question:
+          "Which of these stood on this square first? Walk to it and stay close until it opens, or tap your answer below.",
+        right:
+          "The fountain. Its water ran here more than two hundred years before the tree was planted.",
+        retry: "Not that one. Think of what you have heard, and go and stand by another.",
+        weak: "Your position is unsure here, so the answers wait in the box. Tap your answer.",
+        still: "Not walking just now? Tap your answer here, or walk on and they fly out again.",
+        next: "Next we go to the old well behind the church. Follow the light.",
+      };
+      const ANSWERS = [
+        { id: "bench", label: "The bench", hue: "#b48cff", ang: -60, kind: "bench" },
+        { id: "tree", label: "The plane tree", hue: "#5fd4e8", ang: 0, kind: "tree" },
+        { id: "fountain", label: "The fountain", hue: "#a6e05a", ang: 60, kind: "fountain" },
+      ];
+      const CORRECT = "fountain";
+      const IDX = { bench: 0, tree: 1, fountain: 2 };
+
+      // ---------- renderer and scene ----------
+      const canvas = $("#gl");
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color("#a9c8e4");
+      scene.fog = new THREE.Fog("#bcd4e8", 30, 100);
+      const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 500);
+      camera.rotation.order = "YXZ";
+      scene.add(new THREE.HemisphereLight("#e6f2ff", "#6b5f4c", 1.7));
+      const sun = new THREE.DirectionalLight("#fff1d6", 1.5);
+      sun.position.set(18, 30, 8);
+      scene.add(sun);
+
+      function pavingTexture() {
+        const c = document.createElement("canvas");
+        c.width = c.height = 256;
+        const g = c.getContext("2d");
+        g.fillStyle = "#857f75";
+        g.fillRect(0, 0, 256, 256);
+        for (let y = 0; y < 8; y++) {
+          for (let x = 0; x < 8; x++) {
+            const v = 150 + ((x * 7 + y * 13) % 5) * 7;
+            g.fillStyle = `rgb(${v},${v - 6},${v - 15})`;
+            g.fillRect(x * 32 + 1, y * 32 + 1, 30, 30);
+          }
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(60, 60);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 4;
+        return t;
+      }
+      const ground = new THREE.Mesh(
+        new THREE.PlaneGeometry(240, 240),
+        new THREE.MeshLambertMaterial({ map: pavingTexture() }),
+      );
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+
+      {
+        const geo = new THREE.BoxGeometry(1, 1, 1);
+        geo.translate(0, 0.5, 0);
+        const houses = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial(), 18);
+        const m = new THREE.Matrix4();
+        const q = new THREE.Quaternion();
+        const up = new THREE.Vector3(0, 1, 0);
+        const c = new THREE.Color();
+        for (let i = 0; i < 18; i++) {
+          const a = (i / 18) * Math.PI * 2 + 0.1;
+          const r = 30 + (i % 3) * 3;
+          m.compose(
+            new THREE.Vector3(Math.sin(a) * r, 0, -Math.cos(a) * r - 4),
+            q.setFromAxisAngle(up, -a),
+            new THREE.Vector3(7 + (i % 4), 6 + ((i * 5) % 7), 6),
+          );
+          houses.setMatrixAt(i, m);
+          houses.setColorAt(i, c.setHSL(0.07 + (i % 5) * 0.02, 0.25, 0.62 + (i % 3) * 0.06));
+        }
+        scene.add(houses);
+      }
+
+      // The station pin with its sky beam (station colour, tall), and the station's other items, dimmed during the question.
+      const STATION = new THREE.Vector3(1.3, 0, -5.2);
+      {
+        const amber = new THREE.MeshLambertMaterial({ color: "#f2971f", emissive: "#5a3000" });
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.3, 10), amber);
+        pole.position.set(STATION.x, 1.15, STATION.z);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), amber);
+        head.position.set(STATION.x, 2.4, STATION.z);
+        const beam = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.11, 0.11, 160, 10, 1, true),
+          new THREE.MeshBasicMaterial({
+            color: "#f2971f",
+            transparent: true,
+            opacity: 0.35,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+            fog: false,
+          }),
+        );
+        beam.position.set(STATION.x, 82, STATION.z);
+        scene.add(pole, head, beam);
+      }
+      const otherItems = [];
+      for (const [x, z] of [
+        [-1.7, -6.4],
+        [3.6, -3.4],
+      ]) {
+        const mat = new THREE.MeshLambertMaterial({ color: "#d9cdb8", transparent: true });
+        const icon = new THREE.MeshLambertMaterial({ color: "#f2971f", transparent: true });
+        const g = new THREE.Group();
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.1, 0.5), mat);
+        post.position.y = 0.55;
+        const ball = new THREE.Mesh(new THREE.SphereGeometry(0.22, 14, 10), icon);
+        ball.position.y = 1.35;
+        g.add(post, ball);
+        g.position.set(x, 0, z);
+        scene.add(g);
+        otherItems.push(mat, icon);
+      }
+      function setOthersDim(on) {
+        for (const m of otherItems) {
+          m.opacity = on ? 0.25 : 1;
+          m.depthWrite = !on;
+        }
+      }
+
+      // ---------- the answers' things (neutral shapes) ----------
+      const stone = new THREE.MeshLambertMaterial({ color: "#b8b2a6" });
+      const wood = new THREE.MeshLambertMaterial({ color: "#a29684" });
+      function mesh(geo, mat, x, y, z) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, y, z);
+        return m;
+      }
+      function buildThing(kind) {
+        const g = new THREE.Group();
+        if (kind === "fountain") {
+          g.add(
+            mesh(new THREE.CylinderGeometry(1.3, 1.4, 0.5, 28), stone, 0, 0.25, 0),
+            mesh(
+              new THREE.CylinderGeometry(1.15, 1.15, 0.04, 28),
+              new THREE.MeshLambertMaterial({ color: "#8ea3ad" }),
+              0,
+              0.48,
+              0,
+            ),
+            mesh(new THREE.CylinderGeometry(0.16, 0.22, 1.3, 12), stone, 0, 1.05, 0),
+            mesh(new THREE.CylinderGeometry(0.5, 0.25, 0.18, 18), stone, 0, 1.75, 0),
+          );
+          return { g, front: 1.7 };
+        }
+        if (kind === "tree") {
+          g.add(
+            mesh(
+              new THREE.CylinderGeometry(0.14, 0.22, 2.6, 10),
+              new THREE.MeshLambertMaterial({ color: "#857a6c" }),
+              0,
+              1.3,
+              0,
+            ),
+            mesh(
+              new THREE.IcosahedronGeometry(1.6, 1),
+              new THREE.MeshLambertMaterial({ color: "#8d9886", flatShading: true }),
+              0,
+              3.4,
+              0,
+            ),
+          );
+          return { g, front: 0.7 };
+        }
+        g.add(
+          mesh(new THREE.BoxGeometry(1.8, 0.1, 0.5), wood, 0, 0.45, 0),
+          mesh(new THREE.BoxGeometry(1.8, 0.45, 0.07), wood, 0, 0.75, -0.22),
+          mesh(new THREE.BoxGeometry(0.08, 0.45, 0.45), wood, -0.8, 0.22, 0),
+          mesh(new THREE.BoxGeometry(0.08, 0.45, 0.45), wood, 0.8, 0.22, 0),
+        );
+        return { g, front: 0.6 };
+      }
+
+      // ---------- the answer token: an egg that fills from below (page 10's charge) ----------
+      const egg = (t) => 0.2 * Math.pow(Math.sin(Math.PI * t), 0.75) * (1 - 0.15 * t);
+      function lathe(t0, t1, n) {
+        const pts = [];
+        for (let i = 0; i <= n; i++) {
+          const t = t0 + ((t1 - t0) * i) / n;
+          pts.push(new THREE.Vector2(Math.max(egg(t), 0.0005), t * 0.5));
+        }
+        return new THREE.LatheGeometry(pts, 24);
+      }
+      const BODY_GEO = lathe(0, 0.72, 14);
+      const LID_GEO = lathe(0.72, 1, 6);
+      const BODY_TOP = 0.36;
+      const RIM = egg(0.72);
+      function fillMaterial(hue) {
+        return new THREE.ShaderMaterial({
+          uniforms: {
+            level: { value: 0 },
+            col: { value: new THREE.Color(hue) },
+            glow: { value: 0 },
+            time: { value: 0 },
+            dim: { value: 0 },
+          },
+          vertexShader: `
+            varying float vY; varying vec3 vN; varying vec3 vV;
+            void main() {
+              vY = position.y / ${BODY_TOP.toFixed(3)};
+              vN = normalize(normalMatrix * normal);
+              vec4 mv = modelViewMatrix * vec4(position, 1.0);
+              vV = normalize(-mv.xyz);
+              gl_Position = projectionMatrix * mv;
+            }`,
+          fragmentShader: `
+            uniform float level; uniform vec3 col; uniform float glow; uniform float time; uniform float dim;
+            varying float vY; varying vec3 vN; varying vec3 vV;
+            void main() {
+              float fres = pow(1.0 - abs(dot(vN, vV)), 2.0);
+              vec3 glass = mix(vec3(0.07, 0.08, 0.12), col * 0.35, 0.4) + fres * col * 0.9;
+              float on = step(0.001, level);
+              float surf = level + 0.025 * sin(time * 6.0 + vN.x * 8.0);
+              float filled = step(vY, surf) * on;
+              float edge = smoothstep(0.05, 0.0, abs(surf - vY)) * on * step(level, 0.999);
+              vec3 c = mix(glass, col * (1.15 + 0.4 * glow), filled) + edge * vec3(1.0);
+              c += glow * 0.22 * col;
+              float g = dot(c, vec3(0.33));
+              c = mix(c, vec3(g), dim * 0.75) * (1.0 - dim * 0.35);
+              gl_FragColor = vec4(c, 1.0);
+              #include <colorspace_fragment>
+            }`,
+        });
+      }
+
+      const things = new THREE.Group();
+      scene.add(things);
+      const hitMeshes = [];
+      const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+      const tokens = ANSWERS.map((def, i) => {
+        const thing = buildThing(def.kind);
+        things.add(thing.g);
+        const root = new THREE.Group();
+        const spin = new THREE.Group();
+        const scaleG = new THREE.Group();
+        const bodyMat = fillMaterial(def.hue);
+        const body = new THREE.Mesh(BODY_GEO, bodyMat);
+        const lidMat = new THREE.MeshLambertMaterial({ color: def.hue, emissive: "#000" });
+        const pivot = new THREE.Group();
+        pivot.position.set(-RIM, BODY_TOP, 0);
+        const lid = new THREE.Mesh(LID_GEO, lidMat);
+        lid.position.set(RIM, -BODY_TOP, 0);
+        pivot.add(lid);
+        scaleG.add(body, pivot);
+        spin.add(scaleG);
+        root.add(spin);
+        root.visible = false;
+        scene.add(root);
+        const pool = new THREE.Mesh(
+          new THREE.CircleGeometry(0.8, 28),
+          new THREE.MeshBasicMaterial({
+            color: def.hue,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          }),
+        );
+        pool.rotation.x = -Math.PI / 2;
+        scene.add(pool);
+        const bandMat = new THREE.MeshBasicMaterial({ color: def.hue, transparent: true, opacity: 0, depthWrite: false });
+        const bandDark = new THREE.MeshBasicMaterial({ color: "#000", transparent: true, opacity: 0, depthWrite: false });
+        const band = new THREE.Mesh(new THREE.BufferGeometry(), bandMat);
+        const bandUnder = new THREE.Mesh(new THREE.BufferGeometry(), bandDark);
+        band.rotation.x = bandUnder.rotation.x = -Math.PI / 2;
+        scene.add(bandUnder, band);
+        const hit = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 4, 10), hitMat);
+        hit.userData.i = i;
+        body.userData.i = i;
+        scene.add(hit);
+        hitMeshes.push(hit, body);
+        return {
+          i,
+          def,
+          thing,
+          root,
+          spin,
+          scaleG,
+          bodyMat,
+          lidMat,
+          pivot,
+          pool,
+          band,
+          bandUnder,
+          hit,
+          place: new THREE.Vector3(),
+          land: new THREE.Vector3(),
+          pos: new THREE.Vector3(),
+          fly: 0,
+          dir: 0,
+          delay: 0,
+          started: false,
+          pulse: 0,
+          wake: 0,
+          charge: 0,
+          open: 0,
+          wrong: false,
+          right: false,
+          hidden: false,
+          chip: null,
+          sc: 1,
+        };
+      });
+
+      function layoutPlaces() {
+        // The answers stand 60 degrees apart on a circle of radius R, so neighbours are R apart and R from the start;
+        // each thing stands just behind its answer, so the spacing rule holds for the answers themselves.
+        const R = P.spacing;
+        for (const tk of tokens) {
+          const a = (tk.def.ang * Math.PI) / 180;
+          tk.land.set(Math.sin(a) * R, HOVER, -Math.cos(a) * R);
+          const away = new THREE.Vector3(Math.sin(a), 0, -Math.cos(a));
+          tk.place.set(tk.land.x, 0, tk.land.z).addScaledVector(away, tk.thing.front);
+          tk.thing.g.position.copy(tk.place);
+          tk.thing.g.rotation.y = -a;
+          tk.pool.position.set(tk.land.x, 0.03, tk.land.z);
+          tk.hit.position.set(tk.place.x, 2, tk.place.z);
+        }
+        rebuildBands();
+      }
+      function rebuildBands() {
+        const r = reachEff();
+        for (const tk of tokens) {
+          tk.band.geometry.dispose();
+          tk.bandUnder.geometry.dispose();
+          tk.band.geometry = new THREE.RingGeometry(r - 0.14, r + 0.14, 72);
+          tk.bandUnder.geometry = new THREE.RingGeometry(r - 0.26, r + 0.26, 72);
+          tk.band.position.set(tk.land.x, 0.05, tk.land.z);
+          tk.bandUnder.position.set(tk.land.x, 0.04, tk.land.z);
+        }
+      }
+
+      // ---------- DOM ----------
+      const box = $("#nbox");
+      const col = $("#col");
+      const win = $("#win");
+      const statusEl = $("#status");
+      const answersEl = $("#answers");
+      const fold = $("#fold");
+      const foldLabel = $("#foldLabel");
+      const pts = $("#pts");
+      const threadsCanvas = $("#threads");
+      const tctx = threadsCanvas.getContext("2d");
+      for (const tk of tokens) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "ans";
+        b.style.setProperty("--hue", tk.def.hue);
+        b.innerHTML = `<span class="fill"></span><span class="lbl"></span><span class="sub"></span><span class="gbar"></span>`;
+        b.querySelector(".lbl").textContent = tk.def.label;
+        b.addEventListener("click", () => chipTap(tk.i));
+        answersEl.appendChild(b);
+        tk.chip = b;
+        tk.sub = b.querySelector(".sub");
+        tk.subText = "";
+      }
+
+      // ---------- state ----------
+      const V = { x: 0, z: 0, yaw: 0, pitch: -0.06, go: false, path: null, speedEst: 0, keys: {} };
+      let Q;
+      function freshQ() {
+        return {
+          phase: "lead",
+          clock: 0,
+          boxOpen: true,
+          autoOpen: null,
+          stillAt: null,
+          stillT: 0,
+          weak: false,
+          inside: -1,
+          arm: 0,
+          blocked: -1,
+          graceIdx: -1,
+          graceLeft: 0,
+          graceFrom: null,
+          points: 0,
+          flashText: "",
+          flashT: 0,
+          timers: [],
+          log: [],
+        };
+      }
+      function log(type, data) {
+        Q.log.push({ t: +Q.clock.toFixed(3), type, data });
+        if (Q.log.length > 400) {
+          Q.log.shift();
+        }
+      }
+      function later(sec, fn) {
+        Q.timers.push({ at: Q.clock + sec, fn });
+      }
+      function flash(text, sec = 2.6) {
+        Q.flashText = text;
+        Q.flashT = sec;
+      }
+
+      // ---------- narration (tap pauses or plays, a vertical drag scrubs) ----------
+      const NAR = { t: 0, playing: false, dur: 0, times: [], spans: [], onEnd: null, ended: true };
+      function say(text, who = GRETA, onEnd = null) {
+        $("#whoName").textContent = who.name;
+        box.style.setProperty("--spk", who.color);
+        col.textContent = "";
+        NAR.times = [];
+        NAR.spans = [];
+        let t = 0.25;
+        for (const w of text.split(/\s+/)) {
+          const s = document.createElement("span");
+          s.className = "w";
+          s.textContent = w + " ";
+          col.appendChild(s);
+          NAR.spans.push(s);
+          NAR.times.push(t);
+          t += 0.2 + 0.03 * w.length + (/[.,;:?!]$/.test(w) ? 0.25 : 0);
+        }
+        NAR.dur = t;
+        NAR.t = 0;
+        NAR.playing = true;
+        NAR.onEnd = onEnd;
+        NAR.ended = false;
+      }
+      function updateNar(dt) {
+        if (NAR.playing) {
+          NAR.t += dt;
+        }
+        let cur = -1;
+        for (let k = 0; k < NAR.spans.length; k++) {
+          const on = NAR.t >= NAR.times[k];
+          if (on) {
+            cur = k;
+          }
+          NAR.spans[k].classList.toggle("on", on);
+        }
+        if (cur >= 0 && Q.boxOpen) {
+          const lh = parseFloat(getComputedStyle(win).lineHeight) || 22;
+          const rows = Math.round(win.clientHeight / lh) || 3;
+          const off = Math.max(0, NAR.spans[cur].offsetTop - (rows - 1) * lh);
+          col.style.transform = `translateY(${-off}px)`;
+        }
+        if (!NAR.ended && NAR.t >= NAR.dur) {
+          NAR.ended = true;
+          NAR.playing = false;
+          const f = NAR.onEnd;
+          NAR.onEnd = null;
+          if (f) {
+            f();
+          }
+        }
+      }
+      function tapSign(x, y, playing) {
+        const d = document.createElement("div");
+        d.className = "tapfx";
+        d.textContent = playing ? "▶" : "II";
+        d.style.left = x + "px";
+        d.style.top = y + "px";
+        document.body.appendChild(d);
+        setTimeout(() => d.remove(), 750);
+      }
+      let press = null;
+      box.addEventListener("pointerdown", (e) => {
+        if (e.target.closest("button, .grab") || !Q.boxOpen) {
+          return;
+        }
+        press = { x: e.clientX, y: e.clientY, t0: NAR.t, drag: false, id: e.pointerId };
+        box.setPointerCapture(e.pointerId);
+      });
+      box.addEventListener("pointermove", (e) => {
+        if (!press || e.pointerId !== press.id) {
+          return;
+        }
+        const dy = e.clientY - press.y;
+        if (!press.drag && Math.abs(dy) > 8) {
+          press.drag = true;
+          log("scrub-start");
+        }
+        if (press.drag) {
+          const lines = Math.max(1, Math.round(col.scrollHeight / 22));
+          NAR.t = clamp(press.t0 - (dy / 22) * (NAR.dur / lines), 0, NAR.dur);
+        }
+      });
+      box.addEventListener("pointerup", (e) => {
+        if (!press || e.pointerId !== press.id) {
+          return;
+        }
+        if (!press.drag) {
+          NAR.playing = !NAR.playing;
+          if (NAR.playing && NAR.ended) {
+            NAR.t = 0;
+            NAR.ended = false;
+          }
+          tapSign(e.clientX, e.clientY, NAR.playing);
+          log(NAR.playing ? "play" : "pause");
+        }
+        press = null;
+      });
+      box.addEventListener("pointercancel", () => {
+        press = null;
+      });
+
+      // ---------- the box: collapse sends the answers out, open reels them in ----------
+      function setBox(open, why) {
+        Q.boxOpen = open;
+        box.classList.toggle("collapsed", !open);
+        let k = 0;
+        for (const tk of tokens) {
+          if (tk.hidden) {
+            continue;
+          }
+          const want = open ? -1 : 1;
+          if ((want > 0 && tk.fly >= 1) || (want < 0 && tk.fly <= 0)) {
+            tk.dir = 0;
+            continue;
+          }
+          const fresh = (want > 0 && tk.fly === 0) || (want < 0 && tk.fly === 1);
+          tk.dir = want;
+          tk.delay = fresh ? k * P.stagger * (want < 0 ? P.ret : 1) : 0;
+          tk.started = false;
+          k++;
+        }
+        updateFold();
+        log(open ? "open" : "collapse", why);
+      }
+      function updateFold() {
+        const usable = Q.phase === "ask" || Q.phase === "quiz";
+        fold.disabled = !usable;
+        foldLabel.textContent = Q.boxOpen ? "Send out" : "Bring in";
+        fold.setAttribute("aria-label", Q.boxOpen ? "Send the answers out" : "Bring the answers in");
+      }
+      function userToggle(source) {
+        if (Q.phase !== "ask" && Q.phase !== "quiz") {
+          return;
+        }
+        if (Q.weak && Q.boxOpen) {
+          flash("The position is weak, so the answers stay here. Tap one.");
+          return;
+        }
+        if (Q.phase === "ask") {
+          Q.phase = "quiz";
+        }
+        Q.autoOpen = null;
+        Q.stillT = 0;
+        setBox(!Q.boxOpen, source);
+      }
+      fold.addEventListener("click", () => userToggle("button"));
+      const grab = $("#grab");
+      let grabPress = null;
+      grab.addEventListener("pointerdown", (e) => {
+        e.stopPropagation();
+        grabPress = { y: e.clientY, id: e.pointerId };
+        grab.setPointerCapture(e.pointerId);
+      });
+      grab.addEventListener("pointerup", (e) => {
+        if (!grabPress || e.pointerId !== grabPress.id) {
+          return;
+        }
+        const dy = e.clientY - grabPress.y;
+        grabPress = null;
+        if (Math.abs(dy) < 10) {
+          userToggle("handle-tap");
+        } else if (dy > 18 && Q.boxOpen) {
+          userToggle("handle-drag");
+        } else if (dy < -18 && !Q.boxOpen) {
+          userToggle("handle-drag");
+        }
+      });
+
+      // ---------- choosing ----------
+      const flatDist = (tk) => Math.hypot(V.x - tk.land.x, V.z - tk.land.z);
+      function choose(i, from) {
+        if (Q.graceIdx >= 0 && Q.graceIdx !== i) {
+          undo("switch");
+        }
+        const tk = tokens[i];
+        Q.graceIdx = i;
+        Q.graceLeft = P.grace;
+        Q.graceFrom = from;
+        tk.charge = 1;
+        tk.pulse = 1;
+        log("chosen", { i, from });
+      }
+      function undo(why) {
+        const g = Q.graceIdx;
+        if (g < 0) {
+          return;
+        }
+        const tk = tokens[g];
+        Q.graceIdx = -1;
+        // Stepping away drains the full egg visibly; a tap empties it and blocks a recharge until the visitor leaves reach.
+        if (why === "step") {
+          tk.charge = 0.999;
+        } else {
+          tk.charge = 0;
+          Q.blocked = g;
+        }
+        log("undo", { i: g, why });
+      }
+      function commit(i) {
+        const tk = tokens[i];
+        Q.graceIdx = -1;
+        if (tk.def.id === CORRECT) {
+          tk.right = true;
+          Q.points += 10;
+          Q.phase = "right";
+          Q.inside = -1;
+          wlabel(i, "Right  +10");
+          log("right", i);
+          later(0.9, () => {
+            setBox(true, "result");
+            say(TEXT.right, GRETA, () => later(1.2, goesOn));
+          });
+        } else {
+          tk.wrong = true;
+          tk.charge = 0;
+          wlabel(i, "Not this one");
+          flash("Not that one - try another.", 4);
+          say(TEXT.retry);
+          log("wrong", i);
+        }
+        updateFold();
+      }
+      function goesOn() {
+        Q.phase = "next";
+        for (const tk of tokens) {
+          tk.hidden = true;
+          tk.dir = 0;
+        }
+        answersEl.hidden = true;
+        setOthersDim(false);
+        if (!Q.boxOpen) {
+          Q.boxOpen = true;
+          box.classList.remove("collapsed");
+        }
+        say(TEXT.next);
+        updateFold();
+        log("goes-on");
+      }
+      function chipTap(i) {
+        if (Q.phase === "ask") {
+          Q.phase = "quiz";
+        }
+        if (Q.phase !== "quiz") {
+          return;
+        }
+        const tk = tokens[i];
+        if (tk.wrong) {
+          flash(`${tk.def.label}: already tried.`);
+          return;
+        }
+        if (Q.graceIdx === i) {
+          undo("tap");
+          return;
+        }
+        log("chip-tap", i);
+        choose(i, "chip");
+      }
+      function objectTap(i) {
+        if (Q.phase !== "quiz" && Q.phase !== "ask") {
+          return;
+        }
+        const tk = tokens[i];
+        if (tk.wrong) {
+          wlabel(i, "Already tried");
+          return;
+        }
+        if (flatDist(tk) > reachEff()) {
+          wlabel(i, "Walk closer");
+          log("walk-closer", i);
+          return;
+        }
+        if (Q.phase === "ask") {
+          Q.phase = "quiz";
+        }
+        if (Q.boxOpen && !Q.weak) {
+          Q.autoOpen = null;
+          setBox(false, "object-tap");
+        }
+        Q.inside = i;
+        Q.arm = 0;
+        Q.blocked = -1;
+        log("tap-charge", i);
+      }
+      function setWeak(on) {
+        Q.weak = on;
+        $("#btnWeak").setAttribute("aria-pressed", String(on));
+        log("weak", on);
+        if (Q.phase !== "quiz") {
+          return;
+        }
+        if (on) {
+          if (!Q.boxOpen) {
+            Q.autoOpen = "weak";
+            setBox(true, "weak");
+          }
+          say(TEXT.weak);
+        } else if (Q.autoOpen === "weak") {
+          Q.autoOpen = null;
+          setBox(false, "position-good");
+        }
+      }
+
+      // ---------- world labels (readable plates at the object) ----------
+      const labels = [];
+      function wlabel(i, text) {
+        for (const l of labels.filter((x) => x.i === i)) {
+          l.el.remove();
+          labels.splice(labels.indexOf(l), 1);
+        }
+        const el = document.createElement("div");
+        el.className = "wlabel";
+        el.style.setProperty("--hue", tokens[i].def.hue);
+        el.textContent = text;
+        el.dataset.i = i;
+        document.body.appendChild(el);
+        labels.push({ i, el, left: 2.2 });
+      }
+
+      // ---------- visitor ----------
+      function standAt(i, d) {
+        const tk = tokens[i];
+        const dx = 0 - tk.land.x;
+        const dz = 0 - tk.land.z;
+        const L = Math.hypot(dx, dz) || 1;
+        V.x = tk.land.x + (dx / L) * d;
+        V.z = tk.land.z + (dz / L) * d;
+        faceAt(tk.land);
+      }
+      function faceAt(p) {
+        V.yaw = Math.atan2(-(p.x - V.x), -(p.z - V.z));
+        V.pitch = -0.06;
+      }
+      function setGo(on) {
+        V.go = on;
+        $("#btnGo").setAttribute("aria-pressed", String(on));
+      }
+      function groundTap(pt) {
+        let best = -1;
+        let bd = Infinity;
+        for (const tk of tokens) {
+          if (tk.hidden) {
+            continue;
+          }
+          const d = Math.hypot(pt.x - tk.land.x, pt.z - tk.land.z);
+          if (d < bd) {
+            bd = d;
+            best = tk.i;
+          }
+        }
+        V.path = null;
+        setGo(false);
+        if (best >= 0) {
+          const tk = tokens[best];
+          if (bd < 7) {
+            // Land just outside reach, on the side the tap was made, facing the answer.
+            let dx = pt.x - tk.land.x;
+            let dz = pt.z - tk.land.z;
+            let L = Math.hypot(dx, dz);
+            if (L < 0.05) {
+              dx = V.x - tk.land.x;
+              dz = V.z - tk.land.z;
+              L = Math.hypot(dx, dz) || 1;
+            }
+            const r = reachEff() + 0.5;
+            V.x = tk.land.x + (dx / L) * r;
+            V.z = tk.land.z + (dz / L) * r;
+          } else {
+            V.x = pt.x;
+            V.z = pt.z;
+          }
+          faceAt(tk.land);
+        } else {
+          V.x = pt.x;
+          V.z = pt.z;
+        }
+        log("jump", { x: +V.x.toFixed(2), z: +V.z.toFixed(2), near: best });
+      }
+      function updateVisitor(dt) {
+        const px = V.x;
+        const pz = V.z;
+        const fx = -Math.sin(V.yaw);
+        const fz = -Math.cos(V.yaw);
+        if (V.path) {
+          const dx = V.path.x - V.x;
+          const dz = V.path.z - V.z;
+          const d = Math.hypot(dx, dz);
+          const step = Math.min(d, V.path.speed * dt);
+          if (d < 1e-3) {
+            V.path = null;
+          } else {
+            V.x += (dx / d) * step;
+            V.z += (dz / d) * step;
+          }
+        } else if (V.go) {
+          V.x += fx * FAST * dt;
+          V.z += fz * FAST * dt;
+        }
+        const k = V.keys;
+        const sp = k.ShiftLeft || k.ShiftRight ? FAST : WALK;
+        const f = (k.KeyW || k.ArrowUp ? 1 : 0) - (k.KeyS || k.ArrowDown ? 1 : 0);
+        const s = (k.KeyD ? 1 : 0) - (k.KeyA ? 1 : 0);
+        V.x += (fx * f - fz * s) * sp * dt;
+        V.z += (fz * f + fx * s) * sp * dt;
+        V.yaw += ((k.ArrowLeft ? 1 : 0) - (k.ArrowRight ? 1 : 0)) * 1.6 * dt;
+        V.x = clamp(V.x, -40, 40);
+        V.z = clamp(V.z, -40, 40);
+        const v = Math.hypot(V.x - px, V.z - pz) / Math.max(dt, 1e-3);
+        V.speedEst += (v - V.speedEst) * Math.min(1, dt * 5);
+        camera.position.set(V.x, EYE, V.z);
+        camera.rotation.set(V.pitch, V.yaw, 0);
+        camera.updateMatrixWorld();
+      }
+      addEventListener("keydown", (e) => {
+        V.keys[e.code] = true;
+      });
+      addEventListener("keyup", (e) => {
+        V.keys[e.code] = false;
+      });
+
+      // Canvas: a drag looks around; a tap hits an answer (object tap) or the ground (jump).
+      const ray = new THREE.Raycaster();
+      const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+      let look = null;
+      canvas.addEventListener("pointerdown", (e) => {
+        look = { x: e.clientX, y: e.clientY, yaw: V.yaw, pitch: V.pitch, drag: false, id: e.pointerId };
+        canvas.setPointerCapture(e.pointerId);
+      });
+      canvas.addEventListener("pointermove", (e) => {
+        if (!look || e.pointerId !== look.id) {
+          return;
+        }
+        const dx = e.clientX - look.x;
+        const dy = e.clientY - look.y;
+        if (!look.drag && Math.hypot(dx, dy) > 8) {
+          look.drag = true;
+        }
+        if (look.drag) {
+          V.yaw = look.yaw + dx * 0.006;
+          V.pitch = clamp(look.pitch + dy * 0.004, -0.9, 0.6);
+        }
+      });
+      canvas.addEventListener("pointerup", (e) => {
+        if (!look || e.pointerId !== look.id) {
+          return;
+        }
+        const wasDrag = look.drag;
+        look = null;
+        if (wasDrag) {
+          return;
+        }
+        tapAt(e.clientX, e.clientY);
+      });
+      function tapAt(x, y) {
+        const ndc = new THREE.Vector2((x / W) * 2 - 1, -(y / H) * 2 + 1);
+        ray.setFromCamera(ndc, camera);
+        const hits = ray.intersectObjects(hitMeshes, false);
+        if (hits.length && !tokens[hits[0].object.userData.i].hidden) {
+          objectTap(hits[0].object.userData.i);
+          return;
+        }
+        const p = new THREE.Vector3();
+        if (ray.ray.intersectPlane(groundPlane, p)) {
+          groundTap(p);
+        }
+      }
+
+      // ---------- projection (never clamped to the screen edge) ----------
+      let W = 1;
+      let H = 1;
+      const _v = new THREE.Vector3();
+      function screenOf(p) {
+        _v.copy(p).applyMatrix4(camera.matrixWorldInverse);
+        const ang = Math.atan2(Math.hypot(_v.x, _v.y), -_v.z);
+        if (_v.z < -0.05) {
+          _v.applyMatrix4(camera.projectionMatrix);
+          const x = ((_v.x + 1) / 2) * W;
+          const y = ((1 - _v.y) / 2) * H;
+          return { x, y, on: x >= 0 && x <= W && y >= 0 && y <= H, ang };
+        }
+        // Behind the visitor: leave the screen sideways, toward the side the answer is on.
+        const s = Math.sign(_v.x) || 1;
+        return { x: W / 2 + s * 1e4, y: H * 0.35, on: false, ang };
+      }
+      const _s = new THREE.Vector3();
+      function unprojectAt(sx, sy, depth, out) {
+        _s.set((sx / W) * 2 - 1, -(sy / H) * 2 + 1, 0.5).unproject(camera);
+        _s.sub(camera.position).normalize();
+        return out.copy(camera.position).addScaledVector(_s, depth);
+      }
+      function chipAnchor(i) {
+        const r = tokens[i].chip.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + 1 };
+      }
+
+      // ---------- per-frame update ----------
+      const _a = new THREE.Vector3();
+      const _b = new THREE.Vector3();
+      function updateFlights(dt) {
+        for (const tk of tokens) {
+          tk.pulse = Math.max(0, tk.pulse - dt * 1.6);
+          if (tk.dir === 0) {
+            continue;
+          }
+          if (tk.delay > 0) {
+            tk.delay -= dt;
+            continue;
+          }
+          if (!tk.started) {
+            tk.started = true;
+            log(tk.dir > 0 ? "fly-out" : "fly-in", tk.i);
+          }
+          const dur = tk.dir > 0 ? P.flight : P.flight * P.ret;
+          tk.fly = clamp(tk.fly + (tk.dir * dt) / dur, 0, 1);
+          if (tk.dir > 0 && tk.fly >= 1) {
+            tk.dir = 0;
+            tk.pulse = 1;
+            log("landed", tk.i);
+          } else if (tk.dir < 0 && tk.fly <= 0) {
+            tk.dir = 0;
+            log("home", tk.i);
+          }
+        }
+      }
+      function updateQuiz(dt) {
+        if (Q.phase !== "quiz") {
+          for (const tk of tokens) {
+            tk.wake = approach(tk.wake, 0, dt * 2);
+          }
+          return;
+        }
+        const reach = reachEff();
+        const leave = reach + P.letgo;
+        const out = !Q.boxOpen;
+        if (Q.inside >= 0 && (flatDist(tokens[Q.inside]) > leave || tokens[Q.inside].wrong)) {
+          log("leave", Q.inside);
+          Q.inside = -1;
+        }
+        if (Q.blocked >= 0 && flatDist(tokens[Q.blocked]) > leave) {
+          Q.blocked = -1;
+        }
+        if (Q.inside < 0) {
+          let best = -1;
+          let bd = reach;
+          for (const tk of tokens) {
+            const d = flatDist(tk);
+            if (!tk.wrong && d < bd) {
+              bd = d;
+              best = tk.i;
+            }
+          }
+          if (best >= 0) {
+            Q.inside = best;
+            Q.arm = ARM;
+            log("enter", best);
+            if (V.go) {
+              setGo(false);
+            }
+          }
+        }
+        for (const tk of tokens) {
+          const active = out && Q.inside === tk.i && tk.fly >= 1 && !tk.wrong && Q.blocked !== tk.i;
+          tk.wake = approach(tk.wake, active || Q.graceIdx === tk.i ? 1 : 0, dt * 2.2);
+          if (Q.graceIdx === tk.i) {
+            tk.charge = 1;
+            continue;
+          }
+          if (!out) {
+            continue; // the box is open: the fill is kept, on the chip
+          }
+          if (active) {
+            if (Q.arm > 0) {
+              Q.arm -= dt;
+            } else {
+              tk.charge = Math.min(1, tk.charge + dt / P.dwell);
+              if (tk.charge >= 1) {
+                choose(tk.i, "object");
+              }
+            }
+          } else if (tk.fly >= 1) {
+            tk.charge = Math.max(0, tk.charge - dt / DRAIN); // in flight the fill is carried, not drained
+          }
+        }
+        if (Q.graceIdx >= 0) {
+          const g = tokens[Q.graceIdx];
+          if (Q.graceFrom === "object" && out && g.fly >= 1 && flatDist(g) > leave) {
+            undo("step");
+          } else {
+            Q.graceLeft -= dt;
+            if (Q.graceLeft <= 0) {
+              commit(Q.graceIdx);
+            }
+          }
+        }
+        updateStill(dt, out);
+      }
+      function updateStill(dt, out) {
+        if (Q.autoOpen === "still") {
+          if (Math.hypot(V.x - Q.stillAt.x, V.z - Q.stillAt.z) > 1.5) {
+            Q.autoOpen = null;
+            Q.stillT = 0;
+            setBox(false, "moved-again");
+          }
+          return;
+        }
+        const moving = V.speedEst > 0.3;
+        if (out && !moving && Q.inside < 0 && Q.graceIdx < 0 && !Q.weak) {
+          Q.stillT += dt;
+          if (Q.stillT >= P.still) {
+            Q.autoOpen = "still";
+            Q.stillAt = { x: V.x, z: V.z };
+            setBox(true, "still");
+            say(TEXT.still);
+          }
+        } else {
+          Q.stillT = 0;
+        }
+      }
+      function poseTokens(dt) {
+        const time = Q.clock;
+        for (const tk of tokens) {
+          tk.open = approach(tk.open, Q.graceIdx === tk.i || tk.right ? 1 : 0, dt * 3);
+          if (tk.hidden || tk.fly <= 0) {
+            tk.root.visible = false;
+            tk.pool.material.opacity = 0;
+            tk.band.material.opacity = tk.bandUnder.material.opacity = 0;
+            continue;
+          }
+          tk.root.visible = true;
+          let p;
+          if (tk.fly < 1) {
+            const a = chipAnchor(tk.i);
+            const s = unprojectAt(a.x, a.y, 1.0, _a);
+            const e = ease(tk.fly);
+            p = _b.copy(s).lerp(tk.land, e);
+            p.y += 0.22 * s.distanceTo(tk.land) * Math.sin(Math.PI * e);
+            tk.sc = BASE * (0.12 + 0.88 * e);
+          } else {
+            const w = tk.wake;
+            _a.set(V.x - tk.land.x, 0, V.z - tk.land.z);
+            const d = _a.length();
+            if (d > 1e-3) {
+              _a.multiplyScalar(1 / d);
+            }
+            const come = Math.max(0, Math.min(1.2, d - KEEP)) * w;
+            p = _b.copy(tk.land).addScaledVector(_a, come);
+            p.y = HOVER + (RISE - HOVER) * w + 0.06 * Math.sin(time * 1.6 + tk.i);
+            tk.sc = BASE * (1 + WAKE_SCALE * w + 0.3 * tk.pulse);
+            tk.spin.rotation.y = Math.atan2(-_a.z, _a.x);
+          }
+          tk.root.position.copy(p);
+          tk.pos.copy(p);
+          const c = smooth(tk.charge);
+          tk.scaleG.scale.setScalar(tk.sc);
+          tk.scaleG.position.y = -0.25 * tk.sc; // the egg is centred on its point, at any size
+          tk.scaleG.rotation.z = Math.sin(time * 41) * 0.05 * c * (Q.graceIdx === tk.i ? 0 : 1);
+          tk.pivot.rotation.z = tk.open * 1.9;
+          const u = tk.bodyMat.uniforms;
+          u.level.value = tk.charge;
+          u.glow.value = Math.max(tk.wake * 0.5 + c * 0.5, tk.open);
+          u.time.value = time;
+          u.dim.value = tk.wrong ? 1 : 0;
+          tk.lidMat.color.set(tk.wrong ? "#6d7079" : tk.def.hue);
+          tk.lidMat.emissive.set(tk.def.hue).multiplyScalar(0.15 + 0.6 * Math.max(tk.open, c));
+          const landed = tk.fly >= 1;
+          tk.pool.material.opacity = landed && !tk.wrong ? 0.12 + 0.45 * tk.wake + 0.5 * tk.pulse : 0;
+          const near = Math.hypot(V.x - tk.land.x, V.z - tk.land.z);
+          const showBand = landed && !tk.wrong && !tk.right && Q.phase === "quiz";
+          const fade = showBand ? clamp(1 - (near - reachEff() - 3) / 6, 0, 1) : 0;
+          tk.band.material.opacity = 0.6 * fade;
+          tk.bandUnder.material.opacity = 0.35 * fade;
+        }
+      }
+      function statusText() {
+        if (Q.flashT > 0) {
+          return Q.flashText;
+        }
+        if (Q.phase === "lead" || (Q.phase === "ask" && !Q.weak)) {
+          return "";
+        }
+        if (Q.phase === "right") {
+          return "Right. +10 points";
+        }
+        if (Q.phase === "next") {
+          return `${Q.points} points so far`;
+        }
+        if (Q.graceIdx >= 0) {
+          const tk = tokens[Q.graceIdx];
+          const how = Q.graceFrom === "object" && !Q.boxOpen ? "step away or tap it" : "tap it";
+          return `Chosen: ${tk.def.label}. To undo, ${how} (${Math.ceil(Q.graceLeft)} s)`;
+        }
+        if (Q.weak) {
+          return "Weak position: tap your answer here.";
+        }
+        if (Q.autoOpen === "still") {
+          return "Tap your answer here, or walk on.";
+        }
+        if (Q.inside >= 0 && !Q.boxOpen) {
+          const tk = tokens[Q.inside];
+          if (Q.blocked === tk.i) {
+            return `${tk.def.label}: step out of its ring to charge it again.`;
+          }
+          return tk.charge > 0
+            ? `${tk.def.label}: stay here ${Math.round(tk.charge * 100)}%`
+            : `${tk.def.label} wakes up...`;
+        }
+        const kept = tokens.find((tk) => tk.charge > 0 && !tk.wrong);
+        if (Q.boxOpen && kept) {
+          return `${kept.def.label} is ${Math.round(kept.charge * 100)}% charged. Send out to go on, or tap it.`;
+        }
+        return Q.boxOpen ? "Tap an answer, or send them out." : "Walk to your answer, or tap it here.";
+      }
+      function updateDom(dt) {
+        Q.flashT = Math.max(0, Q.flashT - dt);
+        const st = statusText();
+        if (statusEl.textContent !== st) {
+          statusEl.textContent = st;
+        }
+        pts.hidden = Q.points === 0;
+        pts.textContent = `${Q.points} pts`;
+        for (const tk of tokens) {
+          const chosen = Q.graceIdx === tk.i;
+          const charging = !Q.boxOpen ? Q.inside === tk.i && tk.charge > 0 : tk.charge > 0;
+          const state = tk.right
+            ? "right"
+            : tk.wrong
+              ? "wrong"
+              : chosen
+                ? "chosen"
+                : charging
+                  ? "charging"
+                  : "";
+          if (tk.chip.dataset.state !== state) {
+            tk.chip.dataset.state = state;
+          }
+          tk.chip.style.setProperty("--fill", tk.charge.toFixed(3));
+          tk.chip.style.setProperty("--grace", chosen ? (Q.graceLeft / P.grace).toFixed(3) : "0");
+          const sub = tk.right
+            ? "Right +10"
+            : tk.wrong
+              ? "Not this one"
+              : chosen
+                ? `Tap to undo ${Math.ceil(Q.graceLeft)} s`
+                : charging
+                  ? `${Math.round(tk.charge * 100)}%`
+                  : "";
+          if (tk.subText !== sub) {
+            tk.subText = sub;
+            tk.sub.textContent = sub;
+          }
+        }
+        for (let k = labels.length - 1; k >= 0; k--) {
+          const l = labels[k];
+          l.left -= dt;
+          const tk = tokens[l.i];
+          const s = screenOf(_a.copy(tk.fly > 0 ? tk.pos : tk.land).add(_b.set(0, 0.6, 0)));
+          if (l.left <= 0) {
+            l.el.remove();
+            labels.splice(k, 1);
+            continue;
+          }
+          l.el.style.display = s.on ? "" : "none";
+          l.el.style.left = s.x + "px";
+          l.el.style.top = s.y + "px";
+          l.el.style.opacity = String(clamp(l.left / 0.4, 0, 1));
+        }
+      }
+
+      // ---------- threads (2D overlay, at least 4 px with a dark outline) ----------
+      function mixWhite(hex, k) {
+        const c = new THREE.Color(hex).lerp(new THREE.Color("#ffffff"), k);
+        return `#${c.getHexString()}`;
+      }
+      let threadInfo = [];
+      function drawThreads() {
+        const dpr = threadsCanvas.width / W;
+        tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        tctx.clearRect(0, 0, W, H);
+        threadInfo = [];
+        if (Q.phase === "next") {
+          return;
+        }
+        const list = [];
+        for (const tk of tokens) {
+          if (tk.hidden || tk.fly <= 0) {
+            continue;
+          }
+          list.push({ tk, a: chipAnchor(tk.i), b: screenOf(tk.pos) });
+        }
+        const off = list.filter((e) => !e.b.on);
+        let full = null;
+        if (P.cue === "one" && off.length > 1) {
+          full = off.reduce((m, e) => (e.b.ang < m.b.ang ? e : m));
+        }
+        for (const e of list) {
+          const stub = Boolean(full) && !e.b.on && e !== full;
+          drawThread(e, stub);
+          threadInfo.push({ i: e.tk.i, on: e.b.on, stub, x: e.b.x, y: e.b.y });
+        }
+        if (!Q.boxOpen) {
+          for (const e of list) {
+            const pull = clamp((e.b.x - e.a.x) / 300, -1, 1);
+            e.tk.chip.style.transform = `translateX(${(pull * 5).toFixed(1)}px) rotate(${(pull * 2).toFixed(2)}deg)`;
+          }
+        } else {
+          for (const tk of tokens) {
+            tk.chip.style.transform = "";
+          }
+        }
+      }
+      function drawThread(e, stub) {
+        const { tk, a, b } = e;
+        const charging = Q.inside === tk.i && tk.charge > 0 && !Q.boxOpen;
+        const chosen = Q.graceIdx === tk.i || tk.right;
+        const core = (charging || chosen ? 6.5 : 4.5) + tk.pulse * 4;
+        const lift = Math.min(170, Math.abs(b.y - a.y) * 0.5 + 30);
+        const pts = [];
+        let len = 0;
+        let px = a.x;
+        let py = a.y;
+        pts.push([px, py]);
+        for (let k = 1; k <= 40; k++) {
+          const t = k / 40;
+          const mt = 1 - t;
+          const x = mt * mt * a.x + 2 * mt * t * a.x + t * t * b.x;
+          const y = mt * mt * a.y + 2 * mt * t * (a.y - lift) + t * t * b.y;
+          len += Math.hypot(x - px, y - py);
+          px = x;
+          py = y;
+          pts.push([x, y]);
+          if (stub && len > 46) {
+            break;
+          }
+        }
+        const path = () => {
+          tctx.beginPath();
+          tctx.moveTo(pts[0][0], pts[0][1]);
+          for (const [x, y] of pts) {
+            tctx.lineTo(x, y);
+          }
+        };
+        tctx.lineCap = "round";
+        tctx.lineJoin = "round";
+        tctx.setLineDash([]);
+        tctx.shadowBlur = 0;
+        path();
+        tctx.strokeStyle = "rgba(6, 8, 14, 0.85)";
+        tctx.lineWidth = core + 5;
+        tctx.stroke();
+        path();
+        if (tk.wrong) {
+          tctx.setLineDash([10, 9]);
+          tctx.strokeStyle = "#8b909a";
+        } else {
+          tctx.strokeStyle = charging || chosen ? mixWhite(tk.def.hue, 0.45) : tk.def.hue;
+          if (charging || chosen) {
+            tctx.shadowColor = tk.def.hue;
+            tctx.shadowBlur = 14;
+          }
+        }
+        tctx.lineWidth = core;
+        tctx.stroke();
+        tctx.setLineDash([]);
+        tctx.shadowBlur = 0;
+        const [ex, ey] = pts[pts.length - 1];
+        if (stub || b.on) {
+          tctx.beginPath();
+          tctx.arc(ex, ey, stub ? 6 : 5, 0, Math.PI * 2);
+          tctx.fillStyle = tk.wrong ? "#8b909a" : tk.def.hue;
+          tctx.strokeStyle = "rgba(6, 8, 14, 0.9)";
+          tctx.lineWidth = 3;
+          tctx.fill();
+          tctx.stroke();
+        }
+      }
+
+      // ---------- loop ----------
+      function step(dt) {
+        Q.clock += dt;
+        const due = Q.timers.filter((t) => t.at <= Q.clock);
+        Q.timers = Q.timers.filter((t) => t.at > Q.clock);
+        for (const t of due) {
+          t.fn();
+        }
+        updateVisitor(dt);
+        updateFlights(dt);
+        updateQuiz(dt);
+        updateNar(dt);
+        poseTokens(dt);
+        updateDom(dt);
+      }
+      function sim(sec) {
+        const dt = 1 / 30;
+        for (let t = 0; t < sec; t += dt) {
+          step(dt);
+        }
+        renderFrame();
+      }
+      let ftMs = 16;
+      let frameMs = 16;
+      let lastNow = performance.now();
+      const meter = $("#meter");
+      let meterT = 0;
+      function renderFrame() {
+        renderer.render(scene, camera);
+        drawThreads();
+      }
+      function frame(now) {
+        const dt = Math.min(0.05, (now - lastNow) / 1000);
+        frameMs += (now - lastNow - frameMs) * 0.1;
+        lastNow = now;
+        const t0 = performance.now();
+        step(dt);
+        renderFrame();
+        ftMs += (performance.now() - t0 - ftMs) * 0.1;
+        meterT -= dt;
+        if (meterT <= 0) {
+          meterT = 0.25;
+          const info = renderer.info.render;
+          meter.textContent = `draw ${info.calls}  tris ${info.triangles}\nframe ${frameMs.toFixed(1)} ms  cpu ${ftMs.toFixed(1)} ms`;
+          meter.style.whiteSpace = "pre";
+        }
+        requestAnimationFrame(frame);
+      }
+      function resize() {
+        W = innerWidth;
+        H = innerHeight;
+        renderer.setSize(W, H, false);
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        threadsCanvas.width = Math.round(W * dpr);
+        threadsCanvas.height = Math.round(H * dpr);
+        camera.aspect = W / H;
+        // About 40 degrees across in portrait, like a phone camera.
+        camera.fov = W < H ? 75 : W > 1000 ? 52 : 42;
+        camera.updateProjectionMatrix();
+      }
+      addEventListener("resize", resize);
+
+      // ---------- runs and beats ----------
+      function reset() {
+        Q = freshQ();
+        V.x = 0;
+        V.z = 0;
+        V.yaw = 0;
+        V.pitch = -0.06;
+        V.path = null;
+        V.speedEst = 0;
+        setGo(false);
+        $("#btnWeak").setAttribute("aria-pressed", "false");
+        for (const tk of tokens) {
+          Object.assign(tk, { fly: 0, dir: 0, delay: 0, started: false, pulse: 0, wake: 0, charge: 0, open: 0, wrong: false, right: false, hidden: false });
+          tk.chip.style.transform = "";
+        }
+        for (const l of labels.splice(0)) {
+          l.el.remove();
+        }
+        box.classList.remove("collapsed");
+        answersEl.hidden = true;
+        setOthersDim(false);
+        say(TEXT.lead, GRETA, () => later(0.6, () => toAsk(0)));
+        updateFold();
+        log("reset");
+      }
+      function toAsk(frac) {
+        Q.phase = "ask";
+        answersEl.hidden = false;
+        setOthersDim(true);
+        say(TEXT.question, GRETA, () =>
+          later(0.8, () => {
+            if (Q.phase === "ask") {
+              Q.phase = "quiz";
+              setBox(false, "question-read");
+            }
+          }),
+        );
+        NAR.t = frac * NAR.dur;
+        updateFold();
+      }
+      function landAll() {
+        toAsk(1);
+        NAR.ended = true;
+        NAR.playing = false;
+        NAR.onEnd = null;
+        Q.phase = "quiz";
+        Q.boxOpen = false;
+        box.classList.add("collapsed");
+        for (const tk of tokens) {
+          tk.fly = 1;
+          tk.dir = 0;
+        }
+        updateFold();
+        sim(0.05);
+      }
+      const F = IDX.fountain;
+      function chargeTo(frac) {
+        landAll();
+        standAt(F, 2);
+        sim(ARM + P.dwell * frac + 0.05);
+      }
+      const BEATS = {
+        "lead-in": () => sim(1.2),
+        ask: () => {
+          toAsk(0.6);
+          sim(0.1);
+        },
+        "fly-out": () => {
+          toAsk(1);
+          sim(0.9);
+          sim(P.flight * 0.5);
+        },
+        "off-screen": () => landAll(),
+        toggle: () => {
+          landAll();
+          setBox(true, "user");
+          sim(P.flight * P.ret * 0.5);
+        },
+        approach: () => {
+          landAll();
+          standAt(F, 7);
+          const tk = tokens[F];
+          const dx = V.x - tk.land.x;
+          const dz = V.z - tk.land.z;
+          const L = Math.hypot(dx, dz);
+          V.path = { x: tk.land.x + (dx / L) * 1.8, z: tk.land.z + (dz / L) * 1.8, speed: WALK };
+          sim(1.5);
+        },
+        charge: () => chargeTo(0.5),
+        undo: () => {
+          chargeTo(0.6);
+          // Walk backwards, still facing the answer, out of reach plus let-go.
+          V.path = { x: V.x + Math.sin(V.yaw) * 2.6, z: V.z + Math.cos(V.yaw) * 2.6, speed: WALK };
+          sim(1.6);
+        },
+        grace: () => {
+          chargeTo(1);
+          sim(0.9);
+        },
+        "result-right": () => {
+          chargeTo(1);
+          sim(P.grace + 1.4);
+        },
+        "result-wrong": () => {
+          landAll();
+          standAt(IDX.bench, 2);
+          sim(1.0 + ARM + P.dwell + P.grace);
+        },
+        "goes-on": () => {
+          chargeTo(1);
+          for (let k = 0; k < 80 && Q.phase !== "next"; k++) {
+            sim(0.5);
+          }
+          sim(1);
+        },
+        tap: () => {
+          landAll();
+          chipTap(IDX.tree);
+          sim(0.6);
+        },
+        weak: () => {
+          landAll();
+          setWeak(true);
+          sim(P.flight * 0.6);
+        },
+        still: () => {
+          landAll();
+          Q.stillT = P.still - 1.5;
+          sim(0.2);
+        },
+        "open-during-charge": () => {
+          chargeTo(0.5);
+          setBox(true, "user");
+          sim(P.flight * 0.6);
+        },
+      };
+      function beat(name) {
+        reset();
+        const f = BEATS[name];
+        if (f) {
+          f();
+          log("beat", name);
+        }
+        $("#beat").value = name in BEATS ? name : "lead-in";
+      }
+      const beatSel = $("#beat");
+      for (const name of Object.keys(BEATS)) {
+        const o = document.createElement("option");
+        o.value = name;
+        o.textContent = `Beat: ${name}`;
+        beatSel.appendChild(o);
+      }
+      beatSel.addEventListener("change", () => {
+        const u = new URL(location.href);
+        u.searchParams.set("beat", beatSel.value);
+        history.replaceState(null, "", u);
+        beat(beatSel.value);
+      });
+      $("#btnReset").addEventListener("click", () => {
+        const u = new URL(location.href);
+        u.searchParams.delete("beat");
+        history.replaceState(null, "", u);
+        beat("lead-in");
+      });
+      $("#btnGo").addEventListener("click", () => {
+        V.path = null;
+        setGo(!V.go);
+      });
+      $("#btnWeak").addEventListener("click", () => setWeak(!Q.weak));
+      $("#btnTools").addEventListener("click", () => {
+        const on = !$("#tools").classList.contains("on");
+        $("#tools").classList.toggle("on", on);
+        $("#btnTools").setAttribute("aria-pressed", String(on));
+      });
+
+      // ---------- values panel (sliders built here) ----------
+      const SLIDERS = [
+        ["flight", "Flight time", 0.8, 4, 0.1, "s"],
+        ["stagger", "Stagger (0 = all at once)", 0, 2, 0.1, "s"],
+        ["ret", "Return-speed factor", 0.5, 1, 0.05, "x flight"],
+        ["dwell", "Dwell", 2, 10, 0.5, "s"],
+        ["grace", "Grace", 1, 6, 0.5, "s"],
+        ["spacing", "Answer spacing", 5, 14, 0.5, "m"],
+        ["reach", "Reach (capped by spacing)", 1, 4, 0.25, "m"],
+        ["still", "Standing still before the box offers", 5, 30, 1, "s"],
+      ];
+      const outputs = [];
+      {
+        const tools = $("#tools");
+        const note = document.createElement("p");
+        note.textContent = "Values to judge. Reach plus the 1 m let-go never exceeds half the spacing.";
+        tools.appendChild(note);
+        for (const [key, label, min, max, stepV, unit] of SLIDERS) {
+          const l = document.createElement("label");
+          l.className = "slider";
+          const name = document.createElement("span");
+          name.textContent = label;
+          const out = document.createElement("output");
+          const inp = document.createElement("input");
+          inp.type = "range";
+          inp.min = String(min);
+          inp.max = String(max);
+          inp.step = String(stepV);
+          inp.value = String(P[key]);
+          inp.dataset.key = key;
+          const show = () => {
+            out.textContent =
+              key === "reach" ? `${P.reach} m (in use ${reachEff().toFixed(2)} m)` : `${P[key]} ${unit}`;
+          };
+          outputs.push(show);
+          inp.addEventListener("input", () => {
+            P[key] = Number(inp.value);
+            if (key === "spacing" || key === "reach") {
+              layoutPlaces();
+            }
+            for (const s of outputs) {
+              s();
+            }
+          });
+          show();
+          l.append(name, out, inp);
+          tools.appendChild(l);
+        }
+        const cue = document.createElement("label");
+        cue.className = "slider";
+        cue.innerHTML = `<span>Off-screen threads</span><select id="cueSel"><option value="one">one runs off-screen, others stubs</option><option value="all">all run off-screen</option></select>`;
+        tools.appendChild(cue);
+        const sel = cue.querySelector("select");
+        sel.value = P.cue;
+        sel.addEventListener("change", () => {
+          P.cue = sel.value;
+        });
+      }
+
+      // ---------- test hook ----------
+      window.__quiz = {
+        P,
+        V,
+        get Q() {
+          return Q;
+        },
+        beat,
+        sim,
+        setBox,
+        userToggle,
+        setWeak,
+        chipTap,
+        objectTap,
+        groundTap: (x, z) => groundTap(new THREE.Vector3(x, 0, z)),
+        reachEff,
+        layoutPlaces,
+        state() {
+          return {
+            phase: Q.phase,
+            boxOpen: Q.boxOpen,
+            autoOpen: Q.autoOpen,
+            weak: Q.weak,
+            inside: Q.inside,
+            graceIdx: Q.graceIdx,
+            graceLeft: Q.graceLeft,
+            graceFrom: Q.graceFrom,
+            points: Q.points,
+            stillT: Q.stillT,
+            clock: Q.clock,
+            narPlaying: NAR.playing,
+            narT: NAR.t,
+            visitor: { x: V.x, z: V.z, yaw: V.yaw },
+            W,
+            H,
+            tokens: tokens.map((tk) => {
+              const s = screenOf(tk.pos);
+              return {
+                id: tk.def.id,
+                fly: tk.fly,
+                dir: tk.dir,
+                charge: tk.charge,
+                wake: tk.wake,
+                wrong: tk.wrong,
+                right: tk.right,
+                hidden: tk.hidden,
+                dist: flatDist(tk),
+                pos: { x: tk.pos.x, y: tk.pos.y, z: tk.pos.z },
+                land: { x: tk.land.x, y: tk.land.y, z: tk.land.z },
+                screen: { x: s.x, y: s.y, on: s.on },
+              };
+            }),
+            threads: threadInfo,
+            labels: labels.map((l) => ({ i: l.i, text: l.el.textContent })),
+            status: statusEl.textContent,
+          };
+        },
+        get log() {
+          return Q.log;
+        },
+      };
+
+      resize();
+      layoutPlaces();
+      beat(qs.get("beat") || "lead-in");
+      requestAnimationFrame((t) => {
+        lastNow = t;
+        requestAnimationFrame(frame);
+      });
+    </script>
+  </body>
+</html>
