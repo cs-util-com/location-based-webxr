@@ -26,8 +26,9 @@ and what.
   - `slots.left`, `slots.right` - the side places for a story step's
     action and a quiz; empty and hidden for now.
   - `show(content)` - shows `content`. Cheap for the same content, so the
-    frame loop may call it every frame; a new `key`, text, timing or
-    speaker rebuilds the words.
+    frame loop may call it every frame; a new `key`, text, timing,
+    speaker, title, synthetic flag or voice credit rebuilds the words, the
+    disclosure and the label.
   - `hide()` - fades out, inert, out of reach of taps.
   - `tick()` - follows the voice; `show` calls it, and so does every
     frame.
@@ -70,13 +71,35 @@ and what.
   voice at its end starts it again from the start.
 - A drag: one line height of finger movement is one line of text and
   one line of the voice, up ahead, down back; past either end the words
-  stretch 0.3 as far (the rubber band). A playing voice is held for the
+  stretch 0.3 as far at first (the rubber band). The read line (the lit
+  word's, or the first word's before any is lit) never leaves the window
+  (`dragScroll`): past an end the stretch flattens out before it would,
+  and in the text the words wait at the edge it would leave by, then move
+  on with the finger from there (the press's start scroll moves with
+  them), so they never jump. So the release always goes on from a line
+  in view. Two ways once carried the read line out of the window, and
+  the voice then read words nobody could see: mainly a press at either
+  end, where the read line already sits at the window's edge (at the end
+  the last line in the bottom row with the voice inside it, at the start
+  the first line in the top row, a press during the follow's ease up to a
+  line further), so a drag back from the end or ahead from the start
+  moved it out before the voice left it, at any speed; and a drag far
+  past an end, where the words stretched on without limit. A playing voice is held for the
   drag with `player.hold()` when it has one (`voice-focus.ts`: it stays
   the channel's running voice, so a voice it holds does not wake), else
   `pause()`. A voice that was not playing is left alone, so a voice the
   channel holds stays held to carry on. On release the voice goes on from
   the dragged place, or, dragged past its end, is paused for good (its
   channel handed back).
+- A voice carried on while the finger is down (the voice channel when a
+  clip it held behind ends, or the page's sound gate at a return) is held
+  again on the next frame and counts as one the drag holds: the release
+  lets it go on from the dragged place.
+- A press ends on `pointerup`, `pointercancel` or `lostpointercapture`
+  (the system taking the capture: a notification, the browser taking the
+  gesture). Only `pointerup` can be a tap; the other two end a drag as a
+  release does, so the box never stays dragging with the voice held for a
+  gone finger.
 - A drag cut off by `hide()`, a new text or `dispose()` never plays the
   voice again: the place is kept, and a voice the drag held is paused
   properly, its channel handed back (a voice waiting behind it carries
@@ -139,7 +162,10 @@ box.hide();
   line): the name once at the start, the disclosure after it, words lit
   and greyed, the follow row, tap toggle with its sign, the restart at
   the end, a drag that scrubs and plays on, a paused voice left paused,
-  the rubber band, a drag cut off by hide or a new text not replaying,
+  the rubber band and its limit, the read line kept in view on a drag
+  back from the end and ahead from the start, at 1 px a move (without a
+  jump) and at 60 px, a drag cut off by hide or a new
+  text not replaying,
   the voice channel kept through a drag (with `createVoiceFocus` and two
   focused players, both a voice it holds and a held text voice), the
   keyboard, the live region and `data-speaking`, a hidden page left to
@@ -149,11 +175,22 @@ box.hide();
   voice behind when a drag is cut off (hide, new text, dispose) or ends
   past the end; the voice held again while the finger is down; the
   opening scroll when the name and disclosure take lines of their own;
-  no playing on from a drag ended in a hidden page.
-- `narration-box-timeline.test.ts` - the arithmetic, with properties.
+  no playing on from a drag ended in a hidden page; a voice the channel
+  carries on mid-drag held and played on from the dragged place; the
+  disclosure and label redrawn when only the credit, synthetic flag or
+  title changes; a drag ended by a lost pointer capture, which is no tap.
+- `narration-box-timeline.test.ts` and
+  `narration-box-timeline.property.test.ts` - the arithmetic, with
+  properties.
 - `playwright-tests/narration-check.spec.js` - the layout at three
   viewports against the prototype's numbers, the name and disclosure on
   the first line (the disclosure's first line right after the name), the
   thumb, every word on the 22 px line grid, the line count against the
   drawn lines, the opening scroll at the voice's start, the lit word
-  following the voice, and no box for a stale track.
+  following the voice, and no box for a stale track; and, at the three
+  viewports for touch and mouse, the read line inside the window after
+  every move of a drag and every frame of the settle: ahead past the end
+  and back past the start (seated a few lines from it, and asserted to
+  reach it), back from the end and ahead from the start, 12 px and 60 px
+  a move and one drag at 3 px, each asserted to scrub and to move the
+  voice its way; and the arrow keys the same way.

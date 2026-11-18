@@ -14,6 +14,7 @@ A long text's voice: one audio element over the tour's audio file, fetched only 
 
 - `playing()` is true from the press on, also while the file is fetched, so the button answers at once.
 - A failed fetch or a refused `play()` reverts to paused and reports through `onError` (the page's error channel); the player stays usable.
+- A `play()` that a pause cut short (the browser's AbortError, `isPlayAbort` of `scene-audio.ts`) is no failure when the voice is no longer wanted: a drag can hold a voice the frame after it was carried on, before its `play()` settled, and that must not show the error toast.
 - The file is fetched once; a second press while fetching does not fetch again.
 
 ## Example
