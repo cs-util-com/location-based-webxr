@@ -61,11 +61,15 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
 
 /**
  * The values applied when the slider is released, not while it is dragged:
- * a new haze visibility rebuilds the sky's tables, which a drag would do at
- * every step. Their readout still follows the thumb.
+ * a new haze visibility rebuilds the sky's tables, and a new sky balance
+ * re-bakes the environment (six cube faces and a PMREM pass) at once, which
+ * a drag would do at every input event, several a frame. Their readout
+ * still follows the thumb.
  */
 const APPLIED_ON_RELEASE: ReadonlySet<keyof LightSettings> = new Set([
   "hazeVisibilityKm",
+  "skyBalanceA",
+  "skyBalanceB",
 ]);
 
 /** One measurement of the view as it stands. */
