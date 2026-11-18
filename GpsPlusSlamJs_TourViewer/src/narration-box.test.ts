@@ -318,28 +318,49 @@ describe("createNarrationBox", () => {
     expect(clock.on).toBe(false);
   });
 
-  // Why: at the end of the text the last line sits in the bottom row, so
-  // a drag back moved it out of the window before the voice left it. The
-  // words now wait at the edge and move on with the finger from there,
-  // without a jump once the voice reaches the line before.
-  it("keeps the read line in the window on a slow drag back from the end, without a jump", () => {
-    const { box, clock, content } = make();
-    clock.now = clock.dur - 40;
-    box.show(content);
-    const rows = box.state().rows;
-    let last = box.state().scroll;
-    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
-    for (let px = 1; px <= 3 * LINE_PX; px += 1) {
-      box.element.dispatchEvent(pointer("pointermove", 100, 700 + px));
-      const { lit, scroll } = box.state();
-      const read = Math.floor(Math.max(0, lit) / 4);
-      expect(read).toBeGreaterThanOrEqual(scroll - 1e-9);
-      expect(read + 1).toBeLessThanOrEqual(scroll + rows + 1e-9);
-      expect(Math.abs(scroll - last)).toBeLessThanOrEqual(1 / LINE_PX + 1e-9);
-      last = scroll;
+  // Why: a press at either end starts the drag with the read line at the
+  // window's edge: at the end the last line sits in the bottom row with
+  // the voice inside it, at the start the first line in the top row. A drag
+  // back from the end (or ahead from the start) then moved the read line
+  // part-way out of the window before the voice left it, at any speed:
+  // the main way the words left the box on a phone. The words now wait at
+  // the edge and move on with the finger from there, and slowly (1 px a
+  // move) never jump once the voice reaches the next line.
+  for (const [where, from, sign] of [
+    ["back from the end", "end", 1],
+    ["ahead from the start", "start", -1],
+  ] as const) {
+    for (const step of [1, 60]) {
+      it(`keeps the read line in the window on a drag ${where}, ${step} px a move`, () => {
+        const { box, clock, content } = make();
+        clock.now = from === "end" ? clock.dur - 40 : 0;
+        box.show(content);
+        const rows = box.state().rows;
+        let last = box.state().scroll;
+        box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+        for (let px = step; px <= 3 * LINE_PX; px += step) {
+          box.element.dispatchEvent(
+            pointer("pointermove", 100, 700 + sign * px),
+          );
+          const { lit, scroll, scrubbing } = box.state();
+          // Past the tap slop (8 px) a move is a drag.
+          expect(scrubbing).toBe(px > 8);
+          const read = Math.floor(Math.max(0, lit) / 4);
+          expect(read).toBeGreaterThanOrEqual(scroll - 1e-9);
+          expect(read + 1).toBeLessThanOrEqual(scroll + rows + 1e-9);
+          // A move of 1 px moves the words at most 1 px: no jump. (A fast
+          // move may move them a line or more.)
+          const jump = step === 1 ? Math.abs(scroll - last) : 0;
+          expect(jump).toBeLessThanOrEqual(1 / LINE_PX + 1e-9);
+          last = scroll;
+        }
+        box.element.dispatchEvent(
+          pointer("pointerup", 100, 700 + sign * 3 * LINE_PX),
+        );
+        expect(box.state().scrubbing).toBe(false);
+      });
     }
-    box.element.dispatchEvent(pointer("pointerup", 100, 700 + 3 * LINE_PX));
-  });
+  }
 
   it("answers the keyboard: Space plays, the arrows move a line", () => {
     const { box, clock, content } = make();

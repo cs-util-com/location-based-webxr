@@ -77,8 +77,14 @@ and what.
   and in the text the words wait at the edge it would leave by, then move
   on with the finger from there (the press's start scroll moves with
   them), so they never jump. So the release always goes on from a line
-  in view; a drag far past an end once carried the read line out of the
-  window, and the voice then read words nobody could see. A playing voice is held for the
+  in view. Two ways once carried the read line out of the window, and
+  the voice then read words nobody could see: mainly a press at either
+  end, where the read line already sits at the window's edge (at the end
+  the last line in the bottom row with the voice inside it, at the start
+  the first line in the top row, a press during the follow's ease up to a
+  line further), so a drag back from the end or ahead from the start
+  moved it out before the voice left it, at any speed; and a drag far
+  past an end, where the words stretched on without limit. A playing voice is held for the
   drag with `player.hold()` when it has one (`voice-focus.ts`: it stays
   the channel's running voice, so a voice it holds does not wake), else
   `pause()`. A voice that was not playing is left alone, so a voice the
@@ -156,8 +162,9 @@ box.hide();
   line): the name once at the start, the disclosure after it, words lit
   and greyed, the follow row, tap toggle with its sign, the restart at
   the end, a drag that scrubs and plays on, a paused voice left paused,
-  the rubber band and its limit, the read line kept in view on a slow
-  drag back from the end without a jump, a drag cut off by hide or a new
+  the rubber band and its limit, the read line kept in view on a drag
+  back from the end and ahead from the start, at 1 px a move (without a
+  jump) and at 60 px, a drag cut off by hide or a new
   text not replaying,
   the voice channel kept through a drag (with `createVoiceFocus` and two
   focused players, both a voice it holds and a held text voice), the
@@ -180,4 +187,10 @@ box.hide();
   the first line (the disclosure's first line right after the name), the
   thumb, every word on the 22 px line grid, the line count against the
   drawn lines, the opening scroll at the voice's start, the lit word
-  following the voice, and no box for a stale track.
+  following the voice, and no box for a stale track; and, at the three
+  viewports for touch and mouse, the read line inside the window after
+  every move of a drag and every frame of the settle: ahead past the end
+  and back past the start (seated a few lines from it, and asserted to
+  reach it), back from the end and ahead from the start, 12 px and 60 px
+  a move and one drag at 3 px, each asserted to scrub and to move the
+  voice its way; and the arrow keys the same way.
