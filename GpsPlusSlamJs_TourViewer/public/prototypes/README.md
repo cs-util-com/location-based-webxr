@@ -452,6 +452,16 @@ wired into its logic: every interaction is faked.
     when it turns weak; typed answers stay in the card. Weakness: two
     presentations to learn, and a flickering position means repeated
     hand-overs.
+- `quiz-r4-1-one-by-one/` ... `quiz-r4-3-character-throws/` - quiz round 4,
+  three directions in which the answers fly slowly between the narration
+  box and their places, and walking up to an answer charges it at its
+  thing; made 2026-11-18. Each folder's `README.md` has its beats and values.
+  - `quiz-r4-1-one-by-one/` - the box shrinks to the question and the
+    answers fly one at a time, each waiting until its place is in view.
+  - `quiz-r4-2-tethered/` - a row of answer chips, each with a visible
+    thread to its answer in the world.
+  - `quiz-r4-3-character-throws/` - the asking character throws the answers
+    in her colour; the question rides on them in the world.
 
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own
