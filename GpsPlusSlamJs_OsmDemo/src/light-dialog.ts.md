@@ -24,8 +24,8 @@ WebGL.
   - `deps.defaults?`: what Reset returns to, the colour scheme's light
     (`lightDefaultsFor`); the shipped look when left out.
   - `deps.onChange(settings)`: called on every slider `input`, on Reset and
-    on `setDefaults`, except the haze visibility, which is applied on
-    `change` (release).
+    on `setDefaults`, except the haze visibility and the two sky balance
+    sliders, which are applied on `change` (release).
     `main.ts` applies the settings to the view and writes the URL.
   - `deps.measure(withMargin)`: a `LightReadout` for the view as it stands:
     `litLuma`, `margin | null` (only measured when `withMargin`) and `view`
@@ -86,11 +86,14 @@ WebGL.
 - **The gain ramp always rises.** A start dragged past the end moves the
   end, and the other way round, so the view never receives a ramp that
   `surfaceGainAt` refuses.
-- **The haze visibility is applied on `change` (release), not on `input`.**
-  A new visibility rebuilds the sky's tables, which a drag applied on every
-  step did at every whole km. Its `<output>` still follows the thumb on
-  `input`. Every other value is cheap (uniforms, a fog distance) and stays
-  live.
+- **The haze visibility and both sky balance sliders are applied on
+  `change` (release), not on `input`.** A new visibility rebuilds the sky's
+  tables, which a drag applied on every step did at every whole km. A new
+  sky balance re-bakes the environment synchronously (six cube-face renders
+  and a PMREM pass; the rig's sky is not built with a staged rebuild), and
+  `input` can fire several times a frame while dragging. Their `<output>`
+  still follows the thumb on `input`. Every other value is cheap (uniforms,
+  a fog distance) and stays live.
 - **The brightness is read on `change` (release), not on `input`,** and
   without the margin's second render. Each reading is a full-frame readback
   (plan §7 item 4).
@@ -154,8 +157,8 @@ dialog.toggle();
     focus in on open and back to the opener; `aria-expanded`;
   - a slider reaching `onChange` and showing its value;
   - the ramp kept rising in both directions;
-  - the haze visibility applied on release with its readout live, the
-    other values live on the drag;
+  - the haze visibility and both sky balance sliders applied on release
+    with their readouts live, the other values live on the drag;
   - the veil's sliders (L\*, b\*, a\*), off by default and applied live;
   - the held-veil note: shown with the held L\* above the knee and below
     the gamut, hidden once the colour can be shown as asked and on Reset;

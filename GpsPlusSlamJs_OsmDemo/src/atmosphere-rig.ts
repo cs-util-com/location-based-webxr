@@ -306,6 +306,7 @@ export type SkyLike = Pick<
   | "applySunLight"
   | "horizonColour"
   | "setHorizonVeil"
+  | "setSkyBalance"
   | "sharedUniforms"
   | "visibilityKm"
   | "dispose"
@@ -519,6 +520,22 @@ export class AtmosphereRig {
     if (this.fallback !== undefined && this.lastDirection !== undefined) {
       this.applyFallback(this.lastDirection);
     }
+  }
+
+  /**
+   * The sky balance the light dialog tunes (`sky-balance.ts`): a gain on the
+   * sky's own light, handed to the visible sky (which re-bakes, so the
+   * surfaces' sky light takes it too) and to the haze, so the distance
+   * fades toward the balanced sky. null takes it off. The fallback sky is
+   * a dome of fixed colours with no radiance to balance, so there only the
+   * (unused) haze uniform changes. Validated before any change.
+   *
+   * @throws RangeError for a gain that is not three finite values of at
+   *   least 0.
+   */
+  setSkyBalance(gain: readonly [number, number, number] | null): void {
+    this.haze.setSkyBalance(gain);
+    this.sky?.setSkyBalance(gain);
   }
 
   /**

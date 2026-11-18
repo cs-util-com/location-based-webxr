@@ -200,6 +200,32 @@ describe("createLightDialog", () => {
     });
   });
 
+  // WHY: the sky balance re-bakes the environment (six cube faces and a
+  // PMREM pass) at each apply, and an input event can fire several times a
+  // frame while dragging. Both sliders apply once, on release; their
+  // readouts still follow the thumb.
+  it.each(["skyBalanceA", "skyBalanceB"] as const)(
+    "applies the sky balance %s on release, its readout live",
+    (field) => {
+      const { $, onChange } = setup();
+      const slider = $<HTMLInputElement>(`light-${field}`);
+      const out = slider.parentElement!.querySelector("output")!;
+      slider.value = "-4";
+      slider.dispatchEvent(new Event("input"));
+      expect(out.value).toBe("-4");
+      slider.value = "-6.5";
+      slider.dispatchEvent(new Event("input"));
+      expect(out.value).toBe("-6.5");
+      expect(onChange).not.toHaveBeenCalled();
+      slider.dispatchEvent(new Event("change"));
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenLastCalledWith({
+        ...DEFAULT_LIGHT_SETTINGS,
+        [field]: -6.5,
+      });
+    },
+  );
+
   // WHY: every other value is cheap to apply, so it stays live on the drag.
   it("applies the other values while they are dragged", () => {
     const { $, onChange } = setup();

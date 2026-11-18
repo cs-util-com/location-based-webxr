@@ -84,6 +84,7 @@ import {
   DEFAULT_LIGHT_SETTINGS,
   gainOf,
   hazeOf,
+  skyBalanceOf,
   veilOf,
   type LightSettings,
 } from "./light-settings.js";
@@ -1726,6 +1727,7 @@ export class BuildingView {
     });
     this.atmosphere.setHaze(hazeOf(settings));
     this.atmosphere.setHazeVeil(veilOf(settings));
+    this.atmosphere.setSkyBalance(skyBalanceOf(settings));
     // The view's OWN fog, not `scene.fog`: an AR session swaps in its stock
     // fog and restores this one after, so a change made meanwhile still
     // lands where the desktop view will draw it.

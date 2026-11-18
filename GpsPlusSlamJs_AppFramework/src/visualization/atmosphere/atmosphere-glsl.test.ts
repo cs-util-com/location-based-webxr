@@ -109,7 +109,7 @@ describe('the visible sky stays finite in a half-float target (M4)', () => {
     expect(ATMOSPHERE_MAX_SCENE_RADIANCE).toBeLessThan(largestHalf);
     expect(ATMOSPHERE_MAX_SCENE_RADIANCE).toBeGreaterThan(1000);
     expect(SKY_FRAGMENT_GLSL).toContain(
-      'gl_FragColor = vec4(min(radiance * atmRadianceToScene, vec3(ATM_MAX_SCENE_RADIANCE)), 1.0);'
+      'gl_FragColor = vec4(min(radiance * atmRadianceToScene * atmSkyBalance, vec3(ATM_MAX_SCENE_RADIANCE)), 1.0);'
     );
     expect(SKY_FRAGMENT_GLSL).toContain(
       `ATM_MAX_SCENE_RADIANCE = ${glslFloat(ATMOSPHERE_MAX_SCENE_RADIANCE)}`

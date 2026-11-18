@@ -472,7 +472,7 @@ describe('AtmosphereHaze.setVeil (a haze colour of its own)', () => {
     const f = compile(material, 'standard').fragmentShader;
     const lookupAt = f.indexOf('vec3 atmHazeSky = texture2D(');
     const veilAt = f.indexOf(
-      'atmHazeSky = mix(atmHazeSky, atmHazeVeil, atmHazeVeilOn);'
+      'atmHazeSky = mix(atmHazeSky * atmHazeSkyBalance, atmHazeVeil, atmHazeVeilOn);'
     );
     const blendAt = f.indexOf(
       'gl_FragColor.rgb = gl_FragColor.rgb * atmHazeKeep'
@@ -574,5 +574,48 @@ describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
       h.setRim({ x: 0, z: 0 }, 100, Number.POSITIVE_INFINITY)
     ).toThrow(RangeError);
     expect(h.rim).toEqual({ centre: { x: 0, z: 0 }, innerM: 100, outerM: 200 });
+  });
+});
+
+describe('AtmosphereHaze.setSkyBalance (the sky balance reaches the haze)', () => {
+  // WHY: the haze fades the distance toward the sky in the view direction.
+  // When the visible sky takes a balance (SkyAtmosphere.setSkyBalance) the
+  // haze must take the same gain, or the distance fades toward the sky the
+  // model drew rather than the one on screen, and a seam shows.
+  it('is neutral by default, and a set gain is kept and shown', () => {
+    const h = haze();
+    expect(h.uniforms.atmHazeSkyBalance.value.toArray()).toEqual([1, 1, 1]);
+    expect(h.skyBalance).toBeNull();
+    h.setSkyBalance([0.8, 1, 1.2]);
+    expect(h.uniforms.atmHazeSkyBalance.value.toArray()).toEqual([0.8, 1, 1.2]);
+    expect(h.skyBalance).toEqual([0.8, 1, 1.2]);
+    h.setSkyBalance(null);
+    expect(h.uniforms.atmHazeSkyBalance.value.toArray()).toEqual([1, 1, 1]);
+    expect(h.skyBalance).toBeNull();
+  });
+
+  it('applies to the sky lookup, and the veil replaces the balanced sky', () => {
+    const h = haze();
+    const material = new THREE.MeshStandardMaterial();
+    h.apply(material);
+    const f = compile(material, 'standard').fragmentShader;
+    expect(
+      f.indexOf(
+        'atmHazeSky = mix(atmHazeSky * atmHazeSkyBalance, atmHazeVeil, atmHazeVeilOn);'
+      )
+    ).toBeGreaterThan(f.indexOf('vec3 atmHazeSky = texture2D('));
+  });
+
+  it('refuses a gain that is not three finite values of at least 0, changing nothing', () => {
+    const h = haze();
+    h.setSkyBalance([1.1, 1, 0.9]);
+    for (const bad of [
+      [Number.NaN, 1, 1],
+      [1, -0.01, 1],
+      [1, 1, Number.POSITIVE_INFINITY],
+    ] as const) {
+      expect(() => h.setSkyBalance(bad)).toThrow(RangeError);
+    }
+    expect(h.skyBalance).toEqual([1.1, 1, 0.9]);
   });
 });

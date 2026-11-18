@@ -53,15 +53,23 @@ const LABELS: { readonly [K in keyof LightSettings]: string } = {
   hazeVeilTintA:
     "Haze: veil green-red (a* on screen, below 0 greener, above 0 redder)",
   hazeVeilRiseDeg: "Haze: veil up the sky (° above the horizon, 0 = none)",
+  skyBalanceA:
+    "Sky colour green-red (a* cast on the sky and its light, 0 = the model's)",
+  skyBalanceB:
+    "Sky colour blue-yellow (b* cast on the sky and its light, below 0 bluer)",
 };
 
 /**
  * The values applied when the slider is released, not while it is dragged:
- * a new haze visibility rebuilds the sky's tables, which a drag would do at
- * every step. Their readout still follows the thumb.
+ * a new haze visibility rebuilds the sky's tables, and a new sky balance
+ * re-bakes the environment (six cube faces and a PMREM pass) at once, which
+ * a drag would do at every input event, several a frame. Their readout
+ * still follows the thumb.
  */
 const APPLIED_ON_RELEASE: ReadonlySet<keyof LightSettings> = new Set([
   "hazeVisibilityKm",
+  "skyBalanceA",
+  "skyBalanceB",
 ]);
 
 /** One measurement of the view as it stands. */
