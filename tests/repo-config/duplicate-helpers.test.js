@@ -168,6 +168,12 @@ const CANONICAL = [
     why: 'a GLSL float literal is a CONTRACT (always a "." or an exponent, no NaN): the private toFixed(4) copy in occlusion-mesh.ts wrote 1e-9 as "0.0000" and passed NaN into a shader, where three only logs and the material silently stops drawing. Unified 2026-09-23 (sky/atmosphere plan M2)',
   },
   {
+    name: "mulberry32",
+    rule: "shared",
+    home: "GpsPlusSlamJs_AppFramework/src/utils/mulberry32.ts",
+    why: "the draw sequence is a contract: a pinned star field, the speed dust, the cloud bake's blue noise and the optimizer check's test files all depend on it, and seven private copies in two packages plus three in the framework's test utilities each carried the arithmetic once more",
+  },
+  {
     name: "normalizeBearingDeg",
     rule: "shared",
     home: "GpsPlusSlamJs_AppFramework/src/utils/bearing-degrees.ts",

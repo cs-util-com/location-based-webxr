@@ -11,6 +11,7 @@
  *
  * @see globe-stars.ts.md
  */
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 import * as THREE from "three";
 
 export const GLOBE_STARS = {
@@ -156,18 +157,6 @@ export function packStarField(field: StarField): PackedStars {
   return { count, octahedral, magTint, magnitudes };
 }
 
-/** A small seeded generator (32-bit state), uniform in [0, 1). */
-function seeded(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 /**
  * A star field down to `magLimit` (0.5-9), from an integer `seed`. The
  * cumulative count is N(<m) = countAt6_5 * 10^(0.5 (m - 6.5)), so the same
@@ -192,7 +181,7 @@ export function generateStarField({
   const count = Math.round(
     GLOBE_STARS.countAt6_5 * 10 ** (0.5 * (magLimit - 6.5)),
   );
-  const random = seeded(seed);
+  const random = mulberry32(seed);
   // Inverse of the cumulative law, over [brightestMag, magLimit].
   const uMin = 10 ** (0.5 * (GLOBE_STARS.brightestMag - magLimit));
   const directions = new Float32Array(count * 3);

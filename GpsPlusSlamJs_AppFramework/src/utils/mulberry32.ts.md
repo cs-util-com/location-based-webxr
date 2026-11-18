@@ -15,10 +15,17 @@ The package's one seeded generator for production code: mulberry32, a small
 
 ## Invariants & assumptions
 
-- **One per package.** A pure helper this size may exist once per package,
-  not once per file. Production code imports this module (deep, never
-  through the `utils` barrel); it used to exist twice, inline in the live
-  clouds' cover thresholds and as the ambient occlusion's noise generator.
+- **One in the workspace.** Production code imports this module (deep,
+  never through the `utils` barrel); it used to exist twice here, inline in
+  the live clouds' cover thresholds and as the ambient occlusion's noise
+  generator. The globe lab (`globe-stars.ts`, `globe-speed-dust.ts`,
+  `globe-cloud-bake.ts`) and the Tour Viewer (`asset-optimizer-check.ts`,
+  `mesh-distance.ts`, `narration-look.ts`, `picture-paint.ts`) deep-import
+  it as `gps-plus-slam-app-framework/utils/mulberry32` (a `tsdown` entry);
+  their private copies drew the same sequence bit for bit, and each package
+  pins its outputs in its `seeded-draws.test.ts`.
+  `tests/repo-config/duplicate-helpers.test.js` holds the name to this one
+  definition.
 - **The sequence is a contract.** The ambient occlusion's denoise noise
   (`aoNoiseRandom` in `visualization/ambient-occlusion.ts`, which validates
   its seed and then delegates here) must equal the design system's look-dev
@@ -28,11 +35,15 @@ The package's one seeded generator for production code: mulberry32, a small
   `CLOUD_LIVE_COVER_THRESHOLDS` is that table precomputed.
 - Validation is the caller's: this helper is total, so a caller that must
   refuse a non-integer seed (the ambient occlusion does) checks it first.
-- Test-only copies remain: `test-utils/elevation-offset-scenarios.ts`,
-  `test-utils/integrated-slam-drift.ts` and `test-utils/non-trivial-alignment.ts`,
-  plus local ones in `storage/autosave.property.test.ts`,
-  `cloud-live-noise.test.ts` and `cloud-live-noise.sweep.test.ts`. They may
-  import this file instead; production code never imports from `test-utils/`.
+- `test-utils/elevation-offset-scenarios.ts` and
+  `test-utils/integrated-slam-drift.ts` re-export this generator, and
+  `test-utils/non-trivial-alignment.ts` imports it. Local copies remain in
+  test files only (`storage/autosave.property.test.ts`,
+  `cloud-live-noise.test.ts`, `cloud-live-noise.sweep.test.ts`, and several
+  Tour Viewer tests under other names), plus the design system's `.js`
+  look-dev copies (`3d/ambient-occlusion.js`, `labs/city-look/city-look-model.js`)
+  and the Tour Viewer's throwaway prototypes, which import nothing from
+  the framework. Production code never imports from `test-utils/`.
 
 ## Example
 
@@ -50,3 +61,6 @@ next(); // 0.6270739405881613
   for determinism per seed and the [0, 1) range.
 - `tests/repo-config/ambient-occlusion-copies.test.js`: this generator and
   the design system's copy draw the same sequence.
+- `GpsPlusSlamJs_Globe/src/seeded-draws.test.ts` and
+  `GpsPlusSlamJs_TourViewer/src/seeded-draws.test.ts`: the consumers'
+  seeded outputs, pinned.

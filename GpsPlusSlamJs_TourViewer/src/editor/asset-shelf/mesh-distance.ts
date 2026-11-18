@@ -10,17 +10,7 @@
  */
 /* eslint-disable complexity, max-depth -- numeric kernels */
 
-/** A small seeded generator (mulberry32), uniform in [0, 1). */
-function rng(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 
 type Positions = ArrayLike<number>;
 type Indices = ArrayLike<number>;
@@ -51,7 +41,7 @@ function samplePoints(
       0.5 * Math.hypot(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx);
     cum[t] = total;
   }
-  const r = rng(seed);
+  const r = mulberry32(seed);
   for (let i = 0; i < n; i++) {
     const x = r() * total;
     let lo = 0;

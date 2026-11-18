@@ -3,8 +3,8 @@
  *
  * Production code that needs reproducible randomness (a noise table built
  * from a seed, a precomputed quantile table) draws from this, never from
- * `Math.random` and never from a private copy: one generator per package.
- * Several test helpers and test files still keep their own copies (listed
+ * `Math.random` and never from a private copy: one generator in the workspace.
+ * Several test files still keep their own copies (listed
  * in the sidecar); production code does not import from `test-utils/`.
  *
  * @see mulberry32.ts.md

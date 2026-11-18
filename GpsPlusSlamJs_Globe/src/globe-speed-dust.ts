@@ -18,6 +18,8 @@
  * @see globe-speed-dust.ts.md
  */
 
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
+
 import { smoothstep } from "./globe-ease.js";
 
 export const GLOBE_SPEED_DUST = {
@@ -231,18 +233,6 @@ function requireRising(name: string, lo: number, hi: number): void {
   }
 }
 
-/** A small deterministic generator (mulberry32). */
-function generator(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4_294_967_296;
-  };
-}
-
 /**
  * `count` particle seeds spread evenly through the box [-1, 1)^3,
  * deterministic for a seed. RangeError for a count that is not a positive
@@ -252,7 +242,7 @@ export function createSpeedField(count: number, seed = 1): Float32Array {
   if (!(Number.isInteger(count) && count > 0)) {
     throw new RangeError(`the count must be a positive integer, got ${count}`);
   }
-  const random = generator(seed);
+  const random = mulberry32(seed);
   const out = new Float32Array(count * 3);
   for (let i = 0; i < out.length; i++) out[i] = random() * 2 - 1;
   return out;

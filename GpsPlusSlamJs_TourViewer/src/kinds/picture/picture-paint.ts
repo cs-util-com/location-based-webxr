@@ -14,6 +14,8 @@
  * @see picture-paint.ts.md
  */
 
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
+
 import { plateLines, tagLine } from "./plate.js";
 
 /** A painted panel and its size in the world (metres). */
@@ -128,18 +130,6 @@ function fitLine(
   return t === text ? t : `${t.trimEnd()}…`;
 }
 
-/** A small seeded random stream (the mat's grain is the same each time). */
-function seeded(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 /** The plate, painted at 520 px a metre. */
 function paintPlate(
   doc: Document,
@@ -229,7 +219,7 @@ function paintMat(
   const W = Math.round(innerW * ppm);
   const H = Math.round(innerH * ppm);
   const { canvas, g } = canvasOf(doc, W, H);
-  const r = seeded(3);
+  const r = mulberry32(3);
   g.fillStyle = "#ebe3d1";
   g.fillRect(0, 0, W, H);
   for (let i = 0; i < (W * H) / 70; i++) {
