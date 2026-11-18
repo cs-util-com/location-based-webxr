@@ -4,7 +4,7 @@
 - **Public API:**
   - `blendMeasureRequested(search)`: whether the link asks for it.
   - `startBlendMeasure({ view, scheme, chooseScheme })`: mounts the panel and returns `{ meshDrawn(mesh) }`, which the page calls with every full mesh.
-  - `median(values)`: the median, NaN for an empty list; `quantile(values, q)` the same for any quantile (linear interpolation).
+  - internal helpers: `median(values)` (NaN for an empty list) and `quantile(values, q)` (linear interpolation).
 - **What it measures** (each timing reported as median, p90, min, max and n; uploads, transfers and tree mixes n = 7, sky calls n = 20, scheme switches n = 6):
   - the device's GPU name, WebGL limits (`MAX_VERTEX_UNIFORM_VECTORS`, `MAX_FRAGMENT_UNIFORM_VECTORS`, `MAX_TEXTURE_SIZE`, `MAX_VERTEX_ATTRIBS`);
   - vertex counts (buildings, barriers, roads, from the worker), tree placements and the scene's instanced meshes with instance colours;

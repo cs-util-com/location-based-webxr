@@ -30,7 +30,7 @@ const QUIET_MS = 8000;
 /** The longest wait for one switch's mesh. */
 const SWITCH_TIMEOUT_MS = 240_000;
 
-export interface BlendMeasureView {
+interface BlendMeasureView {
   readonly gl: WebGLRenderingContext | WebGL2RenderingContext;
   readonly sync: () => void;
   readonly instanced: () => THREE.InstancedMesh[];
@@ -65,7 +65,7 @@ export function blendMeasureRequested(search: string): boolean {
 }
 
 /** The q-quantile (nearest rank) of a list; NaN for an empty one. */
-export function quantile(values: readonly number[], q: number): number {
+function quantile(values: readonly number[], q: number): number {
   if (values.length === 0) return Number.NaN;
   const sorted = [...values].sort((a, b) => a - b);
   const rank = Math.min(
@@ -76,7 +76,7 @@ export function quantile(values: readonly number[], q: number): number {
 }
 
 /** The median of a non-empty list; NaN for an empty one. */
-export function median(values: readonly number[]): number {
+function median(values: readonly number[]): number {
   if (values.length === 0) return Number.NaN;
   const sorted = [...values].sort((a, b) => a - b);
   const mid = Math.floor(sorted.length / 2);

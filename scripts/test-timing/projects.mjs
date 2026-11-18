@@ -757,7 +757,10 @@ export const PROJECTS = [
       // The worker entry is a second cycle root: `main.ts` reaches it only
       // through `new Worker(new URL(...))`, so `demo-worker.ts` and the three
       // modules it alone imports were outside the cycle gate until PR #241.
-      ...demoAppStages(["./src/worker/demo-worker.ts"])
+      ...demoAppStages([
+        "./src/worker/demo-worker.ts",
+        "./src/measure-blend-worker.ts",
+      ])
         .filter((stage) => stage.name !== "build:framework")
         // THE ONE STAGE IN THIS REPO WITH A WALL-CLOCK CEILING, and it is the
         // one that has demonstrably regrown: `test:e2e` here went from ~200 s to
