@@ -180,17 +180,30 @@ async function handle(page, part) {
 }
 
 /**
+ * How far (CSS px) a press on the disc keeps from the drawing of any
+ * other item. A press over another item is that item's, and a
+ * character's drawing breathes: its edge moves between the search and
+ * the press. Measured locally on the sample's squire beside the pin: the
+ * disc's middle picked nothing at the search and the squire at the press
+ * about 0.3 s later, so the press panned the camera. The search samples a
+ * 4 px grid, so a drawing can lie up to about 3 px nearer than measured;
+ * 12 px leaves the breath about 9 px. A breath that moved an edge farther
+ * would flip the press again; runner speed does not change it.
+ */
+const CLEAR_OF_OTHERS_PX = 12;
+
+/**
  * A page point of the selection's move disc a press takes as a move:
- * on the disc, over no other item (a press over another item is that
- * item's), out of reach of the knobs and dots, and over the canvas
- * itself (the docks lie over its sides). Searched round the disc's
- * middle, once it shows: from some views another item stands in front
- * of the middle.
+ * on the disc, out of reach of the knobs and dots, over the canvas
+ * itself (the docks lie over its sides), and as far as the disc allows
+ * from every other item's drawing, at least `CLEAR_OF_OTHERS_PX`.
+ * Searched on a grid round the disc's middle, once it shows: from some
+ * views another item stands in front of the middle.
  * @param {import("@playwright/test").Page} page
  */
 async function discPoint(page) {
   await handle(page, "middle");
-  const at = await page.evaluate(() => {
+  const found = await page.evaluate(() => {
     const hook = /** @type {any} */ (window).__tourEditor;
     const middle = hook.view3dHandle("middle");
     const canvas = document.querySelector("#view3d canvas");
@@ -201,28 +214,51 @@ async function discPoint(page) {
     const grips = ["knob", "point", "dot"]
       .map((p) => hook.view3dHandle(p))
       .filter((/** @type {unknown} */ p) => p !== null);
-    for (let r = 0; r <= 80; r += 3) {
-      for (let a = 0; a < 360; a += 20) {
-        const x = middle[0] + r * Math.cos((a * Math.PI) / 180);
-        const y = middle[1] + r * Math.sin((a * Math.PI) / 180);
+    /** @type {number[][]} */
+    const others = [];
+    /** @type {number[][]} */
+    const candidates = [];
+    for (let dx = -92; dx <= 92; dx += 4) {
+      for (let dy = -92; dy <= 92; dy += 4) {
+        const x = middle[0] + dx;
+        const y = middle[1] + dy;
         const under = hook.view3dUnder(x, y);
-        if (
-          under?.onDisc === true &&
-          (under.pick === null || under.pick === own) &&
+        if (under === null) continue;
+        if (under.pick !== null && under.pick !== own) {
+          others.push([x, y]);
+        } else if (
+          under.onDisc === true &&
+          Math.hypot(dx, dy) <= 80 &&
           grips.every(
             (/** @type {number[]} */ [gx = 0, gy = 0]) =>
               Math.hypot(gx - x, gy - y) > 30,
           ) &&
           document.elementFromPoint(box.x + x, box.y + y) === canvas
         ) {
-          return [x, y];
+          candidates.push([x, y]);
         }
       }
     }
-    return null;
+    let best = null;
+    let clear = -1;
+    for (const [x = 0, y = 0] of candidates) {
+      const d = Math.min(
+        Infinity,
+        ...others.map(([ox = 0, oy = 0]) => Math.hypot(ox - x, oy - y)),
+      );
+      if (d > clear) {
+        clear = d;
+        best = [x, y];
+      }
+    }
+    return best === null ? null : { at: best, clear };
   });
-  if (at === null) throw new Error("no point of the disc takes a move");
-  return onPage(page, /** @type {[number, number]} */ (at));
+  if (found === null) throw new Error("no point of the disc takes a move");
+  expect(
+    found.clear,
+    "a point of the disc clear of every other item",
+  ).toBeGreaterThanOrEqual(CLEAR_OF_OTHERS_PX);
+  return onPage(page, /** @type {[number, number]} */ (found.at));
 }
 
 /**
