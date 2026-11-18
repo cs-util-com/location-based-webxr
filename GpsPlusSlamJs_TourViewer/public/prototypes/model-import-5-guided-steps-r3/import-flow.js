@@ -67,6 +67,10 @@ export function initialFlow(first, defaults = {}) {
     shapeLook: false,
     loadTest: false,
     loadCount: LOAD_COUNTS[1],
+    /** The far-away step's viewing distance in metres from the model,
+     *  null outside that step. The slider and the pinch or wheel gesture
+     *  both set it; the camera and the slider follow it. */
+    viewDistance: null,
     accepted: false,
   };
 }
@@ -141,6 +145,12 @@ const ACTIONS = {
     TOGGLES.includes(a.name) ? { ...flow, [a.name]: Boolean(a.on) } : flow,
   loadCount: (flow, a) =>
     LOAD_COUNTS.includes(a.count) ? { ...flow, loadCount: a.count } : flow,
+  view: (flow, a) =>
+    Number.isFinite(a.distance) &&
+    a.distance > 0 &&
+    a.distance !== flow.viewDistance
+      ? { ...flow, viewDistance: a.distance }
+      : flow,
   accept: (flow) => ({ ...flow, accepted: true }),
 };
 
@@ -153,6 +163,14 @@ function loadTestOnlyInShape(flow) {
     : flow;
 }
 
+/** The viewing distance belongs to the far-away step: leaving it clears
+ *  the distance, so the next visit starts from the author's close view. */
+function viewOnlyInDistance(flow) {
+  return flow.viewDistance !== null && flow.current !== "distance"
+    ? { ...flow, viewDistance: null }
+    : flow;
+}
+
 /** The next state; an action that does not apply returns `flow` itself. */
 export function flowReducer(flow, action) {
   const handler = Object.hasOwn(ACTIONS, action?.type)
@@ -162,5 +180,5 @@ export function flowReducer(flow, action) {
     return flow;
   }
   const next = handler(flow, action);
-  return next === flow ? flow : loadTestOnlyInShape(next);
+  return next === flow ? flow : viewOnlyInDistance(loadTestOnlyInShape(next));
 }

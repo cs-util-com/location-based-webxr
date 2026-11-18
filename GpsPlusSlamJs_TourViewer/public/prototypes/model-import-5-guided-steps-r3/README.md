@@ -42,6 +42,51 @@ folders, as in round 2.
   slider is tried first.
 - **Unchanged on purpose:** everything else from round 2.
 
+## After the first phone test
+
+The size and quality step held up; the rest got these fixes in place.
+
+- **The load test draws every copy as its own model.** It used to draw all
+  copies as one instanced mesh: one draw call, one geometry, which no scene
+  of different models would ever get. Now every copy is its own mesh with
+  its own geometry, so the graphics chip holds one set of buffers per copy
+  and draws one call per copy. The copies share the CPU-side arrays (three.js
+  uploads one buffer per attribute object) and the material with its
+  pictures, as different models may share pictures. They still follow
+  Original / Yours, the triangle slider (made again once it rests for
+  300 ms) and the triangle look; switching the test off disposes every copy.
+  The counts stay 100, 1000 and 3000; 3000 is meant to be heavy on a phone.
+- **The load test frames the whole field of copies** when it turns on (seen
+  from at least 35 degrees above), so the frame rate is that of a busy scene
+  in view, not of the few copies near a close-up camera. The readout adds
+  the draw calls and triangles three.js drew in the last frame
+  (`renderer.info.render`). Turning the test off puts the camera back where
+  it was.
+- **Far away after the load test no longer starts tiny.** The far-away step
+  takes the camera's pose as its close view, and the load test left the
+  camera far out (zoomed out by hand to see the copies), so the step's whole
+  distance range started there. The camera now returns to its pose from
+  before the load test whenever the test ends, before the step starts.
+- **One viewing distance in the flow state.** The far-away step's distance
+  is `viewDistance` in `import-flow.js` (metres, null outside that step):
+  the slider and a pinch or wheel both set it, and the camera and the slider
+  follow it. The controls hold a gesture to the slider's range. A turn of
+  the model is kept when the slider moves.
+- **The model never clips.** The near and far planes follow the camera's
+  distance on every frame in every step (and take in the field of copies
+  while the load test runs), so zooming in no longer cuts the model away.
+
+Frame rates measured on a desktop (Intel Iris Xe, Chrome, 1400 x 900, the
+rock at all triangles, half-second readings, median over 8 to 20 s), not on
+a phone:
+
+| copies | before: one instanced mesh, close-up camera | after: separate models, whole field framed |
+| ------ | ------------------------------------------- | ------------------------------------------ |
+| none   | 60                                          | 60                                         |
+| 100    | 58                                          | 60 (101 draw calls)                        |
+| 1000   | 18                                          | 9 (1001 draw calls)                        |
+| 3000   | 7                                           | 4 (3001 draw calls)                        |
+
 ## Quality, measured
 
 Every offered size of the rock (three 1024 px JPEG pictures: bumps, colour,

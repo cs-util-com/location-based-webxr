@@ -5,7 +5,7 @@
 // opened or swapped; Original / Yours is one tap away and never moves the
 // camera. Each picture size is made only when chosen, a quality slider
 // under the sizes fine-tunes the chosen size, and the shape step shows
-// the frame rate and a load test of many copies.
+// the frame rate and a load test of many separate copies.
 //
 // mountModelImport(host, options) -> controller; see README.md.
 import * as THREE from "three";
@@ -780,33 +780,51 @@ export function mountModelImport(host, options = {}) {
       ? m.closePose.position.distanceTo(m.closePose.target)
       : m.size * 1.5;
     const levels = m.chain?.levels;
-    const last = levels ? switchDistance(levels.at(-1).error, pixelBudget(50), FOV) : 0;
+    const last = levels
+      ? switchDistance(levels.at(-1).error, pixelBudget(50), FOV)
+      : 0;
     return { near, far: Math.max(near * 8, WALK_REACH * last) };
   }
 
-  function distanceMetres(m) {
+  /** The walk-away slider (0..1000, logarithmic) as metres, and back. */
+  function sliderMetres(m, value) {
     const { near, far } = distanceRange(m);
-    return near * Math.pow(far / near, Number(ui.distance.value) / 1000);
+    return near * Math.pow(far / near, value / 1000);
   }
 
+  function sliderValue(m, d) {
+    const { near, far } = distanceRange(m);
+    return Math.round((1000 * Math.log(d / near)) / Math.log(far / near));
+  }
+
+  /** Moves the camera to `d` from the look-at point along its current
+   *  direction, so a turn the author made is kept. */
   function placeCameraAt(m, d) {
-    const pose = m.closePose;
-    const dir = pose.position.clone().sub(pose.target).normalize();
-    controls.target.copy(pose.target);
-    camera.position.copy(pose.target).addScaledVector(dir, d);
-    camera.near = Math.max(m.size / 200, d - m.size * 2, 0.001);
-    camera.far = d + m.size * 50;
-    camera.updateProjectionMatrix();
+    const dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-12) {
+      dir.copy(m.closePose.position).sub(m.closePose.target);
+    }
+    camera.position.copy(controls.target).addScaledVector(dir.normalize(), d);
   }
 
+  /** The far-away step's camera follows flow.viewDistance; the slider
+   *  follows it too. The pinch and wheel gestures are held to the slider's
+   *  range by the controls' own limits. */
   function applyDistance() {
     const m = model;
     if (!m?.closePose) {
       return;
     }
     const t0 = performance.now();
-    const d = distanceMetres(m);
+    const range = distanceRange(m);
+    controls.minDistance = range.near;
+    controls.maxDistance = range.far;
+    const d = Math.min(
+      range.far,
+      Math.max(range.near, flow.viewDistance ?? range.near),
+    );
     placeCameraAt(m, d);
+    ui.distance.value = String(sliderValue(m, d));
     ui.distanceOut.textContent = `${formatLength(d)} away`;
     const budget = pixelBudget(flow.choices.falloff);
     ui.falloffOut.textContent = falloffWords(flow.choices.falloff);
@@ -1195,24 +1213,24 @@ export function mountModelImport(host, options = {}) {
       };
       insetCamera.position.copy(m.closePose.position);
       insetCamera.lookAt(m.closePose.target);
-      insetCamera.near = camera.near;
-      insetCamera.far = camera.far;
-      ui.distance.value = "350";
-      applyDistance();
+      fitClipPlanes(m, insetCamera, m.closePose.target);
+      // Walking away keeps the model in the middle of the view.
+      controls.enablePan = false;
+      dispatch({ type: "view", distance: sliderMetres(m, 350) });
     } else if (from === "distance") {
       restoreClosePose(m);
     }
   }
 
   function restoreClosePose(m) {
+    controls.minDistance = 0;
+    controls.maxDistance = Infinity;
+    controls.enablePan = true;
     if (!m.closePose) {
       return;
     }
     camera.position.copy(m.closePose.position);
     controls.target.copy(m.closePose.target);
-    camera.near = m.size / 100;
-    camera.far = m.size * 100;
-    camera.updateProjectionMatrix();
     m.closePose = null;
     if (m.level) {
       m.mineGeometry.setDrawRange(0, m.level.triangles * 3);
@@ -1258,7 +1276,10 @@ export function mountModelImport(host, options = {}) {
     } else if (a.pictureQuality !== b.pictureQuality) {
       schedulePictures();
     }
-    if (a.falloff !== b.falloff && flow.current === "distance") {
+    if (
+      (a.falloff !== b.falloff || prev.viewDistance !== flow.viewDistance) &&
+      flow.current === "distance"
+    ) {
       applyDistance();
     }
     if (
@@ -1267,10 +1288,7 @@ export function mountModelImport(host, options = {}) {
     ) {
       applyLook();
     }
-    if (
-      prev.loadTest !== flow.loadTest ||
-      prev.loadCount !== flow.loadCount
-    ) {
+    if (prev.loadTest !== flow.loadTest || prev.loadCount !== flow.loadCount) {
       syncLoadTest();
     }
   }
@@ -1293,12 +1311,79 @@ export function mountModelImport(host, options = {}) {
     return cells.slice(0, count);
   }
 
-  function dropCrowd(m) {
-    if (m?.crowd) {
-      m.group.remove(m.crowd);
-      m.crowd.dispose();
-      m.crowd = null;
+  /** Every copy is its own mesh with its own geometry, as if each were a
+   *  different model: one draw call per copy, and the graphics chip holds
+   *  one set of buffers per copy. The copies share the CPU-side arrays
+   *  (three.js uploads one buffer per attribute object, not per array) and
+   *  the material with its pictures, as different models may share
+   *  pictures. */
+  function makeCopies(m, crowd) {
+    const src = flow.showOriginal ? m.originalMesh : m.mineMesh;
+    const g = src.geometry;
+    const { start, count } = g.drawRange;
+    const end = Math.min(g.index.count, start + count);
+    const vertices = g.attributes.position.count;
+    // The shown level only, in the smallest index type a saved file uses.
+    const IndexArray = vertices <= 65536 ? Uint16Array : Uint32Array;
+    const index = IndexArray.from(g.index.array.subarray(start, end));
+    if (!g.boundingSphere) {
+      g.computeBoundingSphere();
     }
+    const geometries = crowd.offsets.map(() => {
+      const copy = new THREE.BufferGeometry();
+      for (const [name, attr] of Object.entries(g.attributes)) {
+        copy.setAttribute(
+          name,
+          new THREE.BufferAttribute(attr.array, attr.itemSize, attr.normalized),
+        );
+      }
+      copy.setIndex(new THREE.BufferAttribute(index, 1));
+      copy.boundingBox = g.boundingBox?.clone() ?? null;
+      copy.boundingSphere = g.boundingSphere.clone();
+      return copy;
+    });
+    crowd.meshes.forEach((mesh, i) => {
+      mesh.geometry.dispose();
+      mesh.geometry = geometries[i];
+    });
+    if (crowd.meshes.length === 0) {
+      crowd.meshes = geometries.map((geometry, i) => {
+        const mesh = new THREE.Mesh(geometry, src.material);
+        const [x, z] = crowd.offsets[i];
+        mesh.position.set(x, 0, z);
+        mesh.matrixAutoUpdate = false;
+        mesh.updateMatrix();
+        crowd.group.add(mesh);
+        return mesh;
+      });
+    }
+    crowd.key = shapeKey(m);
+    crowd.triangles = index.length / 3;
+  }
+
+  /** What the copies were made from: a change means making them again. */
+  function shapeKey(m) {
+    const g = (flow.showOriginal ? m.originalMesh : m.mineMesh).geometry;
+    return [
+      g.id,
+      g.index.array.length,
+      g.index.version,
+      g.attributes.position.version,
+      g.drawRange.start,
+      g.drawRange.count,
+    ].join("|");
+  }
+
+  function dropCrowd(m) {
+    if (!m?.crowd) {
+      return;
+    }
+    clearTimeout(m.crowd.timer);
+    m.group.remove(m.crowd.group);
+    for (const mesh of m.crowd.meshes) {
+      mesh.geometry.dispose();
+    }
+    m.crowd = null;
   }
 
   function syncLoadTest() {
@@ -1311,39 +1396,119 @@ export function mountModelImport(host, options = {}) {
       dropCrowd(m);
     }
     if (want > 0 && !m.crowd) {
-      const crowd = new THREE.InstancedMesh(
-        m.mineMesh.geometry,
-        m.mineMesh.material,
-        want,
-      );
-      const at = new THREE.Matrix4();
-      crowdOffsets(m, want).forEach(([x, z], i) => {
-        crowd.setMatrixAt(i, at.makeTranslation(x, 0, z));
-      });
-      crowd.instanceMatrix.needsUpdate = true;
-      // The copies spread far past the model; culling them as one block
-      // by the model's own bounds would hide them all.
-      crowd.frustumCulled = false;
-      m.group.add(crowd);
-      m.crowd = crowd;
+      startCrowd(m, want);
+    } else if (want === 0 && m.poseBeforeLoad) {
+      // Back to where the author was before the load test, so no later
+      // step starts from the far view of the copies.
+      camera.position.copy(m.poseBeforeLoad.position);
+      controls.target.copy(m.poseBeforeLoad.target);
+      m.poseBeforeLoad = null;
     }
     fps.reset();
   }
 
+  function startCrowd(m, want) {
+    const offsets = crowdOffsets(m, want);
+    const crowd = {
+        count: want,
+        offsets,
+        meshes: [],
+        group: new THREE.Group(),
+        key: "",
+        pending: null,
+        timer: 0,
+        triangles: 0,
+        // The field's radius around the model's centre.
+        radius:
+          Math.max(...offsets.map(([x, z]) => Math.hypot(x, z))) + m.size / 2,
+      };
+    makeCopies(m, crowd);
+    m.group.add(crowd.group);
+    m.crowd = crowd;
+    if (!m.poseBeforeLoad) {
+      m.poseBeforeLoad = {
+        position: camera.position.clone(),
+        target: controls.target.clone(),
+      };
+    }
+    frameCrowd(m);
+  }
+
+  /** Frames the whole field of copies, seen from at least 35 degrees
+   *  above: every copy on screen, so the frame rate is that of a busy
+   *  scene in view, not of the few copies near a close-up camera. */
+  const CROWD_VIEW_RISE = Math.sin(THREE.MathUtils.degToRad(35));
+  function frameCrowd(m) {
+    const center = m.box.getCenter(new THREE.Vector3());
+    const dir = camera.position.clone().sub(controls.target).normalize();
+    const flat = Math.hypot(dir.x, dir.z);
+    if (dir.y < CROWD_VIEW_RISE) {
+      const s = Math.sqrt(1 - CROWD_VIEW_RISE ** 2);
+      dir.set(
+        flat > 1e-6 ? (dir.x / flat) * s : 0,
+        CROWD_VIEW_RISE,
+        flat > 1e-6 ? (dir.z / flat) * s : s,
+      );
+    }
+    const vfov = THREE.MathUtils.degToRad(camera.fov);
+    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * camera.aspect);
+    const d = m.crowd.radius / Math.sin(Math.min(vfov, hfov) / 2);
+    controls.target.copy(center);
+    camera.position.copy(center).addScaledVector(dir, d);
+  }
+
   /** The copies follow Original / Yours and the triangle look, so the two
-   *  versions can be compared under the same load. */
+   *  versions can be compared under the same load. A changed shape (the
+   *  triangle slider, Original / Yours) makes them again once it has
+   *  rested for a moment: making thousands of copies per slider step
+   *  would stall the page. */
+  const CROWD_SETTLE_MS = 300;
   function followCrowd(m) {
+    const crowd = m.crowd;
     const src = flow.showOriginal ? m.originalMesh : m.mineMesh;
-    m.crowd.geometry = src.geometry;
-    m.crowd.material = src.material;
+    if (crowd.meshes[0]?.material !== src.material) {
+      for (const mesh of crowd.meshes) {
+        mesh.material = src.material;
+      }
+    }
+    const key = shapeKey(m);
+    if (key !== crowd.key && key !== crowd.pending) {
+      crowd.pending = key;
+      clearTimeout(crowd.timer);
+      crowd.timer = setTimeout(() => {
+        if (m.crowd === crowd && shapeKey(m) === key) {
+          makeCopies(m, crowd);
+        }
+        crowd.pending = null;
+      }, CROWD_SETTLE_MS);
+    }
   }
 
   function crowdTriangles(m) {
     if (!m.crowd) {
       return 0;
     }
-    const each = flow.showOriginal ? m.total : (m.level?.triangles ?? 0);
-    return each * (m.crowd.count + 1);
+    // Every copy draws the same level; the model itself is one more.
+    return m.crowd.triangles * (m.crowd.count + 1);
+  }
+
+  /** Near and far planes that hold the model (and the field of copies)
+   *  at any distance: the near plane moves with the camera, so zooming in
+   *  never cuts the model away. */
+  const NEAR_SHARE = 1 / 200;
+  const boxCenter = new THREE.Vector3();
+  function fitClipPlanes(m, cam, target) {
+    const d = Math.max(cam.position.distanceTo(target), 1e-4);
+    m.box.getCenter(boxCenter);
+    const fromCenter = cam.position.distanceTo(boxCenter);
+    const reach = m.crowd ? m.crowd.radius : m.size / 2;
+    const near = Math.max(fromCenter - reach * 1.05, d * NEAR_SHARE);
+    const far = Math.max(fromCenter + reach * 1.05, near * 2);
+    if (cam.near !== near || cam.far !== far) {
+      cam.near = near;
+      cam.far = far;
+      cam.updateProjectionMatrix();
+    }
   }
 
   // ---- the frame rate: frames counted over half a second ----
@@ -1393,11 +1558,14 @@ export function mountModelImport(host, options = {}) {
         : `${Math.round(fps.last)} frames a second (slowest ${Math.round(fps.lastWorst)} ms)`;
     if (!m?.crowd) {
       ui.loadFact.textContent =
-        "Draws many copies of the version shown, as in a busy scene, to see whether this many triangles still draw smoothly. Smooth is about 60 frames a second.";
+        "Draws many copies of the version shown, each as its own model, as in a busy scene, to see whether this many triangles still draw smoothly. Smooth is about 60 frames a second.";
       return;
     }
     const tris = (crowdTriangles(m) / 1e6).toFixed(1);
-    ui.loadFact.textContent = `${m.crowd.count.toLocaleString("en-US")} copies of ${flow.showOriginal ? "the original" : "your version"}, ${tris} million triangles in all. Smooth is about 60 frames a second; turn it off when done.`;
+    const drawnTris = (drawn.triangles / 1e6).toFixed(1);
+    ui.loadFact.textContent =
+      `${m.crowd.count.toLocaleString("en-US")} copies of ${flow.showOriginal ? "the original" : "your version"}, each its own model, ${tris} million triangles in all. ` +
+      `Drawn each frame: ${drawn.calls.toLocaleString("en-US")} draw calls, ${drawnTris} million triangles. Smooth is about 60 frames a second; turn it off when done.`;
   }
 
   /** The slider shows the falloff mirrored: to the right, detail drops
@@ -1520,7 +1688,14 @@ export function mountModelImport(host, options = {}) {
   listen(ui.loadCount, "change", () =>
     dispatch({ type: "loadCount", count: Number(ui.loadCount.value) }),
   );
-  listen(ui.distance, "input", () => applyDistance());
+  listen(ui.distance, "input", () => {
+    if (model?.closePose) {
+      dispatch({
+        type: "view",
+        distance: sliderMetres(model, Number(ui.distance.value)),
+      });
+    }
+  });
   ui.pictureQuality.min = String(PICTURE_QUALITY.min);
   ui.pictureQuality.max = String(PICTURE_QUALITY.max);
   ui.pictureQuality.step = String(PICTURE_QUALITY.step);
@@ -1592,14 +1767,35 @@ export function mountModelImport(host, options = {}) {
     renderer.setViewport(0, 0, canvasRect.width, canvasRect.height);
   }
 
+  /** A pinch or wheel on the far-away step moves the viewing distance in
+   *  the flow, which the slider then follows. */
+  function gestureToFlow() {
+    if (flow.current !== "distance" || !model?.closePose) {
+      return;
+    }
+    const d = camera.position.distanceTo(controls.target);
+    if (Math.abs(d - (flow.viewDistance ?? d)) > d * 1e-4) {
+      dispatch({ type: "view", distance: d });
+    }
+  }
+
+  /** What the last frame drew, from three.js's own count. */
+  const drawn = { calls: 0, triangles: 0 };
+
   let previousFrame = 0;
   function frame(now) {
     resize();
     controls.update();
-    if (model?.crowd) {
-      followCrowd(model);
+    gestureToFlow();
+    if (model) {
+      fitClipPlanes(model, camera, controls.target);
+      if (model.crowd) {
+        followCrowd(model);
+      }
     }
     renderer.render(scene, camera);
+    drawn.calls = renderer.info.render.calls;
+    drawn.triangles = renderer.info.render.triangles;
     if (flow.current === "distance" && model?.closePose && !ui.inset.hidden) {
       renderInset();
     }
@@ -1661,9 +1857,10 @@ export function mountModelImport(host, options = {}) {
     const away = new THREE.Vector3(1, 0.7, 1.2).normalize();
     controls.target.copy(center);
     camera.position.copy(center).addScaledVector(away, radius * 2.6);
-    camera.near = m.size / 100;
-    camera.far = m.size * 100;
-    camera.updateProjectionMatrix();
+    controls.minDistance = 0;
+    controls.maxDistance = Infinity;
+    controls.enablePan = true;
+    fitClipPlanes(m, camera, controls.target);
   }
 
   function mineTexturesFor(gltf, material, mineMaterial) {
@@ -1797,6 +1994,7 @@ export function mountModelImport(host, options = {}) {
       level: null,
       chain: null,
       closePose: null,
+      poseBeforeLoad: null,
     };
   }
 
@@ -2004,6 +2202,16 @@ export function mountModelImport(host, options = {}) {
         on: Boolean(model?.crowd),
         copies: model?.crowd?.count ?? 0,
         triangles: model ? crowdTriangles(model) : 0,
+      },
+      /** The last frame's draw calls and triangles (renderer.info). */
+      drawn: { ...drawn },
+      /** The far-away step's viewing distance (m), the camera's distance
+       *  to its look-at point, and the camera's near and far planes. */
+      view: {
+        flow: flow.viewDistance,
+        camera: camera.position.distanceTo(controls.target),
+        near: camera.near,
+        far: camera.far,
       },
     }),
     /** Turns the load test on or off (it works in the shape step only). */
