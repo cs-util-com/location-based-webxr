@@ -292,8 +292,8 @@ test.describe("on a touch screen", () => {
 
   // Why: on a phone two fingers are the globe's controls' (their pinch,
   // twist and tilt, as in the globe lab). The editor's input used to lock
-  // the camera for two fingers and read them for the OrbitControls view's
-  // own gestures, which the globe view ignored: a pinch held the camera
+  // the camera for two fingers and read them as its own gestures, which
+  // the globe view ignored: a pinch held the camera
   // still. Then the controls zoomed toward what they picked from the
   // relief's DRAWN mesh, a point 15 km off and 5.8 km under the ground: a
   // spread from eye height flew the camera 6 km through the ground, a

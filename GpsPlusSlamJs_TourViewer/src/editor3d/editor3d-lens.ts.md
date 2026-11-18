@@ -36,9 +36,6 @@ corners); released, the camera has its own field of view back.
 
 ## Who releases it
 
-- The scene view (`editor3d-scene.ts`): the orbit's own gesture (`start`),
-  every flight (`fly`, so Frame, Fly to, zoom, Top view, north up), tilt,
-  heading and distance, and a selection other than the picture.
 - The globe view (`editor3d-globe.ts`): the controls' gesture (`onTake`),
   every aim and pose change, zoom and distance, and a selection other than
   the picture.

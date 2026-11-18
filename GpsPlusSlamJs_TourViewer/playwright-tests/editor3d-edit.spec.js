@@ -24,6 +24,7 @@ import {
   openSample,
   openZip,
   view3d,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 import { save, viewCommand } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
@@ -32,7 +33,7 @@ import { stationBlocks } from "./tour-fixture.mjs";
 /**
  * Why these tests matter: the 3D view is where a creator moves things by
  * hand, and only the page shows whether the gizmo, the ground under the
- * pointer, OrbitControls and the store work together: a drag the camera
+ * pointer, the camera's controls and the store work together: a drag the camera
  * also takes, a drag that writes nothing (or a step per frame), keys that
  * do nothing in the browser, a second finger that leaves half an edit
  * behind, or handles drawn too small to grab all pass every unit test.
@@ -57,10 +58,11 @@ const N_M = 45.68;
  * point, 1.5 m over the ground, and the 3D view shown. `turning` places a
  * long text on its reading stand there instead, under the same id: a pin
  * faces the viewer however it is turned, so it has no turn to edit.
+ * `headingDeg` turns it (clockwise from north).
  * @param {import("@playwright/test").Page} page
- * @param {{ turning?: boolean }} [options]
+ * @param {{ turning?: boolean, headingDeg?: number }} [options]
  */
-async function openWithPin(page, { turning = false } = {}) {
+async function openWithPin(page, { turning = false, headingDeg = 0 } = {}) {
   await page.addInitScript(() => {
     // @ts-expect-error - the save goes to a download the test reads.
     delete window.showSaveFilePicker;
@@ -68,7 +70,7 @@ async function openWithPin(page, { turning = false } = {}) {
   await answerHosts(page);
   await openSample(page);
   const placed = await page.evaluate(
-    ({ id, alt, turning }) => {
+    ({ id, alt, turning, headingDeg }) => {
       const hook = /** @type {any} */ (window).__tourEditor;
       const first = hook.manifest().stations[0];
       const look = turning
@@ -90,13 +92,13 @@ async function openWithPin(page, { turning = false } = {}) {
             first.geo.lon +
             2 / (111_320 * Math.cos((first.geo.lat * Math.PI) / 180)),
           alt,
-          headingDeg: 0,
+          headingDeg,
         },
       });
       hook.edited();
       return { kind: out.kind, station: first.id };
     },
-    { id: PIN, alt: SQUARE_GROUND_M + N_M + 1.5, turning },
+    { id: PIN, alt: SQUARE_GROUND_M + N_M + 1.5, turning, headingDeg },
   );
   expect(placed.kind).toBe("placed");
   await viewCommand(page, "switch");
@@ -175,6 +177,88 @@ async function handle(page, part) {
       part,
     ),
   );
+}
+
+/**
+ * How far (CSS px) a press on the disc keeps from the drawing of any
+ * other item. A press over another item is that item's, and a
+ * character's drawing breathes: its edge moves between the search and
+ * the press. Measured locally on the sample's squire beside the pin: the
+ * disc's middle picked nothing at the search and the squire at the press
+ * about 0.3 s later, so the press panned the camera. The search samples a
+ * 4 px grid, so a drawing can lie up to about 3 px nearer than measured;
+ * 12 px leaves the breath about 9 px. A breath that moved an edge farther
+ * would flip the press again; runner speed does not change it.
+ */
+const CLEAR_OF_OTHERS_PX = 12;
+
+/**
+ * A page point of the selection's move disc a press takes as a move:
+ * on the disc, out of reach of the knobs and dots, over the canvas
+ * itself (the docks lie over its sides), and as far as the disc allows
+ * from every other item's drawing, at least `CLEAR_OF_OTHERS_PX`.
+ * Searched on a grid round the disc's middle, once it shows: from some
+ * views another item stands in front of the middle.
+ * @param {import("@playwright/test").Page} page
+ */
+async function discPoint(page) {
+  await handle(page, "middle");
+  const found = await page.evaluate(() => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const middle = hook.view3dHandle("middle");
+    const canvas = document.querySelector("#view3d canvas");
+    if (middle === null || canvas === null) return null;
+    const box = canvas.getBoundingClientRect();
+    const own = hook.selected();
+    // A knob reaches half its 42 px; a margin past that.
+    const grips = ["knob", "point", "dot"]
+      .map((p) => hook.view3dHandle(p))
+      .filter((/** @type {unknown} */ p) => p !== null);
+    /** @type {number[][]} */
+    const others = [];
+    /** @type {number[][]} */
+    const candidates = [];
+    for (let dx = -92; dx <= 92; dx += 4) {
+      for (let dy = -92; dy <= 92; dy += 4) {
+        const x = middle[0] + dx;
+        const y = middle[1] + dy;
+        const under = hook.view3dUnder(x, y);
+        if (under === null) continue;
+        if (under.pick !== null && under.pick !== own) {
+          others.push([x, y]);
+        } else if (
+          under.onDisc === true &&
+          Math.hypot(dx, dy) <= 80 &&
+          grips.every(
+            (/** @type {number[]} */ [gx = 0, gy = 0]) =>
+              Math.hypot(gx - x, gy - y) > 30,
+          ) &&
+          document.elementFromPoint(box.x + x, box.y + y) === canvas
+        ) {
+          candidates.push([x, y]);
+        }
+      }
+    }
+    let best = null;
+    let clear = -1;
+    for (const [x = 0, y = 0] of candidates) {
+      const d = Math.min(
+        Infinity,
+        ...others.map(([ox = 0, oy = 0]) => Math.hypot(ox - x, oy - y)),
+      );
+      if (d > clear) {
+        clear = d;
+        best = [x, y];
+      }
+    }
+    return best === null ? null : { at: best, clear };
+  });
+  if (found === null) throw new Error("no point of the disc takes a move");
+  expect(
+    found.clear,
+    "a point of the disc clear of every other item",
+  ).toBeGreaterThanOrEqual(CLEAR_OF_OTHERS_PX);
+  return onPage(page, /** @type {[number, number]} */ (found.at));
 }
 
 /**
@@ -260,7 +344,7 @@ test("drags a selected pin over the ground with the mouse: one step, kept above 
   await selectPin(page, station);
   const before = pinOf(await manifest(page));
   const steps = await changes(page);
-  const from = await handle(page, "middle");
+  const from = await discPoint(page);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   for (let i = 1; i <= 10; i++) {
@@ -292,7 +376,9 @@ test("drags a selected pin over the ground with the mouse: one step, kept above 
 
 /**
  * A canvas point on the pin's own drawing that does not meet the move
- * disc, searched on a grid round the pin's point in one round trip.
+ * disc nor lies in reach of the gizmo's knobs and dots (a press there
+ * takes them, whatever body is under it), searched on a grid round the
+ * pin's point in one round trip.
  * @param {import("@playwright/test").Page} page
  */
 async function pinBodyOffDisc(page) {
@@ -300,12 +386,23 @@ async function pinBodyOffDisc(page) {
     const hook = /** @type {any} */ (window).__tourEditor;
     const centre = hook.view3dScreenOf(id);
     if (centre === null) return null;
+    // A knob reaches half its 42 px; a margin past that.
+    const grips = ["knob", "point", "dot"]
+      .map((p) => hook.view3dHandle(p))
+      .filter((/** @type {unknown} */ p) => p !== null);
+    const offGrips = (/** @type {number} */ x, /** @type {number} */ y) =>
+      grips.every(
+        (/** @type {number[]} */ [gx = 0, gy = 0]) =>
+          Math.hypot(gx - x, gy - y) > 30,
+      );
     for (let r = 0; r <= 120; r += 4) {
       for (let a = 0; a < 360; a += 15) {
         const x = centre[0] + r * Math.cos((a * Math.PI) / 180);
         const y = centre[1] + r * Math.sin((a * Math.PI) / 180);
         const under = hook.view3dUnder(x, y);
-        if (under?.pick === id && !under.onDisc) return [x, y];
+        if (under?.pick === id && !under.onDisc && offGrips(x, y)) {
+          return [x, y];
+        }
       }
     }
     return null;
@@ -346,7 +443,7 @@ test("a drag on the selected pin's body turns the camera and leaves the pin; a t
   await expect.poll(() => selected(page)).toBe(PIN);
   await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   // The disc moves it, one step.
-  const from = await handle(page, "middle");
+  const from = await discPoint(page);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   for (let i = 1; i <= 10; i++) {
@@ -378,36 +475,54 @@ test("a tap on another item inside the selected station's move disc selects it",
   await expect(lock).toHaveAttribute("aria-pressed", "false");
   await handle(page, "middle");
   const steps = await changes(page);
-  // A point where the press meets both the pin and the station's disc,
+  // A point where the press meets both another item of the station and
+  // its disc (whichever item the camera shows there: the globe view looks
+  // from farther than the pin's 2 m), out of the knobs' and dots' reach,
   // in the view's uncovered part: the docks (the inspector, the asset
   // shelf) lie over the canvas's sides, and a press there is theirs.
-  const at = await page.evaluate((id) => {
+  const found = await page.evaluate((own) => {
     const hook = /** @type {any} */ (window).__tourEditor;
-    const centre = hook.view3dScreenOf(id);
+    const middle = hook.view3dHandle("middle");
     const canvas = document.querySelector("#view3d canvas");
-    if (centre === null || canvas === null) return null;
+    if (middle === null || canvas === null) return null;
     const box = canvas.getBoundingClientRect();
     const uncovered = (/** @type {number} */ x, /** @type {number} */ y) =>
       document.elementFromPoint(box.x + x, box.y + y) === canvas;
+    const grips = ["knob", "point", "dot"]
+      .map((p) => hook.view3dHandle(p))
+      .filter((/** @type {unknown} */ p) => p !== null);
+    const offGrips = (/** @type {number} */ x, /** @type {number} */ y) =>
+      grips.every(
+        (/** @type {number[]} */ [gx = 0, gy = 0]) =>
+          Math.hypot(gx - x, gy - y) > 30,
+      );
     for (let r = 0; r <= 120; r += 2) {
       for (let a = 0; a < 360; a += 10) {
-        const x = centre[0] + r * Math.cos((a * Math.PI) / 180);
-        const y = centre[1] + r * Math.sin((a * Math.PI) / 180);
+        const x = middle[0] + r * Math.cos((a * Math.PI) / 180);
+        const y = middle[1] + r * Math.sin((a * Math.PI) / 180);
         const under = hook.view3dUnder(x, y);
-        if (under?.pick === id && under.onDisc === true && uncovered(x, y)) {
-          return [x, y];
+        if (
+          typeof under?.pick === "string" &&
+          under.pick !== own &&
+          !under.pick.startsWith("station:") &&
+          under.onDisc === true &&
+          offGrips(x, y) &&
+          uncovered(x, y)
+        ) {
+          return { at: [x, y], pick: under.pick };
         }
       }
     }
     return null;
-  }, PIN);
+  }, `station:${station}`);
   expect(
-    at,
-    "no uncovered point meets both the pin and the disc",
+    found,
+    "no uncovered point meets both another item and the disc",
   ).not.toBeNull();
-  const tap = await onPage(page, at);
+  if (found === null) return;
+  const tap = await onPage(page, /** @type {[number, number]} */ (found.at));
   await page.mouse.click(tap.x, tap.y);
-  await expect.poll(() => selected(page)).toBe(PIN);
+  await expect.poll(() => selected(page)).toBe(found.pick);
   expect(await changes(page)).toBe(steps);
 });
 
@@ -451,7 +566,7 @@ test("a pin dragged out of its circle warns on the ring and stays in its station
   }, station);
   await selectPin(page, station);
   const stations = (await manifest(page)).stations.length;
-  const from = await handle(page, "middle");
+  const from = await discPoint(page);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   for (let i = 1; i <= 16; i++) {
@@ -474,30 +589,53 @@ test("a pin dragged out of its circle warns on the ring and stays in its station
   ).toBeVisible();
 });
 
-/** The camera's position. @param {import("@playwright/test").Page} page */
+/**
+ * The camera's pose: latitude, longitude, altitude (km), heading and
+ * pitch (degrees). Not its position in the world, whose frame follows
+ * the camera.
+ * @param {import("@playwright/test").Page} page
+ */
 async function cameraAt(page) {
-  return /** @type {number[]} */ ((await view3d(page))?.camera ?? []);
+  const pose = (await view3d(page))?.globe?.pose;
+  // A missing pose must fail the caller, not compare two empty lists.
+  if (pose === undefined) throw new Error("the globe view reads no pose");
+  return /** @type {number[]} */ ([
+    pose.lat,
+    pose.lng,
+    pose.altitudeKm,
+    pose.headingDeg,
+    pose.pitchDeg,
+  ]);
 }
 
-// Why: a camera still moving when the gizmo is grabbed (a card's or
-// Frame's flight, the orbit's coast) moves the object under a pointer
-// that holds still, and T, F or Home pressed during a drag would fly the
-// camera away mid-drag. The camera must stand still from the press until
-// the release.
-test("holds the camera still from a press on the gizmo until its release, even mid-flight and against T", async ({
+// Why: a camera still moving when the gizmo is grabbed (the orbit's
+// coast) moves the object under a pointer that holds still, and T, F or
+// Home pressed during a drag would move the camera away mid-drag. The
+// camera must stand still from the press until the release.
+// Not "mid-flight": the globe view's Frame (F) places the camera at once
+// and starts no flight (`flying` read false right after F), and its only
+// flight, the opening approach, cannot be pressed into at a reliable
+// moment. No press can grab the gizmo during that flight: it holds the
+// stations back (`holdsStations`), so no gizmo is drawn, and any press on
+// the canvas takes the camera from it (`approach.takeOver`, held by
+// editor3d-globe-approach.spec.js). The input's lock (`lockCamera`, the
+// controls' `lease(true)`) stops only the orbit's coast (the globe's
+// controls test "lease holds the controls off until it is returned").
+test("holds the camera still from a press on the gizmo until its release, and against T and Home", async ({
   page,
 }) => {
+  // The budget of the other drag tests here: at four times slower CPU the
+  // open and the frame waits took more than the default 30 s.
+  test.setTimeout(120_000);
   const station = await openWithPin(page);
   await selectPin(page, station);
   const steps = await changes(page);
-  await page.keyboard.press("f");
-  const from = await handle(page, "middle");
+  const from = await discPoint(page);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   const held = await cameraAt(page);
   await afterFrames(page, 20);
   expect(await cameraAt(page)).toEqual(held);
-  expect((await view3d(page))?.flying).toBe(false);
   // The shell's camera keys wait for the drag's end.
   await page.keyboard.press("t");
   await page.keyboard.press("Home");
@@ -618,35 +756,49 @@ test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top 
   // Escape closed the menu only: the pin is still selected.
   expect(await selected(page)).toBe(PIN);
   // On the closed menu's button Home is the page's again: it frames the
-  // whole tour. The camera is panned away first so the framing shows.
+  // whole tour, looking north. The camera is turned away first (a right
+  // drag) so the framing shows.
   const canvas = await page.locator("#view3d canvas").boundingBox();
   if (canvas === null) throw new Error("no canvas");
   const mid = {
     x: canvas.x + canvas.width / 2,
     y: canvas.y + canvas.height / 2,
   };
-  /** The orbit's centre (m in the view's frame). */
-  const target = async () =>
-    /** @type {number[]} */ ((await view3d(page))?.target ?? []);
-  /** @param {number[]} a @param {number[]} b */
-  const apart = (a, b) =>
-    Math.hypot((a[0] ?? 0) - (b[0] ?? 0), (a[2] ?? 0) - (b[2] ?? 0));
-  const framed = await target();
+  /** The camera's heading off north (degrees, the short way). */
+  const offNorth = async () => {
+    const heading = (await cameraAt(page))[3] ?? 0;
+    return Math.abs(((((heading + 180) % 360) + 360) % 360) - 180);
+  };
   await page.mouse.move(mid.x, mid.y);
   await page.mouse.down({ button: "right" });
   await page.mouse.move(mid.x + 160, mid.y + 40, { steps: 8 });
   await page.mouse.up({ button: "right" });
   await afterFrames(page, 20);
-  const panned = await target();
-  // The pan still coasts a little (the orbit's damping): Home must take
-  // the centre back much farther than that, half the pan at least.
-  const pan = apart(panned, framed);
-  expect(pan).toBeGreaterThan(1);
+  // The turn may still coast a little: Home must take the heading back
+  // much farther than that, to half the turn at most.
+  const turned = await offNorth();
+  expect(turned).toBeGreaterThan(2);
   await viewButton.focus();
   await page.keyboard.press("Home");
-  await expect
-    .poll(async () => apart(await target(), panned))
-    .toBeGreaterThan(pan / 2);
+  await expect.poll(offNorth).toBeLessThan(turned / 2);
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  // And framed: every station stands on the screen.
+  const framed = await page.evaluate(() => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    return hook
+      .manifest()
+      .stations.map((/** @type {{ id: string }} */ s) =>
+        hook.view3dScreenOf(`station:${s.id}`),
+      );
+  });
+  expect(framed.length).toBeGreaterThan(1);
+  for (const at of framed) {
+    expect(at, "a station framed").not.toBeNull();
+    expect(at[0]).toBeGreaterThan(0);
+    expect(at[0]).toBeLessThan(canvas.width);
+    expect(at[1]).toBeGreaterThan(0);
+    expect(at[1]).toBeLessThan(canvas.height);
+  }
   await expect(viewMenu).toBeHidden();
   expect(await changes(page)).toBe(steps);
   // With the help open, Escape in a menu still closes the menu.
@@ -763,7 +915,7 @@ test.describe("on a touch screen", () => {
     await selectPin(page, station);
     const before = await manifest(page);
     const steps = await changes(page);
-    const from = await handle(page, "middle");
+    const from = await discPoint(page);
     const cdp = await page.context().newCDPSession(page);
     /** @param {string} type @param {{x: number, y: number, id: number}[]} points */
     const touch = (type, points) =>
@@ -798,7 +950,7 @@ test("draws the gizmo's handles at their size on the screen, at a phone, a table
   test.slow();
   await useWideFont(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  const station = await openWithPin(page, { turning: true });
+  const station = await openWithPin(page, { turning: true, headingDeg: 90 });
   // A station: four dots of 30 px (picked from the tree, which a phone's
   // window folds away).
   await page.locator(`#tree-body [data-select="station:${station}"]`).click();
@@ -811,9 +963,9 @@ test("draws the gizmo's handles at their size on the screen, at a phone, a table
     )
     .toBeCloseTo(30, 1);
   await selectPin(page, station);
-  // Straight down, the screen shows the ground plane undistorted.
-  await page.keyboard.press("t");
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  // Turned a quarter, its knob lies across the line of sight (the view
+  // looks north at the selection, framed in the screen's middle): the
+  // stalk is drawn across the screen at its length, whatever the tilt.
   for (const size of [
     { width: 1440, height: 900 },
     { width: 820, height: 1180 },
@@ -865,6 +1017,8 @@ test("draws the gizmo's handles at their size on the screen, at a phone, a table
     // a few per cent further out at a close zoom, never nearer.
     const middle = await handle(page, "middle");
     const knob = await handle(page, "knob");
+    // The knob's height shows as a step up of a few pixels (6 at most
+    // measured), inside the margin.
     const reach = Math.hypot(knob.x - middle.x, knob.y - middle.y);
     expect(reach, at).toBeGreaterThanOrEqual(sizes.ringPx + 30 - 1);
     expect(reach, at).toBeLessThanOrEqual((sizes.ringPx + 30) * 1.06);
@@ -995,7 +1149,7 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   const { zip, id } = await oneCodeTour();
   await openZip(page, zip, "one-code.zip");
@@ -1007,15 +1161,11 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
   await expect.poll(async () => (await view3d(page))?.top).toBe(true);
   await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   await expect.poll(async () => (await view3d(page))?.standing).toBe(0);
-  const code = await page.evaluate(
-    (level) => /** @type {any} */ (window).__tourEditor.view3dPointOf(level),
-    id,
-  );
   /** The least side of a code laid flat on screen (CSS px). */
   const SCREEN_PX = 12;
   const PRINTED_M = 0.2;
   /**
-   * The camera `m` from the orbit's centre, a screenshot kept for the
+   * The camera `m` from the tour's centre, a screenshot kept for the
    * eye at 300 m, and the code then: its growth, its side measured on the canvas,
    * and the side its printed size alone would have.
    * @param {number} m
@@ -1035,17 +1185,21 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
           .outputPath(`top-view-code-${size?.width}x${size?.height}-${m}m.png`),
       );
     }
-    const stats = await view3d(page);
+    // The code and the camera in one read: the world follows the camera.
+    const { stats, code } = await page.evaluate((level) => {
+      const hook = /** @type {any} */ (window).__tourEditor;
+      return { stats: hook.view3d(), code: hook.view3dPointOf(level) };
+    }, id);
     // In whole pixels, as the view reads it: a phone's sheet leaves the
     // canvas a fractional box.
     const canvasPx = await page
       .locator(".view3d-canvas")
       .evaluate((el) => el.clientHeight);
-    // Pixels per radian of the canvas as drawn, through the 50 degree lens.
-    const focal = canvasPx / 2 / Math.tan((25 * Math.PI) / 180);
+    // Pixels per radian of the canvas as drawn, through the view's lens.
+    const focal = canvasPx / 2 / Math.tan((stats.fovDeg * Math.PI) / 360);
     const toCode = [0, 1, 2].map((i) => code[i] - stats.camera[i]);
     const dist = Math.hypot(...toCode);
-    const look = [0, 1, 2].map((i) => stats.target[i] - stats.camera[i]);
+    const look = [0, 1, 2].map((i) => stats.look[i] - stats.camera[i]);
     const lookM = Math.hypot(...look);
     // Its depth in the view: a flat square facing the camera is drawn
     // its side times the focal over its depth.

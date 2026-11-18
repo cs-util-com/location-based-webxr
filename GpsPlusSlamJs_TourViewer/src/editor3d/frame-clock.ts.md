@@ -1,7 +1,7 @@
 # frame-clock.ts
 
-- Purpose: the 3D views' frame clock. Both views (`editor3d-scene.ts`,
-  `editor3d-globe.ts`) tick one per drawn frame; their `readout()` gives
+- Purpose: the 3D view's frame clock. The globe view
+  (`editor3d-globe.ts`) ticks it once per drawn frame; its `readout()` gives
   its mean, its worst interval and its slow-frame count to the editor
   shell, whose Performance tab and its badge show them.
 - Public API:

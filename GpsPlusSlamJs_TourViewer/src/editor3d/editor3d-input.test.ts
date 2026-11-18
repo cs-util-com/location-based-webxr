@@ -88,8 +88,6 @@ function setup(
     lockCamera: vi.fn((on: boolean) => {
       log.push(`lock:${String(on)}`);
     }),
-    twoFingerStart: vi.fn(),
-    twoFinger: vi.fn(),
     frame: vi.fn(),
   };
   const page: InputPage = {
@@ -240,8 +238,8 @@ describe("a drag of the gizmo", () => {
     expect(t.commits).toHaveLength(0);
     expect(t.page.say).toHaveBeenCalledWith(TWO_FINGER_CANCEL);
     expect(t.log).toContain("preview:clear");
-    // The fingers move the camera now, and only the camera: both up
-    // together, a few pixels per event, one finger at a time (as a
+    // The fingers are the camera's controls' now, and edit nothing: both
+    // up together, a few pixels per event, one finger at a time (as a
     // touch screen reports them).
     for (let y = -5; y >= -40; y -= 5) {
       window.dispatchEvent(
@@ -251,11 +249,8 @@ describe("a drag of the gizmo", () => {
         pointer("pointermove", { x: 100, y }, { touch: true, id: 2 }),
       );
     }
-    expect(t.scene.twoFinger).toHaveBeenCalledWith(
-      "tilt",
-      expect.anything(),
-      expect.anything(),
-    );
+    expect(t.commits).toHaveLength(0);
+    expect(t.dispatched).toHaveLength(2);
     // Lifting one finger is no click and starts nothing; the camera stays
     // locked until the last finger is up.
     window.dispatchEvent(
@@ -1177,13 +1172,12 @@ describe("the globe's routing table, event by event", () => {
 
   // Why: the globe's controls pinch, twist and tilt with two fingers (the
   // lab's gestures); the input used to lock the camera for two fingers and
-  // read them itself, which on the globe moved nothing. With a camera that
-  // takes two fingers the input must leave it free, read nothing, and still
-  // cancel a handle drag the first finger had started.
+  // read them itself, which on the globe moved nothing. The input must
+  // leave the controls free, and still cancel a handle drag the first
+  // finger had started.
   it("two fingers are the camera's, a handle drag under the first cancelled", () => {
     for (const on of ["ground", "handle"] as const) {
       const t = globeSetup({ handle: on === "handle" ? "move" : null });
-      t.scene.cameraTakesTwoFingers = true;
       const one = { x: 10, y: 10 };
       t.element.dispatchEvent(pointer("pointerdown", one, { touch: true }));
       t.element.dispatchEvent(
@@ -1203,10 +1197,7 @@ describe("the globe's routing table, event by event", () => {
       }
       const locks = t.log.filter((l) => l.startsWith("lock:"));
       const locked = locks.at(-1) === "lock:true";
-      const read =
-        vi.mocked(t.scene.twoFinger).mock.calls.length > 0 ||
-        vi.mocked(t.scene.twoFingerStart).mock.calls.length > 0;
-      const did = locked || read ? "none" : "camera";
+      const did = locked ? "none" : "camera";
       expect(did, on).toBe(routeGlobeInput({ kind: "fingers", on }));
       expect(t.commits, on).toEqual([]);
       // The cancel line is said exactly when a handle drag was cancelled.
@@ -1238,12 +1229,11 @@ describe("the globe's routing table, event by event", () => {
   });
 });
 
-describe("the OrbitControls view's click distance", () => {
-  // Why: one rule decides click or drag in both views: a press that moved
-  // the click distance or more is a drag. The globe's table puts its line
-  // there, and the default (OrbitControls) view follows the same `>=`, so
-  // its line moved by that one pixel too, on purpose: 4 px with a mouse,
-  // 8 px with a finger, each now a drag, just under them still a click.
+describe("the input's click distance", () => {
+  // Why: one rule decides click or drag: a press that moved the click
+  // distance or more is a drag. The globe's table puts its line there, and
+  // the input follows the same `>=`: 4 px with a mouse, 8 px with a
+  // finger, each a drag, just under them still a click.
   it("selects after a move just under the line, not on it", () => {
     for (const touch of [false, true]) {
       const line = touch ? INPUT.tapPx : INPUT.clickPx;
@@ -1314,7 +1304,6 @@ describe("a second finger after a handle drag, on the globe", () => {
   // and be free again after.
   it("keeps the camera still from the cancel until every finger is up", () => {
     const t = setup({ handle: "move" });
-    t.scene.cameraTakesTwoFingers = true;
     const controls = controlsDouble(t);
     const one = { x: 10, y: 10 };
     const two = { x: 60, y: 10 };
@@ -1348,7 +1337,6 @@ describe("a second finger after a handle drag, on the globe", () => {
   // first finger (it started on the ground): they get both.
   it("leaves both fingers to the camera when the first was not a drag", () => {
     const t = setup({ handle: null });
-    t.scene.cameraTakesTwoFingers = true;
     const controls = controlsDouble(t);
     t.element.dispatchEvent(
       pointer("pointerdown", { x: 10, y: 10 }, { touch: true }),

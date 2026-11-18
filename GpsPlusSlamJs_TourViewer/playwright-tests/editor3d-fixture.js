@@ -221,6 +221,30 @@ export async function afterFrames(page, n) {
 }
 
 /**
+ * Wait until the page has drawn `n` animation frames past now: for a
+ * layout that follows within frames while the 3D view may draw none (the
+ * globe counts no frame while its canvas has no size, as when a maximized
+ * group hides it).
+ * @param {import("@playwright/test").Page} page
+ * @param {number} n
+ */
+export async function afterPageFrames(page, n) {
+  await page.evaluate(
+    (count) =>
+      new Promise((resolve) => {
+        let left = count;
+        const tick = () => {
+          left -= 1;
+          if (left <= 0) resolve(undefined);
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    n,
+  );
+}
+
+/**
  * The frames the relief may take to carry the ground on the globe. Its
  * hand-over waits for every relief tile in view to be parsed, about one a
  * frame, so it is bound by frames, not time: measured 2026-11-03 on the
@@ -304,13 +328,14 @@ export async function reliefCarries(page) {
 /**
  * The editor page with the sample tour open on the 2D map (not in the 3D
  * view, the default: `openSampleIn3d`), for a spec that edits on the map
- * first or drives the view switch itself.
+ * first or drives the view switch itself. The 3D view it switches to is
+ * the globe, opened straight at the tour and without the clouds
+ * (`gotoEditor`).
  * @param {import("@playwright/test").Page} page
- * @param {string} [link] the page to open: the older view by default
  */
-export async function openSample(page, link = OLDER_VIEW) {
+export async function openSample(page) {
   await startOnMap(page.context());
-  await page.goto(link);
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // No tour, nothing to show in 3D: the switch waits for one.
   await expect(page.locator("#view-switch")).toBeDisabled();
@@ -319,18 +344,30 @@ export async function openSample(page, link = OLDER_VIEW) {
   await expect(page.locator("#rail .row-title")).toHaveCount(5);
 }
 
-/** The editor's link to the older 3D view (`?globe=0`), and its plain link
- * (the globe), for the tests that hold both. */
-export const OLDER_VIEW = "/edit.html?globe=0";
+/** The editor's link: its 3D view is the globe. */
 export const GLOBE_VIEW = "/edit.html";
 
 /**
- * The editor page with the sample tour open, as a creator gets it: in the
- * 3D view, its three stations placed.
+ * Load the editor page for a spec about the editor rather than the globe:
+ * every tour it opens shows at street level from its first frame
+ * (`noApproach`) and without the heavy clouds (`noClouds`), several times
+ * faster a frame in this software renderer. The caller answers the hosts
+ * (`answerHosts`) first and waits for the page.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function gotoEditor(page) {
+  await noApproach(page);
+  await noClouds(page);
+  await page.goto(GLOBE_VIEW);
+}
+
+/**
+ * The editor page with the sample tour open, as a creator gets it: on the
+ * globe, its three stations placed (loaded by `gotoEditor`).
  * @param {import("@playwright/test").Page} page
  */
 export async function openSampleIn3d(page) {
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -537,14 +574,19 @@ export function dockBottomPx(height) {
  * @param {number} width the window's
  */
 export async function dockSettled(page, width) {
+  // The docking lays out on the page's frames, which the globe's frames
+  // slow in this software renderer: a loaded machine ran the 5 s default
+  // out before the first layout.
   await expect
-    .poll(() =>
-      page.evaluate(() =>
-        Math.round(
-          document.querySelector(".dock-host")?.getBoundingClientRect().right ??
-            0,
+    .poll(
+      () =>
+        page.evaluate(() =>
+          Math.round(
+            document.querySelector(".dock-host")?.getBoundingClientRect()
+              .right ?? 0,
+          ),
         ),
-      ),
+      { timeout: 30_000 },
     )
     .toBe(width);
   await afterFrames(page, 3);

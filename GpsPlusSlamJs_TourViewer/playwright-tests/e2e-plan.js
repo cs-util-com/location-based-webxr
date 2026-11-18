@@ -25,11 +25,10 @@ export const PROJECTS = /** @type {const} */ (["dom", "webgl"]);
  *   other pages (the visitor's and the phone creator's page, the check
  *   pages); `both`: the spec opens the editor and another page.
  * - lane (1 or 2 for a dom spec, 1 to 4 for a webgl spec): the CI job that
- *   runs the spec (see `LANES`). Balanced by the per-spec seconds of a local
- *   full run of 2026-11-05 (see the sidecar), each dom lane about half of the
- *   dom project and each webgl lane about a quarter of the 3D specs, lane 1
- *   lighter for its clouds spec's CI retries; rebalance from the uploaded
- *   JSON report's per-test durations.
+ *   runs the spec (see `LANES`). Each dom lane about half of the dom
+ *   project (a local full run of 2026-11-05), each webgl lane about a
+ *   quarter of the 3D specs by the CI full run of 2026-11-18 (see the
+ *   sidecar); rebalance from the uploaded JSON report's per-test durations.
  *
  * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both", lane: 1 | 2 | 3 | 4 }>>}
  */
@@ -70,7 +69,7 @@ export const SPECS = {
   },
   "editor3d-docking.spec.js": { project: "webgl", area: "editor", lane: 1 },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor", lane: 3 },
-  "editor3d-folders.spec.js": { project: "webgl", area: "editor", lane: 3 },
+  "editor3d-folders.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-globe-approach.spec.js": {
     project: "webgl",
     area: "editor",
@@ -108,7 +107,7 @@ export const SPECS = {
     area: "editor",
     lane: 2,
   },
-  "editor3d-inspector.spec.js": { project: "webgl", area: "editor", lane: 3 },
+  "editor3d-inspector.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d-long-text.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-model.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-narration.spec.js": { project: "webgl", area: "editor", lane: 4 },
@@ -134,7 +133,7 @@ export const SPECS = {
   "editor3d-story-cards.spec.js": {
     project: "webgl",
     area: "editor",
-    lane: 3,
+    lane: 1,
   },
   "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
   "editor3d-video.spec.js": { project: "webgl", area: "editor", lane: 4 },

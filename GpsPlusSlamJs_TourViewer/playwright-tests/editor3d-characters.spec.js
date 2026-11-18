@@ -12,8 +12,9 @@ import {
   standAt,
 } from "./ar-fakes.js";
 import {
-  OLDER_VIEW,
+  afterFrames,
   answerHosts,
+  gotoEditor,
   openSampleIn3d,
   openZip,
 } from "./editor3d-fixture.js";
@@ -194,7 +195,7 @@ test("the add menu's Character: made in the maker over the editor, standing in t
   const next = await context.newPage();
   await next.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(next);
-  await next.goto("/edit.html?globe=0");
+  await gotoEditor(next);
   await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(next, saved, "sample-with-rita.zip");
   await expect(next.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -339,7 +340,7 @@ test("a character added with the add menu is drawn at a free spot, selected with
     (/** @type {any} */ s) => s.id === "gate",
   ).geo.alt;
   await answerHosts(page, { groundM: gateAlt - GEOID_N_M });
-  await page.goto(OLDER_VIEW);
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, blocks, "blocks-tour.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -411,23 +412,10 @@ test("a character added with the add menu is drawn at a free spot, selected with
   expect(others, "other items drawn at the gate").toBeGreaterThan(0);
 
   // Selected: the gizmo's handles show; its disc moves him, one step.
-  // Seen from above (T), as a creator moves an item among others: from
-  // a low camera the gate's other figures can stand in front of his feet.
-  await page.keyboard.press("t");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourEditor.view3d()?.top,
-      ),
-    )
-    .toBe(true);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourEditor.view3d()?.flying,
-      ),
-    )
-    .toBe(false);
+  // Brought closer with the zoom button, as a creator does: framed, he
+  // still stands among the gate's labels and figures, his disc a few
+  // pixels across (the top view looks down where the camera stands, and
+  // leaves him off the screen).
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -436,27 +424,44 @@ test("a character added with the add menu is drawn at a free spot, selected with
     )
     .not.toBeNull();
   const canvas = await page.locator("#view3d canvas").boundingBox();
-  const middle = await page.evaluate(() =>
-    /** @type {any} */ (window).__tourEditor.view3dHandle("middle"),
-  );
-  if (canvas === null || middle === null) throw new Error("no handle");
+  if (canvas === null) throw new Error("no canvas");
   // A point of his disc no other item covers: from some headings one of
   // the gate's figures stands in front of his feet, and a press over
-  // another item is that item's (a tap selects it), never the disc's.
-  const grip = await page.evaluate(([who, at]) => {
-    const hook = /** @type {any} */ (window).__tourEditor;
-    for (let r = 0; r <= 80; r += 4) {
-      for (let a = 0; a < 360; a += 15) {
-        const x = at[0] + r * Math.cos((a * Math.PI) / 180);
-        const y = at[1] + r * Math.sin((a * Math.PI) / 180);
-        const under = hook.view3dUnder(x, y);
-        if (under?.onDisc === true && (under.pick ?? who) === who) {
-          return [x, y];
+  // another item is that item's (a tap selects it), never the disc's;
+  // nor in reach of his turn knob (half its 42 px), which takes a press.
+  const gripOf = () =>
+    page.evaluate((who) => {
+      const hook = /** @type {any} */ (window).__tourEditor;
+      const at = hook.view3dHandle("middle");
+      if (at === null) return null;
+      const knob = hook.view3dHandle("knob");
+      const offKnob = (/** @type {number} */ x, /** @type {number} */ y) =>
+        knob === null || Math.hypot(knob[0] - x, knob[1] - y) > 30;
+      for (let r = 0; r <= 80; r += 4) {
+        for (let a = 0; a < 360; a += 15) {
+          const x = at[0] + r * Math.cos((a * Math.PI) / 180);
+          const y = at[1] + r * Math.sin((a * Math.PI) / 180);
+          const under = hook.view3dUnder(x, y);
+          if (
+            under?.onDisc === true &&
+            (under.pick ?? who) === who &&
+            offKnob(x, y)
+          ) {
+            return /** @type {[number, number]} */ ([x, y]);
+          }
         }
       }
-    }
-    return null;
-  }, /** @type {[string, [number, number]]} */ ([id, middle]));
+      return null;
+    }, id);
+  // Zoomed in until one shows: at the distance Frame stands back to, his
+  // disc may lie wholly under other items (labels, his neighbour), and the
+  // zoom hides that framing rather than failing on it.
+  let grip = await gripOf();
+  for (let zooms = 0; grip === null && zooms < 6; zooms++) {
+    await page.locator("#zoom-in").click();
+    await afterFrames(page, 2);
+    grip = await gripOf();
+  }
   expect(grip, "a point of his disc no other item covers").not.toBeNull();
   if (grip === null) return;
   const from = { x: canvas.x + grip[0], y: canvas.y + grip[1] };
@@ -473,7 +478,7 @@ test("a character added with the add menu is drawn at a free spot, selected with
   expect(
     Math.hypot(moved[0] - his[0], moved[2] - his[2]),
     "moved by the drag (m)",
-    // 85 px from close above: 0.38 m measured; any clear move counts.
+    // Any clear move counts: the metres per pixel follow the framing.
   ).toBeGreaterThan(0.1);
   expect(
     standing(await tourNow(page), "gate", rita.id),

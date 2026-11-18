@@ -16,15 +16,13 @@ move the camera only, and a second finger during a drag cancels it.
   globe passes its routing table's `dragPx`, 5, in place of `INPUT`'s 4),
   listening until `dispose`:
   - `element` - the view's box (its presses are read in the capture phase,
-    before OrbitControls on the canvas sees them);
+    before the globe's camera controls on the canvas see them);
   - `surface` - the canvas: only a press on it is the scene's (the docks
     over the view keep theirs), and pointer positions are read against it;
   - `scene: InputScene` - `target(selection)`, `handleAt(pointer)`,
     `pickAt(pointer)`, `world`, `preview(target, preview | null)`,
-    `hover(handle)`, `lockCamera(on)`, `twoFingerStart()`,
-    `twoFinger(mode, last, now)`, `frame(selection)`, and the optional
-    `cameraTakesTwoFingers` (the globe's: two fingers are the camera
-    controls' own; see below);
+    `hover(handle)`, `lockCamera(on)`, `frame(selection)` (two
+    fingers are the camera controls' own; see below);
   - `page: InputPage` - `dispatch`, `selected()`, `select(id)`,
     `commit(edit)`, `remove(selection)`, `duplicate(selection)`,
     `say(text)`, `groundMenu(point, place | null)`, `keysFree(event)`.
@@ -37,12 +35,11 @@ move the camera only, and a second finger during a drag cancels it.
   - A `dblclick` after a touch press is ignored: a browser adds one to a
     double tap, which the input already answered, so it would frame (or
     zoom) twice.
-  - One rule in both views: a press that moved the click distance or
-    more is a drag. The globe's routing table draws its line there, and
-    the OrbitControls (default) view follows the same `>=`, so a mouse
-    press that moved exactly 4 px (a finger 8 px) is a drag there too; it
-    was a click before the globe view, a one-pixel move made on purpose
-    (`editor3d-input.test.ts`, "the OrbitControls view's click distance").
+  - One rule: a press that moved the click distance or more is a drag.
+    The globe's routing table draws its line there, and the input follows
+    the same `>=`, so a mouse press that moved exactly 4 px (a finger
+    8 px) is a drag (`editor3d-input.test.ts`, "the input's click
+    distance").
 - `TWO_FINGER_CANCEL` - the toast a second finger's cancel says.
 - Types `InputScene`, `InputPage` (the input itself is `ReturnType<typeof createSceneInput>`).
 - `InputScene.clickWaited?()` and `answerClick?(pointer)` - while a click
@@ -93,16 +90,21 @@ move the camera only, and a second finger during a drag cancels it.
   every held key (or the window losing focus) writes one edit. A press
   and release is one step. (The design merged quick repeats of a key
   into one undo step; here a hold is the unit.)
-- OrbitControls is locked (`lockCamera`) during a drag and while two
-  fingers are down - until the last is up - rather than kept from the
-  events, so its own bookkeeping of the pointers stays whole. A press on a
-  handle locks it BEFORE the gesture reads the pointer: the lock stops a
-  flight and the orbit's coast, so the camera stands still from the press
-  on (a press that finds nothing to grab unlocks again).
-- With `cameraTakesTwoFingers` (the globe view, whose controls pinch,
-  twist and tilt as in the globe lab) a second finger still cancels a
+- The camera's controls are locked (`lockCamera`) during a drag (and,
+  after a second finger cancelled one, until the last finger is up)
+  rather than kept from the events, so their own bookkeeping of the
+  pointers stays whole. A press on a
+  handle locks them BEFORE the gesture reads the pointer: the lock (the
+  globe's controls' `lease(true)`) stops the orbit's coast, so the camera
+  stands still from the press on (a press that finds nothing to grab
+  unlocks again). It stops no flight, and needs not: during the opening
+  approach the globe view holds the stations back (`holdsStations`), so no
+  gizmo is drawn, and a press on the canvas takes the camera from the
+  approach (`approach.takeOver`, `editor3d-globe.ts`).
+- Two fingers are the camera controls' own (the globe view's, which
+  pinch, twist and tilt as in the globe lab): a second finger cancels a
   drag and blocks new presses until every finger is up, and the fingers
-  are not read here (no `twoFingerStart` or `twoFinger`). The camera is
+  are not read here. The camera is
   unlocked at once (before the controls read that finger: the listener
   captures) when the controls saw the first finger; when the second
   finger cancelled a drag, the first was held from them, so the camera

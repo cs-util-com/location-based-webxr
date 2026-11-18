@@ -8,8 +8,7 @@
  *
  * It follows the store (`editorView`): shown while the 3D load has failed
  * with a reason, gone once it is tried again, shown, or left. An "empty"
- * tour is no failure (only the temporary older view refuses one, and the
- * map shows it), so it never brings the page up.
+ * tour is no failure (the map shows it), so it never brings the page up.
  *
  * @see view3d-failed-page.ts.md
  */

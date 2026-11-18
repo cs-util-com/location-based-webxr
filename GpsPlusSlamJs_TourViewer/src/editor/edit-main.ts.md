@@ -49,15 +49,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   `setChecked`).
 - **The 3D view on the whole globe is the default:** the view switch
   opens `openGlobeEditor` (`editor3d-globe.ts`, its own lazy chunk, with
-  the switch's `globeHidePx` and `globeCrowdPx`); `globe=1` still names
-  it. **Temporary:** `globe=0` in the page's address (`readGlobeSwitch`,
-  `globe-switch.ts`) opens the older OrbitControls view (`openEditor3d`)
-  instead, kept only until the 2D map and that view are removed.
+  the link's knobs, `readGlobeSwitch` in `globe-switch.ts`); it is the
+  only 3D view, and an old `globe=0` or `globe=1` in the address changes
+  nothing.
 - **The 3D view is the default:** an open that shows a tour ends with
   `viewSwitch.show3d()`. A tour with nothing positioned opens on the
-  globe too (`editor3d-globe.ts`, `empty-tour-view.ts`); only the older
-  view refuses one, which then opens on the map with a passing line
-  (`say`'s reason `"empty"`).
+  globe too (`editor3d-globe.ts`, `empty-tour-view.ts`). The switch's
+  `say` still answers a reason `"empty"` with a passing line on the map,
+  though no view raises it now.
 - **Where the 3D view cannot open** (no WebGL, its code not loaded, its
   graphics lost, an error) `#view3d-failed` says so
   (`view3d-failed-page.ts`, driven by the store): the reason in plain
@@ -209,13 +208,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   map (`editor-shell.css`: the 3D view does not draw them yet), starts
   ticked and shows or hides them there: view state, never in the tour document, a
   save or the draft. Leaving the tour stops it.
-- View's "Real time" (`#view-realtime`, a checkbox item, shown only in
-  the globe view, hidden with `globe=0`): the globe view's clock, unticked by
+- View's "Real time" (`#view-realtime`, a checkbox item): the globe
+  view's clock, unticked by
   default (the sky held in daylight over the tour), ticked the real time
   now (`Editor3dView.setRealTime`). View state only; a view opened again
   takes the item's state.
-- View's "Clouds" (`#view-clouds`, a checkbox item, shown only in the
-  globe view, hidden with `globe=0`): the globe view's heavy 3D clouds, ticked
+- View's "Clouds" (`#view-clouds`, a checkbox item): the globe view's
+  heavy 3D clouds, ticked
   by default, unticked only the flat cloud layer
   (`Editor3dView.setClouds`). View state only, as Real time. In the
   dev server only, `window.__tourEditorClouds = { off: true }` (an init
@@ -741,7 +740,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   imperative above.
 - **The 3D view** (View's `#view-switch`, `view-switch.ts`): the item
   opens the 3D view over the map by a dynamic `import()` of
-  `../editor3d/editor3d-scene.js`, so the page's own code holds none of
+  `../editor3d/editor3d-globe.js`, so the page's own code holds none of
   it, and closes it again. While it loads the item and the bottom bar's
   `#view-loading` say so and the map stays; once it shows, `#view3d` is unhidden and the card hides (it
   points at a map marker); back on the map the card shows again for the
@@ -753,8 +752,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   for it). An import that does not arrive is tagged `chunk` here: the
   browser keeps that failure for the page's life, so its page offers a
   reload (after the unsaved-work guard) instead of trying again in place.
-  A tour with nothing placed is no failure (the older view alone refuses
-  it, with a passing toast). Opening another tour
+  A tour with nothing placed is no failure: the globe opens on it.
+  Opening another tour
   or closing this one closes the 3D view (`viewSwitch.close()`); the
   switch is off while no tour is open. The 3D
   view reads the tour from the store and the codes the open read
@@ -843,9 +842,9 @@ view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part), view3dU
 view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(reason) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
-  `stats()` (null on the map), `view3dTilt(deg)` tilts its orbit and
+  `stats()` (null on the map), `view3dTilt(deg)` tilts its camera,
   `view3dDistance(m)` moves it in or out, `view3dHeading(deg)` turns it
-  round its centre (the older view only), `view3dBuildings(on)` shows or
+  round the point it looks at, `view3dBuildings(on)` shows or
   hides the globe view's buildings (the view's `setBuildings`; no chip yet), `view3dPointOf(selection)` says
   where a selection stands in its world; `view3dScreenOf`, `view3dHandle`
   and `view3dGizmoSizes` say where a selection and the gizmo's handles are

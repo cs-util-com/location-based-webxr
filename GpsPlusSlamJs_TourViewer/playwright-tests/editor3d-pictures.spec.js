@@ -1,7 +1,13 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { answerHosts, capture, openZip, showList } from "./editor3d-fixture.js";
+import {
+  answerHosts,
+  capture,
+  openZip,
+  showList,
+  gotoEditor,
+} from "./editor3d-fixture.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
@@ -116,7 +122,7 @@ async function openWithPhoto(page, size) {
   });
   await page.setViewportSize(size);
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "blocks-tour.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {

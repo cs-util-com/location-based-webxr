@@ -25,6 +25,7 @@ import {
   shownIn,
   styleIn,
   view3d,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 import { useWideFont } from "./wide-font.js";
 
@@ -72,6 +73,20 @@ const DOCK_TOP_PX = VIEW_TOP_PX + LINE_PX;
 const BG1 = "rgb(31, 32, 35)";
 const BG2 = "rgb(38, 40, 44)";
 const TEXT = "rgb(217, 219, 224)";
+
+/**
+ * How far a point lies from the line through two others (m).
+ * @param {number[]} from
+ * @param {number[]} through
+ * @param {number[]} point
+ */
+function offLine(from, through, point) {
+  const d = through.map((v, i) => v - (from[i] ?? 0));
+  const p = point.map((v, i) => v - (from[i] ?? 0));
+  const len = Math.hypot(...d);
+  const along = d.reduce((sum, v, i) => sum + v * (p[i] ?? 0), 0) / len;
+  return Math.sqrt(Math.max(0, Math.hypot(...p) ** 2 - along ** 2));
+}
 
 /**
  * The WCAG contrast ratio of two computed colours ("rgb(r, g, b)").
@@ -908,11 +923,36 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
     "Station 2 of 3",
   );
   await settled();
-  const at = await page.evaluate(() =>
-    /** @type {any} */ (window).__tourEditor.view3dPointOf("station:gate"),
+  // Flown to: the line of sight passes through the station's point (it
+  // meets the ground beyond the point where the point stands above it).
+  // Read in one call: the globe's world follows the camera.
+  const { at, look, eye, radiusM } = await page.evaluate(() => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const stats = hook.view3d();
+    return {
+      at: hook.view3dPointOf("station:gate"),
+      look: stats.look,
+      eye: stats.camera,
+      radiusM: hook
+        .manifest()
+        .stations.find((/** @type {any} */ s) => s.id === "gate").foundRadiusM,
+    };
+  });
+  expect(offLine(eye, look, at)).toBeLessThan(0.5);
+  // And from as near as a flight to it stands: three found radii away,
+  // 30 m at the least (the gate's 5 m radius flies to 30 m).
+  const away = Math.hypot(
+    ...eye.map(
+      (/** @type {number} */ v, /** @type {number} */ i) => v - (at[i] ?? 0),
+    ),
   );
-  const target = (await view3d(page)).target;
-  expect(Math.hypot(...target.map((v, i) => v - at[i]))).toBeLessThan(0.5);
+  expect(away).toBeLessThanOrEqual(Math.max(30, 3 * radiusM) + 1);
+  // And it aimed far enough: a flight cut short fails the bound above
+  // (the camera starts far away), but one aimed too near, one found
+  // radius away in place of three, passes it. Measured 29.98 m against the
+  // 30 m aimed at, so 90 per cent of the aim leaves room without letting
+  // a too-near aim through.
+  expect(away).toBeGreaterThanOrEqual(Math.max(30, 3 * radiusM) * 0.9);
 
   // A double click on another card: selected once, not toggled back.
   const steps = card(page, "The town hall steps");
@@ -924,7 +964,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   // A second click once the double-click interval has passed: deselected
   // and folded; the camera stays where the flight left it.
   await settled();
-  const before = (await view3d(page)).target;
+  const before = (await view3d(page)).globe.pose;
   const clickedAt = await page.evaluate(() => performance.now());
   await expect
     .poll(() => page.evaluate(() => performance.now()))
@@ -933,8 +973,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await expect(steps).not.toHaveClass(/\bsel\b/);
   await expect(steps.locator(".kids")).toHaveCount(0);
   await expect(page.locator("#shell-inspector")).toBeHidden();
-  const after = (await view3d(page)).target;
-  expect(Math.hypot(...after.map((v, i) => v - before[i]))).toBeLessThan(1e-3);
+  expect((await view3d(page)).globe.pose).toEqual(before);
 
   // The folds are the page's state: a trip to the map and back keeps the
   // old gate unfolded and the station names' chip off.
@@ -976,7 +1015,8 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await expect(viewItem(page, "top")).toHaveAttribute("aria-checked", "true");
   await expect(page.locator("#view-menu")).toBeHidden();
   await settled();
-  expect((await view3d(page)).tiltDeg).toBeLessThan(1);
+  // Straight down but a degree: the globe's top view keeps a heading.
+  expect((await view3d(page)).tiltDeg).toBeLessThan(1.5);
   await page.locator('#shell-toggles [data-tab="perf"]').click();
   await expect(page.locator("#shell-pane-perf .nums")).toContainText(
     "Top view",
@@ -985,18 +1025,26 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await settled();
   expect((await view3d(page)).tiltDeg).toBeGreaterThan(30);
 
+  // A zoom step goes about a third of the way to the ground ahead, and
+  // back out by a third of the way then.
   const far = (await view3d(page)).distanceM;
   await page.locator("#zoom-in").click();
   await settled();
-  expect((await view3d(page)).distanceM).toBeCloseTo(far / 1.6, 0);
+  const near = (await view3d(page)).distanceM;
+  expect(near).toBeLessThan(far * 0.8);
+  expect(near).toBeGreaterThan(far * 0.5);
   await page.locator("#zoom-out").click();
   await settled();
-  expect((await view3d(page)).distanceM).toBeCloseTo(far, 0);
+  // Out by a third of the way to the ground then, 30 m at the least, so
+  // back about where it started (30.8 m measured from 30.0 m): a step that
+  // overshoots or falls short by a tenth fails.
+  const back = (await view3d(page)).distanceM;
+  expect(back).toBeGreaterThan(near * 1.2);
+  expect(Math.abs(back - far)).toBeLessThan(far * 0.1);
 
   // The Performance tab: the whole frame's draw calls, never 0 with a
-  // tour drawn. This is the older 3D view (`openSampleIn3d`: `?globe=0`),
-  // whose stats carry no globe; the globe view's whole-frame count against
-  // its scene's own render is held in editor3d-globe.spec.js.
+  // tour drawn. The whole-frame count against the globe scene's own
+  // render is held in editor3d-globe.spec.js.
   await expect(page.locator("#shell-pane-perf .nums")).toContainText(
     /Draw calls[1-9]/,
   );
@@ -1616,7 +1664,7 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // The open dialog, the editor's first screen.
   const openModal = page.locator("#open-modal .modal");

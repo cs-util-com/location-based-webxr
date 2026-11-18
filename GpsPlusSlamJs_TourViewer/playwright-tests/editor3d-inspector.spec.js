@@ -19,6 +19,7 @@ import {
   dockSettled,
   openSampleIn3d,
   openZip,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
@@ -154,7 +155,7 @@ async function openTour(page, zip) {
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "two-pins.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -913,18 +914,13 @@ test("the inspector's fields sit in place at a phone, a phone in landscape, a ta
   }
 });
 
-test("a picture's and a model's fields are typed in the inspector, a story's entry shows its own texts, and the edits survive a draft reload, a save and a new open", async ({
-  page,
-  context,
-}) => {
-  // Why: a picture's title, caption and alt text and a model's title are
-  // typed in the inspector by the format's caps; each edit must reach the
-  // shared tour document, be backed up by the draft over a reload, be
-  // written by the save and read back by a new open. The tree names an
-  // untitled picture by its kind. A story's blocks (the 3D view draws none
-  // of them) are selected in the story's folder and their texts typed in
-  // their own inspector: the station's lists only the story.
-  test.slow();
+/**
+ * The editor with the blocks tour (a story with a character, an untitled
+ * picture, a titled picture and a model at its gate) open in the 3D view,
+ * the gate selected; saves go to a download.
+ * @param {import("@playwright/test").Page} page
+ */
+async function openBlocksTour(page) {
   const zip = Buffer.from(
     await (
       await fetch("http://127.0.0.1:5197/ranges-ok/blocks-tour.zip")
@@ -938,49 +934,45 @@ test("a picture's and a model's fields are typed in the inspector, a story's ent
   });
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "blocks-tour.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 60_000,
   });
   await selectStation(page, "gate");
+}
+
+/**
+ * The gate's blocks of a saved zip, through the browser's download.
+ * @param {import("@playwright/test").Page} page
+ */
+async function savedGateBlocks(page) {
+  const download = page.waitForEvent("download");
+  await save(page);
+  const { readFileSync } = await import("node:fs");
+  const written = readFileSync(await (await download).path());
+  const gate = (await savedTour(written)).stations.find(
+    (/** @type {any} */ s) => s.id === "gate",
+  );
+  return (/** @type {string} */ id) =>
+    stationBlocks(gate).find((/** @type {any} */ b) => b.id === id);
+}
+
+// Why: a picture's title and alt text and a model's title are typed in
+// the inspector by the format's caps; each edit must reach the shared tour
+// document and be written by the save. The tree names an untitled picture
+// by its kind, a titled one by its title. A draft reload and a new open
+// of the saved file are not repeated here: the draft keeps an item's
+// edits ("edits survive a closed tab" in editor-files.spec.js), and a
+// station's typed fields come back over a reload and a new open above.
+test("a picture's and a model's fields are typed in the inspector, the tree names them, and the save writes them", async ({
+  page,
+}) => {
+  test.slow();
+  await openBlocksTour(page);
   const inspector = page.locator("#shell-inspector");
   const card = page.locator('#tree-body .card[data-station="gate"]');
-  // The station lists its story, not the story's parts.
-  await expect(
-    inspector.locator('[data-act="goto:story:gate-story"]'),
-  ).toBeVisible();
-  await expect(inspector.locator('[data-act="goto:sir-kay"]')).toHaveCount(0);
-  await expect(inspector.locator(".isec.character")).toHaveCount(0);
-  await card.locator('[data-folder="gate-story"]').click();
-  await card.locator('[data-select="sir-kay"]').click();
-  await expect.poll(() => selected(page)).toBe("sir-kay");
-  // His name heads his own parts, on a line of its own: it once ran into
-  // the "View" label after it ("Sir KayView").
-  const kayLabels = inspector.locator(
-    '.character[data-block="sir-kay"] > .flabel',
-  );
-  await expect(kayLabels.nth(0)).toHaveText("Sir Kay");
-  await expect(kayLabels.nth(1)).toHaveText("View");
-  // Both boxes read in one go, the element found in the same call: a
-  // locator's evaluate finds it first, and a redraw in between measured a
-  // detached element (no boxes) now and then.
-  const labels = await page.evaluate(() => {
-    const el = document.querySelector(
-      '#shell-inspector .character[data-block="sir-kay"]',
-    );
-    const [name, view] = [
-      ...(el?.querySelectorAll(":scope > .flabel") ?? []),
-    ].map((l) => l.getBoundingClientRect());
-    return {
-      nameHeight: name?.height ?? 0,
-      nameBottom: (name?.y ?? 0) + (name?.height ?? 0),
-      viewTop: view?.y ?? Number.NaN,
-    };
-  });
-  expect(labels.nameHeight).toBeGreaterThan(0);
-  expect(labels.viewTop).toBeGreaterThanOrEqual(labels.nameBottom - 0.5);
   // An untitled picture is named by its kind in the tree.
   await expect(card.locator('[data-select="gate-knight"]')).toContainText(
     "Photo",
@@ -1020,10 +1012,68 @@ test("a picture's and a model's fields are typed in the inspector, a story's ent
     .poll(async () => (await blockNow("gate-arch"))?.title)
     .toBe("The castle arch");
 
-  // A story character's line, typed in his own inspector: one step that
-  // undo takes back and redo puts again; over its cap, nothing.
+  // Saved: as typed, the caption it already had kept.
+  const savedBlock = await savedGateBlocks(page);
+  expect(savedBlock("gate-photo")).toMatchObject({
+    title: "Dusk",
+    alt: "The gate's two towers against a red sky",
+    caption: "The gate at dusk",
+  });
+  expect(savedBlock("gate-arch")).toMatchObject({ title: "The castle arch" });
+});
+
+// Why: a story's blocks (the 3D view draws none of them) are selected in
+// the story's folder and their texts typed in their own inspector: the
+// station's lists only the story. A character's line is one step that
+// undo takes back and redo puts again, a name over its cap writes nothing,
+// and the save writes what was typed. A story's entries come back from
+// the draft after a reload in editor3d-tree.spec.js.
+test("a story's entry shows its own texts in its own inspector: one step each, undone and redone, refused over its cap, and saved", async ({
+  page,
+}) => {
+  test.slow();
+  await openBlocksTour(page);
+  const inspector = page.locator("#shell-inspector");
+  const card = page.locator('#tree-body .card[data-station="gate"]');
+  // The station lists its story, not the story's parts.
+  await expect(
+    inspector.locator('[data-act="goto:story:gate-story"]'),
+  ).toBeVisible();
+  await expect(inspector.locator('[data-act="goto:sir-kay"]')).toHaveCount(0);
+  await expect(inspector.locator(".isec.character")).toHaveCount(0);
+  await card.locator('[data-folder="gate-story"]').click();
   await card.locator('[data-select="sir-kay"]').click();
   await expect.poll(() => selected(page)).toBe("sir-kay");
+  // His name heads his own parts, on a line of its own: it once ran into
+  // the "View" label after it ("Sir KayView").
+  const kayLabels = inspector.locator(
+    '.character[data-block="sir-kay"] > .flabel',
+  );
+  await expect(kayLabels.nth(0)).toHaveText("Sir Kay");
+  await expect(kayLabels.nth(1)).toHaveText("View");
+  // Both boxes read in one go, the element found in the same call: a
+  // locator's evaluate finds it first, and a redraw in between measured a
+  // detached element (no boxes) now and then.
+  const labels = await page.evaluate(() => {
+    const el = document.querySelector(
+      '#shell-inspector .character[data-block="sir-kay"]',
+    );
+    const [name, view] = [
+      ...(el?.querySelectorAll(":scope > .flabel") ?? []),
+    ].map((l) => l.getBoundingClientRect());
+    return {
+      nameHeight: name?.height ?? 0,
+      nameBottom: (name?.y ?? 0) + (name?.height ?? 0),
+      viewTop: view?.y ?? Number.NaN,
+    };
+  });
+  expect(labels.nameHeight).toBeGreaterThan(0);
+  expect(labels.viewTop).toBeGreaterThanOrEqual(labels.nameBottom - 0.5);
+  const kayNow = async () =>
+    stationBlocks(await stationNow(page, "gate")).find(
+      (/** @type {any} */ b) => b.id === "sir-kay",
+    );
+
   const kayCaption = field(page, "block:sir-kay:caption");
   await expect(kayCaption).toHaveValue("Halt, traveller!");
   await expect(field(page, "block:sir-kay:name")).toHaveValue("Sir Kay");
@@ -1031,16 +1081,16 @@ test("a picture's and a model's fields are typed in the inspector, a story's ent
   await kayCaption.fill("Halt! Who goes there?");
   await kayCaption.press("Tab");
   await expect
-    .poll(async () => (await blockNow("sir-kay"))?.caption)
+    .poll(async () => (await kayNow())?.caption)
     .toBe("Halt! Who goes there?");
   expect(await revision(page)).toBe(beforeKay + 1);
   await page.locator("#studio-undo").click();
   await expect
-    .poll(async () => (await blockNow("sir-kay"))?.caption)
+    .poll(async () => (await kayNow())?.caption)
     .toBe("Halt, traveller!");
   await page.locator("#studio-redo").click();
   await expect
-    .poll(async () => (await blockNow("sir-kay"))?.caption)
+    .poll(async () => (await kayNow())?.caption)
     .toBe("Halt! Who goes there?");
   const kayName = field(page, "block:sir-kay:name");
   await kayName.fill("x".repeat(81));
@@ -1048,68 +1098,12 @@ test("a picture's and a model's fields are typed in the inspector, a story's ent
   await expect(
     page.locator(".toast", { hasText: "A name takes at most 80 characters." }),
   ).toBeVisible();
-  expect((await blockNow("sir-kay"))?.name).toBe("Sir Kay");
+  expect((await kayNow())?.name).toBe("Sir Kay");
 
-  // A reload: the draft offers the edits, and Restore brings them back.
-  await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
-  await page.reload();
-  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await openZip(page, zip, "blocks-tour.zip");
-  const offer = page.locator(".toast.draft-offer");
-  await offer.locator("button", { hasText: "Restore" }).click();
-  await expect(offer).toHaveCount(0);
-  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
-    timeout: 60_000,
-  });
-  expect(await blockNow("gate-photo")).toMatchObject({
-    title: "Dusk",
-    alt: "The gate's two towers against a red sky",
-    caption: "The gate at dusk",
-  });
-  expect((await blockNow("gate-arch"))?.title).toBe("The castle arch");
-  expect((await blockNow("sir-kay"))?.caption).toBe("Halt! Who goes there?");
-
-  // Saved, and opened again in a new page: as typed.
-  const download = page.waitForEvent("download");
-  await save(page);
-  const { readFileSync } = await import("node:fs");
-  const written = readFileSync(await (await download).path());
-  const gate = (await savedTour(written)).stations.find(
-    (/** @type {any} */ s) => s.id === "gate",
-  );
-  const savedBlock = (/** @type {string} */ id) =>
-    stationBlocks(gate).find((/** @type {any} */ b) => b.id === id);
-  expect(savedBlock("gate-photo")).toMatchObject({
-    title: "Dusk",
-    alt: "The gate's two towers against a red sky",
-  });
-  expect(savedBlock("gate-arch")).toMatchObject({ title: "The castle arch" });
+  // Saved: as typed.
+  const savedBlock = await savedGateBlocks(page);
   expect(savedBlock("sir-kay")).toMatchObject({
     name: "Sir Kay",
     caption: "Halt! Who goes there?",
   });
-  const next = await context.newPage();
-  await answerHosts(next);
-  await next.setViewportSize({ width: 1440, height: 900 });
-  await next.goto("/edit.html?globe=0");
-  await expect(next.locator("body")).toHaveAttribute("data-editor", "ready");
-  await openZip(next, written, "blocks-tour.zip");
-  await expect(next.locator("body")).toHaveAttribute("data-view", "3d", {
-    timeout: 60_000,
-  });
-  await next.locator('#tree-body .card[data-station="gate"] .pick').click();
-  await next
-    .locator('#tree-body .card[data-station="gate"] [data-select="gate-arch"]')
-    .click();
-  await expect(
-    next.locator("#shell-inspector").getByLabel("Title", { exact: true }),
-  ).toHaveValue("The castle arch");
-  // A story's character is read back in his own inspector, reached
-  // through the story's folder.
-  const nextCard = next.locator('#tree-body .card[data-station="gate"]');
-  await nextCard.locator('[data-folder="gate-story"]').click();
-  await nextCard.locator('[data-select="sir-kay"]').click();
-  await expect(field(next, "block:sir-kay:caption")).toHaveValue(
-    "Halt! Who goes there?",
-  );
 });

@@ -88,6 +88,18 @@ cannot reach.
   relief again since, so that figure is low) from lane 3 moved to lane 1,
   the lightest by those seconds, for its clouds spec's CI retries. Local
   seconds are not CI minutes; rebalance from the uploaded reports.
+- **3D lanes rebalanced 2026-11-18** from the per-spec minutes of the
+  uploaded reports of a CI full run of 2026-11-18, after the
+  editor's every spec moved to the globe: lanes 1, 2 and 4 took 19.5,
+  19.4 and 14.3 min of test time, lane 3 ran into the 45 min suite limit
+  at 44.8 min with `editor3d.spec.js` and two more tests not run.
+  `editor3d-folders` (10.6 min) moved from lane 3 to lane 4,
+  `editor3d-inspector` (7.5 min) to lane 2 and `editor3d-story-cards`
+  (4.2 min) to lane 1, so about 23.7, 26.9, 22.5 plus the unrun tests
+  (`editor3d.spec.js` was not measured) and 24.9 min. Lane 1 keeps its
+  clouds spec, 0.5 min in that run. A lane job adds about a minute of
+  setup to its test time. The next CI full run (2026-11-18), with every
+  spec run, measured lane 3 (`tour-webgl-3`) at 20 min.
 
 ## Measurement (2026-11-01)
 
@@ -118,8 +130,9 @@ both.
 
 ## Off the map and the older 3D view (inventory, 2026-11-03)
 
-The globe is the editor's 3D view; the 2D map and the older OrbitControls
-view (`?globe=0`) are to be removed. What each editor spec still opens, by
+The globe is the editor's 3D view; the 2D map is to be removed, and the
+older OrbitControls view (`?globe=0`) was removed on 2026-11-18 (see the
+third batch below). What each editor spec still opens, by
 what becomes of it (counts are `test(` titles; a title in a loop counts
 once):
 
@@ -205,15 +218,37 @@ or card. Their shared tour builders and file helpers are in
 **Still in class (a):** `editor.spec.js` has 104 titles, about 86 of them
 class (a). The autosave and undo walks are next, though some of them press
 the map's card or its delete control and cannot be expressed through the
-hook. Also still in (a): `editor-entry` (4), `blocks-tour` (2) and the
-`?globe=0` specs other than the first batch (`editor3d-inspector`,
-`-tree`, `-shell`, `-edit`, `-model`, `editor3d.spec.js` 186 and 251).
+hook. Also still in (a): `editor-entry` (4) and `blocks-tour` (2).
 Classes (b), (c) and (d) are unchanged.
+
+**Third batch, every `?globe=0` spec moved and the older view removed
+(2026-11-18).** The rest of the pinned specs (`editor3d-inspector`,
+`-tree`, `-shell`, `-edit`, `-model`, `editor3d.spec.js`, and the
+fixture's `openSampleIn3d`, which reached the docking, folders,
+characters, pictures, shelf, story-card and other editor3d specs) open
+the globe. What differs on the globe, and how the specs say it:
+
+- The world's frame follows the camera, so a spec compares world points
+  (`view3dPointOf`, `stats().look`, `stats().camera`) only within one
+  read, and the camera's identity is `stats().globe.pose`.
+- Top view (T) tilts the camera where it stands, so a selection off its
+  foot leaves the screen: the gizmo, folder and character specs measure
+  in the framed view (or a station turned 90 degrees) instead.
+- `view3dHeading` turns the camera round the point it looks at, as the
+  older view's orbit did round its centre (`setHeading` in
+  `editor3d-globe.ts`).
+- A drag starts on a free point of the station's disc (`discPoint` in
+  `editor3d-edit.spec.js`), as the globe's pins and dots cover more of
+  it.
+
+The `webgl` project's lanes grew with it: 920, 946, 1274 and 644 s on
+the older view against 1415, 1704, 2147 and 1153 s in the first green
+full run on the globe.
 
 ## Examples
 
 ```js
-selectSpecs(["GpsPlusSlamJs_TourViewer/src/editor3d/editor3d-scene.ts"]);
+selectSpecs(["GpsPlusSlamJs_TourViewer/src/editor3d/editor3d-globe.ts"]);
 // -> { all: false, areas: ["editor"], specs: [the editor and both specs] }
 selectSpecs(["GpsPlusSlamJs_TourViewer/src/main.ts"]);
 // -> { all: true, reason: "GpsPlusSlamJs_TourViewer/src/main.ts" }

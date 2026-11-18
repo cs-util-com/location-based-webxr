@@ -3,10 +3,10 @@
 ## Purpose
 
 The desktop editor's 3D view on the whole globe (full-globe editor plan
-2026-10-27-1850, GV1b): the default 3D view. Only the temporary way back,
-`globe=0` in the page's link (`../editor/globe-switch.ts`, read in
-`../editor/edit-main.ts`), opens the OrbitControls view
-(`editor3d-scene.ts`) instead, and then nothing here loads.
+2026-10-27-1850, GV1b): the editor's only 3D view, loaded by a dynamic
+import from `../editor/edit-main.ts` with the link's knobs
+(`../editor/globe-switch.ts`). The page's contract with it (`Editor3dDeps`,
+`Editor3dView`, `Editor3dStats`) is `editor3d-view.ts`.
 
 It mounts the globe package's view core (`createGlobeView` from
 `gps-plus-slam-globe/view`: sky, sun, surface, a world frame that follows
@@ -31,7 +31,7 @@ true ECEF place, so one placed anywhere shows where it is.
 ## Public API
 
 - `openGlobeEditor(deps, knobs): Promise<Editor3dView>`
-  - `deps`: the same `Editor3dDeps` the OrbitControls view takes.
+  - `deps`: the page's `Editor3dDeps` (`editor3d-view.ts`).
   - `knobs`: `hidePx` and `crowdPx` from the link switch (the visibility
     rule's thresholds), `clouds` (the old clouds by default; `new` draws the
     experimental near clouds, whose tiles bake in
@@ -184,6 +184,11 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   flight yet.
 - `setTop`, `northUp`, `setTilt` re-place the current pose with one field
   changed.
+- `setHeading(deg)` (the page's checks) turns the camera to `deg` round
+  the point its line of sight meets (`stats().look`: the ground ahead,
+  else the tour's centre), keeping its distance to that point and its
+  pitch. The point is held in ECEF across the turn, as placing the pose
+  moves the world's frame.
 - `zoom` moves the camera along its line of sight `ZOOM_SHARE` of the
   distance to the sampled ground under the screen's centre (to the
   camera's horizon), `backM` at least; where none answers (the sky,
@@ -210,6 +215,15 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   rising ground the camera ends exactly `eyeM` over the end's ground),
   with ground under the start only, 50 km from a tour with none, and
   over a station added 50 km away after the open.
+- `stats().look` is where the line of sight meets the sampled ground
+  (else the tour's centre), and `stats().codePx` each code's drawn side on
+  the canvas (its square's corners projected by the camera of the
+  frame; 0 when it cannot be measured, with any corner outside the view
+  volume: behind the camera, nearer than the near plane or past the far
+  one, where `project()` would mirror it into a size; a code straddling
+  the near plane is partly drawn and still reads 0), both in the world, which follows the camera: compare them with
+  `stats().camera` and `pointOf` read in the same call, never across two.
+  `stats().target` stays the tour's centre in the tour's frame.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
   has none), and `groundAt(place)` the ground there, in the tour file's
   ellipsoidal heights: the drawn ground plus the geoid's N (the
@@ -217,7 +231,7 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   camera's height less `eyeM` (plus N) at or under the relief's ceiling,
   and null above it: the tree's "+" then says to come closer instead of
   adding a station kilometres in the air.
-- Editing is the OrbitControls view's (`createSceneEditing`): `turn`,
+- Editing is `editor3d-editing.ts`'s (`createSceneEditing`): `turn`,
   `cancelGesture`, `handleScreen`, `underAt`, `gizmoSizes`, `modelParts`,
   `showSoundIcons`, `modelScreenOf` and `characterCheck` are the editing's. Its camera leases the globe's
   controls off for a handle drag (`GlobeCameraControls.lease`), and the
@@ -238,12 +252,11 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   no ground answers (`ellipsoidPointOfRay`: heights not loaded); a ray
   into the sky does nothing.
 - Two fingers are the globe's controls' (their pinch, twist and tilt, as
-  in the globe lab; the routing table's `fingers` row): the editing
-  camera says `takesTwoFingers`, so the input leaves the controls free
-  for them; a handle drag a second finger interrupts is cancelled
+  in the globe lab; the routing table's `fingers` row): the input
+  leaves the controls free for them; a handle drag a second finger interrupts is cancelled
   unwritten, and the camera then stays still until every finger is up. Before, the input locked the camera for two fingers and read
-  them for the OrbitControls view's gestures, which the globe view
-  ignored: two fingers held the camera still.
+  them as its own gestures, which the globe view ignored: two fingers
+  held the camera still.
 - What the controls zoom toward, drag on and keep their height over is the
   SAMPLED ground (their `groundRay` is `groundPointOfRay` of the relief),
   the ellipsoid where none is found. They used to pick the relief's drawn
@@ -357,7 +370,8 @@ The view disposes the run once the arrival is over.
 
 ## Stats
 
-`stats()` carries the OrbitControls view's fields plus `globe`: the carrier,
+`stats()` carries `Editor3dStats`' common fields (`editor3d-view.ts`) plus
+`globe`: the carrier,
 the camera's altitude, the frame target, the hidden stations and codes, the
 frame recentres, the surface's state and `uploads` (`pending`, `ran`,
 `worstFrameMs`, `admitted`). `mapLoad` is the street map's typed loading

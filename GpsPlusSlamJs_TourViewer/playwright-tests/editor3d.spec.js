@@ -8,6 +8,7 @@ import {
   noApproach,
   noClouds,
   openSample,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 
 /**
@@ -30,10 +31,10 @@ test("a tour whose 3D view cannot load opens on a page that says so, the tour st
   page,
 }) => {
   await answerHosts(page);
-  await page.route("**/src/editor3d/editor3d-scene.ts*", (route) =>
+  await page.route("**/src/editor3d/editor3d-globe.ts*", (route) =>
     route.abort(),
   );
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(
@@ -53,13 +54,13 @@ test("a tour whose 3D view cannot load opens on a page that says so, the tour st
 // of WebGL (the page refuses one WebGL context); the second shows. (A chunk
 // that failed cannot stand in: the browser keeps a failed import's answer
 // for the page's life.)
-for (const [view, link] of VIEWS) {
+for (const [view] of VIEWS) {
   test(`a later open that shows the 3D view takes the earlier failure's page away (${view})`, async ({
     page,
   }) => {
     test.setTimeout(120_000);
     await answerHosts(page);
-    await openSample(page, link);
+    await openSample(page);
     await page.evaluate(() => {
       const real = HTMLCanvasElement.prototype.getContext;
       let refused = false;
@@ -95,13 +96,13 @@ for (const [view, link] of VIEWS) {
 // canvas in the box (a second one on the next open). The open must end on
 // its page with the reason said and nothing of the view left behind. The
 // page's WebGL draw calls throw once, inside three's render.
-for (const [view, link] of VIEWS) {
+for (const [view] of VIEWS) {
   test(`a 3D view whose first frame fails is said on its page, with nothing left (${view})`, async ({
     page,
   }) => {
     test.setTimeout(120_000);
     await answerHosts(page);
-    await openSample(page, link);
+    await openSample(page);
     await page.evaluate(() => {
       let thrown = false;
       for (const proto of [
@@ -146,7 +147,7 @@ for (const [view, link] of VIEWS) {
 // the map's markers or the next 3D view among them. Seventeen switches
 // must never warn of too many contexts: a leak of one context per open
 // shows from the 16th, and one more keeps a spare.
-for (const [view, link] of VIEWS) {
+for (const [view] of VIEWS) {
   test(`switching to 3D and back seventeen times keeps the browser's WebGL contexts free (${view})`, async ({
     page,
   }) => {
@@ -167,7 +168,7 @@ for (const [view, link] of VIEWS) {
     // not show a leak.
     await noApproach(page);
     await noClouds(page);
-    await openSample(page, link);
+    await openSample(page);
     const button = page.locator("#view-switch");
     for (let i = 0; i < 17; i++) {
       await viewCommand(page, "switch");

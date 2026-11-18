@@ -44,7 +44,7 @@ import {
 import type { TourPictureViewpoint } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
-import type { Editor3dView } from "../../editor3d/editor3d-scene.js";
+import type { Editor3dView } from "../../editor3d/editor3d-view.js";
 import type { PlaceEdit } from "../../placement/place-edits.js";
 import { createLongPress, LONG_PRESS } from "../long-press.js";
 import {

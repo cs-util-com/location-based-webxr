@@ -23,7 +23,7 @@ near the camera under the editor's own gate, and the credits both need.
 - `createEditorTerrain({ renderer, centre, device, placement?, imagery?, template?, osmGain?, osmGainMode? })` ->
   `EditorTerrain`. `osmGain` is the map's darkening gain (the link's
   `osmGain`, `../editor/globe-switch.ts`; its default 0.55 where not
-  given, as in the OrbitControls view), `osmGainMode` how it darkens
+  given), `osmGainMode` how it darkens
   ("flat" where not given, the link's `osmGainMode`). `placement` `"ecef"` leaves the tiles' group in ECEF
   for a parent that places it (the globe view's Earth-centred group,
   `editor3d-globe.ts`); the default `"world"` decomposes `worldFromEcef`

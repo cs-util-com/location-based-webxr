@@ -15,6 +15,7 @@ import {
   layoutOf,
   openZip,
   styleIn,
+  gotoEditor,
 } from "./editor3d-fixture.js";
 
 /**
@@ -39,9 +40,11 @@ const N_M = 45.68;
 /**
  * A tour of one station "Station A": a story "First" with one entry, a
  * plain folder "Yard" holding pin "y", and free pins p, q and r.
+ * `yardTurned` turns the yard a quarter about up.
+ * @param {{ yardTurned?: boolean }} [options]
  * @returns {Promise<Buffer>}
  */
-async function foldersTour() {
+async function foldersTour({ yardTurned = false } = {}) {
   /** @param {string} id @param {number} x */
   const pin = (id, x) => ({
     id,
@@ -100,7 +103,12 @@ async function foldersTour() {
             id: "yard",
             kind: "folder",
             title: "Yard",
-            pose: { position: [0, 0, 4], rotation: [0, 0, 0, 1] },
+            pose: {
+              position: [0, 0, 4],
+              rotation: yardTurned
+                ? [0, -Math.SQRT1_2, 0, Math.SQRT1_2]
+                : [0, 0, 0, 1],
+            },
             children: [pin("y", 1)],
           },
           pin("p", -3),
@@ -191,7 +199,7 @@ async function openFolders(page, zip) {
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await page.goto("/edit.html?globe=0");
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await openZip(page, zip, "folders.zip");
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -960,13 +968,11 @@ for (const view of VIEWS) {
   }) => {
     test.slow();
     await page.setViewportSize({ width: view.width, height: view.height });
-    await openFolders(page, await foldersTour());
+    // Turned a quarter, its knob lies across the line of sight (the view
+    // looks north at the selection, framed in the screen's middle): the
+    // stalk is drawn across the screen at its length, whatever the tilt.
+    await openFolders(page, await foldersTour({ yardTurned: true }));
     await selectYard(page);
-    // Straight down, the screen shows the ground plane undistorted.
-    await page.keyboard.press("t");
-    await expect
-      .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
-      .toBe(false);
     const sizes = await page.evaluate(() =>
       /** @type {any} */ (window).__tourEditor.view3dGizmoSizes(),
     );
@@ -975,12 +981,21 @@ for (const view of VIEWS) {
     const dot = await handleAt(page, "dot");
     // Counted at the ground's depth; the knob and dots are drawn a little
     // over the ground, nearer the camera, so they read a few per cent out.
+    // Their height shows as a step up of a pixel or two, inside the margin.
     const reach = Math.hypot(knob.x - middle.x, knob.y - middle.y);
     expect(reach).toBeGreaterThanOrEqual(sizes.ringPx + 30 - 1);
     expect(reach).toBeLessThanOrEqual((sizes.ringPx + 30) * 1.06);
-    const onRing = Math.hypot(dot.x - middle.x, dot.y - middle.y);
-    expect(onRing).toBeGreaterThanOrEqual(sizes.ringPx - 1);
-    expect(onRing).toBeLessThanOrEqual(sizes.ringPx * 1.06 + 1);
+    // The dots stand at 45 degrees off the heading, so half way between
+    // across and along the line of sight: across, the ring's radius times
+    // the sine of 45 degrees; a few per cent either way, standing nearer
+    // or farther from the camera than the middle along the ground. The
+    // globe view measured 1.08 to 1.12 ring radii at the three sizes (the
+    // dots stand over the ground, nearer the camera than the ring's
+    // depth), so the band's top is the measured 1.12 with a margin of
+    // about 3 per cent, and its foot stays below the exact radius.
+    const onRing = Math.abs(dot.x - middle.x) / Math.SQRT1_2;
+    expect(onRing).toBeGreaterThanOrEqual(sizes.ringPx * 0.95 - 1);
+    expect(onRing).toBeLessThanOrEqual(sizes.ringPx * 1.15 + 1);
     // The dashed outline round its item, named on its tag.
     const shown = await page.evaluate(() =>
       /** @type {any} */ (window).__tourEditor.view3dFolderOutlines(),

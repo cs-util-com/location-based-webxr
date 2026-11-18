@@ -34,8 +34,8 @@ edits and the selection are the store's, so switching keeps them all.
     does the dynamic import, so this module never imports the 3D view;
   - `say(text, reason)` - told each failure with its `View3dFailure`
     (the page says a failure on its own page and toasts only a tour with
-    nothing positioned, `"empty"`, refused by the older view alone: no
-    failure, the map shows that tour);
+    nothing positioned, `"empty"`, which no view raises now: no failure,
+    the map shows that tour);
   - `onShown(on)` - the view shown (`true`) or left (`false`), called last,
     with the store already in the mode it announces (the page hides and
     shows its map-only parts there, reading the store).
@@ -76,8 +76,8 @@ const viewSwitch = createViewSwitch({
   button: document.querySelector("#view-switch")!,
   store,
   open: async (events) => {
-    const { openEditor3d } = await import("../editor3d/editor3d-scene.js");
-    return openEditor3d({ ...deps, events });
+    const { openGlobeEditor } = await import("../editor3d/editor3d-globe.js");
+    return openGlobeEditor({ ...deps, events }, knobs);
   },
   say: (text) => toast(text),
   onShown: (on) => {

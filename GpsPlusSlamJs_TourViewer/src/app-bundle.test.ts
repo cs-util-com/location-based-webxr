@@ -500,28 +500,27 @@ describe("the 3D view's code in the app's bundle", () => {
     // Everything the build holds, the lazy chunks included.
     const all = chunks.flatMap((c) => c.moduleIds);
     expect(
-      all.some((id) => id.endsWith("/src/editor3d/editor3d-scene.ts")),
+      all.some((id) => id.endsWith("/src/editor3d/editor3d-globe.ts")),
     ).toBe(true);
     expect(
       all.some((id) => /\/node_modules\/3d-tiles-renderer\//.test(id)),
     ).toBe(true);
     expect(all.some((id) => /elevation\/egm96/.test(id))).toBe(true);
-    // The scene's chunk is a dynamic import of the editor's page.
-    const scene = chunks.find((c) =>
-      c.moduleIds.some((id) => id.endsWith("/src/editor3d/editor3d-scene.ts")),
+    // The 3D view's chunk is a dynamic import of the editor's page.
+    const view = chunks.find((c) =>
+      c.moduleIds.some((id) => id.endsWith("/src/editor3d/editor3d-globe.ts")),
     );
-    expect(scene).toBeDefined();
+    expect(view).toBeDefined();
     const reachedLazily = chunks.some((c) =>
-      c.dynamicImports.includes(scene!.fileName),
+      c.dynamicImports.includes(view!.fileName),
     );
     expect(reachedLazily).toBe(true);
   });
 
   // Why: the globe's whole-Earth imagery (about 12.6 MB at /globe-assets/:
   // the dev server's route, the site build's root copy) belongs to the editor on the globe
-  // view alone, behind its link switch: no other code may hold its
-  // factory, the OrbitControls view (a plain ground under the map)
-  // included, and the reach is by import() only.
+  // view alone: no other code may hold its factory, and the reach is by
+  // import() only.
   it("holds the globe's whole-Earth imagery only in the globe view's chunks", () => {
     const withImagery = chunks
       .filter((c) => c.code.includes("createGlobeImagery"))
@@ -529,18 +528,11 @@ describe("the 3D view's code in the app's bundle", () => {
     // The check can see the imagery at all.
     expect(withImagery.length).toBeGreaterThan(0);
     const globeView = chunkOf(chunks, "/src/editor3d/editor3d-globe.ts");
-    const scene = chunkOf(chunks, "/src/editor3d/editor3d-scene.ts");
     const globeOwn = new Set(
       chunksFrom(chunks, [globeView], false).map((c) => c.fileName),
     );
-    const sceneOwn = new Set(
-      chunksFrom(chunks, [scene], false).map((c) => c.fileName),
-    );
     for (const name of withImagery) {
       expect(globeOwn.has(name), `${name} outside the globe view`).toBe(true);
-      expect(sceneOwn.has(name), `${name} in the OrbitControls view`).toBe(
-        false,
-      );
     }
     for (const page of PAGES) {
       const loaded = staticClosure(chunks, page);

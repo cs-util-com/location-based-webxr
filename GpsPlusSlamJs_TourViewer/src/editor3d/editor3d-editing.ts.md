@@ -47,14 +47,12 @@ pure gesture maths reads (`GestureWorld`).
     while its gizmo is drawn, refreshed in `update()`; for the page's
     checks.
   - `dispose()` (the outline's too).
-- Types `GizmoPart`, `EditingCamera` (`lock(on)`, the optional
-  `takesTwoFingers`, `twoFingerStart()`, `twoFinger(mode, last, now, world)`, `lookAt()`); `takesTwoFingers` reaches the input as
-  `cameraTakesTwoFingers`.
-- `orbitEditingCamera({ controls, camera, endFlight, dropMomentum })` - the
-  OrbitControls view's `EditingCamera`; it turns OrbitControls' two-finger
-  touch off at once. The globe view's (in `editor3d-globe.ts`) leases the
-  globe's controls for a handle drag and takes two fingers itself
-  (`takesTwoFingers`): the globe's controls pinch, twist and tilt.
+- Type `GizmoPart`. Internal (not exported): `EditingCamera` (`lock(on)`,
+  `lookAt()`).
+- The globe view's `EditingCamera` (in `editor3d-globe.ts`) leases the
+  globe's controls for a handle drag. Two fingers are always the
+  controls' own (their pinch, twist and tilt): the input never reads
+  them, it only cancels a drag a second finger interrupts.
 - `SceneEditingDeps.models` - the store's selection, model focus and
   model pick, and the page's model edit (true: written).
 - The selected model's parts are drawn by `editor3d-model-parts.ts`; a
@@ -102,22 +100,14 @@ pure gesture maths reads (`GestureWorld`).
 - An item's gizmo centre is the ground under it (where loaded, else its
   own height); a station's is its point.
 - **A locked camera stands still:** `lockCamera(true)` (a press on a
-  handle, two fingers) goes to `view.lock(true)`: the orbit's ends a
-  running flight and drops the coast before it turns OrbitControls' input
-  off; the globe's leases its controls off. Nothing moves the object under
+  handle) goes to `view.lock(true)`: the globe's leases its controls off. Nothing moves the object under
   a pointer that holds still.
 - **The world's frame may move** between frames (the globe's follows the
   camera): the ECEF matrices and `layerToWorld` are references read at
   each use, never copied. The level plane (`planeUnder`) and the pick's
-  horizontal distance take the world's y as up, exact in the orbit's frame
-  and close to it near the globe's frame target.
+  horizontal distance take the world's y as up, close to it near the
+  globe's frame target.
 - The gizmo's sprite size reads `camera.fov`.
-- **Two fingers are the editing's:** OrbitControls' two-finger touch is
-  turned off (`touches.TWO = null`); one finger and the mouse stay
-  OrbitControls'. Tilt changes the polar angle; a pinch scales the
-  distance, a twist turns the azimuth, a pan keeps the ground under the
-  fingers' midpoint (on the level plane at the orbit's centre); every
-  step within the orbit's limits (`clampedPose`).
 - `stationLocked(stationId)` (a dependency, the page's view state): a station's target carries `locked`, its layout is not posable, and `handleAt` is asked with `posable`, so a locked station's gizmo is its radius dots alone.
 
 ## Examples
@@ -128,7 +118,7 @@ const editing = createSceneEditing({
   canvas,
   scene,
   camera,
-  view: orbitEditingCamera({ controls, camera, endFlight, dropMomentum }),
+  view: globeEditingCamera, // lock, lookAt
   layer,
   ground,
   worldFromEcef: ground.worldFromEcef,
@@ -146,19 +136,21 @@ editing.update();
 
 No unit test of its own (it needs WebGL, the relief and a canvas): its
 parts are tested pure (`gizmo-maths`, `gesture`, `pose-edits`,
-`two-finger`, `editor3d-input`, `editor3d-gizmo`, the layer's preview and
+`editor3d-input`, `editor3d-gizmo`, the layer's preview and
 pick), and the whole in a browser by
 `playwright-tests/editor3d-edit.spec.js` - a mouse drag over the ground
 saved and undone, every key, a second finger's cancel, the camera held
-still from a press during a flight until the release (T and Home
+still from a press on the gizmo until its release (T and Home
 waiting), the gizmo's on-screen sizes at four window sizes; on the
 globe, `editor3d-globe.spec.js` drags a station's middle handle (one
-edit, the camera and the world frame held still). The two-finger twist's direction
-and the pan on a real tablet are not covered by any test.
+edit, the camera and the world frame held still). Two fingers are the
+globe's camera controls' own (pinch, twist and tilt); the page's e2e holds
+only that a second finger cancels a drag, and no test here drives those
+gestures on a real tablet.
 
 The lock's parts are tested where they live (`gizmo-maths`, `gesture`, `editor3d-input`); the page's e2e (`editor3d-edit.spec.js`) checks the gizmo and the keys of a locked and an unlocked station.
 
-`orbitEditingCamera` takes an optional `leaveLens()`, called when a two-finger touch starts: that touch is the creator's own camera gesture, so it gives the camera its own field of view back after "Look from the viewpoint" (`editor3d-lens.ts`). A lock (a gizmo drag) does not call it: dragging the viewpoint's handle keeps the lens.
+A lock (a gizmo drag) does not leave "Look from the viewpoint" (`editor3d-lens.ts`): dragging the viewpoint's handle keeps the lens.
 
 ## "Pick in 3D" and the point handle
 

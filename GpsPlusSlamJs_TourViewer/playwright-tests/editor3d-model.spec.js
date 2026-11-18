@@ -32,7 +32,9 @@ const N_M = 45.68;
 /** The sample's arch (the file's metres): two pillars and a beam over
  *  them, 2.9 m wide and 3 m high, drawn at its size (3 m). */
 const BEAM = /** @type {const} */ ([0, 2.75, 0]);
-const PILLAR = /** @type {const} */ ([1.2, 1.25, 0]);
+/** A pillar's middle, on the side x names (+1 or -1). */
+const pillar = (/** @type {number} */ side) =>
+  /** @type {const} */ ([1.2 * side, 1.25, 0]);
 
 /**
  * The editor with the sample tour, the sample's arch placed as a model
@@ -216,6 +218,13 @@ test("a note is added by a click on the model, typed, placed again, focused from
   const steps = await changes(page);
 
   // Added: the button waits for the click, the click writes one step.
+  // Turned to look across the beam, so a ray through its centre meets it
+  // there and not along it.
+  await page.evaluate(
+    (deg) => /** @type {any} */ (window).__tourEditor.view3dHeading(deg),
+    90,
+  );
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   await act(page, "note-add").click();
   await expect(act(page, "note-add")).toHaveText("Click the model...");
   await clickModel(page, BEAM);
@@ -224,10 +233,11 @@ test("a note is added by a click on the model, typed, placed again, focused from
   expect(added.annotations).toHaveLength(1);
   expect(added.annotations[0].title).toBe("Note 1");
   // On a face of the beam (y 2.5 to 3, z -0.25 to 0.25) toward the camera,
-  // in the file's metres. Which face depends on the camera's tilt: once it
-  // has settled (48 deg), a ray through the beam's centre enters through
-  // the top (0.25 / tan 48 deg < 0.25), earlier in its flight through the
-  // front, so either one is right.
+  // in the file's metres. Which face depends on the camera's tilt: a ray
+  // through the beam's centre enters through the top, short of the centre
+  // toward the camera, or through the front, so either one is right.
+  // Turned across the beam, that shortfall lies in z, not along the beam
+  // (x 0.0003 measured, on the front face).
   const [x, y, z] = added.annotations[0].position;
   expect(Math.abs(x)).toBeLessThan(0.3);
   expect(y).toBeGreaterThan(2.45);
@@ -274,10 +284,12 @@ test("a note is added by a click on the model, typed, placed again, focused from
   await expect(page.locator(".toast").last()).toBeVisible();
   expect((await modelNow(page)).annotations[0].title).toBe("Keystone");
 
-  // Placed again on a pillar: its words kept.
+  // Placed again on a pillar: its words kept. The pillar on the camera's
+  // side, the side the beam's top was entered on: the globe view looks
+  // along the beam from above, so the beam hides the far pillar's middle.
   await act(page, "note-place:0").click();
   await expect(act(page, "note-place:0")).toHaveText("Click the model...");
-  await clickModel(page, PILLAR);
+  await clickModel(page, pillar(x < 0 ? -1 : 1));
   await expect
     .poll(async () => (await modelNow(page)).annotations[0].position[1])
     .toBeLessThan(2.5);

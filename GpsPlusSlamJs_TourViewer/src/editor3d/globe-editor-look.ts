@@ -23,7 +23,7 @@ const M_PER_DEG_LAT = 111_320;
 const DEG = Math.PI / 180;
 
 export const GLOBE_EDITOR_LOOK = Object.freeze({
-  /** The view's vertical lens (deg): the OrbitControls editor's 50. */
+  /** The view's vertical lens (deg). */
   fovYDeg: 50,
   /** The first view stands this far south of the tour's centre (m). */
   backM: 30,

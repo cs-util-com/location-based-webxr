@@ -19,18 +19,15 @@
  * click sets where it points, on another item's surface or else on the
  * ground; its point is a handle of the gizmo too, dragged on its level.
  * Both write the point in the station's frame (`PlaceEdit` "point").
- * The camera is the view's (`EditingCamera`): the OrbitControls view's is
- * `orbitEditingCamera` (two fingers tilt, or pinch, pan and twist, and
- * OrbitControls is told to leave two fingers alone); the globe view leases
- * its own controls for a handle drag and leaves two fingers to them
- * (`EditingCamera.takesTwoFingers`). The world's frame may move between frames (the globe's
+ * The camera is the view's (`EditingCamera`): the globe view leases its
+ * own controls for a handle drag and leaves two fingers to them (the
+ * input never reads two fingers). The world's frame may move between frames (the globe's
  * follows the camera): the ECEF matrices and the layer's frame are read
  * live each time.
  *
  * @see editor3d-editing.ts.md
  */
 import * as THREE from "three";
-import type { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { groundHit } from "gps-plus-slam-globe/editor";
@@ -54,12 +51,6 @@ import {
   posedEntryOf,
   type PlaceRef,
 } from "../placement/placeables.js";
-import {
-  clampedPose,
-  orbitPoseOf,
-  orbitPosition,
-  type OrbitPose,
-} from "./editor3d-flight.js";
 import { createGizmo, drawGizmoPictures } from "./editor3d-gizmo.js";
 import {
   createFolderOutline,
@@ -80,7 +71,6 @@ import {
   type InputPage,
   type InputScene,
 } from "./editor3d-input.js";
-import type { FingerPair } from "./two-finger.js";
 import type { createStationsLayer, LayerPreview } from "./editor3d-stations.js";
 import type { EditorTerrain } from "./editor3d-terrain.js";
 import {
@@ -101,32 +91,18 @@ import {
   viewHeightAtOneM,
 } from "./gizmo-maths.js";
 import { turnedGeo } from "./pose-edits.js";
-import { mapGestureOf, tiltedPolarRad } from "./two-finger.js";
 
 const DEG = Math.PI / 180;
 
 type StationsLayer = ReturnType<typeof createStationsLayer>;
 
 /** What the editing asks of the view's camera. */
-export interface EditingCamera {
+interface EditingCamera {
   /** A handle drag holds the camera still (true) until it is given back
-   *  (false); a flight or a coast stops at once. */
+   *  (false); a coast stops at once. (No flight needs stopping: during the
+   *  opening approach no gizmo is drawn, and a press takes the camera
+   *  from it, `editor3d-globe.ts`.) */
   lock(on: boolean): void;
-  /**
-   * The camera's own controls take two fingers (the globe's): the input
-   * leaves the camera free for them and never calls `twoFingerStart` or
-   * `twoFinger`. Without it the editing reads two fingers itself.
-   */
-  readonly takesTwoFingers?: boolean;
-  /** Two fingers began moving the camera. */
-  twoFingerStart(): void;
-  /** Two fingers moved from `last` to `now`, read as `mode`. */
-  twoFinger(
-    mode: "tilt" | "map",
-    last: FingerPair,
-    now: FingerPair,
-    world: GestureWorld,
-  ): void;
   /** The world point the view looks at (`centre`'s place). */
   lookAt(): THREE.Vector3;
 }
@@ -591,13 +567,6 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     lockCamera: (on) => {
       deps.view.lock(on);
     },
-    twoFingerStart: () => {
-      deps.view.twoFingerStart();
-    },
-    twoFinger: (mode, last, now) => {
-      deps.view.twoFinger(mode, last, now, world);
-    },
-    cameraTakesTwoFingers: deps.view.takesTwoFingers === true,
     frame(selection) {
       deps.frame(selection);
     },
@@ -822,77 +791,5 @@ export function createSceneEditing(deps: SceneEditingDeps) {
       layer.setPreview(null);
       gizmo.dispose();
     },
-  };
-}
-
-/**
- * The OrbitControls view's camera for the editing: a lock ends a flight,
- * spends the orbit's coast and stops rotate, pan and zoom; two fingers
- * are the editing's (`two-finger.ts`), so OrbitControls is told to leave
- * them alone and keeps one finger and the mouse.
- */
-export function orbitEditingCamera(deps: {
-  readonly controls: OrbitControls;
-  readonly camera: THREE.PerspectiveCamera;
-  /** The camera's flights: a lock or a two-finger touch ends one. */
-  endFlight(): void;
-  /** Spend the orbit's coast at once: the camera stops moving. */
-  dropMomentum(): void;
-  /** A two-finger touch is the creator's own camera gesture: it leaves
-   *  the lens "Look from the viewpoint" lent the camera. */
-  leaveLens?(): void;
-}): EditingCamera {
-  const { controls, camera } = deps;
-  controls.touches.TWO = null;
-  return {
-    lock(on) {
-      // Locked, the camera stands still: a flight or the orbit's coast
-      // would move the object under a pointer that holds still.
-      if (on) {
-        deps.endFlight();
-        deps.dropMomentum();
-      }
-      controls.enableRotate = !on;
-      controls.enablePan = !on;
-      controls.enableZoom = !on;
-    },
-    twoFingerStart() {
-      deps.endFlight();
-      deps.leaveLens?.();
-    },
-    twoFinger(mode, last, now, world) {
-      const pose = orbitPoseOf(camera.position, controls.target);
-
-      let next: OrbitPose;
-      if (mode === "tilt") {
-        next = { ...pose, polarRad: tiltedPolarRad(pose.polarRad, last, now) };
-      } else {
-        const { distanceScale, turnRad } = mapGestureOf(last, now);
-        const mid = (p: typeof now): ScreenPoint => ({
-          x: (p[0].x + p[1].x) / 2,
-          y: (p[0].y + p[1].y) / 2,
-        });
-        // The ground under the fingers stays under them: the target moves
-        // by what lay under their midpoint before less what lies there now.
-        const from = world.planeUnder(mid(last), pose.target.y);
-        const to = world.planeUnder(mid(now), pose.target.y);
-        const target = pose.target.clone();
-        if (from !== null && to !== null) {
-          target.x += from.x - to.x;
-          target.z += from.z - to.z;
-        }
-        next = {
-          target,
-          distanceM: pose.distanceM * distanceScale,
-          polarRad: pose.polarRad,
-          azimuthRad: pose.azimuthRad + turnRad,
-        };
-      }
-      const placed = clampedPose(next);
-      controls.target.copy(placed.target);
-      orbitPosition(placed, camera.position);
-      camera.lookAt(placed.target);
-    },
-    lookAt: () => controls.target,
   };
 }

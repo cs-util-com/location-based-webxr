@@ -1,12 +1,10 @@
 /**
- * The desktop editor's 3D view on the whole globe (the full-globe editor
- * plan 2026-10-27-1850, GV1b), the default 3D view (off only with `globe=0`,
- * `globe-switch.ts`): the globe's view core (`createGlobeView`: the sky,
+ * The desktop editor's 3D view on the whole globe, the editor's only 3D view (its knobs the
+ * link's, `globe-switch.ts`): the globe's view core (`createGlobeView`: the sky,
  * the sun, the surface, the world frame that follows the camera) with the
  * editor's relief and map under the camera, the tour drawn in the globe's
  * Earth-centred group (`globe-layer.ts`), the camera in the globe's eye
- * mode, opening at street level south of the tour. With `globe=0` the
- * OrbitControls view (`editor3d-scene.ts`) opens instead (temporary).
+ * mode, opening at street level south of the tour.
  *
  * The tour hangs in the Earth-centred group through one group of its own
  * whose matrix is the tour's frame (x east, y up, z south at the tour's
@@ -28,16 +26,16 @@
  * frame is no longer moved per frame). `stats().globe.frameChanges` counts the
  * frame's moves for the page's checks.
  *
- * Editing is the OrbitControls view's (`editor3d-editing.ts`), with the
- * globe's camera as its `EditingCamera`: a handle drag leases the controls
+ * Editing is `editor3d-editing.ts`'s, with the globe's camera as its
+ * `EditingCamera`: a handle drag leases the controls
  * off, and the world frame holds still while any gesture runs (the view's
  * `gestureBusy`), so the gesture's world points stay valid. The routing
  * table's two extras (`globe-gestures.ts`) are wired here: the arrows with
  * nothing selected step the camera (`steppedView`), a double click on the
  * ground zooms one step toward it. Two fingers are the globe's controls'
  * (their pinch, twist and tilt, as in the globe lab): the input leaves the
- * camera free for them (`takesTwoFingers`), and a handle drag a second
- * finger interrupts is cancelled.
+ * camera free for them, and a handle drag a second finger interrupts is
+ * cancelled.
  *
  * A station is drawn only once its first upload ran (`upload-queue.ts`):
  * at most `UPLOADS.perFrame` stations a frame have their materials
@@ -118,7 +116,7 @@ import type {
   Editor3dDeps,
   Editor3dStats,
   Editor3dView,
-} from "./editor3d-scene.js";
+} from "./editor3d-view.js";
 import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
 import { createSceneEditing } from "./editor3d-editing.js";
 import { openStoryOf } from "../placement/placeables.js";
@@ -187,8 +185,7 @@ import {
 import { UPLOADS, createUploadQueue } from "./upload-queue.js";
 
 const DEG = Math.PI / 180;
-/** The size an item is framed by (m): about a pin or a photo (the
- *  OrbitControls view's). */
+/** The size an item is framed by (m): about a pin or a photo. */
 const ITEM_RADIUS_M = 1.6;
 /** One zoom step (a button's, a double click's) moves the camera this
  *  share of its distance to the ground it looks at. */
@@ -1351,9 +1348,6 @@ export async function openGlobeEditor(
         lock: (on) => {
           controls.lease(on);
         },
-        takesTwoFingers: true,
-        twoFingerStart: () => undefined,
-        twoFinger: () => undefined,
         lookAt: () => camera.position,
       },
       layer,
@@ -1507,6 +1501,19 @@ export async function openGlobeEditor(
     const tourTarget = () =>
       worldOf(new THREE.Vector3(0, centreHeightM, 0), worldPoint);
 
+    /** Where the line of sight meets the ground, in the world: the
+     *  ground under the screen's centre, else (the sky, heights not
+     *  loaded) the tour's centre. */
+    const lookPoint = (): [number, number, number] => {
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        camera.quaternion,
+      );
+      const at =
+        groundPoint(new THREE.Ray(camera.position.clone(), forward)) ??
+        tourTarget();
+      return [at.x, at.y, at.z];
+    };
+
     let firstTick: () => void = () => undefined;
     let notShown: (error: unknown) => void = () => undefined;
     const ready = new Promise<void>((resolve, reject) => {
@@ -1571,6 +1578,26 @@ export async function openGlobeEditor(
         camera.position.copy(tourTarget()).addScaledVector(forward, -m);
         camera.updateMatrixWorld();
         dust.reset();
+      },
+      setHeading(deg) {
+        // Round the point the line of sight meets, held in ECEF: placing
+        // the pose moves the world's frame with the camera.
+        const pivot = new THREE.Vector3(...lookPoint());
+        const distance = camera.position.distanceTo(pivot);
+        followFrame();
+        pivot.applyMatrix4(ecefFromWorld);
+        placePose({ headingDeg: deg });
+        followFrame();
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+          camera.quaternion,
+        );
+        camera.position
+          .copy(pivot.applyMatrix4(worldFromEcef))
+          .addScaledVector(forward, -distance);
+        camera.updateMatrixWorld();
+        // The streaks start again from where the camera now stands:
+        // `placePose` restarted them, and nothing samples them before the
+        // next frame.
       },
       flyTo(selection) {
         const place = placeOf(selection);
@@ -1727,12 +1754,36 @@ export async function openGlobeEditor(
           tiltDeg: 90 + pose.pitchDeg,
           standing,
           ...layer.stats(),
-          codePx: [],
+          codePx: layer.codeCorners().map((corners) => {
+            const ndc = corners.map((c) => c.clone().project(camera));
+            // Not measured: any corner outside the view volume, behind the
+            // camera, nearer than the near plane or past the far one
+            // (`project()` mirrors a point behind the camera through it,
+            // which would measure a size). A code that straddles the near
+            // plane is partly drawn and still reads 0.
+            if (ndc.some((v) => !(v.z >= -1 && v.z <= 1))) return 0;
+            const square = ndc.map(
+              (v) =>
+                new THREE.Vector2(
+                  ((v.x + 1) / 2) * canvas.clientWidth,
+                  ((1 - v.y) / 2) * canvas.clientHeight,
+                ),
+            );
+            // The mean of its four sides (CSS px).
+            return (
+              square.reduce(
+                (sum, p, i) =>
+                  sum + p.distanceTo(square[(i + 1) % square.length]!),
+                0,
+              ) / square.length
+            );
+          }),
           osm: { ...ground.osm.stats(), coverage: ground.osm.coverage() },
           mapLoad: ground.osm.mapLoad(),
           // The tour's centre at its drawn height (the frame's origin is
           // on the ellipsoid, under it).
           target: [0, centreHeightM, 0],
+          look: lookPoint(),
           camera: [camera.position.x, camera.position.y, camera.position.z],
           distanceM: Math.hypot(
             cameraTour.x,

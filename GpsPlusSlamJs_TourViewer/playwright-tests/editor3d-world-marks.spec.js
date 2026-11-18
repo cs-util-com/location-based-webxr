@@ -3,7 +3,6 @@ import { expect, test } from "@playwright/test";
 
 import {
   GLOBE_VIEW,
-  OLDER_VIEW,
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
@@ -107,10 +106,7 @@ function iconPoint(page) {
   }, SOUND);
 }
 
-for (const [name, link] of [
-  ["the older view", OLDER_VIEW],
-  ["the globe", GLOBE_VIEW],
-]) {
+for (const [name, link] of [["the globe", GLOBE_VIEW]]) {
   test(`from the station's camera over uneven ground a click on an ambient sound's icon selects the sound, on ${name}`, async ({
     page,
   }) => {
@@ -264,18 +260,25 @@ async function soundIcons(page, on) {
 // pixels at the icon's middle must still be the icon's own. The same
 // pixels are read with the icon and without it, in the one view: the
 // station's selected ring passes under the icon in the same amber, so a
-// sample elsewhere on the screen says nothing about the icon. Drawn with a depth test the relief hides the
-// icon and the two reads are the same. The older view: on the globe a
-// street-level camera looks over coarse tiles that sag below the stations
-// (see the found-radius spec), and the globe draws the same material
+// sample elsewhere on the screen says nothing about the icon. From
+// straight above, as the found-radius spec. On the globe this holds that
+// the icon is drawn and seen from above, not that it escapes the relief:
+// with the icon's depth test switched on the share still read 0.72 (0.76
+// without), so the material's depth test is held by the unit tests alone
 // (`isInterfacePart`).
-test("an ambient sound's icon is seen where the relief stands in front of it", async ({
+// TODO: why a depth-tested mark 8 m under the relief still shows is an
+// open question; until it is answered this test cannot tell an icon the
+// relief covers from one it does not. The hypothesis that the sampled
+// ground the gate reads is not the ground drawn was checked and not borne
+// out (the flat relief tiles draw where the sample says; see the TODO in
+// editor3d-station-ring.spec.js).
+test("an ambient sound's icon is drawn and seen from above over relief standing above it", async ({
   page,
 }) => {
   test.setTimeout(240_000);
   await openSample3d(
     page,
-    OLDER_VIEW,
+    GLOBE_VIEW,
     () => SQUARE_GROUND_M + RELIEF_ABOVE_STATIONS_M,
   );
   await selectStation(page, STATION);
@@ -326,10 +329,11 @@ test("an ambient sound's icon is seen where the relief stands in front of it", a
   await soundIcons(page, false);
   const hidden = await pixelsAround(page, canvas, middle);
   await soundIcons(page, true);
-  // Measured at 40, 60 and 90 m, boxes 9 to 33 px across and change
-  // tolerances 24 to 96: 0.59 to 0.92 with the icon drawn (0.85 here), and
-  // 0 everywhere with a depth test, where the relief hides it. The ring's
-  // amber under the icon alone fills 0.12 to 0.43 of the box.
+  // Measured on the older view at 40, 60 and 90 m, boxes 9 to 33 px
+  // across and change tolerances 24 to 96: 0.59 to 0.92 with the icon
+  // drawn, 0 with a depth test. On the globe 0.76, and 0.72 with the depth
+  // test on. The ring's amber under the icon alone fills 0.12 to 0.43 of
+  // the box, so 0.5 still tells the icon from the ring.
   // Two reads with the icon drawn did not differ in any pixel.
   expect(iconShare(shown, hidden)).toBeGreaterThan(0.5);
   expect(await rejections(page)).toEqual([]);
@@ -364,13 +368,13 @@ function footprint(page, id) {
 
 // Why: drawn as a flat card at a fixed turn he would vanish edge-on
 // from the side; the visitor's look turns him toward the camera. The
-// orbit goes round his station to four headings; at each he has a
+// camera turns round his station to four headings; at each he has a
 // footprint on the screen.
 test("a free character shows on the screen from four camera headings round his station", async ({
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
-  await openSample3d(page, OLDER_VIEW);
+  await openSample3d(page, GLOBE_VIEW);
   await selectStation(page, "column");
   /** @type {Record<string, number>} */
   const cells = {};
