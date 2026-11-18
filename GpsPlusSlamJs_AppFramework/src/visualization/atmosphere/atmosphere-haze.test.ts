@@ -608,9 +608,8 @@ describe('AtmosphereHaze.setSkyBalance (the sky balance reaches the haze)', () =
     expect(shader.uniforms.atmHazeSkyBalance).toBe(
       h.uniforms.atmHazeSkyBalance
     );
-    expect(shader.uniforms.atmHazeSkyBalance.value.toArray()).toEqual([
-      0.8, 1, 1.2,
-    ]);
+    // The same object, so the typed handle reads what the shader reads.
+    expect(h.uniforms.atmHazeSkyBalance.value.toArray()).toEqual([0.8, 1, 1.2]);
   });
 
   it('applies to the sky lookup, and the veil replaces the balanced sky', () => {
