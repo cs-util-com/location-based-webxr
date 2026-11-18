@@ -97,6 +97,9 @@ skyBalanceA, skyBalanceB }`. The last two are the sky balance's cast
 - `describeLightSettings(settings)`: the Copy line, e.g.
   `light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5,
 haze 45 km from 0.66 of the draw distance`.
+  The sky balance clause is added when either axis is non-zero, read from
+  the settings directly, not from `skyBalanceOf`: a display never computes
+  a gain (which throws on a non-finite value) only to decide what to print.
 - **The haze (city look, haze inside the city).** `vis`, the meteorological
   visibility in km (default `HAZE_VISIBILITY_KM` 45, range 9-60 step 1: 9 is
   the hazy end of the reference city's estimate of 9-21 km, 60 the look-dev
@@ -218,7 +221,8 @@ writeLight(browserPlaceUrl(window), serializeLightSettings(settings, defaults));
   drawn as stated; the sky balance keys read and written inside their
   bounds, `skyBalanceOf` null by default and the gain of the stated cast
   otherwise, a drawable gain at every slider corner, the Copy line naming
-  it only when set.
+  it only when set (one axis is enough) and deciding that without the gain,
+  so a non-finite value gives a line rather than a `RangeError`.
 
 `playwright-tests/boot-and-shell.spec.js`, "an urban link without light
 keys ...", boots the page: urban's veil and EV from a link that states

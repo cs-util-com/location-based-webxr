@@ -589,6 +589,25 @@ describe("the sky balance keys", () => {
       }).endsWith(", sky balance a* -12 b* -8"),
     ).toBe(true);
   });
+
+  // Why this test matters: the Copy line is a display; whether it names the
+  // balance must not hang on computing the balance's gain, which throws on a
+  // non-finite value. One axis set is enough to name it, and a value the
+  // link parser never produces still gives a line rather than a throw.
+  it("names one set axis, and never throws to decide", () => {
+    expect(
+      describeLightSettings({ ...DEFAULT_LIGHT_SETTINGS, skyBalanceB: 5 }),
+    ).toContain(", sky balance a* 0 b* 5");
+    expect(
+      describeLightSettings({ ...DEFAULT_LIGHT_SETTINGS, skyBalanceA: -0 }),
+    ).not.toContain("sky balance");
+    expect(() =>
+      describeLightSettings({
+        ...DEFAULT_LIGHT_SETTINGS,
+        skyBalanceA: Number.NaN,
+      }),
+    ).not.toThrow();
+  });
 });
 
 describe("a colour scheme's light defaults", () => {

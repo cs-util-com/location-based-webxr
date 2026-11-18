@@ -379,7 +379,7 @@ export function describeLightSettings(s: LightSettings): string {
     `EV ${round(s.exposureEv)}, ` +
     `haze ${round(s.hazeVisibilityKm)} km from ${round(s.hazeStartRatio)} of the draw distance` +
     (s.hazeVeilLightness > 0 ? describeVeil(s) : "") +
-    (skyBalanceOf(s) !== null
+    (s.skyBalanceA !== 0 || s.skyBalanceB !== 0
       ? `, sky balance a* ${round(s.skyBalanceA)} b* ${round(s.skyBalanceB)}`
       : "")
   );
