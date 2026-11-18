@@ -343,3 +343,202 @@ test("a narrated text with a stale track shows no box", async ({ page }) => {
   await expect(page.getByTestId("narration-box")).toHaveClass(/nb-off/u);
   expect(errors).toEqual([]);
 });
+
+/**
+ * Why these tests matter: the read line (the line holding the lit word,
+ * or the first word before any is lit) must never leave the box's window
+ * while the words are dragged, and the voice must go on from a line the
+ * visitor can see. A drag far past either end once pushed the words on
+ * (0.3 of the finger, without limit) until the read line was out of the
+ * window, and the release left the voice reading words nobody could see.
+ * Sampled after every frame of the gesture and of the settle after it,
+ * for touch and mouse, slow (4 px a step) and fast (60 px a step), by
+ * 600 px past either end from mid-text, and from either end back into
+ * the text. Tolerance: 1 px, sub-pixel layout only (a word that left the
+ * window by a line is 22 px out).
+ */
+const IN_VIEW_SLACK_PX = 1;
+
+/** Where the read line and the voice's line are against the window. */
+async function readLine(page) {
+  return page.evaluate((slack) => {
+    // A missing page hook or box throws here, and fails the test.
+    const check = window.__longTextCheck;
+    const box = document.querySelector('[data-testid="narration-box"]');
+    const win = box.querySelector(".nb-win").getBoundingClientRect();
+    const words = [...box.querySelectorAll(".nb-col .nb-w")];
+    const lit = box.querySelectorAll(".nb-col .nb-w.nb-on");
+    const read = lit.length > 0 ? lit[lit.length - 1] : words[0];
+    const v = check.voice();
+    const now = v.nowMs;
+    const k = check.segments.findLastIndex((s) => s.startMs <= now - 0.001);
+    const spoken = words[Math.max(0, k)];
+    const at = (el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        text: el.textContent,
+        top: Math.round(r.top),
+        bottom: Math.round(r.bottom),
+        inside: r.top >= win.top - slack && r.bottom <= win.bottom + slack,
+      };
+    };
+    return {
+      read: at(read),
+      spoken: at(spoken),
+      win: { top: Math.round(win.top), bottom: Math.round(win.bottom) },
+      words: words.length,
+      segments: check.segments.length,
+      scroll: v.captions.scroll,
+      nowMs: now,
+    };
+  }, IN_VIEW_SLACK_PX);
+}
+
+async function frame(page) {
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => resolve(null))),
+  );
+}
+
+function expectRead(m, where) {
+  expect(
+    m.read.inside,
+    `${where}: read "${m.read.text}" ${m.read.top}-${m.read.bottom} against the window ${m.win.top}-${m.win.bottom}, scroll ${m.scroll}`,
+  ).toBe(true);
+}
+
+/** After a release: every frame of the settle keeps the read line in
+ *  view (unless `eachFrame` is false), and the voice goes on from a line
+ *  in view. */
+async function expectSettled(page, where, eachFrame = true) {
+  let last = null;
+  for (let i = 0; i < 240; i += 1) {
+    await frame(page);
+    const m = await readLine(page);
+    if (eachFrame) expectRead(m, `${where}, settling`);
+    if (last !== null && m.scroll === last.scroll) break;
+    last = m;
+  }
+  const m = await readLine(page);
+  expectRead(m, `${where}, settled`);
+  expect(
+    m.spoken.inside,
+    `${where}: the voice at ${m.nowMs} ms is on "${m.spoken.text}" ${m.spoken.top}-${m.spoken.bottom}, the window ${m.win.top}-${m.win.bottom}`,
+  ).toBe(true);
+}
+
+/** Puts the voice at `ms` and waits for the box to come to rest there
+ *  (a jump of the voice, not a scroll: the box eases after it). */
+async function seat(page, ms) {
+  await page.evaluate((at) => window.__longTextCheck?.at(at), ms);
+  await expectSettled(page, `seated at ${ms} ms`, false);
+}
+
+async function winCentre(page) {
+  const v = await voice(page);
+  const win = v.captionParts.win;
+  return { x: (win.left + win.right) / 2, y: (win.top + win.bottom) / 2 };
+}
+
+/** The drags every input makes: [name, voice ms or "mid"/"end", dy, step]. */
+function drags(total) {
+  return [
+    ["slow, ahead past the end", "mid", -600, 4],
+    ["fast, ahead past the end", "mid", -600, 60],
+    ["slow, back past the start", "mid", 600, 4],
+    ["fast, back past the start", "mid", 600, 60],
+    ["slow, back from the end", total, 120, 3],
+    ["slow, ahead from the start", 0, -120, 3],
+  ];
+}
+
+for (const viewport of VIEWPORTS) {
+  for (const input of ["touch", "mouse"]) {
+    test(`a ${input} drag keeps the read line in the narration box, slow or fast, past either end (${viewport.name}) @pr`, async ({
+      browser,
+    }) => {
+      const context = await browser.newContext({
+        baseURL: test.info().project.use.baseURL,
+        viewport: { width: viewport.width, height: viewport.height },
+        hasTouch: input === "touch",
+        isMobile: input === "touch",
+      });
+      const page = await context.newPage();
+      const errors = await open(page, "?voice=timed&view=captions", viewport);
+      await page.waitForFunction(
+        () => window.__longTextCheck?.voice()?.captions?.shown === true,
+      );
+      const check = await page.evaluate(() => ({
+        demoMs: window.__longTextCheck?.demoMs ?? 0,
+        total: window.__longTextCheck?.segments.at(-1)?.endMs ?? 0,
+      }));
+      const first = await readLine(page);
+      expect(first.words).toBe(first.segments);
+      const cdp = input === "touch" ? await context.newCDPSession(page) : null;
+      const touch = (type, x, y) =>
+        cdp?.send("Input.dispatchTouchEvent", {
+          type,
+          touchPoints: type === "touchEnd" ? [] : [{ x, y }],
+        });
+      for (const [name, from, dy, step] of drags(check.total)) {
+        const where = `${input} ${name}`;
+        await seat(page, from === "mid" ? check.demoMs : from);
+        const { x, y } = await winCentre(page);
+        // A finger stays on the screen; a mouse may leave the page
+        // while the box holds it.
+        const reach =
+          input === "touch"
+            ? Math.max(-(y - 2), Math.min(dy, viewport.height - 2 - y))
+            : dy;
+        if (input === "touch") await touch("touchStart", x, y);
+        else {
+          await page.mouse.move(x, y);
+          await page.mouse.down();
+        }
+        const steps = Math.max(1, Math.round(Math.abs(reach) / step));
+        for (let i = 1; i <= steps; i += 1) {
+          const ny = y + (reach * i) / steps;
+          if (input === "touch") await touch("touchMove", x, ny);
+          else await page.mouse.move(x, ny);
+          await frame(page);
+          expectRead(
+            await readLine(page),
+            `${where}, ${Math.round(ny - y)} px`,
+          );
+        }
+        if (input === "touch") await touch("touchEnd", x, y + reach);
+        else await page.mouse.up();
+        expect((await voice(page)).captions?.scrubbing).toBe(false);
+        await expectSettled(page, where);
+      }
+      expect(errors).toEqual([]);
+      await context.close();
+    });
+  }
+
+  test(`the wheel and the arrow keys keep the read line in the narration box (${viewport.name}) @pr`, async ({
+    page,
+  }) => {
+    const errors = await open(page, "?voice=timed&view=captions", viewport);
+    await page.waitForFunction(
+      () => window.__longTextCheck?.voice()?.captions?.shown === true,
+    );
+    const demoMs = await page.evaluate(() => window.__longTextCheck?.demoMs);
+    await seat(page, demoMs ?? 0);
+    const { x, y } = await winCentre(page);
+    await page.mouse.move(x, y);
+    for (const dy of [120, 120, 600, -120, -600, -600]) {
+      await page.mouse.wheel(0, dy);
+      await frame(page);
+      expectRead(await readLine(page), `wheel ${dy}`);
+    }
+    await expectSettled(page, "wheel");
+    const box = page.getByTestId("narration-box");
+    await box.focus();
+    for (const key of ["ArrowDown", "ArrowDown", "ArrowDown", "ArrowUp"]) {
+      await page.keyboard.press(key);
+      await expectSettled(page, key);
+    }
+    expect(errors).toEqual([]);
+  });
+}

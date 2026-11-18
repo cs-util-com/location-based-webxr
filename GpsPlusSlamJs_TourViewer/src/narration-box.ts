@@ -32,12 +32,12 @@ import {
 } from "./narration-box-slice.js";
 import {
   BOX_MAX_ROWS,
+  dragScroll,
   followScroll,
   isTap,
   lineFloatAt,
   lineIndices,
   lineStarts,
-  rubberBand,
   thumbGeometry,
   timeAtLine,
   wordAt,
@@ -125,7 +125,8 @@ interface Press {
   readonly id: number;
   readonly x: number;
   readonly y: number;
-  readonly s0: number;
+  /** The scroll the drag moves from (moved on where the words are held). */
+  s0: number;
   readonly line0: number;
 }
 
@@ -500,7 +501,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     if (!dragging) return;
     const moved = dy / lh;
     dragMs = timeAtLine(ls, press.line0 + moved);
-    scroll = rubberBand(press.s0 + moved, Math.max(0, lines - rows));
+    const raw = press.s0 + moved;
+    const read = lineOf[Math.max(0, litAt(dragMs))] ?? 0;
+    scroll = dragScroll(raw, Math.max(0, lines - rows), read, rows);
+    // Held at an edge in the text, the words move on from there with the
+    // finger rather than jump to catch up once the read line moves on.
+    if (raw >= 0 && raw <= lines - rows) press.s0 += scroll - raw;
     tick();
   };
   const onUp = (e: PointerEvent): void => {

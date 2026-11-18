@@ -71,7 +71,14 @@ and what.
   voice at its end starts it again from the start.
 - A drag: one line height of finger movement is one line of text and
   one line of the voice, up ahead, down back; past either end the words
-  stretch 0.3 as far (the rubber band). A playing voice is held for the
+  stretch 0.3 as far at first (the rubber band). The read line (the lit
+  word's, or the first word's before any is lit) never leaves the window
+  (`dragScroll`): past an end the stretch flattens out before it would,
+  and in the text the words wait at the edge it would leave by, then move
+  on with the finger from there (the press's start scroll moves with
+  them), so they never jump. So the release always goes on from a line
+  in view; a drag far past an end once carried the read line out of the
+  window, and the voice then read words nobody could see. A playing voice is held for the
   drag with `player.hold()` when it has one (`voice-focus.ts`: it stays
   the channel's running voice, so a voice it holds does not wake), else
   `pause()`. A voice that was not playing is left alone, so a voice the
@@ -149,7 +156,9 @@ box.hide();
   line): the name once at the start, the disclosure after it, words lit
   and greyed, the follow row, tap toggle with its sign, the restart at
   the end, a drag that scrubs and plays on, a paused voice left paused,
-  the rubber band, a drag cut off by hide or a new text not replaying,
+  the rubber band and its limit, the read line kept in view on a slow
+  drag back from the end without a jump, a drag cut off by hide or a new
+  text not replaying,
   the voice channel kept through a drag (with `createVoiceFocus` and two
   focused players, both a voice it holds and a held text voice), the
   keyboard, the live region and `data-speaking`, a hidden page left to

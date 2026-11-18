@@ -25,7 +25,12 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { lineFloatAt, timeAtLine } from "./narration-box-timeline.js";
+import {
+  dragScroll,
+  lineFloatAt,
+  rubberBand,
+  timeAtLine,
+} from "./narration-box-timeline.js";
 
 const TIME_TOL_MS = 1e-6;
 const LINE_TOL = 1e-8;
@@ -163,6 +168,88 @@ describe("lineFloatAt and timeAtLine", () => {
           expect(timeAtLine([], v)).toBe(0);
           expect(lineFloatAt([only], v)).toBe(0);
           expect(timeAtLine([only], v)).toBe(only);
+        },
+      ),
+      { numRuns: RUNS },
+    );
+  });
+});
+
+/**
+ * Why this matters: whatever a finger does, the read line (the line of the
+ * word the voice is at) stays in the box's window, so the release never
+ * leaves the voice on words out of sight.
+ * Ranges: 1 to 60 lines, 1 to 5 rows (the box shows 3; 1 and 5 bracket
+ * it), the read line any line of the text, a drag anywhere from 1e4 lines
+ * before the start to 1e4 past the end (a finger reaches about 40 lines,
+ * a screen; the rest shows the limit holds for any input).
+ * Tolerance: 1e-9 lines, rounding only; a line that left the window is a
+ * whole line out.
+ */
+const SCROLL_TOL = 1e-9;
+
+describe("the drag scroll, by property", () => {
+  const box = fc
+    .record({
+      lines: fc.integer({ min: 1, max: 60 }),
+      rows: fc.integer({ min: 1, max: 5 }),
+      readShare: fc.double({ min: 0, max: 1, noNaN: true }),
+      raw: fc.double({ min: -1e4, max: 1e4, noNaN: true }),
+    })
+    .map(({ lines, rows, readShare, raw }) => {
+      const shown = Math.min(rows, lines);
+      return {
+        rows: shown,
+        top: lines - shown,
+        read: Math.min(lines - 1, Math.floor(readShare * lines)),
+        raw,
+      };
+    });
+
+  it("keeps the read line inside the window", () => {
+    fc.assert(
+      fc.property(box, ({ rows, top, read, raw }) => {
+        const s = dragScroll(raw, top, read, rows);
+        expect(read).toBeGreaterThanOrEqual(s - SCROLL_TOL);
+        expect(read + 1).toBeLessThanOrEqual(s + rows + SCROLL_TOL);
+      }),
+      { numRuns: RUNS },
+    );
+  });
+
+  it("moves the words with the finger while the read line is in view and no end is passed", () => {
+    fc.assert(
+      fc.property(
+        box,
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        ({ rows, top, read }, share) => {
+          // A drag in the text with the read line in view: never empty,
+          // as the read line is a line of the text.
+          const lo = Math.max(0, read - (rows - 1));
+          const hi = Math.min(top, read);
+          const raw = lo + share * (hi - lo);
+          expect(dragScroll(raw, top, read, rows) === raw).toBe(true);
+        },
+      ),
+      { numRuns: RUNS },
+    );
+  });
+
+  it("never runs backwards: more drag, more scroll", () => {
+    fc.assert(
+      fc.property(
+        box,
+        fc.double({ min: 0, max: 50, noNaN: true }),
+        ({ rows, top, read, raw }, more) => {
+          const reach = { before: 1, after: 1 };
+          expect(rubberBand(raw + more, top, reach)).toBeGreaterThanOrEqual(
+            rubberBand(raw, top, reach) - SCROLL_TOL,
+          );
+          expect(
+            dragScroll(raw + more, top, read, rows),
+          ).toBeGreaterThanOrEqual(
+            dragScroll(raw, top, read, rows) - SCROLL_TOL,
+          );
         },
       ),
       { numRuns: RUNS },

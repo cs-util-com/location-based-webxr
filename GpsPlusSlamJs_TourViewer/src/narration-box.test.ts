@@ -306,11 +306,39 @@ describe("createNarrationBox", () => {
     const s0 = box.state().scroll;
     box.element.dispatchEvent(pointer("pointerdown", 100, 700));
     box.element.dispatchEvent(pointer("pointermove", 100, 0));
-    // Past the last line the words stretch only 0.3 as far.
-    expect(box.state().scroll).toBeCloseTo(1 + (s0 + 700 / LINE_PX - 1) * 0.3);
+    // Past the last line the words stretch 0.3 as far at first, and
+    // flatten out before the last line (the read one) leaves the window.
+    const over = s0 + 700 / LINE_PX - 1;
+    expect(box.state().scroll).toBeCloseTo(
+      1 + 2 * (1 - Math.exp(-(over * 0.3) / 2)),
+    );
+    expect(box.state().scroll).toBeLessThan(3);
     box.element.dispatchEvent(pointer("pointerup", 100, 0));
     expect(clock.now).toBe(clock.dur);
     expect(clock.on).toBe(false);
+  });
+
+  // Why: at the end of the text the last line sits in the bottom row, so
+  // a drag back moved it out of the window before the voice left it. The
+  // words now wait at the edge and move on with the finger from there,
+  // without a jump once the voice reaches the line before.
+  it("keeps the read line in the window on a slow drag back from the end, without a jump", () => {
+    const { box, clock, content } = make();
+    clock.now = clock.dur - 40;
+    box.show(content);
+    const rows = box.state().rows;
+    let last = box.state().scroll;
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    for (let px = 1; px <= 3 * LINE_PX; px += 1) {
+      box.element.dispatchEvent(pointer("pointermove", 100, 700 + px));
+      const { lit, scroll } = box.state();
+      const read = Math.floor(Math.max(0, lit) / 4);
+      expect(read).toBeGreaterThanOrEqual(scroll - 1e-9);
+      expect(read + 1).toBeLessThanOrEqual(scroll + rows + 1e-9);
+      expect(Math.abs(scroll - last)).toBeLessThanOrEqual(1 / LINE_PX + 1e-9);
+      last = scroll;
+    }
+    box.element.dispatchEvent(pointer("pointerup", 100, 700 + 3 * LINE_PX));
   });
 
   it("answers the keyboard: Space plays, the arrows move a line", () => {
