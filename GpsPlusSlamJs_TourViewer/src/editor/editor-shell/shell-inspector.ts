@@ -13,7 +13,9 @@
  * `description`, labelled Name and Description at the top of the body, the
  * head showing the name as text (AU-2: a borderless name in the head read
  * as a heading); its `radius`, `east`, `north` and `heading`; a pin's `title`
- * (its text); an item's `east`, `north`, `height`, `heading` and a
+ * (its text: in the head, or in a text area labelled Text at the top of
+ * the body when it has several lines, which the head's field would lose);
+ * an item's `east`, `north`, `height`, `heading` and a
  * model's `size`; a plain folder's `scale` and, under its Place, its
  * `east`, `north`, `height` and `heading`), each drawn with the tour's
  * value as its default, so
@@ -75,6 +77,7 @@ import {
   lineField,
   numberBox,
   numberField,
+  oneLine,
   severalLines,
   typed,
 } from "./inspector-fields.js";
@@ -99,14 +102,6 @@ function readOnlyNumber(label: string, value: string, unit = ""): HTMLElement {
   if (unit !== "") box.append(el("span", "unit", unit));
   return labelled(label, out, box);
 }
-
-/** Why a pin's text of several lines is read-only in the head, said on a
- *  line of the dock (a title never shows on a touch screen). */
-const PIN_LINES =
-  "This text has several lines, which this one-line field cannot keep: edit it in the pin's card on the 2D map.";
-
-/** The id of that line, which the head's field is described by. */
-const PIN_LINES_ID = "inspector-pin-lines";
 
 /** The id of a typed pin text's count, which the field names. */
 const PIN_COUNT_ID = "inspector-pin-count";
@@ -134,6 +129,24 @@ function proseField(
   const row = labelled(label, area);
   row.classList.add("top");
   return row;
+}
+
+/** A pin's text of several lines to type (`title`): a text area, which
+ *  keeps its lines where the head's one-line field cannot, its count
+ *  against the pin text's cap under it as it is typed (`pin-text.ts`; the
+ *  edit refuses a longer text, `object-edits.ts`). */
+function pinTextParts(text: string): HTMLElement {
+  const section = el("div", "isec");
+  const row = proseField("Text", "title", text, "");
+  const out = el("output", "note count");
+  out.id = PIN_COUNT_ID;
+  const area = row.querySelector("textarea");
+  if (area !== null) {
+    area.setAttribute("aria-describedby", PIN_COUNT_ID);
+    wirePinTextCounter(area, out);
+  }
+  section.append(row, out);
+  return section;
 }
 
 function readOnlyText(label: string, value: string): HTMLElement {
@@ -1156,9 +1169,7 @@ function itemParts(
   const parts: HTMLElement[] = [];
   const fields = panel?.ownsFields === true ? [] : model.fields;
   if (model.text !== null && severalLines(model.text)) {
-    const why = el("div", "note pad", PIN_LINES);
-    why.id = PIN_LINES_ID;
-    parts.push(why);
+    parts.push(pinTextParts(model.text));
   }
   const o = model.offset;
   if (o === null) {
@@ -1601,17 +1612,17 @@ function headTitle(
     return input;
   }
   if (model.kind === "item" && model.text !== null) {
+    if (severalLines(model.text)) {
+      // Typed in the body's text area, which keeps its lines
+      // (`pinTextParts`): named here as text, on one line.
+      const shown = oneLine(model.text);
+      const title = el("span", "ttl", shown);
+      title.title = shown;
+      return title;
+    }
     const input = typed("title", model.text, "ttlin");
     input.setAttribute("aria-label", "Pin text");
-    if (severalLines(model.text)) {
-      // Read-only, so leaving it never writes the text back on one line;
-      // the line in the dock says why (`PIN_LINES`).
-      input.readOnly = true;
-      input.title = PIN_LINES;
-      input.setAttribute("aria-describedby", PIN_LINES_ID);
-    } else {
-      input.title = "The pin's text (Enter keeps it)";
-    }
+    input.title = "The pin's text (Enter keeps it)";
     return input;
   }
   const title = el("span", "ttl", model.title);

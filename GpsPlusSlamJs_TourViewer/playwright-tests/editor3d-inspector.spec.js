@@ -97,9 +97,10 @@ function act(page, act) {
 
 /**
  * Two stations a and b along the square, each with a pin 5 m north of
- * its anchor and 1.5 m up; b stands 3 m over the ground. As a zip.
+ * its anchor and 1.5 m up; b stands 3 m over the ground. Station a's pin
+ * reads `captionA` ("Pin a" by default). As a zip.
  */
-async function twoPinTour() {
+async function twoPinTour(captionA = "Pin a") {
   const station = (
     /** @type {string} */ id,
     /** @type {number} */ dLat,
@@ -121,7 +122,7 @@ async function twoPinTour() {
         id: `p${id}`,
         kind: "shortText",
         view: "pin",
-        caption: `Pin ${id}`,
+        caption: id === "a" ? captionA : `Pin ${id}`,
         createdAtIso: "2026-10-25T09:00:00.000Z",
         pose: { position: [5, 1.5, 0], rotation: [0, 0, 0, 1] },
       },
@@ -527,6 +528,59 @@ test("a short text's caption and Description are typed in the inspector: one ste
     next.locator("#shell-inspector").getByLabel("Description", { exact: true }),
   ).toHaveValue("Under the arch");
   await expect(field(next, "title")).toHaveValue("The old well");
+});
+
+test("a pin text of several lines is typed in the inspector's text area: its lines kept, one step, saved and opened again", async ({
+  page,
+  context,
+}) => {
+  // Why: a pin text of several lines cannot be typed in the head's
+  // one-line field, so the inspector types it in a text area labelled
+  // Text, where Enter starts a new line. Its lines must reach the tour as
+  // one step and come back on the next open, as typed.
+  test.slow();
+  await openTour(page, await twoPinTour("Pin a\nby the gate"));
+  await selectStation(page, "a");
+  await page
+    .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
+    .click();
+  await expect.poll(() => selected(page)).toBe("pa");
+  const inspector = page.locator("#shell-inspector");
+  const text = inspector.getByLabel("Text", { exact: true });
+  await expect(text).toHaveAttribute("data-field", "title");
+  await expect(text).toHaveValue("Pin a\nby the gate");
+  const start = await revision(page);
+  const blockNow = async () =>
+    stationBlocks(await stationNow(page, "a")).find(
+      (/** @type {any} */ b) => b.id === "pa",
+    );
+
+  await text.fill("The old well");
+  await text.press("Enter");
+  await text.pressSequentially("north side");
+  await text.press("Tab");
+  await expect
+    .poll(async () => (await blockNow())?.caption)
+    .toBe("The old well\nnorth side");
+  expect(await revision(page)).toBe(start + 1);
+
+  const download = page.waitForEvent("download");
+  await save(page);
+  const saved = await (await download).path();
+  const { readFileSync } = await import("node:fs");
+  const written = readFileSync(saved);
+  expect(
+    stationBlocks((await savedTour(written)).stations[0])[0],
+  ).toMatchObject({ id: "pa", caption: "The old well\nnorth side" });
+  const next = await context.newPage();
+  await openTour(next, written);
+  await selectStation(next, "a");
+  await next
+    .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
+    .click();
+  await expect(
+    next.locator("#shell-inspector").getByLabel("Text", { exact: true }),
+  ).toHaveValue("The old well\nnorth side");
 });
 
 test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a typed place are one step each", async ({
