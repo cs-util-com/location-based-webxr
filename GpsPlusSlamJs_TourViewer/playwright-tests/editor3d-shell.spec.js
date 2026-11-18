@@ -926,16 +926,27 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   // Flown to: the line of sight passes through the station's point (it
   // meets the ground beyond the point where the point stands above it).
   // Read in one call: the globe's world follows the camera.
-  const { at, look, eye } = await page.evaluate(() => {
+  const { at, look, eye, radiusM } = await page.evaluate(() => {
     const hook = /** @type {any} */ (window).__tourEditor;
     const stats = hook.view3d();
     return {
       at: hook.view3dPointOf("station:gate"),
       look: stats.look,
       eye: stats.camera,
+      radiusM: hook
+        .manifest()
+        .stations.find((/** @type {any} */ s) => s.id === "gate").foundRadiusM,
     };
   });
   expect(offLine(eye, look, at)).toBeLessThan(0.5);
+  // And from as near as a flight to it stands: three found radii away,
+  // 30 m at the least (the gate's 5 m radius flies to 30 m).
+  const away = Math.hypot(
+    ...eye.map(
+      (/** @type {number} */ v, /** @type {number} */ i) => v - (at[i] ?? 0),
+    ),
+  );
+  expect(away).toBeLessThanOrEqual(Math.max(30, 3 * radiusM) + 1);
 
   // A double click on another card: selected once, not toggled back.
   const steps = card(page, "The town hall steps");
@@ -1018,7 +1029,12 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   expect(near).toBeGreaterThan(far * 0.5);
   await page.locator("#zoom-out").click();
   await settled();
-  expect((await view3d(page)).distanceM).toBeGreaterThan(near * 1.2);
+  // Out by a third of the way to the ground then, 30 m at the least, so
+  // back about where it started (30.8 m measured from 30.0 m): a step that
+  // overshoots or falls short by a tenth fails.
+  const back = (await view3d(page)).distanceM;
+  expect(back).toBeGreaterThan(near * 1.2);
+  expect(Math.abs(back - far)).toBeLessThan(far * 0.1);
 
   // The Performance tab: the whole frame's draw calls, never 0 with a
   // tour drawn. The whole-frame count against the globe scene's own

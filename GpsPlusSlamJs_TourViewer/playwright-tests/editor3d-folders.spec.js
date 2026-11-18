@@ -981,14 +981,16 @@ for (const view of VIEWS) {
     const dot = await handleAt(page, "dot");
     // Counted at the ground's depth; the knob and dots are drawn a little
     // over the ground, nearer the camera, so they read a few per cent out.
-    // Across the screen only: their height shows as a step up.
-    const reach = Math.abs(knob.x - middle.x);
+    // Their height shows as a step up of a pixel or two, inside the margin.
+    const reach = Math.hypot(knob.x - middle.x, knob.y - middle.y);
     expect(reach).toBeGreaterThanOrEqual(sizes.ringPx + 30 - 1);
     expect(reach).toBeLessThanOrEqual((sizes.ringPx + 30) * 1.06);
     // The dots stand at 45 degrees off the heading, so half way between
     // across and along the line of sight: across, the ring's radius times
     // the sine of 45 degrees; a few per cent either way, standing nearer
-    // or farther from the camera than the middle along the ground.
+    // or farther from the camera than the middle along the ground. The
+    // globe view measured 1.08 to 1.12 ring radii at the three sizes, so
+    // the band stays wider than the exact radius.
     const onRing = Math.abs(dot.x - middle.x) / Math.SQRT1_2;
     expect(onRing).toBeGreaterThanOrEqual(sizes.ringPx * 0.95 - 1);
     expect(onRing).toBeLessThanOrEqual(sizes.ringPx * 1.1 + 1);

@@ -453,6 +453,9 @@ test("a character added with the add menu is drawn at a free spot, selected with
       }
       return null;
     }, id);
+  // Zoomed in until one shows: at the distance Frame stands back to, his
+  // disc may lie wholly under other items (labels, his neighbour), and the
+  // zoom hides that framing rather than failing on it.
   let grip = await gripOf();
   for (let zooms = 0; grip === null && zooms < 6; zooms++) {
     await page.locator("#zoom-in").click();

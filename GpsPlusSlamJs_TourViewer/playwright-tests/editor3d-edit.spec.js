@@ -582,6 +582,8 @@ test("holds the camera still from a press on the gizmo until its release, even m
   const station = await openWithPin(page);
   await selectPin(page, station);
   const steps = await changes(page);
+  // F starts a flight; on a slow runner it may have ended by the press
+  // (seen locally), and the check below then holds a still camera only.
   await page.keyboard.press("f");
   const from = await discPoint(page);
   await page.mouse.move(from.x, from.y);
@@ -735,6 +737,24 @@ test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top 
   await viewButton.focus();
   await page.keyboard.press("Home");
   await expect.poll(offNorth).toBeLessThan(turned / 2);
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
+  // And framed: every station stands on the screen.
+  const framed = await page.evaluate(() => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    return hook
+      .manifest()
+      .stations.map((/** @type {{ id: string }} */ s) =>
+        hook.view3dScreenOf(`station:${s.id}`),
+      );
+  });
+  expect(framed.length).toBeGreaterThan(1);
+  for (const at of framed) {
+    expect(at, "a station framed").not.toBeNull();
+    expect(at[0]).toBeGreaterThan(0);
+    expect(at[0]).toBeLessThan(canvas.width);
+    expect(at[1]).toBeGreaterThan(0);
+    expect(at[1]).toBeLessThan(canvas.height);
+  }
   await expect(viewMenu).toBeHidden();
   expect(await changes(page)).toBe(steps);
   // With the help open, Escape in a menu still closes the menu.
@@ -953,8 +973,9 @@ test("draws the gizmo's handles at their size on the screen, at a phone, a table
     // a few per cent further out at a close zoom, never nearer.
     const middle = await handle(page, "middle");
     const knob = await handle(page, "knob");
-    // Across the screen only: the knob's height shows as a step up.
-    const reach = Math.abs(knob.x - middle.x);
+    // The knob's height shows as a step up of a few pixels (6 at most
+    // measured), inside the margin.
+    const reach = Math.hypot(knob.x - middle.x, knob.y - middle.y);
     expect(reach, at).toBeGreaterThanOrEqual(sizes.ringPx + 30 - 1);
     expect(reach, at).toBeLessThanOrEqual((sizes.ringPx + 30) * 1.06);
     // Inside the view.

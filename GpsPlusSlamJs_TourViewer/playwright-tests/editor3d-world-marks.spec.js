@@ -260,11 +260,12 @@ async function soundIcons(page, on) {
 // pixels at the icon's middle must still be the icon's own. The same
 // pixels are read with the icon and without it, in the one view: the
 // station's selected ring passes under the icon in the same amber, so a
-// sample elsewhere on the screen says nothing about the icon. Drawn with a depth test the relief hides the
-// icon and the two reads are the same. From straight above, as the
-// found-radius spec: at the globe's street-level opening the camera looks
-// over coarse tiles that sag below the stations (`isInterfacePart` pins
-// the material in the unit tests).
+// sample elsewhere on the screen says nothing about the icon. From
+// straight above, as the found-radius spec. On the globe this holds that
+// the icon is drawn and seen, not that it escapes the relief: with the
+// icon's depth test switched on the share still read 0.72 (0.76 without),
+// so the material's depth test is held by the unit tests alone
+// (`isInterfacePart`).
 test("an ambient sound's icon is seen where the relief stands in front of it", async ({
   page,
 }) => {
@@ -322,10 +323,11 @@ test("an ambient sound's icon is seen where the relief stands in front of it", a
   await soundIcons(page, false);
   const hidden = await pixelsAround(page, canvas, middle);
   await soundIcons(page, true);
-  // Measured at 40, 60 and 90 m, boxes 9 to 33 px across and change
-  // tolerances 24 to 96: 0.59 to 0.92 with the icon drawn (0.85 here), and
-  // 0 everywhere with a depth test, where the relief hides it. The ring's
-  // amber under the icon alone fills 0.12 to 0.43 of the box.
+  // Measured on the older view at 40, 60 and 90 m, boxes 9 to 33 px
+  // across and change tolerances 24 to 96: 0.59 to 0.92 with the icon
+  // drawn, 0 with a depth test. On the globe 0.76, and 0.72 with the depth
+  // test on. The ring's amber under the icon alone fills 0.12 to 0.43 of
+  // the box, so 0.5 still tells the icon from the ring.
   // Two reads with the icon drawn did not differ in any pixel.
   expect(iconShare(shown, hidden)).toBeGreaterThan(0.5);
   expect(await rejections(page)).toEqual([]);

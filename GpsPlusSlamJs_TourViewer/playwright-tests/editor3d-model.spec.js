@@ -218,6 +218,13 @@ test("a note is added by a click on the model, typed, placed again, focused from
   const steps = await changes(page);
 
   // Added: the button waits for the click, the click writes one step.
+  // Turned to look across the beam, so a ray through its centre meets it
+  // there and not along it.
+  await page.evaluate(
+    (deg) => /** @type {any} */ (window).__tourEditor.view3dHeading(deg),
+    90,
+  );
+  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   await act(page, "note-add").click();
   await expect(act(page, "note-add")).toHaveText("Click the model...");
   await clickModel(page, BEAM);
@@ -228,12 +235,11 @@ test("a note is added by a click on the model, typed, placed again, focused from
   // On a face of the beam (y 2.5 to 3, z -0.25 to 0.25) toward the camera,
   // in the file's metres. Which face depends on the camera's tilt: a ray
   // through the beam's centre enters through the top, short of the centre
-  // toward the camera, or through the front, so either one is right. The
-  // globe view looks along the beam from above, so the top is entered
-  // about half a metre short of it (0.53 m measured); the pillars stand
-  // at 1.2 m, under the beam's height range.
+  // toward the camera, or through the front, so either one is right.
+  // Turned across the beam, that shortfall lies in z, not along the beam
+  // (x 0.0003 measured, on the front face).
   const [x, y, z] = added.annotations[0].position;
-  expect(Math.abs(x)).toBeLessThan(0.75);
+  expect(Math.abs(x)).toBeLessThan(0.3);
   expect(y).toBeGreaterThan(2.45);
   expect(y).toBeLessThan(3.05);
   expect(Math.abs(z)).toBeLessThan(0.27);
