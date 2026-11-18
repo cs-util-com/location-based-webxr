@@ -116,9 +116,28 @@ describe("prototype gallery index", () => {
   });
 
   // The heading's date is the section's one date: a second copy in the body
-  // ("Made 2026-10-12. ...") would be left stale by a corrected heading.
+  // ("Made 2026-10-12. ...", "(made 2026-10-25)", "on 25 October 2026")
+  // would be left stale by a corrected heading. Only the visible text is
+  // checked, so a link to a dated section id stays allowed.
   it("dates a section in its heading only", () => {
-    expect(html.match(/\bMade \d{4}-\d{2}-\d{2}/g) ?? []).toEqual([]);
+    const month =
+      "(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?";
+    const date = new RegExp(
+      [
+        String.raw`\b\d{4}[-/.]\d{1,2}[-/.]\d{1,2}\b`,
+        String.raw`\b\d{1,2}[-/.]\d{1,2}[-/.]\d{4}\b`,
+        String.raw`\b\d{1,2}(?:st|nd|rd|th)?\s+${month}\s+\d{4}\b`,
+        String.raw`\b${month}\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b`,
+      ].join("|"),
+      "gi",
+    );
+    const bodies = [
+      ...html.matchAll(/<\/h2>([\s\S]*?)(?=<h2[\s>]|<\/main>)/g),
+    ].map((m) => textOf(m[1] ?? ""));
+    expect(bodies.length).toBe(sections.length);
+    for (const [i, body] of bodies.entries()) {
+      expect(body.match(date) ?? [], ids[i]).toEqual([]);
+    }
   });
 
   // A screen reader's list of the page's links shows only their names, so
