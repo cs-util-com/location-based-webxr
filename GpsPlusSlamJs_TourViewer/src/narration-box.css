@@ -107,7 +107,7 @@
   font-weight: 700;
   letter-spacing: 0.01em;
 }
-.narration-box[data-speaking="yes"] .nb-who {
+.narration-box[data-speaking="yes"] .nb-col .nb-who {
   animation: nb-breathe 2.4s ease-in-out infinite;
 }
 @keyframes nb-breathe {
@@ -115,11 +115,15 @@
     opacity: 0.55;
   }
 }
-/* A synthetic voice and its credit, after the name: small and muted. */
+/* A synthetic voice and its credit, after the name: small and muted.
+   Its own line height stays inside the 22 px line, so smaller type on the
+   name's baseline does not make the first lines taller than the scroll's
+   grid. */
 .nb-disc {
   color: rgb(255 255 255 / var(--nb-grey));
   font-size: 13px;
   font-weight: 500;
+  line-height: 1;
 }
 /* Whether the voice plays, for a screen reader only. */
 .nb-live {
@@ -231,10 +235,10 @@
   }
   /* Still: a paused voice's name is dimmed instead of a playing one
      breathing. */
-  .narration-box[data-speaking="yes"] .nb-who {
+  .narration-box[data-speaking="yes"] .nb-col .nb-who {
     animation: none;
   }
-  .narration-box[data-speaking="no"] .nb-who {
+  .narration-box[data-speaking="no"] .nb-col .nb-who {
     opacity: 0.7;
   }
   .nb-tapfx {

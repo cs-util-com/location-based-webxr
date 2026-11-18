@@ -259,11 +259,17 @@ export function createNarrationVisitor(
     },
     pauseAll(stationId) {
       const wanted = [...players.values()].filter((p) => p.wanted());
-      // The held ones first: pausing the one heard would wake them. It
-      // comes first at the return, for the same one to go on.
-      const heard = wanted.filter((p) => p.playing());
-      for (const player of wanted) if (!player.playing()) player.pause();
+      // The held ones first: pausing the one heard would wake them. The
+      // one heard is the channel's running voice, which a scrub may hold
+      // without it playing. It comes first at the return, for the same one
+      // to go on.
+      const heard = wanted.filter((p) => p.playing() || p.running());
+      for (const player of wanted) if (!heard.includes(player)) player.pause();
       for (const player of heard) player.pause();
+      // Every voice, whatever woke on the way.
+      for (const player of players.values()) {
+        if (player.playing()) player.pause();
+      }
       if (stationId !== undefined && wanted.length > 0) {
         left.set(stationId, [
           ...heard,

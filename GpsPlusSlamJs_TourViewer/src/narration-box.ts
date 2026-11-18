@@ -353,6 +353,9 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     const g = thumbGeometry(scroll, lines, rows, rows * lh - 4);
     thumb.style.height = `${g.height.toFixed(1)}px`;
     thumb.style.transform = `translateY(${g.offset.toFixed(1)}px)`;
+    // Whoever carried the voice on (the page's sound gate at a return),
+    // the finger still holds it.
+    if (dragging && resume && c.player.playing()) holdVoice(c.player);
     // A drag holds the voice for the finger only: it still counts as
     // playing, so neither the store nor a screen reader hears of it.
     const playing = dragging ? resume : c.player.playing();
@@ -409,17 +412,20 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     tick();
   }
 
-  /** A drag holds a playing voice for the finger, keeping its place in
-   *  the voice channel (`hold`); a voice not playing is left alone, so one
-   *  the channel holds stays held. */
+  /** Pauses `player` for the finger, keeping its place in the voice
+   *  channel where it can (`hold`). */
+  function holdVoice(player: NarrationClock): void {
+    if (player.hold === undefined) player.pause();
+    else player.hold();
+  }
+
+  /** A drag holds a playing voice for the finger; a voice not playing is
+   *  left alone, so one the channel holds stays held. */
   function startDrag(c: NarrationBoxContent): void {
     dragging = true;
     resume = c.player.playing();
     dragMs = c.player.nowMs();
-    if (resume) {
-      if (c.player.hold === undefined) c.player.pause();
-      else c.player.hold();
-    }
+    if (resume) holdVoice(c.player);
     col.classList.add("nb-scrub");
     root.classList.add("nb-dragging");
     deps.store.dispatch(narrationBoxScrubbing(true));
@@ -557,6 +563,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
       cancelDrag();
       shown = false;
       told = null;
+      root.dataset.speaking = "no";
       root.classList.add("nb-off");
       root.inert = true;
       deps.store.dispatch(narrationBoxHidden());

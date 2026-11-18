@@ -72,19 +72,23 @@ export function wordAt(starts: readonly number[], ms: number): number {
 }
 
 /**
- * Line numbers for words by their top (px) in the laid-out text: a top
- * within half a line height of a line already seen is on that line. With
- * `firstTop` (the speaker's name, which opens line 0), counting starts at
- * that line, so a first word wrapped under the name is on line 1.
+ * Line numbers for words by their top (px) in the laid-out text. With
+ * `firstTop` (the speaker's name, which opens line 0), a word's line is
+ * how many line heights it sits below the name, so a line that holds no
+ * word (a long voice credit after the name) still counts. Without it, a
+ * top within half a line height of a line already seen is on that line.
  */
 export function lineIndices(
   tops: readonly number[],
   lineHeightPx: number,
   firstTop?: number,
 ): number[] {
-  const seen: number[] =
-    firstTop !== undefined && Number.isFinite(firstTop) ? [firstTop] : [];
-  const half = Math.max(1, lineHeightPx) / 2;
+  const lh = Math.max(1, lineHeightPx);
+  if (firstTop !== undefined && Number.isFinite(firstTop)) {
+    return tops.map((top) => Math.max(0, Math.round((top - firstTop) / lh)));
+  }
+  const seen: number[] = [];
+  const half = lh / 2;
   return tops.map((top) => {
     let k = seen.findIndex((t) => Math.abs(t - top) < half);
     if (k < 0) {

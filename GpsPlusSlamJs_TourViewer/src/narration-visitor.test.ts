@@ -253,6 +253,26 @@ describe("the visitor's narrated texts", () => {
     expect(made.map((p) => p.on)).toEqual([true, false]);
   });
 
+  // Why: a finger scrubbing the box holds its voice without pausing it in
+  // the channel, so it is still the one heard. Walking off mid-scrub must
+  // not pause it first as if it were waiting: that hands the channel to
+  // the voice behind it, which would then follow the visitor out.
+  it("pauses a voice held by a scrub and the one behind it, on leaving", () => {
+    const { visitor, made } = make(() => timingFile());
+    const first = visitor.sheetNarration(text())?.player;
+    const second = visitor.sheetNarration({ ...text(), id: "yard" })?.player;
+    second?.play();
+    first?.play(); // the second waits behind it
+    first?.hold?.(); // a finger scrubs the first
+    visitor.pauseAll("gate");
+    expect(made.map((p) => p.on)).toEqual([false, false]);
+    // At the return the scrubbed one goes on, the other still behind it.
+    visitor.carryOn("gate");
+    expect(made.map((p) => p.on)).toEqual([true, false]);
+    first?.pause();
+    expect(made.map((p) => p.on)).toEqual([false, true]);
+  });
+
   // Why: a voice stopped by the visitor is off until tapped, and passing
   // through another station must not forget what the first one left.
   it("leaves a paused voice off, and remembers a station across another", () => {

@@ -130,6 +130,14 @@ describe("lines", () => {
     expect(lineIndices([0, 22], 22, 0)).toEqual([0, 1]);
   });
 
+  // Why: a long voice credit after the name can fill a line of its own, no
+  // word on it. Counted by first-seen tops, that line got no number, the
+  // text one line short, and its last line never scrolled into view.
+  it("counts a line that holds no word, from the name's top", () => {
+    expect(lineIndices([44, 66], 22, 0)).toEqual([2, 3]);
+    expect(lineIndices([66, 66, 88], 22, 0)).toEqual([3, 3, 4]);
+  });
+
   it("starts each line at its first word, and closes with the total", () => {
     expect(lineStarts([0, 300, 600, 900], [0, 0, 1, 2], 1500)).toEqual([
       0, 600, 900, 1500,

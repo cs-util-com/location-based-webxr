@@ -252,10 +252,17 @@ describe("createNarrationBox", () => {
   });
 
   it("scrubs by the lines dragged, then plays on from there", () => {
-    const { box, clock, content, store } = make();
+    const { box, clock, content, store, actions } = make();
     clock.now = 4 * WORD_MS; // the start of line 1
     clock.on = true;
     box.show(content);
+    // A scrub is no pause: neither the store nor a screen reader hears of
+    // the voice stopping and starting under the finger.
+    const live = box.element.querySelector<HTMLElement>(".nb-live");
+    const said = live?.textContent;
+    const plays = () =>
+      actions.filter((a) => a === "narrationBox/narrationBoxPlaying").length;
+    const playsBefore = plays();
     box.element.dispatchEvent(pointer("pointerdown", 100, 700));
     box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
     // Held while the finger moves; the store says scrubbing, not speaking.
@@ -270,6 +277,8 @@ describe("createNarrationBox", () => {
     expect(clock.now).toBe(12 * WORD_MS);
     expect(clock.on).toBe(true);
     expect(selectNarrationSpeaking(store.getState())).toBe(true);
+    expect(plays()).toBe(playsBefore);
+    expect(live?.textContent).toBe(said);
     // A drag is not a tap: no sign.
     expect(document.querySelector(".nb-tapfx")).toBeNull();
   });
@@ -345,8 +354,12 @@ describe("createNarrationBox", () => {
   it("hides out of reach of taps, and a new text starts afresh", () => {
     const { box, clock, content } = make();
     clock.now = 3000;
+    clock.on = true;
     box.show(content);
+    expect(box.element.dataset.speaking).toBe("yes");
     box.hide();
+    // A hidden box does not breathe on in the background.
+    expect(box.element.dataset.speaking).toBe("no");
     expect(box.element.classList.contains("nb-off")).toBe(true);
     expect(box.element.inert).toBe(true);
     expect(box.state().shown).toBe(false);
@@ -537,5 +550,50 @@ describe("createNarrationBox", () => {
     clock.on = false;
     box.tick();
     expect(actions.slice(before)).toEqual(["narrationBox/narrationBoxPlaying"]);
+  });
+  // Why: a drag cut off, or let go past the end, must hand the voice
+  // channel back for real: with a voice that has hold(), a hold left in
+  // place would keep the voice behind it waiting for nothing.
+  it("hands the channel back when a drag is cut off or ends past the end", () => {
+    for (const end of ["hide", "show", "dispose", "past-end"] as const) {
+      const focus = createVoiceFocus();
+      const behind = focusedPlayer(innerPlayer(), focus);
+      const voiced = focusedPlayer(innerPlayer(), focus);
+      behind.play();
+      voiced.play(); // the other one waits behind the text's voice
+      const { box, content } = make();
+      box.show({ ...content, player: voiced });
+      box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+      box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+      expect(behind.playing()).toBe(false);
+      if (end === "hide") box.hide();
+      else if (end === "show") {
+        box.show({ ...content, key: "text-2", player: new FakeClock() });
+      } else if (end === "dispose") box.dispose();
+      else {
+        box.element.dispatchEvent(pointer("pointermove", 100, 0));
+        box.element.dispatchEvent(pointer("pointerup", 100, 0));
+      }
+      expect(voiced.playing(), end).toBe(false);
+      expect(voiced.wanted(), end).toBe(false);
+      expect(behind.playing(), end).toBe(true);
+      document.body.replaceChildren();
+    }
+  });
+
+  // Why: the page's sound gate carries a voice on when the page comes
+  // back; with a finger still on the words, the box keeps it held.
+  it("keeps the voice held while the finger is down, whoever carries it on", () => {
+    const { box, clock, content } = make();
+    clock.on = true;
+    box.show(content);
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+    expect(clock.on).toBe(false);
+    clock.on = true; // the page carries it on, the finger still down
+    box.tick();
+    expect(clock.on).toBe(false);
+    box.element.dispatchEvent(pointer("pointerup", 100, 700 - LINE_PX));
+    expect(clock.on).toBe(true);
   });
 });

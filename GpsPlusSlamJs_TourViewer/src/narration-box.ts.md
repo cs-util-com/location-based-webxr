@@ -75,18 +75,22 @@ and what.
   channel holds stays held to carry on. On release the voice goes on from
   the dragged place, or, dragged past its end, is paused for good (its
   channel handed back).
-- A drag cut off by `hide()` or a new text never plays the voice again:
-  the place is kept, and a voice the drag held is paused properly.
+- A drag cut off by `hide()`, a new text or `dispose()` never plays the
+  voice again: the place is kept, and a voice the drag held is paused
+  properly, its channel handed back (a voice waiting behind it carries
+  on), as after a drag let go past the end.
 - A hidden page is not the box's to silence: the page's sound gate
   (`sound-setting.ts`) pauses every voice and carries the held one on at
-  the return.
+  the return. Should that happen with a finger still on the words, the
+  next frame holds the voice again until the finger lets go.
 - Keyboard: the box is focusable; Space or Enter plays or pauses (the
   sign at the box's middle), the up and down arrows move the voice one
   line. The `aria-label` names the speaker, the title, a synthetic voice,
   and these gestures and keys; a polite live region says "Playing" or
   "Paused" when the play state changes (not on the first showing).
 - Play state on screen: `data-speaking="yes"` while the voice plays and
-  no finger holds it; the name breathes then (2.4 s). With reduced motion
+  no finger holds it (and "no" once hidden); the name in the words
+  breathes then (2.4 s), the hidden measuring copy never. With reduced motion
   nothing breathes, and a paused voice's name is dimmed instead. Reduced
   motion also drops the word fades, the box's fade and the swap; reduced
   transparency or more contrast raise the tint and the grey.
@@ -97,7 +101,9 @@ and what.
   - a synthetic voice and the voice's credit are said visibly after the
     name, small and in the muted grey (" · synthetic voice · <credit>"),
     because some voice services require a visible disclosure; with
-    neither, nothing is shown.
+    neither, nothing is shown. Its line height of 1 keeps the first lines
+    on the 22 px grid the scroll moves by, and a credit long enough to
+    take lines of its own still counts them.
 - Defensive: an empty text shows one empty line and still scrubs; a
   non-finite line height falls back to 22 px; a pointer capture that
   fails is ignored; `tick` is guarded against re-entry (a dispatch that

@@ -20,8 +20,11 @@ Pure, so the box (`narration-box.ts`) may ask on every frame.
   decreasing, always finite; segments with a non-finite field are skipped.
 - `wordAt(starts, ms)` - the last word started at or before `ms`, -1 for
   none or NaN.
-- `lineIndices(tops, lineHeightPx)` - a line number per word from its
-  laid-out top; a top within half a line height of a seen line joins it.
+- `lineIndices(tops, lineHeightPx, firstTop?)` - a line number per word
+  from its laid-out top. With `firstTop` (the speaker's name, line 0) it
+  is the line heights below the name, rounded, so a line that holds no
+  word (a long voice credit) still counts; without, a top within half a
+  line height of a seen line joins it.
 - `lineStarts(starts, lineOf, totalMs)` - each line's start (its first
   word's), never decreasing, plus a closing entry, the voice's total. No
   words: one line `[0, total]`.

@@ -25,7 +25,7 @@ The visitor's narrated texts for the open tour: one voice per text, shared by it
 
 ## The voice channel
 
-Every text's voice is a `focusedPlayer` in the page's one channel (`voice-focus.ts`, the `focus` dep, a channel of its own when none is given): the sheet and the box get the wrapped player, so playing one holds whatever else speaks. `pauseAll` pauses the held voices before the one heard, because pausing the one heard would wake them.
+Every text's voice is a `focusedPlayer` in the page's one channel (`voice-focus.ts`, the `focus` dep, a channel of its own when none is given): the sheet and the box get the wrapped player, so playing one holds whatever else speaks. `pauseAll` pauses the held voices before the one heard, because pausing the one heard would wake them. The one heard is the channel's running voice (`running()`), which a scrub may hold without it playing; a last sweep pauses anything still playing.
 
 ## Tests
 

@@ -262,7 +262,6 @@ for (const viewport of VIEWPORTS) {
     // starts lower: "the same line" is within half a line height.
     const sameLine = (a, b) => Math.abs(a - b) < want.lineHeight / 2;
     expect(sameLine(p.disc.top, p.who.top)).toBe(true);
-    expect(p.disc.left).toBeGreaterThanOrEqual(p.who.left);
     await expect(page.getByTestId("narration-box-who")).toHaveText("Narrator");
     await expect(page.getByTestId("narration-box-disclosure")).toHaveText(
       ` · synthetic voice · ${CHECK_VOICE_CREDIT}`,
@@ -276,6 +275,37 @@ for (const viewport of VIEWPORTS) {
         return r === undefined ? null : { top: r.top, right: r.right };
       });
     if (discEnd === null) throw new Error("the disclosure has no box");
+    // Where the browser put every part, line by line.
+    const laid = await page.getByTestId("narration-box").evaluate((box) => {
+      const top = (el) => el.getBoundingClientRect().top;
+      const who = box.querySelector(".nb-col .nb-who");
+      const disc = box.querySelector(".nb-col .nb-disc");
+      const rects = disc === null ? [] : [...disc.getClientRects()];
+      return {
+        who: who === null ? null : top(who),
+        discFirstLeft: rects[0]?.left ?? null,
+        discTops: rects.map((r) => r.top),
+        wordTops: [...box.querySelectorAll(".nb-col .nb-w")].map(top),
+      };
+    });
+    if (laid.who === null || laid.discFirstLeft === null) {
+      throw new Error("the name or the disclosure has no box");
+    }
+    // The disclosure starts right after the name, on its line.
+    expect(laid.discFirstLeft).toBeGreaterThanOrEqual(p.who.right - 0.5);
+    // Every word sits on the 22 px grid the scroll moves by: smaller type
+    // on the first line must not make it taller.
+    for (const wordTop of laid.wordTops) {
+      const off = (wordTop - laid.who) / want.lineHeight;
+      near(off * want.lineHeight, Math.round(off) * want.lineHeight, 1);
+    }
+    // The box counts every line, the ones only the name and its
+    // disclosure take too, so the last line can scroll into view.
+    const lineOf = (top) => Math.round((top - laid.who) / want.lineHeight);
+    const drawnLines = new Set(
+      [laid.who, ...laid.discTops, ...laid.wordTops].map(lineOf),
+    ).size;
+    expect(v.captions?.lines).toBe(drawnLines);
     if (sameLine(p.firstWord.top, discEnd.top)) {
       expect(p.firstWord.left).toBeGreaterThanOrEqual(discEnd.right - 0.5);
     } else {
