@@ -3435,11 +3435,11 @@ export function createEditorSession(input: {
       // The tour may have changed during the read: copy the folder as it
       // is now, and only while it holds exactly the items whose pictures
       // were read (a photo added meanwhile would be copied without one).
-      const now = mine();
-      if (now === null) return notInTour;
-      const current = folderOf(now, folderId);
-      if (current === null) return noSuchFolder;
-      const held = itemsIn(now).map((o) => o.id);
+      const after = mine();
+      if (after === null) return notInTour;
+      const fresh = folderOf(after, folderId);
+      if (fresh === null) return noSuchFolder;
+      const held = itemsIn(after).map((o) => o.id);
       if (
         held.length !== items.length ||
         held.some((id, i) => id !== items[i]?.id)
@@ -3453,10 +3453,7 @@ export function createEditorSession(input: {
         ...folder.children.filter(isTourFolder).flatMap(folderIds),
       ];
       const newIds = Object.fromEntries(
-        [...folderIds(current.folder), ...held].map((id) => [
-          id,
-          newObjectId(),
-        ]),
+        [...folderIds(fresh.folder), ...held].map((id) => [id, newObjectId()]),
       );
       // The pictures under the copies' ids before the copies exist: the
       // draft's write of each copy carries its picture.
@@ -3470,10 +3467,10 @@ export function createEditorSession(input: {
         took(() =>
           store.dispatch(
             tourDocumentActions.folderDuplicated({
-              stationId: current.station.id,
+              stationId: fresh.station.id,
               folderId,
               newIds,
-              what: `the copy of "${folderName(current.folder)}"`,
+              what: `the copy of "${folderName(fresh.folder)}"`,
             }),
           ),
         )
