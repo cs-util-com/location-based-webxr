@@ -51,8 +51,10 @@ Pure, so the box (`narration-box.ts`) may ask on every frame.
     nothing. The tap slop is the one with a failure on either side (too
     small: a tap on a moving phone becomes a scrub; too large: a short
     drag becomes a pause); the field test is where it is judged.
-- `timeAtLine(lineFloatAt(t))` returns `t` wherever lines have length
-  (property test), so a drag lands where the finger left the words.
+- `timeAtLine(lineFloatAt(t))` returns `t` clamped to the text, lines of
+  no length included, and `lineFloatAt(timeAtLine(x))` returns `x`
+  clamped to the lines wherever lines have length (property tests), so a
+  drag lands where the finger left the words.
 - Word offsets are UTF-16 indices into the plain text (`wordsOf` in
   `plain-words.ts`), the same the timing track uses.
 
@@ -70,5 +72,11 @@ player.seek(timeAtLine(ls, lineFloatAt(ls, player.nowMs()) + dy / 22));
 
 - `narration-box-timeline.test.ts`: word and sentence tracks, words the
   track never reaches, never running backwards (property), `wordAt`, line
-  grouping, line starts, the time-line round trip and monotonicity
-  (properties), follow scroll, rubber band, thumb, tap.
+  grouping, line starts, the time-line mapping by example, follow scroll, rubber
+  band, thumb, tap.
+- `narration-box-timeline.property.test.ts`: `lineFloatAt` and
+  `timeAtLine` for any line starts (a late first line, lines of no
+  length): both round trips within rounding (1e-6 ms, 1e-8 lines), both
+  monotone, inside the text and clamped at both ends (a text of no time
+  maps its end to line 0), NaN read as the start, and no or one line
+  start answered without NaN.

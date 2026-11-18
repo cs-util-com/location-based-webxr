@@ -158,43 +158,8 @@ describe("lines", () => {
     expect(timeAtLine(ls, -2)).toBe(0);
     expect(timeAtLine(ls, 7)).toBe(1500);
   });
-
-  // Why: a drag of so many lines lands where the words under the finger
-  // are said; the round trip time -> line -> time must come back.
-  it("time -> line -> time comes back where lines have length (property)", () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.integer({ min: 1, max: 5000 }), {
-          minLength: 1,
-          maxLength: 30,
-        }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        (spans, share) => {
-          const ls = [0];
-          for (const s of spans) ls.push((ls.at(-1) ?? 0) + s);
-          const total = ls.at(-1) ?? 0;
-          const t = share * total;
-          expect(timeAtLine(ls, lineFloatAt(ls, t))).toBeCloseTo(t, 6);
-        },
-      ),
-    );
-  });
-
-  it("is monotone: a later time is never on an earlier line (property)", () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.nat(5000), { minLength: 1, maxLength: 30 }),
-        fc.double({ min: -100, max: 200_000, noNaN: true }),
-        fc.double({ min: -100, max: 200_000, noNaN: true }),
-        (spans, a, b) => {
-          const ls = [0];
-          for (const s of spans) ls.push((ls.at(-1) ?? 0) + s);
-          const [lo, hi] = a <= b ? [a, b] : [b, a];
-          expect(lineFloatAt(ls, lo)).toBeLessThanOrEqual(lineFloatAt(ls, hi));
-        },
-      ),
-    );
-  });
+  // The round trip, monotonicity and clamping of this pair, for any line
+  // starts: narration-box-timeline.property.test.ts.
 });
 
 describe("scrolling", () => {
