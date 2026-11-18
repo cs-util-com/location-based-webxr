@@ -132,20 +132,39 @@ function silenceWav() {
   return out;
 }
 
+// How long a drop may take to put its cards on the shelf. Each file is read
+// and saved into the draft before the shelf reveals the cards, which took
+// 3.0 s for one file and 4.4 s for two on an idle desktop: close to or past
+// the default 5 s wait, and a loaded CI runner timed out with the cards
+// arriving later; with the globe drawing in the software renderer the
+// toast "Adding 2 files..." stood past 5 s on a loaded machine. 30 s is
+// about seven times the idle two-file time. An add from the "+" menu
+// takes the same path (the file read, then saved into the draft) before
+// it selects the new item and says so.
+const SHELF_ADD_MS = 30_000;
+
 /**
- * Add a file to the station `stationId` from its "+" menu's `kind`.
+ * Add a file to the station `stationId` from its "+" menu's `kind`, and
+ * wait for the add to end: the toast saying the item `title` (the file's
+ * name as its title) was added. The new item is selected by then.
  * @param {import("@playwright/test").Page} page
  * @param {string} stationId
  * @param {string} kind
  * @param {{ name: string, mimeType: string, buffer: Buffer }} file
+ * @param {string} title
  */
-async function addFromMenu(page, stationId, kind, file) {
+async function addFromMenu(page, stationId, kind, file, title) {
   const card = page.locator(`#tree-body .card[data-station="${stationId}"]`);
   await card.locator(".head").hover();
   await card.locator(".head .add").click();
   const chooser = page.waitForEvent("filechooser");
   await page.locator(`#tree-add-menu [data-kind="${kind}"]`).click();
   await (await chooser).setFiles(file);
+  await expect(
+    page
+      .locator(".toast", { hasText: "Added the " })
+      .filter({ hasText: `"${title}"` }),
+  ).toBeVisible({ timeout: SHELF_ADD_MS });
 }
 
 test.beforeEach(async ({ page }) => {
@@ -176,21 +195,29 @@ test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D
   await openSampleIn3d(page);
   const before = (await blocksOf(page, "gate")).length;
 
-  await addFromMenu(page, "gate", "model", {
-    name: "little-arch.glb",
-    mimeType: "model/gltf-binary",
-    buffer: triangleGlb(),
-  });
-  await expect(
-    page.locator(".toast", { hasText: 'Added the 3D model "little arch"' }),
-  ).toBeVisible();
+  await addFromMenu(
+    page,
+    "gate",
+    "model",
+    {
+      name: "little-arch.glb",
+      mimeType: "model/gltf-binary",
+      buffer: triangleGlb(),
+    },
+    "little arch",
+  );
   const model = await selected(page);
-  await addFromMenu(page, "gate", "audio", {
-    name: "bell.wav",
-    mimeType: "audio/wav",
-    buffer: silenceWav(),
-  });
-  await expect(page.locator(".toast", { hasText: '"bell"' })).toBeVisible();
+  await addFromMenu(
+    page,
+    "gate",
+    "audio",
+    {
+      name: "bell.wav",
+      mimeType: "audio/wav",
+      buffer: silenceWav(),
+    },
+    "bell",
+  );
   const sound = await selected(page);
   expect(sound).not.toBe(model);
 
@@ -320,12 +347,17 @@ test("a file in use is deleted from the shelf with its item and comes back whole
   // toast, the stack and the shelf work together.
   test.setTimeout(240_000);
   await openSampleIn3d(page);
-  await addFromMenu(page, "gate", "audio", {
-    name: "toll.wav",
-    mimeType: "audio/wav",
-    buffer: silenceWav(),
-  });
-  await expect(page.locator(".toast", { hasText: '"toll"' })).toBeVisible();
+  await addFromMenu(
+    page,
+    "gate",
+    "audio",
+    {
+      name: "toll.wav",
+      mimeType: "audio/wav",
+      buffer: silenceWav(),
+    },
+    "toll",
+  );
   const sound = String(await selected(page));
   const audioOf = async () =>
     (await blocksOf(page, "gate")).find((b) => b.id === sound)?.audio;
@@ -381,15 +413,6 @@ test("a file in use is deleted from the shelf with its item and comes back whole
   await expect(page.locator(".toast", { hasText: "Undone" })).toBeVisible();
   expect(await audioOf()).toBe(old);
 });
-
-// How long a drop may take to put its cards on the shelf. Each file is read
-// and saved into the draft before the shelf reveals the cards, which took
-// 3.0 s for one file and 4.4 s for two on an idle desktop: close to or past
-// the default 5 s wait, and a loaded CI runner timed out with the cards
-// arriving later; with the globe drawing in the software renderer the
-// toast "Adding 2 files..." stood past 5 s on a loaded machine. 30 s is
-// about seven times the idle two-file time.
-const SHELF_ADD_MS = 30_000;
 
 /**
  * Drop `files` on the 3D view, as a creator drops them anywhere on the page.
@@ -580,14 +603,17 @@ test("a file added while the docked Files tab is hidden is listed and done when 
     host.getByRole("tab", { name: "Details", exact: true }),
   ).toHaveAttribute("aria-selected", "true");
   await expect(page.locator("#shell-shelf")).toHaveCount(0);
-  await addFromMenu(page, "gate", "model", {
-    name: "little-arch.glb",
-    mimeType: "model/gltf-binary",
-    buffer: triangleGlb(),
-  });
-  await expect(
-    page.locator(".toast", { hasText: 'Added the 3D model "little arch"' }),
-  ).toBeVisible();
+  await addFromMenu(
+    page,
+    "gate",
+    "model",
+    {
+      name: "little-arch.glb",
+      mimeType: "model/gltf-binary",
+      buffer: triangleGlb(),
+    },
+    "little arch",
+  );
   await expect(page.locator("#shell-shelf")).toHaveCount(0);
   await showFiles(page);
   const card = page
@@ -606,11 +632,17 @@ test("a file dropped on an item's file field keeps the docked Details shown", as
   test.setTimeout(150_000);
   await openSampleIn3d(page);
   await dockSettled(page, 1440);
-  await addFromMenu(page, "gate", "model", {
-    name: "little-arch.glb",
-    mimeType: "model/gltf-binary",
-    buffer: triangleGlb(),
-  });
+  await addFromMenu(
+    page,
+    "gate",
+    "model",
+    {
+      name: "little-arch.glb",
+      mimeType: "model/gltf-binary",
+      buffer: triangleGlb(),
+    },
+    "little arch",
+  );
   const field = page.locator("#shell-inspector [data-filefield]").first();
   await expect(field).toBeVisible();
   await field.evaluate((target, bytes) => {
