@@ -24,6 +24,9 @@
 //    family exists as `el`, `requireEl` and `getRequiredElement`; a fourth
 //    `smoothstep` was found by a human reviewer as an inline, unnamed
 //    expression in `terrain-slope.ts`. A name-keyed guard finds neither.
+//    The one exception is a helper whose body carries a constant nothing else
+//    uses (`SIGNATURES` below): mulberry32 is found under any name by its
+//    increment, in production sources outside test-support and test-utils.
 //  - **It only guards names someone listed.** It cannot find the NEXT
 //    duplicated helper, only re-duplication of a known one. That is the trade
 //    accepted when the cross-package detector (which could find new ones, at an
@@ -351,6 +354,58 @@ export function violations(found, canonical, justified) {
   return problems.sort();
 }
 
+/**
+ * Canonical helpers recognisable by their BODY, whatever their name.
+ *
+ * The name-keyed check above is blind to a renamed copy (see "WHAT IT CANNOT
+ * DO"). Where a helper's body carries a constant nothing else uses, that
+ * constant finds a copy under any name: the six removed mulberry32 copies were
+ * called `mulberry`, `seeded` and the like, and every one added 0x6d2b79f5.
+ * Comments are ignored, so prose naming the constant does not count.
+ */
+const SIGNATURES = [
+  {
+    name: "mulberry32",
+    pattern: /0x6d2b79f5|\b1831565813\b/i,
+    home: "GpsPlusSlamJs_AppFramework/src/utils/mulberry32.ts",
+  },
+];
+
+/**
+ * The files the signature check reads: production sources only. Test helpers
+ * under `test-support/` and `test-utils/` are left out like test files, since
+ * several test-only copies of the generator remain there by choice (listed in
+ * the canonical file's sidecar).
+ */
+function signatureFiles() {
+  return sourceFiles().filter(
+    (file) => !/\/(test-support|test-utils)\//.test(file),
+  );
+}
+
+/** Drops block and line comments, so prose never counts as a copy. */
+function withoutComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+}
+
+/** Files carrying a signature away from its home, as human-readable strings. */
+export function signatureCopies(files, read, signatures) {
+  const problems = [];
+  for (const file of files) {
+    const source = withoutComments(read(file));
+    for (const entry of signatures) {
+      if (file !== entry.home && entry.pattern.test(source)) {
+        problems.push(
+          `${entry.name}'s constant appears in ${file}; its one home is ${entry.home}`,
+        );
+      }
+    }
+  }
+  return problems.sort();
+}
+
 /** Justified entries whose definition no longer exists. */
 export function staleExceptions(found, justified) {
   const live = new Set(found.map((d) => `${d.name} @ ${d.file}`));
@@ -522,6 +577,53 @@ describe("duplicate-helper guard", () => {
     // An exception that outlives its file is a claim nobody checked. Failing on
     // it is what keeps the list from becoming a graveyard.
     expect(staleExceptions(found, JUSTIFIED)).toEqual([]);
+  });
+
+  describe("signatureCopies", () => {
+    // Why: the six removed mulberry32 copies were named `mulberry`, `seeded`
+    // and the like, so the name-keyed entry above would miss a seventh under a
+    // new name. Every copy carries the generator's increment constant whatever
+    // it is called, so the constant is the key that survives a rename.
+    const signatures = [
+      {
+        name: "mulberry32",
+        pattern: /0x6d2b79f5|\b1831565813\b/i,
+        home: "a/src/utils/mulberry32.ts",
+      },
+    ];
+    const tree = {
+      "a/src/utils/mulberry32.ts": "a = (a + 0x6d2b79f5) >>> 0;",
+      "b/src/noise.ts":
+        "function seeded(s) { return () => { s = (s + 0x6D2B79F5) | 0; }; }",
+      "c/src/stars.ts": "let a = seed;\n a = (a + 1831565813) >>> 0;",
+      "d/src/notes.ts":
+        "// a copy of mulberry32 (0x6d2b79f5) once lived here\n/* 0x6d2b79f5 */",
+    };
+    const read = (file) => tree[file];
+
+    it("flags a renamed copy, in any spelling of the constant, away from its home", () => {
+      expect(signatureCopies(Object.keys(tree), read, signatures)).toEqual([
+        "mulberry32's constant appears in b/src/noise.ts; its one home is a/src/utils/mulberry32.ts",
+        "mulberry32's constant appears in c/src/stars.ts; its one home is a/src/utils/mulberry32.ts",
+      ]);
+    });
+  });
+
+  it("finds each signature in its home (so the constant check is not vacuous)", () => {
+    for (const entry of SIGNATURES) {
+      expect(
+        signatureCopies([entry.home], readTracked, [
+          { ...entry, home: "elsewhere" },
+        ]),
+      ).toHaveLength(1);
+    }
+  });
+
+  it("no canonical helper is copied under another name", () => {
+    // A non-empty result names the file: import the canonical helper instead.
+    expect(signatureCopies(signatureFiles(), readTracked, SIGNATURES)).toEqual(
+      [],
+    );
   });
 
   it("every justified exception carries a reason", () => {
