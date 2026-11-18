@@ -341,8 +341,14 @@ export interface Editor3dStats {
   /** The street map's loading state (the overlay's `mapLoad`), for the
    *  shell to show. */
   readonly mapLoad: OsmMapLoad;
-  /** The orbit's centre in the world (m). */
+  /** The orbit's centre in the world (m); the globe view's tour centre,
+   *  in the tour's frame. */
   readonly target: readonly [number, number, number];
+  /** Where the line of sight meets the ground in the world (m): the
+   *  orbit's centre; on the globe the ground under the screen's centre,
+   *  else the tour's centre. Read with `camera` in one call: the globe's
+   *  world follows the camera. */
+  readonly look: readonly [number, number, number];
   /** The camera in the world (m). */
   readonly camera: readonly [number, number, number];
   readonly distanceM: number;
@@ -1002,6 +1008,7 @@ export async function openEditor3d(deps: Editor3dDeps): Promise<Editor3dView> {
           osm: { ...ground.osm.stats(), coverage: ground.osm.coverage() },
           mapLoad: ground.osm.mapLoad(),
           target: [controls.target.x, controls.target.y, controls.target.z],
+          look: [controls.target.x, controls.target.y, controls.target.z],
           camera: [camera.position.x, camera.position.y, camera.position.z],
           distanceM: camera.position.distanceTo(controls.target),
           flying: flight !== null,

@@ -1507,6 +1507,19 @@ export async function openGlobeEditor(
     const tourTarget = () =>
       worldOf(new THREE.Vector3(0, centreHeightM, 0), worldPoint);
 
+    /** Where the line of sight meets the ground, in the world: the
+     *  ground under the screen's centre, else (the sky, heights not
+     *  loaded) the tour's centre. */
+    const lookPoint = (): [number, number, number] => {
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        camera.quaternion,
+      );
+      const at =
+        groundPoint(new THREE.Ray(camera.position.clone(), forward)) ??
+        tourTarget();
+      return [at.x, at.y, at.z];
+    };
+
     let firstTick: () => void = () => undefined;
     let notShown: (error: unknown) => void = () => undefined;
     const ready = new Promise<void>((resolve, reject) => {
@@ -1727,12 +1740,29 @@ export async function openGlobeEditor(
           tiltDeg: 90 + pose.pitchDeg,
           standing,
           ...layer.stats(),
-          codePx: [],
+          codePx: layer.codeCorners().map((corners) => {
+            const square = corners.map((c) => {
+              const v = c.clone().project(camera);
+              return new THREE.Vector2(
+                ((v.x + 1) / 2) * canvas.clientWidth,
+                ((1 - v.y) / 2) * canvas.clientHeight,
+              );
+            });
+            // The mean of its four sides (CSS px).
+            return (
+              square.reduce(
+                (sum, p, i) =>
+                  sum + p.distanceTo(square[(i + 1) % square.length]!),
+                0,
+              ) / square.length
+            );
+          }),
           osm: { ...ground.osm.stats(), coverage: ground.osm.coverage() },
           mapLoad: ground.osm.mapLoad(),
           // The tour's centre at its drawn height (the frame's origin is
           // on the ellipsoid, under it).
           target: [0, centreHeightM, 0],
+          look: lookPoint(),
           camera: [camera.position.x, camera.position.y, camera.position.z],
           distanceM: Math.hypot(
             cameraTour.x,

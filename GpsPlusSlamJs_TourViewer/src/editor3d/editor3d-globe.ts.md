@@ -210,6 +210,12 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   rising ground the camera ends exactly `eyeM` over the end's ground),
   with ground under the start only, 50 km from a tour with none, and
   over a station added 50 km away after the open.
+- `stats().look` is where the line of sight meets the sampled ground
+  (else the tour's centre), and `stats().codePx` each code's drawn side on
+  the canvas (its square's corners projected by the camera of the
+  frame), both in the world, which follows the camera: compare them with
+  `stats().camera` and `pointOf` read in the same call, never across two.
+  `stats().target` stays the tour's centre in the tour's frame.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
   has none), and `groundAt(place)` the ground there, in the tour file's
   ellipsoidal heights: the drawn ground plus the geoid's N (the
