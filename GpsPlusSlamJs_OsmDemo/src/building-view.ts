@@ -1737,6 +1737,94 @@ export class BuildingView {
   }
 
   /**
+   * The time-of-day blend spike's handles: the GL context, a GPU sync (a
+   * one-pixel read of the canvas, which waits for every queued command),
+   * the scene's instanced meshes with an instance colour, the sky's update
+   * timings, and `setLightSettings` timed with a visibility and sky balance
+   * change (restored after).
+   */
+  blendMeasureHandles(): {
+    readonly gl: WebGLRenderingContext | WebGL2RenderingContext;
+    readonly sync: () => void;
+    readonly instanced: () => THREE.InstancedMesh[];
+    readonly skyUpdates: (runs: number) => {
+      full: number[];
+      sun: number[];
+      bake: number[];
+    };
+    readonly lightSettings: (runs: number) => number[];
+    readonly sunSweep: (
+      fromDeg: number,
+      toDeg: number,
+      steps: number,
+    ) => { elevationDeg: number; ms: number }[];
+  } {
+    const gl = this.renderer.getContext();
+    const pixel = new Uint8Array(4);
+    const sync = (): void => {
+      this.renderer.setRenderTarget(null);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+    };
+    return {
+      gl,
+      sync,
+      instanced: () => {
+        const found: THREE.InstancedMesh[] = [];
+        this.scene.traverse((object) => {
+          if (
+            object instanceof THREE.InstancedMesh &&
+            object.instanceColor !== null
+          ) {
+            found.push(object as THREE.InstancedMesh);
+          }
+        });
+        return found;
+      },
+      skyUpdates: (runs) => this.atmosphere.measureUpdates(runs, sync),
+      lightSettings: (runs) => {
+        const base = this.lightSettings;
+        const changed: LightSettings = {
+          ...base,
+          hazeVisibilityKm: base.hazeVisibilityKm + 5,
+          skyBalanceA: base.skyBalanceA - 4,
+          skyBalanceB: base.skyBalanceB - 4,
+        };
+        const times: number[] = [];
+        for (let i = 0; i < runs; i++) {
+          sync();
+          const start = performance.now();
+          this.setLightSettings(i % 2 === 0 ? changed : base);
+          sync();
+          times.push(performance.now() - start);
+        }
+        this.setLightSettings(base);
+        return times;
+      },
+      // A TIMELAPSE ON TODAY'S PATH: setSunAngles per step, at the current
+      // azimuth, timed as one synchronous call plus the GPU read, which is
+      // the main thread's blocked piece; restored after.
+      sunSweep: (fromDeg, toDeg, steps) => {
+        const base = this.sunAngles;
+        const out: { elevationDeg: number; ms: number }[] = [];
+        for (let i = 0; i < steps; i++) {
+          const elevationDeg =
+            fromDeg + ((toDeg - fromDeg) * i) / Math.max(1, steps - 1);
+          sync();
+          const start = performance.now();
+          this.setSunAngles({
+            azimuthRad: base.azimuthRad,
+            elevationRad: (elevationDeg * Math.PI) / 180,
+          });
+          sync();
+          out.push({ elevationDeg, ms: performance.now() - start });
+        }
+        this.setSunAngles(base);
+        return out;
+      },
+    };
+  }
+
+  /**
    * The light dialog's readouts, measured on this view as it stands: the
    * lit-surface brightness with the heat grid hidden, and the chroma the grid
    * adds (the DEC-R4-5 margin; `null` when no grid is drawn, or when

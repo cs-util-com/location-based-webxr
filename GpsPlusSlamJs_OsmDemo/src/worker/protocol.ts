@@ -138,6 +138,18 @@ export interface TransferableMesh {
    */
   readonly buildKey: string;
   /**
+   * The time-of-day blend spike's numbers for this build: the city build's
+   * wall time and its colouring share, and the vertex counts (the building
+   * chunks include the barriers).
+   */
+  readonly blendMeasure?: {
+    readonly buildCityMs: number;
+    readonly colourFillMs: number;
+    readonly chunkVertices: number;
+    readonly barrierVertices: number;
+    readonly roadVertices: number;
+  };
+  /**
    * The below-surface features' outlines, in ENU, packed x,y per point.
    *
    * HERE RATHER THAN IN THE SNAPSHOT because the frame lives in the worker, as

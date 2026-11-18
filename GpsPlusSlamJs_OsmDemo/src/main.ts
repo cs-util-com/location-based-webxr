@@ -210,6 +210,7 @@ import {
   schemeLinkValue,
 } from "./colour-schemes.js";
 import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
+import { blendMeasureRequested, startBlendMeasure } from "./measure-blend.js";
 import { attachBuildChoiceSwitch } from "./build-choice-switch.js";
 import { attachInventedRoofsSwitch } from "./invented-roofs-switch.js";
 import {
@@ -567,6 +568,14 @@ async function main(): Promise<void> {
   // THE COLOUR SCHEMES (colour schemes plan 2026-11-10-0841 section 4.4):
   // the dropdown records the choice; the subscriber further down rebuilds
   // and writes the link, and `onMesh` ends the switch on the echoing mesh.
+  // THE TIME-OF-DAY BLEND MEASUREMENT (?measure=blend), a spike readout.
+  const blendMeasure = blendMeasureRequested(window.location.search)
+    ? startBlendMeasure({
+        view: buildingView.blendMeasureHandles(),
+        scheme: () => selectColourScheme(store.getState()),
+        chooseScheme: (name) => store.dispatch(colourSchemeChanged(name)),
+      })
+    : undefined;
   const schemeSwitch = attachColourSchemeSwitch({
     select: el<HTMLSelectElement>("colour-scheme"),
     status: el("colour-scheme-status"),
@@ -1308,6 +1317,7 @@ async function main(): Promise<void> {
     onMesh: (built) => {
       if (built.kind === "full") {
         latestMesh = built.mesh;
+        blendMeasure?.meshDrawn(built.mesh);
         // THE PAGE'S COLOURS FOLLOW THE MESH'S SCHEME, not the choice, so the
         // ground never changes before the buildings it belongs with and AR's
         // default build gets the default ground (colour-schemes.ts).

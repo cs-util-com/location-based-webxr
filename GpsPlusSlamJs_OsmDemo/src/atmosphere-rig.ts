@@ -595,6 +595,64 @@ export class AtmosphereRig {
     this.fallback?.dome.position.copy(camera.position);
   }
 
+  /**
+   * The time-of-day blend spike: times the sky's three update paths, each
+   * with `sync` after it (a GPU read, so queued GPU work is included), and
+   * restores what it changed. `full`: `configure` with a visibility change
+   * (every table) and the re-derived copies; `sun`: `configure` with a
+   * sun nudged by 0.2 degrees (the sun-dependent tables, the read, the bake)
+   * and the copies; `bake`: a cloud-cover change (the bake alone). Empty
+   * lists on the fallback or before the first sun.
+   */
+  measureUpdates(
+    runs: number,
+    sync: () => void,
+  ): { full: number[]; sun: number[]; bake: number[] } {
+    const out = {
+      full: [] as number[],
+      sun: [] as number[],
+      bake: [] as number[],
+    };
+    const sky = this.sky;
+    const direction = this.lastDirection;
+    if (sky === undefined || direction === undefined) return out;
+    const time = (list: number[], work: () => void): void => {
+      sync();
+      const start = performance.now();
+      work();
+      sync();
+      list.push(performance.now() - start);
+    };
+    const nudged = (i: number): Vector3Like => {
+      const a = ((i % 2 === 0 ? 0.2 : -0.2) * Math.PI) / 180;
+      const x = direction.x * Math.cos(a) - direction.z * Math.sin(a);
+      const z = direction.x * Math.sin(a) + direction.z * Math.cos(a);
+      return { x, y: direction.y, z };
+    };
+    for (let i = 0; i < runs; i++) {
+      const v = i % 2 === 0 ? this.visibilityKm + 5 : this.visibilityKm;
+      time(out.full, () => {
+        sky.configure({ visibilityKm: v });
+        this.syncFromSky(sky);
+      });
+    }
+    sky.configure({ visibilityKm: this.visibilityKm });
+    for (let i = 0; i < runs; i++) {
+      time(out.sun, () => {
+        sky.configure({ sunDirection: nudged(i) });
+        this.syncFromSky(sky);
+      });
+    }
+    sky.configure({ sunDirection: direction });
+    for (let i = 0; i < runs; i++) {
+      const cover = i % 2 === 0 ? CLOUD_COVER + 0.01 : CLOUD_COVER;
+      time(out.bake, () => sky.configure({ cloudCover: cover }));
+    }
+    sky.configure({ cloudCover: CLOUD_COVER });
+    this.syncFromSky(sky);
+    return out;
+  }
+
   /** Releases the sky, the haze's texture and the fallback's objects. */
   dispose(): void {
     this.unsubscribeRestore();

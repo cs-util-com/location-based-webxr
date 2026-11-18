@@ -48,6 +48,7 @@ import {
   buildRegionSlabs,
   type SlabRegion,
   buildCity,
+  colourFillClock,
   cityGround,
   enuFrameAt,
   type CityGround,
@@ -353,6 +354,9 @@ function buildMesh(
   // relation reaches far past both, and a tree beyond the drawn terrain
   // would stand on nothing. No overlap, no fetched ground: no woods.
   const window = fetchedWindow(loadedTiles, plateClip);
+  // THE BLEND SPIKE'S CLOCK: the colouring share of this one city build.
+  colourFillClock.ms = 0;
+  const cityStart = nowMs();
   const city = buildCity(all, options, {
     window: window ?? plateClip,
     cosmeticTrees: window !== undefined,
@@ -380,6 +384,8 @@ function buildMesh(
     // city.
     inventedRoofs,
   });
+  const buildCityMs = nowMs() - cityStart;
+  const colourFillMs = colourFillClock.ms;
   const { volumes, barriers, trees } = city;
   // Per-vertex terrain again: a region can be hundreds of metres across.
   const regionSlabs = buildRegionSlabs(regions, options);
@@ -509,7 +515,24 @@ function buildMesh(
     inventedRoofCount: volumes.filter((v) => v.roofIsInvented).length,
     fallbackBuildings: city.fallbackBuildings,
     barriers: barriers.length,
+    blendMeasure: {
+      buildCityMs,
+      colourFillMs,
+      chunkVertices: vertexCount(buildings),
+      barrierVertices: barriers.reduce(
+        (sum, b) => sum + b.mesh.positions.length / 3,
+        0,
+      ),
+      roadVertices: vertexCount(city.roads),
+    },
   };
+}
+
+/** The vertices of a list of chunks (the blend spike's counts). */
+function vertexCount(
+  chunks: readonly { mesh: { positions: Float32Array } }[],
+): number {
+  return chunks.reduce((sum, c) => sum + c.mesh.positions.length / 3, 0);
 }
 
 /**
