@@ -258,7 +258,10 @@ for (const viewport of VIEWPORTS) {
     // not a line of its own but starts the words, on their first line,
     // and the synthetic voice's disclosure and credit follow it there.
     near(p.who.left, p.col.left);
-    near(p.disc.top, p.who.top, 3);
+    // The disclosure is smaller type on the name's baseline, so its box
+    // starts lower: "the same line" is within half a line height.
+    const sameLine = (a, b) => Math.abs(a - b) < want.lineHeight / 2;
+    expect(sameLine(p.disc.top, p.who.top)).toBe(true);
     expect(p.disc.left).toBeGreaterThanOrEqual(p.who.left);
     await expect(page.getByTestId("narration-box-who")).toHaveText("Narrator");
     await expect(page.getByTestId("narration-box-disclosure")).toHaveText(
@@ -273,10 +276,10 @@ for (const viewport of VIEWPORTS) {
         return r === undefined ? null : { top: r.top, right: r.right };
       });
     if (discEnd === null) throw new Error("the disclosure has no box");
-    if (Math.abs(p.firstWord.top - discEnd.top) < 3) {
+    if (sameLine(p.firstWord.top, discEnd.top)) {
       expect(p.firstWord.left).toBeGreaterThanOrEqual(discEnd.right - 0.5);
     } else {
-      near(p.firstWord.top, discEnd.top + want.lineHeight, 3);
+      near(p.firstWord.top, discEnd.top + want.lineHeight, want.lineHeight / 2);
       near(p.firstWord.left, p.col.left);
     }
     // The demo's word is lit, and follows the voice.
