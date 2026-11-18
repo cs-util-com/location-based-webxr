@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 
 import {
   afterFrames,
+  afterPageFrames,
   answerHosts,
   capture,
   DOCK_TABS_PX as TABS_PX,
@@ -751,7 +752,9 @@ async function keyboardOf(page, px) {
     }
     viewport.dispatchEvent(new Event("resize"));
   }, px);
-  await afterFrames(page, 3);
+  // The page's frames, not the view's: maximized, the group in use hides
+  // the 3D view, which then draws no frame.
+  await afterPageFrames(page, 3);
 }
 
 // Why: a keyboard over a short window maximizes the group in use; when it

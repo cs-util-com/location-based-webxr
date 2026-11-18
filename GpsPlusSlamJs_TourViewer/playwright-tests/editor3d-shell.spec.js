@@ -909,11 +909,22 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
     "Station 2 of 3",
   );
   await settled();
-  const at = await page.evaluate(() =>
-    /** @type {any} */ (window).__tourEditor.view3dPointOf("station:gate"),
-  );
-  const target = (await view3d(page)).target;
-  expect(Math.hypot(...target.map((v, i) => v - at[i]))).toBeLessThan(0.5);
+  // Flown to: the view looks at the station's point. Read in one call:
+  // the globe's world follows the camera.
+  const { at, look } = await page.evaluate(() => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    return {
+      at: hook.view3dPointOf("station:gate"),
+      look: hook.view3d().look,
+    };
+  });
+  expect(
+    Math.hypot(
+      ...look.map(
+        (/** @type {number} */ v, /** @type {number} */ i) => v - at[i],
+      ),
+    ),
+  ).toBeLessThan(0.5);
 
   // A double click on another card: selected once, not toggled back.
   const steps = card(page, "The town hall steps");
@@ -925,7 +936,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   // A second click once the double-click interval has passed: deselected
   // and folded; the camera stays where the flight left it.
   await settled();
-  const before = (await view3d(page)).target;
+  const before = (await view3d(page)).globe.pose;
   const clickedAt = await page.evaluate(() => performance.now());
   await expect
     .poll(() => page.evaluate(() => performance.now()))
@@ -934,8 +945,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await expect(steps).not.toHaveClass(/\bsel\b/);
   await expect(steps.locator(".kids")).toHaveCount(0);
   await expect(page.locator("#shell-inspector")).toBeHidden();
-  const after = (await view3d(page)).target;
-  expect(Math.hypot(...after.map((v, i) => v - before[i]))).toBeLessThan(1e-3);
+  expect((await view3d(page)).globe.pose).toEqual(before);
 
   // The folds are the page's state: a trip to the map and back keeps the
   // old gate unfolded and the station names' chip off.
@@ -977,7 +987,8 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await expect(viewItem(page, "top")).toHaveAttribute("aria-checked", "true");
   await expect(page.locator("#view-menu")).toBeHidden();
   await settled();
-  expect((await view3d(page)).tiltDeg).toBeLessThan(1);
+  // Straight down but a degree: the globe's top view keeps a heading.
+  expect((await view3d(page)).tiltDeg).toBeLessThan(1.5);
   await page.locator('#shell-toggles [data-tab="perf"]').click();
   await expect(page.locator("#shell-pane-perf .nums")).toContainText(
     "Top view",
@@ -986,13 +997,17 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   await settled();
   expect((await view3d(page)).tiltDeg).toBeGreaterThan(30);
 
+  // A zoom step goes about a third of the way to the ground ahead, and
+  // back out by a third of the way then.
   const far = (await view3d(page)).distanceM;
   await page.locator("#zoom-in").click();
   await settled();
-  expect((await view3d(page)).distanceM).toBeCloseTo(far / 1.6, 0);
+  const near = (await view3d(page)).distanceM;
+  expect(near).toBeLessThan(far * 0.8);
+  expect(near).toBeGreaterThan(far * 0.5);
   await page.locator("#zoom-out").click();
   await settled();
-  expect((await view3d(page)).distanceM).toBeCloseTo(far, 0);
+  expect((await view3d(page)).distanceM).toBeGreaterThan(near * 1.2);
 
   // The Performance tab: the whole frame's draw calls, never 0 with a
   // tour drawn. The whole-frame count against the globe scene's own

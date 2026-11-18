@@ -410,24 +410,9 @@ test("a character added with the add menu is drawn at a free spot, selected with
   }
   expect(others, "other items drawn at the gate").toBeGreaterThan(0);
 
-  // Selected: the gizmo's handles show; its disc moves him, one step.
-  // Seen from above (T), as a creator moves an item among others: from
-  // a low camera the gate's other figures can stand in front of his feet.
-  await page.keyboard.press("t");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourEditor.view3d()?.top,
-      ),
-    )
-    .toBe(true);
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourEditor.view3d()?.flying,
-      ),
-    )
-    .toBe(false);
+  // Selected: the gizmo's handles show; its disc moves him, one step,
+  // from the framed view (the top view looks down where the camera
+  // stands, and leaves him off the screen).
   await expect
     .poll(() =>
       page.evaluate(() =>
@@ -442,15 +427,23 @@ test("a character added with the add menu is drawn at a free spot, selected with
   if (canvas === null || middle === null) throw new Error("no handle");
   // A point of his disc no other item covers: from some headings one of
   // the gate's figures stands in front of his feet, and a press over
-  // another item is that item's (a tap selects it), never the disc's.
+  // another item is that item's (a tap selects it), never the disc's;
+  // nor in reach of his turn knob (half its 42 px), which takes a press.
   const grip = await page.evaluate(([who, at]) => {
     const hook = /** @type {any} */ (window).__tourEditor;
+    const knob = hook.view3dHandle("knob");
+    const offKnob = (/** @type {number} */ x, /** @type {number} */ y) =>
+      knob === null || Math.hypot(knob[0] - x, knob[1] - y) > 30;
     for (let r = 0; r <= 80; r += 4) {
       for (let a = 0; a < 360; a += 15) {
         const x = at[0] + r * Math.cos((a * Math.PI) / 180);
         const y = at[1] + r * Math.sin((a * Math.PI) / 180);
         const under = hook.view3dUnder(x, y);
-        if (under?.onDisc === true && (under.pick ?? who) === who) {
+        if (
+          under?.onDisc === true &&
+          (under.pick ?? who) === who &&
+          offKnob(x, y)
+        ) {
           return [x, y];
         }
       }
@@ -473,7 +466,7 @@ test("a character added with the add menu is drawn at a free spot, selected with
   expect(
     Math.hypot(moved[0] - his[0], moved[2] - his[2]),
     "moved by the drag (m)",
-    // 85 px from close above: 0.38 m measured; any clear move counts.
+    // Any clear move counts: the metres per pixel follow the framing.
   ).toBeGreaterThan(0.1);
   expect(
     standing(await tourNow(page), "gate", rita.id),

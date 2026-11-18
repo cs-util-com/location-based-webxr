@@ -224,12 +224,14 @@ test("a note is added by a click on the model, typed, placed again, focused from
   expect(added.annotations).toHaveLength(1);
   expect(added.annotations[0].title).toBe("Note 1");
   // On a face of the beam (y 2.5 to 3, z -0.25 to 0.25) toward the camera,
-  // in the file's metres. Which face depends on the camera's tilt: once it
-  // has settled (48 deg), a ray through the beam's centre enters through
-  // the top (0.25 / tan 48 deg < 0.25), earlier in its flight through the
-  // front, so either one is right.
+  // in the file's metres. Which face depends on the camera's tilt: a ray
+  // through the beam's centre enters through the top, short of the centre
+  // toward the camera, or through the front, so either one is right. The
+  // globe view looks along the beam from above, so the top is entered
+  // about half a metre short of it (0.53 m measured); the pillars stand
+  // at 1.2 m, under the beam's height range.
   const [x, y, z] = added.annotations[0].position;
-  expect(Math.abs(x)).toBeLessThan(0.3);
+  expect(Math.abs(x)).toBeLessThan(0.75);
   expect(y).toBeGreaterThan(2.45);
   expect(y).toBeLessThan(3.05);
   expect(Math.abs(z)).toBeLessThan(0.27);

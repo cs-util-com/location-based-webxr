@@ -221,6 +221,30 @@ export async function afterFrames(page, n) {
 }
 
 /**
+ * Wait until the page has drawn `n` animation frames past now: for a
+ * layout that follows within frames while the 3D view may draw none (the
+ * globe counts no frame while its canvas has no size, as when a maximized
+ * group hides it).
+ * @param {import("@playwright/test").Page} page
+ * @param {number} n
+ */
+export async function afterPageFrames(page, n) {
+  await page.evaluate(
+    (count) =>
+      new Promise((resolve) => {
+        let left = count;
+        const tick = () => {
+          left -= 1;
+          if (left <= 0) resolve(undefined);
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    n,
+  );
+}
+
+/**
  * The frames the relief may take to carry the ground on the globe. Its
  * hand-over waits for every relief tile in view to be parsed, about one a
  * frame, so it is bound by frames, not time: measured 2026-11-03 on the
@@ -550,14 +574,19 @@ export function dockBottomPx(height) {
  * @param {number} width the window's
  */
 export async function dockSettled(page, width) {
+  // The docking lays out on the page's frames, which the globe's frames
+  // slow in this software renderer: a loaded machine ran the 5 s default
+  // out before the first layout.
   await expect
-    .poll(() =>
-      page.evaluate(() =>
-        Math.round(
-          document.querySelector(".dock-host")?.getBoundingClientRect().right ??
-            0,
+    .poll(
+      () =>
+        page.evaluate(() =>
+          Math.round(
+            document.querySelector(".dock-host")?.getBoundingClientRect()
+              .right ?? 0,
+          ),
         ),
-      ),
+      { timeout: 30_000 },
     )
     .toBe(width);
   await afterFrames(page, 3);
