@@ -15,7 +15,32 @@
         margin: 0;
         height: 100%;
         overflow: hidden;
-        background: #dfe5e8;
+        /* A stand-in for the camera image, as in the prototypes: a sky,
+           a row of plastered houses with windows and roofs, cobbles. The
+           box and the sheet are read against a scene, not a flat grey.
+           Band positions are shares of the height (for a band of size s
+           at top t the position is t / (100% - s)). */
+        background:
+          repeating-linear-gradient(
+              90deg,
+              transparent 0 18px,
+              rgb(59 63 69 / 0.75) 18px 32px,
+              transparent 32px 46px
+            )
+            0 37% / 100% 6% no-repeat,
+          repeating-linear-gradient(
+              90deg,
+              transparent 0 18px,
+              rgb(59 63 69 / 0.75) 18px 32px,
+              transparent 32px 46px
+            )
+            0 50% / 100% 6% no-repeat,
+          linear-gradient(#a04a30, #8a3f2a) 0 25% / 100% 5% no-repeat,
+          linear-gradient(#f4efe6, #e2d9ca) 0 40% / 100% 25% no-repeat,
+          repeating-linear-gradient(0deg, #77726a 0 3px, #8f8a82 3px 14px) 0
+            100% / 100% 45% no-repeat,
+          linear-gradient(#8fb8d8, #d5dfe6 30%);
+        background-color: #d5dfe6;
       }
       #ar-root {
         position: fixed;

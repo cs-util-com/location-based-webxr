@@ -3,7 +3,9 @@
 ## Purpose
 
 A standalone check page, linked from nothing, that opens one long text in
-the production reading sheet over a plain background, so the sheet can be
+the production reading sheet over a painted stand-in for the camera image
+(a sky, a row of houses, cobbles; page CSS only, as the prototypes put a
+scene behind their boxes), so the sheet can be
 compared side by side with the narrated-text prototype
 (`public/prototypes/station-blocks-1-narrated-text/`, opened at
 `index.html#mode=visitor&view=silent` after walking into the station)
@@ -25,7 +27,8 @@ asks before it opens, as during an AR session.
 
 ## What it does not show
 
-The camera image or the prototype's square behind the sheet, the
+The camera image or the prototype's 3D square behind the sheet (the
+painted backdrop only stands in for one), the
 station's sign and the visitor's view switch; pictures only in the rich
 text.
 
