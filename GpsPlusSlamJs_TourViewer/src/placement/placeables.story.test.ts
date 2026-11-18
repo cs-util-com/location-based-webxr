@@ -1,10 +1,11 @@
 /**
  * Why these tests matter: the 3D editor draws the open story's entries
  * (the story chosen in the tree, or one of its entries) where they stand,
- * so a creator sees a story's scene without playing it. Moving them must
- * wait until the story's edits can be saved: an entry that shows but is
- * not a placeable gets no gizmo, which is what keeps an unsaved move from
- * being offered. A card shows nowhere in the world, so it is not drawn.
+ * so a creator sees a story's scene without playing it, and moves an entry
+ * there by its disc: the move is written back into its story (one undo
+ * step), so its placeable names it as a story entry, never as a free
+ * block. A card shows nowhere in the world, so it is neither drawn nor
+ * given a handle.
  */
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { itemGeoPose } from "gps-plus-slam-app-framework/ar/tour-station-pose";
@@ -76,7 +77,7 @@ describe("the open story's entries", () => {
     expect(entries.map((e) => e.block.id)).toEqual(["first", "second"]);
     const second = entries[1];
     expect(second?.place).toMatchObject({
-      ref: { kind: "block", id: "second" },
+      ref: { kind: "storyEntry", id: "second" },
       selection: "second",
       stationId: "well",
       folderPath: [],
@@ -94,12 +95,42 @@ describe("the open story's entries", () => {
     expect(storyEntries(STATION, "free")).toEqual([]);
   });
 
-  it("are no placeables: the gizmo offers none of them a handle", () => {
-    for (const id of ["first", "told", "second", "elsewhere"]) {
+  // Why: an entry is moved by its disc alone - it neither turns, lifts
+  // nor sizes in 3D (its facing and size are its step's own fields) - and
+  // its move must reach the story's save path, so its ref names it as a
+  // story entry. A card, a choice and a quiz stand nowhere: no handle.
+  it("are placeables moved by the disc alone, named as story entries", () => {
+    const first = placeableOf(TOUR, "first");
+    expect(first).toMatchObject({
+      ref: { kind: "storyEntry", id: "first" },
+      selection: "first",
+      stationId: "well",
+      folderPath: [],
+      local: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
+      inStation: { position: [2, 0, 0], rotation: [0, 0, 0, 1] },
+      turns: false,
+      lifts: false,
+      extent: null,
+      locked: false,
+      members: ["first"],
+      group: false,
+    });
+    expect(first).not.toHaveProperty("bendDeg");
+    expect(first?.geo).toEqual(
+      itemGeoPose({ position: [2, 0, 0], rotation: [0, 0, 0, 1] }, STATION.geo),
+    );
+    expect(placeableOf(TOUR, "elsewhere")?.ref).toEqual({
+      kind: "storyEntry",
+      id: "elsewhere",
+    });
+    for (const id of ["told", "ask", "legend", "story:legend"]) {
       expect(placeableOf(TOUR, id)).toBeNull();
     }
-    // The free block beside them still is one.
-    expect(placeableOf(TOUR, "free")).not.toBeNull();
+    // The free block beside them is still a free block.
+    expect(placeableOf(TOUR, "free")?.ref).toEqual({
+      kind: "block",
+      id: "free",
+    });
   });
 });
 

@@ -255,6 +255,7 @@ describe("drawInspector", () => {
       title: block.title,
       sub: "1 The old gate / The legend / Long text, entry 1",
       block,
+      placed: false,
       advance,
     }) as const;
   const FOLD = { folded: false, positionOpen: false };

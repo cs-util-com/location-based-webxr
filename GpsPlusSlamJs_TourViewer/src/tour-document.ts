@@ -2587,6 +2587,16 @@ export interface StationEdit {
   /** A choice or quiz of the station's story, written whole: its words,
    *  its answers and where each leads (`withStoryStep`). */
   readonly storyStep?: TourChoice | TourQuizEntry;
+  /** Where a block of the station's story stands, in the station's frame
+   *  (its disc moved it in 3D). */
+  readonly storyPose?: StationStoryPoseEdit;
+}
+
+/** The story block `block` standing at `pose` in its station's frame
+ *  from now on: a pose the format reads (`parseTourLocalPose`). */
+export interface StationStoryPoseEdit {
+  readonly block: string;
+  readonly pose: TourLocalPose;
 }
 
 /** The story block `block` made from the file `asset` (an asset the tour
@@ -2643,7 +2653,8 @@ export type StationEditChange =
         | "storyText"
         | "storyAdvance"
         | "storyFile"
-        | "storyStep";
+        | "storyStep"
+        | "storyPose";
     }
   | { readonly kind: "missing" };
 
@@ -2754,6 +2765,19 @@ function withStoryText(
   return withStoryBlock(frame, next as unknown as TourStoryBlock);
 }
 
+/** `frame` with its story block `edit.block` standing at `edit.pose`;
+ *  null when the block is none of its stories', or the pose is none the
+ *  format reads (beyond its reach from the station, or not a rotation). */
+function withStoryPose(
+  frame: StationFrame,
+  edit: StationStoryPoseEdit,
+): StationFrame | null {
+  const block = tourStationStoryBlocks(frame).find((b) => b.id === edit.block);
+  if (block === undefined) return null;
+  const pose = readPose(edit.pose);
+  return pose === null ? null : withStoryBlock(frame, { ...block, pose });
+}
+
 /** `frame` with its story block `edit.block` moving on as `edit` says;
  *  null when the block is none of its stories', or the wait is no number
  *  of seconds above 0. */
@@ -2802,7 +2826,8 @@ function withStoryFile(
  * (`checkTourDescription`), a card image naming a photo of THIS station or
  * an image asset of the tour (`stationImages`), a story character set by
  * `withCharacter`, a story block's text set by `withStoryText`, a
- * story's choice or quiz written whole by `withStoryStep`.
+ * story's choice or quiz written whole by `withStoryStep`, a story
+ * block's pose set by `withStoryPose`.
  */
 export function stationEditChange(
   state: TourDocumentState,
@@ -2863,6 +2888,11 @@ export function stationEditChange(
     const stepped = withStoryStep(next, edit.storyStep);
     if (stepped === null) return { kind: "refused", reason: "storyStep" };
     next = stepped;
+  }
+  if (edit.storyPose !== undefined) {
+    const posed = withStoryPose(next, edit.storyPose);
+    if (posed === null) return { kind: "refused", reason: "storyPose" };
+    next = posed;
   }
   return sameJson(next, frame)
     ? { kind: "unchanged" }

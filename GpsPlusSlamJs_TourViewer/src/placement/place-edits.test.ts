@@ -17,6 +17,7 @@ const MODEL = { kind: "block", id: "m" } as const;
 const STATION = { kind: "station", id: "st" } as const;
 const FOLDER = { kind: "folder", id: "f" } as const;
 const VIEWPOINT = { kind: "viewpoint", id: "p" } as const;
+const ENTRY = { kind: "storyEntry", id: "e" } as const;
 
 function fakeSession(refuse = false) {
   const outcome = refuse
@@ -51,6 +52,11 @@ function fakeSession(refuse = false) {
         ? { kind: "refused" as const, reason: "No." }
         : { kind: "edited" as const },
     ),
+    moveStoryEntry: vi.fn(() =>
+      refuse
+        ? { kind: "refused" as const, reason: "No." }
+        : { kind: "edited" as const },
+    ),
   };
 }
 
@@ -65,6 +71,7 @@ const asSession = (s: ReturnType<typeof fakeSession>) =>
     | "scaleFolder"
     | "editBlockField"
     | "moveViewpoint"
+    | "moveStoryEntry"
   >;
 
 describe("a placement edit", () => {
@@ -125,6 +132,40 @@ describe("a placement edit", () => {
       }),
     ).toMatchObject({ kind: "refused" });
     expect(s.setExtent).not.toHaveBeenCalled();
+  });
+
+  // Why: a story's entry is moved by its disc, and the move is written
+  // back into its story (one call, one undo step) - never as a free
+  // block's pose, and never with a station to join (an entry stays in its
+  // story). It has no dots, no bend and no point in 3D: those edits are
+  // refused rather than sent to a free block's call.
+  it("moves a story's entry through its own call, and takes nothing else", () => {
+    const s = fakeSession();
+    expect(
+      applyPlaceEdit(asSession(s), { kind: "pose", ref: ENTRY, geo: GEO }, "b"),
+    ).toEqual({ kind: "applied" });
+    expect(s.moveStoryEntry).toHaveBeenCalledTimes(1);
+    expect(s.moveStoryEntry).toHaveBeenCalledWith("e", GEO);
+    for (const edit of [
+      { kind: "extent", ref: ENTRY, value: 2 },
+      { kind: "bend", ref: ENTRY, deg: 10 },
+      { kind: "point", ref: ENTRY, at: [1, 2, 3] },
+    ] as const) {
+      expect(applyPlaceEdit(asSession(s), edit)).toMatchObject({
+        kind: "refused",
+      });
+    }
+    expect(s.pose).not.toHaveBeenCalled();
+    expect(s.setExtent).not.toHaveBeenCalled();
+    expect(s.editBlockField).not.toHaveBeenCalled();
+    const refusing = fakeSession(true);
+    expect(
+      applyPlaceEdit(asSession(refusing), {
+        kind: "pose",
+        ref: ENTRY,
+        geo: GEO,
+      }),
+    ).toEqual({ kind: "refused", reason: "No." });
   });
 
   // Why: the creator's answer to "join the station it now stands in?"

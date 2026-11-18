@@ -700,3 +700,9 @@ examples).
 - `moveViewpoint(id, geo)` writes a picture's viewpoint where the 3D view's handle was let go: `geo` is read into the station's frame and passed to `viewpointAt`, so the facing follows the handle's heading and pitch, lens and depth stay. One dispatch, one undo step.
 - Refused, with nothing written, for an unknown id, a block that is no picture, and a picture without a viewpoint ("This picture has no viewpoint to move yet."). It shares its write path with `editPictureViewpoint` (`writeViewpoint`), so an unchanged viewpoint dispatches nothing.
 - Tested in `editor-session.test.ts` ("moves a picture's viewpoint where its handle was let go, as one step").
+
+## `moveStoryEntry`
+
+- `moveStoryEntry(id, geo)` writes a story's posed entry where the 3D view's disc was let go: `geo`'s position is read into the station's frame, the entry keeps its own rotation (the disc does not turn it), and `stationEdited` with `storyPose` writes it in its story in place. One dispatch, one undo step.
+- Refused, with nothing written, for an id no story holds ("no such story" wording), a spot off the map, and a pose beyond the format's reach ("It cannot go that far: a story's entry must stay within ... km of its station.").
+- Tested in `editor-session-stations.test.ts` ("moveStoryEntry moves a story's entry in its story as one step, its facing kept").

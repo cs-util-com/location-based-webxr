@@ -2272,6 +2272,23 @@ describe("createStationsLayer", () => {
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(0, 0), eye);
     expect(layer.pick(ray)).toBe("scene");
+    // Dragged by its disc: drawn where the drag has it (2 m north of the
+    // station), and back where its story has it once the drag ends.
+    layer.setPreview({
+      ref: { kind: "storyEntry", id: "scene" },
+      geo: itemGeoPose(
+        { position: [2, 1.5, 0], rotation: [0, 0, 0, 1] },
+        withStory.geo,
+      ),
+      value: null,
+    });
+    parent.updateMatrixWorld(true);
+    const dragged = mesh!.getWorldPosition(new THREE.Vector3());
+    expect(dragged.z - point.z).toBeCloseTo(-2, 1);
+    layer.setPreview(null);
+    parent.updateMatrixWorld(true);
+    const after = mesh!.getWorldPosition(new THREE.Vector3());
+    expect(after.z - point.z).toBeCloseTo(3, 1);
     // Looking straight down it lies flat face up, as a free photo does.
     layer.update({ ...view(0, 0, "a", 0), openStory: "legend" });
     parent.updateMatrixWorld(true);

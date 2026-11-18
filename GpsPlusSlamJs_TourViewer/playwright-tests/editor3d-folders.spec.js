@@ -380,9 +380,10 @@ function pickAtE2(page) {
 
 // Why: a story's scene is seen where it stands while the story is open
 // (chosen in the tree, or one of its entries), and only then; picking an
-// entry in the 3D view chooses it in the tree. Its entries take no
-// handle: a move the story editor cannot save yet is not offered.
-test("an open story's posed entry shows in the 3D view, is chosen there, and takes no handle", async ({
+// entry in the 3D view chooses it in the tree. Its disc moves it, written
+// back into its story as one step (its facing kept), which Undo takes
+// back.
+test("an open story's posed entry shows in the 3D view, is chosen there, and its disc moves it in its story", async ({
   page,
 }) => {
   test.slow();
@@ -408,7 +409,8 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and tak
   await settled();
   await expect.poll(() => pickAtE2(page)).toBe("e2");
 
-  // Chosen in the 3D view, it is chosen in the tree, with no handle.
+  // Chosen in the 3D view, it is chosen in the tree, with its disc and
+  // neither a turn knob nor dots: its facing and size are its step's.
   const at = await shownAt(page, () =>
     page.evaluate(() =>
       /** @type {any} */ (window).__tourEditor.view3dScreenOf("e2"),
@@ -417,21 +419,54 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and tak
   await page.mouse.click(at.x, at.y);
   await expect.poll(selected).toBe("e2");
   await settled();
-  expect(
-    await page.evaluate(() =>
-      /** @type {any} */ (window).__tourEditor.view3dHandle("middle"),
-    ),
-  ).toBeNull();
+  const handle = (/** @type {string} */ part) =>
+    page.evaluate(
+      (p) => /** @type {any} */ (window).__tourEditor.view3dHandle(p),
+      part,
+    );
+  expect(await handle("knob")).toBeNull();
+  expect(await handle("dot")).toBeNull();
   // Still drawn while its entry is chosen.
   await expect.poll(() => pickAtE2(page)).toBe("e2");
   await capture(page, "editor3d-story-entry-open");
+  expect(await revision(page)).toBe(start);
 
-  // Another item chosen: the story closes, and nothing was written.
+  // Its disc dragged over the ground: one step, written into its story in
+  // place, its facing kept; Undo puts it back.
+  const e2 = () =>
+    page.evaluate(() => {
+      const story = /** @type {any} */ (window).__tourEditor
+        .manifest()
+        .stations[0].children.find((/** @type {any} */ c) => c.id === "s1");
+      return {
+        order: story.children.map((/** @type {any} */ c) => c.id),
+        pose: story.children[1].pose,
+      };
+    });
+  const was = await e2();
+  const middle = await handleAt(page, "middle");
+  await byMouse(page, [
+    middle,
+    ...line(middle, { x: middle.x + 70, y: middle.y + 25 }),
+  ]);
+  await expect.poll(() => revision(page)).toBe(start + 1);
+  const moved = await e2();
+  expect(moved.order).toEqual(["e1", "e2"]);
+  expect(
+    Math.hypot(
+      moved.pose.position[0] - was.pose.position[0],
+      moved.pose.position[2] - was.pose.position[2],
+    ),
+  ).toBeGreaterThan(0.5);
+  expect(moved.pose.rotation).toEqual(was.pose.rotation);
+  await page.keyboard.press("Control+z");
+  await expect.poll(async () => (await e2()).pose).toEqual(was.pose);
+
+  // Another item chosen: the story closes.
   await card.locator('.kid[data-select="p"]').click();
   await expect.poll(selected).toBe("p");
   await settled();
   await expect.poll(() => pickAtE2(page)).not.toBe("e2");
-  expect(await revision(page)).toBe(start);
 });
 
 /**

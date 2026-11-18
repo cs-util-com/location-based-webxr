@@ -1,7 +1,7 @@
 /**
  * Everything the 3D editor can place, as one shape: a PLACEABLE. A free
- * block in a view the world shows, a plain folder, or a station, each
- * with its pose in
+ * block in a view the world shows, a plain folder, a station, or a posed
+ * entry of a story (moved by its disc alone), each with its pose in
  * the world and in its holder, what its row says about turning, lifting
  * and its dots (`placement-rows.ts`), and whether it is locked. The gizmo,
  * the gestures, the keys and the inspector read a placeable and never ask
@@ -53,9 +53,11 @@ import {
 
 /** What the document can name and write a placement back to: one arm
  *  per kind of HOLDER, never per block kind; a picture's viewpoint is the
- *  one place a block holds besides its pose (`id`: the picture's). */
+ *  one place a block holds besides its pose (`id`: the picture's), and a
+ *  story's entry is written back into its story (`id`: the entry's). */
 export type PlaceRef =
   | { readonly kind: "block"; readonly id: string }
+  | { readonly kind: "storyEntry"; readonly id: string }
   | { readonly kind: "folder"; readonly id: string }
   | { readonly kind: "station"; readonly id: string }
   | { readonly kind: "viewpoint"; readonly id: string };
@@ -317,7 +319,8 @@ function viewpointPlaceable(
 /** The placeable the page's `selection` names; null for one that names
  *  nothing placeable (a code, a card, a block or folder the tour lacks).
  *  A picture seen from its viewpoint is named by its viewpoint; every
- *  other reader of a station's blocks (`posedEntries`) keeps its pose. */
+ *  other reader of a station's blocks (`posedEntries`) keeps its pose.
+ *  A story's posed entry is one too (`storyEntries`). */
 export function placeableOf(
   tour: { readonly stations: readonly TourStation[] },
   selection: string,
@@ -342,18 +345,24 @@ export function placeableOf(
       return viewpointPlaceable(found.block, station) ?? found.place;
     }
   }
+  for (const station of tour.stations) {
+    const entry = storyEntryOf(station, selection);
+    if (entry !== null) return entry;
+  }
   return null;
 }
 
 /**
  * The posed entries of `station`'s story `storyId`, in its order, each
- * with the placeable it would be: what the 3D view draws of the open
- * story (`openStoryOf`). A card, a choice and a quiz are left out (the
- * world shows none of them); a story the station lacks has none.
+ * with its placeable: what the 3D view draws of the open story
+ * (`openStoryOf`). A card, a choice and a quiz are left out (the world
+ * shows none of them); a story the station lacks has none.
  *
- * Read-only on purpose: `placeablesOf` and `placeableOf` never return
- * them, so the gizmo offers no handle on a story's entry. Moving one
- * comes with the path that saves a story's edits.
+ * An entry is moved by its disc alone (`storyEntry`, written back into
+ * its story): it neither turns, lifts nor sizes in 3D - its facing and
+ * size are its step's own fields - and has no bend there. `placeablesOf`
+ * leaves entries out (they are drawn only while their story is open);
+ * `placeableOf` names one by its id.
  */
 export function storyEntries(
   station: TourStation,
@@ -366,8 +375,32 @@ export function storyEntries(
   return story.children.flatMap((child): PosedBlock[] => {
     if (!isTourStoryBlock(child)) return [];
     const place = blockPlaceable(child, station, []);
-    return place === null ? [] : [{ block: child, place }];
+    if (place === null) return [];
+    const { bendDeg: _bend, ...rest } = place;
+    return [
+      {
+        block: child,
+        place: {
+          ...rest,
+          ref: { kind: "storyEntry", id: child.id },
+          turns: false,
+          lifts: false,
+          extent: null,
+        },
+      },
+    ];
   });
+}
+
+/** The posed story entry `id` of `station`, or null. */
+function storyEntryOf(station: TourStation, id: string): Placeable | null {
+  for (const story of tourStories(station)) {
+    const found = storyEntries(station, story.id).find(
+      (e) => e.block.id === id,
+    );
+    if (found !== undefined) return found.place;
+  }
+  return null;
 }
 
 /** The story the page's `selection` opens: the story itself

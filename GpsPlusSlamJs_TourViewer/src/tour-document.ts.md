@@ -297,7 +297,10 @@ largeTour?, cannotSave? })`.
     the block's file kind, `block-file.ts`; a video's poster replaced or
     removed); refused `storyFile` otherwise. `storyStep` replaces a story's
     choice or quiz of that id whole (`withStoryStep`); refused `storyStep`
-    when no such step is held or the format refuses it.
+    when no such step is held or the format refuses it. `storyPose`
+    (`{ block, pose }`) sets a story entry's pose in the station's frame
+    in place (`withStoryPose`, its order kept); refused `storyPose` when
+    no story holds that block or the pose is beyond the format's reach.
   - `childMoved({ id, to, what })` - an item of a station moved inside it
     (a free item into a story and out, an entry between stories or within
     one, a story among the stories) or onto another station (`{ place:

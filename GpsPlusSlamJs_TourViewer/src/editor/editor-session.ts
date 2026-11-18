@@ -509,10 +509,12 @@ const STATION_REFUSALS: Readonly<
     | "storyText"
     | "storyAdvance"
     | "storyFile"
-    | "storyStep",
+    | "storyStep"
+    | "storyPose",
     string
   >
 > = {
+  storyPose: `It cannot go that far: a story's entry must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`,
   storyFile:
     "That file cannot stand in for that block's own: it is no file of its kind in this tour.",
   title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
@@ -901,6 +903,15 @@ export interface EditorSession {
    *  carry, a block that is neither a picture nor a video, and one with
    *  no viewpoint. */
   moveViewpoint(
+    id: string,
+    geo: QrGeoPose,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Move a story's posed entry to where its disc in the 3D view was let
+   *  go (`geo`), written back into its story in place: its facing kept
+   *  (the disc does not turn it), one step. Refused in words for an id
+   *  that is no story's entry, a spot on no map, and one beyond its
+   *  station's reach. */
+  moveStoryEntry(
     id: string,
     geo: QrGeoPose,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
@@ -2662,6 +2673,43 @@ export function createEditorSession(input: {
           ? null
           : viewpointAt(vp, localPoseOf(geo, station.geo)),
       );
+    },
+    moveStoryEntry(id, geo) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (state === null || manifest === null) return notInTour;
+      const place = tourChildPlace(manifest, id);
+      const block =
+        place?.story === undefined
+          ? undefined
+          : tourStationStoryBlocks(place.station).find((b) => b.id === id);
+      if (place === null || block === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      if (!onMap(geo)) return { kind: "refused", reason: NOT_ON_MAP };
+      const at = localPoseOf(geo, place.station.geo);
+      const edit: StationEdit = {
+        storyPose: {
+          block: id,
+          pose: { position: at.position, rotation: block.pose.rotation },
+        },
+      };
+      const change = stationEditChange(state, place.station.id, edit);
+      if (change.kind === "refused") {
+        return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+      }
+      if (change.kind !== "edited") return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.stationEdited({
+            stationId: place.station.id,
+            edit,
+            what: `the move of "${storyChildName(block)}"`,
+          }),
+        ),
+      )
+        ? { kind: "edited" }
+        : notApplied;
     },
     editPictureTag(id, shown) {
       const found = find(id);

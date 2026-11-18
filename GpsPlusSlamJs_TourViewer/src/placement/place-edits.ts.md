@@ -79,3 +79,9 @@ the same.
 - A pose edit for `{ kind: "viewpoint", id }` calls `editor.moveViewpoint(id, geo)`: one session call, one undo step, never the picture's own pose and never a station to join (the viewpoint stays in its station's frame).
 - An extent edit for it is refused with "A viewpoint has no size to change." rather than resizing the picture.
 - Tested in `place-edits.test.ts` ("moves a picture's viewpoint through its own call, and sizes none").
+
+## A story entry ref
+
+- A pose edit for `{ kind: "storyEntry", id }` calls `editor.moveStoryEntry(id, geo)`: one session call, one undo step, written into its story in place, never as a free block's pose and never with a station to join.
+- Every other edit for it (extent, bend, point) is refused with "A story's entry is only moved here; set the rest in its step."
+- Tested in `place-edits.test.ts` ("moves a story's entry through its own call, and takes nothing else").
