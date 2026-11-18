@@ -114,17 +114,21 @@ const offsetTop = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   "offsetTop",
 );
+/** Lines the name and its disclosure take before the first word's. */
+let headLines = 0;
 beforeEach(() => {
+  headLines = 0;
   Object.defineProperty(HTMLElement.prototype, "offsetTop", {
     configurable: true,
     get(this: HTMLElement) {
       const all = this.parentElement?.querySelectorAll(".nb-w");
       const i = all === undefined ? -1 : [...all].indexOf(this);
-      return i < 0 ? 0 : Math.floor(i / 4) * LINE_PX;
+      return i < 0 ? 0 : (headLines + Math.floor(i / 4)) * LINE_PX;
     },
   });
 });
 afterEach(() => {
+  setHidden(false);
   if (offsetTop !== undefined) {
     Object.defineProperty(HTMLElement.prototype, "offsetTop", offsetTop);
   }
@@ -158,6 +162,13 @@ function make(clock = new FakeClock()) {
     synthetic: true,
   };
   return { box, clock, store, actions, content };
+}
+
+function setHidden(hidden: boolean): void {
+  Object.defineProperty(document, "hidden", {
+    configurable: true,
+    get: () => hidden,
+  });
 }
 
 function pointer(type: string, x: number, y: number): Event {
@@ -595,5 +606,40 @@ describe("createNarrationBox", () => {
     expect(clock.on).toBe(false);
     box.element.dispatchEvent(pointer("pointerup", 100, 700 - LINE_PX));
     expect(clock.on).toBe(true);
+  });
+  // Why: a long voice credit can push the first words to line 2. The
+  // name and its disclosure must still open the box, not be scrolled out
+  // of view before a word is said: the disclosure is there to be seen.
+  it("opens on the name and its disclosure when they take lines of their own", () => {
+    headLines = 2;
+    const { box, clock, content } = make();
+    box.show(content);
+    for (let i = 0; i < 20; i += 1) box.tick();
+    expect(box.state()).toMatchObject({ lines: 6, rows: 3, scroll: 0 });
+    clock.now = WORD_MS + 10; // still the first words' line
+    for (let i = 0; i < 20; i += 1) box.tick();
+    expect(box.state().scroll).toBe(0);
+    clock.now = 4 * WORD_MS + 10; // line 3: the follow takes over
+    for (let i = 0; i < 20; i += 1) box.tick();
+    expect(box.state().scroll).toBe(2);
+  });
+
+  // Why: a page hidden mid-scrub has its voice quiet by the page's sound
+  // gate; a cancelled pointer arriving then must not start it in the
+  // hidden page. It stays held, the channel's voice, for the gate.
+  it("does not play on from a drag that ends while the page is hidden", () => {
+    const focus = createVoiceFocus();
+    const voiced = focusedPlayer(innerPlayer(), focus);
+    voiced.play();
+    const { box, content } = make();
+    box.show({ ...content, player: voiced });
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+    setHidden(true);
+    box.element.dispatchEvent(pointer("pointercancel", 100, 700 - LINE_PX));
+    expect(box.state().scrubbing).toBe(false);
+    expect(voiced.playing()).toBe(false);
+    expect(voiced.running()).toBe(true);
+    expect(voiced.nowMs()).toBe(4 * WORD_MS);
   });
 });

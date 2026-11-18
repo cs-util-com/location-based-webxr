@@ -24,7 +24,9 @@ Pure, so the box (`narration-box.ts`) may ask on every frame.
   from its laid-out top. With `firstTop` (the speaker's name, line 0) it
   is the line heights below the name, rounded, so a line that holds no
   word (a long voice credit) still counts; without, a top within half a
-  line height of a seen line joins it.
+  line height of a seen line joins it. The first way assumes the real
+  line pitch is `lineHeightPx` (a fixed px line height); a relative line
+  height would need the clustering back.
 - `lineStarts(starts, lineOf, totalMs)` - each line's start (its first
   word's), never decreasing, plus a closing entry, the voice's total. No
   words: one line `[0, total]`.

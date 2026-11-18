@@ -320,7 +320,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
 
   function target(ms: number): number {
     const cur = Math.max(0, litAt(ms));
-    return followScroll(lineOf[cur] ?? 0, lines, rows);
+    const line = lineOf[cur] ?? 0;
+    const first = lineOf[0] ?? 0;
+    // Until the words pass their first line, the name and its disclosure
+    // above them stay in view as far as the rows allow.
+    if (line <= first) return Math.max(0, first - (rows - 1));
+    return followScroll(line, lines, rows);
   }
 
   function draw(c: NarrationBoxContent): void {
@@ -439,8 +444,10 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     root.classList.remove("nb-dragging");
     c.player.seek(dragMs);
     if (resume) {
-      if (dragMs < totalMs()) c.player.play();
-      else c.player.pause();
+      // In a hidden page the voice stays held, the channel's voice: the
+      // page's sound gate carries it on at the return.
+      if (dragMs >= totalMs()) c.player.pause();
+      else if (!doc.hidden) c.player.play();
     }
     resume = false;
     deps.store.dispatch(narrationBoxScrubbing(false));

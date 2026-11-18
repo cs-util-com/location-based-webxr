@@ -319,6 +319,17 @@ for (const viewport of VIEWPORTS) {
       segments[k + 1].startMs + 10,
     );
     expect((await voice(page)).captions?.word).toBe(segments[k + 1].text);
+    // At the start of the voice the box opens on the name and its
+    // disclosure, even when a long credit puts the first words lower.
+    await page.evaluate(() => window.__longTextCheck?.at(0));
+    await page.waitForFunction(
+      () => window.__longTextCheck?.voice()?.captions?.scroll === 0,
+    );
+    const opening = await voice(page);
+    if (opening.captionParts.who === null) throw new Error("no name drawn");
+    expect(opening.captionParts.who.top).toBeGreaterThanOrEqual(
+      opening.captionParts.win.top - 0.5,
+    );
     expect(errors).toEqual([]);
   });
 }

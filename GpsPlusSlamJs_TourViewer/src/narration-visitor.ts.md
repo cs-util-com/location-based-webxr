@@ -29,4 +29,4 @@ Every text's voice is a `focusedPlayer` in the page's one channel (`voice-focus.
 
 ## Tests
 
-- `narration-visitor.test.ts` - one player per text, the read on open, live and stale captions, a new tour resetting, `reset()` letting a real player's audio source and blob URL go, a silent text, a block of another kind.
+- `narration-visitor.test.ts` - one player per text, the read on open, live and stale captions, a new tour resetting, `reset()` letting a real player's audio source and blob URL go, a silent text, a block of another kind, `pauseAll` while a scrub holds the heard voice (both voices paused, the scrubbed one first at the return).

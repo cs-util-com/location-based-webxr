@@ -61,7 +61,9 @@ and what.
   from the speaker's name, which opens line 0. Rows are at most three;
   the spoken line sits in the middle row (`BOX_FOLLOW_ROW`), clamped to
   the text, eased at the prototype's rate (9 per second), at once with
-  reduced motion.
+  reduced motion. Until the voice passes the first words' line, the box
+  keeps the name and its disclosure in view as far as the rows allow,
+  even when a long credit puts the first words two lines down.
 - Tap against drag: a press that moves at most 8 px (`BOX_TAP_SLOP_PX`)
   is a tap. A tap toggles play and pause and puts a play or pause sign at
   the finger (0.75 s, removed after 1.5 s at the latest). A tap on a
@@ -78,7 +80,9 @@ and what.
 - A drag cut off by `hide()`, a new text or `dispose()` never plays the
   voice again: the place is kept, and a voice the drag held is paused
   properly, its channel handed back (a voice waiting behind it carries
-  on), as after a drag let go past the end.
+  on), as after a drag let go past the end. A drag that ends while the
+  page is hidden (a cancelled pointer) does not play on: the voice stays
+  held, the channel's voice, for the page's sound gate.
 - A hidden page is not the box's to silence: the page's sound gate
   (`sound-setting.ts`) pauses every voice and carries the held one on at
   the return. Should that happen with a finger still on the words, the
@@ -140,9 +144,16 @@ box.hide();
   focused players, both a voice it holds and a held text voice), the
   keyboard, the live region and `data-speaking`, a hidden page left to
   the page, the store told only on a change, hide and a new text, taps
-  kept from the AR scene, an empty text, dispose.
+  kept from the AR scene, an empty text, dispose; the store and the live
+  region quiet during a scrub; the channel handed back with a focused
+  voice behind when a drag is cut off (hide, new text, dispose) or ends
+  past the end; the voice held again while the finger is down; the
+  opening scroll when the name and disclosure take lines of their own;
+  no playing on from a drag ended in a hidden page.
 - `narration-box-timeline.test.ts` - the arithmetic, with properties.
 - `playwright-tests/narration-check.spec.js` - the layout at three
   viewports against the prototype's numbers, the name and disclosure on
-  the first line, the thumb, the lit word following the voice, and no box
-  for a stale track.
+  the first line (the disclosure's first line right after the name), the
+  thumb, every word on the 22 px line grid, the line count against the
+  drawn lines, the opening scroll at the voice's start, the lit word
+  following the voice, and no box for a stale track.
