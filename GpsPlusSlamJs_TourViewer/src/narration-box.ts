@@ -32,12 +32,12 @@ import {
 } from "./narration-box-slice.js";
 import {
   BOX_MAX_ROWS,
+  dragScroll,
   followScroll,
   isTap,
   lineFloatAt,
   lineIndices,
   lineStarts,
-  rubberBand,
   thumbGeometry,
   timeAtLine,
   wordAt,
@@ -125,7 +125,8 @@ interface Press {
   readonly id: number;
   readonly x: number;
   readonly y: number;
-  readonly s0: number;
+  /** The scroll the drag moves from (moved on where the words are held). */
+  s0: number;
   readonly line0: number;
 }
 
@@ -154,6 +155,21 @@ function disclosure(c: NarrationBoxContent): string {
     ...(credit === "" ? [] : [credit]),
   ];
   return parts.map((p) => ` · ${p}`).join("");
+}
+
+/** Whether `a` and `b` draw the same words, disclosure and label (the
+ *  player may differ: the box reads whichever it is given). */
+function drawsSame(a: NarrationBoxContent, b: NarrationBoxContent): boolean {
+  return (
+    a.key === b.key &&
+    a.timing === b.timing &&
+    a.plain === b.plain &&
+    a.speaker.name === b.speaker.name &&
+    a.speaker.color === b.speaker.color &&
+    a.title === b.title &&
+    a.synthetic === b.synthetic &&
+    a.voiceCredit === b.voiceCredit
+  );
 }
 
 const pointerIdOf = (e: Event): number => {
@@ -358,9 +374,13 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     const g = thumbGeometry(scroll, lines, rows, rows * lh - 4);
     thumb.style.height = `${g.height.toFixed(1)}px`;
     thumb.style.transform = `translateY(${g.offset.toFixed(1)}px)`;
-    // Whoever carried the voice on (the page's sound gate at a return),
-    // the finger still holds it.
-    if (dragging && resume && c.player.playing()) holdVoice(c.player);
+    // Whoever carried the voice on during the drag (the page's sound gate
+    // at a return, the voice channel when a clip ends), the finger still
+    // holds it, and lets it go on playing at the release.
+    if (dragging && c.player.playing()) {
+      resume = true;
+      holdVoice(c.player);
+    }
     // A drag holds the voice for the finger only: it still counts as
     // playing, so neither the store nor a screen reader hears of it.
     const playing = dragging ? resume : c.player.playing();
@@ -481,7 +501,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     if (!dragging) return;
     const moved = dy / lh;
     dragMs = timeAtLine(ls, press.line0 + moved);
-    scroll = rubberBand(press.s0 + moved, Math.max(0, lines - rows));
+    const raw = press.s0 + moved;
+    const read = lineOf[Math.max(0, litAt(dragMs))] ?? 0;
+    scroll = dragScroll(raw, Math.max(0, lines - rows), read, rows);
+    // Held at an edge in the text, the words move on from there with the
+    // finger rather than jump to catch up once the read line moves on.
+    if (raw >= 0 && raw <= lines - rows) press.s0 += scroll - raw;
     tick();
   };
   const onUp = (e: PointerEvent): void => {
@@ -493,7 +518,8 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
       endDrag(c);
       return;
     }
-    if (e.type === "pointercancel") return;
+    // A cancelled pointer or a capture the system took is no tap.
+    if (e.type !== "pointerup") return;
     toggle(e.clientX, e.clientY);
   };
   const onKey = (e: KeyboardEvent): void => {
@@ -519,6 +545,9 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   root.addEventListener("pointermove", onMove);
   root.addEventListener("pointerup", onUp);
   root.addEventListener("pointercancel", onUp);
+  // The system can take the capture without a pointerup or pointercancel
+  // (a notification, the browser taking the gesture): the press ends there.
+  root.addEventListener("lostpointercapture", onUp);
   root.addEventListener("keydown", onKey);
   win?.addEventListener("resize", onResize);
 
@@ -540,13 +569,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     element: root,
     slots: { left: slotL, right: slotR },
     show(next) {
-      const same =
-        content !== null &&
-        content.key === next.key &&
-        content.timing === next.timing &&
-        content.plain === next.plain &&
-        content.speaker.name === next.speaker.name &&
-        content.speaker.color === next.speaker.color;
+      const same = content !== null && drawsSame(content, next);
       // The store hears of a new text or a new showing, never per frame.
       const fresh = !same || !shown;
       if (!same) {
@@ -594,6 +617,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
       root.removeEventListener("pointermove", onMove);
       root.removeEventListener("pointerup", onUp);
       root.removeEventListener("pointercancel", onUp);
+      root.removeEventListener("lostpointercapture", onUp);
       root.removeEventListener("keydown", onKey);
       win?.removeEventListener("resize", onResize);
       for (const fx of signs) fx.remove();

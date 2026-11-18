@@ -45,7 +45,17 @@ describe("seeded outputs", () => {
       b.indices,
       500,
     );
-    expect([d.mean, d.max]).toEqual([0.09584936281907831, 0.09790887828748089]);
+    // Not an exact-double pin: the areas and spacing go through Math.hypot
+    // and Math.cbrt, which the spec lets an engine approximate, so the last
+    // bits may differ between engines. 14 digits (|diff| < 5e-15) leaves
+    // hundreds of ulps of room for that, and still fails on a changed draw:
+    // shifting any one of the 3000 draws by 0.37 or by 0.01 either left both
+    // values bit-identical (a draw this symmetric mesh does not feel, which
+    // an exact pin cannot see either) or moved one by more than 5e-15; none
+    // landed in between. Only nudges far below a real change (1e-6 to one
+    // draw) can move a value by less, by amounts as small as engine drift.
+    expect(d.mean).toBeCloseTo(0.09584936281907831, 14);
+    expect(d.max).toBeCloseTo(0.09790887828748089, 14);
   });
 
   it("the plate grain's and the motes' seeds draw the pinned sequence", () => {

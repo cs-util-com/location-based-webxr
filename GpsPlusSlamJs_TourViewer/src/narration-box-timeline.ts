@@ -162,11 +162,53 @@ export function followScroll(
   return Math.min(top, Math.max(0, line - BOX_FOLLOW_ROW));
 }
 
-/** A dragged scroll past either end, moved 0.3 as far. */
-export function rubberBand(raw: number, top: number): number {
-  if (raw < 0) return raw * OVERSCROLL_SHARE;
-  if (raw > top) return top + (raw - top) * OVERSCROLL_SHARE;
+/** How far (in lines) a dragged scroll may stretch past each end. */
+export interface BandReach {
+  readonly before: number;
+  readonly after: number;
+}
+
+const NO_LIMIT: BandReach = { before: Infinity, after: Infinity };
+
+/** `over` lines dragged past an end, moved 0.3 as far at first and
+ *  flattening out short of `reach` lines however far the finger goes. */
+function stretch(over: number, reach: number): number {
+  const moved = over * OVERSCROLL_SHARE;
+  if (!(reach > 0)) return 0;
+  if (reach === Infinity) return moved;
+  return reach * (1 - Math.exp(-moved / reach));
+}
+
+/** A dragged scroll past either end: 0.3 as far near it, never as far as
+ *  `reach` (no limit without one). */
+export function rubberBand(
+  raw: number,
+  top: number,
+  reach: BandReach = NO_LIMIT,
+): number {
+  if (raw < 0) return 0 - stretch(-raw, reach.before);
+  if (raw > top) return top + stretch(raw - top, reach.after);
   return raw;
+}
+
+/** Where a drag puts the words: `raw` as dragged (in lines), stretched
+ *  past either end, and held so the read line `read` (the lit word's)
+ *  stays in the window of `rows` lines. Past an end the stretch flattens
+ *  out before the read line would leave; in the text the words stop at
+ *  the edge it would leave by. */
+export function dragScroll(
+  raw: number,
+  top: number,
+  read: number,
+  rows: number,
+): number {
+  const lo = read - (rows - 1);
+  const hi = read;
+  const banded = rubberBand(raw, top, {
+    before: Math.max(0, -lo),
+    after: Math.max(0, hi - top),
+  });
+  return Math.min(hi, Math.max(lo, banded));
 }
 
 /** The scrollbar thumb on a track `trackPx` high: its height by the share

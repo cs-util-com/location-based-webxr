@@ -247,6 +247,8 @@ const EXPECTED = {
     'playwright-tests/launch-and-errors.spec.js: a ?qr= launch opens the archive with no interaction',
     'playwright-tests/launch-and-errors.spec.js: the page boots without console errors',
     'playwright-tests/launch-and-errors.spec.js: boots the landing without console errors',
+    'playwright-tests/narration-check.spec.js: a ${input} drag keeps the read line in the narration box, slow or fast, past either end (${viewport.name})',
+    'playwright-tests/narration-check.spec.js: the arrow keys keep the read line in the narration box (${viewport.name})',
     'playwright-tests/open-file.spec.js: opens a tour zip from the device through the file chooser',
     'playwright-tests/setup-flow.spec.js: starts at the host tiles, and a chosen host carries on to the link',
     'playwright-tests/stations.spec.js: a station tour: the visitor at the code finds the first station, its knight speaks and asks, a walk finds the next, the last is skipped',
