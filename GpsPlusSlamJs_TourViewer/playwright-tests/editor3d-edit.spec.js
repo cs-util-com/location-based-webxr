@@ -615,6 +615,9 @@ async function cameraAt(page) {
 test("holds the camera still from a press on the gizmo until its release, even mid-flight and against T", async ({
   page,
 }) => {
+  // The budget of the other drag tests here: at four times slower CPU the
+  // open and the frame waits took more than the default 30 s.
+  test.setTimeout(120_000);
   const station = await openWithPin(page);
   await selectPin(page, station);
   const steps = await changes(page);
