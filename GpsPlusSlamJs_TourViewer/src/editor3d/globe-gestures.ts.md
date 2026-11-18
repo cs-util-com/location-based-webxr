@@ -44,8 +44,7 @@ counts movement itself). Pure: the page wires each route.
   camera stays still until every finger is up, because the controls
   never saw the first finger (it was held from them for the drag), and
   given the second alone they panned, then dropped it when the first
-  lifted (3d-tiles-renderer 0.5.3's pointer tracker). The page wires this through the editing
-  camera's `takesTwoFingers`: the input then neither locks the camera for
+  lifted (3d-tiles-renderer 0.5.3's pointer tracker). The input neither locks the camera for
   two fingers nor reads them itself. Before this row the input locked
   the camera and read the fingers as its own gestures, which the globe
   has none of, so two fingers held the camera still.

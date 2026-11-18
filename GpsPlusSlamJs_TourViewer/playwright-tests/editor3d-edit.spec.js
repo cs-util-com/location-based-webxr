@@ -607,12 +607,16 @@ async function cameraAt(page) {
   ]);
 }
 
-// Why: a camera still moving when the gizmo is grabbed (a card's or
-// Frame's flight, the orbit's coast) moves the object under a pointer
-// that holds still, and T, F or Home pressed during a drag would fly the
-// camera away mid-drag. The camera must stand still from the press until
-// the release.
-test("holds the camera still from a press on the gizmo until its release, even mid-flight and against T", async ({
+// Why: a camera still moving when the gizmo is grabbed (the orbit's
+// coast) moves the object under a pointer that holds still, and T, F or
+// Home pressed during a drag would move the camera away mid-drag. The
+// camera must stand still from the press until the release.
+// Not "mid-flight": the globe view's Frame (F) places the camera at once
+// and starts no flight (`flying` read false right after F), and its only
+// flight, the opening approach, cannot be pressed into at a reliable
+// moment. That a press stops a flight rests on the input's lock
+// (`lockCamera` before the gesture reads the pointer, unit-tested).
+test("holds the camera still from a press on the gizmo until its release, and against T and Home", async ({
   page,
 }) => {
   // The budget of the other drag tests here: at four times slower CPU the
@@ -621,16 +625,12 @@ test("holds the camera still from a press on the gizmo until its release, even m
   const station = await openWithPin(page);
   await selectPin(page, station);
   const steps = await changes(page);
-  // F starts a flight; on a slow runner it may have ended by the press
-  // (seen locally), and the check below then holds a still camera only.
-  await page.keyboard.press("f");
   const from = await discPoint(page);
   await page.mouse.move(from.x, from.y);
   await page.mouse.down();
   const held = await cameraAt(page);
   await afterFrames(page, 20);
   expect(await cameraAt(page)).toEqual(held);
-  expect((await view3d(page))?.flying).toBe(false);
   // The shell's camera keys wait for the drag's end.
   await page.keyboard.press("t");
   await page.keyboard.press("Home");

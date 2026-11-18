@@ -139,6 +139,8 @@ interface Fakes {
   /** Whether the stations layer hands out its objects (a station is then
    *  admitted at its first upload); false: none ever is. */
   admits: boolean;
+  /** The layer's codes' corners (world), as `codeCorners` gives them. */
+  codeCorners: THREE.Vector3[][];
   /** Whether the relief mount says nothing of the relief is loading. */
   settled: boolean;
   /** The whole-Earth imagery the view's module hands out. */
@@ -175,6 +177,7 @@ const fakes = vi.hoisted((): Fakes => ({
   reliefShare: 1,
   reliefMount: null,
   admits: false,
+  codeCorners: [],
   settled: true,
   airOptions: null,
   airSteps: [],
@@ -485,7 +488,7 @@ vi.mock("./editor3d-stations.js", async () => {
       radiusOf: () => null,
       itemPointOf: () => null,
       codePointOf: () => null,
-      codeCorners: () => [],
+      codeCorners: () => fakes.codeCorners,
       setHidden() {},
       setGrowth() {},
       update() {},
@@ -679,6 +682,7 @@ beforeEach(() => {
   fakes.reliefShare = 1;
   fakes.reliefMount = null;
   fakes.admits = false;
+  fakes.codeCorners = [];
   fakes.settled = true;
   fakes.airOptions = null;
   fakes.airSteps = [];
@@ -816,6 +820,43 @@ describe("openGlobeEditor's wiring", () => {
       expect(
         camera.position.distanceTo(new THREE.Vector3(...after.look)),
       ).toBeCloseTo(distance, 0);
+    },
+  );
+
+  // Why: a turn places the camera; the speed streaks must start again
+  // from where it now stands, or the speed of a dive under way carries
+  // over the turn and the first frame after it still draws streaks. The
+  // camera here looks steeply down from high enough that the turn moves
+  // it less than its height (the streaks' own teleport test, which resets
+  // them anyway, does not fire): the cases above, at 30 degrees from
+  // 400 m, move it farther than that and cannot tell. The restart is the
+  // turn's placing of the pose (`placePose`).
+  it.each([
+    [45, 200],
+    [180, null],
+  ])(
+    "starts the speed streaks again after a turn to heading %s (ground at %s m)",
+    async (headingDeg, groundM) => {
+      fakes.groundM = groundM;
+      const view = await openAt(groundM ?? 0);
+      const seams = fakes.seams;
+      if (seams === null) throw new Error("no seams");
+      let now = 1_000;
+      vi.spyOn(performance, "now").mockImplementation(() => now);
+      const dustOf = () =>
+        (view.stats().globe as { dust: { speedMps: number; shown: boolean } })
+          .dust;
+      // A dive of 1 km in a frame from 5 km up.
+      placeCamera(5_000, -80, groundM);
+      seams.beforeScene?.();
+      now += 16;
+      placeCamera(4_000, -80, groundM);
+      seams.beforeScene?.();
+      expect(dustOf().speedMps).toBeGreaterThan(1_000);
+      view.setHeading(headingDeg);
+      now += 16;
+      seams.beforeScene?.();
+      expect(dustOf()).toMatchObject({ speedMps: 0, shown: false });
     },
   );
 
@@ -1813,6 +1854,44 @@ describe("openGlobeEditor's wiring", () => {
     walkNow = capturesOf(4);
     frameAt(now + 32);
     expect(marks()?.walkPoints).toBe(4);
+  });
+
+  // Why: `project()` mirrors a point behind the camera through it, so a
+  // code behind the camera measured as large as one in front (or huge,
+  // with a corner just behind). A code not wholly between the near and the
+  // far plane is not drawn and measures 0.
+  it("measures a code's drawn side in front of the camera, and 0 behind it", async () => {
+    const view = await openAt(0);
+    const camera = fakes.view?.camera;
+    const canvas = document.querySelector("canvas");
+    if (camera === undefined || canvas === null) throw new Error("no view");
+    Object.defineProperty(canvas, "clientWidth", { value: 800 });
+    Object.defineProperty(canvas, "clientHeight", { value: 600 });
+    camera.aspect = 800 / 600;
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld();
+    const square = (z: number, sideM = 1) =>
+      [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ].map(([x, y]) =>
+        camera.localToWorld(
+          new THREE.Vector3((x! * sideM) / 2, (y! * sideM) / 2, z),
+        ),
+      );
+    // In front at 10 m, behind at 10 m, and straddling the camera.
+    fakes.codeCorners = [
+      square(-10),
+      square(10),
+      [...square(-10).slice(0, 2), ...square(0.5).slice(2)],
+    ];
+    const [front, behind, across] = view.stats().codePx;
+    const focal = 300 / Math.tan((camera.fov * Math.PI) / 360);
+    expect(front).toBeCloseTo(focal / 10, 3);
+    expect(behind).toBe(0);
+    expect(across).toBe(0);
   });
 
   // Why: a frame drawn while the view is being freed draws with freed

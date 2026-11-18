@@ -89,7 +89,7 @@ cannot reach.
   the lightest by those seconds, for its clouds spec's CI retries. Local
   seconds are not CI minutes; rebalance from the uploaded reports.
 - **3D lanes rebalanced 2026-11-18** from the per-spec minutes of the
-  uploaded reports of one CI full run (CI run 44295629516), after the
+  uploaded reports of a CI full run of 2026-11-18, after the
   editor's every spec moved to the globe: lanes 1, 2 and 4 took 19.5,
   19.4 and 14.3 min of test time, lane 3 ran into the 45 min suite limit
   at 44.8 min with `editor3d.spec.js` and two more tests not run.

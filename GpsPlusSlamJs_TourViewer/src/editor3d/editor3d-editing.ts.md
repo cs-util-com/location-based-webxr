@@ -47,14 +47,12 @@ pure gesture maths reads (`GestureWorld`).
     while its gizmo is drawn, refreshed in `update()`; for the page's
     checks.
   - `dispose()` (the outline's too).
-- Type `GizmoPart`. Internal (not exported): `EditingCamera` (`lock(on)`, the optional
-  `takesTwoFingers`, `twoFingerStart()`, `twoFinger(mode, last, now, world)`, `lookAt()`); `takesTwoFingers` reaches the input as
-  `cameraTakesTwoFingers`.
+- Type `GizmoPart`. Internal (not exported): `EditingCamera` (`lock(on)`,
+  `lookAt()`).
 - The globe view's `EditingCamera` (in `editor3d-globe.ts`) leases the
-  globe's controls for a handle drag and takes two fingers itself
-  (`takesTwoFingers`): the globe's controls pinch, twist and tilt. Without
-  `takesTwoFingers` the input would hand two fingers to `twoFinger`; no
-  view does that now.
+  globe's controls for a handle drag. Two fingers are always the
+  controls' own (their pinch, twist and tilt): the input never reads
+  them, it only cancels a drag a second finger interrupts.
 - `SceneEditingDeps.models` - the store's selection, model focus and
   model pick, and the page's model edit (true: written).
 - The selected model's parts are drawn by `editor3d-model-parts.ts`; a
@@ -120,7 +118,7 @@ const editing = createSceneEditing({
   canvas,
   scene,
   camera,
-  view: globeEditingCamera, // lock, takesTwoFingers: true, lookAt
+  view: globeEditingCamera, // lock, lookAt
   layer,
   ground,
   worldFromEcef: ground.worldFromEcef,
@@ -138,7 +136,7 @@ editing.update();
 
 No unit test of its own (it needs WebGL, the relief and a canvas): its
 parts are tested pure (`gizmo-maths`, `gesture`, `pose-edits`,
-`two-finger`, `editor3d-input`, `editor3d-gizmo`, the layer's preview and
+`editor3d-input`, `editor3d-gizmo`, the layer's preview and
 pick), and the whole in a browser by
 `playwright-tests/editor3d-edit.spec.js` - a mouse drag over the ground
 saved and undone, every key, a second finger's cancel, the camera held

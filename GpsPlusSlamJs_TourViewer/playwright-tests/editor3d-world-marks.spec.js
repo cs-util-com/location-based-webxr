@@ -262,11 +262,14 @@ async function soundIcons(page, on) {
 // station's selected ring passes under the icon in the same amber, so a
 // sample elsewhere on the screen says nothing about the icon. From
 // straight above, as the found-radius spec. On the globe this holds that
-// the icon is drawn and seen, not that it escapes the relief: with the
-// icon's depth test switched on the share still read 0.72 (0.76 without),
-// so the material's depth test is held by the unit tests alone
+// the icon is drawn and seen from above, not that it escapes the relief:
+// with the icon's depth test switched on the share still read 0.72 (0.76
+// without), so the material's depth test is held by the unit tests alone
 // (`isInterfacePart`).
-test("an ambient sound's icon is seen where the relief stands in front of it", async ({
+// TODO: why a depth-tested mark 8 m under the relief still shows is an
+// open question; until it is answered this test cannot tell an icon the
+// relief covers from one it does not.
+test("an ambient sound's icon is drawn and seen from above over relief standing above it", async ({
   page,
 }) => {
   test.setTimeout(240_000);

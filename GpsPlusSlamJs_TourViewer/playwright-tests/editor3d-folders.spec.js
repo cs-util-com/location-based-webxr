@@ -989,11 +989,13 @@ for (const view of VIEWS) {
     // across and along the line of sight: across, the ring's radius times
     // the sine of 45 degrees; a few per cent either way, standing nearer
     // or farther from the camera than the middle along the ground. The
-    // globe view measured 1.08 to 1.12 ring radii at the three sizes, so
-    // the band stays wider than the exact radius.
+    // globe view measured 1.08 to 1.12 ring radii at the three sizes (the
+    // dots stand over the ground, nearer the camera than the ring's
+    // depth), so the band's top is the measured 1.12 with a margin of
+    // about 3 per cent, and its foot stays below the exact radius.
     const onRing = Math.abs(dot.x - middle.x) / Math.SQRT1_2;
     expect(onRing).toBeGreaterThanOrEqual(sizes.ringPx * 0.95 - 1);
-    expect(onRing).toBeLessThanOrEqual(sizes.ringPx * 1.1 + 1);
+    expect(onRing).toBeLessThanOrEqual(sizes.ringPx * 1.15 + 1);
     // The dashed outline round its item, named on its tag.
     const shown = await page.evaluate(() =>
       /** @type {any} */ (window).__tourEditor.view3dFolderOutlines(),

@@ -157,14 +157,32 @@ async function addFromMenu(page, stationId, kind, file, title) {
   const card = page.locator(`#tree-body .card[data-station="${stationId}"]`);
   await card.locator(".head").hover();
   await card.locator(".head .add").click();
+  const added = page
+    .locator(".toast", { hasText: "Added the " })
+    .filter({ hasText: `"${title}"` });
+  // The page's answer is a toast either way: the added line, or a refusal
+  // in its own words. Whichever comes first ends the wait, so a refused
+  // add fails at once and says why, not after the whole wait.
+  const answers = page.locator('.toast:not([data-testid="add-file-busy"])');
+  const before = await answers.allTextContents();
   const chooser = page.waitForEvent("filechooser");
   await page.locator(`#tree-add-menu [data-kind="${kind}"]`).click();
   await (await chooser).setFiles(file);
-  await expect(
-    page
-      .locator(".toast", { hasText: "Added the " })
-      .filter({ hasText: `"${title}"` }),
-  ).toBeVisible({ timeout: SHELF_ADD_MS });
+  let answer = "";
+  await expect
+    .poll(
+      async () => {
+        if ((await added.count()) > 0) return "added";
+        const fresh = (await answers.allTextContents()).filter(
+          (t) => !before.includes(t),
+        );
+        answer = fresh.join(" | ");
+        return fresh.length > 0 ? "answered" : "waiting";
+      },
+      { timeout: SHELF_ADD_MS },
+    )
+    .not.toBe("waiting");
+  await expect(added, `the add was answered by: ${answer}`).toBeVisible();
 }
 
 test.beforeEach(async ({ page }) => {

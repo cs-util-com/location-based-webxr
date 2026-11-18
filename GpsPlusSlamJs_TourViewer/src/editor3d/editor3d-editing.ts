@@ -20,8 +20,8 @@
  * ground; its point is a handle of the gizmo too, dragged on its level.
  * Both write the point in the station's frame (`PlaceEdit` "point").
  * The camera is the view's (`EditingCamera`): the globe view leases its
- * own controls for a handle drag and leaves two fingers to them
- * (`EditingCamera.takesTwoFingers`). The world's frame may move between frames (the globe's
+ * own controls for a handle drag and leaves two fingers to them (the
+ * input never reads two fingers). The world's frame may move between frames (the globe's
  * follows the camera): the ECEF matrices and the layer's frame are read
  * live each time.
  *
@@ -71,7 +71,6 @@ import {
   type InputPage,
   type InputScene,
 } from "./editor3d-input.js";
-import type { FingerPair } from "./two-finger.js";
 import type { createStationsLayer, LayerPreview } from "./editor3d-stations.js";
 import type { EditorTerrain } from "./editor3d-terrain.js";
 import {
@@ -102,21 +101,6 @@ interface EditingCamera {
   /** A handle drag holds the camera still (true) until it is given back
    *  (false); a flight or a coast stops at once. */
   lock(on: boolean): void;
-  /**
-   * The camera's own controls take two fingers (the globe's): the input
-   * leaves the camera free for them and never calls `twoFingerStart` or
-   * `twoFinger`. Without it the editing reads two fingers itself.
-   */
-  readonly takesTwoFingers?: boolean;
-  /** Two fingers began moving the camera. */
-  twoFingerStart(): void;
-  /** Two fingers moved from `last` to `now`, read as `mode`. */
-  twoFinger(
-    mode: "tilt" | "map",
-    last: FingerPair,
-    now: FingerPair,
-    world: GestureWorld,
-  ): void;
   /** The world point the view looks at (`centre`'s place). */
   lookAt(): THREE.Vector3;
 }
@@ -581,13 +565,6 @@ export function createSceneEditing(deps: SceneEditingDeps) {
     lockCamera: (on) => {
       deps.view.lock(on);
     },
-    twoFingerStart: () => {
-      deps.view.twoFingerStart();
-    },
-    twoFinger: (mode, last, now) => {
-      deps.view.twoFinger(mode, last, now, world);
-    },
-    cameraTakesTwoFingers: deps.view.takesTwoFingers === true,
     frame(selection) {
       deps.frame(selection);
     },

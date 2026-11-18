@@ -20,11 +20,14 @@ import {
  * relief here stands above the sample's stations and the canvas's pixels
  * are read, from straight above (Top view, drawn back to `TOP_DISTANCE_M`
  * so every station stands in the read stretch), with the relief above
- * every ring. On the globe this holds that the rings are drawn and seen,
- * not that they escape the relief: drawn with a depth test, in the scene's
- * own pass, the rings still showed (4678 pixels against 4782), so the
- * material's depth test is held by the stations' unit test alone
+ * every ring. On the globe this holds that the rings are drawn and seen
+ * from above, not that they escape the relief: drawn with a depth test, in
+ * the scene's own pass, the rings still showed (4678 pixels against 4782),
+ * so the material's depth test is held by the stations' unit test alone
  * (`isInterfacePart`).
+ * TODO: why a depth-tested ring 8 m under the relief still shows is an open
+ * question; until it is answered this spec cannot tell a ring the relief
+ * covers from one it does not.
  */
 
 /** How far the relief stands above the sample's stations (m): more than a
@@ -36,14 +39,22 @@ const RELIEF_ABOVE_STATIONS_M = 8;
 const TOP_DISTANCE_M = 80;
 
 /** How much bluer than red a pixel of the blue ring is at the least: the
- *  ring reads about 82 over the ground, and the globe's grey-blue ground
- *  itself up to about 65 (at 30, a quarter of a million pixels of ground
- *  counted, so no ring was needed). */
+ *  ring reads about 82 over the ground. The globe's grey-blue ground comes
+ *  close and moves with the sun, which follows the day the test runs on,
+ *  so the ground's own count is read with the rings out of view and taken
+ *  off (`CONTROL_RADIUS_M`). */
 const RING_BLUE = 70;
 
-/** Blue pixels fewer than the sample's three rings make at this view
- *  (4782 measured). */
+/** Blue pixels fewer than the sample's three rings add to this view: 4782
+ *  with the rings against 1637 of ground alone measured, 3145 added. Swept
+ *  over the blue cutoff the rings added 3494, 3437, 3145 and 2052 at 50,
+ *  60, 70 and 80 (1859 at 40, 0 at 90). */
 const RING_PIXELS = 2000;
+
+/** The rings' radius for the control read (m): the most a station takes,
+ *  which puts every ring outside the stretch read from `TOP_DISTANCE_M`
+ *  (the least, 2 m, still drew a loop of the ring's blue). */
+const CONTROL_RADIUS_M = 300;
 
 /** Frames for the relief to reach the stations. Read too early the rings
  *  show whatever they are made of, so this can only weaken the check, never
@@ -82,7 +93,7 @@ async function ringPixels(page) {
   );
 }
 
-test("a station's found radius shows where the relief stands above the station", async ({
+test("a station's found radius is drawn and seen from above over relief standing above it", async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -144,6 +155,23 @@ test("a station's found radius shows where the relief stands above the station",
   }
 
   const count = await ringPixels(page);
-  expect(count).toBeGreaterThan(RING_PIXELS);
+  // The control: the same view with the rings out of it, so the
+  // ground's own blue (which moves with the sun, and the editor's sun
+  // follows the day the test runs on) is counted and taken off.
+  const edited = await page.evaluate((radiusM) => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const kinds = hook
+      .manifest()
+      .stations.map(
+        (/** @type {{ id: string }} */ s) =>
+          hook.editor().editStation(s.id, { foundRadiusM: radiusM }).kind,
+      );
+    hook.edited();
+    return kinds;
+  }, CONTROL_RADIUS_M);
+  expect(edited).toEqual(["edited", "edited", "edited"]);
+  await afterFrames(page, 8);
+  const ground = await ringPixels(page);
+  expect(count - ground).toBeGreaterThan(RING_PIXELS);
   expect(await rejections(page)).toEqual([]);
 });

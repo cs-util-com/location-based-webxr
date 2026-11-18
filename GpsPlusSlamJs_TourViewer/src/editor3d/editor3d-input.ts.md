@@ -21,10 +21,8 @@ move the camera only, and a second finger during a drag cancels it.
     over the view keep theirs), and pointer positions are read against it;
   - `scene: InputScene` - `target(selection)`, `handleAt(pointer)`,
     `pickAt(pointer)`, `world`, `preview(target, preview | null)`,
-    `hover(handle)`, `lockCamera(on)`, `twoFingerStart()`,
-    `twoFinger(mode, last, now)`, `frame(selection)`, and the optional
-    `cameraTakesTwoFingers` (the globe's: two fingers are the camera
-    controls' own; see below);
+    `hover(handle)`, `lockCamera(on)`, `frame(selection)` (two
+    fingers are the camera controls' own; see below);
   - `page: InputPage` - `dispatch`, `selected()`, `select(id)`,
     `commit(edit)`, `remove(selection)`, `duplicate(selection)`,
     `say(text)`, `groundMenu(point, place | null)`, `keysFree(event)`.
@@ -92,16 +90,17 @@ move the camera only, and a second finger during a drag cancels it.
   every held key (or the window losing focus) writes one edit. A press
   and release is one step. (The design merged quick repeats of a key
   into one undo step; here a hold is the unit.)
-- OrbitControls is locked (`lockCamera`) during a drag and while two
-  fingers are down - until the last is up - rather than kept from the
-  events, so its own bookkeeping of the pointers stays whole. A press on a
-  handle locks it BEFORE the gesture reads the pointer: the lock stops a
+- The camera's controls are locked (`lockCamera`) during a drag (and,
+  after a second finger cancelled one, until the last finger is up)
+  rather than kept from the events, so their own bookkeeping of the
+  pointers stays whole. A press on a
+  handle locks them BEFORE the gesture reads the pointer: the lock stops a
   flight and the orbit's coast, so the camera stands still from the press
   on (a press that finds nothing to grab unlocks again).
-- With `cameraTakesTwoFingers` (the globe view, whose controls pinch,
-  twist and tilt as in the globe lab) a second finger still cancels a
+- Two fingers are the camera controls' own (the globe view's, which
+  pinch, twist and tilt as in the globe lab): a second finger cancels a
   drag and blocks new presses until every finger is up, and the fingers
-  are not read here (no `twoFingerStart` or `twoFinger`). The camera is
+  are not read here. The camera is
   unlocked at once (before the controls read that finger: the listener
   captures) when the controls saw the first finger; when the second
   finger cancelled a drag, the first was held from them, so the camera

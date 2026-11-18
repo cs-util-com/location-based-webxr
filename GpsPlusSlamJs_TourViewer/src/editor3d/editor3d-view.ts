@@ -254,7 +254,9 @@ export interface Editor3dStats {
    *  with the camera's distance). */
   readonly codeScales: readonly number[];
   /** Each code's drawn side on the canvas (CSS px): its square's corners
-   *  projected by the camera of the last frame. */
+   *  projected by the camera of the last frame; 0 for a code not drawn (a
+   *  corner behind the camera, nearer than the near plane or past the far
+   *  one). */
   readonly codePx: readonly number[];
   readonly shown: readonly string[];
   readonly renders: number;

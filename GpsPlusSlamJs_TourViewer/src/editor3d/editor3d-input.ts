@@ -22,11 +22,12 @@
  * answers the wait (`answerClick`) instead of selecting; a drag still
  * moves the camera.
  *
- * OrbitControls keeps the camera's own input; a gesture or two fingers
- * lock it (`InputScene.lockCamera`) rather than hide events from it, so
- * its bookkeeping of the pointers stays whole. A camera whose controls
- * take two fingers themselves (`InputScene.cameraTakesTwoFingers`, the
- * globe's) is left free for them instead.
+ * The camera's controls keep their own input; a gesture locks them
+ * (`InputScene.lockCamera`) rather than hide events from them, so their
+ * bookkeeping of the pointers stays whole. Two fingers are the controls'
+ * own (the globe's pinch, twist and tilt): they are left free for them,
+ * unless a drag the first finger began held them off, which then lasts
+ * until every finger is up.
  *
  * @see editor3d-input.ts.md
  */
@@ -48,7 +49,6 @@ import {
 import { sceneKey, type GizmoHandle, type ScreenPoint } from "./gizmo-maths.js";
 import { createLongPress, LONG_PRESS } from "../editor/long-press.js";
 import { FOLDER_PREFIX } from "../editor/editor-model.js";
-import { twoFingerMode, type FingerPair } from "./two-finger.js";
 
 /** What the input reads of the scene and asks of it. */
 export interface InputScene {
@@ -66,17 +66,6 @@ export interface InputScene {
   hover(handle: GizmoHandle | null): void;
   /** OrbitControls takes no input while locked. */
   lockCamera(on: boolean): void;
-  /**
-   * The camera's own controls take two fingers (the globe's pinch, twist
-   * and tilt): a second finger still cancels a drag, but the camera is
-   * left free and `twoFingerStart` / `twoFinger` are never called.
-   * Without it two fingers lock the camera and are read here.
-   */
-  cameraTakesTwoFingers?: boolean;
-  /** Two fingers began moving the camera (a flight ends). */
-  twoFingerStart(): void;
-  /** Two fingers moved from `last` to `now`, read as `mode`. */
-  twoFinger(mode: "tilt" | "map", last: FingerPair, now: FingerPair): void;
   /** Fly to a selection (a double click or a double tap). */
   frame(selection: string): void;
   /** A click on the scene is waited for: a press then starts no gesture,
@@ -191,11 +180,6 @@ export function createSceneInput(input: {
   /** A second finger cancelled a drag: the camera's controls never saw
    *  the first finger, so they stay locked until every finger is up. */
   let heldTillUp = false;
-  let two: {
-    start: FingerPair;
-    last: FingerPair;
-    mode: "tilt" | "map" | null;
-  } | null = null;
   let lastTap: { t: number; at: ScreenPoint } | null = null;
   let hovered: GizmoHandle | null = null;
   /** A finger held still opens the ground menu: iOS sends no context
@@ -257,11 +241,6 @@ export function createSceneInput(input: {
     scene.preview(was.gesture.target, null);
   };
 
-  const fingerPair = (): FingerPair | null => {
-    const [a, b] = [...fingers.values()];
-    return a === undefined || b === undefined ? null : [a, b];
-  };
-
   const onDown = (event: PointerEvent) => {
     lastPress = null;
     const at = pointOf(event);
@@ -271,9 +250,9 @@ export function createSceneInput(input: {
       fingers.set(event.pointerId, at);
       longPress.down(event.pointerId, at);
       if (fingers.size > 1) {
-        // Two fingers are the camera's: a drag under way is cancelled,
-        // the document left as it was, and the camera stays locked until
-        // every finger is up.
+        // Two fingers are the camera's controls' (their pinch, twist and
+        // tilt): a drag under way is cancelled, the document left as it
+        // was.
         touchBlocked = true;
         if (press !== null) press.multi = true;
         if (drag !== null) {
@@ -281,20 +260,11 @@ export function createSceneInput(input: {
           page.say(TWO_FINGER_CANCEL);
           heldTillUp = true;
         }
-        if (scene.cameraTakesTwoFingers === true) {
-          // Free before the controls read this finger (the listener
-          // captures), but only when they saw the first one: a finger that
-          // started a drag was held from them, and tracking the second
-          // alone they would pan, then drop it when the first lifts.
-          scene.lockCamera(heldTillUp);
-          return;
-        }
-        scene.lockCamera(true);
-        const pair = fingerPair();
-        if (fingers.size === 2 && pair !== null) {
-          two = { start: pair, last: pair, mode: null };
-          scene.twoFingerStart();
-        }
+        // Free before the controls read this finger (the listener
+        // captures), but only when they saw the first one: a finger that
+        // started a drag was held from them, and tracking the second alone
+        // they would pan, then drop it when the first lifts.
+        scene.lockCamera(heldTillUp);
         return;
       }
     }
@@ -366,15 +336,6 @@ export function createSceneInput(input: {
     if (event.pointerType === "touch" && fingers.has(event.pointerId)) {
       fingers.set(event.pointerId, at);
       longPress.move(event.pointerId, at);
-      const now = fingerPair();
-      if (two !== null && now !== null) {
-        two.mode ??= twoFingerMode(two.start, now);
-        if (two.mode !== null) {
-          scene.twoFinger(two.mode, two.last, now);
-          two.last = now;
-        }
-        return;
-      }
     }
     if (drag !== null && event.pointerId === drag.pointerId) {
       drag.gesture.move(at, event.shiftKey);
@@ -412,7 +373,6 @@ export function createSceneInput(input: {
     if (event.pointerType === "touch") {
       fingers.delete(event.pointerId);
       longPress.end(event.pointerId);
-      if (fingers.size < 2) two = null;
       if (fingers.size === 0 && touchBlocked) {
         touchBlocked = false;
         heldTillUp = false;

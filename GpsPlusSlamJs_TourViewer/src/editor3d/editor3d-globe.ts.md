@@ -218,7 +218,9 @@ surfaceShadow }`, or null where the ground sky cannot draw).
 - `stats().look` is where the line of sight meets the sampled ground
   (else the tour's centre), and `stats().codePx` each code's drawn side on
   the canvas (its square's corners projected by the camera of the
-  frame), both in the world, which follows the camera: compare them with
+  frame; 0 for a code not drawn, with a corner behind the camera, nearer
+  than the near plane or past the far one, where `project()` would mirror
+  it into a size), both in the world, which follows the camera: compare them with
   `stats().camera` and `pointOf` read in the same call, never across two.
   `stats().target` stays the tour's centre in the tour's frame.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
@@ -249,9 +251,8 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   no ground answers (`ellipsoidPointOfRay`: heights not loaded); a ray
   into the sky does nothing.
 - Two fingers are the globe's controls' (their pinch, twist and tilt, as
-  in the globe lab; the routing table's `fingers` row): the editing
-  camera says `takesTwoFingers`, so the input leaves the controls free
-  for them; a handle drag a second finger interrupts is cancelled
+  in the globe lab; the routing table's `fingers` row): the input
+  leaves the controls free for them; a handle drag a second finger interrupts is cancelled
   unwritten, and the camera then stays still until every finger is up. Before, the input locked the camera for two fingers and read
   them as its own gestures, which the globe view ignored: two fingers
   held the camera still.

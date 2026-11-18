@@ -34,8 +34,8 @@
  * nothing selected step the camera (`steppedView`), a double click on the
  * ground zooms one step toward it. Two fingers are the globe's controls'
  * (their pinch, twist and tilt, as in the globe lab): the input leaves the
- * camera free for them (`takesTwoFingers`), and a handle drag a second
- * finger interrupts is cancelled.
+ * camera free for them, and a handle drag a second finger interrupts is
+ * cancelled.
  *
  * A station is drawn only once its first upload ran (`upload-queue.ts`):
  * at most `UPLOADS.perFrame` stations a frame have their materials
@@ -1348,9 +1348,6 @@ export async function openGlobeEditor(
         lock: (on) => {
           controls.lease(on);
         },
-        takesTwoFingers: true,
-        twoFingerStart: () => undefined,
-        twoFinger: () => undefined,
         lookAt: () => camera.position,
       },
       layer,
@@ -1598,8 +1595,9 @@ export async function openGlobeEditor(
           .copy(pivot.applyMatrix4(worldFromEcef))
           .addScaledVector(forward, -distance);
         camera.updateMatrixWorld();
-        // The streaks start again from where the camera now stands.
-        dust.reset();
+        // The streaks start again from where the camera now stands:
+        // `placePose` restarted them, and nothing samples them before the
+        // next frame.
       },
       flyTo(selection) {
         const place = placeOf(selection);
@@ -1757,13 +1755,18 @@ export async function openGlobeEditor(
           standing,
           ...layer.stats(),
           codePx: layer.codeCorners().map((corners) => {
-            const square = corners.map((c) => {
-              const v = c.clone().project(camera);
-              return new THREE.Vector2(
-                ((v.x + 1) / 2) * canvas.clientWidth,
-                ((1 - v.y) / 2) * canvas.clientHeight,
-              );
-            });
+            const ndc = corners.map((c) => c.clone().project(camera));
+            // Not drawn: a corner behind the camera, nearer than the near
+            // plane or past the far one (`project()` mirrors a point
+            // behind the camera through it, which would measure a size).
+            if (ndc.some((v) => !(v.z >= -1 && v.z <= 1))) return 0;
+            const square = ndc.map(
+              (v) =>
+                new THREE.Vector2(
+                  ((v.x + 1) / 2) * canvas.clientWidth,
+                  ((1 - v.y) / 2) * canvas.clientHeight,
+                ),
+            );
             // The mean of its four sides (CSS px).
             return (
               square.reduce(
