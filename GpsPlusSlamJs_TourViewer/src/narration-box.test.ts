@@ -306,12 +306,61 @@ describe("createNarrationBox", () => {
     const s0 = box.state().scroll;
     box.element.dispatchEvent(pointer("pointerdown", 100, 700));
     box.element.dispatchEvent(pointer("pointermove", 100, 0));
-    // Past the last line the words stretch only 0.3 as far.
-    expect(box.state().scroll).toBeCloseTo(1 + (s0 + 700 / LINE_PX - 1) * 0.3);
+    // Past the last line the words stretch 0.3 as far at first, and
+    // flatten out before the last line (the read one) leaves the window.
+    const over = s0 + 700 / LINE_PX - 1;
+    expect(box.state().scroll).toBeCloseTo(
+      1 + 2 * (1 - Math.exp(-(over * 0.3) / 2)),
+    );
+    expect(box.state().scroll).toBeLessThan(3);
     box.element.dispatchEvent(pointer("pointerup", 100, 0));
     expect(clock.now).toBe(clock.dur);
     expect(clock.on).toBe(false);
   });
+
+  // Why: a press at either end starts the drag with the read line at the
+  // window's edge: at the end the last line sits in the bottom row with
+  // the voice inside it, at the start the first line in the top row. A drag
+  // back from the end (or ahead from the start) then moved the read line
+  // part-way out of the window before the voice left it, at any speed:
+  // the main way the words left the box on a phone. The words now wait at
+  // the edge and move on with the finger from there, and slowly (1 px a
+  // move) never jump once the voice reaches the next line.
+  for (const [where, from, sign] of [
+    ["back from the end", "end", 1],
+    ["ahead from the start", "start", -1],
+  ] as const) {
+    for (const step of [1, 60]) {
+      it(`keeps the read line in the window on a drag ${where}, ${step} px a move`, () => {
+        const { box, clock, content } = make();
+        clock.now = from === "end" ? clock.dur - 40 : 0;
+        box.show(content);
+        const rows = box.state().rows;
+        let last = box.state().scroll;
+        box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+        for (let px = step; px <= 3 * LINE_PX; px += step) {
+          box.element.dispatchEvent(
+            pointer("pointermove", 100, 700 + sign * px),
+          );
+          const { lit, scroll, scrubbing } = box.state();
+          // Past the tap slop (8 px) a move is a drag.
+          expect(scrubbing).toBe(px > 8);
+          const read = Math.floor(Math.max(0, lit) / 4);
+          expect(read).toBeGreaterThanOrEqual(scroll - 1e-9);
+          expect(read + 1).toBeLessThanOrEqual(scroll + rows + 1e-9);
+          // A move of 1 px moves the words at most 1 px: no jump. (A fast
+          // move may move them a line or more.)
+          const jump = step === 1 ? Math.abs(scroll - last) : 0;
+          expect(jump).toBeLessThanOrEqual(1 / LINE_PX + 1e-9);
+          last = scroll;
+        }
+        box.element.dispatchEvent(
+          pointer("pointerup", 100, 700 + sign * 3 * LINE_PX),
+        );
+        expect(box.state().scrubbing).toBe(false);
+      });
+    }
+  }
 
   it("answers the keyboard: Space plays, the arrows move a line", () => {
     const { box, clock, content } = make();
@@ -641,5 +690,80 @@ describe("createNarrationBox", () => {
     expect(voiced.playing()).toBe(false);
     expect(voiced.running()).toBe(true);
     expect(voiced.nowMs()).toBe(4 * WORD_MS);
+  });
+
+  // Why: a voice the channel holds can be carried on while the finger is
+  // down (a story clip ends mid-scrub). It must not play from its old
+  // place under the scrubbing finger, and the finger's release must let it
+  // go on from where the words were dragged to.
+  it("holds a voice the channel carries on mid-drag, and plays it on from the dragged place", () => {
+    const focus = createVoiceFocus();
+    const voiced = focusedPlayer(innerPlayer(), focus);
+    const clip = focusedPlayer(innerPlayer(), focus);
+    voiced.play();
+    clip.play(); // the clip holds the text's voice
+    const { box, content, store } = make();
+    box.show({ ...content, player: voiced });
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+    expect(voiced.playing()).toBe(false);
+    clip.pause(); // the clip ends: the channel carries the text's voice on
+    box.tick();
+    expect(voiced.playing()).toBe(false);
+    expect(box.state().scrubbing).toBe(true);
+    // Held for the finger only: it counts as playing, not as a pause.
+    expect(selectNarrationBox(store.getState()).playing).toBe(true);
+    box.element.dispatchEvent(pointer("pointerup", 100, 700 - LINE_PX));
+    expect(voiced.playing()).toBe(true);
+    expect(voiced.nowMs()).toBe(4 * WORD_MS);
+  });
+
+  // Why: the disclosure after the name and the label a screen reader
+  // reads come from the content; a change to the credit, the synthetic
+  // flag or the title alone must not leave the old ones on screen.
+  it("redraws the disclosure and the label when only the credit or title changes", () => {
+    const { box, content } = make();
+    box.show(content);
+    const sameTiming = { ...content };
+    box.show({ ...sameTiming, voiceCredit: "Ann" });
+    expect(box.element.querySelector(".nb-disc")?.textContent).toBe(
+      " · synthetic voice · Ann",
+    );
+    box.show({ ...sameTiming, voiceCredit: "Ann", synthetic: false });
+    expect(box.element.querySelector(".nb-disc")?.textContent).toBe(" · Ann");
+    expect(box.element.getAttribute("aria-label")).not.toContain("synthetic");
+    box.show({
+      ...sameTiming,
+      voiceCredit: "Ann",
+      synthetic: false,
+      title: "Mill",
+    });
+    expect(box.element.getAttribute("aria-label")).toContain('"Mill"');
+  });
+
+  // Why: the system can take a captured pointer away (a notification, the
+  // browser taking the gesture) without a pointerup or pointercancel; the
+  // box must not stay in a drag with the voice held for a gone finger.
+  it("ends a drag when the pointer capture is lost, as on pointercancel", () => {
+    const { box, clock, content, store } = make();
+    clock.now = 4 * WORD_MS;
+    clock.on = true;
+    box.show(content);
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+    expect(clock.on).toBe(false);
+    box.element.dispatchEvent(pointer("lostpointercapture", 100, 700));
+    expect(box.state().scrubbing).toBe(false);
+    expect(selectNarrationBox(store.getState()).scrubbing).toBe(false);
+    expect(clock.now).toBe(8 * WORD_MS);
+    expect(clock.on).toBe(true);
+    // A lost capture is no tap: a press without a drag toggles nothing.
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("lostpointercapture", 100, 700));
+    expect(clock.on).toBe(true);
+    expect(document.querySelector(".nb-tapfx")).toBeNull();
+    // The release after a lost capture is no longer this press's.
+    box.element.dispatchEvent(pointer("pointerup", 100, 700));
+    expect(clock.on).toBe(true);
   });
 });

@@ -59,7 +59,8 @@ import { readTracked, repoRoot, trackedFiles } from './tracked-tree.js';
  *   standalone drafts wired to nothing: their sliders (a landing draft's
  *   size, the 3D editor drafts' station radius, the editor panel drafts'
  *   radius and size, the one-slot HUD draft's then-and-now divider, the
- *   creator-decides quiz draft's six thresholds) change only the draft's
+ *   creator-decides quiz draft's six thresholds, the round 4 quiz drafts'
+ *   flight and charge timings) change only the draft's
  *   own labels and stations, and nothing outside the draft is touched.
  * - The OSM demo's HUD prototypes ARE opened on a phone: their gallery asks
  *   for each to be judged there. So the swipe this guard exists for can
@@ -320,6 +321,18 @@ const EXEMPT = new Map([
   ],
   [
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-player-3-creator-decides/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-r4-1-one-by-one/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-r4-2-tethered/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-r4-3-character-throws/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
 ]);

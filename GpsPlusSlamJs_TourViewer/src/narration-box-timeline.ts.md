@@ -35,8 +35,14 @@ Pure, so the box (`narration-box.ts`) may ask on every frame.
   to the text.
 - `followScroll(line, lines, rows)` - the scroll that puts `line` in the
   follow row, clamped to `[0, lines - rows]`.
-- `rubberBand(raw, top)` - a dragged scroll past either end moves 0.3 as
-  far.
+- `rubberBand(raw, top, reach?)` - a dragged scroll past either end moves
+  0.3 as far at first and flattens out short of `reach.before` /
+  `reach.after` lines (`reach * (1 - exp(-0.3 * over / reach))`; no
+  reach, no limit; a reach of 0, no stretch). Far enough past, rounding
+  reaches the limit itself, never more.
+- `dragScroll(raw, top, read, rows)` - where a drag puts the words: the
+  rubber band with its reach set so the read line `read` stays in the
+  window, then held to `[read - (rows - 1), read]`.
 - `thumbGeometry(scroll, lines, rows, trackPx)` - the scrollbar thumb's
   height (the share of lines shown, at least 14 px) and offset.
 - `isTap(dx, dy)` - moved at most 8 px.
@@ -46,13 +52,22 @@ Pure, so the box (`narration-box.ts`) may ask on every frame.
 - Every value is the prototype's (calm HUD round 5, scroll box): three
   rows, the spoken line in the middle one, 0.3 rubber band, 14 px thumb
   minimum, 8 px tap slop.
+  - One addition: the band's limit, which keeps the read line in the
+    window (the prototype stretches without one, and so carries the read
+    line out of the window on a long drag past an end). Its 0.3 start is
+    the prototype's, so the feel near an end is unchanged.
   - None of them was tuned beyond the prototype: they are a feel, to be
     judged on a phone, and a sweep without a hand on a phone would say
     nothing. The tap slop is the one with a failure on either side (too
     small: a tap on a moving phone becomes a scrub; too large: a short
     drag becomes a pause); the field test is where it is judged.
-- `timeAtLine(lineFloatAt(t))` returns `t` wherever lines have length
-  (property test), so a drag lands where the finger left the words.
+- `timeAtLine(lineFloatAt(t))` returns `t` clamped to the text, lines of
+  no length included, and `lineFloatAt(timeAtLine(x))` returns `x`
+  clamped to the lines wherever lines have length (property tests), so a
+  drag lands where the finger left the words.
+- `dragScroll` keeps `read` inside the window for any drag, moves the
+  words with the finger while the read line is in view and no end is
+  passed, and never runs backwards (property tests).
 - Word offsets are UTF-16 indices into the plain text (`wordsOf` in
   `plain-words.ts`), the same the timing track uses.
 
@@ -70,5 +85,14 @@ player.seek(timeAtLine(ls, lineFloatAt(ls, player.nowMs()) + dy / 22));
 
 - `narration-box-timeline.test.ts`: word and sentence tracks, words the
   track never reaches, never running backwards (property), `wordAt`, line
-  grouping, line starts, the time-line round trip and monotonicity
-  (properties), follow scroll, rubber band, thumb, tap.
+  grouping, line starts, the time-line mapping by example, follow scroll, rubber
+  band and its reach, the drag scroll by example, thumb, tap.
+- `narration-box-timeline.property.test.ts`: `lineFloatAt` and
+  `timeAtLine` for any line starts (a late first line, lines of no
+  length): both round trips within rounding (1e-6 ms, 1e-8 lines), both
+  monotone, inside the text and clamped at both ends (a text of no time
+  maps its end to line 0), NaN read as the start, and no or one line
+  start answered without NaN; `dragScroll` for 1 to 60 lines, 1 to 5
+  rows, any read line and a drag of up to 1e4 lines past either end: the
+  read line in the window (1e-9 lines), the drag as it is in the text,
+  never running backwards.

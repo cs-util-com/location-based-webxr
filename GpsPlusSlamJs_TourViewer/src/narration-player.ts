@@ -7,6 +7,8 @@
  * @see narration-player.ts.md
  */
 
+import { isPlayAbort } from "./scene-audio.js";
+
 /** What the sheet and the strip read and drive. */
 export interface NarrationClock {
   /** Where the voice is, in ms from its start. */
@@ -155,7 +157,12 @@ export function createNarrationPlayer(
           if (!wanted || audio === null) return undefined;
           return audio.play();
         })
-        .catch(fail);
+        .catch((error: unknown) => {
+          // A pause before play() settled (a drag holding the voice the
+          // next frame) aborts it: the voice is held, not refused.
+          if (!wanted && isPlayAbort(error)) return;
+          fail(error);
+        });
     },
     pause() {
       if (!wanted) return;

@@ -102,6 +102,38 @@ describe("createNarrationPlayer", () => {
     expect(loadSpy).toHaveBeenCalledTimes(2);
   });
 
+  // Why: a drag holds a voice the frame after it was carried on, before
+  // the browser's play() settled; the browser then rejects that play()
+  // with AbortError. That is a held voice, not a refused one, and must not
+  // reach the page's error channel (the error toast). A refusal while the
+  // voice is still wanted is still reported.
+  it("takes a play() cut short by a pause quietly, and still reports a refusal", async () => {
+    const { audio, player, onError } = make();
+    let reject: (e: unknown) => void = () => undefined;
+    audio.play.mockImplementationOnce(
+      () =>
+        new Promise<void>((_, r) => {
+          reject = r;
+        }),
+    );
+    player.play();
+    await flush();
+    player.pause();
+    reject(
+      new DOMException("The play() request was interrupted", "AbortError"),
+    );
+    await flush();
+    expect(onError).not.toHaveBeenCalled();
+    expect(player.playing()).toBe(false);
+    audio.play.mockImplementationOnce(() =>
+      Promise.reject(new DOMException("not allowed", "NotAllowedError")),
+    );
+    player.play();
+    await flush();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(player.playing()).toBe(false);
+  });
+
   it("stops at the end and on pause", async () => {
     const { audio, player } = make();
     player.play();

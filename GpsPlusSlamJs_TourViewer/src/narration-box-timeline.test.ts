@@ -16,6 +16,7 @@ import {
   BOX_FOLLOW_ROW,
   BOX_MAX_ROWS,
   BOX_TAP_SLOP_PX,
+  dragScroll,
   followScroll,
   isTap,
   lineFloatAt,
@@ -158,43 +159,8 @@ describe("lines", () => {
     expect(timeAtLine(ls, -2)).toBe(0);
     expect(timeAtLine(ls, 7)).toBe(1500);
   });
-
-  // Why: a drag of so many lines lands where the words under the finger
-  // are said; the round trip time -> line -> time must come back.
-  it("time -> line -> time comes back where lines have length (property)", () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.integer({ min: 1, max: 5000 }), {
-          minLength: 1,
-          maxLength: 30,
-        }),
-        fc.double({ min: 0, max: 1, noNaN: true }),
-        (spans, share) => {
-          const ls = [0];
-          for (const s of spans) ls.push((ls.at(-1) ?? 0) + s);
-          const total = ls.at(-1) ?? 0;
-          const t = share * total;
-          expect(timeAtLine(ls, lineFloatAt(ls, t))).toBeCloseTo(t, 6);
-        },
-      ),
-    );
-  });
-
-  it("is monotone: a later time is never on an earlier line (property)", () => {
-    fc.assert(
-      fc.property(
-        fc.array(fc.nat(5000), { minLength: 1, maxLength: 30 }),
-        fc.double({ min: -100, max: 200_000, noNaN: true }),
-        fc.double({ min: -100, max: 200_000, noNaN: true }),
-        (spans, a, b) => {
-          const ls = [0];
-          for (const s of spans) ls.push((ls.at(-1) ?? 0) + s);
-          const [lo, hi] = a <= b ? [a, b] : [b, a];
-          expect(lineFloatAt(ls, lo)).toBeLessThanOrEqual(lineFloatAt(ls, hi));
-        },
-      ),
-    );
-  });
+  // The round trip, monotonicity and clamping of this pair, for any line
+  // starts: narration-box-timeline.property.test.ts.
 });
 
 describe("scrolling", () => {
@@ -215,6 +181,47 @@ describe("scrolling", () => {
     expect(rubberBand(-3, 5)).toBeCloseTo(-0.9);
     expect(rubberBand(2, 5)).toBe(2);
     expect(rubberBand(8, 5)).toBeCloseTo(5.9);
+  });
+
+  // Why: with no limit the words ran on past the end until the read line
+  // left the window. With a reach, the band starts at the same 0.3 and
+  // then flattens out short of it, however far the finger goes.
+  it("stretches no further than its reach past either end, starting at 0.3", () => {
+    const reach = { before: 1.5, after: 2 };
+    expect(rubberBand(2, 5, reach)).toBe(2);
+    expect(rubberBand(5 + 0.01, 5, reach) - 5).toBeCloseTo(0.003, 4);
+    expect(rubberBand(-0.01, 5, reach)).toBeCloseTo(-0.003, 4);
+    for (const far of [10, 100]) {
+      expect(rubberBand(5 + far, 5, reach)).toBeLessThan(7);
+      expect(rubberBand(-far, 5, reach)).toBeGreaterThan(-1.5);
+    }
+    // Far enough, rounding reaches the limit, and no further.
+    expect(rubberBand(5 + 1e6, 5, reach)).toBe(7);
+    expect(rubberBand(-1e6, 5, reach)).toBe(-1.5);
+    expect(rubberBand(5 + 100, 5, reach)).toBeGreaterThan(6.9);
+    // No reach: the words stay at the end.
+    expect(rubberBand(9, 5, { before: 0, after: 0 })).toBe(5);
+    expect(rubberBand(-4, 5, { before: 0, after: 0 })).toBe(0);
+  });
+
+  // Why: a drag must never move the read line (the line of the lit word)
+  // out of the window, at either end or in the text, or the voice goes on
+  // from words nobody can see.
+  it("holds a drag where the read line stays in the window", () => {
+    // 10 lines, 3 rows (top 7), the read line the last: far past the end
+    // the words stop short of moving it above the window.
+    expect(dragScroll(7 + 50, 7, 9, 3)).toBeLessThan(9);
+    expect(dragScroll(7 + 50, 7, 9, 3)).toBeGreaterThan(8.9);
+    // The read line the first word's (line 1), far back past the start:
+    // the words stop short of moving it below the last row.
+    expect(dragScroll(-50, 7, 1, 3)).toBeGreaterThan(-1);
+    // The first word on line 2 of 3 rows: no stretch back at all.
+    expect(dragScroll(-5, 7, 2, 3)).toBe(0);
+    // In the text with the read line in view: the drag as it is.
+    expect(dragScroll(4.4, 7, 5, 3)).toBe(4.4);
+    // In the text, the read line about to leave: held at the edge.
+    expect(dragScroll(5.6, 7, 5, 3)).toBe(5);
+    expect(dragScroll(2.5, 7, 5, 3)).toBe(3);
   });
 
   it("sizes the thumb by the share shown and places it by the scroll", () => {
