@@ -21,6 +21,7 @@
  */
 
 import type { OsmTags } from "../model/osm-feature.js";
+import { minMaxOf } from "../utils/min-max.js";
 import {
   DEFAULT_LEVEL_HEIGHT_M,
   parseLengthMetres,
@@ -615,7 +616,7 @@ export function offsetRing(
   offsets: readonly number[],
 ): EnuPoint[] | undefined {
   if (offsets.length !== ring.length) return undefined;
-  const longest = Math.max(0, ...offsets);
+  const longest = Math.max(0, minMaxOf(offsets)[1]);
   const normal = (i: number): EnuPoint => {
     const a = ring[i] as EnuPoint;
     const b = ring[(i + 1) % ring.length] as EnuPoint;

@@ -158,6 +158,26 @@ describe("offsetRing", () => {
     const ring = [pt(0, 0), pt(5, 0), pt(10, 0), pt(10, 8), pt(0, 8)];
     expect(offsetRing(ring, [0.3, 0, 0.3, 0.3, 0.3])).toBeUndefined();
   });
+
+  it("offsets a ring with more corners than a spread call can take", () => {
+    // Why: the largest offset was once taken as Math.max(0, ...offsets),
+    // which throws a RangeError past about 120 000 arguments in Node 24
+    // (ok at 100 000, thrown at 125 000). A traced footprint is untrusted
+    // input, so a ring that long must offset, not crash the build.
+    const n = 200_000;
+    const ring = Array.from({ length: n }, (_, i) =>
+      pt(
+        100 * Math.cos((2 * Math.PI * i) / n),
+        100 * Math.sin((2 * Math.PI * i) / n),
+      ),
+    );
+    const out = offsetRing(ring, new Array<number>(n).fill(0.3));
+    expect(out).toHaveLength(n);
+    expect(Math.hypot(out?.[0]?.x ?? 0, out?.[0]?.y ?? 0)).toBeCloseTo(
+      100.3,
+      6,
+    );
+  });
 });
 
 describe("sharedWalls", () => {

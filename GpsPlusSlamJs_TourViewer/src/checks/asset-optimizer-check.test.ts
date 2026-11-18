@@ -7,6 +7,7 @@
  * the test files must be the same for the same seed so a sweep compares
  * like with like.
  */
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,7 +17,6 @@ import {
   glbByteShares,
   lumaOf,
   pictureErrors,
-  seeded,
   ssim,
   testPicturePixels,
   testSoundPlanes,
@@ -39,9 +39,6 @@ describe("the check's test files", () => {
     expect(testPicturePixels(32, 24, 7)).not.toEqual(
       testPicturePixels(32, 24, 8),
     );
-    const a = seeded(3);
-    const b = seeded(3);
-    expect([a(), a()]).toEqual([b(), b()]);
   });
 
   // The flat-colour samples stand in for cartoon and AI-made pictures: the
@@ -89,7 +86,7 @@ describe("the check's measures", () => {
   it("SSIM is 1 for the same picture and drops as it is damaged", () => {
     const luma = lumaOf(testPicturePixels(64, 48));
     expect(ssim(luma, luma, 64, 48)).toBeCloseTo(1, 6);
-    const random = seeded(5);
+    const random = mulberry32(5);
     const light = luma.map((v) => v + (random() - 0.5) * 10);
     const heavy = luma.map((v) => v + (random() - 0.5) * 80);
     const lightScore = ssim(luma, light, 64, 48);

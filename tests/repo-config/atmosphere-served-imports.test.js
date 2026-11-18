@@ -25,18 +25,18 @@
  * LAB's import map (the bare specifiers that page maps), so each page is held
  * to what it can actually resolve.
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const ATMOSPHERE = join(
   repoRoot,
-  'GpsPlusSlamJs_AppFramework',
-  'src',
-  'visualization',
-  'atmosphere'
+  "GpsPlusSlamJs_AppFramework",
+  "src",
+  "visualization",
+  "atmosphere",
 );
 const SPECIFIER =
   /(?:^|[;\s])(?:import|export)\s*(?:[\w*${}\s,]*?\bfrom\s*)?['"]([^'"]+)['"]/g;
@@ -48,8 +48,8 @@ const TYPE_ONLY = /^[;\s]*(?:import|export)\s+type[\s{]/;
  */
 function servedGraphProblems(
   entries,
-  readFile = (f) => readFileSync(f, 'utf8'),
-  mapped = ['three']
+  readFile = (f) => readFileSync(f, "utf8"),
+  mapped = ["three"],
 ) {
   const problems = [];
   const queue = [...entries];
@@ -63,8 +63,14 @@ function servedGraphProblems(
     if (/^\s*(?:export\s+)?(?:const\s+)?enum\s+\w+/m.test(source)) {
       problems.push(`${name}: enum (type stripping cannot erase it)`);
     }
-    if (/constructor\s*\([^)]*\b(?:private|public|protected|readonly)\s+\w+/.test(source)) {
-      problems.push(`${name}: parameter property (type stripping cannot erase it)`);
+    if (
+      /constructor\s*\([^)]*\b(?:private|public|protected|readonly)\s+\w+/.test(
+        source,
+      )
+    ) {
+      problems.push(
+        `${name}: parameter property (type stripping cannot erase it)`,
+      );
     }
     for (const match of source.matchAll(SPECIFIER)) {
       const specifier = match[1];
@@ -72,17 +78,17 @@ function servedGraphProblems(
       // stripper, so their specifier never reaches the browser.
       if (TYPE_ONLY.test(match[0])) continue;
       if (mapped.includes(specifier)) continue;
-      if (!specifier.startsWith('.')) {
+      if (!specifier.startsWith(".")) {
         problems.push(
-          `${name}: bare import "${specifier}" (import-mapped: ${mapped.join(', ')})`
+          `${name}: bare import "${specifier}" (import-mapped: ${mapped.join(", ")})`,
         );
         continue;
       }
-      if (!specifier.endsWith('.js')) {
+      if (!specifier.endsWith(".js")) {
         problems.push(`${name}: import "${specifier}" has no .js suffix`);
         continue;
       }
-      const target = resolve(dirname(file), specifier.replace(/\.js$/, '.ts'));
+      const target = resolve(dirname(file), specifier.replace(/\.js$/, ".ts"));
       if (!existsSync(target)) {
         problems.push(`${name}: import "${specifier}" resolves to nothing`);
         continue;
@@ -95,13 +101,13 @@ function servedGraphProblems(
 
 function atmosphereEntries() {
   return readdirSync(ATMOSPHERE)
-    .filter((f) => f.endsWith('.ts') && !f.includes('.test.'))
+    .filter((f) => f.endsWith(".ts") && !f.includes(".test."))
     .map((f) => join(ATMOSPHERE, f));
 }
 
-describe('atmosphere modules stay servable to the no-build look-dev page', () => {
+describe("atmosphere modules stay servable to the no-build look-dev page", () => {
   // Non-vacuous: the entry list must actually contain the modules.
-  it('finds the atmosphere modules', () => {
+  it("finds the atmosphere modules", () => {
     expect(atmosphereEntries().length).toBeGreaterThanOrEqual(8);
   });
 
@@ -111,58 +117,116 @@ describe('atmosphere modules stay servable to the no-build look-dev page', () =>
 
   // The guard must be able to fail: each rule, planted in a fake file.
   it.each([
-    ["import { log } from '../../utils/logger';", 'no .js suffix'],
-    ["import * as Sentry from '@sentry/browser';", 'bare import'],
-    ['export enum Mode { A, B }', 'enum'],
-    ['class A { constructor(private x: number) {} }', 'parameter property'],
-    ["import { x } from './missing.js';", 'resolves to nothing'],
-  ])('flags %s', (source, expected) => {
-    const fake = join(ATMOSPHERE, '__planted__.ts');
+    ["import { log } from '../../utils/logger';", "no .js suffix"],
+    ["import * as Sentry from '@sentry/browser';", "bare import"],
+    ["export enum Mode { A, B }", "enum"],
+    ["class A { constructor(private x: number) {} }", "parameter property"],
+    ["import { x } from './missing.js';", "resolves to nothing"],
+  ])("flags %s", (source, expected) => {
+    const fake = join(ATMOSPHERE, "__planted__.ts");
     const problems = servedGraphProblems([fake], () => source);
-    expect(problems.join('\n')).toContain(expected);
+    expect(problems.join("\n")).toContain(expected);
   });
 });
 
-const GLOBE_SRC = join(repoRoot, 'GpsPlusSlamJs_Globe', 'src');
-const GLOBE_LAB = join(repoRoot, 'GpsPlusSlamJs_DesignSystem', 'labs', 'globe', 'index.html');
+const GLOBE_SRC = join(repoRoot, "GpsPlusSlamJs_Globe", "src");
+const GLOBE_LAB = join(
+  repoRoot,
+  "GpsPlusSlamJs_DesignSystem",
+  "labs",
+  "globe",
+  "index.html",
+);
 
 /** Every production .ts under a directory, recursively. */
 function productionTs(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
     const path = join(dir, d.name);
     if (d.isDirectory()) return productionTs(path);
-    return d.name.endsWith('.ts') && !d.name.includes('.test.') ? [path] : [];
+    return d.name.endsWith(".ts") && !d.name.includes(".test.") ? [path] : [];
   });
 }
 
-/** The bare specifiers the globe lab's import map resolves. */
-function globeLabMapped() {
-  const html = readFileSync(GLOBE_LAB, 'utf8');
+/** The bare specifiers a lab page's import map resolves (the globe lab's by default). */
+function globeLabMapped(page = GLOBE_LAB) {
+  const html = readFileSync(page, "utf8");
   const map = html.match(/<script type="importmap">([\s\S]*?)<\/script>/);
-  return Object.keys(JSON.parse(map[1]).imports).filter((k) => !k.endsWith('/'));
+  return Object.keys(JSON.parse(map[1]).imports).filter(
+    (k) => !k.endsWith("/"),
+  );
 }
 
-describe('the globe package stays servable to the no-build globe lab', () => {
-  it('finds the globe modules and the lab import map', () => {
+describe("the globe package stays servable to the no-build globe lab", () => {
+  it("finds the globe modules and the lab import map", () => {
     expect(productionTs(GLOBE_SRC).length).toBeGreaterThanOrEqual(2);
     expect(globeLabMapped()).toEqual(
-      expect.arrayContaining(['three', '3d-tiles-renderer', '3d-tiles-renderer/plugins'])
+      expect.arrayContaining([
+        "three",
+        "3d-tiles-renderer",
+        "3d-tiles-renderer/plugins",
+      ]),
     );
   });
 
-  it('imports only what the lab maps, and .js-suffixed relatives', () => {
-    expect(servedGraphProblems(productionTs(GLOBE_SRC), undefined, globeLabMapped())).toEqual([]);
+  it("imports only what the lab maps, and .js-suffixed relatives", () => {
+    expect(
+      servedGraphProblems(productionTs(GLOBE_SRC), undefined, globeLabMapped()),
+    ).toEqual([]);
   });
 
   // A dependency the lab does not map would 404 on the page only.
-  it('flags a bare import the lab does not map', () => {
-    const fake = join(GLOBE_SRC, '__planted__.ts');
+  it("flags a bare import the lab does not map", () => {
+    const fake = join(GLOBE_SRC, "__planted__.ts");
     const problems = servedGraphProblems(
       [fake],
       () => "import { Pass } from 'three/addons/postprocessing/Pass.js';",
-      globeLabMapped()
+      globeLabMapped(),
     );
-    expect(problems.join('\n')).toContain('bare import');
+    expect(problems.join("\n")).toContain("bare import");
+  });
+});
+
+/**
+ * THE GLOBE-TERRAIN CARRIER LAB imports globe modules too, under a smaller
+ * import map of its own, so the graph its modules reach through `/globe/`
+ * is held to THAT map: a globe module that gains a bare import mapped only
+ * in the globe lab would stop this page from booting.
+ */
+const GLOBE_TERRAIN_LAB = join(
+  repoRoot,
+  "GpsPlusSlamJs_DesignSystem",
+  "labs",
+  "globe-terrain",
+);
+
+/** The globe sources the carrier lab's own modules import through `/globe/`. */
+function globeTerrainLabServed() {
+  const served = new Set();
+  for (const f of readdirSync(GLOBE_TERRAIN_LAB)) {
+    if (!f.endsWith(".js") || f.includes(".test.") || f.includes(".spec."))
+      continue;
+    const source = readFileSync(join(GLOBE_TERRAIN_LAB, f), "utf8");
+    for (const match of source.matchAll(SPECIFIER)) {
+      if (!match[1].startsWith("/globe/")) continue;
+      const rel = match[1].slice("/globe/".length).replace(/\.js$/, ".ts");
+      served.add(join(GLOBE_SRC, ...rel.split("/")));
+    }
+  }
+  return [...served].sort();
+}
+
+describe("the globe modules the carrier lab reaches stay servable under its import map", () => {
+  it("finds the globe modules the lab imports", () => {
+    expect(globeTerrainLabServed().map((p) => relative(GLOBE_SRC, p))).toEqual(
+      expect.arrayContaining(["globe-surface.ts", "globe-terrain.ts"]),
+    );
+  });
+
+  it("imports only what the carrier lab maps, and .js-suffixed relatives", () => {
+    const mapped = globeLabMapped(join(GLOBE_TERRAIN_LAB, "index.html"));
+    expect(
+      servedGraphProblems(globeTerrainLabServed(), undefined, mapped),
+    ).toEqual([]);
   });
 });
 
@@ -174,11 +238,16 @@ describe('the globe package stays servable to the no-build globe lab', () => {
  * the design system, so their own gates never load the lab; this is the
  * check that runs when one of them changes.
  */
-const TERRAIN_LAB = join(repoRoot, 'GpsPlusSlamJs_DesignSystem', 'labs', 'terrain');
+const TERRAIN_LAB = join(
+  repoRoot,
+  "GpsPlusSlamJs_DesignSystem",
+  "labs",
+  "terrain",
+);
 /** The served routes the lab reaches, and the source directory behind each. */
 const TERRAIN_ROUTES = {
-  '/osm-lib/': join(repoRoot, 'GpsPlusSlamJs_Osm', 'src'),
-  '/osm/': join(repoRoot, 'GpsPlusSlamJs_OsmDemo', 'src'),
+  "/osm-lib/": join(repoRoot, "GpsPlusSlamJs_Osm", "src"),
+  "/osm/": join(repoRoot, "GpsPlusSlamJs_OsmDemo", "src"),
 };
 
 /**
@@ -189,47 +258,59 @@ const TERRAIN_ROUTES = {
  */
 function terrainLabServed() {
   const files = readdirSync(TERRAIN_LAB).filter(
-    (f) => f.endsWith('.js') && !f.includes('.test.') && !f.includes('.spec.')
+    (f) => f.endsWith(".js") && !f.includes(".test.") && !f.includes(".spec."),
   );
   const served = new Set();
   for (const f of files) {
-    const source = readFileSync(join(TERRAIN_LAB, f), 'utf8');
+    const source = readFileSync(join(TERRAIN_LAB, f), "utf8");
     for (const match of source.matchAll(SPECIFIER)) {
-      const route = Object.keys(TERRAIN_ROUTES).find((r) => match[1].startsWith(r));
+      const route = Object.keys(TERRAIN_ROUTES).find((r) =>
+        match[1].startsWith(r),
+      );
       if (!route) continue;
-      const rel = match[1].slice(route.length).replace(/\.js$/, '.ts');
-      served.add(join(TERRAIN_ROUTES[route], ...rel.split('/')));
+      const rel = match[1].slice(route.length).replace(/\.js$/, ".ts");
+      served.add(join(TERRAIN_ROUTES[route], ...rel.split("/")));
     }
   }
   return [...served].sort();
 }
 const TERRAIN_LAB_SERVED = terrainLabServed();
 
-describe('the terrain lab served modules stay servable inside a worker', () => {
+describe("the terrain lab served modules stay servable inside a worker", () => {
   // Non-vacuous: the worker's decoder and heightfield, and the page's frame.
-  it('finds every served module the lab and its worker import', () => {
-    const names = TERRAIN_LAB_SERVED.map((f) => relative(repoRoot, f).split(sep).join('/'));
+  it("finds every served module the lab and its worker import", () => {
+    const names = TERRAIN_LAB_SERVED.map((f) =>
+      relative(repoRoot, f).split(sep).join("/"),
+    );
     expect(names).toEqual(
       expect.arrayContaining([
-        'GpsPlusSlamJs_Osm/src/elevation/terrarium.ts',
-        'GpsPlusSlamJs_Osm/src/mesh/enu.ts',
-        'GpsPlusSlamJs_Osm/src/elevation/heightfield.ts',
-        'GpsPlusSlamJs_OsmDemo/src/terrain-texture.ts',
-      ])
+        "GpsPlusSlamJs_Osm/src/elevation/terrarium.ts",
+        "GpsPlusSlamJs_Osm/src/mesh/enu.ts",
+        "GpsPlusSlamJs_Osm/src/elevation/heightfield.ts",
+        "GpsPlusSlamJs_OsmDemo/src/terrain-texture.ts",
+      ]),
     );
-    for (const file of TERRAIN_LAB_SERVED) expect(existsSync(file), file).toBe(true);
+    for (const file of TERRAIN_LAB_SERVED)
+      expect(existsSync(file), file).toBe(true);
   });
 
-  it('imports only .js-suffixed relatives, with erasable syntax', () => {
+  it("imports only .js-suffixed relatives, with erasable syntax", () => {
     expect(servedGraphProblems(TERRAIN_LAB_SERVED, undefined, [])).toEqual([]);
   });
 
   // The type-only skip must not open a hole for a value import.
-  it('skips a type-only import but flags a value import of the same package', () => {
-    const fake = join(repoRoot, 'GpsPlusSlamJs_OsmDemo', 'src', '__planted__.ts');
+  it("skips a type-only import but flags a value import of the same package", () => {
+    const fake = join(
+      repoRoot,
+      "GpsPlusSlamJs_OsmDemo",
+      "src",
+      "__planted__.ts",
+    );
     const typeOnly = "import type { EnuFrame } from 'gps-plus-slam-osm';";
     const value = "import { enuFrameAt } from 'gps-plus-slam-osm';";
     expect(servedGraphProblems([fake], () => typeOnly, [])).toEqual([]);
-    expect(servedGraphProblems([fake], () => value, []).join('\n')).toContain('bare import');
+    expect(servedGraphProblems([fake], () => value, []).join("\n")).toContain(
+      "bare import",
+    );
   });
 });

@@ -29,6 +29,7 @@ import {
   type StepLimits,
 } from "./column.js";
 import type { StateSpace } from "./search.js";
+import { minMaxOf } from "../utils/min-max.js";
 
 /**
  * Decimal places kept when a height becomes part of a state's identity.
@@ -126,14 +127,14 @@ export function columnSpace(options: ColumnSpaceOptions): StateSpace<Column> {
   /**
    * The walking surface of a cell, or `undefined` where nothing stands.
    *
-   * `Math.min` rather than `levels[0]`, because the ascending order is a
+   * The minimum rather than `levels[0]`, because the ascending order is a
    * property of `obstacleLevelsAt` and not something this interface demands of
    * every caller — and a space that silently took a wall top for the ground
    * would let an agent walk off one.
    */
   const groundOf = (cell: string): number | undefined => {
     const levels = levelsAt(cell);
-    return levels.length === 0 ? undefined : Math.min(...levels);
+    return levels.length === 0 ? undefined : minMaxOf(levels)[0];
   };
 
   return {

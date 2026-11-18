@@ -18,6 +18,7 @@ import { cellsToMultiPolygon, cellArea, UNITS } from "h3-js";
 import type { LatLng, OsmFeatureKey } from "../model/osm-feature.js";
 import type { CellScore } from "../score/affordance-scorer.js";
 import { median } from "../utils/median.js";
+import { minMaxOf } from "../utils/min-max.js";
 
 /** A contiguous run of above-threshold cells, with its outline. */
 export interface Region {
@@ -72,6 +73,8 @@ export function buildRegion(
     (cell) => scoresByCell.get(cell)?.scores[category] ?? 1,
   );
 
+  const [minScore, maxScore] = minMaxOf(scores);
+
   const sources = new Set<OsmFeatureKey>();
   for (const cell of cells) {
     const contributors = scoresByCell.get(cell)?.contributors[category];
@@ -95,8 +98,8 @@ export function buildRegion(
     // replaced buried that same 1 inside the arithmetic, where it read as a
     // live default and would have been wrong for any other caller.
     medianScore: median(scores) ?? 1,
-    minScore: Math.min(...scores),
-    maxScore: Math.max(...scores),
+    minScore,
+    maxScore,
     osmSourceIds: [...sources].sort(),
   };
 }
