@@ -47,7 +47,7 @@ pure gesture maths reads (`GestureWorld`).
     while its gizmo is drawn, refreshed in `update()`; for the page's
     checks.
   - `dispose()` (the outline's too).
-- Types `GizmoPart`, `EditingCamera` (`lock(on)`, the optional
+- Type `GizmoPart`. Internal (not exported): `EditingCamera` (`lock(on)`, the optional
   `takesTwoFingers`, `twoFingerStart()`, `twoFinger(mode, last, now, world)`, `lookAt()`); `takesTwoFingers` reaches the input as
   `cameraTakesTwoFingers`.
 - The globe view's `EditingCamera` (in `editor3d-globe.ts`) leases the

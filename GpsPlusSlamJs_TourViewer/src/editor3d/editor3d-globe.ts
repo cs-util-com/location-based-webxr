@@ -1,6 +1,5 @@
 /**
- * The desktop editor's 3D view on the whole globe (the full-globe editor
- * plan 2026-10-27-1850, GV1b), the editor's only 3D view (its knobs the
+ * The desktop editor's 3D view on the whole globe, the editor's only 3D view (its knobs the
  * link's, `globe-switch.ts`): the globe's view core (`createGlobeView`: the sky,
  * the sun, the surface, the world frame that follows the camera) with the
  * editor's relief and map under the camera, the tour drawn in the globe's
@@ -1599,6 +1598,8 @@ export async function openGlobeEditor(
           .copy(pivot.applyMatrix4(worldFromEcef))
           .addScaledVector(forward, -distance);
         camera.updateMatrixWorld();
+        // The streaks start again from where the camera now stands.
+        dust.reset();
       },
       flyTo(selection) {
         const place = placeOf(selection);

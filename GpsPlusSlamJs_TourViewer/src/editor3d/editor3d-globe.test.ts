@@ -779,7 +779,7 @@ describe("openGlobeEditor's wiring", () => {
   // station; a turn of the camera where it stands would carry the
   // station off the screen. The turn goes round the point the line of
   // sight meets (the ground ahead, else the tour's centre), keeping the
-  // distance to it and the pitch. Swept over three headings, with the
+  // distance to it and the pitch. Swept over four headings, with the
   // ground loaded (200 m) and not.
   it.each([
     [90, 200],

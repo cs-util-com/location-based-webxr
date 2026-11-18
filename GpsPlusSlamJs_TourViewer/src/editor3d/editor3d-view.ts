@@ -146,9 +146,10 @@ export interface Editor3dView {
   /** The layers turned off (the station names and the codes are drawn
    *  here; the others have nothing to draw yet). */
   setLayers(hidden: readonly ShellLayer[]): void;
-  /** The place the view looks at, on the ground (the tree's "+"); null
-   *  where the view has none to give (the globe's, high over a ground not
-   *  loaded yet). */
+  /** The ground under the camera (the tree's "+"): the globe's eye
+   *  stands at street level, so a new item lands where the creator stands,
+   *  not where the view looks; null where it has none to give (high over a
+   *  ground not loaded yet). */
   centre(): GroundPlace | null;
   /** Turn the selection `deg` clockwise about up, as one edit through the
    *  page (the bar's Align to station); false for one without a pose. */

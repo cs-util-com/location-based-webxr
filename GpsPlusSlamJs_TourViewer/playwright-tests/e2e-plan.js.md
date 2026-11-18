@@ -229,8 +229,9 @@ the globe. What differs on the globe, and how the specs say it:
   `editor3d-edit.spec.js`), as the globe's pins and dots cover more of
   it.
 
-The `webgl` project's lanes grew with it (a first run's 920, 946, 1274
-and 644 s against 1610, 1577, 1939 and 482 s, failures included).
+The `webgl` project's lanes grew with it: 920, 946, 1274 and 644 s on
+the older view against 1415, 1704, 2147 and 1153 s in the first green
+full run on the globe.
 
 ## Examples
 
