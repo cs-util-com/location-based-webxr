@@ -1,12 +1,11 @@
 /**
  * The desktop editor's 3D view on the whole globe (the full-globe editor
- * plan 2026-10-27-1850, GV1b), the default 3D view (off only with `globe=0`,
- * `globe-switch.ts`): the globe's view core (`createGlobeView`: the sky,
+ * plan 2026-10-27-1850, GV1b), the editor's only 3D view (its knobs the
+ * link's, `globe-switch.ts`): the globe's view core (`createGlobeView`: the sky,
  * the sun, the surface, the world frame that follows the camera) with the
  * editor's relief and map under the camera, the tour drawn in the globe's
  * Earth-centred group (`globe-layer.ts`), the camera in the globe's eye
- * mode, opening at street level south of the tour. With `globe=0` the
- * OrbitControls view (`editor3d-scene.ts`) opens instead (temporary).
+ * mode, opening at street level south of the tour.
  *
  * The tour hangs in the Earth-centred group through one group of its own
  * whose matrix is the tour's frame (x east, y up, z south at the tour's
@@ -28,8 +27,8 @@
  * frame is no longer moved per frame). `stats().globe.frameChanges` counts the
  * frame's moves for the page's checks.
  *
- * Editing is the OrbitControls view's (`editor3d-editing.ts`), with the
- * globe's camera as its `EditingCamera`: a handle drag leases the controls
+ * Editing is `editor3d-editing.ts`'s, with the globe's camera as its
+ * `EditingCamera`: a handle drag leases the controls
  * off, and the world frame holds still while any gesture runs (the view's
  * `gestureBusy`), so the gesture's world points stay valid. The routing
  * table's two extras (`globe-gestures.ts`) are wired here: the arrows with
@@ -118,7 +117,7 @@ import type {
   Editor3dDeps,
   Editor3dStats,
   Editor3dView,
-} from "./editor3d-scene.js";
+} from "./editor3d-view.js";
 import { createFrameClock, pauseWhenHidden } from "./frame-clock.js";
 import { createSceneEditing } from "./editor3d-editing.js";
 import { openStoryOf } from "../placement/placeables.js";
@@ -187,8 +186,7 @@ import {
 import { UPLOADS, createUploadQueue } from "./upload-queue.js";
 
 const DEG = Math.PI / 180;
-/** The size an item is framed by (m): about a pin or a photo (the
- *  OrbitControls view's). */
+/** The size an item is framed by (m): about a pin or a photo. */
 const ITEM_RADIUS_M = 1.6;
 /** One zoom step (a button's, a double click's) moves the camera this
  *  share of its distance to the ground it looks at. */
@@ -1584,6 +1582,23 @@ export async function openGlobeEditor(
         camera.position.copy(tourTarget()).addScaledVector(forward, -m);
         camera.updateMatrixWorld();
         dust.reset();
+      },
+      setHeading(deg) {
+        // Round the point the line of sight meets, held in ECEF: placing
+        // the pose moves the world's frame with the camera.
+        const pivot = new THREE.Vector3(...lookPoint());
+        const distance = camera.position.distanceTo(pivot);
+        followFrame();
+        pivot.applyMatrix4(ecefFromWorld);
+        placePose({ headingDeg: deg });
+        followFrame();
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+          camera.quaternion,
+        );
+        camera.position
+          .copy(pivot.applyMatrix4(worldFromEcef))
+          .addScaledVector(forward, -distance);
+        camera.updateMatrixWorld();
       },
       flyTo(selection) {
         const place = placeOf(selection);

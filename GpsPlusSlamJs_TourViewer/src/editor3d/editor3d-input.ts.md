@@ -37,12 +37,11 @@ move the camera only, and a second finger during a drag cancels it.
   - A `dblclick` after a touch press is ignored: a browser adds one to a
     double tap, which the input already answered, so it would frame (or
     zoom) twice.
-  - One rule in both views: a press that moved the click distance or
-    more is a drag. The globe's routing table draws its line there, and
-    the OrbitControls (default) view follows the same `>=`, so a mouse
-    press that moved exactly 4 px (a finger 8 px) is a drag there too; it
-    was a click before the globe view, a one-pixel move made on purpose
-    (`editor3d-input.test.ts`, "the OrbitControls view's click distance").
+  - One rule: a press that moved the click distance or more is a drag.
+    The globe's routing table draws its line there, and the input follows
+    the same `>=`, so a mouse press that moved exactly 4 px (a finger
+    8 px) is a drag (`editor3d-input.test.ts`, "the input's click
+    distance").
 - `TWO_FINGER_CANCEL` - the toast a second finger's cancel says.
 - Types `InputScene`, `InputPage` (the input itself is `ReturnType<typeof createSceneInput>`).
 - `InputScene.clickWaited?()` and `answerClick?(pointer)` - while a click

@@ -67,7 +67,7 @@ async function select(page, id) {
 }
 
 /**
- * Orbit to `deg`, close in, and wait until each character settled facing
+ * Turn to `deg`, close in, and wait until each character settled facing
  * the camera with the bubble `open` names (others shut).
  * @param {import("@playwright/test").Page} page
  * @param {number} deg

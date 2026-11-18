@@ -1,9 +1,8 @@
 # editor3d-view-parts.ts
 
-- Purpose: what the editor's two 3D views share - the OrbitControls view
-  (`editor3d-scene.ts`) and the globe view (`editor3d-globe.ts`). Moved
-  out of `editor3d-scene.ts` unchanged when the globe view arrived, so
-  each lives once in the package.
+- Purpose: the 3D view's parts kept apart from the globe view
+  (`editor3d-globe.ts`): small, and testable without it. They were shared
+  with an older 3D view, since removed.
 - Public API:
   - `viewFailure(reason, message)` - an `Error` carrying `reason`
     (`ViewFailureReason`: `empty`, `webgl`, `chunk`, `context-lost`),

@@ -2,8 +2,8 @@
 
 ## Purpose
 
-The 3D views' credits (both the globe view, `editor3d-globe.ts`, and the
-OrbitControls view, `editor3d-scene.ts`): one "Credits" button at the
+The 3D view's credits (the globe view, `editor3d-globe.ts`): one
+"Credits" button at the
 bottom bar's left (`#view3d-credits` in `edit.html`'s `#shell-bar`, its
 panel opening upward) instead of a line of short names over the canvas.
 A click opens an overlay listing every source in full with its link, and

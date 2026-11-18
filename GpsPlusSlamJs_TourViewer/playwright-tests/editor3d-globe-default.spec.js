@@ -33,8 +33,8 @@ import {
 
 /**
  * Why these tests matter: the editor on the globe is the editor's 3D view
- * now, opened by `/edit.html` with no switch in the link (`?globe=0` is the
- * temporary way back to the older view). These check what a creator gets
+ * now, opened by `/edit.html` with no switch in the link. These check what
+ * a creator gets
  * from the plain link: the globe; a new, empty tour opening on the whole
  * Earth (it used to refuse the 3D view) with its first station placed by a
  * right click on the ground; a plain page, instead of the 2D map, where the
@@ -527,7 +527,7 @@ test.describe("where the 3D view cannot open", () => {
 
 // Why: the plain editor link opens the sample tour on the globe (only the
 // globe view reports the globe's stats, and its sky's items show in the
-// View menu, which the older view hides, Clouds among them, on by default
+// View menu, Clouds among them, on by default
 // and switched off there). And "This tour needs no GPS"
 // lived only in the map's rail; in the 3D view it is in Tour details, and
 // it must reach the file and come back.

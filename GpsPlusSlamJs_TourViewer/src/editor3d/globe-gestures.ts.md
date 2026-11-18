@@ -47,9 +47,8 @@ counts movement itself). Pure: the page wires each route.
   lifted (3d-tiles-renderer 0.5.3's pointer tracker). The page wires this through the editing
   camera's `takesTwoFingers`: the input then neither locks the camera for
   two fingers nor reads them itself. Before this row the input locked
-  the camera and read the fingers for the OrbitControls view's own
-  gestures, which the globe has none of, so two fingers held the camera
-  still.
+  the camera and read the fingers as its own gestures, which the globe
+  has none of, so two fingers held the camera still.
 
 ## Invariants & assumptions
 

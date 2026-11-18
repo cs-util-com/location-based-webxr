@@ -27,7 +27,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
   Save, Save a copy…, Tour details…. Under the top bar, over the map, the
   rail and the card, under the dialogs and toasts.
 - `#view3d` - the 3D view's box over the map, hidden until the view
-  shows (`src/editor3d/editor3d-scene.ts` puts its canvas in it), its first
+  shows (`src/editor3d/editor3d-globe.ts` puts its canvas in it), its first
   child the permanent accent line `#load-line` (`aria-hidden`, under the
   top bar; the globe view's approach covers it with its own loading line
   while the tour loads). Inside it the studio shell's parts

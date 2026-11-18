@@ -118,8 +118,9 @@ both.
 
 ## Off the map and the older 3D view (inventory, 2026-11-03)
 
-The globe is the editor's 3D view; the 2D map and the older OrbitControls
-view (`?globe=0`) are to be removed. What each editor spec still opens, by
+The globe is the editor's 3D view; the 2D map is to be removed, and the
+older OrbitControls view (`?globe=0`) was removed on 2026-11-18 (see the
+third batch below). What each editor spec still opens, by
 what becomes of it (counts are `test(` titles; a title in a loop counts
 once):
 
@@ -205,15 +206,36 @@ or card. Their shared tour builders and file helpers are in
 **Still in class (a):** `editor.spec.js` has 104 titles, about 86 of them
 class (a). The autosave and undo walks are next, though some of them press
 the map's card or its delete control and cannot be expressed through the
-hook. Also still in (a): `editor-entry` (4), `blocks-tour` (2) and the
-`?globe=0` specs other than the first batch (`editor3d-inspector`,
-`-tree`, `-shell`, `-edit`, `-model`, `editor3d.spec.js` 186 and 251).
+hook. Also still in (a): `editor-entry` (4) and `blocks-tour` (2).
 Classes (b), (c) and (d) are unchanged.
+
+**Third batch, every `?globe=0` spec moved and the older view removed
+(2026-11-18).** The rest of the pinned specs (`editor3d-inspector`,
+`-tree`, `-shell`, `-edit`, `-model`, `editor3d.spec.js`, and the
+fixture's `openSampleIn3d`, which reached the docking, folders,
+characters, pictures, shelf, story-card and other editor3d specs) open
+the globe. What differs on the globe, and how the specs say it:
+
+- The world's frame follows the camera, so a spec compares world points
+  (`view3dPointOf`, `stats().look`, `stats().camera`) only within one
+  read, and the camera's identity is `stats().globe.pose`.
+- Top view (T) tilts the camera where it stands, so a selection off its
+  foot leaves the screen: the gizmo, folder and character specs measure
+  in the framed view (or a station turned 90 degrees) instead.
+- `view3dHeading` turns the camera round the point it looks at, as the
+  older view's orbit did round its centre (`setHeading` in
+  `editor3d-globe.ts`).
+- A drag starts on a free point of the station's disc (`discPoint` in
+  `editor3d-edit.spec.js`), as the globe's pins and dots cover more of
+  it.
+
+The `webgl` project's lanes grew with it (a first run's 920, 946, 1274
+and 644 s against 1610, 1577, 1939 and 482 s, failures included).
 
 ## Examples
 
 ```js
-selectSpecs(["GpsPlusSlamJs_TourViewer/src/editor3d/editor3d-scene.ts"]);
+selectSpecs(["GpsPlusSlamJs_TourViewer/src/editor3d/editor3d-globe.ts"]);
 // -> { all: false, areas: ["editor"], specs: [the editor and both specs] }
 selectSpecs(["GpsPlusSlamJs_TourViewer/src/main.ts"]);
 // -> { all: true, reason: "GpsPlusSlamJs_TourViewer/src/main.ts" }

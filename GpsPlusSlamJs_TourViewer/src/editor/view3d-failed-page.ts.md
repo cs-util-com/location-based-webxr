@@ -50,8 +50,8 @@ within reach, so no work is stranded.
 - Driven by the store alone: shown while a load has failed, hidden again
   by a retry (`loading`), a shown view, or a tour closed or opened
   (`view2dRequested`).
-- An `empty` tour never brings it up: only the temporary older view
-  (`globe=0`) refuses one, and the map shows such a tour.
+- An `empty` tour never brings it up: the map shows such a tour (the
+  globe view opens one, so no view raises it now).
 - The words are `view3dFailureText` (`view-switch.ts`); none speaks of the
   map.
 - The heading takes the focus once, when the page shows, so a screen
@@ -92,5 +92,5 @@ wireView3dFailedPage({
   graphics, what it covers (the card's chip included) out of the Tab
   order; for code that did not load, "Reload the page" asking once over
   unsaved work.
-- `playwright-tests/editor3d.spec.js` - the older view's failures said on
+- `playwright-tests/editor3d.spec.js` - the 3D view's failures said on
   the page.

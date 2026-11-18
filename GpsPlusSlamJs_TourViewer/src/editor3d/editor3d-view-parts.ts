@@ -1,6 +1,5 @@
 /**
- * What the editor's two 3D views share (the OrbitControls view,
- * `editor3d-scene.ts`, and the globe view, `editor3d-globe.ts`): the
+ * The 3D view's parts kept apart from `editor3d-globe.ts`: the
  * failure the view switch reads the reason of, the renderer made or
  * refused, and what it drew (the credits are `editor3d-credits.ts`).
  *

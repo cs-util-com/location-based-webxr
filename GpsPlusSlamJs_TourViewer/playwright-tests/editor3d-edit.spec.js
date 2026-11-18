@@ -33,7 +33,7 @@ import { stationBlocks } from "./tour-fixture.mjs";
 /**
  * Why these tests matter: the 3D view is where a creator moves things by
  * hand, and only the page shows whether the gizmo, the ground under the
- * pointer, OrbitControls and the store work together: a drag the camera
+ * pointer, the camera's controls and the store work together: a drag the camera
  * also takes, a drag that writes nothing (or a step per frame), keys that
  * do nothing in the browser, a second finger that leaves half an edit
  * behind, or handles drawn too small to grab all pass every unit test.

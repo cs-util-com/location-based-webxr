@@ -2,8 +2,8 @@
 
 ## Purpose
 
-The one list of builders the flat view (`editor3d-scene.ts`) and the globe
-view (`editor3d-globe.ts`) hand the stations layer
+The one list of builders the globe view (`editor3d-globe.ts`) hands the
+stations layer
 (`editor3d-stations.ts`) to draw a station's items with. They are the
 visitor's own builders, so the editor shows an item as the phone does.
 Before this list each view wrote its own, and the globe's lacked the

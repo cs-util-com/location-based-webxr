@@ -4,7 +4,7 @@
  * anything else pinches (zoom), pans (the ground under the fingers stays
  * under them) and twists (turns). The kind is decided once the fingers
  * moved past a dead zone, and kept until they lift. Pure: the input feeds
- * the fingers and places the orbit.
+ * the fingers and holds the kind it decided.
  *
  * @see two-finger.ts.md
  */
@@ -24,8 +24,6 @@ export const TWO_FINGER = Object.freeze({
   deadPx: 10,
   /** A finger that moved less than this is still (px)... */
   stillPx: 4,
-  /** Radians of tilt per pixel of the fingers' mean vertical travel. */
-  tiltPerPx: 0.0055,
 });
 
 /** How far past the dead zone one finger must go while the other stays
@@ -74,34 +72,4 @@ export function twoFingerMode(
     spread <
     (SPREAD_FRACTION * (Math.abs(da.y) + Math.abs(db.y))) / 2 + SPREAD_SLACK_PX;
   return vertical && parallel ? "tilt" : "map";
-}
-
-/** The tilt (rad from straight down) after the fingers moved from
- *  `start` to `now`, from `polarRad`: up makes it more oblique. */
-export function tiltedPolarRad(
-  polarRad: number,
-  start: FingerPair,
-  now: FingerPair,
-): number {
-  const dy = (now[0].y - start[0].y + (now[1].y - start[1].y)) / 2;
-  return polarRad - dy * TWO_FINGER.tiltPerPx;
-}
-
-/**
- * A pinch and twist from `start` to `now`: the camera's distance scale
- * (the fingers' spread at the start over now) and its turn (rad, the
- * twist of the line between them, the short way round).
- */
-export function mapGestureOf(
-  start: FingerPair,
-  now: FingerPair,
-): { distanceScale: number; turnRad: number } {
-  const d0 = length(delta(start[0], start[1])) || 1;
-  const d1 = length(delta(now[0], now[1])) || 1;
-  const a0 = Math.atan2(start[1].y - start[0].y, start[1].x - start[0].x);
-  const a1 = Math.atan2(now[1].y - now[0].y, now[1].x - now[0].x);
-  let turn = a1 - a0;
-  while (turn > Math.PI) turn -= 2 * Math.PI;
-  while (turn <= -Math.PI) turn += 2 * Math.PI;
-  return { distanceScale: d0 / d1, turnRad: turn };
 }

@@ -1245,12 +1245,11 @@ describe("the globe's routing table, event by event", () => {
   });
 });
 
-describe("the OrbitControls view's click distance", () => {
-  // Why: one rule decides click or drag in both views: a press that moved
-  // the click distance or more is a drag. The globe's table puts its line
-  // there, and the default (OrbitControls) view follows the same `>=`, so
-  // its line moved by that one pixel too, on purpose: 4 px with a mouse,
-  // 8 px with a finger, each now a drag, just under them still a click.
+describe("the input's click distance", () => {
+  // Why: one rule decides click or drag: a press that moved the click
+  // distance or more is a drag. The globe's table puts its line there, and
+  // the input follows the same `>=`: 4 px with a mouse, 8 px with a
+  // finger, each a drag, just under them still a click.
   it("selects after a move just under the line, not on it", () => {
     for (const touch of [false, true]) {
       const line = touch ? INPUT.tapPx : INPUT.clickPx;

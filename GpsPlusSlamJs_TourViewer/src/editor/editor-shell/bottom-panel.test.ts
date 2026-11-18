@@ -14,7 +14,7 @@ import type {
 } from "gps-plus-slam-globe/editor";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Editor3dReadout } from "../../editor3d/editor3d-scene.js";
+import type { Editor3dReadout } from "../../editor3d/editor3d-view.js";
 import { PANEL_STORAGE_KEY, createBottomPanel } from "./bottom-panel.js";
 import type { ProblemFix, ProblemGroup } from "./tour-problems.js";
 

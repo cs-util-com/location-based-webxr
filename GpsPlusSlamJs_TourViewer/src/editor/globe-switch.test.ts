@@ -1,9 +1,7 @@
 /**
- * Why these tests matter: the editor on the globe is the default 3D view,
- * so the switch must be ON for every link that does not turn it off; the
- * one way back to the older 3D view and the map, `globe=0`, is temporary
- * until those views are removed, and an old `globe=1` link must keep
- * working. The tuning knobs set by hand in the link must
+ * Why these tests matter: the editor on the globe is the only 3D view, so
+ * an old link's `globe=0` or `globe=1` must change nothing. The tuning
+ * knobs set by hand in the link must
  * never turn a typo into a broken view: a value that is not a number in
  * range falls back to the default instead of hiding everything (0 px) or
  * nothing (Infinity).
@@ -28,9 +26,8 @@ describe("readGlobeSwitch", () => {
     expect(readGlobeSwitch("?globe=1").grade).toBeNull();
   });
 
-  it("is on with its defaults for a link without the switch", () => {
+  it("has its defaults for a link without knobs", () => {
     expect(readGlobeSwitch("")).toEqual({
-      on: true,
       hidePx: GLOBE_SWITCH.hidePx.fallback,
       crowdPx: GLOBE_SWITCH.crowdPx.fallback,
       meteorDeg: 20,
@@ -47,7 +44,9 @@ describe("readGlobeSwitch", () => {
       clouds: "old",
       quality: null,
     });
-    expect(readGlobeSwitch("?tour=https://example.org/walk.zip").on).toBe(true);
+    expect(readGlobeSwitch("?tour=https://example.org/walk.zip")).toEqual(
+      readGlobeSwitch(""),
+    );
   });
 
   // Why: the old clouds are the default and the new ones experimental,
@@ -65,13 +64,11 @@ describe("readGlobeSwitch", () => {
     expect(readGlobeSwitch("?quality=").quality).toBe("");
   });
 
-  // Why: `globe=0` is the temporary way back to the older 3D view; any
-  // other value, an old `globe=1` link among them, keeps the globe.
-  it("is off only for globe=0", () => {
-    expect(readGlobeSwitch("?globe=0").on).toBe(false);
-    expect(readGlobeSwitch("globe=0").on).toBe(false);
-    for (const value of ["1", "", "yes", "true", "2"]) {
-      expect(readGlobeSwitch(`?globe=${value}`).on).toBe(true);
+  // Why: links written while an older 3D view existed carry `globe=0`
+  // (that view) or `globe=1`; both now open the globe as any link does.
+  it("reads an old link's globe switch as nothing", () => {
+    for (const value of ["0", "1", "", "yes"]) {
+      expect(readGlobeSwitch(`?globe=${value}`)).toEqual(readGlobeSwitch(""));
     }
   });
 
@@ -79,7 +76,6 @@ describe("readGlobeSwitch", () => {
     expect(
       readGlobeSwitch("?globe=1&globeHidePx=5&globeCrowdPx=40"),
     ).toMatchObject({
-      on: true,
       hidePx: 5,
       crowdPx: 40,
     });

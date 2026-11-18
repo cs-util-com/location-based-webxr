@@ -98,8 +98,7 @@ describe("createEditorTerrain", () => {
     });
 
   // Why: the map's darkening gain reaches the shader: the link's value
-  // when the page passes one, the link's default otherwise (the
-  // OrbitControls view passes none).
+  // when the page passes one, the link's default otherwise.
   it("darkens the map by the gain given, the link's default otherwise", () => {
     const plain = make();
     expect(plain.osm.uniforms.uOsmGain.value).toBe(

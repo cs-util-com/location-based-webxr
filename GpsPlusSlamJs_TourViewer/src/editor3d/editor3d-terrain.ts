@@ -170,7 +170,7 @@ export function createEditorTerrain(input: {
    * a light standard material) where not given. The globe view gives the
    * globe's own (`createGlobeImagery`, `globe.template`) so the ground
    * keeps its look where the relief takes over; this module never imports
-   * them (the OrbitControls view must not carry the whole-Earth imagery).
+   * them (only the globe view's chunk may carry the whole-Earth imagery).
    */
   readonly imagery?: ReliefLook["imagery"];
   readonly template?: ReliefLook["template"];

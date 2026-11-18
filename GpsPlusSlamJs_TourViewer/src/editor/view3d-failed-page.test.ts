@@ -5,7 +5,7 @@
  * plainly what happened on a page of its own, and keeps the tour's File
  * actions within reach - open another, save, save a copy, the details -
  * plus a way to try again. These pin when the page shows (a failure, never
- * the temporary older view's "nothing positioned", which is no failure),
+ * "nothing positioned", which is no failure),
  * that it goes when the view shows or the load is left, what it says, that
  * each button runs its action, and that what it covers leaves the tab
  * order only while it shows.
@@ -36,8 +36,8 @@ describe("failedPageReason", () => {
     }
   });
 
-  // Why: "nothing with a position" is the older view's (globe=0), and no
-  // failure: the map shows such a tour, a passing line says why.
+  // Why: "nothing with a position" is no failure: the map shows such a
+  // tour, a passing line says why.
   it("is null for an empty tour, an idle, loading or shown view", () => {
     expect(failedPageReason(failed("empty"))).toBeNull();
     expect(failedPageReason(idle)).toBeNull();

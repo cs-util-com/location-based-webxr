@@ -261,10 +261,10 @@ async function soundIcons(page, on) {
 // pixels are read with the icon and without it, in the one view: the
 // station's selected ring passes under the icon in the same amber, so a
 // sample elsewhere on the screen says nothing about the icon. Drawn with a depth test the relief hides the
-// icon and the two reads are the same. The older view: on the globe a
-// street-level camera looks over coarse tiles that sag below the stations
-// (see the found-radius spec), and the globe draws the same material
-// (`isInterfacePart`).
+// icon and the two reads are the same. From straight above, as the
+// found-radius spec: at the globe's street-level opening the camera looks
+// over coarse tiles that sag below the stations (`isInterfacePart` pins
+// the material in the unit tests).
 test("an ambient sound's icon is seen where the relief stands in front of it", async ({
   page,
 }) => {
@@ -360,7 +360,7 @@ function footprint(page, id) {
 
 // Why: drawn as a flat card at a fixed turn he would vanish edge-on
 // from the side; the visitor's look turns him toward the camera. The
-// orbit goes round his station to four headings; at each he has a
+// camera turns round his station to four headings; at each he has a
 // footprint on the screen.
 test("a free character shows on the screen from four camera headings round his station", async ({
   page,

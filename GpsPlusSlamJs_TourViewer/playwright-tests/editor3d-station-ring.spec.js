@@ -18,11 +18,11 @@ import {
  * (seen on a phone). Nothing but the picture can show that: the ring's
  * material says how it is drawn, not what the relief does to it. So the
  * relief here stands above the sample's stations and the canvas's pixels
- * are read, from straight above, where the relief covers every ring.
- * This is the older view: on the globe the test's street-level camera
- * looks over coarse tiles that sag below the stations, so a ring stayed in
- * sight with its depth test on and the check could not fail. The globe
- * draws the same material (`isInterfacePart`, and the stations' unit test).
+ * are read, from straight above (Top view), where the relief covers every
+ * ring. Not from the globe's street-level opening: there the camera looks
+ * over coarse tiles that sag below the stations, so a ring would stay in
+ * sight with its depth test on and the check could not fail. The material
+ * itself is pinned by the stations' unit test (`isInterfacePart`).
  */
 
 /** How far the relief stands above the sample's stations (m): more than a

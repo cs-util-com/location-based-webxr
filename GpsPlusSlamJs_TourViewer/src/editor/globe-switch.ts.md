@@ -2,19 +2,15 @@
 
 ## Purpose
 
-The link switch for the desktop editor's 3D view on the full globe, its
-default, and the knobs tuned by eye: the globe's
-visibility rule (`../editor3d/globe-visibility.ts`) and the approach's
-meteor (`../editor3d/globe-approach-meteor.ts`). `edit.html?globe=0`
-opens the older 3D view (OrbitControls over a local ground) instead.
-
-**Temporary:** `globe=0` exists only until the older 3D view and the 2D
-map are removed from the editor; the e2e specs of those views open with
-it. An old `globe=1` link keeps opening the globe.
+The link's knobs for the desktop editor's 3D view on the full globe,
+tuned by eye: the globe's visibility rule
+(`../editor3d/globe-visibility.ts`) and the approach's meteor
+(`../editor3d/globe-approach-meteor.ts`). The globe is the editor's only
+3D view: an old `globe=0` or `globe=1` in a link changes nothing.
 
 ## Public API
 
-- `GLOBE_SWITCH` - `param` `"globe"`; the knobs (`GlobeSwitchKnob`:
+- `GLOBE_SWITCH` - the knobs (`GlobeSwitchKnob`:
   `param`, `fallback`, `min`, `max`):
   - `clouds` - `clouds`: the old clouds near the ground are the default. `new` exactly draws the new (near) clouds, which are **experimental**: kept, tested and reachable for later work, not the look the page ships. `old` is accepted and is the default (links written while the new clouds were the default keep working); any other value is the default too.
   - `quality` - `quality`, no default here: the quality tier's name as the link wrote it, judged by `resolveGlobeQuality`. Null falls to the View menu's choice (`globe-quality-choice.ts`).
@@ -81,16 +77,15 @@ it. An old `globe=1` link keeps opening the globe.
   it (`null`) the meteor starts where the globe lab's intro zooms out to
   at the page's aspect (about 43,600 km on a landscape screen, more on a
   portrait phone; `../editor3d/globe-approach-meteor.ts`).
-- `readGlobeSwitch(search)` -> `GlobeSwitch` (`on`, `hidePx`, `crowdPx`,
+- `readGlobeSwitch(search)` -> `GlobeSwitch` (`hidePx`, `crowdPx`,
   `meteorDeg`, `meteorLandDeg`, `landAglM`, `startKm` (number or null),
   `dust`, `osmGain`, `osmGainMode`, `cloudShadow`, `cloudWind`, `buildings`)
   from a link's query, with or without its "?".
 
 ## Invariants & assumptions
 
-- **On unless turned off:** only `globe=0` turns it off (`1`, `true`,
-  `yes`, empty, no value: on), so an old `globe=1` link still opens
-  the globe.
+- **No switch:** `globe` in a link is not read, so an old `globe=0` or
+  `globe=1` link opens the globe as any other.
 - **A typo never breaks the view:** a knob that is empty, not a number,
   not finite or outside its range reads as its default (an override as
   none).
@@ -105,15 +100,13 @@ it. An old `globe=1` link keeps opening the globe.
 
 ```ts
 const globe = readGlobeSwitch(location.search);
-if (globe.on) {
-  /* open the globe view with globe.hidePx, globe.crowdPx */
-}
+openGlobeEditor(deps, globe); // globe.hidePx, globe.crowdPx, ...
 ```
 
 ## Tests
 
-`globe-switch.test.ts`: on with its defaults without the switch, off only
-for `globe=0`, every knob read, a landing never shallower than the
+`globe-switch.test.ts`: the defaults without knobs, an old `globe=0` or
+`globe=1` read as nothing, every knob read, a landing never shallower than the
 entry, a bad or out-of-range knob read as its default, `startKm` read
 as an override only, the streaks on by default and off for `dust=0`, the buildings on by
 default and off for `buildings=0`, the

@@ -33,7 +33,7 @@ view draws the point.
 
 ## Invariants & assumptions
 
-- **The 3D view's frame:** `editor3d-scene.ts` centres the globe's
+- **The 3D view's frame:** `editor3d-globe.ts` centres the globe's
   `worldFromEcefAt` on `tourCentre`; `eastNorthOf` is that frame's x and
   -z for a point on the ellipsoid, to the millimetre (checked against the
   globe's function).

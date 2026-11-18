@@ -9,13 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  TWO_FINGER,
-  mapGestureOf,
-  tiltedPolarRad,
-  twoFingerMode,
-  type FingerPair,
-} from "./two-finger.js";
+import { TWO_FINGER, twoFingerMode, type FingerPair } from "./two-finger.js";
 
 const START: FingerPair = [
   { x: 100, y: 300 },
@@ -52,41 +46,6 @@ describe("which two-finger gesture it is", () => {
   }
 
   it("uses the design's numbers", () => {
-    expect(TWO_FINGER).toEqual({ deadPx: 10, stillPx: 4, tiltPerPx: 0.0055 });
-  });
-});
-
-describe("what the gesture does to the camera", () => {
-  it("tilts 0.0055 rad per pixel of the fingers' mean rise: up makes it more oblique", () => {
-    expect(tiltedPolarRad(0.8, START, moved(0, -100, 0, -100))).toBeCloseTo(
-      0.8 + 0.55,
-      9,
-    );
-    expect(tiltedPolarRad(0.8, START, moved(0, 40, 0, 20))).toBeCloseTo(
-      0.8 - 30 * 0.0055,
-      9,
-    );
-  });
-
-  it("zooms by the fingers' spread and turns by their twist", () => {
-    const pinch = mapGestureOf(START, moved(-50, 0, 50, 0));
-    expect(pinch.distanceScale).toBeCloseTo(0.5, 9);
-    expect(pinch.turnRad).toBeCloseTo(0, 9);
-    // The second finger swung a quarter turn round the first.
-    const twist = mapGestureOf(START, [
-      { x: 100, y: 300 },
-      { x: 100, y: 400 },
-    ]);
-    expect(twist.distanceScale).toBeCloseTo(1, 9);
-    // Clockwise on the screen (y down) is a positive turn: the editing
-    // adds it to the orbit's azimuth, which swings the camera the other
-    // way round the centre, so the ground turns WITH the fingers, as on a
-    // map.
-    expect(twist.turnRad).toBeCloseTo(Math.PI / 2, 9);
-    const back = mapGestureOf(START, [
-      { x: 100, y: 300 },
-      { x: 100, y: 200 },
-    ]);
-    expect(back.turnRad).toBeCloseTo(-Math.PI / 2, 9);
+    expect(TWO_FINGER).toEqual({ deadPx: 10, stillPx: 4 });
   });
 });

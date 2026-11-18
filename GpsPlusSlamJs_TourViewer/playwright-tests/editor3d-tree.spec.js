@@ -73,9 +73,8 @@ async function order(page) {
 
 /**
  * Wait until the camera has stopped moving: the screen point of
- * `selection` is the same two frames apart. The orbit keeps a pan's
- * momentum after the drag and spends it a share per frame (OrbitControls'
- * damping counts frames, not time), so on a slow renderer a fixed number
+ * `selection` is the same two frames apart. The controls may keep a pan's
+ * momentum after the drag and spend it frame by frame, so on a slow renderer a fixed number
  * of frames after a drag can leave the camera still coasting - and then
  * a point pressed now is no longer under the same pixel a moment later.
  * @param {import("@playwright/test").Page} page

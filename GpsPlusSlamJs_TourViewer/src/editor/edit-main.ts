@@ -257,7 +257,7 @@ import type {
   Editor3dDeps,
   Editor3dStats,
   Editor3dView,
-} from "../editor3d/editor3d-scene.js";
+} from "../editor3d/editor3d-view.js";
 import {
   globeQualityChoiceLabel,
   globeQualityChoiceToast,
@@ -855,7 +855,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
       shown3d?.setDistance(m);
     },
     view3dHeading: (deg) => {
-      shown3d?.setHeading?.(deg);
+      shown3d?.setHeading(deg);
     },
     view3dBuildings: (on) => {
       shown3d?.setBuildings?.(on);
@@ -5024,12 +5024,12 @@ const shell = createEditorShell({
     toast(text);
   },
 });
-/** The link switch to the 3D view on the whole globe (on unless `globe=0`). */
+/** The link's knobs of the 3D view on the whole globe. */
 const globeSwitch = readGlobeSwitch(location.search);
 /** True from a 3D open with an approach until its bar goes: the shell
  *  keeps the tree folded meanwhile and unfolds it at the landing. */
 let approachHolds = false;
-/** What only the globe view takes: its approach and the recorded walk. */
+/** The globe view's approach and the recorded walk. */
 function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
   const approach = takeApproach();
   approachHolds = approach !== undefined;
@@ -5048,10 +5048,6 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
     walk: () => walkGeo,
   };
 }
-// Only the globe view has a sky of its own to set the clock of.
-realTimeSwitch.hidden = !globeSwitch.on;
-cloudsSwitch.hidden = !globeSwitch.on;
-qualitySwitch.hidden = !globeSwitch.on;
 /** Local storage where the browser allows it (a private window may not). */
 function browserStorage(): Storage | null {
   try {
@@ -5095,30 +5091,21 @@ const viewSwitch = createViewSwitch({
   store,
   open: async (events) => {
     // A module that does not arrive is the connection's (`chunk`).
-    // With the link switch on, the view on the whole globe; else the
-    // OrbitControls view.
-    const openView = await (
-      globeSwitch.on
-        ? import("../editor3d/editor3d-globe.js").then(
-            ({ openGlobeEditor }) =>
-              (deps: Editor3dDeps) =>
-                openGlobeEditor(deps, {
-                  ...globeSwitch,
-                  quality: qualityToOpenWith(
-                    globeSwitch.quality,
-                    qualityChoice,
-                  ),
-                }),
-          )
-        : import("../editor3d/editor3d-scene.js").then(
-            ({ openEditor3d }) => openEditor3d,
-          )
-    ).catch((error: unknown) => {
-      throw Object.assign(
-        new Error(`the 3D view did not load: ${String(error)}`),
-        { reason: "chunk" },
-      );
-    });
+    const openView = await import("../editor3d/editor3d-globe.js")
+      .then(
+        ({ openGlobeEditor }) =>
+          (deps: Editor3dDeps) =>
+            openGlobeEditor(deps, {
+              ...globeSwitch,
+              quality: qualityToOpenWith(globeSwitch.quality, qualityChoice),
+            }),
+      )
+      .catch((error: unknown) => {
+        throw Object.assign(
+          new Error(`the 3D view did not load: ${String(error)}`),
+          { reason: "chunk" },
+        );
+      });
     approachHolds = false;
     const view = await openView({
       container: view3dBox,
@@ -5127,7 +5114,7 @@ const viewSwitch = createViewSwitch({
       levels: () => openedLevels,
       loadContent: readContent,
       events,
-      ...(globeSwitch.on ? globeOpening() : {}),
+      ...globeOpening(),
       edits: {
         commit: commitSceneEdit,
         select: (id) => {
@@ -5171,8 +5158,8 @@ const viewSwitch = createViewSwitch({
     view3dFailureToast?.remove();
     view3dFailureToast = null;
     // A failure is said by its own page (`view3d-failed-page.ts`). A tour
-    // with nothing positioned - refused by the older view (`globe=0`)
-    // alone - is no failure: the map shows it, and a passing line says why.
+    // with nothing positioned is no failure: the map shows it, and a
+    // passing line says why.
     if (reason !== "empty") return;
     view3dFailureToast = toast(text, undefined, UNDO_MS);
     fileToasts.push(view3dFailureToast);
