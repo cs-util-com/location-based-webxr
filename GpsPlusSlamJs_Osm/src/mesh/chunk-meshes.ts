@@ -84,6 +84,25 @@ export interface MeshChunk {
    * building pulses in lockstep and the city reads as one organism.
    */
   readonly featureRand?: Float32Array;
+  /**
+   * One colour buffer per look, present only when `looksOf` was supplied:
+   * three bytes per vertex, the sRGB codes the look paints, filled from the
+   * same merge as `colors` (look 0's codes are `colors`' before any
+   * conversion). A renderer decodes them with `LOOK_COLOUR_DECODE`: the
+   * "linear" row for building chunks (as `linearChunkColours` converts
+   * `colors`), the "raw" row for road chunks. Bytes, not floats: K looks
+   * cost 3 B per vertex each, so four take what one Float32 colour takes.
+   */
+  readonly lookColours?: readonly Uint8Array[];
+}
+
+/**
+ * What one look paints on one item: its wall colour (packed `0xrrggbb`) and
+ * its roof, as `colourOf` and `roofOf` give them for a single look.
+ */
+export interface LookPaint {
+  readonly colour: number;
+  readonly roof?: RoofPaint | undefined;
 }
 
 /** Which chunk an ENU point falls in. */
@@ -142,7 +161,27 @@ export function chunkMeshes<T>(
    * gables were told apart by a normal epsilon.
    */
   roofOf?: (item: T) => RoofPaint | undefined,
+  /**
+   * Every look's paint of the item, one entry per look and the same count
+   * for every item, when the layer carries K looks (`MeshChunk.lookColours`).
+   * The geometry is merged ONCE and each look's buffer filled from the same
+   * parts, so a vertex holds every look's colour of its own feature. Needs
+   * `colourOf` (the single-look `colors`, look 0's by the caller's
+   * contract); RangeError without it, or when items disagree on the count.
+   */
+  looksOf?: (item: T) => readonly LookPaint[],
 ): MeshChunk[] {
+  if (looksOf !== undefined && colourOf === undefined) {
+    throw new RangeError("chunkMeshes: looks need a colour function");
+  }
+  const partOf = (item: T, mesh: MeshData): ChunkPart => ({
+    mesh,
+    colour: colourOf?.(item) ?? 0xffffff,
+    roof: roofOf?.(item),
+    rand: shellRandOf?.(item) ?? 0,
+    looks: looksOf?.(item),
+  });
+  let lookCount: number | undefined;
   const grouped = new Map<string, ChunkPart[]>();
   for (const item of items) {
     const mesh = meshOf(item);
@@ -150,12 +189,9 @@ export function chunkMeshes<T>(
     if (mesh.triangleCount === 0) continue;
     const key = chunkKeyFor(positionOf(item), sizeM);
     const list = grouped.get(key) ?? [];
-    list.push({
-      mesh,
-      colour: colourOf?.(item) ?? 0xffffff,
-      roof: roofOf?.(item),
-      rand: shellRandOf?.(item) ?? 0,
-    });
+    const part = partOf(item, mesh);
+    list.push(part);
+    lookCount = checkedLookCount(lookCount, part.looks);
     grouped.set(key, list);
   }
   return [...grouped].map(([key, parts]) => {
@@ -170,11 +206,54 @@ export function chunkMeshes<T>(
     if (colourOf === undefined) {
       return shell === undefined ? { key, mesh } : { key, mesh, ...shell };
     }
-    const colors = vertexColours(parts, mesh.positions.length / 3);
+    const vertexCount = mesh.positions.length / 3;
+    const colors = fillColours(
+      new Float32Array(vertexCount * 3),
+      parts,
+      (part) => part,
+      BYTE_TO_UNIT,
+    );
+    const looks =
+      lookCount === undefined
+        ? {}
+        : { lookColours: lookColoursOf(parts, lookCount, vertexCount) };
     return shell === undefined
-      ? { key, mesh, colors }
-      : { key, mesh, colors, ...shell };
+      ? { key, mesh, colors, ...looks }
+      : { key, mesh, colors, ...shell, ...looks };
   });
+}
+
+/**
+ * The look count after one more item: the first item's count, which every
+ * later item must repeat. RangeError for a different or zero count.
+ */
+function checkedLookCount(
+  count: number | undefined,
+  looks: readonly LookPaint[] | undefined,
+): number | undefined {
+  if (looks === undefined) return count;
+  if (looks.length === 0 || (count !== undefined && looks.length !== count)) {
+    throw new RangeError(
+      `chunkMeshes: every item needs the same number of looks, got ${looks.length} and ${count ?? looks.length}`,
+    );
+  }
+  return looks.length;
+}
+
+/** One sRGB byte buffer per look, filled from the same parts as `colors`. */
+function lookColoursOf(
+  parts: readonly ChunkPart[],
+  lookCount: number,
+  vertexCount: number,
+): Uint8Array[] {
+  return Array.from({ length: lookCount }, (_, k) =>
+    fillColours(
+      new Uint8Array(vertexCount * 3),
+      parts,
+      (part) => part.looks?.[k] ?? part,
+      (byte) => byte,
+    ),
+  );
 }
 
 /** One item's mesh with what `chunkMeshes` paints on it. */
@@ -183,6 +262,7 @@ interface ChunkPart {
   readonly colour: number;
   readonly roof: RoofPaint | undefined;
   readonly rand: number;
+  readonly looks: readonly LookPaint[] | undefined;
 }
 
 /** A roof colour and the vertices of the item's mesh it applies to. */
@@ -193,17 +273,14 @@ export interface RoofPaint {
   readonly vertexRanges: readonly VertexRange[];
 }
 
-/** A packed `0xrrggbb` as three 0..1 channels. */
-function channels(colour: number): readonly [number, number, number] {
-  return [
-    ((colour >> 16) & 0xff) / 255,
-    ((colour >> 8) & 0xff) / 255,
-    (colour & 0xff) / 255,
-  ];
-}
+/** A colour byte as the 0..1 value `colors` holds. */
+const BYTE_TO_UNIT = (byte: number): number => byte / 255;
 
 /**
- * The per-vertex colours of one chunk's parts, in merge order.
+ * The per-vertex colours of one chunk's parts, in merge order, into `out`
+ * (three entries a vertex), each channel byte written as `encode(byte)`.
+ * ONE fill for the single-look Float32 `colors` and the K look bytes, so
+ * the two can never disagree on which vertex is whose.
  *
  * FLAT PER FEATURE, never interpolated across one: a building whose walls
  * faded from one class colour to its neighbour's would read as a gradient
@@ -212,36 +289,45 @@ function channels(colour: number): readonly [number, number, number] {
  * paints the vertices of its roof ranges with it; ranges are
  * clamped to the part's own vertices, so a bad range cannot paint a neighbour.
  */
-function vertexColours(
+function fillColours<A extends Float32Array | Uint8Array>(
+  out: A,
   parts: readonly ChunkPart[],
-  vertexCount: number,
-): Float32Array {
-  const colors = new Float32Array(vertexCount * 3);
+  paintOf: (part: ChunkPart) => LookPaint,
+  encode: (byte: number) => number,
+): A {
   let at = 0;
   for (const part of parts) {
     const count = part.mesh.positions.length / 3;
-    const wall = channels(part.colour);
-    for (let i = 0; i < count; i++) colors.set(wall, at + i * 3);
-    if (part.roof !== undefined) paintRoof(colors, at, part.mesh, part.roof);
+    const paint = paintOf(part);
+    paintRange(out, at, 0, count, paint.colour, encode);
+    const roof = paint.roof;
+    for (const range of roof?.vertexRanges ?? []) {
+      const from = Math.max(0, range.start);
+      const to = Math.min(range.end, count);
+      paintRange(out, at, from, to, roof?.colour ?? paint.colour, encode);
+    }
     at += count * 3;
   }
-  return colors;
+  return out;
 }
 
-/** Paints one part's roof ranges, starting at float offset `at`. */
-function paintRoof(
-  colors: Float32Array,
+/** Writes `colour` on vertices `from`..`to` of the part at offset `at`. */
+function paintRange(
+  out: Float32Array | Uint8Array,
   at: number,
-  mesh: MeshData,
-  roof: RoofPaint,
+  from: number,
+  to: number,
+  colour: number,
+  encode: (byte: number) => number,
 ): void {
-  const count = mesh.positions.length / 3;
-  const rgb = channels(roof.colour);
-  for (const range of roof.vertexRanges) {
-    const end = Math.min(range.end, count);
-    for (let i = Math.max(0, range.start); i < end; i++) {
-      colors.set(rgb, at + i * 3);
-    }
+  const r = encode((colour >> 16) & 0xff);
+  const g = encode((colour >> 8) & 0xff);
+  const b = encode(colour & 0xff);
+  for (let i = from; i < to; i++) {
+    const o = at + i * 3;
+    out[o] = r;
+    out[o + 1] = g;
+    out[o + 2] = b;
   }
 }
 
@@ -312,6 +398,43 @@ export function meshCentroidEnu(mesh: MeshData): EnuPoint {
 const LINEAR_OF_BYTE = Float32Array.from({ length: 256 }, (_, i) =>
   srgbToLinear(i / 255),
 );
+
+/** Which row of `LOOK_COLOUR_DECODE` a layer's look codes take. */
+export type LookColourDecode = "linear" | "raw";
+
+/**
+ * The exact decode of a look colour code, 256 x 2 Float32: entries 0..255
+ * (row "linear") are sRGB to linear light, as `linearChunkColours` converts
+ * building chunks; entries 256..511 (row "raw") are code / 255, as road
+ * chunks keep them. A renderer uploads it as a float texture and looks a code
+ * up, so a look at weight 1 draws bit for bit the fixed build's colour
+ * (a uniform array would not fit: a phone has 256 uniform vectors a stage).
+ */
+export const LOOK_COLOUR_DECODE: Float32Array = Float32Array.from(
+  { length: 512 },
+  (_, i) => (i < 256 ? (LINEAR_OF_BYTE[i] ?? 0) : (i - 256) / 255),
+);
+
+/**
+ * A look's codes decoded as a layer's `colors` would hold them: "linear"
+ * for building chunks, "raw" for road chunks. New array; the input is kept.
+ */
+export function decodeLookColours(
+  codes: Uint8Array,
+  decode: LookColourDecode,
+): Float32Array {
+  if (decode !== "linear" && decode !== "raw") {
+    throw new RangeError(
+      `decode must be "linear" or "raw", got ${String(decode)}`,
+    );
+  }
+  const offset = decode === "linear" ? 0 : 256;
+  const out = new Float32Array(codes.length);
+  for (let i = 0; i < codes.length; i++) {
+    out[i] = LOOK_COLOUR_DECODE[offset + (codes[i] ?? 0)] ?? 0;
+  }
+  return out;
+}
 
 /**
  * The chunks with their vertex colours converted from sRGB to linear light

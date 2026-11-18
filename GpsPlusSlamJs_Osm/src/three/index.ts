@@ -39,5 +39,7 @@ export type {
 export {
   applyGroundTint,
   GROUND_TINT_FADE_M,
+  groundClassTexture,
+  groundPaletteTexture,
   groundTintTexture,
 } from "./ground-tint.js";

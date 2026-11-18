@@ -29,6 +29,7 @@ import {
 import { buildBuildings, type BuildingVolume } from "./buildings.js";
 import {
   DEFAULT_CITY_COLOUR_SCHEME,
+  MAX_CITY_LOOKS,
   validateCityColourScheme,
   type CityColourScheme,
 } from "./colour-scheme.js";
@@ -41,6 +42,7 @@ import {
   chunkMeshes,
   linearChunkColours,
   meshCentroidEnu,
+  type LookPaint,
   type MeshChunk,
 } from "./chunk-meshes.js";
 import type { EnuFrame, EnuPoint } from "./enu.js";
@@ -65,6 +67,8 @@ import {
   type FurniturePlacement,
 } from "./street-furniture.js";
 import { buildTrees, type TreePlacement } from "./trees.js";
+
+export { MAX_CITY_LOOKS } from "./colour-scheme.js";
 
 /** Where the city is built: its frame and the ground under it. */
 export interface CityGround {
@@ -122,6 +126,19 @@ export interface CityOptions {
    * throws `RangeError`.
    */
   readonly colours?: CityColourScheme;
+  /**
+   * Also bake the city in up to `MAX_CITY_LOOKS` colour schemes at once, for
+   * a renderer that mixes them (a time of day between two looks), with the
+   * geometry built once. Each look's colours are exactly those a build with
+   * `colours` set to that look gives: `MeshChunk.lookColours` per building
+   * and road chunk, `lookColours` per tree and cosmetic tree, and
+   * `GroundTint.lookPalettes` over one class raster. Look 0 is the one
+   * `colors`, `colour` and `palette` are painted in, so `colours`, when
+   * also given, must be the same object as `looks[0]`. Absent: no look data
+   * at all, the build byte for byte as without it. RangeError for an empty
+   * list, more than `MAX_CITY_LOOKS`, or a malformed look (named by index).
+   */
+  readonly looks?: readonly CityColourScheme[];
   /**
    * Paint the land use into a ground tint over `window` (`ground-tint.ts`,
    * city objects plan 2026-11-07-2315 M3), in the scheme's `landUse` colours
@@ -242,10 +259,8 @@ export function buildCity(
   options: CityOptions,
 ): City {
   const { withinM, palette = "seeded" } = options;
-  const colours =
-    options.colours === undefined
-      ? DEFAULT_CITY_COLOUR_SCHEME
-      : validateCityColourScheme(options.colours);
+  const looks = cityLooks(options);
+  const colours = cityColours(options, looks);
   if (options.window === undefined) {
     throw new RangeError("buildCity needs a window (the fetched bbox)");
   }
@@ -273,9 +288,11 @@ export function buildCity(
   const barriers = buildBarriers(all, ground).filter((b) =>
     inside(meshCentroidEnu(b.mesh)),
   );
+  const treeLooks = treeLookOptions(looks);
   const trees = buildTrees(all, {
     ...ground,
     treePalette: colours.trees,
+    ...treeLooks,
   }).filter((t) => inside(t.position));
   // TAGS BY KEY: the builders return a feature key, not the tags.
   const tagsByKey = new Map(
@@ -299,33 +316,53 @@ export function buildCity(
         volume.parentFeature === undefined
           ? undefined
           : tagsByKey.get(volume.parentFeature);
-      return {
-        mesh: volume.mesh,
-        roofVertexRanges: volume.roofVertexRanges,
-        ...(palette === "seeded"
+      const paint = (
+        scheme: CityColourScheme,
+      ): { readonly wall: number; readonly roof?: number | undefined } =>
+        palette === "seeded"
           ? seededBuildingColours(
               tags,
               outline,
               volume.parentFeature ?? volume.feature,
               drawsPitchedRoof(volume),
-              colours,
+              scheme,
               tallestByKey.get(volume.parentFeature ?? volume.feature),
             )
           : {
               wall: buildingColour(tags, outline),
               roof: roofColour(tags, outline),
+            };
+      return {
+        mesh: volume.mesh,
+        roofVertexRanges: volume.roofVertexRanges,
+        ...paint(colours),
+        ...(looks === undefined ? {} : { looks: looks.map(paint) }),
+      };
+    }),
+    ...barriers.map((barrier) => {
+      const tags = tagsByKey.get(barrier.feature) ?? {};
+      return {
+        mesh: barrier.mesh,
+        // A barrier has no roof block: it is all wall, in its own muted kind
+        // colour, not a building's.
+        roofVertexRanges: [],
+        wall: barrierColour(tags, colours),
+        roof: undefined,
+        ...(looks === undefined
+          ? {}
+          : {
+              looks: looks.map((scheme) => ({
+                wall: barrierColour(tags, scheme),
+                roof: undefined,
+              })),
             }),
       };
     }),
-    ...barriers.map((barrier) => ({
-      mesh: barrier.mesh,
-      // A barrier has no roof block: it is all wall, in its own muted kind
-      // colour, not a building's.
-      roofVertexRanges: [],
-      wall: barrierColour(tagsByKey.get(barrier.feature) ?? {}, colours),
-      roof: undefined,
-    })),
   ];
+  const roofPaint = (
+    roof: number | undefined,
+    vertexRanges: (typeof drawn)[number]["roofVertexRanges"],
+  ) => (roof === undefined ? undefined : { colour: roof, vertexRanges });
   // Linear light, as three.js shades (plan 2026-11-07-2315 section 7). The
   // whole chunk is converted, roof vertices included, so a tagged roof colour
   // is in the same colour space as its walls.
@@ -339,10 +376,10 @@ export function buildCity(
       // The shell shader's phase, from the feature's own geometry, so it is
       // stable across rebuilds (an index would re-shuffle on every refresh).
       (item) => shellRandFor(item.mesh),
-      (item) =>
-        item.roof === undefined
-          ? undefined
-          : { colour: item.roof, vertexRanges: item.roofVertexRanges },
+      (item) => roofPaint(item.roof, item.roofVertexRanges),
+      looks === undefined
+        ? undefined
+        : (item) => buildingLooks(item, roofPaint),
     ),
   );
   const roadOptions = roadBuildOptions(options.roads, ground);
@@ -353,6 +390,7 @@ export function buildCity(
           inside,
           tagsByKey,
           colours,
+          looks,
           window: options.window,
           markings: roadMarkingsOn(options.roads),
         });
@@ -366,6 +404,7 @@ export function buildCity(
           window: options.window,
           excludeRings: built.flatMap((v) => v.outerRings),
           treePalette: colours.trees,
+          ...treeLooks,
         }).filter((t) => inside(t.position));
   const furniture = cityFurniture(all, ground, options, inside);
   const city = {
@@ -381,7 +420,82 @@ export function buildCity(
     pedestrianAreaCount,
     fallbackBuildings,
   };
-  return { ...city, ...cityGroundTint(all, ground, options, colours) };
+  return {
+    ...city,
+    ...cityGroundTint(all, ground, options, colours, looks),
+  };
+}
+
+/** The scheme `colors` is painted in: look 0, `colours`, or the default. */
+function cityColours(
+  options: CityOptions,
+  looks: readonly CityColourScheme[] | undefined,
+): CityColourScheme {
+  if (looks?.[0] !== undefined) return looks[0];
+  return options.colours === undefined
+    ? DEFAULT_CITY_COLOUR_SCHEME
+    : validateCityColourScheme(options.colours);
+}
+
+/** The tree builders' `lookPalettes` option, or nothing without looks. */
+function treeLookOptions(looks: readonly CityColourScheme[] | undefined): {
+  readonly lookPalettes?: readonly CityColourScheme["trees"][];
+} {
+  return looks === undefined ? {} : { lookPalettes: looks.map((l) => l.trees) };
+}
+
+/** A drawn building's or barrier's paint per look, for `chunkMeshes`. */
+function buildingLooks<R>(
+  item: {
+    readonly looks?: readonly {
+      readonly wall: number;
+      readonly roof?: number | undefined;
+    }[];
+    readonly roofVertexRanges: R;
+  },
+  roofPaint: (roof: number | undefined, ranges: R) => LookPaint["roof"],
+): LookPaint[] {
+  return (item.looks ?? []).map((look) => ({
+    colour: look.wall,
+    roof: roofPaint(look.roof, item.roofVertexRanges),
+  }));
+}
+
+/**
+ * The validated `looks` of the options, or undefined without any. Each look
+ * is validated and named by its index in the error; `colours`, when given
+ * too, must be `looks[0]` itself, since look 0 is what `colors` is painted
+ * in.
+ */
+function cityLooks(
+  options: CityOptions,
+): readonly CityColourScheme[] | undefined {
+  const looks: unknown = options.looks;
+  if (looks === undefined) return undefined;
+  if (!Array.isArray(looks) || looks.length === 0) {
+    throw new RangeError("looks must be a non-empty array of colour schemes");
+  }
+  if (looks.length > MAX_CITY_LOOKS) {
+    throw new RangeError(
+      `looks has ${looks.length} colour schemes, at most ${MAX_CITY_LOOKS}`,
+    );
+  }
+  const valid = looks.map((look: unknown, i) => {
+    try {
+      return validateCityColourScheme(look);
+    } catch (error) {
+      throw new RangeError(
+        `looks[${i}]: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  });
+  if (options.colours !== undefined && options.colours !== looks[0]) {
+    throw new RangeError(
+      "colours and looks[0] differ: pass looks alone, or colours as looks[0]",
+    );
+  }
+  return valid;
 }
 
 /**
@@ -393,6 +507,7 @@ function cityGroundTint(
   ground: CityGround,
   options: CityOptions & { readonly window: Bbox },
   colours: CityColourScheme,
+  looks: readonly CityColourScheme[] | undefined,
 ): { readonly groundTint?: GroundTint } {
   if (options.groundTint !== true) return {};
   const groundTint = buildGroundTint(all, {
@@ -400,6 +515,11 @@ function cityGroundTint(
     window: options.window,
     ground: colours.ground,
     landUse: colours.landUse,
+    ...(looks === undefined
+      ? {}
+      : {
+          looks: looks.map((l) => ({ ground: l.ground, landUse: l.landUse })),
+        }),
   });
   return { groundTint };
 }
@@ -499,11 +619,12 @@ function cityRoads(
     readonly inside: (p: EnuPoint) => boolean;
     readonly tagsByKey: ReadonlyMap<string, OsmFeature["tags"]>;
     readonly colours: CityColourScheme;
+    readonly looks: readonly CityColourScheme[] | undefined;
     readonly window: Bbox;
     readonly markings: boolean;
   },
 ): CityRoads {
-  const { inside, tagsByKey, colours } = context;
+  const { inside, tagsByKey, colours, looks } = context;
   const kept = <T extends { readonly mesh: MeshData }>(items: T[]): T[] =>
     items.filter((item) => inside(meshCentroidEnu(item.mesh)));
   const allRibbons = buildRoads(all, ground);
@@ -531,16 +652,19 @@ function cityRoads(
         }),
       )
     : [];
+  // One colour per item and look; look 0 is `colours`.
   const painted = [
-    ...ribbons.map((road) => ({
-      mesh: road.mesh,
-      colour: roadColour(tagsByKey.get(road.feature) ?? {}, colours),
+    ...[...ribbons, ...areas].map((item) => {
+      const tags = tagsByKey.get(item.feature) ?? {};
+      return {
+        mesh: item.mesh,
+        colourIn: (scheme: CityColourScheme) => roadColour(tags, scheme),
+      };
+    }),
+    ...zebras.map((zebra) => ({
+      mesh: zebra.mesh,
+      colourIn: (scheme: CityColourScheme) => scheme.markings,
     })),
-    ...areas.map((area) => ({
-      mesh: area.mesh,
-      colour: roadColour(tagsByKey.get(area.feature) ?? {}, colours),
-    })),
-    ...zebras.map((zebra) => ({ mesh: zebra.mesh, colour: colours.markings })),
   ];
   return {
     roads: chunkMeshes(
@@ -548,7 +672,12 @@ function cityRoads(
       (item) => item.mesh,
       (item) => meshCentroidEnu(item.mesh),
       undefined,
-      (item) => item.colour,
+      (item) => item.colourIn(colours),
+      undefined,
+      undefined,
+      looks === undefined
+        ? undefined
+        : (item) => looks.map((scheme) => ({ colour: item.colourIn(scheme) })),
     ),
     roadCount: ribbons.length,
     zebraStripeCount: zebras.reduce((sum, z) => sum + z.stripeCount, 0),

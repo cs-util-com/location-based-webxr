@@ -4,7 +4,9 @@ import {
   CHUNK_SIZE_M,
   chunkKeyFor,
   chunkMeshes,
+  decodeLookColours,
   linearChunkColours,
+  LOOK_COLOUR_DECODE,
   meshCentroidEnu,
   type RoofPaint,
 } from "./chunk-meshes.js";
@@ -470,5 +472,116 @@ describe("linearChunkColours", () => {
       (m) => meshCentroidEnu(m),
     );
     expect(linearChunkColours(bare)[0]).toBe(bare[0]);
+  });
+});
+
+describe("chunkMeshes - K looks from one merge", () => {
+  // WHY THESE TESTS MATTER. A time-of-day renderer cross-fades K looks of
+  // one city, so each look's colours must sit on the same vertices as the
+  // single-look `colors`, from the same merge. These pin that the K buffers
+  // are bytes (the codes before any decode), fill in merge order with each
+  // look's own roof, and that the decode table reproduces the Float32
+  // colours exactly; the per-site equality lives in
+  // city-looks.property.test.ts.
+  const items = [cube(0, 0), cube(3, 0)];
+  const roofOnly = (m: MeshData): RoofPaint => ({
+    colour: m === items[0] ? 0x0000ff : 0x00ff00,
+    vertexRanges: [{ start: 0, end: 4 }],
+  });
+  const looks = (m: MeshData) => [
+    { colour: m === items[0] ? 0x102030 : 0x405060, roof: roofOnly(m) },
+    { colour: 0xff8000, roof: undefined },
+  ];
+  const chunks = chunkMeshes(
+    items,
+    (m) => m,
+    () => ({ x: 0, y: 0 }),
+    undefined,
+    (m) => looks(m)[0]!.colour,
+    undefined,
+    (m) => looks(m)[0]!.roof,
+    looks,
+  );
+
+  it("fills one byte buffer per look, three bytes per vertex", () => {
+    const chunk = chunks[0]!;
+    const vertices = chunk.mesh.positions.length / 3;
+    expect(chunk.lookColours).toHaveLength(2);
+    for (const codes of chunk.lookColours!) {
+      expect(codes).toBeInstanceOf(Uint8Array);
+      expect(codes.length).toBe(vertices * 3);
+    }
+    const second = chunk.lookColours![1]!;
+    expect([...second.subarray(0, 3)]).toEqual([0xff, 0x80, 0x00]);
+    expect([...second.subarray(second.length - 3)]).toEqual([0xff, 0x80, 0]);
+  });
+
+  it("paints each look's roof on the item's own roof ranges", () => {
+    const first = chunks[0]!.lookColours![0]!;
+    const cubeVertices = items[0]!.positions.length / 3;
+    expect([...first.subarray(0, 3)]).toEqual([0, 0, 0xff]);
+    expect([...first.subarray(4 * 3, 4 * 3 + 3)]).toEqual([0x10, 0x20, 0x30]);
+    const at = cubeVertices * 3;
+    expect([...first.subarray(at, at + 3)]).toEqual([0, 0xff, 0]);
+    expect([...first.subarray(at + 12, at + 15)]).toEqual([0x40, 0x50, 0x60]);
+  });
+
+  it("decodes look 0 to exactly the single-look colours, raw and linear", () => {
+    const chunk = chunks[0]!;
+    expect([...decodeLookColours(chunk.lookColours![0]!, "raw")]).toEqual([
+      ...chunk.colors!,
+    ]);
+    const linear = linearChunkColours(chunks)[0]!;
+    expect([...decodeLookColours(chunk.lookColours![0]!, "linear")]).toEqual([
+      ...linear.colors!,
+    ]);
+    // The conversion leaves the codes alone: the page decodes them.
+    expect(linear.lookColours).toBe(chunk.lookColours);
+  });
+
+  it("holds both decode rows in one 256 x 2 table", () => {
+    // WHY: a renderer uploads this table as a float texture and decodes a
+    // code by a lookup, so it must agree with decodeLookColours bit for bit.
+    expect(LOOK_COLOUR_DECODE).toBeInstanceOf(Float32Array);
+    expect(LOOK_COLOUR_DECODE.length).toBe(512);
+    const codes = Uint8Array.from({ length: 256 }, (_, i) => i);
+    expect([...LOOK_COLOUR_DECODE.subarray(0, 256)]).toEqual([
+      ...decodeLookColours(codes, "linear"),
+    ]);
+    expect([...LOOK_COLOUR_DECODE.subarray(256)]).toEqual([
+      ...decodeLookColours(codes, "raw"),
+    ]);
+  });
+
+  it("refuses items that disagree on the number of looks", () => {
+    expect(() =>
+      chunkMeshes(
+        items,
+        (m) => m,
+        () => ({ x: 0, y: 0 }),
+        undefined,
+        () => 0,
+        undefined,
+        undefined,
+        (m) => (m === items[0] ? looks(m) : looks(m).slice(0, 1)),
+      ),
+    ).toThrow(RangeError);
+  });
+
+  it("refuses looks without a colour function", () => {
+    // WHY: `colors` is look 0's; looks without it would have no look 0 buffer
+    // for a renderer that draws a single look.
+    expect(() =>
+      chunkMeshes(
+        items,
+        (m) => m,
+        () => ({ x: 0, y: 0 }),
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        looks,
+      ),
+    ).toThrow(RangeError);
   });
 });
