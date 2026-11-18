@@ -255,13 +255,33 @@ export function createFolderOutline(deps: {
   };
 
   let shown = 0;
+  // The folder's items and name, read again only for another tour or
+  // folder: `update` runs every frame, and the page hands the same tour
+  // object while nothing changed (`manifestToWrite`).
+  let read: {
+    readonly tour: TourManifest | null;
+    readonly folderId: string | null;
+    readonly ids: readonly string[];
+    readonly title: string | null;
+  } | null = null;
+  const folderOf = (tour: TourManifest | null, folderId: string | null) => {
+    if (read?.tour !== tour || read.folderId !== folderId) {
+      read = {
+        tour,
+        folderId,
+        ids: folderId === null ? [] : folderItemIds(tour, folderId),
+        title: folderId === null ? null : folderTitleOf(tour, folderId),
+      };
+    }
+    return read;
+  };
   return {
     update(tour, selected, gizmo = null) {
       const folderId =
         selected?.startsWith(FOLDER_PREFIX) === true
           ? selected.slice(FOLDER_PREFIX.length)
           : null;
-      const ids = folderId === null ? [] : folderItemIds(tour, folderId);
+      const { ids, title } = folderOf(tour, folderId);
       ensure(ids.length);
       shown = 0;
       const footprints: Footprint[] = [];
@@ -285,11 +305,7 @@ export function createFolderOutline(deps: {
         const helper = helpers[i];
         if (helper !== undefined) helper.visible = false;
       }
-      drawHull(
-        folderId === null ? null : folderTitleOf(tour, folderId),
-        gizmo,
-        footprints,
-      );
+      drawHull(title, gizmo, footprints);
     },
     count: () => shown,
     hull: () => hullNow,

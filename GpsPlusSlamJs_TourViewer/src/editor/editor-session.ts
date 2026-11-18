@@ -11,6 +11,7 @@
 import {
   isStory,
   isTourBlockChild,
+  isTourFolder,
   isTourStoryBlock,
   tourChildPlace,
   tourStationChildIds,
@@ -19,6 +20,7 @@ import {
   TOUR_FOLDER_MAX_SCALE,
   TOUR_FOLDER_MIN_SCALE,
   type TourChoice,
+  type TourFolder,
   type TourQuizEntry,
   type TourStory,
   type TourStoryBlock,
@@ -1091,6 +1093,22 @@ export interface EditorSession {
     folderId: string,
     geo: QrGeoPose,
   ): { kind: "moved" | "unchanged" } | EditorRefusal;
+  /** Delete a plain folder with everything it holds, its items and the
+   *  folders inside it: ONE step, which `undo` takes back (a photo's
+   *  picture kept for that, as `remove` keeps it). `items`: how many
+   *  items went. Refused for a folder the tour lacks. */
+  deleteFolder(
+    folderId: string,
+  ): { kind: "deleted"; items: number } | EditorRefusal;
+  /** Copy a plain folder beside itself (1.5 m east, right after it in
+   *  its holder) with everything it holds, every id new (a photo's
+   *  picture read first, and held under its copy's id): ONE step.
+   *  Refused for a folder the tour lacks, a photo whose picture cannot be
+   *  read, and a copy that would take an item beyond its station's
+   *  reach. */
+  duplicateFolder(
+    folderId: string,
+  ): Promise<{ kind: "duplicated"; folderId: string } | EditorRefusal>;
   /** Set a plain folder's scale (0.1 to 10 times): its whole group grows
    *  about its origin, sizes and distances alike. One step. Refused for a
    *  folder the tour lacks, a scale out of the bounds, and one that takes
@@ -3331,6 +3349,79 @@ export function createEditorSession(input: {
         ),
       )
         ? { kind: "moved" }
+        : { kind: "refused", reason: FOLDER_TOO_FAR };
+    },
+    deleteFolder(folderId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const found = folderOf(state, folderId);
+      if (found === null) return noSuchFolder;
+      const held = documentObjects(state).filter(
+        (o) => o.object.folder?.includes(folderId) === true,
+      );
+      for (const item of held) keepPicture(item);
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.folderDeleted({
+            stationId: found.station.id,
+            folderId,
+            what: `the delete of ${folderName(found.folder)}`,
+          }),
+        ),
+      )
+        ? { kind: "deleted", items: held.length }
+        : notApplied;
+    },
+    async duplicateFolder(folderId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const found = folderOf(state, folderId);
+      if (found === null) return noSuchFolder;
+      const items = documentObjects(state)
+        .map((o) => o.object)
+        .filter((o) => o.folder?.includes(folderId) === true);
+      const read = await picturesOf(items);
+      if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+      // Every folder inside it and every item it holds gets a new id too:
+      // ids are unique across the tour.
+      const folderIds = (folder: TourFolder): string[] => [
+        folder.id,
+        ...folder.children.filter(isTourFolder).flatMap(folderIds),
+      ];
+      const newIds = Object.fromEntries(
+        [...folderIds(found.folder), ...items.map((o) => o.id)].map((id) => [
+          id,
+          newObjectId(),
+        ]),
+      );
+      // The pictures under the copies' ids before the copies exist: the
+      // draft's write of each copy carries its picture.
+      for (const [id, blob] of read) {
+        const copyId = newIds[id];
+        if (copyId !== undefined) files.set(copyId, blob);
+      }
+      const copyId = newIds[folderId];
+      if (
+        copyId !== undefined &&
+        took(() =>
+          store.dispatch(
+            tourDocumentActions.folderDuplicated({
+              stationId: found.station.id,
+              folderId,
+              newIds,
+              what: `the copy of ${folderName(found.folder)}`,
+            }),
+          ),
+        )
+      ) {
+        return { kind: "duplicated", folderId: copyId };
+      }
+      for (const id of items.map((o) => newIds[o.id])) {
+        if (id !== undefined) files.delete(id);
+      }
+      if (mine() === null) return notInTour;
+      return folderOf(own(), folderId) === null
+        ? noSuchFolder
         : { kind: "refused", reason: FOLDER_TOO_FAR };
     },
     scaleFolder(folderId, value) {

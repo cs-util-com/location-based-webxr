@@ -269,6 +269,18 @@ never state). Design:
       for a folder the tour lacks (`NO_SUCH_FOLDER`), a spot on no map,
       and a move the document refuses (an item beyond its station's
       reach, `FOLDER_TOO_FAR`).
+    - `deleteFolder(folderId)` - a plain folder deleted with everything
+      in it (`folderDeleted`), one step: `{ kind: "deleted", items }`
+      (how many items went); each photo's picture is kept for the undo,
+      as `remove` keeps it. Refused for a folder the tour lacks.
+    - `duplicateFolder(folderId)` (async) - a plain folder copied beside
+      itself with everything in it (`folderDuplicated`), one step:
+      `{ kind: "duplicated", folderId }` (the copy's). Every folder and
+      item in it gets a new id (`newObjectId`); each photo's picture is
+      read first and held under its copy's id, so the save writes it.
+      Refused for a folder the tour lacks, a picture that cannot be read,
+      and a copy taking an item beyond its station's reach
+      (`FOLDER_TOO_FAR`); the held pictures are dropped then.
     - `scaleFolder(folderId, value)` - a plain folder's scale, 0.1 to 10
       times (`folderScaled`): its whole group grows about its origin;
       "unchanged" for the scale it has (none counts as 1); refused out of

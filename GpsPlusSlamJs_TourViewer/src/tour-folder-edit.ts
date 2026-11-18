@@ -46,7 +46,7 @@ const REASONS: Readonly<Record<FolderRefusal, string>> = {
   oneLevel:
     "folders hold items, not other folders. Take the items out of their folder first.",
   notHere: "a folder holds items of one station.",
-  tooFar: "an item or folder would stand more than 10 km from its folder.",
+  tooFar: "an item or folder would stand more than 10 km from what holds it.",
   staysInStation:
     "an item in a folder stays in its station. Take it out of its folder first.",
   gone: "that folder is no longer in the tour.",
@@ -99,6 +99,29 @@ export function withFolderAdded(
     ...holder,
     children: [...holder.children, folder],
   }));
+}
+
+/** `children` with `folder` right after the plain folder `id` (at any
+ *  depth), beside it in its holder: where a copy of it goes. The same
+ *  array when no folder has the id. */
+export function withFolderAfter(
+  children: readonly TourStationChild[],
+  id: string,
+  folder: TourFolder,
+): TourStationChild[] {
+  let hit = false;
+  const next = children.flatMap((child): TourStationChild[] => {
+    if (!isTourFolder(child)) return [child];
+    if (child.id === id) {
+      hit = true;
+      return [child, folder];
+    }
+    const inner = withFolderAfter(child.children, id, folder);
+    if (inner === child.children) return [child];
+    hit = true;
+    return [{ ...child, children: inner as TourFolder["children"] }];
+  });
+  return hit ? next : (children as TourStationChild[]);
 }
 
 /**

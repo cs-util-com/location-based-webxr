@@ -20,9 +20,7 @@ tour document and none moves an item in the world.
   ids and `folder:<id>`) cannot be grouped (`oneLevel` for a folder among
   them, else `groupRefusal`), or null.
 - `NOTHING_TO_GROUP`, `FOLDER_NAME_TOO_LONG` (names the format's cap,
-  80 characters), `FOLDER_DELETE_NOT_YET`, `FOLDER_DUPLICATE_NOT_YET`
-  (Del and Ctrl+D on a plain folder, `editor3d-input.ts`) - the lines
-  said where no folder rule refused.
+  80 characters) - the lines said where no folder rule refused.
 - `createFolderCommands(deps)` -> `{ group, ungroup, moveInto, rename,
 reorder, pivotToCentre }`:
   - `deps`: `getState` (the tour document), `dispatch`, `before` (called
@@ -31,9 +29,12 @@ reorder, pivotToCentre }`:
     (a passing line), `mint` (a new folder's id, default `newObjectId`);
   - `group(picked)` - the new folder's id, or null when refused (nothing
     picked says `NOTHING_TO_GROUP`);
-  - `ungroup(folderId)` - the ids of the items it held, or null (a
-    folder gone from the tour says `gone`, one that would lift a folder
-    or an item past the 10 km bound `tooFar`, as `ungroupRefusal` says);
+  - `ungroup(folderIds)` - the picked folders taken apart together as
+    ONE step (one Undo brings them all back; duplicates counted once):
+    the ids of the items they held, or null, all or none (a folder gone
+    from the tour says `gone`, one that would lift a folder or an item
+    past the 10 km bound `tooFar`, as `ungroupRefusal` says; a store
+    refusal of several says `tooFar`);
   - `moveInto(itemId, folderId | null)` - whether the item moved (null:
     out of its folders); refused with the store's own reason
     (`folderDropRefusal`, then `objectsFolderRefusal`: `notHere`,

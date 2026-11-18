@@ -28,6 +28,7 @@ import {
   tourStories,
   TOUR_FOLDER_MAX_SCALE,
   TOUR_FOLDER_MIN_SCALE,
+  TOUR_FOLDER_TITLE_RULE,
   tourStoryChildrenBlocks,
   TOUR_STORY_TITLE_RULE,
   type TourChoice,
@@ -172,6 +173,7 @@ import {
   folderTitle,
   withFolder,
   withFolderAdded,
+  withFolderAfter,
   withoutFolder,
   type FolderRefusal,
 } from "./tour-folder-edit.js";
@@ -4597,16 +4599,57 @@ function folderGroup(
   );
 }
 
+/** A plain folder of a station, as the folder actions name it. */
+interface FolderAt {
+  readonly stationId: string;
+  readonly folderId: string;
+}
+
 /**
- * A plain folder taken apart (`folderUngrouped`), as one step: its items
- * and its own folders go to its holder (the station, or the folder around
- * it), each kept where it stands in the world. An unknown station or
- * folder, or one `ungroupRefusal` refuses (a pose lifted past the
- * format's bound): the same state.
+ * Plain folders taken apart (`folderUngrouped`: the tree's picked folders
+ * together), as ONE step: each one's items and its own folders go to its
+ * holder (the station, or the folder around it), each kept where it
+ * stands in the world, in the order given. No folder, a folder named
+ * twice, or any one the chain refuses (`ungroupOne`): the same state -
+ * all of them or none.
  */
 function folderUngroup(
   before: TourDocumentState,
-  payload: { stationId: string; folderId: string; what: string },
+  payload: { folders: readonly FolderAt[]; what: string },
+): TourDocumentState {
+  const { folders, what } = payload;
+  const ids = folders.map((f) => f.folderId);
+  if (ids.length === 0 || new Set(ids).size !== ids.length) return before;
+  let after = before;
+  for (const folder of folders) {
+    const next = ungroupOne(after, { ...folder, what });
+    if (next === after) return before;
+    after = next;
+  }
+  if (folders.length === 1) return after;
+  return edited(
+    before,
+    {
+      placed: after.placed,
+      deleted: after.deleted,
+      stations: after.stations,
+      touched: after.touched,
+      framesRecorded: true,
+    },
+    what,
+  );
+}
+
+/**
+ * One plain folder taken apart, as one step: its items and its own
+ * folders go to its holder (the station, or the folder around it), each
+ * kept where it stands in the world. An unknown station or folder, or one
+ * `ungroupRefusal` refuses (a pose lifted past the format's bound): the
+ * same state.
+ */
+function ungroupOne(
+  before: TourDocumentState,
+  payload: FolderAt & { readonly what: string },
 ): TourDocumentState {
   if (before.written === null) return before;
   const frame = frameOf(before, payload.stationId);
@@ -4791,6 +4834,126 @@ function folderDelete(
   );
 }
 
+/** What `folderDuplicated` carries: the new ids are minted outside the
+ *  reducer, by the page (it copies the pictures of the folder's photos
+ *  under them first). */
+interface FolderDuplicatePayload extends FolderAt {
+  /** A new id for the folder, for every folder inside it and for every
+   *  item it holds at any depth, by its old id (ids are unique across the
+   *  tour). */
+  readonly newIds: Readonly<Record<string, string>>;
+  readonly createdAtIso: string;
+  readonly what: string;
+}
+
+/** The ids of `folder` and of every folder inside it, outermost first. */
+function folderIdsIn(folder: TourFolder): string[] {
+  return [
+    folder.id,
+    ...folder.children.filter(isTourFolder).flatMap(folderIdsIn),
+  ];
+}
+
+/**
+ * A plain folder copied beside itself with everything it holds
+ * (`folderDuplicated`), as one step: the copy follows its original in
+ * its holder, titled as a copy, its origin standing
+ * `ITEM_DUPLICATE_OFFSET_M` east of the original's (where an item's copy
+ * stands), turned and scaled as it is; the folders inside it and its
+ * items are copied under their new ids, each item standing in the copy
+ * as its original stands in the folder (`copiedObject`: a photo under its
+ * own new asset). The same state for an unknown station or folder, a
+ * missing, taken or repeated new id, an origin the format would refuse,
+ * and a copy whose item would stand past its station's bound.
+ */
+function folderDuplicate(
+  before: TourDocumentState,
+  payload: FolderDuplicatePayload,
+): TourDocumentState {
+  if (before.written === null) return before;
+  const frame = frameOf(before, payload.stationId);
+  const chain = frame && folderChains(frame).get(payload.folderId);
+  const old = chain?.at(-1);
+  if (frame === undefined || chain === undefined || old === undefined) {
+    return before;
+  }
+  const items = documentObjects(before)
+    .map((o) => o.object)
+    .filter(
+      (o) =>
+        o.station === frame.id && o.folder?.includes(payload.folderId) === true,
+    );
+  const copied = [...folderIdsIn(old), ...items.map((o) => o.id)];
+  const minted = copied.map((id) => payload.newIds[id]);
+  if (
+    minted.some((id) => id === undefined || !freeObjectId(before, id)) ||
+    new Set(minted).size !== minted.length
+  ) {
+    return before;
+  }
+  const renamed = (id: string): string => payload.newIds[id] ?? id;
+  // The copy's origin: the original's, in the world, moved east as an
+  // item's copy is; back in the copy's holder (the original's), turned as
+  // the original is.
+  const holders = chain.slice(0, -1);
+  const was = old.pose ?? NO_FOLDER_POSE;
+  const origin = itemGeoPose(composeTourFolderPath(holders, was), frame.geo);
+  const pose = readPose({
+    ...was,
+    position: decomposeTourFolderPath(
+      holders,
+      localPoseOf(duplicateItemGeo(origin), frame.geo),
+    ).position,
+  });
+  if (pose === null) return before;
+  const copy: TourFolder = {
+    ...copiedFolder(old, renamed),
+    pose,
+    ...(old.title === undefined
+      ? {}
+      : { title: copyTitle(old.title, TOUR_FOLDER_TITLE_RULE.max) }),
+  };
+  const next: StationFrame = {
+    ...frame,
+    children: withFolderAfter(frame.children, payload.folderId, copy),
+  };
+  const chains = folderChains(frame);
+  const nextChains = folderChains(next);
+  let placed = before.placed;
+  for (const item of items) {
+    const path = (item.folder ?? []).map(renamed);
+    const inFolder = decomposeTourFolderPath(
+      folderChainOf(item, chains),
+      localPoseOf(item.geo, frame.geo),
+    );
+    const geo = itemGeoPose(
+      composeTourFolderPath(
+        folderChainOf({ ...item, folder: path }, nextChains),
+        inFolder,
+      ),
+      frame.geo,
+    );
+    if (!fitsStation(geo, frame.id, [next])) return before;
+    const object = copiedObject(
+      item,
+      {
+        id: renamed(item.id),
+        createdAtIso: payload.createdAtIso,
+        geo,
+        station: frame.id,
+      },
+      before.addedAssets,
+    );
+    placed = upsertPlaced(placed, { object: { ...object, folder: path } });
+  }
+  return foldersEdited(
+    before,
+    next,
+    { placed, deleted: before.deleted },
+    payload.what,
+  );
+}
+
 /** A block's size set (`blockNumberSet`): the field its placement row's
  *  `size` or `scale` extent names, within the row's bounds. */
 function numberSet(
@@ -4917,12 +5080,27 @@ const folderGrouped = createAction<FolderGroupPayload>(
   "tourDocument/folderGrouped",
 );
 
-/** A folder taken apart (`folderUngroup`). */
+/** Folders taken apart, all in one step (`folderUngroup`). */
 const folderUngrouped = createAction<{
-  stationId: string;
-  folderId: string;
+  folders: readonly FolderAt[];
   what: string;
 }>("tourDocument/folderUngrouped");
+
+/** A folder copied beside itself with what it holds (`folderDuplicate`);
+ *  made now unless told. */
+const folderDuplicated = createAction(
+  "tourDocument/folderDuplicated",
+  (
+    input: Omit<FolderDuplicatePayload, "createdAtIso"> & {
+      readonly createdAtIso?: string;
+    },
+  ): { payload: FolderDuplicatePayload } => ({
+    payload: {
+      ...input,
+      createdAtIso: input.createdAtIso ?? new Date().toISOString(),
+    },
+  }),
+);
 
 /** Items moved into or out of a folder (`objectsFolder`). */
 const objectsFoldered = createAction<{
@@ -5917,6 +6095,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(folderDeleted, (state, action) =>
       folderDelete(plain(state), action.payload),
     );
+    builder.addCase(folderDuplicated, (state, action) =>
+      folderDuplicate(plain(state), action.payload),
+    );
     builder.addCase(folderReordered, (state, action) =>
       folderReorder(plain(state), action.payload),
     );
@@ -5944,6 +6125,7 @@ export const tourDocumentActions = {
   objectsFoldered,
   folderRenamed,
   folderDeleted,
+  folderDuplicated,
   folderReordered,
   characterDeclared,
   characterRemoved,
@@ -5986,6 +6168,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.objectsFoldered,
   tourDocumentActions.folderRenamed,
   tourDocumentActions.folderDeleted,
+  tourDocumentActions.folderDuplicated,
   tourDocumentActions.folderReordered,
   tourDocumentActions.settingsChanged,
   tourDocumentActions.detailsChanged,

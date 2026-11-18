@@ -19,6 +19,12 @@ words that name what goes with it, so a yes is given knowing it. Pure;
   alone kept), it names it: "Its entry and its station "Station 2", which
   holds nothing else, go with it." Null for a story the tour does not
   carry.
+- `folderDeleteQuestion(state, folderId): string | null` - "Delete the
+  folder "Benches"? Its 3 items and 1 folder go with it. You can undo
+  this." It counts every item at any depth and the folders inside it
+  (the delete takes them all; Ungroup is the way to keep them); "Its
+  item goes with it." for one, "It holds nothing." for none. Null for a
+  folder the tour lacks.
 
 ## Invariants & assumptions
 
@@ -42,4 +48,6 @@ storyDeleteQuestion(store.getState().tourDocument, "aside");
 free items by count, one item, two parts and none; the story's question
 for a station that stays, for an automatic station that goes with it (with
 and without entries), for a story with no entries, and null for a story
-not in the tour.
+not in the tour; the folder's question counting items at any depth and
+the folders inside, one item, none, and null for a folder not in the
+tour.

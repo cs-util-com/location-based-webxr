@@ -6,7 +6,11 @@
  */
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourFreeBlocks } from "gps-plus-slam-app-framework/ar/tour-station-pose";
-import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  isTourFolder,
+  tourStories,
+  type TourFolder,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 
 import { stationTitle } from "../station-run.js";
 import {
@@ -15,6 +19,7 @@ import {
   tourDocumentReducer,
   type TourDocumentState,
 } from "../tour-document.js";
+import { folderName, plainFolderOf } from "./folder-commands.js";
 
 /** `parts` as one list: "a", "a and b", "a, b and c". */
 function joined(parts: readonly string[]): string {
@@ -87,4 +92,38 @@ export function storyDeleteQuestion(
       ? "It has no entries."
       : `${list.charAt(0).toUpperCase()}${list.slice(1)} ${verb} with it.`;
   return `Delete the story "${story.title}"? ${goes} You can undo this.`;
+}
+
+/** How many folders `folder` holds, at any depth. */
+function foldersInside(folder: TourFolder): number {
+  return folder.children
+    .filter(isTourFolder)
+    .reduce((n, inner) => n + 1 + foldersInside(inner), 0);
+}
+
+/**
+ * The question before the delete of the plain folder `folderId` in
+ * `state` (the delete takes everything in it): its items at any depth
+ * and the folders inside it, by count; null for a folder the tour lacks.
+ */
+export function folderDeleteQuestion(
+  state: TourDocumentState,
+  folderId: string,
+): string | null {
+  const place = plainFolderOf(state, folderId);
+  if (place === null) return null;
+  const items = place.itemIds.length;
+  const folders = foldersInside(place.folder);
+  const parts = [
+    ...(items === 0 ? [] : [items === 1 ? "item" : `${String(items)} items`]),
+    ...(folders === 0
+      ? []
+      : [folders === 1 ? "1 folder" : `${String(folders)} folders`]),
+  ];
+  const one = parts.length === 1 && items + folders === 1;
+  const goes =
+    parts.length === 0
+      ? "It holds nothing."
+      : `Its ${joined(parts)} ${one ? "goes" : "go"} with it.`;
+  return `Delete the folder "${folderName(place.folder)}"? ${goes} You can undo this.`;
 }

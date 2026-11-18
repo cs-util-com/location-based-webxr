@@ -111,6 +111,42 @@ describe("createFolderOutline", () => {
       false,
     );
   });
+  // Why: `update` runs every frame; walking the whole tour for the
+  // folder's items each time costs a frame budget on a large tour. The
+  // same tour object (the page hands the same one while nothing changed)
+  // and folder are read once; a new tour or folder is read again.
+  it("reads the tour again only for another tour or folder", () => {
+    const scene = new THREE.Scene();
+    const outline = createFolderOutline({ scene, itemObjects: () => [] });
+    const counted = () => {
+      const t = tour();
+      let reads = 0;
+      const counting = {
+        get stations() {
+          reads += 1;
+          return t.stations;
+        },
+      };
+      return {
+        counting: counting as unknown as ReturnType<typeof tour>,
+        reads: () => reads,
+      };
+    };
+    const one = counted();
+    outline.update(one.counting, "folder:f");
+    const first = one.reads();
+    expect(first).toBeGreaterThan(0);
+    outline.update(one.counting, "folder:f");
+    outline.update(one.counting, "folder:f");
+    expect(one.reads()).toBe(first);
+    outline.update(one.counting, "folder:g");
+    expect(one.reads()).toBeGreaterThan(first);
+    const two = counted();
+    outline.update(two.counting, "folder:g");
+    expect(two.reads()).toBeGreaterThan(0);
+    outline.dispose();
+  });
+
   // Why: the dashed outline and the name tag are how the creator sees,
   // with the folder's gizmo, which items move together and what the group
   // is called; they ring the folder's items square to its heading, and go

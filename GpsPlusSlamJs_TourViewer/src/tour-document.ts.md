@@ -452,9 +452,23 @@ geo?, what })` - a copy inserted after the original (any station the
     item keeps its world pose and names the folder. Refused: a
     `groupRefusal` (`tooFar` among them), a taken id, a title the format
     refuses.
-  - `folderUngrouped({ stationId, folderId, what })` - the folder taken
-    apart: its items and its own folders go to its holder, each where it
-    stood (`withoutFolder` with lift). Refused: `ungroupRefusal`.
+  - `folderUngrouped({ folders: [{ stationId, folderId }], what })` -
+    the folders taken apart, in order, as ONE step (one undo brings them
+    all back): each one's items and its own folders go to its holder,
+    each where it stood (`withoutFolder` with lift). Refused, all or
+    none: an empty list, a folder named twice, `ungroupRefusal` for any
+    of them (checked against the tree the earlier ones left).
+  - `folderDuplicated({ stationId, folderId, newIds, createdAtIso?, what })`
+    - a copy of the folder right after it in its holder, 1.5 m east in
+      the world (`duplicateItemGeo`, turn and scale kept), with every
+      folder and item in it copied: `newIds` maps each of their ids to a
+      new one (the page mints them; each must be given, free in the tour
+      and distinct), the copied items naming the copied folders, a photo's
+      picture under its copy's id (`copiedObject`), a titled folder named
+      "<title> copy" (within the format's 80 code points; an untitled one
+      stays untitled). One step. Refused: an unknown folder, a missing,
+      taken or repeated new id, an item the copy would take beyond its
+      station's reach.
   - `objectsFoldered({ ids, folderId, what })` - items into the folder
     `folderId` of their station, or (null) out to the station's top,
     each keeping its world pose. Refused: `objectsFolderRefusal` (an
@@ -479,8 +493,10 @@ geo?, what })` - a copy inserted after the original (any station the
     reorder (the tree, `folder-commands.ts`); `folderMoved` and
     `folderScaled` (the gizmo and the folder's inspector, through the
     session's `moveFolder` and `scaleFolder`); `folderPivotCentred` (the
-    inspector's "Pivot to centre", `folder-commands.ts`). `folderDeleted` (a
-    folder's delete with its confirmation) has none yet.
+    inspector's "Pivot to centre", `folder-commands.ts`); `folderDeleted`
+    and `folderDuplicated` (Del and Duplicate on a folder, the delete
+    asked first, through the session's `deleteFolder` and
+    `duplicateFolder`).
   - `blockNumberSet({ id, field, value, what })` - a block's size: the
     field its placement row's `size` extent names
     (`placement/placement-rows.ts`), a placed model's `sizeM` (0.05 m to

@@ -690,6 +690,91 @@ describe("the editor session's station edits", () => {
     await session.close();
   });
 
+  // Why: a folder's Duplicate copies a photo in it under a new id, so the
+  // copy names a content file of its own; a save that did not write the
+  // picture under it would save a tour the reader refuses. And the copy,
+  // with all it holds, is ONE undo step.
+  it("duplicateFolder copies a folder with its photo as one step, the save writing the copy's picture", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["f"],
+        what: "group",
+      }),
+    );
+    const steps = () => store.getState().tourDocument.past.length;
+    const was = steps();
+    const copied = await editor.duplicateFolder("grp");
+    if (copied.kind !== "duplicated") throw new Error("not copied");
+    expect(copied.folderId).not.toBe("grp");
+    expect(steps()).toBe(was + 1);
+    const saved = await editor.save({ keepScan: false });
+    const tour = await savedTour(saved.blob);
+    const items = tourObjects(tour).filter((o) => o.kind === "picture");
+    const copy = items.find((o) => o.folder?.[0] === copied.folderId);
+    if (copy?.kind !== "picture") throw new Error("no copy");
+    expect(copy.id).not.toBe("f");
+    const path = tour.assets.find((a) => a.id === copy.image)?.path ?? "";
+    expect(path).toBe(`content/${copy.image}.jpg`);
+    expect(await entryText(saved.blob, path)).toBe("the picture of f");
+    expect(await editor.duplicateFolder("nope")).toEqual({
+      kind: "refused",
+      reason: "That folder is no longer in this tour.",
+    });
+    await session.close();
+  });
+
+  // Why: a folder's Delete takes everything in it as ONE step, and its
+  // Undo must bring a photo back with its picture even after a save wrote
+  // the delete (the picture is kept for that, as for an item's delete).
+  it("deleteFolder deletes a folder with its items as one step, and an undo after a save keeps the photo's picture", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["f"],
+        what: "group",
+      }),
+    );
+    const steps = () => store.getState().tourDocument.past.length;
+    const was = steps();
+    expect(editor.deleteFolder("grp")).toEqual({ kind: "deleted", items: 1 });
+    expect(steps()).toBe(was + 1);
+    const gone = await savedTour((await editor.save({ keepScan: false })).blob);
+    expect(tourObjects(gone).map((o) => o.id)).not.toContain("f");
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const back = await editor.save({ keepScan: false });
+    const tour = await savedTour(back.blob);
+    expect(tourObjects(tour).find((o) => o.id === "f")?.folder).toEqual([
+      "grp",
+    ]);
+    expect(await entryText(back.blob, "content/f.jpg")).toBe(
+      "the picture of f",
+    );
+    expect(editor.deleteFolder("nope")).toEqual({
+      kind: "refused",
+      reason: "That folder is no longer in this tour.",
+    });
+    await session.close();
+  });
+
   it("an item moved into a station of its own, and items put on the ground as one step", async () => {
     const { session, manifest } = await opened();
     const editor = createEditorSession({

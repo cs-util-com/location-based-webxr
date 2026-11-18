@@ -91,6 +91,7 @@ import {
 } from "./debug-capture-layer.js";
 import { walkAfterDraw, walkAtLayerStart } from "./tour-walk-kept.js";
 import {
+  FOLDER_PREFIX,
   STATION_PREFIX,
   STORY_PREFIX,
   photoSource,
@@ -98,7 +99,11 @@ import {
   type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
-import { createFolderCommands } from "./folder-commands.js";
+import {
+  createFolderCommands,
+  folderName,
+  plainFolderOf,
+} from "./folder-commands.js";
 import { storyRows } from "./editor-shell/tree-model.js";
 import { applyPlaceEdit, type PlaceEdit } from "../placement/place-edits.js";
 import { askMove, moveNote } from "../move-question.js";
@@ -248,6 +253,7 @@ import { newObjectId } from "../content-placement.js";
 import type { InspectorCode } from "./editor-shell/inspector-model.js";
 import { stationTitle } from "../station-run.js";
 import {
+  folderDeleteQuestion,
   stationDeleteQuestion,
   storyDeleteQuestion,
 } from "./delete-questions.js";
@@ -1514,15 +1520,20 @@ function itemCalled(id: string): string {
 }
 
 /**
- * Delete a note, or a station with its notes (`station:<id>`; the 3D
- * view's Del) once its creator said yes: one step. The toast offers its
- * Undo while it is the newest edit; a refusal deletes nothing and is said.
+ * Delete a note, a folder with everything in it (`folder:<id>`), or a
+ * station with its notes (`station:<id>`; the 3D view's Del) once its
+ * creator said yes: one step. The toast offers its Undo while it is the
+ * newest edit; a refusal deletes nothing and is said.
  */
 function deleteSelection(id: string): void {
   if (editor === null) return;
   const tour = manifestToWrite(store.getState().tourDocument);
   if (id.startsWith(STORY_PREFIX)) {
     deleteStorySelection(id.slice(STORY_PREFIX.length));
+    return;
+  }
+  if (id.startsWith(FOLDER_PREFIX)) {
+    deleteFolderSelection(id.slice(FOLDER_PREFIX.length));
     return;
   }
   const place = tour === null ? null : tourChildPlace(tour, id);
@@ -1625,6 +1636,25 @@ function deleteStorySelection(storyId: string): void {
   );
 }
 
+/** Delete a plain folder with everything in it, once its creator said
+ *  yes to a question that counts it: one step, which Undo takes back. */
+function deleteFolderSelection(folderId: string): void {
+  const doc = store.getState().tourDocument;
+  const place = plainFolderOf(doc, folderId);
+  const question = folderDeleteQuestion(doc, folderId);
+  if (editor === null || place === null || question === null) return;
+  if (!confirmPausingFrames(question)) return;
+  endUndo();
+  const outcome = editor.deleteFolder(folderId);
+  const n = outcome.kind === "deleted" ? outcome.items : 0;
+  deleted(
+    outcome,
+    `Deleted the folder "${folderName(place.folder)}"${
+      n === 0 ? "" : ` and its ${n === 1 ? "item" : `${String(n)} items`}`
+    }`,
+  );
+}
+
 /** Delete an entry of `story`: one step; the toast says when answers that
  *  led to it changed. */
 function deleteStoryEntry(id: string, story: TourStory): void {
@@ -1643,16 +1673,21 @@ function deleteStoryEntry(id: string, story: TourStory): void {
 }
 
 /**
- * Copy a note, a story (`story:<id>`, right after itself), or a station
- * with its notes, beside itself (the bar's Duplicate, the 3D view's
- * Ctrl+D): one step; the copy is selected and a toast names it. A photo's
- * picture is read first; a tour switched meanwhile drops the result.
+ * Copy a note, a story (`story:<id>`, right after itself), a folder with
+ * everything in it (`folder:<id>`), or a station with its notes, beside
+ * itself (the bar's Duplicate, the 3D view's Ctrl+D): one step; the copy
+ * is selected and a toast names it. A photo's picture is read first; a
+ * tour switched meanwhile drops the result.
  */
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
   if (mine === null) return;
   if (id.startsWith(STORY_PREFIX)) {
     duplicateStorySelection(id.slice(STORY_PREFIX.length));
+    return;
+  }
+  if (id.startsWith(FOLDER_PREFIX)) {
+    await duplicateFolderSelection(mine, id.slice(FOLDER_PREFIX.length));
     return;
   }
   const called = itemCalled(id);
@@ -1677,6 +1712,30 @@ async function duplicateSelection(id: string): Promise<void> {
   if (home !== undefined) showRowsOf(home.id);
   select(outcome.id);
   toast(said);
+  tourChanged();
+}
+
+/** The plain folder `folderId` copied beside itself with everything in
+ *  it: the copy selected in its station's rows, said once it was made;
+ *  one step. A tour switched meanwhile drops the result. */
+async function duplicateFolderSelection(
+  mine: EditorSession,
+  folderId: string,
+): Promise<void> {
+  endUndo();
+  const outcome = await mine.duplicateFolder(folderId);
+  if (editor !== mine) return;
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  const copy = plainFolderOf(store.getState().tourDocument, outcome.folderId);
+  if (copy !== null) showRowsOf(copy.stationId);
+  select(`${FOLDER_PREFIX}${outcome.folderId}`);
+  toast(
+    `Duplicated the folder${copy === null ? "" : ` as "${folderName(copy.folder)}"`}`,
+  );
   tourChanged();
 }
 

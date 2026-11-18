@@ -16,6 +16,7 @@ import { tourOf } from "../test-support/tour-of.js";
 import { tourDocumentActions, tourDocumentReducer } from "../tour-document.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
+  folderDeleteQuestion,
   stationDeleteQuestion,
   storyDeleteQuestion,
 } from "./delete-questions.js";
@@ -129,5 +130,55 @@ describe("storyDeleteQuestion", () => {
       'Delete the story "Legend"? It has no entries. You can undo this.',
     );
     expect(storyDeleteQuestion(state, "gone")).toBeNull();
+  });
+});
+
+describe("folderDeleteQuestion", () => {
+  const pin = (id: string) =>
+    ({
+      id,
+      kind: "shortText",
+      view: "pin",
+      caption: id,
+      createdAtIso: "2026-11-18T00:00:00.000Z",
+      pose: POSE,
+    }) as const;
+  const state = stateOf([
+    station(
+      "yard",
+      [
+        {
+          id: "bench",
+          kind: "folder",
+          title: "Benches",
+          children: [
+            pin("a"),
+            pin("b"),
+            { id: "in", kind: "folder", children: [pin("c")] },
+          ],
+        },
+        { id: "spare", kind: "folder", title: "Spare", children: [] },
+        { id: "one", kind: "folder", children: [pin("d")] },
+      ] as never,
+      "Yard",
+    ),
+  ]);
+
+  // Why: Delete on a folder takes everything in it, at any depth - the
+  // question must count it all, or a yes deletes more than was agreed.
+  it("counts every item in it at any depth, and the folders inside it", () => {
+    expect(folderDeleteQuestion(state, "bench")).toBe(
+      'Delete the folder "Benches"? Its 3 items and 1 folder go with it. You can undo this.',
+    );
+  });
+
+  it("says one item, no items, and is null for a folder not in the tour", () => {
+    expect(folderDeleteQuestion(state, "one")).toBe(
+      'Delete the folder "Folder"? Its item goes with it. You can undo this.',
+    );
+    expect(folderDeleteQuestion(state, "spare")).toBe(
+      'Delete the folder "Spare"? It holds nothing. You can undo this.',
+    );
+    expect(folderDeleteQuestion(state, "gone")).toBeNull();
   });
 });

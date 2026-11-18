@@ -192,8 +192,9 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     from the tree's add in place and the palette);
   - `deps.say(text)` - a passing line (the page's toast);
   - `deps.folders` (`FolderCommands`, `../folder-commands.ts`) - Group,
-    Ungroup, the drag into or out of a plain folder and its rename, each
-    one undo step that says its outcome or its refusal.
+    Ungroup (every picked folder together), the drag into or out of a
+    plain folder and its rename, each one undo step that says its outcome
+    or its refusal.
 - `EditorShell.groundMenu(point, place)` - the 3D view's input asks for
   the ground menu (a right click, a long press): opened at `point` (px on
   the 3D canvas, placed in the view's box: the canvas covers only the

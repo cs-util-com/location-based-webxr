@@ -37,6 +37,7 @@ import { describe, expect, it } from "vitest";
 import { hostedObjects } from "./authoring-draft.js";
 import { placeableOf } from "./placement/placeables.js";
 import { presentWorldBlocks } from "./shown-blocks.js";
+import { duplicateItemGeo } from "./station-geometry.js";
 import { stationContent, storyOf } from "./test-support/station-content.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
@@ -346,8 +347,7 @@ describe("taking a folder apart", () => {
       const after = reduce(
         start,
         act.folderUngrouped({
-          stationId: "well",
-          folderId: "outer",
+          folders: [{ stationId: "well", folderId: "outer" }],
           what: "u",
         }),
       );
@@ -400,8 +400,7 @@ describe("taking a folder apart", () => {
       const after = reduce(
         opened(tour(yawDeg, offsetM)),
         act.folderUngrouped({
-          stationId: "well",
-          folderId: "outer",
+          folders: [{ stationId: "well", folderId: "outer" }],
           what: "u",
         }),
       );
@@ -433,7 +432,13 @@ describe("taking a folder apart", () => {
       ["gate", "outer"],
     ] as const) {
       expect(
-        reduce(start, act.folderUngrouped({ stationId, folderId, what: "u" })),
+        reduce(
+          start,
+          act.folderUngrouped({
+            folders: [{ stationId, folderId }],
+            what: "u",
+          }),
+        ),
       ).toBe(start);
     }
   });
@@ -442,7 +447,10 @@ describe("taking a folder apart", () => {
     const tourFile = tour(179, 2000);
     const state = reduce(
       reduce(opened(tourFile), group(["p", "q"])),
-      act.folderUngrouped({ stationId: "well", folderId: "outer", what: "u" }),
+      act.folderUngrouped({
+        folders: [{ stationId: "well", folderId: "outer" }],
+        what: "u",
+      }),
     );
     const back = reloaded(state, tourFile);
     expect(documentFrames(back)).toEqual(documentFrames(state));
@@ -961,7 +969,10 @@ describe("the format's 10 km bound in a folder", () => {
         );
         const after = reduce(
           start,
-          act.folderUngrouped({ stationId: "deep", folderId, what: "u" }),
+          act.folderUngrouped({
+            folders: [{ stationId: "deep", folderId }],
+            what: "u",
+          }),
         );
         expect(after === start).toBe(past);
         expect(() => saved(after)).not.toThrow();
@@ -1151,7 +1162,10 @@ describe("undo and redo of every folder action", () => {
         what: "centre",
       }),
       group(["p", "q"]),
-      act.folderUngrouped({ stationId: "well", folderId: "outer", what: "u" }),
+      act.folderUngrouped({
+        folders: [{ stationId: "well", folderId: "outer" }],
+        what: "u",
+      }),
       act.objectsFoldered({ ids: ["p"], folderId: "inner", what: "in" }),
       act.objectsFoldered({ ids: ["a"], folderId: null, what: "out" }),
       act.folderRenamed({
@@ -1161,6 +1175,12 @@ describe("undo and redo of every folder action", () => {
         what: "rename",
       }),
       act.folderDeleted({ stationId: "well", folderId: "outer", what: "del" }),
+      act.folderDuplicated({
+        stationId: "well",
+        folderId: "outer",
+        newIds: { outer: "o2", inner: "i2", a: "a2", b: "b2" },
+        what: "copy",
+      }),
       act.folderReordered({
         stationId: "well",
         folderId: "spare",
@@ -1182,6 +1202,217 @@ describe("undo and redo of every folder action", () => {
       const redone = reduce(undone, act.redone());
       expect(saved(redone), action.type).toEqual(saved(after));
       expect(items(redone), action.type).toEqual(items(after));
+    }
+  });
+});
+
+/** The distance between two poses in metres (a local flat-earth
+ *  approximation, ample over the metres compared here). */
+function metresApart(a: TourObject["geo"], b: TourObject["geo"]): number {
+  const north = (a.lat - b.lat) * 111_320;
+  const east = (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.hypot(north, east, a.alt - b.alt);
+}
+
+/** New ids for folder "outer" and what it holds: each old id with "2". */
+const OUTER_COPY_IDS = Object.fromEntries(
+  ["outer", "inner", "a", "b"].map((id) => [id, `${id}2`]),
+);
+
+const duplicate = (
+  folderId = "outer",
+  newIds: Record<string, string> = OUTER_COPY_IDS,
+  stationId = "well",
+) =>
+  act.folderDuplicated({
+    stationId,
+    folderId,
+    newIds,
+    createdAtIso: "2026-11-18T00:00:00.000Z",
+    what: "copy",
+  });
+
+describe("duplicating a folder", () => {
+  // Why: a folder's copy is a second group of the same items beside the
+  // first, every id new (ids are unique across the tour, and a copy that
+  // reused one would make two items one), each item standing in the copy
+  // as in the original, the copy 1.5 m east like an item's copy - and
+  // the whole copy is ONE undo step.
+  it("copies the folder right after itself, 1.5 m east, new ids throughout, items in place in it, as one step", () => {
+    for (const [yawDeg, offsetM] of SWEEP) {
+      const start = opened(tour(yawDeg, offsetM));
+      const after = reduce(start, duplicate());
+      expect(after.past).toHaveLength(start.past.length + 1);
+      expect(objectOf(after, "a2").folder).toEqual(["outer2"]);
+      expect(objectOf(after, "b2").folder).toEqual(["outer2", "inner2"]);
+      for (const id of ["a", "b", "p", "q", "r", "g"]) {
+        expectSameGeo(objectOf(after, id).geo, objectOf(start, id).geo);
+      }
+      for (const id of ["a", "b"]) {
+        const original = objectOf(after, id);
+        const copy = objectOf(after, `${id}2`);
+        // 2 mm: the east shift is taken at the folder's origin, up to
+        // 2 km from the item, where east turns by about 3e-4 rad.
+        expect(
+          metresApart(copy.geo, duplicateItemGeo(original.geo)),
+        ).toBeLessThanOrEqual(2e-3);
+        expect(
+          rotationGap(
+            copy.geo.rotation ?? IDENTITY,
+            original.geo.rotation ?? IDENTITY,
+          ),
+        ).toBeLessThanOrEqual(1e-9);
+      }
+      const out = saved(after);
+      const children = wellChildren(out);
+      expect(children.indexOf("outer2")).toBe(children.indexOf("outer") + 1);
+      const copy = folderIn(out, "outer2");
+      expect(copy?.title).toBe("Courtyard copy");
+      expect(copy?.pose?.rotation).toEqual(
+        folderIn(out, "outer")?.pose?.rotation,
+      );
+      // Its items and folders, in whatever order the write lists them.
+      expect(copy?.children.map((c) => c.id).sort()).toEqual(["a2", "inner2"]);
+      // An untitled folder's copy stays untitled.
+      expect(folderIn(out, "inner2")?.title).toBeUndefined();
+      // The visitor sees each copied item where the editor shows it.
+      const well = out.stations.find((s) => s.id === "well");
+      if (well === undefined) throw new Error("no station");
+      const shown = new Map(
+        documentObjects(after).map((o) => [o.object.id, o.object.geo]),
+      );
+      const copies = presentWorldBlocks(well, []).filter((b) =>
+        ["a2", "b2"].includes(b.id),
+      );
+      expect(copies).toHaveLength(2);
+      for (const block of copies) {
+        const geo = shown.get(block.id);
+        if (geo === undefined) throw new Error(`unknown block ${block.id}`);
+        expectSameGeo(itemGeoPose(block.pose, well.geo), geo);
+      }
+      expect(saved(reduce(after, act.undone()))).toEqual(saved(start));
+    }
+  });
+
+  it("copies a nested folder beside itself inside its holder, and an empty one", () => {
+    const start = opened(tour());
+    const inner = reduce(start, duplicate("inner", { inner: "i2", b: "b2" }));
+    // The copy right after its original among the folders it sits with.
+    const kids =
+      folderIn(saved(inner), "outer")?.children.map((c) => c.id) ?? [];
+    expect(kids.indexOf("i2")).toBe(kids.indexOf("inner") + 1);
+    expect(objectOf(inner, "b2").folder).toEqual(["outer", "i2"]);
+    const spare = reduce(start, duplicate("spare", { spare: "s2" }));
+    expect(folderIn(saved(spare), "s2")?.title).toBe("Spare copy");
+    expect(folderIn(saved(spare), "s2")?.children).toEqual([]);
+  });
+
+  // Why: a copy must never take an id the tour already gives something
+  // (an item, a folder, a story), nor give two of its parts one id; and a
+  // folder or station that is gone (an undo since the press) copies
+  // nothing.
+  it("refuses an unknown folder or station, a missing, taken or repeated new id, changing nothing", () => {
+    const start = opened(tour());
+    for (const action of [
+      duplicate("nothing"),
+      duplicate("outer", OUTER_COPY_IDS, "gate"),
+      duplicate("outer", { outer: "outer2", inner: "inner2", a: "a2" }),
+      duplicate("outer", { ...OUTER_COPY_IDS, a: "p" }),
+      duplicate("outer", { ...OUTER_COPY_IDS, outer: "spare" }),
+      duplicate("outer", { ...OUTER_COPY_IDS, outer: "miller" }),
+      duplicate("outer", { ...OUTER_COPY_IDS, b: "a2" }),
+    ]) {
+      expect(reduce(start, action)).toBe(start);
+    }
+  });
+
+  // Why: a copy that put an item past the format's 10 km bound of its
+  // station would make a tour no save can write.
+  it("refuses a copy whose item would stand past its station's bound", () => {
+    const edge = 9999.5;
+    const wire = tourOf([], {
+      stations: [
+        {
+          id: "wide",
+          title: "Wide",
+          geo: { ...AT, rotation: [0, 0, 0, 1] },
+          activateRadiusM: 50,
+          foundRadiusM: 25,
+          hint: "arrow",
+          ...stationContent([
+            {
+              id: "rim",
+              kind: "folder",
+              title: "Rim",
+              pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+              children: [
+                pin("x1", [edge, 0, 0]),
+                pin("x2", [-edge, 0, 0]),
+                pin("z1", [0, 0, edge]),
+                pin("z2", [0, 0, -edge]),
+              ],
+            },
+          ] as never),
+        },
+      ],
+    });
+    const start = opened(
+      parseTourManifest(JSON.parse(serializeTourManifest(wire))),
+    );
+    const ids = Object.fromEntries(
+      ["rim", "x1", "x2", "z1", "z2"].map((id) => [id, `${id}c`]),
+    );
+    expect(reduce(start, duplicate("rim", ids, "wide"))).toBe(start);
+  });
+
+  it("comes back from the draft after a reload", () => {
+    const tourFile = tour();
+    const state = reduce(opened(tourFile), duplicate());
+    const back = reloaded(state, tourFile);
+    expect(saved(back)).toEqual(saved(state));
+  });
+});
+
+describe("taking several folders apart at once", () => {
+  // Why: Ungroup on several picked folders is one press; one Undo must
+  // bring them all back, not one folder per press.
+  it("takes them all apart as ONE step, and one undo brings them all back", () => {
+    const start = opened(tour());
+    const after = reduce(
+      start,
+      act.folderUngrouped({
+        folders: [
+          { stationId: "well", folderId: "outer" },
+          { stationId: "well", folderId: "spare" },
+        ],
+        what: "u",
+      }),
+    );
+    expect(after.past).toHaveLength(start.past.length + 1);
+    const out = saved(after);
+    expect(folderIn(out, "outer")).toBeUndefined();
+    expect(folderIn(out, "spare")).toBeUndefined();
+    expect(folderIn(out, "inner")).toBeDefined();
+    expectNothingMoved(start, after);
+    expect(saved(reduce(after, act.undone()))).toEqual(saved(start));
+  });
+
+  it("refuses all of them when one is refused, none named, or one named twice", () => {
+    const start = opened(tour());
+    for (const folders of [
+      [],
+      [
+        { stationId: "well", folderId: "outer" },
+        { stationId: "well", folderId: "nothing" },
+      ],
+      [
+        { stationId: "well", folderId: "spare" },
+        { stationId: "well", folderId: "spare" },
+      ],
+    ]) {
+      expect(reduce(start, act.folderUngrouped({ folders, what: "u" }))).toBe(
+        start,
+      );
     }
   });
 });
