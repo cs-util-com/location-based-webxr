@@ -21,6 +21,7 @@ import {
   type OsmFeature,
 } from "../model/osm-feature.js";
 import { barrierColour } from "./barrier-colours.js";
+import { timedColourFill } from "./colour-fill-clock.js";
 import { buildBarriers, type BarrierVolume } from "./barrier-volumes.js";
 import {
   seededBuildingColours,
@@ -292,7 +293,7 @@ export function buildCity(
   // The tower rule reads the height of the same building, its tallest volume,
   // so a podium and its tower stay one colour too.
   const tallestByKey = tallestVolumeByKey(volumes);
-  const drawn = [
+  const drawn = timedColourFill(() => [
     ...volumes.map((volume) => {
       const tags = tagsByKey.get(volume.feature) ?? {};
       const outline =
@@ -325,26 +326,25 @@ export function buildCity(
       wall: barrierColour(tagsByKey.get(barrier.feature) ?? {}, colours),
       roof: undefined,
     })),
-  ];
+  ]);
   // Linear light, as three.js shades (plan 2026-11-07-2315 section 7). The
   // whole chunk is converted, roof vertices included, so a tagged roof colour
   // is in the same colour space as its walls.
-  const buildings = linearChunkColours(
-    chunkMeshes(
-      drawn,
-      (item) => item.mesh,
-      (item) => meshCentroidEnu(item.mesh),
-      undefined,
-      (item) => item.wall,
-      // The shell shader's phase, from the feature's own geometry, so it is
-      // stable across rebuilds (an index would re-shuffle on every refresh).
-      (item) => shellRandFor(item.mesh),
-      (item) =>
-        item.roof === undefined
-          ? undefined
-          : { colour: item.roof, vertexRanges: item.roofVertexRanges },
-    ),
+  const buildingChunks = chunkMeshes(
+    drawn,
+    (item) => item.mesh,
+    (item) => meshCentroidEnu(item.mesh),
+    undefined,
+    (item) => item.wall,
+    // The shell shader's phase, from the feature's own geometry, so it is
+    // stable across rebuilds (an index would re-shuffle on every refresh).
+    (item) => shellRandFor(item.mesh),
+    (item) =>
+      item.roof === undefined
+        ? undefined
+        : { colour: item.roof, vertexRanges: item.roofVertexRanges },
   );
+  const buildings = timedColourFill(() => linearChunkColours(buildingChunks));
   const roadOptions = roadBuildOptions(options.roads, ground);
   const { roads, roadCount, zebraStripeCount, pedestrianAreaCount } =
     roadOptions === undefined
@@ -531,7 +531,7 @@ function cityRoads(
         }),
       )
     : [];
-  const painted = [
+  const painted = timedColourFill(() => [
     ...ribbons.map((road) => ({
       mesh: road.mesh,
       colour: roadColour(tagsByKey.get(road.feature) ?? {}, colours),
@@ -541,7 +541,7 @@ function cityRoads(
       colour: roadColour(tagsByKey.get(area.feature) ?? {}, colours),
     })),
     ...zebras.map((zebra) => ({ mesh: zebra.mesh, colour: colours.markings })),
-  ];
+  ]);
   return {
     roads: chunkMeshes(
       painted,

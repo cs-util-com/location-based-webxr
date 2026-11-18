@@ -5,6 +5,8 @@
  * consumer app turns these buffers into meshes and owns the renderer.
  */
 
+export { colourFillClock } from "./colour-fill-clock.js";
+
 export type { EnuFrame, EnuPoint } from "./enu.js";
 export {
   ENU_METRES_PER_DEG_LAT,

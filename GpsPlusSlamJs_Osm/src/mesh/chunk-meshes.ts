@@ -29,6 +29,7 @@
  * @see chunk-meshes.ts.md
  */
 
+import { timedColourFill } from "./colour-fill-clock.js";
 import { srgbToLinear } from "./srgb.js";
 import type { EnuPoint } from "./enu.js";
 import { mergeMeshes } from "./extrude.js";
@@ -170,7 +171,9 @@ export function chunkMeshes<T>(
     if (colourOf === undefined) {
       return shell === undefined ? { key, mesh } : { key, mesh, ...shell };
     }
-    const colors = vertexColours(parts, mesh.positions.length / 3);
+    const colors = timedColourFill(() =>
+      vertexColours(parts, mesh.positions.length / 3),
+    );
     return shell === undefined
       ? { key, mesh, colors }
       : { key, mesh, colors, ...shell };
