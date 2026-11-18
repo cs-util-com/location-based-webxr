@@ -1859,8 +1859,10 @@ describe("openGlobeEditor's wiring", () => {
   // Why: `project()` mirrors a point behind the camera through it, so a
   // code behind the camera measured as large as one in front (or huge,
   // with a corner just behind). A code not wholly between the near and the
-  // far plane is not drawn and measures 0.
-  it("measures a code's drawn side in front of the camera, and 0 behind it", async () => {
+  // far plane cannot be measured and reads 0, also one wholly between the
+  // camera and the near plane (whose depth is below the view volume, not
+  // above it: an upper-bound check alone measured it).
+  it("measures a code's drawn side in front of the camera, and 0 behind it or nearer than the near plane", async () => {
     const view = await openAt(0);
     const camera = fakes.view?.camera;
     const canvas = document.querySelector("canvas");
@@ -1881,17 +1883,20 @@ describe("openGlobeEditor's wiring", () => {
           new THREE.Vector3((x! * sideM) / 2, (y! * sideM) / 2, z),
         ),
       );
-    // In front at 10 m, behind at 10 m, and straddling the camera.
+    // In front at 10 m, behind at 10 m, straddling the camera, and in
+    // front but nearer than the near plane.
     fakes.codeCorners = [
       square(-10),
       square(10),
       [...square(-10).slice(0, 2), ...square(0.5).slice(2)],
+      square(-camera.near / 2, camera.near / 4),
     ];
-    const [front, behind, across] = view.stats().codePx;
+    const [front, behind, across, tooNear] = view.stats().codePx;
     const focal = 300 / Math.tan((camera.fov * Math.PI) / 360);
     expect(front).toBeCloseTo(focal / 10, 3);
     expect(behind).toBe(0);
     expect(across).toBe(0);
+    expect(tooNear).toBe(0);
   });
 
   // Why: a frame drawn while the view is being freed draws with freed

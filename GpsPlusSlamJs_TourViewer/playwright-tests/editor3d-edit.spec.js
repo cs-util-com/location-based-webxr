@@ -597,7 +597,8 @@ test("a pin dragged out of its circle warns on the ring and stays in its station
  */
 async function cameraAt(page) {
   const pose = (await view3d(page))?.globe?.pose;
-  if (pose === undefined) return [];
+  // A missing pose must fail the caller, not compare two empty lists.
+  if (pose === undefined) throw new Error("the globe view reads no pose");
   return /** @type {number[]} */ ([
     pose.lat,
     pose.lng,
@@ -614,8 +615,12 @@ async function cameraAt(page) {
 // Not "mid-flight": the globe view's Frame (F) places the camera at once
 // and starts no flight (`flying` read false right after F), and its only
 // flight, the opening approach, cannot be pressed into at a reliable
-// moment. That a press stops a flight rests on the input's lock
-// (`lockCamera` before the gesture reads the pointer, unit-tested).
+// moment. No press can grab the gizmo during that flight: it holds the
+// stations back (`holdsStations`), so no gizmo is drawn, and any press on
+// the canvas takes the camera from it (`approach.takeOver`, held by
+// editor3d-globe-approach.spec.js). The input's lock (`lockCamera`, the
+// controls' `lease(true)`) stops only the orbit's coast (the globe's
+// controls test "lease holds the controls off until it is returned").
 test("holds the camera still from a press on the gizmo until its release, and against T and Home", async ({
   page,
 }) => {

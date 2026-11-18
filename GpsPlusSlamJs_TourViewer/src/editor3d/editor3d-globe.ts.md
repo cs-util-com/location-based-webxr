@@ -218,9 +218,10 @@ surfaceShadow }`, or null where the ground sky cannot draw).
 - `stats().look` is where the line of sight meets the sampled ground
   (else the tour's centre), and `stats().codePx` each code's drawn side on
   the canvas (its square's corners projected by the camera of the
-  frame; 0 for a code not drawn, with a corner behind the camera, nearer
-  than the near plane or past the far one, where `project()` would mirror
-  it into a size), both in the world, which follows the camera: compare them with
+  frame; 0 when it cannot be measured, with any corner outside the view
+  volume: behind the camera, nearer than the near plane or past the far
+  one, where `project()` would mirror it into a size; a code straddling
+  the near plane is partly drawn and still reads 0), both in the world, which follows the camera: compare them with
   `stats().camera` and `pointOf` read in the same call, never across two.
   `stats().target` stays the tour's centre in the tour's frame.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode

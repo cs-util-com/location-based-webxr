@@ -268,7 +268,10 @@ async function soundIcons(page, on) {
 // (`isInterfacePart`).
 // TODO: why a depth-tested mark 8 m under the relief still shows is an
 // open question; until it is answered this test cannot tell an icon the
-// relief covers from one it does not.
+// relief covers from one it does not. The hypothesis that the sampled
+// ground the gate reads is not the ground drawn was checked and not borne
+// out (the flat relief tiles draw where the sample says; see the TODO in
+// editor3d-station-ring.spec.js).
 test("an ambient sound's icon is drawn and seen from above over relief standing above it", async ({
   page,
 }) => {

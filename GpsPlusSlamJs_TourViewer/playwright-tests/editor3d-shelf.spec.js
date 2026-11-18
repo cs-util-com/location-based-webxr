@@ -182,7 +182,9 @@ async function addFromMenu(page, stationId, kind, file, title) {
       { timeout: SHELF_ADD_MS },
     )
     .not.toBe("waiting");
-  await expect(added, `the add was answered by: ${answer}`).toBeVisible();
+  await expect(added, `the add was answered by: ${answer}`).toBeVisible({
+    timeout: SHELF_ADD_MS,
+  });
 }
 
 test.beforeEach(async ({ page }) => {

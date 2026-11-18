@@ -99,7 +99,9 @@ type StationsLayer = ReturnType<typeof createStationsLayer>;
 /** What the editing asks of the view's camera. */
 interface EditingCamera {
   /** A handle drag holds the camera still (true) until it is given back
-   *  (false); a flight or a coast stops at once. */
+   *  (false); a coast stops at once. (No flight needs stopping: during the
+   *  opening approach no gizmo is drawn, and a press takes the camera
+   *  from it, `editor3d-globe.ts`.) */
   lock(on: boolean): void;
   /** The world point the view looks at (`centre`'s place). */
   lookAt(): THREE.Vector3;

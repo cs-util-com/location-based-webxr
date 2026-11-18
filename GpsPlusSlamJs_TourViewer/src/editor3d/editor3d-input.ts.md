@@ -16,7 +16,7 @@ move the camera only, and a second finger during a drag cancels it.
   globe passes its routing table's `dragPx`, 5, in place of `INPUT`'s 4),
   listening until `dispose`:
   - `element` - the view's box (its presses are read in the capture phase,
-    before OrbitControls on the canvas sees them);
+    before the globe's camera controls on the canvas see them);
   - `surface` - the canvas: only a press on it is the scene's (the docks
     over the view keep theirs), and pointer positions are read against it;
   - `scene: InputScene` - `target(selection)`, `handleAt(pointer)`,
@@ -94,9 +94,13 @@ move the camera only, and a second finger during a drag cancels it.
   after a second finger cancelled one, until the last finger is up)
   rather than kept from the events, so their own bookkeeping of the
   pointers stays whole. A press on a
-  handle locks them BEFORE the gesture reads the pointer: the lock stops a
-  flight and the orbit's coast, so the camera stands still from the press
-  on (a press that finds nothing to grab unlocks again).
+  handle locks them BEFORE the gesture reads the pointer: the lock (the
+  globe's controls' `lease(true)`) stops the orbit's coast, so the camera
+  stands still from the press on (a press that finds nothing to grab
+  unlocks again). It stops no flight, and needs not: during the opening
+  approach the globe view holds the stations back (`holdsStations`), so no
+  gizmo is drawn, and a press on the canvas takes the camera from the
+  approach (`approach.takeOver`, `editor3d-globe.ts`).
 - Two fingers are the camera controls' own (the globe view's, which
   pinch, twist and tilt as in the globe lab): a second finger cancels a
   drag and blocks new presses until every finger is up, and the fingers

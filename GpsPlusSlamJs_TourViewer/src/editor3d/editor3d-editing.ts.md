@@ -140,11 +140,13 @@ parts are tested pure (`gizmo-maths`, `gesture`, `pose-edits`,
 pick), and the whole in a browser by
 `playwright-tests/editor3d-edit.spec.js` - a mouse drag over the ground
 saved and undone, every key, a second finger's cancel, the camera held
-still from a press during a flight until the release (T and Home
+still from a press on the gizmo until its release (T and Home
 waiting), the gizmo's on-screen sizes at four window sizes; on the
 globe, `editor3d-globe.spec.js` drags a station's middle handle (one
-edit, the camera and the world frame held still). The two-finger twist's direction
-and the pan on a real tablet are not covered by any test.
+edit, the camera and the world frame held still). Two fingers are the
+globe's camera controls' own (pinch, twist and tilt); the page's e2e holds
+only that a second finger cancels a drag, and no test here drives those
+gestures on a real tablet.
 
 The lock's parts are tested where they live (`gizmo-maths`, `gesture`, `editor3d-input`); the page's e2e (`editor3d-edit.spec.js`) checks the gizmo and the keys of a locked and an unlocked station.
 

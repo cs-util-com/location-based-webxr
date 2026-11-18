@@ -64,7 +64,8 @@ export interface InputScene {
   preview(target: GestureTarget, preview: GesturePreview | null): void;
   /** The handle drawn larger (under the pointer, or held). */
   hover(handle: GizmoHandle | null): void;
-  /** OrbitControls takes no input while locked. */
+  /** The globe's camera controls take no input while locked (their
+   *  `lease`), and a coast stops. */
   lockCamera(on: boolean): void;
   /** Fly to a selection (a double click or a double tap). */
   frame(selection: string): void;
@@ -144,7 +145,7 @@ interface Press {
 
 /**
  * The input on `element` (the 3D view's box: its presses are read before
- * OrbitControls sees them) and the window's keys, until `dispose`. Only a
+ * the globe's camera controls on the canvas see them) and the window's keys, until `dispose`. Only a
  * press on `surface` (the canvas) is the scene's: the docks over the view
  * keep theirs; a pointer's position is read against it. `frame` is called
  * each frame (a drag waiting for its ground tries again; a gesture whose
@@ -287,9 +288,11 @@ export function createSceneInput(input: {
     if (target === null) return;
     const handle = scene.handleAt(at);
     if (handle === null) return;
-    // Before OrbitControls reads this press (the listener captures), and
-    // before the gesture reads the pointer: the lock stops a flight or a
-    // coast, so the camera stands still from here.
+    // Before the camera controls read this press (the listener captures),
+    // and before the gesture reads the pointer: the lock stops a coast, so
+    // the camera stands still from here. (No flight runs here: during the
+    // opening approach no gizmo is drawn, and the press takes the camera
+    // from it.)
     scene.lockCamera(true);
     const gesture = startGesture(handle, target, at, scene.world);
     if (gesture === null) {

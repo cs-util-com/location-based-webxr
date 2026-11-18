@@ -947,10 +947,11 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
     ),
   );
   expect(away).toBeLessThanOrEqual(Math.max(30, 3 * radiusM) + 1);
-  // And it got there: a flight cut short, or one that never started,
-  // passes the bound above too. Measured 29.98 m against the 30 m aimed
-  // at, so 90 per cent of the aim leaves room without letting a short
-  // flight through.
+  // And it aimed far enough: a flight cut short fails the bound above
+  // (the camera starts far away), but one aimed too near, one found
+  // radius away in place of three, passes it. Measured 29.98 m against the
+  // 30 m aimed at, so 90 per cent of the aim leaves room without letting
+  // a too-near aim through.
   expect(away).toBeGreaterThanOrEqual(Math.max(30, 3 * radiusM) * 0.9);
 
   // A double click on another card: selected once, not toggled back.
