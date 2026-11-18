@@ -159,7 +159,7 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
   await afterFrames(page, 3);
   expect(await order(page)).toEqual(["column", "gate", "steps"]);
 
-  // "+": a station at the centre of the view, selected and said.
+  // "+": a station on the ground under the camera, selected and said.
   const start = await revision(page);
   await page.locator("#tree-add").click();
   await expect.poll(async () => (await order(page)).length).toBe(4);
@@ -167,7 +167,7 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
   expect(await selected(page)).toBe(`station:${added}`);
   await expect(
     page.locator(".toast", {
-      hasText: 'Added "Station 4" at the centre of the view',
+      hasText: 'Added "Station 4" under the camera',
     }),
   ).toBeVisible();
   await expect(card(page, added)).toBeVisible();

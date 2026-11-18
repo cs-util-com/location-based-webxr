@@ -799,9 +799,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **The tree's station commands** (G2 M3b), given to the shell as
   `stations` with a `say` (a toast), each one undo step that ends a
   delete's Undo offer, refreshes the views and tells autosave:
-  - `add` (`addStationAt`) - a station at the view's centre ("+") or
+  - `add` (`addStationAt`) - a station under the camera ("+") or
     where the ground menu was opened: selected, its card unfolded, said
-    (`Added "Station 4" at the centre of the view` / `... here`); a
+    (`Added "Station 4" under the camera` / `... here`); a
     refusal is said;
   - `reorder` (`reorderStations`) - the stations in a new order (the
     tree's drag, the inspector's Earlier and Later);

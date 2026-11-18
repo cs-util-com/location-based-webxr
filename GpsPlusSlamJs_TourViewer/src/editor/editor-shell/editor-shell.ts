@@ -18,7 +18,7 @@
  * (`dock-rule.ts`). The camera commands are the 3D view's
  * (`ShellView`); the shell never imports the 3D view's code.
  *
- * The tree's editing (M3b): "+" adds a station at the centre of the view,
+ * The tree's editing (M3b): "+" adds a station on the ground under the camera,
  * the scene's ground menu one where it was pressed (the kit's `scene-menu.ts`); a
  * card's grip reorders by drag (`tree-drag.ts`), the inspector's Earlier
  * and Later by the keyboard; the inspector's Delete and "Move to a new
@@ -216,7 +216,7 @@ type ShellView = Pick<
 /** The page's station commands the tree and the bars give: each one undo
  *  step, its outcome said by the page. */
 interface ShellStationCommands {
-  /** A new station at `at`: the view's centre ("+") or where the ground
+  /** A new station at `at`: under the camera ("+") or where the ground
    *  menu was opened ("here"). */
   add(at: GroundPlace, where: "centre" | "here"): void;
   /** The stations in `order` (every station once). */
@@ -2005,7 +2005,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     drawTreeNow();
     pictures.sweep();
   }
-  /** A new station at the centre of the view: the tree's "+" and the
+  /** A new station under the camera: the tree's "+" and the
    *  palette's New station. */
   function addStationAtCentre(): void {
     if (view === null) return;

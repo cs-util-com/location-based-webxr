@@ -104,6 +104,7 @@ import {
   folderName,
   plainFolderOf,
 } from "./folder-commands.js";
+import { NEW_STATION_PLACE } from "./editor-shell/add-palette-model.js";
 import { storyRows } from "./editor-shell/tree-model.js";
 import { applyPlaceEdit, type PlaceEdit } from "../placement/place-edits.js";
 import { askMove, moveNote } from "../move-question.js";
@@ -2515,7 +2516,7 @@ function showNewStation(stationId: string, said: (title: string) => string) {
 }
 
 /**
- * A new station at `at` (the 3D tree's "+" at the view's centre, or the
+ * A new station at `at` (the 3D tree's "+" under the camera, or the
  * ground menu's "New station here"): one step; a refusal is said.
  */
 function addStationAt(at: GroundPlace, where: "centre" | "here"): void {
@@ -2530,7 +2531,7 @@ function addStationAt(at: GroundPlace, where: "centre" | "here"): void {
   showNewStation(
     outcome.stationId,
     (title) =>
-      `Added "${title}" ${where === "centre" ? "at the centre of the view" : "here"}`,
+      `Added "${title}" ${where === "centre" ? NEW_STATION_PLACE : "here"}`,
   );
 }
 
