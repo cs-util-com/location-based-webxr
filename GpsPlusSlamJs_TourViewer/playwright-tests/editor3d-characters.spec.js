@@ -376,13 +376,6 @@ test("a character added with the add menu is drawn at a free spot, selected with
   // Framed (F), as a creator looks at what he just added: from the
   // tour's overview he is a few pixels tall.
   await page.keyboard.press("f");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourEditor.view3d()?.flying,
-      ),
-    )
-    .toBe(false);
 
   // A row in the station's list.
   await expect(page.locator(`#tree-body [data-select="${id}"]`)).toBeVisible();

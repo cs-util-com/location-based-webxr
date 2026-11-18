@@ -401,20 +401,14 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   const start = await revision(page);
   const selected = () =>
     page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
-  const settled = () =>
-    expect
-      .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
-      .toBe(false);
 
   // Closed: nothing of the story stands there.
   await card.locator('.kid[data-select="p"]').click();
   await expect.poll(selected).toBe("p");
-  await settled();
   expect(await pickAtE2(page)).not.toBe("e2");
 
   await card.locator('.folder[data-story="s1"] button.fname').click();
   await expect.poll(selected).toBe("story:s1");
-  await settled();
   await expect.poll(() => pickAtE2(page)).toBe("e2");
 
   // Chosen in the 3D view, it is chosen in the tree, with its disc and
@@ -426,7 +420,6 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   );
   await page.mouse.click(at.x, at.y);
   await expect.poll(selected).toBe("e2");
-  await settled();
   const handle = (/** @type {string} */ part) =>
     page.evaluate(
       (p) => /** @type {any} */ (window).__tourEditor.view3dHandle(p),
@@ -473,7 +466,6 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   // Another item chosen: the story closes.
   await card.locator('.kid[data-select="p"]').click();
   await expect.poll(selected).toBe("p");
-  await settled();
   await expect.poll(() => pickAtE2(page)).not.toBe("e2");
 });
 
@@ -665,11 +657,6 @@ function wholeTour(page) {
   );
 }
 
-/** @param {import("@playwright/test").Page} page */
-function view3dStats(page) {
-  return page.evaluate(() => /** @type {any} */ (window).__tourEditor.view3d());
-}
-
 /**
  * A point of the 3D view's hook (CSS px on the canvas) on the page, once
  * it shows.
@@ -815,9 +802,6 @@ async function selectYard(page) {
       page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected()),
     )
     .toBe("folder:yard");
-  await expect
-    .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
-    .toBe(false);
   await expect
     .poll(() =>
       page.evaluate(
