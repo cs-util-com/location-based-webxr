@@ -187,25 +187,54 @@ describe("the globe package stays servable to the no-build globe lab", () => {
 });
 
 /**
- * THE GLOBE-TERRAIN CARRIER LAB imports globe modules too, under a smaller
- * import map of its own, so the graph its modules reach through `/globe/`
- * is held to THAT map: a globe module that gains a bare import mapped only
- * in the globe lab would stop this page from booting.
+ * THE CARRIER LABS import globe modules through `/globe/` too, each page under
+ * a smaller import map of its own, so the graph a lab reaches through
+ * `/globe/` is held to THAT page's map: a globe module that gains a bare
+ * import mapped only in the globe lab would stop the carrier page from
+ * booting. One row per lab; a lab whose variants are separate pages (the city
+ * look) is held to every variant's map, since each loads the shared harness.
  */
-const GLOBE_TERRAIN_LAB = join(
-  repoRoot,
-  "GpsPlusSlamJs_DesignSystem",
-  "labs",
-  "globe-terrain",
-);
+const LABS = join(repoRoot, "GpsPlusSlamJs_DesignSystem", "labs");
 
-/** The globe sources the carrier lab's own modules import through `/globe/`. */
-function globeTerrainLabServed() {
+/** Every `<dir>/<variant>/index.html` below a lab that declares an import map. */
+function variantPages(dir) {
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => join(dir, d.name, "index.html"))
+    .filter(
+      (page) =>
+        existsSync(page) &&
+        readFileSync(page, "utf8").includes('<script type="importmap">'),
+    )
+    .sort();
+}
+
+const CARRIER_LABS = [
+  {
+    lab: "globe-terrain",
+    pages: [join(LABS, "globe-terrain", "index.html")],
+    reaches: ["globe-surface.ts", "globe-terrain.ts"],
+  },
+  {
+    lab: "terrain",
+    pages: [join(LABS, "terrain", "index.html")],
+    reaches: ["globe-clock.ts", "globe-sources.ts", "sky-level.ts"],
+  },
+  {
+    lab: "city-look",
+    pages: variantPages(join(LABS, "city-look")),
+    reaches: ["globe-grade.ts"],
+  },
+];
+
+/** The globe sources a lab's own top-level modules import through `/globe/`. */
+function carrierLabServed(lab) {
+  const dir = join(LABS, lab);
   const served = new Set();
-  for (const f of readdirSync(GLOBE_TERRAIN_LAB)) {
+  for (const f of readdirSync(dir)) {
     if (!f.endsWith(".js") || f.includes(".test.") || f.includes(".spec."))
       continue;
-    const source = readFileSync(join(GLOBE_TERRAIN_LAB, f), "utf8");
+    const source = readFileSync(join(dir, f), "utf8");
     for (const match of source.matchAll(SPECIFIER)) {
       if (!match[1].startsWith("/globe/")) continue;
       const rel = match[1].slice("/globe/".length).replace(/\.js$/, ".ts");
@@ -215,20 +244,30 @@ function globeTerrainLabServed() {
   return [...served].sort();
 }
 
-describe("the globe modules the carrier lab reaches stay servable under its import map", () => {
-  it("finds the globe modules the lab imports", () => {
-    expect(globeTerrainLabServed().map((p) => relative(GLOBE_SRC, p))).toEqual(
-      expect.arrayContaining(["globe-surface.ts", "globe-terrain.ts"]),
-    );
-  });
+describe.each(CARRIER_LABS)(
+  "the globe modules the $lab lab reaches stay servable under its import map",
+  ({ lab, pages, reaches }) => {
+    it("finds the globe modules the lab imports and the pages that map them", () => {
+      expect(pages.length).toBeGreaterThan(0);
+      expect(carrierLabServed(lab).map((p) => relative(GLOBE_SRC, p))).toEqual(
+        expect.arrayContaining(reaches),
+      );
+    });
 
-  it("imports only what the carrier lab maps, and .js-suffixed relatives", () => {
-    const mapped = globeLabMapped(join(GLOBE_TERRAIN_LAB, "index.html"));
-    expect(
-      servedGraphProblems(globeTerrainLabServed(), undefined, mapped),
-    ).toEqual([]);
-  });
-});
+    it.each(pages.map((page) => [relative(LABS, page), page]))(
+      "imports only what %s maps, and .js-suffixed relatives",
+      (_name, page) => {
+        expect(
+          servedGraphProblems(
+            carrierLabServed(lab),
+            undefined,
+            globeLabMapped(page),
+          ),
+        ).toEqual([]);
+      },
+    );
+  },
+);
 
 /**
  * THE TERRAIN LAB (terrain plan 2026-09-27-0605 §9, findings 2 and 5) is

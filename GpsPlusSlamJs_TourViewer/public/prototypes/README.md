@@ -9,7 +9,20 @@ wired into its logic: every interaction is faked.
   (`/tour/item-lab.html?kind=stamp-1`); its `README.md` says how to add one.
   Pages and files here are linked from nothing in the app.
 
-- `index.html` - the list: one section per round, its heading `<time>YYYY-MM-DD</time> Title` with the id `YYYY-MM-DD-slug` and a "#" link to itself, sections oldest first, a newest-first contents list at the top (`src/prototypes-index.test.ts` holds it to that).
+- `index.html` - the list, held to these rules by `src/prototypes-index.test.ts`:
+  - One section per round, sections oldest first. Its heading is
+    `<time datetime="YYYY-MM-DD">YYYY-MM-DD</time> Title` with the id
+    `YYYY-MM-DD-slug`.
+  - The heading ends with a link to itself:
+    `<a class="anchor" href="#YYYY-MM-DD-slug" aria-label="Link to this section: Title">#</a>`,
+    so each self-link has its own name in a screen reader's link list.
+  - The heading carries the section's only date: no date in the body text
+    ("Made YYYY-MM-DD", "(made ...)"); to point at another round, link its
+    section instead.
+  - A newest-first contents list at the top, one entry per section, its
+    label exactly "YYYY-MM-DD Title" as in the heading.
+  - Every in-page link points at an id on the page, every other link at a
+    prototype folder with an `index.html` (or one of the package's pages).
 - `landing-1-editorial/` ... `landing-5-map-path/` - the creator's entry
   and setup page, five visual directions. The app took L5.
 - `landing-r3-0-strip-or-cards/` ... `landing-r3-5-calm-route-cards/` - the
