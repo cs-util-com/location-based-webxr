@@ -642,4 +642,79 @@ describe("createNarrationBox", () => {
     expect(voiced.running()).toBe(true);
     expect(voiced.nowMs()).toBe(4 * WORD_MS);
   });
+
+  // Why: a voice the channel holds can be carried on while the finger is
+  // down (a story clip ends mid-scrub). It must not play from its old
+  // place under the scrubbing finger, and the finger's release must let it
+  // go on from where the words were dragged to.
+  it("holds a voice the channel carries on mid-drag, and plays it on from the dragged place", () => {
+    const focus = createVoiceFocus();
+    const voiced = focusedPlayer(innerPlayer(), focus);
+    const clip = focusedPlayer(innerPlayer(), focus);
+    voiced.play();
+    clip.play(); // the clip holds the text's voice
+    const { box, content, store } = make();
+    box.show({ ...content, player: voiced });
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+    expect(voiced.playing()).toBe(false);
+    clip.pause(); // the clip ends: the channel carries the text's voice on
+    box.tick();
+    expect(voiced.playing()).toBe(false);
+    expect(box.state().scrubbing).toBe(true);
+    // Held for the finger only: it counts as playing, not as a pause.
+    expect(selectNarrationBox(store.getState()).playing).toBe(true);
+    box.element.dispatchEvent(pointer("pointerup", 100, 700 - LINE_PX));
+    expect(voiced.playing()).toBe(true);
+    expect(voiced.nowMs()).toBe(4 * WORD_MS);
+  });
+
+  // Why: the disclosure after the name and the label a screen reader
+  // reads come from the content; a change to the credit, the synthetic
+  // flag or the title alone must not leave the old ones on screen.
+  it("redraws the disclosure and the label when only the credit or title changes", () => {
+    const { box, content } = make();
+    box.show(content);
+    const sameTiming = { ...content };
+    box.show({ ...sameTiming, voiceCredit: "Ann" });
+    expect(box.element.querySelector(".nb-disc")?.textContent).toBe(
+      " · synthetic voice · Ann",
+    );
+    box.show({ ...sameTiming, voiceCredit: "Ann", synthetic: false });
+    expect(box.element.querySelector(".nb-disc")?.textContent).toBe(" · Ann");
+    expect(box.element.getAttribute("aria-label")).not.toContain("synthetic");
+    box.show({
+      ...sameTiming,
+      voiceCredit: "Ann",
+      synthetic: false,
+      title: "Mill",
+    });
+    expect(box.element.getAttribute("aria-label")).toContain('"Mill"');
+  });
+
+  // Why: the system can take a captured pointer away (a notification, the
+  // browser taking the gesture) without a pointerup or pointercancel; the
+  // box must not stay in a drag with the voice held for a gone finger.
+  it("ends a drag when the pointer capture is lost, as on pointercancel", () => {
+    const { box, clock, content, store } = make();
+    clock.now = 4 * WORD_MS;
+    clock.on = true;
+    box.show(content);
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointermove", 100, 700 - LINE_PX));
+    expect(clock.on).toBe(false);
+    box.element.dispatchEvent(pointer("lostpointercapture", 100, 700));
+    expect(box.state().scrubbing).toBe(false);
+    expect(selectNarrationBox(store.getState()).scrubbing).toBe(false);
+    expect(clock.now).toBe(8 * WORD_MS);
+    expect(clock.on).toBe(true);
+    // A lost capture is no tap: a press without a drag toggles nothing.
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("lostpointercapture", 100, 700));
+    expect(clock.on).toBe(true);
+    expect(document.querySelector(".nb-tapfx")).toBeNull();
+    // The release after a lost capture is no longer this press's.
+    box.element.dispatchEvent(pointer("pointerup", 100, 700));
+    expect(clock.on).toBe(true);
+  });
 });

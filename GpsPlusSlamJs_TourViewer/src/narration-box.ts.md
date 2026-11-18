@@ -26,8 +26,9 @@ and what.
   - `slots.left`, `slots.right` - the side places for a story step's
     action and a quiz; empty and hidden for now.
   - `show(content)` - shows `content`. Cheap for the same content, so the
-    frame loop may call it every frame; a new `key`, text, timing or
-    speaker rebuilds the words.
+    frame loop may call it every frame; a new `key`, text, timing,
+    speaker, title, synthetic flag or voice credit rebuilds the words, the
+    disclosure and the label.
   - `hide()` - fades out, inert, out of reach of taps.
   - `tick()` - follows the voice; `show` calls it, and so does every
     frame.
@@ -77,6 +78,15 @@ and what.
   channel holds stays held to carry on. On release the voice goes on from
   the dragged place, or, dragged past its end, is paused for good (its
   channel handed back).
+- A voice carried on while the finger is down (the voice channel when a
+  clip it held behind ends, or the page's sound gate at a return) is held
+  again on the next frame and counts as one the drag holds: the release
+  lets it go on from the dragged place.
+- A press ends on `pointerup`, `pointercancel` or `lostpointercapture`
+  (the system taking the capture: a notification, the browser taking the
+  gesture). Only `pointerup` can be a tap; the other two end a drag as a
+  release does, so the box never stays dragging with the voice held for a
+  gone finger.
 - A drag cut off by `hide()`, a new text or `dispose()` never plays the
   voice again: the place is kept, and a voice the drag held is paused
   properly, its channel handed back (a voice waiting behind it carries
@@ -149,8 +159,13 @@ box.hide();
   voice behind when a drag is cut off (hide, new text, dispose) or ends
   past the end; the voice held again while the finger is down; the
   opening scroll when the name and disclosure take lines of their own;
-  no playing on from a drag ended in a hidden page.
-- `narration-box-timeline.test.ts` - the arithmetic, with properties.
+  no playing on from a drag ended in a hidden page; a voice the channel
+  carries on mid-drag held and played on from the dragged place; the
+  disclosure and label redrawn when only the credit, synthetic flag or
+  title changes; a drag ended by a lost pointer capture, which is no tap.
+- `narration-box-timeline.test.ts` and
+  `narration-box-timeline.property.test.ts` - the arithmetic, with
+  properties.
 - `playwright-tests/narration-check.spec.js` - the layout at three
   viewports against the prototype's numbers, the name and disclosure on
   the first line (the disclosure's first line right after the name), the
