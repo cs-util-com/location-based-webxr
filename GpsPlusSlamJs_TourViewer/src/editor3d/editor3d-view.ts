@@ -123,17 +123,15 @@ export interface Editor3dView {
    *  again. The gap counts as no slow frame. */
   setPaused(on: boolean): void;
   /** The globe view's clock: the sky at the real time now (true), or held
-   *  in daylight over the tour (false, its default). Absent: the view has
-   *  no sky of its own. */
-  setRealTime?(on: boolean): void;
-  /** The globe view's heavy clouds on (true, their default) or off.
-   *  Absent: the view has no clouds of its own. */
-  setClouds?(on: boolean): void;
+   *  in daylight over the tour (false, its default). */
+  setRealTime(on: boolean): void;
+  /** The globe view's heavy clouds on (true, their default) or off. */
+  setClouds(on: boolean): void;
   /** The globe view's OSM buildings (with their trees and roads) shown
    *  (true, their default) or hidden: hiding stops a load that runs, and
-   *  while hidden nothing more is loaded for them and they are not drawn. Absent: the view has no buildings (or
-   *  the link turned them off, `buildings=0`, where this does nothing). */
-  setBuildings?(on: boolean): void;
+   *  while hidden nothing more is loaded for them and they are not drawn. Where
+   *  the link turned them off (`buildings=0`) this does nothing. */
+  setBuildings(on: boolean): void;
   /** What the shell shows of the camera and the drawing. */
   readout(): Editor3dReadout;
   /** The street map's near tiles, failed first (the Map loading tab). */
@@ -254,9 +252,10 @@ export interface Editor3dStats {
    *  with the camera's distance). */
   readonly codeScales: readonly number[];
   /** Each code's drawn side on the canvas (CSS px): its square's corners
-   *  projected by the camera of the last frame; 0 for a code not drawn (a
-   *  corner behind the camera, nearer than the near plane or past the far
-   *  one). */
+   *  projected by the camera of the last frame; 0 when it cannot be
+   *  measured (any corner outside the view volume: behind the camera,
+   *  nearer than the near plane or past the far one), so also for a code
+   *  that straddles the near plane and is partly drawn. */
   readonly codePx: readonly number[];
   readonly shown: readonly string[];
   readonly renders: number;

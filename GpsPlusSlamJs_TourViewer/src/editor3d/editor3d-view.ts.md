@@ -24,9 +24,9 @@ loading it: the view itself arrives by a dynamic `import()`.
     `lookFrom`, `frame`, `setTop`, `zoom`, `northUp`, `setTilt`,
     `setDistance`, `setHeading` (round the point the line of sight
     meets, keeping the distance to it and the tilt);
-  - the drawing's switches: `setPaused`, `setLayers`, and the optional
-    `setRealTime`, `setClouds`, `setBuildings` (absent: the view has no
-    such thing to switch);
+  - the drawing's switches: `setPaused`, `setLayers`, `setRealTime`,
+    `setClouds` and `setBuildings` (every view has them: the globe is the
+    only 3D view);
   - edits through the page: `turn`, `previewRadius`, `cancelGesture`;
   - reads: `readout` (the shell's compass, Top view item and bottom
     panel), `stats` (the page's checks), `mapTiles`, `retryMap`,
