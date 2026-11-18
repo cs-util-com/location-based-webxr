@@ -88,6 +88,17 @@ cannot reach.
   relief again since, so that figure is low) from lane 3 moved to lane 1,
   the lightest by those seconds, for its clouds spec's CI retries. Local
   seconds are not CI minutes; rebalance from the uploaded reports.
+- **3D lanes rebalanced 2026-11-18** from the per-spec minutes of the
+  uploaded reports of one CI full run (CI run 44295629516), after the
+  editor's every spec moved to the globe: lanes 1, 2 and 4 took 19.5,
+  19.4 and 14.3 min of test time, lane 3 ran into the 45 min suite limit
+  at 44.8 min with `editor3d.spec.js` and two more tests not run.
+  `editor3d-folders` (10.6 min) moved from lane 3 to lane 4,
+  `editor3d-inspector` (7.5 min) to lane 2 and `editor3d-story-cards`
+  (4.2 min) to lane 1, so about 23.7, 26.9, 22.5 plus the unrun tests
+  (`editor3d.spec.js` was not measured) and 24.9 min. Lane 1 keeps its
+  clouds spec, 0.5 min in that run. A lane job adds about a minute of
+  setup to its test time.
 
 ## Measurement (2026-11-01)
 
