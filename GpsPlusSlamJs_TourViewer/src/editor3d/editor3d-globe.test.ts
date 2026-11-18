@@ -823,6 +823,50 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why: the top view (T) tilts the camera to look straight down; a tilt
+  // where the camera stands carried the point it looked at, and the
+  // selection there, off the screen. It tilts round that point instead,
+  // as a turn does, keeping the distance to it, and back again. Swept
+  // with the ground loaded (200 m) and not, from two pitches.
+  it.each([
+    [-30, 200],
+    [-30, null],
+    [-55, 200],
+  ])(
+    "tilts to the top view and back round the point it looks at (pitch %s, ground at %s m)",
+    async (pitchDeg, groundM) => {
+      fakes.groundM = groundM;
+      const view = await openAt(groundM ?? 0);
+      const camera = fakes.view?.camera;
+      const group = fakes.view?.globe.group;
+      if (camera === undefined || group === undefined)
+        throw new Error("no camera");
+      placeCamera(400, pitchDeg, groundM, 700);
+      const ecefOf = (p: readonly number[]) =>
+        new THREE.Vector3(p[0], p[1], p[2]).applyMatrix4(
+          group.matrix.clone().invert(),
+        );
+      const pitchNow = () =>
+        (view.stats().globe as { pose: { pitchDeg: number } }).pose.pitchDeg;
+      const lookEcef = ecefOf(view.stats().look);
+      const distance = camera.position.distanceTo(
+        new THREE.Vector3(...view.stats().look),
+      );
+      for (const [on, pitch] of [
+        [true, -89],
+        [false, GLOBE_EDITOR_LOOK.aimPitchDeg],
+      ] as const) {
+        view.setTop(on);
+        const after = view.stats();
+        expect(pitchNow()).toBeCloseTo(pitch, 1);
+        expect(ecefOf(after.look).distanceTo(lookEcef)).toBeLessThan(0.5);
+        expect(
+          camera.position.distanceTo(new THREE.Vector3(...after.look)),
+        ).toBeCloseTo(distance, 0);
+      }
+    },
+  );
+
   // Why: a turn places the camera; the speed streaks must start again
   // from where it now stands, or the speed of a dive under way carries
   // over the turn and the first frame after it still draws streaks. The
