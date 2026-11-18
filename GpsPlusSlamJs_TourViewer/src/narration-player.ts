@@ -87,6 +87,9 @@ export function createNarrationPlayer(
   let url: string | null = null;
   let loading: Promise<void> | null = null;
   let wanted = false;
+  /** Counts presses of play and pause: a play() whose press a later one
+   *  superseded neither starts the audio nor reports its abort. */
+  let presses = 0;
   let heldMs = 0;
   let disposed = false;
 
@@ -151,22 +154,26 @@ export function createNarrationPlayer(
     play() {
       if (disposed || wanted) return;
       wanted = true;
+      presses += 1;
+      const press = presses;
       notify();
       ensure()
         .then(() => {
-          if (!wanted || audio === null) return undefined;
+          if (press !== presses || audio === null) return undefined;
           return audio.play();
         })
         .catch((error: unknown) => {
           // A pause before play() settled (a drag holding the voice the
-          // next frame) aborts it: the voice is held, not refused.
-          if (!wanted && isPlayAbort(error)) return;
+          // next frame, or play-pause-play) aborts it: the voice is held,
+          // not refused. An abort of the current press is still reported.
+          if (press !== presses && isPlayAbort(error)) return;
           fail(error);
         });
     },
     pause() {
       if (!wanted) return;
       wanted = false;
+      presses += 1;
       audio?.pause();
       notify();
     },
