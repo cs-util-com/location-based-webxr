@@ -13,6 +13,8 @@ fragment shaders, and the visible sky's vertex/fragment pair.
   `atmSkyVeilOn` (0 or 1) and `atmSkyVeilRise` and, before tone mapping,
   mixes the sky toward the veil by `atmHorizonVeilWeight(dir.y, rise)`
   (`horizon-veil.ts`). Off (`atmSkyVeilOn` 0) it renders what it did.
+- The sky fragment shader multiplies the radiance by `atmSkyBalance`
+  (vec3, (1, 1, 1) for none) before the half-float clamp and the veil mix.
 - `ATMOSPHERE_LUT_VERTEX_GLSL` — full-screen triangle.
 - `TRANSMITTANCE_LUT_FRAGMENT_GLSL`, `MULTI_SCATTERING_LUT_FRAGMENT_GLSL`,
   `SKY_VIEW_LUT_FRAGMENT_GLSL`.

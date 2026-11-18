@@ -31,6 +31,11 @@ with the air's per-channel extinction, replacing the one-colour fog. An
     fades toward in place of the sky-view LUT colour (an app's look
     control); `null` (the default) is the sky's colour. Each channel must
     be finite and ≥ 0 (`RangeError`). Survives `sync`.
+  - `setSkyBalance(rgb | null)` and `skyBalance`: the gain the visible sky
+    takes (`SkyAtmosphere.setSkyBalance`), applied to the sky colour the
+    haze fades toward, so the distance meets the balanced sky without a
+    seam; a set veil replaces the balanced sky. `null` (the default) is
+    (1, 1, 1). Same validation; survives `sync`.
   - `setRim(centre | null, innerM = 0, outerM = 0)` and `rim`: a radial
     boundary fade around a horizontal centre (world x, z), complete at
     `outerM`, for an app whose ground is a finite tile: its rim then fades

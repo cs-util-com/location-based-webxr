@@ -63,6 +63,17 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   uniforms stay off), so the scene's image-based light is unchanged.
   `null` or a rise of 0 switches it off. Validated before any change
   (channels finite and ≥ 0, rise in 0..90; `RangeError`). Uniforms only.
+- `setSkyBalance(gain | null)` and `skyBalance`: a per-channel gain on the
+  sky's own radiance (before the clamp and the horizon veil), in the
+  visible sky AND the bake, through one shared uniform `atmSkyBalance`, so
+  the surfaces' image-based light takes the same cast. A look tool: it
+  moves the model's twilight colour (mauve after sunset) toward a chosen
+  one; a gain of luminance 1 leaves the exposure where it was. `null` (the
+  default) is (1, 1, 1). A change re-bakes (staged: marks the bake due);
+  the same gain again, or a gain before the first sun, bakes nothing.
+  Validated before any change (channels finite and ≥ 0; `RangeError`).
+  The haze takes the same gain through `AtmosphereHaze.setSkyBalance`,
+  which the app calls too.
 - `setExposureCompensation(ev)` — EV on top of the auto-exposure; no GPU work.
 - `autoExposureAdaptation` (getter) and `setAutoExposureAdaptation(a)` — the
   auto-exposure's adaptation (default 0.75), recomputed at the last
