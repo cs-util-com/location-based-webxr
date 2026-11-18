@@ -6,7 +6,7 @@ The synthetic odometry and GPS models behind the "code left behind" sweeps: SLAM
 
 ## Public API
 
-- **`mulberry32(seed) → () => number`**, **`gaussian(rng) → number`**: the seeded PRNG and a Box-Muller normal draw every walk here is built from.
+- **`mulberry32(seed) → () => number`**, **`gaussian(rng) → number`**: the seeded PRNG (the package's `utils/mulberry32.ts`, re-exported) and a Box-Muller normal draw every walk here is built from.
 - **`rotY(a, v) → Nue`**: rotation about Up (NUE y) by `a` radians.
 - **`Waypoint { tS, at: NE, walkedM }`** and **`positionOnRoute(waypoints, tS) → { at, walkedM }`**: a timed route and where the walker is on it (linear between waypoints, clamped at both ends). Throws on an empty route.
 - **`IntegratedDrift { yawDegPer100m, transPct }`** and **`driftedYaw(yaw0, sign, yawDegPer100m, walkedM)`**: the odometry frame's yaw after `walkedM` metres.

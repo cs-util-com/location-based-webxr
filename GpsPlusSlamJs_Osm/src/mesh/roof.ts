@@ -57,6 +57,7 @@ import type { TriangulationResult } from "./triangulate.js";
 import { dropClosingPoint } from "./triangulate.js";
 import { addWalls } from "./walls.js";
 import { containsPoint } from "../spatial/point-in-ring.js";
+import { minMaxOf } from "../utils/min-max.js";
 
 export interface RoofOptions {
   readonly shape: RoofShape;
@@ -380,8 +381,7 @@ function skillionRoof(
       ? longestAxis(outer)
       : uphillOf(options.directionDeg);
   const projected = outer.map((p) => p.x * axis.x + p.y * axis.y);
-  const min = Math.min(...projected);
-  const max = Math.max(...projected);
+  const [min, max] = minMaxOf(projected);
   const span = max - min;
 
   const heightAt = (p: EnuPoint): number => {
