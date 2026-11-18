@@ -178,4 +178,13 @@ dialog.toggle();
     view booting in the tuned look (the same brightness within 2);
   - the readouts' parity with the sweep's independent inline measures on the
     same view. Measured 2026-09-24: lit 65.0 vs 65.0 and 64.9 vs 64.9, margin
-    5.31 vs 5.31 and 5.49 vs 5.49 (two runs).
+    5.31 vs 5.31 and 5.49 vs 5.49 (two runs), before the cosmetic woods.
+  - **the expected margin at that view, woods on:** the parity step runs at
+    the boot state (June noon, ambient occlusion off, the fixture's mapped
+    wood and the tint on), where the margin read 1.99 in every run on
+    2026-11-15, below the bound by design (see "The margin applies to this
+    view only" above). The test asserts it stays above 1, about half the
+    measured value: a collapse of the heat grid's contrast (for example to
+    0.2) fails, while ordinary look changes leave room. The dialog's verdict
+    word is not asserted there; the unit tests hold it on both sides of the
+    bound.

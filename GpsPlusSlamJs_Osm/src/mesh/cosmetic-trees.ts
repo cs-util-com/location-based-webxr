@@ -596,6 +596,29 @@ function placementOf(
 }
 
 /**
+ * A ring's bounds by a loop, not `Math.min(...xs)`: a spread passes every
+ * point as an argument, and a long ring exceeds the engine's argument limit.
+ */
+function ringBounds(ring: readonly EnuPoint[]): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of ring) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+/**
  * `(p) => true` where a wood or orchard tree must not stand: inside an
  * excluded ring, or within a road's half width plus `margin`. Bucketed on
  * 16 m cells of the frame, and only what touches the window is bucketed.
@@ -636,11 +659,8 @@ function exclusion(
   };
   for (const ring of rings ?? []) {
     if (ring.length < 3) continue;
-    const xs = ring.map((p) => p.x);
-    const ys = ring.map((p) => p.y);
-    add(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), {
-      ring,
-    });
+    const b = ringBounds(ring);
+    add(b.minX, b.minY, b.maxX, b.maxY, { ring });
   }
   for (const feature of features) {
     if (!isRoad(feature)) continue;

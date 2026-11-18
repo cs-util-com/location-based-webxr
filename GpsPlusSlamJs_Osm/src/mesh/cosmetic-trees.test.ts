@@ -129,6 +129,32 @@ describe("woods", () => {
     expect(trees.some((t) => inSquare(t.position, 20, 20, 60, 60))).toBe(false);
   });
 
+  // Why: an excluded ring's bounds were taken with Math.min(...xs), and a
+  // spread passes every point as an argument, so a ring past the engine's
+  // argument limit (about 100k-125k in Node) threw a RangeError and lost the
+  // whole build. A ring that long is rare but real (a traced footprint or a
+  // merged outline); its bounds must come from a loop.
+  it("takes the bounds of an excluded ring too long to spread", () => {
+    const perSide = 50_000;
+    const house: EnuPoint[] = [];
+    const side = (x0: number, y0: number, x1: number, y1: number) => {
+      for (let k = 0; k < perSide; k++) {
+        const f = k / perSide;
+        house.push({ x: x0 + (x1 - x0) * f, y: y0 + (y1 - y0) * f });
+      }
+    };
+    side(20, 20, 60, 20);
+    side(60, 20, 60, 60);
+    side(60, 60, 20, 60);
+    side(20, 60, 20, 20);
+    expect(house.length).toBeGreaterThan(125_000);
+    const trees = build([wood(square(0, 0, 100, 100))], {
+      excludeRings: [house],
+    });
+    expect(trees.length).toBeGreaterThan(100);
+    expect(trees.some((t) => inSquare(t.position, 20, 20, 60, 60))).toBe(false);
+  });
+
   it("keeps a road's half width plus the margin clear", () => {
     // highway=residential is 2 lanes of the default lane width.
     const road: OsmFeature = {

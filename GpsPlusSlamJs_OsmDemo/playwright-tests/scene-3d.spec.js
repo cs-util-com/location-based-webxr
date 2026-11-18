@@ -2726,7 +2726,11 @@ test.describe("the light dialog", () => {
       );
       expect(Math.abs((await readoutLuma(page)) - inlineLit)).toBeLessThan(0.2);
       expect(Math.abs(margin - inlineMargin)).toBeLessThan(0.05);
-      expect(text).toContain(margin >= 5 ? "ok" : "below the bound");
+      // The margin itself, not the dialog's verdict word (the unit tests
+      // hold the word on both sides of the bound): this boot view has its
+      // mapped wood on, so it sits below the bound by design, and the floor
+      // stated in `light-dialog.ts.md` is what catches a collapse of it.
+      expect(margin).toBeGreaterThan(1);
       // WHY: the dialog sits inside the 3D view's container, and its clicks
       // (the back arrow on every `setting`, "Check heat grid") used to bubble
       // into a scene pick that ordered the NPC to the ground under the

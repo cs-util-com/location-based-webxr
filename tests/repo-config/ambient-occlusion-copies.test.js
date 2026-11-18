@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import * as designSystem from '../../GpsPlusSlamJs_DesignSystem/3d/ambient-occlusion.js';
 import * as framework from '../../GpsPlusSlamJs_AppFramework/src/visualization/ambient-occlusion.ts';
+import { mulberry32 } from '../../GpsPlusSlamJs_AppFramework/src/utils/mulberry32.ts';
 
 const FADE_FIELDS = ['fadeStartM', 'fadeEndM'];
 
@@ -35,9 +36,19 @@ describe('the two ambient occlusion copies agree', () => {
     expect(framework.AO_NOISE_SEED).toBe(designSystem.AO_NOISE_SEED);
   });
 
+  // The framework's AO draws from the package's one generator
+  // (`utils/mulberry32.ts`), which the live clouds share, so the pin holds
+  // that generator itself to the look-dev copy as well as the AO's use of it.
   it('on the seeded generator', () => {
-    const a = framework.aoNoiseRandom(designSystem.AO_NOISE_SEED);
-    const b = designSystem.aoNoiseRandom(designSystem.AO_NOISE_SEED);
-    for (let i = 0; i < 16; i++) expect(a()).toBe(b());
+    for (const seed of [designSystem.AO_NOISE_SEED, 0, 7, -1, 0xffffffff]) {
+      const ao = framework.aoNoiseRandom(seed);
+      const shared = mulberry32(seed);
+      const lookDev = designSystem.aoNoiseRandom(seed);
+      for (let i = 0; i < 16; i++) {
+        const expected = lookDev();
+        expect(ao(), `AO, seed ${seed}`).toBe(expected);
+        expect(shared(), `shared generator, seed ${seed}`).toBe(expected);
+      }
+    }
   });
 });

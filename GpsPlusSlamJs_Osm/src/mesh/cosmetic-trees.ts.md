@@ -60,7 +60,9 @@ cos(row centre))` degrees wide; the tree stands at 0.15 + 0.7 * hash of the
 - **No spread over candidates**: each source's candidates are appended one by
   one, never `push(...list)`, which throws `RangeError: Maximum call stack size
 exceeded` above roughly 100-125 k elements; one forest covering the OSM
-  demo's drawn window at Heidelberg reached that (2026-11-10).
+  demo's drawn window at Heidelberg reached that (2026-11-10). An excluded
+  ring's bounds come from a loop for the same reason, never
+  `Math.min(...xs)`.
 - **The window**: wood and orchard areas are clipped to it (`clipToBbox`) before
   the point-in-polygon test (by crossing parity over all rings, so holes are
   outside), and every candidate is tested against it, rows included.
@@ -94,7 +96,8 @@ const trees = buildCosmeticTrees(features, {
   a bend and the mapped-tree clearance; rank order, the cap keeping the lowest
   ranks spread over the wood, an infinite cap; the RangeErrors; the count
   scaling with density 0.005 / 0.01 / 0.02; a wood with 300 000 candidate
-  cells (the spread overflow).
+  cells (the spread overflow); an excluded ring of 200 000 points (the bounds
+  overflow).
 - `cosmetic-trees.property.test.ts`: density within 10 % on random star polygons
   above 1 ha at three densities; the same trees in frames up to 5 km apart (1 mm);
   input order; nothing outside a random window (a row included).

@@ -222,8 +222,8 @@ const hash = await textHashOf(text); // 'sha256:...'
   compared average about 130 characters), skipping by name the bodies that
   reach a spec departure above; totality and `P` invariants on arbitrary
   strings, on repeated-chunk bodies up to 64 k characters, and on fixed
-  1 MB bodies (every mark mixed, emphasis nested about a quarter million levels deep,
-  pictures nested in pictures, quote and list lines); `P` invariants under
+  1 MB bodies (every mark mixed, emphasis nested about a quarter million
+  levels deep, pictures nested in pictures, quote and list lines); `P` invariants under
   removed formatting and through the escaper. Linear time is the
   linearity test's, never a timeout's.
 - `tour-markdown.diagnostics.test.ts` - each diagnostic kind with its exact
