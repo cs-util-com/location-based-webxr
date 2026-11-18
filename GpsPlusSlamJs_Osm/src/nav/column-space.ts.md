@@ -57,7 +57,7 @@ Two things about how it is applied, both of which a naive wiring gets wrong:
   `planRouteWithIndex` constructs `{ cell, heightM }` from the obstacle levels —
   so a space that trusted its inputs would judge the agent's first step by the
   absolute rule alone and refuse to let it off a hillside.
-- **`Math.min`, not `levels[0]`.** The ascending order is a property of
+- **The minimum, not `levels[0]`.** The ascending order is a property of
   `obstacleLevelsAt`, not something this interface demands of every caller, and a
   space that mistook a wall top for the ground would let an agent walk off one.
 

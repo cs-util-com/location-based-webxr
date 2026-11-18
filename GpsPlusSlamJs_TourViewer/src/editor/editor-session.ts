@@ -11,6 +11,7 @@
 import {
   isStory,
   isTourBlockChild,
+  isTourFolder,
   isTourStoryBlock,
   tourChildPlace,
   tourStationChildIds,
@@ -19,6 +20,7 @@ import {
   TOUR_FOLDER_MAX_SCALE,
   TOUR_FOLDER_MIN_SCALE,
   type TourChoice,
+  type TourFolder,
   type TourQuizEntry,
   type TourStory,
   type TourStoryBlock,
@@ -507,10 +509,12 @@ const STATION_REFUSALS: Readonly<
     | "storyText"
     | "storyAdvance"
     | "storyFile"
-    | "storyStep",
+    | "storyStep"
+    | "storyPose",
     string
   >
 > = {
+  storyPose: `It cannot go that far: a story's entry must stay within ${String(TOUR_ITEM_MAX_OFFSET_M / 1000)} km of its station.`,
   storyFile:
     "That file cannot stand in for that block's own: it is no file of its kind in this tour.",
   title: `A station's name can be at most ${String(TOUR_TITLE_MAX_CHARS)} characters long.`,
@@ -902,6 +906,15 @@ export interface EditorSession {
     id: string,
     geo: QrGeoPose,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
+  /** Move a story's posed entry to where its disc in the 3D view was let
+   *  go (`geo`), written back into its story in place: its facing kept
+   *  (the disc does not turn it), one step. Refused in words for an id
+   *  that is no story's entry, a spot on no map, and one beyond its
+   *  station's reach. */
+  moveStoryEntry(
+    id: string,
+    geo: QrGeoPose,
+  ): { kind: "edited" | "unchanged" } | EditorRefusal;
   /** Show or hide a picture's tag (a cut-out's, `showTag`): one step;
    *  shown is the field's absence. Refused in words for an id the tour
    *  does not carry and a block that is no picture. */
@@ -1091,6 +1104,22 @@ export interface EditorSession {
     folderId: string,
     geo: QrGeoPose,
   ): { kind: "moved" | "unchanged" } | EditorRefusal;
+  /** Delete a plain folder with everything it holds, its items and the
+   *  folders inside it: ONE step, which `undo` takes back (a photo's
+   *  picture kept for that, as `remove` keeps it). `items`: how many
+   *  items went. Refused for a folder the tour lacks. */
+  deleteFolder(
+    folderId: string,
+  ): { kind: "deleted"; items: number } | EditorRefusal;
+  /** Copy a plain folder beside itself (1.5 m east, right after it in
+   *  its holder) with everything it holds, every id new (a photo's
+   *  picture read first, and held under its copy's id): ONE step.
+   *  Refused for a folder the tour lacks, a photo whose picture cannot be
+   *  read, and a copy that would take an item beyond its station's
+   *  reach. */
+  duplicateFolder(
+    folderId: string,
+  ): Promise<{ kind: "duplicated"; folderId: string } | EditorRefusal>;
   /** Set a plain folder's scale (0.1 to 10 times): its whole group grows
    *  about its origin, sizes and distances alike. One step. Refused for a
    *  folder the tour lacks, a scale out of the bounds, and one that takes
@@ -2645,6 +2674,43 @@ export function createEditorSession(input: {
           : viewpointAt(vp, localPoseOf(geo, station.geo)),
       );
     },
+    moveStoryEntry(id, geo) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (state === null || manifest === null) return notInTour;
+      const place = tourChildPlace(manifest, id);
+      const block =
+        place?.story === undefined
+          ? undefined
+          : tourStationStoryBlocks(place.station).find((b) => b.id === id);
+      if (place === null || block === undefined) {
+        return { kind: "refused", reason: NO_SUCH_STORY };
+      }
+      if (!onMap(geo)) return { kind: "refused", reason: NOT_ON_MAP };
+      const at = localPoseOf(geo, place.station.geo);
+      const edit: StationEdit = {
+        storyPose: {
+          block: id,
+          pose: { position: at.position, rotation: block.pose.rotation },
+        },
+      };
+      const change = stationEditChange(state, place.station.id, edit);
+      if (change.kind === "refused") {
+        return { kind: "refused", reason: STATION_REFUSALS[change.reason] };
+      }
+      if (change.kind !== "edited") return { kind: "unchanged" };
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.stationEdited({
+            stationId: place.station.id,
+            edit,
+            what: `the move of "${storyChildName(block)}"`,
+          }),
+        ),
+      )
+        ? { kind: "edited" }
+        : notApplied;
+    },
     editPictureTag(id, shown) {
       const found = find(id);
       if (found === undefined) return notInTour;
@@ -3331,6 +3397,92 @@ export function createEditorSession(input: {
         ),
       )
         ? { kind: "moved" }
+        : { kind: "refused", reason: FOLDER_TOO_FAR };
+    },
+    deleteFolder(folderId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const found = folderOf(state, folderId);
+      if (found === null) return noSuchFolder;
+      const held = documentObjects(state).filter(
+        (o) => o.object.folder?.includes(folderId) === true,
+      );
+      for (const item of held) keepPicture(item);
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.folderDeleted({
+            stationId: found.station.id,
+            folderId,
+            what: `the delete of "${folderName(found.folder)}"`,
+          }),
+        ),
+      )
+        ? { kind: "deleted", items: held.length }
+        : notApplied;
+    },
+    async duplicateFolder(folderId) {
+      const state = mine();
+      if (state === null) return notInTour;
+      const found = folderOf(state, folderId);
+      if (found === null) return noSuchFolder;
+      const itemsIn = (of: TourDocumentState) =>
+        documentObjects(of)
+          .map((o) => o.object)
+          .filter((o) => o.folder?.includes(folderId) === true);
+      const items = itemsIn(state);
+      const read = await picturesOf(items);
+      if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+      // The tour may have changed during the read: copy the folder as it
+      // is now, and only while it holds exactly the items whose pictures
+      // were read (a photo added meanwhile would be copied without one).
+      const after = mine();
+      if (after === null) return notInTour;
+      const fresh = folderOf(after, folderId);
+      if (fresh === null) return noSuchFolder;
+      const held = itemsIn(after).map((o) => o.id);
+      if (
+        held.length !== items.length ||
+        held.some((id, i) => id !== items[i]?.id)
+      ) {
+        return notApplied;
+      }
+      // Every folder inside it and every item it holds gets a new id too:
+      // ids are unique across the tour.
+      const folderIds = (folder: TourFolder): string[] => [
+        folder.id,
+        ...folder.children.filter(isTourFolder).flatMap(folderIds),
+      ];
+      const newIds = Object.fromEntries(
+        [...folderIds(fresh.folder), ...held].map((id) => [id, newObjectId()]),
+      );
+      // The pictures under the copies' ids before the copies exist: the
+      // draft's write of each copy carries its picture.
+      for (const [id, blob] of read) {
+        const copyId = newIds[id];
+        if (copyId !== undefined) files.set(copyId, blob);
+      }
+      const copyId = newIds[folderId];
+      if (
+        copyId !== undefined &&
+        took(() =>
+          store.dispatch(
+            tourDocumentActions.folderDuplicated({
+              stationId: fresh.station.id,
+              folderId,
+              newIds,
+              what: `the copy of "${folderName(fresh.folder)}"`,
+            }),
+          ),
+        )
+      ) {
+        return { kind: "duplicated", folderId: copyId };
+      }
+      for (const id of items.map((o) => newIds[o.id])) {
+        if (id !== undefined) files.delete(id);
+      }
+      if (mine() === null) return notInTour;
+      return folderOf(own(), folderId) === null
+        ? noSuchFolder
         : { kind: "refused", reason: FOLDER_TOO_FAR };
     },
     scaleFolder(folderId, value) {

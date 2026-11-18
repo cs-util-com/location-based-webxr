@@ -61,9 +61,9 @@ magnitudes, colors }` (Float32Arrays; directions are unit vectors in the
   - The real sky has about 9,100 stars to 6.5 (the Bright Star Catalogue);
     5,000 is the owner's "a few thousand".
 - Invariants & assumptions: deterministic per seed (a pinned link shows the
-  same sky); the generator is a small 32-bit seeded generator kept here
-  (the one-liner per package rule: the globe package cannot reach the
-  framework's test utilities).
+  same sky); the generator is the framework's `mulberry32`
+  (`gps-plus-slam-app-framework/utils/mulberry32`), deep-imported; the
+  sequence is pinned in `seeded-draws.test.ts`.
 - Example:
 
   ```ts

@@ -27,10 +27,6 @@ import type { GestureTarget, GestureWorld } from "./gesture.js";
 import type { GizmoHandle, ScreenPoint } from "./gizmo-maths.js";
 import { GLOBE_GESTURES, routeGlobeInput } from "./globe-gestures.js";
 import { LONG_PRESS } from "../editor/long-press.js";
-import {
-  FOLDER_DELETE_NOT_YET,
-  FOLDER_DUPLICATE_NOT_YET,
-} from "../editor/folder-commands.js";
 import { liftedGeo, nudgedGeo, turnedGeo } from "./pose-edits.js";
 
 // The geodesy is licence-gated; the store activates it (as the page does).
@@ -489,18 +485,15 @@ describe("the keys", () => {
     code.input.dispose();
   });
 
-  // Why: a plain folder selected in the tree has no delete or copy of its
-  // own yet; Del and Ctrl+D on it must say so and what to do instead,
-  // never act on nothing in silence (or let the browser's own Ctrl+D
-  // bookmark the page).
-  it("say why Del and Ctrl+D do nothing on a folder, and keep the browser's keys off", () => {
+  // Why: a plain folder selected in the tree has no target in the scene,
+  // yet Del and Ctrl+D on it delete and copy it whole; the keys must reach
+  // the page (and the browser's own Ctrl+D must not bookmark the page).
+  it("hand Del and Ctrl+D on a folder to the page, keeping the browser's keys off", () => {
     const t = setup({ selected: "folder:yard" });
     expect(tap("Delete").defaultPrevented).toBe(true);
     expect(key("keydown", "KeyD", { ctrl: true }).defaultPrevented).toBe(true);
-    expect(t.page.remove).not.toHaveBeenCalled();
-    expect(t.page.duplicate).not.toHaveBeenCalled();
-    expect(t.page.say).toHaveBeenNthCalledWith(1, FOLDER_DELETE_NOT_YET);
-    expect(t.page.say).toHaveBeenNthCalledWith(2, FOLDER_DUPLICATE_NOT_YET);
+    expect(t.page.remove).toHaveBeenCalledWith("folder:yard");
+    expect(t.page.duplicate).toHaveBeenCalledWith("folder:yard");
     t.input.dispose();
   });
 

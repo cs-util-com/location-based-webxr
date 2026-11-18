@@ -75,7 +75,10 @@ import {
   posedEntries,
   posedEntryOf,
 } from "../../placement/placeables.js";
-import type { ExtentSpec } from "../../placement/placement-rows.js";
+import {
+  blockPlacement,
+  type ExtentSpec,
+} from "../../placement/placement-rows.js";
 import type { SliderTrack } from "./range-slider.js";
 import {
   blockChoices,
@@ -258,6 +261,8 @@ interface StoryEntryInspector {
   /** Where it stands: its station, its story, its kind and its place. */
   readonly sub: string;
   readonly block: InspectorStoryBlock;
+  /** The world shows it (a posed view): its disc moves it in 3D. */
+  readonly placed: boolean;
   /** How it moves on; `afterS` only when by itself. */
   readonly advance: {
     readonly mode: string;
@@ -717,6 +722,9 @@ export function inspectorHint(model: InspectorModel | null): string {
   if (model.kind === "folder") {
     return `${model.title} - drag the middle to move its items together, a white dot to scale them, the round arrow to turn`;
   }
+  if (model.kind === "storyEntry" && model.placed) {
+    return `${model.title} - drag the middle to move it; its step sets the rest`;
+  }
   if (model.kind === "story") {
     return `${model.title} - its entries play in order; its + in the list adds one, Esc deselects`;
   }
@@ -1115,6 +1123,7 @@ function storyChildInspector(
       title: objectTitle(child),
       sub: `${blockLabel(child)}, ${entry}`,
       block: storyEntry(child),
+      placed: blockPlacement(child.kind, child.view)?.posed === true,
       advance: {
         mode: child.advance.mode,
         afterS: child.advance.mode === "auto" ? child.advance.afterS : null,

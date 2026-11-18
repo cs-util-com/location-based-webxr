@@ -160,9 +160,9 @@ describe("sentences cut from the plain text", () => {
     );
   });
 
-  // Why this test matters: the captions strip follows the voice by the
-  // same sentences the sheet marks, without a DOM; a cut that differed
-  // would show one sentence in the strip while the sheet marks another.
+  // Why this test matters: the editor's timing checks read the same
+  // sentences the sheet marks, without a DOM; a cut that differed would
+  // judge one sentence while the sheet marks another.
   it("cuts the same sentences without a DOM", () => {
     const body =
       "See [the map](https://example.org/map) here. Then *walk* on.\n\n## Inside\n\nThe hall.";

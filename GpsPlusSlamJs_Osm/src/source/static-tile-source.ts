@@ -9,8 +9,10 @@
  * race) at once and stops asking for fills for a while; stored files are
  * still read, unless the host gave no answer at all (a network error or a
  * request with no headers within its time limit), in which case it is not
- * asked anything for that while; a body that breaks off after its headers
- * is a refusal of that tile only. The two never run for one tile at the same
+ * asked anything for that while, except when the host gave any answer
+ * after the silent request was sent (that silence is overtaken and says
+ * nothing newer); a body that breaks off after its headers is a refusal of
+ * that tile only. The two never run for one tile at the same
  * time. A stored file that is not a complete Overpass answer goes to the
  * race too, and is reported to the host once.
  *
@@ -65,7 +67,8 @@ export interface StaticTileSourceOptions {
   /**
    * How long no fill is asked for after the host said no, and nothing at
    * all after it did not answer (a network error, or no headers within the
-   * request limit). Default 10 min.
+   * request limit). A request that got no answer starts the second only if
+   * the host gave no answer after it was sent. Default 10 min.
    */
   readonly refusalMemoryMs?: number;
   /**

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Reads and judges a narrated long text's read-along timing (`timing/<blockId>.json`), only when its text opens (the reading sheet, or the captions strip), against the text the visitor sees. The answer is a verdict the views follow.
+Reads and judges a narrated long text's read-along timing (`timing/<blockId>.json`), only when its text opens (the reading sheet, or the narration box), against the text the visitor sees. The answer is a verdict the views follow.
 
 ## Public API
 

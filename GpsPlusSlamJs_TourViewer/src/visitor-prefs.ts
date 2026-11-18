@@ -41,9 +41,9 @@ export interface ViewSet {
  * set's FIRST member is its floor, whose needs always hold.
  *
  * `captions` is a visitor's member only: no creator's view names it (a
- * creator places a text; the strip is how a visitor follows its voice),
+ * creator places a text; the box is how a visitor follows its voice),
  * so it joins the world set it is chosen from. Its world drawing is the
- * reading sign; the strip is the page's (`captions-strip.ts`).
+ * reading sign; the box is the page's (`narration-box.ts`).
  *
  * `storedAt` names a member the device stores under another placement
  * key than the set's: captions are a SCREEN view in the design (§3.2,

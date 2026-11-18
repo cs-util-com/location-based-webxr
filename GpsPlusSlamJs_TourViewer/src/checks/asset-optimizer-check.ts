@@ -9,19 +9,9 @@
  * @see asset-optimizer-check.ts.md
  */
 
-import { clamp01 } from "../landing/clamp01.js";
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 
-/** A seeded generator (mulberry32): the same seed, the same test file. */
-export function seeded(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+import { clamp01 } from "../landing/clamp01.js";
 
 function wholeAtLeast(value: number, least: number, what: string): void {
   if (!Number.isSafeInteger(value) || value < least) {
@@ -39,7 +29,7 @@ export function testPicturePixels(
 ): Uint8ClampedArray {
   wholeAtLeast(width, 1, "the width");
   wholeAtLeast(height, 1, "the height");
-  const random = seeded(seed);
+  const random = mulberry32(seed);
   const px = new Uint8ClampedArray(width * height * 4);
   const ground = Math.round(height * 0.62);
   const houses = Array.from({ length: 9 }, () => ({
@@ -108,7 +98,7 @@ type Rgb = readonly [number, number, number];
 /** The words of the cartoon's label, as [start, length] pairs per line,
  *  in units of the picture's shorter side. */
 function labelWords(seed: number): number[][][] {
-  const random = seeded(seed);
+  const random = mulberry32(seed);
   return [0, 1, 2, 3].map(() => {
     const words: number[][] = [];
     for (let x = 0; x < 0.26;) {
@@ -313,7 +303,7 @@ export function testSoundPlanes(
   }
   wholeAtLeast(sampleRate, 8000, "the sample rate");
   const frames = Math.round(seconds * sampleRate);
-  const random = seeded(seed);
+  const random = mulberry32(seed);
   if (kind === "speech") {
     const plane = new Float32Array(frames);
     let phase = 0;

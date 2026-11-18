@@ -9,7 +9,7 @@
  * @see word-diff.ts.md
  */
 
-import { wordsOf } from "../../caption-chunks.js";
+import { wordsOf } from "../../plain-words.js";
 
 /** A word of a text: its stretch (`from` inclusive, `to` exclusive) and
  *  its key (`wordKey`). */

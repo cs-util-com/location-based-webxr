@@ -149,6 +149,11 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `write(id, write)` - one AWAITED write for the object list's actions.
   - `forgetObject(id)` - remove an id's files after any write queued for
     it.
+    Its base goes with them, so the versions this load's Finishes wrote
+    and its uploads noted are kept in memory per id, and a record written
+    again for a forgotten id (`writeObject`, `recordPlacement`) gets them
+    back after its record: without them a reopen would call this device's
+    own saved work "replaced by a newer one". Cleared by `reset`.
   - `warnNoBackup()` / `persists()` - the once-only "not saving a backup
     copy" note, and whether it was said.
 - `hostedLevelJson(session, levelId)` - what the HOSTED zip stores for a
@@ -415,7 +420,8 @@ another, none, or cannot be read - pinned before the codes move into the
 store, plan 2026-10-20-1159 M3a), `creator-finish.test.ts` and
 `authoring-settle.test.ts` (the meta a mint or settle writes, the backup
 notice), plus the draft e2e specs. `follow` in isolation:
-`creator-draft-follow.test.ts` (every file copied, a photo as a blob, the
+`creator-draft-follow.test.ts` (a record written again after a forget
+keeping the versions a Finish wrote, so a reopen offers it; every file copied, a photo as a blob, the
 meta re-stated, later writes in the new namespace, the old one kept; a
 write issued during the copy never overwritten by it; an unreadable file
 reported; nothing opened for the same key; two follows to the same key at

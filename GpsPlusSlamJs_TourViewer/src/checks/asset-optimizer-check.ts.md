@@ -1,10 +1,9 @@
 # asset-optimizer-check.ts
 
-**Purpose:** the asset optimizer check's pure parts (`asset-optimizer-check.html`): the test files it makes and the measures it shows next to each result.
+**Purpose:** the asset optimizer check's pure parts (`asset-optimizer-check.html`): the test files it makes and the measures it shows next to each result. Its test files draw from the framework's `mulberry32` (`gps-plus-slam-app-framework/utils/mulberry32`), so the same seed gives the same file.
 
 ## Public API
 
-- `seeded(seed)`: a seeded generator (mulberry32) of numbers in [0, 1).
 - `testPicturePixels(width, height, seed?)`: RGBA pixels of a photo-like picture (a sky gradient, houses with windows, discs, a fine grain).
 - `cartoonPicturePixels(width, height, { shaded, seed? })`: RGBA pixels of a cartoon figure of a few flat colours (sky, ground, sun, clouds, a figure with black outlines, a label of dark "words" as small detail), anti-aliased with 2 x 2 samples a pixel; `shaded` lights and rounds the same figure as many AI-made pictures are, so it has gradients instead of flat areas. The flat-colour samples of the check page and of the flat-colour sweep.
 - `testSoundPlanes(kind, seconds, sampleRate, seed?)`: `"speech"` is one plane of a voice-like tone of moving pitch in syllables; `"music"` two planes of chords with a beat.

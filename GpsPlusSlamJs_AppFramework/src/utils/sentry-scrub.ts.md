@@ -32,10 +32,10 @@ dependency on the SDK, so its rules are tested on their own.
   - a number labelled `lat`, `latitude`, `lon`, `lng` or `longitude`
     (`lat=48.1`, `"latitude":48.1`, `lat: '48.1'`, quoted or not), also after
     a prefix (`originLat`, `start_lng`), with a `c` in front (`clat`, `clng`,
-    `clon`: the map demo's camera target in its page address) or with an index or a unit before a
-    separator (`lat1=48.1`, `latDeg=48.1`), loses its value; `long` counts
-    only with `:` or `=`, being an ordinary word, and not after a prefix
-    (`isLong=1` stays); a word that merely ends
+    `clon`: the map demo's camera target in its page address) or with an
+    index or a unit before a separator (`lat1=48.1`, `latDeg=48.1`), loses
+    its value; `long` counts only with `:` or `=`, being an ordinary word,
+    and not after a prefix (`isLong=1` stays); a word that merely ends
     in a label (`flat`, `salon`) does not count, nor do one to three digits
     running on into a word (`lon0a`, `lat2a9Q` in a hashed asset name). A
     separator is not required (`lat48.1`, `lat48_137154`, `lat48137154N`
@@ -105,8 +105,8 @@ dependency on the SDK, so its rules are tested on their own.
     `]` could spell another path (`contexts: { 'trace.span_id': id }`,
     `{ 'spans[]': { span_id: id } }`), so it ends the path: nothing under
     it is exempt, at any depth. So does an empty key, which at the root
-    would read as the root itself (`{ '': { contexts: ... } }`). A value under `span_id` or
-    `debug_id` anywhere else (breadcrumb data, tags, a context of the app's
+    would read as the root itself (`{ '': { contexts: ... } }`). A value
+    under `span_id` or `debug_id` anywhere else (breadcrumb data, tags, a context of the app's
     own) is scrubbed as usual, as is a value at an exempt path that is not
     shaped like an id. `sentry-options.ts` passes the paths the SDK writes
     its ids to. A bundle's `code_file` in `debug_meta` is scrubbed like any
@@ -140,8 +140,8 @@ dependency on the SDK, so its rules are tested on their own.
 ## Invariants
 
 - Idempotent: scrubbing twice changes nothing more than scrubbing once
-  (property test), in both profiles. Sentry runs the breadcrumb hook and the event hook over
-  the same text.
+  (property test), in both profiles. Sentry runs the breadcrumb hook and
+  the event hook over the same text.
 - Text with no digits, slashes, `=`, `:`, `?` or `#` comes back unchanged.
 - Removes more, never less, when `ownHost` is unknown: every link is then
   treated as foreign.

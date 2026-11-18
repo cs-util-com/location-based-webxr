@@ -23,8 +23,8 @@ alone.
   - `oneLevel` - the editor groups one level deep (no folder inside a
     folder, no group of items already in one);
   - `notHere` - items of several stations, or something that is no item;
-  - `tooFar` - an item, or a folder an ungroup lifts, would stand past
-    the format's 10 km bound in its folder;
+  - `tooFar` - an item or folder would stand more than 10 km from what
+    holds it (a folder an ungroup lifts, an item moved or copied);
   - `staysInStation` - an item in a folder stays in its station (the
     tree's drag across stations and "Move to a new station" both refuse
     it, with this one line);
@@ -40,6 +40,9 @@ alone.
 - `withFolderAdded(children, folder, into?)` - the tree with `folder` at
   the end of the folder `into`, or of the top; the same array for an
   unknown `into`.
+- `withFolderAfter(children, id, folder)` - the tree with `folder`
+  right after the folder `id`, at any depth (a folder's copy beside
+  it); the same array for an unknown id.
 - `withoutFolder(children, id, lift)` - the tree without the folder
   `id`. With `lift` its own folders take its place, each at its pose
   composed with the removed folder's (`composeTourFolderPose`), so they

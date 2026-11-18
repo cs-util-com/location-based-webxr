@@ -3,7 +3,7 @@
  * megabytes; it must be fetched only when the visitor first presses play,
  * the button must answer at once while it is fetched, a failed fetch must
  * reach the page's error channel and put the button back, and closing the
- * tour must let the file's memory go. The sheet and the captions strip
+ * tour must let the file's memory go. The sheet and the narration box
  * share this clock, so its place must hold before the file is there too.
  */
 import { describe, expect, it, vi } from "vitest";

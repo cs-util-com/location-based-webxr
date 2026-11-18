@@ -130,8 +130,9 @@ the library default is off.
    refusal of its tile (inside the source the failure is a `NoAnswer`
    carrying its count). A count, not a send time, because the clock cannot
    order a send and an answer in the same millisecond, and both orders
-   happen: a ring warm sent just before an edge cache hit's answer (a network answer) is overtaken,
-   while a fill POST sent right after its read's 404 is not.
+   happen: a ring warm sent just before an edge cache hit's answer (a
+   network answer) is overtaken, while a fill POST sent right after its
+   read's 404 is not.
    A header timer of the fill wait (the wait
    running out before an answer began) is `FillWaitSpent` inside the
    source and counts as the wait spent, not as no answer: the host had
@@ -143,6 +144,16 @@ the library default is off.
      again. The memory is per `StaticTileSource` instance: a consumer that
      builds one per load (the globe city worker) pays it once per load.
      Before this, each cold tile paid the 45 s, one after another.
+   - **Worst case for a host that answers and then goes silent** (it dies
+     in the middle of a load): a request sent before the host's last
+     answer is overtaken and marks nothing, so the memory starts only when
+     the first request sent after that answer runs out its
+     `requestTimeoutMs`, up to one limit after the host went silent. Every
+     tile asked for until then, and every request already running, waits
+     its own `requestTimeoutMs` before its race; the waits overlap, so the
+     load stalls for about two limits at most (a tile asked just before
+     the memory starts still waits its full limit), not one limit per tile.
+     After that, as above.
 
 **Read-only fetches** do step 1 only: a `speculative` fetch (a ring warm,
 nobody waiting on it) and any fetch while fills are refused. A speculative
@@ -264,8 +275,9 @@ const source = new CachingSource(
   left; a late tile's body read whole past the wait's end but within the
   per-request limit; a poll's re-read bounded by the same deadline, and a
   re-read cut by it still reporting the first copy with no refusal; a
-  caller abort during the re-read staying an abort with no report; a caller abort during the body read staying an abort with no race and no refusal; a
-  re-read with no wait left, or one the caller aborted, leaving the
+  caller abort during the re-read staying an abort with no report; a
+  caller abort during the body read staying an abort with no race and no
+  refusal; a re-read with no wait left, or one the caller aborted, leaving the
   allowance for the next read; a re-read failing with a host error, a
   network error or no headers in time spending it; the warning once per
   tile, speculative reads included; header
@@ -278,6 +290,6 @@ const source = new CachingSource(
   request sent before another request's answer does not either, while one
   sent after the last answer does, in the same millisecond too: a ring warm
   overtaken by an answer in its millisecond does not mark it, a fill POST
-  sent in its read's 404 millisecond does), the poll timings (`slotWaitMs` for the wait), the bounded wait,
-  the memory expiring, abort, the base URL check, and the property test.
+  sent in its read's 404 millisecond does), the poll timings (`slotWaitMs`
+  for the wait), the bounded wait, the memory expiring, abort, the base URL check, and the property test.
 - `city/city-data.test.ts`: `createCityTileSource` with and without the option.

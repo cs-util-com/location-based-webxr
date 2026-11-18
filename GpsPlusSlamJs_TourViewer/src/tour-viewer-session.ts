@@ -50,6 +50,7 @@ import {
 import { visitorGuideReducer } from "./visitor-guide-slice.js";
 import { visitorWalkReducer } from "./visitor-walk-slice.js";
 import { visitorPrefsReducer } from "./visitor-prefs-slice.js";
+import { narrationBoxReducer } from "./narration-box-slice.js";
 
 import type {
   HitTestReticleHandle,
@@ -141,6 +142,7 @@ export function createTourViewerStore<
     visitorWalk: visitorWalkReducer,
     creatorCodes: creatorCodesReducer,
     visitorPrefs: visitorPrefsReducer,
+    narrationBox: narrationBoxReducer,
   };
   const clash = Object.keys(pageReducers ?? {}).filter((key) => key in own);
   if (clash.length > 0) {

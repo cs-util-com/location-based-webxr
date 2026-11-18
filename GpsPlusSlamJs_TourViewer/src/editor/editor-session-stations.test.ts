@@ -690,6 +690,252 @@ describe("the editor session's station edits", () => {
     await session.close();
   });
 
+  // Why: a folder's Duplicate copies a photo in it under a new id, so the
+  // copy names a content file of its own; a save that did not write the
+  // picture under it would save a tour the reader refuses. And the copy,
+  // with all it holds, is ONE undo step.
+  it("duplicateFolder copies a folder with its photo as one step, the save writing the copy's picture", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["f"],
+        what: "group",
+      }),
+    );
+    const steps = () => store.getState().tourDocument.past.length;
+    const was = steps();
+    const copied = await editor.duplicateFolder("grp");
+    if (copied.kind !== "duplicated") throw new Error("not copied");
+    expect(copied.folderId).not.toBe("grp");
+    expect(steps()).toBe(was + 1);
+    const saved = await editor.save({ keepScan: false });
+    const tour = await savedTour(saved.blob);
+    const items = tourObjects(tour).filter((o) => o.kind === "picture");
+    const copy = items.find((o) => o.folder?.[0] === copied.folderId);
+    if (copy?.kind !== "picture") throw new Error("no copy");
+    expect(copy.id).not.toBe("f");
+    const path = tour.assets.find((a) => a.id === copy.image)?.path ?? "";
+    expect(path).toBe(`content/${copy.image}.jpg`);
+    expect(await entryText(saved.blob, path)).toBe("the picture of f");
+    expect(await editor.duplicateFolder("nope")).toEqual({
+      kind: "refused",
+      reason: "That folder is no longer in this tour.",
+    });
+    await session.close();
+  });
+
+  // Why: Duplicate reads the folder's pictures first, and the tour may
+  // change during that read. The copy is made only of the folder as it
+  // is after the read, and only while it holds exactly the items whose
+  // pictures were read (an item moved in meanwhile has no picture read
+  // and, before, no new id: the store refused it and the creator was told
+  // the copy would go too far). A change refuses it, saying the tour
+  // changed. The step label names the folder in quotes, as the other
+  // folder steps do.
+  it("duplicateFolder refuses, saying the tour changed, when the folder's items change during the picture read", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["f"],
+        what: "group",
+      }),
+    );
+    const was = store.getState().tourDocument;
+    const copying = editor.duplicateFolder("grp");
+    store.dispatch(
+      tourDocumentActions.objectsFoldered({
+        ids: ["f"],
+        folderId: null,
+        what: "out",
+      }),
+    );
+    expect(store.getState().tourDocument).not.toBe(was);
+    const steps = store.getState().tourDocument.past.length;
+    expect(await copying).toEqual({
+      kind: "refused",
+      reason: "That change could not be made to the tour as it is now.",
+    });
+    expect(store.getState().tourDocument.past.length).toBe(steps);
+    // Asked again, it copies the folder as it is now, the step named.
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const copied = await editor.duplicateFolder("grp");
+    expect(copied.kind).toBe("duplicated");
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: 'the copy of "Shots"',
+    });
+    await session.close();
+  });
+
+  // Why: a folder's Delete takes everything in it as ONE step, and its
+  // Undo must bring a photo back with its picture even after a save wrote
+  // the delete (the picture is kept for that, as for an item's delete).
+  it("deleteFolder deletes a folder with its items as one step, and an undo after a save keeps the photo's picture", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["f"],
+        what: "group",
+      }),
+    );
+    const steps = () => store.getState().tourDocument.past.length;
+    const was = steps();
+    expect(editor.deleteFolder("grp")).toEqual({ kind: "deleted", items: 1 });
+    expect(steps()).toBe(was + 1);
+    const gone = await savedTour((await editor.save({ keepScan: false })).blob);
+    expect(tourObjects(gone).map((o) => o.id)).not.toContain("f");
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: 'the delete of "Shots"',
+    });
+    const back = await editor.save({ keepScan: false });
+    const tour = await savedTour(back.blob);
+    expect(tourObjects(tour).find((o) => o.id === "f")?.folder).toEqual([
+      "grp",
+    ]);
+    expect(await entryText(back.blob, "content/f.jpg")).toBe(
+      "the picture of f",
+    );
+    expect(editor.deleteFolder("nope")).toEqual({
+      kind: "refused",
+      reason: "That folder is no longer in this tour.",
+    });
+    await session.close();
+  });
+
+  // Why: a story's entry moved by its disc in 3D is written back into its
+  // story, in place (its order kept), as ONE step that Undo takes back; it
+  // keeps its facing (the disc does not turn it), and the save carries
+  // it. A spot beyond the format's reach, an id that is no story entry,
+  // and one the tour lacks are refused in words, changing nothing.
+  it("moveStoryEntry moves a story's entry in its story as one step, its facing kept", async () => {
+    const turned: [number, number, number, number] = [0, 0.6, 0, 0.8];
+    const entry = (id: string, position: [number, number, number]) => ({
+      id,
+      kind: "shortText" as const,
+      view: "pin" as const,
+      caption: id,
+      pose: { position, rotation: turned },
+    });
+    const withStory = (
+      m: { readonly stations: readonly TourManifest["stations"][number][] },
+      story: ReturnType<typeof storyOf>,
+    ) =>
+      m.stations.map((s) =>
+        s.id === stationIdOf("a")
+          ? { ...s, ...stationContent([...stationBlocks(s), story]) }
+          : s,
+      );
+    const { session, manifest } = await opened((m) => ({
+      ...m,
+      stations: withStory(
+        m,
+        storyOf("legend", [
+          {
+            id: "intro",
+            kind: "shortText",
+            view: "card",
+            caption: "Welcome",
+            pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+          entry("sign", [1, 0, 2]),
+        ]),
+      ),
+    }));
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const now = () => {
+      const tour = manifestToWrite(store.getState().tourDocument);
+      if (tour === null) throw new Error("nothing open");
+      return tour;
+    };
+    const place = placeableOf(now(), "sign");
+    // Where the disc lets go of it: 3 m further north, read as a probe
+    // entry standing there would be.
+    const target = placeableOf(
+      {
+        stations: withStory(
+          now(),
+          storyOf("probe", [entry("probe", [4, 0, 2])]),
+        ),
+      },
+      "probe",
+    );
+    if (place === null || target === null) throw new Error("no placeable");
+    const steps = () => store.getState().tourDocument.past.length;
+    const was = steps();
+    expect(editor.moveStoryEntry("sign", target.geo)).toEqual({
+      kind: "edited",
+    });
+    expect(steps()).toBe(was + 1);
+    const saved = await savedTour(
+      (await editor.save({ keepScan: false })).blob,
+    );
+    const blocksOf = (tour: TourManifest) =>
+      tourStationStoryBlocks(
+        tour.stations.find((s) => s.id === stationIdOf("a")) ?? {
+          children: [],
+        },
+      );
+    expect(blocksOf(saved).map((b) => b.id)).toEqual(["intro", "sign"]);
+    const sign = blocksOf(saved)[1];
+    expect(sign?.pose.position[0]).toBeCloseTo(4, 3);
+    expect(sign?.pose.position[1]).toBeCloseTo(0, 3);
+    expect(sign?.pose.position[2]).toBeCloseTo(2, 3);
+    expect(sign?.pose.rotation).toEqual(turned);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(blocksOf(now()).find((b) => b.id === "sign")?.pose).toEqual({
+      position: [1, 0, 2],
+      rotation: turned,
+    });
+    const before = steps();
+    const far = { ...place.geo, lat: place.geo.lat + 0.2 };
+    expect(editor.moveStoryEntry("sign", far)).toEqual({
+      kind: "refused",
+      reason: expect.stringContaining("km of its station") as unknown,
+    });
+    expect(editor.moveStoryEntry("a", place.geo)).toMatchObject({
+      kind: "refused",
+    });
+    expect(editor.moveStoryEntry("nope", place.geo)).toMatchObject({
+      kind: "refused",
+    });
+    expect(steps()).toBe(before);
+    await session.close();
+  });
+
   it("an item moved into a station of its own, and items put on the ground as one step", async () => {
     const { session, manifest } = await opened();
     const editor = createEditorSession({

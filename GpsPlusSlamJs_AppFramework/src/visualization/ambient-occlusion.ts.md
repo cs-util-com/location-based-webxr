@@ -35,8 +35,9 @@ sky stay exactly where three puts them.
   own fade window (OsmDemo: 700-1400 m).
 - `AO_DENOISE` (frozen): the Poisson denoise (`radius` 8 px, `lumaPhi` 10,
   `depthPhi` 2, `normalPhi` 3, `samples` 16, `rings` 2, `radiusExponent` 2).
-- `AO_NOISE_SEED` (1), `aoNoiseRandom(seed)`: mulberry32 in [0, 1);
-  `RangeError` for a seed that is not an integer.
+- `AO_NOISE_SEED` (1), `aoNoiseRandom(seed)`: the package's `mulberry32`
+  (`utils/mulberry32.ts`) in [0, 1); `RangeError` for a seed that is not an
+  integer.
 - `aoNoiseTexture(seed?)`: three's denoise noise (four simplex channels over
   a 64 x 64 repeating RGBA8 `DataTexture`) built from the seeded generator,
   so the AO looks the same on every load. `Math.random` is never used.

@@ -1,8 +1,8 @@
 /**
- * Why this test matters: the strip must show exactly while the visitor
+ * Why this test matters: the narration box must show exactly while the visitor
  * stands at a station whose text they see in captions and whose
  * read-along fits - never outside a station, never for a text shown in
- * another view, never an empty strip for a stale timing - and a voice
+ * another view, never an empty box for a stale timing - and a voice
  * must not follow the visitor out of its station.
  */
 import { describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ import type {
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import { captionsBlock, createCaptionsFollow } from "./captions-follow.js";
-import type { CaptionsContent } from "./captions-strip.js";
+import type { NarrationBoxContent } from "./narration-box.js";
 import type { NarrationVerdict } from "./narration-timing.js";
 import { withPreferredView } from "./visitor-prefs.js";
 
@@ -67,8 +67,8 @@ describe("createCaptionsFollow", () => {
   });
 
   function make() {
-    const strip = { show: vi.fn(), hide: vi.fn() };
-    let content: CaptionsContent | null = null;
+    const box = { show: vi.fn(), hide: vi.fn() };
+    let content: NarrationBoxContent | null = null;
     const narration = {
       verdictOf: vi.fn((): NarrationVerdict => "live"),
       captions: vi.fn(() => content),
@@ -80,31 +80,52 @@ describe("createCaptionsFollow", () => {
       presentId: null as string | null,
       stored: CAPTIONS as unknown,
     };
-    const follow = createCaptionsFollow({ strip, narration, read: () => now });
+    const follow = createCaptionsFollow({ box, narration, read: () => now });
     return {
-      strip,
+      box,
       narration,
       follow,
       set: (n: Partial<typeof now>) => {
         now = { ...now, ...n };
       },
-      give: (c: CaptionsContent | null) => {
+      give: (c: NarrationBoxContent | null) => {
         content = c;
       },
     };
   }
 
-  it("shows the strip at a captions station once the read-along fits", () => {
-    const { strip, follow, set, give } = make();
+  it("shows the box at a captions station once the read-along fits", () => {
+    const { box, follow, set, give } = make();
     follow.sync();
-    expect(strip.hide).toHaveBeenCalled();
+    expect(box.hide).toHaveBeenCalled();
     set({ blocks: [text("a")], presentId: "s1" });
     follow.sync();
-    expect(strip.show).not.toHaveBeenCalled();
-    const content = { key: "a" } as CaptionsContent;
+    expect(box.show).not.toHaveBeenCalled();
+    const content = { key: "a" } as NarrationBoxContent;
     give(content);
     follow.sync();
-    expect(strip.show).toHaveBeenLastCalledWith(content);
+    expect(box.show).toHaveBeenLastCalledWith(content);
+  });
+
+  // Why: a narrated text is heard only inside its station's radius. The
+  // page hands this follow the present station's blocks, and none outside
+  // one; should a caller ever hand blocks with no present station, the
+  // box still must not show, nor a voice play on from it.
+  it("shows no box outside a station, even when handed its blocks", () => {
+    const { box, narration, follow, set, give } = make();
+    give({ key: "a" } as NarrationBoxContent);
+    set({ blocks: [text("a")], presentId: null });
+    follow.sync();
+    expect(box.show).not.toHaveBeenCalled();
+    expect(narration.captions).not.toHaveBeenCalled();
+    set({ presentId: "s1" });
+    follow.sync();
+    expect(box.show).toHaveBeenCalledTimes(1);
+    set({ presentId: null });
+    follow.sync();
+    expect(box.hide).toHaveBeenCalledTimes(2);
+    expect(box.show).toHaveBeenCalledTimes(1);
+    expect(narration.pauseAll).toHaveBeenLastCalledWith("s1");
   });
 
   it("pauses the voice on leaving the station, and on stop", () => {

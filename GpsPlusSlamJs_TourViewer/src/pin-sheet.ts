@@ -24,12 +24,12 @@ import type {
 /** What the visitor's overlay keeps from becoming an XR select (its
  *  `beforexrselect` is cancelled): a tap on a control or on a sheet or
  *  card - the long text's reading sheet (`.lt-sheet`) and the view switch
- *  with its menu (`.view-switch`) and the captions strip
- *  (`.captions-strip`, its words and the gaps between its controls)
- *  included. A tap on the overlay's open view stays a select - a pin's
+ *  with its menu (`.view-switch`) and the narration box
+ *  (`.narration-box`, its words and its padding, where a tap pauses or
+ *  plays the voice) included. A tap on the overlay's open view stays a select - a pin's
  *  tap. */
 const OVERLAY_TAPS =
-  "button, a, input, select, textarea, summary, .sheet, .lt-sheet, .view-switch, .captions-strip, #scene-panel, .model-card, .model-gestures";
+  "button, a, input, select, textarea, summary, .sheet, .lt-sheet, .view-switch, .narration-box, #scene-panel, .model-card, .model-gestures";
 
 /** Whether a tap on `target` (a `beforexrselect`'s) is the overlay's,
  *  not the world's. */

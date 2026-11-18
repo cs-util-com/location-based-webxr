@@ -256,3 +256,10 @@ unchanged across the split (the split's behaviour-neutrality proof).
   value read from the device under `tour-viewer.visitor.prefs.v1` and
   every choice since. Not persisted, and no tour change resets it (the
   preference is the device's, across tours).
+
+## The narration box's playback
+
+- The store also mounts `narrationBox` (`narration-box-slice.ts`): which
+  narrated text the bottom box shows, and whether its voice plays or is
+  held by a scrub. Not persisted; the voice itself
+  stays in its audio element.

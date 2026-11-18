@@ -378,6 +378,9 @@ const entryFiles = [
   // The GLSL float-literal formatter, for shader code that interpolates
   // TypeScript constants (the globe lab's air and cloud passes).
   'src/utils/glsl-float.ts',
+  // The one seeded generator, deep-imported by the globe lab and the Tour
+  // Viewer instead of their private copies.
+  'src/utils/mulberry32.ts',
   // The locate buttons' shared behaviour (labels, error mapping, the fix
   // each failure names, one request) - deep-imported by the OSM demo's
   // locate control and served to the globe lab's pin (round-2 plan

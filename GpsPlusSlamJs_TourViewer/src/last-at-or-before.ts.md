@@ -4,8 +4,9 @@
 
 The one "last element with key <= x" binary search of the read-along: the
 voice's segment at a time (`read-along.ts` `segmentAt`), the sentence
-holding an offset (`long-text-sentences.ts` `sentenceHolding`) and the
-caption word holding an offset (`caption-chunks.ts` `wordHolding`), and
+holding an offset (`long-text-sentences.ts` `sentenceHolding`), the
+narration box's word at a time and its line positions
+(`narration-box-timeline.ts` `wordAt`, `wordStartsMs`, `lineFloatAt`), and
 the landing film's part at a time (`landing/film-timeline.ts`
 `segmentAt`, which clamps -1 to the first part). Each of those keeps its
 own name and its own guard; the search is here once in the package.
@@ -22,7 +23,7 @@ own name and its own guard; the search is here once in the package.
   equal keys is found. An unsorted list gives some index, never a throw.
 - `x` Infinity finds the last element; a caller that wants -1 for a
   non-finite `x` says so itself (`segmentAt` and `sentenceHolding` do;
-  `wordHolding` takes any number).
+  `wordAt` takes any number).
 - O(log n), no allocation: asked on every camera frame.
 
 ## Examples
@@ -38,4 +39,4 @@ lastAtOrBefore([{ at: 3 }], (s) => s.at, 2); // -1
   any value, the index equals a linear scan's (the last key `<= x`, or
   -1), ties and NaN included.
 - Through `read-along.test.ts`, `long-text-sentences.test.ts` and
-  `caption-chunks.test.ts`, which pin the three wrappers.
+  `narration-box-timeline.test.ts`, which pin the wrappers.

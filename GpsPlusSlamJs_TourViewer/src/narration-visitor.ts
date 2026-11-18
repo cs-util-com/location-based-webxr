@@ -1,8 +1,8 @@
 /**
  * The visitor's narrated texts, for one open tour: each text's voice (one
- * shared player for its sheet and its captions strip, fetched on the
+ * shared player for its sheet and the narration box, fetched on the
  * first play), its read-along (read when its text opens, judged by
- * `narration-timing.ts`), and what the sheet and the strip are given.
+ * `narration-timing.ts`), and what the sheet and the box are given.
  * The page asks it per block; a new tour starts it afresh.
  *
  * @see narration-visitor.ts.md
@@ -18,9 +18,8 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-markdown";
 import type { TourTiming } from "gps-plus-slam-app-framework/ar/tour-timing";
 
-import type { CaptionsContent } from "./captions-strip.js";
 import type { SheetNarration } from "./long-text-sheet.js";
-import { plainSentences, type TextSpan } from "./long-text-sentences.js";
+import type { NarrationBoxContent, NarrationSpeaker } from "./narration-box.js";
 import {
   createNarrationPlayer,
   type NarrationPlayer,
@@ -79,9 +78,9 @@ export interface NarrationVisitor {
   /** The sheet's narration for a text with a voice (its read-along read
    *  now), or undefined for a silent one. */
   sheetNarration(block: TourLongTextBlock): SheetNarration | undefined;
-  /** The captions strip's content for a text whose read-along fits, or
+  /** The narration box's content for a text whose read-along fits, or
    *  null - while it is read (the read starts here) or when it does not. */
-  captions(block: TourLongTextBlock): CaptionsContent | null;
+  captions(block: TourLongTextBlock): NarrationBoxContent | null;
   /** Pauses every voice (the visitor left the station, or the AR ended).
    *  With `stationId`, those wanted now carry on at its `carryOn`. */
   pauseAll(stationId?: string): void;
@@ -106,8 +105,11 @@ export function audioAssetPath(
 interface Plain {
   readonly body: string;
   readonly text: string;
-  readonly sentences: readonly TextSpan[];
 }
+
+/** Who reads a long text: no character, so one colour no character
+ *  uses (the narrated sign's in the calm HUD prototypes). */
+const NARRATOR: NarrationSpeaker = { name: "Narrator", color: "#f9a8d4" };
 
 export function createNarrationVisitor(
   deps: NarrationVisitorDeps,
@@ -195,13 +197,7 @@ export function createNarrationVisitor(
     const have = plains.get(block.id);
     if (have?.body === block.body) return have;
     const plain = plainTextOf(parseTourMarkdown(block.body));
-    const made = {
-      body: block.body,
-      text: plain.text,
-      // The sheet's own cut (it is given no language either), so the
-      // strip and the sheet follow the voice by the same sentences.
-      sentences: plainSentences(plain.text, plain.leaves),
-    };
+    const made = { body: block.body, text: plain.text };
     plains.set(block.id, made);
     return made;
   }
@@ -251,8 +247,8 @@ export function createNarrationVisitor(
       return {
         key: block.id,
         title: block.title,
+        speaker: NARRATOR,
         plain: plain.text,
-        sentences: plain.sentences,
         timing,
         player,
         synthetic: narration.synthetic,
@@ -263,11 +259,17 @@ export function createNarrationVisitor(
     },
     pauseAll(stationId) {
       const wanted = [...players.values()].filter((p) => p.wanted());
-      // The held ones first: pausing the one heard would wake them. It
-      // comes first at the return, for the same one to go on.
-      const heard = wanted.filter((p) => p.playing());
-      for (const player of wanted) if (!player.playing()) player.pause();
+      // The held ones first: pausing the one heard would wake them. The
+      // one heard is the channel's running voice, which a scrub may hold
+      // without it playing. It comes first at the return, for the same one
+      // to go on.
+      const heard = wanted.filter((p) => p.playing() || p.running());
+      for (const player of wanted) if (!heard.includes(player)) player.pause();
       for (const player of heard) player.pause();
+      // Every voice, whatever woke on the way.
+      for (const player of players.values()) {
+        if (player.playing()) player.pause();
+      }
       if (stationId !== undefined && wanted.length > 0) {
         left.set(stationId, [
           ...heard,

@@ -1,6 +1,6 @@
 /**
  * A narrated long text's read-along timing, read only when its text opens
- * (the reading sheet, or the captions strip mounting) and judged against
+ * (the reading sheet, or the narration box showing) and judged against
  * the text the visitor sees. A missing entry, a structural fault, a track
  * that no longer fits the words (`tourTimingStaleReason`), or any other
  * throw is STALE: the text shows plain, with the voice where there is one,

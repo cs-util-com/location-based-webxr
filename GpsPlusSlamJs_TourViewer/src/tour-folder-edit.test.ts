@@ -19,6 +19,7 @@ import {
   folderTitle,
   withFolder,
   withFolderAdded,
+  withFolderAfter,
   withoutFolder,
   type FolderRefusal,
 } from "./tour-folder-edit.js";
@@ -103,6 +104,25 @@ describe("the folder tree", () => {
       "new",
     ]);
   });
+
+  // Why: a folder's copy stands right after its original, at the
+  // original's depth - in the tree it is the row under the one copied,
+  // as the prototype showed it.
+  it("puts a copy right after its original at any depth, and leaves the tree when the id is unknown", () => {
+    const copy: TourFolder = { id: "copy", kind: "folder", children: [] };
+    expect(withFolderAfter(tree, "outer", copy).map((c) => c.id)).toEqual([
+      "outer",
+      "copy",
+      "spare",
+    ]);
+    const nested = withFolderAfter(tree, "inner", copy);
+    expect((nested[0] as TourFolder).children.map((c) => c.id)).toEqual([
+      "inner",
+      "copy",
+      "bare",
+    ]);
+    expect(withFolderAfter(tree, "nothing", copy)).toBe(tree);
+  });
 });
 
 describe("a folder's title and a refusal's line", () => {
@@ -130,5 +150,14 @@ describe("a folder's title and a refusal's line", () => {
       expect(line.length).toBeGreaterThan(FOLDER_NOT_POSSIBLE.length + 10);
     }
     expect(new Set(lines).size).toBe(reasons.length);
+  });
+
+  // Why: what holds an item may be its station, not only a folder (an
+  // ungroup lifts into the station); the line must not name a folder
+  // that is not there.
+  it("says an item would stand too far from what holds it, not from 'its folder'", () => {
+    const line = folderRefusalLine("tooFar");
+    expect(line).toContain("from what holds it");
+    expect(line).not.toContain("its folder");
   });
 });

@@ -1,9 +1,9 @@
 /**
  * The one binary search the read-along asks on every frame: the last
  * element of a list sorted by a key whose key is at or before a value.
- * The voice's segment at a time (`read-along.ts`), the sentence and the
- * caption word holding an offset (`long-text-sentences.ts`,
- * `caption-chunks.ts`) are all this search, and so is the landing film's
+ * The voice's segment at a time (`read-along.ts`), the sentence holding
+ * an offset (`long-text-sentences.ts`), the narration box's word at a
+ * time (`narration-box-timeline.ts`) are all this search, and so is the landing film's
  * part at a time (`landing/film-timeline.ts`).
  *
  * @see last-at-or-before.ts.md

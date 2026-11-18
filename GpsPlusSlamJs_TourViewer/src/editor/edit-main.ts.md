@@ -768,10 +768,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     (`moveNote`). The 2D map's drag (`finishMove`) asks the same and says
     the same on the card ("... - not saved yet.");
   - `remove` (`deleteSelection`, the card's Delete too) deletes an item
-    with the toast's Undo, or a station (`deleteStation`);
+    with the toast's Undo, a station (`deleteStation`), or a plain folder
+    with everything in it (`deleteFolderSelection`: asked first with
+    `folderDeleteQuestion`'s count, one step, "Deleted the folder
+    "<name>" and its <n> items" with the Undo);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies a story right after
     itself (`duplicateStorySelection`: the copy selected, its folder open,
-    "Duplicated "<title> copy""), or an item or a station beside itself,
+    "Duplicated "<title> copy""), a plain folder beside itself with
+    everything in it (`duplicateFolderSelection`: the copy selected in
+    its station's rows, "Duplicated the folder as "<name> copy""), or an
+    item or a station beside itself,
     ends a running search and unfolds the station
     the copy is in (`showRowsOf`: the copy's name matches what was typed
     no better), selects the copy and says "Duplicated ...";

@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Model import: two guided steps, round 3</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.185.1/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #f4f1ea;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+      }
+
+      body {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      .shell-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+        padding: 6px 10px;
+        font-size: 14px;
+        color: #f4f1ea;
+        background: #1f2a26;
+      }
+
+      .shell-bar b {
+        margin-right: 6px;
+      }
+
+      .shell-bar button,
+      .shell-bar label {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 4px 12px;
+        font: inherit;
+        color: #1f2a26;
+        cursor: pointer;
+        background: #f4f1ea;
+        border: 0;
+        border-radius: 999px;
+      }
+
+      .shell-bar button[aria-pressed="true"] {
+        color: #fff;
+        background: #1f7a5a;
+      }
+
+      .shell-bar input {
+        display: none;
+      }
+
+      #host {
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell-bar" role="toolbar" aria-label="Sample models">
+      <b>Prototype</b>
+      <button type="button" data-sample="rock">Rock</button>
+      <button type="button" data-sample="bust">Marble bust</button>
+      <button type="button" data-sample="box">Utility box</button>
+      <label
+        >Open a .glb<input type="file" accept=".glb,model/gltf-binary"
+      /></label>
+    </div>
+    <div id="host"></div>
+    <script type="module">
+      import { mountModelImport } from "./model-import.js";
+
+      const SAMPLES = {
+        rock: { url: "../model-lod-1/rock.glb", label: "Rock" },
+        // The samples of the first round, shared rather than copied.
+        bust: {
+          url: "../model-import-1-guided-steps/model-marble-bust.glb",
+          label: "Marble bust",
+        },
+        box: {
+          url: "../model-import-1-guided-steps/model-utility-box.glb",
+          label: "Utility box",
+        },
+      };
+      const importer = mountModelImport(document.getElementById("host"), {
+        onAccept: (result) => console.info("accepted", result),
+      });
+      window.__modelImport = importer;
+
+      const buttons = document.querySelectorAll("[data-sample]");
+      async function open(id) {
+        const sample = SAMPLES[id];
+        buttons.forEach((b) =>
+          b.setAttribute("aria-pressed", String(b.dataset.sample === id)),
+        );
+        const response = await fetch(sample.url);
+        if (!response.ok) {
+          throw new Error(`could not fetch ${sample.url}`);
+        }
+        await importer.load(await response.blob(), sample.label);
+      }
+      buttons.forEach((b) =>
+        b.addEventListener("click", () => open(b.dataset.sample)),
+      );
+      document
+        .querySelector(".shell-bar input")
+        .addEventListener("change", (event) => {
+          const file = event.target.files?.[0];
+          if (file) {
+            buttons.forEach((b) => b.setAttribute("aria-pressed", "false"));
+            importer.load(file, file.name);
+          }
+        });
+      const wanted = new URLSearchParams(location.search).get("sample");
+      open(SAMPLES[wanted] ? wanted : "rock");
+    </script>
+  </body>
+</html>

@@ -1308,11 +1308,16 @@ test.describe("the phone layout", () => {
       // needs and the view gives way, where a bound that assumed a one-row
       // line let the open control grow past the map's top. A landscape
       // phone's line fits on one row, so the control is narrowed by hand.
+      // "Wraps" is judged against the line's own one-row height, measured
+      // first, so the check holds at any font size.
+      const line = page.locator("#map .map-attribution-line");
+      const oneRow = (await line.boundingBox())?.height ?? 0;
+      expect(oneRow, "the line's one-row height").toBeGreaterThan(0);
       await control.evaluate((el) => el.style.setProperty("max-width", "8rem"));
-      const lineBox = await page
-        .locator("#map .map-attribution-line")
-        .boundingBox();
-      expect(lineBox?.height ?? 0, "the line wraps").toBeGreaterThan(30);
+      const lineBox = await line.boundingBox();
+      expect(lineBox?.height ?? 0, "the line wraps").toBeGreaterThan(
+        oneRow * 1.5,
+      );
       inside(await control.boundingBox(), "the open control, its line wrapped");
       await control.evaluate((el) => el.style.removeProperty("max-width"));
       await toggle.click();

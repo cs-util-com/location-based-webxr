@@ -269,6 +269,22 @@ never state). Design:
       for a folder the tour lacks (`NO_SUCH_FOLDER`), a spot on no map,
       and a move the document refuses (an item beyond its station's
       reach, `FOLDER_TOO_FAR`).
+    - `deleteFolder(folderId)` - a plain folder deleted with everything
+      in it (`folderDeleted`), one step: `{ kind: "deleted", items }`
+      (how many items went); each photo's picture is kept for the undo,
+      as `remove` keeps it. Refused for a folder the tour lacks.
+    - `duplicateFolder(folderId)` (async) - a plain folder copied beside
+      itself with everything in it (`folderDuplicated`), one step:
+      `{ kind: "duplicated", folderId }` (the copy's). Every folder and
+      item in it gets a new id (`newObjectId`); each photo's picture is
+      read first and held under its copy's id, so the save writes it.
+      The new ids are minted from the tour as it stands after that read.
+      Refused for a folder the tour lacks, a picture that cannot be read,
+      a folder whose items changed during the read (`NOT_APPLIED`: a
+      photo added meanwhile has no picture read), and a copy taking an
+      item beyond its station's reach (`FOLDER_TOO_FAR`); the held
+      pictures are dropped then. Its step, like `deleteFolder`'s, names
+      the folder in quotes (`the copy of "Shots"`).
     - `scaleFolder(folderId, value)` - a plain folder's scale, 0.1 to 10
       times (`folderScaled`): its whole group grows about its origin;
       "unchanged" for the scale it has (none counts as 1); refused out of
@@ -688,3 +704,9 @@ examples).
 - `moveViewpoint(id, geo)` writes a picture's viewpoint where the 3D view's handle was let go: `geo` is read into the station's frame and passed to `viewpointAt`, so the facing follows the handle's heading and pitch, lens and depth stay. One dispatch, one undo step.
 - Refused, with nothing written, for an unknown id, a block that is no picture, and a picture without a viewpoint ("This picture has no viewpoint to move yet."). It shares its write path with `editPictureViewpoint` (`writeViewpoint`), so an unchanged viewpoint dispatches nothing.
 - Tested in `editor-session.test.ts` ("moves a picture's viewpoint where its handle was let go, as one step").
+
+## `moveStoryEntry`
+
+- `moveStoryEntry(id, geo)` writes a story's posed entry where the 3D view's disc was let go: `geo`'s position is read into the station's frame, the entry keeps its own rotation (the disc does not turn it), and `stationEdited` with `storyPose` writes it in its story in place. One dispatch, one undo step.
+- Refused, with nothing written, for an id no story holds ("no such story" wording), a spot off the map, and a pose beyond the format's reach ("It cannot go that far: a story's entry must stay within ... km of its station.").
+- Tested in `editor-session-stations.test.ts` ("moveStoryEntry moves a story's entry in its story as one step, its facing kept").

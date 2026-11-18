@@ -382,6 +382,15 @@ test("a file in use is deleted from the shelf with its item and comes back whole
   expect(await audioOf()).toBe(old);
 });
 
+// How long a drop may take to put its cards on the shelf. Each file is read
+// and saved into the draft before the shelf reveals the cards, which took
+// 3.0 s for one file and 4.4 s for two on an idle desktop: close to or past
+// the default 5 s wait, and a loaded CI runner timed out with the cards
+// arriving later; with the globe drawing in the software renderer the
+// toast "Adding 2 files..." stood past 5 s on a loaded machine. 30 s is
+// about seven times the idle two-file time.
+const SHELF_ADD_MS = 30_000;
+
 /**
  * Drop `files` on the 3D view, as a creator drops them anywhere on the page.
  * @param {import("@playwright/test").Page} page
@@ -486,11 +495,8 @@ test("the Assets panel sits where the chosen prototype puts it, on a desktop, a 
     },
     { name: "bell.wav", type: "audio/wav", bytes: [...silenceWav()] },
   ]);
-  // Two files are read one after the other while the globe draws in this
-  // software renderer (the toast "Adding 2 files..." stood past 5 s on a
-  // loaded machine); the shelf is revealed once both are in.
   await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 2, {
-    timeout: 30_000,
+    timeout: SHELF_ADD_MS,
   });
   await expect(filesTab).toHaveAttribute("aria-selected", "true");
 
@@ -664,6 +670,8 @@ test("a file dropped while the list is behind the Files tab reaches the shelf", 
       bytes: [...encodeRgbPng(4, 3, new Array(36).fill(200))],
     },
   ]);
-  await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 1);
+  await expect(page.locator("#shell-shelf .as-card")).toHaveCount(before + 1, {
+    timeout: SHELF_ADD_MS,
+  });
   expect(errors).toEqual([]);
 });

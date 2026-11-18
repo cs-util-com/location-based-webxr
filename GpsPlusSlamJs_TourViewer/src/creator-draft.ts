@@ -417,6 +417,47 @@ export function wireCreatorDraft(deps: {
   /** The objects this load's Finishes wrote (F19): what a yes to "did you
    *  upload it?" can be about. */
   const finishedIds = new Set<string>();
+  /** The versions this load's Finishes wrote and its uploads noted, per
+   *  id: a forget removes the record WITH its base, so a record written
+   *  again afterwards gets them back - without them a reopen would call
+   *  this device's own saved work "replaced by a newer one". */
+  const knownKeys = new Map<
+    string,
+    { seen: Set<string>; written: Set<string> }
+  >();
+  /** Ids forgotten in this load whose base was removed with them. */
+  const forgottenIds = new Set<string>();
+
+  function rememberKey(id: string, list: "seen" | "written", key: string) {
+    let known = knownKeys.get(id);
+    if (known === undefined) {
+      known = { seen: new Set(), written: new Set() };
+      knownKeys.set(id, known);
+    }
+    known[list].add(key);
+  }
+
+  /** Write a live record; for an id forgotten earlier in this load, put
+   *  back the base keys the forget removed (in the id's queue, after the
+   *  record, as any base write). */
+  async function liveWrite(
+    s: DraftFileStore,
+    object: TourObject,
+    blob: Blob | undefined,
+    seen: string | undefined,
+  ): Promise<boolean> {
+    const wrote = await writeDraftLiveRecord(s, object, blob, seen);
+    if (!wrote || !forgottenIds.has(object.id)) return wrote;
+    forgottenIds.delete(object.id);
+    const known = knownKeys.get(object.id);
+    if (known === undefined) return wrote;
+    for (const list of ["seen", "written"] as const) {
+      for (const key of known[list]) {
+        await addDraftBaseKey(s, object.id, list, key);
+      }
+    }
+    return wrote;
+  }
 
   /** The opened tour's version of an object, recorded as seen with each
    *  draft write of it (M6 E2p); none for an object it does not carry.
@@ -445,7 +486,7 @@ export function wireCreatorDraft(deps: {
     }
     const seen = seenKey(object.id);
     void writeForObject(store, tourUrl, object.id, (s) =>
-      writeDraftLiveRecord(s, object, blob, seen),
+      liveWrite(s, object, blob, seen),
     ).then((ok) => {
       if (!ok) noteNoPersistence();
     });
@@ -1397,6 +1438,8 @@ export function wireCreatorDraft(deps: {
       undecided = null;
       touchedIds.clear();
       finishedIds.clear();
+      knownKeys.clear();
+      forgottenIds.clear();
       dom.draftOffer.hidden = true;
       offered = null;
       draftStore = undefined;
@@ -1432,9 +1475,7 @@ export function wireCreatorDraft(deps: {
     writeObject: (object, blob) => {
       touchedIds.add(object.id);
       const seen = seenKey(object.id);
-      return draftWrite(object.id, (s) =>
-        writeDraftLiveRecord(s, object, blob, seen),
-      );
+      return draftWrite(object.id, (s) => liveWrite(s, object, blob, seen));
     },
     finished: (ids, written) => {
       for (const id of ids) finishedIds.add(id);
@@ -1446,6 +1487,7 @@ export function wireCreatorDraft(deps: {
       for (const id of ids) {
         const key = read.key(id);
         if (key === undefined) continue;
+        rememberKey(id, "written", key);
         void writeForObject(store, tourUrl, id, (s) =>
           addDraftBaseKey(s, id, "written", key),
         );
@@ -1465,6 +1507,7 @@ export function wireCreatorDraft(deps: {
       const notes = [...finishedIds].flatMap((id) => {
         const key = read.key(id);
         if (key === undefined) return [];
+        rememberKey(id, "seen", key);
         return [draftWrite(id, (s) => addDraftBaseKey(s, id, "seen", key))];
       });
       return (await Promise.all(notes)).every(Boolean);
@@ -1476,9 +1519,10 @@ export function wireCreatorDraft(deps: {
       if (store === undefined || tourUrl === null) return Promise.resolve();
       // In the id's queue: a placement's write still in flight lands first,
       // and this removal after it (M4 review #7).
-      return draftWrites.run(objectChainKey(tourUrl, id), () =>
-        removeDraftObject(store, id),
-      );
+      return draftWrites.run(objectChainKey(tourUrl, id), async () => {
+        await removeDraftObject(store, id);
+        forgottenIds.add(id);
+      });
     },
     follow,
     warnNoBackup: noteNoPersistence,

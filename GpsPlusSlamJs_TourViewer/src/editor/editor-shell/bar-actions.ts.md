@@ -31,6 +31,8 @@ deg` - metres east and north of the tour's centre and the height over
 
 - A story has Duplicate alone (it is copied whole, right after itself,
   `storyDuplicated`); it has no place in the world to copy or turn to.
+- A plain folder has Duplicate alone: it is copied whole, with
+  everything in it, beside itself (`folderDuplicated`).
 - A story's entry and an item with no place in the world (a video, its
   `offset` null) have no bar
   actions: nothing to copy, frame or turn.

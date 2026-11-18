@@ -9,24 +9,14 @@
  * @see globe-cloud-bake.ts.md
  */
 
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
+
 import { clamp01, lerp } from "./globe-ease.js";
 
 const wrap = (i: number, n: number) => ((i % n) + n) % n;
 const fade = (t: number) => t * t * t * (t * (t * 6 - 15) + 10);
 const remap = (v: number, a: number, b: number, c: number, d: number) =>
   c + ((v - a) / (b - a)) * (d - c);
-
-/** A reproducible stream of numbers in 0..1. */
-function mulberry(start: number): () => number {
-  let seed = start;
-  return () => {
-    seed |= 0;
-    seed = (seed + 0x6d2b79f5) | 0;
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 /** A number in 0..1 for an integer lattice point and a seed. */
 function ihash(x: number, y: number, z: number, s: number): number {
@@ -385,7 +375,7 @@ function bakeBlue(S: number): Uint8Array {
   const n = S * S;
   const E = new Float32Array(n);
   const rank = new Int32Array(n).fill(-1);
-  const rnd = mulberry(5);
+  const rnd = mulberry32(5);
   const kernel = blueKernel();
   for (let i = 0; i < n; i++) E[i] = rnd() * 1e-4;
   for (let r = 0; r < n; r++) {

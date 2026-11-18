@@ -98,6 +98,9 @@ export interface FocusedPlayer extends NarrationPlayer {
   /** It plays, or the focus holds it to carry on: it counts as left behind
    *  when the visitor walks off. */
   wanted(): boolean;
+  /** The voice channel's running voice, whether playing or held (a
+   *  scrub, sound off, still loading). Pausing it hands the channel on. */
+  running(): boolean;
   /** Carry on without a tap: only while nothing else runs. True when it
    *  does; otherwise it waits behind the running voice, and with that place
    *  taken it stays paused. A tap continues it either way. */
@@ -141,6 +144,10 @@ export function focusedPlayer(
       inner.seek(ms);
     },
     onChange: (listener) => inner.onChange(listener),
+    // A scrub's pause: still the running voice, so nothing it holds wakes.
+    hold: () => {
+      voice.hold();
+    },
     play() {
       held = false;
       focus.tapped(voice);
@@ -152,6 +159,7 @@ export function focusedPlayer(
       focus.ended(voice);
     },
     wanted: () => held || inner.playing(),
+    running: () => focus.running() === voice,
     carryOn() {
       if (!focus.selfStart(voice)) {
         held = focus.behind(voice);

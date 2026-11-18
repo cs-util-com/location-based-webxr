@@ -123,10 +123,9 @@ move the camera only, and a second finger during a drag cancels it.
   E, PageUp and PageDown then are not).
 - A code has no target: no handles, no Del, no Ctrl+D (read-only in the
   3D view, as on the map).
-- A plain folder (`folder:<id>`) has no delete or copy of its own yet:
-  Del and Ctrl+D say so (`FOLDER_DELETE_NOT_YET`,
-  `FOLDER_DUPLICATE_NOT_YET`, `folder-commands.ts`) and keep the
-  browser's own keys off.
+- A plain folder (`folder:<id>`) has no target in the scene, yet Del
+  and Ctrl+D on it go to the page's `remove` and `duplicate` (the page
+  deletes or copies it whole), with the browser's own keys kept off.
 - A locked station (`poseLocked`) takes no nudge, turn or lift key: the press is refused and said once (`STATION_LOCKED`; a held key's repeats say nothing more). Delete and copy keys still work on it.
 
 ## Examples

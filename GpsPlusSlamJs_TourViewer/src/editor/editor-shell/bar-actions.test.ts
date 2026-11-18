@@ -98,6 +98,27 @@ describe("barActions for what stands nowhere", () => {
   });
 });
 
+describe("barActions for a folder", () => {
+  // Why: a plain folder is copied whole by Duplicate (Ctrl+D does the
+  // same); the bar must offer it, and nothing a folder cannot do.
+  it("offers a plain folder Duplicate alone", () => {
+    const folder: InspectorModel = {
+      kind: "folder",
+      folderId: "yard",
+      stationId: "s",
+      title: "Yard",
+      sub: "",
+      scale: { label: "Scale", meaning: "", value: 1, min: 0.1, max: 10 },
+      offset: { northM: 0, upM: 0, eastM: 0 },
+      headingDeg: 0,
+      groundOffM: null,
+      items: [],
+      phoneDetails: false,
+    };
+    expect(barActions(folder).map((a) => a.action)).toEqual(["duplicate"]);
+  });
+});
+
 describe("barActions", () => {
   it("gives a station Duplicate and Copy position, an item Align to station too", () => {
     expect(barActions(station).map((a) => a.action)).toEqual([
