@@ -18,7 +18,12 @@ tuned look can be shared and pasted back.
 
 - `LightSettings`: `{ gainMax, gainFromDeg, gainFullDeg, buildingSkyLight,
 exposureAdaptation, exposureEv, hazeVisibilityKm, hazeStartRatio,
-hazeVeilLightness, hazeVeilTint, hazeVeilTintA, hazeVeilRiseDeg }`.
+hazeVeilLightness, hazeVeilTint, hazeVeilTintA, hazeVeilRiseDeg,
+skyBalanceA, skyBalanceB }`. The last two are the sky balance's cast
+  (`sky-balance.ts`), a* -20..20 and b* -30..30, default 0 (no balance);
+  the cool corner (a* -16 with b* below about -27, a* -20 with b* below
+  about -22) clips red to 0
+  (`sky-balance.ts.md`).
 - `DEFAULT_LIGHT_SETTINGS`: built from `NOON_SURFACE_GAIN`,
   `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION`,
   `NATURAL_LIGHT_COMPENSATION_EV`, `HAZE_VISIBILITY_KM` and
@@ -29,7 +34,8 @@ hazeVeilLightness, hazeVeilTint, hazeVeilTintA, hazeVeilRiseDeg }`.
 - `LIGHT_SETTING_RANGES`: each field's slider min, max and step.
 - `parseLightSettings(search, defaults = DEFAULT_LIGHT_SETTINGS)`: from
   `?light=v1:gain=1.8,ev=-2.5` (keyed, versioned pairs; the keys are gain,
-  from, full, sky, adapt, ev, vis, haze, veil, tint, tinta, rise, and the
+  from, full, sky, adapt, ev, vis, haze, veil, tint, tinta, rise, skya,
+  skyb, and the
   read-only `vcol` shorthand). Never
   throws. A missing, unknown, non-numeric or out-of-range field falls back to
   its value in `defaults`, a ramp that does not rise falls back to their
@@ -45,6 +51,16 @@ hazeVeilLightness, hazeVeilTint, hazeVeilTintA, hazeVeilRiseDeg }`.
   `null` at them (the URL stays clean). Keyed, so an old link keeps every
   value it states after a new field or new defaults (plan §7); what it
   leaves out follows the defaults.
+- `skyBalanceOf(settings)`: the sky balance's gain (`skyBalanceGain`), or
+  `null` at a* 0 and b* 0; the view hands it to `AtmosphereRig.setSkyBalance`.
+  The Copy line names it only when set.
+- **The low-sun looks' light** (golden, dusk, bluehour), measured against
+  a dusk reference (sky band L* 62.9 a* -2.9 b* -15.9, horizon band 65.3,
+  5.3, 22.2): dusk is EV -1.5, sky balance a* -12 b* -8 and a warm veil
+  (L* 65, a* 5, b* 22, rise 6); blue hour EV -1.5, balance -16 / -12, veil
+  62 / 8 / 24 rising 5; golden hour EV -3 in clear air (60 km) and no
+  balance, because a cool balance on a sunlit sky turns it olive, not
+  blue (measured). Their links pin the sun with `date` and `time`.
 - **A colour scheme's own light.** `lightDefaultsFor(scheme)` gives the
   defaults a link is read and written against under that scheme: the
   shipped look with the scheme's own values over it, or
@@ -81,6 +97,9 @@ hazeVeilLightness, hazeVeilTint, hazeVeilTintA, hazeVeilRiseDeg }`.
 - `describeLightSettings(settings)`: the Copy line, e.g.
   `light: gain 1.8 (20° to 45°), sky light 1.3, adaptation 0.6, EV -2.5,
 haze 45 km from 0.66 of the draw distance`.
+  The sky balance clause is added when either axis is non-zero, read from
+  the settings directly, not from `skyBalanceOf`: a display never computes
+  a gain (which throws on a non-finite value) only to decide what to print.
 - **The haze (city look, haze inside the city).** `vis`, the meteorological
   visibility in km (default `HAZE_VISIBILITY_KM` 45, range 9-60 step 1: 9 is
   the hazy end of the reference city's estimate of 9-21 km, 60 the look-dev
@@ -198,6 +217,12 @@ writeLight(browserPlaceUrl(window), serializeLightSettings(settings, defaults));
   urban's defaults; any setting round-tripping against them, and any
   rebase keeping every set field and moving every other (property tests,
   fixed seed); the known limit of a veil switched off and switched back.
+- the low-sun looks' light value for value, inside the ranges, their veils
+  drawn as stated; the sky balance keys read and written inside their
+  bounds, `skyBalanceOf` null by default and the gain of the stated cast
+  otherwise, a drawable gain at every slider corner, the Copy line naming
+  it only when set (one axis is enough) and deciding that without the gain,
+  so a non-finite value gives a line rather than a `RangeError`.
 
 `playwright-tests/boot-and-shell.spec.js`, "an urban link without light
 keys ...", boots the page: urban's veil and EV from a link that states

@@ -24,8 +24,11 @@ import {
 
 import {
   ARCHITECT,
+  BLUE_HOUR,
   BLUEPRINT,
   CONTRAST,
+  DUSK,
+  GOLDEN,
   MAP,
   MEDITERRANEAN,
   MONO,
@@ -127,6 +130,9 @@ export const COLOUR_SCHEMES = Object.freeze({
   mono: MONO,
   contrast: CONTRAST,
   urban: URBAN,
+  golden: GOLDEN,
+  dusk: DUSK,
+  bluehour: BLUE_HOUR,
 } satisfies Record<string, ColourScheme>);
 
 export type ColourSchemeName = keyof typeof COLOUR_SCHEMES;

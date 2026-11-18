@@ -289,6 +289,15 @@ function validateOptions(options: SkyAtmosphereOptions): void {
   }
 }
 
+/** Whether two sky balances are the same gain (null: none). */
+function sameGain(
+  a: readonly number[] | null,
+  b: readonly number[] | null
+): boolean {
+  if (a === null || b === null) return a === b;
+  return a.every((c, i) => c === b[i]);
+}
+
 export class SkyAtmosphere {
   /** The visible sky. Added to the scene; drawn first, at the far plane. */
   readonly sky: THREE.Mesh;
@@ -420,6 +429,14 @@ export class SkyAtmosphere {
     atmSkyVeilRise: { value: 0 },
   };
   private horizonVeilState: { colour: Rgb; riseDeg: number } | null = null;
+  /**
+   * The sky balance (`setSkyBalance`): ONE uniform object spread into the
+   * visible sky and the bake, so the surfaces' sky light takes it too.
+   */
+  private readonly balance = {
+    atmSkyBalance: { value: new THREE.Vector3(1, 1, 1) },
+  };
+  private skyBalanceState: Rgb | null = null;
 
   constructor(options: SkyAtmosphereOptions) {
     try {
@@ -540,6 +557,7 @@ export class SkyAtmosphere {
         atmSunDiscEnabled: { value: sunDisc },
         atmClampHorizon: { value: clampHorizon },
         atmRadianceToScene: scale,
+        ...this.balance,
         ...veil,
       },
       side: THREE.BackSide,
@@ -1206,6 +1224,42 @@ export class SkyAtmosphere {
     this.skyVeil.atmSkyVeil.value.set(colour[0], colour[1], colour[2]);
     this.skyVeil.atmSkyVeilRise.value = rise;
     this.skyVeil.atmSkyVeilOn.value = 1;
+  }
+
+  /**
+   * The sky balance: a per-channel gain on the sky's own radiance, before
+   * the horizon veil, in the visible sky AND the bake (so a cool sky lights
+   * the surfaces cool too). A look tool: it moves the model's twilight
+   * colour toward a chosen one (a gain of equal luminance keeps the
+   * exposure where it was). `null`, the default, is no gain (1, 1, 1).
+   * A change re-bakes the environment (staged: on the next step); the same
+   * gain again does nothing. The haze takes its own copy
+   * (`AtmosphereHaze.setSkyBalance`). The dome's own clouds take the gain;
+   * the fly-through sheet and slab clouds do not, since they light from
+   * the raw sky-view table (`cloud-sheet.ts`). Validated before anything
+   * changes.
+   *
+   * @throws RangeError for a gain that is not three finite values of at
+   *   least 0.
+   */
+  setSkyBalance(gain: readonly [number, number, number] | null): void {
+    if (gain !== null && !gain.every((c) => Number.isFinite(c) && c >= 0)) {
+      throw new RangeError(
+        `the sky balance must be three finite values of at least 0, got ${gain.join(', ')}`
+      );
+    }
+    if (sameGain(this.skyBalanceState, gain)) return;
+    this.skyBalanceState = gain === null ? null : [gain[0], gain[1], gain[2]];
+    const g = gain ?? [1, 1, 1];
+    this.balance.atmSkyBalance.value.set(g[0], g[1], g[2]);
+    if (this.sun === undefined) return;
+    if (this.staged) this.pendingBake = true;
+    else this.rebake();
+  }
+
+  /** The sky balance {@link setSkyBalance} set, or `null` (none). */
+  get skyBalance(): Rgb | null {
+    return this.skyBalanceState;
   }
 
   /** The horizon veil {@link setHorizonVeil} set, or `null` (none). */

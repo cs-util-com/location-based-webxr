@@ -1262,6 +1262,24 @@ describe('SkyAtmosphere staged rebuild (globe F2 plan 2026-10-03-1922, F2b)', ()
     expect(atmosphere.stepRebuild()).toBe('idle');
   });
 
+  // A staged page must not bake inside the setter (a full PMREM pass in a
+  // slider's input handler), and two changes before the next frame must
+  // cost one bake, not two: the balance only marks the bake due.
+  it('defers a sky balance change to one bake on the next step', () => {
+    const { atmosphere, device } = staged();
+    atmosphere.setSun(UP);
+    drain(atmosphere);
+    const bakes = device.reusedBakes;
+    atmosphere.setSkyBalance([0.8, 1, 1.3]);
+    atmosphere.setSkyBalance([0.7, 1, 1.4]);
+    expect(atmosphere.rebuildPending).toBe(true);
+    expect(device.reusedBakes).toBe(bakes);
+    expect(atmosphere.stepRebuild()).toBe('bake');
+    expect(device.reusedBakes).toBe(bakes + 1);
+    expect(device.bakes).toBe(0);
+    expect(atmosphere.stepRebuild()).toBe('idle');
+  });
+
   // The staged read measures exactly what the synchronous one does: the
   // same exposure and horizon from the same sky.
   it('exposes the staged sky exactly as the synchronous one', () => {
@@ -1913,5 +1931,95 @@ describe('SkyAtmosphere horizon veil', () => {
     );
     expect(sky.uniforms.atmSkyVeilOn!.value).toBe(1);
     expect(s.atmosphere.horizonVeil?.riseDeg).toBe(4);
+  });
+});
+
+describe('SkyAtmosphere sky balance', () => {
+  const materials = (setupResult: ReturnType<typeof setup>) => {
+    setupResult.atmosphere.setSun(UP);
+    const sky = setupResult.atmosphere.sky.material as THREE.ShaderMaterial;
+    const bake = (setupResult.device.bakedScene!.children[0] as THREE.Mesh)
+      .material as THREE.ShaderMaterial;
+    return { sky, bake };
+  };
+
+  // WHY: a twilight sky from the physical model reads mauve where a look
+  // wants it slate blue. The balance is a per-channel gain on the sky's
+  // own radiance, so it must reach the bake too: the surfaces' sky light
+  // then takes the same cast, and a cool sky lights the city cool.
+  it('reaches the visible sky and the bake through one uniform, and re-bakes', () => {
+    const s = setup();
+    const { sky, bake } = materials(s);
+    expect(sky.uniforms.atmSkyBalance).toBe(bake.uniforms.atmSkyBalance);
+    expect(
+      (sky.uniforms.atmSkyBalance!.value as THREE.Vector3).toArray()
+    ).toEqual([1, 1, 1]);
+    expect(s.atmosphere.skyBalance).toBeNull();
+    const bakesBefore = s.device.bakes;
+    s.atmosphere.setSkyBalance([0.8, 1, 1.3]);
+    expect(
+      (sky.uniforms.atmSkyBalance!.value as THREE.Vector3).toArray()
+    ).toEqual([0.8, 1, 1.3]);
+    expect(s.atmosphere.skyBalance).toEqual([0.8, 1, 1.3]);
+    expect(s.device.bakes).toBe(bakesBefore + 1);
+    s.atmosphere.setSkyBalance(null);
+    expect(
+      (sky.uniforms.atmSkyBalance!.value as THREE.Vector3).toArray()
+    ).toEqual([1, 1, 1]);
+    expect(s.atmosphere.skyBalance).toBeNull();
+    expect(s.device.bakes).toBe(bakesBefore + 2);
+  });
+
+  // WHY: re-baking costs a cube render; an unchanged balance (the light
+  // dialog re-applies every setting on each change) must not pay it.
+  it('does not re-bake for the balance it already has', () => {
+    const s = setup();
+    materials(s);
+    s.atmosphere.setSkyBalance([0.9, 1, 1.1]);
+    const bakes = s.device.bakes;
+    s.atmosphere.setSkyBalance([0.9, 1, 1.1]);
+    s.atmosphere.setSkyBalance([0.9, 1, 1.1]);
+    expect(s.device.bakes).toBe(bakes);
+  });
+
+  // WHY: before the first sun there is nothing to bake; the balance is
+  // kept and the first bake takes it.
+  it('keeps a balance set before the first sun without baking', () => {
+    const s = setup();
+    s.atmosphere.setSkyBalance([1.1, 1, 0.9]);
+    expect(s.device.bakes).toBe(0);
+    s.atmosphere.setSun(UP);
+    const sky = s.atmosphere.sky.material as THREE.ShaderMaterial;
+    expect(
+      (sky.uniforms.atmSkyBalance!.value as THREE.Vector3).toArray()
+    ).toEqual([1.1, 1, 0.9]);
+  });
+
+  it('refuses a gain it cannot draw, and keeps the last one', () => {
+    const s = setup();
+    materials(s);
+    s.atmosphere.setSkyBalance([0.9, 1, 1.1]);
+    for (const bad of [
+      [Number.NaN, 1, 1],
+      [1, -0.1, 1],
+      [1, 1, Number.POSITIVE_INFINITY],
+    ] as const) {
+      expect(() => s.atmosphere.setSkyBalance(bad)).toThrow(RangeError);
+    }
+    expect(s.atmosphere.skyBalance).toEqual([0.9, 1, 1.1]);
+  });
+
+  // WHY: the gain is on the sky's own radiance, before the veil mix, so a
+  // veil keeps the colour it was given whatever the balance.
+  it('multiplies the radiance before the clamp and the veil mix', () => {
+    const f = (setup().atmosphere.sky.material as THREE.ShaderMaterial)
+      .fragmentShader;
+    const balanceAt = f.indexOf(
+      'radiance * atmRadianceToScene * atmSkyBalance'
+    );
+    expect(balanceAt).toBeGreaterThan(0);
+    expect(f.indexOf('mix(gl_FragColor.rgb, atmSkyVeil')).toBeGreaterThan(
+      balanceAt
+    );
   });
 });

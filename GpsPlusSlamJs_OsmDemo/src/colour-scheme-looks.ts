@@ -565,3 +565,159 @@ export const URBAN: ColourScheme = {
   ground: { slope: SLOPE, plates: PLATE_COLOUR },
   brightnessTrim: 1.6,
 };
+
+/*
+ * Low-sun looks, measured against a dusk reference (city look exploration,
+ * dusk round). Each keeps urban's real-albedo ladder and its tower and
+ * material rules (the settled direction: no invented facade detail, light
+ * raised by the trim) and changes what a low sun shows: the asphalt, the
+ * ground, the land use and the roof and wall families. Their light (sky
+ * balance, veil, exposure) is in `light-settings.ts`, `SCHEME_LIGHT`; the
+ * sun itself is the link's (`date` and `time`).
+ */
+
+/**
+ * Golden hour: honey limestone, sandstone and warm plaster under clay and
+ * slate, warm-grey asphalt, dry autumn land use. Made for a sun a few
+ * degrees up: the walls facing it glow, the rest stay cool in sky light.
+ */
+export const GOLDEN: ColourScheme = {
+  label: "Golden hour",
+  city: {
+    ...URBAN.city,
+    ground: 0x67635d,
+    walls: [
+      // honey limestone and cream
+      0xcbbca4, 0xc2b196, 0xb8a990,
+      // sandstone and ochre plaster
+      0xb79c80, 0xad9174, 0xa08872,
+      // warm grey render
+      0xaaa59c, 0x9a958d,
+      // brick and terracotta render
+      0xa47a68, 0x9a6c5c, 0x8c6458,
+      // brownstone and dark stone
+      0x725a4e, 0x5a5452,
+    ],
+    pitchedRoofs: [
+      // clay, aged
+      0x8d5f4e, 0x7f5848, 0x98685a,
+      // slate
+      0x55585c, 0x4d5054,
+    ],
+    flatRoofs: [
+      // bitumen and gravel
+      0x4c4a48, 0x5a5652, 0x7a7670, 0x8a857e,
+    ],
+    ...roadsOf({
+      major: 0x232120,
+      middle: 0x262423,
+      minor: 0x2a2826,
+      paths: 0x6a6052,
+      sidewalk: 0x5e5a54,
+      markings: 0xcfc8bc,
+      surfaces: 0x2a2826,
+    }),
+    ...barriersOf(0x8e8476, 0x4c5a38),
+    trees: treesOf(0x5c5a30, 0x34442c),
+    landUse: landUseOf({
+      built: 0x6c6862,
+      green: 0x66683e,
+      wood: 0x464e2e,
+      field: 0x8a7a52,
+      water: 0x4a5866,
+      sand: 0xa89878,
+    }),
+  },
+  ground: { slope: SLOPE, plates: 0x7e7a72 },
+  brightnessTrim: 1.6,
+};
+
+/**
+ * Dusk after rain: the sun just set, a slate-blue sky over a warm band at
+ * the horizon. Urban's walls and roofs under a cool sky light; the asphalt
+ * and the paths wet and dark, the water slate, the greens deep.
+ */
+export const DUSK: ColourScheme = {
+  label: "Dusk after rain",
+  city: {
+    ...URBAN.city,
+    ground: 0x626462,
+    ...roadsOf({
+      major: 0x16171a,
+      middle: 0x18191c,
+      minor: 0x1b1c1f,
+      paths: 0x4a4946,
+      sidewalk: 0x4c4d4e,
+      markings: 0xb8b8b4,
+      surfaces: 0x1b1c1f,
+    }),
+    ...barriersOf(0x6e6e6c, 0x2c3a2c),
+    trees: treesOf(0x2e3c2a, 0x243228),
+    landUse: landUseOf({
+      built: 0x5a5c5c,
+      green: 0x3e4c38,
+      wood: 0x2c3a2c,
+      field: 0x5a5644,
+      water: 0x56687a,
+      sand: 0x8a8476,
+    }),
+  },
+  ground: { slope: SLOPE, plates: 0x707374 },
+  brightnessTrim: 1.6,
+};
+
+/**
+ * Blue hour: the sun a few degrees under the horizon, the sky deep blue
+ * above a thin peach glow. Cooler, lighter stone and render (so walls still
+ * read in the dim light), dark slate and zinc roofs, dark asphalt.
+ */
+export const BLUE_HOUR: ColourScheme = {
+  label: "Blue hour",
+  city: {
+    ...URBAN.city,
+    ground: 0x626468,
+    walls: [
+      // pale limestone and white render
+      0xcac6be, 0xbfbbb3, 0xb4b2ae,
+      // light concrete and blue-grey render
+      0xa8acb0, 0x9ca2a8, 0x8e949a,
+      // sand, muted
+      0xaca294, 0x9e968a,
+      // brick, muted
+      0x987c74, 0x8a6e66,
+      // dark stone or glass
+      0x50545a, 0x5c6066,
+    ],
+    pitchedRoofs: [
+      // slate and zinc
+      0x4a4e54, 0x54585e, 0x5e646a, 0x747c80,
+      // muted clay
+      0x765e58,
+    ],
+    flatRoofs: [
+      // bitumen, gravel, membrane
+      0x46484c, 0x52545a, 0x72747a, 0xb8bcc0,
+    ],
+    ...roadsOf({
+      major: 0x1a1b1f,
+      middle: 0x1c1d21,
+      minor: 0x1f2024,
+      paths: 0x4e4e50,
+      sidewalk: 0x525458,
+      markings: 0xc0c2c4,
+      surfaces: 0x1f2024,
+    }),
+    ...barriersOf(0x76787c, 0x2e3c34),
+    trees: treesOf(0x2e3e34, 0x26342e),
+    landUse: landUseOf({
+      built: 0x5e6064,
+      green: 0x405046,
+      wood: 0x2e3c34,
+      field: 0x5c5c54,
+      water: 0x4c5e74,
+      sand: 0x8c8a84,
+    }),
+  },
+  ground: { slope: SLOPE, plates: 0x72747a },
+  brightnessTrim: 1.6,
+};

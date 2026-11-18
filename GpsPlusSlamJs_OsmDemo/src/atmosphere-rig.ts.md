@@ -33,6 +33,14 @@ colour that matched the sky at one time of day.
     `building-view.ts` writes `fog.near = startRatio x fog.far` from it.
     Validated before any change: a visibility that is not a positive finite
     number, or a start outside [0, 1), is a `RangeError`.
+  - `setSkyBalance(gain | null)`: the light dialog's sky balance
+    (`sky-balance.ts`), handed to the visible sky (`SkyAtmosphere.setSkyBalance`,
+    which re-bakes so the surfaces' sky light takes the cast) and to the
+    haze (`AtmosphereHaze.setSkyBalance`), so the distance fades toward the
+    balanced sky. The fallback dome has no radiance to balance; there only
+    the unused haze uniform changes. A gain the framework refuses changes
+    nothing (the haze validates first). The stock `scene.fog` colour stays
+    unbalanced, as with `setHazeVeil`.
   - `setHazeVeil(veil | null)`: the light dialog's haze veil
     (`haze-veil.ts`), the colour a fully hazed distance SHOWS, in place of
     the sky's colour in that direction. The haze gets
@@ -230,6 +238,8 @@ renderer.render(scene, camera);
   fog are untouched; it survives a sun move and an exposure change; the
   fallback's fog takes the veil's display colour and returns to the
   horizon on `null`; a veil it cannot show changes nothing.
+  `setSkyBalance`: the same gain reaches the sky and the haze, `null` takes
+  it off both, the fallback accepts it, a bad gain changes nothing.
 - The night floor (same file): off by day and at -2.9 deg, full at -30 deg,
   cool, one light, untouched by an exposure change, the same in the fallback,
   removed on dispose. `atmosphere-rig.property.test.ts`: the weight is in

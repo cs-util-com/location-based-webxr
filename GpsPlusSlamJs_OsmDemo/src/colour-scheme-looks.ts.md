@@ -11,7 +11,7 @@ puts them into the table after `today`.
 ## Public API
 
 - `ARCHITECT`, `BLUEPRINT`, `MEDITERRANEAN`, `NORDIC`, `PASTEL`, `MAP`,
-  `NIGHT`, `MONO`, `CONTRAST`, `URBAN`: one `ColourScheme` each (label, city colours,
+  `NIGHT`, `MONO`, `CONTRAST`, `URBAN`, `GOLDEN`, `DUSK`, `BLUE_HOUR`: one `ColourScheme` each (label, city colours,
   ground colours, brightness trim). Nothing else is exported; read them
   through `COLOUR_SCHEMES` in `colour-schemes.ts`.
 
@@ -76,7 +76,8 @@ COLOUR_SCHEMES.map.city.roads.get("primary"); // 0xf2a65a
 
 ## Tests
 
-- `colour-schemes.test.ts`: the ten in plan order then `urban`, the urban
+- `colour-schemes.test.ts`: the ten in plan order then `urban`, `golden`,
+  `dusk` and `bluehour`, the urban
   ladder's hex proxy (walls mean L* 53-57 spanning at least 30, car roads
   10-14, ground 40-44) and its flags, validation, the lightness
   distance, plates lighter than the ground, the tag rule, only the default on
@@ -85,6 +86,27 @@ COLOUR_SCHEMES.map.city.roads.get("primary"); // 0xf2a65a
   itself; every scheme has every road and land-use class.
 - `playwright-tests/scene-3d.spec.js` ("the colour schemes"): the switch
   repaints, says Applying until the echo, writes and boots the link.
+
+## Low-sun looks (`GOLDEN`, `DUSK`, `BLUE_HOUR`)
+
+Three looks moved toward a measured dusk reference (its sky and horizon
+band colours). Each spreads `URBAN.city`, so the real-albedo
+ladder, the tower and material rules, the wall jitter and the tag rule
+stay; what changes is what a low sun shows.
+
+- `GOLDEN` "Golden hour": honey limestone, sandstone and warm render under
+  aged clay and slate, warm-grey asphalt, dry autumn land use. For a sun a
+  few degrees up.
+- `DUSK` "Dusk after rain": urban's walls and roofs, wet dark asphalt,
+  deep greens, slate water. The closest to the reference by measurement.
+- `BLUE_HOUR` "Blue hour": lighter, cooler stone and render (walls still
+  read in the dim light), slate and zinc roofs, dark asphalt.
+
+Their light is in `light-settings.ts` (`SCHEME_LIGHT`): the sky balance
+and veil do most of the work. The ground stays near urban's L* 42, the one
+band that keeps both the dark glass towers (L* 27-30) and the brick
+material tone (L* 54) 11 L* away (the tower and material tests found a
+darker wet ground and golden's first ground too close).
 
 ## Zebra paint (`markings`, city objects M4b, 2026-11-11)
 

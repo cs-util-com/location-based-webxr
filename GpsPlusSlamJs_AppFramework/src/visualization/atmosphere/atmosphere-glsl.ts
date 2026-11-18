@@ -576,6 +576,8 @@ uniform float atmClampHorizon;
 uniform vec3 atmSkyVeil;
 uniform float atmSkyVeilOn;
 uniform float atmSkyVeilRise;
+// A per-channel gain on the sky's own radiance (1, 1, 1: none).
+uniform vec3 atmSkyBalance;
 ${HORIZON_VEIL_GLSL}
 varying vec3 vAtmWorldDirection;
 ${ATMOSPHERE_CLOUD_GLSL}
@@ -656,7 +658,7 @@ void main() {
 
   radiance = atmClouds(dir, r, radiance);
   // Finite in a half-float target, whatever the exposure (see the constant).
-  gl_FragColor = vec4(min(radiance * atmRadianceToScene, vec3(ATM_MAX_SCENE_RADIANCE)), 1.0);
+  gl_FragColor = vec4(min(radiance * atmRadianceToScene * atmSkyBalance, vec3(ATM_MAX_SCENE_RADIANCE)), 1.0);
   // Toward the veil at the horizon, in the units the haze blends in, so a
   // ground hazed toward the same veil meets the sky without a step.
   gl_FragColor.rgb = mix(gl_FragColor.rgb, atmSkyVeil,

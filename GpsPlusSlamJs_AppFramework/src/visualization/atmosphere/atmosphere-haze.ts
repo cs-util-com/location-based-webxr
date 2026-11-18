@@ -114,6 +114,7 @@ uniform float atmObserverRadius;
 uniform float atmRadianceToScene;
 uniform vec3 atmHazeVeil;
 uniform float atmHazeVeilOn;
+uniform vec3 atmHazeSkyBalance;
 uniform vec4 atmHazeRim;
 uniform float atmHazeRimOn;
 ${ATMOSPHERE_COMMON_GLSL}
@@ -131,7 +132,9 @@ if (atmHazeMode > 0.5) {
     * atmRadianceToScene;
   // The app's own veil colour in place of the sky's, when set (weight 1);
   // a weight of 0 returns the sky colour unchanged.
-  atmHazeSky = mix(atmHazeSky, atmHazeVeil, atmHazeVeilOn);
+  // The sky balance first (SkyAtmosphere.setSkyBalance), so the haze fades
+  // toward the sky on screen; a veil replaces the balanced sky.
+  atmHazeSky = mix(atmHazeSky * atmHazeSkyBalance, atmHazeVeil, atmHazeVeilOn);
   #ifdef FOG_EXP2
     float atmBoundary = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
   #else
@@ -186,6 +189,8 @@ export interface HazeUniforms {
   atmHazeVeil: THREE.IUniform<THREE.Vector3>;
   /** 1 while a veil is set, else 0. */
   atmHazeVeilOn: THREE.IUniform<number>;
+  /** The sky balance's gain on the sky colour, (1, 1, 1) for none. */
+  atmHazeSkyBalance: THREE.IUniform<THREE.Vector3>;
   /** The rim: centre x, centre z, inner and outer radius, metres. */
   atmHazeRim: THREE.IUniform<THREE.Vector4>;
   /** 1 while a rim is set, else 0. */
@@ -254,6 +259,7 @@ export class AtmosphereHaze {
   private requested: 'atmosphere' | 'fog' = 'atmosphere';
   private skyView: THREE.Texture | undefined;
   private veilColour: Rgb | null = null;
+  private skyBalanceGain: Rgb | null = null;
   private rimState: HazeRim | null = null;
 
   constructor(options: AtmosphereHazeOptions) {
@@ -277,6 +283,7 @@ export class AtmosphereHaze {
       atmRadianceToScene: { value: 0 },
       atmHazeVeil: { value: new THREE.Vector3() },
       atmHazeVeilOn: { value: 0 },
+      atmHazeSkyBalance: { value: new THREE.Vector3(1, 1, 1) },
       // Rising edges even while off (setRim keeps them rising).
       atmHazeRim: { value: new THREE.Vector4(0, 0, 0, 1) },
       atmHazeRimOn: { value: 0 },
@@ -362,6 +369,31 @@ export class AtmosphereHaze {
   /** The veil colour set by {@link setVeil}, or `null` (the sky's colour). */
   get veil(): Rgb | null {
     return this.veilColour;
+  }
+
+  /**
+   * The sky balance's gain on the sky colour the haze fades toward, so the
+   * distance meets the balanced visible sky (`SkyAtmosphere.setSkyBalance`)
+   * without a seam. `null`, the default, is (1, 1, 1). A set veil replaces
+   * the balanced sky. A sync keeps it.
+   *
+   * @throws RangeError for a gain that is not three finite values of at
+   *   least 0 (nothing changes).
+   */
+  setSkyBalance(gain: Rgb | null): void {
+    if (gain !== null && !gain.every((c) => Number.isFinite(c) && c >= 0)) {
+      throw new RangeError(
+        `haze sky balance must be three finite values of at least 0, got ${gain.join(', ')}`
+      );
+    }
+    this.skyBalanceGain = gain === null ? null : [gain[0], gain[1], gain[2]];
+    const g = gain ?? [1, 1, 1];
+    this.uniforms.atmHazeSkyBalance.value.set(g[0], g[1], g[2]);
+  }
+
+  /** The gain set by {@link setSkyBalance}, or `null` (none). */
+  get skyBalance(): Rgb | null {
+    return this.skyBalanceGain;
   }
 
   /**

@@ -21,6 +21,15 @@
   draws it. The new `horizon-veil.ts` holds the weight as a CPU twin
   (`horizonVeilRise`, `horizonVeilWeight`) and its GLSL
   (`HORIZON_VEIL_GLSL`).
+- **The sky's colour can be balanced** (`visualization/atmosphere`):
+  `SkyAtmosphere.setSkyBalance(gain)` with its `skyBalance` getter,
+  `AtmosphereHaze.setSkyBalance(gain)` with its getter, and the haze uniform
+  `HazeUniforms.atmHazeSkyBalance` apply a per-channel gain to the sky's
+  radiance before the clamp and the horizon veil, in the visible sky and in
+  the environment bake. A change re-bakes; the same gain again does
+  nothing; `null` (the default) is no gain. A non-finite or negative
+  channel throws `RangeError`. The app calls the haze's setter too, so the
+  distance fades toward the balanced sky.
 - **The AO can be reapplied without recomputing it**
   (`visualization/ambient-occlusion`): `AmbientOcclusion.reapply()`
   multiplies the AO the last `render` computed onto the frame just drawn,
