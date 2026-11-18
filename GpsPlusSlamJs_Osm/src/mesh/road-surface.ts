@@ -18,6 +18,7 @@
 
 import type { EnuPoint } from "./enu.js";
 import type { RoadRibbon } from "./roads.js";
+import { minMaxOf } from "../utils/min-max.js";
 
 /** The road ground at a point in plan, or undefined off every road. */
 export interface RoadGround {
@@ -66,11 +67,11 @@ export function roadGroundIndex(ribbons: readonly RoadRibbon[]): RoadGround {
   return {
     highestAt(p) {
       const hs = heightsAt(p);
-      return hs.length === 0 ? undefined : Math.max(...hs);
+      return hs.length === 0 ? undefined : minMaxOf(hs)[1];
     },
     lowestAt(p) {
       const hs = heightsAt(p);
-      return hs.length === 0 ? undefined : Math.min(...hs);
+      return hs.length === 0 ? undefined : minMaxOf(hs)[0];
     },
   };
 }
@@ -97,7 +98,7 @@ function cell(metres: number): number {
 }
 
 function span(values: readonly [number, number, number]): [number, number] {
-  return [Math.min(...values), Math.max(...values)];
+  return minMaxOf(values);
 }
 
 /** The ribbon's triangles in plan, its lift taken off (mesh z is -north). */

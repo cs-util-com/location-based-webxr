@@ -27,6 +27,7 @@ import { isPedestrianArea } from "./ground-tint.js";
 import { MeshBuilder, type MeshData } from "./mesh-data.js";
 import { pedestrianAreaLiftM } from "./roads.js";
 import { triangulate } from "./triangulate.js";
+import { minMaxOf } from "../utils/min-max.js";
 
 /**
  * The default cut spacing, metres: the terrain's post spacing
@@ -207,12 +208,12 @@ function ccw(t: EnuPoint[]): EnuPoint[] {
  * the triangle. Pieces under `MIN_TRIANGLE_AREA_M2` are dropped.
  */
 function cutToCells(triangle: EnuPoint[], spacingM: number): EnuPoint[][] {
-  const xs = triangle.map((p) => p.x);
-  const ys = triangle.map((p) => p.y);
-  const i0 = Math.floor(Math.min(...xs) / spacingM);
-  const i1 = Math.floor(Math.max(...xs) / spacingM);
-  const j0 = Math.floor(Math.min(...ys) / spacingM);
-  const j1 = Math.floor(Math.max(...ys) / spacingM);
+  const [minX, maxX] = minMaxOf(triangle.map((p) => p.x));
+  const [minY, maxY] = minMaxOf(triangle.map((p) => p.y));
+  const i0 = Math.floor(minX / spacingM);
+  const i1 = Math.floor(maxX / spacingM);
+  const j0 = Math.floor(minY / spacingM);
+  const j1 = Math.floor(maxY / spacingM);
   if (i0 === i1 && j0 === j1) return [triangle];
   const pieces: EnuPoint[][] = [];
   for (let i = i0; i <= i1; i += 1) {
