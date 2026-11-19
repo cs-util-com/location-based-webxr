@@ -1,0 +1,92 @@
+<!doctype html>
+<!-- Prototype: quiz round 5, variant 2 "A pillar on request". Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Quiz 5.2 - A pillar on request</title>
+    <link rel="stylesheet" href="pillar.css" />
+    <script type="importmap">
+      { "imports": { "three": "https://unpkg.com/three@0.185.1/build/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <canvas id="cam" aria-label="Simulated camera view of a town square"></canvas>
+    <div class="edge" id="edge" aria-hidden="true"></div>
+
+    <div class="hud" id="hud">
+      <!-- The narration box (the calm HUD's round 5 look): a handle on its top edge folds it to a one-line pill. -->
+      <section class="nbox" id="nbox" tabindex="0" aria-roledescription="narration" aria-label="Mara speaks. Tap the words to pause or play, drag them up or down to move through what she says.">
+        <button class="handle" id="handle" type="button" aria-label="Fold the box">
+          <i></i><span id="handleText">Hide</span>
+        </button>
+        <div class="full" id="full">
+          <div class="win" id="win">
+            <div class="col" id="col"></div>
+            <div class="sbar" id="sbar"><i id="thumb"></i></div>
+          </div>
+          <div class="chips" id="chips" hidden></div>
+          <div class="status" id="status" hidden>
+            <span class="eggs" id="eggs"></span>
+            <span class="count" id="count" aria-live="polite"></span>
+            <button class="ask" id="ask" type="button" aria-pressed="false"></button>
+          </div>
+          <p class="hint" id="hint" hidden></p>
+        </div>
+        <div class="pline" id="pline">
+          <span class="pdots" id="pdots"></span>
+          <span class="ptext" id="ptext"></span>
+        </div>
+      </section>
+    </div>
+    <div id="flyLayer"></div>
+
+    <!-- Demo controls: not part of the design; the bottom edge belongs to the box. -->
+    <div class="strip" id="strip">
+      <select id="beat" aria-label="Jump to a beat"></select>
+      <button type="button" id="resetBtn" title="Start again">Reset</button>
+      <button type="button" id="fastBtn" aria-pressed="false" title="Walk at 3.5 m/s">Fast</button>
+      <button type="button" id="menuBtn" aria-label="Settings and notes">&#9776;</button>
+    </div>
+    <div class="meter" id="meter">-</div>
+    <div class="pad" id="pad">
+      <button type="button" data-walk="1" aria-label="Walk forward (hold)">Walk</button>
+      <button type="button" data-walk="-1" aria-label="Walk back (hold)">Back</button>
+    </div>
+
+    <aside class="panel" id="panel" hidden aria-label="Settings and notes">
+      <p><b>A pillar on request.</b> An egg is hidden at each thing an answer names; it glitters faintly. Walk close and it opens and flies into the box. From the first egg on you may choose. Stuck? Tell Mara in the box: one short pale pillar then rises at the nearest egg still hidden. Keep looking at it and the egg fills from below and comes to you; the pillar sinks, and the next one rises while help is on.</p>
+      <h4>Try</h4>
+      <ul>
+        <li>Drag sideways on the view to turn; tap the ground to walk there (3.5 m/s); hold Walk (Fast for 3.5 m/s). On a desktop: W A S D, Q E to turn, Shift to hurry.</li>
+        <li>Walk to the fountain straight ahead, then choose it at once: the shortcut.</li>
+        <li>Tap "Mara, help me find them" and turn slowly towards the glow at the screen side.</li>
+        <li>The handle on the box's top edge folds it: the found eggs fly back to their places, and in again when it opens.</li>
+      </ul>
+      <h4>Quiz item settings (set by the tour's creator)</h4>
+      <div class="row"><span>Attempts</span><select id="attempts"><option value="1">1</option><option value="2">2</option><option value="0">Unlimited</option></select></div>
+      <div id="creator"></div>
+      <div class="row"><span>Needs the golden key</span><button type="button" id="keyNeedBtn" aria-pressed="false">off</button></div>
+      <h4>The visitor</h4>
+      <div class="row"><span>Has the golden key</span><button type="button" id="keyHasBtn" aria-pressed="false">no</button></div>
+      <div id="visitor"></div>
+      <p class="sub">Changing these restarts the beat, so the box shows what the visitor sees with them.</p>
+      <h4>Values</h4>
+      <div id="sliders"></div>
+      <label><span>Beam colour</span><output id="beamOut"></output><input type="color" id="beamColor" /></label>
+      <div class="row"><span>Additive beam</span><button type="button" id="addBtn" aria-pressed="false">off</button></div>
+      <div class="row"><span>Voice</span><button type="button" id="voiceBtn" aria-pressed="false">off</button></div>
+      <p class="note">URL options: every slider by its key, plus <code>beat</code>, <code>attempts</code>, <code>cost</code>, <code>coins</code>, <code>key=need|has|need,has</code>, <code>beam=fff4b0</code>, <code>add=1</code>, <code>at=x,z,yawDeg</code>, <code>voice=on</code>.</p>
+      <h4>Faked here</h4>
+      <ul>
+        <li>The camera, the square and the position are simulated; the look direction is the view's heading (pitch is ignored).</li>
+        <li>The narration plays on invented word times; "Voice" adds the browser's text-to-speech without word sync.</li>
+      </ul>
+      <button class="close" id="panelClose" type="button">Close</button>
+    </aside>
+
+    <script type="module" src="pillar.js"></script>
+  </body>
+</html>
