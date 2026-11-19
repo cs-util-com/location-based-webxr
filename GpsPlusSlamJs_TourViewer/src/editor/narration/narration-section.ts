@@ -24,7 +24,11 @@ import { shellIcon } from "gps-plus-slam-editor-kit/chrome";
 
 import { sizeWords } from "../../checks/file-access-check.js";
 import { clockText } from "../../read-along.js";
-import { normalVoiceCredit, VOICE_CREDIT_MAX } from "../../voice-credit.js";
+import {
+  normalVoiceCredit,
+  VOICE_CREDIT_MAX,
+  voiceCreditCut,
+} from "../../voice-credit.js";
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
 import {
@@ -709,10 +713,15 @@ export function createNarrationSection(
       await running("credit", async () => {
         const done = await deps.edit(at.blockId, { kind: "voiceCredit", text });
         if (done !== "written") return;
+        // The field takes more than the cap (`maxLength` counts UTF-16
+        // units), so a longer credit is cut here; the toast says so.
+        const cut = voiceCreditCut(text)
+          ? ` Cut to ${String(VOICE_CREDIT_MAX)} letters.`
+          : "";
         deps.say(
           next === ""
             ? "Credit removed. Ctrl+Z brings it back."
-            : `Spoken by: ${next}. Ctrl+Z undoes it.`,
+            : `Spoken by: ${next}.${cut} Ctrl+Z undoes it.`,
         );
       });
     }

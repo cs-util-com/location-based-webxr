@@ -10,6 +10,7 @@ A narration's voice credit (the "Spoken by" line the visitor sees after the spea
 - `normalVoiceCredit(text): string | undefined`
   - trims, turns every whitespace run (tabs, line breaks, no-break spaces) into one space, cuts to `VOICE_CREDIT_MAX` code points and trims the cut end;
   - `undefined` when nothing is left: an empty credit means none, so the narration then carries no `voiceCredit` field.
+- `voiceCreditCut(text): boolean` - whether `normalVoiceCredit` cuts `text`: more than `VOICE_CREDIT_MAX` code points once trimmed and its whitespace collapsed. The narration section then adds "Cut to 200 letters." to its toast (the field's `maxLength` is twice the cap, in UTF-16 units, so a longer text can be typed).
 
 ## Invariants
 
@@ -26,4 +27,4 @@ normalVoiceCredit("   "); // undefined
 
 ## Tests
 
-`voice-credit.property.test.ts`: the format's rule holds for any text, idempotence, a text within the cap kept word for word, the cut by letters.
+`voice-credit.property.test.ts`: the format's rule holds for any text, idempotence, a text within the cap kept word for word, the cut by letters, and `voiceCreditCut` true exactly when the collapsed text is longer than the cap.

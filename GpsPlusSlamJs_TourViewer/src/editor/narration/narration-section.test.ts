@@ -665,6 +665,21 @@ describe("who speaks the voice", () => {
     await flush();
     expect(field.value).toBe(atCap);
     expect([...field.value].length).toBe(VOICE_CREDIT_MAX);
+    expect(said.at(-1)).toBe(
+      `Spoken by: ${atCap}. Cut to ${String(VOICE_CREDIT_MAX)} letters. Ctrl+Z undoes it.`,
+    );
+  });
+
+  // Why: a credit within the cap is stored word for word, so its toast
+  // must not claim a cut.
+  it("says no cut for a credit within the cap", async () => {
+    await voiced();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    field.value = "Anna";
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(said.at(-1)).toBe("Spoken by: Anna. Ctrl+Z undoes it.");
   });
 
   it("takes the credit off when the field is emptied", async () => {
@@ -708,10 +723,13 @@ describe("who speaks the voice", () => {
     const field = credit();
     if (field === null) throw new Error("no field");
     field.focus();
+    // The next text carries its own credit, so a field that kept the first
+    // text's value would show "Anna", not "Berta".
+    held.voiceCredit = "Berta";
     section.update({ blockId: "other", body: BODY, key: "1" });
     expect(document.activeElement).not.toBe(field);
     await flush();
     expect(credit()).toBe(field);
-    expect(field.value).toBe("Anna");
+    expect(field.value).toBe("Berta");
   });
 });

@@ -13,7 +13,11 @@ import {
 import { TOUR_NARRATION_RULES } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { describe, expect, it } from "vitest";
 
-import { VOICE_CREDIT_MAX, normalVoiceCredit } from "./voice-credit.js";
+import {
+  VOICE_CREDIT_MAX,
+  normalVoiceCredit,
+  voiceCreditCut,
+} from "./voice-credit.js";
 
 const RULE = TOUR_NARRATION_RULES.voiceCredit;
 
@@ -84,6 +88,29 @@ describe("normalVoiceCredit, by example", () => {
     expect([...(cut ?? "")].length).toBe(VOICE_CREDIT_MAX);
     // No half of a surrogate pair is left at the end.
     expect(cut?.endsWith("😀")).toBe(true);
+  });
+
+  // Why: the editor's toast says "Cut to 200 letters" on this answer; it
+  // must be true exactly when storing the text dropped letters.
+  it("says a cut exactly when the stored credit lost letters", () => {
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          typed,
+          fc.string({
+            minLength: VOICE_CREDIT_MAX - 2,
+            maxLength: VOICE_CREDIT_MAX + 3,
+          }),
+        ),
+        (text) => {
+          const whole = [...text.trim().replace(/\s+/gu, " ")].length;
+          expect(voiceCreditCut(text)).toBe(whole > VOICE_CREDIT_MAX);
+          // No cut said: the stored credit kept every letter.
+          const kept = [...(normalVoiceCredit(text) ?? "")].length;
+          expect(voiceCreditCut(text) || kept === whole).toBe(true);
+        },
+      ),
+    );
   });
 
   it("names the format's own cap", () => {
