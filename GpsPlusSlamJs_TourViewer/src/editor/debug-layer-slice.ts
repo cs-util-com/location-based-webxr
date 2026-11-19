@@ -1,9 +1,11 @@
 /**
  * The debug layer's page state (`debugLayer`): whether "Show debug data"
  * is on, whose walk the layer shows (the tour's own, or debug data added
- * beside it) and the camera captures it drew, each by its picture's entry
- * name and its place. The map and the 3D view on the globe both draw from
- * it, so the two views never keep two copies that mean different things.
+ * beside it), the camera captures it drew, each by its picture's entry
+ * name and its place, and the panel's status line. The 3D view on the
+ * globe draws from it; the switch, the status line and the map's
+ * visibility follow it. The map is still drawn by the layer's own view
+ * callbacks, with the same captures.
  *
  * Debug data, never the tour: no history, no draft, no save reads it. The
  * thumbnails are decoded pictures (blob URLs), so they stay out of the
@@ -36,12 +38,16 @@ export interface DebugLayerState {
   /** The captures drawn, in capture order; null until the layer drew
    *  (and while none runs). */
   readonly captures: readonly DebugPlace[] | null;
+  /** The panel's status line (reading, declined, shown); "" says
+   *  nothing. */
+  readonly status: string;
 }
 
 export const initialDebugLayerState: DebugLayerState = {
   shown: true,
   source: null,
   captures: null,
+  status: "",
 };
 
 /** The captures a drawing may keep: a name and a finite place each, the
@@ -109,6 +115,12 @@ const debugLayerSlice = createSlice({
     /** "Show debug data" switched. */
     shownChanged(state, action: PayloadAction<{ readonly on: boolean }>) {
       state.shown = action.payload.on === true;
+    },
+    /** The panel's status line, kept until said again (a stop leaves the
+     *  last line; the page clears it when the tour closes). */
+    statusSaid(state, action: PayloadAction<{ readonly line: string }>) {
+      const { line } = action.payload;
+      state.status = typeof line === "string" ? line : "";
     },
     /** The layer stopped (the tour closed, another source replaced it):
      *  nothing drawn, no source. The switch keeps its state until the

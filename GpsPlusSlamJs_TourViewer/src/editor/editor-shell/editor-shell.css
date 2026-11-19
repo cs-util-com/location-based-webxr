@@ -67,16 +67,37 @@ body[data-view="3d"] :is(#rail, #card, #offscreen-chip) {
 }
 
 /* The debug panel over the 3D view (its layer draws on the globe too): at
- * the canvas's foot on the left, right of an open tree, so the inspector,
- * the shelf and the map controls on the right stay clear. */
+ * the canvas's foot on the left, right of an open tree, and never wider
+ * than the canvas between the docks, so the inspector and the shelf on the
+ * right stay clear. On a phone the docks are sheets over the canvas's
+ * foot: the panel is not shown there, File's "Add debug data" and View's
+ * switch reach the same layer. */
 body[data-view="3d"] .debug-panel {
+  --debug-left: 0px;
+  --debug-right: var(--s-shelf-cur, 0px);
+
   right: auto;
-  left: 12px;
+  left: calc(var(--debug-left) + 12px);
   bottom: calc(var(--s-bar-h) + var(--s-panel-h, 0px) + 14px);
+  max-width: min(
+    320px,
+    calc(100vw - var(--debug-left) - var(--debug-right) - 36px)
+  );
 }
 
 body[data-view="3d"]:has(#shell-tree:not([hidden], .collapsed)) .debug-panel {
-  left: calc(var(--s-tree-w) + 12px);
+  --debug-left: var(--s-tree-w);
+}
+
+body[data-view="3d"]:has(#shell-inspector:not([hidden], .collapsed))
+  .debug-panel {
+  --debug-right: calc(var(--s-insp-w) + var(--s-shelf-cur, 0px));
+}
+
+@media (width <= 700px) {
+  body[data-view="3d"] .debug-panel {
+    display: none;
+  }
 }
 
 svg.i {
@@ -4648,7 +4669,8 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
  * colour. */
 .backdrop,
 #toasts,
-#view3d-failed {
+#view3d-failed,
+body[data-view="3d"] .debug-panel {
   --ink: var(--s-text);
   --ink-dim: var(--s-muted);
   --ink-faint: var(--s-dim);

@@ -63,7 +63,10 @@ describe("atlasCell", () => {
     // A landscape picture in the second row's first cell.
     const c = atlasCell(layout, 2, 64, 48);
     expect(c).toMatchObject({ x: 0, y: 64, w: 64, h: 48 });
-    expect(c.uv).toEqual([0, 1 - 112 / 128, 0.5, 48 / 128]);
+    // Inset half a texel, so the filter never reads the next cell.
+    expect(c.uv).toEqual([0.5 / 128, 1 - 111.5 / 128, 63 / 128, 47 / 128]);
+    // A picture one pixel wide keeps its texel.
+    expect(atlasCell(layout, 0, 1, 64).uv[2]).toBe(1 / 128);
     // A portrait one fits by its height.
     expect(atlasCell(layout, 1, 48, 64)).toMatchObject({
       x: 64,
@@ -110,13 +113,23 @@ describe("createGlobeDebugLayer", () => {
 
   it("puts a thumbnail in its capture's cell at the map's width, once", () => {
     const { surface, draws } = fakeSurface();
-    const layer = createGlobeDebugLayer(new THREE.Group(), surface);
+    const parent = new THREE.Group();
+    const layer = createGlobeDebugLayer(parent, surface);
     layer.set(captures(4), false);
     expect(layer.thumb("img-3", { source: null, width: 64, height: 48 })).toBe(
       true,
     );
     expect(draws).toEqual([{ x: 64, y: 64, w: 64, h: 48 }]);
     expect(layer.hasThumb("img-3")).toBe(true);
+    // Its instance samples its cell; the others stay dots (no cell).
+    const cells = (
+      parent.getObjectByName(
+        "debug-thumbs",
+      ) as THREE.Mesh<THREE.InstancedBufferGeometry>
+    ).geometry.getAttribute("cell");
+    expect(cells.getX(3)).toBeCloseTo(64.5 / 128);
+    expect(cells.getZ(3)).toBeGreaterThan(0);
+    expect([0, 1, 2].map((i) => cells.getZ(i))).toEqual([0, 0, 0]);
     expect(layer.thumb("img-3", { source: null, width: 64, height: 48 })).toBe(
       false,
     );
@@ -176,9 +189,10 @@ describe("createGlobeDebugLayer", () => {
     expect(parent.getObjectByName("debug-layer")?.visible).toBe(true);
   });
 
-  it("frees its geometry when replaced, and everything on dispose", () => {
+  it("frees its geometry and atlas when replaced, and everything on dispose", () => {
     const parent = new THREE.Group();
-    const layer = createGlobeDebugLayer(parent, fakeSurface().surface);
+    const { surface, px } = fakeSurface();
+    const layer = createGlobeDebugLayer(parent, surface);
     layer.set(captures(3), true);
     const freed: string[] = [];
     const watch = (o: THREE.Object3D | undefined, name: string) => {
@@ -191,8 +205,18 @@ describe("createGlobeDebugLayer", () => {
     };
     watch(parent.getObjectByName("debug-thumbs"), "thumbs");
     watch(parent.getObjectByName("debug-walk"), "walk");
+    const atlas = (
+      parent.getObjectByName("debug-thumbs") as THREE.Mesh<
+        THREE.InstancedBufferGeometry,
+        THREE.ShaderMaterial
+      >
+    ).material.uniforms["atlas"]?.value as THREE.Texture;
+    atlas.addEventListener("dispose", () => freed.push("atlas"));
     layer.set(null, true);
-    expect(freed.sort()).toEqual(["thumbs-geo", "walk-geo"]);
+    // The atlas's texture and its pixels go with the drawing: a long
+    // walk's are 16 MB each.
+    expect(freed.sort()).toEqual(["atlas", "thumbs-geo", "walk-geo"]);
+    expect(px()).toBe(1);
     expect(layer.stats()).toMatchObject({
       captures: 0,
       objects: 0,

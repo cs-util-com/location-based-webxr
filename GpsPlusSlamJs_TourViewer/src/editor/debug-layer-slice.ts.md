@@ -3,13 +3,15 @@
 ## Purpose
 
 The debug layer's page state in the store (`debugLayer`): whether "Show
-debug data" is on, whose walk the layer shows and the camera captures it
-drew. The 2D map and the 3D view on the globe both draw from it, so the
-two views read one copy.
+debug data" is on, whose walk the layer shows, the camera captures it
+drew and the panel's status line. The 3D view on the globe draws from it;
+the switch, the status line and the map's visibility follow it. The 2D
+map is still drawn through the layer's view callbacks (`edit-main.ts`),
+with the same captures.
 
 ## Public API
 
-- `DebugLayerState` - `{ shown, source, captures }`:
+- `DebugLayerState` - `{ shown, source, captures, status }`:
   - `shown` - the View menu's "Show debug data"; on at every start.
   - `source` - `"walk"` (the tour file's own walk), `"added"` (debug data
     added beside the tour, "Add debug data…"), or null while no layer
@@ -17,12 +19,16 @@ two views read one copy.
   - `captures` - `DebugPlace[]` in capture order (`image`, the picture's
     entry name and the capture's id; `lat`, `lon`, `alt` in degrees and
     metres over the ellipsoid), or null until drawn.
+  - `status` - the panel's status line (reading, declined, shown), ""
+    for none.
 - `debugLayerActions`
   - `started({ source })` - shown, the source set, nothing drawn; an
     unknown source is ignored.
   - `drawn({ captures })` - the captures drawn, cleaned by
     `debugPlacesOf`; ignored while no layer runs.
   - `shownChanged({ on })`.
+  - `statusSaid({ line })` - the status line, kept through starts and
+    clears until said again; a line that is no string is "".
   - `cleared()` - no source, nothing drawn; `shown` kept until the next
     start.
 - `debugLayerReducer`, `initialDebugLayerState`, `selectDebugLayer(root)`.
@@ -49,13 +55,13 @@ store.dispatch(
     captures: captures.map((c) => ({ image: c.image, ...c.geo })),
   }),
 );
-selectDebugLayer(store.getState()).captures; // what both views draw
+selectDebugLayer(store.getState()).captures; // what the globe draws
 ```
 
 ## Tests
 
-- `debug-layer-slice.test.ts` - start, draw, switch, clear, an unknown
-  source, a drawing without a layer, mounting in the store, the cleaning.
+- `debug-layer-slice.test.ts` - start, draw, switch, clear, the status
+  line, an unknown source, a drawing without a layer, mounting in the store, the cleaning.
 - `debug-layer-slice.property.test.ts` - any captures keep unique names
   with finite places in their order; no action sequence leaves captures
   without a source.

@@ -102,7 +102,8 @@ export function atlasLayout(count: number): {
  * Where a picture `w` x `h` goes in cell `index`: the largest rectangle of
  * its aspect inside the cell, at the cell's top left (canvas pixels), and
  * its place in the texture (u, v of its bottom left and its size; the
- * texture is flipped, v up).
+ * texture is flipped, v up), inset half a texel on each side so the
+ * linear filter never reads the neighbouring cell.
  */
 export function atlasCell(
   layout: {
@@ -126,7 +127,21 @@ export function atlasCell(
   const x = (index % layout.columns) * layout.cellPx;
   const y = Math.floor(index / layout.columns) * layout.cellPx;
   const s = layout.px;
-  return { x, y, w: dw, h: dh, uv: [x / s, 1 - (y + dh) / s, dw / s, dh / s] };
+  // A one-pixel picture keeps its texel (an inset would leave it no size).
+  const ix = dw > 1 ? 0.5 : 0;
+  const iy = dh > 1 ? 0.5 : 0;
+  return {
+    x,
+    y,
+    w: dw,
+    h: dh,
+    uv: [
+      (x + ix) / s,
+      1 - (y + dh - iy) / s,
+      (dw - 2 * ix) / s,
+      (dh - 2 * iy) / s,
+    ],
+  };
 }
 
 const VERTEX = /* glsl */ `
@@ -228,6 +243,9 @@ export function createGlobeDebugLayer(
       dotColour: { value: new THREE.Color(0xffffff) },
     },
     toneMapped: false,
+    // Sorted with the transparent line, so `renderOrder` puts the
+    // thumbnails over it (opaque objects would draw first whatever it is).
+    transparent: true,
   });
   const lineMaterial = new LineMaterial({
     color: LINE_COLOUR,
@@ -269,6 +287,9 @@ export function createGlobeDebugLayer(
     thumbed = new Set();
     atlasPx = 0;
     dirty = false;
+    // The atlas's storage and pixels too: a long walk's are 16 MB each.
+    texture.dispose();
+    surface.reset(1);
   };
 
   const cellAttribute = () =>
@@ -294,8 +315,8 @@ export function createGlobeDebugLayer(
       layout = atlasLayout(kept.length);
       atlasPx = layout.px;
       surface.reset(layout.px);
-      // A new size: the texture's storage is made anew at its upload.
-      texture.dispose();
+      // A new size: the texture's storage (freed by `drop`) is made anew
+      // at its upload.
       texture.needsUpdate = true;
       uploadedAt = -Infinity;
 

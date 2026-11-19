@@ -209,15 +209,18 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   starts ticked and shows or hides them: view state, never in the tour
   document, a save or the draft. Leaving the tour stops it.
   - What the layer drew (each capture's picture name and place), its
-    source (`"walk"` or `"added"`) and the switch are the store's
-    `debugLayer` slice (`debug-layer-slice.ts`): the layer's view
-    dispatches `started`, `drawn` and `cleared`, the switch dispatches
-    `shownChanged`, and one store subscriber ticks the item and shows or
-    hides the map's markers. The decoded thumbnails are kept beside it in
-    `debugThumbs` (`debug-thumbs.ts`, cleared with each drawing and
-    clear). The 3D view on the globe reads both (`globeOpening()` hands
-    it `debugThumbs`) and draws the captures and, for added debug data,
-    a line through them (`globe-debug-layer.ts`).
+    source (`"walk"` or `"added"`), the switch and the panel's status
+    line are the store's `debugLayer` slice (`debug-layer-slice.ts`):
+    the layer's view dispatches `started`, `drawn` and `cleared`, its
+    status `statusSaid`, the switch `shownChanged`, and one store
+    subscriber writes `#debug-status`, ticks the item and shows or hides
+    the map's markers. The map's markers themselves are still drawn by
+    the layer's view callbacks, with the same captures. The decoded
+    thumbnails are kept beside it in `debugThumbs` (`debug-thumbs.ts`,
+    cleared with each drawing and clear). The 3D view on the globe reads
+    both (`globeOpening()` hands it `debugThumbs`) and draws the
+    captures and, for added debug data, a line through them
+    (`globe-debug-layer.ts`).
 - View's "Real time" (`#view-realtime`, a checkbox item): the globe
   view's clock, unticked by
   default (the sky held in daylight over the tour), ticked the real time
@@ -254,8 +257,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   and is idle and enabled again however the add ends
   (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)
   is the same entry in both views (the panel shows over the 3D view
-  too, at the canvas's foot on the left): both open the one `#debug-add-input` and `createAddDebugButton`
-  drives both.
+  too, at the canvas's foot on the left, as wide as the canvas between
+  the docks allows; hidden there on a phone, whose docks are sheets over
+  the canvas's foot): both open the one `#debug-add-input` and
+  `createAddDebugButton` drives both. The panel over the 3D view is an
+  interim place, until the 3D view's bottom panel takes it.
   Never saved, never drafted, closed with the tour and forgotten at a
   reload (Q-H); a newer add replaces it; an add that ends after another
   tour opened is closed unseen.
@@ -503,7 +509,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`setNeedsNoGps`): one change, one toast, autosave told. The rail's box
   stays for the map.
 - **Not yet in the 3D view** (pending, for the removal of the 2D map):
-  editing a pin's multi-line
+  framing the debug layer's captures when the tour has nothing
+  positioned to frame (the map does it; the 3D view does not open for
+  such a tour), and editing a pin's multi-line
   text on the map card (it becomes the station's Markdown description).
   The rail's search has no counterpart: the 3D view's tree has no filter
   yet.

@@ -37,6 +37,8 @@ content: nothing in it is picked, selected or saved.
   picture's aspect in cell `index` (canvas pixels, top left) and its
   texture place (u, v of its bottom left and size; the texture is flipped).
 - `THUMB_WIDTH_PX` (32, the map's), `ATLAS_MAX_PX`.
+  The texture place is inset half a texel on each side (none for a
+  one-pixel side), so the linear filter never reads the next cell.
 
 ## Invariants and assumptions
 
@@ -50,6 +52,12 @@ content: nothing in it is picked, selected or saved.
 - The thumbnails' quads are placed in the shader, so the mesh is never
   frustum-culled; depth-tested, so the ground and buildings in front hide
   them.
+- A drawing replaced or cleared frees the atlas's texture and shrinks its
+  canvas to one pixel (a long walk's are 16 MB each).
+- Both materials are transparent, so the line (`renderOrder` 1) draws
+  before the thumbnails (2) over it. Named `debug-layer`, the group is
+  drawn in the globe's interface pass (`globe-interface-pass.ts`): no
+  cloud shadow or haze over it.
 - The atlas is sized at `set` and its texture made anew; a thumbnail
   writes its cell and its instance's two attributes only, and the
   texture's upload waits for `frame` (one upload per 250 ms however many
@@ -76,12 +84,15 @@ debug.frame(performance.now());
 
 - `globe-debug-layer.test.ts` - the atlas's layout and cells, one mesh
   and one line under the frame, no line unless asked or for one capture,
-  a thumbnail in its cell once at the map's width, the upload throttle,
+  a thumbnail in its cell once at the map's width (its instance's cell
+  attribute set, the others dots), the half-texel inset, the upload throttle,
   bad and repeated captures dropped, show and hide, geometry freed when
-  replaced and everything on dispose, the size on screen.
+  replaced (the atlas's texture and canvas too) and everything on
+  dispose, the size on screen.
 - `globe-debug-layer.property.test.ts` - any walk length draws at most one
   mesh and one line and a clear leaves nothing; every capture's cell lies
   inside the atlas, apart from the others, at its picture's aspect.
 - `editor3d-globe.spec.js` - a recording added as debug data over the
   globe view: two thumbnails and the line drawn, the atlas uploaded, View's
   switch hides and shows them, nothing pending.
+- `globe-interface-pass.test.ts` - the layer is lifted by its name.

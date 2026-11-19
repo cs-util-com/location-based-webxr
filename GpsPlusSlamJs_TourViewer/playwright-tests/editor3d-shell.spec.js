@@ -1532,15 +1532,14 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
 test("File's Add debug data opens the same add as the map's panel", async ({
   page,
 }) => {
-  // Why: the map's debug panel is hidden over the 3D view, so
-  // "Add debug data" could not be reached there at all. File's item opens
-  // the same file input and runs the same add: a file that is no debug
-  // data is refused in the same words, and the item comes back idle.
+  // Why: File's item and the panel's button over the 3D view open the
+  // same file input and run the same add: a file that is no debug data is
+  // refused in the same words, and both come back idle.
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await open3d(page);
   const add = fileItem(page, "debugAdd");
-  await expect(page.locator("#debug-add")).toBeHidden();
+  await expect(page.locator("#debug-add")).toBeVisible();
   const sample = await (
     await page.request.get("/samples/marienplatz-tour.zip")
   ).body();
@@ -1561,6 +1560,8 @@ test("File's Add debug data opens the same add as the map's panel", async ({
   ).toBeVisible();
   await expect(add).toBeEnabled();
   await expect(add).toHaveText("Add debug data…");
+  await expect(page.locator("#debug-add")).toBeEnabled();
+  await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
 });
 
 test("a tap on the folded list's rail opens it with its stations shown", async ({

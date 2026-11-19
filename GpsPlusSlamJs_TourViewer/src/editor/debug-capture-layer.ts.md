@@ -46,7 +46,7 @@ save or the draft. The phone has no such layer
 - `DEBUG_READING_LINE` ("Reading the debug data..."), `debugReadingLine`
   ("Reading the debug data... 40 %"), `debugDeclinedLine`
   ("No debug data shown: <reason>."), `debugShownLine` ("Debug data: N
-  camera captures on the map.").
+  camera captures shown.", on either view).
 - A thumbnail is 32 CSS pixels wide (`DEBUG_THUMB_WIDTH_PX`, module-internal).
 - `decodeDebugThumbnail(blob): Promise<HTMLImageElement>` - the browser's
   downscaled decode (`createImageBitmap` with `resizeWidth`, twice the

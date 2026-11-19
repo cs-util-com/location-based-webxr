@@ -29,6 +29,7 @@ describe("debugLayer", () => {
       shown: true,
       source: null,
       captures: null,
+      status: "",
     });
   });
 
@@ -37,7 +38,12 @@ describe("debugLayer", () => {
     s = reduce(s, act.drawn({ captures: [A] }));
     s = reduce(s, act.shownChanged({ on: false }));
     s = reduce(s, act.started({ source: "added" }));
-    expect(s).toEqual({ shown: true, source: "added", captures: null });
+    expect(s).toEqual({
+      shown: true,
+      source: "added",
+      captures: null,
+      status: "",
+    });
   });
 
   it("keeps the drawn captures in order, by name and place only", () => {
@@ -56,7 +62,28 @@ describe("debugLayer", () => {
     s = reduce(s, act.drawn({ captures: [A, B] }));
     s = reduce(s, act.shownChanged({ on: false }));
     s = reduce(s, act.cleared());
-    expect(s).toEqual({ shown: false, source: null, captures: null });
+    expect(s).toEqual({
+      shown: false,
+      source: null,
+      captures: null,
+      status: "",
+    });
+  });
+
+  it("holds the panel's status line, whatever the layer does, until it is said again", () => {
+    let s = reduce(
+      undefined,
+      act.statusSaid({ line: "Reading the debug data..." }),
+    );
+    expect(s.status).toBe("Reading the debug data...");
+    s = reduce(s, act.started({ source: "walk" }));
+    s = reduce(s, act.cleared());
+    expect(s.status).toBe("Reading the debug data...");
+    s = reduce(s, act.statusSaid({ line: "" }));
+    expect(s.status).toBe("");
+    // A line that is no string says nothing rather than "undefined".
+    s = reduce(s, act.statusSaid({ line: 3 as unknown as string }));
+    expect(s.status).toBe("");
   });
 
   it("refuses a source it does not know", () => {

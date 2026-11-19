@@ -55,6 +55,7 @@ describe("debugLayer (properties)", () => {
         .map((captures) => act.drawn({ captures })),
       fc.boolean().map((on) => act.shownChanged({ on })),
       fc.constant(act.cleared()),
+      fc.string().map((line) => act.statusSaid({ line })),
     );
     fc.assert(
       fc.property(fc.array(action, { maxLength: 30 }), (actions) => {

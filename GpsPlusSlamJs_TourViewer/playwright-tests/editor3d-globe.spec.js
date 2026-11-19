@@ -294,7 +294,9 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
   page,
 }) => {
   test.setTimeout(240_000);
-  await page.setViewportSize({ width: 1280, height: 800 });
+  // A small desktop window: fewer pixels for the software renderer each
+  // frame, and still wide enough for the panel (a phone hides it).
+  await page.setViewportSize({ width: 900, height: 560 });
   await answerHosts(page, {});
   await keepRejections(page);
   await noApproach(page);
@@ -316,21 +318,22 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
     mimeType: "application/zip",
     buffer: recording,
   });
-  // The walk is replayed between the globe's frames, which a software
-  // renderer makes slow: give the read the time the poll below has.
-  await expect(page.locator("#debug-status")).toContainText(
-    "Debug data: 2 camera captures",
-    { timeout: 90_000 },
-  );
+  // Reading the recording (the zip's entries, then the replay of its few
+  // actions) waits behind the globe's frames, which a software renderer
+  // draws slowly: one budget for the read and the drawing, on the globe's
+  // own figures.
   const debug = async () =>
     /** @type {any} */ ((await view3d(page))?.globe?.debug ?? null);
-  await expect.poll(debug, { timeout: 60_000 }).toMatchObject({
+  await expect.poll(debug, { timeout: 90_000 }).toMatchObject({
     captures: 2,
     thumbs: 2,
     linePoints: 2,
     shown: true,
     objects: 2,
   });
+  await expect(page.locator("#debug-status")).toHaveText(
+    "Added from walk.zip, not saved with the tour. It is a recording, not saved from this tour. Debug data: 2 camera captures shown.",
+  );
   await expect
     .poll(async () => (await debug())?.uploads, { timeout: 60_000 })
     .toBeGreaterThan(0);

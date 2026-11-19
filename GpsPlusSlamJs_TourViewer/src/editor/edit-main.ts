@@ -2899,7 +2899,7 @@ function leaveFile(): void {
   forgetAddedDebug();
   debugPanel.hidden = true;
   debugSwitch.hidden = true;
-  debugStatus.textContent = "";
+  store.dispatch(debugLayerActions.statusSaid({ line: "" }));
 }
 
 /** The open tour's debug layer: view state only, never in the tour
@@ -2976,7 +2976,7 @@ function startDebugLayer(): void {
   walkGeo = walkAtLayerStart(walkGeo, addedDebug !== null);
   const from = debugSource();
   debugSwitch.hidden = from === null;
-  debugStatus.textContent = from?.line ?? "";
+  store.dispatch(debugLayerActions.statusSaid({ line: from?.line ?? "" }));
   if (from === null) return;
   store.dispatch(
     debugLayerActions.started({
@@ -3018,8 +3018,11 @@ function startDebugLayer(): void {
       },
     },
     status: (line) => {
-      debugStatus.textContent =
-        from.line === null ? line : `${from.line} ${line}`;
+      store.dispatch(
+        debugLayerActions.statusSaid({
+          line: from.line === null ? line : `${from.line} ${line}`,
+        }),
+      );
     },
     discard: revokeDebugThumbnail,
   });
@@ -4331,7 +4334,8 @@ keepWalk.addEventListener("click", () => {
   setChecked(keepWalk, !isChecked(keepWalk));
 });
 // The debug layer's switch: view state only - no edit, nothing pending.
-// The store holds it; the switch and the layer follow the store.
+// The store holds it and the panel's status line; the switch, the line
+// and the layer follow the store.
 debugSwitch.addEventListener("click", () => {
   store.dispatch(
     debugLayerActions.shownChanged({
@@ -4342,7 +4346,8 @@ debugSwitch.addEventListener("click", () => {
 let debugShownDrawn = selectDebugLayer(store.getState()).shown;
 setChecked(debugSwitch, debugShownDrawn);
 store.subscribe(() => {
-  const { shown } = selectDebugLayer(store.getState());
+  const { shown, status } = selectDebugLayer(store.getState());
+  if (debugStatus.textContent !== status) debugStatus.textContent = status;
   if (shown === debugShownDrawn) return;
   debugShownDrawn = shown;
   setChecked(debugSwitch, shown);
