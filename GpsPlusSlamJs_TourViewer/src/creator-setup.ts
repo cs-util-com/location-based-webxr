@@ -945,7 +945,7 @@ export function wireCreatorSetup(deps: {
       // The draft's own word (`persists`): false while work waits in
       // memory - no tour open, its manifest not settled (a broken
       // tour.json never opens a draft), its draft still opening - and once
-      // a backup write failed (U2 milestone review #3).
+      // a backup write failed.
       draftPersists: draft.persists(),
       finishFailed: ctx.finishError !== null,
     };
