@@ -81,7 +81,7 @@ import {
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
-  NO_TOUR_LEAD,
+  finishBlockedLead,
   codeTourLine,
   entryHint,
   setupHint,
@@ -698,20 +698,23 @@ export function wireCreatorSetup(deps: {
     // the phone on the printed code so it fills the screen" on a desktop
     // page with no session running is an instruction for a situation the
     // creator is not in.
-    // With no tour open nothing measured or placed is kept (no draft, and
-    // Done cannot save): said FIRST, in AR and on the page, because the AR
-    // line is clamped to two lines and a swipe-away fires no leave guard.
-    // Short there, so the note and the readout still fit; the full hint,
-    // where to open the tour, ends the line.
-    const noTourLead = readiness === "no-tour" ? `${NO_TOUR_LEAD} · ` : "";
+    // With no tour open, or its tour.json loading or broken, nothing
+    // measured or placed is kept (no draft, and Done cannot save): said
+    // FIRST on the clamped AR line, because a swipe-away fires no leave
+    // guard. Short there, so the note and the readout still fit; the full
+    // hint ends the line. An unclamped line (the page, or AR opened by a
+    // tap) shows the full hint whole, so it takes no lead.
+    const clamped = dom.status.dataset["clamped"] === "true";
+    const shortLead = clamped ? finishBlockedLead(readiness) : "";
+    const blockedLead = shortLead === "" ? "" : `${shortLead} · `;
     const blocked = finishBlockedHint(readiness);
     if (!sessionLive()) {
-      dom.status.textContent =
-        readiness === "no-tour"
-          ? [NO_TOUR_LEAD, ctx.placementNote, blocked]
-              .filter((part) => part !== null)
-              .join(" · ")
-          : (ctx.placementNote ?? "");
+      dom.status.textContent = [
+        ctx.placementNote,
+        readiness === "no-tour" ? blocked : null,
+      ]
+        .filter((part) => part !== null && part !== "")
+        .join(" · ");
       return;
     }
     // A placement's outcome (or a draft notice) stands until the next tap
@@ -720,7 +723,7 @@ export function wireCreatorSetup(deps: {
     // notice fires at tour open, before any measuring - so Save never
     // unlocked (scan-to-open plan §5 #13).
     const lead =
-      noTourLead +
+      blockedLead +
       (doneWaits && measuring.inFlight()
         ? `${DONE_WAITS_FOR_MEASURING} · `
         : "") +
@@ -939,15 +942,12 @@ export function wireCreatorSetup(deps: {
         ctx.rebuiltZip === null
           ? null
           : { delivered: ctx.rebuiltZip.delivered === true },
-      // A failed backup write is noted once; from then on the page cannot
-      // promise the phone keeps the work (U2 milestone review #3).
-      // With no tour open, or before its manifest settled (a broken
-      // tour.json never opens a draft), nothing is backed up either: the
-      // work waits in memory (`creator-draft.ts`'s `recordPlacement`).
-      draftPersists:
-        ctx.session !== null &&
-        ctx.tourManifestStatus === "settled" &&
-        draft.persists(),
+      // The draft's own word (`persists`): false while work waits in
+      // memory - no tour open, its manifest not settled (a broken
+      // tour.json never opens a draft), its draft still opening - and once
+      // a backup write failed. With no tour open nothing is backed up,
+      // whatever a draft continuation reported.
+      draftPersists: ctx.session !== null && draft.persists(),
       finishFailed: ctx.finishError !== null,
     };
   }

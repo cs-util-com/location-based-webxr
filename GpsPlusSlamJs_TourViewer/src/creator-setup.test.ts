@@ -50,6 +50,7 @@ import {
   type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ObjectListHandlers } from "./object-list.js";
+import { finishBlockedLead } from "./qr-author-mode.js";
 import {
   asHosted,
   stationIdOf,
@@ -358,6 +359,8 @@ function wire(
     /** The AR status, switchable mid-test (a session ending); by default
      *  "running" for a placeable wiring, "idle" otherwise. */
     arStatus?: { value: string };
+    /** Every draft store open waits for this (a slow OPFS open). */
+    openGate?: Promise<void>;
   } = {},
 ) {
   let opens = 0;
@@ -416,7 +419,10 @@ function wire(
       if (options.firstOpenFails === true && opens === 1) {
         return Promise.resolve(undefined);
       }
-      return Promise.resolve(options.storeFor?.(key) ?? store);
+      const opened = options.storeFor?.(key) ?? store;
+      return options.openGate === undefined
+        ? Promise.resolve(opened)
+        : options.openGate.then(() => opened);
     },
   });
   if (options.placeable === true) {
@@ -1512,10 +1518,120 @@ describe("work made before the tour's draft opened reaches it", () => {
     ).toBe(false);
   });
 
-  it("still leads with the no-tour hint on the page after AR ends", async () => {
+  it("keeps asking before leaving while the settled tour's draft is still opening", async () => {
+    // Why: the manifest settles before the draft's store has opened and
+    // taken the work made earlier (the open path presents the draft only
+    // once the manifest settled, and the store opens asynchronously). In
+    // that gap nothing is stored yet, so a leave without a question lost
+    // the placement while the guard said the phone keeps it.
+    const { store } = memoryStore();
+    let release = (): void => undefined;
+    const openGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { ctx, dom, setup } = wire(store, { placeable: true, openGate });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
+    } as never;
+    ctx.tourManifestStatus = "settled";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(
+      setup.leaveNeedsConfirm(),
+      "the manifest settled but the draft store has not opened",
+    ).toBe(true);
+    expect(setup.leaveQuestion()).toContain("holds no backup copy");
+    release();
+    await settle();
+    expect(
+      setup.leaveNeedsConfirm(),
+      "the draft opened and took the placement",
+    ).toBe(false);
+  });
+
+  it("keeps asking when the tour is torn down while its draft is still opening", async () => {
+    // Why: a tour removed by a late integrity failure is torn down inside
+    // the same open, so the open generation does not move. The draft's
+    // continuation, held in its store open meanwhile, used to finish after
+    // the teardown, attach the closed tour's store and report the work as
+    // backed up with no tour open: a reload then lost the placement
+    // without a question.
+    const { store, putKeys } = memoryStore();
+    let release = (): void => undefined;
+    const openGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { ctx, dom, setup } = wire(store, { placeable: true, openGate });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
+    } as never;
+    ctx.tourManifestStatus = "settled";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    const generation = ctx.openGeneration;
+    // The teardown as the integrity failure runs it: the session goes,
+    // the finish step resets, the generation stays.
+    ctx.session = null;
+    setup.resetFinishStep();
+    expect(ctx.openGeneration).toBe(generation);
+    const writesBefore = putKeys.length;
+    release();
+    await settle();
+    expect(
+      setup.leaveNeedsConfirm(),
+      "no tour is open, so nothing backs the placement up",
+    ).toBe(true);
+    expect(setup.leaveQuestion()).toContain("holds no backup copy");
+    expect(putKeys.length, "nothing is written for the closed tour").toBe(
+      writesBefore,
+    );
+  });
+
+  it("leads the clamped AR line with a short lead while the tour.json loads or is broken, and only there", async () => {
+    // Why: no draft opens before the manifest settles, so the work is kept
+    // nowhere - and the full hint ends the line, past the two-line clamp.
+    // Opened to its full length (a tap) the line already ends with the
+    // full hint, so the lead would say the same fact twice.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
+    } as never;
+    for (const [status, lead] of [
+      ["pending", finishBlockedLead("manifest-pending")],
+      ["broken", finishBlockedLead("manifest-broken")],
+    ] as const) {
+      ctx.tourManifestStatus = status;
+      setup.renderAuthorReadout();
+      expect(dom.status.dataset["clamped"]).toBe("true");
+      expect(dom.status.textContent.startsWith(`${lead} · `)).toBe(true);
+      dom.status.handlers.get("click")?.();
+      expect(dom.status.dataset["clamped"]).toBe("false");
+      expect(dom.status.textContent).not.toContain(lead);
+      dom.status.handlers.get("click")?.();
+    }
+  });
+
+  it("still says on the page after AR ends that nothing placed is kept", async () => {
     // Why: after AR the page shows only the placement note, and Finish is
     // hidden with no tour open - the placed work was lost on a reload with
-    // nothing on the page saying it is not kept.
+    // nothing on the page saying it is not kept. The page is never clamped,
+    // so the full hint says it alone (the short lead would repeat it).
     const { store } = memoryStore();
     const arStatus = { value: "running" };
     const { ctx, dom, setup } = wire(store, { placeable: true, arStatus });
@@ -1526,12 +1642,18 @@ describe("work made before the tour's draft opened reaches it", () => {
     ctx.placementNote = null;
     setup.renderAuthorReadout();
     expect(dom.status.textContent).toBe(
-      "No tour open - nothing placed here is kept. · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+      "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );
     ctx.placementNote = "Pin placed.";
     setup.renderAuthorReadout();
     expect(dom.status.textContent).toBe(
-      "No tour open - nothing placed here is kept. · Pin placed. · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+      "Pin placed. · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+    );
+    // An empty note is no part of the line either.
+    ctx.placementNote = "";
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(
+      "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );
   });
 
@@ -2661,6 +2783,24 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
       expect(setup.codes.inHand()).toEqual(a);
     },
   );
+
+  // Why: the page's earlier work is queued into the store before the
+  // hosted comparison, which reads the zip over the network (a range read
+  // can take long, or never end). Waiting for it, the leave question said
+  // nothing was backed up although the work already was.
+  it("reports the draft as backing up once the earlier work is queued, before a slow hosted read ends", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
+      [objectKey("hosted")]: recordText(HOSTED),
+    });
+    const { ctx, setup } = wire(store);
+    ctx.tourDocument.open(PUBLISHED);
+    ctx.session = hostedZip([a.id], () => new Promise<string>(() => undefined));
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(setup.leaveQuestion()).toContain("Your changes stay on this phone");
+  });
 });
 
 describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", () => {

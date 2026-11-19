@@ -670,6 +670,26 @@ describe("who speaks the voice", () => {
     );
   });
 
+  // Why: letters typed past a credit already at the cap leave the stored
+  // credit as it was, so no edit runs; the field going back without a word
+  // would read as the typing being lost for no reason.
+  it("says the cap when letters typed past a credit already at it are cut", async () => {
+    const atCap = "a".repeat(VOICE_CREDIT_MAX);
+    held.voiceCredit = atCap;
+    await voiced();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    const count = edits.length;
+    field.value = `${atCap} more`;
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(edits.length).toBe(count);
+    expect(field.value).toBe(atCap);
+    expect(said.at(-1)).toBe(
+      `A credit keeps at most ${String(VOICE_CREDIT_MAX)} letters: it stays as it was.`,
+    );
+  });
+
   // Why: a credit within the cap is stored word for word, so its toast
   // must not claim a cut.
   it("says no cut for a credit within the cap", async () => {

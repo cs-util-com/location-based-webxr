@@ -37,6 +37,10 @@ rather than pushing the list past a phone's window
   - `deps.makerShown(shown)` (optional): told true when the maker's dialog
     opens and false when it closes; the editor stops drawing its 3D view
     meanwhile, so the cut and the save get the machine.
+  - `deps.signal` (optional): aborting it removes the panel's one
+    listener on the document (the tab coming back). The page's panel
+    lives as long as the page and passes none; the tests end each
+    panel after its test, so no earlier panel looks again in a later one.
 - `CharactersPanel`
   - `open()`: shows the list and reads the library.
   - `isOpen()`: whether the list shows. `dialogOpen()`: whether the list or
@@ -65,8 +69,14 @@ rather than pushing the list past a phone's window
 - The tour gives each character its own id; the library id (which tells
   when he was made) never reaches the tour. A library character counts as
   in the tour when the tour declares his four poses: the list learns each
-  one's poses as the tour names them (`tour.fileId`, once per character)
-  when it reads the library.
+  one's poses as the tour names them (`tour.fileId`, once per character
+  once read) when it reads the library. The rows are drawn as soon as the read is
+  done, before the poses are learnt; a row whose poses are not known yet
+  offers no "Add to tour" (it cannot tell whether he is in the tour), and
+  the rows are drawn again once they are. Poses that could not be read
+  count as known for that look: the row offers Add, and adding says what
+  failed; the next look reads them again ("reads a character's poses
+  again at the next look after a failed read").
 - A "new" character is a library id not seen before and not in the tour. On
   the very first read (no seen ids kept yet), every character counts as
   seen.
@@ -103,16 +113,25 @@ rather than pushing the list past a phone's window
 ## Invariants and assumptions
 
 - Every name is escaped where it is drawn.
-- Two library reads never overlap: a read asked for while one is running
-  waits for it.
+- Two looks (`relist`) never overlap: a look asked for while one is
+  running joins it - except the import's, which waits for it and then
+  looks again, since its save is newer than a look begun before it. Other
+  library reads (an import's own list after its save, the maker's lists
+  before and after it, the picture and pose reads) run beside a look,
+  each reading the library as it is then.
 - Both lists are drawn at once from what is known; the thumbnails follow
-  into the drawn rows, each made once per character. A list that waited
+  into the drawn rows, each made once per character (a redraw while one is
+  cut waits for the same cut, and its picture reaches the row on the page,
+  never a detached one). A thumbnail that could not be made is not kept:
+  the next drawing of the row tries again. A list that waited
   for them kept its old rows for seconds on a busy page (the 3D view drawn
   in software), the "No characters on this device yet" line among them
   while the character was safely saved.
 - "No characters on this device yet" is said only after a finished look;
   before the first one the list is empty and the status line says
-  "Looking on this device...".
+  "Looking on this device...". When no look has finished and the last one
+  failed, the list says "Could not look on this device." (the error toast
+  fades; a blank list said nothing).
 - Adding copies the pictures into the tour, so the tour keeps the character
   even if he is later deleted from this device.
 
@@ -135,7 +154,14 @@ const made = await characters.makeForTour(); // TourCharacter | null
 - `characters-panel.test.ts` (jsdom, with a library and a tour in memory)
   covers:
   - the first read and the banner; no "none yet" line before the first look
-    is done; the rows drawn before their thumbnails are made;
+    is done, and that line after a look of an empty library; the list's
+    own line when no look could finish; the rows drawn before their
+    thumbnails are made, and before the poses are known (Add only once
+    they are);
+  - thumbnails: one cut per character with a redraw meanwhile, a failed
+    one tried again, and a property (any number of rows, any order of the
+    cuts answering, redraws between them: each row ends with its own
+    picture);
   - add: busy state, success, refusal and failure; "add all"; "not now";
   - remove and its Undo, and a refused remove;
   - the maker: its URL, closing it, and the "nothing new" line;
@@ -143,10 +169,11 @@ const made = await characters.makeForTour(); // TourCharacter | null
     from the close until the add settled (taken down after a success,
     after nothing saved and after a failure after the close, which is
     said), Escape inside the frame;
-  - coming back to the tab;
+  - coming back to the tab, and no look on it once the panel's signal
+    is aborted (every test's panel is ended in `afterEach`);
   - `makeForTour`: made, none saved, refused, library unreadable;
   - import: the busy steps, a refusal, a failed save, a cancelled name
-    question;
+    question, and an import racing a look in flight (it reads again);
   - the page toast while the list is closed.
 - `playwright-tests/editor-characters.spec.js` runs the whole path in a
   browser (maker -> library -> editor -> placed character -> reload) and

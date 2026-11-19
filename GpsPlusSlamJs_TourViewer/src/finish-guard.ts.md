@@ -41,11 +41,14 @@ draftPersists, finishFailed }`. `tourChanged`: the tour's own fields
   keeps asking. The anchor-download
   fallback reports delivered whatever happened (the browser gives no
   signal).
-- `draftPersists` is false once the page noted a failed backup
-  (`creator-draft.ts`'s `noteNoPersistence`), and while no tour is open
-  or its manifest has not settled (`creator-setup.ts`'s `guardInput`; a
-  broken tour.json never opens a draft): the work made then lives only in
-  memory, so leaving with it asks.
+- `draftPersists` is the draft's own `persists()` (`creator-draft.ts`),
+  and false whenever no tour is open (`creator-setup.ts` checks the
+  session too, so a draft continuation that outlived its tour cannot
+  report a backup):
+  false once the page noted a failed backup, and while no tour is open,
+  its manifest has not settled (a broken tour.json never opens a draft)
+  or its draft is still opening and has not taken the earlier work: the
+  work made then lives only in memory, so leaving with it asks.
 - `beforeunload` (wired in `main.ts`) is partial on Android: a closed tab,
   a swipe-away or an OS discard do not fire it. The draft is what survives
   those - and with no tour open there is no draft, so nothing survives

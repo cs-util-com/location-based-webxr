@@ -724,6 +724,12 @@ export function createNarrationSection(
             : `Spoken by: ${next}.${cut} Ctrl+Z undoes it.`,
         );
       });
+    } else if (voiceCreditCut(text)) {
+      // Letters typed past a credit already at the cap: no edit runs, so
+      // say why the field goes back.
+      deps.say(
+        `A credit keeps at most ${String(VOICE_CREDIT_MAX)} letters: it stays as it was.`,
+      );
     }
     if (shown(at)) creditField.value = facts?.voiceCredit ?? "";
   }

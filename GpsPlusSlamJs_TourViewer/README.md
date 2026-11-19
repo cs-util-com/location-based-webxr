@@ -77,8 +77,9 @@ author flag.
    which ("Undo: delete "Gate"", "Undo: the code's improvement"); it stays
    until something else changes the tour. "Done" finishes: it ends the
    session and writes the tour file. A creator who measured and then left
-   AR finishes from the page instead, with "Finish - rebuild the zip"
-   below the step.
+   AR finishes from the page instead, with "Finish and save your changes"
+   below the step (it reads "Finish - rebuild the zip" once nothing is
+   left unsaved).
 6. **Put the saved tour in place** - the page saves the rebuilt zip to the
    phone by itself ("Save the tour zip again" saves it once more) and shows
    how to replace the hosted file:

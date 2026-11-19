@@ -1317,7 +1317,9 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
         },
       },
     });
-    expect(setup.leaveNeedsConfirm()).toBe(false);
+    // No draft was ever opened here, so the placed pin waits in memory
+    // only: leaving asks until a save delivers the rebuilt file.
+    expect(setup.leaveNeedsConfirm()).toBe(true);
     dom.replaceHelp.hidden = true; // as the page starts
     dom.finishButton.click();
     await settle(ctx);

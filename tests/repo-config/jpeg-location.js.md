@@ -7,17 +7,17 @@ The byte-level reader behind the repo-config guard `photo-location-free.test.js`
 ## Public API
 
 - `jpegLocation(bytes: Uint8Array)` returns one of:
-  - `{ readable: true, exifGps, xmpGps }` - `exifGps` when an Exif APP1 segment's first IFD (IFD0) holds the GPS IFD pointer, `xmpGps` when an XMP APP1 packet names `GPSLatitude` or `GPSLongitude`;
-  - `{ readable: false, reason }` - no start marker, a segment cut short or running past the file, an Exif header that is not TIFF, a first IFD outside its segment, or a file that ends before its image data.
+  - `{ readable: true, exifGps, xmpGps }` - `exifGps` when an Exif APP1 segment's first IFD (IFD0) holds the GPS IFD pointer, `xmpGps` when the body of any APPn segment (APP0 to APP15: an XMP packet in APP1, Photoshop's copy in APP13, anything else) names `GPSLatitude`, `GPSLongitude` or their `GPSDest` variants, in any case;
+  - `{ readable: false, reason }` - no start marker, a segment cut short or running past the file, an Exif header that is not TIFF, a first IFD outside its segment, a file that ends before its image data, an APP1 that begins with `Exif` or `http://ns.adobe.com/` but matches no known identifier (a variant nobody checked), a Multi-Picture (`MPF\0`) APP2 segment, any byte after the first image's end marker (a secondary image, a motion photo's video), or XMP the reader does not fully read: an ExtendedXMP segment (the continuation of a packet over 64 KB, split and possibly out of order), a standard packet that names `HasExtendedXMP`, or a packet with a NUL byte (UTF-16 or UTF-32, where the byte search for the property names would find nothing).
 - `GPS_IFD_POINTER` - the tag `0x8825`.
 
 ## Invariants and defensive measures
 
 - Never throws, on any bytes (a property test feeds random ones).
-- Reads only the marker segments before the scan header (SOS) or the end marker; the image data is never parsed.
+- Reads every marker segment up to the end marker, between scans too (a progressive image has several); the image data after each scan header is skipped, not parsed (a 0xFF followed by a stuffed zero, a restart marker or a fill byte does not end it), and the end marker must be the file's last bytes.
 - Every offset is bounds-checked against its segment; anything that does not fit is `readable: false`, never a clean answer. The guard fails on that too, since a file nobody could check is not a clean one.
 - Dependency-free: no Exif library decides what counts.
-- Limits: the GPS pointer is looked for in IFD0, where the Exif standard puts it; JPEG only (no HEIC, PNG or WebP); XMP by property name, not by parsing the packet.
+- Limits: the GPS pointer is looked for in IFD0, where the Exif standard puts it; JPEG only (no HEIC, PNG, WebP or MP4); a location by property name, not by parsing the packet; a COM segment is not searched.
 
 ## Example
 
@@ -29,5 +29,5 @@ if (!result.readable || result.exifGps || result.xmpGps) throw new Error('photo.
 
 ## Tests
 
-- `jpeg-location.test.js` - synthetic JPEGs: the pointer in either byte order behind a JFIF segment and other tags, Exif without it, no Exif, an XMP location, damaged files and non-JPEGs; properties: the answer follows the pointer for any IFD, no throw on any bytes, no clean answer for any prefix of a file with a location.
+- `jpeg-location.test.js` - synthetic JPEGs: the pointer in either byte order behind a JFIF segment and other tags, Exif without it, no Exif, an XMP location, a location under its destination names, in any case and in Photoshop's APP13, XMP it cannot fully read (ExtendedXMP alone, a packet pointing at it, both, a UTF-16 packet), metadata and images it does not read (an Exif or Adobe variant, a Multi-Picture segment, bytes or a second image after the end marker), segments between two scans, damaged files and non-JPEGs; properties: the answer follows the pointer for any IFD, no throw on any bytes, no clean answer for any prefix of a file with a location.
 - `photo-location-free.test.js` - the guard over every tracked JPEG.

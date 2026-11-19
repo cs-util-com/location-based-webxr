@@ -886,22 +886,29 @@ export async function openGlobeEditor(
       debugLayer.frame(now);
     }
     /** The page's thumbnails not in the atlas yet, copied in once the
-     *  table changed. */
+     *  table changed. The version counts as seen only once the pass
+     *  drained the table: a picture with no size yet failed its copy and
+     *  is tried again next frame, since the table does not change when
+     *  it becomes usable. (A capture the layer did not place refuses its
+     *  copy for good, so it is not retried.) */
     function debugThumbsIn(captures: NonNullable<DebugLayerState["captures"]>) {
       const thumbs = deps.debugThumbs;
       if (thumbs === undefined || thumbs.version() === debugThumbsSeen) return;
-      debugThumbsSeen = thumbs.version();
+      let drained = true;
       for (const c of captures) {
         const picture = debugLayer.hasThumb(c.image)
           ? undefined
           : thumbs.get(c.image);
         if (picture === undefined) continue;
-        debugLayer.thumb(c.image, {
-          source: picture,
-          width: picture.naturalWidth,
-          height: picture.naturalHeight,
-        });
+        const width = picture.naturalWidth;
+        const height = picture.naturalHeight;
+        if (!(width > 0) || !(height > 0)) {
+          drained = false;
+          continue;
+        }
+        debugLayer.thumb(c.image, { source: picture, width, height });
       }
+      if (drained) debugThumbsSeen = thumbs.version();
     }
 
     const resizeBillboards = () => {
@@ -1443,7 +1450,7 @@ export async function openGlobeEditor(
         lock: (on) => {
           controls.lease(on);
         },
-        lookAt: () => camera.position,
+        eye: () => camera.position,
       },
       layer,
       ground,

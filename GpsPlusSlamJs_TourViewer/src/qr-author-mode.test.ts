@@ -11,6 +11,7 @@ import {
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
+  finishBlockedLead,
   NO_TOUR_LEAD,
   finishReadiness,
   setupHint,
@@ -388,6 +389,24 @@ describe("setupHint / finishReadiness", () => {
     // characters on a 360 px phone): it must leave room for what follows.
     expect(NO_TOUR_LEAD).toBe("No tour open - nothing placed here is kept.");
     expect(NO_TOUR_LEAD.length).toBeLessThanOrEqual(45);
+    // Why: a tour whose tour.json is still loading or did not read keeps
+    // nothing either (no draft opens before it settles), and its full
+    // hint ends a clamped line where nobody sees it: each blocked state
+    // gets a short lead that fits, and a ready one none.
+    expect(finishBlockedLead("no-tour")).toBe(NO_TOUR_LEAD);
+    for (const readiness of ["manifest-pending", "manifest-broken"] as const) {
+      const lead = finishBlockedLead(readiness);
+      expect(lead).toMatch(/nothing here is kept/);
+      expect(lead.length).toBeLessThanOrEqual(45);
+    }
+    expect(finishBlockedLead("ready")).toBe("");
+    expect(finishBlockedLead("not-measured")).toBe("");
+    // Why: an unclamped line (the page, or the AR line opened by a tap)
+    // shows the full hint alone, with no lead, so the full hint of a tour
+    // still loading must itself say the work is not kept yet.
+    expect(finishBlockedHint("manifest-pending")).toMatch(
+      /nothing here is kept yet/,
+    );
     expect(finishBlockedHint("no-tour")).toBe(
       "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );

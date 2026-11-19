@@ -1257,6 +1257,31 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why: the tree's "+" says a new station goes "under the camera". With
+  // ground loaded and the camera tilted, the place the view looks at lies
+  // hundreds of metres ahead; the station must land under the camera,
+  // not there. Swept over pitches and heights.
+  it.each([
+    [300, -20],
+    [300, -45],
+    [1000, -30],
+    [50, -60],
+  ])(
+    "gives the ground under a camera %s m up, tilted %s deg, with ground loaded",
+    async (aboveM, pitchDeg) => {
+      const view = await openAt(0);
+      placeCamera(aboveM, pitchDeg, DRAWN_M, 800);
+      const camera = cameraPlace();
+      const at = view.centre();
+      if (at === null) throw new Error("no centre");
+      expect(at.lat).toBeCloseTo(camera.lat, 6);
+      expect(at.lon).toBeCloseTo(camera.lon, 6);
+      expect(at.alt).toBeCloseTo(DRAWN_M + N, 6);
+      // The look point is elsewhere: the camera stands 800 m south.
+      expect(Math.abs(at.lat - MUNICH.lat) * 111_200).toBeGreaterThan(700);
+    },
+  );
+
   /** One frame of the view at `now` (ms), as its loop runs it. */
   const frameAt = (now: number) => {
     fakes.seams?.driveCamera?.();
@@ -2127,5 +2152,32 @@ describe("the globe's debug layer, read from the store", () => {
     thumbs.set(B.image, late);
     frameAt(1016);
     expect(debugStats()).toMatchObject({ thumbs: 2 });
+  });
+
+  // Why: a copy can fail (a picture with no size yet). The table's version
+  // does not change when that picture later becomes usable, so a pass that
+  // marked the version seen before its copies succeeded would never try
+  // again, and that capture would stay without its thumbnail.
+  it("tries a failed thumbnail copy again on a later frame", async () => {
+    const thumbs = createDebugThumbs();
+    const img = document.createElement("img");
+    let width = 0;
+    Object.defineProperty(img, "naturalWidth", { get: () => width });
+    Object.defineProperty(img, "naturalHeight", { value: 48 });
+    thumbs.set(A.image, img);
+    const slice = {
+      current: {
+        shown: true,
+        source: "walk",
+        captures: [A, B],
+        status: "",
+      } as DebugLayerState,
+    };
+    await openAt(0, { store: storeWith(slice), debugThumbs: thumbs });
+    frameAt(1000);
+    expect(debugStats()).toMatchObject({ captures: 2, thumbs: 0 });
+    width = 64;
+    frameAt(1016);
+    expect(debugStats()).toMatchObject({ thumbs: 1 });
   });
 });

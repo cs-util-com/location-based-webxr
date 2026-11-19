@@ -9,7 +9,7 @@
 // strip the photo's metadata before committing it.
 //
 // Coverage limits: tracked files only (a new photo counts once it is added),
-// JPEG only, and by extension. A file that cannot be read as a JPEG fails
+// JPEG only (PNG, HEIC, WebP and MP4 are not read), and by extension. A file that cannot be read as a JPEG fails
 // too, since a file nobody could check is not a clean one.
 
 import { readFileSync } from 'node:fs';
