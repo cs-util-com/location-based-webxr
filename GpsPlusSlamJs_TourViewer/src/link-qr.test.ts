@@ -143,6 +143,19 @@ describe("onComputerScreenChange", () => {
         listener,
       );
     }).not.toThrow();
+    expect(() => {
+      onComputerScreenChange(
+        {
+          matchMedia: () => ({
+            matches: true,
+            addEventListener: () => {
+              throw new Error("no");
+            },
+          }),
+        },
+        listener,
+      );
+    }).not.toThrow();
   });
 });
 
