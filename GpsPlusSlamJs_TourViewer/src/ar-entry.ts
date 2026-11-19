@@ -782,7 +782,7 @@ export function wireArEntry(deps: {
     hadLocationStep = false;
     locationRefusal = null;
     ctx.cameraFrameCount = 0;
-    // A refused AUTHOR pipeline (bad size, no detector) keeps AR unstarted —
+    // A refused AUTHOR pipeline (no tour open, bad size, no detector) keeps AR unstarted -
     // the message is already in the author panel, where the author is
     // looking. The viewer pipeline is best-effort: without a detector the
     // session is plain AR.

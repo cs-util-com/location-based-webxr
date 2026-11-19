@@ -79,9 +79,16 @@ result or a shared link shows).
      siblings since F4, wrapping `#ar-root`; its button reads "Start
      creating". And `#draft-offer` - unsaved work this
      device still holds for this tour, offered with three answers rather
-     than applied (F13). The paste form F12 added here (`#tour-missing`) is gone: the
-     printed code carries the tour's link, so reading it in AR opens the
-     tour (scan-to-open plan §2).
+     than applied (F13). The paste form F12 added here (`#tour-missing`) is gone.
+     `#start-checklist` ("Before you start", creator entry variant B,
+     `start-checklist.ts`) sits right above the button: the tour row
+     checked only while a tour is open (else a link to step 2), the hung
+     code a reminder that is never checked, and "This phone cannot keep a
+     backup copy" only once the draft store said so. Hidden in AR and on
+     a device without AR. A start with no tour open is refused in
+     `#setup-status` and reveals step 2, so the camera no longer opens a
+     tour from its printed code from here (this variant reverses
+     scan-to-open, plan §2).
   6. **Done** (`#step-done`): `#finish-block` (the rebuilt zip's status,
      the save, the summary and `#replace-help`), opened by the Finish
      (polish round M2, B9). Until then `.done-pending` says what the step

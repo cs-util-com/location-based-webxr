@@ -14,6 +14,7 @@
  * that had the symptom. Only the device (QR controller, reticle, camera)
  * is stood in.
  */
+import { openTourWithNothingRead } from "./test-support/open-tour.js";
 import { stationBlocks } from "./test-support/station-content.js";
 import { isAnyOf } from "@reduxjs/toolkit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -408,6 +409,7 @@ function authoring(
     ReturnType<typeof el>
   >;
   const ctx = createTourViewerSession();
+  ctx.session = openTourWithNothingRead();
   const real = createTourViewerStore();
   const gps: {
     alignment: number[];

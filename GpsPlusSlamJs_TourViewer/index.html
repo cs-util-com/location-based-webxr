@@ -95,6 +95,79 @@
       .step-copy {
         margin-block-start: var(--space-1);
       }
+      /* Step 5's "Before you start" list (start-checklist.ts), on the
+         page's paper card: a box per row, checked only for what the page
+         knows; the code's row is a reminder dot, never a check. */
+      .start-checklist {
+        margin: var(--space-3) 0;
+        padding: 12px 14px 14px;
+        max-width: 34rem;
+        background: var(--map-card);
+        border: 1px solid var(--map-line);
+        border-radius: 10px;
+      }
+      .start-checklist h3 {
+        margin: 0 0 8px;
+        font-family: var(--map-serif);
+        font-size: 18px;
+        font-weight: 600;
+        line-height: 1.25;
+        letter-spacing: normal;
+        text-transform: none;
+        color: var(--ink);
+      }
+      .start-checklist ul {
+        display: grid;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .start-checklist li {
+        position: relative;
+        padding-left: 28px;
+        font-size: 15px;
+        line-height: 1.4;
+        color: var(--ink);
+      }
+      .start-checklist li::before {
+        position: absolute;
+        top: 1px;
+        left: 0;
+        box-sizing: border-box;
+        width: 19px;
+        height: 19px;
+        border: 1.5px solid var(--ink-dim);
+        border-radius: 4px;
+        font: 700 13px/16px var(--font-ui);
+        text-align: center;
+        content: "";
+      }
+      .start-checklist li[data-state="done"]::before {
+        border-color: var(--ink);
+        background: var(--ink);
+        color: var(--map-card);
+        content: "✓";
+      }
+      .start-checklist li[data-state="reminder"] {
+        color: var(--ink-dim);
+      }
+      .start-checklist li[data-state="reminder"]::before {
+        border-style: dashed;
+        border-radius: 50%;
+      }
+      .start-checklist li[data-state="warning"]::before {
+        border-color: var(--map-route);
+        background: var(--map-route);
+        color: #fff;
+        content: "!";
+      }
+      .start-checklist a {
+        margin-left: 4px;
+        color: var(--accent-ink);
+        font-weight: 600;
+        text-underline-offset: 3px;
+      }
       /* Step 1's host tiles (polish round M2, A6/A7): a grid that uses the
          width, the chosen one pressed in and in the accent - the atoms'
          language for an engaged control, no border. */
@@ -4197,6 +4270,11 @@
         height: 22px;
         flex: none;
       }
+      /* Step 5's "Before you start" list is start-page copy, never over
+         the camera. */
+      body[data-ar-active="true"] #start-checklist {
+        display: none;
+      }
       /* Step 5 on a computer (tour editor plan 2026-10-17-1816, W1): the
          #measure-desktop pointer replaces the disabled "AR not supported"
          button, a dead end (review #9), and the AR lines that describe a
@@ -4208,7 +4286,9 @@
       body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
         #ar-hint,
       body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
-        #ar-status {
+        #ar-status,
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #start-checklist {
         display: none;
       }
       /* A picture's details sheet (kinds/picture/picture-sheet.ts), opened
@@ -5991,11 +6071,12 @@
               <h2>Create it on site, in AR</h2>
             </summary>
             <p class="step-copy hint--dim creator-only" hidden>
-              Now the tour itself: start creating (best at the hung code, so it
-              is measured first) and walk the route, placing text pins and
-              photos where they belong. When you are done, the tour file is
-              saved to this phone, and the last step shows how to put it in
-              place.
+              Now the tour itself, with your tour open on this phone (step 2):
+              start creating (best at the hung code, so it is measured first)
+              and walk the route, placing text pins and photos where they
+              belong. While your tour is open, this phone keeps a copy of
+              everything you place; when you are done, the tour file is saved
+              here, and the last step shows how to put it in place.
             </p>
             <!-- Step 5 on a device without AR (tour editor plan 2026-10-17-1816,
              W1, review #9): shown by the CSS once the AR check says
@@ -6157,6 +6238,69 @@
                 Watch where you walk. Look up from your phone when you move, and
                 stay off roads.
               </p>
+              <!-- Step 5's "Before you start" list, right above the start
+               (creator entry prototype, variant B; start-checklist.ts renders
+               the rows from the open tour and the draft store's answer). Off
+               during a session and on a device without AR (the CSS). The
+               mark is drawn by the CSS; the state word before each row is
+               for screen readers. -->
+              <section
+                id="start-checklist"
+                class="creator-only start-checklist"
+                data-testid="start-checklist"
+                aria-labelledby="start-checklist-title"
+                hidden
+              >
+                <h3 id="start-checklist-title">Before you start</h3>
+                <ul>
+                  <li
+                    id="start-check-tour"
+                    data-testid="start-check-tour"
+                    data-state="todo"
+                  >
+                    <span class="visually-hidden" id="start-check-tour-state"
+                      >Not yet:</span
+                    >
+                    <span id="start-check-tour-text"
+                      >Open your tour on this phone, so everything you place is
+                      backed up here.</span
+                    >
+                    <a
+                      href="#step-link"
+                      id="start-check-tour-link"
+                      data-testid="start-check-tour-link"
+                      >Open it in step 2</a
+                    >
+                  </li>
+                  <li
+                    id="start-check-code"
+                    data-testid="start-check-code"
+                    data-state="reminder"
+                  >
+                    <span class="visually-hidden" id="start-check-code-state"
+                      >Reminder:</span
+                    >
+                    <span id="start-check-code-text"
+                      >Your code hangs where the tour starts. This page cannot
+                      see it, so check before you go.</span
+                    >
+                  </li>
+                  <li
+                    id="start-check-backup"
+                    data-testid="start-check-backup"
+                    data-state="warning"
+                    hidden
+                  >
+                    <span class="visually-hidden" id="start-check-backup-state"
+                      >Warning:</span
+                    >
+                    <span id="start-check-backup-text"
+                      >This phone cannot keep a backup copy, so what you place
+                      lives only in this page until you tap Done.</span
+                    >
+                  </li>
+                </ul>
+              </section>
               <button
                 type="button"
                 class="btn"

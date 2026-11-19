@@ -11,6 +11,7 @@
  * fused one does, at the true rotation. A pipeline still on
  * the average fails the stable-pose tests below.
  */
+import { openTourWithNothingRead } from "./test-support/open-tour.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildObjectPoints,
@@ -366,6 +367,7 @@ describe("the creator measures and mints with the fused pose", () => {
       ReturnType<typeof el>
     >;
     const ctx = createTourViewerSession();
+    ctx.session = openTourWithNothingRead();
     const real = createTourViewerStore();
     const arStore = options.aligned === true ? alignedOver(real) : real;
     const setup = wireCreatorSetup({

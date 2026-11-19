@@ -58,6 +58,7 @@ import {
 } from "./test-support/tour-of.js";
 import { SETTINGS_KEY } from "./tour-document-draft.js";
 import { manifestToWrite } from "./tour-document.js";
+import { NO_TOUR_START_MESSAGE } from "./start-checklist.js";
 
 /** One fake element: the properties this module writes, and a click it can
  *  be told to fire. Not a DOM stand-in - only what `creator-setup` uses. */
@@ -355,6 +356,8 @@ function wire(
     /** One store for the session and the AR side, as the page wires it
      *  (`main.ts`): the codes' dispatches then reach the subscriptions. */
     oneStore?: boolean;
+    /** Hears the wizard's reveals (the start refusals point at a step). */
+    revealStep?: (step: string) => void;
   } = {},
 ) {
   let opens = 0;
@@ -401,7 +404,12 @@ function wire(
       getScene: () => null,
       getArWorldGroup: () => worldGroup,
     } as never,
-    wizard: { openStep: () => undefined, revealStep: () => undefined } as never,
+    wizard: {
+      openStep: () => undefined,
+      revealStep: (step: string) => {
+        options.revealStep?.(step);
+      },
+    } as never,
     dom: dom as unknown as CreatorSetupDom,
     openDraftStore: (key: string) => {
       opens += 1;
@@ -3226,5 +3234,41 @@ describe("the readout and a dispatch that changed only the creator's code state 
         store.dispatch({ type: "test/unanswered" });
       }),
     ).toBe(true);
+  });
+});
+
+describe("Start creating with no tour open", () => {
+  // Why this matters (creator entry, variant B): only an open tour keeps a
+  // draft on this phone, so work placed in AR with none would live in
+  // memory alone and a reload or a crash would lose it without a word.
+  // The start refuses the way a missing print size does: the reason in
+  // the panel's status line, and the step that fixes it revealed beside
+  // step 5, not opened in its place.
+  it("refuses, says why in the status line and reveals step 2", () => {
+    const reveals: string[] = [];
+    const { setup, ctx, dom } = wire(memoryStore().store, {
+      revealStep: (step) => reveals.push(step),
+    });
+    expect(ctx.session).toBeNull();
+    expect(setup.startAuthorPipeline()).toBe(false);
+    expect(ctx.authorErrorText).toBe(NO_TOUR_START_MESSAGE);
+    expect(reveals).toEqual(["link"]);
+    expect(dom.status.textContent).toBe(NO_TOUR_START_MESSAGE);
+  });
+
+  it("drops the refusal once a tour opens, and a start with a tour is not refused for it", () => {
+    const { setup, ctx, dom } = wire(memoryStore().store);
+    setup.startAuthorPipeline();
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.reject(new Error("no such entry")),
+    } as never;
+    setup.renderAuthorReadout();
+    expect(ctx.authorErrorText).toBeNull();
+    expect(dom.status.textContent).not.toBe(NO_TOUR_START_MESSAGE);
+    // With a tour open the start goes past the tour check, on to the QR
+    // front end, which this harness does not fake.
+    expect(() => setup.startAuthorPipeline()).toThrow(/createQrFrontEnd/);
+    expect(ctx.authorErrorText).not.toBe(NO_TOUR_START_MESSAGE);
   });
 });

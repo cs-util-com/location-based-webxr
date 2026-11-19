@@ -22,8 +22,10 @@ M4 replaces its one code in hand with the code book.
   - `seams`: `createQrFrontEnd`, `solveQrPose`, `getIntrinsics`.
   - `codeTour`: scan-to-open's `onDetection`, `relation`.
 - `CreatorMeasuring`:
-  - `start()` - validate the printed size (revealing step 2 when it is
-    unusable) and start the QR pipeline with a fused-pose source for this
+  - `start()` - refuse with no tour open (`NO_TOUR_START_MESSAGE`,
+    revealing step 2, where a tour is opened: only an open tour keeps a
+    draft on this phone; creator entry, variant B), validate the printed
+    size (revealing the print step when it is unusable) and start the QR pipeline with a fused-pose source for this
     AR entry; false, with the reason in the panel, keeps AR unstarted.
   - `renderSizeOffer()` - the offer, or the confirmation after adopting.
   - `outcome(text)` / `maybeMeasure(canMint, measure)` - the

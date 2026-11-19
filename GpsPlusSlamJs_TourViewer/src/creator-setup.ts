@@ -104,6 +104,12 @@ import {
 import type { Wizard } from "./wizard.js";
 import { writeSideM } from "./printed-side.js";
 import {
+  NO_TOUR_START_MESSAGE,
+  renderStartChecklist,
+  startChecklistView,
+  type StartChecklistDom,
+} from "./start-checklist.js";
+import {
   onlyCreatorCodesChanged,
   type CreatorCodesState,
 } from "./creator-codes-slice.js";
@@ -211,6 +217,9 @@ export interface CreatorSetupDom {
   /** The placed objects' list with Edit text, Move and Delete (authoring
    *  plan 2026-09-28-0953 §3.4, M4): `object-list.ts`'s view. */
   objectList: ObjectListView;
+  /** Step 5's "Before you start" list (`start-checklist.ts`). Absent
+   *  in the node tests that do not need it. */
+  startChecklist?: StartChecklistDom;
   /** The open station's line above the action strip (tour editor plan
    *  W3 "AR authoring", `creator-stations.ts`). Absent in the node tests
    *  that do not need it: a detached stand-in. */
@@ -670,6 +679,22 @@ export function wireCreatorSetup(deps: {
     dom.finishButton.textContent = finishButtonText(guard);
     if (hideFinishForResult(guard)) dom.finishButton.hidden = true;
     finish.renderKeepScan();
+    // Step 5's "Before you start" list follows the open tour and the
+    // draft store's answer (`start-checklist.ts`).
+    if (dom.startChecklist !== undefined) {
+      renderStartChecklist(
+        dom.startChecklist,
+        startChecklistView({
+          tourOpen: ctx.session !== null,
+          backupKept: draft.persists(),
+        }),
+      );
+    }
+    // A start refused for want of a tour: its reason is gone once one is
+    // open, and the line goes back to the live readout.
+    if (ctx.authorErrorText === NO_TOUR_START_MESSAGE && ctx.session !== null) {
+      ctx.authorErrorText = null;
+    }
     if (ctx.authorErrorText !== null) {
       dom.status.textContent = ctx.authorErrorText;
       return;

@@ -154,7 +154,10 @@ were here. What stays is the Finish's side:
   - `CreatorSetup.renderAuthorReadout()` - the measuring readout
     (`authorStatusLine`) joined with the setup hint once measured
     (`setupHint`); a persistent pipeline error (`ctx.authorErrorText`) has
-    priority. No-op in visitor mode. A creator's store subscription
+    priority, except a no-tour refusal, dropped once a tour is open. It
+    also renders step 5's "Before you start" list (`start-checklist.ts`,
+    optional `dom.startChecklist`) from the open tour and
+    `draft.persists()`. No-op in visitor mode. A creator's store subscription
     re-renders it on every dispatch except one that moved only the
     creator's code state (`onlyCreatorCodesChanged`) and none of what the
     readout reads of it: the hand, its measurement, and which code the

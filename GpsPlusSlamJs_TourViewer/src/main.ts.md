@@ -21,6 +21,10 @@ listed in `index.html.md`. The concerns and their modules:
   only, wired after the visitor screen so its hidden states are final).
 - `host-picker.ts` - step 1's host tiles (`wireHostPicker`, creator only;
   Continue opens the link step and focuses the field).
+- `start-checklist.ts` - step 5's "Before you start" list; `main.ts`
+  hands its rows to `wireCreatorSetup` (which renders it) and wires the
+  tour row's link to open the link step and focus the field, as Continue
+  does.
 - `link-check.ts` - the PDF's re-check of an unverified link, bound here
   to `openRemoteArchive` with the Drive proxy.
 - `visitor-screen.ts` - the visitor's consent screen and the location

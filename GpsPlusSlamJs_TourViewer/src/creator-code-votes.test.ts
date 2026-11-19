@@ -15,6 +15,7 @@
  * "fixes at 5 m" its creator never had. Each test below fails without the
  * creator's vote path, or with votes counted as fixes.
  */
+import { openTourWithNothingRead } from "./test-support/open-tour.js";
 import fc from "fast-check";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -365,6 +366,7 @@ async function indoorCreator(
     return dispatch(action as never);
   }) as typeof arStore.dispatch;
   const ctx = createTourViewerSession(arStore);
+  ctx.session = openTourWithNothingRead();
   const hooks = createUnwiredHooks();
   const dom = Object.fromEntries(DOM_KEYS.map((k) => [k, el()])) as Record<
     (typeof DOM_KEYS)[number],

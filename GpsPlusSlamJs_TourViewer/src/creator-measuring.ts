@@ -47,6 +47,7 @@ import {
   type CodeVoteOptions,
 } from "./qr-viewer-mode.js";
 import { SCAN_GATE_ESCAPE_MS } from "./scan-gate.js";
+import { NO_TOUR_START_MESSAGE } from "./start-checklist.js";
 import type { ScanOpen } from "./scan-open.js";
 import type { TourViewerSeams } from "./seams.js";
 import { codeMeasured } from "./tour-authoring-actions.js";
@@ -246,6 +247,16 @@ export function wireCreatorMeasuring(deps: {
 
   function startAuthorPipeline(): boolean {
     ctx.authorErrorText = null;
+    // No tour open: only an open tour keeps a draft on this phone, so work
+    // placed now would be lost to a reload or a crash (creator entry,
+    // variant B). Refused the way a missing size is, below: the reason in
+    // the status line, step 2 (which opens a tour) revealed beside step 5.
+    if (ctx.session === null) {
+      ctx.authorErrorText = NO_TOUR_START_MESSAGE;
+      deps.wizard.revealStep("link");
+      deps.render();
+      return false;
+    }
     // Validate BEFORE starting anything: a cleared number input yields 0, the
     // min attribute never fires outside a form, and the resulting RangeError
     // used to unwind into the generic error box - the surface the creator is

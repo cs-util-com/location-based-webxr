@@ -430,6 +430,13 @@ if (mode === "creator") {
       element<HTMLInputElement>("link").focus();
     },
   });
+  // Step 5's "Before you start": the unchecked tour row's link opens the
+  // step that opens a tour, as host-continue does (start-checklist.ts).
+  element("start-check-tour-link").addEventListener("click", (event) => {
+    event.preventDefault();
+    wizard.openStep("link");
+    element<HTMLInputElement>("link").focus();
+  });
 }
 hooks.presentTourForPrint = (url, origin) => {
   print.presentTour(url);
@@ -763,6 +770,25 @@ const setup = wireCreatorSetup({
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
     stationChip: element("creator-station"),
+    // Step 5's "Before you start" list (creator entry, variant B).
+    startChecklist: {
+      tour: {
+        root: element("start-check-tour"),
+        state: element("start-check-tour-state"),
+        text: element("start-check-tour-text"),
+      },
+      code: {
+        root: element("start-check-code"),
+        state: element("start-check-code-state"),
+        text: element("start-check-code-text"),
+      },
+      noBackup: {
+        root: element("start-check-backup"),
+        state: element("start-check-backup-state"),
+        text: element("start-check-backup-text"),
+      },
+      tourLink: element("start-check-tour-link"),
+    },
   },
   // Crash-safe authoring (F13), in this origin's private file system - the
   // desktop editor's draft opens through the same wrapper (M6 E2c).

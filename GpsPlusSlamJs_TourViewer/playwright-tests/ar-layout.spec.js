@@ -101,15 +101,25 @@ for (const viewport of PHONES) {
 }
 
 for (const viewport of PHONES) {
-  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the longest scan-to-open note`, async ({
+  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the note on another tour's code`, async ({
     page,
   }) => {
-    // Scan-to-open plan §9 #14: with no tour open the panel carries the
-    // code's status line, whose longest form is a file not hosted yet -
-    // one more line of text above the controls on a small phone.
+    // Scan-to-open plan §9 #14: the panel carries a status line about the
+    // code in view - one more line of text above the controls on a small
+    // phone. Its longest form used to be a file not hosted yet, read with
+    // no tour open; since Start creating needs an open tour (the Before you
+    // start list), the longest reachable form is the note that a code of
+    // another tour is added to the open one.
     await page.setViewportSize(viewport);
     await installTourViewerArFakes(page);
     await page.goto("/?debug=1");
+    await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+    await page.getByTestId("open-button").click();
+    await expect(page.locator("body")).toHaveAttribute(
+      "data-tour-open",
+      "settled",
+      { timeout: 15000 },
+    );
     const step = page.getByTestId("step-measure");
     if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
       await page.getByTestId("station-measure").click();
@@ -132,7 +142,7 @@ for (const viewport of PHONES) {
         },
         { timeout: 20000 },
       )
-      .toMatch(/in view to try again/);
+      .toMatch(/added to the open tour/);
 
     expect(await controlsBelowTheFold(page)).toEqual([]);
   });
