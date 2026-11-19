@@ -45,9 +45,9 @@ camera, so `installTourViewerArFakes(page)` installs
   `recordDeviceFix` and the vote sink; the moved-code e2e, D20 M5c, needs
   it because the veto re-feeds the fixes the sink stored), and
   `armQrDetection(text, position?)` + `nextDetection` /
-  `nextSolution` — scripted device-level QR results for the author
+  `nextSolution` - scripted device-level QR results for the author
   pipeline; the REAL controller, slice, stability gate and mint run over
-  them — plus `fakeScene` (a scene-root stub the image planes land in). Both stubs parent what they hold as three does (`parenting`), the world group under the scene, each shown and with an identity world matrix, so a visitor's tap on a world part finds the part shown under its station and a child's world pose reads as before;
+  them - plus `fakeScene` (a scene-root stub the image planes land in). Both stubs parent what they hold as three does (`parenting`), the world group under the scene, each shown and with an identity world matrix, so a visitor's tap on a world part finds the part shown under its station and a child's world pose reads as before. Since the stubs parent, in every spec that installs these fakes a station's content group has a parent chain up to the scene: its world parts tick, its model views count as shown, and a tap on a model or a part runs the pick before the pin sheet opens. The world group is parented (its `parent` is the scene) but deliberately not listed among the scene's `children`, so the scene's child counts the specs read are unchanged;
   `getArWorldGroup`/`getScene` return null until initAR ran, pinning the
   production ordering; `locationPermission` / `locationOutcome` /
   `locationRequests` (the visitor screen's gate: what the permission

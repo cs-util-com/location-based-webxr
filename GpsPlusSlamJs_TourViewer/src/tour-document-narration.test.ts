@@ -485,12 +485,16 @@ describe("narrationEdited: who speaks the voice", () => {
   // would not take (blank, over its cap, not text) or a mark that is not
   // true or false would make the next save fail or show a visitor a
   // credit line that says nothing.
-  it("refuses a blank, over-long or non-text credit and a mark that is not true or false", () => {
+  it("refuses a blank, over-long, unnormalised or non-text credit and a mark that is not true or false", () => {
     const before = opened();
     for (const bad of [
       { ...N, voiceCredit: "" },
       { ...N, voiceCredit: "   " },
       { ...N, voiceCredit: "x".repeat(201) },
+      // Not in its stored form (`normalVoiceCredit`): the format would
+      // take both, so only the reducer's own guard refuses them.
+      { ...N, voiceCredit: " Anna " },
+      { ...N, voiceCredit: "Read  by Anna" },
       { ...N, voiceCredit: 7 },
       { ...N, synthetic: "yes" },
       { audio: "voice", timing: ENTRY },

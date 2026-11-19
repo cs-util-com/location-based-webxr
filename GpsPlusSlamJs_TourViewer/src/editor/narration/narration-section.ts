@@ -215,7 +215,11 @@ export function createNarrationSection(
   creditField.type = "text";
   creditField.id = `ln-credit-${String(++sections)}`;
   creditField.dataset["ln"] = "credit";
-  creditField.maxLength = VOICE_CREDIT_MAX;
+  // The format's cap counts letters (code points) after whitespace is
+  // collapsed; `maxlength` counts UTF-16 units with every space. Twice the
+  // cap lets any credit the format holds be typed (a letter is at most two
+  // units); `normalVoiceCredit` makes the cut.
+  creditField.maxLength = 2 * VOICE_CREDIT_MAX;
   creditField.autocomplete = "off";
   creditField.placeholder = "Optional: who reads it";
   const creditLabel = el("label", "ln-k", "Spoken by");
@@ -331,12 +335,15 @@ export function createNarrationSection(
     rest.replaceChildren();
   }
 
-  /** The switch and the field as the tour holds them; the field keeps
-   *  what a creator is typing in it. */
+  /** The switch and the field as the tour holds them; the switch keeps
+   *  the creator's tick while its write runs, and the field keeps what a
+   *  creator is typing in it. Another text selected takes the field off
+   *  the page while it is read (`only`), so it is never focused here
+   *  then and shows the new text's credit. */
   function drawSpeaker(held: NarrationFacts): void {
     if (!held.hasVoice) speaker.remove();
     else if (speaker.parentNode !== view) rest.before(speaker);
-    synthBox.checked = held.synthetic;
+    if (busy !== "synthetic") synthBox.checked = held.synthetic;
     synthBox.disabled = busy !== null;
     if (busy === "synthetic") synthBox.setAttribute("aria-busy", "true");
     else synthBox.removeAttribute("aria-busy");
