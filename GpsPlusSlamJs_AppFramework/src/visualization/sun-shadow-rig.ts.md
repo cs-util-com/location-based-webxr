@@ -21,10 +21,11 @@ are the plan's M2 and M3.
   - `minSunElevationDeg`: 10.
   - `transmittance`: 0.3.
   - `mapSize`: 1024.
-- `sunShadowPose({ sunDir, centre, halfWidthM?, distanceM? })` returns
+- `sunShadowPose({ sunDir, centre, halfWidthM?, distanceM?, farM? })` returns
   `{ position, target, bounds }`.
   - The light is at `centre + sunDir · D`, aimed at the centre.
-  - The bounds are a ±R square, near 0 (the light itself), far D + R.
+  - The bounds are a ±R square, near 0 (the light itself), far `farM`,
+    default D + R. `RangeError` unless `farM` is finite and greater than D.
   - `RangeError` for a non-finite or non-unit direction, a sun at or below
     the horizon, a non-finite centre, R ≤ 0, or D ≤ R.
 - `shadowNeedsUpdate(lastRendered, now, thresholds?)` returns `true` when:
