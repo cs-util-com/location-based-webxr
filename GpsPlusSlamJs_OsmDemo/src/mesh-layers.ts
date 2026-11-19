@@ -214,6 +214,12 @@ export interface MeshLayerContext {
   readonly looks?: LookMix;
 }
 
+/**
+ * The `userData` flag on every landuse plate mesh: what a change of look
+ * finds to recolour without a rebuild.
+ */
+export const LANDUSE_PLATE_TAG = "landusePlate";
+
 /** The library's options for buildings and roads: the look mix, when one is drawn. */
 function lookOptions(context: MeshLayerContext): LookObjectOptions {
   return context.looks === undefined ? {} : { looks: context.looks };
@@ -232,7 +238,7 @@ function treeOptions(context: MeshLayerContext): TreeObjectOptions {
  * would make that mistake look like a design choice. The same reasoning as
  * `NO_DATA_RGB` in `height-ramp.ts`.
  */
-const NEUTRAL_CONTEXT: MeshLayerContext = {
+export const NEUTRAL_CONTEXT: MeshLayerContext = {
   colourForScore: () => 0xff00ff,
   // EMPTY, which means every marker stays at its node. That is the safe
   // default: a caller that forgot the real context gets markers where the data
@@ -428,6 +434,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         );
         // From the shared ladder, so it cannot be coplanar with roads or grid.
         plate.position.y = groundLift("plates");
+        // So a change of look recolours the drawn plates (`city-look.ts`).
+        plate.userData[LANDUSE_PLATE_TAG] = true;
         return plate;
       }),
     counters: (mesh) => ({

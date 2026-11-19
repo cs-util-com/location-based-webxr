@@ -99,7 +99,7 @@ input untouched and passing a chunk without colours through.
 `s3db-parts.test.ts` checks the rule end to end through `buildCity`: onion,
 gable ends, a floating flat part's floor, dome.
 
-## Looks: K colour buffers from one merge (time-of-day colour blend plan 2026-11-18-1913)
+## Looks: K colour buffers from one merge
 
 - **`chunkMeshes(..., looksOf)`**, the eighth parameter: `(item) => readonly LookPaint[]`, one `LookPaint { colour, roof? }` per look. With it every chunk also carries `lookColours`: one `Uint8Array` of `vertices * 3` per look, painted exactly as `colors` is (wall over the item's vertices, the look's roof over its roof ranges) but as the colour's sRGB BYTES. The geometry is merged once; only the fills repeat.
   - RangeError when `looksOf` is given without `colourOf`, when an item returns no looks, or when two items return different counts.

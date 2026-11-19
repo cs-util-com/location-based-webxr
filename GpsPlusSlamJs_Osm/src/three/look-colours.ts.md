@@ -34,7 +34,11 @@ city with one uniform write and never a rebuild.
     K looks;
   - fragment shader: `diffuseColor.rgb *= vLookColour` right after
     `color_fragment`, where three's vertex colour would multiply;
-  - program cache key `look-colours-<K>-<row>`;
+  - program cache key `<earlier key>|look-colours-<K>-<row>`;
+  - an `onBeforeCompile` already on the material runs first and its
+    `customProgramCacheKey` is kept as the key's prefix (chained as the
+    ground tint's patch is), so another patch on the same material
+    survives;
   - `RangeError` for no looks, more than four, or a buffer that is not a
     `Uint8Array` of three codes per `position` vertex.
 - Reached through `buildingObjects(chunks, { looks })` (row `linear`) and
@@ -76,7 +80,8 @@ setTrimWeights(mix, [0.4 * 1.0, 0.6 * 1.1]);
 the decode texture's size, format, filters and data; the attributes
 replacing `color`; the shader text (declarations, mix, decode row, the
 multiply after `color_fragment`) and the shared uniform objects; the cache
-key per look count and row; the refusals; `buildingObjects` and
+key per look count and row; the chained hook and key; the refusals;
+`buildingObjects` and
 `roadObjects` using the looks only with a mix and decoding on their rows.
 The GLSL compile and frame equality run in OsmDemo's browser spec
 `looks-programs.spec.js`.

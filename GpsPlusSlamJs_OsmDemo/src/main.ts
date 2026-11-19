@@ -203,16 +203,13 @@ import {
   selectLayers,
   selectOsmView,
 } from "./osm-store.js";
-import { colourSchemeOf } from "./colour-schemes.js";
 import {
   DAY_LOOK_WEIGHTS,
   lookLinkValue,
   parseLookWeights,
   resolveLook,
   resolveLookChoice,
-  TIME_OF_DAY,
 } from "./look-choice.js";
-import { mixedPageLook } from "./mixed-page-look.js";
 import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
 import { attachBuildChoiceSwitch } from "./build-choice-switch.js";
 import { attachInventedRoofsSwitch } from "./invented-roofs-switch.js";
@@ -1261,7 +1258,7 @@ async function main(): Promise<void> {
     // them, and two independent samples would be two chances to disagree.
     geoidUndulationM: () => arUndulationM,
     // THE SCHEME, read at post time like the datum: AR always builds the
-    // default (D9), and the choice and the link stay as they are. The same
+    // default, and the choice and the link stay as they are. The same
     // pure rule (`resolveLook`) the switch's echo is checked against.
     colourScheme: () =>
       resolveLook(selectColourScheme(store.getState()), {
@@ -1324,17 +1321,8 @@ async function main(): Promise<void> {
         latestMesh = built.mesh;
         // THE PAGE'S COLOURS FOLLOW THE MESH'S SCHEME, not the choice, so the
         // ground never changes before the buildings it belongs with and AR's
-        // default build gets the default ground (colour-schemes.ts).
-        if (built.mesh.colourScheme === TIME_OF_DAY) {
-          // The blend: ground, tint, trees and the mesh trim follow the
-          // look weights (the trims fold into them, the material's is 1).
-          buildingView.setLookWeights(lookWeights);
-        } else {
-          const look = colourSchemeOf(built.mesh.colourScheme);
-          buildingView.setLookWeights(undefined);
-          buildingView.setGroundColours(look.city.ground, look.ground.slope);
-          buildingView.setBrightnessTrim(look.brightnessTrim);
-        }
+        // default build gets the default ground (`city-look.ts`).
+        buildingView.followMeshScheme(built.mesh.colourScheme, lookWeights);
         schemeSwitch.meshDrawn(built.mesh.colourScheme);
         roofsSwitch.meshDrawn(built.mesh.inventedRoofs);
         markingsSwitch.meshDrawn(built.mesh.markings);
@@ -3074,10 +3062,6 @@ async function main(): Promise<void> {
           const { r, g, b } = heatColour(score, scale);
           return (r << 16) | (g << 8) | b;
         },
-        plateColour:
-          latestMesh.colourScheme === TIME_OF_DAY
-            ? mixedPageLook(lookWeights).plates
-            : colourSchemeOf(latestMesh.colourScheme).ground.plates,
         treeForm: woodsKnobs.treeForm,
       });
     } else if (!wantsMeshLayers) {

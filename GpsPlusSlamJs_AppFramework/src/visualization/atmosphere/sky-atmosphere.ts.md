@@ -51,7 +51,7 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   (the horizon and the exposure), `'bake'` (into one reused target), or
   `'idle'`. Immediate mode is unchanged and its `stepRebuild()` is always
   `'idle'` (OsmDemo never calls it).
-- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps?, sunThroughClouds?, skyBalance? })` — all at once,
+- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps?, sunThroughClouds?, skyBalance? })` - all at once,
   ONE rebuild or re-bake (a preset change); validates everything before
   changing anything. `setSun`, `setVisibilityKm`, `setClouds` and
   `setSkyBalance` delegate to it. A sun, a visibility and a sky balance in

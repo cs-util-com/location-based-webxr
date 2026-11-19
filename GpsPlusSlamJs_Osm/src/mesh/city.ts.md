@@ -229,7 +229,7 @@ use.
   height from levels, a podium and tower of one outline sharing the tower
   list).
 
-## Looks: several schemes in one build (time-of-day colour blend plan 2026-11-18-1913)
+## Looks: several schemes in one build
 
 - **`CityOptions.looks`**: up to `MAX_CITY_LOOKS` (4) colour schemes baked in one build. The geometry (buildings, roads, trees, the tint raster) is built once; per look only the colour picks repeat (`seededBuildingColours` or the class colours, `barrierColour`, `roadColour`, the markings colour, the tree palettes, the land-use palette).
   - Out: `MeshChunk.lookColours` on every building and road chunk, `lookColours` on every tree and cosmetic tree, `GroundTint.lookPalettes` over the one `classes` raster.

@@ -46,7 +46,7 @@ three-free; three.js is an optional peer, loaded only by this entry.
   (`tree-looks.ts`; the trunk form through its last sort's slots,
   `trunk-trees.ts`). Returns the trees recoloured; meshes without looks
   are left alone; `RangeError` for weights that are not one finite value
-  > = 0 per look.
+  at or above 0 per look.
 - `cosmeticTreeObjects(placements, { form? })` → `treeObjects` for
   `City.cosmeticTrees`, each mesh's `userData` gaining `cosmetic: true`
   so an app can hide the invented trees (OsmDemo's `woods` layer, AR)

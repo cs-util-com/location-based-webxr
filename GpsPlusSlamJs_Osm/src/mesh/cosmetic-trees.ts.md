@@ -110,6 +110,6 @@ const trees = buildCosmeticTrees(features, {
 - `BuildCosmeticTreesOptions.treePalette`: the crown palette (a scheme's
   `trees`), default `TREE_PALETTE`, read through `treeColour`.
 
-## Looks (time-of-day colour blend plan 2026-11-18-1913)
+## Looks
 
 - `BuildCosmeticTreesOptions.lookPalettes`: as `buildTrees`'s (`trees.ts.md`, "Looks"); every invented tree carries `lookColours` through the shared `treeLookColours`. Held over real sites by `city-looks.property.test.ts`.

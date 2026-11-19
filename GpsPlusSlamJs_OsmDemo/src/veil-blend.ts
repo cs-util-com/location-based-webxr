@@ -1,6 +1,6 @@
 /**
- * The haze veil as the atmosphere draws it, and its blend over colour looks
- * (time-of-day colour blend plan 2026-11-18-1913): a veil is a PREMULTIPLIED scene
+ * The haze veil as the atmosphere draws it, and its blend over colour looks:
+ * a veil is a PREMULTIPLIED scene
  * colour with a strength in [0, 1], so a blend of looks sums `w_i * s_i *
  * c_i` with strength `sum(w_i * s_i)` and never divides the colour. A look
  * without a veil adds nothing, so the strength fades in from 0 rather than

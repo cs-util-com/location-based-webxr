@@ -45,13 +45,8 @@ import {
   TERRAIN_SPACING_M,
   type Heightfield,
 } from "gps-plus-slam-osm";
-import {
-  applyWoodsShare,
-  createLookMix,
-  setTreeLookWeights,
-  setTrimWeights,
-  WOODS_GOVERNOR,
-} from "gps-plus-slam-osm/three";
+import { applyWoodsShare, WOODS_GOVERNOR } from "gps-plus-slam-osm/three";
+import { CityLook, type CityDrawContext } from "./city-look.js";
 import { heightRampColours } from "./height-ramp.js";
 import { createWoodsMeter, type WoodsMeter } from "./woods-readout.js";
 import {
@@ -77,14 +72,11 @@ import {
   slopeColourUniforms,
 } from "./ground-slope-shader.js";
 import type { GroundSlopeColours } from "./ground-slope-colours.js";
-import { MAX_BRIGHTNESS_TRIM, MIN_BRIGHTNESS_TRIM } from "./colour-schemes.js";
 import { landUseTint, type LandUseTint } from "./land-use-tint.js";
 import {
   applyBuildingSkyLight,
-  applySurfaceGain,
   showCosmetic,
   showFurniture,
-  drawMeshLayers,
 } from "./mesh-layers.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
@@ -101,7 +93,6 @@ import { createQuestBeacons } from "./quest-beacon.js";
 import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
 import { buildUndergroundLines } from "./underground-lines.js";
-import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { RENDER_ORDER } from "./layer-order.js";
 import {
@@ -130,8 +121,6 @@ import {
 } from "./atmosphere-rig.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 import { veilBlendOf } from "./veil-blend.js";
-import { TIME_OF_DAY } from "./look-choice.js";
-import { mixedPageLook } from "./mixed-page-look.js";
 
 // Re-exported so the many call sites that import these from the view keep working.
 // The table owns them because it owns what they describe: `BuildingStats` is
@@ -548,23 +537,17 @@ export class BuildingView {
    */
   private sunAngles: SunAngles;
   /**
-   * The noon brightening's current factor (plan 2026-09-24-0901), HELD so
-   * every rebuild re-applies it: new meshes arrive at factor 1.
+   * The city's look (`city-look.ts`): the noon gain, the scheme's
+   * brightness trim, the time-of-day look weights and their shared mix and
+   * the plates' colour, HELD there so every rebuild re-applies them (new
+   * meshes arrive at factor 1 and in no look). Every draw of the city goes
+   * through it.
    */
-  private surfaceGain = 1;
-  /**
-   * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
-   * D4), multiplied into {@link surfaceGain} wherever that is applied.
-   */
-  private brightnessTrim = 1;
-  /**
-   * The time-of-day blend (`look-choice.ts`): the normalised look weights
-   * the page last set, HELD like the surface gain so a rebuilt city, its
-   * trees and its ground tint take them; undefined while a fixed scheme is
-   * drawn. The mix is the one uniform every look material shares.
-   */
-  private lookWeights: readonly number[] | undefined;
-  private readonly lookMix = createLookMix();
+  private readonly cityLook = new CityLook({
+    root: this.group,
+    setGroundColours: (ground, slope) => this.setGroundColours(ground, slope),
+    setLandUseLookWeights: (weights) => this.landUse.setLookWeights(weights),
+  });
   /** The light dialog's settings (plan 2026-09-24-2140); the shipped look by default. */
   private lightSettings: LightSettings = DEFAULT_LIGHT_SETTINGS;
   /** The desktop view's distance haze (`scene.fog` outside AR). */
@@ -1436,40 +1419,22 @@ export class BuildingView {
    * `mixedPageLook` refuses; nothing changes then.
    */
   setLookWeights(lookWeights: readonly number[] | undefined): void {
-    if (lookWeights === undefined) {
-      this.lookWeights = undefined;
-      this.landUse.setLookWeights(undefined);
-      return;
-    }
-    const mixed = mixedPageLook(lookWeights);
-    this.lookWeights = lookWeights;
-    setTrimWeights(this.lookMix, mixed.trimWeights);
-    this.setBrightnessTrim(1);
-    this.landUse.setLookWeights(lookWeights);
-    setTreeLookWeights(this.group.children, lookWeights);
-    this.setGroundColours(mixed.ground, mixed.slope);
+    this.cityLook.setLookWeights(lookWeights);
+    this.requestFrame();
   }
 
   /**
-   * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
-   * section 4.4, D4): multiplied into the noon gain, so it reaches buildings
-   * and roads (the `neutralSurface` materials) and nothing else; the gain is
-   * 1 below its start angle, so at night the trim acts alone. `RangeError`
-   * outside 0.5-2.
+   * Follows the scheme a drawn mesh was BUILT in (`CityLook.followScheme`):
+   * a time-of-day build takes `lookWeights`, a fixed scheme its own ground,
+   * plates and brightness trim (multiplied into the noon gain on buildings
+   * and roads only; the gain is 1 below its start angle, so at night the
+   * trim acts alone). The page calls it for every full mesh, before drawing.
    */
-  setBrightnessTrim(trim: number): void {
-    if (
-      !Number.isFinite(trim) ||
-      trim < MIN_BRIGHTNESS_TRIM ||
-      trim > MAX_BRIGHTNESS_TRIM
-    ) {
-      throw new RangeError(
-        `brightness trim ${String(trim)} is outside ${MIN_BRIGHTNESS_TRIM}-${MAX_BRIGHTNESS_TRIM}`,
-      );
-    }
-    if (trim === this.brightnessTrim) return;
-    this.brightnessTrim = trim;
-    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
+  followMeshScheme(
+    scheme: string | undefined,
+    lookWeights: readonly number[],
+  ): void {
+    this.cityLook.followScheme(scheme, lookWeights);
     this.requestFrame();
   }
 
@@ -1914,11 +1879,9 @@ export class BuildingView {
     this.sun.target.position.set(0, 0, 0);
     this.sun.target.updateMatrixWorld();
     // The noon brightening follows the sun (plan 2026-09-24-0901).
-    this.surfaceGain = surfaceGainAt(
-      this.sunAngles.elevationRad,
-      gainOf(this.lightSettings),
+    this.cityLook.setSurfaceGain(
+      surfaceGainAt(this.sunAngles.elevationRad, gainOf(this.lightSettings)),
     );
-    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
   }
 
   /**
@@ -2150,7 +2113,9 @@ export class BuildingView {
     layers?: MeshLayers,
     // Omits `drawnHostLayers`, which `drawMeshLayers` derives from `layers` itself
     // rather than taking from a caller who could disagree with it.
-    context?: Omit<MeshLayerContext, "drawnHostLayers" | "looks">,
+    // The plates' colour comes from the city look, which follows the mesh's
+    // scheme, so a caller cannot pass one that disagrees with it.
+    context?: CityDrawContext,
   ): BuildingStats {
     this.clear();
     // THE TINT FOLLOWS EVERY BUILD, including a build without one (it is then
@@ -2161,25 +2126,16 @@ export class BuildingView {
     // its contribution when off — which reached complexity 21 with three layers and
     // had four more (W12–W15) queued behind it. The table also makes a MISSING
     // layer detectable, which the longhand form could not: see that file's header.
-    const looks =
-      mesh.colourScheme === TIME_OF_DAY && this.lookWeights !== undefined;
-    const { objects, stats } = drawMeshLayers(
-      mesh,
-      layers,
-      context,
-      looks ? this.lookMix : undefined,
-    );
-    for (const object of objects) this.group.add(object);
-    if (looks) setTreeLookWeights(objects, this.lookWeights ?? []);
+    // THE CITY LOOK DRAWS, so the look mix, the trees' mix, the plates'
+    // colour and the held gain and trim reach every new mesh (new meshes
+    // arrive at factor 1; the lesson of the AR shell material below).
+    const { stats } = this.cityLook.draw(mesh, layers, context);
     // New woods arrive whole; the governor's share holds across a rebuild,
     // or every refetch on a slow phone would bring the full woods back.
     this.inventedTrees = applyWoodsShare(
       this.group.children,
       this.woods.share(),
     );
-    // New meshes arrive at factor 1; the noon brightening is held on the
-    // view for exactly this (the lesson of the AR shell material below).
-    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
     // RE-APPLIED AFTER EVERY REBUILD. The objects above are brand new and carry
     // the desktop material; without this a refetch mid-session would silently
     // drop the AR look at whatever moment the user walked far enough to trigger

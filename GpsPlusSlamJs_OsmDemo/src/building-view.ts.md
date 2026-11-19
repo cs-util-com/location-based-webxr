@@ -661,10 +661,11 @@ field ask that raised the default was literally about zooming further out.
 - `setGroundColours(ground, slope)` - the scheme's ground (sRGB, the material
   colour while no tint is applied) and the slope treatment's linear colours.
 - `dispose()` frees the tint's texture before the material.
-- `setBrightnessTrim(trim)` (colour schemes plan 4.4, D4) - multiplied into the
-  noon gain wherever it is applied (the frame loop and `render`), so it reaches
-  buildings and roads only; `RangeError` outside 0.5-2. `main.ts` sets it,
-  with the ground colours, from the scheme each full mesh was built in.
+- `followMeshScheme(scheme, lookWeights)` - the page's colours follow the
+  scheme each full mesh was BUILT in (`city-look.ts`): a fixed scheme's
+  ground, plates and brightness trim (multiplied into the noon gain on
+  buildings and roads only; `RangeError` outside 0.5-2), or the blend's look
+  weights. `main.ts` calls it for every full mesh.
 
 ## The woods governor and the `?perf=1` readout (city objects M2b)
 
@@ -721,13 +722,17 @@ device and the knobs, and no location.
 ## The time-of-day blend: `setLookWeights()`
 
 `setLookWeights(lookWeights | undefined)` draws a time-of-day build at the
-given look weights (normalised, `look-choice.ts`):
+given look weights (normalised, `look-choice.ts`). The view holds no look
+state of its own: the gain, the trim, the weights, the shared mix and the
+plates' colour live in its `CityLook` (`city-look.ts`), and `render` draws
+the city only through it, so the tests of that module test what the view
+runs:
 
 - the trim weights (`mixedPageLook`) go to the shared look mix the building
   and road materials read, and the material brightness trim becomes 1 (the
   trims are folded into the weights);
-- the land-use tint, the trees (`setTreeLookWeights`) and the ground colours
-  follow the same weights;
+- the land-use tint, the trees (`setTreeLookWeights`), the drawn plates and
+  the ground colours follow the same weights;
 - `undefined` leaves the blend (a fixed scheme is drawn); the caller then sets
   the scheme's ground colours and trim as before.
 

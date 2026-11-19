@@ -51,7 +51,7 @@ the neutral ground over the last `GROUND_TINT_FADE_M` (40 m) of the window
   chained hook, the cache key, the switch, `dispose`, the fade check; a later tint reaching the program
   compiled for an earlier one, and a stale handle being inert.
 
-## Looks: class and palette textures (time-of-day colour blend plan 2026-11-18-1913)
+## Looks: class and palette textures
 
 - `groundClassTexture(tint)`: the class raster as an R8 `DataTexture`, `NearestFilter` both ways, no mips (filtering would blend class indices), `unpackAlignment` 1 (odd widths). RangeError when the classes do not match the size.
 - `groundPaletteTexture(tint)`: the MIXED palette, one row of linear RGBA float texels (`FloatType`, `NoColorSpace`), palette length wide, nearest, no mips, holding look 0's palette (decoded from sRGB by `THREE.Color`) until `setLookWeights` mixes. RangeError without look palettes, with more than 4, or with rows of different lengths.

@@ -136,8 +136,9 @@ function vertexMix(looks: number): string {
  * by `mix.trimWeights`, decoded on the `decode` row (`linear` for
  * buildings, `raw` for roads, as their `colors` are). The material's own
  * vertex colours are switched off; its `color` still multiplies (the noon
- * gain). RangeError for no looks, more than four, or a buffer that is not
- * three codes per vertex of the geometry's `position`.
+ * gain). A hook or cache key already on the material is chained, never
+ * replaced. RangeError for no looks, more than four, or a buffer that is
+ * not three codes per vertex of the geometry's `position`.
  */
 export function applyLookColours(
   geometry: THREE.BufferGeometry,
@@ -174,7 +175,15 @@ export function applyLookColours(
   }
   const row = ROWS[decode];
   material.vertexColors = false;
-  material.onBeforeCompile = (shader) => {
+  // CHAINED, like the ground tint's patch: a hook already on the material
+  // runs first and keeps its key, so two patches never overwrite each other
+  // or share one program.
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- kept unbound on purpose and always called with `.call(material, ...)`.
+  const previous = material.onBeforeCompile;
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- as `previous` above.
+  const previousKey = material.customProgramCacheKey;
+  material.onBeforeCompile = (shader, renderer) => {
+    previous.call(material, shader, renderer);
     shader.uniforms["trimWeights"] = mix.trimWeights;
     shader.uniforms["lookDecode"] = { value: lookDecodeTexture() };
     shader.vertexShader = shader.vertexShader
@@ -196,6 +205,7 @@ export function applyLookColours(
         "#include <color_fragment>\ndiffuseColor.rgb *= vLookColour;",
       );
   };
-  material.customProgramCacheKey = () => `look-colours-${looks}-${row}`;
+  material.customProgramCacheKey = () =>
+    `${previousKey.call(material)}|look-colours-${looks}-${row}`;
   material.needsUpdate = true;
 }

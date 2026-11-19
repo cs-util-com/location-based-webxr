@@ -14,6 +14,8 @@ import { repackTreeLod } from "./trunk-trees.js";
 
 const RED = 0xff0000;
 const BLUE = 0x0000ff;
+const GREEN = 0x00ff00;
+const WHITE = 0xffffff;
 
 function placement(x: number, lookColours?: readonly number[]): TreePlacement {
   return {
@@ -78,10 +80,12 @@ describe("setTreeLookWeights", () => {
 
   // WHY: the trunk form copies colours into near and far slots at each
   // sort; a mix must land in the slot each tree holds NOW (the kept sort
-  // order), and the next sort must carry the mix, not the old colour.
+  // order), and the next sort must carry the mix, not the old colour. The
+  // two trees carry different colours, so a mix landing in the other
+  // tree's slot, or a sort carrying the wrong tree's colour, shows.
   it("rewrites the trunk form's sorted slots and keeps the mix across sorts", () => {
     const objects = treeObjects(
-      [placement(0, [RED, BLUE]), placement(500, [RED, BLUE])],
+      [placement(0, [RED, BLUE]), placement(500, [GREEN, WHITE])],
       { form: "trunk" },
     );
     const crowns = objects.filter((m) => m.userData["treePart"] === "crown");
@@ -89,11 +93,15 @@ describe("setTreeLookWeights", () => {
     const far = crowns.find((m) => m.userData["treeLevel"] === "far")!;
     repackTreeLod(near, { x: 0, y: 0, z: 0 });
     expect([near.count, far.count]).toEqual([1, 1]);
+    // Before the mix: the tree at 0 near, the tree at 500 far, look 0.
+    expect(colourAt(near, 0)).toEqual(linear(RED));
+    expect(colourAt(far, 0)).toEqual(linear(GREEN));
     expect(setTreeLookWeights(objects, [0, 1])).toBe(2);
     expect(colourAt(near, 0)).toEqual(linear(BLUE));
-    expect(colourAt(far, 0)).toEqual(linear(BLUE));
+    expect(colourAt(far, 0)).toEqual(linear(WHITE));
+    // The eye moves to 500: the trees swap slots and keep the mixed look.
     repackTreeLod(near, { x: 500, y: 0, z: 0 });
-    expect(colourAt(near, 0)).toEqual(linear(BLUE));
+    expect(colourAt(near, 0)).toEqual(linear(WHITE));
     expect(colourAt(far, 0)).toEqual(linear(BLUE));
   });
 

@@ -135,7 +135,7 @@ variant-grouped packing, and hash stability.
 - `BuildTreesOptions.treePalette` passes a scheme's `trees` through
   `buildTrees`; absent, `TREE_PALETTE`.
 
-## Looks (time-of-day colour blend plan 2026-11-18-1913)
+## Looks
 
 - `BuildTreesOptions.lookPalettes`: one tree palette per look. Each placement then carries `lookColours`, one crown colour per look, each exactly the `colour` a build with that palette gives the tree (class pick and jitter included); look 0's is `colour` when `treePalette` is the first palette. Absent: no `lookColours` key.
 - `treeLookColours(cls, key, lookPalettes)`: the helper both tree builders spread into a placement (`{}` without palettes). Not on the package's barrel.

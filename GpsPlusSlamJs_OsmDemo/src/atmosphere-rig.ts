@@ -314,6 +314,24 @@ function assertExposure(exposure: ExposureSetting): ExposureSetting {
   return exposure;
 }
 
+/**
+ * `setLight`'s veil check, made before anything changes: a strength in
+ * [0, 1] and a colour of finite values >= 0 (a bad colour would otherwise
+ * reach the haze only after the sky had been configured).
+ */
+function assertVeil(veil: VeilBlend | null): void {
+  if (veil === null) return;
+  const { strength, colour } = veil;
+  if (!(strength >= 0 && strength <= 1)) {
+    throw new RangeError(`veil strength must be in [0, 1], got ${strength}`);
+  }
+  if (!colour.every((c) => Number.isFinite(c) && c >= 0)) {
+    throw new RangeError(
+      `veil colour must be finite and >= 0, got ${colour.join(", ")}`,
+    );
+  }
+}
+
 /** Everything the light dialog (or a blend of looks) sets at once (`setLight`). */
 export interface LightSetting {
   readonly exposure: ExposureSetting;
@@ -452,17 +470,23 @@ export class AtmosphereRig {
    * `DirectionalLight` along the SAME vector the sky uses.
    */
   setSun(angles: SunAngles): Vector3Like {
-    const direction = sunDirection(angles);
-    this.sunSet = true;
-    this.lastDirection = direction;
-    this.nightFloor.intensity =
-      NIGHT_FLOOR.intensity * nightFloorWeight(angles.elevationRad);
+    const direction = this.takeSun(angles);
     if (this.sky !== undefined) {
       this.sky.configure({ sunDirection: direction });
       this.syncFromSky(this.sky);
     } else {
       this.applyFallback(direction);
     }
+    return direction;
+  }
+
+  /** Holds a new sun and sets the night floor; the sky is left to the caller. */
+  private takeSun(angles: SunAngles): Vector3Like {
+    const direction = sunDirection(angles);
+    this.sunSet = true;
+    this.lastDirection = direction;
+    this.nightFloor.intensity =
+      NIGHT_FLOOR.intensity * nightFloorWeight(angles.elevationRad);
     return direction;
   }
 
@@ -504,28 +528,34 @@ export class AtmosphereRig {
    * never one per setter) and its copies re-derived once. The light
    * dialog's apply and each step of a blend of looks go through here.
    *
+   * WITH `sun`, THIS IS THE WHOLE SUN STEP: the sun direction rides the
+   * same `configure`, so a step that moves the sun and the light together
+   * costs one table rebuild and one bake, never a light update followed by
+   * a `setSun` (two rebuilds and two bakes). Returns the unit direction
+   * toward that sun, as `setSun` does; undefined without one.
+   *
    * @throws RangeError for any value its single setter refuses; nothing
    *   changes then.
    */
-  setLight(light: LightSetting): void {
+  setLight(light: LightSetting, sun?: SunAngles): Vector3Like | undefined {
     const exposure = assertExposure(light.exposure);
     const { visibilityKm, startRatio } = assertHaze(light.haze);
-    const strength = light.veil?.strength ?? 1;
-    if (!(strength >= 0 && strength <= 1)) {
-      throw new RangeError(`veil strength must be in [0, 1], got ${strength}`);
-    }
+    assertVeil(light.veil);
     // The haze checks its gain, and nothing else has changed if it throws.
     this.haze.setSkyBalance(light.skyBalance);
     this.applyExposure(exposure);
     this.startRatio = startRatio;
     const visibilityChanged = visibilityKm !== this.visibilityKm;
     this.visibilityKm = visibilityKm;
+    const direction = sun === undefined ? undefined : this.takeSun(sun);
     this.sky?.configure({
+      ...(direction === undefined ? {} : { sunDirection: direction }),
       ...(visibilityChanged ? { visibilityKm } : {}),
       skyBalance: light.skyBalance,
     });
     this.applyVeil(light.veil);
     this.resync();
+    return direction;
   }
 
   /**

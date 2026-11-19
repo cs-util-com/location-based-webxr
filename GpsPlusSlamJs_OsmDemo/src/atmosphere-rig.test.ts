@@ -816,6 +816,15 @@ describe("AtmosphereRig.setLight (one combined update)", () => {
       { ...light(30), haze: { visibilityKm: -1, startRatio: 0.5 } },
       { ...light(20), skyBalance: [1, Number.NaN, 1] as const },
       { ...light(20), veil: { ...light(20).veil!, strength: 2 } },
+      // Checked with the strength, before the sky is configured.
+      {
+        ...light(20),
+        veil: { ...light(20).veil!, colour: [0.1, Number.NaN, 0.1] as const },
+      },
+      {
+        ...light(20),
+        veil: { ...light(20).veil!, colour: [-1, 0, 0] as const },
+      },
     ];
     for (const setting of bad) {
       expect(() => view.setLight(setting)).toThrow(RangeError);
@@ -823,6 +832,62 @@ describe("AtmosphereRig.setLight (one combined update)", () => {
       expect(sky.ev).toBe(-2.5);
       expect(sky.visibilityKm).toBe(30);
     }
+  });
+});
+
+describe("AtmosphereRig.setLight with a sun (the sun step)", () => {
+  const light = {
+    exposure: { ev: -1.5, adaptation: 0.8 },
+    haze: { visibilityKm: 45, startRatio: 0.5 },
+    veil: veilBlendOf({ lightness: 65, tint: 22 }, TONE_MAPPING_EXPOSURE),
+    skyBalance: [0.8, 1, 1.2] as const,
+  };
+
+  // WHY: on the measured phone a separate `setSun` after the light update
+  // cost a second rebuild and bake (about 17 + 31 ms against a 50 ms
+  // budget); with the sun inside the same `configure` a time-of-day step is
+  // one rebuild, one bake and one re-read of the sky's copies.
+  it("configures the sky once and re-reads it once per sun step", () => {
+    const { view, sky, scene } = rig();
+    view.setSun(sunAt(25, 200));
+    for (const elevation of [8, 4, 0, -3]) {
+      const configures = sky.configured.length;
+      const syncs = sky.syncs;
+      const direction = view.setLight(light, sunAt(elevation, 260));
+      expect(sky.configured.length - configures).toBe(1);
+      expect(sky.syncs - syncs).toBe(1);
+      expect(direction).toEqual(sunDirection(sunAt(elevation, 260)));
+      expect(sky.configured.at(-1)).toMatchObject({
+        sunDirection: direction,
+        skyBalance: [0.8, 1, 1.2],
+      });
+      const floor = scene.getObjectByName(NIGHT_FLOOR_NAME) as THREE.Light;
+      expect(floor.intensity).toBeCloseTo(
+        NIGHT_FLOOR.intensity *
+          nightFloorWeight(sunAt(elevation, 260).elevationRad),
+        12,
+      );
+    }
+    // Without a sun nothing about the sun is sent.
+    expect(view.setLight(light)).toBeUndefined();
+    expect(sky.configured.at(-1)).not.toHaveProperty("sunDirection");
+  });
+
+  // WHY: on the fallback the step must re-derive the fog and lights from
+  // the NEW sun, not the previous one.
+  it("re-derives the fallback from the new sun", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(40, 200));
+    const high = (scene.fog as THREE.Fog).color.clone();
+    view.setLight(light, sunAt(-4, 260));
+    const low = (scene.fog as THREE.Fog).color;
+    expect(low.equals(high)).toBe(false);
+    const again = rig({ unsupported: true });
+    again.view.setLight(light);
+    again.view.setSun(sunAt(-4, 260));
+    expect(low.toArray()).toEqual(
+      (again.scene.fog as THREE.Fog).color.toArray(),
+    );
   });
 });
 

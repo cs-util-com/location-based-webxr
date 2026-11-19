@@ -162,6 +162,34 @@ describe("applyLookColours", () => {
     expect(keyOf(2, "raw")).toBe(keyOf(2, "raw"));
   });
 
+  // WHY: the city materials may carry another patch; replacing its hook
+  // would silently drop that patch, and a key without the earlier one would
+  // share a program with a material that lacks it.
+  it("chains a hook and a cache key already on the material", () => {
+    const material = new THREE.MeshStandardMaterial();
+    const calls: string[] = [];
+    material.onBeforeCompile = (s) => {
+      calls.push("earlier");
+      s.vertexShader += "\n// earlier patch";
+    };
+    material.customProgramCacheKey = () => "earlier-key";
+    applyLookColours(
+      new THREE.BufferGeometry(),
+      material,
+      [new Uint8Array(3)],
+      "linear",
+      createLookMix(),
+    );
+    const s = shader();
+    material.onBeforeCompile(s, {} as THREE.WebGLRenderer);
+    expect(calls).toEqual(["earlier"]);
+    expect(s.vertexShader).toContain("// earlier patch");
+    expect(s.vertexShader).toContain("attribute vec3 lookColour0;");
+    expect(material.customProgramCacheKey()).toBe(
+      "earlier-key|look-colours-1-0",
+    );
+  });
+
   // WHY: a mismatch would draw garbage from a short buffer or skip looks;
   // the geometry's vertex count is the contract the builder kept.
   it("refuses no looks, more than four, and a buffer of the wrong length", () => {

@@ -324,5 +324,11 @@ and the failure message it shows when a tile cannot be fetched.
   read, invalid input ignored with a warning) fixes its look weights at boot,
   else all on the day look.
 - The refresh builds `resolveLook(choice, {ar})`, so AR builds the default.
-- A drawn blend mesh sets the view's look weights; a fixed one clears them and
-  sets the scheme's ground colours and trim; the plates use the mixed colour.
+- Every full mesh goes to `buildingView.followMeshScheme(scheme, weights)`
+  (`city-look.ts`): a blend mesh sets the view's look weights, a fixed one
+  clears them and sets the scheme's ground, plates and trim. The plates'
+  colour comes from the view's city look, not from this file.
+- The light does NOT blend yet: the light dialog keeps the chosen scheme's
+  defaults (`lightDefaultsFor("timeofday")` is the day look's), and
+  `blendVeils` (`veil-blend.ts`) has no production caller until the sun
+  drives the look weights.
