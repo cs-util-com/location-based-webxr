@@ -14,6 +14,8 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import type { TourDocumentState } from "../tour-document.js";
 import type { EditorViewState, ShellLayer } from "../editor/editor-view.js";
+import type { DebugLayerState } from "../editor/debug-layer-slice.js";
+import type { DebugThumbsRead } from "../editor/debug-thumbs.js";
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import type { FolderOutlineShown } from "./folder-outline.js";
 import type {
@@ -33,6 +35,9 @@ interface Editor3dStore {
   getState(): {
     readonly tourDocument: TourDocumentState;
     readonly editorView: EditorViewState;
+    /** The debug layer's captures and switch (`debug-layer-slice.ts`);
+     *  absent on a page without one, which then draws none. */
+    readonly debugLayer?: DebugLayerState;
   };
   subscribe(listener: () => void): () => void;
   dispatch(action: UnknownAction): unknown;
@@ -82,6 +87,10 @@ export interface Editor3dDeps {
         readonly alt: number;
       }[]
     | null;
+  /** The debug layer's decoded thumbnails (`debug-thumbs.ts`), keyed as
+   *  the store's `debugLayer` captures: the globe copies them into its
+   *  atlas. */
+  readonly debugThumbs?: DebugThumbsRead;
 }
 
 /** A shown 3D view. */

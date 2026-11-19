@@ -112,6 +112,7 @@ import {
 } from "../editor/editor-model.js";
 import { tourCentre, tourReach } from "../editor/tour-origin.js";
 import type { GlobeSwitch } from "../editor/globe-switch.js";
+import type { DebugLayerState } from "../editor/debug-layer-slice.js";
 import type {
   Editor3dDeps,
   Editor3dStats,
@@ -170,6 +171,10 @@ import {
   emptyTourView,
 } from "./empty-tour-view.js";
 import { createArrivalMarks } from "./globe-approach-marks.js";
+import {
+  createGlobeDebugLayer,
+  type GlobeDebugCapture,
+} from "./globe-debug-layer.js";
 import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
 import { createGlobeLayer } from "./globe-layer.js";
@@ -796,22 +801,83 @@ export async function openGlobeEditor(
     /** When a walk that came after the stations popped in began drawing;
      *  null when the arrival draws it (or there is none). */
     let lateWalkAt: number | null = null;
-    const walkPoints = (
-      captures: NonNullable<WalkCaptures>,
-    ): THREE.Vector3[] => {
+    /** A capture's place in the tour's frame, null for one without a
+     *  finite place. As a station is drawn: its height over the ellipsoid
+     *  less N. */
+    const capturePoint = (c: {
+      readonly lat: number;
+      readonly lon: number;
+      readonly alt: number;
+    }): THREE.Vector3 | null => {
+      if (![c.lat, c.lon, c.alt].every(Number.isFinite)) return null;
       const ecef = new THREE.Vector3();
-      return captures.flatMap((c) => {
-        if (![c.lat, c.lon, c.alt].every(Number.isFinite)) return [];
-        // As a station is drawn: its height over the ellipsoid less N.
-        ellipsoid.getCartographicToPosition(
-          c.lat * DEG,
-          c.lon * DEG,
-          c.alt - undulationAt(c),
-          ecef,
-        );
-        return [ecef.clone().applyMatrix4(tourFromEcef)];
-      });
+      ellipsoid.getCartographicToPosition(
+        c.lat * DEG,
+        c.lon * DEG,
+        c.alt - undulationAt(c),
+        ecef,
+      );
+      return ecef.applyMatrix4(tourFromEcef);
     };
+    const walkPoints = (captures: NonNullable<WalkCaptures>): THREE.Vector3[] =>
+      captures.flatMap((c) => {
+        const p = capturePoint(c);
+        return p === null ? [] : [p];
+      });
+
+    // The debug layer (`globe-debug-layer.ts`): the captures the page's
+    // debug layer drew (the store's `debugLayer`), their thumbnails from
+    // the page's side table, and a line through them for debug data added
+    // beside the tour (the tour's own walk is the marks').
+    const debugLayer = createGlobeDebugLayer(tourFrame);
+    undo.push(() => {
+      debugLayer.dispose();
+    });
+    debugLayer.resize(canvas.clientWidth, canvas.clientHeight);
+    let debugDrawn: DebugLayerState["captures"] | undefined;
+    let debugSource: DebugLayerState["source"] | undefined;
+    let debugThumbsSeen = -1;
+    /** The debug layer's part of a frame at `now`: the store's captures
+     *  drawn again when they changed, new thumbnails copied in, the
+     *  switch, and the atlas's upload. */
+    function debugFrame(now: number): void {
+      const slice = deps.store.getState().debugLayer;
+      const captures = slice?.captures ?? null;
+      const source = slice?.source ?? null;
+      if (captures !== debugDrawn || source !== debugSource) {
+        debugDrawn = captures;
+        debugSource = source;
+        debugThumbsSeen = -1;
+        debugLayer.set(
+          captures?.flatMap((c): GlobeDebugCapture[] => {
+            const at = capturePoint(c);
+            return at === null ? [] : [{ image: c.image, at }];
+          }) ?? null,
+          source === "added",
+        );
+      }
+      debugLayer.show(slice?.shown === true);
+      if (captures !== null) debugThumbsIn(captures);
+      debugLayer.frame(now);
+    }
+    /** The page's thumbnails not in the atlas yet, copied in once the
+     *  table changed. */
+    function debugThumbsIn(captures: NonNullable<DebugLayerState["captures"]>) {
+      const thumbs = deps.debugThumbs;
+      if (thumbs === undefined || thumbs.version() === debugThumbsSeen) return;
+      debugThumbsSeen = thumbs.version();
+      for (const c of captures) {
+        const picture = debugLayer.hasThumb(c.image)
+          ? undefined
+          : thumbs.get(c.image);
+        if (picture === undefined) continue;
+        debugLayer.thumb(c.image, {
+          source: picture,
+          width: picture.naturalWidth,
+          height: picture.naturalHeight,
+        });
+      }
+    }
 
     const resizeBillboards = () => {
       const sized = billboardView();
@@ -824,6 +890,7 @@ export async function openGlobeEditor(
     const resize = new ResizeObserver(() => {
       viewportPx = Math.max(1, canvasHeight());
       marks.resize(canvas.clientWidth, canvas.clientHeight);
+      debugLayer.resize(canvas.clientWidth, canvas.clientHeight);
       resizeBillboards();
     });
     resize.observe(deps.container);
@@ -1181,6 +1248,7 @@ export async function openGlobeEditor(
       );
       const held = unadmitted();
       const arriving = approachFrame(now, altitudeM);
+      debugFrame(now);
       const notShown = [
         ...hidden.stations,
         ...(held ?? []),
@@ -1846,6 +1914,7 @@ export async function openGlobeEditor(
             air: air?.state() ?? null,
             approach: approach?.stats() ?? approachEnded,
             marks: marks.stats(),
+            debug: debugLayer.stats(),
             // The speed streaks as last stepped, and the camera's distance
             // from the Earth's centre against the fit (the start's check).
             dust: dust.state(),

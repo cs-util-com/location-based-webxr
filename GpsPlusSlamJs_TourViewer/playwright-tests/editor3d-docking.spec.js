@@ -12,6 +12,7 @@ import {
   dockWidthsAt as widths,
   openSampleIn3d,
 } from "./editor3d-fixture.js";
+import { viewCommand } from "./editor-menus.js";
 
 /**
  * The editor's panels docked around the 3D view at a desk: the list at
@@ -41,6 +42,20 @@ async function box(locator) {
   const b = await locator.boundingBox();
   if (b === null) throw new Error("no box: the element is not shown");
   return b;
+}
+
+/**
+ * Whether box `inner` lies inside box `outer` (to half a pixel).
+ * @param {{ x: number, y: number, width: number, height: number }} inner
+ * @param {{ x: number, y: number, width: number, height: number }} outer
+ */
+function inside(inner, outer) {
+  return (
+    inner.x >= outer.x - 0.5 &&
+    inner.y >= outer.y - 0.5 &&
+    inner.x + inner.width <= outer.x + outer.width + 0.5 &&
+    inner.y + inner.height <= outer.y + outer.height + 0.5
+  );
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -944,6 +959,14 @@ test("a docking that fails to load is said once, not on every resize", async ({
   const said = () =>
     page.evaluate(() => /** @type {any} */ (window).__dockFailedSaid.n);
   await expect.poll(said).toBe(1);
+  // Undocked, the debug panel still stands over the canvas, right of the
+  // tree, never under a dock.
+  const debugBox = await box(page.locator("#view3d > #debug-panel"));
+  const canvasBox = await box(page.locator("#view3d canvas.view3d-canvas"));
+  expect(
+    inside(debugBox, canvasBox),
+    JSON.stringify({ debugBox, canvasBox }),
+  ).toBe(true);
   for (const width of [1200, 600, 1300]) {
     await page.setViewportSize({ width, height: 900 });
     await afterFrames(page, 3);
@@ -1632,4 +1655,51 @@ test("a kept layout opened in a wider window takes that window's side widths", a
   await expect
     .poll(() => sideWidths(page))
     .toEqual({ list: after.list, column: after.column });
+});
+
+// Why: over the 3D view the debug panel stood fixed above the bottom bar,
+// placed by the side docks' first widths. Docked, the bottom group
+// (Problems, History, Map loading, Performance) stands there, and a list
+// widened by its splitter or a phone's group beside the view moved
+// without it, so the panel covered their rows. It stands in the 3D view's
+// own pane now: inside it whatever the docks around it do. Back on the
+// map it is in its place in the page again.
+test("the debug panel stands inside the 3D view's pane with the bottom group open and on a phone held sideways", async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const viewPane = page.locator(".dock-host .dock-pane-view");
+  const panel = viewPane.locator("#debug-panel");
+  await expect(panel).toBeVisible();
+  const problems = page.locator('#shell-toggles [data-tab="problems"]');
+  await problems.click();
+  await expect(page.locator("#shell-pane-problems")).toBeVisible();
+  await afterFrames(page, 3);
+  const at = async (/** @type {string} */ where) => {
+    const panelBox = await box(panel);
+    const paneBox = await box(viewPane);
+    expect(
+      inside(panelBox, paneBox),
+      `${where}: ${JSON.stringify({ panelBox, paneBox })}`,
+    ).toBe(true);
+  };
+  await at("1280 x 800, Problems open");
+  // Nothing of the bottom group under it.
+  const bottomBox = await box(page.locator(".dock-pane-problems"));
+  const panelBox = await box(panel);
+  expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(bottomBox.y + 0.5);
+
+  await page.setViewportSize({ width: 844, height: 390 });
+  await dockSettled(page, 844);
+  await expect(page.locator(".dock-host.dock-phone")).toHaveCount(1);
+  await expect(panel).toBeVisible();
+  await at("844 x 390, a phone held sideways");
+
+  await viewCommand(page, "switch");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
+  await expect(page.locator("#view3d #debug-panel")).toHaveCount(0);
+  await expect(page.locator("#debug-panel")).toBeVisible();
 });

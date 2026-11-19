@@ -14,7 +14,7 @@ take the shadow.
 - `GLOBE_INTERFACE` - `{ layer: 1, names }`: the layer the interface is
   drawn on, and the object names whose whole subtree is the interface
   (`"found-radius"`, `"pole"`, `"code"`, `"approach-marks"`,
-  `"model-sections"`).
+  `"model-sections"`, `"debug-layer"`).
 - `interfaceOverAir(cameraAltitudeM, deckM)` -> boolean: whether the
   interface is drawn over the air this frame, true only while the camera
   is below the cloud deck (false for a non-finite altitude). The cloud and

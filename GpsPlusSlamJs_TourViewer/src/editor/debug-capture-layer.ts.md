@@ -5,8 +5,10 @@
 The desktop editor's debug layer (M1 of the debug-captures plan): the
 walk's camera captures - the frames a recording captured by itself -
 placed by the capture-time join (`debug-captures.ts`) once the tour has
-opened, and drawn on the map as small thumbnails behind a "Show debug
-data" switch. They are debug data, never the tour's content: this module
+opened, and drawn as small thumbnails behind a "Show debug data"
+switch: on the map, and through the page's store (`debug-layer-slice.ts`)
+and thumbnail table (`debug-thumbs.ts`) on the 3D view on the globe
+(`globe-debug-layer.ts`). They are debug data, never the tour's content: this module
 reaches only its view and its status line, never the tour document, a
 save or the draft. The phone has no such layer
 (`config/.dependency-cruiser.cjs`, `debug-captures-editor-only`).
@@ -44,7 +46,7 @@ save or the draft. The phone has no such layer
 - `DEBUG_READING_LINE` ("Reading the debug data..."), `debugReadingLine`
   ("Reading the debug data... 40 %"), `debugDeclinedLine`
   ("No debug data shown: <reason>."), `debugShownLine` ("Debug data: N
-  camera captures on the map.").
+  camera captures shown.", on either view).
 - A thumbnail is 32 CSS pixels wide (`DEBUG_THUMB_WIDTH_PX`, module-internal).
 - `decodeDebugThumbnail(blob): Promise<HTMLImageElement>` - the browser's
   downscaled decode (`createImageBitmap` with `resizeWidth`, twice the

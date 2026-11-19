@@ -30,6 +30,8 @@ import type { Editor3dDeps, Editor3dView } from "./editor3d-view.js";
 import { openGlobeEditor } from "./editor3d-globe.js";
 import { GLOBE_EDITOR_LOOK } from "./globe-editor-look.js";
 import { readGlobeSwitch } from "../editor/globe-switch.js";
+import { createDebugThumbs } from "../editor/debug-thumbs.js";
+import type { DebugLayerState } from "../editor/debug-layer-slice.js";
 
 const DEG = Math.PI / 180;
 /** The geoid's N everywhere in these tests (m). */
@@ -1968,5 +1970,90 @@ describe("openGlobeEditor's wiring", () => {
     expect(fakes.log.indexOf("listener-off")).toBeLessThan(
       fakes.log.indexOf("force-context-loss"),
     );
+  });
+});
+
+describe("the globe's debug layer, read from the store", () => {
+  // Why: the globe draws the debug layer from the store's slice, not from
+  // the layer's callbacks: a new drawing (a new captures array) must be
+  // drawn again, the line only for debug data added beside the tour (the
+  // tour's own walk is drawn by the arrival's marks), and thumbnails the
+  // page decoded before the 3D view opened must still reach its atlas.
+  const A = { image: "images/a.jpg", lat: MUNICH.lat, lon: MUNICH.lon, alt: N };
+  const B = {
+    image: "images/b.jpg",
+    lat: MUNICH.lat + 0.0001,
+    lon: MUNICH.lon,
+    alt: N,
+  };
+  const frameAt = (now: number) => {
+    fakes.seams?.driveCamera?.();
+    fakes.seams?.update?.(now);
+  };
+  const debugStats = () =>
+    (open?.stats().globe as { debug: Record<string, unknown> }).debug;
+  function storeWith(slice: { current: DebugLayerState }) {
+    return {
+      getState: () => ({
+        tourDocument: {},
+        editorView: { selected: null, modelFocus: null, modelPick: null },
+        debugLayer: slice.current,
+      }),
+      subscribe: () => () => undefined,
+      dispatch: () => undefined,
+    } as unknown as Editor3dDeps["store"];
+  }
+
+  it("draws a new drawing again, with a line only for added debug data", async () => {
+    const slice = {
+      current: {
+        shown: true,
+        source: "walk",
+        captures: [A, B],
+        status: "",
+      } as DebugLayerState,
+    };
+    await openAt(0, { store: storeWith(slice) });
+    frameAt(1000);
+    expect(debugStats()).toMatchObject({
+      captures: 2,
+      linePoints: 0,
+      shown: true,
+    });
+    slice.current = { ...slice.current, source: "added", captures: [A, B] };
+    frameAt(1016);
+    expect(debugStats()).toMatchObject({ captures: 2, linePoints: 2 });
+    slice.current = { ...slice.current, shown: false };
+    frameAt(1032);
+    expect(debugStats()).toMatchObject({ shown: false, linePoints: 2 });
+    slice.current = { ...slice.current, source: null, captures: null };
+    frameAt(1048);
+    expect(debugStats()).toMatchObject({ captures: 0, objects: 0 });
+  });
+
+  it("copies in thumbnails the page decoded before the view opened", async () => {
+    const thumbs = createDebugThumbs();
+    const img = document.createElement("img");
+    Object.defineProperty(img, "naturalWidth", { value: 64 });
+    Object.defineProperty(img, "naturalHeight", { value: 48 });
+    thumbs.set(A.image, img);
+    const slice = {
+      current: {
+        shown: true,
+        source: "walk",
+        captures: [A, B],
+        status: "",
+      } as DebugLayerState,
+    };
+    await openAt(0, { store: storeWith(slice), debugThumbs: thumbs });
+    frameAt(1000);
+    expect(debugStats()).toMatchObject({ captures: 2, thumbs: 1 });
+    // One that comes later is copied in at the next frame.
+    const late = document.createElement("img");
+    Object.defineProperty(late, "naturalWidth", { value: 48 });
+    Object.defineProperty(late, "naturalHeight", { value: 64 });
+    thumbs.set(B.image, late);
+    frameAt(1016);
+    expect(debugStats()).toMatchObject({ thumbs: 2 });
   });
 });
