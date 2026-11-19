@@ -65,7 +65,7 @@ describe("withZipBlobDirectory", () => {
       sizes: [5, 2],
       missing: undefined,
       text: "xy",
-      refused: expect.stringMatching(/nope/) as unknown as string,
+      refused: expect.stringMatching(/nope/),
     });
   });
 });

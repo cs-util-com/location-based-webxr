@@ -181,10 +181,13 @@ describe("classifyEditorFile", () => {
           const tourish = names.some(
             (n) => n === "tour.json" || /^qr\/[^/]+\.json$/.test(n),
           );
-          if (tourish) expect(kind.kind).toBe("tour");
-          else if (!names.some((n) => n.startsWith("actions/"))) {
-            expect(kind.kind).toBe("neither");
-          }
+          const walk = names.some((n) => n.startsWith("actions/"));
+          const allowed = tourish
+            ? ["tour"]
+            : walk
+              ? ["scan", "neither"]
+              : ["neither"];
+          expect(allowed).toContain(kind.kind);
         },
       ),
       { numRuns: 60 },
