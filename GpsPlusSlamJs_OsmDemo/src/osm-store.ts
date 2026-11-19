@@ -420,13 +420,6 @@ export function summariseSnapshot<S>(state: S): S {
   } as S;
 }
 
-/**
- * Builds the store, its action creators and a change-only subscriber.
- *
- * **Backed by the framework's `createSlamAppStore` since AR milestone 1**, so
- * the library's GPS/AR reducers are present for the alignment wiring to read.
- * The demo dispatches none of them itself; AR mode does.
- */
 /** The boot sun from the options, validated: RangeError for a bad one. */
 function bootSunOf(options: CreateDemoStoreOptions): SunState {
   const sun: SunState = options.sun ?? {
@@ -456,6 +449,13 @@ function lookWeightsOverrideOf(
   return override;
 }
 
+/**
+ * Builds the store, its action creators and a change-only subscriber.
+ *
+ * **Backed by the framework's `createSlamAppStore` since AR milestone 1**, so
+ * the library's GPS/AR reducers are present for the alignment wiring to read.
+ * The demo dispatches none of them itself; AR mode does.
+ */
 export function createDemoStore(options: CreateDemoStoreOptions) {
   const sun = bootSunOf(options);
   const override = lookWeightsOverrideOf(options);
