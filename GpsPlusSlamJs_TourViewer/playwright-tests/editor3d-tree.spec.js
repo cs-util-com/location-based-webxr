@@ -1126,8 +1126,15 @@ test("a station's picture is a strip under its row, and a tap on it selects the 
     if ((await strip.count()) === 0)
       await fountain.locator(".head .tw").click();
     await expect(strip, at).toBeVisible();
+    // The picture is read from the tour and checked before it is shown,
+    // beside the 3D view loading in software: measured 2026-11-19
+    // locally, 2.5-2.7 s at the first size (three runs) and about 0.5 s
+    // at the second, where it is read already, against the default 5 s.
+    // The budget leaves a slower runner room.
     await expect
-      .poll(() => strip.evaluate((e) => getComputedStyle(e).backgroundImage))
+      .poll(() => strip.evaluate((e) => getComputedStyle(e).backgroundImage), {
+        timeout: 15_000,
+      })
       .toContain("url(");
     const row = await box(fountain.locator("> .head"));
     const shown = await box(strip);
