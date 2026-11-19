@@ -67,8 +67,14 @@ import {
 } from "./dock-save.js";
 
 /** The parts of the view box that move with the 3D view into its panel:
- *  the canvas, the model's notes over it, the map controls. */
-const VIEW_PARTS = [".view3d-canvas", ".model-notes", "#map-controls"];
+ *  the canvas, the model's notes over it, the map controls, the debug
+ *  panel (put in the view box while the 3D view shows, `edit-main.ts`). */
+const VIEW_PARTS = [
+  ".view3d-canvas",
+  ".model-notes",
+  "#map-controls",
+  "#debug-panel",
+];
 
 /** What takes the focus in a moved element when the one that held it
  *  cannot any more. */

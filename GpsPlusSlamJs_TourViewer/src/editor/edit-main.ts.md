@@ -257,9 +257,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   and is idle and enabled again however the add ends
   (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)
   is the same entry in both views (the panel shows over the 3D view
-  too, at the canvas's foot on the left, as wide as the canvas between
-  the docks allows; hidden there on a phone, whose docks are sheets over
-  the canvas's foot): both open the one `#debug-add-input` and
+  too: `placeDebugPanel` moves it into the view box while the 3D view
+  shows, where the docking takes it into the view's pane with the map
+  controls, at its foot on the left and never wider than the pane; back
+  in its place in the page over the map; hidden over the 3D view on a
+  phone, whose docks are sheets over the canvas's foot): both open the one `#debug-add-input` and
   `createAddDebugButton` drives both. The panel over the 3D view is an
   interim place, until the 3D view's bottom panel takes it.
   Never saved, never drafted, closed with the tour and forgotten at a
@@ -510,8 +512,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   stays for the map.
 - **Not yet in the 3D view** (pending, for the removal of the 2D map):
   framing the debug layer's captures when the tour has nothing
-  positioned to frame (the map does it; the 3D view does not open for
-  such a tour), and editing a pin's multi-line
+  positioned to frame (the map frames them; the globe opens such a tour
+  over the whole Earth and does not fly to them), and editing a pin's multi-line
   text on the map card (it becomes the station's Markdown description).
   The rail's search has no counterpart: the 3D view's tree has no filter
   yet.

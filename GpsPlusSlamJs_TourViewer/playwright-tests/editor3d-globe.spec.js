@@ -324,12 +324,15 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
   // own figures.
   const debug = async () =>
     /** @type {any} */ ((await view3d(page))?.globe?.debug ?? null);
-  await expect.poll(debug, { timeout: 90_000 }).toMatchObject({
-    captures: 2,
-    thumbs: 2,
-    linePoints: 2,
-    shown: true,
-    objects: 2,
+  // A step of its own, so the run's report carries how long it took.
+  await test.step("the debug data read and drawn", async () => {
+    await expect.poll(debug, { timeout: 90_000 }).toMatchObject({
+      captures: 2,
+      thumbs: 2,
+      linePoints: 2,
+      shown: true,
+      objects: 2,
+    });
   });
   await expect(page.locator("#debug-status")).toHaveText(
     "Added from walk.zip, not saved with the tour. It is a recording, not saved from this tour. Debug data: 2 camera captures shown.",

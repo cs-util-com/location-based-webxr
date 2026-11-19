@@ -542,6 +542,12 @@ const keepWalk = element<HTMLButtonElement>("file-keep-walk");
 /** The debug layer's switch (View's "Show debug data") and its line
  *  (`debug-capture-layer.ts`). */
 const debugPanel = element("debug-panel");
+/** Where the debug panel stands in the page over the map
+ *  (`placeDebugPanel`). */
+const debugPanelHome = {
+  parent: debugPanel.parentElement ?? document.body,
+  next: debugPanel.nextElementSibling,
+};
 const debugSwitch = element<HTMLButtonElement>("view-debug");
 /** The View menu's Real time: the globe view's clock (the globe view only). */
 const realTimeSwitch = element<HTMLButtonElement>("view-realtime");
@@ -5003,6 +5009,24 @@ element("open-fineprint").textContent = saveFinePrint(
  * with nothing positioned is no failure: its line passes.
  */
 const view3dBox = element("view3d");
+
+/** Over the 3D view the debug panel stands in the view itself, at its
+ *  foot on the left (the docking takes it into the view's pane with the
+ *  map controls, `dock-host.ts`), so the docks around the view never
+ *  cover it nor it them; over the map it is back in its place in the
+ *  page. A focus inside it is kept. */
+function placeDebugPanel(in3d: boolean): void {
+  if (in3d === view3dBox.contains(debugPanel)) return;
+  const focused = document.activeElement;
+  if (in3d) view3dBox.append(debugPanel);
+  else {
+    const { parent, next } = debugPanelHome;
+    parent.insertBefore(debugPanel, next?.parentNode === parent ? next : null);
+  }
+  if (focused instanceof HTMLElement && debugPanel.contains(focused)) {
+    focused.focus({ preventScroll: true });
+  }
+}
 let view3dFailureToast: HTMLElement | null = null;
 
 /** A content entry of the open tour, from the copy the page reads now. */
@@ -5279,6 +5303,7 @@ const viewSwitch = createViewSwitch({
     // The page's look follows the view: the studio's dark shell in 3D
     // (`editor-shell.css`), the paper map page otherwise.
     document.body.dataset["view"] = on ? "3d" : "2d";
+    placeDebugPanel(on);
     // Covered by the 3D view, the map's markers and controls leave the
     // tab order and the accessibility tree - and stay out while the
     // failure's page covers it: a view that stops after it showed leaves
