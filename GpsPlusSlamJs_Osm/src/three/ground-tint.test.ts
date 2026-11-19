@@ -5,6 +5,8 @@ import type { GroundTint } from "../mesh/ground-tint.js";
 import {
   applyGroundTint,
   GROUND_TINT_FADE_M,
+  groundClassTexture,
+  groundPaletteTexture,
   groundTintTexture,
 } from "./ground-tint.js";
 
@@ -156,5 +158,103 @@ describe("applyGroundTint", () => {
     expect(() =>
       applyGroundTint(new THREE.MeshStandardMaterial(), tint(), { fadeM }),
     ).toThrow(RangeError);
+  });
+});
+
+describe("applyGroundTint with looks: class and palette textures", () => {
+  // WHY THESE TESTS MATTER. A tint built with looks is drawn from ONE class
+  // texture (R8, sampled nearest: filtering would blend class indices) and a
+  // palette texture of classes x looks, mixed by a vec4 of weights, so the
+  // land use cross-fades without regenerating a texture. At a weight of 1
+  // the palette row must give exactly what the fixed texture gives that
+  // look, texel for texel; that is the data half of the equality, the
+  // frame half is a browser check.
+  const looked = (): GroundTint =>
+    tint({
+      lookPalettes: [
+        [0x6b7280, 0xff0000, 0x00ff00],
+        [0x112233, 0x445566, 0x778899],
+      ],
+    });
+
+  it("reproduces each look's fixed texture through the palette", () => {
+    const t = looked();
+    const classes = groundClassTexture(t);
+    const palette = groundPaletteTexture(t);
+    const width = t.lookPalettes![0]!.length;
+    const rows = palette.image.data as Uint8Array;
+    expect(palette.image.width).toBe(width);
+    expect(palette.image.height).toBe(4);
+    t.lookPalettes!.forEach((lookPalette, k) => {
+      const fixed = groundTintTexture({ ...t, palette: lookPalette }).image
+        .data as Uint8Array;
+      const cls = classes.image.data as Uint8Array;
+      for (let i = 0; i < cls.length; i++) {
+        const at = (k * width + cls[i]!) * 4;
+        expect([...rows.subarray(at, at + 4)]).toEqual([
+          ...fixed.subarray(i * 4, i * 4 + 4),
+        ]);
+      }
+    });
+  });
+
+  it("samples the classes nearest, unfiltered, one byte a texel", () => {
+    const classes = groundClassTexture(looked());
+    expect(classes.format).toBe(THREE.RedFormat);
+    expect(classes.type).toBe(THREE.UnsignedByteType);
+    expect(classes.minFilter).toBe(THREE.NearestFilter);
+    expect(classes.magFilter).toBe(THREE.NearestFilter);
+    expect(classes.generateMipmaps).toBe(false);
+    // Rows of an odd width are not 4-byte aligned.
+    expect(classes.unpackAlignment).toBe(1);
+    const palette = groundPaletteTexture(looked());
+    expect(palette.colorSpace).toBe(THREE.SRGBColorSpace);
+    expect(palette.minFilter).toBe(THREE.NearestFilter);
+    expect(palette.generateMipmaps).toBe(false);
+  });
+
+  it("refuses a tint without looks, or with too many", () => {
+    expect(() => groundPaletteTexture(tint())).toThrow(RangeError);
+    const five = Array.from({ length: 5 }, () => [0, 0, 0]);
+    expect(() => groundPaletteTexture(tint({ lookPalettes: five }))).toThrow(
+      RangeError,
+    );
+  });
+
+  it("patches the looks shader, mixes by weights, and sets the neutral", () => {
+    const material = new THREE.MeshStandardMaterial();
+    const applied = applyGroundTint(material, looked());
+    const s = shader();
+    material.onBeforeCompile(s, {} as THREE.WebGLRenderer);
+    expect(s.fragmentShader).toContain("uniform sampler2D groundPalette;");
+    expect(s.fragmentShader).toContain("texelFetch(groundPalette");
+    expect(material.customProgramCacheKey()).toContain("ground-tint-looks");
+    const u = s.uniforms;
+    expect(u["groundClasses"]?.value).toBeInstanceOf(THREE.DataTexture);
+    expect(u["groundWeights"]?.value).toEqual(new THREE.Vector4(1, 0, 0, 0));
+    applied.setLookWeights([0.25, 0.75]);
+    expect(u["groundWeights"]?.value).toEqual(
+      new THREE.Vector4(0.25, 0.75, 0, 0),
+    );
+    applied.setNeutral(0x112233);
+    const neutral = new THREE.Color(0x112233);
+    expect(u["groundNeutral"]?.value).toEqual(
+      new THREE.Vector3(neutral.r, neutral.g, neutral.b),
+    );
+    applied.dispose();
+    expect(u["groundClasses"]?.value).toBeNull();
+    expect(u["groundPalette"]?.value).toBeNull();
+  });
+
+  it("refuses bad weights, and weights on a tint without looks", () => {
+    const applied = applyGroundTint(new THREE.MeshStandardMaterial(), looked());
+    expect(() => applied.setLookWeights([1])).toThrow(RangeError);
+    expect(() => applied.setLookWeights([1, Number.NaN])).toThrow(RangeError);
+    expect(() => applied.setLookWeights([1, -0.5])).toThrow(RangeError);
+    expect(() => applied.setNeutral(-1)).toThrow(RangeError);
+    const fixed = applyGroundTint(new THREE.MeshStandardMaterial(), tint());
+    expect(() => fixed.setLookWeights([1])).toThrow(RangeError);
+    // The fixed tint's neutral is settable too.
+    expect(() => fixed.setNeutral(0x445566)).not.toThrow();
   });
 });

@@ -49,6 +49,7 @@ import {
   isTree,
   treeClass,
   treeColour,
+  treeLookColours,
   type TreeClass,
   type TreePlacement,
   type TreeVariant,
@@ -112,6 +113,8 @@ export interface BuildCosmeticTreesOptions {
   readonly roadMarginM?: number;
   /** The crown palette (a colour scheme's `trees`). Default `TREE_PALETTE`. */
   readonly treePalette?: ReadonlyMap<string, number>;
+  /** One crown palette per look, as `BuildTreesOptions.lookPalettes`. */
+  readonly lookPalettes?: readonly ReadonlyMap<string, number>[];
 }
 
 /** What implies cosmetic trees in a feature, or undefined. */
@@ -592,6 +595,7 @@ function placementOf(
     rotationY: stableRotationY(c.key),
     variant: variantOf(c.cls),
     colour: treeColour(c.cls, c.key, TREE_COLOUR_JITTER, options.treePalette),
+    ...treeLookColours(c.cls, c.key, options.lookPalettes),
   };
 }
 

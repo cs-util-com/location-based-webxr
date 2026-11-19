@@ -98,3 +98,13 @@ overlong range is clamped), and no change for a feature without one;
 input untouched and passing a chunk without colours through.
 `s3db-parts.test.ts` checks the rule end to end through `buildCity`: onion,
 gable ends, a floating flat part's floor, dome.
+
+## Looks: K colour buffers from one merge (time-of-day colour blend plan 2026-11-18-1913)
+
+- **`chunkMeshes(..., looksOf)`**, the eighth parameter: `(item) => readonly LookPaint[]`, one `LookPaint { colour, roof? }` per look. With it every chunk also carries `lookColours`: one `Uint8Array` of `vertices * 3` per look, painted exactly as `colors` is (wall over the item's vertices, the look's roof over its roof ranges) but as the colour's sRGB BYTES. The geometry is merged once; only the fills repeat.
+  - RangeError when `looksOf` is given without `colourOf`, when an item returns no looks, or when two items return different counts.
+  - Without `looksOf` a chunk has no `lookColours` key at all: the default build is byte-identical (`colour-identity.test.ts`).
+- **Bytes, not floats**: four looks cost 12 B a vertex against 48 B as floats, and a normalised Uint8 attribute is what a shader reads. Each buffer is its own `ArrayBuffer`, so a worker can transfer them.
+- **Decoding**: `LOOK_COLOUR_DECODE` is a 512-entry Float32Array, entries 0-255 the exact sRGB-to-linear value of a byte (the table `linearChunkColours` uses), 256-511 `byte / 255`. `decodeLookColours(codes, "linear" | "raw")` gives the Float32Array a fixed build carries: "linear" for building chunks (whose `colors` `linearChunkColours` converted), "raw" for road chunks (whose `colors` stay byte / 255). A renderer uploads the table as a 256x2 float texture for the same exact decode on the GPU.
+- `linearChunkColours` converts `colors` only and keeps `lookColours` as they are (the same reference).
+- Tests: `chunk-meshes.test.ts` ("K looks from one merge"), and over real sites `city-looks.property.test.ts`.

@@ -60,6 +60,31 @@ export interface TreePlacement {
   readonly variant: TreeVariant;
   /** The crown's colour, packed `0xRRGGBB`, sRGB (`treeColour`). */
   readonly colour: number;
+  /**
+   * The crown's colour in each look, packed sRGB, present only when the
+   * build was given `lookPalettes`: entry k is what a build in palette k
+   * gives this tree as `colour` (the same class pick and jitter), and entry
+   * 0 is `colour` itself.
+   */
+  readonly lookColours?: readonly number[];
+}
+
+/**
+ * The `lookColours` field of a placement: each palette's `treeColour` of
+ * the tree, or nothing without palettes (so a build without looks adds no
+ * field). Shared with `cosmetic-trees.ts`.
+ */
+export function treeLookColours(
+  cls: Pick<TreeClass, "leafType" | "leafCycle">,
+  key: string,
+  lookPalettes: readonly ReadonlyMap<string, number>[] | undefined,
+): { readonly lookColours?: readonly number[] } {
+  if (lookPalettes === undefined) return {};
+  return {
+    lookColours: lookPalettes.map((palette) =>
+      treeColour(cls, key, TREE_COLOUR_JITTER, palette),
+    ),
+  };
 }
 
 /** What a tree is from its tags (`treeClass`). */
@@ -314,6 +339,11 @@ export interface BuildTreesOptions {
   readonly groundHeightM?: (position: LatLng) => number;
   /** The crown palette (a colour scheme's `trees`). Default `TREE_PALETTE`. */
   readonly treePalette?: ReadonlyMap<string, number>;
+  /**
+   * One crown palette per look (`TreePlacement.lookColours`); the caller
+   * passes `treePalette` as entry 0. Absent: no look colours.
+   */
+  readonly lookPalettes?: readonly ReadonlyMap<string, number>[];
 }
 
 /**
@@ -358,6 +388,7 @@ export function buildTrees(
       rotationY: stableRotationY(key),
       variant: variantOf(cls),
       colour: treeColour(cls, key, TREE_COLOUR_JITTER, options.treePalette),
+      ...treeLookColours(cls, key, options.lookPalettes),
     });
   }
 

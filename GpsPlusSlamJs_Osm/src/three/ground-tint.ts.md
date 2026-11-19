@@ -50,3 +50,14 @@ the neutral ground over the last `GROUND_TINT_FADE_M` (40 m) of the window
   unknown class bytes, the size check, the shader patch and its uniforms, a
   chained hook, the cache key, the switch, `dispose`, the fade check; a later tint reaching the program
   compiled for an earlier one, and a stale handle being inert.
+
+## Looks: class and palette textures (time-of-day colour blend plan 2026-11-18-1913)
+
+- `groundClassTexture(tint)`: the class raster as an R8 `DataTexture`, `NearestFilter` both ways, no mips (filtering would blend class indices), `unpackAlignment` 1 (odd widths). RangeError when the classes do not match the size.
+- `groundPaletteTexture(tint)`: `lookPalettes` as an RGBA8 sRGB texture, palette length wide and `MAX_CITY_LOOKS` (4) high, row k look k (rows past the last look repeat row 0; their weight is 0), nearest, no mips. RangeError without look palettes, with more than 4, or with rows of different lengths. Row k at each texel's class is exactly the RGBA `groundTintTexture` gives look k (test-held).
+- `applyGroundTint` on a tint with `lookPalettes` builds those two textures instead of the RGBA one and compiles a separate program (cache key `|ground-tint-looks`): per fragment it fetches the class (an index past the palette reads as 0, the neutral), fetches the four palette rows with `texelFetch` (decoded from sRGB by the format), and mixes them in linear light by `groundWeights` (a vec4, look 0 alone until set).
+- `AppliedGroundTint.setLookWeights(weights)`: one weight per look, each finite and >= 0, not normalised (the caller sums to 1). RangeError for a wrong count or value, and on a tint without looks.
+- `AppliedGroundTint.setNeutral(rgb)`: the fade-to neutral, sRGB 0xRRGGBB; works on both kinds of tint. RangeError for anything else.
+- `dispose` frees whichever textures it built and nulls `groundTint`, `groundClasses` and `groundPalette`.
+- **Not pixel-identical to the fixed tint at a class edge**: the fixed texture is sampled with linear filtering and mips, the looks mode nearest, so at weight 1 the two agree inside a class and differ along its edges. The data equality is test-held; a frame comparison must allow for the edges.
+- Tests: `ground-tint.test.ts` ("applyGroundTint with looks").

@@ -303,3 +303,49 @@ describe("buildCity's ground tint", () => {
     expect(tint?.texelM).toBe(DEFAULT_GROUND_TINT_TEXEL_M);
   });
 });
+
+describe("buildGroundTint with looks", () => {
+  // WHY: a time-of-day renderer keeps ONE class raster (it does not depend
+  // on the look) and indexes a palette per look, so each look's palette must
+  // be exactly the one a fixed build of that look carries, in the same
+  // order, and look 0's must be `palette`.
+  const moved = new Map(
+    [...DEFAULT_LAND_USE_RGB].map(([cls, rgb]) => [cls, rgb ^ 0x0a0b0c]),
+  );
+  const features = [
+    wayBox(1, { landuse: "residential" }, [-100, -100, 100, 100]),
+    wayBox(2, { leisure: "park" }, [-50, -90, 50, -10]),
+  ];
+  const looks = [
+    { ground: DEFAULT_GROUND_RGB, landUse: DEFAULT_LAND_USE_RGB },
+    { ground: 0x223344, landUse: moved },
+  ];
+
+  it("gives one palette per look, each its fixed build's, over one raster", () => {
+    const tint = buildGroundTint(features, { ...options, looks });
+    expect(tint.lookPalettes).toHaveLength(2);
+    expect(tint.lookPalettes![0]).toEqual(tint.palette);
+    const fixed = buildGroundTint(features, {
+      ...options,
+      ground: 0x223344,
+      landUse: moved,
+    });
+    expect(tint.lookPalettes![1]).toEqual(fixed.palette);
+    expect([...tint.classes]).toEqual([...fixed.classes]);
+  });
+
+  it("has no look palettes without looks", () => {
+    expect("lookPalettes" in buildGroundTint(features, options)).toBe(false);
+  });
+
+  it("refuses a look missing a class", () => {
+    const landUse = new Map(DEFAULT_LAND_USE_RGB);
+    landUse.delete("park");
+    expect(() =>
+      buildGroundTint(features, {
+        ...options,
+        looks: [looks[0]!, { ground: 0, landUse }],
+      }),
+    ).toThrow(RangeError);
+  });
+});

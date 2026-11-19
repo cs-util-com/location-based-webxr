@@ -254,3 +254,37 @@ describe("packInstances colours", () => {
     expect(packed?.colours[5]).toBeCloseTo((second & 0xff) / 255, 6);
   });
 });
+
+describe("buildTrees with look palettes", () => {
+  // WHY: a time-of-day renderer mixes K baked crown colours per tree; each
+  // must be exactly the colour a build in that palette gives the same tree
+  // (class pick and jitter included), and look 0's must be `colour`.
+  const other = new Map(
+    [...TREE_PALETTE].map(([k, rgb]) => [k, rgb ^ 0x203040]),
+  );
+  const features = [
+    tree(1, { leaf_type: "broadleaved", leaf_cycle: "deciduous" }),
+    tree(2, { leaf_type: "needleleaved" }),
+    tree(3, {}),
+  ];
+
+  it("gives each tree one colour per look, each its fixed build's", () => {
+    const looks = buildTrees(features, {
+      frame,
+      lookPalettes: [TREE_PALETTE, other],
+    });
+    const fixed = buildTrees(features, { frame, treePalette: other });
+    looks.forEach((placement, i) => {
+      expect(placement.lookColours).toEqual([
+        placement.colour,
+        fixed[i]!.colour,
+      ]);
+    });
+  });
+
+  it("adds no field without look palettes", () => {
+    for (const placement of buildTrees(features, { frame })) {
+      expect("lookColours" in placement).toBe(false);
+    }
+  });
+});

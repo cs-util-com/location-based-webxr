@@ -44,6 +44,14 @@ import { TREE_PALETTE, type TreeKey } from "./trees.js";
  * the default (which would leave a scheme half switched). Write one by
  * spreading the default and overriding.
  */
+/**
+ * The most looks (colour schemes) one city build bakes. A renderer mixes
+ * them by one vec4 of weights and one vertex colour attribute per look;
+ * WebGL 2 guarantees only 16 vertex attributes, of which a building chunk
+ * already uses several, and four keeps a tree instance at four colours.
+ */
+export const MAX_CITY_LOOKS = 4;
+
 export interface CityColourScheme
   extends PaletteColours, RoadColours, BarrierColours {
   /**

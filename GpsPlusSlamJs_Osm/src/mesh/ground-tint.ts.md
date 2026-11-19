@@ -112,3 +112,9 @@ no ground (the demo's AR) passes `groundTint: false`.
 - `ground-tint.property.test.ts` - every texel centre equals an independent
   point-in-ring evaluation of the same priority rule on random polygons;
   invariance under input permutation; the raster covers exactly the window.
+
+## Looks (time-of-day colour blend plan 2026-11-18-1913)
+
+- `BuildGroundTintOptions.looks`: `GroundTintLook { ground, landUse }` per look (the caller passes `ground` and `landUse` as entry 0). The tint then carries `lookPalettes`, one palette per look in `palette`'s layout (0 the neutral, i + 1 class i), each validated like `palette` (RangeError for a missing class). The raster does not depend on the colours, so it is painted once whatever the count; `classes` indexed through `lookPalettes[k]` is what a fixed build of look k paints. Absent: no `lookPalettes` key.
+- The three side draws it from a class texture and a palette texture (`three/ground-tint.ts.md`, "Looks").
+- Tests: `ground-tint.test.ts` ("buildGroundTint with looks"), `city-looks.property.test.ts`.
