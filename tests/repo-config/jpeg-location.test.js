@@ -106,6 +106,71 @@ describe('jpegLocation', () => {
     }
   });
 
+  // Why: a location is written under other names and in other places than
+  // the two the reader first knew. Destination coordinates and a lower-case
+  // spelling are locations too, and Photoshop keeps its XMP copy in APP13,
+  // not APP1, so the search runs over every APPn body.
+  it('finds a location under its destination names, in any case, in any APPn segment', () => {
+    const XMP = ascii('http://ns.adobe.com/xap/1.0/');
+    for (const property of ['GPSDestLatitude', 'gpslongitude', 'GPSDestLongitude']) {
+      const xmp = segment(0xe1, [...XMP, 0, ...ascii(`<rdf:Description exif:${property}="0,0N"/>`)]);
+      expect(jpegLocation(jpeg(xmp)), property).toEqual({ readable: true, exifGps: false, xmpGps: true });
+    }
+    const photoshop = segment(0xed, [
+      ...ascii('Photoshop 3.0'),
+      0,
+      ...ascii('8BIM'),
+      4,
+      36,
+      ...ascii('<rdf:Description exif:GPSLatitude="0,0N"/>'),
+    ]);
+    expect(jpegLocation(jpeg(photoshop))).toEqual({ readable: true, exifGps: false, xmpGps: true });
+  });
+
+  // Why: metadata the reader does not read must never pass as clean. An
+  // APP1 that begins like Exif or an Adobe packet but is neither known kind
+  // is a variant nobody checked; a Multi-Picture segment and any bytes after
+  // the first image's end marker hold further images (a phone's depth map, a
+  // motion photo's video) with metadata of their own.
+  it('never answers clean for metadata or images it does not read', () => {
+    const afterEnd = Uint8Array.from([...jpeg(JFIF), ...ascii('ftypmp42')]);
+    for (const [name, bytes] of [
+      ['an Exif variant', jpeg(segment(0xe1, [...ascii('Exif'), 0xff, 0x49, 0x49, 42, 0]))],
+      ['an unknown Adobe packet', jpeg(segment(0xe1, [...ascii('http://ns.adobe.com/other/'), 0, 1]))],
+      ['a Multi-Picture segment', jpeg(segment(0xe2, [...ascii('MPF'), 0, 0x49, 0x49, 42, 0]))],
+      ['bytes after the end marker', afterEnd],
+      ['a second image after the first', Uint8Array.from([...jpeg(JFIF), ...jpeg(JFIF)])],
+    ]) {
+      expect(jpegLocation(bytes).readable, name).toBe(false);
+    }
+  });
+
+  // Why: the image data is skipped, not parsed, and a progressive image has
+  // several scans with segments between them: a location in a segment
+  // between two scans is found, and the stuffed and restart bytes inside a
+  // scan do not end it early.
+  it('reads the segments between scans, skipping the image data', () => {
+    const xmp = segment(0xe1, [
+      ...ascii('http://ns.adobe.com/xap/1.0/'),
+      0,
+      ...ascii('<rdf:Description exif:GPSLatitude="0,0N"/>'),
+    ]);
+    const scanData = [1, 2, 0xff, 0x00, 3, 0xff, 0xd3, 4, 0xff, 0xff, 0x00];
+    const bytes = Uint8Array.from([
+      0xff,
+      0xd8,
+      ...JFIF,
+      ...segment(0xda, [0, 0]),
+      ...scanData,
+      ...xmp,
+      ...segment(0xda, [0, 0]),
+      ...scanData,
+      0xff,
+      0xd9,
+    ]);
+    expect(jpegLocation(bytes)).toEqual({ readable: true, exifGps: false, xmpGps: true });
+  });
+
   it('never answers clean for a damaged file or one that is no JPEG', () => {
     const good = jpeg(segment(0xe1, exifBody([MAKE])));
     const directoryPastSegment = jpeg(segment(0xe1, exifBody([MAKE]).slice(0, 18)));
