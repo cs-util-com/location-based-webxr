@@ -624,7 +624,9 @@ reproduced there, jsdom lacks it); the commit's own draw hands the focus
 on to the control it was moving to, drawn again; Escape puts the value
 back; Enter in the description is a new line and leaving it writes the
 lines; a description and a pin text of several lines focused and left
-write nothing; a ground command
+write nothing; a pin text of several lines typed in its text area is
+written as typed, its lines kept, when it is left (Enter there is a new
+line); a ground command
 waiting is called off by a selection change (later ground writes
 nothing), and writes once the ground arrives when the selection stays;
 the readout's tick builds no tour with nothing selected; the bottom

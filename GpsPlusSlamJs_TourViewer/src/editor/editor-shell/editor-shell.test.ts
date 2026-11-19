@@ -950,6 +950,25 @@ describe("the inspector's Escape and its text of several lines", () => {
     shell.hide();
     expect(edits.text).not.toHaveBeenCalled();
   });
+
+  // Why: a pin text of several lines is typed in a text area, where Enter
+  // starts a new line rather than committing; leaving it writes the text,
+  // its lines kept, as that pin's text - the page's one pin text edit,
+  // whose rules (its cap, its refusal) are the page's.
+  it("writes a pin text of several lines as typed, its lines kept, when the text area is left", () => {
+    const { select, edits, shell } = setUp();
+    select("pa");
+    const area = typeInto("title", "The gate\nnorth side");
+    expect(area).toBeInstanceOf(HTMLTextAreaElement);
+    area.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(edits.text).not.toHaveBeenCalled();
+    area.blur();
+    expect(edits.text).toHaveBeenCalledTimes(1);
+    expect(edits.text).toHaveBeenCalledWith("pa", "The gate\nnorth side");
+    shell.hide();
+  });
 });
 
 describe("Put items on the ground, waiting for the ground", () => {

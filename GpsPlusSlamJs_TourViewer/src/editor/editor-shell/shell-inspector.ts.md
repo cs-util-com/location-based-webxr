@@ -180,14 +180,15 @@ wide`) and "Preview the story" (`preview-story`, `act pri`, once it
     taken as the default, on one line, so a field left untouched writes
     nothing. A station's name of several lines (from another writer)
     stays editable that way, and a changed one is one line. A pin's text
-    of several lines (the 2D card's text area writes them) is read-only
-    in the head, since typing would lose its lines, and a line at the
-    top of the dock (`#inspector-pin-lines`, which the field is
-    described by, also its title) says why: edit it in the pin's card on
-    the 2D map. A pin's text typed in the head has its count at the
-    top of the dock (`#inspector-pin-count`, an `<output>` the field is
-    described by, `pin-text.ts`): "12 / 40", marked `data-over` past
-    the 40 characters the edit refuses. A block's other text fields
+    of one line is typed in the head, its count at the top of the dock
+    (`#inspector-pin-count`, an `<output>` the field is described by,
+    `pin-text.ts`): "12 / 40", marked `data-over` past the 40
+    characters the edit refuses. A pin's text of several lines is typed
+    instead in a `<textarea>` labelled Text at the top of the body
+    (`title`, the same field name and the same pin text edit), which
+    keeps its lines (Enter is a new line there, leaving it writes it),
+    the same count under it; the head then shows the text as text, on
+    one line (`oneLine`), so the dock never holds two fields of it. A block's other text fields
     (`block-fields.ts`) carry the placeholder "Required" for a field the
     block needs, else "Optional" (`blockFieldPlaceholder`).
   - A code: its line, its print size, and its position, or that none is
@@ -266,7 +267,12 @@ drawInspector(dock, buildInspector(input), { folded, positionOpen }, pictures);
 `buildInspector`): hidden without a selection, a station's fields each
 tied to its label with the position folded, the position in metres of
 the tour's centre once unfolded, an item's offset in its station's
-frame, a code without a position, and the folded head. The page by
+frame, a code without a position, and the folded head.
+`shell-inspector.property.test.ts` (jsdom, fast-check): for any pin
+text of several lines (any line ends), the one text area shows it with
+its lines as its default, what is typed there reaches the pin text edit
+(`inspectorEdit`) as typed, and the head names it on one line, as text.
+The page by
 `playwright-tests/editor3d-shell.spec.js` and
 `playwright-tests/editor3d-inspector.spec.js` (the edits, saved and
 opened again, and the fields' layout at four window sizes).
@@ -294,7 +300,8 @@ It also keeps the focus on Earlier through an autosave's status change,
 and gives the focus back to the control that had it when the inspector
 is drawn again; a draw asked for inside a draw is not run, and
 `inspectorDrawing` is true only during one; a pin text of several lines
-shows on one line, read-only, its reason a line in the dock; a station's
+is typed in the body's text area, its lines kept, counted, the head
+showing it as text; a station's
 name and description of several lines stay editable, the description a
 text area holding its lines.
 

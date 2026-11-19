@@ -70,6 +70,12 @@ export function severalLines(value: string): boolean {
   return /[\r\n]/.test(value);
 }
 
+/** `value` on one line: each run of line breaks, with the spaces around
+ *  it, one space (a value of one line unchanged). */
+export function oneLine(value: string): string {
+  return value.replace(/\s*[\r\n]+\s*/g, " ");
+}
+
 /** A field to type in, named `field` (`data-field`), the tour's value
  *  `value` its default, so text that differs from it is typed. A text
  *  input drops line breaks: a value of several lines is shown, and taken
@@ -85,9 +91,7 @@ export function typed(
   input.spellcheck = false;
   input.autocomplete = "off";
   input.dataset["field"] = field;
-  input.defaultValue = severalLines(value)
-    ? value.replace(/\s*[\r\n]+\s*/g, " ")
-    : value;
+  input.defaultValue = oneLine(value);
   return input;
 }
 
