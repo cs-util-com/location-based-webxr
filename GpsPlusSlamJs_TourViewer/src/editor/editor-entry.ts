@@ -22,7 +22,7 @@ export type EditorEntryPlan =
   | { readonly kind: "refuse"; readonly reason: string };
 
 /** A file left out of the plan, and why. */
-export interface IgnoredFile {
+interface IgnoredFile {
   readonly file: File;
   readonly reason: string;
 }
