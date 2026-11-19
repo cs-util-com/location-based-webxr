@@ -312,26 +312,33 @@ test("a voice marked synthetic and credited is saved, and the visitor's reading 
   await seedAlignment(visitor);
   await standAt(visitor, 0, 0, 0);
   await lockFixtureCode(visitor);
-  // A tap at the gate: the stub scene has no geometry, so the fake camera
-  // ray hits the reading sign by the key the page offers for it.
+  // Taps at the gate: the stub scene has no geometry, so the fake camera
+  // ray hits a part by the key the page offers for it. The gate stands
+  // more than one part that takes a tap, and a key names a part by its
+  // place among them, so each offered key is tried in turn until the
+  // reading sign's opens the sheet. The poll reads the keys it was
+  // offered, so a failure says what the page stood.
   const sheet = visitor.getByTestId("long-text-sheet");
+  let tries = 0;
   await expect
     .poll(
       async () => {
-        await visitor.evaluate(() => {
+        const offered = await visitor.evaluate((n) => {
           const t = /** @type {any} */ (window).__tourViewerTest;
           t.emitFrames(1);
-          t.pickId =
-            t.pickTargets.find((/** @type {string} */ k) =>
-              k.startsWith("part-"),
-            ) ?? null;
+          const parts = t.pickTargets.filter((/** @type {string} */ k) =>
+            k.startsWith("part-"),
+          );
+          t.pickId = parts.length === 0 ? null : parts[n % parts.length];
           t.tapXr();
-        });
-        return sheet.isVisible();
+          return parts.join(",");
+        }, tries);
+        tries += 1;
+        return (await sheet.isVisible()) ? "open" : `offered [${offered}]`;
       },
       { timeout: 20_000 },
     )
-    .toBe(true);
+    .toBe("open");
   await expect(visitor.getByTestId("long-text-credit")).toHaveText(
     "Synthetic voice · Read by Anna Berg",
   );
