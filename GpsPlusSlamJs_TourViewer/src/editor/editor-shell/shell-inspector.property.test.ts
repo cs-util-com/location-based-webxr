@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
  * Why these tests matter: a pin's text is free text from the tour file,
- * and one of several lines is typed in the inspector's text area. Whatever
- * the text is (any lines, line ends of any platform, spaces, markup-looking
+ * and it is typed in the inspector's text area, one line or several.
+ * Whatever the text is (any lines or one, line ends of any platform, spaces, markup-looking
  * characters), the area must show it with its lines as its default, so a
  * field left untouched reads as untyped and is never written back changed;
  * what is typed there must reach the page's pin text edit as typed, its
@@ -62,6 +62,9 @@ const severalLines = fc
   )
   .map(([lines, end]) => lines.join(end));
 
+/** A pin text of one line or several. */
+const anyText = fc.oneof(fc.string({ maxLength: 40 }), severalLines);
+
 let dock: { root: HTMLElement; head: HTMLElement; body: HTMLElement };
 
 beforeEach(() => {
@@ -88,10 +91,10 @@ function drawPin(stations: TourStation[]): HTMLTextAreaElement {
   return area;
 }
 
-describe("a pin text of several lines in the inspector", () => {
+describe("a pin text in the inspector", () => {
   it("is shown with its lines, typed back as typed, named on one line in the head", () => {
     fc.assert(
-      fc.property(severalLines, severalLines, (text, typed) => {
+      fc.property(anyText, anyText, (text, typed) => {
         const stations = withPin(text);
         const area = drawPin(stations);
         // Its lines, as a text area reads line ends: one character each.

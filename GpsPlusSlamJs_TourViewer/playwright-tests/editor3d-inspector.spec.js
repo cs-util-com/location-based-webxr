@@ -461,11 +461,13 @@ test("a short text's caption and Description are typed in the inspector: one ste
       (/** @type {any} */ b) => b.id === "pa",
     );
 
-  // The caption, typed in the head: one step.
-  const caption = field(page, "title");
+  // The caption, typed in the body's text area labelled Text and left:
+  // one step.
+  const caption = inspector.getByLabel("Text", { exact: true });
+  await expect(caption).toHaveAttribute("data-field", "title");
   await expect(caption).toHaveValue("Pin a");
   await caption.fill("The old well");
-  await caption.press("Enter");
+  await caption.press("Tab");
   await expect
     .poll(async () => (await blockNow())?.caption)
     .toBe("The old well");
@@ -534,9 +536,8 @@ test("a pin text of several lines is typed in the inspector's text area: its lin
   page,
   context,
 }) => {
-  // Why: a pin text of several lines cannot be typed in the head's
-  // one-line field, so the inspector types it in a text area labelled
-  // Text, where Enter starts a new line. Its lines must reach the tour as
+  // Why: a pin's text is typed in the inspector's text area labelled
+  // Text, whatever its lines, where Enter starts a new line. Its lines must reach the tour as
   // one step and come back on the next open, as typed.
   test.slow();
   await openTour(page, await twoPinTour("Pin a\nby the gate"));
@@ -663,7 +664,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   await expect(field(page, "heading")).toHaveValue("90.0");
 
   // Add a pin (the row's "+"): a new pin in b, selected and said; its
-  // words typed in the head.
+  // words typed in the body's text area and left.
   await page.locator('#tree-body .card[data-station="b"] .head .add').click();
   await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   await expect(
@@ -678,7 +679,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   ).toContain(pin);
   await expect(field(page, "title")).toHaveValue("New pin 2");
   await field(page, "title").fill("Look up");
-  await field(page, "title").press("Enter");
+  await field(page, "title").press("Tab");
   await expect
     .poll(
       async () =>

@@ -13,8 +13,8 @@
  * `description`, labelled Name and Description at the top of the body, the
  * head showing the name as text (AU-2: a borderless name in the head read
  * as a heading); its `radius`, `east`, `north` and `heading`; a pin's `title`
- * (its text: in the head, or in a text area labelled Text at the top of
- * the body when it has several lines, which the head's field would lose);
+ * (its text, one line or several: a text area labelled Text at the top of
+ * the body, as a station's description is, the head showing it as text);
  * an item's `east`, `north`, `height`, `heading` and a
  * model's `size`; a plain folder's `scale` and, under its Place, its
  * `east`, `north`, `height` and `heading`), each drawn with the tour's
@@ -78,7 +78,6 @@ import {
   numberBox,
   numberField,
   oneLine,
-  severalLines,
   typed,
 } from "./inspector-fields.js";
 import type { KindPanelDraw } from "../kind-panels/kind-panel.js";
@@ -103,7 +102,8 @@ function readOnlyNumber(label: string, value: string, unit = ""): HTMLElement {
   return labelled(label, out, box);
 }
 
-/** The id of a typed pin text's count, which the field names. */
+/** The id of a typed pin text's or story name's count, which the field
+ *  names. */
 const PIN_COUNT_ID = "inspector-pin-count";
 
 /** Prose to type, named `field`: a text area, which keeps line breaks
@@ -131,8 +131,8 @@ function proseField(
   return row;
 }
 
-/** A pin's text of several lines to type (`title`): a text area, which
- *  keeps its lines where the head's one-line field cannot, its count
+/** A pin's text to type (`title`), one line or several: a text area,
+ *  which keeps its lines and lets a creator start a new one, its count
  *  against the pin text's cap under it as it is typed (`pin-text.ts`; the
  *  edit refuses a longer text, `object-edits.ts`). */
 function pinTextParts(text: string): HTMLElement {
@@ -1168,9 +1168,7 @@ function itemParts(
 ): HTMLElement[] {
   const parts: HTMLElement[] = [];
   const fields = panel?.ownsFields === true ? [] : model.fields;
-  if (model.text !== null && severalLines(model.text)) {
-    parts.push(pinTextParts(model.text));
-  }
+  if (model.text !== null) parts.push(pinTextParts(model.text));
   const o = model.offset;
   if (o === null) {
     const box = el("div", "isec");
@@ -1596,9 +1594,9 @@ function storyPill(model: InspectorModel): HTMLElement[] {
   return [pill];
 }
 
-/** The head's title: its kind's panel's, a pin's text or a story's name
- *  to type, else the title in words (a station's name is typed in its
- *  labelled field, AU-2). */
+/** The head's title: its kind's panel's or a story's name to type, else
+ *  the title in words (a station's name and a pin's text are typed in
+ *  their labelled fields in the body). */
 function headTitle(
   model: InspectorModel,
   panel: KindPanelDraw | null,
@@ -1612,43 +1610,32 @@ function headTitle(
     return input;
   }
   if (model.kind === "item" && model.text !== null) {
-    if (severalLines(model.text)) {
-      // Typed in the body's text area, which keeps its lines
-      // (`pinTextParts`): named here as text, on one line.
-      const shown = oneLine(model.text);
-      const title = el("span", "ttl", shown);
-      title.title = shown;
-      return title;
-    }
-    const input = typed("title", model.text, "ttlin");
-    input.setAttribute("aria-label", "Pin text");
-    input.title = "The pin's text (Enter keeps it)";
-    return input;
+    // Typed in the body's text area (`pinTextParts`): named here as
+    // text, on one line.
+    const shown = oneLine(model.text);
+    const title = el("span", "ttl", shown);
+    title.title = shown;
+    return title;
   }
   const title = el("span", "ttl", model.title);
   title.title = model.title;
   return title;
 }
 
-/** A typed pin text's "12 / 40" (`pin-text.ts`), counted as it is typed
- *  (the edit refuses a longer text, `object-edits.ts`), or null when the
- *  head offers no pin text to type. */
-function pinCount(
+/** A typed story name's count against its cap, counted as it is typed,
+ *  or null when the head offers no story name to type. (A pin's text is
+ *  counted under its text area, `pinTextParts`.) */
+function storyNameCount(
   model: InspectorModel,
   head: HTMLElement,
 ): HTMLElement | null {
-  const counted = model.kind === "story" || model.kind === "item";
-  if (!counted || (model.kind === "item" && model.text === null)) return null;
+  if (model.kind !== "story") return null;
   if (!(head instanceof HTMLInputElement) || head.readOnly) return null;
   const out = el("output", "note pad");
   out.id = PIN_COUNT_ID;
   head.setAttribute("aria-describedby", PIN_COUNT_ID);
-  if (model.kind === "story") {
-    const { max, unit } = TOUR_STORY_TITLE_RULE;
-    wireTextCounter(head, out, max, unit);
-  } else {
-    wirePinTextCounter(head, out);
-  }
+  const { max, unit } = TOUR_STORY_TITLE_RULE;
+  wireTextCounter(head, out, max, unit);
   return out;
 }
 
@@ -1782,7 +1769,7 @@ function drawDock(
   const icon = el("span", `hic ic ${look}`);
   icon.append(shellIcon(drawn));
   const head = headTitle(model, panel);
-  const count = pinCount(model, head);
+  const count = storyNameCount(model, head);
   const back = iconButton("right", backLabel(state.crumb), "back");
   // Up to a level (not to the list, which Deselect already is): shown on
   // every layout, where Back to the list is a phone's alone.

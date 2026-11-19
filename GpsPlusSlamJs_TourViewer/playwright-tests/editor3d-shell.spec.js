@@ -1658,17 +1658,18 @@ test("the tour's name carries a pen that opens its details, with no Details butt
   await expect(page.locator("#details-modal")).toBeVisible();
 });
 
-test("the dialogs, their fields and the toasts wear the studio's dark dress; an item's name shows its pen and a dotted underline at rest", async ({
+test("the dialogs, their fields and the toasts wear the studio's dark dress; a story's name shows its pen and a dotted underline at rest, a pin's text is typed in the body", async ({
   page,
 }) => {
   // Why: File > Tour details opened white over the dark editor (seen in
   // a field test), as did the open and the share dialogs: they took
   // the 2D map's paper tokens. A colour read on each dialog, a field in
   // it, its buttons and a toast is what tells a dark dress from a white
-  // one; a presence check passes either. And an item's name in the
+  // one; a presence check passes either. And a story's name in the
   // inspector's head is typed in place, but showed its box only on hover:
   // at rest it must say it can be edited (a pen and a dotted underline,
-  // like the tour's name).
+  // like the tour's name). A pin's text is typed in the body's text area,
+  // where it can take a second line, so its head holds no field.
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
@@ -1735,8 +1736,9 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   await page.locator("#done-close").click();
   await expect(done).toBeHidden();
 
-  // A new pin: its toast dark, its name typed in the head, with the pen
-  // and the dotted underline at rest.
+  // A new pin: its toast dark, its text typed in the body's text area
+  // (one line or several), the head showing it as text only: no field
+  // there, so no pen.
   await card(page, "The old gate").locator(".pick").click();
   await card(page, "The old gate").locator(".head .add").click();
   await page.locator('#tree-add-menu [data-kind="shortText"]').click();
@@ -1744,9 +1746,24 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCSS("background-color", BG1);
   await expect(toast).toHaveCSS("color", TEXT);
+  const pinText = page.locator('#inspector-body textarea[data-field="title"]');
+  await expect(pinText).toBeVisible();
+  await expect(
+    page.locator("#inspector-body label", { hasText: /^Text$/ }),
+  ).toBeVisible();
+  await expect(page.locator("#shell-inspector .ttl")).toHaveText(
+    await pinText.inputValue(),
+  );
+  await expect(page.locator("#shell-inspector .ttlin")).toHaveCount(0);
+  await capture(page, test.info().outputPath("pin-toast.png"));
+
+  // A new story: its name typed in the head, with the pen and the dotted
+  // underline at rest.
+  await card(page, "The old gate").locator(".pick").click();
+  await page.locator('#shell-inspector [data-act="add-content"]').click();
+  await page.locator('#tree-add-menu [data-kind="story"]').click();
   const name = page.locator("#shell-inspector .ttlin");
   await expect(name).toBeVisible();
-  await capture(page, test.info().outputPath("pin-toast.png"));
   await name.evaluate((el) => /** @type {HTMLElement} */ (el).blur());
   await page.mouse.move(700, 450);
   const rest = await name.evaluate((el) => {

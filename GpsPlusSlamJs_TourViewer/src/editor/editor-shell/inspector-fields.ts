@@ -65,11 +65,6 @@ export function labelled(
   return row;
 }
 
-/** Whether `value` holds a line break. */
-export function severalLines(value: string): boolean {
-  return /[\r\n]/.test(value);
-}
-
 /** `value` on one line: each run of line breaks, with the spaces around
  *  it, one space (a value of one line unchanged). */
 export function oneLine(value: string): string {

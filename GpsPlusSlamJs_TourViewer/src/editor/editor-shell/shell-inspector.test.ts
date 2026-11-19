@@ -1412,8 +1412,11 @@ describe("drawInspector", () => {
     expect(ground()).not.toBe(button);
   });
 
-  // Why: a pin's words are its title; they are typed where the title is.
-  it("offers a pin's text in the head", () => {
+  // Why: a pin's words are typed in the body's text area whatever their
+  // lines, as a station's description is: a one-line field in the head
+  // would leave no way to give a pin a second line. The head names the
+  // text as text only, so there is one field of it, never two.
+  it("types a pin's text of one line in the body's text area labelled Text, the head showing it as text", () => {
     drawInspector(
       dock,
       buildInspector({
@@ -1439,8 +1442,17 @@ describe("drawInspector", () => {
       { folded: false, positionOpen: false },
       pictures,
     );
-    expect(input("title")?.value).toBe("Look up");
-    expect(input("title")?.getAttribute("aria-label")).toBe("Pin text");
+    const fieldsNamed = dock.root.querySelectorAll('[data-field="title"]');
+    expect(fieldsNamed).toHaveLength(1);
+    const area = fieldsNamed[0];
+    if (!(area instanceof HTMLTextAreaElement)) throw new Error("no area");
+    expect(dock.body.contains(area)).toBe(true);
+    expect(area.labels[0]?.textContent).toBe("Text");
+    expect(area.value).toBe("Look up");
+    expect(area.defaultValue).toBe(area.value);
+    // The head: the text in words, no field, no pen.
+    expect(dock.head.querySelector("input, textarea")).toBeNull();
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe("Look up");
   });
 
   // Why: a pin's text is a short text's caption, which the tour file caps
@@ -1473,9 +1485,8 @@ describe("drawInspector", () => {
       pictures,
     );
     const title = input("title");
-    const count = dock.body.querySelector("output.pad");
+    const count = dock.body.querySelector("#inspector-pin-count");
     expect(count?.textContent).toBe("7 / 40");
-    expect(count?.id).not.toBe("");
     expect(title?.getAttribute("aria-describedby")).toBe(count?.id);
     if (title === null || title === undefined) throw new Error("no field");
     title.value = "y".repeat(41);
@@ -1484,7 +1495,7 @@ describe("drawInspector", () => {
     expect(count?.hasAttribute("data-over")).toBe(true);
     // A station's name is not a pin's text: no count.
     draw("station:steps");
-    expect(dock.body.querySelector("output.pad")).toBeNull();
+    expect(dock.root.querySelector("#inspector-pin-count")).toBeNull();
   });
 
   // Why: lowering a radius under its items leaves them where they are;
@@ -1916,9 +1927,6 @@ describe("drawInspector", () => {
     expect(count?.hasAttribute("data-over")).toBe(true);
     // No word of another page to edit it on.
     expect(dock.root.textContent).not.toContain("2D map");
-    // A one-line text stays the head's field to type in.
-    draw("station:steps");
-    expect(input("title")?.readOnly).toBe(false);
   });
 
   // Why: the 3D inspector is the only place that edits a station's name
