@@ -4,11 +4,8 @@ import { parseOverpassJson } from "../model/overpass-parser.js";
 import { loadSite } from "../test-utils/load-fixtures.js";
 import { median } from "../utils/median.js";
 import { buildCity, type CityOptions } from "./city.js";
-import {
-  DEFAULT_CITY_COLOUR_SCHEME,
-  type CityColourScheme,
-} from "./colour-scheme.js";
 import { enuFrameAt } from "./enu.js";
+import { FOUR_LOOKS } from "../test-utils/rule-looks.js";
 
 /**
  * What baking looks (`CityOptions.looks`) adds to a full city build, against
@@ -20,7 +17,9 @@ import { enuFrameAt } from "./enu.js";
  * looks). If it grows towards a second build, the design (geometry once) has
  * regressed. The options are the OSM demo's full pass: roads, cosmetic trees,
  * the ground tint and invented roofs. Two dense sites, Cologne's cathedral
- * and Heidelberg's old town.
+ * and Heidelberg's old town. The looks are the rule looks of the property
+ * test (material walls, tower rules, jitter, roads by surface on), not tone
+ * shifts: the rules are where a looks build pays.
  *
  * INTERLEAVED, NOT ONE BENCH PER CASE: run one after the other, tinybench's
  * cases differ by JIT warm-up and GC state as much as by the work (a first
@@ -35,26 +34,7 @@ const WARMUP_ROUNDS = 2;
 
 const SITES = ["cologne-cathedral", "heidelberg-altstadt"] as const;
 
-/** A look whose colour lists and one rule differ from the default's. */
-function variant(delta: number, flip: boolean): CityColourScheme {
-  const shift = (rgb: number): number => (rgb + delta) & 0xffffff;
-  const d = DEFAULT_CITY_COLOUR_SCHEME;
-  return {
-    ...d,
-    walls: d.walls.map(shift),
-    flatRoofs: d.flatRoofs.map(shift),
-    pitchedRoofs: d.pitchedRoofs.map(shift),
-    honourColourTags: flip ? !d.honourColourTags : d.honourColourTags,
-    ground: shift(d.ground),
-  };
-}
-
-const LOOKS: readonly CityColourScheme[] = [
-  DEFAULT_CITY_COLOUR_SCHEME,
-  variant(0x101010, true),
-  variant(0x202020, false),
-  variant(0x303030, true),
-];
+const LOOKS = FOUR_LOOKS;
 
 const CASES: readonly (readonly [string, Partial<CityOptions>])[] = [
   ["one scheme", {}],

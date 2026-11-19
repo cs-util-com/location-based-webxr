@@ -17,7 +17,9 @@
   throw `RangeError`.
 - **The ground tint can mix its looks on the GPU** (`three`):
   `groundClassTexture` and `groundPaletteTexture` give the class raster
-  (R8, nearest) and the looks' palettes (one row per look); on a tint with
-  `lookPalettes`, `applyGroundTint` draws from them and mixes the looks by
-  `AppliedGroundTint.setLookWeights`. `setNeutral` sets the colour the tint
-  fades to at its edge, on either kind of tint.
+  (R8, nearest) and the mixed palette (one linear float row); on a tint
+  with `lookPalettes`, `applyGroundTint` filters four class texels by hand
+  through that palette, so a magnified class edge looks as the fixed tint's
+  does, and `AppliedGroundTint.setLookWeights` re-mixes the palette.
+  `setNeutral` sets the colour the tint fades to at its edge, on either
+  kind of tint.

@@ -27,8 +27,8 @@ export interface AppliedGroundTint {
    */
   setLookWeights(weights: readonly number[]): void;
   /**
-   * The neutral the tint fades to at the window edge (and, without looks,
-   * the one it is off at), sRGB 0xRRGGBB. RangeError for anything else.
+   * The neutral the tint fades to at the window edge, and the one it is off
+   * at, sRGB 0xRRGGBB. RangeError for anything else.
    */
   setNeutral(rgb: number): void;
   /** Frees the textures and gives the material back its own shader and colour. */
@@ -99,31 +99,62 @@ export function groundClassTexture(tint: GroundTint): THREE.DataTexture {
 }
 
 /**
- * The palettes of a tint built with looks: row k is `lookPalettes[k]`, one
- * sRGB texel per palette entry, `MAX_CITY_LOOKS` rows (rows past the last
- * look repeat row 0; their weight is 0). RangeError without look palettes,
- * with more than `MAX_CITY_LOOKS`, or with rows of different lengths.
+ * The MIXED palette of a tint built with looks: one linear RGBA float texel
+ * per palette entry, a single row, holding look 0's palette until
+ * `setLookWeights` writes a mix into it. Mixed on the CPU (a palette is a
+ * few dozen entries) so the shader fetches one texel per class sample, which
+ * is what lets it filter four of them by hand. RangeError without look
+ * palettes, with more than `MAX_CITY_LOOKS`, or with rows of different
+ * lengths.
  */
 export function groundPaletteTexture(tint: GroundTint): THREE.DataTexture {
-  const palettes = checkedLookPalettes(tint);
-  const first = palettes[0] ?? [];
-  const width = first.length;
-  const rgba = new Uint8Array(width * MAX_CITY_LOOKS * 4);
-  for (let k = 0; k < MAX_CITY_LOOKS; k++) {
-    const row = palettes[k] ?? first;
-    for (let i = 0; i < width; i++) {
-      const rgb = row[i] ?? 0;
-      const at = (k * width + i) * 4;
-      rgba[at] = (rgb >> 16) & 0xff;
-      rgba[at + 1] = (rgb >> 8) & 0xff;
-      rgba[at + 2] = rgb & 0xff;
-      rgba[at + 3] = 255;
-    }
-  }
-  const texture = new THREE.DataTexture(rgba, width, MAX_CITY_LOOKS);
-  texture.colorSpace = THREE.SRGBColorSpace;
+  const palettes = linearPalettes(checkedLookPalettes(tint));
+  const width = (palettes[0]?.length ?? 0) / 4;
+  const texture = new THREE.DataTexture(
+    new Float32Array(width * 4),
+    width,
+    1,
+    THREE.RGBAFormat,
+    THREE.FloatType,
+  );
   nearestData(texture);
+  mixGroundPalette(texture, palettes, [1]);
   return texture;
+}
+
+/** Each look's palette as linear RGBA floats (alpha 1). */
+function linearPalettes(
+  palettes: readonly (readonly number[])[],
+): Float32Array[] {
+  const colour = new THREE.Color();
+  return palettes.map((row) => {
+    const out = new Float32Array(row.length * 4);
+    row.forEach((rgb, i) => {
+      colour.setHex(rgb, THREE.SRGBColorSpace);
+      out.set([colour.r, colour.g, colour.b, 1], i * 4);
+    });
+    return out;
+  });
+}
+
+/**
+ * Writes `sum(weights[k] * palettes[k])` into the palette texture's data
+ * (a missing weight is 0) and marks it for upload.
+ */
+function mixGroundPalette(
+  texture: THREE.DataTexture,
+  palettes: readonly Float32Array[],
+  weights: readonly number[],
+): void {
+  const out = texture.image.data as Float32Array;
+  out.fill(0);
+  palettes.forEach((row, k) => {
+    const w = weights[k] ?? 0;
+    if (w === 0) return;
+    for (let i = 0; i < out.length; i++)
+      out[i] = (out[i] ?? 0) + w * (row[i] ?? 0);
+  });
+  texture.needsUpdate = true;
 }
 
 /** `tint.lookPalettes` when 1..MAX_CITY_LOOKS rows of one length. */
@@ -177,20 +208,38 @@ function nearestData(texture: THREE.DataTexture): void {
 }
 
 /**
- * The looks mode's paint: the texel's class (nearest; an index past the
- * palette reads as the neutral 0), its colour in each look's palette row
- * (decoded from sRGB by the texture format), mixed by the weights in linear
- * light.
+ * The looks mode's declarations: the two textures and the colour of one
+ * class texel (clamped to the raster, as the fixed texture's clamp-to-edge
+ * wrap; an index past the palette reads as the neutral 0) through the mixed,
+ * linear palette.
+ */
+const LOOKS_DECLARATIONS = [
+  "uniform sampler2D groundClasses;",
+  "uniform sampler2D groundPalette;",
+  "vec3 groundClassColour(ivec2 texel) {",
+  "  ivec2 cells = textureSize(groundClasses, 0);",
+  "  int c = int(texelFetch(groundClasses, clamp(texel, ivec2(0), cells - 1), 0).r * 255.0 + 0.5);",
+  "  if (c >= textureSize(groundPalette, 0).x) c = 0;",
+  "  return texelFetch(groundPalette, ivec2(c, 0), 0).rgb;",
+  "}",
+];
+
+/**
+ * The looks mode's paint: BILINEAR BY HAND over the four class texels
+ * around the sample, each mapped to its colour first, so a class edge blends
+ * colours (as the fixed texture's linear filter does) and never indices.
+ * Magnification matches the fixed tint; there are no mips, so far ground
+ * aliases where the fixed tint averages (a renderer's anisotropy cannot apply
+ * to a hand-filtered sample).
  */
 const LOOKS_PAINT = [
-  "ivec2 groundCells = textureSize(groundClasses, 0);",
-  "ivec2 groundTexel = clamp(ivec2(floor(groundUv * vec2(groundCells))), ivec2(0), groundCells - 1);",
-  "int groundClass = int(texelFetch(groundClasses, groundTexel, 0).r * 255.0 + 0.5);",
-  "if (groundClass >= textureSize(groundPalette, 0).x) groundClass = 0;",
-  "vec3 groundPaint = groundWeights.x * texelFetch(groundPalette, ivec2(groundClass, 0), 0).rgb",
-  "  + groundWeights.y * texelFetch(groundPalette, ivec2(groundClass, 1), 0).rgb",
-  "  + groundWeights.z * texelFetch(groundPalette, ivec2(groundClass, 2), 0).rgb",
-  "  + groundWeights.w * texelFetch(groundPalette, ivec2(groundClass, 3), 0).rgb;",
+  "vec2 groundAt = groundUv * vec2(textureSize(groundClasses, 0)) - 0.5;",
+  "ivec2 groundCell = ivec2(floor(groundAt));",
+  "vec2 groundFrac = groundAt - floor(groundAt);",
+  "vec3 groundPaint = mix(",
+  "  mix(groundClassColour(groundCell), groundClassColour(groundCell + ivec2(1, 0)), groundFrac.x),",
+  "  mix(groundClassColour(groundCell + ivec2(0, 1)), groundClassColour(groundCell + ivec2(1, 1)), groundFrac.x),",
+  "  groundFrac.y);",
 ];
 
 /**
@@ -219,7 +268,6 @@ interface TintUniforms {
   readonly groundTint: { value: THREE.Texture | null };
   readonly groundClasses: { value: THREE.Texture | null };
   readonly groundPalette: { value: THREE.Texture | null };
-  readonly groundWeights: { value: THREE.Vector4 };
   readonly groundOrigin: { value: THREE.Vector2 };
   readonly groundSize: { value: THREE.Vector2 };
   readonly groundNeutral: { value: THREE.Vector3 };
@@ -246,7 +294,6 @@ function uniformsFor(material: THREE.Material): TintUniforms {
       groundTint: { value: null },
       groundClasses: { value: null },
       groundPalette: { value: null },
-      groundWeights: { value: new THREE.Vector4(1, 0, 0, 0) },
       groundOrigin: { value: new THREE.Vector2() },
       groundSize: { value: new THREE.Vector2() },
       groundNeutral: { value: new THREE.Vector3() },
@@ -259,15 +306,35 @@ function uniformsFor(material: THREE.Material): TintUniforms {
   return uniforms;
 }
 
+/** Points a material's tint uniforms at one tint's textures and window. */
+function pointUniformsAt(
+  uniforms: TintUniforms,
+  tint: GroundTint,
+  textures: ReturnType<typeof tintTextures>,
+  fadeM: number,
+): void {
+  const neutral = new THREE.Color(tint.palette[0] ?? 0);
+  uniforms.groundTint.value = textures.tint ?? null;
+  uniforms.groundClasses.value = textures.classes ?? null;
+  uniforms.groundPalette.value = textures.palette ?? null;
+  uniforms.groundOrigin.value.set(tint.originX, tint.originY);
+  uniforms.groundSize.value.set(
+    tint.width * tint.texelM,
+    tint.height * tint.texelM,
+  );
+  uniforms.groundNeutral.value.set(neutral.r, neutral.g, neutral.b);
+  uniforms.groundFade.value = Math.max(0.01, fadeM);
+}
+
 /**
  * Patches `material` (a lit three material whose world xz plane is east and
  * minus north, the render convention) to draw `tint`. Sets the material's
  * colour to white: the neutral ground comes from the tint's palette, so the
  * ground has one colour owner. Chains an existing `onBeforeCompile`.
  *
- * A tint built with looks (`lookPalettes`) is drawn from the class and
- * palette textures instead, mixed per fragment by `setLookWeights` (look 0
- * alone until then), so the land use cross-fades without a new texture.
+ * A tint built with looks (`lookPalettes`) is drawn from the class raster
+ * and a palette row `setLookWeights` mixes (look 0 alone until then), so the
+ * land use cross-fades by rewriting a few dozen texels, never the raster.
  */
 export function applyGroundTint(
   material: THREE.MeshStandardMaterial | THREE.MeshLambertMaterial,
@@ -280,22 +347,12 @@ export function applyGroundTint(
   }
   const looks = tint.lookPalettes === undefined ? 0 : tint.lookPalettes.length;
   const textures = tintTextures(tint, looks, options.anisotropy);
-  const neutral = new THREE.Color(tint.palette[0] ?? 0);
+  const palettes = linearPalettes(tint.lookPalettes ?? []);
   const previousColour = material.color.clone();
   const uniforms = uniformsFor(material);
   const handle = {};
   uniforms.owner = handle;
-  uniforms.groundTint.value = textures.tint ?? null;
-  uniforms.groundClasses.value = textures.classes ?? null;
-  uniforms.groundPalette.value = textures.palette ?? null;
-  uniforms.groundWeights.value.set(1, 0, 0, 0);
-  uniforms.groundOrigin.value.set(tint.originX, tint.originY);
-  uniforms.groundSize.value.set(
-    tint.width * tint.texelM,
-    tint.height * tint.texelM,
-  );
-  uniforms.groundNeutral.value.set(neutral.r, neutral.g, neutral.b);
-  uniforms.groundFade.value = Math.max(0.01, fadeM);
+  pointUniformsAt(uniforms, tint, textures, fadeM);
   const live = (): boolean => uniforms.owner === handle;
   // THE ORIGINALS ARE KEPT, called with the material as `this`, so dispose
   // restores exactly them: a bound copy would leave one more wrapper behind
@@ -308,7 +365,6 @@ export function applyGroundTint(
       groundTint: uniforms.groundTint,
       groundClasses: uniforms.groundClasses,
       groundPalette: uniforms.groundPalette,
-      groundWeights: uniforms.groundWeights,
       groundOrigin: uniforms.groundOrigin,
       groundSize: uniforms.groundSize,
       groundNeutral: uniforms.groundNeutral,
@@ -332,11 +388,7 @@ export function applyGroundTint(
           "varying vec2 vGroundXZ;",
           ...(looks === 0
             ? ["uniform sampler2D groundTint;"]
-            : [
-                "uniform sampler2D groundClasses;",
-                "uniform sampler2D groundPalette;",
-                "uniform vec4 groundWeights;",
-              ]),
+            : LOOKS_DECLARATIONS),
           "uniform vec2 groundOrigin;",
           "uniform vec2 groundSize;",
           "uniform vec3 groundNeutral;",
@@ -370,8 +422,10 @@ export function applyGroundTint(
   };
   setEnabled(options.enabled !== false);
   const setLookWeights = (weights: readonly number[]): void => {
-    const [x = 0, y = 0, z = 0, w = 0] = checkedLookWeights(weights, looks);
-    if (live()) uniforms.groundWeights.value.set(x, y, z, w);
+    const checked = checkedLookWeights(weights, looks);
+    if (live() && textures.palette !== undefined) {
+      mixGroundPalette(textures.palette, palettes, checked);
+    }
   };
   const setNeutral = (rgb: number): void => {
     if (!Number.isInteger(rgb) || rgb < 0 || rgb > 0xffffff) {

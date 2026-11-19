@@ -1,12 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { OsmFeature } from "../model/osm-feature.js";
+import { FOUR_LOOKS } from "../test-utils/rule-looks.js";
+import { buildBuildings } from "./buildings.js";
 import { buildCity, MAX_CITY_LOOKS, type CityOptions } from "./city.js";
 import {
   DEFAULT_CITY_COLOUR_SCHEME,
   type CityColourScheme,
 } from "./colour-scheme.js";
 import { enuFrameAt } from "./enu.js";
+import type * as BuildingsModule from "./buildings.js";
+
+// The real building pass, counted: "geometry once" below.
+vi.mock("./buildings.js", async (importOriginal) => {
+  const actual: typeof BuildingsModule = await importOriginal();
+  return { ...actual, buildBuildings: vi.fn(actual.buildBuildings) };
+});
 
 /**
  * WHY THESE TESTS MATTER. `looks` is read at the library boundary from a
@@ -101,5 +110,23 @@ describe("buildCity looks validation", () => {
         expect(codes.length).toBe(vertices * 3);
       }
     }
+  });
+});
+
+describe("buildCity looks: geometry once", () => {
+  // WHY THIS TEST MATTERS. The point of baking looks into one build is that
+  // the geometry (the costliest part of a city) is built ONCE, and only the
+  // colour picks repeat per look. A regression that ran the building pass
+  // per look would still pass every colour test and only show as a slower
+  // build, inside the bench's run-to-run noise; this counts the pass.
+  it("runs the building pass once for four looks, as for one scheme", () => {
+    const pass = vi.mocked(buildBuildings);
+    pass.mockClear();
+    build({});
+    expect(pass).toHaveBeenCalledTimes(1);
+    pass.mockClear();
+    const city = build({ looks: FOUR_LOOKS });
+    expect(pass).toHaveBeenCalledTimes(1);
+    expect(city.buildings[0]?.lookColours).toHaveLength(4);
   });
 });
