@@ -325,6 +325,11 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
   const debug = async () =>
     /** @type {any} */ ((await view3d(page))?.globe?.debug ?? null);
   // A step of its own, so the run's report carries how long it took.
+  // Measured on CI: the step took 11.9 s once (its whole test 21.2 s); two
+  // earlier green runs took 16.7 s and 34.9 s for the whole test, which
+  // bounds the step there but does not measure it. 3x the one measured
+  // step (36 s) would leave little room on the slower of those runs, so
+  // the budget stays 90 s, at least 2.5x the slowest whole test.
   await test.step("the debug data read and drawn", async () => {
     await expect.poll(debug, { timeout: 90_000 }).toMatchObject({
       captures: 2,
