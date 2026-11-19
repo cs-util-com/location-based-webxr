@@ -24,8 +24,11 @@ import {
   type SeenStore,
 } from "./characters-panel.js";
 
+const thumbs = vi.hoisted(() => ({
+  crop: (_blob: Blob): Promise<string> => Promise.resolve(""),
+}));
 vi.mock("../characters/character-thumb.js", () => ({
-  cropThumb: () => Promise.resolve(""),
+  cropThumb: (blob: Blob) => thumbs.crop(blob),
   whenMade: () => "made today, 10:00",
 }));
 const readFile = vi.fn();
@@ -256,6 +259,7 @@ function setup(
 
 beforeEach(() => {
   readFile.mockReset();
+  thumbs.crop = () => Promise.resolve("");
 });
 
 describe("opening the list", () => {
@@ -286,6 +290,48 @@ describe("opening the list", () => {
     expect(s.d.pickup.textContent).toContain("Add Max to the tour");
     expect(s.libRow("c2")?.classList.contains("fresh")).toBe(true);
     expect(s.libRow("c2")?.textContent).toContain("New");
+  });
+
+  // Why: on a page just opened the list knows nothing until its first look
+  // is done; saying "No characters on this device yet" meanwhile told an
+  // author whose character was safely saved that it was gone.
+  it("does not say the device has none before its first look is done", async () => {
+    const s = setup({ lib: [record("c1", "Rita")] });
+    let answer = () => {};
+    vi.mocked(s.library.lib.list).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          answer = () => r({ entries: [record("c1", "Rita")], interrupted: 0 });
+        }),
+    );
+    s.panel.open();
+    await settled();
+    expect(s.d.libStatus.textContent).toBe("Looking on this device...");
+    expect(s.d.libList.textContent).not.toContain("No characters");
+    answer();
+    await settled();
+    expect(s.libRow("c1")?.textContent).toContain("Rita");
+  });
+
+  // Why: a thumbnail is cut from the full picture, which on a busy page
+  // (the 3D view drawn in software) took seconds; the list held its old
+  // rows, the "none yet" line among them, until every thumbnail was made.
+  it("shows the characters as soon as the look is done, the thumbnails following", async () => {
+    let cut = (_url: string) => {};
+    thumbs.crop = () => new Promise((r) => (cut = r));
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.panel.open();
+    await settled();
+    expect(s.libRow("c1")?.textContent).toContain("Rita");
+    expect(s.libRow("c1")?.querySelector("[data-add]")).not.toBeNull();
+    expect(
+      s.libRow("c1")?.querySelector("img")?.getAttribute("src"),
+    ).toBeNull();
+    cut("data:image/png;base64,AAAA");
+    await settled();
+    expect(s.libRow("c1")?.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,AAAA",
+    );
   });
 
   it("says in the list when the library cannot be read", async () => {
