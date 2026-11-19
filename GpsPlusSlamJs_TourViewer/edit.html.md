@@ -123,7 +123,10 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - `#open-fineprint` - what Save does, written per browser by
   `edit-main.ts` (`saveFinePrint`); the markup's text is the one for a
   browser without the file picker. A span inside the fine print, beside
-  its Privacy link (`/legal/#privacy`, the site-wide page).
+  its Privacy link (`/legal/#privacy`, the site-wide page) and the
+  "Back to the tour page" link (`back-to-tour-page`, `./`, so it reaches
+  the viewer's own index wherever the site serves it; the editor's
+  `beforeunload` guard still asks before unsaved changes go).
 - `#details-modal` - "Tour details" (W2 of the tour editor plan
   2026-10-17-1816): `#details-form` with `#details-name` (the format keeps
   80 characters), `#details-description` (2000), `#details-covers` (the

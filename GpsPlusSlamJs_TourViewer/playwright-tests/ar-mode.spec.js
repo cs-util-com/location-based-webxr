@@ -496,7 +496,7 @@ test("camera frames flow through the foundation and surface in the status line",
   // containText, not exact: the viewer QR pipeline appends its own status
   // segment to the same line once frames start flowing (M4).
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Visitor mode — AR running · 3 camera frames",
+    "Visitor mode - AR running · 3 camera frames",
   );
 });
 
