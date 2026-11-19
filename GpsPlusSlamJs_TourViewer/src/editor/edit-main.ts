@@ -89,6 +89,12 @@ import {
   revokeDebugThumbnail,
   type DebugLayer,
 } from "./debug-capture-layer.js";
+import {
+  debugLayerActions,
+  debugLayerReducer,
+  selectDebugLayer,
+} from "./debug-layer-slice.js";
+import { createDebugThumbs } from "./debug-thumbs.js";
 import { walkAfterDraw, walkAtLayerStart } from "./tour-walk-kept.js";
 import {
   FOLDER_PREFIX,
@@ -104,6 +110,7 @@ import {
   folderName,
   plainFolderOf,
 } from "./folder-commands.js";
+import { NEW_STATION_PLACE } from "./editor-shell/add-palette-model.js";
 import { storyRows } from "./editor-shell/tree-model.js";
 import { applyPlaceEdit, type PlaceEdit } from "../placement/place-edits.js";
 import { askMove, moveNote } from "../move-question.js";
@@ -439,6 +446,7 @@ function element<T extends HTMLElement>(id: string): T {
 // runs once a store exists).
 const store = createTourViewerStore(undefined, {
   editorView: editorViewReducer,
+  debugLayer: debugLayerReducer,
   ...EDITOR_SESSION_SLICES,
 });
 
@@ -535,6 +543,12 @@ const keepWalk = element<HTMLButtonElement>("file-keep-walk");
 /** The debug layer's switch (View's "Show debug data") and its line
  *  (`debug-capture-layer.ts`). */
 const debugPanel = element("debug-panel");
+/** Where the debug panel stands in the page over the map
+ *  (`placeDebugPanel`). */
+const debugPanelHome = {
+  parent: debugPanel.parentElement ?? document.body,
+  next: debugPanel.nextElementSibling,
+};
 const debugSwitch = element<HTMLButtonElement>("view-debug");
 /** The View menu's Real time: the globe view's clock (the globe view only). */
 const realTimeSwitch = element<HTMLButtonElement>("view-realtime");
@@ -1676,20 +1690,42 @@ function deleteStoryEntry(id: string, story: TourStory): void {
  * Copy a note, a story (`story:<id>`, right after itself), a folder with
  * everything in it (`folder:<id>`), or a station with its notes, beside
  * itself (the bar's Duplicate, the 3D view's Ctrl+D): one step; the copy
- * is selected and a toast names it. A photo's picture is read first; a
- * tour switched meanwhile drops the result.
+ * is selected and a toast names it. A photo's picture is read first,
+ * said by a held toast: another Duplicate meanwhile makes nothing; a tour
+ * switched meanwhile drops the result. A story's entry has no Duplicate
+ * (the bar offers none), so its Ctrl+D does nothing.
  */
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
-  if (mine === null) return;
+  if (mine === null || ui().duplicating) return;
   if (id.startsWith(STORY_PREFIX)) {
     duplicateStorySelection(id.slice(STORY_PREFIX.length));
     return;
   }
-  if (id.startsWith(FOLDER_PREFIX)) {
-    await duplicateFolderSelection(mine, id.slice(FOLDER_PREFIX.length));
-    return;
+  const tour = manifestToWrite(store.getState().tourDocument);
+  if (tour !== null && tourChildPlace(tour, id)?.story !== undefined) return;
+  store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
+  const working = toast("Duplicating...", undefined, null, false);
+  working.setAttribute("aria-busy", "true");
+  try {
+    if (id.startsWith(FOLDER_PREFIX)) {
+      await duplicateFolderSelection(mine, id.slice(FOLDER_PREFIX.length));
+    } else {
+      await duplicateItemSelection(mine, id);
+    }
+  } finally {
+    working.remove();
+    store.dispatch(
+      editorViewActions.duplicatingChanged({ duplicating: false }),
+    );
   }
+}
+
+/** A note or a station (`station:<id>`) copied beside itself. */
+async function duplicateItemSelection(
+  mine: EditorSession,
+  id: string,
+): Promise<void> {
   const called = itemCalled(id);
   endUndo();
   const outcome = id.startsWith(STATION_PREFIX)
@@ -2493,7 +2529,7 @@ function showNewStation(stationId: string, said: (title: string) => string) {
 }
 
 /**
- * A new station at `at` (the 3D tree's "+" at the view's centre, or the
+ * A new station at `at` (the 3D tree's "+" under the camera, or the
  * ground menu's "New station here"): one step; a refusal is said.
  */
 function addStationAt(at: GroundPlace, where: "centre" | "here"): void {
@@ -2508,7 +2544,7 @@ function addStationAt(at: GroundPlace, where: "centre" | "here"): void {
   showNewStation(
     outcome.stationId,
     (title) =>
-      `Added "${title}" ${where === "centre" ? "at the centre of the view" : "here"}`,
+      `Added "${title}" ${where === "centre" ? NEW_STATION_PLACE : "here"}`,
   );
 }
 
@@ -2892,12 +2928,16 @@ function leaveFile(): void {
   forgetAddedDebug();
   debugPanel.hidden = true;
   debugSwitch.hidden = true;
-  debugStatus.textContent = "";
+  store.dispatch(debugLayerActions.statusSaid({ line: "" }));
 }
 
 /** The open tour's debug layer: view state only, never in the tour
- *  document, a save or the draft. */
+ *  document, a save or the draft. What it drew and its switch are the
+ *  store's (`debugLayer`), which the map and the 3D view both draw. */
 let debugLayer: DebugLayer | null = null;
+/** Its decoded thumbnails, keyed as the store's captures: decoded
+ *  pictures stay out of the store. */
+const debugThumbs = createDebugThumbs();
 /** The opened file, when it carries a walk: the layer's source unless
  *  debug data was added. */
 let tourWalk: TourSession | null = null;
@@ -2965,10 +3005,14 @@ function startDebugLayer(): void {
   walkGeo = walkAtLayerStart(walkGeo, addedDebug !== null);
   const from = debugSource();
   debugSwitch.hidden = from === null;
-  debugStatus.textContent = from?.line ?? "";
+  store.dispatch(debugLayerActions.statusSaid({ line: from?.line ?? "" }));
   if (from === null) return;
-  setChecked(debugSwitch, true);
-  const layer = createDebugCaptureLayer<HTMLElement>({
+  store.dispatch(
+    debugLayerActions.started({
+      source: addedDebug !== null ? "added" : "walk",
+    }),
+  );
+  const layer = createDebugCaptureLayer<HTMLImageElement>({
     read: (options) => debugCapturesOf(from.source, options),
     loadPicture: from.loadPicture,
     pictureProblem,
@@ -2976,21 +3020,38 @@ function startDebugLayer(): void {
     view: {
       draw: (captures) => {
         walkGeo = walkAfterDraw(walkGeo, from.source, tourWalk, captures);
+        debugThumbs.clear();
+        store.dispatch(
+          debugLayerActions.drawn({
+            captures: captures.map((c) => ({
+              image: c.image,
+              lat: c.geo.lat,
+              lon: c.geo.lon,
+              alt: c.geo.alt,
+            })),
+          }),
+        );
         map.debugDraw(captures);
       },
       thumb: (image, picture) => {
+        debugThumbs.set(image, picture);
         map.debugThumb(image, picture);
       },
       visible: (on) => {
         map.debugVisible(on);
       },
       clear: () => {
+        debugThumbs.clear();
+        store.dispatch(debugLayerActions.cleared());
         map.debugClear();
       },
     },
     status: (line) => {
-      debugStatus.textContent =
-        from.line === null ? line : `${from.line} ${line}`;
+      store.dispatch(
+        debugLayerActions.statusSaid({
+          line: from.line === null ? line : `${from.line} ${line}`,
+        }),
+      );
     },
     discard: revokeDebugThumbnail,
   });
@@ -4302,10 +4363,24 @@ keepWalk.addEventListener("click", () => {
   setChecked(keepWalk, !isChecked(keepWalk));
 });
 // The debug layer's switch: view state only - no edit, nothing pending.
+// The store holds it and the panel's status line; the switch, the line
+// and the layer follow the store.
 debugSwitch.addEventListener("click", () => {
-  const on = !isChecked(debugSwitch);
-  setChecked(debugSwitch, on);
-  debugLayer?.setVisible(on);
+  store.dispatch(
+    debugLayerActions.shownChanged({
+      on: !selectDebugLayer(store.getState()).shown,
+    }),
+  );
+});
+let debugShownDrawn = selectDebugLayer(store.getState()).shown;
+setChecked(debugSwitch, debugShownDrawn);
+store.subscribe(() => {
+  const { shown, status } = selectDebugLayer(store.getState());
+  if (debugStatus.textContent !== status) debugStatus.textContent = status;
+  if (shown === debugShownDrawn) return;
+  debugShownDrawn = shown;
+  setChecked(debugSwitch, shown);
+  debugLayer?.setVisible(shown);
 });
 // "Add debug data…": its file input, or a file dropped on the panel. The
 // document's own drop guard keeps the browser from opening the file.
@@ -4957,6 +5032,24 @@ element("open-fineprint").textContent = saveFinePrint(
  * with nothing positioned is no failure: its line passes.
  */
 const view3dBox = element("view3d");
+
+/** Over the 3D view the debug panel stands in the view itself, at its
+ *  foot on the left (the docking takes it into the view's pane with the
+ *  map controls, `dock-host.ts`), so the docks around the view never
+ *  cover it nor it them; over the map it is back in its place in the
+ *  page. A focus inside it is kept. */
+function placeDebugPanel(in3d: boolean): void {
+  if (in3d === view3dBox.contains(debugPanel)) return;
+  const focused = document.activeElement;
+  if (in3d) view3dBox.append(debugPanel);
+  else {
+    const { parent, next } = debugPanelHome;
+    parent.insertBefore(debugPanel, next?.parentNode === parent ? next : null);
+  }
+  if (focused instanceof HTMLElement && debugPanel.contains(focused)) {
+    focused.focus({ preventScroll: true });
+  }
+}
 let view3dFailureToast: HTMLElement | null = null;
 
 /** A content entry of the open tour, from the copy the page reads now. */
@@ -5088,8 +5181,12 @@ const globeSwitch = readGlobeSwitch(location.search);
 /** True from a 3D open with an approach until its bar goes: the shell
  *  keeps the tree folded meanwhile and unfolds it at the landing. */
 let approachHolds = false;
-/** The globe view's approach and the recorded walk. */
-function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
+/** The globe view's approach, the recorded walk and the debug layer's
+ *  thumbnails. */
+function globeOpening(): Pick<
+  Editor3dDeps,
+  "approach" | "walk" | "debugThumbs"
+> {
   const approach = takeApproach();
   approachHolds = approach !== undefined;
   return {
@@ -5105,6 +5202,7 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
           },
         }),
     walk: () => walkGeo,
+    debugThumbs,
   };
 }
 /** Local storage where the browser allows it (a private window may not). */
@@ -5228,6 +5326,7 @@ const viewSwitch = createViewSwitch({
     // The page's look follows the view: the studio's dark shell in 3D
     // (`editor-shell.css`), the paper map page otherwise.
     document.body.dataset["view"] = on ? "3d" : "2d";
+    placeDebugPanel(on);
     // Covered by the 3D view, the map's markers and controls leave the
     // tab order and the accessibility tree - and stay out while the
     // failure's page covers it: a view that stops after it showed leaves

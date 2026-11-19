@@ -61,11 +61,49 @@ body:not([data-view="3d"]) #shell-bar > :not(#save-status, #view-loading) {
   display: none !important;
 }
 
-/* What belongs to the map is not shown over the 3D view (View's "Show
- * debug data" too: only the map draws the debug layer yet). */
-body[data-view="3d"]
-  :is(#rail, #card, #debug-panel, #offscreen-chip, #view-debug) {
+/* What belongs to the map is not shown over the 3D view. */
+body[data-view="3d"] :is(#rail, #card, #offscreen-chip) {
   display: none !important;
+}
+
+/* The debug panel over the 3D view (its layer draws on the globe too)
+ * stands in the view itself (`edit-main.ts` moves it there while the 3D
+ * view shows), at its foot on the left, across from the map controls.
+ * Docked it is in the view's pane (`dock-host.ts`), so whatever the docks
+ * around the view do (a bottom group open, a splitter moved, a phone's
+ * group beside the view) it stays inside the view. Undocked (while the
+ * docking loads, or where it failed) it stands right of an open tree and
+ * clear of the docks on the right, over the bottom panel while it is
+ * open. On a phone the docks are sheets over the canvas's foot: the panel
+ * is not shown there, File's "Add debug data" and View's switch reach the
+ * same layer. */
+#view3d .debug-panel {
+  position: absolute;
+  right: auto;
+  bottom: calc(14px + var(--s-panel-h, 0px));
+  left: calc(var(--s-view-left, 0px) + 12px);
+  z-index: 4;
+  max-width: min(
+    320px,
+    calc(100% - var(--s-view-left, 0px) - var(--s-view-right, 0px) - 24px)
+  );
+}
+
+/* Docked, the map controls stand at the pane's other foot corner: the
+ * panel leaves their width free (122 px measured, with a 12 px gap), or
+ * on a narrow pane (a phone held sideways, just above the width that
+ * hides the panel) a long status line widens it over them
+ * (`editor3d-docking.spec.js` measures both). */
+#view3d.docked .dock-pane-view .debug-panel {
+  bottom: 14px;
+  left: 12px;
+  max-width: min(320px, calc(100% - 24px - 134px));
+}
+
+@media (width <= 700px) {
+  #view3d .debug-panel {
+    display: none;
+  }
 }
 
 svg.i {
@@ -4637,7 +4675,8 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
  * colour. */
 .backdrop,
 #toasts,
-#view3d-failed {
+#view3d-failed,
+body[data-view="3d"] .debug-panel {
   --ink: var(--s-text);
   --ink-dim: var(--s-muted);
   --ink-faint: var(--s-dim);
@@ -4692,6 +4731,7 @@ body[data-view="3d"] #toasts {
 
 .backdrop :is(.btn, .drop, .cover-choice),
 #view3d-failed .btn,
+#view3d .debug-panel .btn,
 .backdrop .link-row input,
 .backdrop .details :is(input[type="text"], textarea),
 .backdrop .done select {
@@ -4701,7 +4741,8 @@ body[data-view="3d"] #toasts {
 }
 
 .backdrop .btn:hover:not(:disabled),
-#view3d-failed .btn:hover:not(:disabled) {
+#view3d-failed .btn:hover:not(:disabled),
+#view3d .debug-panel .btn:hover:not(:disabled) {
   border-color: var(--s-muted);
   background-color: var(--s-bg3);
 }

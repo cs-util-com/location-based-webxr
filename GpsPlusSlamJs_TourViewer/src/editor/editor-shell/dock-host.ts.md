@@ -192,9 +192,12 @@ are not part of the page's first load.
   layout to 140 px wide / 90 px high (not a group folded meanwhile), since a plain size is overruled by
   the relayout a constraint change starts. The bottom group starts hidden
   and gets its first height when first shown.
-- The canvas, the model's notes and the map controls move into the 3D
-  view's panel; a mutation observer moves those the view adds later (a
-  new canvas). Moving a canvas keeps its WebGL context.
+- The canvas, the model's notes, the map controls and the debug panel
+  (`#debug-panel`, which `edit-main.ts` puts in the view box only while
+  the 3D view shows and takes back to the page over the map) move into
+  the 3D view's panel; a mutation observer moves those the view adds later (a
+  new canvas, the debug panel put back into the view box). Moving a canvas
+  keeps its WebGL context; a focus inside a moved part is kept (`holdFocus`).
 - While the details hold the long text's writer (their `lw` class, `lw-wide`
   when wider) their group takes `writerWidthPx`, and gets back the width it
   had once the writer goes (the new window's column width after a window
@@ -268,3 +271,6 @@ dock.dispose();
   behind another tab (Details behind Files, the list dragged beside
   Files) keeping its scroll, its folds and a half-typed field; the shelf
   spec covers a file added while Files is hidden.
+- The same spec holds the debug panel inside the 3D view's pane with the
+  bottom group open at 1280 x 800 and on a phone held sideways (844 x
+  390), back in the page over the map, and over the canvas undocked.

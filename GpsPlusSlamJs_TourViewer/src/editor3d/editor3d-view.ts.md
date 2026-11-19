@@ -18,7 +18,10 @@ loading it: the view itself arrives by a dynamic `import()`.
   view shows (`events.contextLost`, `events.failed`), the page's edits
   (`edits`: commit, select, remove, duplicate, say, the ground menu, a
   model's own edit, whether a key is free), the optional approach (with
-  its `ended` callback) and the recorded walk (`walk`).
+  its `ended` callback), the recorded walk (`walk`) and the debug
+  layer's thumbnails (`debugThumbs`, `debug-thumbs.ts`). The store it
+  reads may carry the `debugLayer` slice (`debug-layer-slice.ts`); a
+  page without it draws no debug layer.
 - `Editor3dView` - the shown view:
   - the camera's verbs the shell and the page's checks use: `flyTo`,
     `lookFrom`, `frame`, `setTop`, `zoom`, `northUp`, `setTilt`,

@@ -86,11 +86,15 @@ describe('test-changed on a committed merge', { timeout: 60_000 }, () => {
     return { status: result.status, out: `${result.stdout}${result.stderr}` };
   };
 
+  // The describe's timeout covers its tests only; a hook keeps vitest's 10 s
+  // default, which these ten git calls missed on a loaded machine. Only what
+  // the CLI can import is copied: no tests, sidecars or fixtures.
   beforeAll(() => {
     repo = mkdtempSync(path.join(os.tmpdir(), 'test-changed-merge-'));
     cpSync(SCRIPTS_DIR, path.join(repo, 'scripts'), {
       recursive: true,
-      filter: (source) => !/\.(test\.mjs|md)$/.test(source),
+      filter: (source) =>
+        !/\.(test\.mjs|md)$/.test(source) && !source.includes('__test-fixtures__'),
     });
     mkdirSync(path.join(repo, 'Pkg'));
     writeFileSync(path.join(repo, 'pnpm-workspace.yaml'), 'packages:\n  - Pkg\n');
@@ -103,7 +107,7 @@ describe('test-changed on a committed merge', { timeout: 60_000 }, () => {
     git('checkout', '-b', 'feature', 'main');
     commitFile('feature.txt');
     git('merge', '--no-ff', '-m', 'merge side', 'side');
-  });
+  }, 60_000);
 
   afterAll(() => {
     rmSync(repo, { recursive: true, force: true });

@@ -144,9 +144,10 @@ still from a press on the gizmo until its release (T and Home
 waiting), the gizmo's on-screen sizes at four window sizes; on the
 globe, `editor3d-globe.spec.js` drags a station's middle handle (one
 edit, the camera and the world frame held still). Two fingers are the
-globe's camera controls' own (pinch, twist and tilt); the page's e2e holds
-only that a second finger cancels a drag, and no test here drives those
-gestures on a real tablet.
+globe's camera controls' own (pinch, twist and tilt); the editing's e2e
+holds only that a second finger cancels a drag (`editor3d-globe.spec.js`
+drives the pinch, emulated), and no test here drives those gestures on a
+real tablet.
 
 The lock's parts are tested where they live (`gizmo-maths`, `gesture`, `editor3d-input`); the page's e2e (`editor3d-edit.spec.js`) checks the gizmo and the keys of a locked and an unlocked station.
 

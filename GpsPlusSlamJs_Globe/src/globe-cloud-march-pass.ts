@@ -50,6 +50,8 @@ const MID_KM = 0.5 * (CLOUD_MARCH_LAYER.baseKm + CLOUD_MARCH_LAYER.topKm);
 /** The light the haze leaves where the clouds start to fade, and end. */
 const HAZE_FADE = 0.1;
 const HAZE_END = 0.01;
+/** Checks of a compile before the first draw takes over (10 ms apart, about 5 s). */
+const COMPILE_MAX_TRIES = 500;
 
 /** A mipped, repeating tile of bytes. */
 function tile2d(data: Uint8Array, size: number): THREE.DataTexture {
@@ -474,15 +476,19 @@ export function createGlobeCloudMarch(
       compiled = true;
       return;
     }
+    let tries = 0;
     const check = () => {
       if (disposed) return;
+      tries += 1;
       for (const m of pending) {
         const { currentProgram: program } = renderer.properties.get(m) as {
           currentProgram?: { isReady(): boolean };
         };
         if (program === undefined || program.isReady()) pending.delete(m);
       }
-      if (pending.size === 0) compiled = true;
+      // A lost context never links: after about 5 s the first draw decides
+      // (the Tour Viewer's `whenReady` gives up after the same 500).
+      if (pending.size === 0 || tries >= COMPILE_MAX_TRIES) compiled = true;
       else setTimeout(check, 10);
     };
     check();

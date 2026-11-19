@@ -472,8 +472,17 @@
       };
       const qs = new URLSearchParams(location.search);
       for (const k of Object.keys(P)) {
-        if (qs.has(k)) {
-          P[k] = typeof P[k] === "number" ? Number(qs.get(k)) : qs.get(k);
+        if (!qs.has(k)) {
+          continue;
+        }
+        if (typeof P[k] !== "number") {
+          P[k] = qs.get(k);
+          continue;
+        }
+        // A value that is no number (?flight=3s) keeps the default.
+        const v = Number(qs.get(k));
+        if (Number.isFinite(v)) {
+          P[k] = v;
         }
       }
       // Reach plus let-go never exceeds half the spacing, so two answers can never both be in reach.

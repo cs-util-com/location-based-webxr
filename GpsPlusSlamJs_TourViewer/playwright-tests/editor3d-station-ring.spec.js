@@ -119,7 +119,6 @@ test("a station's found radius is drawn and seen from above over relief standing
   await expect(names).toHaveAttribute("aria-pressed", "false");
   await page.keyboard.press("t");
   await expect.poll(async () => (await view3d(page))?.top).toBe(true);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   await page.evaluate(
     (m) => /** @type {any} */ (window).__tourEditor.view3dDistance(m),
     TOP_DISTANCE_M,

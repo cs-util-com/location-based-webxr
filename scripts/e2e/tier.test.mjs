@@ -38,6 +38,22 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 
+/**
+ * Removes a throwaway suite's folder. On Windows a Playwright worker the
+ * hung-run test left behind can hold it for a moment after the CLI ended
+ * (EPERM, EBUSY), so the removal retries; a folder still held after that
+ * stays in the temp dir, since a teardown is not what these tests check.
+ * @param {string} dir
+ */
+function removeTemp(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  } catch (error) {
+    const code = /** @type {NodeJS.ErrnoException} */ (error).code;
+    if (code !== 'EPERM' && code !== 'EBUSY') throw error;
+  }
+}
+
 /** @param {RegExp[] | undefined} grep @param {string} line */
 const selects = (grep, line) => grep === undefined || grep.some((re) => re.test(line));
 
@@ -354,7 +370,7 @@ describe('a hung run under the limit, in Playwright itself', () => {
   const playwright = pathToFileURL(path.join(path.dirname(cli), 'index.mjs')).href;
   const tier = pathToFileURL(path.join(HERE, 'tier.mjs')).href;
   const dir = mkdtempSync(path.join(os.tmpdir(), 'e2e-hang-'));
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => removeTemp(dir));
   writeFileSync(
     path.join(dir, 'pw.config.mjs'),
     `import { defineConfig } from ${JSON.stringify(playwright)};\n` +
@@ -404,7 +420,7 @@ describe('an empty tier selection fails in Playwright itself', () => {
   const playwright = pathToFileURL(path.join(path.dirname(cli), 'index.mjs')).href;
   const tier = pathToFileURL(path.join(HERE, 'tier.mjs')).href;
   const dir = mkdtempSync(path.join(os.tmpdir(), 'e2e-tier-'));
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  afterAll(() => removeTemp(dir));
   writeFileSync(
     path.join(dir, 'pw.config.mjs'),
     `import { defineConfig } from ${JSON.stringify(playwright)};\n` +

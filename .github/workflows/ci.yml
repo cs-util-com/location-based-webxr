@@ -221,7 +221,10 @@ jobs:
             timeout: 30
           # The Tour Viewer's browser specs: the page tests in two lanes
           # (one worker each on CI; the whole set took about 28 min in one)
-          # and four 3D lanes. The 2026-11-04 CI runs had lane 1 at about
+          # and five 3D lanes (four until 2026-11-19: on a slow runner one
+          # lane of about 29 min took 45 and met its limit; runners of one
+          # run differed up to 2.3 times in speed, so each lane holds about
+          # 21 min of tests by the 2026-11-19 full run). The 2026-11-04 CI runs had lane 1 at about
           # 35 min (about 55 when its clouds spec is retried) and lanes 2-4
           # at about 26-32 min, before a second round of test cuts
           # shortened them; the lanes are balanced from a local full run since. The
@@ -271,6 +274,14 @@ jobs:
             dir: GpsPlusSlamJs_TourViewer
             scripts: test:e2e
             lane: webgl-4
+            browsers: true
+            report: GpsPlusSlamJs_TourViewer/test-results/
+            e2e_limit: 45
+            timeout: 75
+          - job: tour-webgl-5
+            dir: GpsPlusSlamJs_TourViewer
+            scripts: test:e2e
+            lane: webgl-5
             browsers: true
             report: GpsPlusSlamJs_TourViewer/test-results/
             e2e_limit: 45

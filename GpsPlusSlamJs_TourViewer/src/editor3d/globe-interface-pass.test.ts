@@ -7,6 +7,7 @@ import {
   interfaceOverAir,
   isInterfacePart,
 } from "./globe-interface-pass.js";
+import { createGlobeDebugLayer } from "./globe-debug-layer.js";
 
 /** A small tour: a billboard, a ring with a child, a pole, a lit model. */
 function tour() {
@@ -181,6 +182,33 @@ describe("createGlobeInterfacePass", () => {
     expect(face.layers.test(camera.layers)).toBe(false);
     pass.draw();
     expect(face.layers.test(camera.layers)).toBe(true);
+  });
+
+  // Why: the debug layer's thumbnails and line are read as data, like
+  // the walk's marks: the clouds' shadow and the haze must not darken
+  // them, so the whole layer is lifted by its group's name.
+  it("lifts the debug layer's thumbnails and line by the name", () => {
+    const { t, pass, camera } = setup();
+    const debug = createGlobeDebugLayer(t.root, {
+      image: { width: 1, height: 1 },
+      reset: () => undefined,
+      draw: () => undefined,
+    });
+    debug.set(
+      [
+        { image: "a", at: new THREE.Vector3(0, 0, 0) },
+        { image: "b", at: new THREE.Vector3(1, 0, 0) },
+      ],
+      true,
+    );
+    const thumbs = t.root.getObjectByName("debug-thumbs")!;
+    const walk = t.root.getObjectByName("debug-walk")!;
+    pass.lift();
+    expect(thumbs.layers.test(camera.layers)).toBe(false);
+    pass.draw();
+    expect(thumbs.layers.test(camera.layers)).toBe(true);
+    expect(walk.layers.test(camera.layers)).toBe(true);
+    debug.dispose();
   });
 
   // Why: nothing to draw, no second pass over the scene.

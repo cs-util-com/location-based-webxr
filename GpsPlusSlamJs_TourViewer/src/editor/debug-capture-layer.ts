@@ -32,9 +32,9 @@ export function debugDeclinedLine(reason: string): string {
   return `No debug data shown: ${reason}.`;
 }
 
-/** The line once the captures are on the map. */
+/** The line once the captures are drawn (on the map or the globe). */
 export function debugShownLine(count: number): string {
-  return `Debug data: ${String(count)} camera ${count === 1 ? "capture" : "captures"} on the map.`;
+  return `Debug data: ${String(count)} camera ${count === 1 ? "capture" : "captures"} shown.`;
 }
 
 /** A thumbnail's width in CSS pixels; its height keeps the picture's

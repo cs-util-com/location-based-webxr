@@ -2,7 +2,6 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  fileCommand,
   fileItem,
   publish,
   save,
@@ -908,9 +907,6 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await open3d(page);
   const gate = card(page, "The old gate");
   const pick = gate.locator(".pick");
-  const settled = async () => {
-    await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
-  };
 
   // One click: selected, unfolded (its items listed), flown to.
   await pick.click();
@@ -922,7 +918,6 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await expect(page.locator("#inspector-body .sub")).toHaveText(
     "Station 2 of 3",
   );
-  await settled();
   // Flown to: the line of sight passes through the station's point (it
   // meets the ground beyond the point where the point stands above it).
   // Read in one call: the globe's world follows the camera.
@@ -939,7 +934,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
     };
   });
   expect(offLine(eye, look, at)).toBeLessThan(0.5);
-  // And from as near as a flight to it stands: three found radii away,
+  // And from as near as the fly-to places it: three found radii away,
   // 30 m at the least (the gate's 5 m radius flies to 30 m).
   const away = Math.hypot(
     ...eye.map(
@@ -947,9 +942,10 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
     ),
   );
   expect(away).toBeLessThanOrEqual(Math.max(30, 3 * radiusM) + 1);
-  // And it aimed far enough: a flight cut short fails the bound above
-  // (the camera starts far away), but one aimed too near, one found
-  // radius away in place of three, passes it. Measured 29.98 m against the
+  // And it aimed far enough: the fly-to places the camera at once, so one
+  // left at the opening view (about 21 m off) fails the line-of-sight
+  // check, and one aimed under the 30 m minimum passes the bound above;
+  // this floor catches it. Measured 29.98 m against the
   // 30 m aimed at, so 90 per cent of the aim leaves room without letting
   // a too-near aim through.
   expect(away).toBeGreaterThanOrEqual(Math.max(30, 3 * radiusM) * 0.9);
@@ -962,8 +958,7 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await expect(gate).not.toHaveClass(/\bsel\b/);
 
   // A second click once the double-click interval has passed: deselected
-  // and folded; the camera stays where the flight left it.
-  await settled();
+  // and folded; the camera stays where the fly-to left it.
   const before = (await view3d(page)).globe.pose;
   const clickedAt = await page.evaluate(() => performance.now());
   await expect
@@ -973,7 +968,27 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   await expect(steps).not.toHaveClass(/\bsel\b/);
   await expect(steps.locator(".kids")).toHaveCount(0);
   await expect(page.locator("#shell-inspector")).toBeHidden();
-  expect((await view3d(page)).globe.pose).toEqual(before);
+  // Within a millimetre and 1e-4 degrees, not bit for bit: a frame drawn
+  // in between may nudge the camera's height over newly sampled ground by
+  // a hair, while a click that moved the camera moves it metres.
+  const after = (await view3d(page)).globe.pose;
+  const mPerDeg = (6_371_000 * Math.PI) / 180;
+  expect(
+    Math.hypot(
+      (after.lat - before.lat) * mPerDeg,
+      (after.lng - before.lng) *
+        mPerDeg *
+        Math.cos((before.lat * Math.PI) / 180),
+      (after.altitudeKm - before.altitudeKm) * 1000,
+    ),
+  ).toBeLessThan(1e-3);
+  // The heading compared the short way round: the pose's heading lives in
+  // [0, 360), so a hair either side of north reads as 0 or 359.99...
+  const headingTurn = Math.abs(
+    ((after.headingDeg - before.headingDeg + 540) % 360) - 180,
+  );
+  expect(headingTurn).toBeLessThan(1e-4);
+  expect(Math.abs(after.pitchDeg - before.pitchDeg)).toBeLessThan(1e-4);
 
   // The folds are the page's state: a trip to the map and back keeps the
   // old gate unfolded and the station names' chip off.
@@ -1007,14 +1022,9 @@ test("View's Top view and the zoom buttons drive the camera", async ({
   // browser rejecting every one, unseen).
   await keepRejections(page);
   await open3d(page);
-  const settled = async () => {
-    await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
-  };
-  await settled();
   await viewCommand(page, "top");
   await expect(viewItem(page, "top")).toHaveAttribute("aria-checked", "true");
   await expect(page.locator("#view-menu")).toBeHidden();
-  await settled();
   // Straight down but a degree: the globe's top view keeps a heading.
   expect((await view3d(page)).tiltDeg).toBeLessThan(1.5);
   await page.locator('#shell-toggles [data-tab="perf"]').click();
@@ -1022,19 +1032,16 @@ test("View's Top view and the zoom buttons drive the camera", async ({
     "Top view",
   );
   await page.keyboard.press("t");
-  await settled();
   expect((await view3d(page)).tiltDeg).toBeGreaterThan(30);
 
   // A zoom step goes about a third of the way to the ground ahead, and
   // back out by a third of the way then.
   const far = (await view3d(page)).distanceM;
   await page.locator("#zoom-in").click();
-  await settled();
   const near = (await view3d(page)).distanceM;
   expect(near).toBeLessThan(far * 0.8);
   expect(near).toBeGreaterThan(far * 0.5);
   await page.locator("#zoom-out").click();
-  await settled();
   // Out by a third of the way to the ground then, 30 m at the least, so
   // back about where it started (30.8 m measured from 30.0 m): a step that
   // overshoots or falls short by a tenth fails.
@@ -1529,40 +1536,6 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   await expect(gate.locator(".head .tw")).toBeFocused();
 });
 
-test("File's Add debug data opens the same add as the map's panel", async ({
-  page,
-}) => {
-  // Why: the map's debug panel is hidden over the 3D view, so
-  // "Add debug data" could not be reached there at all. File's item opens
-  // the same file input and runs the same add: a file that is no debug
-  // data is refused in the same words, and the item comes back idle.
-  test.setTimeout(150_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await open3d(page);
-  const add = fileItem(page, "debugAdd");
-  await expect(page.locator("#debug-add")).toBeHidden();
-  const sample = await (
-    await page.request.get("/samples/marienplatz-tour.zip")
-  ).body();
-  const chooser = page.waitForEvent("filechooser");
-  await fileCommand(page, "debugAdd");
-  await (
-    await chooser
-  ).setFiles({
-    name: "plain.zip",
-    mimeType: "application/zip",
-    buffer: sample,
-  });
-  await expect(
-    page.locator(".toast", {
-      hasText:
-        "Not added: This file carries no recording: it is neither debug data nor a Recorder zip.",
-    }),
-  ).toBeVisible();
-  await expect(add).toBeEnabled();
-  await expect(add).toHaveText("Add debug data…");
-});
-
 test("a tap on the folded list's rail opens it with its stations shown", async ({
   page,
 }) => {
@@ -1650,17 +1623,18 @@ test("the tour's name carries a pen that opens its details, with no Details butt
   await expect(page.locator("#details-modal")).toBeVisible();
 });
 
-test("the dialogs, their fields and the toasts wear the studio's dark dress; an item's name shows its pen and a dotted underline at rest", async ({
+test("the dialogs, their fields and the toasts wear the studio's dark dress; a story's name shows its pen and a dotted underline at rest, a pin's text is typed in the body", async ({
   page,
 }) => {
   // Why: File > Tour details opened white over the dark editor (seen in
   // a field test), as did the open and the share dialogs: they took
   // the 2D map's paper tokens. A colour read on each dialog, a field in
   // it, its buttons and a toast is what tells a dark dress from a white
-  // one; a presence check passes either. And an item's name in the
+  // one; a presence check passes either. And a story's name in the
   // inspector's head is typed in place, but showed its box only on hover:
   // at rest it must say it can be edited (a pen and a dotted underline,
-  // like the tour's name).
+  // like the tour's name). A pin's text is typed in the body's text area,
+  // where it can take a second line, so its head holds no field.
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
@@ -1727,8 +1701,9 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   await page.locator("#done-close").click();
   await expect(done).toBeHidden();
 
-  // A new pin: its toast dark, its name typed in the head, with the pen
-  // and the dotted underline at rest.
+  // A new pin: its toast dark, its text typed in the body's text area
+  // (one line or several), the head showing it as text only: no field
+  // there, so no pen.
   await card(page, "The old gate").locator(".pick").click();
   await card(page, "The old gate").locator(".head .add").click();
   await page.locator('#tree-add-menu [data-kind="shortText"]').click();
@@ -1736,9 +1711,24 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; an 
   await expect(toast).toBeVisible();
   await expect(toast).toHaveCSS("background-color", BG1);
   await expect(toast).toHaveCSS("color", TEXT);
+  const pinText = page.locator('#inspector-body textarea[data-field="title"]');
+  await expect(pinText).toBeVisible();
+  await expect(
+    page.locator("#inspector-body label", { hasText: /^Text$/ }),
+  ).toBeVisible();
+  await expect(page.locator("#shell-inspector .ttl")).toHaveText(
+    await pinText.inputValue(),
+  );
+  await expect(page.locator("#shell-inspector .ttlin")).toHaveCount(0);
+  await capture(page, test.info().outputPath("pin-toast.png"));
+
+  // A new story: its name typed in the head, with the pen and the dotted
+  // underline at rest.
+  await card(page, "The old gate").locator(".pick").click();
+  await page.locator('#shell-inspector [data-act="add-content"]').click();
+  await page.locator('#tree-add-menu [data-kind="story"]').click();
   const name = page.locator("#shell-inspector .ttlin");
   await expect(name).toBeVisible();
-  await capture(page, test.info().outputPath("pin-toast.png"));
   await name.evaluate((el) => /** @type {HTMLElement} */ (el).blur());
   await page.mouse.move(700, 450);
   const rest = await name.evaluate((el) => {

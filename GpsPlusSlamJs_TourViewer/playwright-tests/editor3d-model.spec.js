@@ -86,7 +86,6 @@ async function openWithModel(page) {
   }
   await row.click();
   await expect.poll(() => selected(page)).toBe(MODEL);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   await expect
     .poll(() => modelScreen(page, BEAM), { timeout: 20_000 })
     .not.toBeNull();
@@ -224,7 +223,6 @@ test("a note is added by a click on the model, typed, placed again, focused from
     (deg) => /** @type {any} */ (window).__tourEditor.view3dHeading(deg),
     90,
   );
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   await act(page, "note-add").click();
   await expect(act(page, "note-add")).toHaveText("Click the model...");
   await clickModel(page, BEAM);

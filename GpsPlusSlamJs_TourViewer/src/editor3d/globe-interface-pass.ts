@@ -20,7 +20,8 @@ export const GLOBE_INTERFACE = Object.freeze({
   /**
    * Objects drawn as the interface with everything under them, by name:
    * the found radius's ring, the pole up to a billboard, a code's square,
-   * the arrival's marks and the model's section planes.
+   * the arrival's marks, the model's section planes and the debug
+   * layer's thumbnails and line.
    */
   names: Object.freeze([
     "found-radius",
@@ -28,6 +29,7 @@ export const GLOBE_INTERFACE = Object.freeze({
     "code",
     "approach-marks",
     "model-sections",
+    "debug-layer",
   ]),
 });
 

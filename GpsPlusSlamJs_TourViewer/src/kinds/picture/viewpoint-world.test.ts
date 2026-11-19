@@ -694,11 +694,11 @@ describe("viewpointWorld", () => {
     at("pointerup", 120);
     tick(part, station, THEN_NOW_TIMING.introS, [0, 1.6, 0]);
     expect(shader()).toEqual({ on: true, split: 0.3 });
-    // Back to Fade: the fade-in stopped at the switch, nothing is cut.
+    // Back to Fade: the switch finished the fade-in, nothing is cut.
     button("Fade")?.click();
     tick(part, station, THEN_NOW_TIMING.introS + 1, [0, 1.6, 0]);
     expect(shader().on).toBe(false);
-    expect(plane.material.opacity).toBeCloseTo(0, 6);
+    expect(plane.material.opacity).toBeCloseTo(THEN_NOW_TIMING.introTo, 6);
     // Swiping again and walking off: the slider goes, the cut with it,
     // and the line is where the visitor left it when they come back.
     button("Swipe")?.click();
@@ -744,6 +744,42 @@ describe("viewpointWorld", () => {
       6,
     );
     part.dispose();
+  });
+
+  it("finishes the fade-in when the visitor picks Swipe during it", async () => {
+    // Why: Swipe stops the fade-in; had it stopped it where it was, the
+    // fade would stay near 0, so a later switch back to Fade would show
+    // nothing of the old picture until the visitor had been away a while.
+    // The switch moment is swept across the fade-in, from its first frames
+    // to its last.
+    for (const switchS of [0.1, 1, 2.5, 4.9]) {
+      const host = document.createElement("div");
+      document.body.append(host);
+      const { part, station } = await placed(
+        picture("thenNow"),
+        envOf("play", host),
+      );
+      const button = (label: string): HTMLButtonElement | undefined =>
+        [...host.querySelectorAll("button")].find(
+          (b) => b.textContent === label,
+        );
+      tick(part, station, 0, [0, 1.6, 0]);
+      tick(part, station, switchS, [0, 1.6, 0]);
+      expect(
+        opacity(part.object, "picture-viewpoint-plane"),
+        `${switchS} s`,
+      ).toBeLessThan(THEN_NOW_TIMING.introTo);
+      button("Swipe")?.click();
+      tick(part, station, switchS + 0.05, [0, 1.6, 0]);
+      button("Fade")?.click();
+      tick(part, station, switchS + 0.1, [0, 1.6, 0]);
+      expect(
+        opacity(part.object, "picture-viewpoint-plane"),
+        `${switchS} s`,
+      ).toBeCloseTo(THEN_NOW_TIMING.introTo, 6);
+      part.dispose();
+      host.remove();
+    }
   });
 
   it("shows a swiping visitor not yet lined up the whole picture, uncut", async () => {
