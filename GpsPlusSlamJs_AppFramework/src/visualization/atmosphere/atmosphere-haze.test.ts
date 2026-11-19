@@ -472,7 +472,7 @@ describe('AtmosphereHaze.setVeil (a haze colour of its own)', () => {
     const f = compile(material, 'standard').fragmentShader;
     const lookupAt = f.indexOf('vec3 atmHazeSky = texture2D(');
     const veilAt = f.indexOf(
-      'atmHazeSky = mix(atmHazeSky * atmHazeSkyBalance, atmHazeVeil, atmHazeVeilOn);'
+      'atmHazeSky = atmHazeSky * atmHazeSkyBalance * (1.0 - atmHazeVeilOn) + atmHazeVeil;'
     );
     const blendAt = f.indexOf(
       'gl_FragColor.rgb = gl_FragColor.rgb * atmHazeKeep'
@@ -481,6 +481,29 @@ describe('AtmosphereHaze.setVeil (a haze colour of its own)', () => {
     expect(veilAt).toBeGreaterThan(lookupAt);
     expect(blendAt).toBeGreaterThan(veilAt);
     expect(f.indexOf('if (atmHazeMode > 0.5)')).toBeLessThan(veilAt);
+  });
+
+  // WHY: a blend of looks weights the veil by its strength, with the colour
+  // premultiplied by it (the sky's horizon veil takes the same pair), so a
+  // blend never divides by a strength that is 0. The shader keeps
+  // (1 - strength) of the balanced sky and adds the colour: strength 1 is
+  // today's veil, strength 0 with no colour today's no veil. So off must
+  // zero the colour too, or it would still be added.
+  it('weights the veil by a strength, and off zeroes the premultiplied colour', () => {
+    const h = haze();
+    h.setVeil([0.1, 0.15, 0.2], 0.5);
+    expect(h.uniforms.atmHazeVeilOn.value).toBe(0.5);
+    expect(h.uniforms.atmHazeVeil.value.toArray()).toEqual([0.1, 0.15, 0.2]);
+    expect(h.veil).toEqual([0.1, 0.15, 0.2]);
+    expect(h.veilStrength).toBe(0.5);
+    h.setVeil(null);
+    expect(h.uniforms.atmHazeVeilOn.value).toBe(0);
+    expect(h.uniforms.atmHazeVeil.value.toArray()).toEqual([0, 0, 0]);
+    expect(h.veilStrength).toBe(0);
+    for (const bad of [-0.1, 1.1, Number.NaN]) {
+      expect(() => h.setVeil([0.1, 0.1, 0.1], bad)).toThrow(RangeError);
+    }
+    expect(h.uniforms.atmHazeVeilOn.value).toBe(0);
   });
 
   it('refuses a colour that is not three finite values of at least 0, changing nothing', () => {
@@ -515,10 +538,29 @@ describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
       centre: { x: 10, z: -20 },
       innerM: 1800,
       outerM: 2400,
+      strength: 1,
     });
     h.setRim(null);
     expect(h.uniforms.atmHazeRimOn.value).toBe(0);
     expect(h.rim).toBeNull();
+  });
+
+  // WHY: the rim follows the veil's strength in a blend of looks, so it
+  // fades in with the veil instead of switching on at once.
+  it('takes a strength, which weights the rim term', () => {
+    const h = haze();
+    h.setRim({ x: 0, z: 0 }, 100, 200, 0.25);
+    expect(h.uniforms.atmHazeRimOn.value).toBe(0.25);
+    expect(h.rim).toEqual({
+      centre: { x: 0, z: 0 },
+      innerM: 100,
+      outerM: 200,
+      strength: 0.25,
+    });
+    for (const bad of [-0.1, 1.1, Number.NaN]) {
+      expect(() => h.setRim({ x: 0, z: 0 }, 100, 200, bad)).toThrow(RangeError);
+    }
+    expect(h.uniforms.atmHazeRimOn.value).toBe(0.25);
   });
 
   // WHY: the rim only raises the boundary fade, so it can never make a near
@@ -531,7 +573,7 @@ describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
     const f = compile(material, 'standard').fragmentShader;
     const boundaryAt = f.indexOf('float atmBoundary');
     const rimAt = f.indexOf(
-      'atmBoundary = max(atmBoundary, smoothstep(atmHazeRim.z, atmHazeRim.w,'
+      'atmBoundary = max(atmBoundary, atmHazeRimOn * smoothstep(atmHazeRim.z, atmHazeRim.w,'
     );
     const keepAt = f.indexOf('vec3 atmHazeKeep');
     expect(boundaryAt).toBeGreaterThan(0);
@@ -545,9 +587,10 @@ describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
 
   // WHY: GLSL ES leaves smoothstep undefined when its edges do not rise,
   // and a NaN from it is not masked by a weight of 0 (0 * NaN is NaN, and
-  // max() with a NaN may return it). So with no rim set the term is not
-  // evaluated at all, and the uniform's edges rise even before any setRim,
-  // for every consumer of the haze.
+  // max() with a NaN may return it). So with no rim set (strength 0) the
+  // term is not evaluated at all, the weight applies only inside the
+  // branch, and the uniform's edges rise even before any setRim, for every
+  // consumer of the haze.
   it('never evaluates the rim term while the rim is off, and its default edges rise', () => {
     const h = haze();
     const [, , inner, outer] = h.uniforms.atmHazeRim.value.toArray();
@@ -555,11 +598,12 @@ describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
     const material = new THREE.MeshStandardMaterial();
     h.apply(material);
     const f = compile(material, 'standard').fragmentShader;
-    const guardAt = f.indexOf('if (atmHazeRimOn > 0.5) {');
+    const guardAt = f.indexOf('if (atmHazeRimOn > 0.0) {');
     const rimAt = f.indexOf('smoothstep(atmHazeRim.z, atmHazeRim.w,');
     expect(guardAt).toBeGreaterThan(0);
     expect(rimAt).toBeGreaterThan(guardAt);
-    expect(f).not.toContain('atmHazeRimOn * smoothstep');
+    expect(f.split('atmHazeRimOn * smoothstep')).toHaveLength(2);
+    expect(f.indexOf('atmHazeRimOn * smoothstep')).toBeGreaterThan(guardAt);
   });
 
   it('refuses radii that do not rise or a centre that is not finite, changing nothing', () => {
@@ -573,7 +617,12 @@ describe('AtmosphereHaze.setRim (the edge of a world that ends)', () => {
     expect(() =>
       h.setRim({ x: 0, z: 0 }, 100, Number.POSITIVE_INFINITY)
     ).toThrow(RangeError);
-    expect(h.rim).toEqual({ centre: { x: 0, z: 0 }, innerM: 100, outerM: 200 });
+    expect(h.rim).toEqual({
+      centre: { x: 0, z: 0 },
+      innerM: 100,
+      outerM: 200,
+      strength: 1,
+    });
   });
 });
 
@@ -619,7 +668,7 @@ describe('AtmosphereHaze.setSkyBalance (the sky balance reaches the haze)', () =
     const f = compile(material, 'standard').fragmentShader;
     expect(
       f.indexOf(
-        'atmHazeSky = mix(atmHazeSky * atmHazeSkyBalance, atmHazeVeil, atmHazeVeilOn);'
+        'atmHazeSky = atmHazeSky * atmHazeSkyBalance * (1.0 - atmHazeVeilOn) + atmHazeVeil;'
       )
     ).toBeGreaterThan(f.indexOf('vec3 atmHazeSky = texture2D('));
   });
