@@ -35,6 +35,11 @@ chrome reads, one copy for every view of the page.
     its steps (`entryStep`): what every entry (a drop, the sample, a
     link) asks before it starts, since `busy` alone is false between
     the open and the add;
+  - `entryFiles` - the open dialog's drop area: one `EntryRow`
+    (`entry-drop.ts`: id, file name, chip) per file given to it, at most
+    `MAX_ENTRY_FILES`; the files themselves stay in the page's side
+    table. `entryPicks` - `{ tour, scan }`, the row picked where
+    several tours or scans came, or null. Both emptied by every open;
   - `duplicating` - a Duplicate is reading its pictures before it
     writes: another one does nothing meanwhile (a second Ctrl+D makes
     no copy);
@@ -76,6 +81,11 @@ chrome reads, one copy for every view of the page.
     `pickingChanged({ picking })`, `entryStepChanged({ step })` (an
     unknown step ignored), `undeliveredChanged({ waits })`,
     `duplicatingChanged({ duplicating })`;
+  - the drop area's: `entryFilesAdded({ rows })` (each row validated,
+    `isEntryRow`; a known id ignored; past the cap the rest dropped),
+    `entryFileRemoved({ id })` (its pick cleared with it),
+    `entryFilePicked({ id })` (picks the row's kind; a row that is
+    neither, or unknown, changes nothing), `entryFilesCleared()`;
   - `moveStarted({ id })`, `moveDropped({ id, drop })`, `moveEnded()`;
   - `walkChanged({ keepsWalk?, openedWalk? })` - each given flag set;
   - `said({ message })` - the card's line, or none;
@@ -165,7 +175,9 @@ selectEditorView(store.getState()).moving; // { id: "a", drop: {...} }
 marker being dragged and only for a drawable spot (another marker's late
 event, NaN, Infinity and a drop after the drag ended all ignored); each
 flag set on its own, and `selected` keeping the line; `isEntryIdle` false
-while busy or between an entry's steps; the view switch's
+while busy or between an entry's steps; the drop area's rows (added,
+validated, deduplicated and capped; removed with their pick; picked by
+kind; emptied by an open and by a clear); the view switch's
 fields through each action, and late or doubled actions ignored; the
 shell's folds and layers, with unknown keys, empty ids and
 flags that are not booleans ignored; the unfolded stations emptied when

@@ -21,6 +21,7 @@ import {
 } from "./editor-view.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { tourDocumentActions, tourDocumentReducer } from "../tour-document.js";
+import { MAX_ENTRY_FILES } from "./entry-drop.js";
 
 /** The 3D view's shell at the start: every station folded, every section
  *  open, both docks unfolded, every layer shown, no rows picked, every
@@ -146,6 +147,8 @@ describe("editorView", () => {
       message: null,
       picking: false,
       entryStep: null,
+      entryFiles: [],
+      entryPicks: { tour: null, scan: null },
       duplicating: false,
       viewMode: "2d",
       view3dLoad: "idle",
@@ -203,6 +206,8 @@ describe("editorView", () => {
       message: { id: "x", text: "No.", refused: true },
       picking: true,
       entryStep: null,
+      entryFiles: [],
+      entryPicks: { tour: null, scan: null },
       duplicating: true,
       viewMode: "2d",
       view3dLoad: "idle",
@@ -619,5 +624,90 @@ describe("the entry step", () => {
         ),
       ).toBe(false);
     }
+  });
+});
+
+describe("the drop area (entryFiles)", () => {
+  // Why: the drop area is store state so the rows, the picks and the one
+  // action always agree. A row that is no row, a repeat, a pick of a row
+  // that is not there, or a pick left behind by a removed row would offer
+  // an action for a file the person no longer sees.
+  const tourRow = {
+    id: "t1",
+    name: "castle.zip",
+    chip: { kind: "tour", title: "Castle walk", stations: 6 },
+  } as const;
+  const scanRow = {
+    id: "s1",
+    name: "walk.zip",
+    chip: { kind: "scan", captures: 312 },
+  } as const;
+  const badRow = {
+    id: "x1",
+    name: "notes.txt",
+    chip: { kind: "neither", reason: "This is not a .zip file." },
+  } as const;
+
+  it("adds rows in order, leaving out repeats and what is not a row", () => {
+    const state = reduce(
+      initialEditorViewState,
+      act.entryFilesAdded({
+        rows: [
+          tourRow,
+          tourRow,
+          /** A row with a chip of no known kind. */
+          {
+            id: "z",
+            name: "z.zip",
+            chip: { kind: "photo" },
+          } as unknown as typeof tourRow,
+          scanRow,
+          badRow,
+        ],
+      }),
+    );
+    expect(state.entryFiles.map((r) => r.id)).toEqual(["t1", "s1", "x1"]);
+  });
+
+  it("keeps at most MAX_ENTRY_FILES rows", () => {
+    const rows = Array.from({ length: MAX_ENTRY_FILES + 3 }, (_, i) => ({
+      ...scanRow,
+      id: `s${String(i)}`,
+    }));
+    const state = reduce(initialEditorViewState, act.entryFilesAdded({ rows }));
+    expect(state.entryFiles).toHaveLength(MAX_ENTRY_FILES);
+  });
+
+  it("picks a tour or a scan by its row, and a removed row takes its pick", () => {
+    let state = reduce(
+      initialEditorViewState,
+      act.entryFilesAdded({ rows: [tourRow, scanRow, badRow] }),
+    );
+    state = reduce(state, act.entryFilePicked({ id: "t1" }));
+    state = reduce(state, act.entryFilePicked({ id: "s1" }));
+    // A row that is neither, or none, picks nothing.
+    state = reduce(state, act.entryFilePicked({ id: "x1" }));
+    state = reduce(state, act.entryFilePicked({ id: "gone" }));
+    expect(state.entryPicks).toEqual({ tour: "t1", scan: "s1" });
+    state = reduce(state, act.entryFileRemoved({ id: "t1" }));
+    expect(state.entryPicks).toEqual({ tour: null, scan: "s1" });
+    expect(state.entryFiles.map((r) => r.id)).toEqual(["s1", "x1"]);
+    state = reduce(state, act.entryFilesCleared());
+    expect(state.entryFiles).toEqual([]);
+    expect(state.entryPicks).toEqual({ tour: null, scan: null });
+  });
+
+  it("empties once a tour opened", () => {
+    let state = reduce(
+      initialEditorViewState,
+      act.entryFilesAdded({ rows: [tourRow, scanRow] }),
+    );
+    state = reduce(state, act.entryFilePicked({ id: "t1" }));
+    state = reduce(
+      state,
+      tourDocumentActions.opened({ manifest: createEmptyTourManifest() }),
+    );
+    expect(state.entryFiles).toEqual([]);
+    expect(state.entryPicks).toEqual({ tour: null, scan: null });
   });
 });

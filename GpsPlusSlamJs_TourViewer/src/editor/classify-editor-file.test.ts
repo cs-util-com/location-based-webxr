@@ -44,6 +44,7 @@ vi.mock("gps-plus-slam-app-framework/storage", async (importOriginal) => {
 import {
   classifyEditorFile,
   classifyEditorFiles,
+  TOUR_SUMMARY_MAX_BYTES,
 } from "./classify-editor-file.js";
 import { NOT_A_TOUR, NOT_A_ZIP } from "./editor-open.js";
 
@@ -85,7 +86,47 @@ describe("classifyEditorFile", () => {
     const file = await zipFile("castle.zip", [
       { path: "tour.json", data: "{}" },
     ]);
-    expect(await classifyEditorFile(file)).toEqual({ kind: "tour", file });
+    // "{}" has no title and no stations: the summary says nothing.
+    expect(await classifyEditorFile(file)).toEqual({
+      kind: "tour",
+      file,
+      title: null,
+      stations: null,
+    });
+  });
+
+  // Why: the drop area names a tour by its title and station count, read
+  // from its small tour.json - but only while that read stays cheap and
+  // safe: an oversized or broken tour.json is still a tour, named only so.
+  it("reads a tour's title and station count from its tour.json, wrapped too", async () => {
+    const manifest = JSON.stringify({
+      title: "  Castle walk  ",
+      stations: [{}, {}, {}],
+    });
+    const file = await zipFile("castle.zip", [
+      { path: "mytour/tour.json", data: manifest },
+    ]);
+    expect(await classifyEditorFile(file)).toMatchObject({
+      kind: "tour",
+      title: "Castle walk",
+      stations: 3,
+    });
+  });
+
+  it("names a tour only as a tour when its tour.json is broken, odd or too large", async () => {
+    for (const data of [
+      "not json",
+      JSON.stringify({ title: 7, stations: "many" }),
+      JSON.stringify({ title: "", stations: [] }),
+      JSON.stringify({ title: "Big", pad: "x".repeat(TOUR_SUMMARY_MAX_BYTES) }),
+    ]) {
+      const file = await zipFile("t.zip", [{ path: "tour.json", data }]);
+      const kind = await classifyEditorFile(file);
+      expect(kind.kind).toBe("tour");
+      if (kind.kind !== "tour") continue;
+      expect(kind.title).toBeNull();
+      expect(kind.stations === null || kind.stations === 0).toBe(true);
+    }
   });
 
   it("sorts a zip of printed codes only as a tour", async () => {
@@ -113,6 +154,23 @@ describe("classifyEditorFile", () => {
       kind: "scan",
       file,
       scan: { kind: "recording" },
+      captures: 0,
+    });
+  });
+
+  // Why: the scan row says how many camera captures it brings, counted
+  // from the zip directory only (its frame images), never by reading them.
+  it("counts a scan's camera captures from its directory", async () => {
+    const file = await zipFile("walk.zip", [
+      { path: "session.json", data: "{}" },
+      { path: "actions/000001.json", data: "[]" },
+      { path: "images/frame-000001.jpg", data: "j" },
+      { path: "images/frame-000002.jpg", data: "j" },
+      { path: "images/notes.txt", data: "n" },
+    ]);
+    expect(await classifyEditorFile(file)).toMatchObject({
+      kind: "scan",
+      captures: 2,
     });
   });
 

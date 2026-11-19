@@ -201,15 +201,41 @@ export async function answerTiles(page) {
 }
 
 /**
- * Open `buffer` through the real file chooser.
+ * The open dialog's one action pressed, once the files given to it are
+ * sorted into rows: nothing opens before it (`entry-drop.ts`).
+ * @param {import("@playwright/test").Page} page
+ * @param {string} [button] - the action, or "Add it to the open tour
+ *   instead" (`#entry-add-open`)
+ */
+export async function pressEntry(page, button = "#entry-go") {
+  const action = page.locator(button);
+  await expect(action).toBeVisible();
+  await expect(action).toBeEnabled();
+  await action.click();
+}
+
+/**
+ * Give `buffer` to the open dialog through the real file chooser: it
+ * becomes a row with its chip, and the dialog's action is pressed
+ * (`pressEntry`) unless `press` is false.
  * @param {import("@playwright/test").Page} page
  * @param {Buffer} buffer
  * @param {string} name
+ * @param {{ press?: boolean }} [options]
  */
-export async function openThroughChooser(page, buffer, name) {
+export async function openThroughChooser(
+  page,
+  buffer,
+  name,
+  { press = true } = {},
+) {
   const chooser = page.waitForEvent("filechooser");
   await page.locator("#drop").click();
   await (await chooser).setFiles({ name, mimeType: "application/zip", buffer });
+  await expect(
+    page.locator("#entry-rows .entry-name", { hasText: name }).first(),
+  ).toBeVisible();
+  if (press) await pressEntry(page);
 }
 
 /** A tour in the wrapped shape ("compress this folder") carrying a walk

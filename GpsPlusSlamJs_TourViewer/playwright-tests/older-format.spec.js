@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 
 import { expect, test } from "@playwright/test";
 import { Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
+import { pressEntry } from "./editor-tours.js";
 
 /**
  * A tour of an older format (the archive server's
@@ -147,6 +148,7 @@ test("the editor refuses a tour of an older format and deletes its draft, and no
     mimeType: "application/zip",
     buffer: Buffer.from(zip),
   });
+  await pressEntry(page);
   await expect(page.locator("#open-error")).toHaveText(LOST, {
     timeout: 15000,
   });

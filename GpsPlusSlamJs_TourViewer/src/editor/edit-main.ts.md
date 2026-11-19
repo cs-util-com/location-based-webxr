@@ -27,10 +27,28 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   drop box opens it, so a stray drop never takes the open tour away (PR
   #609 review).
 
-- **Open:** the file input's change, "Choose…" and a drop on `#drop`
-  (every file of the drop) go through `enterFiles`: each file is sorted
-  first (`classify-editor-file.ts`, its zip directory only), then planned
-  (`editor-entry.ts` `planEditorEntry`). A tour opens through
+- **Open:** the open dialog is one drop area ("Drop your files here - a
+  tour, a scan, or both."). The file input's change (several files),
+  "Choose files…" (the browser's picker, one writable file a press, else
+  the input) and a drop on `#drop` (every file of the drop) go through
+  `stageFiles`: each file is sorted (`classify-editor-file.ts`, its zip
+  directory only, a tour's title and station count from a small
+  `tour.json`) and becomes a row of the store's `editorView.entryFiles`
+  with its chip; the `File` and its picker handle stay in a side table
+  keyed by the row's id (`stagedFiles`), let go when the row is. A file
+  already in the area is not added twice; past `MAX_ENTRY_FILES` the rest
+  are named as left out. NOTHING opens on a drop or a pick: the rows plan
+  the dialog's ONE action (`entry-drop.ts` `planEntryAction`, drawn by
+  `entry-drop-view.ts` from a store subscription), and only a press of
+  `#entry-go` acts - "Open the tour" / "Open the tour with this scan"
+  (`openStaged`), "Start a new tour on this scan" for a scan alone
+  (`startNewTourWith`: the new tour's save dialog in the click, then the
+  tour, then the scan), or nothing while several tours or scans wait for
+  a radio pick; `#entry-add-open` adds a lone scan to the tour already
+  open instead. Each row has a Remove button; Cancel empties the area,
+  and so does every open. "Start an empty tour" (`#new-tour-btn`) is
+  `startNewTourWith(null)`. The press then runs the engine's plan
+  (`editor-entry.ts` `planEditorEntry`, `runEntryPlan`). A tour opens through
   `openTourForEditing` (`editor-open.ts`); a tour with a scan opens and
   then gets the scan as one busy state (`openWithScan`, the store's
   `editorView.entryStep`, a held line naming both files; a scan that
@@ -44,8 +62,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   for no zip or no tour goes to the open, which refuses it in its own
   words, and one with a precise reason is refused with it; a file left
   out of a drop is named in a toast; every entry (a drop, the sample, a
-  link) starts only while `isEntryIdle` (`editor-view.ts`); "Use the sample tour" fetches
-  `samples/marienplatz-tour.zip` beside the page; `#link-form` fetches a
+  link) starts only while `isEntryIdle` (`editor-view.ts`); "Look at the example" fetches
+  `samples/marienplatz-tour.zip` beside the page and opens it at once,
+  asking nothing (its first Save asks, with a dated name); `#link-form` fetches a
   hosted tour from its link (`editor-link.ts`, the viewer's transport and
   Drive proxy, tour editor plan 2026-10-17-1816 W1) and opens it as a
   chosen file - without a file handle, so Save downloads the new copy -
@@ -342,12 +361,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the page may not write (a refused permission, another tab's name), which
   still downloads, and "Download instead" after an in-place refusal (no
   pick: a download). The fine print says which the browser does.
-- **A tour opened from a link or the sample asks where to save it as it
+- **A tour opened from a link, or a new tour, asks where to save it as it
   opens**, where the browser adopts a chosen file (`adoptsSavedFile`, the
-  first Save's rule: both file dialogs, Android included):
-  `askOpenSaveFile` opens the save dialog IN the sample's click or the
-  link's submit, before the fetch, suggesting the name the fetched file
-  will carry (`linkFileName`, the sample's own name; a Drive link without
+  first Save's rule: both file dialogs, Android included); the example
+  does not (it is there to be looked at, and asks at its first Save):
+  `askOpenSaveFile` opens the save dialog IN the new tour's click or the
+  link's submit, before the fetch, suggesting the name the file
+  will carry (`linkFileName`, `new-tour.zip`; a Drive link without
   a `.zip` name gives `tour-<start of its file id>.zip`, so a second Drive
   tour does not offer the first one's file), dated to the second
   (`datedFileName`, local time: `<name>-YYYY-MM-DD-HHMMSS.zip`), so the
@@ -1022,7 +1042,12 @@ dismisses only inside the click, so a dialog asked for after the build
 would download and fail it); Ctrl+S and Share and publish each asking
 inside their own gesture, its line naming "the file you chose when you first saved";
 and a chosen file that cannot be read back saying so, the next Save
-asking again. A tour opened from its link or the sample (`editor.spec.js`):
+asking again. The example opening without a dialog, its first Save
+asking with a dated name; the open dialog's drop area (`editor.spec.js`:
+a tour and a scan sorted into rows and opened only on the press, a scan
+alone starting a new tour or added to the open one, two tours waiting
+for a pick, an unusable row and Remove, a second new tour offered no
+draft). A tour opened from its link or a new tour (`editor.spec.js`):
 asked for in the click under the link's file name, "Saving into" while
 the held write runs, then the toast, the file holding the tour and the
 first edit saved into it by itself, the written file's size and SHA-256

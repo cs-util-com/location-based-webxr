@@ -21,11 +21,14 @@ const file = (name: string) => new File(["x"], name);
 const tour = (name: string): EditorFileKind => ({
   kind: "tour",
   file: file(name),
+  title: null,
+  stations: null,
 });
 const scan = (name: string): EditorFileKind => ({
   kind: "scan",
   file: file(name),
   scan: { kind: "recording" },
+  captures: 0,
 });
 const neither = (name: string): EditorFileKind => ({
   kind: "neither",

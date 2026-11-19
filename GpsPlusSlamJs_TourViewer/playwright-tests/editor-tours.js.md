@@ -35,8 +35,12 @@ moved to a spec of their own, so both specs build the same tours.
   - `autosaveOutOfTheWay(page)` - the dev-only autosave timings set to an
     hour.
 - Files:
-  - `openThroughChooser(page, buffer, name)` - the tour opened through the
-    real file chooser of `#drop`.
+  - `openThroughChooser(page, buffer, name, { press })` - the file given
+    through the real file chooser of `#drop`; once its row shows, the
+    dialog's action is pressed (`pressEntry`) unless `press` is false.
+  - `pressEntry(page, button)` - the open dialog's one action
+    (`#entry-go`, or `#entry-add-open`) pressed once visible and enabled:
+    nothing given to the dialog opens before it.
   - `offerOpfsFile(page, buffer, name, { permission })` - the bytes written
     to the origin-private file `name`, which the page's open picker hands
     out (a real handle, so an in-place write runs for real).

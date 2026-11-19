@@ -1009,6 +1009,106 @@ kbd {
   color: var(--ink-dim);
 }
 
+/* The drop area's rows (entry-drop-view.ts): a file each, its chip, and
+   the one action under them. */
+.entry-rows {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entry-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--hairline);
+  background: #fff;
+}
+
+.entry-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.entry-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+
+.entry-chip {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #eeece6;
+  color: var(--ink);
+}
+
+.entry-row[data-kind="tour"] .entry-chip {
+  background: #e3efe6;
+}
+
+.entry-row[data-kind="scan"] .entry-chip {
+  background: #e4ebf5;
+}
+
+.entry-row[data-kind="neither"] .entry-chip {
+  background: transparent;
+  color: var(--danger);
+  white-space: normal;
+}
+
+.entry-note {
+  margin: 8px 4px 0;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.entry-act {
+  margin-top: 14px;
+}
+
+.entry-question {
+  margin: 0 4px 8px;
+  font-weight: 600;
+}
+
+.entry-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.entry-footer {
+  margin: 14px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
 .link-open {
   margin-top: 14px;
 }

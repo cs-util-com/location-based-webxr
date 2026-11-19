@@ -20,6 +20,7 @@ import {
   offerExistingOpfsFile,
   offerOpfsFile,
   openThroughChooser,
+  pressEntry,
   saveAndRead,
   wrappedTour,
 } from "./editor-tours.js";
@@ -80,6 +81,7 @@ async function openFile(page, buffer, name) {
  */
 async function openOffered(page) {
   await page.locator("#choose-btn").click();
+  await pressEntry(page);
   await expect(page.locator("#view3d-failed")).toBeVisible();
 }
 
@@ -553,6 +555,7 @@ test("the changed-on-disk refusal points to the browser's copy, and the file ope
   });
   await openAnother(page);
   await page.locator("#choose-btn").click();
+  await pressEntry(page);
   // The file as the other program wrote it, then the draft offered on it.
   await expectCaption(page, ADDED_ELSEWHERE, "Added elsewhere");
   const offer = page.locator(".toast.draft-offer");

@@ -226,7 +226,17 @@ import {
   openWithScan,
   planEditorEntry,
   type AddScanOutcome,
+  type EditorEntryPlan,
 } from "./editor-entry.js";
+import {
+  MAX_ENTRY_FILES,
+  planEntryAction,
+  type EntryChip,
+  type EntryPicks,
+  type EntryRow,
+} from "./entry-drop.js";
+import { renderEntryDrop } from "./entry-drop-view.js";
+import { startNewTour } from "./new-tour.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
 import {
@@ -518,6 +528,17 @@ const linkButton = element<HTMLButtonElement>("link-btn");
 const openStatus = element("open-status");
 const openError = element("open-error");
 const sampleButton = element<HTMLButtonElement>("sample-btn");
+/** "Start an empty tour", beside the example in the dialog's footer. */
+const newTourButton = element<HTMLButtonElement>("new-tour-btn");
+/** The drop area's rows and its one action (`entry-drop-view.ts`). */
+const entryElements = {
+  rows: element("entry-rows"),
+  note: element("entry-scan-note"),
+  act: element("entry-act"),
+  question: element("entry-question"),
+  go: element<HTMLButtonElement>("entry-go"),
+  addToOpen: element<HTMLButtonElement>("entry-add-open"),
+};
 const cancelButton = element<HTMLButtonElement>("open-cancel");
 const topbar = element("topbar");
 /** The tour's name in the top bar: it opens the tour's details (W2). */
@@ -2907,6 +2928,7 @@ document.addEventListener("keydown", (event) => {
 function setBusy(on: boolean, text: string): void {
   store.dispatch(editorViewActions.busyChanged({ busy: on }));
   sampleButton.disabled = on;
+  newTourButton.disabled = on;
   zipInput.disabled = on;
   chooseButton.disabled = on;
   linkInput.disabled = on;
@@ -3126,36 +3148,229 @@ interface PickedTourFile {
   readonly picked: FileSystemHandle | null;
 }
 
+/** A file in the drop area, kept beside its row (a File is never store
+ *  state): what it sorted as, and what the browser's picker gave with it. */
+interface StagedEntryFile {
+  readonly kind: EditorFileKind;
+  readonly picked: PickedTourFile | null;
+  /** Picked through the browser's picker without write permission: said
+   *  once the tour opened, since Save then downloads a copy. */
+  readonly unwritable: boolean;
+}
+
+/** The drop area's files by row id (the rows are the store's
+ *  `entryFiles`); an id the store no longer holds is let go when the area
+ *  is drawn (`drawEntryDrop`). */
+const stagedFiles = new Map<string, StagedEntryFile>();
+
+/** A sorted file's chip. */
+function chipOf(kind: EditorFileKind): EntryChip {
+  if (kind.kind === "tour") {
+    return { kind: "tour", title: kind.title, stations: kind.stations };
+  }
+  if (kind.kind === "scan") return { kind: "scan", captures: kind.captures };
+  return { kind: "neither", reason: kind.reason };
+}
+
+/** The same file given twice (dropped, then chosen again). */
+function sameFile(a: File, b: File): boolean {
+  return (
+    a.name === b.name && a.size === b.size && a.lastModified === b.lastModified
+  );
+}
+
 /**
- * Files chosen in, or dropped on, the open dialog. Each is sorted first
- * (`classifyEditorFiles`, its zip directory only), then planned
- * (`planEditorEntry`): a tour opens; a tour with a scan opens and then
- * gets the scan, as one busy state (`openWithScan`, the store's
- * `entryStep`, a held line meanwhile); a scan alone is added beside the
- * open tour, or refused without one. A file that is neither still goes to
- * the open, which refuses it in its own words. Resolves true when a tour
- * opened.
+ * Files chosen in, or dropped on, the open dialog: each is sorted
+ * (`classifyEditorFiles`, its zip directory only) and becomes a row of the
+ * drop area with its chip. Nothing opens here: the dialog's one action
+ * does, once pressed (`entry-drop.ts`). A file already in the area is not
+ * added twice; past `MAX_ENTRY_FILES` the rest are left out, said in a
+ * toast. `picked`: the browser's picker gave the one file, with a handle.
  */
-async function enterFiles(
+async function stageFiles(
   files: readonly File[],
-  picked: PickedTourFile | null = null,
-): Promise<boolean> {
-  if (!isEntryIdle(ui()) || files.length === 0) return false;
+  picked: {
+    readonly file: PickedTourFile;
+    readonly unwritable: boolean;
+  } | null = null,
+): Promise<void> {
+  if (!isEntryIdle(ui()) || files.length === 0) return;
   openError.hidden = true;
-  const [only] = files;
+  const held = [...stagedFiles.values()].map((s) => s.kind.file);
+  const fresh = files.filter((f) => !held.some((h) => sameFile(h, f)));
+  const room = Math.max(0, MAX_ENTRY_FILES - ui().entryFiles.length);
+  const taken = fresh.slice(0, room);
+  if (fresh.length > taken.length) {
+    toast(
+      `Left out ${String(fresh.length - taken.length)} of the files: the drop area holds ${String(MAX_ENTRY_FILES)} at a time.`,
+    );
+  }
+  const [only] = taken;
+  if (only === undefined) return;
   setBusy(
     true,
-    files.length === 1 && only !== undefined
+    taken.length === 1
       ? `Reading ${only.name}…`
-      : `Reading ${String(files.length)} files…`,
+      : `Reading ${String(taken.length)} files…`,
   );
   let kinds: EditorFileKind[];
   try {
-    kinds = await classifyEditorFiles(files);
+    kinds = await classifyEditorFiles(taken);
   } finally {
     setBusy(false, "");
   }
-  const plan = planEditorEntry(kinds, editor !== null);
+  const rows: EntryRow[] = kinds.map((kind) => {
+    const id = crypto.randomUUID();
+    const mine = picked !== null && picked.file.file === kind.file;
+    stagedFiles.set(id, {
+      kind,
+      picked: mine ? picked.file : null,
+      unwritable: mine && picked.unwritable,
+    });
+    return { id, name: kind.file.name, chip: chipOf(kind) };
+  });
+  store.dispatch(editorViewActions.entryFilesAdded({ rows }));
+}
+
+/** What the drop area was last drawn from: it is drawn again only when
+ *  one of them changed. */
+let entryDrawn: {
+  readonly rows: readonly EntryRow[];
+  readonly picks: EntryPicks;
+  readonly idle: boolean;
+  readonly tourOpen: boolean;
+} | null = null;
+
+/** Draws the drop area from the store, and lets go of the files whose
+ *  rows are gone. */
+function drawEntryDrop(): void {
+  const view = ui();
+  const idle = isEntryIdle(view);
+  const tourOpen = editor !== null;
+  if (
+    entryDrawn?.rows === view.entryFiles &&
+    entryDrawn.picks === view.entryPicks &&
+    entryDrawn.idle === idle &&
+    entryDrawn.tourOpen === tourOpen
+  ) {
+    return;
+  }
+  entryDrawn = {
+    rows: view.entryFiles,
+    picks: view.entryPicks,
+    idle,
+    tourOpen,
+  };
+  for (const id of [...stagedFiles.keys()]) {
+    if (!view.entryFiles.some((r) => r.id === id)) stagedFiles.delete(id);
+  }
+  renderEntryDrop(
+    entryElements,
+    {
+      rows: view.entryFiles,
+      picks: view.entryPicks,
+      action: planEntryAction(view.entryFiles, view.entryPicks, tourOpen),
+      busy: !idle,
+    },
+    {
+      remove: (id) => {
+        store.dispatch(editorViewActions.entryFileRemoved({ id }));
+      },
+      pick: (id) => {
+        store.dispatch(editorViewActions.entryFilePicked({ id }));
+      },
+    },
+  );
+}
+
+/** The drop area's tour (and scan) opened, as the engine plans it: the
+ *  same rules as ever (a scan never opens, no add without a tour). */
+async function openStaged(
+  tourId: string,
+  scanId: string | null,
+): Promise<void> {
+  const tour = stagedFiles.get(tourId);
+  const scan = scanId === null ? null : (stagedFiles.get(scanId) ?? null);
+  if (tour === undefined || (scanId !== null && scan === null)) return;
+  const opened = await runEntryPlan(
+    planEditorEntry(
+      scan === null ? [tour.kind] : [tour.kind, scan.kind],
+      editor !== null,
+    ),
+    tour.picked,
+  );
+  // Said about the tour just opened, never over the one that stayed.
+  if (opened && tour.unwritable) {
+    toast(
+      "The browser did not allow saving to this file, so Save downloads a copy.",
+    );
+  }
+}
+
+/** The drop area's lone scan added to the tour already open. */
+async function addStagedToOpen(scanId: string): Promise<void> {
+  const scan = stagedFiles.get(scanId);
+  if (scan === undefined || editor === null) return;
+  await runEntryPlan(planEditorEntry([scan.kind], true));
+}
+
+/**
+ * A new, empty tour, with `scan` added once it is open (a scan alone in
+ * the drop area). Called IN the click: the save dialog is asked before any
+ * await (`startNewTour`). The dialog is reached only past the unsaved-work
+ * guard (File's Open… asks it; with no tour open there is nothing to
+ * lose). Every new tour mints its own id, so its draft is its own.
+ */
+function startNewTourWith(scan: EditorFileKind | null): void {
+  setBusy(true, "Starting a new tour…");
+  void startNewTour({
+    askSaveFile: (name) => askOpenSaveFile(name),
+    open: async (file) => {
+      // The open holds its own busy state, and refuses while one is on.
+      setBusy(false, "");
+      const tour: EditorFileKind = {
+        kind: "tour",
+        file,
+        title: null,
+        stations: null,
+      };
+      const opened = await runEntryPlan(
+        planEditorEntry(scan === null ? [tour] : [tour, scan], editor !== null),
+      );
+      // Its first Save suggests a dated name, as the open's dialog did: a
+      // second new tour must not offer to replace the first one's file.
+      if (opened) datedSave = true;
+      return opened;
+    },
+    keepInChosenFile: (file, pick) => {
+      if (pick !== null && editor !== null) {
+        void keepInChosenFile(editor, file, pick);
+      } else {
+        settleUnusedPick(pick);
+      }
+    },
+    settleUnusedPick,
+    failed: (reason) => {
+      setBusy(false, "");
+      openError.textContent = `The new tour could not be started: ${reason}`;
+      openError.hidden = false;
+    },
+  });
+}
+
+/**
+ * Runs an entry plan (`editor-entry.ts`): a tour opens; a tour with a scan
+ * opens and then gets the scan, as one busy state (`openWithScan`, the
+ * store's `entryStep`, a held line meanwhile); a scan alone is added
+ * beside the open tour. A refusal is said in the dialog. Resolves true
+ * when a tour opened.
+ */
+async function runEntryPlan(
+  plan: EditorEntryPlan,
+  picked: PickedTourFile | null = null,
+): Promise<boolean> {
+  if (!isEntryIdle(ui())) return false;
+  openError.hidden = true;
   if (plan.kind === "refuse") {
     openError.textContent = plan.reason;
     openError.hidden = false;
@@ -3176,8 +3391,10 @@ async function enterFiles(
       setBusy(false, "");
       store.dispatch(editorViewActions.entryStepChanged({ step: null }));
     }
-    if (added?.kind === "added") showModal(false);
-    else if (added?.kind === "refused") {
+    if (added?.kind === "added") {
+      store.dispatch(editorViewActions.entryFilesCleared());
+      showModal(false);
+    } else if (added?.kind === "refused") {
       openError.textContent = notAddedLine(added.reason);
       openError.hidden = false;
     }
@@ -3620,17 +3837,14 @@ async function chooseTour(): Promise<void> {
     openError.hidden = false;
     return;
   }
-  const opened = await enterFiles([outcome.file], {
-    file: outcome.file,
-    handle: outcome.writable ? outcome.handle : null,
-    picked: outcome.handle,
+  await stageFiles([outcome.file], {
+    file: {
+      file: outcome.file,
+      handle: outcome.writable ? outcome.handle : null,
+      picked: outcome.handle,
+    },
+    unwritable: !outcome.writable,
   });
-  // Said about the tour just opened, never over the one that stayed.
-  if (opened && !outcome.writable) {
-    toast(
-      "The browser did not allow saving to this file, so Save downloads a copy.",
-    );
-  }
 }
 
 /**
@@ -4558,9 +4772,9 @@ drop.addEventListener("click", (event) => {
   void chooseTour();
 });
 zipInput.addEventListener("change", () => {
-  const file = zipInput.files?.[0];
+  const files = Array.from(zipInput.files ?? []);
   zipInput.value = "";
-  if (file !== undefined) void enterFiles([file]);
+  void stageFiles(files);
 });
 // A file dropped anywhere else on the page would make the browser open
 // it, and the open tour would be gone (PR #609 review): only #drop opens.
@@ -4579,8 +4793,9 @@ drop.addEventListener("dragleave", () => {
 drop.addEventListener("drop", (event) => {
   event.preventDefault();
   drop.classList.remove("over");
-  // Every file dropped: a tour and a scan may come together.
-  void enterFiles(Array.from(event.dataTransfer?.files ?? []));
+  // Every file dropped: a tour and a scan may come together. Each
+  // becomes a row; nothing opens before the dialog's action is pressed.
+  void stageFiles(Array.from(event.dataTransfer?.files ?? []));
 });
 // A file dragged over the open editor: the page shows that it takes files
 // (`body.file-drag`), and the row or file field it would be used in
@@ -4625,10 +4840,10 @@ document.addEventListener("drop", (event) => {
   if (at === undefined) return;
   void dropFiles(Array.from(event.dataTransfer?.files ?? []), at);
 });
+// The example opens at once, to be looked at: nothing asks where to save
+// it before it is seen. Its first Save asks, with a dated name.
 sampleButton.addEventListener("click", () => {
   if (!isEntryIdle(ui())) return;
-  // First, in the click: where to save it (`askOpenSaveFile`).
-  const pick = askOpenSaveFile(SAMPLE_NAME);
   openError.hidden = true;
   setBusy(true, "Fetching the sample tour…");
   fetch(SAMPLE_URL)
@@ -4639,13 +4854,7 @@ sampleButton.addEventListener("click", () => {
       const blob = await response.blob();
       setBusy(false, "");
       const file = new File([blob], SAMPLE_NAME, { type: "application/zip" });
-      const opened = await openFile(file);
-      if (opened) datedSave = true;
-      if (opened && pick !== null && editor !== null) {
-        void keepInChosenFile(editor, file, pick);
-      } else {
-        settleUnusedPick(pick);
-      }
+      if (await openFile(file)) datedSave = true;
     })
     .catch((err: unknown) => {
       setBusy(false, "");
@@ -4653,9 +4862,40 @@ sampleButton.addEventListener("click", () => {
         err instanceof Error ? err.message : String(err)
       }`;
       openError.hidden = false;
-      settleUnusedPick(pick);
     });
 });
+// "Start an empty tour": in the click, where to save it, then a new tour.
+newTourButton.addEventListener("click", () => {
+  if (!isEntryIdle(ui())) return;
+  openError.hidden = true;
+  startNewTourWith(null);
+});
+// The dialog's one action, as the rows plan it (`entry-drop.ts`).
+entryElements.go.addEventListener("click", () => {
+  if (!isEntryIdle(ui())) return;
+  const view = ui();
+  const action = planEntryAction(
+    view.entryFiles,
+    view.entryPicks,
+    editor !== null,
+  );
+  if (action.kind === "open") {
+    void openStaged(action.tour, action.scan);
+  } else if (action.kind === "new-tour-on-scan") {
+    const scan = stagedFiles.get(action.scan);
+    if (scan === undefined) return;
+    openError.hidden = true;
+    // In the click: the new tour's save dialog comes before any await.
+    startNewTourWith(scan.kind);
+  }
+});
+entryElements.addToOpen.addEventListener("click", () => {
+  if (!isEntryIdle(ui())) return;
+  const action = planEntryAction(ui().entryFiles, ui().entryPicks, true);
+  if (action.kind === "new-tour-on-scan") void addStagedToOpen(action.scan);
+});
+store.subscribe(drawEntryDrop);
+drawEntryDrop();
 // A hosted tour, from its link (tour editor plan 2026-10-17-1816, W1): the
 // viewer's transport fetches it whole, then it opens as a chosen file does
 // (no file handle: Save downloads the new copy).
@@ -4693,6 +4933,7 @@ linkForm.addEventListener("submit", (event) => {
     });
 });
 cancelButton.addEventListener("click", () => {
+  store.dispatch(editorViewActions.entryFilesCleared());
   showModal(false);
 });
 /** File's Open…: the open dialog, after the unsaved-work guard. */

@@ -14,12 +14,19 @@ directory can understate it) - never a scan's walk.
 ## Public API
 
 - `classifyEditorFile(file) -> Promise<EditorFileKind>`, never rejects:
-  - `{ kind: "tour", file }` - the directory names a `tour.json`
-    (`tourManifestEntryOf`) or a printed code's level
+  - `{ kind: "tour", file, title, stations }` - the directory names a
+    `tour.json` (`tourManifestEntryOf`) or a printed code's level
     (`qrLevelIdFromEntryName`). A tour carrying a walk is a tour.
-  - `{ kind: "scan", file, scan }` - no tour entry, but a recording
-    (`recordingEntryNames`); `scan` is `readDebugBundle`'s
-    `{ kind: "bundle", identity }` or `{ kind: "recording" }`.
+    `title` (trimmed, cut at 80 characters, null when empty) and
+    `stations` (the `stations` list's length) come from the `tour.json`
+    when its declared size is at most `TOUR_SUMMARY_MAX_BYTES` (256 kB)
+    and it parses; else null - the summary is for the open dialog's chip
+    and never decides the kind.
+  - `{ kind: "scan", file, scan, captures }` - no tour entry, but a
+    recording (`recordingEntryNames`); `scan` is `readDebugBundle`'s
+    `{ kind: "bundle", identity }` or `{ kind: "recording" }`;
+    `captures` the count of recorded frames in the directory
+    (`../tour-read-set.ts` `isRecordedFrameName`), names only.
   - `{ kind: "neither", file, reason }` - `NOT_A_ZIP` for a name and type
     that are no zip, `describeOpenError` words for bytes that are not a
     readable zip, `NOT_A_TOUR` for a zip with neither a tour nor a
@@ -48,7 +55,9 @@ if (kind.kind === "scan") addScan(file);
 
 ## Tests
 
-- `classify-editor-file.test.ts` - each kind, the tour-wins rule, the
+- `classify-editor-file.test.ts` - each kind, a tour's title and station
+  count (wrapped too) and null for a broken, odd or oversized `tour.json`,
+  a scan's capture count, the tour-wins rule, the
   refusals, bytes read stay a fixed block for a 4 MB scan, an identity
   entry that inflates far past its declared size stopped early (its read
   capped, the bytes inflated measured), an identity carried twice refused

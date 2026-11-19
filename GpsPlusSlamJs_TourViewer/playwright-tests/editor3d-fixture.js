@@ -12,6 +12,7 @@ import {
   phoneGroupPx,
 } from "../src/editor/editor-shell/dock-layout.ts";
 import { startOnMap } from "./editor-menus.js";
+import { pressEntry } from "./editor-tours.js";
 
 /** A 1x1 grey PNG: a map tile the page can decode. Encoded here, not
  *  pasted: a hand-copied one carried a broken checksum, so the browser
@@ -389,6 +390,7 @@ export async function openZip(page, zip, name) {
   await (
     await chooser
   ).setFiles({ name, mimeType: "application/zip", buffer: zip });
+  await pressEntry(page);
 }
 
 /**

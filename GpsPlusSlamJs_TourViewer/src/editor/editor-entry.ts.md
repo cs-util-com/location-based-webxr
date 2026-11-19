@@ -6,8 +6,9 @@ The engine behind the open dialog's file input, "Choose…" and drop box:
 given files already sorted (`classify-editor-file.ts`), it plans what to
 do, and it runs "open a tour, then add a scan" as one busy state. The
 order is forced: there is no add without a tour. Pure planning, and an
-orchestrator over injected steps; `edit-main.ts` (`enterFiles`) wires it.
-Which UI offers a new tour, or asks for a scan, is not decided here.
+orchestrator over injected steps; `edit-main.ts` (`runEntryPlan`) runs it
+once the open dialog's one action is pressed (`entry-drop.ts` plans that
+action from the rows; this plans what the press does with the files).
 
 ## Public API
 

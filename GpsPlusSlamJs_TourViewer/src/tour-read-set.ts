@@ -87,6 +87,12 @@ const RECORDED_FRAME = new RegExp(
   String.raw`(^|/)(${SESSION_IMAGES_DIR}|${LEGACY_SESSION_IMAGES_DIR})/frame-\d+\.[A-Za-z0-9]+$`,
 );
 
+/** Whether `name` is a recorded frame (`frame-NNNNNN.<ext>` in the
+ *  recording's images folder): one camera capture of the walk. */
+export function isRecordedFrameName(name: string): boolean {
+  return RECORDED_FRAME.test(name);
+}
+
 /** The recording's action stream, the walk itself: an `actions/` path
  *  SEGMENT, at the start or after a slash, so a sibling folder whose name
  *  only ends in it (`myactions/`) is not it. The framework's parser

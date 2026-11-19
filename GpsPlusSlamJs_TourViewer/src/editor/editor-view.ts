@@ -23,6 +23,12 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 import { tourDocumentActions } from "../tour-document.js";
+import {
+  isEntryRow,
+  MAX_ENTRY_FILES,
+  type EntryPicks,
+  type EntryRow,
+} from "./entry-drop.js";
 
 /** A spot on the map, as a drag drops a marker. */
 interface MapSpot {
@@ -135,6 +141,12 @@ export interface EditorViewState {
    *  added - one step to the person, from the open's start to the add's
    *  end (`editor-entry.ts`). Null otherwise. */
   readonly entryStep: EditorEntryStep | null;
+  /** The files in the open dialog's drop area, one row each, in the order
+   *  given (`entry-drop.ts`); the files themselves are the page's. Nothing
+   *  is opened until the dialog's one action is pressed. */
+  readonly entryFiles: readonly EntryRow[];
+  /** The tour and the scan picked among several in the drop area. */
+  readonly entryPicks: EntryPicks;
   /** A Duplicate is reading its pictures before it writes: another one
    *  does nothing meanwhile, so a second Ctrl+D makes no second copy. */
   readonly duplicating: boolean;
@@ -201,6 +213,8 @@ export const initialEditorViewState: EditorViewState = {
   message: null,
   picking: false,
   entryStep: null,
+  entryFiles: [],
+  entryPicks: { tour: null, scan: null },
   duplicating: false,
   viewMode: "2d",
   view3dLoad: "idle",
@@ -364,6 +378,41 @@ const editorViewSlice = createSlice({
         state.entryStep = step;
       }
     },
+    /** Files sorted into the drop area: rows that are not rows, and ids
+     *  already there, are left out, and at most `MAX_ENTRY_FILES` are
+     *  kept. */
+    entryFilesAdded(
+      state,
+      action: PayloadAction<{ rows: readonly EntryRow[] }>,
+    ) {
+      const { rows } = action.payload;
+      if (!Array.isArray(rows)) return;
+      for (const row of rows) {
+        if (state.entryFiles.length >= MAX_ENTRY_FILES) break;
+        if (!isEntryRow(row)) continue;
+        if (state.entryFiles.some((r) => r.id === row.id)) continue;
+        state.entryFiles.push(row);
+      }
+    },
+    /** A row taken out of the drop area, and its pick with it. */
+    entryFileRemoved(state, action: PayloadAction<{ id: string }>) {
+      const { id } = action.payload;
+      state.entryFiles = state.entryFiles.filter((r) => r.id !== id);
+      if (state.entryPicks.tour === id) state.entryPicks.tour = null;
+      if (state.entryPicks.scan === id) state.entryPicks.scan = null;
+    },
+    /** The tour or the scan of a row picked; a row not there, or one that
+     *  is neither, changes nothing. */
+    entryFilePicked(state, action: PayloadAction<{ id: string }>) {
+      const row = state.entryFiles.find((r) => r.id === action.payload.id);
+      if (row?.chip.kind === "tour") state.entryPicks.tour = row.id;
+      if (row?.chip.kind === "scan") state.entryPicks.scan = row.id;
+    },
+    /** The drop area emptied. */
+    entryFilesCleared(state) {
+      state.entryFiles = [];
+      state.entryPicks = { tour: null, scan: null };
+    },
     duplicatingChanged(state, action: PayloadAction<{ duplicating: boolean }>) {
       state.duplicating = action.payload.duplicating;
     },
@@ -494,7 +543,13 @@ const editorViewSlice = createSlice({
       state.foldedFolders = [];
     };
     builder
-      .addCase(tourDocumentActions.opened, foldAll)
+      .addCase(tourDocumentActions.opened, (state) => {
+        foldAll(state);
+        // The files given to open it are done with: the next open dialog
+        // starts empty.
+        state.entryFiles = [];
+        state.entryPicks = { tour: null, scan: null };
+      })
       .addCase(tourDocumentActions.closed, foldAll);
   },
 });

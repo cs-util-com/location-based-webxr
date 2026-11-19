@@ -4765,6 +4765,28 @@ body[data-view="3d"] #toasts {
   border-color: var(--s-line2);
 }
 
+.backdrop .entry-row {
+  border-color: var(--s-line2);
+  background-color: var(--s-bg2);
+  color: var(--s-text);
+}
+
+.backdrop .entry-chip {
+  background-color: var(--s-bg3);
+  color: var(--s-text);
+}
+
+.backdrop .entry-row[data-kind="tour"] .entry-chip,
+.backdrop .entry-row[data-kind="scan"] .entry-chip {
+  background-color: var(--s-accent-bg);
+  color: var(--s-accent-text);
+}
+
+.backdrop .entry-row[data-kind="neither"] .entry-chip {
+  background-color: transparent;
+  color: var(--s-danger);
+}
+
 .backdrop .drop.over {
   border-color: var(--s-accent);
   background-color: var(--s-accent-bg);

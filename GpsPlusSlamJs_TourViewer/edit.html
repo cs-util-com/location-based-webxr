@@ -777,36 +777,58 @@
         aria-modal="true"
         aria-labelledby="open-title"
       >
-        <h1 id="open-title">Open a tour</h1>
+        <h1 id="open-title">Open the editor</h1>
         <p class="lede">
-          See what your phone created on a map: every printed code, pin and
-          photo, and fix a text, move a pin or remove a note.
+          Bring a tour you made, a scan of the place, or both. The editor sorts
+          them, and nothing opens until you choose what to do.
         </p>
+        <!-- One drop area for every file (entry-drop.ts): each becomes a row
+             with a chip saying what it is, and the rows decide the one
+             action below. -->
         <label class="drop" id="drop">
           <span class="drop-text">
-            <span class="drop-title">Choose the tour file (.zip)</span>
+            <span class="drop-title"
+              >Drop your files here - a tour, a scan, or both.</span
+            >
             <span class="drop-sub"
-              >The file your phone's Finish saved. You can also drop it
-              here.</span
+              >A tour is the .zip your phone's Finish saved. A scan is a
+              Recorder recording or the debug data your phone saved.</span
             >
           </span>
           <button class="btn small" id="choose-btn" type="button">
-            Choose…
+            Choose files…
           </button>
           <input
             type="file"
             id="zip-input"
             accept=".zip,application/zip"
+            multiple
             hidden
           />
         </label>
+        <ul class="entry-rows" id="entry-rows" hidden></ul>
+        <p class="entry-note" id="entry-scan-note" hidden></p>
+        <div class="entry-act" id="entry-act" hidden>
+          <p class="entry-question" id="entry-question" hidden></p>
+          <div class="entry-buttons">
+            <button class="btn primary" id="entry-go" type="button"></button>
+            <button
+              class="btn ghost small"
+              id="entry-add-open"
+              type="button"
+              hidden
+            >
+              Add it to the open tour instead
+            </button>
+          </div>
+        </div>
         <!-- A hosted tour opens from its link (tour editor plan 2026-10-17-1816,
              W1): fetched whole, then opened as a chosen file is
              (editor-link.ts). type="text": the dialog says what is wrong
              with a link, not the browser. -->
         <form class="link-open" id="link-form">
           <label class="link-label" for="link-input"
-            >Or open it from its link</label
+            >Or open a tour from its link</label
           >
           <div class="link-row">
             <input
@@ -828,10 +850,17 @@
           <button class="btn" id="open-cancel" type="button" hidden>
             Cancel
           </button>
-          <button class="btn ghost" id="sample-btn" type="button">
-            Use the sample tour
-          </button>
         </div>
+        <p class="entry-footer">
+          No files?
+          <button class="btn ghost small" id="new-tour-btn" type="button">
+            Start an empty tour
+          </button>
+          <span aria-hidden="true">-</span>
+          <button class="btn ghost small" id="sample-btn" type="button">
+            Look at the example
+          </button>
+        </p>
         <!-- Said per browser by edit-main.ts (saveFinePrint): this text is
              the one for a browser that cannot write a chosen file. The
              privacy page beside it (the site-wide /legal/). -->

@@ -12,6 +12,9 @@ which a visitor never sees.
 
 ## Public API
 
+- `isRecordedFrameName(name) -> boolean` - a recorded frame's entry
+  (the walk's camera captures), wherever it sits; the open dialog counts
+  them for a scan's chip (`editor/classify-editor-file.ts`).
 - `visitorEntryNames(entryNames, manifest, wrap) -> Set<string>` - the
   entries of `entryNames` a visitor reads:
   - `${wrap}tour.json`;

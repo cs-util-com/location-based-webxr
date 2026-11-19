@@ -17,6 +17,7 @@ import {
   worldManifest,
 } from "./ar-fakes.js";
 import { save, startOnMap } from "./editor-menus.js";
+import { pressEntry } from "./editor-tours.js";
 
 /**
  * A tour whose station stands every kind of free block in the world (the
@@ -163,6 +164,7 @@ async function openInEditor(page, zip) {
     mimeType: "application/zip",
     buffer: zip,
   });
+  await pressEntry(page);
   await expect(page.locator("#tour-name")).toHaveText("E2E castle");
 }
 
