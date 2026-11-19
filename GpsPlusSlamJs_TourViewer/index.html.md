@@ -5,7 +5,9 @@
 Two pages in one file (guided-setup plan DEC-N1, 2026-09-08): the plain
 page is the CREATOR'S guided setup, a `?qr=` launch is the VISITOR'S
 screen. Everything marked `.creator-only` is hidden for a visitor
-(`visitor-screen.ts`); `#visitor-screen` is hidden for a creator.
+(`visitor-screen.ts`); `#visitor-screen` is hidden for a creator. The
+head carries a meta description of what the app is for (what a search
+result or a shared link shows).
 
 - The setup (`wizard.ts`): collapsible steps, one open at a time, each
   with an `<h2>` inside its summary (valid markup; how a screen reader

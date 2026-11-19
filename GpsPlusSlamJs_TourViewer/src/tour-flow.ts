@@ -10,7 +10,7 @@
  *   that as the app waiting for a code the zip cannot carry (feedback F3).
  *   With NO tour open the scanning line stays: a tour opened later can
  *   still resolve against it (owner verdict 2026-09-04, DEC-T9).
- * - The running prefix "<mode> — AR running · N camera frames" is pinned
+ * - The running prefix "<mode> - AR running · N camera frames" is pinned
  *   by the e2e suite and is a contract.
  */
 
@@ -252,11 +252,15 @@ export function arStatusLine(input: ArStatusInput): string {
   if (input.arStatus !== "running") {
     // The cause of a failed start, for the creator and ?debug=1: the button
     // only says "Try again" since UI round 1 (U1 milestone review #1).
-    if (input.arStatus !== "error") return `${mode} — ${input.arStatus}`;
+    if (input.arStatus !== "error") {
+      // Before a session a creator's line carries only a failed start's
+      // cause: "ready" or "unsupported" said nothing the button does not.
+      return input.mode === "creator" ? "" : `${mode} - ${input.arStatus}`;
+    }
     const cause =
       input.arError == null
-        ? `${mode} — error`
-        : `${mode} — error: ${input.arError}`;
+        ? `${mode} - error`
+        : `${mode} - error: ${input.arError}`;
     const refusal = input.locationRefusal ?? null;
     return refusal === null
       ? cause
@@ -265,7 +269,7 @@ export function arStatusLine(input: ArStatusInput): string {
   // A tour that is not finished yet has nothing to scan for or place: the
   // sentence stands alone after the prefix.
   if (input.tour.kind === "open" && input.tour.unfinished !== undefined) {
-    return `${mode} — AR running · ${String(input.cameraFrames)} camera frames · ${notFinishedSentence(input.tour.unfinished.contact)}`;
+    return `${mode} - AR running · ${String(input.cameraFrames)} camera frames · ${notFinishedSentence(input.tour.unfinished.contact)}`;
   }
   const placement = input.placement;
   // While the gate scans, the placement's coaching hint ("walk around")
@@ -286,7 +290,7 @@ export function arStatusLine(input: ArStatusInput): string {
   const gateIgnored =
     input.gate.kind === "passed" && input.gate.via === "ignored";
   const segments = [
-    `${mode} — AR running · ${String(input.cameraFrames)} camera frames`,
+    `${mode} - AR running · ${String(input.cameraFrames)} camera frames`,
     // The gate's own "point the phone at the code" replaces the pipeline's
     // generic scanning line; a detected-but-unknown code still shows.
     ((gateScanning || gateIgnored) &&

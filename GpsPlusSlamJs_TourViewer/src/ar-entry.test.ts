@@ -728,7 +728,7 @@ describe("the status line's channels (U1 milestone review #8, #9)", () => {
   it("announces a creator's failed start, with its cause", () => {
     const h = harness({ arStatus: "error", mode: "creator" });
     h.entry.renderArStatus();
-    expect(h.dom.arStatusLive.textContent).toBe("Creator mode — error");
+    expect(h.dom.arStatusLive.textContent).toBe("Creator mode - error");
   });
 
   it("names the gate on the line, for tests and styling", () => {
