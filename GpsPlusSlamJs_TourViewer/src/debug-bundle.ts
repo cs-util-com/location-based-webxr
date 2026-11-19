@@ -33,7 +33,7 @@ const FORMAT = 1;
 const MAX_TEXT_CHARS = 512;
 
 /** The largest identity entry read: a written one is a few hundred bytes. */
-const MAX_IDENTITY_BYTES = 16 * 1024;
+export const MAX_IDENTITY_BYTES = 16 * 1024;
 
 /** A series id's shape: the signed list's alphabet (base64url). Looser in
  *  length than the list's 16-64, since the bundle only compares it. */

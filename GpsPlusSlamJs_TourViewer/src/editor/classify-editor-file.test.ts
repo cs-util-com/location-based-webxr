@@ -1,6 +1,46 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import type * as Storage from "gps-plus-slam-app-framework/storage";
+import { MAX_IDENTITY_BYTES } from "../debug-bundle.js";
+import { tourManifestEntryOf } from "gps-plus-slam-app-framework/ar/tour-archive";
+import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
+import {
+  BlobWriter,
+  TextReader,
+  Uint8ArrayReader,
+  ZipWriter,
+} from "@zip.js/zip.js";
+import { recordingEntryNames } from "../tour-read-set.js";
+
+/** Every entry read, kept: the cap it was given, and its blob's size or
+ *  what it threw. The read itself is the real one; this only watches it. */
+const reads = vi.hoisted(
+  () =>
+    [] as Array<{
+      cap: number | undefined;
+      end: { size: number } | { error: unknown };
+    }>,
+);
+vi.mock("gps-plus-slam-app-framework/storage", async (importOriginal) => {
+  const real = await importOriginal<typeof Storage>();
+  return {
+    ...real,
+    readZipEntryBlob: async (
+      ...args: Parameters<typeof real.readZipEntryBlob>
+    ) => {
+      const cap = args[3];
+      try {
+        const blob = await real.readZipEntryBlob(...args);
+        reads.push({ cap, end: { size: blob.size } });
+        return blob;
+      } catch (error) {
+        reads.push({ cap, end: { error } });
+        throw error;
+      }
+    },
+  };
+});
 import {
   classifyEditorFile,
   classifyEditorFiles,
@@ -125,6 +165,69 @@ describe("classifyEditorFile", () => {
     expect(kind.reason).not.toBe(NOT_A_TOUR);
   });
 
+  // Why: the file is untrusted. Its directory may say its identity entry
+  // is 100 bytes while it inflates to 8 MiB. The read must stop early (the
+  // bytes inflated are measured) and the file be refused as unreadable;
+  // the identity read carries its own cap, so it stops near 16 KiB even
+  // where the zip reader's own check against the declared size does not
+  // apply, rather than under the archive's budget of tens of MiB.
+  it("stops a crafted identity entry that inflates far past what its directory declares", async () => {
+    const writer = new ZipWriter(new BlobWriter("application/zip"), {
+      level: 9,
+    });
+    await writer.add("actions/000001.json", new TextReader("[]"));
+    await writer.add(
+      "debug-bundle.json",
+      new Uint8ArrayReader(new Uint8Array(8 << 20).fill(0x20)),
+    );
+    const bytes = new Uint8Array(await (await writer.close()).arrayBuffer());
+    const view = new DataView(bytes.buffer);
+    for (let i = 0; i + 4 <= bytes.length; i++) {
+      const sig = view.getUint32(i, true);
+      if (sig === 0x04034b50) view.setUint32(i + 22, 100, true);
+      if (sig === 0x02014b50) view.setUint32(i + 24, 100, true);
+    }
+    const file = new File([bytes], "bomb.zip", { type: "application/zip" });
+    reads.length = 0;
+    const kind = await classifyEditorFile(file);
+    expect(kind.kind).toBe("neither");
+    if (kind.kind !== "neither") throw new Error();
+    expect(kind.reason).toBe("Its debug-bundle.json could not be read.");
+    expect(reads).toHaveLength(1);
+    const read = reads[0];
+    expect(read?.cap).toBe(MAX_IDENTITY_BYTES);
+    if (read === undefined || !("error" in read.end)) {
+      throw new Error("the identity read did not fail");
+    }
+    // Whichever guard stopped it, it stopped near the start.
+    const err = read.end.error as { observed?: number; outputSize?: number };
+    const inflated = err.observed ?? err.outputSize;
+    expect(inflated).toBeDefined();
+    expect(inflated).toBeLessThan(1 << 20);
+  });
+
+  // Why: two identity entries of one name say two different tours; the
+  // directory lists both, so the file is refused as ambiguous rather than
+  // read for the first.
+  it("refuses a scan carrying its identity entry twice under one name", async () => {
+    const writer = new ZipWriter(new BlobWriter("application/zip"), {
+      level: 0,
+    });
+    await writer.add("actions/000001.json", new TextReader("[]"));
+    await writer.add("debug-bundle.json", new TextReader(IDENTITY));
+    await writer.add("debug-bundle.jsox", new TextReader(IDENTITY));
+    const bytes = new Uint8Array(await (await writer.close()).arrayBuffer());
+    const from = new TextEncoder().encode("debug-bundle.jsox");
+    for (let i = 0; i + from.length <= bytes.length; i++) {
+      if (from.every((b, k) => bytes[i + k] === b)) bytes[i + 16] = 0x6e;
+    }
+    const file = new File([bytes], "twice.zip", { type: "application/zip" });
+    const kind = await classifyEditorFile(file);
+    expect(kind.kind).toBe("neither");
+    if (kind.kind !== "neither") throw new Error();
+    expect(kind.reason).toMatch(/more than one debug-bundle\.json/);
+  });
+
   // Why: the plan's "chips without reading the scan" - a scan sorts from
   // its directory; its walk's bytes are never read.
   it("reads only the directory of a scan, never its walk", async () => {
@@ -159,6 +262,8 @@ describe("classifyEditorFile", () => {
 
   // Why: the file is untrusted - whatever entry names it carries, the
   // classifier answers and never rejects, and a tour entry always wins.
+  // The oracle is the archive's own predicates (a wrapped tour, `w/tour.json`
+  // or `ab/qr/cd.json`, is a tour too), so wrapped tours are tested as well.
   it("never rejects, and a tour entry always makes a tour", async () => {
     const name = fc.oneof(
       fc.constantFrom(
@@ -166,6 +271,9 @@ describe("classifyEditorFile", () => {
         "qr/a.json",
         "actions/1.json",
         "debug-bundle.json",
+        "w/tour.json",
+        "ab/qr/cd.json",
+        "w/actions/1.json",
       ),
       fc.stringMatching(/^[a-z]{1,6}(\/[a-z]{1,6}){0,2}\.(json|jpg|bin)$/),
     );
@@ -178,10 +286,10 @@ describe("classifyEditorFile", () => {
             names.map((path) => ({ path, data: "{}" })),
           );
           const kind = await classifyEditorFile(file);
-          const tourish = names.some(
-            (n) => n === "tour.json" || /^qr\/[^/]+\.json$/.test(n),
-          );
-          const walk = names.some((n) => n.startsWith("actions/"));
+          const tourish =
+            tourManifestEntryOf(names) !== null ||
+            names.some((n) => qrLevelIdFromEntryName(n) !== null);
+          const walk = recordingEntryNames(names).length > 0;
           const allowed = tourish
             ? ["tour"]
             : walk

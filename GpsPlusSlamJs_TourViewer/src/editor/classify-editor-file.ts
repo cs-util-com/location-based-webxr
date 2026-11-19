@@ -1,6 +1,10 @@
 import { tourManifestEntryOf } from "gps-plus-slam-app-framework/ar/tour-archive";
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
-import { readDebugBundle, type DebugBundleFound } from "../debug-bundle.js";
+import {
+  MAX_IDENTITY_BYTES,
+  readDebugBundle,
+  type DebugBundleFound,
+} from "../debug-bundle.js";
 import { describeOpenError } from "../open-errors.js";
 import { recordingEntryNames } from "../tour-read-set.js";
 import { withZipBlobDirectory } from "../zip-blob.js";
@@ -41,9 +45,14 @@ export async function classifyEditorFile(file: File): Promise<EditorFileKind> {
       if (recordingEntryNames(names).length === 0) {
         return { kind: "neither", file, reason: NOT_A_TOUR };
       }
-      const read = await readDebugBundle(names, (name) => dir.read(name), {
-        sizeOf: (name) => dir.sizeOf(name),
-      });
+      // The identity entry inflated under its own small cap: a directory
+      // can understate it, and the archive's budget alone would let it
+      // inflate to tens of MiB before its size is looked at.
+      const read = await readDebugBundle(
+        names,
+        (name) => dir.read(name, MAX_IDENTITY_BYTES),
+        { sizeOf: (name) => dir.sizeOf(name) },
+      );
       if (read.kind === "refused") {
         return { kind: "neither", file, reason: read.reason };
       }

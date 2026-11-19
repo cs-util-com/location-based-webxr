@@ -17,8 +17,13 @@ carry.
   exact name (wrap prefix included).
 
 - `withZipBlobDirectory(blob, use): Promise<T>` - one directory read
-  handed to `use` as `{ names, sizeOf(name), read(name) }` (valid only
-  inside `use`; the reader closes after it). Reads only the directory's
+  handed to `use` as `{ names, sizeOf(name), read(name, maxEntryBytes?) }`
+  (valid only inside `use`; the reader closes after it). `names` lists a
+  name the zip carries twice twice, so a caller can refuse the ambiguity;
+  `sizeOf` and `read` use the first entry of such a name. `maxEntryBytes`
+  caps what one read inflates (the framework's `readZipEntryBlob` cap,
+  an `ArchiveLimitError` of kind `"entry-bytes"` past it), below the
+  archive's budget, for an entry a caller wants small. Reads only the directory's
   bytes plus what `use` reads, so it suits a large File too: the editor's
   file classifier (`editor/classify-editor-file.ts`) sorts a scan by it
   without reading the scan.
@@ -44,4 +49,6 @@ const picture = await readZipBlobEntry(lastSave, "content/f.jpg");
 
 `zip-blob.test.ts`: names in archive order and one entry's bytes; a
 missing name and non-zip bytes refused; the directory's names, sizes and
-one read, and a missing entry refused through it.
+one read, and a missing entry refused through it; a read capped by
+`maxEntryBytes` stopped near the cap (an entry deflated from 8 MiB,
+the bytes inflated measured); a name carried twice listed twice.

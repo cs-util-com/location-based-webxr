@@ -8,7 +8,8 @@ before anything is opened. The editor then opens a tour, adds a scan
 beside an open tour, or refuses in words. It reads the zip's central
 directory once (`../zip-blob.ts` `withZipBlobDirectory`) and, for a
 bundle, its small identity entry (`../debug-bundle.ts` `readDebugBundle`,
-which caps it) - never a scan's walk.
+which caps it, inflated under its own cap `MAX_IDENTITY_BYTES`: a
+directory can understate it) - never a scan's walk.
 
 ## Public API
 
@@ -48,9 +49,13 @@ if (kind.kind === "scan") addScan(file);
 ## Tests
 
 - `classify-editor-file.test.ts` - each kind, the tour-wins rule, the
-  refusals, bytes read stay a fixed block for a 4 MB scan, a list in
-  order, and a property over random entry names (never rejects; a tour
-  entry always makes a tour; no recording and no tour is neither).
+  refusals, bytes read stay a fixed block for a 4 MB scan, an identity
+  entry that inflates far past its declared size stopped early (its read
+  capped, the bytes inflated measured), an identity carried twice refused
+  as ambiguous, a list in order, and a property over random entry names,
+  wrapped ones included (never rejects; a tour entry always makes a tour;
+  no recording and no tour is neither; the oracle is the archive's own
+  predicates).
 - `classify-editor-file.recordings.test.ts` - the example Recorder zips:
   each a scan under the read bound, bytes read printed per file (no clock
   assertion: the bytes are the machine-independent bound; `--reporter=default`

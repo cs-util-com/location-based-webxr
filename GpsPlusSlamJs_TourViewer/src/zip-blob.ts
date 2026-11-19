@@ -49,12 +49,19 @@ export function zipBlobEntryNames(blob: Blob): Promise<string[]> {
 /** One read of a zip's central directory: its file entries and a way to
  *  read one of them, valid only inside the `use` callback. */
 export interface ZipBlobDirectory {
-  /** The file entries' names, in archive order (directories left out). */
+  /** The file entries' names, in archive order (directories left out). A
+   *  name the zip carries twice is listed twice, so a reader can refuse
+   *  the ambiguity rather than read one of the two unknowingly. */
   readonly names: readonly string[];
-  /** An entry's uncompressed size as the directory declares it. */
+  /** An entry's uncompressed size as the directory declares it (the
+   *  first entry of a repeated name). */
   sizeOf(name: string): number | undefined;
-  /** An entry's bytes; rejects, naming it, when the zip lacks it. */
-  read(name: string): Promise<Blob>;
+  /** An entry's bytes (the first entry of a repeated name); rejects,
+   *  naming it, when the zip lacks it. `maxEntryBytes` caps what is
+   *  inflated, below the archive's budget: a directory can understate an
+   *  entry's size, and the budget alone lets one inflate to tens of MiB
+   *  before a caller could look at its size. */
+  read(name: string, maxEntryBytes?: number): Promise<Blob>;
 }
 
 /**
@@ -67,14 +74,17 @@ export function withZipBlobDirectory<T>(
   use: (directory: ZipBlobDirectory) => Promise<T>,
 ): Promise<T> {
   return withEntries(blob, (entries) => {
+    const names: string[] = [];
     const files = new Map<string, FileEntry>();
     for (const e of entries) {
-      if (!e.directory && !files.has(e.filename)) files.set(e.filename, e);
+      if (e.directory) continue;
+      names.push(e.filename);
+      if (!files.has(e.filename)) files.set(e.filename, e);
     }
     return use({
-      names: Array.from(files.keys()),
+      names,
       sizeOf: (name) => files.get(name)?.uncompressedSize,
-      read: (name) => {
+      read: (name, maxEntryBytes) => {
         const entry = files.get(name);
         if (entry === undefined) {
           return Promise.reject(new Error(`the zip carries no ${name}`));
@@ -83,6 +93,7 @@ export function withZipBlobDirectory<T>(
           entry,
           DecompressionBudget.forArchive(blob.size),
           "application/octet-stream",
+          maxEntryBytes,
         );
       },
     });
