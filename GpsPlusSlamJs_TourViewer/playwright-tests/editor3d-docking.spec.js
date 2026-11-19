@@ -1670,6 +1670,16 @@ test("the debug panel stands inside the 3D view's pane with the bottom group ope
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   await answerHosts(page);
+  // Where the panel stands as the page is parsed: its place on the map.
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => {
+      const panel = document.getElementById("debug-panel");
+      /** @type {any} */ (window).__debugPanelHome = {
+        parent: panel?.parentElement,
+        next: panel?.nextElementSibling,
+      };
+    });
+  });
   await openSampleIn3d(page);
   const viewPane = page.locator(".dock-host .dock-pane-view");
   const panel = viewPane.locator("#debug-panel");
@@ -1698,8 +1708,50 @@ test("the debug panel stands inside the 3D view's pane with the bottom group ope
   await expect(panel).toBeVisible();
   await at("844 x 390, a phone held sideways");
 
+  // Just above the width that hides it the pane is narrow: a long status
+  // line widens the panel up to its cap, which must leave the map
+  // controls at the pane's other corner uncovered.
+  await page.setViewportSize({ width: 740, height: 360 });
+  await dockSettled(page, 740);
+  await page.locator("#debug-status").evaluate((status) => {
+    status.textContent =
+      "Debug data: 12 captures, 3 skipped, 41 points without a picture, " +
+      "the rest drawn on the globe at their recorded places";
+  });
+  await afterFrames(page, 2);
+  await at("740 x 360, a long status line");
+  const controls = await box(viewPane.locator("#map-controls"));
+  const wide = await box(panel);
+  expect(
+    wide.x + wide.width <= controls.x ||
+      wide.y + wide.height <= controls.y ||
+      controls.y + controls.height <= wide.y,
+    `the panel covers the map controls: ${JSON.stringify({ wide, controls })}`,
+  ).toBe(true);
+
   await viewCommand(page, "switch");
   await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
   await expect(page.locator("#view3d #debug-panel")).toHaveCount(0);
   await expect(page.locator("#debug-panel")).toBeVisible();
+  // Back in the very place it had at load, before its sibling there.
+  expect(
+    await page.evaluate(() => {
+      const home = /** @type {any} */ (window).__debugPanelHome;
+      const now = document.getElementById("debug-panel");
+      return (
+        home?.parent instanceof Element &&
+        now?.parentElement === home.parent &&
+        now?.nextElementSibling === home.next
+      );
+    }),
+  ).toBe(true);
+
+  // Its button keeps the focus while the panel moves into the view's pane
+  // (the page puts it into the view box, the docking moves it on): the
+  // switch is pressed without moving the focus, as a shortcut would.
+  await page.locator("#debug-add").focus();
+  await page.evaluate(() => document.getElementById("view-switch")?.click());
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d");
+  await expect(viewPane.locator("#debug-panel")).toBeVisible();
+  await expect(page.locator("#debug-add")).toBeFocused();
 });

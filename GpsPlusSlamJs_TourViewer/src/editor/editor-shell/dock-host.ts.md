@@ -196,7 +196,8 @@ are not part of the page's first load.
   (`#debug-panel`, which `edit-main.ts` puts in the view box only while
   the 3D view shows and takes back to the page over the map) move into
   the 3D view's panel; a mutation observer moves those the view adds later (a
-  new canvas). Moving a canvas keeps its WebGL context.
+  new canvas, the debug panel put back into the view box). Moving a canvas
+  keeps its WebGL context; a focus inside a moved part is kept (`holdFocus`).
 - While the details hold the long text's writer (their `lw` class, `lw-wide`
   when wider) their group takes `writerWidthPx`, and gets back the width it
   had once the writer goes (the new window's column width after a window

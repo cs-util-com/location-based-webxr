@@ -338,13 +338,19 @@ export function mountDockHost(deps: DockHostDeps): DockHost {
     });
   };
   /** The 3D view's parts into its panel (the canvas first, under the
-   *  rest); also those the view adds later (a new canvas). */
+   *  rest); also those the view adds later (a new canvas, the debug
+   *  panel the page puts into the view). A focus inside one is kept. */
   const adoptViewParts = () => {
-    for (const selector of VIEW_PARTS) {
-      for (const node of box.querySelectorAll(`:scope > ${selector}`)) {
-        adopt(node, view, selector === ".view3d-canvas");
-      }
-    }
+    const parts = VIEW_PARTS.flatMap((selector) =>
+      [...box.querySelectorAll(`:scope > ${selector}`)].map((node) => ({
+        node,
+        under: selector === ".view3d-canvas",
+      })),
+    );
+    if (parts.length === 0) return;
+    const back = holdFocus(parts.map((p) => p.node));
+    for (const { node, under } of parts) adopt(node, view, under);
+    back();
   };
   const watcher = new MutationObserver(adoptViewParts);
 

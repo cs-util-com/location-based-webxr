@@ -89,10 +89,15 @@ body[data-view="3d"] :is(#rail, #card, #offscreen-chip) {
   );
 }
 
+/* Docked, the map controls stand at the pane's other foot corner: the
+ * panel leaves their width free (122 px measured, with a 12 px gap), or
+ * on a narrow pane (a phone held sideways, just above the width that
+ * hides the panel) a long status line widens it over them
+ * (`editor3d-docking.spec.js` measures both). */
 #view3d.docked .dock-pane-view .debug-panel {
   bottom: 14px;
   left: 12px;
-  max-width: min(320px, calc(100% - 24px));
+  max-width: min(320px, calc(100% - 24px - 134px));
 }
 
 @media (width <= 700px) {
