@@ -81,12 +81,9 @@ import {
 } from "gps-plus-slam-osm";
 import { createTerrainField, type TerrainField } from "gps-plus-slam-osm";
 import { terrainWindowFor } from "gps-plus-slam-osm";
-import {
-  DEFAULT_COLOUR_SCHEME,
-  colourSchemeOf,
-  isColourSchemeName,
-  type ColourSchemeName,
-} from "../colour-schemes.js";
+import { DEFAULT_COLOUR_SCHEME } from "../colour-schemes.js";
+import { isLookChoice, lookBuildOf, type LookChoice } from "../look-choice.js";
+import { transferablesOf } from "./mesh-transfer.js";
 import {
   meshBuildChoices,
   meshBuildKey,
@@ -111,7 +108,6 @@ import {
   MeshBuildError,
   type TransferableMesh,
   type WorkerCallKind,
-  type UpdateResult,
   type WorkerCalls,
   type WorkerNotice,
 } from "./protocol.js";
@@ -316,7 +312,7 @@ function buildMesh(
    */
   loadedTiles: readonly string[] = [],
   /** The colours to build in (colour schemes plan 2026-11-10-0841, D1). */
-  scheme: ColourSchemeName = DEFAULT_COLOUR_SCHEME,
+  scheme: LookChoice = DEFAULT_COLOUR_SCHEME,
   /** Whether to rasterise the land-use ground tint (AR draws no ground). */
   groundTint = true,
   /** Whether to invent roofs for the buildings the map says nothing about. */
@@ -374,7 +370,9 @@ function buildMesh(
     // THE SCHEME'S COLOURS, passed even for the default: the library's
     // identity test holds that the explicit default builds byte-identical
     // buffers to none at all.
-    colours: colourSchemeOf(scheme).city,
+    // The time-of-day blend adds `looks`: the city baked in its four looks
+    // at once, look 0 being `colours` (`lookBuildOf`).
+    ...lookBuildOf(scheme),
     // THE LAYER LIST'S SWITCH, the library default (on) when never touched.
     // The obstacle index follows it (`planRoute`), so agents walk the drawn
     // city.
@@ -592,7 +590,7 @@ function meshUpdateFor(
   },
   pipeline: DemoPipeline,
   frameOrigin: LatLng,
-  scheme: ColourSchemeName,
+  scheme: LookChoice,
   /** The key of the full mesh the page draws (`undefined`: none). */
   drawnBuildKey: string | undefined,
   /** Whether the full build includes the ground tint. */
@@ -788,7 +786,7 @@ async function handle<K extends WorkerCallKind>(
       // worker does not know is refused before any work, as that scheme's
       // build failure.
       const scheme = colourScheme ?? DEFAULT_COLOUR_SCHEME;
-      if (!isColourSchemeName(scheme)) {
+      if (!isLookChoice(scheme)) {
         throw new MeshBuildError(`no such colour scheme: "${scheme}"`, {
           colourScheme: scheme,
           inventedRoofs: inventedRoofs ?? true,
@@ -1340,59 +1338,6 @@ function describeCurrentTerrain(
     // stops covering the user as soon as they walk past its extent.
     centreEnu: window.sampleCentreEnu,
   };
-}
-
-/**
- * Buffers to hand over rather than copy, per request kind.
- *
- * WHY PER KIND AND NOT A BLANKET SWEEP. Transferring **detaches** a buffer on this
- * side, so it may only be done for data the worker does not keep:
- *
- * - **update** — the mesh comes from `chunkMeshes`, freshly allocated per call and
- *   never retained here, so handing it over is free. This is the payload that
- *   matters: the building geometry is the largest thing that crosses.
- * - **terrain** — the field's `heights` MUST NOT be transferred. That same object
- *   stays in module state for the next mesh build, and detaching it would leave the
- *   worker holding a zero-length array. Buildings would silently drop to flat ground
- *   on the following refresh, which reads as a terrain bug rather than as a
- *   memory-ownership one.
- * - **init / explain** — small plain objects with nothing worth transferring.
- *
- * Until this existed the package's `Float32Array` output was only transfer**able**,
- * while four docstrings claimed the transfer itself as the payoff of the worker
- * split. Raised in review on #228: the docs asserted a property the code lacked.
- */
-function transferablesOf(kind: WorkerCallKind, value: unknown): Transferable[] {
-  if (kind !== "update") return [];
-  const update = (value as UpdateResult | undefined)?.mesh;
-  // A REGIONS-ONLY REPLY TRANSFERS NOTHING (W6). It has no `buildings` or
-  // `plates` to hand over, and the slab buffers are not in this list either —
-  // which is worth knowing rather than assuming: the win from W6 is the BUILD
-  // being skipped, not a transfer being saved.
-  if (update === undefined || update.kind !== "full") return [];
-  const mesh = update.mesh;
-  // PER CHUNK since W20. The layers are lists now, so the transfer list is a
-  // flatMap rather than six fields — and it must stay complete: a buffer left
-  // out is silently COPIED instead of moved, which is invisible except as the
-  // thing this list exists to avoid.
-  return [...mesh.buildings, ...mesh.plates, ...mesh.roads]
-    .flatMap((chunk) => [
-      chunk.mesh.positions.buffer,
-      chunk.mesh.normals.buffer,
-      chunk.mesh.indices.buffer,
-      // `colors` IS DELIBERATELY ABSENT, and the omission is not the oversight
-      // it looks like. Adding it on 2026-08-16 turned the demo's e2e suite red
-      // — so something downstream re-reads that buffer after the post, and
-      // transferring it detaches the worker's copy. Reverted rather than chased,
-      // and filed; the comment above is about buffers that are safe to move.
-      //
-      // The two shell attributes ARE transferred: they are new, and nothing but
-      // the AR material reads them. The optional entries rely on the
-      // `instanceof` filter below to drop `undefined`.
-      chunk.height01?.buffer,
-      chunk.featureRand?.buffer,
-    ])
-    .filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
 }
 
 /**

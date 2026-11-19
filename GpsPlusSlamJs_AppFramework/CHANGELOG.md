@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Veils blend by strength, and the sky balance joins `configure`**
+  (`visualization/atmosphere`): `SkyAtmosphere.setHorizonVeil`,
+  `AtmosphereHaze.setVeil` and `AtmosphereHaze.setRim` take a `strength`
+  in [0, 1] (1 by default, today's veil and rim), with the veil colour
+  premultiplied by it, so a blend of looks weights the veil without a
+  division; `null` now zeroes the veil colour too. The new
+  `checkedVeilStrength` (`horizon-veil.ts`) validates it.
+  `SkyAtmosphere.configure({ skyBalance })` sets the balance in the same
+  call as the sun and the visibility, so a step that moves all three costs
+  one rebuild and one bake; `setSkyBalance` delegates to it.
 - **Cached two-map sun shadows over a whole city**: a near map on the sun,
   fitted to the camera distance and snapped to its texel grid, and a far
   map over the loaded city on a second light of zero intensity; both

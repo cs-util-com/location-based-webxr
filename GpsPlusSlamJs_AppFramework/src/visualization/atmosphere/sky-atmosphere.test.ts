@@ -1910,10 +1910,58 @@ describe('SkyAtmosphere horizon veil', () => {
     expect(s.atmosphere.horizonVeil).toEqual({
       colour: [0.2, 0.3, 0.4],
       riseDeg: 4,
+      strength: 1,
     });
     s.atmosphere.setHorizonVeil(null);
     expect(sky.uniforms.atmSkyVeilOn!.value).toBe(0);
+    expect((sky.uniforms.atmSkyVeil!.value as THREE.Vector3).toArray()).toEqual(
+      [0, 0, 0]
+    );
     expect(s.atmosphere.horizonVeil).toBeNull();
+  });
+
+  // WHY: a blend of looks weights the veil by strength (the share of the
+  // looks that carry one). The colour is PREMULTIPLIED by that strength, so
+  // a blend sums w*s*c and w*s and never divides by a sum that is 0 on a
+  // plateau without a veil. The shader adds the colour and keeps
+  // (1 - strength * weight) of the sky, which at strength 1 is today's mix
+  // and at strength 0 with no colour is no veil at all.
+  it('weights the veil by a strength, with a premultiplied colour', () => {
+    const s = setup();
+    const { sky } = materials(s);
+    s.atmosphere.setHorizonVeil([0.1, 0.15, 0.2], 4, 0.5);
+    expect(sky.uniforms.atmSkyVeilOn!.value).toBe(0.5);
+    expect((sky.uniforms.atmSkyVeil!.value as THREE.Vector3).toArray()).toEqual(
+      [0.1, 0.15, 0.2]
+    );
+    expect(s.atmosphere.horizonVeil).toEqual({
+      colour: [0.1, 0.15, 0.2],
+      riseDeg: 4,
+      strength: 0.5,
+    });
+    // Strength 0 with no colour: the uniforms no veil sets.
+    s.atmosphere.setHorizonVeil([0, 0, 0], 4, 0);
+    expect(sky.uniforms.atmSkyVeilOn!.value).toBe(0);
+    expect((sky.uniforms.atmSkyVeil!.value as THREE.Vector3).toArray()).toEqual(
+      [0, 0, 0]
+    );
+    const f = sky.fragmentShader;
+    expect(f).toContain(
+      'gl_FragColor.rgb = gl_FragColor.rgb * (1.0 - atmSkyVeilOn * atmVeilWeight) + atmSkyVeil * atmVeilWeight;'
+    );
+    expect(f).not.toContain('mix(gl_FragColor.rgb, atmSkyVeil');
+  });
+
+  it('refuses a strength outside 0 to 1, and keeps the last veil', () => {
+    const s = setup();
+    const { sky } = materials(s);
+    s.atmosphere.setHorizonVeil([0.2, 0.3, 0.4], 4, 0.25);
+    for (const bad of [-0.1, 1.1, Number.NaN]) {
+      expect(() =>
+        s.atmosphere.setHorizonVeil([0.2, 0.3, 0.4], 4, bad)
+      ).toThrow(RangeError);
+    }
+    expect(sky.uniforms.atmSkyVeilOn!.value).toBe(0.25);
   });
 
   it('refuses a colour or rise it cannot draw, and keeps the last one', () => {
@@ -2018,8 +2066,75 @@ describe('SkyAtmosphere sky balance', () => {
       'radiance * atmRadianceToScene * atmSkyBalance'
     );
     expect(balanceAt).toBeGreaterThan(0);
-    expect(f.indexOf('mix(gl_FragColor.rgb, atmSkyVeil')).toBeGreaterThan(
-      balanceAt
-    );
+    expect(
+      f.indexOf('gl_FragColor.rgb = gl_FragColor.rgb * (1.0 - atmSkyVeilOn')
+    ).toBeGreaterThan(balanceAt);
+  });
+});
+
+describe('SkyAtmosphere.configure with the sky balance (one update per sun step)', () => {
+  // WHY: a blend of looks moves the sun, the visibility and the sky balance
+  // together on every sun step. Three setters cost a rebuild, another
+  // rebuild and a bake; one configure call must cost one rebuild, whose own
+  // bake already carries the new balance, and a balance alone one bake.
+  const ready = () => {
+    const s = setup();
+    s.atmosphere.setSun(UP);
+    s.device.renders = [];
+    const bakes = s.device.bakes;
+    const sky = s.atmosphere.sky.material as THREE.ShaderMaterial;
+    return { ...s, bakes, sky };
+  };
+
+  it('rebuilds once and bakes once for a sun, a visibility and a balance', () => {
+    const s = ready();
+    s.atmosphere.configure({
+      sunDirection: LOW,
+      visibilityKm: 37,
+      skyBalance: [0.9, 1, 1.1],
+    });
+    expect(s.device.renders).toEqual([
+      'transmittance',
+      'multiScattering',
+      'skyView',
+    ]);
+    expect(s.device.bakes).toBe(s.bakes + 1);
+    expect(
+      (s.sky.uniforms.atmSkyBalance!.value as THREE.Vector3).toArray()
+    ).toEqual([0.9, 1, 1.1]);
+    expect(s.atmosphere.skyBalance).toEqual([0.9, 1, 1.1]);
+  });
+
+  it('bakes once for a sun and a balance, with one sky-view render', () => {
+    const s = ready();
+    s.atmosphere.configure({ sunDirection: LOW, skyBalance: [0.9, 1, 1.1] });
+    expect(s.device.renders).toEqual(['skyView']);
+    expect(s.device.bakes).toBe(s.bakes + 1);
+  });
+
+  it('bakes once for a balance alone, and not at all for the same balance', () => {
+    const s = ready();
+    s.atmosphere.configure({ skyBalance: [0.9, 1, 1.1] });
+    expect(s.device.renders).toEqual([]);
+    expect(s.device.bakes).toBe(s.bakes + 1);
+    s.atmosphere.configure({ skyBalance: [0.9, 1, 1.1] });
+    expect(s.device.bakes).toBe(s.bakes + 1);
+    s.atmosphere.configure({ skyBalance: null });
+    expect(s.atmosphere.skyBalance).toBeNull();
+    expect(s.device.bakes).toBe(s.bakes + 2);
+  });
+
+  it('refuses a bad balance before changing the sun or anything else', () => {
+    const s = ready();
+    expect(() =>
+      s.atmosphere.configure({
+        sunDirection: LOW,
+        skyBalance: [1, Number.NaN, 1],
+      })
+    ).toThrow(RangeError);
+    expect(s.device.renders).toEqual([]);
+    expect(s.device.bakes).toBe(s.bakes);
+    expect(s.atmosphere.skyBalance).toBeNull();
+    expect(s.sky.uniforms.atmSunCosZenith!.value).toBe(1);
   });
 });

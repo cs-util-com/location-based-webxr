@@ -46,6 +46,7 @@ import {
   type Heightfield,
 } from "gps-plus-slam-osm";
 import { applyWoodsShare, WOODS_GOVERNOR } from "gps-plus-slam-osm/three";
+import { CityLook, type CityDrawContext } from "./city-look.js";
 import { heightRampColours } from "./height-ramp.js";
 import { createWoodsMeter, type WoodsMeter } from "./woods-readout.js";
 import {
@@ -71,23 +72,18 @@ import {
   slopeColourUniforms,
 } from "./ground-slope-shader.js";
 import type { GroundSlopeColours } from "./ground-slope-colours.js";
-import { MAX_BRIGHTNESS_TRIM, MIN_BRIGHTNESS_TRIM } from "./colour-schemes.js";
 import { landUseTint, type LandUseTint } from "./land-use-tint.js";
 import {
   applyBuildingSkyLight,
-  applySurfaceGain,
   showCosmetic,
   showFurniture,
-  drawMeshLayers,
 } from "./mesh-layers.js";
 import {
   DEFAULT_LIGHT_SETTINGS,
   gainOf,
-  hazeOf,
-  skyBalanceOf,
-  veilOf,
   type LightSettings,
 } from "./light-settings.js";
+import { rigLightOf } from "./look-light.js";
 import { measureLightReadouts } from "./light-measure.js";
 import { applyArShadowCasting } from "./ar-sun-shadow.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
@@ -95,7 +91,6 @@ import { createQuestBeacons } from "./quest-beacon.js";
 import { type QuestBeaconPlacement } from "./quest-beacon-placement.js";
 import { GROUND_COLOUR } from "./surface-colours.js";
 import { buildUndergroundLines } from "./underground-lines.js";
-import type { MeshLayerContext } from "./mesh-layers.js";
 import type { DrawCost } from "./draw-cost.js";
 import { RENDER_ORDER } from "./layer-order.js";
 import {
@@ -111,7 +106,7 @@ import {
 } from "./pick-gesture.js";
 import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
 import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
-import type { SunAngles } from "./sun-position.js";
+import type { SunAngles, Vector3Like } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import type { HazeModeSwitch } from "./ar-scene-environment.js";
@@ -121,6 +116,7 @@ import {
   surfaceGainAt,
   TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
+  type LightSetting,
 } from "./atmosphere-rig.js";
 import type { TransferableMesh } from "./worker/protocol.js";
 
@@ -539,15 +535,17 @@ export class BuildingView {
    */
   private sunAngles: SunAngles;
   /**
-   * The noon brightening's current factor (plan 2026-09-24-0901), HELD so
-   * every rebuild re-applies it: new meshes arrive at factor 1.
+   * The city's look (`city-look.ts`): the noon gain, the scheme's
+   * brightness trim, the time-of-day look weights and their shared mix and
+   * the plates' colour, HELD there so every rebuild re-applies them (new
+   * meshes arrive at factor 1 and in no look). Every draw of the city goes
+   * through it.
    */
-  private surfaceGain = 1;
-  /**
-   * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
-   * D4), multiplied into {@link surfaceGain} wherever that is applied.
-   */
-  private brightnessTrim = 1;
+  private readonly cityLook = new CityLook({
+    root: this.group,
+    setGroundColours: (ground, slope) => this.setGroundColours(ground, slope),
+    setLandUseLookWeights: (weights) => this.landUse.setLookWeights(weights),
+  });
   /** The light dialog's settings (plan 2026-09-24-2140); the shipped look by default. */
   private lightSettings: LightSettings = DEFAULT_LIGHT_SETTINGS;
   /** The desktop view's distance haze (`scene.fog` outside AR). */
@@ -666,6 +664,10 @@ export class BuildingView {
   private inFrame = false;
   /** Whether the frame now queued was requested from within a frame. */
   private queuedChained = false;
+  /** The 1x1 readback `waitForGpu` reads into. */
+  private readonly gpuWaitPixel = new Uint8Array(4);
+  /** The task the next frame runs before it draws (`atNextFrame`). */
+  private frameTask: (() => void) | undefined;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
@@ -1409,25 +1411,40 @@ export class BuildingView {
   }
 
   /**
-   * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
-   * section 4.4, D4): multiplied into the noon gain, so it reaches buildings
-   * and roads (the `neutralSurface` materials) and nothing else; the gain is
-   * 1 below its start angle, so at night the trim acts alone. `RangeError`
-   * outside 0.5-2.
+   * The time-of-day blend's normalised look weights (one per
+   * `TIME_OF_DAY_LOOKS` entry), or undefined for a fixed scheme. With
+   * weights, everything the looks colour follows them at once: the ground
+   * and its slope colours (`mixedPageLook`), the land-use tint, the trees
+   * (a CPU mix) and the buildings and roads (the trim weights, each look's
+   * brightness trim folded in, with the material trim 1). Uniform and
+   * colour writes only, never a rebuild. RangeError for weights
+   * `mixedPageLook` refuses; nothing changes then.
    */
-  setBrightnessTrim(trim: number): void {
-    if (
-      !Number.isFinite(trim) ||
-      trim < MIN_BRIGHTNESS_TRIM ||
-      trim > MAX_BRIGHTNESS_TRIM
-    ) {
-      throw new RangeError(
-        `brightness trim ${String(trim)} is outside ${MIN_BRIGHTNESS_TRIM}-${MAX_BRIGHTNESS_TRIM}`,
-      );
-    }
-    if (trim === this.brightnessTrim) return;
-    this.brightnessTrim = trim;
-    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
+  setLookWeights(lookWeights: readonly number[] | undefined): void {
+    this.cityLook.setLookWeights(lookWeights);
+    this.requestFrame();
+  }
+
+  /**
+   * Whether the drawn city is a time-of-day build: it holds look weights
+   * (`CityLook.lookWeights`), set by `followMeshScheme` for every full mesh.
+   */
+  get drawsBlend(): boolean {
+    return this.cityLook.lookWeights !== undefined;
+  }
+
+  /**
+   * Follows the scheme a drawn mesh was BUILT in (`CityLook.followScheme`):
+   * a time-of-day build takes `lookWeights`, a fixed scheme its own ground,
+   * plates and brightness trim (multiplied into the noon gain on buildings
+   * and roads only; the gain is 1 below its start angle, so at night the
+   * trim acts alone). The page calls it for every full mesh, before drawing.
+   */
+  followMeshScheme(
+    scheme: string | undefined,
+    lookWeights: readonly number[],
+  ): void {
+    this.cityLook.followScheme(scheme, lookWeights);
     this.requestFrame();
   }
 
@@ -1712,27 +1729,60 @@ export class BuildingView {
   }
 
   /**
-   * The light dialog's settings (plan 2026-09-24-2140): the surface gain's
-   * ramp (applied through `aimSun`, as the sun does), the exposure through
-   * the rig (which re-derives the sun light, fog and haze), and the sky light
-   * on buildings (applied before every render). Held, so rebuilt meshes and
-   * later sun changes keep them. The haze and its veil go to the rig, and its start is
-   * re-applied to the fog at the current draw distance.
+   * The light dialog's settings (plan 2026-09-24-2140) at the held sun: the
+   * sun step `setSunAndLight` with the settings' own light (`rigLightOf`),
+   * so the exposure, the haze and its veil reach the rig in one
+   * `rig.setLight`, and the gain ramp and the sky light on buildings are
+   * held for rebuilt meshes and later sun steps.
    */
   setLightSettings(settings: LightSettings): void {
-    this.lightSettings = settings;
-    this.atmosphere.setExposure({
-      ev: settings.exposureEv,
-      adaptation: settings.exposureAdaptation,
+    this.setSunAndLight(this.sunAngles, settings, rigLightOf(settings));
+  }
+
+  /**
+   * THE SUN STEP: the sun and the light together, as the time-of-day blend
+   * moves them (`look-light.ts`), with ONE atmosphere update and one bake
+   * (`AtmosphereRig.setLight` with the sun). `settings` are what the view
+   * holds for the gain ramp and the sky light on buildings; `light` is what
+   * the atmosphere takes (for one look `rigLightOf(settings)`, for the blend
+   * the looks' light mixed). Validation is the rig's: a `RangeError`
+   * changes nothing there, and then nothing here either.
+   *
+   * THE COST LIVES HERE, DELIBERATELY. A step renders the sky's tables,
+   * reads them back (for the exposure and the fog colour) and re-bakes the
+   * environment map; a changed visibility rebuilds every table. Only the
+   * time controls (the slider sampled while dragged), the drivers
+   * (`sun-follow.ts`) and the light dialog call it, never the camera.
+   */
+  setSunAndLight(
+    angles: SunAngles,
+    settings: LightSettings,
+    light: LightSetting,
+  ): void {
+    // `?perf=1` times the step apart from the wait for the frame in flight
+    // (`SunStepTiming`): the step's own sky readback would wait for it.
+    const recorder = this.perfRecorder;
+    const gpuWaitMs = recorder === undefined ? 0 : this.waitForGpu();
+    const startedAt = performance.now();
+    const allTables =
+      light.haze.visibilityKm !== this.atmosphere.hazeVisibilityKm;
+    const direction = this.atmosphere.setLight(light, angles);
+    recorder?.sunStep({
+      atMs: startedAt,
+      gpuWaitMs,
+      stepMs: performance.now() - startedAt,
+      allTables,
     });
-    this.atmosphere.setHaze(hazeOf(settings));
-    this.atmosphere.setHazeVeil(veilOf(settings));
-    this.atmosphere.setSkyBalance(skyBalanceOf(settings));
+    if (direction === undefined) {
+      throw new Error("the atmosphere returned no sun for a sun step");
+    }
+    this.sunAngles = angles;
+    this.lightSettings = settings;
     // The view's OWN fog, not `scene.fog`: an AR session swaps in its stock
     // fog and restores this one after, so a change made meanwhile still
     // lands where the desktop view will draw it.
     this.viewFog.near = this.viewFog.far * this.atmosphere.hazeStartRatio;
-    this.aimSun();
+    this.finishSunStep(direction);
     this.requestFrame();
   }
 
@@ -1793,25 +1843,6 @@ export class BuildingView {
   }
 
   /**
-   * Moves the sun (§1, DEC-R6-3; the real sun since plan 2026-09-23-2149).
-   *
-   * THE COST LIVES HERE, DELIBERATELY. Each call renders the sky's sky-view
-   * LUT, reads it back (for the exposure and the fog colour) and re-bakes the
-   * environment map. That is affordable because only the user's time
-   * controls call it, never the camera: the hotkeys, the date, and the time
-   * slider, which `main.ts` samples to one call per 50 ms while it is
-   * dragged. See `aimSun` and `sun-clock.ts`, whose
-   * stops keep the sun within civil twilight (≥ −6°).
-   */
-  setSunAngles(angles: SunAngles): void {
-    this.sunAngles = angles;
-    this.aimSun();
-    // On-demand rendering: without this the new sun is invisible until the
-    // camera moves, which is finding R2-3 in a new place.
-    this.requestFrame();
-  }
-
-  /**
    * The physical sky's distance haze, for the AR session to put on stock fog
    * while it runs (`applyArEnvironment`).
    */
@@ -1819,18 +1850,23 @@ export class BuildingView {
     return this.atmosphere.haze;
   }
 
+  /** Points the sun at `this.sunAngles` on its own (the constructor's first aim). */
+  private aimSun(): void {
+    this.finishSunStep(this.atmosphere.setSun(this.sunAngles));
+  }
+
   /**
-   * Points the sun from the camera's current azimuth (W12).
-   *
-   * Called from the controls' `change` handler rather than from a loop: the sun
-   * only has to move when the camera does, and that is exactly when a frame is
-   * already being scheduled. DEC-R3-9's on-demand renderer is untouched.
+   * WHERE EVERY SUN STEP ENDS, once the atmosphere has the new sun: the sun
+   * light placed along `direction` (the unit vector toward the sun the rig
+   * returned) and the noon gain re-derived. Anything that must follow the
+   * sun after the atmosphere (a shadow, a second light) belongs here, so the
+   * two entries (`setSunAndLight` and the first aim) keep it.
    *
    * The distance is arbitrary — a `DirectionalLight` has no falloff and only its
    * direction matters — but it must be large enough to sit outside the scene if
    * a shadow camera is ever added.
    */
-  private aimSun(): void {
+  private finishSunStep(direction: Vector3Like): void {
     // ONE VECTOR, TWO CONSUMERS, and it now comes back from the rig rather than
     // being derived twice: `setSun` points the sky shader and returns the same
     // unit direction the light is placed along. Two independently-derived sun
@@ -1846,7 +1882,6 @@ export class BuildingView {
     // camera's azimuth was deleted once nothing had read it for two rounds.
     // That is also what makes the sky rebuild inside `setSun`
     // affordable — it runs when the user changes the time, not on every drag.
-    const direction = this.atmosphere.setSun(this.sunAngles);
     const distance = 1000;
     this.sun.position.set(
       direction.x * distance,
@@ -1870,11 +1905,9 @@ export class BuildingView {
     this.sun.target.position.set(0, 0, 0);
     this.sun.target.updateMatrixWorld();
     // The noon brightening follows the sun (plan 2026-09-24-0901).
-    this.surfaceGain = surfaceGainAt(
-      this.sunAngles.elevationRad,
-      gainOf(this.lightSettings),
+    this.cityLook.setSurfaceGain(
+      surfaceGainAt(this.sunAngles.elevationRad, gainOf(this.lightSettings)),
     );
-    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
   }
 
   /**
@@ -1900,6 +1933,9 @@ export class BuildingView {
       cancelAnimationFrame(this.frame);
       this.frame = undefined;
     }
+    // A task queued for the cancelled frame runs now, as `atNextFrame`
+    // runs one on a suspended view.
+    this.runFrameTask();
     // `visibility`, NOT `display`. A `display: none` canvas has a zero-sized
     // box, and the `ResizeObserver` above would fire with 0×0 and resize the
     // drawing buffer to nothing — so returning from AR would find a renderer
@@ -1951,14 +1987,59 @@ export class BuildingView {
     if (this.frame !== undefined) return;
     this.queuedChained = this.inFrame;
     this.frame = requestAnimationFrame((atMs) => {
-      this.frame = undefined;
-      this.inFrame = true;
       try {
-        this.drawFrame(atMs);
+        // BEFORE `frame` is cleared, so a task that requests a frame (a sun
+        // step does) is drawn in this one rather than chaining another.
+        this.runFrameTask();
       } finally {
-        this.inFrame = false;
+        this.frame = undefined;
+        this.inFrame = true;
+        try {
+          this.drawFrame(atMs);
+        } finally {
+          this.inFrame = false;
+        }
       }
     });
+  }
+
+  /**
+   * Runs `task` at the start of the next frame, before it is drawn (the
+   * latest task replaces one still queued); returns its cancel. A sun
+   * step's sky readback waits for the GPU to finish what it was given, and
+   * at the start of a frame the frame before has had a whole frame to
+   * finish; from a bare timer the step can land right after a frame was
+   * submitted and wait for all of it. A suspended view draws no frame, so
+   * there the task runs at once.
+   */
+  atNextFrame(task: () => void): () => void {
+    if (this.suspended) {
+      task();
+      return () => undefined;
+    }
+    this.frameTask = task;
+    this.requestFrame();
+    return () => {
+      if (this.frameTask === task) this.frameTask = undefined;
+    };
+  }
+
+  /**
+   * `?perf=1` only: waits for the GPU to finish what it was given (a 1x1
+   * readback blocks until then) and returns how long that took, in ms.
+   */
+  private waitForGpu(): number {
+    const gl = this.renderer.getContext();
+    const startedAt = performance.now();
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.gpuWaitPixel);
+    return performance.now() - startedAt;
+  }
+
+  /** The queued `atNextFrame` task, taken off the queue before it runs. */
+  private runFrameTask(): void {
+    const task = this.frameTask;
+    this.frameTask = undefined;
+    task?.();
   }
 
   /** One on-demand frame; `requestFrame` is its only caller. */
@@ -2106,7 +2187,9 @@ export class BuildingView {
     layers?: MeshLayers,
     // Omits `drawnHostLayers`, which `drawMeshLayers` derives from `layers` itself
     // rather than taking from a caller who could disagree with it.
-    context?: Omit<MeshLayerContext, "drawnHostLayers">,
+    // The plates' colour comes from the city look, which follows the mesh's
+    // scheme, so a caller cannot pass one that disagrees with it.
+    context?: CityDrawContext,
   ): BuildingStats {
     this.clear();
     // THE TINT FOLLOWS EVERY BUILD, including a build without one (it is then
@@ -2117,17 +2200,16 @@ export class BuildingView {
     // its contribution when off — which reached complexity 21 with three layers and
     // had four more (W12–W15) queued behind it. The table also makes a MISSING
     // layer detectable, which the longhand form could not: see that file's header.
-    const { objects, stats } = drawMeshLayers(mesh, layers, context);
-    for (const object of objects) this.group.add(object);
+    // THE CITY LOOK DRAWS, so the look mix, the trees' mix, the plates'
+    // colour and the held gain and trim reach every new mesh (new meshes
+    // arrive at factor 1; the lesson of the AR shell material below).
+    const { stats } = this.cityLook.draw(mesh, layers, context);
     // New woods arrive whole; the governor's share holds across a rebuild,
     // or every refetch on a slow phone would bring the full woods back.
     this.inventedTrees = applyWoodsShare(
       this.group.children,
       this.woods.share(),
     );
-    // New meshes arrive at factor 1; the noon brightening is held on the
-    // view for exactly this (the lesson of the AR shell material below).
-    applySurfaceGain(this.group, this.surfaceGain * this.brightnessTrim);
     // RE-APPLIED AFTER EVERY REBUILD. The objects above are brand new and carry
     // the desktop material; without this a refetch mid-session would silently
     // drop the AR look at whatever moment the user walked far enough to trigger
@@ -2718,6 +2800,7 @@ export class BuildingView {
     // Cancelled FIRST: a frame already queued would otherwise fire against a
     // disposed context, which crashes rather than leaks.
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
+    this.frameTask = undefined;
     this.frame = undefined;
     // THE BEACONS OWN THREE GEOMETRIES AND A MATERIAL, and nothing else frees
     // them: they hang off `this.content`, so the scene-level teardown below

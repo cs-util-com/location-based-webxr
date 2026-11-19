@@ -660,9 +660,11 @@ void main() {
   // Finite in a half-float target, whatever the exposure (see the constant).
   gl_FragColor = vec4(min(radiance * atmRadianceToScene * atmSkyBalance, vec3(ATM_MAX_SCENE_RADIANCE)), 1.0);
   // Toward the veil at the horizon, in the units the haze blends in, so a
-  // ground hazed toward the same veil meets the sky without a step.
-  gl_FragColor.rgb = mix(gl_FragColor.rgb, atmSkyVeil,
-    atmSkyVeilOn * atmHorizonVeilWeight(dir.y, atmSkyVeilRise));
+  // ground hazed toward the same veil meets the sky without a step. The
+  // veil colour is premultiplied by its strength (atmSkyVeilOn), so at
+  // strength 1 this is mix(sky, veil, w) and at 0 (black) the sky alone.
+  float atmVeilWeight = atmHorizonVeilWeight(dir.y, atmSkyVeilRise);
+  gl_FragColor.rgb = gl_FragColor.rgb * (1.0 - atmSkyVeilOn * atmVeilWeight) + atmSkyVeil * atmVeilWeight;
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }
