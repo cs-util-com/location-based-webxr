@@ -1622,9 +1622,24 @@ export async function openGlobeEditor(
       setTop(on) {
         if (on === top) return;
         top = on;
+        // Tilted round the point the line of sight meets, as a turn is
+        // (`setHeading`): a tilt in place carried what it looked at, the
+        // selection too, off the screen.
+        const pivot = new THREE.Vector3(...lookPoint());
+        const distance = camera.position.distanceTo(pivot);
+        followFrame();
+        pivot.applyMatrix4(ecefFromWorld);
         placePose({
           pitchDeg: on ? TOP_PITCH_DEG : GLOBE_EDITOR_LOOK.aimPitchDeg,
         });
+        followFrame();
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+          camera.quaternion,
+        );
+        camera.position
+          .copy(pivot.applyMatrix4(worldFromEcef))
+          .addScaledVector(forward, -distance);
+        camera.updateMatrixWorld();
       },
       zoom(step) {
         approach?.takeOver(performance.now());
@@ -1756,11 +1771,12 @@ export async function openGlobeEditor(
           ...layer.stats(),
           codePx: layer.codeCorners().map((corners) => {
             const ndc = corners.map((c) => c.clone().project(camera));
-            // Not measured: any corner outside the view volume, behind the
+            // Not measured: any corner outside the depth range, behind the
             // camera, nearer than the near plane or past the far one
             // (`project()` mirrors a point behind the camera through it,
             // which would measure a size). A code that straddles the near
-            // plane is partly drawn and still reads 0.
+            // plane is partly drawn and still reads 0; a code beside the
+            // view is still measured.
             if (ndc.some((v) => !(v.z >= -1 && v.z <= 1))) return 0;
             const square = ndc.map(
               (v) =>

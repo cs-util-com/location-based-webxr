@@ -105,6 +105,7 @@ const OBJECTS = [
  *  same tour as changed on another device). */
 async function opened(
   changed: (manifest: TourManifest) => TourManifest = (m) => m,
+  { picture = true }: { readonly picture?: boolean } = {},
 ): Promise<{
   session: TourSession;
   manifest: TourManifest;
@@ -122,7 +123,8 @@ async function opened(
   );
   const zip = await packFilesAsZip([
     { path: "tour.json", data: serializeTourManifest(manifest) },
-    { path: "content/f.jpg", data: "the picture of f" },
+    // Left out, f's picture cannot be read: the zip lacks it.
+    ...(picture ? [{ path: "content/f.jpg", data: "the picture of f" }] : []),
     { path: "content/m1.glb", data: "glb" },
   ]);
   const session = await openTourFile(
@@ -782,6 +784,35 @@ describe("the editor session's station edits", () => {
       kind: "undone",
       what: 'the copy of "Shots"',
     });
+    await session.close();
+  });
+
+  // Why: a copy of a photo needs its picture, so a folder whose photo's
+  // picture cannot be read (the file lacks it) is not copied, and saying
+  // so leaves the tour and its undo steps as they were.
+  it("duplicateFolder refuses, saying the picture could not be read, when a photo's picture is unreadable", async () => {
+    const { session, manifest } = await opened(undefined, { picture: false });
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["f"],
+        what: "group",
+      }),
+    );
+    const was = store.getState().tourDocument;
+    expect(await editor.duplicateFolder("grp")).toEqual({
+      kind: "refused",
+      reason: "This photo's picture could not be read, so it cannot be copied.",
+    });
+    expect(store.getState().tourDocument).toBe(was);
     await session.close();
   });
 

@@ -159,7 +159,7 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
   await afterFrames(page, 3);
   expect(await order(page)).toEqual(["column", "gate", "steps"]);
 
-  // "+": a station at the centre of the view, selected and said.
+  // "+": a station on the ground under the camera, selected and said.
   const start = await revision(page);
   await page.locator("#tree-add").click();
   await expect.poll(async () => (await order(page)).length).toBe(4);
@@ -167,7 +167,7 @@ test("the tree adds, reorders and deletes stations, each one step to undo", asyn
   expect(await selected(page)).toBe(`station:${added}`);
   await expect(
     page.locator(".toast", {
-      hasText: 'Added "Station 4" at the centre of the view',
+      hasText: 'Added "Station 4" under the camera',
     }),
   ).toBeVisible();
   await expect(card(page, added)).toBeVisible();
@@ -1126,8 +1126,15 @@ test("a station's picture is a strip under its row, and a tap on it selects the 
     if ((await strip.count()) === 0)
       await fountain.locator(".head .tw").click();
     await expect(strip, at).toBeVisible();
+    // The picture is read from the tour and checked before it is shown,
+    // beside the 3D view loading in software: measured 2026-11-19
+    // locally, 2.5-2.7 s at the first size (three runs) and about 0.5 s
+    // at the second, where it is read already, against the default 5 s.
+    // The budget leaves a slower runner room.
     await expect
-      .poll(() => strip.evaluate((e) => getComputedStyle(e).backgroundImage))
+      .poll(() => strip.evaluate((e) => getComputedStyle(e).backgroundImage), {
+        timeout: 15_000,
+      })
       .toContain("url(");
     const row = await box(fountain.locator("> .head"));
     const shown = await box(strip);

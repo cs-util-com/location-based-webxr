@@ -5,7 +5,7 @@ Purpose: the near clouds' drawing pass: the march into a half-float target alloc
 ## Public API
 
 - `createGlobeCloudMarch(renderer, { ellipsoid, surfaceUniforms, lifeSpeed? })`: returns `GlobeCloudMarch`.
-- `ready`: true once `setBakes(bakes)` uploaded the tiles and both shaders are compiled (its own wait over `renderer.compile`, so the compile does not stall the frame that first draws them and a view closed meanwhile has no timer left to throw; a failed compile counts as done, the first draw compiles then). Until then `render` draws nothing and returns false, and the old clouds keep drawing.
+- `ready`: true once `setBakes(bakes)` uploaded the tiles and both shaders are compiled (its own wait over `renderer.compile`, so the compile does not stall the frame that first draws them and a view closed meanwhile has no timer left to throw; a failed compile counts as done, the first draw compiles then; after 500 checks 10 ms apart, about 5 s, as the Tour Viewer's `whenReady`, it stops waiting too, so a lost context that never links leaves no timer polling). Until then `render` draws nothing and returns false, and the old clouds keep drawing.
 - `render(frame: CloudMarchFrame): boolean`: draws one frame; true when the targets hold it.
 - `texture`, `shadowTexture`: premultiplied radiance; shadow in alpha.
 - `uv`, `resolution`: the share of the target this frame drew and the target's size, both shared with the composite.

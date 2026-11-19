@@ -81,7 +81,7 @@ describe("createAddPalette", () => {
       "Videoin 2 The old gate",
       "Soundin 2 The old gate",
       "3D modelin 2 The old gate",
-      "New stationat the centre of the view",
+      "New stationunder the camera",
     ]);
     expect(field.getAttribute("aria-activedescendant")).toBe(options()[0]?.id);
     expect(options()[0]?.getAttribute("aria-selected")).toBe("true");

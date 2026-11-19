@@ -556,8 +556,8 @@ describe("a gesture's other ends", () => {
     t.input.dispose();
   });
 
-  // Why: the right button is the camera's (OrbitControls pans or tilts
-  // with it), and a press while keys are held would start a second
+  // Why: the right button is the camera's (the globe's camera controls
+  // turn or tilt with it), and a press while keys are held would start a second
   // gesture over the first.
   it("starts no drag on the right button, or while a key is held", () => {
     const right = setup({ handle: "move" });
@@ -632,7 +632,7 @@ describe("a gesture's other ends", () => {
     t.input.dispose();
   });
 
-  // Why: the camera's coast or a flight still moving when the gizmo is
+  // Why: the camera's coast still moving when the gizmo is
   // grabbed would move the object under a still pointer; the camera is
   // stopped before the gesture reads where the pointer is.
   it("locks the camera before the gesture reads the ground under the press", () => {

@@ -144,6 +144,7 @@ describe("editorView", () => {
       undelivered: false,
       message: null,
       picking: false,
+      duplicating: false,
       viewMode: "2d",
       view3dLoad: "idle",
       view3dFailure: null,
@@ -187,6 +188,7 @@ describe("editorView", () => {
     state = reduce(state, act.doneBusyChanged({ busy: true }));
     state = reduce(state, act.undeliveredChanged({ waits: true }));
     state = reduce(state, act.pickingChanged({ picking: true }));
+    state = reduce(state, act.duplicatingChanged({ duplicating: true }));
     expect(state).toEqual({
       selected: "x",
       openStories: [],
@@ -198,6 +200,7 @@ describe("editorView", () => {
       undelivered: true,
       message: { id: "x", text: "No.", refused: true },
       picking: true,
+      duplicating: true,
       viewMode: "2d",
       view3dLoad: "idle",
       view3dFailure: null,

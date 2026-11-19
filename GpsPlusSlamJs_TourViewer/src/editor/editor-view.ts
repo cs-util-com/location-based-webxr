@@ -128,6 +128,9 @@ export interface EditorViewState {
   readonly message: EditorMessage | null;
   /** The browser's file picker is open: a second click opens nothing. */
   readonly picking: boolean;
+  /** A Duplicate is reading its pictures before it writes: another one
+   *  waits for it, so a second Ctrl+D makes no second copy. */
+  readonly duplicating: boolean;
   /** The view the page shows: the map, or the 3D view. */
   readonly viewMode: "2d" | "3d";
   /** The 3D view's load: none running, loading, or the last one failed.
@@ -190,6 +193,7 @@ export const initialEditorViewState: EditorViewState = {
   undelivered: false,
   message: null,
   picking: false,
+  duplicating: false,
   viewMode: "2d",
   view3dLoad: "idle",
   view3dFailure: null,
@@ -340,6 +344,9 @@ const editorViewSlice = createSlice({
     },
     pickingChanged(state, action: PayloadAction<{ picking: boolean }>) {
       state.picking = action.payload.picking;
+    },
+    duplicatingChanged(state, action: PayloadAction<{ duplicating: boolean }>) {
+      state.duplicating = action.payload.duplicating;
     },
     /** The 3D view asked for, from the map: its load starts. Asked again
      *  while it loads, or while it shows, nothing changes. */

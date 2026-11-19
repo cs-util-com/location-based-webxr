@@ -182,8 +182,12 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   24-bit buffer.
 - `flyTo` and `frame` place an aimed view (`aimView`) at once; there is no
   flight yet.
-- `setTop`, `northUp`, `setTilt` re-place the current pose with one field
+- `northUp` and `setTilt` re-place the current pose with one field
   changed.
+- `setTop(on)` (T) pitches to look straight down (-89 deg), or back to
+  the aimed pitch, round the point the line of sight meets, keeping the
+  distance to it, as `setHeading` turns: what the view looked at stays
+  on the screen.
 - `setHeading(deg)` (the page's checks) turns the camera to `deg` round
   the point its line of sight meets (`stats().look`: the ground ahead,
   else the tour's centre), keeping its distance to that point and its
@@ -218,10 +222,11 @@ surfaceShadow }`, or null where the ground sky cannot draw).
 - `stats().look` is where the line of sight meets the sampled ground
   (else the tour's centre), and `stats().codePx` each code's drawn side on
   the canvas (its square's corners projected by the camera of the
-  frame; 0 when it cannot be measured, with any corner outside the view
-  volume: behind the camera, nearer than the near plane or past the far
+  frame; 0 when it cannot be measured, with any corner outside the depth
+  range: behind the camera, nearer than the near plane or past the far
   one, where `project()` would mirror it into a size; a code straddling
-  the near plane is partly drawn and still reads 0), both in the world, which follows the camera: compare them with
+  the near plane is partly drawn and still reads 0, while a code beside
+  the view is still measured), both in the world, which follows the camera: compare them with
   `stats().camera` and `pointOf` read in the same call, never across two.
   `stats().target` stays the tour's centre in the tour's frame.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode

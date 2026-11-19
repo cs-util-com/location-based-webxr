@@ -99,7 +99,9 @@ cannot reach.
   (`editor3d.spec.js` was not measured) and 24.9 min. Lane 1 keeps its
   clouds spec, 0.5 min in that run. A lane job adds about a minute of
   setup to its test time. The next CI full run (2026-11-18), with every
-  spec run, measured lane 3 (`tour-webgl-3`) at 20 min.
+  spec run, measured lane 3's job (`tour-webgl-3`) at about 21 min from
+  its start to its end, setup included (its test time was not read); the
+  same job took 16 to 26 min in the day's other full runs.
 
 ## Measurement (2026-11-01)
 

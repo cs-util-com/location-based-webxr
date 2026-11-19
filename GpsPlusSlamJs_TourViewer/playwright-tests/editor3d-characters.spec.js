@@ -209,10 +209,21 @@ test("the add menu's Character: made in the maker over the editor, standing in t
   await expect(next.locator("#characters-tour li")).toContainText(
     "Ranger Rita",
   );
+  // The device's list is a look into the private file system that also
+  // fingerprints each character's sheet to know him in the tour, and then
+  // draws his thumbnail, all beside the 3D view loading in software:
+  // measured 2026-11-19 locally, the look ended after about 4 s and the
+  // row came 2 s later, past the default 5 s. So the test waits for the
+  // page's own end of the look, then for the row, with a budget that
+  // leaves a slower runner room.
+  await expect(next.locator("#characters-lib-status")).toContainText(
+    "looked when this list opened",
+    { timeout: 30_000 },
+  );
   const onDevice = next.locator("#characters-lib li", {
     hasText: "Ranger Rita",
   });
-  await expect(onDevice).toContainText("In this tour");
+  await expect(onDevice).toContainText("In this tour", { timeout: 15_000 });
   await expect(onDevice.locator("[data-add]")).toHaveCount(0);
 });
 
@@ -376,13 +387,6 @@ test("a character added with the add menu is drawn at a free spot, selected with
   // Framed (F), as a creator looks at what he just added: from the
   // tour's overview he is a few pixels tall.
   await page.keyboard.press("f");
-  await expect
-    .poll(() =>
-      page.evaluate(
-        () => /** @type {any} */ (window).__tourEditor.view3d()?.flying,
-      ),
-    )
-    .toBe(false);
 
   // A row in the station's list.
   await expect(page.locator(`#tree-body [data-select="${id}"]`)).toBeVisible();

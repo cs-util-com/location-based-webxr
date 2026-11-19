@@ -823,6 +823,50 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why: the top view (T) tilts the camera to look straight down; a tilt
+  // where the camera stands carried the point it looked at, and the
+  // selection there, off the screen. It tilts round that point instead,
+  // as a turn does, keeping the distance to it, and back again. Swept
+  // with the ground loaded (200 m) and not, from two pitches.
+  it.each([
+    [-30, 200],
+    [-30, null],
+    [-55, 200],
+  ])(
+    "tilts to the top view and back round the point it looks at (pitch %s, ground at %s m)",
+    async (pitchDeg, groundM) => {
+      fakes.groundM = groundM;
+      const view = await openAt(groundM ?? 0);
+      const camera = fakes.view?.camera;
+      const group = fakes.view?.globe.group;
+      if (camera === undefined || group === undefined)
+        throw new Error("no camera");
+      placeCamera(400, pitchDeg, groundM, 700);
+      const ecefOf = (p: readonly number[]) =>
+        new THREE.Vector3(p[0], p[1], p[2]).applyMatrix4(
+          group.matrix.clone().invert(),
+        );
+      const pitchNow = () =>
+        (view.stats().globe as { pose: { pitchDeg: number } }).pose.pitchDeg;
+      const lookEcef = ecefOf(view.stats().look);
+      const distance = camera.position.distanceTo(
+        new THREE.Vector3(...view.stats().look),
+      );
+      for (const [on, pitch] of [
+        [true, -89],
+        [false, GLOBE_EDITOR_LOOK.aimPitchDeg],
+      ] as const) {
+        view.setTop(on);
+        const after = view.stats();
+        expect(pitchNow()).toBeCloseTo(pitch, 1);
+        expect(ecefOf(after.look).distanceTo(lookEcef)).toBeLessThan(0.5);
+        expect(
+          camera.position.distanceTo(new THREE.Vector3(...after.look)),
+        ).toBeCloseTo(distance, 0);
+      }
+    },
+  );
+
   // Why: a turn places the camera; the speed streaks must start again
   // from where it now stands, or the speed of a dive under way carries
   // over the turn and the first frame after it still draws streaks. The
@@ -1315,8 +1359,8 @@ describe("openGlobeEditor's wiring", () => {
     const view = await openAt(0);
     expect(typeof fakes.airOptions?.clouds).toBe("function");
     expect(fakes.cloudsOn).toEqual([]);
-    view.setClouds?.(false);
-    view.setClouds?.(true);
+    view.setClouds(false);
+    view.setClouds(true);
     expect(fakes.cloudsOn).toEqual([false, true]);
   });
 
@@ -1383,7 +1427,7 @@ describe("openGlobeEditor's wiring", () => {
       worker: "loading",
       reliefGroundM: DRAWN_M,
     });
-    view.setBuildings?.(false);
+    view.setBuildings(false);
     expect(fakes.cityAborts).toBe(1); // the running load is stopped
     expect(view.stats().city?.shown).toBe(false);
     expect(fakes.cloudsOptions?.extra?.()).toEqual([]);
@@ -1421,7 +1465,7 @@ describe("openGlobeEditor's wiring", () => {
     const view = open;
     expect(fakes.cityOptions).toEqual([]);
     expect(view.stats().city).toBeNull();
-    view.setBuildings?.(false);
+    view.setBuildings(false);
     // An edit that leaves the tour without a centre mounts nothing.
     tourDocument = {};
     listener();
@@ -1431,7 +1475,7 @@ describe("openGlobeEditor's wiring", () => {
     listener();
     expect(fakes.cityOptions).toHaveLength(1);
     expect(view.stats().city?.shown).toBe(false);
-    view.setBuildings?.(true);
+    view.setBuildings(true);
     view.setDistance(200);
     frameAt(16);
     expect(fakes.cityLoads.at(-1)).toMatchObject({
@@ -1860,7 +1904,7 @@ describe("openGlobeEditor's wiring", () => {
   // code behind the camera measured as large as one in front (or huge,
   // with a corner just behind). A code not wholly between the near and the
   // far plane cannot be measured and reads 0, also one wholly between the
-  // camera and the near plane (whose depth is below the view volume, not
+  // camera and the near plane (whose depth is below the depth range, not
   // above it: an upper-bound check alone measured it).
   it("measures a code's drawn side in front of the camera, and 0 behind it or nearer than the near plane", async () => {
     const view = await openAt(0);

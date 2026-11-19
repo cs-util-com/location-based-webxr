@@ -8,7 +8,6 @@ import {
   openSampleIn3d,
   rejections,
   showList,
-  view3d,
 } from "./editor3d-fixture.js";
 
 /**
@@ -54,7 +53,7 @@ function selected(page) {
 }
 
 /**
- * Select tree entry `id` and wait for any flight to it.
+ * Select tree entry `id` (the view places the camera at once).
  * @param {import("@playwright/test").Page} page
  * @param {string} id
  */
@@ -63,7 +62,6 @@ async function select(page, id) {
   await showList(page);
   await page.locator(`#tree-body [data-select="${id}"]`).click();
   await expect.poll(() => selected(page)).toBe(id);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
 }
 
 /**
