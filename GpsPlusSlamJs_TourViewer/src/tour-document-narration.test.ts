@@ -438,3 +438,70 @@ describe("draftableObject: what a draft keeps of a narration", () => {
     );
   });
 });
+
+describe("narrationEdited: who speaks the voice", () => {
+  const N = { audio: "voice", timing: ENTRY, synthetic: false };
+  const credited = (narration: unknown) =>
+    ({ ...NARRATED, narration }) as unknown as TourObject;
+
+  // Why: the synthetic mark and the "Spoken by" credit are what a visitor
+  // is told about the voice; a change of them is one undo step like the
+  // voice itself, and is written with the tour.
+  it("sets the synthetic mark and the credit as one step each, undone in turn", () => {
+    const before = opened();
+    const marked = reduce(
+      before,
+      act.narrationEdited({
+        object: credited({ ...N, synthetic: true }),
+        what: "the synthetic voice mark",
+      }),
+    );
+    expect(essay(marked)).toMatchObject({ narration: { synthetic: true } });
+    const named = reduce(
+      marked,
+      act.narrationEdited({
+        object: credited({
+          ...N,
+          synthetic: true,
+          voiceCredit: "Read by Anna Berg",
+        }),
+        what: "the voice credit",
+      }),
+    );
+    expect(essay(named)).toMatchObject({
+      narration: { synthetic: true, voiceCredit: "Read by Anna Berg" },
+    });
+    expect(manifestToWrite(named)).not.toBeNull();
+    expect(changeCount(named)).toBe(1);
+    const once = reduce(named, act.undone());
+    expect(essay(once)).toMatchObject({ narration: { synthetic: true } });
+    expect(essay(once)).not.toHaveProperty("narration.voiceCredit");
+    const twice = reduce(once, act.undone());
+    expect(essay(twice)).toMatchObject({ narration: { synthetic: false } });
+    expect(changeCount(twice)).toBe(0);
+  });
+
+  // Why: the reducer is the document's last guard - a credit the format
+  // would not take (blank, over its cap, not text) or a mark that is not
+  // true or false would make the next save fail or show a visitor a
+  // credit line that says nothing.
+  it("refuses a blank, over-long or non-text credit and a mark that is not true or false", () => {
+    const before = opened();
+    for (const bad of [
+      { ...N, voiceCredit: "" },
+      { ...N, voiceCredit: "   " },
+      { ...N, voiceCredit: "x".repeat(201) },
+      { ...N, voiceCredit: 7 },
+      { ...N, synthetic: "yes" },
+      { audio: "voice", timing: ENTRY },
+    ]) {
+      expect(
+        reduce(
+          before,
+          act.narrationEdited({ object: credited(bad), what: "the credit" }),
+        ),
+        JSON.stringify(bad),
+      ).toBe(before);
+    }
+  });
+});
