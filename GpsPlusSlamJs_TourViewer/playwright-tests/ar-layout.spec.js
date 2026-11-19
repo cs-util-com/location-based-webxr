@@ -244,6 +244,10 @@ async function enterTheStrip(page, viewport) {
   }
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
+  // A phone has no pointer resting on the screen; the test mouse stays
+  // where Start creating was, and whatever chip lands under it takes the
+  // buttons' hover lift (a 2 px shift) into every position measured here.
+  await page.mouse.move(0, 0);
   await measureWithGpsFirst(page);
 }
 
