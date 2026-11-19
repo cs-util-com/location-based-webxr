@@ -9,7 +9,14 @@
  */
 
 import * as THREE from "three";
-import { applyGroundTint } from "gps-plus-slam-osm/three";
+import { decodeLookColours } from "gps-plus-slam-osm";
+import {
+  applyGroundTint,
+  buildingObjects,
+  createLookMix,
+  roadObjects,
+  setTrimWeights,
+} from "gps-plus-slam-osm/three";
 
 /** The square canvas every check draws into, pixels. */
 const SIZE = 64;
@@ -180,4 +187,106 @@ export function groundLooksCheck() {
   applied.dispose();
   renderer.dispose();
   return { errors, atWeightOne, fixedShades, looksShades, mixDrawn };
+}
+
+/**
+ * The sRGB codes two looks paint on the four corners of a quad, three per
+ * vertex: different per corner, so the drawn frame interpolates between
+ * decoded colours and a wrong decode row shows across the whole ramp.
+ */
+const QUAD_CODES = [
+  Uint8Array.from([200, 60, 40, 40, 160, 90, 30, 70, 210, 230, 220, 120]),
+  Uint8Array.from([20, 30, 60, 250, 140, 20, 90, 200, 180, 10, 10, 10]),
+];
+
+/**
+ * A 10 m quad facing up, as a layer chunk would carry it.
+ *
+ * @param {Float32Array} colors
+ * @param {readonly Uint8Array[] | undefined} lookColours
+ * @returns {import("gps-plus-slam-osm").MeshChunk}
+ */
+function quadChunk(colors, lookColours) {
+  const plane = new THREE.PlaneGeometry(10, 10).rotateX(-Math.PI / 2);
+  const index = plane.getIndex();
+  return /** @type {import("gps-plus-slam-osm").MeshChunk} */ ({
+    key: "0,0",
+    mesh: {
+      positions: Float32Array.from(plane.getAttribute("position").array),
+      normals: Float32Array.from(plane.getAttribute("normal").array),
+      indices: Uint32Array.from(index === null ? [] : index.array),
+      triangleCount: 2,
+    },
+    colors,
+    ...(lookColours === undefined ? {} : { lookColours }),
+  });
+}
+
+/**
+ * One layer (buildings decode "linear", roads "raw") drawn from a looks
+ * chunk against a fixed chunk whose `colors` are the same codes decoded on
+ * the CPU: at a weight of 1 for each look, and at a 50/50 mix against the
+ * mean of the two decoded colours (the shader mixes the decoded values).
+ *
+ * @param {THREE.WebGLRenderer} renderer
+ * @param {typeof buildingObjects} objectsOf
+ * @param {"linear" | "raw"} decode
+ * @returns {{ atWeightOne: number[], atHalf: number, drawn: boolean }}
+ */
+function layerLooks(renderer, objectsOf, decode) {
+  const decoded = QUAD_CODES.map((codes) => decodeLookColours(codes, decode));
+  const scene = (/** @type {THREE.Object3D[]} */ objects) => {
+    const s = new THREE.Scene();
+    s.add(new THREE.AmbientLight(0xffffff, 1));
+    for (const object of objects) s.add(object);
+    return s;
+  };
+  const { camera } = groundScene();
+  const mix = createLookMix();
+  const looks = scene(
+    objectsOf([quadChunk(decoded[0] ?? new Float32Array(), QUAD_CODES)], {
+      looks: mix,
+    }),
+  );
+  /** @type {number[]} */
+  const atWeightOne = [];
+  for (const [k, colours] of decoded.entries()) {
+    const want = draw(
+      renderer,
+      scene(objectsOf([quadChunk(colours, undefined)])),
+      camera,
+    );
+    setTrimWeights(
+      mix,
+      QUAD_CODES.map((_, i) => (i === k ? 1 : 0)),
+    );
+    atWeightOne.push(maxDifference(want, draw(renderer, looks, camera)));
+  }
+  const mean = (decoded[0] ?? new Float32Array()).map(
+    (c, i) => (c + (decoded[1]?.[i] ?? 0)) / 2,
+  );
+  const want = draw(
+    renderer,
+    scene(objectsOf([quadChunk(mean, undefined)])),
+    camera,
+  );
+  setTrimWeights(mix, [0.5, 0.5]);
+  const got = draw(renderer, looks, camera);
+  // Not a black frame matching a black frame: the quad is drawn and lit.
+  const drawn = got.some((v, i) => i % 4 !== 3 && v > 0);
+  return { atWeightOne, atHalf: maxDifference(want, got), drawn };
+}
+
+/**
+ * The building and road looks programs against their fixed programs
+ * (`layerLooks`), with every shader error three.js saw.
+ *
+ * @returns {{ errors: string[], buildings: { atWeightOne: number[], atHalf: number, drawn: boolean }, roads: { atWeightOne: number[], atHalf: number, drawn: boolean } }}
+ */
+export function meshLooksCheck() {
+  const { renderer, errors } = checkedRenderer();
+  const buildings = layerLooks(renderer, buildingObjects, "linear");
+  const roads = layerLooks(renderer, roadObjects, "raw");
+  renderer.dispose();
+  return { errors, buildings, roads };
 }

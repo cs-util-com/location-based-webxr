@@ -46,6 +46,13 @@ export interface LandUseTint {
    * no tint is applied. `RangeError` for anything but an integer in range.
    */
   setGroundColour(rgb: number): void;
+  /**
+   * The time-of-day blend's normalised look weights, or undefined for none.
+   * Applied to a tint built with looks (`GroundTint.lookPalettes`), now and
+   * to every later one; a tint without looks ignores them. RangeError (from
+   * the tint) for a count other than its looks.
+   */
+  setLookWeights(weights: readonly number[] | undefined): void;
   /** Whether the tint is drawn now. */
   showing(): boolean;
   /** Frees the applied tint and leaves the material with the ground colour. */
@@ -70,8 +77,17 @@ export function landUseTint(
   let groundRgb = material.color.getHex();
   let current: GroundTint | undefined;
   let applied: AppliedGroundTint | undefined;
+  let lookWeights: readonly number[] | undefined;
 
   const wantedNow = (): boolean => wanted && appearance !== "ramp";
+  // A tint baked in looks fades to a neutral that moves with the blend, so
+  // it takes the ground colour and the weights; a fixed tint keeps its own.
+  const looked = (): boolean => current?.lookPalettes !== undefined;
+  const applyLooks = (): void => {
+    if (applied === undefined || !looked()) return;
+    applied.setNeutral(groundRgb);
+    if (lookWeights !== undefined) applied.setLookWeights(lookWeights);
+  };
   const sync = (): void => applied?.setEnabled(wantedNow());
   const drop = (): void => {
     applied?.dispose();
@@ -89,6 +105,7 @@ export function landUseTint(
         enabled: wantedNow(),
         anisotropy: options.anisotropy ?? 1,
       });
+      applyLooks();
     },
     setWanted(next) {
       wanted = next;
@@ -104,6 +121,11 @@ export function landUseTint(
       }
       groundRgb = rgb;
       if (applied === undefined) material.color.setHex(rgb);
+      else applyLooks();
+    },
+    setLookWeights(weights) {
+      lookWeights = weights;
+      applyLooks();
     },
     showing: () => applied !== undefined && wantedNow(),
     dispose() {

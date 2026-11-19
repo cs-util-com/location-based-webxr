@@ -203,12 +203,16 @@ import {
   selectLayers,
   selectOsmView,
 } from "./osm-store.js";
+import { colourSchemeOf } from "./colour-schemes.js";
 import {
-  DEFAULT_COLOUR_SCHEME,
-  colourSchemeOf,
-  resolveColourScheme,
-  schemeLinkValue,
-} from "./colour-schemes.js";
+  DAY_LOOK_WEIGHTS,
+  lookLinkValue,
+  parseLookWeights,
+  resolveLook,
+  resolveLookChoice,
+  TIME_OF_DAY,
+} from "./look-choice.js";
+import { mixedPageLook } from "./mixed-page-look.js";
 import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
 import { attachBuildChoiceSwitch } from "./build-choice-switch.js";
 import { attachInventedRoofsSwitch } from "./invented-roofs-switch.js";
@@ -413,6 +417,15 @@ async function main(): Promise<void> {
       ? bootInstant(sunBootDate, sunPlace)
       : instantAt(sunBootDate, sunPlace, sunPinnedTime);
 
+  // THE TIME-OF-DAY BLEND'S LOOK WEIGHTS (`look-choice.ts`): fixed at boot
+  // from `?lookWeights=` (a test and review hook), else all on the day
+  // look. A constant of the boot, not app state: the sun derives them once
+  // the driver exists, and the view holds what it last drew.
+  const lookWeights =
+    parseLookWeights(
+      new URLSearchParams(window.location.search).get("lookWeights"),
+    ) ?? DAY_LOOK_WEIGHTS;
+
   const { store, actions, subscribe } = createDemoStore({
     start,
     category: categorySelect.value,
@@ -422,7 +435,7 @@ async function main(): Promise<void> {
       new URLSearchParams(window.location.search).get("ao") !== "off",
     // THE LINK'S SCHEME (colour schemes plan 2026-11-10-0841, D6); unknown
     // names open the default with one warning.
-    colourScheme: resolveColourScheme(
+    colourScheme: resolveLookChoice(
       new URLSearchParams(window.location.search).get("scheme"),
     ),
     // THE LINK CAN SWITCH THE INVENTED ROOFS OFF for a comparison (?roofs=off).
@@ -1248,11 +1261,12 @@ async function main(): Promise<void> {
     // them, and two independent samples would be two chances to disagree.
     geoidUndulationM: () => arUndulationM,
     // THE SCHEME, read at post time like the datum: AR always builds the
-    // default (D9), and the choice and the link stay as they are.
+    // default (D9), and the choice and the link stay as they are. The same
+    // pure rule (`resolveLook`) the switch's echo is checked against.
     colourScheme: () =>
-      arSession === undefined
-        ? selectColourScheme(store.getState())
-        : DEFAULT_COLOUR_SCHEME,
+      resolveLook(selectColourScheme(store.getState()), {
+        ar: arSession !== undefined,
+      }),
     // THE BUILD THE PAGE DRAWS, so the worker rebuilds after a reply that
     // never reached the page (an aborted pass) instead of sending slabs for
     // a mesh this side does not have.
@@ -1311,9 +1325,16 @@ async function main(): Promise<void> {
         // THE PAGE'S COLOURS FOLLOW THE MESH'S SCHEME, not the choice, so the
         // ground never changes before the buildings it belongs with and AR's
         // default build gets the default ground (colour-schemes.ts).
-        const look = colourSchemeOf(built.mesh.colourScheme);
-        buildingView.setGroundColours(look.city.ground, look.ground.slope);
-        buildingView.setBrightnessTrim(look.brightnessTrim);
+        if (built.mesh.colourScheme === TIME_OF_DAY) {
+          // The blend: ground, tint, trees and the mesh trim follow the
+          // look weights (the trims fold into them, the material's is 1).
+          buildingView.setLookWeights(lookWeights);
+        } else {
+          const look = colourSchemeOf(built.mesh.colourScheme);
+          buildingView.setLookWeights(undefined);
+          buildingView.setGroundColours(look.city.ground, look.ground.slope);
+          buildingView.setBrightnessTrim(look.brightnessTrim);
+        }
         schemeSwitch.meshDrawn(built.mesh.colourScheme);
         roofsSwitch.meshDrawn(built.mesh.inventedRoofs);
         markingsSwitch.meshDrawn(built.mesh.markings);
@@ -3053,7 +3074,10 @@ async function main(): Promise<void> {
           const { r, g, b } = heatColour(score, scale);
           return (r << 16) | (g << 8) | b;
         },
-        plateColour: colourSchemeOf(latestMesh.colourScheme).ground.plates,
+        plateColour:
+          latestMesh.colourScheme === TIME_OF_DAY
+            ? mixedPageLook(lookWeights).plates
+            : colourSchemeOf(latestMesh.colourScheme).ground.plates,
         treeForm: woodsKnobs.treeForm,
       });
     } else if (!wantsMeshLayers) {
@@ -3410,13 +3434,13 @@ async function main(): Promise<void> {
   // (already reported once) or the default's own name is removed at once.
   let shownScheme = selectColourScheme(store.getState());
   const schemeUrl = browserPlaceUrl(window);
-  writeScheme(schemeUrl, schemeLinkValue(shownScheme));
+  writeScheme(schemeUrl, lookLinkValue(shownScheme));
   store.subscribe(() => {
     const scheme = selectColourScheme(store.getState());
     if (scheme === shownScheme) return;
     shownScheme = scheme;
     schemeSwitch.show(scheme);
-    writeScheme(schemeUrl, schemeLinkValue(scheme));
+    writeScheme(schemeUrl, lookLinkValue(scheme));
     // The scheme's own light follows it; what the viewer set stays.
     lightDialog.setDefaults(lightDefaultsFor(scheme));
     void refresh();

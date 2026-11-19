@@ -717,3 +717,19 @@ log" and paste the text: it holds the newest 3000 frame intervals, 1000
 bursts with their draw cost and 500 share changes (it says how many older
 ones were dropped, and whether it is still whole enough to replay), the
 device and the knobs, and no location.
+
+## The time-of-day blend: `setLookWeights()`
+
+`setLookWeights(lookWeights | undefined)` draws a time-of-day build at the
+given look weights (normalised, `look-choice.ts`):
+
+- the trim weights (`mixedPageLook`) go to the shared look mix the building
+  and road materials read, and the material brightness trim becomes 1 (the
+  trims are folded into the weights);
+- the land-use tint, the trees (`setTreeLookWeights`) and the ground colours
+  follow the same weights;
+- `undefined` leaves the blend (a fixed scheme is drawn); the caller then sets
+  the scheme's ground colours and trim as before.
+
+A layer is drawn by the look mix only while the drawn mesh was built as the
+blend AND weights are set; a fixed build never sees the mix.

@@ -45,7 +45,13 @@ import {
   TERRAIN_SPACING_M,
   type Heightfield,
 } from "gps-plus-slam-osm";
-import { applyWoodsShare, WOODS_GOVERNOR } from "gps-plus-slam-osm/three";
+import {
+  applyWoodsShare,
+  createLookMix,
+  setTreeLookWeights,
+  setTrimWeights,
+  WOODS_GOVERNOR,
+} from "gps-plus-slam-osm/three";
 import { heightRampColours } from "./height-ramp.js";
 import { createWoodsMeter, type WoodsMeter } from "./woods-readout.js";
 import {
@@ -123,6 +129,9 @@ import {
   TONE_MAPPING_EXPOSURE,
 } from "./atmosphere-rig.js";
 import type { TransferableMesh } from "./worker/protocol.js";
+import { veilBlendOf } from "./veil-blend.js";
+import { TIME_OF_DAY } from "./look-choice.js";
+import { mixedPageLook } from "./mixed-page-look.js";
 
 // Re-exported so the many call sites that import these from the view keep working.
 // The table owns them because it owns what they describe: `BuildingStats` is
@@ -548,6 +557,14 @@ export class BuildingView {
    * D4), multiplied into {@link surfaceGain} wherever that is applied.
    */
   private brightnessTrim = 1;
+  /**
+   * The time-of-day blend (`look-choice.ts`): the normalised look weights
+   * the page last set, HELD like the surface gain so a rebuilt city, its
+   * trees and its ground tint take them; undefined while a fixed scheme is
+   * drawn. The mix is the one uniform every look material shares.
+   */
+  private lookWeights: readonly number[] | undefined;
+  private readonly lookMix = createLookMix();
   /** The light dialog's settings (plan 2026-09-24-2140); the shipped look by default. */
   private lightSettings: LightSettings = DEFAULT_LIGHT_SETTINGS;
   /** The desktop view's distance haze (`scene.fog` outside AR). */
@@ -1409,6 +1426,31 @@ export class BuildingView {
   }
 
   /**
+   * The time-of-day blend's normalised look weights (one per
+   * `TIME_OF_DAY_LOOKS` entry), or undefined for a fixed scheme. With
+   * weights, everything the looks colour follows them at once: the ground
+   * and its slope colours (`mixedPageLook`), the land-use tint, the trees
+   * (a CPU mix) and the buildings and roads (the trim weights, each look's
+   * brightness trim folded in, with the material trim 1). Uniform and
+   * colour writes only, never a rebuild. RangeError for weights
+   * `mixedPageLook` refuses; nothing changes then.
+   */
+  setLookWeights(lookWeights: readonly number[] | undefined): void {
+    if (lookWeights === undefined) {
+      this.lookWeights = undefined;
+      this.landUse.setLookWeights(undefined);
+      return;
+    }
+    const mixed = mixedPageLook(lookWeights);
+    this.lookWeights = lookWeights;
+    setTrimWeights(this.lookMix, mixed.trimWeights);
+    this.setBrightnessTrim(1);
+    this.landUse.setLookWeights(lookWeights);
+    setTreeLookWeights(this.group.children, lookWeights);
+    this.setGroundColours(mixed.ground, mixed.slope);
+  }
+
+  /**
    * The colour scheme's brightness trim (colour schemes plan 2026-11-10-0841
    * section 4.4, D4): multiplied into the noon gain, so it reaches buildings
    * and roads (the `neutralSurface` materials) and nothing else; the gain is
@@ -1721,13 +1763,15 @@ export class BuildingView {
    */
   setLightSettings(settings: LightSettings): void {
     this.lightSettings = settings;
-    this.atmosphere.setExposure({
-      ev: settings.exposureEv,
-      adaptation: settings.exposureAdaptation,
+    this.atmosphere.setLight({
+      exposure: {
+        ev: settings.exposureEv,
+        adaptation: settings.exposureAdaptation,
+      },
+      haze: hazeOf(settings),
+      veil: veilBlendOf(veilOf(settings), TONE_MAPPING_EXPOSURE),
+      skyBalance: skyBalanceOf(settings),
     });
-    this.atmosphere.setHaze(hazeOf(settings));
-    this.atmosphere.setHazeVeil(veilOf(settings));
-    this.atmosphere.setSkyBalance(skyBalanceOf(settings));
     // The view's OWN fog, not `scene.fog`: an AR session swaps in its stock
     // fog and restores this one after, so a change made meanwhile still
     // lands where the desktop view will draw it.
@@ -2106,7 +2150,7 @@ export class BuildingView {
     layers?: MeshLayers,
     // Omits `drawnHostLayers`, which `drawMeshLayers` derives from `layers` itself
     // rather than taking from a caller who could disagree with it.
-    context?: Omit<MeshLayerContext, "drawnHostLayers">,
+    context?: Omit<MeshLayerContext, "drawnHostLayers" | "looks">,
   ): BuildingStats {
     this.clear();
     // THE TINT FOLLOWS EVERY BUILD, including a build without one (it is then
@@ -2117,8 +2161,16 @@ export class BuildingView {
     // its contribution when off — which reached complexity 21 with three layers and
     // had four more (W12–W15) queued behind it. The table also makes a MISSING
     // layer detectable, which the longhand form could not: see that file's header.
-    const { objects, stats } = drawMeshLayers(mesh, layers, context);
+    const looks =
+      mesh.colourScheme === TIME_OF_DAY && this.lookWeights !== undefined;
+    const { objects, stats } = drawMeshLayers(
+      mesh,
+      layers,
+      context,
+      looks ? this.lookMix : undefined,
+    );
     for (const object of objects) this.group.add(object);
+    if (looks) setTreeLookWeights(objects, this.lookWeights ?? []);
     // New woods arrive whole; the governor's share holds across a rebuild,
     // or every refetch on a slow phone would bring the full woods back.
     this.inventedTrees = applyWoodsShare(

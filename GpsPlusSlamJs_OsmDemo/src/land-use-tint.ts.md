@@ -47,3 +47,11 @@ control.setAppearance("ramp"); // hidden
   both states, bad colours, dispose.
 - `land-use-tint.property.test.ts` - any sequence of the four inputs keeps
   both invariants above.
+
+## The time-of-day blend: `setLookWeights()`
+
+`setLookWeights(weights | undefined)` hands the weights to a tint baked in
+several looks (`lookPalettes`), now or when it arrives, and keeps the tint's
+neutral (its fade target) on the current ground colour; the material colour
+stays white while such a tint is applied. A tint without looks is left alone.
+Tests: `land-use-tint.test.ts`, "landUseTint with looks".

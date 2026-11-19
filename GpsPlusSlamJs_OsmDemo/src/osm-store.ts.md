@@ -95,3 +95,10 @@ The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, 
   action (a non-boolean payload is ignored), `selectMarkings` its selector;
   both choices share one reducer factory.
 - `selectInventedRoofs(state)`.
+
+## The time-of-day blend
+
+`colourScheme` holds a `LookChoice` (`look-choice.ts`): a scheme or
+`"timeofday"`. The reducer accepts only `isLookChoice` values. The look
+WEIGHTS are not store state: they are derived (from the link today, from the
+sun later) and the view holds what it last drew.

@@ -52,6 +52,8 @@ import {
   streetFurnitureObjects,
   treeObjects,
   type TreeForm,
+  type LookMix,
+  type LookObjectOptions,
   type TreeObjectOptions,
 } from "gps-plus-slam-osm/three";
 
@@ -204,6 +206,17 @@ export interface MeshLayerContext {
    * default, the crown-only form.
    */
   readonly treeForm?: TreeForm;
+  /**
+   * The look mix of a time-of-day build (`look-choice.ts`): buildings and
+   * roads draw their baked looks mixed by its uniform. Absent for a fixed
+   * scheme (and set by `drawMeshLayers`, never by a caller's context).
+   */
+  readonly looks?: LookMix;
+}
+
+/** The library's options for buildings and roads: the look mix, when one is drawn. */
+function lookOptions(context: MeshLayerContext): LookObjectOptions {
+  return context.looks === undefined ? {} : { looks: context.looks };
 }
 
 /** The library's tree options for a context: no form, no option. */
@@ -378,7 +391,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // chunk, a material per chunk, white plus vertex colours, single-sided,
     // flat, roughness 0.55, `userData.solid` for picking and the material's
     // `neutralSurface` for the noon brightening. Its header carries why.
-    build: (mesh) => buildingObjects(mesh.buildings),
+    build: (mesh, context) =>
+      buildingObjects(mesh.buildings, lookOptions(context)),
     counters: (mesh) => ({
       volumes: mesh.volumes,
       parts: mesh.parts,
@@ -525,8 +539,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // double-blend into a blob at every junction), SINGLE-SIDED, flat, rough,
     // the noon brightening's target. Its header carries why. The LIFT is this
     // demo's own ladder, so a road is never coplanar with a plate or the grid.
-    build: (mesh) =>
-      roadObjects(mesh.roads).map((ribbon) => {
+    build: (mesh, context) =>
+      roadObjects(mesh.roads, lookOptions(context)).map((ribbon) => {
         ribbon.position.y = groundLift("roads");
         return ribbon;
       }),
@@ -683,7 +697,12 @@ export function drawMeshLayers(
    * and a caller passing its own could disagree with the set that actually
    * gates drawing. So the parameter omits it and the rows receive it.
    */
-  context: Omit<MeshLayerContext, "drawnHostLayers"> = NEUTRAL_CONTEXT,
+  context: Omit<
+    MeshLayerContext,
+    "drawnHostLayers" | "looks"
+  > = NEUTRAL_CONTEXT,
+  /** The look mix, for a mesh built in looks (a time-of-day build). */
+  looks?: LookMix,
 ): { objects: THREE.Object3D[]; stats: BuildingStats } {
   const objects: THREE.Object3D[] = [];
   let stats = NO_STATS;
@@ -693,6 +712,7 @@ export function drawMeshLayers(
   // what would let them drift.
   const hostAware: MeshLayerContext = {
     ...context,
+    ...(looks === undefined ? {} : { looks }),
     drawnHostLayers: new Set(
       (["buildings", "plates"] as const).filter(
         (layer) => layers?.[layer] ?? true,

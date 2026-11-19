@@ -54,3 +54,9 @@ control.failed(loading.message); // on the error phase
 `colour-scheme-switch.test.ts` (jsdom): the options and labels, the tampered
 value, the in-progress state and the echo rule, the revert rule, AR. The three
 switch tests need a second scheme and run once the table has one (S5).
+
+## The time-of-day blend
+
+The dropdown offers `LOOK_CHOICES`: the schemes plus "By time of day"
+(`timeofday`). The blend is one more choice: in progress until a mesh built as
+the blend is drawn, like any scheme.

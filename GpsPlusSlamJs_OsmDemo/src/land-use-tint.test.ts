@@ -41,6 +41,50 @@ function compiled(material: THREE.Material): {
 const groundOn = (material: THREE.Material): unknown =>
   compiled(material).uniforms["groundOn"]?.value;
 
+/** A 2 x 1 tint baked in two looks: look 1 paints the park blue. */
+function lookedTint(): GroundTint {
+  return {
+    ...tintOf(),
+    lookPalettes: [
+      [GROUND_COLOUR, 0x6f9a5c],
+      [0x202020, 0x0000ff],
+    ],
+  };
+}
+
+describe("landUseTint with looks", () => {
+  // WHY: a time-of-day build's tint must follow the blend: the weights set
+  // before the tint arrived apply to it, and its neutral (the fade target
+  // at the window's edge) follows the mixed ground, or the ground under
+  // the tint keeps look 0's colour while the rest of the page moves.
+  it("hands a looked tint the weights and the ground as its neutral", () => {
+    const material = groundMaterial();
+    const control = landUseTint(material);
+    control.setLookWeights([0, 1]);
+    control.setTint(lookedTint());
+    const neutral = (): number[] =>
+      (compiled(material).uniforms["groundNeutral"]?.value as THREE.Vector3)
+        .toArray()
+        .map((c) => Math.round(c * 1e6) / 1e6);
+    const want = (hex: number): number[] =>
+      new THREE.Color(hex).toArray().map((c) => Math.round(c * 1e6) / 1e6);
+    expect(neutral()).toEqual(want(GROUND_COLOUR));
+    control.setGroundColour(0x405060);
+    expect(neutral()).toEqual(want(0x405060));
+    expect(material.color.getHex()).toBe(0xffffff);
+    expect(() => control.setLookWeights([1])).toThrow(RangeError);
+  });
+
+  // WHY: a fixed scheme's tint is the build byte for byte; weights left
+  // over from a blend must not reach it (a tint without looks refuses them).
+  it("leaves a tint without looks alone", () => {
+    const control = landUseTint(groundMaterial());
+    control.setLookWeights([0, 1]);
+    expect(() => control.setTint(tintOf())).not.toThrow();
+    expect(() => control.setGroundColour(0x405060)).not.toThrow();
+  });
+});
+
 describe("landUseTint", () => {
   it("applies a build's tint, white material, shown by default", () => {
     // WHY: the default look (owner Q6) is the tint on in the plain and slope

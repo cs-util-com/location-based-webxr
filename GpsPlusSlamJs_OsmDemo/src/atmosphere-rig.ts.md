@@ -248,3 +248,22 @@ renderer.render(scene, camera);
 - Pixels: OsmDemo's e2e suite (every lit-geometry and heat-ramp check runs
   under this sky); the sky's shaders themselves are checked by the look-dev
   smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history)).
+
+## The time-of-day blend: `setLight` and `setVeilBlend`
+
+- `setVeilBlend(veil: VeilBlend | null)` - draws a premultiplied veil
+  (`veil-blend.ts`) with its strength: the haze, the sky's horizon veil and the
+  rim all take the strength, and the fallback fog is
+  `horizon * (1 - strength) + display`. `setHazeVeil(veil)` is this at
+  strength 1.
+- `setLight({exposure, haze, veil, skyBalance})` - one combined light update:
+  every value is validated first (a `RangeError` changes nothing), then the
+  haze, the exposure and the veil are applied with ONE `sky.configure`
+  (visibility only when it changed, plus the sky balance) and ONE re-sync, so
+  a blend step costs one sky rebuild and one bake, not one per field.
+- The sun stays outside `setLight` (`aimSun` configures it on its own); a
+  driver that moves the sun and the light together should fold both into one
+  configure.
+- Tests: `atmosphere-rig.test.ts`, "AtmosphereRig.setVeilBlend" and
+  "AtmosphereRig.setLight" (one configure, one sync, an unchanged visibility
+  not sent, refusals before any change).

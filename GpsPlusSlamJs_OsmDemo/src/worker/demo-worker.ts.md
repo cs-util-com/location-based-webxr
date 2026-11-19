@@ -216,3 +216,10 @@ The `update` handler passes `inventedRoofs ?? true` to the planner's choices
 and to `buildCity`, and echoes it on the mesh. `planRoute` asks the obstacle
 cache with the same flag, so routes climb over the roofs the city draws and,
 switched off, over the flat lids; the cache rebuilds when the flag flips.
+
+## The time-of-day blend
+
+A full update with the scheme `"timeofday"` builds with `lookBuildOf`: the
+city baked in its four looks at once, look 0 being the colours. The look
+colour buffers move to the page with the geometry
+(`worker/mesh-transfer.ts`).

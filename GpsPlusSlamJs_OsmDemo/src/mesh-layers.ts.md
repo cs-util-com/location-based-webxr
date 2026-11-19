@@ -206,3 +206,11 @@ buildings counter; the status line shows it beside the guessed heights.
 invented `woods`, as the library's `TreeObjectOptions.form`; absent draws
 the crown-only default. Both rows take it so a trunk-form measurement
 covers every tree. Tested in `mesh-layers.test.ts` ("the tree form").
+
+## The time-of-day blend
+
+`drawMeshLayers(mesh, layers, context, looks?)` takes the shared `LookMix`
+when the mesh is a time-of-day build; the building and road layers are then
+built with `{looks}` and draw their `lookColours` (decoded in the shader,
+mixed by the trim weights) instead of `colors`. Without it they are built
+exactly as before.

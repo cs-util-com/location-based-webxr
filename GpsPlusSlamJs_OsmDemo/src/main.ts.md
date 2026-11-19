@@ -317,3 +317,12 @@ No unit tests — it is DOM wiring. It is covered end to end by
 `playwright-tests/`, which drives the real shell: the rule-table
 tier it reports, the category picker it builds, the status line it assembles,
 and the failure message it shows when a tile cannot be fetched.
+
+## The time-of-day blend
+
+- `?scheme=timeofday` chooses the blend; `?lookWeights=a,b,c,d` (normalised on
+  read, invalid input ignored with a warning) fixes its look weights at boot,
+  else all on the day look.
+- The refresh builds `resolveLook(choice, {ar})`, so AR builds the default.
+- A drawn blend mesh sets the view's look weights; a fixed one clears them and
+  sets the scheme's ground colours and trim; the plates use the mixed colour.

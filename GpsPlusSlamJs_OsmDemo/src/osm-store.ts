@@ -37,11 +37,8 @@ import {
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
-import {
-  DEFAULT_COLOUR_SCHEME,
-  isColourSchemeName,
-  type ColourSchemeName,
-} from "./colour-schemes.js";
+import { DEFAULT_COLOUR_SCHEME } from "./colour-schemes.js";
+import { isLookChoice, type LookChoice } from "./look-choice.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import { DEFAULT_GROUND_MODE } from "./ground-mode.js";
 import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
@@ -72,7 +69,7 @@ export interface DemoRootState {
    * this demo's looks, and a field there would pull every framework
    * dependant into this change.
    */
-  readonly colourScheme: ColourSchemeName;
+  readonly colourScheme: LookChoice;
   /**
    * Whether the city invents roofs for the buildings the map says nothing
    * about (the layer list's switch). A demo field beside `colourScheme`, for
@@ -92,7 +89,7 @@ export interface CreateDemoStoreOptions {
   /** The AO switch at boot, from the link (`?ao=off`); on when absent. */
   readonly ambientOcclusion?: boolean;
   /** The scheme at boot, from the link (`?scheme=`); the default when absent. */
-  readonly colourScheme?: ColourSchemeName;
+  readonly colourScheme?: LookChoice;
   /** The switch at boot, from the link (`?roofs=off`); on when absent. */
   readonly inventedRoofs?: boolean;
   /** The switch at boot, from the link (`?markings=off`); on when absent. */
@@ -135,33 +132,31 @@ const COLOUR_SCHEME_CHANGED = "colourScheme/changed";
 /** The one action of the colour-scheme reducer. */
 export interface ColourSchemeChanged {
   readonly type: typeof COLOUR_SCHEME_CHANGED;
-  readonly payload: ColourSchemeName;
+  readonly payload: LookChoice;
 }
 
-/** The dropdown's choice (or a revert of it). */
-export function colourSchemeChanged(
-  name: ColourSchemeName,
-): ColourSchemeChanged {
+/** The dropdown's choice (or a revert of it): a scheme or the time-of-day blend. */
+export function colourSchemeChanged(name: LookChoice): ColourSchemeChanged {
   return { type: COLOUR_SCHEME_CHANGED, payload: name };
 }
 
 /**
  * The colour-scheme reducer, starting at `initial`. A payload that is not a
- * scheme name is ignored (the state stays), so nothing outside the table can
- * reach the worker's build key.
+ * scheme name or the time-of-day blend is ignored (the state stays), so
+ * nothing outside the table can reach the worker's build key.
  */
-function colourSchemeReducer(initial: ColourSchemeName) {
+function colourSchemeReducer(initial: LookChoice) {
   return (
-    state: ColourSchemeName = initial,
+    state: LookChoice = initial,
     action: { readonly type: string; readonly payload?: unknown },
-  ): ColourSchemeName => {
+  ): LookChoice => {
     if (action.type !== COLOUR_SCHEME_CHANGED) return state;
-    return isColourSchemeName(action.payload) ? action.payload : state;
+    return isLookChoice(action.payload) ? action.payload : state;
   };
 }
 
-/** The chosen colour scheme. */
-export function selectColourScheme(state: DemoRootState): ColourSchemeName {
+/** The chosen look: a colour scheme, or the time-of-day blend. */
+export function selectColourScheme(state: DemoRootState): LookChoice {
   return state.colourScheme;
 }
 

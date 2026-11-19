@@ -15,7 +15,7 @@ import { test, expect } from "./e2e-test.js";
 const HARNESS = "/playwright-tests/looks-programs-harness.js";
 
 test.describe("the colour-looks programs in WebGL 2", () => {
-  test("the land-use tint's looks program compiles, filters its class edges, and matches the fixed tint at a weight of 1 @pr", async ({
+  test("the land-use tint's looks program compiles, filters its class edges, and matches the fixed tint at a weight of 1", async ({
     page,
   }) => {
     // WHY THIS TEST MATTERS. The looks ground filters four class texels by
@@ -45,5 +45,34 @@ test.describe("the colour-looks programs in WebGL 2", () => {
     expect(result.fixedShades).toBeGreaterThan(8);
     expect(result.looksShades).toBeGreaterThan(8);
     expect(result.mixDrawn).toBe(true);
+  });
+
+  test("the building and road looks programs compile and draw what the fixed build draws, at a weight of 1 and at a mix", async ({
+    page,
+  }) => {
+    // WHY THIS TEST MATTERS. A time-of-day build draws its buildings and
+    // roads from byte codes decoded in the shader (a 256 x 2 table, one row
+    // per layer) and mixed by the trim weights. At a weight of 1 on one look
+    // the frame must be the fixed build's of that look, or switching the
+    // blend on changes the city; at a mix, the mean of the decoded colours.
+    // A wrong decode row (linear against raw) is tens of steps off.
+    //
+    // TOLERANCE 1 of 255 per channel: both frames interpolate the same
+    // decoded floats, one from the vertex buffer and one from the table.
+    await page.goto("/playwright-tests/looks-programs.html");
+    const result = await page.evaluate(async (url) => {
+      /** @type {{ meshLooksCheck: () => { errors: string[], buildings: { atWeightOne: number[], atHalf: number, drawn: boolean }, roads: { atWeightOne: number[], atHalf: number, drawn: boolean } } }} */
+      const harness = await import(url);
+      return harness.meshLooksCheck();
+    }, HARNESS);
+    expect(result.errors).toEqual([]);
+    for (const layer of [result.buildings, result.roads]) {
+      expect(layer.atWeightOne).toHaveLength(2);
+      for (const difference of layer.atWeightOne) {
+        expect(difference).toBeLessThanOrEqual(1);
+      }
+      expect(layer.atHalf).toBeLessThanOrEqual(1);
+      expect(layer.drawn).toBe(true);
+    }
   });
 });
