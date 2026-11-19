@@ -984,8 +984,7 @@ function commit() {
   }
   A[i].crossed = true;
   const left = creator.attempts === "unlimited" ? Infinity : Number(creator.attempts) - S.tries;
-  const choosable = A.some((a) => !a.crossed);
-  if (left <= 0 || !choosable) {
+  if (left <= 0) {
     finish("wrong");
   } else if (!canAfford()) {
     finish("broke");

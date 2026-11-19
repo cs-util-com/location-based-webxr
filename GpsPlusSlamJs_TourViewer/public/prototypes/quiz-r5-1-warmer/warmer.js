@@ -533,8 +533,9 @@ for (const a of A) {
   a.sparkPos = new Float32Array(SPARKS * 3);
   a.sparkCol = new Float32Array(SPARKS * 4);
   const sg = new THREE.BufferGeometry();
-  sg.setAttribute("position", new THREE.Float32BufferAttribute(a.sparkPos, 3));
-  sg.setAttribute("color", new THREE.Float32BufferAttribute(a.sparkCol, 4));
+  // BufferAttribute shares the arrays the frame loop writes; Float32BufferAttribute would copy them
+  sg.setAttribute("position", new THREE.BufferAttribute(a.sparkPos, 3));
+  sg.setAttribute("color", new THREE.BufferAttribute(a.sparkCol, 4));
   a.sparks = new THREE.Points(
     sg,
     new THREE.PointsMaterial({ size: SPARK_SIZE, map: sparkTex, vertexColors: true, transparent: true, premultipliedAlpha: true, depthWrite: false }),
@@ -1333,7 +1334,7 @@ function hintHtml() {
   }
   const left = triesLeft();
   if (left !== Infinity && (maxTries() > 1 || S.tries > 0)) {
-    parts.push(left === 1 ? (maxTries() === 1 ? "One try." : "One try left.") : `${left} tries.`);
+    parts.push(left === 1 ? "One try left." : `${left} tries.`);
   } else if (left !== Infinity) {
     parts.push("One try.");
   }
