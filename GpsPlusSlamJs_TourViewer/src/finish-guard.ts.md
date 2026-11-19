@@ -49,8 +49,12 @@ draftPersists, finishFailed }`. `tourChanged`: the tour's own fields
 - `beforeunload` (wired in `main.ts`) is partial on Android: a closed tab,
   a swipe-away or an OS discard do not fire it. The draft is what survives
   those - and with no tour open there is no draft, so nothing survives
-  them; only the status line's no-tour hint, which leads the line in AR
-  and on the page, says so.
+  them; only the status line says so (`NO_TOUR_LEAD` leads it in AR and
+  on the page, the full no-tour hint ends it).
+- `leaveQuestion` without a backup speaks of these changes ("this device
+  holds no backup copy of them"), not of the device: it is also asked on a
+  phone that keeps drafts, with no tour open or before its manifest
+  settled.
 
 ## Tests
 

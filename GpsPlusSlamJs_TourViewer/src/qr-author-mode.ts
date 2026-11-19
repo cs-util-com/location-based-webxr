@@ -416,6 +416,11 @@ export function finishReadiness(state: {
   return "ready";
 }
 
+/** The short form of the "no-tour" hint that leads the AR status line: the
+ *  line is clamped to two lines (about 52 characters on a 360 px phone),
+ *  so it leaves room for the note and the readout after it. */
+export const NO_TOUR_LEAD = "No tour open - nothing placed here is kept.";
+
 /** Why the finish button is off, in the creator's words (empty when ready). */
 export function finishBlockedHint(
   readiness: ReturnType<typeof finishReadiness>,

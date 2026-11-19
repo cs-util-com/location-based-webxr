@@ -81,6 +81,7 @@ import {
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
+  NO_TOUR_LEAD,
   codeTourLine,
   entryHint,
   setupHint,
@@ -700,13 +701,17 @@ export function wireCreatorSetup(deps: {
     // With no tour open nothing measured or placed is kept (no draft, and
     // Done cannot save): said FIRST, in AR and on the page, because the AR
     // line is clamped to two lines and a swipe-away fires no leave guard.
-    const noTourLead =
-      readiness === "no-tour" ? `${finishBlockedHint(readiness)} · ` : "";
+    // Short there, so the note and the readout still fit; the full hint,
+    // where to open the tour, ends the line.
+    const noTourLead = readiness === "no-tour" ? `${NO_TOUR_LEAD} · ` : "";
+    const blocked = finishBlockedHint(readiness);
     if (!sessionLive()) {
       dom.status.textContent =
-        ctx.placementNote === null
-          ? noTourLead.slice(0, -3)
-          : noTourLead + ctx.placementNote;
+        readiness === "no-tour"
+          ? [NO_TOUR_LEAD, ctx.placementNote, blocked]
+              .filter((part) => part !== null)
+              .join(" · ")
+          : (ctx.placementNote ?? "");
       return;
     }
     // A placement's outcome (or a draft notice) stands until the next tap
@@ -777,10 +782,7 @@ export function wireCreatorSetup(deps: {
       tour;
     // Measured on its own once the gate opens (UI round 1, U3).
     measuring.maybeMeasure(readout.canMint, view?.measure === true);
-    const blocked = finishBlockedHint(readiness);
-    if (blocked !== "" && readiness !== "no-tour") {
-      dom.status.textContent += ` · ${blocked}`;
-    }
+    if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
     if (readiness === "ready" && ctx.session !== null) {
       dom.status.textContent += ` · ${archiveSizeNote(ctx.session.archive.size)}`;
     }

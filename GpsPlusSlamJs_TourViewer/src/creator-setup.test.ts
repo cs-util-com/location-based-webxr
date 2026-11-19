@@ -1475,12 +1475,20 @@ describe("work made before the tour's draft opened reaches it", () => {
     dom.pinSave.click();
     await settle();
     expect(setup.leaveNeedsConfirm()).toBe(true);
-    expect(setup.leaveQuestion()).toContain("keeps no backup");
-    // The live readout LEADS with why Done cannot save it: in AR the line
-    // is clamped to two lines, so a sentence at its end is never read.
+    expect(setup.leaveQuestion()).toContain("holds no backup copy");
+    // The live readout LEADS with a short form of why Done cannot save it:
+    // in AR the line is clamped to two lines (about 52 characters on a
+    // 360 px phone), so a sentence at its end, or a long one at its start,
+    // hides everything else. The placement's note follows it, and the full
+    // sentence - where to open the tour - ends the line.
     expect(dom.status.textContent).toMatch(
-      /^Your tour is not open on this phone yet/,
+      /^No tour open - nothing placed here is kept. · Pin "Gate" placed/,
     );
+    expect(
+      dom.status.textContent.endsWith(
+        ` · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.`,
+      ),
+    ).toBe(true);
 
     // The tour opens as the page opens it: its session first, its draft
     // only once the manifest settled. In between nothing writes the
@@ -1518,12 +1526,12 @@ describe("work made before the tour's draft opened reaches it", () => {
     ctx.placementNote = null;
     setup.renderAuthorReadout();
     expect(dom.status.textContent).toBe(
-      "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+      "No tour open - nothing placed here is kept. · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );
     ctx.placementNote = "Pin placed.";
     setup.renderAuthorReadout();
-    expect(dom.status.textContent).toMatch(
-      /^Your tour is not open on this phone yet.* · Pin placed.$/,
+    expect(dom.status.textContent).toBe(
+      "No tour open - nothing placed here is kept. · Pin placed. · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );
   });
 

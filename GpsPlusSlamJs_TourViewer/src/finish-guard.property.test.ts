@@ -43,7 +43,7 @@ describe("leaveNeedsConfirm (properties)", () => {
       fc.property(guardInput, (input) => {
         fc.pre(!input.draftPersists && unsavedWork(input));
         expect(leaveNeedsConfirm(input)).toBe(true);
-        expect(leaveQuestion(input)).toContain("keeps no backup");
+        expect(leaveQuestion(input)).toContain("holds no backup copy");
       }),
     );
   });

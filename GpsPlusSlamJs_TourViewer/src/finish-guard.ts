@@ -39,7 +39,7 @@ const FINISH_UNSAVED = "Finish and save your changes";
 const LEAVE_WITH_BACKUP =
   "The updated tour file is not saved yet. Leave anyway? Your changes stay on this phone, and you can finish and save them later.";
 const LEAVE_WITHOUT_BACKUP =
-  "Your changes are not saved anywhere yet, and this device keeps no backup. Leave anyway and lose them?";
+  "Your changes are not saved anywhere yet, and this device holds no backup copy of them. Leave anyway and lose them?";
 
 /** The question before the page or the tour goes away: it promises the
  *  phone keeps the work only while the draft backs it up (U2 milestone
