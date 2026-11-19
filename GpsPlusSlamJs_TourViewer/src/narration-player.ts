@@ -193,6 +193,9 @@ export function createNarrationPlayer(
       if (disposed) return;
       disposed = true;
       wanted = false;
+      // Counts as a press: a play() pending across dispose is superseded,
+      // so the teardown's AbortError reaches no error toast.
+      presses += 1;
       listeners.clear();
       if (audio !== null) {
         audio.pause();

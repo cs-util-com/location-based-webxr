@@ -208,4 +208,37 @@ describe("createNarrationPlayer", () => {
     player.play();
     expect(player.playing()).toBe(false);
   });
+
+  // Why: leaving a station before its voice started disposes the player
+  // while the browser's play() is still pending; the teardown then rejects
+  // it with AbortError. The player is gone, so that must not reach the
+  // page's error toast.
+  it("takes the abort of a play() pending across dispose quietly", async () => {
+    const { audio, player, onError } = make();
+    let reject: (e: unknown) => void = () => undefined;
+    audio.play.mockImplementationOnce(
+      () =>
+        new Promise<void>((_, r) => {
+          reject = r;
+        }),
+    );
+    player.play();
+    await flush();
+    player.dispose();
+    reject(
+      new DOMException("The play() request was interrupted", "AbortError"),
+    );
+    await flush();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  // Why: dispose during the fetch must not start the audio once the file
+  // arrives.
+  it("starts no audio when disposed during the fetch", async () => {
+    const { audio, player } = make();
+    player.play();
+    player.dispose();
+    await flush();
+    expect(audio.play).not.toHaveBeenCalled();
+  });
 });
