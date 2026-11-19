@@ -57,6 +57,15 @@ map scored.
   of that work, the AO reused across the grid toggle and the redraw it
   saves live in `light-measure.ts` (its sidecar carries the measured cost).
   The grid is restored as found, also when a render throws.
+- **One sun step, one atmosphere update:** `setSunAndLight(angles,
+settings, light)` moves the sun and sets the light in one
+  `atmosphere.setLight(light, angles)` (one sky rebuild, one bake), where a
+  light update then a sun update were two. `setLightSettings(settings)` is
+  `setSunAndLight` at the held angles with the settings' own light
+  (`rigLightOf`); the time-of-day blend passes its mixed light
+  (`look-light.ts`). Every sun step ends in `finishSunStep(direction)`, the
+  one place that aims the sun light and its target and sets the surface
+  gain.
 - **The sun:** `initialSun` (constructor option, the angles the sky is built
   for) and `setSunAngles(angles)`. The view only draws
   the angles it is given; WHERE the sun is (the real sun for a place and a

@@ -81,11 +81,9 @@ import {
 import {
   DEFAULT_LIGHT_SETTINGS,
   gainOf,
-  hazeOf,
-  skyBalanceOf,
-  veilOf,
   type LightSettings,
 } from "./light-settings.js";
+import { rigLightOf } from "./look-light.js";
 import { measureLightReadouts } from "./light-measure.js";
 import { applyArShadowCasting } from "./ar-sun-shadow.js";
 import { SceneContent, type ContentFrame } from "./scene-content.js";
@@ -108,7 +106,7 @@ import {
 } from "./pick-gesture.js";
 import { resolvePick, type Pick, type ScenePoint } from "./pick.js";
 import { AGENT_SPEED_MPS, pathLengthM, pointAlong } from "./route-path.js";
-import type { SunAngles } from "./sun-position.js";
+import type { SunAngles, Vector3Like } from "./sun-position.js";
 import { terrainTextureFrom } from "./terrain-texture.js";
 import type { BuildingStats, MeshLayers } from "./mesh-layers.js";
 import type { HazeModeSwitch } from "./ar-scene-environment.js";
@@ -118,9 +116,9 @@ import {
   surfaceGainAt,
   TONE_MAPPING,
   TONE_MAPPING_EXPOSURE,
+  type LightSetting,
 } from "./atmosphere-rig.js";
 import type { TransferableMesh } from "./worker/protocol.js";
-import { veilBlendOf } from "./veil-blend.js";
 
 // Re-exported so the many call sites that import these from the view keep working.
 // The table owns them because it owns what they describe: `BuildingStats` is
@@ -1727,21 +1725,34 @@ export class BuildingView {
    * re-applied to the fog at the current draw distance.
    */
   setLightSettings(settings: LightSettings): void {
+    this.setSunAndLight(this.sunAngles, settings, rigLightOf(settings));
+  }
+
+  /**
+   * THE SUN STEP: the sun and the light together, as the time-of-day blend
+   * moves them (`look-light.ts`), with ONE atmosphere update and one bake
+   * (`AtmosphereRig.setLight` with the sun). `settings` are what the view
+   * holds for the gain ramp and the sky light on buildings; `light` is what
+   * the atmosphere takes (for one look `rigLightOf(settings)`, for the blend
+   * the looks' light mixed). Validation is the rig's: a `RangeError`
+   * changes nothing there, and then nothing here either.
+   */
+  setSunAndLight(
+    angles: SunAngles,
+    settings: LightSettings,
+    light: LightSetting,
+  ): void {
+    const direction = this.atmosphere.setLight(light, angles);
+    if (direction === undefined) {
+      throw new Error("the atmosphere returned no sun for a sun step");
+    }
+    this.sunAngles = angles;
     this.lightSettings = settings;
-    this.atmosphere.setLight({
-      exposure: {
-        ev: settings.exposureEv,
-        adaptation: settings.exposureAdaptation,
-      },
-      haze: hazeOf(settings),
-      veil: veilBlendOf(veilOf(settings), TONE_MAPPING_EXPOSURE),
-      skyBalance: skyBalanceOf(settings),
-    });
     // The view's OWN fog, not `scene.fog`: an AR session swaps in its stock
     // fog and restores this one after, so a change made meanwhile still
     // lands where the desktop view will draw it.
     this.viewFog.near = this.viewFog.far * this.atmosphere.hazeStartRatio;
-    this.aimSun();
+    this.finishSunStep(direction);
     this.requestFrame();
   }
 
@@ -1813,8 +1824,9 @@ export class BuildingView {
    * stops keep the sun within civil twilight (≥ −6°).
    */
   setSunAngles(angles: SunAngles): void {
+    const direction = this.atmosphere.setSun(angles);
     this.sunAngles = angles;
-    this.aimSun();
+    this.finishSunStep(direction);
     // On-demand rendering: without this the new sun is invisible until the
     // camera moves, which is finding R2-3 in a new place.
     this.requestFrame();
@@ -1828,18 +1840,23 @@ export class BuildingView {
     return this.atmosphere.haze;
   }
 
+  /** Points the sun at `this.sunAngles` on its own (the constructor's first aim). */
+  private aimSun(): void {
+    this.finishSunStep(this.atmosphere.setSun(this.sunAngles));
+  }
+
   /**
-   * Points the sun from the camera's current azimuth (W12).
-   *
-   * Called from the controls' `change` handler rather than from a loop: the sun
-   * only has to move when the camera does, and that is exactly when a frame is
-   * already being scheduled. DEC-R3-9's on-demand renderer is untouched.
+   * WHERE EVERY SUN STEP ENDS, once the atmosphere has the new sun: the sun
+   * light placed along `direction` (the unit vector toward the sun the rig
+   * returned) and the noon gain re-derived. Anything that must follow the
+   * sun after the atmosphere (a shadow, a second light) belongs here, so the
+   * three entries (`setSunAngles`, `setSunAndLight`, the first aim) keep it.
    *
    * The distance is arbitrary — a `DirectionalLight` has no falloff and only its
    * direction matters — but it must be large enough to sit outside the scene if
    * a shadow camera is ever added.
    */
-  private aimSun(): void {
+  private finishSunStep(direction: Vector3Like): void {
     // ONE VECTOR, TWO CONSUMERS, and it now comes back from the rig rather than
     // being derived twice: `setSun` points the sky shader and returns the same
     // unit direction the light is placed along. Two independently-derived sun
@@ -1855,7 +1872,6 @@ export class BuildingView {
     // camera's azimuth was deleted once nothing had read it for two rounds.
     // That is also what makes the sky rebuild inside `setSun`
     // affordable — it runs when the user changes the time, not on every drag.
-    const direction = this.atmosphere.setSun(this.sunAngles);
     const distance = 1000;
     this.sun.position.set(
       direction.x * distance,

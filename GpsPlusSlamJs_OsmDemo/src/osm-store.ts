@@ -38,7 +38,14 @@ import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
 
 import { DEFAULT_COLOUR_SCHEME } from "./colour-schemes.js";
-import { isLookChoice, type LookChoice } from "./look-choice.js";
+import {
+  isLookChoice,
+  TIME_OF_DAY_LOOKS,
+  type LookChoice,
+} from "./look-choice.js";
+import { isMorningAt, lookWeightsAt } from "./look-driver.js";
+import type { SunPlace } from "./sun-clock.js";
+import { solarPosition } from "gps-plus-slam-app-framework/geo/solar-position";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import { DEFAULT_GROUND_MODE } from "./ground-mode.js";
 import { DEFAULT_LAYERS, type LayerSet } from "./layers.js";
@@ -81,6 +88,24 @@ export interface DemoRootState {
    * areas (the layer list's switch), a build choice like the roofs.
    */
   readonly markings: boolean;
+  /**
+   * The sun on screen: the instant and the place it is computed for (the
+   * scene anchor). The time controls, the clock and the timelapse move it;
+   * the view, the sun controls and the look weights follow it.
+   */
+  readonly sun: SunState;
+  /**
+   * The time-of-day blend's weights pinned by the link (`?lookWeights=`, a
+   * test and review hook), or null: then the sun derives them. Read-only
+   * after boot.
+   */
+  readonly lookWeightsOverride: readonly number[] | null;
+}
+
+/** The sun on screen. */
+export interface SunState {
+  readonly instantMs: number;
+  readonly place: SunPlace;
 }
 
 export interface CreateDemoStoreOptions {
@@ -99,6 +124,13 @@ export interface CreateDemoStoreOptions {
    * `DEFAULT_LAYERS` when absent.
    */
   readonly initialLayers?: LayerSet;
+  /**
+   * The sun at boot; absent, the epoch at `start` (for tests that never
+   * read the sun). `RangeError` for one `isSunState` refuses.
+   */
+  readonly sun?: SunState;
+  /** The link's pinned look weights (normalised, `parseLookWeights`). */
+  readonly lookWeightsOverride?: readonly number[] | null;
 }
 
 const AMBIENT_OCCLUSION_CHANGED = "ambientOcclusion/changed";
@@ -204,6 +236,129 @@ export function selectMarkings(state: DemoRootState): boolean {
   return state.markings;
 }
 
+const SUN_MOVED = "sun/moved";
+const SUN_PLACE_MOVED = "sun/placeMoved";
+
+/** The sun moved in time at the same place (the time controls, the clock, the timelapse). */
+export function sunMoved(instantMs: number): {
+  readonly type: typeof SUN_MOVED;
+  readonly payload: number;
+} {
+  return { type: SUN_MOVED, payload: instantMs };
+}
+
+/** The sun moved to another place, and to `instantMs` there (a re-anchor keeps its phase). */
+export function sunPlaceMoved(
+  place: SunPlace,
+  instantMs: number,
+): {
+  readonly type: typeof SUN_PLACE_MOVED;
+  readonly payload: SunState;
+} {
+  return { type: SUN_PLACE_MOVED, payload: { instantMs, place } };
+}
+
+/** Whether a value is a sun the clock can show: a finite instant at a real place. */
+function isSunState(value: unknown): value is SunState {
+  if (typeof value !== "object" || value === null) return false;
+  const { instantMs, place } = value as Partial<SunState>;
+  return (
+    typeof instantMs === "number" &&
+    Number.isFinite(instantMs) &&
+    typeof place === "object" &&
+    place !== null &&
+    typeof place.lat === "number" &&
+    typeof place.lng === "number" &&
+    Math.abs(place.lat) <= 90 &&
+    Number.isFinite(place.lng)
+  );
+}
+
+/** The sun reducer; a payload that is not a valid instant or sun is ignored. */
+function sunReducer(initial: SunState) {
+  return (
+    state: SunState = initial,
+    action: { readonly type: string; readonly payload?: unknown },
+  ): SunState => {
+    if (action.type === SUN_MOVED) {
+      const ms = action.payload;
+      return typeof ms === "number" && Number.isFinite(ms)
+        ? ms === state.instantMs
+          ? state
+          : { ...state, instantMs: ms }
+        : state;
+    }
+    if (action.type === SUN_PLACE_MOVED) {
+      return isSunState(action.payload)
+        ? {
+            instantMs: action.payload.instantMs,
+            place: {
+              lat: action.payload.place.lat,
+              lng: action.payload.place.lng,
+            },
+          }
+        : state;
+    }
+    return state;
+  };
+}
+
+/** The sun on screen. */
+export function selectSun(state: DemoRootState): SunState {
+  return state.sun;
+}
+
+/**
+ * The time-of-day blend's look weights for the sun on screen
+ * (`look-driver.ts`), or the link's pinned ones. Always defined: whether
+ * the city wears them is the drawn mesh's scheme's business (a build of
+ * another scheme, or AR's default build, ignores them).
+ *
+ * MEMOISED on the instant, the place and the pin, so every subscriber sees
+ * the same frozen list until the sun moves, and a subscriber can compare by
+ * reference. A cache of derived data, not state.
+ */
+export const selectLookWeights: (state: DemoRootState) => readonly number[] =
+  (() => {
+    let last:
+      | {
+          readonly sun: SunState;
+          readonly override: readonly number[] | null;
+          readonly weights: readonly number[];
+        }
+      | undefined;
+    return (state: DemoRootState) => {
+      const sun = selectSun(state);
+      const override = state.lookWeightsOverride;
+      if (
+        last !== undefined &&
+        last.sun === sun &&
+        last.override === override
+      ) {
+        return last.weights;
+      }
+      const weights =
+        override ??
+        lookWeightsAt(
+          (solarPosition(sun.instantMs, sun.place.lat, sun.place.lng)
+            .elevationRad *
+            180) /
+            Math.PI,
+          isMorningAt(sun.instantMs, sun.place.lng),
+        );
+      // Equal weights keep their reference: a sun step inside a plateau
+      // (all golden, all blue) recolours nothing.
+      const kept =
+        last !== undefined &&
+        last.weights.length === weights.length &&
+        last.weights.every((w, k) => w === weights[k])
+          ? last.weights
+          : weights;
+      last = { sun, override, weights: kept };
+      return kept;
+    };
+  })();
+
 /**
  * The layer set, narrowed back to the demo's own union.
  *
@@ -272,7 +427,38 @@ export function summariseSnapshot<S>(state: S): S {
  * the library's GPS/AR reducers are present for the alignment wiring to read.
  * The demo dispatches none of them itself; AR mode does.
  */
+/** The boot sun from the options, validated: RangeError for a bad one. */
+function bootSunOf(options: CreateDemoStoreOptions): SunState {
+  const sun: SunState = options.sun ?? {
+    instantMs: 0,
+    place: { lat: options.start.lat, lng: options.start.lng },
+  };
+  if (!isSunState(sun)) {
+    throw new RangeError("the boot sun needs a finite instant at a real place");
+  }
+  return sun;
+}
+
+/** The pinned look weights from the options, validated: RangeError for bad ones. */
+function lookWeightsOverrideOf(
+  options: CreateDemoStoreOptions,
+): readonly number[] | null {
+  const override = options.lookWeightsOverride ?? null;
+  if (
+    override !== null &&
+    (override.length !== TIME_OF_DAY_LOOKS.length ||
+      !override.every((w) => Number.isFinite(w) && w >= 0))
+  ) {
+    throw new RangeError(
+      `pinned look weights need ${TIME_OF_DAY_LOOKS.length} finite values >= 0`,
+    );
+  }
+  return override;
+}
+
 export function createDemoStore(options: CreateDemoStoreOptions) {
+  const sun = bootSunOf(options);
+  const override = lookWeightsOverrideOf(options);
   const slice = createOsmViewSlice<DemoSnapshot, GeoEvent>({
     initialPosition: options.start,
     initialCategory: options.category,
@@ -320,6 +506,10 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
         MARKINGS_CHANGED,
         options.markings ?? true,
       ),
+      sun: sunReducer(sun),
+      lookWeightsOverride: (
+        state: readonly number[] | null = override,
+      ): readonly number[] | null => state,
     },
     // RESTORED AFTER THE MIGRATION DROPPED IT. The old bare store passed this
     // as ; the factory hardcoded its own and had no

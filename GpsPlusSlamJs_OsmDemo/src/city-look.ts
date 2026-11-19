@@ -60,6 +60,16 @@ export type CityDrawContext = Omit<
 >;
 
 /**
+ * The smallest weight move that re-mixes the drawn trees: one 8-bit step.
+ * Their mix is a CPU pass over every tree instance, the one cost of a sun
+ * step that grows with the city; the looks' colours are 8-bit, so a move
+ * below one step per weight shifts a tree by about one display step at
+ * most, which a moving sun hides, while a sun step moves the weights by far
+ * less (a timelapse frame by about 1/1000).
+ */
+export const TREE_MIX_STEP = 1 / 255;
+
+/**
  * The page's city look (see the file header). Every setter is a uniform,
  * colour or material write, never a rebuild.
  */
@@ -70,6 +80,8 @@ export class CityLook {
   private brightnessTrim = 1;
   private weights: readonly number[] | undefined;
   private plateColour = colourSchemeOf(undefined).ground.plates;
+  /** The weights the drawn trees were last mixed at. */
+  private treeWeights: readonly number[] | undefined;
 
   constructor(private readonly targets: CityLookTargets) {}
 
@@ -108,7 +120,8 @@ export class CityLook {
    * The time-of-day blend's normalised look weights (one per
    * `TIME_OF_DAY_LOOKS` entry), or undefined for a fixed scheme. With
    * weights everything the looks colour follows them at once: the ground
-   * and slope, the plates, the land-use tint, the drawn trees (a CPU mix)
+   * and slope, the plates, the land-use tint, the drawn trees (a CPU mix,
+   * redone only once a weight has moved by `TREE_MIX_STEP` since the last)
    * and the buildings and roads (the trim weights carry each look's
    * brightness trim, so the material trim goes to 1). RangeError for
    * weights `mixedPageLook` refuses; nothing changes then.
@@ -116,6 +129,7 @@ export class CityLook {
   setLookWeights(lookWeights: readonly number[] | undefined): void {
     if (lookWeights === undefined) {
       this.weights = undefined;
+      this.treeWeights = undefined;
       this.targets.setLandUseLookWeights(undefined);
       return;
     }
@@ -124,7 +138,14 @@ export class CityLook {
     setTrimWeights(this.mix, mixed.trimWeights);
     this.setBrightnessTrim(1);
     this.targets.setLandUseLookWeights(lookWeights);
-    setTreeLookWeights(this.targets.root.children, lookWeights);
+    const trees = this.treeWeights;
+    if (
+      trees === undefined ||
+      lookWeights.some((w, k) => Math.abs(w - (trees[k] ?? 0)) >= TREE_MIX_STEP)
+    ) {
+      setTreeLookWeights(this.targets.root.children, lookWeights);
+      this.treeWeights = lookWeights;
+    }
     this.setPlateColour(mixed.plates);
     this.targets.setGroundColours(mixed.ground, mixed.slope);
   }
@@ -176,6 +197,8 @@ export class CityLook {
       weights === undefined ? undefined : this.mix,
     );
     for (const object of drawn.objects) this.targets.root.add(object);
+    // New trees are always mixed, at the weights held now; the drawn ones
+    // may sit up to one step behind, which no stored colour shows.
     if (weights !== undefined) setTreeLookWeights(drawn.objects, weights);
     applySurfaceGain(this.targets.root, this.neutralSurfaceFactor);
     return drawn;

@@ -14,12 +14,22 @@
  */
 
 import * as THREE from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CityLook } from "./city-look.js";
+import type * as OsmThree from "gps-plus-slam-osm/three";
+import { setTreeLookWeights } from "gps-plus-slam-osm/three";
+
+import { CityLook, TREE_MIX_STEP } from "./city-look.js";
+
+// The trees' mix is spied, not faked: the real one runs, so every other
+// test still recolours real objects.
+vi.mock("gps-plus-slam-osm/three", async (importOriginal) => {
+  const real = await importOriginal<typeof OsmThree>();
+  return { ...real, setTreeLookWeights: vi.fn(real.setTreeLookWeights) };
+});
 import { colourSchemeOf, COLOUR_SCHEME_NAMES } from "./colour-schemes.js";
 import type { GroundSlopeColours } from "./ground-slope-colours.js";
 import { TIME_OF_DAY, TIME_OF_DAY_LOOKS } from "./look-choice.js";
@@ -196,6 +206,38 @@ describe("CityLook - the time-of-day blend drawn on the page", () => {
     expect(look.mix.trimWeights.value.toArray()).toEqual(mixed.trimWeights);
   });
 
+  // WHY: the trees' mix is a CPU pass over every tree, and a timelapse
+  // moves the weights every frame by far less than a colour step; the
+  // trees re-mix only once a weight has moved by one 8-bit step since
+  // their last mix, while the uniforms follow every move.
+  it("re-mixes the drawn trees only once a weight moved by one step", () => {
+    const { look } = cityLook();
+    const mixTrees = vi.mocked(setTreeLookWeights);
+    look.followScheme(TIME_OF_DAY, [0, 1, 0, 0]);
+    mixTrees.mockClear();
+    const small = TREE_MIX_STEP / 3;
+    look.setLookWeights([0, 1 - small, small, 0]);
+    look.setLookWeights([0, 1 - 2 * small, 2 * small, 0]);
+    expect(mixTrees).not.toHaveBeenCalled();
+    expect(look.mix.trimWeights.value.toArray()).toEqual(
+      mixedPageLook([0, 1 - 2 * small, 2 * small, 0]).trimWeights,
+    );
+    look.setLookWeights([0, 1 - TREE_MIX_STEP, TREE_MIX_STEP, 0]);
+    expect(mixTrees).toHaveBeenCalledTimes(1);
+    // Measured from the last mix, not from the last call.
+    look.setLookWeights([
+      0,
+      1 - TREE_MIX_STEP - small,
+      TREE_MIX_STEP + small,
+      0,
+    ]);
+    expect(mixTrees).toHaveBeenCalledTimes(1);
+    // After a fixed scheme the next weights always mix.
+    look.followScheme(TRIMMED, GOLDEN);
+    look.followScheme(TIME_OF_DAY, [0, 1 - TREE_MIX_STEP, TREE_MIX_STEP, 0]);
+    expect(mixTrees).toHaveBeenCalledTimes(2);
+  });
+
   // WHY: a bad weight list must change nothing (the store or a link can
   // hand one in), so the check runs before any write.
   it("refuses bad weights and changes nothing", () => {
@@ -230,8 +272,8 @@ describe("CityLook - the page routes through it", () => {
   });
 
   it("main routes every full mesh's scheme to the city look", () => {
-    expect(main).toContain(
-      "buildingView.followMeshScheme(built.mesh.colourScheme,",
+    expect(main).toMatch(
+      /buildingView\.followMeshScheme\(\s*built\.mesh\.colourScheme,/,
     );
     expect(main).not.toContain("plateColour");
   });

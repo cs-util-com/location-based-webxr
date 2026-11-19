@@ -11,8 +11,6 @@ four sun looks. Three-free, so the worker and the page share it.
   `TIME_OF_DAY_LOOKS` (`today`, `golden`, `dusk`, `bluehour`, in that order),
   `LOOK_CHOICES` (the dropdown's values), `lookLabel`,
   `isLookChoice` (own keys only; `"toString"` is not a choice).
-- `DAY_LOOK_WEIGHTS` - `[1, 0, 0, 0]`: the blend's look weights until something
-  sets them.
 - `resolveLook(chosen, {ar})` - what is BUILT: AR always builds the default
   scheme, otherwise the choice. Only the request side (`main.ts`'s refresh)
   reads it; the switch's `meshDrawn` does not. AR plus the blend still
@@ -32,14 +30,14 @@ four sun looks. Three-free, so the worker and the page share it.
 - Look weights are normalised (sum 1) and drive the CPU rules (ground, trees,
   veil); the shader's trim weights are look weights times each look's
   brightness trim (`mixed-page-look.ts`). The two are never interchangeable.
-- The veil's blend (`blendVeils`) is built and tested but has no production
-  caller yet: until the sun drives the weights, the light follows the day
-  look.
+- The sun derives the weights (`look-driver.ts`, `selectLookWeights` in
+  `osm-store.ts`); the light mixes by the same weights (`look-light.ts`,
+  whose veil mix is `blendVeils`).
 
 ## Examples
 
 ```ts
-const weights = parseLookWeights(params.get("lookWeights")) ?? DAY_LOOK_WEIGHTS;
+const pinned = parseLookWeights(params.get("lookWeights")) ?? null;
 const built = resolveLook(selectColourScheme(state), { ar: inAr });
 ```
 

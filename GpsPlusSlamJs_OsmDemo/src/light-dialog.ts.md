@@ -51,6 +51,8 @@ WebGL.
   - `refresh()`: re-reads the brightness when open. The page calls it on
     every sun move.
   - `settings`, `defaults` and `dispose()`.
+  - `touched`: the fields the viewer set (a copy), forgotten on Reset. The
+    time-of-day blend keeps these in every look (`look-light.ts`).
   - `setDefaults(next)`: moves onto a new scheme's defaults
     (`rebaseLightSettings`: an untouched value follows, a set one stays),
     shows and applies the result through `onChange`. The page calls it on a

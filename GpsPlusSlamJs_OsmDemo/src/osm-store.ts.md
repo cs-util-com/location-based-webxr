@@ -99,6 +99,19 @@ The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, 
 ## The time-of-day blend
 
 `colourScheme` holds a `LookChoice` (`look-choice.ts`): a scheme or
-`"timeofday"`. The reducer accepts only `isLookChoice` values. The look
-WEIGHTS are not store state: they are derived (from the link today, from the
-sun later) and the view holds what it last drew.
+`"timeofday"`. The reducer accepts only `isLookChoice` values.
+
+- **`sun`** (`SunState`, `{instantMs, place}`): where and when the sun is.
+  `createDemoStore({sun})` sets the boot sun (default: instant 0 at the
+  start), `RangeError` for a non-finite instant or a place off the globe.
+  `sunMoved(instantMs)` moves it in time, `sunPlaceMoved(place, instantMs)`
+  to a new place (a re-anchor); the reducer ignores an invalid payload and
+  keeps the state's reference for an unchanged sun. `selectSun(state)`.
+- **`lookWeightsOverride`**: the `?lookWeights=` pin, a constant of the
+  boot (`createDemoStore({lookWeightsOverride})`, `RangeError` unless one
+  finite value >= 0 per look), null by default.
+- **`selectLookWeights(state)`**: the pin, else `lookWeightsAt` of the
+  sun's elevation and limb (`look-driver.ts`). Memoised by hand on the sun
+  and the pin, and an equal result keeps the previous reference, so a sun
+  step inside a plateau (all golden, all blue) recolours nothing. Always
+  defined: whether the view uses it is the drawn mesh's scheme.

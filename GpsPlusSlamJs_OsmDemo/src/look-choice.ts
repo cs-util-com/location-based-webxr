@@ -40,12 +40,6 @@ export const TIME_OF_DAY_LOOKS: readonly ColourSchemeName[] = Object.freeze([
   "bluehour",
 ]);
 
-/**
- * The blend's weights until something sets them: all on the day look. The
- * page reads `?lookWeights=` over it; the sun drives it in a later step.
- */
-export const DAY_LOOK_WEIGHTS: readonly number[] = Object.freeze([1, 0, 0, 0]);
-
 /** The dropdown's label for the blend. */
 const TIME_OF_DAY_LABEL = "By time of day";
 

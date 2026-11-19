@@ -132,6 +132,11 @@ export interface LightDialog {
   /** The defaults Reset returns to and the light link is written against. */
   readonly defaults: LightSettings;
   /**
+   * The fields the viewer set (by the link or a slider), a fresh copy; the
+   * time-of-day blend keeps these and lets the others follow each look.
+   */
+  readonly touched: ReadonlySet<keyof LightSettings>;
+  /**
    * Moves onto new defaults (the page calls it on a colour scheme switch):
    * a value still at the old default takes the new one, a value the viewer
    * set keeps it (`rebaseLightSettings`), and the result is applied.
@@ -434,6 +439,9 @@ export function createLightDialog(deps: LightDialogDeps): LightDialog {
     },
     get defaults() {
       return defaults;
+    },
+    get touched() {
+      return new Set(touched);
     },
     setDefaults(next) {
       const from = defaults;

@@ -56,6 +56,11 @@ state, which is why it is a class and not store state.
 - Plates are found by `userData[LANDUSE_PLATE_TAG]` (`mesh-layers.ts`);
   their colour is not touched by the surface gain.
 - Every setter is a uniform, colour or material write, never a rebuild.
+- **The trees re-mix in steps:** `setLookWeights` re-mixes the drawn trees'
+  colours (a write per tree instance, the costly part of a sun step) only
+  once a weight has moved by `TREE_MIX_STEP` (1/255, one step of an 8-bit
+  colour channel) since their last mix; the other layers follow every call.
+  A newly drawn mesh always mixes its trees at the held weights.
 
 ## Examples
 

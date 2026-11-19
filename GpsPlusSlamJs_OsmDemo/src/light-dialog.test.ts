@@ -459,6 +459,26 @@ describe("createLightDialog", () => {
     expect(dialog.settings).toEqual({ ...urban, hazeVeilLightness: 0 });
   });
 
+  // WHY: the time-of-day blend lets every field the viewer did NOT set
+  // follow each look's light, so the dialog must say which ones were set;
+  // a copy, so the page cannot change the dialog's memory.
+  it("names the fields the viewer set, and forgets them on Reset", () => {
+    const link = parseLightLink("?light=v1:veil=0", DEFAULT_LIGHT_SETTINGS);
+    const { dialog, slide, $ } = setup({
+      initial: link.settings,
+      defaults: DEFAULT_LIGHT_SETTINGS,
+      stated: link.stated,
+    });
+    slide("gainMax", 2);
+    expect([...dialog.touched].sort()).toEqual(
+      ["gainMax", "hazeVeilLightness"].sort(),
+    );
+    (dialog.touched as Set<keyof LightSettings>).clear();
+    expect(dialog.touched.size).toBe(2);
+    $("light-reset").click();
+    expect(dialog.touched.size).toBe(0);
+  });
+
   it("resets every value to the shipped look", () => {
     const { dialog, onChange, slide, $ } = setup();
     slide("gainMax", 2);
