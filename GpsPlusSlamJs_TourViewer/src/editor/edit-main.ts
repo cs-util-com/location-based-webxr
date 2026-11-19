@@ -3230,6 +3230,13 @@ async function stageFiles(
     return { id, name: kind.file.name, chip: chipOf(kind) };
   });
   store.dispatch(editorViewActions.entryFilesAdded({ rows }));
+  // The chooser was disabled while the files were read, which dropped the
+  // keyboard's focus to the page: it goes on to the press (never pressed
+  // for the user), so Enter is the next step without a mouse.
+  const { go } = entryElements;
+  const lost =
+    document.activeElement === null || document.activeElement === document.body;
+  if (lost && !go.hidden && !go.disabled) go.focus();
 }
 
 /** What the drop area was last drawn from: it is drawn again only when

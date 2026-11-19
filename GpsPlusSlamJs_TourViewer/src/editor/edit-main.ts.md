@@ -40,7 +40,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   are named as left out. NOTHING opens on a drop or a pick: the rows plan
   the dialog's ONE action (`entry-drop.ts` `planEntryAction`, drawn by
   `entry-drop-view.ts` from a store subscription), and only a press of
-  `#entry-go` acts - "Open the tour" / "Open the tour with this scan"
+  `#entry-go` acts (a pick that left the keyboard focus on the page, the
+  chooser being disabled while the files were read, moves it to
+  `#entry-go`, never pressing it) - "Open the tour" / "Open the tour with this scan"
   (`openStaged`), "Start a new tour on this scan" for a scan alone
   (`startNewTourWith`: the new tour's save dialog in the click, then the
   tour, then the scan), or nothing while several tours or scans wait for
@@ -480,7 +482,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     the same: a save whose tour closed meanwhile (`abandon`) runs the
     Save queued in the tour that shows, never one pressed before it opened;
     so does a move of the debug data whose tour was dropped meanwhile
-    (`holdForMove`). A Ctrl+S pressed in a tour from a link or the sample
+    (`holdForMove`). A Ctrl+S pressed in a tour from a link (the example asks for no file
+    at its open, so its Ctrl+S then asks Save to be pressed)
     while its write into the file its open asked for still waits for the
     slot (`openWriteOf`) stays queued when the previous save ends, and runs
     into that file once it is adopted, instead of finding no file and
