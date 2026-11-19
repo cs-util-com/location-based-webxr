@@ -13,7 +13,8 @@
 //
 //  - **The file set.** `list(...pathspecs)` runs the very same
 //    `git ls-files <pathspecs>` the guards ran before, with the pathspecs
-//    passed through verbatim. Git's pathspec semantics (in `*/src/**.ts` the
+//    passed through verbatim (with `-z`, so a non-ASCII path arrives as it is
+//    on disk, not in git's quoted form). Git's pathspec semantics (in `*/src/**.ts` the
 //    `*` crosses `/`) are NOT re-implemented in JavaScript, so there is no
 //    second matcher to drift from the first.
 //  - **Tracked files only.** A new, untracked file is still invisible to every
@@ -74,8 +75,10 @@ export function createTrackedTree({ root, exec, read }) {
       let files = listings.get(key);
       if (files === undefined) {
         files = Object.freeze(
-          exec(['ls-files', ...pathspecs], root)
-            .split('\n')
+          // NUL-separated: without -z git octal-escapes and quotes a path
+          // with a non-ASCII byte, and a guard reading it gets ENOENT.
+          exec(['ls-files', '-z', ...pathspecs], root)
+            .split('\0')
             .filter((line) => line !== '')
         );
         listings.set(key, files);
