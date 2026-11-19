@@ -13,6 +13,10 @@ export const GPS_IFD_POINTER = 0x8825;
 
 const EXIF_ID = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]; // "Exif\0\0"
 const XMP_ID = 'http://ns.adobe.com/xap/1.0/\0';
+/** The continuation of an XMP packet too large for one segment (XMP part 3). */
+const EXTENDED_XMP_ID = 'http://ns.adobe.com/xmp/extension/\0';
+/** The standard packet's note that the packet continues in ExtendedXMP. */
+const XMP_HAS_EXTENDED = /HasExtendedXMP/;
 /** Property names an XMP packet carries a location under (exif namespace). */
 const XMP_GPS = /GPS(Latitude|Longitude)/;
 
@@ -93,7 +97,19 @@ export function jpegLocation(bytes) {
       startsWith(bytes, body, [...XMP_ID].map((c) => c.charCodeAt(0)))
     ) {
       const packet = new TextDecoder('latin1').decode(bytes.subarray(body + XMP_ID.length, end));
+      // A NUL byte means UTF-16 or UTF-32, where a byte search for the
+      // property names finds nothing: unread, so not clean.
+      if (packet.includes('\0')) return { readable: false, reason: 'the XMP packet is not UTF-8' };
+      if (XMP_HAS_EXTENDED.test(packet)) {
+        return { readable: false, reason: 'the XMP packet continues in ExtendedXMP' };
+      }
       xmpGps ||= XMP_GPS.test(packet);
+    } else if (
+      marker === APP1 &&
+      startsWith(bytes, body, [...EXTENDED_XMP_ID].map((c) => c.charCodeAt(0)))
+    ) {
+      // Split across segments, possibly out of order: not joined here.
+      return { readable: false, reason: 'an ExtendedXMP segment is not read' };
     }
     at = end;
   }

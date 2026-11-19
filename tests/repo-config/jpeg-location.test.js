@@ -71,6 +71,41 @@ describe('jpegLocation', () => {
     expect(jpegLocation(jpeg(xmp))).toEqual({ readable: true, exifGps: false, xmpGps: true });
   });
 
+  // Why: a location can sit where this reader does not look. An XMP packet
+  // over 64 KB continues in ExtendedXMP segments (split, possibly out of
+  // order), and a UTF-16 packet hides the property names from a byte search.
+  // Neither is read, so each must make the file unreadable: the guard fails
+  // closed instead of answering clean.
+  it('never answers clean for XMP it cannot fully read', () => {
+    const XMP = ascii('http://ns.adobe.com/xap/1.0/');
+    const EXTENDED = ascii('http://ns.adobe.com/xmp/extension/');
+    const extended = segment(0xe1, [
+      ...EXTENDED,
+      0,
+      ...ascii('0123456789ABCDEF0123456789ABCDEF'),
+      ...[0, 0, 0, 64, 0, 0, 0, 0],
+      ...ascii('<rdf:Description exif:GPSLatitude="0,0N"/>'),
+    ]);
+    const pointsToExtended = segment(0xe1, [
+      ...XMP,
+      0,
+      ...ascii('<rdf:Description xmpNote:HasExtendedXMP="0123456789ABCDEF0123456789ABCDEF"/>'),
+    ]);
+    const utf16 = segment(0xe1, [
+      ...XMP,
+      0,
+      ...ascii('<rdf:Description exif:GPSLatitude="0,0N"/>').flatMap((c) => [c, 0]),
+    ]);
+    for (const [name, bytes] of [
+      ['an ExtendedXMP segment alone', jpeg(extended)],
+      ['a standard packet pointing at ExtendedXMP', jpeg(pointsToExtended)],
+      ['both', jpeg(pointsToExtended, extended)],
+      ['a UTF-16 packet', jpeg(utf16)],
+    ]) {
+      expect(jpegLocation(bytes).readable, name).toBe(false);
+    }
+  });
+
   it('never answers clean for a damaged file or one that is no JPEG', () => {
     const good = jpeg(segment(0xe1, exifBody([MAKE])));
     const directoryPastSegment = jpeg(segment(0xe1, exifBody([MAKE]).slice(0, 18)));
