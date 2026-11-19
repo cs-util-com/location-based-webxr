@@ -313,32 +313,29 @@ test("a voice marked synthetic and credited is saved, and the visitor's reading 
   await standAt(visitor, 0, 0, 0);
   await lockFixtureCode(visitor);
   // Taps at the gate: the stub scene has no geometry, so the fake camera
-  // ray hits a part by the key the page offers for it. The gate stands
-  // more than one part that takes a tap, and a key names a part by its
-  // place among them, so each offered key is tried in turn until the
-  // reading sign's opens the sheet. The poll reads the keys it was
-  // offered, so a failure says what the page stood.
+  // ray hits whatever key it is told to. A world part's key is
+  // `part-<i>`, its place among the mounted parts (`tapShownWorldPart`),
+  // and the gate mounts more than the reading sign, so the first few
+  // places are tried in turn. The keys cannot be read back from
+  // `pickTargets`: a missed tap goes on to the pin sheet, whose own pick
+  // overwrites them.
   const sheet = visitor.getByTestId("long-text-sheet");
   let tries = 0;
   await expect
     .poll(
       async () => {
-        const offered = await visitor.evaluate((n) => {
+        await visitor.evaluate((n) => {
           const t = /** @type {any} */ (window).__tourViewerTest;
           t.emitFrames(1);
-          const parts = t.pickTargets.filter((/** @type {string} */ k) =>
-            k.startsWith("part-"),
-          );
-          t.pickId = parts.length === 0 ? null : parts[n % parts.length];
+          t.pickId = `part-${String(n % 8)}`;
           t.tapXr();
-          return `offered [${t.pickTargets.join(",")}]`;
         }, tries);
         tries += 1;
-        return (await sheet.isVisible()) ? "open" : offered;
+        return sheet.isVisible();
       },
       { timeout: 20_000 },
     )
-    .toBe("open");
+    .toBe(true);
   await expect(visitor.getByTestId("long-text-credit")).toHaveText(
     "Synthetic voice · Read by Anna Berg",
   );
