@@ -560,7 +560,7 @@ async function dropOnOpenBox(page, files) {
   await page.locator("#drop").dispatchEvent("drop", { dataTransfer: dropped });
 }
 
-test("the drop area sorts a tour and a scan into rows, and opens the tour with the scan only once its action is pressed @pr", async ({
+test("the drop area sorts a tour and a scan into rows, and opens the tour with the scan only once its action is pressed", async ({
   page,
 }) => {
   // Why: the open dialog is one drop area. Each file dropped becomes a row
