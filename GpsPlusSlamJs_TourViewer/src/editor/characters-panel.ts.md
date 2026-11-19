@@ -122,8 +122,10 @@ rather than pushing the list past a phone's window
 - Both lists are drawn at once from what is known; the thumbnails follow
   into the drawn rows, each made once per character (a redraw while one is
   cut waits for the same cut, and its picture reaches the row on the page,
-  never a detached one). A thumbnail that could not be made is not kept:
-  the next drawing of the row tries again. A list that waited
+  never a detached one). A thumbnail whose read or cut threw is not kept:
+  the next drawing of the row tries again; a character with no picture
+  (`image` gives `undefined`) is an answer, kept, so it is not asked for
+  again on every redraw. A list that waited
   for them kept its old rows for seconds on a busy page (the 3D view drawn
   in software), the "No characters on this device yet" line among them
   while the character was safely saved.
