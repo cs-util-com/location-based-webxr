@@ -389,7 +389,7 @@ test("adds the debug data back beside a tour from its own button, and forgets it
     buffer: bundle,
   });
   await expect(page.locator("#debug-status")).toHaveText(
-    "Added from editor-fixture-debug.zip, not saved with the tour. Debug data: 2 camera captures shown.",
+    "Scan editor-fixture-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. Debug data: 2 camera captures shown.",
   );
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
   await expect(page.locator(".mk-debug img")).toHaveCount(2);
@@ -459,7 +459,7 @@ test("says whose added debug data is - another tour's, or a plain recording - re
     "else-debug.zip",
   );
   await expect(page.locator("#debug-status")).toHaveText(
-    'Added from else-debug.zip, not saved with the tour. It was saved from another tour ("Somewhere else", else.zip), not this one. Debug data: 2 camera captures shown.',
+    'Scan else-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It was saved from another tour ("Somewhere else", else.zip), not this one. Debug data: 2 camera captures shown.',
   );
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
   const recording = Buffer.from(
@@ -469,7 +469,7 @@ test("says whose added debug data is - another tour's, or a plain recording - re
   );
   await addDebugFile(page, recording, "walk.zip");
   await expect(page.locator("#debug-status")).toHaveText(
-    "Added from walk.zip, not saved with the tour. It is a recording, not saved from this tour. Debug data: 2 camera captures shown.",
+    "Scan walk.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It is a recording from the Recorder app. Debug data: 2 camera captures shown.",
   );
   await addDebugFile(page, await editorTour(), "plain.zip");
   await expect(
@@ -483,9 +483,7 @@ test("says whose added debug data is - another tour's, or a plain recording - re
   await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
   await expect(page.locator("#debug-add")).toBeEnabled();
   // The layer kept what was added before.
-  await expect(page.locator("#debug-status")).toContainText(
-    "Added from walk.zip",
-  );
+  await expect(page.locator("#debug-status")).toContainText("Scan walk.zip:");
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
   await expect(page.locator("#save-status")).toHaveText("No changes");
   await page.locator("#rail .row", { hasText: "Town hall" }).click();
@@ -529,10 +527,120 @@ test("shows debug data dropped on its panel in place of the tour's own walk, and
     .locator("#debug-panel")
     .dispatchEvent("drop", { dataTransfer: dropped });
   await expect(page.locator("#debug-status")).toHaveText(
-    "Added from wrapped-debug.zip, not saved with the tour. It is shown in place of the tour's own walk. Debug data: 2 camera captures shown.",
+    "Scan wrapped-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It is shown in place of the tour's own walk. Debug data: 2 camera captures shown.",
   );
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
   await expect(page.locator("#save-status")).toHaveText("No changes");
+});
+
+/**
+ * Drop files on the open dialog's box, all in one drop.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ name: string, buffer: Buffer }[]} files
+ */
+async function dropOnOpenBox(page, files) {
+  const dropped = await page.evaluateHandle(
+    (given) => {
+      const data = new DataTransfer();
+      for (const { name, bytes } of given) {
+        data.items.add(
+          new File([new Uint8Array(bytes)], name, { type: "application/zip" }),
+        );
+      }
+      return data;
+    },
+    files.map(({ name, buffer }) => ({ name, bytes: Array.from(buffer) })),
+  );
+  await page.locator("#drop").dispatchEvent("drop", { dataTransfer: dropped });
+}
+
+test("a scan chosen in the open dialog is added beside the open tour, and refused with no tour", async ({
+  page,
+}) => {
+  // Why: a scan is not a tour, so the open dialog never opens it as one.
+  // With no tour open it says what to do first; with a tour open, the same
+  // file is added beside that tour as a scan and the dialog closes, its
+  // status line saying so while it reads (the async-UI rule).
+  const bundle = await debugBundleOf({
+    tour: "Editor fixture",
+    file: "editor-fixture.zip",
+  });
+  await page.goto("/edit.html");
+  await openThroughChooser(page, bundle, "editor-fixture-debug.zip");
+  await expect(page.locator("#open-error")).toHaveText(
+    "editor-fixture-debug.zip is a scan, not a tour. Open a tour or start a new one first, then add the scan to it.",
+  );
+  await expect(page.locator("#open-modal")).toBeVisible();
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await openAnother(page);
+  // Every text the status line shows, kept: the add may be quicker than a
+  // poll.
+  await page.evaluate(() => {
+    const status = document.getElementById("open-status");
+    const seen = /** @type {string[]} */ ([]);
+    Object.assign(window, { statusSeen: seen });
+    if (status === null) return;
+    new MutationObserver(() => {
+      seen.push(status.textContent ?? "");
+    }).observe(status, { childList: true, characterData: true, subtree: true });
+  });
+  await openThroughChooser(page, bundle, "editor-fixture-debug.zip");
+  await expect(page.locator("#open-modal")).toBeHidden();
+  expect(
+    await page.evaluate(
+      () =>
+        /** @type {{ statusSeen: string[] }} */ (
+          /** @type {unknown} */ (window)
+        ).statusSeen,
+    ),
+  ).toContain("Adding the scan editor-fixture-debug.zip…");
+  await expect(page.locator("#open-status")).toHaveText("");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#debug-status")).toContainText(
+    "Scan editor-fixture-debug.zip: shown while you edit.",
+  );
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+});
+
+test("a tour and a scan dropped together open the tour, then add the scan; an unusable one is left out, the tour kept", async ({
+  page,
+}) => {
+  // Why (the async-UI rule): one drop, one action - the tour opens first,
+  // since there is no add without a tour, then the scan is added. A file
+  // whose scan identity does not read is sorted out before anything
+  // opens: it must not cost the tour, and a toast names it as left out.
+  const tour = await editorTour();
+  const bundle = await debugBundleOf({
+    tour: "Editor fixture",
+    file: "editor-fixture.zip",
+  });
+  await page.goto("/edit.html");
+  await dropOnOpenBox(page, [
+    { name: "editor-fixture-debug.zip", buffer: bundle },
+    { name: "editor-fixture.zip", buffer: tour },
+  ]);
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#debug-status")).toContainText(
+    "Scan editor-fixture-debug.zip: shown while you edit.",
+  );
+  await page.reload();
+  const broken = await zip([
+    { path: "actions/000001.json", data: "[]" },
+    { path: "debug-bundle.json", data: "{ not json" },
+  ]);
+  await dropOnOpenBox(page, [
+    { name: "editor-fixture.zip", buffer: tour },
+    { name: "walk.zip", buffer: broken },
+  ]);
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#open-modal")).toBeHidden();
+  await expect(
+    page.locator(".toast", { hasText: "Left out walk.zip:" }),
+  ).toBeVisible();
+  await expect(page.locator("#debug-status")).not.toContainText(
+    "Scan walk.zip",
+  );
 });
 
 test("says the sample is being fetched while it is, and why it failed when it does", async ({

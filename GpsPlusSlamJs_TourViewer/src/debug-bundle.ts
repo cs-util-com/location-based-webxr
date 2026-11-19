@@ -33,7 +33,7 @@ const FORMAT = 1;
 const MAX_TEXT_CHARS = 512;
 
 /** The largest identity entry read: a written one is a few hundred bytes. */
-const MAX_IDENTITY_BYTES = 16 * 1024;
+export const MAX_IDENTITY_BYTES = 16 * 1024;
 
 /** A series id's shape: the signed list's alphabet (base64url). Looser in
  *  length than the list's 16-64, since the bundle only compares it. */
@@ -405,8 +405,8 @@ export async function readDebugBundle(
  * is a listed tour's on its series id alone; any other - an unlisted
  * tour's, or one saved before the tour was listed - is this tour's unless
  * its title AND its file name both differ (a text neither side knows is no
- * match). A plain recording is its own case: "a recording, not saved from
- * this tour".
+ * match). A plain recording is its own case: "a recording from the
+ * Recorder app".
  */
 export function bundleMatchesTour(
   read: DebugBundleFound,

@@ -14,6 +14,7 @@ import {
   editorViewActions as act,
   editorViewReducer as reduce,
   initialEditorViewState,
+  isEntryIdle,
   isStationLocked,
   pointerDragRuns,
   selectEditorView,
@@ -144,6 +145,7 @@ describe("editorView", () => {
       undelivered: false,
       message: null,
       picking: false,
+      entryStep: null,
       duplicating: false,
       viewMode: "2d",
       view3dLoad: "idle",
@@ -200,6 +202,7 @@ describe("editorView", () => {
       undelivered: true,
       message: { id: "x", text: "No.", refused: true },
       picking: true,
+      entryStep: null,
       duplicating: true,
       viewMode: "2d",
       view3dLoad: "idle",
@@ -576,5 +579,45 @@ describe("editorView - the tree's picked rows", () => {
     expect(state.picked).toEqual([]);
     expect(state.selectMode).toBe(false);
     expect(state.foldedFolders).toEqual([]);
+  });
+});
+
+// Why: a tour given with a scan is one busy state to the person; the step
+// the page shows is the store's, and a stray value must not clear it.
+describe("the entry step", () => {
+  it("goes opening, then adding the scan, then none, and ignores anything else", () => {
+    let state = reduce(
+      initialEditorViewState,
+      act.entryStepChanged({ step: "opening" }),
+    );
+    expect(state.entryStep).toBe("opening");
+    state = reduce(state, act.entryStepChanged({ step: "adding-scan" }));
+    expect(state.entryStep).toBe("adding-scan");
+    state = reduce(
+      state,
+      act.entryStepChanged({ step: "bogus" as unknown as "opening" }),
+    );
+    expect(state.entryStep).toBe("adding-scan");
+    state = reduce(state, act.entryStepChanged({ step: null }));
+    expect(state.entryStep).toBeNull();
+  });
+
+  // Why: between the open and the add, `busy` is false; a sample or a
+  // link opened then would replace the tour the scan is being added to,
+  // so every entry asks this, not `busy` alone.
+  it("is idle only with nothing opening and no entry between its steps", () => {
+    expect(isEntryIdle(initialEditorViewState)).toBe(true);
+    const busy = reduce(
+      initialEditorViewState,
+      act.busyChanged({ busy: true }),
+    );
+    expect(isEntryIdle(busy)).toBe(false);
+    for (const step of ["opening", "adding-scan"] as const) {
+      expect(
+        isEntryIdle(
+          reduce(initialEditorViewState, act.entryStepChanged({ step })),
+        ),
+      ).toBe(false);
+    }
   });
 });

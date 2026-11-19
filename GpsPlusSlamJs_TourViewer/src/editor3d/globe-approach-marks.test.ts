@@ -121,6 +121,39 @@ describe("createArrivalMarks", () => {
     marks.dispose();
   });
 
+  it("keeps the line's buffer near its own origin, however far the walk is", () => {
+    // Why: the GPU's buffers are 32-bit. A walk 5000 km from the frame's
+    // centre written by its own coordinates keeps about 0.5 m of
+    // resolution and jitters on screen; written relative to its first
+    // point, with that point the line's (64-bit) position, it keeps
+    // sub-millimetre resolution. A cut end is written relative as well.
+    const parent = new THREE.Group();
+    const marks = createArrivalMarks(parent);
+    const far = 5e6;
+    marks.setWalk([v(far, far), v(far + 10, far), v(far + 10, far + 10)]);
+    marks.drawWalk(0.25);
+    const line = parent.getObjectByName("approach-walk") as THREE.Mesh;
+    expect([line.position.x, line.position.y, line.position.z]).toEqual([
+      far,
+      0.05,
+      far,
+    ]);
+    const geometry = line.geometry as THREE.InstancedBufferGeometry;
+    for (const name of ["instanceStart", "instanceEnd"]) {
+      const a = geometry.getAttribute(name);
+      for (let i = 0; i < a.count; i++) {
+        for (const c of [a.getX(i), a.getY(i), a.getZ(i)]) {
+          expect(Math.abs(c)).toBeLessThanOrEqual(10);
+        }
+      }
+    }
+    // A quarter of 20 m is 5 m into the first segment.
+    expect(geometry.getAttribute("instanceEnd").getX(0)).toBeCloseTo(5, 6);
+    marks.drawWalk(1);
+    expect(geometry.getAttribute("instanceEnd").getX(0)).toBe(10);
+    marks.dispose();
+  });
+
   it("uploads only the segment ends it writes", () => {
     // Why: a frame of the walk's drawing writes one cut end (and puts the
     // one cut before back), so that is all it should upload; flagging the

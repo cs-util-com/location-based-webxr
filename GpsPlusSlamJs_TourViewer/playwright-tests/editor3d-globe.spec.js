@@ -340,7 +340,7 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
     });
   });
   await expect(page.locator("#debug-status")).toHaveText(
-    "Added from walk.zip, not saved with the tour. It is a recording, not saved from this tour. Debug data: 2 camera captures shown.",
+    "Scan walk.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It is a recording from the Recorder app. Debug data: 2 camera captures shown.",
   );
   await expect
     .poll(async () => (await debug())?.uploads, { timeout: 60_000 })

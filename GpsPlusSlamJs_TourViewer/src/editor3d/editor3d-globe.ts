@@ -837,9 +837,26 @@ export async function openGlobeEditor(
     let debugDrawn: DebugLayerState["captures"] | undefined;
     let debugSource: DebugLayerState["source"] | undefined;
     let debugThumbsSeen = -1;
+    /** The drawn captures' points, for framing a tour with nothing of its
+     *  own to frame. */
+    let debugPoints: THREE.Vector3[] = [];
+    /** The capture set last checked for a flight, once it showed: checked
+     *  once per set (a camera the person moved away is not pulled back each
+     *  frame, and a tour with stations is not looked at again each frame). */
+    let debugFlownTo: DebugLayerState["captures"] | undefined;
+    /** A shown scan's points when the tour has nothing positioned (no
+     *  station, no code; a new tour), else none: what the view frames in
+     *  the tour's stead. */
+    const scanToFrame = (): THREE.Vector3[] =>
+      deps.store.getState().debugLayer?.shown === true &&
+      tourCentre(tourNow?.stations ?? [], codeGeosOf(deps.levels())) === null
+        ? debugPoints
+        : [];
     /** The debug layer's part of a frame at `now`: the store's captures
      *  drawn again when they changed, new thumbnails copied in, the
-     *  switch, and the atlas's upload. */
+     *  switch, and the atlas's upload. A shown scan beside a tour with
+     *  nothing positioned yet (a new tour) is flown to: the view would
+     *  otherwise stay on the whole Earth. */
     function debugFrame(now: number): void {
       const slice = deps.store.getState().debugLayer;
       const captures = slice?.captures ?? null;
@@ -848,13 +865,21 @@ export async function openGlobeEditor(
         debugDrawn = captures;
         debugSource = source;
         debugThumbsSeen = -1;
-        debugLayer.set(
+        const drawn =
           captures?.flatMap((c): GlobeDebugCapture[] => {
             const at = capturePoint(c);
             return at === null ? [] : [{ image: c.image, at }];
-          }) ?? null,
-          source === "added",
-        );
+          }) ?? [];
+        debugPoints = drawn.map((c) => c.at);
+        debugLayer.set(drawn, source === "added");
+      }
+      if (
+        captures !== debugFlownTo &&
+        slice?.shown === true &&
+        debugPoints.length > 0
+      ) {
+        debugFlownTo = captures;
+        if (scanToFrame().length > 0) frameView(null);
       }
       debugLayer.show(slice?.shown === true);
       if (captures !== null) debugThumbsIn(captures);
@@ -1341,17 +1366,19 @@ export async function openGlobeEditor(
       dust.reset();
       controls.followIntro();
     };
-    /** Fit the selection (null: the whole tour) into the view. */
+    /** Fit the selection (null: the whole tour, else a shown scan beside a
+     *  tour with no station yet) into the view. */
     const frameView = (selection: string | null) => {
       if (selection !== null) {
         const place = placeOf(selection);
         if (place !== null) aimAt(place.at, place.radiusM);
         return;
       }
-      const points = (tourNow?.stations ?? []).flatMap((s) => {
+      const stationPoints = (tourNow?.stations ?? []).flatMap((s) => {
         const at = layer.pointOf(s.id);
         return at === null ? [] : [at];
       });
+      const points = stationPoints.length > 0 ? stationPoints : scanToFrame();
       if (points.length === 0) return;
       const box = new THREE.Box3().setFromPoints(points);
       const sphere = box.getBoundingSphere(new THREE.Sphere());

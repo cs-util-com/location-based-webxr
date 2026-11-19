@@ -66,6 +66,22 @@ content: nothing in it is picked, selected or saved.
   arrival's marks (`globe-approach-marks.ts`), so the page asks for it
   for debug data added beside the tour only. Placed at the captures'
   heights lifted 5 cm, as the walk is (not draped on the ground).
+- Precision: the thumbnails' `center` attribute and the line's points
+  are relative to the first kept capture, whose point is both objects'
+  `position`. The GPU's numbers are 32-bit; three builds the
+  model-view matrix in 64 bits from the position, so the large numbers
+  cancel there and the GPU only sees metres. Measured
+  (`globe-debug-precision.test.ts`, `Math.fround` emulation, 1280x720
+  at 50 deg, the camera 30 m and 300 m from a capture creeping 1 mm a
+  frame): drawn by their own coordinates, a capture's place jittered
+  0.03 px at 10 km from the frame's centre, 0.3 px at 100 km, 2.9 px at
+  1000 km, 10 px at 3000 km and 27 px at 8000 km (seen from 30 m; a
+  tenth of that from 300 m); relative, under 0.001 px at every distance
+  up to 15000 km and for a walk 5 km long. This is chosen over moving
+  the tour's frame to the scan: the frame carries the stations, the
+  codes and the editing, which place their objects by 64-bit positions.
+  The arrival's walk line (`globe-approach-marks.ts`), a 32-bit buffer
+  of points in that frame too, is anchored the same way.
 - Colour: the atlas is an sRGB texture and the fragment shader ends in
   three's `colorspace_fragment`; not tone mapped.
 
@@ -88,7 +104,13 @@ debug.frame(performance.now());
   attribute set, the others dots), the half-texel inset, the upload throttle,
   bad and repeated captures dropped, show and hide, geometry freed when
   replaced (the atlas's texture and canvas too) and everything on
-  dispose, the size on screen.
+  dispose, the size on screen; a scan 8000 km out handed to the GPU
+  relative to its first capture (the objects' position the anchor).
+- `globe-debug-precision.test.ts` - the 32-bit arithmetic emulated and
+  swept over the distance from the frame's centre (0 to 15000 km), the
+  view distance and the walk's length: relative coordinates under a
+  tenth of a pixel everywhere, direct ones jittering over a pixel at
+  8000 km. It logs its table.
 - `globe-debug-layer.property.test.ts` - any walk length draws at most one
   mesh and one line and a clear leaves nothing; every capture's cell lies
   inside the atlas, apart from the others, at its picture's aspect.

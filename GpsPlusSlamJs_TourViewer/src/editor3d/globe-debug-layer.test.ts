@@ -101,6 +101,42 @@ describe("createGlobeDebugLayer", () => {
     });
   });
 
+  it("hands the GPU the captures relative to their first one, so a scan far from the frame keeps its place", () => {
+    // A 32-bit attribute 8000 km from the frame's centre is rounded to
+    // half a metre, which jitters on screen (globe-debug-precision.test.ts);
+    // the anchor goes into the object's 64-bit position instead.
+    const parent = new THREE.Group();
+    const { surface } = fakeSurface();
+    const layer = createGlobeDebugLayer(parent, surface);
+    const far = new THREE.Vector3(5e6, -4e6, 4.5e6);
+    layer.set(
+      [0, 1, 2].map((i) => ({
+        image: `far-${String(i)}`,
+        at: far.clone().add(new THREE.Vector3(i * 10, 0.5, -i * 3)),
+      })),
+      true,
+    );
+    const mesh = parent.getObjectByName(
+      "debug-thumbs",
+    ) as THREE.Mesh<THREE.InstancedBufferGeometry>;
+    const line = parent.getObjectByName("debug-walk") as THREE.Object3D;
+    const anchor = far
+      .clone()
+      .add(new THREE.Vector3(0, 0.5, 0))
+      .toArray();
+    expect(mesh.position.toArray()).toEqual(anchor);
+    expect(line.position.toArray()).toEqual(anchor);
+    expect(Array.from(mesh.geometry.getAttribute("center").array)).toEqual([
+      0, 0, 0, 10, 0, -3, 20, 0, -6,
+    ]);
+    const start = (
+      line as unknown as { geometry: THREE.BufferGeometry }
+    ).geometry.getAttribute("instanceStart");
+    expect(start.getX(1)).toBe(10);
+    expect(start.getY(1)).toBeCloseTo(0.05, 6);
+    expect(start.getZ(1)).toBe(-3);
+  });
+
   it("draws no line when not asked (the tour's own walk is drawn already), nor for one capture", () => {
     const parent = new THREE.Group();
     const layer = createGlobeDebugLayer(parent, fakeSurface().surface);
