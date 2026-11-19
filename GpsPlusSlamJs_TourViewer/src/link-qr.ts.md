@@ -19,7 +19,9 @@ scanning it with another such phone gains nothing.
   of) a computer screen re-renders the code without a reload; a no-op where
   `matchMedia` or the answer's `addEventListener` is missing or throws.
 - `shareLinkOf(href): string` - the link the code holds and "Copy link"
-  copies: the page's origin and path with its `qr` parameter only, in
+  copies: the page's own address (its query and fragment taken off, not
+  origin plus path: a `file:` page's origin reads "null" and a `blob:`
+  page's path is a whole address) with its `qr` parameter only, in
   that parameter's own encoding (so a plain visitor address comes back
   unchanged); a debug or cache switch and a fragment are dropped. An
   address with no `qr` parameter, or one that does not parse, is
@@ -80,7 +82,7 @@ if (shown) box.innerHTML = linkQrSvg(shareLinkOf(location.href));
 
 `link-qr.test.ts`: when it shows (every condition alone hides it), the
 media query and its failure modes, the share link (only `qr` kept, in its
-own encoding), the module scale over provider links from the shortest to
+own encoding, on a `file:` and a `blob:` page too), the module scale over provider links from the shortest to
 the longest (each within `LINK_QR_MAX_PX`), the refusal of a code over it
 (a 231 px and a 243 px code either side), and the drawn modules read back from
 the SVG against the library's own code for the link (one url, a different

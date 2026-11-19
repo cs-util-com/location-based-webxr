@@ -108,7 +108,13 @@ export function shareLinkOf(href: string): string {
     .slice(1)
     .split("&")
     .find((part) => part === "qr" || part.startsWith("qr="));
-  return qr === undefined ? href : `${url.origin}${url.pathname}?${qr}`;
+  if (qr === undefined) return href;
+  // The page's own address without its query and fragment, not origin
+  // plus path: a `file:` page's origin reads "null", and a `blob:` page's
+  // origin is the page that made it, its path a whole address.
+  url.search = "";
+  url.hash = "";
+  return `${url.href}?${qr}`;
 }
 
 /**

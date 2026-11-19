@@ -177,6 +177,19 @@ describe("shareLinkOf", () => {
     );
   });
 
+  // Why: a page opened from a file or a blob has no origin to print (its
+  // `origin` reads "null", a blob's names the page that made it), so a
+  // link built from origin and path read `null/...?qr=` or doubled the
+  // host. The link is the page's own address with the query swapped.
+  it("keeps a file or blob page's own address", () => {
+    expect(shareLinkOf("file:///C:/tours/index.html?debug=1&qr=abc#top")).toBe(
+      "file:///C:/tours/index.html?qr=abc",
+    );
+    expect(shareLinkOf("blob:https://example.test/1234?debug=1&qr=abc")).toBe(
+      "blob:https://example.test/1234?qr=abc",
+    );
+  });
+
   it("gives an address without a qr parameter, or one it cannot read, back as it is", () => {
     expect(shareLinkOf("https://example.test/tour/?debug=1")).toBe(
       "https://example.test/tour/?debug=1",
