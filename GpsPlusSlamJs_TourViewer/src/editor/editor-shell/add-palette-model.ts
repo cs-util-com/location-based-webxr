@@ -71,8 +71,9 @@ export const PALETTE_KINDS: readonly {
 /** The most rows listed: a tour of many stations is narrowed by typing. */
 export const PALETTE_MAX_ROWS = 40;
 
-/** Where a new station goes: the tree's "+" (`tree-add`) puts it there. */
-export const NEW_STATION_PLACE = "at the centre of the view";
+/** Where a new station goes: the tree's "+" (`tree-add`) puts it on the
+ *  ground under the camera (the view's `centre()`), not where it looks. */
+export const NEW_STATION_PLACE = "under the camera";
 
 const NEW_STATION_WORDS = "new station place stop";
 

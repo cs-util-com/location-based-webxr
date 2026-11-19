@@ -182,8 +182,12 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   24-bit buffer.
 - `flyTo` and `frame` place an aimed view (`aimView`) at once; there is no
   flight yet.
-- `setTop`, `northUp`, `setTilt` re-place the current pose with one field
+- `northUp` and `setTilt` re-place the current pose with one field
   changed.
+- `setTop(on)` (T) pitches to look straight down (-89 deg), or back to
+  the aimed pitch, round the point the line of sight meets, keeping the
+  distance to it, as `setHeading` turns: what the view looked at stays
+  on the screen.
 - `setHeading(deg)` (the page's checks) turns the camera to `deg` round
   the point its line of sight meets (`stats().look`: the ground ahead,
   else the tour's centre), keeping its distance to that point and its

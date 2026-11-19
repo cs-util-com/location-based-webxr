@@ -14,7 +14,7 @@ where, best first; Enter adds the first.
   `{ kind: "station" }`: what a row adds.
 - `PaletteRow` - `{ add, label, place, icon }`: the kind in words
   ("Short text", "Long text", "New station"), where it goes ("in 2 The
-  old gate", or `NEW_STATION_PLACE` "at the centre of the view"), its
+  old gate", or `NEW_STATION_PLACE` "under the camera"), its
   shell icon.
 - `PaletteKind`, `PALETTE_KINDS` - the kinds the palette's chips offer,
   by the labels of the rows, in their order.

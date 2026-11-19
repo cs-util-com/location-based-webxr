@@ -1622,9 +1622,24 @@ export async function openGlobeEditor(
       setTop(on) {
         if (on === top) return;
         top = on;
+        // Tilted round the point the line of sight meets, as a turn is
+        // (`setHeading`): a tilt in place carried what it looked at, the
+        // selection too, off the screen.
+        const pivot = new THREE.Vector3(...lookPoint());
+        const distance = camera.position.distanceTo(pivot);
+        followFrame();
+        pivot.applyMatrix4(ecefFromWorld);
         placePose({
           pitchDeg: on ? TOP_PITCH_DEG : GLOBE_EDITOR_LOOK.aimPitchDeg,
         });
+        followFrame();
+        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+          camera.quaternion,
+        );
+        camera.position
+          .copy(pivot.applyMatrix4(worldFromEcef))
+          .addScaledVector(forward, -distance);
+        camera.updateMatrixWorld();
       },
       zoom(step) {
         approach?.takeOver(performance.now());

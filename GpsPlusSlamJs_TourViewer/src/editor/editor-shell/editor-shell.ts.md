@@ -43,7 +43,7 @@ browser's own Ctrl+K prevented - and the top bar's Add (`#studio-add`,
 the way in for a touch screen; at a phone's width the Edit menu's `#edit-add`, which leaves the focus on the Edit button, as its menu closes) open the add palette (`add-palette.ts`): a kind and a place typed in one query, its
 place the selected station (or the station of the selected item) when
 the query names none, and its New station the head's "+" (a station at
-the centre of the view). Escape closes the palette before the help it
+the ground under the camera). Escape closes the palette before the help it
 was opened over. Both close with the view. The tree's foot
 (`#tree-foot`, `edit.html`) says these keys in words; not on a phone,
 nor while the dock is folded.
@@ -85,7 +85,7 @@ Docked, the layout is told the keyboard's height on every change and,
 when it is docked while a keyboard is up, at once.
 
 The tree's editing (G2 M3b) goes through it: "+" in the tree's head adds a
-station at the centre of the view (where the view has none, `centre()`
+station on the ground under the camera (where the view has none, `centre()`
 null, it says to come closer to the ground and adds nothing), the scene's
 ground menu one where it
 was pressed (the editor kit's `scene-menu.ts`); a card's grip reorders the tour by drag

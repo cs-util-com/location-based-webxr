@@ -134,6 +134,57 @@ describe("createNarrationPlayer", () => {
     expect(player.playing()).toBe(false);
   });
 
+  // Why: play, pause, play again before the first play() settled. The
+  // browser rejects the first with AbortError while the voice is wanted
+  // again; that rejection belongs to a superseded press and must not
+  // reach the error toast or put the button back.
+  it("takes the abort of a superseded play() quietly after play-pause-play", async () => {
+    const { audio, player, onError } = make();
+    const rejects: ((e: unknown) => void)[] = [];
+    audio.play.mockImplementation(
+      () =>
+        new Promise<void>((_, r) => {
+          rejects.push(r);
+        }),
+    );
+    player.play();
+    await flush();
+    player.pause();
+    player.play();
+    await flush();
+    rejects[0]?.(
+      new DOMException("The play() request was interrupted", "AbortError"),
+    );
+    await flush();
+    expect(onError).not.toHaveBeenCalled();
+    expect(player.playing()).toBe(true);
+  });
+
+  // Why: an AbortError nobody's pause caused (the element reset under
+  // the voice) leaves nothing playing; the button must go back and the
+  // page must hear of it.
+  it("reports an abort of the current play() while the voice is wanted", async () => {
+    const { audio, player, onError } = make();
+    audio.play.mockImplementationOnce(() =>
+      Promise.reject(new DOMException("aborted", "AbortError")),
+    );
+    player.play();
+    await flush();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(player.playing()).toBe(false);
+  });
+
+  // Why: play-pause-play before the file arrived must start the audio
+  // element once, not once per press.
+  it("starts the audio once after play-pause-play during the fetch", async () => {
+    const { audio, player } = make();
+    player.play();
+    player.pause();
+    player.play();
+    await flush();
+    expect(audio.play).toHaveBeenCalledTimes(1);
+  });
+
   it("stops at the end and on pause", async () => {
     const { audio, player } = make();
     player.play();

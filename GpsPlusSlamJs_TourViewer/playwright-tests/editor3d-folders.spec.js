@@ -431,6 +431,11 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   await expect.poll(() => pickAtE2(page)).toBe("e2");
   await capture(page, "editor3d-story-entry-open");
   expect(await revision(page)).toBe(start);
+  // Ctrl+D on an entry does nothing, as the bar offers it no Duplicate.
+  await page.keyboard.press("Control+d");
+  await afterFrames(page);
+  expect(await revision(page)).toBe(start);
+  await expect(page.locator(".toast", { hasText: "no longer" })).toHaveCount(0);
 
   // Its disc dragged over the ground: one step, written into its story in
   // place, its facing kept; Undo puts it back.
@@ -467,6 +472,90 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   await card.locator('.kid[data-select="p"]').click();
   await expect.poll(selected).toBe("p");
   await expect.poll(() => pickAtE2(page)).not.toBe("e2");
+});
+
+/**
+ * Two animation frames: time enough for a key's work that settles at once.
+ * @param {import("@playwright/test").Page} page
+ */
+function afterFrames(page) {
+  return page.evaluate(
+    () =>
+      new Promise((done) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => done(null)));
+      }),
+  );
+}
+
+// Why: a folder's Duplicate reads its items' pictures before it writes, so
+// a second Ctrl+D while that read runs must make no second copy. Its
+// Delete asks first: a No leaves the tour as it was, a Yes removes the
+// folder with its item as one step, and Undo brings both back.
+test("a folder's Ctrl+D pressed twice at once makes one copy, and its Delete asks first and undoes as one step", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFolders(page, await foldersTour());
+  const card = await unfold(page);
+  const start = await revision(page);
+  const selected = () =>
+    page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
+  const yard = card.locator('.gfolder[data-plainfolder="yard"] button.fname');
+  await yard.click();
+  await expect.poll(selected).toBe("folder:yard");
+
+  // Both presses in one task: the second comes while the first still reads.
+  await page.evaluate(() => {
+    for (let i = 0; i < 2; i += 1) {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "d",
+          code: "KeyD",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
+  });
+  await expect(
+    page.locator(".toast", { hasText: "Duplicated the folder" }),
+  ).toBeVisible();
+  await afterFrames(page);
+  expect(await folderOrder(page)).toHaveLength(2);
+  expect(await revision(page)).toBe(start + 1);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => folderOrder(page)).toEqual(["Yard"]);
+
+  /** @type {string[]} */
+  const asked = [];
+  /** @param {boolean} yes */
+  const answer = (yes) =>
+    page.once("dialog", (dialog) => {
+      asked.push(dialog.message());
+      void (yes ? dialog.accept() : dialog.dismiss());
+    });
+  await yard.click();
+  await expect.poll(selected).toBe("folder:yard");
+  const before = await revision(page);
+  answer(false);
+  await page.keyboard.press("Delete");
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toBe(
+    'Delete the folder "Yard"? Its item goes with it. You can undo this.',
+  );
+  expect(await revision(page)).toBe(before);
+  expect(await groups(page)).toEqual({ Yard: ["y"], free: ["p", "q", "r"] });
+
+  answer(true);
+  await page.keyboard.press("Delete");
+  await expect.poll(() => groups(page)).toEqual({ free: ["p", "q", "r"] });
+  expect(await revision(page)).toBe(before + 1);
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(() => groups(page))
+    .toEqual({ Yard: ["y"], free: ["p", "q", "r"] });
 });
 
 /**
