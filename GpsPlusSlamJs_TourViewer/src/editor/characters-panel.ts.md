@@ -66,7 +66,11 @@ rather than pushing the list past a phone's window
   when he was made) never reaches the tour. A library character counts as
   in the tour when the tour declares his four poses: the list learns each
   one's poses as the tour names them (`tour.fileId`, once per character)
-  when it reads the library.
+  when it reads the library. The rows are drawn as soon as the read is
+  done, before the poses are learnt; a row whose poses are not known yet
+  offers no "Add to tour" (it cannot tell whether he is in the tour), and
+  the rows are drawn again once they are. Poses that could not be read
+  count as known: the row offers Add, and adding says what failed.
 - A "new" character is a library id not seen before and not in the tour. On
   the very first read (no seen ids kept yet), every character counts as
   seen.
@@ -104,15 +108,21 @@ rather than pushing the list past a phone's window
 
 - Every name is escaped where it is drawn.
 - Two library reads never overlap: a read asked for while one is running
-  waits for it.
+  joins it - except the import's, which waits for it and then reads
+  again, since its save is newer than a read begun before it.
 - Both lists are drawn at once from what is known; the thumbnails follow
-  into the drawn rows, each made once per character. A list that waited
+  into the drawn rows, each made once per character (a redraw while one is
+  cut waits for the same cut, and its picture reaches the row on the page,
+  never a detached one). A thumbnail that could not be made is not kept:
+  the next drawing of the row tries again. A list that waited
   for them kept its old rows for seconds on a busy page (the 3D view drawn
   in software), the "No characters on this device yet" line among them
   while the character was safely saved.
 - "No characters on this device yet" is said only after a finished look;
   before the first one the list is empty and the status line says
-  "Looking on this device...".
+  "Looking on this device...". When no look has finished and the last one
+  failed, the list says "Could not look on this device." (the error toast
+  fades; a blank list said nothing).
 - Adding copies the pictures into the tour, so the tour keeps the character
   even if he is later deleted from this device.
 
@@ -135,7 +145,14 @@ const made = await characters.makeForTour(); // TourCharacter | null
 - `characters-panel.test.ts` (jsdom, with a library and a tour in memory)
   covers:
   - the first read and the banner; no "none yet" line before the first look
-    is done; the rows drawn before their thumbnails are made;
+    is done, and that line after a look of an empty library; the list's
+    own line when no look could finish; the rows drawn before their
+    thumbnails are made, and before the poses are known (Add only once
+    they are);
+  - thumbnails: one cut per character with a redraw meanwhile, a failed
+    one tried again, and a property (any number of rows, any order of the
+    cuts answering, redraws between them: each row ends with its own
+    picture);
   - add: busy state, success, refusal and failure; "add all"; "not now";
   - remove and its Undo, and a refused remove;
   - the maker: its URL, closing it, and the "nothing new" line;
@@ -146,7 +163,7 @@ const made = await characters.makeForTour(); // TourCharacter | null
   - coming back to the tab;
   - `makeForTour`: made, none saved, refused, library unreadable;
   - import: the busy steps, a refusal, a failed save, a cancelled name
-    question;
+    question, and an import racing a look in flight (it reads again);
   - the page toast while the list is closed.
 - `playwright-tests/editor-characters.spec.js` runs the whole path in a
   browser (maker -> library -> editor -> placed character -> reload) and

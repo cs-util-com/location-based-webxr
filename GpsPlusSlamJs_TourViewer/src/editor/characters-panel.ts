@@ -187,6 +187,9 @@ export function createCharactersPanel(
   /** Whether `entries` holds a finished look: before the first one the
    *  list cannot say the device has none. */
   let looked = false;
+  /** The last look failed: with none finished, the list says so (the
+   *  error toast fades, and a blank list says nothing). */
+  let lookFailed = false;
   /** New on this device, offered in the banner. */
   let pending: CharacterRecord[] = [];
   const libThumbs = new Map<string, Promise<string>>();
@@ -208,8 +211,10 @@ export function createCharactersPanel(
   }
 
   /** Each device character's four poses as the tour would name them,
-   *  learnt once per character (his files never change once saved). */
-  const sheetOf = new Map<string, string>();
+   *  learnt once per character (his files never change once saved); null
+   *  where they could not be read. A character not in it yet cannot be
+   *  told in the tour or not, so his row offers no "Add to tour". */
+  const sheetOf = new Map<string, string | null>();
   async function learnSheets(list: readonly CharacterRecord[]): Promise<void> {
     const tour = deps.tour();
     const todo = list.filter((e) => !sheetOf.has(e.libraryId));
@@ -221,6 +226,7 @@ export function createCharactersPanel(
         sheetOf.set(e.libraryId, await tour.fileId(files.frames));
       } catch {
         // Unread: shown as not in the tour; adding him says what failed.
+        sheetOf.set(e.libraryId, null);
       }
     }
   }
@@ -228,7 +234,7 @@ export function createCharactersPanel(
   /** The tour's character made from the device's `libraryId`, if any. */
   const inTourAs = (libraryId: string): TourCharacter | undefined => {
     const sheet = sheetOf.get(libraryId);
-    return sheet === undefined
+    return sheet === undefined || sheet === null
       ? undefined
       : deps
           .tour()
@@ -242,7 +248,8 @@ export function createCharactersPanel(
     seenStore.write([...(seen ?? [])]);
   }
 
-  /** The thumbnail of `key`, made once ("" where it cannot be). */
+  /** The thumbnail of `key`, made once ("" where it cannot be). A
+   *  failure is not kept: the next drawing of the row tries again. */
   function thumbOf(
     cache: Map<string, Promise<string>>,
     key: string,
@@ -250,7 +257,7 @@ export function createCharactersPanel(
   ): Promise<string> {
     let url = cache.get(key);
     if (url === undefined) {
-      url = (async () => {
+      const made = (async () => {
         try {
           const b = await blob();
           return b === undefined ? "" : await cropThumb(b);
@@ -258,7 +265,11 @@ export function createCharactersPanel(
           return ""; // no thumbnail: the row shows the name only
         }
       })();
-      cache.set(key, url);
+      url = made;
+      cache.set(key, made);
+      void made.then((got) => {
+        if (got === "" && cache.get(key) === made) cache.delete(key);
+      });
     }
     return url;
   }
@@ -311,7 +322,9 @@ export function createCharactersPanel(
       // Before the first look the status line says it is looking.
       dom.libList.innerHTML = looked
         ? '<li class="empty-line">No characters on this device yet.</li>'
-        : "";
+        : lookFailed
+          ? '<li class="empty-line">Could not look on this device.</li>'
+          : "";
       return;
     }
     const fresh = new Set(pending.map((p) => p.libraryId));
@@ -327,7 +340,11 @@ export function createCharactersPanel(
             ? '<span class="state warn">No name yet</span>'
             : "";
       li.innerHTML = `${THUMB_IMG}<div class="who"><b>${esc(e.name)}</b><span class="meta">${state}<span>${esc(whenMade(e.createdAtIso, now()))}</span></span></div><div class="acts"></div>`;
-      if (!inTour(e.libraryId) && deps.tour() !== null) {
+      if (
+        sheetOf.has(e.libraryId) &&
+        !inTour(e.libraryId) &&
+        deps.tour() !== null
+      ) {
         const b = document.createElement("button");
         b.className = "btn small";
         b.type = "button";
@@ -375,14 +392,27 @@ export function createCharactersPanel(
 
   let relisting: Promise<void> | null = null;
   /** Looks into the library again: what is new since the last look joins
-   *  the banner (on the first look ever, nothing is new). */
-  function relist(reason: RelistReason, quiet = false): Promise<void> {
+   *  the banner (on the first look ever, nothing is new). A call while a
+   *  look runs joins it, unless `afresh`: then it looks again once that
+   *  one is done (an import's save is newer than a look begun before it). */
+  function relist(
+    reason: RelistReason,
+    quiet = false,
+    afresh = false,
+  ): Promise<void> {
+    if (afresh && relisting !== null) {
+      return relisting.then(() => relist(reason, quiet, true));
+    }
     relisting ??= (async () => {
       dom.libStatus.textContent = "Looking on this device...";
       try {
         const res = await (await deps.library()).list();
         entries = [...res.entries];
         looked = true;
+        lookFailed = false;
+        // The rows show now, the thumbnails and the poses following: a
+        // row whose poses are not known yet offers no "Add to tour".
+        renderLib();
         await learnSheets(entries);
         const first = seen === null;
         const known = seen ?? new Set<string>();
@@ -410,6 +440,8 @@ export function createCharactersPanel(
         }
       } catch (e) {
         dom.libStatus.textContent = "";
+        lookFailed = true;
+        renderLib();
         toast(
           `The characters on this device could not be read: ${reasonOf(e)}`,
           true,
@@ -617,7 +649,7 @@ export function createCharactersPanel(
         toast(`Importing did not work: ${reasonOf(e)}`, true);
       }
     });
-    await relist("import");
+    await relist("import", false, true);
   }
 
   dom.close.addEventListener("click", () => {
