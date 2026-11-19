@@ -426,6 +426,10 @@ export function finishBlockedHint(
       return "Saving unlocks once the tour's content list has loaded.";
     case "manifest-broken":
       return "The hosted zip's tour.json is broken; repair it before saving, or the placement it holds would be lost.";
+    case "no-tour":
+      // Done cannot save and no draft keeps the work yet; opening the tour
+      // (its link, or its printed code in view) carries it over.
+      return "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.";
     default:
       return "";
   }

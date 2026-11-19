@@ -1455,6 +1455,34 @@ describe("work made before the tour's draft opened reaches it", () => {
     expect(String(ctx.placementNote)).toContain("not saving a backup");
   });
 
+  it("asks before leaving while no tour holds the placed work, and stops asking once its draft opens", async () => {
+    // Why: with no tour open a placement lives only in memory - the draft
+    // writes it when a tour opens. A reload, a closed tab or an AR crash
+    // in between lost it with no question asked, because the guard read
+    // "the draft persists" before any draft existed.
+    const { store } = memoryStore();
+    expect(
+      wire(store).setup.leaveNeedsConfirm(),
+      "nothing measured or placed: nothing to lose",
+    ).toBe(false);
+    const { dom, setup } = wire(store, { placeable: true });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(setup.leaveNeedsConfirm()).toBe(true);
+    expect(setup.leaveQuestion()).toContain("keeps no backup");
+    // The live readout says why Done cannot save it.
+    expect(dom.status.textContent).toContain(
+      "Your tour is not open on this phone yet",
+    );
+
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(setup.leaveNeedsConfirm(), "the draft now holds the placement").toBe(
+      false,
+    );
+  });
+
   it("writes the placements into the draft once it opens", async () => {
     const { store, files } = memoryStore();
     const { ctx, dom, setup } = wire(store, { placeable: true });

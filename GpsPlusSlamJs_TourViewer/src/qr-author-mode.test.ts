@@ -381,6 +381,11 @@ describe("setupHint / finishReadiness", () => {
     ).toBe("manifest-broken");
     expect(finishBlockedHint("manifest-broken")).toMatch(/tour\.json/);
     expect(finishBlockedHint("ready")).toBe("");
+    // Why: with no tour open nothing placed is kept - not by Done, not by
+    // the draft - so a blocked Done must say why, never stay silent.
+    expect(finishBlockedHint("no-tour")).toBe(
+      "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+    );
     expect(
       finishReadiness({ hasWork: true, tourOpen: true, manifest: settled }),
     ).toBe("ready");
