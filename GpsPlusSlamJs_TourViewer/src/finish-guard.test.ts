@@ -130,6 +130,10 @@ describe("the guard without a backup, and after a failed Finish (U2 milestone re
     );
     expect(noBackup).not.toMatch(/stay on this phone/);
     expect(noBackup).toMatch(/not saved anywhere/);
+    // True in every case it is asked in - a failed backup, no tour open, a
+    // tour whose manifest has not settled - also on a phone that keeps
+    // drafts: it speaks of these changes, not of the device.
+    expect(noBackup).toMatch(/holds no backup copy of them/);
   });
 
   it("keeps Finish after a failed Finish, whatever file it left", () => {

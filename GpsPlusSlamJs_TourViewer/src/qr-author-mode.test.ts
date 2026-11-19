@@ -11,6 +11,7 @@ import {
   archiveSizeNote,
   authorStatusLine,
   finishBlockedHint,
+  NO_TOUR_LEAD,
   finishReadiness,
   setupHint,
   entryHint,
@@ -381,6 +382,15 @@ describe("setupHint / finishReadiness", () => {
     ).toBe("manifest-broken");
     expect(finishBlockedHint("manifest-broken")).toMatch(/tour\.json/);
     expect(finishBlockedHint("ready")).toBe("");
+    // Why: with no tour open nothing placed is kept - not by Done, not by
+    // the draft - so a blocked Done must say why, never stay silent.
+    // The short form leads the AR line, clamped to two lines (about 52
+    // characters on a 360 px phone): it must leave room for what follows.
+    expect(NO_TOUR_LEAD).toBe("No tour open - nothing placed here is kept.");
+    expect(NO_TOUR_LEAD.length).toBeLessThanOrEqual(45);
+    expect(finishBlockedHint("no-tour")).toBe(
+      "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+    );
     expect(
       finishReadiness({ hasWork: true, tourOpen: true, manifest: settled }),
     ).toBe("ready");
