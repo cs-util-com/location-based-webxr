@@ -61,7 +61,7 @@ describe("normalVoiceCredit", () => {
   it("keeps a credit within the cap word for word, its spacing made single", () => {
     fc.assert(
       fc.property(typed, (text) => {
-        const collapsed = text.trim().replace(/\s+/gu, " ");
+        const collapsed = text.normalize("NFC").trim().replace(/\s+/gu, " ");
         const credit = normalVoiceCredit(text);
         const within = [...collapsed].length <= VOICE_CREDIT_MAX;
         // Within the cap the collapsed line is kept whole; past it, it is
@@ -103,7 +103,7 @@ describe("normalVoiceCredit, by example", () => {
           }),
         ),
         (text) => {
-          const whole = [...text.trim().replace(/\s+/gu, " ")].length;
+          const whole = tourTextCount(text.normalize("NFC"), RULE.unit);
           expect(voiceCreditCut(text)).toBe(whole > VOICE_CREDIT_MAX);
           // No cut said: the stored credit kept every letter.
           const kept = [...(normalVoiceCredit(text) ?? "")].length;
@@ -111,6 +111,28 @@ describe("normalVoiceCredit, by example", () => {
         },
       ),
     );
+  });
+
+  // Why: a keyboard or a paste may hand over a decomposed accent ("e" and
+  // a combining mark), two code points where the stored letter is one: the
+  // credit is counted and stored in NFC, as every other text the editor
+  // takes, so the same name is never cut on one device and kept on another.
+  it("counts and stores a decomposed letter as the one letter it reads as", () => {
+    const decomposed = "é".repeat(VOICE_CREDIT_MAX);
+    expect([...decomposed].length).toBe(2 * VOICE_CREDIT_MAX);
+    expect(voiceCreditCut(decomposed)).toBe(false);
+    expect(normalVoiceCredit(decomposed)).toBe("é".repeat(VOICE_CREDIT_MAX));
+  });
+
+  // Why: a letter outside the basic plane is two UTF-16 units and one
+  // code point; the cap counts code points, so a credit of such letters
+  // at the cap is kept whole and one more is cut.
+  it("counts an astral letter once", () => {
+    const atCap = "\u{1D49C}".repeat(VOICE_CREDIT_MAX);
+    expect(voiceCreditCut(atCap)).toBe(false);
+    expect(normalVoiceCredit(atCap)).toBe(atCap);
+    expect(voiceCreditCut(`${atCap}\u{1D49C}`)).toBe(true);
+    expect(normalVoiceCredit(`${atCap}\u{1D49C}`)).toBe(atCap);
   });
 
   it("names the format's own cap", () => {
