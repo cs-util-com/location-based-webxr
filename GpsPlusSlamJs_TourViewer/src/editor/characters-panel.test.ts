@@ -451,14 +451,19 @@ describe("opening the list", () => {
   // lifetime.
   it("tries again at the next redraw after a cut that could not draw", async () => {
     let crops = 0;
+    let drawNothing = () => {};
     thumbs.crop = () => {
       crops += 1;
-      return Promise.resolve(crops === 1 ? "" : "data:image/png;base64,DDDD");
+      return crops === 1
+        ? new Promise((r) => (drawNothing = () => r("")))
+        : Promise.resolve("data:image/png;base64,DDDD");
     };
     const s = setup({ lib: [record("c1", "Rita")] });
     s.panel.open();
     await settled();
-    expect(crops).toBe(1);
+    expect(crops, "one cut while it is under way").toBe(1);
+    drawNothing();
+    await settled();
     expect(
       s.libRow("c1")?.querySelector("img")?.getAttribute("src"),
     ).toBeNull();

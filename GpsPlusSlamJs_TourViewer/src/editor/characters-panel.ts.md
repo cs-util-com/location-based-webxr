@@ -122,7 +122,9 @@ rather than pushing the list past a phone's window
 - Both lists are drawn at once from what is known; the thumbnails follow
   into the drawn rows, each made once per character (a redraw while one is
   cut waits for the same cut, and its picture reaches the row on the page,
-  never a detached one). A thumbnail whose read or cut threw is not kept:
+  never a detached one). A thumbnail whose read or cut threw is not kept,
+  nor one whose cut answered "" without throwing (`cropThumb` does when
+  `getContext("2d")` gives null, a passing failure under memory pressure):
   the next drawing of the row tries again; a character with no picture
   (`image` gives `undefined`) is an answer, kept, so it is not asked for
   again on every redraw. A list that waited
@@ -161,7 +163,8 @@ const made = await characters.makeForTour(); // TourCharacter | null
     thumbnails are made, and before the poses are known (Add only once
     they are);
   - thumbnails: one cut per character with a redraw meanwhile, a failed
-    one tried again, and a property (any number of rows, any order of the
+    one tried again (a cut that threw, and one that answered "" because it
+    could not draw), one with no picture asked for once, and a property (any number of rows, any order of the
     cuts answering, redraws between them: each row ends with its own
     picture);
   - add: busy state, success, refusal and failure; "add all"; "not now";
