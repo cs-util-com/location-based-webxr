@@ -6,7 +6,7 @@ export const NEW_TOUR_FILE_NAME = "new-tour.zip";
 /** What making a new tour's file needs; the defaults are the real ones. */
 export interface NewTourFileDeps {
   /** A fresh tour id per call (the default draws 128 random bits). */
-  readonly mint?: () => string;
+  readonly mint?: (() => string) | undefined;
 }
 
 /**
@@ -31,7 +31,7 @@ export interface StartNewTourDeps<P> {
   readonly settleUnusedPick: (pick: P) => void;
   /** Says why the new tour could not be made. */
   readonly failed: (reason: string) => void;
-  readonly mint?: () => string;
+  readonly mint?: (() => string) | undefined;
 }
 
 /**
