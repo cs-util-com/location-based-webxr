@@ -2,7 +2,6 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  fileCommand,
   fileItem,
   publish,
   save,
@@ -1535,41 +1534,6 @@ test("the tree can be used from the keyboard alone", async ({ page }) => {
   await page.keyboard.press("Space");
   await expect(gate.locator(".kids")).toHaveCount(0);
   await expect(gate.locator(".head .tw")).toBeFocused();
-});
-
-test("File's Add debug data opens the same add as the map's panel", async ({
-  page,
-}) => {
-  // Why: File's item and the panel's button over the 3D view open the
-  // same file input and run the same add: a file that is no debug data is
-  // refused in the same words, and both come back idle.
-  test.setTimeout(150_000);
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await open3d(page);
-  const add = fileItem(page, "debugAdd");
-  await expect(page.locator("#debug-add")).toBeVisible();
-  const sample = await (
-    await page.request.get("/samples/marienplatz-tour.zip")
-  ).body();
-  const chooser = page.waitForEvent("filechooser");
-  await fileCommand(page, "debugAdd");
-  await (
-    await chooser
-  ).setFiles({
-    name: "plain.zip",
-    mimeType: "application/zip",
-    buffer: sample,
-  });
-  await expect(
-    page.locator(".toast", {
-      hasText:
-        "Not added: This file carries no recording: it is neither debug data nor a Recorder zip.",
-    }),
-  ).toBeVisible();
-  await expect(add).toBeEnabled();
-  await expect(add).toHaveText("Add debug data…");
-  await expect(page.locator("#debug-add")).toBeEnabled();
-  await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
 });
 
 test("a tap on the folded list's rail opens it with its stations shown", async ({

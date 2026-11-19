@@ -407,6 +407,41 @@ test("adds the debug data back beside a tour from its own button, and forgets it
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(0);
 });
 
+test("File's Add debug data opens the same add as the panel's button", async ({
+  page,
+}) => {
+  // Why: File's item and the debug panel's button open the same file
+  // input and run the same add, so both say they are busy and both come
+  // back idle and enabled. The refusal is the cheapest add to wait for.
+  // On the map, not the 3D view: the globe's software rendering kept the
+  // page so busy on a CI runner that this add's refusal came after 5 s.
+  await page.goto("/edit.html");
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  const chooser = page.waitForEvent("filechooser");
+  await fileCommand(page, "debugAdd");
+  await (
+    await chooser
+  ).setFiles({
+    name: "plain.zip",
+    mimeType: "application/zip",
+    buffer: await editorTour(),
+  });
+  await expect(
+    page.locator(".toast", {
+      hasText:
+        "Not added: This file carries no recording: it is neither debug data nor a Recorder zip.",
+    }),
+  ).toBeVisible();
+  for (const button of [
+    fileItem(page, "debugAdd"),
+    page.locator("#debug-add"),
+  ]) {
+    await expect(button).toBeEnabled();
+    await expect(button).toHaveText("Add debug data…");
+  }
+});
+
 test("says whose added debug data is - another tour's, or a plain recording - refuses a file that is none, and never saves it", async ({
   page,
 }) => {
