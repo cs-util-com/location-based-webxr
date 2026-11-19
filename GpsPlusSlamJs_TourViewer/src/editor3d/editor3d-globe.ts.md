@@ -323,8 +323,9 @@ The view disposes the run once the arrival is over.
   Earth) and the slice is shown with captures, `debugFrame` flies the
   view to them (`frameView(null)`: their bounding sphere, `aimAt`),
   once per capture set, so a person who looks elsewhere is not pulled
-  back each frame. `frame(null)` (the whole tour) fits the scan the
-  same way while the tour has no station; a tour with stations keeps
+  back each frame (the tour is checked once per shown set too, not each
+  frame). `frame(null)` (the whole tour) fits the scan the same way while
+  the tour has nothing positioned (no station, no code); a tour with stations keeps
   framing them. A scan far from the tour frame's centre keeps its place
   on screen (`globe-debug-layer.ts.md`, "Precision").
 - The flight's clock starts at its first drawn frame (the run's first

@@ -79,8 +79,9 @@ content: nothing in it is picked, selected or saved.
   tenth of that from 300 m); relative, under 0.001 px at every distance
   up to 15000 km and for a walk 5 km long. This is chosen over moving
   the tour's frame to the scan: the frame carries the stations, the
-  codes and the editing, which place their objects by 64-bit positions
-  and keep no 32-bit buffer of far points.
+  codes and the editing, which place their objects by 64-bit positions.
+  The arrival's walk line (`globe-approach-marks.ts`), a 32-bit buffer
+  of points in that frame too, is anchored the same way.
 - Colour: the atlas is an sRGB texture and the fragment shader ends in
   three's `colorspace_fragment`; not tone mapped.
 

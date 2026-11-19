@@ -840,8 +840,9 @@ export async function openGlobeEditor(
     /** The drawn captures' points, for framing a tour with nothing of its
      *  own to frame. */
     let debugPoints: THREE.Vector3[] = [];
-    /** The capture set the view last flew to (once per set: a camera the
-     *  person moved away is not pulled back each frame). */
+    /** The capture set last checked for a flight, once it showed: checked
+     *  once per set (a camera the person moved away is not pulled back each
+     *  frame, and a tour with stations is not looked at again each frame). */
     let debugFlownTo: DebugLayerState["captures"] | undefined;
     /** A shown scan's points when the tour has nothing positioned (no
      *  station, no code; a new tour), else none: what the view frames in
@@ -872,9 +873,13 @@ export async function openGlobeEditor(
         debugPoints = drawn.map((c) => c.at);
         debugLayer.set(drawn, source === "added");
       }
-      if (captures !== debugFlownTo && scanToFrame().length > 0) {
+      if (
+        captures !== debugFlownTo &&
+        slice?.shown === true &&
+        debugPoints.length > 0
+      ) {
         debugFlownTo = captures;
-        frameView(null);
+        if (scanToFrame().length > 0) frameView(null);
       }
       debugLayer.show(slice?.shown === true);
       if (captures !== null) debugThumbsIn(captures);

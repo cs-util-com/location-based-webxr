@@ -14,6 +14,10 @@
  * frame of the walk's drawing uploads those ends only (update ranges of the
  * shared buffer), not a new line or the whole walk.
  *
+ * The line's points are relative to the walk's first point, which is the
+ * line's `position`: the GPU's buffers are 32-bit, and a walk far from
+ * the frame's centre drawn by its own coordinates jitters on screen.
+ *
  * @see globe-approach-marks.ts.md
  */
 import * as THREE from "three";
@@ -97,6 +101,10 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
     depthWrite: false,
   });
   let walk: THREE.Vector3[] = [];
+  /** The walk's first point: the line's `position`, and what every point
+   *  in its buffer is relative to. */
+  const anchor = new THREE.Vector3();
+  const relative = new THREE.Vector3();
   /** The walk's length up to each point (`along[0]` 0). */
   let along: number[] = [];
   let line: Line2 | null = null;
@@ -110,11 +118,13 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
   const endsOf = (l: Line2) =>
     l.geometry.getAttribute("instanceEnd") as THREE.InterleavedBufferAttribute;
 
-  /** Segment `i`'s end written as `p`, and only those three numbers of
-   *  the shared buffer flagged for upload. */
+  /** Segment `i`'s end written as `p` (the tour's frame; stored
+   *  relative to the anchor), and only those three numbers of the shared
+   *  buffer flagged for upload. */
   const writeEnd = (l: Line2, i: number, p: THREE.Vector3) => {
     const ends = endsOf(l);
-    ends.setXYZ(i, p.x, p.y, p.z);
+    relative.subVectors(p, anchor);
+    ends.setXYZ(i, relative.x, relative.y, relative.z);
     ends.data.addUpdateRange(i * ends.data.stride + ends.offset, 3);
     ends.data.needsUpdate = true;
   };
@@ -174,10 +184,14 @@ export function createArrivalMarks(parent: THREE.Object3D): ArrivalMarks {
       dropLine();
       const total = along[along.length - 1] ?? 0;
       if (walk.length < 2 || !(total > 0)) return;
+      anchor.copy(walk[0]!);
       const geometry = new LineGeometry();
-      geometry.setPositions(walk.flatMap((p) => [p.x, p.y, p.z]));
+      geometry.setPositions(
+        walk.flatMap((p) => [p.x - anchor.x, p.y - anchor.y, p.z - anchor.z]),
+      );
       geometry.instanceCount = 0;
       line = new Line2(geometry, lineMaterial);
+      line.position.copy(anchor);
       line.name = "approach-walk";
       line.visible = false;
       line.computeLineDistances();

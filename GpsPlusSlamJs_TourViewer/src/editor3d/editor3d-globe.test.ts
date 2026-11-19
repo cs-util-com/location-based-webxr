@@ -2077,6 +2077,32 @@ describe("the globe's debug layer, read from the store", () => {
     expect(cameraPlace().lat).toBeCloseTo(MUNICH.lat, 0);
   });
 
+  // Why: whether the tour has anything to frame is a walk over its
+  // stations and codes; a scan shown beside a tour with stations is
+  // checked once per capture set, not again on every frame.
+  it("checks a tour with stations once per shown scan, not each frame", async () => {
+    const levelReads = async (slice: DebugLayerState) => {
+      let reads = 0;
+      await openAt(0, {
+        store: storeWith({ current: slice }),
+        levels: () => {
+          reads++;
+          return new Map();
+        },
+      });
+      frameAt(1000);
+      const before = reads;
+      for (let i = 1; i <= 10; i++) frameAt(1000 + 16 * i);
+      open?.dispose();
+      open = null;
+      return reads - before;
+    };
+    const shown = sliceOf([FAR]).current;
+    const shownReads = await levelReads(shown);
+    const hiddenReads = await levelReads({ ...shown, shown: false });
+    expect(shownReads).toBe(hiddenReads);
+  });
+
   it("copies in thumbnails the page decoded before the view opened", async () => {
     const thumbs = createDebugThumbs();
     const img = document.createElement("img");
