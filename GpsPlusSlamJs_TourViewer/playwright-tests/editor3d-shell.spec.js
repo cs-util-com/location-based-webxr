@@ -983,7 +983,12 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
       (after.altitudeKm - before.altitudeKm) * 1000,
     ),
   ).toBeLessThan(1e-3);
-  expect(Math.abs(after.headingDeg - before.headingDeg)).toBeLessThan(1e-4);
+  // The heading compared the short way round: the pose's heading lives in
+  // [0, 360), so a hair either side of north reads as 0 or 359.99...
+  const headingTurn = Math.abs(
+    ((after.headingDeg - before.headingDeg + 540) % 360) - 180,
+  );
+  expect(headingTurn).toBeLessThan(1e-4);
   expect(Math.abs(after.pitchDeg - before.pitchDeg)).toBeLessThan(1e-4);
 
   // The folds are the page's state: a trip to the map and back keeps the
