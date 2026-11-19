@@ -6,6 +6,7 @@ import {
   COMPUTER_SCREEN_QUERY,
   isComputerScreen,
   onComputerScreenChange,
+  LINK_QR_MAX_PX,
   LINK_QR_MODULE_PX,
   linkQrShown,
   linkQrSvg,
@@ -209,8 +210,29 @@ describe("linkQrSvg size", () => {
       const px = String(side * LINK_QR_MODULE_PX);
       expect(svg, link).toContain(`width="${px}" height="${px}"`);
       // Still small enough to stand beside Copy link on a computer screen.
-      expect(side * LINK_QR_MODULE_PX, link).toBeLessThanOrEqual(360);
+      expect(side * LINK_QR_MODULE_PX, link).toBeLessThanOrEqual(
+        LINK_QR_MAX_PX,
+      );
     }
+  });
+
+  // Why: the code stands beside the Copy link dial in the visitor's
+  // column (at most 440 px with its padding, the dial up to 156 px, a
+  // 40 px gap), so a code past about 240 px pushes the row out of it.
+  // Such a link gets no code, the same way as one too long for any code;
+  // the shown one is never larger than the room. The links are a 231 px
+  // and a 243 px code, the two sizes either side of the limit.
+  it("refuses a code larger than the room beside Copy link", () => {
+    expect(LINK_QR_MAX_PX).toBe(240);
+    const fits = `https://example.test/tour/?qr=${"a".repeat(310)}`;
+    const tooLarge = `https://example.test/tour/?qr=${"a".repeat(340)}`;
+    expect(drawnModules(linkQrSvg(fits)).side * LINK_QR_MODULE_PX).toBe(231);
+    expect(() => linkQrSvg(tooLarge)).toThrow(RangeError);
+    expect(
+      (QRCode.create(tooLarge, { errorCorrectionLevel: "M" }).modules.size +
+        4) *
+        LINK_QR_MODULE_PX,
+    ).toBe(243);
   });
 });
 

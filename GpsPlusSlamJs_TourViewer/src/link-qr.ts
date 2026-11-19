@@ -22,9 +22,16 @@ const QUIET_ZONE = 2;
 
 /** CSS pixels per module: a whole number, so every module lands on whole
  *  pixels and the code stays sharp; the box is sized from the module
- *  count (about 100 to 270 px for the shortest to the longest storage
- *  provider link). */
+ *  count (135 to 195 px for the shortest to the longest storage provider
+ *  link the tests use). */
 export const LINK_QR_MODULE_PX = 3;
+
+/** The largest code, in CSS pixels, that stands beside the Copy link dial:
+ *  the visitor's column is at most 440 px with its 24 px side padding, the
+ *  dial up to 156 px and the gap 40 px, so a code up to 240 px keeps the
+ *  row inside the column's box (it may take part of the padding). A larger
+ *  one is refused like a link too long for any code: Copy link alone. */
+export const LINK_QR_MAX_PX = 240;
 
 interface MediaWindow {
   matchMedia?: (query: string) => {
@@ -108,8 +115,10 @@ export function shareLinkOf(href: string): string {
  * The QR code of `url` as an SVG string: one path of dark modules on a
  * white square, `viewBox` in modules, `width` and `height` at
  * `LINK_QR_MODULE_PX` CSS pixels per module. Throws on an empty or
- * non-string url, and (the library's error) on a link too long for any QR
- * code: past version 40, about 2300 bytes at error correction M.
+ * non-string url, with a `RangeError` on a code larger than
+ * `LINK_QR_MAX_PX` (a link over about 360 bytes), and (the library's
+ * error) on a link too long for any QR code: past version 40, about 2300
+ * bytes at error correction M.
  */
 export function linkQrSvg(url: string): string {
   if (typeof url !== "string" || url.length === 0) {
@@ -119,6 +128,11 @@ export function linkQrSvg(url: string): string {
     errorCorrectionLevel: "M",
   }).modules;
   const side = size + 2 * QUIET_ZONE;
+  if (side * LINK_QR_MODULE_PX > LINK_QR_MAX_PX) {
+    throw new RangeError(
+      `linkQrSvg: a ${String(side * LINK_QR_MODULE_PX)} px code is larger than ${String(LINK_QR_MAX_PX)} px`,
+    );
+  }
   let path = "";
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
