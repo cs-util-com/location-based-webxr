@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Feature matching benchmark</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/design.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #f3f5f7;
+        color: #1b2328;
+        font:
+          15px/1.4 system-ui,
+          sans-serif;
+        overflow-x: hidden;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 4px;
+      }
+      .intro {
+        margin: 0 0 12px;
+        color: #4a565e;
+      }
+      .layout {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(0, 1fr);
+      }
+      @media (min-width: 900px),
+        (orientation: landscape) and (min-width: 640px) {
+        .layout {
+          grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+        }
+      }
+      fieldset {
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+        margin: 0 0 10px;
+        padding: 8px 10px;
+        background: #fff;
+      }
+      legend {
+        font-weight: 600;
+      }
+      label {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        margin: 4px 12px 4px 0;
+      }
+      .hint {
+        color: #5b6870;
+        font-size: 0.85rem;
+      }
+      button {
+        min-height: 44px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #2f5d78;
+        background: #2f5d78;
+        color: #fff;
+        font: inherit;
+      }
+      button.secondary {
+        background: #fff;
+        color: #2f5d78;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      video {
+        width: 100%;
+        max-height: 40vh;
+        background: #000;
+        border-radius: 6px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        background: #fff;
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+      }
+      table {
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        white-space: nowrap;
+      }
+      th,
+      td {
+        padding: 4px 8px;
+        border-bottom: 1px solid #e3e8ec;
+        text-align: left;
+      }
+      .row-error td {
+        color: #a02020;
+      }
+      pre,
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        font:
+          12px/1.35 ui-monospace,
+          monospace;
+        background: #fff;
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+        padding: 8px;
+      }
+      pre {
+        max-height: 30vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      textarea {
+        height: 30vh;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Feature matching benchmark</h1>
+    <p class="intro">
+      Times keypoint extraction and matching per method on this device. Models
+      load from the network on first use.
+    </p>
+    <div class="layout">
+      <section aria-label="Settings">
+        <fieldset>
+          <legend>Input</legend>
+          <label
+            ><input type="radio" name="input" value="synthetic" checked />
+            Synthetic pair (known warp)</label
+          >
+          <label
+            ><input type="radio" name="input" value="camera" /> Camera</label
+          >
+          <div id="camera-box" hidden>
+            <video id="video" playsinline muted></video>
+            <div class="row">
+              <button id="capture-a" type="button" class="secondary">
+                Capture A
+              </button>
+              <button id="capture-b" type="button" class="secondary">
+                Capture B
+              </button>
+              <span id="capture-state">A: -, B: -</span>
+            </div>
+            <p class="hint">Move a little between A and B.</p>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Methods</legend>
+          <label
+            ><input id="m-sift" type="checkbox" checked /> SIFT (plain
+            JS)</label
+          >
+          <label
+            ><input id="m-xfeat" type="checkbox" checked /> XFeat (LiteRT.js,
+            1.4 MB)</label
+          >
+          <label
+            ><input id="m-aliked" type="checkbox" /> ALIKED + LightGlue
+            (onnxruntime-web, 13 MB + 51 MB)</label
+          >
+          <div>
+            <label
+              >Backend
+              <select id="backend">
+                <option value="webgpu">WebGPU</option>
+                <option value="wasm">WASM</option>
+                <option value="both">Both</option>
+              </select></label
+            >
+            <label
+              >XFeat weights
+              <select id="precision">
+                <option value="fp16">fp16</option>
+                <option value="fp32">fp32</option>
+                <option value="both">Both</option>
+              </select></label
+            >
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Sizes and runs</legend>
+          <label
+            ><input type="checkbox" name="size" value="320" checked />
+            320</label
+          >
+          <label
+            ><input type="checkbox" name="size" value="480" checked />
+            480</label
+          >
+          <label
+            ><input type="checkbox" name="size" value="640" checked />
+            640</label
+          >
+          <label
+            >Runs
+            <input id="runs" type="number" min="1" max="50" value="5" size="3"
+          /></label>
+          <p class="hint">Long edge in pixels; one warm-up before the runs.</p>
+        </fieldset>
+        <div class="row">
+          <button id="run" type="button">Run benchmark</button>
+          <span id="run-state" aria-live="polite"></span>
+        </div>
+      </section>
+      <section aria-label="Results">
+        <div class="table-wrap">
+          <table id="results">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Backend</th>
+                <th>Size</th>
+                <th>Extract ms (median / p90)</th>
+                <th>Match ms (median / p90)</th>
+                <th>Keypoints</th>
+                <th>Descriptors / frame</th>
+                <th>Matches</th>
+                <th>Correct</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="row">
+          <button id="copy" type="button" class="secondary">Copy log</button>
+          <span id="copy-state" aria-live="polite"></span>
+        </div>
+        <textarea id="report" readonly aria-label="Report"></textarea>
+        <pre id="log" aria-label="Log"></pre>
+      </section>
+    </div>
+    <script>
+      // Until the page module runs, a load failure still becomes a log line.
+      window.addEventListener("error", function (ev) {
+        var log = document.getElementById("log");
+        if (log && !log.textContent) {
+          log.textContent = "ERROR page: " + ev.message + "\n";
+        }
+      });
+    </script>
+    <script type="module">
+      import { startFeatureMatchCheck } from "./src/checks/feature-match/feature-match-check.ts";
+
+      startFeatureMatchCheck(document);
+    </script>
+  </body>
+</html>
