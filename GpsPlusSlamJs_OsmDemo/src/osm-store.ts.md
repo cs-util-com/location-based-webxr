@@ -107,6 +107,11 @@ The framework slice's own behaviour (the `fetchFailed` / `nonFatalError` split, 
   `sunMoved(instantMs)` moves it in time, `sunPlaceMoved(place, instantMs)`
   to a new place (a re-anchor); the reducer ignores an invalid payload and
   keeps the state's reference for an unchanged sun. `selectSun(state)`.
+- **`sunDriver`** (`SunDriverKind`: `"none"`, `"clock"` or
+  `"timelapse"`): which driver moves the sun, `"none"` at boot.
+  `sunDriverChanged(kind)` sets it (an unknown kind is ignored);
+  `selectSunDriver(state)`. The sun follower (`sun-follow.ts`) writes it
+  when a driver starts or stops; the driver itself is a resource there.
 - **`lookWeightsOverride`**: the `?lookWeights=` pin, a constant of the
   boot (`createDemoStore({lookWeightsOverride})`, `RangeError` unless one
   finite value >= 0 per look), null by default.

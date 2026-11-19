@@ -35,6 +35,14 @@ light for the atmosphere rig. Pure; no three.js.
 - The sky balance mixes with a look without one counted as no cast
   `[1, 1, 1]`; it is null only when no weighted look has one. A mix of
   luminance-1 gains keeps luminance 1.
+- The haze visibility is rounded to its slider step (1 km) after the mix.
+  It is the one light field that rebuilds every sky table (about 31 ms on
+  the measured phone against about 17 for a sun-only step); the looks'
+  visibilities differ (day 45 km, golden hour 60), so a linear mix sent a
+  new one with every sun step of a blend touching golden hour. The other
+  fields cost no table rebuild: the exposure is a uniform, the veil a
+  uniform, the sky balance a re-bake that rides the sun's own. The rounded
+  value stays within the looks' range (both ends are whole kilometres).
 
 ## Examples
 
@@ -51,7 +59,9 @@ buildingView.setSunAndLight(sunAnglesAt(instantMs, place), settings, light);
 ## Tests
 
 `look-light.test.ts`: per-look defaults and a kept field, exact at weight 1,
-the linear mix, the veil fade, the sky balance with a look without one, a
+the linear mix, the rounded visibility (a property, and two nearby weights
+of the day to golden blend sharing one value; `atmosphere-rig.test.ts` pins
+that such a step reaches the sky without a visibility), the veil fade, the sky balance with a look without one, a
 property over any weights (rising ramp, veil strength in (0, 1], luminance 1,
 every field in the looks' range), the refusals; and source checks that the
 view updates the atmosphere once per sun step (`setSunAndLight`,

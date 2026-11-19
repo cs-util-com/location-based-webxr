@@ -41,9 +41,9 @@ map scored.
   it lives.)
 
 - **The light dialog** (plan 2026-09-24-2140): `setLightSettings(settings)`
-  holds the settings (`light-settings.ts`) and applies them: the surface
-  gain's ramp through `aimSun`, the exposure through the rig's
-  `setExposure`, the haze through the rig's `setHaze` (its start then
+  holds the settings (`light-settings.ts`) and applies them through the sun
+  step `setSunAndLight` at the held sun, so the exposure, the haze and its
+  veil reach the rig in one `rig.setLight` (the haze's start then
   written to the view's own fog, `fog.near = hazeStartRatio x fog.far`; the
   view's fog object, not `scene.fog`, because an AR session swaps that), and
   the sky light on buildings before every render (one private
@@ -57,8 +57,8 @@ map scored.
   of that work, the AO reused across the grid toggle and the redraw it
   saves live in `light-measure.ts` (its sidecar carries the measured cost).
   The grid is restored as found, also when a render throws.
-- **One sun step, one atmosphere update:** `setSunAndLight(angles,
-settings, light)` moves the sun and sets the light in one
+- **One sun step, one atmosphere update:**
+  `setSunAndLight(angles, settings, light)` moves the sun and sets the light in one
   `atmosphere.setLight(light, angles)` (one sky rebuild, one bake), where a
   light update then a sun update were two. `setLightSettings(settings)` is
   `setSunAndLight` at the held angles with the settings' own light
@@ -66,8 +66,23 @@ settings, light)` moves the sun and sets the light in one
   (`look-light.ts`). Every sun step ends in `finishSunStep(direction)`, the
   one place that aims the sun light and its target and sets the surface
   gain.
+  - With `?perf=1` each step is timed into the perf log (`perf-log.ts`,
+    "Sun steps"): first a 1x1 `gl.readPixels` waits for the GPU to finish
+    the frames before it (`gpuWaitMs`), then `rig.setLight` alone is timed
+    (`stepMs`), with whether the visibility changed and so rebuilt every
+    sky table (`allTables`). The readback only moves that wait ahead of
+    the step; without `?perf=1` none of it runs.
+- **`atNextFrame(task)`**: runs `task` at the start of the next frame,
+  before its render, and schedules that frame; returns a cancel. One task at
+  a time (a new one replaces the old); while suspended (AR) it runs at once,
+  and `suspend()` runs a pending one. The sun follower queues its sampled
+  sun step here, so the step's GPU work lands in a frame instead of between
+  two.
+- **`drawsBlend`**: whether the drawn mesh is the time-of-day blend
+  (`CityLook.lookWeights !== undefined`); the sun follower blends the light
+  only then.
 - **The sun:** `initialSun` (constructor option, the angles the sky is built
-  for) and `setSunAngles(angles)`. The view only draws
+  for); every later move is `setSunAndLight`. The view only draws
   the angles it is given; WHERE the sun is (the real sun for a place and a
   date) is `sun-clock.ts`'s job, owned by `main.ts` (plan 2026-09-23-2149).
   Replaced `setTimeOfDay` / `timeOfDayValue` (the retired plausible day).
@@ -674,7 +689,9 @@ field ask that raised the default was literally about zooming further out.
   scheme each full mesh was BUILT in (`city-look.ts`): a fixed scheme's
   ground, plates and brightness trim (multiplied into the noon gain on
   buildings and roads only; `RangeError` outside 0.5-2), or the blend's look
-  weights. `main.ts` calls it for every full mesh.
+  weights. `main.ts` calls it for every full mesh, through the sun
+  follower (`sun-follow.ts`). It is the only path that sets the fixed
+  scheme's trim.
 
 ## The woods governor and the `?perf=1` readout (city objects M2b)
 
@@ -728,6 +745,15 @@ bursts with their draw cost and 500 share changes (it says how many older
 ones were dropped, and whether it is still whole enough to replay), the
 device and the knobs, and no location.
 
+### Measuring a sun step on a phone
+
+Open the time-of-day blend with `&perf=1` (for example with
+`&timelapse=60`, or by dragging the time slider), let the sun move for some
+seconds, then tap "Copy perf log". Its `== Sun steps ==` section splits
+each step into the GPU wait before it (the frames still drawing) and the
+step itself, separately for sun-only steps and for steps whose visibility
+changed and rebuilt every sky table.
+
 ## The time-of-day blend: `setLookWeights()`
 
 `setLookWeights(lookWeights | undefined)` draws a time-of-day build at the
@@ -738,12 +764,12 @@ the city only through it, so the tests of that module test what the view
 runs:
 
 - the trim weights (`mixedPageLook`) go to the shared look mix the building
-  and road materials read, and the material brightness trim becomes 1 (the
-  trims are folded into the weights);
+  and road materials read (the trims are folded into the weights; the
+  material trim is `followMeshScheme`'s alone);
 - the land-use tint, the trees (`setTreeLookWeights`), the drawn plates and
   the ground colours follow the same weights;
-- `undefined` leaves the blend (a fixed scheme is drawn); the caller then sets
-  the scheme's ground colours and trim as before.
+- `undefined` leaves the blend; `followMeshScheme` then sets the fixed
+  scheme's ground colours and trim.
 
 A layer is drawn by the look mix only while the drawn mesh was built as the
 blend AND weights are set; a fixed build never sees the mix.

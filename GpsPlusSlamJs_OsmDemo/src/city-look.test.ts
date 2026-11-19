@@ -238,6 +238,38 @@ describe("CityLook - the time-of-day blend drawn on the page", () => {
     expect(mixTrees).toHaveBeenCalledTimes(2);
   });
 
+  // WHY: on a plateau the trees must wear exactly that look's colours, as
+  // the fixed scheme does; the step gate would skip a last move of under
+  // one step onto it and leave them a fraction short for the whole plateau.
+  it("re-mixes the trees on reaching a plateau, however small the move", () => {
+    const { look } = cityLook();
+    const mixTrees = vi.mocked(setTreeLookWeights);
+    const near = TREE_MIX_STEP / 2;
+    look.followScheme(TIME_OF_DAY, [0, 1 - near, near, 0]);
+    mixTrees.mockClear();
+    look.setLookWeights([0, 1, 0, 0]);
+    expect(mixTrees).toHaveBeenCalledTimes(1);
+    expect(mixTrees.mock.calls[0]?.[1]).toEqual([0, 1, 0, 0]);
+    // Staying on the plateau mixes nothing more.
+    look.setLookWeights([0, 1, 0, 0]);
+    expect(mixTrees).toHaveBeenCalledTimes(1);
+  });
+
+  // WHY: a draw mixes every tree it draws (the root is cleared first) at
+  // the weights held then, so the gate must measure the next move from
+  // those weights, not from an older mix.
+  it("measures the next tree mix from the weights a draw used", () => {
+    const { look } = cityLook();
+    const mixTrees = vi.mocked(setTreeLookWeights);
+    const s = TREE_MIX_STEP;
+    look.followScheme(TIME_OF_DAY, [0, 1, 0, 0]);
+    look.setLookWeights([0, 1 - 0.6 * s, 0.6 * s, 0]);
+    look.draw(meshIn(TIME_OF_DAY), undefined, undefined);
+    mixTrees.mockClear();
+    look.setLookWeights([0, 1 - 1.2 * s, 1.2 * s, 0]);
+    expect(mixTrees).not.toHaveBeenCalled();
+  });
+
   // WHY: a bad weight list must change nothing (the store or a link can
   // hand one in), so the check runs before any write.
   it("refuses bad weights and changes nothing", () => {
@@ -272,8 +304,10 @@ describe("CityLook - the page routes through it", () => {
   });
 
   it("main routes every full mesh's scheme to the city look", () => {
-    expect(main).toMatch(
-      /buildingView\.followMeshScheme\(\s*built\.mesh\.colourScheme,/,
+    // Through the sun follower, which steps the light when the drawn
+    // city turns into the blend or back (`sun-follow.test.ts`).
+    expect(main).toContain(
+      "sunFollow.followMeshScheme(built.mesh.colourScheme)",
     );
     expect(main).not.toContain("plateColour");
   });

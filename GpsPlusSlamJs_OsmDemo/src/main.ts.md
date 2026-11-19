@@ -325,26 +325,31 @@ and the failure message it shows when a tile cannot be fetched.
   `look-driver.ts`); `?lookWeights=a,b,c,d` (normalised on read, invalid
   input ignored with a warning) pins them instead, a test and review hook.
 - The refresh builds `resolveLook(choice, {ar})`, so AR builds the default.
-- Every full mesh goes to `buildingView.followMeshScheme(scheme, weights)`
+- Every full mesh goes to `sunFollow.followMeshScheme(scheme)`, which hands
+  the view `followMeshScheme(scheme, weights)`
   (`city-look.ts`): a blend mesh sets the view's look weights, a fixed one
   clears them and sets the scheme's ground, plates and trim. The plates'
   colour comes from the view's city look, not from this file.
-- The light blends with the looks while a blend mesh is drawn (`blendDrawn`,
-  set in `onMesh` from the scheme the mesh was BUILT in, so AR's default
+- The light blends with the looks while a blend mesh is drawn (the view's
+  `drawsBlend`, from the scheme the mesh was BUILT in, so AR's default
   build keeps the default light): each look's light, the fields the viewer
   set kept, mixed by the look weights (`look-light.ts`). A fixed build takes
   the dialog's settings as they are.
 - **The sun is store state** (`sun`, `osm-store.ts`): the time controls,
-  the hotkeys, a re-anchor (`sunPlaceMoved`) and the drivers dispatch it.
-  One store subscription follows it: new look weights go to the view
-  (`setLookWeights`, uniform and colour writes), and a new sun runs THE SUN
-  STEP, `stepSun`: one `buildingView.setSunAndLight` (one sky rebuild and
-  one bake), then the controls and the dialog's brightness.
+  the hotkeys, a re-anchor and the drivers move it, all through the sun
+  follower (`sun-follow.ts`, created after the light dialog): its one
+  store subscription hands new look weights to the view and runs THE SUN
+  STEP for a new sun (one `buildingView.setSunAndLight`, then the controls
+  and, unless the timelapse plays, the dialog's brightness). `main.ts`
+  keeps only the wiring: `moveSun` for the controls, `placeMoved` for a
+  re-anchor, `followMeshScheme` for each mesh, `viewLight` for the dialog.
 - **The drivers** (`sun-driver.ts`): `?now=1` follows the real clock (held
   at the night's edge), `?timelapse=<seconds>` plays the evening from 12
   degrees to civil dusk, looped. A pinned `?time=` wins over both, the
   timelapse over the clock, each loser named in a warning. The boot sun is
   the chosen driver's, so the first frame does not jump. A hand on the time
-  controls stops the driver; a re-anchor does not. While the timelapse plays
+  controls stops the driver; a re-anchor does not (under `?now=1` it goes
+  to the clock's instant at the new place). While the timelapse plays
   the look weights follow every frame, the sun step at most every 250 ms
-  and once after the last move.
+  and once after the last move, at the start of a frame. Which driver runs
+  is store state (`selectSunDriver`).

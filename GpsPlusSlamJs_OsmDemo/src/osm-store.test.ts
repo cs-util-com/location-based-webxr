@@ -29,7 +29,9 @@ import {
   selectLookWeights,
   selectOsmView,
   selectSun,
+  selectSunDriver,
   summariseSnapshot,
+  sunDriverChanged,
   sunMoved,
   sunPlaceMoved,
 } from "./osm-store.js";
@@ -427,6 +429,24 @@ describe("the sun and the look weights it derives", () => {
       sun: { instantMs, place: COLOGNE_SUN },
       lookWeightsOverride: override ?? null,
     }).store;
+
+  // WHY: which driver moves the sun is workflow state: the sun step
+  // reads the driver (a timelapse samples the costly step), so does a
+  // re-anchor (the clock goes straight to the clock's instant there), and a
+  // hand ends the driver. An
+  // unknown kind must not end a running driver by accident.
+  it("holds which driver moves the sun, none by default", () => {
+    const s = store(at(20, "setting"));
+    expect(selectSunDriver(s.getState())).toBe("none");
+    s.dispatch(sunDriverChanged("timelapse"));
+    expect(selectSunDriver(s.getState())).toBe("timelapse");
+    s.dispatch({ type: "sunDriver/changed", payload: "sundial" });
+    expect(selectSunDriver(s.getState())).toBe("timelapse");
+    s.dispatch(sunDriverChanged("clock"));
+    expect(selectSunDriver(s.getState())).toBe("clock");
+    s.dispatch(sunDriverChanged("none"));
+    expect(selectSunDriver(s.getState())).toBe("none");
+  });
 
   // WHY: the sun is the state the view, the controls and the look weights
   // all read; a NaN instant or an impossible place would reach the sky

@@ -59,8 +59,22 @@ state, which is why it is a class and not store state.
 - **The trees re-mix in steps:** `setLookWeights` re-mixes the drawn trees'
   colours (a write per tree instance, the costly part of a sun step) only
   once a weight has moved by `TREE_MIX_STEP` (1/255, one step of an 8-bit
-  colour channel) since their last mix; the other layers follow every call.
-  A newly drawn mesh always mixes its trees at the held weights.
+  colour channel) since their last mix, or once the weights reach a plateau
+  (a weight of exactly 1) the last mix had not, so a plateau shows its look
+  exactly; the other layers follow every call. A newly drawn mesh always
+  mixes its trees at the held weights, and the next move is measured from
+  them (the view clears the root before a draw, so every drawn tree is at
+  them).
+- **When the step gate saves work:** the timelapse plays 18 degrees of sun
+  (12 to -6) in T seconds, so at 60 fps a frame moves a weight by about
+  18 / (60 T w) across a blend w degrees wide. That stays under one step
+  only for T > 76.5 / w: about 26 s in the 3 degree day to golden blend,
+  38 s in the 2 degree golden to dusk blend, 51 s in the 1.5 degree dusk to
+  blue blend, twice that at 30 fps. A shorter timelapse re-mixes the trees
+  on every frame of a blend. The real clock (`?now=1`) steps every 10 s;
+  near the horizon the sun moves about 0.15 to 0.25 degrees a minute, so a
+  clock step inside a blend moves a weight by about two steps or more and
+  re-mixes every time, which at one mix per 10 s costs nothing that shows.
 
 ## Examples
 
@@ -81,7 +95,9 @@ look.setLookWeights([0, 0.5, 0.5, 0]); // a sun step: no rebuild
 (material colour equals the gain, mix `(0, trimGolden, 0, 0)`, look
 attributes and no `color`, mixed plates); a following fixed build gets its
 trim back and its plain colours; moving weights recolours the drawn plates,
-ground and land use; bad weights change nothing. Two source-text checks pin
+ground and land use; the trees re-mix only after a step, always on reaching
+a plateau, and measure the next move from the weights a draw used; bad
+weights change nothing. Two source-text checks pin
 that `BuildingView` and `main.ts` route through this module, since neither
 can run in the unit suite. The first test was seen to fail with the reset of
 the trim to 1 removed.

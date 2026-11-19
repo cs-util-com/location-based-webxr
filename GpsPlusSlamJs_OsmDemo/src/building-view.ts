@@ -664,6 +664,10 @@ export class BuildingView {
   private inFrame = false;
   /** Whether the frame now queued was requested from within a frame. */
   private queuedChained = false;
+  /** The 1x1 readback `waitForGpu` reads into. */
+  private readonly gpuWaitPixel = new Uint8Array(4);
+  /** The task the next frame runs before it draws (`atNextFrame`). */
+  private frameTask: (() => void) | undefined;
 
   constructor(options: BuildingViewOptions) {
     this.container = options.container;
@@ -1422,6 +1426,14 @@ export class BuildingView {
   }
 
   /**
+   * Whether the drawn city is a time-of-day build: it holds look weights
+   * (`CityLook.lookWeights`), set by `followMeshScheme` for every full mesh.
+   */
+  get drawsBlend(): boolean {
+    return this.cityLook.lookWeights !== undefined;
+  }
+
+  /**
    * Follows the scheme a drawn mesh was BUILT in (`CityLook.followScheme`):
    * a time-of-day build takes `lookWeights`, a fixed scheme its own ground,
    * plates and brightness trim (multiplied into the noon gain on buildings
@@ -1717,12 +1729,11 @@ export class BuildingView {
   }
 
   /**
-   * The light dialog's settings (plan 2026-09-24-2140): the surface gain's
-   * ramp (applied through `aimSun`, as the sun does), the exposure through
-   * the rig (which re-derives the sun light, fog and haze), and the sky light
-   * on buildings (applied before every render). Held, so rebuilt meshes and
-   * later sun changes keep them. The haze and its veil go to the rig, and its start is
-   * re-applied to the fog at the current draw distance.
+   * The light dialog's settings (plan 2026-09-24-2140) at the held sun: the
+   * sun step `setSunAndLight` with the settings' own light (`rigLightOf`),
+   * so the exposure, the haze and its veil reach the rig in one
+   * `rig.setLight`, and the gain ramp and the sky light on buildings are
+   * held for rebuilt meshes and later sun steps.
    */
   setLightSettings(settings: LightSettings): void {
     this.setSunAndLight(this.sunAngles, settings, rigLightOf(settings));
@@ -1736,13 +1747,32 @@ export class BuildingView {
    * the atmosphere takes (for one look `rigLightOf(settings)`, for the blend
    * the looks' light mixed). Validation is the rig's: a `RangeError`
    * changes nothing there, and then nothing here either.
+   *
+   * THE COST LIVES HERE, DELIBERATELY. A step renders the sky's tables,
+   * reads them back (for the exposure and the fog colour) and re-bakes the
+   * environment map; a changed visibility rebuilds every table. Only the
+   * time controls (the slider sampled while dragged), the drivers
+   * (`sun-follow.ts`) and the light dialog call it, never the camera.
    */
   setSunAndLight(
     angles: SunAngles,
     settings: LightSettings,
     light: LightSetting,
   ): void {
+    // `?perf=1` times the step apart from the wait for the frame in flight
+    // (`SunStepTiming`): the step's own sky readback would wait for it.
+    const recorder = this.perfRecorder;
+    const gpuWaitMs = recorder === undefined ? 0 : this.waitForGpu();
+    const startedAt = performance.now();
+    const allTables =
+      light.haze.visibilityKm !== this.atmosphere.hazeVisibilityKm;
     const direction = this.atmosphere.setLight(light, angles);
+    recorder?.sunStep({
+      atMs: startedAt,
+      gpuWaitMs,
+      stepMs: performance.now() - startedAt,
+      allTables,
+    });
     if (direction === undefined) {
       throw new Error("the atmosphere returned no sun for a sun step");
     }
@@ -1813,26 +1843,6 @@ export class BuildingView {
   }
 
   /**
-   * Moves the sun (§1, DEC-R6-3; the real sun since plan 2026-09-23-2149).
-   *
-   * THE COST LIVES HERE, DELIBERATELY. Each call renders the sky's sky-view
-   * LUT, reads it back (for the exposure and the fog colour) and re-bakes the
-   * environment map. That is affordable because only the user's time
-   * controls call it, never the camera: the hotkeys, the date, and the time
-   * slider, which `main.ts` samples to one call per 50 ms while it is
-   * dragged. See `aimSun` and `sun-clock.ts`, whose
-   * stops keep the sun within civil twilight (≥ −6°).
-   */
-  setSunAngles(angles: SunAngles): void {
-    const direction = this.atmosphere.setSun(angles);
-    this.sunAngles = angles;
-    this.finishSunStep(direction);
-    // On-demand rendering: without this the new sun is invisible until the
-    // camera moves, which is finding R2-3 in a new place.
-    this.requestFrame();
-  }
-
-  /**
    * The physical sky's distance haze, for the AR session to put on stock fog
    * while it runs (`applyArEnvironment`).
    */
@@ -1850,7 +1860,7 @@ export class BuildingView {
    * light placed along `direction` (the unit vector toward the sun the rig
    * returned) and the noon gain re-derived. Anything that must follow the
    * sun after the atmosphere (a shadow, a second light) belongs here, so the
-   * three entries (`setSunAngles`, `setSunAndLight`, the first aim) keep it.
+   * two entries (`setSunAndLight` and the first aim) keep it.
    *
    * The distance is arbitrary — a `DirectionalLight` has no falloff and only its
    * direction matters — but it must be large enough to sit outside the scene if
@@ -1923,6 +1933,9 @@ export class BuildingView {
       cancelAnimationFrame(this.frame);
       this.frame = undefined;
     }
+    // A task queued for the cancelled frame runs now, as `atNextFrame`
+    // runs one on a suspended view.
+    this.runFrameTask();
     // `visibility`, NOT `display`. A `display: none` canvas has a zero-sized
     // box, and the `ResizeObserver` above would fire with 0×0 and resize the
     // drawing buffer to nothing — so returning from AR would find a renderer
@@ -1974,14 +1987,59 @@ export class BuildingView {
     if (this.frame !== undefined) return;
     this.queuedChained = this.inFrame;
     this.frame = requestAnimationFrame((atMs) => {
-      this.frame = undefined;
-      this.inFrame = true;
       try {
-        this.drawFrame(atMs);
+        // BEFORE `frame` is cleared, so a task that requests a frame (a sun
+        // step does) is drawn in this one rather than chaining another.
+        this.runFrameTask();
       } finally {
-        this.inFrame = false;
+        this.frame = undefined;
+        this.inFrame = true;
+        try {
+          this.drawFrame(atMs);
+        } finally {
+          this.inFrame = false;
+        }
       }
     });
+  }
+
+  /**
+   * Runs `task` at the start of the next frame, before it is drawn (the
+   * latest task replaces one still queued); returns its cancel. A sun
+   * step's sky readback waits for the GPU to finish what it was given, and
+   * at the start of a frame the frame before has had a whole frame to
+   * finish; from a bare timer the step can land right after a frame was
+   * submitted and wait for all of it. A suspended view draws no frame, so
+   * there the task runs at once.
+   */
+  atNextFrame(task: () => void): () => void {
+    if (this.suspended) {
+      task();
+      return () => undefined;
+    }
+    this.frameTask = task;
+    this.requestFrame();
+    return () => {
+      if (this.frameTask === task) this.frameTask = undefined;
+    };
+  }
+
+  /**
+   * `?perf=1` only: waits for the GPU to finish what it was given (a 1x1
+   * readback blocks until then) and returns how long that took, in ms.
+   */
+  private waitForGpu(): number {
+    const gl = this.renderer.getContext();
+    const startedAt = performance.now();
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.gpuWaitPixel);
+    return performance.now() - startedAt;
+  }
+
+  /** The queued `atNextFrame` task, taken off the queue before it runs. */
+  private runFrameTask(): void {
+    const task = this.frameTask;
+    this.frameTask = undefined;
+    task?.();
   }
 
   /** One on-demand frame; `requestFrame` is its only caller. */
@@ -2742,6 +2800,7 @@ export class BuildingView {
     // Cancelled FIRST: a frame already queued would otherwise fire against a
     // disposed context, which crashes rather than leaks.
     if (this.frame !== undefined) cancelAnimationFrame(this.frame);
+    this.frameTask = undefined;
     this.frame = undefined;
     // THE BEACONS OWN THREE GEOMETRIES AND A MATERIAL, and nothing else frees
     // them: they hang off `this.content`, so the scene-level teardown below

@@ -64,10 +64,35 @@ export type CityDrawContext = Omit<
  * Their mix is a CPU pass over every tree instance, the one cost of a sun
  * step that grows with the city; the looks' colours are 8-bit, so a move
  * below one step per weight shifts a tree by about one display step at
- * most, which a moving sun hides, while a sun step moves the weights by far
- * less (a timelapse frame by about 1/1000).
+ * most, which a moving sun hides. A move onto a plateau (a weight of
+ * exactly 1) always re-mixes, so a plateau shows its look exactly.
+ *
+ * WHEN IT SAVES ANYTHING. The timelapse plays 18 degrees of sun (12 to -6)
+ * in T seconds; across a blend of width w degrees a frame at 60 fps moves
+ * a weight by about 18 / (60 T w). That is under one step only for
+ * T > 76.5 / w seconds: above about 26 s in the 3 degree day to golden
+ * blend, 38 s in the 2 degree golden to dusk blend, 51 s in the 1.5 degree
+ * dusk to blue blend (twice that at 30 fps). A shorter timelapse re-mixes
+ * the trees on every frame of a blend; the real clock re-mixes on each of
+ * its 10 s steps inside a blend, which costs one mix per 10 s.
  */
 export const TREE_MIX_STEP = 1 / 255;
+
+/**
+ * Whether trees mixed at `mixed` must be re-mixed for `next`: never mixed,
+ * a weight moved by `TREE_MIX_STEP`, or `next` reaches a plateau (an exact
+ * 1) that `mixed` had not.
+ */
+function treesNeedMix(
+  next: readonly number[],
+  mixed: readonly number[] | undefined,
+): boolean {
+  if (mixed === undefined) return true;
+  return next.some((w, k) => {
+    const before = mixed[k] ?? 0;
+    return Math.abs(w - before) >= TREE_MIX_STEP || (w === 1 && before !== 1);
+  });
+}
 
 /**
  * The page's city look (see the file header). Every setter is a uniform,
@@ -138,11 +163,7 @@ export class CityLook {
     setTrimWeights(this.mix, mixed.trimWeights);
     this.setBrightnessTrim(1);
     this.targets.setLandUseLookWeights(lookWeights);
-    const trees = this.treeWeights;
-    if (
-      trees === undefined ||
-      lookWeights.some((w, k) => Math.abs(w - (trees[k] ?? 0)) >= TREE_MIX_STEP)
-    ) {
+    if (treesNeedMix(lookWeights, this.treeWeights)) {
       setTreeLookWeights(this.targets.root.children, lookWeights);
       this.treeWeights = lookWeights;
     }
@@ -197,9 +218,13 @@ export class CityLook {
       weights === undefined ? undefined : this.mix,
     );
     for (const object of drawn.objects) this.targets.root.add(object);
-    // New trees are always mixed, at the weights held now; the drawn ones
-    // may sit up to one step behind, which no stored colour shows.
-    if (weights !== undefined) setTreeLookWeights(drawn.objects, weights);
+    // New trees are always mixed, at the weights held now. The root holds
+    // only this draw's objects (the view clears it first), so every drawn
+    // tree is now at these weights and the next move is measured from them.
+    if (weights !== undefined) {
+      setTreeLookWeights(drawn.objects, weights);
+      this.treeWeights = weights;
+    }
     applySurfaceGain(this.targets.root, this.neutralSurfaceFactor);
     return drawn;
   }

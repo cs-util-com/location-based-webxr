@@ -23,8 +23,10 @@ colour that matched the sky at one time of day.
     fog colour, the haze), which a change on the sky alone left stale until
     the sun moved; on the fallback it re-derives the fallback's lights.
     Validated before any change (`RangeError`).
-  - `setHaze({ visibilityKm, startRatio })` and the `hazeStartRatio`
-    getter: the light dialog's haze. The visibility is the air's, so it goes
+  - `setHaze({ visibilityKm, startRatio })` and the `hazeStartRatio` and
+    `hazeVisibilityKm` getters (the latter the visibility the sky was last
+    configured with, which the perf log compares to tell a step that rebuilt
+    every table): the light dialog's haze. The visibility is the air's, so it goes
     to the SKY (`configure({ visibilityKm })` rebuilds its tables) and the
     haze on the city re-reads it in the sync; the city therefore fades
     toward a sky drawn for the same air. An unchanged visibility touches

@@ -681,6 +681,11 @@ export class AtmosphereRig {
     );
   }
 
+  /** The air's visibility the sky's tables are built for, km. */
+  get hazeVisibilityKm(): number {
+    return this.visibilityKm;
+  }
+
   /** Where the haze's boundary fade starts, as a share of the draw distance. */
   get hazeStartRatio(): number {
     return this.startRatio;

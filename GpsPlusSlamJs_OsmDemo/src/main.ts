@@ -57,16 +57,9 @@ import {
   lightDefaultsFor,
   parseLightLink,
   serializeLightSettings,
-  type LightSettings,
 } from "./light-settings.js";
-import { blendLookLight, lookLightSettings, rigLightOf } from "./look-light.js";
-import {
-  chooseSunDriver,
-  clockInstant,
-  followClock,
-  playTimelapse,
-  timelapseSpan,
-} from "./sun-driver.js";
+import { chooseSunDriver, clockInstant, timelapseSpan } from "./sun-driver.js";
+import { createSunFollow } from "./sun-follow.js";
 import { describeDrawCost } from "./draw-cost.js";
 import { fallbackBuildingsNote } from "./fallback-note.js";
 import { readWoodsKnobs } from "./woods-readout.js";
@@ -210,18 +203,14 @@ import {
   selectInventedRoofs,
   selectMarkings,
   selectLayers,
-  selectLookWeights,
   selectOsmView,
   selectSun,
-  sunMoved,
-  sunPlaceMoved,
 } from "./osm-store.js";
 import {
   lookLinkValue,
   parseLookWeights,
   resolveLook,
   resolveLookChoice,
-  TIME_OF_DAY,
 } from "./look-choice.js";
 import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
 import { attachBuildChoiceSwitch } from "./build-choice-switch.js";
@@ -243,7 +232,6 @@ import {
   moveToDate,
   parseSolarTime,
   parseSunDate,
-  relocate,
   stepSun as stepSunClock,
   sunDateOf,
   type SunPlace,
@@ -695,27 +683,6 @@ async function main(): Promise<void> {
     sunReadout.textContent = formatSunReadout(instantMs, place);
     sunChipTime.textContent = formatSolarClock(instantMs, place);
   };
-  // WHETHER THE DRAWN CITY IS THE BLEND: the scheme the latest full mesh was
-  // BUILT in, set in `onMesh` (AR builds the default, so its light is the
-  // default's). Held here, not read from `latestMesh`, because the light
-  // dialog applies light before that is declared.
-  let blendDrawn = false;
-  /**
-   * The light the view takes for the dialog's `settings`: as they are for a
-   * fixed build; for the blend each look's light (the fields the viewer set
-   * kept) mixed by the sun's look weights (`look-light.ts`).
-   */
-  const viewLight = (settings: LightSettings) =>
-    blendDrawn
-      ? blendLookLight(
-          lookLightSettings(
-            settings,
-            lightDialog.defaults,
-            lightDialog.touched,
-          ),
-          selectLookWeights(store.getState()),
-        )
-      : { settings, light: rigLightOf(settings) };
   // THE LIGHT DIALOG (plan 2026-09-24-2140): the owner tunes the noon
   // lighting live and pastes the result back. The settings travel in the URL
   // (`?light=`, a deliberate exception to DEC-R12-5, see url-state.ts); the
@@ -751,7 +718,7 @@ async function main(): Promise<void> {
     stated: statedLight,
     onChange: (settings) => {
       const { instantMs, place } = selectSun(store.getState());
-      const view = viewLight(settings);
+      const view = sunFollow.viewLight(settings);
       buildingView.setSunAndLight(
         sunAnglesAt(instantMs, place),
         view.settings,
@@ -797,61 +764,22 @@ async function main(): Promise<void> {
   store.subscribe(() => {
     buildingView.setAmbientOcclusion(selectAmbientOcclusion(store.getState()));
   });
-  /**
-   * THE SUN STEP, the one place the view follows the store's sun: the sun
-   * and the light in one atmosphere update (`BuildingView.setSunAndLight`),
-   * then the controls and the dialog's brightness.
-   */
-  const stepSun = () => {
-    const { instantMs, place } = selectSun(store.getState());
-    const view = viewLight(lightDialog.settings);
-    buildingView.setSunAndLight(
-      sunAnglesAt(instantMs, place),
-      view.settings,
-      view.light,
-    );
-    showSunControl();
-    lightDialog.refresh();
-  };
-  // A TIMELAPSE MOVES THE SUN EVERY FRAME: the look weights follow each
-  // move (uniform and colour writes), the sun step (a sky rebuild and a
-  // bake) at most every 250 ms and once after the last move.
-  const SUN_STEP_TIMELAPSE_MS = 250;
-  const stepSunSampled = throttle(stepSun, SUN_STEP_TIMELAPSE_MS);
-  // The driver's timers, a resource; a hand on the time controls stops it.
-  let stopSunDriver: () => void = () => undefined;
-  let timelapsePlaying = false;
-  let shownSun = selectSun(store.getState());
-  let shownWeights = selectLookWeights(store.getState());
-  store.subscribe(() => {
-    const state = store.getState();
-    const weights = selectLookWeights(state);
-    if (weights !== shownWeights) {
-      shownWeights = weights;
-      if (blendDrawn) buildingView.setLookWeights(weights);
-    }
-    const sun = selectSun(state);
-    if (sun === shownSun) return;
-    shownSun = sun;
-    if (timelapsePlaying) stepSunSampled();
-    else stepSun();
+  // THE SUN FOLLOWER (`sun-follow.ts`): the one place the view follows the
+  // store's sun (the sun step, its light, the look weights) and the holder
+  // of the drivers' timers. Whether the drawn city is the blend is the
+  // view's (`BuildingView.drawsBlend`, from the drawn mesh's scheme), so
+  // AR's default build gets the default's light. Created after the light
+  // dialog, whose changes (user input only) read its light.
+  const sunFollow = createSunFollow({
+    store,
+    view: buildingView,
+    dialog: () => lightDialog,
+    sunAngles: sunAnglesAt,
+    showSun: () => showSunControl(),
   });
-  /** A hand moves the sun: the driver stops, and the store takes the move. */
-  const moveSun = (next: number) => {
-    stopSunDriver();
-    stopSunDriver = () => undefined;
-    timelapsePlaying = false;
-    store.dispatch(sunMoved(next));
-  };
-  if (sunDriver.kind === "clock") {
-    stopSunDriver = followClock()(store.dispatch, store.getState);
-  } else if (sunDriver.kind === "timelapse") {
-    timelapsePlaying = true;
-    stopSunDriver = playTimelapse({ seconds: sunDriver.seconds })(
-      store.dispatch,
-      store.getState,
-    );
-  }
+  // THE LINK'S DRIVER; a hand on the time controls stops it (`moveSun`).
+  sunFollow.start(sunDriver);
+  const moveSun = (next: number) => sunFollow.moveSun(next);
   showSunControl();
   sunDateInput.addEventListener("change", () => {
     const picked = parseSunDate(sunDateInput.value);
@@ -867,8 +795,8 @@ async function main(): Promise<void> {
     if (event.key === "Enter" || event.key === "Escape") sunDateInput.blur();
   });
   // SAMPLED WHILE DRAGGING (PR #489 review): each move re-renders the sky
-  // LUT, reads it back and re-bakes the environment
-  // (`BuildingView.setSunAngles`), so a drag moves the sun at most every
+  // LUT, reads it back and re-bakes the environment (the sun step,
+  // `BuildingView.setSunAndLight`), so a drag moves the sun at most every
   // 50 ms, with the value the slider holds by then, and always once after
   // the last event (`throttle.ts`).
   const moveSunToSlider = throttle(() => {
@@ -1435,17 +1363,9 @@ async function main(): Promise<void> {
         // THE PAGE'S COLOURS FOLLOW THE MESH'S SCHEME, not the choice, so the
         // ground never changes before the buildings it belongs with and AR's
         // default build gets the default ground (`city-look.ts`).
-        buildingView.followMeshScheme(
-          built.mesh.colourScheme,
-          selectLookWeights(store.getState()),
-        );
         // The light follows the drawn scheme too: the blend's light comes
         // and goes with a blend build (and AR's default build), at once.
-        const isBlend = built.mesh.colourScheme === TIME_OF_DAY;
-        if (isBlend !== blendDrawn) {
-          blendDrawn = isBlend;
-          stepSun();
-        }
+        sunFollow.followMeshScheme(built.mesh.colourScheme);
         schemeSwitch.meshDrawn(built.mesh.colourScheme);
         roofsSwitch.meshDrawn(built.mesh.inventedRoofs);
         markingsSwitch.meshDrawn(built.mesh.markings);
@@ -3488,10 +3408,12 @@ async function main(): Promise<void> {
       // THE SUN FOLLOWS THE ANCHOR, keeping its phase (the same elevation on
       // the same limb): golden hour in Cologne stays golden hour in Tokyo.
       if (anchor.reanchored) {
-        const place = { lat: anchors.origin.lat, lng: anchors.origin.lng };
-        const { instantMs, place: from } = selectSun(store.getState());
-        // Not a hand on the controls: a running driver keeps running there.
-        store.dispatch(sunPlaceMoved(place, relocate(instantMs, from, place)));
+        // Not a hand on the controls: a running driver keeps running there,
+        // and under the real clock the sun is the clock's there at once.
+        sunFollow.placeMoved({
+          lat: anchors.origin.lat,
+          lng: anchors.origin.lng,
+        });
       }
       // W11 (R4-12). A click must bring the chosen point back to the middle of
       // the 3D view without spinning it: `MapControls` pans camera and target

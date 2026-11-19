@@ -34,6 +34,9 @@ import {
   HAZE_RIM_INNER_RATIO,
 } from "./atmosphere-rig.js";
 import { veilDisplayLinear, veilSceneColour } from "./haze-veil.js";
+import { DEFAULT_LIGHT_SETTINGS } from "./light-settings.js";
+import { lookWeightsAt } from "./look-driver.js";
+import { blendLookLight, lookLightSettings } from "./look-light.js";
 import { sunDirection, type SunAngles } from "./sun-position.js";
 import { blendVeils, veilBlendOf } from "./veil-blend.js";
 
@@ -871,6 +874,32 @@ describe("AtmosphereRig.setLight with a sun (the sun step)", () => {
     // Without a sun nothing about the sun is sent.
     expect(view.setLight(light)).toBeUndefined();
     expect(sky.configured.at(-1)).not.toHaveProperty("sunDirection");
+  });
+
+  // WHY: a visibility change rebuilds every sky table (31 ms on the
+  // measured phone against 17 for the sun alone). Inside the day to golden
+  // hour blend the looks' visibilities differ (45 and 60 km), so a sun step
+  // must reach the sky as the sun alone while the blended visibility rounds
+  // to the same kilometre.
+  it("takes a sun step inside a golden hour blend as the sun alone", () => {
+    const { view, sky } = rig();
+    const perLook = lookLightSettings(
+      DEFAULT_LIGHT_SETTINGS,
+      DEFAULT_LIGHT_SETTINGS,
+      new Set(),
+    );
+    const stepAt = (elevation: number) =>
+      view.setLight(
+        blendLookLight(perLook, lookWeightsAt(elevation, false)).light,
+        sunAt(elevation, 260),
+      );
+    stepAt(7.4);
+    expect(sky.configured.at(-1)).toHaveProperty("visibilityKm");
+    // The view reads it to tell a sun-only step from one with every table.
+    expect(view.hazeVisibilityKm).toBe(sky.visibilityKm);
+    stepAt(7.39);
+    expect(sky.configured.at(-1)).toHaveProperty("sunDirection");
+    expect(sky.configured.at(-1)).not.toHaveProperty("visibilityKm");
   });
 
   // WHY: on the fallback the step must re-derive the fog and lights from

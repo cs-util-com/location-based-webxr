@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_LIGHT_SETTINGS,
+  LIGHT_SETTING_RANGES,
   lightDefaultsFor,
   type LightSettings,
 } from "./light-settings.js";
@@ -86,9 +87,38 @@ describe("blendLookLight", () => {
       12,
     );
     expect(light.exposure.ev).toBeCloseTo(settings.exposureEv, 12);
-    expect(light.haze.visibilityKm).toBeCloseTo(
-      (golden.hazeVisibilityKm + dusk.hazeVisibilityKm) / 2,
-      12,
+    // The visibility is the exception: rounded to its slider's step (below).
+    expect(light.haze.visibilityKm).toBe(
+      Math.round((golden.hazeVisibilityKm + dusk.hazeVisibilityKm) / 2),
+    );
+  });
+
+  // WHY: the visibility is the one light field that rebuilds every sky
+  // table (31 ms on the measured phone, against 17 for a sun-only step).
+  // Golden hour's air is clearer than the day's, so a linear mix sent a new
+  // visibility with every sun step of a blend touching golden hour; on the
+  // slider's 1 km step only a few steps of a blend change it.
+  it("rounds the blended visibility to its slider's step", () => {
+    const step = LIGHT_SETTING_RANGES.hazeVisibilityKm.step;
+    fc.assert(
+      fc.property(weightsArb, (weights) => {
+        const { settings, light } = blendLookLight(PER_LOOK, weights);
+        const k = settings.hazeVisibilityKm / step;
+        expect(Math.abs(k - Math.round(k))).toBeLessThan(1e-9);
+        expect(light.haze.visibilityKm).toBe(settings.hazeVisibilityKm);
+      }),
+    );
+    const day = TIME_OF_DAY_LOOKS.indexOf("today");
+    const golden = TIME_OF_DAY_LOOKS.indexOf("golden");
+    const at = (t: number) =>
+      TIME_OF_DAY_LOOKS.map((_, k) =>
+        k === day ? 1 - t : k === golden ? t : 0,
+      );
+    expect(PER_LOOK[day]!.hazeVisibilityKm).not.toBe(
+      PER_LOOK[golden]!.hazeVisibilityKm,
+    );
+    expect(blendLookLight(PER_LOOK, at(0.34)).light.haze.visibilityKm).toBe(
+      blendLookLight(PER_LOOK, at(0.341)).light.haze.visibilityKm,
     );
   });
 
@@ -173,15 +203,18 @@ describe("the page's sun step", () => {
   it("BuildingView updates the atmosphere once per sun step", () => {
     expect(view.split("this.atmosphere.setLight(")).toHaveLength(2);
     expect(view).toContain("this.atmosphere.setLight(light, angles)");
-    expect(view.split("this.finishSunStep(")).toHaveLength(4);
+    expect(view.split("this.finishSunStep(")).toHaveLength(3);
   });
 
   // WHY: the sun is app state; a second copy in a closure is how two views
   // disagree about the time.
   it("main keeps the sun in the store, and the view follows it there", () => {
     expect(main).not.toMatch(/let sunInstant|let sunPlace/);
-    expect(main).toContain("store.dispatch(sunMoved(next))");
-    expect(main).toContain("store.dispatch(sunPlaceMoved(");
+    // The moves go through the sun follower (`sun-follow.test.ts` runs it
+    // against the real store); main dispatches none itself.
+    expect(main).toContain("sunFollow.moveSun(next)");
+    expect(main).toContain("sunFollow.placeMoved(");
+    expect(main).not.toMatch(/dispatch\(sun(Place)?Moved\(/);
     expect(main).not.toContain("buildingView.setSunAngles(");
     expect(main).not.toContain("buildingView.setLightSettings(settings)");
   });

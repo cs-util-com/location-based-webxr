@@ -12,7 +12,10 @@
  *   (`blendVeils`), so a look without a veil fades it rather than shifting
  *   its hue;
  * - the sky balance: the gains are mixed, a look without one counting as
- *   no cast (1, 1, 1); the gains keep luminance 1, and so does their mix.
+ *   no cast (1, 1, 1); the gains keep luminance 1, and so does their mix;
+ * - the haze visibility: rounded to its slider's step (1 km), because a new
+ *   visibility rebuilds every sky table, so a sun step inside a blend stays
+ *   a sun-only step until the rounded value moves.
  *
  * Pure: no three.js objects, so it runs in node.
  *
@@ -22,6 +25,7 @@
 import { TONE_MAPPING_EXPOSURE, type LightSetting } from "./atmosphere-rig.js";
 import {
   hazeOf,
+  LIGHT_SETTING_RANGES,
   lightDefaultsFor,
   rebaseLightSettings,
   skyBalanceOf,
@@ -103,6 +107,12 @@ export function blendLookLight(
       0,
     );
   }
+  // THE VISIBILITY ON ITS SLIDER'S STEP: it is the one field that rebuilds
+  // every sky table (the rest ride the sun's re-render or a re-bake), and
+  // golden hour's clearer air would send a new one with every sun step of a
+  // blend touching it (31 ms against 17 on the measured phone).
+  const { step } = LIGHT_SETTING_RANGES.hazeVisibilityKm;
+  mixed.hazeVisibilityKm = Math.round(mixed.hazeVisibilityKm / step) * step;
   const settings: LightSettings = mixed;
   const gains = perLook.map(skyBalanceOf);
   const skyBalance = gains.every((g, k) => g === null || weights[k] === 0)

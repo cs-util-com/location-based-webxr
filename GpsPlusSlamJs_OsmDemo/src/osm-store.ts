@@ -95,6 +95,13 @@ export interface DemoRootState {
    */
   readonly sun: SunState;
   /**
+   * Which driver moves the sun (`sun-driver.ts`): none (a hand, or a
+   * pinned time), the real clock or the timelapse. Workflow state the sun
+   * step and a re-anchor read; the driver's timers are resources and live
+   * with whoever started them (`sun-follow.ts`).
+   */
+  readonly sunDriver: SunDriverKind;
+  /**
    * The time-of-day blend's weights pinned by the link (`?lookWeights=`, a
    * test and review hook), or null: then the sun derives them. Read-only
    * after boot.
@@ -308,6 +315,39 @@ export function selectSun(state: DemoRootState): SunState {
   return state.sun;
 }
 
+/** Which driver moves the sun. */
+export type SunDriverKind = "none" | "clock" | "timelapse";
+
+const SUN_DRIVER_KINDS: readonly SunDriverKind[] = [
+  "none",
+  "clock",
+  "timelapse",
+];
+const SUN_DRIVER_CHANGED = "sunDriver/changed";
+
+/** A driver started, or the running one stopped (`"none"`). */
+export function sunDriverChanged(kind: SunDriverKind): {
+  readonly type: typeof SUN_DRIVER_CHANGED;
+  readonly payload: SunDriverKind;
+} {
+  return { type: SUN_DRIVER_CHANGED, payload: kind };
+}
+
+/** The driver reducer; a kind it does not know is ignored. */
+function sunDriverReducer(
+  state: SunDriverKind = "none",
+  action: { readonly type: string; readonly payload?: unknown },
+): SunDriverKind {
+  if (action.type !== SUN_DRIVER_CHANGED) return state;
+  const kind = SUN_DRIVER_KINDS.find((k) => k === action.payload);
+  return kind ?? state;
+}
+
+/** Which driver moves the sun now. */
+export function selectSunDriver(state: DemoRootState): SunDriverKind {
+  return state.sunDriver;
+}
+
 /**
  * The time-of-day blend's look weights for the sun on screen
  * (`look-driver.ts`), or the link's pinned ones. Always defined: whether
@@ -507,6 +547,7 @@ export function createDemoStore(options: CreateDemoStoreOptions) {
         options.markings ?? true,
       ),
       sun: sunReducer(sun),
+      sunDriver: sunDriverReducer,
       lookWeightsOverride: (
         state: readonly number[] | null = override,
       ): readonly number[] | null => state,
