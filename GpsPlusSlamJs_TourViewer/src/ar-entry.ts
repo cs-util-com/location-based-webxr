@@ -28,6 +28,7 @@ import {
   isComputerScreen,
   linkQrShown,
   linkQrSvg,
+  shareLinkOf,
   onComputerScreenChange,
 } from "./link-qr.js";
 import {
@@ -697,16 +698,30 @@ export function wireArEntry(deps: {
     hooks.renderAuthorReadout();
   }
 
-  /** Shows or hides the link's code; draws it only when the page's
-   *  address differs from the one it encodes (the same link Copy link
-   *  copies, `location.href`). */
+  /** Shows or hides the link's code; draws it only when the share link
+   *  differs from the one it encodes (the link Copy link copies,
+   *  `shareLinkOf(location.href)`). A link too long for any QR code shows
+   *  no code: Copy link alone. */
   function renderLinkQr(shown: boolean): void {
     const qr = dom.linkQr;
     if (qr === undefined) return;
     qr.root.hidden = !shown;
-    if (!shown || qr.code.dataset["url"] === location.href) return;
-    qr.code.innerHTML = linkQrSvg(location.href);
-    qr.code.dataset["url"] = location.href;
+    if (!shown) return;
+    const link = shareLinkOf(location.href);
+    if (qr.code.dataset["url"] !== link) {
+      qr.code.dataset["url"] = link;
+      try {
+        qr.code.innerHTML = linkQrSvg(link);
+        delete qr.code.dataset["tooLong"];
+      } catch {
+        // A link too long for any QR code (the `?qr=` payload has no
+        // cap): caught, so the rest of the render still runs, and kept,
+        // so it is not tried again on every render.
+        qr.code.innerHTML = "";
+        qr.code.dataset["tooLong"] = "true";
+      }
+    }
+    if (qr.code.dataset["tooLong"] === "true") qr.root.hidden = true;
   }
 
   /** The visitor's Copy link tap (async-UI rule: busy, then the outcome;
@@ -718,7 +733,7 @@ export function wireArEntry(deps: {
     // "Copying…" (M4 review #1).
     void copyWithFeedback(
       dom.enterArButton,
-      location.href,
+      shareLinkOf(location.href),
       (text) => seams.copyText(text),
       {
         busy: COPY_LINK_LABELS.busy,

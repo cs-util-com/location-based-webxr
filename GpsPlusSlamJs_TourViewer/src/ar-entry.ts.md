@@ -254,8 +254,12 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
   beside "Copy link" (`link-qr.ts`). `renderArState` shows it when
   `linkQrShown` says so (a visitor, AR unsupported, Start not withheld, a
   computer-sized screen by `isComputerScreen(globalThis)`) and draws
-  `linkQrSvg(location.href)` into `linkQr.code`, keeping the encoded link
-  in `data-url`; it redraws only when the address changed.
+  `linkQrSvg(shareLinkOf(location.href))` into `linkQr.code`, keeping
+  the encoded link in `data-url`; it redraws only when that link changed.
+  "Copy link" copies the same `shareLinkOf(location.href)`. A link too
+  long for any QR code (the `?qr=` payload has no cap) is caught: the code
+  stays hidden (`data-too-long`), "Copy link" stays, and the rest of
+  `renderArState` (the hint, the status line, the tracking report) runs.
   `onComputerScreenChange` re-runs `renderArState` when the screen starts
   or stops being a computer screen (a widened window), so no reload is
   needed. Pinned by

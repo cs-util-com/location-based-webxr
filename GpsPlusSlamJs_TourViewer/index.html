@@ -2167,17 +2167,17 @@
         order: 1;
         margin: 0;
       }
+      /* Sized by its code: the SVG's width and height are a whole number
+         of pixels per module (LINK_QR_MODULE_PX), so no module is scaled
+         onto a fraction of a pixel. */
       .link-qr-code {
-        width: 124px;
-        height: 124px;
         border-radius: 8px;
         background: #fff;
         box-shadow: 0 0 0 1px var(--map-line);
       }
       .link-qr-code svg {
         display: block;
-        width: 100%;
-        height: 100%;
+        border-radius: 8px;
       }
       #link-qr figcaption {
         color: var(--ink-dim);

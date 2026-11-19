@@ -9,6 +9,7 @@
  * in-progress state to show.
  */
 
+import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
 import QRCode from "qrcode";
 
 /** A screen a person sits at: wide, with a mouse or a trackpad. */
@@ -18,6 +19,12 @@ export const COMPUTER_SCREEN_QUERY =
 /** Quiet zone around the code, in modules (the standard asks for 4; the
  *  code sits on its own white tile, so 2 scans as well and stays larger). */
 const QUIET_ZONE = 2;
+
+/** CSS pixels per module: a whole number, so every module lands on whole
+ *  pixels and the code stays sharp; the box is sized from the module
+ *  count (about 100 to 270 px for the shortest to the longest storage
+ *  provider link). */
+export const LINK_QR_MODULE_PX = 3;
 
 interface MediaWindow {
   matchMedia?: (query: string) => {
@@ -64,7 +71,7 @@ export function onComputerScreenChange(
  *  computer-sized screen. */
 export function linkQrShown(input: {
   visitor: boolean;
-  arStatus: string;
+  arStatus: EnableGpsArState["status"];
   withheld: boolean;
   computerScreen: boolean;
 }): boolean {
@@ -77,9 +84,32 @@ export function linkQrShown(input: {
 }
 
 /**
+ * The link the code holds and Copy link copies: the page and its `qr`
+ * parameter, nothing else of the address (a debug switch, a cache
+ * switch, a fragment). The parameter keeps its own encoding, so a link
+ * that had nothing else is given back unchanged. An address without a
+ * `qr` parameter, or one that does not parse, is given back as it is.
+ */
+export function shareLinkOf(href: string): string {
+  let url: URL;
+  try {
+    url = new URL(href);
+  } catch {
+    return href;
+  }
+  const qr = url.search
+    .slice(1)
+    .split("&")
+    .find((part) => part === "qr" || part.startsWith("qr="));
+  return qr === undefined ? href : `${url.origin}${url.pathname}?${qr}`;
+}
+
+/**
  * The QR code of `url` as an SVG string: one path of dark modules on a
- * white square, `viewBox` in modules. Throws on an empty or non-string
- * url (the caller passes the page's own `location.href`).
+ * white square, `viewBox` in modules, `width` and `height` at
+ * `LINK_QR_MODULE_PX` CSS pixels per module. Throws on an empty or
+ * non-string url, and (the library's error) on a link too long for any QR
+ * code: past version 40, about 2300 bytes at error correction M.
  */
 export function linkQrSvg(url: string): string {
   if (typeof url !== "string" || url.length === 0) {
@@ -98,7 +128,7 @@ export function linkQrSvg(url: string): string {
     }
   }
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(side)} ${String(side)}" shape-rendering="crispEdges" aria-hidden="true">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(side)} ${String(side)}" width="${String(side * LINK_QR_MODULE_PX)}" height="${String(side * LINK_QR_MODULE_PX)}" shape-rendering="crispEdges" aria-hidden="true">` +
     `<rect width="${String(side)}" height="${String(side)}" fill="#fff"/>` +
     `<path d="${path}" fill="#000"/></svg>`
   );

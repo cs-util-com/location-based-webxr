@@ -926,6 +926,50 @@ describe("a visitor's phone without AR copies the link (polish round M4a, V4)", 
     expect(h.dom.linkQr.root.hidden).toBe(true);
   });
 
+  // Why: the code holds the tour's link only, what Copy link copies: any
+  // other parameter in the address (a debug switch, a fragment) makes the
+  // code denser and harder to scan, and is not the visitor's to pass on.
+  it("encodes and copies the share link, without the page's other parameters", async () => {
+    const h = harness({ arStatus: "unsupported", computerScreen: true });
+    vi.stubGlobal("location", {
+      href: "https://example.test/tour/?debug=1&qr=abc#top",
+    });
+    for (const listener of h.screen.listeners) listener();
+    expect(h.dom.linkQr.code.dataset["url"]).toBe(
+      "https://example.test/tour/?qr=abc",
+    );
+    h.dom.enterArButton.click();
+    await vi.waitFor(() => {
+      expect(h.seams.copyText).toHaveBeenCalledWith(
+        "https://example.test/tour/?qr=abc",
+      );
+    });
+  });
+
+  // Why: the code's library throws past its largest size (about 2300 bytes
+  // at this error correction) and the `?qr=` payload has no cap. Thrown
+  // inside the render, it skipped the hint, the status line and the
+  // tracking report on every state change; the code goes, Copy link stays.
+  it("falls back to Copy link alone when the link is too long for a code", () => {
+    const h = harness({ arStatus: "unsupported", computerScreen: true });
+    expect(h.dom.linkQr.root.hidden).toBe(false);
+    vi.stubGlobal("location", {
+      href: `https://example.test/tour/?qr=${"x".repeat(4000)}`,
+    });
+    h.dom.arStatus.textContent = "";
+    expect(() => {
+      for (const listener of h.screen.listeners) listener();
+    }).not.toThrow();
+    expect(h.dom.linkQr.root.hidden).toBe(true);
+    expect(h.dom.linkQr.code.innerHTML).toBe("");
+    expect(h.dom.enterArButton.hidden).toBe(false);
+    expect(h.dom.enterArButton.textContent).toBe("Copy link");
+    expect(
+      h.dom.arStatus.textContent,
+      "the status line still renders",
+    ).not.toBe("");
+  });
+
   it("shows no code on a phone without AR, nor on a device with AR", () => {
     expect(
       harness({ arStatus: "unsupported", computerScreen: false }).dom.linkQr
