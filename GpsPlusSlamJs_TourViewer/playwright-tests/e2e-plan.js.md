@@ -28,15 +28,15 @@ cannot reach.
   changed area's specs, the `both` specs and any changed spec file.
 - `RESULTS_DIR`, `RESULTS_NAME`: where the config's CI JSON reporter writes,
   from the package.
-- `LANES`: `["dom-1", "dom-2", "webgl-1", ..., "webgl-4"]`, the CI jobs the
+- `LANES`: `["dom-1", "dom-2", "webgl-1", ..., "webgl-5"]`, the CI jobs the
   browser specs are split into (`E2E_LANE`, `.github/workflows/ci.yml`).
 - `specsOfLane(lane)`: the specs of the lane's project (`dom-N`: `dom`,
   `webgl-N`: `webgl`) whose entry has `lane: N`. Throws `RangeError` on
   any name `LANES` does not hold (`dom` alone included).
-- Every entry of `SPECS` carries `lane`: 1-2 for a `dom` spec, 1-4 for a
+- Every entry of `SPECS` carries `lane`: 1-2 for a `dom` spec, 1-5 for a
   `webgl` spec.
 - **The lanes in the per-PR tier** (`E2E_TIER=pr`, the default; see
-  [`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md)): the same six
+  [`scripts/e2e/tier.mjs`](../../scripts/e2e/tier.mjs.md)): the same seven
   jobs, each running the `@pr` tests of its own specs plus any spec file
   the pull request changed, whole. A tagged 3D test runs in its spec's lane;
   nothing is moved for the tier. A lane job that selects no test fails, so
@@ -246,6 +246,19 @@ the globe. What differs on the globe, and how the specs say it:
 The `webgl` project's lanes grew with it: 920, 946, 1274 and 644 s on
 the older view against 1415, 1704, 2147 and 1153 s in the first green
 full run on the globe.
+
+**Five 3D lanes since 2026-11-19.** Two CI full runs of one commit range
+summed the four lanes' test time to 23.4, 28.8, 24.4 and 30.6 min, then
+29.3, 44.6, 19.6 and 20.9 min: the same specs, on runners up to 2.3
+times apart in speed, so lane 2 met its 45 min limit with about 29 min of
+tests. A fifth lane cuts each to about 21 min, which leaves a lane on a
+runner 1.5 times slower than the first run's well under the limit. By
+the first run's per-spec sums (in min): lane 1 21.6 (docking 11.0),
+lane 2 19.6 (shell 6.0, tree 5.6), lane 3 22.5 (edit 6.1, shelf 4.5),
+lane 4 22.7 (folders 11.8), lane 5 20.8 (inspector 5.5, model 3.7,
+sound sliders 3.0); by the second run's 27.2, 30.0, 18.0, 16.3 and
+22.8. Each lane keeps a test tagged for the per-PR tier (lane 5:
+`editor3d-globe-buildings`).
 
 ## Examples
 

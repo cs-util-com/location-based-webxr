@@ -24,13 +24,13 @@ export const PROJECTS = /** @type {const} */ (["dom", "webgl"]);
  * - area `editor`: only the desktop editor (`edit.html`); `viewer`: only the
  *   other pages (the visitor's and the phone creator's page, the check
  *   pages); `both`: the spec opens the editor and another page.
- * - lane (1 or 2 for a dom spec, 1 to 4 for a webgl spec): the CI job that
+ * - lane (1 or 2 for a dom spec, 1 to 5 for a webgl spec): the CI job that
  *   runs the spec (see `LANES`). Each dom lane about half of the dom
  *   project (a local full run of 2026-11-05), each webgl lane about a
- *   quarter of the 3D specs by the CI full run of 2026-11-18 (see the
+ *   fifth of the 3D specs by the CI full run of 2026-11-19 (see the
  *   sidecar); rebalance from the uploaded JSON report's per-test durations.
  *
- * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both", lane: 1 | 2 | 3 | 4 }>>}
+ * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both", lane: 1 | 2 | 3 | 4 | 5 }>>}
  */
 export const SPECS = {
   "ar-layout.spec.js": { project: "dom", area: "viewer", lane: 2 },
@@ -50,17 +50,17 @@ export const SPECS = {
   "editor-entry.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor-files.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor.spec.js": { project: "dom", area: "editor", lane: 1 },
-  "editor3d-add-palette.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-add-palette.spec.js": { project: "webgl", area: "editor", lane: 5 },
   "editor3d-character-facing.spec.js": {
     project: "webgl",
     area: "editor",
-    lane: 3,
+    lane: 4,
   },
-  "editor3d-character.spec.js": { project: "webgl", area: "editor", lane: 4 },
+  "editor3d-character.spec.js": { project: "webgl", area: "editor", lane: 5 },
   "editor3d-characters.spec.js": {
     project: "webgl",
     area: "both",
-    lane: 2,
+    lane: 5,
   },
   "editor3d-child-moves.spec.js": {
     project: "webgl",
@@ -78,7 +78,7 @@ export const SPECS = {
   "editor3d-globe-buildings.spec.js": {
     project: "webgl",
     area: "editor",
-    lane: 1,
+    lane: 5,
   },
   "editor3d-globe-clouds.spec.js": {
     project: "webgl",
@@ -107,9 +107,9 @@ export const SPECS = {
     area: "editor",
     lane: 2,
   },
-  "editor3d-inspector.spec.js": { project: "webgl", area: "editor", lane: 2 },
+  "editor3d-inspector.spec.js": { project: "webgl", area: "editor", lane: 5 },
   "editor3d-long-text.spec.js": { project: "webgl", area: "editor", lane: 3 },
-  "editor3d-model.spec.js": { project: "webgl", area: "editor", lane: 4 },
+  "editor3d-model.spec.js": { project: "webgl", area: "editor", lane: 5 },
   "editor3d-narration.spec.js": { project: "webgl", area: "editor", lane: 4 },
   "editor3d-phone.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-pictures.spec.js": { project: "webgl", area: "both", lane: 4 },
@@ -123,7 +123,7 @@ export const SPECS = {
   "editor3d-sound-sliders.spec.js": {
     project: "webgl",
     area: "editor",
-    lane: 4,
+    lane: 5,
   },
   "editor3d-station-ring.spec.js": {
     project: "webgl",
@@ -136,7 +136,7 @@ export const SPECS = {
     lane: 1,
   },
   "editor3d-tree.spec.js": { project: "webgl", area: "editor", lane: 2 },
-  "editor3d-video.spec.js": { project: "webgl", area: "editor", lane: 4 },
+  "editor3d-video.spec.js": { project: "webgl", area: "editor", lane: 5 },
   "editor3d-world-marks.spec.js": {
     project: "webgl",
     area: "editor",
@@ -203,6 +203,7 @@ export const LANES = /** @type {const} */ ([
   "webgl-2",
   "webgl-3",
   "webgl-4",
+  "webgl-5",
 ]);
 
 /**
