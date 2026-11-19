@@ -156,9 +156,11 @@ describe("normalVoiceCredit, by example", () => {
             unit,
           );
           expect(voiceCreditCut(text, rule)).toBe(whole > rule.max);
-          if (!voiceCreditCut(text, rule)) {
-            expect(tourTextCount(credit, unit)).toBe(whole);
-          }
+          const keptWhole = tourTextCount(credit, unit) === whole;
+          expect(
+            whole > rule.max || keptWhole,
+            "an uncut credit is kept whole",
+          ).toBe(true);
         }),
       );
     }
