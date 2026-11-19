@@ -358,6 +358,8 @@ function wire(
     /** The AR status, switchable mid-test (a session ending); by default
      *  "running" for a placeable wiring, "idle" otherwise. */
     arStatus?: { value: string };
+    /** Every draft store open waits for this (a slow OPFS open). */
+    openGate?: Promise<void>;
   } = {},
 ) {
   let opens = 0;
@@ -416,7 +418,10 @@ function wire(
       if (options.firstOpenFails === true && opens === 1) {
         return Promise.resolve(undefined);
       }
-      return Promise.resolve(options.storeFor?.(key) ?? store);
+      const opened = options.storeFor?.(key) ?? store;
+      return options.openGate === undefined
+        ? Promise.resolve(opened)
+        : options.openGate.then(() => opened);
     },
   });
   if (options.placeable === true) {
@@ -1509,6 +1514,42 @@ describe("work made before the tour's draft opened reaches it", () => {
     expect(
       setup.leaveNeedsConfirm(),
       "with the manifest settled and the draft open, leaving does not ask",
+    ).toBe(false);
+  });
+
+  it("keeps asking before leaving while the settled tour's draft is still opening", async () => {
+    // Why: the manifest settles before the draft's store has opened and
+    // taken the work made earlier (the open path presents the draft only
+    // once the manifest settled, and the store opens asynchronously). In
+    // that gap nothing is stored yet, so a leave without a question lost
+    // the placement while the guard said the phone keeps it.
+    const { store } = memoryStore();
+    let release = (): void => undefined;
+    const openGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { ctx, dom, setup } = wire(store, { placeable: true, openGate });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
+    } as never;
+    ctx.tourManifestStatus = "settled";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(
+      setup.leaveNeedsConfirm(),
+      "the manifest settled but the draft store has not opened",
+    ).toBe(true);
+    expect(setup.leaveQuestion()).toContain("holds no backup copy");
+    release();
+    await settle();
+    expect(
+      setup.leaveNeedsConfirm(),
+      "the draft opened and took the placement",
     ).toBe(false);
   });
 

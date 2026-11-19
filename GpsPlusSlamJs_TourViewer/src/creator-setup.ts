@@ -939,15 +939,11 @@ export function wireCreatorSetup(deps: {
         ctx.rebuiltZip === null
           ? null
           : { delivered: ctx.rebuiltZip.delivered === true },
-      // A failed backup write is noted once; from then on the page cannot
-      // promise the phone keeps the work (U2 milestone review #3).
-      // With no tour open, or before its manifest settled (a broken
-      // tour.json never opens a draft), nothing is backed up either: the
-      // work waits in memory (`creator-draft.ts`'s `recordPlacement`).
-      draftPersists:
-        ctx.session !== null &&
-        ctx.tourManifestStatus === "settled" &&
-        draft.persists(),
+      // The draft's own word (`persists`): false while work waits in
+      // memory - no tour open, its manifest not settled (a broken
+      // tour.json never opens a draft), its draft still opening - and once
+      // a backup write failed (U2 milestone review #3).
+      draftPersists: draft.persists(),
       finishFailed: ctx.finishError !== null,
     };
   }

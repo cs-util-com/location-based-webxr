@@ -150,7 +150,12 @@ export interface CreatorDraft {
   forgetRefused(tourUrl: string): Promise<boolean>;
   /** Say, once, that this device keeps no backup copy. */
   warnNoBackup(): void;
-  /** False once the creator was told no backup is kept. */
+  /** The work this page holds is backed up on this device: a tour's draft
+   *  has opened and taken the work made before it (`present` ran to its
+   *  end for the open tour), and no backup write failed. False with no
+   *  tour open, before its manifest settled (no draft is presented), while
+   *  its draft is still opening, and once the creator was told no backup
+   *  is kept - in each, unstored work may be waiting in memory. */
   persists(): boolean;
 }
 
@@ -392,6 +397,9 @@ export function wireCreatorDraft(deps: {
   } | null = null;
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
+  /** The open tour's draft took the page's earlier work: its `present`
+   *  continuation ran to its end. Until then that work waits in memory. */
+  let caughtUp = false;
 
   /** Say once that the walk is not being backed up. A creator mid-session
    *  cannot act on it more often than that, and repeating it would push
@@ -1098,6 +1106,7 @@ export function wireCreatorDraft(deps: {
     // whatever opens after it.
     const held: SettingsHolder = { poses: null, created: null, codes: null };
     undecided = held;
+    caughtUp = false;
     void (async () => {
       const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
       if (stale()) return;
@@ -1425,7 +1434,12 @@ export function wireCreatorDraft(deps: {
       // and no signal, so the step is revealed - without collapsing
       // whatever the creator was reading.
       deps.wizard.revealStep("measure");
-    })();
+    })().then(() => {
+      // Every return above ran after the page's earlier work was queued
+      // into the opened store (or after no store opened, which warns): a
+      // stale open's end says nothing about the open tour.
+      if (!stale()) caughtUp = true;
+    });
   }
 
   return {
@@ -1436,6 +1450,7 @@ export function wireCreatorDraft(deps: {
       unreadNote = null;
       // A write still queued for the closing tour keeps its own holder.
       undecided = null;
+      caughtUp = false;
       touchedIds.clear();
       finishedIds.clear();
       knownKeys.clear();
@@ -1526,7 +1541,7 @@ export function wireCreatorDraft(deps: {
     },
     follow,
     warnNoBackup: noteNoPersistence,
-    persists: () => !warnedAboutPersistence,
+    persists: () => caughtUp && !warnedAboutPersistence,
     saveSettings: (settings) => {
       const store = draftStore;
       const tourUrl = draftTourUrl;
