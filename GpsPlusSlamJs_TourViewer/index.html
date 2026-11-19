@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tour Viewer</title>
+    <meta
+      name="description"
+      content="Make an AR walking tour without programming: walk the place with an Android phone, leave words and pictures where they belong, and visitors open it by scanning a printed code."
+    />
     <!-- A returning device's page is scrolled to the setup by #landing-skip
          (right below the stage): on a document that arrives in several
          network chunks the first paint waits until that script is parsed,
@@ -2132,6 +2136,52 @@
         background: var(--ink);
         font-size: 18px;
         box-shadow: 0 10px 24px rgb(23 25 28 / 24%);
+      }
+      /* The link's code beside Copy link, on a computer without AR
+         (link-qr.ts): white tile, the caption under it. While it shows,
+         the action becomes a grid so the button and the code share one
+         row on the first screen; every other line keeps its own row. */
+      .link-qr[hidden] {
+        display: none;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #ar-root:has(> #link-qr:not([hidden])) {
+        display: grid;
+        grid-template-columns: auto auto;
+        align-items: center;
+        justify-content: center;
+        column-gap: 40px;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #ar-root:has(> #link-qr:not([hidden]))
+        > :not(#enter-ar, #link-qr) {
+        grid-column: 1 / -1;
+        justify-self: center;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        .link-qr:not([hidden]) {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        order: 1;
+        margin: 0;
+      }
+      .link-qr-code {
+        width: 124px;
+        height: 124px;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 0 0 1px var(--map-line);
+      }
+      .link-qr-code svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #link-qr figcaption {
+        color: var(--ink-dim);
+        font-size: 15px;
       }
       body[data-mode="visitor"]:not([data-ar-active="true"]) #ar-hint {
         order: 2;
@@ -4538,7 +4588,7 @@
                 <p class="landing-say">
                   Open the page on your phone and go to the mill. Stand where
                   the story happened and hold the phone up. A ring on the ground
-                  shows the spot. Tap <b>Place here</b>, and a numbered station
+                  shows the spot. Tap <b>Place a pin</b>, and a numbered station
                   drops onto it.
                 </p>
                 <p class="landing-say">
@@ -4589,7 +4639,7 @@
                 <p class="landing-card-kicker">Words and pictures</p>
                 <h3 id="landing-step-3">Add what you know.</h3>
                 <p class="landing-say">
-                  Type a title and a few lines. Add the old photo. They stay on
+                  Type a title and a few lines. Take a photo there. They stay on
                   that spot, standing in the air above the station, the way a
                   sign would.
                 </p>
@@ -5431,7 +5481,7 @@
                       stroke-linejoin="round"
                     />
                   </svg>
-                  <h2>Where will your tour live?</h2>
+                  <h2>Where your tour file is stored</h2>
                 </summary>
                 <p class="step-copy hint--dim">
                   Your tour is one small zip file in your own storage. Visitors'
@@ -5442,7 +5492,7 @@
                   id="host-tiles"
                   class="host-tiles"
                   role="group"
-                  aria-label="Where your tour lives"
+                  aria-label="Where your tour file is stored"
                   data-testid="host-tiles"
                 ></div>
                 <ol
@@ -5941,10 +5991,11 @@
               <h2>Create it on site, in AR</h2>
             </summary>
             <p class="step-copy hint--dim creator-only" hidden>
-              Now the tour itself: stand at the hung code, start creating, and
-              walk the route, placing text pins and photos where they belong.
-              When you are done, the tour file is saved to this phone, and the
-              last step shows how to put it in place.
+              Now the tour itself: start creating (best at the hung code, so it
+              is measured first) and walk the route, placing text pins and
+              photos where they belong. When you are done, the tour file is
+              saved to this phone, and the last step shows how to put it in
+              place.
             </p>
             <!-- Step 5 on a device without AR (tour editor plan 2026-10-17-1816,
              W1, review #9): shown by the CSS once the AR check says
@@ -5958,7 +6009,8 @@
               <p class="step-copy">
                 This step runs on site and needs an Android phone with Chrome
                 that supports AR: open this page there. Here, the editor opens a
-                tour you made: fix its texts, move its pins, remove photos.
+                tour you made, to add stations, texts, pictures, video, sound
+                and 3D models, or change anything in it.
               </p>
               <a class="btn setup-primary" href="edit.html">Open the editor</a>
             </div>
@@ -6114,6 +6166,19 @@
               >
                 Checking AR support…
               </button>
+              <!-- The visitor's "Scan with your phone" code: on a computer
+               that cannot show AR, the tour's link as a QR code beside Copy
+               link (link-qr.ts; ar-entry.ts shows it and draws the SVG). -->
+              <figure id="link-qr" class="link-qr" data-testid="link-qr" hidden>
+                <div
+                  id="link-qr-code"
+                  class="link-qr-code"
+                  data-testid="link-qr-code"
+                  role="img"
+                  aria-label="QR code of this tour's link"
+                ></div>
+                <figcaption>Scan with your phone</figcaption>
+              </figure>
               <!-- The visitor's scan card (polish round M4b, the owner's S1,
                D-P5 amended): centred over the camera while the scan gate
                waits for the code, with the phone-over-code animation, a
@@ -7318,9 +7383,9 @@
             id="have-tour-editor-text"
             data-testid="have-tour-editor-text"
           >
-            The editor shows your tour on a map: fix a text, move a pin or
-            remove a photo, and save a new copy of the tour file to put in place
-            of the old one.
+            The editor shows your tour in 3D: add stations, texts, pictures,
+            video, sound and 3D models, or change anything in it, and save a new
+            copy of the tour file to put in place of the old one.
           </p>
           <a
             class="btn setup-primary"

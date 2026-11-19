@@ -1,5 +1,15 @@
 // @ts-check
+import { readFileSync } from "node:fs";
+
 import { expect, test } from "@playwright/test";
+
+import {
+  installTourViewerArFakes,
+  lockFixtureCode,
+  seedAlignment,
+  standAt,
+} from "./ar-fakes.js";
+import { save } from "./editor-menus.js";
 
 import {
   GLOBE_VIEW,
@@ -8,6 +18,7 @@ import {
   noClouds,
   openZip,
 } from "./editor3d-fixture.js";
+import { serveZip } from "./serve-zip.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
@@ -20,7 +31,10 @@ import { stationBlocks } from "./tour-fixture.mjs";
  * walk pins the promise the section makes: an edited word marks the
  * read-along stale, and lining the voice up again makes it read along
  * once more without touching the text. The layout test pins the rows'
- * measures from the prototype's CSS at three desktop sizes.
+ * measures from the prototype's CSS at three desktop sizes. The last
+ * walk follows who speaks the voice from the switch and the field to the
+ * visitor: only a browser shows the saved tour opened by the viewer and
+ * the reading sheet saying so under the player.
  */
 
 test.describe.configure({ mode: "default" });
@@ -243,4 +257,89 @@ test("the Narration section sits in place at 1440x900, 1280x720 and 1024x768", a
       12,
     );
   }
+});
+
+test("a voice marked synthetic and credited is saved, and the visitor's reading sheet says so", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(BUDGET_MS);
+  await openNarration(page);
+  await page.getByTestId("narration-voice-file").setInputFiles({
+    name: "gate-voice.wav",
+    mimeType: "audio/wav",
+    buffer: silentWav(),
+  });
+  await expect(page.locator(".ln-sec .ln-fn").first()).toHaveText(
+    "gate-voice.wav",
+    { timeout: VOICE_ADD_MS },
+  );
+
+  // The switch, then the credit as typed: each one change of the tour,
+  // the credit stored trimmed.
+  const synthetic = page.locator('[data-ln="synthetic"]');
+  await expect(synthetic).not.toBeChecked();
+  await synthetic.check();
+  await expect
+    .poll(async () => (await essayNow(page)).narration.synthetic)
+    .toBe(true);
+  await expect(synthetic).toBeChecked();
+  const credit = page.locator('[data-ln="credit"]');
+  await credit.fill("  Read by Anna Berg ");
+  await credit.press("Enter");
+  await expect
+    .poll(async () => (await essayNow(page)).narration.voiceCredit)
+    .toBe("Read by Anna Berg");
+  await expect(credit).toHaveValue("Read by Anna Berg");
+
+  // Saved, then visited: the reading sign's sheet names the voice.
+  const download = page.waitForEvent("download");
+  await save(page);
+  const saved = readFileSync(await (await download).path());
+  const visitor = await context.newPage();
+  await serveZip(visitor, "/e2e/narrated-tour.zip", saved, "e2e-narrated");
+  await installTourViewerArFakes(visitor);
+  const link = new URL("/e2e/narrated-tour.zip", page.url()).href;
+  await visitor.goto(`/?qr=${encodeURIComponent(link)}`);
+  await expect(visitor.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15_000 },
+  );
+  const enter = visitor.getByTestId("enter-ar");
+  await expect(enter).toBeEnabled({ timeout: 10_000 });
+  await enter.click();
+  await seedAlignment(visitor);
+  await standAt(visitor, 0, 0, 0);
+  await lockFixtureCode(visitor);
+  // Taps at the gate: the stub scene has no geometry, so the fake camera
+  // ray hits whatever key it is told to. A world part's key is
+  // `part-<i>`, its place among the mounted parts (`tapShownWorldPart`),
+  // and the gate mounts more than the reading sign, so the first few
+  // places are tried in turn. The keys cannot be read back from
+  // `pickTargets`: a missed tap goes on to the pin sheet, whose own pick
+  // overwrites them.
+  const sheet = visitor.getByTestId("long-text-sheet");
+  let tries = 0;
+  await expect
+    .poll(
+      async () => {
+        await visitor.evaluate((n) => {
+          const t = /** @type {any} */ (window).__tourViewerTest;
+          t.emitFrames(1);
+          t.pickId = `part-${String(n % 8)}`;
+          t.tapXr();
+        }, tries);
+        tries += 1;
+        return sheet.isVisible();
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+  await expect(visitor.getByTestId("long-text-credit")).toHaveText(
+    "Synthetic voice · Read by Anna Berg",
+  );
+  await expect(visitor.getByTestId("long-text-credit").locator("i")).toHaveText(
+    "Synthetic voice",
+  );
 });

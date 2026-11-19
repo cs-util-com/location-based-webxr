@@ -678,6 +678,32 @@ button.lw-iss:hover {
 .ln-sec .note {
   margin-top: 4px;
 }
+.ln-sec .ln-who {
+  margin: 0 0 8px;
+}
+.ln-sec .ln-chk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--s-text);
+  font-size: 11px;
+}
+.ln-sec .ln-in {
+  box-sizing: border-box;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--s-line2);
+  border-radius: 4px;
+  background: var(--s-bg2);
+  color: var(--s-text);
+  font: inherit;
+}
+.ln-sec .ln-in:focus {
+  border-color: var(--s-accent);
+  outline: none;
+}
 .ln-sec .ln-notice,
 .ln-sec .ln-result {
   margin: 8px 0;

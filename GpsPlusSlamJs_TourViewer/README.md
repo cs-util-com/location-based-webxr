@@ -44,39 +44,44 @@ author flag.
 
 ## The creator's setup, step by step
 
-1. **Host your tour** - upload the recorder zip (or the empty starter zip
-   the page offers) to Drive, Dropbox, GitHub or OneDrive, paste the share
-   link, press Open. The link is the tour's identity: the printed code
-   encodes it, and replacing the file behind it later keeps the code valid.
-2. **Print the code** - the print panel is prefilled with the link;
+1. **Where your tour file is stored** - choose Google Drive, Dropbox,
+   OneDrive or GitHub; the step shows how to upload a tour zip there (the
+   empty starter zip the page offers, or a tour saved before) and share it.
+2. **Paste your tour's share link** - paste the share link, press Open.
+   The link is the tour's identity: the printed code encodes it, and
+   replacing the file behind it later keeps the code valid.
+3. **Print your posters** - the print panel is prefilled with the link;
    generate, print at true size (the declared size is what the AR
    measurement solves against).
-3. **Hang the code** - flat, at about chest height, where the tour
-   starts.
-4. **Measure the code and place content** - "Start AR setup" opens the
-   camera; keep the code in view until the panel says it is measured
-   (walking a few metres with GPS reception lets the phone align to the
-   map, and the panel shows the accuracy). At the spots you choose,
-   "Place a pin here" (a text label on the surface under the ring; the
-   ring follows a mesh the phone builds of the surroundings from its depth
-   sensor, easing over the surface and lying flat to it, and falls back to
-   the phone's own surface detection where there is no mesh - a phone
-   without depth, the first seconds, gaps; a troubleshooting recording
-   samples depth more sparsely, so its mesh is thinner; `?mesh=0` turns
-   the mesh off) and
-   "Capture a photo" (the camera frame, placed where you stood). Placing
-   needs only the GPS alignment, never the code: it works anywhere along
-   the walk, also before the code is measured or after its print size
-   changed. Each new pin or photo joins the nearest station within 25 m
-   of where it lands, else starts a new one there; "New station here" makes
-   the next one start its own station even within that radius (for places
-   closer together than any radius can separate; a second tap cancels it).
-   "Undo", above them, takes back the last delete, or the last automatic
-   change of a code's saved position together with the pins and stations
-   it moved, and says which ("Undo: delete "Gate"", "Undo: the code's
-   improvement"); it stays until something else changes the tour.
-   "Finish"
-   ends the session, and the same step then saves and shows:
+4. **Hang it where the tour starts** - flat, at about chest height.
+5. **Create it on site, in AR** - "Start creating" opens the camera,
+   best at the hung code, so it is measured first: keep the code in view
+   until the panel says it is measured (walking a few metres with GPS
+   reception lets the phone align to the map, and the panel shows the
+   accuracy). At the spots you choose, "Place a pin" (a text label on the
+   surface under the ring; the ring follows a mesh the phone builds of the
+   surroundings from its depth sensor, easing over the surface and lying
+   flat to it, and falls back to the phone's own surface detection where
+   there is no mesh - a phone without depth, the first seconds, gaps; a
+   troubleshooting recording samples depth more sparsely, so its mesh is
+   thinner; `?mesh=0` turns the mesh off) and "Take a photo" (the camera
+   frame, placed where you stood). Placing needs only the GPS alignment,
+   never the code: it works anywhere along the walk, also before the code
+   is measured or after its print size changed. Each new pin or photo
+   joins the nearest station within 25 m of where it lands, else starts a
+   new one there; "New station here" makes the next one start its own
+   station even within that radius (for places closer together than any
+   radius can separate; a second tap cancels it). "Undo", above them,
+   takes back the last delete, or the last automatic change of a code's
+   saved position together with the pins and stations it moved, and says
+   which ("Undo: delete "Gate"", "Undo: the code's improvement"); it stays
+   until something else changes the tour. "Done" finishes: it ends the
+   session and writes the tour file. A creator who measured and then left
+   AR finishes from the page instead, with "Finish - rebuild the zip"
+   below the step.
+6. **Put the saved tour in place** - the page saves the rebuilt zip to the
+   phone by itself ("Save the tour zip again" saves it once more) and shows
+   how to replace the hosted file:
    - **the rebuilt zip** - the page rebuilds the archive in the browser:
      the original entries byte for byte, plus `qr/<id>.json` (the measured
      code's pose) and `tour.json` (the placed objects, with GPS positions
@@ -100,7 +105,9 @@ one line under it saying what the next tap does. What the tour needs
 (camera, location, nothing uploaded, no account) is behind "What
 happens?", and "Make your own tour" opens the setup in a new tab. A phone
 that cannot run AR gets a "Copy link" button instead, to open the tour on
-one that can. The page is paper-coloured on every device; held sideways,
+one that can; on a computer-sized screen the same link is also shown as a
+code beside it, "Scan with your phone", and the code follows the window
+when it is widened or narrowed. The page is paper-coloured on every device; held sideways,
 the name and the button sit side by side.
 
 The tour's archive streams in while the start page shows (a visitor

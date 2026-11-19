@@ -155,7 +155,6 @@ function freshState() {
     tries: 0,
     chosen: -1,
     result: null,
-    resultAt: 0,
     help: false, // the visitor asked for help: looking collects
     score: START_SCORE,
     gained: 0,
@@ -844,7 +843,7 @@ function found(a) {
   a.where = "opening";
   a.openAt = S.clock;
   a.order = S.foundCount++;
-  a.gaze = Math.max(a.gaze, 1);
+  a.gaze = 0; // the fill belongs to a hidden egg: a found one keeps its full hue
   a.inCone = false;
   if (S.help && hiddenCount() === 0) {
     S.help = false; // nothing left to help with: the mode ends quietly
@@ -908,7 +907,6 @@ function commit() {
 function finish(result) {
   S.result = result;
   S.phase = "result";
-  S.resultAt = S.clock;
   S.fold = false;
   S.help = false;
   // the eggs nobody found come to the box too, so the whole set is visible with the result

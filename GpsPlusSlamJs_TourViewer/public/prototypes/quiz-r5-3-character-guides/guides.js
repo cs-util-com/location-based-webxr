@@ -126,8 +126,7 @@ function freshState() {
     paid: 0,
     chosen: -1,
     result: null,
-    resultAt: 0,
-    help: null, // { level, target, inCone, cat, pend, pendAt, since }
+    help: null, // { level, target, inCone, cat, pend, pendAt }
     say: null, // { text, until } a line the character says, ahead of any guiding
     pillar: { i: -1, up: 0 },
     autoWalk: null,
@@ -832,7 +831,7 @@ function askHelp() {
     return;
   }
   if (!S.help) {
-    S.help = { level: 1, target: nearestUnfound(), inCone: false, cat: "", pend: "", pendAt: 0, since: S.clock };
+    S.help = { level: 1, target: nearestUnfound(), inCone: false, cat: "", pend: "", pendAt: 0 };
     say(SAY.ask, 1.8);
   } else if (S.help.level === 1) {
     S.help.level = 2;
@@ -972,6 +971,9 @@ function tapChip(i) {
 }
 function commit() {
   const i = S.held;
+  if (i < 0) {
+    return;
+  }
   S.held = -1;
   S.chosen = i;
   S.tries += 1;
@@ -995,7 +997,6 @@ function commit() {
 function finish(result) {
   S.result = result;
   S.phase = "result";
-  S.resultAt = S.clock;
   S.fold = false;
   stopHelp(false);
   S.say = null;

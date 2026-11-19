@@ -189,6 +189,7 @@ import {
 } from "../placement/placement-rows.js";
 import { freeStorySpot, newCharacterEntry, newStoryEntry } from "./new-pin.js";
 import { newStoryStep, type StepKind } from "./story-step-edits.js";
+import { normalVoiceCredit } from "../voice-credit.js";
 
 /** One of the tour's objects as it stands, with this page's entry. */
 type AuthoringObject = ReturnType<typeof documentObjects>[number];
@@ -629,6 +630,10 @@ const NOT_A_VOICE = `That file is not a sound file a tour can carry (${TOUR_MEDI
 const NO_VOICE =
   "Add the voice first: a timing says when the voice reads each word.";
 
+/** Said for a synthetic mark or a credit without a voice to describe. */
+const NO_VOICE_TO_DESCRIBE =
+  "Add the voice first: the synthetic mark and the credit describe it.";
+
 /** Said when the tour's timing for a text cannot be read. */
 const TIMING_UNREAD =
   "The tour's timing for this text could not be read, so it cannot be changed here.";
@@ -650,6 +655,10 @@ export interface NarrationFacts {
   readonly timingText: string | null;
   /** The entry is named but could not be read. */
   readonly timingUnread: boolean;
+  /** The voice is marked synthetic (false without a voice). */
+  readonly synthetic: boolean;
+  /** Who speaks it, as stored ("": no credit). */
+  readonly voiceCredit: string;
 }
 
 /** A change of a long text's narration (`editNarration`). */
@@ -667,7 +676,12 @@ export type NarrationChange =
   /** The timing taken off, the voice kept. */
   | { readonly kind: "removeTiming" }
   /** The read-along entry's new text (a `TourTiming`, compact JSON). */
-  | { readonly kind: "timing"; readonly text: string };
+  | { readonly kind: "timing"; readonly text: string }
+  /** Whether the voice is a synthetic one. */
+  | { readonly kind: "synthetic"; readonly synthetic: boolean }
+  /** Who speaks it, as typed: stored by `normalVoiceCredit` (trimmed,
+   *  single-spaced, capped; empty takes the credit off). */
+  | { readonly kind: "voiceCredit"; readonly text: string };
 
 /** Said for a size given to a block whose row has none. */
 const NO_EXTENT = "This item has no size to set.";
@@ -1076,7 +1090,8 @@ export interface EditorSession {
   /** Change it (`NarrationChange`): one step, undone like any other, the
    *  voice and the timing written by the next save. Refused in words,
    *  changing nothing, for an id the tour does not carry, a block that is
-   *  not a long text, a file that is not a sound file, a timing without a
+   *  not a long text, a file that is not a sound file, a synthetic mark or
+   *  a credit without a voice, a timing without a
    *  voice or over the format's cap, and a timing whose written text
    *  could not be read first (what an undo would bring back).
    *  `notBackedUp`: the voice is in the tour, but the draft could not
@@ -1826,7 +1841,39 @@ export function createEditorSession(input: {
     voice: TourAsset | undefined,
     entry: string,
   ): TourNarration | undefined {
+    const after = narrationChanged(was, change, voice, entry);
+    return after === undefined ? undefined : withStoredCredit(after);
+  }
+
+  /** `narration` with its credit in the stored form: a credit an opened
+   *  tour carries as written (spaces and all) is stored normalised by the
+   *  first edit, since the document takes only that form. */
+  function withStoredCredit(narration: TourNarration): TourNarration {
+    const { voiceCredit, ...rest } = narration;
+    const credit =
+      voiceCredit === undefined ? undefined : normalVoiceCredit(voiceCredit);
+    return credit === undefined ? rest : { ...rest, voiceCredit: credit };
+  }
+
+  /** `narrationAfter`'s change itself, before the credit is stored. */
+  function narrationChanged(
+    was: TourNarration | undefined,
+    change: NarrationChange,
+    voice: TourAsset | undefined,
+    entry: string,
+  ): TourNarration | undefined {
     if (change.kind === "removeVoice") return undefined;
+    if (change.kind === "synthetic") {
+      return was === undefined
+        ? undefined
+        : { ...was, synthetic: change.synthetic === true };
+    }
+    if (change.kind === "voiceCredit") {
+      if (was === undefined) return undefined;
+      const { voiceCredit: _old, ...kept } = was;
+      const credit = normalVoiceCredit(change.text);
+      return credit === undefined ? kept : { ...kept, voiceCredit: credit };
+    }
     if (change.kind === "removeTiming") {
       if (was === undefined) return undefined;
       const { timing: _off, ...kept } = was;
@@ -3233,6 +3280,8 @@ export function createEditorSession(input: {
         hasVoice: narration !== undefined,
         audioId: narration?.audio ?? null,
         durationMs: narration?.durationMs ?? null,
+        synthetic: narration?.synthetic === true,
+        voiceCredit: narration?.voiceCredit ?? "",
       };
       if (narration?.timing === undefined) {
         return { ...facts, timingText: null, timingUnread: false };
@@ -3300,6 +3349,12 @@ export function createEditorSession(input: {
       if (change.kind === "timing" && was === undefined) {
         return { kind: "refused", reason: NO_VOICE };
       }
+      if (
+        (change.kind === "synthetic" || change.kind === "voiceCredit") &&
+        was === undefined
+      ) {
+        return { kind: "refused", reason: NO_VOICE_TO_DESCRIBE };
+      }
       if (change.kind === "removeVoice" && was === undefined) {
         return { kind: "unchanged" };
       }
@@ -3311,6 +3366,13 @@ export function createEditorSession(input: {
         return { kind: "unchanged" };
       }
       const narration = narrationAfter(was, change, voice, entry);
+      // The same mark or credit again: no change, said as none.
+      if (
+        (change.kind === "synthetic" || change.kind === "voiceCredit") &&
+        sameJson(narration, was)
+      ) {
+        return { kind: "unchanged" };
+      }
       const { narration: _was, ...rest } = latest;
       const what =
         change.kind === "voice"
@@ -3319,7 +3381,11 @@ export function createEditorSession(input: {
             ? `the removal of the voice of ${objectName(latest)}`
             : change.kind === "removeTiming"
               ? `the removal of the timing of ${objectName(latest)}`
-              : `the timing of ${objectName(latest)}`;
+              : change.kind === "synthetic"
+                ? `the synthetic voice mark of ${objectName(latest)}`
+                : change.kind === "voiceCredit"
+                  ? `the voice credit of ${objectName(latest)}`
+                  : `the timing of ${objectName(latest)}`;
       const applied = took(() =>
         store.dispatch(
           tourDocumentActions.narrationEdited({

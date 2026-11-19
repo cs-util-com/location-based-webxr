@@ -269,12 +269,43 @@ export async function installTourViewerArFakes(page, options = {}) {
           ? Array.from(m)
           : [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
       }
+      /**
+       * A stub group's add and remove, parenting as three does: a held
+       * object's `parent` is the stub, so a climb from a part up to the
+       * scene (the visitor's tap asks whether a part is shown under a
+       * station) arrives at the scene.
+       */
+      const parenting = {
+        /** @param {any} object */
+        add(object) {
+          if (object.parent && object.parent !== this) {
+            object.parent.remove(object);
+          }
+          /** @type {any} */ (this).children.push(object);
+          object.parent = this;
+        },
+        /** @param {any} object */
+        remove(object) {
+          const self = /** @type {any} */ (this);
+          self.children = self.children.filter(
+            (/** @type {unknown} */ c) => c !== object,
+          );
+          if (object.parent === this) object.parent = null;
+        },
+      };
       const worldGroup = {
         name: "fake-world-group",
-        children: /** @type {unknown[]} */ ([]),
+        visible: true,
+        parent: /** @type {any} */ (null),
+        updateWorldMatrix() {},
+        updateMatrixWorld() {},
+        children: /** @type {any[]} */ ([]),
         // The alignment, as far as the creator's placement reads the group
         // (its odometry position, the matrix it used, the settle).
+        // A child's world pose reads the identity (`elements`), as it did
+        // while the stubs parented nothing.
         matrixWorld: {
+          elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
           toArray: () => currentAlignment(),
         },
         /** World to the group's frame: the rigid inverse of the alignment,
@@ -290,24 +321,27 @@ export async function installTourViewerArFakes(page, options = {}) {
           v.z = z;
           return v;
         },
-        add(object) {
-          this.children.push(object);
-        },
-        remove(object) {
-          this.children = this.children.filter((c) => c !== object);
-        },
+        ...parenting,
       };
-      /** Scene-root stub for the image planes (real three meshes land here). */
+      /**
+       * Scene-root stub for the image planes (real three meshes land here).
+       * It parents what it holds (`parenting`); as a shown root with an
+       * identity world matrix it changes no world pose a child reads.
+       */
       const fakeScene = {
         name: "fake-scene",
-        children: /** @type {unknown[]} */ ([]),
-        add(object) {
-          this.children.push(object);
+        visible: true,
+        parent: null,
+        matrixWorld: {
+          elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
         },
-        remove(object) {
-          this.children = this.children.filter((c) => c !== object);
-        },
+        updateWorldMatrix() {},
+        updateMatrixWorld() {},
+        children: /** @type {any[]} */ ([]),
+        ...parenting,
       };
+      // The world group under the scene, as the real alignment group is.
+      worldGroup.parent = fakeScene;
       test.fakeScene = fakeScene;
       /** @type {any} */ (window).__tourViewerSeams = {
         controllerDeps: {
