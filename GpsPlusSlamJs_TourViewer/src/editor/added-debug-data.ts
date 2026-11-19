@@ -38,13 +38,18 @@ function otherTour(identity: AddedDebugData["identity"]): string {
     : `It was saved from another tour (${named.join(", ")}), not this one.`;
 }
 
-/** The line ahead of the layer's own while it shows an added file. */
+/**
+ * The line ahead of the layer's own while it shows an added file (a
+ * scan). Every such line says the three things a creator must not get
+ * wrong: the scan is shown while editing, it is not part of the tour
+ * visitors get, and it is not saved into the tour file.
+ */
 export function addedDebugLine(added: AddedDebugData): string {
   return [
-    `Added from ${added.fileName}, not saved with the tour.`,
+    `Scan ${added.fileName}: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file.`,
     ...(added.match === "other-tour" ? [otherTour(added.identity)] : []),
     ...(added.match === "recording"
-      ? ["It is a recording, not saved from this tour."]
+      ? ["It is a recording from the Recorder app."]
       : []),
     ...(added.tourCarriesWalk
       ? ["It is shown in place of the tour's own walk."]

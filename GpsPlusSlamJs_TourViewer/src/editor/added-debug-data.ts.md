@@ -16,11 +16,15 @@ says it. Pure; `edit-main.ts` opens the file and runs the layer.
   in-progress ("Adding the debug data…") labels.
 - `addedDebugLine({ fileName, match, identity, tourCarriesWalk })` - the
   line while an added file is shown:
-  - always "Added from <file>, not saved with the tour.";
+  - always "Scan <file>: shown while you edit. It is not part of the
+    tour visitors get, and it is not saved into the tour file." - the
+    three things every scan line says;
   - `match: "other-tour"` (`bundleMatchesTour`): "It was saved from
     another tour (\"<title>\", <file>), not this one." - naming what the
     identity knows, or neither;
-  - `match: "recording"`: "It is a recording, not saved from this tour.";
+  - `match: "recording"`: "It is a recording from the Recorder app."
+    (plain words: the earlier "not saved from this tour" read as a
+    warning);
   - `tourCarriesWalk`: "It is shown in place of the tour's own walk."
 - `notAddedLine(reason)` - "Not added: <reason>" for a refused file.
 - `createAddDebugButton(...buttons) -> { run(work), busy() }` - the
@@ -50,8 +54,9 @@ addedDebugLine({
   identity: { tour: "Castle", file: "castle.zip" },
   tourCarriesWalk: true,
 });
-// "Added from castle-debug.zip, not saved with the tour. It is shown in
-//  place of the tour's own walk."
+// "Scan castle-debug.zip: shown while you edit. It is not part of the
+//  tour visitors get, and it is not saved into the tour file. It is shown
+//  in place of the tour's own walk."
 ```
 
 ## Tests

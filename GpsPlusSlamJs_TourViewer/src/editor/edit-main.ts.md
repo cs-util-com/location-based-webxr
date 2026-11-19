@@ -27,8 +27,24 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   drop box opens it, so a stray drop never takes the open tour away (PR
   #609 review).
 
-- **Open:** the file input's change and a drop on `#drop` call
-  `openTourForEditing` (`editor-open.ts`); "Use the sample tour" fetches
+- **Open:** the file input's change, "Choose…" and a drop on `#drop`
+  (every file of the drop) go through `enterFiles`: each file is sorted
+  first (`classify-editor-file.ts`, its zip directory only), then planned
+  (`editor-entry.ts` `planEditorEntry`). A tour opens through
+  `openTourForEditing` (`editor-open.ts`); a tour with a scan opens and
+  then gets the scan as one busy state (`openWithScan`, the store's
+  `editorView.entryStep`, a held line naming both files; a scan that
+  fails keeps the tour and says so in a toast that stays; one added under
+  a tour that changed meanwhile says nothing; an open that threw says
+  its error in `#open-error` and ends the busy state); a scan alone
+  is added beside the open tour as one busy state ("Adding the scan
+  <name>…", the store's `entryStep` `"adding-scan"`, so a second drop
+  waits) and closes the dialog, or is refused in the dialog when no tour
+  is open; several tours or scans are refused; a file that is neither
+  for no zip or no tour goes to the open, which refuses it in its own
+  words, and one with a precise reason is refused with it; a file left
+  out of a drop is named in a toast; every entry (a drop, the sample, a
+  link) starts only while `isEntryIdle` (`editor-view.ts`); "Use the sample tour" fetches
   `samples/marienplatz-tour.zip` beside the page; `#link-form` fetches a
   hosted tour from its link (`editor-link.ts`, the viewer's transport and
   Drive proxy, tour editor plan 2026-10-17-1816 W1) and opens it as a
@@ -252,7 +268,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   `bundleMatchesTour` against `EditorSession.debugTour()`). Shown, also
   when it is another tour's (Q-C), with `addedDebugLine`
   (`added-debug-data.ts`) ahead of the layer's line; a file that is no
-  debug data is refused in a toast (`notAddedLine`), the layer kept.
+  debug data is refused in a toast (`notAddedLine`, from
+  `addDebugDataSaying`; `addDebugData` itself returns the outcome, so the
+  open dialog's scan path says it its own way), the layer kept.
   The button reads "Adding the debug data…" and is disabled meanwhile,
   and is idle and enabled again however the add ends
   (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)

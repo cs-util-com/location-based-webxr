@@ -18,6 +18,13 @@
  * (`globe-approach-marks.ts`), so a second line over it would only hide
  * it.
  *
+ * Both reach the GPU relative to the first capture, whose point is the
+ * objects' position: the GPU's numbers are 32-bit, and a scan thousands
+ * of km from the tour's centre (a new tour opens over the creator's part
+ * of the world) would jitter by pixels if its points were (measured in
+ * `globe-debug-precision.test.ts`); the position goes into three's
+ * 64-bit model-view matrix instead.
+ *
  * @see globe-debug-layer.ts.md
  */
 import * as THREE from "three";
@@ -333,9 +340,15 @@ export function createGlobeDebugLayer(
         new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2),
       );
       geometry.setIndex([0, 1, 2, 0, 2, 3]);
+      // Relative to the first capture: small numbers for the GPU's 32
+      // bits, the anchor in the objects' 64-bit position.
+      const anchor = kept[0]!.at.clone();
       const centers = new Float32Array(kept.length * 3);
       kept.forEach((c, i) => {
-        centers.set([c.at.x, c.at.y, c.at.z], i * 3);
+        centers.set(
+          [c.at.x - anchor.x, c.at.y - anchor.y, c.at.z - anchor.z],
+          i * 3,
+        );
       });
       const sizes = new Float32Array(kept.length * 2).fill(DOT_PX);
       geometry.setAttribute(
@@ -359,17 +372,23 @@ export function createGlobeDebugLayer(
       // Placed in the shader: the quad's own bounds say nothing.
       mesh.frustumCulled = false;
       mesh.renderOrder = 2;
+      mesh.position.copy(anchor);
       group.add(mesh);
 
       if (withLine && kept.length >= 2) {
         const lineGeometry = new LineGeometry();
         lineGeometry.setPositions(
-          kept.flatMap((c) => [c.at.x, c.at.y + LINE_LIFT_M, c.at.z]),
+          kept.flatMap((c) => [
+            c.at.x - anchor.x,
+            c.at.y - anchor.y + LINE_LIFT_M,
+            c.at.z - anchor.z,
+          ]),
         );
         line = new Line2(lineGeometry, lineMaterial);
         line.name = "debug-walk";
         line.computeLineDistances();
         line.renderOrder = 1;
+        line.position.copy(anchor);
         group.add(line);
         linePoints = kept.length;
       }

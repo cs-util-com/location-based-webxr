@@ -320,6 +320,16 @@ The view disposes the run once the arrival is over.
   and the haze never darken it. A view opened late copies every
   thumbnail the page already decoded in one frame (not measured for a
   long walk; to cap per frame if it hitches).
+- **A scan framed in the tour's stead:** when the tour has nothing
+  positioned (no station, no code: a new tour, which opens on the whole
+  Earth) and the slice is shown with captures, `debugFrame` flies the
+  view to them (`frameView(null)`: their bounding sphere, `aimAt`),
+  once per capture set, so a person who looks elsewhere is not pulled
+  back each frame (the tour is checked once per shown set too, not each
+  frame). `frame(null)` (the whole tour) fits the scan the same way while
+  the tour has nothing positioned (no station, no code); a tour with stations keeps
+  framing them. A scan far from the tour frame's centre keeps its place
+  on screen (`globe-debug-layer.ts.md`, "Precision").
 - The flight's clock starts at its first drawn frame (the run's first
   `drive` in the frame's camera step), not at mount: the box's fit and the first tiles
   can take a while, and a flight timed from mount would skip its start.
@@ -419,7 +429,9 @@ see-through), null without buildings.
 - `editor3d-globe.test.ts` also covers the debug layer's wiring: a new
   drawing drawn again, the line only for added debug data, the switch,
   a clear, thumbnails decoded before the view opened, and a failed copy
-  tried again on a later frame.
+  tried again on a later frame; the view flying to a shown scan beside a
+  tour with nothing positioned, once per scan, and `frame(null)` fitting
+  it, while a tour with stations keeps its own framing.
 - `editor3d-globe.test.ts` (jsdom, the wiring): the view core, the
   controls, the relief, the stations layer and the input are fakes; the
   fake view places its camera through the globe's own `viewPoseEcef`, and

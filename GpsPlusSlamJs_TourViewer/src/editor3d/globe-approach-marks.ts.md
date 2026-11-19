@@ -35,10 +35,18 @@ between stations.
 
 - The drawn walk only grows with its share.
 - The walk is lifted 5 cm so the ground it lies on does not hide it.
+- Precision: the line's points (and every cut end written) are relative
+  to the walk's first point, which is the line's `position`. The GPU's
+  buffers are 32-bit; three builds the model-view matrix in 64 bits from
+  the position, so a walk far from the frame's centre keeps its
+  millimetres, as the debug layer's points do (its sidecar has the
+  measurement).
 
 ## Tests
 
 - `globe-approach-marks.test.ts` - `walkCut` by length, its monotone
   growth, no line without a walk, the one geometry revealed by its share
   (the cut end, restored ends, share 0 hidden), the update ranges (only
-  the ends written, none at share 0), rings added and removed.
+  the ends written, none at share 0), the buffer near its own origin for
+  a walk 5000 km out (the line's position its first point), rings added
+  and removed.
