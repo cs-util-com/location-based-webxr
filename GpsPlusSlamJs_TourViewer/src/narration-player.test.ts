@@ -232,6 +232,39 @@ describe("createNarrationPlayer", () => {
     expect(onError).not.toHaveBeenCalled();
   });
 
+  // Why: once the player is gone no failure of it is the page's to show:
+  // a fetch that fails after dispose, or a play() the browser refuses
+  // then, used to reach the error toast for a voice nobody is listening to.
+  it("reports no failure after dispose, whatever it is", async () => {
+    let failFetch: (e: unknown) => void = () => undefined;
+    const fetching = make(
+      () =>
+        new Promise<Blob>((_, r) => {
+          failFetch = r;
+        }),
+    );
+    fetching.player.play();
+    fetching.player.dispose();
+    failFetch(new Error("network down"));
+    await flush();
+    expect(fetching.onError).not.toHaveBeenCalled();
+
+    const refused = make();
+    let refuse: (e: unknown) => void = () => undefined;
+    refused.audio.play.mockImplementationOnce(
+      () =>
+        new Promise<void>((_, r) => {
+          refuse = r;
+        }),
+    );
+    refused.player.play();
+    await flush();
+    refused.player.dispose();
+    refuse(new DOMException("not allowed", "NotAllowedError"));
+    await flush();
+    expect(refused.onError).not.toHaveBeenCalled();
+  });
+
   // Why: dispose during the fetch must not start the audio once the file
   // arrives.
   it("starts no audio when disposed during the fetch", async () => {

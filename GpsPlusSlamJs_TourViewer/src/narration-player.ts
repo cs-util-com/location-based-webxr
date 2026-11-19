@@ -163,6 +163,10 @@ export function createNarrationPlayer(
           return audio.play();
         })
         .catch((error: unknown) => {
+          // A player that is gone reports nothing: a fetch failing after
+          // dispose, or a play() the browser refuses then, is no one's to
+          // hear.
+          if (disposed) return;
           // A pause before play() settled (a drag holding the voice the
           // next frame, or play-pause-play) aborts it: the voice is held,
           // not refused. An abort of the current press is still reported.
