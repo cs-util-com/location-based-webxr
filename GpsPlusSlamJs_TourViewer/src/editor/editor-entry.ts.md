@@ -6,8 +6,10 @@ The engine behind the open dialog's file input, "Choose…" and drop box:
 given files already sorted (`classify-editor-file.ts`), it plans what to
 do, and it runs "open a tour, then add a scan" as one busy state. The
 order is forced: there is no add without a tour. Pure planning, and an
-orchestrator over injected steps; `edit-main.ts` (`enterFiles`) wires it.
-Which UI offers a new tour, or asks for a scan, is not decided here.
+orchestrator over injected steps; the start card (`start-card.ts`
+`sortTourPick`) plans with it, and `edit-main.ts` (`openTourWithScan`)
+runs `openWithScan`. Which UI offers a new tour, or asks for a scan, is
+not decided here.
 
 ## Public API
 
@@ -25,7 +27,8 @@ Which UI offers a new tour, or asks for a scan, is not decided here.
     broken, a damaged zip): "<name>: <reason>", since the open would only
     say it holds no tour.
   - `ignored` - the files sorted as neither that came along, with their
-    reasons, for the page to name.
+    reasons, for the page to name (`IgnoredFile`, exported for the start
+    card).
 - `openWithScan(tour, scan, { open, addScan, step }) ->
 Promise<OpenWithScanOutcome>`, never rejects:
   - `step` goes `"opening"`, then `"adding-scan"`, then `null` on every

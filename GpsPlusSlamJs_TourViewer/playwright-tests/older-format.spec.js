@@ -139,6 +139,7 @@ test("the editor refuses a tour of an older format and deletes its draft, and no
   await seedDraft(page, `editor:${contentKey}`);
   await seedDraft(page, "editor:local-file:00000000000000000000000000000002");
   const chooser = page.waitForEvent("filechooser");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#drop").click();
   await (
     await chooser
@@ -147,6 +148,7 @@ test("the editor refuses a tour of an older format and deletes its draft, and no
     mimeType: "application/zip",
     buffer: Buffer.from(zip),
   });
+  await page.locator("#start-open").click();
   await expect(page.locator("#open-error")).toHaveText(LOST, {
     timeout: 15000,
   });

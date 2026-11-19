@@ -1645,10 +1645,14 @@ test("the dialogs, their fields and the toasts wear the studio's dark dress; a s
   await expect(openModal).toBeVisible();
   await expect(openModal).toHaveCSS("background-color", BG1);
   await expect(openModal).toHaveCSS("color", TEXT);
+  await page.locator(".start-choice:has(#start-tour)").click();
   await expect(page.locator("#link-input")).toHaveCSS("background-color", BG2);
   await expect(page.locator("#link-input")).toHaveCSS("color", TEXT);
   await expect(page.locator("#drop")).toHaveCSS("background-color", BG2);
-  await expect(page.locator("#sample-btn")).toHaveCSS("color", TEXT);
+  await expect(page.locator(".start-choice:has(#start-example)")).toHaveCSS(
+    "color",
+    TEXT,
+  );
   await openSampleIn3d(page);
 
   // Tour details, from the tour's name in the top bar.

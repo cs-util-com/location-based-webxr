@@ -777,59 +777,128 @@
         aria-modal="true"
         aria-labelledby="open-title"
       >
-        <h1 id="open-title">Open a tour</h1>
+        <!-- The start card (start-card.ts): two questions, then one button.
+             Nothing opens before "Open the editor"; what it will do is said
+             under it (#start-summary). -->
+        <h1 id="open-title">Start in the editor</h1>
         <p class="lede">
-          See what your phone created on a map: every printed code, pin and
-          photo, and fix a text, move a pin or remove a note.
+          Make a tour, or change one you made: its stations, texts and printed
+          codes, on the globe.
         </p>
-        <label class="drop" id="drop">
-          <span class="drop-text">
-            <span class="drop-title">Choose the tour file (.zip)</span>
-            <span class="drop-sub"
-              >The file your phone's Finish saved. You can also drop it
-              here.</span
-            >
-          </span>
-          <button class="btn small" id="choose-btn" type="button">
-            Choose…
-          </button>
-          <input
-            type="file"
-            id="zip-input"
-            accept=".zip,application/zip"
-            hidden
-          />
-        </label>
-        <!-- A hosted tour opens from its link (tour editor plan 2026-10-17-1816,
-             W1): fetched whole, then opened as a chosen file is
-             (editor-link.ts). type="text": the dialog says what is wrong
-             with a link, not the browser. -->
-        <form class="link-open" id="link-form">
-          <label class="link-label" for="link-input"
-            >Or open it from its link</label
-          >
-          <div class="link-row">
-            <input
-              id="link-input"
-              type="text"
-              inputmode="url"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="https://…"
-            />
-            <button class="btn small" id="link-btn" type="submit">
-              Open the link
-            </button>
+        <fieldset class="start-q" id="start-from">
+          <legend class="start-legend">What do you start from?</legend>
+          <div class="start-choices">
+            <label class="start-choice">
+              <input
+                type="radio"
+                name="start-from"
+                value="tour"
+                id="start-tour"
+              />
+              <span>A tour I made (.zip or link)</span>
+            </label>
+            <label class="start-choice">
+              <input
+                type="radio"
+                name="start-from"
+                value="new"
+                id="start-new"
+              />
+              <span>A new, empty tour</span>
+            </label>
+            <label class="start-choice">
+              <input
+                type="radio"
+                name="start-from"
+                value="example"
+                id="start-example"
+              />
+              <span>The example tour - just look around</span>
+            </label>
           </div>
-        </form>
+        </fieldset>
+        <div class="start-step" id="start-tour-step" hidden>
+          <label class="drop" id="drop">
+            <span class="drop-text">
+              <span class="drop-title" id="start-tour-held"
+                >Choose the tour file (.zip)</span
+              >
+              <span class="drop-sub"
+                >The file your phone's Finish or this editor saved. You can also
+                drop it here.</span
+              >
+            </span>
+            <button class="btn small" id="choose-btn" type="button">
+              Choose…
+            </button>
+            <input
+              type="file"
+              id="zip-input"
+              accept=".zip,application/zip"
+              multiple
+              hidden
+            />
+          </label>
+          <!-- A hosted tour opens from its link (tour editor plan 2026-10-17-1816,
+               W1): fetched whole, then opened as a chosen file is
+               (editor-link.ts). type="text": the dialog says what is wrong
+               with a link, not the browser. Enter opens the editor. -->
+          <form class="link-open" id="link-form">
+            <label class="link-label" for="link-input">Or paste its link</label>
+            <div class="link-row">
+              <input
+                id="link-input"
+                type="text"
+                inputmode="url"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="https://…"
+              />
+            </div>
+          </form>
+        </div>
+        <fieldset class="start-q start-step" id="start-scan-step" hidden>
+          <legend class="start-legend">
+            Add a scan of the place? (optional)
+          </legend>
+          <p class="start-explain">
+            A scan is a recording from the Recorder app, or the debug data your
+            phone saved. It is shown while you edit, so you can place stations
+            where things really are. It is not part of the tour visitors get,
+            and it is not saved into the tour file.
+          </p>
+          <div class="start-scan-row">
+            <span class="start-scan-held" id="start-scan-held">No scan</span>
+            <button
+              class="btn small"
+              id="start-scan-remove"
+              type="button"
+              hidden
+            >
+              Remove
+            </button>
+            <button class="btn small" id="start-scan-btn" type="button">
+              Add a scan…
+            </button>
+            <input
+              type="file"
+              id="start-scan-input"
+              accept=".zip,application/zip"
+              hidden
+            />
+          </div>
+        </fieldset>
         <div id="open-status" role="status" aria-live="polite"></div>
         <div id="open-error" role="alert" hidden></div>
+        <p class="start-summary" id="start-summary">
+          Choose where you start from.
+        </p>
         <div class="modal-actions">
           <button class="btn" id="open-cancel" type="button" hidden>
             Cancel
           </button>
-          <button class="btn ghost" id="sample-btn" type="button">
-            Use the sample tour
+          <button class="btn primary" id="start-open" type="button" disabled>
+            Open the editor
           </button>
         </div>
         <!-- Said per browser by edit-main.ts (saveFinePrint): this text is

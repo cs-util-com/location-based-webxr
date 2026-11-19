@@ -79,7 +79,9 @@ async function openFile(page, buffer, name) {
  * @param {import("@playwright/test").Page} page
  */
 async function openOffered(page) {
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#view3d-failed")).toBeVisible();
 }
 
@@ -552,7 +554,9 @@ test("the changed-on-disk refusal points to the browser's copy, and the file ope
     void dialog.accept();
   });
   await openAnother(page);
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   // The file as the other program wrote it, then the draft offered on it.
   await expectCaption(page, ADDED_ELSEWHERE, "Added elsewhere");
   const offer = page.locator(".toast.draft-offer");

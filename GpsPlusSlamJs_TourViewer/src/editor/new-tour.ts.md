@@ -4,7 +4,8 @@
 
 Makes a new, empty tour as a file and opens it in the desktop editor the
 way a chosen tour opens, so the rest of the editor (draft, save, globe)
-needs nothing new. Its zip comes from the start page's packer
+needs nothing new. The start card's "A new, empty tour" calls it
+(`edit-main.ts` `startNew`). Its zip comes from the start page's packer
 (`../starter-tour.ts`).
 
 ## Public API

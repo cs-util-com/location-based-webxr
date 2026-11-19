@@ -208,8 +208,10 @@ export async function answerTiles(page) {
  */
 export async function openThroughChooser(page, buffer, name) {
   const chooser = page.waitForEvent("filechooser");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#drop").click();
   await (await chooser).setFiles({ name, mimeType: "application/zip", buffer });
+  await page.locator("#start-open").click();
 }
 
 /** A tour in the wrapped shape ("compress this folder") carrying a walk

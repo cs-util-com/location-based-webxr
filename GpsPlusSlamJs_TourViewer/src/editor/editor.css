@@ -1036,6 +1036,92 @@ kbd {
   font: inherit;
 }
 
+/* The start card's questions (start-card.ts), drawn as the cover choice. */
+.start-q {
+  border: 0;
+  margin: 0 0 14px;
+  padding: 0;
+  min-width: 0;
+}
+
+.start-legend {
+  padding: 0;
+  margin: 0 4px 8px;
+  font-weight: 600;
+}
+
+.start-choices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (width <= 480px) {
+  .start-choices {
+    grid-template-columns: 1fr;
+  }
+}
+
+.start-choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: var(--radius-small);
+  border: 1.5px solid var(--hairline);
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.start-choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.start-choice:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.start-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.start-step {
+  margin-bottom: 14px;
+}
+
+.start-explain {
+  margin: 0 4px 10px;
+  font-size: 13px;
+  color: var(--ink-dim);
+  line-height: 1.45;
+}
+
+.start-scan-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.start-scan-held {
+  flex: 1;
+  min-width: 0;
+  margin-left: 4px;
+  overflow-wrap: anywhere;
+}
+
+.start-summary {
+  margin: 12px 4px 0;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
 #open-status {
   min-height: 20px;
   margin: 12px 4px 0;
