@@ -29,6 +29,11 @@ wired into its logic: every interaction is faked.
   `page.css` are the package's sheet and the page's `<style>` block, with
   their comments removed) with switches for the device, a returning device and the
   AR check delay, and a notes panel with its measurements and weaknesses.
+- `start-page-3-device-aware/` - the tour start page whose hero button and
+  the line under it depend on the device; the real page's markup, its
+  scripts bundled into `real/` (generated, never edited by hand), the setup
+  steps, the editor entry and AR faked, with prototype switches and a notes
+  panel. Its own `README.md` has the details.
 - `landing-1-editorial/` ... `landing-5-map-path/` - the creator's entry
   and setup page, five visual directions. The app took L5.
 - `landing-r3-0-strip-or-cards/` ... `landing-r3-5-calm-route-cards/` - the
