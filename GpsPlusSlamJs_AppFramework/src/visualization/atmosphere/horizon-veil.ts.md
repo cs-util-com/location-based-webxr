@@ -17,6 +17,11 @@ step, while the sky higher up keeps its own colour.
   - `exp(-max(dirY, 0) / rise)`; 0 when `rise <= 0` (the veil is off).
   - Throws a `RangeError` when either argument is not finite.
   - The CPU twin of the GLSL below; the tests hold the two to one formula.
+- `checkedVeilStrength(strength: number, what: string): number`
+  - The strength `SkyAtmosphere.setHorizonVeil`, `AtmosphereHaze.setVeil`
+    and `AtmosphereHaze.setRim` take: returns it when finite and in
+    [0, 1], otherwise throws a `RangeError` naming `what`. Covered through
+    those setters' tests.
 - `HORIZON_VEIL_GLSL: string`
   - Defines `float atmHorizonVeilWeight(float dirY, float rise)`, the same
     formula, for inclusion in a fragment shader.

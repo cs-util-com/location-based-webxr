@@ -25,6 +25,13 @@ import {
 
 import { deviceGpsQuality } from "./device-gps-quality.js";
 import {
+  isComputerScreen,
+  linkQrShown,
+  linkQrSvg,
+  shareLinkOf,
+  onComputerScreenChange,
+} from "./link-qr.js";
+import {
   arButtonView,
   COPY_LINK_LABELS,
   visitorStep,
@@ -112,6 +119,13 @@ export interface ArEntryDom {
   /** The peek's line asking for the code (the prototype: in the peek, not over the
    *  camera). */
   codeTail?: Pick<HTMLElement, "hidden" | "textContent">;
+  /** The visitor's "Scan with your phone" code beside "Copy link"
+   *  (`link-qr.ts`): its figure and the box the SVG is drawn into.
+   *  Absent: no code (the node tests that do not need one). */
+  linkQr?: {
+    root: Pick<HTMLElement, "hidden">;
+    code: Pick<HTMLElement, "innerHTML" | "dataset">;
+  };
 }
 
 /** The scan card's two titles (the first kept). */
@@ -592,6 +606,14 @@ export function wireArEntry(deps: {
     // The page's CSS reads it: "What happens?" describes a session this
     // visitor cannot start, so it goes too (index.html).
     dom.enterArButton.dataset["start"] = withheld ? "withheld" : "offered";
+    renderLinkQr(
+      linkQrShown({
+        visitor: !authorMode,
+        arStatus: state.status,
+        withheld,
+        computerScreen: isComputerScreen(globalThis),
+      }),
+    );
     dom.arHint.hidden =
       withheld ||
       sessionActive ||
@@ -676,6 +698,34 @@ export function wireArEntry(deps: {
     hooks.renderAuthorReadout();
   }
 
+  /** Shows or hides the link's code; draws it only when the share link
+   *  differs from the one it encodes (the link Copy link copies,
+   *  `shareLinkOf(location.href)`). A link too long for any QR code, or
+   *  whose code would not fit beside the dial, shows no code: Copy link
+   *  alone. */
+  function renderLinkQr(shown: boolean): void {
+    const qr = dom.linkQr;
+    if (qr === undefined) return;
+    qr.root.hidden = !shown;
+    if (!shown) return;
+    const link = shareLinkOf(location.href);
+    if (qr.code.dataset["url"] !== link) {
+      qr.code.dataset["url"] = link;
+      try {
+        qr.code.innerHTML = linkQrSvg(link);
+        delete qr.code.dataset["tooLong"];
+      } catch {
+        // A link too long for any QR code (the `?qr=` payload has no
+        // cap) or for the room beside the dial even at 2 px per module:
+        // caught, so the rest of the render still runs, and kept,
+        // so it is not tried again on every render.
+        qr.code.innerHTML = "";
+        qr.code.dataset["tooLong"] = "true";
+      }
+    }
+    if (qr.code.dataset["tooLong"] === "true") qr.root.hidden = true;
+  }
+
   /** The visitor's Copy link tap (async-UI rule: busy, then the outcome;
    *  a failure on the error line, with the address bar as the way out). */
   function copyLink(): void {
@@ -685,7 +735,7 @@ export function wireArEntry(deps: {
     // "Copying…" (M4 review #1).
     void copyWithFeedback(
       dom.enterArButton,
-      location.href,
+      shareLinkOf(location.href),
       (text) => seams.copyText(text),
       {
         busy: COPY_LINK_LABELS.busy,
@@ -902,6 +952,11 @@ export function wireArEntry(deps: {
 
   arController.subscribe(renderArState);
   renderArState(arController.getState());
+  // The code beside "Copy link" depends on the screen as well as the state:
+  // a window widened into a computer screen shows it without a reload.
+  onComputerScreenChange(globalThis, () => {
+    renderArState(arController.getState());
+  });
   void arController.refreshSupport();
   dom.enterArButton.addEventListener("click", () => {
     // During a session the button is the way out (UI round 1, U2): the

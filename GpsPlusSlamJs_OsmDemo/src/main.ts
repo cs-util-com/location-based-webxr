@@ -58,6 +58,8 @@ import {
   parseLightLink,
   serializeLightSettings,
 } from "./light-settings.js";
+import { chooseSunDriver, clockInstant, timelapseSpan } from "./sun-driver.js";
+import { createSunFollow } from "./sun-follow.js";
 import { describeDrawCost } from "./draw-cost.js";
 import { fallbackBuildingsNote } from "./fallback-note.js";
 import { readWoodsKnobs } from "./woods-readout.js";
@@ -202,13 +204,14 @@ import {
   selectMarkings,
   selectLayers,
   selectOsmView,
+  selectSun,
 } from "./osm-store.js";
 import {
-  DEFAULT_COLOUR_SCHEME,
-  colourSchemeOf,
-  resolveColourScheme,
-  schemeLinkValue,
-} from "./colour-schemes.js";
+  lookLinkValue,
+  parseLookWeights,
+  resolveLook,
+  resolveLookChoice,
+} from "./look-choice.js";
 import { attachColourSchemeSwitch } from "./colour-scheme-switch.js";
 import { attachBuildChoiceSwitch } from "./build-choice-switch.js";
 import { attachInventedRoofsSwitch } from "./invented-roofs-switch.js";
@@ -229,8 +232,7 @@ import {
   moveToDate,
   parseSolarTime,
   parseSunDate,
-  relocate,
-  stepSun,
+  stepSun as stepSunClock,
   sunDateOf,
   type SunPlace,
 } from "./sun-clock.js";
@@ -403,26 +405,51 @@ async function main(): Promise<void> {
   // (apparent solar HH:MM) are READ-ONLY test pins, never written back, so
   // DEC-R12-5 (no presentation state in the URL) holds; the e2e suite pins
   // the date because the look now changes with the season.
+  //
+  // THE SUN IS STORE STATE (`osm-store.ts`, `sun`): the time controls, the
+  // real clock and the timelapse dispatch it; the view, the controls and the
+  // time-of-day blend's look weights follow it.
+  //
+  // THE DRIVERS (`sun-driver.ts`): `?now=1` follows the real clock (held at
+  // the night's edge), `?timelapse=<seconds>` plays the evening; a pinned
+  // `?time=` wins over both, with a warning. The boot sun is already the
+  // driver's, so the first frame does not jump.
   const sunParams = new URLSearchParams(window.location.search);
-  let sunPlace: SunPlace = { lat: start.lat, lng: start.lng };
+  const bootPlace: SunPlace = { lat: start.lat, lng: start.lng };
   const sunBootDate =
     parseSunDate(sunParams.get("date")) ?? viewerToday(new Date());
   const sunPinnedTime = parseSolarTime(sunParams.get("time"));
-  let sunInstant =
-    sunPinnedTime === null
-      ? bootInstant(sunBootDate, sunPlace)
-      : instantAt(sunBootDate, sunPlace, sunPinnedTime);
+  const sunDriver = chooseSunDriver({
+    time: sunParams.get("time"),
+    timelapse: sunParams.get("timelapse"),
+    now: sunParams.get("now"),
+  });
+  const dateBootInstant = bootInstant(sunBootDate, bootPlace);
+  const sunBootInstant =
+    sunPinnedTime !== null
+      ? instantAt(sunBootDate, bootPlace, sunPinnedTime)
+      : sunDriver.kind === "clock"
+        ? clockInstant(Date.now(), bootPlace)
+        : sunDriver.kind === "timelapse"
+          ? (timelapseSpan(dateBootInstant, bootPlace)?.startMs ??
+            dateBootInstant)
+          : dateBootInstant;
 
   const { store, actions, subscribe } = createDemoStore({
     start,
     category: categorySelect.value,
+    sun: { instantMs: sunBootInstant, place: bootPlace },
+    // THE TIME-OF-DAY BLEND'S LOOK WEIGHTS pinned by `?lookWeights=` (a
+    // test and review hook, `look-choice.ts`); absent, the sun derives
+    // them (`selectLookWeights`).
+    lookWeightsOverride: parseLookWeights(sunParams.get("lookWeights")) ?? null,
     // THE LINK CAN SWITCH THE AMBIENT OCCLUSION OFF (?ao=off), read-only like
     // the roofs: the light dialog's box changes it, never the link.
     ambientOcclusion:
       new URLSearchParams(window.location.search).get("ao") !== "off",
     // THE LINK'S SCHEME (colour schemes plan 2026-11-10-0841, D6); unknown
     // names open the default with one warning.
-    colourScheme: resolveColourScheme(
+    colourScheme: resolveLookChoice(
       new URLSearchParams(window.location.search).get("scheme"),
     ),
     // THE LINK CAN SWITCH THE INVENTED ROOFS OFF for a comparison (?roofs=off).
@@ -505,7 +532,7 @@ async function main(): Promise<void> {
   );
   const buildingView = new BuildingView({
     container: el("scene"),
-    initialSun: sunAnglesAt(sunInstant, sunPlace),
+    initialSun: sunAnglesAt(sunBootInstant, bootPlace),
     woodsAuto: woodsKnobs.auto,
     perfReadout: woodsKnobs.perf,
     cameraDamping: cameraDampingEnabled(window.location.search),
@@ -646,14 +673,15 @@ async function main(): Promise<void> {
   const sunTimeQuick = el<HTMLInputElement>("sun-time-quick");
   const sunChipTime = el("sun-chip-time");
   const showSunControl = () => {
-    const d = sunDateOf(sunInstant, sunPlace);
+    const { instantMs, place } = selectSun(store.getState());
+    const d = sunDateOf(instantMs, place);
     sunDateInput.value = `${d.year}-${pad2(d.month)}-${pad2(d.day)}`;
     sunTimeInput.value = String(
-      Math.round(instantToSlider(sunInstant, sunPlace) * SUN_SLIDER_STEPS),
+      Math.round(instantToSlider(instantMs, place) * SUN_SLIDER_STEPS),
     );
     sunTimeQuick.value = sunTimeInput.value;
-    sunReadout.textContent = formatSunReadout(sunInstant, sunPlace);
-    sunChipTime.textContent = formatSolarClock(sunInstant, sunPlace);
+    sunReadout.textContent = formatSunReadout(instantMs, place);
+    sunChipTime.textContent = formatSolarClock(instantMs, place);
   };
   // THE LIGHT DIALOG (plan 2026-09-24-2140): the owner tunes the noon
   // lighting live and pastes the result back. The settings travel in the URL
@@ -689,7 +717,13 @@ async function main(): Promise<void> {
     defaults: lightDefaultsFor(selectColourScheme(store.getState())),
     stated: statedLight,
     onChange: (settings) => {
-      buildingView.setLightSettings(settings);
+      const { instantMs, place } = selectSun(store.getState());
+      const view = sunFollow.viewLight(settings);
+      buildingView.setSunAndLight(
+        sunAnglesAt(instantMs, place),
+        view.settings,
+        view.light,
+      );
       // The haze start moves the fog's near, which the draw readout names.
       // Declared further down; this runs on user input or a scheme switch
       // only, after boot.
@@ -713,7 +747,8 @@ async function main(): Promise<void> {
     // carries it), so a pasted pick is reproduced at the same sun.
     copyText: (settings) => {
       const date = sunDateInput.value;
-      const clock = formatSolarClock(sunInstant, sunPlace);
+      const { instantMs, place } = selectSun(store.getState());
+      const clock = formatSolarClock(instantMs, place);
       return `${describeLightSettings(settings)} | sun ${date} ${clock} solar time | ${sunPinnedHref(window.location.href, date, clock)}`;
     },
     writeClipboard: (text) => navigator.clipboard.writeText(text),
@@ -729,16 +764,27 @@ async function main(): Promise<void> {
   store.subscribe(() => {
     buildingView.setAmbientOcclusion(selectAmbientOcclusion(store.getState()));
   });
-  const moveSun = (next: number) => {
-    sunInstant = next;
-    buildingView.setSunAngles(sunAnglesAt(sunInstant, sunPlace));
-    showSunControl();
-    lightDialog.refresh();
-  };
+  // THE SUN FOLLOWER (`sun-follow.ts`): the one place the view follows the
+  // store's sun (the sun step, its light, the look weights) and the holder
+  // of the drivers' timers. Whether the drawn city is the blend is the
+  // view's (`BuildingView.drawsBlend`, from the drawn mesh's scheme), so
+  // AR's default build gets the default's light. Created after the light
+  // dialog, whose changes (user input only) read its light.
+  const sunFollow = createSunFollow({
+    store,
+    view: buildingView,
+    dialog: () => lightDialog,
+    sunAngles: sunAnglesAt,
+    showSun: () => showSunControl(),
+  });
+  // THE LINK'S DRIVER; a hand on the time controls stops it (`moveSun`).
+  sunFollow.start(sunDriver);
+  const moveSun = (next: number) => sunFollow.moveSun(next);
   showSunControl();
   sunDateInput.addEventListener("change", () => {
     const picked = parseSunDate(sunDateInput.value);
-    if (picked !== null) moveSun(moveToDate(sunInstant, sunPlace, picked));
+    const { instantMs, place } = selectSun(store.getState());
+    if (picked !== null) moveSun(moveToDate(instantMs, place, picked));
   });
   // HAND FOCUS BACK ON ENTER OR ESCAPE, never on change (M2 review finding
   // 4): "change" fires per edited segment, so blurring there broke typing a
@@ -749,15 +795,14 @@ async function main(): Promise<void> {
     if (event.key === "Enter" || event.key === "Escape") sunDateInput.blur();
   });
   // SAMPLED WHILE DRAGGING (PR #489 review): each move re-renders the sky
-  // LUT, reads it back and re-bakes the environment
-  // (`BuildingView.setSunAngles`), so a drag moves the sun at most every
+  // LUT, reads it back and re-bakes the environment (the sun step,
+  // `BuildingView.setSunAndLight`), so a drag moves the sun at most every
   // 50 ms, with the value the slider holds by then, and always once after
   // the last event (`throttle.ts`).
   const moveSunToSlider = throttle(() => {
     const fraction = Number(sunTimeInput.value) / SUN_SLIDER_STEPS;
-    moveSun(
-      sliderToInstant(fraction, sunDateOf(sunInstant, sunPlace), sunPlace),
-    );
+    const { instantMs, place } = selectSun(store.getState());
+    moveSun(sliderToInstant(fraction, sunDateOf(instantMs, place), place));
   }, 50);
   sunTimeInput.addEventListener("input", () => moveSunToSlider());
   sunTimeQuick.addEventListener("input", () => {
@@ -767,12 +812,18 @@ async function main(): Promise<void> {
   hotkeys.add({
     key: "t",
     description: "step the sun forward (skips the night)",
-    handler: () => moveSun(stepSun(sunInstant, sunPlace, 1)),
+    handler: () => {
+      const { instantMs, place } = selectSun(store.getState());
+      moveSun(stepSunClock(instantMs, place, 1));
+    },
   });
   hotkeys.add({
     key: "T",
     description: "step the sun back",
-    handler: () => moveSun(stepSun(sunInstant, sunPlace, -1)),
+    handler: () => {
+      const { instantMs, place } = selectSun(store.getState());
+      moveSun(stepSunClock(instantMs, place, -1));
+    },
   });
   // THE COMMAND BAR'S PANELS: the settings drawer, the status and the quick
   // sun slider share one place, so at most one is open; open/closed is view
@@ -1248,11 +1299,12 @@ async function main(): Promise<void> {
     // them, and two independent samples would be two chances to disagree.
     geoidUndulationM: () => arUndulationM,
     // THE SCHEME, read at post time like the datum: AR always builds the
-    // default (D9), and the choice and the link stay as they are.
+    // default, and the choice and the link stay as they are. The same
+    // pure rule (`resolveLook`) the switch's echo is checked against.
     colourScheme: () =>
-      arSession === undefined
-        ? selectColourScheme(store.getState())
-        : DEFAULT_COLOUR_SCHEME,
+      resolveLook(selectColourScheme(store.getState()), {
+        ar: arSession !== undefined,
+      }),
     // THE BUILD THE PAGE DRAWS, so the worker rebuilds after a reply that
     // never reached the page (an aborted pass) instead of sending slabs for
     // a mesh this side does not have.
@@ -1310,10 +1362,10 @@ async function main(): Promise<void> {
         latestMesh = built.mesh;
         // THE PAGE'S COLOURS FOLLOW THE MESH'S SCHEME, not the choice, so the
         // ground never changes before the buildings it belongs with and AR's
-        // default build gets the default ground (colour-schemes.ts).
-        const look = colourSchemeOf(built.mesh.colourScheme);
-        buildingView.setGroundColours(look.city.ground, look.ground.slope);
-        buildingView.setBrightnessTrim(look.brightnessTrim);
+        // default build gets the default ground (`city-look.ts`).
+        // The light follows the drawn scheme too: the blend's light comes
+        // and goes with a blend build (and AR's default build), at once.
+        sunFollow.followMeshScheme(built.mesh.colourScheme);
         schemeSwitch.meshDrawn(built.mesh.colourScheme);
         roofsSwitch.meshDrawn(built.mesh.inventedRoofs);
         markingsSwitch.meshDrawn(built.mesh.markings);
@@ -3053,7 +3105,6 @@ async function main(): Promise<void> {
           const { r, g, b } = heatColour(score, scale);
           return (r << 16) | (g << 8) | b;
         },
-        plateColour: colourSchemeOf(latestMesh.colourScheme).ground.plates,
         treeForm: woodsKnobs.treeForm,
       });
     } else if (!wantsMeshLayers) {
@@ -3357,10 +3408,12 @@ async function main(): Promise<void> {
       // THE SUN FOLLOWS THE ANCHOR, keeping its phase (the same elevation on
       // the same limb): golden hour in Cologne stays golden hour in Tokyo.
       if (anchor.reanchored) {
-        const place = { lat: anchors.origin.lat, lng: anchors.origin.lng };
-        const moved = relocate(sunInstant, sunPlace, place);
-        sunPlace = place;
-        moveSun(moved);
+        // Not a hand on the controls: a running driver keeps running there,
+        // and under the real clock the sun is the clock's there at once.
+        sunFollow.placeMoved({
+          lat: anchors.origin.lat,
+          lng: anchors.origin.lng,
+        });
       }
       // W11 (R4-12). A click must bring the chosen point back to the middle of
       // the 3D view without spinning it: `MapControls` pans camera and target
@@ -3410,13 +3463,13 @@ async function main(): Promise<void> {
   // (already reported once) or the default's own name is removed at once.
   let shownScheme = selectColourScheme(store.getState());
   const schemeUrl = browserPlaceUrl(window);
-  writeScheme(schemeUrl, schemeLinkValue(shownScheme));
+  writeScheme(schemeUrl, lookLinkValue(shownScheme));
   store.subscribe(() => {
     const scheme = selectColourScheme(store.getState());
     if (scheme === shownScheme) return;
     shownScheme = scheme;
     schemeSwitch.show(scheme);
-    writeScheme(schemeUrl, schemeLinkValue(scheme));
+    writeScheme(schemeUrl, lookLinkValue(scheme));
     // The scheme's own light follows it; what the viewer set stays.
     lightDialog.setDefaults(lightDefaultsFor(scheme));
     void refresh();

@@ -52,6 +52,8 @@ import {
   streetFurnitureObjects,
   treeObjects,
   type TreeForm,
+  type LookMix,
+  type LookObjectOptions,
   type TreeObjectOptions,
 } from "gps-plus-slam-osm/three";
 
@@ -204,6 +206,23 @@ export interface MeshLayerContext {
    * default, the crown-only form.
    */
   readonly treeForm?: TreeForm;
+  /**
+   * The look mix of a time-of-day build (`look-choice.ts`): buildings and
+   * roads draw their baked looks mixed by its uniform. Absent for a fixed
+   * scheme (and set by `drawMeshLayers`, never by a caller's context).
+   */
+  readonly looks?: LookMix;
+}
+
+/**
+ * The `userData` flag on every landuse plate mesh: what a change of look
+ * finds to recolour without a rebuild.
+ */
+export const LANDUSE_PLATE_TAG = "landusePlate";
+
+/** The library's options for buildings and roads: the look mix, when one is drawn. */
+function lookOptions(context: MeshLayerContext): LookObjectOptions {
+  return context.looks === undefined ? {} : { looks: context.looks };
 }
 
 /** The library's tree options for a context: no form, no option. */
@@ -219,7 +238,7 @@ function treeOptions(context: MeshLayerContext): TreeObjectOptions {
  * would make that mistake look like a design choice. The same reasoning as
  * `NO_DATA_RGB` in `height-ramp.ts`.
  */
-const NEUTRAL_CONTEXT: MeshLayerContext = {
+export const NEUTRAL_CONTEXT: MeshLayerContext = {
   colourForScore: () => 0xff00ff,
   // EMPTY, which means every marker stays at its node. That is the safe
   // default: a caller that forgot the real context gets markers where the data
@@ -378,7 +397,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // chunk, a material per chunk, white plus vertex colours, single-sided,
     // flat, roughness 0.55, `userData.solid` for picking and the material's
     // `neutralSurface` for the noon brightening. Its header carries why.
-    build: (mesh) => buildingObjects(mesh.buildings),
+    build: (mesh, context) =>
+      buildingObjects(mesh.buildings, lookOptions(context)),
     counters: (mesh) => ({
       volumes: mesh.volumes,
       parts: mesh.parts,
@@ -414,6 +434,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
         );
         // From the shared ladder, so it cannot be coplanar with roads or grid.
         plate.position.y = groundLift("plates");
+        // So a change of look recolours the drawn plates (`city-look.ts`).
+        plate.userData[LANDUSE_PLATE_TAG] = true;
         return plate;
       }),
     counters: (mesh) => ({
@@ -525,8 +547,8 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // double-blend into a blob at every junction), SINGLE-SIDED, flat, rough,
     // the noon brightening's target. Its header carries why. The LIFT is this
     // demo's own ladder, so a road is never coplanar with a plate or the grid.
-    build: (mesh) =>
-      roadObjects(mesh.roads).map((ribbon) => {
+    build: (mesh, context) =>
+      roadObjects(mesh.roads, lookOptions(context)).map((ribbon) => {
         ribbon.position.y = groundLift("roads");
         return ribbon;
       }),
@@ -683,7 +705,12 @@ export function drawMeshLayers(
    * and a caller passing its own could disagree with the set that actually
    * gates drawing. So the parameter omits it and the rows receive it.
    */
-  context: Omit<MeshLayerContext, "drawnHostLayers"> = NEUTRAL_CONTEXT,
+  context: Omit<
+    MeshLayerContext,
+    "drawnHostLayers" | "looks"
+  > = NEUTRAL_CONTEXT,
+  /** The look mix, for a mesh built in looks (a time-of-day build). */
+  looks?: LookMix,
 ): { objects: THREE.Object3D[]; stats: BuildingStats } {
   const objects: THREE.Object3D[] = [];
   let stats = NO_STATS;
@@ -693,6 +720,7 @@ export function drawMeshLayers(
   // what would let them drift.
   const hostAware: MeshLayerContext = {
     ...context,
+    ...(looks === undefined ? {} : { looks }),
     drawnHostLayers: new Set(
       (["buildings", "plates"] as const).filter(
         (layer) => layers?.[layer] ?? true,

@@ -20,27 +20,27 @@
  * @see colour-scheme-switch.ts.md
  */
 
+import { DEFAULT_COLOUR_SCHEME } from "./colour-schemes.js";
 import {
-  COLOUR_SCHEME_NAMES,
-  DEFAULT_COLOUR_SCHEME,
-  colourSchemeOf,
-  isColourSchemeName,
-  type ColourSchemeName,
-} from "./colour-schemes.js";
+  isLookChoice,
+  LOOK_CHOICES,
+  lookLabel,
+  type LookChoice,
+} from "./look-choice.js";
 
 export interface ColourSchemeSwitchOptions {
   readonly select: HTMLSelectElement;
   /** A polite live region beside the select: "Applying <label>...". */
   readonly status: HTMLElement;
-  /** The scheme the page boots with (the store's, from the link). */
-  readonly initial: ColourSchemeName;
+  /** The look the page boots with (the store's, from the link). */
+  readonly initial: LookChoice;
   /** Records the choice (the store dispatch); the rebuild follows from it. */
-  readonly choose: (name: ColourSchemeName) => void;
+  readonly choose: (name: LookChoice) => void;
 }
 
 export interface ColourSchemeSwitch {
   /** The store's choice changed (a pick, a revert): the select follows it. */
-  show(name: ColourSchemeName): void;
+  show(name: LookChoice): void;
   /** A full mesh was drawn, built in `scheme` (absent means the default). */
   meshDrawn(scheme: string | undefined): void;
   /**
@@ -50,8 +50,8 @@ export interface ColourSchemeSwitch {
   failed(failedScheme?: string): void;
   /** AR draws the default whatever is chosen (D9): the select is disabled. */
   setArActive(active: boolean): void;
-  /** The scheme being applied, or `undefined` when none is. */
-  pending(): ColourSchemeName | undefined;
+  /** The look being applied, or `undefined` when none is. */
+  pending(): LookChoice | undefined;
 }
 
 /** Why the select is disabled in AR; also its tooltip. */
@@ -62,38 +62,37 @@ export function attachColourSchemeSwitch(
   options: ColourSchemeSwitchOptions,
 ): ColourSchemeSwitch {
   const { select, status, choose } = options;
-  if (!isColourSchemeName(options.initial)) {
+  if (!isLookChoice(options.initial)) {
     throw new RangeError(`unknown colour scheme: ${String(options.initial)}`);
   }
-  for (const name of COLOUR_SCHEME_NAMES) {
+  // The schemes, then the time-of-day blend (`look-choice.ts`).
+  for (const name of LOOK_CHOICES) {
     const option = select.ownerDocument.createElement("option");
     option.value = name;
-    option.textContent = colourSchemeOf(name).label;
+    option.textContent = lookLabel(name);
     select.append(option);
   }
   select.value = options.initial;
 
   /** The store's choice, as last shown. */
-  let chosen: ColourSchemeName = options.initial;
-  /** The scheme the drawn city was built in: what a failed switch reverts to. */
-  let drawn: ColourSchemeName = options.initial;
-  let waitingFor: ColourSchemeName | undefined;
+  let chosen: LookChoice = options.initial;
+  /** The look the drawn city was built in: what a failed switch reverts to. */
+  let drawn: LookChoice = options.initial;
+  let waitingFor: LookChoice | undefined;
   let arActive = false;
 
   const paint = (): void => {
     select.disabled = arActive || waitingFor !== undefined;
     select.title = arActive ? AR_REASON : "";
     status.textContent =
-      waitingFor === undefined
-        ? ""
-        : `Applying ${colourSchemeOf(waitingFor).label}...`;
+      waitingFor === undefined ? "" : `Applying ${lookLabel(waitingFor)}...`;
   };
 
   select.addEventListener("change", () => {
     const name = select.value;
     // Only the table's names are offered; anything else is a tampered page,
     // and the select goes back to what is drawn rather than asking for it.
-    if (!isColourSchemeName(name) || name === chosen) {
+    if (!isLookChoice(name) || name === chosen) {
       select.value = chosen;
       return;
     }
@@ -109,7 +108,7 @@ export function attachColourSchemeSwitch(
       select.value = name;
     },
     meshDrawn(scheme) {
-      if (scheme !== undefined && !isColourSchemeName(scheme)) return;
+      if (scheme !== undefined && !isLookChoice(scheme)) return;
       drawn = scheme ?? DEFAULT_COLOUR_SCHEME;
       if (waitingFor !== undefined && drawn === waitingFor) {
         waitingFor = undefined;

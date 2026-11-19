@@ -10,7 +10,8 @@
  * nowhere, or a "new" character missed after the maker closed would each
  * leave the author thinking a character is in the tour when it is not.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import fc from "fast-check";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 
 import type * as CharacterImport from "../characters/character-import.js";
@@ -24,8 +25,11 @@ import {
   type SeenStore,
 } from "./characters-panel.js";
 
+const thumbs = vi.hoisted(() => ({
+  crop: (_blob: Blob): Promise<string> => Promise.resolve(""),
+}));
 vi.mock("../characters/character-thumb.js", () => ({
-  cropThumb: () => Promise.resolve(""),
+  cropThumb: (blob: Blob) => thumbs.crop(blob),
   whenMade: () => "made today, 10:00",
 }));
 const readFile = vi.fn();
@@ -238,8 +242,11 @@ function setup(
   const reach = {
     library: (): Promise<CharacterLibrary> => Promise.resolve(library.lib),
   };
+  const ended = new AbortController();
+  live.push(ended);
   const panel = createCharactersPanel({
     dom: d,
+    signal: ended.signal,
     tour: () => t.tour,
     library: () => reach.library(),
     makerUrl: "./characters.html",
@@ -251,11 +258,32 @@ function setup(
   const toasts = () => d.toasts.textContent ?? "";
   const libRow = (id: string) =>
     d.libList.querySelector<HTMLElement>(`li[data-id="${id}"]`);
-  return { d, library, reach, t, said, shown, seen, panel, toasts, libRow };
+  return {
+    d,
+    library,
+    reach,
+    t,
+    said,
+    shown,
+    seen,
+    panel,
+    toasts,
+    libRow,
+    ended,
+  };
 }
+
+/** Every panel's end, aborted after its test: a panel listens to the
+ *  document, and one left listening would look again in a later test. */
+const live: AbortController[] = [];
+
+afterEach(() => {
+  for (const ended of live.splice(0)) ended.abort();
+});
 
 beforeEach(() => {
   readFile.mockReset();
+  thumbs.crop = () => Promise.resolve("");
 });
 
 describe("opening the list", () => {
@@ -288,6 +316,48 @@ describe("opening the list", () => {
     expect(s.libRow("c2")?.textContent).toContain("New");
   });
 
+  // Why: on a page just opened the list knows nothing until its first look
+  // is done; saying "No characters on this device yet" meanwhile told an
+  // author whose character was safely saved that it was gone.
+  it("does not say the device has none before its first look is done", async () => {
+    const s = setup({ lib: [record("c1", "Rita")] });
+    let answer = () => {};
+    vi.mocked(s.library.lib.list).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          answer = () => r({ entries: [record("c1", "Rita")], interrupted: 0 });
+        }),
+    );
+    s.panel.open();
+    await settled();
+    expect(s.d.libStatus.textContent).toBe("Looking on this device...");
+    expect(s.d.libList.textContent).not.toContain("No characters");
+    answer();
+    await settled();
+    expect(s.libRow("c1")?.textContent).toContain("Rita");
+  });
+
+  // Why: a thumbnail is cut from the full picture, which on a busy page
+  // (the 3D view drawn in software) took seconds; the list held its old
+  // rows, the "none yet" line among them, until every thumbnail was made.
+  it("shows the characters as soon as the look is done, the thumbnails following", async () => {
+    let cut = (_url: string) => {};
+    thumbs.crop = () => new Promise((r) => (cut = r));
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.panel.open();
+    await settled();
+    expect(s.libRow("c1")?.textContent).toContain("Rita");
+    expect(s.libRow("c1")?.querySelector("[data-add]")).not.toBeNull();
+    expect(
+      s.libRow("c1")?.querySelector("img")?.getAttribute("src"),
+    ).toBeNull();
+    cut("data:image/png;base64,AAAA");
+    await settled();
+    expect(s.libRow("c1")?.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,AAAA",
+    );
+  });
+
   it("says in the list when the library cannot be read", async () => {
     const s = setup({ lib: [record("c1", "Rita")] });
     s.library.failNext("list");
@@ -296,7 +366,225 @@ describe("opening the list", () => {
     expect(s.toasts()).toContain(
       "The characters on this device could not be read: list broke",
     );
+    // Why: the error toast fades after a few seconds; with no look ever
+    // finished the list was then blank, saying nothing at all.
+    expect(s.d.libList.textContent).toContain("Could not look on this device");
+    expect(s.d.libList.textContent).not.toContain("No characters");
+    s.library.failNext("list");
+    s.panel.open(); // looks again and redraws, this panel only
+    await settled();
+    expect(s.d.libList.textContent).toContain("Could not look on this device");
+    s.panel.open(); // looks again and redraws, this panel only
+    await settled();
+    expect(s.libRow("c1")?.textContent).toContain("Rita");
   });
+
+  // Why: once a look has finished on an empty library, the list says so -
+  // the one case where "none yet" is true.
+  it("says the device has none once a look found an empty library", async () => {
+    const s = setup({ lib: [] });
+    s.panel.open();
+    await settled();
+    expect(s.d.libList.textContent).toBe("No characters on this device yet.");
+  });
+
+  // Why: the rows are drawn again whenever the list looks again, while a
+  // thumbnail may still be cut; the picture must reach the row on the
+  // page, not the detached one drawn before, and be cut only once.
+  it("cuts one thumbnail per character, and a redraw meanwhile still gets it", async () => {
+    let cut = (_url: string) => {};
+    let crops = 0;
+    thumbs.crop = () => {
+      crops += 1;
+      return new Promise((r) => (cut = r));
+    };
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.panel.open();
+    await settled();
+    const before = s.libRow("c1");
+    s.panel.open(); // looks again and redraws, this panel only
+    await settled();
+    const after = s.libRow("c1");
+    expect(after).not.toBe(before);
+    expect(crops).toBe(1);
+    cut("data:image/png;base64,BBBB");
+    await settled();
+    expect(crops).toBe(1);
+    expect(s.libRow("c1")).toBe(after);
+    expect(after?.isConnected).toBe(true);
+    expect(after?.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,BBBB",
+    );
+  });
+
+  // Why: a thumbnail that could not be cut once (a busy page, a read that
+  // failed) stayed blank for good, the failure kept as its answer.
+  it("tries a failed thumbnail again at the next redraw", async () => {
+    let crops = 0;
+    let fail = (_e: Error) => {};
+    thumbs.crop = () => {
+      crops += 1;
+      return crops === 1
+        ? new Promise((_r, reject) => (fail = reject))
+        : Promise.resolve("data:image/png;base64,CCCC");
+    };
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.panel.open();
+    await settled();
+    expect(crops, "one cut while it is under way").toBe(1);
+    fail(new Error("busy"));
+    await settled();
+    expect(
+      s.libRow("c1")?.querySelector("img")?.getAttribute("src"),
+    ).toBeNull();
+    s.panel.open(); // looks again and redraws, this panel only
+    await settled();
+    expect(crops).toBe(2);
+    expect(s.libRow("c1")?.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,CCCC",
+    );
+  });
+
+  // Why: the cut answers "" without throwing when no canvas could be drawn
+  // (`getContext` null under memory pressure). That is a passing failure,
+  // not his answer: kept, his thumbnail stayed blank for the panel's
+  // lifetime.
+  it("tries again at the next redraw after a cut that could not draw", async () => {
+    let crops = 0;
+    let drawNothing = () => {};
+    thumbs.crop = () => {
+      crops += 1;
+      return crops === 1
+        ? new Promise((r) => (drawNothing = () => r("")))
+        : Promise.resolve("data:image/png;base64,DDDD");
+    };
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.panel.open();
+    await settled();
+    expect(crops, "one cut while it is under way").toBe(1);
+    drawNothing();
+    await settled();
+    expect(
+      s.libRow("c1")?.querySelector("img")?.getAttribute("src"),
+    ).toBeNull();
+    s.panel.open(); // looks again and redraws, this panel only
+    await settled();
+    expect(crops).toBe(2);
+    expect(s.libRow("c1")?.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,DDDD",
+    );
+  });
+
+  // Why: a character with no picture is an answer, not a failure (the
+  // tour's `image` gives `undefined` for him). Treated as a failure, his
+  // bytes were asked for again on every redraw; only a read that threw
+  // is tried again.
+  it("asks once for a character with no picture, again only after a failed read", async () => {
+    const s = setup();
+    s.t.chars.push(
+      { id: "t1", name: "Rita", image: "file:none", frames: "file:f1" },
+      { id: "t2", name: "Otto", image: "file:lost", frames: "file:f2" },
+    );
+    const asked: string[] = [];
+    s.t.tour.image = (id) => {
+      asked.push(id);
+      return id === "t2" && asked.filter((a) => a === "t2").length === 1
+        ? Promise.reject(new Error("read failed"))
+        : Promise.resolve(undefined);
+    };
+    s.panel.open();
+    await settled();
+    s.panel.open();
+    await settled();
+    s.panel.open();
+    await settled();
+    expect(
+      asked.filter((a) => a === "t1"),
+      "no picture: asked once",
+    ).toEqual(["t1"]);
+    expect(
+      asked.filter((a) => a === "t2"),
+      "a failed read is asked again, then its answer kept",
+    ).toEqual(["t2", "t2"]);
+  });
+
+  // Why: the rows used to wait until every character's four poses were
+  // read and named, which on a large library kept the list blank; a row
+  // whose poses are not known yet cannot tell whether he is in the tour,
+  // so it offers no "Add to tour" until they are.
+  it("shows the rows before the poses are known, offering Add only once they are", async () => {
+    const s = setup({ lib: [record("c1", "Rita")] });
+    let learnt = () => {};
+    const real = s.t.tour.fileId;
+    s.t.tour.fileId = (file) =>
+      new Promise((r) => {
+        learnt = () => r(real(file));
+      });
+    s.panel.open();
+    await settled();
+    expect(s.libRow("c1")?.textContent).toContain("Rita");
+    expect(s.libRow("c1")?.querySelector("[data-add]")).toBeNull();
+    learnt();
+    await settled();
+    expect(s.libRow("c1")?.querySelector("[data-add]")).not.toBeNull();
+  });
+});
+
+describe("thumbnails in any order", () => {
+  // Why: the crops answer in whatever order the machine finishes them,
+  // with the list drawn again in between; each row must end with its own
+  // picture and never another character's.
+  it("every row ends with its own picture, whatever order the cuts answer in", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.integer({ min: 1, max: 5 }).chain((n) =>
+          fc.tuple(
+            fc.shuffledSubarray(
+              Array.from({ length: n }, (_, i) => i),
+              { minLength: n, maxLength: n },
+            ),
+            fc.array(fc.boolean(), { minLength: n, maxLength: n }),
+          ),
+        ),
+        async ([order, redraws]) => {
+          const waiting = new Map<string, (url: string) => void>();
+          thumbs.crop = async (blob) => {
+            const id = await blob.text();
+            return new Promise((r) => waiting.set(id, r));
+          };
+          const ids = order.map((i) => `c${String(i)}`).sort();
+          const s = setup({ lib: ids.map((id) => record(id, id)) });
+          vi.mocked(s.library.lib.files).mockImplementation(async (id) =>
+            Promise.resolve({
+              record: record(id, id),
+              frames: new Blob([`poses of ${id}`], { type: "image/png" }),
+              image: new Blob([id], { type: "image/png" }),
+            }),
+          );
+          s.panel.open();
+          await settled();
+          for (const [k, i] of order.entries()) {
+            if (redraws[k] === true) {
+              s.panel.open(); // looks again and redraws, this panel only
+              await settled();
+            }
+            waiting.get(`c${String(i)}`)?.(`data:${String(i)}`);
+            await settled(2);
+          }
+          await settled();
+          for (const i of order) {
+            expect(
+              s
+                .libRow(`c${String(i)}`)
+                ?.querySelector("img")
+                ?.getAttribute("src"),
+            ).toBe(`data:${String(i)}`);
+          }
+        },
+      ),
+      { numRuns: 25 },
+    );
+  }, 30_000);
 });
 
 describe("Add to tour", () => {
@@ -464,6 +752,23 @@ describe("the maker", () => {
   });
 });
 
+describe("ending the panel", () => {
+  // Why: the panel listens to the document for the tab coming back; a
+  // panel that has ended (a test's, between tests) must stop listening,
+  // or every later visibility change would make it look again.
+  it("stops looking on a visibility change once its signal is aborted", async () => {
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.panel.open();
+    await settled();
+    const calls = vi.mocked(s.library.lib.list).mock.calls.length;
+    s.ended.abort();
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settled();
+    expect(s.d.panel.open).toBe(true);
+    expect(vi.mocked(s.library.lib.list).mock.calls.length).toBe(calls);
+  });
+});
+
 describe("makeForTour (the add menu's Character)", () => {
   it("adds the character saved while the maker was open, and hands it back", async () => {
     const s = setup({ lib: [record("c1", "Rita")] });
@@ -561,6 +866,32 @@ describe("Import character...", () => {
     );
     // the imported character is not offered as new afterwards
     expect(s.d.pickup.hidden).toBe(true);
+  });
+
+  // Why: an import that joined a look started before its save took that
+  // look's older answer as its own: the imported character was missing
+  // from the list until it looked again.
+  it("an import looks again after a look already in flight, never joining it", async () => {
+    const s = setup({ lib: [] });
+    let answer = () => {};
+    vi.mocked(s.library.lib.list).mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          answer = () => r({ entries: [], interrupted: 0 });
+        }),
+    );
+    s.panel.open();
+    await settled();
+    readFile.mockResolvedValue(accepted("Rita"));
+    choose(s);
+    await settled(10);
+    expect(s.library.lib.save).toHaveBeenCalledOnce();
+    answer();
+    await settled(10);
+    expect(s.libRow("new1")?.textContent).toContain("Rita");
+    expect(s.d.libStatus.textContent).toMatch(
+      /^looked again after the import, /,
+    );
   });
 
   it("a file that is no character is refused in its card, nothing saved", async () => {
@@ -711,6 +1042,33 @@ describe("the tour's own character ids", () => {
     expect(s.libRow("c1")?.textContent).toContain("In this tour");
     expect(s.libRow("c1")?.querySelector("[data-add]")).toBeNull();
     expect(s.libRow("c2")?.querySelector("[data-add]")).not.toBeNull();
+  });
+
+  // Why: poses that failed to read once were kept as the answer, so the
+  // row said "not in the tour" for good and offered to add him twice.
+  // The next look reads them again.
+  it("reads a character's poses again at the next look after a failed read", async () => {
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.t.chars.push({
+      id: "k7",
+      name: "Rita",
+      image: "x",
+      frames: "file:poses of c1",
+    });
+    const real = s.t.tour.fileId;
+    let reads = 0;
+    s.t.tour.fileId = (file) => {
+      reads += 1;
+      return reads === 1 ? Promise.reject(new Error("busy")) : real(file);
+    };
+    s.panel.open();
+    await settled(10);
+    expect(s.libRow("c1")?.textContent).not.toContain("In this tour");
+    s.panel.open();
+    await settled(10);
+    expect(reads).toBe(2);
+    expect(s.libRow("c1")?.textContent).toContain("In this tour");
+    expect(s.libRow("c1")?.querySelector("[data-add]")).toBeNull();
   });
 
   // Why: the add menu's Character must hand back the tour's character

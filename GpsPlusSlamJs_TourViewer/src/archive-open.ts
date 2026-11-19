@@ -165,19 +165,49 @@ export function wireArchiveOpen(deps: {
     // retried open must not wipe it (scan-to-open plan §5 #1, §9 #1).
     const closing = ctx.session;
     if (closing === null) return;
+    // Let go first: a hook below that throws (a disposal) must not leave
+    // the closing session current for every later reader, and its archive
+    // is closed whatever happens below.
+    ctx.session = null;
+    try {
+      closeTourState();
+    } finally {
+      await closing.close().catch(() => undefined);
+    }
+  }
+
+  /** The closing tour's state, cleared by `teardownSession` once its
+   *  session is let go. */
+  function closeTourState(): void {
+    // Every step runs even when one before it throws: the session is already
+    // let go, so no later open runs this teardown again, and a skipped step
+    // would hand the closing tour's leftovers to the next one as pre-open
+    // work. The first failure is rethrown once everything ran.
+    const failures: unknown[] = [];
+    const step = (run: () => void): void => {
+      try {
+        run();
+      } catch (error) {
+        failures.push(error);
+      }
+    };
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     // The parsed levels and the hosted texts are held per open in the
     // store (debug-captures plan M3a, M3b): the open that runs this
     // teardown holds them from here.
-    ctx.store.dispatch(
-      tourDocumentActions.levelsParsed({
-        session: ctx.openGeneration,
-        levels: null,
-      }),
+    step(() =>
+      ctx.store.dispatch(
+        tourDocumentActions.levelsParsed({
+          session: ctx.openGeneration,
+          levels: null,
+        }),
+      ),
     );
-    ctx.store.dispatch(
-      tourDocumentActions.levelsCleared({ session: ctx.openGeneration }),
+    step(() =>
+      ctx.store.dispatch(
+        tourDocumentActions.levelsCleared({ session: ctx.openGeneration }),
+      ),
     );
     // The tour document goes with its tour: the manifest, and the
     // creator's placed objects and deletions (M4 review #1, plan
@@ -185,12 +215,12 @@ export function wireArchiveOpen(deps: {
     // written into ITS zip, and into the same tour re-opened after a finish
     // they would duplicate their own ids and break every later finish; an
     // id deleted from one tour means nothing in another.
-    ctx.tourDocument.close();
-    hooks.presentTourInfo(null);
+    step(() => ctx.tourDocument.close());
+    step(() => hooks.presentTourInfo(null));
     // The closing tour's story and HUD (tour kit plan K4).
-    hooks.stopStations();
+    step(() => hooks.stopStations());
     // Its voices' audio and blob URLs, which an AR session's end keeps.
-    hooks.releaseTourMedia();
+    step(() => hooks.releaseTourMedia());
     ctx.rebuiltZip = null;
     ctx.tourLabel = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION
@@ -205,33 +235,35 @@ export function wireArchiveOpen(deps: {
     // a finish - which needs a measured level - clears it (scan-to-open
     // plan §9 #8).
     ctx.finishError = null;
-    hooks.resetFinishStep();
+    step(() => hooks.resetFinishStep());
     // The AR button reads the finish's failure ("Close AR"); it is gone
     // now (scan-to-open in AR opens a tour mid-session - M3 review #3).
-    hooks.renderArEntry();
+    step(() => hooks.renderArEntry());
     // From here until an open SUCCEEDS there is no tour, and the page has
     // to say so: the print step goes back to asking for a link and step 4
     // offers to open one again. Both are hidden again below on success, so
     // the visible effect is only on the paths that end without a tour.
-    hooks.presentNoTour();
+    step(() => hooks.presentNoTour());
     // Same cache: the closed tour's levels must stop voting (M4 review #1),
     // and the per-text level cache belongs to the closed tour too (M6
     // review #8).
-    ctx.qrController?.reset();
+    step(() => ctx.qrController?.reset());
     ctx.levelByText.clear();
     ctx.levelIdByText.clear();
     // The code keep-alive holds a closing tour's code for up to ~4 min,
     // and the vote budget remembers which codes voted; the pipeline
     // outlives the switch, so both end with the tour here (M2b; review #6).
-    endTourCodeVotes(ctx);
-    ctx.stationContent?.dispose();
+    step(() => endTourCodeVotes(ctx));
+    step(() => ctx.stationContent?.dispose());
     ctx.stationContent = null;
     ctx.contentAttempted = false;
     ctx.contentError = null;
     // The gate belongs to the closing tour too (M5 review #8): a gate
     // waived for a code-less tour must not carry into one with a code.
-    hooks.resetScanGate();
-    for (const preview of ctx.placedPreviews.values()) preview.dispose();
+    step(() => hooks.resetScanGate());
+    for (const preview of ctx.placedPreviews.values()) {
+      step(() => preview.dispose());
+    }
     ctx.placedPreviews.clear();
     ctx.placementNote = null;
     ctx.placementAttempted = false;
@@ -251,12 +283,11 @@ export function wireArchiveOpen(deps: {
     // pipeline outlives a tour switch, so the counts are emptied IN PLACE -
     // it keeps writing into the same map for the new tour's codes.
     ctx.viewerLastEvaluation = null;
-    ctx.fusedTallies?.clear();
+    step(() => ctx.fusedTallies?.clear());
     // The print-size check measured the closing tour's codes (S3a).
-    ctx.printSizeCheck?.reset();
+    step(() => ctx.printSizeCheck?.reset());
     ctx.placement = { kind: "idle" };
-    ctx.session = null;
-    await closing.close().catch(() => undefined);
+    if (failures.length > 0) throw failures[0];
   }
 
   function renderStats(): void {
@@ -344,12 +375,24 @@ export function wireArchiveOpen(deps: {
     failed: TourSession,
   ): void {
     if (ctx.session !== failed) return; // closed or superseded: nothing shown
-    void teardownSession().then(() => {
-      const message = `${describeIntegrityError(err)} Its content was removed.`;
+    const removed = `${describeIntegrityError(err)} Its content was removed.`;
+    const report = (message: string): void => {
       dom.errorBox.textContent = message;
       ctx.contentError = message;
       hooks.renderArStatus();
-    });
+    };
+    // The teardown rethrows the first close step that threw, once every
+    // step ran: the visitor still hears why the tour went, and what failed.
+    void teardownSession().then(
+      () => {
+        report(removed);
+      },
+      (stepError: unknown) => {
+        const detail =
+          stepError instanceof Error ? stepError.message : String(stepError);
+        report(`${removed} Closing part of it failed: ${detail}`);
+      },
+    );
   }
 
   /** A late failure the session found before the page held it (its

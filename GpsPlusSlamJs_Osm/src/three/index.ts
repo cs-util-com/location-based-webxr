@@ -3,7 +3,11 @@
  * point so the package's core stays free of three.js (globe city plan
  * 2026-10-05-0040 §14 L5); three is an optional peer, needed only here.
  */
-export type { TreeForm, TreeObjectOptions } from "./city-objects.js";
+export type {
+  LookObjectOptions,
+  TreeForm,
+  TreeObjectOptions,
+} from "./city-objects.js";
 export {
   applyWoodsShare,
   buildingObjects,
@@ -12,6 +16,7 @@ export {
   disposeCityObjects,
   geometryFrom,
   roadObjects,
+  setTreeLookWeights,
   treeObjects,
 } from "./city-objects.js";
 export {
@@ -39,5 +44,14 @@ export type {
 export {
   applyGroundTint,
   GROUND_TINT_FADE_M,
+  groundClassTexture,
+  groundPaletteTexture,
   groundTintTexture,
 } from "./ground-tint.js";
+export type { LookMix } from "./look-colours.js";
+export {
+  applyLookColours,
+  createLookMix,
+  lookDecodeTexture,
+  setTrimWeights,
+} from "./look-colours.js";

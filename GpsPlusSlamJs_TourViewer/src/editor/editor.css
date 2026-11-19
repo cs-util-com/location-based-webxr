@@ -1149,6 +1149,11 @@ kbd {
   color: var(--ink-dim);
   line-height: 1.5;
 }
+/* Two links side by side keep a gap, as the tour page's footer links do,
+   so "Privacy" and "Back to the tour page" never read as one. */
+.fineprint a + a {
+  margin-left: 16px;
+}
 
 /* The tour's details dialog (W2). */
 /* Above the toasts (#toasts, 1200): a save's result toast stays until it is

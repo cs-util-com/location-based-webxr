@@ -51,12 +51,15 @@ function pidIn(file) {
 /**
  * Resolves once the file holds a pid, waiting as long as the driver lives
  * (a loaded machine can take seconds to start it; the test's own timeout
- * bounds the wait), and fails once the driver ended without writing one.
+ * bounds the wait), and fails once the driver ended without writing one,
+ * or once `signal` aborts (the test's own, aborted on its timeout).
  * @param {string} file
  * @param {import('node:child_process').ChildProcess} driver
+ * @param {AbortSignal} signal
  */
-async function readPid(file, driver) {
+async function readPid(file, driver, signal) {
   for (;;) {
+    signal.throwIfAborted();
     const ended = driver.exitCode !== null || driver.signalCode !== null;
     const pid = pidIn(file);
     if (pid !== null) return pid;
@@ -69,7 +72,22 @@ async function readPid(file, driver) {
 const dirs = [];
 /** @type {number[]} */
 const leftovers = [];
+/** Every driver spawned, stopped after its test if still running: by
+ *  SIGINT, the path this suite proves forwards to the stage group. A
+ *  SIGKILL would skip that forwarding and leave the group running on
+ *  POSIX, so it comes only after a grace, for a driver that ignored the
+ *  SIGINT (an unref'd timer: it never keeps the run alive).
+ *  @type {import('node:child_process').ChildProcess[]} */
+const drivers = [];
+const SIGINT_GRACE_MS = 5_000;
 afterEach(() => {
+  for (const driver of drivers.splice(0)) {
+    if (driver.exitCode !== null || driver.signalCode !== null) continue;
+    driver.kill('SIGINT');
+    setTimeout(() => {
+      if (driver.exitCode === null && driver.signalCode === null) driver.kill('SIGKILL');
+    }, SIGINT_GRACE_MS).unref();
+  }
   for (const pid of leftovers.splice(0)) {
     try {
       process.kill(pid, 'SIGKILL');
@@ -103,6 +121,7 @@ function drive(stage, limitMin, pidFile = '', mode = '') {
       GATE_SLOT_DIR: 'off',
     },
   });
+  drivers.push(child);
   let out = '';
   child.stdout.on('data', (chunk) => (out += chunk));
   child.stderr.on('data', (chunk) => (out += chunk));
@@ -112,14 +131,32 @@ function drive(stage, limitMin, pidFile = '', mode = '') {
   return { child, done: /** @type {Promise<{ code: number | null, signal: string | null, out: string }>} */ (done) };
 }
 
+describe('the test helpers', () => {
+  // Why: a test that times out while readPid waits must not leave the wait
+  // polling, nor its driver running: both outlived the test before, and a
+  // driver left alive holds its fixture processes. The test's abort signal
+  // ends the wait; afterEach stops the driver.
+  it('stops waiting for a pid once the test is aborted', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
+    dirs.push(dir);
+    // The talker never writes the pid file, so only the abort ends the wait.
+    const { child } = drive('talker', '0.1667', path.join(dir, 'never.pid'));
+    const abort = new AbortController();
+    setTimeout(() => abort.abort(new Error('test timed out')), 200);
+    await expect(readPid(path.join(dir, 'never.pid'), child, abort.signal)).rejects.toThrow(
+      'test timed out'
+    );
+  }, 30_000);
+});
+
 describe('the stage watchdog, end to end', () => {
-  it('kills a silent stage and its forked grandchild, and exits 124', async () => {
+  it('kills a silent stage and its forked grandchild, and exits 124', async ({ signal }) => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
     dirs.push(dir);
     const pidFile = path.join(dir, 'grandchild.pid');
     // 0.02 min = 1.2 s of silence.
     const { child, done } = drive('silent', '0.02', pidFile);
-    const grandchild = await readPid(pidFile, child);
+    const grandchild = await readPid(pidFile, child, signal);
     leftovers.push(grandchild);
 
     const { code, out } = await done;
@@ -137,7 +174,7 @@ describe('the stage watchdog, end to end', () => {
   // entry points call process.exit at once, which hides it; this caller lets
   // the loop empty instead. On Windows the kill is synchronous and the cap is
   // always armed before the exit, so only a POSIX run can fail here.
-  it('leaves nothing behind that keeps the caller alive after a stall', async () => {
+  it('leaves nothing behind that keeps the caller alive after a stall', async ({ signal }) => {
     const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
     dirs.push(dir);
     const pidFile = path.join(dir, 'grandchild.pid');
@@ -147,7 +184,7 @@ describe('the stage watchdog, end to end', () => {
     child.stdout.on('data', (chunk) => {
       if (verdictAt === null && String(chunk).includes('RESULT exit=')) verdictAt = Date.now();
     });
-    leftovers.push(await readPid(pidFile, child));
+    leftovers.push(await readPid(pidFile, child, signal));
     const { code, out } = await done;
     const exitedAt = Date.now();
     expect(out).toContain('RESULT exit=124');
@@ -177,12 +214,12 @@ describe('the stage watchdog, end to end', () => {
   // the SIGKILL after the grace.
   it.skipIf(process.platform === 'win32')(
     'interrupts a silent browser stage first, so it writes its report, and exits 124 (POSIX)',
-    async () => {
+    async ({ signal }) => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
       dirs.push(dir);
       const pidFile = path.join(dir, 'grandchild.pid');
       const { child, done } = drive('browser', '0.02', pidFile);
-      leftovers.push(await readPid(pidFile, child));
+      leftovers.push(await readPid(pidFile, child, signal));
       const { code, out } = await done;
       expect(code).toBe(STALL_EXIT);
       expect(readFileSync(`${pidFile}.report`, 'utf8')).toBe('written');
@@ -193,13 +230,13 @@ describe('the stage watchdog, end to end', () => {
 
   it.skipIf(process.platform === 'win32')(
     'still kills a browser stage that ignores the interrupt, after the wait (POSIX)',
-    async () => {
+    async ({ signal }) => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
       dirs.push(dir);
       const pidFile = path.join(dir, 'grandchild.pid');
       const { child, done } = drive('stubborn-browser', '0.02', pidFile);
-      const grandchild = await readPid(pidFile, child);
-      const stage = await readPid(`${pidFile}.stage`, child);
+      const grandchild = await readPid(pidFile, child, signal);
+      const stage = await readPid(`${pidFile}.stage`, child, signal);
       leftovers.push(grandchild, stage);
       const { code } = await done;
       expect(code).toBe(STALL_EXIT);
@@ -214,12 +251,12 @@ describe('the stage watchdog, end to end', () => {
 
   it.skipIf(process.platform === 'win32')(
     'kills any other silent stage without an interrupt (POSIX)',
-    async () => {
+    async ({ signal }) => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
       dirs.push(dir);
       const pidFile = path.join(dir, 'grandchild.pid');
       const { child, done } = drive('stubborn', '0.02', pidFile);
-      leftovers.push(await readPid(pidFile, child), await readPid(`${pidFile}.stage`, child));
+      leftovers.push(await readPid(pidFile, child, signal), await readPid(`${pidFile}.stage`, child, signal));
       expect((await done).code).toBe(STALL_EXIT);
       expect(readFileSync(`${pidFile}.signals`, 'utf8').trim()).toBe('SIGTERM');
     },
@@ -228,14 +265,14 @@ describe('the stage watchdog, end to end', () => {
 
   it.skipIf(process.platform === 'win32')(
     'forwards a SIGINT to the gate to the detached stage group, then SIGKILLs a stage that ignores it (POSIX)',
-    async () => {
+    async ({ signal }) => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
       dirs.push(dir);
       const pidFile = path.join(dir, 'grandchild.pid');
       // A limit far beyond the test: only the signal can end the stage.
       const { child, done } = drive('stubborn', '30', pidFile);
-      const grandchild = await readPid(pidFile, child);
-      const stage = await readPid(`${pidFile}.stage`, child);
+      const grandchild = await readPid(pidFile, child, signal);
+      const stage = await readPid(`${pidFile}.stage`, child, signal);
       leftovers.push(grandchild, stage);
       child.kill('SIGINT');
       const { code } = await done;

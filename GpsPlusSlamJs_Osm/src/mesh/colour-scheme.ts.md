@@ -93,3 +93,7 @@ const city = buildCity(features, ground, {
   colour comes from the scheme.
 - `colour-identity.test.ts` - the default, absent or explicit, reproduces
   the golden digests recorded before schemes at twelve sites.
+
+## `MAX_CITY_LOOKS`
+
+- `MAX_CITY_LOOKS = 4`: the most schemes one `buildCity` bakes (`CityOptions.looks`, `city.ts.md` "Looks"). Defined here, the lightest module both the mesh side and `three/ground-tint.ts` (its palette texture height) can import; `city.ts` re-exports it.

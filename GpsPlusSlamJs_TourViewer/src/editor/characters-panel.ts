@@ -98,6 +98,9 @@ export interface CharactersPanelDeps {
   /** The maker covers the page (true) or no longer does (false): the
    *  editor stops drawing its 3D view meanwhile. */
   readonly makerShown?: (shown: boolean) => void;
+  /** Ends the panel's listener on the document. The page's panel lives
+   *  as long as the page and passes none; a test ends each of its own. */
+  readonly signal?: AbortSignal;
 }
 
 /** What `makeForTour` tells its caller on the way. */
@@ -184,10 +187,16 @@ export function createCharactersPanel(
     return ids === null ? null : new Set(ids);
   })();
   let entries: CharacterRecord[] = [];
+  /** Whether `entries` holds a finished look: before the first one the
+   *  list cannot say the device has none. */
+  let looked = false;
+  /** The last look failed: with none finished, the list says so (the
+   *  error toast fades, and a blank list says nothing). */
+  let lookFailed = false;
   /** New on this device, offered in the banner. */
   let pending: CharacterRecord[] = [];
-  const libThumbs = new Map<string, string>();
-  const tourThumbs = new Map<string, string>();
+  const libThumbs = new Map<string, Promise<string>>();
+  const tourThumbs = new Map<string, Promise<string>>();
   /** The maker's close, awaited by `makeForTour`. */
   let makerClosed: (() => void) | null = null;
 
@@ -205,11 +214,16 @@ export function createCharactersPanel(
   }
 
   /** Each device character's four poses as the tour would name them,
-   *  learnt once per character (his files never change once saved). */
-  const sheetOf = new Map<string, string>();
+   *  learnt once per character (his files never change once saved); null
+   *  where they could not be read. A character not in it yet cannot be
+   *  told in the tour or not, so his row offers no "Add to tour". */
+  const sheetOf = new Map<string, string | null>();
   async function learnSheets(list: readonly CharacterRecord[]): Promise<void> {
     const tour = deps.tour();
-    const todo = list.filter((e) => !sheetOf.has(e.libraryId));
+    // An unread one is read again: a failed read is not his answer.
+    const todo = list.filter(
+      (e) => typeof sheetOf.get(e.libraryId) !== "string",
+    );
     if (tour === null || todo.length === 0) return;
     const lib = await deps.library();
     for (const e of todo) {
@@ -217,7 +231,9 @@ export function createCharactersPanel(
         const files = await lib.files(e.libraryId);
         sheetOf.set(e.libraryId, await tour.fileId(files.frames));
       } catch {
-        // Unread: shown as not in the tour; adding him says what failed.
+        // Unread: shown as not in the tour until the next look reads him
+        // again; adding him meanwhile says what failed.
+        sheetOf.set(e.libraryId, null);
       }
     }
   }
@@ -225,7 +241,7 @@ export function createCharactersPanel(
   /** The tour's character made from the device's `libraryId`, if any. */
   const inTourAs = (libraryId: string): TourCharacter | undefined => {
     const sheet = sheetOf.get(libraryId);
-    return sheet === undefined
+    return sheet === undefined || sheet === null
       ? undefined
       : deps
           .tour()
@@ -239,30 +255,56 @@ export function createCharactersPanel(
     seenStore.write([...(seen ?? [])]);
   }
 
-  async function thumbOf(
-    cache: Map<string, string>,
+  /** The thumbnail of `key`, made once ("" for a character with no
+   *  picture). A read or cut that threw is not kept, nor a cut that
+   *  answered "" (no canvas could be drawn, a passing failure under memory
+   *  pressure): the next drawing of the row tries again. */
+  function thumbOf(
+    cache: Map<string, Promise<string>>,
     key: string,
     blob: () => Promise<Blob | undefined>,
   ): Promise<string> {
-    const known = cache.get(key);
-    if (known !== undefined) return known;
-    let url = "";
-    try {
-      const b = await blob();
-      if (b !== undefined) url = await cropThumb(b);
-    } catch {
-      // no thumbnail: the row shows the name only
+    let url = cache.get(key);
+    if (url === undefined) {
+      let retry = false;
+      const made = (async () => {
+        try {
+          const b = await blob();
+          if (b === undefined) return ""; // no picture: his answer, kept
+          const cut = await cropThumb(b);
+          retry = cut === "";
+          return cut;
+        } catch {
+          retry = true;
+          return ""; // no thumbnail: the row shows the name only
+        }
+      })();
+      url = made;
+      cache.set(key, made);
+      void made.then(() => {
+        if (retry && cache.get(key) === made) cache.delete(key);
+      });
     }
-    cache.set(key, url);
     return url;
   }
 
-  const thumbImg = (url: string): string =>
-    `<img class="thumb" alt="" ${url ? `src="${url}"` : ""} />`;
+  const THUMB_IMG = '<img class="thumb" alt="" />';
 
-  let tourSeq = 0;
-  async function renderTour(): Promise<void> {
-    const seq = ++tourSeq;
+  /** Gives the row's thumbnail its picture once it is made. The rows never
+   *  wait for it: cutting one from the full picture took seconds on a busy
+   *  page, and a list that waited kept showing what it showed before. */
+  function fillThumb(
+    li: HTMLElement,
+    cache: Map<string, Promise<string>>,
+    key: string,
+    blob: () => Promise<Blob | undefined>,
+  ): void {
+    void thumbOf(cache, key, blob).then((url) => {
+      if (url) li.querySelector("img.thumb")?.setAttribute("src", url);
+    });
+  }
+
+  function renderTour(): void {
     const tour = deps.tour();
     const chars = tour?.characters() ?? [];
     dom.tourCount.textContent =
@@ -276,66 +318,63 @@ export function createCharactersPanel(
         '<li class="empty-line">No character in this tour yet. Add one from this device below, or make one.</li>';
       return;
     }
-    const rows = await Promise.all(
-      chars.map(async (c) => {
-        const li = document.createElement("li");
-        li.dataset["id"] = c.id;
-        const url = await thumbOf(tourThumbs, c.image, () => tour.image(c.id));
-        li.innerHTML = `${thumbImg(url)}<div class="who"><b>${esc(c.name)}</b><span class="meta"><span class="state">In this tour</span></span></div><div class="acts"><button class="btn small" type="button" data-remove>Remove</button></div>`;
-        li.querySelector("[data-remove]")?.addEventListener("click", () => {
-          removeFromTour(c);
-        });
-        return li;
-      }),
-    );
-    if (seq !== tourSeq) return;
+    const rows = chars.map((c) => {
+      const li = document.createElement("li");
+      li.dataset["id"] = c.id;
+      li.innerHTML = `${THUMB_IMG}<div class="who"><b>${esc(c.name)}</b><span class="meta"><span class="state">In this tour</span></span></div><div class="acts"><button class="btn small" type="button" data-remove>Remove</button></div>`;
+      li.querySelector("[data-remove]")?.addEventListener("click", () => {
+        removeFromTour(c);
+      });
+      fillThumb(li, tourThumbs, c.image, () => tour.image(c.id));
+      return li;
+    });
     dom.tourList.replaceChildren(...rows);
   }
 
-  let libSeq = 0;
-  async function renderLib(): Promise<void> {
-    const seq = ++libSeq;
+  function renderLib(): void {
     if (entries.length === 0) {
-      dom.libList.innerHTML =
-        '<li class="empty-line">No characters on this device yet.</li>';
+      // Before the first look the status line says it is looking.
+      dom.libList.innerHTML = looked
+        ? '<li class="empty-line">No characters on this device yet.</li>'
+        : lookFailed
+          ? '<li class="empty-line">Could not look on this device.</li>'
+          : "";
       return;
     }
     const fresh = new Set(pending.map((p) => p.libraryId));
-    let lib: CharacterLibrary | null = null;
-    try {
-      lib = await deps.library();
-    } catch {
-      // thumbnails only
-    }
-    const rows = await Promise.all(
-      entries.map(async (e) => {
-        const li = document.createElement("li");
-        li.dataset["id"] = e.libraryId;
-        if (fresh.has(e.libraryId)) li.classList.add("fresh");
-        const state = inTour(e.libraryId)
-          ? '<span class="state">In this tour</span>'
-          : fresh.has(e.libraryId)
-            ? '<span class="state info">New</span>'
-            : e.autoName
-              ? '<span class="state warn">No name yet</span>'
-              : "";
-        const url = await thumbOf(libThumbs, e.libraryId, async () =>
-          lib === null ? undefined : (await lib.files(e.libraryId)).image,
-        );
-        li.innerHTML = `${thumbImg(url)}<div class="who"><b>${esc(e.name)}</b><span class="meta">${state}<span>${esc(whenMade(e.createdAtIso, now()))}</span></span></div><div class="acts"></div>`;
-        if (!inTour(e.libraryId) && deps.tour() !== null) {
-          const b = document.createElement("button");
-          b.className = "btn small";
-          b.type = "button";
-          b.dataset["add"] = "";
-          b.textContent = "Add to tour";
-          b.addEventListener("click", () => void addToTour(e, b));
-          li.querySelector(".acts")?.append(b);
-        }
-        return li;
-      }),
-    );
-    if (seq !== libSeq) return;
+    const rows = entries.map((e) => {
+      const li = document.createElement("li");
+      li.dataset["id"] = e.libraryId;
+      if (fresh.has(e.libraryId)) li.classList.add("fresh");
+      const state = inTour(e.libraryId)
+        ? '<span class="state">In this tour</span>'
+        : fresh.has(e.libraryId)
+          ? '<span class="state info">New</span>'
+          : e.autoName
+            ? '<span class="state warn">No name yet</span>'
+            : "";
+      li.innerHTML = `${THUMB_IMG}<div class="who"><b>${esc(e.name)}</b><span class="meta">${state}<span>${esc(whenMade(e.createdAtIso, now()))}</span></span></div><div class="acts"></div>`;
+      if (
+        sheetOf.has(e.libraryId) &&
+        !inTour(e.libraryId) &&
+        deps.tour() !== null
+      ) {
+        const b = document.createElement("button");
+        b.className = "btn small";
+        b.type = "button";
+        b.dataset["add"] = "";
+        b.textContent = "Add to tour";
+        b.addEventListener("click", () => void addToTour(e, b));
+        li.querySelector(".acts")?.append(b);
+      }
+      fillThumb(
+        li,
+        libThumbs,
+        e.libraryId,
+        async () => (await (await deps.library()).files(e.libraryId)).image,
+      );
+      return li;
+    });
     dom.libList.replaceChildren(...rows);
   }
 
@@ -360,20 +399,34 @@ export function createCharactersPanel(
   }
 
   function renderAll(): void {
-    void renderTour();
+    renderTour();
     renderPickup();
-    void renderLib();
+    renderLib();
   }
 
   let relisting: Promise<void> | null = null;
   /** Looks into the library again: what is new since the last look joins
-   *  the banner (on the first look ever, nothing is new). */
-  function relist(reason: RelistReason, quiet = false): Promise<void> {
+   *  the banner (on the first look ever, nothing is new). A call while a
+   *  look runs joins it, unless `afresh`: then it looks again once that
+   *  one is done (an import's save is newer than a look begun before it). */
+  function relist(
+    reason: RelistReason,
+    quiet = false,
+    afresh = false,
+  ): Promise<void> {
+    if (afresh && relisting !== null) {
+      return relisting.then(() => relist(reason, quiet, true));
+    }
     relisting ??= (async () => {
       dom.libStatus.textContent = "Looking on this device...";
       try {
         const res = await (await deps.library()).list();
         entries = [...res.entries];
+        looked = true;
+        lookFailed = false;
+        // The rows show now, the thumbnails and the poses following: a
+        // row whose poses are not known yet offers no "Add to tour".
+        renderLib();
         await learnSheets(entries);
         const first = seen === null;
         const known = seen ?? new Set<string>();
@@ -401,6 +454,8 @@ export function createCharactersPanel(
         }
       } catch (e) {
         dom.libStatus.textContent = "";
+        lookFailed = true;
+        renderLib();
         toast(
           `The characters on this device could not be read: ${reasonOf(e)}`,
           true,
@@ -549,11 +604,19 @@ export function createCharactersPanel(
     if (isOpen()) void relist("closed");
   });
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && isOpen() && !dom.maker.open) {
-      void relist("back");
-    }
-  });
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (
+        document.visibilityState === "visible" &&
+        isOpen() &&
+        !dom.maker.open
+      ) {
+        void relist("back");
+      }
+    },
+    deps.signal === undefined ? undefined : { signal: deps.signal },
+  );
 
   // ------------------------------------------------- "Import character..."
 
@@ -597,6 +660,7 @@ export function createCharactersPanel(
         (seen ??= new Set()).add(rec.libraryId);
         remember();
         entries = [...(await lib.list()).entries];
+        looked = true;
         const added = await addToTour(rec, null, true);
         if (added !== null) {
           toast(
@@ -607,7 +671,7 @@ export function createCharactersPanel(
         toast(`Importing did not work: ${reasonOf(e)}`, true);
       }
     });
-    await relist("import");
+    await relist("import", false, true);
   }
 
   dom.close.addEventListener("click", () => {

@@ -23,7 +23,7 @@ skyBalanceA, skyBalanceB }`. The last two are the sky balance's cast
   (`sky-balance.ts`), a* -20..20 and b* -30..30, default 0 (no balance);
   the cool corner (a* -16 with b* below about -27, a* -20 with b* below
   about -22) clips red to 0
-  (`sky-balance.ts.md`).
+  (`sky-balance.ts.md`; the light dialog says so).
 - `DEFAULT_LIGHT_SETTINGS`: built from `NOON_SURFACE_GAIN`,
   `BUILDING_SKY_LIGHT`, `NATURAL_LIGHT_ADAPTATION`,
   `NATURAL_LIGHT_COMPENSATION_EV`, `HAZE_VISIBILITY_KM` and

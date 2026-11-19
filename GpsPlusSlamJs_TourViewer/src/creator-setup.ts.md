@@ -267,6 +267,14 @@ were here. What stays is the Finish's side:
   check read the whole), and nothing has to decide which sentence the
   author can do without - the line already leads with what to act on.
   Test: `authoring-settle.test.ts` "the status line in AR is clamped".
+  While the work is kept nowhere (no tour open, its tour.json loading or
+  broken) only the CLAMPED line leads with the short form
+  (`finishBlockedLead`, `qr-author-mode.ts`); an unclamped one - the
+  page, or AR opened by a tap - ends with the full hint and takes no lead,
+  so the fact is said once. Tests: `creator-setup.test.ts` "leads the
+  clamped AR line with a short lead while the tour.json loads or is
+  broken, and only there" and "still says on the page after AR ends that
+  nothing placed is kept".
 - **Editing placed objects (authoring plan 2026-09-28-0953 §3.4, M4)**,
   through `object-editing.ts`:
   - **The hosted zip's objects are rendered in author mode**, keyed by id,

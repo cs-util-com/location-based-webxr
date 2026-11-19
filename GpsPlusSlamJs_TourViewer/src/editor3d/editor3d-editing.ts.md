@@ -26,8 +26,9 @@ pure gesture maths reads (`GestureWorld`).
     held key) or null; the globe holds its frame still meanwhile.
   - `rayUnder(pointer)` - the world ray under a pointer, a copy (the
     globe's double-click zoom finds its own ground along it).
-  - `centre()` - the place the view looks at (`view.lookAt()`) with
-    the ground's ellipsoidal height there, or the centre's own height
+  - `centre()` - the place under the camera (`view.eye()`; not where
+    the view looks, which a tilted camera puts far ahead) with
+    the ground's ellipsoidal height there, or the camera's own height
     plus the geoid's N where no ground has loaded (the tree's "+").
   - `turn(selection, deg)` - the selection turned `deg` clockwise about
     up where it stands (`turnedGeo`), written as one placement edit
@@ -48,7 +49,7 @@ pure gesture maths reads (`GestureWorld`).
     checks.
   - `dispose()` (the outline's too).
 - Type `GizmoPart`. Internal (not exported): `EditingCamera` (`lock(on)`,
-  `lookAt()`).
+  `eye()`).
 - The globe view's `EditingCamera` (in `editor3d-globe.ts`) leases the
   globe's controls for a handle drag. Two fingers are always the
   controls' own (their pinch, twist and tilt): the input never reads

@@ -228,3 +228,17 @@ use.
 - Tested in `city.test.ts` ("the tower rule": a tall and a low house, a
   height from levels, a podium and tower of one outline sharing the tower
   list).
+
+## Looks: several schemes in one build
+
+- **`CityOptions.looks`**: up to `MAX_CITY_LOOKS` (4) colour schemes baked in one build. The geometry (buildings, roads, trees, the tint raster) is built once; per look only the colour picks repeat (`seededBuildingColours` or the class colours, `barrierColour`, `roadColour`, the markings colour, the tree palettes, the land-use palette).
+  - Out: `MeshChunk.lookColours` on every building and road chunk, `lookColours` on every tree and cosmetic tree, `GroundTint.lookPalettes` over the one `classes` raster.
+  - Look 0 is what `colors`, `colour` and `palette` are painted in. `colours`, when given too, must be the same object as `looks[0]` (identity, not deep equality: a caller across a worker boundary passes `looks` alone).
+  - RangeError, before any geometry is built: not an array, empty, more than 4 ("at most 4"), a malformed look (`looks[i]: ...`), or `colours` other than `looks[0]`.
+  - Scheme NAMES are not this module's concern: it takes scheme objects; names resolve in the OSM demo (`colour-schemes.ts`).
+- **Why at most 4**: a renderer mixes the looks with one vec4 of weights and one colour attribute per look; WebGL 2 guarantees only 16 vertex attributes, and 4 keeps a tree instance at four colours (`MAX_CITY_LOOKS` in `colour-scheme.ts`).
+- **The equality it promises**: for every look k, the looks build's look-k colours equal a fixed build with `colours: looks[k]`, vertex for vertex, instance for instance, palette entry for palette entry, over one class raster (`city-looks.property.test.ts`: 12 fixture sites, invented roofs on at Cologne, a non-default first look, and a fast-check property of 1-4 random looks). Validation: `city-looks.test.ts`.
+- **Cost** (`city-looks.bench.ts`, interleaved medians on a desktop shared with other jobs, the full demo pass: roads, cosmetic trees, tint, invented roofs; looks 1-3 are the property test's rule looks, so tower roofs, material tags and wall jitter all run per look):
+  - Cologne cathedral: about 240-430 ms in one scheme (the machine's load moved the baseline that much between the two runs of 2026-11-19); four looks +10.6 %, -0.2 %.
+  - Heidelberg old town: about 300-360 ms in one scheme; four looks +18.5 %, +7.5 %.
+  - Run-to-run noise on this machine is about 10 % and the first run was taken under heavy load, so the cost reads as below that noise in three of four readings and +18.5 % in the loaded one: not a second build (+100 %). An earlier sequential tinybench run read +59 % at Cologne and did not repeat once the cases were interleaved, which is why the bench interleaves. A quiet machine would narrow the range.

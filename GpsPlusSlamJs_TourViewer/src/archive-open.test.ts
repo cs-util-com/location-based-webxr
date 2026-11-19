@@ -273,6 +273,37 @@ describe("the teardown clears tour-scoped state only when a tour closes", () => 
     expect(ctx.placementNote).toBeNull();
     expect(reset).toHaveBeenCalledOnce();
   });
+
+  // Why: the teardown's hooks dispose three.js objects, voices and sheets,
+  // and any of them can throw. The closing session was let go only at the
+  // end, so a throw left it current: every later reader of the session
+  // (the leave guard, the next open's teardown) saw a tour half torn down.
+  it("lets the closing session go before its hooks run, so a throwing one cannot keep it", async () => {
+    const ctx = createTourViewerSession();
+    const close = vi.fn(() => Promise.resolve());
+    ctx.session = { close } as never;
+    const hooks = createUnwiredHooks();
+    let sessionInHook: unknown = "not called";
+    vi.spyOn(hooks, "stopStations").mockImplementation(() => {
+      sessionInHook = ctx.session;
+      throw new Error("a disposal failed");
+    });
+    const resetFinishStep = vi.spyOn(hooks, "resetFinishStep");
+    ctx.rebuiltZip = new Blob(["old"]) as never;
+    ctx.placement = { kind: "placing" } as never;
+    const dom = openAnotherTour(ctx, hooks);
+    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+    expect(sessionInHook).toBeNull();
+    // The rest of the teardown still ran: with the session gone, no later
+    // open re-runs it, so a skipped step would leak this tour into the next.
+    expect(ctx.rebuiltZip).toBeNull();
+    expect(ctx.placement).toEqual({ kind: "idle" });
+    expect(resetFinishStep).toHaveBeenCalled();
+    expect(ctx.session).toBeNull();
+    // Its archive is closed all the same.
+    expect(close).toHaveBeenCalledOnce();
+    expect(dom.errorBox.textContent).not.toBe("");
+  });
 });
 
 describe("opening another tour asks first while the creator's file is unsaved (UI round 1, U2)", () => {

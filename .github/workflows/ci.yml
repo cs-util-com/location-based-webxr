@@ -330,12 +330,28 @@ jobs:
 
       # A step limit, because a job limit cancels the job with no log. Above
       # the first install's, because apt can fetch at 15 kB/s from a slow
-      # mirror for over 15 min and still finish.
+      # mirror for over 15 min and still finish. An unreachable mirror fails
+      # an attempt in seconds (exit 100): that attempt has ended by itself, so
+      # it is tried again after a growing pause, 3 attempts at most. No
+      # attempt is cut by the loop (killing apt can leave dpkg interrupted);
+      # the step limit covers all of them together, so a later attempt after
+      # one that failed late may still meet it, and that run is a rerun.
       - name: Install Playwright browsers
         if: ${{ matrix.browsers }}
         timeout-minutes: 20
         working-directory: GpsPlusSlamJs_RecorderApp
-        run: pnpm exec playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            pnpm exec playwright install --with-deps chromium && exit 0
+            rc=$?
+            if [ "$attempt" = 3 ]; then
+              echo "::error::Playwright browser install failed 3 times (last exit $rc), most often an unreachable apt mirror"
+              exit "$rc"
+            fi
+            pause=$(( attempt == 1 ? 30 : 90 ))
+            echo "::warning::Playwright browser install failed (exit $rc), attempt $attempt of 3; trying again in ${pause}s"
+            sleep "$pause"
+          done
 
       # Every script runs even after a red one, so one job reports every
       # package it holds; the job fails if any of them failed.

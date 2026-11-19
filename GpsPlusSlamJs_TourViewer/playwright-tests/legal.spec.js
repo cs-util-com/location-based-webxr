@@ -96,7 +96,7 @@ test("the setup page's footer links the legal notice and the privacy page, and i
   await expect(page).toHaveURL(/\/legal\/#notice$/);
 });
 
-test("the editor's fine print names the map's source and links the privacy page", async ({
+test("the editor's fine print names the map's source, links the privacy page and leads back to the tour page", async ({
   page,
 }) => {
   await page.goto("/edit.html");
@@ -106,4 +106,9 @@ test("the editor's fine print names the map's source and links the privacy page"
   );
   await expect(print).not.toContainText("nothing is uploaded");
   await expect(print.locator('a[href="/legal/#privacy"]')).toBeVisible();
+  // The way back is relative, so it holds wherever the site serves the
+  // viewer: from the editor it lands on the tour page beside it.
+  await page.getByTestId("back-to-tour-page").click();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByTestId("setup-foot")).toBeVisible();
 });

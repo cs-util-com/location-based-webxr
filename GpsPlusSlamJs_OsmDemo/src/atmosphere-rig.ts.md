@@ -23,8 +23,10 @@ colour that matched the sky at one time of day.
     fog colour, the haze), which a change on the sky alone left stale until
     the sun moved; on the fallback it re-derives the fallback's lights.
     Validated before any change (`RangeError`).
-  - `setHaze({ visibilityKm, startRatio })` and the `hazeStartRatio`
-    getter: the light dialog's haze. The visibility is the air's, so it goes
+  - `setHaze({ visibilityKm, startRatio })` and the `hazeStartRatio` and
+    `hazeVisibilityKm` getters (the latter the visibility the sky was last
+    configured with, which the perf log compares to tell a step that rebuilt
+    every table): the light dialog's haze. The visibility is the air's, so it goes
     to the SKY (`configure({ visibilityKm })` rebuilds its tables) and the
     haze on the city re-reads it in the sync; the city therefore fades
     toward a sky drawn for the same air. An unchanged visibility touches
@@ -248,3 +250,30 @@ renderer.render(scene, camera);
 - Pixels: OsmDemo's e2e suite (every lit-geometry and heat-ramp check runs
   under this sky); the sky's shaders themselves are checked by the look-dev
   smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history)).
+
+## The time-of-day blend: `setLight` and `setVeilBlend`
+
+- `setVeilBlend(veil: VeilBlend | null)` - draws a premultiplied veil
+  (`veil-blend.ts`) with its strength: the haze, the sky's horizon veil and the
+  rim all take the strength, and the fallback fog is
+  `horizon * (1 - strength) + display`. `setHazeVeil(veil)` is this at
+  strength 1.
+- `setLight({exposure, haze, veil, skyBalance}, sun?)` - one combined light
+  update: every value is validated first (exposure, haze, the veil's strength
+  in [0, 1] and its colour finite and >= 0; a `RangeError` changes nothing),
+  then the haze, the exposure and the veil are applied with ONE
+  `sky.configure` (visibility only when it changed, plus the sky balance)
+  and ONE re-sync, so a blend step costs one sky rebuild and one bake, not
+  one per field.
+- WITH `sun` (`SunAngles`) it is the whole sun step: the sun direction rides
+  the same `configure` and the night floor follows the elevation, so moving
+  the sun and the light together costs one rebuild and one bake, never a
+  light update plus a `setSun` (measured on the phone at about 17 + 31 ms
+  each). It returns the unit direction toward the sun, as `setSun` does,
+  undefined without a sun. Angles rather than a bare direction because the
+  night floor needs the elevation.
+- Tests: `atmosphere-rig.test.ts`, "AtmosphereRig.setVeilBlend",
+  "AtmosphereRig.setLight" (one configure, one sync, an unchanged visibility
+  not sent, refusals before any change) and "AtmosphereRig.setLight with a
+  sun" (one configure and one sync per sun step, the night floor, the
+  fallback re-derived from the new sun).

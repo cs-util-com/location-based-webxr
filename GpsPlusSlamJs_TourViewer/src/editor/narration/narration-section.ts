@@ -3,8 +3,10 @@
  * inspector" prototype's, `public/prototypes/longtext-editor-1-in-the-
  * inspector/`): the voice (add, replace, remove; a file may be dropped on
  * it), the timing (import a subtitle file or a word list), why a timing
- * no longer fits an edited text with "Line the voice up again", and what
- * an import or a lining up did, until the creator folds it away. Every
+ * no longer fits an edited text with "Line the voice up again", what
+ * an import or a lining up did, until the creator folds it away, and who
+ * speaks the voice (the "Synthetic voice" switch and the "Spoken by"
+ * credit the visitor sees after the speaker's name). Every
  * action is async and shows it: its button is disabled and says what runs
  * until the tour holds the result, and a failure is said and leaves the
  * section as it was. The words and rules are `narration-status.ts`'s; the
@@ -22,6 +24,11 @@ import { shellIcon } from "gps-plus-slam-editor-kit/chrome";
 
 import { sizeWords } from "../../checks/file-access-check.js";
 import { clockText } from "../../read-along.js";
+import {
+  normalVoiceCredit,
+  VOICE_CREDIT_MAX,
+  voiceCreditCut,
+} from "../../voice-credit.js";
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
 import type { TypedEditOutcome } from "../editor-shell/editor-shell.js";
 import {
@@ -103,7 +110,8 @@ function timingKey(text: string): string {
 }
 
 /** What a running action says on its button. */
-type Busy = "voice" | "remove" | "timing" | "untime" | "lineup";
+type Busy =
+  "voice" | "remove" | "timing" | "untime" | "lineup" | "synthetic" | "credit";
 
 /** What a running action is doing, for a file dropped meanwhile. */
 const BUSY_WORDS: Record<Busy, string> = {
@@ -112,7 +120,12 @@ const BUSY_WORDS: Record<Busy, string> = {
   timing: "The timing is still being imported",
   untime: "The timing is still being removed",
   lineup: "The voice is still being lined up",
+  synthetic: "The synthetic voice mark is still being changed",
+  credit: "The credit is still being changed",
 };
+
+/** Each section's credit field gets its own id, for its label. */
+let sections = 0;
 
 /** A voice file by its name: one of the tour's allowlisted sound types. */
 const VOICE_FILE = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)$/i;
@@ -187,8 +200,35 @@ export function createNarrationSection(
   timingInput.accept = ".vtt,.json,.txt,text/vtt,application/json";
   timingInput.hidden = true;
   timingInput.dataset["testid"] = "narration-timing-file";
+  // The voice's row, who speaks it, and the rest: the middle part is one
+  // node for the section's life, in place while there is a voice, so a
+  // redraw never takes the credit field out from under a creator typing
+  // in it.
+  const top = el("div");
+  const speaker = el("div", "ln-who");
+  const rest = el("div");
   const view = el("div");
+  view.append(top, rest);
   node.append(view, voiceInput, timingInput);
+  const synthBox = el("input");
+  synthBox.type = "checkbox";
+  synthBox.dataset["ln"] = "synthetic";
+  const synthRow = el("label", "ln-chk");
+  synthRow.append(synthBox, "Synthetic voice");
+  const creditField = el("input", "ln-in");
+  creditField.type = "text";
+  creditField.id = `ln-credit-${String(++sections)}`;
+  creditField.dataset["ln"] = "credit";
+  // The format's cap counts letters (code points) after whitespace is
+  // collapsed; `maxlength` counts UTF-16 units with every space. Twice the
+  // cap lets any credit the format holds be typed (a letter is at most two
+  // units); `normalVoiceCredit` makes the cut.
+  creditField.maxLength = 2 * VOICE_CREDIT_MAX;
+  creditField.autocomplete = "off";
+  creditField.placeholder = "Optional: who reads it";
+  const creditLabel = el("label", "ln-k", "Spoken by");
+  creditLabel.htmlFor = creditField.id;
+  speaker.append(synthRow, creditLabel, creditField);
 
   // --- state -----------------------------------------------------------------
   let input: NarrationSectionInput | null = null;
@@ -292,19 +332,44 @@ export function createNarrationSection(
     return b;
   }
 
+  /** Only `parts` shown, nothing of who speaks a voice. */
+  function only(...parts: HTMLElement[]): void {
+    top.replaceChildren(...parts);
+    speaker.remove();
+    rest.replaceChildren();
+  }
+
+  /** The switch and the field as the tour holds them; the switch keeps
+   *  the creator's tick while its write runs, and the field keeps what a
+   *  creator is typing in it. Another text selected takes the field off
+   *  the page while it is read (`only`), so it is never focused here
+   *  then and shows the new text's credit. */
+  function drawSpeaker(held: NarrationFacts): void {
+    if (!held.hasVoice) speaker.remove();
+    else if (speaker.parentNode !== view) rest.before(speaker);
+    if (busy !== "synthetic") synthBox.checked = held.synthetic;
+    synthBox.disabled = busy !== null;
+    if (busy === "synthetic") synthBox.setAttribute("aria-busy", "true");
+    else synthBox.removeAttribute("aria-busy");
+    creditField.readOnly = busy !== null;
+    if (doc.activeElement !== creditField) {
+      creditField.value = held.voiceCredit;
+    }
+  }
+
   function draw(): void {
     node.setAttribute("aria-busy", String(busy !== null));
     if (input === null) {
-      view.replaceChildren();
+      only();
       return;
     }
     if (refusal !== null) {
-      view.replaceChildren(el("div", "note", refusal));
+      only(el("div", "note", refusal));
       deps.onSummary("", "");
       return;
     }
     if (facts === null || status === null) {
-      view.replaceChildren(el("div", "note", "Reading the narration..."));
+      only(el("div", "note", "Reading the narration..."));
       return;
     }
     deps.onSummary(status.summary, status.tone);
@@ -361,7 +426,8 @@ export function createNarrationSection(
       drop.append(acts);
       vrow.append(drop);
     }
-    parts.push(vrow);
+    top.replaceChildren(vrow);
+    drawSpeaker(facts);
 
     // The timing.
     const trow = el("div", "ln-row");
@@ -515,7 +581,7 @@ export function createNarrationSection(
         parts.push(box);
       }
     }
-    view.replaceChildren(...parts);
+    rest.replaceChildren(...parts);
   }
 
   // --- actions ---------------------------------------------------------------
@@ -611,6 +677,61 @@ export function createNarrationSection(
         "Timing removed: the voice plays without the words lighting up. Ctrl+Z brings it back.",
       );
     });
+  }
+
+  async function setSynthetic(on: boolean): Promise<void> {
+    const at = input;
+    if (at === null || facts?.hasVoice !== true || busy !== null) {
+      draw();
+      return;
+    }
+    await running("synthetic", async () => {
+      const done = await deps.edit(at.blockId, {
+        kind: "synthetic",
+        synthetic: on,
+      });
+      if (done !== "written") return;
+      deps.say(
+        on
+          ? "Marked as a synthetic voice: visitors are told so. Ctrl+Z undoes it."
+          : "Marked as a person's voice. Ctrl+Z undoes it.",
+      );
+    });
+  }
+
+  /** The credit as entered (the field's change: leaving it, or Enter),
+   *  one edit; the field then shows it as the tour stores it. */
+  async function setCredit(text: string): Promise<void> {
+    const at = input;
+    if (at === null || facts?.hasVoice !== true) return;
+    if (busy !== null) {
+      deps.say(`${BUSY_WORDS[busy]}. Enter the credit again once it is done.`);
+      return;
+    }
+    const next = normalVoiceCredit(text) ?? "";
+    if (next !== facts.voiceCredit) {
+      await running("credit", async () => {
+        const done = await deps.edit(at.blockId, { kind: "voiceCredit", text });
+        if (done !== "written") return;
+        // The field takes more than the cap (`maxLength` counts UTF-16
+        // units), so a longer credit is cut here; the toast says so.
+        const cut = voiceCreditCut(text)
+          ? ` Cut to ${String(VOICE_CREDIT_MAX)} letters.`
+          : "";
+        deps.say(
+          next === ""
+            ? "Credit removed. Ctrl+Z brings it back."
+            : `Spoken by: ${next}.${cut} Ctrl+Z undoes it.`,
+        );
+      });
+    } else if (voiceCreditCut(text)) {
+      // Letters typed past a credit already at the cap: no edit runs, so
+      // say why the field goes back.
+      deps.say(
+        `A credit keeps at most ${String(VOICE_CREDIT_MAX)} letters: it stays as it was.`,
+      );
+    }
+    if (shown(at)) creditField.value = facts?.voiceCredit ?? "";
   }
 
   async function importFile(file: File): Promise<void> {
@@ -763,6 +884,12 @@ export function createNarrationSection(
       void takeFiles(files);
     });
   }
+  synthBox.addEventListener("change", () => {
+    void setSynthetic(synthBox.checked);
+  });
+  creditField.addEventListener("change", () => {
+    void setCredit(creditField.value);
+  });
   node.addEventListener("dragover", (event) => {
     if ([...(event.dataTransfer?.types ?? [])].includes("Files")) {
       event.preventDefault();
@@ -796,6 +923,7 @@ export function createNarrationSection(
         importError = null;
         last = null;
         notesOpen = false;
+        creditField.value = "";
         draw();
       } else if (was.key === next.key && was.body === next.body) {
         return;

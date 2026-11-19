@@ -496,7 +496,7 @@ test("camera frames flow through the foundation and surface in the status line",
   // containText, not exact: the viewer QR pipeline appends its own status
   // segment to the same line once frames start flowing (M4).
   await expect(page.getByTestId("ar-status")).toContainText(
-    "Visitor mode — AR running · 3 camera frames",
+    "Visitor mode - AR running · 3 camera frames",
   );
 });
 
@@ -1336,6 +1336,29 @@ test("the creator's AR visit first asks for the tour's code, and stops asking on
   await expect(page.getByTestId("setup-status")).not.toHaveText(
     /First, point the camera/,
   );
+});
+
+test("the creator's empty status line takes no room on the setup page", async ({
+  page,
+}) => {
+  // Why: before a session a creator's status line is empty, yet only the
+  // visitor's empty line was hidden; an empty block reads as hidden to a
+  // visibility check (no size) while its margin still pushes the steps
+  // down, so only display none gives the room back. The fakes report AR as
+  // supported: where it is not, a separate rule hides the line anyway.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  await openMeasureStep(page);
+  await expect(page.getByTestId("enter-ar")).toBeVisible();
+  const status = page.getByTestId("ar-status");
+  await expect(status).toHaveText("");
+  await expect(status).toHaveCSS("display", "none");
 });
 
 test("a failed finish says so with priority and can be retried; the panel shows the rebuild's progress meanwhile", async ({

@@ -1330,6 +1330,7 @@ const arEntry = wireArEntry({
       text: element("walk-coach-text"),
     },
     codeTail: element("walk-code-tail"),
+    linkQr: { root: element("link-qr"), code: element("link-qr-code") },
   },
   hooks,
   walk: {

@@ -59,7 +59,7 @@ describe("visitorStatus - one plain sentence per state", () => {
       "an unsupported phone",
       { arStatus: "unsupported" },
       "unsupported",
-      "This tour needs an Android phone with Chrome, and this phone or browser can't show it in AR. Copy the link and open it in Chrome on an Android phone.",
+      "This tour needs an Android phone with Chrome, and this device or browser can't show it in AR. Copy the link and open it in Chrome on an Android phone.",
     ],
     [
       "AR failed to start",

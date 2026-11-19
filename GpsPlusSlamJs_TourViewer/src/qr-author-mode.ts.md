@@ -86,6 +86,20 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   (code book plan M4d): there is something to write - a code to write, a
   changed or deleted object, or in AR a code in hand; without it the state
   is `not-measured`.
+- `finishBlockedHint(readiness)` - why the finish button (or Done in AR)
+  is off, in the creator's words: the manifest still loading (saying
+  nothing here is kept yet, since an unclamped line shows it with no
+  lead), a broken
+  `tour.json`, or no tour open (nothing placed is kept until the tour
+  opens - step 2, or its printed code in view); "" otherwise.
+- `NO_TOUR_LEAD` - the short form of the no-tour hint (at most 45
+  characters) that leads the creator's status line: in AR the line is
+  clamped to two lines, about 52 characters on a 360 px phone, so the
+  placement note and the readout still fit; the full hint ends the line.
+- `finishBlockedLead(readiness)` - that short lead per blocked state:
+  `NO_TOUR_LEAD` for no tour, a lead of its own (at most 45 characters,
+  "nothing here is kept") while the tour.json loads or is broken, ""
+  otherwise. Only the clamped AR line carries it.
 - `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size
   field is empty at AR entry. The example inside it is interpolated from
   `AUTHOR_DEFAULT_SIZE_M`, so the two cannot drift.

@@ -416,6 +416,30 @@ export function finishReadiness(state: {
   return "ready";
 }
 
+/** The short form of the "no-tour" hint that leads the AR status line: the
+ *  line is clamped to two lines (about 52 characters on a 360 px phone),
+ *  so it leaves room for the note and the readout after it. */
+export const NO_TOUR_LEAD = "No tour open - nothing placed here is kept.";
+
+/** The short lead of the clamped AR status line for a blocked finish (at
+ *  most 45 characters, as `NO_TOUR_LEAD`): with no tour open, or while
+ *  its tour.json loads or did not read, no draft keeps the work. "" when
+ *  nothing blocks it that way. */
+export function finishBlockedLead(
+  readiness: ReturnType<typeof finishReadiness>,
+): string {
+  switch (readiness) {
+    case "no-tour":
+      return NO_TOUR_LEAD;
+    case "manifest-pending":
+      return "Tour loading - nothing here is kept yet.";
+    case "manifest-broken":
+      return "Tour file broken - nothing here is kept.";
+    default:
+      return "";
+  }
+}
+
 /** Why the finish button is off, in the creator's words (empty when ready). */
 export function finishBlockedHint(
   readiness: ReturnType<typeof finishReadiness>,
@@ -423,9 +447,13 @@ export function finishBlockedHint(
   switch (readiness) {
     case "manifest-pending":
       // Said in AR (Done) and on the page (Finish) - M3 review #5, #12.
-      return "Saving unlocks once the tour's content list has loaded.";
+      return "Saving unlocks once the tour's content list has loaded - nothing here is kept yet.";
     case "manifest-broken":
       return "The hosted zip's tour.json is broken; repair it before saving, or the placement it holds would be lost.";
+    case "no-tour":
+      // Done cannot save and no draft keeps the work yet; opening the tour
+      // (its link, or its printed code in view) carries it over.
+      return "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.";
     default:
       return "";
   }

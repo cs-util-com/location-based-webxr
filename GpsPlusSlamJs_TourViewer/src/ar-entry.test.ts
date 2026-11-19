@@ -14,6 +14,7 @@ import { MESH_DEPTH } from "./mesh-surface.js";
 import type { EnableGpsArConfig } from "gps-plus-slam-app-framework/ar";
 import { createWalkToast } from "./walk-toast.js";
 import { wireArEntry, type ArEntryDom } from "./ar-entry.js";
+import { linkQrSvg } from "./link-qr.js";
 import {
   createTourViewerSession,
   createTourViewerStore,
@@ -98,6 +99,8 @@ function harness(
     debugLines?: () => string[];
     /** What the browser's location permission reads. */
     permission?: string;
+    /** The screen answers the computer-screen query (`link-qr.ts`). */
+    computerScreen?: boolean;
     /** The tour stores a code that can start a creator without location. */
     codeCanStart?: boolean;
     /** A failed start's location request was refused (the page's
@@ -109,6 +112,18 @@ function harness(
   // package tests run in node, so the page body is stood in.
   vi.stubGlobal("document", { body: { dataset: {} } });
   vi.stubGlobal("location", { href: "https://example.test/tour/?qr=abc" });
+  /** The screen's answer to the computer-screen query, settable so a
+   *  test can widen the window, and the page's listeners for its change. */
+  const screen = {
+    computer: options.computerScreen === true,
+    listeners: [] as (() => void)[],
+  };
+  vi.stubGlobal("matchMedia", () => ({
+    matches: screen.computer,
+    addEventListener: (_type: "change", listener: () => void) => {
+      screen.listeners.push(listener);
+    },
+  }));
   const ctx = createTourViewerSession();
   // A finished tour (one station) unless a test closes it: a visitor's
   // line about an open tour assumes one with something to show.
@@ -162,6 +177,10 @@ function harness(
     scanCardTitle: el(),
     coach: { root: el(), text: el() },
     codeTail: el(),
+    linkQr: {
+      root: el(),
+      code: { innerHTML: "", dataset: {} as Record<string, string> },
+    },
   };
   /** What the walk's toast was asked to say, and its resets. */
   const toasts: string[] = [];
@@ -249,6 +268,7 @@ function harness(
     entry,
     hooks,
     dispose,
+    screen,
     arStore,
     seams,
     xrSelectDispose,
@@ -728,7 +748,7 @@ describe("the status line's channels (U1 milestone review #8, #9)", () => {
   it("announces a creator's failed start, with its cause", () => {
     const h = harness({ arStatus: "error", mode: "creator" });
     h.entry.renderArStatus();
-    expect(h.dom.arStatusLive.textContent).toBe("Creator mode — error");
+    expect(h.dom.arStatusLive.textContent).toBe("Creator mode - error");
   });
 
   it("names the gate on the line, for tests and styling", () => {
@@ -876,6 +896,94 @@ describe("a visitor's phone without AR copies the link (polish round M4a, V4)", 
   it("hides the AR hint, which would describe a session that cannot start", () => {
     const h = harness({ arStatus: "unsupported" });
     expect(h.dom.arHint.hidden).toBe(true);
+  });
+
+  // Why: on a computer the visitor's way on is a phone; a code of the same
+  // link Copy link copies moves the tour there with one scan. A phone
+  // without AR gets none: scanning it with another such phone gains
+  // nothing.
+  it("shows a code of the page's link on a computer-sized screen", () => {
+    const h = harness({ arStatus: "unsupported", computerScreen: true });
+    expect(h.dom.linkQr.root.hidden).toBe(false);
+    expect(h.dom.linkQr.code.dataset["url"]).toBe(
+      "https://example.test/tour/?qr=abc",
+    );
+    expect(h.dom.linkQr.code.innerHTML).toBe(
+      linkQrSvg("https://example.test/tour/?qr=abc"),
+    );
+  });
+
+  // Why: the screen can change while the page is open (a window widened
+  // past the query's width); the code must follow without a reload.
+  it("shows the code once the window is widened into a computer screen", () => {
+    const h = harness({ arStatus: "unsupported", computerScreen: false });
+    expect(h.dom.linkQr.root.hidden).toBe(true);
+    h.screen.computer = true;
+    for (const listener of h.screen.listeners) listener();
+    expect(h.dom.linkQr.root.hidden).toBe(false);
+    h.screen.computer = false;
+    for (const listener of h.screen.listeners) listener();
+    expect(h.dom.linkQr.root.hidden).toBe(true);
+  });
+
+  // Why: the code holds the tour's link only, what Copy link copies: any
+  // other parameter in the address (a debug switch, a fragment) makes the
+  // code denser and harder to scan, and is not the visitor's to pass on.
+  it("encodes and copies the share link, without the page's other parameters", async () => {
+    const h = harness({ arStatus: "unsupported", computerScreen: true });
+    vi.stubGlobal("location", {
+      href: "https://example.test/tour/?debug=1&qr=abc#top",
+    });
+    for (const listener of h.screen.listeners) listener();
+    expect(h.dom.linkQr.code.dataset["url"]).toBe(
+      "https://example.test/tour/?qr=abc",
+    );
+    h.dom.enterArButton.click();
+    await vi.waitFor(() => {
+      expect(h.seams.copyText).toHaveBeenCalledWith(
+        "https://example.test/tour/?qr=abc",
+      );
+    });
+  });
+
+  // Why: the code's library throws past its largest size (about 2300 bytes
+  // at this error correction) and the `?qr=` payload has no cap. Thrown
+  // inside the render, it skipped the hint, the status line and the
+  // tracking report on every state change; the code goes, Copy link stays.
+  // A link of about a thousand bytes takes the same path: its code would
+  // not fit beside the dial (`LINK_QR_MAX_PX`) even at 2 px per module.
+  it.each([
+    ["too long for any code", 4000],
+    ["too large for the room beside the dial", 1000],
+  ])("falls back to Copy link alone when the link is %s", (_name, length) => {
+    const h = harness({ arStatus: "unsupported", computerScreen: true });
+    expect(h.dom.linkQr.root.hidden).toBe(false);
+    vi.stubGlobal("location", {
+      href: `https://example.test/tour/?qr=${"x".repeat(length)}`,
+    });
+    h.dom.arStatus.textContent = "";
+    expect(() => {
+      for (const listener of h.screen.listeners) listener();
+    }).not.toThrow();
+    expect(h.dom.linkQr.root.hidden).toBe(true);
+    expect(h.dom.linkQr.code.innerHTML).toBe("");
+    expect(h.dom.enterArButton.hidden).toBe(false);
+    expect(h.dom.enterArButton.textContent).toBe("Copy link");
+    expect(
+      h.dom.arStatus.textContent,
+      "the status line still renders",
+    ).not.toBe("");
+  });
+
+  it("shows no code on a phone without AR, nor on a device with AR", () => {
+    expect(
+      harness({ arStatus: "unsupported", computerScreen: false }).dom.linkQr
+        .root.hidden,
+    ).toBe(true);
+    expect(
+      harness({ arStatus: "ready", computerScreen: true }).dom.linkQr.root
+        .hidden,
+    ).toBe(true);
   });
 });
 

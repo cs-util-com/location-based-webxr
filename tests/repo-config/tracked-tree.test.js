@@ -13,13 +13,16 @@
 
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
-import { resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 import { createTrackedTree } from './tracked-tree.js';
 
 const ROOT = resolve('/repo');
 
-function fakes(listing = 'a.ts\nb/c.md\n') {
+function fakes(listing = 'a.ts\0b/c.md\0') {
   const execCalls = [];
   const readCalls = [];
   return {
@@ -46,17 +49,17 @@ function fakes(listing = 'a.ts\nb/c.md\n') {
 
 describe('createTrackedTree', () => {
   describe('list', () => {
-    it('runs `git ls-files` with the pathspecs verbatim, at the root', () => {
+    it('runs `git ls-files -z` with the pathspecs verbatim, at the root', () => {
       // The guards' file sets depend on git's own pathspec semantics (in
       // `*/src/**.ts` the `*` crosses `/`), so the helper must pass them
       // through unchanged rather than re-implement the matching.
       const { tree, execCalls } = fakes();
       tree.list('*.md', '*.ts');
-      expect(execCalls).toEqual([{ args: ['ls-files', '*.md', '*.ts'], cwd: ROOT }]);
+      expect(execCalls).toEqual([{ args: ['ls-files', '-z', '*.md', '*.ts'], cwd: ROOT }]);
     });
 
-    it('returns the listed paths, one per line, with empty lines dropped', () => {
-      const { tree } = fakes('a.ts\n\nb/c.md\n');
+    it('returns the listed paths, NUL-separated, with empty entries dropped', () => {
+      const { tree } = fakes('a.ts\0\0b/c.md\0');
       expect(tree.list()).toEqual(['a.ts', 'b/c.md']);
     });
 
@@ -68,8 +71,8 @@ describe('createTrackedTree', () => {
       tree.list('*/src/**.ts');
       expect(second).toBe(first);
       expect(execCalls.map((call) => call.args)).toEqual([
-        ['ls-files'],
-        ['ls-files', '*/src/**.ts'],
+        ['ls-files', '-z'],
+        ['ls-files', '-z', '*/src/**.ts'],
       ]);
     });
 
@@ -81,6 +84,26 @@ describe('createTrackedTree', () => {
       expect(() => tree.list().sort()).toThrow(TypeError);
     });
   });
+
+  // Why: without -z git prints a path with a non-ASCII byte octal-escaped
+  // and in quotes, so a guard that reads the listed path fails with ENOENT
+  // on any such file. Real git, in a throwaway repository, since the quoting
+  // is git's behaviour and no fake can prove it. Real git processes, which
+  // a loaded machine starts slowly: hence the longer timeout.
+  it('lists a non-ASCII file name as it is on disk (real git)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tracked-tree-'));
+    try {
+      const git = (args, cwd) =>
+        execFileSync('git', ['-c', 'core.quotePath=true', ...args], { cwd, encoding: 'utf8' });
+      git(['init', '-q'], dir);
+      writeFileSync(join(dir, 'bär photo.jpg'), 'x');
+      git(['add', '.'], dir);
+      const tree = createTrackedTree({ root: dir, exec: git, read: () => '' });
+      expect(tree.list()).toEqual(['bär photo.jpg']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   describe('read', () => {
     it('reads a repo-relative path resolved against the root, once', () => {

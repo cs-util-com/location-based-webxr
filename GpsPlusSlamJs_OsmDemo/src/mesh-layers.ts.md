@@ -190,8 +190,12 @@ the two tagged materials scale, idempotent, bad gains refused):
 ## Plates colour (colour schemes plan 2026-11-10-0841)
 
 `MeshLayerContext.plateColour?` colours the plates; absent is `PLATE_COLOUR`.
-`main.ts` passes the colour of the scheme the drawn mesh was built in.
-Tested in `mesh-layers.test.ts`.
+`city-look.ts` passes the colour of the scheme the drawn mesh was built in
+(the mixed colour for the blend). Every plate mesh carries
+`userData[LANDUSE_PLATE_TAG]` (`"landusePlate"`), so a change of look
+recolours the drawn plates without a rebuild. `NEUTRAL_CONTEXT` (the
+magenta fallback) is exported for a caller that draws without a context.
+Tested in `mesh-layers.test.ts` and `city-look.test.ts`.
 
 ## Invented roof count
 
@@ -206,3 +210,11 @@ buildings counter; the status line shows it beside the guessed heights.
 invented `woods`, as the library's `TreeObjectOptions.form`; absent draws
 the crown-only default. Both rows take it so a trunk-form measurement
 covers every tree. Tested in `mesh-layers.test.ts` ("the tree form").
+
+## The time-of-day blend
+
+`drawMeshLayers(mesh, layers, context, looks?)` takes the shared `LookMix`
+when the mesh is a time-of-day build; the building and road layers are then
+built with `{looks}` and draw their `lookColours` (decoded in the shader,
+mixed by the trim weights) instead of `colors`. Without it they are built
+exactly as before.

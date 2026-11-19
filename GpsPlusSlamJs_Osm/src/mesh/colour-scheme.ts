@@ -39,6 +39,14 @@ import {
 import { TREE_PALETTE, type TreeKey } from "./trees.js";
 
 /**
+ * The most looks (colour schemes) one city build bakes. A renderer mixes
+ * them by one vec4 of weights and one vertex colour attribute per look;
+ * WebGL 2 guarantees only 16 vertex attributes, of which a building chunk
+ * already uses several, and four keeps a tree instance at four colours.
+ */
+export const MAX_CITY_LOOKS = 4;
+
+/**
  * Every colour of a city. No field is optional: a scheme lists every colour,
  * so a missing entry is a validation error rather than a silent fallback to
  * the default (which would leave a scheme half switched). Write one by

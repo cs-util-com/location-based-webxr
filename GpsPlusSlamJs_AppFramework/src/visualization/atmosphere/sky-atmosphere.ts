@@ -87,7 +87,7 @@ import {
   type CloudSlabReach,
 } from './cloud-slab.js';
 import type { CloudDiscCentre } from './cloud-coverage.js';
-import { horizonVeilRise } from './horizon-veil.js';
+import { checkedVeilStrength, horizonVeilRise } from './horizon-veil.js';
 import {
   type AtmosphereDevice,
   type AtmosphereUniforms,
@@ -428,7 +428,11 @@ export class SkyAtmosphere {
     atmSkyVeilOn: { value: 0 },
     atmSkyVeilRise: { value: 0 },
   };
-  private horizonVeilState: { colour: Rgb; riseDeg: number } | null = null;
+  private horizonVeilState: {
+    colour: Rgb;
+    riseDeg: number;
+    strength: number;
+  } | null = null;
   /**
    * The sky balance (`setSkyBalance`): ONE uniform object spread into the
    * visible sky and the bake, so the surfaces' sky light takes it too.
@@ -933,8 +937,16 @@ export class SkyAtmosphere {
      * cover kept. A uniform; the bake follows in live mode.
      */
     cloudNoiseFineGain?: number;
+    /**
+     * The sky balance ({@link setSkyBalance}), in the same call as the sun
+     * and the visibility, so a step that moves all three costs one rebuild
+     * (whose bake takes the new gain) instead of a rebuild per setter and a
+     * bake. A balance alone re-bakes; the same balance does nothing.
+     */
+    skyBalance?: readonly [number, number, number] | null;
   }): void {
     // Validate everything before changing anything.
+    const balance = this.changedBalance(change.skyBalance);
     const sunFx = this.changedSunThroughClouds(change.sunThroughClouds);
     const steps = this.changedSlabSteps(change.cloudSlabSteps);
     const mode = this.changedMode(change.cloudMode);
@@ -947,8 +959,28 @@ export class SkyAtmosphere {
     const cloudsRebake = this.applyCloudLook(cover, sunFx, noise, fineGain);
     this.applySlabSteps(steps);
     this.applyMode(mode);
-    if (mie !== undefined) {
-      this.visibility = change.visibilityKm!;
+    if (balance !== undefined) this.applyBalance(balance.gain);
+    this.applySky(mie, change.visibilityKm, sun);
+    if (this.sun === undefined) return;
+    const skyChanged = mie !== undefined || sun !== undefined;
+    // The LUTs do not depend on clouds: a cover-only change just re-bakes.
+    // The sun-through-cloud knobs never do: the bake has no disc, and no
+    // glow (its own zero lobes, below).
+    if (skyChanged) this.rebuild(mie !== undefined || firstSun);
+    else if (cloudsRebake || balance !== undefined) {
+      if (this.staged) this.pendingBake = true;
+      else this.rebake();
+    }
+  }
+
+  /** Applies a validated visibility and sun change (each: undefined = none). */
+  private applySky(
+    mie: number | undefined,
+    visibilityKm: number | undefined,
+    sun: THREE.Vector3 | undefined
+  ): void {
+    if (mie !== undefined && visibilityKm !== undefined) {
+      this.visibility = visibilityKm;
       this.uniforms.atmMieExtinction.value = mie;
       this.updateScale();
     }
@@ -957,16 +989,32 @@ export class SkyAtmosphere {
       this.uniforms.atmSunDirection.value.copy(sun);
       this.uniforms.atmSunCosZenith.value = sun.y;
     }
-    if (this.sun === undefined) return;
-    const skyChanged = mie !== undefined || sun !== undefined;
-    // The LUTs do not depend on clouds: a cover-only change just re-bakes.
-    // The sun-through-cloud knobs never do: the bake has no disc, and no
-    // glow (its own zero lobes, below).
-    if (skyChanged) this.rebuild(mie !== undefined || firstSun);
-    else if (cloudsRebake) {
-      if (this.staged) this.pendingBake = true;
-      else this.rebake();
+  }
+
+  /**
+   * A validated balance change, or undefined for none (absent, or the gain
+   * already set).
+   *
+   * @throws RangeError for a gain that is not three finite values of at
+   *   least 0.
+   */
+  private changedBalance(
+    gain: readonly [number, number, number] | null | undefined
+  ): { gain: Rgb | null } | undefined {
+    if (gain === undefined) return undefined;
+    if (gain !== null && !gain.every((c) => Number.isFinite(c) && c >= 0)) {
+      throw new RangeError(
+        `the sky balance must be three finite values of at least 0, got ${gain.join(', ')}`
+      );
     }
+    if (sameGain(this.skyBalanceState, gain)) return undefined;
+    return { gain: gain === null ? null : [gain[0], gain[1], gain[2]] };
+  }
+
+  private applyBalance(gain: Rgb | null): void {
+    this.skyBalanceState = gain;
+    const g = gain ?? [1, 1, 1];
+    this.balance.atmSkyBalance.value.set(g[0], g[1], g[2]);
   }
 
   /**
@@ -1199,15 +1247,26 @@ export class SkyAtmosphere {
    * a step. `null`, the default, takes it off. The bake never draws it.
    * Uniforms only: nothing is rebuilt. Validated before anything changes.
    *
+   * `strength` weights the veil, for a blend of looks: the sky keeps
+   * `1 - strength * w` of its own colour and adds `colour * w` (w the
+   * height weight). So `colour` is PREMULTIPLIED by the strength: a veil c
+   * drawn at strength s is passed as s * c, and a blend of looks passes
+   * sum(w_i * s_i * c_i) with strength sum(w_i * s_i), never dividing by a
+   * sum that is 0 where no look has a veil. At strength 1 (the default)
+   * this is the plain mix toward `colour`; at 0 with a black colour, none.
+   *
    * @throws RangeError for a colour that is not three finite values of at
-   *   least 0, or a rise `horizonVeilRise` refuses.
+   *   least 0, a rise `horizonVeilRise` refuses, or a strength outside
+   *   [0, 1].
    */
   setHorizonVeil(
     colour: readonly [number, number, number] | null,
-    riseDeg = 0
+    riseDeg = 0,
+    strength = 1
   ): void {
     if (colour === null) {
       this.horizonVeilState = null;
+      this.skyVeil.atmSkyVeil.value.set(0, 0, 0);
       this.skyVeil.atmSkyVeilOn.value = 0;
       return;
     }
@@ -1217,13 +1276,15 @@ export class SkyAtmosphere {
       );
     }
     const rise = horizonVeilRise(riseDeg);
+    checkedVeilStrength(strength, 'horizon veil');
     this.horizonVeilState = {
       colour: [colour[0], colour[1], colour[2]],
       riseDeg,
+      strength,
     };
     this.skyVeil.atmSkyVeil.value.set(colour[0], colour[1], colour[2]);
     this.skyVeil.atmSkyVeilRise.value = rise;
-    this.skyVeil.atmSkyVeilOn.value = 1;
+    this.skyVeil.atmSkyVeilOn.value = strength;
   }
 
   /**
@@ -1243,18 +1304,7 @@ export class SkyAtmosphere {
    *   least 0.
    */
   setSkyBalance(gain: readonly [number, number, number] | null): void {
-    if (gain !== null && !gain.every((c) => Number.isFinite(c) && c >= 0)) {
-      throw new RangeError(
-        `the sky balance must be three finite values of at least 0, got ${gain.join(', ')}`
-      );
-    }
-    if (sameGain(this.skyBalanceState, gain)) return;
-    this.skyBalanceState = gain === null ? null : [gain[0], gain[1], gain[2]];
-    const g = gain ?? [1, 1, 1];
-    this.balance.atmSkyBalance.value.set(g[0], g[1], g[2]);
-    if (this.sun === undefined) return;
-    if (this.staged) this.pendingBake = true;
-    else this.rebake();
+    this.configure({ skyBalance: gain });
   }
 
   /** The sky balance {@link setSkyBalance} set, or `null` (none). */
@@ -1263,7 +1313,7 @@ export class SkyAtmosphere {
   }
 
   /** The horizon veil {@link setHorizonVeil} set, or `null` (none). */
-  get horizonVeil(): { colour: Rgb; riseDeg: number } | null {
+  get horizonVeil(): { colour: Rgb; riseDeg: number; strength: number } | null {
     return this.horizonVeilState;
   }
 
