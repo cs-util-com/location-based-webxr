@@ -21,6 +21,8 @@ import type { ElevationProvider, LatLng } from "gps-plus-slam-osm";
 
 import { planRoute } from "../agent-route.js";
 import { buildHeightfieldData, heightfieldFrom } from "gps-plus-slam-osm";
+import { transferablesOf } from "./mesh-transfer.js";
+import type { UpdateResult } from "./protocol.js";
 
 const FRAME = enuFrameAt({ lat: 50.9413, lng: 6.9583 });
 
@@ -159,5 +161,55 @@ describe("the heightfield across the worker boundary", () => {
     expect(data.hasData).toBe(true);
     expect(Number.isFinite(data.reliefM)).toBe(true);
     expect(data.reliefM).toBeGreaterThan(0);
+  });
+});
+
+describe("a time-of-day build across the worker boundary", () => {
+  /** One building chunk baked in two looks, shaped as `chunkMeshes` gives it. */
+  function lookedReply() {
+    const chunk = {
+      mesh: {
+        positions: new Float32Array(9),
+        normals: new Float32Array(9),
+        indices: new Uint32Array(3),
+        colors: new Float32Array(9),
+      },
+      lookColours: [
+        new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9]),
+        new Uint8Array([9, 8, 7, 6, 5, 4, 3, 2, 1]),
+      ],
+    };
+    const reply = {
+      mesh: {
+        kind: "full",
+        mesh: { buildings: [chunk], plates: [], roads: [chunk] },
+      },
+    } as unknown as UpdateResult;
+    return { chunk, reply };
+  }
+
+  // WHY: a buffer left out of the transfer list is silently COPIED; the
+  // look colours are four extra code buffers per chunk, so each must be
+  // moved like the geometry, and the page must receive them intact.
+  it("moves every look colour buffer and delivers the codes intact", () => {
+    const { chunk, reply } = lookedReply();
+    const transfer = transferablesOf("update", reply);
+    for (const codes of chunk.lookColours) {
+      expect(transfer).toContain(codes.buffer);
+    }
+    // The colours stay copied (see `mesh-transfer.ts`).
+    expect(transfer).not.toContain(chunk.mesh.colors.buffer);
+    const unique = [...new Set(transfer)];
+    const arrived = structuredClone(reply, { transfer: unique }) as unknown as {
+      mesh: { mesh: { buildings: { lookColours: Uint8Array[] }[] } };
+    };
+    expect(
+      arrived.mesh.mesh.buildings[0]?.lookColours.map((c) => Array.from(c)),
+    ).toEqual([
+      [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      [9, 8, 7, 6, 5, 4, 3, 2, 1],
+    ]);
+    // Moved, not copied: the worker's side is detached.
+    expect(chunk.lookColours[0]?.byteLength).toBe(0);
   });
 });

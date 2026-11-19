@@ -43,6 +43,22 @@ export function horizonVeilWeight(dirY: number, rise: number): number {
   return Math.exp(-Math.max(dirY, 0) / rise);
 }
 
+/**
+ * A veil or rim strength as the setters take it (`SkyAtmosphere.setHorizonVeil`,
+ * `AtmosphereHaze.setVeil` and `setRim`): the weight a blend of looks gives
+ * it, finite and in [0, 1]. Returns it.
+ *
+ * @throws RangeError otherwise, naming `what`.
+ */
+export function checkedVeilStrength(strength: number, what: string): number {
+  if (!(Number.isFinite(strength) && strength >= 0 && strength <= 1)) {
+    throw new RangeError(
+      `the ${what} strength must be a finite number in [0, 1], got ${strength}`
+    );
+  }
+  return strength;
+}
+
 /** The GLSL twin of {@link horizonVeilWeight}. */
 export const HORIZON_VEIL_GLSL = /* glsl */ `
 float atmHorizonVeilWeight(float dirY, float rise) {

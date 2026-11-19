@@ -33,6 +33,7 @@ export const SPECS = {
   "map-and-cells.spec.js": 3,
   "hud-layout.spec.js": 3,
   "layers-and-ground.spec.js": 3,
+  "looks-programs.spec.js": 3,
 };
 
 /** The lanes, one CI job each (`.github/workflows/ci.yml`). */

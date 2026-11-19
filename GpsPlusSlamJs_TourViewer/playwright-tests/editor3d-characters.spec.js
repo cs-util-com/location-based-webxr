@@ -19,6 +19,7 @@ import {
   openZip,
 } from "./editor3d-fixture.js";
 import { fileCommand, save } from "./editor-menus.js";
+import { serveZip } from "./serve-zip.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
@@ -275,44 +276,6 @@ function footprint(page, id) {
   }, id);
 }
 
-/**
- * Serve `zip` on the page's own origin at `path`, as a host that honours
- * byte ranges does (the visitor reads an archive by ranges).
- * @param {import("@playwright/test").Page} page
- * @param {string} path
- * @param {Buffer} zip
- */
-async function serveZip(page, path, zip) {
-  await page.route(`**${path}`, async (route) => {
-    const request = route.request();
-    const headers = {
-      "accept-ranges": "bytes",
-      "content-type": "application/zip",
-      etag: '"e2e-character-tour"',
-    };
-    const range = /^bytes=(\d+)-(\d+)$/.exec(request.headers().range ?? "");
-    if (request.method() === "HEAD") {
-      await route.fulfill({
-        status: 200,
-        headers: { ...headers, "content-length": String(zip.length) },
-      });
-    } else if (range !== null) {
-      const start = Number(range[1]);
-      const end = Math.min(Number(range[2]), zip.length - 1);
-      await route.fulfill({
-        status: 206,
-        headers: {
-          ...headers,
-          "content-range": `bytes ${String(start)}-${String(end)}/${String(zip.length)}`,
-        },
-        body: zip.subarray(start, end + 1),
-      });
-    } else {
-      await route.fulfill({ status: 200, headers, body: zip });
-    }
-  });
-}
-
 // Why: the add menu's Character ends in a free character the creator
 // then works with like any other item, and the visitor must see him too.
 // Each link is a different module (the free spot, the 3D view's figure,
@@ -495,7 +458,12 @@ test("a character added with the add menu is drawn at a free spot, selected with
   await save(page);
   const saved = readFileSync(await (await download).path());
   const visitor = await context.newPage();
-  await serveZip(visitor, "/e2e/character-tour.zip", saved);
+  await serveZip(
+    visitor,
+    "/e2e/character-tour.zip",
+    saved,
+    "e2e-character-tour",
+  );
   await installTourViewerArFakes(visitor);
   const link = new URL("/e2e/character-tour.zip", page.url()).href;
   await visitor.goto(`/?qr=${encodeURIComponent(link)}`);

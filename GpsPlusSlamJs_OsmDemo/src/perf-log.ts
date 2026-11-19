@@ -34,11 +34,13 @@ const PERF_LOG_LIMITS = Object.freeze({
   intervals: 3000,
   bursts: 1000,
   shareChanges: 500,
+  sunSteps: 1000,
 });
 
+/** The rings' sizes; the sun steps' is optional (the default above). */
 export type PerfLogLimits = Readonly<
-  Record<keyof typeof PERF_LOG_LIMITS, number>
->;
+  Record<Exclude<keyof typeof PERF_LOG_LIMITS, "sunSteps">, number>
+> & { readonly sunSteps?: number };
 
 /** A ring of the newest `capacity` items, with a count of those dropped. */
 export interface Ring<T> {
@@ -98,6 +100,23 @@ interface PerfBurst {
   readonly slowest: SlowestFrame | null;
 }
 
+/**
+ * One sun step, timed under `?perf=1` (`BuildingView.setSunAndLight`). The
+ * step's sky readback waits for the GPU to finish everything it was given
+ * before, so the view first waits for that with a 1x1 readback of its own
+ * and times the two apart: `gpuWaitMs` is the frame in flight, `stepMs`
+ * the step's own work (the sky tables, their readback, the bake, the
+ * copies).
+ */
+interface SunStepTiming {
+  /** When the step started (ms from page start). */
+  readonly atMs: number;
+  readonly gpuWaitMs: number;
+  readonly stepMs: number;
+  /** Whether the step rebuilt every sky table (a new haze visibility). */
+  readonly allTables: boolean;
+}
+
 /** The recorder's content: times are ms from page start (rAF timestamps). */
 export interface PerfTimeline {
   /** `[atMs, intervalMs]` of the newest chained intervals, oldest first. */
@@ -119,6 +138,9 @@ export interface PerfTimeline {
   readonly droppedBursts: number;
   readonly shareChanges: readonly ShareChange[];
   readonly droppedShareChanges: number;
+  /** The newest sun steps, oldest first. */
+  readonly sunSteps: readonly SunStepTiming[];
+  readonly droppedSunSteps: number;
 }
 
 export interface PerfRecorder {
@@ -127,6 +149,8 @@ export interface PerfRecorder {
   /** What the frame just drawn cost (`renderer.info.render` after the render). */
   drawn(cost: DrawCost): void;
   shareChange(change: ShareChange): void;
+  /** One sun step, timed (`SunStepTiming`). */
+  sunStep(timing: SunStepTiming): void;
   snapshot(): PerfTimeline;
 }
 
@@ -149,6 +173,9 @@ export function createPerfRecorder(
   const intervals = createRing<readonly [number, number]>(limits.intervals);
   const bursts = createRing<OpenBurst>(limits.bursts);
   const shareChanges = createRing<ShareChange>(limits.shareChanges);
+  const sunSteps = createRing<SunStepTiming>(
+    limits.sunSteps ?? PERF_LOG_LIMITS.sunSteps,
+  );
   let lastMs: number | undefined;
   let lastCost: DrawCost | null = null;
   let current: OpenBurst | undefined;
@@ -201,6 +228,9 @@ export function createPerfRecorder(
     shareChange(change) {
       shareChanges.push(change);
     },
+    sunStep(timing) {
+      sunSteps.push({ ...timing });
+    },
     snapshot: () => ({
       intervals: intervals.items(),
       droppedIntervals: intervals.dropped(),
@@ -212,6 +242,8 @@ export function createPerfRecorder(
       droppedBursts: bursts.dropped(),
       shareChanges: shareChanges.items(),
       droppedShareChanges: shareChanges.dropped(),
+      sunSteps: sunSteps.items(),
+      droppedSunSteps: sunSteps.dropped(),
     }),
   };
 }
@@ -413,6 +445,34 @@ function summaryLines(input: PerfReportInput, summary: FrameSummary): string[] {
   ];
 }
 
+/** p50, p90 and max of a list of times, in words. */
+function spread(times: readonly number[]): string {
+  const sorted = [...times].sort((a, b) => a - b);
+  return `p50 ${ms(percentile(sorted, 0.5))} · p90 ${ms(percentile(sorted, 0.9))} · max ${ms(sorted.at(-1))} ms`;
+}
+
+/**
+ * The sun steps' section: how many, the GPU wait before them, and their
+ * own time split by whether they rebuilt every sky table.
+ */
+function sunStepLines(timeline: PerfTimeline): string[] {
+  const steps = timeline.sunSteps;
+  const total = steps.length + timeline.droppedSunSteps;
+  const all = steps.filter((s) => s.allTables);
+  const sunOnly = steps.filter((s) => !s.allTables);
+  return [
+    "== Sun steps ==",
+    `${total} sun steps (${all.length} rebuilt every sky table) · ${steps.length} kept`,
+    ...(steps.length === 0
+      ? []
+      : [
+          `GPU wait ${spread(steps.map((s) => s.gpuWaitMs))}`,
+          `sun only ${spread(sunOnly.map((s) => s.stepMs))}`,
+          `every table ${spread(all.map((s) => s.stepMs))}`,
+        ]),
+  ];
+}
+
 function deviceLines(device: PerfDevice): string[] {
   return [
     "== Device ==",
@@ -483,6 +543,13 @@ export function buildPerfReport(input: PerfReportInput): string {
         averageMs: tenth(change.averageMs),
       })),
       droppedShareChanges: timeline.droppedShareChanges,
+      sunSteps: timeline.sunSteps.map((s) => [
+        tenth(s.atMs),
+        tenth(s.gpuWaitMs),
+        tenth(s.stepMs),
+        s.allTables ? 1 : 0,
+      ]),
+      droppedSunSteps: timeline.droppedSunSteps,
     },
   };
   return [
@@ -498,6 +565,8 @@ export function buildPerfReport(input: PerfReportInput): string {
     "== Bursts ==",
     `the newest ${Math.min(BURST_LINES, timeline.bursts.length)} of ${timeline.bursts.length + timeline.droppedBursts}; the JSON has every kept one`,
     ...timeline.bursts.slice(-BURST_LINES).map(burstLine),
+    "",
+    ...sunStepLines(timeline),
     "",
     ...deviceLines(device),
     "",

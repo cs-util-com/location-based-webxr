@@ -44,7 +44,7 @@ export const FILE_OPENED_ASK =
  */
 export function editorPitch(win: object): string {
   const does =
-    "The editor shows your tour on a map: fix a text, move a pin or remove a photo,";
+    "The editor shows your tour in 3D: add stations, texts, pictures, video, sound and 3D models, or change anything in it,";
   return hasFilePicker(win)
     ? `${does} and save it back into the tour file.`
     : `${does} and save a new copy of the tour file to put in place of the old one.`;

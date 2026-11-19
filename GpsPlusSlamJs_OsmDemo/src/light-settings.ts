@@ -39,7 +39,7 @@ import {
   HAZE_VEIL_TINT,
   type HazeVeil,
 } from "./haze-veil.js";
-import { skyBalanceGain } from "./sky-balance.js";
+import { hasSkyBalance, skyBalanceGain } from "./sky-balance.js";
 
 export interface LightSettings {
   /** The building and road colour factor at a high sun. */
@@ -189,7 +189,8 @@ export const LIGHT_SETTING_RANGES: {
   hazeVeilTintA: { min: -10, max: 10, step: 0.5 },
   hazeVeilRiseDeg: { min: 0, max: 20, step: 0.5 },
   // A strong cast either way; every corner is a drawable gain
-  // (light-settings.test.ts).
+  // (light-settings.test.ts). The cool corner clips red to 0, which the
+  // light dialog says (`#light-sky-note`).
   skyBalanceA: { min: -20, max: 20, step: 0.5 },
   skyBalanceB: { min: -30, max: 30, step: 0.5 },
 };
@@ -379,7 +380,7 @@ export function describeLightSettings(s: LightSettings): string {
     `EV ${round(s.exposureEv)}, ` +
     `haze ${round(s.hazeVisibilityKm)} km from ${round(s.hazeStartRatio)} of the draw distance` +
     (s.hazeVeilLightness > 0 ? describeVeil(s) : "") +
-    (s.skyBalanceA !== 0 || s.skyBalanceB !== 0
+    (hasSkyBalance(s.skyBalanceA, s.skyBalanceB)
       ? `, sky balance a* ${round(s.skyBalanceA)} b* ${round(s.skyBalanceB)}`
       : "")
   );

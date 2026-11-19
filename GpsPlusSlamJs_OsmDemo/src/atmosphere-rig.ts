@@ -32,13 +32,10 @@ import {
 } from "gps-plus-slam-app-framework/visualization/atmosphere/sky-atmosphere";
 import * as THREE from "three";
 
-import {
-  type HazeVeil,
-  veilDisplayLinear,
-  veilSceneColour,
-} from "./haze-veil.js";
+import type { HazeVeil } from "./haze-veil.js";
 import type { SunAngles, Vector3Like } from "./sun-position.js";
 import { sunDirection } from "./sun-position.js";
+import { type VeilBlend, veilBlendOf } from "./veil-blend.js";
 
 /**
  * The demo's tone mapping, desktop AND AR (one grade; AR imports it):
@@ -297,6 +294,53 @@ function assertHaze(haze: HazeSetting): HazeSetting {
   return haze;
 }
 
+/** The exposure, as `AtmosphereRig.setExposure` takes it. */
+interface ExposureSetting {
+  readonly ev: number;
+  readonly adaptation: number;
+}
+
+/** `setExposure`'s validation: the setting unchanged, or a RangeError. */
+function assertExposure(exposure: ExposureSetting): ExposureSetting {
+  const { ev, adaptation } = exposure;
+  if (!Number.isFinite(ev)) {
+    throw new RangeError(`exposure EV must be finite, got ${ev}`);
+  }
+  if (!(Number.isFinite(adaptation) && adaptation >= 0 && adaptation <= 1)) {
+    throw new RangeError(
+      `auto-exposure adaptation must be in [0, 1], got ${adaptation}`,
+    );
+  }
+  return exposure;
+}
+
+/**
+ * `setLight`'s veil check, made before anything changes: a strength in
+ * [0, 1] and a colour of finite values >= 0 (a bad colour would otherwise
+ * reach the haze only after the sky had been configured).
+ */
+function assertVeil(veil: VeilBlend | null): void {
+  if (veil === null) return;
+  const { strength, colour } = veil;
+  if (!(strength >= 0 && strength <= 1)) {
+    throw new RangeError(`veil strength must be in [0, 1], got ${strength}`);
+  }
+  if (!colour.every((c) => Number.isFinite(c) && c >= 0)) {
+    throw new RangeError(
+      `veil colour must be finite and >= 0, got ${colour.join(", ")}`,
+    );
+  }
+}
+
+/** Everything the light dialog (or a blend of looks) sets at once (`setLight`). */
+export interface LightSetting {
+  readonly exposure: ExposureSetting;
+  readonly haze: HazeSetting;
+  /** The veil as drawn, premultiplied (`veil-blend.ts`); null for none. */
+  readonly veil: VeilBlend | null;
+  readonly skyBalance: readonly [number, number, number] | null;
+}
+
 /** What the rig uses of `SkyAtmosphere` (the seam its tests stub). */
 export type SkyLike = Pick<
   SkyAtmosphere,
@@ -357,8 +401,8 @@ export class AtmosphereRig {
   /** The air's visibility the light dialog set (`setHaze`), km. */
   private visibilityKm: number = HAZE_VISIBILITY_KM;
   private startRatio: number = HAZE_START_RATIO;
-  /** The haze veil the light dialog set (`setHazeVeil`); none by default. */
-  private veil: HazeVeil | null = null;
+  /** The veil as drawn (`setVeilBlend`), premultiplied; none by default. */
+  private veil: VeilBlend | null = null;
   /** The ground's centre and extent (`setGroundRim`), once the view set it. */
   private groundRim:
     | { readonly centre: { x: number; z: number }; readonly extentM: number }
@@ -426,17 +470,23 @@ export class AtmosphereRig {
    * `DirectionalLight` along the SAME vector the sky uses.
    */
   setSun(angles: SunAngles): Vector3Like {
-    const direction = sunDirection(angles);
-    this.sunSet = true;
-    this.lastDirection = direction;
-    this.nightFloor.intensity =
-      NIGHT_FLOOR.intensity * nightFloorWeight(angles.elevationRad);
+    const direction = this.takeSun(angles);
     if (this.sky !== undefined) {
       this.sky.configure({ sunDirection: direction });
       this.syncFromSky(this.sky);
     } else {
       this.applyFallback(direction);
     }
+    return direction;
+  }
+
+  /** Holds a new sun and sets the night floor; the sky is left to the caller. */
+  private takeSun(angles: SunAngles): Vector3Like {
+    const direction = sunDirection(angles);
+    this.sunSet = true;
+    this.lastDirection = direction;
+    this.nightFloor.intensity =
+      NIGHT_FLOOR.intensity * nightFloorWeight(angles.elevationRad);
     return direction;
   }
 
@@ -450,28 +500,62 @@ export class AtmosphereRig {
    *
    * @throws RangeError for a non-finite EV or an adaptation outside [0, 1].
    */
-  setExposure(exposure: {
-    readonly ev: number;
-    readonly adaptation: number;
-  }): void {
-    const { ev, adaptation } = exposure;
-    if (!Number.isFinite(ev)) {
-      throw new RangeError(`exposure EV must be finite, got ${ev}`);
-    }
-    if (!(Number.isFinite(adaptation) && adaptation >= 0 && adaptation <= 1)) {
-      throw new RangeError(
-        `auto-exposure adaptation must be in [0, 1], got ${adaptation}`,
-      );
-    }
+  setExposure(exposure: ExposureSetting): void {
+    this.applyExposure(assertExposure(exposure));
+    this.resync();
+  }
+
+  private applyExposure({ ev, adaptation }: ExposureSetting): void {
     this.exposureEv = ev;
     this.adaptation = adaptation;
+    this.sky?.setExposureCompensation(ev);
+    this.sky?.setAutoExposureAdaptation(adaptation);
+  }
+
+  /** Re-derives the copies of the sky's state (or the fallback's lights). */
+  private resync(): void {
     if (this.sky !== undefined) {
-      this.sky.setExposureCompensation(ev);
-      this.sky.setAutoExposureAdaptation(adaptation);
       if (this.sunSet) this.syncFromSky(this.sky);
     } else if (this.lastDirection !== undefined) {
       this.applyFallback(this.lastDirection);
     }
+  }
+
+  /**
+   * The exposure, haze, veil and sky balance in ONE update (the time-of-day
+   * blend): every value validated before any change, the sky configured
+   * once (its visibility and balance together, so one rebuild or one bake,
+   * never one per setter) and its copies re-derived once. The light
+   * dialog's apply and each step of a blend of looks go through here.
+   *
+   * WITH `sun`, THIS IS THE WHOLE SUN STEP: the sun direction rides the
+   * same `configure`, so a step that moves the sun and the light together
+   * costs one table rebuild and one bake, never a light update followed by
+   * a `setSun` (two rebuilds and two bakes). Returns the unit direction
+   * toward that sun, as `setSun` does; undefined without one.
+   *
+   * @throws RangeError for any value its single setter refuses; nothing
+   *   changes then.
+   */
+  setLight(light: LightSetting, sun?: SunAngles): Vector3Like | undefined {
+    const exposure = assertExposure(light.exposure);
+    const { visibilityKm, startRatio } = assertHaze(light.haze);
+    assertVeil(light.veil);
+    // The haze checks its gain, and nothing else has changed if it throws.
+    this.haze.setSkyBalance(light.skyBalance);
+    this.applyExposure(exposure);
+    this.startRatio = startRatio;
+    const visibilityChanged = visibilityKm !== this.visibilityKm;
+    this.visibilityKm = visibilityKm;
+    const direction = sun === undefined ? undefined : this.takeSun(sun);
+    this.sky?.configure({
+      ...(direction === undefined ? {} : { sunDirection: direction }),
+      ...(visibilityChanged ? { visibilityKm } : {}),
+      skyBalance: light.skyBalance,
+    });
+    this.applyVeil(light.veil);
+    this.resync();
+    return direction;
   }
 
   /**
@@ -511,15 +595,35 @@ export class AtmosphereRig {
    * @throws RangeError for a veil `veilSceneColour` refuses.
    */
   setHazeVeil(veil: HazeVeil | null): void {
-    const scene =
-      veil === null ? null : veilSceneColour(veil, TONE_MAPPING_EXPOSURE);
-    this.veil = veil;
-    this.haze.setVeil(scene);
-    this.sky?.setHorizonVeil(scene, veil?.riseDeg ?? 0);
-    this.applyRim();
+    this.setVeilBlend(veilBlendOf(veil, TONE_MAPPING_EXPOSURE));
+  }
+
+  /**
+   * The veil as drawn (`veil-blend.ts`): a premultiplied colour at a
+   * strength, as a blend of looks gives it; null for none. The haze, the
+   * visible sky's horizon and the ground's rim follow the strength, and the
+   * fallback's fog is the sky's horizon `* (1 - strength)` plus the
+   * premultiplied display colour. Uniforms only.
+   *
+   * @throws RangeError for a strength outside [0, 1] or a colour the haze
+   *   refuses.
+   */
+  setVeilBlend(veil: VeilBlend | null): void {
+    this.applyVeil(veil);
     if (this.fallback !== undefined && this.lastDirection !== undefined) {
       this.applyFallback(this.lastDirection);
     }
+  }
+
+  private applyVeil(veil: VeilBlend | null): void {
+    this.haze.setVeil(veil?.colour ?? null, veil?.strength ?? 1);
+    this.sky?.setHorizonVeil(
+      veil?.colour ?? null,
+      veil?.riseDeg ?? 0,
+      veil?.strength ?? 1,
+    );
+    this.veil = veil;
+    this.applyRim();
   }
 
   /**
@@ -573,7 +677,13 @@ export class AtmosphereRig {
       rim.centre,
       rim.extentM * HAZE_RIM_INNER_RATIO,
       rim.extentM,
+      this.veil.strength,
     );
+  }
+
+  /** The air's visibility the sky's tables are built for, km. */
+  get hazeVisibilityKm(): number {
+    return this.visibilityKm;
   }
 
   /** Where the haze's boundary fade starts, as a share of the draw distance. */
@@ -667,9 +777,11 @@ export class AtmosphereRig {
     });
     this.sun.color.setRGB(...sky.sun.colour);
     this.sun.intensity = sky.sun.intensity;
+    const veil = this.veil;
+    const keep = 1 - (veil?.strength ?? 0);
     this.setFogColour(
       new THREE.Color(
-        ...(this.veil === null ? sky.horizon : veilDisplayLinear(this.veil)),
+        ...sky.horizon.map((c, i) => c * keep + (veil?.display[i] ?? 0)),
       ),
     );
     // Radiance-coloured, so π turns it into the irradiance three's

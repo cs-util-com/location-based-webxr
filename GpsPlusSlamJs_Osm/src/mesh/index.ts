@@ -110,11 +110,13 @@ export {
   seededBuildingColours,
 } from "./building-palette.js";
 
-export type { MeshChunk } from "./chunk-meshes.js";
+export type { LookColourDecode, LookPaint, MeshChunk } from "./chunk-meshes.js";
 export {
   CHUNK_SIZE_M,
   chunkKeyFor,
   chunkMeshes,
+  decodeLookColours,
+  LOOK_COLOUR_DECODE,
   linearChunkColours,
   meshCentroidEnu,
 } from "./chunk-meshes.js";
@@ -240,12 +242,14 @@ export {
 export type { CityColourScheme } from "./colour-scheme.js";
 export {
   DEFAULT_CITY_COLOUR_SCHEME,
+  MAX_CITY_LOOKS,
   validateCityColourScheme,
 } from "./colour-scheme.js";
 export type {
   BuildGroundTintOptions,
   GroundClass,
   GroundTint,
+  GroundTintLook,
 } from "./ground-tint.js";
 export {
   buildGroundTint,

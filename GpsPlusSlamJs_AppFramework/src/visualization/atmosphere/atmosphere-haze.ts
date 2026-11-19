@@ -48,6 +48,7 @@ import {
   type Rgb,
 } from './atmosphere-model.js';
 import { smoothstep } from '../../utils/smoothstep.js';
+import { checkedVeilStrength } from './horizon-veil.js';
 
 /** Thrown when three's shader no longer contains a chunk the patch hooks. */
 export class HazeAnchorError extends Error {
@@ -130,23 +131,25 @@ if (atmHazeMode > 0.5) {
   vec3 atmDir = atmHorizonClampedDir(atmViewDir);
   vec3 atmHazeSky = texture2D(atmHazeSkyView, atmSkyViewUv(atmObserverRadius, atmDir, atmSunDirection)).rgb
     * atmRadianceToScene;
-  // The app's own veil colour in place of the sky's, when set (weight 1);
-  // a weight of 0 returns the sky colour unchanged.
+  // The app's own veil colour in place of the sky's, weighted by its
+  // strength (atmHazeVeilOn) and premultiplied by it: strength 1 is the
+  // veil alone, strength 0 (black) the sky colour unchanged.
   // The sky balance first (SkyAtmosphere.setSkyBalance), so the haze fades
   // toward the sky on screen; a veil replaces the balanced sky.
-  atmHazeSky = mix(atmHazeSky * atmHazeSkyBalance, atmHazeVeil, atmHazeVeilOn);
+  atmHazeSky = atmHazeSky * atmHazeSkyBalance * (1.0 - atmHazeVeilOn) + atmHazeVeil;
   #ifdef FOG_EXP2
     float atmBoundary = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
   #else
     float atmBoundary = smoothstep(fogNear, fogFar, vFogDepth);
   #endif
   // The world's edge (setRim): the fade completes by the rim's outer radius
-  // from its centre, measured in the world's horizontal plane. Branched, not
-  // weighted: smoothstep is undefined for edges that do not rise, and a NaN
-  // would survive a weight of 0.
-  if (atmHazeRimOn > 0.5) {
+  // from its centre, measured in the world's horizontal plane. Branched
+  // first: smoothstep is undefined for edges that do not rise, and a NaN
+  // would survive a weight of 0. Inside, the strength weights it, so a rim
+  // that follows a veil's strength fades in with it.
+  if (atmHazeRimOn > 0.0) {
     vec3 atmWorld = cameraPosition + (vec4(vAtmViewPosition, 0.0) * viewMatrix).xyz;
-    atmBoundary = max(atmBoundary, smoothstep(atmHazeRim.z, atmHazeRim.w,
+    atmBoundary = max(atmBoundary, atmHazeRimOn * smoothstep(atmHazeRim.z, atmHazeRim.w,
       length(atmWorld.xz - atmHazeRim.xy)));
   }
   vec3 atmHazeKeep = exp(-atmHazeExtinction * length(vAtmViewPosition)) * (1.0 - atmBoundary);
@@ -205,6 +208,8 @@ export interface HazeRim {
   readonly innerM: number;
   /** Where it is complete, metres from the centre. */
   readonly outerM: number;
+  /** The weight of the rim's fade, in [0, 1]; 1 unless set lower. */
+  readonly strength: number;
 }
 
 /** What the haze reads from an atmosphere (`SkyAtmosphere` satisfies it). */
@@ -240,6 +245,22 @@ const HAZE_MARKER = 'uniform float atmHazeMode;';
 const ATMOSPHERE_THICKNESS_KM =
   EARTH_ATMOSPHERE.topRadiusKm - EARTH_ATMOSPHERE.groundRadiusKm;
 
+/**
+ * @throws RangeError unless the rim's radii are finite, start at 0 or
+ *   beyond, and rise.
+ */
+function checkedRimRadii(innerM: number, outerM: number): void {
+  if (
+    !(Number.isFinite(innerM) && Number.isFinite(outerM)) ||
+    innerM < 0 ||
+    !(outerM > innerM)
+  ) {
+    throw new RangeError(
+      `the rim's radii must be finite, from 0, and rise, got ${innerM}, ${outerM}`
+    );
+  }
+}
+
 function validAltitude(km: number): number {
   if (!(Number.isFinite(km) && km >= 0 && km < ATMOSPHERE_THICKNESS_KM)) {
     throw new RangeError(
@@ -259,6 +280,7 @@ export class AtmosphereHaze {
   private requested: 'atmosphere' | 'fog' = 'atmosphere';
   private skyView: THREE.Texture | undefined;
   private veilColour: Rgb | null = null;
+  private veilWeight = 0;
   private skyBalanceGain: Rgb | null = null;
   private rimState: HazeRim | null = null;
 
@@ -351,19 +373,33 @@ export class AtmosphereHaze {
    * `null` returns to the sky's colour, the default. Only atmosphere mode
    * draws it; the stock fog (AR) keeps its own colour. A sync keeps it.
    *
+   * `strength` weights it, for a blend of looks: the haze keeps
+   * `1 - strength` of the sky colour and adds `colour`, which is therefore
+   * PREMULTIPLIED by the strength (as `SkyAtmosphere.setHorizonVeil`'s):
+   * strength 1, the default, is the veil alone, strength 0 with a black
+   * colour the sky alone, and a blend never divides by a strength sum.
+   *
    * @throws RangeError for a colour that is not three finite values of at
-   *   least 0 (nothing changes).
+   *   least 0, or a strength outside [0, 1] (nothing changes).
    */
-  setVeil(colour: Rgb | null): void {
+  setVeil(colour: Rgb | null, strength = 1): void {
     if (colour !== null && !colour.every((c) => Number.isFinite(c) && c >= 0)) {
       throw new RangeError(
         `haze veil must be three finite values of at least 0, got ${colour.join(', ')}`
       );
     }
+    const weight =
+      colour === null ? 0 : checkedVeilStrength(strength, 'haze veil');
     this.veilColour =
       colour === null ? null : [colour[0], colour[1], colour[2]];
-    this.uniforms.atmHazeVeilOn.value = colour === null ? 0 : 1;
-    if (colour !== null) this.uniforms.atmHazeVeil.value.set(...colour);
+    this.veilWeight = weight;
+    this.uniforms.atmHazeVeilOn.value = weight;
+    this.uniforms.atmHazeVeil.value.set(...(colour ?? [0, 0, 0]));
+  }
+
+  /** The strength {@link setVeil} set, 0 with no veil. */
+  get veilStrength(): number {
+    return this.veilWeight;
   }
 
   /** The veil colour set by {@link setVeil}, or `null` (the sky's colour). */
@@ -404,14 +440,18 @@ export class AtmosphereHaze {
    * ground's edge and anything standing beyond it are fully hazed whatever
    * the draw distance. It only ever raises the fade. `null`, the default,
    * takes it off. Only atmosphere mode draws it. A sync keeps it.
+   * `strength` (1 by default) weights the rim's fade, so a rim that follows
+   * a veil's strength in a blend of looks fades in with it; 0 is off.
    *
-   * @throws RangeError for a centre that is not finite, or radii that are not
-   *   finite, start below 0 or do not rise (nothing changes).
+   * @throws RangeError for a centre that is not finite, radii that are not
+   *   finite, start below 0 or do not rise, or a strength outside [0, 1]
+   *   (nothing changes).
    */
   setRim(
     centre: { readonly x: number; readonly z: number } | null,
     innerM = 0,
-    outerM = 0
+    outerM = 0,
+    strength = 1
   ): void {
     if (centre === null) {
       this.rimState = null;
@@ -423,18 +463,16 @@ export class AtmosphereHaze {
         `the rim's centre must be finite, got ${centre.x}, ${centre.z}`
       );
     }
-    if (
-      !(Number.isFinite(innerM) && Number.isFinite(outerM)) ||
-      innerM < 0 ||
-      !(outerM > innerM)
-    ) {
-      throw new RangeError(
-        `the rim's radii must be finite, from 0, and rise, got ${innerM}, ${outerM}`
-      );
-    }
-    this.rimState = { centre: { x: centre.x, z: centre.z }, innerM, outerM };
+    checkedRimRadii(innerM, outerM);
+    checkedVeilStrength(strength, 'rim');
+    this.rimState = {
+      centre: { x: centre.x, z: centre.z },
+      innerM,
+      outerM,
+      strength,
+    };
     this.uniforms.atmHazeRim.value.set(centre.x, centre.z, innerM, outerM);
-    this.uniforms.atmHazeRimOn.value = 1;
+    this.uniforms.atmHazeRimOn.value = strength;
   }
 
   /** The rim set by {@link setRim}, or `null` (none). */

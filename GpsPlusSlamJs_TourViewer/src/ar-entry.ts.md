@@ -248,7 +248,21 @@ hint's evaluation and keeps the counts. A recorded entry (the
 "depth for a recorded entry" block) requests depth, starts the sampler at
 the recording's rate, dispatches each sample into the store, and stops it at
 the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test.ts`,
-`tour-flow.test.ts`.
+`tour-flow.test.ts`, `link-qr.test.ts`.
+
+- `dom.linkQr` (optional): the visitor's "Scan with your phone" code
+  beside "Copy link" (`link-qr.ts`). `renderArState` shows it when
+  `linkQrShown` says so (a visitor, AR unsupported, Start not withheld, a
+  computer-sized screen by `isComputerScreen(globalThis)`) and draws
+  `linkQrSvg(location.href)` into `linkQr.code`, keeping the encoded link
+  in `data-url`; it redraws only when the address changed.
+  `onComputerScreenChange` re-runs `renderArState` when the screen starts
+  or stops being a computer screen (a widened window), so no reload is
+  needed. Pinned by
+  `ar-entry.test.ts` ("shows a code of the page's link on a
+  computer-sized screen", "shows no code on a phone without AR, nor on a
+  device with AR", "shows the code once the window is widened into a
+  computer screen").
 
 - The runtime start also snapshots `ctx.frameEpochAtSessionStart` (code
   book plan M6 v5.1), next to `gpsSamplesAtSessionStart`

@@ -162,6 +162,7 @@ import {
   withWrittenBlocks,
 } from "./tour-content.js";
 import { sameJson } from "./same-json.js";
+import { normalVoiceCredit } from "./voice-credit.js";
 import { blockFileKind, withBlockFile } from "./block-file.js";
 import {
   fileIdsOf,
@@ -2390,13 +2391,31 @@ function withTimingListed(
   };
 }
 
+/** Whether a narration's synthetic mark is true or false and its credit,
+ *  when it has one, is in the form the editor stores (`normalVoiceCredit`):
+ *  never blank, within the format's cap. */
+function speakerFieldsHold(narration: TourNarration): boolean {
+  const { synthetic, voiceCredit } = narration as {
+    readonly synthetic: unknown;
+    readonly voiceCredit?: unknown;
+  };
+  if (typeof synthetic !== "boolean") return false;
+  return (
+    voiceCredit === undefined ||
+    (typeof voiceCredit === "string" &&
+      normalVoiceCredit(voiceCredit) === voiceCredit)
+  );
+}
+
 /**
  * A free long text's narration changed (`narrationEdited`), as one step:
  * its voice (a file the tour holds or one brought in first,
  * `assetsAdded`), whether it names its read-along entry, and that entry's
  * text. Refused, changing nothing: for anything but a free long text of
  * the document, a change of anything but its narration, a voice the tour
- * does not hold, a read-along entry other than its own
+ * does not hold, a synthetic mark that is not true or false, a credit
+ * that is blank, over the format's cap or not in its stored form
+ * (`voice-credit.ts`), a read-along entry other than its own
  * (`timing/<id>.json`), a text where the narration names no entry or none
  * where it does, and a change that changes nothing.
  */
@@ -2419,6 +2438,7 @@ function narrationEdit(
     (a) => a.id === narration?.audio,
   );
   if (narration !== undefined && audio?.kind !== "audio") return before;
+  if (narration !== undefined && !speakerFieldsHold(narration)) return before;
   let entry: string;
   try {
     entry = tourTimingEntryName(object.id);

@@ -472,6 +472,56 @@ describe("buildPerfReport, the replay and the draw cost", () => {
   });
 });
 
+describe("the sun steps in the perf log", () => {
+  // WHY: on the phone a sun step's time is two things, the wait for the GPU
+  // to finish the frame it was given and the step's own sky work; only the
+  // second is the step's cost, and the time-of-day test must tell which
+  // one a slow step was (and whether it rebuilt every sky table), from a
+  // pasted log alone.
+  it("keeps each step's GPU wait apart from its own time", () => {
+    const recorder = createPerfRecorder();
+    recorder.sunStep({ atMs: 100, gpuWaitMs: 2, stepMs: 17, allTables: false });
+    recorder.sunStep({ atMs: 350, gpuWaitMs: 9, stepMs: 31, allTables: true });
+    recorder.sunStep({ atMs: 600, gpuWaitMs: 1, stepMs: 16, allTables: false });
+    const report = buildPerfReport(input({ timeline: recorder.snapshot() }));
+    expect(report).toContain("== Sun steps ==");
+    expect(report).toContain("3 sun steps (1 rebuilt every sky table)");
+    expect(report).toContain("GPU wait p50 2.0 · p90 9.0 · max 9.0 ms");
+    expect(report).toContain("sun only p50 16.0 · p90 17.0 · max 17.0 ms");
+    expect(report).toContain("every table p50 31.0 · p90 31.0 · max 31.0 ms");
+    const json = reportJson(report) as {
+      timeline: { sunSteps: number[][]; droppedSunSteps: number };
+    };
+    expect(json.timeline.sunSteps).toEqual([
+      [100, 2, 17, 0],
+      [350, 9, 31, 1],
+      [600, 1, 16, 0],
+    ]);
+    expect(json.timeline.droppedSunSteps).toBe(0);
+  });
+
+  it("says so when no sun step was taken", () => {
+    const report = buildPerfReport(input());
+    expect(report).toContain("0 sun steps");
+  });
+
+  // A long session must not grow the log without bound.
+  it("keeps only the newest sun steps", () => {
+    const recorder = createPerfRecorder({
+      intervals: 10,
+      bursts: 10,
+      shareChanges: 10,
+      sunSteps: 2,
+    });
+    for (const atMs of [1, 2, 3]) {
+      recorder.sunStep({ atMs, gpuWaitMs: 0, stepMs: 1, allTables: false });
+    }
+    const timeline = recorder.snapshot();
+    expect(timeline.sunSteps.map((s) => s.atMs)).toEqual([2, 3]);
+    expect(timeline.droppedSunSteps).toBe(1);
+  });
+});
+
 describe("reportJson", () => {
   // A Windows clipboard returns CRLF; a pasted copy must still parse.
   it("reads a copy with CRLF line ends", () => {

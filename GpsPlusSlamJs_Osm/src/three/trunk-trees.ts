@@ -34,10 +34,16 @@ import * as THREE from "three";
 
 import {
   packInstances,
+  type TreeInstances,
   type TreePlacement,
   type TreeVariant,
 } from "../mesh/trees.js";
 import { crownHull } from "./crown-hull.js";
+import {
+  checkedTreeLookWeights,
+  linearTreeLooks,
+  mixTreeLooks,
+} from "./tree-looks.js";
 
 /** Trees nearer than this to the eye are drawn in the near level, metres. */
 export const TREE_LOD_NEAR_M = 120;
@@ -160,6 +166,13 @@ interface FormLod {
   sorted: boolean;
   /** The eye of the last sort, reused rather than replaced. */
   readonly sortedAt: { x: number; y: number; z: number };
+  /**
+   * Where the last sort put each tree it took: its slot in the near level,
+   * or `~slot` in the far one; the first `taken` entries are valid. A look
+   * mix rewrites the crown colours through it without sorting again.
+   */
+  readonly slots: Int32Array;
+  taken: number;
 }
 
 /** Each mesh's form and place in it. */
@@ -183,18 +196,12 @@ interface FormLayout {
   readonly trunkMatrices: Float32Array;
   readonly colours: Float32Array;
   readonly centres: Float32Array;
+  /** Each look's linear crown colours, when the trees were baked in looks. */
+  readonly looks?: readonly Float32Array[];
 }
 
 /** `packInstances`' arrays for one form, as crown and trunk matrices. */
-function layOut(
-  variant: TreeVariant,
-  packed: {
-    readonly positions: Float32Array;
-    readonly rotations: Float32Array;
-    readonly scales: Float32Array;
-    readonly colours: Float32Array;
-  },
-): FormLayout {
+function layOut(variant: TreeVariant, packed: TreeInstances): FormLayout {
   const total = packed.rotations.length;
   const layout: FormLayout = {
     total,
@@ -202,6 +209,7 @@ function layOut(
     trunkMatrices: new Float32Array(total * 16),
     colours: new Float32Array(total * 3),
     centres: new Float32Array(total * 3),
+    ...lookLayout(packed.lookColours),
   };
   for (let i = 0; i < total; i++) {
     const [x, ground, z] = [0, 1, 2].map(
@@ -230,6 +238,14 @@ function layOut(
     layout.centres.set([x, ground + heightM / 2, z], i * 3);
   }
   return layout;
+}
+
+/** The layout's `looks` field, or nothing for trees without looks. */
+function lookLayout(looks: readonly Float32Array[] | undefined): {
+  readonly looks?: readonly Float32Array[];
+} {
+  const linear = linearTreeLooks(looks);
+  return linear === undefined ? {} : { looks: linear };
 }
 
 /** One of a form's four meshes; crowns carry an instance colour. */
@@ -290,6 +306,8 @@ export function trunkTreeObjects(
       share: 1,
       sorted: false,
       sortedAt: { x: 0, y: 0, z: 0 },
+      slots: new Int32Array(layout.total),
+      taken: 0,
     };
     for (const part of ["crown", "trunk"] as const) {
       for (const level of ["near", "far"] as const) {
@@ -324,6 +342,18 @@ function uploadPrefix(
   attribute.needsUpdate = true;
 }
 
+/** The squared distance from tree `i`'s centre to `eye`. */
+function squaredDistance(
+  centres: Float32Array,
+  i: number,
+  eye: { readonly x: number; readonly y: number; readonly z: number },
+): number {
+  const dx = (centres[i * 3] ?? 0) - eye.x;
+  const dy = (centres[i * 3 + 1] ?? 0) - eye.y;
+  const dz = (centres[i * 3 + 2] ?? 0) - eye.z;
+  return dx * dx + dy * dy + dz * dz;
+}
+
 /** One distance pass writing the trees into all four of a form's meshes. */
 function sortForm(
   form: FormLod,
@@ -336,17 +366,22 @@ function sortForm(
   let near = 0;
   let far = 0;
   for (let i = 0; i < taking; i++) {
-    const dx = (centres[i * 3] ?? 0) - eye.x;
-    const dy = (centres[i * 3 + 1] ?? 0) - eye.y;
-    const dz = (centres[i * 3 + 2] ?? 0) - eye.z;
-    const isNear = dx * dx + dy * dy + dz * dz < nearSquared;
+    const isNear = squaredDistance(centres, i, eye) < nearSquared;
     const level: Level = isNear ? "near" : "far";
     const slot = isNear ? near++ : far++;
+    form.slots[i] = isNear ? slot : ~slot;
     copyItem(crownMatrices, i, crown[level].instanceMatrix.array, slot, 16);
     copyItem(trunkMatrices, i, trunk[level].instanceMatrix.array, slot, 16);
     const tint = crown[level].instanceColor;
     if (tint !== null) copyItem(colours, i, tint.array, slot, 3);
   }
+  form.taken = taking;
+  drawLevels(form, near, far);
+}
+
+/** Sets each level's draw count and marks the written prefixes for upload. */
+function drawLevels(form: FormLod, near: number, far: number): void {
+  const { crown, trunk } = form.meshes;
   for (const [level, count] of [
     ["near", near],
     ["far", far],
@@ -406,4 +441,39 @@ export function setTreeLodShare(
   return entry.part === "crown" && entry.level === "near"
     ? Math.ceil(entry.form.layout.total * share)
     : 0;
+}
+
+/**
+ * Mixes a trunk-form mesh's crown colours by `lookWeights` (one per look
+ * the trees were baked in, `checkedTreeLookWeights`) and rewrites the
+ * crown slots the last sort filled, so the change shows without a sort and
+ * the next sort copies the mix. The trees recoloured, counted once per form
+ * (on its near crown mesh, 0 on the other three); undefined for a mesh this
+ * module did not make or a form without looks.
+ */
+export function setTrunkTreeLookWeights(
+  mesh: THREE.InstancedMesh,
+  lookWeights: readonly number[],
+): number | undefined {
+  const entry = lodStates.get(mesh);
+  const looks = entry?.form.layout.looks;
+  if (entry === undefined || looks === undefined) return undefined;
+  checkedTreeLookWeights(lookWeights, looks.length);
+  if (entry.part !== "crown" || entry.level !== "near") return 0;
+  mixTreeLooks(looks, lookWeights, entry.form.layout.colours);
+  rewriteCrownSlots(entry.form);
+  return entry.form.layout.total;
+}
+
+/** Copies the layout's crown colours into the slots the last sort filled. */
+function rewriteCrownSlots(form: FormLod): void {
+  const { near, far } = form.meshes.crown;
+  for (let i = 0; i < form.taken; i++) {
+    const slot = form.slots[i] ?? 0;
+    const tint = (slot >= 0 ? near : far).instanceColor;
+    if (tint === null) continue;
+    copyItem(form.layout.colours, i, tint.array, slot >= 0 ? slot : ~slot, 3);
+  }
+  uploadPrefix(near.instanceColor, near.count);
+  uploadPrefix(far.instanceColor, far.count);
 }

@@ -20,12 +20,23 @@ import type { FurniturePlacement } from "../mesh/street-furniture.js";
 import type { MeshData } from "../mesh/mesh-data.js";
 import {
   packInstances,
+  type TreeInstances,
   type TreePlacement,
   type TreeVariant,
 } from "../mesh/trees.js";
 import { crownHull } from "./crown-hull.js";
+import { applyLookColours, type LookMix } from "./look-colours.js";
 import { streetFurnitureObjects } from "./street-furniture.js";
-import { setTreeLodShare, trunkTreeObjects } from "./trunk-trees.js";
+import {
+  checkedTreeLookWeights,
+  linearTreeLooks,
+  mixTreeLooks,
+} from "./tree-looks.js";
+import {
+  setTreeLodShare,
+  setTrunkTreeLookWeights,
+  trunkTreeObjects,
+} from "./trunk-trees.js";
 
 /**
  * Wraps a builder's buffers in a geometry. The buffers are already validated.
@@ -99,8 +110,15 @@ export function geometryFrom(
  * And `userData.cityLayer = "buildings"`, as a road carries `"roads"`: the
  * name a consumer keys a building-only treatment on (the globe's building
  * light), so that treatment does not ride on the picking marker.
+ *
+ * `options.looks`: a city baked in several colour looks draws their mix
+ * (`look-colours.ts`) in place of `colors`, every chunk on this one shared
+ * mix; a chunk without `lookColours`, or no mix given, draws `colors`.
  */
-export function buildingObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
+export function buildingObjects(
+  chunks: readonly MeshChunk[],
+  options: LookObjectOptions = {},
+): THREE.Mesh[] {
   return chunks.map((chunk) => {
     const object = new THREE.Mesh(
       geometryFrom(chunk.mesh, chunk.colors, {
@@ -117,10 +135,41 @@ export function buildingObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
         metalness: 0,
       }),
     );
+    withLooks(object, chunk, "linear", options);
     object.userData["solid"] = true;
     object.userData["cityLayer"] = "buildings";
     return object;
   });
+}
+
+/** How a layer of chunks baked in colour looks is drawn. */
+export interface LookObjectOptions {
+  /** The shared mix to draw a chunk's `lookColours` by; absent: `colors`. */
+  readonly looks?: LookMix;
+}
+
+/** Switches `object` to its chunk's looks when it has them and a mix is given. */
+function withLooks(
+  object: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>,
+  chunk: MeshChunk,
+  decode: "linear" | "raw",
+  options: LookObjectOptions,
+): void {
+  const codes = chunk.lookColours;
+  if (
+    options.looks === undefined ||
+    codes === undefined ||
+    codes.length === 0
+  ) {
+    return;
+  }
+  applyLookColours(
+    object.geometry,
+    object.material,
+    codes,
+    decode,
+    options.looks,
+  );
 }
 
 /** The trees' shared geometry per variant and material, made on first use. */
@@ -266,24 +315,69 @@ export function treeObjects(
   if (form === "trunk") return trunkTreeObjects(placements);
   const objects: THREE.InstancedMesh[] = [];
   if (placements.length === 0) return objects;
-  const { geometry, material } = trees();
   for (const [variant, packed] of packInstances(placements)) {
-    const count = packed.rotations.length;
-    if (count === 0) continue;
-    const instanced = new THREE.InstancedMesh(
-      geometry[variant],
-      material,
-      count,
-    );
-    setTreeMatrices(instanced, packed);
-    instanced.instanceMatrix.needsUpdate = true;
-    if (instanced.instanceColor !== null) {
-      instanced.instanceColor.needsUpdate = true;
-    }
-    instanced.userData = { sharedResources: true };
-    objects.push(instanced);
+    if (packed.rotations.length === 0) continue;
+    objects.push(crownMesh(variant, packed));
   }
   return objects;
+}
+
+/** One variant's crown-form instanced mesh, on the shared resources. */
+function crownMesh(
+  variant: TreeVariant,
+  packed: TreeInstances,
+): THREE.InstancedMesh {
+  const { geometry, material } = trees();
+  const instanced = new THREE.InstancedMesh(
+    geometry[variant],
+    material,
+    packed.rotations.length,
+  );
+  setTreeMatrices(instanced, packed);
+  instanced.instanceMatrix.needsUpdate = true;
+  if (instanced.instanceColor !== null) {
+    instanced.instanceColor.needsUpdate = true;
+  }
+  instanced.userData = { sharedResources: true };
+  const looks = linearTreeLooks(packed.lookColours);
+  if (looks !== undefined) crownLooks.set(instanced, looks);
+  return instanced;
+}
+
+/** Each crown-form tree mesh's linear colours per look, when baked in looks. */
+const crownLooks = new WeakMap<THREE.InstancedMesh, readonly Float32Array[]>();
+
+/**
+ * Mixes the crown colours of every tree mesh among `objects` that was
+ * baked in colour looks (`TreePlacement.lookColours`), mapped and invented
+ * alike, crown and trunk form, by `lookWeights`: the normalised look
+ * weights, one per look, mixed in linear space into `instanceColor` (a
+ * CPU pass over the instances, `tree-looks.ts`). Returns the trees
+ * recoloured; meshes without looks are left alone. RangeError for weights
+ * that are not one finite value >= 0 per look of a mesh.
+ */
+export function setTreeLookWeights(
+  objects: Iterable<THREE.Object3D>,
+  lookWeights: readonly number[],
+): number {
+  let recoloured = 0;
+  for (const object of objects) {
+    if (!(object instanceof THREE.InstancedMesh)) continue;
+    const mesh = object as THREE.InstancedMesh;
+    const trunk = setTrunkTreeLookWeights(mesh, lookWeights);
+    if (trunk !== undefined) {
+      recoloured += trunk;
+      continue;
+    }
+    const looks = crownLooks.get(mesh);
+    const tint = mesh.instanceColor;
+    if (looks === undefined || tint === null) continue;
+    checkedTreeLookWeights(lookWeights, looks.length);
+    mixTreeLooks(looks, lookWeights, tint.array);
+    tint.needsUpdate = true;
+    recoloured += tint.count;
+  }
+  return recoloured;
 }
 
 /**
@@ -303,8 +397,14 @@ export function treeObjects(
  * Each mesh carries `userData.cityLayer = "roads"`. It lies AT the ground
  * it was built on: how far to lift it off a drawn ground is the app's call
  * (OsmDemo's lift ladder, the globe's relief), so it is left at 0.
+ *
+ * `options.looks` as `buildingObjects`', decoded on the raw row (road
+ * colours are raw codes / 255, not linear).
  */
-export function roadObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
+export function roadObjects(
+  chunks: readonly MeshChunk[],
+  options: LookObjectOptions = {},
+): THREE.Mesh[] {
   return chunks.map((chunk) => {
     const object = new THREE.Mesh(
       geometryFrom(chunk.mesh, chunk.colors),
@@ -318,6 +418,7 @@ export function roadObjects(chunks: readonly MeshChunk[]): THREE.Mesh[] {
         flatShading: true,
       }),
     );
+    withLooks(object, chunk, "raw", options);
     object.userData["cityLayer"] = "roads";
     return object;
   });

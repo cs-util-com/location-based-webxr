@@ -112,11 +112,10 @@ function freshState() {
     chosen: -1,
     result: null,
     coins: cfg.coins,
-    flashAt: -99,
     autoWalk: null,
   });
   for (const a of A) {
-    Object.assign(a, { where: "hidden", flight: null, fill: 0, findT: 0, looking: false, crossed: false, openAt: -99, homeAt: -99, landedAt: -99, d: 99, by: "" });
+    Object.assign(a, { where: "hidden", flight: null, fill: 0, findT: 0, looking: false, crossed: false, openAt: -99, homeAt: -99, d: 99 });
   }
 }
 
@@ -754,7 +753,7 @@ handle.addEventListener("click", (e) => {
 
 /* ================= the quiz flow ================= */
 const isResult = () => S.phase === "result" || S.phase === "after";
-const boxOpen = () => isResult() || !S.fold;
+const boxOpen = () => !S.fold;
 function setBoxOpen(open) {
   S.fold = !open;
 }
@@ -801,7 +800,6 @@ function found(a, by) {
     return;
   }
   a.where = "opening";
-  a.by = by;
   a.openAt = S.clock;
   a.fill = by === "look" ? 1 : 0;
   a.looking = false;
@@ -841,6 +839,7 @@ function commit() {
 function finish(result) {
   S.result = result;
   S.phase = "result";
+  S.fold = false; // the result opens the box; the handle folds it again
   S.help = false;
   S.held = -1;
   // the right answer is shown, found or not
@@ -1002,7 +1001,6 @@ function schedule() {
         launch(a, "in");
       } else {
         a.where = "world";
-        a.landedAt = S.clock;
       }
     }
   }
@@ -1056,7 +1054,6 @@ function stepFlights() {
       a.flyEl.hidden = true;
       if (f.dir === "out") {
         a.where = "world";
-        a.landedAt = S.clock;
       } else {
         a.where = "box";
         a.homeAt = S.clock;
@@ -1214,7 +1211,7 @@ function tapChip(i) {
     return;
   }
   if (locked() || shortOfCoins()) {
-    S.flashAt = S.clock; // the rules line says why, once more
+    // the rules line says why, once more
     hintEl.classList.remove("flash");
     void hintEl.offsetWidth;
     hintEl.classList.add("flash");
@@ -1584,7 +1581,6 @@ function openQuiz() {
 function inBox(...ids) {
   for (const i of ids) {
     A[i].where = "box";
-    A[i].by = "walk";
   }
 }
 function standBy(i, dist) {

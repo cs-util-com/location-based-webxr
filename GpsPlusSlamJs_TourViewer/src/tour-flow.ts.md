@@ -75,8 +75,10 @@ codeLinedUp(qr)`: whether the station guide judges on the aligned frame
 - `placementSegment(placement, readiness = null): string` - the placement
   copy; `""` for idle; `waiting-ready` renders `readiness.hint` (or the
   generic wait).
-- `arStatusLine(input): string` - the whole `#ar-status` text. A failed
-  start reads `<mode> — error[: <cause>]`, followed, when
+- `arStatusLine(input): string` - the whole `#ar-status` text. Before a
+  session a creator's line is empty unless the start failed (a visitor's
+  `?debug=1` line still names the state, e.g. "Visitor mode - ready"). A failed
+  start reads `<mode> - error[: <cause>]`, followed, when
   `input.locationRefusal` is set (a creator's start refused the
   location), by what to do next: `code-can-start` - "Tap Try again to
   start on the tour's printed code instead."; `no-code` - allow
@@ -98,7 +100,7 @@ generic scanning line.
 
 ## Invariants & assumptions
 
-- **The running prefix is a contract:** `"<mode> — AR running · N camera
+- **The running prefix is a contract:** `"<mode> - AR running · N camera
 frames"` is asserted literally by `playwright-tests/ar-mode.spec.js`.
 - **No-codes rule (feedback F3):** with a tour OPEN, `levelCount === 0`, a
   reporting pipeline and nothing detected, the QR line is "This tour has no
@@ -133,7 +135,7 @@ arStatusLine({
   gate: { kind: "idle" },
   content: { kind: "placed", count: 2, skipped: 0 },
 });
-// "Visitor mode — AR running · 3 camera frames · This tour has no printed codes. · 2 placed objects"
+// "Visitor mode - AR running · 3 camera frames · This tour has no printed codes. · 2 placed objects"
 ```
 
 - `ArStatusInput.qr.fusedHint` carries the visitor hint through to
@@ -157,5 +159,5 @@ arStatusLine({
 
 - `arStatusLine` is now the CREATOR's line and a visitor's `?debug=1` line;
   a visitor otherwise reads `visitor-status.ts`'s one sentence. A failed
-  start reads "<mode> — error: <cause>" (`ArStatusInput.arError`), since the
+  start reads "<mode> - error: <cause>" (`ArStatusInput.arError`), since the
   start button only says "Try again" (U1 milestone review #1).

@@ -34,7 +34,11 @@ import {
   HAZE_RIM_INNER_RATIO,
 } from "./atmosphere-rig.js";
 import { veilDisplayLinear, veilSceneColour } from "./haze-veil.js";
+import { DEFAULT_LIGHT_SETTINGS } from "./light-settings.js";
+import { lookWeightsAt } from "./look-driver.js";
+import { blendLookLight, lookLightSettings } from "./look-light.js";
 import { sunDirection, type SunAngles } from "./sun-position.js";
+import { blendVeils, veilBlendOf } from "./veil-blend.js";
 
 /** A sun at an elevation and an azimuth, degrees (the rig does not care how it was chosen). */
 const sunAt = (elevationDeg: number, azimuthDeg = 250): SunAngles => ({
@@ -58,13 +62,20 @@ class StubSky {
   };
 
   cloudCover: number | undefined = undefined;
+  /** Every `configure` change, in order. */
+  readonly configured: object[] = [];
+  /** How often the rig re-read the sky's light (`applySunLight`). */
+  syncs = 0;
 
   configure(change: {
     sunDirection?: { x: number; y: number; z: number };
     cloudCover?: number;
     visibilityKm?: number;
+    skyBalance?: readonly [number, number, number] | null;
   }): void {
     this.calls.push("configure");
+    this.configured.push(change);
+    if (change.skyBalance !== undefined) this.skyBalance = change.skyBalance;
     if (change.cloudCover !== undefined) this.cloudCover = change.cloudCover;
     if (change.visibilityKm !== undefined) {
       this.visibilityKm = change.visibilityKm;
@@ -92,6 +103,7 @@ class StubSky {
   }
 
   applySunLight(light: THREE.DirectionalLight): void {
+    this.syncs++;
     light.color.setRGB(1, 0.8, 0.6);
     // Exposure-dependent, like the real sky: the light holds a COPY.
     light.intensity =
@@ -102,11 +114,14 @@ class StubSky {
 
   /** The horizon veil the rig set (not a call: a uniform, nothing rebuilt). */
   horizonVeil: { colour: readonly number[]; riseDeg: number } | null = null;
+  horizonVeilStrength = 1;
   setHorizonVeil(
     colour: readonly [number, number, number] | null,
     riseDeg = 0,
+    strength = 1,
   ): void {
     this.horizonVeil = colour === null ? null : { colour, riseDeg };
+    this.horizonVeilStrength = strength;
   }
 
   /** The sky balance the rig set (a re-bake in the real sky, not a call here). */
@@ -705,6 +720,7 @@ describe("AtmosphereRig: the veil up the sky and at the ground's rim", () => {
       centre: { x: 100, z: -50 },
       innerM: 2400 * HAZE_RIM_INNER_RATIO,
       outerM: 2400,
+      strength: 1,
     });
     view.setGroundRim({ x: 0, z: 0 }, 2400);
     expect(view.haze.rim?.centre).toEqual({ x: 0, z: 0 });
@@ -721,6 +737,186 @@ describe("AtmosphereRig: the veil up the sky and at the ground's rim", () => {
       RangeError,
     );
     expect(view.haze.rim?.outerM).toBe(2400);
+  });
+});
+
+describe("AtmosphereRig.setVeilBlend (a veil at a strength)", () => {
+  const full = veilBlendOf({ lightness: 72, tint: -4, riseDeg: 3 }, 1)!;
+  const half = blendVeils([null, full], [0.5, 0.5])!;
+
+  // WHY: a blend of looks draws a veil at a strength; the haze, the sky's
+  // horizon and the ground's rim must all take the SAME strength, or the
+  // ground's edge and the horizon fade in at different rates.
+  it("hands the haze, the sky and the rim one strength", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setGroundRim({ x: 0, z: 0 }, 2400);
+    view.setVeilBlend(half);
+    expect(view.haze.veil).toEqual(half.colour);
+    expect(view.haze.veilStrength).toBe(0.5);
+    expect(sky.horizonVeil).toEqual({ colour: half.colour, riseDeg: 3 });
+    expect(sky.horizonVeilStrength).toBe(0.5);
+    expect(view.haze.rim?.strength).toBe(0.5);
+  });
+
+  // WHY: on the fallback the veil is the fog colour; at a strength it must
+  // keep the horizon's share, so a half veil is the mean, not a dark veil.
+  it("mixes the fallback's fog with the horizon by the strength", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(25, 200));
+    const horizon = (scene.fog as THREE.Fog).color.clone();
+    view.setVeilBlend(half);
+    const fog = (scene.fog as THREE.Fog).color;
+    const want = horizon
+      .toArray()
+      .map((c, i) => c * 0.5 + (half.display[i] ?? 0));
+    fog.toArray().forEach((c, i) => expect(c).toBeCloseTo(want[i] ?? 0, 6));
+  });
+});
+
+describe("AtmosphereRig.setLight (one combined update)", () => {
+  const light = (visibilityKm: number) => ({
+    exposure: { ev: -2.5, adaptation: 0.8 },
+    haze: { visibilityKm, startRatio: 0.5 },
+    veil: veilBlendOf({ lightness: 72, tint: -4 }, TONE_MAPPING_EXPOSURE),
+    skyBalance: [0.9, 1, 1.1] as const,
+  });
+
+  // WHY: each setter configured or re-synced the sky on its own, so a step
+  // that moves the visibility AND the balance cost two rebuilds or a
+  // rebuild and a bake; the combined update configures once and re-reads
+  // the sky's copies once (time-of-day plan, one rebuild per update).
+  it("configures the sky once and re-reads it once", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    const configures = sky.calls.length;
+    const syncs = sky.syncs;
+    view.setLight(light(30));
+    expect(sky.calls.length - configures).toBe(1);
+    expect(sky.configured.at(-1)).toEqual({
+      visibilityKm: 30,
+      skyBalance: [0.9, 1, 1.1],
+    });
+    expect(sky.syncs - syncs).toBe(1);
+    expect(sky.ev).toBe(-2.5);
+    expect(view.hazeStartRatio).toBe(0.5);
+    expect(view.haze.skyBalance).toEqual([0.9, 1, 1.1]);
+    expect(view.haze.veil).toEqual(light(30).veil?.colour);
+    // An unchanged visibility is not sent (it would rebuild every table).
+    view.setLight(light(30));
+    expect(sky.configured.at(-1)).toEqual({ skyBalance: [0.9, 1, 1.1] });
+  });
+
+  // WHY: a bad value must not half-apply (a new exposure with the old haze
+  // would show a look nobody chose).
+  it("refuses any bad value before anything changes", () => {
+    const { view, sky } = rig();
+    view.setSun(sunAt(25, 200));
+    view.setLight(light(30));
+    const calls = sky.calls.length;
+    const bad = [
+      { ...light(30), exposure: { ev: Number.NaN, adaptation: 0.8 } },
+      { ...light(30), haze: { visibilityKm: -1, startRatio: 0.5 } },
+      { ...light(20), skyBalance: [1, Number.NaN, 1] as const },
+      { ...light(20), veil: { ...light(20).veil!, strength: 2 } },
+      // Checked with the strength, before the sky is configured.
+      {
+        ...light(20),
+        veil: { ...light(20).veil!, colour: [0.1, Number.NaN, 0.1] as const },
+      },
+      {
+        ...light(20),
+        veil: { ...light(20).veil!, colour: [-1, 0, 0] as const },
+      },
+    ];
+    for (const setting of bad) {
+      expect(() => view.setLight(setting)).toThrow(RangeError);
+      expect(sky.calls.length).toBe(calls);
+      expect(sky.ev).toBe(-2.5);
+      expect(sky.visibilityKm).toBe(30);
+    }
+  });
+});
+
+describe("AtmosphereRig.setLight with a sun (the sun step)", () => {
+  const light = {
+    exposure: { ev: -1.5, adaptation: 0.8 },
+    haze: { visibilityKm: 45, startRatio: 0.5 },
+    veil: veilBlendOf({ lightness: 65, tint: 22 }, TONE_MAPPING_EXPOSURE),
+    skyBalance: [0.8, 1, 1.2] as const,
+  };
+
+  // WHY: on the measured phone a separate `setSun` after the light update
+  // cost a second rebuild and bake (about 17 + 31 ms against a 50 ms
+  // budget); with the sun inside the same `configure` a time-of-day step is
+  // one rebuild, one bake and one re-read of the sky's copies.
+  it("configures the sky once and re-reads it once per sun step", () => {
+    const { view, sky, scene } = rig();
+    view.setSun(sunAt(25, 200));
+    for (const elevation of [8, 4, 0, -3]) {
+      const configures = sky.configured.length;
+      const syncs = sky.syncs;
+      const direction = view.setLight(light, sunAt(elevation, 260));
+      expect(sky.configured.length - configures).toBe(1);
+      expect(sky.syncs - syncs).toBe(1);
+      expect(direction).toEqual(sunDirection(sunAt(elevation, 260)));
+      expect(sky.configured.at(-1)).toMatchObject({
+        sunDirection: direction,
+        skyBalance: [0.8, 1, 1.2],
+      });
+      const floor = scene.getObjectByName(NIGHT_FLOOR_NAME) as THREE.Light;
+      expect(floor.intensity).toBeCloseTo(
+        NIGHT_FLOOR.intensity *
+          nightFloorWeight(sunAt(elevation, 260).elevationRad),
+        12,
+      );
+    }
+    // Without a sun nothing about the sun is sent.
+    expect(view.setLight(light)).toBeUndefined();
+    expect(sky.configured.at(-1)).not.toHaveProperty("sunDirection");
+  });
+
+  // WHY: a visibility change rebuilds every sky table (31 ms on the
+  // measured phone against 17 for the sun alone). Inside the day to golden
+  // hour blend the looks' visibilities differ (45 and 60 km), so a sun step
+  // must reach the sky as the sun alone while the blended visibility rounds
+  // to the same kilometre.
+  it("takes a sun step inside a golden hour blend as the sun alone", () => {
+    const { view, sky } = rig();
+    const perLook = lookLightSettings(
+      DEFAULT_LIGHT_SETTINGS,
+      DEFAULT_LIGHT_SETTINGS,
+      new Set(),
+    );
+    const stepAt = (elevation: number) =>
+      view.setLight(
+        blendLookLight(perLook, lookWeightsAt(elevation, false)).light,
+        sunAt(elevation, 260),
+      );
+    stepAt(7.4);
+    expect(sky.configured.at(-1)).toHaveProperty("visibilityKm");
+    // The view reads it to tell a sun-only step from one with every table.
+    expect(view.hazeVisibilityKm).toBe(sky.visibilityKm);
+    stepAt(7.39);
+    expect(sky.configured.at(-1)).toHaveProperty("sunDirection");
+    expect(sky.configured.at(-1)).not.toHaveProperty("visibilityKm");
+  });
+
+  // WHY: on the fallback the step must re-derive the fog and lights from
+  // the NEW sun, not the previous one.
+  it("re-derives the fallback from the new sun", () => {
+    const { view, scene } = rig({ unsupported: true });
+    view.setSun(sunAt(40, 200));
+    const high = (scene.fog as THREE.Fog).color.clone();
+    view.setLight(light, sunAt(-4, 260));
+    const low = (scene.fog as THREE.Fog).color;
+    expect(low.equals(high)).toBe(false);
+    const again = rig({ unsupported: true });
+    again.view.setLight(light);
+    again.view.setSun(sunAt(-4, 260));
+    expect(low.toArray()).toEqual(
+      (again.scene.fog as THREE.Fog).color.toArray(),
+    );
   });
 });
 

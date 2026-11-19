@@ -262,14 +262,18 @@ describe("editorPitch", () => {
     const text = editorPitch({
       showOpenFilePicker: () => Promise.resolve([]),
     });
-    expect(text).toContain("fix a text, move a pin or remove a photo");
+    expect(text).toContain(
+      "add stations, texts, pictures, video, sound and 3D models, or change anything in it",
+    );
     expect(text).toContain("save it back into the tour file");
     expect(text).not.toContain("new copy");
   });
 
   it("says the editor gives a new copy where it does not", () => {
     const text = editorPitch({});
-    expect(text).toContain("fix a text, move a pin or remove a photo");
+    expect(text).toContain(
+      "add stations, texts, pictures, video, sound and 3D models, or change anything in it",
+    );
     expect(text).toContain("a new copy of the tour file");
     expect(text).not.toContain("back into");
   });

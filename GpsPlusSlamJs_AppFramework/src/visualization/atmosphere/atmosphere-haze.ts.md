@@ -27,16 +27,23 @@ with the air's per-channel extinction, replacing the one-colour fog. An
     neutral 1×1 texture bound (AR, or no atmosphere yet).
   - `mode` — the requested mode (so an AR session can restore it).
   - `setDensityScale(k)` — multiplier on the physical extinction (≥ 0).
-  - `setVeil(rgb | null)` and `veil`: a fixed scene-linear colour the haze
-    fades toward in place of the sky-view LUT colour (an app's look
-    control); `null` (the default) is the sky's colour. Each channel must
-    be finite and ≥ 0 (`RangeError`). Survives `sync`.
+  - `setVeil(rgb | null, strength = 1)`, `veil` and `veilStrength`: a fixed
+    scene-linear colour the haze fades toward in place of the sky-view LUT
+    colour (an app's look control); `null` (the default) is the sky's
+    colour, and zeroes the colour uniform. Each channel must be finite and
+    ≥ 0, the strength in [0, 1] (`RangeError`). The colour is
+    premultiplied by the strength, as `SkyAtmosphere.setHorizonVeil`'s:
+    the haze keeps `1 - strength` of the balanced sky and adds the colour.
+    Survives `sync`.
   - `setSkyBalance(rgb | null)` and `skyBalance`: the gain the visible sky
     takes (`SkyAtmosphere.setSkyBalance`), applied to the sky colour the
     haze fades toward, so the distance meets the balanced sky without a
     seam; a set veil replaces the balanced sky. `null` (the default) is
     (1, 1, 1). Same validation; survives `sync`.
-  - `setRim(centre | null, innerM = 0, outerM = 0)` and `rim`: a radial
+  - `setRim(centre | null, innerM = 0, outerM = 0, strength = 1)` and `rim`
+    (with its `strength`): the strength in [0, 1] weights the rim's fade,
+    inside the shader's `atmHazeRimOn > 0.0` branch (its NaN guard), so a
+    rim that follows a veil's strength fades in with it. A radial
     boundary fade around a horizontal centre (world x, z), complete at
     `outerM`, for an app whose ground is a finite tile: its rim then fades
     into the haze colour instead of standing against the void. `null` (the
@@ -118,7 +125,9 @@ haze.setMode(inAr ? 'fog' : 'atmosphere');
   anchor error, subtree application (skips included), modes, sync after an
   atmosphere replacement (altitude derived), density, the veil (off by
   default, kept through a sync, mixed in after the sky lookup, bad colours
-  refused).
+  refused), the sky balance (neutral by default, applied to the sky lookup
+  before the veil, kept through a sync and shared with patched materials,
+  bad gains refused).
 - Pixels: the look-dev smoke asserts the haze changes the distant ridges
   several times more than the near city; that every changed ridge pixel
   moved TOWARD the sky just above it (direction, not only magnitude); and

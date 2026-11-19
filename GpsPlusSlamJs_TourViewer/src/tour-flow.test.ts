@@ -57,7 +57,7 @@ describe("the fused pose's hint in the composed line (plan §66-§67)", () => {
       gate: { kind: "passed", via: "code" },
     });
     expect(line).toBe(
-      "Visitor mode — AR running · 3 camera frames · Measuring the code: keep it in view while you move slowly. · Code recognised - placing the tour.",
+      "Visitor mode - AR running · 3 camera frames · Measuring the code: keep it in view while you move slowly. · Code recognised - placing the tour.",
     );
   });
 });
@@ -84,7 +84,7 @@ describe("the fused pose's hint while placement waits (milestone review of b4c #
       },
     });
     expect(line).toBe(
-      "Visitor mode — AR running · 3 camera frames · Code measured - waiting for the first GPS fix. · Code recognised - placing the tour. · Walk around a few steps.",
+      "Visitor mode - AR running · 3 camera frames · Code measured - waiting for the first GPS fix. · Code recognised - placing the tour. · Walk around a few steps.",
     );
   });
 });
@@ -151,7 +151,7 @@ describe("the scan gate and the content in the composed line (M5)", () => {
       placement: { kind: "idle" },
     });
     expect(line).toBe(
-      "Visitor mode — AR running · 3 camera frames · The tour's printed-code file could not be read - placing by GPS.",
+      "Visitor mode - AR running · 3 camera frames · The tour's printed-code file could not be read - placing by GPS.",
     );
   });
 
@@ -184,7 +184,7 @@ describe("arStatusLine - an unfinished tour", () => {
       placement: { kind: "waiting-ready" },
     });
     expect(line).toBe(
-      "Visitor mode — AR running · 3 camera frames · This tour is not finished yet. Questions about this tour? Contact its maker: https://example.org/castle",
+      "Visitor mode - AR running · 3 camera frames · This tour is not finished yet. Questions about this tour? Contact its maker: https://example.org/castle",
     );
   });
 });
@@ -192,12 +192,27 @@ describe("arStatusLine - an unfinished tour", () => {
 describe("arStatusLine - the fixed prefix", () => {
   it("renders mode and status while the session is not running", () => {
     expect(arStatusLine({ ...RUNNING_BASE, arStatus: "ready" })).toBe(
-      "Visitor mode — ready",
+      "Visitor mode - ready",
     );
-    expect(
-      arStatusLine({ ...RUNNING_BASE, mode: "creator", arStatus: "starting" }),
-    ).toBe("Creator mode — starting");
   });
+
+  // Why: a creator's pre-AR line said "Creator mode - ready" or
+  // "- unsupported", debug wording that told nothing the button does not
+  // say; only a failed start's cause is worth a line before a session.
+  it.each([
+    "checking",
+    "ready",
+    "starting",
+    "unsupported",
+    "stopping",
+  ] as const)(
+    "leaves a creator's line empty before a session (%s)",
+    (arStatus) => {
+      expect(arStatusLine({ ...RUNNING_BASE, mode: "creator", arStatus })).toBe(
+        "",
+      );
+    },
+  );
 
   it("names the start failure's cause for the creator and ?debug=1 (U1 milestone review #1)", () => {
     // Why: the start button became a plain "Try again"; without this line
@@ -209,7 +224,7 @@ describe("arStatusLine - the fixed prefix", () => {
         arStatus: "error",
         arError: "Location permission is required for GPS AR.",
       }),
-    ).toBe("Creator mode — error: Location permission is required for GPS AR.");
+    ).toBe("Creator mode - error: Location permission is required for GPS AR.");
   });
 
   // Why: a creator whose location is refused can still start on a code the
@@ -219,11 +234,11 @@ describe("arStatusLine - the fixed prefix", () => {
   it.each([
     [
       "no-code",
-      "Creator mode — error: Location permission is required for GPS AR. This tour has no measured code to start from without GPS: allow location for this page, then step outside for a first GPS fix.",
+      "Creator mode - error: Location permission is required for GPS AR. This tour has no measured code to start from without GPS: allow location for this page, then step outside for a first GPS fix.",
     ],
     [
       "code-can-start",
-      "Creator mode — error: Location permission is required for GPS AR. Tap Try again to start on the tour's printed code instead.",
+      "Creator mode - error: Location permission is required for GPS AR. Tap Try again to start on the tour's printed code instead.",
     ],
   ] as const)(
     "tells a creator whose location was refused what to do next (%s)",
@@ -243,7 +258,7 @@ describe("arStatusLine - the fixed prefix", () => {
   it("keeps the e2e-pinned running prefix exactly", () => {
     // ar-mode.spec.js asserts this literal text; the prefix is a contract.
     expect(arStatusLine(RUNNING_BASE)).toBe(
-      "Visitor mode — AR running · 3 camera frames",
+      "Visitor mode - AR running · 3 camera frames",
     );
   });
 });
@@ -400,7 +415,7 @@ describe("arStatusLine - composition", () => {
         contentError: "That file does not exist.",
       }),
     ).toBe(
-      "Visitor mode — AR running · 3 camera frames · Scanning for the printed code… · 2 placed objects · placed content failed: That file does not exist.",
+      "Visitor mode - AR running · 3 camera frames · Scanning for the printed code… · 2 placed objects · placed content failed: That file does not exist.",
     );
   });
 
@@ -410,7 +425,7 @@ describe("arStatusLine - composition", () => {
         ...RUNNING_BASE,
         placement: { kind: "idle" },
       }),
-    ).toBe("Visitor mode — AR running · 3 camera frames");
+    ).toBe("Visitor mode - AR running · 3 camera frames");
   });
 });
 
@@ -432,7 +447,7 @@ describe("arStatusLine - a code the moved-code check ignores (D20, M5c)", () => 
       gate: { kind: "passed", via: "ignored" },
     });
     expect(line).toBe(
-      "Visitor mode — AR running · 3 camera frames · This code seems to have been moved, so its position is not used. Showing the tour by GPS.",
+      "Visitor mode - AR running · 3 camera frames · This code seems to have been moved, so its position is not used. Showing the tour by GPS.",
     );
   });
 

@@ -1032,7 +1032,7 @@ store.dispatch(tourDocumentActions.undone());
 
 - State: `timings` (the read-along texts set here, by archive entry, `null` for none), `timingsWritten` (what the file last written holds for each). A voice is a file brought in (`addedAssets`, below), listed before the step naming it.
 - `narrationEdited({ object, timing?, what })`: a free long text's narration changed as ONE step - its voice, whether it names its entry (`tourTimingEntryName(id)`), that entry's text.
-  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when the narration names an audio that is not an audio asset of the written tour or of `addedAssets`, or when the entry is not the object's own.
+  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when the narration names an audio that is not an audio asset of the written tour or of `addedAssets`, when its `synthetic` is not a boolean or its `voiceCredit` is not in the stored form (`normalVoiceCredit`, `voice-credit.ts`: never blank, within the cap), or when the entry is not the object's own.
   - An undo brings back the entry's text the step started from.
   - It is a separate `createAction` handled in `extraReducers` and merged into `tourDocumentActions`: one more case reducer on the slice made the slice's type too long for the compiler to write out (TS7056).
 - `timingChanges(state)`: the entries set here that the written file does not hold, for an object not otherwise unsaved. `changeCount` counts each changed object once, so a new voice and its timing on one text count once.

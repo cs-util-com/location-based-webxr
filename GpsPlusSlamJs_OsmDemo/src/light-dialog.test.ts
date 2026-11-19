@@ -226,6 +226,44 @@ describe("createLightDialog", () => {
     },
   );
 
+  // WHY: a release-applied slider's thumb can hold a value that was never
+  // committed (dragged, then the dialog closed before the release). On the
+  // next open every slider and readout must show the settings in force, or
+  // the dialog names a light the view does not draw.
+  it("shows the committed settings on open, not a thumb left uncommitted", () => {
+    const { dialog, $, onChange } = setup();
+    dialog.toggle();
+    const slider = $<HTMLInputElement>("light-skyBalanceA");
+    const out = slider.parentElement!.querySelector("output")!;
+    slider.value = "-4";
+    slider.dispatchEvent(new Event("input"));
+    dialog.close();
+    dialog.toggle();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(slider.value).toBe("0");
+    expect(out.value).toBe("0");
+  });
+
+  // WHY: in the sliders' cool corner the cast leaves the screen's colours
+  // and its red is clipped to 0, so the sky drawn is less cool than the
+  // sliders name. As for the held veil, a slider must never silently draw
+  // another colour than the one it names: a note says so, and goes once
+  // the cast is inside the screen's colours again.
+  it("says when the sky balance's cast is clipped to the screen's colours", () => {
+    const { $, slide } = setup();
+    const note = $<HTMLElement>("light-sky-note");
+    expect(note.hidden).toBe(true);
+    slide("skyBalanceA", -20);
+    slide("skyBalanceB", -30);
+    expect(note.hidden).toBe(false);
+    expect(note.textContent).toContain("red");
+    slide("skyBalanceB", -8);
+    expect(note.hidden).toBe(true);
+    slide("skyBalanceB", -30);
+    $("light-reset").click();
+    expect(note.hidden).toBe(true);
+  });
+
   // WHY: every other value is cheap to apply, so it stays live on the drag.
   it("applies the other values while they are dragged", () => {
     const { $, onChange } = setup();
@@ -419,6 +457,26 @@ describe("createLightDialog", () => {
     const urban = lightDefaultsFor("urban");
     dialog.setDefaults(urban);
     expect(dialog.settings).toEqual({ ...urban, hazeVeilLightness: 0 });
+  });
+
+  // WHY: the time-of-day blend lets every field the viewer did NOT set
+  // follow each look's light, so the dialog must say which ones were set;
+  // a copy, so the page cannot change the dialog's memory.
+  it("names the fields the viewer set, and forgets them on Reset", () => {
+    const link = parseLightLink("?light=v1:veil=0", DEFAULT_LIGHT_SETTINGS);
+    const { dialog, slide, $ } = setup({
+      initial: link.settings,
+      defaults: DEFAULT_LIGHT_SETTINGS,
+      stated: link.stated,
+    });
+    slide("gainMax", 2);
+    expect([...dialog.touched].sort()).toEqual(
+      ["gainMax", "hazeVeilLightness"].sort(),
+    );
+    (dialog.touched as Set<keyof LightSettings>).clear();
+    expect(dialog.touched.size).toBe(2);
+    $("light-reset").click();
+    expect(dialog.touched.size).toBe(0);
   });
 
   it("resets every value to the shipped look", () => {
