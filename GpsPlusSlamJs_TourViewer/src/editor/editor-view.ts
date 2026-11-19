@@ -116,7 +116,7 @@ export type EditorEntryStep = "opening" | "adding-scan";
 /** The question after a tour was continued or started: "Do you have a
  *  scan of this place?" - asked, or a scan being added from it; `error`
  *  is why the last one given was not added (only while asking). */
-export interface ScanAsk {
+interface ScanAsk {
   readonly phase: "asking" | "adding";
   readonly error: string | null;
 }
