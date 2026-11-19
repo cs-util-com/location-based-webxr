@@ -89,6 +89,12 @@ import {
   revokeDebugThumbnail,
   type DebugLayer,
 } from "./debug-capture-layer.js";
+import {
+  debugLayerActions,
+  debugLayerReducer,
+  selectDebugLayer,
+} from "./debug-layer-slice.js";
+import { createDebugThumbs } from "./debug-thumbs.js";
 import { walkAfterDraw, walkAtLayerStart } from "./tour-walk-kept.js";
 import {
   FOLDER_PREFIX,
@@ -439,6 +445,7 @@ function element<T extends HTMLElement>(id: string): T {
 // runs once a store exists).
 const store = createTourViewerStore(undefined, {
   editorView: editorViewReducer,
+  debugLayer: debugLayerReducer,
   ...EDITOR_SESSION_SLICES,
 });
 
@@ -2896,8 +2903,12 @@ function leaveFile(): void {
 }
 
 /** The open tour's debug layer: view state only, never in the tour
- *  document, a save or the draft. */
+ *  document, a save or the draft. What it drew and its switch are the
+ *  store's (`debugLayer`), which the map and the 3D view both draw. */
 let debugLayer: DebugLayer | null = null;
+/** Its decoded thumbnails, keyed as the store's captures: decoded
+ *  pictures stay out of the store. */
+const debugThumbs = createDebugThumbs();
 /** The opened file, when it carries a walk: the layer's source unless
  *  debug data was added. */
 let tourWalk: TourSession | null = null;
@@ -2967,8 +2978,12 @@ function startDebugLayer(): void {
   debugSwitch.hidden = from === null;
   debugStatus.textContent = from?.line ?? "";
   if (from === null) return;
-  setChecked(debugSwitch, true);
-  const layer = createDebugCaptureLayer<HTMLElement>({
+  store.dispatch(
+    debugLayerActions.started({
+      source: addedDebug !== null ? "added" : "walk",
+    }),
+  );
+  const layer = createDebugCaptureLayer<HTMLImageElement>({
     read: (options) => debugCapturesOf(from.source, options),
     loadPicture: from.loadPicture,
     pictureProblem,
@@ -2976,15 +2991,29 @@ function startDebugLayer(): void {
     view: {
       draw: (captures) => {
         walkGeo = walkAfterDraw(walkGeo, from.source, tourWalk, captures);
+        debugThumbs.clear();
+        store.dispatch(
+          debugLayerActions.drawn({
+            captures: captures.map((c) => ({
+              image: c.image,
+              lat: c.geo.lat,
+              lon: c.geo.lon,
+              alt: c.geo.alt,
+            })),
+          }),
+        );
         map.debugDraw(captures);
       },
       thumb: (image, picture) => {
+        debugThumbs.set(image, picture);
         map.debugThumb(image, picture);
       },
       visible: (on) => {
         map.debugVisible(on);
       },
       clear: () => {
+        debugThumbs.clear();
+        store.dispatch(debugLayerActions.cleared());
         map.debugClear();
       },
     },
@@ -4302,10 +4331,22 @@ keepWalk.addEventListener("click", () => {
   setChecked(keepWalk, !isChecked(keepWalk));
 });
 // The debug layer's switch: view state only - no edit, nothing pending.
+// The store holds it; the switch and the layer follow the store.
 debugSwitch.addEventListener("click", () => {
-  const on = !isChecked(debugSwitch);
-  setChecked(debugSwitch, on);
-  debugLayer?.setVisible(on);
+  store.dispatch(
+    debugLayerActions.shownChanged({
+      on: !selectDebugLayer(store.getState()).shown,
+    }),
+  );
+});
+let debugShownDrawn = selectDebugLayer(store.getState()).shown;
+setChecked(debugSwitch, debugShownDrawn);
+store.subscribe(() => {
+  const { shown } = selectDebugLayer(store.getState());
+  if (shown === debugShownDrawn) return;
+  debugShownDrawn = shown;
+  setChecked(debugSwitch, shown);
+  debugLayer?.setVisible(shown);
 });
 // "Add debug data…": its file input, or a file dropped on the panel. The
 // document's own drop guard keeps the browser from opening the file.
@@ -5088,8 +5129,12 @@ const globeSwitch = readGlobeSwitch(location.search);
 /** True from a 3D open with an approach until its bar goes: the shell
  *  keeps the tree folded meanwhile and unfolds it at the landing. */
 let approachHolds = false;
-/** The globe view's approach and the recorded walk. */
-function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
+/** The globe view's approach, the recorded walk and the debug layer's
+ *  thumbnails. */
+function globeOpening(): Pick<
+  Editor3dDeps,
+  "approach" | "walk" | "debugThumbs"
+> {
   const approach = takeApproach();
   approachHolds = approach !== undefined;
   return {
@@ -5105,6 +5150,7 @@ function globeOpening(): Pick<Editor3dDeps, "approach" | "walk"> {
           },
         }),
     walk: () => walkGeo,
+    debugThumbs,
   };
 }
 /** Local storage where the browser allows it (a private window may not). */

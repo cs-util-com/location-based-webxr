@@ -299,6 +299,16 @@ The view disposes the run once the arrival is over.
   when it came (`walkDrawShare`), not whole in one frame. With no
   approach at all it is drawn whole. It follows the walk layer chip
   (`showWalk`), not the page's debug switch.
+- **The debug layer** (`globe-debug-layer.ts`, under the tour's frame):
+  each frame `debugFrame` reads the store's `debugLayer` slice and
+  draws its captures anew when their array or their source changed (each
+  placed as the walk is, `capturePoint`), with a line through them only
+  for debug data added beside the tour (`source === "added"`; the tour's
+  own walk is the marks' line above). It shows or hides them by the
+  slice's `shown`, copies new thumbnails from `deps.debugThumbs` into
+  its atlas when the table's version changed, and uploads the atlas at
+  most every 250 ms. `stats().globe.debug` carries its figures; the
+  view's dispose frees it.
 - The flight's clock starts at its first drawn frame (the run's first
   `drive` in the frame's camera step), not at mount: the box's fit and the first tiles
   can take a while, and a flight timed from mount would skip its start.

@@ -61,11 +61,22 @@ body:not([data-view="3d"]) #shell-bar > :not(#save-status, #view-loading) {
   display: none !important;
 }
 
-/* What belongs to the map is not shown over the 3D view (View's "Show
- * debug data" too: only the map draws the debug layer yet). */
-body[data-view="3d"]
-  :is(#rail, #card, #debug-panel, #offscreen-chip, #view-debug) {
+/* What belongs to the map is not shown over the 3D view. */
+body[data-view="3d"] :is(#rail, #card, #offscreen-chip) {
   display: none !important;
+}
+
+/* The debug panel over the 3D view (its layer draws on the globe too): at
+ * the canvas's foot on the left, right of an open tree, so the inspector,
+ * the shelf and the map controls on the right stay clear. */
+body[data-view="3d"] .debug-panel {
+  right: auto;
+  left: 12px;
+  bottom: calc(var(--s-bar-h) + var(--s-panel-h, 0px) + 14px);
+}
+
+body[data-view="3d"]:has(#shell-tree:not([hidden], .collapsed)) .debug-panel {
+  left: calc(var(--s-tree-w) + 12px);
 }
 
 svg.i {

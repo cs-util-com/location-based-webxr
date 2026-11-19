@@ -11,6 +11,7 @@ import {
   rejections,
   view3d,
 } from "./editor3d-fixture.js";
+import { viewCommand, viewItem } from "./editor-menus.js";
 
 /**
  * Why these tests matter: the editor on the globe view is the default
@@ -280,6 +281,67 @@ test("opens the sample at street level on the globe, and drags a selected statio
   const clock = (await view3d(page)).globe.clock;
   const pageNow = await page.evaluate(() => Date.now());
   expect(Math.abs(clock.sceneMs - pageNow)).toBeLessThan(120_000);
+  expect(await rejections(page)).toEqual([]);
+});
+
+// Why: the 3D view on the globe is the editor's only 3D view, and the
+// debug layer (a recording's camera captures and its walk) used to draw
+// on the 2D map alone, its panel and switch hidden over the 3D view. A
+// recording added as debug data is now drawn on the globe too: a
+// thumbnail per capture (one instanced draw over one atlas) and a line
+// through them, behind View's "Show debug data".
+test("draws a recording added as debug data on the globe: its captures' thumbnails and its walk, behind View's switch", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await answerHosts(page, {});
+  await keepRejections(page);
+  await noApproach(page);
+  await noClouds(page);
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 120_000,
+  });
+  await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
+  // The panel and its add are there over the 3D view.
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  const recording = await (
+    await page.request.get("http://127.0.0.1:5197/ranges-ok/recording-tour.zip")
+  ).body();
+  await page.locator("#debug-add-input").setInputFiles({
+    name: "walk.zip",
+    mimeType: "application/zip",
+    buffer: recording,
+  });
+  await expect(page.locator("#debug-status")).toContainText(
+    "Debug data: 2 camera captures",
+  );
+  const debug = async () =>
+    /** @type {any} */ ((await view3d(page))?.globe?.debug ?? null);
+  await expect.poll(debug, { timeout: 60_000 }).toMatchObject({
+    captures: 2,
+    thumbs: 2,
+    linePoints: 2,
+    shown: true,
+    objects: 2,
+  });
+  await expect
+    .poll(async () => (await debug())?.uploads, { timeout: 60_000 })
+    .toBeGreaterThan(0);
+  await expect(viewItem(page, "debug")).toHaveAttribute("aria-checked", "true");
+  await viewCommand(page, "debug");
+  await expect(viewItem(page, "debug")).toHaveAttribute(
+    "aria-checked",
+    "false",
+  );
+  await expect.poll(async () => (await debug())?.shown).toBe(false);
+  await viewCommand(page, "debug");
+  await expect.poll(async () => (await debug())?.shown).toBe(true);
+  // Debug data is never the tour's: nothing pending.
+  await expect(page.locator("#save-status")).toHaveText("No changes");
   expect(await rejections(page)).toEqual([]);
 });
 
