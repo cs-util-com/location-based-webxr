@@ -35,8 +35,6 @@ const ALLOWED_KINDS = new Map([
 /** JFXX's extension code for a thumbnail coded as a whole JPEG, which can
  *  carry metadata of its own (a palette or RGB thumbnail cannot). */
 const JFXX_JPEG_THUMBNAIL = 0x10;
-/** The signature of a Photoshop image resource. */
-const RESOURCE_ID = [0x38, 0x42, 0x49, 0x4d]; // "8BIM"
 /** Photoshop resources holding a whole binary Exif block (GPS IFD
  *  included), invisible to a text search. */
 const PHOTOSHOP_EXIF = new Set([0x0422, 0x0423]);
@@ -71,6 +69,11 @@ function startsWith(bytes, at, id, end) {
 /** @param {string} text */
 const codes = (text) => [...text].map((c) => c.charCodeAt(0));
 
+/** The signatures a Photoshop image resource can carry: "8BIM", and the
+ *  older and vendor ones readers of the format accept as its equals
+ *  ("MeSa", "PHUT", "AgHg", "DCSR"). */
+const RESOURCE_IDS = ['8BIM', 'MeSa', 'PHUT', 'AgHg', 'DCSR'].map((id) => codes(id));
+
 /**
  * The offset of the marker that ends the entropy-coded data starting at
  * `at`: the first 0xFF followed by neither a stuffed zero, a restart marker
@@ -91,8 +94,9 @@ function scanEnd(bytes, at) {
 /**
  * Why a Photoshop block cannot pass, or null when it can: a resource with
  * a binary Exif block, or an XMP packet that is cut short or not UTF-8.
- * Every "8BIM" in the block is looked at, so one inside another
- * resource's data can refuse a clean file too (it fails closed).
+ * Every resource signature in the block ("8BIM", "MeSa", "PHUT", "AgHg",
+ * "DCSR") is looked at, so one inside another resource's data can refuse
+ * a clean file too (it fails closed).
  * @param {Uint8Array} bytes
  * @param {number} start - first byte after the block's signature
  * @param {number} end - one past the segment's last byte
@@ -100,7 +104,7 @@ function scanEnd(bytes, at) {
  */
 function photoshopRefusal(bytes, start, end) {
   for (let i = start; i + 6 <= end; i += 1) {
-    if (!startsWith(bytes, i, RESOURCE_ID, end)) continue;
+    if (!RESOURCE_IDS.some((id) => startsWith(bytes, i, id, end))) continue;
     const id = (bytes[i + 4] << 8) | bytes[i + 5];
     if (PHOTOSHOP_EXIF.has(id)) return 'a Photoshop resource holds binary Exif';
     if (id !== PHOTOSHOP_XMP) continue;
@@ -120,7 +124,7 @@ function photoshopRefusal(bytes, start, end) {
 
 /**
  * Whether a marker that is not APPn, SOS or a marker without length is one
- * the reader may pass: a frame header (SOFn, among them DHT and DAC), DQT,
+ * the reader may pass: SOFn and the DHT and DAC tables in their range, DQT,
  * DNL, DRI or a comment. JPG, the JPGn extensions, the hierarchical
  * markers and the reserved ones are never read, so they fail closed.
  * @param {number} marker

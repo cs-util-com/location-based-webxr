@@ -43,13 +43,13 @@ function jpeg(...segments) {
   return Uint8Array.from([0xff, 0xd8, ...segments.flat(), ...segment(0xda, [0, 0]), 0xff, 0xd9]);
 }
 
-/** A Photoshop image resource: "8BIM", its id, an empty name, its size and
- *  its data, padded to an even length. */
-function resource(id, data) {
+/** A Photoshop image resource: its signature ("8BIM" unless given), its id,
+ *  an empty name, its size and its data, padded to an even length. */
+function resource(id, data, signature = '8BIM') {
   const size = data.length;
   const pad = size % 2 === 1 ? [0] : [];
   return [
-    ...ascii('8BIM'),
+    ...ascii(signature),
     id >> 8,
     id & 0xff,
     0,
@@ -188,9 +188,20 @@ describe('jpegLocation', () => {
         `APP${marker - 0xe0}`,
         jpeg(segment(marker, [...ascii('Any'), 0, 1, 2])),
       ]),
-      ...[0x0422, 0x0423].map((id) => [
-        `binary Exif in Photoshop resource 0x0${id.toString(16)}`,
-        jpeg(photoshopWith(resource(id, exifBody([GPS_IFD_POINTER])))),
+      // Every resource signature Photoshop writes, not "8BIM" alone.
+      ...['8BIM', 'MeSa', 'PHUT', 'AgHg', 'DCSR'].flatMap((signature) => [
+        ...[0x0422, 0x0423].map((id) => [
+          `binary Exif in Photoshop resource 0x0${id.toString(16)} under ${signature}`,
+          jpeg(photoshopWith(resource(id, exifBody([GPS_IFD_POINTER]), signature))),
+        ]),
+        [
+          `a UTF-16 XMP packet in a Photoshop resource under ${signature}`,
+          jpeg(photoshopWith(resource(0x0424, ascii('<x:xmpmeta/>').flatMap((c) => [c, 0]), signature))),
+        ],
+        [
+          `a Photoshop XMP resource under ${signature} running past its segment`,
+          jpeg(photoshopWith(resource(0x0424, ascii('<x:xmpmeta/>'), signature).slice(0, 16))),
+        ],
       ]),
       [
         'a UTF-16 XMP packet in a Photoshop resource',
@@ -231,6 +242,11 @@ describe('jpegLocation', () => {
         0,
         ...resource(0x0404, [0x1c, 2, 0]),
         ...resource(0x0424, ascii('<x:xmpmeta/>')),
+        // The other resource signatures Photoshop writes are read the same way.
+        ...['MeSa', 'PHUT', 'AgHg', 'DCSR'].flatMap((signature) => [
+          ...resource(0x0404, [0x1c, 2, 0], signature),
+          ...resource(0x0424, ascii('<x:xmpmeta/>'), signature),
+        ]),
       ]),
       segment(0xee, [...ascii('Adobe'), 0, 100, 0, 0, 0, 0, 1]),
       // The image tables and a comment a decoder needs or ignores.

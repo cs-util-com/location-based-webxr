@@ -240,31 +240,32 @@ describe("linkQrSvg size", () => {
 
   // Why: the code stands beside the Copy link dial in the visitor's
   // column (at most 440 px with its padding, the dial up to 156 px, a
-  // 40 px gap), so a code past about 240 px pushes the row out of it.
+  // 40 px gap), so a code past 244 px pushes the row out of it.
   // A link of a few hundred bytes (a presigned storage link) still gets a
   // code: drawn at 2 px per module instead of 3, still on whole pixels,
-  // up to 234 px. Only a code too large even then is refused, the same way
+  // up to 242 px. Only a code too large even then is refused, the same way
   // as one too long for any code. The links sit either side of each step:
-  // 231 px at 3 px per module, then 243 px, so 162 px at 2; 234 px at 2,
-  // then 242 px, refused.
+  // 243 px at 3 px per module, then 255 px, so 170 px at 2; 242 px at 2,
+  // then 250 px, refused.
   it("draws a larger code at 2 px per module, and refuses one too large even then", () => {
-    expect(LINK_QR_MAX_PX).toBe(240);
+    expect(LINK_QR_MAX_PX).toBe(244);
     const link = (n: number) =>
       `https://example.test/tour/?qr=${"a".repeat(n)}`;
     const widthOf = (svg: string) => Number(/width="(\d+)"/.exec(svg)?.[1]);
-    const fits = linkQrSvg(link(310));
-    expect(drawnModules(fits).side * LINK_QR_MODULE_PX).toBe(231);
-    expect(widthOf(fits)).toBe(231);
-    const smaller = linkQrSvg(link(340));
-    expect(drawnModules(smaller).side * LINK_QR_SMALL_MODULE_PX).toBe(162);
-    expect(widthOf(smaller)).toBe(162);
-    expect(widthOf(linkQrSvg(link(881)))).toBe(234);
-    expect(() => linkQrSvg(link(882))).toThrow(RangeError);
+    const fits = linkQrSvg(link(382));
+    expect(drawnModules(fits).side * LINK_QR_MODULE_PX).toBe(243);
+    expect(widthOf(fits)).toBe(243);
+    const smaller = linkQrSvg(link(383));
+    expect(drawnModules(smaller).side * LINK_QR_MODULE_PX).toBe(255);
+    expect(drawnModules(smaller).side * LINK_QR_SMALL_MODULE_PX).toBe(170);
+    expect(widthOf(smaller)).toBe(170);
+    expect(widthOf(linkQrSvg(link(967)))).toBe(242);
+    expect(() => linkQrSvg(link(968))).toThrow(RangeError);
     expect(
-      (QRCode.create(link(882), { errorCorrectionLevel: "M" }).modules.size +
+      (QRCode.create(link(968), { errorCorrectionLevel: "M" }).modules.size +
         4) *
         LINK_QR_SMALL_MODULE_PX,
-    ).toBe(242);
+    ).toBe(250);
   });
 });
 

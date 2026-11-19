@@ -519,6 +519,28 @@ describe("a late integrity failure (tour kit plan K1, §8 D3)", () => {
     expect(ctx.currentLevels).toBeNull();
   });
 
+  // Why: the teardown rethrows the first close step that threw, after every
+  // step ran. Without a rejection handler here, a throwing hook left the
+  // error box empty, the AR line stale and an unhandled rejection; the
+  // visitor must still hear why the tour went, and what failed with it.
+  it("still says why when a close step throws, and names that failure", async () => {
+    const { ctx, dom, hooks, session, report } = await openedFile();
+    hooks.stopStations = vi.fn(() => {
+      throw new Error("station dispose failed");
+    });
+    const renderArStatus = vi.fn();
+    hooks.renderArStatus = renderArStatus;
+    report(new TourIntegrityError("hash-mismatch", "bad bytes"), session);
+    await vi.waitFor(() => {
+      expect(dom.errorBox.textContent).toMatch(/does not match its own list/);
+    });
+    expect(dom.errorBox.textContent).toMatch(/station dispose failed/);
+    expect(ctx.contentError).toBe(dom.errorBox.textContent);
+    expect(renderArStatus).toHaveBeenCalled();
+    expect(ctx.session).toBeNull();
+    expect(session.close).toHaveBeenCalled();
+  });
+
   it("ignores a failure reported by a tour that is no longer open", async () => {
     const { ctx, dom, report } = await openedFile();
     const stale = fakeSession("local-file:old");

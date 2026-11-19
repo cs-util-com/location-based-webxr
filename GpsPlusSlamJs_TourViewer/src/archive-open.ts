@@ -375,12 +375,24 @@ export function wireArchiveOpen(deps: {
     failed: TourSession,
   ): void {
     if (ctx.session !== failed) return; // closed or superseded: nothing shown
-    void teardownSession().then(() => {
-      const message = `${describeIntegrityError(err)} Its content was removed.`;
+    const removed = `${describeIntegrityError(err)} Its content was removed.`;
+    const report = (message: string): void => {
       dom.errorBox.textContent = message;
       ctx.contentError = message;
       hooks.renderArStatus();
-    });
+    };
+    // The teardown rethrows the first close step that threw, once every
+    // step ran: the visitor still hears why the tour went, and what failed.
+    void teardownSession().then(
+      () => {
+        report(removed);
+      },
+      (stepError: unknown) => {
+        const detail =
+          stepError instanceof Error ? stepError.message : String(stepError);
+        report(`${removed} Closing part of it failed: ${detail}`);
+      },
+    );
   }
 
   /** A late failure the session found before the page held it (its

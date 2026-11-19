@@ -28,16 +28,17 @@ export const LINK_QR_MODULE_PX = 3;
 
 /** CSS pixels per module for a code too large at `LINK_QR_MODULE_PX`
  *  (a presigned storage link of several hundred bytes): still whole
- *  pixels, so still sharp, up to 234 px. */
+ *  pixels, so still sharp, up to 242 px. */
 export const LINK_QR_SMALL_MODULE_PX = 2;
 
 /** The largest code, in CSS pixels, that stands beside the Copy link dial:
  *  the visitor's column is at most 440 px with its 24 px side padding, the
- *  dial up to 156 px and the gap 40 px, so a code up to 240 px keeps the
- *  row inside the column's box (it may take part of the padding). A code
- *  larger at 3 px per module is drawn at 2; one larger even then is
- *  refused like a link too long for any code: Copy link alone. */
-export const LINK_QR_MAX_PX = 240;
+ *  dial up to 156 px and the gap 40 px, so a code up to 440 - 156 - 40 =
+ *  244 px keeps the row inside the column's box (taking at most all of its
+ *  padding; measured on the page at 1280x720 and 1000x620). A code larger
+ *  at 3 px per module is drawn at 2; one larger even then is refused like
+ *  a link too long for any code: Copy link alone. */
+export const LINK_QR_MAX_PX = 244;
 
 interface MediaWindow {
   matchMedia?: (query: string) => {
@@ -131,9 +132,9 @@ export function shareLinkOf(href: string): string {
  * white square, `viewBox` in modules, `width` and `height` at
  * `LINK_QR_MODULE_PX` CSS pixels per module, or at
  * `LINK_QR_SMALL_MODULE_PX` where 3 would exceed `LINK_QR_MAX_PX` (a
- * link over about 360 bytes). Throws on an empty or non-string url, with
+ * link over about 410 bytes). Throws on an empty or non-string url, with
  * a `RangeError` on a code larger than `LINK_QR_MAX_PX` even at 2 px
- * per module (a link over about 910 bytes), and (the library's error) on
+ * per module (a link over about 1000 bytes), and (the library's error) on
  * a link too long for any QR code: past version 40, about 2300 bytes at
  * error correction M.
  */

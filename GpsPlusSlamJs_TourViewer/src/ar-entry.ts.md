@@ -258,9 +258,10 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
   the encoded link in `data-url`; it redraws only when that link changed.
   "Copy link" copies the same `shareLinkOf(location.href)`. A link too
   long for any QR code (the `?qr=` payload has no cap), or whose code
-  is over `LINK_QR_MAX_PX` even at 2 px per module (`link-qr.ts`), is caught: the code
-  stays hidden (`data-too-long`), "Copy link" stays, and the rest of
-  `renderArState` (the hint, the status line, the tracking report) runs.
+  is over `LINK_QR_MAX_PX` even at 2 px per module (`link-qr.ts`), is
+  caught: the code stays hidden (`data-too-long`), "Copy link" stays,
+  and the rest of `renderArState` (the hint, the status line, the
+  tracking report) runs.
   `onComputerScreenChange` re-runs `renderArState` when the screen starts
   or stops being a computer screen (a widened window), so no reload is
   needed. Pinned by
