@@ -88,7 +88,8 @@ describe('createTrackedTree', () => {
   // Why: without -z git prints a path with a non-ASCII byte octal-escaped
   // and in quotes, so a guard that reads the listed path fails with ENOENT
   // on any such file. Real git, in a throwaway repository, since the quoting
-  // is git's behaviour and no fake can prove it.
+  // is git's behaviour and no fake can prove it. Real git processes, which
+  // a loaded machine starts slowly: hence the longer timeout.
   it('lists a non-ASCII file name as it is on disk (real git)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'tracked-tree-'));
     try {
@@ -102,8 +103,6 @@ describe('createTrackedTree', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  
-    // Real git processes, which a loaded machine starts slowly.
   }, 30_000);
 
   describe('read', () => {

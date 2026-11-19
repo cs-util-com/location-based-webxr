@@ -75,12 +75,18 @@ const leftovers = [];
 /** Every driver spawned, stopped after its test if still running: by
  *  SIGINT, the path this suite proves forwards to the stage group. A
  *  SIGKILL would skip that forwarding and leave the group running on
- *  POSIX.
+ *  POSIX, so it comes only after a grace, for a driver that ignored the
+ *  SIGINT (an unref'd timer: it never keeps the run alive).
  *  @type {import('node:child_process').ChildProcess[]} */
 const drivers = [];
+const SIGINT_GRACE_MS = 5_000;
 afterEach(() => {
   for (const driver of drivers.splice(0)) {
-    if (driver.exitCode === null && driver.signalCode === null) driver.kill('SIGINT');
+    if (driver.exitCode !== null || driver.signalCode !== null) continue;
+    driver.kill('SIGINT');
+    setTimeout(() => {
+      if (driver.exitCode === null && driver.signalCode === null) driver.kill('SIGKILL');
+    }, SIGINT_GRACE_MS).unref();
   }
   for (const pid of leftovers.splice(0)) {
     try {
