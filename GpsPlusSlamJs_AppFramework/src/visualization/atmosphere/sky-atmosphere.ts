@@ -960,16 +960,7 @@ export class SkyAtmosphere {
     this.applySlabSteps(steps);
     this.applyMode(mode);
     if (balance !== undefined) this.applyBalance(balance.gain);
-    if (mie !== undefined) {
-      this.visibility = change.visibilityKm!;
-      this.uniforms.atmMieExtinction.value = mie;
-      this.updateScale();
-    }
-    if (sun !== undefined) {
-      this.sun = sun;
-      this.uniforms.atmSunDirection.value.copy(sun);
-      this.uniforms.atmSunCosZenith.value = sun.y;
-    }
+    this.applySky(mie, change.visibilityKm, sun);
     if (this.sun === undefined) return;
     const skyChanged = mie !== undefined || sun !== undefined;
     // The LUTs do not depend on clouds: a cover-only change just re-bakes.
@@ -979,6 +970,24 @@ export class SkyAtmosphere {
     else if (cloudsRebake || balance !== undefined) {
       if (this.staged) this.pendingBake = true;
       else this.rebake();
+    }
+  }
+
+  /** Applies a validated visibility and sun change (each: undefined = none). */
+  private applySky(
+    mie: number | undefined,
+    visibilityKm: number | undefined,
+    sun: THREE.Vector3 | undefined
+  ): void {
+    if (mie !== undefined && visibilityKm !== undefined) {
+      this.visibility = visibilityKm;
+      this.uniforms.atmMieExtinction.value = mie;
+      this.updateScale();
+    }
+    if (sun !== undefined) {
+      this.sun = sun;
+      this.uniforms.atmSunDirection.value.copy(sun);
+      this.uniforms.atmSunCosZenith.value = sun.y;
     }
   }
 

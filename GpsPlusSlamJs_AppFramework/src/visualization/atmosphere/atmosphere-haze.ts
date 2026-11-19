@@ -245,6 +245,22 @@ const HAZE_MARKER = 'uniform float atmHazeMode;';
 const ATMOSPHERE_THICKNESS_KM =
   EARTH_ATMOSPHERE.topRadiusKm - EARTH_ATMOSPHERE.groundRadiusKm;
 
+/**
+ * @throws RangeError unless the rim's radii are finite, start at 0 or
+ *   beyond, and rise.
+ */
+function checkedRimRadii(innerM: number, outerM: number): void {
+  if (
+    !(Number.isFinite(innerM) && Number.isFinite(outerM)) ||
+    innerM < 0 ||
+    !(outerM > innerM)
+  ) {
+    throw new RangeError(
+      `the rim's radii must be finite, from 0, and rise, got ${innerM}, ${outerM}`
+    );
+  }
+}
+
 function validAltitude(km: number): number {
   if (!(Number.isFinite(km) && km >= 0 && km < ATMOSPHERE_THICKNESS_KM)) {
     throw new RangeError(
@@ -447,15 +463,7 @@ export class AtmosphereHaze {
         `the rim's centre must be finite, got ${centre.x}, ${centre.z}`
       );
     }
-    if (
-      !(Number.isFinite(innerM) && Number.isFinite(outerM)) ||
-      innerM < 0 ||
-      !(outerM > innerM)
-    ) {
-      throw new RangeError(
-        `the rim's radii must be finite, from 0, and rise, got ${innerM}, ${outerM}`
-      );
-    }
+    checkedRimRadii(innerM, outerM);
     checkedVeilStrength(strength, 'rim');
     this.rimState = {
       centre: { x: centre.x, z: centre.z },
