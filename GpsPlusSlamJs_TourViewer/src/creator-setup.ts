@@ -697,8 +697,16 @@ export function wireCreatorSetup(deps: {
     // the phone on the printed code so it fills the screen" on a desktop
     // page with no session running is an instruction for a situation the
     // creator is not in.
+    // With no tour open nothing measured or placed is kept (no draft, and
+    // Done cannot save): said FIRST, in AR and on the page, because the AR
+    // line is clamped to two lines and a swipe-away fires no leave guard.
+    const noTourLead =
+      readiness === "no-tour" ? `${finishBlockedHint(readiness)} · ` : "";
     if (!sessionLive()) {
-      dom.status.textContent = ctx.placementNote ?? "";
+      dom.status.textContent =
+        ctx.placementNote === null
+          ? noTourLead.slice(0, -3)
+          : noTourLead + ctx.placementNote;
       return;
     }
     // A placement's outcome (or a draft notice) stands until the next tap
@@ -707,6 +715,7 @@ export function wireCreatorSetup(deps: {
     // notice fires at tour open, before any measuring - so Save never
     // unlocked (scan-to-open plan §5 #13).
     const lead =
+      noTourLead +
       (doneWaits && measuring.inFlight()
         ? `${DONE_WAITS_FOR_MEASURING} · `
         : "") +
@@ -769,7 +778,9 @@ export function wireCreatorSetup(deps: {
     // Measured on its own once the gate opens (UI round 1, U3).
     measuring.maybeMeasure(readout.canMint, view?.measure === true);
     const blocked = finishBlockedHint(readiness);
-    if (blocked !== "") dom.status.textContent += ` · ${blocked}`;
+    if (blocked !== "" && readiness !== "no-tour") {
+      dom.status.textContent += ` · ${blocked}`;
+    }
     if (readiness === "ready" && ctx.session !== null) {
       dom.status.textContent += ` · ${archiveSizeNote(ctx.session.archive.size)}`;
     }
@@ -927,10 +938,14 @@ export function wireCreatorSetup(deps: {
           ? null
           : { delivered: ctx.rebuiltZip.delivered === true },
       // A failed backup write is noted once; from then on the page cannot
-      // promise the phone keeps the work (U2 milestone review #3). With no
-      // tour open nothing is backed up either: placements wait in memory
-      // for a tour to open (`creator-draft.ts`'s `recordPlacement`).
-      draftPersists: ctx.session !== null && draft.persists(),
+      // promise the phone keeps the work (U2 milestone review #3).
+      // With no tour open, or before its manifest settled (a broken
+      // tour.json never opens a draft), nothing is backed up either: the
+      // work waits in memory (`creator-draft.ts`'s `recordPlacement`).
+      draftPersists:
+        ctx.session !== null &&
+        ctx.tourManifestStatus === "settled" &&
+        draft.persists(),
       finishFailed: ctx.finishError !== null,
     };
   }

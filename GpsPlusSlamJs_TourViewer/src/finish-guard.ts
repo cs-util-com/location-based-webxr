@@ -26,7 +26,8 @@ export interface FinishGuardInput {
   /** The last Finish's rebuilt file, and whether a save delivered it. */
   readonly rebuilt: { readonly delivered: boolean } | null;
   /** The draft backs changes up on this device (false once a backup write
-   *  failed or no store could open). */
+   *  failed or no store could open, or no tour is open, or its manifest
+   *  has not settled). */
   readonly draftPersists: boolean;
   /** The last Finish failed (its retry must stay reachable). */
   readonly finishFailed: boolean;

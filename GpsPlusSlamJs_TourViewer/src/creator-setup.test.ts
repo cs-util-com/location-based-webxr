@@ -355,6 +355,9 @@ function wire(
     /** One store for the session and the AR side, as the page wires it
      *  (`main.ts`): the codes' dispatches then reach the subscriptions. */
     oneStore?: boolean;
+    /** The AR status, switchable mid-test (a session ending); by default
+     *  "running" for a placeable wiring, "idle" otherwise. */
+    arStatus?: { value: string };
   } = {},
 ) {
   let opens = 0;
@@ -386,7 +389,9 @@ function wire(
     arStore: arStore as never,
     arController: {
       getState: () => ({
-        status: options.placeable === true ? "running" : "idle",
+        status:
+          options.arStatus?.value ??
+          (options.placeable === true ? "running" : "idle"),
       }),
       disable: () => undefined,
     } as never,
@@ -1471,22 +1476,97 @@ describe("work made before the tour's draft opened reaches it", () => {
     await settle();
     expect(setup.leaveNeedsConfirm()).toBe(true);
     expect(setup.leaveQuestion()).toContain("keeps no backup");
-    // The live readout says why Done cannot save it.
-    expect(dom.status.textContent).toContain(
-      "Your tour is not open on this phone yet",
+    // The live readout LEADS with why Done cannot save it: in AR the line
+    // is clamped to two lines, so a sentence at its end is never read.
+    expect(dom.status.textContent).toMatch(
+      /^Your tour is not open on this phone yet/,
     );
 
-    // The tour opens - its session first, then its draft, as the page
-    // does - and the draft takes the placement over.
+    // The tour opens as the page opens it: its session first, its draft
+    // only once the manifest settled. In between nothing writes the
+    // placement yet, so leaving still asks.
     ctx.session = {
       entries: [],
       loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
     } as never;
+    ctx.tourManifestStatus = "pending";
+    expect(
+      setup.leaveNeedsConfirm(),
+      "a tour whose manifest is still loading backs nothing up yet",
+    ).toBe(true);
+    ctx.tourManifestStatus = "settled";
     setup.presentDraftForTour(TOUR);
     await settle();
-    expect(setup.leaveNeedsConfirm(), "the draft now holds the placement").toBe(
-      false,
+    expect(
+      setup.leaveNeedsConfirm(),
+      "with the manifest settled and the draft open, leaving does not ask",
+    ).toBe(false);
+  });
+
+  it("still leads with the no-tour hint on the page after AR ends", async () => {
+    // Why: after AR the page shows only the placement note, and Finish is
+    // hidden with no tour open - the placed work was lost on a reload with
+    // nothing on the page saying it is not kept.
+    const { store } = memoryStore();
+    const arStatus = { value: "running" };
+    const { ctx, dom, setup } = wire(store, { placeable: true, arStatus });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    arStatus.value = "idle";
+    ctx.placementNote = null;
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(
+      "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );
+    ctx.placementNote = "Pin placed.";
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toMatch(
+      /^Your tour is not open on this phone yet.* · Pin placed.$/,
+    );
+  });
+
+  it("asks before leaving when the open tour's tour.json did not read", async () => {
+    // Why: a broken manifest never presents a draft, so a placement made in
+    // that tour lives only in memory - the guard must not count it as kept.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
+    } as never;
+    ctx.tourManifestStatus = "broken";
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries()).toHaveLength(1);
+    expect(setup.leaveNeedsConfirm()).toBe(true);
+  });
+
+  it("asks before leaving when the open tour's draft could not open a store", async () => {
+    // Why: pins the draft's own half of the guard input - with a tour open
+    // and its manifest settled, only the failed backup says the work is not
+    // kept.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, {
+      placeable: true,
+      firstOpenFails: true,
+    });
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
+    } as never;
+    ctx.tourManifestStatus = "settled";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries()).toHaveLength(1);
+    expect(setup.leaveNeedsConfirm()).toBe(true);
   });
 
   it("writes the placements into the draft once it opens", async () => {
