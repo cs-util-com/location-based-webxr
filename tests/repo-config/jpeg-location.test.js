@@ -145,6 +145,56 @@ describe('jpegLocation', () => {
     }
   });
 
+  // Why: a location can be binary, in a segment kind no text search can
+  // read: an action camera's telemetry (GoPro's GPMF in APP6), a thermal
+  // camera's APP1 record (FLIR). So only a short allowlist of segment kinds
+  // passes (JFIF and JFXX in APP0, Exif and XMP in APP1, an ICC profile in
+  // APP2, Photoshop's APP13, Adobe's APP14), and every other APPn fails
+  // closed. A second standard XMP packet or a Photoshop block split over two
+  // segments fails too: a property name can be cut at the boundary.
+  it('never answers clean for a segment kind outside its allowlist, nor a split packet', () => {
+    const XMP = ascii('http://ns.adobe.com/xap/1.0/');
+    const xmp = segment(0xe1, [...XMP, 0, ...ascii('<rdf:Description exif:GPSLat')]);
+    const xmpRest = segment(0xe1, [...XMP, 0, ...ascii('itude="0,0N"/>')]);
+    const photoshop = (text) =>
+      segment(0xed, [...ascii('Photoshop 3.0'), 0, ...ascii('8BIM'), 4, 4, ...ascii(text)]);
+    const otherApps = [0xe3, 0xe4, 0xe5, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xef];
+    for (const [name, bytes] of [
+      ['GoPro telemetry in APP6', jpeg(segment(0xe6, [...ascii('GoPro'), 0, ...ascii('DEVC'), 0, 1]))],
+      ['a FLIR record in APP1', jpeg(segment(0xe1, [...ascii('FLIR'), 0, 1, 0, 2, 3]))],
+      ['an unknown APP0 kind', jpeg(segment(0xe0, [...ascii('AVI1'), 0, 0]))],
+      ['an unknown APP2 kind', jpeg(segment(0xe2, [...ascii('FPXR'), 0, 0]))],
+      ['an Adobe signature in APP13', jpeg(segment(0xed, [...ascii('Adobe'), 0, 1]))],
+      ['an unknown APP14 kind', jpeg(segment(0xee, [...ascii('Other'), 0, 1]))],
+      ...otherApps.map((marker) => [
+        `APP${marker - 0xe0}`,
+        jpeg(segment(marker, [...ascii('Any'), 0, 1, 2])),
+      ]),
+      ['a second standard XMP packet', jpeg(xmp, xmpRest)],
+      [
+        'a Photoshop block split over two segments',
+        jpeg(photoshop('<rdf:Description exif:GPSLat'), photoshop('itude="0,0N"/>')),
+      ],
+    ]) {
+      expect(jpegLocation(bytes).readable, name).toBe(false);
+    }
+  });
+
+  // Why: the allowlist must not refuse the kinds a stripped photo or an
+  // exported web image ordinarily carries.
+  it('reads the allowed segment kinds as clean', () => {
+    const allowed = jpeg(
+      JFIF,
+      segment(0xe0, [...ascii('JFXX'), 0, 0x10]),
+      segment(0xe1, exifBody([MAKE])),
+      segment(0xe1, [...ascii('http://ns.adobe.com/xap/1.0/'), 0, ...ascii('<x:xmpmeta/>')]),
+      segment(0xe2, [...ascii('ICC_PROFILE'), 0, 1, 1, 0, 0]),
+      segment(0xed, [...ascii('Photoshop 3.0'), 0, ...ascii('8BIM'), 4, 4, 0, 0]),
+      segment(0xee, [...ascii('Adobe'), 0, 100, 0, 0, 0, 0, 1]),
+    );
+    expect(jpegLocation(allowed)).toEqual({ readable: true, exifGps: false, xmpGps: false });
+  });
+
   // Why: the image data is skipped, not parsed, and a progressive image has
   // several scans with segments between them: a location in a segment
   // between two scans is found, and the stuffed and restart bytes inside a
