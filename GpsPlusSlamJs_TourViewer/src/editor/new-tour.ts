@@ -1,4 +1,4 @@
-import { newTourManifest, packStarterTour } from "../starter-tour.js";
+import { packNewTour } from "../starter-tour.js";
 
 /** The name a new tour suggests in the save dialog. */
 export const NEW_TOUR_FILE_NAME = "new-tour.zip";
@@ -15,7 +15,7 @@ export interface NewTourFileDeps {
  * new tour is never offered the first one's edits.
  */
 export async function newTourFile(deps: NewTourFileDeps = {}): Promise<File> {
-  const blob = await packStarterTour(newTourManifest(deps.mint));
+  const blob = await packNewTour(deps.mint);
   return new File([blob], NEW_TOUR_FILE_NAME, { type: "application/zip" });
 }
 

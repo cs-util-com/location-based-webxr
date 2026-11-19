@@ -13,8 +13,9 @@ two never drift apart (one packer, not two copies).
   - Throws `RangeError` when `mint` gives an id outside the manifest's
     id rule (`TOUR_ID_PATTERN`): such an id is dropped on read, which
     would leave the tour keyed by its content again.
-- `packStarterTour(manifest) -> Promise<Blob>` - the zip of that manifest
-  as `tour.json` (`packFilesAsZip`).
+- `packNewTour(mint = newTourId) -> Promise<Blob>` - the zip of a new
+  manifest as `tour.json` (`packFilesAsZip`); every call mints its own
+  id, the start page's starter zip included.
 
 ## Invariants
 
@@ -28,10 +29,12 @@ two never drift apart (one packer, not two copies).
 ## Examples
 
 ```ts
-const blob = await packStarterTour(newTourManifest());
+const blob = await packNewTour();
 ```
 
 ## Tests
 
 - `editor/new-tour.test.ts` - two new tours get two keys, one id one key,
   the id rule is enforced, and a property over valid ids.
+- `starter-tour.test.ts` - the start page's starter zips: two downloads
+  open under two keys.

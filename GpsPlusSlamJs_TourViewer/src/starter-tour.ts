@@ -26,11 +26,17 @@ export function newTourManifest(mint: () => string = newTourId): TourManifest {
 }
 
 /**
- * The zip of a tour that holds only its `tour.json`: the start page's
- * starter zip and the editor's new tour are both this one packer.
+ * The zip of a new, empty tour: only its `tour.json`, with a freshly
+ * minted tour id. The start page's starter zip and the editor's new tour
+ * are both this one packer.
+ *
+ * @throws RangeError as {@link newTourManifest} does.
  */
-export function packStarterTour(manifest: TourManifest): Promise<Blob> {
+export function packNewTour(mint: () => string = newTourId): Promise<Blob> {
   return packFilesAsZip([
-    { path: TOUR_MANIFEST_ENTRY, data: serializeTourManifest(manifest) },
+    {
+      path: TOUR_MANIFEST_ENTRY,
+      data: serializeTourManifest(newTourManifest(mint)),
+    },
   ]);
 }
