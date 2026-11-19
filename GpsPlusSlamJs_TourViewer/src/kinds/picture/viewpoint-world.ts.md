@@ -30,7 +30,24 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
   no blur).
 - `thenNow`: the plane's opacity is `THEN_NOW_FADE` times the blend of
   `then-now-fade.ts`; lined up, the visitor gets the slider on the page's
-  screen (`then-now-slider.ts`), and it closes when they leave. Its
+  screen (`then-now-slider.ts`), and it closes when they leave. In
+  Swipe (the panel's switch) the plane is shown whole (opacity
+  `THEN_NOW_FADE` alone, the fade-in stopped) and its shader cut at the
+  visitor's line (`then-now-swipe.ts` `swipeMask`): the old picture
+  left of it, today right of it. The cut is on only while Swipe is chosen
+  and the visitor is lined up, and never in the editor. The mode and the
+  line's place are the part's own transient view state, held in its
+  closure like the fade, not in the store: only its panel and its shader
+  read them, nothing of the tour is saved from them, and a panel built
+  again (a narration took the screen a while) starts from them. They
+  are kept per picture, a deliberate difference from the chosen
+  prototype, which keeps one mode and one line for the whole page: each
+  picture is met at its own spot, and the line's place belongs to that
+  picture's view. Back on the spot after a while in Swipe, the visitor
+  keeps the fade they had (the fade-in replays in Fade only, as the
+  prototype). The
+  shader's state is read out as `material.userData.thenNowSwipe()`
+  (`{ on, split }`) for the tests and the check page. Its
   plane carries the shared soft-edge alpha map (`then-now-feather.ts`)
   at 0.035; the viewer's plane takes the same width and sharpen's 0.02.
   The maps are shared by every part, so `dispose` detaches them from
@@ -102,4 +119,6 @@ shared feather map alive, the viewer's and the window's ground shadows
 outside the tap target, sharpen's card
 without the picture, the
 column held still on reduced motion, the slider's arrival, fade-in, take-over and
-departure, the window's shader plane, the sheet, disposal.
+departure, Swipe's whole plane and cut (switched, dragged, back to Fade,
+left and come back), the fade kept by a visitor back swiping, the uncut
+picture of a swiping visitor not yet lined up, the window's shader plane, the sheet, disposal.

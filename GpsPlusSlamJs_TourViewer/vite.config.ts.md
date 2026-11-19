@@ -31,7 +31,8 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   (`file-access-check.html.md`), at `/tour/file-access-check.html`.
   And the check pages `model-views-check.html`, `character-views-check.html`, `item-lab.html`,
   `lectern-check.html` (a long text on its reading stand,
-  `lectern-check.html.md`) and `long-text-check.html` (a long text in
+  `lectern-check.html.md`), `then-now-check.html` (then and now's
+  picture and its Swipe line, `then-now-check.html.md`) and `long-text-check.html` (a long text in
   its reading sheet, `long-text-check.html.md`), each linked from nothing.
 - `plugins`: `globeAssetsRoute(<GpsPlusSlamJs_Globe/assets>)`
   (`src/dev-server/globe-assets-route.ts`): the dev server (and so the e2e)
