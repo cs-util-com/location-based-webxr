@@ -1101,7 +1101,8 @@ test("the file chooser can be reached and opened from the keyboard", async ({
 }) => {
   // Why (PR #612 review): the chooser was a styled span in a label around
   // a hidden input, none of which is in the tab order, so a keyboard user
-  // could open only the sample.
+  // could open only the sample. The whole start card answers the keyboard:
+  // the answer by Space, the chooser and "Open the editor" by Enter.
   // Listening from before the page loads: Playwright starts catching file
   // choosers when the first listener is added, asynchronously, and under
   // load an Enter pressed right after it opened a chooser it had not yet
@@ -1111,6 +1112,9 @@ test("the file chooser can be reached and opened from the keyboard", async ({
   // The button answers once the page script is wired; before, Enter on a
   // button inside a label does nothing.
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#start-tour").focus();
+  await page.keyboard.press("Space");
+  await expect(page.locator("#start-tour")).toBeChecked();
   const choose = page.locator("#choose-btn");
   await choose.focus();
   await expect(choose).toBeFocused();
@@ -1122,6 +1126,10 @@ test("the file chooser can be reached and opened from the keyboard", async ({
     mimeType: "application/zip",
     buffer: await editorTour(),
   });
+  const open = page.locator("#start-open");
+  await expect(open).toBeEnabled();
+  await open.focus();
+  await page.keyboard.press("Enter");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
 });
 
@@ -4512,6 +4520,10 @@ test("a write at the open still running when another tour is opened lets the sav
     "Saving into slow.zip…",
     { timeout: 15000 },
   );
+  // The write still runs, so the unsaved-work guard asks first.
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
   await openAnother(page);
   await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
