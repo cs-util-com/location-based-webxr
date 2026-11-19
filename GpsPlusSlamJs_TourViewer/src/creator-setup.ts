@@ -927,8 +927,10 @@ export function wireCreatorSetup(deps: {
           ? null
           : { delivered: ctx.rebuiltZip.delivered === true },
       // A failed backup write is noted once; from then on the page cannot
-      // promise the phone keeps the work (U2 milestone review #3).
-      draftPersists: draft.persists(),
+      // promise the phone keeps the work (U2 milestone review #3). With no
+      // tour open nothing is backed up either: placements wait in memory
+      // for a tour to open (`creator-draft.ts`'s `recordPlacement`).
+      draftPersists: ctx.session !== null && draft.persists(),
       finishFailed: ctx.finishError !== null,
     };
   }

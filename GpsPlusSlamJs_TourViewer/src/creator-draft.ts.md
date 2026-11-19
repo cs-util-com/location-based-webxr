@@ -155,10 +155,7 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     back after its record: without them a reopen would call this device's
     own saved work "replaced by a newer one". Cleared by `reset`.
   - `warnNoBackup()` / `persists()` - the once-only "not saving a backup
-    copy" note; `persists()` is false once it was said, and also while no
-    draft namespace is open (no tour open, or its draft still opening):
-    placements then wait in memory for the open, so the leave guard
-    (`finish-guard.ts`) asks before a reload could lose them.
+    copy" note, and whether it was said.
 - `hostedLevelJson(session, levelId)` - what the HOSTED zip stores for a
   level (the content, not the id's presence), or null when unreadable.
   Exported because the measuring path asks it too.

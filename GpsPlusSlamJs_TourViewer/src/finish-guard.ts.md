@@ -42,9 +42,9 @@ draftPersists, finishFailed }`. `tourChanged`: the tour's own fields
   fallback reports delivered whatever happened (the browser gives no
   signal).
 - `draftPersists` is false once the page noted a failed backup
-  (`creator-draft.ts`'s `noteNoPersistence`), and while no tour is open:
-  placements made then live only in memory until a tour opens, so leaving
-  with them asks (`creator-draft.ts`'s `persists()`).
+  (`creator-draft.ts`'s `noteNoPersistence`), and while no tour is open
+  (`creator-setup.ts`'s `guardInput`): placements made then live only in
+  memory until a tour opens, so leaving with them asks.
 - `beforeunload` (wired in `main.ts`) is partial on Android: a closed tab,
   a swipe-away or an OS discard do not fire it. The draft is what survives
   those.

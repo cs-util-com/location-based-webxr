@@ -1465,7 +1465,7 @@ describe("work made before the tour's draft opened reaches it", () => {
       wire(store).setup.leaveNeedsConfirm(),
       "nothing measured or placed: nothing to lose",
     ).toBe(false);
-    const { dom, setup } = wire(store, { placeable: true });
+    const { ctx, dom, setup } = wire(store, { placeable: true });
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
@@ -1476,6 +1476,12 @@ describe("work made before the tour's draft opened reaches it", () => {
       "Your tour is not open on this phone yet",
     );
 
+    // The tour opens - its session first, then its draft, as the page
+    // does - and the draft takes the placement over.
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+    } as never;
     setup.presentDraftForTour(TOUR);
     await settle();
     expect(setup.leaveNeedsConfirm(), "the draft now holds the placement").toBe(

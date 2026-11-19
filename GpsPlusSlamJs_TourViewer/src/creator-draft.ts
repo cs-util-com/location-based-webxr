@@ -150,9 +150,7 @@ export interface CreatorDraft {
   forgetRefused(tourUrl: string): Promise<boolean>;
   /** Say, once, that this device keeps no backup copy. */
   warnNoBackup(): void;
-  /** False while no draft namespace is open (no tour open, or its draft
-   *  still opening: what is placed then lives only in memory), and once
-   *  the creator was told no backup is kept. */
+  /** False once the creator was told no backup is kept. */
   persists(): boolean;
 }
 
@@ -1528,10 +1526,7 @@ export function wireCreatorDraft(deps: {
     },
     follow,
     warnNoBackup: noteNoPersistence,
-    // With no namespace open, placements wait in memory for a tour to open
-    // (`recordPlacement`): nothing would survive a reload yet, so the leave
-    // guard must ask.
-    persists: () => draftTourUrl !== null && !warnedAboutPersistence,
+    persists: () => !warnedAboutPersistence,
     saveSettings: (settings) => {
       const store = draftStore;
       const tourUrl = draftTourUrl;
