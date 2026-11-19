@@ -17,10 +17,31 @@ export const SWIPE_SPLIT_MAX = 0.96;
 /** Where the line stands until the visitor drags it: the middle. */
 export const SWIPE_SPLIT_START = 0.5;
 
-/** `split` kept between the edges; one that is no number is the middle. */
-export function clampSwipeSplit(split: number): number {
+/** How far the knob's centre stays in from either edge of the screen
+ *  (CSS px): clear of the system's edge gestures (Android's back swipe),
+ *  and a whole knob still on the screen. */
+export const SWIPE_EDGE_PX = 48;
+
+/**
+ * The line's reach on a screen `width` CSS px wide: the share's own
+ * reach, narrowed so the knob's centre stays `SWIPE_EDGE_PX` in from
+ * either edge; the middle alone on a screen too narrow for both. A
+ * width that is not a positive finite number gives the share's reach.
+ */
+export function swipeReach(width: number): readonly [number, number] {
+  if (!(width > 0) || !Number.isFinite(width)) {
+    return [SWIPE_SPLIT_MIN, SWIPE_SPLIT_MAX];
+  }
+  const edge = Math.min(0.5, SWIPE_EDGE_PX / width);
+  return [Math.max(SWIPE_SPLIT_MIN, edge), Math.min(SWIPE_SPLIT_MAX, 1 - edge)];
+}
+
+/** `split` kept in its reach (on a screen `width` px wide, when known);
+ *  one that is no number is the middle. */
+export function clampSwipeSplit(split: number, width = Number.NaN): number {
   if (!Number.isFinite(split)) return SWIPE_SPLIT_START;
-  return Math.min(SWIPE_SPLIT_MAX, Math.max(SWIPE_SPLIT_MIN, split));
+  const [lo, hi] = swipeReach(width);
+  return Math.min(hi, Math.max(lo, split));
 }
 
 /**
@@ -34,7 +55,7 @@ export function swipeSplitAt(
   width: number,
 ): number {
   if (!(width > 0) || !Number.isFinite(left)) return SWIPE_SPLIT_START;
-  return clampSwipeSplit((clientX - left) / width);
+  return clampSwipeSplit((clientX - left) / width, width);
 }
 
 /** The vertex side: the clip position, so the fragment knows its place

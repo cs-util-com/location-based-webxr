@@ -1,8 +1,7 @@
 /* Then and now's slider (then-now-slider.ts): its panel on the page's
    screen while a visitor stands lined up with the picture, and Swipe's
    line across the whole screen. Imported by the slider, so every page
-   that shows it (the visitor page, the check page) has its look. Only
-   the screen host's own rule stays with the host, in index.html. */
+   that shows it (the visitor page, the check page) has its look. */
 .then-now-slider {
   display: grid;
   gap: 8px;
@@ -67,14 +66,25 @@
   font-size: 0.8rem;
   color: #bcb09c;
 }
+/* The screen's host (#narration-card-root) drops its centring
+   transform while it holds the slider, or Swipe's fixed full-screen
+   line would be held to the host's box. */
+#narration-card-root:has(.then-now-slider) {
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  transform: none;
+}
 /* Swipe's line across the whole screen: only its knob takes a
-   finger, so the world below keeps every other touch. */
+   finger, so the world below keeps every other touch. It stands aside
+   while the walk sheet's list is open, which it would paint over. */
 .then-now-swipe {
   position: fixed;
   inset: 0;
   pointer-events: none;
 }
-.then-now-swipe[hidden] {
+.then-now-swipe[hidden],
+body:has(.walk-sheet[data-sheet="list"]:not([hidden])) .then-now-swipe {
   display: none;
 }
 .then-now-swipe-line {

@@ -16,6 +16,7 @@ import {
   SWIPE_SPLIT_MIN,
   SWIPE_SPLIT_START,
   swipeMask,
+  swipeReach,
   swipeSplitAt,
 } from "./then-now-swipe.js";
 
@@ -25,11 +26,15 @@ describe("swipeSplitAt", () => {
     expect(swipeSplitAt(130, 30, 400)).toBe(0.25);
   });
 
-  it("keeps the line off the edges", () => {
-    expect(swipeSplitAt(-50, 0, 400)).toBe(SWIPE_SPLIT_MIN);
-    expect(swipeSplitAt(1, 0, 400)).toBe(SWIPE_SPLIT_MIN);
-    expect(swipeSplitAt(399, 0, 400)).toBe(SWIPE_SPLIT_MAX);
-    expect(swipeSplitAt(9000, 0, 400)).toBe(SWIPE_SPLIT_MAX);
+  it("keeps the knob off the edges, out of the system's edge gestures", () => {
+    // 400 px wide: the knob's centre stays 48 px in from either edge.
+    expect(swipeSplitAt(-50, 0, 400)).toBe(48 / 400);
+    expect(swipeSplitAt(1, 0, 400)).toBe(48 / 400);
+    expect(swipeSplitAt(399, 0, 400)).toBe(1 - 48 / 400);
+    expect(swipeSplitAt(9000, 0, 400)).toBe(1 - 48 / 400);
+    // On a wide screen the share's own reach is the nearer bound.
+    expect(swipeSplitAt(-50, 0, 4000)).toBe(SWIPE_SPLIT_MIN);
+    expect(swipeSplitAt(9000, 0, 4000)).toBe(SWIPE_SPLIT_MAX);
   });
 
   it("keeps the middle for a screen with no width or a broken reading", () => {
@@ -46,6 +51,28 @@ describe("clampSwipeSplit", () => {
     expect(clampSwipeSplit(-1)).toBe(SWIPE_SPLIT_MIN);
     expect(clampSwipeSplit(2)).toBe(SWIPE_SPLIT_MAX);
     expect(clampSwipeSplit(Number.POSITIVE_INFINITY)).toBe(SWIPE_SPLIT_START);
+  });
+
+  it("clamps to a screen's reach when its width is known", () => {
+    expect(clampSwipeSplit(0, 390)).toBe(48 / 390);
+    expect(clampSwipeSplit(1, 390)).toBe(1 - 48 / 390);
+    expect(clampSwipeSplit(0.3, 390)).toBe(0.3);
+  });
+});
+
+describe("swipeReach", () => {
+  it("is the share's reach, narrowed to 48 px from either edge", () => {
+    expect(swipeReach(390)).toEqual([48 / 390, 1 - 48 / 390]);
+    expect(swipeReach(4000)).toEqual([SWIPE_SPLIT_MIN, SWIPE_SPLIT_MAX]);
+    // A screen too narrow for both margins keeps the middle.
+    expect(swipeReach(60)).toEqual([0.5, 0.5]);
+    // An unknown width: the share's reach alone.
+    for (const w of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(swipeReach(w), String(w)).toEqual([
+        SWIPE_SPLIT_MIN,
+        SWIPE_SPLIT_MAX,
+      ]);
+    }
   });
 });
 
@@ -98,5 +125,25 @@ describe("swipeMask", () => {
     mask.set(false, 7);
     expect(uniforms["uThenNowSwipe"]?.value).toBe(0);
     expect(mask.state()).toEqual({ on: false, split: SWIPE_SPLIT_MAX });
+  });
+
+  it("gives every material its own uniforms under the one program", () => {
+    // Why: the cache key shares one compiled program between the
+    // pictures; each must still be cut at its own line, so the values
+    // live per material, never in the shared shader text.
+    const a = new MeshBasicMaterial();
+    const b = new MeshBasicMaterial();
+    const maskA = swipeMask(a);
+    const maskB = swipeMask(b);
+    expect(a.customProgramCacheKey()).toBe(b.customProgramCacheKey());
+    const ua = compiled(a).uniforms;
+    const ub = compiled(b).uniforms;
+    maskA.set(true, 0.2);
+    maskB.set(false, 0.7);
+    expect(ua["uThenNowSplit"]?.value).toBe(0.2);
+    expect(ua["uThenNowSwipe"]?.value).toBe(1);
+    expect(ub["uThenNowSplit"]?.value).toBe(0.7);
+    expect(ub["uThenNowSwipe"]?.value).toBe(0);
+    expect(ua["uThenNowSplit"]).not.toBe(ub["uThenNowSplit"]);
   });
 });

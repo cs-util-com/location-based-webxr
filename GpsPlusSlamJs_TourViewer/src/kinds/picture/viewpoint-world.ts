@@ -445,6 +445,7 @@ export function viewpointWorld(
           THEN_NOW_FADE.ramp[1],
           reach.distanceM,
         );
+        const fadeBefore = thenNow.fade;
         thenNow = stepThenNow(thenNow, {
           dtS,
           near,
@@ -452,9 +453,10 @@ export function viewpointWorld(
           shown: true,
         });
         const swiping = thenNowMode === "swipe";
-        // The fade-in is Fade's: a visitor swiping is not faded at.
+        // The fade-in is Fade's: a visitor back on the spot swiping is
+        // not faded at, and keeps the fade they had for a later Fade.
         if (swiping && thenNow.introS !== null) {
-          thenNow = takeOverThenNow(thenNow, thenNow.fade);
+          thenNow = takeOverThenNow(thenNow, fadeBefore);
         }
         if (thenNow.aligned) openSlider();
         else closeSliderNow();

@@ -39,7 +39,13 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
   line's place are the part's own transient view state, held in its
   closure like the fade, not in the store: only its panel and its shader
   read them, nothing of the tour is saved from them, and a panel built
-  again (a narration took the screen a while) starts from them. The
+  again (a narration took the screen a while) starts from them. They
+  are kept per picture, a deliberate difference from the chosen
+  prototype, which keeps one mode and one line for the whole page: each
+  picture is met at its own spot, and the line's place belongs to that
+  picture's view. Back on the spot after a while in Swipe, the visitor
+  keeps the fade they had (the fade-in replays in Fade only, as the
+  prototype). The
   shader's state is read out as `material.userData.thenNowSwipe()`
   (`{ on, split }`) for the tests and the check page. Its
   plane carries the shared soft-edge alpha map (`then-now-feather.ts`)
@@ -114,4 +120,5 @@ outside the tap target, sharpen's card
 without the picture, the
 column held still on reduced motion, the slider's arrival, fade-in, take-over and
 departure, Swipe's whole plane and cut (switched, dragged, back to Fade,
-left and come back), the window's shader plane, the sheet, disposal.
+left and come back), the fade kept by a visitor back swiping, the uncut
+picture of a swiping visitor not yet lined up, the window's shader plane, the sheet, disposal.

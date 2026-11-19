@@ -713,6 +713,71 @@ describe("viewpointWorld", () => {
     part.dispose();
   });
 
+  it("keeps the visitor's fade when they come back swiping after a while", async () => {
+    // Why: the fade-in replays for a visitor back on the spot after a
+    // while, but only in Fade (as the chosen page has it); in Swipe the
+    // replay must not reset the fade to today, or a later switch to Fade
+    // would show nothing of the old picture.
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { part, station } = await placed(
+      picture("thenNow"),
+      envOf("play", host),
+    );
+    const button = (label: string): HTMLButtonElement | undefined =>
+      [...host.querySelectorAll("button")].find((b) => b.textContent === label);
+    tick(part, station, 0, [0, 1.6, 0]);
+    tick(part, station, THEN_NOW_TIMING.introS, [0, 1.6, 0]);
+    expect(opacity(part.object, "picture-viewpoint-plane")).toBeCloseTo(
+      THEN_NOW_TIMING.introTo,
+      6,
+    );
+    button("Swipe")?.click();
+    const away = THEN_NOW_TIMING.freshAfterS * 2;
+    tick(part, station, 6, [0, 1.6, -8]);
+    tick(part, station, 6 + away, [0, 1.6, -8]);
+    tick(part, station, 7 + away, [0, 1.6, 0]);
+    button("Fade")?.click();
+    tick(part, station, 8 + away, [0, 1.6, 0]);
+    expect(opacity(part.object, "picture-viewpoint-plane")).toBeCloseTo(
+      THEN_NOW_TIMING.introTo,
+      6,
+    );
+    part.dispose();
+  });
+
+  it("shows a swiping visitor not yet lined up the whole picture, uncut", async () => {
+    // Why: Swipe compares only once the visitor is lined up; on the way
+    // in the picture comes in whole by the distance alone (no fade of
+    // Fade's), and nothing is cut, as there is no line to cut at.
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { part, station } = await placed(
+      picture("thenNow"),
+      envOf("play", host),
+    );
+    const plane = named<Mesh<BufferGeometry, MeshBasicMaterial>>(
+      part.object,
+      "picture-viewpoint-plane",
+    );
+    tick(part, station, 0, [0, 1.6, 0]);
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "Swipe")
+      ?.click();
+    tick(part, station, 1, [0, 1.6, -8]);
+    // 1.7 m behind the spot: near enough to show, not to line up.
+    tick(part, station, 2, [0, 1.6, -1.7]);
+    expect(host.querySelector("[role=slider]")).toBeNull();
+    const state = (
+      plane.material.userData["thenNowSwipe"] as () => { on: boolean }
+    )();
+    expect(state.on).toBe(false);
+    const t = (1.7 - 2.6) / (0.9 - 2.6);
+    expect(plane.material.opacity).toBeCloseTo(t * t * (3 - 2 * t), 6);
+    expect(plane.material.opacity).toBeGreaterThan(0.3);
+    part.dispose();
+  });
+
   it("softens each viewpoint picture at its edges by the chosen widths", async () => {
     // Why: on the chosen page then and now and the viewer melt into today
     // over 0.035 of the width, sharpen over 0.02.

@@ -8,13 +8,16 @@ import { expect, test } from "@playwright/test";
  * uniforms one by one in jsdom; only a real browser shows that the three
  * meet: the knob's layer really covers the screen (a transformed host
  * would hold it to the panel's box), a mouse drag moves it through
- * pointer capture, and the drawn frame shows then on the left of the
- * line and today on the right. The page is `then-now-check.html`: one
+ * pointer capture, a touch anywhere but the knob goes through the layer
+ * to the world, the layer stands aside for the walk sheet's open list,
+ * and the drawn frame shows then on the left of the line and today on
+ * the right, up to a few pixels from it. The page is `then-now-check.html`: one
  * production then-and-now part seen from exactly its viewpoint.
  *
  * What it cannot catch: how the line feels under a thumb on a phone in
  * AR (a field check), and the AR session's own select gesture (the knob
- * is in `pin-sheet.ts`'s overlay list, pinned by its unit test).
+ * is in `pin-sheet.ts`'s overlay list; `then-now-slider.test.ts` pins
+ * that the knob cancels a select and the layer, line and labels do not).
  */
 
 const VIEWPORTS = [
@@ -90,8 +93,35 @@ for (const viewport of VIEWPORTS) {
     expect(cut.split).toBeCloseTo(0.3, 2);
 
     // Then left of the line, today right of it, in the drawn frame.
-    expect(isThen(await sample(page, 0.15, 0.5))).toBe(true);
-    expect(isToday(await sample(page, 0.6, 0.5))).toBe(true);
+    for (const x of [0.15, 0.27]) {
+      expect(isThen(await sample(page, x, 0.5)), String(x)).toBe(true);
+    }
+    for (const x of [0.33, 0.6]) {
+      expect(isToday(await sample(page, x, 0.5)), String(x)).toBe(true);
+    }
+
+    // Away from the knob a touch reaches the world, not the layer.
+    const through = await page.evaluate(
+      ([x, y]) =>
+        document.elementFromPoint(x, y)?.closest(".then-now-swipe") ?? null,
+      [viewport.width * 0.7, viewport.height * 0.35],
+    );
+    expect(through).toBeNull();
+
+    // The walk sheet's open list: the line stands aside, and is back
+    // once the list closes.
+    await page.evaluate(() => {
+      const sheet = document.createElement("div");
+      sheet.className = "walk-sheet";
+      sheet.dataset["sheet"] = "list";
+      sheet.id = "stand-in-walk-sheet";
+      document.body.append(sheet);
+    });
+    await expect(knob).toBeHidden();
+    await page.evaluate(() => {
+      document.getElementById("stand-in-walk-sheet")?.remove();
+    });
+    await expect(knob).toBeVisible();
 
     // Back to Fade: the line goes and nothing is cut.
     await page.getByRole("button", { name: "Fade" }).click();

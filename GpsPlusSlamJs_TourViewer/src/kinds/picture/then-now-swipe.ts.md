@@ -14,6 +14,11 @@ screen's width) and the cut in the old picture's shader at that share.
 - `swipeSplitAt(clientX, left, width)`: a finger's x on a layer starting
   at `left` and `width` wide, as a clamped share; a width that is not
   positive, or a left that is not finite, gives the start.
+- `SWIPE_EDGE_PX` (48) and `swipeReach(width)`: the reach narrowed so
+  the knob's centre stays 48 px in from either edge of a screen `width`
+  px wide (clear of Android's back gesture), the middle alone on a
+  screen narrower than two margins; an unknown width gives the share's
+  reach. `clampSwipeSplit(split, width?)` and `swipeSplitAt` clamp to it.
 - `swipeMask(material)` returns `{ set(on, split), state() }`: patches a
   `MeshBasicMaterial` (`onBeforeCompile`, its own program cache key) so
   that, while on, it keeps only what is left of `split` on the screen.
@@ -24,7 +29,8 @@ screen's width) and the cut in the old picture's shader at that share.
 - The cut is in screen space from the clip-space position
   (`x / w * 0.5 + 0.5`), so it needs no viewport size and holds in an XR
   layer as on a page; it is applied after the alpha map, so the feathered
-  edges stay, with a soft edge of about one pixel (`fwidth`).
+  edges stay, with a soft edge of two pixels (one `fwidth` either side
+  of the line).
 - Off, the material draws as before (the branch is a uniform test).
 - The old picture is left of the line: what is right of it is cut.
 

@@ -8,8 +8,10 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  SWIPE_EDGE_PX,
   SWIPE_SPLIT_MAX,
   SWIPE_SPLIT_MIN,
+  swipeReach,
   swipeSplitAt,
 } from "./then-now-swipe.js";
 
@@ -31,15 +33,26 @@ describe("swipeSplitAt", () => {
   });
 
   it("stands under the finger within its reach", () => {
-    const share = fc.double({
-      min: SWIPE_SPLIT_MIN,
-      max: SWIPE_SPLIT_MAX,
-      noNaN: true,
-    });
+    const share = fc.double({ min: 0, max: 1, noNaN: true });
     fc.assert(
-      fc.property(left, width, share, (l, w, s) => {
-        const at = l + s * w;
+      fc.property(left, width, share, (l, w, t) => {
+        const [lo, hi] = swipeReach(w);
+        const at = l + (lo + t * (hi - lo)) * w;
         expect(swipeSplitAt(at, l, w)).toBeCloseTo((at - l) / w, 12);
+      }),
+    );
+  });
+
+  it("keeps the knob's centre clear of both edges on any screen", () => {
+    // Why: a knob within the system's edge strip (Android's back swipe)
+    // is a back gesture, not a drag; 48 px keeps it clear, and a screen
+    // narrower than two margins keeps the middle.
+    fc.assert(
+      fc.property(left, width, x, (l, w, a) => {
+        const centre = swipeSplitAt(a, l, w) * w;
+        const margin = Math.min(SWIPE_EDGE_PX, w / 2);
+        expect(centre).toBeGreaterThanOrEqual(margin - 1e-9);
+        expect(w - centre).toBeGreaterThanOrEqual(margin - 1e-9);
       }),
     );
   });

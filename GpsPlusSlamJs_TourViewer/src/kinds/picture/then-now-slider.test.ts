@@ -14,7 +14,12 @@ import {
   firstSentence,
   type ThenNowSliderStart,
 } from "./then-now-slider.js";
-import { SWIPE_SPLIT_MAX, SWIPE_SPLIT_START } from "./then-now-swipe.js";
+import { cancelsXrSelect } from "../../pin-sheet.js";
+import {
+  SWIPE_SPLIT_MAX,
+  SWIPE_SPLIT_START,
+  swipeReach,
+} from "./then-now-swipe.js";
 
 const FADE: ThenNowSliderStart = {
   mode: "fade",
@@ -134,7 +139,9 @@ describe("the swipe", () => {
     const hint = host.querySelector<HTMLElement>(".then-now-hint");
     expect(layer?.hidden).toBe(true);
     expect(row?.hidden).toBe(false);
-    expect(hint?.hidden).toBe(true);
+    // Each way has the chosen page's hint.
+    expect(hint?.textContent).toBe("Slide between then and today");
+    expect(hint?.hidden).toBe(false);
     buttons[0]?.click();
     expect(heard.mode).toHaveBeenLastCalledWith("swipe");
     expect(buttons.map((b) => b.getAttribute("aria-pressed"))).toEqual([
@@ -151,6 +158,7 @@ describe("the swipe", () => {
     buttons[1]?.click();
     expect(heard.mode).toHaveBeenLastCalledWith("fade");
     expect(layer?.hidden).toBe(true);
+    expect(hint?.textContent).toBe("Slide between then and today");
     // A click on the group's padding chooses nothing.
     modes?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(heard.mode).toHaveBeenCalledTimes(2);
@@ -201,9 +209,11 @@ describe("the swipe", () => {
     // A second finger is not the one holding it.
     knob.dispatchEvent(pointer("pointermove", 2, 300));
     expect(heard.split).toHaveBeenCalledTimes(1);
-    // Past the screen's edge the line stops in reach.
+    // Past the screen's edge the line stops in reach, the knob clear of
+    // the edge's system gesture.
     knob.dispatchEvent(pointer("pointermove", 1, 9000));
-    expect(heard.split).toHaveBeenLastCalledWith(SWIPE_SPLIT_MAX);
+    expect(heard.split).toHaveBeenLastCalledWith(swipeReach(400)[1]);
+    expect(swipeReach(400)[1]).toBeLessThan(SWIPE_SPLIT_MAX);
     knob.dispatchEvent(pointer("pointerup", 1, 9000));
     expect(held.has(1)).toBe(false);
     knob.dispatchEvent(pointer("pointermove", 1, 100));
@@ -226,6 +236,43 @@ describe("the swipe", () => {
     expect(heard.split).toHaveBeenLastCalledWith(SWIPE_SPLIT_MAX);
     expect(key("a").defaultPrevented).toBe(false);
     expect(heard.split).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a key's move as clear of the screen's edges as a drag", () => {
+    const host = document.createElement("div");
+    const heard = listeners();
+    buildThenNowSlider(host, {}, { ...FADE, mode: "swipe" }, heard);
+    const layer = host.querySelector<HTMLElement>(".then-now-swipe");
+    const knob = host.querySelector<HTMLElement>("[role=slider]");
+    if (layer === null || knob === null) throw new Error("no swipe");
+    layer.getBoundingClientRect = () =>
+      ({ left: 0, width: 390, top: 0, height: 844 }) as DOMRect;
+    knob.dispatchEvent(new KeyboardEvent("keydown", { key: "Home" }));
+    expect(heard.split).toHaveBeenLastCalledWith(swipeReach(390)[0]);
+  });
+
+  it("lets only the knob's press past the AR view, never the layer's", () => {
+    // Why: the layer covers the whole screen; a press on the knob that
+    // also reached the AR session as a select would open the picture's
+    // sheet and take the line away, and a layer that cancelled selects
+    // would take every tap on the world.
+    const host = document.createElement("div");
+    document.body.append(host);
+    buildThenNowSlider(host, {}, { ...FADE, mode: "swipe" }, listeners());
+    const at = (selector: string): Element | null =>
+      host.querySelector(selector);
+    expect(cancelsXrSelect(at(".then-now-swipe-knob"))).toBe(true);
+    expect(cancelsXrSelect(at(".then-now-swipe-knob svg"))).toBe(true);
+    expect(cancelsXrSelect(at(".then-now-swipe-knob path"))).toBe(true);
+    for (const part of [
+      ".then-now-swipe",
+      ".then-now-swipe-line",
+      ".then-now-swipe-then",
+      ".then-now-swipe-now",
+    ]) {
+      expect(at(part), part).not.toBeNull();
+      expect(cancelsXrSelect(at(part)), part).toBe(false);
+    }
   });
 
   it("leaves no line behind and hears nothing after its clean-up", () => {

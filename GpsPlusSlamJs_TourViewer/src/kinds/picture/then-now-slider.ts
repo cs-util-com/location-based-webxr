@@ -53,7 +53,11 @@ const STEPS = 100;
 const KEY_STEP = 0.05;
 /** The caption's first sentence, cut at about two lines. */
 const FIRST_SENTENCE_MAX = 110;
-const SWIPE_HINT = "Drag the line to compare";
+/** Each way's hint, the chosen page's words. */
+const HINTS: Readonly<Record<ThenNowMode, string>> = {
+  swipe: "Drag the line to compare",
+  fade: "Slide between then and today",
+};
 
 /** The caption's first sentence, cut at a word within the limit. */
 export function firstSentence(text: string | undefined): string {
@@ -124,6 +128,8 @@ function buildSwipeLine(
 
   let split = clampSwipeSplit(Number.NaN);
   const place = (value: number): void => {
+    // Already clamped to the screen by a drag or a key; here to the
+    // share alone, as the screen may have turned since.
     split = clampSwipeSplit(value);
     const left = `${String(split * 100)}%`;
     line.style.left = left;
@@ -161,7 +167,7 @@ function buildSwipeLine(
     const step = keyStep(e.key);
     if (step === 0) return;
     e.preventDefault();
-    move(split + step);
+    move(clampSwipeSplit(split + step, layer.getBoundingClientRect().width));
   };
   knob.addEventListener("pointerdown", onDown);
   knob.addEventListener("pointermove", onMove);
@@ -257,7 +263,6 @@ export function buildThenNowSlider(
 
   const hint = doc.createElement("p");
   hint.className = "then-now-hint";
-  hint.textContent = SWIPE_HINT;
 
   const swipe = buildSwipeLine(doc, year, heard.split);
   swipe.place(start.split);
@@ -268,7 +273,7 @@ export function buildThenNowSlider(
     }
     const swiping = mode === "swipe";
     row.hidden = swiping;
-    hint.hidden = !swiping;
+    hint.textContent = HINTS[mode];
     swipe.layer.hidden = !swiping;
   };
   choose(start.mode === "swipe" ? "swipe" : "fade");
