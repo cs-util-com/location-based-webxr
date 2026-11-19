@@ -21,6 +21,7 @@ import {
   type NarrationSectionDeps,
 } from "./narration-section.js";
 import { settle } from "../../test-support/settle.js";
+import { normalVoiceCredit, VOICE_CREDIT_MAX } from "../../voice-credit.js";
 
 const BODY = "The mill turned all day. The miller slept at night.";
 const VTT = [
@@ -38,6 +39,8 @@ interface Held {
   hasVoice: boolean;
   audioId: string | null;
   timingText: string | null;
+  synthetic?: boolean;
+  voiceCredit?: string;
 }
 
 /** Each voice the fake tour takes gets a new asset id, as the session's. */
@@ -64,6 +67,8 @@ function make(over: Partial<NarrationSectionDeps> = {}): NarrationSection {
         durationMs: held.hasVoice ? 4000 : null,
         timingText: held.timingText,
         timingUnread: false,
+        synthetic: held.synthetic ?? false,
+        voiceCredit: held.voiceCredit ?? "",
       }),
     edit: (_id, change) => {
       edits.push(change);
@@ -78,6 +83,11 @@ function make(over: Partial<NarrationSectionDeps> = {}): NarrationSection {
         }
         if (change.kind === "timing") held.timingText = change.text;
         if (change.kind === "removeTiming") held.timingText = null;
+        if (change.kind === "synthetic") held.synthetic = change.synthetic;
+        // The session stores a credit normalised: so does the fake.
+        if (change.kind === "voiceCredit") {
+          held.voiceCredit = normalVoiceCredit(change.text) ?? "";
+        }
         return outcome;
       };
       if (refuseNext) {
@@ -485,5 +495,223 @@ describe("following the selection", () => {
     section.update(null);
     await flush();
     expect(section.node.querySelector("[data-ln]")).toBeNull();
+  });
+});
+
+describe("who speaks the voice", () => {
+  const box = () =>
+    section.node.querySelector<HTMLInputElement>('[data-ln="synthetic"]');
+  const credit = () =>
+    section.node.querySelector<HTMLInputElement>('[data-ln="credit"]');
+  async function voiced(): Promise<void> {
+    held.hasVoice = true;
+    held.audioId = "voice-1";
+    section.update({ blockId: "essay", body: BODY, key: "2" });
+    await flush();
+  }
+
+  // Why: the mark and the credit describe a voice; without one there is
+  // nothing to describe, and the format has no narration to hold them.
+  it("offers neither the switch nor the field before there is a voice", () => {
+    expect(box()).toBeNull();
+    expect(credit()).toBeNull();
+  });
+
+  it("shows a voice as a person's with no credit, labelled as the visitor reads it", async () => {
+    await voiced();
+    expect(box()?.checked).toBe(false);
+    expect(box()?.closest("label")?.textContent).toBe("Synthetic voice");
+    expect(credit()?.value).toBe("");
+    expect(credit()?.maxLength).toBe(2 * VOICE_CREDIT_MAX);
+    const label = section.node.querySelector(
+      `label[for="${credit()?.id ?? "none"}"]`,
+    );
+    expect(label?.textContent).toBe("Spoken by");
+  });
+
+  // Why: the switch's write is async (the async-feedback rule): it is
+  // disabled while it runs, and ends in what the tour holds.
+  it("marks the voice synthetic: disabled while it runs, checked once the tour holds it", async () => {
+    await voiced();
+    holdNext = true;
+    box()?.click();
+    await flush();
+    expect(edits.at(-1)).toEqual({ kind: "synthetic", synthetic: true });
+    expect(box()?.disabled).toBe(true);
+    expect(section.node.getAttribute("aria-busy")).toBe("true");
+    gate?.release("written");
+    await flush();
+    expect(box()?.disabled).toBe(false);
+    expect(box()?.checked).toBe(true);
+    expect(said.at(-1)).toBe(
+      "Marked as a synthetic voice: visitors are told so. Ctrl+Z undoes it.",
+    );
+  });
+
+  // Why: both paths of the async-feedback rule, while the write is held:
+  // the tick stays and the switch is disabled while it runs; a refusal
+  // enables it again on the tour's mark, with nothing said.
+  it("goes back to the tour's mark when the tour refuses it", async () => {
+    await voiced();
+    holdNext = true;
+    box()?.click();
+    await flush();
+    expect(box()?.disabled).toBe(true);
+    expect(box()?.checked).toBe(true);
+    gate?.release("refused");
+    await flush();
+    expect(box()?.disabled).toBe(false);
+    expect(box()?.checked).toBe(false);
+    expect(said).toEqual([]);
+  });
+
+  // Why: one edit per finished entry (the field's change, on leaving it or
+  // Enter), never per key, so one undo takes back one credit; the field
+  // then shows the credit as stored.
+  it("writes the credit once it is entered, and shows it as stored", async () => {
+    await voiced();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    field.value = "  Read by   Anna ";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    await flush();
+    expect(edits.filter((e) => e.kind === "voiceCredit")).toEqual([]);
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(edits.at(-1)).toEqual({
+      kind: "voiceCredit",
+      text: "  Read by   Anna ",
+    });
+    expect(credit()?.value).toBe("Read by Anna");
+    expect(said.at(-1)).toBe("Spoken by: Read by Anna. Ctrl+Z undoes it.");
+    // The same credit again is no edit.
+    const count = edits.length;
+    field.value = "Read by Anna ";
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(edits.length).toBe(count);
+    expect(credit()?.value).toBe("Read by Anna");
+  });
+
+  // Why: the credit's write is async too: the field is read-only while it
+  // runs and takes typing again once the tour holds the credit.
+  it("keeps the field read-only while the credit is written", async () => {
+    await voiced();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    holdNext = true;
+    field.value = "Anna";
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(field.readOnly).toBe(true);
+    expect(section.node.getAttribute("aria-busy")).toBe("true");
+    gate?.release("written");
+    await flush();
+    expect(field.readOnly).toBe(false);
+    expect(field.value).toBe("Anna");
+  });
+
+  // Why: a refused credit must not stay in the field as if it were held;
+  // the field (still focused, as after Enter) shows the tour's credit.
+  it("shows the tour's credit again when the tour refuses the entry", async () => {
+    held.voiceCredit = "Anna";
+    await voiced();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    field.focus();
+    holdNext = true;
+    field.value = "Berta";
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    gate?.release("refused");
+    await flush();
+    expect(field.readOnly).toBe(false);
+    expect(field.value).toBe("Anna");
+    expect(said).toEqual([]);
+  });
+
+  // Why: one action at a time; a credit entered while the switch's write
+  // runs is not taken, and the creator is told to enter it again.
+  it("asks for the credit again when it is entered while another action runs", async () => {
+    await voiced();
+    holdNext = true;
+    box()?.click();
+    await flush();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    field.value = "Anna";
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(edits.filter((e) => e.kind === "voiceCredit")).toEqual([]);
+    expect(said.at(-1)).toBe(
+      "The synthetic voice mark is still being changed. Enter the credit again once it is done.",
+    );
+    gate?.release("written");
+    await flush();
+  });
+
+  // Why: the format's cap counts letters (code points), `maxlength` UTF-16
+  // units: a credit of letters outside the basic plane takes two units
+  // each, so a field capped at the format's number would stop at half of
+  // it, and the cut that keeps the cap would never be reached.
+  it("lets a credit of astral letters reach the format's cap, and cuts there", async () => {
+    await voiced();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    const atCap = "\u{1D49C}".repeat(VOICE_CREDIT_MAX);
+    expect(atCap.length).toBeLessThanOrEqual(field.maxLength);
+    field.value = `${atCap}\u{1D49C}`;
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(field.value).toBe(atCap);
+    expect([...field.value].length).toBe(VOICE_CREDIT_MAX);
+  });
+
+  it("takes the credit off when the field is emptied", async () => {
+    held.voiceCredit = "Anna";
+    await voiced();
+    expect(credit()?.value).toBe("Anna");
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    field.value = "";
+    field.dispatchEvent(new Event("change", { bubbles: true }));
+    await flush();
+    expect(edits.at(-1)).toEqual({ kind: "voiceCredit", text: "" });
+    expect(credit()?.value).toBe("");
+    expect(said.at(-1)).toBe("Credit removed. Ctrl+Z brings it back.");
+  });
+
+  // Why: the section draws itself again whenever the tour changes (a
+  // save, an edit elsewhere); a field rebuilt mid-typing would lose the
+  // creator's words and their focus.
+  it("keeps the field and what is typed in it across a redraw", async () => {
+    await voiced();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    field.focus();
+    field.value = "Read by A";
+    section.update({ blockId: "essay", body: BODY, key: "3" });
+    await flush();
+    expect(credit()).toBe(field);
+    expect(document.activeElement).toBe(field);
+    expect(field.value).toBe("Read by A");
+  });
+
+  // Why: the field is one node for the section's life; selecting another
+  // text while it is focused must show that text's credit, never a blank
+  // field the next change would write as "no credit". It holds because
+  // the field leaves the page while the new text is read, which takes its
+  // focus; this pins that.
+  it("shows the next text's credit when another text is selected while the field is focused", async () => {
+    held.voiceCredit = "Anna";
+    await voiced();
+    const field = credit();
+    if (field === null) throw new Error("no field");
+    field.focus();
+    section.update({ blockId: "other", body: BODY, key: "1" });
+    expect(document.activeElement).not.toBe(field);
+    await flush();
+    expect(credit()).toBe(field);
+    expect(field.value).toBe("Anna");
   });
 });
