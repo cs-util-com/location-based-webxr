@@ -216,7 +216,7 @@ export const LC_PHONE = `<div class="lc-phone">
         <div class="lc-chip"><svg viewBox="0 0 12 12"><path d="M2.5 6.5l2.3 2.3L9.5 3.5"/></svg>Tour found</div>
         <div class="lc-sheet lc-s-place">
           <p class="lc-hint">Stand where it happened</p>
-          <span class="lc-sbtn">Place here</span>
+          <span class="lc-sbtn">Place a pin</span>
         </div>
         <div class="lc-sheet lc-s-add">
           <div class="lc-tools">

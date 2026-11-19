@@ -24,6 +24,7 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import { deviceGpsQuality } from "./device-gps-quality.js";
+import { isComputerScreen, linkQrShown, linkQrSvg } from "./link-qr.js";
 import {
   arButtonView,
   COPY_LINK_LABELS,
@@ -112,6 +113,13 @@ export interface ArEntryDom {
   /** The peek's line asking for the code (the prototype: in the peek, not over the
    *  camera). */
   codeTail?: Pick<HTMLElement, "hidden" | "textContent">;
+  /** The visitor's "Scan with your phone" code beside "Copy link"
+   *  (`link-qr.ts`): its figure and the box the SVG is drawn into.
+   *  Absent: no code (the node tests that do not need one). */
+  linkQr?: {
+    root: Pick<HTMLElement, "hidden">;
+    code: Pick<HTMLElement, "innerHTML" | "dataset">;
+  };
 }
 
 /** The scan card's two titles (the first kept). */
@@ -592,6 +600,14 @@ export function wireArEntry(deps: {
     // The page's CSS reads it: "What happens?" describes a session this
     // visitor cannot start, so it goes too (index.html).
     dom.enterArButton.dataset["start"] = withheld ? "withheld" : "offered";
+    renderLinkQr(
+      linkQrShown({
+        visitor: !authorMode,
+        arStatus: state.status,
+        withheld,
+        computerScreen: isComputerScreen(globalThis),
+      }),
+    );
     dom.arHint.hidden =
       withheld ||
       sessionActive ||
@@ -674,6 +690,18 @@ export function wireArEntry(deps: {
     });
     renderArStatus();
     hooks.renderAuthorReadout();
+  }
+
+  /** Shows or hides the link's code; draws it only when the page's
+   *  address differs from the one it encodes (the same link Copy link
+   *  copies, `location.href`). */
+  function renderLinkQr(shown: boolean): void {
+    const qr = dom.linkQr;
+    if (qr === undefined) return;
+    qr.root.hidden = !shown;
+    if (!shown || qr.code.dataset["url"] === location.href) return;
+    qr.code.innerHTML = linkQrSvg(location.href);
+    qr.code.dataset["url"] = location.href;
   }
 
   /** The visitor's Copy link tap (async-UI rule: busy, then the outcome;
