@@ -19,14 +19,18 @@ import {
 } from "./added-debug-data.js";
 
 describe("addedDebugLine", () => {
-  it("names the added file and says it is not saved with the tour", () => {
+  it("names the scan and says it is shown while editing, not part of the visitors' tour, not saved into the file", () => {
+    // Why: the scan is never saved, and a line that read as a warning or
+    // left one of the three out let a creator think it joins the tour.
     const line = addedDebugLine({
       fileName: "castle-debug.zip",
       match: "this-tour",
       identity: { tour: "Castle", file: "castle.zip" },
       tourCarriesWalk: false,
     });
-    expect(line).toBe("Added from castle-debug.zip, not saved with the tour.");
+    expect(line).toBe(
+      "Scan castle-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file.",
+    );
   });
 
   it("says a bundle saved from another tour is another tour's, naming it", () => {
@@ -37,7 +41,7 @@ describe("addedDebugLine", () => {
       tourCarriesWalk: false,
     });
     expect(line).toBe(
-      'Added from x-debug.zip, not saved with the tour. It was saved from another tour ("Harbour", harbour.zip), not this one.',
+      'Scan x-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It was saved from another tour ("Harbour", harbour.zip), not this one.',
     );
     // An identity without a title or a file name says only that.
     expect(
@@ -48,11 +52,11 @@ describe("addedDebugLine", () => {
         tourCarriesWalk: false,
       }),
     ).toBe(
-      "Added from x-debug.zip, not saved with the tour. It was saved from another tour, not this one.",
+      "Scan x-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It was saved from another tour, not this one.",
     );
   });
 
-  it("says a plain recording is a recording, not saved from this tour", () => {
+  it("names a plain recording as one, without a warning's words", () => {
     expect(
       addedDebugLine({
         fileName: "walk.zip",
@@ -61,7 +65,7 @@ describe("addedDebugLine", () => {
         tourCarriesWalk: false,
       }),
     ).toBe(
-      "Added from walk.zip, not saved with the tour. It is a recording, not saved from this tour.",
+      "Scan walk.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It is a recording from the Recorder app.",
     );
   });
 
@@ -76,7 +80,7 @@ describe("addedDebugLine", () => {
         tourCarriesWalk: true,
       }),
     ).toBe(
-      "Added from castle-debug.zip, not saved with the tour. It is shown in place of the tour's own walk.",
+      "Scan castle-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It is shown in place of the tour's own walk.",
     );
   });
 });

@@ -697,7 +697,7 @@ describe("does the bundle belong to this tour", () => {
 
   it("calls a plain recording its own case", () => {
     // Why: a Recorder zip carries no identity, so it is neither this tour's
-    // nor another's: "a recording, not saved from this tour".
+    // nor another's: "a recording from the Recorder app".
     expect(bundleMatchesTour({ kind: "recording" }, LISTED)).toBe("recording");
   });
 });

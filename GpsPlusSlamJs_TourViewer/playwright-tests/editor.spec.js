@@ -389,7 +389,7 @@ test("adds the debug data back beside a tour from its own button, and forgets it
     buffer: bundle,
   });
   await expect(page.locator("#debug-status")).toHaveText(
-    "Added from editor-fixture-debug.zip, not saved with the tour. Debug data: 2 camera captures shown.",
+    "Scan editor-fixture-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. Debug data: 2 camera captures shown.",
   );
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
   await expect(page.locator(".mk-debug img")).toHaveCount(2);
@@ -459,7 +459,7 @@ test("says whose added debug data is - another tour's, or a plain recording - re
     "else-debug.zip",
   );
   await expect(page.locator("#debug-status")).toHaveText(
-    'Added from else-debug.zip, not saved with the tour. It was saved from another tour ("Somewhere else", else.zip), not this one. Debug data: 2 camera captures shown.',
+    'Scan else-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It was saved from another tour ("Somewhere else", else.zip), not this one. Debug data: 2 camera captures shown.',
   );
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
   const recording = Buffer.from(
@@ -469,7 +469,7 @@ test("says whose added debug data is - another tour's, or a plain recording - re
   );
   await addDebugFile(page, recording, "walk.zip");
   await expect(page.locator("#debug-status")).toHaveText(
-    "Added from walk.zip, not saved with the tour. It is a recording, not saved from this tour. Debug data: 2 camera captures shown.",
+    "Scan walk.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It is a recording from the Recorder app. Debug data: 2 camera captures shown.",
   );
   await addDebugFile(page, await editorTour(), "plain.zip");
   await expect(
@@ -483,9 +483,7 @@ test("says whose added debug data is - another tour's, or a plain recording - re
   await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
   await expect(page.locator("#debug-add")).toBeEnabled();
   // The layer kept what was added before.
-  await expect(page.locator("#debug-status")).toContainText(
-    "Added from walk.zip",
-  );
+  await expect(page.locator("#debug-status")).toContainText("Scan walk.zip:");
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
   await expect(page.locator("#save-status")).toHaveText("No changes");
   await page.locator("#rail .row", { hasText: "Town hall" }).click();
@@ -529,7 +527,7 @@ test("shows debug data dropped on its panel in place of the tour's own walk, and
     .locator("#debug-panel")
     .dispatchEvent("drop", { dataTransfer: dropped });
   await expect(page.locator("#debug-status")).toHaveText(
-    "Added from wrapped-debug.zip, not saved with the tour. It is shown in place of the tour's own walk. Debug data: 2 camera captures shown.",
+    "Scan wrapped-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It is shown in place of the tour's own walk. Debug data: 2 camera captures shown.",
   );
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(2);
   await expect(page.locator("#save-status")).toHaveText("No changes");
