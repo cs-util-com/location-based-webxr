@@ -1582,6 +1582,29 @@ export async function openGlobeEditor(
       return [at.x, at.y, at.z];
     };
 
+    /** The pose changed by `change` round the point the line of sight
+     *  meets, at the same distance from it, so that point stays at the
+     *  screen's centre. Held in ECEF across the change: placing the pose
+     *  moves the world's frame with the camera. */
+    const placePoseRoundLook = (change: {
+      headingDeg?: number;
+      pitchDeg?: number;
+    }) => {
+      const pivot = new THREE.Vector3(...lookPoint());
+      const distance = camera.position.distanceTo(pivot);
+      followFrame();
+      pivot.applyMatrix4(ecefFromWorld);
+      placePose(change);
+      followFrame();
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        camera.quaternion,
+      );
+      camera.position
+        .copy(pivot.applyMatrix4(worldFromEcef))
+        .addScaledVector(forward, -distance);
+      camera.updateMatrixWorld();
+    };
+
     let firstTick: () => void = () => undefined;
     let notShown: (error: unknown) => void = () => undefined;
     const ready = new Promise<void>((resolve, reject) => {
@@ -1648,21 +1671,8 @@ export async function openGlobeEditor(
         dust.reset();
       },
       setHeading(deg) {
-        // Round the point the line of sight meets, held in ECEF: placing
-        // the pose moves the world's frame with the camera.
-        const pivot = new THREE.Vector3(...lookPoint());
-        const distance = camera.position.distanceTo(pivot);
-        followFrame();
-        pivot.applyMatrix4(ecefFromWorld);
-        placePose({ headingDeg: deg });
-        followFrame();
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-          camera.quaternion,
-        );
-        camera.position
-          .copy(pivot.applyMatrix4(worldFromEcef))
-          .addScaledVector(forward, -distance);
-        camera.updateMatrixWorld();
+        // Round the point the line of sight meets.
+        placePoseRoundLook({ headingDeg: deg });
         // The streaks start again from where the camera now stands:
         // `placePose` restarted them, and nothing samples them before the
         // next frame.
@@ -1693,21 +1703,9 @@ export async function openGlobeEditor(
         // Tilted round the point the line of sight meets, as a turn is
         // (`setHeading`): a tilt in place carried what it looked at, the
         // selection too, off the screen.
-        const pivot = new THREE.Vector3(...lookPoint());
-        const distance = camera.position.distanceTo(pivot);
-        followFrame();
-        pivot.applyMatrix4(ecefFromWorld);
-        placePose({
+        placePoseRoundLook({
           pitchDeg: on ? TOP_PITCH_DEG : GLOBE_EDITOR_LOOK.aimPitchDeg,
         });
-        followFrame();
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-          camera.quaternion,
-        );
-        camera.position
-          .copy(pivot.applyMatrix4(worldFromEcef))
-          .addScaledVector(forward, -distance);
-        camera.updateMatrixWorld();
       },
       zoom(step) {
         approach?.takeOver(performance.now());

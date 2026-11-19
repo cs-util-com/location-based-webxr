@@ -40,11 +40,12 @@ const N_M = 45.68;
 /**
  * A tour of one station "Station A": a story "First" with one entry, a
  * plain folder "Yard" holding pin "y", and free pins p, q and r.
- * `yardTurned` turns the yard a quarter about up.
- * @param {{ yardTurned?: boolean }} [options]
+ * `yardTurned` turns the yard a quarter about up; `unreadPhoto` adds a
+ * photo "z" to the yard whose picture the zip lacks, so it cannot be read.
+ * @param {{ yardTurned?: boolean, unreadPhoto?: boolean }} [options]
  * @returns {Promise<Buffer>}
  */
-async function foldersTour({ yardTurned = false } = {}) {
+async function foldersTour({ yardTurned = false, unreadPhoto = false } = {}) {
   /** @param {string} id @param {number} x */
   const pin = (id, x) => ({
     id,
@@ -57,6 +58,9 @@ async function foldersTour({ yardTurned = false } = {}) {
   const manifest = {
     ...createEmptyTourManifest(),
     title: "Folders",
+    ...(unreadPhoto
+      ? { assets: [{ id: "z", path: "content/z.jpg", width: 8, height: 6 }] }
+      : {}),
     // Its own id: the draft is offered back for the same tour only.
     tourId: "fedcba9876543210fedcba9876543210",
     stations: [
@@ -109,7 +113,22 @@ async function foldersTour({ yardTurned = false } = {}) {
                 ? [0, -Math.SQRT1_2, 0, Math.SQRT1_2]
                 : [0, 0, 0, 1],
             },
-            children: [pin("y", 1)],
+            children: [
+              pin("y", 1),
+              ...(unreadPhoto
+                ? [
+                    {
+                      id: "z",
+                      kind: "picture",
+                      view: "plane",
+                      image: "z",
+                      widthM: 1,
+                      createdAtIso: "2026-11-10T09:00:00.000Z",
+                      pose: { position: [-1, 1.5, 0], rotation: [0, 0, 0, 1] },
+                    },
+                  ]
+                : []),
+            ],
           },
           pin("p", -3),
           pin("q", 0),
@@ -527,6 +546,16 @@ test("a folder's Ctrl+D pressed twice at once makes one copy, and its Delete ask
   expect(await revision(page)).toBe(start + 1);
   await page.keyboard.press("Control+z");
   await expect.poll(() => folderOrder(page)).toEqual(["Yard"]);
+  // The read is over: its held toast is gone and the next Duplicate is
+  // free again (a busy state left behind would make every later one do
+  // nothing).
+  await expect(page.locator('.toast[aria-busy="true"]')).toHaveCount(0);
+  await yard.click();
+  await expect.poll(selected).toBe("folder:yard");
+  await page.keyboard.press("Control+d");
+  await expect.poll(() => folderOrder(page)).toHaveLength(2);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => folderOrder(page)).toEqual(["Yard"]);
 
   /** @type {string[]} */
   const asked = [];
@@ -556,6 +585,39 @@ test("a folder's Ctrl+D pressed twice at once makes one copy, and its Delete ask
   await expect
     .poll(() => groups(page))
     .toEqual({ Yard: ["y"], free: ["p", "q", "r"] });
+});
+
+// Why: a Duplicate that cannot read a photo's picture is refused in words,
+// and its held "Duplicating..." toast and busy state end with it: left
+// behind, the toast would say a copy is still coming and every later
+// Duplicate would do nothing.
+test("a folder's Duplicate refused for a picture it cannot read says so and leaves nothing busy", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFolders(page, await foldersTour({ unreadPhoto: true }));
+  const card = await unfold(page);
+  const start = await revision(page);
+  const selected = () =>
+    page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
+  const yard = card.locator('.gfolder[data-plainfolder="yard"] button.fname');
+  const refusal = page.locator(".toast", {
+    hasText: "This photo's picture could not be read, so it cannot be copied.",
+  });
+  await yard.click();
+  await expect.poll(selected).toBe("folder:yard");
+  await page.keyboard.press("Control+d");
+  await expect(refusal).toBeVisible();
+  await expect(page.locator('.toast[aria-busy="true"]')).toHaveCount(0);
+  expect(await folderOrder(page)).toEqual(["Yard"]);
+  expect(await revision(page)).toBe(start);
+  // Not left busy: the next press is refused again, in the same words.
+  await refusal.evaluateAll((all) => {
+    for (const shown of all) shown.remove();
+  });
+  await page.keyboard.press("Control+d");
+  await expect(refusal).toBeVisible();
 });
 
 /**

@@ -29,7 +29,8 @@ chrome reads, one copy for every view of the page.
     for the item it was said about;
   - `picking` - the browser's file picker is open;
   - `duplicating` - a Duplicate is reading its pictures before it
-    writes: another one waits for it (a second Ctrl+D makes no copy);
+    writes: another one does nothing meanwhile (a second Ctrl+D makes
+    no copy);
   - `viewMode` - `"2d"` (the map) or `"3d"` (the 3D view shows);
   - `view3dLoad` - `"idle"`, `"loading"` (the 3D view's code, ground
     and WebGL are coming) or `"failed"` (the last load failed; the map

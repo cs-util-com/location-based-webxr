@@ -1705,7 +1705,7 @@ async function duplicateSelection(id: string): Promise<void> {
   const tour = manifestToWrite(store.getState().tourDocument);
   if (tour !== null && tourChildPlace(tour, id)?.story !== undefined) return;
   store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
-  const working = toast("Duplicating…", undefined, null, false);
+  const working = toast("Duplicating...", undefined, null, false);
   working.setAttribute("aria-busy", "true");
   try {
     if (id.startsWith(FOLDER_PREFIX)) {

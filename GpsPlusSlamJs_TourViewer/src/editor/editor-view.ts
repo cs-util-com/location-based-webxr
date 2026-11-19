@@ -129,7 +129,7 @@ export interface EditorViewState {
   /** The browser's file picker is open: a second click opens nothing. */
   readonly picking: boolean;
   /** A Duplicate is reading its pictures before it writes: another one
-   *  waits for it, so a second Ctrl+D makes no second copy. */
+   *  does nothing meanwhile, so a second Ctrl+D makes no second copy. */
   readonly duplicating: boolean;
   /** The view the page shows: the map, or the 3D view. */
   readonly viewMode: "2d" | "3d";

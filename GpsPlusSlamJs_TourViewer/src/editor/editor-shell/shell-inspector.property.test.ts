@@ -65,6 +65,22 @@ const severalLines = fc
 /** A pin text of one line or several. */
 const anyText = fc.oneof(fc.string({ maxLength: 40 }), severalLines);
 
+/** What a creator types: any graphemes of the whole of Unicode, with
+ *  decomposed accents among them (an "e" and its combining acute), so
+ *  the NFC the edit applies changes something to check. */
+const anyTyped = fc.oneof(
+  fc.string({ unit: "grapheme", maxLength: 20 }),
+  fc
+    .array(
+      fc.oneof(
+        fc.string({ unit: "grapheme", maxLength: 3 }),
+        fc.constantFrom("é", "Å", "ñ", "가"),
+      ),
+      { maxLength: 6 },
+    )
+    .map((parts) => parts.join("")),
+);
+
 let dock: { root: HTMLElement; head: HTMLElement; body: HTMLElement };
 
 beforeEach(() => {
@@ -94,7 +110,7 @@ function drawPin(stations: TourStation[]): HTMLTextAreaElement {
 describe("a pin text in the inspector", () => {
   it("is shown with its lines, typed back as typed, named on one line in the head", () => {
     fc.assert(
-      fc.property(anyText, anyText, (text, typed) => {
+      fc.property(anyText, anyTyped, (text, typed) => {
         const stations = withPin(text);
         const area = drawPin(stations);
         // Its lines, as a text area reads line ends: one character each.

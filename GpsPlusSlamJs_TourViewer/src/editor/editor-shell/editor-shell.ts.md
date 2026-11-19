@@ -443,7 +443,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   hardcoded white fields (buttons, the drop zone, inputs, the cover
   choices, the done dialog's host list) get the dark field colour.
 - **An editable name says so at rest**: the inspector head's `.ttlin`
-  (a story's name; a pin's text is typed in the body) shows a dotted
+  (a story's name, or a long text's title, `../long-text/long-text-panel.ts`;
+  a pin's text is typed in the body) shows a dotted
   underline and a pen at its right; while typing only the field's frame
   shows.
 - **Text, never markup:** names and lines from the tour are set as text
