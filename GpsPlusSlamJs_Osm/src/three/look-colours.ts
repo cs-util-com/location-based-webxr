@@ -205,7 +205,13 @@ export function applyLookColours(
         "#include <color_fragment>\ndiffuseColor.rgb *= vLookColour;",
       );
   };
+  // three's default key is the CURRENT hook's source, which after this
+  // patch is the patch itself; the earlier hook's source keeps its place.
+  const keyBefore =
+    previousKey === THREE.Material.prototype.customProgramCacheKey
+      ? () => previous.toString()
+      : () => previousKey.call(material);
   material.customProgramCacheKey = () =>
-    `${previousKey.call(material)}|look-colours-${looks}-${row}`;
+    `${keyBefore()}|look-colours-${looks}-${row}`;
   material.needsUpdate = true;
 }

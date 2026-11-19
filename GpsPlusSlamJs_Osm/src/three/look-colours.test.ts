@@ -190,6 +190,35 @@ describe("applyLookColours", () => {
     );
   });
 
+  // WHY: three's default cache key is the hook's source text; read after
+  // the hook was replaced it is this patch's own, the same for every
+  // material, so two materials with different earlier hooks would share
+  // one program and one of them would draw without its patch.
+  it("keys an earlier hook without a cache key of its own by its source", () => {
+    const keyAfter = (
+      hook: (s: THREE.WebGLProgramParametersWithUniforms) => void,
+    ) => {
+      const material = new THREE.MeshStandardMaterial();
+      material.onBeforeCompile = hook;
+      applyLookColours(
+        new THREE.BufferGeometry(),
+        material,
+        [new Uint8Array(3)],
+        "linear",
+        createLookMix(),
+      );
+      return material.customProgramCacheKey();
+    };
+    const first = keyAfter((s) => {
+      s.vertexShader += "\n// first";
+    });
+    const second = keyAfter((s) => {
+      s.vertexShader += "\n// second";
+    });
+    expect(first).not.toBe(second);
+    expect(first).toContain("// first");
+  });
+
   // WHY: a mismatch would draw garbage from a short buffer or skip looks;
   // the geometry's vertex count is the contract the builder kept.
   it("refuses no looks, more than four, and a buffer of the wrong length", () => {
