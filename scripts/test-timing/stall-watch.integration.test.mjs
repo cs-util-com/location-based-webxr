@@ -72,12 +72,15 @@ async function readPid(file, driver, signal) {
 const dirs = [];
 /** @type {number[]} */
 const leftovers = [];
-/** Every driver spawned, stopped after its test if still running.
+/** Every driver spawned, stopped after its test if still running: by
+ *  SIGINT, the path this suite proves forwards to the stage group. A
+ *  SIGKILL would skip that forwarding and leave the group running on
+ *  POSIX.
  *  @type {import('node:child_process').ChildProcess[]} */
 const drivers = [];
 afterEach(() => {
   for (const driver of drivers.splice(0)) {
-    if (driver.exitCode === null && driver.signalCode === null) driver.kill('SIGKILL');
+    if (driver.exitCode === null && driver.signalCode === null) driver.kill('SIGINT');
   }
   for (const pid of leftovers.splice(0)) {
     try {

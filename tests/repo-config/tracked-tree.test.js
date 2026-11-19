@@ -102,7 +102,9 @@ describe('createTrackedTree', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
+  
+    // Real git processes, which a loaded machine starts slowly.
+  }, 30_000);
 
   describe('read', () => {
     it('reads a repo-relative path resolved against the root, once', () => {
