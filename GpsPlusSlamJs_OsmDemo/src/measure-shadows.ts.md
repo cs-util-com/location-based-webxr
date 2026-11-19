@@ -6,7 +6,7 @@ Purpose: the building-shadow measurement (`?measure=shadows`), a throwaway runne
 
 - `shadowMeasureRequested(search)`: true for `measure=shadows`.
 - `startShadowMeasure({handles, hooks, slider, scheme, chooseScheme})`: mounts the panel, installs the two-map chunk rewrite and, once the city is quiet, the frame and sun-step hooks; returns `{ meshDrawn(mesh) }`, which `onMesh` calls for every full mesh.
-- `quantile(values, q)`: nearest-rank quantile.
+- `quantile(values, q)` (internal): nearest-rank quantile.
 
 ## What it logs
 

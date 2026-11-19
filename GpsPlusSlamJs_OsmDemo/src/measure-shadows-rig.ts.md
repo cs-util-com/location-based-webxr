@@ -6,7 +6,7 @@ Purpose: the building-shadow spike's controller (`?measure=shadows`), a throwawa
 
 - `SpikeConfig`, `SPIKE_DEFAULT`: every swept knob (map sizes, near fit `k`, re-centre fraction, settle time, split frames, `sunUpdateDeg`, cadence, the elevation ramp, the depth-fade start `f`).
 - `SpikeShadows`: `enable()`, `disable()` (removes the far light, so the shadow-free programs are today's), `configure(config)`, `forget()`, `bytes()`, `update(inputs)` returning which maps render in this frame and whether one waits for the next frame.
-- Pure helpers: `nearHalfWidth`, `rampStrength`, `snapCentre`, `casterDistance`.
+- Pure helpers: `nearHalfWidth` (exported); `rampStrength`, `snapCentre`, `casterDistance` (internal).
 
 ## Invariants
 

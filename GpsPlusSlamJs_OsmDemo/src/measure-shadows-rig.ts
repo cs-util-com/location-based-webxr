@@ -93,7 +93,7 @@ export function nearHalfWidth(distanceM: number, k: number): number {
 }
 
 /** 0 at and below the floor, 1 at and above full, linear between. */
-export function rampStrength(elevationDeg: number, c: SpikeConfig): number {
+function rampStrength(elevationDeg: number, c: SpikeConfig): number {
   if (elevationDeg <= c.floorDeg) return 0;
   if (elevationDeg >= c.fullDeg) return 1;
   return (elevationDeg - c.floorDeg) / (c.fullDeg - c.floorDeg);
@@ -109,7 +109,7 @@ function lightAxes(sunDir: THREE.Vector3): [THREE.Vector3, THREE.Vector3] {
 }
 
 /** The centre moved onto the light-space texel grid (depth unchanged). */
-export function snapCentre(
+function snapCentre(
   centre: THREE.Vector3,
   sunDir: THREE.Vector3,
   halfWidthM: number,
@@ -144,7 +144,7 @@ function boxDistance(
 }
 
 /** The farthest loaded caster toward the sun, capped by the longest shadow. */
-export function casterDistance(
+function casterDistance(
   centre: THREE.Vector3,
   sunDir: THREE.Vector3,
   halfWidthM: number,

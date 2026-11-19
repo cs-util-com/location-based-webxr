@@ -67,7 +67,7 @@ export function shadowMeasureRequested(search: string): boolean {
 
 // --- numbers ---------------------------------------------------------------
 
-export function quantile(values: readonly number[], q: number): number {
+function quantile(values: readonly number[], q: number): number {
   if (values.length === 0) return Number.NaN;
   const sorted = [...values].sort((a, b) => a - b);
   const rank = Math.min(
