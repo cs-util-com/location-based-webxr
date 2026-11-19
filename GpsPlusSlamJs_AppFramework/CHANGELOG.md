@@ -14,6 +14,32 @@
   `SkyAtmosphere.configure({ skyBalance })` sets the balance in the same
   call as the sun and the visibility, so a step that moves all three costs
   one rebuild and one bake; `setSkyBalance` delegates to it.
+- **Cached two-map sun shadows over a whole city**: a near map on the sun,
+  fitted to the camera distance and snapped to its texel grid, and a far
+  map over the loaded city on a second light of zero intensity; both
+  render only on a sun step, a caster change, a re-centre or a zoom step,
+  never per frame, and the strength ramps from 2 to 8 degrees of sun. The
+  `phone` tier (two 1024 maps) is provisional until a phone measurement
+  sets it.
+  - **`visualization/two-map-sun-shadow`** (deep import): the controller,
+    `createTwoMapSunShadow`.
+  - **`visualization/two-map-shadow`** (deep import): `withTwoMapShadow`,
+    the light-chunk rewrite that blends the two maps (moved here from the
+    look-dev page).
+  - **`visualization/shadow-fit`** (deep import): the geometry (half-width
+    steps, centre snap, ramp, caster distance, far planes, `CityBox`).
+  - **`visualization/two-map-shadow-rig`** (deep import): the tiers
+    (`SHADOW_TIERS`, `effectiveShadowTier`), the derived caster mode
+    (`castingMode`), layer flags, `casterGeneration` and `planMapRenders`.
+  - **`visualization/shadow-casting`** (deep import): `applyShadowCasting`
+    writes both shadow flags per mesh for a mode.
+- **`createSunShadow` gains a cached-map API** (`visualization`):
+  `update(now, { distanceM?, farM? })` overrides the distance and far
+  plane per render, `wouldUpdate(now)` asks without rendering, `release()`
+  frees the map, and `lightFollowsSun` keeps the light along the current
+  sun between renders. `sunShadowPose` takes `farM`. The depth bias is now
+  pinned to 0 (restored on dispose).
+
 - **The haze can fade toward a colour of the app's own**
   (`visualization/atmosphere`): `AtmosphereHaze.setVeil(colour)` sets a
   scene-linear veil colour the distance fades toward in place of the sky's

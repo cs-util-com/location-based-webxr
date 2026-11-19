@@ -179,6 +179,25 @@ describe("createGlobeCloudMarch: the shader's first compile", () => {
     await vi.waitFor(() => expect(march.ready).toBe(true));
   });
 
+  // Why this test matters: a lost context never links its programs; the
+  // wait must give up after 500 checks (about 5 s) and let the first draw
+  // decide, not poll every 10 ms for as long as the page is open.
+  it("gives up waiting after 500 checks", () => {
+    vi.useFakeTimers();
+    try {
+      const { march, renderer } = make();
+      compiling(renderer);
+      march.setBakes(fakeBakes());
+      vi.advanceTimersByTime(10 * 498);
+      expect(march.ready).toBe(false);
+      vi.advanceTimersByTime(10 * 3);
+      expect(march.ready).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // Why this test matters: a browser that fails the wait can still compile
   // on the first draw; the new clouds must not stay off for that.
   it("is ready after a failed compile too", async () => {

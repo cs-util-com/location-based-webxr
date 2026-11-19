@@ -14,15 +14,22 @@ uses it (M2, the S1 cost and look check); OsmDemo AR comes next (M3).
 - `enableSunShadows(renderer)`: `shadowMap.enabled`, PCF. Call it BEFORE
   the first frame that uses shadows. Switching mid-session recompiles every
   lit material, which is a visible hitch in AR (exploration §5.3).
-- `createSunShadow({ light, mapSize?, distanceM?, thresholds? })` returns a
+- `createSunShadow({ light, mapSize?, distanceM?, thresholds?, lightFollowsSun? })` returns a
   `SunShadow`. It makes `light` a caster with a manual map (`autoUpdate`
   off) of `mapSize`² texels (default 1024). `RangeError` for a map size that
   is not a positive integer.
 - `SunShadow`:
-  - `update(now: ShadowUpdateState)`: `true` when it moved the light to the
-    rig's pose, set the camera bounds and the normal bias, and set
-    `shadow.needsUpdate`; `false` otherwise. It keeps the last-rendered state
-    itself, as the rig requires.
+  - `update(now: ShadowUpdateState, fit?: SunShadowFit)`: `true` when it
+    moved the light to the rig's pose, set the camera bounds and the normal
+    bias, and set `shadow.needsUpdate`; `false` otherwise. It keeps the
+    last-rendered state itself, as the rig requires. `fit` overrides, for
+    this render only, the camera's distance (`distanceM`) and its far plane
+    (`farM`, which must exceed the distance); the two-map controller fits
+    both per map.
+  - `wouldUpdate(now)`: whether `update(now)` would render, without doing
+    anything (`false` after dispose).
+  - `release()`: disposes the map's render target and forgets the last
+    render, so the next `update` renders a fresh map (three reallocates it).
   - `renders`: how many maps it requested.
   - `dispose()`: restores the light as it was found (see below) and frees
     the map. Idempotent. `update` does nothing after it.
@@ -32,14 +39,22 @@ uses it (M2, the S1 cost and look check); OsmDemo AR comes next (M3).
 - **Cost.** A map render happens only on the rig's triggers: the sun moved
   more than 0.05°, the user left the inner quarter, or the casters changed.
   Every other frame only samples the existing map.
-- **Normal bias of about one ground texel** (2R / mapSize, plan §3.2).
+- **Normal bias of about one ground texel** (2R / mapSize), and a depth
+  `shadow.bias` of 0: a depth bias is in normalised depth, so it would grow
+  with the far plane. `dispose` restores the bias it found.
+- **`lightFollowsSun`**: by default the light sits at the last-rendered
+  pose between renders. With `lightFollowsSun: true` it sits along the
+  CURRENT sun at the last distance from the last centre, so the lighting
+  follows a sun that moved less than the render threshold; the shadow
+  matrix still updates only when the map renders.
 - **Bounds are metres.** The light's parent must carry no scale, and its
   target must be in the scene graph, or three will not update its matrix.
 - **The caller owns** which objects cast and receive, and the elevation
   floor. It checks `sunShadowActive` before calling `update`, because the
   pose throws for a sun at or below the horizon.
-- **Every `update` call puts the light back at the last-rendered pose**
-  (M2 review, finding 1). three builds the shadow camera from the light's
+- **Every `update` call puts the light back at the last-rendered pose**,
+  or with `lightFollowsSun` at the last-rendered centre and distance but
+  along the CURRENT sun. three builds the shadow camera from the light's
   position WHEN the map renders, which may be frames after `update`; the
   look-dev page re-aims the light at 1 km in every look change, and a
   pending render once came out empty from there. So a caller may move the
@@ -77,6 +92,9 @@ if (sunShadowActive(elevationDeg)) {
   step;
 - the light and camera at the rig's pose, and the bias;
 - the restore on dispose, and no updates after it;
+- the cached map: bias 0 and its restore, the per-call distance and far
+  plane, `lightFollowsSun` against the fixed pose, `wouldUpdate` and
+  `release`;
 - `enableSunShadows`.
 
 The look-dev smoke (`GpsPlusSlamJs_DesignSystem/3d/lookdev.smoke.spec.mjs` (removed; in git history))

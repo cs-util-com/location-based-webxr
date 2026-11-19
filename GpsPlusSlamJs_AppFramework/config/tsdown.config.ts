@@ -541,6 +541,13 @@ const entryFiles = [
   // sun light (M2) and its pure rig (M1).
   'src/visualization/sun-shadow.ts',
   'src/visualization/sun-shadow-rig.ts',
+  // The cached two-map city shadow: controller, shader rewrite, fit, rules
+  // and the shadow-flag writer, each deep-imported via `./visualization/*`.
+  'src/visualization/two-map-sun-shadow.ts',
+  'src/visualization/two-map-shadow.ts',
+  'src/visualization/shadow-fit.ts',
+  'src/visualization/two-map-shadow-rig.ts',
+  'src/visualization/shadow-casting.ts',
   // Shared canvas-text sprite helper (2026-07-17 wayfinding graduation).
   'src/visualization/text-sprite.ts',
   'src/visualization/three-dispose.ts',

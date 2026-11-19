@@ -29,7 +29,7 @@ import type {
  *  plays the voice) included. A tap on the overlay's open view stays a select - a pin's
  *  tap. */
 const OVERLAY_TAPS =
-  "button, a, input, select, textarea, summary, .sheet, .lt-sheet, .view-switch, .narration-box, #scene-panel, .model-card, .model-gestures";
+  "button, a, input, select, textarea, summary, .sheet, .lt-sheet, .view-switch, .narration-box, #scene-panel, .model-card, .model-gestures, .then-now-swipe-knob";
 
 /** Whether a tap on `target` (a `beforexrselect`'s) is the overlay's,
  *  not the world's. */

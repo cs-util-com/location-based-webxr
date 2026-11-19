@@ -210,6 +210,7 @@
         "src/checks/character-views-check.ts",
         "src/checks/item-lab.ts",
         "src/checks/lectern-check.ts",
+        "src/checks/then-now-check.ts",
         "src/checks/long-text-check.ts",
         "src/checks/narration-look-check.ts",
         "src/characters/maker-main.ts",

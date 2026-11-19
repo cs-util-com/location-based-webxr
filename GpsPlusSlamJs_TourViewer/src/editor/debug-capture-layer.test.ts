@@ -403,10 +403,8 @@ describe("the debug layer's lines", () => {
     ]) {
       expect(line.toLowerCase()).not.toContain("photo");
     }
-    expect(debugShownLine(1)).toBe("Debug data: 1 camera capture on the map.");
-    expect(debugShownLine(58)).toBe(
-      "Debug data: 58 camera captures on the map.",
-    );
+    expect(debugShownLine(1)).toBe("Debug data: 1 camera capture shown.");
+    expect(debugShownLine(58)).toBe("Debug data: 58 camera captures shown.");
     expect(debugDeclinedLine("no recording in this tour")).toBe(
       "No debug data shown: no recording in this tour.",
     );

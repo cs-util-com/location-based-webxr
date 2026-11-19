@@ -115,16 +115,20 @@ function assertSunDirection(v: Vec3): void {
  * ±R orthographic camera from depth 0 (the light) to D + R. Every point
  * within R of the centre is inside it, and so is the column toward the sun
  * up to the light (tall casters on the sun side). Property-tested, and
- * checked against three.js's own shadow matrix.
+ * checked against three.js's own shadow matrix. `farM` overrides the far
+ * plane (a cached map that fades out near its depth end, or one that must
+ * reach the square's corners); it must lie beyond D.
  *
  * @throws RangeError for a non-finite or non-unit direction, a sun at or
- *   below the horizon, a non-finite centre, or R ≤ 0 or D ≤ R.
+ *   below the horizon, a non-finite centre, R ≤ 0, D ≤ R, or a far plane
+ *   that is not finite or not beyond D.
  */
 export function sunShadowPose(input: {
   readonly sunDir: Vec3;
   readonly centre: Vec3;
   readonly halfWidthM?: number;
   readonly distanceM?: number;
+  readonly farM?: number;
 }): SunShadowPose {
   const R = input.halfWidthM ?? SUN_SHADOW.halfWidthM;
   const D = input.distanceM ?? R + SUN_SHADOW.marginM;
@@ -135,12 +139,18 @@ export function sunShadowPose(input: {
       `the shadow half width must be positive and the distance larger, got ${R}, ${D}`
     );
   }
+  const far = input.farM ?? D + R;
+  if (!(Number.isFinite(far) && far > D)) {
+    throw new RangeError(
+      `the far plane must be finite and beyond the distance, got ${far}`
+    );
+  }
   const [cx, cy, cz] = input.centre;
   const [sx, sy, sz] = input.sunDir;
   return {
     position: [cx + sx * D, cy + sy * D, cz + sz * D],
     target: [cx, cy, cz],
-    bounds: { left: -R, right: R, top: R, bottom: -R, near: 0, far: D + R },
+    bounds: { left: -R, right: R, top: R, bottom: -R, near: 0, far },
   };
 }
 

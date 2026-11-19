@@ -1412,8 +1412,11 @@ describe("drawInspector", () => {
     expect(ground()).not.toBe(button);
   });
 
-  // Why: a pin's words are its title; they are typed where the title is.
-  it("offers a pin's text in the head", () => {
+  // Why: a pin's words are typed in the body's text area whatever their
+  // lines, as a station's description is: a one-line field in the head
+  // would leave no way to give a pin a second line. The head names the
+  // text as text only, so there is one field of it, never two.
+  it("types a pin's text of one line in the body's text area labelled Text, the head showing it as text", () => {
     drawInspector(
       dock,
       buildInspector({
@@ -1439,8 +1442,17 @@ describe("drawInspector", () => {
       { folded: false, positionOpen: false },
       pictures,
     );
-    expect(input("title")?.value).toBe("Look up");
-    expect(input("title")?.getAttribute("aria-label")).toBe("Pin text");
+    const fieldsNamed = dock.root.querySelectorAll('[data-field="title"]');
+    expect(fieldsNamed).toHaveLength(1);
+    const area = fieldsNamed[0];
+    if (!(area instanceof HTMLTextAreaElement)) throw new Error("no area");
+    expect(dock.body.contains(area)).toBe(true);
+    expect(area.labels[0]?.textContent).toBe("Text");
+    expect(area.value).toBe("Look up");
+    expect(area.defaultValue).toBe(area.value);
+    // The head: the text in words, no field, no pen.
+    expect(dock.head.querySelector("input, textarea")).toBeNull();
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe("Look up");
   });
 
   // Why: a pin's text is a short text's caption, which the tour file caps
@@ -1473,9 +1485,8 @@ describe("drawInspector", () => {
       pictures,
     );
     const title = input("title");
-    const count = dock.body.querySelector("output.pad");
+    const count = dock.body.querySelector("#inspector-pin-count");
     expect(count?.textContent).toBe("7 / 40");
-    expect(count?.id).not.toBe("");
     expect(title?.getAttribute("aria-describedby")).toBe(count?.id);
     if (title === null || title === undefined) throw new Error("no field");
     title.value = "y".repeat(41);
@@ -1484,7 +1495,7 @@ describe("drawInspector", () => {
     expect(count?.hasAttribute("data-over")).toBe(true);
     // A station's name is not a pin's text: no count.
     draw("station:steps");
-    expect(dock.body.querySelector("output.pad")).toBeNull();
+    expect(dock.root.querySelector("#inspector-pin-count")).toBeNull();
   });
 
   // Why: lowering a radius under its items leaves them where they are;
@@ -1855,11 +1866,12 @@ describe("drawInspector", () => {
   });
 
   // Why: a text input drops line breaks, so a pin text of several lines
-  // (the 2D card's textarea writes them) read back as one glued line, and
-  // focusing and leaving the field wrote that flattened text as an edit.
-  // It is read-only here, and the dock says why in words (a title never
-  // shows on a touch screen, nor to a sighted keyboard user).
-  it("shows a pin text of several lines on one line, read-only, its reason in words, so leaving it writes nothing", () => {
+  // in the head's one-line field read back as one glued line, and leaving
+  // it wrote that flattened text as an edit. Such a text is typed in a
+  // labelled text area in the body instead, which keeps its lines, with
+  // the pin text's count tied to it; the head shows it as text only, so
+  // there is one field of the text, never two.
+  it("types a pin text of several lines in a text area that keeps its lines, counted, the head showing it as text", () => {
     const withPin = STATIONS.map((s) =>
       s.id === "steps"
         ? {
@@ -1888,21 +1900,33 @@ describe("drawInspector", () => {
       { folded: false, positionOpen: false },
       pictures,
     );
-    const title = input("title");
-    expect(title?.readOnly).toBe(true);
-    expect(title?.value).toBe("line one line two");
-    // Its value as shown is its default: nothing reads as typed.
-    expect(title?.defaultValue).toBe(title?.value);
-    expect(title?.title).toContain("2D map");
-    expect(dock.body.textContent).toContain(
-      "edit it in the pin's card on the 2D map",
+    // One field of the text, in the body, a text area labelled Text.
+    const fieldsNamed = dock.root.querySelectorAll('[data-field="title"]');
+    expect(fieldsNamed).toHaveLength(1);
+    const area = fieldsNamed[0];
+    if (!(area instanceof HTMLTextAreaElement)) throw new Error("no area");
+    expect(dock.body.contains(area)).toBe(true);
+    expect(area.readOnly).toBe(false);
+    expect(area.labels[0]?.textContent).toBe("Text");
+    // Its lines kept, as its default: nothing reads as typed.
+    expect(area.value).toBe("line one\nline two");
+    expect(area.defaultValue).toBe(area.value);
+    // The head names it as text, on one line.
+    expect(dock.head.querySelector("input")).toBeNull();
+    expect(dock.head.querySelector(".ttl")?.textContent).toBe(
+      "line one line two",
     );
-    // Read-only, it is not typed here: no count of its text.
-    expect(dock.body.querySelector("#inspector-pin-count")).toBeNull();
-    // A one-line text stays a field to type in, with no such line.
-    draw("station:steps");
-    expect(input("title")?.readOnly).toBe(false);
-    expect(dock.body.textContent).not.toContain("2D map");
+    // Counted by the format's count, against the pin text's cap, and
+    // marked past it as it is typed.
+    const count = dock.body.querySelector("#inspector-pin-count");
+    expect(area.getAttribute("aria-describedby")).toBe("inspector-pin-count");
+    expect(count?.textContent).toBe("17 / 40");
+    area.value = "a\n".repeat(30);
+    area.dispatchEvent(new Event("input"));
+    expect(count?.textContent).toBe("59 / 40");
+    expect(count?.hasAttribute("data-over")).toBe(true);
+    // No word of another page to edit it on.
+    expect(dock.root.textContent).not.toContain("2D map");
   });
 
   // Why: the 3D inspector is the only place that edits a station's name

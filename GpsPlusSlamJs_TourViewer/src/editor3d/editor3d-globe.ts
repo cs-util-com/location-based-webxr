@@ -112,6 +112,7 @@ import {
 } from "../editor/editor-model.js";
 import { tourCentre, tourReach } from "../editor/tour-origin.js";
 import type { GlobeSwitch } from "../editor/globe-switch.js";
+import type { DebugLayerState } from "../editor/debug-layer-slice.js";
 import type {
   Editor3dDeps,
   Editor3dStats,
@@ -170,6 +171,10 @@ import {
   emptyTourView,
 } from "./empty-tour-view.js";
 import { createArrivalMarks } from "./globe-approach-marks.js";
+import {
+  createGlobeDebugLayer,
+  type GlobeDebugCapture,
+} from "./globe-debug-layer.js";
 import { createApproachRun, type ApproachRun } from "./globe-approach-run.js";
 import { GLOBE_GESTURES } from "./globe-gestures.js";
 import { createGlobeLayer } from "./globe-layer.js";
@@ -796,22 +801,83 @@ export async function openGlobeEditor(
     /** When a walk that came after the stations popped in began drawing;
      *  null when the arrival draws it (or there is none). */
     let lateWalkAt: number | null = null;
-    const walkPoints = (
-      captures: NonNullable<WalkCaptures>,
-    ): THREE.Vector3[] => {
+    /** A capture's place in the tour's frame, null for one without a
+     *  finite place. As a station is drawn: its height over the ellipsoid
+     *  less N. */
+    const capturePoint = (c: {
+      readonly lat: number;
+      readonly lon: number;
+      readonly alt: number;
+    }): THREE.Vector3 | null => {
+      if (![c.lat, c.lon, c.alt].every(Number.isFinite)) return null;
       const ecef = new THREE.Vector3();
-      return captures.flatMap((c) => {
-        if (![c.lat, c.lon, c.alt].every(Number.isFinite)) return [];
-        // As a station is drawn: its height over the ellipsoid less N.
-        ellipsoid.getCartographicToPosition(
-          c.lat * DEG,
-          c.lon * DEG,
-          c.alt - undulationAt(c),
-          ecef,
-        );
-        return [ecef.clone().applyMatrix4(tourFromEcef)];
-      });
+      ellipsoid.getCartographicToPosition(
+        c.lat * DEG,
+        c.lon * DEG,
+        c.alt - undulationAt(c),
+        ecef,
+      );
+      return ecef.applyMatrix4(tourFromEcef);
     };
+    const walkPoints = (captures: NonNullable<WalkCaptures>): THREE.Vector3[] =>
+      captures.flatMap((c) => {
+        const p = capturePoint(c);
+        return p === null ? [] : [p];
+      });
+
+    // The debug layer (`globe-debug-layer.ts`): the captures the page's
+    // debug layer drew (the store's `debugLayer`), their thumbnails from
+    // the page's side table, and a line through them for debug data added
+    // beside the tour (the tour's own walk is the marks').
+    const debugLayer = createGlobeDebugLayer(tourFrame);
+    undo.push(() => {
+      debugLayer.dispose();
+    });
+    debugLayer.resize(canvas.clientWidth, canvas.clientHeight);
+    let debugDrawn: DebugLayerState["captures"] | undefined;
+    let debugSource: DebugLayerState["source"] | undefined;
+    let debugThumbsSeen = -1;
+    /** The debug layer's part of a frame at `now`: the store's captures
+     *  drawn again when they changed, new thumbnails copied in, the
+     *  switch, and the atlas's upload. */
+    function debugFrame(now: number): void {
+      const slice = deps.store.getState().debugLayer;
+      const captures = slice?.captures ?? null;
+      const source = slice?.source ?? null;
+      if (captures !== debugDrawn || source !== debugSource) {
+        debugDrawn = captures;
+        debugSource = source;
+        debugThumbsSeen = -1;
+        debugLayer.set(
+          captures?.flatMap((c): GlobeDebugCapture[] => {
+            const at = capturePoint(c);
+            return at === null ? [] : [{ image: c.image, at }];
+          }) ?? null,
+          source === "added",
+        );
+      }
+      debugLayer.show(slice?.shown === true);
+      if (captures !== null) debugThumbsIn(captures);
+      debugLayer.frame(now);
+    }
+    /** The page's thumbnails not in the atlas yet, copied in once the
+     *  table changed. */
+    function debugThumbsIn(captures: NonNullable<DebugLayerState["captures"]>) {
+      const thumbs = deps.debugThumbs;
+      if (thumbs === undefined || thumbs.version() === debugThumbsSeen) return;
+      debugThumbsSeen = thumbs.version();
+      for (const c of captures) {
+        const picture = debugLayer.hasThumb(c.image)
+          ? undefined
+          : thumbs.get(c.image);
+        if (picture === undefined) continue;
+        debugLayer.thumb(c.image, {
+          source: picture,
+          width: picture.naturalWidth,
+          height: picture.naturalHeight,
+        });
+      }
+    }
 
     const resizeBillboards = () => {
       const sized = billboardView();
@@ -824,6 +890,7 @@ export async function openGlobeEditor(
     const resize = new ResizeObserver(() => {
       viewportPx = Math.max(1, canvasHeight());
       marks.resize(canvas.clientWidth, canvas.clientHeight);
+      debugLayer.resize(canvas.clientWidth, canvas.clientHeight);
       resizeBillboards();
     });
     resize.observe(deps.container);
@@ -1181,6 +1248,7 @@ export async function openGlobeEditor(
       );
       const held = unadmitted();
       const arriving = approachFrame(now, altitudeM);
+      debugFrame(now);
       const notShown = [
         ...hidden.stations,
         ...(held ?? []),
@@ -1514,6 +1582,29 @@ export async function openGlobeEditor(
       return [at.x, at.y, at.z];
     };
 
+    /** The pose changed by `change` round the point the line of sight
+     *  meets, at the same distance from it, so that point stays at the
+     *  screen's centre. Held in ECEF across the change: placing the pose
+     *  moves the world's frame with the camera. */
+    const placePoseRoundLook = (change: {
+      headingDeg?: number;
+      pitchDeg?: number;
+    }) => {
+      const pivot = new THREE.Vector3(...lookPoint());
+      const distance = camera.position.distanceTo(pivot);
+      followFrame();
+      pivot.applyMatrix4(ecefFromWorld);
+      placePose(change);
+      followFrame();
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+        camera.quaternion,
+      );
+      camera.position
+        .copy(pivot.applyMatrix4(worldFromEcef))
+        .addScaledVector(forward, -distance);
+      camera.updateMatrixWorld();
+    };
+
     let firstTick: () => void = () => undefined;
     let notShown: (error: unknown) => void = () => undefined;
     const ready = new Promise<void>((resolve, reject) => {
@@ -1580,21 +1671,8 @@ export async function openGlobeEditor(
         dust.reset();
       },
       setHeading(deg) {
-        // Round the point the line of sight meets, held in ECEF: placing
-        // the pose moves the world's frame with the camera.
-        const pivot = new THREE.Vector3(...lookPoint());
-        const distance = camera.position.distanceTo(pivot);
-        followFrame();
-        pivot.applyMatrix4(ecefFromWorld);
-        placePose({ headingDeg: deg });
-        followFrame();
-        const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
-          camera.quaternion,
-        );
-        camera.position
-          .copy(pivot.applyMatrix4(worldFromEcef))
-          .addScaledVector(forward, -distance);
-        camera.updateMatrixWorld();
+        // Round the point the line of sight meets.
+        placePoseRoundLook({ headingDeg: deg });
         // The streaks start again from where the camera now stands:
         // `placePose` restarted them, and nothing samples them before the
         // next frame.
@@ -1622,7 +1700,10 @@ export async function openGlobeEditor(
       setTop(on) {
         if (on === top) return;
         top = on;
-        placePose({
+        // Tilted round the point the line of sight meets, as a turn is
+        // (`setHeading`): a tilt in place carried what it looked at, the
+        // selection too, off the screen.
+        placePoseRoundLook({
           pitchDeg: on ? TOP_PITCH_DEG : GLOBE_EDITOR_LOOK.aimPitchDeg,
         });
       },
@@ -1756,11 +1837,12 @@ export async function openGlobeEditor(
           ...layer.stats(),
           codePx: layer.codeCorners().map((corners) => {
             const ndc = corners.map((c) => c.clone().project(camera));
-            // Not measured: any corner outside the view volume, behind the
+            // Not measured: any corner outside the depth range, behind the
             // camera, nearer than the near plane or past the far one
             // (`project()` mirrors a point behind the camera through it,
             // which would measure a size). A code that straddles the near
-            // plane is partly drawn and still reads 0.
+            // plane is partly drawn and still reads 0; a code beside the
+            // view is still measured.
             if (ndc.some((v) => !(v.z >= -1 && v.z <= 1))) return 0;
             const square = ndc.map(
               (v) =>
@@ -1830,6 +1912,7 @@ export async function openGlobeEditor(
             air: air?.state() ?? null,
             approach: approach?.stats() ?? approachEnded,
             marks: marks.stats(),
+            debug: debugLayer.stats(),
             // The speed streaks as last stepped, and the camera's distance
             // from the Earth's centre against the fit (the start's check).
             dust: dust.state(),

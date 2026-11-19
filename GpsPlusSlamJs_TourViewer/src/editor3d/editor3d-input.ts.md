@@ -97,10 +97,9 @@ move the camera only, and a second finger during a drag cancels it.
   handle locks them BEFORE the gesture reads the pointer: the lock (the
   globe's controls' `lease(true)`) stops the orbit's coast, so the camera
   stands still from the press on (a press that finds nothing to grab
-  unlocks again). It stops no flight, and needs not: during the opening
-  approach the globe view holds the stations back (`holdsStations`), so no
-  gizmo is drawn, and a press on the canvas takes the camera from the
-  approach (`approach.takeOver`, `editor3d-globe.ts`).
+  unlocks again). It stops no flight, and needs not: a press on the
+  canvas ends the opening approach in the same event (`approach.takeOver`,
+  `editor3d-globe.ts`), so no flight outlives the press.
 - Two fingers are the camera controls' own (the globe view's, which
   pinch, twist and tilt as in the globe lab): a second finger cancels a
   drag and blocks new presses until every finger is up, and the fingers

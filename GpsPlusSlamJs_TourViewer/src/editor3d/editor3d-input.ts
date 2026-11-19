@@ -290,9 +290,9 @@ export function createSceneInput(input: {
     if (handle === null) return;
     // Before the camera controls read this press (the listener captures),
     // and before the gesture reads the pointer: the lock stops a coast, so
-    // the camera stands still from here. (No flight runs here: during the
-    // opening approach no gizmo is drawn, and the press takes the camera
-    // from it.)
+    // the camera stands still from here. (A press on the canvas ends the
+    // opening approach in the same event, `approach.takeOver`, so no
+    // flight outlives the press.)
     scene.lockCamera(true);
     const gesture = startGesture(handle, target, at, scene.world);
     if (gesture === null) {

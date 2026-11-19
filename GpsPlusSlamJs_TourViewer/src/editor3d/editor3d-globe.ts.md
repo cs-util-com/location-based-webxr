@@ -182,8 +182,12 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   24-bit buffer.
 - `flyTo` and `frame` place an aimed view (`aimView`) at once; there is no
   flight yet.
-- `setTop`, `northUp`, `setTilt` re-place the current pose with one field
+- `northUp` and `setTilt` re-place the current pose with one field
   changed.
+- `setTop(on)` (T) pitches to look straight down (-89 deg), or back to
+  the aimed pitch, round the point the line of sight meets, keeping the
+  distance to it, as `setHeading` turns: what the view looked at stays
+  on the screen.
 - `setHeading(deg)` (the page's checks) turns the camera to `deg` round
   the point its line of sight meets (`stats().look`: the ground ahead,
   else the tour's centre), keeping its distance to that point and its
@@ -218,10 +222,11 @@ surfaceShadow }`, or null where the ground sky cannot draw).
 - `stats().look` is where the line of sight meets the sampled ground
   (else the tour's centre), and `stats().codePx` each code's drawn side on
   the canvas (its square's corners projected by the camera of the
-  frame; 0 when it cannot be measured, with any corner outside the view
-  volume: behind the camera, nearer than the near plane or past the far
+  frame; 0 when it cannot be measured, with any corner outside the depth
+  range: behind the camera, nearer than the near plane or past the far
   one, where `project()` would mirror it into a size; a code straddling
-  the near plane is partly drawn and still reads 0), both in the world, which follows the camera: compare them with
+  the near plane is partly drawn and still reads 0, while a code beside
+  the view is still measured), both in the world, which follows the camera: compare them with
   `stats().camera` and `pointOf` read in the same call, never across two.
   `stats().target` stays the tour's centre in the tour's frame.
 - `centre()` is the place UNDER the camera, not a look-at target (eye mode
@@ -299,6 +304,20 @@ The view disposes the run once the arrival is over.
   when it came (`walkDrawShare`), not whole in one frame. With no
   approach at all it is drawn whole. It follows the walk layer chip
   (`showWalk`), not the page's debug switch.
+- **The debug layer** (`globe-debug-layer.ts`, under the tour's frame):
+  each frame `debugFrame` reads the store's `debugLayer` slice and
+  draws its captures anew when their array or their source changed (each
+  placed as the walk is, `capturePoint`), with a line through them only
+  for debug data added beside the tour (`source === "added"`; the tour's
+  own walk is the marks' line above). It shows or hides them by the
+  slice's `shown`, copies new thumbnails from `deps.debugThumbs` into
+  its atlas when the table's version changed, and uploads the atlas at
+  most every 250 ms. `stats().globe.debug` carries its figures; the
+  view's dispose frees it. The layer is drawn in the interface pass
+  (`"debug-layer"` in `GLOBE_INTERFACE.names`), so the clouds' shadow
+  and the haze never darken it. A view opened late copies every
+  thumbnail the page already decoded in one frame (not measured for a
+  long walk; to cap per frame if it hitches).
 - The flight's clock starts at its first drawn frame (the run's first
   `drive` in the frame's camera step), not at mount: the box's fit and the first tiles
   can take a while, and a flight timed from mount would skip its start.
@@ -395,6 +414,9 @@ see-through), null without buildings.
 
 ## Tests
 
+- `editor3d-globe.test.ts` also covers the debug layer's wiring: a new
+  drawing drawn again, the line only for added debug data, the switch,
+  a clear, and thumbnails decoded before the view opened.
 - `editor3d-globe.test.ts` (jsdom, the wiring): the view core, the
   controls, the relief, the stations layer and the input are fakes; the
   fake view places its camera through the globe's own `viewPoseEcef`, and

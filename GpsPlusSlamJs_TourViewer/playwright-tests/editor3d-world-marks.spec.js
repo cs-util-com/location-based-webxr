@@ -2,13 +2,11 @@
 import { expect, test } from "@playwright/test";
 
 import {
-  GLOBE_VIEW,
   SQUARE_GROUND_M,
   afterFrames,
   answerHosts,
+  gotoEditor,
   keepRejections,
-  noApproach,
-  noClouds,
   rejections,
   view3d,
 } from "./editor3d-fixture.js";
@@ -22,8 +20,8 @@ import {
  * front of it: the canvas's pixels at the icon's point are read and must be
  * the icon's colours (the pick alone cannot say so, it never meets the
  * relief). Second, that from the station's own camera over uneven ground a
- * press reaches it and selects the sound, on both views (the globe is the
- * editor's default).
+ * press reaches it and selects the sound, on the globe, the editor's 3D
+ * view.
  *
  * A free character had no drawing in the editor at all. He stands now in
  * the visitor's character look, turning toward the camera, so the camera
@@ -42,23 +40,16 @@ const SOUND = "market-sound";
 const STATION = "gate";
 
 /**
- * The editor at `link` with the sample tour open in 3D, on the relief
- * `groundAt` gives.
+ * The editor with the sample tour open in 3D, on the relief `groundAt`
+ * gives (opened straight at the tour, without the clouds: `gotoEditor`).
  * @param {import("@playwright/test").Page} page
- * @param {string} link
  * @param {(col: number, row: number) => number} [groundAt]
  */
-async function openSample3d(page, link, groundAt) {
+async function openSample3d(page, groundAt) {
   await page.setViewportSize({ width: 1280, height: 800 });
   await answerHosts(page, groundAt === undefined ? {} : { groundAt });
   await keepRejections(page);
-  if (link === GLOBE_VIEW) {
-    await noApproach(page);
-    // Not about the clouds: without them the globe draws several times
-    // faster in a software renderer (`noClouds`).
-    await noClouds(page);
-  }
-  await page.goto(link);
+  await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   await page.locator("#sample-btn").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
@@ -68,14 +59,13 @@ async function openSample3d(page, link, groundAt) {
 }
 
 /**
- * Select station `id` from the tree and wait for the flight to it.
+ * Select station `id` from the tree (the view places the camera at once).
  * @param {import("@playwright/test").Page} page
  * @param {string} id
  */
 async function selectStation(page, id) {
   await page.locator(`#tree-body [data-select="station:${id}"]`).click();
   await expect.poll(() => selected(page)).toBe(`station:${id}`);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -106,66 +96,64 @@ function iconPoint(page) {
   }, SOUND);
 }
 
-for (const [name, link] of [["the globe", GLOBE_VIEW]]) {
-  test(`from the station's camera over uneven ground a click on an ambient sound's icon selects the sound, on ${name}`, async ({
-    page,
-  }) => {
-    test.setTimeout(240_000);
-    await openSample3d(page, link, hills);
-    await selectStation(page, STATION);
-    // The relief has reached the station: the ground drawn under it has
-    // loaded and holds still between two reads (the hills give each
-    // station its own height, so there is no one value to wait for).
-    /** @type {number | null} */
-    let lastGroundM = null;
-    await expect
-      .poll(async () => {
-        const at = (await view3d(page))?.ground?.find(
-          (/** @type {{ id: string }} */ g) => g.id === STATION,
-        );
-        const groundM = at?.groundM ?? null;
-        const settled =
-          groundM !== null &&
-          lastGroundM !== null &&
-          Math.abs(groundM - lastGroundM) < 0.01;
-        lastGroundM = groundM;
-        return settled;
-      })
-      .toBe(true);
+test(`from the station's camera over uneven ground a click on an ambient sound's icon selects the sound`, async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await openSample3d(page, hills);
+  await selectStation(page, STATION);
+  // The relief has reached the station: the ground drawn under it has
+  // loaded and holds still between two reads (the hills give each
+  // station its own height, so there is no one value to wait for).
+  /** @type {number | null} */
+  let lastGroundM = null;
+  await expect
+    .poll(async () => {
+      const at = (await view3d(page))?.ground?.find(
+        (/** @type {{ id: string }} */ g) => g.id === STATION,
+      );
+      const groundM = at?.groundM ?? null;
+      const settled =
+        groundM !== null &&
+        lastGroundM !== null &&
+        Math.abs(groundM - lastGroundM) < 0.01;
+      lastGroundM = groundM;
+      return settled;
+    })
+    .toBe(true);
 
-    // The station's camera frames its view in the middle of the canvas,
-    // which covers only the view between the docks; the sound stands at
-    // the frame's left edge, so the details are folded to give the view
-    // its width (the picking, not the docks, is what this test is about).
-    const fold = page.locator('#inspector-head [data-act="fold"]');
-    if ((await fold.getAttribute("aria-label")) !== "Show the details") {
-      await fold.click();
-    }
-    await expect(fold).toHaveAttribute("aria-label", "Show the details");
-    await afterFrames(page, 3);
-    const at = await iconPoint(page);
-    expect(at, "no point of the canvas reaches the sound").not.toBeNull();
-    const canvas = await page.locator("#view3d canvas").boundingBox();
-    if (canvas === null || at === null) throw new Error("no canvas");
-    expect(at[0]).toBeGreaterThan(0);
-    expect(at[0]).toBeLessThan(canvas.width);
-    expect(at[1]).toBeGreaterThan(0);
-    expect(at[1]).toBeLessThan(canvas.height);
+  // The station's camera frames its view in the middle of the canvas,
+  // which covers only the view between the docks; the sound stands at
+  // the frame's left edge, so the details are folded to give the view
+  // its width (the picking, not the docks, is what this test is about).
+  const fold = page.locator('#inspector-head [data-act="fold"]');
+  if ((await fold.getAttribute("aria-label")) !== "Show the details") {
+    await fold.click();
+  }
+  await expect(fold).toHaveAttribute("aria-label", "Show the details");
+  await afterFrames(page, 3);
+  const at = await iconPoint(page);
+  expect(at, "no point of the canvas reaches the sound").not.toBeNull();
+  const canvas = await page.locator("#view3d canvas").boundingBox();
+  if (canvas === null || at === null) throw new Error("no canvas");
+  expect(at[0]).toBeGreaterThan(0);
+  expect(at[0]).toBeLessThan(canvas.width);
+  expect(at[1]).toBeGreaterThan(0);
+  expect(at[1]).toBeLessThan(canvas.height);
 
-    // Below its foot, on the ground inside its 20 m range, a press does
-    // not reach the sound: its glow and its range ring take no ray.
-    const ground = await page.evaluate((id) => {
-      const hook = /** @type {any} */ (window).__tourEditor;
-      const foot = hook.view3dScreenOf(id);
-      return foot === null ? null : hook.view3dUnder(foot[0], foot[1] + 40);
-    }, SOUND);
-    expect(ground?.pick ?? null).not.toBe(SOUND);
+  // Below its foot, on the ground inside its 20 m range, a press does
+  // not reach the sound: its glow and its range ring take no ray.
+  const ground = await page.evaluate((id) => {
+    const hook = /** @type {any} */ (window).__tourEditor;
+    const foot = hook.view3dScreenOf(id);
+    return foot === null ? null : hook.view3dUnder(foot[0], foot[1] + 40);
+  }, SOUND);
+  expect(ground?.pick ?? null).not.toBe(SOUND);
 
-    await page.mouse.click(canvas.x + at[0], canvas.y + at[1]);
-    await expect.poll(() => selected(page)).toBe(SOUND);
-    expect(await rejections(page)).toEqual([]);
-  });
-}
+  await page.mouse.click(canvas.x + at[0], canvas.y + at[1]);
+  await expect.poll(() => selected(page)).toBe(SOUND);
+  expect(await rejections(page)).toEqual([]);
+});
 
 /** The top view's distance for the check (m). From straight above the
  *  icon lies flat facing up, at its lift and half its size over its foot:
@@ -276,15 +264,10 @@ test("an ambient sound's icon is drawn and seen from above over relief standing 
   page,
 }) => {
   test.setTimeout(240_000);
-  await openSample3d(
-    page,
-    GLOBE_VIEW,
-    () => SQUARE_GROUND_M + RELIEF_ABOVE_STATIONS_M,
-  );
+  await openSample3d(page, () => SQUARE_GROUND_M + RELIEF_ABOVE_STATIONS_M);
   await selectStation(page, STATION);
   await page.keyboard.press("t");
   await expect.poll(async () => (await view3d(page))?.top).toBe(true);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   await page.evaluate(
     (m) => /** @type {any} */ (window).__tourEditor.view3dDistance(m),
     TOP_DISTANCE_M,
@@ -374,7 +357,7 @@ test("a free character shows on the screen from four camera headings round his s
   page,
 }, testInfo) => {
   test.setTimeout(180_000);
-  await openSample3d(page, GLOBE_VIEW);
+  await openSample3d(page);
   await selectStation(page, "column");
   /** @type {Record<string, number>} */
   const cells = {};

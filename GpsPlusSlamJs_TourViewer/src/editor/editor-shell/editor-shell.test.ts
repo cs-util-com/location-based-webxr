@@ -33,7 +33,11 @@ import { createTourViewerStore } from "../../tour-viewer-session.js";
 import { editorViewActions, editorViewReducer } from "../editor-view.js";
 import type { DockHost, mountDockHost } from "./dock-host.js";
 import type { DockPanelId } from "./dock-layout.js";
-import { createEditorShell, type EditorShellDeps } from "./editor-shell.js";
+import {
+  createEditorShell,
+  type EditorShellDeps,
+  type TypedEditOutcome,
+} from "./editor-shell.js";
 import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
 import {
   stationContent,
@@ -160,7 +164,7 @@ function setUp() {
     addToStory: vi.fn(),
     addStepToStory: vi.fn(),
     addCharacter: vi.fn(),
-    storyTitle: vi.fn(() => "written" as const),
+    storyTitle: vi.fn((): TypedEditOutcome => "written"),
     storyAdvance: vi.fn(() => "written" as const),
     storyStep: vi.fn(() => "written" as const),
     narration: vi.fn(() =>
@@ -724,28 +728,6 @@ describe("the inspector's typed fields", () => {
     }
   });
 
-  // Why: Enter commits a field and leaving it commits it again. A
-  // refused text stays in the field, so the second commit sent the same
-  // refused text a second time and the creator read the same refusal
-  // twice. A refusal is said once; a changed text is sent again.
-  it("send a refused text once when Enter is followed by leaving the field", () => {
-    const { select, edits, shell } = setUp();
-    edits.text.mockReturnValue("refused");
-    select("pb");
-    const input = typeInto("title", "A pin text the page refuses");
-    input.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
-    );
-    input.blur();
-    expect(edits.text).toHaveBeenCalledTimes(1);
-    expect(input.value).toBe("A pin text the page refuses");
-    input.focus();
-    input.value = "A shorter pin text";
-    input.blur();
-    expect(edits.text).toHaveBeenCalledTimes(2);
-    shell.hide();
-  });
-
   it("show the tour's value again when the page writes the edit", () => {
     const { select, edits, shell } = setUp();
     edits.block.mockReturnValue("written");
@@ -949,6 +931,25 @@ describe("the inspector's Escape and its text of several lines", () => {
     select("station:b");
     shell.hide();
     expect(edits.text).not.toHaveBeenCalled();
+  });
+
+  // Why: a pin text of several lines is typed in a text area, where Enter
+  // starts a new line rather than committing; leaving it writes the text,
+  // its lines kept, as that pin's text - the page's one pin text edit,
+  // whose rules (its cap, its refusal) are the page's.
+  it("writes a pin text of several lines as typed, its lines kept, when the text area is left", () => {
+    const { select, edits, shell } = setUp();
+    select("pa");
+    const area = typeInto("title", "The gate\nnorth side");
+    expect(area).toBeInstanceOf(HTMLTextAreaElement);
+    area.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    expect(edits.text).not.toHaveBeenCalled();
+    area.blur();
+    expect(edits.text).toHaveBeenCalledTimes(1);
+    expect(edits.text).toHaveBeenCalledWith("pa", "The gate\nnorth side");
+    shell.hide();
   });
 });
 
@@ -1655,6 +1656,41 @@ describe("a story's folder in the tree", () => {
       mode: "auto",
       afterS: 5,
     });
+    shell.hide();
+  });
+
+  // Why: Enter commits a one-line field and leaving it commits it again.
+  // A refused text stays in the field, so the second commit sent the same
+  // refused text a second time and the creator read the same refusal
+  // twice. A refusal is said once; a changed text is sent again. A story's
+  // name is such a field (a pin's text is typed in a text area, where
+  // Enter starts a new line and commits nothing).
+  it("sends a refused story name once when Enter is followed by leaving the field", () => {
+    const { edits, select, shell } = withStory();
+    edits.storyTitle.mockReturnValue("refused");
+    select("story:legend");
+    const title = document.querySelector<HTMLInputElement>(
+      '#shell-inspector [data-field="story-title"]',
+    );
+    if (title === null) throw new Error("no title");
+    title.focus();
+    title.value = "A name the page refuses";
+    title.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    // Enter alone committed it, so the blur below meets the guard.
+    expect(edits.storyTitle).toHaveBeenCalledTimes(1);
+    title.blur();
+    expect(edits.storyTitle).toHaveBeenCalledTimes(1);
+    expect(title.value).toBe("A name the page refuses");
+    title.focus();
+    title.value = "A shorter name";
+    title.blur();
+    expect(edits.storyTitle).toHaveBeenCalledTimes(2);
+    expect(edits.storyTitle).toHaveBeenLastCalledWith(
+      "legend",
+      "A shorter name",
+    );
     shell.hide();
   });
 

@@ -335,6 +335,18 @@ const EXEMPT = new Map([
     'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-r4-3-character-throws/index.html',
     'design prototype in the inspiration gallery, wired to nothing',
   ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-r5-1-warmer/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-r5-2-pillar/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
+  [
+    'GpsPlusSlamJs_TourViewer/public/prototypes/quiz-r5-3-character-guides/index.html',
+    'design prototype in the inspiration gallery, wired to nothing',
+  ],
 ]);
 
 const RANGE_IN_HTML = /<input\b[^>]*\btype\s*=\s*["']?range\b/is;

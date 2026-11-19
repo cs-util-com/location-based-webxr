@@ -649,6 +649,171 @@ describe("viewpointWorld", () => {
     part.dispose();
   });
 
+  it("lets a lined-up visitor swipe a line across then and now", async () => {
+    // Why: Swipe shows the whole old picture on one side of the visitor's
+    // line and today on the other, so the plane must be fully shown (not
+    // faded) and its shader cut exactly where the knob was dragged; the
+    // fade-in is Fade's alone, and nothing is cut once the visitor leaves.
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { part, station } = await placed(
+      picture("thenNow"),
+      envOf("play", host),
+    );
+    const plane = named<Mesh<BufferGeometry, MeshBasicMaterial>>(
+      part.object,
+      "picture-viewpoint-plane",
+    );
+    const shader = (): { on: boolean; split: number } =>
+      (
+        plane.material.userData["thenNowSwipe"] as () => {
+          on: boolean;
+          split: number;
+        }
+      )();
+    const button = (label: string): HTMLButtonElement | undefined =>
+      [...host.querySelectorAll("button")].find((b) => b.textContent === label);
+    tick(part, station, 0, [0, 1.6, 0]);
+    expect(shader()).toEqual({ on: false, split: 0.5 });
+    button("Swipe")?.click();
+    tick(part, station, THEN_NOW_TIMING.introS / 2, [0, 1.6, 0]);
+    expect(plane.material.opacity).toBeCloseTo(1, 6);
+    expect(shader()).toEqual({ on: true, split: 0.5 });
+    const knob = host.querySelector<HTMLElement>("[role=slider]");
+    const layer = host.querySelector<HTMLElement>(".then-now-swipe");
+    if (knob === null || layer === null) throw new Error("no swipe line");
+    layer.getBoundingClientRect = () =>
+      ({ left: 0, width: 400, top: 0, height: 800 }) as DOMRect;
+    knob.setPointerCapture = () => undefined;
+    knob.hasPointerCapture = () => false;
+    const at = (type: string, clientX: number): void => {
+      knob.dispatchEvent(new PointerEvent(type, { pointerId: 7, clientX }));
+    };
+    at("pointerdown", 200);
+    at("pointermove", 120);
+    at("pointerup", 120);
+    tick(part, station, THEN_NOW_TIMING.introS, [0, 1.6, 0]);
+    expect(shader()).toEqual({ on: true, split: 0.3 });
+    // Back to Fade: the switch finished the fade-in, nothing is cut.
+    button("Fade")?.click();
+    tick(part, station, THEN_NOW_TIMING.introS + 1, [0, 1.6, 0]);
+    expect(shader().on).toBe(false);
+    expect(plane.material.opacity).toBeCloseTo(THEN_NOW_TIMING.introTo, 6);
+    // Swiping again and walking off: the slider goes, the cut with it,
+    // and the line is where the visitor left it when they come back.
+    button("Swipe")?.click();
+    tick(part, station, 20, [0, 1.6, -8]);
+    expect(host.querySelector("[role=slider]")).toBeNull();
+    expect(shader().on).toBe(false);
+    tick(part, station, 21, [0, 1.6, 0]);
+    expect(
+      host.querySelector("[role=slider]")?.getAttribute("aria-valuenow"),
+    ).toBe("30");
+    expect(shader()).toEqual({ on: true, split: 0.3 });
+    part.dispose();
+  });
+
+  it("keeps the visitor's fade when they come back swiping after a while", async () => {
+    // Why: the fade-in replays for a visitor back on the spot after a
+    // while, but only in Fade (as the chosen page has it); in Swipe the
+    // replay must not reset the fade to today, or a later switch to Fade
+    // would show nothing of the old picture.
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { part, station } = await placed(
+      picture("thenNow"),
+      envOf("play", host),
+    );
+    const button = (label: string): HTMLButtonElement | undefined =>
+      [...host.querySelectorAll("button")].find((b) => b.textContent === label);
+    tick(part, station, 0, [0, 1.6, 0]);
+    tick(part, station, THEN_NOW_TIMING.introS, [0, 1.6, 0]);
+    expect(opacity(part.object, "picture-viewpoint-plane")).toBeCloseTo(
+      THEN_NOW_TIMING.introTo,
+      6,
+    );
+    button("Swipe")?.click();
+    const away = THEN_NOW_TIMING.freshAfterS * 2;
+    tick(part, station, 6, [0, 1.6, -8]);
+    tick(part, station, 6 + away, [0, 1.6, -8]);
+    tick(part, station, 7 + away, [0, 1.6, 0]);
+    button("Fade")?.click();
+    tick(part, station, 8 + away, [0, 1.6, 0]);
+    expect(opacity(part.object, "picture-viewpoint-plane")).toBeCloseTo(
+      THEN_NOW_TIMING.introTo,
+      6,
+    );
+    part.dispose();
+  });
+
+  it("finishes the fade-in when the visitor picks Swipe during it", async () => {
+    // Why: Swipe stops the fade-in; had it stopped it where it was, the
+    // fade would stay near 0, so a later switch back to Fade would show
+    // nothing of the old picture until the visitor had been away a while.
+    // The switch moment is swept across the fade-in, from its first frames
+    // to its last.
+    for (const switchS of [0.1, 1, 2.5, 4.9]) {
+      const host = document.createElement("div");
+      document.body.append(host);
+      const { part, station } = await placed(
+        picture("thenNow"),
+        envOf("play", host),
+      );
+      const button = (label: string): HTMLButtonElement | undefined =>
+        [...host.querySelectorAll("button")].find(
+          (b) => b.textContent === label,
+        );
+      tick(part, station, 0, [0, 1.6, 0]);
+      tick(part, station, switchS, [0, 1.6, 0]);
+      expect(
+        opacity(part.object, "picture-viewpoint-plane"),
+        `${switchS} s`,
+      ).toBeLessThan(THEN_NOW_TIMING.introTo);
+      button("Swipe")?.click();
+      tick(part, station, switchS + 0.05, [0, 1.6, 0]);
+      button("Fade")?.click();
+      tick(part, station, switchS + 0.1, [0, 1.6, 0]);
+      expect(
+        opacity(part.object, "picture-viewpoint-plane"),
+        `${switchS} s`,
+      ).toBeCloseTo(THEN_NOW_TIMING.introTo, 6);
+      part.dispose();
+      host.remove();
+    }
+  });
+
+  it("shows a swiping visitor not yet lined up the whole picture, uncut", async () => {
+    // Why: Swipe compares only once the visitor is lined up; on the way
+    // in the picture comes in whole by the distance alone (no fade of
+    // Fade's), and nothing is cut, as there is no line to cut at.
+    const host = document.createElement("div");
+    document.body.append(host);
+    const { part, station } = await placed(
+      picture("thenNow"),
+      envOf("play", host),
+    );
+    const plane = named<Mesh<BufferGeometry, MeshBasicMaterial>>(
+      part.object,
+      "picture-viewpoint-plane",
+    );
+    tick(part, station, 0, [0, 1.6, 0]);
+    [...host.querySelectorAll("button")]
+      .find((b) => b.textContent === "Swipe")
+      ?.click();
+    tick(part, station, 1, [0, 1.6, -8]);
+    // 1.7 m behind the spot: near enough to show, not to line up.
+    tick(part, station, 2, [0, 1.6, -1.7]);
+    expect(host.querySelector("[role=slider]")).toBeNull();
+    const state = (
+      plane.material.userData["thenNowSwipe"] as () => { on: boolean }
+    )();
+    expect(state.on).toBe(false);
+    const t = (1.7 - 2.6) / (0.9 - 2.6);
+    expect(plane.material.opacity).toBeCloseTo(t * t * (3 - 2 * t), 6);
+    expect(plane.material.opacity).toBeGreaterThan(0.3);
+    part.dispose();
+  });
+
   it("softens each viewpoint picture at its edges by the chosen widths", async () => {
     // Why: on the chosen page then and now and the viewer melt into today
     // over 0.035 of the width, sharpen over 0.02.
