@@ -64,15 +64,12 @@ import {
   enableSunShadows,
 } from "/fw/visualization/sun-shadow.js";
 import { sunShadowActive } from "/fw/visualization/sun-shadow-rig.js";
+import { withTwoMapShadow } from "/fw/visualization/two-map-shadow.js";
 
 import { createAmbientOcclusion } from "./ambient-occlusion.js";
 import { createGodRays } from "./god-rays.js";
 import { createGpuTimer } from "./gpu-timer.js";
-import {
-  RING_HALF_WIDTH_M,
-  RING_MAP_SIZE,
-  withRingShadow,
-} from "./ring-shadow.js";
+import { RING_HALF_WIDTH_M, RING_MAP_SIZE } from "./ring-shadow.js";
 import { lutParity, skyPixelExpected } from "./parity.js";
 import { createPresetGlide, presetLook } from "./preset-glide.js";
 import {
@@ -351,11 +348,11 @@ const shadowParams = {
 const SHADOW_FLOOR_DEG = 2;
 let sunShadow = null;
 /**
- * The ring shadow (round-2 plan M2b): a light with no intensity whose coarse
+ * The ring shadow: a light with no intensity whose coarse
  * map shadows the dense city past the central map. Present while shadows are
  * on and the dense city shows. The chunk rewrite is inert with one shadow.
  */
-THREE.ShaderChunk.lights_fragment_begin = withRingShadow(
+THREE.ShaderChunk.lights_fragment_begin = withTwoMapShadow(
   THREE.ShaderChunk.lights_fragment_begin,
 );
 let ringShadow = null;

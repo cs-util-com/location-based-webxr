@@ -215,3 +215,93 @@ describe('createSunShadow (M2 review fixes)', () => {
     );
   });
 });
+
+// A cached city shadow: the map renders rarely, the light follows the sun in
+// between, the fit (distance, far plane) changes with the view, and a hidden
+// view frees the map's memory.
+describe('createSunShadow (cached map)', () => {
+  it('pins the depth bias to 0 and restores it on dispose', () => {
+    const light = new THREE.DirectionalLight();
+    light.shadow.bias = -0.002;
+    const shadow = createSunShadow({ light });
+    expect(light.shadow.bias).toBe(0);
+    shadow.dispose();
+    expect(light.shadow.bias).toBe(-0.002);
+  });
+
+  it('takes the distance and the far plane per call', () => {
+    const light = new THREE.DirectionalLight();
+    const shadow = createSunShadow({ light, distanceM: 100 });
+    shadow.update(state(), { distanceM: 700, farM: 900 });
+    expect(light.shadow.camera.far).toBe(900);
+    const target = new THREE.Vector3(4, 0, -2);
+    expect(light.position.distanceTo(target)).toBeCloseTo(700, 9);
+    // Without a per-call value the option still applies.
+    shadow.update(state(50));
+    expect(light.position.distanceTo(target)).toBeCloseTo(100, 9);
+    expect(light.shadow.camera.far).toBe(100 + SUN_SHADOW.halfWidthM);
+  });
+
+  // Between renders the shading must follow the current sun while the map
+  // keeps its rendered pose; the default keeps the old behaviour.
+  it('keeps the light on the current sun between renders when asked to', () => {
+    const light = new THREE.DirectionalLight();
+    const shadow = createSunShadow({
+      light,
+      lightFollowsSun: true,
+      thresholds: { sunDeg: 5 },
+    });
+    shadow.update(state(30));
+    light.shadow.needsUpdate = false;
+    const moved = state(32);
+    expect(shadow.update(moved)).toBe(false);
+    expect(light.shadow.needsUpdate).toBe(false);
+    const dir = light.position.clone().sub(light.target.position).normalize();
+    expect(dir.toArray()[1]).toBeCloseTo(moved.sunDir[1], 9);
+    expect(light.target.position.toArray()).toEqual([4, 0, -2]);
+    expect(light.position.distanceTo(light.target.position)).toBeCloseTo(
+      SUN_SHADOW.halfWidthM + SUN_SHADOW.marginM,
+      9
+    );
+
+    const fixed = new THREE.DirectionalLight();
+    const still = createSunShadow({ light: fixed, thresholds: { sunDeg: 5 } });
+    still.update(state(30));
+    const before = fixed.position.toArray();
+    still.update(state(32));
+    expect(fixed.position.toArray()).toEqual(before);
+  });
+
+  it('answers wouldUpdate without rendering or moving anything', () => {
+    const light = new THREE.DirectionalLight();
+    const shadow = createSunShadow({ light });
+    expect(shadow.wouldUpdate(state())).toBe(true);
+    expect(shadow.renders).toBe(0);
+    expect(light.shadow.needsUpdate).toBe(false);
+    shadow.update(state());
+    expect(shadow.wouldUpdate(state())).toBe(false);
+    expect(shadow.wouldUpdate(state(60))).toBe(true);
+    shadow.dispose();
+    expect(shadow.wouldUpdate(state(60))).toBe(false);
+  });
+
+  it('releases the map and renders a new one on the next update', () => {
+    const light = new THREE.DirectionalLight();
+    const shadow = createSunShadow({ light });
+    shadow.update(state());
+    const map = new THREE.WebGLRenderTarget(4, 4);
+    let disposed = 0;
+    map.dispose = () => {
+      disposed += 1;
+    };
+    light.shadow.map = map;
+    shadow.release();
+    expect(disposed).toBe(1);
+    expect(light.shadow.map).toBeNull();
+    expect(light.castShadow).toBe(true);
+    light.shadow.needsUpdate = false;
+    expect(shadow.update(state())).toBe(true);
+    expect(light.shadow.needsUpdate).toBe(true);
+    expect(shadow.renders).toBe(2);
+  });
+});

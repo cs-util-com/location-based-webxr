@@ -4,6 +4,27 @@
 
 ### Added
 
+- **Cached two-map sun shadows over a whole city** (`visualization`): the
+  new `two-map-sun-shadow.ts` (`createTwoMapSunShadow`) drives a near map
+  on the sun, fitted to the camera distance and snapped to its texel grid,
+  and a far map over the loaded city on a second light of zero intensity;
+  both render only on a sun step, a caster change, a re-centre or a zoom
+  step, never per frame, and the strength ramps from 2 to 8 degrees of
+  sun. `two-map-shadow.ts` (`withTwoMapShadow`) is the light-chunk rewrite
+  that blends the two maps (moved here from the look-dev page);
+  `shadow-fit.ts` holds the geometry (half-width steps, centre snap, ramp,
+  caster distance, far planes); `two-map-shadow-rig.ts` the tiers
+  (`SHADOW_TIERS`, `effectiveShadowTier`), the derived caster mode
+  (`castingMode`), layer flags and `casterGeneration`;
+  `shadow-casting.ts` (`applyShadowCasting`) writes both shadow flags per
+  mesh for a mode.
+- **`createSunShadow` gains a cached-map API** (`visualization`):
+  `update(now, { distanceM?, farM? })` overrides the distance and far
+  plane per render, `wouldUpdate(now)` asks without rendering, `release()`
+  frees the map, and `lightFollowsSun` keeps the light along the current
+  sun between renders. `sunShadowPose` takes `farM`. The depth bias is now
+  pinned to 0 (restored on dispose).
+
 - **The haze can fade toward a colour of the app's own**
   (`visualization/atmosphere`): `AtmosphereHaze.setVeil(colour)` sets a
   scene-linear veil colour the distance fades toward in place of the sky's
