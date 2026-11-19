@@ -35,9 +35,11 @@ nearSize, farSize? }`.
   that CASTS in this mode changes, and never for a layer that does not
   cast; layer order does not matter. `RangeError` for a non-finite
   generation.
-- `MapRenderPlan { near, far, again }` and `planMapRenders({ near, far,
-split })`: with `split`, a frame that wants both renders the near map
-  and asks for one more frame (`again`) for the far one.
+- `MapRenderPlan { near, far, again }` and `planMapRenders(input)`, with
+  `input` `{ near, far, split, farDeferred? }`: with `split`, a frame that
+  wants both renders the near map and asks for one more frame (`again`)
+  for the far one; with `farDeferred` (the last frame deferred the far
+  map) it renders the far map first, so the maps alternate.
 
 ## Invariants & assumptions
 

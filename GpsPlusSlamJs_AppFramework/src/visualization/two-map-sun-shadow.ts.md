@@ -21,9 +21,12 @@ side is [`two-map-shadow.ts`](two-map-shadow.ts.md), the geometry
   `sunUpdateDeg`, `innerFraction` (defaults from `SUN_SHADOW`); `split`
   (render near and far in alternate frames); `tiers` (default
   `SHADOW_TIERS`).
-- `TwoMapShadowInput { sunDir, target, cameraDistanceM, city,
-casterGeneration }`: what the app knows this frame. `RangeError` for a
-  non-finite direction or target or a non-positive camera distance.
+- `TwoMapShadowInput`: `{ sunDir, target, cameraDistanceM, city,
+casterGeneration }`, what the app knows this frame. `city.centre[1]` is
+  the lowest receiver ground in the square and `city.maxHeightM` the
+  highest caster top above it, terrain included (see `CityBox`).
+  `RangeError` for a non-finite direction or target or a non-positive
+  camera distance.
 - `TwoMapSunShadow`:
   - `update(input)`: sets the shadow strength from the sun's elevation,
     places the sun light along the current sun, requests the renders the
@@ -60,6 +63,19 @@ casterGeneration }`: what the app knows this frame. `RangeError` for a
 - **Depth bias is 0 on both lights**; the one-texel normal bias in metres
   carries the offset.
 - **The far light has no intensity**: it exists only to carry a map.
+- **The light always shades from the newest sun**: off, released, below
+  the floor, after `setTier` and after `dispose`, the sun light is placed
+  along the last input's sun direction (from the last near render's
+  centre). Disposing a `createSunShadow` restores the light's
+  creation-time pose, so the controller re-aims it right after.
+- **The far map re-renders on any move of the city centre** (its
+  re-centre fraction is 0); a quarter of a city-sized square would ignore
+  re-anchors of several hundred metres.
+- **Split frames alternate**: after a frame deferred the far map, the next
+  frame that wants both renders the far map first, so continuous sun steps
+  cannot starve it.
+- **The texel snap uses world up** for the light's axes: a light whose
+  parent is rotated needs its own snap.
 
 ## Example
 
@@ -87,4 +103,8 @@ if (plan.again) requestRender();
   in every tier; bias 0; each shadow camera's projection matrix against
   its bounds; release and restore; `setTier('off')`; dispose; refusals.
 - `two-map-sun-shadow.property.test.ts`: over random event sequences, each
-  frame requests exactly the renders the rule names and the total matches.
+  frame requests exactly the renders the rule names and the total matches;
+  over random sun steps (below and above the render threshold), jumps
+  across the floor and the horizon and re-anchors, the light points along
+  the current sun and its target is the snapped centre of the last near
+  render.

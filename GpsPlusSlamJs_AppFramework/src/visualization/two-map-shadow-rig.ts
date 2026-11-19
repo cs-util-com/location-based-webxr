@@ -173,15 +173,20 @@ export interface MapRenderPlan {
  * Which of the maps that WANT a render get one this frame. With `split`
  * on, a frame that would render both renders only the near map and asks
  * for one more frame, in which the far map (still wanting) renders: the
- * cost of a sun step spreads over two frames.
+ * cost of a sun step spreads over two frames. `farDeferred` says the last
+ * frame deferred the far map: then the far map goes first, so continuous
+ * sun steps alternate the maps instead of starving the far one.
  */
 export function planMapRenders(input: {
   readonly near: boolean;
   readonly far: boolean;
   readonly split: boolean;
+  readonly farDeferred?: boolean;
 }): MapRenderPlan {
   if (input.split && input.near && input.far) {
-    return { near: true, far: false, again: true };
+    return input.farDeferred === true
+      ? { near: false, far: true, again: true }
+      : { near: true, far: false, again: true };
   }
   return { near: input.near, far: input.far, again: false };
 }

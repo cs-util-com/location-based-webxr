@@ -14,7 +14,7 @@ import fc from 'fast-check';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 
-import type { CityBox } from './shadow-fit.js';
+import { snapShadowCentre, type CityBox } from './shadow-fit.js';
 import type { Vec3 } from './sun-shadow-rig.js';
 import {
   createTwoMapSunShadow,
@@ -107,6 +107,99 @@ describe('createTwoMapSunShadow: render cadence over event sequences', () => {
         }
       ),
       { numRuns: 100 }
+    );
+  });
+});
+
+type SunEvent =
+  | { readonly kind: 'step'; readonly deg: number }
+  | { readonly kind: 'jump'; readonly el: number }
+  | { readonly kind: 'anchor'; readonly dx: number; readonly dz: number };
+
+const sunEventArb: fc.Arbitrary<SunEvent> = fc.oneof(
+  // Steps below the 0.05 degree render threshold and well above it.
+  fc.record({
+    kind: fc.constant('step' as const),
+    deg: fc.oneof(
+      fc.double({ min: -0.04, max: 0.04, noNaN: true }),
+      fc.double({ min: -4, max: 4, noNaN: true })
+    ),
+  }),
+  // Jumps cross the floor and the horizon both ways.
+  fc.record({
+    kind: fc.constant('jump' as const),
+    el: fc.double({ min: -10, max: 60, noNaN: true }),
+  }),
+  fc.record({
+    kind: fc.constant('anchor' as const),
+    dx: fc.double({ min: -400, max: 400, noNaN: true }),
+    dz: fc.double({ min: -400, max: 400, noNaN: true }),
+  })
+);
+
+describe('createTwoMapSunShadow: the light follows the sun', () => {
+  // Why: between near renders the light must shade from the CURRENT sun
+  // (a slider step below the render threshold, a sun below the floor or the
+  // horizon), while its target stays on the snapped centre the near map was
+  // last rendered for. Dropping lightFollowsSun or the snap fails here.
+  it('aims along the current sun from the last near render snapped centre', () => {
+    fc.assert(
+      fc.property(
+        fc.array(sunEventArb, { minLength: 1, maxLength: 25 }),
+        fc.integer({ min: 0, max: 359 }),
+        fc.double({ min: -500, max: 500, noNaN: true }),
+        (events, azDeg, start) => {
+          const scene = new THREE.Scene();
+          const sun = new THREE.DirectionalLight();
+          scene.add(sun, sun.target);
+          const shadow = createTwoMapSunShadow({
+            sun,
+            parent: scene,
+            tier: 'high',
+          });
+          let elDeg = 30;
+          let target: Vec3 = [start, 0, -start / 3];
+          let nearCentre: Vec3 | undefined;
+          for (const event of [
+            { kind: 'step', deg: 0 } as SunEvent,
+            ...events,
+          ]) {
+            if (event.kind === 'step') {
+              elDeg = Math.max(-10, Math.min(60, elDeg + event.deg));
+            } else if (event.kind === 'jump') {
+              elDeg = event.el;
+            } else {
+              target = [target[0] + event.dx, 0, target[2] + event.dz];
+            }
+            const sunDir = sunAt(azDeg, elDeg);
+            const plan = shadow.update({
+              sunDir,
+              target,
+              cameraDistanceM: 200,
+              city: CITY,
+              casterGeneration: 'build:1',
+            });
+            if (plan.near) {
+              nearCentre = snapShadowCentre(target, sunDir, 240, 2048);
+            }
+            const want = nearCentre ?? target;
+            const at = sun.target.position.toArray();
+            for (let i = 0; i < 3; i += 1) {
+              expect(at[i]).toBeCloseTo(want[i]!, 6);
+            }
+            const aim = sun.position
+              .clone()
+              .sub(sun.target.position)
+              .normalize();
+            const got = aim.toArray();
+            for (let i = 0; i < 3; i += 1) {
+              expect(got[i]).toBeCloseTo(sunDir[i]!, 9);
+            }
+          }
+          shadow.dispose();
+        }
+      ),
+      { numRuns: 150 }
     );
   });
 });

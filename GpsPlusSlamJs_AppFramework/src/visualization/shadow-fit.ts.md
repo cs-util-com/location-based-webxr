@@ -27,8 +27,11 @@ fadeFraction: 0.9 }`.
   sun is untouched; idempotent.
 - `shadowStrengthAt(elevationDeg, { floorDeg?, fullDeg? })`: 0 at or below
   the floor, 1 at or above full strength, linear between.
-- `CityBox { centre, halfExtentM, maxHeightM }`: the loaded city's square
-  and its tallest caster.
+- `CityBox { centre, halfExtentM, maxHeightM }`: the loaded city's square,
+  its lowest receiver and its highest caster. With terrain, `centre[1]` is
+  the LOWEST receiver ground anywhere in the square and `maxHeightM` the
+  HIGHEST caster top above it, terrain included; a box that leaves a hill
+  or a tower out puts its casters outside D.
 - `shadowCasterDistance({ centre, sunDir, halfWidthM, city, floorDeg?,
 marginM? })`: D, the camera's distance from the centre along the sun:
   `max(R, min(box distance, cap)) + margin`. The box distance is the
@@ -42,7 +45,7 @@ marginM? })`: D, the camera's distance from the centre along the sun:
 
 Every function throws `RangeError` on non-finite input, a non-positive
 distance, R, k or map size, `fullDeg <= floorDeg`, a negative height or
-margin, a floor outside (0, 90) or a fade fraction outside (0, 1).
+margin, a floor outside (0, 90) or a fade fraction outside (0, 1].
 
 ## Invariants & assumptions
 

@@ -113,6 +113,8 @@ function elevationDeg(sunDir: Vec3): number {
   return Math.asin(Math.max(-1, Math.min(1, sunDir[1]))) / DEG;
 }
 
+const copyVec = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
+
 function assertInput(input: TwoMapShadowInput): void {
   const finite = [...input.sunDir, ...input.target].every(Number.isFinite);
   if (!finite || !(input.cameraDistanceM > 0)) {
@@ -156,6 +158,9 @@ export function createTwoMapSunShadow(config: {
   let finished = false;
   let lastCentre: Vec3 | undefined;
   let lastDistance = 0;
+  /** The newest sun and target, to leave the light along them. */
+  let lastSun: { readonly dir: Vec3; readonly target: Vec3 } | undefined;
+  let farDeferred = false;
   let rendersBefore = 0;
 
   const makeMaps = (tier: ShadowTier): Maps | undefined => {
@@ -171,14 +176,38 @@ export function createTwoMapSunShadow(config: {
     const farLight = new THREE.DirectionalLight(0xffffff, 0);
     farLight.name = 'two-map far shadow';
     parent.add(farLight, farLight.target);
+    // innerFraction 0: any move of the city centre re-renders the far map
+    // (a quarter of a city-sized square would ignore re-anchors of 500 m).
     const far = createSunShadow({
       light: farLight,
       mapSize: spec.farSize,
-      thresholds,
+      thresholds: { ...thresholds, innerFraction: 0 },
     });
     return { near, far, farLight, spec };
   };
 
+  /**
+   * The light along `sunDir` from the last near render's centre (or
+   * `target` before any), at the last distance. 1000 m before any render:
+   * any distance aims the light the same; it only has to clear the scene.
+   */
+  const placeAlongSun = (sunDir: Vec3, target: Vec3): void => {
+    const centre = lastCentre ?? target;
+    const d = lastDistance > 0 ? lastDistance : 1000;
+    sun.position.set(
+      centre[0] + sunDir[0] * d,
+      centre[1] + sunDir[1] * d,
+      centre[2] + sunDir[2] * d
+    );
+    sun.target.position.set(centre[0], centre[1], centre[2]);
+    sun.updateMatrixWorld();
+    sun.target.updateMatrixWorld();
+  };
+
+  /**
+   * Drops the maps. Disposing the near map restores the sun as it was found
+   * at creation, the sun of THEN: put it back along the newest sun.
+   */
   const dropMaps = (): void => {
     if (!maps) return;
     rendersBefore += maps.near.renders + (maps.far?.renders ?? 0);
@@ -186,6 +215,8 @@ export function createTwoMapSunShadow(config: {
     maps.far?.dispose();
     if (maps.farLight) parent.remove(maps.farLight, maps.farLight.target);
     maps = undefined;
+    farDeferred = false;
+    if (lastSun) placeAlongSun(lastSun.dir, lastSun.target);
   };
 
   /** The near state: R from the camera distance, centre on the texel grid. */
@@ -231,20 +262,6 @@ export function createTwoMapSunShadow(config: {
     return { distanceM, farM };
   };
 
-  /** Below the floor: no map, the light still along the current sun. */
-  const placeBelowFloor = (input: TwoMapShadowInput): void => {
-    const centre = lastCentre ?? input.target;
-    const d = lastDistance > 0 ? lastDistance : 1000;
-    sun.position.set(
-      centre[0] + input.sunDir[0] * d,
-      centre[1] + input.sunDir[1] * d,
-      centre[2] + input.sunDir[2] * d
-    );
-    sun.target.position.set(centre[0], centre[1], centre[2]);
-    sun.updateMatrixWorld();
-    sun.target.updateMatrixWorld();
-  };
-
   const remember = (state: ShadowUpdateState, fit: SunShadowFit): void => {
     lastCentre = state.centre;
     lastDistance = fit.distanceM ?? lastDistance;
@@ -258,7 +275,9 @@ export function createTwoMapSunShadow(config: {
       near: m.near.wouldUpdate(sunState),
       far: m.far?.wouldUpdate(farState) ?? false,
       split: o.split ?? false,
+      farDeferred,
     });
+    farDeferred = plan.again && !plan.far;
     const sunFit = plan.near ? fitFor(sunState, input, two) : {};
     m.near.update(sunState, sunFit);
     if (plan.near) remember(sunState, sunFit);
@@ -273,11 +292,18 @@ export function createTwoMapSunShadow(config: {
   return {
     update(input) {
       assertInput(input);
-      if (finished || !maps || released) return none;
+      if (finished) return none;
+      lastSun = { dir: copyVec(input.sunDir), target: copyVec(input.target) };
+      // Off, released or below the floor: no map, the light still shades
+      // from the current sun.
+      if (!maps || released) {
+        placeAlongSun(input.sunDir, input.target);
+        return none;
+      }
       const strength = shadowStrengthAt(elevationDeg(input.sunDir), ramp);
       sun.shadow.intensity = strength;
       if (strength === 0) {
-        placeBelowFloor(input);
+        placeAlongSun(input.sunDir, input.target);
         return none;
       }
       return updateMaps(input, maps);
@@ -311,8 +337,8 @@ export function createTwoMapSunShadow(config: {
     dispose() {
       if (finished) return;
       finished = true;
-      dropMaps();
       sun.shadow.intensity = previousIntensity;
+      dropMaps();
     },
   };
 }

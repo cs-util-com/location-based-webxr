@@ -52,8 +52,9 @@ uses it (M2, the S1 cost and look check); OsmDemo AR comes next (M3).
 - **The caller owns** which objects cast and receive, and the elevation
   floor. It checks `sunShadowActive` before calling `update`, because the
   pose throws for a sun at or below the horizon.
-- **Every `update` call puts the light back at the last-rendered pose**
-  (M2 review, finding 1). three builds the shadow camera from the light's
+- **Every `update` call puts the light back at the last-rendered pose**,
+  or with `lightFollowsSun` at the last-rendered centre and distance but
+  along the CURRENT sun. three builds the shadow camera from the light's
   position WHEN the map renders, which may be frames after `update`; the
   look-dev page re-aims the light at 1 km in every look change, and a
   pending render once came out empty from there. So a caller may move the

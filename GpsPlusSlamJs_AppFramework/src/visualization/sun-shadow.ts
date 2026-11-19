@@ -50,9 +50,10 @@ export interface SunShadow {
   /**
    * Follow the sun and the user. Re-renders the map only when the rig's
    * update rule says so, and returns whether it did; on EVERY call it puts
-   * the light back at the last-rendered pose, because three builds the
-   * shadow camera from the light's position when the map renders, which may
-   * be frames later.
+   * the light back at the last-rendered pose (with `lightFollowsSun`: at the
+   * last-rendered centre and distance, along the current sun), because three
+   * builds the shadow camera from the light's position when the map
+   * renders, which may be frames later.
    */
   update(now: ShadowUpdateState, fit?: SunShadowFit): boolean;
   /** Whether `update(now)` would re-render the map; changes nothing. */

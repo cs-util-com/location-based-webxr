@@ -144,6 +144,13 @@ describe('planMapRenders', () => {
       far: true,
       again: false,
     });
+    // After a deferral the far map goes first, so it cannot starve.
+    expect(
+      planMapRenders({ near: true, far: true, split: true, farDeferred: true })
+    ).toEqual({ near: false, far: true, again: true });
+    expect(
+      planMapRenders({ near: true, far: true, split: false, farDeferred: true })
+    ).toEqual({ near: true, far: true, again: false });
     expect(planMapRenders({ near: false, far: false, split: true })).toEqual({
       near: false,
       far: false,

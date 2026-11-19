@@ -160,13 +160,18 @@ export function shadowStrengthAt(
   return (elevationDeg - floor) / (full - floor);
 }
 
-/** The loaded city: its ground centre, half width and tallest caster. */
+/**
+ * The loaded city: its square, its lowest receiver and its highest caster.
+ * With terrain the box must hold the terrain too: `centre[1]` is the LOWEST
+ * receiver ground anywhere in the square and `maxHeightM` the HIGHEST caster
+ * top (terrain included) above that, so every caster lies inside the box.
+ */
 export interface CityBox {
-  /** The centre of the city's square, on the ground (y is the ground). */
+  /** The centre of the city's square; y is the lowest receiver ground. */
   readonly centre: Vec3;
   /** Half the square's edge, metres. */
   readonly halfExtentM: number;
-  /** The tallest caster above the ground, metres. */
+  /** The highest caster top above `centre[1]`, terrain included, metres. */
   readonly maxHeightM: number;
 }
 

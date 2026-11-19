@@ -59,6 +59,16 @@ function rig(tier: ShadowTier = 'high', split = false) {
   return { scene, sun, shadow, consume };
 }
 
+/** How far the light's aim (target toward light) is from `dir`, per axis. */
+function aimError(light: THREE.DirectionalLight, dir: Vec3): number {
+  const aim = light.position.clone().sub(light.target.position).normalize();
+  return Math.max(
+    Math.abs(aim.x - dir[0]),
+    Math.abs(aim.y - dir[1]),
+    Math.abs(aim.z - dir[2])
+  );
+}
+
 /** The casting directional lights in three's order (scene traversal). */
 function castingLights(scene: THREE.Scene): THREE.DirectionalLight[] {
   const out: THREE.DirectionalLight[] = [];
@@ -114,6 +124,27 @@ describe('createTwoMapSunShadow: when maps render', () => {
     expect(consume()).toEqual([true, false]);
     shadow.update(input({ target: [180, 0, -50], cameraDistanceM: 300 }));
     expect(consume()).toEqual([true, false]);
+  });
+
+  it('re-renders the far map for any move of the city centre', () => {
+    const { shadow, consume } = rig();
+    shadow.update(input());
+    consume();
+    // 100 m is far below a quarter of the city's 2000 m half extent.
+    shadow.update(input({ city: { ...CITY, centre: [100, 0, 0] } }));
+    expect(consume()).toEqual([false, true]);
+  });
+
+  it('with split frames never starves the far map under continuous sun steps', () => {
+    const { shadow, consume } = rig('high', true);
+    let farRenders = 0;
+    for (let i = 0; i < 12; i += 1) {
+      shadow.update(input({ sunDir: sunAt(200, 30 + i) }));
+      const [, far] = consume();
+      if (far) farRenders += 1;
+    }
+    // Both want a render every frame; they must take turns.
+    expect(farRenders).toBe(6);
   });
 
   it('renders both maps for a caster change', () => {
@@ -251,6 +282,36 @@ describe('createTwoMapSunShadow: release, restore, tiers and dispose', () => {
     shadow.setTier('high');
     expect(castingLights(scene)[0]).toBe(sun);
     expect(castingLights(scene)).toHaveLength(2);
+  });
+
+  it('setTier off leaves the light along the newest sun, and keeps it following', () => {
+    const { sun, shadow } = rig();
+    shadow.update(input({ sunDir: sunAt(120, 50) }));
+    const evening = sunAt(260, 12);
+    shadow.update(input({ sunDir: evening }));
+    shadow.setTier('off');
+    expect(aimError(sun, evening)).toBeLessThan(1e-9);
+    const later = sunAt(275, 4);
+    shadow.update(input({ sunDir: later }));
+    expect(aimError(sun, later)).toBeLessThan(1e-9);
+  });
+
+  it('keeps the light following the sun while released', () => {
+    const { sun, shadow } = rig();
+    shadow.update(input());
+    shadow.release();
+    const later = sunAt(250, 20);
+    shadow.update(input({ sunDir: later }));
+    expect(aimError(sun, later)).toBeLessThan(1e-9);
+  });
+
+  it('dispose leaves the light along the newest sun', () => {
+    const { sun, shadow } = rig();
+    shadow.update(input({ sunDir: sunAt(120, 50) }));
+    const evening = sunAt(260, 12);
+    shadow.update(input({ sunDir: evening }));
+    shadow.dispose();
+    expect(aimError(sun, evening)).toBeLessThan(1e-9);
   });
 
   it('dispose restores the sun and stops for good', () => {

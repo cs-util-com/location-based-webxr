@@ -257,7 +257,9 @@ describe('createSunShadow (cached map)', () => {
     expect(shadow.update(moved)).toBe(false);
     expect(light.shadow.needsUpdate).toBe(false);
     const dir = light.position.clone().sub(light.target.position).normalize();
-    expect(dir.toArray()[1]).toBeCloseTo(moved.sunDir[1], 9);
+    for (const [i, v] of dir.toArray().entries()) {
+      expect(v).toBeCloseTo(moved.sunDir[i]!, 9);
+    }
     expect(light.target.position.toArray()).toEqual([4, 0, -2]);
     expect(light.position.distanceTo(light.target.position)).toBeCloseTo(
       SUN_SHADOW.halfWidthM + SUN_SHADOW.marginM,
