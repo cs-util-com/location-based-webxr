@@ -14,6 +14,8 @@ import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 
 import type { TourDocumentState } from "../tour-document.js";
 import type { EditorViewState, ShellLayer } from "../editor/editor-view.js";
+import type { DebugLayerState } from "../editor/debug-layer-slice.js";
+import type { DebugThumbsRead } from "../editor/debug-thumbs.js";
 import type { GroundPlace } from "gps-plus-slam-editor-kit/chrome";
 import type { FolderOutlineShown } from "./folder-outline.js";
 import type {
@@ -33,6 +35,9 @@ interface Editor3dStore {
   getState(): {
     readonly tourDocument: TourDocumentState;
     readonly editorView: EditorViewState;
+    /** The debug layer's captures and switch (`debug-layer-slice.ts`);
+     *  absent on a page without one, which then draws none. */
+    readonly debugLayer?: DebugLayerState;
   };
   subscribe(listener: () => void): () => void;
   dispatch(action: UnknownAction): unknown;
@@ -82,6 +87,10 @@ export interface Editor3dDeps {
         readonly alt: number;
       }[]
     | null;
+  /** The debug layer's decoded thumbnails (`debug-thumbs.ts`), keyed as
+   *  the store's `debugLayer` captures: the globe copies them into its
+   *  atlas. */
+  readonly debugThumbs?: DebugThumbsRead;
 }
 
 /** A shown 3D view. */
@@ -112,7 +121,8 @@ export interface Editor3dView {
   /** Fit the selection (null: the whole tour) into the view. */
   frame(selection: string | null): void;
   /** Look straight down (the left button then pans like a map), or go
-   *  back to the tilt from before. */
+   *  back to the view's default tilt (`GLOBE_EDITOR_LOOK.aimPitchDeg`,
+   *  not the tilt from before). */
   setTop(on: boolean): void;
   /** One zoom step in (1) or out (-1). */
   zoom(step: 1 | -1): void;
@@ -253,9 +263,10 @@ export interface Editor3dStats {
   readonly codeScales: readonly number[];
   /** Each code's drawn side on the canvas (CSS px): its square's corners
    *  projected by the camera of the last frame; 0 when it cannot be
-   *  measured (any corner outside the view volume: behind the camera,
+   *  measured (any corner outside the depth range: behind the camera,
    *  nearer than the near plane or past the far one), so also for a code
-   *  that straddles the near plane and is partly drawn. */
+   *  that straddles the near plane and is partly drawn; a code beside the
+   *  view is still measured. */
   readonly codePx: readonly number[];
   readonly shown: readonly string[];
   readonly renders: number;

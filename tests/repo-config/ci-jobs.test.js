@@ -165,13 +165,14 @@ describe('a red script makes its job red, and one result job says whether all pa
 describe('the workflow stays inside the free plan and never hangs', () => {
   // The result job is not counted: it starts only when the others are done,
   // so it never takes one of the shared concurrent job slots beside them.
-  // 14 since OsmDemo's lanes (11 before): one run leaves 6 of the 20 slots,
-  // so a second run beside it starts 6 jobs and queues 8 until the first
-  // run's short jobs end. More jobs per run trade queue time for wall clock.
-  it('has between 8 and 14 jobs per run (20 concurrent jobs are shared by the organisation)', () => {
+  // 14 since OsmDemo's lanes (11 before), 15 since the Tour Viewer's fifth
+  // 3D lane: one run leaves 5 of the 20 slots, so a second run beside it
+  // starts 5 jobs and queues 10 until the first run's short jobs end. More
+  // jobs per run trade queue time for wall clock.
+  it('has between 8 and 15 jobs per run (20 concurrent jobs are shared by the organisation)', () => {
     const count = entries.length + Object.keys(workflow.jobs).length - 2;
     expect(count).toBeGreaterThanOrEqual(8);
-    expect(count).toBeLessThanOrEqual(14);
+    expect(count).toBeLessThanOrEqual(15);
   });
 
   it('gives every job a time limit well under the 6 h hard limit', () => {

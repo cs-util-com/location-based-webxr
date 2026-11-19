@@ -588,6 +588,12 @@ for (const viewport of VIEWPORTS) {
           // name and disclosure on lines of their own the first word's line
           // would leave the window, so the voice shows it got there.
           expect(after.nowMs, where).toBeLessThanOrEqual(firstMs);
+        } else if (dy > 0) {
+          // A drag back from the end stops short of the start: a tap that
+          // sent the voice to its start would pass the direction check.
+          expect(after.nowMs, where).toBeGreaterThan(firstMs);
+        } else {
+          expect(after.nowMs, where).toBeLessThan(endMs);
         }
         await expectSettled(page, where);
       }

@@ -365,7 +365,7 @@ describe("selectSpecs", () => {
 // Plain `--shard` is not used because it cuts the alphabetical list, which
 // would put every `editor3d-globe-*` spec in one shard.
 describe("the e2e plan puts every spec in exactly one CI lane", () => {
-  it("names the lanes: two page-test lanes and four 3D lanes", () => {
+  it("names the lanes: two page-test lanes and five 3D lanes", () => {
     expect(plan.LANES).toEqual([
       "dom-1",
       "dom-2",
@@ -373,6 +373,7 @@ describe("the e2e plan puts every spec in exactly one CI lane", () => {
       "webgl-2",
       "webgl-3",
       "webgl-4",
+      "webgl-5",
     ]);
   });
 
@@ -393,16 +394,16 @@ describe("the e2e plan puts every spec in exactly one CI lane", () => {
     }
   });
 
-  it("gives every dom spec a lane number of 1 or 2, and every webgl spec one from 1 to 4", () => {
+  it("gives every dom spec a lane number of 1 or 2, and every webgl spec one from 1 to 5", () => {
     for (const [name, entry] of Object.entries(plan.SPECS)) {
-      expect(entry.project === "webgl" ? [1, 2, 3, 4] : [1, 2], name).toContain(
+      expect(entry.project === "webgl" ? [1, 2, 3, 4, 5] : [1, 2], name).toContain(
         entry.lane,
       );
     }
   });
 
   it("refuses a lane it does not know", () => {
-    expect(() => plan.specsOfLane("webgl-5")).toThrow(RangeError);
+    expect(() => plan.specsOfLane("webgl-6")).toThrow(RangeError);
     expect(() => plan.specsOfLane("dom-3")).toThrow(RangeError);
     expect(() => plan.specsOfLane("dom")).toThrow(RangeError);
     expect(() => plan.specsOfLane("")).toThrow(RangeError);

@@ -33,7 +33,7 @@ AR (tour editor plan 2026-10-17-1816, W1).
   while the tour loads). Inside it the studio shell's parts
   (`src/editor/editor-shell/editor-shell.ts`): the tree dock
   `#shell-tree` (`#tree-stations`, `#tree-add` - the "+" that adds a
-  station at the centre of the view -, `#tree-select` - the Select mode's
+  station on the ground under the camera -, `#tree-select` - the Select mode's
   button, `aria-pressed`, a phone's way to tick several rows -,
   `#tree-fold`, `#tree-body`, `#tree-selbar` - the selection bar: the
   picked rows' count, Group, Ungroup and, in the Select mode, Done), the
@@ -62,9 +62,11 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - `body[data-view]` - `3d` while the 3D view shows, else `2d`: the
   shell's stylesheet (`src/editor/editor-shell/editor-shell.css`, the
   page's second link) dresses the top bar dark, places the view between
-  a 40 px top bar and the 24 px bottom bar, and hides the rail, the card,
-  the debug panel and the off-screen chip; the studio's controls
-  (`.studio`) show only then.
+  a 40 px top bar and the 24 px bottom bar, and hides the rail, the card
+  and the off-screen chip; the studio's controls (`.studio`) show only
+  then. The debug panel is not hidden: while the 3D view shows,
+  `edit-main.ts` moves it into `#view3d` (docked, into the view's pane),
+  at the view's foot on the left, and back to its place over the map.
 - `#debug-panel` - shown for every open tour: the debug layer's line
   (`#debug-status`, a live region) and "Add debug data…" (`#debug-add`,
   with its hidden `#debug-add-input`; a file dropped on the panel too;

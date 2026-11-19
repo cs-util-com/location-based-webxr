@@ -163,7 +163,8 @@ wide`) and "Preview the story" (`preview-story`, `act pri`, once it
     Position.
   - An item standing in the world (a pin, a picture, a model, a long
     text, a sound, a free character): what it is and its station (a
-    pin's text to type in the head, "Pin text"), its commands, the size
+    pin's text to type in the body's text area labelled Text, the head
+    showing it as text), its commands, the size
     its white dots change to type (a model's Size, a picture's Width,
     `data-field` `size`, with what it means and its bounds), and under
     "Position" its Offset east and north, Height
@@ -179,15 +180,17 @@ wide`) and "Preview the story" (`preview-story`, `act pri`, once it
     `<input>`s, which drop them: a value with a line break is shown, and
     taken as the default, on one line, so a field left untouched writes
     nothing. A station's name of several lines (from another writer)
-    stays editable that way, and a changed one is one line. A pin's text
-    of several lines (the 2D card's text area writes them) is read-only
-    in the head, since typing would lose its lines, and a line at the
-    top of the dock (`#inspector-pin-lines`, which the field is
-    described by, also its title) says why: edit it in the pin's card on
-    the 2D map. A pin's text typed in the head has its count at the
-    top of the dock (`#inspector-pin-count`, an `<output>` the field is
-    described by, `pin-text.ts`): "12 / 40", marked `data-over` past
-    the 40 characters the edit refuses. A block's other text fields
+    stays editable that way, and a changed one is one line. A pin's text,
+    one line or several, is typed in a `<textarea>` labelled Text at the
+    top of the body (`title`), as a station's description is, so a
+    creator can always give it a second line: it keeps its lines (Enter
+    is a new line there, leaving it writes it), its count under it
+    (`#inspector-pin-count`, an `<output>` the area is described by,
+    `pin-text.ts`): "12 / 40", marked `data-over` past the 40
+    characters the edit refuses. The head shows the text as text only,
+    on one line (`oneLine`), with no field and no pen, so the dock never
+    holds two fields of it. A story's name is typed in the head, with its
+    count under it. A block's other text fields
     (`block-fields.ts`) carry the placeholder "Required" for a field the
     block needs, else "Optional" (`blockFieldPlaceholder`).
   - A code: its line, its print size, and its position, or that none is
@@ -266,7 +269,12 @@ drawInspector(dock, buildInspector(input), { folded, positionOpen }, pictures);
 `buildInspector`): hidden without a selection, a station's fields each
 tied to its label with the position folded, the position in metres of
 the tour's centre once unfolded, an item's offset in its station's
-frame, a code without a position, and the folded head. The page by
+frame, a code without a position, and the folded head.
+`shell-inspector.property.test.ts` (jsdom, fast-check): for any pin
+text, one line or several (any line ends), the one text area shows it with
+its lines as its default, what is typed there reaches the pin text edit
+(`inspectorEdit`) as typed, and the head names it on one line, as text.
+The page by
 `playwright-tests/editor3d-shell.spec.js` and
 `playwright-tests/editor3d-inspector.spec.js` (the edits, saved and
 opened again, and the fields' layout at four window sizes).
@@ -285,16 +293,18 @@ named) and his facing in the pop-up view alone, none for a long text, a story bl
 named `block:<id>:<field>` (a character's in his box, none for a
 block without texts), the fields to type
 per kind (each counted in its unit), a locked station's place
-and heading read-only with its Put on the ground off, a pin's text in
-the head with its count as it is typed (none for a read-only one or a
-station's name, which is typed in its labelled Name field in the body,
-the head showing it as text; the description three rows high), the outside-the-circle warning, and a command waiting for the
+and heading read-only with its Put on the ground off, a pin's text of
+one line in the body's text area labelled Text with its count as it is
+typed, the head showing it as text (no count for a station's name,
+which is typed in its labelled Name field in the body, the head showing
+it as text; the description three rows high), the outside-the-circle warning, and a command waiting for the
 ground (not `disabled`), with the focus kept on it as it starts waiting.
 It also keeps the focus on Earlier through an autosave's status change,
 and gives the focus back to the control that had it when the inspector
 is drawn again; a draw asked for inside a draw is not run, and
 `inspectorDrawing` is true only during one; a pin text of several lines
-shows on one line, read-only, its reason a line in the dock; a station's
+is typed in the body's text area, its lines kept, counted, the head
+showing it as text; a station's
 name and description of several lines stay editable, the description a
 text area holding its lines.
 

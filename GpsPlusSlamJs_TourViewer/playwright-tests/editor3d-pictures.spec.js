@@ -85,7 +85,7 @@ function view3d(page) {
 }
 
 /**
- * Looks from the photo's viewpoint and waits for the camera to get there.
+ * Looks from the photo's viewpoint (the view places the camera at once).
  * @param {import("@playwright/test").Page} page
  */
 async function lookFromViewpoint(page) {
@@ -93,7 +93,6 @@ async function lookFromViewpoint(page) {
     .locator("#shell-inspector")
     .getByRole("button", { name: "Look from the viewpoint" })
     .click();
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -209,7 +208,6 @@ for (const size of SIZES) {
 
     // The 3D view's keys move and turn the viewpoint, one step each, and
     // leave the picture's own pose alone.
-    await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
     await page.evaluate(() =>
       /** @type {HTMLElement | null} */ (document.activeElement)?.blur(),
     );

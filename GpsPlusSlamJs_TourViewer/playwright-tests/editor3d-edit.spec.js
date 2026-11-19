@@ -262,8 +262,8 @@ async function discPoint(page) {
 }
 
 /**
- * Select the pin from the tree (a click on its station unfolds it),
- * and wait for the flight to it to end.
+ * Select the pin from the tree (a click on its station unfolds it); the
+ * view places the camera at once, with no flight to wait for.
  * @param {import("@playwright/test").Page} page
  * @param {string} station
  */
@@ -272,14 +272,9 @@ async function selectPin(page, station) {
   // A second click on a station folds it again.
   if (!(await pin.isVisible())) {
     await page.locator(`#tree-body [data-select="station:${station}"]`).click();
-    // The station's flight ends first: a pick mid-flight keeps the
-    // distance the camera has then (`flightGoal`), so the pin would be
-    // framed at a distance that depends on the moment of the click.
-    await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   }
   await pin.click();
   await expect.poll(() => selected(page)).toBe(PIN);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
 }
 
 /**
@@ -437,11 +432,9 @@ test("a drag on the selected pin's body turns the camera and leaves the pin; a t
   // A tap on the body selects the pin.
   await page.keyboard.press("Escape");
   await expect.poll(() => selected(page)).toBeNull();
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   const tap = await pinPoint(page);
   await page.mouse.click(tap.x, tap.y);
   await expect.poll(() => selected(page)).toBe(PIN);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   // The disc moves it, one step.
   const from = await discPoint(page);
   await page.mouse.move(from.x, from.y);
@@ -467,7 +460,6 @@ test("a tap on another item inside the selected station's move disc selects it",
   const station = await openWithPin(page);
   await page.locator(`#tree-body [data-select="station:${station}"]`).click();
   await expect.poll(() => selected(page)).toBe(`station:${station}`);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   // The sample's stations are locked, and a locked station has no disc.
   const lock = page.locator("#shell-inspector [data-act='lock']");
   await expect(lock).toHaveAttribute("aria-pressed", "true");
@@ -615,10 +607,9 @@ async function cameraAt(page) {
 // Not "mid-flight": the globe view's Frame (F) places the camera at once
 // and starts no flight (`flying` read false right after F), and its only
 // flight, the opening approach, cannot be pressed into at a reliable
-// moment. No press can grab the gizmo during that flight: it holds the
-// stations back (`holdsStations`), so no gizmo is drawn, and any press on
-// the canvas takes the camera from it (`approach.takeOver`, held by
-// editor3d-globe-approach.spec.js). The input's lock (`lockCamera`, the
+// moment. A press on the canvas ends that flight in the same event
+// (`approach.takeOver`, held by editor3d-globe-approach.spec.js), so no
+// flight outlives the press. The input's lock (`lockCamera`, the
 // controls' `lease(true)`) stops only the orbit's coast (the globe's
 // controls test "lease holds the controls off until it is returned").
 test("holds the camera still from a press on the gizmo until its release, and against T and Home", async ({
@@ -781,7 +772,6 @@ test("keys pressed in a menu stay in the menu: no nudge, no camera move, no top 
   await viewButton.focus();
   await page.keyboard.press("Home");
   await expect.poll(offNorth).toBeLessThan(turned / 2);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   // And framed: every station stands on the screen.
   const framed = await page.evaluate(() => {
     const hook = /** @type {any} */ (window).__tourEditor;
@@ -1043,7 +1033,6 @@ test("a station's position is locked until it is unlocked in the inspector: its 
   const station = await openWithPin(page);
   await page.locator(`#tree-body [data-select="station:${station}"]`).click();
   await expect.poll(() => selected(page)).toBe(`station:${station}`);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   /** @param {"middle" | "knob" | "dot"} part */
   const shown = (part) =>
     page.evaluate(
@@ -1159,7 +1148,6 @@ test("a code laid flat in the top view is drawn 12 px on screen from high above,
   await expect.poll(async () => (await view3d(page))?.codes).toBe(1);
   await page.keyboard.press("t");
   await expect.poll(async () => (await view3d(page))?.top).toBe(true);
-  await expect.poll(async () => (await view3d(page))?.flying).toBe(false);
   await expect.poll(async () => (await view3d(page))?.standing).toBe(0);
   /** The least side of a code laid flat on screen (CSS px). */
   const SCREEN_PX = 12;

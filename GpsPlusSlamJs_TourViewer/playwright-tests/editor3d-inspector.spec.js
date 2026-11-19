@@ -97,9 +97,10 @@ function act(page, act) {
 
 /**
  * Two stations a and b along the square, each with a pin 5 m north of
- * its anchor and 1.5 m up; b stands 3 m over the ground. As a zip.
+ * its anchor and 1.5 m up; b stands 3 m over the ground. Station a's pin
+ * reads `captionA` ("Pin a" by default). As a zip.
  */
-async function twoPinTour() {
+async function twoPinTour(captionA = "Pin a") {
   const station = (
     /** @type {string} */ id,
     /** @type {number} */ dLat,
@@ -121,7 +122,7 @@ async function twoPinTour() {
         id: `p${id}`,
         kind: "shortText",
         view: "pin",
-        caption: `Pin ${id}`,
+        caption: id === "a" ? captionA : `Pin ${id}`,
         createdAtIso: "2026-10-25T09:00:00.000Z",
         pose: { position: [5, 1.5, 0], rotation: [0, 0, 0, 1] },
       },
@@ -460,11 +461,13 @@ test("a short text's caption and Description are typed in the inspector: one ste
       (/** @type {any} */ b) => b.id === "pa",
     );
 
-  // The caption, typed in the head: one step.
-  const caption = field(page, "title");
+  // The caption, typed in the body's text area labelled Text and left:
+  // one step.
+  const caption = inspector.getByLabel("Text", { exact: true });
+  await expect(caption).toHaveAttribute("data-field", "title");
   await expect(caption).toHaveValue("Pin a");
   await caption.fill("The old well");
-  await caption.press("Enter");
+  await caption.press("Tab");
   await expect
     .poll(async () => (await blockNow())?.caption)
     .toBe("The old well");
@@ -527,6 +530,58 @@ test("a short text's caption and Description are typed in the inspector: one ste
     next.locator("#shell-inspector").getByLabel("Description", { exact: true }),
   ).toHaveValue("Under the arch");
   await expect(field(next, "title")).toHaveValue("The old well");
+});
+
+test("a pin text of several lines is typed in the inspector's text area: its lines kept, one step, saved and opened again", async ({
+  page,
+  context,
+}) => {
+  // Why: a pin's text is typed in the inspector's text area labelled
+  // Text, whatever its lines, where Enter starts a new line. Its lines must reach the tour as
+  // one step and come back on the next open, as typed.
+  test.slow();
+  await openTour(page, await twoPinTour("Pin a\nby the gate"));
+  await selectStation(page, "a");
+  await page
+    .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
+    .click();
+  await expect.poll(() => selected(page)).toBe("pa");
+  const inspector = page.locator("#shell-inspector");
+  const text = inspector.getByLabel("Text", { exact: true });
+  await expect(text).toHaveAttribute("data-field", "title");
+  await expect(text).toHaveValue("Pin a\nby the gate");
+  const start = await revision(page);
+  const blockNow = async () =>
+    stationBlocks(await stationNow(page, "a")).find(
+      (/** @type {any} */ b) => b.id === "pa",
+    );
+
+  await text.fill("The old well");
+  await text.press("Enter");
+  await text.pressSequentially("north side");
+  await text.press("Tab");
+  await expect
+    .poll(async () => (await blockNow())?.caption)
+    .toBe("The old well\nnorth side");
+  expect(await revision(page)).toBe(start + 1);
+
+  const download = page.waitForEvent("download");
+  await save(page);
+  const saved = await (await download).path();
+  const { readFileSync } = await import("node:fs");
+  const written = readFileSync(saved);
+  expect(
+    stationBlocks((await savedTour(written)).stations[0])[0],
+  ).toMatchObject({ id: "pa", caption: "The old well\nnorth side" });
+  const next = await context.newPage();
+  await openTour(next, written);
+  await selectStation(next, "a");
+  await next
+    .locator('#tree-body .card[data-station="a"] [data-select="pa"]')
+    .click();
+  await expect(
+    next.locator("#shell-inspector").getByLabel("Text", { exact: true }),
+  ).toHaveValue("The old well\nnorth side");
 });
 
 test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a typed place are one step each", async ({
@@ -609,7 +664,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   await expect(field(page, "heading")).toHaveValue("90.0");
 
   // Add a pin (the row's "+"): a new pin in b, selected and said; its
-  // words typed in the head.
+  // words typed in the body's text area and left.
   await page.locator('#tree-body .card[data-station="b"] .head .add').click();
   await page.locator('#tree-add-menu [data-kind="shortText"]').click();
   await expect(
@@ -624,7 +679,7 @@ test("Put items on the ground, Put on the ground, Add a pin, a pin's text and a 
   ).toContain(pin);
   await expect(field(page, "title")).toHaveValue("New pin 2");
   await field(page, "title").fill("Look up");
-  await field(page, "title").press("Enter");
+  await field(page, "title").press("Tab");
   await expect
     .poll(
       async () =>

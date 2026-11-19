@@ -33,6 +33,11 @@ function isToday([r, , b]) {
   return b > r + 40;
 }
 
+/**
+ * What the shader is told. It changes only inside the part's per-frame
+ * `show()`, so after a click it lags by a frame or more under software
+ * WebGL: every read after an action goes through `expect.poll`.
+ */
 async function shader(page) {
   const s = await page.evaluate(() => window.__thenNowCheck?.state());
   if (s === null || s === undefined) throw new Error("no picture");
@@ -66,14 +71,14 @@ for (const viewport of VIEWPORTS) {
     // Lined up: the panel is open in Fade, nothing is cut.
     const swipe = page.getByRole("button", { name: "Swipe" });
     await swipe.waitFor({ state: "visible" });
-    expect((await shader(page)).on).toBe(false);
+    await expect.poll(async () => (await shader(page)).on).toBe(false);
     await swipe.click();
     await expect(page.getByText("Drag the line to compare")).toBeVisible();
     const knob = page.getByRole("slider", {
       name: "Line between then and today",
     });
     await expect(knob).toHaveAttribute("aria-valuenow", "50");
-    expect(await shader(page)).toEqual({ on: true, split: 0.5 });
+    await expect.poll(() => shader(page)).toEqual({ on: true, split: 0.5 });
 
     // Drag the knob to 30 % of the screen's width.
     const box = await knob.boundingBox();
@@ -88,9 +93,10 @@ for (const viewport of VIEWPORTS) {
     await page.mouse.move(viewport.width * 0.3, y, { steps: 6 });
     await page.mouse.up();
     await expect(knob).toHaveAttribute("aria-valuenow", "30");
-    const cut = await shader(page);
-    expect(cut.on).toBe(true);
-    expect(cut.split).toBeCloseTo(0.3, 2);
+    await expect.poll(async () => (await shader(page)).on).toBe(true);
+    await expect
+      .poll(async () => (await shader(page)).split)
+      .toBeCloseTo(0.3, 2);
 
     // Then left of the line, today right of it, in the drawn frame.
     for (const x of [0.15, 0.27]) {
@@ -126,7 +132,7 @@ for (const viewport of VIEWPORTS) {
     // Back to Fade: the line goes and nothing is cut.
     await page.getByRole("button", { name: "Fade" }).click();
     await expect(knob).toBeHidden();
-    expect((await shader(page)).on).toBe(false);
+    await expect.poll(async () => (await shader(page)).on).toBe(false);
     expect(errors).toEqual([]);
   });
 }

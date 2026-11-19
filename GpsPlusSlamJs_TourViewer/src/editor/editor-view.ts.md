@@ -28,6 +28,9 @@ chrome reads, one copy for every view of the page.
   - `message` - `{ id, text, refused? }`: the card's last outcome line,
     for the item it was said about;
   - `picking` - the browser's file picker is open;
+  - `duplicating` - a Duplicate is reading its pictures before it
+    writes: another one does nothing meanwhile (a second Ctrl+D makes
+    no copy);
   - `viewMode` - `"2d"` (the map) or `"3d"` (the 3D view shows);
   - `view3dLoad` - `"idle"`, `"loading"` (the 3D view's code, ground
     and WebGL are coming) or `"failed"` (the last load failed; the map
@@ -63,7 +66,8 @@ chrome reads, one copy for every view of the page.
 - `editorViewActions`:
   - `selected({ id })`;
   - `busyChanged({ busy })`, `doneBusyChanged({ busy })`,
-    `pickingChanged({ picking })`, `undeliveredChanged({ waits })`;
+    `pickingChanged({ picking })`, `undeliveredChanged({ waits })`,
+    `duplicatingChanged({ duplicating })`;
   - `moveStarted({ id })`, `moveDropped({ id, drop })`, `moveEnded()`;
   - `walkChanged({ keepsWalk?, openedWalk? })` - each given flag set;
   - `said({ message })` - the card's line, or none;

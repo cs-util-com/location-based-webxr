@@ -38,18 +38,31 @@ async function gone(/** @type {number} */ pid, tries = 40) {
   return !alive(pid);
 }
 
-/** Resolves once the file holds a pid. */
-async function readPid(/** @type {string} */ file, tries = 200) {
-  for (let i = 0; i < tries; i++) {
-    try {
-      const pid = Number(readFileSync(file, 'utf8'));
-      if (Number.isInteger(pid) && pid > 0) return pid;
-    } catch {
-      // not written yet
-    }
+/** @param {string} file @returns {number | null} */
+function pidIn(file) {
+  try {
+    const pid = Number(readFileSync(file, 'utf8'));
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null; // not written yet
+  }
+}
+
+/**
+ * Resolves once the file holds a pid, waiting as long as the driver lives
+ * (a loaded machine can take seconds to start it; the test's own timeout
+ * bounds the wait), and fails once the driver ended without writing one.
+ * @param {string} file
+ * @param {import('node:child_process').ChildProcess} driver
+ */
+async function readPid(file, driver) {
+  for (;;) {
+    const ended = driver.exitCode !== null || driver.signalCode !== null;
+    const pid = pidIn(file);
+    if (pid !== null) return pid;
+    if (ended) throw new Error(`no pid in ${file}, and the driver ended`);
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`no pid in ${file}`);
 }
 
 /** @type {string[]} */
@@ -105,8 +118,8 @@ describe('the stage watchdog, end to end', () => {
     dirs.push(dir);
     const pidFile = path.join(dir, 'grandchild.pid');
     // 0.02 min = 1.2 s of silence.
-    const { done } = drive('silent', '0.02', pidFile);
-    const grandchild = await readPid(pidFile);
+    const { child, done } = drive('silent', '0.02', pidFile);
+    const grandchild = await readPid(pidFile, child);
     leftovers.push(grandchild);
 
     const { code, out } = await done;
@@ -134,7 +147,7 @@ describe('the stage watchdog, end to end', () => {
     child.stdout.on('data', (chunk) => {
       if (verdictAt === null && String(chunk).includes('RESULT exit=')) verdictAt = Date.now();
     });
-    leftovers.push(await readPid(pidFile));
+    leftovers.push(await readPid(pidFile, child));
     const { code, out } = await done;
     const exitedAt = Date.now();
     expect(out).toContain('RESULT exit=124');
@@ -168,8 +181,8 @@ describe('the stage watchdog, end to end', () => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
       dirs.push(dir);
       const pidFile = path.join(dir, 'grandchild.pid');
-      const { done } = drive('browser', '0.02', pidFile);
-      leftovers.push(await readPid(pidFile));
+      const { child, done } = drive('browser', '0.02', pidFile);
+      leftovers.push(await readPid(pidFile, child));
       const { code, out } = await done;
       expect(code).toBe(STALL_EXIT);
       expect(readFileSync(`${pidFile}.report`, 'utf8')).toBe('written');
@@ -184,9 +197,9 @@ describe('the stage watchdog, end to end', () => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
       dirs.push(dir);
       const pidFile = path.join(dir, 'grandchild.pid');
-      const { done } = drive('stubborn-browser', '0.02', pidFile);
-      const grandchild = await readPid(pidFile);
-      const stage = await readPid(`${pidFile}.stage`);
+      const { child, done } = drive('stubborn-browser', '0.02', pidFile);
+      const grandchild = await readPid(pidFile, child);
+      const stage = await readPid(`${pidFile}.stage`, child);
       leftovers.push(grandchild, stage);
       const { code } = await done;
       expect(code).toBe(STALL_EXIT);
@@ -205,8 +218,8 @@ describe('the stage watchdog, end to end', () => {
       const dir = mkdtempSync(path.join(os.tmpdir(), 'stall-watch-'));
       dirs.push(dir);
       const pidFile = path.join(dir, 'grandchild.pid');
-      const { done } = drive('stubborn', '0.02', pidFile);
-      leftovers.push(await readPid(pidFile), await readPid(`${pidFile}.stage`));
+      const { child, done } = drive('stubborn', '0.02', pidFile);
+      leftovers.push(await readPid(pidFile, child), await readPid(`${pidFile}.stage`, child));
       expect((await done).code).toBe(STALL_EXIT);
       expect(readFileSync(`${pidFile}.signals`, 'utf8').trim()).toBe('SIGTERM');
     },
@@ -221,8 +234,8 @@ describe('the stage watchdog, end to end', () => {
       const pidFile = path.join(dir, 'grandchild.pid');
       // A limit far beyond the test: only the signal can end the stage.
       const { child, done } = drive('stubborn', '30', pidFile);
-      const grandchild = await readPid(pidFile);
-      const stage = await readPid(`${pidFile}.stage`);
+      const grandchild = await readPid(pidFile, child);
+      const stage = await readPid(`${pidFile}.stage`, child);
       leftovers.push(grandchild, stage);
       child.kill('SIGINT');
       const { code } = await done;

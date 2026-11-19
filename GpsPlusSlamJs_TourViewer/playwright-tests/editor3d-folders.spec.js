@@ -40,11 +40,12 @@ const N_M = 45.68;
 /**
  * A tour of one station "Station A": a story "First" with one entry, a
  * plain folder "Yard" holding pin "y", and free pins p, q and r.
- * `yardTurned` turns the yard a quarter about up.
- * @param {{ yardTurned?: boolean }} [options]
+ * `yardTurned` turns the yard a quarter about up; `unreadPhoto` adds a
+ * photo "z" to the yard whose picture the zip lacks, so it cannot be read.
+ * @param {{ yardTurned?: boolean, unreadPhoto?: boolean }} [options]
  * @returns {Promise<Buffer>}
  */
-async function foldersTour({ yardTurned = false } = {}) {
+async function foldersTour({ yardTurned = false, unreadPhoto = false } = {}) {
   /** @param {string} id @param {number} x */
   const pin = (id, x) => ({
     id,
@@ -57,6 +58,9 @@ async function foldersTour({ yardTurned = false } = {}) {
   const manifest = {
     ...createEmptyTourManifest(),
     title: "Folders",
+    ...(unreadPhoto
+      ? { assets: [{ id: "z", path: "content/z.jpg", width: 8, height: 6 }] }
+      : {}),
     // Its own id: the draft is offered back for the same tour only.
     tourId: "fedcba9876543210fedcba9876543210",
     stations: [
@@ -109,7 +113,22 @@ async function foldersTour({ yardTurned = false } = {}) {
                 ? [0, -Math.SQRT1_2, 0, Math.SQRT1_2]
                 : [0, 0, 0, 1],
             },
-            children: [pin("y", 1)],
+            children: [
+              pin("y", 1),
+              ...(unreadPhoto
+                ? [
+                    {
+                      id: "z",
+                      kind: "picture",
+                      view: "plane",
+                      image: "z",
+                      widthM: 1,
+                      createdAtIso: "2026-11-10T09:00:00.000Z",
+                      pose: { position: [-1, 1.5, 0], rotation: [0, 0, 0, 1] },
+                    },
+                  ]
+                : []),
+            ],
           },
           pin("p", -3),
           pin("q", 0),
@@ -401,20 +420,14 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   const start = await revision(page);
   const selected = () =>
     page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
-  const settled = () =>
-    expect
-      .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
-      .toBe(false);
 
   // Closed: nothing of the story stands there.
   await card.locator('.kid[data-select="p"]').click();
   await expect.poll(selected).toBe("p");
-  await settled();
   expect(await pickAtE2(page)).not.toBe("e2");
 
   await card.locator('.folder[data-story="s1"] button.fname').click();
   await expect.poll(selected).toBe("story:s1");
-  await settled();
   await expect.poll(() => pickAtE2(page)).toBe("e2");
 
   // Chosen in the 3D view, it is chosen in the tree, with its disc and
@@ -426,7 +439,6 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   );
   await page.mouse.click(at.x, at.y);
   await expect.poll(selected).toBe("e2");
-  await settled();
   const handle = (/** @type {string} */ part) =>
     page.evaluate(
       (p) => /** @type {any} */ (window).__tourEditor.view3dHandle(p),
@@ -438,6 +450,11 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   await expect.poll(() => pickAtE2(page)).toBe("e2");
   await capture(page, "editor3d-story-entry-open");
   expect(await revision(page)).toBe(start);
+  // Ctrl+D on an entry does nothing, as the bar offers it no Duplicate.
+  await page.keyboard.press("Control+d");
+  await afterFrames(page);
+  expect(await revision(page)).toBe(start);
+  await expect(page.locator(".toast", { hasText: "no longer" })).toHaveCount(0);
 
   // Its disc dragged over the ground: one step, written into its story in
   // place, its facing kept; Undo puts it back.
@@ -473,8 +490,134 @@ test("an open story's posed entry shows in the 3D view, is chosen there, and its
   // Another item chosen: the story closes.
   await card.locator('.kid[data-select="p"]').click();
   await expect.poll(selected).toBe("p");
-  await settled();
   await expect.poll(() => pickAtE2(page)).not.toBe("e2");
+});
+
+/**
+ * Two animation frames: time enough for a key's work that settles at once.
+ * @param {import("@playwright/test").Page} page
+ */
+function afterFrames(page) {
+  return page.evaluate(
+    () =>
+      new Promise((done) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => done(null)));
+      }),
+  );
+}
+
+// Why: a folder's Duplicate reads its items' pictures before it writes, so
+// a second Ctrl+D while that read runs must make no second copy. Its
+// Delete asks first: a No leaves the tour as it was, a Yes removes the
+// folder with its item as one step, and Undo brings both back.
+test("a folder's Ctrl+D pressed twice at once makes one copy, and its Delete asks first and undoes as one step", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFolders(page, await foldersTour());
+  const card = await unfold(page);
+  const start = await revision(page);
+  const selected = () =>
+    page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
+  const yard = card.locator('.gfolder[data-plainfolder="yard"] button.fname');
+  await yard.click();
+  await expect.poll(selected).toBe("folder:yard");
+
+  // Both presses in one task: the second comes while the first still reads.
+  await page.evaluate(() => {
+    for (let i = 0; i < 2; i += 1) {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "d",
+          code: "KeyD",
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
+  });
+  await expect(
+    page.locator(".toast", { hasText: "Duplicated the folder" }),
+  ).toBeVisible();
+  await afterFrames(page);
+  expect(await folderOrder(page)).toHaveLength(2);
+  expect(await revision(page)).toBe(start + 1);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => folderOrder(page)).toEqual(["Yard"]);
+  // The read is over: its held toast is gone and the next Duplicate is
+  // free again (a busy state left behind would make every later one do
+  // nothing).
+  await expect(page.locator('.toast[aria-busy="true"]')).toHaveCount(0);
+  await yard.click();
+  await expect.poll(selected).toBe("folder:yard");
+  await page.keyboard.press("Control+d");
+  await expect.poll(() => folderOrder(page)).toHaveLength(2);
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => folderOrder(page)).toEqual(["Yard"]);
+
+  /** @type {string[]} */
+  const asked = [];
+  /** @param {boolean} yes */
+  const answer = (yes) =>
+    page.once("dialog", (dialog) => {
+      asked.push(dialog.message());
+      void (yes ? dialog.accept() : dialog.dismiss());
+    });
+  await yard.click();
+  await expect.poll(selected).toBe("folder:yard");
+  const before = await revision(page);
+  answer(false);
+  await page.keyboard.press("Delete");
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toBe(
+    'Delete the folder "Yard"? Its item goes with it. You can undo this.',
+  );
+  expect(await revision(page)).toBe(before);
+  expect(await groups(page)).toEqual({ Yard: ["y"], free: ["p", "q", "r"] });
+
+  answer(true);
+  await page.keyboard.press("Delete");
+  await expect.poll(() => groups(page)).toEqual({ free: ["p", "q", "r"] });
+  expect(await revision(page)).toBe(before + 1);
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(() => groups(page))
+    .toEqual({ Yard: ["y"], free: ["p", "q", "r"] });
+});
+
+// Why: a Duplicate that cannot read a photo's picture is refused in words,
+// and its held "Duplicating..." toast and busy state end with it: left
+// behind, the toast would say a copy is still coming and every later
+// Duplicate would do nothing.
+test("a folder's Duplicate refused for a picture it cannot read says so and leaves nothing busy", async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openFolders(page, await foldersTour({ unreadPhoto: true }));
+  const card = await unfold(page);
+  const start = await revision(page);
+  const selected = () =>
+    page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
+  const yard = card.locator('.gfolder[data-plainfolder="yard"] button.fname');
+  const refusal = page.locator(".toast", {
+    hasText: "This photo's picture could not be read, so it cannot be copied.",
+  });
+  await yard.click();
+  await expect.poll(selected).toBe("folder:yard");
+  await page.keyboard.press("Control+d");
+  await expect(refusal).toBeVisible();
+  await expect(page.locator('.toast[aria-busy="true"]')).toHaveCount(0);
+  expect(await folderOrder(page)).toEqual(["Yard"]);
+  expect(await revision(page)).toBe(start);
+  // Not left busy: the next press is refused again, in the same words.
+  await refusal.evaluateAll((all) => {
+    for (const shown of all) shown.remove();
+  });
+  await page.keyboard.press("Control+d");
+  await expect(refusal).toBeVisible();
 });
 
 /**
@@ -665,11 +808,6 @@ function wholeTour(page) {
   );
 }
 
-/** @param {import("@playwright/test").Page} page */
-function view3dStats(page) {
-  return page.evaluate(() => /** @type {any} */ (window).__tourEditor.view3d());
-}
-
 /**
  * A point of the 3D view's hook (CSS px on the canvas) on the page, once
  * it shows.
@@ -815,9 +953,6 @@ async function selectYard(page) {
       page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected()),
     )
     .toBe("folder:yard");
-  await expect
-    .poll(async () => (await view3dStats(page))?.flying, { timeout: 30_000 })
-    .toBe(false);
   await expect
     .poll(() =>
       page.evaluate(
