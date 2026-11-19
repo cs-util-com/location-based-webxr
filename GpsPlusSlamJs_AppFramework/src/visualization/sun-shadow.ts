@@ -162,7 +162,11 @@ export function createSunShadow(options: SunShadowOptions): SunShadow {
       ...(fit.farM === undefined ? {} : { farM: fit.farM }),
     });
     const [px, py, pz] = pose.position;
-    distance = Math.hypot(px - now.centre[0], py - now.centre[1], pz - now.centre[2]);
+    distance = Math.hypot(
+      px - now.centre[0],
+      py - now.centre[1],
+      pz - now.centre[2]
+    );
     Object.assign(camera, pose.bounds);
     camera.updateProjectionMatrix();
     // One ground texel of normal bias: a 2R map of mapSize
