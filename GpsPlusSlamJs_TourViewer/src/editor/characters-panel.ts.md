@@ -37,6 +37,10 @@ rather than pushing the list past a phone's window
   - `deps.makerShown(shown)` (optional): told true when the maker's dialog
     opens and false when it closes; the editor stops drawing its 3D view
     meanwhile, so the cut and the save get the machine.
+  - `deps.signal` (optional): aborting it removes the panel's one
+    listener on the document (the tab coming back). The page's panel
+    lives as long as the page and passes none; the tests end each
+    panel after its test, so no earlier panel looks again in a later one.
 - `CharactersPanel`
   - `open()`: shows the list and reads the library.
   - `isOpen()`: whether the list shows. `dialogOpen()`: whether the list or
@@ -165,7 +169,8 @@ const made = await characters.makeForTour(); // TourCharacter | null
     from the close until the add settled (taken down after a success,
     after nothing saved and after a failure after the close, which is
     said), Escape inside the frame;
-  - coming back to the tab;
+  - coming back to the tab, and no look on it once the panel's signal
+    is aborted (every test's panel is ended in `afterEach`);
   - `makeForTour`: made, none saved, refused, library unreadable;
   - import: the busy steps, a refusal, a failed save, a cancelled name
     question, and an import racing a look in flight (it reads again);

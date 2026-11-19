@@ -11,7 +11,7 @@
  * leave the author thinking a character is in the tour when it is not.
  */
 import fc from "fast-check";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 
 import type * as CharacterImport from "../characters/character-import.js";
@@ -242,8 +242,11 @@ function setup(
   const reach = {
     library: (): Promise<CharacterLibrary> => Promise.resolve(library.lib),
   };
+  const ended = new AbortController();
+  live.push(ended);
   const panel = createCharactersPanel({
     dom: d,
+    signal: ended.signal,
     tour: () => t.tour,
     library: () => reach.library(),
     makerUrl: "./characters.html",
@@ -255,8 +258,28 @@ function setup(
   const toasts = () => d.toasts.textContent ?? "";
   const libRow = (id: string) =>
     d.libList.querySelector<HTMLElement>(`li[data-id="${id}"]`);
-  return { d, library, reach, t, said, shown, seen, panel, toasts, libRow };
+  return {
+    d,
+    library,
+    reach,
+    t,
+    said,
+    shown,
+    seen,
+    panel,
+    toasts,
+    libRow,
+    ended,
+  };
 }
+
+/** Every panel's end, aborted after its test: a panel listens to the
+ *  document, and one left listening would look again in a later test. */
+const live: AbortController[] = [];
+
+afterEach(() => {
+  for (const ended of live.splice(0)) ended.abort();
+});
 
 beforeEach(() => {
   readFile.mockReset();
@@ -662,6 +685,23 @@ describe("the maker", () => {
     const calls = vi.mocked(s.library.lib.list).mock.calls.length;
     document.dispatchEvent(new Event("visibilitychange"));
     await settled();
+    expect(vi.mocked(s.library.lib.list).mock.calls.length).toBe(calls);
+  });
+});
+
+describe("ending the panel", () => {
+  // Why: the panel listens to the document for the tab coming back; a
+  // panel that has ended (a test's, between tests) must stop listening,
+  // or every later visibility change would make it look again.
+  it("stops looking on a visibility change once its signal is aborted", async () => {
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.panel.open();
+    await settled();
+    const calls = vi.mocked(s.library.lib.list).mock.calls.length;
+    s.ended.abort();
+    document.dispatchEvent(new Event("visibilitychange"));
+    await settled();
+    expect(s.d.panel.open).toBe(true);
     expect(vi.mocked(s.library.lib.list).mock.calls.length).toBe(calls);
   });
 });

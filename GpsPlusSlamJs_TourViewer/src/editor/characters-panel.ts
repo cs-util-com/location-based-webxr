@@ -98,6 +98,9 @@ export interface CharactersPanelDeps {
   /** The maker covers the page (true) or no longer does (false): the
    *  editor stops drawing its 3D view meanwhile. */
   readonly makerShown?: (shown: boolean) => void;
+  /** Ends the panel's listener on the document. The page's panel lives
+   *  as long as the page and passes none; a test ends each of its own. */
+  readonly signal?: AbortSignal;
 }
 
 /** What `makeForTour` tells its caller on the way. */
@@ -594,11 +597,19 @@ export function createCharactersPanel(
     if (isOpen()) void relist("closed");
   });
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && isOpen() && !dom.maker.open) {
-      void relist("back");
-    }
-  });
+  document.addEventListener(
+    "visibilitychange",
+    () => {
+      if (
+        document.visibilityState === "visible" &&
+        isOpen() &&
+        !dom.maker.open
+      ) {
+        void relist("back");
+      }
+    },
+    deps.signal === undefined ? undefined : { signal: deps.signal },
+  );
 
   // ------------------------------------------------- "Import character..."
 
