@@ -102,7 +102,7 @@ for (const viewport of VIEWPORTS) {
   });
 }
 
-test("a phone without AR copies the tour's link for one that has it", async ({
+test("a device without AR copies the tour's link for one that has it, and shows it as a code on a computer", async ({
   browser,
 }) => {
   // No fakes: headless Chromium has no WebXR, i.e. the unsupported phone.
@@ -118,6 +118,19 @@ test("a phone without AR copies the tour's link for one that has it", async ({
   // "What happens?" describes a session this phone cannot start.
   await expect(page.locator("#visitor-what")).toBeHidden();
   await expect(page.getByTestId("make-your-own")).toBeVisible();
+  // On this computer-sized screen the same link is a code to scan with a
+  // phone, drawn beside the button.
+  await expect(page.getByTestId("link-qr")).toBeVisible();
+  await expect(page.getByTestId("link-qr")).toContainText(
+    "Scan with your phone",
+  );
+  await expect(page.getByTestId("link-qr-code")).toHaveAttribute(
+    "data-url",
+    page.url(),
+  );
+  await expect(page.locator("[data-testid=link-qr-code] svg path")).toHaveCount(
+    1,
+  );
   await button.click();
   await expect(button).toHaveText("Link copied");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(

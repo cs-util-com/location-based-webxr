@@ -2137,6 +2137,52 @@
         font-size: 18px;
         box-shadow: 0 10px 24px rgb(23 25 28 / 24%);
       }
+      /* The link's code beside Copy link, on a computer without AR
+         (link-qr.ts): white tile, the caption under it. While it shows,
+         the action becomes a grid so the button and the code share one
+         row on the first screen; every other line keeps its own row. */
+      .link-qr[hidden] {
+        display: none;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #ar-root:has(> #link-qr:not([hidden])) {
+        display: grid;
+        grid-template-columns: auto auto;
+        align-items: center;
+        justify-content: center;
+        column-gap: 40px;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        #ar-root:has(> #link-qr:not([hidden]))
+        > :not(#enter-ar, #link-qr) {
+        grid-column: 1 / -1;
+        justify-self: center;
+      }
+      body[data-mode="visitor"]:not([data-ar-active="true"])
+        .link-qr:not([hidden]) {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        order: 1;
+        margin: 0;
+      }
+      .link-qr-code {
+        width: 124px;
+        height: 124px;
+        border-radius: 8px;
+        background: #fff;
+        box-shadow: 0 0 0 1px var(--map-line);
+      }
+      .link-qr-code svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      #link-qr figcaption {
+        color: var(--ink-dim);
+        font-size: 15px;
+      }
       body[data-mode="visitor"]:not([data-ar-active="true"]) #ar-hint {
         order: 2;
         max-width: 330px;
@@ -6120,6 +6166,19 @@
               >
                 Checking AR support…
               </button>
+              <!-- The visitor's "Scan with your phone" code: on a computer
+               that cannot show AR, the tour's link as a QR code beside Copy
+               link (link-qr.ts; ar-entry.ts shows it and draws the SVG). -->
+              <figure id="link-qr" class="link-qr" data-testid="link-qr" hidden>
+                <div
+                  id="link-qr-code"
+                  class="link-qr-code"
+                  data-testid="link-qr-code"
+                  role="img"
+                  aria-label="QR code of this tour's link"
+                ></div>
+                <figcaption>Scan with your phone</figcaption>
+              </figure>
               <!-- The visitor's scan card (polish round M4b, the owner's S1,
                D-P5 amended): centred over the camera while the scan gate
                waits for the code, with the phone-over-code animation, a

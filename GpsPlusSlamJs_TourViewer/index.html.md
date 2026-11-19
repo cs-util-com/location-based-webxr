@@ -94,7 +94,10 @@ result or a shared link shows).
   `visitor-start.ts`, which also titles the tab after the tour), then `#ar-root`
   restyled as the action (the status sentence above, the round
   `#enter-ar` with its ring and `data-step` marker, `#ar-hint` as the
-  one line under it, by flex `order`), then `#visitor-more` after the
+  one line under it, by flex `order`; on a computer without AR the
+  `#link-qr` figure beside "Copy link" (the action turns into a grid row
+  while it shows), its code drawn into
+  `#link-qr-code` by `ar-entry.ts` with `link-qr.ts`), then `#visitor-more` after the
   stage ("What happens?" `#visitor-what`, whose "Stays on your phone"
   says the app sends none of your data - no camera image, no location -
   and links the privacy page; hidden on a phone without AR and for a
@@ -536,7 +539,7 @@ authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 `replace-help-generic`, `replace-help-drive`, `replace-drive-copy`)), `visitor-screen`,
-`visitor-description`, `stats`, `error`, `error-contact`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`,
+`visitor-description`, `stats`, `error`, `error-contact`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`, `link-qr`, `link-qr-code`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`,
 `object-list` (its rows carry
