@@ -372,6 +372,13 @@ function wire(
   // live session, a reticle with a surface, and an aligned AR state.
   if (options.placeable === true) {
     ctx.reticle = fakeReticle() as never;
+    // Placing needs a tour open on the page (only an open tour keeps a
+    // draft): a hosted zip holding no codes, all a placement reads of it.
+    ctx.session = {
+      archive: { size: 0 },
+      entries: [],
+      loadEntryText: () => Promise.reject(new Error("no such entry")),
+    } as never;
   }
   const arStore = (pageStore ??
     (options.placeable === true
@@ -1181,6 +1188,37 @@ describe("a refused older tour's draft", () => {
       setup.forgetRefusedDraft("local-file:0123456789abcdef0123456789abcdef"),
     ).resolves.toBe(false);
     expect(a.files.size).toBe(2);
+  });
+});
+
+describe("placing is locked while no tour is open", () => {
+  it("keeps Pin, Photo and New station locked and places nothing, then unlocks once a tour opens", async () => {
+    // Why this test matters: only an open tour keeps a draft on this
+    // phone. Work placed with none lived in memory alone, so a reload, a
+    // tab kill or an AR crash lost it without a word. The camera opens the
+    // tour from its printed code; until then the panel locks placing and
+    // says so (`entryHint`), and nothing can be lost.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    const tour = ctx.session;
+    ctx.session = null;
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries(), "nothing placed").toEqual([]);
+    expect(dom.pinButton.disabled).toBe(true);
+    expect(dom.photoButton.disabled).toBe(true);
+    expect(dom.newStationButton.disabled).toBe(true);
+
+    ctx.session = tour;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(dom.pinButton.disabled).toBe(false);
+    expect(ctx.tourDocument.entries()).toHaveLength(1);
   });
 });
 

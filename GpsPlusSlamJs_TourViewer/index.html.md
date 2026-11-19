@@ -32,13 +32,22 @@ result or a shared link shows).
   no AR session runs (`body[data-ar-active]`), so `#ar-root` over the
   camera keeps the sheet's tokens; L5's own tokens are `--map-*`. The
   header (`<h1>Tour Viewer</h1>`) shows for a visitor only. The steps:
-  1. **Where the tour lives** (`#step-host`): the host tiles
-     (`#host-tiles`, a radiogroup filled by `host-picker.ts`), the chosen
-     host's steps (`#host-steps`), the starter zip (`#starter-zip`, only
-     for a host that needs a file before it gives a link), Continue
-     (`#host-continue`), and a small link to open a tour zip from the
-     device (`#open-file`, "Open it from this device", tour kit plan K0;
-     a file has no link, so its code is printed once the zip is hosted).
+  1. **Where the tour lives** (`#step-host`): it opens as one question,
+     "Before you make anything, your tour needs its file in your storage.
+     Is it there already?" (`#storage-question`, three answer buttons in
+     `.storage-answers`, wired by `storage-question.ts`; the answer is
+     not stored). "No, this is a new tour" reveals `#storage-new-panel`:
+     why the file comes first (its link goes into the printed code; once
+     the tour is open the phone keeps a copy of all you place; nothing is
+     made yet), the host tiles (`#host-tiles`, a group filled by
+     `host-picker.ts`), the chosen host's steps (`#host-steps`), the
+     starter zip (`#starter-zip`, only for a host that needs a file
+     before it gives a link) and Continue (`#host-continue`). "Yes, I
+     have its link" opens step 2. "Yes, the zip is on this phone" opens
+     the device's picker at once and reveals `#storage-zip-panel`, the
+     line holding `#open-file` ("Open it from this device", tour kit plan
+     K0), where the open shows its progress and a retry; a file has no
+     link, so its code is printed once the zip is hosted.
   2. **The link** (`#step-link`): `#open-form` with the button "Check
      link" - the check also runs by itself on paste and when the field is
      left - and `#link-status`, the line saying what the check found
@@ -77,7 +86,11 @@ result or a shared link shows).
   4. **Hang** (`#step-hang`): the "It hangs - continue" button.
   5. **Create the tour** (`#step-measure`): a `<details>` like its
      siblings since F4, wrapping `#ar-root`; its button reads "Start
-     creating". And `#draft-offer` - unsaved work this
+     creating". While no tour is open on the page, `.measure-no-tour` says
+     "Your tour is not open here yet. Start at your hung code (the camera
+     opens your tour from it), or open its link in step 2." - CSS only,
+     keyed on `body[data-tour-open="settled"]` (`archive-open.ts`); in AR
+     placing stays locked until then (`creator-placement.ts`). And `#draft-offer` - unsaved work this
      device still holds for this tour, offered with three answers rather
      than applied (F13). The paste form F12 added here (`#tour-missing`) is gone: the
      printed code carries the tour's link, so reading it in AR opens the

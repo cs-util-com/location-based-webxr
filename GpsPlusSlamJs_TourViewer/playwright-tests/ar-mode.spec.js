@@ -2192,7 +2192,7 @@ test("a refused AR entry explains itself on the page, with no session to explain
   await expect(page.getByTestId("enter-ar")).toHaveText("Start creating");
 });
 
-test("step 4 opens the tour its printed code names, and stays on step 4", async ({
+test("step 4 opens the tour its printed code names, stays on step 4, and placing unlocks only then", async ({
   page,
 }) => {
   // Why this matters (scan-to-open plan §2, owner decision): a creator
@@ -2204,10 +2204,22 @@ test("step 4 opens the tour its printed code names, and stays on step 4", async 
   // The trap this pins (M3 review #1): the open runs step 1's path, whose
   // default is "a tour opened, go to step 2" - which would collapse the
   // step holding the AR overlay.
+  //
+  // Placing is locked until the tour is open: only an open tour keeps a
+  // draft on this phone, so a pin placed before would be lost to a reload
+  // or a crash. The step and the panel say so, and the code unlocks it.
   await page.goto("/");
   await openMeasureStep(page);
   await expect(page.getByTestId("tour-missing")).toHaveCount(0);
+  await expect(page.getByTestId("measure-no-tour")).toBeVisible();
   await enterAr(page);
+  // Aligned, so the tour is the one thing placing waits for.
+  await seedAlignment(page);
+  await expect(page.getByTestId("setup-pin")).toBeDisabled();
+  await expect(page.getByTestId("setup-photo")).toBeDisabled();
+  await expect(page.getByTestId("setup-status")).toContainText(
+    "Point at your hung code: it opens your tour.",
+  );
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
   }, E2E_QR_TEXT);
@@ -2228,6 +2240,11 @@ test("step 4 opens the tour its printed code names, and stays on step 4", async 
   // step 2's code is built from the same value.
   await expect(page.getByTestId("link-input")).toHaveValue(E2E_QR_ARCHIVE);
   await expect(page.getByTestId("print-url-shown")).toHaveText(E2E_QR_ARCHIVE);
+  // The tour is open: placing unlocks, and the locked line is gone.
+  await expect(page.getByTestId("setup-pin")).toBeEnabled();
+  await expect(page.getByTestId("setup-status")).not.toContainText(
+    "Point at your hung code",
+  );
 });
 
 test("a code whose tour cannot be opened says why, and one that names no tour says so", async ({
@@ -3304,6 +3321,8 @@ test("on a device that can share files, the starter button says share and report
   await installTourViewerArFakes(page, { shareRoute: true });
   await page.goto("/?nocache=1");
   await page.getByTestId("station-host").click();
+  // Step 1 opens as a question; a new tour reveals the hosts and the zip.
+  await page.getByTestId("storage-answer-new").click();
   const starter = page.getByTestId("starter-zip");
   await expect(starter).toHaveText(/share the empty starter tour/i);
   await expect(starter).not.toHaveText(/download/i);
@@ -3332,6 +3351,8 @@ test("a share that hands nothing over says so, without blaming the creator", asy
     /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
   });
   await page.getByTestId("station-host").click();
+  // Step 1 opens as a question; a new tour reveals the hosts and the zip.
+  await page.getByTestId("storage-answer-new").click();
   const starter = page.getByTestId("starter-zip");
   await starter.click();
   await expect(starter).toHaveText(/not shared/i);

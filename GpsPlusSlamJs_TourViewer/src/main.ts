@@ -69,6 +69,7 @@ import type { ScanOpen } from "./scan-open.js";
 import { meshCursorFromSearch, viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wireHostPicker } from "./host-picker.js";
+import { wireStorageQuestion } from "./storage-question.js";
 import { wireSetupStage } from "./setup-stage.js";
 import { mountLanding, watchArStarting } from "./landing/landing-mount.js";
 import { holdLandingSkip } from "./landing/landing-skip.js";
@@ -428,6 +429,30 @@ if (mode === "creator") {
     onContinue: () => {
       wizard.openStep("link");
       element<HTMLInputElement>("link").focus();
+    },
+  });
+  // Step 1 opens as one question (storage-question.ts): the file comes
+  // before anything is made, and each answer leads to its way in.
+  wireStorageQuestion({
+    dom: {
+      answers: {
+        newTour: element("storage-new"),
+        link: element("storage-link"),
+        zip: element("storage-zip"),
+      },
+      panels: {
+        newTour: element("storage-new-panel"),
+        zip: element("storage-zip-panel"),
+      },
+    },
+    onLink: () => {
+      wizard.openStep("link");
+      element<HTMLInputElement>("link").focus();
+    },
+    // The existing device open (archive-open.ts), inside this tap so the
+    // picker keeps its user activation; its line shows the progress.
+    onZip: () => {
+      element<HTMLButtonElement>("open-file").click();
     },
   });
 }

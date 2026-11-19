@@ -109,6 +109,22 @@
         box-shadow: var(--shadow-pressed);
         color: var(--accent);
       }
+      /* Step 1's opening question (storage-question.ts): its answers are
+         sentences, so one per row, in the host tiles' pressed language. */
+      .storage-answers {
+        display: grid;
+        gap: var(--space-2);
+        margin: var(--space-3) 0 0;
+        max-width: 28rem;
+      }
+      /* Step 5 says so while no tour is open on this page (the body's
+         data-tour-open is "settled" only once one has opened). */
+      .measure-no-tour {
+        display: none;
+      }
+      body:not([data-tour-open="settled"]) .measure-no-tour:not([hidden]) {
+        display: block;
+      }
       /* A button that reads as a link (polish round M2, A5): the device
          open is the fallback, so it stops looking like a main action. */
       .link-button {
@@ -5483,51 +5499,108 @@
                   </svg>
                   <h2>Where your tour's file is stored</h2>
                 </summary>
-                <p class="step-copy hint--dim">
-                  Your tour is one small zip file in your own storage. Visitors'
-                  phones load it from there; once it has loaded, it keeps
-                  working without signal.
+                <!-- One question first (storage-question.ts): the file comes
+                 before anything is made, and each answer leads to its one
+                 way in. The answer is not stored. -->
+                <p class="step-copy" id="storage-question">
+                  Before you make anything, your tour needs its file in your
+                  storage. Is it there already?
                 </p>
                 <div
-                  id="host-tiles"
-                  class="host-tiles"
+                  class="storage-answers"
                   role="group"
-                  aria-label="Where your tour's file is stored"
-                  data-testid="host-tiles"
-                ></div>
-                <ol
-                  id="host-steps"
-                  class="substeps"
-                  data-testid="host-steps"
+                  aria-labelledby="storage-question"
+                  data-testid="storage-answers"
+                >
+                  <button
+                    type="button"
+                    id="storage-new"
+                    class="btn btn--prose host-tile"
+                    data-testid="storage-answer-new"
+                  >
+                    No, this is a new tour
+                  </button>
+                  <button
+                    type="button"
+                    id="storage-link"
+                    class="btn btn--prose host-tile"
+                    data-testid="storage-answer-link"
+                  >
+                    Yes, I have its link
+                  </button>
+                  <button
+                    type="button"
+                    id="storage-zip"
+                    class="btn btn--prose host-tile"
+                    data-testid="storage-answer-zip"
+                  >
+                    Yes, the zip is on this phone
+                  </button>
+                </div>
+                <div
+                  id="storage-new-panel"
+                  data-testid="storage-new-panel"
                   hidden
-                ></ol>
-                <div class="step-body">
-                  <button
-                    type="button"
-                    id="starter-zip"
-                    class="btn btn--prose"
-                    data-testid="starter-zip"
+                >
+                  <p class="step-copy hint--dim">
+                    Why the file comes first: its link goes into the printed
+                    code, so the code can only be made once the file has a link.
+                    And once the tour is open here, this phone keeps a copy of
+                    all you place. You have not made anything yet, so nothing
+                    can be lost.
+                  </p>
+                  <p class="step-copy hint--dim">
+                    Your tour is one small zip file in your own storage.
+                    Visitors' phones load it from there; once it has loaded, it
+                    keeps working without signal.
+                  </p>
+                  <div
+                    id="host-tiles"
+                    class="host-tiles"
+                    role="group"
+                    aria-label="Where your tour's file is stored"
+                    data-testid="host-tiles"
+                  ></div>
+                  <ol
+                    id="host-steps"
+                    class="substeps"
+                    data-testid="host-steps"
                     hidden
-                  >
-                    Download the empty starter tour
-                  </button>
-                  <button
-                    type="button"
-                    id="host-continue"
-                    class="btn"
-                    data-testid="host-continue"
-                    hidden
-                  >
-                    Continue
-                  </button>
+                  ></ol>
+                  <div class="step-body">
+                    <button
+                      type="button"
+                      id="starter-zip"
+                      class="btn btn--prose"
+                      data-testid="starter-zip"
+                      hidden
+                    >
+                      Download the empty starter tour
+                    </button>
+                    <button
+                      type="button"
+                      id="host-continue"
+                      class="btn"
+                      data-testid="host-continue"
+                      hidden
+                    >
+                      Continue
+                    </button>
+                  </div>
                 </div>
                 <!-- "Open a file" (tour kit plan K0): a zip on this device,
                  for a host that does not let browsers read its files.
                  The picker is #file-input, outside the wizard, which
-                 the visitor's advice button uses too. A small link since
-                 polish round M2 (A5): the hosts above are the main way. -->
-                <p class="step-copy hint--dim">
-                  Already have a tour zip on this device?
+                 the visitor's advice button uses too. Shown by the
+                 question's zip answer, which opens the picker at once; the
+                 line keeps the open's progress and its retry in view. -->
+                <p
+                  id="storage-zip-panel"
+                  class="step-copy hint--dim"
+                  data-testid="storage-zip-panel"
+                  hidden
+                >
+                  Choose your tour zip in the picker that opened. Closed it?
                   <button
                     type="button"
                     id="open-file"
@@ -5996,6 +6069,14 @@
               photos where they belong. When you are done, the tour file is
               saved to this phone, and the last step shows how to put it in
               place.
+            </p>
+            <p
+              class="step-copy creator-only measure-no-tour"
+              data-testid="measure-no-tour"
+              hidden
+            >
+              Your tour is not open here yet. Start at your hung code (the
+              camera opens your tour from it), or open its link in step 2.
             </p>
             <!-- Step 5 on a device without AR (tour editor plan 2026-10-17-1816,
              W1, review #9): shown by the CSS once the AR check says

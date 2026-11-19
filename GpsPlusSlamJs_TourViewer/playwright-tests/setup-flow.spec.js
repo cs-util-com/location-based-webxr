@@ -27,6 +27,13 @@ test.describe("a first visit", () => {
   }) => {
     await page.goto("/?nocache=1");
     await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+    // Step 1 opens as one question; the hosts are the new tour's answer.
+    await expect(page.getByTestId("host-tiles")).toBeHidden();
+    await page.getByTestId("storage-answer-new").click();
+    await expect(page.getByTestId("storage-answer-new")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     const tiles = page.getByTestId("host-tiles").getByRole("button");
     await expect(tiles).toHaveText([
       "Google Drive",

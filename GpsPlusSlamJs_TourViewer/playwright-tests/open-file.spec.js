@@ -44,7 +44,8 @@ test("opens a tour zip from the device through the file chooser @pr", async ({
   await page.goto("/?nocache=1");
   const chooser = page.waitForEvent("filechooser");
   await openHostStep(page);
-  await page.getByTestId("open-file-button").click();
+  // The question's zip answer opens the picker at once.
+  await page.getByTestId("storage-answer-zip").click();
   await (await chooser).setFiles(file);
 
   await expect(page.locator("body")).toHaveAttribute(
@@ -70,7 +71,8 @@ test("a file that is not a zip reports a plain error and restores the button", a
   await page.goto("/?nocache=1");
   const chooser = page.waitForEvent("filechooser");
   await openHostStep(page);
-  await page.getByTestId("open-file-button").click();
+  // The question's zip answer opens the picker at once.
+  await page.getByTestId("storage-answer-zip").click();
   await (
     await chooser
   ).setFiles({

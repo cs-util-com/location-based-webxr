@@ -21,6 +21,9 @@ listed in `index.html.md`. The concerns and their modules:
   only, wired after the visitor screen so its hidden states are final).
 - `host-picker.ts` - step 1's host tiles (`wireHostPicker`, creator only;
   Continue opens the link step and focuses the field).
+- `storage-question.ts` - step 1's opening question (`wireStorageQuestion`,
+  creator only): a new tour reveals the host tiles, a link opens the link
+  step and focuses the field, a zip clicks `#open-file` inside the tap.
 - `link-check.ts` - the PDF's re-check of an unverified link, bound here
   to `openRemoteArchive` with the Drive proxy.
 - `visitor-screen.ts` - the visitor's consent screen and the location
