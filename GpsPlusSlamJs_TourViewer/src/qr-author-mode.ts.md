@@ -87,7 +87,9 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   changed or deleted object, or in AR a code in hand; without it the state
   is `not-measured`.
 - `finishBlockedHint(readiness)` - why the finish button (or Done in AR)
-  is off, in the creator's words: the manifest still loading, a broken
+  is off, in the creator's words: the manifest still loading (saying
+  nothing here is kept yet, since an unclamped line shows it with no
+  lead), a broken
   `tour.json`, or no tour open (nothing placed is kept until the tour
   opens - step 2, or its printed code in view); "" otherwise.
 - `NO_TOUR_LEAD` - the short form of the no-tour hint (at most 45

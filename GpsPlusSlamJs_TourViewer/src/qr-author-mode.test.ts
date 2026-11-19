@@ -401,6 +401,12 @@ describe("setupHint / finishReadiness", () => {
     }
     expect(finishBlockedLead("ready")).toBe("");
     expect(finishBlockedLead("not-measured")).toBe("");
+    // Why: an unclamped line (the page, or the AR line opened by a tap)
+    // shows the full hint alone, with no lead, so the full hint of a tour
+    // still loading must itself say the work is not kept yet.
+    expect(finishBlockedHint("manifest-pending")).toMatch(
+      /nothing here is kept yet/,
+    );
     expect(finishBlockedHint("no-tour")).toBe(
       "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );
