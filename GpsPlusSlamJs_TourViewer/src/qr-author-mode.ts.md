@@ -94,6 +94,10 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   characters) that leads the creator's status line: in AR the line is
   clamped to two lines, about 52 characters on a 360 px phone, so the
   placement note and the readout still fit; the full hint ends the line.
+- `finishBlockedLead(readiness)` - that short lead per blocked state:
+  `NO_TOUR_LEAD` for no tour, a lead of its own (at most 45 characters,
+  "nothing here is kept") while the tour.json loads or is broken, ""
+  otherwise. Only the clamped AR line carries it.
 - `MISSING_SIZE_MESSAGE` - what a creator reads when the printed-size
   field is empty at AR entry. The example inside it is interpolated from
   `AUTHOR_DEFAULT_SIZE_M`, so the two cannot drift.

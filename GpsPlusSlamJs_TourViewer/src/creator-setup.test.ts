@@ -50,6 +50,7 @@ import {
   type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ObjectListHandlers } from "./object-list.js";
+import { finishBlockedLead } from "./qr-author-mode.js";
 import {
   asHosted,
   stationIdOf,
@@ -1553,10 +1554,41 @@ describe("work made before the tour's draft opened reaches it", () => {
     ).toBe(false);
   });
 
-  it("still leads with the no-tour hint on the page after AR ends", async () => {
+  it("leads the clamped AR line with a short lead while the tour.json loads or is broken, and only there", async () => {
+    // Why: no draft opens before the manifest settles, so the work is kept
+    // nowhere - and the full hint ends the line, past the two-line clamp.
+    // Opened to its full length (a tap) the line already ends with the
+    // full hint, so the lead would say the same fact twice.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
+    } as never;
+    for (const [status, lead] of [
+      ["pending", finishBlockedLead("manifest-pending")],
+      ["broken", finishBlockedLead("manifest-broken")],
+    ] as const) {
+      ctx.tourManifestStatus = status;
+      setup.renderAuthorReadout();
+      expect(dom.status.dataset["clamped"]).toBe("true");
+      expect(dom.status.textContent.startsWith(`${lead} · `)).toBe(true);
+      dom.status.handlers.get("click")?.();
+      expect(dom.status.dataset["clamped"]).toBe("false");
+      expect(dom.status.textContent).not.toContain(lead);
+      dom.status.handlers.get("click")?.();
+    }
+  });
+
+  it("still says on the page after AR ends that nothing placed is kept", async () => {
     // Why: after AR the page shows only the placement note, and Finish is
     // hidden with no tour open - the placed work was lost on a reload with
-    // nothing on the page saying it is not kept.
+    // nothing on the page saying it is not kept. The page is never clamped,
+    // so the full hint says it alone (the short lead would repeat it).
     const { store } = memoryStore();
     const arStatus = { value: "running" };
     const { ctx, dom, setup } = wire(store, { placeable: true, arStatus });
@@ -1567,12 +1599,18 @@ describe("work made before the tour's draft opened reaches it", () => {
     ctx.placementNote = null;
     setup.renderAuthorReadout();
     expect(dom.status.textContent).toBe(
-      "No tour open - nothing placed here is kept. · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+      "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );
     ctx.placementNote = "Pin placed.";
     setup.renderAuthorReadout();
     expect(dom.status.textContent).toBe(
-      "No tour open - nothing placed here is kept. · Pin placed. · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+      "Pin placed. · Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
+    );
+    // An empty note is no part of the line either.
+    ctx.placementNote = "";
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(
+      "Your tour is not open on this phone yet, so nothing here is kept - open it in step 2, or point at your printed code.",
     );
   });
 
