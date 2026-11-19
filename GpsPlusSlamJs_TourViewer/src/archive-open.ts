@@ -165,6 +165,20 @@ export function wireArchiveOpen(deps: {
     // retried open must not wipe it (scan-to-open plan §5 #1, §9 #1).
     const closing = ctx.session;
     if (closing === null) return;
+    // Let go first: a hook below that throws (a disposal) must not leave
+    // the closing session current for every later reader, and its archive
+    // is closed whatever happens below.
+    ctx.session = null;
+    try {
+      closeTourState();
+    } finally {
+      await closing.close().catch(() => undefined);
+    }
+  }
+
+  /** The closing tour's state, cleared by `teardownSession` once its
+   *  session is let go. */
+  function closeTourState(): void {
     // The viewer pipeline's level source and the placed planes belong to the
     // closing tour — a newly opened tour must not relocalize against them.
     // The parsed levels and the hosted texts are held per open in the
@@ -255,8 +269,6 @@ export function wireArchiveOpen(deps: {
     // The print-size check measured the closing tour's codes (S3a).
     ctx.printSizeCheck?.reset();
     ctx.placement = { kind: "idle" };
-    ctx.session = null;
-    await closing.close().catch(() => undefined);
   }
 
   function renderStats(): void {
