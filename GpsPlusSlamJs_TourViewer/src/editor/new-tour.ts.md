@@ -27,6 +27,11 @@ needs nothing new. Its zip comes from the start page's packer
   be called in the click handler itself.
 - **Every new tour has its own draft**: the minted id is its file key, so
   a second new tour is never offered the first one's edits.
+- **The caller has passed the unsaved-work guard**: a new tour replaces the
+  open one, so its edits are lost unless the user said so, as File's
+  Open… asks before the open dialog shows (`openAnotherTour` in
+  `edit-main.ts`). A button inside that dialog has passed it; one
+  anywhere else asks first.
 - No UI of its own: which button or card starts a new tour is the entry
   UI's choice, wired in `edit-main.ts`.
 
@@ -34,10 +39,19 @@ needs nothing new. Its zip comes from the start page's packer
 
 ```ts
 button.addEventListener("click", () => {
+  // The unsaved-work guard first, as File's Open… asks it.
+  if (unsavedWork() && !confirm("Your changes are not saved yet. ...")) return;
   void startNewTour({
     askSaveFile: askOpenSaveFile,
     open: openFile,
-    keepInChosenFile: (file, pick) => void keepInChosenFile(editor, file, pick),
+    // Kept only while a tour is open: an open that failed has no editor.
+    keepInChosenFile: (file, pick) => {
+      if (editor !== null && pick !== null) {
+        void keepInChosenFile(editor, file, pick);
+      } else {
+        settleUnusedPick(pick);
+      }
+    },
     settleUnusedPick,
     failed: (reason) => toast(reason),
   });
