@@ -950,6 +950,8 @@ function stepGuide() {
   }
 }
 
+const hintMoteColor = new THREE.Color();
+
 /* ---------- choosing in the box: from the first found egg on, with grace and undo ---------- */
 function canAfford() {
   return S.points >= creator.cost;
@@ -964,6 +966,8 @@ function tapChip(i) {
   } else if (S.held < 0 && canAfford()) {
     S.held = i;
     S.heldAt = S.clock;
+  } else if (S.held < 0) {
+    say(`A guess costs ${creator.cost} points, and you have ${S.points}.`, 2.4);
   }
 }
 function commit() {
@@ -980,7 +984,7 @@ function commit() {
   }
   A[i].crossed = true;
   const left = creator.attempts === "unlimited" ? Infinity : Number(creator.attempts) - S.tries;
-  const choosable = A.some((a) => !a.crossed && (!a.found || a.state !== "hidden"));
+  const choosable = A.some((a) => !a.crossed);
   if (left <= 0 || !choosable) {
     finish("wrong");
   } else if (!canAfford()) {
@@ -1522,7 +1526,7 @@ function updateWorld(t, dt) {
     hintBeam.material.uniforms.uFade.value = cfg.fade;
     hintBeam.material.uniforms.uGlow.value = S.pillar.up;
     hintBeam.material.uniforms.uColor.value.set(cfg.beamColor);
-    const col3 = new THREE.Color(cfg.beamColor);
+    const col3 = hintMoteColor.set(cfg.beamColor);
     const pos = hintMotes.geometry.attributes.position.array;
     const colr = hintMotes.geometry.attributes.color.array;
     for (let j = 0; j < HINT_MOTES; j++) {

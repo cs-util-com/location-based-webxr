@@ -162,7 +162,6 @@ function freshState() {
     foundCount: 0,
     lastIn: -Infinity,
     lastOut: -Infinity,
-    backAt: 0, // when the narration returns to the question after a help line or a retry
     note: null, // { text, until } a short line in the box after a tap that cannot act
     bubble: null, // { i, text, until } a word at an egg in the world
     autoWalk: null,
@@ -834,7 +833,6 @@ function enterAfter() {
 // a short line from the character that then gives the box back to the question
 function sayThenQuestion(kind, text) {
   setNarration(kind, text, true);
-  S.backAt = -1;
 }
 
 // found by walking or by looking: it opens where it is, then flies into the box

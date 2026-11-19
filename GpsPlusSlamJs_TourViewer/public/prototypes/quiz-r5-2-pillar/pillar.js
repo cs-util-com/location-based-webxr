@@ -835,7 +835,7 @@ function commit() {
     const more = left === Infinity ? "Try another one." : left === 1 ? "You have one more try." : `You have ${left} more tries.`;
     setNarration("retry", `Not that one. ${more}`, true);
   } else {
-    finish("wrong");
+    finish(left > 0 ? "broke" : "wrong");
   }
 }
 function finish(result) {
@@ -851,7 +851,8 @@ function finish(result) {
     }
   }
   const pts = result === "right" ? (S.tries ? POINTS / 2 : POINTS) : 0;
-  setNarration("result", result === "right" ? `${TEXT.right} +${pts} points.` : `${TEXT.wrong} No points this time.`, true);
+  const why = result === "broke" ? "Not that one, and you have no coins left for another try. " : "";
+  setNarration("result", result === "right" ? `${TEXT.right} +${pts} points.` : `${why}${TEXT.wrong} No points this time.`, true);
 }
 
 function flow() {
