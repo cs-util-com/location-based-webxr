@@ -33,7 +33,8 @@ tap on nothing closes the sheet.
   (`.lt-sheet`, its text, progress bar, padding and ask bar included) or
   the view switch with its menu (`.view-switch`) or the narration box
   (`.narration-box`, its words and its padding, where a tap pauses or
-  plays the voice). The reading sheet is
+  plays the voice) or the knob of then and now's swipe line
+  (`.then-now-swipe-knob`, a slider, not an input). The reading sheet is
   named by its own class, not `.sheet`, which would pull in the design
   system's sheet styles. `main.ts` cancels those in visitor mode, so a
   tap on Continue or on the sheet's Close never also hits a pin behind it.

@@ -5,7 +5,8 @@
  * (`viewpoint-looks.ts`) and shows it by where the visitor stands and
  * looks (`viewpoint-fade.ts`); then and now blends it with today
  * (`then-now-fade.ts`) and, lined up, hands the visitor a slider
- * (`then-now-slider.ts`).
+ * (`then-now-slider.ts`) to fade between the two or swipe a line across
+ * them (`then-now-swipe.ts`).
  *
  * The viewpoint is in the station's frame, so moving the picture's pose
  * never moves where it lines up: the part's look sits in an anchor that
@@ -38,7 +39,8 @@ import {
   type ThenNowState,
 } from "./then-now-fade.js";
 import { THEN_NOW_FEATHER, thenNowFeatherMap } from "./then-now-feather.js";
-import { buildThenNowSlider } from "./then-now-slider.js";
+import { buildThenNowSlider, type ThenNowMode } from "./then-now-slider.js";
+import { SWIPE_SPLIT_START, swipeMask } from "./then-now-swipe.js";
 import {
   FINDER_FADE,
   SHARPEN_FADE,
@@ -198,6 +200,13 @@ export function viewpointWorld(
   let closeSlider: (() => void) | null = null;
   let thenNow: ThenNowState = THEN_NOW_START;
   let setSlider: ((fade: number) => void) | null = null;
+  // The way to compare and the line's place: this part's own transient
+  // view state, like the fade. Only its panel and its picture read them,
+  // and nothing of the tour is saved from them, so they live here, not in
+  // the store; a panel built again (a narration took the screen a while)
+  // starts from them.
+  let thenNowMode: ThenNowMode = "fade";
+  let split = SWIPE_SPLIT_START;
 
   const closeSliderNow = (): void => {
     const close = closeSlider;
@@ -212,9 +221,19 @@ export function viewpointWorld(
       const slider = buildThenNowSlider(
         host,
         { year: block.year, caption: block.caption },
-        thenNow.fade,
-        (fade) => {
-          thenNow = takeOverThenNow(thenNow, fade);
+        { mode: thenNowMode, fade: thenNow.fade, split },
+        {
+          fade: (fade) => {
+            thenNow = takeOverThenNow(thenNow, fade);
+          },
+          mode: (mode) => {
+            thenNowMode = mode;
+            // A switch is the visitor's choice: the fade-in stops.
+            thenNow = takeOverThenNow(thenNow, thenNow.fade);
+          },
+          split: (at) => {
+            split = at;
+          },
         },
       );
       setSlider = slider.set;
@@ -403,7 +422,11 @@ export function viewpointWorld(
         },
       };
     }
-    // Then and now: the old picture melts into today at its edges.
+    // Then and now: the old picture melts into today at its edges, and
+    // the swipe cuts it at the visitor's line.
+    const mask = swipeMask(plane.mesh.material);
+    // A read-out of what the shader is told, for the page's own e2e.
+    plane.mesh.material.userData["thenNowSwipe"] = mask.state;
     return {
       root,
       tappable,
@@ -411,6 +434,7 @@ export function viewpointWorld(
       show(reading) {
         const { reach, dtS } = reading;
         if (editing) {
+          mask.set(false, split);
           plane.mesh.material.opacity = EDITOR_PICTURE_ALPHA;
           guide(reading, 0);
           return;
@@ -427,10 +451,17 @@ export function viewpointWorld(
           offAxisDeg: reach.offAxisDeg,
           shown: true,
         });
+        const swiping = thenNowMode === "swipe";
+        // The fade-in is Fade's: a visitor swiping is not faded at.
+        if (swiping && thenNow.introS !== null) {
+          thenNow = takeOverThenNow(thenNow, thenNow.fade);
+        }
         if (thenNow.aligned) openSlider();
         else closeSliderNow();
         setSlider?.(thenNow.fade);
-        plane.mesh.material.opacity = k * thenNow.fade;
+        // Swiping, the whole picture shows left of the line, today right.
+        mask.set(swiping && thenNow.aligned, split);
+        plane.mesh.material.opacity = swiping ? k : k * thenNow.fade;
         guide(reading, near);
       },
     };
