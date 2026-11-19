@@ -331,10 +331,25 @@ test("a voice marked synthetic and credited is saved, and the visitor's reading 
           );
           t.pickId = parts.length === 0 ? null : parts[n % parts.length];
           t.tapXr();
-          return parts.join(",");
+          // What the page stood for the essay: its chain of parents up to
+          // the scene, each with whether it is shown.
+          /** @param {any} o @returns {any} */
+          const find = (o) => {
+            if (o.userData?.objectId === "gate-essay") return o;
+            for (const c of o.children ?? []) {
+              const hit = find(c);
+              if (hit !== null) return hit;
+            }
+            return null;
+          };
+          const chain = [];
+          for (let o = find(t.fakeScene); o; o = o.parent) {
+            chain.push(`${o.name || o.type}${o.visible ? "" : "(hidden)"}`);
+          }
+          return `targets [${t.pickTargets.join(",")}] select ${t.xrSelect !== null} essay ${chain.join("<")}`;
         }, tries);
         tries += 1;
-        return (await sheet.isVisible()) ? "open" : `offered [${offered}]`;
+        return (await sheet.isVisible()) ? "open" : offered;
       },
       { timeout: 20_000 },
     )
