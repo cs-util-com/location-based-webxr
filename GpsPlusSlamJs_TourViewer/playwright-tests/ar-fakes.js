@@ -297,15 +297,35 @@ export async function installTourViewerArFakes(page, options = {}) {
           this.children = this.children.filter((c) => c !== object);
         },
       };
-      /** Scene-root stub for the image planes (real three meshes land here). */
+      /**
+       * Scene-root stub for the image planes (real three meshes land here).
+       * It parents what it holds as three does, so a climb from a part to
+       * the scene (the visitor's tap asks whether a part is shown under a
+       * station) arrives here; as a shown root with an identity world
+       * matrix it changes no world pose a child reads.
+       */
       const fakeScene = {
         name: "fake-scene",
-        children: /** @type {unknown[]} */ ([]),
-        add(object) {
-          this.children.push(object);
+        visible: true,
+        parent: null,
+        matrixWorld: {
+          elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
         },
+        updateWorldMatrix() {},
+        updateMatrixWorld() {},
+        children: /** @type {any[]} */ ([]),
+        /** @param {any} object */
+        add(object) {
+          if (object.parent && object.parent !== this) {
+            object.parent.remove(object);
+          }
+          this.children.push(object);
+          object.parent = this;
+        },
+        /** @param {any} object */
         remove(object) {
           this.children = this.children.filter((c) => c !== object);
+          if (object.parent === this) object.parent = null;
         },
       };
       test.fakeScene = fakeScene;
