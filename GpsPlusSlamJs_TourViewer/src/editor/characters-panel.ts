@@ -255,9 +255,10 @@ export function createCharactersPanel(
     seenStore.write([...(seen ?? [])]);
   }
 
-  /** The thumbnail of `key`, made once ("" where it cannot be: no
-   *  picture, or none can be cut). A read or cut that threw is not kept:
-   *  the next drawing of the row tries again. */
+  /** The thumbnail of `key`, made once ("" for a character with no
+   *  picture). A read or cut that threw is not kept, nor a cut that
+   *  answered "" (no canvas could be drawn, a passing failure under memory
+   *  pressure): the next drawing of the row tries again. */
   function thumbOf(
     cache: Map<string, Promise<string>>,
     key: string,
@@ -265,20 +266,23 @@ export function createCharactersPanel(
   ): Promise<string> {
     let url = cache.get(key);
     if (url === undefined) {
-      let threw = false;
+      let retry = false;
       const made = (async () => {
         try {
           const b = await blob();
-          return b === undefined ? "" : await cropThumb(b);
+          if (b === undefined) return ""; // no picture: his answer, kept
+          const cut = await cropThumb(b);
+          retry = cut === "";
+          return cut;
         } catch {
-          threw = true;
+          retry = true;
           return ""; // no thumbnail: the row shows the name only
         }
       })();
       url = made;
       cache.set(key, made);
       void made.then(() => {
-        if (threw && cache.get(key) === made) cache.delete(key);
+        if (retry && cache.get(key) === made) cache.delete(key);
       });
     }
     return url;

@@ -445,6 +445,31 @@ describe("opening the list", () => {
     );
   });
 
+  // Why: the cut answers "" without throwing when no canvas could be drawn
+  // (`getContext` null under memory pressure). That is a passing failure,
+  // not his answer: kept, his thumbnail stayed blank for the panel's
+  // lifetime.
+  it("tries again at the next redraw after a cut that could not draw", async () => {
+    let crops = 0;
+    thumbs.crop = () => {
+      crops += 1;
+      return Promise.resolve(crops === 1 ? "" : "data:image/png;base64,DDDD");
+    };
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.panel.open();
+    await settled();
+    expect(crops).toBe(1);
+    expect(
+      s.libRow("c1")?.querySelector("img")?.getAttribute("src"),
+    ).toBeNull();
+    s.panel.open(); // looks again and redraws, this panel only
+    await settled();
+    expect(crops).toBe(2);
+    expect(s.libRow("c1")?.querySelector("img")?.getAttribute("src")).toBe(
+      "data:image/png;base64,DDDD",
+    );
+  });
+
   // Why: a character with no picture is an answer, not a failure (the
   // tour's `image` gives `undefined` for him). Treated as a failure, his
   // bytes were asked for again on every redraw; only a read that threw
