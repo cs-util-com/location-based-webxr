@@ -1,0 +1,2216 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Start page V1: doors under the hero</title>
+    <meta
+      name="description"
+      content="Prototype of the tour start page: the real landing with three equal doors right under the hero and its film."
+    />
+    <!-- A standalone copy of the real /tour/ start page: design.css is the
+         package's design.css and page.css the real page's <style> block,
+         both with their comments removed and otherwise unchanged.
+         Everything V1 adds is in the <style> below. Linked from nothing in
+         the app. -->
+    <!-- A returning device opens at the doors: the first paint waits for
+         the script that scrolls there (as the real page does for its skip). -->
+    <link rel="expect" href="#doors-skip" blocking="render" />
+    <link rel="stylesheet" href="design.css" />
+    <link rel="stylesheet" href="page.css" />
+    <style>
+      /* ===== V1: three equal doors right under the hero ===== */
+      .landing-doors {
+        max-width: calc(var(--landing-wide) + 32px);
+        margin: 0 auto;
+        padding: 26px 16px 0;
+      }
+      .doors-back {
+        margin-bottom: 10px;
+        font-size: 15px;
+        color: var(--ink-dim);
+      }
+      .doors-title {
+        font: 700 12px/1.25 var(--font-ui);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--landing-route-dark);
+        margin-bottom: 10px;
+      }
+      .doors {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+        list-style: none;
+        padding: 0;
+      }
+
+      @media (width >= 700px) {
+        .doors {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 14px;
+        }
+      }
+      .door {
+        display: grid;
+        grid-template-columns: 38px minmax(0, 1fr) 18px;
+        align-items: start;
+        gap: 12px;
+        width: 100%;
+        height: 100%;
+        padding: 14px 14px 15px;
+        border: 1px solid var(--map-line);
+        border-radius: 14px;
+        background: var(--map-card);
+        color: var(--ink);
+        text-align: left;
+        cursor: pointer;
+        font: inherit;
+      }
+      .door:hover {
+        border-color: var(--map-route);
+      }
+      .door:focus-visible {
+        outline: 3px solid var(--map-route);
+        outline-offset: 2px;
+      }
+      .door[aria-expanded="true"] {
+        border-color: var(--map-route);
+        box-shadow: inset 0 0 0 1px var(--map-route);
+      }
+      .door .landing-mark {
+        position: static;
+      }
+      .door-name {
+        display: block;
+        font: 600 21px/1.15 var(--map-serif);
+        letter-spacing: -0.01em;
+        padding-top: 6px;
+      }
+      /* The line under each name: every wording the AR check can pick
+         sits in the same grid cell, so the box is as tall as the longest
+         one from the first paint and the check never moves anything. */
+      .door-line {
+        display: grid;
+        margin-top: 6px;
+        font-size: 15px;
+        line-height: 1.4;
+        color: var(--ink-dim);
+      }
+      .door-line > span {
+        grid-area: 1 / 1;
+      }
+      body[data-device="computer"] .door-line > :not(.dl-computer),
+      body[data-device="phone"] .door-line > .dl-computer {
+        display: none;
+      }
+      body[data-device="phone"]:not([data-ar="no"]) .door-line > .dl-noar,
+      body[data-device="phone"][data-ar="no"] .door-line > .dl-ar {
+        visibility: hidden;
+      }
+      .door-arrow {
+        align-self: center;
+        width: 18px;
+        height: 18px;
+        stroke: var(--landing-route-dark);
+        fill: none;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* Which line shows follows the device (known at once) and the AR
+         check (known later); the phone lines assume AR until it says no. */
+      body[data-device="computer"] .say:not(.say-computer),
+      body[data-device="phone"]:not([data-ar="no"]) .say:not(.say-ar),
+      body[data-device="phone"][data-ar="no"] .say:not(.say-noar) {
+        display: none;
+      }
+
+      .door-panel {
+        margin-top: 12px;
+        padding: 16px;
+        border: 1px solid var(--map-line);
+        border-radius: 14px;
+        background: var(--map-card);
+      }
+      .door-panel[hidden] {
+        display: none;
+      }
+      .door-panel h3 {
+        font: 600 21px/1.2 var(--map-serif);
+      }
+      .door-panel p {
+        margin-top: 8px;
+        font-size: 16px;
+        line-height: 1.5;
+        color: var(--ink-dim);
+      }
+      .door-panel form,
+      .door-panel .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .door-panel .input {
+        flex: 1 1 14em;
+      }
+
+      /* The visitor screen and the editor stand-in, over the page. */
+      .over {
+        position: fixed;
+        inset: 0;
+        z-index: 40;
+        overflow: auto;
+        padding: 24px 16px 48px;
+        background: var(--paper);
+      }
+      .over[hidden] {
+        display: none;
+      }
+      .over-inner {
+        max-width: 34rem;
+        margin: 0 auto;
+      }
+      .over h2 {
+        font: 600 30px/1.1 var(--map-serif);
+        margin-top: 10px;
+      }
+      .over p {
+        margin-top: 10px;
+        font-size: 16.5px;
+        line-height: 1.5;
+        color: var(--ink-dim);
+      }
+      .over .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 18px;
+      }
+      .over-close {
+        font-size: 15px;
+      }
+      .visit-start {
+        display: grid;
+        place-items: center;
+        width: 132px;
+        height: 132px;
+        margin: 26px auto 0;
+        border: 0;
+        border-radius: 50%;
+        background: var(--map-route);
+        color: #fff;
+        font: 700 22px/1 var(--font-ui);
+        cursor: pointer;
+      }
+      .visit-play {
+        margin-top: 20px;
+        padding: 22px 18px;
+        border-radius: 14px;
+        background: #2a2824;
+        color: #f4eedf;
+      }
+      .visit-play p {
+        color: #ddd2b6;
+      }
+      .qr-draw {
+        display: block;
+        width: 132px;
+        height: 132px;
+        margin-top: 14px;
+        background: #fff;
+        border: 1px solid var(--map-line);
+        border-radius: 8px;
+      }
+      .editor-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--map-line);
+      }
+      .editor-head b {
+        font: 600 18px/1.2 var(--map-serif);
+      }
+      .editor-choices {
+        display: grid;
+        gap: 10px;
+        margin-top: 16px;
+        list-style: none;
+        padding: 0;
+      }
+      .editor-choice {
+        display: block;
+        width: 100%;
+        padding: 14px 16px;
+        border: 1px solid var(--map-line);
+        border-radius: 12px;
+        background: var(--map-card);
+        color: var(--ink);
+        text-align: left;
+        font: inherit;
+        cursor: pointer;
+      }
+      .editor-choice b {
+        display: block;
+        font: 600 19px/1.2 var(--map-serif);
+      }
+      .editor-choice span {
+        display: block;
+        margin-top: 4px;
+        font-size: 15px;
+        line-height: 1.4;
+        color: var(--ink-dim);
+      }
+      .editor-choice:hover {
+        border-color: var(--map-route);
+      }
+      .editor-open {
+        margin-top: 18px;
+        padding: 18px;
+        border-radius: 12px;
+        background: var(--landing-place);
+      }
+
+      /* The setup's steps 2 to 6 in this copy: one line each. */
+      .fake-step-status {
+        margin-top: 10px;
+        font-weight: 600;
+        color: var(--ink);
+      }
+
+      /* ===== Prototype chrome: never part of the design ===== */
+      .proto-strip {
+        position: fixed;
+        left: 8px;
+        bottom: 8px;
+        z-index: 60;
+        max-width: calc(100vw - 16px);
+        padding: 6px 10px;
+        border-radius: 10px;
+        background: #1f2328;
+        color: #eceef0;
+        font: 13px/1.4 system-ui, sans-serif;
+        box-shadow: 0 2px 10px rgb(0 0 0 / 30%);
+      }
+      .proto-strip summary {
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .proto-strip label {
+        display: block;
+        margin-top: 6px;
+      }
+      .proto-strip select {
+        font: inherit;
+      }
+      .proto-notes {
+        max-width: calc(var(--landing-wide) + 32px);
+        margin: 48px auto 96px;
+        padding: 0 16px;
+        font: 15px/1.5 system-ui, sans-serif;
+        color: #1f2328;
+      }
+      .proto-notes > summary {
+        cursor: pointer;
+        font-weight: 700;
+        padding: 10px 12px;
+        border: 2px dashed #8c8577;
+        border-radius: 10px;
+      }
+      .proto-notes h3 {
+        margin-top: 18px;
+        font: 700 16px/1.3 system-ui, sans-serif;
+      }
+      .proto-notes p,
+      .proto-notes li {
+        margin-top: 6px;
+      }
+      .proto-notes ul {
+        padding-left: 20px;
+      }
+      .proto-notes .proto-table-wrap {
+        overflow-x: auto;
+        margin-top: 8px;
+      }
+      .proto-notes table {
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+      .proto-notes th,
+      .proto-notes td {
+        padding: 4px 8px;
+        border: 1px solid #c9bea3;
+        text-align: left;
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body class="page">
+    <script id="proto-mode">
+      // The prototype's switches, read before the first paint: device
+      // (computer, phone with or without AR), a returning device, and how
+      // long the AR check takes. The real page learns AR support from an
+      // asynchronous check; this copy fakes it with a timer.
+      (() => {
+        const q = new URLSearchParams(location.search);
+        const coarse = matchMedia("(pointer: coarse)").matches;
+        let device = q.get("device");
+        if (device !== "computer" && device !== "ar-phone" && device !== "phone") {
+          if (q.get("ar") === "1") device = "ar-phone";
+          else if (q.get("ar") === "0") device = coarse ? "phone" : "computer";
+          else device = coarse ? "ar-phone" : "computer";
+        }
+        const delay = Number(q.get("delay") ?? "300");
+        const body = document.body.dataset;
+        body.mode = "creator";
+        body.device = device === "computer" ? "computer" : "phone";
+        body.protoDevice = device;
+        body.ar = device === "computer" ? "no" : "checking";
+        body.returning = q.get("returning") === "1" ? "yes" : "no";
+        body.delay = String([0, 300, 2000].includes(delay) ? delay : 300);
+      })();
+    </script>
+    <main>
+      <section
+        id="landing"
+        class="creator-only landing"
+        aria-labelledby="landing-title"
+      >
+        <p class="landing-way" data-testid="landing-way">
+          <b>Here to walk a tour?</b> Scan its code with your phone's camera, or
+          <a href="#door-walk">open its link</a>.
+        </p>
+        <div class="landing-hero">
+          <div class="landing-hero-text">
+            <p class="landing-kicker">AR tours, on your phone, on site</p>
+            <h1 id="landing-title">
+              You know a story about a place.
+              <em>Let people see it there.</em>
+            </h1>
+            <p class="landing-lede">
+              You have a story to tell, or something to show. Here are the tools
+              to put it on the spot, so your visitors experience it in the real
+              world, through their phone.
+            </p>
+            <p class="landing-make-line">
+              <b>Make the tour yourself, without programming.</b> Walk there
+              once with your phone and leave your words and pictures where they
+              belong.
+            </p>
+            <p class="landing-needs" data-testid="landing-needs">
+              Tours run on Android phones with Chrome.
+            </p>
+            <p class="landing-cta">
+              <button
+                type="button"
+                class="btn setup-primary landing-begin"
+                data-testid="landing-begin-top"
+              >
+                Make your tour
+              </button>
+            </p>
+          </div>
+          <!-- The film's host: its aspect is reserved (9:10 on an upright
+               phone, 3:2 held sideways, 16:9 from 900 px wide), and it shows the film's last moment
+               as a drawing until the film mounts (or for good, where it
+               cannot). -->
+          <div
+            id="landing-film"
+            class="landing-film"
+            data-testid="landing-film"
+          >
+            <picture>
+              <source
+                media="(orientation: landscape), (width >= 900px)"
+                srcset="../../landing/hero-still-landscape.svg"
+              />
+              <img
+                class="landing-still"
+                src="../../landing/hero-still-portrait.svg"
+                alt="A drawn park with a mill, a pond and trees: a dotted route links the code at the start with five numbered stations, and a visitor walks it."
+                loading="lazy"
+                decoding="async"
+                data-testid="landing-still"
+              />
+            </picture>
+          </div>
+        </div>
+        <section
+          id="landing-doors"
+          class="landing-doors"
+          aria-labelledby="doors-title"
+        >
+          <p class="doors-back" id="doors-back" hidden>
+            Welcome back. Pick up where you left off.
+          </p>
+          <h2 id="doors-title" class="doors-title">What would you like to do?</h2>
+          <ul class="doors">
+            <li>
+              <button
+                type="button"
+                class="door"
+                id="door-walk"
+                aria-expanded="false"
+                aria-controls="panel-walk"
+              >
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <path
+                      d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"
+                    />
+                    <circle cx="12" cy="12" r="3" /></svg
+                ></span>
+                <span>
+                  <span class="door-name">Walk a tour</span>
+                  <span class="door-line">
+                    <span class="dl-ar"
+                      >Scan the code at the start with your camera, or open the
+                      tour's link here.</span
+                    ><span class="dl-noar"
+                      >Tours play on Android phones with Chrome. Open the link
+                      here to pass it on.</span
+                    ><span class="dl-computer"
+                      >Tours play on Android phones. Open a link here to send it
+                      to your phone.</span
+                    >
+                  </span>
+                </span>
+                <svg class="door-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="door" id="door-make">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="4.5" r="2" />
+                    <path
+                      d="M10.5 21l1.5-6 3 3v3M8 12l2.5-4.5 3.5 1 2 3.5M12 15l-1.5-6"
+                    /></svg
+                ></span>
+                <span>
+                  <span class="door-name">Make one on site</span>
+                  <span class="door-line">
+                    <span class="dl-ar"
+                      >Walk the place with this phone and leave your words where
+                      they belong.</span
+                    ><span class="dl-noar"
+                      >You walk it with an Android phone. The first steps work on
+                      this one too.</span
+                    ><span class="dl-computer"
+                      >You walk it with an Android phone. The first steps work
+                      here too.</span
+                    >
+                  </span>
+                </span>
+                <svg class="door-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                class="door"
+                id="door-edit"
+                aria-controls="panel-edit"
+              >
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <path d="M4 20h4L19 9l-4-4L4 16z" />
+                    <path d="M13.5 6.5l4 4" /></svg
+                ></span>
+                <span>
+                  <span class="door-name">Build or edit at a computer</span>
+                  <span class="door-line">
+                    <span class="dl-computer"
+                      >Add texts, pictures, video, sound and 3D models to a tour,
+                      or change anything in it.</span
+                    ><span class="dl-phone"
+                      >Best on a big screen: open this page at a computer to
+                      start the editor.</span
+                    >
+                  </span>
+                </span>
+                <svg class="door-arrow" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </li>
+          </ul>
+
+          <div class="door-panel" id="panel-walk" hidden>
+            <h3>Walk a tour</h3>
+            <p>
+              Standing at the code? Point your phone's camera at it, and the
+              tour opens by itself.
+            </p>
+            <p>Have the tour's link, or its file on this device?</p>
+            <form id="walk-form">
+              <input
+                id="walk-link"
+                class="input"
+                type="text"
+                autocomplete="off"
+                placeholder="https://… link to the tour .zip"
+                aria-label="The tour's link"
+              />
+              <button type="submit" class="btn">Open the link</button>
+            </form>
+            <div class="row">
+              <button type="button" class="btn" id="walk-file">
+                From this device
+              </button>
+            </div>
+          </div>
+
+          <div class="door-panel" id="panel-edit" hidden>
+            <h3>Build or edit at a computer</h3>
+            <p>
+              The editor shows a tour in 3D, on a big screen. Open this page at
+              a computer, or send yourself its link.
+            </p>
+            <div class="row">
+              <button type="button" class="btn" id="edit-copy">
+                Copy this page's link
+              </button>
+              <button type="button" class="link-button" id="edit-anyway">
+                Open the editor on this phone
+              </button>
+            </div>
+          </div>
+        </section>
+        <section
+          class="landing-story"
+          aria-labelledby="landing-story-title"
+          data-testid="landing-story"
+        >
+          <div class="landing-head">
+            <p class="landing-kicker">How it goes</p>
+            <h2 id="landing-story-title" class="landing-h2">
+              Your story, <em>told in one walk.</em>
+            </h2>
+            <p class="landing-sub">
+              Here is the whole of it, start to finish. Each picture shows what
+              your phone, and later your visitor's phone, would show at that
+              moment.
+            </p>
+          </div>
+          <ol class="landing-cards" data-testid="landing-cards">
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <path
+                      d="M4 5.5c2.6-1 5.4-1 8 .8 2.6-1.8 5.4-1.8 8-.8v13c-2.6-1-5.4-1-8 .8-2.6-1.8-5.4-1.8-8-.8z"
+                    />
+                    <path d="M12 6.3v13" /></svg
+                ></span>
+                <p class="landing-card-kicker">A story you know</p>
+                <h3 id="landing-step-1">It starts with something you know.</h3>
+                <p class="landing-say">
+                  The old mill at the edge of the park turned for a hundred
+                  years. You know when it was built and what the stream drove,
+                  and somewhere you have a photo of it from 1910.
+                </p>
+                <p class="landing-say">
+                  People walk past it every day and know none of this. You could
+                  tell them, right there, at the mill.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="scene"
+                    aria-hidden="true"
+                  ></div>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>What you start with:</b> a place, and something to tell
+                    about it.</span
+                  >
+                </figcaption>
+              </figure>
+            </li>
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <circle cx="12" cy="4.5" r="2" />
+                    <path
+                      d="M10.5 21l1.5-6 3 3v3M8 12l2.5-4.5 3.5 1 2 3.5M12 15l-1.5-6"
+                    /></svg
+                ></span>
+                <p class="landing-card-kicker">On site</p>
+                <h3 id="landing-step-2">Walk there with your phone.</h3>
+                <p class="landing-say">
+                  Open the page on your phone and go to the mill. Stand where
+                  the story happened and hold the phone up. A ring on the ground
+                  shows the spot. Tap <b>Place a pin</b>, and a numbered station
+                  drops onto it.
+                </p>
+                <p class="landing-say">
+                  You do not need anything printed for this. Placing works
+                  anywhere along your walk.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="place"
+                    data-look="510"
+                    aria-hidden="true"
+                  ></div>
+                  <button
+                    type="button"
+                    class="landing-hold"
+                    aria-describedby="landing-step-2"
+                    aria-pressed="false"
+                    aria-label="Pause the picture"
+                    hidden
+                  >
+                    <span class="landing-pause-mark" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>On your phone:</b> the ring finds the ground, the
+                    station drops onto it.</span
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-2"
+                  >
+                    Show again
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <path d="M4 20h4L19 9l-4-4L4 16z" />
+                    <path d="M13.5 6.5l4 4" /></svg
+                ></span>
+                <p class="landing-card-kicker">Words and pictures</p>
+                <h3 id="landing-step-3">Add what you know.</h3>
+                <p class="landing-say">
+                  Type a title and a few lines. Take a photo there. They stay on
+                  that spot, standing in the air above the station, the way a
+                  sign would.
+                </p>
+                <p class="landing-say">
+                  Then walk on to the next place that has a story, and do the
+                  same there. The words can be changed later, at a computer.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="add"
+                    data-look="510"
+                    aria-hidden="true"
+                  ></div>
+                  <button
+                    type="button"
+                    class="landing-hold"
+                    aria-describedby="landing-step-3"
+                    aria-pressed="false"
+                    aria-label="Pause the picture"
+                    hidden
+                  >
+                    <span class="landing-pause-mark" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>On your phone:</b> a few lines and a photo, fixed to the
+                    spot.</span
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-3"
+                  >
+                    Show again
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <rect x="4" y="4" width="6" height="6" rx="1" />
+                    <rect x="14" y="4" width="6" height="6" rx="1" />
+                    <rect x="4" y="14" width="6" height="6" rx="1" />
+                    <path
+                      d="M14 14h2v2h-2zM18 18h2v2h-2zM14 18h2M18 14h2"
+                    /></svg
+                ></span>
+                <p class="landing-card-kicker">When it is ready</p>
+                <h3 id="landing-step-4">Hang a code where the walk begins.</h3>
+                <p class="landing-say">
+                  At the end of your walk the tour is saved. Print its code on a
+                  sheet of paper, whenever the tour is ready, and hang it where
+                  the walk starts: on a gate, a post, a noticeboard.
+                </p>
+                <p class="landing-say">
+                  Visitors scan it there to open the tour.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="hang"
+                    data-look="862"
+                    aria-hidden="true"
+                  ></div>
+                  <button
+                    type="button"
+                    class="landing-hold"
+                    aria-describedby="landing-step-4"
+                    aria-pressed="false"
+                    aria-label="Pause the picture"
+                    hidden
+                  >
+                    <span class="landing-pause-mark" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>On your phone:</b> the tour is ready, and its code goes
+                    up on the noticeboard.</span
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-4"
+                  >
+                    Show again
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+            <li class="landing-card" data-testid="landing-card">
+              <div class="landing-card-text">
+                <span class="landing-mark" aria-hidden="true"
+                  ><svg viewBox="0 0 24 24">
+                    <path
+                      d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"
+                    />
+                    <circle cx="12" cy="12" r="3" /></svg
+                ></span>
+                <p class="landing-card-kicker">Your visitors</p>
+                <h3 id="landing-step-5">
+                  They scan it, and your stations appear.
+                </h3>
+                <p class="landing-say">
+                  Someone stops at the noticeboard and points their camera at
+                  the code. <b>No app to install:</b> the tour opens in their
+                  phone's browser.
+                </p>
+                <p class="landing-say">
+                  They hold the phone up, and your station appears on the spot
+                  where you stood, with your words and your photo. Then the next
+                  one, as they walk.
+                </p>
+              </div>
+              <figure class="landing-fig">
+                <div class="landing-pic">
+                  <div
+                    class="lc-dock"
+                    data-kind="scan"
+                    data-look="690"
+                    aria-hidden="true"
+                  ></div>
+                  <button
+                    type="button"
+                    class="landing-hold"
+                    aria-describedby="landing-step-5"
+                    aria-pressed="false"
+                    aria-label="Pause the picture"
+                    hidden
+                  >
+                    <span class="landing-pause-mark" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <figcaption class="landing-caption">
+                  <span
+                    ><b>On their phone:</b> the tour opens in the browser, and
+                    station 1 appears on the path.</span
+                  ><button
+                    type="button"
+                    class="landing-again"
+                    aria-describedby="landing-step-5"
+                  >
+                    Show again
+                  </button>
+                </figcaption>
+              </figure>
+            </li>
+          </ol>
+          <div class="landing-coda">
+            <span class="landing-mark landing-mark-done" aria-hidden="true"
+              ><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg
+            ></span>
+            <p class="landing-coda-line">
+              And at the mill they read what you wrote, beside the photo you
+              kept.
+            </p>
+          </div>
+        </section>
+        <section
+          class="landing-make"
+          aria-labelledby="landing-make-title"
+          data-testid="landing-make"
+        >
+          <h2 id="landing-make-title" class="landing-h2">Make your own tour</h2>
+          <ul class="landing-why" aria-label="Why it works this way">
+            <li class="landing-reason">Nothing to install</li>
+            <li class="landing-reason">It all runs in the browser</li>
+            <li class="landing-reason">
+              No need to print a code while you build
+            </li>
+            <li class="landing-reason">Lives in your own storage</li>
+            <li class="landing-reason">No sign-up, no account</li>
+            <li class="landing-reason">
+              Keeps working without signal once a tour has loaded
+            </li>
+          </ul>
+          <p class="landing-order">
+            The setup right below takes you through it, one step at a time, and
+            its steps open in any order.
+          </p>
+          <p class="landing-cta">
+            <button
+              type="button"
+              id="setup-begin"
+              class="btn setup-primary landing-begin"
+              data-testid="setup-begin"
+            >
+              Make your tour
+            </button>
+          </p>
+        </section>
+        <div id="landing-uses" class="landing-uses" data-testid="landing-uses">
+          <h2 class="landing-h2">What people make with it</h2>
+          <ul class="landing-uses-list">
+            <li>
+              <b>A walk through the town's history.</b> A local history group
+              puts the old photos back where they were taken.
+            </li>
+            <li>
+              <b>A birthday treasure hunt.</b> Parents hide the clues along the
+              way, and the children find them through the phone.
+            </li>
+            <li>
+              <b>The castle tower, as it once stood.</b> Visitors see the tower
+              that is gone, on the spot where it stood.
+            </li>
+            <li>
+              <b>More about every painting.</b> A small museum tells, beside
+              each picture, what the label leaves out.
+            </li>
+            <li class="uses-more" hidden>
+              <b>The pond life trail.</b> What lives in the water, shown at the
+              bank where it can be found.
+            </li>
+            <li class="uses-more" hidden>
+              <b>A poem along the river.</b> One verse at each bend, read where
+              it was written.
+            </li>
+            <li class="uses-more" hidden>
+              <b>A sculpture path.</b> An open-air exhibition puts the artist's
+              first sketch beside each sculpture on the lawn.
+            </li>
+          </ul>
+          <p class="landing-cta">
+            <button type="button" class="btn" id="uses-more">More ideas</button>
+          </p>
+        </div>
+      </section>
+      <div id="setup-stage" class="setup-stage" data-testid="setup-stage">
+        <div
+          id="setup-map"
+          class="creator-only setup-map"
+          data-testid="setup-map"
+        >
+          <div class="setup-map-head">
+            <span class="setup-map-title"
+              >Mill Park <i>an example route</i></span
+            >
+          </div>
+          <div class="setup-map-frame">
+            <svg
+              id="map-map"
+              viewBox="0 0 400 300"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              data-testid="setup-map-svg"
+              aria-label="Illustrated map of a park with a tour route and six stations"
+            >
+              <defs>
+                <pattern
+                  id="map-grid"
+                  width="25"
+                  height="25"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <path
+                    d="M25 0 H0 V25"
+                    fill="none"
+                    stroke="#c9bea3"
+                    stroke-width=".45"
+                    opacity=".7"
+                  />
+                </pattern>
+                <pattern
+                  id="map-hatch"
+                  width="4"
+                  height="4"
+                  patternUnits="userSpaceOnUse"
+                  patternTransform="rotate(45)"
+                >
+                  <line
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="4"
+                    stroke="#57534a"
+                    stroke-width=".7"
+                    opacity=".55"
+                  />
+                </pattern>
+                <pattern
+                  id="map-paving"
+                  width="9"
+                  height="9"
+                  patternUnits="userSpaceOnUse"
+                >
+                  <rect
+                    x=".6"
+                    y=".6"
+                    width="7.8"
+                    height="7.8"
+                    fill="none"
+                    stroke="#c9bea3"
+                    stroke-width=".6"
+                  />
+                </pattern>
+                <g id="map-tree">
+                  <circle
+                    r="7"
+                    fill="#ddd2b6"
+                    stroke="#57534a"
+                    stroke-width=".75"
+                  />
+                  <path
+                    d="M-3.6 -1.5 A4.2 4.2 0 0 1 1.5 -4.2 M-1 3 A3 3 0 0 0 3.6 0.6"
+                    fill="none"
+                    stroke="#57534a"
+                    stroke-width=".55"
+                  />
+                  <circle r=".9" fill="#57534a" />
+                </g>
+                <mask
+                  id="map-route-mask"
+                  maskUnits="userSpaceOnUse"
+                  x="-50"
+                  y="-50"
+                  width="500"
+                  height="400"
+                >
+                  <path
+                    id="map-route-reveal"
+                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                    fill="none"
+                    stroke="#fff"
+                    stroke-width="10"
+                    stroke-linecap="round"
+                  />
+                </mask>
+              </defs>
+
+              <!-- paper, extended beyond the viewBox so letterboxing still looks like map -->
+              <rect
+                x="-400"
+                y="-300"
+                width="1200"
+                height="900"
+                fill="#f4eedf"
+              />
+              <rect
+                x="-400"
+                y="-300"
+                width="1200"
+                height="900"
+                fill="url(#map-grid)"
+              />
+
+              <!-- stream -->
+              <path
+                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                fill="none"
+                stroke="#8c8577"
+                stroke-width="8.5"
+              />
+              <path
+                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                fill="none"
+                stroke="#ebe3cf"
+                stroke-width="6.6"
+              />
+              <path
+                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                fill="none"
+                stroke="#8c8577"
+                stroke-width=".5"
+                stroke-dasharray="5 7"
+              />
+              <text class="lbl-place" transform="translate(5 228) rotate(-82)">
+                Mill Stream
+              </text>
+
+              <!-- road -->
+              <path
+                id="map-lane"
+                d="M-60 286 C 120 274 280 292 460 268"
+                fill="none"
+                stroke="#57534a"
+                stroke-width="22"
+              />
+              <path
+                d="M-60 286 C 120 274 280 292 460 268"
+                fill="none"
+                stroke="#ebe3cf"
+                stroke-width="20"
+              />
+              <text class="lbl-road">
+                <textPath href="#map-lane" startOffset="47%">
+                  MILL LANE
+                </textPath>
+              </text>
+
+              <!-- footpaths (cased) -->
+              <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+                <g stroke="#8c8577" stroke-width="10">
+                  <path
+                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                  />
+                  <path d="M58 262 L58 284" />
+                  <path d="M226 212 C 232 240 240 258 246 284" />
+                  <path d="M286 46 C 292 26 298 10 302 -20" />
+                  <path d="M222 132 C 222 160 226 190 226 212" />
+                  <path d="M150 106 L162 106" />
+                </g>
+                <g stroke="#f4eedf" stroke-width="8.2">
+                  <path
+                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                  />
+                  <path d="M58 262 L58 284" />
+                  <path d="M226 212 C 232 240 240 258 246 284" />
+                  <path d="M286 46 C 292 26 298 10 302 -20" />
+                  <path d="M222 132 C 222 160 226 190 226 212" />
+                  <path d="M150 106 L162 106" />
+                </g>
+              </g>
+
+              <!-- old mill building -->
+              <rect x="22" y="26" width="128" height="94" fill="#ddd2b6" />
+              <rect
+                x="22"
+                y="26"
+                width="128"
+                height="94"
+                fill="url(#map-hatch)"
+                stroke="#2a2824"
+                stroke-width="1.3"
+              />
+              <rect
+                x="30"
+                y="34"
+                width="112"
+                height="78"
+                fill="none"
+                stroke="#2a2824"
+                stroke-width=".5"
+              />
+              <text class="lbl-caps" x="86" y="76" text-anchor="middle">
+                OLD MILL
+              </text>
+              <g transform="translate(16 74)">
+                <circle
+                  r="10"
+                  fill="#f4eedf"
+                  stroke="#2a2824"
+                  stroke-width="1.1"
+                />
+                <path
+                  d="M0 -10 V10 M-10 0 H10 M-7 -7 L7 7 M7 -7 L-7 7"
+                  stroke="#2a2824"
+                  stroke-width=".6"
+                />
+                <circle r="2" fill="#2a2824" />
+              </g>
+
+              <!-- courtyard -->
+              <rect x="172" y="40" width="100" height="92" fill="#ebe3cf" />
+              <rect
+                x="172"
+                y="40"
+                width="100"
+                height="92"
+                fill="url(#map-paving)"
+                stroke="#57534a"
+                stroke-width=".9"
+                stroke-dasharray="4 2"
+              />
+              <circle
+                cx="216"
+                cy="104"
+                r="9.5"
+                fill="#f4eedf"
+                stroke="#2a2824"
+                stroke-width="1"
+              />
+              <circle
+                cx="216"
+                cy="104"
+                r="4"
+                fill="none"
+                stroke="#2a2824"
+                stroke-width=".7"
+              />
+              <circle cx="216" cy="104" r="1.2" fill="#2a2824" />
+              <rect
+                x="248"
+                y="112"
+                width="12"
+                height="12"
+                fill="#ddd2b6"
+                stroke="#57534a"
+                stroke-width=".6"
+              />
+              <rect
+                x="184"
+                y="112"
+                width="12"
+                height="12"
+                fill="#ddd2b6"
+                stroke="#57534a"
+                stroke-width=".6"
+              />
+              <text class="lbl-place" x="216" y="127" text-anchor="middle">
+                Courtyard
+              </text>
+
+              <!-- pond -->
+              <ellipse
+                cx="316"
+                cy="140"
+                rx="21"
+                ry="12.5"
+                fill="#ebe3cf"
+                stroke="#57534a"
+                stroke-width=".9"
+              />
+              <path
+                d="M304 137 q4 -2 8 0 t8 0 M310 144 q4 -2 8 0 t8 0"
+                fill="none"
+                stroke="#8c8577"
+                stroke-width=".6"
+              />
+              <text class="lbl-place" x="312" y="178" text-anchor="middle">
+                Mill Park
+              </text>
+
+              <!-- trees -->
+              <g id="map-trees">
+                <use href="#map-tree" transform="translate(300 72) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(322 66) scale(0.85)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(344 82) scale(1.05)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(300 98) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(282 122) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(296 168) scale(0.8)"
+                />
+                <use href="#map-tree" transform="translate(270 160) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(250 180) scale(0.85)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(270 190) scale(0.7)"
+                />
+                <use href="#map-tree" transform="translate(190 18) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(214 14) scale(0.85)"
+                />
+                <use href="#map-tree" transform="translate(240 22) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(262 12) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(318 18) scale(1.05)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(340 24) scale(0.8)"
+                />
+                <use href="#map-tree" transform="translate(362 16) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(386 34) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(392 64) scale(0.8)"
+                />
+                <use href="#map-tree" transform="translate(390 122) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(394 152) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(386 190) scale(0.9)"
+                />
+                <use href="#map-tree" transform="translate(368 214) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(392 210) scale(0.7)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(300 242) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(320 234) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(276 246) scale(0.75)"
+                />
+                <use href="#map-tree" transform="translate(190 242) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(166 250) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(140 240) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(100 242) scale(0.85)"
+                />
+                <use href="#map-tree" transform="translate(36 146) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(60 160) scale(0.85)"
+                />
+                <use href="#map-tree" transform="translate(90 150) scale(1)" />
+                <use
+                  href="#map-tree"
+                  transform="translate(120 160) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(48 186) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(80 182) scale(0.8)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(184 156) scale(0.9)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(196 180) scale(0.75)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(158 140) scale(0.7)"
+                />
+                <use
+                  href="#map-tree"
+                  transform="translate(150 174) scale(0.85)"
+                />
+              </g>
+
+              <!-- benches -->
+              <g fill="#57534a">
+                <rect
+                  x="246"
+                  y="199"
+                  width="9"
+                  height="2.4"
+                  transform="rotate(-6 250 200)"
+                />
+                <rect x="374" y="96" width="2.4" height="9" />
+                <rect
+                  x="140"
+                  y="222"
+                  width="9"
+                  height="2.4"
+                  transform="rotate(8 144 223)"
+                />
+              </g>
+
+              <!-- viewpoint -->
+              <g transform="translate(38 246)">
+                <path
+                  d="M0 -6 L5.5 4 H-5.5 Z"
+                  fill="none"
+                  stroke="#2a2824"
+                  stroke-width=".9"
+                />
+                <text class="lbl-place" x="0" y="-9" text-anchor="middle">
+                  Viewpoint
+                </text>
+              </g>
+
+              <!-- compass -->
+              <g transform="translate(382 236)">
+                <circle r="9" fill="none" stroke="#8c8577" stroke-width=".6" />
+                <path d="M0 -12 L3 0 L0 -2 L-3 0 Z" fill="#2a2824" />
+                <path
+                  d="M0 12 L3 0 L0 2 L-3 0 Z"
+                  fill="none"
+                  stroke="#2a2824"
+                  stroke-width=".6"
+                />
+                <text
+                  x="0"
+                  y="-14.5"
+                  text-anchor="middle"
+                  font-family="Georgia,serif"
+                  font-size="6.5"
+                  font-weight="700"
+                  fill="#2a2824"
+                >
+                  N
+                </text>
+              </g>
+
+              <!-- the tour route: faint plan + dotted line revealed by the mask -->
+              <path
+                id="map-route-ghost"
+                d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                fill="none"
+                stroke="#2a2824"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-dasharray="0.1 7"
+                opacity=".22"
+              />
+              <path
+                id="map-route"
+                d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                fill="none"
+                stroke="#cf4428"
+                stroke-width="3.6"
+                stroke-linecap="round"
+                stroke-dasharray="0.1 7"
+                mask="url(#map-route-mask)"
+              />
+
+              <!-- start point: the poster -->
+              <g id="map-start" transform="translate(157 92)">
+                <circle class="halo" cx="0" cy="0" r="11" />
+                <rect
+                  class="empty"
+                  x="-7"
+                  y="-8.5"
+                  width="14"
+                  height="17"
+                  rx="1"
+                />
+
+                <g class="tack">
+                  <circle
+                    cx="0"
+                    cy="-8.5"
+                    r="2.4"
+                    fill="#cf4428"
+                    stroke="#fff"
+                    stroke-width=".7"
+                  />
+                </g>
+                <text
+                  class="lbl-start"
+                  x="0"
+                  y="-14"
+                  text-anchor="middle"
+                  id="map-start-label"
+                >
+                  Start: your poster
+                </text>
+              </g>
+
+              <!-- end flag -->
+              <g id="map-end-flag">
+                <path d="M0 0 V-18" stroke="#2a2824" stroke-width="1.1" />
+                <path d="M0 -18 L11 -14 L0 -10 Z" fill="#cf4428" />
+              </g>
+
+              <!-- station markers -->
+              <g id="map-stations"></g>
+            </svg>
+          </div>
+        </div>
+        <div id="setup-card" class="setup-card" data-testid="setup-card">
+          <div class="creator-only setup-card-top">
+            <span class="setup-badge" id="setup-badge">1</span>
+            <span class="setup-of" id="setup-of">Step 1 of 6</span>
+            <nav class="setup-dots" id="setup-dots" aria-label="Steps"></nav>
+          </div>
+          <ol id="wizard" class="creator-only">
+            <li>
+              <details id="step-host" class="step" data-step="host" open>
+                <summary>
+                  <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 16V4m0 0-4 4m4-4 4 4M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="1.8"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  <h2>Where your tour's file is stored</h2>
+                </summary>
+                <p class="step-copy hint--dim">
+                  Your tour is one small zip file in your own storage. Visitors'
+                  phones load it from there; once it has loaded, it keeps
+                  working without signal.
+                </p>
+                <div
+                  id="host-tiles"
+                  class="host-tiles"
+                  role="group"
+                  aria-label="Where your tour's file is stored"
+                >
+                  <button type="button" class="btn btn--prose host-tile" aria-pressed="false" data-host="Google Drive">Google Drive</button>
+                  <button type="button" class="btn btn--prose host-tile" aria-pressed="false" data-host="Dropbox">Dropbox</button>
+                  <button type="button" class="btn btn--prose host-tile" aria-pressed="false" data-host="OneDrive">OneDrive</button>
+                  <button type="button" class="btn btn--prose host-tile" aria-pressed="false" data-host="GitHub">GitHub</button>
+                  <button type="button" class="btn btn--prose host-tile" aria-pressed="false" data-host="your own server">Your own server</button>
+                </div>
+                <ol id="host-steps" class="substeps" hidden>
+                  <li>
+                    Download the empty starter tour below, and put it in
+                    <b class="host-name">your storage</b>.
+                  </li>
+                  <li>Share it so anyone with the link can see it.</li>
+                  <li>Copy its share link; the next step asks for it.</li>
+                </ol>
+                <div class="step-body">
+                  <button
+                    type="button"
+                    id="starter-zip"
+                    class="btn btn--prose"
+                    hidden
+                  >
+                    Download the empty starter tour
+                  </button>
+                  <button type="button" id="host-continue" class="btn" hidden>
+                    Continue
+                  </button>
+                </div>
+                <p class="step-copy hint--dim">
+                  Already have a tour zip on this device?
+                  <button type="button" id="open-file" class="link-button">
+                    Open it from this device
+                  </button>
+                </p>
+              </details>
+            </li>
+            <li>
+              <details class="step" data-step="link">
+                <summary><h2>Paste your tour's share link</h2></summary>
+                <p class="step-copy hint--dim">
+                  The link your storage gave you. Your printed code carries it.
+                </p>
+              </details>
+            </li>
+            <li>
+              <details class="step" data-step="print">
+                <summary><h2>Print your posters</h2></summary>
+                <p class="step-copy hint--dim">
+                  A sheet with the tour's code, to print whenever the tour is
+                  ready.
+                </p>
+              </details>
+            </li>
+            <li>
+              <details class="step" data-step="hang">
+                <summary><h2>Hang it where the tour starts</h2></summary>
+                <p class="step-copy hint--dim">
+                  On a gate, a post or a noticeboard, where the walk begins.
+                </p>
+              </details>
+            </li>
+            <li>
+              <details class="step" data-step="measure">
+                <summary><h2>Create it on site, in AR</h2></summary>
+                <p class="step-copy hint--dim say say-ar">
+                  Now the tour itself: start creating and walk the route,
+                  placing text pins and photos where they belong. When you are
+                  done, the tour file is saved to this phone.
+                </p>
+                <p class="step-copy hint--dim say say-noar say-computer">
+                  Creating needs an Android phone with Chrome. Open this page
+                  there: scan this code with the phone.
+                </p>
+                <p class="step-body">
+                  <button
+                    type="button"
+                    id="start-creating"
+                    class="btn setup-primary say say-ar"
+                  >
+                    Start creating
+                  </button>
+                </p>
+                <svg
+                  class="qr-draw say say-noar say-computer"
+                  viewBox="0 0 29 29"
+                  role="img"
+                  aria-label="A code that opens this page on a phone"
+                  id="measure-qr"
+                ></svg>
+                <p
+                  class="fake-step-status"
+                  id="creating-status"
+                  role="status"
+                  hidden
+                >
+                  The phone's camera opens here, in the real create flow.
+                </p>
+              </details>
+            </li>
+            <li>
+              <details class="step" data-step="done">
+                <summary><h2>Put the saved tour in place</h2></summary>
+                <p class="step-copy hint--dim">
+                  This step opens by itself when you finish in step 5.
+                </p>
+              </details>
+            </li>
+          </ol>
+          <div class="creator-only setup-nav" id="setup-nav" hidden>
+            <button type="button" id="setup-back" class="btn setup-ghost">
+              Back
+            </button>
+            <button type="button" id="setup-next" class="btn setup-ink">
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <script id="doors-skip">
+        // A returning device opens at the doors (V1), not at the setup:
+        // an instant scroll here, before the first paint, so nothing jumps.
+        if (document.body.dataset.returning === "yes") {
+          document.getElementById("doors-back").hidden = false;
+          document
+            .getElementById("landing-doors")
+            .scrollIntoView({ block: "start", behavior: "instant" });
+        }
+      </script>
+
+      <details class="proto-notes" id="proto-notes">
+        <summary>Prototype notes: V1, doors under the hero</summary>
+        <h3>The direction</h3>
+        <p>
+          The real start page, unchanged above and below, with one addition:
+          right under the hero and its film, three equal doors. "Walk a tour"
+          opens a small panel to open a tour by its link or file. "Make one on
+          site" goes to the setup, storage first, in the real step 1 look.
+          "Build or edit at a computer" opens the editor's entry (a stand-in
+          here) with "Start a new tour", "Open a tour you have" and "Look at
+          the example"; on a phone it first suggests a computer. The top line
+          for visitors now points at the first door. A returning device opens
+          at the doors instead of the setup.
+        </p>
+        <h3>What to try</h3>
+        <ul>
+          <li>
+            On a phone: scroll past the film to the doors; try "Make one on
+            site" (setup, step 1) and "Walk a tour", then "From this device"
+            and Start.
+          </li>
+          <li>
+            At a computer: the doors show at the bottom of the first screen;
+            "Build or edit at a computer" opens the editor's entry.
+          </li>
+          <li>
+            The "Prototype" switch at the bottom left: device, returning
+            device, AR check delay.
+          </li>
+        </ul>
+        <h3>Measurements (headless Chromium, AR check delay 300 ms)</h3>
+        <p>
+          Scroll is the distance a reader scrolls by hand from the first paint
+          at the top so that each next button is fully in view; taps count
+          every button pressed. "Jump" is the distance the page moves by
+          itself (door 2 to the setup). "Editor open" means a choice in the
+          editor's entry was made; "Start creating" was reached in order
+          through steps 1 to 4 (a storage tile, Continue, Next three times);
+          "playing" means Start on the visitor screen after "From this
+          device".
+        </p>
+        <div class="proto-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Size</th>
+                <th>Device</th>
+                <th>Doors start at</th>
+                <th>To editor open</th>
+                <th>To Start creating</th>
+                <th>To playing the tour</th>
+                <th>Layout shift after the AR check (0 / 300 / 2000 ms)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>390x844</td>
+                <td>AR phone</td>
+                <td>1059 px (below the first screen)</td>
+                <td>873 px, 3 taps</td>
+                <td>515 px, 7 taps, jump 8449 px</td>
+                <td>912 px, 3 taps</td>
+                <td>0 / 0 / 0</td>
+              </tr>
+              <tr>
+                <td>390x844</td>
+                <td>Phone without AR</td>
+                <td>1059 px</td>
+                <td>873 px, 3 taps</td>
+                <td>not offered: step 5 shows a code for an Android phone (515 px, 6 taps to it)</td>
+                <td>not possible: the visitor screen offers a code and Copy link (912 px, 2 taps)</td>
+                <td>0 / 0 / 0</td>
+              </tr>
+              <tr>
+                <td>844x390</td>
+                <td>AR phone</td>
+                <td>756 px (below the first screen)</td>
+                <td>721 px, 3 taps</td>
+                <td>855 px, 7 taps, jump 4796 px</td>
+                <td>822 px, 3 taps</td>
+                <td>0 / 0 / 0</td>
+              </tr>
+              <tr>
+                <td>844x390</td>
+                <td>Phone without AR</td>
+                <td>756 px</td>
+                <td>721 px, 3 taps</td>
+                <td>not offered (881 px, 6 taps to step 5)</td>
+                <td>not possible (822 px, 2 taps to the visitor screen)</td>
+                <td>0 / 0 / 0</td>
+              </tr>
+              <tr>
+                <td>1000x620</td>
+                <td>Computer</td>
+                <td>519 px (row cut by the first screen)</td>
+                <td>105 px, 2 taps</td>
+                <td>not offered (105 px, 6 taps to step 5, jump 5670 px)</td>
+                <td>not possible (335 px, 2 taps)</td>
+                <td>0 / 0 / 0</td>
+              </tr>
+              <tr>
+                <td>1280x720</td>
+                <td>Computer</td>
+                <td>537 px (whole row in the first screen)</td>
+                <td>0 px, 2 taps</td>
+                <td>not offered (0 px, 6 taps, jump 5387 px)</td>
+                <td>not possible (207 px, 2 taps)</td>
+                <td>0 / 0 / 0</td>
+              </tr>
+              <tr>
+                <td>1440x900</td>
+                <td>Computer</td>
+                <td>545 px (whole row in the first screen)</td>
+                <td>0 px, 2 taps</td>
+                <td>not offered (0 px, 6 taps, jump 5031 px)</td>
+                <td>not possible (36 px, 2 taps)</td>
+                <td>0 / 0 / 0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Through the step dots instead of in order, "Start creating" takes 3
+          taps (the door, dot 5, Start creating); the page lets steps open in
+          any order, so storage first is a suggestion there, not a rule. A
+          returning device opens with the doors at the top of the screen
+          (scrolled 1059 px at 390x844, 545 px at 1440x900) and no shift.
+        </p>
+        <h3>Weaknesses</h3>
+        <ul>
+          <li>
+            A choice before the story is read: on a computer the doors sit
+            right under the hero, before the five story cards, and "Make one
+            on site" then jumps 5000 to 8500 px over the story to the setup, so
+            the door meant for makers skips the part that tells them how it
+            goes.
+          </li>
+          <li>
+            On a phone the doors are below the first screen (1059 px at
+            390x844, 756 px held sideways): the film comes first, so a
+            visitor with a link still scrolls about 900 px before "Walk a
+            tour".
+          </li>
+          <li>
+            Three ways to the same setup: the hero's "Make your tour", door 2
+            and "Make your own tour" further down. Door 2 could replace the
+            hero button, but the hero is meant to stay as it is.
+          </li>
+          <li>
+            Equal doors give no hint which one fits the device: a computer
+            shows "Make one on site" as large as the editor door, and the
+            first two doors end at a code to scan there.
+          </li>
+          <li>
+            A returning maker opens at the doors, one tap further from the
+            setup than today, where a returning device opens at the setup.
+          </li>
+          <li>
+            The long jump to the setup leaves the reader far from the doors;
+            there is no way back up except scrolling.
+          </li>
+        </ul>
+        <h3>The values it rests on</h3>
+        <ul>
+          <li>
+            Viewports 390x844, 844x390, 1000x620, 1280x720 and 1440x900; phones
+            measured as both AR phone and phone without AR, the three larger
+            sizes as a computer.
+          </li>
+          <li>
+            Fonts are this machine's headless Chromium fallbacks; a phone's
+            own fonts may change the heights, so the pixel numbers are a guide
+            and no verdict rests on their exact value: the doors are well
+            below the first screen at both phone sizes (by 215 px and more)
+            and fully in it at 1280x720 and 1440x900.
+          </li>
+          <li>
+            The film shows its drawn still, and the five cards keep their
+            reserved picture boxes empty: the real page draws them with its own
+            scripts, which this copy does not run. Their boxes are the real
+            page's sizes, so distances match; the use cases are the short list
+            the real page shows before its gallery loads (the real gallery is
+            taller, which lengthens only the jump to the setup).
+          </li>
+          <li>
+            Layout shift was swept over 13 widths from 320 to 844 px, AR check
+            at 2000 ms, from the top and as a returning device scrolled to the
+            doors: 0 everywhere, because every wording a door can switch to
+            sits in the same box from the first paint.
+          </li>
+          <li>
+            The codes drawn here are stand-ins, not readable codes. Nothing
+            here starts AR, opens a file or copies a link.
+          </li>
+        </ul>
+        <h3>Script size</h3>
+        <p>
+          The doors are plain markup and styles (about 9 kB of CSS); the
+          prototype's own inline script, faking the switches and flows, is
+          about 12 kB (about 3.5 kB gzip). Built into the app, the doors would
+          add almost no script, far inside the landing's 250 kB gzip budget.
+        </p>
+      </details>
+    </main>
+
+    <!-- The visitor screen after "Open the link" or "From this device". -->
+    <section class="over" id="visit" hidden aria-labelledby="visit-title">
+      <div class="over-inner">
+        <button type="button" class="link-button over-close" data-close>
+          Back to the start page
+        </button>
+        <p class="landing-kicker" style="margin-top: 18px">AR walking tour</p>
+        <h2 id="visit-title">The old mill</h2>
+        <p>Mill Park, five stations, about 25 minutes on foot.</p>
+        <div class="say say-ar">
+          <button type="button" class="visit-start" id="visit-start">
+            Start
+          </button>
+          <div class="visit-play" id="visit-play" hidden>
+            <b>The tour is playing.</b>
+            <p>
+              Here the camera view opens and the first station appears on the
+              path.
+            </p>
+          </div>
+        </div>
+        <div class="say say-noar say-computer">
+          <p>
+            This tour plays on an Android phone with Chrome. Scan this code with
+            the phone, or send yourself the link.
+          </p>
+          <svg
+            class="qr-draw"
+            viewBox="0 0 29 29"
+            role="img"
+            aria-label="A code that opens the tour on a phone"
+            id="visit-qr"
+          ></svg>
+          <div class="row">
+            <button type="button" class="btn" id="visit-copy">Copy link</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- A stand-in for the editor's entry; the real editor is edit.html. -->
+    <section class="over" id="editor" hidden aria-labelledby="editor-title">
+      <div class="over-inner">
+        <div class="editor-head">
+          <b id="editor-title">Tour editor</b>
+          <button type="button" class="link-button over-close" data-close>
+            Back to the start page
+          </button>
+        </div>
+        <div id="editor-pick">
+          <p>What would you like to do?</p>
+          <ul class="editor-choices">
+            <li>
+              <button type="button" class="editor-choice" data-open="new">
+                <b>Start a new tour</b>
+                <span
+                  >An empty tour: add stations and what they show. On site, a
+                  phone measures the code later.</span
+                >
+              </button>
+            </li>
+            <li>
+              <button type="button" class="editor-choice" data-open="have">
+                <b>Open a tour you have</b>
+                <span
+                  >The tour file your phone saved at the end of a walk, or the
+                  one at your tour's link.</span
+                >
+              </button>
+            </li>
+            <li>
+              <button type="button" class="editor-choice" data-open="example">
+                <b>Look at the example</b>
+                <span>A finished tour, to see how one is put together.</span>
+              </button>
+            </li>
+          </ul>
+        </div>
+        <div class="editor-open" id="editor-open" hidden>
+          <b id="editor-open-what">The editor is open.</b>
+          <p>
+            In the app this is the editor's 3D view.
+            <a href="../../edit.html">Open the real editor</a>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <details class="proto-strip" id="proto-strip">
+      <summary>Prototype</summary>
+      <label
+        >Device
+        <select id="sw-device">
+          <option value="computer">Computer</option>
+          <option value="ar-phone">AR phone (?ar=1)</option>
+          <option value="phone">Phone without AR (?ar=0)</option>
+        </select></label
+      >
+      <label><input type="checkbox" id="sw-returning" /> Returning device</label>
+      <label
+        >AR check
+        <select id="sw-delay">
+          <option value="0">0 ms</option>
+          <option value="300">300 ms</option>
+          <option value="2000">2000 ms</option>
+        </select></label
+      >
+    </details>
+
+    <script id="proto-logic">
+      (() => {
+        const body = document.body.dataset;
+        const root = document.documentElement.dataset;
+        const $ = (id) => document.getElementById(id);
+        const reach = (what) => {
+          root.reached = what;
+        };
+
+        // The faked AR check: a phone switched to "AR phone" says yes after
+        // the chosen delay; every other device says no.
+        setTimeout(() => {
+          if (body.ar === "checking") {
+            body.ar = body.protoDevice === "ar-phone" ? "yes" : "no";
+          }
+          root.arChecked = String(Math.round(performance.now()));
+        }, Number(body.delay));
+
+        // Switches: a reload with the chosen values in the address.
+        const q = new URLSearchParams(location.search);
+        $("sw-device").value = body.protoDevice;
+        $("sw-returning").checked = body.returning === "yes";
+        $("sw-delay").value = body.delay;
+        const reload = () => {
+          const device = $("sw-device").value;
+          q.set("device", device);
+          q.set("ar", device === "ar-phone" ? "1" : "0");
+          q.set("delay", $("sw-delay").value);
+          if ($("sw-returning").checked) q.set("returning", "1");
+          else q.delete("returning");
+          location.search = q.toString();
+        };
+        for (const id of ["sw-device", "sw-returning", "sw-delay"]) {
+          $(id).addEventListener("change", reload);
+        }
+
+        // A drawn stand-in for a QR code (not a readable code).
+        const drawQr = (svg) => {
+          let seed = 7;
+          const cells = [];
+          for (let y = 0; y < 29; y += 1) {
+            for (let x = 0; x < 29; x += 1) {
+              seed = (seed * 1103515245 + 12345) % 2147483648;
+              const finder =
+                (x < 7 && y < 7) || (x > 21 && y < 7) || (x < 7 && y > 21);
+              const ring =
+                finder &&
+                (x % 22 === 0 || x % 22 === 6 || y % 22 === 0 || y % 22 === 6 ||
+                  (x % 22 >= 2 && x % 22 <= 4 && y % 22 >= 2 && y % 22 <= 4));
+              if ((finder && ring) || (!finder && seed % 3 === 0)) {
+                cells.push(`M${x} ${y}h1v1h-1z`);
+              }
+            }
+          }
+          svg.innerHTML = `<path d="${cells.join("")}" fill="#2a2824"/>`;
+        };
+        drawQr($("measure-qr"));
+        drawQr($("visit-qr"));
+
+        // Door 1: one panel under the doors.
+        const walk = $("door-walk");
+        walk.addEventListener("click", () => {
+          const open = walk.getAttribute("aria-expanded") !== "true";
+          walk.setAttribute("aria-expanded", String(open));
+          $("panel-walk").hidden = !open;
+          $("panel-edit").hidden = true;
+        });
+        const openVisit = () => {
+          $("visit").hidden = false;
+          $("visit-play").hidden = true;
+          $("visit-start").hidden = false;
+          reach("visitor-screen");
+        };
+        $("walk-form").addEventListener("submit", (event) => {
+          event.preventDefault();
+          openVisit();
+        });
+        $("walk-file").addEventListener("click", openVisit);
+        $("visit-start").addEventListener("click", () => {
+          $("visit-start").hidden = true;
+          $("visit-play").hidden = false;
+          reach("playing");
+        });
+        $("visit-copy").addEventListener("click", () => {
+          $("visit-copy").textContent = "Link copied";
+        });
+
+        // Door 3: the editor at a computer; on a phone a panel first.
+        const openEditor = () => {
+          $("editor").hidden = false;
+          $("editor-pick").hidden = false;
+          $("editor-open").hidden = true;
+          reach("editor-entry");
+        };
+        $("door-edit").addEventListener("click", () => {
+          if (body.device === "computer") {
+            openEditor();
+            return;
+          }
+          $("panel-edit").hidden = !$("panel-edit").hidden;
+          $("panel-walk").hidden = true;
+          walk.setAttribute("aria-expanded", "false");
+        });
+        $("edit-anyway").addEventListener("click", openEditor);
+        $("edit-copy").addEventListener("click", () => {
+          $("edit-copy").textContent = "Link copied";
+        });
+        const opened = {
+          new: "A new, empty tour is open in the editor.",
+          have: "Your tour is open in the editor.",
+          example: "The example tour is open in the editor.",
+        };
+        for (const choice of document.querySelectorAll("[data-open]")) {
+          choice.addEventListener("click", () => {
+            $("editor-open-what").textContent = opened[choice.dataset.open];
+            $("editor-pick").hidden = true;
+            $("editor-open").hidden = false;
+            reach("editor");
+          });
+        }
+        for (const close of document.querySelectorAll("[data-close]")) {
+          close.addEventListener("click", () => {
+            close.closest(".over").hidden = true;
+          });
+        }
+
+        // The setup: the real step 1, then one line per step; storage first.
+        const steps = [...document.querySelectorAll("#wizard .step")];
+        const names = ["Storage", "Link", "Print", "Hang", "Create", "Done"];
+        const fractions = [0, 0.2, 0.4, 0.6, 0.8, 1];
+        const done = new Set();
+        let current = 0;
+        const route = $("map-route");
+        const reveal = $("map-route-reveal");
+        const length = route.getTotalLength();
+        const ns = "http://www.w3.org/2000/svg";
+        const offsets = [
+          [0, 21, "middle"],
+          [0, -14, "middle"],
+          [-14, 3, "end"],
+          [-14, 3, "end"],
+          [0, 21, "middle"],
+          [13, 3, "start"],
+        ];
+        const stations = names.map((name, i) => {
+          const at = route.getPointAtLength(
+            [0.02, 0.2, 0.4, 0.6, 0.8, 0.98][i] * length,
+          );
+          const g = document.createElementNS(ns, "g");
+          g.setAttribute("class", "setup-station");
+          g.setAttribute("transform", `translate(${at.x} ${at.y})`);
+          const dot = document.createElementNS(ns, "circle");
+          dot.setAttribute("r", "7");
+          const num = document.createElementNS(ns, "text");
+          num.setAttribute("class", "setup-station-num");
+          num.textContent = String(i + 1);
+          const label = document.createElementNS(ns, "text");
+          label.setAttribute("class", "setup-station-label");
+          label.setAttribute("x", String(offsets[i][0]));
+          label.setAttribute("y", String(offsets[i][1]));
+          label.setAttribute("text-anchor", offsets[i][2]);
+          label.textContent = name;
+          g.append(dot, num, label);
+          g.addEventListener("click", () => show(i));
+          $("map-stations").append(g);
+          return g;
+        });
+        const end = route.getPointAtLength(length);
+        $("map-end-flag").setAttribute("transform", `translate(${end.x} ${end.y})`);
+        const dots = names.map((name, i) => {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.setAttribute("aria-label", `Step ${i + 1}: ${name}`);
+          b.addEventListener("click", () => show(i));
+          $("setup-dots").append(b);
+          return b;
+        });
+        const render = () => {
+          steps.forEach((step, i) => {
+            step.open = i === current;
+            const state =
+              i === current ? "current" : done.has(i) ? "done" : "todo";
+            dots[i].dataset.state = state;
+            stations[i].setAttribute("data-state", state);
+            if (state === "current") dots[i].setAttribute("aria-current", "step");
+            else dots[i].removeAttribute("aria-current");
+          });
+          $("setup-badge").textContent = String(current + 1);
+          $("setup-of").textContent = `Step ${current + 1} of 6`;
+          $("setup-nav").hidden = current === 0;
+          $("setup-next").hidden = current >= 4;
+          reveal.style.strokeDasharray = `${length} ${length}`;
+          reveal.style.strokeDashoffset = String(
+            length * (1 - fractions[current]),
+          );
+          $("map-start").setAttribute("data-hung", String(done.has(3)));
+        };
+        const show = (i) => {
+          current = i;
+          render();
+        };
+        $("setup-next").addEventListener("click", () => {
+          done.add(current);
+          show(current + 1);
+        });
+        $("setup-back").addEventListener("click", () => show(current - 1));
+        for (const tile of document.querySelectorAll(".host-tile")) {
+          tile.addEventListener("click", () => {
+            for (const other of document.querySelectorAll(".host-tile")) {
+              other.setAttribute("aria-pressed", String(other === tile));
+            }
+            for (const name of document.querySelectorAll(".host-name")) {
+              name.textContent = tile.dataset.host;
+            }
+            $("host-steps").hidden = false;
+            $("starter-zip").hidden = false;
+            $("host-continue").hidden = false;
+          });
+        }
+        $("host-continue").addEventListener("click", () => {
+          done.add(0);
+          show(1);
+        });
+        $("start-creating").addEventListener("click", () => {
+          $("creating-status").hidden = false;
+          reach("creating");
+        });
+        render();
+
+        // Door 2 and the page's own "Make your tour" buttons: the setup.
+        const toSetup = () => {
+          $("setup-stage").scrollIntoView({ block: "start", behavior: "instant" });
+          reach("setup");
+        };
+        $("door-make").addEventListener("click", toSetup);
+        for (const begin of document.querySelectorAll(".landing-begin")) {
+          begin.addEventListener("click", toSetup);
+        }
+
+        $("uses-more").addEventListener("click", () => {
+          for (const more of document.querySelectorAll(".uses-more")) {
+            more.hidden = false;
+          }
+          $("uses-more").hidden = true;
+        });
+      })();
+    </script>
+  </body>
+</html>
