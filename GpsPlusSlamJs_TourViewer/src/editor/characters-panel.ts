@@ -184,10 +184,13 @@ export function createCharactersPanel(
     return ids === null ? null : new Set(ids);
   })();
   let entries: CharacterRecord[] = [];
+  /** Whether `entries` holds a finished look: before the first one the
+   *  list cannot say the device has none. */
+  let looked = false;
   /** New on this device, offered in the banner. */
   let pending: CharacterRecord[] = [];
-  const libThumbs = new Map<string, string>();
-  const tourThumbs = new Map<string, string>();
+  const libThumbs = new Map<string, Promise<string>>();
+  const tourThumbs = new Map<string, Promise<string>>();
   /** The maker's close, awaited by `makeForTour`. */
   let makerClosed: (() => void) | null = null;
 
@@ -239,30 +242,44 @@ export function createCharactersPanel(
     seenStore.write([...(seen ?? [])]);
   }
 
-  async function thumbOf(
-    cache: Map<string, string>,
+  /** The thumbnail of `key`, made once ("" where it cannot be). */
+  function thumbOf(
+    cache: Map<string, Promise<string>>,
     key: string,
     blob: () => Promise<Blob | undefined>,
   ): Promise<string> {
-    const known = cache.get(key);
-    if (known !== undefined) return known;
-    let url = "";
-    try {
-      const b = await blob();
-      if (b !== undefined) url = await cropThumb(b);
-    } catch {
-      // no thumbnail: the row shows the name only
+    let url = cache.get(key);
+    if (url === undefined) {
+      url = (async () => {
+        try {
+          const b = await blob();
+          return b === undefined ? "" : await cropThumb(b);
+        } catch {
+          return ""; // no thumbnail: the row shows the name only
+        }
+      })();
+      cache.set(key, url);
     }
-    cache.set(key, url);
     return url;
   }
 
-  const thumbImg = (url: string): string =>
-    `<img class="thumb" alt="" ${url ? `src="${url}"` : ""} />`;
+  const THUMB_IMG = '<img class="thumb" alt="" />';
 
-  let tourSeq = 0;
-  async function renderTour(): Promise<void> {
-    const seq = ++tourSeq;
+  /** Gives the row's thumbnail its picture once it is made. The rows never
+   *  wait for it: cutting one from the full picture took seconds on a busy
+   *  page, and a list that waited kept showing what it showed before. */
+  function fillThumb(
+    li: HTMLElement,
+    cache: Map<string, Promise<string>>,
+    key: string,
+    blob: () => Promise<Blob | undefined>,
+  ): void {
+    void thumbOf(cache, key, blob).then((url) => {
+      if (url) li.querySelector("img.thumb")?.setAttribute("src", url);
+    });
+  }
+
+  function renderTour(): void {
     const tour = deps.tour();
     const chars = tour?.characters() ?? [];
     dom.tourCount.textContent =
@@ -276,66 +293,57 @@ export function createCharactersPanel(
         '<li class="empty-line">No character in this tour yet. Add one from this device below, or make one.</li>';
       return;
     }
-    const rows = await Promise.all(
-      chars.map(async (c) => {
-        const li = document.createElement("li");
-        li.dataset["id"] = c.id;
-        const url = await thumbOf(tourThumbs, c.image, () => tour.image(c.id));
-        li.innerHTML = `${thumbImg(url)}<div class="who"><b>${esc(c.name)}</b><span class="meta"><span class="state">In this tour</span></span></div><div class="acts"><button class="btn small" type="button" data-remove>Remove</button></div>`;
-        li.querySelector("[data-remove]")?.addEventListener("click", () => {
-          removeFromTour(c);
-        });
-        return li;
-      }),
-    );
-    if (seq !== tourSeq) return;
+    const rows = chars.map((c) => {
+      const li = document.createElement("li");
+      li.dataset["id"] = c.id;
+      li.innerHTML = `${THUMB_IMG}<div class="who"><b>${esc(c.name)}</b><span class="meta"><span class="state">In this tour</span></span></div><div class="acts"><button class="btn small" type="button" data-remove>Remove</button></div>`;
+      li.querySelector("[data-remove]")?.addEventListener("click", () => {
+        removeFromTour(c);
+      });
+      fillThumb(li, tourThumbs, c.image, () => tour.image(c.id));
+      return li;
+    });
     dom.tourList.replaceChildren(...rows);
   }
 
-  let libSeq = 0;
-  async function renderLib(): Promise<void> {
-    const seq = ++libSeq;
+  function renderLib(): void {
     if (entries.length === 0) {
-      dom.libList.innerHTML =
-        '<li class="empty-line">No characters on this device yet.</li>';
+      // Before the first look the status line says it is looking.
+      dom.libList.innerHTML = looked
+        ? '<li class="empty-line">No characters on this device yet.</li>'
+        : "";
       return;
     }
     const fresh = new Set(pending.map((p) => p.libraryId));
-    let lib: CharacterLibrary | null = null;
-    try {
-      lib = await deps.library();
-    } catch {
-      // thumbnails only
-    }
-    const rows = await Promise.all(
-      entries.map(async (e) => {
-        const li = document.createElement("li");
-        li.dataset["id"] = e.libraryId;
-        if (fresh.has(e.libraryId)) li.classList.add("fresh");
-        const state = inTour(e.libraryId)
-          ? '<span class="state">In this tour</span>'
-          : fresh.has(e.libraryId)
-            ? '<span class="state info">New</span>'
-            : e.autoName
-              ? '<span class="state warn">No name yet</span>'
-              : "";
-        const url = await thumbOf(libThumbs, e.libraryId, async () =>
-          lib === null ? undefined : (await lib.files(e.libraryId)).image,
-        );
-        li.innerHTML = `${thumbImg(url)}<div class="who"><b>${esc(e.name)}</b><span class="meta">${state}<span>${esc(whenMade(e.createdAtIso, now()))}</span></span></div><div class="acts"></div>`;
-        if (!inTour(e.libraryId) && deps.tour() !== null) {
-          const b = document.createElement("button");
-          b.className = "btn small";
-          b.type = "button";
-          b.dataset["add"] = "";
-          b.textContent = "Add to tour";
-          b.addEventListener("click", () => void addToTour(e, b));
-          li.querySelector(".acts")?.append(b);
-        }
-        return li;
-      }),
-    );
-    if (seq !== libSeq) return;
+    const rows = entries.map((e) => {
+      const li = document.createElement("li");
+      li.dataset["id"] = e.libraryId;
+      if (fresh.has(e.libraryId)) li.classList.add("fresh");
+      const state = inTour(e.libraryId)
+        ? '<span class="state">In this tour</span>'
+        : fresh.has(e.libraryId)
+          ? '<span class="state info">New</span>'
+          : e.autoName
+            ? '<span class="state warn">No name yet</span>'
+            : "";
+      li.innerHTML = `${THUMB_IMG}<div class="who"><b>${esc(e.name)}</b><span class="meta">${state}<span>${esc(whenMade(e.createdAtIso, now()))}</span></span></div><div class="acts"></div>`;
+      if (!inTour(e.libraryId) && deps.tour() !== null) {
+        const b = document.createElement("button");
+        b.className = "btn small";
+        b.type = "button";
+        b.dataset["add"] = "";
+        b.textContent = "Add to tour";
+        b.addEventListener("click", () => void addToTour(e, b));
+        li.querySelector(".acts")?.append(b);
+      }
+      fillThumb(
+        li,
+        libThumbs,
+        e.libraryId,
+        async () => (await (await deps.library()).files(e.libraryId)).image,
+      );
+      return li;
+    });
     dom.libList.replaceChildren(...rows);
   }
 
@@ -360,9 +368,9 @@ export function createCharactersPanel(
   }
 
   function renderAll(): void {
-    void renderTour();
+    renderTour();
     renderPickup();
-    void renderLib();
+    renderLib();
   }
 
   let relisting: Promise<void> | null = null;
@@ -374,6 +382,7 @@ export function createCharactersPanel(
       try {
         const res = await (await deps.library()).list();
         entries = [...res.entries];
+        looked = true;
         await learnSheets(entries);
         const first = seen === null;
         const known = seen ?? new Set<string>();
@@ -597,6 +606,7 @@ export function createCharactersPanel(
         (seen ??= new Set()).add(rec.libraryId);
         remember();
         entries = [...(await lib.list()).entries];
+        looked = true;
         const added = await addToTour(rec, null, true);
         if (added !== null) {
           toast(
