@@ -10,6 +10,7 @@
  */
 
 import {
+  ArchiveLimitError,
   rebuildZipWithEntries,
   type DecompressionBudget,
   type ZipEntryInput,
@@ -392,8 +393,12 @@ export async function readDebugBundle(
     const blob = await readEntry(entry);
     if (blob.size > MAX_IDENTITY_BYTES) return refused("too-large");
     text = await blob.text();
-  } catch {
-    return refused("unreadable");
+  } catch (err) {
+    // A read stopped by its size cap: a directory that understated the
+    // entry, the same fault as a declared size past the cap.
+    return refused(
+      err instanceof ArchiveLimitError ? "too-large" : "unreadable",
+    );
   }
   return parseIdentity(text);
 }

@@ -69,9 +69,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     fetched with no save question ("Fetching the example tour…", a failure
     in `#open-error`); it is saved only when the creator chooses Save,
     whose first press asks for a file.
-    Every entry starts only while `isEntryIdle` (`editor-view.ts`); while a
-    file is read the modal says "Opening <name>…" and its controls are
-    disabled; then the tour is drawn and a toast names what opened, or the
+    Every entry starts only while `isEntryIdle` (`editor-view.ts`), and
+    every control of the card (answers, pickers, link field, "Open the
+    editor") is off while it is not - `renderStartCard` draws that from
+    the store, so the card is off too while a tour's scan is being added
+    after its open; while a file is read the modal says "Opening <name>…"; then the tour is drawn and a toast names what opened, or the
     reason shows in `#open-error` and the card stays (root `CLAUDE.md`,
     async feedback).
 - **The top bar's menus** (`menu-button.ts`): File (Open…, Save, Save a
@@ -290,7 +292,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`added-debug-data.ts`) ahead of the layer's line; a file that is no
   debug data is refused in a toast (`notAddedLine`, from
   `addDebugDataSaying`; `addDebugData` itself returns the outcome, so the
-  open dialog's scan path says it its own way), the layer kept.
+  start card's scan path says it its own way), the layer kept. Every add
+  goes through `addScan`: refused in words while another add runs (a file
+  dropped on the panel then is said, never dropped silently), and a throw
+  said as a refusal (`addScanSafely`), never an unhandled rejection.
   The button reads "Adding the debug data…" and is disabled meanwhile,
   and is idle and enabled again however the add ends
   (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)

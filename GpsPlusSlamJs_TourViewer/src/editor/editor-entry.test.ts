@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type { EditorFileKind } from "./classify-editor-file.js";
 import {
+  addScanSafely,
   NO_FILE,
   notOpenedLine,
   ONE_SCAN_AT_A_TIME,
@@ -290,6 +291,21 @@ describe("openWithScan", () => {
     expect(await r.outcome).toEqual({ kind: "opened", scanAdded: false });
     expect(r.adds).toEqual([]);
     expect(r.steps.every((s) => s === null)).toBe(true);
+  });
+});
+
+// Why: an add that throws (a scan read past its own refusals) would be an
+// unhandled rejection: the button clears, and nothing says why. Every add
+// the page starts goes through this, so a throw is said like a refusal.
+describe("addScanSafely", () => {
+  it("passes an add's outcome through, and says a throw as a refusal", async () => {
+    expect(
+      await addScanSafely(() => Promise.resolve({ kind: "added" })),
+    ).toEqual({ kind: "added" });
+    expect(await addScanSafely(() => Promise.resolve(null))).toBeNull();
+    expect(
+      await addScanSafely(() => Promise.reject(new Error("disk gone"))),
+    ).toEqual({ kind: "refused", reason: "disk gone" });
   });
 });
 

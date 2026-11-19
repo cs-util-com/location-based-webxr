@@ -78,10 +78,11 @@ again by an OS's "compress folder" gains a folder.
   - none: `{kind: "recording"}` (a plain Recorder zip, or a tour file that
     carries its walk);
   - one: its declared size (`sizeOf`) checked before it is read, then
-    read through `readEntry` (a failure: `"unreadable"`) and the read's
-    own size checked before its text (a directory can understate it):
-    either past 16 KiB (`MAX_IDENTITY_BYTES`, exported so a reader can
-    inflate the entry under the same cap) is `"too-large"`. Then
+    read through `readEntry` (a failure: `"unreadable"`; a read stopped
+    by its size cap, an `ArchiveLimitError`: `"too-large"`) and the
+    read's own size checked before its text (a directory can understate
+    it): either past 16 KiB (`MAX_IDENTITY_BYTES`, exported so a reader
+    can inflate the entry under the same cap) is `"too-large"`. Then
     validated:
     - not JSON, not an object, `format` not a number: `"malformed"`;
     - `format` another number: `"unknown-format"` (a newer writer);

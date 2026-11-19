@@ -150,8 +150,23 @@ describe("classifyEditorFile", () => {
     const fake = new File(["not a zip"], "fake.zip", {
       type: "application/zip",
     });
-    const kind = await classifyEditorFile(fake);
-    expect(kind.kind).toBe("neither");
+    // Why: a damaged zip is said in the editor's own words (the open
+    // refuses it as it always did), never in the zip reader's raw message.
+    expect(await classifyEditorFile(fake)).toEqual({
+      kind: "neither",
+      file: fake,
+      reason: NOT_A_ZIP,
+    });
+  });
+
+  // Why: a tour zipped inside its folder carries `<folder>/tour.json`;
+  // the open reads it as a tour, so the classifier must too.
+  it("sorts a tour wrapped in one folder as a tour", async () => {
+    const file = await zipFile("wrapped.zip", [
+      { path: "w/tour.json", data: "{}" },
+      { path: "w/content/a.jpg", data: "picture" },
+    ]);
+    expect(await classifyEditorFile(file)).toEqual({ kind: "tour", file });
   });
 
   it("refuses a bundle whose identity is unreadable, with the bundle's reason", async () => {

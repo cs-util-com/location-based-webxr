@@ -40,18 +40,19 @@ needs nothing new. The start card's "A new, empty tour" calls it
 
 ```ts
 button.addEventListener("click", () => {
-  // The unsaved-work guard first, as File's Open… asks it.
+  // Nothing else opening, and the unsaved-work guard first, as File's
+  // Open… asks it.
+  if (!isEntryIdle(ui())) return;
   if (unsavedWork() && !confirm("Your changes are not saved yet. ...")) return;
   void startNewTour({
     askSaveFile: askOpenSaveFile,
     open: openFile,
-    // Kept only while a tour is open: an open that failed has no editor.
     keepInChosenFile: (file, pick) => {
-      if (editor !== null && pick !== null) {
-        void keepInChosenFile(editor, file, pick);
-      } else {
-        settleUnusedPick(pick);
-      }
+      if (pick === null) return; // no save dialog here: Save downloads
+      // The tour may have been dropped since it opened (a late integrity
+      // failure): nothing is written into the pick then.
+      if (editor === null) settleUnusedPick(pick);
+      else void keepInChosenFile(editor, file, pick);
     },
     settleUnusedPick,
     failed: (reason) => toast(reason),

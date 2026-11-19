@@ -222,6 +222,7 @@ import {
   type EditorFileKind,
 } from "./classify-editor-file.js";
 import {
+  addScanSafely,
   entryStepLine,
   notOpenedLine,
   openWithScan,
@@ -2938,9 +2939,6 @@ document.addEventListener("keydown", (event) => {
 
 function setBusy(on: boolean, text: string): void {
   store.dispatch(editorViewActions.busyChanged({ busy: on }));
-  zipInput.disabled = on;
-  chooseButton.disabled = on;
-  linkInput.disabled = on;
   cancelButton.disabled = on;
   openStatus.textContent = text;
   renderStartCard();
@@ -2996,8 +2994,13 @@ function renderStartCard(): void {
   startScanRemove.hidden = start.scan === null;
   startScanButton.textContent =
     start.scan === null ? "Add a scan…" : "Another scan…";
+  // Every control that starts an entry, off while one runs: an open, or a
+  // tour's scan being added after it (`isEntryIdle`).
   startScanButton.disabled = !idle;
   startScanRemove.disabled = !idle;
+  zipInput.disabled = !idle;
+  chooseButton.disabled = !idle;
+  linkInput.disabled = !idle;
   startSummary.textContent = view.summary;
   startOpen.disabled = !idle || !view.canOpen;
 }
@@ -3193,18 +3196,30 @@ async function addDebugData(file: File): Promise<AddScanOutcome | null> {
   });
 }
 
-/** {@link addDebugData} from its own button or panel: a refusal said in a
- *  toast. Null - no tour, another tour opened meanwhile, another add
- *  running - says nothing, as before. */
+/** Said when a scan started no add: another add ran. */
+const SCAN_NOT_STARTED = "another scan was being added at the same time.";
+
+/**
+ * One add of a scan as every caller starts it: refused in words while
+ * another add runs, a throw said as a refusal (`addScanSafely`). Null -
+ * no tour, or another tour opened meanwhile - says nothing: the scan was
+ * never that tour's.
+ */
+function addScan(file: File): Promise<AddScanOutcome | null> {
+  if (debugAdd.busy()) {
+    return Promise.resolve({ kind: "refused", reason: SCAN_NOT_STARTED });
+  }
+  return addScanSafely(() => addDebugData(file));
+}
+
+/** {@link addScan} from its own button or panel: a refusal said in a
+ *  toast. */
 async function addDebugDataSaying(file: File): Promise<void> {
-  const outcome = await addDebugData(file);
+  const outcome = await addScan(file);
   if (outcome?.kind === "refused") {
     fileToasts.push(toast(notAddedLine(outcome.reason)));
   }
 }
-
-/** Said when the scan given with a tour started no add: another add ran. */
-const SCAN_NOT_STARTED = "another scan was being added at the same time.";
 
 /** The file the browser's picker gave, with what it may be saved through. */
 interface PickedTourFile {
@@ -3284,12 +3299,7 @@ async function openTourWithScan(
       picked !== null && file === picked.file
         ? openFile(file, picked.handle, picked.picked)
         : openFile(file),
-    // Null from the add (another tour opened meanwhile) says nothing: the
-    // scan was never that tour's.
-    addScan: (file) =>
-      debugAdd.busy()
-        ? Promise.resolve({ kind: "refused", reason: SCAN_NOT_STARTED })
-        : addDebugData(file),
+    addScan,
     step: (step) => {
       store.dispatch(editorViewActions.entryStepChanged({ step }));
       stepLine?.remove();
@@ -3697,7 +3707,7 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
 /** "Choose…" and the drop box: the browser's file picker where it exists,
  *  for a file that can be saved in place, else the file input. */
 async function chooseTour(): Promise<void> {
-  if (ui().busy || ui().picking) return;
+  if (!isEntryIdle(ui()) || ui().picking) return;
   store.dispatch(editorViewActions.pickingChanged({ picking: true }));
   const outcome = await pickTourFile(window as unknown as PickerWindow).finally(
     () => {
@@ -3812,12 +3822,11 @@ function startNew(scan: File | null): void {
     open: async (file) =>
       (await openTourWithScan(file, scan, null)).kind !== "not-opened",
     keepInChosenFile: (file, pick) => {
-      // Kept only while a tour is open: an open that failed has no editor.
-      if (editor !== null && pick !== null) {
-        void keepInChosenFile(editor, file, pick);
-      } else {
-        settleUnusedPick(pick);
-      }
+      if (pick === null) return; // no save dialog here: Save downloads
+      // The tour may have been dropped while its scan was added (a late
+      // integrity failure): nothing is written into the pick then.
+      if (editor === null) settleUnusedPick(pick);
+      else void keepInChosenFile(editor, file, pick);
     },
     settleUnusedPick,
     failed: (reason) => {

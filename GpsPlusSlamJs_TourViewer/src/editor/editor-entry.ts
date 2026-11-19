@@ -88,6 +88,24 @@ export type AddScanOutcome =
   | { readonly kind: "added" }
   | { readonly kind: "refused"; readonly reason: string };
 
+/**
+ * Runs one add of a scan; a throw (a read failing past its own refusals)
+ * is a refusal in words, so no caller leaves it unhandled and unsaid.
+ * Null - nothing added, nothing to say - passes through. Never rejects.
+ */
+export async function addScanSafely(
+  add: () => Promise<AddScanOutcome | null>,
+): Promise<AddScanOutcome | null> {
+  try {
+    return await add();
+  } catch (err) {
+    return {
+      kind: "refused",
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /** How opening a tour with a scan ended. */
 export type OpenWithScanOutcome =
   /** The tour did not open; the scan was not read. The open said why,
@@ -160,15 +178,7 @@ export async function openWithScan(
     if (!opened) return { kind: "not-opened" };
     if (scan === null) return { kind: "opened", scanAdded: false };
     deps.step("adding-scan");
-    let added: AddScanOutcome | null;
-    try {
-      added = await deps.addScan(scan);
-    } catch (err) {
-      added = {
-        kind: "refused",
-        reason: err instanceof Error ? err.message : String(err),
-      };
-    }
+    const added = await addScanSafely(() => deps.addScan(scan));
     if (added === null) return { kind: "opened", scanAdded: false };
     return added.kind === "added"
       ? { kind: "opened", scanAdded: true }
