@@ -2059,7 +2059,9 @@
         font-size: 16px;
         text-shadow: none;
       }
-      body[data-mode="visitor"]:not([data-ar-active="true"]) #ar-status:empty {
+      /* Empty before a session in both modes (a creator's line carries only
+         a failed start's cause): hidden, so its margin takes no room. */
+      body:not([data-ar-active="true"]) #ar-status:empty {
         display: none;
       }
       body[data-mode="visitor"]:not([data-ar-active="true"]) #enter-ar {
