@@ -1554,6 +1554,49 @@ describe("work made before the tour's draft opened reaches it", () => {
     ).toBe(false);
   });
 
+  it("keeps asking when the tour is torn down while its draft is still opening", async () => {
+    // Why: a tour removed by a late integrity failure is torn down inside
+    // the same open, so the open generation does not move. The draft's
+    // continuation, held in its store open meanwhile, used to finish after
+    // the teardown, attach the closed tour's store and report the work as
+    // backed up with no tour open: a reload then lost the placement
+    // without a question.
+    const { store, putKeys } = memoryStore();
+    let release = (): void => undefined;
+    const openGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { ctx, dom, setup } = wire(store, { placeable: true, openGate });
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    ctx.session = {
+      entries: [],
+      loadEntryText: () => Promise.resolve(""),
+      archive: { size: 1 },
+    } as never;
+    ctx.tourManifestStatus = "settled";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    const generation = ctx.openGeneration;
+    // The teardown as the integrity failure runs it: the session goes,
+    // the finish step resets, the generation stays.
+    ctx.session = null;
+    setup.resetFinishStep();
+    expect(ctx.openGeneration).toBe(generation);
+    const writesBefore = putKeys.length;
+    release();
+    await settle();
+    expect(
+      setup.leaveNeedsConfirm(),
+      "no tour is open, so nothing backs the placement up",
+    ).toBe(true);
+    expect(setup.leaveQuestion()).toContain("holds no backup copy");
+    expect(putKeys.length, "nothing is written for the closed tour").toBe(
+      writesBefore,
+    );
+  });
+
   it("leads the clamped AR line with a short lead while the tour.json loads or is broken, and only there", async () => {
     // Why: no draft opens before the manifest settles, so the work is kept
     // nowhere - and the full hint ends the line, past the two-line clamp.
@@ -2740,6 +2783,24 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
       expect(setup.codes.inHand()).toEqual(a);
     },
   );
+
+  // Why: the page's earlier work is queued into the store before the
+  // hosted comparison, which reads the zip over the network (a range read
+  // can take long, or never end). Waiting for it, the leave question said
+  // nothing was backed up although the work already was.
+  it("reports the draft as backing up once the earlier work is queued, before a slow hosted read ends", async () => {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16 }),
+      [CODES_KEY]: JSON.stringify({ level: a, levels: [a] }),
+      [objectKey("hosted")]: recordText(HOSTED),
+    });
+    const { ctx, setup } = wire(store);
+    ctx.tourDocument.open(PUBLISHED);
+    ctx.session = hostedZip([a.id], () => new Promise<string>(() => undefined));
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(setup.leaveQuestion()).toContain("Your changes stay on this phone");
+  });
 });
 
 describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", () => {

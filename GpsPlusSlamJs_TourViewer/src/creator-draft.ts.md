@@ -156,12 +156,22 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     own saved work "replaced by a newer one". Cleared by `reset`.
   - `warnNoBackup()` / `persists()` - the once-only "not saving a backup
     copy" note; `persists()` is true only once the open tour's draft took
-    the page's earlier work (`present` ran to its end for that open) and
-    no such note was said, so it is false while unstored work waits in
-    memory - no tour open, its manifest not settled, its draft still
-    opening. The leave guard reads it as its one fact
+    the page's earlier work (`present` queued it into that open's store,
+    or ran to its end) and no such note was said, so it is false while
+    unstored work waits in memory - no tour open, its manifest not
+    settled, its draft still opening. A read that fails before the
+    earlier work is queued leaves it false: that work is not stored. A
+    slow hosted comparison after it does not hold it back. The leave
+    guard reads it, with "a tour is open", as its one fact
     (`creator-setup.test.ts` "keeps asking before leaving while the
-    settled tour's draft is still opening").
+    settled tour's draft is still opening", "reports the draft as backing
+    up once the earlier work is queued, before a slow hosted read ends").
+  - Every `present` continuation is stale once the open generation moves
+    OR `reset` ran: a late integrity failure tears the tour down inside
+    the same open, so the generation alone would let the continuation
+    attach the closed tour's store and report it as backing up
+    (`creator-setup.test.ts` "keeps asking when the tour is torn down
+    while its draft is still opening").
 - `hostedLevelJson(session, levelId)` - what the HOSTED zip stores for a
   level (the content, not the id's presence), or null when unreadable.
   Exported because the measuring path asks it too.

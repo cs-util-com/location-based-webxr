@@ -945,8 +945,9 @@ export function wireCreatorSetup(deps: {
       // The draft's own word (`persists`): false while work waits in
       // memory - no tour open, its manifest not settled (a broken
       // tour.json never opens a draft), its draft still opening - and once
-      // a backup write failed.
-      draftPersists: draft.persists(),
+      // a backup write failed. With no tour open nothing is backed up,
+      // whatever a draft continuation reported.
+      draftPersists: ctx.session !== null && draft.persists(),
       finishFailed: ctx.finishError !== null,
     };
   }

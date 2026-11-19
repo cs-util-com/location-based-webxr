@@ -400,6 +400,11 @@ export function wireCreatorDraft(deps: {
   /** The open tour's draft took the page's earlier work: its `present`
    *  continuation ran to its end. Until then that work waits in memory. */
   let caughtUp = false;
+  /** Moves on every `reset` (a tour's teardown). A teardown that runs
+   *  inside the same open (a late integrity failure removes the tour
+   *  without a new open) leaves `ctx.openGeneration` where it was, so a
+   *  `present` continuation compares this too. */
+  let presentEpoch = 0;
 
   /** Say once that the walk is not being backed up. A creator mid-session
    *  cannot act on it more often than that, and repeating it would push
@@ -1095,7 +1100,9 @@ export function wireCreatorDraft(deps: {
     // three are the data loss this milestone exists to prevent, and the
     // open path already guards every other continuation this way.
     const generation = ctx.openGeneration;
-    const stale = (): boolean => generation !== ctx.openGeneration;
+    const epoch = presentEpoch;
+    const stale = (): boolean =>
+      generation !== ctx.openGeneration || epoch !== presentEpoch;
     // The tour as opened (M6 E2p): every hosted comparison below uses it,
     // never a manifest a Finish advanced meanwhile (the continuation is
     // this open's: `stale`).
@@ -1243,6 +1250,9 @@ export function wireCreatorDraft(deps: {
           if (!ok) noteNoPersistence();
         });
       }
+      // The earlier work is queued into this store: from here a failing
+      // read below, or a slow hosted comparison, leaves it backed up.
+      if (!stale()) caughtUp = true;
       if (stored === undefined) {
         // No draft yet, but there will be (its meta is written above): a
         // code measured before the open is recorded too.
@@ -1451,6 +1461,8 @@ export function wireCreatorDraft(deps: {
       // A write still queued for the closing tour keeps its own holder.
       undecided = null;
       caughtUp = false;
+      // A continuation of the closing tour's `present` ends here.
+      presentEpoch += 1;
       touchedIds.clear();
       finishedIds.clear();
       knownKeys.clear();
