@@ -44,7 +44,7 @@ author flag.
 
 ## The creator's setup, step by step
 
-1. **Where your tour's file is stored** - choose Google Drive, Dropbox,
+1. **Where your tour file is stored** - choose Google Drive, Dropbox,
    OneDrive or GitHub; the step shows how to upload a tour zip there (the
    empty starter zip the page offers, or a tour saved before) and share it.
 2. **Paste your tour's share link** - paste the share link, press Open.
