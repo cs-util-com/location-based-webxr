@@ -138,4 +138,32 @@ describe("normalVoiceCredit, by example", () => {
   it("names the format's own cap", () => {
     expect(VOICE_CREDIT_MAX).toBe(RULE.max);
   });
+
+  // Why: the cut and the "Cut to" toast must agree in whatever unit the
+  // format counts. Cutting by code points matched the count only because
+  // the rule happens to count code points; under a UTF-16 rule an astral
+  // credit at the cap in code points is twice the cap in UTF-16 units.
+  it("cuts in the rule's own unit, never half a surrogate pair (property)", () => {
+    for (const unit of ["codePoints", "utf16"] as const) {
+      const rule = { max: 5, unit, required: false };
+      fc.assert(
+        fc.property(typed, (text) => {
+          const credit = normalVoiceCredit(text, rule) ?? "";
+          expect(tourTextCount(credit, unit)).toBeLessThanOrEqual(rule.max);
+          expect(/\p{Cs}/u.test(credit), "half a surrogate pair").toBe(false);
+          const whole = tourTextCount(
+            text.normalize("NFC").trim().replace(/\s+/gu, " "),
+            unit,
+          );
+          expect(voiceCreditCut(text, rule)).toBe(whole > rule.max);
+          if (!voiceCreditCut(text, rule)) {
+            expect(tourTextCount(credit, unit)).toBe(whole);
+          }
+        }),
+      );
+    }
+    const utf16 = { max: 5, unit: "utf16", required: false } as const;
+    expect(normalVoiceCredit("😀😀😀", utf16)).toBe("😀😀");
+    expect(voiceCreditCut("😀😀😀", utf16)).toBe(true);
+  });
 });
