@@ -103,8 +103,9 @@ interface EditingCamera {
    *  opening approach in the same event, `approach.takeOver` in
    *  `editor3d-globe.ts`, so no flight outlives the press.) */
   lock(on: boolean): void;
-  /** The world point the view looks at (`centre`'s place). */
-  lookAt(): THREE.Vector3;
+  /** The camera's world position: `centre` gives the ground under it
+   *  (the tree's "+" puts a new station there), not where the view looks. */
+  eye(): THREE.Vector3;
 }
 
 /** What the editing needs of the scene and the page. */
@@ -596,11 +597,11 @@ export function createSceneEditing(deps: SceneEditingDeps) {
   });
 
   return {
-    /** The place the view looks at, on the ground: the ground's
-     *  ellipsoidal height there, or the point's own height where no
+    /** The place under the camera, on the ground: the ground's
+     *  ellipsoidal height there, or the camera's own height where no
      *  ground has loaded yet. */
     centre(): GroundPlace {
-      const at = deps.view.lookAt();
+      const at = deps.view.eye();
       const place = placeOf(at);
       const groundAlt = world.groundAt(place);
       if (groundAlt !== null) return { ...place, alt: groundAlt };

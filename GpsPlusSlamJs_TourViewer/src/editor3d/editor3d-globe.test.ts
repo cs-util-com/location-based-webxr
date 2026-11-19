@@ -1257,6 +1257,31 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why: the tree's "+" says a new station goes "under the camera". With
+  // ground loaded and the camera tilted, the place the view looks at lies
+  // hundreds of metres ahead; the station must land under the camera,
+  // not there. Swept over pitches and heights.
+  it.each([
+    [300, -20],
+    [300, -45],
+    [1000, -30],
+    [50, -60],
+  ])(
+    "gives the ground under a camera %s m up, tilted %s deg, with ground loaded",
+    async (aboveM, pitchDeg) => {
+      const view = await openAt(0);
+      placeCamera(aboveM, pitchDeg, DRAWN_M, 800);
+      const camera = cameraPlace();
+      const at = view.centre();
+      if (at === null) throw new Error("no centre");
+      expect(at.lat).toBeCloseTo(camera.lat, 6);
+      expect(at.lon).toBeCloseTo(camera.lon, 6);
+      expect(at.alt).toBeCloseTo(DRAWN_M + N, 6);
+      // The look point is elsewhere: the camera stands 800 m south.
+      expect(Math.abs(at.lat - MUNICH.lat) * 111_200).toBeGreaterThan(700);
+    },
+  );
+
   /** One frame of the view at `now` (ms), as its loop runs it. */
   const frameAt = (now: number) => {
     fakes.seams?.driveCamera?.();

@@ -1423,7 +1423,7 @@ export async function openGlobeEditor(
         lock: (on) => {
           controls.lease(on);
         },
-        lookAt: () => camera.position,
+        eye: () => camera.position,
       },
       layer,
       ground,
