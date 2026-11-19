@@ -23,6 +23,12 @@ wired into its logic: every interaction is faked.
     label exactly "YYYY-MM-DD Title" as in the heading.
   - Every in-page link points at an id on the page, every other link at a
     prototype folder with an `index.html` (or one of the package's pages).
+- `start-page-1-doors-under-hero/` - the tour start page with three equal
+  doors right under the hero and its film (walk a tour, make one on site,
+  build or edit at a computer); a copy of the real page (`design.css` and
+  `page.css` are the package's sheet and the page's `<style>` block, with
+  their comments removed) with switches for the device, a returning device and the
+  AR check delay, and a notes panel with its measurements and weaknesses.
 - `landing-1-editorial/` ... `landing-5-map-path/` - the creator's entry
   and setup page, five visual directions. The app took L5.
 - `landing-r3-0-strip-or-cards/` ... `landing-r3-5-calm-route-cards/` - the

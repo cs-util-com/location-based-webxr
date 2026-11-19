@@ -1,0 +1,3 @@
+/* eslint-disable */
+/* A generated copy of the Tour Viewer's real landing modules (see ../README.md). Do not edit. */
+function c(e){return!Number.isFinite(e)||e<0?0:e>1?1:e}function u(e){let n=e>>>0||123456789;return()=>(n^=n<<13,n>>>=0,n^=n>>>17,n^=n<<5,n>>>=0,n/4294967296)}var s=21;function g(e=Math.imul(8,2654435761)){let n=s,o=u(e),f=(r,t)=>r<8&&t<8||r>n-9&&t<8||r<8&&t>n-9,i="";for(let r=0;r<n;r++)for(let t=0;t<n;t++)!f(t,r)&&o()<.47&&(i+=`M${String(t)} ${String(r)}h1v1h-1z`);for(let[r,t]of[[0,0],[n-7,0],[0,n-7]])i+=`M${String(r)} ${String(t)}h7v7h-7z`,i+=`M${String(r+1)} ${String(t+1)}v5h5v-5z`,i+=`M${String(r+2)} ${String(t+2)}h3v3h-3z`;return i}export{c as a,u as b,g as c};
