@@ -316,8 +316,11 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
     mimeType: "application/zip",
     buffer: recording,
   });
+  // The walk is replayed between the globe's frames, which a software
+  // renderer makes slow: give the read the time the poll below has.
   await expect(page.locator("#debug-status")).toContainText(
     "Debug data: 2 camera captures",
+    { timeout: 90_000 },
   );
   const debug = async () =>
     /** @type {any} */ ((await view3d(page))?.globe?.debug ?? null);
