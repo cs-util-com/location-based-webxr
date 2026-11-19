@@ -1516,6 +1516,14 @@ describe("work made before the tour's draft opened reaches it", () => {
       setup.leaveNeedsConfirm(),
       "with the manifest settled and the draft open, leaving does not ask",
     ).toBe(false);
+    // The tour's session gone (a teardown) while its draft still says it
+    // persists: with no tour open nothing backs the work up, whatever the
+    // draft reported, so leaving asks again, without promising a copy.
+    ctx.session = null;
+    expect(setup.leaveNeedsConfirm(), "no tour open: nothing backs it up").toBe(
+      true,
+    );
+    expect(setup.leaveQuestion()).toContain("holds no backup copy");
   });
 
   it("keeps asking before leaving while the settled tour's draft is still opening", async () => {
