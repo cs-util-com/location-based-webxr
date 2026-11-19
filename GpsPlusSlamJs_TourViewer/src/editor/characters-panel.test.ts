@@ -941,6 +941,33 @@ describe("the tour's own character ids", () => {
     expect(s.libRow("c2")?.querySelector("[data-add]")).not.toBeNull();
   });
 
+  // Why: poses that failed to read once were kept as the answer, so the
+  // row said "not in the tour" for good and offered to add him twice.
+  // The next look reads them again.
+  it("reads a character's poses again at the next look after a failed read", async () => {
+    const s = setup({ lib: [record("c1", "Rita")] });
+    s.t.chars.push({
+      id: "k7",
+      name: "Rita",
+      image: "x",
+      frames: "file:poses of c1",
+    });
+    const real = s.t.tour.fileId;
+    let reads = 0;
+    s.t.tour.fileId = (file) => {
+      reads += 1;
+      return reads === 1 ? Promise.reject(new Error("busy")) : real(file);
+    };
+    s.panel.open();
+    await settled(10);
+    expect(s.libRow("c1")?.textContent).not.toContain("In this tour");
+    s.panel.open();
+    await settled(10);
+    expect(reads).toBe(2);
+    expect(s.libRow("c1")?.textContent).toContain("In this tour");
+    expect(s.libRow("c1")?.querySelector("[data-add]")).toBeNull();
+  });
+
   // Why: the add menu's Character must hand back the tour's character
   // when the one just made is in the tour already, not add him twice.
   it("makeForTour hands back the character the tour holds already", async () => {

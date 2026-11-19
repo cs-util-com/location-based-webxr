@@ -65,12 +65,14 @@ rather than pushing the list past a phone's window
 - The tour gives each character its own id; the library id (which tells
   when he was made) never reaches the tour. A library character counts as
   in the tour when the tour declares his four poses: the list learns each
-  one's poses as the tour names them (`tour.fileId`, once per character)
-  when it reads the library. The rows are drawn as soon as the read is
+  one's poses as the tour names them (`tour.fileId`, once per character
+  once read) when it reads the library. The rows are drawn as soon as the read is
   done, before the poses are learnt; a row whose poses are not known yet
   offers no "Add to tour" (it cannot tell whether he is in the tour), and
   the rows are drawn again once they are. Poses that could not be read
-  count as known: the row offers Add, and adding says what failed.
+  count as known for that look: the row offers Add, and adding says what
+  failed; the next look reads them again ("reads a character's poses
+  again at the next look after a failed read").
 - A "new" character is a library id not seen before and not in the tour. On
   the very first read (no seen ids kept yet), every character counts as
   seen.
@@ -107,9 +109,12 @@ rather than pushing the list past a phone's window
 ## Invariants and assumptions
 
 - Every name is escaped where it is drawn.
-- Two library reads never overlap: a read asked for while one is running
-  joins it - except the import's, which waits for it and then reads
-  again, since its save is newer than a read begun before it.
+- Two looks (`relist`) never overlap: a look asked for while one is
+  running joins it - except the import's, which waits for it and then
+  looks again, since its save is newer than a look begun before it. Other
+  library reads (an import's own list after its save, the maker's lists
+  before and after it, the picture and pose reads) run beside a look,
+  each reading the library as it is then.
 - Both lists are drawn at once from what is known; the thumbnails follow
   into the drawn rows, each made once per character (a redraw while one is
   cut waits for the same cut, and its picture reaches the row on the page,

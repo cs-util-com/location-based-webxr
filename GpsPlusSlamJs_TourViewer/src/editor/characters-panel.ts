@@ -217,7 +217,10 @@ export function createCharactersPanel(
   const sheetOf = new Map<string, string | null>();
   async function learnSheets(list: readonly CharacterRecord[]): Promise<void> {
     const tour = deps.tour();
-    const todo = list.filter((e) => !sheetOf.has(e.libraryId));
+    // An unread one is read again: a failed read is not his answer.
+    const todo = list.filter(
+      (e) => typeof sheetOf.get(e.libraryId) !== "string",
+    );
     if (tour === null || todo.length === 0) return;
     const lib = await deps.library();
     for (const e of todo) {
@@ -225,7 +228,8 @@ export function createCharactersPanel(
         const files = await lib.files(e.libraryId);
         sheetOf.set(e.libraryId, await tour.fileId(files.frames));
       } catch {
-        // Unread: shown as not in the tour; adding him says what failed.
+        // Unread: shown as not in the tour until the next look reads him
+        // again; adding him meanwhile says what failed.
         sheetOf.set(e.libraryId, null);
       }
     }
