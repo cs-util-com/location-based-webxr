@@ -16,6 +16,13 @@ carry.
 - `readZipBlobEntry(blob, name): Promise<Blob>` - one entry's bytes by its
   exact name (wrap prefix included).
 
+- `withZipBlobDirectory(blob, use): Promise<T>` - one directory read
+  handed to `use` as `{ names, sizeOf(name), read(name) }` (valid only
+  inside `use`; the reader closes after it). Reads only the directory's
+  bytes plus what `use` reads, so it suits a large File too: the editor's
+  file classifier (`editor/classify-editor-file.ts`) sorts a scan by it
+  without reading the scan.
+
 ## Invariants & assumptions
 
 - Every read goes through the framework's caps: the central directory under
@@ -36,4 +43,5 @@ const picture = await readZipBlobEntry(lastSave, "content/f.jpg");
 ## Tests
 
 `zip-blob.test.ts`: names in archive order and one entry's bytes; a
-missing name and non-zip bytes refused.
+missing name and non-zip bytes refused; the directory's names, sizes and
+one read, and a missing entry refused through it.

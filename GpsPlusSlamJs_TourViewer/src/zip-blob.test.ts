@@ -10,7 +10,11 @@
 import { describe, expect, it } from "vitest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
-import { readZipBlobEntry, zipBlobEntryNames } from "./zip-blob.js";
+import {
+  readZipBlobEntry,
+  withZipBlobDirectory,
+  zipBlobEntryNames,
+} from "./zip-blob.js";
 
 describe("zipBlobEntryNames / readZipBlobEntry", () => {
   it("lists every file entry in archive order, and reads one by name", async () => {
@@ -34,5 +38,34 @@ describe("zipBlobEntryNames / readZipBlobEntry", () => {
       /content\/gone\.jpg/,
     );
     await expect(zipBlobEntryNames(new Blob(["not a zip"]))).rejects.toThrow();
+  });
+});
+
+// Why: the editor's file classifier reads a dropped file's directory once
+// and an entry or none - its names, declared sizes and one read must be the
+// zip's own, and a name it lacks an error.
+describe("withZipBlobDirectory", () => {
+  it("hands over the names, declared sizes and one read in a single directory pass", async () => {
+    const zip = await packFilesAsZip([
+      { path: "a.txt", data: "12345" },
+      { path: "b/c.txt", data: "xy" },
+    ]);
+    const seen = await withZipBlobDirectory(zip, async (dir) => ({
+      names: [...dir.names],
+      sizes: dir.names.map((n) => dir.sizeOf(n)),
+      missing: dir.sizeOf("nope"),
+      text: await (await dir.read("b/c.txt")).text(),
+      refused: await dir.read("nope").then(
+        () => "read",
+        (err: unknown) => String(err),
+      ),
+    }));
+    expect(seen).toEqual({
+      names: ["a.txt", "b/c.txt"],
+      sizes: [5, 2],
+      missing: undefined,
+      text: "xy",
+      refused: expect.stringMatching(/nope/) as unknown as string,
+    });
   });
 });

@@ -46,6 +46,49 @@ export function zipBlobEntryNames(blob: Blob): Promise<string[]> {
   );
 }
 
+/** One read of a zip's central directory: its file entries and a way to
+ *  read one of them, valid only inside the `use` callback. */
+export interface ZipBlobDirectory {
+  /** The file entries' names, in archive order (directories left out). */
+  readonly names: readonly string[];
+  /** An entry's uncompressed size as the directory declares it. */
+  sizeOf(name: string): number | undefined;
+  /** An entry's bytes; rejects, naming it, when the zip lacks it. */
+  read(name: string): Promise<Blob>;
+}
+
+/**
+ * Reads the directory once and hands it to `use`: only the directory's
+ * bytes are read, plus whatever `use` reads. Throws as
+ * {@link zipBlobEntryNames} does. A File works as well as a built Blob.
+ */
+export function withZipBlobDirectory<T>(
+  blob: Blob,
+  use: (directory: ZipBlobDirectory) => Promise<T>,
+): Promise<T> {
+  return withEntries(blob, (entries) => {
+    const files = new Map<string, FileEntry>();
+    for (const e of entries) {
+      if (!e.directory && !files.has(e.filename)) files.set(e.filename, e);
+    }
+    return use({
+      names: Array.from(files.keys()),
+      sizeOf: (name) => files.get(name)?.uncompressedSize,
+      read: (name) => {
+        const entry = files.get(name);
+        if (entry === undefined) {
+          return Promise.reject(new Error(`the zip carries no ${name}`));
+        }
+        return readZipEntryBlob(
+          entry,
+          DecompressionBudget.forArchive(blob.size),
+          "application/octet-stream",
+        );
+      },
+    });
+  });
+}
+
 /** The entry `name`'s bytes. Throws, naming it, when the zip lacks it. */
 export function readZipBlobEntry(blob: Blob, name: string): Promise<Blob> {
   return withEntries(blob, async (entries) => {
