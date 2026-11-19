@@ -348,6 +348,23 @@ describe('a hung browser run ends before its job does', () => {
     ]);
   });
 
+  // Why: an unreachable apt mirror fails the browser install in seconds
+  // ("Connection failed", exit 100) before any test ran, and one day put about
+  // a dozen jobs red that a rerun turned green. Such an attempt has ended by
+  // itself, so trying again kills nothing (the reason above for never cutting
+  // a slow one still holds): up to 3 attempts after a growing pause, each
+  // failure named in the log, red only after the last. Plain shell, no action.
+  it('tries the browser install again after a failed attempt, three times at most', () => {
+    const install = testJob.steps.find((s) => s.name === 'Install Playwright browsers');
+    const run = String(install.run);
+    expect(install.uses).toBeUndefined();
+    expect(run).toContain('for attempt in 1 2 3; do');
+    expect(run).toContain('pnpm exec playwright install --with-deps chromium && exit 0');
+    expect(run).toMatch(/sleep "\$pause"/);
+    expect(run).toMatch(/::error::/);
+    expect(run).not.toMatch(/\btimeout\b|\bkill\b/);
+  });
+
   // Why: a run keeps a report only where its config writes one, and the design
   // system's wrote a list to the log alone.
   it('has the design system write the JSON report the job uploads', () => {
