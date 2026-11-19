@@ -462,6 +462,18 @@ wired into its logic: every interaction is faked.
     thread to its answer in the world.
   - `quiz-r4-3-character-throws/` - the asking character throws the answers
     in her colour; the question rides on them in the world.
+- `quiz-r5-1-warmer/` ... `quiz-r5-3-character-guides/` - quiz round 5,
+  an Easter-egg hunt: answers hidden at their things, found by walking
+  close, choosing open from the first found egg, and help only when the
+  visitor asks the character, after which a long enough look collects the
+  nearest hidden egg; made 2026-11-19. Each folder's `README.md` has its
+  beats, sliders and creator settings.
+  - `quiz-r5-1-warmer/` - the hidden-egg count is the ask; help warms the
+    glitter of the egg the visitor turns towards.
+  - `quiz-r5-2-pillar/` - a still "help me find them" pill; help raises a
+    short pale-yellow pillar at the nearest hidden egg.
+  - `quiz-r5-3-character-guides/` - a tap on the character's name asks her;
+    she says which way to turn, and a second ask lights a pillar.
 
 **Kept, the chosen and the unchosen** (decided 2026-10-11 evening): another
 developer may prefer a variant that was not chosen and ask their own
