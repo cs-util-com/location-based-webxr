@@ -2056,4 +2056,31 @@ describe("the globe's debug layer, read from the store", () => {
     frameAt(1016);
     expect(debugStats()).toMatchObject({ thumbs: 2 });
   });
+
+  // Why: a copy can fail (a picture with no size yet). The table's version
+  // does not change when that picture later becomes usable, so a pass that
+  // marked the version seen before its copies succeeded would never try
+  // again, and that capture would stay without its thumbnail.
+  it("tries a failed thumbnail copy again on a later frame", async () => {
+    const thumbs = createDebugThumbs();
+    const img = document.createElement("img");
+    let width = 0;
+    Object.defineProperty(img, "naturalWidth", { get: () => width });
+    Object.defineProperty(img, "naturalHeight", { value: 48 });
+    thumbs.set(A.image, img);
+    const slice = {
+      current: {
+        shown: true,
+        source: "walk",
+        captures: [A, B],
+        status: "",
+      } as DebugLayerState,
+    };
+    await openAt(0, { store: storeWith(slice), debugThumbs: thumbs });
+    frameAt(1000);
+    expect(debugStats()).toMatchObject({ captures: 2, thumbs: 0 });
+    width = 64;
+    frameAt(1016);
+    expect(debugStats()).toMatchObject({ thumbs: 1 });
+  });
 });

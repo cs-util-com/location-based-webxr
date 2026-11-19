@@ -311,7 +311,9 @@ The view disposes the run once the arrival is over.
   for debug data added beside the tour (`source === "added"`; the tour's
   own walk is the marks' line above). It shows or hides them by the
   slice's `shown`, copies new thumbnails from `deps.debugThumbs` into
-  its atlas when the table's version changed, and uploads the atlas at
+  its atlas when the table's version changed (the version counts as
+  seen only once every picture there had a size, so one not decoded yet
+  is tried again on the next frame), and uploads the atlas at
   most every 250 ms. `stats().globe.debug` carries its figures; the
   view's dispose frees it. The layer is drawn in the interface pass
   (`"debug-layer"` in `GLOBE_INTERFACE.names`), so the clouds' shadow
@@ -416,7 +418,8 @@ see-through), null without buildings.
 
 - `editor3d-globe.test.ts` also covers the debug layer's wiring: a new
   drawing drawn again, the line only for added debug data, the switch,
-  a clear, and thumbnails decoded before the view opened.
+  a clear, thumbnails decoded before the view opened, and a failed copy
+  tried again on a later frame.
 - `editor3d-globe.test.ts` (jsdom, the wiring): the view core, the
   controls, the relief, the stations layer and the input are fakes; the
   fake view places its camera through the globe's own `viewPoseEcef`, and
