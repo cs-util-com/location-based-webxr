@@ -559,7 +559,8 @@ test("a scan chosen in the open dialog is added beside the open tour, and refuse
 }) => {
   // Why: a scan is not a tour, so the open dialog never opens it as one.
   // With no tour open it says what to do first; with a tour open, the same
-  // file is added beside that tour as a scan and the dialog closes.
+  // file is added beside that tour as a scan and the dialog closes, its
+  // status line saying so while it reads (the async-UI rule).
   const bundle = await debugBundleOf({
     tour: "Editor fixture",
     file: "editor-fixture.zip",
@@ -573,8 +574,28 @@ test("a scan chosen in the open dialog is added beside the open tour, and refuse
   await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
   await openAnother(page);
+  // Every text the status line shows, kept: the add may be quicker than a
+  // poll.
+  await page.evaluate(() => {
+    const status = document.getElementById("open-status");
+    const seen = /** @type {string[]} */ ([]);
+    Object.assign(window, { statusSeen: seen });
+    if (status === null) return;
+    new MutationObserver(() => {
+      seen.push(status.textContent ?? "");
+    }).observe(status, { childList: true, characterData: true, subtree: true });
+  });
   await openThroughChooser(page, bundle, "editor-fixture-debug.zip");
   await expect(page.locator("#open-modal")).toBeHidden();
+  expect(
+    await page.evaluate(
+      () =>
+        /** @type {{ statusSeen: string[] }} */ (
+          /** @type {unknown} */ (window)
+        ).statusSeen,
+    ),
+  ).toContain("Adding the scan editor-fixture-debug.zip…");
+  await expect(page.locator("#open-status")).toHaveText("");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
   await expect(page.locator("#debug-status")).toContainText(
     "Scan editor-fixture-debug.zip: shown while you edit.",
@@ -586,8 +607,9 @@ test("a tour and a scan dropped together open the tour, then add the scan; an un
   page,
 }) => {
   // Why (the async-UI rule): one drop, one action - the tour opens first,
-  // since there is no add without a tour, then the scan is added. A scan
-  // that does not read must not cost the tour, and the page says so.
+  // since there is no add without a tour, then the scan is added. A file
+  // whose scan identity does not read is sorted out before anything
+  // opens: it must not cost the tour, and a toast names it as left out.
   const tour = await editorTour();
   const bundle = await debugBundleOf({
     tour: "Editor fixture",

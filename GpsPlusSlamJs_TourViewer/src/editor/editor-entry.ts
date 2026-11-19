@@ -1,11 +1,14 @@
+import { describeOpenError } from "../open-errors.js";
 import type { EditorFileKind } from "./classify-editor-file.js";
+import { NOT_A_TOUR, NOT_A_ZIP } from "./editor-open.js";
 import type { EditorEntryStep } from "./editor-view.js";
 
 /** What the editor does with the files it was given, already sorted. */
 export type EditorEntryPlan =
   /** Open `tour`, then add `scan` beside it when one came along. A file
-   *  sorted as neither is opened too, when it is the only candidate: the
-   *  open refuses it in its own words. */
+   *  sorted as neither for the open's own reasons (no zip, no tour in it)
+   *  is opened too, when it is the only candidate: the open refuses it in
+   *  its own words. */
   | {
       readonly kind: "open";
       readonly tour: File;
@@ -72,6 +75,11 @@ export function planEditorEntry(
   }
   const [first, ...rest] = neither;
   if (first === undefined) return { kind: "refuse", reason: NO_FILE };
+  // A precise reason (a scan whose identity is broken, a damaged zip) is
+  // said as it is: the open would only say it holds no tour.
+  if (first.reason !== NOT_A_TOUR && first.reason !== NOT_A_ZIP) {
+    return { kind: "refuse", reason: `${first.file.name}: ${first.reason}` };
+  }
   return { kind: "open", tour: first.file, scan: null, ignored: rest };
 }
 
@@ -82,12 +90,22 @@ export type AddScanOutcome =
 
 /** How opening a tour with a scan ended. */
 export type OpenWithScanOutcome =
-  /** The tour did not open (the open said why); the scan was not read. */
-  | { readonly kind: "not-opened" }
+  /** The tour did not open; the scan was not read. The open said why,
+   *  unless it threw: then `error` is what it threw, for the page to say
+   *  ({@link notOpenedLine}). */
+  | { readonly kind: "not-opened"; readonly error?: unknown }
   /** The tour opened, and its scan (if one came) was added. */
   | { readonly kind: "opened"; readonly scanAdded: boolean }
   /** The tour opened and stays open; its scan could not be added. */
   | { readonly kind: "scan-failed"; readonly line: string };
+
+/** What the page says for an open that threw (its own refusals it said
+ *  itself): the error in words; null for any other outcome. */
+export function notOpenedLine(outcome: OpenWithScanOutcome): string | null {
+  return outcome.kind === "not-opened" && "error" in outcome
+    ? describeOpenError(outcome.error)
+    : null;
+}
 
 /** Said when the tour opened but its scan was not added. */
 export function scanFailedLine(fileName: string, reason: string): string {
@@ -109,8 +127,10 @@ export function entryStepLine(
 export interface OpenWithScanDeps {
   /** Opens the tour; true when it became the open tour. */
   readonly open: (tour: File) => Promise<boolean>;
-  /** Adds the scan beside the tour just opened. */
-  readonly addScan: (scan: File) => Promise<AddScanOutcome>;
+  /** Adds the scan beside the tour just opened; null when that tour is no
+   *  longer the open one (another opened meanwhile), which says nothing:
+   *  the scan was never that tour's. */
+  readonly addScan: (scan: File) => Promise<AddScanOutcome | null>;
   /** The step shown meanwhile (the store's `entryStep`); null at the end,
    *  on every path. */
   readonly step: (step: EditorEntryStep | null) => void;
@@ -121,7 +141,8 @@ export interface OpenWithScanDeps {
  * goes "opening", then "adding-scan", then null, whatever happens. A tour
  * that does not open ends it before the scan is read; a scan that fails
  * keeps the tour open and says so. Never rejects: a throwing add is a
- * failed add, a throwing open a tour that did not open.
+ * failed add, a throwing open a tour that did not open (its error carried
+ * out, since an open that throws has said nothing).
  */
 export async function openWithScan(
   tour: File,
@@ -133,13 +154,13 @@ export async function openWithScan(
     let opened: boolean;
     try {
       opened = await deps.open(tour);
-    } catch {
-      opened = false;
+    } catch (error) {
+      return { kind: "not-opened", error };
     }
     if (!opened) return { kind: "not-opened" };
     if (scan === null) return { kind: "opened", scanAdded: false };
     deps.step("adding-scan");
-    let added: AddScanOutcome;
+    let added: AddScanOutcome | null;
     try {
       added = await deps.addScan(scan);
     } catch (err) {
@@ -148,6 +169,7 @@ export async function openWithScan(
         reason: err instanceof Error ? err.message : String(err),
       };
     }
+    if (added === null) return { kind: "opened", scanAdded: false };
     return added.kind === "added"
       ? { kind: "opened", scanAdded: true }
       : { kind: "scan-failed", line: scanFailedLine(scan.name, added.reason) };

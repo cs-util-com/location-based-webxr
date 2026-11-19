@@ -30,7 +30,11 @@ chrome reads, one copy for every view of the page.
   - `picking` - the browser's file picker is open;
   - `entryStep` - `"opening"` or `"adding-scan"` while a tour given
     with a scan opens and then gets its scan (`editor-entry.ts`), null
-    otherwise; one busy state to the person across both halves;
+    otherwise; one busy state to the person across both halves.
+    `isEntryIdle(view)` - no open running (`busy`) and no entry between
+    its steps (`entryStep`): what every entry (a drop, the sample, a
+    link) asks before it starts, since `busy` alone is false between
+    the open and the add;
   - `duplicating` - a Duplicate is reading its pictures before it
     writes: another one does nothing meanwhile (a second Ctrl+D makes
     no copy);
@@ -160,7 +164,8 @@ selectEditorView(store.getState()).moving; // { id: "a", drop: {...} }
 `editor-view.test.ts`: the initial state; a drop kept only for the
 marker being dragged and only for a drawable spot (another marker's late
 event, NaN, Infinity and a drop after the drag ended all ignored); each
-flag set on its own, and `selected` keeping the line; the view switch's
+flag set on its own, and `selected` keeping the line; `isEntryIdle` false
+while busy or between an entry's steps; the view switch's
 fields through each action, and late or doubled actions ignored; the
 shell's folds and layers, with unknown keys, empty ids and
 flags that are not booleans ignored; the unfolded stations emptied when

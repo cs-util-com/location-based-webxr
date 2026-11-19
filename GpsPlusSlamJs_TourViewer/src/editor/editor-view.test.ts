@@ -14,6 +14,7 @@ import {
   editorViewActions as act,
   editorViewReducer as reduce,
   initialEditorViewState,
+  isEntryIdle,
   isStationLocked,
   pointerDragRuns,
   selectEditorView,
@@ -599,5 +600,24 @@ describe("the entry step", () => {
     expect(state.entryStep).toBe("adding-scan");
     state = reduce(state, act.entryStepChanged({ step: null }));
     expect(state.entryStep).toBeNull();
+  });
+
+  // Why: between the open and the add, `busy` is false; a sample or a
+  // link opened then would replace the tour the scan is being added to,
+  // so every entry asks this, not `busy` alone.
+  it("is idle only with nothing opening and no entry between its steps", () => {
+    expect(isEntryIdle(initialEditorViewState)).toBe(true);
+    const busy = reduce(
+      initialEditorViewState,
+      act.busyChanged({ busy: true }),
+    );
+    expect(isEntryIdle(busy)).toBe(false);
+    for (const step of ["opening", "adding-scan"] as const) {
+      expect(
+        isEntryIdle(
+          reduce(initialEditorViewState, act.entryStepChanged({ step })),
+        ),
+      ).toBe(false);
+    }
   });
 });

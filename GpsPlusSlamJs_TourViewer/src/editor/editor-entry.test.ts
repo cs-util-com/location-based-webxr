@@ -3,6 +3,7 @@ import fc from "fast-check";
 import type { EditorFileKind } from "./classify-editor-file.js";
 import {
   NO_FILE,
+  notOpenedLine,
   ONE_SCAN_AT_A_TIME,
   ONE_TOUR_AT_A_TIME,
   openWithScan,
@@ -13,6 +14,8 @@ import {
   type AddScanOutcome,
 } from "./editor-entry.js";
 import type { EditorEntryStep } from "./editor-view.js";
+import { NOT_A_TOUR, NOT_A_ZIP } from "./editor-open.js";
+import { describeOpenError } from "../open-errors.js";
 
 const file = (name: string) => new File(["x"], name);
 const tour = (name: string): EditorFileKind => ({
@@ -88,15 +91,27 @@ describe("planEditorEntry", () => {
     ).toEqual({ kind: "refuse", reason: ONE_SCAN_AT_A_TIME });
   });
 
-  // Why: a file that is neither goes to the open as before, so it is
-  // refused in the open's own words (the e2e refusal specs read them).
-  it("hands a lone unusable file to the open, which says why", () => {
-    const n = neither("n.zip");
-    expect(planEditorEntry([n], false)).toEqual({
-      kind: "open",
-      tour: n.file,
-      scan: null,
-      ignored: [],
+  // Why: a file that is neither for the open's own reasons goes to the
+  // open as before, so it is refused in the open's own words (the e2e
+  // refusal specs read them); a precise reason - a scan whose identity is
+  // broken - is said as it is, since the open would only say "no tour".
+  it("hands a lone file with no zip or no tour to the open, and says a precise reason itself", () => {
+    for (const reason of [NOT_A_TOUR, NOT_A_ZIP]) {
+      const n: EditorFileKind = {
+        kind: "neither",
+        file: file("n.zip"),
+        reason,
+      };
+      expect(planEditorEntry([n], false)).toEqual({
+        kind: "open",
+        tour: n.file,
+        scan: null,
+        ignored: [],
+      });
+    }
+    expect(planEditorEntry([neither("n.zip")], true)).toEqual({
+      kind: "refuse",
+      reason: "n.zip: n.zip is no use",
     });
   });
 
@@ -166,7 +181,7 @@ describe("planEditorEntry", () => {
 describe("openWithScan", () => {
   function run(
     open: () => Promise<boolean>,
-    add: () => Promise<AddScanOutcome>,
+    add: () => Promise<AddScanOutcome | null>,
     withScan = true,
   ) {
     const steps: (EditorEntryStep | null)[] = [];
@@ -222,15 +237,48 @@ describe("openWithScan", () => {
   });
 
   it("never reads the scan when the tour did not open, and ends the step", async () => {
-    for (const open of [
+    const refused = run(
       () => Promise.resolve(false),
-      () => Promise.reject(new Error("no")),
-    ]) {
-      const r = run(open, () => Promise.resolve({ kind: "added" }));
-      expect(await r.outcome).toEqual({ kind: "not-opened" });
+      () => Promise.resolve({ kind: "added" }),
+    );
+    expect(await refused.outcome).toEqual({ kind: "not-opened" });
+    const thrown = new Error("no");
+    const threw = run(
+      () => Promise.reject(thrown),
+      () => Promise.resolve({ kind: "added" }),
+    );
+    expect(await threw.outcome).toEqual({ kind: "not-opened", error: thrown });
+    for (const r of [refused, threw]) {
       expect(r.adds).toEqual([]);
       expect(r.steps).toEqual(["opening", null]);
     }
+  });
+
+  // Why: an open that throws has said nothing itself (the page's open
+  // says its own refusals, never a throw), so the page must say it, or a
+  // drop fails silently.
+  it("carries a thrown open's error out, in words for the page", async () => {
+    const thrown = new Error("the disk went away");
+    const r = run(
+      () => Promise.reject(thrown),
+      () => Promise.resolve({ kind: "added" }),
+    );
+    const outcome = await r.outcome;
+    expect(notOpenedLine(outcome)).toBe(describeOpenError(thrown));
+    expect(notOpenedLine({ kind: "not-opened" })).toBeNull();
+    expect(notOpenedLine({ kind: "opened", scanAdded: false })).toBeNull();
+  });
+
+  // Why: when another tour opened while the scan was read, the scan was
+  // never that tour's - a lasting line blaming the scan would name the
+  // wrong tour and the wrong cause.
+  it("says nothing when the tour changed under the add", async () => {
+    const r = run(
+      () => Promise.resolve(true),
+      () => Promise.resolve(null),
+    );
+    expect(await r.outcome).toEqual({ kind: "opened", scanAdded: false });
+    expect(r.steps.at(-1)).toBeNull();
   });
 
   it("opens a tour without a scan with no entry step of its own", async () => {

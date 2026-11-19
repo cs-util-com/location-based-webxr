@@ -521,6 +521,14 @@ export function isStationLocked(
   return !view.unlockedStations.includes(stationId);
 }
 
+/** Whether a new open may start: nothing is opening (`busy`) and no
+ *  tour-with-scan entry is between its steps (`entryStep`). Between them
+ *  `busy` is false, so a sample or a link opened then would replace the
+ *  tour the scan is being added to. */
+export function isEntryIdle(view: EditorViewState): boolean {
+  return !view.busy && view.entryStep === null;
+}
+
 /** The slice in a store's state. */
 export function selectEditorView(root: {
   readonly editorView: EditorViewState;

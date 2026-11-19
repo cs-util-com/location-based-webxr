@@ -40,6 +40,7 @@ import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
   editorViewActions,
   editorViewReducer,
+  isEntryIdle,
   isStationLocked,
   selectEditorView,
   type EditorMessage,
@@ -221,6 +222,7 @@ import {
 } from "./classify-editor-file.js";
 import {
   entryStepLine,
+  notOpenedLine,
   openWithScan,
   planEditorEntry,
   type AddScanOutcome,
@@ -3114,8 +3116,7 @@ async function addDebugDataSaying(file: File): Promise<void> {
   }
 }
 
-/** Said when the scan given with a tour started no add (another add ran,
- *  or another tour opened meanwhile). */
+/** Said when the scan given with a tour started no add: another add ran. */
 const SCAN_NOT_STARTED = "another scan was being added at the same time.";
 
 /** The file the browser's picker gave, with what it may be saved through. */
@@ -3139,7 +3140,7 @@ async function enterFiles(
   files: readonly File[],
   picked: PickedTourFile | null = null,
 ): Promise<boolean> {
-  if (ui().busy || ui().entryStep !== null || files.length === 0) return false;
+  if (!isEntryIdle(ui()) || files.length === 0) return false;
   openError.hidden = true;
   const [only] = files;
   setBusy(
@@ -3164,7 +3165,17 @@ async function enterFiles(
     toast(`Left out ${left.file.name}: ${left.reason}`);
   }
   if (plan.kind === "add-scan") {
-    const added = await addDebugData(plan.scan);
+    // One busy state while the scan reads (the async-UI rule): the line
+    // says so, and a second drop or open waits for it.
+    store.dispatch(editorViewActions.entryStepChanged({ step: "adding-scan" }));
+    setBusy(true, entryStepLine("adding-scan", "", plan.scan.name));
+    let added: AddScanOutcome | null;
+    try {
+      added = await addDebugData(plan.scan);
+    } finally {
+      setBusy(false, "");
+      store.dispatch(editorViewActions.entryStepChanged({ step: null }));
+    }
     if (added?.kind === "added") showModal(false);
     else if (added?.kind === "refused") {
       openError.textContent = notAddedLine(added.reason);
@@ -3179,11 +3190,12 @@ async function enterFiles(
       picked !== null && file === picked.file
         ? openFile(file, picked.handle, picked.picked)
         : openFile(file),
-    addScan: async (file) =>
-      (await addDebugData(file)) ?? {
-        kind: "refused",
-        reason: SCAN_NOT_STARTED,
-      },
+    // Null from the add (another tour opened meanwhile) says nothing: the
+    // scan was never that tour's.
+    addScan: (file) =>
+      debugAdd.busy()
+        ? Promise.resolve({ kind: "refused", reason: SCAN_NOT_STARTED })
+        : addDebugData(file),
     step: (step) => {
       store.dispatch(editorViewActions.entryStepChanged({ step }));
       stepLine?.remove();
@@ -3200,6 +3212,14 @@ async function enterFiles(
   });
   if (outcome.kind === "scan-failed") {
     fileToasts.push(toast(outcome.line, undefined, null));
+  }
+  const thrown = notOpenedLine(outcome);
+  if (thrown !== null) {
+    // The open threw past its own refusals: it said nothing, and left
+    // its busy state on.
+    setBusy(false, "");
+    openError.textContent = thrown;
+    openError.hidden = false;
   }
   return outcome.kind !== "not-opened";
 }
@@ -4606,7 +4626,7 @@ document.addEventListener("drop", (event) => {
   void dropFiles(Array.from(event.dataTransfer?.files ?? []), at);
 });
 sampleButton.addEventListener("click", () => {
-  if (ui().busy) return;
+  if (!isEntryIdle(ui())) return;
   // First, in the click: where to save it (`askOpenSaveFile`).
   const pick = askOpenSaveFile(SAMPLE_NAME);
   openError.hidden = true;
@@ -4641,7 +4661,7 @@ sampleButton.addEventListener("click", () => {
 // (no file handle: Save downloads the new copy).
 linkForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (ui().busy) return;
+  if (!isEntryIdle(ui())) return;
   const link = linkInput.value;
   // First, in the submit: where to save it (`askOpenSaveFile`).
   const pick = askOpenSaveFile(linkFileName(link));
