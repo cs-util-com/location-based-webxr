@@ -662,6 +662,14 @@ export class BuildingView {
   private readonly woodsAuto: boolean;
   /** True while the frame callback runs, so `requestFrame` can tell chained. */
   private inFrame = false;
+  /** The building-shadow spike's hooks (`?measure=shadows`); empty otherwise. */
+  readonly shadowSpikeHooks: {
+    sunStepStart?: () => void;
+    sunStepEnd?: (direction: Vector3Like) => void;
+    frameStart?: () => void;
+    beforeRender?: () => void;
+    frameEnd?: () => void;
+  } = {};
   /** Whether the frame now queued was requested from within a frame. */
   private queuedChained = false;
 
@@ -1742,6 +1750,7 @@ export class BuildingView {
     settings: LightSettings,
     light: LightSetting,
   ): void {
+    this.shadowSpikeHooks.sunStepStart?.();
     const direction = this.atmosphere.setLight(light, angles);
     if (direction === undefined) {
       throw new Error("the atmosphere returned no sun for a sun step");
@@ -1824,6 +1833,7 @@ export class BuildingView {
    * stops keep the sun within civil twilight (≥ −6°).
    */
   setSunAngles(angles: SunAngles): void {
+    this.shadowSpikeHooks.sunStepStart?.();
     const direction = this.atmosphere.setSun(angles);
     this.sunAngles = angles;
     this.finishSunStep(direction);
@@ -1898,6 +1908,51 @@ export class BuildingView {
     this.cityLook.setSurfaceGain(
       surfaceGainAt(this.sunAngles.elevationRad, gainOf(this.lightSettings)),
     );
+    this.shadowSpikeHooks.sunStepEnd?.(direction);
+  }
+
+  /**
+   * The building-shadow spike's handles: the renderer, scene, camera,
+   * controls, sun light, city root and ground, a GPU sync (a one-pixel read
+   * of the canvas, which waits for every queued command), one synchronous
+   * render without the hooks, the frame request and the sun.
+   */
+  shadowSpikeHandles(): {
+    readonly renderer: THREE.WebGLRenderer;
+    readonly scene: THREE.Scene;
+    readonly camera: THREE.PerspectiveCamera;
+    readonly controls: MapControls;
+    readonly sun: THREE.DirectionalLight;
+    readonly cityRoot: THREE.Object3D;
+    readonly ground: THREE.Mesh;
+    readonly sync: () => void;
+    readonly renderNow: () => void;
+    readonly requestFrame: () => void;
+    readonly setSunAngles: (angles: SunAngles) => void;
+    readonly sunAngles: () => SunAngles;
+  } {
+    const gl = this.renderer.getContext();
+    const pixel = new Uint8Array(4);
+    return {
+      renderer: this.renderer,
+      scene: this.scene,
+      camera: this.camera,
+      controls: this.controls,
+      sun: this.sun,
+      cityRoot: this.group,
+      ground: this.ground,
+      sync: () => {
+        this.renderer.setRenderTarget(null);
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+      },
+      renderNow: () => {
+        this.prepareFrame();
+        this.renderer.render(this.scene, this.camera);
+      },
+      requestFrame: () => this.requestFrame(),
+      setSunAngles: (angles) => this.setSunAngles(angles),
+      sunAngles: () => this.sunAngles,
+    };
   }
 
   /**
@@ -1986,12 +2041,14 @@ export class BuildingView {
 
   /** One on-demand frame; `requestFrame` is its only caller. */
   private drawFrame(atMs: number): void {
+    this.shadowSpikeHooks.frameStart?.();
     this.meterWoods(atMs, this.queuedChained);
     this.controls.update();
     // BEFORE THE RENDER, so this frame shows where the agent now is rather
     // than where it was one frame ago.
     const walking = this.advanceWalk();
     this.prepareFrame();
+    this.shadowSpikeHooks.beforeRender?.();
     this.renderer.render(this.scene, this.camera);
     // THE ONE OBSERVABLE BEHIND "THE SCENE GOES QUIET" (stage 4, DEC-R11-15).
     // The regression this stage carries is a reintroduced permanent render
@@ -2028,6 +2085,7 @@ export class BuildingView {
     // AFTER the cost capture: the AO's own renders reset those counters, and
     // the cost reported is the scene's.
     this.ao.render();
+    this.shadowSpikeHooks.frameEnd?.();
     // DRIVEN FROM THE ON-DEMAND FRAME, and that is the accepted trade
     // (DEC-R3-9). This view deliberately has no permanent rAF loop — one was
     // measured to make the e2e suite ~6x slower and would burn a phone's

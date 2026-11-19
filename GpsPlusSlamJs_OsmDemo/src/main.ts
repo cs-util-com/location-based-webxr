@@ -68,6 +68,10 @@ import {
   timelapseSpan,
 } from "./sun-driver.js";
 import { describeDrawCost } from "./draw-cost.js";
+import {
+  shadowMeasureRequested,
+  startShadowMeasure,
+} from "./measure-shadows.js";
 import { fallbackBuildingsNote } from "./fallback-note.js";
 import { readWoodsKnobs } from "./woods-readout.js";
 import {
@@ -588,6 +592,17 @@ async function main(): Promise<void> {
   if (shadowCheckEnabled(window.location.search)) {
     buildingView.enableShadowCheck();
   }
+  // THE SHADOW SPIKE (`?measure=shadows`): a throwaway measurement of
+  // cached city shadows through the real slider and frame loop.
+  const shadowMeasure = shadowMeasureRequested(window.location.search)
+    ? startShadowMeasure({
+        handles: buildingView.shadowSpikeHandles(),
+        hooks: buildingView.shadowSpikeHooks,
+        slider: el<HTMLInputElement>("sun-time"),
+        scheme: () => selectColourScheme(store.getState()),
+        chooseScheme: (name) => store.dispatch(colourSchemeChanged(name)),
+      })
+    : undefined;
   // THE GROUND PICKER (W11, DEC-R3-3). Three exclusive states rather than W23's
   // checkbox: the CPU path, the GPU path, and none at all — the last of which is
   // what makes the OSM ground areas inspectable on their own, since `plates`
@@ -1449,6 +1464,7 @@ async function main(): Promise<void> {
         schemeSwitch.meshDrawn(built.mesh.colourScheme);
         roofsSwitch.meshDrawn(built.mesh.inventedRoofs);
         markingsSwitch.meshDrawn(built.mesh.markings);
+        shadowMeasure?.meshDrawn(built.mesh);
         return;
       }
       if (latestMesh === undefined) return;
