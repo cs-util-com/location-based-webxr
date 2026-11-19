@@ -83,22 +83,40 @@ export function summarizeResources(
 }
 
 /**
- * Fetches a file as bytes and times it.
+ * Request options for every model download: no Referer. The model host
+ * answers a request whose Referer is a `*.workers.dev` origin with a 404
+ * that carries no CORS header, which the browser reports only as
+ * "Failed to fetch"; without a Referer it serves the file.
+ */
+const MODEL_FETCH_INIT: RequestInit = { referrerPolicy: "no-referrer" };
+
+/**
+ * Fetches a file as bytes, without a referrer, and times it.
  *
  * @throws Error naming the label, the HTTP status and the URL when the
- *   response is not ok (a 404 becomes one log line, not a blank page).
+ *   response is not ok (a 404 becomes one log line, not a blank page), or
+ *   the label, the error and the URL when the request itself fails (a
+ *   network error or a CORS refusal).
  */
 export async function fetchBytes(
   url: string,
   label: string,
   deps: {
-    readonly fetch: (url: string) => Promise<Response>;
+    readonly fetch: (url: string, init?: RequestInit) => Promise<Response>;
     readonly now: () => number;
     readonly lookup?: (url: string) => ResourceLike | undefined;
   },
 ): Promise<{ bytes: Uint8Array; record: DownloadRecord }> {
   const t0 = deps.now();
-  const res = await deps.fetch(url);
+  let res: Response;
+  try {
+    res = await deps.fetch(url, MODEL_FETCH_INIT);
+  } catch (e) {
+    throw new Error(
+      `${label}: ${errorText(e)} for ${url} (network error or CORS refusal)`,
+      { cause: e },
+    );
+  }
   if (!res.ok) {
     throw new Error(`${label}: HTTP ${String(res.status)} for ${url}`);
   }
@@ -120,7 +138,7 @@ export async function fetchBytes(
 export interface LoadDeps {
   /** A dynamic `import()` of a pinned CDN module. */
   readonly importModule: (url: string) => Promise<unknown>;
-  readonly fetch: (url: string) => Promise<Response>;
+  readonly fetch: (url: string, init?: RequestInit) => Promise<Response>;
   readonly now: () => number;
   /** The page's resource timing entries so far. */
   readonly resources: () => readonly ResourceLike[];

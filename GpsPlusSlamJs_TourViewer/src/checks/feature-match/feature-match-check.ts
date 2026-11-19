@@ -64,7 +64,7 @@ function findUi(root: ParentNode): Ui {
 
 const browserDeps: LoadDeps = {
   importModule: (url) => import(/* @vite-ignore */ url) as Promise<unknown>,
-  fetch: (url) => fetch(url),
+  fetch: (url, init) => fetch(url, init),
   now: () => performance.now(),
   resources: () =>
     performance.getEntriesByType("resource") as PerformanceResourceTiming[],

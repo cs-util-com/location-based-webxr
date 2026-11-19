@@ -45,6 +45,35 @@ describe("fetchBytes", () => {
       }),
     ).rejects.toThrow("xfeat model: HTTP 404 for https://x.test/gone.tflite");
   });
+
+  // Why this test matters: the model host answers a request whose Referer
+  // is a workers.dev preview origin with a 404 that carries no CORS header,
+  // which the browser reports only as "Failed to fetch". Sending no
+  // referrer is what makes the download work from the preview.
+  it("asks for the file without a referrer", async () => {
+    const inits: (RequestInit | undefined)[] = [];
+    await fetchBytes("https://x.test/m.onnx", "model", {
+      fetch: (_url, init) => {
+        inits.push(init);
+        return Promise.resolve(new Response(new Uint8Array([1])));
+      },
+      now: () => 0,
+    });
+    expect(inits).toEqual([{ referrerPolicy: "no-referrer" }]);
+  });
+
+  // Why this test matters: a refused cross-origin request rejects with a
+  // bare "Failed to fetch"; the log line must say which file and URL.
+  it("names the file and URL when the request itself fails", async () => {
+    await expect(
+      fetchBytes("https://x.test/blocked.tflite", "xfeat model", {
+        fetch: () => Promise.reject(new TypeError("Failed to fetch")),
+        now: () => 0,
+      }),
+    ).rejects.toThrow(
+      "xfeat model: TypeError: Failed to fetch for https://x.test/blocked.tflite (network error or CORS refusal)",
+    );
+  });
 });
 
 describe("summarizeResources", () => {

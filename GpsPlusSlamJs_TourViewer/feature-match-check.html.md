@@ -17,7 +17,7 @@ A standalone measurement page: it times keypoint extraction and matching of thre
 - **XFeat (LiteRT.js)**: the Apache-2.0 LiteRT export of XFeat (1.4 MB, fp16 or fp32 weights), run by `@litertjs/core` 2.6.0 (Apache-2.0) on WebGPU or WASM.
 - **ALIKED + LightGlue (onnxruntime-web)**: the split ONNX exports (extractor 13 MB, matcher 51 MB), run by onnxruntime-web 1.31.1 (MIT) on WebGPU or WASM. Off by default because of the download.
 
-All models load from pinned Hugging Face revisions at run time; no model file is in the repository. Licences and attributions are in `src/checks/feature-match/method-*.ts.md`.
+All models load from pinned Hugging Face revisions at run time; no model file is in the repository. They are fetched without a Referer (see `src/checks/feature-match/bench-net.ts.md`), because the model host refuses requests whose Referer is a `*.workers.dev` preview origin. Licences and attributions are in `src/checks/feature-match/method-*.ts.md`.
 
 ## Layout and behaviour
 
