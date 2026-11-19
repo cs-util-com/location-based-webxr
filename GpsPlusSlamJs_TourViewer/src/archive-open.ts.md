@@ -123,6 +123,10 @@ DOM glue, its own module since the flows plan M6.
   runs inside the same open, so its own `levelsParsed(null)` is what takes
   the removed tour's parsed levels away, pinned in
   `archive-open-file.test.ts`);
+  `hooks.renderArEntry()` runs right after `ctx.session` is set and right
+  after it is cleared: a creator's button reads whether a tour is open
+  (creator entry, variant A; `archive-open.test.ts`,
+  `archive-open-order.test.ts`);
   `teardownSession` clears tour state ONLY when a tour was open at its
   start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
   and the creator's pre-open work (a measured level, placements, the

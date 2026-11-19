@@ -622,6 +622,22 @@
         gap: var(--space-2);
         justify-items: start;
       }
+      /* Step 1's line for a computer (creator entry, variant A): the
+         phone, not this screen, is where the tour gets opened to create. */
+      .host-desktop {
+        display: none;
+      }
+      body:has(#enter-ar[data-ar-state="unsupported"]) .host-desktop {
+        display: block;
+      }
+      /* Step 5's lead promises a saved file only with a tour open. */
+      .measure-no-tour,
+      body:has(#enter-ar[data-tour="none"]) .measure-tour-open {
+        display: none;
+      }
+      body:has(#enter-ar[data-tour="none"]) .measure-no-tour {
+        display: inline;
+      }
       .have-tour-form {
         display: flex;
         flex-wrap: wrap;
@@ -4824,8 +4840,8 @@
             </li>
           </ul>
           <p class="landing-order">
-            The setup right below takes you through it, one step at a time, and
-            its steps open in any order.
+            The setup right below takes you through it, one step at a time.
+            Start with step 1; after that, the steps open in any order.
           </p>
           <p class="landing-cta">
             <button
@@ -5483,10 +5499,26 @@
                   </svg>
                   <h2>Where your tour's file is stored</h2>
                 </summary>
+                <!-- Creator entry, variant A: the why of storage first, told
+                 here. Both reasons are real: the printed code carries the
+                 file's link, and an open tour is what this phone keeps a
+                 copy of (ar-entry.ts sends "Open your tour first" here). -->
+                <p class="step-copy hint--dim" data-testid="host-why">
+                  Your tour is one small zip file in your own storage, and it
+                  comes first: its link goes into the code you print, so the
+                  file's place must be known before the code is printed.
+                </p>
                 <p class="step-copy hint--dim">
-                  Your tour is one small zip file in your own storage. Visitors'
-                  phones load it from there; once it has loaded, it keeps
-                  working without signal.
+                  Once the tour is open, this phone keeps a copy of everything
+                  you place, so a crash or a closed tab loses nothing. You have
+                  not made anything yet, so nothing can be lost.
+                </p>
+                <p
+                  class="step-copy hint--dim host-desktop"
+                  data-testid="host-desktop"
+                >
+                  At a computer? Your phone will know the tour once its link is
+                  pasted into this page there, in step 2.
                 </p>
                 <div
                   id="host-tiles"
@@ -5993,9 +6025,18 @@
             <p class="step-copy hint--dim creator-only" hidden>
               Now the tour itself: start creating (best at the hung code, so it
               is measured first) and walk the route, placing text pins and
-              photos where they belong. When you are done, the tour file is
-              saved to this phone, and the last step shows how to put it in
-              place.
+              photos where they belong.
+              <!-- Creator entry, variant A: the saved-file promise holds only
+               with a tour open; ar-entry.ts flags #enter-ar data-tour. -->
+              <span class="measure-tour-open"
+                >When you are done, the tour file is saved to this phone, and
+                the last step shows how to put it in place.</span
+              >
+              <span class="measure-no-tour" data-testid="measure-no-tour"
+                >No tour is open yet, so open yours first: from then on this
+                phone keeps a copy of everything you place, and Done can save
+                it.</span
+              >
             </p>
             <!-- Step 5 on a device without AR (tour editor plan 2026-10-17-1816,
              W1, review #9): shown by the CSS once the AR check says

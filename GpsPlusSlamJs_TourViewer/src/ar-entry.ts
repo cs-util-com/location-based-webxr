@@ -526,6 +526,16 @@ export function wireArEntry(deps: {
       .join("\n");
   }
 
+  /** A creator has a tour open: without one nothing placed in AR is kept
+   *  (there is no draft), so the ready tap opens a tour first. */
+  function creatorTourOpen(): boolean {
+    return ctx.session !== null;
+  }
+
+  function creatorWithoutTour(): boolean {
+    return authorMode && !creatorTourOpen();
+  }
+
   /** The entry button: its label (left alone while a copy runs - the copy
    *  owns it until it settles), the state for the page's CSS (V4 restyles
    *  a phone without AR), and the step marker of V4's round button, which
@@ -545,12 +555,18 @@ export function wireArEntry(deps: {
         failed: ctx.finishError !== null,
       },
       deps.walk?.progressKept() ?? false,
+      creatorTourOpen(),
     );
     if (!copying) {
       button.disabled = view.disabled;
       button.textContent = view.label;
     }
     button.dataset["arState"] = state.status;
+    // The page's CSS reads it: step 5's lead promises a saved tour only
+    // while one is open (creator entry, variant A). Creator only: a
+    // visitor's page always has its tour.
+    if (authorMode)
+      button.dataset["tour"] = creatorTourOpen() ? "open" : "none";
     const step = visitorStep(mode, state, location, hadLocationStep);
     if (step === null) {
       delete button.dataset["step"];
@@ -608,10 +624,13 @@ export function wireArEntry(deps: {
         computerScreen: isComputerScreen(globalThis),
       }),
     );
+    // A creator with no tour open gets no hint either: it describes a
+    // session that ends in a saved tour (creator entry, variant A).
     dom.arHint.hidden =
       withheld ||
       sessionActive ||
-      (!authorMode && state.status === "unsupported");
+      (!authorMode && state.status === "unsupported") ||
+      creatorWithoutTour();
     renderArStatus();
   }
 
@@ -953,8 +972,21 @@ export function wireArEntry(deps: {
     }
     // Hidden then; a tap that still arrives asks for nothing.
     if (startWithheld()) return;
-    if (!authorMode && arController.getState().status === "unsupported") {
+    startFromTap();
+  });
+
+  /** The tap on a button that is not the way out of a session. */
+  function startFromTap(): void {
+    const status = arController.getState().status;
+    if (!authorMode && status === "unsupported") {
       copyLink();
+      return;
+    }
+    // No tour open: the button reads "Open your tour first" and does that
+    // (creator entry, variant A). Only from ready: an error's "Try again"
+    // and an unsupported phone keep their own paths.
+    if (creatorWithoutTour() && status === "ready") {
+      hooks.openTourFirst();
       return;
     }
     // Inside the tap, before any await: the stories' one audio element
@@ -966,7 +998,7 @@ export function wireArEntry(deps: {
     enterAr().catch((err: unknown) => {
       dom.errorBox.textContent = describeOpenError(err);
     });
-  });
+  }
 
   return {
     renderArStatus,

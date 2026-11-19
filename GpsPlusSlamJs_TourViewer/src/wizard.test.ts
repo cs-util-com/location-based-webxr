@@ -3,11 +3,13 @@ import fc from "fast-check";
 
 import {
   launchHrefFromPrintedUrl,
+  openTourFirstStep,
   parseWizardStep,
   remapLegacyStep,
   STARTER_LABELS,
   visitorLaunchHref,
   wizardStepKey,
+  WIZARD_LAST_URL_KEY,
   WIZARD_STEPS,
   stepStoreOrUndefined,
   wireWizard,
@@ -428,6 +430,112 @@ describe("opening a tour from step 4 (M3 review #1)", () => {
     }).presentTour("https://h/t.zip", { prefer: "measure" });
     expect(dom.steps.hang?.open).toBe(true);
     expect(dom.steps.measure?.open).toBe(false);
+  });
+});
+
+describe("Open your tour first (creator entry, variant A)", () => {
+  // Why these tests matter: with no tour open, nothing a creator places in
+  // AR is kept (no draft exists without a tour), so step 5's button sends
+  // them to open one first. Where it sends them decides whether they land
+  // on a step that can open a tour now (the link, when this device knows
+  // where the file lives) or on the one that explains where it must live.
+  const memoryStore = (entries: [string, string][] = []) => {
+    const store = new Map<string, string>(entries);
+    return {
+      store,
+      stepStore: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => {
+          store.set(k, v);
+        },
+      },
+    };
+  };
+  const wire = (stepStore?: ReturnType<typeof memoryStore>["stepStore"]) => {
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+      ...(stepStore === undefined ? {} : { stepStore }),
+    });
+    return { dom, wizard };
+  };
+
+  it("leads to the link when a host or a link is remembered, else to where the file is stored (property)", () => {
+    fc.assert(
+      fc.property(fc.boolean(), fc.boolean(), (hostChosen, linkRemembered) => {
+        expect(openTourFirstStep({ hostChosen, linkRemembered })).toBe(
+          hostChosen || linkRemembered ? "link" : "host",
+        );
+      }),
+    );
+  });
+
+  it("opens step 2 for a device that chose a host, step 2 for one that remembers a link, and step 1 otherwise", () => {
+    const host = wire(
+      memoryStore([["tour-viewer.wizard.host", "dropbox"]]).stepStore,
+    );
+    host.wizard.openStep("measure");
+    expect(host.wizard.openTourFirst()).toBe("link");
+    expect(host.dom.steps.link?.open).toBe(true);
+    expect(host.dom.steps.measure?.open).toBe(false);
+
+    const link = wire(
+      memoryStore([[WIZARD_LAST_URL_KEY, "https://h/t.zip"]]).stepStore,
+    );
+    link.wizard.openStep("measure");
+    expect(link.wizard.openTourFirst()).toBe("link");
+    expect(link.dom.steps.link?.open).toBe(true);
+
+    const fresh = wire(memoryStore().stepStore);
+    fresh.wizard.openStep("measure");
+    expect(fresh.wizard.openTourFirst()).toBe("host");
+    expect(fresh.dom.steps.host?.open).toBe(true);
+    expect(fresh.dom.steps.measure?.open).toBe(false);
+
+    // Blocked site data: nothing is known, so step 1.
+    expect(wire().wizard.openTourFirst()).toBe("host");
+  });
+
+  it("brings the creator back to step 5 once the tour opens, over a remembered step", () => {
+    // "And back": the creator was on their way to create; the open answers
+    // by returning there, not by the open's usual print step.
+    const { stepStore } = memoryStore([
+      ["tour-viewer.wizard.host", "dropbox"],
+      [wizardStepKey("https://h/t.zip"), "hang"],
+    ]);
+    const { dom, wizard } = wire(stepStore);
+    wizard.openTourFirst();
+    wizard.presentTour("https://h/t.zip");
+    expect(dom.steps.measure?.open).toBe(true);
+    expect(dom.steps.hang?.open).toBe(false);
+    // Once: the next open goes where it always went.
+    wizard.presentTour("https://h/other.zip");
+    expect(dom.steps.print?.open).toBe(true);
+  });
+
+  it("brings a tour opened from a file back to step 5 as well, through returnAfterOpen", () => {
+    const { wizard } = wire(memoryStore().stepStore);
+    expect(wizard.returnAfterOpen()).toBeNull();
+    wizard.openTourFirst();
+    expect(wizard.returnAfterOpen()).toBe("measure");
+    expect(wizard.returnAfterOpen()).toBeNull();
+  });
+
+  it("forgets the way back when the creator goes on to another step by hand", () => {
+    // Steps 1 and 2 are where a tour opens; a creator who walks on to print
+    // or hang has changed their plan, and an open later must not yank them
+    // to step 5.
+    const { dom, wizard } = wire(memoryStore().stepStore);
+    wizard.openTourFirst();
+    wizard.openStep("link");
+    expect(wizard.returnAfterOpen()).toBe("measure");
+    wizard.openTourFirst();
+    wizard.openStep("print");
+    wizard.presentTour("https://h/t.zip");
+    expect(dom.steps.print?.open).toBe(true);
   });
 });
 

@@ -144,6 +144,24 @@ export function parseWizardStep(value: string | null): WizardStep | null {
     : null;
 }
 
+/**
+ * Where "Open your tour first" sends a creator who tapped step 5's button
+ * with no tour open (creator entry, variant A): to the link (step 2) when
+ * this device already knows where the tour lives - a host was chosen or a
+ * tour link is remembered - since a tour can be opened there right away;
+ * otherwise to step 1, which explains why the file's place comes first.
+ */
+export function openTourFirstStep(known: {
+  hostChosen: boolean;
+  linkRemembered: boolean;
+}): "host" | "link" {
+  return known.hostChosen || known.linkRemembered ? "link" : "host";
+}
+
+/** The steps a tour is opened from; walking among them keeps the way back
+ *  that "Open your tour first" armed, any other step drops it. */
+const OPENING_STEPS: readonly WizardStep[] = ["host", "link"];
+
 export interface Wizard {
   /** Open one step, collapse the others; remembered for the open tour. */
   openStep(step: WizardStep): void;
@@ -165,6 +183,14 @@ export interface Wizard {
    *  measured shortest form and the code-number token), so the tester's
    *  way in decodes what a real scan decodes (M2 review #10). */
   presentLaunchUrl(launchUrl: string): void;
+  /** Step 5's button with no tour open (creator entry, variant A): open the
+   *  step a tour is opened from (see `openTourFirstStep`) and arm the way
+   *  back, so the next tour open returns to step 5. Returns the step. */
+  openTourFirst(): "host" | "link";
+  /** Takes the way back armed by `openTourFirst`: `"measure"` once, then
+   *  null. For an open that does not go through `presentTour` (a tour
+   *  opened from a file). */
+  returnAfterOpen(): WizardStep | null;
 }
 
 /** The launch link for `url`, relative to the page (the landing's `?qr=`
@@ -246,6 +272,10 @@ export function wireWizard(deps: {
   let tourUrl: string | null = null;
   /** A step opened by `revealStep`, awaiting its own queued `toggle`. */
   let revealed: WizardStep | null = null;
+  /** The way back "Open your tour first" armed: transient navigation, owned
+   *  here like `revealed` (which step is open is this module's alone), not
+   *  document state; a reload drops it on purpose. */
+  let returnTo: WizardStep | null = null;
 
   function remember(step: WizardStep): void {
     // A visitor never writes a creator's key (M6 review #11), whatever
@@ -319,6 +349,7 @@ export function wireWizard(deps: {
       const node = dom.steps[name];
       if (node !== undefined) node.open = name === step;
     }
+    if (!OPENING_STEPS.includes(step)) returnTo = null;
     remember(step);
     if (step === "measure") {
       // Step 4 is the tall one and its body is the AR section: opening it
@@ -421,6 +452,12 @@ export function wireWizard(deps: {
       });
   });
 
+  function takeReturn(): WizardStep | null {
+    const back = returnTo;
+    returnTo = null;
+    return back;
+  }
+
   return {
     openStep,
     revealStep: (step) => {
@@ -451,8 +488,22 @@ export function wireWizard(deps: {
       // changes nothing and remembers nothing while a session runs - so it
       // is remembered here (scan-to-open plan §9 #12).
       if (arSessionActive()) remember("measure");
-      openStep(remembered(url) ?? options?.prefer ?? "print");
+      // "Open your tour first" sent the creator here on their way to step
+      // 5; the open answers by returning there, ahead of a remembered step.
+      const back = takeReturn();
+      openStep(back ?? remembered(url) ?? options?.prefer ?? "print");
     },
+    openTourFirst: () => {
+      const lastUrl = rememberedTourUrl();
+      const step = openTourFirstStep({
+        hostChosen: readTourHost(stepStore) !== null,
+        linkRemembered: lastUrl !== null && lastUrl !== "",
+      });
+      openStep(step);
+      returnTo = "measure";
+      return step;
+    },
+    returnAfterOpen: takeReturn,
     presentLaunchUrl: (launchUrl) => {
       const href = launchHrefFromPrintedUrl(launchUrl, deps.debug);
       if (href === null) return;

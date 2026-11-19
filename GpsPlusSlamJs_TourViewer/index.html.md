@@ -704,6 +704,19 @@ auto`) and their labels wrap inside the chip; up to 380 px the chips take a
   the row included, and the Undo chip (its own line above "New station
   here", a long label ending in an ellipsis) at 390 and 320 px.
 
+## Creator entry, variant A (prototype)
+
+Built into the real page on its own branch as the approved in-app
+prototype; not merged before a variant is chosen. Step 1's lead gives
+the two reasons storage comes first: the printed code carries the file's
+link, and an open tour is what the phone keeps a copy of (so a crash or a
+closed tab loses nothing), and that nothing has been made yet.
+`.host-desktop` is a computer-only line (shown while `#enter-ar` reads
+`data-ar-state="unsupported"`) that the phone learns the tour from its
+pasted link. The landing line says to start with step 1. Step 5's lead
+splits into `.measure-tour-open` (the saved-file promise) and
+`.measure-no-tour`, switched by `#enter-ar[data-tour]` (`ar-entry.ts`).
+
 ## Tests
 
 Driven by `playwright-tests/*.spec.js`; `way-in.spec.js` holds the

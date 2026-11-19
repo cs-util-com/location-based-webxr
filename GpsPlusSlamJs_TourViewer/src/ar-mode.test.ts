@@ -12,6 +12,7 @@ import type { Object3D } from "three";
 
 import {
   CAMERA_FRAME_INTERVAL_MS,
+  OPEN_TOUR_FIRST_LABEL,
   arButtonView,
   visitorStep,
   buildArEnableConfig,
@@ -425,6 +426,54 @@ describe("arButtonView", () => {
     );
     expect(view.disabled).toBe(false);
     expect(view.label).toBe("Try again");
+  });
+});
+
+describe("arButtonView: a creator with no tour open (creator entry, variant A)", () => {
+  // Why this test matters: without an open tour nothing a creator places in
+  // AR is kept, so "Start creating" there was a promise the page could not
+  // keep. The ready button says what comes first instead, and only there:
+  // running, error and the visitor's labels do not depend on it.
+  const idle = { pending: false, busy: false };
+  const noFinish = { running: false, failed: false };
+
+  it("reads Open your tour first, still tappable, until a tour is open", () => {
+    expect(
+      arButtonView(
+        { status: "ready" },
+        "creator",
+        idle,
+        noFinish,
+        false,
+        false,
+      ),
+    ).toEqual({ label: OPEN_TOUR_FIRST_LABEL, disabled: false });
+    expect(OPEN_TOUR_FIRST_LABEL).toBe("Open your tour first");
+    expect(
+      arButtonView({ status: "ready" }, "creator", idle, noFinish, false, true)
+        .label,
+    ).toBe("Start creating");
+    // The default is an open tour: callers that know of no tour state keep
+    // the label they had.
+    expect(arButtonView({ status: "ready" }, "creator").label).toBe(
+      "Start creating",
+    );
+  });
+
+  it("leaves every other state and the visitor's labels alone", () => {
+    for (const state of [
+      { status: "running" },
+      { status: "error", error: "x" },
+      { status: "unsupported" },
+    ] as const) {
+      expect(
+        arButtonView(state, "creator", idle, noFinish, false, false),
+      ).toEqual(arButtonView(state, "creator", idle, noFinish, false, true));
+    }
+    expect(
+      arButtonView({ status: "ready" }, "visitor", idle, noFinish, false, false)
+        .label,
+    ).toBe("Start the tour");
   });
 });
 

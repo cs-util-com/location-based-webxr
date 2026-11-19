@@ -100,43 +100,11 @@ for (const viewport of PHONES) {
   });
 }
 
-for (const viewport of PHONES) {
-  test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with the longest scan-to-open note`, async ({
-    page,
-  }) => {
-    // Scan-to-open plan §9 #14: with no tour open the panel carries the
-    // code's status line, whose longest form is a file not hosted yet -
-    // one more line of text above the controls on a small phone.
-    await page.setViewportSize(viewport);
-    await installTourViewerArFakes(page);
-    await page.goto("/?debug=1");
-    const step = page.getByTestId("step-measure");
-    if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
-      await page.getByTestId("station-measure").click();
-    }
-    await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
-    await page.getByTestId("enter-ar").click();
-    const missing = `https://gps.csutil.com/tour/?qr=${encodeURIComponent(
-      "http://127.0.0.1:5197/ranges-ok/does-not-exist.zip",
-    )}`;
-    await page.evaluate((text) => {
-      /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-    }, missing);
-    await expect
-      .poll(
-        async () => {
-          await page.evaluate(() => {
-            /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-          });
-          return page.getByTestId("setup-status").textContent();
-        },
-        { timeout: 20000 },
-      )
-      .toMatch(/in view to try again/);
-
-    expect(await controlsBelowTheFold(page)).toEqual([]);
-  });
-}
+// (A layout test of "the longest scan-to-open note" stood here: AR entered
+// with no tour open, a code naming a file not hosted yet, and its "in view to
+// try again" line. Since creator entry variant A a creator enters AR only
+// with a tour open, so that note cannot be reached from the page; the open
+// tour's own longest state is the size offer above.)
 
 for (const viewport of PHONES) {
   test(`every AR panel control fits a ${viewport.width}x${viewport.height} screen, with an object selected by a tap`, async ({

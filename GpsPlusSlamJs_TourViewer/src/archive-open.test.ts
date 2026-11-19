@@ -229,6 +229,27 @@ describe("a tour switch stops the closing tour's stations", () => {
   });
 });
 
+describe("the AR button hears that the tour closed (creator entry, variant A)", () => {
+  // Why this test matters: a creator's button reads "Open your tour first"
+  // while no tour is open, from `ctx.session`. A render that ran only
+  // BEFORE the session was cleared would keep "Start creating" on a page
+  // with no tour, and its tap would enter AR where nothing is kept.
+  it("re-renders the button after the session is gone", async () => {
+    const ctx = createTourViewerSession();
+    ctx.session = openTour();
+    const hooks = createUnwiredHooks();
+    const seen: boolean[] = [];
+    hooks.renderArEntry = () => {
+      seen.push(ctx.session !== null);
+    };
+    const dom = openAnotherTour(ctx, hooks);
+    await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
+    expect(seen).toContain(false);
+    // The open fails in this harness, so the last render is a closed tour.
+    expect(seen.at(-1)).toBe(false);
+  });
+});
+
 // (A test that a tour switch forgot the closing tour's bake stood here: the
 // open bakes no walk any more, so there is no bake to carry across.)
 

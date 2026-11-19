@@ -151,6 +151,22 @@ async function openMeasureStep(page) {
   await expect(step).toHaveAttribute("open", "");
 }
 
+/**
+ * Open the fixture tour on `path` (a creator with a host chosen lands on
+ * step 2). A creator enters AR only with a tour open since creator entry
+ * variant A: with none, step 5's button reads "Open your tour first".
+ */
+async function openTourAt(page, path) {
+  await page.goto(path);
+  await page.getByTestId("link-input").fill(E2E_QR_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+}
+
 async function enterAr(page) {
   await openMeasureStep(page);
   const button = page.getByTestId("enter-ar");
@@ -172,7 +188,9 @@ test("the plain page is the creator's setup; a ?qr= launch is the visitor's scre
   await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
   await expect(page.getByTestId("print-url")).toBeHidden(); // step 3 collapsed
   await expect(page.getByTestId("visitor-screen")).toBeHidden();
-  await expect(page.getByTestId("enter-ar")).toHaveText("Start creating");
+  // No tour is open yet: the creator's button says what comes first
+  // (creator entry, variant A).
+  await expect(page.getByTestId("enter-ar")).toHaveText("Open your tour first");
 
   await openAsVisitor(page, RANGES_ARCHIVE);
   await expect(page.getByTestId("visitor-screen")).toBeVisible();
@@ -503,7 +521,7 @@ test("camera frames flow through the foundation and surface in the status line",
 test("creator mode (the plain page) boots the same foundation under its own labels", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openTourAt(page, "/");
   await expect(page.getByTestId("enter-ar")).toHaveText("Start creating");
   await enterAr(page);
   // A creator's one way out of AR (polish round M3, Q-Done).
@@ -551,7 +569,7 @@ test("a system session end tears the runtime down, and a re-entry starts a clean
   // first session's recording stayed open, and its GPS elements — anchored
   // to the DEAD session's odom origin — blended into the next session's
   // alignment solve.
-  await page.goto("/");
+  await openTourAt(page, "/");
   await enterAr(page);
   await expect(page.getByTestId("enter-ar")).toHaveText("Done");
 
@@ -2192,87 +2210,59 @@ test("a refused AR entry explains itself on the page, with no session to explain
   await expect(page.getByTestId("enter-ar")).toHaveText("Start creating");
 });
 
-test("step 4 opens the tour its printed code names, and stays on step 4", async ({
+test("with no tour open, step 5 sends the creator to open one first, and back", async ({
   page,
 }) => {
-  // Why this matters (scan-to-open plan §2, owner decision): a creator
-  // walks to the poster with their phone, which has no tour open - the
-  // reached step is remembered per device. The printed code carries the
-  // tour's link, so reading it is enough; the paste form it replaced made
-  // them send themselves the link first.
-  //
-  // The trap this pins (M3 review #1): the open runs step 1's path, whose
-  // default is "a tour opened, go to step 2" - which would collapse the
-  // step holding the AR overlay.
+  // Why this matters (creator entry, variant A): without an open tour
+  // nothing a creator places in AR is kept, so step 5 no longer starts AR
+  // with none. This REVERSES the scan-to-open path that used to stand here
+  // ("step 4 opens the tour its printed code names, and stays on step 4"):
+  // reading the hung code from AR opened the tour behind it, after the
+  // creator had entered AR with nothing open. That intent - a creator at
+  // the poster should not have to type a link - is now served by the
+  // remembered link (step 2 is prefilled) and by step 1's reason for
+  // storage first; the scan's no-tour statuses ("not a tour", "in view to
+  // try again") are pinned in scan-open.test.ts, but no page path reaches
+  // them while this variant stands.
   await page.goto("/");
   await openMeasureStep(page);
-  await expect(page.getByTestId("tour-missing")).toHaveCount(0);
-  await enterAr(page);
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, E2E_QR_TEXT);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("setup-status").textContent();
-      },
-      { timeout: 15000 },
-    )
-    .toMatch(/Tour: tour.zip/);
-  // Still on step 4, and the tour behind the code is the one open.
-  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
-  // One link of record: step 1's input carries what the code named, and
-  // step 2's code is built from the same value.
-  await expect(page.getByTestId("link-input")).toHaveValue(E2E_QR_ARCHIVE);
-  await expect(page.getByTestId("print-url-shown")).toHaveText(E2E_QR_ARCHIVE);
-});
+  const button = page.getByTestId("enter-ar");
+  await expect(button).toHaveText("Open your tour first", { timeout: 10000 });
+  await expect(page.getByTestId("measure-no-tour")).toBeVisible();
+  await button.click();
+  // The suite's creator chose a host, so the tap lands on the link.
+  await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("step-measure")).not.toHaveAttribute(
+    "open",
+    "",
+  );
+  expect(
+    await page.evaluate(
+      () => /** @type {any} */ (window).__tourViewerTest.initARCalls.length,
+    ),
+  ).toBe(0);
 
-test("a code whose tour cannot be opened says why, and one that names no tour says so", async ({
-  page,
-}) => {
-  // Why this matters (plan §9 #5, #9): the panel is the only thing a
-  // creator at the poster can read (the error box is outside the AR
-  // overlay). A file not hosted yet is retried while the code stays in
-  // view; a code of some other kind is told apart from a broken tour.
-  await page.goto("/");
-  await enterAr(page);
-  const missing = `https://gps.csutil.com/tour/?qr=${encodeURIComponent(
-    "http://127.0.0.1:5197/ranges-ok/does-not-exist.zip",
-  )}`;
-  await page.evaluate((text) => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
-  }, missing);
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("setup-status").textContent();
-      },
-      { timeout: 15000 },
-    )
-    .toMatch(/Could not open the tour: file not found.*in view to try again/);
-
-  await page.evaluate(() => {
-    /** @type {any} */ (window).__tourViewerTest.armQrDetection(
-      "https://menu.example/today",
-    );
+  // And back: the open returns to step 5, where the button now starts.
+  await page.getByTestId("link-input").fill(E2E_QR_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "", {
+    timeout: 15000,
   });
-  await expect
-    .poll(
-      async () => {
-        await page.evaluate(() => {
-          /** @type {any} */ (window).__tourViewerTest.emitFrames(1);
-        });
-        return page.getByTestId("setup-status").textContent();
-      },
-      { timeout: 15000 },
-    )
-    .toMatch(/does not point to a tour/);
+  await expect(button).toHaveText("Start creating");
+  await expect(page.getByTestId("measure-no-tour")).toBeHidden();
+
+  // A device that knows nothing yet (no host, no link) is sent to step 1,
+  // which says why the file's place comes first.
+  await page.evaluate(() => {
+    localStorage.removeItem("tour-viewer.wizard.host");
+    localStorage.removeItem("tour-viewer.wizard.last-url");
+  });
+  await page.goto("/");
+  await openMeasureStep(page);
+  await expect(button).toHaveText("Open your tour first", { timeout: 10000 });
+  await button.click();
+  await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+  await expect(page.getByTestId("host-why")).toBeVisible();
 });
 
 test("the print step builds a real PDF of numbered codes", async ({ page }) => {
@@ -3666,7 +3656,7 @@ test("a recording whose tab was killed is offered on the next open, saved from i
   // is released, the new page finds the folder, rebuilds session.json from
   // the recorded fixes, hands the zip over through the same seam, and the
   // saved marker keeps it from being offered a second time.
-  await page.goto("/?nocache=1&debug=1");
+  await openTourAt(page, "/?nocache=1&debug=1");
   await openMeasureStep(page);
   await expect(page.getByTestId("recording-block")).toHaveAttribute(
     "data-housekeeping",
@@ -4029,7 +4019,7 @@ test("a creator's ring follows a mesh by default: depth at the mesh density, one
         pick: t.reticleSurfacePick,
       };
     });
-  await page.goto("/");
+  await openTourAt(page, "/");
   await openMeasureStep(page);
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
@@ -4045,7 +4035,7 @@ test("a creator's ring follows a mesh by default: depth at the mesh density, one
   await expect(page.getByTestId("enter-ar")).toHaveText("Start creating");
   expect((await state()).disposed).toBe(1);
 
-  await page.goto("/?mesh=0");
+  await openTourAt(page, "/?mesh=0");
   await openMeasureStep(page);
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
@@ -4055,7 +4045,7 @@ test("a creator's ring follows a mesh by default: depth at the mesh density, one
   // The old opt-in links (?mesh=1, from the phone test) keep the mesh on
   // through the composed page, not only in the flag's parser (r867 review
   // #7: the plan's verification named this case).
-  await page.goto("/?mesh=1");
+  await openTourAt(page, "/?mesh=1");
   await openMeasureStep(page);
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();

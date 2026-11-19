@@ -106,6 +106,9 @@ function harness(
     /** A failed start's location request was refused (the page's
      *  requester counts it): the permission reads denied from then on. */
     refusesLocation?: boolean;
+    /** A creator's tour is open (default): without one the entry sends
+     *  them to open it first instead of entering AR (variant A). */
+    tourOpen?: boolean;
   } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
@@ -119,6 +122,11 @@ function harness(
   // A finished tour (one station) unless a test closes it: a visitor's
   // line about an open tour assumes one with something to show.
   ctx.tourDocument.open(FINISHED_TOUR);
+  // A creator has opened a tour unless a test says not: without one the
+  // ready tap opens a step instead of AR (creator entry, variant A).
+  if (options.mode === "creator" && options.tourOpen !== false) {
+    ctx.session = {} as never;
+  }
   const dispose = vi.fn();
   let enabled: EnableGpsArConfig | null = null;
   /** The controller's status, settable so a test can walk a session. */
@@ -284,6 +292,55 @@ function harness(
     },
   };
 }
+
+describe("wireArEntry: a creator with no tour open (creator entry, variant A)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends the tap to open a tour first and starts no AR", async () => {
+    // Why this test matters: with no tour open there is no draft, so
+    // everything placed in AR would be lost; the tap that said "Start
+    // creating" now opens the step a tour is opened from, and AR stays off.
+    const h = harness({ mode: "creator", tourOpen: false });
+    const openTourFirst = vi.fn();
+    h.hooks.openTourFirst = openTourFirst;
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.textContent).toBe("Open your tour first");
+    expect(h.dom.enterArButton.dataset["tour"]).toBe("none");
+    // The hint below describes a session that ends in a saved tour; with
+    // none open it would repeat the promise the button no longer makes.
+    expect(h.dom.arHint.hidden).toBe(true);
+    await h.enter();
+    expect(openTourFirst).toHaveBeenCalledTimes(1);
+    expect(h.arController.enable).not.toHaveBeenCalled();
+  });
+
+  it("starts creating as before once a tour is open, and the page's flag follows", async () => {
+    const h = harness({ mode: "creator", tourOpen: false });
+    const openTourFirst = vi.fn();
+    h.hooks.openTourFirst = openTourFirst;
+    h.ctx.session = {} as never;
+    h.entry.renderArEntry();
+    expect(h.dom.enterArButton.textContent).toBe("Start creating");
+    expect(h.dom.enterArButton.dataset["tour"]).toBe("open");
+    expect(h.dom.arHint.hidden).toBe(false);
+    await h.enter();
+    expect(openTourFirst).not.toHaveBeenCalled();
+    expect(h.arController.enable).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves the visitor alone: no flag, no detour", async () => {
+    // A visitor's page always has the scanned tour; its button never
+    // depends on the creator's open-tour state.
+    const h = harness({ mode: "visitor" });
+    const openTourFirst = vi.fn();
+    h.hooks.openTourFirst = openTourFirst;
+    await h.enter();
+    expect(openTourFirst).not.toHaveBeenCalled();
+    expect(h.dom.enterArButton.dataset["tour"]).toBeUndefined();
+  });
+});
 
 describe("wireArEntry session end", () => {
   afterEach(() => {

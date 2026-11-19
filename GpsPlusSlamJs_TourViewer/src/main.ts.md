@@ -177,6 +177,9 @@ listed in `index.html.md`. The concerns and their modules:
   kit plan K0: the print step keeps asking for a link and a creator's
   wizard opens step 3, or stays in step 5, without remembering a link;
   and `presentUnverifiedLink` - step 2's link printed unverified;
+  and `openTourFirst` - `wizard.openTourFirst()`; a file open honours
+  its way back to step 5 through `wizard.returnAfterOpen()` (creator
+  entry, variant A);
   and `presentTourCodes` - the print step re-reads the codes, when the
   tour's arrive and whenever the creator setup's set of codes changes
   (follow-up F16);

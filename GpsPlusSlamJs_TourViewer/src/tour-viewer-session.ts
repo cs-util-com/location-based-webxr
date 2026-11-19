@@ -228,6 +228,10 @@ export interface TourViewerHooks {
    *  not uploaded yet, or the device is offline (polish round M2, A16): the
    *  print step takes it, marked unverified, and the wizard moves on. */
   presentUnverifiedLink(url: string): void;
+  /** A creator tapped step 5's button with no tour open (creator entry,
+   *  variant A): open the step a tour is opened from, and come back to
+   *  step 5 once one is open (`wizard.ts`). */
+  openTourFirst(): void;
   /** The open tour's codes arrived: the print step continues their
    *  numbering (polish round M0b). */
   presentTourCodes(): void;
@@ -321,6 +325,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     presentTourForPrint: () => undefined,
     presentLocalTour: () => undefined,
     presentUnverifiedLink: () => undefined,
+    openTourFirst: () => undefined,
     presentTourCodes: () => undefined,
     presentTourLevels: () => undefined,
     presentTourInfo: () => undefined,

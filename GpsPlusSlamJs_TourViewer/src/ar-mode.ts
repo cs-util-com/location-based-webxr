@@ -99,14 +99,25 @@ function runningButtonView(
   return { label: finish.failed ? "Close AR" : "Done", disabled: false };
 }
 
+/** A creator's ready button while no tour is open (creator entry, variant
+ *  A): nothing placed in AR is kept without one, so the tap opens the step
+ *  a tour is opened from instead of AR (ar-entry.ts). */
+export const OPEN_TOUR_FIRST_LABEL = "Open your tour first";
+
 /** The ready button: a creator starts; a visitor first allows the
  *  location (DEC-N2), shown busy while the browser asks. */
 function readyButtonView(
   mode: ViewerMode,
   location: { pending: boolean; busy: boolean },
   progressKept: boolean,
+  tourOpen: boolean,
 ): ArButtonView {
-  if (mode === "creator") return { label: "Start creating", disabled: false };
+  if (mode === "creator") {
+    return {
+      label: tourOpen ? "Start creating" : OPEN_TOUR_FIRST_LABEL,
+      disabled: false,
+    };
+  }
   if (location.busy) {
     return { label: "Getting your location…", disabled: true };
   }
@@ -135,6 +146,9 @@ export function arButtonView(
   },
   /** A visitor left AR with progress on the open tour: the start goes "Back to the tour". */
   progressKept = false,
+  /** A creator has a tour open; without one the ready button sends them to
+   *  open it first (creator entry, variant A). The visitor ignores it. */
+  tourOpen = true,
 ): ArButtonView {
   switch (state.status) {
     case "unsupported":
@@ -144,7 +158,7 @@ export function arButtonView(
         ? { label: COPY_LINK_LABELS.idle, disabled: false }
         : STATIC_BUTTON_VIEWS.unsupported;
     case "ready":
-      return readyButtonView(mode, location, progressKept);
+      return readyButtonView(mode, location, progressKept, tourOpen);
     case "running":
       return runningButtonView(mode, finish);
     case "error":

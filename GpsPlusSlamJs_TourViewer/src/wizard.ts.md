@@ -68,6 +68,18 @@ chosen opens `host`, a stored choice opens `link`.
   is the `getItem`/`setItem` slice of `localStorage`;
   `Wizard.rememberedTourUrl()`.
 
+- `openTourFirstStep({ hostChosen, linkRemembered })` - where step 5's
+  "Open your tour first" leads (creator entry, variant A): the link (step 2)
+  when this device chose a host or remembers a tour link, else step 1.
+  `Wizard.openTourFirst()` opens that step, arms a way back to step 5 and
+  returns the step; the next `presentTour` opens step 5 ahead of a
+  remembered step, once. `Wizard.returnAfterOpen()` takes that way back
+  (`"measure"` once, then null) for an open that does not pass through
+  `presentTour` (a file, `main.ts`'s `presentLocalTour`). Opening any
+  step other than 1 or 2 drops it: the creator changed their plan. The flag
+  is a closure variable like `revealed`: transient navigation that this
+  module alone owns, not document state, and a reload drops it on purpose.
+
 ## Invariants & assumptions
 
 - At most one step is open at a time.

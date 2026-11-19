@@ -256,6 +256,9 @@ export function wireArchiveOpen(deps: {
     ctx.printSizeCheck?.reset();
     ctx.placement = { kind: "idle" };
     ctx.session = null;
+    // A creator's button reads whether a tour is open ("Open your tour
+    // first" without one, creator entry variant A).
+    hooks.renderArEntry();
     await closing.close().catch(() => undefined);
   }
 
@@ -468,6 +471,8 @@ export function wireArchiveOpen(deps: {
         return { kind: "superseded" };
       }
       ctx.session = opened;
+      // As in the teardown: the creator's button now reads "Start creating".
+      hooks.renderArEntry();
       ctx.tourLabel = labelOf(source);
       // Pending BEFORE the placement trigger below: the tour's content
       // lives in tour.json, and a trigger that saw the teardown's "settled"

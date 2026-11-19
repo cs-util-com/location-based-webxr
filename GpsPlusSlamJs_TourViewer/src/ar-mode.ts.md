@@ -26,6 +26,12 @@ identical here — they diverge in M3/M4.
   enabled, for a VISITOR (the owner's V4, polish round M4a: `ar-entry.ts`
   copies the page's link for a phone that has AR), "AR not supported on
   this device" disabled for a creator.
+- `arButtonView`'s sixth argument `tourOpen` (default true; creator
+  entry, variant A): a creator's ready button with no tour open reads
+  `OPEN_TOUR_FIRST_LABEL` ("Open your tour first"), enabled, because
+  nothing placed in AR is kept without a tour; `ar-entry.ts` makes the tap
+  open the step a tour is opened from. Every other state and the visitor's
+  labels ignore it.
 - `COPY_LINK_LABELS` - that button's idle / busy / done labels and the
   failure sentence (async-UI rule).
 - `visitorStep(mode, state, location, hadLocationStep): string | null` -

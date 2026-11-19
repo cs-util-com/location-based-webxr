@@ -159,6 +159,8 @@ lives here.
   no link to print, tour kit plan K0), `presentUnverifiedLink` (step 2's
   link whose file is not there yet, or that could not be checked offline:
   printed as given, marked unverified - polish round M2, A16),
+  `openTourFirst` (step 5's tap with no tour open: the step a tour is
+  opened from, and back to step 5 after - creator entry, variant A),
   `presentTourCodes` (the open tour's codes arrived: the print step
   continues their numbering - polish round M0b), `presentTourLevels`
   (the open tour's levels settled, read or failed: the visitor screen's

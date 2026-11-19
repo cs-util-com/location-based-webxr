@@ -118,6 +118,20 @@ changed, since the block re-renders per frame; polish round C4) and
 whether this entry records (the depth sampler runs only for a recorded
 entry; C7).
 
+## A creator with no tour open (creator entry, variant A)
+
+With `ctx.session === null` a creator's ready button reads "Open your tour
+first" and its tap calls `hooks.openTourFirst()` instead of entering AR:
+without an open tour there is no draft, so nothing placed would be kept.
+Only from `ready` (an error's "Try again" and an unsupported device keep
+their paths). The button also carries `data-tour="open" | "none"` for a
+creator, which the page's CSS reads to keep step 5's saved-file promise to
+an open tour, and `#ar-hint` (which describes a session ending in a saved
+tour) stays hidden while none is open. `archive-open.ts` re-renders the button when the session is
+set and when it is cleared. Tests: `ar-entry.test.ts` ("a creator with no
+tour open"); the harness gives a creator an open tour unless
+`tourOpen: false`.
+
 ## Invariants & assumptions
 
 - Session-state fields it owns: `qrController` (disposed and nulled on

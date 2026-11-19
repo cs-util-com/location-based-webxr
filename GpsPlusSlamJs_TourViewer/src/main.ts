@@ -460,7 +460,18 @@ hooks.presentTourCodes = () => {
 hooks.presentLocalTour = (origin) => {
   print.presentNoTour();
   if (mode !== "creator") return;
-  wizard.openStep(origin === "measure-step" ? "measure" : "print");
+  // "Open your tour first" armed a way back to step 5: a file open honours
+  // it as a link open does (`wizard.presentTour`).
+  wizard.openStep(
+    wizard.returnAfterOpen() ??
+      (origin === "measure-step" ? "measure" : "print"),
+  );
+};
+
+// Step 5's button with no tour open (creator entry, variant A): the step a
+// tour is opened from, and back to step 5 once it is.
+hooks.openTourFirst = () => {
+  wizard.openTourFirst();
 };
 
 const visitor = wireVisitorScreen({

@@ -46,3 +46,16 @@ describe("only the open in place marks the tour settled (follow-up F14)", () => 
     expect(source.slice(wait, mark)).toContain("manifestDone, levelsDone");
   });
 });
+
+describe("the open re-renders the AR button once the session is installed (creator entry, variant A)", () => {
+  // Why: a creator's button reads "Open your tour first" until a tour is
+  // open, from `ctx.session`. Rendered only before the session is set, it
+  // would keep that label over an open tour; the open's session is mocked
+  // away in the behavioural tests, so the order is pinned in the source.
+  it("calls renderArEntry after ctx.session = opened", () => {
+    const installed = source.indexOf("ctx.session = opened;");
+    expect(installed).toBeGreaterThan(-1);
+    const after = source.slice(installed, installed + 400);
+    expect(after).toContain("hooks.renderArEntry();");
+  });
+});
