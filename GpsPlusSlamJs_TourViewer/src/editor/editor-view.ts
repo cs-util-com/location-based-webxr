@@ -113,6 +113,19 @@ const isIndex = (v: unknown): v is number =>
 /** The two halves of opening a tour with a scan, in their forced order. */
 export type EditorEntryStep = "opening" | "adding-scan";
 
+/** The question after a tour was continued or started: "Do you have a
+ *  scan of this place?" - asked, or a scan being added from it; `error`
+ *  is why the last one given was not added (only while asking). */
+export interface ScanAsk {
+  readonly phase: "asking" | "adding";
+  readonly error: string | null;
+}
+
+/** What the scan question says a scan is, and that it stays out of the
+ *  tour (the words every scan line carries). */
+export const SCAN_ASK_LINE =
+  "A scan is a recording from the Recorder app, or the debug data a phone saved: it shows where the camera went and what it saw. It is shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file.";
+
 export interface EditorViewState {
   /** The selected item's id (the model's: `station:<id>` for a station). */
   readonly selected: string | null;
@@ -135,6 +148,10 @@ export interface EditorViewState {
    *  added - one step to the person, from the open's start to the add's
    *  end (`editor-entry.ts`). Null otherwise. */
   readonly entryStep: EditorEntryStep | null;
+  /** The scan question shown after a tour was continued or started, or
+   *  none. It never blocks: the editor works behind it. Belongs to the
+   *  open tour: another tour, or none, ends it. */
+  readonly scanAsk: ScanAsk | null;
   /** A Duplicate is reading its pictures before it writes: another one
    *  does nothing meanwhile, so a second Ctrl+D makes no second copy. */
   readonly duplicating: boolean;
@@ -201,6 +218,7 @@ export const initialEditorViewState: EditorViewState = {
   message: null,
   picking: false,
   entryStep: null,
+  scanAsk: null,
   duplicating: false,
   viewMode: "2d",
   view3dLoad: "idle",
@@ -364,6 +382,28 @@ const editorViewSlice = createSlice({
         state.entryStep = step;
       }
     },
+    /** The scan question asked (afresh: a last refusal is forgotten). */
+    scanAsked(state) {
+      state.scanAsk = { phase: "asking", error: null };
+    },
+    /** A scan given to the question is being read; only while asking. */
+    scanAddStarted(state) {
+      if (state.scanAsk?.phase !== "asking") return;
+      state.scanAsk = { phase: "adding", error: null };
+    },
+    /** The scan given was not added, and why: the question asks again.
+     *  Only while one is being added, and only with a reason in words. */
+    scanAddRefused(state, action: PayloadAction<{ reason: string }>) {
+      const { reason } = action.payload;
+      if (state.scanAsk?.phase !== "adding" || typeof reason !== "string") {
+        return;
+      }
+      state.scanAsk = { phase: "asking", error: reason };
+    },
+    /** The question answered ("Not now", or a scan added). */
+    scanAskEnded(state) {
+      state.scanAsk = null;
+    },
     duplicatingChanged(state, action: PayloadAction<{ duplicating: boolean }>) {
       state.duplicating = action.payload.duplicating;
     },
@@ -478,6 +518,7 @@ const editorViewSlice = createSlice({
       picked: string[];
       selectMode: boolean;
       foldedFolders: string[];
+      scanAsk: ScanAsk | null;
     }) => {
       state.openStations = [];
       state.openStories = [];
@@ -492,6 +533,8 @@ const editorViewSlice = createSlice({
       state.picked = [];
       state.selectMode = false;
       state.foldedFolders = [];
+      // The scan question was about the tour that leaves.
+      state.scanAsk = null;
     };
     builder
       .addCase(tourDocumentActions.opened, foldAll)

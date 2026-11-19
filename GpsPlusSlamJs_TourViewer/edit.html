@@ -770,66 +770,97 @@
 
     <div id="toasts" aria-live="polite"></div>
 
+    <!-- The way into the editor: three start cards. Continue a tour (its
+         file, a drop or its link), start a new one (it asks where to save
+         in the click), or look at the example (nothing asks to be saved).
+         After Continue or New, the scan question (#scan-sheet) asks for a
+         scan of the place, without blocking. -->
     <div class="backdrop" id="open-modal">
       <div
-        class="modal"
+        class="modal start-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="open-title"
       >
-        <h1 id="open-title">Open a tour</h1>
+        <h1 id="open-title">Edit a tour</h1>
         <p class="lede">
-          See what your phone created on a map: every printed code, pin and
-          photo, and fix a text, move a pin or remove a note.
+          Keep working on a tour you have, start a new one, or look around in an
+          example first.
         </p>
-        <label class="drop" id="drop">
-          <span class="drop-text">
-            <span class="drop-title">Choose the tour file (.zip)</span>
-            <span class="drop-sub"
-              >The file your phone's Finish saved. You can also drop it
-              here.</span
+        <div class="start-cards">
+          <section class="start-card" aria-labelledby="start-continue-title">
+            <h2 id="start-continue-title">Continue a tour</h2>
+            <p class="start-text">Its file (.zip) or its link.</p>
+            <label class="drop" id="drop">
+              <span class="drop-text">
+                <span class="drop-title">Choose the tour file</span>
+                <span class="drop-sub">or drop it here</span>
+              </span>
+              <button class="btn small" id="choose-btn" type="button">
+                Choose…
+              </button>
+              <input
+                type="file"
+                id="zip-input"
+                accept=".zip,application/zip"
+                hidden
+              />
+            </label>
+            <!-- A hosted tour opens from its link (tour editor plan
+                 2026-10-17-1816, W1): fetched whole, then opened as a
+                 chosen file is (editor-link.ts). type="text": the dialog
+                 says what is wrong with a link, not the browser. -->
+            <form class="link-open" id="link-form">
+              <label class="link-label" for="link-input"
+                >Or open it from its link</label
+              >
+              <div class="link-row">
+                <input
+                  id="link-input"
+                  type="text"
+                  inputmode="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="https://…"
+                />
+                <button class="btn small" id="link-btn" type="submit">
+                  Open
+                </button>
+              </div>
+            </form>
+          </section>
+          <section class="start-card" aria-labelledby="start-new-title">
+            <h2 id="start-new-title">Start a new tour</h2>
+            <p class="start-text">
+              An empty tour. You choose where to save it, then place your first
+              station on the globe.
+            </p>
+            <button
+              class="btn primary start-go"
+              id="new-tour-btn"
+              type="button"
             >
-          </span>
-          <button class="btn small" id="choose-btn" type="button">
-            Choose…
-          </button>
-          <input
-            type="file"
-            id="zip-input"
-            accept=".zip,application/zip"
-            hidden
-          />
-        </label>
-        <!-- A hosted tour opens from its link (tour editor plan 2026-10-17-1816,
-             W1): fetched whole, then opened as a chosen file is
-             (editor-link.ts). type="text": the dialog says what is wrong
-             with a link, not the browser. -->
-        <form class="link-open" id="link-form">
-          <label class="link-label" for="link-input"
-            >Or open it from its link</label
-          >
-          <div class="link-row">
-            <input
-              id="link-input"
-              type="text"
-              inputmode="url"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="https://…"
-            />
-            <button class="btn small" id="link-btn" type="submit">
-              Open the link
+              Start a new tour
             </button>
-          </div>
-        </form>
+          </section>
+          <section class="start-card" aria-labelledby="start-example-title">
+            <h2 id="start-example-title">
+              Look at an example
+              <span class="start-aside">- nothing is saved</span>
+            </h2>
+            <p class="start-text">
+              A finished tour to look around in. Nothing asks where to save it.
+            </p>
+            <button class="btn start-go" id="sample-btn" type="button">
+              Open the example
+            </button>
+          </section>
+        </div>
         <div id="open-status" role="status" aria-live="polite"></div>
         <div id="open-error" role="alert" hidden></div>
         <div class="modal-actions">
           <button class="btn" id="open-cancel" type="button" hidden>
             Cancel
-          </button>
-          <button class="btn ghost" id="sample-btn" type="button">
-            Use the sample tour
           </button>
         </div>
         <!-- Said per browser by edit-main.ts (saveFinePrint): this text is
@@ -845,6 +876,37 @@
         </p>
       </div>
     </div>
+
+    <!-- The scan question, after a tour was continued or started: shown
+         while it is asked (the store's editorView.scanAsk), never in the
+         way - the editor works behind it, "Not now" closes it. A scan given
+         here is added as "Add debug data…" adds one (session only, never
+         saved into the tour). -->
+    <aside
+      id="scan-sheet"
+      class="panel scan-sheet"
+      aria-labelledby="scan-sheet-title"
+      hidden
+    >
+      <h2 id="scan-sheet-title">Do you have a scan of this place?</h2>
+      <p class="scan-sheet-text" id="scan-sheet-text"></p>
+      <div id="scan-sheet-status" role="status" aria-live="polite"></div>
+      <div id="scan-sheet-error" role="alert" hidden></div>
+      <div class="scan-sheet-actions">
+        <button class="btn ghost" id="scan-sheet-later" type="button">
+          Not now
+        </button>
+        <button class="btn primary" id="scan-sheet-add" type="button">
+          Add a scan…
+        </button>
+      </div>
+      <input
+        type="file"
+        id="scan-sheet-input"
+        accept=".zip,application/zip"
+        hidden
+      />
+    </aside>
 
     <!-- The tour's details (W2 of the tour editor plan): opened from the
          name in the top bar, applied to the editor session as one change of

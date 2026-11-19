@@ -38,6 +38,7 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import {
+  SCAN_ASK_LINE,
   editorViewActions,
   editorViewReducer,
   isEntryIdle,
@@ -227,6 +228,7 @@ import {
   planEditorEntry,
   type AddScanOutcome,
 } from "./editor-entry.js";
+import { startNewTour } from "./new-tour.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
 import {
@@ -518,6 +520,17 @@ const linkButton = element<HTMLButtonElement>("link-btn");
 const openStatus = element("open-status");
 const openError = element("open-error");
 const sampleButton = element<HTMLButtonElement>("sample-btn");
+/** "Start a new tour", the open dialog's second card. */
+const newTourButton = element<HTMLButtonElement>("new-tour-btn");
+/** The scan question after a tour was continued or started (the store's
+ *  `scanAsk`), and its parts. */
+const scanSheet = element("scan-sheet");
+const scanSheetStatus = element("scan-sheet-status");
+const scanSheetError = element("scan-sheet-error");
+const scanSheetAdd = element<HTMLButtonElement>("scan-sheet-add");
+const scanSheetLater = element<HTMLButtonElement>("scan-sheet-later");
+const scanSheetInput = element<HTMLInputElement>("scan-sheet-input");
+element("scan-sheet-text").textContent = SCAN_ASK_LINE;
 const cancelButton = element<HTMLButtonElement>("open-cancel");
 const topbar = element("topbar");
 /** The tour's name in the top bar: it opens the tour's details (W2). */
@@ -2907,6 +2920,7 @@ document.addEventListener("keydown", (event) => {
 function setBusy(on: boolean, text: string): void {
   store.dispatch(editorViewActions.busyChanged({ busy: on }));
   sampleButton.disabled = on;
+  newTourButton.disabled = on;
   zipInput.disabled = on;
   chooseButton.disabled = on;
   linkInput.disabled = on;
@@ -3102,6 +3116,8 @@ async function addDebugData(file: File): Promise<AddScanOutcome | null> {
     forgetAddedDebug();
     addedDebug = { session: added.session, line: added.line };
     startDebugLayer();
+    // A scan shown, from wherever it came: the scan question is answered.
+    store.dispatch(editorViewActions.scanAskEnded());
     return { kind: "added" };
   });
 }
@@ -3114,6 +3130,44 @@ async function addDebugDataSaying(file: File): Promise<void> {
   if (outcome?.kind === "refused") {
     fileToasts.push(toast(notAddedLine(outcome.reason)));
   }
+}
+
+/** After a tour was continued or started without a scan: the scan
+ *  question, unless a scan already shows beside it. */
+function askForScan(): void {
+  if (editor === null || addedDebug !== null) return;
+  store.dispatch(editorViewActions.scanAsked());
+}
+
+/** Said in the scan question when its add started nothing. */
+const SCAN_NOT_ADDED_BUSY =
+  "Another scan is being added. Try again once it is shown.";
+
+/**
+ * A scan given to the scan question: added as "Add debug data…" adds one,
+ * with the question's own busy state (the async-UI rule): "Reading the
+ * scan…" meanwhile, closed once it shows (`addDebugData` ends the
+ * question), a refusal said in the sheet, which asks again.
+ */
+async function addScanFromSheet(file: File): Promise<void> {
+  if (ui().scanAsk?.phase !== "asking") return;
+  const mine = editor;
+  store.dispatch(editorViewActions.scanAddStarted());
+  let reason: string | null;
+  try {
+    const outcome = await addDebugData(file);
+    reason =
+      outcome === null
+        ? SCAN_NOT_ADDED_BUSY
+        : outcome.kind === "refused"
+          ? notAddedLine(outcome.reason)
+          : null;
+  } catch (err) {
+    reason = notAddedLine(err instanceof Error ? err.message : String(err));
+  }
+  // Another tour opened meanwhile ended the question: nothing to say.
+  if (editor !== mine || reason === null) return;
+  store.dispatch(editorViewActions.scanAddRefused({ reason }));
 }
 
 /** Said when the scan given with a tour started no add: another add ran. */
@@ -3213,6 +3267,8 @@ async function enterFiles(
   if (outcome.kind === "scan-failed") {
     fileToasts.push(toast(outcome.line, undefined, null));
   }
+  // A tour continued without a scan: ask for one (it never blocks).
+  if (outcome.kind === "opened" && scan === null) askForScan();
   const thrown = notOpenedLine(outcome);
   if (thrown !== null) {
     // The open threw past its own refusals: it said nothing, and left
@@ -4537,6 +4593,50 @@ debugPanel.addEventListener("drop", (event) => {
   const file = event.dataTransfer?.files[0];
   if (file !== undefined) void addDebugDataSaying(file);
 });
+// The scan question (`scanAsk`): drawn from the store; "Add a scan…" (its
+// input, or a file dropped on the sheet) adds it as "Add debug data…" does,
+// the outcome said in the sheet; "Not now" closes it.
+let scanAskDrawn = ui().scanAsk;
+function drawScanSheet(): void {
+  const ask = ui().scanAsk;
+  scanSheet.hidden = ask === null;
+  const adding = ask?.phase === "adding";
+  scanSheetAdd.disabled = adding;
+  scanSheetLater.disabled = adding;
+  scanSheetStatus.textContent = adding ? "Reading the scan…" : "";
+  scanSheetError.textContent = ask?.error ?? "";
+  scanSheetError.hidden = (ask?.error ?? null) === null;
+}
+drawScanSheet();
+store.subscribe(() => {
+  if (ui().scanAsk === scanAskDrawn) return;
+  scanAskDrawn = ui().scanAsk;
+  drawScanSheet();
+});
+scanSheetLater.addEventListener("click", () => {
+  store.dispatch(editorViewActions.scanAskEnded());
+});
+scanSheetAdd.addEventListener("click", () => {
+  scanSheetInput.click();
+});
+scanSheetInput.addEventListener("change", () => {
+  const file = scanSheetInput.files?.[0];
+  scanSheetInput.value = "";
+  if (file !== undefined) void addScanFromSheet(file);
+});
+scanSheet.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  scanSheet.classList.add("over");
+});
+scanSheet.addEventListener("dragleave", () => {
+  scanSheet.classList.remove("over");
+});
+scanSheet.addEventListener("drop", (event) => {
+  event.preventDefault();
+  scanSheet.classList.remove("over");
+  const file = event.dataTransfer?.files[0];
+  if (file !== undefined) void addScanFromSheet(file);
+});
 // A tour-level edit (QR-first M1b-2): pending like a note's, backed up by
 // the draft, saved by itself like any change.
 noGpsInput.addEventListener("change", () => {
@@ -4597,7 +4697,10 @@ function markFileDrop(next: Element | null): void {
 function fileDragAt(event: DragEvent): Element | null | undefined {
   if (editor === null || !dragHasFiles(event)) return undefined;
   const at = event.target instanceof Element ? event.target : null;
-  if (at !== null && (drop.contains(at) || debugPanel.contains(at))) {
+  if (
+    at !== null &&
+    (drop.contains(at) || debugPanel.contains(at) || scanSheet.contains(at))
+  ) {
     return undefined;
   }
   return at;
@@ -4625,10 +4728,11 @@ document.addEventListener("drop", (event) => {
   if (at === undefined) return;
   void dropFiles(Array.from(event.dataTransfer?.files ?? []), at);
 });
+// The example: "nothing is saved", so nothing asks where to save before
+// the tour is seen; Save asks later, as for a dropped file. No scan
+// question either: the example is for looking around.
 sampleButton.addEventListener("click", () => {
   if (!isEntryIdle(ui())) return;
-  // First, in the click: where to save it (`askOpenSaveFile`).
-  const pick = askOpenSaveFile(SAMPLE_NAME);
   openError.hidden = true;
   setBusy(true, "Fetching the sample tour…");
   fetch(SAMPLE_URL)
@@ -4639,13 +4743,9 @@ sampleButton.addEventListener("click", () => {
       const blob = await response.blob();
       setBusy(false, "");
       const file = new File([blob], SAMPLE_NAME, { type: "application/zip" });
-      const opened = await openFile(file);
-      if (opened) datedSave = true;
-      if (opened && pick !== null && editor !== null) {
-        void keepInChosenFile(editor, file, pick);
-      } else {
-        settleUnusedPick(pick);
-      }
+      // Dated: a later Save never suggests the name of a file that
+      // holds an earlier edit of the example.
+      if (await openFile(file)) datedSave = true;
     })
     .catch((err: unknown) => {
       setBusy(false, "");
@@ -4653,8 +4753,40 @@ sampleButton.addEventListener("click", () => {
         err instanceof Error ? err.message : String(err)
       }`;
       openError.hidden = false;
-      settleUnusedPick(pick);
     });
+});
+// "Start a new tour": the dialog is reached only through the unsaved-work
+// guard (`openAnotherTour`, or no tour open), so it asks nothing more.
+// Where to save comes first, in the click (`startNewTour`); then the
+// scan question.
+newTourButton.addEventListener("click", () => {
+  if (!isEntryIdle(ui())) return;
+  openError.hidden = true;
+  void startNewTour({
+    askSaveFile: askOpenSaveFile,
+    open: async (file) => {
+      const opened = await openFile(file);
+      // Dated: a second new tour never suggests the first one's file.
+      if (opened) datedSave = true;
+      return opened;
+    },
+    // Kept only while a tour is open: an open that failed has no editor.
+    keepInChosenFile: (file, pick) => {
+      if (editor !== null && pick !== null) {
+        void keepInChosenFile(editor, file, pick);
+      } else {
+        settleUnusedPick(pick);
+      }
+    },
+    settleUnusedPick,
+    failed: (reason) => {
+      setBusy(false, "");
+      openError.textContent = `The new tour could not be made: ${reason}`;
+      openError.hidden = false;
+    },
+  }).then((opened) => {
+    if (opened) askForScan();
+  });
 });
 // A hosted tour, from its link (tour editor plan 2026-10-17-1816, W1): the
 // viewer's transport fetches it whole, then it opens as a chosen file does
@@ -4684,6 +4816,7 @@ linkForm.addEventListener("submit", (event) => {
       linkHosted = linkHostedName(link);
       datedSave = true;
       if (pick !== null) void keepInChosenFile(editor, file, pick);
+      askForScan();
     })
     .catch((err: unknown) => {
       setBusy(false, "");

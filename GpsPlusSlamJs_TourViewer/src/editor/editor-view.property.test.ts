@@ -6,6 +6,7 @@
  * reason. Any run of the switch's actions, in any order, must keep them.
  */
 import fc from "fast-check";
+import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +15,7 @@ import {
   initialEditorViewState,
   type EditorViewState,
 } from "./editor-view.js";
+import { tourDocumentActions } from "../tour-document.js";
 
 const actions = fc.constantFrom(
   act.view3dRequested(),
@@ -60,6 +62,42 @@ describe("the view switch's state, for any run of its actions", () => {
           expect(run.reduce(reduce, start).selected).toBe("s");
         },
       ),
+    );
+  });
+});
+
+// Why: the scan question's sheet reads one field; whatever order its
+// actions and the tour's opens arrive in, it is a question, a question
+// being answered, or none - a refusal is said only while asking, and an
+// open of another tour always ends it.
+describe("the scan question, for any run of its actions", () => {
+  const scanActions = fc.constantFrom(
+    act.scanAsked(),
+    act.scanAddStarted(),
+    act.scanAddRefused({ reason: "No." }),
+    act.scanAskEnded(),
+    tourDocumentActions.opened({ manifest: createEmptyTourManifest() }),
+    tourDocumentActions.closed(),
+  );
+  it("keeps the phase and the error consistent, and an open ends it", () => {
+    fc.assert(
+      fc.property(fc.array(scanActions, { maxLength: 40 }), (run) => {
+        let state = initialEditorViewState;
+        for (const action of run) {
+          state = reduce(state, action);
+          const ask = state.scanAsk;
+          if (ask !== null) {
+            expect(["asking", "adding"]).toContain(ask.phase);
+            if (ask.phase === "adding") expect(ask.error).toBeNull();
+          }
+          if (
+            action.type === tourDocumentActions.opened.type ||
+            action.type === tourDocumentActions.closed.type
+          ) {
+            expect(ask).toBeNull();
+          }
+        }
+      }),
     );
   });
 });

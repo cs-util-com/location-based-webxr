@@ -4676,6 +4676,7 @@ body[data-view="3d"] #shell-tree.unfolding:not(.collapsed) {
 .backdrop,
 #toasts,
 #view3d-failed,
+#scan-sheet,
 body[data-view="3d"] .debug-panel {
   --ink: var(--s-text);
   --ink-dim: var(--s-muted);
@@ -4730,6 +4731,7 @@ body[data-view="3d"] #toasts {
 }
 
 .backdrop :is(.btn, .drop, .cover-choice),
+#scan-sheet .btn,
 #view3d-failed .btn,
 #view3d .debug-panel .btn,
 .backdrop .link-row input,
@@ -4741,19 +4743,23 @@ body[data-view="3d"] #toasts {
 }
 
 .backdrop .btn:hover:not(:disabled),
+#scan-sheet .btn:hover:not(:disabled),
 #view3d-failed .btn:hover:not(:disabled),
 #view3d .debug-panel .btn:hover:not(:disabled) {
   border-color: var(--s-muted);
   background-color: var(--s-bg3);
 }
 
-.backdrop .btn.ghost {
+.backdrop .btn.ghost,
+#scan-sheet .btn.ghost {
   border-color: transparent;
   background-color: transparent;
 }
 
 .backdrop .btn.primary,
 .backdrop .btn.primary:hover:not(:disabled),
+#scan-sheet .btn.primary,
+#scan-sheet .btn.primary:hover:not(:disabled),
 #view3d-failed .btn.primary,
 #view3d-failed .btn.primary:hover:not(:disabled) {
   border-color: transparent;

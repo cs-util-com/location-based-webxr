@@ -32,7 +32,8 @@ needs nothing new. Its zip comes from the start page's packer
   Open… asks before the open dialog shows (`openAnotherTour` in
   `edit-main.ts`). A button inside that dialog has passed it; one
   anywhere else asks first.
-- No UI of its own: which button or card starts a new tour is the entry
+- No UI of its own: the open dialog's "Start a new tour" card starts it
+  (`#new-tour-btn`); which button or card starts a new tour is the entry
   UI's choice, wired in `edit-main.ts`.
 
 ## Examples

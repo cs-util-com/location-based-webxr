@@ -35,6 +35,14 @@ chrome reads, one copy for every view of the page.
     its steps (`entryStep`): what every entry (a drop, the sample, a
     link) asks before it starts, since `busy` alone is false between
     the open and the add;
+  - `scanAsk` - the scan question after a tour was continued or
+    started ("Do you have a scan of this place?", `#scan-sheet`), or
+    null: `{ phase: "asking" | "adding", error }`, `error` the last
+    refusal (only while asking). Never blocking; ended by "Not now", by a
+    scan shown from anywhere, and by any open or close (it belongs to the
+    tour it asked about). `SCAN_ASK_LINE` is its explanation: what a scan
+    is, shown while editing, not part of the tour visitors get, not saved
+    into the tour file;
   - `duplicating` - a Duplicate is reading its pictures before it
     writes: another one does nothing meanwhile (a second Ctrl+D makes
     no copy);
@@ -76,6 +84,9 @@ chrome reads, one copy for every view of the page.
     `pickingChanged({ picking })`, `entryStepChanged({ step })` (an
     unknown step ignored), `undeliveredChanged({ waits })`,
     `duplicatingChanged({ duplicating })`;
+  - the scan question's: `scanAsked()` (afresh), `scanAddStarted()`
+    (only while asking), `scanAddRefused({ reason })` (only while adding,
+    a text reason), `scanAskEnded()`;
   - `moveStarted({ id })`, `moveDropped({ id, drop })`, `moveEnded()`;
   - `walkChanged({ keepsWalk?, openedWalk? })` - each given flag set;
   - `said({ message })` - the card's line, or none;

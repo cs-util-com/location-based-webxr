@@ -643,6 +643,121 @@ test("a tour and a scan dropped together open the tour, then add the scan; an un
   );
 });
 
+/**
+ * Why these tests matter: after a tour is continued or started, a sheet
+ * asks "Do you have a scan of this place?". It must never block (the
+ * editor works behind it, "Not now" closes it), say what a scan is and
+ * that it stays out of the tour, show its own busy state while a scan
+ * reads, and say a refusal where it was asked (the async-UI rule).
+ */
+test.describe("the scan question", () => {
+  test("after a tour is continued: a refused file is said in the sheet, a scan given there shows beside the tour", async ({
+    page,
+  }) => {
+    await page.goto("/edit.html");
+    await expect(page.locator("#start-continue-title")).toHaveText(
+      "Continue a tour",
+    );
+    await expect(page.locator("#start-new-title")).toHaveText(
+      "Start a new tour",
+    );
+    await expect(page.locator("#start-example-title")).toHaveText(
+      "Look at an example - nothing is saved",
+    );
+    await expect(page.locator("#scan-sheet")).toBeHidden();
+    await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+    await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+    const sheet = page.locator("#scan-sheet");
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toContainText("Do you have a scan of this place?");
+    await expect(sheet).toContainText("not part of the tour visitors get");
+    await expect(sheet).toContainText("not saved into the tour file");
+    // Never in the way: the tour's list is still usable behind it.
+    await page.locator("#rail .row", { hasText: "Fountain" }).click();
+    await expect(page.locator("#card")).toBeVisible();
+    // Every text the sheet's status shows, kept: the read may be quicker
+    // than a poll.
+    await page.evaluate(() => {
+      const status = document.getElementById("scan-sheet-status");
+      const seen = /** @type {string[]} */ ([]);
+      Object.assign(window, { sheetSeen: seen });
+      if (status === null) return;
+      new MutationObserver(() => {
+        seen.push(status.textContent ?? "");
+      }).observe(status, {
+        childList: true,
+        characterData: true,
+        subtree: true,
+      });
+    });
+    const give = async (
+      /** @type {Buffer} */ buffer,
+      /** @type {string} */ name,
+    ) => {
+      const chooser = page.waitForEvent("filechooser");
+      await page.locator("#scan-sheet-add").click();
+      await (
+        await chooser
+      ).setFiles({
+        name,
+        mimeType: "application/zip",
+        buffer,
+      });
+    };
+    await give(await zip([{ path: "notes.txt", data: "hello" }]), "notes.zip");
+    await expect(page.locator("#scan-sheet-error")).toContainText("Not added:");
+    await expect(sheet).toBeVisible();
+    await expect(page.locator("#scan-sheet-add")).toBeEnabled();
+    const bundle = await debugBundleOf({
+      tour: "Editor fixture",
+      file: "editor-fixture.zip",
+    });
+    await give(bundle, "editor-fixture-debug.zip");
+    await expect(sheet).toBeHidden();
+    await expect(page.locator("#debug-status")).toContainText(
+      "Scan editor-fixture-debug.zip: shown while you edit.",
+    );
+    expect(
+      await page.evaluate(
+        () =>
+          /** @type {{ sheetSeen: string[] }} */ (
+            /** @type {unknown} */ (window)
+          ).sheetSeen,
+      ),
+    ).toContain("Reading the scan…");
+    await expect(page.locator("#save-status")).toHaveText("No changes");
+  });
+
+  test("after a new tour: Not now closes it, and a second new tour asks again, without the first one's draft", async ({
+    page,
+  }) => {
+    // Why: a second new tour must never be offered the first one's edits
+    // (each has its own id, so its own draft); the question belongs to the
+    // tour it was asked about.
+    await noSavePicker(page);
+    await page.goto("/edit.html");
+    await page.locator("#new-tour-btn").click();
+    await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
+    await expect(page.locator("#tour-file")).toHaveText("new-tour.zip");
+    const sheet = page.locator("#scan-sheet");
+    await expect(sheet).toBeVisible();
+    await page.locator("#scan-sheet-later").click();
+    await expect(sheet).toBeHidden();
+    await page.locator("#no-gps-input").check();
+    await expect(page.locator("#save-status")).toContainText("1 change");
+    page.once("dialog", (dialog) => {
+      void dialog.accept();
+    });
+    await openAnother(page);
+    await page.locator("#new-tour-btn").click();
+    await expect(page.locator("#open-modal")).toBeHidden({ timeout: 15000 });
+    await expect(sheet).toBeVisible();
+    await expect(page.locator("#no-gps-input")).not.toBeChecked();
+    await expect(page.locator("#save-status")).toHaveText("No changes");
+    await expect(page.locator(".draft-offer")).toHaveCount(0);
+  });
+});
+
 test("says the sample is being fetched while it is, and why it failed when it does", async ({
   page,
 }) => {
@@ -2544,13 +2659,15 @@ test("a Ctrl+S pressed in a tour opened while the last tour's Ctrl+S save still 
   );
 });
 
-test("a Ctrl+S pressed in the sample while its file waits for the last tour's save is saved into that file once it is adopted", async ({
+test("a Ctrl+S pressed in a new tour while its file waits for the last tour's save is saved into that file once it is adopted", async ({
   page,
 }) => {
-  // Why (a PR review finding): the sample's open-time write into the file
+  // Changed: this used the sample, which no longer asks where to save; a
+  // new tour asks in its click as the sample did.
+  // Why (a PR review finding): the new tour's open-time write into the file
   // its click chose waits for the save slot. The closed tour's save, ending,
   // ran the Ctrl+S queued in the sample before that write claimed the slot:
-  // the sample had no file yet, so it said "Press Save to choose where to
+  // the new tour had no file yet, so it said "Press Save to choose where to
   // save the tour." and dropped the Save - and the write then put the
   // unedited sample into the file. The queued Save must wait for the
   // adopted file and then save the edit into it.
@@ -2574,8 +2691,8 @@ test("a Ctrl+S pressed in the sample while its file waits for the last tour's sa
     void dialog.accept();
   });
   await openAnother(page);
-  await clickBoundSavePicker(page, "my-sample.zip");
-  await page.locator("#sample-btn").click();
+  await clickBoundSavePicker(page, "my-new.zip");
+  await page.locator("#new-tour-btn").click();
   await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
   await page.locator("#no-gps-input").check();
   await page.keyboard.press("Control+s");
@@ -2585,12 +2702,10 @@ test("a Ctrl+S pressed in the sample while its file waits for the last tour's sa
     // @ts-expect-error - set by the held write.
     window.__release();
   });
-  await expect(page.locator("#tour-file")).toHaveText("my-sample.zip");
+  await expect(page.locator("#tour-file")).toHaveText("my-new.zip");
   // The autosave is an hour away: only the queued Ctrl+S can save the edit.
-  await expect(page.locator("#save-status")).toHaveText(
-    "Saved to my-sample.zip",
-  );
-  expect(tourJsonOf(await readOpfsTour(page, "my-sample.zip"))).toContain(
+  await expect(page.locator("#save-status")).toHaveText("Saved to my-new.zip");
+  expect(tourJsonOf(await readOpfsTour(page, "my-new.zip"))).toContain(
     '"needsNoGps": true',
   );
   await expect(
@@ -4058,23 +4173,45 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   );
 });
 
-test("the sample asks where to save it in its click, and the chosen file holds it", async ({
+test("a new tour asks where to save it in its click, and the chosen file holds it", async ({
   page,
 }) => {
-  // Why: the sample is the other tour without a file of its own; it must
-  // ask in its own click as a link does, and the file must hold the tour.
+  // Why: a new tour has no file of its own; it must ask in its own click
+  // as a link does (a browser opens the dialog only close to a click), and
+  // the file must hold the tour, under the new tour's own id.
   await withBothDialogs(page);
   await page.goto("/edit.html");
-  await clickBoundSavePicker(page, "my-sample.zip");
-  await page.locator("#sample-btn").click();
-  await expect(page.locator("#tour-file")).toHaveText("my-sample.zip", {
+  await clickBoundSavePicker(page, "my-new.zip");
+  await page.locator("#new-tour-btn").click();
+  await expect(page.locator("#tour-file")).toHaveText("my-new.zip", {
     timeout: 15000,
   });
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
-  const title = await page.locator("#tour-name").textContent();
-  expect(tourJsonOf(await readOpfsTour(page, "my-sample.zip"))).toContain(
-    `"title": ${JSON.stringify(title)}`,
+  expect(tourJsonOf(await readOpfsTour(page, "my-new.zip"))).toMatch(
+    /"tourId": "[^"]+"/,
   );
+});
+
+test("the example asks nothing before it is seen, and no scan question; its first Save asks where", async ({
+  page,
+}) => {
+  // Why: its card says "nothing is saved" - the example used to open a
+  // save dialog in the same click, before the visitor had seen anything.
+  // It is for looking around, so no scan question either.
+  await withBothDialogs(page);
+  await page.goto("/edit.html");
+  await clickBoundSavePicker(page, "example-copy.zip");
+  await page.locator("#sample-btn").click();
+  await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
+  await expect(page.locator("#tour-file")).toHaveText("marienplatz-tour.zip");
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(0);
+  await expect(page.locator("#scan-sheet")).toBeHidden();
+  await page.locator("#no-gps-input").check();
+  await save(page);
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to example-copy.zip",
+  );
+  expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
 });
 
 test("a link that fails after a file was picked writes nothing into it, keeps the file, and says so", async ({
@@ -4150,7 +4287,7 @@ test("a write refused at the open says so in a toast that stays, keeps the file,
   await page.clock.install();
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "full-disk.zip", { failWrite: true });
-  await page.locator("#sample-btn").click();
+  await page.locator("#new-tour-btn").click();
   const toastLine = page.locator(".toast", {
     hasText: "The tour is open, but full-disk.zip could not be written",
   });
@@ -4160,7 +4297,7 @@ test("a write refused at the open says so in a toast that stays, keeps the file,
   );
   await expect(toastLine).not.toContainText("Save asks for a file again");
   await expect(page.locator("#save-status")).toHaveText("No changes");
-  await expect(page.locator("#tour-file")).toHaveText("marienplatz-tour.zip");
+  await expect(page.locator("#tour-file")).toHaveText("new-tour.zip");
   expect(await opfsSize(page, "full-disk.zip")).toBe(0);
   // A toast that stays: still there long after a passing one would go.
   await page.clock.runFor(30_000);
@@ -4232,7 +4369,7 @@ test("a file chosen at the open that another tab is editing is not said to save 
     );
   });
   await clickBoundSavePicker(page, "locked.zip");
-  await page.locator("#sample-btn").click();
+  await page.locator("#new-tour-btn").click();
   await expect(
     page.locator(".toast", {
       hasText: "Another tab is editing a file named locked.zip.",
@@ -4262,7 +4399,7 @@ test("a dismissed dialog at the open leaves the tour in this browser, said in th
   await page.clock.install({ time: new Date(2026, 9, 7, 9, 5) });
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "never-written.zip", { dismiss: true });
-  await page.locator("#sample-btn").click();
+  await page.locator("#new-tour-btn").click();
   await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
   expect(await opfsSize(page, "never-written.zip")).toBe(0);
@@ -4277,11 +4414,11 @@ test("a dismissed dialog at the open leaves the tour in this browser, said in th
   );
   expect(names).toHaveLength(2);
   for (const suggested of names) {
-    expect(suggested).toMatch(/^marienplatz-tour-2026-10-07-0905\d{2}\.zip$/);
+    expect(suggested).toMatch(/^new-tour-2026-10-07-0905\d{2}\.zip$/);
   }
 });
 
-test("on Android a tour from the sample asks for its file as on a desktop, and saves into it by itself", async ({
+test("on Android a new tour asks for its file as on a desktop, and saves into it by itself", async ({
   page,
 }) => {
   // Why: Android was held back from adopting a picked file (a content URI,
@@ -4299,7 +4436,7 @@ test("on Android a tour from the sample asks for its file as on a desktop, and s
   await page.clock.install();
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "phone-sample.zip");
-  await page.locator("#sample-btn").click();
+  await page.locator("#new-tour-btn").click();
   await expect(page.locator("#tour-file")).toHaveText("phone-sample.zip", {
     timeout: 15000,
   });

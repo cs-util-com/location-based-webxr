@@ -1064,6 +1064,120 @@ kbd {
   line-height: 1.5;
 }
 
+/* The way in: three start cards side by side, stacked in a narrow
+   window. Continue holds the chooser and the link, so it is the widest. */
+.modal.start-modal {
+  width: min(940px, 100%);
+}
+
+.start-cards {
+  display: grid;
+  grid-template-columns: 1.45fr 1fr 1fr;
+  gap: 14px;
+}
+
+@media (width <= 820px) {
+  .start-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.start-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--hairline);
+  background: var(--panel-lo, #fff);
+}
+
+.start-card h2 {
+  font-size: 17px;
+  line-height: 1.3;
+}
+
+.start-aside {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink-dim);
+}
+
+.start-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+/* The card's one action at its foot, so the three line up. */
+.start-go {
+  margin-top: auto;
+  align-self: flex-start;
+}
+
+.start-card .drop {
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px;
+}
+
+.start-card .link-open {
+  margin-top: 0;
+}
+
+/* The scan question after a tour was continued or started: a sheet at the
+   top of the view, never a modal - the editor works around it. Under the
+   card (850) and the toasts. */
+.scan-sheet {
+  position: fixed;
+  top: 64px;
+  left: 50%;
+  z-index: 845;
+  transform: translateX(-50%);
+  width: min(440px, calc(100vw - 32px));
+  padding: 14px 16px 12px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.scan-sheet[hidden] {
+  display: none;
+}
+
+.scan-sheet.over {
+  outline: 2px dashed var(--ink-dim);
+}
+
+.scan-sheet h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.scan-sheet-text {
+  margin: 0;
+  color: var(--ink-dim);
+  line-height: 1.45;
+}
+
+#scan-sheet-status:not(:empty) {
+  margin-top: 8px;
+  color: var(--ink-dim);
+}
+
+#scan-sheet-error {
+  margin-top: 8px;
+  color: var(--danger);
+}
+
+.scan-sheet-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 /* The tour's details dialog (W2). */
 /* Above the toasts (#toasts, 1200): a save's result toast stays until it is
    closed and sat over the dialog's buttons. The dialog is short-lived, and

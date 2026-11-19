@@ -206,7 +206,7 @@ test.describe("a computer (no AR)", () => {
     );
     await editor.click();
     await expect(page).toHaveURL(/\/edit\.html$/);
-    await expect(page.locator("#open-title")).toHaveText("Open a tour");
+    await expect(page.locator("#open-title")).toHaveText("Edit a tour");
   });
 
   test("the box waits for the AR check: no heading over an empty box", async ({

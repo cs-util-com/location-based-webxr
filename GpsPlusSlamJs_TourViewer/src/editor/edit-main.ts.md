@@ -27,6 +27,25 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   drop box opens it, so a stray drop never takes the open tour away (PR
   #609 review).
 
+- **The way in** is three start cards in the open dialog: "Continue a
+  tour" (the chooser, its drop box and the link, below), "Start a new
+  tour" (`#new-tour-btn`: `startNewTour` of `new-tour.ts`, the save
+  dialog asked in the click, a dated save name so a second new tour never
+  suggests the first one's file, kept in the chosen file once open) and
+  "Look at an example - nothing is saved" (`#sample-btn`: nothing asks
+  where to save; Save asks later, under a dated name). The dialog is
+  reached only through the unsaved-work guard (`openAnotherTour`) or with
+  no tour open, so no card asks again.
+- **The scan question:** after Continue (a chosen, dropped or linked tour
+  given without a scan) or New, `askForScan` asks "Do you have a scan of
+  this place?" (`#scan-sheet`, the store's `editorView.scanAsk`), unless
+  a scan already shows. A sheet at the top of the view, never a modal:
+  the editor works behind it, "Not now" closes it, and a file drag over it
+  is its own (never a tour item). "Add a scan…" (its input, or a drop on
+  the sheet) adds it as "Add debug data…" does (`addScanFromSheet`):
+  "Reading the scan…" with its buttons off meanwhile, closed once the
+  scan shows, a refusal said in the sheet, which asks again. The example
+  asks nothing. The scan stays for the session only.
 - **Open:** the file input's change, "Choose…" and a drop on `#drop`
   (every file of the drop) go through `enterFiles`: each file is sorted
   first (`classify-editor-file.ts`, its zip directory only), then planned
@@ -44,7 +63,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   for no zip or no tour goes to the open, which refuses it in its own
   words, and one with a precise reason is refused with it; a file left
   out of a drop is named in a toast; every entry (a drop, the sample, a
-  link) starts only while `isEntryIdle` (`editor-view.ts`); "Use the sample tour" fetches
+  link) starts only while `isEntryIdle` (`editor-view.ts`); "Open the example" fetches
   `samples/marienplatz-tour.zip` beside the page; `#link-form` fetches a
   hosted tour from its link (`editor-link.ts`, the viewer's transport and
   Drive proxy, tour editor plan 2026-10-17-1816 W1) and opens it as a
@@ -342,12 +361,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the page may not write (a refused permission, another tab's name), which
   still downloads, and "Download instead" after an in-place refusal (no
   pick: a download). The fine print says which the browser does.
-- **A tour opened from a link or the sample asks where to save it as it
-  opens**, where the browser adopts a chosen file (`adoptsSavedFile`, the
+- **A tour opened from a link or a new tour asks where to save it as it
+  opens** (the example does not: its card says nothing is saved), where
+  the browser adopts a chosen file (`adoptsSavedFile`, the
   first Save's rule: both file dialogs, Android included):
-  `askOpenSaveFile` opens the save dialog IN the sample's click or the
+  `askOpenSaveFile` opens the save dialog IN the new tour's click or the
   link's submit, before the fetch, suggesting the name the fetched file
-  will carry (`linkFileName`, the sample's own name; a Drive link without
+  will carry (`linkFileName`, `new-tour.zip` for a new one; a Drive link without
   a `.zip` name gives `tour-<start of its file id>.zip`, so a second Drive
   tour does not offer the first one's file), dated to the second
   (`datedFileName`, local time: `<name>-YYYY-MM-DD-HHMMSS.zip`), so the
@@ -1001,6 +1021,8 @@ another tour's and a plain recording's lines, a refusal, no save carrying
 it, a reload forgetting it, a drop on the panel shown in place of the
 tour's walk) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.
+
+The way in and the scan question (`editor.spec.js`, "the scan question"): the three cards, the sheet after a continued tour (a refused file said in it, a scan given there shown, "Reading the scan…" seen), after a new tour ("Not now", a second new tour asking again without the first one's draft); the example asking nothing before it is seen; the new tour asking in its click.
 
 `editor.spec.js` also renames a station through the test hook, closes the
 tab, and sees the draft offer the change and Restore bring it back (seen

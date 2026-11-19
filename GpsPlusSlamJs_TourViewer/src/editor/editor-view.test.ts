@@ -11,6 +11,7 @@
 import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { describe, expect, it } from "vitest";
 import {
+  SCAN_ASK_LINE,
   editorViewActions as act,
   editorViewReducer as reduce,
   initialEditorViewState,
@@ -146,6 +147,7 @@ describe("editorView", () => {
       message: null,
       picking: false,
       entryStep: null,
+      scanAsk: null,
       duplicating: false,
       viewMode: "2d",
       view3dLoad: "idle",
@@ -203,6 +205,7 @@ describe("editorView", () => {
       message: { id: "x", text: "No.", refused: true },
       picking: true,
       entryStep: null,
+      scanAsk: null,
       duplicating: true,
       viewMode: "2d",
       view3dLoad: "idle",
@@ -619,5 +622,69 @@ describe("the entry step", () => {
         ),
       ).toBe(false);
     }
+  });
+});
+
+// Why: after a tour is continued or started, a sheet asks for a scan of
+// the place. It must never block (it only shows, and closes on "Not now"),
+// say a refused scan where it was asked for, and belong to the tour it
+// was asked about: another tour, or none, must not inherit the question.
+describe("the scan question", () => {
+  const empty = createEmptyTourManifest();
+  it("asks, adds, says a refusal while still asking, and ends", () => {
+    let state = reduce(initialEditorViewState, act.scanAsked());
+    expect(state.scanAsk).toEqual({ phase: "asking", error: null });
+    state = reduce(state, act.scanAddStarted());
+    expect(state.scanAsk).toEqual({ phase: "adding", error: null });
+    // A second start while one reads changes nothing.
+    expect(reduce(state, act.scanAddStarted())).toBe(state);
+    state = reduce(state, act.scanAddRefused({ reason: "Not a scan." }));
+    expect(state.scanAsk).toEqual({ phase: "asking", error: "Not a scan." });
+    state = reduce(state, act.scanAddStarted());
+    // A new try forgets the last refusal.
+    expect(state.scanAsk).toEqual({ phase: "adding", error: null });
+    state = reduce(state, act.scanAskEnded());
+    expect(state.scanAsk).toBeNull();
+  });
+
+  it("ignores a start or a refusal with no question, and a refusal that is no text", () => {
+    expect(
+      reduce(initialEditorViewState, act.scanAddStarted()).scanAsk,
+    ).toBeNull();
+    expect(
+      reduce(initialEditorViewState, act.scanAddRefused({ reason: "x" }))
+        .scanAsk,
+    ).toBeNull();
+    const adding = [act.scanAsked(), act.scanAddStarted()].reduce(
+      reduce,
+      initialEditorViewState,
+    );
+    expect(
+      reduce(adding, act.scanAddRefused({ reason: 3 as unknown as string }))
+        .scanAsk,
+    ).toEqual({ phase: "adding", error: null });
+  });
+
+  it("asked again starts afresh, and another tour or none ends it", () => {
+    const refused = [
+      act.scanAsked(),
+      act.scanAddStarted(),
+      act.scanAddRefused({ reason: "No." }),
+    ].reduce(reduce, initialEditorViewState);
+    expect(reduce(refused, act.scanAsked()).scanAsk).toEqual({
+      phase: "asking",
+      error: null,
+    });
+    expect(
+      reduce(refused, tourDocumentActions.opened({ manifest: empty })).scanAsk,
+    ).toBeNull();
+    expect(reduce(refused, tourDocumentActions.closed()).scanAsk).toBeNull();
+  });
+
+  it("says in its words what a scan is and that it stays out of the tour", () => {
+    expect(SCAN_ASK_LINE).toContain("Recorder app");
+    expect(SCAN_ASK_LINE).toContain("shown while you edit");
+    expect(SCAN_ASK_LINE).toContain("not part of the tour visitors get");
+    expect(SCAN_ASK_LINE).toContain("not saved into the tour file");
   });
 });
