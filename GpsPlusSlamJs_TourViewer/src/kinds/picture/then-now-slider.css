@@ -1,0 +1,149 @@
+/* Then and now's slider (then-now-slider.ts): its panel on the page's
+   screen while a visitor stands lined up with the picture, and Swipe's
+   line across the whole screen. Imported by the slider, so every page
+   that shows it (the visitor page, the check page) has its look. */
+.then-now-slider {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgb(19 16 13 / 92%);
+  color: #f4ede1;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 40%);
+}
+.then-now-words {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+.then-now-year {
+  color: #e9b872;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+.then-now-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 0.8rem;
+  color: #bcb09c;
+}
+.then-now-row input {
+  width: 100%;
+  min-height: 32px;
+  accent-color: #e9b872;
+}
+/* The switch between Swipe and Fade, as the chosen page's pill. */
+.then-now-modes {
+  display: inline-flex;
+  justify-self: start;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgb(244 237 225 / 8%);
+}
+.then-now-modes button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: #bcb09c;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.then-now-modes button[aria-pressed="true"] {
+  background: #f4ede1;
+  color: #1d1913;
+}
+.then-now-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #bcb09c;
+}
+/* The screen's host (#narration-card-root) drops its centring
+   transform while it holds the slider, or Swipe's fixed full-screen
+   line would be held to the host's box. */
+#narration-card-root:has(.then-now-slider) {
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  transform: none;
+}
+/* Swipe's line across the whole screen: only its knob takes a
+   finger, so the world below keeps every other touch. It stands aside
+   while the walk sheet's list is open, which it would paint over. */
+.then-now-swipe {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+.then-now-swipe[hidden],
+body:has(.walk-sheet[data-sheet="list"]:not([hidden])) .then-now-swipe {
+  display: none;
+}
+.then-now-swipe-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: rgb(244 237 225 / 92%);
+  box-shadow: 0 0 10px rgb(0 0 0 / 30%);
+}
+.then-now-swipe-label {
+  position: absolute;
+  top: calc(150px + env(safe-area-inset-top));
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgb(20 17 14 / 93%);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: #f4ede1;
+}
+.then-now-swipe-then {
+  right: 12px;
+  color: #e9b872;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 15px;
+}
+.then-now-swipe-now {
+  left: 12px;
+}
+/* 48 px: a thumb's target, as the chosen page's knob. */
+.then-now-swipe-knob {
+  position: absolute;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin: -24px 0 0 -24px;
+  border: 2px solid #f4ede1;
+  border-radius: 50%;
+  background: rgb(20 17 14 / 93%);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: ew-resize;
+}
+.then-now-swipe-knob svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: #f4ede1;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .then-now-swipe-label {
+    top: calc(62px + env(safe-area-inset-top));
+  }
+}

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Then and now check</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/design.css" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #3d7ab8;
+      }
+      #ar-root {
+        position: fixed;
+        inset: 0;
+        overflow: hidden;
+      }
+      .check-canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      /* The visitor page's screen host (index.html), so the slider sits
+         where it sits there. */
+      #narration-card-root {
+        position: fixed;
+        bottom: calc(16px + env(safe-area-inset-bottom));
+        left: 50%;
+        z-index: 30;
+        width: calc(100vw - 32px);
+        max-width: 360px;
+        transform: translateX(-50%);
+      }
+      #narration-card-root:empty {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="ar-root"></div>
+    <div id="narration-card-root"></div>
+    <script type="module">
+      import { startThenNowCheck } from "./src/checks/then-now-check.ts";
+
+      startThenNowCheck(
+        document.getElementById("ar-root"),
+        document.getElementById("narration-card-root"),
+      );
+    </script>
+  </body>
+</html>

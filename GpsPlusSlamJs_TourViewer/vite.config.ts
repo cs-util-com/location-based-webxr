@@ -90,6 +90,11 @@ export default defineConfig({
         lecternCheck: fileURLToPath(
           new URL("lectern-check.html", import.meta.url),
         ),
+        // Then and now's picture and its Swipe line without an AR session
+        // (`then-now-check.html.md`), linked from nothing.
+        thenNowCheck: fileURLToPath(
+          new URL("then-now-check.html", import.meta.url),
+        ),
         // A narration circle in its look without an AR session
         // (`narration-look-check.html.md`), linked from nothing.
         narrationLookCheck: fileURLToPath(
