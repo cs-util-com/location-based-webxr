@@ -123,7 +123,11 @@ DOM glue, its own module since the flows plan M6.
   runs inside the same open, so its own `levelsParsed(null)` is what takes
   the removed tour's parsed levels away, pinned in
   `archive-open-file.test.ts`);
-  `teardownSession` clears tour state ONLY when a tour was open at its
+  `teardownSession` lets the closing session go (`ctx.session = null`)
+  before any teardown hook runs, and closes its archive in a `finally`, so
+  a hook that throws can neither keep the old session reachable nor leave
+  its archive open.
+  It clears tour state ONLY when a tour was open at its
   start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
   and the creator's pre-open work (a measured level, placements, the
   print-size check) is kept for the tour about to open. When a tour closes,

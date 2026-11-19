@@ -22,9 +22,22 @@ const QUIET_ZONE = 2;
 
 /** CSS pixels per module: a whole number, so every module lands on whole
  *  pixels and the code stays sharp; the box is sized from the module
- *  count (about 100 to 270 px for the shortest to the longest storage
- *  provider link). */
+ *  count (135 to 195 px for the shortest to the longest storage provider
+ *  link the tests use). */
 export const LINK_QR_MODULE_PX = 3;
+
+/** CSS pixels per module for a code too large at `LINK_QR_MODULE_PX`
+ *  (a presigned storage link of several hundred bytes): still whole
+ *  pixels, so still sharp, up to 234 px. */
+export const LINK_QR_SMALL_MODULE_PX = 2;
+
+/** The largest code, in CSS pixels, that stands beside the Copy link dial:
+ *  the visitor's column is at most 440 px with its 24 px side padding, the
+ *  dial up to 156 px and the gap 40 px, so a code up to 240 px keeps the
+ *  row inside the column's box (it may take part of the padding). A code
+ *  larger at 3 px per module is drawn at 2; one larger even then is
+ *  refused like a link too long for any code: Copy link alone. */
+export const LINK_QR_MAX_PX = 240;
 
 interface MediaWindow {
   matchMedia?: (query: string) => {
@@ -101,15 +114,28 @@ export function shareLinkOf(href: string): string {
     .slice(1)
     .split("&")
     .find((part) => part === "qr" || part.startsWith("qr="));
-  return qr === undefined ? href : `${url.origin}${url.pathname}?${qr}`;
+  if (qr === undefined) return href;
+  // The page's own address without its query and fragment, not origin
+  // plus path: a `file:` page's origin reads "null", and a `blob:` page's
+  // origin is the page that made it, its path a whole address.
+  url.search = "";
+  url.hash = "";
+  // A user name and password would travel with every scan and paste.
+  url.username = "";
+  url.password = "";
+  return `${url.href}?${qr}`;
 }
 
 /**
  * The QR code of `url` as an SVG string: one path of dark modules on a
  * white square, `viewBox` in modules, `width` and `height` at
- * `LINK_QR_MODULE_PX` CSS pixels per module. Throws on an empty or
- * non-string url, and (the library's error) on a link too long for any QR
- * code: past version 40, about 2300 bytes at error correction M.
+ * `LINK_QR_MODULE_PX` CSS pixels per module, or at
+ * `LINK_QR_SMALL_MODULE_PX` where 3 would exceed `LINK_QR_MAX_PX` (a
+ * link over about 360 bytes). Throws on an empty or non-string url, with
+ * a `RangeError` on a code larger than `LINK_QR_MAX_PX` even at 2 px
+ * per module (a link over about 910 bytes), and (the library's error) on
+ * a link too long for any QR code: past version 40, about 2300 bytes at
+ * error correction M.
  */
 export function linkQrSvg(url: string): string {
   if (typeof url !== "string" || url.length === 0) {
@@ -119,6 +145,16 @@ export function linkQrSvg(url: string): string {
     errorCorrectionLevel: "M",
   }).modules;
   const side = size + 2 * QUIET_ZONE;
+  const modulePx =
+    side * LINK_QR_MODULE_PX <= LINK_QR_MAX_PX
+      ? LINK_QR_MODULE_PX
+      : LINK_QR_SMALL_MODULE_PX;
+  const px = side * modulePx;
+  if (px > LINK_QR_MAX_PX) {
+    throw new RangeError(
+      `linkQrSvg: a ${String(px)} px code is larger than ${String(LINK_QR_MAX_PX)} px`,
+    );
+  }
   let path = "";
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
@@ -128,7 +164,7 @@ export function linkQrSvg(url: string): string {
     }
   }
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(side)} ${String(side)}" width="${String(side * LINK_QR_MODULE_PX)}" height="${String(side * LINK_QR_MODULE_PX)}" shape-rendering="crispEdges" aria-hidden="true">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${String(side)} ${String(side)}" width="${String(px)}" height="${String(px)}" shape-rendering="crispEdges" aria-hidden="true">` +
     `<rect width="${String(side)}" height="${String(side)}" fill="#fff"/>` +
     `<path d="${path}" fill="#000"/></svg>`
   );

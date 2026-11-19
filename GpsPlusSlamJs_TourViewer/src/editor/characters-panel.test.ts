@@ -445,6 +445,39 @@ describe("opening the list", () => {
     );
   });
 
+  // Why: a character with no picture is an answer, not a failure (the
+  // tour's `image` gives `undefined` for him). Treated as a failure, his
+  // bytes were asked for again on every redraw; only a read that threw
+  // is tried again.
+  it("asks once for a character with no picture, again only after a failed read", async () => {
+    const s = setup();
+    s.t.chars.push(
+      { id: "t1", name: "Rita", image: "file:none", frames: "file:f1" },
+      { id: "t2", name: "Otto", image: "file:lost", frames: "file:f2" },
+    );
+    const asked: string[] = [];
+    s.t.tour.image = (id) => {
+      asked.push(id);
+      return id === "t2" && asked.filter((a) => a === "t2").length === 1
+        ? Promise.reject(new Error("read failed"))
+        : Promise.resolve(undefined);
+    };
+    s.panel.open();
+    await settled();
+    s.panel.open();
+    await settled();
+    s.panel.open();
+    await settled();
+    expect(
+      asked.filter((a) => a === "t1"),
+      "no picture: asked once",
+    ).toEqual(["t1"]);
+    expect(
+      asked.filter((a) => a === "t2"),
+      "a failed read is asked again, then its answer kept",
+    ).toEqual(["t2", "t2"]);
+  });
+
   // Why: the rows used to wait until every character's four poses were
   // read and named, which on a large library kept the list blank; a row
   // whose poses are not known yet cannot tell whether he is in the tour,

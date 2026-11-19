@@ -700,8 +700,9 @@ export function wireArEntry(deps: {
 
   /** Shows or hides the link's code; draws it only when the share link
    *  differs from the one it encodes (the link Copy link copies,
-   *  `shareLinkOf(location.href)`). A link too long for any QR code shows
-   *  no code: Copy link alone. */
+   *  `shareLinkOf(location.href)`). A link too long for any QR code, or
+   *  whose code would not fit beside the dial, shows no code: Copy link
+   *  alone. */
   function renderLinkQr(shown: boolean): void {
     const qr = dom.linkQr;
     if (qr === undefined) return;
@@ -715,7 +716,8 @@ export function wireArEntry(deps: {
         delete qr.code.dataset["tooLong"];
       } catch {
         // A link too long for any QR code (the `?qr=` payload has no
-        // cap): caught, so the rest of the render still runs, and kept,
+        // cap) or for the room beside the dial even at 2 px per module:
+        // caught, so the rest of the render still runs, and kept,
         // so it is not tried again on every render.
         qr.code.innerHTML = "";
         qr.code.dataset["tooLong"] = "true";

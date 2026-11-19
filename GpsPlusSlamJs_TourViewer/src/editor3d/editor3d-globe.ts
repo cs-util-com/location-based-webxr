@@ -837,6 +837,13 @@ export async function openGlobeEditor(
     let debugDrawn: DebugLayerState["captures"] | undefined;
     let debugSource: DebugLayerState["source"] | undefined;
     let debugThumbsSeen = -1;
+    /** The frames a picture with no size has been tried in, by picture: a
+     *  new picture for the same capture starts afresh. */
+    const debugThumbTries = new WeakMap<HTMLImageElement, number>();
+    /** How many frames a picture with no size is tried before it is
+     *  given up. The page hands over decoded pictures, so in a browser they
+     *  have a size at once; this bounds the cost of one that never does. */
+    const DEBUG_THUMB_TRIES = 5;
     /** The drawn captures' points, for framing a tour with nothing of its
      *  own to frame. */
     let debugPoints: THREE.Vector3[] = [];
@@ -889,8 +896,9 @@ export async function openGlobeEditor(
      *  table changed. The version counts as seen only once the pass
      *  drained the table: a picture with no size yet failed its copy and
      *  is tried again next frame, since the table does not change when
-     *  it becomes usable. (A capture the layer did not place refuses its
-     *  copy for good, so it is not retried.) */
+     *  it becomes usable, for `DEBUG_THUMB_TRIES` frames, then given up
+     *  (each retry walks every capture again). (A capture the layer did
+     *  not place refuses its copy for good, so it is not retried.) */
     function debugThumbsIn(captures: NonNullable<DebugLayerState["captures"]>) {
       const thumbs = deps.debugThumbs;
       if (thumbs === undefined || thumbs.version() === debugThumbsSeen) return;
@@ -903,7 +911,9 @@ export async function openGlobeEditor(
         const width = picture.naturalWidth;
         const height = picture.naturalHeight;
         if (!(width > 0) || !(height > 0)) {
-          drained = false;
+          const tries = (debugThumbTries.get(picture) ?? 0) + 1;
+          debugThumbTries.set(picture, tries);
+          if (tries < DEBUG_THUMB_TRIES) drained = false;
           continue;
         }
         debugLayer.thumb(c.image, { source: picture, width, height });

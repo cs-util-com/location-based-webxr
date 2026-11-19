@@ -950,11 +950,16 @@ describe("a visitor's phone without AR copies the link (polish round M4a, V4)", 
   // at this error correction) and the `?qr=` payload has no cap. Thrown
   // inside the render, it skipped the hint, the status line and the
   // tracking report on every state change; the code goes, Copy link stays.
-  it("falls back to Copy link alone when the link is too long for a code", () => {
+  // A link of about a thousand bytes takes the same path: its code would
+  // not fit beside the dial (`LINK_QR_MAX_PX`) even at 2 px per module.
+  it.each([
+    ["too long for any code", 4000],
+    ["too large for the room beside the dial", 1000],
+  ])("falls back to Copy link alone when the link is %s", (_name, length) => {
     const h = harness({ arStatus: "unsupported", computerScreen: true });
     expect(h.dom.linkQr.root.hidden).toBe(false);
     vi.stubGlobal("location", {
-      href: `https://example.test/tour/?qr=${"x".repeat(4000)}`,
+      href: `https://example.test/tour/?qr=${"x".repeat(length)}`,
     });
     h.dom.arStatus.textContent = "";
     expect(() => {

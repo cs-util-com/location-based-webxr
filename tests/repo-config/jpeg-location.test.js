@@ -43,6 +43,26 @@ function jpeg(...segments) {
   return Uint8Array.from([0xff, 0xd8, ...segments.flat(), ...segment(0xda, [0, 0]), 0xff, 0xd9]);
 }
 
+/** A Photoshop image resource: "8BIM", its id, an empty name, its size and
+ *  its data, padded to an even length. */
+function resource(id, data) {
+  const size = data.length;
+  const pad = size % 2 === 1 ? [0] : [];
+  return [
+    ...ascii('8BIM'),
+    id >> 8,
+    id & 0xff,
+    0,
+    0,
+    (size >>> 24) & 0xff,
+    (size >> 16) & 0xff,
+    (size >> 8) & 0xff,
+    size & 0xff,
+    ...data,
+    ...pad,
+  ];
+}
+
 const JFIF = segment(0xe0, [...ascii('JFIF'), 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]);
 
 describe('jpegLocation', () => {
@@ -119,10 +139,7 @@ describe('jpegLocation', () => {
     const photoshop = segment(0xed, [
       ...ascii('Photoshop 3.0'),
       0,
-      ...ascii('8BIM'),
-      4,
-      36,
-      ...ascii('<rdf:Description exif:GPSLatitude="0,0N"/>'),
+      ...resource(0x0424, ascii('<rdf:Description exif:GPSLatitude="0,0N"/>')),
     ]);
     expect(jpegLocation(jpeg(photoshop))).toEqual({ readable: true, exifGps: false, xmpGps: true });
   });
@@ -143,6 +160,87 @@ describe('jpegLocation', () => {
     ]) {
       expect(jpegLocation(bytes).readable, name).toBe(false);
     }
+  });
+
+  // Why: a location can be binary, in a segment kind no text search can
+  // read: an action camera's telemetry (GoPro's GPMF in APP6), a thermal
+  // camera's APP1 record (FLIR). So only a short allowlist of segment kinds
+  // passes (JFIF and JFXX in APP0, Exif and XMP in APP1, an ICC profile in
+  // APP2, Photoshop's APP13, Adobe's APP14), and every other APPn fails
+  // closed. A second standard XMP packet or a Photoshop block split over two
+  // segments fails too: a property name can be cut at the boundary.
+  it('never answers clean for a segment kind outside its allowlist, nor a split packet', () => {
+    const XMP = ascii('http://ns.adobe.com/xap/1.0/');
+    const xmp = segment(0xe1, [...XMP, 0, ...ascii('<rdf:Description exif:GPSLat')]);
+    const xmpRest = segment(0xe1, [...XMP, 0, ...ascii('itude="0,0N"/>')]);
+    const photoshop = (text) =>
+      segment(0xed, [...ascii('Photoshop 3.0'), 0, ...ascii('8BIM'), 4, 4, ...ascii(text)]);
+    const photoshopWith = (...resources) => segment(0xed, [...ascii('Photoshop 3.0'), 0, ...resources.flat()]);
+    const otherApps = [0xe3, 0xe4, 0xe5, 0xe7, 0xe8, 0xe9, 0xea, 0xeb, 0xec, 0xef];
+    for (const [name, bytes] of [
+      ['GoPro telemetry in APP6', jpeg(segment(0xe6, [...ascii('GoPro'), 0, ...ascii('DEVC'), 0, 1]))],
+      ['a FLIR record in APP1', jpeg(segment(0xe1, [...ascii('FLIR'), 0, 1, 0, 2, 3]))],
+      ['an unknown APP0 kind', jpeg(segment(0xe0, [...ascii('AVI1'), 0, 0]))],
+      ['an unknown APP2 kind', jpeg(segment(0xe2, [...ascii('FPXR'), 0, 0]))],
+      ['an Adobe signature in APP13', jpeg(segment(0xed, [...ascii('Adobe'), 0, 1]))],
+      ['an unknown APP14 kind', jpeg(segment(0xee, [...ascii('Other'), 0, 1]))],
+      ...otherApps.map((marker) => [
+        `APP${marker - 0xe0}`,
+        jpeg(segment(marker, [...ascii('Any'), 0, 1, 2])),
+      ]),
+      ...[0x0422, 0x0423].map((id) => [
+        `binary Exif in Photoshop resource 0x0${id.toString(16)}`,
+        jpeg(photoshopWith(resource(id, exifBody([GPS_IFD_POINTER])))),
+      ]),
+      [
+        'a UTF-16 XMP packet in a Photoshop resource',
+        jpeg(photoshopWith(resource(0x0424, ascii('<x:xmpmeta/>').flatMap((c) => [c, 0])))),
+      ],
+      [
+        'a Photoshop XMP resource running past its segment',
+        jpeg(photoshopWith(resource(0x0424, ascii('<x:xmpmeta/>')).slice(0, 16))),
+      ],
+      // A JPEG thumbnail inside JFXX is a whole JPEG, with metadata of its own.
+      ['a JPEG thumbnail in JFXX', jpeg(segment(0xe0, [...ascii('JFXX'), 0, 0x10, 0xff, 0xd8]))],
+      // Markers that are neither an image table nor a comment: never read.
+      ...[0xf0, 0xf7, 0xfd, 0xc8, 0xde, 0xdf, 0x02, 0xbf].map((marker) => [
+        `marker 0x${marker.toString(16)}`,
+        jpeg(segment(marker, [...ascii('GPS'), 0, 1, 2])),
+      ]),
+      ['a second standard XMP packet', jpeg(xmp, xmpRest)],
+      [
+        'a Photoshop block split over two segments',
+        jpeg(photoshop('<rdf:Description exif:GPSLat'), photoshop('itude="0,0N"/>')),
+      ],
+    ]) {
+      expect(jpegLocation(bytes).readable, name).toBe(false);
+    }
+  });
+
+  // Why: the allowlist must not refuse the kinds a stripped photo or an
+  // exported web image ordinarily carries.
+  it('reads the allowed segment kinds as clean', () => {
+    const allowed = jpeg(
+      JFIF,
+      segment(0xe0, [...ascii('JFXX'), 0, 0x13, 1, 1, 0, 0, 0]),
+      segment(0xe1, exifBody([MAKE])),
+      segment(0xe1, [...ascii('http://ns.adobe.com/xap/1.0/'), 0, ...ascii('<x:xmpmeta/>')]),
+      segment(0xe2, [...ascii('ICC_PROFILE'), 0, 1, 1, 0, 0]),
+      segment(0xed, [
+        ...ascii('Photoshop 3.0'),
+        0,
+        ...resource(0x0404, [0x1c, 2, 0]),
+        ...resource(0x0424, ascii('<x:xmpmeta/>')),
+      ]),
+      segment(0xee, [...ascii('Adobe'), 0, 100, 0, 0, 0, 0, 1]),
+      // The image tables and a comment a decoder needs or ignores.
+      segment(0xdb, [0, ...Array(64).fill(1)]),
+      segment(0xc4, [0, ...Array(16).fill(0)]),
+      segment(0xdd, [0, 0]),
+      segment(0xfe, ascii('a comment')),
+      segment(0xc0, [8, 0, 1, 0, 1, 1, 1, 0x11, 0]),
+    );
+    expect(jpegLocation(allowed)).toEqual({ readable: true, exifGps: false, xmpGps: false });
   });
 
   // Why: the image data is skipped, not parsed, and a progressive image has

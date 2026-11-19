@@ -313,7 +313,10 @@ The view disposes the run once the arrival is over.
   slice's `shown`, copies new thumbnails from `deps.debugThumbs` into
   its atlas when the table's version changed (the version counts as
   seen only once every picture there had a size, so one not decoded yet
-  is tried again on the next frame), and uploads the atlas at
+  is tried again on the next frame, for at most 5 frames per picture:
+  the page hands over decoded pictures, so only one that never gains a
+  size is given up, and a new picture for the capture starts afresh),
+  and uploads the atlas at
   most every 250 ms. `stats().globe.debug` carries its figures; the
   view's dispose frees it. The layer is drawn in the interface pass
   (`"debug-layer"` in `GLOBE_INTERFACE.names`), so the clouds' shadow
@@ -429,7 +432,7 @@ see-through), null without buildings.
 - `editor3d-globe.test.ts` also covers the debug layer's wiring: a new
   drawing drawn again, the line only for added debug data, the switch,
   a clear, thumbnails decoded before the view opened, and a failed copy
-  tried again on a later frame; the view flying to a shown scan beside a
+  tried again on a later frame and given up after a few; the view flying to a shown scan beside a
   tour with nothing positioned, once per scan, and `frame(null)` fitting
   it, while a tour with stations keeps its own framing.
 - `editor3d-globe.test.ts` (jsdom, the wiring): the view core, the

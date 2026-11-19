@@ -352,8 +352,9 @@ describe('a hung browser run ends before its job does', () => {
   // ("Connection failed", exit 100) before any test ran, and one day put about
   // a dozen jobs red that a rerun turned green. Such an attempt has ended by
   // itself, so trying again kills nothing (the loop never cuts a slow one, for
-  // the reason above; the step limit still bounds them all): up to 3 attempts after a growing pause, each
-  // failure named in the log, red only after the last. Plain shell, no action.
+  // the reason above; the step limit still bounds them all): up to 3
+  // attempts after a growing pause, each failure named in the log, red only
+  // after the last. Plain shell, no action.
   it('tries the browser install again after a failed attempt, three times at most', () => {
     const install = testJob.steps.find((s) => s.name === 'Install Playwright browsers');
     const run = String(install.run);

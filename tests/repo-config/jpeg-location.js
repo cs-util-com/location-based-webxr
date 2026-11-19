@@ -1,6 +1,11 @@
 // Byte-level reader behind the repo-config guard `photo-location-free.test.js`:
 // does a JPEG carry a location? It reads the marker segments, skips the image
 // data, and returns whether a GPS block exists, never any value from it.
+// Only a short allowlist of APPn kinds passes: any other kind (a camera's
+// binary telemetry, a vendor record) could carry a location no text search
+// finds, so it fails closed; so do Photoshop's binary Exif resources, a
+// JPEG thumbnail in JFXX and every marker that is not an image table or a
+// comment.
 // Dependency-free on purpose: the guard must not depend on an Exif library's
 // idea of what to parse. See jpeg-location.js.md.
 
@@ -10,17 +15,33 @@ const SOS = 0xda;
 const APP0 = 0xe0;
 const APP1 = 0xe1;
 const APP2 = 0xe2;
+const APP13 = 0xed;
+const APP14 = 0xee;
 const APP15 = 0xef;
 /** The Exif tag whose value points at the GPS IFD. */
 export const GPS_IFD_POINTER = 0x8825;
 
 const EXIF_ID = [0x45, 0x78, 0x69, 0x66, 0x00, 0x00]; // "Exif\0\0"
-/** What an APP1 segment of either known kind begins with: one that begins so
- *  but matches no identifier below is a variant this reader does not know. */
-const EXIF_PREFIX = 'Exif';
-const ADOBE_PREFIX = 'http://ns.adobe.com/';
 /** The Multi-Picture Format (APP2): further images follow the first. */
 const MPF_ID = 'MPF\0';
+/** The APPn kinds passed as known, by marker: every body they hold is
+ *  text-searched; Exif and XMP in APP1 are read below. Anything else fails. */
+const ALLOWED_KINDS = new Map([
+  [APP0, ['JFIF\0', 'JFXX\0']],
+  [APP2, ['ICC_PROFILE\0']],
+  [APP13, ['Photoshop 3.0\0']],
+  [APP14, ['Adobe']],
+]);
+/** JFXX's extension code for a thumbnail coded as a whole JPEG, which can
+ *  carry metadata of its own (a palette or RGB thumbnail cannot). */
+const JFXX_JPEG_THUMBNAIL = 0x10;
+/** The signature of a Photoshop image resource. */
+const RESOURCE_ID = [0x38, 0x42, 0x49, 0x4d]; // "8BIM"
+/** Photoshop resources holding a whole binary Exif block (GPS IFD
+ *  included), invisible to a text search. */
+const PHOTOSHOP_EXIF = new Set([0x0422, 0x0423]);
+/** The Photoshop resource holding an XMP packet. */
+const PHOTOSHOP_XMP = 0x0424;
 const XMP_ID = 'http://ns.adobe.com/xap/1.0/\0';
 /** The continuation of an XMP packet too large for one segment (XMP part 3). */
 const EXTENDED_XMP_ID = 'http://ns.adobe.com/xmp/extension/\0';
@@ -40,9 +61,10 @@ const XMP_GPS = /GPS(Dest)?(Latitude|Longitude)/i;
  * @param {Uint8Array} bytes
  * @param {number} at
  * @param {readonly number[]} id
+ * @param {number} end - one past the last byte the id may occupy
  */
-function startsWith(bytes, at, id) {
-  if (at + id.length > bytes.length) return false;
+function startsWith(bytes, at, id, end) {
+  if (at + id.length > end) return false;
   return id.every((b, i) => bytes[at + i] === b);
 }
 
@@ -64,6 +86,48 @@ function scanEnd(bytes, at) {
     return i;
   }
   return bytes.length;
+}
+
+/**
+ * Why a Photoshop block cannot pass, or null when it can: a resource with
+ * a binary Exif block, or an XMP packet that is cut short or not UTF-8.
+ * Every "8BIM" in the block is looked at, so one inside another
+ * resource's data can refuse a clean file too (it fails closed).
+ * @param {Uint8Array} bytes
+ * @param {number} start - first byte after the block's signature
+ * @param {number} end - one past the segment's last byte
+ * @returns {string | null}
+ */
+function photoshopRefusal(bytes, start, end) {
+  for (let i = start; i + 6 <= end; i += 1) {
+    if (!startsWith(bytes, i, RESOURCE_ID, end)) continue;
+    const id = (bytes[i + 4] << 8) | bytes[i + 5];
+    if (PHOTOSHOP_EXIF.has(id)) return 'a Photoshop resource holds binary Exif';
+    if (id !== PHOTOSHOP_XMP) continue;
+    // A Pascal name padded to an even length, a 4-byte size, the data.
+    if (i + 7 > end) return 'a Photoshop XMP resource is cut short';
+    const sizeAt = i + 6 + ((bytes[i + 6] + 2) & ~1);
+    if (sizeAt + 4 > end) return 'a Photoshop XMP resource is cut short';
+    const size =
+      bytes[sizeAt] * 0x1000000 + ((bytes[sizeAt + 1] << 16) | (bytes[sizeAt + 2] << 8) | bytes[sizeAt + 3]);
+    const dataEnd = sizeAt + 4 + size;
+    if (dataEnd > end) return 'a Photoshop XMP resource runs past its segment';
+    // As in APP1: a NUL means UTF-16 or UTF-32, unread by the text search.
+    if (bytes.subarray(sizeAt + 4, dataEnd).includes(0)) return 'the Photoshop XMP packet is not UTF-8';
+  }
+  return null;
+}
+
+/**
+ * Whether a marker that is not APPn, SOS or a marker without length is one
+ * the reader may pass: a frame header (SOFn, among them DHT and DAC), DQT,
+ * DNL, DRI or a comment. JPG, the JPGn extensions, the hierarchical
+ * markers and the reserved ones are never read, so they fail closed.
+ * @param {number} marker
+ */
+function knownTableMarker(marker) {
+  if (marker >= 0xc0 && marker <= 0xcf) return marker !== 0xc8;
+  return marker === 0xdb || marker === 0xdc || marker === 0xdd || marker === 0xfe;
 }
 
 /**
@@ -101,6 +165,8 @@ export function jpegLocation(bytes) {
   }
   let exifGps = false;
   let xmpGps = false;
+  let xmpSeen = false;
+  let photoshopSeen = false;
   let at = 2;
   let scanned = false;
   while (at < bytes.length) {
@@ -135,17 +201,36 @@ export function jpegLocation(bytes) {
     if (marker >= APP0 && marker <= APP15) {
       xmpGps ||= XMP_GPS.test(new TextDecoder('latin1').decode(bytes.subarray(body, end)));
     }
-    if (marker === APP2 && startsWith(bytes, body, codes(MPF_ID))) {
+    if (marker === APP2 && startsWith(bytes, body, codes(MPF_ID), end)) {
       return { readable: false, reason: 'a Multi-Picture segment names further images' };
     }
-    if (marker === APP1 && startsWith(bytes, body, EXIF_ID)) {
+    if (marker >= APP0 && marker <= APP15 && marker !== APP1) {
+      const kinds = ALLOWED_KINDS.get(marker) ?? [];
+      const kind = kinds.find((id) => startsWith(bytes, body, codes(id), end));
+      if (kind === undefined) {
+        return { readable: false, reason: `an APP${marker - APP0} segment of a kind not on the allowlist` };
+      }
+      if (marker === APP13) {
+        // A block split over several segments can cut a name in two.
+        if (photoshopSeen) return { readable: false, reason: 'a Photoshop block is split over segments' };
+        photoshopSeen = true;
+        const refusal = photoshopRefusal(bytes, body + kind.length, end);
+        if (refusal !== null) return { readable: false, reason: refusal };
+      }
+      if (kind === 'JFXX\0' && bytes[body + kind.length] === JFXX_JPEG_THUMBNAIL) {
+        return { readable: false, reason: 'a JFXX segment holds a JPEG thumbnail' };
+      }
+    } else if (marker === APP1 && startsWith(bytes, body, EXIF_ID, end)) {
       const found = exifHasGps(bytes, body + EXIF_ID.length, end);
       if (typeof found === 'string') return { readable: false, reason: found };
       exifGps ||= found;
     } else if (
       marker === APP1 &&
-      startsWith(bytes, body, codes(XMP_ID))
+      startsWith(bytes, body, codes(XMP_ID), end)
     ) {
+      // A second packet can continue the first, cutting a name in two.
+      if (xmpSeen) return { readable: false, reason: 'a second standard XMP packet' };
+      xmpSeen = true;
       const packet = new TextDecoder('latin1').decode(bytes.subarray(body + XMP_ID.length, end));
       // A NUL byte means UTF-16 or UTF-32, where a byte search for the
       // property names finds nothing: unread, so not clean.
@@ -156,15 +241,14 @@ export function jpegLocation(bytes) {
       xmpGps ||= XMP_GPS.test(packet);
     } else if (
       marker === APP1 &&
-      startsWith(bytes, body, codes(EXTENDED_XMP_ID))
+      startsWith(bytes, body, codes(EXTENDED_XMP_ID), end)
     ) {
       // Split across segments, possibly out of order: not joined here.
       return { readable: false, reason: 'an ExtendedXMP segment is not read' };
-    } else if (
-      marker === APP1 &&
-      (startsWith(bytes, body, codes(EXIF_PREFIX)) || startsWith(bytes, body, codes(ADOBE_PREFIX)))
-    ) {
-      return { readable: false, reason: 'an APP1 segment of an unknown Exif or Adobe kind' };
+    } else if (marker === APP1) {
+      return { readable: false, reason: 'an APP1 segment of a kind not on the allowlist' };
+    } else if (!knownTableMarker(marker)) {
+      return { readable: false, reason: `a marker 0x${marker.toString(16)} segment is not read` };
     }
     at = end;
   }
