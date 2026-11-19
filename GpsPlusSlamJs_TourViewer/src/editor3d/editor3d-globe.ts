@@ -841,7 +841,7 @@ export async function openGlobeEditor(
      *  new picture for the same capture starts afresh. */
     const debugThumbTries = new WeakMap<HTMLImageElement, number>();
     /** How many frames a picture with no size is tried before it is
-     *  given up. The page hands over decoded pictures, so a browser's
+     *  given up. The page hands over decoded pictures, so in a browser they
      *  have a size at once; this bounds the cost of one that never does. */
     const DEBUG_THUMB_TRIES = 5;
     /** The drawn captures' points, for framing a tour with nothing of its
