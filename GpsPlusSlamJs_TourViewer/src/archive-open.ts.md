@@ -104,7 +104,12 @@ DOM glue, its own module since the flows plan M6.
   (`ctx.contentError`; the error box is outside the overlay). A failure
   from a session that is no longer open changes nothing; one found before
   the page held the session is handled at the end of the open
-  (`reportEarlyFailure`).
+  (`reportEarlyFailure`). A close step that throws during that teardown
+  does not silence it: the rejection is handled, and the error box, the
+  AR status line and `ctx.contentError` carry the integrity message
+  followed by "Closing part of it failed: <the step's message>"
+  (`archive-open-file.test.ts`, "still says why when a close step
+  throws").
 
 - Session-state fields it owns: `session`, `currentLevels`,
   `openGeneration`; a successful open re-derives the scan gate for a
@@ -126,7 +131,13 @@ DOM glue, its own module since the flows plan M6.
   `teardownSession` lets the closing session go (`ctx.session = null`)
   before any teardown hook runs, and closes its archive in a `finally`, so
   a hook that throws can neither keep the old session reachable nor leave
-  its archive open.
+  its archive open. **The step guard's guarantee** (`closeTourState`):
+  every close step runs even after one before it throws - the session is
+  already let go, so no later open would run this teardown again, and a
+  skipped step would hand the closing tour's leftovers to the next one as
+  pre-open work - and the first failure is rethrown once every step ran,
+  inside the `try`/`finally` that closes the archive, so the archive is
+  closed before `teardownSession` rejects with it.
   It clears tour state ONLY when a tour was open at its
   start (scan-to-open plan §9 #1): with none, nothing tour-scoped exists,
   and the creator's pre-open work (a measured level, placements, the
