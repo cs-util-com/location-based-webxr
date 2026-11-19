@@ -11,11 +11,8 @@
 import { createEnableGpsArController } from "gps-plus-slam-app-framework/ar";
 import { requestGeolocationPermission } from "gps-plus-slam-app-framework/sensors";
 import { locationPermissionWithoutFix } from "./location-permission.js";
-import {
-  createEmptyTourManifest,
-  serializeTourManifest,
-} from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { TOUR_MANIFEST_ENTRY } from "gps-plus-slam-app-framework/ar/tour-archive";
+import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { packStarterTour } from "./starter-tour.js";
 import {
   createGpsPositionHandler,
   selectAlignmentMatrix,
@@ -30,7 +27,6 @@ import {
 import {
   BoundedLocalCacheStore,
   CacheApiStore,
-  packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
 import { openRemoteArchive } from "gps-plus-slam-app-framework/storage";
@@ -378,13 +374,7 @@ const wizard = wireWizard({
   },
   // The starter zip (DEC-N5): an empty manifest, so a creator without a
   // recording has something to host before printing the code.
-  packStarter: () =>
-    packFilesAsZip([
-      {
-        path: TOUR_MANIFEST_ENTRY,
-        data: serializeTourManifest(createEmptyTourManifest()),
-      },
-    ]),
+  packStarter: () => packStarterTour(createEmptyTourManifest()),
   // Through the seam like the finish step's download, so the e2e fake
   // captures it (M3 review #10).
   download: (blob, filename) => seams.shareOrDownloadZip(blob, filename),
