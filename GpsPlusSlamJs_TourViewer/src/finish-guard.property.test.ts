@@ -28,14 +28,22 @@ const guardInput: fc.Arbitrary<FinishGuardInput> = fc.record({
   finishFailed: fc.boolean(),
 });
 
+const nothingUnsaved = guardInput.map((input): FinishGuardInput => ({
+  ...input,
+  placedCount: 0,
+  deletedCount: 0,
+  tourChanged: false,
+  codeCount: 0,
+  rebuilt: input.rebuilt === null ? null : { delivered: true },
+}));
+
 describe("leaveNeedsConfirm (properties)", () => {
   it("asks whenever unsaved work has no backup", () => {
     fc.assert(
       fc.property(guardInput, (input) => {
-        if (!input.draftPersists && unsavedWork(input)) {
-          expect(leaveNeedsConfirm(input)).toBe(true);
-          expect(leaveQuestion(input)).toContain("keeps no backup");
-        }
+        fc.pre(!input.draftPersists && unsavedWork(input));
+        expect(leaveNeedsConfirm(input)).toBe(true);
+        expect(leaveQuestion(input)).toContain("keeps no backup");
       }),
     );
   });
@@ -43,9 +51,8 @@ describe("leaveNeedsConfirm (properties)", () => {
   it("asks whenever a rebuilt file was not saved, backup or not", () => {
     fc.assert(
       fc.property(guardInput, (input) => {
-        if (input.rebuilt !== null && !input.rebuilt.delivered) {
-          expect(leaveNeedsConfirm(input)).toBe(true);
-        }
+        fc.pre(input.rebuilt !== null && !input.rebuilt.delivered);
+        expect(leaveNeedsConfirm(input)).toBe(true);
       }),
     );
   });
@@ -53,20 +60,22 @@ describe("leaveNeedsConfirm (properties)", () => {
   it("stays quiet when a backup holds the work and no rebuilt file waits", () => {
     fc.assert(
       fc.property(guardInput, (input) => {
-        if (
+        fc.pre(
           input.draftPersists &&
-          (input.rebuilt === null || input.rebuilt.delivered)
-        ) {
-          expect(leaveNeedsConfirm(input)).toBe(false);
-        }
+            (input.rebuilt === null || input.rebuilt.delivered),
+        );
+        expect(leaveNeedsConfirm(input)).toBe(false);
       }),
     );
   });
 
   it("stays quiet with nothing unsaved at all", () => {
     fc.assert(
-      fc.property(guardInput, (input) => {
-        if (!unsavedWork(input)) expect(leaveNeedsConfirm(input)).toBe(false);
+      // Built with nothing unsaved: a filter would reject almost every
+      // generated input.
+      fc.property(nothingUnsaved, (input) => {
+        expect(unsavedWork(input)).toBe(false);
+        expect(leaveNeedsConfirm(input)).toBe(false);
       }),
     );
   });
