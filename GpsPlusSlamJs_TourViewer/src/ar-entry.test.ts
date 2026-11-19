@@ -112,8 +112,17 @@ function harness(
   // package tests run in node, so the page body is stood in.
   vi.stubGlobal("document", { body: { dataset: {} } });
   vi.stubGlobal("location", { href: "https://example.test/tour/?qr=abc" });
+  /** The screen's answer to the computer-screen query, settable so a
+   *  test can widen the window, and the page's listeners for its change. */
+  const screen = {
+    computer: options.computerScreen === true,
+    listeners: [] as (() => void)[],
+  };
   vi.stubGlobal("matchMedia", () => ({
-    matches: options.computerScreen === true,
+    matches: screen.computer,
+    addEventListener: (_type: "change", listener: () => void) => {
+      screen.listeners.push(listener);
+    },
   }));
   const ctx = createTourViewerSession();
   // A finished tour (one station) unless a test closes it: a visitor's
@@ -259,6 +268,7 @@ function harness(
     entry,
     hooks,
     dispose,
+    screen,
     arStore,
     seams,
     xrSelectDispose,
@@ -901,6 +911,19 @@ describe("a visitor's phone without AR copies the link (polish round M4a, V4)", 
     expect(h.dom.linkQr.code.innerHTML).toBe(
       linkQrSvg("https://example.test/tour/?qr=abc"),
     );
+  });
+
+  // Why: the screen can change while the page is open (a window widened
+  // past the query's width); the code must follow without a reload.
+  it("shows the code once the window is widened into a computer screen", () => {
+    const h = harness({ arStatus: "unsupported", computerScreen: false });
+    expect(h.dom.linkQr.root.hidden).toBe(true);
+    h.screen.computer = true;
+    for (const listener of h.screen.listeners) listener();
+    expect(h.dom.linkQr.root.hidden).toBe(false);
+    h.screen.computer = false;
+    for (const listener of h.screen.listeners) listener();
+    expect(h.dom.linkQr.root.hidden).toBe(true);
   });
 
   it("shows no code on a phone without AR, nor on a device with AR", () => {

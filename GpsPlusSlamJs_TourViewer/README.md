@@ -76,7 +76,9 @@ author flag.
    saved position together with the pins and stations it moved, and says
    which ("Undo: delete "Gate"", "Undo: the code's improvement"); it stays
    until something else changes the tour. "Done" finishes: it ends the
-   session and writes the tour file.
+   session and writes the tour file. A creator who measured and then left
+   AR finishes from the page instead, with "Finish - rebuild the zip"
+   below the step.
 6. **Put the saved tour in place** - the page saves the rebuilt zip to the
    phone by itself ("Save the tour zip again" saves it once more) and shows
    how to replace the hosted file:
@@ -103,7 +105,9 @@ one line under it saying what the next tap does. What the tour needs
 (camera, location, nothing uploaded, no account) is behind "What
 happens?", and "Make your own tour" opens the setup in a new tab. A phone
 that cannot run AR gets a "Copy link" button instead, to open the tour on
-one that can. The page is paper-coloured on every device; held sideways,
+one that can; on a computer-sized screen the same link is also shown as a
+code beside it, "Scan with your phone", and the code follows the window
+when it is widened or narrowed. The page is paper-coloured on every device; held sideways,
 the name and the button sit side by side.
 
 The tour's archive streams in while the start page shows (a visitor

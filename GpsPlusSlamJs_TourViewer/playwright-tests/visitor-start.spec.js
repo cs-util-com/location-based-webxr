@@ -131,6 +131,13 @@ test("a device without AR copies the tour's link for one that has it, and shows 
   await expect(page.locator("[data-testid=link-qr-code] svg path")).toHaveCount(
     1,
   );
+  // Beside the button, not under it: right of it, at the same height.
+  const qrBox = await page.getByTestId("link-qr").boundingBox();
+  const buttonBox = await button.boundingBox();
+  if (qrBox === null || buttonBox === null) throw new Error("not laid out");
+  expect(qrBox.x).toBeGreaterThanOrEqual(buttonBox.x + buttonBox.width);
+  expect(qrBox.y).toBeLessThan(buttonBox.y + buttonBox.height);
+  expect(buttonBox.y).toBeLessThan(qrBox.y + qrBox.height);
   await button.click();
   await expect(button).toHaveText("Link copied");
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(

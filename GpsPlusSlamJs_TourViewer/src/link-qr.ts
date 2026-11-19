@@ -20,7 +20,10 @@ export const COMPUTER_SCREEN_QUERY =
 const QUIET_ZONE = 2;
 
 interface MediaWindow {
-  matchMedia?: (query: string) => { matches: boolean };
+  matchMedia?: (query: string) => {
+    matches: boolean;
+    addEventListener?: (type: "change", listener: () => void) => void;
+  };
 }
 
 /** Whether this window is a computer-sized screen; false where the
@@ -33,6 +36,25 @@ export function isComputerScreen(win: MediaWindow): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+/** Calls `listener` whenever the window starts or stops answering the
+ *  computer-screen query (a window widened past 768 px, a mouse plugged
+ *  in), so the code follows without a reload. Does nothing where the
+ *  browser cannot say (no `matchMedia`, no `addEventListener` on its
+ *  answer, or either throws). */
+export function onComputerScreenChange(
+  win: MediaWindow,
+  listener: () => void,
+): void {
+  try {
+    if (typeof win.matchMedia !== "function") return;
+    const query = win.matchMedia(COMPUTER_SCREEN_QUERY);
+    if (typeof query.addEventListener !== "function") return;
+    query.addEventListener("change", listener);
+  } catch {
+    // An old or unusual browser: the code keeps its first answer.
   }
 }
 

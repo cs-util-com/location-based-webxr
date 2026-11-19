@@ -255,10 +255,14 @@ the session end; an unrecorded one asks for none. The pure pieces: `ar-mode.test
   `linkQrShown` says so (a visitor, AR unsupported, Start not withheld, a
   computer-sized screen by `isComputerScreen(globalThis)`) and draws
   `linkQrSvg(location.href)` into `linkQr.code`, keeping the encoded link
-  in `data-url`; it redraws only when the address changed. Pinned by
+  in `data-url`; it redraws only when the address changed.
+  `onComputerScreenChange` re-runs `renderArState` when the screen starts
+  or stops being a computer screen (a widened window), so no reload is
+  needed. Pinned by
   `ar-entry.test.ts` ("shows a code of the page's link on a
   computer-sized screen", "shows no code on a phone without AR, nor on a
-  device with AR").
+  device with AR", "shows the code once the window is widened into a
+  computer screen").
 
 - The runtime start also snapshots `ctx.frameEpochAtSessionStart` (code
   book plan M6 v5.1), next to `gpsSamplesAtSessionStart`

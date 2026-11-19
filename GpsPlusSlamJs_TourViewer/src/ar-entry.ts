@@ -24,7 +24,12 @@ import {
 } from "gps-plus-slam-app-framework/state";
 
 import { deviceGpsQuality } from "./device-gps-quality.js";
-import { isComputerScreen, linkQrShown, linkQrSvg } from "./link-qr.js";
+import {
+  isComputerScreen,
+  linkQrShown,
+  linkQrSvg,
+  onComputerScreenChange,
+} from "./link-qr.js";
 import {
   arButtonView,
   COPY_LINK_LABELS,
@@ -930,6 +935,11 @@ export function wireArEntry(deps: {
 
   arController.subscribe(renderArState);
   renderArState(arController.getState());
+  // The code beside "Copy link" depends on the screen as well as the state:
+  // a window widened into a computer screen shows it without a reload.
+  onComputerScreenChange(globalThis, () => {
+    renderArState(arController.getState());
+  });
   void arController.refreshSupport();
   dom.enterArButton.addEventListener("click", () => {
     // During a session the button is the way out (UI round 1, U2): the
