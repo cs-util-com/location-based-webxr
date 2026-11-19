@@ -23,7 +23,7 @@ Which UI offers a new tour, or asks for a scan, is not decided here.
   - `ignored` - the files sorted as neither that came along, with their
     reasons, for the page to name.
 - `openWithScan(tour, scan, { open, addScan, step }) ->
-  Promise<OpenWithScanOutcome>`, never rejects:
+Promise<OpenWithScanOutcome>`, never rejects:
   - `step` goes `"opening"`, then `"adding-scan"`, then `null` on every
     path (only `null` for a tour without a scan: the open shows its own
     busy state);

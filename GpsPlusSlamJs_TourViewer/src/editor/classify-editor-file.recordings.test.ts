@@ -22,9 +22,10 @@ class CountingFile extends File {
  * Why this test matters: a scan's chip should appear at once, so a scan
  * must sort from its zip directory without its walk being read. On the
  * repo's real Recorder zips (the largest some 70 MB) it must sort as a
- * scan, read a small fixed share of the file, and take well under a
- * second. Each line printed is the measurement: file, size, bytes read,
- * time.
+ * scan and read a small fixed share of the file. The bytes read are the
+ * machine-independent bound (the time follows from them; a clock would
+ * make the verdict depend on the machine). Each line printed is the
+ * measurement: file, size, bytes read.
  */
 describe("classifying the example Recorder zips", () => {
   const zips = fs.existsSync(CORPUS)
@@ -39,19 +40,14 @@ describe("classifying the example Recorder zips", () => {
         const file = new CountingFile([disk], name, {
           type: "application/zip",
         });
-        const started = performance.now();
         const kind = await classifyEditorFile(file);
-        const ms = performance.now() - started;
         console.log(
           `classify ${name}: ${(file.size / 1e6).toFixed(1)} MB, read ${(
             file.bytesRead / 1e3
-          ).toFixed(0)} kB, ${ms.toFixed(0)} ms`,
+          ).toFixed(0)} kB`,
         );
         expect(kind.kind).toBe("scan");
         expect(file.bytesRead).toBeLessThan(Math.max(2e6, file.size / 50));
-        // Generous for a loaded CI machine; the printed times are the
-        // measurement.
-        expect(ms).toBeLessThan(2000);
       }
     },
   );

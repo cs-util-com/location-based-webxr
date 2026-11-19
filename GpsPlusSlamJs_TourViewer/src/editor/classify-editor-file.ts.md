@@ -35,7 +35,7 @@ which caps it) - never a scan's walk.
   scan by the add (its archive caps); those say why themselves.
 - Cost (measured on the repo's example Recorder zips, Node, 2026-11): the
   largest, 71.5 MB, read 204 kB in 27 ms; the eight files 3.6-71.5 MB read
-  80-204 kB in 7-27 ms. The read grows with the directory (entry count),
+  80-204 kB in 7-27 ms (measured once, not asserted). The read grows with the directory (entry count),
   not with the walk's bytes.
 
 ## Examples
@@ -52,5 +52,6 @@ if (kind.kind === "scan") addScan(file);
   order, and a property over random entry names (never rejects; a tour
   entry always makes a tour; no recording and no tour is neither).
 - `classify-editor-file.recordings.test.ts` - the example Recorder zips:
-  each a scan, bytes read and time printed per file (`--reporter=default`
+  each a scan under the read bound, bytes read printed per file (no clock
+  assertion: the bytes are the machine-independent bound; `--reporter=default`
   shows them).
