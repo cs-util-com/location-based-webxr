@@ -116,6 +116,8 @@ describe("a narration added in the editor", () => {
       durationMs: 4000,
       timingText: text,
       timingUnread: false,
+      synthetic: false,
+      voiceCredit: "",
     });
 
     const saved = await editor.save({ keepScan: false });
@@ -316,6 +318,152 @@ describe("the bytes the next save adds, once no step names a file", () => {
     expect(editor.nextSaveBytes()).toBe(opened);
     // The archive room check stays on the safe side: every file brought in.
     expect(editor.addedBytes()).toBe(16);
+    await session.close();
+  });
+});
+
+describe("who speaks the voice", () => {
+  const voiced = async () => {
+    const opened = await editorOf([ESSAY]);
+    await opened.editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["v"]),
+      fileName: "v.mp3",
+    });
+    return opened;
+  };
+
+  // Why: a voice file brought in is a recording until the creator says
+  // otherwise - the editor has no speech tool of its own that would know.
+  it("reads a new voice as a person's, with no credit", async () => {
+    const { session, editor } = await voiced();
+    expect(await editor.narration("t1")).toMatchObject({
+      synthetic: false,
+      voiceCredit: "",
+    });
+    await session.close();
+  });
+
+  // Why: the mark and the credit are what a visitor is told about the
+  // voice. Each is one undo step, stored in the form the format takes
+  // (trimmed, single-spaced, capped; empty means none), and written by
+  // the save.
+  it("sets the synthetic mark and the credit one step each, normalised, undone in turn, and saved", async () => {
+    const { session, editor } = await voiced();
+    const steps = editor.changeCount();
+    expect(
+      await editor.editNarration("t1", { kind: "synthetic", synthetic: true }),
+    ).toEqual({ kind: "edited" });
+    expect(
+      await editor.editNarration("t1", { kind: "synthetic", synthetic: true }),
+    ).toEqual({ kind: "unchanged" });
+    expect(
+      await editor.editNarration("t1", {
+        kind: "voiceCredit",
+        text: "  Read by   Anna Berg ",
+      }),
+    ).toEqual({ kind: "edited" });
+    expect(
+      await editor.editNarration("t1", {
+        kind: "voiceCredit",
+        text: "Read by Anna Berg",
+      }),
+    ).toEqual({ kind: "unchanged" });
+    expect(await editor.narration("t1")).toMatchObject({
+      synthetic: true,
+      voiceCredit: "Read by Anna Berg",
+    });
+    expect(editor.changeCount()).toBe(steps);
+
+    const saved = await editor.save({ keepScan: false });
+    const bytes = new Uint8Array(await saved.blob.arrayBuffer());
+    const tour = withWorldObjects(
+      parseTourManifest(JSON.parse(entryText(bytes, "tour.json"))),
+    );
+    const essay = tour.objects.find((o) => o.id === "t1");
+    expect(essay?.kind === "longText" ? essay.narration : null).toMatchObject({
+      synthetic: true,
+      voiceCredit: "Read by Anna Berg",
+    });
+
+    editor.undo();
+    expect(await editor.narration("t1")).toMatchObject({
+      synthetic: true,
+      voiceCredit: "",
+    });
+    editor.undo();
+    expect(await editor.narration("t1")).toMatchObject({
+      synthetic: false,
+      hasVoice: true,
+    });
+    await session.close();
+  });
+
+  it("takes the credit off when it is emptied, and cuts one over the cap", async () => {
+    const { session, editor } = await voiced();
+    await editor.editNarration("t1", { kind: "voiceCredit", text: "Anna" });
+    expect(
+      await editor.editNarration("t1", { kind: "voiceCredit", text: "   " }),
+    ).toEqual({ kind: "edited" });
+    expect(await editor.narration("t1")).toMatchObject({ voiceCredit: "" });
+    expect(
+      await editor.editNarration("t1", { kind: "voiceCredit", text: "" }),
+    ).toEqual({ kind: "unchanged" });
+    await editor.editNarration("t1", {
+      kind: "voiceCredit",
+      text: "y".repeat(250),
+    });
+    expect(await editor.narration("t1")).toMatchObject({
+      voiceCredit: "y".repeat(200),
+    });
+    await session.close();
+  });
+
+  it("refuses both without a voice, changing nothing", async () => {
+    const { session, editor } = await editorOf([ESSAY, PIN]);
+    for (const change of [
+      { kind: "synthetic", synthetic: true },
+      { kind: "voiceCredit", text: "Anna" },
+    ] as const) {
+      expect(await editor.editNarration("t1", change)).toMatchObject({
+        kind: "refused",
+      });
+      expect(await editor.editNarration("p1", change)).toMatchObject({
+        kind: "refused",
+      });
+    }
+    expect(editor.changeCount()).toBe(0);
+    await session.close();
+  });
+
+  // Why: the format takes a credit as written, spaces and all, but the
+  // document's guard takes only the stored form. A tour opened with such
+  // a credit must still take every narration edit, its credit stored
+  // normalised by the first.
+  it("still edits a narration whose opened credit is not in the stored form", async () => {
+    const narrated: TourObject = {
+      ...ESSAY,
+      narration: {
+        audio: "voice",
+        synthetic: true,
+        voiceCredit: "  Read by  Anna ",
+      },
+    };
+    const { session, editor } = await editorOf(
+      [narrated],
+      [{ path: "content/voice.mp3", data: "voice" }],
+      [{ id: "voice", path: "content/voice.mp3", kind: "audio" }],
+    );
+    expect(
+      await editor.editNarration("t1", {
+        kind: "timing",
+        text: await timingText(),
+      }),
+    ).toEqual({ kind: "edited" });
+    expect(await editor.narration("t1")).toMatchObject({
+      synthetic: true,
+      voiceCredit: "Read by Anna",
+    });
     await session.close();
   });
 });

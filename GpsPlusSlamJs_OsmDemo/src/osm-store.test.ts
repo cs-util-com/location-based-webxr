@@ -26,9 +26,17 @@ import {
   selectColourScheme,
   selectInventedRoofs,
   selectMarkings,
+  selectLookWeights,
   selectOsmView,
+  selectSun,
+  selectSunDriver,
   summariseSnapshot,
+  sunDriverChanged,
+  sunMoved,
+  sunPlaceMoved,
 } from "./osm-store.js";
+import { timeAtElevation } from "gps-plus-slam-app-framework/geo/solar-position";
+import { lookWeightsAt } from "./look-driver.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import { DEFAULT_LAYERS, toggleLayer } from "./layers.js";
 
@@ -405,5 +413,110 @@ describe("the layers at boot", () => {
     const layers = selectOsmView(linked.store.getState()).layers;
     expect(layers.furniture).toBe(false);
     expect(layers.buildings).toBe(true);
+  });
+});
+
+describe("the sun and the look weights it derives", () => {
+  const COLOGNE_SUN = { lat: 50.94, lng: 6.96 };
+  const DATE = { year: 2026, month: 9, day: 23 };
+  /** The instant the sun is at `deg` on the evening or morning limb in Cologne. */
+  const at = (deg: number, limb: "setting" | "rising") =>
+    timeAtElevation(DATE, COLOGNE_SUN.lat, COLOGNE_SUN.lng, deg, limb)!;
+  const store = (instantMs: number, override?: readonly number[]) =>
+    createDemoStore({
+      start: COLOGNE_SUN,
+      category: "x",
+      sun: { instantMs, place: COLOGNE_SUN },
+      lookWeightsOverride: override ?? null,
+    }).store;
+
+  // WHY: which driver moves the sun is workflow state: the sun step
+  // reads the driver (a timelapse samples the costly step), so does a
+  // re-anchor (the clock goes straight to the clock's instant there), and a
+  // hand ends the driver. An
+  // unknown kind must not end a running driver by accident.
+  it("holds which driver moves the sun, none by default", () => {
+    const s = store(at(20, "setting"));
+    expect(selectSunDriver(s.getState())).toBe("none");
+    s.dispatch(sunDriverChanged("timelapse"));
+    expect(selectSunDriver(s.getState())).toBe("timelapse");
+    s.dispatch({ type: "sunDriver/changed", payload: "sundial" });
+    expect(selectSunDriver(s.getState())).toBe("timelapse");
+    s.dispatch(sunDriverChanged("clock"));
+    expect(selectSunDriver(s.getState())).toBe("clock");
+    s.dispatch(sunDriverChanged("none"));
+    expect(selectSunDriver(s.getState())).toBe("none");
+  });
+
+  // WHY: the sun is the state the view, the controls and the look weights
+  // all read; a NaN instant or an impossible place would reach the sky
+  // shader and every selector, so the reducer keeps the last good sun.
+  it("moves in time and place, and ignores a sun it cannot show", () => {
+    const s = store(at(20, "setting"));
+    const later = at(1, "setting");
+    s.dispatch(sunMoved(later));
+    expect(selectSun(s.getState()).instantMs).toBe(later);
+    s.dispatch(sunMoved(Number.NaN));
+    s.dispatch({ type: "sun/moved", payload: "noon" });
+    expect(selectSun(s.getState()).instantMs).toBe(later);
+    const tokyo = { lat: 35.68, lng: 139.69 };
+    s.dispatch(sunPlaceMoved(tokyo, 123));
+    expect(selectSun(s.getState())).toEqual({ instantMs: 123, place: tokyo });
+    s.dispatch(sunPlaceMoved({ lat: 91, lng: 0 }, 5));
+    s.dispatch(sunPlaceMoved({ lat: 0, lng: Number.NaN }, 5));
+    expect(selectSun(s.getState())).toEqual({ instantMs: 123, place: tokyo });
+    expect(() =>
+      createDemoStore({
+        start: COLOGNE_SUN,
+        category: "x",
+        sun: { instantMs: Number.NaN, place: COLOGNE_SUN },
+      }),
+    ).toThrow(RangeError);
+  });
+
+  // WHY: the weights are the sun's, through the one rule, on the limb of
+  // the day: the same elevation is dusk in the evening and a blue-to-golden
+  // blend in the morning.
+  it("derives the weights from the sun on its limb", () => {
+    const evening = store(at(0, "setting"));
+    selectLookWeights(evening.getState()).forEach((w, k) =>
+      expect(w).toBeCloseTo(lookWeightsAt(0, false)[k]!, 4),
+    );
+    expect(selectLookWeights(evening.getState())[2]).toBeCloseTo(1, 3);
+    const morning = store(at(0, "rising"));
+    selectLookWeights(morning.getState()).forEach((w, k) =>
+      expect(w).toBeCloseTo(lookWeightsAt(0, true)[k]!, 4),
+    );
+    expect(selectLookWeights(morning.getState())[2]).toBe(0);
+  });
+
+  // WHY: the link's pin is a test and review hook; it must win over the
+  // sun, or a pinned screenshot changes with the time it is taken.
+  it("lets the link's pinned weights win over the sun", () => {
+    const pinned = [0, 0, 0.25, 0.75];
+    const s = store(at(30, "setting"), pinned);
+    expect(selectLookWeights(s.getState())).toBe(pinned);
+    s.dispatch(sunMoved(at(5, "setting")));
+    expect(selectLookWeights(s.getState())).toBe(pinned);
+    expect(() =>
+      createDemoStore({
+        start: COLOGNE_SUN,
+        category: "x",
+        lookWeightsOverride: [1, 0],
+      }),
+    ).toThrow(RangeError);
+  });
+
+  // WHY: the view and the plates compare the weights by reference to skip
+  // a recolour; a fresh list per read, or per step inside a plateau, would
+  // recolour the city on every sun step for nothing.
+  it("keeps the same list while the sun stays and inside a plateau", () => {
+    const s = store(at(5, "setting"));
+    const first = selectLookWeights(s.getState());
+    expect(selectLookWeights(s.getState())).toBe(first);
+    s.dispatch(sunMoved(at(3, "setting")));
+    expect(selectLookWeights(s.getState())).toBe(first);
+    s.dispatch(sunMoved(at(1, "setting")));
+    expect(selectLookWeights(s.getState())).not.toBe(first);
   });
 });

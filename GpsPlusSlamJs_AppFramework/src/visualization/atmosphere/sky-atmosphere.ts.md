@@ -51,11 +51,21 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   (the horizon and the exposure), `'bake'` (into one reused target), or
   `'idle'`. Immediate mode is unchanged and its `stepRebuild()` is always
   `'idle'` (OsmDemo never calls it).
-- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps?, sunThroughClouds? })` — all at once,
+- `configure({ sunDirection?, visibilityKm?, cloudCover?, cloudMode?, cloudSlabSteps?, sunThroughClouds?, skyBalance? })` - all at once,
   ONE rebuild or re-bake (a preset change); validates everything before
-  changing anything. `setSun`, `setVisibilityKm` and `setClouds` delegate
-  to it.
-- `setHorizonVeil(colour | null, riseDeg = 0)` and `horizonVeil`: mix the
+  changing anything. `setSun`, `setVisibilityKm`, `setClouds` and
+  `setSkyBalance` delegate to it. A sun, a visibility and a sky balance in
+  one call cost one rebuild, whose bake already takes the new balance; a
+  balance alone one bake, the same balance nothing (a blend of looks moves
+  all three on every sun step; `sky-atmosphere.test.ts`, "configure with
+  the sky balance").
+- `setHorizonVeil(colour | null, riseDeg = 0, strength = 1)` and
+  `horizonVeil` (`{ colour, riseDeg, strength }`): `strength` in [0, 1]
+  weights the veil for a blend of looks, and `colour` is PREMULTIPLIED by
+  it (the shader keeps `1 - strength * w` of the sky and adds
+  `colour * w`), so a blend passes `sum(w_i * s_i * c_i)` with strength
+  `sum(w_i * s_i)` and never divides; strength 1 is the plain mix below,
+  0 with a black colour no veil. `null` zeroes the colour too. Mixes the
   VISIBLE sky toward a scene-linear colour near the horizon, fully at and
   below it and falling off over `riseDeg` degrees above it
   (`horizon-veil.ts`), so a haze veil on the ground meets a sky of its own
@@ -75,7 +85,10 @@ observerAltitudeKm = 0.2, sunIntensity = 1 })` — adds `sky` to the scene.
   The haze takes the same gain through `AtmosphereHaze.setSkyBalance`,
   which the app calls too. The dome's own clouds take the gain; the
   fly-through sheet and slab clouds do not, since they light from the raw
-  sky-view table (`cloud-sheet.ts`).
+  sky-view table (`cloud-sheet.ts`). The gain is GPU-only: the CPU-side
+  measurements (`skyIlluminance`, the auto-exposure, `horizonColour()`)
+  read the raw sky-view table, so a gain whose luminance is not 1 moves the
+  sky on screen without moving them.
 - `setExposureCompensation(ev)` — EV on top of the auto-exposure; no GPU work.
 - `autoExposureAdaptation` (getter) and `setAutoExposureAdaptation(a)` — the
   auto-exposure's adaptation (default 0.75), recomputed at the last

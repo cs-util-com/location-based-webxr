@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   COMPUTER_SCREEN_QUERY,
   isComputerScreen,
+  onComputerScreenChange,
   linkQrShown,
   linkQrSvg,
 } from "./link-qr.js";
@@ -85,6 +86,61 @@ describe("isComputerScreen", () => {
         },
       }),
     ).toBe(false);
+  });
+});
+
+describe("onComputerScreenChange", () => {
+  // Why: the code follows a window resized into or out of a computer
+  // screen; a browser without the change event must not throw.
+  it("listens to the computer-screen query's change event", () => {
+    const asked: string[] = [];
+    const added: string[] = [];
+    let calls = 0;
+    onComputerScreenChange(
+      {
+        matchMedia: (q) => {
+          asked.push(q);
+          return {
+            matches: false,
+            addEventListener: (type, listener) => {
+              added.push(type);
+              listener();
+            },
+          };
+        },
+      },
+      () => {
+        calls += 1;
+      },
+    );
+    expect(asked).toEqual([COMPUTER_SCREEN_QUERY]);
+    expect(added).toEqual(["change"]);
+    expect(calls).toBe(1);
+  });
+
+  it("is a no-op where matchMedia, its change event, or either throws", () => {
+    const listener = () => {
+      throw new Error("must not be called");
+    };
+    expect(() => {
+      onComputerScreenChange({}, listener);
+    }).not.toThrow();
+    expect(() => {
+      onComputerScreenChange(
+        { matchMedia: () => ({ matches: true }) },
+        listener,
+      );
+    }).not.toThrow();
+    expect(() => {
+      onComputerScreenChange(
+        {
+          matchMedia: () => {
+            throw new Error("no");
+          },
+        },
+        listener,
+      );
+    }).not.toThrow();
   });
 });
 

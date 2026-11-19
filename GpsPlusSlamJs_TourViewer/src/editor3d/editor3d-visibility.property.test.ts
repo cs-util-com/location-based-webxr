@@ -75,9 +75,10 @@ describe("nearStations, for any tour", () => {
           );
           expect([...reversed].sort()).toEqual([...shown].sort());
           // Everything shown but the selection is no farther than anything
-          // left out.
+          // left out. Squared distances, exact for these integer spots:
+          // Math.hypot can round two equal distances one ulp apart.
           const d = (s: { east: number; north: number }) =>
-            Math.hypot(s.east - centre.east, s.north - centre.north);
+            (s.east - centre.east) ** 2 + (s.north - centre.north) ** 2;
           const near = stations.filter(
             (s) => shown.has(s.id) && s.id !== selected,
           );

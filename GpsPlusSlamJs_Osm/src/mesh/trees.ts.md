@@ -10,7 +10,9 @@ colour, plus what a tree is from its tags (`treeClass`). No geometry.
 - `buildTrees(features, { frame, groundHeightM? }): TreePlacement[]`
 - `packInstances(placements): Map<TreeVariant, TreeInstances>`, where
   `TreeInstances` is `{ positions, scales, rotations, colours }`; `colours`
-  is sRGB channels 0 to 1, three per instance, for the renderer to convert
+  is sRGB channels 0 to 1, three per instance, for the renderer to convert;
+  `lookColours` (one such array per look) is present only when every
+  placement of the variant carries the same number of `lookColours`
 - `treeClass(tags): TreeClass`, `{ leafType, leafCycle, source }`:
   - `leafType`: broadleaved, needleleaved, mixed or unknown;
   - `leafCycle`: deciduous, evergreen or unknown;
@@ -132,3 +134,9 @@ variant-grouped packing, and hash stability.
   palette.
 - `BuildTreesOptions.treePalette` passes a scheme's `trees` through
   `buildTrees`; absent, `TREE_PALETTE`.
+
+## Looks
+
+- `BuildTreesOptions.lookPalettes`: one tree palette per look. Each placement then carries `lookColours`, one crown colour per look, each exactly the `colour` a build with that palette gives the tree (class pick and jitter included); look 0's is `colour` when `treePalette` is the first palette. Absent: no `lookColours` key.
+- `treeLookColours(cls, key, lookPalettes)`: the helper both tree builders spread into a placement (`{}` without palettes). Not on the package's barrel.
+- Tests: `trees.test.ts` ("buildTrees with look palettes"), `city-looks.property.test.ts`.

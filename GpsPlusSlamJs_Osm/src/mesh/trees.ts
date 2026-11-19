@@ -60,6 +60,31 @@ export interface TreePlacement {
   readonly variant: TreeVariant;
   /** The crown's colour, packed `0xRRGGBB`, sRGB (`treeColour`). */
   readonly colour: number;
+  /**
+   * The crown's colour in each look, packed sRGB, present only when the
+   * build was given `lookPalettes`: entry k is what a build in palette k
+   * gives this tree as `colour` (the same class pick and jitter), and entry
+   * 0 is `colour` itself.
+   */
+  readonly lookColours?: readonly number[];
+}
+
+/**
+ * The `lookColours` field of a placement: each palette's `treeColour` of
+ * the tree, or nothing without palettes (so a build without looks adds no
+ * field). Shared with `cosmetic-trees.ts`.
+ */
+export function treeLookColours(
+  cls: Pick<TreeClass, "leafType" | "leafCycle">,
+  key: string,
+  lookPalettes: readonly ReadonlyMap<string, number>[] | undefined,
+): { readonly lookColours?: readonly number[] } {
+  if (lookPalettes === undefined) return {};
+  return {
+    lookColours: lookPalettes.map((palette) =>
+      treeColour(cls, key, TREE_COLOUR_JITTER, palette),
+    ),
+  };
 }
 
 /** What a tree is from its tags (`treeClass`). */
@@ -314,6 +339,11 @@ export interface BuildTreesOptions {
   readonly groundHeightM?: (position: LatLng) => number;
   /** The crown palette (a colour scheme's `trees`). Default `TREE_PALETTE`. */
   readonly treePalette?: ReadonlyMap<string, number>;
+  /**
+   * One crown palette per look (`TreePlacement.lookColours`); the caller
+   * passes `treePalette` as entry 0. Absent: no look colours.
+   */
+  readonly lookPalettes?: readonly ReadonlyMap<string, number>[];
 }
 
 /**
@@ -358,6 +388,7 @@ export function buildTrees(
       rotationY: stableRotationY(key),
       variant: variantOf(cls),
       colour: treeColour(cls, key, TREE_COLOUR_JITTER, options.treePalette),
+      ...treeLookColours(cls, key, options.lookPalettes),
     });
   }
 
@@ -377,6 +408,25 @@ export interface TreeInstances {
    * with `SRGBColorSpace`).
    */
   readonly colours: Float32Array;
+  /**
+   * The crown colour in each look (`TreePlacement.lookColours`), as
+   * `colours` is, one array per look; present only when every placement of
+   * the variant carries the same number of looks.
+   */
+  readonly lookColours?: readonly Float32Array[];
+}
+
+/** Packed sRGB `rgb` as channels 0 to 1 into `out` at item `i`. */
+function writeChannels(out: Float32Array, i: number, rgb: number): void {
+  out[i * 3] = ((rgb >> 16) & 0xff) / 255;
+  out[i * 3 + 1] = ((rgb >> 8) & 0xff) / 255;
+  out[i * 3 + 2] = (rgb & 0xff) / 255;
+}
+
+/** The look count every placement shares, or 0 when any differs or has none. */
+function sharedLookCount(list: readonly TreePlacement[]): number {
+  const looks = list[0]?.lookColours?.length ?? 0;
+  return list.every((p) => p.lookColours?.length === looks) ? looks : 0;
 }
 
 /**
@@ -408,10 +458,15 @@ export function packInstances(
     const scales = new Float32Array(list.length * 2);
     const rotations = new Float32Array(list.length);
     const colours = new Float32Array(list.length * 3);
+    const lookColours = Array.from(
+      { length: sharedLookCount(list) },
+      () => new Float32Array(list.length * 3),
+    );
     list.forEach((placement, i) => {
-      colours[i * 3] = ((placement.colour >> 16) & 0xff) / 255;
-      colours[i * 3 + 1] = ((placement.colour >> 8) & 0xff) / 255;
-      colours[i * 3 + 2] = (placement.colour & 0xff) / 255;
+      writeChannels(colours, i, placement.colour);
+      for (const [k, look] of lookColours.entries()) {
+        writeChannels(look, i, placement.lookColours?.[k] ?? placement.colour);
+      }
       positions[i * 3] = placement.position.x;
       positions[i * 3 + 1] = placement.groundHeightM;
       // ENU north → render −z, the same reflection `MeshBuilder.vertex` applies
@@ -422,7 +477,13 @@ export function packInstances(
       scales[i * 2 + 1] = placement.crownDiameterM;
       rotations[i] = placement.rotationY;
     });
-    packed.set(variant, { positions, scales, rotations, colours });
+    packed.set(variant, {
+      positions,
+      scales,
+      rotations,
+      colours,
+      ...(lookColours.length === 0 ? {} : { lookColours }),
+    });
   }
   return packed;
 }

@@ -14,6 +14,10 @@ scanning it with another such phone gains nothing.
   `(min-width: 768px) and (hover: hover) and (pointer: fine)`.
 - `isComputerScreen(win): boolean` - `win.matchMedia(COMPUTER_SCREEN_QUERY)`;
   `false` where `matchMedia` is missing or throws.
+- `onComputerScreenChange(win, listener): void` - adds `listener` to the
+  query's `change` event, so a window resized or re-pointed into (or out
+  of) a computer screen re-renders the code without a reload; a no-op where
+  `matchMedia` or the answer's `addEventListener` is missing or throws.
 - `linkQrShown({ visitor, arStatus, withheld, computerScreen }): boolean` -
   true only for a visitor, with AR `"unsupported"`, a Start not withheld (a
   tour not finished yet offers nothing to open elsewhere) and a computer

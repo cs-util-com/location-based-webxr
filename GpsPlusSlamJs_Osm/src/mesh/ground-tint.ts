@@ -458,6 +458,19 @@ export interface BuildGroundTintOptions {
   readonly ground: Rgb;
   /** The class colours. */
   readonly landUse: ReadonlyMap<GroundClass, Rgb>;
+  /**
+   * One neutral and class colours per look (`GroundTint.lookPalettes`); the
+   * caller passes `ground` and `landUse` as entry 0. Absent: no look
+   * palettes. The raster does not depend on the colours, so it is painted
+   * once whatever the count.
+   */
+  readonly looks?: readonly GroundTintLook[];
+}
+
+/** The colours of one look of the tint. */
+export interface GroundTintLook {
+  readonly ground: Rgb;
+  readonly landUse: ReadonlyMap<GroundClass, Rgb>;
 }
 
 /**
@@ -479,6 +492,12 @@ export interface GroundTint {
   readonly classes: Uint8Array;
   /** sRGB, `palette[0]` the neutral ground, `palette[i + 1]` class i. */
   readonly palette: readonly Rgb[];
+  /**
+   * One palette per look, laid out as `palette` (entry 0 is `palette`'s
+   * colours), present only when built with `looks`: `classes` indexed
+   * through `lookPalettes[k]` is the tint a fixed build of look k paints.
+   */
+  readonly lookPalettes?: readonly (readonly Rgb[])[];
   /** Share of the window painted by each present class, 0..1. */
   readonly shares: Readonly<Partial<Record<GroundClass, number>>>;
   /** Areas with a class whose geometry gave no polygon (unclosed lines...). */
@@ -540,14 +559,11 @@ export function buildGroundTint(
     box,
     options.texelM ?? DEFAULT_GROUND_TINT_TEXEL_M,
   );
-  const palette: Rgb[] = [options.ground];
-  for (const cls of GROUND_CLASS_NAMES) {
-    const colour = options.landUse.get(cls);
-    if (colour === undefined) {
-      throw new RangeError(`the ground tint has no colour for "${cls}"`);
-    }
-    palette.push(colour);
-  }
+  const palette = groundTintPalette(options);
+  const lookPalettes =
+    options.looks === undefined
+      ? {}
+      : { lookPalettes: options.looks.map(groundTintPalette) };
   const { entries, skipped } = groundTintEntries(features, options.frame);
   const classes = new Uint8Array(plan.width * plan.height);
   for (const entry of paintOrder(entries)) {
@@ -571,7 +587,24 @@ export function buildGroundTint(
     originY: box.minY,
     classes,
     palette,
+    ...lookPalettes,
     shares,
     skipped,
   };
+}
+
+/**
+ * The palette of one look: the neutral ground, then the class colours in
+ * `GROUND_CLASS_NAMES` order. RangeError for a map missing a class.
+ */
+function groundTintPalette(look: GroundTintLook): Rgb[] {
+  const palette: Rgb[] = [look.ground];
+  for (const cls of GROUND_CLASS_NAMES) {
+    const colour = look.landUse.get(cls);
+    if (colour === undefined) {
+      throw new RangeError(`the ground tint has no colour for "${cls}"`);
+    }
+    palette.push(colour);
+  }
+  return palette;
 }

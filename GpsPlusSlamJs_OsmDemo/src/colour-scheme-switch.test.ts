@@ -51,11 +51,30 @@ describe("attachColourSchemeSwitch", () => {
     const { select, status } = setup();
     expect([...select.options].map((o) => o.value)).toEqual([
       ...COLOUR_SCHEME_NAMES,
+      "timeofday",
     ]);
     expect(select.options[0]?.textContent).toBe("Today");
     expect(select.value).toBe("today");
     expect(select.disabled).toBe(false);
     expect(status.textContent).toBe("");
+  });
+
+  it("offers the time-of-day blend and ends its switch on the blend's echo", () => {
+    // Why this test matters: the blend is one more choice of the same
+    // dropdown; it must show as in progress until a mesh BUILT as the blend
+    // is drawn, like any scheme, or the select unlocks over the old city.
+    const { select, status, choose, control } = setup();
+    expect(select.options[select.options.length - 1]?.textContent).toBe(
+      "By time of day",
+    );
+    pick(select, "timeofday");
+    expect(choose).toHaveBeenCalledWith("timeofday");
+    expect(status.textContent).toBe("Applying By time of day...");
+    control.meshDrawn("today");
+    expect(control.pending()).toBe("timeofday");
+    control.meshDrawn("timeofday");
+    expect(control.pending()).toBeUndefined();
+    expect(select.disabled).toBe(false);
   });
 
   it("ignores a value outside the table and re-picking the chosen scheme", () => {

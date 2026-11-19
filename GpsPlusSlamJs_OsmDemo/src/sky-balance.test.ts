@@ -2,7 +2,7 @@ import fc from "fast-check";
 import { linearToSrgb, rgbToLab } from "gps-plus-slam-osm";
 import { describe, expect, it } from "vitest";
 
-import { skyBalanceGain } from "./sky-balance.js";
+import { hasSkyBalance, skyBalanceGain } from "./sky-balance.js";
 
 const luminance = (g: readonly number[]) =>
   0.2126 * g[0]! + 0.7152 * g[1]! + 0.0722 * g[2]!;
@@ -54,6 +54,28 @@ describe("skyBalanceGain (a colour cast on the sky's own light)", () => {
       expect(Math.abs(lab.a - a)).toBeLessThan(1.5);
       expect(Math.abs(lab.b - b)).toBeLessThan(1.5);
     }
+  });
+
+  // WHY: the Copy line and the gain must agree on what "a balance is set"
+  // means, or the line could name a cast the sky does not draw (or hide one
+  // it does). One predicate decides both; -0 is no balance, and a value
+  // that is not finite counts as set, so the Copy line still names it
+  // instead of the gain's RangeError deciding.
+  it("has one test for a set balance, shared with the gain", () => {
+    expect(hasSkyBalance(0, 0)).toBe(false);
+    expect(hasSkyBalance(-0, 0)).toBe(false);
+    expect(hasSkyBalance(0, 5)).toBe(true);
+    expect(hasSkyBalance(-0.5, 0)).toBe(true);
+    expect(hasSkyBalance(Number.NaN, 0)).toBe(true);
+    fc.assert(
+      fc.property(
+        fc.oneof(fc.constant(0), fc.double({ min: -20, max: 20, noNaN: true })),
+        fc.oneof(fc.constant(0), fc.double({ min: -30, max: 30, noNaN: true })),
+        (a, b) => {
+          expect(skyBalanceGain(a, b) !== null).toBe(hasSkyBalance(a, b));
+        },
+      ),
+    );
   });
 
   it("refuses a balance that is not finite", () => {

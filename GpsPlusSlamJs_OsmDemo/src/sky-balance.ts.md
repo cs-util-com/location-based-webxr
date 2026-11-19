@@ -10,6 +10,10 @@ tint reaches the upper sky; a per-channel gain on its radiance does.
 
 ## Public API
 
+- `hasSkyBalance(a, b): boolean`: whether a balance is set (either value
+  not 0; -0 is 0). The one test for it, shared by `skyBalanceGain` and the
+  Copy line (`describeLightSettings`); a non-finite value counts as set, so
+  it never throws.
 - `skyBalanceGain(a, b): Rgb | null`: the linear per-channel gain that casts
   a mid grey toward Lab(50, a, b), scaled to luminance 1 so only the colour
   moves (the auto-exposure and the surfaces' sky light keep their level).
@@ -26,8 +30,9 @@ tint reaches the upper sky; a per-channel gain on its radiance does.
   framework requires.
 - The sliders' cool corner leaves the sRGB gamut: at a* -16 with b* below
   about -27, and at a* -20 with b* below about -22, the red channel of
-  Lab(50, a*, b*) is negative and is clipped to 0, so the gain there is
-  slightly less cool than its Lab value says (no error, still valid). The
+  Lab(50, a*, b*) is negative and is clipped to 0, so the gain's red is
+  exactly 0 and the sky drawn is less cool than its Lab value says (no
+  error, still valid); the light dialog says so (`#light-sky-note`). The
   sliders keep their ranges because a narrower b* would also cut the
   in-gamut blues at a* 0; the looks use values well inside the gamut.
 - The framework applies it before the horizon veil and the half-float
@@ -44,5 +49,6 @@ rig.setSkyBalance(gain);
 ## Tests
 
 `sky-balance.test.ts`: null for (0, 0); luminance 1 and channels at least 0
-over the sliders' range (property test); a mid grey through the gain shows
+over the sliders' range (property test); `hasSkyBalance` agreeing with
+the gain's null (property test), -0 and non-finite values; a mid grey through the gain shows
 about the a* and b* asked for; non-finite input refused.
