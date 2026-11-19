@@ -45,7 +45,9 @@ The world part of a picture in a viewpoint view (`thenNow`, `sharpen`,
   picture is met at its own spot, and the line's place belongs to that
   picture's view. Back on the spot after a while in Swipe, the visitor
   keeps the fade they had (the fade-in replays in Fade only, as the
-  prototype). The
+  prototype). Picking Swipe during the fade-in ends it at its end value
+  (`THEN_NOW_TIMING.introTo`), not where it was, so a later switch back
+  to Fade shows the old picture rather than a fade frozen near 0. The
   shader's state is read out as `material.userData.thenNowSwipe()`
   (`{ on, split }`) for the tests and the check page. Its
   plane carries the shared soft-edge alpha map (`then-now-feather.ts`)
@@ -120,5 +122,6 @@ outside the tap target, sharpen's card
 without the picture, the
 column held still on reduced motion, the slider's arrival, fade-in, take-over and
 departure, Swipe's whole plane and cut (switched, dragged, back to Fade,
-left and come back), the fade kept by a visitor back swiping, the uncut
+left and come back), the fade-in finished by a switch to Swipe during it
+(swept over its first to last frames), the fade kept by a visitor back swiping, the uncut
 picture of a swiping visitor not yet lined up, the window's shader plane, the sheet, disposal.
