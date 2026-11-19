@@ -47,7 +47,7 @@ camera, so `installTourViewerArFakes(page)` installs
   `armQrDetection(text, position?)` + `nextDetection` /
   `nextSolution` — scripted device-level QR results for the author
   pipeline; the REAL controller, slice, stability gate and mint run over
-  them — plus `fakeScene` (a scene-root stub the image planes land in; it sets each held object's `parent` as three does, as a shown root with an identity world matrix, so a visitor's tap on a world part finds the part shown under its station);
+  them — plus `fakeScene` (a scene-root stub the image planes land in). Both stubs parent what they hold as three does (`parenting`), the world group under the scene, each shown and with an identity world matrix, so a visitor's tap on a world part finds the part shown under its station and a child's world pose reads as before;
   `getArWorldGroup`/`getScene` return null until initAR ran, pinning the
   production ordering; `locationPermission` / `locationOutcome` /
   `locationRequests` (the visitor screen's gate: what the permission
