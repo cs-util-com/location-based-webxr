@@ -86,16 +86,15 @@ describe("the scan question, for any run of its actions", () => {
         for (const action of run) {
           state = reduce(state, action);
           const ask = state.scanAsk;
-          if (ask !== null) {
-            expect(["asking", "adding"]).toContain(ask.phase);
-            if (ask.phase === "adding") expect(ask.error).toBeNull();
-          }
-          if (
+          const consistent =
+            ask === null ||
+            ask.phase === "asking" ||
+            (ask.phase === "adding" && ask.error === null);
+          expect(consistent).toBe(true);
+          const openOrClose =
             action.type === tourDocumentActions.opened.type ||
-            action.type === tourDocumentActions.closed.type
-          ) {
-            expect(ask).toBeNull();
-          }
+            action.type === tourDocumentActions.closed.type;
+          expect(openOrClose && ask !== null).toBe(false);
         }
       }),
     );
