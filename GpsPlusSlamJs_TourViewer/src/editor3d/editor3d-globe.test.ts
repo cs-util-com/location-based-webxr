@@ -2180,4 +2180,43 @@ describe("the globe's debug layer, read from the store", () => {
     frameAt(1016);
     expect(debugStats()).toMatchObject({ thumbs: 1 });
   });
+
+  // Why: the retry above has no end for a picture that never gains a size,
+  // and every retry walks every capture again: a frame-long cost forever.
+  // A picture is tried a few frames, then given up; one set anew for the
+  // same capture is a new picture and is tried again.
+  it("gives up a thumbnail that never gains a size after a few frames", async () => {
+    const thumbs = createDebugThumbs();
+    let reads = 0;
+    const never = () => {
+      const img = document.createElement("img");
+      Object.defineProperty(img, "naturalWidth", {
+        get: () => {
+          reads++;
+          return 0;
+        },
+      });
+      Object.defineProperty(img, "naturalHeight", { value: 48 });
+      return img;
+    };
+    thumbs.set(A.image, never());
+    const slice = {
+      current: {
+        shown: true,
+        source: "walk",
+        captures: [A, B],
+        status: "",
+      } as DebugLayerState,
+    };
+    await openAt(0, { store: storeWith(slice), debugThumbs: thumbs });
+    for (let i = 0; i < 200; i++) frameAt(1000 + 16 * i);
+    const givenUp = reads;
+    expect(givenUp).toBeGreaterThan(1);
+    expect(givenUp).toBeLessThanOrEqual(10);
+    for (let i = 200; i < 300; i++) frameAt(1000 + 16 * i);
+    expect(reads, "no more reads once given up").toBe(givenUp);
+    thumbs.set(A.image, never());
+    frameAt(1000 + 16 * 300);
+    expect(reads, "a new picture is tried").toBeGreaterThan(givenUp);
+  });
 });
