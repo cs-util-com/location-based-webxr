@@ -34,6 +34,7 @@ import {
 } from "../../world-part.js";
 import {
   THEN_NOW_START,
+  THEN_NOW_TIMING,
   stepThenNow,
   takeOverThenNow,
   type ThenNowState,
@@ -228,8 +229,14 @@ export function viewpointWorld(
           },
           mode: (mode) => {
             thenNowMode = mode;
-            // A switch is the visitor's choice: the fade-in stops.
-            thenNow = takeOverThenNow(thenNow, thenNow.fade);
+            // A switch is the visitor's choice: the fade-in stops. Swipe
+            // ends it where it would have ended, not where it was, so a
+            // later Fade shows the old picture rather than a fade near 0.
+            const finish = mode === "swipe" && thenNow.introS !== null;
+            thenNow = takeOverThenNow(
+              thenNow,
+              finish ? THEN_NOW_TIMING.introTo : thenNow.fade,
+            );
           },
           split: (at) => {
             split = at;
