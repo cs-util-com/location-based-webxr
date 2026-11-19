@@ -2031,6 +2031,52 @@ describe("the globe's debug layer, read from the store", () => {
     expect(debugStats()).toMatchObject({ captures: 0, objects: 0 });
   });
 
+  // Why: a new tour has nothing to frame, so the view opens on the whole
+  // Earth; a scan shown beside it is then the only place to look at, and
+  // the view flies there - once per scan, or a person could never look
+  // away - while a tour with stations keeps its own framing.
+  const FAR = { image: "images/far.jpg", lat: -33.87, lon: 151.21, alt: 0 };
+  const sliceOf = (captures: DebugLayerState["captures"]) => ({
+    current: {
+      shown: true,
+      source: "added",
+      captures,
+      status: "",
+    } as DebugLayerState,
+  });
+
+  it("flies to a shown scan when the tour has nothing positioned, once per scan", async () => {
+    fakes.manifest = { stations: [] };
+    const slice = sliceOf([FAR]);
+    open = await openGlobeEditor(
+      { ...deps(), store: storeWith(slice) },
+      { ...readGlobeSwitch(""), hidePx: 4, crowdPx: 16 },
+    );
+    const before = cameraPlace();
+    expect(
+      Math.abs(before.lat - FAR.lat) + Math.abs(before.lon - FAR.lon),
+    ).toBeGreaterThan(1);
+    frameAt(1000);
+    const there = cameraPlace();
+    expect(there.lat).toBeCloseTo(FAR.lat, 1);
+    expect(there.lon).toBeCloseTo(FAR.lon, 1);
+    // The person looks elsewhere: the same scan does not pull the view back.
+    placeCamera(500, -30, null);
+    frameAt(1016);
+    expect(cameraPlace().lat).toBeCloseTo(MUNICH.lat, 1);
+    // The whole-tour frame (the page's F) goes to the scan too.
+    open.frame(null);
+    expect(cameraPlace().lat).toBeCloseTo(FAR.lat, 1);
+  });
+
+  it("keeps a tour with stations on its own framing when a scan is shown", async () => {
+    await openAt(0, { store: storeWith(sliceOf([FAR])) });
+    frameAt(1000);
+    expect(cameraPlace().lat).toBeCloseTo(MUNICH.lat, 0);
+    open?.frame(null);
+    expect(cameraPlace().lat).toBeCloseTo(MUNICH.lat, 0);
+  });
+
   it("copies in thumbnails the page decoded before the view opened", async () => {
     const thumbs = createDebugThumbs();
     const img = document.createElement("img");
