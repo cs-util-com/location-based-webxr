@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Buildings, roads and trees can draw a mix of their looks** (`three`):
+  `buildingObjects` and `roadObjects` take `{ looks }`, a shared
+  `LookMix` (`createLookMix`, `setTrimWeights`): a chunk's
+  `lookColours` then replace `colors` as K normalised Uint8 attributes,
+  decoded in the vertex shader through `lookDecodeTexture` (the
+  `LOOK_COLOUR_DECODE` table, the linear row for buildings, the raw row
+  for roads) and summed by the `trimWeights` vec4, so a blend moves with
+  one uniform write (`applyLookColours`). `setTreeLookWeights` mixes the
+  trees' crown colours on the CPU in both tree forms, and `packInstances`
+  packs `lookColours` per variant.
 - **A city can be baked in several colour schemes at once** (`mesh`):
   `CityOptions.looks` takes up to `MAX_CITY_LOOKS` (4) colour schemes and
   builds the geometry once. Every building and road chunk then carries

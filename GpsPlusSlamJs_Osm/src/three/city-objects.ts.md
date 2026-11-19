@@ -19,6 +19,10 @@ three-free; three.js is an optional peer, loaded only by this entry.
   `MeshStandardMaterial` (white, `vertexColors`, `FrontSide`, `flatShading`,
   roughness 0.55, metalness 0, `userData.neutralSurface`) and
   `userData.solid` and `userData.cityLayer = "buildings"` on the mesh.
+  `buildingObjects(chunks, { looks })` (`LookObjectOptions`): with a
+  shared `LookMix`, a chunk carrying `lookColours` draws their mix in
+  place of `colors` (`look-colours.ts`, the linear decode row); without a
+  mix, or for a chunk without looks, `colors` as before.
 - `treeObjects(placements, { form? })` → one `InstancedMesh` per tree variant present
   (`packInstances` groups and reflects ENU to scene), on shared geometry and
   material, each flagged `userData.sharedResources`, each instance coloured
@@ -34,6 +38,15 @@ three-free; three.js is an optional peer, loaded only by this entry.
   roughness 0.9, `userData.neutralSurface`; each carries
   `userData.cityLayer = "roads"` and lies at its ground (the lift off a
   drawn ground is each app's: OsmDemo's ladder, the globe's relief).
+  `roadObjects(chunks, { looks })` as `buildingObjects`', on the raw
+  decode row.
+- `setTreeLookWeights(objects, lookWeights)` → mixes the crown colours of
+  every tree mesh among `objects` baked in looks (mapped and invented,
+  both forms) by the normalised look weights, in linear space, on the CPU
+  (`tree-looks.ts`; the trunk form through its last sort's slots,
+  `trunk-trees.ts`). Returns the trees recoloured; meshes without looks
+  are left alone; `RangeError` for weights that are not one finite value
+  > = 0 per look.
 - `cosmeticTreeObjects(placements, { form? })` → `treeObjects` for
   `City.cosmeticTrees`, each mesh's `userData` gaining `cosmetic: true`
   so an app can hide the invented trees (OsmDemo's `woods` layer, AR)
@@ -132,4 +145,5 @@ crown form unless the trunk form is asked for. `city-objects.property.test.ts`:
 a smaller share draws a subset of a larger one and full draws every tree, in
 both forms. The crown geometry lives in `crown-hull.ts`. `street-furniture.test.ts` covers
 the furniture in `cityObjects` (its cut, and never freed). OsmDemo's
-`mesh-layers.test.ts` covers the rows that delegate here.
+`mesh-layers.test.ts` covers the rows that delegate here. The looks
+option and the tree mix: `look-colours.test.ts`, `tree-looks.test.ts`.

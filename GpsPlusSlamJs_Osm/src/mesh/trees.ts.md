@@ -10,7 +10,9 @@ colour, plus what a tree is from its tags (`treeClass`). No geometry.
 - `buildTrees(features, { frame, groundHeightM? }): TreePlacement[]`
 - `packInstances(placements): Map<TreeVariant, TreeInstances>`, where
   `TreeInstances` is `{ positions, scales, rotations, colours }`; `colours`
-  is sRGB channels 0 to 1, three per instance, for the renderer to convert
+  is sRGB channels 0 to 1, three per instance, for the renderer to convert;
+  `lookColours` (one such array per look) is present only when every
+  placement of the variant carries the same number of `lookColours`
 - `treeClass(tags): TreeClass`, `{ leafType, leafCycle, source }`:
   - `leafType`: broadleaved, needleleaved, mixed or unknown;
   - `leafCycle`: deciduous, evergreen or unknown;
