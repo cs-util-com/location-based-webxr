@@ -23,16 +23,20 @@ scanning it with another such phone gains nothing.
   origin plus path: a `file:` page's origin reads "null" and a `blob:`
   page's path is a whole address) with its `qr` parameter only, in
   that parameter's own encoding (so a plain visitor address comes back
-  unchanged); a debug or cache switch and a fragment are dropped. An
+  unchanged); a debug or cache switch, a fragment and a user name and
+  password are dropped. An
   address with no `qr` parameter, or one that does not parse, is
   returned as it is.
 - `LINK_QR_MODULE_PX` - 3, the CSS pixels per module.
+- `LINK_QR_SMALL_MODULE_PX` - 2, the CSS pixels per module for a code
+  over `LINK_QR_MAX_PX` at 3 (a presigned storage link of several hundred
+  bytes): still whole pixels, up to 234 px (version 24).
 - `LINK_QR_MAX_PX` - 240, the largest code beside the Copy link dial:
   the visitor's column is at most 440 px with its 24 px side padding, the
   dial (`--visitor-dial` of the unsupported state) 132 to 156 px, the
   grid gap 40 px, so 244 to 268 px are left inside the column's box (196
   to 220 px inside its padding). A 240 px code may take part of the
-  padding, never more.
+  padding, never more. A code over it at 3 px per module is drawn at 2.
 - `linkQrShown({ visitor, arStatus, withheld, computerScreen }): boolean` -
   `arStatus` is the controller's own status union, not any string;
   true only for a visitor, with AR `"unsupported"`, a Start not withheld (a
@@ -41,12 +45,15 @@ scanning it with another such phone gains nothing.
 - `linkQrSvg(url): string` - the QR code of `url` (error correction M, a
   quiet zone of 2 modules) as an inline SVG string: one white square and
   one path of dark modules, `viewBox` in modules, `width` and `height`
-  of the module count times `LINK_QR_MODULE_PX` (the box takes its size
+  of the module count times `LINK_QR_MODULE_PX`, or
+  `LINK_QR_SMALL_MODULE_PX` where 3 would exceed `LINK_QR_MAX_PX` (the box takes its size
   from it: 135 px for the shortest to 195 px for the longest storage
   provider link of the tests), `aria-hidden` (the box it is drawn into
   carries the label). Throws `TypeError` on an empty or non-string url,
-  `RangeError` on a code over `LINK_QR_MAX_PX` (a link over about 360
-  bytes: 231 px up to 362 bytes, 243 px from 363), and the
+  `RangeError` on a code over `LINK_QR_MAX_PX` even at 2 px per module
+  (a link over about 910 bytes: 3 px per module up to 362 bytes, 231 px;
+  2 px from 363, 162 px, up to 911 bytes, 234 px; refused from 912,
+  242 px), and the
   library's error on a link too long for any QR code (past version 40,
   about 2300 bytes at error correction M).
 
@@ -62,7 +69,7 @@ scanning it with another such phone gains nothing.
   link" copies, and redraws only when that link changed since the last
   draw. A link too long for a code is caught there: no code, "Copy link"
   alone, and the rest of the render runs. A code over `LINK_QR_MAX_PX`
-  takes the same path.
+  even at 2 px per module takes the same path.
 - A whole number of pixels per module keeps every module on whole pixels,
   so the code stays sharp; the page's CSS gives the box no size of its own.
 
@@ -83,12 +90,14 @@ if (shown) box.innerHTML = linkQrSvg(shareLinkOf(location.href));
 `link-qr.test.ts`: when it shows (every condition alone hides it), the
 media query and its failure modes, the share link (only `qr` kept, in its
 own encoding, on a `file:` and a `blob:` page too), the module scale over provider links from the shortest to
-the longest (each within `LINK_QR_MAX_PX`), the refusal of a code over it
-(a 231 px and a 243 px code either side), and the drawn modules read back from
+the longest (each within `LINK_QR_MAX_PX`), the step to 2 px per module
+and the refusal past it (a 231 px code at 3, a 162 px and a 234 px code at
+2, a refused 242 px one), the user name and password dropped, and the drawn modules read back from
 the SVG against the library's own code for the link (one url, a different
 url, an empty url, and a property over arbitrary web urls). `ar-entry.test.ts`
 ("a visitor on a phone without AR" block) pins the wiring: shown on a
 computer screen with the page's link, the share link encoded and copied
 without the address's other parameters, Copy link alone for a link too long
-for any code and for one whose code is over `LINK_QR_MAX_PX`, hidden on a phone and on a device with AR. `playwright-tests/visitor-start.spec.js` asserts the code beside
+for any code and for one whose code is over `LINK_QR_MAX_PX` even at
+2 px per module, hidden on a phone and on a device with AR. `playwright-tests/visitor-start.spec.js` asserts the code beside
 "Copy link" on the desktop viewport without WebXR.

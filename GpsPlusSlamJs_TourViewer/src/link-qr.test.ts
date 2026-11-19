@@ -7,6 +7,7 @@ import {
   isComputerScreen,
   onComputerScreenChange,
   LINK_QR_MAX_PX,
+  LINK_QR_SMALL_MODULE_PX,
   LINK_QR_MODULE_PX,
   linkQrShown,
   linkQrSvg,
@@ -190,6 +191,14 @@ describe("shareLinkOf", () => {
     );
   });
 
+  // Why: an address with a user name and password in it would hand them
+  // to every phone that scans the code and every chat the link is pasted in.
+  it("drops a user name and password from the address", () => {
+    expect(shareLinkOf("https://me:secret@example.test/tour/?qr=abc")).toBe(
+      "https://example.test/tour/?qr=abc",
+    );
+  });
+
   it("gives an address without a qr parameter, or one it cannot read, back as it is", () => {
     expect(shareLinkOf("https://example.test/tour/?debug=1")).toBe(
       "https://example.test/tour/?debug=1",
@@ -232,20 +241,30 @@ describe("linkQrSvg size", () => {
   // Why: the code stands beside the Copy link dial in the visitor's
   // column (at most 440 px with its padding, the dial up to 156 px, a
   // 40 px gap), so a code past about 240 px pushes the row out of it.
-  // Such a link gets no code, the same way as one too long for any code;
-  // the shown one is never larger than the room. The links are a 231 px
-  // and a 243 px code, the two sizes either side of the limit.
-  it("refuses a code larger than the room beside Copy link", () => {
+  // A link of a few hundred bytes (a presigned storage link) still gets a
+  // code: drawn at 2 px per module instead of 3, still on whole pixels,
+  // up to 234 px. Only a code too large even then is refused, the same way
+  // as one too long for any code. The links sit either side of each step:
+  // 231 px at 3 px per module, then 243 px, so 162 px at 2; 234 px at 2,
+  // then 242 px, refused.
+  it("draws a larger code at 2 px per module, and refuses one too large even then", () => {
     expect(LINK_QR_MAX_PX).toBe(240);
-    const fits = `https://example.test/tour/?qr=${"a".repeat(310)}`;
-    const tooLarge = `https://example.test/tour/?qr=${"a".repeat(340)}`;
-    expect(drawnModules(linkQrSvg(fits)).side * LINK_QR_MODULE_PX).toBe(231);
-    expect(() => linkQrSvg(tooLarge)).toThrow(RangeError);
+    const link = (n: number) =>
+      `https://example.test/tour/?qr=${"a".repeat(n)}`;
+    const widthOf = (svg: string) => Number(/width="(\d+)"/.exec(svg)?.[1]);
+    const fits = linkQrSvg(link(310));
+    expect(drawnModules(fits).side * LINK_QR_MODULE_PX).toBe(231);
+    expect(widthOf(fits)).toBe(231);
+    const smaller = linkQrSvg(link(340));
+    expect(drawnModules(smaller).side * LINK_QR_SMALL_MODULE_PX).toBe(162);
+    expect(widthOf(smaller)).toBe(162);
+    expect(widthOf(linkQrSvg(link(881)))).toBe(234);
+    expect(() => linkQrSvg(link(882))).toThrow(RangeError);
     expect(
-      (QRCode.create(tooLarge, { errorCorrectionLevel: "M" }).modules.size +
+      (QRCode.create(link(882), { errorCorrectionLevel: "M" }).modules.size +
         4) *
-        LINK_QR_MODULE_PX,
-    ).toBe(243);
+        LINK_QR_SMALL_MODULE_PX,
+    ).toBe(242);
   });
 });
 

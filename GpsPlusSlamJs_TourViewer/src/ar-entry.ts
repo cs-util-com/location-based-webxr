@@ -716,7 +716,8 @@ export function wireArEntry(deps: {
         delete qr.code.dataset["tooLong"];
       } catch {
         // A link too long for any QR code (the `?qr=` payload has no
-        // cap) or for the room beside the dial: caught, so the rest of the render still runs, and kept,
+        // cap) or for the room beside the dial even at 2 px per module:
+        // caught, so the rest of the render still runs, and kept,
         // so it is not tried again on every render.
         qr.code.innerHTML = "";
         qr.code.dataset["tooLong"] = "true";
