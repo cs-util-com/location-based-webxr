@@ -533,6 +533,94 @@ test("shows debug data dropped on its panel in place of the tour's own walk, and
   await expect(page.locator("#save-status")).toHaveText("No changes");
 });
 
+/**
+ * Drop files on the open dialog's box, all in one drop.
+ * @param {import("@playwright/test").Page} page
+ * @param {{ name: string, buffer: Buffer }[]} files
+ */
+async function dropOnOpenBox(page, files) {
+  const dropped = await page.evaluateHandle(
+    (given) => {
+      const data = new DataTransfer();
+      for (const { name, bytes } of given) {
+        data.items.add(
+          new File([new Uint8Array(bytes)], name, { type: "application/zip" }),
+        );
+      }
+      return data;
+    },
+    files.map(({ name, buffer }) => ({ name, bytes: Array.from(buffer) })),
+  );
+  await page.locator("#drop").dispatchEvent("drop", { dataTransfer: dropped });
+}
+
+test("a scan chosen in the open dialog is added beside the open tour, and refused with no tour", async ({
+  page,
+}) => {
+  // Why: a scan is not a tour, so the open dialog never opens it as one.
+  // With no tour open it says what to do first; with a tour open, the same
+  // file is added beside that tour as a scan and the dialog closes.
+  const bundle = await debugBundleOf({
+    tour: "Editor fixture",
+    file: "editor-fixture.zip",
+  });
+  await page.goto("/edit.html");
+  await openThroughChooser(page, bundle, "editor-fixture-debug.zip");
+  await expect(page.locator("#open-error")).toHaveText(
+    "editor-fixture-debug.zip is a scan, not a tour. Open a tour or start a new one first, then add the scan to it.",
+  );
+  await expect(page.locator("#open-modal")).toBeVisible();
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await openAnother(page);
+  await openThroughChooser(page, bundle, "editor-fixture-debug.zip");
+  await expect(page.locator("#open-modal")).toBeHidden();
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#debug-status")).toContainText(
+    "Scan editor-fixture-debug.zip: shown while you edit.",
+  );
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+});
+
+test("a tour and a scan dropped together open the tour, then add the scan; an unusable one is left out, the tour kept", async ({
+  page,
+}) => {
+  // Why (the async-UI rule): one drop, one action - the tour opens first,
+  // since there is no add without a tour, then the scan is added. A scan
+  // that does not read must not cost the tour, and the page says so.
+  const tour = await editorTour();
+  const bundle = await debugBundleOf({
+    tour: "Editor fixture",
+    file: "editor-fixture.zip",
+  });
+  await page.goto("/edit.html");
+  await dropOnOpenBox(page, [
+    { name: "editor-fixture-debug.zip", buffer: bundle },
+    { name: "editor-fixture.zip", buffer: tour },
+  ]);
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#debug-status")).toContainText(
+    "Scan editor-fixture-debug.zip: shown while you edit.",
+  );
+  await page.reload();
+  const broken = await zip([
+    { path: "actions/000001.json", data: "[]" },
+    { path: "debug-bundle.json", data: "{ not json" },
+  ]);
+  await dropOnOpenBox(page, [
+    { name: "editor-fixture.zip", buffer: tour },
+    { name: "walk.zip", buffer: broken },
+  ]);
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#open-modal")).toBeHidden();
+  await expect(
+    page.locator(".toast", { hasText: "Left out walk.zip:" }),
+  ).toBeVisible();
+  await expect(page.locator("#debug-status")).not.toContainText(
+    "Scan walk.zip",
+  );
+});
+
 test("says the sample is being fetched while it is, and why it failed when it does", async ({
   page,
 }) => {

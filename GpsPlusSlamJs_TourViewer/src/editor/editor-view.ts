@@ -110,6 +110,9 @@ const MODEL_PICKS: ReadonlySet<string> = new Set([
 const isIndex = (v: unknown): v is number =>
   typeof v === "number" && Number.isInteger(v) && v >= 0;
 
+/** The two halves of opening a tour with a scan, in their forced order. */
+export type EditorEntryStep = "opening" | "adding-scan";
+
 export interface EditorViewState {
   /** The selected item's id (the model's: `station:<id>` for a station). */
   readonly selected: string | null;
@@ -128,6 +131,10 @@ export interface EditorViewState {
   readonly message: EditorMessage | null;
   /** The browser's file picker is open: a second click opens nothing. */
   readonly picking: boolean;
+  /** A tour given with a scan: the tour opening, then the scan being
+   *  added - one step to the person, from the open's start to the add's
+   *  end (`editor-entry.ts`). Null otherwise. */
+  readonly entryStep: EditorEntryStep | null;
   /** A Duplicate is reading its pictures before it writes: another one
    *  does nothing meanwhile, so a second Ctrl+D makes no second copy. */
   readonly duplicating: boolean;
@@ -193,6 +200,7 @@ export const initialEditorViewState: EditorViewState = {
   undelivered: false,
   message: null,
   picking: false,
+  entryStep: null,
   duplicating: false,
   viewMode: "2d",
   view3dLoad: "idle",
@@ -344,6 +352,17 @@ const editorViewSlice = createSlice({
     },
     pickingChanged(state, action: PayloadAction<{ picking: boolean }>) {
       state.picking = action.payload.picking;
+    },
+    /** The entry's step (`EditorViewState.entryStep`); anything else is
+     *  ignored. */
+    entryStepChanged(
+      state,
+      action: PayloadAction<{ step: EditorEntryStep | null }>,
+    ) {
+      const { step } = action.payload;
+      if (step === null || step === "opening" || step === "adding-scan") {
+        state.entryStep = step;
+      }
     },
     duplicatingChanged(state, action: PayloadAction<{ duplicating: boolean }>) {
       state.duplicating = action.payload.duplicating;

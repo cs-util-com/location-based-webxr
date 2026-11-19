@@ -215,6 +215,16 @@ import {
   createAddDebugButton,
   notAddedLine,
 } from "./added-debug-data.js";
+import {
+  classifyEditorFiles,
+  type EditorFileKind,
+} from "./classify-editor-file.js";
+import {
+  entryStepLine,
+  openWithScan,
+  planEditorEntry,
+  type AddScanOutcome,
+} from "./editor-entry.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
 import {
@@ -3068,10 +3078,10 @@ function startDebugLayer(): void {
  * a file that is no debug data is refused in words, the layer kept. The
  * button says it is reading meanwhile (the async-UI rule).
  */
-async function addDebugData(file: File): Promise<void> {
+async function addDebugData(file: File): Promise<AddScanOutcome | null> {
   const mine = editor;
-  if (mine === null) return;
-  await debugAdd.run(async () => {
+  if (mine === null) return null;
+  return debugAdd.run(async (): Promise<AddScanOutcome | null> => {
     const added = await readAddedDebug(
       file,
       mine.debugTour(),
@@ -3082,16 +3092,116 @@ async function addDebugData(file: File): Promise<void> {
       if (added.kind === "added") {
         void added.session.close().catch(() => undefined);
       }
-      return;
+      return null;
     }
     if (added.kind === "refused") {
-      fileToasts.push(toast(notAddedLine(added.reason)));
-      return;
+      return { kind: "refused", reason: added.reason };
     }
     forgetAddedDebug();
     addedDebug = { session: added.session, line: added.line };
     startDebugLayer();
+    return { kind: "added" };
   });
+}
+
+/** {@link addDebugData} from its own button or panel: a refusal said in a
+ *  toast. Null - no tour, another tour opened meanwhile, another add
+ *  running - says nothing, as before. */
+async function addDebugDataSaying(file: File): Promise<void> {
+  const outcome = await addDebugData(file);
+  if (outcome?.kind === "refused") {
+    fileToasts.push(toast(notAddedLine(outcome.reason)));
+  }
+}
+
+/** Said when the scan given with a tour started no add (another add ran,
+ *  or another tour opened meanwhile). */
+const SCAN_NOT_STARTED = "another scan was being added at the same time.";
+
+/** The file the browser's picker gave, with what it may be saved through. */
+interface PickedTourFile {
+  readonly file: File;
+  readonly handle: WritableFileHandle | null;
+  readonly picked: FileSystemHandle | null;
+}
+
+/**
+ * Files chosen in, or dropped on, the open dialog. Each is sorted first
+ * (`classifyEditorFiles`, its zip directory only), then planned
+ * (`planEditorEntry`): a tour opens; a tour with a scan opens and then
+ * gets the scan, as one busy state (`openWithScan`, the store's
+ * `entryStep`, a held line meanwhile); a scan alone is added beside the
+ * open tour, or refused without one. A file that is neither still goes to
+ * the open, which refuses it in its own words. Resolves true when a tour
+ * opened.
+ */
+async function enterFiles(
+  files: readonly File[],
+  picked: PickedTourFile | null = null,
+): Promise<boolean> {
+  if (ui().busy || ui().entryStep !== null || files.length === 0) return false;
+  openError.hidden = true;
+  const [only] = files;
+  setBusy(
+    true,
+    files.length === 1 && only !== undefined
+      ? `Reading ${only.name}…`
+      : `Reading ${String(files.length)} files…`,
+  );
+  let kinds: EditorFileKind[];
+  try {
+    kinds = await classifyEditorFiles(files);
+  } finally {
+    setBusy(false, "");
+  }
+  const plan = planEditorEntry(kinds, editor !== null);
+  if (plan.kind === "refuse") {
+    openError.textContent = plan.reason;
+    openError.hidden = false;
+    return false;
+  }
+  for (const left of plan.ignored) {
+    toast(`Left out ${left.file.name}: ${left.reason}`);
+  }
+  if (plan.kind === "add-scan") {
+    const added = await addDebugData(plan.scan);
+    if (added?.kind === "added") showModal(false);
+    else if (added?.kind === "refused") {
+      openError.textContent = notAddedLine(added.reason);
+      openError.hidden = false;
+    }
+    return false;
+  }
+  const { tour, scan } = plan;
+  let stepLine: HTMLElement | null = null;
+  const outcome = await openWithScan(tour, scan, {
+    open: (file) =>
+      picked !== null && file === picked.file
+        ? openFile(file, picked.handle, picked.picked)
+        : openFile(file),
+    addScan: async (file) =>
+      (await addDebugData(file)) ?? {
+        kind: "refused",
+        reason: SCAN_NOT_STARTED,
+      },
+    step: (step) => {
+      store.dispatch(editorViewActions.entryStepChanged({ step }));
+      stepLine?.remove();
+      stepLine =
+        step === null || scan === null
+          ? null
+          : toast(
+              entryStepLine(step, tour.name, scan.name),
+              undefined,
+              null,
+              false,
+            );
+    },
+  });
+  if (outcome.kind === "scan-failed") {
+    fileToasts.push(toast(outcome.line, undefined, null));
+  }
+  return outcome.kind !== "not-opened";
 }
 
 /** A file added as debug data, opened and read for whose it is, or why
@@ -3490,11 +3600,11 @@ async function chooseTour(): Promise<void> {
     openError.hidden = false;
     return;
   }
-  const opened = await openFile(
-    outcome.file,
-    outcome.writable ? outcome.handle : null,
-    outcome.handle,
-  );
+  const opened = await enterFiles([outcome.file], {
+    file: outcome.file,
+    handle: outcome.writable ? outcome.handle : null,
+    picked: outcome.handle,
+  });
   // Said about the tour just opened, never over the one that stayed.
   if (opened && !outcome.writable) {
     toast(
@@ -4392,7 +4502,7 @@ for (const button of [debugAddButton, fileDebugAdd]) {
 debugAddInput.addEventListener("change", () => {
   const file = debugAddInput.files?.[0];
   debugAddInput.value = "";
-  if (file !== undefined) void addDebugData(file);
+  if (file !== undefined) void addDebugDataSaying(file);
 });
 debugPanel.addEventListener("dragover", (event) => {
   event.preventDefault();
@@ -4405,7 +4515,7 @@ debugPanel.addEventListener("drop", (event) => {
   event.preventDefault();
   debugPanel.classList.remove("over");
   const file = event.dataTransfer?.files[0];
-  if (file !== undefined) void addDebugData(file);
+  if (file !== undefined) void addDebugDataSaying(file);
 });
 // A tour-level edit (QR-first M1b-2): pending like a note's, backed up by
 // the draft, saved by itself like any change.
@@ -4430,7 +4540,7 @@ drop.addEventListener("click", (event) => {
 zipInput.addEventListener("change", () => {
   const file = zipInput.files?.[0];
   zipInput.value = "";
-  if (file !== undefined) void openFile(file);
+  if (file !== undefined) void enterFiles([file]);
 });
 // A file dropped anywhere else on the page would make the browser open
 // it, and the open tour would be gone (PR #609 review): only #drop opens.
@@ -4449,8 +4559,8 @@ drop.addEventListener("dragleave", () => {
 drop.addEventListener("drop", (event) => {
   event.preventDefault();
   drop.classList.remove("over");
-  const file = event.dataTransfer?.files[0];
-  if (file !== undefined) void openFile(file);
+  // Every file dropped: a tour and a scan may come together.
+  void enterFiles(Array.from(event.dataTransfer?.files ?? []));
 });
 // A file dragged over the open editor: the page shows that it takes files
 // (`body.file-drag`), and the row or file field it would be used in
