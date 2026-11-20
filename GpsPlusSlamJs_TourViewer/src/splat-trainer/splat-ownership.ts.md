@@ -25,7 +25,9 @@ most one window however many trained it.
   a non-positive range.
 - `shellCrop(points, cameraPositions, keepM) -> boolean[]` - true for a
   point within `keepM` of one of the window's cameras. The caller passes
-  `keepFraction * shellDistance`. RangeError for a non-positive distance.
+  `keepFraction * shellDistance`. RangeError for a non-positive distance
+  or a camera too far from the origin to key (as above, in cells of
+  `keepM`).
 
 ## Rules
 
@@ -36,9 +38,14 @@ A point's seeing cameras are those that see it within `ownRangeM`.
 2. Revisit: another window `w` is a revisit of that window `n` when they
    lie in different segments, or when every seeing camera of `w` is more
    than `2 * ownRangeM` along the walk from every seeing camera of `n`.
-   The earliest window that is a revisit of `n` keeps the point instead,
-   so a spot the walk came back to is kept whole by one window, never
-   interleaved from two.
+   Then the earliest such window `w0` marks the first pass: of the
+   windows before `n` that are no revisit of `w0` (`w0` included), the
+   one with the nearest seeing camera keeps the point (lower camera index
+   on a tie). So a spot the walk came back to is kept by the first pass
+   alone, never interleaved from two passes, and within that pass by its
+   closest view: on an out-and-back walk the earliest window of the way
+   out may see the spot from 36 m while a later window of the same pass
+   stands 5 m from it.
 3. Seen by no camera within range: the nearest camera that sees it at any
    distance (lower index on a tie).
 4. Seen by none: -1, dropped by every window.
@@ -106,7 +113,10 @@ const kept = splats.filter((s) => own.ownerOf(s.position) === w);
   from beyond range, and a nearer camera beyond range losing to a farther
   one within it; a straight walk planned by `planWindows` never read as a
   revisit and a real loop read as one, each at ranges 20 / 40 / 80 m; a
-  revisit to the earliest; a seam by the nearest; segments always a
+  revisit to the earliest; an out-and-back walk
+  whose spot goes to the nearest window of the first pass, not its
+  earliest; a camera too far out to key refused and a spot far out
+  answered by rules 3 and 4; a seam by the nearest; segments always a
   revisit; bad input; the shell crop.
 - `splat-ownership.property.test.ts` - over random windows, segments,
   camera poses, distances along the walk and points: the keeping window is

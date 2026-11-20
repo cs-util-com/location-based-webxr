@@ -99,24 +99,31 @@ function referenceOwner(
   }
   const nearest = [...inRange].sort(byNearest)[0] ?? -1;
   const n = cameras[nearest]?.window ?? -1;
-  const revisit = (w: number): boolean => {
-    if (windows[w]?.segment !== windows[n]?.segment) return true;
+  const revisit = (w: number, v: number): boolean => {
+    if (windows[w]?.segment !== windows[v]?.segment) return true;
     for (const a of inRange) {
       for (const b of inRange) {
         const ca = cameras[a];
         const cb = cameras[b];
-        if (ca?.window !== w || cb?.window !== n) continue;
+        if (ca?.window !== w || cb?.window !== v) continue;
         if (Math.abs(ca.along - cb.along) <= 2 * range) return false;
       }
     }
     return true;
   };
-  let owner = n;
+  let first = n;
   for (const i of inRange) {
     const w = cameras[i]?.window ?? n;
-    if (w < owner && revisit(w)) owner = w;
+    if (w < first && revisit(w, n)) first = w;
   }
-  return owner;
+  if (first === n) return n;
+  // The nearest seeing camera of the first pass's windows before n.
+  const firstPass = inRange.filter((i) => {
+    const w = cameras[i]?.window ?? n;
+    return w < n && !revisit(w, first);
+  });
+  const owner = [...firstPass].sort(byNearest)[0];
+  return owner === undefined ? first : (cameras[owner]?.window ?? first);
 }
 
 describe("createOwnership (property)", () => {

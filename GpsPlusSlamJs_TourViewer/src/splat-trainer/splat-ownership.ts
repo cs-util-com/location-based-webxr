@@ -81,10 +81,13 @@ export function sees(
  * 2. A revisit: another window whose seeing cameras are all more than
  *    `2 * ownRangeM` along the walk from every seeing camera of that
  *    window, or lie in another segment, saw the spot on an earlier or
- *    later pass. The earliest window that is a revisit of the nearest's
- *    keeps it instead, so a spot the walk came back to is kept whole by
- *    one window, never interleaved from two. Windows that saw it on one
- *    pass share their seam by rule 1 alone, however many windows apart.
+ *    later pass. Then the earliest such window marks the first pass, and
+ *    of the windows before the nearest's that saw the spot on that pass
+ *    (no revisit of the earliest), the one with the nearest seeing camera
+ *    keeps it. So a spot the walk came back to is kept by the first pass
+ *    alone, and within that pass by its closest view, never by a far view
+ *    of an earlier window. Windows that saw it on one pass share their
+ *    seam by rule 1 alone, however many windows apart.
  * 3. Seen by no camera within range: the nearest camera that sees it at
  *    any distance names the window.
  * 4. Seen by none: -1.
@@ -127,6 +130,8 @@ export function createOwnership(
       let nearest = -1;
       let nearestDistance = Infinity;
       const alongs = new Map<number, number[]>();
+      // Each window's nearest seeing camera: [distance, camera index].
+      const best = new Map<number, [number, number]>();
       for (const i of grid.near(point)) {
         const c = cameras[i];
         if (c === undefined) continue;
@@ -135,6 +140,10 @@ export function createOwnership(
         const list = alongs.get(c.window) ?? [];
         list.push(c.along);
         alongs.set(c.window, list);
+        const b = best.get(c.window);
+        if (b === undefined || d < b[0] || (d === b[0] && i < b[1])) {
+          best.set(c.window, [d, i]);
+        }
         if (d < nearestDistance || (d === nearestDistance && i < nearest)) {
           nearestDistance = d;
           nearest = i;
@@ -142,14 +151,29 @@ export function createOwnership(
       }
       if (nearest >= 0) {
         const n = cameras[nearest]?.window ?? -1;
-        const own = sorted(alongs.get(n) ?? []);
-        let owner = n;
-        for (const [w, list] of alongs) {
-          if (w >= owner) continue;
-          const revisit =
-            windows[w]?.segment !== windows[n]?.segment ||
-            closestGap(sorted(list), own) > revisitGapM;
-          if (revisit) owner = w;
+        const revisit = (a: number, b: number): boolean =>
+          windows[a]?.segment !== windows[b]?.segment ||
+          closestGap(sorted(alongs.get(a) ?? []), sorted(alongs.get(b) ?? [])) >
+            revisitGapM;
+        // The earliest window that saw the spot on another pass than n's.
+        let first = n;
+        for (const w of alongs.keys()) {
+          if (w < first && revisit(w, n)) first = w;
+        }
+        if (first === n) return n;
+        // Of that earlier pass (the windows before n that are no revisit
+        // of `first`), the one with the nearest seeing camera keeps it.
+        let owner = first;
+        let ownerAt = best.get(first) ?? [Infinity, Infinity];
+        for (const [w, at] of best) {
+          if (w >= n || revisit(w, first)) continue;
+          if (
+            at[0] < ownerAt[0] ||
+            (at[0] === ownerAt[0] && at[1] < ownerAt[1])
+          ) {
+            owner = w;
+            ownerAt = at;
+          }
         }
         return owner;
       }

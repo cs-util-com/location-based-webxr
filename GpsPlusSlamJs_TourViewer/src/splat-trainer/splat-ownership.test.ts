@@ -216,6 +216,28 @@ describe("createOwnership", () => {
     },
   );
 
+  it("gives a spot of an out-and-back walk to the nearest window of the first pass, not the earliest", () => {
+    // Why: the walk goes out 150 m and comes back 0.6 m beside itself.
+    // The return pass is nearest here, so the revisit rule decides; but
+    // windows 0, 1 and 2 of the way out all see the spot within range.
+    // Taking the earliest of them gave window 0's view from 36 m away the
+    // spot standing 5 m into window 2, interleaving it with window 2's
+    // close-up splats at every spot where window 2 is nearest. Of the
+    // first pass, the nearest seeing window must keep it.
+    const { cameras, windows: plan } = camerasOf(
+      walkThrough([
+        [0, 0],
+        [0, -150],
+        [0.6, -150],
+        [0.6, 0],
+      ]),
+    );
+    const own = createOwnership(cameras, plan, P, 40);
+    const spot: Vector3 = [0.5, -1.5, -65];
+    expect(nearestSeeing(cameras, spot, 40)).toBeGreaterThan(4);
+    expect(own.ownerOf(spot)).toBe(2);
+  });
+
   it("never lets a camera beyond the range claim a revisit", () => {
     // Why: rule 1 counts only cameras within ownRangeM. An earlier window
     // that saw a spot from 74 m away, however far back along the walk,
@@ -271,6 +293,34 @@ describe("createOwnership", () => {
       createOwnership([camera(0, 0, FORWARD, Number.NaN)], windows, P, 40),
     ).toThrow(RangeError);
   });
+  it("rejects a camera too far from the origin to key its grid cell", () => {
+    // Why: past the cell key's range two cells share one key, so a camera
+    // there would be found from a spot on the other side of the world.
+    // 70 000 cells of the range is past the key's 65 535.
+    expect(() =>
+      createOwnership([camera(70000 * 40, 0)], [{ segment: 0 }], P, 40),
+    ).toThrow(RangeError);
+  });
+
+  it("answers a spot far outside the key's range by rules 3 and 4, never from an aliased cell", () => {
+    // Why: a splat can land anywhere, and its cell is never keyed past the
+    // range; the spot at cell y 65 541 packs to the same key as the
+    // camera's cell (1, -65 531, 0), and must still be told by the
+    // cameras that see it, not by a key that only collides.
+    const up: Quaternion = [Math.SQRT1_2, 0, 0, Math.SQRT1_2];
+    const cam: OwnershipCamera = {
+      position: [1.5, -65530.5, 0.5],
+      rotation: up,
+      window: 0,
+      along: 0,
+    };
+    const own = createOwnership([cam], [{ segment: 0 }], P, 1);
+    // Seen, but from 131 072 m: rule 3 names the camera's window.
+    expect(own.ownerOf([1.5, 65541.5, 0.5])).toBe(0);
+    // Below the camera, seen by nothing: rule 4.
+    expect(own.ownerOf([1.5, -70000, 0.5])).toBe(-1);
+    expect(own.ownerOf([1e12, 1e12, 1e12])).toBe(-1);
+  });
 });
 
 describe("shellCrop", () => {
@@ -292,7 +342,8 @@ describe("shellCrop", () => {
     expect(keep).toEqual([true, false, true]);
   });
 
-  it("rejects a non-positive keep distance", () => {
+  it("rejects a non-positive keep distance or a camera too far out to key", () => {
     expect(() => shellCrop([], [], 0)).toThrow(RangeError);
+    expect(() => shellCrop([], [[70000 * 20, 0, 0]], 20)).toThrow(RangeError);
   });
 });
