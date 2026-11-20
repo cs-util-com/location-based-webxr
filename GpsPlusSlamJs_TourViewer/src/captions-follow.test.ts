@@ -80,6 +80,24 @@ describe("narratedShown", () => {
     expect(narratedShown([plain], resetReading, live)?.mode).toBe("box");
   });
 
+  // Why: a visitor's pick the text cannot meet (a lectern for a text
+  // with pictures) shows the creator's view instead, so the creator's
+  // choice of where the words show comes back with it: the sign's words
+  // travel for `words: "sign"`, and stay at the bottom without it.
+  it("defers to the creator's choice where the visitor's pick cannot be met", () => {
+    const LECTERN = withPreferredView(null, "longText", "world", "lectern");
+    const pictured = (words: boolean): TourLongTextBlock => ({
+      ...text("p", { words }),
+      body: "Words.\n\n![The hall](asset:hall)",
+    });
+    expect(narratedShown([pictured(true)], LECTERN, live)?.mode).toBe("travel");
+    expect(narratedShown([pictured(false)], LECTERN, live)?.mode).toBe("box");
+    // A lectern pick the text can meet shows no words at all.
+    expect(narratedShown([text("t", { words: true })], LECTERN, live)).toBe(
+      null,
+    );
+  });
+
   // Why: the reading stand shows the words itself, so a box would show
   // them twice; a text without a fitting timing has no words to follow.
   it("shows nothing for a lectern, a stale timing or none, and goes on to the next text", () => {
@@ -164,6 +182,9 @@ describe("createCaptionsFollow", () => {
         } as unknown as ReadingSignHandle;
         signs.set(id, sign);
         return sign;
+      },
+      unmount: (id: string) => {
+        signs.delete(id);
       },
       noCamera: () => {
         camera = false;
@@ -314,6 +335,61 @@ describe("createCaptionsFollow", () => {
     expect(starts[0]?.sheetOpen()).toBe(false);
     sheetOpen(true);
     expect(starts[0]?.sheetOpen()).toBe(true);
+    // While travelling, the box stays the ghost under the open sheet: the
+    // travel hides the words by its own rules.
+    follow.sync();
+    expect(box.show).toHaveBeenLastCalledWith(content, "travel");
+  });
+
+  // Why: a travel hangs the words on one sign's plate; whatever takes
+  // the words or the sign away (leaving the station, the sign going, a
+  // new sign for the same text, another text) must stop it, or a travel
+  // keeps running on a disposed sign.
+  describe("stops the travel when its text or sign goes", () => {
+    function travelling() {
+      const t = make();
+      t.give(at(0));
+      t.set({ blocks: [text("a")], presentId: "s1", stored: READING });
+      t.mount("a");
+      t.follow.sync();
+      expect(t.starts).toHaveLength(1);
+      return t;
+    }
+
+    it("on leaving the station", () => {
+      const { follow, set, starts, stops } = travelling();
+      set({ presentId: null });
+      follow.sync();
+      expect(stops).toHaveBeenCalledTimes(1);
+      expect(starts).toHaveLength(1);
+    });
+
+    it("when the sign unmounts", () => {
+      const { follow, starts, stops, unmount } = travelling();
+      unmount("a");
+      follow.sync();
+      expect(stops).toHaveBeenCalledTimes(1);
+      expect(starts).toHaveLength(1);
+    });
+
+    it("when the sign is remounted under the same id, and starts from the new one", () => {
+      const { follow, mount, starts, stops } = travelling();
+      const again = mount("a");
+      follow.sync();
+      expect(stops).toHaveBeenCalledTimes(1);
+      expect(starts).toHaveLength(2);
+      expect(starts[1]?.sign).toBe(again);
+    });
+
+    it("when another text is shown, and starts from its sign", () => {
+      const { follow, set, mount, starts, stops } = travelling();
+      mount("b");
+      set({ blocks: [text("b")] });
+      follow.sync();
+      expect(stops).toHaveBeenCalledTimes(1);
+      expect(starts).toHaveLength(2);
+      expect(starts[1]?.id).toBe("b");
+    });
   });
 
   // Why: the chip on a narrated sign says whether its voice speaks, so
@@ -344,5 +420,40 @@ describe("createCaptionsFollow", () => {
     give(at(9000));
     follow.sync();
     expect(chips.get("a")).toBe("ended");
+  });
+
+  // Why: leaving pauses the voice, so a sign still standing (every
+  // station's content shows with "show all", and a sign fades out over a
+  // while without it) must stop saying it speaks; so must a sign whose
+  // text is no longer the one shown.
+  it("stops a sign's chip saying it plays once its text is no longer shown", () => {
+    const { follow, set, give, mount, chips, playing, unmount } = make();
+    mount("a");
+    set({ blocks: [text("a")], presentId: "s1", stored: null });
+    give(at(4000));
+    playing(true);
+    follow.sync();
+    expect(chips.get("a")).toBe("playing");
+    // Walking out: the store may still say it plays for a frame.
+    set({ blocks: [], presentId: null });
+    follow.sync();
+    expect(chips.get("a")).toBe("paused");
+    // Back in: it plays again.
+    set({ blocks: [text("a")], presentId: "s1" });
+    follow.sync();
+    expect(chips.get("a")).toBe("playing");
+    // Straight into the next station, its own text shown: the old sign
+    // says paused.
+    mount("b");
+    set({ blocks: [text("b")], presentId: "s2" });
+    follow.sync();
+    expect(chips.get("a")).toBe("paused");
+    expect(chips.get("b")).toBe("playing");
+    // The shown sign unmounted and gone: nothing paints it again.
+    unmount("b");
+    chips.delete("b");
+    set({ blocks: [], presentId: null });
+    follow.sync();
+    expect(chips.has("b")).toBe(false);
   });
 });
