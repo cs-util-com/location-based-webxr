@@ -9,16 +9,22 @@
  * assumed world = ECEF, the view would jump or the camera would land on
  * the far side of the Earth. Measured: the frame and the camera's ECEF
  * pose just before and just after a switch at a fixed pose, and the state
- * a whole dive leaves in the target's frame.
+ * a landing (the lab's park at the target) leaves in the target's frame.
  */
 import { expect, test } from "@playwright/test";
 
 import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&relief=1&reliefHeights=synthetic&detail=0";
+
+/** Parks the camera `km` above the target, as a landing there leaves it. */
+const parkAtTarget = (page, km) =>
+  page.evaluate(
+    ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+    [TARGET.latitude, TARGET.longitude, km * 1000],
+  );
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 
@@ -48,13 +54,10 @@ function compare(a, b) {
 const swept = (value, bound) =>
   `${value.toFixed(2)} (bound ${bound}: ${SWEEP.map((k) => `x${k} ${value <= bound * k ? "ok" : "NO"}`).join(" ")})`;
 
-test("the world frame switches without moving the view, and a dive lands in the target's frame", async ({
+test("the world frame switches without moving the view, and a landing is in the target's frame", async ({
   page,
-  context,
 }) => {
   test.setTimeout(600_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
   // At the 150 km hold this was written at, not the dive's default 2 km
   // (r790 city plan K4): below it the layers the frame exists for draw
   // only in the target's frame (the haze, measured: density 1 there, 0 in
@@ -62,11 +65,11 @@ test("the world frame switches without moving the view, and a dive lands in the 
   // one by one), so the two pictures differ. Measured at the same pose,
   // frame against ECEF: 23 levels at 2 km (27 with the haze off), 30 at 10,
   // 16 at 50, 0 at 150.
-  const errors = await bootGlobe(page, `${BASE}&landKm=150`);
+  const errors = await bootGlobe(page, BASE);
   expect(
     await page.evaluate(() => window.__globeLab.state().worldFrame),
   ).toBeNull();
-  await page.locator("#globe-pin").click();
+  await parkAtTarget(page, 150);
   await page.waitForFunction(
     () => {
       const s = window.__globeLab.state();
@@ -78,7 +81,7 @@ test("the world frame switches without moving the view, and a dive lands in the 
     { timeout: 300_000 },
   );
   const landed = await page.evaluate(() => window.__globeLab.state());
-  // The pin moved the world into the target's frame.
+  // The landing moved the world into the target's frame.
   expect(landed.worldFrame).toEqual({
     lat: TARGET.latitude,
     lng: TARGET.longitude,
@@ -132,18 +135,15 @@ test("the world frame switches without moving the view, and a dive lands in the 
 // the view, and that the frame follows once the press ends.
 test("the frame never moves under a drag in progress, and follows once the controls are idle", async ({
   page,
-  context,
 }) => {
   test.setTimeout(600_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
   // At the 150 km hold this was written at (r790 city plan K4): there the
   // oblique camera stands about 210 km from the target, past the frame's
   // 20 km drift, so the frame has somewhere to follow once the press ends.
   // From the 2 km landing it stood 2.8 km off, the shift moved it 150 m,
   // and the frame rightly stayed (measured 2026-10-07).
-  const errors = await bootGlobe(page, `${BASE}&landKm=150`);
-  await page.locator("#globe-pin").click();
+  const errors = await bootGlobe(page, BASE);
+  await parkAtTarget(page, 150);
   await page.waitForFunction(
     () => {
       const s = window.__globeLab.state();

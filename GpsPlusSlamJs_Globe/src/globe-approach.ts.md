@@ -30,6 +30,10 @@ now? })` returns a `GlobeApproach`. `sunEcef`, `fitDistance` and
     - `dive(now, target, fromPose, { durationMs, toAltitudeM, clock? })`:
       the fixed dive (`planDive`, at `params.pitchLow`) on `clock` (the
       arrival prefetch's; default as it is); drops any pin flight;
+    - `park(now, target, camera)`: the camera held at `camera` (an ECEF
+      `{ position, quaternion }`, copied; every frame returns a fresh
+      copy) as `landed` over `target` until a touch or a restart; drops any
+      dive or pin flight. The lab's smokes measure held views this way;
     - `flyPin(now, pin, place?)`, `aimPin(place)`, `updatePin(now, apply)`,
       `pinFlight`: the continuous flight (`/globe/pin-flight.ts`);
     - `holdDiveAt(ms | null)`, `diveAltitudeAt(ms)`: the smokes' hold and
@@ -76,7 +80,8 @@ now? })` returns a `GlobeApproach`. `sunEcef`, `fitDistance` and
   the fallback, a position while spinning and over the fallback, the
   fly-in's first frame and its arrival (also on a NaN frame time), the
   user, the dive with its clock
-  and hold, the pin flight and its cancel, the restart key, the pole case
+  and hold, a park held exactly (copies both ways) until a touch or a
+  restart, the pin flight and its cancel, the restart key, the pole case
   of `poseToward`); `globe-approach.property.test.ts` (forward-only
   phases, a non-growing fly-in between the fit and the zoom-out limit,
   the exact hold from `turnMs`, a dive that lands exactly once at its

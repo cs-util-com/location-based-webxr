@@ -377,6 +377,50 @@ describe("createGlobeApproach: the user, the dive and the pin flight", () => {
   });
 });
 
+describe("createGlobeApproach: parking", () => {
+  // Why: the lab's smokes measure looks at a held altitude over a place.
+  // They park the camera there instead of flying to it: the approach keeps
+  // driving the camera (so the frame loop, its clip planes and the world
+  // frame behave as after a landing), the pose holds exactly where it was
+  // parked, a later frame cannot move it, and a restart or a touch ends it.
+  it("holds the parked camera as landed until a touch or a restart", () => {
+    const { approach, at } = setup();
+    approach.restart(at(0), params({ turnMs: 0 }));
+    approach.pose(at(0));
+    const position = new THREE.Vector3(1, 2, 3).multiplyScalar(2_000_000);
+    const quaternion = new THREE.Quaternion(0.1, 0.2, 0.3, 0.9).normalize();
+    approach.park(at(100), ZURICH, { position, quaternion });
+    expect(approach.state().phase).toBe("landed");
+    expect(approach.state().target).toEqual(ZURICH);
+    expect(approach.state().source).toBe("pin");
+    expect(approach.drives).toBe(true);
+    for (const ms of [100, 5_000, 60_000]) {
+      const step = placed(approach.pose(at(ms)));
+      expect(step.position.toArray()).toEqual(position.toArray());
+      expect(step.quaternion.toArray()).toEqual(quaternion.toArray());
+      // A caller that moves the returned pose cannot move the next one.
+      step.position.set(0, 0, 0);
+    }
+    // The parked pose is a copy: moving the caller's own vectors later
+    // does not move the camera either.
+    const before = position.toArray();
+    position.set(9, 9, 9);
+    expect(placed(approach.pose(at(70_000))).position.toArray()).toEqual(
+      before,
+    );
+    expect(approach.state().history.map((h) => h.phase)).toEqual([
+      "spin",
+      "turning",
+      "arrived",
+      "landed",
+    ]);
+    approach.yieldToUser(at(80_000));
+    expect(approach.state().phase).toBe("user");
+    approach.restart(at(90_000), params({ turnMs: 0 }));
+    expect(isOrbit(approach.pose(at(90_000)))).toBe(true);
+  });
+});
+
 describe("approachRestartKey", () => {
   it("changes with the target and the intro's timing, not with anything else", () => {
     const base = params();

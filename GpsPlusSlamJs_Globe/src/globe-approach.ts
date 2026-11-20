@@ -157,6 +157,8 @@ export function createGlobeApproach(
   let diveClock = (elapsedMs: number) => elapsedMs;
   /** A fixed dive time (ms) the pose holds at, for the smokes; null: run. */
   let diveHoldMs: number | null = null;
+  /** A parked camera (`park`), held as landed; null otherwise. */
+  let parked: ApproachPlacedStep | null = null;
   /** The continuous flight: the pin flight that drives the camera instead of `dive`. */
   let pinFlight: PinFlight | null = null;
   /** The pin flight's last drawn pose. */
@@ -197,6 +199,7 @@ export function createGlobeApproach(
     history = [];
     runs += 1;
     dive = null;
+    parked = null;
     pinFlight = null;
     arrival = null;
     spinShown = false;
@@ -413,6 +416,7 @@ export function createGlobeApproach(
       });
       diveStartedAt = now;
       diveHoldMs = null;
+      parked = null;
       diveClock = clock ?? ((elapsedMs) => elapsedMs);
       // A pin flight left from `flight=2` (the hash can switch modes
       // without a restart) must not drive this dive's pose (a cancelled
@@ -430,9 +434,28 @@ export function createGlobeApproach(
     flyPin(now: number, pin: PinFlight, place: LatLng | null = null) {
       pinFlight = pin;
       dive = null;
+      parked = null;
       diveHoldMs = null;
       choice = { target: place, source: "pin" };
       phase = "diving";
+      note(now);
+    },
+    /**
+     * Parks the camera at `camera` (its ECEF pose) over `target`, held
+     * there as `landed` until a touch or a restart: the lab's smokes
+     * measure a held view this way, without flying to it. The pose is
+     * copied, and every frame returns a fresh copy.
+     */
+    park(now: number, target: LatLng, camera: ApproachPlacedStep) {
+      parked = {
+        position: camera.position.clone(),
+        quaternion: camera.quaternion.clone(),
+      };
+      dive = null;
+      pinFlight = null;
+      diveHoldMs = null;
+      choice = { target, source: "pin" };
+      phase = "landed";
       note(now);
     },
     /** The pin flight's place once the fix names it, for the distance readout. */
@@ -470,6 +493,12 @@ export function createGlobeApproach(
     /** The pose for this frame, advancing the states. */
     pose(now: number): ApproachStep {
       if (pinFlight && descending()) return pinPose(now, pinFlight);
+      if (parked && phase === "landed") {
+        return {
+          position: parked.position.clone(),
+          quaternion: parked.quaternion.clone(),
+        };
+      }
       if (descending() && dive) return diveFrame(now, dive);
       return introPose(now);
     },

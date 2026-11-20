@@ -519,7 +519,11 @@ register = true)` (a red sphere ahead, which the near plane follows
     the relief draws, the camera is raised to the clearance over the drawn
     ground under it (`clearedAltitudeM` of the plugin's
     `sampleCartographicElevation`), whoever owns the camera.
-  - Test hooks on `__globeLab`: `holdDiveAt(ms)` holds the camera at a
+  - Test hooks on `__globeLab`: `parkAt(place, altitudeM)` parks the
+    camera that high over the place (never below the clearance), at the
+    flight's pitch law, with what a landing there sets (the place located,
+    its detail and city data asked for, the world frame moved), held as
+    landed by the approach (the smokes' held views); `holdDiveAt(ms)` holds the camera at a
     dive time (null runs on) and `diveAltitudeAt(ms)` reads the dive's
     altitude without moving it (the moving-camera band smoke);
     `plantDetail(eastFactor)` plants a detail grid east of the target (the

@@ -1180,6 +1180,43 @@ function bindPin({
   render();
   return {
     /**
+     * Parks the camera `altitudeM` above `place` ({ lat, lng }; never
+     * below the clearance over its ground), looking at it at the flight's
+     * pitch law, with everything a landing there sets: the place located,
+     * its detail and city data asked for, the world frame moved to it. The
+     * approach holds it as landed until a touch or a restart. For the
+     * smokes that measure a held view. Only from idle; RangeError for a
+     * place or an altitude that is not finite and positive.
+     */
+    parkAt(place, altitudeM) {
+      if (
+        !(Number.isFinite(place?.lat) && Number.isFinite(place?.lng)) ||
+        !(altitudeM > 0 && Number.isFinite(altitudeM))
+      ) {
+        throw new RangeError(
+          `parking needs a finite place and altitude, got ${place}, ${altitudeM}`,
+        );
+      }
+      if (phase !== "idle") return;
+      const located = landing.locate(place);
+      const params = getParams();
+      onLocated(located, params);
+      controls.release();
+      arrival.start(located, params);
+      setFrameTarget(located);
+      const heldM = Math.max(altitudeM, diveFloorM(located, altitudeM));
+      flight.park(
+        performance.now(),
+        located,
+        obliqueCamera(
+          ellipsoid,
+          orbitPose(ellipsoid, located),
+          heldM,
+          pitchAtDeg(heldM, { pitchLowDeg: params.pitchLow }),
+        ),
+      );
+    },
+    /**
      * Flies the dive to `place` ({ lat, lng }) without asking for the
      * device's position (a `land=1` link, §12.4 R15), as a press would
      * once located. Only from idle; RangeError for a place that is not
@@ -2035,10 +2072,11 @@ async function start() {
       : { near: params.reliefNear };
   /**
    * The least altitude over `target` (the clearance rule, F1): its ground
-   * from a ray down onto the drawn relief, exaggerated as at the hand-over
-   * altitude, plus the clearance; 0 without the relief or a loaded tile.
+   * from a ray down onto the drawn relief, exaggerated as at `altitudeM`
+   * (the dive's landing by default), plus the clearance; 0 without the
+   * relief or a loaded tile.
    */
-  const diveFloorM = (target) => {
+  const diveFloorM = (target, altitudeM = params.landKm * 1000) => {
     if (!terrain) return 0;
     const ground = terrain.plugin.sampleCartographicElevation(
       target.lat * DEG,
@@ -2046,7 +2084,7 @@ async function start() {
     );
     if (ground === null) return 0;
     const heightM = ground / Math.max(terrain.plugin.heightScale, 1);
-    const e = exaggerationAt(params.landKm * 1000, heightLaw());
+    const e = exaggerationAt(altitudeM, heightLaw());
     return minimumAltitudeM(heightM, e, GLOBE_FLIGHT.clearanceM);
   };
   /**
@@ -3120,6 +3158,11 @@ void main() {
       terrain.setDetail({ ratio, side, extentM, halfM: extentM }, target);
       return target;
     },
+    /**
+     * Parks the camera `altitudeM` above `place`, as a landing there
+     * would leave it (`bindPin`'s `parkAt`): the smokes' held views.
+     */
+    parkAt: (place, altitudeM) => pin.parkAt(place, altitudeM),
     /** The dive's altitude at a dive time (m), the camera unmoved. */
     diveAltitudeAt: (ms) => flight.diveAltitudeAt(ms),
     /** Holds the camera at a dive time (ms; null runs on); its altitude. */
