@@ -80,7 +80,7 @@ not-checked`): a link's complete copies are checked through
     M1). `loadSessionMeta()` reads the entry the framework's
     `isSessionJsonEntryName` picks (a look-alike such as
     `backup-session.json` is not the session).
-- `TourEntry { filename; size; isImage }` (reached via `TourSession.entries`, not separately exported),
+- `TourEntry { filename; size; crc32?; isImage }` (`crc32`: the checksum the archive records for the entry's bytes, absent when the reader gives none) (reached via `TourSession.entries`, not separately exported),
   `StreamStats { networkRequests; networkBytes; cacheReads; cacheBytes; origin }`
   — `origin` tracks the LATEST read, flipping to `'cache'` once the warm
   swap serves reads locally (the archive's own `origin` field is only the

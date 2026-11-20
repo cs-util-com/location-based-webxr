@@ -104,6 +104,7 @@ import {
   isOlderVersionDraft,
 } from "../draft-persistence.js";
 import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
+import { crc32 } from "../characters/png-text.js";
 import { isTourContentKey } from "../tour-file-key.js";
 import type { EditorLock } from "./save-target.js";
 import {
@@ -838,16 +839,19 @@ export interface EditorDraft
    *  given the writes, the page's save path the notes. */
   writes(): EditorTourDraft;
   /** A tour opened: hold its draft, read it, clear what the file carries,
-   *  and say what to offer. Awaited before the tour shows. `sizeInFile`
-   *  gives the size of an entry (by its path in the tour's folder) the
-   *  opened file holds: a smaller file the file lists at its path is the
-   *  file's own only when the sizes agree (a save by download wrote it),
-   *  since the path alone does not say which bytes are there. Without it a
-   *  smaller file is always kept. */
+   *  and say what to offer. Awaited before the tour shows. `entryInFile`
+   *  gives the size and CRC-32 of an entry (by its path in the tour's
+   *  folder) the opened file holds: a file the file lists at its path is
+   *  the file's own only when both agree with the draft's bytes (a save
+   *  by download wrote it), since neither the path nor the size says which
+   *  bytes are there. Without it a smaller file is always kept, and so is
+   *  any file whose entry names no CRC-32. */
   open(
     fileKey: string,
     manifest: TourManifest,
-    sizeInFile?: (path: string) => number | undefined,
+    entryInFile?: (
+      path: string,
+    ) => { readonly size: number; readonly crc32?: number } | undefined,
   ): Promise<EditorDraftOpened>;
   /** The offer was restored (the session wrote what it applied). */
   restored(): void;
@@ -1537,7 +1541,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   // `built`, `landed` and `moved` are reached only through `writes()`,
   // bound to the tour open when it was called.
   const api: DraftApi = {
-    async open(fileKey, manifest, sizeInFile) {
+    async open(fileKey, manifest, entryInFile) {
       close();
       const mine = generation;
       told = false;
@@ -1587,26 +1591,34 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         detail,
       } of listed ?? []) {
         // A file the file on disk lists at its path is its own when the
-        // entry there has its size (`sizeInFile`): the path alone does not
-        // say which bytes are there - a save that started before "use the
-        // original" lands the smaller file at the original's path. Without
-        // sizes a plain file is its own by its path, and a smaller file
+        // entry there has its bytes (`entryInFile`: the same size and
+        // CRC-32): the path alone does not say which bytes are there - a
+        // save that started before "use the original" lands the smaller
+        // file at the original's path - and the size alone does not either:
+        // two smaller files of one original (made again after "use the
+        // original"), or two WAVs of one length, share a size. Without
+        // entries a plain file is its own by its path, and a smaller file
         // stays (it may share the path with other bytes).
-        const ownAtPath = (blob: Blob): boolean =>
-          pathInFile.get(asset.id) === asset.path &&
-          (sizeInFile === undefined
-            ? original === undefined
-            : sizeInFile(asset.path) === blob.size);
+        const ownAtPath = async (blob: Blob): Promise<boolean> => {
+          if (pathInFile.get(asset.id) !== asset.path) return false;
+          if (entryInFile === undefined) return original === undefined;
+          const entry = entryInFile(asset.path);
+          if (entry === undefined || entry.size !== blob.size) return false;
+          const bytes = await blob.arrayBuffer().catch(() => undefined);
+          return (
+            bytes !== undefined && crc32(new Uint8Array(bytes)) === entry.crc32
+          );
+        };
         if (original === undefined) {
           if (
-            sizeInFile === undefined &&
+            entryInFile === undefined &&
             pathInFile.get(asset.id) === asset.path
           ) {
             continue;
           }
           const blob = await bytesAt(`${ASSET_PREFIX}${asset.id}`);
           if (mine !== generation) return none;
-          if (blob !== undefined && ownAtPath(blob)) continue;
+          if (blob !== undefined && (await ownAtPath(blob))) continue;
           if (blob === undefined) {
             // Bytes gone while the file on disk holds an entry at the
             // record's path: an open's tidy removed them as the file's own
@@ -1614,7 +1626,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             // file carries it, so nothing of the draft's is lost.
             const onDisk =
               pathInFile.get(asset.id) === asset.path &&
-              sizeInFile?.(asset.path) !== undefined;
+              entryInFile?.(asset.path) !== undefined;
             if (!onDisk) lost = true;
           } else {
             files.set(asset.id, {
@@ -1629,10 +1641,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           bytesKey({ asset, blob: new Blob(), original: { asset: original } }),
         );
         if (mine !== generation) return none;
-        // At its path with bytes of its size (a save by download wrote
-        // it there): the file's own now, its original with it. A smaller
-        // file and the bytes it replaced never share a size.
-        if (blob !== undefined && ownAtPath(blob)) continue;
+        // At its path with its bytes (a save by download wrote it there):
+        // the file's own now, its original with it.
+        if (blob !== undefined && (await ownAtPath(blob))) continue;
         const kept = originalKept
           ? await bytesAt(`${ASSET_PREFIX}${asset.id}`)
           : undefined;

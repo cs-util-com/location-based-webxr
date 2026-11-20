@@ -83,6 +83,8 @@ import { truncated } from "./truncated.js";
 interface TourEntry {
   readonly filename: string;
   readonly size: number;
+  /** The CRC-32 the archive records for the entry's bytes. */
+  readonly crc32?: number;
   readonly isImage: boolean;
 }
 
@@ -701,6 +703,7 @@ async function buildSession(
     entries.push({
       filename: entry.filename,
       size: entry.uncompressedSize,
+      ...(entry.crc32 === undefined ? {} : { crc32: entry.crc32 }),
       isImage: tourMediaTypeOfEntry(entry.filename)?.kind === "image",
     });
   }

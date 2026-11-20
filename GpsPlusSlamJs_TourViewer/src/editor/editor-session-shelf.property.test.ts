@@ -23,7 +23,11 @@
  * path whose bytes no save wrote; through a random run once the steps
  * were weighted, a reload that dropped the original the creator chose for
  * a smaller WAV at the same path, because the draft trusted the path the
- * file on disk listed rather than its bytes. The steps are drawn alone or
+ * file on disk listed rather than its bytes; through a random run in CI, a
+ * reload that dropped a picture made smaller a second time (after "use the
+ * original" and a reload) for the older smaller bytes the file on disk held
+ * at the same path, because the draft took a matching size for the same
+ * bytes. The steps are drawn alone or
  * as short fragments (a job and its end, a save started and something done while
  * it runs, a save or a use of the original and a reload), so random runs
  * reach such orders too: the five-step order behind the running-save bug
@@ -214,11 +218,12 @@ async function openWorld(
   );
   const manifest = manifestOf(new Uint8Array(await disk.arrayBuffer()));
   const draft = draftOf(stores);
-  // As the page opens it: with the file's entry sizes, which tell a
-  // draft's file from the bytes the file on disk holds at the same path.
-  const sizes = new Map(session.entries.map((e) => [e.filename, e.size]));
+  // As the page opens it: with the file's entries (size and CRC-32),
+  // which tell a draft's file from the bytes the file on disk holds at the
+  // same path.
+  const entries = new Map(session.entries.map((e) => [e.filename, e]));
   const { offer } = await draft.open(K, manifest, (path) =>
-    sizes.get(`${session.manifestWrap}${path}`),
+    entries.get(`${session.manifestWrap}${path}`),
   );
   const store = editorStore();
   const voices = fakeOptimizer();
@@ -479,7 +484,11 @@ describe("the shelf, the save and the draft, in any order", () => {
         // because the file on disk listed its path, though with the smaller
         // bytes); a reload with a large file still on the shelf; "use the
         // original" while a save writing the smaller file runs, then a
-        // reload; a picture made smaller at its own path, saved, reloaded.
+        // reload; a picture made smaller at its own path, saved, reloaded;
+        // a picture made smaller, saved while "use the original" is chosen,
+        // reloaded, made smaller again (other bytes of the same size) and
+        // reloaded (the draft took the file on disk's older smaller bytes
+        // for its own by their size).
         examples: [
           [
             [
@@ -531,6 +540,20 @@ describe("the shelf, the save and the draft, in any order", () => {
           // redone, then a reload: the record written again must still know
           // the version the save wrote, or the reload drops the redone voice.
           [["voice", "startSave", "voice", "undo", "redo", "reload"]],
+          [
+            [
+              "optimizeTour",
+              "finishPicture",
+              "startSave",
+              "usePictureOriginal",
+              "startSave",
+              "reload",
+              "optimizeTour",
+              "finishPicture",
+              "reload",
+              "voice",
+            ],
+          ],
         ],
       },
     );
