@@ -78,4 +78,15 @@ describe("createTravelRegistry", () => {
     b.owns = true;
     expect(reg.ownsTap()).toBe(true);
   });
+
+  // Why: quads are drawn in the order they were added, so on a tie the
+  // later one is the one on top and the one the finger sees.
+  it("gives a tie between quads to the later one, as drawn", () => {
+    const log: string[] = [];
+    const reg = createTravelRegistry();
+    reg.add(fake("first", { quad: true, depth: 0, linePx: 5 }, log));
+    reg.add(fake("later", { quad: true, depth: 0, linePx: 5 }, log));
+    reg.pointerDown(E, TARGET);
+    expect(log).toEqual(["down later"]);
+  });
 });

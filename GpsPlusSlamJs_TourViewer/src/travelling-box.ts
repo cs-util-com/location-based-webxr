@@ -18,10 +18,12 @@ import {
   type Camera,
   type CanvasTexture,
   type Material,
+  type Mesh,
   type Object3D,
   type Texture,
 } from "three";
 
+import type { TravelRegistry } from "./travel-registry.js";
 import type {
   TravelLayout,
   TravelRect,
@@ -37,7 +39,7 @@ import {
   flightClip,
   inQuad,
   plateMetrics,
-  quadOfClip,
+  quadOfClipInto,
   settlePlace,
   stepToward,
   TRAVEL_MIN_W,
@@ -49,7 +51,7 @@ import {
   type TravelWhy,
 } from "./travelling-box-rules.js";
 import { CLOSING_TAP_GRACE_MS } from "./view-switch.js";
-import { canvasTexture } from "./world-part.js";
+import { canvasTexture, setOpacity } from "./world-part.js";
 
 /** The fade in and out (s): the prototype's. */
 const PRESENCE_S = 0.3;
@@ -95,6 +97,9 @@ export interface TravellingBoxDeps {
   readonly onPlace?: (event: TravelPlaceEvent) => void;
   /** Whether this surface owns its screen slot (alone it always does). */
   readonly slotFree?: () => boolean;
+  /** The page's registry: the box joins it at once and leaves it on
+   *  `stop()`. */
+  readonly registry?: Pick<TravelRegistry, "add">;
 }
 
 /** A pointer on the words: where it hit and how deep. */
@@ -185,6 +190,14 @@ const CORNERS = [
   [0.5, -0.5],
 ] as const;
 
+/** Writes `v` into `out` at `at` (no array literal per call). */
+function putClip(out: Float32Array, at: number, v: Vector4): void {
+  out[at] = v.x;
+  out[at + 1] = v.y;
+  out[at + 2] = v.z;
+  out[at + 3] = v.w;
+}
+
 /** The 4 corners and the centre of the unit plate, through `mvp`. */
 function projectPlate(
   mvp: Matrix4,
@@ -194,23 +207,54 @@ function projectPlate(
 ): void {
   for (let i = 0; i < 4; i++) {
     const [x, y] = CORNERS[i]!;
-    v.set(x, y, 0, 1).applyMatrix4(mvp);
-    corners.set([v.x, v.y, v.z, v.w], i * 4);
+    putClip(corners, i * 4, v.set(x, y, 0, 1).applyMatrix4(mvp));
   }
-  v.set(0, 0, 0, 1).applyMatrix4(mvp);
-  centre.set([v.x, v.y, v.z, v.w]);
+  putClip(centre, 0, v.set(0, 0, 0, 1).applyMatrix4(mvp));
 }
 
-function onScreenClip(centre: Float32Array, corners: Float32Array): boolean {
+/** The w a corner must pass to be on screen: the rules' margin, or the
+ *  camera's near plane where that is further (WebXR clips at its own
+ *  near, 0.1 m, which three.js takes from the camera). */
+function minWOf(cam: Camera): number {
+  const near = (cam as Partial<{ near: number }>).near;
+  return typeof near === "number" && Number.isFinite(near)
+    ? Math.max(TRAVEL_MIN_W, near)
+    : TRAVEL_MIN_W;
+}
+
+function onScreenClip(
+  centre: Float32Array,
+  corners: Float32Array,
+  minW: number,
+): boolean {
   for (let i = 0; i < 4; i++) {
-    if (!(corners[i * 4 + 3]! > TRAVEL_MIN_W)) return false;
+    if (!(corners[i * 4 + 3]! > minW)) return false;
   }
   const w = centre[3]!;
   return (
-    w > TRAVEL_MIN_W &&
-    Math.abs(centre[0]! / w) < 1 &&
-    Math.abs(centre[1]! / w) < 1
+    w > minW && Math.abs(centre[0]! / w) < 1 && Math.abs(centre[1]! / w) < 1
   );
+}
+
+/** Four corner pairs, written in place each frame. */
+function quadBuffer(): [number, number][] {
+  return [
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [0, 0],
+  ];
+}
+
+function copyQuad(q: readonly [number, number][]): [number, number][] {
+  return q.map(([x, y]) => [x, y]);
+}
+
+/** The plate's materials, each of which may carry the texture as its map. */
+function materialsOf(
+  material: Mesh["material"],
+): (Material & { map?: Texture | null })[] {
+  return Array.isArray(material) ? material : [material];
 }
 
 function quadHeight(q: readonly (readonly [number, number])[]): number {
@@ -225,12 +269,6 @@ function quadHeight(q: readonly (readonly [number, number])[]): number {
       Math.hypot(br[0] - tr[0], br[1] - tr[1])) /
     2
   );
-}
-
-function setOpacity(material: Material | Material[], opacity: number): void {
-  for (const m of Array.isArray(material) ? material : [material]) {
-    m.opacity = opacity;
-  }
 }
 
 export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
@@ -266,8 +304,12 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
   let presence = 0;
   let metrics = plateMetrics([], [], 0, 0, 0, 0, 0, 0);
   let angleDeg = 0;
-  let plateQuad: [number, number][] | null = null;
-  let drawnQuad: [number, number][] | null = null;
+  const plateQuad = quadBuffer();
+  const drawnQuad = quadBuffer();
+  let plateSeen = false;
+  let drawnSeen = false;
+  /** The ghost as last set; null before the surface first travelled. */
+  let ghost: boolean | null = null;
   let showPlate = false;
   let showQuad = false;
   let pointerOn = false;
@@ -293,7 +335,6 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     drawCorners(cam, out);
   });
   deps.scene.add(quad.mesh);
-  surface.setGhost(true);
 
   /** The quad's corners for the render's camera: from the plate as that
    *  camera sees it (or as last seen on screen) to the dock. */
@@ -302,23 +343,24 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     pv.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
     mvp.multiplyMatrices(pv, surface.plate.matrixWorld);
     projectPlate(mvp, renderClip, renderCentre, v4);
-    if (onScreenClip(renderCentre, renderClip)) {
+    const minW = minWOf(cam);
+    const seen = onScreenClip(renderCentre, renderClip, minW);
+    if (seen) {
       lastClip.set(renderClip);
       haveLast = true;
     }
-    const src = onScreenClip(renderCentre, renderClip)
-      ? renderClip
-      : haveLast
-        ? lastClip
-        : null;
+    const src = seen ? renderClip : haveLast ? lastClip : null;
     if (src === null) {
       for (let i = 0; i < 4; i++) {
-        out.set([dockNdc[i * 2]!, dockNdc[i * 2 + 1]!, 0, 1], i * 4);
+        out[i * 4] = dockNdc[i * 2]!;
+        out[i * 4 + 1] = dockNdc[i * 2 + 1]!;
+        out[i * 4 + 2] = 0;
+        out[i * 4 + 3] = 1;
       }
     } else {
       flightClip(src, dockNdc, easeInOutCubic(u), out);
     }
-    drawnQuad = quadOfClip(out, view.width, view.height);
+    drawnSeen = quadOfClipInto(out, view.width, view.height, drawnQuad, minW);
   }
 
   /** Sizes the canvas and hangs the plate for a new layout. */
@@ -350,6 +392,7 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     mvp.multiplyMatrices(pv, surface.plate.matrixWorld);
     projectPlate(mvp, frameClip, frameCentre, v4);
+    const minW = minWOf(camera);
     metrics =
       layout === null
         ? plateMetrics([], [], 0, 0, 0, 0, 0, 0)
@@ -362,14 +405,15 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
             layout.cssH,
             layout.fontPx,
             layout.lineHeightPx,
+            minW,
           );
     if (metrics.onScreen) {
       lastClip.set(frameClip);
       haveLast = true;
     }
-    plateQuad = metrics.valid
-      ? quadOfClip(frameClip, view.width, view.height)
-      : null;
+    plateSeen =
+      metrics.valid &&
+      quadOfClipInto(frameClip, view.width, view.height, plateQuad, minW);
     normal.set(0, 0, 1).transformDirection(surface.plate.matrixWorld);
     at.setFromMatrixPosition(surface.plate.matrixWorld);
     eye.setFromMatrixPosition(camera.matrixWorld);
@@ -386,13 +430,19 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
       dock = null;
       return;
     }
-    const nx = (x: number) => ((x - view.left) / view.width) * 2 - 1;
-    const ny = (y: number) => 1 - ((y - view.top) / view.height) * 2;
-    const x0 = nx(dock.x);
-    const x1 = nx(dock.x + dock.w);
-    const y0 = ny(dock.y);
-    const y1 = ny(dock.y + dock.h);
-    dockNdc.set([x0, y0, x1, y0, x0, y1, x1, y1]);
+    const x0 = ((dock.x - view.left) / view.width) * 2 - 1;
+    const x1 = ((dock.x + dock.w - view.left) / view.width) * 2 - 1;
+    const y0 = 1 - ((dock.y - view.top) / view.height) * 2;
+    const y1 = 1 - ((dock.y + dock.h - view.top) / view.height) * 2;
+    // TL TR BL BR, the plate's clip order.
+    dockNdc[0] = x0;
+    dockNdc[1] = y0;
+    dockNdc[2] = x1;
+    dockNdc[3] = y0;
+    dockNdc[4] = x0;
+    dockNdc[5] = y1;
+    dockNdc[6] = x1;
+    dockNdc[7] = y1;
   }
 
   function paint(): void {
@@ -427,9 +477,9 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     const dtS = Math.min(MAX_STEP_S, Math.max(0, gapMs / 1000));
     lastT = t;
     cost.frames += 1;
-    GAPS_MS.forEach((limit, i) => {
-      if (gapMs > limit) cost.over[i]! += 1;
-    });
+    for (let i = 0; i < GAPS_MS.length; i++) {
+      if (gapMs > GAPS_MS[i]!) cost.over[i]! += 1;
+    }
 
     view = deps.viewRect();
     const travelling = surface.travelling();
@@ -441,7 +491,8 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     const fingerDown = surface.pressing();
     if (wasPressing && !fingerDown) releasedAt = t;
     wasPressing = fingerDown;
-    const onPlate = settle.place === "plate" && u === 0;
+    // The hysteresis side is the settled place: a flight home keeps it.
+    const onPlate = settle.place === "plate";
     const wanted = wantPlace(
       {
         travelling: travelling && layout !== null,
@@ -469,7 +520,8 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     );
     if (settle.place !== before) {
       why = wanted.why;
-      const appearing = before === "hidden" || presence === 0;
+      // Words still fading out are on screen: they fly from there.
+      const appearing = presence === 0;
       if (settle.place === "plate" || settle.place === "dock") {
         const target = settle.place === "dock" ? 1 : 0;
         if (appearing) u = target;
@@ -496,9 +548,9 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     setOpacity(surface.plate.material, presence);
     quad.mesh.visible = showQuad;
     quad.setOpacity(presence);
-    if (!showQuad) drawnQuad = null;
+    if (!showQuad) drawnSeen = false;
     pointerOn = u === 1 && presence > 0;
-    surface.setPointer(pointerOn);
+    giveGhost(travelling);
     if (showPlate || showQuad) paint();
 
     const work = deps.now() - t;
@@ -506,16 +558,33 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     cost.workMaxMs = Math.max(cost.workMaxMs, work);
   }
 
+  /** The ghost and its pointers are the controller's only while the
+   *  surface travels; a surface shown at the bottom keeps its own box,
+   *  and gets it back whole when the travel ends. */
+  function giveGhost(travelling: boolean): void {
+    if (travelling) {
+      if (ghost !== true) surface.setGhost(true);
+      ghost = true;
+      surface.setPointer(pointerOn);
+    } else if (ghost === true) {
+      surface.setPointer(true);
+      surface.setGhost(false);
+      ghost = false;
+    }
+  }
+
   function hit(x: number, y: number): TravelHit | null {
     if (
+      stopped ||
       presence <= 0.5 ||
       (settle.place !== "plate" && settle.place !== "dock")
     ) {
       return null;
     }
     if (u === 1 || hung === null) return null;
+    const seen = u === 0 ? plateSeen : drawnSeen;
     const q = u === 0 ? plateQuad : drawnQuad;
-    if (q === null || !inQuad(x - view.left, y - view.top, q)) return null;
+    if (!seen || !inQuad(x - view.left, y - view.top, q)) return null;
     const depth =
       u === 0
         ? (frameClip[3]! + frameClip[7]! + frameClip[11]! + frameClip[15]!) / 4
@@ -536,7 +605,7 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     releasedAt = deps.now();
   }
 
-  return {
+  const self: TravellingBox = {
     frame,
     hit,
     pointerDown(e, target) {
@@ -605,8 +674,8 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
         plateVisible: showPlate,
         quadVisible: showQuad,
         pointer: pointerOn,
-        plateQuad,
-        quad: drawnQuad,
+        plateQuad: plateSeen ? copyQuad(plateQuad) : null,
+        quad: drawnSeen ? copyQuad(drawnQuad) : null,
         dock,
         textureId: texture?.id ?? null,
         quadTextureId:
@@ -634,14 +703,25 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
       if (stopped) return;
       if (press !== null) endPress("cancel", 0, 0);
       stopped = true;
+      leave();
       quad.dispose();
       surface.unhang();
       surface.plate.visible = true;
       setOpacity(surface.plate.material, 1);
-      texture?.dispose();
+      if (texture !== null) {
+        for (const m of materialsOf(surface.plate.material)) {
+          if (m.map === texture) {
+            m.map = null;
+            m.needsUpdate = true;
+          }
+        }
+        texture.dispose();
+      }
       texture = null;
       surface.setPointer(true);
       surface.setGhost(false);
     },
   };
+  const leave = deps.registry?.add(self) ?? ((): void => undefined);
+  return self;
 }

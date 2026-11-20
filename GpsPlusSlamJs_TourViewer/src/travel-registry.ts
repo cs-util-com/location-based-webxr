@@ -30,6 +30,8 @@ export interface TravelRegistry {
 
 export function createTravelRegistry(): TravelRegistry {
   const boxes: Entry[] = [];
+  /** The boxes a frame runs, copied in place (a box may stop mid-frame). */
+  const running: Entry[] = [];
   let inFrame = false;
   return {
     add(box) {
@@ -43,8 +45,11 @@ export function createTravelRegistry(): TravelRegistry {
       if (inFrame) return;
       inFrame = true;
       try {
-        for (const box of [...boxes]) box.frame();
+        running.length = 0;
+        for (const box of boxes) running.push(box);
+        for (const box of running) box.frame();
       } finally {
+        running.length = 0;
         inFrame = false;
       }
     },
@@ -56,10 +61,13 @@ export function createTravelRegistry(): TravelRegistry {
       for (const box of boxes) {
         const h = box.hit(e.clientX, e.clientY);
         if (h === null) continue;
+        // Quads are drawn in the order they were added: on a tie the later
+        // one is on top. Plates go to the nearest.
         const better =
           best === null ||
           (h.quad && !bestQuad) ||
-          (h.quad === bestQuad && h.depth < bestDepth);
+          (h.quad === bestQuad &&
+            (h.quad ? h.depth <= bestDepth : h.depth < bestDepth));
         if (better) {
           best = box;
           bestQuad = h.quad;
