@@ -107,9 +107,9 @@ frameHeight)` from the framework, unchanged: it already is the
   (about 1e-7 in float32), while a real change of lens moves the focal
   terms by percent; 1e-4 sits between. A value that would change it: a
   device whose matrix drifts by more than 1e-4 within one session (none
-  is known; the census reports the spread so it would show). Not yet
-  measured on real devices across sessions: the value is kept until it
-  is.
+  is known; the census reports the spread so it would show). One device
+  measured: its spread was exactly 0 on two recordings, so the value
+  refuses neither; other devices are not yet measured.
 - **`ASPECT_TOL`.** `|fx / fy - 1|` with the photos' size. Real lenses
   show a fraction of a percent; a frustum for another frame shape is off
   by tens of percent. A value that would change it: a device whose

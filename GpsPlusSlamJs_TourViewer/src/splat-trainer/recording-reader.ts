@@ -48,8 +48,8 @@ import { isActionEntryName, recordingFoldersOf } from "../tour-read-set.js";
  * compare in absolute terms. A session's matrix is constant up to float
  * round-off (about 1e-7 for float32), so 1e-4 passes jitter and refuses
  * any real change of lens: a zoom or crop moves the focal terms by
- * percent, not by parts per ten thousand. Not yet checked against the
- * spread real devices show within one session (the census reports it).
+ * percent, not by parts per ten thousand. One device measured so far
+ * (spread 0); the census reports the spread for any other.
  */
 export const PROJ_TOL = 1e-4;
 

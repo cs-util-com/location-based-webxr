@@ -219,13 +219,11 @@ describe("readSplatInputs (property)", () => {
             projectionAt: () => lens as unknown as Matrix4,
           });
           const read = await readSplatInputs(rec.file);
-          if (Math.abs(stretch) < ASPECT_TOL) {
-            expect(read.kind).toBe("read");
-          } else {
-            expect(read.kind === "refused" ? read.reason : "read").toMatch(
-              /does not fit the shape of its photos/,
-            );
-          }
+          expect(read.kind === "refused" ? read.reason : "read").toMatch(
+            Math.abs(stretch) < ASPECT_TOL
+              ? /^read$/
+              : /does not fit the shape of its photos/,
+          );
         },
       ),
       RUNS,
