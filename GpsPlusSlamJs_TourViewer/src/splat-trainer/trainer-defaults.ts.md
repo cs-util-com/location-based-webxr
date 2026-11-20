@@ -1,0 +1,70 @@
+# trainer-defaults.ts
+
+## Purpose
+
+The splat trainer's tuning values in one constants block, so a sweep
+that settles them changes one file. `windowM` and `itersPerFrame` are
+measured; every other value is PROVISIONAL until the sweep that measures
+it has run.
+
+## Public API
+
+- `TrainerSettings` - the tuning read by the window plan
+  (`walk-windows.ts`), ownership (`splat-ownership.ts`) and the budgets
+  (`training-budget.ts`). Every function takes it as a parameter, so a
+  test or a sweep passes its own values without touching the defaults.
+- `TRAINER_DEFAULTS` - the values below, frozen.
+
+## The values, their swept range, and what would move them
+
+- `jumpSpeedMPerS` 3 (swept 2 / 3 / 5): a walk is about 1.4 m/s. Lower
+  would cut brisk walks into pieces; higher would let a tracking
+  relocalisation through as a step.
+- `holdoutEvery` 8 (4 / 8 / 16): every 8th capture is for evaluation
+  only. Fewer hold-outs give a noisy score, more starve training.
+- `minHoldouts` 5 (3 / 5 / 8): a window with fewer borrows its
+  neighbours'. A score that single frames still swing at 5 would raise
+  it.
+- `windowM` 30, measured over 15 / 30 / 60: held-out quality moved by
+  -0.8 to +1.2 dB with no consistent direction, while the wall time per
+  window was about 2.3 / 4 / 9 min. Windowed training stayed within -1.4
+  to +1.2 dB of training the whole walk at once: windows are a time and
+  memory measure, not a quality gain. A device that cannot hold 30 m of
+  photos at a useful size would lower it.
+- `minFrames` 20, `maxFrames` 100: training captures per window; the plan
+  requires `maxFrames >= 2 * minFrames`.
+- `overlapFraction` 0.25 (0 / 0.15 / 0.25 / 0.4): how far into its
+  neighbours a window trains, as a fraction of `windowM`. Visible seams
+  would raise it; memory pressure would lower it.
+- `ownRangeM` 40 (20 / 40 / 80): a camera claims the splats it sees within
+  this range first.
+- `keepFraction` 0.8 (0.5 / 0.8 / 1.0): a window keeps splats within this
+  fraction of the background shell's distance from one of its cameras.
+- `itersPerFrame` 150, measured against 300: the doubled steps gained
+  only at the training cameras, held-out quality flat within 0.4 dB.
+  Within `minIterations` 4000 and `maxIterations` 30000 (provisional).
+- Measured trainer choices outside this block, for the training step that
+  reads it: camera pose optimisation off, blur gate off.
+- `targetMemoryBytes` 700 MiB and `bytesPerPixel` 12: the photo memory
+  target before the adapter's own limits (`training-budget.ts`).
+- `minShortSidePx` 128 (64 / 128 / 256): the smallest photo side a window
+  may be scaled to before it is refused as too large. Usable splats at
+  64 px would lower it; unusable ones at 128 would raise it.
+- `etaMinIterations` 200: steps measured before a time estimate shows.
+
+## Invariants & assumptions
+
+- Nothing reads the defaults implicitly: each consumer validates the
+  settings it is given and throws a RangeError for values that cannot
+  hold.
+
+## Examples
+
+```ts
+const plan = planWindows(captures, { ...TRAINER_DEFAULTS, windowM: 15 });
+```
+
+## Tests
+
+None of its own: a constants block. Its consumers' property tests draw
+the settings over the swept ranges above.
