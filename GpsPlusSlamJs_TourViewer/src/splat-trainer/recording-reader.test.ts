@@ -19,6 +19,7 @@ import { readZipBlobEntry } from "../zip-blob.js";
 import {
   ASPECT_TOL,
   PROJ_TOL,
+  readRecordingPhotos,
   readSplatInputs,
   type SplatInputs,
   type SplatInputsRead,
@@ -406,6 +407,9 @@ describe("readSplatInputs refuses, in words", () => {
     expect(reasonOf(read)).toBe(
       "This recording has no depth data, so the camera's lens is unknown. Record with depth on.",
     );
+    // Why: the page words this refusal by its code, never by matching the
+    // sentence, so a reworded reason cannot change the page's heading.
+    expect(read.kind === "refused" && read.code).toBe("no-depth");
   });
 
   it("refuses depth data that carries no lens, in its own words", async () => {
@@ -416,6 +420,20 @@ describe("readSplatInputs refuses, in words", () => {
     );
     expect(reasonOf(read)).toBe(
       "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it.",
+    );
+    // A recording that has depth is not a "no depth" refusal.
+    expect(read.kind === "refused" && read.code).toBeUndefined();
+  });
+
+  it("refuses depth data whose lens is there but whose poses are broken, in its own words", async () => {
+    // Why: telling the creator their recording lacks the lens, when it has
+    // one and the samples are damaged, sends them to re-record with a
+    // recorder that already writes it.
+    const read = await readSplatInputs(
+      (await buildSyntheticRecording({ brokenDepthPose: true })).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "This recording's depth data carries the camera's lens, but its camera poses or depth points are unreadable, so the lens cannot be used.",
     );
   });
 
@@ -448,7 +466,38 @@ describe("readSplatInputs refuses, in words", () => {
       ).file,
     );
     expect(reasonOf(read)).toBe(
-      "The recording's lens does not fit the shape of its photos (it would stretch them by 33 %).",
+      "The recording's lens does not fit the shape of its photos (it would stretch them by 33.3 %).",
+    );
+  });
+
+  it("names a stretch just past the tolerance with one decimal", async () => {
+    // Why: rounded to whole percent, a 2.4 % stretch read "2 %", the same
+    // number as the tolerance it was refused for.
+    const read = await readSplatInputs(
+      (
+        await buildSyntheticRecording({
+          projectionAt: () => nudged(0, (SYNTHETIC_PROJECTION[0] ?? 0) * 0.024),
+        })
+      ).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "The recording's lens does not fit the shape of its photos (it would stretch them by 2.4 %).",
+    );
+  });
+
+  it("never prints the tolerance itself for a stretch just past it", async () => {
+    // Why: one decimal rounds a 2.03 % stretch to "2.0 %", which reads as
+    // the 2 % tolerance it was refused for.
+    const read = await readSplatInputs(
+      (
+        await buildSyntheticRecording({
+          projectionAt: () =>
+            nudged(0, (SYNTHETIC_PROJECTION[0] ?? 0) * 0.0203),
+        })
+      ).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "The recording's lens does not fit the shape of its photos (it would stretch them by just over 2 %).",
     );
   });
 
@@ -692,5 +741,54 @@ describe("readSplatInputs holds the archive caps", () => {
     expect(reasonOf(await readSplatInputs(file))).toMatch(
       /^The recording could not be read \(Action file "actions\/900000\.json" .* exceeds maximum allowed size/,
     );
+  });
+});
+
+describe("readRecordingPhotos", () => {
+  // Why: the GPU trainer reads only a window's photos, in the job's order;
+  // a reordered list trains each camera on another camera's photo, and a
+  // missing entry must fail in words instead of training on nothing.
+  it("reads the named photos in the order asked", async () => {
+    const rec = await buildSyntheticRecording();
+    const names = [rec.photoEntries[2], rec.photoEntries[0]].filter(
+      (n): n is string => n !== undefined,
+    );
+    const photos = await readRecordingPhotos(rec.file, names);
+    const expected = await Promise.all(
+      names.map((n) => readZipBlobEntry(rec.file, n)),
+    );
+    expect(photos).toHaveLength(2);
+    for (const [i, p] of photos.entries()) {
+      expect(new Uint8Array(await p.arrayBuffer())).toEqual(
+        new Uint8Array(await (expected[i] as Blob).arrayBuffer()),
+      );
+    }
+  });
+
+  it("rejects, naming it, a photo the recording lacks", async () => {
+    const rec = await buildSyntheticRecording();
+    await expect(readRecordingPhotos(rec.file, ["nope.jpg"])).rejects.toThrow(
+      /nope\.jpg/,
+    );
+  });
+});
+
+describe("read progress", () => {
+  // Why: a recording holds one small file per action, thousands of them,
+  // and reading them is the slow part on a phone. The reader says how many
+  // of them it has read, of a total it knows before reading the first, so
+  // the page can show a bar that only moves forward and ends full.
+  it("reports each text entry it reads, of a total known up front", async () => {
+    const { file } = await buildSyntheticRecording({ frames: 10 });
+    const seen: [number, number][] = [];
+    const read = await readSplatInputs(file, {
+      onProgress: (done, total) => seen.push([done, total]),
+    });
+    expect(read.kind).toBe("read");
+    const total = seen[0]?.[1] ?? 0;
+    // session.json and at least one action file per photo.
+    expect(total).toBeGreaterThan(10);
+    expect(seen.map(([done]) => done)).toEqual([...Array(total + 1).keys()]);
+    expect(seen.every(([, t]) => t === total)).toBe(true);
   });
 });

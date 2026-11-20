@@ -9,15 +9,22 @@ with the prototype's own state switcher removed. Imported by
 
 ## Contents
 
-- Colour tokens on `:root` for dark (default) and light, through
-  `prefers-color-scheme`; `--print-paper` is the colour a print shows
+- Every rule, the tokens included, is scoped under the page root class
+  `.splat-page` (`PAGE_CLASS`, added by `mountSplatTrainerPage`): no rule
+  reaches `html`, `body` or anything outside the mounted element, and the
+  two animations are named `splat-pulse` and `splat-flash`. The page's
+  `index.html` sets `body { margin: 0 }` itself.
+- Colour tokens on `.splat-page` for dark (default) and light, through
+  `prefers-color-scheme` (or a `data-theme` on the document root); `--print-paper` is the colour a print shows
   before its first picture and is read by the practice pictures.
-- Page grid (header, main, bar), the drop area, census and warning cards,
+- Page grid (header, main, bar), the drop area and its read bar
+  (`.read-bar`, a `<progress>`), census and warning cards,
   the contact sheet (`.sheet`, `.print` and its frame, ring, mark,
-  reasons, progress, live line, stamp), the bar with its strip, the
+  reasons, progress, live line, stamp, and the practice note
+  `.print-practice`), the bar with its strip, the
   dialogs (`.veil`, `.modal`, the closer look) and the refusal card.
 - States are driven by data attributes the view sets: `data-status`,
-  `data-verdict`, `data-decision` on a print, `data-v` on a strip
+  `data-verdict`, `data-decision`, `data-stage` on a print, `data-v` on a strip
   segment, `data-dim` on the sheet, `data-wide` on the dialog,
   `data-over` on the drop area, `data-flash` on a print just shown.
 

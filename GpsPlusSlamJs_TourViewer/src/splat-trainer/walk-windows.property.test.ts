@@ -62,12 +62,38 @@ const settingsArb = fc
 const RUNS = { numRuns: 200 };
 
 describe("planWindows (property)", () => {
-  it("puts every frame in exactly one window core", () => {
+  it("puts every frame in exactly one window core, but those of a segment with nothing to train", () => {
     fc.assert(
       fc.property(walkArb, settingsArb, (walk, settings) => {
         const plan = planWindows(walk, settings);
+        const held = new Set(plan.holdouts);
+        const trainable = plan.segments
+          .filter((segment) => segment.some((i) => !held.has(i)))
+          .flat()
+          .sort((a, b) => a - b);
         const seen = plan.windows.flatMap((w) => w.core).sort((a, b) => a - b);
-        expect(seen).toEqual([...walk.keys()]);
+        expect(seen).toEqual(trainable);
+        expect(plan.windows.every((w) => w.train.length > 0)).toBe(true);
+      }),
+      RUNS,
+    );
+  });
+
+  it("measures every frame's distance along its segment, from 0 at its start", () => {
+    fc.assert(
+      fc.property(walkArb, settingsArb, (walk, settings) => {
+        const plan = planWindows(walk, settings);
+        const expected = new Array<number>(walk.length).fill(Number.NaN);
+        for (const segment of plan.segments) {
+          let total = 0;
+          segment.forEach((i, k) => {
+            const p = walk[i]?.position ?? [0, 0, 0];
+            const q = walk[segment[k - 1] ?? i]?.position ?? p;
+            total += Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+            expected[i] = total;
+          });
+        }
+        expect(plan.along).toEqual(expected);
       }),
       RUNS,
     );

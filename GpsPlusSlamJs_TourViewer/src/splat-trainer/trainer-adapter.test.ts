@@ -7,11 +7,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  createUnavailableTrainer,
-  type GpuAdapterLike,
-  probeWebGpu,
-} from "./trainer-adapter.js";
+import { type GpuAdapterLike, probeWebGpu } from "./trainer-adapter.js";
 
 const gpuWith = (adapter: GpuAdapterLike | null) => ({
   requestAdapter: () => Promise.resolve(adapter),
@@ -50,18 +46,21 @@ describe("probeWebGpu", () => {
       "integrated",
     );
     expect(await kindOf({ vendor: "nvidia" })).toBe("ready");
+    // Why: Intel also makes graphics cards (Arc, the Xe-HPG family);
+    // calling one built-in graphics sent the person using it to Windows settings
+    // for nothing. Intel's integrated families stay integrated.
+    expect(await kindOf({ vendor: "intel", architecture: "xe-hpg" })).toBe(
+      "ready",
+    );
+    expect(await kindOf({ vendor: "intel", architecture: "xe2-hpg" })).toBe(
+      "ready",
+    );
+    expect(await kindOf({ vendor: "intel", architecture: "xe-lpg" })).toBe(
+      "integrated",
+    );
+    expect(await kindOf({ vendor: "intel", architecture: "gen-12lp" })).toBe(
+      "integrated",
+    );
     expect(await kindOf(undefined)).toBe("ready");
-  });
-});
-
-describe("createUnavailableTrainer", () => {
-  it("probes the real card but refuses to train or judge", async () => {
-    const t = createUnavailableTrainer(gpuWith({ info: { vendor: "nvidia" } }));
-    expect(t.kind).toBe("unavailable");
-    expect((await t.probe()).kind).toBe("ready");
-    await expect(
-      t.trainWindow({} as never, {} as never, new AbortController().signal),
-    ).rejects.toThrow(/not available/);
-    expect(() => t.judge({} as never, {} as never)).toThrow(/not available/);
   });
 });

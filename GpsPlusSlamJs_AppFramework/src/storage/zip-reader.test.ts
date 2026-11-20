@@ -1227,6 +1227,24 @@ describe('a folder name that only ENDS in a framework folder name', () => {
     expect(result).toHaveLength(1);
   });
 
+  it('ignores the metadata entries a macOS re-zip adds', async () => {
+    // Why: zipping a folder on a Mac adds `__MACOSX/<path>/._<name>` and
+    // `._<name>` resource-fork entries. They are not JSON, so reading one as
+    // an action fails the whole load of an otherwise good recording.
+    const data = await zipOf([
+      { name: 'actions/000001.json', content: '{"type":"real/a"}' },
+      { name: '__MACOSX/actions/._000001.json', content: 'binary' },
+      { name: '__MACOSX/actions/000003.json', content: 'binary' },
+      { name: 'actions/._000002.json', content: 'binary' },
+    ]);
+    const read: string[] = [];
+    await loadActionsFromEntries(await readZipEntries(data), (entry) => {
+      read.push(entry.filename);
+      return Promise.resolve('{"type":"x"}');
+    });
+    expect(read).toEqual(['actions/000001.json']);
+  });
+
   it('does not draw a sibling folder into the GPS path (loadGpsPathFromBlob)', async () => {
     const produced = await produceTestZip({ gpsEventCount: 3 });
     const doubled = await rezip(produced.zipData, (name) =>

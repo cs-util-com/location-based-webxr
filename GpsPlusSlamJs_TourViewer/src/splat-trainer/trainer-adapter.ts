@@ -3,10 +3,9 @@
  * the page asks a {@link TrainerAdapter} to probe the graphics card, to
  * train one stretch (reporting progress and preview pictures while it
  * runs, stoppable through an AbortSignal) and to judge the result. The
- * GPU trainer implements this interface when it lands; until then the
- * page runs either the {@link createUnavailableTrainer} (production: it
- * probes the real card but cannot train) or the scripted practice trainer
- * (`fake-trainer.ts`, only on request).
+ * GPU trainer (`gpu-trainer.ts`) implements it and is the page's
+ * default; the scripted practice trainer (`fake-trainer.ts`) runs only on
+ * request.
  *
  * @see trainer-adapter.ts.md
  */
@@ -27,9 +26,19 @@ export interface TrainRequest {
   /** How much more time than a first try this attempt gets (2 = twice). */
   readonly timeScale: number;
   readonly inputs: SplatInputs;
+  /** The recording file the inputs were read from (its photos). */
+  readonly recording: Blob;
 }
 
+/**
+ * What a training stretch is doing: loading the trainer (the library and
+ * the stretch's photos), preparing the graphics card (photos and seeds
+ * uploaded), training, or checking the result (scoring and exporting).
+ */
+export type TrainStage = "loading" | "preparing" | "training" | "checking";
+
 export interface TrainProgress {
+  readonly stage: TrainStage;
   /** 0 to 1. */
   readonly fraction: number;
   /** Seconds this stretch still needs, or null while not yet measured. */
@@ -80,8 +89,9 @@ export interface WindowJudgement {
 }
 
 export interface TrainerAdapter {
-  /** `practice` is the scripted stand-in; the page says so visibly. */
-  readonly kind: "practice" | "unavailable";
+  /** `practice` is the scripted stand-in; the page says so visibly.
+   *  `gpu` trains for real (`gpu-trainer.ts`). */
+  readonly kind: "practice" | "gpu";
   probe(): Promise<GpuProbe>;
   /** Resolves with outcome `cancelled` (never rejects) when aborted. */
   trainWindow(
@@ -110,12 +120,17 @@ export interface GpuAdapterLike {
 }
 
 const BUILT_IN = /\b(integrated|uhd|iris)\b/i;
+/** Intel's graphics-card families (Arc: Xe-HPG, Xe2-HPG); every other
+ *  Intel architecture is built into the processor. */
+const INTEL_CARD = /\bxe\d*-hpg\b/i;
 
 /**
  * Asks the browser for its fastest graphics adapter. No WebGPU, a refused
  * request, no adapter or a software fallback adapter all mean the page
- * cannot train; an Intel adapter, or one that describes itself as built-in
- * graphics, trains slowly. Never throws.
+ * cannot train; an Intel adapter that is not one of Intel's graphics
+ * cards, or one that describes itself as built-in graphics, trains slowly
+ * (`adapter.info` may say too little to be sure, so the page words this
+ * as likely, not certain). Never throws.
  */
 export async function probeWebGpu(
   gpu: GpuLike | undefined | null,
@@ -151,26 +166,9 @@ export async function probeWebGpu(
   const info = adapter.info ?? {};
   const vendor = String(info.vendor ?? "").toLowerCase();
   const text = `${info.architecture ?? ""} ${info.description ?? ""}`;
-  return vendor === "intel" || BUILT_IN.test(text)
+  const intelBuiltIn =
+    vendor === "intel" && !INTEL_CARD.test(String(info.architecture ?? ""));
+  return intelBuiltIn || BUILT_IN.test(text)
     ? { kind: "integrated" }
     : { kind: "ready" };
-}
-
-/**
- * Production's trainer until the GPU trainer lands: it probes the real
- * card, so the page can say what this computer has, but it trains nothing.
- * The page never offers a start with it; a call anyway rejects.
- */
-export function createUnavailableTrainer(
-  gpu: GpuLike | undefined | null,
-): TrainerAdapter {
-  return {
-    kind: "unavailable",
-    probe: () => probeWebGpu(gpu),
-    trainWindow: () =>
-      Promise.reject(new Error("The splat trainer is not available yet.")),
-    judge: () => {
-      throw new Error("The splat trainer is not available yet.");
-    },
-  };
 }

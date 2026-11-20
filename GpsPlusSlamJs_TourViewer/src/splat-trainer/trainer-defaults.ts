@@ -48,10 +48,11 @@ export interface TrainerSettings {
   /** Most training steps for a window. */
   readonly maxIterations: number;
   /** The trainer's photo memory target (bytes), before the adapter's own
-   *  limits cap it further. */
+   *  limits cap it further. Splat.js shrinks its photos at its own
+   *  700e6-byte budget, so the default plans with the same number. */
   readonly targetMemoryBytes: number;
-  /** Bytes the trainer holds per photo pixel (colour plus its working
-   *  copies). */
+  /** Bytes per photo pixel the memory budget counts: Splat.js counts 12
+   *  (three float32 channels) against its budget. */
   readonly bytesPerPixel: number;
   /** Shortest photo side the trainer may scale down to (px); below it a
    *  window is refused as too large instead. Swept 64 / 128 / 256. */
@@ -59,6 +60,31 @@ export interface TrainerSettings {
   /** Steps measured before a time estimate is shown: earlier ones carry
    *  shader compilation and warm-up. */
   readonly etaMinIterations: number;
+  /** A depth sample seeds a training photo when it was taken within this
+   *  many milliseconds of it. Picked, not swept: the recorder takes them
+   *  in the same frame, so any value above a frame or two keeps them. */
+  readonly depthMaxDtMs: number;
+  /** Seeds from depth readings are merged per cube of this side (m).
+   *  Picked, not swept: finer keeps more seeds than training needs. */
+  readonly seedVoxelM: number;
+  /** The background shell's distance from each camera along every pixel
+   *  ray (m). Picked, not swept: beyond what the depth readings reach. */
+  readonly shellDistanceM: number;
+  /** One shell point per square of this side in pixels. */
+  readonly shellGridPx: number;
+  /** Every n-th training photo grows shell points. */
+  readonly shellEveryPhoto: number;
+  /** Shell points are merged per cube of this side (m). */
+  readonly shellVoxelM: number;
+  /** A first try trains for at most this long (s); "train again" scales
+   *  it. Picked, not swept: a window of 100 photos took minutes on the
+   *  graphics cards measured so far. */
+  readonly deadlineS: number;
+  /** Held-out sharpness (dB) from which a stretch is good, and from which
+   *  it is at least weak. Picked, not swept: they stand until the stretch
+   *  judge is measured against people's ratings. */
+  readonly goodHeldOutDb: number;
+  readonly weakHeldOutDb: number;
 }
 
 /** The provisional defaults (see the module comment). */
@@ -75,8 +101,17 @@ export const TRAINER_DEFAULTS: TrainerSettings = Object.freeze({
   itersPerFrame: 150,
   minIterations: 4000,
   maxIterations: 30000,
-  targetMemoryBytes: 700 * 1024 * 1024,
+  targetMemoryBytes: 700e6,
   bytesPerPixel: 12,
   minShortSidePx: 128,
   etaMinIterations: 200,
+  depthMaxDtMs: 200,
+  seedVoxelM: 0.05,
+  shellDistanceM: 40,
+  shellGridPx: 48,
+  shellEveryPhoto: 4,
+  shellVoxelM: 1,
+  deadlineS: 1200,
+  goodHeldOutDb: 20,
+  weakHeldOutDb: 16,
 });
