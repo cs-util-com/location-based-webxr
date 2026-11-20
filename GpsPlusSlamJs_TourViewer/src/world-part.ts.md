@@ -96,7 +96,8 @@ the reading sign (`reading-sign.ts`) are world parts too.
   mounted, so a second `dispose` is a no-op), `mountedWorldParts()` (oldest
   first, a copy) - the one mounted set; `mountedWorldPartSet()` is the set
   itself, read-only and live, for a per-frame lookup that must not copy it
-  (`reading-sign.ts` `mountedReadingSign`).
+  (`reading-sign.ts` `mountedReadingSign`); read-only by type only, and no
+  part may be mounted or unmounted while it is iterated.
 - `tapShownWorldPart(scene, pick, tap, parts = mountedWorldParts())` - the
   visitor's tap (`main.ts`, the `part` route of `visitor-stations.ts`
   `routeVisitorTap`): among the parts shown under a station's content group

@@ -164,8 +164,10 @@ async function freeBoxPoints(page, b) {
 
 /**
  * What a tap on the box leaves at once, read without waiting: the tap's
- * play or pause sign (in the page for over a second) and the store's
- * playing flag. `data-speaking` follows the voice and could turn later.
+ * play or pause sign (in the page for most of a second: it goes at the
+ * end of its 0.75 s animation) and the store's playing flag, set at once
+ * by the tap and kept. `data-speaking` follows the voice and could turn
+ * later.
  * @param {import("@playwright/test").Page} page
  */
 async function tapTrace(page) {
@@ -240,8 +242,12 @@ for (const viewport of [
     const [at] = free;
     if (at === undefined) throw new Error("no free point on the box");
     await page.mouse.click(at.x, at.y);
-    // The trace the card tap was checked for does show for a box tap.
-    expect(await tapTrace(page)).toEqual({ signs: 1, playing: true });
+    // The trace the card tap was checked for does show for a box tap:
+    // the store first, which does not depend on the sign's animation, so
+    // a slow read that misses the sign still shows the tap was taken.
+    const trace = await tapTrace(page);
+    expect(trace.playing, "the box took the tap").toBe(true);
+    expect(trace.signs, "the tap's sign, read within its animation").toBe(1);
     await expectSpeaking(page, box, "yes");
     await page.mouse.click(at.x, at.y);
     await expectSpeaking(page, box, "no");

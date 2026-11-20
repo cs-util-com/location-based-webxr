@@ -595,7 +595,7 @@ async function buildStationsZip({
                       pose: { position: [-2, 1.5, 1], rotation: [0, 0, 0, 1] },
                     },
                   ]),
-              // A narration circle around the gate (`narrated`).
+              // A narration circle around the gate (`voiced`).
               ...(voiced
                 ? [
                     {

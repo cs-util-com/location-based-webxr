@@ -329,7 +329,8 @@ export function mountedWorldParts(): WorldPart[] {
 }
 
 /** The mounted set itself, read-only and live: for a lookup run every
- *  frame, which must not copy it. */
+ *  frame, which must not copy it. Read-only by type only: do not mount or
+ *  unmount while iterating it (a part mounted meanwhile is visited too). */
 export function mountedWorldPartSet(): ReadonlySet<WorldPart> {
   return mounted;
 }
