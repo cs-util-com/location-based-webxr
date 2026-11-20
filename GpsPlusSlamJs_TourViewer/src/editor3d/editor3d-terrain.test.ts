@@ -13,6 +13,7 @@ import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createGlobeTerrain } from "gps-plus-slam-globe/editor";
+import type * as GlobeEditor from "gps-plus-slam-globe/editor";
 
 import { GLOBE_SWITCH } from "../editor/globe-switch.js";
 
@@ -29,8 +30,7 @@ import {
 // The relief itself, watched: what it was made with is the caller's
 // imagery and template, not a fallback.
 vi.mock("gps-plus-slam-globe/editor", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("gps-plus-slam-globe/editor")>();
+  const actual = await importOriginal<typeof GlobeEditor>();
   return { ...actual, createGlobeTerrain: vi.fn(actual.createGlobeTerrain) };
 });
 
