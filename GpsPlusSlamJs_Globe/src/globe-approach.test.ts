@@ -257,6 +257,25 @@ describe("createGlobeApproach: the fly-in and the hold", () => {
   });
 });
 
+describe("createGlobeApproach: the distance intro keeps the field of view", () => {
+  // Why: the intro flies by distance only, so its field of view is the
+  // page's `fovY` in every phase (the spin, the fly-in, the hold); a
+  // camera that never leaves `fovY` needs no ease back to it when the
+  // user takes it mid-flight.
+  it("returns fovY on every orbit frame of a whole run", () => {
+    for (const fovY of [30, 50, 75]) {
+      const { approach, at } = setup();
+      approach.restart(at(0), params({ url: undefined, intro: "distance", fovY }));
+      const fovs = new Set<number>();
+      for (let t = 0; t <= 3000 + 5000 + 1000; t += 100) {
+        fovs.add(orbit(approach.pose(at(t))).fovDeg);
+      }
+      expect(approach.state().phase).toBe("arrived");
+      expect([...fovs]).toEqual([fovY]);
+    }
+  });
+});
+
 describe("createGlobeApproach: the user, the dive and the pin flight", () => {
   it("yields to the user once, and a restart gives the camera back", () => {
     const { approach, at } = setup();
