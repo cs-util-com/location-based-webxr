@@ -1,0 +1,149 @@
+<!doctype html>
+<!-- Throwaway prototype: the splat trainer page, direction A (guided steps). Fully simulated, not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Make a splat - guided steps</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="page">
+    <header class="top">
+      <div class="top-inner">
+        <div class="top-title">
+          <p class="eyebrow">Tour Viewer</p>
+          <h1>Make a splat of a place</h1>
+          <p class="lede">
+            Turns a walk you recorded into a 3D view of the place, shown in the
+            tour editor while you edit.
+          </p>
+        </div>
+        <p class="local-badge">
+          <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16">
+            <path
+              d="M7 10V7a5 5 0 0 1 10 0v3M5.5 10h13v10h-13z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Everything happens on this computer. Nothing is uploaded.
+        </p>
+      </div>
+    </header>
+
+    <main class="layout" id="layout">
+      <ol class="steps" id="steps" aria-label="Steps"></ol>
+      <aside class="notes" aria-label="Good to know">
+        <h2 class="label">Good to know</h2>
+        <ul>
+          <li>
+            <strong>Stays here.</strong> The recording is read on this computer
+            and the result is saved to your disk. No file leaves it.
+          </li>
+          <li>
+            <strong>Takes a while.</strong> A walk is trained in stretches of
+            about 30 m, a few minutes each. A whole walk takes 30 to 60 minutes.
+          </li>
+          <li>
+            <strong>Leave it running.</strong> You can use other tabs. Keep this
+            tab open.
+          </li>
+          <li>
+            <strong>Stop any time.</strong> Finished stretches are kept, and you
+            can carry on later.
+          </li>
+        </ul>
+      </aside>
+    </main>
+
+    <section class="phone-refusal" id="phone-refusal" hidden>
+      <div class="phone-card">
+        <svg
+          class="phone-icon"
+          aria-hidden="true"
+          viewBox="0 0 64 48"
+          width="88"
+          height="66"
+        >
+          <rect
+            x="4"
+            y="4"
+            width="56"
+            height="32"
+            rx="3"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="3"
+          />
+          <path
+            d="M24 44h16M32 36v8"
+            stroke="currentColor"
+            stroke-width="3"
+            stroke-linecap="round"
+          />
+        </svg>
+        <p class="eyebrow">Make a splat</p>
+        <h1>Use a desktop computer</h1>
+        <p>
+          Making a splat trains a 3D model on a graphics card for 30 to 60
+          minutes. A phone cannot do this.
+        </p>
+        <h2 class="label">What to do</h2>
+        <ol class="phone-todo">
+          <li>Copy your recording file to a computer.</li>
+          <li>Open this page there, in Chrome or Edge.</li>
+          <li>Choose the recording. It stays on that computer.</li>
+        </ol>
+        <button type="button" class="btn btn-primary" id="copy-link">
+          Copy this page's link
+        </button>
+        <p class="hint" id="copy-link-status" role="status"></p>
+      </div>
+    </section>
+
+    <div class="dock" id="dock">
+      <button
+        type="button"
+        class="dock-toggle"
+        id="dock-toggle"
+        aria-expanded="true"
+        aria-controls="dock-body"
+      >
+        Prototype controls
+      </button>
+      <div class="dock-body" id="dock-body">
+        <p class="dock-note">Not part of the page. Everything here is faked.</p>
+        <label
+          >Jump to
+          <select id="ctl-state"></select>
+        </label>
+        <label
+          >Speed
+          <select id="ctl-speed">
+            <option value="1">1x (real time)</option>
+            <option value="10">10x</option>
+            <option value="30">30x</option>
+            <option value="60" selected>60x</option>
+            <option value="240">240x</option>
+          </select>
+        </label>
+        <label
+          >Theme
+          <select id="ctl-theme">
+            <option value="auto">Follow system</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </label>
+        <label class="dock-check"
+          ><input type="checkbox" id="ctl-pause" /> Pause the simulation</label
+        >
+      </div>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
