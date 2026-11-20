@@ -30,9 +30,9 @@
  *   at the cloud, and the zenith sky as ambient from a small table of the
  *   framework's CPU sky by the sun's cosine (`globe-cloud-shell-light.ts`).
  * - **The mix** with the slab: the slab drawn into its own target at its
- *   full share, then ONE composite of both, premultiplied and weighted
- *   (the shell 1 - the slab's share, the slab its share): mixed, never
- *   stacked, so the hand-over keeps the opacity.
+ *   full share, then ONE composite of both (`globe-cloud-composite.ts`),
+ *   premultiplied and weighted (the shell 1 - the slab's share, the slab
+ *   its share): mixed, never stacked, so the hand-over keeps the opacity.
  *
  * @see globe-cloud-shell-volume-pass.ts.md
  */
@@ -62,6 +62,7 @@ import {
 import type { SkyAtmosphere } from "gps-plus-slam-app-framework/visualization/atmosphere/sky-atmosphere";
 
 import type { GlobeAtmosphere } from "./globe-atmosphere.js";
+import { createGlobeCloudComposite } from "./globe-cloud-composite.js";
 import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
 import { ZENITH_MU, ZENITH_TABLE } from "./globe-cloud-shell-light.js";
 import {
@@ -469,66 +470,6 @@ void main() {
   gl_FragColor = vec4( lit * outAlpha, outAlpha + ( 1.0 - outAlpha ) * shadow );
 }`;
 
-const COMPOSITE_VERTEX = /* glsl */ `
-varying vec2 vUv;
-void main() {
-  vUv = position.xy * 0.5 + 0.5;
-  gl_Position = vec4( position.xy, 0.0, 1.0 );
-}`;
-
-/**
- * The mix: the shell and the slab premultiplied, each by its weight, never
- * one over the other; then straight colour, three's tone mapping and colour
- * space, and the alpha blended over the frame (the slab's own composite).
- */
-const COMPOSITE_FRAGMENT = /* glsl */ `
-uniform sampler2D tShell;
-uniform sampler2D tSlab;
-uniform float uShellWeight;
-uniform float uSlabWeight;
-// The shell's ground shadow, drawn on its own (the cloud-shadows plan M1).
-uniform sampler2D tShadow;
-uniform float uShadowOn;
-// The high layer (round-5 plan §11, A): on, and in front (from above).
-uniform sampler2D tHigh;
-uniform float uHighOn;
-uniform float uHighInFront;
-varying vec2 vUv;
-void main() {
-  vec4 shell = texture2D( tShell, vUv );
-  vec4 c = uShellWeight * shell;
-  if ( uSlabWeight > 0.0 ) {
-    // Per pixel (R4d review, finding 1; round 5): the shell gives up the
-    // slab's share only of the cloud the slab draws here, r = the slab's
-    // alpha over the shell's (1 where the shell draws none), so where the
-    // slab draws less (its fade ring, beyond its disc, a clear patch) the
-    // shell fills it. Twin: cloudShellPixelWeight.
-    vec4 slab = texture2D( tSlab, vUv );
-    float r = shell.a > 1e-4 ? min( 1.0, slab.a / shell.a ) : 1.0;
-    c = uShellWeight * ( 1.0 - uSlabWeight * r ) * shell + uSlabWeight * slab;
-  }
-  // The ground shadow under both clouds (the cloud-shadows plan M1): in the
-  // shell's own alpha the slab's per-pixel share took it with the shell's
-  // clouds, and below the slab's ceiling the ground lost its shadows (an
-  // 0.12 share of shadowed points in the target, none on the screen at
-  // 5 km, measured). Black, under the mix.
-  if ( uShadowOn > 0.5 ) {
-    c.a = min( c.a, 1.0 );
-    c.a += ( 1.0 - c.a ) * texture2D( tShadow, vUv ).a;
-  }
-  if ( uHighOn > 0.5 ) {
-    // Premultiplied over (twin of cloudLayerOver), its order by height.
-    vec4 high = texture2D( tHigh, vUv );
-    c.a = min( c.a, 1.0 );
-    c = uHighInFront > 0.5 ? high + ( 1.0 - high.a ) * c : c + ( 1.0 - c.a ) * high;
-  }
-  if ( c.a < 1e-4 ) discard;
-  gl_FragColor = vec4( c.rgb / c.a, 1.0 );
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-  gl_FragColor.a = min( c.a, 1.0 );
-}`;
-
 /** A full-screen triangle with `material`, in its own scene. */
 function fullScreen(material: THREE.Material): {
   scene: THREE.Scene;
@@ -926,26 +867,12 @@ export function createGlobeCloudShellVolume(
   const highTarget = halfFloatTarget();
   /** The shell's ground shadow, alone (the cloud-shadows plan M1). */
   const shadowTarget = halfFloatTarget();
-  const compositeUniforms = {
-    tShell: { value: target.texture },
-    tShadow: { value: shadowTarget.texture },
-    uShadowOn: { value: 0 },
-    tSlab: { value: null as THREE.Texture | null },
-    uShellWeight: { value: 0 },
-    uSlabWeight: { value: 0 },
-    tHigh: { value: highTarget.texture },
-    uHighOn: { value: 0 },
-    uHighInFront: { value: 0 },
-  };
-  const composite = new THREE.ShaderMaterial({
-    uniforms: compositeUniforms,
-    vertexShader: COMPOSITE_VERTEX,
-    fragmentShader: COMPOSITE_FRAGMENT,
-    depthTest: false,
-    depthWrite: false,
-    transparent: true,
+  const composite = createGlobeCloudComposite({
+    shell: target.texture,
+    shadow: shadowTarget.texture,
+    high: highTarget.texture,
   });
-  const compositeQuad = fullScreen(composite);
+  const compositeQuad = fullScreen(composite.material);
   const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const ecefFromWorld = new THREE.Matrix4();
   const rotation = new THREE.Matrix3();
@@ -1211,26 +1138,16 @@ export function createGlobeCloudShellVolume(
   /** On, framed and weighing something this frame. */
   const drawable = () => enabled && framed && (weight > 0 || slabWeight > 0);
 
-  /** The composite's switches for the shell's own layers. */
-  const applyShellSwitches = () => {
-    // The high layer at full strength wherever the shell draws (not handed
-    // to the slab), in front of the clouds from above its middle and
-    // behind them from below (premultiplied over, cloudLayerOver).
-    compositeUniforms.uHighOn.value = high !== null && shellIn > 0 ? 1 : 0;
-    compositeUniforms.uShadowOn.value =
-      shadowStrength > 0 && shellIn > 0 ? 1 : 0;
-    compositeUniforms.uHighInFront.value =
-      high !== null && cameraKm > high.altitudeKm ? 1 : 0;
-    // The shell's own fade-in; the composite weighs it per pixel by what
-    // the slab draws (`cloudShellPixelWeight`).
-    compositeUniforms.uShellWeight.value = shellIn;
-  };
-
   /** The composite's switches and weights, then the mix over the frame. */
   const drawComposite = (slabTexture: THREE.Texture | null) => {
-    applyShellSwitches();
-    compositeUniforms.tSlab.value = slabTexture;
-    compositeUniforms.uSlabWeight.value = slabTexture === null ? 0 : slabWeight;
+    composite.apply({
+      shellIn,
+      shadowStrength,
+      high,
+      cameraKm,
+      slabTexture,
+      slabWeight,
+    });
     renderer.render(compositeQuad.scene, quadCamera);
   };
 

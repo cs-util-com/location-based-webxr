@@ -39,7 +39,8 @@ highLayer, shadow })` (`CloudShellVolumeFrame`): the
 sceneDepthWeight, disc, flatten })` (`CloudShellVolumeRenderOptions`): the march into its own half-float target
   (cleared to 0, premultiplied; `disc`: the slab's `{ centre, deckY,
 radiusM }` from its state, the centre null on the camera, where its flat
-  deck and its haze apply), then ONE composite over the frame of the shell
+  deck and its haze apply), then ONE composite over the frame
+  (`globe-cloud-composite.ts`, drawn on this pass's full-screen triangle) of the shell
   times its fade-in less the slab's share of the cloud the slab draws at
   that pixel (`cloudShellPixelWeight`: r = the slab's alpha over the
   shell's) plus `slabTexture` (the slab drawn this frame at its full share,
@@ -205,6 +206,7 @@ The high layer takes `thinLight`, the brighter of the top's light and the light 
   object, so the framework keeps its resolved field cached instead of
   recomputing it up to three times a frame.
 - `globe-cloud-shell-light.test.ts` (the ambient table).
+- `globe-cloud-composite.test.ts` (the composite's own switches and weights).
 - The lab's `globe-cloud-shell-field.test.mjs` (the two-field mix keeps
   the field's spread and the cover the thresholds draw, on the
   framework's CPU twin; the plain average it replaces fails it).
