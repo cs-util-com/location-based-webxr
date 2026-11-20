@@ -525,7 +525,7 @@ register = true)` (a red sphere ahead, which the near plane follows
     its detail and city data asked for, the world frame moved), held as
     landed by the approach (the smokes' held views). It does nothing unless
     the pin is idle, and it does not reset the speed dust as a flight's
-    placement does, so with the jump reads as speed for a frame;
+    placement does, so with `dust=1` the jump reads as speed for a frame;
     `holdDiveAt(ms)` holds the camera at a
     dive time (null runs on) and `diveAltitudeAt(ms)` reads the dive's
     altitude without moving it (the moving-camera band smoke);
