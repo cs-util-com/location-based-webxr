@@ -110,14 +110,27 @@ export function isActionEntryName(name: string): boolean {
  * (`mytour/myactions/`) never gives the folder.
  */
 export function recordingFolderOf(entryNames: readonly string[]): string {
-  const at = entryNames
+  return recordingFoldersOf(entryNames)[0] ?? "";
+}
+
+/**
+ * Every folder that holds an action stream, each once, in the parser's
+ * order (see `recordingFolderOf`, which is the first of them). More than
+ * one means the zip carries more than one recording, whose actions the
+ * framework's parser would replay as one stream.
+ */
+export function recordingFoldersOf(
+  entryNames: readonly string[],
+): readonly string[] {
+  const folders = new Set<string>();
+  for (const name of entryNames
     .filter(isActionEntryName)
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => ACTIONS_SEGMENT.exec(name))
-    .find((match) => match !== null);
-  return at === undefined
-    ? ""
-    : at.input.slice(0, at.index + (at[1] ?? "").length);
+    .sort((a, b) => a.localeCompare(b))) {
+    const at = ACTIONS_SEGMENT.exec(name);
+    if (at !== null)
+      folders.add(name.slice(0, at.index + (at[1] ?? "").length));
+  }
+  return [...folders];
 }
 
 /**
