@@ -1,0 +1,31 @@
+{
+  "name": "The old well",
+  "words": "Two pins in one station; a tap on a pin opens its description, which travels between the pin and the screen.",
+  "records": {
+    "a": {
+      "kind": "shortText",
+      "view": "pin",
+      "caption": "The old well",
+      "description": "Dug before the houses around it, and the reason they stand here. The stone lid is new; the rope groove in the rim is not. Lean over and you can still hear water.",
+      "readAtM": 4,
+      "at": [0, 0]
+    },
+    "longest": {
+      "kind": "shortText",
+      "view": "pin",
+      "caption": "The old well and the quarrel over who may draw first in a dry summer",
+      "description": "Dug before the houses around it, and the reason they stand here. The stone lid is new; the rope groove in the rim is not. In dry summers the street drew water by turns, and the order was set every spring by lot. A family that missed its turn waited a whole day. Lean over and you can still hear water far below, though nobody has drawn a bucket from it in a long time, and the lid is only lifted once a year.",
+      "readAtM": 4,
+      "at": [0, 0]
+    },
+    "b": {
+      "kind": "shortText",
+      "view": "pin",
+      "caption": "Bench of the carters",
+      "description": "Carters waited here for loads from the yard. The stone is worn into two hollows where they sat.",
+      "readAtM": 4,
+      "at": [1.6, -2.5]
+    }
+  },
+  "assets": []
+}
