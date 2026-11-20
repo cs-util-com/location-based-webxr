@@ -21,7 +21,7 @@ const FIRST_VISIT = { cookies: [], origins: [] };
 test.describe("a first visit", () => {
   test.use({ storageState: FIRST_VISIT });
 
-  test("asks the question, and each answer routes to its own checklist @pr", async ({
+  test("asks the question, and each answer routes to its own checklist", async ({
     page,
   }) => {
     await page.goto("/?nocache=1");
@@ -64,7 +64,7 @@ test.describe("a first visit", () => {
     await expect(page.getByTestId("setup-question")).toBeHidden();
   });
 
-  test("start here: one tap saves the starter zip, opens it as the tour, and leads to placing; Done offers the code @pr", async ({
+  test("start here: one tap saves the starter zip, opens it as the tour, and leads to placing; Done offers the code", async ({
     page,
   }) => {
     await installTourViewerArFakes(page);

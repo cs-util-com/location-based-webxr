@@ -27,7 +27,7 @@ export const STARTER_OPEN_LABELS = {
 /** The file name the starter zip is saved and opened under. */
 const STARTER_FILENAME = "tour.zip";
 
-export type StarterOpenOutcome = "opened" | "cancelled" | "failed" | "busy";
+type StarterOpenOutcome = "opened" | "cancelled" | "failed" | "busy";
 
 export interface StarterOpen {
   /** Pack, save, then open; the button's click runs it. */
