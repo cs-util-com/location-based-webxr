@@ -16,7 +16,7 @@ aborting it the moment the state says otherwise), and saving.
 - `TrainerSideTables` - `files`, `inputs` and `plans` keyed by recording
   id; `previews` and `splats` keyed by stretch id.
 - `createTrainerPageStore(deps) -> { store, sides, probe, chooseRecording,
-save, dispose }`, typed as `TrainerPageController`.
+save, dispose }`.
   - `probe()` - runs the adapter's probe; a throw counts as no WebGPU.
   - `chooseRecording(file)` - from the start or census only; gives the
     recording a fresh id so a late read of an earlier file is ignored.
