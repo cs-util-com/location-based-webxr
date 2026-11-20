@@ -103,7 +103,7 @@ interface GroundSkyFrame {
   /** The space view's sun intensity, the exposure above the edge. */
   spaceExposure: number;
   /** The ground look: its own camera and the ground's own sun. */
-  nearLook: boolean;
+  groundLook: boolean;
 }
 
 /** What the debug panel and the smokes read. */
@@ -242,16 +242,16 @@ export function createGlobeGroundSky(
    */
   const lookOn = (
     sky: SkyAtmosphere,
-    nearLook: boolean,
+    groundLook: boolean,
     sunWorld: THREE.Vector3,
   ) => {
-    const adaptation = nearLook
+    const adaptation = groundLook
       ? GLOBE_SKY_HAND_OVER.exposureAdaptation
       : AUTO_EXPOSURE.adaptation;
     if (sky.autoExposureAdaptation !== adaptation) {
       sky.setAutoExposureAdaptation(adaptation);
     }
-    groundSun = nearLook
+    groundSun = groundLook
       ? sunLight(sunWorld.y / sunWorld.length(), {
           visibilityKm: sky.visibilityKm,
           observerAltitudeKm: 0,
@@ -276,13 +276,13 @@ export function createGlobeGroundSky(
       widthKm,
       stepPct,
       spaceExposure,
-      nearLook,
+      groundLook,
     }) {
       const working =
         atmosphere !== null && framed && altitudeKm < edgeKm + widthKm;
       weight = working ? groundSkyWeight(altitudeKm, { edgeKm, widthKm }) : 0;
       if (working) {
-        lookOn(atmosphere, nearLook, sunWorld);
+        lookOn(atmosphere, groundLook, sunWorld);
         advance(atmosphere, altitudeKm, stepPct, sunWorld);
       }
       // The automatic exposure alone (without this page's compensation),

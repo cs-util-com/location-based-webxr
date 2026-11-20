@@ -141,9 +141,9 @@ const reliefTiles = () => ({
 });
 
 describe("createGlobeViewClouds's shell cover", () => {
-  // Why this test matters: the old clouds are the editor's default and must
-  // stay the old path, with the cover they always had.
-  it("does not lift the shell's cover", () => {
+  // Why this test matters: the editor's clouds draw the shell at the cover
+  // they always had; a cover other than 1 is a different look.
+  it("keeps the shell's cover at 1", () => {
     const fakes = fakeParts();
     const clouds = createGlobeViewClouds(fakeView(60_000), fakes.parts);
     clouds.patch(reliefTiles());

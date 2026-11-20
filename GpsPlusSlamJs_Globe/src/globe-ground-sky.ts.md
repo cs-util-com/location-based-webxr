@@ -62,7 +62,7 @@ observerKm, rebuildPending, lastStage, rebuilds }`, `rebuilds` counting each sta
   values differ by less than the eye tells, so the value is decided at dusk.
   At -3 degrees 0.3 leaves the frame nearly black and 0.75 washes the sky
   white and burns the pale roofs; 0.6 starts to, 0.4 starts to go dark. The
-  value is a look. Only with the ground look (`nearLook`, the lab's
+  value is a look. Only with the ground look (`groundLook`, the lab's
   `atmoGround` knob): the default clouds keep the framework's camera and a
   white sun.
 - **One eased exposure** (DEC-GL5-16): `easedExposure(spaceExposure,

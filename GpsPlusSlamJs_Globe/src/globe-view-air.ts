@@ -18,9 +18,11 @@
  *
  * The lab's defaults, but one: the space pass's veil over the ground
  * fades with the sky below the edge (the lab's `atmoGround=0`) and the
- * haze carries the ground. Without the relief's depth the veil's rays end
- * at the ellipsoid, under the relief, and over high ground the veil would
- * be far too thick.
+ * haze carries the ground. Kept below the edge, the veil is a full-canvas
+ * march (far too slow for a phone), and without the relief's depth (a view
+ * without clouds draws none) its rays end at the ellipsoid, under the
+ * relief, so over high ground it would be far too thick. The sidecar
+ * holds the measurement.
  *
  * @see globe-view-air.ts.md
  */

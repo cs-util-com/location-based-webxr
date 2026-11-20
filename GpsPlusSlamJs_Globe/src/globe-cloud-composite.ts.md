@@ -62,7 +62,8 @@ renderer.render(quad.scene, quadCamera);
 
 - `globe-cloud-composite.test.ts`: the targets by identity, the shadow
   and high-layer switches only while the shell is in, the high layer's
-  order by height, the slab weighed only with its texture, dispose.
+  order by height, the slab weighed only with its texture, the fragment
+  shader against its snapshot (the only test that sees the GLSL), dispose.
 - Through a whole frame: `globe-cloud-shell-volume-pass.test.ts` (the
   composite's uniforms at each draw) and the snapshots of
   `globe-cloud-default-look.test.ts`.

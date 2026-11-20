@@ -250,7 +250,7 @@ describe("mountGlobeViewAir", () => {
   // nearly half its light between 80 and 40 km (measured on the editor,
   // luma 60 to 35): with the depth of the clouds its rays end at the relief
   // and it stays, as in the lab.
-  it("fades the veil with its sky on the old clouds, as they always did", () => {
+  it("fades the veil with its sky under the clouds, as it always did", () => {
     const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
     const air = mountGlobeViewAir(fakeView(2), {
       coarsePointer: false,

@@ -48,7 +48,7 @@ interface GroundSkyFrame {
   stepPct: number;
   spaceExposure: number;
   /** The ground look (`atmoGround` 1): its own camera and the ground's own sun. */
-  nearLook: boolean;
+  groundLook: boolean;
 }
 
 /** The lab's ground sky, as the wiring uses it. */
@@ -201,7 +201,7 @@ export function createGlobeAir<Sky, Depth>(
             widthKm: Math.min(params.skyWidthKm, params.skyEdgeKm),
             stepPct: params.skyStepPct,
             spaceExposure: params.sunIntensity,
-            nearLook: params.atmoGround === 1,
+            groundLook: params.atmoGround === 1,
           })
         : { weight: 0, exposure: params.sunIntensity };
       onGround = grounded ? groundSky.sunOnGround() : SPACE_SUN;

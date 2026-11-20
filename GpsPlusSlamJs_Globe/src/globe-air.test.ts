@@ -323,7 +323,10 @@ describe("createGlobeAir", () => {
       { cameraEcef: at(30_000), framed: true },
     );
     air.step(PARAMS, { cameraEcef: at(30_000), framed: true });
-    expect(updates).toMatchObject([{ nearLook: false }, { nearLook: true }]);
+    expect(updates).toMatchObject([
+      { groundLook: false },
+      { groundLook: true },
+    ]);
   });
 
   it("renders the space pass with the hand-over's shares", () => {

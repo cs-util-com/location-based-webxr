@@ -85,6 +85,16 @@ describe("createGlobeCloudComposite", () => {
     expect(read(composite.material, "tSlab")).toBe(slab);
   });
 
+  // Why: no other test can see the composite's GLSL (the uniform
+  // snapshots record values only), so an edit to how the shell, the slab,
+  // the shadow and the high layer blend would change every pixel under the
+  // shell with every test green. A deliberate change updates the snapshot
+  // in the same commit, where its diff shows the GLSL.
+  it("draws with the fragment shader recorded in its snapshot", () => {
+    const { material } = createGlobeCloudComposite(textures());
+    expect(material.fragmentShader).toMatchSnapshot();
+  });
+
   it("frees its material", () => {
     const composite = createGlobeCloudComposite(textures());
     let disposed = 0;
