@@ -26,7 +26,6 @@ import {
   cloudLiveBasis,
 } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-live-noise";
 
-import { CLOUD_AIR_GLSL } from "./globe-cloud-march-glsl.js";
 import { ZENITH_TABLE } from "./globe-cloud-shell-light.js";
 import {
   CLOUD_HIGH_LAYER,
@@ -71,11 +70,6 @@ const COMPOSITE_KEYS = [
   "uShadowOn",
   "uHighOn",
   "uHighInFront",
-  "uNearWeight",
-  "uAirOn",
-  "uH",
-  "uNearShadowOn",
-  "uShadowWeight",
 ] as const;
 
 /** A float-capable renderer that records draws, clears and clear colours. */
@@ -558,150 +552,27 @@ describe("createGlobeCloudShellVolume", () => {
     expect(shell.state().high?.shadow).toBe(0);
   });
 
-  describe("with the near clouds", () => {
-    const air = {
-      uH: { value: 12 },
-      uFwd: { value: new THREE.Vector3(0, 0, -1) },
-      uRight: { value: new THREE.Vector3(1, 0, 0) },
-      uUp: { value: new THREE.Vector3(0, 1, 0) },
-      uTan: { value: new THREE.Vector2(1, 1) },
-      uSun: { value: new THREE.Vector3(0, 1, 0) },
-      uSunCol: { value: new THREE.Vector3(1, 1, 1) },
-      uSceneDepth: { value: new THREE.Texture() as THREE.Texture | null },
-      uSceneInverseProjection: { value: new THREE.Matrix4() },
-      uSceneDepthOn: { value: 1 },
-    };
-    const near = (weight: number, shadow = true) => ({
-      texture: new THREE.Texture(),
-      shadowTexture: new THREE.Texture(),
-      uv: new THREE.Vector2(0.5, 0.25),
-      resolution: new THREE.Vector2(100, 50),
-      tapPixels: 0.45,
-      weight,
-      shadow,
-      air,
-      gain: 2,
-    });
-
-    // Why this test matters: the mix is the hand-over. Stacked, the two
-    // clouds would double the cover in the band; mixed by one weight the
-    // opacity stays.
-    it("hands the composite their texture, share and tent", () => {
-      const { shell, draws } = setUp();
-      shell.setEnabled(true);
-      shell.update(frameAt({ shares: { shellIn: 1, shell: 1, slab: 0 } }));
-      const mix = near(0.25);
-      shell.render(camera(), { ...renderOptions, near: mix });
-      const composite = drawAt(draws, -1);
-      expect(composite.uniforms.tNear?.value).toBe(mix.texture);
-      // Why: the target is drawn only up to the frame's share; a tap past
-      // its edge reads the last, larger frame's shadow.
-      expect(composite.fragmentShader).toContain(
-        "texture2D( tNearShadow, clamp(",
-      );
-      expect(composite.uniforms.tNearShadow?.value).toBe(mix.shadowTexture);
-      expect(composite.uniforms.uNearUv?.value).toBe(mix.uv);
-      expect(composite.uniforms.uNearRes?.value).toBe(mix.resolution);
-      expect(composite.uniforms.uNearTap?.value).toBe(0.45);
-      expect(composite.uniforms.uNearGain?.value).toBe(2);
-      expect(composite.snapshot).toMatchObject({
-        uNearWeight: 0.25,
-        uNearShadowOn: 1,
-        uShadowWeight: 0.75,
-      });
-    });
-
-    // Why this test matters: the near clouds fade into their air, so the
-    // air behind them must be that same air, from the same camera, sun and
-    // depth. Against any other sky far clouds stand out as white dashes on
-    // a dark limb. It sits under the clouds and over their ground shadow,
-    // and comes and goes with them.
-    // Why this test matters: the high layer is thin ice, lit through. Lit as
-    // the deck's dark underside it drew brown streaks on a bright sky from
-    // below and along the horizon from above.
-    it("lights the high layer through, the deck's underside only for the deck", () => {
-      const { shell, draws } = setUp();
-      shell.setEnabled(true);
-      shell.update(
-        frameAt({
-          altitudeKm: 5,
-          highLayer: { on: true },
-          shares: { shellIn: 1, shell: 1, slab: 0 },
-        }),
-      );
-      shell.render(camera(), renderOptions);
-      const pass = draws.find((draw) =>
-        draw.fragmentShader.includes("uBothSides"),
-      );
-      expect(pass?.fragmentShader).toContain("uBothSides > 0.5 ? thinLight");
-      expect(pass?.fragmentShader).toContain(
-        "vec3 thinLight = max( top, sunUnder + skyUnder );",
-      );
-    });
-
-    it("draws the march's air behind them, over their shadow", () => {
-      const { shell, draws } = setUp();
-      shell.setEnabled(true);
-      shell.update(frameAt({ shares: { shellIn: 1, shell: 1, slab: 0 } }));
-      shell.render(camera(), { ...renderOptions, near: near(0.25) });
-      const composite = drawAt(draws, -1);
-      expect(composite.snapshot).toMatchObject({ uAirOn: 1, uH: 12 });
-      expect(composite.uniforms.uSceneDepth?.value).toBe(air.uSceneDepth.value);
-      expect(composite.uniforms.uFwd?.value).toBe(air.uFwd.value);
-      expect(composite.fragmentShader).toContain(CLOUD_AIR_GLSL);
-      const shader = composite.fragmentShader;
-      expect(shader.indexOf("airAt( vUv )")).toBeGreaterThan(
-        shader.indexOf("tHigh, vUv"),
-      );
-      shell.render(camera(), { ...renderOptions, near: null });
-      expect(drawAt(draws, -1).snapshot).toMatchObject({ uAirOn: 0 });
-    });
-
-    // Why this test matters: the reason for the rule. Left in, the old
-    // shell fills the new clouds' gaps at street level; and its march is
-    // the frame's cost for nothing once its weight is 0.
-    it("skips the old deck and its shadow once the near clouds are whole", () => {
-      const { shell, draws } = setUp();
-      shell.setEnabled(true);
-      shell.update(
-        frameAt({
-          shares: { shellIn: 1, shell: 1, slab: 0 },
-          shadow: 0.5,
-          highLayer: {
-            on: true,
-            altitudeKm: 9,
-            cellScale: 2,
-            cover: 0.5,
-            noiseShare: 0.5,
-            shadow: 0.5,
-          },
-        }),
-      );
-      shell.render(camera(), { ...renderOptions, near: near(1) });
-      const marches = draws.filter((d) => d.kind === "march");
-      expect(marches).toHaveLength(1);
-      expect(marches[0]?.snapshot.uThickness).toBe(
-        CLOUD_HIGH_LAYER.thicknessScale,
-      );
-      expect(drawAt(draws, -1).snapshot).toMatchObject({
-        uShellWeight: 0,
-        uShadowOn: 0,
-        uHighOn: 1,
-        uNearWeight: 1,
-      });
-    });
-
-    it("draws no near clouds without them", () => {
-      const { shell, draws } = setUp();
-      shell.setEnabled(true);
-      shell.update(frameAt());
-      shell.render(camera(), renderOptions);
-      expect(drawAt(draws, -1).snapshot).toMatchObject({
-        uNearWeight: 0,
-        uNearShadowOn: 0,
-        uShadowWeight: 1,
-      });
-    });
+  // Why this test matters: the high layer is thin ice, lit through. Lit as
+  // the deck's dark underside it drew brown streaks on a bright sky from
+  // below and along the horizon from above.
+  it("lights the high layer through, the deck's underside only for the deck", () => {
+    const { shell, draws } = setUp();
+    shell.setEnabled(true);
+    shell.update(
+      frameAt({
+        altitudeKm: 5,
+        highLayer: { on: true },
+        shares: { shellIn: 1, shell: 1, slab: 0 },
+      }),
+    );
+    shell.render(camera(), renderOptions);
+    const pass = draws.find((draw) =>
+      draw.fragmentShader.includes("uBothSides"),
+    );
+    expect(pass?.fragmentShader).toContain("uBothSides > 0.5 ? thinLight");
+    expect(pass?.fragmentShader).toContain(
+      "vec3 thinLight = max( top, sunUnder + skyUnder );",
+    );
   });
 
   it("weighs the slab in the composite only with its texture, and eases the flat deck in", () => {

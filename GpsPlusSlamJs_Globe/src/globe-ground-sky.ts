@@ -97,7 +97,7 @@ interface GroundSkyFrame {
   stepPct: number;
   /** The space view's sun intensity, the exposure above the edge. */
   spaceExposure: number;
-  /** The near clouds' look: their camera and the ground's own sun. */
+  /** The ground look: its own camera and the ground's own sun. */
   nearLook: boolean;
 }
 
@@ -243,7 +243,7 @@ export function createGlobeGroundSky(
     if (stage !== "idle") rebuilds[stage] += 1;
   };
   /**
-   * The near clouds' look: the camera's adaptation and, each frame (the
+   * The ground look: the camera's adaptation and, each frame (the
    * sky's sun moves in steps that jump this light at a low sun), the sun
    * that reached the ground. Off, the framework's camera and a white sun.
    */

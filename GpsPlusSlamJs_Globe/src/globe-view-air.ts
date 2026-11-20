@@ -17,11 +17,10 @@
  * sky), and `haze(tiles)` once per relief it draws.
  *
  * The lab's defaults, but one: the space pass's veil over the ground
- * stays below the edge (the lab's `atmoGround=1`) only with the near
- * clouds, whose depth ends its rays at the relief. Without a depth they
- * end at the ellipsoid, under the relief, and over high ground the veil
- * would be far too thick; so a page without clouds, and the old clouds,
- * fade it with the sky (`atmoGround=0`) and the haze carries the ground.
+ * fades with the sky below the edge (the lab's `atmoGround=0`) and the
+ * haze carries the ground. Without the relief's depth the veil's rays end
+ * at the ellipsoid, under the relief, and over high ground the veil would
+ * be far too thick.
  *
  * @see globe-view-air.ts.md
  */
@@ -198,7 +197,6 @@ export function mountGlobeViewAir(
     hazeScale: 1,
     atmoRamp: 1,
     atmoThickness: GLOBE_ATMOSPHERE.thickness,
-    // Set each frame: the near clouds may fail after the view opened.
     atmoGround: 0,
     atmoSteps: defaultAtmosphereSteps(options.coarsePointer),
     atmoStrength: GLOBE_ATMOSPHERE.strength,
@@ -218,14 +216,12 @@ export function mountGlobeViewAir(
   let disposed = false;
   /** Drawn only between the first step and the dispose. */
   const live = () => stepped && !disposed;
-  /** The air's step: the near clouds decide its shares. */
+  /** The air's step. */
   const stepAir = () => {
-    params.atmoGround = clouds?.nearLive() === true ? 1 : 0;
     const { position } = view.ecefCamera();
     air.step(params, {
       cameraEcef: [position.x, position.y, position.z],
       framed: view.frameTarget() !== null,
-      nearAir: clouds?.nearAir() ?? 0,
     });
     view.globe.surfaceUniforms.uNightGain.value =
       GLOBE_SURFACE_TUNING.nightGain * nightLightsShare(air.observerKm());

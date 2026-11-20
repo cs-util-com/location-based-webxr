@@ -236,40 +236,6 @@ describe("createGlobeAir", () => {
     expect(renders[0]).toMatchObject({ sunIntensity: 4.5 });
   });
 
-  // Why this test matters: where the near clouds draw the air behind them
-  // (the composite's own, on their scale), the veil and the space sky hand
-  // it over by the same share. Kept, the air is counted twice: a pale wash
-  // over the clouds. And at a whole share the veil's march is the frame's
-  // cost for nothing.
-  it("hands the air to the near clouds by their share", () => {
-    const { air, renders, weights } = setup({ weight: 0.5, exposure: 4.5 });
-    const frame = {
-      drawn: true,
-      worldFromEcef: new THREE.Matrix4(),
-      sunEcef: new THREE.Vector3(1, 0, 0),
-      sceneDepth: null,
-    };
-    const camera = new THREE.PerspectiveCamera();
-    const cameraEcef = at(1000);
-    air.step(PARAMS, { cameraEcef, framed: true, nearAir: 0.25 });
-    air.render(camera, PARAMS, frame);
-    expect(renders.at(-1)).toMatchObject({
-      skyShare: 0.375,
-      groundShare: 0.75,
-    });
-    expect(weights.at(-1)).toEqual([0.375, 2]);
-    air.render(camera, { ...PARAMS, atmoGround: 0 }, frame);
-    expect(renders.at(-1)).toMatchObject({
-      skyShare: 0.375,
-      groundShare: 0.375,
-    });
-    air.step(PARAMS, { cameraEcef, framed: true, nearAir: 1 });
-    const before = renders.length;
-    air.render(camera, PARAMS, frame);
-    expect(renders).toHaveLength(before);
-    expect(weights.at(-1)).toEqual([0, 2]);
-  });
-
   // Before the first `step` there is no hand-over yet (its exposure is
   // NaN, the observer at infinity). The lab never calls `finish` that way;
   // a second caller of this factory might, and a NaN sun draws the scene
@@ -348,8 +314,9 @@ describe("createGlobeAir", () => {
     expect(sunExposure.value).toBe(4);
   });
 
-  // Why this test matters: the near clouds' look stays off the old clouds.
-  it("tells the ground sky whether the near clouds' look is on", () => {
+  // Why this test matters: the ground look (the lab's `atmoGround` knob)
+  // stays off the default clouds.
+  it("tells the ground sky whether the ground look is on", () => {
     const { air, updates } = setup();
     air.step(
       { ...PARAMS, atmoGround: 0 },

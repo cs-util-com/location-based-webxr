@@ -227,9 +227,9 @@ describe("createGlobeGroundSky", () => {
     expect(sky.sunOnGround().scale).toBeGreaterThan(before);
   });
 
-  // Why this test matters: the old clouds are the editor's default look
-  // (the near clouds are experimental, `?clouds=new`), so neither the
-  // light nor the camera may change under them.
+  // Why this test matters: the default clouds are the editor's look (the
+  // ground look is only the lab's `atmoGround` knob), so neither the light
+  // nor the camera may change under them.
   it("leaves the old clouds' sun and camera as they were", () => {
     const r = (3 * Math.PI) / 180;
     const sky = createGlobeGroundSky(fakeRenderer(true).renderer);

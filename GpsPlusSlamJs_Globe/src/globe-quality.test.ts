@@ -9,9 +9,9 @@ import {
 } from "./globe-quality.js";
 
 /**
- * Why these tests matter: the quality names are the contract the sea and
- * the near clouds are built against, by two builders at once, so the names,
- * their order and what each sets must not drift. The table's steps are
+ * Why these tests matter: the quality names are the contract the sea is
+ * built against, so the names, their order and what each sets must not
+ * drift. The table's steps are
  * checked as an order (a higher tier never costs less), since a mistyped
  * value would otherwise only show as a slow or a coarse picture on a device
  * nobody tested. The default follows the pointer: low is never a default,
@@ -52,30 +52,6 @@ describe("the quality table", () => {
     if (!low || !medium || !high) throw new Error("three tiers expected");
     expect(low.pixelRatioCap).toBeLessThan(medium.pixelRatioCap);
     expect(medium.pixelRatioCap).toBeLessThan(high.pixelRatioCap);
-    expect(low.clouds.maxPixelsPerCss).toBeLessThan(
-      medium.clouds.maxPixelsPerCss,
-    );
-    expect(medium.clouds.maxPixelsPerCss).toBeLessThan(
-      high.clouds.maxPixelsPerCss,
-    );
-    expect(low.clouds.entrySubSteps).toBeLessThanOrEqual(
-      high.clouds.entrySubSteps,
-    );
-  });
-
-  it("each cloud law runs outward, with values in range", () => {
-    for (const { clouds } of Object.values(GLOBE_QUALITIES)) {
-      expect(clouds.law.length).toBeGreaterThan(0);
-      let last = 0;
-      for (const step of clouds.law) {
-        expect(step.distanceKm).toBeGreaterThan(last);
-        last = step.distanceKm;
-        expect(step.march).toBeGreaterThan(0);
-        expect(step.march).toBeLessThanOrEqual(1);
-        expect(step.pixelsPerCss).toBeGreaterThan(0);
-        expect(step.pixelsPerCss).toBeLessThanOrEqual(clouds.maxPixelsPerCss);
-      }
-    }
   });
 });
 

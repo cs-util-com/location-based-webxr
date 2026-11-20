@@ -218,7 +218,7 @@ describe("createGlobeSea", () => {
 });
 
 describe("the sea's shadow interface", () => {
-  // Why: the near clouds shadow the sea through this one function, so the
+  // Why: every cloud shadow reaches the sea through this one function, so the
   // sea's code never learns where a shadow comes from.
   it("is one named function of the point's own shadow value", () => {
     expect(GLOBE_SEA_SHADOW_GLSL).toContain(

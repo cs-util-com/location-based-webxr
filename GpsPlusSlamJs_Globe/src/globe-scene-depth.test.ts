@@ -191,7 +191,7 @@ describe("createGlobeSceneDepth", () => {
     // Why: the band's cross-fade drops relief pixels in a fine dither. In the
     // depth those holes read "no ground", so a pass that ends at the depth
     // alternates between the relief and the sea's sphere pixel by pixel: the
-    // near clouds' shadow came out as a dark stipple over the whole ground
+    // a cloud pass's shadow came out as a dark stipple over the whole ground
     // around 3.5 km. A share left at 1 would blank the globe in the next frame.
     const { renderer, raw } = fakeRenderer();
     const carrierShare = { value: 0.4 };

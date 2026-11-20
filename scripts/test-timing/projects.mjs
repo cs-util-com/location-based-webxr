@@ -621,7 +621,6 @@ export const PROJECTS = [
       ...demoAppStages([
         "./src/workers/occlusion-mesher.worker.ts",
         "./src/editor3d/globe-city-worker.ts",
-        "./src/editor3d/globe-cloud-bake-worker.ts",
         "./src/editor/asset-shelf/asset-optimizer.worker.ts",
         "./src/characters/character-cut.worker.ts",
       ]).map((stage) =>
@@ -635,17 +634,17 @@ export const PROJECTS = [
             ? // --concurrency auto: 46 s -> 34 s (projects.mjs.md).
               { ...stage, command: `${stage.command} --concurrency auto` }
             : stage.name === "check:boundaries"
-            ? // includeOnly reaches ../GpsPlusSlamJs_EditorKit/src: an editor
-              // kit change can break this package's boundary rules.
-              { ...stage, readsUpstreamSources: true }
-            : stage.name === "test:e2e"
-            ? {
-                ...stage,
-                command:
-                  "node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js",
-                narrowable: true,
-              }
-            : stage,
+              ? // includeOnly reaches ../GpsPlusSlamJs_EditorKit/src: an editor
+                // kit change can break this package's boundary rules.
+                { ...stage, readsUpstreamSources: true }
+              : stage.name === "test:e2e"
+                ? {
+                    ...stage,
+                    command:
+                      "node ../scripts/e2e/run-projects.mjs playwright-tests/e2e-plan.js playwright test --config playwright-tests/playwright.config.js",
+                    narrowable: true,
+                  }
+                : stage,
       ),
     ],
   },
@@ -1016,7 +1015,9 @@ export function dependentTrimMode(env = {}) {
 export function gateBaseCommand(stage, env = {}) {
   const { skipBrowser } = resolveGateMode(env);
   const command =
-    skipBrowser && stage.fastGateCommand ? stage.fastGateCommand : stage.command;
+    skipBrowser && stage.fastGateCommand
+      ? stage.fastGateCommand
+      : stage.command;
   if (onGithubRunner(env)) {
     return /(?:^|\s)prettier\s/.test(command)
       ? command.replace(" --write ", " --check ")
@@ -1049,7 +1050,8 @@ export const UNIT_RELATED_ENV = "GATE_UNIT_RELATED_REF";
 export const RELATED_UNIT_SCRIPT = "../scripts/test-changed/related-unit.mjs";
 
 /** The changed-files wrapper of the format stage, relative to a package directory. */
-export const CHANGED_FILES_SCRIPT = "../scripts/test-changed/changed-files-stage.mjs";
+export const CHANGED_FILES_SCRIPT =
+  "../scripts/test-changed/changed-files-stage.mjs";
 
 /** Env var that puts a gate run in DEC-G2's dependent mode. */
 export const SKIP_BROWSER_ENV = "GATE_SKIP_BROWSER_STAGES";

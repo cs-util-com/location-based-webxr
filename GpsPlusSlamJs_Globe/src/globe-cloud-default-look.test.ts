@@ -5,10 +5,8 @@
  * real shell pass, with a recording slab and a renderer that snapshots the
  * uniforms of every full-screen draw.
  *
- * Why this file matters: the view's clouds once carried a second,
- * experimental renderer for the ground-level clouds beside the slab, with
- * branches in every layer above them. Removing such branches must not move
- * the default look by a single uniform. These snapshots pin, at camera
+ * Why this file matters: a refactor of the cloud layers must not move the
+ * default look by a single uniform. These snapshots pin, at camera
  * heights from 400 km down to 3 km, what the view reports
  * (`state()`, `shell()`), what the step tells the slab and the shell, and
  * what the shell's march and composite are drawn with. Their pixels are the
@@ -81,8 +79,6 @@ interface Draw {
 /** A float-capable renderer that records each full-screen draw. */
 function recordingRenderer() {
   const draws: Draw[] = [];
-  /** The composite's experimental near-cloud weights, each draw. */
-  const nearMix: Record<string, unknown>[] = [];
   let target: THREE.WebGLRenderTarget | null = null;
   const renderer = {
     getContext: () => ({
@@ -110,15 +106,6 @@ function recordingRenderer() {
       const { uniforms } = mesh.material as THREE.ShaderMaterial;
       const kind = "tShell" in uniforms ? "composite" : "march";
       const keys = kind === "march" ? MARCH_KEYS : COMPOSITE_KEYS;
-      if (kind === "composite") {
-        nearMix.push(
-          Object.fromEntries(
-            ["uNearWeight", "uNearShadowOn", "uAirOn", "uShadowWeight"].map(
-              (k) => [k, uniforms[k]?.value],
-            ),
-          ),
-        );
-      }
       draws.push({
         kind,
         into: target === null ? "canvas" : "target",
@@ -131,7 +118,6 @@ function recordingRenderer() {
   return {
     renderer: renderer as unknown as THREE.WebGLRenderer,
     draws,
-    nearMix,
   };
 }
 
@@ -212,7 +198,7 @@ const sceneDepth = {
 
 /** One frame of the default clouds at `altitudeKm`, everything recorded. */
 function frameAt(altitudeKm: number) {
-  const { renderer, draws, nearMix } = recordingRenderer();
+  const { renderer, draws } = recordingRenderer();
   const sky = createGlobeGroundSky(renderer);
   if (sky.atmosphere === null) throw new Error("the fake renderer has floats");
   const shellVolume = createGlobeCloudShellVolume(renderer, {
@@ -238,18 +224,14 @@ function frameAt(altitudeKm: number) {
   clouds.step({ observerKm: altitudeKm, shareClouds: () => 1 });
   clouds.render({ weight: altitudeKm < 80 ? 1 : 0 });
   const { law, deckKm, high } = shellVolume.state();
-  const { near, ...state } = clouds.state();
   return {
-    near: { state: near, mix: nearMix },
-    look: {
-      state: settle(state),
-      shell: settle(clouds.shell()),
-      shellLaw: settle({ law, deckKm, high }),
-      surfaceShadow: settle(view.globe.surfaceUniforms.uCloudShadow.value),
-      cloudShellM: view.globe.cloudShell.heightM(),
-      slab: told,
-      draws,
-    },
+    state: settle(clouds.state()),
+    shell: settle(clouds.shell()),
+    shellLaw: settle({ law, deckKm, high }),
+    surfaceShadow: settle(view.globe.surfaceUniforms.uCloudShadow.value),
+    cloudShellM: view.globe.cloudShell.heightM(),
+    slab: told,
+    draws,
   };
 }
 
@@ -260,13 +242,7 @@ describe("the default clouds of a globe view", () => {
   it.each([400, 120, 60, 20, 3])(
     "draws the slab and the shell at %d km as characterized",
     (altitudeKm) => {
-      const { look, near } = frameAt(altitudeKm);
-      expect(look).toMatchSnapshot();
-      // The experimental near clouds take no part in the default look.
-      expect(near.state).toBeNull();
-      expect(near.mix).toEqual([
-        { uNearWeight: 0, uNearShadowOn: 0, uAirOn: 0, uShadowWeight: 1 },
-      ]);
+      expect(frameAt(altitudeKm)).toMatchSnapshot();
     },
   );
 });
