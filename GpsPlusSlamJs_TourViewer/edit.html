@@ -18,8 +18,8 @@
     <link rel="stylesheet" href="/src/editor/characters-panel.css" />
   </head>
   <body>
-    <!-- The top bar first: the keyboard reaches it before the map, the 3D
-         view and the panels below it (it is fixed, so the order draws
+    <!-- The top bar first: the keyboard reaches it before the 3D view and
+         the panels below it (it is fixed, so the order draws
          nothing differently). -->
     <header id="topbar" class="panel" hidden>
       <div class="brand">
@@ -225,17 +225,11 @@
             >
               Show debug data
             </button>
-            <div role="separator"></div>
-            <!-- The view switch: the 2D map or the 3D view of the same
-                 tour (view-switch.ts); its load is said in the bottom bar. -->
-            <button role="menuitem" type="button" id="view-switch">
-              3D view
-            </button>
           </div>
         </div>
       </div>
-      <!-- The 3D view's studio controls (editor-shell.ts); the map page
-           hides them. -->
+      <!-- The 3D view's studio controls (editor-shell.ts); hidden while the
+           view does not show. -->
       <div class="studio grp">
         <button
           class="tbtn"
@@ -291,12 +285,9 @@
       </div>
     </header>
 
-    <div id="map" aria-label="Tour map"></div>
-
     <!-- Where the 3D view cannot open (view3d-failed-page.ts): no WebGL,
          its code not loaded, its graphics lost, an error. It says so and
-         keeps the File actions within reach; the 2D map no longer stands
-         in for the 3D view. -->
+         keeps the File actions within reach. -->
     <section id="view3d-failed" aria-labelledby="view3d-failed-title" hidden>
       <div class="modal failed">
         <h1 id="view3d-failed-title" tabindex="-1">The 3D view cannot open</h1>
@@ -325,9 +316,8 @@
       </div>
     </section>
 
-    <!-- The 3D view (view-switch.ts, src/editor3d/): over the map while it
-         shows, its code loaded only when the switch asks for it. The
-         panels stay above it. -->
+    <!-- The 3D view (view3d-opener.ts, src/editor3d/): the editor, its
+         code loaded only when a tour opens. The panels stay above it. -->
     <div id="view3d" aria-label="The tour in 3D" tabindex="-1" hidden>
       <!-- The view's accent line under the top bar, always full; the globe
            view's approach covers it with its own loading line while the
@@ -409,7 +399,7 @@
         <div class="dbody" id="inspector-body"></div>
       </aside>
       <!-- The asset shelf: right of the inspector, folding to a rail of
-           rings; a sheet on a phone, with its pill over the map while it
+           rings; a sheet on a phone, with its pill over the scene while it
            is closed (asset-shelf/shelf-panel.ts fills both). -->
       <aside class="dock" id="shell-shelf" aria-label="Assets"></aside>
       <button id="shelf-pill" type="button" hidden></button>
@@ -521,6 +511,32 @@
           New station here
         </button>
       </div>
+      <!-- The debug layer (debug-capture-layer.ts): the walk's camera
+           captures on the globe, for a tour whose file carries a walk or with
+           debug data added beside it ("Add debug data…", a file input or a
+           drop on this panel; added-debug-data.ts). Debug data, never the
+           tour's content: an added file is never saved, drafted or kept
+           across a reload. Its switch is the View menu's "Show debug data",
+           there only while the layer shows something. It stands in the 3D
+           view, at its foot (the docking takes it into the view's pane,
+           dock-host.ts), so it is hidden whenever the view is. -->
+      <div
+        id="debug-panel"
+        class="panel debug-panel"
+        aria-label="Debug data"
+        hidden
+      >
+        <span id="debug-status" role="status" aria-live="polite"></span>
+        <button class="btn debug-add" id="debug-add" type="button">
+          Add debug data…
+        </button>
+        <input
+          type="file"
+          id="debug-add-input"
+          accept=".zip,application/zip"
+          hidden
+        />
+      </div>
     </div>
 
     <!-- The bottom bar (editor-shell.ts): in the 3D view the credits, the
@@ -530,7 +546,7 @@
     <footer id="shell-bar" aria-label="The editor's status" hidden>
       <!-- The 3D view's credits (the relief's and the map's), small at the
            bar's left: never under a dock, after the docks in the Tab order,
-           their panel opening upward. Empty on the map. -->
+           their panel opening upward. Empty while the view does not show. -->
       <div class="view3d-credits" id="view3d-credits"></div>
       <span
         id="save-status"
@@ -560,114 +576,6 @@
         ><span class="tl">Assets</span>
       </button>
     </footer>
-
-    <!-- The debug layer (debug-capture-layer.ts): the walk's camera
-         captures on the map, for a tour whose file carries a walk or with
-         debug data added beside it ("Add debug data…", a file input or a
-         drop on this panel; added-debug-data.ts). Debug data, never the
-         tour's content: an added file is never saved, drafted or kept
-         across a reload. Its switch is the View menu's "Show debug data",
-         there only while the layer shows something. -->
-    <div
-      id="debug-panel"
-      class="panel debug-panel"
-      aria-label="Debug data"
-      hidden
-    >
-      <span id="debug-status" role="status" aria-live="polite"></span>
-      <button class="btn debug-add" id="debug-add" type="button">
-        Add debug data…
-      </button>
-      <input
-        type="file"
-        id="debug-add-input"
-        accept=".zip,application/zip"
-        hidden
-      />
-    </div>
-
-    <aside id="rail" class="panel" hidden aria-label="Objects in this tour">
-      <div class="rail-head">
-        <h2>In this tour</h2>
-        <button
-          class="btn ghost icon-btn"
-          id="collapse-btn"
-          type="button"
-          aria-label="Collapse the list"
-          title="Collapse the list"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            aria-hidden="true"
-          >
-            <path id="collapse-icon" d="M15 6l-6 6 6 6" />
-          </svg>
-        </button>
-      </div>
-      <div class="rail-mini" id="rail-mini"></div>
-      <section class="rail-settings" aria-label="Tour settings">
-        <label class="setting">
-          <input type="checkbox" id="no-gps-input" />
-          <span class="setting-text">
-            <span class="setting-title">This tour needs no GPS</span>
-            <span class="setting-sub"
-              >Visitors are never asked for their location; the printed codes
-              place the tour.</span
-            >
-          </span>
-        </label>
-        <div
-          class="setting-warnings"
-          id="no-gps-warnings"
-          role="status"
-          aria-live="polite"
-        ></div>
-      </section>
-      <div class="rail-search">
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          aria-hidden="true"
-        >
-          <circle cx="11" cy="11" r="6" />
-          <path d="M20 20l-4.5-4.5" />
-        </svg>
-        <input
-          id="filter"
-          type="search"
-          placeholder="Find a code or note"
-          aria-label="Find a code or note"
-        />
-      </div>
-      <div class="rail-body" id="rail-body"></div>
-    </aside>
-
-    <section
-      id="card"
-      class="panel"
-      role="dialog"
-      aria-label="The selected object"
-      hidden
-    >
-      <div class="arrow"></div>
-      <div id="card-inner"></div>
-    </section>
-
-    <div id="offscreen-chip" class="panel" hidden>
-      <span id="offscreen-text"></span>
-      <button class="btn small" id="offscreen-show" type="button">
-        Show it
-      </button>
-    </div>
 
     <!-- The tour's characters and the ones on this device (characters-panel.ts). -->
     <dialog
@@ -969,8 +877,8 @@
           An e-mail address or a web link. Visitors see it when the tour fails
           to open or show.
         </p>
-        <!-- The tour's "needs no GPS" setting, here for the 3D view, which
-             has no rail (details-dialog.ts `noGps`); written by Apply. -->
+        <!-- The tour's "needs no GPS" setting (details-dialog.ts `noGps`);
+             written by Apply. -->
         <label class="setting" for="details-no-gps">
           <input id="details-no-gps" type="checkbox" />
           <span class="setting-text">

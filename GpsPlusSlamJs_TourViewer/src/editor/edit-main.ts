@@ -1,27 +1,26 @@
 /**
  * The desktop editor's page (`/tour/edit.html`, M6 E1, E2a): the
  * composition root. Opens a tour (a file chosen or dropped, or the
- * sample), draws it in the chosen variant 1 layout (full map, the left
- * rail, the card beside the selected marker), and edits it: a pin's text,
- * Move and Delete, undo and redo of every edit (Ctrl+Z, Ctrl+Shift+Z,
- * Ctrl+Y; W2), and a Save that downloads the tour to put in
- * place of the old file - or, where the browser allows it (Chromium's file
- * picker, M6 E2b-1), writes the opened file in place - by itself too, a
- * few seconds after a change (M6 E2b-2, `autosave.ts`). The tour's name in
- * the top bar opens its details (W2 of the tour editor plan,
- * `details-dialog.ts`). The top bar's File menu opens, saves, saves a
- * copy, adds debug data and "Share and publish…" (it says where the
+ * sample), shows it in the 3D view on the globe - the editor itself
+ * (`view3d-opener.ts`; the 3D view's code, `src/editor3d/`, is a dynamic
+ * import made only then) - and edits it: undo and redo of every edit
+ * (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y; W2), and a Save that downloads the tour
+ * to put in place of the old file - or, where the browser allows it
+ * (Chromium's file picker, M6 E2b-1), writes the opened file in place - by
+ * itself too, a few seconds after a change (M6 E2b-2, `autosave.ts`). The
+ * tour's name in the top bar opens its details (W2 of the tour editor
+ * plan, `details-dialog.ts`). The top bar's File menu opens, saves, saves
+ * a copy, adds debug data and "Share and publish…" (it says where the
  * changes are and what is left to do, and moves the walk out,
- * `done-dialog.ts`); its View menu holds the 3D view's commands and the
- * view switch (`menu-button.ts`). The save status is the bottom bar's,
- * with a mark beside File while changes are not saved. A tour opens in the
- * 3D view (`view-switch.ts`; the 3D view's code, `src/editor3d/`, is a
- * dynamic import made only then); the 2D map stays reachable from View and
- * is where the page falls back when the 3D view cannot show. A tour whose
- * file carries a walk shows its debug camera captures on the map once it
- * has opened (`debug-capture-layer.ts`; debug data, never the tour's
- * content), behind View's "Show debug data". Linked from the setup page's
- * "You already have a tour?" box and its step 5 on a device without AR.
+ * `done-dialog.ts`); its View menu holds the 3D view's commands
+ * (`menu-button.ts`). The save status is the bottom bar's, with a mark
+ * beside File while changes are not saved. Where the 3D view cannot open,
+ * a page of its own says why and keeps the File actions within reach
+ * (`view3d-failed-page.ts`). A tour whose file carries a walk shows its
+ * debug camera captures on the globe once it has opened
+ * (`debug-capture-layer.ts`; debug data, never the tour's content), behind
+ * View's "Show debug data". Linked from the setup page's "You already have
+ * a tour?" box and its step 5 on a device without AR.
  *
  * @see edit-main.ts.md
  */
@@ -43,7 +42,6 @@ import {
   isEntryIdle,
   isStationLocked,
   selectEditorView,
-  type EditorMessage,
   type EditorViewState,
 } from "./editor-view.js";
 import {
@@ -52,7 +50,6 @@ import {
   selectTourDocument,
   stationDeleteRefusal,
   tourDocumentActions,
-  objectMoveChange,
   type TourSaveHolder,
   type TourSaveStatus,
 } from "../tour-document.js";
@@ -79,12 +76,6 @@ import {
   type TourSession,
 } from "../tour-session.js";
 import {
-  CARD_RESIZED,
-  createEditorCard,
-  type CardView,
-} from "./editor-card.js";
-import { createEditorMap } from "./editor-map.js";
-import {
   createDebugCaptureLayer,
   decodeDebugThumbnail,
   revokeDebugThumbnail,
@@ -101,9 +92,7 @@ import {
   FOLDER_PREFIX,
   STATION_PREFIX,
   STORY_PREFIX,
-  photoSource,
   selectedStationOf,
-  type EditorItem,
   type EditorModel,
 } from "./editor-model.js";
 import {
@@ -123,8 +112,6 @@ import {
 } from "./editor-open.js";
 import {
   holdPageInert,
-  revealPadding,
-  type Box,
   createStatusLines,
   createMenuButton,
   menuItemControl,
@@ -183,7 +170,6 @@ import {
   readTourHost,
   type TourHost,
 } from "../tour-host.js";
-import { createEditorRail } from "./editor-rail.js";
 import {
   AUTOSAVE_MAX_BYTES,
   autosaveFits,
@@ -253,11 +239,8 @@ import {
   type StartFrom,
 } from "./start-card.js";
 import { noGpsWarnings } from "./no-gps-check.js";
-import { createViewSwitch, type View3dHandle } from "./view-switch.js";
-import {
-  failedPageReason,
-  wireView3dFailedPage,
-} from "./view3d-failed-page.js";
+import { createView3dOpener, type View3dHandle } from "./view3d-opener.js";
+import { wireView3dFailedPage } from "./view3d-failed-page.js";
 import {
   createEditorShell,
   type TypedEditOutcome,
@@ -365,10 +348,6 @@ const DETAILS_UNCHANGED = "The tour details are as they were.";
 const NOTHING_TO_SAVE =
   "Nothing to save: there are no changes since the tour was opened or last saved.";
 
-/** The gap between the panels and the window's edges (`--gap`). */
-const EDGE_PX = 12;
-/** Below this width the rail starts folded (the prototype's 760 px). */
-const NARROW_PX = 760;
 /** How long a delete's toast offers its Undo - the phone's hold
  *  (`object-editing.ts` `OUTCOME_HOLD_MS`) - and holds autosave (M4a
  *  review #2). Ctrl+Z undoes it later too (W2: the session's edit stack),
@@ -441,22 +420,6 @@ function scanStore(): HandleStore | null {
 }
 
 /**
- * Whether an opened tour shows in the 3D view (the editor's default view)
- * - true, except in the dev server an e2e may set
- * `window.__tourEditorStartOnMap` (an init script) to start on the 2D map,
- * where most of the editor's specs work. Inert in a production build, as
- * `autosaveSettings`: `import.meta.env.DEV` is statically false there.
- */
-function opensIn3d(): boolean {
-  if (import.meta.env.DEV && !import.meta.env.VITEST) {
-    const onMap = (window as { __tourEditorStartOnMap?: boolean })
-      .__tourEditorStartOnMap;
-    if (onMap === true) return false;
-  }
-  return true;
-}
-
-/**
  * The globe view's approach for the next 3D open, or undefined for none:
  * set when a tour opens without a draft to restore (a restored draft goes
  * straight to the tour), taken by the first 3D open after it. In the dev
@@ -506,15 +469,10 @@ const store = createTourViewerStore(undefined, {
   ...EDITOR_SESSION_SLICES,
 });
 
-/** The page's chrome state (`editorView`): what is selected, in flight,
- *  dragged, and the card's last line. */
+/** The page's chrome state (`editorView`): what is selected and in
+ *  flight. */
 function ui(): EditorViewState {
   return selectEditorView(store.getState());
-}
-
-/** The card's outcome line for an item, or none. */
-function say(message: EditorMessage | null): void {
-  store.dispatch(editorViewActions.said({ message }));
 }
 
 /** A save the browser did not deliver, or none: kept here (it holds a
@@ -613,12 +571,6 @@ const keepWalk = element<HTMLButtonElement>("file-keep-walk");
 /** The debug layer's switch (View's "Show debug data") and its line
  *  (`debug-capture-layer.ts`). */
 const debugPanel = element("debug-panel");
-/** Where the debug panel stands in the page over the map
- *  (`placeDebugPanel`). */
-const debugPanelHome = {
-  parent: debugPanel.parentElement ?? document.body,
-  next: debugPanel.nextElementSibling,
-};
 const debugSwitch = element<HTMLButtonElement>("view-debug");
 /** The View menu's Real time: the globe view's clock (the globe view only). */
 const realTimeSwitch = element<HTMLButtonElement>("view-realtime");
@@ -631,7 +583,7 @@ const debugStatus = element("debug-status");
  *  plan). */
 const debugAddButton = element<HTMLButtonElement>("debug-add");
 const debugAddInput = element<HTMLInputElement>("debug-add-input");
-/** File's "Add debug data…": the same add as the map panel's button. */
+/** File's "Add debug data…": the same add as the debug panel's button. */
 const fileDebugAdd = element<HTMLButtonElement>("file-debug-add");
 
 /** A checkbox item's state (`aria-checked`). */
@@ -657,19 +609,10 @@ createMenuButton({
   button: element<HTMLButtonElement>("view-menu-btn"),
   menu: element("view-menu"),
 });
-/** The tour's "needs no GPS" setting and its warnings (QR-first M1b-2). */
-const noGpsInput = element<HTMLInputElement>("no-gps-input");
-/** Its warnings' live region: never hidden (an empty one is zero-height),
- *  and its lines replaced only when their words change, so a refresh does
- *  not announce the same warning again (M1b-2 milestone review #5). */
-const noGpsLines = createStatusLines(element("no-gps-warnings"), (line) => {
-  const p = document.createElement("p");
-  p.className = "note-line warn";
-  p.textContent = line;
-  return p;
-});
-/** The same setting's box in Tour details, for the 3D view (no rail
- *  there), and its warnings' live region (never hidden, like the rail's). */
+/** The tour's "needs no GPS" setting in Tour details (QR-first M1b-2),
+ *  and its warnings' live region: never hidden (an empty one is
+ *  zero-height), and its lines replaced only when their words change, so
+ *  a refresh does not announce the same warning again. */
 const detailsNoGpsInput = element<HTMLInputElement>("details-no-gps");
 const detailsNoGpsLines = createStatusLines(
   element("details-no-gps-warnings"),
@@ -682,7 +625,7 @@ const detailsNoGpsLines = createStatusLines(
 );
 
 let session: TourSession | null = null;
-/** The written file, for the card's photos once a save replaced the bytes
+/** The written file, for the tour's photos once a save replaced the bytes
  *  the opened file had (E2b plan review #2, #5): the rebuild keeps the
  *  opened session, only the reads move - one copy opened at a time, so
  *  the whole-archive checks never pile up (E2b-2 milestone review #3). */
@@ -795,7 +738,7 @@ const characters = createCharactersPanel({
 });
 /** The open tour's codes as opened (the 3D view draws them; read-only). */
 let openedLevels: ReadonlyMap<string, QrLevel> = new Map();
-/** The 3D view while it shows (the view switch holds its handle too). */
+/** The 3D view while it shows (the opener holds its handle too). */
 let shown3d: Editor3dView | null = null;
 /** The open tour's draft key: its opened file's, then the key of each
  *  in-place write that landed (M6 E2c) and of a download whose key differs
@@ -807,8 +750,6 @@ let model: EditorModel | null = null;
  *  its zip (a Blob, never state), so it stays here; `editorView` holds
  *  only that one waits (`setUndelivered`). */
 let undelivered: EditorSave | null = null;
-/** Notes moved since the last save: their card says the height was kept. */
-const moved = new Set<string>();
 /** The open delete's Undo toast, until it times out or a newer edit
  *  comes. */
 let undoOffer: { toast: HTMLElement; timer: number } | null = null;
@@ -857,19 +798,14 @@ async function savesSettled(): Promise<void> {
 }
 
 /** Edits being made that a save must not cut into (M6 E2b-2, the E2b plan
- *  review #3, #7): a delete's undo while its toast offers it, typing not
- *  yet committed, a marker being moved. The delete reaches the file only
+ *  review #3, #7): a delete's undo while its toast offers it, a gesture of
+ *  the 3D view. The delete reaches the file only
  *  once its Undo has lapsed (M4a review #2): an undo after the save that
  *  wrote it still works in this tab (the edit stack), but a draft does not
  *  bring the note back after a closed tab (`editor-draft.ts` places
  *  nothing new). */
 function editing(): boolean {
-  return (
-    undoOffer !== null ||
-    card.dirty() ||
-    ui().moving !== null ||
-    ui().gesture !== null
-  );
+  return undoOffer !== null || ui().gesture !== null;
 }
 
 /** The page saves by itself, a few seconds after a committed change, while
@@ -895,7 +831,7 @@ document.body.dataset["autosave"] = autosave.state();
  * The dev server's test hook (`window.__tourEditor`): an e2e reaches the
  * editor session's edits no control of this page offers yet (a station's
  * name), then `edited()` follows them as an edit made here would - the
- * rail, the map, the card and the status, and the autosave told. Inert in
+ * 3D view and the status, and the autosave told. Inert in
  * a production build: `import.meta.env.DEV` is statically false there, so
  * the hook is stripped (`seams.ts`'s guarantee).
  */
@@ -1103,96 +1039,8 @@ function toast(
   return t;
 }
 
-/** The free part of the window: right of the rail, under the top bar
- *  (read from the bar itself, so the CSS stays the one source). */
-function freeArea(): Box {
-  const bar = topbar.hidden ? 0 : topbar.getBoundingClientRect().bottom;
-  const floor = shellBar.hidden
-    ? window.innerHeight
-    : shellBar.getBoundingClientRect().top;
-  return {
-    left: rail.right() + EDGE_PX,
-    top: bar + EDGE_PX,
-    right: window.innerWidth - EDGE_PX,
-    bottom: floor - EDGE_PX,
-  };
-}
-
-function reveal(id: string): void {
-  map.reveal(
-    id,
-    revealPadding(
-      { width: window.innerWidth, height: window.innerHeight },
-      freeArea(),
-    ),
-  );
-}
-
-/** The debug panel's box while it shows: the card keeps clear of it
- *  (r901 review #4; the panel shares the window's lower right corner). */
-function debugPanelBox(): Box | null {
-  if (debugPanel.hidden) return null;
-  const r = debugPanel.getBoundingClientRect();
-  return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
-}
-
-function placeCard(): void {
-  const { selected } = ui();
-  if (selected === null) return;
-  card.place(map.anchorOf(selected), freeArea(), debugPanelBox());
-}
-
-/** A pin or photo of the tour can be edited; codes and stations cannot
- *  (yet). */
-function editable(item: EditorItem): boolean {
-  return item.kind === "pin" || item.kind === "photo";
-}
-
-function viewOf(item: EditorItem): CardView {
-  const { moving, message } = ui();
-  return {
-    editable: editable(item),
-    moving: moving?.id === item.id,
-    moved: moved.has(item.id),
-    message: message?.id === item.id ? message.text : "",
-  };
-}
-
-function showCard(): void {
-  const item = model?.items.find((i) => i.id === ui().selected) ?? null;
-  // The card points at a marker of the map: not over the 3D view, whose
-  // panels come later. The selection stays (the store's).
-  if (item === null || ui().viewMode === "3d") {
-    card.hide();
-    return;
-  }
-  card.show(item, viewOf(item));
-  placeCard();
-}
-
-function select(id: string | null, pan = false): void {
-  // Typing in the card's field is committed before it shows something else.
-  if (id !== ui().selected) {
-    card.commit();
-    // What was typed was refused, and the card is about to show something
-    // else: the refusal goes to a toast, never silently away (PR #611
-    // review).
-    const { message, selected } = ui();
-    if (message?.refused === true && message.id === selected) {
-      toast(message.text);
-    }
-  }
-  const { moving } = ui();
-  if (moving !== null && moving.id !== id) cancelMove();
+function select(id: string | null): void {
   store.dispatch(editorViewActions.selected({ id }));
-  say(null);
-  map.select(id);
-  rail.select(id);
-  showCard();
-  if (pan && id !== null) {
-    reveal(id);
-    placeCard();
-  }
 }
 
 /** The save status: its state and its words, the words also its title
@@ -1220,7 +1068,7 @@ function renderFileItems(): void {
   setItemDisabled(fileDetailsButton, editor === null);
   setItemDisabled(fileCharactersButton, editor === null);
   // On whenever a tour is open and no save runs: a click commits the
-  // card's typing first, so a disabled button would swallow the first
+  // inspector's typing first, so a disabled button would swallow the first
   // edit (E2a review #3).
   setItemDisabled(saveButton, editor === null || saving());
   setItemDisabled(saveCopyButton, editor === null || saving());
@@ -1288,18 +1136,6 @@ function pendingSuffix(): string {
   return "";
 }
 
-/** The "needs no GPS" setting as the session holds it, and - while it is
- *  on - what visitors without location will meet (QR-first M1b-2): plain
- *  lines, never blocking the save. */
-function renderNoGps(): void {
-  const on = editor?.needsNoGps() ?? false;
-  noGpsInput.checked = on;
-  noGpsInput.disabled = editor === null;
-  noGpsLines.show(
-    editor === null || !on ? [] : noGpsWarnings(editor.noGpsCheck()),
-  );
-}
-
 /** The tour's name in the top bar and the tab's title (W2: link titles
  *  use the tour's name, not the app's). */
 function renderTourName(): void {
@@ -1310,7 +1146,7 @@ function renderTourName(): void {
 }
 
 /** Whether the selection `id` is still in the tour: one of the editor
- *  model's items, or a block the 2D editor does not list
+ *  model's items, or a block the editor model does not list
  *  (`editor-model.ts`) but the 3D view selects and edits - a 3D model, a
  *  free long text. */
 function stillInTour(id: string): boolean {
@@ -1321,21 +1157,16 @@ function stillInTour(id: string): boolean {
   );
 }
 
-/** After an edit: the rail, the markers, the card and the status follow. */
+/** After an edit: the tour's name and the status follow (the 3D view
+ *  reads the store). */
 function refresh(): void {
   if (editor === null) return;
   model = editor.model();
   renderTourName();
-  rail.update(model);
-  map.update(model);
   const { selected } = ui();
   if (selected !== null && !stillInTour(selected)) {
     store.dispatch(editorViewActions.selected({ id: null }));
   }
-  map.select(ui().selected);
-  rail.select(ui().selected);
-  showCard();
-  renderNoGps();
   renderSaveState();
 }
 
@@ -1364,10 +1195,7 @@ function runStep(which: "undo" | "redo"): void {
   // A drag or a held key of the 3D view ends unwritten: the step acts on
   // the tour as it was.
   shown3d?.cancelGesture();
-  if (ui().moving !== null) cancelMove();
-  card.commit();
   const outcome = which === "undo" ? editor.undo() : editor.redo();
-  say(null);
   refresh();
   if (outcome.kind === "refused") {
     // A delete toast stays: its Undo can be tapped again once the save ends.
@@ -1442,170 +1270,8 @@ function resaveMayStart(): boolean {
   );
 }
 
-function startMove(id: string): void {
-  store.dispatch(editorViewActions.moveStarted({ id }));
-  map.drag(id, (lat, lng) => {
-    store.dispatch(editorViewActions.moveDropped({ id, drop: { lat, lng } }));
-  });
-  showCard();
-}
-
-function finishMove(): void {
-  const done = ui().moving;
-  if (done === null || editor === null) return;
-  map.drag(done.id, null);
-  store.dispatch(editorViewActions.moveEnded());
-  if (done.drop !== null) {
-    try {
-      const before = store.getState().tourDocument;
-      const { lat, lng } = done.drop;
-      const change = objectMoveChange(before, done.id, lat, lng);
-      const joinStation =
-        change.kind === "moved"
-          ? askMove(before, done.id, change.after.geo, confirmPausingFrames)
-          : undefined;
-      const outcome = editor.move(
-        done.id,
-        lat,
-        lng,
-        joinStation === undefined ? {} : { joinStation },
-      );
-      if (outcome.kind === "moved") {
-        moved.add(done.id);
-        if (joinStation !== undefined) showRowsOf(joinStation);
-        const note = moveNote(before, store.getState().tourDocument, done.id);
-        say({ id: done.id, text: `${note ?? "Moved"} - not saved yet.` });
-        endUndo();
-        tourChanged();
-      } else {
-        // Said, never dropped (PR #622 bot finding C).
-        say({ id: done.id, text: outcome.reason, refused: true });
-      }
-    } catch (err) {
-      say({
-        id: done.id,
-        text: `It cannot go there: ${err instanceof Error ? err.message : String(err)}`,
-      });
-    }
-  }
-  refresh();
-  autosave.poke();
-  void resaveIfDue();
-}
-
-function cancelMove(): void {
-  const done = ui().moving;
-  if (done === null) return;
-  map.drag(done.id, null);
-  store.dispatch(editorViewActions.moveEnded());
-  // Redrawn from the model: the marker goes back to where it was.
-  refresh();
-  autosave.poke();
-  void resaveIfDue();
-}
-
-const mapBox = element("map");
-const map = createEditorMap(mapBox, {
-  onSelect: (id) => {
-    select(id);
-  },
-  onHover: (id, on) => {
-    map.hover(id, on);
-    rail.hover(id, on);
-  },
-  onBackground: () => {
-    if (ui().moving === null) select(null);
-  },
-  onView: placeCard,
-});
-
-const rail = createEditorRail(
-  {
-    rail: element("rail"),
-    body: element("rail-body"),
-    mini: element("rail-mini"),
-    filter: element<HTMLInputElement>("filter"),
-    collapse: element<HTMLButtonElement>("collapse-btn"),
-    collapseIcon: document.getElementById(
-      "collapse-icon",
-    ) as unknown as SVGPathElement,
-  },
-  {
-    onSelect: (id) => {
-      select(id, true);
-    },
-    onHover: (id, on) => {
-      map.hover(id, on);
-      rail.hover(id, on);
-    },
-    onResize: placeCard,
-  },
-);
-
-const card = createEditorCard(
-  {
-    card: element("card"),
-    inner: element("card-inner"),
-    arrow:
-      element("card").querySelector<HTMLElement>(".arrow") ?? element("card"),
-    chip: element("offscreen-chip"),
-    chipText: element("offscreen-text"),
-    chipShow: element<HTMLButtonElement>("offscreen-show"),
-  },
-  {
-    loadImage: (item) => {
-      // A photo an undo brought back after a save took it out: its picture
-      // is the session's until the next save writes it (W2).
-      const kept = editor?.pictureOf(item.id);
-      if (kept !== undefined) return Promise.resolve(kept);
-      const open = photos.current() ?? session;
-      const source = photoSource(item);
-      if (open === null || source === null) {
-        return Promise.reject(new Error("no tour is open"));
-      }
-      return open.loadContentEntry(source);
-    },
-    onClose: () => {
-      select(null);
-    },
-    onReveal: () => {
-      const { selected } = ui();
-      if (selected !== null) reveal(selected);
-    },
-    onText: (id, text) => {
-      if (editor === null) return;
-      const outcome = editor.editText(id, text);
-      say(
-        outcome.kind === "refused"
-          ? { id, text: outcome.reason, refused: true }
-          : outcome.kind === "edited"
-            ? { id, text: "Changed - not saved yet." }
-            : null,
-      );
-      // In place: the click that blurred the field must still land on the
-      // button or row under the pointer (E2a review #3).
-      model = editor.model();
-      rail.update(model);
-      map.update(model);
-      card.note(ui().message?.text ?? "");
-      renderSaveState();
-      // Committed (or given back unchanged): the typing hold is over.
-      if (outcome.kind === "edited") {
-        endUndo();
-        tourChanged();
-      }
-      autosave.poke();
-      void resaveIfDue();
-    },
-    onMove: startMove,
-    onMoveDone: finishMove,
-    onMoveCancel: cancelMove,
-    onDelete: deleteSelection,
-  },
-);
-
-/** What a toast calls `id`: its rail row's title (a pin, a photo, a
- *  station), else, for a free block the rail does not list, its name by
+/** What a toast calls `id`: its listed title (a pin, a photo, a
+ *  station), else, for a free block the model does not list, its name by
  *  the one rule (`objectTitle`: its own text, else its kind's word); "the
  *  note" for an id the tour does not have. */
 function itemCalled(id: string): string {
@@ -1893,7 +1559,6 @@ function commitSceneEdit(edit: PlaceEdit): boolean {
       ? askMove(before, movedBlock, edit.geo, confirmPausingFrames)
       : undefined;
   const outcome = applyPlaceEdit(editor, edit, joinStation);
-  say(null);
   refresh();
   if (outcome.kind === "refused") {
     toast(outcome.reason);
@@ -2325,7 +1990,7 @@ function openShelfPanel(open: EditorSession): void {
     },
     show: (selection) => {
       if (selection === TOUR_COVER_SELECTION) openDetails();
-      else select(selection, true);
+      else select(selection);
     },
     useIn: {
       choices: (id) => {
@@ -2344,7 +2009,7 @@ function openShelfPanel(open: EditorSession): void {
     toast: shelfToast,
     storage: browserStorage(),
     phone: () => phoneLayout.matches,
-    // Sideways on a phone the open shelf leaves the map no room beside
+    // Sideways on a phone the open shelf leaves the view no room beside
     // the details: its rail then, and opening it folds the details.
     squeezed: () => shelfSqueezed(window.innerWidth, detailsOpen()),
     makeRoom: () => {
@@ -2869,9 +2534,6 @@ const details = wireDetailsDialog({
  *  from File's Tour details…. */
 function openDetails(): void {
   if (editor === null || ui().busy) return;
-  // Typing in the card is committed first: the dialog shows the tour as it
-  // stands.
-  card.commit();
   details.open();
   releaseOutside = holdOutside(element("details-modal"));
 }
@@ -2930,16 +2592,9 @@ function showModal(on: boolean): void {
 
 /** Leaving would lose edits: changes not saved, or a save not delivered. */
 function unsavedWork(): boolean {
-  return (
-    saving() ||
-    undelivered !== null ||
-    card.dirty() ||
-    (editor?.changeCount() ?? 0) > 0
-  );
+  return saving() || undelivered !== null || (editor?.changeCount() ?? 0) > 0;
 }
 
-window.addEventListener("resize", placeCard);
-element("card").addEventListener(CARD_RESIZED, placeCard);
 /** Set once the page asked before leaving itself (a reload of the
  *  cannot-open page): the browser's prompt would ask a second time. */
 let leavingOnPurpose = false;
@@ -2964,10 +2619,6 @@ document.addEventListener("keydown", (event) => {
   }
   if (done.isOpen()) {
     done.close();
-    return;
-  }
-  if (ui().moving !== null) {
-    cancelMove();
     return;
   }
   // "Pick in 3D" armed: Escape disarms it and keeps the selection.
@@ -3077,7 +2728,7 @@ function leaveFile(): void {
 
 /** The open tour's debug layer: view state only, never in the tour
  *  document, a save or the draft. What it drew and its switch are the
- *  store's (`debugLayer`), which the map and the 3D view both draw. */
+ *  store's (`debugLayer`), which the 3D view draws. */
 let debugLayer: DebugLayer | null = null;
 /** Its decoded thumbnails, keyed as the store's captures: decoded
  *  pictures stay out of the store. */
@@ -3121,7 +2772,7 @@ function debugSource(): {
   return {
     source: walk,
     // From the copy the page reads now: the opened file stops reading
-    // once a save rewrote it (as the card's photos, E2b plan review #2).
+    // once a save rewrote it (as the tour's photos, E2b plan review #2).
     loadPicture: (image) => (photos.current() ?? walk).loadEntry(image),
     line: null,
   };
@@ -3175,19 +2826,13 @@ function startDebugLayer(): void {
             })),
           }),
         );
-        map.debugDraw(captures);
       },
       thumb: (image, picture) => {
         debugThumbs.set(image, picture);
-        map.debugThumb(image, picture);
-      },
-      visible: (on) => {
-        map.debugVisible(on);
       },
       clear: () => {
         debugThumbs.clear();
         store.dispatch(debugLayerActions.cleared());
-        map.debugClear();
       },
     },
     status: (line) => {
@@ -3498,9 +3143,6 @@ async function readAddedDebug(
  *  save status an open or a close resets). */
 function resetEditing(): void {
   endUndo();
-  store.dispatch(editorViewActions.moveEnded());
-  moved.clear();
-  say(null);
   setUndelivered(null);
   delete saveStatus.dataset["saved"];
 }
@@ -3511,8 +3153,7 @@ function dropTour(reason: string): void {
   details.close();
   // Closed even while a move runs: its tour is gone.
   done.close(true);
-  viewSwitch.close();
-  viewSwitch.setEnabled(false);
+  view3d.close();
   select(null);
   const open = session;
   session = null;
@@ -3532,7 +3173,6 @@ function dropTour(reason: string): void {
   topbar.hidden = true;
   shellBar.hidden = true;
   renderTourName();
-  element("rail").hidden = true;
   showModal(true);
   openError.textContent = reason;
   openError.hidden = false;
@@ -3668,14 +3308,13 @@ async function openFile(
   details.close();
   done.close(true);
   // The 3D view showed the tour that goes now.
-  viewSwitch.close();
+  view3d.close();
   linkHost = null;
   linkHosted = undefined;
   datedSave = false;
   select(null);
   const previous = session;
   session = outcome.session;
-  viewSwitch.setEnabled(true);
   void previous?.close().catch(() => undefined);
   resetEditing();
   leaveFile();
@@ -3738,12 +3377,6 @@ async function openFile(
   topbar.hidden = false;
   shellBar.hidden = false;
   showModal(false);
-  rail.render(model);
-  // A narrow window starts with the rail folded, as the prototype does.
-  if (window.innerWidth < NARROW_PX) rail.collapse(true);
-  const free = freeArea();
-  map.show(model, { left: free.left, top: free.top });
-  renderNoGps();
   renderSaveState();
   toast(`Opened ${outcome.fileName}: ${openedSummary(model)}`);
   sayNoBackup();
@@ -3759,8 +3392,8 @@ async function openFile(
     ),
   );
   // A tour opened afresh into the 3D view flies in; a draft to restore
-  // goes straight to it, as does a later switch from the map.
-  approachNext = drafted.offer === null && opensIn3d();
+  // goes straight to it.
+  approachNext = drafted.offer === null;
   if (drafted.offer !== null) offerDraft(editor, drafted.offer);
   if (handle !== null) void attachTarget(editor, handle, file);
   // After the open, never before it: the replay must not hold up the tour.
@@ -3769,7 +3402,7 @@ async function openFile(
   startDebugLayer();
   // The 3D view is the default (its load is said in the bottom bar; a
   // failure is said on its own page, `view3d-failed-page.ts`).
-  if (opensIn3d()) viewSwitch.show3d();
+  view3d.open();
   return true;
 }
 
@@ -3788,7 +3421,6 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
         run: () => {
           t.remove();
           if (editor !== mine) return;
-          card.commit();
           const applied = mine.restore(offer);
           draft.restored();
           if (applied.changed + applied.deleted > 0) endUndo();
@@ -4526,8 +4158,6 @@ async function runSave(
       // holder). A second Save during this tour's own Save is the same
       // Save.
       shell.flush();
-      card.commit();
-      if (ui().moving !== null) finishMove();
       store.dispatch(tourDocumentActions.saveQueued({ queued: true }));
     }
     return;
@@ -4587,8 +4217,6 @@ const PRESS_SAVE_TO_CHOOSE = "Press Save to choose where to save the tour.";
 async function saveCopy(): Promise<void> {
   const mine = editor;
   if (mine === null || saving()) return;
-  card.commit();
-  if (ui().moving !== null) finishMove();
   // First, before any await: the dialog needs the click.
   const pick = pickSaveFile(
     window as unknown as SavePickerWindow,
@@ -4659,7 +4287,7 @@ async function saveCopy(): Promise<void> {
 
 /**
  * Build and deliver one save. `auto` is the autosave's: it commits
- * nothing (it never runs while a field is typed in or a marker moved), ends
+ * nothing (it never runs during a gesture of the 3D view), ends
  * no undo (it never runs during one), and says only in the status line
  * that it saved; it gives itself back as `held` when an edit began while
  * it checked the file, before the session took its snapshot.
@@ -4677,8 +4305,6 @@ async function saveTour(
   try {
     if (mode === "explicit") {
       shell.flush();
-      card.commit();
-      if (ui().moving !== null) finishMove();
     }
     if (mine.changeCount() === 0 && undelivered === null) {
       releaseSave();
@@ -4807,10 +4433,6 @@ async function buildAndDeliver(
     if (editor !== mine) return abandon();
     setUndelivered(arrived ? null : save);
     if (arrived) {
-      // A move made during the save is still pending: its line stays.
-      const pending = new Set(mine.pendingIds());
-      for (const id of [...moved]) if (!pending.has(id)) moved.delete(id);
-      say(null);
       noteDelivered(inPlace, into, save, chosen);
       if (chosen !== undefined) {
         savedIntoChosen = true;
@@ -4896,7 +4518,6 @@ store.subscribe(() => {
   if (shown === debugShownDrawn) return;
   debugShownDrawn = shown;
   setChecked(debugSwitch, shown);
-  debugLayer?.setVisible(shown);
 });
 // "Add debug data…": its file input, or a file dropped on the panel. The
 // document's own drop guard keeps the browser from opening the file.
@@ -4922,18 +4543,6 @@ debugPanel.addEventListener("drop", (event) => {
   debugPanel.classList.remove("over");
   const file = event.dataTransfer?.files[0];
   if (file !== undefined) void addDebugDataSaying(file);
-});
-// A tour-level edit (QR-first M1b-2): pending like a note's, backed up by
-// the draft, saved by itself like any change.
-noGpsInput.addEventListener("change", () => {
-  if (editor === null) return;
-  const outcome = editor.setNeedsNoGps(noGpsInput.checked);
-  renderNoGps();
-  renderSaveState();
-  if (outcome.kind === "changed") {
-    endUndo();
-    tourChanged();
-  }
 });
 // One handler for the drop box and its "Choose…" button (a click on the
 // button reaches the label too). The input's own click - the fallback's -
@@ -5128,8 +4737,6 @@ async function finishEditing(): Promise<void> {
     return;
   }
   const mine = editor;
-  card.commit();
-  if (ui().moving !== null) finishMove();
   // In the click, before any await: the save dialog needs it.
   const pick = askSaveFile();
   if (unsavedWork()) {
@@ -5511,34 +5118,12 @@ element("open-fineprint").textContent = saveFinePrint(
 );
 
 /**
- * The view switch (`view-switch.ts`): the 3D view over the map. Its code
- * is imported here, at the click, never before; it reads the tour and the
+ * The 3D view opener (`view3d-opener.ts`). The view's code is imported
+ * here, when a tour opens, never before; it reads the tour and the
  * selection from the store, and its photos and models from the copy the
- * page reads now. A failure is said and kept until closed (the async-UI
- * rule: the creator asked for something that did not happen), or until a
- * later open shows the view: then it says what is no longer so. A tour
- * with nothing positioned is no failure: its line passes.
+ * page reads now. A failure ends on its own page (`view3d-failed-page.ts`).
  */
 const view3dBox = element("view3d");
-
-/** Over the 3D view the debug panel stands in the view itself, at its
- *  foot on the left (the docking takes it into the view's pane with the
- *  map controls, `dock-host.ts`), so the docks around the view never
- *  cover it nor it them; over the map it is back in its place in the
- *  page. A focus inside it is kept. */
-function placeDebugPanel(in3d: boolean): void {
-  if (in3d === view3dBox.contains(debugPanel)) return;
-  const focused = document.activeElement;
-  if (in3d) view3dBox.append(debugPanel);
-  else {
-    const { parent, next } = debugPanelHome;
-    parent.insertBefore(debugPanel, next?.parentNode === parent ? next : null);
-  }
-  if (focused instanceof HTMLElement && debugPanel.contains(focused)) {
-    focused.focus({ preventScroll: true });
-  }
-}
-let view3dFailureToast: HTMLElement | null = null;
 
 /** A content entry of the open tour, from the copy the page reads now. */
 function readContent(name: string): Promise<Blob> {
@@ -5570,7 +5155,7 @@ function shellCodes(): InspectorCode[] {
 
 /** The 3D view's studio shell (`editor-shell/`): the tree, the inspector,
  *  the map controls and the bottom bar, while the 3D view shows. Its
- *  selection is the page's (`select`), so the map follows it. */
+ *  selection is the page's (`select`), so the 3D view follows it. */
 const shell = createEditorShell({
   store,
   // The docking library comes with the 3D view, never with the page.
@@ -5730,8 +5315,7 @@ cloudsSwitch.addEventListener("click", () => {
   setChecked(cloudsSwitch, on);
   shown3d?.setClouds(on);
 });
-const viewSwitch = createViewSwitch({
-  button: menuItemControl(element("view-switch")),
+const view3d = createView3dOpener({
   status: element("view-loading"),
   store,
   open: async (events) => {
@@ -5799,40 +5383,17 @@ const viewSwitch = createViewSwitch({
     };
     return handle;
   },
-  say: (text, reason) => {
-    view3dFailureToast?.remove();
-    view3dFailureToast = null;
-    // A failure is said by its own page (`view3d-failed-page.ts`). A tour
-    // with nothing positioned is no failure: the map shows it, and a
-    // passing line says why.
-    if (reason !== "empty") return;
-    view3dFailureToast = toast(text, undefined, UNDO_MS);
-    fileToasts.push(view3dFailureToast);
-  },
   onShown: (on) => {
     view3dBox.hidden = !on;
-    // The page's look follows the view: the studio's dark shell in 3D
-    // (`editor-shell.css`), the paper map page otherwise.
-    document.body.dataset["view"] = on ? "3d" : "2d";
-    placeDebugPanel(on);
-    // Covered by the 3D view, the map's markers and controls leave the
-    // tab order and the accessibility tree - and stay out while the
-    // failure's page covers it: a view that stops after it showed leaves
-    // through the store first, whose render shows that page.
-    mapBox.inert = on || failedPageReason(store.getState().editorView) !== null;
+    // The page's look follows the view: the studio's dark shell while it
+    // shows (`editor-shell.css`); an e2e waits for `data-view="3d"`.
+    if (on) document.body.dataset["view"] = "3d";
+    else delete document.body.dataset["view"];
     if (on && shown3d !== null) {
       shell.show(shown3d, { approach: approachHolds });
     } else shell.hide();
-    if (on) {
-      view3dFailureToast?.remove();
-      view3dFailureToast = null;
-    }
-    // The card and its chip belong to the map; back on it, they return.
-    showCard();
   },
 });
-// Nothing to show in 3D until a tour is open.
-viewSwitch.setEnabled(session !== null);
 // Where the 3D view cannot open, a page says so, with the File actions.
 wireView3dFailedPage({
   dom: {
@@ -5845,13 +5406,6 @@ wireView3dFailedPage({
     saveCopy: element("view3d-failed-save-copy"),
     details: element("view3d-failed-details"),
   },
-  covered: [
-    mapBox,
-    element("rail"),
-    element("card"),
-    element("offscreen-chip"),
-    debugPanel,
-  ],
   store,
   toasts: {
     height: () => toasts.offsetHeight,
@@ -5865,7 +5419,7 @@ wireView3dFailedPage({
   },
   actions: {
     retry: () => {
-      viewSwitch.show3d();
+      view3d.open();
     },
     // The browser keeps a failed import's answer for the page's life:
     // only a reload fetches the 3D view's code again. After the same guard

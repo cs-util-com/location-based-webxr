@@ -3,8 +3,8 @@
 ## Purpose
 
 The composition root of the desktop editor (`edit.html`, M6 E1): opens a
-tour (chosen, dropped, from a link, new, or the example), builds its model and wires the map,
-the rail and the card in the chosen variant 1 layout, and edits it (E2a);
+tour (chosen, dropped, from a link, new, or the example), builds its model, shows it
+in the 3D view on the globe with the studio shell around it, and edits it (E2a);
 where the browser allows it, it saves the opened file in place (E2b-1,
 `save-target.ts`) - by itself too, a few seconds after a change (E2b-2,
 `gps-plus-slam-app-framework/storage/autosave`); and it keeps every edit since the opened file in this
@@ -19,8 +19,6 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - The open dialog's "Choose…" is a button, so the chooser can be reached
   and opened from the keyboard (the label and its hidden input are not in
   the tab order, PR #612 review).
-- A text refused when committed by clicking away is said in a toast,
-  since the card then shows something else (PR #611 review).
 - Toasts last the Undo's 8 s, except the save's result, which says where
   to put the file and stays until it is closed.
 - A file dropped anywhere on the page is held: only the open dialog's
@@ -98,34 +96,28 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **The top bar's menus** (`menu-button.ts`): File (Open…, Save, Save a
   copy…, Tour details…, Add debug data…, the keep-the-walk checkbox,
   Share and publish…), Edit (Undo, Redo; the 3D view's, at a phone's
-  width) and View (Top view, Frame, Show debug data, the view switch).
+  width) and View (Top view, Frame, Show debug data, Real time, Clouds).
   Beside File the unsaved mark (`#unsaved-mark`): shown while the status
   is pending or an error, its `title` the status's words, which are in
-  the bottom bar (`#shell-bar`, shown with the top bar in both views).
+  the bottom bar (`#shell-bar`, shown with the top bar).
   Checkbox items keep their state in `aria-checked` (`isChecked`,
   `setChecked`).
-- **The 3D view on the whole globe is the default:** the view switch
-  opens `openGlobeEditor` (`editor3d-globe.ts`, its own lazy chunk, with
+- **The 3D view on the whole globe is the editor's only view:** the
+  opener (`view3d-opener.ts`) opens `openGlobeEditor` (`editor3d-globe.ts`, its own lazy chunk, with
   the link's knobs, `readGlobeSwitch` in `globe-switch.ts`); it is the
   only 3D view, and an old `globe=0` or `globe=1` in the address changes
   nothing.
-- **The 3D view is the default:** an open that shows a tour ends with
-  `viewSwitch.show3d()`. A tour with nothing positioned opens on the
-  globe too (`editor3d-globe.ts`, `empty-tour-view.ts`). The switch's
-  `say` still answers a reason `"empty"` with a passing line on the map,
-  though no view raises it now.
+- **Every open shows the 3D view:** an open that shows a tour ends with
+  `view3d.open()`. A tour with nothing positioned opens on the globe
+  too (`editor3d-globe.ts`, `empty-tour-view.ts`).
 - **Where the 3D view cannot open** (no WebGL, its code not loaded, its
   graphics lost, an error) `#view3d-failed` says so
   (`view3d-failed-page.ts`, driven by the store): the reason in plain
-  words and the File actions - Try again (`viewSwitch.show3d()`), Open
+  words and the File actions - Try again (`view3d.open()`), Open
   another tour… (`openAnotherTour`, File's Open… with its unsaved-work
-  guard), Save, Save a copy…, Tour details…. It covers the map, the rail
-  and the card (inert while it shows); no toast says the failure. The 2D
-  map no longer stands in for the 3D view.
-  In the dev server only, `window.__tourEditorStartOnMap` (an init
-  script) keeps the open on the map, for the specs that edit there
-  (`opensIn3d()`; stripped from a production build like the other dev
-  hooks).
+  guard), Save, Save a copy…, Tour details…; no toast says the failure.
+  The debug panel stands in `#view3d` (`edit.html`), so it is hidden
+  with the view.
 - **The approach on opening (globe view):** a tour opened without a
   draft to restore, straight into the 3D view, flies in on the globe
   view (`approachNext`, taken by the next 3D open: `globeOpening()`,
@@ -134,15 +126,14 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   sees a change by identity. Debug data added from elsewhere never
   becomes the 3D walk (it may be another tour's); the tour's own walk is
   kept while it shows. The 3D walk follows the view's own walk layer
-  chip, not the debug switch, which hides the debug layer's captures
-  in both views).
+  chip, not the debug switch, which hides the debug layer's captures).
   While the approach flies (`approachHolds`) the shell is shown with
   `{ approach: true }`, its tree a folded tab; the view's
   `approach.ended` calls `shell.approachEnded(how)`, which unfolds it
   after a landing and leaves it a tab after a takeover.
   The page's filter is `tour-walk-kept.ts` (its own unit test); the view's side is in
-  `editor3d-globe.test.ts`. A restored draft and a later switch from the map go straight
-  to the tour. In the dev server only, `window.__tourEditorApproach`
+  `editor3d-globe.test.ts`. A restored draft and a later try after a
+  failure go straight to the tour. In the dev server only, `window.__tourEditorApproach`
   (`{ off?, durationMs? }`, an init script) turns it off or sets its
   length, for the specs.
 - **File > Open…** shows the dialog with Cancel (and Esc) back to
@@ -163,7 +154,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`droppedDetailsLine`): which ones, and that the next save writes the
   tour without them; station descriptions and card images the reader
   left out (format minor 2: a picture gone, or a value a hand edit broke)
-  in a toast of their own, naming each station by its rail name
+  in a toast of their own, naming each station by its name
   (`droppedStationFieldsLine`); a block's text over its cap in a
   third, naming each block (`droppedBlockFieldsLine`); plain folders'
   sizes a newer editor wrote (`droppedFolderScalesLine`) and whole items
@@ -177,36 +168,30 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **A late integrity failure** (`onIntegrityFailure`, the background
   whole-file check) closes the tour, hides it and shows
   `describeIntegrityError` in the modal.
-- **Select:** a marker or a row selects; a row also brings its marker
-  into view (`revealPadding`). A photo is read by `photoSource`: a placed
-  one by `loadContentEntry`, a recorded one by `loadEntry`. The card follows the marker on every map move and on resize;
-  Esc, the card's close and a click on the map clear the selection.
+- **Select:** the 3D view and the shell's tree select (`select`, the
+  store's `editorView.selected`); Esc clears the selection.
   A `refresh()` keeps a selection that is still in the tour (`stillInTour`):
   an item of the editor model, or any block of the tour the model never
   lists (a 3D model, a free long text), so an edit of a selected block
   keeps it selected (only models were kept before, and the long text's
   first saved pause deselected it, closing its writer).
-- **Editing (M6 E2a)** through `editor-session.ts`: a pin's text (committed
-  on blur or Ctrl+Enter; an empty pin is refused in the phone's words),
-  Move (the marker made draggable, Done applies the drop, Cancel or Esc
-  puts it back; the card then says the height was kept), Delete with an
+- **Editing (M6 E2a)** through `editor-session.ts`: the inspector's
+  fields, the 3D view's gestures (below), Delete with an
   Undo toast for 8 s (the phone's hold, which holds autosave too). The toast names
-  the item by its rail name, else by its own text, else by its kind's word
+  the item by its name, else by its own text, else by its kind's word
   (`itemCalled`: "Deleted Video", never "Deleted the note" for a free video). Codes and stations
   stay read-only; the walk's debug camera captures are not items.
   The toast's Undo is the edit stack's (below): it runs while its delete
   is still the newest step (`editor.revision()` unchanged), also after a
-  save wrote the delete, and a newer edit ends the toast. A delete or a move of a note the tour no longer carries
-  (a card outliving its object) is refused in the session's words
-  (`NOT_IN_TOUR`): the delete in a toast, with no "Deleted" toast and no
-  Undo; the move on the card (PR #622 bot finding C).
+  save wrote the delete, and a newer edit ends the toast. A delete of a note the tour no longer carries
+  is refused in the session's words (`NOT_IN_TOUR`) in a toast, with no
+  "Deleted" toast and no Undo.
 - **Station pose lock:** the session gets `stationLocked` from the page's
   view state (`isStationLocked`), so every station opens locked and its
   move, turn and lift are refused (`STATION_LOCKED`) whichever control
   asked, until the inspector's lock beside Position unlocks it. The lock
   is per open tour and never saved; the radius, the name, a delete and a
-  copy stay open while locked. The map's Move moves pins and photos only,
-  never a station.
+  copy stay open while locked.
   A station made in this session - added by "+" or "New station here",
   split off by "Move to a new station", copied, or started by the station
   rule for an item moved out of every circle - starts UNLOCKED
@@ -235,7 +220,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   Ctrl+S / Cmd+S saves (matched by the key's letter, by its position only
   for a non-Latin layout), and the browser's own "Save page as" never opens
   on this page. Toasts about the file go when another tour is opened.
-- After any save the card's photos read from the page's copy of what was
+- After any save the tour's photos read from the page's copy of what was
   written (a read-only session over it), never from the opened file, whose
   bytes may have been replaced (E2b plan review #2, #5). The page does not
   read the file back from disk: once something else rewrites it, a `File`
@@ -262,7 +247,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   of `debugSource()` are placed (`debugCapturesOf`) and drawn as
   thumbnails, with "Reading the debug data..." and then how many it shows
   or why none (`#debug-status`). View's "Show debug data" (`#view-debug`,
-  a checkbox item) shows only while there is a source, in both views,
+  a checkbox item) shows only while there is a source,
   starts ticked and shows or hides them: view state, never in the tour
   document, a save or the draft. Leaving the tour stops it.
   - What the layer drew (each capture's picture name and place), its
@@ -270,11 +255,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     line are the store's `debugLayer` slice (`debug-layer-slice.ts`):
     the layer's view dispatches `started`, `drawn` and `cleared`, its
     status `statusSaid`, the switch `shownChanged`, and one store
-    subscriber writes `#debug-status`, ticks the item and shows or hides
-    the map's markers. The map's markers themselves are still drawn by
-    the layer's view callbacks, with the same captures. The decoded
+    subscriber writes `#debug-status` and ticks the item. The decoded
     thumbnails are kept beside it in `debugThumbs` (`debug-thumbs.ts`,
-    cleared with each drawing and clear). The 3D view on the globe reads
+    cleared with each drawing and clear, which frees each thumbnail's
+    object URL). The 3D view on the globe reads
     both (`globeOpening()` hands it `debugThumbs`) and draws the
     captures and, for added debug data, a line through them
     (`globe-debug-layer.ts`).
@@ -291,11 +275,6 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   script) starts it unticked, for the specs: in the software renderer the
   heavy clouds hold the globe near 1.4 frames a second against about 6
   without, and every click waits on those frames.
-  - The note card keeps clear of the panel (`debugPanelBox()`, passed to
-    `card.place` as the box to avoid, r901 review #4): both share the
-    window's lower right corner, and whichever lay on top covered the
-    other's buttons. Pinned by the layout e2e "the note card never covers
-    the debug panel, whichever note is open".
   - `debugSource()` is the one seam the layer reads (and a point cloud
     will): debug data added beside the tour wins - the creator chose it -
     else the opened file when it carries a walk (`tourWalk`, its
@@ -319,15 +298,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   The button reads "Adding the debug data…" and is disabled meanwhile,
   and is idle and enabled again however the add ends
   (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)
-  is the same entry in both views (the panel shows over the 3D view
-  too: `placeDebugPanel` moves it into the view box while the 3D view
-  shows, where the docking takes it into the view's pane with the map
-  controls, at its foot on the left and never wider than the pane; back
-  in its place in the page over the map; hidden over the 3D view on a
-  phone, whose docks are sheets over the canvas's foot): both run the one
+  is the same entry (the panel stands in the view box, `edit.html`, where
+  the docking takes it into the view's pane with the map controls, at its
+  foot on the left and never wider than the pane; hidden on a phone,
+  whose docks are sheets over the canvas's foot): both run the one
   `chooseScan` (else `#debug-add-input`) and `createAddDebugButton` drives
-  both. The panel over the 3D view is an
-  interim place, until the 3D view's bottom panel takes it.
+  both. The panel in the 3D view is an interim place, until the 3D view's
+  bottom panel takes it.
   Never saved, never drafted, closed with the tour and not shown again
   by itself after a reload (Q-H; only its handle may be remembered, see
   the remembered scan above); a newer add replaces it; an add that ends after another
@@ -349,7 +326,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   data…" on its button meanwhile, the result in a toast): the save reads
   the opened file, so the copy must not be put in its place first (r901
   review #1). Save is on whenever a tour is open
-  and commits the card's typing and the 3D inspector's (`shell.flush()`: a field or a long text typed in, not yet paused on) first ("Nothing to save" when there is
+  and commits the inspector's typing (`shell.flush()`: a field or a long text typed in, not yet paused on) first ("Nothing to save" when there is
   none - in the status line and, since plan 2026-10-15-0348 M0, in a toast:
   the status line already read "No changes", so the swap alone looked like
   nothing happened); a save belongs to its tour and ends quietly if another was
@@ -461,12 +438,12 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   "large tour: saved when you press Save", adding "your changes are kept in
   this browser meanwhile" only when the draft backs up (E2b-2 milestone
   review #3).
-  - **Held** while the card's field holds typing not
-    yet committed, a marker is being moved, a save runs, or the open dialog
+  - **Held** while a delete's Undo is offered or a 3D gesture runs, a
+    save runs, or the open dialog
     shows or an open is busy (`editing()`, `saving`, `!modal.hidden`,
     `busy`: an autosave landing in the middle of an open moved the NEW
     tour's draft, E2b-2 milestone review #1); the hold's end pokes it
-    (the field's commit, a move's end, an autosave's end, the
+    (the Undo offer's end, a gesture's end, an autosave's end, the
     dialog closing), and a hold that ends without a poke is looked at again
     once per delay (`gps-plus-slam-app-framework/storage/autosave`). An explicit save's end does not poke: its
     outcome reaches the autosave first, so a failed Save pauses it rather
@@ -485,7 +462,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     toast (one at a time: a new one replaces the last) and PAUSES autosave -
     the status adds "not saved by itself until you Save" - until an
     explicit Save or a download lands (no write loop).
-  - **Ctrl+S during an autosave** commits the card and the 3D inspector's typing and runs right after
+  - **Ctrl+S during an autosave** commits the inspector's typing and runs right after
     it, and so does Ctrl+S during the write at a link's or the sample's
     open (the `"open"` claim), during a copy being saved (`"copy"`) and
     during a move of the debug data (`"walk"`): every claim but an
@@ -553,35 +530,21 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   get a backup (close that tab, open the tour again here). `body[data-draft]` is
   `writing` / `saved` / `off`: the e2e waits for `saved` before it closes a
   page (`page.close()` skips `beforeunload`).
-- **"This tour needs no GPS" (QR-first M1b-2, owner Q-QF-1).** A checkbox
-  at the top of the rail (`#no-gps-input`, hidden with the folded rail):
-  turning it on or off is an edit (`session.setNeedsNoGps`) - pending in the
-  status line, backed up by the draft, saved by Save and by autosave like
-  any change. A tour opened with `needsNoGps` shows it on. While it is on,
-  `#no-gps-warnings` (a polite status region, never blocking the save)
-  carries `no-gps-check.ts`'s lines: the stations without a printed code,
-  and the stations on a code the viewer cannot use (no printed size, or not
-  in the tour), by name and count - or, when no code can place the tour,
-  that visitors are asked for their location anyway. Redrawn on every
-  `refresh()` (a restore, a save) and on each toggle, through
-  `status-lines.ts`: the lines are replaced only when their words change,
-  and the region is never `hidden` (an empty one is zero-height), so a
-  screen reader announces the first lines and never the same ones again
-  (M1b-2 milestone review #5).
-- **"Needs no GPS" in Tour details**, for the 3D view (it has no rail):
+- **"This tour needs no GPS" (QR-first M1b-2), in Tour details:**
   `#details-no-gps` and its warnings' region `#details-no-gps-warnings`
-  (`details-dialog.ts`'s `noGps`, lines drawn by a second
-  `status-lines.ts` set). The box opens as the session holds it, the
-  warnings preview while ticked, and Apply writes it with the details
-  (`setNeedsNoGps`): one change, one toast, autosave told. The rail's box
-  stays for the map.
-- **Not yet in the 3D view** (pending, for the removal of the 2D map):
-  framing the debug layer's captures when the tour has nothing
-  positioned to frame (the map frames them; the globe opens such a tour
-  over the whole Earth and does not fly to them), and editing a pin's multi-line
-  text on the map card (it becomes the station's Markdown description).
-  The rail's search has no counterpart: the 3D view's tree has no filter
-  yet.
+  (`details-dialog.ts`'s `noGps`, lines drawn by `status-lines.ts`).
+  The box opens as the session holds it, the warnings preview while
+  ticked (`no-gps-check.ts`'s lines: the stations without a printed
+  code, and the stations on a code the viewer cannot use, by name and
+  count - or, when no code can place the tour, that visitors are asked
+  for their location anyway), and Apply writes it with the details
+  (`session.setNeedsNoGps`): one change, one toast, autosave told; it is
+  pending in the status line, backed up by the draft and saved like any
+  change. A tour opened with `needsNoGps` shows it on.
+- **Not yet in the 3D view:** framing the debug layer's captures when the
+  tour has nothing positioned to frame (the globe opens such a tour over
+  the whole Earth and does not fly to them), and a search over the
+  tour's items: the 3D view's tree has no filter yet.
 - **Tour details (W2 of the tour editor plan 2026-10-17-1816).** The
   tour's name in the top bar (`#tour-name`, a button) opens the details
   dialog (`details-dialog.ts`, `#details-modal`): name, description, cover
@@ -614,10 +577,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   save runs, Tour details off without a tour, Share and publish off
   without a tour or while the walk moves out. They are disabled the menu
   pattern's way (`setItemDisabled`, `aria-disabled`: reachable, a click
-  ignored); the debug data add and the view switch drive their item
-  through `menuItemControl`.
+  ignored); the debug data add drives its item through
+  `menuItemControl`.
 - **Share and publish… (W2, D18, D19; once "Done").** File's
-  `#file-publish` commits the card, waits for a running save and saves
+  `#file-publish` commits the inspector's typing, waits for a running save and saves
   what is pending ("Saving…" on the item, disabled, while it runs - the
   async-UI rule); a save that did not land keeps the dialog shut and says
   so in a toast ("Not ready to share yet: ..."). Then `done-dialog.ts` opens with the facts: where the last
@@ -700,11 +663,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   undoes, Ctrl+Shift+Z and Ctrl+Y redo (Cmd on a Mac; by the key's letter,
   as Ctrl+S): one step of the session's edit stack (`editor.undo()` /
   `redo()`), over every edit kind - a text, a move, a delete, the "needs
-  no GPS" setting, the details, a restore. `runStep` cancels a move,
-  commits the card, ends the delete toast, takes the step and says it in a
+  no GPS" setting, the details, a restore. `runStep` cancels a 3D
+  gesture, commits the inspector's typing, ends the delete toast, takes the step and says it in a
   toast ("Undone: the delete of "Fountain".", "Nothing to undo.", or the
   session's refusal while a save runs); a step is an edit, so it tells
-  autosave. In a field (the card's text, a dialog's input, the search) and
+  autosave. In a field (the inspector's, a dialog's input) and
   while a dialog shows, the keys are left to the browser: the field's own
   undo. A photo brought back after a save wrote its delete is drawn from
   the picture the session kept (`pictureOf`).
@@ -716,9 +679,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     (every step restarts the timer), at each save's end, and when the open
     dialog closes; it waits - the resave staying due - while the quiet time
     runs, while a save runs, while an edit is being made (`editing()`: the
-    delete's Undo offer, a card field not yet committed, a move; their end
-    asks again - the Undo offer's end, the card's commit, a finished or
-    cancelled move), and while another tour is being chosen or opened
+    delete's Undo offer, a 3D gesture; their end asks again - the Undo
+    offer's end, a finished or cancelled gesture), and while another tour is being chosen or opened
     (`busy`, the open dialog showing). Started during an edit, a resave
     would be claimed - which takes it on - and then held as an autosave
     is, and nothing would write the file until Save. One small window
@@ -770,7 +732,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
       written.
     - **Also for a large tour** (autosave off): one full write per run of
       steps that crosses - the cost of the disk matching the editor.
-    - **Held**: a resave that finds an edit begun (typing, a move) gives
+    - **Held**: a resave that finds an edit begun (a gesture) gives
       itself back as an autosave would; the autosave writes it once the
       hold ends (a large tour's waits for Save).
 - **Titles:** the top bar and the tab say the tour's name (`model.title`,
@@ -783,11 +745,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (W2: it said "a new copy" in every browser).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
   File's Open… (`window.confirm`).
-- **Free area** for the card: right of the rail, under the top bar and
-  above the bottom bar (read from the bars' own boxes), 12 px from the
-  window's edges. The rail starts folded below 760 px.
-- **Closing** a tour (another open) closes its session; the card revokes
-  its photo's object URL.
+- **Closing** a tour (another open) closes its session and its 3D view.
 - **The page's store** (`createTourViewerStore()`, built first: the
   library's geo maths - the distance lines - runs only once one exists)
   holds the tour document (`../tour-document.ts`, D29-D31): the session
@@ -813,33 +771,25 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **The page's chrome state is the store's too** (`editorView`,
   `editor-view.ts`, mounted only here: `createTourViewerStore(undefined,
 { editorView, ...EDITOR_SESSION_SLICES })`, the session's own slices -
-  the asset shelf - beside it): the selection, `busy`, the marker being dragged and
-  its drop, `keepsWalk`, `openedWalk`, `doneBusy`, whether a save waits
-  to be delivered, the card's outcome line and the file picker's
-  `picking`. The page reads them through `ui()` and changes them only by
-  `editorViewActions` (`say(message)` for the card's line,
-  `setUndelivered(save)` for the waiting save), so another view of the
-  page reads the same copy. Kept here on purpose: `moved` (the notes
-  moved since the last save, a `Set` only the card reads) and everything
-  imperative above.
-- **The 3D view** (View's `#view-switch`, `view-switch.ts`): the item
-  opens the 3D view over the map by a dynamic `import()` of
-  `../editor3d/editor3d-globe.js`, so the page's own code holds none of
-  it, and closes it again. While it loads the item and the bottom bar's
-  `#view-loading` say so and the map stays; once it shows, `#view3d` is unhidden and the card hides (it
-  points at a map marker); back on the map the card shows again for the
-  same selection. A failure (its code, no WebGL, a lost context, an
-  error) is said on a page of its own (`view3d-failed-page.ts`,
-  `#view3d-failed`) with the File actions, until a later open shows the
-  view; the map, the rail, the card and the debug panel under it stay
-  inert while it shows (the view's own `onShown(false)` keeps the map inert
-  for it). An import that does not arrive is tagged `chunk` here: the
+  the asset shelf - beside it): the selection, `busy`, `keepsWalk`,
+  `openedWalk`, `doneBusy`, whether a save waits to be delivered, the
+  file picker's `picking` and the 3D view's load. The page reads them
+  through `ui()` and changes them only by `editorViewActions`
+  (`setUndelivered(save)` for the waiting save), so another view of the
+  page reads the same copy. Kept here on purpose: everything imperative
+  above.
+- **The 3D view** (`view3d-opener.ts`): every open of a tour opens it by
+  a dynamic `import()` of `../editor3d/editor3d-globe.js`, so the page's
+  own code holds none of it. While it loads the bottom bar's
+  `#view-loading` says so; once it shows, `#view3d` is unhidden. A
+  failure (its code, no WebGL, a lost context, an error) is said on a
+  page of its own (`view3d-failed-page.ts`, `#view3d-failed`) with the
+  File actions, until a later try shows the view. An import that does not arrive is tagged `chunk` here: the
   browser keeps that failure for the page's life, so its page offers a
   reload (after the unsaved-work guard) instead of trying again in place.
   A tour with nothing placed is no failure: the globe opens on it.
   Opening another tour
-  or closing this one closes the 3D view (`viewSwitch.close()`); the
-  switch is off while no tour is open. The 3D
+  or closing this one closes the 3D view (`view3d.close()`). The 3D
   view reads the tour from the store and the codes the open read
   (`openedLevels`), and edits through the page's `edits`:
   - `commit` (`commitSceneEdit`) writes a finished gesture as one undo
@@ -849,9 +799,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     in the blocking `confirmPausingFrames` (`askMove`, `move-question.ts`),
     so no drag is ever half applied; the drop stays drawn behind the
     question. What the write did to the item's station is said in a toast
-    (`moveNote`). The 2D map's drag (`finishMove`) asks the same and says
-    the same on the card ("... - not saved yet.");
-  - `remove` (`deleteSelection`, the card's Delete too) deletes an item
+    (`moveNote`);
+  - `remove` (`deleteSelection`) deletes an item
     with the toast's Undo, a station (`deleteStation`), or a plain folder
     with everything in it (`deleteFolderSelection`: asked first with
     `folderDeleteQuestion`'s count, one step, "Deleted the folder
@@ -884,7 +833,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   `stations` with a `say` (a toast), each one undo step that ends a
   delete's Undo offer, refreshes the views and tells autosave:
   - `add` (`addStationAt`) - a station under the camera ("+") or
-    where the ground menu was opened: selected, its card unfolded, said
+    where the ground menu was opened: selected, its row unfolded, said
     (`Added "Station 4" under the camera` / `... here`); a
     refusal is said;
   - `reorder` (`reorderStations`) - the stations in a new order (the
@@ -915,11 +864,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 "..."`) only when it was placed; a refusal, a gone station's too, is
     toasted.
 - **The 3D view's studio shell** (`editor-shell/editor-shell.ts`): made
-  once at start; the switch's `onShown` sets `body[data-view]` (`3d` or
-  `2d`, which the shell's stylesheet follows), makes the map `inert`
-  while the 3D view shows (out of the Tab order under it), and shows the
-  shell over the shown view or hides it. Its selection is the page's `select` (so
-  the map's markers follow), Undo and Redo (the bar's and Edit's) are
+  once at start; the opener's `onShown` sets `body[data-view="3d"]`
+  while the view shows (which the shell's stylesheet follows; removed
+  otherwise), and shows the shell over the shown view or hides it. Its
+  selection is the page's `select`, Undo and Redo (the bar's and Edit's) are
   `runStep` (the tour's details open from the tour's name and its pen,
   `openDetails`, not from the shell), its pictures
   and the scene's content are read through `readContent` (the copy the
@@ -931,7 +879,7 @@ view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part), view3dU
 view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(reason), deleteSelection(id) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
-  `stats()` (null on the map), `view3dTilt(deg)` tilts its camera,
+  `stats()` (null while it does not show), `view3dTilt(deg)` tilts its camera,
   `view3dDistance(m)` moves it in or out, `view3dHeading(deg)` turns it
   round the point it looks at, `view3dBuildings(on)` shows or
   hides the globe view's buildings (the view's `setBuildings`; no chip yet), `view3dPointOf(selection)` says
@@ -939,7 +887,7 @@ view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(rea
   and `view3dGizmoSizes` say where a selection and the gizmo's handles are
   on the canvas and how large, `view3dUnder(x, y)` what a press at a
   canvas point picks and whether it meets the move disc; `view3dFolderOutlines()` how many teal
-  boxes show around a selected folder's items, and its dashed outline and name tag (null on the map); `manifest()` is what a save would write
+  boxes show around a selected folder's items, and its dashed outline and name tag (null while the view does not show); `manifest()` is what a save would write
   now and `selected()` the selection; `dropTour(reason)` drops the open
   tour as a late integrity failure does, at the moment the e2e chooses;
   `deleteSelection(id)` is the page's own Delete of `id` (the edit, then
@@ -1056,8 +1004,8 @@ then said gone) and `editor-entry.spec.js` (the
 `editor.spec.js` also renames a station through the test hook, closes the
 tab, and sees the draft offer the change and Restore bring it back (seen
 red with the settings record's stations left out). The chrome state's
-slice: `editor-view.test.ts`. The 3D view as the default, its switch, its
-loading and failure states and the selection kept: `editor3d.spec.js`; the studio
+slice: `editor-view.test.ts`. The 3D view's loading and failure states
+and its WebGL contexts over many opens: `editor3d.spec.js`; the studio
 shell's layout, its fold steps, the menus by keyboard and touch and the
 unsaved mark, and its tree clicks: `editor3d-shell.spec.js`; Save a copy
 and the menus inside the window: `editor.spec.js`; editing in
@@ -1168,4 +1116,4 @@ on a desktop.
 
 ## Escape and "Pick in 3D"
 
-Escape disarms an armed "Pick in 3D" (`editorView.pointPickAsked({ on: false })`) and keeps the selection; it comes after closing a dialog and cancelling a move, before deselecting.
+Escape disarms an armed "Pick in 3D" (`editorView.pointPickAsked({ on: false })`) and keeps the selection; it comes after closing a dialog, before deselecting.

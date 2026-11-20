@@ -8,7 +8,6 @@ export {
   setItemDisabled,
 } from "./menu-button.js";
 export { holdPageInert } from "./page-inert.js";
-export { placePopover, revealPadding, type Box } from "./popover-place.js";
 export { createStatusLines } from "./status-lines.js";
 export { waitForGround } from "./ground-wait.js";
 export { placeShellIcons, shellIcon, type ShellIcon } from "./shell-icons.js";

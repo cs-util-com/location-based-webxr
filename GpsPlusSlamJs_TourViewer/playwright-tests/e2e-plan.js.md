@@ -132,7 +132,9 @@ both.
 
 ## Off the map and the older 3D view (inventory, 2026-11-03)
 
-The globe is the editor's 3D view; the 2D map is to be removed, and the
+The globe is the editor's 3D view; the 2D map has since been removed
+(with its rail, card and view switch; the specs below that opened on it
+now open without WebGL or through the test hook), and the
 older OrbitControls view (`?globe=0`) was removed on 2026-11-18 (see the
 third batch below). What each editor spec still opens, by
 what becomes of it (counts are `test(` titles; a title in a loop counts

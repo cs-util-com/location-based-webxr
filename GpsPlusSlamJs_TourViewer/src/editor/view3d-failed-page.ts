@@ -1,20 +1,18 @@
 /**
  * The page the editor shows where its 3D view cannot open: no WebGL, its
  * code not loaded, its graphics lost, or an error that stopped it. The 3D
- * view is the editor, and the 2D map no longer stands in for it, so this
- * says plainly what happened (`view3dFailureText`) and keeps the tour's
+ * view is the editor and nothing stands in for it, so this says plainly what happened (`view3dFailureText`) and keeps the tour's
  * File actions within reach - try again, open another tour, save, save a
  * copy, the tour's details - so no work is stranded.
  *
  * It follows the store (`editorView`): shown while the 3D load has failed
- * with a reason, gone once it is tried again, shown, or left. An "empty"
- * tour is no failure (the map shows it), so it never brings the page up.
+ * with a reason, gone once it is tried again, shown, or left.
  *
  * @see view3d-failed-page.ts.md
  */
 
 import type { EditorViewState, View3dFailure } from "./editor-view.js";
-import { view3dFailureText } from "./view-switch.js";
+import { view3dFailureText } from "./view3d-opener.js";
 
 /** The page's words that do not depend on the failure. */
 export const VIEW3D_FAILED_PAGE = Object.freeze({
@@ -28,14 +26,13 @@ export const VIEW3D_FAILED_PAGE = Object.freeze({
 
 type ViewState = Pick<
   EditorViewState,
-  "viewMode" | "view3dLoad" | "view3dFailure"
+  "view3dShown" | "view3dLoad" | "view3dFailure"
 >;
 
 /** The failure the page shows, or `null` while it does not show. */
 export function failedPageReason(view: ViewState): View3dFailure | null {
   if (view.view3dLoad !== "failed") return null;
-  const reason = view.view3dFailure;
-  return reason === null || reason === "empty" ? null : reason;
+  return view.view3dFailure;
 }
 
 interface Clickable {
@@ -84,16 +81,11 @@ export interface View3dFailedPage {
 
 /**
  * Wire the page: it shows and hides with the store, its heading takes the
- * focus when it shows (so it is read out), and `covered` (the map, the
- * rail, the card and its "Show it" chip, the debug panel) leaves the tab
- * order only while it shows - touched on a change of showing alone, as the
- * 3D view keeps the map inert itself while it shows. The toasts' height is
- * kept on the page as `--toasts-h` (px), which its CSS keeps the card
- * clear of: a save's result must be seen, so the toasts stay above it.
+ * focus when it shows (so it is read out). The toasts' height is kept on
+ * the page as `--toasts-h` (px), which its CSS keeps the card clear of: a save's result must be seen, so the toasts stay above it.
  */
 export function wireView3dFailedPage(deps: {
   readonly dom: View3dFailedPageDom;
-  readonly covered: readonly { inert: boolean }[];
   readonly store: {
     getState(): { readonly editorView: EditorViewState };
     subscribe(listener: () => void): () => void;
@@ -101,7 +93,7 @@ export function wireView3dFailedPage(deps: {
   readonly actions: View3dFailedPageActions;
   readonly toasts: ToastStack;
 }): View3dFailedPage {
-  const { dom, covered, store, actions, toasts } = deps;
+  const { dom, store, actions, toasts } = deps;
   let shown = false;
 
   const render = (): void => {
@@ -117,7 +109,6 @@ export function wireView3dFailedPage(deps: {
     if (show === shown) return;
     shown = show;
     dom.root.hidden = !show;
-    for (const element of covered) element.inert = show;
     if (show) dom.heading.focus();
   };
 

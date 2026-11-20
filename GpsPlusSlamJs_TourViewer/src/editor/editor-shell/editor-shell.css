@@ -3,9 +3,10 @@
  * folds its controls in steps as the window narrows, the docks over the
  * scene, the map controls and a 24 px bottom bar, drawn after the studio
  * prototype (`public/prototypes/editor3d-1-studio-r3/`). Applied while
- * `body[data-view="3d"]`: the 2D map keeps its own look (`editor.css`),
- * and the shell's own parts are hidden there - except the File and View
- * menus (in this dress in both views) and the bottom bar's save status.
+ * `body[data-view="3d"]`: before the view shows (its load, its cannot-open
+ * page) the page keeps its own look (`editor.css`), and the shell's own
+ * parts are hidden - except the File and View menus and the bottom bar's
+ * save status.
  */
 :root {
   --s-bg0: #18191c;
@@ -54,21 +55,15 @@
   --s-name-min: 134px;
 }
 
-/* The studio's parts exist only in the 3D view; on the 2D map the bottom
+/* The studio's parts exist only in the 3D view; before it shows the bottom
  * bar holds only the save status (and the 3D view's load). */
 body:not([data-view="3d"]) .studio,
 body:not([data-view="3d"]) #shell-bar > :not(#save-status, #view-loading) {
   display: none !important;
 }
 
-/* What belongs to the map is not shown over the 3D view. */
-body[data-view="3d"] :is(#rail, #card, #offscreen-chip) {
-  display: none !important;
-}
-
-/* The debug panel over the 3D view (its layer draws on the globe too)
- * stands in the view itself (`edit-main.ts` moves it there while the 3D
- * view shows), at its foot on the left, across from the map controls.
+/* The debug panel stands in the 3D view itself (`edit.html`), at its
+ * foot on the left, across from the map controls.
  * Docked it is in the view's pane (`dock-host.ts`), so whatever the docks
  * around the view do (a bottom group open, a splitter moved, a phone's
  * group beside the view) it stays inside the view. Undocked (while the
@@ -362,7 +357,7 @@ body[data-view="3d"] #topbar .tour-name:hover {
   background: var(--s-accent);
 }
 
-/* The 2D map keeps its paper bar: the menu buttons in its ink. */
+/* Before the 3D view shows the bar is paper: the menu buttons in its ink. */
 body:not([data-view="3d"]) #topbar .tbtn {
   color: var(--ink);
   font-size: 14px;
@@ -2035,7 +2030,7 @@ button.thumb:focus-visible {
   position: absolute;
 }
 
-/* "Loading 3D view…" while the 3D view loads (view-switch.ts). */
+/* "Loading 3D view…" while the 3D view loads (view3d-opener.ts). */
 #view-loading {
   flex: none;
   padding: 0 10px;
@@ -2076,7 +2071,8 @@ button.thumb:focus-visible {
 }
 
 /* The 3D view's credits, small at the bar's left: their panel opens
- * upward out of the bar, so nothing here clips it; empty on the map. */
+ * upward out of the bar, so nothing here clips it; empty before the view
+ * shows. */
 #shell-bar > #view3d-credits {
   flex: none;
   overflow: visible;

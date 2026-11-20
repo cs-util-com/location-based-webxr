@@ -37,8 +37,7 @@ import {
  * a creator gets
  * from the plain link: the globe; a new, empty tour opening on the whole
  * Earth (it used to refuse the 3D view) with its first station placed by a
- * right click on the ground; a plain page, instead of the 2D map, where the
- * 3D view cannot open, its File actions still working; and the "needs no
+ * right click on the ground; a plain page where the 3D view cannot open, its File actions still working; and the "needs no
  * GPS" setting, which lived only in the map's rail, kept through a save and
  * a reload from the 3D view's Tour details. The viewports are named per
  * test; the screenshots go to the test's output.
@@ -402,8 +401,6 @@ test.describe("where the 3D view cannot open", () => {
     await page.evaluate(() => {
       for (const t of document.querySelectorAll(".e2e-toast")) t.remove();
     });
-    // What it covers is out of the Tab order meanwhile.
-    expect(await page.locator("#map").evaluate((m) => m.inert)).toBe(true);
     const download = page.waitForEvent("download");
     await failed.getByRole("button", { name: "Save a copy…" }).click();
     const { texts } = await zipTexts(await download);
@@ -427,9 +424,7 @@ test.describe("where the 3D view cannot open", () => {
   });
 
   // Why: a view that stops after it showed (its graphics lost) leaves for
-  // the page; the store's render covered the map before the view's own
-  // hand-back uncovered it again, so Tab reached the map's markers under
-  // the page. Everything under it stays out of reach.
+  // the page, and nothing of the view stays in reach of Tab under it.
   test("graphics lost after the globe showed: the page takes focus and Tab stays off what it covers", async ({
     page,
   }) => {
@@ -454,20 +449,14 @@ test.describe("where the 3D view cannot open", () => {
     const failed = page.locator("#view3d-failed");
     await expect(failed).toBeVisible({ timeout: 60_000 });
     await expect(page.locator("#view3d-failed-title")).toBeFocused();
-    for (const id of ["map", "debug-panel", "rail", "card", "offscreen-chip"]) {
-      expect(await page.locator(`#${id}`).evaluate((e) => e.inert), id).toBe(
-        true,
-      );
-    }
+    await expect(page.locator("#view3d")).toBeHidden();
     /** @type {string[]} */
     const reached = [];
     for (let i = 0; i < 20; i++) {
       await page.keyboard.press("Tab");
       const under = await page.evaluate(() => {
         const at = document.activeElement;
-        const box = at?.closest(
-          "#map, #debug-panel, #rail, #card, #offscreen-chip, #view3d",
-        );
+        const box = at?.closest("#view3d");
         return box ? `${box.id}: ${at?.outerHTML.slice(0, 60) ?? ""}` : null;
       });
       if (under !== null) reached.push(under);

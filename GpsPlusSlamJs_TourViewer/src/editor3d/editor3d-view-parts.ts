@@ -1,6 +1,6 @@
 /**
  * The 3D view's parts kept apart from `editor3d-globe.ts`: the
- * failure the view switch reads the reason of, the renderer made or
+ * failure the 3D view opener reads the reason of, the renderer made or
  * refused, and what it drew (the credits are `editor3d-credits.ts`).
  *
  * @see editor3d-view-parts.ts.md
@@ -17,10 +17,10 @@ export function drawnCounts(renderer: THREE.WebGLRenderer): {
   return { drawCalls: calls, triangles };
 }
 
-/** Why a view did not open (the view switch says it). */
-export type ViewFailureReason = "empty" | "webgl" | "chunk" | "context-lost";
+/** Why a view did not open (its cannot-open page says it). */
+export type ViewFailureReason = "webgl" | "chunk" | "context-lost";
 
-/** A failure with the reason the view switch says. */
+/** A failure with the reason the cannot-open page says. */
 export function viewFailure(reason: ViewFailureReason, message: string): Error {
   return Object.assign(new Error(message), { reason });
 }

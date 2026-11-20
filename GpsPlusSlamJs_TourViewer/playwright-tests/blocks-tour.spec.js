@@ -16,7 +16,8 @@ import {
   standAt,
   worldManifest,
 } from "./ar-fakes.js";
-import { save, startOnMap } from "./editor-menus.js";
+import { save } from "./editor-menus.js";
+import { editText, expectCaption, withoutWebgl } from "./editor-session.js";
 
 /**
  * A tour whose station stands every kind of free block in the world (the
@@ -177,13 +178,10 @@ test("the editor opens a tour of every free block, edits its pin, saves it whole
   // stories. A save that dropped a block it does not list (the placed
   // model), a story block, or the image asset a captured photo owns would
   // lose the creator's work without a word.
-  await startOnMap(context);
+  await withoutWebgl(context);
   const zip = Buffer.from(await (await fetch(BLOCKS_ARCHIVE)).arrayBuffer());
   await openInEditor(page, zip);
-  await page.locator("#rail .row", { hasText: "Gate sign" }).click();
-  const field = page.locator("#card textarea");
-  await field.fill("Gate sign, renamed");
-  await field.blur();
+  await editText(page, "gate-pin", "Gate sign, renamed");
   // Opened through the chooser, so there is no file to save into by
   // itself: the line says the browser's draft keeps the change (E2c).
   await expect(page.locator("#save-status")).toHaveText(
@@ -249,8 +247,6 @@ test("the editor opens a tour of every free block, edits its pin, saves it whole
   // Opened again, the saved file shows the edit and changes nothing more.
   const again = await context.newPage();
   await openInEditor(again, saved.bytes);
-  await expect(
-    again.locator("#rail .row", { hasText: "Gate sign, renamed" }),
-  ).toHaveCount(1);
+  await expectCaption(again, "gate-pin", "Gate sign, renamed");
   await expect(again.locator("#save-status")).not.toContainText("not saved");
 });

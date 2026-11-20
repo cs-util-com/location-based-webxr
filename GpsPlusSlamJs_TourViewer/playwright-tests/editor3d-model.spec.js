@@ -4,10 +4,9 @@ import { expect, test } from "@playwright/test";
 import {
   SQUARE_GROUND_M,
   answerHosts,
-  openSample,
+  openSampleIn3d,
   view3d,
 } from "./editor3d-fixture.js";
-import { viewCommand } from "./editor-menus.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
 /**
@@ -45,7 +44,7 @@ const pillar = (/** @type {number} */ side) =>
 async function openWithModel(page) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await answerHosts(page);
-  await openSample(page);
+  await openSampleIn3d(page);
   const placed = await page.evaluate(
     ({ id, alt }) => {
       const hook = /** @type {any} */ (window).__tourEditor;
@@ -73,10 +72,6 @@ async function openWithModel(page) {
     { id: MODEL, alt: SQUARE_GROUND_M + N_M },
   );
   expect(placed.kind).toBe("placed");
-  await viewCommand(page, "switch");
-  await expect(page.locator("#view-switch")).toHaveText("2D map", {
-    timeout: 60_000,
-  });
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
   const row = page.locator(`#tree-body [data-select="${MODEL}"]`);
   if (!(await row.isVisible())) {

@@ -120,9 +120,9 @@ this draws them and takes the clicks, the grip's drag and the keys.
   ArrowDown on the focused grip step 20 px. Maximised, it takes the view's
   whole height and the view above keeps none.
 - **Intended, kept as they are:** Escape closes the panel only with the
-  focus inside it (elsewhere Escape is the view's: it deselects); on the
-  2D map the bottom bar keeps its empty strip (the toggles are the 3D
-  view's).
+  focus inside it (elsewhere Escape is the view's: it deselects); while
+  the 3D view does not show the bottom bar keeps its empty strip (the
+  toggles are the view's).
 - **Defensive:** the kept values are read through `readSaved`; storage
   that throws (a private window) is caught both ways and the panel opens
   at its defaults. A drag ends only for the pointer that began it. A
