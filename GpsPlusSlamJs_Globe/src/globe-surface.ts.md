@@ -30,7 +30,7 @@ setCloudShellShare(share, flat?), dispose() }`.
       surface, its shadow, the shell, the volume's coverage) shares, so the
       swap reaches all of them at once. `updateClouds(renderer)` is that
       step alone, for a page that draws the relief's tiles without the
-      globe's (the globe-terrain lab).
+      globe's.
     - `cloudShell` (`globe-cloud-shell.ts`, round-6 plan G6-2) sits in a
       group that copies `tiles.group`'s matrix on every sun sync, so it
       stays in the tiles' ECEF frame; hidden until it has a share.
