@@ -37,6 +37,7 @@ import {
   atmosphereLook,
   ellipsoidToModel,
 } from "./globe-atmosphere-frame.js";
+import { fullScreenPass } from "./globe-full-screen.js";
 
 /**
  * A full-screen triangle; each corner's ray direction in the model frame
@@ -340,16 +341,7 @@ export function createGlobeAtmosphere(
     blendSrcAlpha: THREE.ZeroFactor,
     blendDstAlpha: THREE.OneFactor,
   });
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3),
-  );
-  const triangle = new THREE.Mesh(geometry, material);
-  triangle.frustumCulled = false;
-  const scene = new THREE.Scene();
-  scene.add(triangle);
-  const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const triangle = fullScreenPass(material);
   const ecefFromWorld = new THREE.Matrix4();
   const rotation = new THREE.Matrix3();
   const cameraEcef = new THREE.Vector3();
@@ -431,7 +423,7 @@ export function createGlobeAtmosphere(
       // per unit of that, times the scene's sun and the look's strength.
       uniforms.uRadiance.value =
         (sunIntensity * look.strength) / ATMOSPHERE_RADIANCE_SCALE;
-      renderer.render(scene, quadCamera);
+      triangle.render(renderer);
     },
     transmittance() {
       if (!device.supported) return null;
@@ -442,7 +434,7 @@ export function createGlobeAtmosphere(
       stopListening();
       device.dispose();
       material.dispose();
-      geometry.dispose();
+      triangle.dispose();
     },
   };
 }
