@@ -25,7 +25,13 @@ import {
   precisionsFor,
 } from "./bench-methods";
 import { errorText, formatBytes, type LoadDeps } from "./bench-net";
-import { formatReport, tableRows, type DeviceInfo } from "./bench-report";
+import {
+  formatReport,
+  hasJspi,
+  tableRows,
+  UNKNOWN_DEVICE,
+  type DeviceInfo,
+} from "./bench-report";
 import { runBenchmark, type BenchInput } from "./bench-run";
 import { syntheticPair } from "./bench-synthetic";
 
@@ -144,7 +150,7 @@ async function collectDeviceInfo(): Promise<DeviceInfo> {
     hardwareConcurrency: nav.hardwareConcurrency ?? null,
     deviceMemoryGb: nav.deviceMemory ?? null,
     crossOriginIsolated: globalThis.crossOriginIsolated === true,
-    jspi: "Suspending" in WebAssembly,
+    jspi: hasJspi((globalThis as { WebAssembly?: unknown }).WebAssembly),
     screen: `${String(screen.width)}x${String(screen.height)} @${String(devicePixelRatio)}`,
     webgpu: await webgpuText(),
   };
@@ -226,6 +232,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   /** Blob URLs of the offered files; revoked when the captures change. */
   let savedUrls: string[] = [];
   let stream: MediaStream | null = null;
+  /** The camera start in flight, so a second tap does not open a second stream. */
+  let starting: Promise<boolean> | null = null;
 
   const log = (line: string): void => {
     const t = (performance.now() / 1000).toFixed(1);
@@ -250,26 +258,73 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     // Older browsers keep their default buffer; sizes may then read "-".
   }
 
-  const startCamera = async (): Promise<void> => {
-    if (stream) {
+  /** Device facts, or dashes when the browser refuses them. */
+  const deviceInfo = (): Promise<DeviceInfo> =>
+    collectDeviceInfo().catch((e: unknown) => {
+      log(`device info unavailable: ${errorText(e)}`);
+      return UNKNOWN_DEVICE;
+    });
+
+  /**
+   * Stops the camera: it must not run beside the timed runs (it costs the
+   * same CPU and GPU being measured). The next capture starts it again.
+   */
+  const stopCamera = (): void => {
+    if (!stream) {
       return;
     }
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 } },
-        audio: false,
-      });
-      ui.video.srcObject = stream;
-      await ui.video.play();
-      log("camera on");
-    } catch (e) {
-      fail("camera", e);
+    for (const t of stream.getTracks()) {
+      t.stop();
     }
+    stream = null;
+    ui.video.srcObject = null;
+    log("camera off");
   };
 
+  /** Starts the camera once; true when it is running. */
+  const startCamera = (): Promise<boolean> => {
+    if (stream) {
+      return Promise.resolve(true);
+    }
+    starting ??= (async () => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+          },
+          audio: false,
+        });
+        stream = s;
+        ui.video.srcObject = s;
+        await ui.video.play();
+        log("camera on");
+        return true;
+      } catch (e) {
+        fail("camera", e);
+        stopCamera();
+        return false;
+      } finally {
+        starting = null;
+      }
+    })();
+    return starting;
+  };
+
+  const captureText = (): string =>
+    `A: ${captures.a ? "ready" : "-"}, B: ${captures.b ? "ready" : "-"}`;
+
   const capture = (which: "a" | "b") => async (): Promise<void> => {
-    await startCamera();
-    if (!stream || ui.video.videoWidth === 0) {
+    if (!stream) {
+      ui.captureState.textContent = "starting camera...";
+    }
+    if (!(await startCamera())) {
+      ui.captureState.textContent = "camera unavailable (see log)";
+      return;
+    }
+    if (ui.video.videoWidth === 0) {
+      ui.captureState.textContent = "camera not ready yet: tap again";
+      log("capture: the camera has no picture yet");
       return;
     }
     const name = which === "a" ? "A" : "B";
@@ -282,7 +337,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     log(
       `captured ${name} ${String(f.width)}x${String(f.height)} (camera ${String(ui.video.videoWidth)}x${String(ui.video.videoHeight)}), ${describeGrey(greyStats(f))}`,
     );
-    ui.captureState.textContent = `A: ${captures.a ? "ready" : "-"}, B: ${captures.b ? "ready" : "-"}`;
+    ui.captureState.textContent = captureText();
     clearSaved(captures.a && captures.b ? "" : "capture A and B first");
   };
   const clearSaved = (state: string): void => {
@@ -299,7 +354,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     if (!a || !b) {
       return;
     }
-    const info = framesInfo([a, b], await collectDeviceInfo(), CAPTURE_MAX);
+    const info = framesInfo([a, b], await deviceInfo(), CAPTURE_MAX);
     const files: [string, string, Blob][] = [
       [FRAME_FILES.A, "frame A (PNG)", await framePng(a.frame, "frame A")],
       [FRAME_FILES.B, "frame B (PNG)", await framePng(b.frame, "frame B")],
@@ -348,6 +403,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       ui.cameraBox.hidden = !camera;
       if (camera) {
         void startCamera();
+      } else {
+        stopCamera();
       }
     });
   }
@@ -421,8 +478,9 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       return "not run: nothing chosen";
     }
     const runs = parseRuns(valueOf(root, "#runs"));
+    stopCamera();
     const startedAt = new Date().toISOString();
-    const device = await collectDeviceInfo();
+    const device = await deviceInfo();
     log(
       `run: ${String(methods.length)} methods, sizes ${sizes.join("/")}, ${String(runs)} runs`,
     );
@@ -488,10 +546,6 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       });
   });
 
-  window.addEventListener("pagehide", () => {
-    for (const t of stream?.getTracks() ?? []) {
-      t.stop();
-    }
-  });
+  window.addEventListener("pagehide", stopCamera);
   log("ready");
 }

@@ -205,6 +205,15 @@ test("the feature matching benchmark saves the captured camera frames", async ({
   await chooseSiftOnly(page);
   await page.locator("#run").click();
   await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+  // The camera is off during the timed runs; the captures stay.
+  await expect(page.locator("#log")).toContainText("camera off");
+  expect(
+    await page.evaluate(
+      () =>
+        /** @type {HTMLVideoElement} */ (document.querySelector("#video"))
+          .srcObject,
+    ),
+  ).toBeNull();
   expect(await page.locator("#report").inputValue()).toMatch(
     /input: camera A 320x240, grey mean [\d.]+ sd [\d.]+ \(0-255\); B 320x240, grey mean/,
   );

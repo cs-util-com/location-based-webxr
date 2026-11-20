@@ -58,14 +58,17 @@ export function stackPair(a: Float32Array, b: Float32Array): Float32Array {
 
 /**
  * The matcher's `matches0` (for each keypoint of A, its index in B or -1)
- * as flat pairs `[ia, ib, ...]`; indices outside B are dropped.
+ * as flat pairs `[ia, ib, ...]`; entries past A's keypoints and indices
+ * outside B are dropped.
  */
 export function pairsFromMatches(
   matches0: ArrayLike<number | bigint>,
+  countA: number,
   countB: number,
 ): Int32Array {
   const out: number[] = [];
-  for (let i = 0; i < matches0.length; i++) {
+  const n = Math.min(matches0.length, countA);
+  for (let i = 0; i < n; i++) {
     const m = Number(matches0[i]);
     if (m >= 0 && m < countB) {
       out.push(i, m);

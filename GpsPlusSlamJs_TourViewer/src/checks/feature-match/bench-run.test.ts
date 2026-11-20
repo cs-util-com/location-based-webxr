@@ -139,6 +139,25 @@ describe("runBenchmark", () => {
     expect(runner.disposed).toBe(true);
   });
 
+  // Why this test matters: a size the frame cannot be resized to must be
+  // one failed row, not an exception that ends the whole run.
+  it("keeps a size that cannot be computed as an error", async () => {
+    const h = hooks();
+    const method: BenchMethod = {
+      id: "m",
+      label: "M",
+      init: () => Promise.resolve(fakeRunner(h.clock)),
+    };
+    const [r] = await runBenchmark(
+      [method],
+      { a: frame(40, 30), b: frame(40, 30), warp: null },
+      { sizes: [0, 20], runs: 1 },
+      h,
+    );
+    expect(r!.sizes[0]!.error).toMatch(/RangeError/);
+    expect(r!.sizes[1]!.error).toBeNull();
+  });
+
   it("counts correct matches against the known warp of a synthetic pair", async () => {
     const h = hooks();
     const [bx, by] = warpPoint(DEFAULT_WARP, 10, 12, 64, 48);

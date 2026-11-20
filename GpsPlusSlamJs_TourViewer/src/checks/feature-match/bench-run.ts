@@ -156,13 +156,8 @@ async function runSize(
   runs: number,
   hooks: BenchHooks,
 ): Promise<SizeResult> {
-  const { width, height } = sizeForLongEdge(
-    input.a.width,
-    input.a.height,
-    longEdge,
-  );
-  const fa = resizeFrame(input.a, width, height);
-  const fb = resizeFrame(input.b, width, height);
+  let width = 0;
+  let height = 0;
   const extractMs: number[] = [];
   const matchMs: number[] = [];
   const keypoints: number[] = [];
@@ -171,6 +166,13 @@ async function runSize(
   const correct: number[] = [];
   let error: string | null = null;
   try {
+    ({ width, height } = sizeForLongEdge(
+      input.a.width,
+      input.a.height,
+      longEdge,
+    ));
+    const fa = resizeFrame(input.a, width, height);
+    const fb = resizeFrame(input.b, width, height);
     await runner.match(await runner.extract(fa), await runner.extract(fb));
     await hooks.yieldToUi();
     for (let r = 0; r < runs; r++) {

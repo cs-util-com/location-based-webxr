@@ -15,8 +15,10 @@ A standalone measurement page: it times keypoint extraction and matching of thre
 ## Methods
 
 - **SIFT (plain JS)**: Splat.js `sift.js` (MIT), imported at run time from a pinned commit on jsDelivr; never vendored.
-- **XFeat (LiteRT.js)**: the Apache-2.0 LiteRT export of XFeat (1.4 MB, fp16 or fp32 weights), run by `@litertjs/core` 2.6.0 (Apache-2.0) on WebGPU or WASM.
+- **XFeat (LiteRT.js)**: the Apache-2.0 LiteRT export of XFeat (1.4 MB, `xfeat_fp16.tflite` or `xfeat.tflite`, labelled by file name since the two are the same size), run by `@litertjs/core` 2.6.0 (Apache-2.0) on WebGPU or WASM.
 - **ALIKED + LightGlue (onnxruntime-web)**: the split ONNX exports (extractor 13 MB, matcher 51 MB), run by onnxruntime-web 1.31.1 (MIT) on WebGPU or WASM. Off by default because of the download.
+
+Trust: the page imports its runtime code (sift.js, LiteRT.js, onnxruntime-web) from jsDelivr at run time, on the site's own origin, with no integrity check. The URLs pin a commit or version, but jsDelivr's `+esm` bundles are generated and not byte-stable, so a hash would not hold for them; the page therefore trusts jsDelivr and the pinned upstream releases. It holds no user data, writes nothing, and is linked from nothing.
 
 All models load from pinned Hugging Face revisions at run time; no model file is in the repository. They are fetched without a Referer (see `src/checks/feature-match/bench-net.ts.md`), because the model host refuses requests whose Referer is a `*.workers.dev` preview origin. Licences and attributions are in `src/checks/feature-match/method-*.ts.md`.
 

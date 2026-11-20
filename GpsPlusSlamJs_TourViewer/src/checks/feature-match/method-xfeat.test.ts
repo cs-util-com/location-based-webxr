@@ -100,14 +100,38 @@ describe("XFeat helpers", () => {
     expect(
       Array.from(toFloat32(new Uint16Array([0x3c00, 0xc000]), "float16")),
     ).toEqual([1, -2]);
+  });
+
+  // Why this test matters: the output tensors are deleted right after they
+  // are read, and a typed array may be a view on the runtime's memory; the
+  // decoder must get its own copy.
+  it("copies float32 output instead of keeping a view", () => {
     const f = new Float32Array([0.5]);
-    expect(toFloat32(f, "float32")).toBe(f);
+    const out = toFloat32(f, "float32");
+    expect(out).not.toBe(f);
+    f[0] = 9;
+    expect(Array.from(out)).toEqual([0.5]);
   });
 
   it("names the shapes when a map is missing", () => {
     expect(() =>
       xfeatMaps([{ data: new Float32Array(4), shape: [1, 2, 2, 1] }]),
     ).toThrow("XFeat: no output with 64 channels ([1, 2, 2, 1])");
+  });
+
+  // Why this test matters: a [1, 64, 64, 1] map fits both "64 channels
+  // first" and "1 channel last"; each role must get its own output.
+  it("gives each role a different output", () => {
+    const ambiguous = {
+      data: new Float32Array(64 * 64),
+      shape: [1, 64, 64, 1],
+    };
+    const logits = { data: new Float32Array(65 * 4), shape: [1, 65, 2, 2] };
+    const reliability = { data: new Float32Array(4), shape: [1, 1, 2, 2] };
+    const maps = xfeatMaps([ambiguous, logits, reliability]);
+    expect(maps.feats.channels).toBe(64);
+    expect(maps.reliability.data).toBe(reliability.data);
+    expect(maps.logits.data).toBe(logits.data);
   });
 
   it("pins both model files to one revision", () => {
@@ -121,6 +145,17 @@ describe("XFeat helpers", () => {
 });
 
 describe("xfeatMethod", () => {
+  // Why this test matters: both weight files are the same size, so the
+  // label names the file, not a precision the page has not confirmed.
+  it("labels a variant by its model file", () => {
+    expect(xfeatMethod("wasm", "fp16", fakeDeps()).label).toBe(
+      "XFeat (LiteRT.js) wasm xfeat_fp16.tflite",
+    );
+    expect(xfeatMethod("webgpu", "fp32", fakeDeps()).label).toBe(
+      "XFeat (LiteRT.js) webgpu xfeat.tflite",
+    );
+  });
+
   it("compiles for the backend, finds the keypoint and frees every tensor", async () => {
     FakeTensor.log = [];
     const deps = fakeDeps();

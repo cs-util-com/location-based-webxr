@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { formatReport, tableRows, type DeviceInfo } from "./bench-report";
+import {
+  formatReport,
+  hasJspi,
+  tableRows,
+  UNKNOWN_DEVICE,
+  type DeviceInfo,
+} from "./bench-report";
 import type { MethodResult } from "./bench-run";
 import { summarize } from "./bench-stats";
 
@@ -147,5 +153,34 @@ describe("tableRows", () => {
       error: "RangeError: out of memory",
     });
     expect(rows[2]).toMatchObject({ size: "-", error: failed.error });
+  });
+});
+
+// Why these tests matter: a browser without WebAssembly made the JSPI probe
+// throw and ended the whole run, SIFT included; device facts are optional.
+describe("hasJspi", () => {
+  it("is false without WebAssembly or without Suspending", () => {
+    expect(hasJspi(undefined)).toBe(false);
+    expect(hasJspi({})).toBe(false);
+  });
+
+  it("is true when WebAssembly has Suspending", () => {
+    expect(hasJspi({ Suspending: () => undefined })).toBe(true);
+  });
+});
+
+describe("UNKNOWN_DEVICE", () => {
+  it("reads as dashes in the report", () => {
+    const text = formatReport({
+      startedAt: "t",
+      device: UNKNOWN_DEVICE,
+      input: "x",
+      sizes: [320],
+      runs: 1,
+      results: [],
+      errors: [],
+    });
+    expect(text).toContain("model: -, platform version: -");
+    expect(text).toContain("webgpu: -");
   });
 });

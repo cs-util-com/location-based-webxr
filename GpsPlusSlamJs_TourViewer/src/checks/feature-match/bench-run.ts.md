@@ -10,7 +10,7 @@ The benchmark loop: loads each method, runs it per input size with a warm-up and
 - `Features { count, descriptorBytes, x, y, payload }` (keypoints in frame pixels; `payload` is the method's own descriptor data).
 - `MethodRunner { backend, downloads, initMs, notes, extract(frame), match(a, b), dispose() }`; `BenchMethod { id, label, init() }`.
 - `BenchInput { a, b, warp | null }`; `MethodResult` (with one `SizeResult` per size); `BenchHooks { now, yieldToUi, log }`.
-- `runBenchmark(methods, input, { sizes, runs }, hooks)`: per method `init()`, then per size both frames resized to that long edge, one warm-up (extract A, extract B, match), then `runs` timed rounds. Extraction is timed per frame, matching per pair. Counts come from the last round (lower median where they vary).
+- `runBenchmark(methods, input, { sizes, runs }, hooks)`: per method `init()`, then per size both frames resized to that long edge, one warm-up (extract A, extract B, match), then `runs` timed rounds. Extraction is timed per frame, matching per pair. Keypoints, descriptor bytes, matches and correct matches are the lower median over all timed rounds (keypoints and bytes over both frames). A size that cannot be computed or resized is kept as that size's error, like a failed extraction.
 
 ## Invariants
 

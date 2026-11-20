@@ -90,13 +90,17 @@ export function liteRtApi(mod: unknown): LrtApi {
   return m as unknown as LrtApi;
 }
 
-/** Output data as float32; float16 arrives as raw 16-bit words. */
+/**
+ * Output data as a float32 copy (the tensor is deleted after reading, and
+ * its array may be a view on the runtime's memory); float16 arrives as raw
+ * 16-bit words.
+ */
 export function toFloat32(
   data: ArrayLike<number>,
   dtype: string,
 ): Float32Array {
   if (data instanceof Float32Array) {
-    return data;
+    return data.slice();
   }
   if (dtype === "float16" && data instanceof Uint16Array) {
     return Float32Array.from(data, halfToFloat);
@@ -117,15 +121,18 @@ function tryMap(
 
 /**
  * The three output maps told apart by channel count (64 descriptor, 65
- * keypoint logits, 1 reliability): exporters do not keep their order.
+ * keypoint logits, 1 reliability): exporters do not keep their order. Each
+ * role takes a different output (a [1, 64, 64, 1] map fits two roles).
  */
 export function xfeatMaps(
   outputs: readonly { data: Float32Array; shape: ArrayLike<number> }[],
 ): { feats: DenseMap; logits: DenseMap; reliability: DenseMap } {
+  const used = new Set<number>();
   const find = (c: number): DenseMap => {
-    for (const o of outputs) {
-      const m = tryMap(o, c);
+    for (const [i, o] of outputs.entries()) {
+      const m = used.has(i) ? null : tryMap(o, c);
       if (m) {
+        used.add(i);
         return m;
       }
     }
@@ -134,7 +141,10 @@ export function xfeatMaps(
       `XFeat: no output with ${String(c)} channels (${shapes.join(" ")})`,
     );
   };
-  return { feats: find(64), logits: find(65), reliability: find(1) };
+  // The 1-channel map last: it is the role an odd shape fits by accident.
+  const feats = find(64);
+  const logits = find(65);
+  return { feats, logits, reliability: find(1) };
 }
 
 /**
@@ -214,7 +224,9 @@ export function xfeatMethod(
 ): BenchMethod {
   return {
     id: `xfeat-${backend}-${precision}`,
-    label: `XFeat (LiteRT.js) ${backend} ${precision}`,
+    // Named by file: both files are the same size, so "fp16 / fp32" is
+    // the file's name, not a confirmed weight precision.
+    label: `XFeat (LiteRT.js) ${backend} ${xfeatModelUrl(precision).split("/").pop()!}`,
     async init(): Promise<MethodRunner> {
       const runtime = await loadRuntime(deps);
       const url = xfeatModelUrl(precision);

@@ -22,6 +22,24 @@ export interface DeviceInfo {
   readonly webgpu: string;
 }
 
+/** Device facts when collecting them failed: every field reads "-". */
+export const UNKNOWN_DEVICE: DeviceInfo = {
+  userAgent: "-",
+  model: null,
+  platformVersion: null,
+  hardwareConcurrency: null,
+  deviceMemoryGb: null,
+  crossOriginIsolated: false,
+  jspi: false,
+  screen: "-",
+  webgpu: "-",
+};
+
+/** JSPI support of a `WebAssembly` global, false when it is absent. */
+export function hasJspi(wasm: unknown): boolean {
+  return typeof wasm === "object" && wasm !== null && "Suspending" in wasm;
+}
+
 export interface ReportInput {
   readonly startedAt: string;
   readonly device: DeviceInfo;

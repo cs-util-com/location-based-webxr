@@ -80,9 +80,10 @@ describe("resizeFrame", () => {
           const out = resizeFrame(solid(w, h, v), dw, dh);
           expect(out.width).toBe(dw);
           expect(out.height).toBe(dh);
-          for (let i = 0; i < out.rgba.length; i += 4) {
-            expect(out.rgba[i]).toBe(v);
-          }
+          // One assertion per case, not per pixel: an expect per pixel made
+          // this property slow enough to time out under load.
+          const off = out.rgba.findIndex((p, i) => i % 4 === 0 && p !== v);
+          expect(off).toBe(-1);
         },
       ),
     );
