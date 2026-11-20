@@ -88,7 +88,7 @@ describe("the Globe sky passes' shader programs", () => {
       },
       atmosphere: {
         count: 1,
-        hash: "d9f57f3cc93ec62e1cfb27aa1ee09842598bd7022dad41e9cd6bb77c3d67a606",
+        hash: "16a15cd4b56fdf68075217e7b5022e434a4abbfae5bc2a02fc8b9d8ed8bee924",
       },
     });
   });

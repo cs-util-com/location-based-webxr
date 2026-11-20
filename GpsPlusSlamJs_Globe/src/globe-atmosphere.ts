@@ -38,6 +38,7 @@ import {
   ellipsoidToModel,
 } from "./globe-atmosphere-frame.js";
 import { fullScreenPass } from "./globe-full-screen.js";
+import { SCENE_DEPTH_GLSL } from "./globe-scene-depth.js";
 
 /**
  * A full-screen triangle; each corner's ray direction in the model frame
@@ -100,8 +101,7 @@ uniform float uGroundShare;
 // hand-over): the hard edge. The weight follows the hand-over's, so at its
 // 80 km edge (weight 0) the pass is exactly the one without the depth, and
 // the depth does not switch on as a jump.
-uniform sampler2D uSceneDepth;
-uniform mat4 uSceneInverseProjection;
+${SCENE_DEPTH_GLSL}
 uniform float uSceneDepthWeight;
 // The vertex shader's view-to-model map: linear, so a view point's model
 // length is the march's t along the same (normalised) ray.
@@ -158,8 +158,7 @@ void main() {
     vec2 depthUv = gl_FragCoord.xy / vec2( textureSize( uSceneDepth, 0 ) );
     float sceneDepth = texture2D( uSceneDepth, depthUv ).r;
     if ( sceneDepth < 1.0 ) {
-      vec4 viewPoint = uSceneInverseProjection * vec4( depthUv * 2.0 - 1.0, sceneDepth * 2.0 - 1.0, 1.0 );
-      float tRelief = length( uViewToModel * ( viewPoint.xyz / viewPoint.w ) );
+      float tRelief = length( uViewToModel * sceneViewPoint( depthUv, sceneDepth ) );
       tEnd = mix( tEnd, min( tEnd, tRelief ), uSceneDepthWeight );
       groundness = max( groundness, uSceneDepthWeight );
     }
