@@ -160,6 +160,20 @@
               <span id="capture-state">A: -, B: -</span>
             </div>
             <p class="hint">Move a little between A and B.</p>
+            <div class="row">
+              <button id="save-frames" type="button" class="secondary" disabled>
+                Save frames
+              </button>
+              <span id="save-state" aria-live="polite"
+                >capture A and B first</span
+              >
+            </div>
+            <p id="save-links" class="row"></p>
+            <p class="hint">
+              Saves the two captured frames as PNG and their sizes as JSON, on
+              this device only. The files carry pixels only, no location or EXIF
+              data.
+            </p>
           </div>
         </fieldset>
         <fieldset>

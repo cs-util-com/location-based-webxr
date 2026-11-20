@@ -5,14 +5,26 @@
  *
  * @see feature-match-check.ts.md
  */
-import { fitInside, makeFrame, type Frame } from "./bench-image";
+import {
+  assertPlainPng,
+  FRAME_FILES,
+  framesInfo,
+  type SavedFrame,
+} from "./bench-export";
+import {
+  describeGrey,
+  fitInside,
+  greyStats,
+  makeFrame,
+  type Frame,
+} from "./bench-image";
 import {
   backendsFor,
   buildMethods,
   parseRuns,
   precisionsFor,
 } from "./bench-methods";
-import { errorText, type LoadDeps } from "./bench-net";
+import { errorText, formatBytes, type LoadDeps } from "./bench-net";
 import { formatReport, tableRows, type DeviceInfo } from "./bench-report";
 import { runBenchmark, type BenchInput } from "./bench-run";
 import { syntheticPair } from "./bench-synthetic";
@@ -43,6 +55,9 @@ interface Ui {
   readonly captureB: HTMLButtonElement;
   readonly captureState: HTMLElement;
   readonly cameraBox: HTMLElement;
+  readonly saveFrames: HTMLButtonElement;
+  readonly saveState: HTMLElement;
+  readonly saveLinks: HTMLElement;
 }
 
 function findUi(root: ParentNode): Ui {
@@ -59,6 +74,9 @@ function findUi(root: ParentNode): Ui {
     captureB: $(root, "#capture-b"),
     captureState: $(root, "#capture-state"),
     cameraBox: $(root, "#camera-box"),
+    saveFrames: $(root, "#save-frames"),
+    saveState: $(root, "#save-state"),
+    saveLinks: $(root, "#save-links"),
   };
 }
 
@@ -152,6 +170,37 @@ function captureFrame(video: HTMLVideoElement): Frame {
   return makeFrame(size.width, size.height, img.data);
 }
 
+/** A frame and its grey values as one log phrase. */
+const frameText = (name: string, f: Frame): string =>
+  `${name} ${String(f.width)}x${String(f.height)}, ${describeGrey(greyStats(f))}`;
+
+/**
+ * A frame as PNG bytes: the canvas encoder writes pixels only (no EXIF,
+ * text or time), and assertPlainPng refuses the file if that ever changes.
+ */
+async function framePng(f: Frame, label: string): Promise<Blob> {
+  const canvas = document.createElement("canvas");
+  canvas.width = f.width;
+  canvas.height = f.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("save: no 2D canvas");
+  }
+  ctx.putImageData(
+    new ImageData(new Uint8ClampedArray(f.rgba), f.width, f.height),
+    0,
+    0,
+  );
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, "image/png");
+  });
+  if (!blob) {
+    throw new Error(`${label}: PNG encoding failed`);
+  }
+  assertPlainPng(new Uint8Array(await blob.arrayBuffer()), label);
+  return blob;
+}
+
 const checked = (root: ParentNode, sel: string): boolean =>
   root.querySelector<HTMLInputElement>(sel)?.checked === true;
 
@@ -170,7 +219,12 @@ function chosenSizes(root: ParentNode): number[] {
 export function startFeatureMatchCheck(root: ParentNode = document): void {
   const ui = findUi(root);
   const errors: string[] = [];
-  const captures: { a: Frame | null; b: Frame | null } = { a: null, b: null };
+  const captures: { a: SavedFrame | null; b: SavedFrame | null } = {
+    a: null,
+    b: null,
+  };
+  /** Blob URLs of the offered files; revoked when the captures change. */
+  let savedUrls: string[] = [];
   let stream: MediaStream | null = null;
 
   const log = (line: string): void => {
@@ -218,13 +272,71 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     if (!stream || ui.video.videoWidth === 0) {
       return;
     }
+    const name = which === "a" ? "A" : "B";
     const f = captureFrame(ui.video);
-    captures[which] = f;
+    captures[which] = {
+      name,
+      frame: f,
+      source: { width: ui.video.videoWidth, height: ui.video.videoHeight },
+    };
     log(
-      `captured ${which.toUpperCase()} ${String(f.width)}x${String(f.height)}`,
+      `captured ${name} ${String(f.width)}x${String(f.height)} (camera ${String(ui.video.videoWidth)}x${String(ui.video.videoHeight)}), ${describeGrey(greyStats(f))}`,
     );
     ui.captureState.textContent = `A: ${captures.a ? "ready" : "-"}, B: ${captures.b ? "ready" : "-"}`;
+    clearSaved(captures.a && captures.b ? "" : "capture A and B first");
   };
+  const clearSaved = (state: string): void => {
+    for (const u of savedUrls) {
+      URL.revokeObjectURL(u);
+    }
+    savedUrls = [];
+    ui.saveLinks.replaceChildren();
+    ui.saveState.textContent = state;
+    ui.saveFrames.disabled = !(captures.a && captures.b);
+  };
+  const saveFrames = async (): Promise<void> => {
+    const { a, b } = captures;
+    if (!a || !b) {
+      return;
+    }
+    const info = framesInfo([a, b], await collectDeviceInfo(), CAPTURE_MAX);
+    const files: [string, string, Blob][] = [
+      [FRAME_FILES.A, "frame A (PNG)", await framePng(a.frame, "frame A")],
+      [FRAME_FILES.B, "frame B (PNG)", await framePng(b.frame, "frame B")],
+      [
+        FRAME_FILES.info,
+        "sizes (JSON)",
+        new Blob([info], { type: "application/json" }),
+      ],
+    ];
+    ui.saveLinks.replaceChildren(
+      ...files.map(([file, text, blob]) => {
+        const url = URL.createObjectURL(blob);
+        savedUrls.push(url);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = file;
+        link.textContent = `${text}, ${formatBytes(blob.size)}`;
+        return link;
+      }),
+    );
+  };
+  ui.saveFrames.addEventListener("click", () => {
+    clearSaved("preparing...");
+    ui.saveFrames.disabled = true;
+    saveFrames()
+      .then(() => {
+        ui.saveState.textContent = "3 files ready: tap each to save";
+        log("frames ready to save");
+      })
+      .catch((e: unknown) => {
+        fail("save", e);
+        clearSaved("failed (see log)");
+      })
+      .finally(() => {
+        ui.saveFrames.disabled = !(captures.a && captures.b);
+      });
+  });
   ui.captureA.addEventListener("click", () => void capture("a")());
   ui.captureB.addEventListener("click", () => void capture("b")());
 
@@ -245,7 +357,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       const p = syntheticPair(640, 480, SYNTHETIC_SEED);
       return {
         input: { a: p.a, b: p.b, warp: p.warp },
-        text: `synthetic 640x480 (seed ${String(SYNTHETIC_SEED)}, known warp)`,
+        text: `synthetic (seed ${String(SYNTHETIC_SEED)}, known warp) ${frameText("A", p.a)}; ${frameText("B", p.b)}`,
       };
     }
     const { a, b } = captures;
@@ -254,8 +366,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       return null;
     }
     return {
-      input: { a, b, warp: null },
-      text: `camera A ${String(a.width)}x${String(a.height)}, B ${String(b.width)}x${String(b.height)}`,
+      input: { a: a.frame, b: b.frame, warp: null },
+      text: `camera ${frameText("A", a.frame)}; ${frameText("B", b.frame)}`,
     };
   };
 

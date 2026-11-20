@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import {
+  describeGrey,
   fitInside,
+  greyStats,
   makeFrame,
   resizeFrame,
   sizeForLongEdge,
@@ -136,5 +138,64 @@ describe("toFramePoint", () => {
     expect(toFramePoint(0.5, 4, 2)).toBeCloseTo(0, 9);
     expect(toFramePoint(2.5, 4, 2)).toBeCloseTo(1, 9);
     expect(toFramePoint(0, 4, 2)).toBeCloseTo(-0.25, 9);
+  });
+});
+
+// Why these tests matter: a dark or flat camera frame yields few
+// keypoints whatever the detector does; the copied log must show the
+// frame's brightness and contrast so a low count can be read as the
+// image, not a threshold.
+describe("greyStats", () => {
+  const solid = (w: number, h: number, v: number) =>
+    makeFrame(w, h, new Uint8ClampedArray(w * h * 4).fill(v));
+
+  it("gives the mean and a zero spread for a flat frame", () => {
+    const s = greyStats(solid(3, 2, 80));
+    expect(s.mean).toBeCloseTo(80, 4); // grey is Float32
+    expect(s.sd).toBeCloseTo(0, 4);
+  });
+
+  it("gives 127.5 and 127.5 for half black, half white", () => {
+    const f = makeFrame(
+      2,
+      1,
+      new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]),
+    );
+    const s = greyStats(f);
+    expect(s.mean).toBeCloseTo(127.5, 4);
+    expect(s.sd).toBeCloseTo(127.5, 4);
+  });
+
+  it("weights the channels as Rec. 601 luma", () => {
+    const f = makeFrame(1, 1, new Uint8ClampedArray([255, 0, 0, 255]));
+    expect(greyStats(f).mean).toBeCloseTo(0.299 * 255, 3);
+  });
+
+  it("stays inside 0..255 and 0..127.5 for any frame", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 6 }),
+        fc.integer({ min: 1, max: 6 }),
+        fc.infiniteStream(fc.integer({ min: 0, max: 255 })),
+        (w, h, values) => {
+          const it = values[Symbol.iterator]();
+          const rgba = new Uint8ClampedArray(w * h * 4).map(
+            () => it.next().value as number,
+          );
+          const s = greyStats(makeFrame(w, h, rgba));
+          // Tolerances cover the Float32 grey values.
+          expect(s.mean).toBeGreaterThanOrEqual(-1e-3);
+          expect(s.mean).toBeLessThanOrEqual(255 + 1e-3);
+          expect(s.sd).toBeGreaterThanOrEqual(0);
+          expect(s.sd).toBeLessThanOrEqual(127.5 + 1e-3);
+        },
+      ),
+    );
+  });
+
+  it("reads as one short phrase for the log", () => {
+    expect(describeGrey({ mean: 107.26, sd: 46.04 })).toBe(
+      "grey mean 107.3 sd 46.0 (0-255)",
+    );
   });
 });

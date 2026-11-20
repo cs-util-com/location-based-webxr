@@ -168,3 +168,33 @@ export function toGray(frame: Frame): Float32Array {
   }
   return g;
 }
+
+/** Brightness and contrast of a frame: Rec. 601 luma in 0..255. */
+export interface GreyStats {
+  readonly mean: number;
+  /** Population standard deviation. */
+  readonly sd: number;
+}
+
+/**
+ * The mean and standard deviation of a frame's grey values (0..255), so a
+ * dark or flat frame shows in the log next to its keypoint counts.
+ */
+export function greyStats(frame: Frame): GreyStats {
+  const g = toGray(frame);
+  let sum = 0;
+  for (const v of g) {
+    sum += v;
+  }
+  const mean = sum / g.length;
+  let sq = 0;
+  for (const v of g) {
+    sq += (v - mean) * (v - mean);
+  }
+  return { mean: mean * 255, sd: Math.sqrt(sq / g.length) * 255 };
+}
+
+/** e.g. "grey mean 107.3 sd 46.0 (0-255)". */
+export function describeGrey(s: GreyStats): string {
+  return `grey mean ${s.mean.toFixed(1)} sd ${s.sd.toFixed(1)} (0-255)`;
+}

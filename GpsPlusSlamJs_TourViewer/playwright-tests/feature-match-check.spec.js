@@ -121,3 +121,149 @@ test("the feature matching benchmark reports a method that fails to load", async
   await expect(page.locator("#run")).toBeEnabled();
   await expect(page.locator("#run")).toHaveText("Run benchmark");
 });
+
+/**
+ * A stand-in camera: a 320x240 canvas stream, left half black and right
+ * half white, so the captured frames' grey values are known.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function fakeCamera(page) {
+  await page.addInitScript(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = /** @type {CanvasRenderingContext2D} */ (
+      canvas.getContext("2d")
+    );
+    const paint = () => {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, 160, 240);
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(160, 0, 160, 240);
+      requestAnimationFrame(paint);
+    };
+    paint();
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: () => Promise.resolve(canvas.captureStream(30)),
+      },
+    });
+  });
+}
+
+/**
+ * The chunk types of a PNG file (a test-side copy of the page's walk, so
+ * the check does not trust the code it checks).
+ *
+ * @param {Buffer} bytes
+ */
+function chunkTypes(bytes) {
+  const types = [];
+  for (let at = 8; at + 8 <= bytes.length;) {
+    types.push(bytes.toString("latin1", at + 4, at + 8));
+    at += 12 + bytes.readUInt32BE(at);
+  }
+  return types;
+}
+
+/**
+ * Why this test matters: real camera frames are handed over in a chat to
+ * explain a phone's numbers, so the page must log each frame's grey values
+ * (a dark or flat frame explains a low keypoint count) and save exactly the
+ * captured pixels as files that carry nothing but pixels: no EXIF, text or
+ * time chunk, and a JSON without time or place. Nothing is uploaded: every
+ * request leaving the machine is refused.
+ */
+test("the feature matching benchmark saves the captured camera frames", async ({
+  page,
+}) => {
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  await routeNetwork(page, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/javascript",
+      headers: { "access-control-allow-origin": "*" },
+      body: SIFT_STUB,
+    }),
+  );
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await expect(page.locator("#save-frames")).toBeDisabled();
+
+  await page.locator('input[name="input"][value="camera"]').check();
+  await page.locator("#capture-a").click();
+  await page.locator("#capture-b").click();
+  await expect(page.locator("#capture-state")).toHaveText("A: ready, B: ready");
+  await expect(page.locator("#log")).toContainText(
+    /captured A 320x240 \(camera 320x240\), grey mean \d+\.\d sd \d+\.\d \(0-255\)/,
+  );
+
+  await chooseSiftOnly(page);
+  await page.locator("#run").click();
+  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+  expect(await page.locator("#report").inputValue()).toMatch(
+    /input: camera A 320x240, grey mean [\d.]+ sd [\d.]+ \(0-255\); B 320x240, grey mean/,
+  );
+
+  await page.locator("#save-frames").click();
+  await expect(page.locator("#save-state")).toHaveText(
+    "3 files ready: tap each to save",
+  );
+  const links = page.locator("#save-links a");
+  await expect(links).toHaveCount(3);
+
+  for (const name of [
+    "feature-match-frame-a.png",
+    "feature-match-frame-b.png",
+  ]) {
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.locator(`#save-links a[download="${name}"]`).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe(name);
+    const bytes = await readDownload(download);
+    const types = chunkTypes(bytes);
+    expect(types[0]).toBe("IHDR");
+    expect(types.at(-1)).toBe("IEND");
+    expect(
+      types.filter(
+        (t) =>
+          !["IHDR", "sRGB", "gAMA", "cHRM", "iCCP", "IDAT", "IEND"].includes(t),
+      ),
+    ).toEqual([]);
+    // IHDR: the captured size, unchanged.
+    expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
+      320, 240,
+    ]);
+  }
+
+  const [json] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator('#save-links a[download="feature-match-frames.json"]').click(),
+  ]);
+  const info = JSON.parse((await readDownload(json)).toString("utf8"));
+  expect(Object.keys(info).sort()).toEqual([
+    "captureMaxLongEdge",
+    "device",
+    "format",
+    "frames",
+  ]);
+  expect(
+    info.frames.map((/** @type {{ width: number }} */ f) => f.width),
+  ).toEqual([320, 320]);
+  expect(errors).toEqual([]);
+});
+
+/** @param {import("@playwright/test").Download} download */
+async function readDownload(download) {
+  const stream = await download.createReadStream();
+  const chunks = [];
+  for await (const c of stream) {
+    chunks.push(/** @type {Buffer} */ (c));
+  }
+  return Buffer.concat(chunks);
+}

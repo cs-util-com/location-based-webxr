@@ -12,6 +12,8 @@ The benchmark's image type and the resizing helpers every method shares.
 - `toFramePoint(v, fromSize, toSize)`: a coordinate mapped between two sizes of one image, pixel centres at integers.
 - `resizeFrame(frame, w, h)`: 2 x 2 box halving while the target is under half the size, then bilinear.
 - `toGray(frame)`: Rec. 601 luma as Float32 in 0..1.
+- `greyStats(frame)`: `{ mean, sd }` of the grey values in 0..255 (population standard deviation).
+- `describeGrey(stats)`: `grey mean 107.3 sd 46.0 (0-255)`.
 
 ## Invariants
 

@@ -1,0 +1,29 @@
+# bench-export.ts
+
+## Purpose
+
+Saving the benchmark's captured camera frames to the device: the file names, a check that a PNG holds image chunks only, and the JSON that travels with the frames.
+
+## Public API
+
+- `FRAME_FILES`: `A` `feature-match-frame-a.png`, `B` `feature-match-frame-b.png`, `info` `feature-match-frames.json`.
+- `SavedFrame { name: "A" | "B", frame, source: { width, height } }`: a captured frame and the camera size it was taken from.
+- `pngChunkTypes(bytes)`: the chunk types in order; throws `not a PNG` on a wrong signature and `PNG truncated` when a chunk runs past the end. CRCs are not checked.
+- `assertPlainPng(bytes, label)`: throws `<label>: PNG carries a <type> chunk` for anything but `IHDR PLTE tRNS sRGB gAMA cHRM iCCP IDAT IEND` (so `eXIf`, `tEXt`, `iTXt`, `zTXt`, `tIME` and unknown chunks are refused), and `<label>: PNG has no IEND` for a cut-off file.
+- `framesInfo(frames, device, captureMaxLongEdge)`: pretty JSON with exactly `format` (`feature-match-frames/1`), `captureMaxLongEdge`, `frames` (name, file, width, height, sourceWidth, sourceHeight, greyMean, greySd rounded to 2 decimals) and `device`.
+
+## Invariants
+
+- Pure functions; no DOM, no network. The page does the encoding and offers the files as local downloads only.
+- The files carry no time and no place: the PNG check refuses metadata chunks, and the JSON's fields are a fixed list (pinned by a test that walks every key).
+
+## Example
+
+```ts
+assertPlainPng(new Uint8Array(await blob.arrayBuffer()), "frame A");
+const json = framesInfo([a, b], device, 1280);
+```
+
+## Tests
+
+`bench-export.test.ts`; the page's saved files are checked in `playwright-tests/feature-match-check.spec.js`.
