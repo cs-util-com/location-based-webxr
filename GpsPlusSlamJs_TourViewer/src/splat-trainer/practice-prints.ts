@@ -9,16 +9,7 @@
  * @see practice-prints.ts.md
  */
 
-/** A small, seeded xorshift generator: the same seed, the same place. */
-export function seededRandom(seed: number): () => number {
-  let s = seed >>> 0 || 1;
-  return () => {
-    s ^= s << 13;
-    s ^= s >>> 17;
-    s ^= s << 5;
-    return ((s >>> 0) % 100000) / 100000;
-  };
-}
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 
 type Hsl = readonly [number, number, number];
 interface Palette {
@@ -166,7 +157,7 @@ function sceneFor(
   canvas.height = h;
   const g = canvas.getContext("2d");
   if (g === null) return null;
-  const r = seededRandom(seed * 7919 + 13);
+  const r = mulberry32(seed * 7919 + 13);
   const pal = PALETTES[seed % PALETTES.length] ?? PALETTES[0];
   if (pal === undefined) return null;
   const hy = h * (0.4 + r() * 0.14);
@@ -191,7 +182,7 @@ function drawBlobs(
   sharp: number,
   seed: number,
 ): void {
-  const r = seededRandom(seed * 104729 + 5);
+  const r = mulberry32(seed * 104729 + 5);
   const k = w / 480;
   const radius = (2 + (1 - sharp) * 26) * k;
   const alpha = 0.06 + 0.55 * (1 - sharp);

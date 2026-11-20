@@ -39,11 +39,12 @@ const VIEW_COPY: Readonly<Record<string, { label: string; line: string }>> = {
   },
   captions: {
     label: "Captions",
-    line: "A few lines at a time with the voice, eyes on the place",
+    line: "The words always at the bottom",
   },
 };
 
-const READING_NARRATED = "The whole text in a sheet, the voice highlighted";
+const READING_NARRATED =
+  "The words on the sign while it can be read, else at the bottom";
 
 /** A block's read-along verdict, where the page knows it. */
 export type VerdictOf = (block: TourBlock) => NarrationVerdict | undefined;

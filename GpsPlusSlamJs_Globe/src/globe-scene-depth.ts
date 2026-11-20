@@ -34,6 +34,23 @@ import * as THREE from "three";
  */
 const SCENE_DEPTH_NEAR_M = 10;
 
+/**
+ * The GLSL a reader of the depth includes: the depth texture and the
+ * inverse projection of the camera it was drawn with (`texture` and
+ * `camera.projectionMatrixInverse`), and `sceneViewPoint(uv, z)`, the
+ * view-space point the depth `z` (0 to 1) read at `uv` (0 to 1 across the
+ * depth) stands for. The reader samples the depth itself, with the call
+ * its GLSL version has, and skips `z >= 1.0` (nothing drawn).
+ */
+export const SCENE_DEPTH_GLSL = /* glsl */ `
+uniform sampler2D uSceneDepth;
+uniform mat4 uSceneInverseProjection;
+vec3 sceneViewPoint( vec2 uv, float z ) {
+  vec4 v = uSceneInverseProjection * vec4( uv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0 );
+  return v.xyz / v.w;
+}
+`;
+
 export interface GlobeSceneDepth {
   /** The depth (1 where nothing was drawn). */
   readonly texture: THREE.DepthTexture;

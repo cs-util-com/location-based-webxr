@@ -12,6 +12,13 @@ import {
   view3d,
 } from "./editor3d-fixture.js";
 import { viewCommand, viewItem } from "./editor-menus.js";
+import { openThroughChooser, zip } from "./editor-tours.js";
+import {
+  TextWriter,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader,
+} from "@zip.js/zip.js";
 
 /**
  * Why these tests matter: the editor on the globe view is the default
@@ -19,9 +26,14 @@ import { viewCommand, viewItem } from "./editor-menus.js";
  * through the page's test hook (a software-drawn WebGL shows little a
  * screenshot could assert on), that the globe view opens at street level
  * with the three stations in its Earth-centred group, its sky follows the
- * clock, a gizmo drag is the gizmo's alone, and a pinch steps toward the
- * ground under the fingers.
+ * clock, a gizmo drag is the gizmo's alone, a pinch steps toward the
+ * ground under the fingers, and a recording with nothing else positioned
+ * is flown to.
  */
+
+/** Below this the camera is framing something on the ground, not the
+ *  Earth (whose whole view stands thousands of kilometres up). */
+const FRAMED_MAX_M = 20_000;
 
 /**
  * The sky's colour: the per-channel median (0-255) of the canvas's top
@@ -359,6 +371,74 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
   await expect.poll(async () => (await debug())?.shown).toBe(true);
   // Debug data is never the tour's: nothing pending.
   await expect(page.locator("#save-status")).toHaveText("No changes");
+  expect(await rejections(page)).toEqual([]);
+});
+
+// Why: a recording whose one code has no position yet (measured nowhere)
+// gives the tour nothing to frame, so the view would stay on the whole
+// Earth, its two camera captures ten metres apart drawn as one speck. The
+// globe flies to the captures once they are drawn. (The code stays: the
+// editor opens no zip without a tour.json or a code.)
+test("flies to a recording's camera captures when the tour has nothing positioned", async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  await page.setViewportSize({ width: 900, height: 560 });
+  await answerHosts(page, {});
+  await keepRejections(page);
+  await noApproach(page);
+  await noClouds(page);
+  // The file input, not the picker, so the chooser is the e2e's.
+  await page.addInitScript(() => {
+    // @ts-expect-error - the e2e takes the picker away on purpose.
+    delete window.showOpenFilePicker;
+  });
+  const full = new ZipReader(
+    new Uint8ArrayReader(
+      new Uint8Array(
+        await (
+          await page.request.get(
+            "http://127.0.0.1:5197/ranges-ok/recording-tour.zip",
+          )
+        ).body(),
+      ),
+    ),
+  );
+  /** @type {{ path: string, data: string | Uint8Array }[]} */
+  const entries = [];
+  for (const entry of await full.getEntries()) {
+    if (entry.directory) continue;
+    if (entry.filename.startsWith("qr/")) {
+      // The code without its stored position.
+      const level = JSON.parse(await entry.getData(new TextWriter()));
+      delete level.qr.geo;
+      entries.push({ path: entry.filename, data: JSON.stringify(level) });
+      continue;
+    }
+    entries.push({
+      path: entry.filename,
+      data: await entry.getData(new Uint8ArrayWriter()),
+    });
+  }
+  await full.close();
+  await page.goto("/edit.html");
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await openThroughChooser(page, await zip(entries), "no-code.zip");
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 120_000,
+  });
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.debug ?? null, {
+      timeout: 90_000,
+    })
+    .toMatchObject({ captures: 2, shown: true });
+  // Framed, the camera stands over the captures; the whole Earth is seen
+  // from thousands of kilometres up.
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.altitudeM, {
+      timeout: 60_000,
+    })
+    .toBeLessThan(FRAMED_MAX_M);
   expect(await rejections(page)).toEqual([]);
 });
 

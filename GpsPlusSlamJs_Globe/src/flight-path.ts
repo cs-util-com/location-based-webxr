@@ -60,8 +60,6 @@ export const FLIGHT_PATH = Object.freeze({
   radiusM: 6_371_000,
 });
 
-const DEG = Math.PI / 180;
-
 function requirePositive(name: string, value: number): void {
   if (!(value > 0 && Number.isFinite(value))) {
     throw new RangeError(`${name} must be a positive number, got ${value}`);
@@ -92,7 +90,7 @@ function requirePitch(name: string, value: number): void {
  * `pitchDeg` (the triangle centre-camera-ground, as `obliqueCamera`).
  */
 function lookBackRad(rs: number, altitudeM: number, pitchDeg: number): number {
-  const gamma = (90 - pitchDeg) * DEG;
+  const gamma = (90 - pitchDeg) * THREE.MathUtils.DEG2RAD;
   if (gamma <= 1e-12) return 0;
   return (
     Math.asin(Math.min(1, ((rs + altitudeM) / rs) * Math.sin(gamma))) - gamma

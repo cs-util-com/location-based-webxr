@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Group, Mesh, PlaneGeometry, Texture } from "three";
 
-import type { NarrationBox } from "./narration-box.js";
 import type { WordsPaintModel } from "./narration-words-paint.js";
 import {
   signHideWhy,
@@ -33,7 +32,7 @@ function deps(over: Partial<SignWordsDeps> = {}): SignWordsDeps {
       beginPress: () => true,
       movePress: () => undefined,
       endPress: () => undefined,
-      state: () => ({ pressing: true }) as ReturnType<NarrationBox["state"]>,
+      pressing: () => true,
     },
     scale: 2.5,
     travelling: () => true,

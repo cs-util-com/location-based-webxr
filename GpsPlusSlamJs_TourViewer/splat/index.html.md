@@ -2,11 +2,10 @@
 
 ## Purpose
 
-The splat trainer page: a desktop page that will turn a recording from
-the recorder app into a splat, on this computer, nothing uploaded. Until
-the GPU trainer exists it reads a recording, shows how it would be made,
-and says the splat maker is not ready yet; `?trainer=practice` runs the
-whole flow with a scripted practice trainer.
+The splat trainer page: a desktop page that turns a recording from the
+recorder app into a splat, on this computer, nothing uploaded. It trains
+on the graphics card in a worker; `?trainer=practice` runs the whole flow
+with a scripted practice trainer that draws pictures instead.
 
 It is a Vite build entry (`vite.config.ts`), so it is built and reachable
 on a deployed branch preview at `/tour/splat/`; nothing links to it yet.
@@ -20,4 +19,5 @@ The page logic lives in `src/splat-trainer/` (`splat-main.ts`,
 
 ## Tests
 
-`playwright-tests/splat-trainer.spec.js`.
+`playwright-tests/splat-trainer.spec.js` and
+`playwright-tests/splat-trainer-gpu.spec.js`.

@@ -17,8 +17,8 @@ measures the walked metres the page prints under each print.
   with its `core`, `train` and `holdouts` frame lists. The page store keeps
   these beside the state (`sides.plans`) and hands the matching one to the
   trainer in each `TrainRequest`.
-- `PlannerInput` - `{ captures: WalkFrame[] }`; the reader's `SplatInputs`
-  satisfy it.
+- `PlannerInput` (internal, the type of a planner's argument) - `{
+captures: WalkFrame[] }`; the reader's `SplatInputs` satisfy it.
 - `WindowPlanner` - `(input) => PlannedWindow[]`, the seam the page store
   takes (`TrainerPageDeps.plan`).
 - `walkedDistances(captures) -> number[]` - cumulative distance at each
@@ -36,8 +36,7 @@ measures the walked metres the page prints under each print.
   stretch's first core frame, so the metres never run backwards and
   neighbours meet; the last one ends at its own last core frame.
 - `planWindows` throws only for settings that cannot hold; the page store
-  catches a throw and treats it as an empty plan (the page then refuses
-  the recording).
+  catches a throw and refuses the recording with the planner's message.
 
 ## Example
 

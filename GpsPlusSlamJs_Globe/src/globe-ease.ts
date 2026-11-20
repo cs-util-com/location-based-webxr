@@ -19,3 +19,13 @@ export const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 /** From `a` to `b` at `t`, not clamped. */
 export const lerp = (a: number, b: number, t: number): number =>
   a + (b - a) * t;
+
+/**
+ * A progress fraction held in [0, 1], with NaN read as 0 (where `clamp01`
+ * would pass NaN through): a clock or flight that is told nothing has not
+ * started.
+ */
+export function clampProgress(p: number): number {
+  if (!(p > 0)) return 0;
+  return p >= 1 ? 1 : p;
+}

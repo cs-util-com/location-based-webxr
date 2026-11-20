@@ -56,6 +56,11 @@ prototype's (`public/prototypes/station-blocks-1-narrated-text/`).
   the block's text; without it the sign takes no tap (the 3D editor's).
   The minutes come from `readMinutes(wordCount(body))` in
   `long-text-sheet.ts`.
+- `mountedReadingSign(blockId, parts = mountedWorldParts())` - the
+  mounted sign standing for the text `blockId`, or null: `main.ts`
+  finds a narrated text's sign by it to start its words' travel and set
+  its voice chip (`captions-follow.ts`). Only a part `mountReadingSign`
+  made counts (a module `WeakSet`), whatever another part's fields.
 - `readingSheetContent(stations, block)` - `{ over, title, body }` for the
   sheet: `over` is "Title · Station N", "Station N" for an untitled
   station, or "" when no station holds the block.
@@ -95,7 +100,8 @@ stationGroup.add(stand.object);
   "Untitled", the geometry, the facing from four sides and in the parent's
   frame through `onBeforeRender`, `mountReadingSign` as a world part (the
   plate takes the tap and opens the text, none without an opener, mounted
-  until disposed), `readingSheetContent`, the voice chip, the words
+  until disposed; found by its text's id only while mounted),
+  `readingSheetContent`, the voice chip, the words
   plate (its place in the tree, its turning, the growth only while
   attached, on top of a folder's scale, the tap target's centre kept),
   a tap through the words plate opening nothing, and the chip repainted

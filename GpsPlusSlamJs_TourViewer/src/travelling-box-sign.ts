@@ -59,7 +59,7 @@ export interface SignWordsDeps {
     | "beginPress"
     | "movePress"
     | "endPress"
-    | "state"
+    | "pressing"
   >;
   /** The paint scale (`wordsPaintScale` of the device pixel ratio). */
   readonly scale: number;
@@ -143,6 +143,6 @@ export function signWordsSurface(deps: SignWordsDeps): TravelSurface {
     endPress: (kind, x, y) => {
       box.endPress(kind, x, y);
     },
-    pressing: () => box.state().pressing,
+    pressing: () => box.pressing(),
   };
 }

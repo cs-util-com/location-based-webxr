@@ -69,6 +69,9 @@ the reading sign (`reading-sign.ts`) are world parts too.
   the part, takes it out of the station and its count, and names the
   block in `skipped`),
   `dispose()` (frees every geometry, material and texture it made).
+- `setOpacity(material, opacity)` - sets the opacity of a mesh's material
+  or of each of its materials (the travelling words' plate, a viewpoint's
+  stand); allocates nothing, so a fade can call it every frame.
 - `canvasTexture(canvas, { anisotropy?, mipmaps? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
   sRGB, and the anisotropy only when given (a page seen at a slant; three
   clamps it to the renderer's largest). `mipmaps: false` skips the
