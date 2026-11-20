@@ -6,7 +6,7 @@
  * {@link SHIM_IMPORT_KEY} and then imports the built worker script by its
  * absolute address; the worker loads Splat.js only through that importer,
  * because an `import()` written in a module served by this site would
- * send the site's origin. The `blob:` address is released when the worker
+ * send this page's address as the Referer. The `blob:` address is released when the worker
  * is ended.
  *
  * @see trainer-worker-spawn.ts.md

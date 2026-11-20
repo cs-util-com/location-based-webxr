@@ -928,7 +928,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
 edited(), view3d(), view3dTilt(deg), view3dDistance(m), view3dHeading(deg), view3dBuildings(on),
 view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part), view3dUnder(x, y),
-view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(reason) }`): an e2e reaches the editor session's edits no control of
+view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(reason), deleteSelection(id) }`): an e2e reaches the editor session's edits no control of
   this page offers yet, then `edited()` follows them as an edit made here
   would (refresh, autosave told); `view3d()` is the shown 3D view's
   `stats()` (null on the map), `view3dTilt(deg)` tilts its camera,
@@ -941,7 +941,10 @@ view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(rea
   canvas point picks and whether it meets the move disc; `view3dFolderOutlines()` how many teal
   boxes show around a selected folder's items, and its dashed outline and name tag (null on the map); `manifest()` is what a save would write
   now and `selected()` the selection; `dropTour(reason)` drops the open
-  tour as a late integrity failure does, at the moment the e2e chooses.
+  tour as a late integrity failure does, at the moment the e2e chooses;
+  `deleteSelection(id)` is the page's own Delete of `id` (the edit, then
+  the "Deleted ..." toast with Undo), for an e2e with no view to select
+  from.
   Guarded by `import.meta.env.DEV &&
 !import.meta.env.VITEST`, so a production build strips it.
 

@@ -8,6 +8,8 @@
  * @see globe-intro.ts.md
  */
 
+import { smoothstep } from "./globe-ease.js";
+
 /** A direction or point as [x, y, z]. */
 export type Vec3 = readonly [number, number, number];
 
@@ -53,9 +55,6 @@ function unit(v: Vec3, what: string): Vec3 {
   }
   return [v[0] / n, v[1] / n, v[2] / n];
 }
-
-/** The smooth ease used throughout: 0 to 1 with zero slope at both ends. */
-const ease = (t: number): number => t * t * (3 - 2 * t);
 
 /** Below this length, `b` minus its part along `a` counts as zero. */
 const PARALLEL_EPSILON = 1e-9;
@@ -177,13 +176,13 @@ export function introCameraPose(t: number, path: IntroPath): IntroPose {
   const target = unit(path.target, "the target");
   if (u >= 1)
     return { direction: target, distanceKm: endKm, fovDeg: endFovDeg };
-  const direction = slerp(unit(path.start, "the start"), target, ease(u));
+  const direction = slerp(unit(path.start, "the start"), target, smoothstep(u));
   const logDistance = (s: number): number =>
     Math.exp(
-      Math.log(startKm) + (Math.log(endKm) - Math.log(startKm)) * ease(s),
+      Math.log(startKm) + (Math.log(endKm) - Math.log(startKm)) * smoothstep(s),
     );
   const lerp = (a: number, b: number, s: number): number =>
-    a + (b - a) * ease(s);
+    a + (b - a) * smoothstep(s);
   if (variant === "fov") {
     const p = GLOBE_INTRO.fovPhase;
     return {
@@ -237,7 +236,7 @@ export function blendTarget(
   const a = unit(from, "the old target");
   const b = unit(to, "the new target");
   if (!(blendMs > 0) || elapsedMs >= blendMs) return b;
-  return slerp(a, b, ease(Math.max(0, elapsedMs) / blendMs));
+  return slerp(a, b, smoothstep(Math.max(0, elapsedMs) / blendMs));
 }
 
 /**
@@ -291,5 +290,9 @@ export function flyInStart(input: {
   }
   const start = introStartDirection(target, sun, capDeg);
   if (blendMs === 0 || sinceArrivalMs >= blendMs) return start;
-  return slerp(unit(spin, "the spin"), start, ease(sinceArrivalMs / blendMs));
+  return slerp(
+    unit(spin, "the spin"),
+    start,
+    smoothstep(sinceArrivalMs / blendMs),
+  );
 }

@@ -20,7 +20,7 @@ A worker created from a `blob:` address inherits the creating page's
 referrer policy, and `splat/index.html` sets `no-referrer`. But an
 `import()` takes its referrer policy from the module it is written in:
 the worker script itself is served by this site under the default policy,
-so an `import()` written there sent the site's origin to the CDN (seen in
+so an `import()` written there sent this page's address to the CDN as the Referer (seen in
 the browser test). The importer is therefore written in the `blob:`
 module, and the worker loads Splat.js only through it. Splat.js's own
 imports of its sibling files then name only that CDN file.

@@ -56,6 +56,7 @@ if (root !== null) {
     plan: windowPlanner(),
     write: (handle, blob) => writeFileOrAbort(handle, blob),
     download: (blob, name) => downloadBlob(blob, name, ZIP_FILE_TYPE),
+    thumbnail: shrinkLook,
   });
   const isPhone = window.matchMedia("(max-width: 700px)").matches;
   const page = mountSplatTrainerPage(root, controller, {
@@ -69,5 +70,26 @@ if (root !== null) {
     if (event.persisted) return;
     page.dispose();
     controller.dispose();
+  });
+}
+
+/** Longest side of the look a finished stretch keeps (px): about 0.7 MB
+ *  of pixels, against several MB at the trainer's photo size. */
+const KEPT_LOOK_PX = 480;
+
+/** A copy of `picture` no larger than {@link KEPT_LOOK_PX} on its longest
+ *  side; a picture already that small is kept as it is. */
+async function shrinkLook(
+  picture: CanvasImageSource,
+): Promise<CanvasImageSource> {
+  const { width, height } = picture as { width?: unknown; height?: unknown };
+  if (typeof width !== "number" || typeof height !== "number") return picture;
+  const longest = Math.max(width, height);
+  if (!(longest > KEPT_LOOK_PX)) return picture;
+  const scale = KEPT_LOOK_PX / longest;
+  return createImageBitmap(picture, {
+    resizeWidth: Math.max(1, Math.round(width * scale)),
+    resizeHeight: Math.max(1, Math.round(height * scale)),
+    resizeQuality: "medium",
   });
 }
