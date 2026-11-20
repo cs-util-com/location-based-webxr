@@ -118,6 +118,13 @@ camera, so `installTourViewerArFakes(page)` installs
   estimate report that size, one new independent window per call (the
   fakes' single camera pose carries no parallax), so the creator's size
   offer appears after three detections.
+- `installTourViewerArFakes(page, { viewer: true })` hands the world parts
+  a viewer at the last fix's AR pose through `getViewerCamera` (a
+  position and a forward look, nothing more), so a narration circle sees
+  the visitor inside it and opens its card. It is not a camera: nothing
+  projects through it, and a narrated text's words cannot travel from
+  their sign with it, so a travel smoke stays a phone test. Without the
+  option the seam is absent and the real one gives no camera, as before.
 - The fake controller deps grant every permission and resolve `initAR`
   immediately, so the controller walks `checking → ready → running` — the
   specs prove the COMPOSED wiring, not the framework internals (those have
