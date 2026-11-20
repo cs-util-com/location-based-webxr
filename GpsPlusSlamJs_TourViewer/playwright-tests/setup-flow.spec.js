@@ -210,61 +210,202 @@ test.describe("a landscape phone", () => {
   });
 });
 
+/**
+ * Measures the setup card as laid out: the sticker's size, what lies under
+ * it, what leaves the card, the gaps of the step's stack and the start
+ * answers' widths. One function, so every viewport is measured the same.
+ */
+function measureCard() {
+  const card = /** @type {HTMLElement} */ (
+    document.getElementById("setup-card")
+  );
+  const map = /** @type {HTMLElement} */ (document.getElementById("setup-map"));
+  const s = map.getBoundingClientRect();
+  const c = card.getBoundingClientRect();
+  const cs = getComputedStyle(card);
+  const pad = parseFloat(cs.paddingLeft);
+  // The box of a slightly turned sticker is a little larger than the
+  // sticker itself.
+  const inset = 4;
+  /** @param {DOMRect} r */
+  const shown = (r) => r.width > 0 && r.height > 0;
+  /** @param {DOMRect} r */
+  const under = (r) =>
+    shown(r) &&
+    r.right > s.left + inset &&
+    r.left < s.right - inset &&
+    r.bottom > s.top + inset &&
+    r.top < s.bottom - inset;
+  const covered = [];
+  const parts =
+    "#setup-card .setup-card-top > *, #setup-card .step[open] :is(button, input, select), #setup-nav button";
+  for (const el of document.querySelectorAll(parts)) {
+    if (under(el.getBoundingClientRect())) covered.push(el.outerHTML);
+  }
+  // A block's box runs under a float while its lines wrap beside it, so
+  // text is measured by its line boxes.
+  for (const el of document.querySelectorAll(
+    "#setup-card .step[open] :is(h2, p, a, li, label)",
+  )) {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    if ([...range.getClientRects()].some(under))
+      covered.push(el.textContent?.trim());
+  }
+  // Nothing of the step may leave the card's border box: an edge or a
+  // rounded corner would cut it (a cut "Back to the question" was seen in
+  // an earlier layout).
+  const outside = [];
+  for (const el of card.querySelectorAll(
+    ".setup-card-top *, .step[open] *, #setup-nav *",
+  )) {
+    const r = el.getBoundingClientRect();
+    if (!shown(r)) continue;
+    if (
+      r.left < c.left + 1.5 ||
+      r.right > c.right - 1.5 ||
+      r.top < c.top + 1.5 ||
+      r.bottom > c.bottom - 1.5
+    )
+      outside.push(el.outerHTML.slice(0, 80));
+  }
+  const open = /** @type {HTMLElement} */ (card.querySelector(".step[open]"));
+  const summary = /** @type {HTMLElement} */ (open.querySelector("summary"));
+  const blocks = [...open.children].filter(
+    (el) => el !== summary && shown(el.getBoundingClientRect()),
+  );
+  const nav = /** @type {HTMLElement} */ (document.getElementById("setup-nav"));
+  const last = blocks.at(-1)?.getBoundingClientRect();
+  return {
+    stickerWidth: map.offsetWidth,
+    stickerLeft: s.left,
+    stickerRight: s.right,
+    stickerTop: s.top,
+    cardTop: c.top,
+    pad,
+    covered,
+    outside,
+    overflow: document.documentElement.scrollWidth - window.innerWidth,
+    headingToWhy:
+      blocks[0].getBoundingClientRect().top -
+      summary.getBoundingClientRect().bottom,
+    whyToNext:
+      blocks.length > 1
+        ? blocks[1].getBoundingClientRect().top -
+          blocks[0].getBoundingClientRect().bottom
+        : null,
+    toFooter:
+      last !== undefined && shown(nav.getBoundingClientRect())
+        ? nav.getBoundingClientRect().top - last.bottom
+        : null,
+    answers: [...document.querySelectorAll(".start-answer")]
+      .filter((b) => shown(b.getBoundingClientRect()))
+      .map((b) => {
+        const r = b.getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(b);
+        return {
+          width: r.width,
+          lines: new Set(
+            [...range.getClientRects()].map((q) => Math.round(q.top)),
+          ).size,
+          words: range.getBoundingClientRect().width,
+        };
+      }),
+    contentWidth: c.width - 2 * pad - 3,
+  };
+}
+
+// The chosen sticker size (size "l" of map-size.ts): 37 % of the
+// window's width, from 11.5rem up to 23.5rem, and never past 58 % of its
+// height. Its layout width, before the slight turn.
+/** @param {{ width: number, height: number }} vp */
+const stickerWidthAt = (vp) =>
+  Math.min(Math.min(Math.max(184, 0.37 * vp.width), 376), 0.58 * vp.height);
+
+// Why: the chosen layout is the map as a
+// sticker on the card's corner, at a size picked from four, with a spacing
+// scale (8 under a heading, 16 between groups, 24 before the footer) and
+// start answers only as wide as their words. Positions and gaps, not
+// presence: a card that shows everything passes a presence test with the
+// map over a button or a corner cutting a link.
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+  { width: 880, height: 1000 },
+  { width: 1000, height: 880 },
+  { width: 768, height: 1024 },
+  { width: 1024, height: 768 },
+  { width: 1280, height: 800 },
+  { width: 1440, height: 900 },
+]) {
+  test.describe(`the setup card at ${String(viewport.width)}x${String(viewport.height)}`, () => {
+    test.use({ viewport, storageState: { cookies: [], origins: [] } });
+
+    test("keeps the sticker's size, the spacing scale, and every part readable and inside", async ({
+      page,
+    }) => {
+      await page.goto("/?nocache=1");
+      await expect(page.getByTestId("start-answers")).toBeVisible();
+      for (const answer of [null, "new", "link", "later"]) {
+        if (answer !== null) {
+          await page.getByTestId(`start-answer-${answer}`).click();
+          await expect(page.getByTestId("step-link")).toHaveAttribute(
+            "open",
+            "",
+          );
+        }
+        const m = await page.evaluate(measureCard);
+        const at = `${answer ?? "question"}: `;
+        expect(
+          Math.abs(m.stickerWidth - stickerWidthAt(viewport)),
+          at,
+        ).toBeLessThanOrEqual(1);
+        // Over the card's top and right edges, inside the window.
+        expect(m.stickerTop, at).toBeLessThan(m.cardTop);
+        expect(m.stickerLeft, at).toBeGreaterThan(0);
+        // The turned box may reach a fraction of a pixel past the edge (0.13 px
+        // at 880 wide); the page itself must not scroll sideways (overflow below).
+        expect(m.stickerRight, at).toBeLessThanOrEqual(viewport.width + 0.5);
+        expect(m.overflow, at).toBeLessThanOrEqual(0);
+        expect(m.covered, at).toEqual([]);
+        expect(m.outside, at).toEqual([]);
+        expect(m.pad, at).toBe(viewport.width >= 600 ? 24 : 16);
+        expect(Math.abs(m.headingToWhy - 8), at).toBeLessThanOrEqual(1);
+        if (m.whyToNext !== null)
+          expect(Math.abs(m.whyToNext - 16), at).toBeLessThanOrEqual(1);
+        // The footer is a flow box: 24 above it, more only where it had
+        // to pass the sticker.
+        if (m.toFooter !== null)
+          expect(m.toFooter, at).toBeGreaterThanOrEqual(23);
+        if (answer === null) {
+          // One line each, all as wide as the longest, which is about its
+          // words and padding - never the card's width.
+          expect(m.answers).toHaveLength(4);
+          const widest = Math.max(...m.answers.map((a) => a.words));
+          for (const a of m.answers) {
+            expect(a.lines, at).toBe(1);
+            expect(
+              Math.abs(a.width - m.answers[0].width),
+              at,
+            ).toBeLessThanOrEqual(1);
+            expect(a.width - widest, at).toBeLessThanOrEqual(48);
+          }
+        } else {
+          await page.getByTestId("start-back").click();
+          await expect(page.getByTestId("start-answers")).toBeVisible();
+        }
+      }
+    });
+  });
+}
+
 test.describe("the map sticker on a phone held upright", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  // Why (creator setup layout round): the map sits on the card's corner
-  // and the step flows around it, so no line, answer or button may lie
-  // under it - it could be neither read nor tapped. A block's box runs
-  // under a float while its lines wrap beside it, so text is measured by
-  // its line boxes and controls by their own boxes.
-  test("covers no line, answer or button of the step", async ({ page }) => {
-    await page.goto("/?nocache=1");
-    const covered = () =>
-      page.evaluate(() => {
-        const map = document.getElementById("setup-map");
-        if (map === null) return ["no map"];
-        const s = map.getBoundingClientRect();
-        // The box of a slightly turned sticker is a little larger than
-        // the sticker itself.
-        const inset = 4;
-        /** @param {DOMRect} r */
-        const under = (r) =>
-          r.width > 0 &&
-          r.height > 0 &&
-          r.right > s.left + inset &&
-          r.left < s.right - inset &&
-          r.bottom > s.top + inset &&
-          r.top < s.bottom - inset;
-        const hits = [];
-        for (const el of document.querySelectorAll(
-          "#setup-card .setup-card-top > *, #setup-card .step[open] :is(button, input)",
-        )) {
-          if (under(el.getBoundingClientRect())) hits.push(el.outerHTML);
-        }
-        for (const el of document.querySelectorAll(
-          "#setup-card .step[open] :is(h2, p, a)",
-        )) {
-          const range = document.createRange();
-          range.selectNodeContents(el);
-          if ([...range.getClientRects()].some(under))
-            hits.push(el.textContent);
-        }
-        return hits;
-      });
-    await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
-    expect(await covered()).toEqual([]);
-    await page.getByTestId("station-host").click();
-    await expect(page.getByTestId("start-answers")).toBeVisible();
-    expect(await covered()).toEqual([]);
-    await page.getByTestId("start-answer-later").click();
-    await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
-    expect(await covered()).toEqual([]);
-  });
-
   // Why: on a phone the sticker is small (the route and its numbered
-  // stations only), so a tap shows the whole map larger and the next one
-  // puts it back - without moving a step.
+  // stations only), so a tap shows the whole map larger, across the card,
+  // and the next one puts it back - without moving a step.
   test("shows the map larger on a tap, and back on the next", async ({
     page,
   }) => {
@@ -275,9 +416,16 @@ test.describe("the map sticker on a phone held upright", () => {
     await expect(zoom).toBeVisible();
     await expect(zoom).toHaveAttribute("aria-expanded", "false");
     const small = await width();
+    const content = await page
+      .getByTestId("setup-card")
+      .evaluate(
+        (el) =>
+          el.clientWidth - 2 * parseFloat(getComputedStyle(el).paddingLeft),
+      );
     await zoom.click();
     await expect(zoom).toHaveAttribute("aria-expanded", "true");
-    expect(await width()).toBeGreaterThan(small * 2);
+    expect(await width()).toBeGreaterThan(small * 1.5);
+    expect(await width()).toBeGreaterThanOrEqual(content - 2);
     await zoom.click();
     await expect(zoom).toHaveAttribute("aria-expanded", "false");
     expect(Math.abs((await width()) - small)).toBeLessThanOrEqual(1);

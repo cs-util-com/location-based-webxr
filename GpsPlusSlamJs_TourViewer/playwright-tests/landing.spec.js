@@ -498,7 +498,7 @@ for (const { viewport, wide } of [
       // The setup card across the same column, its edges on the column's
       // edges, and the map a sticker on its top-right corner: over the
       // card's top and right edges, inside the window, and never a column
-      // of its own (a third of the card at most, the rest is the step's).
+      // of its own (its turned box at most 38 % of the card, the rest is the step's).
       const card = await at("#setup-card");
       const sticker = await at("#setup-map");
       near(card.x, column.left);
@@ -506,7 +506,7 @@ for (const { viewport, wide } of [
       expect(sticker.y).toBeLessThan(card.y);
       expect(sticker.x + sticker.width).toBeGreaterThan(card.x + card.width);
       expect(sticker.x + sticker.width).toBeLessThanOrEqual(viewport.width);
-      expect(sticker.width).toBeLessThanOrEqual(card.width / 3);
+      expect(sticker.width).toBeLessThanOrEqual(card.width * 0.38);
     });
   });
 }

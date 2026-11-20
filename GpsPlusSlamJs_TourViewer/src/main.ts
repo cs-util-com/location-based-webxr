@@ -66,6 +66,7 @@ import { describeOpenError } from "./open-errors.js";
 import { wireHostPicker } from "./host-picker.js";
 import { wireStartQuestion, type StartQuestion } from "./start-question.js";
 import { wireSetupStage } from "./setup-stage.js";
+import { mountMapSizeKnob, wireMapSize } from "./map-size.js";
 import { mountLanding, watchArStarting } from "./landing/landing-mount.js";
 import { holdLandingSkip } from "./landing/landing-skip.js";
 import { readTourHost } from "./tour-host.js";
@@ -594,6 +595,15 @@ if (mode === "creator") {
             ...(endFlag === undefined ? {} : { endFlag }),
           },
         }),
+  });
+  // The map sticker's size knob: only with ?mapSize= (map-size.ts).
+  wireMapSize({
+    stage: element("setup-stage"),
+    search: location.search,
+    mountKnob: (sizes, current) => mountMapSizeKnob(document, sizes, current),
+    replaceSearch: (search) => {
+      history.replaceState(history.state, "", search + location.hash);
+    },
   });
 }
 

@@ -30,13 +30,28 @@ result or a shared link shows).
   rest of the step runs the card's full width. A float, so no line or
   control can lie under it (each `.step` drops the design system's
   `overflow: hidden` in the card, which would make it a column beside the
-  sticker). Its width is `min(clamp(7.5rem, 25vw, 16.5rem), 46svh)`: about
-  a third of a phone held upright, a quarter of a wide card, held down by
-  a short landscape screen. Below 11rem (a container query on the sticker
+  sticker). Its width is `--sticker` on the stage, one of four sizes
+  (`--sticker-s` to `--sticker-xl`, each `min(clamp(floor, share of vw,
+cap), share of svh)`); the page uses `l`,
+  `min(clamp(11.5rem, 37vw, 23.5rem), 58svh)`: about half of a phone held
+  upright, a third of a wide card, held down by a short landscape screen
+  (chosen from four; `s` is the earlier size).
+  `?mapSize=s|m|l|xl` picks another and shows a size select
+  (`src/map-size.ts`). Below 11rem (a container query on the sticker
   itself) it shows only the route and the numbered stations, drawn larger,
   and `#setup-map-zoom` lies over it: a tap shows the whole map above the
   step (`data-zoomed`, no longer floated), the next puts it back. From
-  900 px wide the four start answers sit two by two. The card shows ONE step - the open `<details>`; closed
+  900 px wide the four start answers sit two by two; the answers, and a
+  step body's buttons, are as wide as their words (the answers all as wide
+  as the longest), never stretched across the card. The card's spacing
+  scale: 8 px between a heading and its why line, 12 between the
+  items of one group (answers, tiles, a field and its button, also where
+  they wrap), 16 between groups (the open step and its panels
+  `#start-host` and `#link-field` are stacks in block flow, not grids, so
+  their lines still flow around the sticker), 16 from the sticker to the
+  text beside and under it, 24 before the footer, the card's padding 16
+  (24 from 600 px wide); a step body whose controls are all hidden takes no
+  room. The card shows ONE step - the open `<details>`; closed
   steps are hidden by CSS - under its station row (`#setup-badge`,
   `#setup-of`, `#setup-dots`) and over `#setup-nav` (Back/Next; none on
   step 6, no Next on step 5). The paper palette is set on the design
@@ -485,7 +500,8 @@ its chunk fails, the hero shows its last moment as a drawing).
     landing's column (`--landing-wide`, 1128 px, set on `body` so both the
     landing and the stage read it, and its 16 px gutters): the step card's
     edges on the column's edges, the map sticker poking 18 px over its top
-    and 10 px past its right edge. "You already have a tour?" below it
+    and 6 px past its right edge (more, and its turned corner would leave
+    the 16 px gutter at 1000-1024 px wide). "You already have a tour?" below it
     keeps its own narrower centred column.
 - **Its moving parts** are mounted by `src/landing/landing-mount.ts`
   (dynamic imports, a creator only; see its sidecar): the cards' pictures

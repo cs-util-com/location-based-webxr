@@ -110,18 +110,23 @@
         color: var(--accent);
       }
       /* The start question's answers (setup flow round 2): one card per
-         line, large enough to read as the four ways in. */
+         line, large enough to read as the four ways in. The column is as
+         wide as its longest answer and every answer takes that width, so
+         the cards line up and end where their words do, never stretched
+         across a wide card. */
       .start-answers {
         display: grid;
-        gap: var(--space-2);
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-3);
+        width: max-content;
+        max-width: 100%;
         margin: var(--space-3) 0 0;
-        max-width: 36rem;
       }
-      /* Two by two on a wide card, so the answers use its width. */
+      /* Two by two on a wide card, so the four sit beside the map. */
       @media (width >= 900px) {
         .start-answers {
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          max-width: 48rem;
+          column-gap: var(--space-2);
         }
       }
       .btn.start-answer {
@@ -1605,9 +1610,46 @@
          card's edge, so a scroll to the stage shows the whole sticker (a
          scroll to the card itself keeps the same room: its scroll margin). */
       body[data-mode="creator"] .setup-stage {
+        /* The map sticker's sizes: its width follows the screen's,
+           bounded by a floor, a cap and the screen's height. One is the
+           page's; a ?mapSize= URL parameter picks another to compare
+           (map-size.ts). */
+        --sticker-s: min(clamp(7.5rem, 25vw, 16.5rem), 46svh);
+        --sticker-m: min(clamp(9.5rem, 31vw, 20rem), 52svh);
+        --sticker-l: min(clamp(11.5rem, 37vw, 23.5rem), 58svh);
+        --sticker-xl: min(clamp(13.5rem, 43vw, 27rem), 64svh);
+        --sticker: var(--sticker-l);
+
         max-width: 90rem;
         margin: 0 auto;
         padding-top: calc(var(--space-4) + var(--space-3));
+      }
+      body[data-mode="creator"] .setup-stage[data-map-size="s"] {
+        --sticker: var(--sticker-s);
+      }
+      body[data-mode="creator"] .setup-stage[data-map-size="m"] {
+        --sticker: var(--sticker-m);
+      }
+      body[data-mode="creator"] .setup-stage[data-map-size="l"] {
+        --sticker: var(--sticker-l);
+      }
+      body[data-mode="creator"] .setup-stage[data-map-size="xl"] {
+        --sticker: var(--sticker-xl);
+      }
+      /* The size knob, shown only with ?mapSize= (map-size.ts). */
+      .map-size-knob {
+        position: fixed;
+        left: var(--space-2);
+        bottom: var(--space-2);
+        z-index: 10;
+        display: flex;
+        gap: var(--space-1);
+        align-items: center;
+        padding: var(--space-1) var(--space-2);
+        background: #fff;
+        border: 1px solid var(--ink);
+        border-radius: var(--radius-small);
+        font-size: 0.75rem;
       }
       /* At least a view tall on a page that skipped the landing: it is
          scrolled to the stage's top before the rest of the page is parsed
@@ -1641,7 +1683,6 @@
          screens, capped by the screen's height and never more than about
          a quarter of the card. */
       body[data-mode="creator"] .setup-map {
-        --sticker: min(clamp(7.5rem, 25vw, 16.5rem), 46svh);
         --poke-up: 14px;
         --poke-out: 6px;
 
@@ -1651,10 +1692,11 @@
         display: flex;
         flex-direction: column-reverse;
         width: var(--sticker);
-        /* The card's padding and border, then the poke past its edge. */
-        margin: calc(-1 * (var(--space-3) + 1.5px + var(--poke-up)))
-          calc(-1 * (var(--space-3) + 1.5px + var(--poke-out))) var(--space-2)
-          var(--space-3);
+        /* The card's padding and border, then the poke past its edge; the
+           step's lines keep a group's distance from it. */
+        margin: calc(-1 * (var(--card-pad) + 1.5px + var(--poke-up)))
+          calc(-1 * (var(--card-pad) + 1.5px + var(--poke-out))) var(--space-4)
+          var(--space-4);
         padding: 5px 5px 0;
         background: #fff;
         border-radius: 14px;
@@ -1867,16 +1909,65 @@
 
       /* The card: ONE step at a time, across the width. A formatting
          context of its own, so it always holds the map sticker. */
+      /* Its spacing scale (4, 8, 12, 16, 24 px): 8 between a heading and
+         its line, 12 between the items of one group (answers, tiles, a
+         field and its button, also where they wrap), 16 between groups,
+         24 before the footer; its padding 16, 24 on a wide card. */
       body[data-mode="creator"] .setup-card {
+        --card-pad: var(--space-4);
+        --gap-item: var(--space-3);
+        --gap-group: var(--space-4);
+
         position: relative;
         display: flow-root;
         background: var(--map-card);
         border: 1.5px solid var(--ink);
         border-radius: 6px;
         box-shadow: 4px 4px 0 var(--map-paper-3);
-        padding: var(--space-3);
+        padding: var(--card-pad);
         margin: 0 var(--space-3) var(--space-4);
         scroll-margin-top: calc(var(--space-4) + var(--space-3));
+      }
+
+      @media (width >= 600px) {
+        body[data-mode="creator"] .setup-card {
+          --card-pad: calc(var(--space-4) + var(--space-2));
+        }
+      }
+      /* Outside an AR session the open step is a stack: its why line
+         close under the heading, then a group's distance between blocks.
+         (In AR, step 5's content is the overlay and keeps its own
+         placement.) */
+      body[data-mode="creator"]:not([data-ar-active="true"])
+        #setup-card
+        .step[open]
+        > :not(summary) {
+        margin-block: var(--gap-group) 0;
+      }
+      body[data-mode="creator"]:not([data-ar-active="true"])
+        #setup-card
+        .step[open]
+        > summary
+        + .step-copy {
+        margin-block-start: var(--space-2);
+      }
+      body[data-mode="creator"] #setup-card .step-body {
+        gap: var(--gap-item);
+      }
+      /* The panels and the buttons inside a step: at the end of this
+         sheet (their selectors outrank later AR-session rules). */
+      /* A body whose every control is hidden (the starter zip before a
+         host is chosen) takes no room: its margin would double a gap. */
+      body[data-mode="creator"]
+        #setup-card
+        .step-body:not(:has(> :not([hidden]))) {
+        display: none;
+      }
+      body[data-mode="creator"] #setup-card :is(.host-tiles, .start-answers) {
+        row-gap: var(--gap-item);
+      }
+      body[data-mode="creator"] #setup-card form {
+        gap: var(--gap-item) var(--space-2);
       }
 
       /* On a wide screen the stage stands on the landing's centred column
@@ -1894,7 +1985,7 @@
 
         body[data-mode="creator"] .setup-map {
           --poke-up: 18px;
-          --poke-out: 10px;
+          --poke-out: 6px;
         }
       }
       /* The step row wraps beside a small sticker: the dots go under the
@@ -1904,7 +1995,7 @@
         flex-wrap: wrap;
         align-items: center;
         gap: var(--space-1) var(--space-2);
-        margin-bottom: var(--space-2);
+        margin-bottom: var(--space-3);
       }
       /* The map and the card's step line are static markup: shown by CSS
          for a creator from the first paint, so a page that opens at the
@@ -1989,7 +2080,7 @@
         cursor: default;
         text-transform: none;
         letter-spacing: normal;
-        margin-bottom: var(--space-2);
+        margin: 0;
       }
       body[data-mode="creator"]
         #setup-card
@@ -2010,8 +2101,8 @@
         display: flex;
         gap: var(--space-2);
         justify-content: space-between;
-        margin-top: var(--space-4);
-        padding-top: var(--space-3);
+        margin-top: calc(var(--space-4) + var(--space-2));
+        padding-top: var(--space-4);
         border-top: 1px dashed var(--map-line);
       }
       .setup-nav[hidden] {
@@ -4461,6 +4552,26 @@
           width: 94%;
           max-width: 620px;
         }
+      }
+      /* The setup card's panels and step buttons (see the open-step
+         stack above), last so no less specific rule follows them. */
+      /* The panels inside a step stack the same way. Block flow, not a
+         grid: a grid is a box of its own and would stand beside the map
+         as a whole column, leaving an empty strip under it. */
+      body[data-mode="creator"] #setup-card :is(#start-host, #link-field) > * {
+        margin-block: 0;
+      }
+      body[data-mode="creator"]
+        #setup-card
+        :is(#start-host, #link-field)
+        > :not([hidden])
+        ~ :not([hidden]) {
+        margin-block-start: var(--gap-group);
+      }
+      /* A button is as wide as its words, as the start answers are: a
+         stretched pill reads as a field. */
+      body[data-mode="creator"] #setup-card .step-body > .btn:not(#ar-root *) {
+        justify-self: start;
       }
     </style>
   </head>
