@@ -218,6 +218,28 @@ describe("scanEntryNames", () => {
 });
 
 describe("recordingEntryNames", () => {
+  it("finds no walk in macOS metadata alone, and keeps only real action entries of one", () => {
+    // Why: the walk is found by the same rule the framework parser replays
+    // actions by. A __MACOSX/ copy of an actions/ folder is no walk, and a
+    // non-JSON file under actions/ is no action the recorder writes.
+    expect(
+      recordingEntryNames([
+        "session.json",
+        "__MACOSX/actions/._000001.json",
+        "content/a.jpg",
+      ]),
+    ).toEqual([]);
+    expect(
+      recordingEntryNames([
+        "rec/session.json",
+        "rec/actions/000001.json",
+        "rec/actions/._000001.json",
+        "rec/actions/notes.txt",
+      ]),
+    ).toEqual(["rec/session.json", "rec/actions/000001.json"]);
+  });
+
+
   // Why (the M4b milestone review #8): the debug bundle (the editor's
   // "Move the debug data out") puts the walk into a file of its own, and that file must be the whole
   // recording, every frame included (frames a tour kept for its visitors

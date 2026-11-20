@@ -199,3 +199,30 @@ describe("the tour id key (debug-captures plan, Q-I)", () => {
     expect(isTourContentKey("https://example.test/tour.zip")).toBe(false);
   });
 });
+
+describe("tourFileKey and a macOS re-zip", () => {
+  it("keeps the key of a recording that macOS Finder re-zipped from its folder", async () => {
+    // Why: compressing a folder in the Finder wraps every entry in the
+    // folder AND adds a __MACOSX/ tree of `._` resource-fork files. Those
+    // made the folder no longer shared, so the wrapped names and the
+    // metadata were hashed and the same recording got a new key: its
+    // training and its draft were no longer found.
+    const flat: TourFileKeyEntry[] = [
+      { filename: "session.json", uncompressedSize: 30, crc32: 7 },
+      { filename: "actions/000001.json", uncompressedSize: 200, crc32: 8 },
+      { filename: "images/frame-000001.jpg", uncompressedSize: 9000, crc32: 9 },
+    ];
+    const finder: TourFileKeyEntry[] = [
+      ...flat.map((e) => ({ ...e, filename: `walk/${e.filename}` })),
+      { filename: "__MACOSX/", directory: true, uncompressedSize: 0 },
+      { filename: "__MACOSX/walk/._session.json", uncompressedSize: 120, crc32: 1 },
+      {
+        filename: "__MACOSX/walk/actions/._000001.json",
+        uncompressedSize: 120,
+        crc32: 2,
+      },
+      { filename: "walk/._notes", uncompressedSize: 120, crc32: 3 },
+    ];
+    expect(await tourFileKey(finder)).toBe(await tourFileKey(flat));
+  });
+});
