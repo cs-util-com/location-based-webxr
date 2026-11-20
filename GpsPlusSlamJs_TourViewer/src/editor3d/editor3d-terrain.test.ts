@@ -12,11 +12,7 @@
 import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  createGlobeTerrain,
-  osmGateLimits,
-  worldFromEcefAt,
-} from "gps-plus-slam-globe/editor";
+import { createGlobeTerrain, osmGateLimits } from "gps-plus-slam-globe/editor";
 import { OSM_TILE_MAX_ZOOM } from "gps-plus-slam-app-framework/utils/osm-tiles";
 
 import { GLOBE_SWITCH } from "../editor/globe-switch.js";
@@ -102,11 +98,27 @@ describe("createEditorTerrain", () => {
     vi.unstubAllGlobals();
   });
 
+  // The look the globe view passes: an imagery that draws nothing here
+  // (these tests never draw a tile) and a standard material.
+  const look = () => ({
+    imagery: {
+      tiling: { maxLevel: 0, projection: { scheme: "EPSG:4326" } },
+      init: () => Promise.resolve(),
+      hasContent: () => false,
+      lockTexture: () => Promise.resolve(null),
+      getTexture: () => {
+        throw new Error("no texture in this test");
+      },
+      releaseTexture: () => {},
+    },
+    template: new THREE.MeshStandardMaterial(),
+  });
+
   const make = () =>
     createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
+      ...look(),
     });
 
   // Why: the map's darkening gain reaches the shader: the link's value
@@ -119,8 +131,8 @@ describe("createEditorTerrain", () => {
     plain.dispose();
     const tuned = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
+      ...look(),
       osmGain: 0.45,
     });
     expect(tuned.osm.uniforms.uOsmGain.value).toBe(0.45);
@@ -135,8 +147,8 @@ describe("createEditorTerrain", () => {
     plain.dispose();
     const compressed = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
+      ...look(),
       osmGainMode: "compress",
     });
     expect(compressed.osm.uniforms.uOsmFlat.value).toBe(0);
@@ -167,7 +179,7 @@ describe("createEditorTerrain", () => {
   });
 
   // Why: the map must be on the relief from the start, enabled, under the
-  // editor's gate; the relief must stand in the world the page draws in.
+  // editor's gate.
   it("attaches the map at once, enabled, under the editor's gate", () => {
     const ground = make();
     const plugins = (ground.terrain.tiles as unknown as { plugins: unknown[] })
@@ -179,17 +191,6 @@ describe("createEditorTerrain", () => {
     expect(ground.osm.uniforms.uOsmFadeStart.value).toBe(
       EDITOR_OSM_FADE_START_SHARE,
     );
-    const frame = worldFromEcefAt(
-      ground.terrain.tiles.ellipsoid,
-      { lat: 48.137393, lng: 11.575493 },
-      new THREE.Matrix4(),
-    );
-    expect(ground.worldFromEcef.equals(frame)).toBe(true);
-    ground.terrain.tiles.group.updateMatrix();
-    const placed = ground.terrain.tiles.group.matrix.elements;
-    frame.elements.forEach((v, i) => {
-      expect(placed[i]).toBeCloseTo(v, 6);
-    });
     ground.dispose();
   });
 
@@ -229,8 +230,8 @@ describe("createEditorTerrain", () => {
   it("keeps as many released map regions on a phone as on a desktop", () => {
     const phone = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "phone",
+      ...look(),
     });
     expect(phone.osm.stats().keep).toBe(64);
     phone.dispose();
@@ -254,30 +255,19 @@ describe("createEditorTerrain", () => {
     expect(ground.osm.stats().active).toBe(false);
     ground.dispose();
   });
+
   // Why: the globe view is the only caller, and it passes the globe's own
   // imagery and template (so the ground keeps the globe's look where the
   // relief takes over) and lets its Earth-centred group place the relief.
   // This pins that the relief is drawn with exactly those, unwrapped and
   // unreplaced, and stays in ECEF.
   it("draws the relief with the caller's imagery and template, in ECEF", () => {
-    const imagery = {
-      tiling: { maxLevel: 0, projection: { scheme: "EPSG:4326" } },
-      init: () => Promise.resolve(),
-      hasContent: () => false,
-      lockTexture: () => Promise.resolve(null),
-      getTexture: () => {
-        throw new Error("no texture in this test");
-      },
-      releaseTexture: () => {},
-    };
-    const template = new THREE.MeshStandardMaterial();
+    const { imagery, template } = look();
     const made = vi.mocked(createGlobeTerrain);
     made.mockClear();
     const ground = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
-      placement: "ecef",
       imagery,
       template,
     });
@@ -291,24 +281,6 @@ describe("createEditorTerrain", () => {
     expect(group.position.length()).toBe(0);
     expect(group.quaternion.equals(new THREE.Quaternion())).toBe(true);
     expect(group.scale.equals(new THREE.Vector3(1, 1, 1))).toBe(true);
-    ground.dispose();
-  });
-
-  // Why: on the globe view the relief hangs in the view's Earth-centred
-  // group, which places it; placed again in the tour's frame it would
-  // stand 6,400 km off. The frame is still given for the tour's objects.
-  it("stays in ECEF when its parent places it, the frame still given", () => {
-    const ground = createEditorTerrain({
-      renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
-      device: "desktop",
-      placement: "ecef",
-    });
-    const group = ground.terrain.tiles.group;
-    expect(group.position.length()).toBe(0);
-    expect(group.quaternion.equals(new THREE.Quaternion())).toBe(true);
-    expect(ground.worldFromEcef.equals(make().worldFromEcef)).toBe(true);
-    expect(make().terrain.tiles.group.position.length()).toBeGreaterThan(6e6);
     ground.dispose();
   });
 });
