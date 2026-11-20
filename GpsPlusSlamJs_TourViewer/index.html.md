@@ -51,7 +51,22 @@ cap), share of svh)`); the page uses `l`,
   their lines still flow around the sticker), 16 from the sticker to the
   text beside and under it, 24 before the footer, the card's padding 16
   (24 from 600 px wide); a step body whose controls are all hidden takes no
-  room. The card shows ONE step - the open `<details>`; closed
+  room. In the creator card every shown step body, and the computer's
+  `#measure-desktop`, is in BLOCK flow, not a grid: a grid, like a
+  fieldset, is a block formatting context, and one beside the floated map
+  sticker narrows over its WHOLE height, so the fields under the sticker
+  stopped short of the card's edge. In block flow each `.field` (label,
+  hint line, control; a small grid of its own) narrows only while it
+  stands beside the sticker; the gap between items is `--gap-item` as
+  margin, buttons stay as wide as their words, links get their own line.
+  Labels are bold, a `.field-hint` under the label says what the field is
+  for (the input names it in `aria-describedby`), and a placeholder is
+  only ever an example ("e.g. ...", dimmed italic), so a prefilled default
+  in upright ink never reads as one. One creator-only `#setup-settings`
+  disclosure ("Settings") sits directly above `#setup-nav` on every step
+  that has something in it: the print settings while the print step is
+  open, the storage block (`#storage-panel`) whenever the page has a
+  cache; with neither it is hidden by CSS (`:has()`). The card shows ONE step - the open `<details>`; closed
   steps are hidden by CSS - under its station row (`#setup-badge`,
   `#setup-of`, `#setup-dots`) and over `#setup-nav` (Back/Next; none on
   step 6, no Next on step 5). The paper palette is set on the design
@@ -87,7 +102,8 @@ cap), share of svh)`); the page uses `l`,
      wizard, so a visitor reaches them too - with `#file-advice`, the
      "Open the downloaded file" button shown under a "host blocks
      browsers" error.
-  3. **Print** (`#print-panel`): the tour's own name first (`#tour-name-input`,
+  3. **Print** (`#print-panel`): the link in the codes ("Link in the QR
+     code", `#print-url-ask`, only while no tour is open), then the tour's own name (`#tour-name-input`,
      W2 of the tour editor plan 2026-10-17-1816: apart from the poster's
      title, it shows the open tour's title, and a changed one renames the
      tour, saved by the next Finish - an emptied one removes the title,
@@ -97,15 +113,24 @@ cap), share of svh)`); the page uses `l`,
      PDF of N numbered posters (`#print-count` between the big - and +
      `#print-count-down` / `#print-count-up`, three by default), each
      carrying the poster text of `#poster-title`, `#poster-explanation`
-     and `#poster-cta` (polish round D-P7, r820 feedback R8), previewed as
+     and `#poster-cta` (polish round D-P7, r820 feedback R8), grouped under
+     the serif heading "On the poster" (`.field-group`, `role=group`
+     labelled by `#poster-text-heading`, an indented rule on the left; not
+     a fieldset, whose legend reads as one more label and whose box
+     narrowed beside the sticker), previewed as
      one small poster per code (`#print-tiles`). The defaults nobody needs
-     to touch sit in the closed `#print-settings` (r820 feedback R7): the
+     to touch sit in `#print-settings` inside the closed `#setup-settings`
+     above the navigation (r820 feedback R7): the
      side length in centimetres (`#author-size`, 18 by default; a size
      refusal at AR start opens the block), `#print-paper` and the first
      code number (`#author-c`). The launch link the codes carry
      (`#print-url-out`) is shown in step 2 since the r820 feedback (R6). The print dialog's "fit to page" silently rescales, and a
      rescaled code measures the world wrong, so the page has no print
-     stylesheet and no print button. The link is SHOWN
+     stylesheet and no print button. "Download PDF to print" is the filled
+     main action and "Next" outlined until a PDF was saved
+     (`#print-panel[data-pdf-saved]`, set by `print-panel.ts`; a dismissed
+     save sets nothing), then Next is filled again; Next stays usable
+     throughout. The link is SHOWN
      (`#print-url-shown`), not asked for, whenever a tour is open, and the
      code renders without a button press; `#print-url-ask` returns only
      when nothing is open, which is what keeps printing before hosting
@@ -189,7 +214,7 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   fix re-review #3) "Keeps working without signal once a tour has loaded":
   the tour is cached, the page is not (no service worker), so nothing on
   the page promises an offline revisit - the host step says the same, and
-  "Other settings" says the kept tours open faster (`legal.spec.js`).
+  "Settings" says the kept tours open faster (`legal.spec.js`).
 - **Step 5 on a computer** (W1, plan review #9): `#measure-desktop` says
   the step runs on site on an Android phone with Chrome and links the
   editor; the same AR check shows it, and on the creator page an
@@ -200,8 +225,9 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   Android phones with Chrome; the visitor's no-AR sentence
   (`visitor-status.ts`) and the poster's default call to action
   (`poster-text.ts`) say it too.
-- Below the steps, creator-only: the Storage section (`#storage-panel`,
-  summary "Other settings" - something you normally do not open, F9).
+- Creator-only, inside `#setup-settings` above the navigation: the
+  Storage section (`#storage-panel`, something you normally do not open,
+  F9).
 - Shared: `#error`, and under it `#error-contact` (W2, D15: "Questions
   about this tour? Contact its maker:" and the tour's contact as a link,
   `#error-contact-link`, shown for a visitor while an error shows and the
@@ -551,7 +577,7 @@ drawn `map-station-<step>` and `setup-map-zoom`, `setup-loading`, `setup-badge`,
 with `start-here`, `start-back`, `link-status` and `print-url-out`, the launch link in `#link-launch`),
 `starter-zip`, `link-input`, `open-button`, `open-file-button`,
 `file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,
-`storage-panel`,
+`setup-settings` (owns `print-settings` and `storage-panel`),
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
 `print-url-shown`, `tour-name-input`, `poster-text` (`poster-title`, `poster-explanation`,
 `poster-cta`), `print-count-down`, `print-count`, `print-count-up`,

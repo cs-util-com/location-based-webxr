@@ -731,7 +731,7 @@ const setup = wireCreatorSetup({
     uploadYes: element<HTMLButtonElement>("upload-yes"),
     uploadNo: element<HTMLButtonElement>("upload-no"),
     sizeInput,
-    printSettings: element<HTMLDetailsElement>("print-settings"),
+    printSettings: element<HTMLDetailsElement>("setup-settings"),
     printPanel,
     status: element("setup-status"),
     finishButton: element("setup-finish"),

@@ -67,6 +67,7 @@ function el(value = "") {
     hidden: false,
     disabled: false,
     open: false,
+    dataset: {} as Record<string, string | undefined>,
     replaceChildren: () => undefined,
     attributes: new Map<string, string>(),
     offsetHeight: 0,
@@ -534,6 +535,31 @@ describe("the next PDF continues the numbering (F4, D-R5)", () => {
     await settled(dom);
     // The PDF is built first; the tiles of the next run (from 7) follow.
     expect(spies.indexes.slice(0, 3)).toEqual([4, 5, 6]);
+  });
+
+  // Why: the download is the print step's main action until a PDF was
+  // saved, then Next is (the page's CSS reads this mark). A dismissed save
+  // changes nothing, and another tour has printed nothing yet.
+  it("marks the panel once a PDF was saved, never for a dismissed save, and not for the next tour", async () => {
+    const env = wire();
+    env.panel.presentTour("https://h.example/t.zip");
+    expect(env.dom.panel.dataset.pdfSaved).not.toBe("true");
+    env.downloadPdf.mockResolvedValueOnce(false);
+    env.dom.pdfButton.fire("click");
+    await settled(env.dom);
+    await vi.waitFor(() => {
+      expect(env.dom.info.textContent).toMatch(/not saved/);
+    });
+    expect(env.dom.panel.dataset.pdfSaved).not.toBe("true");
+    env.dom.pdfButton.fire("click");
+    await vi.waitFor(() => {
+      expect(env.dom.panel.dataset.pdfSaved).toBe("true");
+    });
+    await settled(env.dom);
+    env.panel.presentTour("https://h.example/other.zip");
+    expect(env.dom.panel.dataset.pdfSaved).not.toBe("true");
+    env.panel.presentNoTour();
+    expect(env.dom.panel.dataset.pdfSaved).not.toBe("true");
   });
 
   it("stays put when nothing was saved", async () => {

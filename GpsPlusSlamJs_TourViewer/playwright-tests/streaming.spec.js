@@ -186,7 +186,7 @@ test("clear cache empties the store and the next open goes to the network again"
 
   // The button lives in the collapsed Storage section (flows plan M2): a
   // click through Playwright needs it visible, so expand the summary first.
-  await page.getByTestId("storage-panel").locator("summary").click();
+  await page.getByTestId("setup-settings").locator("summary").click();
   await page.getByTestId("clear-cache").click();
   // The confirmation names what went (the count is read before the open
   // session's own copy is evicted - one tour was stored), then reverts.
@@ -210,9 +210,14 @@ test("without a cache store the Storage section is hidden, not just its button",
   // Why this matters (flows plan review #14): the section's sentence
   // explains a cache; under ?nocache=1 that sentence would describe a
   // feature that is off.
+  // It lives in the card's one Settings disclosure, which on the link
+  // step holds nothing else: no cache, no disclosure.
   await page.goto("/?nocache=1&debug=1");
+  await expect(page.getByTestId("setup-settings")).toBeHidden();
   await expect(page.getByTestId("storage-panel")).toBeHidden();
   await page.goto("/?debug=1");
+  await expect(page.getByTestId("setup-settings")).toBeVisible();
+  await page.getByTestId("setup-settings").locator("summary").click();
   await expect(page.getByTestId("storage-panel")).toBeVisible();
 });
 
@@ -236,7 +241,7 @@ test("clear cache during an in-flight warm download settles at once, and the sto
     await openArchive(page, SLOW_WARM_URL);
     await expectGalleryStreamedIn(page); // ranges flow; the warm GET is held
 
-    await page.getByTestId("storage-panel").locator("summary").click();
+    await page.getByTestId("setup-settings").locator("summary").click();
     await page.getByTestId("clear-cache").click();
     // The gate is still HELD: a clear that waited for the warm could not
     // confirm here (the old assertion was the opposite - it required the

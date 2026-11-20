@@ -177,19 +177,27 @@
         padding: var(--space-3);
         font-variant-numeric: tabular-nums;
       }
-      #storage-panel {
-        margin: var(--space-4) 0;
+      /* The card's one "Settings" (r820 feedback R7), above Back and
+         Next: the print defaults on the print step, the cache wherever a
+         cache store exists. */
+      .setup-settings {
+        margin: var(--space-4) 0 0;
       }
-      /* Step 3's "Settings" (r820 feedback R7). */
-      #print-settings > summary {
+      .setup-settings > summary {
         cursor: pointer;
         font-weight: 600;
       }
-      #storage-panel summary {
-        cursor: pointer;
-      }
       #storage-panel p {
         margin: var(--space-2) 0;
+      }
+      /* Not on the print step: its defaults belong to that step. */
+      #setup-card:not(:has(#print-panel[open])) #print-settings {
+        display: none;
+      }
+      /* Nothing left to set on this step: no disclosure at all. */
+      #setup-card:not(:has(#print-panel[open]))
+        #setup-settings:has(> #storage-panel[hidden]) {
+        display: none;
       }
       /* The error line wears the sheet's failure family, but the STATE is
          derived from the content rather than mirrored into a data
@@ -548,18 +556,39 @@
         font-size: 0.62rem;
         color: #5b6570;
       }
-      .poster-text {
+      /* A field: its label, a hint line that stays while typing, the
+         control. A grid of its own per field, so beside the map sticker
+         only the fields there narrow. */
+      .field {
         display: grid;
-        gap: var(--space-2);
-        margin: 0;
-        padding: 0;
-        border: 0;
-        min-width: 0;
+        gap: var(--space-1);
       }
-      .poster-text legend {
-        padding: 0;
-        margin-bottom: var(--space-1);
+      .field > label,
+      #print-count-label {
         font-weight: 600;
+      }
+      .field-hint {
+        margin: 0;
+      }
+      /* A placeholder is an example, never a value: dimmed and slanted,
+         so a prefilled default (plain ink) reads apart from it. */
+      #setup-card .input::placeholder {
+        color: var(--ink-dim);
+        font-style: italic;
+        opacity: 0.8;
+      }
+      /* A group of fields: a heading in the headings' face, and the
+         fields set in behind a rule that marks them as its. */
+      .field-group-heading {
+        margin: 0 0 var(--space-2);
+        font: 600 1.2rem/1.2 var(--map-serif);
+      }
+      .field-group-body {
+        padding-inline-start: var(--space-3);
+        border-inline-start: 2px solid var(--map-line);
+      }
+      .field-group-body > * + * {
+        margin-block-start: var(--gap-item, var(--space-3));
       }
       /* The poster count: big -/+ either side of a short number. */
       .print-count-row {
@@ -596,6 +625,10 @@
         grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
         gap: var(--space-2);
         margin-top: var(--space-2);
+      }
+      .print-settings-grid label {
+        display: grid;
+        gap: var(--space-1);
       }
       .print-settings-grid .input,
       .print-settings-grid .select {
@@ -1684,8 +1717,9 @@
          heading) wrap beside it and nothing can sit under it; below it
          the step runs the card's full width. Its size follows the screen:
          small on a phone held upright, larger in landscape and on wide
-         screens, capped by the screen's height and never more than about
-         a quarter of the card. */
+         screens, capped by the screen's height. The page's size (l, about
+         37 % of the screen's width) takes up to about a third of the
+         card's width, more on a phone held upright. */
       body[data-mode="creator"] .setup-map {
         --poke-up: 14px;
         --poke-out: 6px;
@@ -4572,10 +4606,68 @@
         ~ :not([hidden]) {
         margin-block-start: var(--gap-group);
       }
+      /* A step's body in block flow, not a grid: a grid is one box beside
+         the map sticker and narrows over its whole height, which kept the
+         print step's fields at about 60 % of the card down to its foot.
+         In block flow each field is a box of its own, so the ones below
+         the sticker take the card's full width. The same for step 5's
+         line on a device without AR. */
+      body[data-mode="creator"]
+        #setup-card
+        .step-body:not([hidden], :where(#ar-root *)):has(> :not([hidden])),
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #setup-card
+        .measure-desktop {
+        display: block;
+        max-width: none;
+      }
+      body[data-mode="creator"]
+        #setup-card
+        :is(.step-body, .measure-desktop):not(#ar-root *)
+        > :not([hidden])
+        ~ :not([hidden]) {
+        margin-block-start: var(--gap-item);
+      }
+      body[data-mode="creator"]
+        #setup-card
+        :is(.step-body, .measure-desktop)
+        > :is(p, .field-group) {
+        margin-block-end: 0;
+      }
       /* A button is as wide as its words, as the start answers are: a
          stretched pill reads as a field. */
-      body[data-mode="creator"] #setup-card .step-body > .btn:not(#ar-root *) {
-        justify-self: start;
+      body[data-mode="creator"]
+        #setup-card
+        :is(.step-body, .measure-desktop)
+        > .btn:not([hidden], #ar-root *) {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: fit-content;
+      }
+      /* A link on a line of its own keeps the stack's gap: an inline box
+         takes no block margin. */
+      body[data-mode="creator"] #setup-card .step-body > a:not([hidden], .btn) {
+        display: block;
+        width: fit-content;
+      }
+      /* The print step's main action is the download until a PDF was saved
+         (print-panel.ts sets data-pdf-saved), then Next is; Next stays
+         usable throughout. */
+      body[data-mode="creator"]
+        main
+        #print-panel:not([data-pdf-saved="true"])
+        .btn#print-pdf:not(#ar-root *, [disabled]) {
+        background: var(--ink);
+        border-color: var(--ink);
+        color: var(--paper);
+      }
+      body[data-mode="creator"]
+        main
+        #setup-card:has(#print-panel[open]:not([data-pdf-saved="true"]))
+        .btn.setup-ink:not(#ar-root *) {
+        background: #fff;
+        color: var(--ink);
       }
     </style>
   </head>
@@ -5873,25 +5965,35 @@
                   </div>
                 </div>
                 <div id="link-field" data-testid="link-field">
-                  <form id="open-form">
-                    <input
-                      id="link"
-                      name="link"
-                      class="input"
-                      type="text"
-                      placeholder="https://… link to the .zip"
-                      autocomplete="off"
-                      data-testid="link-input"
-                    />
-                    <button
-                      type="submit"
-                      class="btn"
-                      id="open"
-                      data-testid="open-button"
-                    >
-                      Check link
-                    </button>
-                  </form>
+                  <!-- A field says what it is for in a line under its label
+                   that stays while typing; its placeholder is only an
+                   example (.field, below in the sheet). -->
+                  <div class="field">
+                    <label for="link">Link to your tour file</label>
+                    <p id="link-hint" class="field-hint hint--dim">
+                      The share link your storage gives for the .zip file.
+                    </p>
+                    <form id="open-form">
+                      <input
+                        id="link"
+                        name="link"
+                        class="input"
+                        type="text"
+                        placeholder="e.g. https://www.dropbox.com/s/…/tour.zip"
+                        autocomplete="off"
+                        aria-describedby="link-hint"
+                        data-testid="link-input"
+                      />
+                      <button
+                        type="submit"
+                        class="btn"
+                        id="open"
+                        data-testid="open-button"
+                      >
+                        Check link
+                      </button>
+                    </form>
+                  </div>
                   <p
                     id="link-status"
                     class="step-copy hint--dim"
@@ -6026,17 +6128,26 @@
                    which is what keeps printing BEFORE hosting possible
                    (flows plan DEC-F2 rejected removing that). One link
                    either way: the two are never both live. -->
-                  <label id="print-url-ask" data-testid="print-url-ask">
-                    The link the code will carry
+                  <div
+                    class="field"
+                    id="print-url-ask"
+                    data-testid="print-url-ask"
+                  >
+                    <label for="print-url">Link in the QR code</label>
+                    <p id="print-url-hint" class="field-hint hint--dim">
+                      The link to your tour file: a phone that scans a poster
+                      opens it.
+                    </p>
                     <input
                       id="print-url"
                       class="input"
                       data-testid="print-url"
                       type="text"
                       autocomplete="off"
-                      placeholder="https://… link to the tour .zip"
+                      aria-describedby="print-url-hint"
+                      placeholder="e.g. https://www.dropbox.com/s/…/tour.zip"
                     />
-                  </label>
+                  </div>
                   <div
                     id="print-url-shown"
                     data-testid="print-url-shown"
@@ -6049,17 +6160,21 @@
                    title (tour-name-field.ts). No maxlength: it counts UTF-16
                    units, the format counts characters - the check says
                    when a name is too long (plan §23 #8). -->
-                  <label class="tour-name-ask" id="tour-name-ask"
-                    >Tour name
+                  <div class="field tour-name-ask" id="tour-name-ask">
+                    <label for="tour-name-input">Tour name</label>
+                    <p id="tour-name-hint" class="field-hint hint--dim">
+                      Visitors see it when they open the tour.
+                    </p>
                     <input
                       id="tour-name-input"
                       class="input"
                       data-testid="tour-name-input"
                       type="text"
                       autocomplete="off"
-                      placeholder="Visitors see it when they open the tour"
+                      aria-describedby="tour-name-hint"
+                      placeholder="e.g. Old town walk"
                     />
-                  </label>
+                  </div>
                   <p
                     id="tour-name-error"
                     class="step-copy"
@@ -6070,44 +6185,75 @@
                   <!-- The poster text (polish round D-P7, r820 feedback R8):
                    printed with every code so a sheet can be hung as it
                    comes out of the printer. Filled in; an emptied field is
-                   left off; remembered per tour (poster-text.ts). -->
-                  <fieldset class="poster-text" data-testid="poster-text">
-                    <legend>On the poster</legend>
-                    <label
-                      >Title
-                      <input
-                        id="poster-title"
-                        class="input"
-                        data-testid="poster-title"
-                        type="text"
-                        maxlength="80"
-                        autocomplete="off"
-                        placeholder="The poster's headline"
-                      />
-                    </label>
-                    <label
-                      >Explanation
-                      <input
-                        id="poster-explanation"
-                        class="input"
-                        data-testid="poster-explanation"
-                        type="text"
-                        maxlength="80"
-                        autocomplete="off"
-                      />
-                    </label>
-                    <label
-                      >Call to action
-                      <input
-                        id="poster-cta"
-                        class="input"
-                        data-testid="poster-cta"
-                        type="text"
-                        maxlength="80"
-                        autocomplete="off"
-                      />
-                    </label>
-                  </fieldset>
+                   left off; remembered per tour (poster-text.ts). A group
+                   with a heading of its own, not a fieldset: a fieldset is
+                   one box beside the map sticker and would narrow its
+                   fields over its whole height. -->
+                  <div
+                    class="poster-text field-group"
+                    role="group"
+                    aria-labelledby="poster-text-heading"
+                    data-testid="poster-text"
+                  >
+                    <h3 id="poster-text-heading" class="field-group-heading">
+                      On the poster
+                    </h3>
+                    <div class="field-group-body">
+                      <p class="field-hint hint--dim">
+                        Printed around every code, so a sheet can hang as it
+                        comes out of the printer. An emptied line is left off.
+                      </p>
+                      <div class="field">
+                        <label for="poster-title">Title</label>
+                        <p id="poster-title-hint" class="field-hint hint--dim">
+                          The largest line, at the top.
+                        </p>
+                        <input
+                          id="poster-title"
+                          class="input"
+                          data-testid="poster-title"
+                          type="text"
+                          maxlength="80"
+                          autocomplete="off"
+                          aria-describedby="poster-title-hint"
+                          placeholder="e.g. Old town walk"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="poster-explanation">Explanation</label>
+                        <p
+                          id="poster-explanation-hint"
+                          class="field-hint hint--dim"
+                        >
+                          A short line under the title.
+                        </p>
+                        <input
+                          id="poster-explanation"
+                          class="input"
+                          data-testid="poster-explanation"
+                          type="text"
+                          maxlength="80"
+                          autocomplete="off"
+                          aria-describedby="poster-explanation-hint"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="poster-cta">Call to action</label>
+                        <p id="poster-cta-hint" class="field-hint hint--dim">
+                          Under the code: what a visitor should do.
+                        </p>
+                        <input
+                          id="poster-cta"
+                          class="input"
+                          data-testid="poster-cta"
+                          type="text"
+                          maxlength="80"
+                          autocomplete="off"
+                          aria-describedby="poster-cta-hint"
+                        />
+                      </div>
+                    </div>
+                  </div>
                   <!-- How many posters: the one number a creator decides
                    here, so it stays in view with big -/+ (r820 feedback
                    R7). Each poster gets its own number, hence its own
@@ -6151,55 +6297,6 @@
                       </button>
                     </div>
                   </div>
-                  <!-- The defaults nobody needs to touch (r820 feedback R7):
-                   18 cm, A4, numbering continued from the tour's codes.
-                   PDF only since polish round M0b (A10): the browser's
-                   print dialog owns a "fit to page" that rescales the
-                   code, and a rescaled code measures the world wrong. -->
-                  <details
-                    id="print-settings"
-                    class="print-settings"
-                    data-testid="print-settings"
-                  >
-                    <summary>Settings</summary>
-                    <div class="print-settings-grid">
-                      <label
-                        >Size (cm)
-                        <input
-                          id="author-size"
-                          class="input"
-                          data-testid="author-size"
-                          type="number"
-                          step="0.1"
-                          min="1"
-                          value="18"
-                        />
-                      </label>
-                      <label
-                        >Paper
-                        <select
-                          id="print-paper"
-                          class="select"
-                          data-testid="print-paper"
-                        >
-                          <option value="a4">A4</option>
-                          <option value="letter">Letter</option>
-                        </select>
-                      </label>
-                      <label
-                        >First code number
-                        <input
-                          id="author-c"
-                          class="input"
-                          data-testid="author-c"
-                          type="number"
-                          step="1"
-                          min="1"
-                          value="1"
-                        />
-                      </label>
-                    </div>
-                  </details>
                   <button
                     type="button"
                     id="print-pdf"
@@ -7662,6 +7759,89 @@
               tour started on this phone, behind a new code.
             </p>
           </details>
+          <!-- One settings disclosure for the card, above Back and Next:
+           the print step's defaults while that step is open (the CSS hides
+           them on the other steps), and the cache wherever a cache store
+           exists. Hidden by the CSS on a step with nothing in it.
+           The print defaults nobody needs to touch (r820 feedback R7):
+           18 cm, A4, numbering continued from the tour's codes. PDF only
+           since polish round M0b (A10): the browser's print dialog owns a
+           "fit to page" that rescales the code, and a rescaled code
+           measures the world wrong.
+           The cache (flows plan M2, DEC-F1): a transport-demo control,
+           outside the steps (a collapsed step would hide it), with the one
+           sentence that says what the cache is; hidden without a cache
+           store (?nocache=1, no Cache API). -->
+          <details
+            id="setup-settings"
+            class="creator-only setup-settings"
+            data-testid="setup-settings"
+            hidden
+          >
+            <summary>Settings</summary>
+            <div
+              id="print-settings"
+              class="print-settings-grid"
+              data-testid="print-settings"
+            >
+              <label
+                >Size (cm)
+                <input
+                  id="author-size"
+                  class="input"
+                  data-testid="author-size"
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  value="18"
+                />
+              </label>
+              <label
+                >Paper
+                <select
+                  id="print-paper"
+                  class="select"
+                  data-testid="print-paper"
+                >
+                  <option value="a4">A4</option>
+                  <option value="letter">Letter</option>
+                </select>
+              </label>
+              <label
+                >First code number
+                <input
+                  id="author-c"
+                  class="input"
+                  data-testid="author-c"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value="1"
+                />
+              </label>
+            </div>
+            <div
+              id="storage-panel"
+              class="creator-only hint--dim"
+              data-testid="storage-panel"
+              hidden
+            >
+              <p>
+                Opened tours are kept on this device (up to five, oldest
+                dropped) so a revisit opens faster. A changed file on the host
+                is picked up automatically; clearing is only needed to free
+                space.
+              </p>
+              <button
+                type="button"
+                class="btn"
+                id="clear-cache"
+                data-testid="clear-cache"
+              >
+                Clear cache
+              </button>
+            </div>
+          </details>
           <div
             id="setup-nav"
             class="creator-only setup-nav"
@@ -7685,32 +7865,6 @@
               Next
             </button>
           </div>
-          <!-- Storage (flows plan M2, DEC-F1): a transport-demo control, below
-           the steps rather than inside one (a collapsed step would hide it),
-           collapsed with the one sentence that says what the cache is.
-           Hidden entirely without a cache store (?nocache=1, no Cache
-           API). -->
-          <details
-            id="storage-panel"
-            class="creator-only hint--dim"
-            data-testid="storage-panel"
-            hidden
-          >
-            <summary>Other settings</summary>
-            <p>
-              Opened tours are kept on this device (up to five, oldest dropped)
-              so a revisit opens faster. A changed file on the host is picked up
-              automatically; clearing is only needed to free space.
-            </p>
-            <button
-              type="button"
-              class="btn"
-              id="clear-cache"
-              data-testid="clear-cache"
-            >
-              Clear cache
-            </button>
-          </details>
           <div id="stats" class="plate" hidden data-testid="stats">
             <div id="stats-headline" class="prose"></div>
             <div id="stats-detail" class="prose"></div>

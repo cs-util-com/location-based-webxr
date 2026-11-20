@@ -2014,7 +2014,7 @@ test("the print panel draws one tile per poster at the declared size, and prints
   );
   // The defaults sit behind "Settings" (r820 feedback R7).
   await expect(page.getByTestId("author-size")).toBeHidden();
-  await page.getByTestId("print-settings").locator("summary").click();
+  await page.getByTestId("setup-settings").locator("summary").click();
   // BARE host (ZD-9): the landing forward carries ?qr= to the viewer, so
   // printed codes never spend payload bits on a path.
   await expect(page.getByTestId("print-url-out")).toContainText(
@@ -2110,7 +2110,7 @@ test("opening a tour shows the code and the link it carries, without asking agai
 
   // Changing the code number re-renders rather than leaving a stale code
   // on screen claiming to be the new one (M3 review #8).
-  await page.getByTestId("print-settings").locator("summary").click();
+  await page.getByTestId("setup-settings").locator("summary").click();
   const beforeNumber = await page.getByTestId("print-url-out").textContent();
   await page.getByTestId("author-c").fill("2");
   await page.getByTestId("author-c").blur();
@@ -2188,11 +2188,11 @@ test("a refused AR entry explains itself on the page, with no session to explain
   // and `min` never fires outside a form submit. It sits in the closed
   // "Settings" block (r820 feedback R7), which is closed again afterwards:
   // the refusal has to open it.
-  await page.getByTestId("print-settings").evaluate((details) => {
+  await page.getByTestId("setup-settings").evaluate((details) => {
     /** @type {HTMLDetailsElement} */ (details).open = true;
   });
   await page.getByTestId("author-size").fill("");
-  await page.getByTestId("print-settings").evaluate((details) => {
+  await page.getByTestId("setup-settings").evaluate((details) => {
     /** @type {HTMLDetailsElement} */ (details).open = false;
   });
   await enterAr(page);
@@ -2375,7 +2375,7 @@ test("the print step builds a real PDF of numbered codes", async ({ page }) => {
 
   // The failure path (async-UI rule): a size no paper can hold says which
   // size would work, and the button comes back.
-  await page.getByTestId("print-settings").locator("summary").click();
+  await page.getByTestId("setup-settings").locator("summary").click();
   await page.getByTestId("author-size").fill("40");
   await page.getByTestId("print-pdf").click();
   // An EXPLICIT budget, because the failure this produced pointed
@@ -2512,7 +2512,7 @@ test("the PDF button shows it is working, says when nothing was saved, and conti
     t.saveOutcome = true;
     t.holdPdfSave = false;
   });
-  await page.getByTestId("print-settings").locator("summary").click();
+  await page.getByTestId("setup-settings").locator("summary").click();
   await page.getByTestId("author-c").fill("4");
   await page.getByTestId("print-count").fill("2");
   await page.getByTestId("print-pdf").click();

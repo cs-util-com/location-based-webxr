@@ -109,7 +109,7 @@ export interface ArchiveOpenDom {
    *  gallery holds N images"). Optional: the composition root passes the
    *  page's body. */
   readiness?: HTMLElement;
-  storagePanel: HTMLDetailsElement;
+  storagePanel: HTMLElement;
   clearCacheButton: HTMLButtonElement;
 }
 
