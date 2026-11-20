@@ -13,7 +13,8 @@ the clock come in, so the whole path runs in a unit test.
   (`ImageData` has this shape).
 - `TrainMessage` - `{ type: "train", job: WindowJob, photos: Blob[] }`,
   one photo per job photo, same order.
-- `ToWorker` - a `TrainMessage` or `{ type: "cancel" }`.
+- `ToWorker` - a `TrainMessage` (the page stops a stretch by ending the
+  worker, so nothing else is sent).
 - `FromWorker` - `{ type: "progress", progress }`, `{ type: "preview",
 picture: ImageBitmap }` or `{ type: "result", result }`.
 - `WorkerTrainDeps<P>` - `{ load, decode, clock, preview? }`; `preview` is
@@ -21,13 +22,20 @@ picture: ImageBitmap }` or `{ type: "result", result }`.
 - `colourSampler(photo, width, height) -> ColourAt` - a camera pixel
   scaled to the decoded photo's size; null off the photo.
 - `trainInWorker(msg, onProgress, signal, deps) -> Promise<RunResult>`.
+- `serveTrainer(post, deps, train = trainInWorker) -> (msg) => void` -
+  the worker's message handler: trains the first message's stretch only,
+  posts its progress and result, and turns a rejected training into a
+  `failed` result, "The trainer stopped unexpectedly (...)", so the page
+  never waits on a worker that will not answer.
 
 ## Behaviour
 
 - Never rejects. A photo list that does not match the job, a library that
   will not load, or a photo that will not decode ("A photo could not be
-  read (...)") ends as `failed` with the sentence in `detail`; an abort
-  before training ends as `cancelled`.
+  read (...)") ends as `failed` with the sentence in `detail`; the last
+  two also carry `retryHelps: false` (a second try meets the same
+  library and the same photo). An abort before training ends as
+  `cancelled`. The job's `prepareCapMs` reaches the run.
 - The first progress, before the library is asked for, is `loading`.
 - Only photos with depth samples or a shell flag are decoded; depth seeds
   are thinned by `seedVoxelM`, shell seeds by `shellVoxelM`.
@@ -38,4 +46,5 @@ picture: ImageBitmap }` or `{ type: "result", result }`.
 library before any decode, only seeding photos decoded and their seeds
 thinned, a decode failure in words, a mismatched photo list, a cancel
 while seeding, `loading` said before the library arrives, and the
-preview passed on to the run.
+preview passed on to the run; `serveTrainer` posting a failed result for
+a rejected training and training only the first message.

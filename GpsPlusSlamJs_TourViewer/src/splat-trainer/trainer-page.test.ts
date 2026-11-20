@@ -112,6 +112,41 @@ describe("keyboard focus across re-renders", () => {
     expect((document.activeElement as HTMLElement).dataset.act).toBe("again");
   });
 
+  // Why: "Train again" was offered as the fix for every failure, also for
+  // causes a second try cannot change (a blocked library download, a
+  // broken photo); the print then offers only to keep or discard it.
+  it("offers Train again only when it can help", () => {
+    const { root, store } = mount(storeAt(2, "gpu"));
+    store.dispatch(A.trainingStarted());
+    const finish = (id: string, retryHelps?: false) =>
+      store.dispatch(
+        A.windowFinished({
+          id,
+          attempt: 1,
+          outcome: "failed",
+          metrics: null,
+          judgement: {
+            verdict: "poor",
+            reasons: ["the trainer stopped"],
+            say: "Training stopped: the library could not be downloaded.",
+            ...(retryHelps === undefined ? {} : { retryHelps }),
+          },
+          trainingS: 1,
+        }),
+      );
+    finish("w0", false);
+    finish("w1");
+    const acts = (n: number) =>
+      [...(printOf(root, n)?.querySelectorAll<HTMLElement>("[data-act]") ?? [])]
+        .map((b) => b.dataset.act)
+        .filter((a) => a !== "open");
+    expect(acts(1)).toEqual(["keep", "discard"]);
+    expect(acts(2)).toEqual(["again", "keep", "discard"]);
+    expect(printOf(root, 1)?.querySelector(".print-say")?.textContent).toBe(
+      "Training stopped: the library could not be downloaded.",
+    );
+  });
+
   it("does not rebuild unchanged buttons, so a focused button survives a progress tick", () => {
     const { root, store } = mount(storeAt(3));
     store.dispatch(A.trainingStarted());
@@ -126,7 +161,7 @@ describe("keyboard focus across re-renders", () => {
         attempt: 1,
         fraction: 0.4,
         secondsLeft: 9,
-        nextPreviewInS: 2,
+        previewEveryS: 2,
         stage: "training",
       }),
     );
@@ -144,7 +179,7 @@ describe("the stop dialog", () => {
         attempt: 1,
         fraction: 0.2,
         secondsLeft: 30,
-        nextPreviewInS: 3,
+        previewEveryS: 3,
         stage: "training",
       }),
     );
@@ -158,7 +193,7 @@ describe("the stop dialog", () => {
         attempt: 1,
         fraction: 0.6,
         secondsLeft: 10,
-        nextPreviewInS: 1,
+        previewEveryS: 1,
         stage: "training",
       }),
     );
@@ -224,7 +259,7 @@ describe("bar texts", () => {
         attempt: 1,
         fraction: 0.01,
         secondsLeft: null,
-        nextPreviewInS: null,
+        previewEveryS: null,
         stage: "training",
       }),
     );
@@ -463,7 +498,7 @@ describe("what each print says while its stretch runs", () => {
         attempt: 1,
         fraction: 0,
         secondsLeft: null,
-        nextPreviewInS: null,
+        previewEveryS: null,
         ...p,
       }),
     );
@@ -494,10 +529,11 @@ describe("what each print says while its stretch runs", () => {
       stage: "training",
       fraction: 0.42,
       secondsLeft: 150,
-      nextPreviewInS: 12,
+      previewEveryS: 15,
     });
     expect(live()).toBe("Training 42 %");
-    expect(next()).toBe("about 3 min left, new look in 12 s");
+    // The interval, not a countdown that stood still between reports.
+    expect(next()).toBe("about 3 min left, a new look about every 15 s");
     progress(store, { stage: "checking", fraction: 0.9 });
     expect(live()).toBe("Checking the result");
     expect(next()).toBe("");

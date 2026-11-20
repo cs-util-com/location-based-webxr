@@ -237,6 +237,92 @@ describe("a run that ends on its own", () => {
   });
 });
 
+describe("what a finished stretch keeps", () => {
+  /** A trainer that shows one look of each stretch and then ends it. */
+  function onePicture(
+    result: Partial<Awaited<ReturnType<TrainerAdapter["trainWindow"]>>>,
+    pictures: { close: ReturnType<typeof vi.fn> }[],
+  ): TrainerAdapter {
+    const real = createPracticeTrainer({ timer: manualTimer() });
+    return {
+      ...real,
+      trainWindow: (_request, events) => {
+        const p = { close: vi.fn() };
+        pictures.push(p);
+        events.onPreview(p as unknown as CanvasImageSource);
+        return Promise.resolve({
+          outcome: "finished",
+          metrics: { atCameraDb: 30, heldOutDb: 22, photosUsed: 4 },
+          trainingS: 1,
+          ply: null,
+          ...result,
+        });
+      },
+    };
+  }
+
+  async function run(adapter: TrainerAdapter, over: Partial<TrainerPageDeps>) {
+    const h = setup(over, adapter);
+    await h.c.probe();
+    const { file } = await buildSyntheticRecording({
+      frames: 60,
+      spacingM: 1.2,
+    });
+    h.c.chooseRecording(file);
+    await h.settled();
+    h.c.store.dispatch(A.trainingStarted());
+    await h.settled();
+    return h;
+  }
+
+  // Why: a finished stretch kept its full-size look (about 7.7 MB at the
+  // trainer's photo size) for the whole session, half a gigabyte for a
+  // long walk. It keeps a small copy and lets go of the big one.
+  it("keeps a small copy of a finished stretch's look", async () => {
+    const pictures: { close: ReturnType<typeof vi.fn> }[] = [];
+    const small = { close: vi.fn() };
+    const thumbnail = vi.fn(() =>
+      Promise.resolve(small as unknown as CanvasImageSource),
+    );
+    const h = await run(onePicture({}, pictures), { thumbnail });
+    expect(h.c.store.getState().phase).toBe("done");
+    expect(thumbnail).toHaveBeenCalledWith(pictures[0]);
+    for (const p of pictures) expect(p.close).toHaveBeenCalledTimes(1);
+    expect(h.c.sides.previews.get("w0")).toBe(small);
+    expect(small.close).not.toHaveBeenCalled();
+  });
+
+  // Why: a copy that cannot be made must not keep the big picture either.
+  it("lets go of the look when no small copy can be made", async () => {
+    const pictures: { close: ReturnType<typeof vi.fn> }[] = [];
+    const h = await run(onePicture({}, pictures), {
+      thumbnail: () => Promise.reject(new Error("no canvas")),
+    });
+    for (const p of pictures) expect(p.close).toHaveBeenCalledTimes(1);
+    expect(h.c.sides.previews.has("w0")).toBe(false);
+  });
+
+  // Why: a failed stretch said only "Training stopped with an error";
+  // it now says why, and a cause training again cannot fix does not
+  // offer it.
+  it("says why a stretch failed and whether training again can help", async () => {
+    const detail =
+      "The splat trainer library could not be downloaded (blocked).";
+    const h = await run(
+      onePicture(
+        { outcome: "failed", metrics: null, detail, retryHelps: false },
+        [],
+      ),
+      {},
+    );
+    const w = h.c.store.getState().windows[0];
+    expect(w?.judgement?.say).toContain(detail);
+    expect(w?.judgement?.retryHelps).toBe(false);
+    h.c.store.dispatch(A.trainAgainAsked({ id: "w0" }));
+    expect(h.c.store.getState().windows[0]?.attempt).toBe(1);
+  });
+});
+
 async function settleAll(c: ReturnType<typeof setup>["c"]) {
   await settle(() => [c.store.getState()]);
 }

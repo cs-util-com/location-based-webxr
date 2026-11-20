@@ -26,7 +26,7 @@ recheck }`; `recheck` is `idle | checking | unchanged`: "Check again" runs
 - `recording`: `{ id, name, census }` or null.
 - `windows`: one `WindowState` per stretch - the `StretchSummary` fields
   plus `status` (`waiting | training | stopped | queued | done`),
-  `attempt`, `progress`, `secondsLeft`, `nextPreviewInS`, `stage`
+  `attempt`, `progress`, `secondsLeft`, `previewEveryS`, `stage`
   (`loading | preparing | training | checking` while it trains, else
   null), `previews`,
   `outcome`, `metrics`, `judgement`, `trainingS`, `decision`
@@ -81,7 +81,9 @@ the average time per attempt so far, each scaled by
 `attemptTimeScale`; null until measured, once the stretch is complete,
 and for a total that is not finite - a stand-in until the trainer's own
 time estimates arrive), `attemptTimeScale(attempt)` (the one time rule
-the store and the estimate share), `canTrainAgain`, `stretchNo`.
+the store and the estimate share), `canTrainAgain` (poor stretches
+always, weak ones once, never one whose judgement says `retryHelps:
+false`), `stretchNo`.
 
 ## Invariants (held by the property test)
 

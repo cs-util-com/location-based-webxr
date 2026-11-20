@@ -265,6 +265,8 @@ describe("planWindowJob", () => {
     expect(job.photos.every((p) => p.camera.image === p.name)).toBe(true);
     expect(job.maxIters).toBe(TRAINER_DEFAULTS.minIterations);
     expect(job.deadlineMs).toBe(TRAINER_DEFAULTS.deadlineS * 1000 * 2);
+    // A second try also gets longer to prepare.
+    expect(job.prepareCapMs).toBe(TRAINER_DEFAULTS.prepareCapS * 1000 * 2);
     expect(job.keepM).toBeCloseTo(
       TRAINER_DEFAULTS.keepFraction * TRAINER_DEFAULTS.shellDistanceM,
     );

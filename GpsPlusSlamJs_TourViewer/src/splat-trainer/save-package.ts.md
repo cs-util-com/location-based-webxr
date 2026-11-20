@@ -4,12 +4,17 @@
 
 Builds the file the splat trainer page saves: a zip with a manifest,
 `splat-package.json`, and one splat per stretch that goes into the file.
-While only the practice trainer exists the zip holds no splats, and the
-manifest says it is a placeholder (`placeholder: true`, version 0), so no
-later reader can mistake it for a real package. `placeholder` follows the
-trainer (`state.trainer === "practice"`), and the manifest names it in
-`trainer`; a reader of real packages refuses version 0 and any
-`placeholder: true`.
+A file from the practice trainer holds no splats and says it is a
+placeholder (`placeholder: true`); a file from the GPU trainer holds the
+cropped splat of each stretch it trained (`placeholder: false`).
+`placeholder` follows the trainer (`state.trainer === "practice"`), and
+the manifest names it in `trainer`.
+
+Both are `version: 0`: the format is provisional, GPU-trained packages
+included. Nothing reads these files yet; a reader written before the
+format is settled must treat version 0 as provisional (fields may change
+without notice) and must refuse `placeholder: true`. No version 1 exists
+or is promised; the first settled format takes the next number.
 
 ## Public API
 
@@ -18,7 +23,7 @@ trainer (`state.trainer === "practice"`), and the manifest names it in
   when nothing is left.
 - Internal, not exported: `PACKAGE_MANIFEST` (`splat-package.json`),
   `PACKAGE_FORMAT` (`splat-package`), `PACKAGE_VERSION` (0 while the
-  format is a placeholder), and `packageManifest(state, splats)` - `{
+  format is provisional, for every trainer), and `packageManifest(state, splats)` - `{
 format, version, placeholder, trainer, note?,
 walk: { photos, lengthM, photoWidth, photoHeight }, stretches: [{ number,
 fromM, toM, photos, attempts, verdict, marked, reasons, atCameraDb,
