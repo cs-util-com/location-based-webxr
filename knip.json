@@ -216,6 +216,7 @@
         "src/checks/narration-look-check.ts",
         "src/checks/feature-match/feature-match-check.ts",
         "src/characters/maker-main.ts",
+        "src/splat-trainer/splat-main.ts",
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"

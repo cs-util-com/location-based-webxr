@@ -1,0 +1,329 @@
+/**
+ * Why these tests matter: the slice IS the run's rule book. A stop that
+ * throws away a finished stretch, a "train again" that re-runs the wrong
+ * one, or a late event from a stopped run that overwrites the next
+ * stretch's progress would each lose an hour of graphics-card time
+ * without any error on screen.
+ */
+import { configureStore } from "@reduxjs/toolkit";
+import { describe, expect, it } from "vitest";
+
+import {
+  CENSUS,
+  finishCurrent,
+  judged,
+  plan,
+  storeAt,
+} from "../test-support/splat-trainer-fixtures.js";
+import type { WindowJudgement } from "./trainer-adapter.js";
+import {
+  secondsLeftInRun,
+  trainerPageActions as A,
+  trainerPageReducer,
+  type TrainerPageState,
+  undecidedWindows,
+  windowsInFile,
+} from "./trainer-page-slice.js";
+
+const statuses = (s: TrainerPageState) => s.windows.map((w) => w.status);
+
+describe("reading a recording", () => {
+  it("ignores the answer of a read that is no longer the current one", () => {
+    const store = configureStore({ reducer: trainerPageReducer });
+    store.dispatch(A.readingStarted({ id: "r2", name: "b.zip" }));
+    store.dispatch(
+      A.readFinished({ id: "r1", census: CENSUS, windows: plan(3) }),
+    );
+    expect(store.getState().phase).toBe("reading");
+    store.dispatch(A.readRefused({ id: "r1", reason: "old" }));
+    expect(store.getState().phase).toBe("reading");
+  });
+
+  it("refuses a recording whose plan has no stretch", () => {
+    const store = configureStore({ reducer: trainerPageReducer });
+    store.dispatch(A.readingStarted({ id: "r1", name: "a.zip" }));
+    store.dispatch(A.readFinished({ id: "r1", census: CENSUS, windows: [] }));
+    expect(store.getState().refusal?.kind).toBe("recording");
+  });
+
+  it("goes back to the drop area, keeping what the probe found", () => {
+    const store = storeAt(3);
+    store.dispatch(A.anotherRecordingChosen());
+    const s = store.getState();
+    expect(s.phase).toBe("start");
+    expect(s.windows).toEqual([]);
+    expect(s.gpu.status).toBe("ready");
+  });
+});
+
+describe("starting", () => {
+  it("never starts with the unavailable trainer", () => {
+    const store = storeAt(3, "unavailable");
+    store.dispatch(A.trainingStarted());
+    expect(store.getState().phase).toBe("census");
+  });
+
+  it("waits for a yes before training on built-in graphics", () => {
+    const store = storeAt(3);
+    store.dispatch(A.probeFinished("integrated"));
+    store.dispatch(A.trainingStarted());
+    expect(store.getState().phase).toBe("census");
+    store.dispatch(A.integratedAccepted());
+    store.dispatch(A.trainingStarted());
+    expect(store.getState().phase).toBe("training");
+  });
+
+  it("refuses the page when the probe finds no WebGPU", () => {
+    const store = storeAt(3);
+    store.dispatch(A.probeFinished("no-webgpu"));
+    expect(store.getState().refusal?.kind).toBe("no-webgpu");
+  });
+
+  it("trains the stretches in order and ends done", () => {
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    expect(statuses(store.getState())).toEqual([
+      "training",
+      "waiting",
+      "waiting",
+    ]);
+    finishCurrent(store);
+    finishCurrent(store);
+    finishCurrent(store);
+    expect(store.getState().phase).toBe("done");
+    expect(statuses(store.getState())).toEqual(["done", "done", "done"]);
+  });
+});
+
+describe("events from the trainer", () => {
+  it("ignores progress of an earlier attempt or another stretch", () => {
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    store.dispatch(
+      A.progressed({
+        id: "w1",
+        attempt: 1,
+        fraction: 0.5,
+        secondsLeft: 9,
+        nextPreviewInS: 1,
+      }),
+    );
+    store.dispatch(
+      A.progressed({
+        id: "w0",
+        attempt: 2,
+        fraction: 0.5,
+        secondsLeft: 9,
+        nextPreviewInS: 1,
+      }),
+    );
+    expect(store.getState().windows.map((w) => w.progress)).toEqual([0, 0, 0]);
+  });
+
+  it("clamps progress, never moves it back, and drops non-numbers", () => {
+    const store = storeAt(2);
+    store.dispatch(A.trainingStarted());
+    const p = (fraction: number, secondsLeft: number | null) =>
+      store.dispatch(
+        A.progressed({
+          id: "w0",
+          attempt: 1,
+          fraction,
+          secondsLeft,
+          nextPreviewInS: null,
+        }),
+      );
+    p(0.4, 30);
+    p(0.2, 20);
+    expect(store.getState().windows[0]?.progress).toBe(0.4);
+    p(Number.NaN, Number.NaN);
+    expect(store.getState().windows[0]?.progress).toBe(0.4);
+    p(7, Number.POSITIVE_INFINITY);
+    expect(store.getState().windows[0]?.progress).toBe(1);
+    expect(store.getState().windows[0]?.secondsLeft).toBeNull();
+  });
+
+  it("never judges a cancelled run", () => {
+    const store = storeAt(2);
+    store.dispatch(A.trainingStarted());
+    store.dispatch(
+      A.windowFinished({
+        id: "w0",
+        attempt: 1,
+        outcome: "cancelled",
+        metrics: null,
+        judgement: judged("poor"),
+        trainingS: 1,
+      }),
+    );
+    expect(store.getState().windows[0]?.status).toBe("training");
+  });
+});
+
+describe("stopping and continuing", () => {
+  it("keeps finished stretches and starts the stopped one over", () => {
+    const store = storeAt(4);
+    store.dispatch(A.trainingStarted());
+    finishCurrent(store);
+    store.dispatch(
+      A.progressed({
+        id: "w1",
+        attempt: 1,
+        fraction: 0.5,
+        secondsLeft: 9,
+        nextPreviewInS: 1,
+      }),
+    );
+    store.dispatch(A.stopAsked());
+    store.dispatch(A.stopConfirmed({ id: "w1" }));
+    let s = store.getState();
+    expect(s.phase).toBe("stopped");
+    expect(statuses(s)).toEqual(["done", "stopped", "waiting", "waiting"]);
+    expect(s.windows[1]?.progress).toBe(0);
+    expect(s.queue).toEqual(["w1", "w2", "w3"]);
+    store.dispatch(A.continued());
+    s = store.getState();
+    expect(s.current).toBe("w1");
+    expect(s.banner).toBe(
+      "Continued at stretch 2. The 1 finished stretch was kept.",
+    );
+  });
+
+  it("does not stop a stretch the dialog was not opened for", () => {
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    store.dispatch(A.stopAsked());
+    store.dispatch(A.stopConfirmed({ id: "w2" }));
+    expect(store.getState().phase).toBe("training");
+    expect(store.getState().stopDialog).toBe("w0");
+  });
+
+  it("holds the next stretch while the dialog is open, and Stop then stops nothing else", () => {
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    store.dispatch(A.stopAsked());
+    finishCurrent(store);
+    let s = store.getState();
+    expect(s.held).toBe(true);
+    expect(s.current).toBeNull();
+    expect(statuses(s)).toEqual(["done", "waiting", "waiting"]);
+    store.dispatch(A.stopConfirmed({ id: "w0" }));
+    s = store.getState();
+    expect(s.phase).toBe("stopped");
+    expect(statuses(s)).toEqual(["done", "waiting", "waiting"]);
+    expect(s.queue).toEqual(["w1", "w2"]);
+  });
+
+  it("starts the held stretch on Keep training", () => {
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    store.dispatch(A.stopAsked());
+    finishCurrent(store);
+    store.dispatch(A.stopDismissed());
+    expect(store.getState().current).toBe("w1");
+    expect(store.getState().held).toBe(false);
+  });
+});
+
+describe("verdicts and decisions", () => {
+  function doneWith(verdicts: WindowJudgement["verdict"][]) {
+    const store = storeAt(verdicts.length);
+    store.dispatch(A.trainingStarted());
+    for (const v of verdicts) finishCurrent(store, v);
+    return store;
+  }
+
+  it("leaves an undecided poor stretch out of the file", () => {
+    const store = doneWith(["good", "poor", "weak"]);
+    expect(undecidedWindows(store.getState()).map((w) => w.id)).toEqual(["w1"]);
+    expect(windowsInFile(store.getState()).map((w) => w.id)).toEqual([
+      "w0",
+      "w2",
+    ]);
+    store.dispatch(A.decided({ id: "w1", decision: "keep" }));
+    expect(windowsInFile(store.getState()).map((w) => w.id)).toEqual([
+      "w0",
+      "w1",
+      "w2",
+    ]);
+    store.dispatch(A.decided({ id: "w1", decision: "discard" }));
+    expect(windowsInFile(store.getState()).map((w) => w.id)).toEqual([
+      "w0",
+      "w2",
+    ]);
+    store.dispatch(A.decided({ id: "w1", decision: null }));
+    expect(undecidedWindows(store.getState())).toHaveLength(1);
+  });
+
+  it("only decides about poor stretches", () => {
+    const store = doneWith(["good", "weak"]);
+    store.dispatch(A.decided({ id: "w0", decision: "discard" }));
+    store.dispatch(A.decided({ id: "w1", decision: "discard" }));
+    expect(store.getState().windows.map((w) => w.decision)).toEqual([
+      null,
+      null,
+    ]);
+  });
+
+  it("trains a poor stretch again right away after the run, with the next attempt", () => {
+    const store = doneWith(["good", "poor"]);
+    store.dispatch(A.trainAgainAsked({ id: "w1" }));
+    const s = store.getState();
+    expect(s.phase).toBe("training");
+    expect(s.current).toBe("w1");
+    expect(s.windows[1]?.attempt).toBe(2);
+    expect(s.banner).toBe("Training stretch 2 again, with twice the time.");
+  });
+
+  it("queues a retry behind the others during a run", () => {
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    finishCurrent(store, "weak");
+    store.dispatch(A.trainAgainAsked({ id: "w0" }));
+    const s = store.getState();
+    expect(s.queue).toEqual(["w2", "w0"]);
+    expect(s.windows[0]?.status).toBe("queued");
+  });
+
+  it("lets a weak stretch train again once, a poor one any number of times", () => {
+    const store = doneWith(["weak"]);
+    store.dispatch(A.trainAgainAsked({ id: "w0" }));
+    finishCurrent(store, "weak");
+    store.dispatch(A.trainAgainAsked({ id: "w0" }));
+    expect(store.getState().phase).toBe("done");
+    const poor = doneWith(["poor"]);
+    poor.dispatch(A.trainAgainAsked({ id: "w0" }));
+    finishCurrent(poor, "poor");
+    poor.dispatch(A.trainAgainAsked({ id: "w0" }));
+    expect(poor.getState().windows[0]?.attempt).toBe(3);
+  });
+
+  it("marks a saved run unsaved again after a change", () => {
+    const store = doneWith(["poor"]);
+    store.dispatch(A.saveStarted());
+    store.dispatch(A.saveSucceeded({ count: 0 }));
+    store.dispatch(A.decided({ id: "w0", decision: "keep" }));
+    expect(store.getState().save.status).toBe("idle");
+    expect(store.getState().save.savedCount).toBe(0);
+  });
+});
+
+describe("secondsLeftInRun", () => {
+  it("is null until the trainer measured, then adds the queue at the average pace", () => {
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    expect(secondsLeftInRun(store.getState())).toBeNull();
+    finishCurrent(store);
+    store.dispatch(
+      A.progressed({
+        id: "w1",
+        attempt: 1,
+        fraction: 0.5,
+        secondsLeft: 30,
+        nextPreviewInS: 3,
+      }),
+    );
+    // 30 s of stretch 2, then stretch 3 at the 60 s stretch 1 took.
+    expect(secondsLeftInRun(store.getState())).toBe(90);
+  });
+});
