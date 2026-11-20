@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The code of `long-text-check.html` (`long-text-check.html.md`): one long
+The code of `check.html?view=long-text` (`check.html.md`): one long
 text open in the production reading sheet (`long-text-sheet.ts`), with no
 AR session, so the sheet can be compared side by side with the
 narrated-text prototype's "sound off" sheet and the layout e2e can pin
@@ -23,7 +23,7 @@ other words; both run through the visitor's own narration
 (`narration-visitor.ts`), with a stand-in clock that stands still until
 moved (no sound plays) and a timing made in the page the way the
 prototype makes its own (`checkSegments`), opened at the prototype's
-demo position (`checkDemoMs`). `?view=captions` shows the narration box
+demo position (`checkDemoMs`). `?look=captions` shows the narration box
 (`narration-box.ts` through `captions-follow.ts`, with a store holding
 only its slice) in place of the sheet. `?open=0` opens nothing until `show()` or
 `follow()`.
@@ -50,7 +50,7 @@ only its slice) in place of the sheet. `?open=0` opens nothing until `show()` or
 - `CHECK_RICH_BODY` - the rich text.
 - `longTextCheckOptions(search)` - `{ rich, ar, voice, view, open }`
   from the query (`text=rich`, `ar=1`, `voice=timed|stale`,
-  `view=captions`, `open=0`; anything else is the default).
+  `look=captions`, `open=0`; anything else is the default).
 - `checkSegments(plain)` - a word track over `P` timed as the
   prototype's stand-in narration; `checkDemoMs(sentences, segments)` -
   60 ms into the third sentence's seventh word;
@@ -67,7 +67,7 @@ only its slice) in place of the sheet. `?open=0` opens nothing until `show()` or
 
 `playwright-tests/long-text-check.spec.js` (the layout at three viewports,
 the mark, and the rich text: pictures after a scroll, the link's question
-in AR, allowlisted tags only); `playwright-tests/narration-check.spec.js`
+in AR, allowlisted tags only); `playwright-tests/long-text-narration.spec.js`
 (reading along, a stale track, the read on open, the narration box's layout at
 three viewports, the speaker's name on the first words' line);
 `src/checks/long-text-check.test.ts` (the query, the

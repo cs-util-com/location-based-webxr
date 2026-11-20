@@ -75,29 +75,12 @@ export default defineConfig({
         fileAccessCheck: fileURLToPath(
           new URL("file-access-check.html", import.meta.url),
         ),
-        // A tour model in each world view without an AR session
-        // (`model-views-check.html.md`), linked from nothing.
-        modelViewsCheck: fileURLToPath(
-          new URL("model-views-check.html", import.meta.url),
-        ),
-        // A tour character in each world view without an AR session
-        // (`character-views-check.html.md`), linked from nothing.
-        characterViewsCheck: fileURLToPath(
-          new URL("character-views-check.html", import.meta.url),
-        ),
+        // The prototype-parity views without an AR session, one per
+        // `?view=` (`check.html.md`), linked from nothing.
+        check: fileURLToPath(new URL("check.html", import.meta.url)),
         // A new kind of item in a story and in a station, side by side
         // (`item-lab.html.md`), linked from nothing.
         itemLab: fileURLToPath(new URL("item-lab.html", import.meta.url)),
-        // A long text on its reading stand without an AR session
-        // (`lectern-check.html.md`), linked from nothing.
-        lecternCheck: fileURLToPath(
-          new URL("lectern-check.html", import.meta.url),
-        ),
-        // Then and now's picture and its Swipe line without an AR session
-        // (`then-now-check.html.md`), linked from nothing.
-        thenNowCheck: fileURLToPath(
-          new URL("then-now-check.html", import.meta.url),
-        ),
         // A narration circle in its look without an AR session
         // (`narration-look-check.html.md`), linked from nothing.
         narrationLookCheck: fileURLToPath(
@@ -113,16 +96,6 @@ export default defineConfig({
         // from nothing.
         splatSceneCheck: fileURLToPath(
           new URL("splat-scene-check.html", import.meta.url),
-        ),
-        // A long text in its reading sheet without an AR session
-        // (`long-text-check.html.md`), linked from nothing.
-        longTextCheck: fileURLToPath(
-          new URL("long-text-check.html", import.meta.url),
-        ),
-        // A narrated long text whose words hang under its sign without an
-        // AR session (`travelling-box-check.html.md`), linked from nothing.
-        travellingBoxCheck: fileURLToPath(
-          new URL("travelling-box-check.html", import.meta.url),
         ),
         // The picture and sound optimizers at the chosen settings and one
         // step either side (`asset-optimizer-check.html.md`), linked from

@@ -1,5 +1,5 @@
 /**
- * Then and now's check page (`then-now-check.html`): one `thenNow`
+ * Then and now's check page (`check.html?view=then-now`): one `thenNow`
  * picture with its production part (`viewpointWorld`), seen from exactly
  * its viewpoint, so its slider shows at once and Swipe can be tried on a
  * desktop without a phone or a tour. Linked from nothing. "Today" is a

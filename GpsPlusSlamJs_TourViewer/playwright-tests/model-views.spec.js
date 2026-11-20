@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
  * what the prototype chose - the card at the bottom centre, 12 px from the
  * edge, at most 420 px wide; its counter, title and row with their gaps;
  * the discs 28 px round and apart - on a phone, a phone held sideways and a
- * desktop, through the check page `model-views-check.html` (the views
+ * desktop, through the check page `check.html?view=model-views` (the views
  * without an AR session). A toy's card adds "Back to its place" and lays a
  * gesture layer over the screen.
  *
@@ -71,7 +71,7 @@ async function open(page, viewport, b, target = [0.3, 1.3, 0]) {
     width: viewport.width,
     height: viewport.height,
   });
-  await page.goto("/model-views-check.html?hook=1");
+  await page.goto("/check.html?view=model-views&hook=1");
   await page.waitForFunction(() => window.__modelViewsCheck !== undefined);
   await page.evaluate(
     async ([blockValue, at]) => {
@@ -248,7 +248,7 @@ test("opened by a person, it shows the stand-in and switches its views from a ba
       errors.push(message.text());
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/model-views-check.html");
+  await page.goto("/check.html?view=model-views");
   const bar = page.locator("nav.mvc-views");
   const buttons = bar.locator("button.btn");
   await expect(buttons).toHaveText([

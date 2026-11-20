@@ -2,10 +2,10 @@
 
 ## Purpose
 
-The code of the check page `model-views-check.html`: a WebGL scene with one
+The code of the check page `check.html?view=model-views`: a WebGL scene with one
 tour model mounted in its world view and the visitor's model DOM
 (`model-visitor.ts`) over it, driven by the `window.__modelViewsCheck`
-hook. See `model-views-check.html.md` for what the page is for.
+hook. See `check.html.md` for what the page is for.
 
 ## Public API
 

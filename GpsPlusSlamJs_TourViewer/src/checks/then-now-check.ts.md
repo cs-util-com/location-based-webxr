@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The code of `then-now-check.html` (`then-now-check.html.md`): one
+The code of `check.html?view=then-now` (`check.html.md`): one
 `thenNow` picture block with the production part
 (`kinds/picture/viewpoint-world.ts`) in a plain scene, the camera on its
 viewpoint looking along it, its screen the page's `#narration-card-root`,

@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test";
  * the pop-up's scroll above its
  * stage - and still pass a test that asks only whether something drew.
  * These pin those positions and gaps on a phone, a phone held sideways
- * and a desktop, through the check page `character-views-check.html`
+ * and a desktop, through the check page `check.html?view=character-views`
  * (the views without an AR session), seen from the prototype's own
  * viewpoint for its first station (4.8 m from him, eye 1.6 m).
  *
@@ -49,7 +49,7 @@ async function open(page, viewport) {
     width: viewport.width,
     height: viewport.height,
   });
-  await page.goto("/character-views-check.html?hook=1");
+  await page.goto("/check.html?view=character-views&hook=1");
   await page.waitForFunction(() => window.__characterViewsCheck !== undefined);
   return errors;
 }

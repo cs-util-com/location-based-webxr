@@ -1,5 +1,5 @@
 /**
- * The travelling box's check page (`travelling-box-check.html`): a
+ * The travelling box's check page (`check.html?view=travelling-box`): a
  * narrated long text's reading sign in the reading stand's plain square
  * (`lectern-check.ts`), its words painted on the plate under the sign
  * from the invisible narration box at the bottom of the page (travel

@@ -11,7 +11,7 @@ const CHECK_VOICE_CREDIT =
  * the reading sheet and the narration box, and both are driven by a
  * timing file checked against the text it was made for. In a real
  * browser (the Custom Highlight API, layout, the frame loop) these pin
- * through the check page `long-text-check.html?voice=...`:
+ * through the check page `check.html?view=long-text&voice=...`:
  * - the sheet marks the sentence and the word the voice is at, and moves
  *   with it;
  * - a stale timing gives plain text with the voice, and says nothing about
@@ -41,7 +41,8 @@ async function open(page, query, viewport = VIEWPORTS[0]) {
     width: viewport.width,
     height: viewport.height,
   });
-  await page.goto(`/long-text-check.html${query}`);
+  // `query` starts with "?"; its keys follow the view's own.
+  await page.goto(`/check.html?view=long-text&${query.slice(1)}`);
   await page.waitForFunction(() => window.__longTextCheck?.voice() != null);
   return errors;
 }
@@ -196,7 +197,7 @@ for (const viewport of VIEWPORTS) {
   test(`the narration box lands where the prototype put it, with its gaps, the name on the first line, and lights the word (${viewport.name})`, async ({
     page,
   }) => {
-    const errors = await open(page, "?voice=timed&view=captions", viewport);
+    const errors = await open(page, "?voice=timed&look=captions", viewport);
     await page.waitForFunction(
       () => window.__longTextCheck?.voice()?.captions?.shown === true,
     );
@@ -335,7 +336,7 @@ for (const viewport of VIEWPORTS) {
 }
 
 test("a narrated text with a stale track shows no box", async ({ page }) => {
-  const errors = await open(page, "?voice=stale&view=captions");
+  const errors = await open(page, "?voice=stale&look=captions");
   await page.waitForFunction(
     () => window.__longTextCheck?.voice()?.verdict === "stale",
   );
@@ -546,7 +547,7 @@ for (const viewport of VIEWPORTS) {
         isMobile: input === "touch",
       });
       const page = await context.newPage();
-      const errors = await open(page, "?voice=timed&view=captions", viewport);
+      const errors = await open(page, "?voice=timed&look=captions", viewport);
       await page.waitForFunction(
         () => window.__longTextCheck?.voice()?.captions?.shown === true,
       );
@@ -605,7 +606,7 @@ for (const viewport of VIEWPORTS) {
   test(`the arrow keys keep the read line in the narration box (${viewport.name}) @pr`, async ({
     page,
   }) => {
-    const errors = await open(page, "?voice=timed&view=captions", viewport);
+    const errors = await open(page, "?voice=timed&look=captions", viewport);
     await page.waitForFunction(
       () => window.__longTextCheck?.voice()?.captions?.shown === true,
     );

@@ -46,7 +46,7 @@ async function open(page, viewport) {
     width: viewport.width,
     height: viewport.height,
   });
-  await page.goto("/travelling-box-check.html");
+  await page.goto("/check.html?view=travelling-box");
   await page.waitForFunction(
     () => (window.__travellingBoxCheck?.state().texture.paints ?? 0) > 0,
   );
@@ -277,7 +277,7 @@ async function openClocked(page, viewport) {
   // Paused before the page loads: time moves only with runFor.
   await page.clock.install({ time: 0 });
   await page.clock.pauseAt(1000);
-  await page.goto("/travelling-box-check.html");
+  await page.goto("/check.html?view=travelling-box");
   await hook(page, "standAt", 3);
   // The words fade in over 0.3 s.
   await page.clock.runFor(500);

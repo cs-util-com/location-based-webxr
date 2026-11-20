@@ -1,5 +1,5 @@
 /**
- * The reading stand's check page (`lectern-check.html`): one long text in
+ * The reading stand's check page (`check.html?view=lectern`): one long text in
  * the `lectern` view standing in a plain square like the narrated-text
  * prototype's, seen from the visitor's eye 2.6 m in front of it. Linked
  * from nothing. A click on the page turns it, as a visitor's tap does in
