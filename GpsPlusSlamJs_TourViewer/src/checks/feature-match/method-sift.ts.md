@@ -11,9 +11,9 @@ The SIFT method of the benchmark: Splat.js `sift.js` imported at run time, match
 
 ## Public API
 
-- `SIFT_URL`, `SIFT_MAX_FEATURES` (1024, the same budget as XFeat).
+- `SIFT_URL`, `SIFT_MAX_FEATURES` (1024, the same budget as XFeat). sift.js caps its detections, then adds a keypoint for each extra dominant orientation, so it can return more than the cap; the result is cut to the budget again.
 - `siftApi(mod)`: the module's `detectSift`, or `sift.js: no detectSift export`.
-- `siftFeatures(result)`: a detector result as `Features`; throws on buffers shorter than `n` says.
+- `siftFeatures(result, max = Infinity)`: a detector result as `Features`, cut to the first `max` keypoints (strongest first); throws on buffers shorter than `n` says.
 - `siftMethod(deps)`: the `BenchMethod`. Backend `js (main thread)`; init is the module import, download included; one download record from resource timing.
 
 ## Invariants
