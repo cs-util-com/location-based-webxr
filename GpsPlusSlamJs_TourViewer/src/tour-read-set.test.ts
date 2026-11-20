@@ -10,6 +10,7 @@ import {
   entriesForVisitor,
   recordingEntryNames,
   recordingFolderOf,
+  recordingFoldersOf,
   scanEntryNames,
   stopsVisitorDownload,
   visitorEntryNames,
@@ -341,5 +342,33 @@ describe("recordingFolderOf", () => {
     expect(recordingFolderOf(["mytour/session.json", "x/actions/a.txt"])).toBe(
       "",
     );
+  });
+});
+
+describe("recordingFoldersOf", () => {
+  // Why: a zip can carry two recordings side by side; a reader that took
+  // only the first folder read the actions of both as one walk. Every
+  // folder holding an action stream must be named, so the caller can
+  // refuse.
+  it("names every folder that holds an action stream, once, in the parser's order", () => {
+    expect(
+      recordingFoldersOf([
+        "second/actions/000001.json",
+        "first/actions/000002.json",
+        "first/actions/000001.json",
+        "first/images/frame-000001.jpg",
+      ]),
+    ).toEqual(["first/", "second/"]);
+  });
+
+  it("names one folder for a single recording, flat or wrapped, and none without actions", () => {
+    expect(recordingFoldersOf(["actions/000001.json"])).toEqual([""]);
+    expect(recordingFoldersOf(["a/b/actions/000001.json"])).toEqual(["a/b/"]);
+    expect(recordingFoldersOf(["session.json"])).toEqual([]);
+  });
+
+  it("agrees with recordingFolderOf on the first folder", () => {
+    const names = ["z/actions/1.json", "y/actions/1.json"];
+    expect(recordingFoldersOf(names)[0]).toBe(recordingFolderOf(names));
   });
 });

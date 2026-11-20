@@ -13,9 +13,11 @@ import {
   SYNTHETIC_DEPTH_GRID,
   SYNTHETIC_FRAME_SIZE,
   SYNTHETIC_LAST_MODIFIED,
+  SYNTHETIC_PROJECTION,
 } from "../test-support/synthetic-recording.js";
 import { readZipBlobEntry } from "../zip-blob.js";
 import {
+  ASPECT_TOL,
   PROJ_TOL,
   readSplatInputs,
   type SplatInputs,
@@ -43,7 +45,7 @@ function reasonOf(read: SplatInputsRead): string {
 
 /** The test projection with element `index` moved by `delta`. */
 function nudged(index: number, delta: number): Matrix4 {
-  const m = [...WIDE_TEST_PROJECTION];
+  const m = [...SYNTHETIC_PROJECTION];
   m[index] = (m[index] ?? 0) + delta;
   return m as unknown as Matrix4;
 }
@@ -62,6 +64,52 @@ describe("readSplatInputs on the synthetic walk", () => {
     );
     expect(inputs.captures.map((c) => c.capturedAt)).toEqual(rec.capturedAt);
     expect(inputs.captures.map((c) => c.entry)).toEqual(rec.photoEntries);
+    // The walk turns at every capture, so a rotation paired with another
+    // capture's position cannot pass the comparison above.
+    const rotations = new Set(rec.poses.map((p) => JSON.stringify(p.rotation)));
+    expect(rotations.size).toBe(rec.poses.length);
+  });
+
+  it("orders the captures by their capture time, not by when they were written", async () => {
+    // Why: a photo can be written after a later one (encoding takes its
+    // own time), and every spacing, speed and window downstream assumes
+    // the walk runs forward in time; a negative median spacing was the
+    // symptom.
+    const rec = await buildSyntheticRecording({ frames: 5, intervalMs: -700 });
+    const inputs = await readOk(rec.file);
+    expect(inputs.captures.map((c) => c.entry)).toEqual(
+      [...rec.photoEntries].reverse(),
+    );
+    expect(inputs.census.medianSpacingS).toBe(0.7);
+  });
+
+  it("keeps the recorded order and reports no time spacing when a capture has no time", async () => {
+    // Why: one untimed capture cannot be placed in time; sorting around it
+    // would invent an order, and a spacing across it would mislead.
+    const rec = await buildSyntheticRecording({
+      frames: 4,
+      extraEntries: [
+        { path: "images/untimed.jpg", data: new Uint8Array([0xff, 0xd8]) },
+        {
+          path: "actions/900000.json",
+          data: JSON.stringify({
+            type: "gpsData/add2dImage",
+            payload: {
+              imageFile: "images/untimed.jpg",
+              position: [9, 1.5, 0],
+              rotation: [0, 0, 0, 1],
+              ...SYNTHETIC_FRAME_SIZE,
+            },
+          }),
+        },
+      ],
+    });
+    const inputs = await readOk(rec.file);
+    expect(inputs.captures.map((c) => c.entry)).toEqual([
+      ...rec.photoEntries,
+      "images/untimed.jpg",
+    ]);
+    expect(inputs.census.medianSpacingS).toBeNull();
   });
 
   it("takes the lens from the depth samples' projection exactly, with no half-pixel step", async () => {
@@ -72,11 +120,11 @@ describe("readSplatInputs on the synthetic walk", () => {
     const inputs = await readOk((await buildSyntheticRecording()).file);
     const { width, height } = SYNTHETIC_FRAME_SIZE;
     expect(inputs.intrinsics).toEqual(
-      pinholeFromProjection(WIDE_TEST_PROJECTION, width, height),
+      pinholeFromProjection(SYNTHETIC_PROJECTION, width, height),
     );
     expect(inputs.intrinsics.cx).toBe(width / 2);
     expect(inputs.intrinsics.cy).toBe(height / 2);
-    expect(inputs.projectionMatrix).toEqual(WIDE_TEST_PROJECTION);
+    expect(inputs.projectionMatrix).toEqual(SYNTHETIC_PROJECTION);
   });
 
   it("counts the walk exactly in its census", async () => {
@@ -146,12 +194,33 @@ describe("readSplatInputs on the synthetic walk", () => {
     expect(a.fingerprint).toEqual({
       size: file.size,
       lastModified: SYNTHETIC_LAST_MODIFIED,
-      directoryHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      contentKey: expect.stringMatching(/^local-file:[0-9a-f]{32}$/),
     });
     expect(b.fingerprint).toEqual(a.fingerprint);
-    expect(c.fingerprint.directoryHash).not.toBe(a.fingerprint.directoryHash);
+    expect(c.fingerprint.contentKey).not.toBe(a.fingerprint.contentKey);
     const blob = await readOk(new Blob([file]));
     expect(blob.fingerprint.lastModified).toBeNull();
+  });
+
+  it("tells apart two recordings whose files differ only in content, not in size", async () => {
+    // Why: a corrected copy of a walk can keep every file's length; only
+    // the content checksum separates it from the original, so a key of
+    // names and sizes alone would let resume mix the two.
+    const withAction = (value: number) =>
+      buildSyntheticRecording({
+        extraEntries: [
+          {
+            path: "actions/900000.json",
+            data: JSON.stringify({ type: "x/y", payload: { v: value } }),
+          },
+        ],
+      });
+    const one = await withAction(1);
+    const two = await withAction(2);
+    expect(two.file.size).toBe(one.file.size);
+    const a = await readOk(one.file);
+    const b = await readOk(two.file);
+    expect(b.fingerprint.contentKey).not.toBe(a.fingerprint.contentKey);
   });
 });
 
@@ -214,6 +283,52 @@ describe("readSplatInputs skips what it cannot use", () => {
     const inputs = await readOk(rec.file);
     expect(inputs.census.frames).toBe(6);
     expect(inputs.captures[0]?.position).toEqual([9, 9, 9]);
+  });
+
+  it("judges the photo size by the capture it keeps, not by one it replaced", async () => {
+    // Why: only the last capture of a file belongs to the photo the zip
+    // carries; a size the replaced capture recorded says nothing about it.
+    const rec = await buildSyntheticRecording({
+      frameSizeAt: (i) =>
+        i === 0 ? { width: 48, height: 64 } : SYNTHETIC_FRAME_SIZE,
+      extraEntries: [
+        {
+          path: "actions/900000.json",
+          data: JSON.stringify({
+            type: "gpsData/add2dImage",
+            payload: {
+              imageFile: "images/frame-000001.jpg",
+              position: [9, 9, 9],
+              rotation: [0, 0, 0, 1],
+              capturedAt: 0,
+              ...SYNTHETIC_FRAME_SIZE,
+            },
+          }),
+        },
+      ],
+    });
+    const inputs = await readOk(rec.file);
+    expect(inputs.census.frames).toBe(6);
+    expect(inputs.census.frameWidth).toBe(SYNTHETIC_FRAME_SIZE.width);
+  });
+
+  it("skips a capture with a broken pose whose photo the zip lacks", async () => {
+    // Why: a capture without its photo is skipped whatever it says; its
+    // pose cannot matter, so it must not refuse the whole recording.
+    const rec = await buildSyntheticRecording({
+      extraEntries: [
+        {
+          path: "actions/900000.json",
+          data: JSON.stringify({
+            type: "gpsData/add2dImage",
+            payload: { imageFile: "images/gone.jpg", position: ["0", 0, 0] },
+          }),
+        },
+      ],
+    });
+    const inputs = await readOk(rec.file);
+    expect(inputs.census.frames).toBe(6);
+    expect(inputs.census.skippedFrames).toBe(1);
   });
 
   it("finds a re-zipped recording's photos under its wrapping folder", async () => {
@@ -293,15 +408,100 @@ describe("readSplatInputs refuses, in words", () => {
     );
   });
 
+  it("refuses depth data that carries no lens, in its own words", async () => {
+    // Why: a recording made with depth on, before depth samples carried
+    // the projection, must not be told to "record with depth on".
+    const read = await readSplatInputs(
+      (await buildSyntheticRecording({ projectionAt: () => null })).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it.",
+    );
+  });
+
+  it("ignores a change of the near and far planes, which are not part of the lens", async () => {
+    // Why: an app may move its clip planes after the first frames; only
+    // the focal and centre terms (elements 0, 5, 8 and 9) are the lens,
+    // so a moved plane must neither refuse nor count as spread.
+    const moved = [...SYNTHETIC_PROJECTION];
+    moved[10] = (moved[10] ?? 0) + 0.02;
+    moved[14] = (moved[14] ?? 0) + 0.18;
+    const inputs = await readOk(
+      (
+        await buildSyntheticRecording({
+          projectionAt: (i) =>
+            i === 0 ? SYNTHETIC_PROJECTION : (moved as unknown as Matrix4),
+        })
+      ).file,
+    );
+    expect(inputs.census.projectionSpread).toBe(0);
+  });
+
+  it("refuses a lens whose shape does not fit the photos", async () => {
+    // Why: a square frustum on 4:3 photos gives pixels a third wider than
+    // tall; trained as it is, every view would be stretched.
+    const read = await readSplatInputs(
+      (
+        await buildSyntheticRecording({
+          projectionAt: () => WIDE_TEST_PROJECTION,
+        })
+      ).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "The recording's lens does not fit the shape of its photos (it would stretch them by 33 %).",
+    );
+  });
+
+  it("accepts a lens whose shape fits the photos within the tolerance", async () => {
+    // Why: real lenses differ from square pixels by a fraction of a
+    // percent; that must never refuse a good recording.
+    const inputs = await readOk(
+      (
+        await buildSyntheticRecording({
+          projectionAt: () =>
+            nudged(0, (SYNTHETIC_PROJECTION[0] ?? 0) * ASPECT_TOL * 0.5),
+        })
+      ).file,
+    );
+    expect(inputs.intrinsics.fx / inputs.intrinsics.fy).toBeCloseTo(
+      1 + ASPECT_TOL * 0.5,
+      6,
+    );
+  });
+
+  it("refuses a zip that holds more than one recording", async () => {
+    // Why: actions from two walks would be read as one, with the folder
+    // and era of the first; the poses of the second would sit in the
+    // wrong frame.
+    const read = await readSplatInputs(
+      (
+        await buildSyntheticRecording({
+          folder: "first/",
+          extraEntries: [
+            { path: "second/session.json", data: '{"odomCoordVersion":5}' },
+            {
+              path: "second/actions/000001.json",
+              data: JSON.stringify({ type: "gpsData/setZeroPos", payload: {} }),
+            },
+          ],
+        })
+      ).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "This zip holds more than one recording (first/, second/). Give the trainer one recording at a time.",
+    );
+  });
+
   it("accepts projection jitter within the tolerance and reports its spread", async () => {
     // Why: float round-off between samples must never refuse a good
-    // recording; the spread still shows in the census.
+    // recording; the spread still shows in the census. A centre term
+    // (element 8, zero here) moves by exactly the jitter on the floor of 1.
     const jitter = PROJ_TOL / 2;
     const inputs = await readOk(
       (
         await buildSyntheticRecording({
           projectionAt: (i) =>
-            i === 3 ? nudged(0, jitter) : WIDE_TEST_PROJECTION,
+            i === 3 ? nudged(8, jitter) : SYNTHETIC_PROJECTION,
         })
       ).file,
     );
@@ -313,7 +513,7 @@ describe("readSplatInputs refuses, in words", () => {
       (
         await buildSyntheticRecording({
           projectionAt: (i) =>
-            i === 3 ? nudged(8, 0.01) : WIDE_TEST_PROJECTION,
+            i === 3 ? nudged(8, 0.01) : SYNTHETIC_PROJECTION,
         })
       ).file,
     );
@@ -427,6 +627,18 @@ describe("readSplatInputs holds the archive caps", () => {
     });
     expect(reasonOf(read)).toBe(
       new ArchiveLimitError("archive-bytes", file.size - 1).message,
+    );
+  });
+
+  it("refuses a zip whose directory is over the directory cap", async () => {
+    // Why: the directory is read in one piece; a crafted zip with a huge
+    // directory must be refused before that read, not after.
+    const { file } = await buildSyntheticRecording();
+    const read = await readSplatInputs(file, {
+      limits: { maxDirectoryBytes: 64 },
+    });
+    expect(reasonOf(read)).toBe(
+      new ArchiveLimitError("directory-bytes", 64).message,
     );
   });
 
