@@ -20,6 +20,9 @@ paragraphs).
   42 degrees across the width in portrait. It differs from the model
   views' check page (45 degrees) on purpose: each page copies its own
   prototype.
+- `buildSquare(scene)` - adds the prototype's square (the ground, the
+  paving and the guild house) to `scene`; the travelling box's check
+  page (`travelling-box-check.ts`) stands in it too.
 - The hook `window.__lecternCheck`: `show({ title?, body? })` (re-made
   from scratch; the default is the demo text), `turn()` (the stand's
   `tap`), `standAt(x, z)`

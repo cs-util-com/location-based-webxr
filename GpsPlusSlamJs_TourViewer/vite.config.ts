@@ -110,6 +110,11 @@ export default defineConfig({
         longTextCheck: fileURLToPath(
           new URL("long-text-check.html", import.meta.url),
         ),
+        // A narrated long text whose words hang under its sign without an
+        // AR session (`travelling-box-check.html.md`), linked from nothing.
+        travellingBoxCheck: fileURLToPath(
+          new URL("travelling-box-check.html", import.meta.url),
+        ),
         // The picture and sound optimizers at the chosen settings and one
         // step either side (`asset-optimizer-check.html.md`), linked from
         // the prototype gallery only.

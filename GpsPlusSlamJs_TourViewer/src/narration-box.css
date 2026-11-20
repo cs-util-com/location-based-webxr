@@ -67,6 +67,32 @@
   }
 }
 
+/* The travel mode's ghost: the painted plate is the visible box; this one
+   keeps its layout, its gestures and its screen reader text, unseen. */
+.narration-box.nb-ghost {
+  opacity: 0;
+  transition: none;
+}
+.narration-box.nb-ghost .nb-mid {
+  animation: none;
+}
+.narration-box.nb-nopointer {
+  pointer-events: none;
+}
+/* The travel mode's head row: the hint, right-aligned over the words. */
+.nb-head {
+  height: 20px;
+  padding-right: 12px;
+  overflow: hidden;
+  color: rgb(255 255 255 / 0.7);
+  font: 600 11px/20px var(--font-ui);
+  text-align: right;
+  white-space: nowrap;
+}
+.nb-head[hidden] {
+  display: none;
+}
+
 /* The side places for a step's action: hidden while empty. */
 .nb-slot {
   display: flex;

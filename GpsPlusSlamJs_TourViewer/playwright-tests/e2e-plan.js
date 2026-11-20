@@ -170,6 +170,7 @@ export const SPECS = {
   "streaming.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "summary.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "then-now-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
+  "travelling-box-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "view-switch.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "visitor-start.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "visitor-walk-layout.spec.js": { project: "dom", area: "viewer", lane: 2 },

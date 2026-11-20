@@ -44,6 +44,11 @@ import {
   wordStartsMs,
 } from "./narration-box-timeline.js";
 import type { NarrationClock } from "./narration-player.js";
+import type {
+  WordsPaintLayout,
+  WordsPaintModel,
+  WordsPaintRun,
+} from "./narration-words-paint.js";
 
 /** Who speaks: the name shown at the start of the words, in this colour. */
 export interface NarrationSpeaker {
@@ -89,6 +94,26 @@ export interface NarrationBoxViewState {
   /** The scroll, in lines. */
   readonly scroll: number;
   readonly scrubbing: boolean;
+  /** Whether a finger (on the box or forwarded from the plate) is down. */
+  readonly pressing: boolean;
+  /** The travel mode's head row hint, empty in the natural mode. */
+  readonly hint: string;
+}
+
+/**
+ * How the box measures itself: "natural" fits the text (the HUD box);
+ * "travel" takes a fixed 17 em, so the painted plate keeps one shape from
+ * sign to sign, and adds a head row for the hint.
+ */
+type NarrationBoxMeasure = "natural" | "travel";
+
+/** A finger forwarded from elsewhere (the plate), in screen px. */
+interface NarrationBoxPress {
+  readonly id: number;
+  readonly x: number;
+  readonly y: number;
+  /** One line of the words as the finger sees it, in screen px. */
+  readonly linePx: number;
 }
 
 export interface NarrationBox {
@@ -96,8 +121,19 @@ export interface NarrationBox {
   /** The side places for a step's action (empty and hidden for now). */
   readonly slots: { readonly left: HTMLElement; readonly right: HTMLElement };
   /** Shows `content` (cheap for the same content: every frame may call). */
-  show(content: NarrationBoxContent): void;
+  show(content: NarrationBoxContent, measure?: NarrationBoxMeasure): void;
   hide(): void;
+  /** An invisible box that keeps its layout and its gestures. */
+  setGhost(on: boolean): void;
+  /** Whether the box takes pointers itself. */
+  setPointer(on: boolean): void;
+  /** What the plate paints, or null when hidden or not in travel mode. */
+  paintModel(): WordsPaintModel | null;
+  /** Starts a forwarded press; false when one is already down. */
+  beginPress(press: NarrationBoxPress): boolean;
+  movePress(x: number, y: number): void;
+  /** Ends the press: "up" is a tap or a drag's release, "cancel" no tap. */
+  endPress(kind: "up" | "cancel", x: number, y: number): void;
   /** Follows the voice; called by `show` and on every frame. */
   tick(): void;
   state(): NarrationBoxViewState;
@@ -118,6 +154,21 @@ const BOX_CAP_PX = 720;
 const BOX_CHROME_PX = 38;
 const TEXT_MIN_PX = 90;
 const FALLBACK_LINE_PX = 22;
+const FALLBACK_FONT_PX = 16;
+/** The travel mode's fixed width, in em of the words' font. */
+const TRAVEL_WIDTH_EM = 17;
+/** The travel mode's head row (narration-box.css .nb-head). */
+const HEAD_PX = 20;
+/** The scrollbar's room right of the words (narration-box.css .nb-win). */
+const SBAR_ROOM_PX = 12;
+/** A finger's line is never taken as smaller than this (px). */
+const MIN_PRESS_LINE_PX = 4;
+const FALLBACK_GREY = 0.55;
+const FALLBACK_TINT = 0.72;
+const FALLBACK_RADIUS_PX = 12;
+const HINT_START = "tap the words to listen";
+const HINT_PAUSED = "paused - tap to play";
+const HINT_END = "the end - tap to hear it again";
 /** How long a tap sign may stay if its animation never ends (ms). */
 const TAP_SIGN_MS = 1500;
 
@@ -128,6 +179,7 @@ interface Press {
   /** The scroll the drag moves from (moved on where the words are held). */
   s0: number;
   readonly line0: number;
+  readonly linePx: number;
 }
 
 function icon(doc: Document, d: string): SVGSVGElement {
@@ -144,6 +196,31 @@ function div(doc: Document, className: string): HTMLDivElement {
   const el = doc.createElement("div");
   el.className = className;
   return el;
+}
+
+/** Fills `el` with `text`, each word in its own span (the spaces kept as
+ *  text), so the painter finds every word where the browser put it. */
+function wordSpans(
+  doc: Document,
+  el: HTMLElement,
+  text: string,
+): HTMLElement[] {
+  const spans: HTMLElement[] = [];
+  const parts = text.split(/(\s+)/).map((part) => {
+    if (part === "" || /^\s+$/.test(part)) return part;
+    const span = doc.createElement("span");
+    span.textContent = part;
+    spans.push(span);
+    return span;
+  });
+  el.replaceChildren(...parts);
+  return spans;
+}
+
+/** A positive CSS number, or `fallback` when it is not one. */
+function cssNumber(value: string | undefined, fallback: number): number {
+  const n = parseFloat(value ?? "");
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 /** What is said after the speaker's name: a synthetic voice, and the
@@ -193,6 +270,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   root.inert = true;
   const slotL = div(doc, "nb-slot nb-slot-l");
   const mid = div(doc, "nb-mid");
+  // The travel mode's hint row: the painted plate draws it, the box keeps
+  // its place.
+  const headEl = div(doc, "nb-head");
+  headEl.dataset.testid = "narration-box-hint";
+  headEl.setAttribute("aria-hidden", "true");
+  headEl.hidden = true;
   const winEl = div(doc, "nb-win");
   const col = div(doc, "nb-col");
   const sbar = div(doc, "nb-sbar");
@@ -207,7 +290,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   live.className = "nb-live";
   live.setAttribute("aria-live", "polite");
   winEl.append(col, sbar, measure, live);
-  mid.append(winEl);
+  mid.append(headEl, winEl);
   const slotR = div(doc, "nb-slot nb-slot-r");
   root.append(slotL, mid, slotR);
   deps.host.append(root);
@@ -234,6 +317,11 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
    *  none yet in this showing. */
   let told: boolean | null = null;
   let whoEl: HTMLElement | null = null;
+  let whoParts: HTMLElement[] = [];
+  let discParts: HTMLElement[] = [];
+  let mode: NarrationBoxMeasure = "natural";
+  let hint = "";
+  let paintLayout: WordsPaintLayout | null = null;
   const signs = new Set<HTMLElement>();
 
   function totalMs(): number {
@@ -248,7 +336,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     const who = doc.createElement("b");
     who.className = "nb-who";
     who.dataset.testid = "narration-box-who";
-    who.textContent = c.speaker.name;
+    whoParts = wordSpans(doc, who, c.speaker.name);
     who.style.color = c.speaker.color;
     whoEl = who;
     const said = disclosure(c);
@@ -256,7 +344,9 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     if (disc !== null) {
       disc.className = "nb-disc";
       disc.dataset.testid = "narration-box-disclosure";
-      disc.textContent = said;
+      discParts = wordSpans(doc, disc, said);
+    } else {
+      discParts = [];
     }
     const head: Node[] = disc === null ? [who] : [who, disc];
     const parts: (Node | string)[] = [...head, " "];
@@ -308,15 +398,24 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
         ? lineHeight
         : FALLBACK_LINE_PX;
     const viewW = win?.innerWidth ?? 0;
-    const boxMax = Math.min(viewW * BOX_SHARE, BOX_CAP_PX);
+    const travel = mode === "travel";
+    const fontPx = cssNumber(
+      win?.getComputedStyle(col).fontSize,
+      FALLBACK_FONT_PX,
+    );
+    const boxMax = Math.min(
+      viewW * BOX_SHARE,
+      BOX_CAP_PX,
+      travel ? TRAVEL_WIDTH_EM * fontPx : Infinity,
+    );
     const natural = measure.getBoundingClientRect().width;
     const slotW = slotR.getBoundingClientRect().width;
     const room = Math.max(TEXT_MIN_PX, boxMax - BOX_CHROME_PX - slotW);
     const textW = Math.floor(
-      Math.min(room, Math.max(TEXT_MIN_PX, natural + 2)),
+      travel ? room : Math.min(room, Math.max(TEXT_MIN_PX, natural + 2)),
     );
     col.style.width = `${String(textW)}px`;
-    mid.style.width = `${String(textW + 12)}px`;
+    mid.style.width = `${String(textW + SBAR_ROOM_PX)}px`;
     lineOf = lineIndices(
       spans.map((s) => s.offsetTop),
       lh,
@@ -328,6 +427,101 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     ls = lineStarts(starts, lineOf, totalMs());
     sbar.classList.toggle("nb-none", lines <= rows);
     scroll = target(content?.player.nowMs() ?? 0);
+    paintLayout =
+      travel && content !== null ? measurePaint(content, textW) : null;
+  }
+
+  function fontOf(el: Element, fallback: string): string {
+    const cs = win?.getComputedStyle(el);
+    if (cs === undefined || cs.fontSize === "" || cs.fontFamily === "") {
+      return fallback;
+    }
+    return `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  }
+
+  function runsOf(
+    els: readonly HTMLElement[],
+    kind: WordsPaintRun["kind"],
+  ): WordsPaintRun[] {
+    const at = lineIndices(
+      els.map((el) => el.offsetTop),
+      lh,
+      whoEl?.offsetTop,
+    );
+    return els.map((el, i) => ({
+      kind,
+      text: el.textContent ?? "",
+      x: el.offsetLeft,
+      line: at[i] ?? 0,
+      word: -1,
+    }));
+  }
+
+  /** The words as the browser laid them out, in the box's CSS px (offsets
+   *  ignore transforms, so a box that moves or scales measures the same). */
+  function measurePaint(
+    c: NarrationBoxContent,
+    textW: number,
+  ): WordsPaintLayout {
+    const bx = root.clientLeft;
+    const by = root.clientTop;
+    const words: WordsPaintRun[] = spans.map((el, i) => ({
+      kind: "word",
+      text: el.textContent ?? "",
+      x: el.offsetLeft,
+      line: lineOf[i] ?? 0,
+      word: i,
+    }));
+    const rootCs = win?.getComputedStyle(root);
+    const wordFont = fontOf(
+      col,
+      `500 ${String(FALLBACK_FONT_PX)}px sans-serif`,
+    );
+    return {
+      width: root.offsetWidth,
+      height: root.offsetHeight,
+      radius: cssNumber(rootCs?.borderTopLeftRadius, FALLBACK_RADIUS_PX),
+      win: {
+        x: winEl.offsetLeft + bx,
+        y: winEl.offsetTop + by,
+        w: textW + SBAR_ROOM_PX,
+        h: rows * lh,
+      },
+      head: {
+        x: headEl.offsetLeft + bx,
+        y: headEl.offsetTop + by,
+        w: textW,
+        h: headEl.offsetHeight > 0 ? headEl.offsetHeight : HEAD_PX,
+      },
+      fontPx: cssNumber(win?.getComputedStyle(col).fontSize, FALLBACK_FONT_PX),
+      lineHeight: lh,
+      rows,
+      lines,
+      fonts: {
+        word: wordFont,
+        who: whoEl === null ? wordFont : fontOf(whoEl, wordFont),
+        disc: fontOf(discParts[0] ?? col, wordFont),
+        hint: fontOf(headEl, "600 11px sans-serif"),
+      },
+      whoColor: c.speaker.color,
+      grey: cssNumber(rootCs?.getPropertyValue("--nb-grey"), FALLBACK_GREY),
+      tint: cssNumber(rootCs?.getPropertyValue("--nb-tint"), FALLBACK_TINT),
+      runs: [
+        ...runsOf(whoParts, "who"),
+        ...runsOf(discParts, "disc"),
+        ...words,
+      ],
+      startsMs: starts,
+    };
+  }
+
+  /** The head row's hint: how to start, go on or hear it again. */
+  function hintOf(c: NarrationBoxContent, playing: boolean): string {
+    if (mode !== "travel" || playing || dragging) return "";
+    const ms = c.player.nowMs();
+    const total = totalMs();
+    if (total > 0 && ms >= total) return HINT_END;
+    return ms <= 0 ? HINT_START : HINT_PAUSED;
   }
 
   function litAt(ms: number): number {
@@ -384,6 +578,11 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     // A drag holds the voice for the finger only: it still counts as
     // playing, so neither the store nor a screen reader hears of it.
     const playing = dragging ? resume : c.player.playing();
+    const nextHint = hintOf(c, playing);
+    if (nextHint !== hint) {
+      hint = nextHint;
+      headEl.textContent = hint;
+    }
     const speaking = playing && !dragging ? "yes" : "no";
     if (root.dataset.speaking !== speaking) root.dataset.speaking = speaking;
     if (told !== playing) {
@@ -474,17 +673,56 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     tick();
   }
 
-  const onDown = (e: PointerEvent): void => {
-    if (!shown || content === null || press !== null) return;
-    if ((e.target as Element | null)?.closest?.("button") != null) return;
-    const ms = content.player.nowMs();
+  function beginPress(p: NarrationBoxPress): boolean {
+    if (!shown || content === null || press !== null) return false;
     press = {
+      id: p.id,
+      x: p.x,
+      y: p.y,
+      s0: scroll,
+      line0: lineFloatAt(ls, content.player.nowMs()),
+      linePx: Math.max(MIN_PRESS_LINE_PX, p.linePx),
+    };
+    return true;
+  }
+  function movePress(x: number, y: number): void {
+    const c = content;
+    if (press === null || c === null) return;
+    const dy = press.y - y; // finger up, text up: ahead
+    if (!dragging && !isTap(x - press.x, dy)) startDrag(c);
+    if (!dragging) return;
+    const moved = dy / press.linePx;
+    dragMs = timeAtLine(ls, press.line0 + moved);
+    const raw = press.s0 + moved;
+    const read = lineOf[Math.max(0, litAt(dragMs))] ?? 0;
+    scroll = dragScroll(raw, Math.max(0, lines - rows), read, rows);
+    // Held at an edge in the text, the words move on from there with the
+    // finger rather than jump to catch up once the read line moves on.
+    if (raw >= 0 && raw <= lines - rows) press.s0 += scroll - raw;
+    tick();
+  }
+  function endPress(kind: "up" | "cancel", x: number, y: number): void {
+    const c = content;
+    if (press === null) return;
+    press = null;
+    if (c === null) return;
+    if (dragging) {
+      endDrag(c);
+      return;
+    }
+    // A cancelled pointer or a capture the system took is no tap.
+    if (kind === "up") toggle(x, y);
+  }
+
+  const onDown = (e: PointerEvent): void => {
+    if ((e.target as Element | null)?.closest?.("button") != null) return;
+    const started = beginPress({
       id: pointerIdOf(e),
       x: e.clientX,
       y: e.clientY,
-      s0: scroll,
-      line0: lineFloatAt(ls, ms),
-    };
+      linePx: lh,
+    });
+    if (!started) return;
     if (typeof root.setPointerCapture === "function") {
       try {
         root.setPointerCapture(pointerIdOf(e));
@@ -494,33 +732,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     }
   };
   const onMove = (e: PointerEvent): void => {
-    const c = content;
-    if (press === null || c === null || pointerIdOf(e) !== press.id) return;
-    const dy = press.y - e.clientY; // finger up, text up: ahead
-    if (!dragging && !isTap(e.clientX - press.x, dy)) startDrag(c);
-    if (!dragging) return;
-    const moved = dy / lh;
-    dragMs = timeAtLine(ls, press.line0 + moved);
-    const raw = press.s0 + moved;
-    const read = lineOf[Math.max(0, litAt(dragMs))] ?? 0;
-    scroll = dragScroll(raw, Math.max(0, lines - rows), read, rows);
-    // Held at an edge in the text, the words move on from there with the
-    // finger rather than jump to catch up once the read line moves on.
-    if (raw >= 0 && raw <= lines - rows) press.s0 += scroll - raw;
-    tick();
+    if (press === null || pointerIdOf(e) !== press.id) return;
+    movePress(e.clientX, e.clientY);
   };
   const onUp = (e: PointerEvent): void => {
-    const c = content;
     if (press === null || pointerIdOf(e) !== press.id) return;
-    press = null;
-    if (c === null) return;
-    if (dragging) {
-      endDrag(c);
-      return;
-    }
-    // A cancelled pointer or a capture the system took is no tap.
-    if (e.type !== "pointerup") return;
-    toggle(e.clientX, e.clientY);
+    endPress(e.type === "pointerup" ? "up" : "cancel", e.clientX, e.clientY);
   };
   const onKey = (e: KeyboardEvent): void => {
     const c = content;
@@ -568,7 +785,17 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   return {
     element: root,
     slots: { left: slotL, right: slotR },
-    show(next) {
+    show(next, how = "natural") {
+      if (how !== mode) {
+        mode = how;
+        root.classList.toggle("nb-travel", mode === "travel");
+        headEl.hidden = mode !== "travel";
+        if (mode !== "travel") {
+          hint = "";
+          headEl.textContent = "";
+        }
+        dirty = true;
+      }
       const same = content !== null && drawsSame(content, next);
       // The store hears of a new text or a new showing, never per frame.
       const fresh = !same || !shown;
@@ -599,6 +826,31 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
       deps.store.dispatch(narrationBoxHidden());
     },
     tick,
+    setGhost(on) {
+      root.classList.toggle("nb-ghost", on);
+    },
+    setPointer(on) {
+      root.classList.toggle("nb-nopointer", !on);
+    },
+    paintModel() {
+      const c = content;
+      if (!shown || c === null) return null;
+      if (dirty) layout();
+      if (paintLayout === null) return null;
+      return {
+        layout: paintLayout,
+        frame: {
+          voiceMs: dragging ? dragMs : c.player.nowMs(),
+          lit: litUpTo,
+          scroll,
+          scrubbing: dragging,
+          hint,
+        },
+      };
+    },
+    beginPress,
+    movePress,
+    endPress,
     state() {
       return {
         shown,
@@ -609,6 +861,8 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
         rows,
         scroll,
         scrubbing: dragging,
+        pressing: press !== null,
+        hint,
       };
     },
     dispose() {

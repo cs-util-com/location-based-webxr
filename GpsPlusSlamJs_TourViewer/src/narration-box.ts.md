@@ -25,11 +25,28 @@ and what.
     `data-testid="narration-box"`, focusable).
   - `slots.left`, `slots.right` - the side places for a story step's
     action and a quiz; empty and hidden for now.
-  - `show(content)` - shows `content`. Cheap for the same content, so the
+  - `show(content, measure = "natural")` - shows `content`. Cheap for the same content, so the
     frame loop may call it every frame; a new `key`, text, timing,
     speaker, title, synthetic flag or voice credit rebuilds the words, the
     disclosure and the label.
   - `hide()` - fades out, inert, out of reach of taps.
+  - `setGhost(on)` - an invisible box (opacity 0, no fades) that keeps
+    its layout, its gestures and its screen reader text: the travel
+    mode's, whose visible box is the painted plate.
+  - `setPointer(on)` - whether the box takes pointers itself
+    (`nb-nopointer` when off).
+  - `paintModel()` - what the plate paints
+    (`narration-words-paint.ts` `WordsPaintModel`): the layout measured
+    at the last `layout()` (the same object until the box is laid out
+    anew) and this frame's voice time, lit word, scroll, scrub and hint;
+    null when hidden or in the natural mode.
+  - `beginPress({ id, x, y, linePx })`, `movePress(x, y)`,
+    `endPress("up" | "cancel", x, y)` - a finger forwarded from
+    elsewhere (the plate), in screen px, with one line of the words as
+    the finger sees it (`linePx`, at least 4 px); the box's own
+    pointer handlers go through the same three with its line height.
+    `beginPress` is false while a press is down; "cancel" is never a
+    tap.
   - `tick()` - follows the voice; `show` calls it, and so does every
     frame.
   - `state()` - what a test or the check page reads: shown, key, lit word
@@ -121,6 +138,18 @@ and what.
   nothing breathes, and a paused voice's name is dimmed instead. Reduced
   motion also drops the word fades, the box's fade and the swap; reduced
   transparency or more contrast raise the tint and the grey.
+- The travel mode (`show(content, "travel")`, class `nb-travel`): the
+  box takes a fixed width, `min(17 em, 80 % of the window, 720 px)`, so
+  the plate keeps one shape from sign to sign (a 234 px text column at
+  16 px), and shows a 20 px head row (`nb-head`, aria-hidden) over the
+  words for the hint: "tap the words to listen" before the voice starts,
+  "paused - tap to play", "the end - tap to hear it again", and nothing
+  while playing or dragging (the natural mode has no hint). The
+  measured paint layout takes the words', the name's and the
+  disclosure's runs from the ghost's spans, the window and head
+  rectangles from the box's own offsets (transform-proof), and the
+  fonts, grey and tint from the computed style (`--nb-grey`,
+  `--nb-tint`), with fallbacks (16 px, 0.55, 0.72).
 - Intended differences from the prototype:
   - the speaker's name is not a line of its own and has no coloured
     mark: it starts the words, bold, in the speaker's colour, once per
@@ -178,7 +207,14 @@ box.hide();
   no playing on from a drag ended in a hidden page; a voice the channel
   carries on mid-drag held and played on from the dragged place; the
   disclosure and label redrawn when only the credit, synthetic flag or
-  title changes; a drag ended by a lost pointer capture, which is no tap.
+  title changes; a drag ended by a lost pointer capture, which is no tap;
+  in travel mode: the fixed width and the head row, the ghost and
+  pointer switches, the paint model (null in the natural mode, the same
+  layout object until laid out anew), the hints, and forwarded presses
+  (a tap, a drag scaled by `linePx`, a cancel that is no tap, a second
+  press refused).
+- `playwright-tests/travelling-box-check.spec.js` - the travel box's
+  shape and the painted words against the ghost's spans.
 - `narration-box-timeline.test.ts` and
   `narration-box-timeline.property.test.ts` - the arithmetic, with
   properties.
