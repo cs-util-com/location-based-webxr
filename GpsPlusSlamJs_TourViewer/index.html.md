@@ -113,14 +113,14 @@ cap), share of svh)`); the page uses `l`,
      PDF of N numbered posters (`#print-count` between the big - and +
      `#print-count-down` / `#print-count-up`, three by default), each
      carrying the poster text of `#poster-title`, `#poster-explanation`
-     and `#poster-cta` (polish round D-P7, r820 feedback R8), grouped under
+     and `#poster-cta` (polish round D-P7), grouped under
      the serif heading "On the poster" (`.field-group`, `role=group`
      labelled by `#poster-text-heading`, an indented rule on the left; not
      a fieldset, whose legend reads as one more label and whose box
      narrowed beside the sticker), previewed as
      one small poster per code (`#print-tiles`). The defaults nobody needs
      to touch sit in `#print-settings` inside the closed `#setup-settings`
-     above the navigation (r820 feedback R7): the
+     above the navigation: the
      side length in centimetres (`#author-size`, 18 by default; a size
      refusal at AR start opens the block), `#print-paper` and the first
      code number (`#author-c`). The launch link the codes carry
