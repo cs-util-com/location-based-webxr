@@ -39,7 +39,7 @@ import {
 } from "./trainer-page-slice.js";
 import type { TrainerSideTables } from "./trainer-page-store.js";
 
-export const VERDICT_WORD: Readonly<Record<Verdict, string>> = {
+const VERDICT_WORD: Readonly<Record<Verdict, string>> = {
   good: "Good",
   weak: "Weak",
   poor: "Not good enough",
@@ -190,7 +190,7 @@ export function minutesText(seconds: number): string {
 }
 
 /** The census card's sentences, as markup with escaped numbers. */
-export function censusLeadHtml(s: TrainerPageState): string {
+function censusLeadHtml(s: TrainerPageState): string {
   const c = s.recording?.census;
   if (c === null || c === undefined) return "";
   const n = s.windows.length;
@@ -210,7 +210,7 @@ export function censusLeadHtml(s: TrainerPageState): string {
 <p class="census-lead">It is made in ${stretches}. You can leave it running, or stop and continue: finished stretches are kept.</p>`;
 }
 
-export function sayFor(w: WindowState): string {
+function sayFor(w: WindowState): string {
   if (w.status === "stopped")
     return "Stopped here. This stretch starts over when you continue.";
   if (w.status === "queued")
@@ -235,7 +235,7 @@ interface PrintAction {
   readonly tone: ActionTone;
 }
 
-export function actionsFor(w: WindowState): PrintAction[] {
+function actionsFor(w: WindowState): PrintAction[] {
   if (w.status !== "done" || w.judgement === null) return [];
   if (w.decision !== null) return [{ key: "undo", label: "Undo", tone: "" }];
   const again: PrintAction = {
@@ -304,7 +304,7 @@ export function barText(s: TrainerPageState): [string, string] | null {
   return [parts.join(", "), sub];
 }
 
-export function saveContentsLine(s: TrainerPageState): string {
+function saveContentsLine(s: TrainerPageState): string {
   const files = windowsInFile(s);
   const weak = files.filter((w) => w.judgement?.verdict === "weak").length;
   const poor = files.filter((w) => w.judgement?.verdict === "poor").length;
@@ -326,7 +326,7 @@ export function saveContentsLine(s: TrainerPageState): string {
 }
 
 /** The stop dialog's sentence, from the live state of the stretch it is for. */
-export function stopDialogText(s: TrainerPageState): string {
+function stopDialogText(s: TrainerPageState): string {
   const w = s.windows.find((x) => x.id === s.stopDialog);
   const kept = finishedWindows(s).length;
   const keptText = `The ${kept} finished ${kept === 1 ? "stretch stays" : "stretches stay"} on this computer.`;
@@ -338,7 +338,7 @@ export function stopDialogText(s: TrainerPageState): string {
 }
 
 /** Started stretches the loupe can show: never one that has not started. */
-export const showable = (w: WindowState): boolean => w.status !== "waiting";
+const showable = (w: WindowState): boolean => w.status !== "waiting";
 
 export function loupeWord(w: WindowState): string {
   if (w.status === "done" && w.judgement !== null)

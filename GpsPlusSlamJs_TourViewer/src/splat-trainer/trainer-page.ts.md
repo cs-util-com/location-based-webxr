@@ -16,9 +16,10 @@ thing it keeps itself is which dialog is open.
     `subscribe`), `sides.previews`, `chooseRecording`, `save`;
     `createTrainerPageStore` provides it.
   - `env`: `{ win, isPhone }`; on a phone the page refuses at once.
-- Pure text helpers, exported for tests: `VERDICT_WORD`, `minutesText`,
-  `censusLeadHtml`, `sayFor`, `actionsFor`, `barText`, `saveContentsLine`,
-  `stopDialogText`, `showable`, `loupeWord`.
+- Pure text helpers, exported for tests: `minutesText`, `barText`,
+  `loupeWord`. The rest (`censusLeadHtml`, `sayFor`, `actionsFor`,
+  `saveContentsLine`, `stopDialogText`, `showable`) stay module-private
+  and are tested through the mounted page.
 
 ## States it shows
 

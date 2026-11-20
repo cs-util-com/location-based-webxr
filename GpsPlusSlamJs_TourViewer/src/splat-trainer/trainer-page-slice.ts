@@ -21,18 +21,17 @@ import type {
 } from "./trainer-adapter.js";
 import type { StretchSummary } from "./window-plan.js";
 
-export type Phase =
+type Phase =
   "start" | "reading" | "census" | "training" | "stopped" | "done" | "refused";
 
-export type RefusalKind = "phone" | "no-webgpu" | "recording";
+type RefusalKind = "phone" | "no-webgpu" | "recording";
 
-export type WindowStatus =
-  "waiting" | "training" | "stopped" | "queued" | "done";
+type WindowStatus = "waiting" | "training" | "stopped" | "queued" | "done";
 
-export type Decision = "keep" | "discard";
+type Decision = "keep" | "discard";
 
 /** The numbers of the recording the census card speaks about. */
-export interface CensusSummary {
+interface CensusSummary {
   readonly frames: number;
   readonly skippedFrames: number;
   readonly pathM: number;
@@ -64,7 +63,7 @@ export interface WindowState {
   readonly decision: Decision | null;
 }
 
-export type GpuStatus = "probing" | GpuProbe["kind"];
+type GpuStatus = "probing" | GpuProbe["kind"];
 
 export interface TrainerPageState {
   readonly phase: Phase;
@@ -191,7 +190,7 @@ const canTrain = (s: S): boolean =>
   (s.gpu.status === "ready" ||
     (s.gpu.status === "integrated" && s.gpu.accepted));
 
-export const trainerPageSlice = createSlice({
+const trainerPageSlice = createSlice({
   name: "splatTrainer",
   initialState: initialTrainerPageState("unavailable"),
   reducers: {

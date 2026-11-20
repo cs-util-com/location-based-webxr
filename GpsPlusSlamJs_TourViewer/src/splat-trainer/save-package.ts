@@ -20,10 +20,10 @@ import {
   windowsInFile,
 } from "./trainer-page-slice.js";
 
-export const PACKAGE_MANIFEST = "splat-package.json";
-export const PACKAGE_FORMAT = "splat-package";
+const PACKAGE_MANIFEST = "splat-package.json";
+const PACKAGE_FORMAT = "splat-package";
 /** 0 while the format is a placeholder; the first real format is 1. */
-export const PACKAGE_VERSION = 0;
+const PACKAGE_VERSION = 0;
 
 /** `<recording name>-splat.zip`, from a name a person chose: kept to safe characters. */
 export function packageFileName(recordingName: string): string {
@@ -38,7 +38,7 @@ export function packageFileName(recordingName: string): string {
 const pad2 = (n: number): string => String(n).padStart(2, "0");
 const round1 = (x: number): number => Math.round(x * 10) / 10;
 
-export function packageManifest(
+function packageManifest(
   state: TrainerPageState,
   splats: ReadonlyMap<string, Blob>,
 ): Record<string, unknown> {

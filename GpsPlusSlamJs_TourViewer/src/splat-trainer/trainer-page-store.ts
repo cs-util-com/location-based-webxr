@@ -297,4 +297,4 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
   return { store, sides, probe, chooseRecording, save, dispose };
 }
 
-export type TrainerPageController = ReturnType<typeof createTrainerPageStore>;
+type TrainerPageController = ReturnType<typeof createTrainerPageStore>;

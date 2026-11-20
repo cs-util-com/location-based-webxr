@@ -38,7 +38,7 @@ export interface TrainProgress {
   readonly nextPreviewInS: number | null;
 }
 
-export interface TrainEvents {
+interface TrainEvents {
   onProgress(progress: TrainProgress): void;
   /** A newer look of the stretch, drawn to be shown as it is. */
   onPreview(picture: CanvasImageSource): void;

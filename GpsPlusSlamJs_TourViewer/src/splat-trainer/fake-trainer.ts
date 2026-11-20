@@ -22,14 +22,14 @@ import type {
 } from "./trainer-adapter.js";
 
 /** The timer the practice run counts on (the page passes the window's). */
-export interface PracticeTimer {
+interface PracticeTimer {
   now(): number;
   set(fn: () => void, ms: number): number;
   clear(id: number): void;
 }
 
 /** How one practice attempt ends. Numbers are invented. */
-export interface PracticeEnding {
+interface PracticeEnding {
   readonly outcome: Exclude<TrainOutcome, "cancelled" | "failed">;
   readonly verdict: Verdict;
   /** How sharp the last picture gets, 0 to 1. */
@@ -61,9 +61,9 @@ export interface PracticeOptions {
 /** One first try at pace 1, ms; a retry gets its time scale times this. */
 export const PRACTICE_STRETCH_MS = 20_000;
 /** A new picture this often, ms at pace 1. */
-export const PRACTICE_PREVIEW_MS = 4_000;
+const PRACTICE_PREVIEW_MS = 4_000;
 /** No time estimate before this much of a stretch, ms at pace 1. */
-export const PRACTICE_MEASURE_MS = 3_000;
+const PRACTICE_MEASURE_MS = 3_000;
 const TICK_MS = 250;
 
 const GOOD: PracticeEnding = {

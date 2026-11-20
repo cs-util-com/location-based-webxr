@@ -33,7 +33,7 @@ export interface PlannedWindow extends StretchSummary {
 }
 
 /** What a planner needs from a recording: its captures in order. */
-export interface PlannerInput {
+interface PlannerInput {
   readonly captures: readonly WalkFrame[];
 }
 
