@@ -763,6 +763,12 @@ const setup = wireCreatorSetup({
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
     stationChip: element("creator-station"),
+    scanCard: {
+      root: element("scan-card"),
+      title: element("scan-card-title"),
+      line: element("scan-card-line"),
+      close: element("scan-card-close"),
+    },
   },
   // Crash-safe authoring (F13), in this origin's private file system - the
   // desktop editor's draft opens through the same wrapper (M6 E2c).
@@ -864,6 +870,17 @@ if (recordingPanel !== null) {
   // killed tab left unsaved is still offered (M3 review #8).
   wireRecordingHousekeeping();
 }
+
+// The completion card's "Make your own tour": the link opens the start page
+// in a new tab (its own default action, inside the tap's activation), and
+// the AR session ends with it, the same way out as the X, so the visitor is
+// not left in a camera view nobody watches.
+element("walk-own-tour").addEventListener("click", () => {
+  if (!arSessionLive(arController.getState().status)) return;
+  arController.disable().catch((err: unknown) => {
+    errorBox.textContent = describeOpenError(err);
+  });
+});
 
 /**
  * A recording a killed tab left unsaved is offered, and old saved ones are

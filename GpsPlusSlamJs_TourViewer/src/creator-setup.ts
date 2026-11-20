@@ -83,7 +83,8 @@ import {
   finishBlockedHint,
   finishBlockedLead,
   codeTourLine,
-  entryHint,
+  creatorScanCardShown,
+  CREATOR_SCAN_CARD,
   setupHint,
 } from "./qr-author-mode.js";
 
@@ -216,6 +217,16 @@ export interface CreatorSetupDom {
    *  W3 "AR authoring", `creator-stations.ts`). Absent in the node tests
    *  that do not need it: a detached stand-in. */
   stationChip?: Pick<HTMLElement, "textContent" | "hidden">;
+  /** The scan card the visitor reads at the gate, in the creator's own
+   *  variant (look at the printed code first, with a close button). In a
+   *  creator's session this file is its one writer; `ar-entry.ts` writes it
+   *  for a visitor. Absent in the node tests that do not need it. */
+  scanCard?: {
+    root: Pick<HTMLElement, "hidden">;
+    title: Pick<HTMLElement, "textContent">;
+    line: Pick<HTMLElement, "textContent">;
+    close: Pick<HTMLElement, "addEventListener">;
+  };
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -560,18 +571,43 @@ export function wireCreatorSetup(deps: {
     return ctx.viewerVotedLocks > 0;
   }
 
-  /** The entry hint (§3.2a, D5) as the line's first part, until this
-   *  visit has seen the code in hand (or any code, with none measured). */
-  function entryLead(): string {
+  /** The creator closed the scan card in this AR visit. Transient UI
+   *  that nothing else reads, so it stays outside the store; each visit
+   *  starts with it open again (`endAuthorVisit`). A visitor page's card
+   *  is `ar-entry.ts`'s alone: nothing here listens to it or writes it. */
+  let scanCardDismissed = false;
+  if (creator) {
+    dom.scanCard?.close.addEventListener("click", () => {
+      scanCardDismissed = true;
+      renderScanCard();
+    });
+    // A tap on the close button is not also an XR select (see the panel).
+    dom.scanCard?.close.addEventListener("beforexrselect", (event) => {
+      event.preventDefault();
+    });
+  }
+
+  /** The creator's scan card: look at the tour's printed code first, until
+   *  this visit has seen the code in hand (or any code, with none in hand),
+   *  only for a tour with a measured code, and closed at once by a tap.
+   *  A creator's page only. */
+  function renderScanCard(): void {
+    const card = dom.scanCard;
+    if (!creator || card === undefined) return;
     const sighting = codes.sighting();
     const inHand = codes.inHand();
-    const hint = entryHint({
-      tourOpen: ctx.session !== null,
+    const shown = creatorScanCardShown({
+      sessionLive: sessionLive(),
+      levels: ctx.currentLevels,
       codeSeen:
         sighting !== null &&
         (inHand === null || sighting.levelId === inHand.id),
+      dismissed: scanCardDismissed,
     });
-    return hint === "" ? "" : `${hint} · `;
+    card.root.hidden = !shown;
+    if (!shown) return;
+    card.title.textContent = CREATOR_SCAN_CARD.title;
+    card.line.textContent = CREATOR_SCAN_CARD.line;
   }
 
   /** Whether the level in hand is a stored pose THIS visit did not measure
@@ -635,6 +671,7 @@ export function wireCreatorSetup(deps: {
   function renderAuthorReadout(): void {
     measuring.renderSizeOffer();
     if (!creator) return;
+    renderScanCard();
     // In AR the line is clamped to two lines, the whole of it a tap away
     // (see `statusExpanded`); on the page it is whole.
     dom.status.dataset["clamped"] =
@@ -727,7 +764,6 @@ export function wireCreatorSetup(deps: {
       (doneWaits && measuring.inFlight()
         ? `${DONE_WAITS_FOR_MEASURING} · `
         : "") +
-      entryLead() +
       // A stored code ignored as moved: its votes are withdrawn, so a visit
       // it lined up waits for GPS again - say why, as the visitor is told.
       (ctx.viewerIgnoredText === null
@@ -1082,6 +1118,7 @@ export function wireCreatorSetup(deps: {
       settle.endVisit();
       statusExpanded = false;
       doneWaits = false;
+      scanCardDismissed = false;
       // What the previews were made from, and the earlier visits' frame.
       previews.endVisit();
       // The open station's line and ring belong to the session, and so

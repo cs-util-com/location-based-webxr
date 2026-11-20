@@ -290,13 +290,17 @@ export function wireArEntry(deps: {
   /** The scan card shows the visitor's sentence while the gate waits, and
    *  "Code found - placing the tour…" with a check once the code passed
    *  it (the prototype's `found` state); the status line steps aside meanwhile (kept with
-   *  ?debug=1, whose technical line the card does not carry). */
+   *  ?debug=1, whose technical line the card does not carry). A creator's
+   *  session leaves the card to `creator-setup.ts`, which shows its own
+   *  variant of it. */
   function renderScanCard(
     shown: boolean,
     found: boolean,
     sentence: string,
   ): void {
     const visible = shown || found;
+    dom.arStatus.hidden = visible && !ctx.debug;
+    if (mode !== "visitor") return;
     if (dom.scanCard !== undefined) {
       dom.scanCard.hidden = !visible;
       dom.scanCard.dataset["look"] = found && !shown ? "found" : "scan";
@@ -310,7 +314,6 @@ export function wireArEntry(deps: {
     if (dom.scanCardLine !== undefined) {
       dom.scanCardLine.textContent = shown ? sentence : "";
     }
-    dom.arStatus.hidden = visible && !ctx.debug;
   }
 
   /** The walk's surfaces for a visitor's sentence: the coach, the toast's news, the peek's code line. The

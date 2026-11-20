@@ -71,7 +71,10 @@ file once more; a file moved or deleted since is said, and forgotten.
    best at the hung code, so it is measured first: keep the code in view
    until the panel says it is measured (walking a few metres with GPS
    reception lets the phone align to the map, and the panel shows the
-   accuracy). At the spots you choose, "Place a pin" (a text label on the
+   accuracy). On a later visit to a tour whose code is measured, a card
+   under the readout asks for the printed code first (pins and photos
+   placed before it is seen are less exact); its x closes it at once, and
+   it goes by itself once the code is seen. At the spots you choose, "Place a pin" (a text label on the
    surface under the ring; the ring follows a mesh the phone builds of the
    surroundings from its depth sensor, easing over the surface and lying
    flat to it, and falls back to the phone's own surface detection where
@@ -117,7 +120,8 @@ poster title becomes at the Finish - a line counting its places, one of
 its photos when it has one, and the round button low on the screen, with
 one line under it saying what the next tap does. What the tour needs
 (camera, location, nothing uploaded, no account) is behind "What
-happens?", and "Make your own tour" opens the setup in a new tab. A phone
+happens?", and "Make your own tour" opens the setup in a new tab; the card at the end of a
+walk offers the same link, and its tap also leaves AR. A phone
 that cannot run AR gets a "Copy link" button instead, to open the tour on
 one that can; on a computer-sized screen the same link is also shown as a
 code beside it, "Scan with your phone", and the code follows the window
