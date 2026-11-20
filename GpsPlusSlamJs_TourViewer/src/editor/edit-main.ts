@@ -830,8 +830,13 @@ document.body.dataset["autosave"] = autosave.state();
 /**
  * The dev server's test hook (`window.__tourEditor`): an e2e reaches the
  * editor session's edits no control of this page offers yet (a station's
- * name), then `edited()` follows them as an edit made here would - the
- * 3D view and the status, and the autosave told. Inert in
+ * name). `edit(write)` runs one through the inspector's own commit path
+ * (`writeInspectorEdit`: a delete's Undo offer ended first, then the
+ * refresh, a refusal toasted, the autosave told) and answers the
+ * session's outcome kind. `edited()` only follows edits the e2e already
+ * made (an async one, or several at once): the refresh and the autosave
+ * told, with no Undo offer ended, so it is for setup with no delete toast
+ * up, where the two paths do the same. Inert in
  * a production build: `import.meta.env.DEV` is statically false there, so
  * the hook is stripped (`seams.ts`'s guarantee).
  */
@@ -840,6 +845,9 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     window as {
       __tourEditor?: {
         editor: () => EditorSession | null;
+        edit: (
+          write: (session: EditorSession) => { readonly kind: string },
+        ) => string;
         edited: () => void;
         view3d: () => Editor3dStats | null;
         view3dTilt: (deg: number) => void;
@@ -878,6 +886,15 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     }
   ).__tourEditor = {
     editor: () => editor,
+    edit: (write) => {
+      let kind = "refused";
+      writeInspectorEdit((session) => {
+        const outcome = write(session);
+        kind = outcome.kind;
+        return outcome;
+      });
+      return kind;
+    },
     edited: () => {
       refresh();
       tourChanged();

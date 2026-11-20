@@ -35,6 +35,25 @@ import {
  *  Earth (whose whole view stands thousands of kilometres up). */
 const FRAMED_MAX_M = 20_000;
 
+/** How far a framed point may stand off the line of sight: the view aims
+ *  at it exactly, so this is rounding, far under the captures' 10 m. */
+const SIGHT_TOLERANCE_M = 1;
+
+/**
+ * The distance (m) from point `p` to the line through `a` and `b`.
+ * @param {number[]} p @param {number[]} a @param {number[]} b
+ */
+function offLine(p, a, b) {
+  const d = [0, 1, 2].map((i) => b[i] - a[i]);
+  const v = [0, 1, 2].map((i) => p[i] - a[i]);
+  const cross = [
+    v[1] * d[2] - v[2] * d[1],
+    v[2] * d[0] - v[0] * d[2],
+    v[0] * d[1] - v[1] * d[0],
+  ];
+  return Math.hypot(...cross) / Math.hypot(...d);
+}
+
 /**
  * The sky's colour: the per-channel median (0-255) of the canvas's top
  * tenth, read from a screenshot (a software-drawn WebGL keeps no drawing
@@ -432,13 +451,24 @@ test("flies to a recording's camera captures when the tour has nothing positione
       timeout: 90_000,
     })
     .toMatchObject({ captures: 2, shown: true });
-  // Framed, the camera stands over the captures; the whole Earth is seen
-  // from thousands of kilometres up.
+  // Framed, the camera stands over the captures (the whole Earth is seen
+  // from thousands of kilometres up) and its line of sight runs through
+  // their centre: the view is on them, not merely low somewhere.
   await expect
-    .poll(async () => (await view3d(page))?.globe?.altitudeM, {
-      timeout: 60_000,
-    })
-    .toBeLessThan(FRAMED_MAX_M);
+    .poll(
+      async () => {
+        const stats = await view3d(page);
+        const centre = stats?.globe?.scanCentre;
+        if (!stats || !Array.isArray(centre)) return null;
+        return {
+          low: stats.globe.altitudeM < FRAMED_MAX_M,
+          offSightM:
+            offLine(centre, stats.camera, stats.look) < SIGHT_TOLERANCE_M,
+        };
+      },
+      { timeout: 60_000 },
+    )
+    .toEqual({ low: true, offSightM: true });
   expect(await rejections(page)).toEqual([]);
 });
 

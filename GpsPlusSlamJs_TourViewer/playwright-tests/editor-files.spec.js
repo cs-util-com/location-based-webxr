@@ -31,6 +31,7 @@ import {
   captionOf,
   editText,
   expectCaption,
+  GONE,
   placeOf,
   remove,
   sessionEdit,
@@ -124,7 +125,7 @@ test("edits survive a closed tab: the same file reopened offers them, and Restor
   await offer.locator("button", { hasText: "Restore" }).click();
   await expect(offer).toHaveCount(0);
   await expectCaption(next, TOWN_HALL, "Kept in the browser");
-  await expectCaption(next, FOUNTAIN, undefined);
+  await expectCaption(next, FOUNTAIN, GONE);
   await expect(next.locator("#save-status")).toHaveText(
     "2 changes not saved - kept in this browser until you save",
   );
@@ -423,7 +424,7 @@ test("a tour of notes alone saved in place and reopened keeps the edit made afte
   const offer = next.locator(".toast.draft-offer");
   await expect(offer).toContainText("1 deletion");
   await offer.locator("button", { hasText: "Restore" }).click();
-  await expectCaption(next, FOUNTAIN, undefined);
+  await expectCaption(next, FOUNTAIN, GONE);
 });
 
 test("the changed-on-disk refusal points to the browser's copy, and the file opened again offers the edits", async ({
@@ -632,7 +633,7 @@ test("an undo of a delete of an edited note keeps the edit for the next open", a
   await openFile(page, buffer, "editor-fixture.zip");
   await editText(page, TOWN_HALL, "Edited, deleted, undone");
   await remove(page, TOWN_HALL);
-  await expectCaption(page, TOWN_HALL, undefined);
+  await expectCaption(page, TOWN_HALL, GONE);
   await page.keyboard.press("Control+z");
   await expectCaption(page, TOWN_HALL, "Edited, deleted, undone");
   await backedUp(page);

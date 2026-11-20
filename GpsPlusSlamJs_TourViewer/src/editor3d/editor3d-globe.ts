@@ -1957,6 +1957,17 @@ export async function openGlobeEditor(
             approach: approach?.stats() ?? approachEnded,
             marks: marks.stats(),
             debug: debugLayer.stats(),
+            // The centre of the drawn captures' bounds (what `frameView`
+            // aims at for a tour with nothing positioned) in the world's
+            // frame, as `camera` and `look`; null with none drawn.
+            scanCentre:
+              debugPoints.length === 0
+                ? null
+                : new THREE.Box3()
+                    .setFromPoints(debugPoints)
+                    .getCenter(new THREE.Vector3())
+                    .applyMatrix4(tourFrame.matrixWorld)
+                    .toArray(),
             // The speed streaks as last stepped, and the camera's distance
             // from the Earth's centre against the fit (the start's check).
             dust: dust.state(),

@@ -874,11 +874,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   page reads now), and its codes come from `shellCodes` (the model's
   codes with their stored position and print size as opened).
 - **The dev server's test hook** `window.__tourEditor` (`{ editor(),
-edited(), view3d(), view3dTilt(deg), view3dDistance(m), view3dHeading(deg), view3dBuildings(on),
+edit(write), edited(), view3d(), view3dTilt(deg), view3dDistance(m), view3dHeading(deg), view3dBuildings(on),
 view3dPointOf(selection), view3dScreenOf(selection), view3dHandle(part), view3dUnder(x, y),
 view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(reason), deleteSelection(id) }`): an e2e reaches the editor session's edits no control of
-  this page offers yet, then `edited()` follows them as an edit made here
-  would (refresh, autosave told); `view3d()` is the shown 3D view's
+  this page offers yet: `edit(write)` runs one through the inspector's
+  commit path (`writeInspectorEdit`: a delete's Undo offer ended, the
+  refresh, a refusal toasted, the autosave told) and answers the session's
+  outcome kind; `edited()` only follows edits the e2e made itself (async
+  ones, or several at once) with the refresh and the autosave told, and
+  ends no Undo offer, so it is for setup with no delete toast up;
+  `view3d()` is the shown 3D view's
   `stats()` (null while it does not show), `view3dTilt(deg)` tilts its camera,
   `view3dDistance(m)` moves it in or out, `view3dHeading(deg)` turns it
   round the point it looks at, `view3dBuildings(on)` shows or
