@@ -1,92 +1,28 @@
 import { describeOpenError } from "../open-errors.js";
-import type { EditorFileKind } from "./classify-editor-file.js";
-import { NOT_A_TOUR, NOT_A_ZIP } from "./editor-open.js";
 import type { EditorEntryStep } from "./editor-view.js";
-
-/** What the editor does with the files it was given, already sorted. */
-export type EditorEntryPlan =
-  /** Open `tour`, then add `scan` beside it when one came along. A file
-   *  sorted as neither for the open's own reasons (no zip, no tour in it)
-   *  is opened too, when it is the only candidate: the open refuses it in
-   *  its own words. */
-  | {
-      readonly kind: "open";
-      readonly tour: File;
-      readonly scan: File | null;
-      readonly ignored: readonly IgnoredFile[];
-    }
-  /** Add `scan` beside the tour already open. */
-  | {
-      readonly kind: "add-scan";
-      readonly scan: File;
-      readonly ignored: readonly IgnoredFile[];
-    }
-  /** Nothing to do, and why in words. */
-  | { readonly kind: "refuse"; readonly reason: string };
-
-/** A file left out of the plan, and why. */
-interface IgnoredFile {
-  readonly file: File;
-  readonly reason: string;
-}
-
-/** Said when a scan comes without a tour to add it to. */
-export function scanNeedsTourLine(fileName: string): string {
-  return `${fileName} is a scan, not a tour. Open a tour or start a new one first, then add the scan to it.`;
-}
-
-/** Said when more than one tour came at once. */
-export const ONE_TOUR_AT_A_TIME =
-  "These are several tours. Choose one tour at a time.";
-
-/** Said when more than one scan came at once. */
-export const ONE_SCAN_AT_A_TIME =
-  "These are several scans. Add one scan at a time.";
-
-/** Said when the file list was empty. */
-export const NO_FILE = "No file was given.";
-
-/**
- * The plan for files given to the editor (chosen, or dropped on its open
- * box): at most one tour and one scan, and a scan only with a tour - the
- * one given, or the one already open (`tourOpen`). The order is forced:
- * there is no add without a tour. Pure.
- */
-export function planEditorEntry(
-  kinds: readonly EditorFileKind[],
-  tourOpen: boolean,
-): EditorEntryPlan {
-  const tours = kinds.filter((k) => k.kind === "tour");
-  const scans = kinds.filter((k) => k.kind === "scan");
-  const neither = kinds.flatMap((k) =>
-    k.kind === "neither" ? [{ file: k.file, reason: k.reason }] : [],
-  );
-  if (tours.length > 1) return { kind: "refuse", reason: ONE_TOUR_AT_A_TIME };
-  if (scans.length > 1) return { kind: "refuse", reason: ONE_SCAN_AT_A_TIME };
-  const [tour] = tours;
-  const scan = scans[0]?.file ?? null;
-  if (tour !== undefined) {
-    return { kind: "open", tour: tour.file, scan, ignored: neither };
-  }
-  if (scan !== null) {
-    return tourOpen
-      ? { kind: "add-scan", scan, ignored: neither }
-      : { kind: "refuse", reason: scanNeedsTourLine(scan.name) };
-  }
-  const [first, ...rest] = neither;
-  if (first === undefined) return { kind: "refuse", reason: NO_FILE };
-  // A precise reason (a scan whose identity is broken, a damaged zip) is
-  // said as it is: the open would only say it holds no tour.
-  if (first.reason !== NOT_A_TOUR && first.reason !== NOT_A_ZIP) {
-    return { kind: "refuse", reason: `${first.file.name}: ${first.reason}` };
-  }
-  return { kind: "open", tour: first.file, scan: null, ignored: rest };
-}
 
 /** How adding a scan ended. */
 export type AddScanOutcome =
   | { readonly kind: "added" }
   | { readonly kind: "refused"; readonly reason: string };
+
+/**
+ * Runs one add of a scan; a throw (a read failing past its own refusals)
+ * is a refusal in words, so no caller leaves it unhandled and unsaid.
+ * Null - nothing added, nothing to say - passes through. Never rejects.
+ */
+export async function addScanSafely(
+  add: () => Promise<AddScanOutcome | null>,
+): Promise<AddScanOutcome | null> {
+  try {
+    return await add();
+  } catch (err) {
+    return {
+      kind: "refused",
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
 
 /** How opening a tour with a scan ended. */
 export type OpenWithScanOutcome =
@@ -160,15 +96,7 @@ export async function openWithScan(
     if (!opened) return { kind: "not-opened" };
     if (scan === null) return { kind: "opened", scanAdded: false };
     deps.step("adding-scan");
-    let added: AddScanOutcome | null;
-    try {
-      added = await deps.addScan(scan);
-    } catch (err) {
-      added = {
-        kind: "refused",
-        reason: err instanceof Error ? err.message : String(err),
-      };
-    }
+    const added = await addScanSafely(() => deps.addScan(scan));
     if (added === null) return { kind: "opened", scanAdded: false };
     return added.kind === "added"
       ? { kind: "opened", scanAdded: true }

@@ -75,8 +75,9 @@ function grey(color: string): THREE.MeshLambertMaterial {
   return new THREE.MeshLambertMaterial({ color });
 }
 
-/** The prototype's square: the ground, the paving and the guild house. */
-function buildSquare(scene: THREE.Scene): void {
+/** The prototype's square: the ground, the paving and the guild house
+ *  (the travelling box's check page stands in it too). */
+export function buildSquare(scene: THREE.Scene): void {
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(400, 400),
     grey("#bdbab3"),

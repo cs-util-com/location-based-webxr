@@ -7,7 +7,7 @@
  */
 
 import fc from "fast-check";
-import { Vector3 } from "three";
+import { Box3, Texture, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -16,6 +16,7 @@ import {
   turnToward,
   type SignContext,
 } from "./reading-sign";
+import { plateSizeM, TRAVEL_PLATE } from "./travelling-box-rules";
 
 describe("reading sign properties", () => {
   it("the plate faces any viewer about the upright axis only", () => {
@@ -27,8 +28,8 @@ describe("reading sign properties", () => {
         fc.double({ min: -50, max: 50, noNaN: true }),
         (x, y, z) => {
           fc.pre(Math.hypot(x, z) > 0.01);
-          turnToward(sign.plate, new Vector3(x, y, z));
-          const face = new Vector3(0, 0, 1).applyEuler(sign.plate.rotation);
+          turnToward(sign.turn, new Vector3(x, y, z));
+          const face = new Vector3(0, 0, 1).applyEuler(sign.turn.rotation);
           const len = Math.hypot(x, z);
           expect(face.y).toBeCloseTo(0, 9);
           expect(face.x).toBeCloseTo(x / len, 6);
@@ -80,6 +81,35 @@ describe("reading sign properties", () => {
         },
       ),
       { numRuns: 300 },
+    );
+  });
+});
+
+// Why: the plate under the sign is the narration box drawn in the world,
+// painted from the box's own layout. If its world shape differed from the
+// box's CSS shape the words would stretch and plate and dock would no
+// longer read alike. Whatever size the box takes, the plate keeps its
+// aspect, at 0.136 m an em.
+describe("the words plate's shape", () => {
+  it("is the box's CSS aspect for any box size", () => {
+    fc.assert(
+      fc.property(
+        fc.double({ min: 120, max: 900, noNaN: true }),
+        fc.double({ min: 40, max: 400, noNaN: true }),
+        fc.double({ min: 10, max: 32, noNaN: true }),
+        (w, h, font) => {
+          const sign = buildReadingSign(null);
+          sign.attachWords(new Texture(), plateSizeM(w, h, font));
+          sign.root.updateMatrixWorld(true);
+          const size = new Box3()
+            .setFromObject(sign.words)
+            .getSize(new Vector3());
+          sign.dispose();
+          expect(size.x / size.y).toBeCloseTo(w / h, 6);
+          expect(size.x).toBeCloseTo((w / font) * TRAVEL_PLATE.emM, 9);
+        },
+      ),
+      { numRuns: 200 },
     );
   });
 });

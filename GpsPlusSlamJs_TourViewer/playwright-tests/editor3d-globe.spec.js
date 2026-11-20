@@ -101,7 +101,8 @@ test("the sky over the tour is blue at noon and dark at its midnight", async ({
   await noClouds(page);
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
@@ -193,7 +194,8 @@ test("opens the sample at street level on the globe, and drags a selected statio
   await noClouds(page);
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
@@ -303,7 +305,8 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
   await noClouds(page);
   await page.goto("/edit.html");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
@@ -396,7 +399,8 @@ test.describe("on a touch screen", () => {
     await noClouds(page);
     await page.goto("/edit.html?globe=1");
     await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-    await page.locator("#sample-btn").click();
+    await page.locator(".start-choice:has(#start-example)").click();
+    await page.locator("#start-open").click();
     await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
       timeout: 120_000,
     });

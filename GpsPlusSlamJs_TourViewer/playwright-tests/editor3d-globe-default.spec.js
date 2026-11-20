@@ -160,7 +160,8 @@ test("the link's grade reaches the renderer, and no name keeps the default", asy
   const gradeOf = async (/** @type {string} */ link) => {
     await page.goto(link);
     await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-    await page.locator("#sample-btn").click();
+    await page.locator(".start-choice:has(#start-example)").click();
+    await page.locator("#start-open").click();
     await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
       timeout: 120_000,
     });
@@ -312,7 +313,8 @@ test.describe("where the 3D view cannot open", () => {
     });
     await page.goto("/edit.html");
     await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-    await page.locator("#sample-btn").click();
+    await page.locator(".start-choice:has(#start-example)").click();
+    await page.locator("#start-open").click();
     const failed = page.locator("#view3d-failed");
     await expect(failed).toBeVisible({ timeout: 60_000 });
     await expect(failed.getByRole("heading")).toHaveText(
@@ -436,7 +438,8 @@ test.describe("where the 3D view cannot open", () => {
     await noApproach(page);
     await page.goto("/edit.html");
     await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-    await page.locator("#sample-btn").click();
+    await page.locator(".start-choice:has(#start-example)").click();
+    await page.locator("#start-open").click();
     await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
       timeout: 120_000,
     });
@@ -484,7 +487,8 @@ test.describe("where the 3D view cannot open", () => {
     );
     await page.goto("/edit.html");
     await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-    await page.locator("#sample-btn").click();
+    await page.locator(".start-choice:has(#start-example)").click();
+    await page.locator("#start-open").click();
     const failed = page.locator("#view3d-failed");
     await expect(failed).toBeVisible({ timeout: 60_000 });
     await expect(failed).toContainText("could not be loaded");
@@ -547,7 +551,8 @@ test("the plain editor link opens the sample tour on the globe, and 'needs no GP
   await withoutPickers(page);
   await page.goto("/edit.html");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });

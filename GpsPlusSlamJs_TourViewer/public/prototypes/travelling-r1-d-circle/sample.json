@@ -1,0 +1,29 @@
+{
+  "name": "The well in the square",
+  "words": "A narration circle whose spoken words stand over the circle and travel to the screen when they cannot be read there.",
+  "records": {
+    "normal": {
+      "kind": "audio",
+      "view": "spot",
+      "title": "The old well",
+      "radiusM": 6,
+      "audio": "voice/old-well.ogg",
+      "synthetic": true,
+      "words": "circle",
+      "wordsAt": "stand",
+      "transcript": "You are standing where the town once came for water. Before the pipes, the well in the middle of this square was the only clean water for every house around it. A keeper lived in the small house on the corner and locked the cover at night. In dry summers people queued here before sunrise with two buckets each, and the keeper allowed no more. The stones under your feet were laid in a ring so that carts could turn without stopping the queue. Look down: the darker stones mark where the wall of the well stood. It was filled in when the water tower was built, and for a while nobody remembered it was here."
+    },
+    "longest": {
+      "kind": "audio",
+      "view": "spot",
+      "title": "The old well, and the long summer when the town ran dry and argued about who owned the water",
+      "radiusM": 6,
+      "audio": "voice/old-well-long.ogg",
+      "synthetic": true,
+      "words": "circle",
+      "wordsAt": "stand",
+      "transcript": "You are standing where the town once came for water. Before the pipes, the well in the middle of this square was the only clean water for every house around it. A keeper lived in the small house on the corner and locked the cover at night. In dry summers people queued here before sunrise with two buckets each, and the keeper allowed no more. One summer the water sank so low that the bucket came up half full of sand. The brewers said the well was theirs, because they had paid for the new rope; the bakers said it was theirs, because they had paid for the cover; and the council met every evening for three weeks without agreeing on anything. In the end it rained, and nobody ever settled whose well it was. The stones under your feet were laid in a ring so that carts could turn without stopping the queue. Look down: the darker stones mark where the wall of the well stood. It was filled in when the water tower was built, and for a while nobody remembered it was here."
+    }
+  },
+  "assets": []
+}

@@ -1,0 +1,288 @@
+<!doctype html>
+<!-- Prototype: the sign speaks, round 6, variant 2 - one box that travels. Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Sign speaks 6.2 - One box that travels</title>
+    <link rel="stylesheet" href="travelling-box.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="stage" id="stage">
+      <main class="device" id="device">
+        <canvas
+          id="cam"
+          aria-label="Simulated camera view of a town square with a reading sign"
+        ></canvas>
+
+        <div class="strip" id="strip">
+          <div class="strip-row">
+            <button
+              type="button"
+              data-beat="walk"
+              title="Start outside the circle and walk up to the sign"
+            >
+              Walk up
+            </button>
+            <button
+              type="button"
+              data-beat="d3"
+              title="Stand 3 m in front of the sign"
+            >
+              3 m
+            </button>
+            <button
+              type="button"
+              data-beat="d7"
+              title="Stand 7 m in front of the sign"
+            >
+              7 m
+            </button>
+            <button
+              type="button"
+              data-beat="d16"
+              title="Stand 16 m in front of the sign"
+            >
+              16 m
+            </button>
+            <button
+              type="button"
+              data-beat="side"
+              title="Stand 7 m away, 65 degrees to the side"
+            >
+              65&deg;
+            </button>
+            <button type="button" id="menuBtn" aria-label="Settings">
+              &#9776;
+            </button>
+          </div>
+          <div class="strip-row">
+            <button
+              type="button"
+              data-beat="turn"
+              id="turnBtn"
+              aria-pressed="false"
+              title="Turn away from the sign, then back"
+            >
+              Turn away
+            </button>
+            <button
+              type="button"
+              data-beat="scrub"
+              title="Tap to pause, then drag the words back two lines"
+            >
+              Pause, scrub
+            </button>
+            <button
+              type="button"
+              data-beat="missing"
+              id="missingBtn"
+              aria-pressed="false"
+              title="The voice file cannot be played"
+            >
+              No voice
+            </button>
+            <button
+              type="button"
+              data-beat="end"
+              title="Jump to the last sentence"
+            >
+              End
+            </button>
+          </div>
+        </div>
+        <div class="readout" id="readout" aria-live="off"></div>
+
+        <div class="hud" id="hud">
+          <button class="exit" id="exitBtn" type="button" aria-label="Exit AR">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 3l10 10M13 3L3 13" />
+            </svg>
+          </button>
+          <button
+            class="view-pill"
+            id="viewPill"
+            type="button"
+            title="Where the words show while the voice plays (your own choice wins)"
+          >
+            <span class="vp-k">Words</span
+            ><span id="viewLabel">on the sign</span>
+          </button>
+        </div>
+
+        <!-- The full text, opened through the sign. While it is open the words show here only. -->
+        <aside class="sheet" id="sheet" hidden aria-label="The whole text">
+          <div class="sheet-head">
+            <div>
+              <div class="sheet-over">READ &middot; STATION 1</div>
+              <h2 id="sheetTitle">-</h2>
+            </div>
+            <button
+              type="button"
+              class="sheet-close"
+              id="sheetClose"
+              aria-label="Close the text"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 3l10 10M13 3L3 13" />
+              </svg>
+            </button>
+          </div>
+          <p class="sheet-note" id="sheetNote" hidden>
+            No voice right now. The whole text is here to read.
+          </p>
+          <div class="sheet-body" id="sheetBody"></div>
+        </aside>
+
+        <i class="finger" id="finger" hidden></i>
+      </main>
+    </div>
+
+    <aside
+      class="demo"
+      id="demo"
+      hidden
+      aria-label="About this page and settings"
+    >
+      <p>
+        <b>One box that travels.</b> The narration box is one object. While the
+        sign can be read and is in view, the box hangs under it as a plate in
+        the world. When it cannot be read, it flies down and docks at the bottom
+        edge; when the sign can be read again it flies back up. Same words, one
+        place, never two.
+      </p>
+
+      <h4>Try</h4>
+      <ul>
+        <li>
+          "Walk up": the words wait in the box until the sign is close enough,
+          then fly up under it. Tap the words to listen.
+        </li>
+        <li>
+          Tap the words (on the plate or in the box) to pause or play. Drag them
+          up or down to move through the voice.
+        </li>
+        <li>
+          "Turn away" and back, "16 m" and "3 m": watch the box travel. Drag
+          sideways on the view to look around.
+        </li>
+        <li>
+          Tap the sign to open the whole text; tap "AI voice" to see who speaks.
+        </li>
+      </ul>
+
+      <h4>Settings</h4>
+      <div class="row">
+        <span>Legible from</span
+        ><button type="button" data-cfg="thr" data-v="10">10 px</button
+        ><button type="button" data-cfg="thr" data-v="12">12 px</button
+        ><button type="button" data-cfg="thr" data-v="14">14 px</button
+        ><button type="button" data-cfg="thr" data-v="16">16 px</button>
+      </div>
+      <div class="row">
+        <span>Box text</span
+        ><button type="button" data-cfg="fs" data-v="14">14 px</button
+        ><button type="button" data-cfg="fs" data-v="16">16 px</button
+        ><button type="button" data-cfg="fs" data-v="18">18 px</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Flight</span
+        ><button type="button" data-cfg="fly" data-v="0">off</button
+        ><button type="button" data-cfg="fly" data-v="0.35">0.35 s</button
+        ><button type="button" data-cfg="fly" data-v="0.6">0.6 s</button
+        ><button type="button" data-cfg="fly" data-v="1.2">1.2 s</button>
+      </div>
+      <div class="row">
+        <span>Far sign grows</span
+        ><button type="button" data-cfg="grow" data-v="on">on</button
+        ><button type="button" data-cfg="grow" data-v="off">off</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Sign turns</span
+        ><button type="button" data-cfg="turn" data-v="on">to you</button
+        ><button type="button" data-cfg="turn" data-v="off">fixed</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Hand shake</span
+        ><button type="button" data-cfg="shake" data-v="on">on</button
+        ><button type="button" data-cfg="shake" data-v="off">off</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Sound</span
+        ><button type="button" data-cfg="sound" data-v="tone">tone</button
+        ><button type="button" data-cfg="sound" data-v="silent">silent</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Text</span
+        ><button type="button" data-cfg="text" data-v="normal">normal</button
+        ><button type="button" data-cfg="text" data-v="longest">longest</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Phone</span
+        ><button type="button" data-cfg="stage" data-v="auto">window</button
+        ><button type="button" data-cfg="stage" data-v="portrait">
+          upright</button
+        ><button type="button" data-cfg="stage" data-v="landscape">
+          sideways</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Creator chose</span
+        ><button type="button" data-cfg="creator" data-v="sign">
+          on the sign</button
+        ><button type="button" data-cfg="creator" data-v="screen">
+          on screen</button
+        ><button type="button" id="resetPick">reset my pick</button
+        ><span></span>
+      </div>
+      <p class="note">
+        The "Words" pill in the view is the visitor's own pick; once made it
+        wins over the creator's choice. URL options:
+        <code
+          >?thr=12&amp;fs=16&amp;fly=0.6&amp;grow=on&amp;turn=on&amp;shake=on&amp;sound=tone&amp;creator=sign&amp;stage=auto&amp;at=d7</code
+        >, <code>?autostart</code> plays at once.
+      </p>
+
+      <h4>Cost</h4>
+      <p class="cost" id="cost">-</p>
+
+      <h4>Faked here</h4>
+      <ul>
+        <li>
+          The voice is a soft generated tone, one note per word, on times
+          invented from the letters. No recording.
+        </li>
+        <li>
+          The camera, the square and the walk are simulated; nothing runs in AR.
+          In AR a finger turns no camera; the sideways drag here stands in for
+          turning the phone.
+        </li>
+        <li>
+          The station circle is 20 m around the sign; the voice plays only
+          inside it.
+        </li>
+      </ul>
+      <button class="close" id="demoClose" type="button">Close</button>
+    </aside>
+
+    <script type="module" src="travelling-box.js"></script>
+  </body>
+</html>

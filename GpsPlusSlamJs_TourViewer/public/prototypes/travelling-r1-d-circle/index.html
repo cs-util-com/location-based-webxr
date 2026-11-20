@@ -1,0 +1,306 @@
+<!doctype html>
+<!-- Prototype: travelling surface, round 1, variant D - words over the circle. Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Travelling surface D - Words over the circle</title>
+    <link rel="stylesheet" href="circle.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="stage" id="stage">
+      <main class="device" id="device">
+        <canvas
+          id="cam"
+          aria-label="Simulated camera view of a town square with a narration circle on the ground"
+        ></canvas>
+
+        <div class="strip" id="strip">
+          <div class="strip-row">
+            <button
+              type="button"
+              data-beat="walk"
+              title="Start outside the circle and walk into its centre"
+            >
+              Walk in
+            </button>
+            <button
+              type="button"
+              data-beat="edge"
+              title="Stand just inside the near rim, facing the centre"
+            >
+              Edge
+            </button>
+            <button
+              type="button"
+              data-beat="centre"
+              title="Stand in the centre, facing the far rim"
+            >
+              Centre
+            </button>
+            <button
+              type="button"
+              data-beat="side"
+              title="Stand off to the side, looking at the far rim"
+            >
+              Side
+            </button>
+            <button
+              type="button"
+              data-beat="far"
+              title="Stand near the far rim, looking back across the circle"
+            >
+              Far
+            </button>
+            <button type="button" id="menuBtn" aria-label="Settings">
+              &#9776;
+            </button>
+          </div>
+          <div class="strip-row">
+            <button
+              type="button"
+              data-beat="turn"
+              title="Turn slowly once round on the spot"
+            >
+              Turn round
+            </button>
+            <button
+              type="button"
+              data-beat="down"
+              id="downBtn"
+              aria-pressed="false"
+              title="Look down at the phone: the camera points at the ground"
+            >
+              Look down
+            </button>
+            <button
+              type="button"
+              data-beat="scrub"
+              title="Tap to pause, then drag the words back two lines, then tap to play"
+            >
+              Scrub
+            </button>
+            <button
+              type="button"
+              data-beat="leave"
+              title="Walk out of the circle: the words hide, the voice stops"
+            >
+              Leave
+            </button>
+            <button
+              type="button"
+              data-beat="end"
+              title="Jump to the last sentence"
+            >
+              End
+            </button>
+          </div>
+        </div>
+        <div class="readout" id="readout" aria-live="off"></div>
+
+        <div class="hud" id="hud">
+          <button class="exit" id="exitBtn" type="button" aria-label="Exit AR">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 3l10 10M13 3L3 13" />
+            </svg>
+          </button>
+          <button
+            class="view-pill"
+            id="viewPill"
+            type="button"
+            title="One choice for the whole tour: where spoken words show while a voice plays"
+          >
+            <span class="vp-k">Tour words</span
+            ><span id="viewLabel">in the world</span>
+          </button>
+        </div>
+
+        <i class="finger" id="finger" hidden></i>
+      </main>
+    </div>
+
+    <aside
+      class="demo"
+      id="demo"
+      hidden
+      aria-label="About this page and settings"
+    >
+      <p>
+        <b>Words over the circle.</b> A narration circle has no sign: you stand
+        inside it. The spoken words are one object. While they can be read
+        where they stand over the circle, they stay there; when you turn away,
+        look down, stand too close or see them too flat, they fly down and dock
+        at the bottom edge, and fly back when they can be read again. One copy,
+        never two. Leaving the circle hides them and stops the voice.
+      </p>
+
+      <h4>Try</h4>
+      <ul>
+        <li>
+          "Walk in": nothing shows outside the circle; inside, the words appear
+          where they can be read, or docked. Tap the words to listen.
+        </li>
+        <li>
+          Tap the words (over the circle or in the box) to pause or play. Drag
+          them up or down to move through the voice.
+        </li>
+        <li>
+          "Turn round" and "Look down" in the centre: the angle, not the
+          distance, moves the words. Compare the three places below.
+        </li>
+        <li>
+          "Leave": the words hide and the voice stops; walk back in and it
+          carries on. Drag on the view to look around.
+        </li>
+      </ul>
+
+      <h4>Settings</h4>
+      <div class="row">
+        <span>Words stand</span
+        ><button type="button" data-cfg="pos" data-v="stand">
+          far edge, upright</button
+        ><button type="button" data-cfg="pos" data-v="lie">
+          near edge, lying</button
+        ><button type="button" data-cfg="pos" data-v="float">
+          over centre, floating</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Angle limit</span
+        ><button type="button" data-cfg="ang" data-v="30">30&deg;</button
+        ><button type="button" data-cfg="ang" data-v="45">45&deg;</button
+        ><button type="button" data-cfg="ang" data-v="60">60&deg;</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Legible from</span
+        ><button type="button" data-cfg="thr" data-v="10">10 px</button
+        ><button type="button" data-cfg="thr" data-v="12">12 px</button
+        ><button type="button" data-cfg="thr" data-v="14">14 px</button
+        ><button type="button" data-cfg="thr" data-v="16">16 px</button>
+      </div>
+      <div class="row">
+        <span>Hysteresis</span
+        ><button type="button" data-cfg="hyst" data-v="5">5 %</button
+        ><button type="button" data-cfg="hyst" data-v="10">10 %</button
+        ><button type="button" data-cfg="hyst" data-v="15">15 %</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Hold before moving</span
+        ><button type="button" data-cfg="settle" data-v="0.15">0.15 s</button
+        ><button type="button" data-cfg="settle" data-v="0.3">0.3 s</button
+        ><button type="button" data-cfg="settle" data-v="0.6">0.6 s</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Flight</span
+        ><button type="button" data-cfg="fly" data-v="0">off</button
+        ><button type="button" data-cfg="fly" data-v="0.35">0.35 s</button
+        ><button type="button" data-cfg="fly" data-v="0.6">0.6 s</button
+        ><button type="button" data-cfg="fly" data-v="1.2">1.2 s</button>
+      </div>
+      <div class="row">
+        <span>Circle radius</span
+        ><button type="button" data-cfg="radius" data-v="4">4 m</button
+        ><button type="button" data-cfg="radius" data-v="6">6 m</button
+        ><button type="button" data-cfg="radius" data-v="10">10 m</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Box text</span
+        ><button type="button" data-cfg="fs" data-v="14">14 px</button
+        ><button type="button" data-cfg="fs" data-v="16">16 px</button
+        ><button type="button" data-cfg="fs" data-v="18">18 px</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Words turn</span
+        ><button type="button" data-cfg="turn" data-v="on">to you</button
+        ><button type="button" data-cfg="turn" data-v="off">fixed</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Hand shake</span
+        ><button type="button" data-cfg="shake" data-v="on">on</button
+        ><button type="button" data-cfg="shake" data-v="off">off</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Sound</span
+        ><button type="button" data-cfg="sound" data-v="tone">tone</button
+        ><button type="button" data-cfg="sound" data-v="silent">silent</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Text</span
+        ><button type="button" data-cfg="text" data-v="normal">normal</button
+        ><button type="button" data-cfg="text" data-v="longest">longest</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Phone</span
+        ><button type="button" data-cfg="stage" data-v="auto">window</button
+        ><button type="button" data-cfg="stage" data-v="portrait">
+          upright</button
+        ><button type="button" data-cfg="stage" data-v="landscape">
+          sideways</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Creator chose</span
+        ><button type="button" data-cfg="creator" data-v="circle">
+          over the circle</button
+        ><button type="button" data-cfg="creator" data-v="screen">
+          on screen</button
+        ><button type="button" id="resetPick">reset tour pick</button
+        ><span></span>
+      </div>
+      <p class="note">
+        The "Tour words" pill is the visitor's one choice for the whole tour
+        (not a choice per item); once made it wins over every creator's choice.
+        The bottom-centre dock belongs to the item whose voice runs (one voice
+        at a time, a tap wins); here the circle is the only voice, so it always
+        has the dock. URL options:
+        <code
+          >?pos=stand&amp;ang=45&amp;thr=12&amp;hyst=5&amp;settle=0.3&amp;fly=0.6&amp;radius=6&amp;fs=16&amp;turn=on&amp;creator=circle&amp;stage=auto&amp;at=centre&amp;look=down</code
+        >, <code>?autostart</code> plays at once.
+      </p>
+
+      <h4>Cost</h4>
+      <p class="cost" id="cost">-</p>
+
+      <h4>Faked here</h4>
+      <ul>
+        <li>
+          The voice is a soft generated tone, one note per word, on times
+          invented from the letters. No recording.
+        </li>
+        <li>
+          The camera, the square and the walk are simulated; nothing runs in AR.
+          In AR a finger turns no camera; the drag on the view stands in for
+          turning and tilting the phone.
+        </li>
+        <li>
+          The circle counts you inside from its rim and holds you inside up to
+          1.5 m past it, as the app's circle does.
+        </li>
+      </ul>
+      <button class="close" id="demoClose" type="button">Close</button>
+    </aside>
+
+    <script type="module" src="circle.js"></script>
+  </body>
+</html>

@@ -1,0 +1,79 @@
+{
+  "name": "The bakery corner",
+  "words": "Two characters in one station: a story step with two choices, and a free figure. Their words travel between the bubble and the box at the bottom.",
+  "records": {
+    "baker": {
+      "kind": "character",
+      "view": "bubble",
+      "name": "The baker",
+      "color": "#f6c45a",
+      "hat": "tall",
+      "at": [0, 0],
+      "pitch": 150,
+      "narration": { "audio": "voice/baker.ogg", "synthetic": true },
+      "steps": [
+        {
+          "id": "start",
+          "line": "Good morning! I have baked bread on this corner since before the bridge was built. Every loaf goes into the oven at four, while the square is still dark. Now, what would you like to know?",
+          "choices": [
+            { "label": "Show me the oven", "next": "oven" },
+            { "label": "Where does the flour come from?", "next": "flour" }
+          ]
+        },
+        {
+          "id": "oven",
+          "line": "The oven is behind the blue door. It is older than me, and it still holds the heat for two days. Come back at four and you will see it glow."
+        },
+        {
+          "id": "flour",
+          "line": "The flour comes by boat, twice a week. The ferry keeper over there knows every sack by its smell. Ask her, she likes to talk."
+        }
+      ]
+    },
+    "bakerLongest": {
+      "kind": "character",
+      "view": "bubble",
+      "name": "The baker",
+      "color": "#f6c45a",
+      "hat": "tall",
+      "at": [0, 0],
+      "pitch": 150,
+      "narration": { "audio": "voice/baker-long.ogg", "synthetic": true },
+      "steps": [
+        {
+          "id": "start",
+          "line": "Good morning! I have baked bread on this corner since before the bridge was built, and my mother baked here before me, and her father before her. Every loaf goes into the oven at four, while the square is still dark and the lamps are still lit. The smell is how the street wakes up: first the cats, then the carters, then the whole row of houses. People say they can tell the day of the week by the bread. Now, what would you like to know?",
+          "choices": [
+            { "label": "Show me the oven", "next": "oven" },
+            { "label": "Where does the flour come from?", "next": "flour" }
+          ]
+        },
+        {
+          "id": "oven",
+          "line": "The oven is behind the blue door. It is older than me, and it still holds the heat for two days. Come back at four and you will see it glow."
+        },
+        {
+          "id": "flour",
+          "line": "The flour comes by boat, twice a week. The ferry keeper over there knows every sack by its smell. Ask her, she likes to talk."
+        }
+      ]
+    },
+    "keeper": {
+      "kind": "character",
+      "view": "bubble",
+      "name": "The ferry keeper",
+      "color": "#7dd3fc",
+      "hat": "cap",
+      "at": [3.2, -1.6],
+      "pitch": 215,
+      "narration": { "audio": "voice/keeper.ogg", "synthetic": true },
+      "steps": [
+        {
+          "id": "start",
+          "line": "Before the bridge, I carried everyone across: bakers, brides, a goat once. On a windy morning the boat would dance, and the bread arrived a little salty."
+        }
+      ]
+    }
+  },
+  "assets": []
+}

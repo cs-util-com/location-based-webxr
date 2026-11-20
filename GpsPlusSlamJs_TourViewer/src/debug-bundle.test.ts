@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  ArchiveLimitError,
   packFilesAsZip,
   writeStoreZip,
 } from "gps-plus-slam-app-framework/storage";
@@ -557,6 +558,19 @@ describe("reading a bundle back", () => {
       { sizeOf: () => 200 },
     );
     expect(small.kind).toBe("bundle");
+  });
+
+  it("refuses an identity whose read was stopped by its size cap as too large", async () => {
+    // Why: a directory can understate the identity's size; the read's own
+    // cap then stops it mid-inflate. That is the same fault as a declared
+    // size past the cap, so it is said the same way, never as "could not
+    // be read".
+    const read = await readDebugBundle(
+      ["debug-bundle.json", "actions/000001.json"],
+      () =>
+        Promise.reject(new ArchiveLimitError("entry-bytes", 16 * 1024, 20_000)),
+    );
+    expect(read).toMatchObject({ kind: "refused", code: "too-large" });
   });
 
   it("refuses an identity that cannot be read, without throwing", async () => {

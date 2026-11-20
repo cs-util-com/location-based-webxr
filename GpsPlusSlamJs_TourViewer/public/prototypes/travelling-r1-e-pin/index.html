@@ -1,0 +1,186 @@
+<!doctype html>
+<!-- Prototype: travelling surface, round 1, variant E - the pin opens in place. Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Travelling surface E - The pin opens in place</title>
+    <link rel="stylesheet" href="pin-opens.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="stage" id="stage">
+      <main class="device" id="device">
+        <canvas
+          id="cam"
+          aria-label="Simulated camera view of a town square with two pins"
+        ></canvas>
+
+        <div class="strip" id="strip">
+          <div class="strip-row">
+            <button type="button" data-beat="walk">Walk up</button>
+            <button type="button" data-beat="tap">Tap pin</button>
+            <button type="button" data-beat="d2">2 m</button>
+            <button type="button" data-beat="d4">4 m</button>
+            <button type="button" data-beat="d8">8 m</button>
+            <button type="button" data-beat="d15">15 m</button>
+            <button type="button" id="menuBtn" aria-label="Settings">&#9776;</button>
+          </div>
+          <div class="strip-row">
+            <button type="button" data-beat="side">65 deg</button>
+            <button type="button" data-beat="turn" id="turnBtn" aria-pressed="false">Turn away</button>
+            <button type="button" data-beat="other">Other pin</button>
+            <button type="button" data-beat="voice" id="voiceBtn" aria-pressed="false">Voice</button>
+            <button type="button" data-beat="away">Tap away</button>
+            <button type="button" data-beat="leave">Leave</button>
+          </div>
+        </div>
+        <div class="readout" id="readout" aria-live="off">Loading...</div>
+
+        <div class="hud">
+          <button class="exit" id="exitBtn" type="button" aria-label="Exit AR">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 3l10 10M13 3L3 13" />
+            </svg>
+          </button>
+          <button
+            class="view-pill"
+            id="viewPill"
+            type="button"
+            title="Where an open pin's words show (your own choice wins, for the whole tour)"
+          >
+            <span class="vp-k">Words</span
+            ><span id="viewLabel">in the world</span>
+          </button>
+        </div>
+
+        <div class="voicebox" id="voicebox" hidden>
+          <span class="vb-k">Narration</span>
+          A silent stand-in for a voice that holds the box at the bottom.
+        </div>
+        <div class="edge-arrow" id="edgeArrow" hidden></div>
+        <div class="finger" id="finger" hidden></div>
+      </main>
+    </div>
+
+    <aside class="demo" id="demo" hidden aria-label="Prototype settings">
+      <p>
+        <b>The pin opens in place.</b> A tap on a pin's tag unfolds its
+        description under the caption, on the same card. When the open card
+        cannot be read where it stands, the same card flies to the screen and
+        back. A tap anywhere else closes it. Synthetic content.
+      </p>
+      <h4>Settings</h4>
+          <div class="row">
+            <span>Words from</span>
+            <button type="button" data-cfg="thr" data-v="10">10 px</button>
+            <button type="button" data-cfg="thr" data-v="12">12 px</button>
+            <button type="button" data-cfg="thr" data-v="14">14 px</button>
+            <button type="button" data-cfg="thr" data-v="16">16 px</button>
+          </div>
+          <div class="row">
+            <span>Description</span>
+            <button type="button" data-cfg="desc" data-v="0.62">0.62 em</button>
+            <button type="button" data-cfg="desc" data-v="0.8">0.8 em</button>
+            <button type="button" data-cfg="desc" data-v="1">1 em</button>
+          </div>
+          <div class="row">
+            <span>Read from</span>
+            <button type="button" data-cfg="read" data-v="4">4 m</button>
+            <button type="button" data-cfg="read" data-v="8">8 m</button>
+            <button type="button" data-cfg="read" data-v="15">15 m</button>
+          </div>
+          <div class="row">
+            <span>When away</span>
+            <button type="button" data-cfg="away" data-v="dock">box</button>
+            <button type="button" data-cfg="away" data-v="edge">edge</button>
+          </div>
+          <div class="row">
+            <span>Flight</span>
+            <button type="button" data-cfg="fly" data-v="0">off</button>
+            <button type="button" data-cfg="fly" data-v="0.35">0.35 s</button>
+            <button type="button" data-cfg="fly" data-v="0.6">0.6 s</button>
+            <button type="button" data-cfg="fly" data-v="1.2">1.2 s</button>
+          </div>
+          <div class="row">
+            <span>Hold</span>
+            <button type="button" data-cfg="hold" data-v="0.15">0.15 s</button>
+            <button type="button" data-cfg="hold" data-v="0.3">0.3 s</button>
+            <button type="button" data-cfg="hold" data-v="0.6">0.6 s</button>
+            <button type="button" data-cfg="hold" data-v="1">1 s</button>
+          </div>
+          <div class="row">
+            <span>Hysteresis</span>
+            <button type="button" data-cfg="hyst" data-v="5">5 %</button>
+            <button type="button" data-cfg="hyst" data-v="10">10 %</button>
+            <button type="button" data-cfg="hyst" data-v="15">15 %</button>
+          </div>
+          <div class="row">
+            <span>Side limit</span>
+            <button type="button" data-cfg="angle" data-v="35">35 deg</button>
+            <button type="button" data-cfg="angle" data-v="45">45 deg</button>
+            <button type="button" data-cfg="angle" data-v="60">60 deg</button>
+          </div>
+          <div class="row">
+            <span>Pin turns</span>
+            <button type="button" data-cfg="turn" data-v="on">on</button>
+            <button type="button" data-cfg="turn" data-v="off">off</button>
+          </div>
+          <div class="row">
+            <span>Touch</span>
+            <button type="button" data-cfg="touch" data-v="0">0 px</button>
+            <button type="button" data-cfg="touch" data-v="8">8 px</button>
+            <button type="button" data-cfg="touch" data-v="16">16 px</button>
+            <button type="button" data-cfg="touch" data-v="24">24 px</button>
+          </div>
+          <div class="row">
+            <span>Box text</span>
+            <button type="button" data-cfg="fs" data-v="14">14 px</button>
+            <button type="button" data-cfg="fs" data-v="16">16 px</button>
+            <button type="button" data-cfg="fs" data-v="18">18 px</button>
+          </div>
+          <div class="row">
+            <span>Text</span>
+            <button type="button" data-cfg="text" data-v="normal">normal</button>
+            <button type="button" data-cfg="text" data-v="longest">longest</button>
+          </div>
+          <div class="row">
+            <span>Stage</span>
+            <button type="button" data-cfg="stage" data-v="auto">auto</button>
+            <button type="button" data-cfg="stage" data-v="portrait">portrait</button>
+            <button type="button" data-cfg="stage" data-v="landscape">landscape</button>
+          </div>
+          <div class="row">
+            <span>Creator</span>
+            <button type="button" data-cfg="creator" data-v="pin">at the pin</button>
+            <button type="button" data-cfg="creator" data-v="screen">on screen</button>
+          </div>
+          <div class="row">
+            <span>Tour pick</span>
+            <button type="button" id="resetPick">forget my pick</button>
+          </div>
+      <p class="note">
+        The pill at the top is the visitor's one pick for the whole tour; it
+        wins over the creator's choice.
+      </p>
+      <h4>Where it docks</h4>
+      <p class="table" id="table"></p>
+      <h4>Cost</h4>
+      <p class="cost" id="cost">Measuring...</p>
+      <button type="button" class="close" id="demoClose">Close</button>
+    </aside>
+
+    <script type="module" src="pin-opens.js"></script>
+  </body>
+</html>

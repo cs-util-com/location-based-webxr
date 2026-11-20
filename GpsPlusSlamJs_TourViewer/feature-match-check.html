@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Feature matching benchmark</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/design.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #f3f5f7;
+        color: #1b2328;
+        font:
+          15px/1.4 system-ui,
+          sans-serif;
+        overflow-x: hidden;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 4px;
+      }
+      .intro {
+        margin: 0 0 12px;
+        color: #4a565e;
+      }
+      .layout {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      @media (width >= 900px), (orientation: landscape) and (width >= 640px) {
+        .layout {
+          grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+        }
+      }
+      .steps {
+        list-style: none;
+        margin: 0 0 10px;
+        padding: 0;
+        display: grid;
+        gap: 8px;
+      }
+      .steps > li {
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: #fff;
+      }
+      .steps > li[data-state="current"] {
+        border: 2px solid #2f5d78;
+        box-shadow: 0 0 0 3px #2f5d7826;
+      }
+      .steps > li[data-state="todo"] {
+        opacity: 0.65;
+      }
+      .steps h2 {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 0;
+        font-size: 1rem;
+      }
+      .num {
+        display: inline-grid;
+        place-items: center;
+        flex: none;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: #c9d2d8;
+        color: #1b2328;
+        font-size: 0.85rem;
+        font-weight: 700;
+      }
+      li[data-state="current"] .num {
+        background: #2f5d78;
+        color: #fff;
+      }
+      li[data-state="done"] .num {
+        background: #2e7d4f;
+        color: #fff;
+      }
+      .step-mark {
+        margin-left: auto;
+        color: #5b6870;
+        font-size: 0.8rem;
+        font-weight: 400;
+      }
+      li[data-state="done"] .step-mark::after {
+        content: "done";
+        color: #2e7d4f;
+      }
+      li[data-state="current"] .step-mark::after {
+        content: "now";
+        color: #2f5d78;
+      }
+      details {
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: #fff;
+      }
+      summary {
+        font-weight: 600;
+        min-height: 32px;
+        cursor: pointer;
+      }
+      fieldset {
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+        margin: 8px 0;
+        padding: 8px 10px;
+        background: #fff;
+      }
+      legend {
+        font-weight: 600;
+      }
+      label {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        margin: 4px 12px 4px 0;
+      }
+      .hint {
+        margin: 6px 0;
+        color: #5b6870;
+        font-size: 0.85rem;
+      }
+      button {
+        min-height: 44px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #2f5d78;
+        background: #2f5d78;
+        color: #fff;
+        font: inherit;
+      }
+      button.secondary {
+        background: #fff;
+        color: #2f5d78;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      video {
+        width: 100%;
+        max-height: 40vh;
+        background: #000;
+        border-radius: 6px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        background: #fff;
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+      }
+      table {
+        border-collapse: collapse;
+        font-size: 0.85rem;
+        white-space: nowrap;
+      }
+      th,
+      td {
+        padding: 4px 8px;
+        border-bottom: 1px solid #e3e8ec;
+        text-align: left;
+      }
+      .row-error td {
+        color: #a02020;
+      }
+      .picture {
+        margin: 0 0 10px;
+        padding: 8px;
+        background: #fff;
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+      }
+      .picture figcaption {
+        margin: 0 0 6px;
+        font-size: 0.85rem;
+        overflow-wrap: anywhere;
+      }
+      .picture canvas {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        background: #000;
+      }
+      .picture-error figcaption {
+        margin: 0;
+        color: #a02020;
+      }
+      pre,
+      textarea {
+        box-sizing: border-box;
+        width: 100%;
+        font:
+          12px/1.35 ui-monospace,
+          monospace;
+        background: #fff;
+        border: 1px solid #c9d2d8;
+        border-radius: 8px;
+        padding: 8px;
+      }
+      pre {
+        max-height: 30vh;
+        overflow: auto;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      textarea {
+        height: 30vh;
+      }
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Feature matching benchmark</h1>
+    <p class="intro">
+      Times keypoint extraction and matching of three methods on this device, on
+      two photos you take, and draws what each one matched. Models load from the
+      network on first use (ALIKED + LightGlue about 64 MB).
+    </p>
+    <div class="layout">
+      <section aria-label="Steps">
+        <div id="camera-box" hidden>
+          <video id="video" playsinline muted></video>
+        </div>
+        <ol class="steps">
+          <li id="step-1" data-state="current" aria-current="step">
+            <h2>
+              <span class="num">1</span> Take photo A
+              <span class="step-mark"></span>
+            </h2>
+            <div class="row">
+              <button id="capture-a" type="button">Start camera</button>
+              <span id="state-a" aria-live="polite">not taken</span>
+            </div>
+          </li>
+          <li id="step-2" data-state="todo">
+            <h2>
+              <span class="num">2</span> Take photo B
+              <span class="step-mark"></span>
+            </h2>
+            <p class="hint">
+              Hold the phone the same way as for A, step about 1 m to the side,
+              and keep most of what A shows in view.
+            </p>
+            <div class="row">
+              <button id="capture-b" type="button" disabled>
+                Take photo B
+              </button>
+              <span id="state-b" aria-live="polite">not taken</span>
+            </div>
+          </li>
+          <li id="step-3" data-state="todo">
+            <h2>
+              <span class="num">3</span> Run
+              <span class="step-mark"></span>
+            </h2>
+            <p class="hint">
+              Starts by itself after photo B, with every method and size ticked
+              in the options; the camera is off meanwhile. The pictures under
+              Results fill in as each one finishes. A full run takes minutes.
+            </p>
+            <div class="row">
+              <button id="run" type="button" class="secondary" disabled>
+                Run again
+              </button>
+              <span id="run-state" aria-live="polite">waiting for photo B</span>
+            </div>
+          </li>
+          <li id="step-4" data-state="todo">
+            <h2>
+              <span class="num">4</span> Save
+              <span class="step-mark"></span>
+            </h2>
+            <div class="row">
+              <button id="save-frames" type="button" disabled>
+                Save files
+              </button>
+              <span id="save-state" aria-live="polite">after the run</span>
+            </div>
+            <p id="save-links" class="row"></p>
+            <p class="hint">
+              Offers one zip holding everything, this page's log and report
+              included, and each file on its own, to save on this device only:
+              the two photos as PNG, a JSON of their sizes, grey values and this
+              device's browser, OS version, model, cores, memory, screen and
+              GPU, and a JSON of every method's keypoints and matches. The
+              photos carry pixels only, no location, time or EXIF data. Nothing
+              is uploaded.
+            </p>
+          </li>
+        </ol>
+        <details id="options">
+          <summary>Options: everything is on, untick to leave out</summary>
+          <fieldset>
+            <legend>Methods</legend>
+            <label
+              ><input id="m-sift" type="checkbox" checked /> SIFT (plain
+              JS)</label
+            >
+            <label
+              ><input id="m-xfeat" type="checkbox" checked /> XFeat (LiteRT.js,
+              1.4 MB)</label
+            >
+            <label
+              ><input id="m-aliked" type="checkbox" checked /> ALIKED +
+              LightGlue (onnxruntime-web, 13 MB + 51 MB)</label
+            >
+          </fieldset>
+          <fieldset>
+            <legend>Backends (XFeat, ALIKED)</legend>
+            <label
+              ><input type="checkbox" name="backend" value="webgpu" checked />
+              WebGPU</label
+            >
+            <label
+              ><input type="checkbox" name="backend" value="wasm" checked />
+              WASM</label
+            >
+          </fieldset>
+          <fieldset>
+            <legend>XFeat model files</legend>
+            <label
+              ><input type="checkbox" name="model" value="fp16" checked />
+              xfeat_fp16.tflite</label
+            >
+            <label
+              ><input type="checkbox" name="model" value="fp32" checked />
+              xfeat.tflite</label
+            >
+          </fieldset>
+          <fieldset>
+            <legend>Sizes and runs</legend>
+            <label
+              ><input type="checkbox" name="size" value="320" checked />
+              320</label
+            >
+            <label
+              ><input type="checkbox" name="size" value="480" checked />
+              480</label
+            >
+            <label
+              ><input type="checkbox" name="size" value="640" checked />
+              640</label
+            >
+            <label
+              >Runs
+              <input
+                id="runs"
+                type="number"
+                min="1"
+                max="50"
+                value="5"
+                size="3"
+            /></label>
+            <p class="hint">
+              Long edge in pixels; one warm-up before the runs.
+            </p>
+          </fieldset>
+          <div class="row">
+            <button id="run-synthetic" type="button" class="secondary">
+              Run on a synthetic pair
+            </button>
+            <span id="synthetic-state" aria-live="polite"></span>
+          </div>
+          <p class="hint">
+            A generated pair with a known warp, no camera: it also counts the
+            matches that land within 3 px of where they should.
+          </p>
+        </details>
+      </section>
+      <section aria-label="Results">
+        <div class="table-wrap">
+          <table id="results">
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Backend</th>
+                <th>Size</th>
+                <th>Extract ms (median / p90)</th>
+                <th>Match ms (median / p90)</th>
+                <th>Keypoints</th>
+                <th>Descriptors / frame</th>
+                <th>Matches</th>
+                <th>Correct</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="row">
+          <button id="copy" type="button" class="secondary">Copy log</button>
+          <span id="copy-state" aria-live="polite"></span>
+        </div>
+        <div id="pictures" aria-label="Result pictures"></div>
+        <textarea id="report" readonly aria-label="Report"></textarea>
+        <pre id="log" aria-label="Log"></pre>
+      </section>
+    </div>
+    <script>
+      // Until the page module runs, a load failure still becomes a log line.
+      window.addEventListener("error", function (ev) {
+        var log = document.getElementById("log");
+        if (log && !log.textContent) {
+          log.textContent = "ERROR page: " + ev.message + "\n";
+        }
+      });
+    </script>
+    <script type="module">
+      import { startFeatureMatchCheck } from "./src/checks/feature-match/feature-match-check.ts";
+
+      startFeatureMatchCheck(document);
+    </script>
+  </body>
+</html>

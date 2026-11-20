@@ -91,12 +91,46 @@ const RECORDED_FRAME = new RegExp(
  *  SEGMENT, at the start or after a slash, so a sibling folder whose name
  *  only ends in it (`myactions/`) is not it. The framework's parser
  *  (`zip-reader.ts`) holds the same rule; it does not export it. */
-export const ACTIONS_SEGMENT = /(^|\/)actions\//;
+const ACTIONS_SEGMENT = /(^|\/)actions\//;
 
 /** An action entry the framework's parser replays: under an `actions/`
  *  segment, ending `.json`. */
 export function isActionEntryName(name: string): boolean {
   return ACTIONS_SEGMENT.test(name) && name.endsWith(".json");
+}
+
+/**
+ * The folder the recording's action stream sits under, with its trailing
+ * slash (`""` for a flat zip, `"mytour/"` for a recording re-zipped from
+ * its folder). A capture's `imageFile` is relative to the recording, so
+ * its entry is this folder plus that name. The action entries are found
+ * by the same rule as the framework's parser (`isActionEntryName`) and in
+ * its order, so this is the folder of exactly the stream that parser
+ * replays: a sibling folder whose name only ends in it
+ * (`mytour/myactions/`) never gives the folder.
+ */
+export function recordingFolderOf(entryNames: readonly string[]): string {
+  return recordingFoldersOf(entryNames)[0] ?? "";
+}
+
+/**
+ * Every folder that holds an action stream, each once, in the parser's
+ * order (see `recordingFolderOf`, which is the first of them). More than
+ * one means the zip carries more than one recording, whose actions the
+ * framework's parser would replay as one stream.
+ */
+export function recordingFoldersOf(
+  entryNames: readonly string[],
+): readonly string[] {
+  const folders = new Set<string>();
+  for (const name of entryNames
+    .filter(isActionEntryName)
+    .sort((a, b) => a.localeCompare(b))) {
+    const at = ACTIONS_SEGMENT.exec(name);
+    if (at !== null)
+      folders.add(name.slice(0, at.index + (at[1] ?? "").length));
+  }
+  return [...folders];
 }
 
 /**

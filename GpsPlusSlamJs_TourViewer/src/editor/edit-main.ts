@@ -217,16 +217,41 @@ import {
   notAddedLine,
 } from "./added-debug-data.js";
 import {
+  classifyEditorFile,
   classifyEditorFiles,
   type EditorFileKind,
 } from "./classify-editor-file.js";
 import {
+  addScanSafely,
   entryStepLine,
   notOpenedLine,
   openWithScan,
-  planEditorEntry,
   type AddScanOutcome,
+  type OpenWithScanOutcome,
 } from "./editor-entry.js";
+import { startNewTour } from "./new-tour.js";
+import {
+  SHOW_SCAN_AGAIN_LABELS,
+  createScanMemory,
+  indexedDbHandleStore,
+  type HandleStore,
+  reopenScan,
+  runShowScanAgain,
+  scanRememberedLine,
+  type ScanHandle,
+} from "./scan-memory.js";
+import {
+  EMPTY_GLOBE_HINT,
+  NEW_TOUR_SAVE_QUESTION,
+  editorStartActions,
+  editorStartReducer,
+  scanKeptInsteadLine,
+  selectEditorStart,
+  sortScanPick,
+  sortTourPick,
+  startCardView,
+  type StartFrom,
+} from "./start-card.js";
 import { noGpsWarnings } from "./no-gps-check.js";
 import { createViewSwitch, type View3dHandle } from "./view-switch.js";
 import {
@@ -300,6 +325,7 @@ import {
   isSameFile,
   pickSaveFile,
   releaseUnusedPick,
+  pickScanFile,
   pickTourFile,
   saveFinePrint,
   InPlaceRefusal,
@@ -398,6 +424,23 @@ const { maxBytes: autosaveMaxBytes = AUTOSAVE_MAX_BYTES, ...autosaveTimings } =
   autosaveSettings();
 
 /**
+ * Where scans are remembered: the browser's IndexedDB, except in the dev
+ * server an e2e may set `window.__tourEditorScanStore` (an init script),
+ * because a real file handle read back from IndexedDB crashes the headless
+ * test browsers. Inert in a production build, as `autosaveSettings`.
+ */
+function scanStore(): HandleStore | null {
+  if (import.meta.env.DEV && !import.meta.env.VITEST) {
+    const set = (window as { __tourEditorScanStore?: HandleStore })
+      .__tourEditorScanStore;
+    if (set !== undefined) return set;
+  }
+  return indexedDbHandleStore(
+    typeof indexedDB === "undefined" ? undefined : indexedDB,
+  );
+}
+
+/**
  * Whether an opened tour shows in the 3D view (the editor's default view)
  * - true, except in the dev server an e2e may set
  * `window.__tourEditorStartOnMap` (an init script) to start on the 2D map,
@@ -458,6 +501,7 @@ function element<T extends HTMLElement>(id: string): T {
 // runs once a store exists).
 const store = createTourViewerStore(undefined, {
   editorView: editorViewReducer,
+  editorStart: editorStartReducer,
   debugLayer: debugLayerReducer,
   ...EDITOR_SESSION_SLICES,
 });
@@ -514,11 +558,25 @@ const zipInput = element<HTMLInputElement>("zip-input");
 const chooseButton = element<HTMLButtonElement>("choose-btn");
 const linkForm = element<HTMLFormElement>("link-form");
 const linkInput = element<HTMLInputElement>("link-input");
-const linkButton = element<HTMLButtonElement>("link-btn");
 const openStatus = element("open-status");
 const openError = element("open-error");
-const sampleButton = element<HTMLButtonElement>("sample-btn");
 const cancelButton = element<HTMLButtonElement>("open-cancel");
+// The start card (start-card.ts): question 1's answers, the tour picker,
+// question 2's scan, and the one button that opens the editor.
+const startAnswers = Array.from(
+  document.querySelectorAll<HTMLInputElement>('input[name="start-from"]'),
+);
+const startTourStep = element("start-tour-step");
+const startTourHeld = element("start-tour-held");
+const startScanStep = element("start-scan-step");
+const startScanHeld = element("start-scan-held");
+const startScanButton = element<HTMLButtonElement>("start-scan-btn");
+const startScanRemove = element<HTMLButtonElement>("start-scan-remove");
+const startScanInput = element<HTMLInputElement>("start-scan-input");
+const startSummary = element("start-summary");
+const startOpen = element<HTMLButtonElement>("start-open");
+/** The tour picker's title while no tour file is held. */
+const TOUR_PICK_TITLE = "Choose the tour file (.zip)";
 const topbar = element("topbar");
 /** The tour's name in the top bar: it opens the tour's details (W2). */
 const tourName = element<HTMLButtonElement>("tour-name");
@@ -648,6 +706,14 @@ let lock: EditorLock | null = null;
 let letGo: Promise<void> = Promise.resolve();
 /** Toasts about this file that mean nothing once another tour is open. */
 const fileToasts: HTMLElement[] = [];
+/** Scans remembered in this browser by tour id: where the file is (its
+ *  handle), never its bytes, never in the tour (`scan-memory.ts`). */
+const scanMemory = createScanMemory(scanStore());
+/** The handle a picked file came through, keyed by the File (a side
+ *  table: files and handles are resources, never store state). A scan
+ *  added with one is remembered; one dropped or given through a file
+ *  input has none. */
+const scanHandles = new WeakMap<File, ScanHandle>();
 let editor: EditorSession | null = null;
 
 /** The character maker's library on this device, opened once. */
@@ -2844,7 +2910,10 @@ function showModal(on: boolean): void {
   modal.hidden = !on;
   // Cancel returns to the open tour; with none there is nothing to return to.
   cancelButton.hidden = session === null;
-  if (on) openError.hidden = true;
+  if (on) {
+    openError.hidden = true;
+    resetStartCard();
+  }
   // An autosave held while the dialog showed may start now, and so may a
   // resave (D33).
   else {
@@ -2906,13 +2975,70 @@ document.addEventListener("keydown", (event) => {
 
 function setBusy(on: boolean, text: string): void {
   store.dispatch(editorViewActions.busyChanged({ busy: on }));
-  sampleButton.disabled = on;
-  zipInput.disabled = on;
-  chooseButton.disabled = on;
-  linkInput.disabled = on;
-  linkButton.disabled = on;
   cancelButton.disabled = on;
   openStatus.textContent = text;
+  renderStartCard();
+}
+
+/**
+ * The files held for the start card's answers, until "Open the editor":
+ * the tour picked (with what it may be saved through) and the scan. A
+ * File is never store state (the root rule's side table for Blobs): the
+ * store's `editorStart` holds their names, which is what every view reads,
+ * and these go with them (`holdTour`, `holdScan`, `resetStartCard`).
+ */
+const startFiles: { tour: PickedTourFile | null; scan: File | null } = {
+  tour: null,
+  scan: null,
+};
+
+function holdTour(picked: PickedTourFile | null): void {
+  startFiles.tour = picked;
+  store.dispatch(
+    editorStartActions.tourHeld({ name: picked?.file.name ?? null }),
+  );
+}
+
+function holdScan(scan: File | null): void {
+  startFiles.scan = scan;
+  store.dispatch(editorStartActions.scanHeld({ name: scan?.name ?? null }));
+}
+
+/** The card shown afresh: nothing answered, nothing held. */
+function resetStartCard(): void {
+  startFiles.tour = null;
+  startFiles.scan = null;
+  linkInput.value = "";
+  store.dispatch(editorStartActions.startReset());
+}
+
+/** The start card drawn from the store (`startCardView`). */
+function renderStartCard(): void {
+  const start = selectEditorStart(store.getState());
+  const view = startCardView(start, linkInput.value);
+  const idle = isEntryIdle(ui());
+  for (const answer of startAnswers) {
+    answer.checked = answer.value === start.from;
+    answer.disabled = !idle;
+  }
+  startTourStep.hidden = !view.tourStep;
+  startScanStep.hidden = !view.scanStep;
+  startTourHeld.textContent =
+    start.tour === null ? TOUR_PICK_TITLE : `Your tour: ${start.tour}`;
+  startScanHeld.textContent =
+    start.scan === null ? "No scan" : `Scan: ${start.scan}`;
+  startScanRemove.hidden = start.scan === null;
+  startScanButton.textContent =
+    start.scan === null ? "Add a scan…" : "Another scan…";
+  // Every control that starts an entry, off while one runs: an open, or a
+  // tour's scan being added after it (`isEntryIdle`).
+  startScanButton.disabled = !idle;
+  startScanRemove.disabled = !idle;
+  zipInput.disabled = !idle;
+  chooseButton.disabled = !idle;
+  linkInput.disabled = !idle;
+  startSummary.textContent = view.summary;
+  startOpen.disabled = !idle || !view.canOpen;
 }
 
 /** The opened file's hold and target, and the written bytes' session, go
@@ -3102,22 +3228,109 @@ async function addDebugData(file: File): Promise<AddScanOutcome | null> {
     forgetAddedDebug();
     addedDebug = { session: added.session, line: added.line };
     startDebugLayer();
+    rememberScan(mine, file);
     return { kind: "added" };
   });
 }
 
-/** {@link addDebugData} from its own button or panel: a refusal said in a
- *  toast. Null - no tour, another tour opened meanwhile, another add
- *  running - says nothing, as before. */
+/**
+ * The scan just added becomes the one this tour offers to show again
+ * after a reload: its handle remembered by the tour's id. A scan with no
+ * handle (dropped, or from a file input) cannot be read again, so the
+ * one remembered before is forgotten: "again" never means an older scan
+ * than the last one shown.
+ */
+function rememberScan(mine: EditorSession, file: File): void {
+  const tourId = mine.debugTour().tourId;
+  const handle = scanHandles.get(file);
+  void (handle === undefined
+    ? scanMemory.forget(tourId)
+    : scanMemory.remember(tourId, handle));
+}
+
+/**
+ * After a tour opened with no scan: when this browser remembers one for
+ * it, a held toast offers "Show the scan again" (`runShowScanAgain`:
+ * read permission asked in the click, busy meanwhile, a failure said; a
+ * scan gone since is forgotten and the offer withdrawn).
+ */
+async function offerRememberedScan(mine: EditorSession): Promise<void> {
+  const tourId = mine.debugTour().tourId;
+  const handle = await scanMemory.recall(tourId);
+  if (handle === null || editor !== mine || addedDebug !== null) return;
+  const offer = toast(
+    scanRememberedLine(handle.name),
+    {
+      label: SHOW_SCAN_AGAIN_LABELS.idle,
+      run: (button) => {
+        void runShowScanAgain(button, handle.name, {
+          reopen: () => reopenScan(handle),
+          add: (file) => {
+            scanHandles.set(file, handle);
+            return addScan(file);
+          },
+          forget: () => {
+            void scanMemory.forget(tourId);
+          },
+        }).then((result) => {
+          if (result.kind === "done" || !result.keepOffer) offer.remove();
+          if (result.kind === "failed") {
+            fileToasts.push(toast(result.line, undefined, null));
+          }
+        });
+      },
+    },
+    null,
+  );
+  fileToasts.push(offer);
+}
+
+/**
+ * A scan chosen through the browser's picker (its handle kept, so the
+ * scan can be remembered), else through `input`, for `use`.
+ */
+async function chooseScan(
+  input: HTMLInputElement,
+  use: (file: File) => Promise<void>,
+): Promise<void> {
+  const outcome = await pickScanFile(window as unknown as PickerWindow);
+  if (outcome.kind === "unavailable") {
+    input.click();
+    return;
+  }
+  if (outcome.kind === "cancelled") return;
+  if (outcome.kind === "unreadable") {
+    toast(`The chosen file could not be read: ${outcome.reason}`);
+    return;
+  }
+  scanHandles.set(outcome.file, outcome.handle);
+  await use(outcome.file);
+}
+
+/** Said when a scan started no add: another add ran. */
+const SCAN_NOT_STARTED = "another scan was being added at the same time.";
+
+/**
+ * One add of a scan as every caller starts it: refused in words while
+ * another add runs, a throw said as a refusal (`addScanSafely`). Null -
+ * no tour, or another tour opened meanwhile - says nothing: the scan was
+ * never that tour's.
+ */
+function addScan(file: File): Promise<AddScanOutcome | null> {
+  if (debugAdd.busy()) {
+    return Promise.resolve({ kind: "refused", reason: SCAN_NOT_STARTED });
+  }
+  return addScanSafely(() => addDebugData(file));
+}
+
+/** {@link addScan} from its own button or panel: a refusal said in a
+ *  toast. */
 async function addDebugDataSaying(file: File): Promise<void> {
-  const outcome = await addDebugData(file);
+  const outcome = await addScan(file);
   if (outcome?.kind === "refused") {
     fileToasts.push(toast(notAddedLine(outcome.reason)));
   }
 }
-
-/** Said when the scan given with a tour started no add: another add ran. */
-const SCAN_NOT_STARTED = "another scan was being added at the same time.";
 
 /** The file the browser's picker gave, with what it may be saved through. */
 interface PickedTourFile {
@@ -3126,21 +3339,8 @@ interface PickedTourFile {
   readonly picked: FileSystemHandle | null;
 }
 
-/**
- * Files chosen in, or dropped on, the open dialog. Each is sorted first
- * (`classifyEditorFiles`, its zip directory only), then planned
- * (`planEditorEntry`): a tour opens; a tour with a scan opens and then
- * gets the scan, as one busy state (`openWithScan`, the store's
- * `entryStep`, a held line meanwhile); a scan alone is added beside the
- * open tour, or refused without one. A file that is neither still goes to
- * the open, which refuses it in its own words. Resolves true when a tour
- * opened.
- */
-async function enterFiles(
-  files: readonly File[],
-  picked: PickedTourFile | null = null,
-): Promise<boolean> {
-  if (!isEntryIdle(ui()) || files.length === 0) return false;
+/** The files sorted (`classifyEditorFiles`), the card busy meanwhile. */
+async function readKinds(files: readonly File[]): Promise<EditorFileKind[]> {
   openError.hidden = true;
   const [only] = files;
   setBusy(
@@ -3149,53 +3349,68 @@ async function enterFiles(
       ? `Reading ${only.name}…`
       : `Reading ${String(files.length)} files…`,
   );
-  let kinds: EditorFileKind[];
   try {
-    kinds = await classifyEditorFiles(files);
+    return await classifyEditorFiles(files);
   } finally {
     setBusy(false, "");
   }
-  const plan = planEditorEntry(kinds, editor !== null);
-  if (plan.kind === "refuse") {
-    openError.textContent = plan.reason;
+}
+
+/**
+ * Files chosen in, or dropped on, the start card's tour picker: sorted
+ * first (`classifyEditorFiles`, their zip directories only), then held
+ * (`sortTourPick`) until "Open the editor" - a tour as the tour, a scan
+ * that came along (or came alone) as question 2's scan. Nothing opens
+ * here. A refusal is said in the card. Resolves true when a tour is held.
+ */
+async function holdTourFiles(
+  files: readonly File[],
+  picked: PickedTourFile | null = null,
+): Promise<boolean> {
+  if (!isEntryIdle(ui()) || files.length === 0) return false;
+  const pick = sortTourPick(await readKinds(files));
+  if (pick.kind === "refuse") {
+    openError.textContent = pick.reason;
     openError.hidden = false;
     return false;
   }
-  for (const left of plan.ignored) {
+  for (const left of pick.ignored) {
     toast(`Left out ${left.file.name}: ${left.reason}`);
   }
-  if (plan.kind === "add-scan") {
-    // One busy state while the scan reads (the async-UI rule): the line
-    // says so, and a second drop or open waits for it.
-    store.dispatch(editorViewActions.entryStepChanged({ step: "adding-scan" }));
-    setBusy(true, entryStepLine("adding-scan", "", plan.scan.name));
-    let added: AddScanOutcome | null;
-    try {
-      added = await addDebugData(plan.scan);
-    } finally {
-      setBusy(false, "");
-      store.dispatch(editorViewActions.entryStepChanged({ step: null }));
-    }
-    if (added?.kind === "added") showModal(false);
-    else if (added?.kind === "refused") {
-      openError.textContent = notAddedLine(added.reason);
-      openError.hidden = false;
-    }
+  if (pick.scan !== null) holdScan(pick.scan);
+  if (pick.tour === null) {
+    // Only a scan came: kept for question 2 (a refusal names no file).
+    openStatus.textContent = scanKeptInsteadLine(pick.scan?.name ?? "");
     return false;
   }
-  const { tour, scan } = plan;
+  // One tour at a time: a file chosen replaces a link typed.
+  linkInput.value = "";
+  holdTour(
+    picked !== null && picked.file === pick.tour
+      ? picked
+      : { file: pick.tour, handle: null, picked: null },
+  );
+  return true;
+}
+
+/**
+ * Opens `tour`, then adds `scan` beside it when one is given, as one busy
+ * state (`openWithScan`, the store's `entryStep`, a held line meanwhile).
+ * `picked` is what the tour may be saved through when it came from the
+ * browser's picker. The outcome's failures are said here.
+ */
+async function openTourWithScan(
+  tour: File,
+  scan: File | null,
+  picked: PickedTourFile | null,
+): Promise<OpenWithScanOutcome> {
   let stepLine: HTMLElement | null = null;
   const outcome = await openWithScan(tour, scan, {
     open: (file) =>
       picked !== null && file === picked.file
         ? openFile(file, picked.handle, picked.picked)
         : openFile(file),
-    // Null from the add (another tour opened meanwhile) says nothing: the
-    // scan was never that tour's.
-    addScan: (file) =>
-      debugAdd.busy()
-        ? Promise.resolve({ kind: "refused", reason: SCAN_NOT_STARTED })
-        : addDebugData(file),
+    addScan,
     step: (step) => {
       store.dispatch(editorViewActions.entryStepChanged({ step }));
       stepLine?.remove();
@@ -3213,6 +3428,9 @@ async function enterFiles(
   if (outcome.kind === "scan-failed") {
     fileToasts.push(toast(outcome.line, undefined, null));
   }
+  if (outcome.kind === "opened" && scan === null && editor !== null) {
+    void offerRememberedScan(editor);
+  }
   const thrown = notOpenedLine(outcome);
   if (thrown !== null) {
     // The open threw past its own refusals: it said nothing, and left
@@ -3221,7 +3439,7 @@ async function enterFiles(
     openError.textContent = thrown;
     openError.hidden = false;
   }
-  return outcome.kind !== "not-opened";
+  return outcome;
 }
 
 /** A file added as debug data, opened and read for whose it is, or why
@@ -3431,16 +3649,14 @@ async function openFile(
   // The draft is read inside the open, before the tour shows (E2c plan
   // review #7): what an earlier visit left is offered with the tour.
   document.body.dataset["draft"] = "writing";
-  // The opened file's entry sizes: a smaller file it already holds at
-  // its path (a save by download) is no work of the draft's any more.
+  // The opened file's entries: a smaller file it already holds at its
+  // path (a save by download) is no work of the draft's any more.
   const wrap = outcome.session.manifestWrap;
-  const entrySizes = new Map(
-    outcome.session.entries.map((e) => [e.filename, e.size]),
-  );
+  const entries = new Map(outcome.session.entries.map((e) => [e.filename, e]));
   const drafted = await draft.open(
     outcome.session.archive.url,
     outcome.manifest,
-    (path) => entrySizes.get(`${wrap}${path}`),
+    (path) => entries.get(`${wrap}${path}`),
   );
   setBusy(false, "");
   details.close();
@@ -3603,7 +3819,7 @@ function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
 /** "Choose…" and the drop box: the browser's file picker where it exists,
  *  for a file that can be saved in place, else the file input. */
 async function chooseTour(): Promise<void> {
-  if (ui().busy || ui().picking) return;
+  if (!isEntryIdle(ui()) || ui().picking) return;
   store.dispatch(editorViewActions.pickingChanged({ picking: true }));
   const outcome = await pickTourFile(window as unknown as PickerWindow).finally(
     () => {
@@ -3620,17 +3836,181 @@ async function chooseTour(): Promise<void> {
     openError.hidden = false;
     return;
   }
-  const opened = await enterFiles([outcome.file], {
+  // A scan chosen here instead of a tour may be remembered too.
+  scanHandles.set(outcome.file, outcome.handle);
+  await holdTourFiles([outcome.file], {
     file: outcome.file,
     handle: outcome.writable ? outcome.handle : null,
     picked: outcome.handle,
   });
-  // Said about the tour just opened, never over the one that stayed.
-  if (opened && !outcome.writable) {
-    toast(
-      "The browser did not allow saving to this file, so Save downloads a copy.",
-    );
+}
+
+/** Said, once the tour opened, when its picked file may not be written. */
+const NOT_WRITABLE_LINE =
+  "The browser did not allow saving to this file, so Save downloads a copy.";
+
+/**
+ * "Open the editor" (and Enter in the link field): what the start card's
+ * answers name, opened (`startCardView`). The unsaved-work guard came
+ * before the card showed (`openAnotherTour`). Each start asks its save
+ * question IN this click where it asks one (a new tour, a link): a
+ * browser opens the dialog only close to a click. The example asks none:
+ * it is looked at first, and its first Save asks.
+ */
+function openFromStart(): void {
+  if (!isEntryIdle(ui())) return;
+  const start = selectEditorStart(store.getState());
+  const view = startCardView(start, linkInput.value);
+  if (!view.canOpen || start.from === null) return;
+  const scan = view.scanStep ? startFiles.scan : null;
+  openError.hidden = true;
+  const run: Record<StartFrom, () => void> = {
+    example: () => {
+      void openExample();
+    },
+    new: () => {
+      startNew(scan);
+    },
+    tour: () => {
+      const held = startFiles.tour;
+      if (held === null) {
+        openLink(linkInput.value, scan);
+        return;
+      }
+      void openTourWithScan(held.file, scan, held).then((outcome) => {
+        // Said about the tour just opened, never over the one that stayed.
+        if (
+          outcome.kind !== "not-opened" &&
+          held.picked !== null &&
+          held.handle === null
+        ) {
+          toast(NOT_WRITABLE_LINE);
+        }
+      });
+    },
+  };
+  run[start.from]();
+}
+
+/** The example tour, fetched and opened, with no save question: it is
+ *  looked at first, and Save asks where once there is something to keep. */
+async function openExample(): Promise<void> {
+  setBusy(true, "Fetching the example tour…");
+  let file: File;
+  try {
+    const response = await fetch(SAMPLE_URL);
+    if (!response.ok) {
+      throw new Error(`the example answered ${String(response.status)}`);
+    }
+    file = new File([await response.blob()], SAMPLE_NAME, {
+      type: "application/zip",
+    });
+  } catch (err) {
+    setBusy(false, "");
+    openError.textContent = `The example tour could not be fetched: ${
+      err instanceof Error ? err.message : String(err)
+    }`;
+    openError.hidden = false;
+    return;
   }
+  setBusy(false, "");
+  if ((await openTourWithScan(file, null, null)).kind !== "not-opened") {
+    datedSave = true;
+  }
+}
+
+/**
+ * A new, empty tour (`startNewTour`, its own minted id, so its own draft),
+ * then the scan beside it when one is held. The save dialog is asked IN
+ * the click; a toast asks the card's question while it is open.
+ */
+function startNew(scan: File | null): void {
+  let asking: HTMLElement | null = null;
+  void startNewTour<Promise<SaveFilePick> | null>({
+    askSaveFile: (name) => {
+      const pick = askOpenSaveFile(name);
+      if (pick !== null) {
+        asking = toast(NEW_TOUR_SAVE_QUESTION, undefined, null, false);
+        void pick.finally(() => asking?.remove());
+      }
+      return pick;
+    },
+    open: async (file) =>
+      (await openTourWithScan(file, scan, null)).kind !== "not-opened",
+    keepInChosenFile: (file, pick) => {
+      if (pick === null) return; // no save dialog here: Save downloads
+      // The tour may have been dropped while its scan was added (a late
+      // integrity failure): nothing is written into the pick then.
+      if (editor === null) settleUnusedPick(pick);
+      else void keepInChosenFile(editor, file, pick);
+    },
+    settleUnusedPick,
+    failed: (reason) => {
+      openError.textContent = `The new tour could not be started: ${reason}`;
+      openError.hidden = false;
+    },
+  }).then((opened) => {
+    if (!opened) return;
+    datedSave = true;
+    // Over the whole Earth, or at the scan: where the first station goes.
+    fileToasts.push(toast(EMPTY_GLOBE_HINT, undefined, null));
+  });
+}
+
+/**
+ * A hosted tour, from its link (tour editor plan 2026-10-17-1816, W1): the
+ * viewer's transport fetches it whole, then it opens as a chosen file does
+ * (no file handle: Save downloads the new copy), with the held scan
+ * beside it. Where to save it is asked first, in the click.
+ */
+function openLink(link: string, scan: File | null): void {
+  const pick = askOpenSaveFile(linkFileName(link));
+  setBusy(true, "Fetching the tour from its link…");
+  fetchTourFile(link, {
+    corsProxyBaseUrl: driveProxyBaseUrl(location.hostname),
+  })
+    .then(async (file) => {
+      setBusy(false, "");
+      const outcome = await openTourWithScan(file, scan, null);
+      if (outcome.kind === "not-opened" || editor === null) {
+        settleUnusedPick(pick);
+        return;
+      }
+      // Done names the host the tour was fetched from (W2); a link to no
+      // cloud host is an own server's (GitHub Pages included).
+      linkHost = hostOfLink(link) ?? "own";
+      // ... and the name its file has there, which the saved one (dated)
+      // does not carry.
+      linkHosted = linkHostedName(link);
+      datedSave = true;
+      if (pick !== null) void keepInChosenFile(editor, file, pick);
+    })
+    .catch((err: unknown) => {
+      setBusy(false, "");
+      openError.textContent = linkOpenErrorText(err, link);
+      openError.hidden = false;
+      settleUnusedPick(pick);
+    });
+}
+
+/** Question 2's file: a scan is held, anything else refused in words. */
+async function holdScanFile(file: File): Promise<void> {
+  if (!isEntryIdle(ui())) return;
+  openError.hidden = true;
+  setBusy(true, `Reading ${file.name}…`);
+  let kind: EditorFileKind;
+  try {
+    kind = await classifyEditorFile(file);
+  } finally {
+    setBusy(false, "");
+  }
+  const pick = sortScanPick(kind);
+  if (pick.kind === "refuse") {
+    openError.textContent = pick.reason;
+    openError.hidden = false;
+    return;
+  }
+  holdScan(pick.scan);
 }
 
 /**
@@ -4516,7 +4896,7 @@ store.subscribe(() => {
 // document's own drop guard keeps the browser from opening the file.
 for (const button of [debugAddButton, fileDebugAdd]) {
   button.addEventListener("click", () => {
-    debugAddInput.click();
+    void chooseScan(debugAddInput, addDebugDataSaying);
   });
 }
 debugAddInput.addEventListener("change", () => {
@@ -4558,9 +4938,10 @@ drop.addEventListener("click", (event) => {
   void chooseTour();
 });
 zipInput.addEventListener("change", () => {
-  const file = zipInput.files?.[0];
+  // A tour and a scan may be chosen together.
+  const files = Array.from(zipInput.files ?? []);
   zipInput.value = "";
-  if (file !== undefined) void enterFiles([file]);
+  void holdTourFiles(files);
 });
 // A file dropped anywhere else on the page would make the browser open
 // it, and the open tour would be gone (PR #609 review): only #drop opens.
@@ -4580,7 +4961,7 @@ drop.addEventListener("drop", (event) => {
   event.preventDefault();
   drop.classList.remove("over");
   // Every file dropped: a tour and a scan may come together.
-  void enterFiles(Array.from(event.dataTransfer?.files ?? []));
+  void holdTourFiles(Array.from(event.dataTransfer?.files ?? []));
 });
 // A file dragged over the open editor: the page shows that it takes files
 // (`body.file-drag`), and the row or file field it would be used in
@@ -4625,73 +5006,44 @@ document.addEventListener("drop", (event) => {
   if (at === undefined) return;
   void dropFiles(Array.from(event.dataTransfer?.files ?? []), at);
 });
-sampleButton.addEventListener("click", () => {
-  if (!isEntryIdle(ui())) return;
-  // First, in the click: where to save it (`askOpenSaveFile`).
-  const pick = askOpenSaveFile(SAMPLE_NAME);
-  openError.hidden = true;
-  setBusy(true, "Fetching the sample tour…");
-  fetch(SAMPLE_URL)
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`the sample answered ${String(response.status)}`);
-      }
-      const blob = await response.blob();
-      setBusy(false, "");
-      const file = new File([blob], SAMPLE_NAME, { type: "application/zip" });
-      const opened = await openFile(file);
-      if (opened) datedSave = true;
-      if (opened && pick !== null && editor !== null) {
-        void keepInChosenFile(editor, file, pick);
-      } else {
-        settleUnusedPick(pick);
-      }
-    })
-    .catch((err: unknown) => {
-      setBusy(false, "");
-      openError.textContent = `The sample tour could not be fetched: ${
-        err instanceof Error ? err.message : String(err)
-      }`;
-      openError.hidden = false;
-      settleUnusedPick(pick);
-    });
+// The start card: question 1's answers, question 2's scan, and the one
+// button. Nothing opens before "Open the editor" (`openFromStart`).
+for (const answer of startAnswers) {
+  answer.addEventListener("change", () => {
+    if (!answer.checked) return;
+    openError.hidden = true;
+    openStatus.textContent = "";
+    store.dispatch(
+      editorStartActions.startChosen({ from: answer.value as StartFrom }),
+    );
+  });
+}
+linkInput.addEventListener("input", () => {
+  // One tour at a time: a link typed replaces a file chosen.
+  if (linkInput.value.trim() !== "" && startFiles.tour !== null) {
+    holdTour(null);
+  }
+  renderStartCard();
 });
-// A hosted tour, from its link (tour editor plan 2026-10-17-1816, W1): the
-// viewer's transport fetches it whole, then it opens as a chosen file does
-// (no file handle: Save downloads the new copy).
+// Enter in the link field opens the editor, as the button does.
 linkForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  if (!isEntryIdle(ui())) return;
-  const link = linkInput.value;
-  // First, in the submit: where to save it (`askOpenSaveFile`).
-  const pick = askOpenSaveFile(linkFileName(link));
-  openError.hidden = true;
-  setBusy(true, "Fetching the tour from its link…");
-  fetchTourFile(link, {
-    corsProxyBaseUrl: driveProxyBaseUrl(location.hostname),
-  })
-    .then(async (file) => {
-      setBusy(false, "");
-      if (!(await openFile(file)) || editor === null) {
-        settleUnusedPick(pick);
-        return;
-      }
-      // Done names the host the tour was fetched from (W2); a link to no
-      // cloud host is an own server's (GitHub Pages included).
-      linkHost = hostOfLink(link) ?? "own";
-      // ... and the name its file has there, which the saved one (dated)
-      // does not carry.
-      linkHosted = linkHostedName(link);
-      datedSave = true;
-      if (pick !== null) void keepInChosenFile(editor, file, pick);
-    })
-    .catch((err: unknown) => {
-      setBusy(false, "");
-      openError.textContent = linkOpenErrorText(err, link);
-      openError.hidden = false;
-      settleUnusedPick(pick);
-    });
+  openFromStart();
 });
+startOpen.addEventListener("click", openFromStart);
+startScanButton.addEventListener("click", () => {
+  void chooseScan(startScanInput, holdScanFile);
+});
+startScanInput.addEventListener("change", () => {
+  const file = startScanInput.files?.[0];
+  startScanInput.value = "";
+  if (file !== undefined) void holdScanFile(file);
+});
+startScanRemove.addEventListener("click", () => {
+  holdScan(null);
+});
+store.subscribe(renderStartCard);
+renderStartCard();
 cancelButton.addEventListener("click", () => {
   showModal(false);
 });
