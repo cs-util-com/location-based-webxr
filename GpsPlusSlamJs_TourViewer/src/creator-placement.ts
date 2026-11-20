@@ -176,10 +176,16 @@ export function wireCreatorPlacement(deps: {
    * hand is never asked for: a tour builder with no codes places by GPS
    * and tracking alone (field test 2, F5; a print size adopted mid-walk
    * used to grey the buttons for the rest of the loop).
+   *
+   * And a tour open on this page: only an open tour keeps a draft on this
+   * phone, so work placed with none would live in memory alone, and a
+   * reload or a crash would lose it. The camera opens the tour from its
+   * printed code, which is what the locked panel asks for (`entryHint`).
    */
   function placementAllowed(): boolean {
     const alignment = deps.alignmentInfo();
     return (
+      ctx.session !== null &&
       alignment.hasMatrix &&
       (alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES ||
         deps.codeVoted?.() === true) &&

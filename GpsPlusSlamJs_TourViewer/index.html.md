@@ -32,17 +32,26 @@ result or a shared link shows).
   no AR session runs (`body[data-ar-active]`), so `#ar-root` over the
   camera keeps the sheet's tokens; L5's own tokens are `--map-*`. The
   header (`<h1>Tour Viewer</h1>`) shows for a visitor only. The steps:
-  1. **Where the tour lives** (`#step-host`): the host tiles
-     (`#host-tiles`, a radiogroup filled by `host-picker.ts`), the chosen
-     host's steps (`#host-steps`), the starter zip (`#starter-zip`, only
-     for a host that needs a file before it gives a link), Continue
-     (`#host-continue`), and a small link to open a tour zip from the
-     device (`#open-file`, "Open it from this device", tour kit plan K0;
-     a file has no link, so its code is printed once the zip is hosted).
-  2. **The link** (`#step-link`): `#open-form` with the button "Check
-     link" - the check also runs by itself on paste and when the field is
-     left - and `#link-status`, the line saying what the check found
-     (`link-check.ts`). The shortener advice and its bit.ly warning live
+  1. **The start question** (`#step-host`, setup flow round 2): "How do
+     you want to start?" with four answer cards (`.start-answers`,
+     `#start-answer-new`, `-link`, `-file`, `-later`); a tap only routes
+     to step 2 (`start-question.ts`).
+  2. **The answer's panel** (`#step-link`): `#link-heading` and
+     `#link-why` are written per answer, and one block per answer shows:
+     `#start-host` (new tour, or "share" from Done: the host tiles
+     `#host-tiles` filled by `host-picker.ts`, the chosen host's steps
+     `#host-steps`, the starter zip `#starter-zip` only for a host that
+     needs a file before it gives a link and not after Done saved one),
+     `#link-field` (new tour, share, link), `#start-code-hangs` ("Start at
+     the code", the link answer's way to step 5 for a code that already
+     hangs), `#start-file` (`#open-file`, "Open it from this device", tour
+     kit plan K0; a file has no link, so its code is printed once the zip is
+     hosted) and `#start-later` (`#start-here`, "Save the tour file and
+     start", with the indoor limit); every panel ends in "Back to the
+     question" (`.start-back-button`). `#link-field` holds `#open-form`
+     with the button "Check link" - the check also runs by itself on paste
+     and when the field is left - and `#link-status`, the line saying what
+     the check found (`link-check.ts`). The shortener advice and its bit.ly warning live
      here, where the check that counts runs. The picker itself (`#file-input`) and the line naming a
      file-opened tour (`#file-status`) and the open tour's signature lines
      (`#tour-trust`, tour kit plan K1: who signed it or that nobody did,
@@ -84,7 +93,11 @@ result or a shared link shows).
      tour (scan-to-open plan §2).
   6. **Done** (`#step-done`): `#finish-block` (the rebuilt zip's status,
      the save, the summary and `#replace-help`), opened by the Finish
-     (polish round M2, B9). Until then `.done-pending` says what the step
+     (polish round M2, B9). For a tour with no link (started on this
+     phone) `#make-code` ("Make your code now": upload, link, print, measure
+     the code at the next visit, and the untested re-basing of GPS-placed
+     pins) shows, and `#step-done[data-hosted="false"]` hides
+     `#replace-help` and `#upload-ask` (`start-question.ts`). Until then `.done-pending` says what the step
      is for; page CSS hides it once the block shows.
 
 - The visitor's start page in the owner's V4 look (polish round M4a,
@@ -501,15 +514,17 @@ blocking="render">` holds the first paint until the script is parsed, so
 ## Public API
 
 The `data-testid` contract the e2e suite drives: `wizard`, `step-host`
-(owns `host-tiles`, `host-steps`, `host-continue`), `landing` (owns
+(owns `start-answers` and `start-answer-<new|link|file|later>`), `landing` (owns
 `landing-way`, `landing-needs`, `landing-begin-top`, `landing-film` with
 `landing-still`, `landing-story`, `landing-cards` with five
 `landing-card`, `landing-make` with `setup-begin`, `landing-uses`),
 `setup-stage`, `setup-map` (owns `setup-map-svg` and the
 drawn `map-station-<step>`), `setup-card` (owns `setup-loading`, `setup-badge`, `setup-of`,
 `setup-dots` with `station-<step>`, `setup-nav`, `setup-back`,
-`setup-next`), `step-link` (owns
-`link-status` and `print-url-out`, the launch link in `#link-launch`),
+`setup-next`), `step-link` (owns `link-heading`, `link-why`,
+`start-host` with `host-tiles` and `host-steps`, `link-field`,
+`start-code-hangs` with `code-hangs-button`, `start-file`, `start-later`
+with `start-here`, `start-back`, `link-status` and `print-url-out`, the launch link in `#link-launch`),
 `starter-zip`, `link-input`, `open-button`, `open-file-button`,
 `file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,
 `storage-panel`,
@@ -531,7 +546,7 @@ setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
 `have-tour-link`, `have-tour-open`, `have-tour-status`, `have-tour-ask`,
 `have-tour-play`, `have-tour-continue`),
 `step-done` (owns `done-pending`, `finish-block`,
-`finish-status`, `finish-download`, `debug-save` ("Save the debug data"
+`finish-status`, `finish-download`, `make-code` (owns `make-code-start`), `debug-save` ("Save the debug data"
 after a Finish that left the walk out, above the replace steps:
 `debug-save-text`, `debug-save-btn`, `debug-save-status`;
 `creator-debug-save.ts`), `summary` (the summary after Finish,

@@ -87,7 +87,7 @@ export interface WizardDom {
   steps: Partial<Record<WizardStep, StepNode>>;
   /** "I hung it - continue" in step 3. */
   hangDone: ClickableNode;
-  /** "Download an empty starter zip" in step 1. */
+  /** "Download the empty starter tour" in step 2's new-tour answer. */
   starterButton: ButtonNode;
   /** The `?qr=` launch link in step 2. */
   visitorLink: LinkNode;
@@ -165,6 +165,15 @@ export interface Wizard {
    *  measured shortest form and the code-number token), so the tester's
    *  way in decodes what a real scan decodes (M2 review #10). */
   presentLaunchUrl(launchUrl: string): void;
+  /** A tour opened from a file on this phone: it has no link yet, so it is
+   *  not hosted, and the creator goes on in `measure` (the start
+   *  question's "start on this phone" and a step-5 open) or `print`. */
+  presentLocalTour(step: "measure" | "print"): void;
+  /** The open tour closed (every open closes the last one first). */
+  presentNoTour(): void;
+  /** Whether the open tour came from a link: only then can a code be
+   *  printed for it. A tour from a file is not, until its link opens. */
+  hosted(): boolean;
 }
 
 /** The launch link for `url`, relative to the page (the landing's `?qr=`
@@ -459,5 +468,18 @@ export function wireWizard(deps: {
       dom.visitorLink.href = href;
       dom.visitorLink.hidden = false;
     },
+    presentLocalTour: (step) => {
+      // A file has no link: nothing to launch, nothing to remember a step
+      // under, and the map must not mark printing and hanging as done.
+      forgetTour();
+      if (mode === "creator") openStep(step);
+    },
+    presentNoTour: forgetTour,
+    hosted: () => tourUrl !== null,
   };
+
+  function forgetTour(): void {
+    tourUrl = null;
+    dom.visitorLink.hidden = true;
+  }
 }

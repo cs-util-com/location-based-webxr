@@ -3327,6 +3327,7 @@ test("on a device that can share files, the starter button says share and report
   await installTourViewerArFakes(page, { shareRoute: true });
   await page.goto("/?nocache=1");
   await page.getByTestId("station-host").click();
+  await page.getByTestId("start-answer-new").click();
   const starter = page.getByTestId("starter-zip");
   await expect(starter).toHaveText(/share the empty starter tour/i);
   await expect(starter).not.toHaveText(/download/i);
@@ -3355,6 +3356,7 @@ test("a share that hands nothing over says so, without blaming the creator", asy
     /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
   });
   await page.getByTestId("station-host").click();
+  await page.getByTestId("start-answer-new").click();
   const starter = page.getByTestId("starter-zip");
   await starter.click();
   await expect(starter).toHaveText(/not shared/i);

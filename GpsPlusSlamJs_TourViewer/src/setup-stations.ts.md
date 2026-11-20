@@ -11,7 +11,10 @@ open step in, what the station row and the map show out. Plan:
 
 ## Public API
 
-- `stationView(open: WizardStep | null): StationView`
+- `stationView(open: WizardStep | null, { hosted? }): StationView`
+  - `hosted` (default true): whether the open tour has a link. While it
+    has none (a tour started on this phone, shared later), printing and
+    hanging are never marked done: no code exists for it yet.
   - `number` (1-based) and `total` (6);
   - `states` - one `"done" | "current" | "todo"` per step in
     `WIZARD_STEPS` order;

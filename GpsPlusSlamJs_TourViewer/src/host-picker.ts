@@ -1,9 +1,11 @@
 /**
- * The host tiles of step 1 (polish round M2, A6/A7): one radio tile per
- * host, the chosen host's own steps below them, the starter zip only for a
- * host that needs a file before it gives a link, and a Continue that hands
- * over to step 2. The choice is stored (`tour-host.ts`), so a returning
- * creator finds it selected.
+ * The host tiles of the "new tour, share now" answer (polish round M2,
+ * A6/A7; the setup's start question since round 2): one toggle tile per
+ * host, the chosen host's own steps below them, and the starter zip only
+ * for a host that needs a file before it gives a link - never when the
+ * creator shares a tour this phone already saved (`saved`). The link field
+ * sits right below in the same step, so there is no Continue. The choice
+ * is stored (`tour-host.ts`), so a returning creator finds it selected.
  *
  * The DOM surface is structural, like the wizard's, so the unit tests run
  * in node with plain objects.
@@ -42,11 +44,6 @@ interface TileNode<T> {
   addEventListener(type: "click", fn: () => void): void;
 }
 
-interface ClickableNode {
-  hidden: Hidden;
-  addEventListener(type: "click", fn: () => void): void;
-}
-
 export interface HostPickerDom<T> {
   /** The group the toggle tiles are rendered into. */
   tiles: PickerNode<T>;
@@ -54,7 +51,11 @@ export interface HostPickerDom<T> {
   steps: PickerNode<T>;
   /** The starter zip button; its click is the wizard's. */
   starter: { hidden: Hidden };
-  continueButton: ClickableNode;
+}
+
+export interface HostPicker {
+  /** Draw again: the share-later route switched (`saved`). */
+  render(): void;
 }
 
 export function wireHostPicker<T extends TileNode<T>>(deps: {
@@ -62,9 +63,11 @@ export function wireHostPicker<T extends TileNode<T>>(deps: {
   store: TourHostStore | undefined;
   /** `document.createElement`, injectable for the tests. */
   createElement: (tag: "button" | "li" | "span" | "a") => T;
-  /** Continue was tapped with a host chosen. */
-  onContinue: (host: TourHost) => void;
-}): void {
+  /** Whether the zip to upload is one this phone saved at Done: the
+   *  steps then start from it, and no starter is offered. Read on each
+   *  render. */
+  saved?: () => boolean;
+}): HostPicker {
   const { dom, store, createElement } = deps;
   // Held here as well as in the store: a store that throws must not lose
   // the choice for this page.
@@ -96,10 +99,10 @@ export function wireHostPicker<T extends TileNode<T>>(deps: {
     if (chosen === null) {
       dom.steps.hidden = true;
       dom.starter.hidden = true;
-      dom.continueButton.hidden = true;
       return;
     }
-    const items = hostStepParts(chosen).map((parts) => {
+    const saved = deps.saved?.() === true;
+    const items = hostStepParts(chosen, { saved }).map((parts) => {
       const li = createElement("li");
       li.replaceChildren(
         ...parts.map((part) => {
@@ -121,12 +124,9 @@ export function wireHostPicker<T extends TileNode<T>>(deps: {
     });
     dom.steps.replaceChildren(...items);
     dom.steps.hidden = false;
-    dom.starter.hidden = !needsStarterZip(chosen);
-    dom.continueButton.hidden = false;
+    dom.starter.hidden = saved || !needsStarterZip(chosen);
   }
 
-  dom.continueButton.addEventListener("click", () => {
-    if (chosen !== null) deps.onContinue(chosen);
-  });
   render();
+  return { render };
 }

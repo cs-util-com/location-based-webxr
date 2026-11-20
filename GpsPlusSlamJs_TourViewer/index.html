@@ -109,8 +109,39 @@
         box-shadow: var(--shadow-pressed);
         color: var(--accent);
       }
-      /* A button that reads as a link (polish round M2, A5): the device
-         open is the fallback, so it stops looking like a main action. */
+      /* The start question's answers (setup flow round 2): one card per
+         line, large enough to read as the four ways in. */
+      .start-answers {
+        display: grid;
+        gap: var(--space-2);
+        margin: var(--space-3) 0 0;
+        max-width: 36rem;
+      }
+      .btn.start-answer {
+        justify-content: flex-start;
+        min-height: 3.25rem;
+        text-align: start;
+      }
+      .start-back {
+        margin-block-start: var(--space-3);
+      }
+      .make-code {
+        margin-block: var(--space-3);
+      }
+      .make-code h3 {
+        margin: 0 0 var(--space-2);
+        font-size: 1.2rem;
+        font-weight: 600;
+      }
+      #start-code-hangs {
+        margin-block-start: var(--space-3);
+      }
+      /* A tour with no link yet: no file at a link to replace. */
+      #step-done[data-hosted="false"] :is(#replace-help, #upload-ask) {
+        display: none;
+      }
+      /* A button that reads as a link (polish round M2, A5): a secondary
+         way, so it stops looking like a main action. */
       .link-button {
         appearance: none;
         background: none;
@@ -1612,19 +1643,24 @@
         border: 1.5px solid var(--ink);
         outline: 1px solid var(--ink);
         outline-offset: 3px;
-        margin: var(--space-1);
+        margin: var(--space-1) auto;
+        /* A slim strip on a phone held upright (setup flow round 2): the
+           map is orientation, the step card is the work, so the map takes
+           at most about a quarter of the height. */
+        width: fit-content;
+        max-width: 100%;
       }
       .setup-map-frame svg {
         display: block;
-        width: 100%;
-        height: auto;
-        max-height: 42svh;
+        width: auto;
+        max-width: 100%;
+        height: 18svh;
       }
 
       @media (orientation: landscape) and (width >= 640px), (width >= 1024px) {
         body[data-mode="creator"] .setup-stage {
           display: grid;
-          grid-template-columns: minmax(0, 1.42fr) minmax(300px, 1fr);
+          grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr);
           align-items: start;
           gap: var(--space-3);
         }
@@ -1633,7 +1669,12 @@
           top: 0;
           border-bottom: 0;
         }
+        .setup-map-frame {
+          width: auto;
+        }
         .setup-map-frame svg {
+          width: 100%;
+          height: auto;
           max-height: 85svh;
         }
       }
@@ -5467,10 +5508,10 @@
           </p>
           <ol id="wizard" class="creator-only" data-testid="wizard" hidden>
             <li>
-              <!-- Step 1: where the tour lives (polish round M2, A6/A7). The
-               host tiles are the context every later step uses
-               (tour-host.ts); the starter zip shows only for a host that
-               needs a file before it gives a link. -->
+              <!-- Step 1: how the creator wants to start (creator setup flow,
+               round 2, the "conversation" variant). One question, four
+               answers; a tap only routes to step 2, which shows that
+               answer's panel (start-question.ts). -->
               <details id="step-host" class="step" data-testid="step-host">
                 <summary>
                   <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -5483,69 +5524,59 @@
                       stroke-linejoin="round"
                     />
                   </svg>
-                  <h2>Where your tour file is stored</h2>
+                  <h2>How do you want to start?</h2>
                 </summary>
                 <p class="step-copy hint--dim">
-                  Your tour is one small zip file in your own storage. Visitors'
-                  phones load it from there; once it has loaded, it keeps
-                  working without signal.
+                  Nothing is made yet, so nothing can be lost.
                 </p>
                 <div
-                  id="host-tiles"
-                  class="host-tiles"
+                  class="start-answers"
                   role="group"
-                  aria-label="Where your tour file is stored"
-                  data-testid="host-tiles"
-                ></div>
-                <ol
-                  id="host-steps"
-                  class="substeps"
-                  data-testid="host-steps"
-                  hidden
-                ></ol>
-                <div class="step-body">
+                  aria-label="How do you want to start?"
+                  data-testid="start-answers"
+                >
                   <button
                     type="button"
-                    id="starter-zip"
-                    class="btn btn--prose"
-                    data-testid="starter-zip"
-                    hidden
+                    id="start-answer-new"
+                    class="btn btn--prose start-answer"
+                    data-testid="start-answer-new"
                   >
-                    Download the empty starter tour
+                    New tour - I want to share it now
                   </button>
                   <button
                     type="button"
-                    id="host-continue"
-                    class="btn"
-                    data-testid="host-continue"
-                    hidden
+                    id="start-answer-link"
+                    class="btn btn--prose start-answer"
+                    data-testid="start-answer-link"
                   >
-                    Continue
+                    I have my tour's link
+                  </button>
+                  <button
+                    type="button"
+                    id="start-answer-file"
+                    class="btn btn--prose start-answer"
+                    data-testid="start-answer-file"
+                  >
+                    The tour file is on this phone
+                  </button>
+                  <button
+                    type="button"
+                    id="start-answer-later"
+                    class="btn btn--prose start-answer"
+                    data-testid="start-answer-later"
+                  >
+                    Start on this phone now, share later
                   </button>
                 </div>
-                <!-- "Open a file" (tour kit plan K0): a zip on this device,
-                 for a host that does not let browsers read its files.
-                 The picker is #file-input, outside the wizard, which
-                 the visitor's advice button uses too. A small link since
-                 polish round M2 (A5): the hosts above are the main way. -->
-                <p class="step-copy hint--dim">
-                  Already have a tour zip on this device?
-                  <button
-                    type="button"
-                    id="open-file"
-                    class="link-button"
-                    data-testid="open-file-button"
-                  >
-                    Open it from this device
-                  </button>
-                </p>
               </details>
             </li>
             <li>
-              <!-- Step 2: the link, given once (polish round M2, A13/A16). It is
-               checked by itself on paste; the print step carries it, also
-               while it is not reachable yet (an own server's link can come
-               before its file). -->
+              <!-- Step 2: the start question's answer (creator setup flow,
+               round 2): a heading and a why per answer, and that answer's
+               blocks (start-question.ts). The link is given once (polish
+               round M2, A13/A16): checked by itself on paste; the print
+               step carries it, also while it is not reachable yet (an own
+               server's link can come before its file). -->
               <details id="step-link" class="step" data-testid="step-link">
                 <summary>
                   <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -5558,62 +5589,166 @@
                       stroke-linejoin="round"
                     />
                   </svg>
-                  <h2>Paste your tour's share link</h2>
+                  <h2 id="link-heading" data-testid="link-heading">
+                    Paste your tour's link
+                  </h2>
                 </summary>
-                <p class="step-copy hint--dim">
-                  Paste the share link to your tour zip. Keep the file where it
-                  is: your printed codes point to it.
-                </p>
-                <form id="open-form">
-                  <input
-                    id="link"
-                    name="link"
-                    class="input"
-                    type="text"
-                    placeholder="https://… link to the .zip"
-                    autocomplete="off"
-                    data-testid="link-input"
-                  />
-                  <button
-                    type="submit"
-                    class="btn"
-                    id="open"
-                    data-testid="open-button"
-                  >
-                    Check link
-                  </button>
-                </form>
                 <p
-                  id="link-status"
+                  id="link-why"
                   class="step-copy hint--dim"
-                  data-testid="link-status"
-                  role="status"
-                  aria-live="polite"
-                  hidden
-                ></p>
-                <!-- What the codes carry (r820 feedback R6): the pasted link
+                  data-testid="link-why"
+                >
+                  The link opens your tour file where you stored it. Keep the
+                  file there: your printed codes point to it.
+                </p>
+                <!-- New tour, share now: where it lives, the host's own
+                 steps and the starter zip (host-picker.ts), the link field
+                 right below. -->
+                <div id="start-host" data-testid="start-host" hidden>
+                  <div
+                    id="host-tiles"
+                    class="host-tiles"
+                    role="group"
+                    aria-label="Where your tour file is stored"
+                    data-testid="host-tiles"
+                  ></div>
+                  <ol
+                    id="host-steps"
+                    class="substeps"
+                    data-testid="host-steps"
+                    hidden
+                  ></ol>
+                  <div class="step-body">
+                    <button
+                      type="button"
+                      id="starter-zip"
+                      class="btn btn--prose"
+                      data-testid="starter-zip"
+                      hidden
+                    >
+                      Download the empty starter tour
+                    </button>
+                  </div>
+                </div>
+                <div id="link-field" data-testid="link-field">
+                  <form id="open-form">
+                    <input
+                      id="link"
+                      name="link"
+                      class="input"
+                      type="text"
+                      placeholder="https://… link to the .zip"
+                      autocomplete="off"
+                      data-testid="link-input"
+                    />
+                    <button
+                      type="submit"
+                      class="btn"
+                      id="open"
+                      data-testid="open-button"
+                    >
+                      Check link
+                    </button>
+                  </form>
+                  <p
+                    id="link-status"
+                    class="step-copy hint--dim"
+                    data-testid="link-status"
+                    role="status"
+                    aria-live="polite"
+                    hidden
+                  ></p>
+                  <!-- What the codes carry (r820 feedback R6): the pasted link
                  wrapped into the launch link a scan opens. Written by
                  print-panel.ts once the first poster's code is planned;
                  hidden while empty. -->
-                <div id="link-launch" class="link-launch">
+                  <div id="link-launch" class="link-launch">
+                    <p class="step-copy hint--dim">
+                      Your posters' codes carry this link, with your link
+                      wrapped inside - it is what a phone opens when it scans a
+                      poster:
+                    </p>
+                    <a
+                      id="print-url-out"
+                      data-testid="print-url-out"
+                      target="_blank"
+                      rel="noopener"
+                    ></a>
+                  </div>
                   <p class="step-copy hint--dim">
-                    Your posters' codes carry this link, with your link wrapped
-                    inside - it is what a phone opens when it scans a poster:
+                    A shortened link makes the printed code coarser and easier
+                    to scan from afar. Not every shortener works: some, bit.ly
+                    among them, open for you but stop the tour loading for
+                    visitors, so opening the short link yourself proves nothing.
+                    Paste the short link here and wait for the tour to be found
+                    before you print.
                   </p>
-                  <a
-                    id="print-url-out"
-                    data-testid="print-url-out"
-                    target="_blank"
-                    rel="noopener"
-                  ></a>
                 </div>
-                <p class="step-copy hint--dim">
-                  A shortened link makes the printed code coarser and easier to
-                  scan from afar. Not every shortener works: some, bit.ly among
-                  them, open for you but stop the tour loading for visitors, so
-                  opening the short link yourself proves nothing. Paste the
-                  short link here and wait for the tour to be found before you
-                  print.
+                <!-- Scan-to-open's one case: the code already hangs. -->
+                <p
+                  id="start-code-hangs"
+                  class="step-copy"
+                  data-testid="start-code-hangs"
+                  hidden
+                >
+                  Your code already hangs at the tour's start?
+                  <button
+                    type="button"
+                    id="code-hangs"
+                    class="link-button"
+                    data-testid="code-hangs-button"
+                  >
+                    Start at the code
+                  </button>
+                </p>
+                <!-- The tour file is on this phone. The picker is
+                 #file-input, outside the wizard, which the visitor's advice
+                 button uses too (tour kit plan K0). -->
+                <div
+                  id="start-file"
+                  class="step-body"
+                  data-testid="start-file"
+                  hidden
+                >
+                  <button
+                    type="button"
+                    id="open-file"
+                    class="btn"
+                    data-testid="open-file-button"
+                  >
+                    Open it from this device
+                  </button>
+                </div>
+                <!-- Start on this phone now, share later: one tap saves the
+                 empty starter and opens it as the tour, before AR. -->
+                <div
+                  id="start-later"
+                  class="step-body"
+                  data-testid="start-later"
+                  hidden
+                >
+                  <button
+                    type="button"
+                    id="start-here"
+                    class="btn"
+                    data-testid="start-here"
+                  >
+                    Save the tour file and start
+                  </button>
+                  <p class="step-copy hint--dim">
+                    Placing needs a GPS fix, so start outdoors: a new tour has
+                    no measured code yet, and indoors the pin buttons stay
+                    locked.
+                  </p>
+                </div>
+                <p class="step-copy start-back">
+                  <button
+                    type="button"
+                    class="link-button start-back-button"
+                    data-testid="start-back"
+                  >
+                    Back to the question
+                  </button>
                 </p>
               </details>
             </li>
@@ -7117,6 +7252,42 @@
               >
                 Save the tour zip again
               </button>
+              <!-- A tour started on this phone has no link yet: Done leads to
+               making its code (start-question.ts). The replace steps and the
+               "uploaded?" question below speak of a link, so the page's CSS
+               hides them while #step-done says data-hosted="false". -->
+              <section
+                id="make-code"
+                class="make-code"
+                data-testid="make-code"
+                hidden
+              >
+                <h3>Make your code now</h3>
+                <ol class="substeps">
+                  <li>
+                    Put the tour zip this phone just saved in your own storage,
+                    and copy its share link.
+                  </li>
+                  <li>Paste the link: your tour opens from it.</li>
+                  <li>Print the code and hang it where the tour starts.</li>
+                  <li>
+                    At your next visit, start at the code: it opens the tour,
+                    and the code is measured into it.
+                  </li>
+                </ol>
+                <p class="step-copy hint--dim">
+                  Pins you placed by GPS alone may shift a little once the code
+                  is measured on that later visit. That step is not tested yet.
+                </p>
+                <button
+                  type="button"
+                  id="make-code-start"
+                  class="btn"
+                  data-testid="make-code-start"
+                >
+                  Put it online and paste the link
+                </button>
+              </section>
               <!-- The debug data the Finish left out of the tour file
                (debug-captures plan M2, E2): saved apart on a tap, above the
                replace steps, from the bytes the Finish read
@@ -7245,7 +7416,8 @@
               data-testid="done-pending"
             >
               This step opens by itself when you finish in step 5: your saved
-              tour file, and how to put it in place of the one at your link.
+              tour file, and how to put it in place - at your link, or, for a
+              tour started on this phone, behind a new code.
             </p>
           </details>
           <div

@@ -296,8 +296,20 @@ describe("entryHint (authoring plan 2026-09-28-0953 §3.2a, decision D5)", () =>
     );
     expect(hint).not.toMatch(/scanned/);
     expect(entryHint({ tourOpen: true, codeSeen: true })).toBe("");
-    // No tour open: there is no "code of this tour" to point at yet.
-    expect(entryHint({ tourOpen: false, codeSeen: false })).toBe("");
+  });
+
+  it("with no tour open, says placing is locked until the hung code opens the tour", () => {
+    // Why this matters: with no tour open nothing placed would be kept on
+    // this phone, so placing is locked (`creator-placement.ts`). Locked
+    // buttons with no reason read as broken; this line gives the reason
+    // and the one move that unlocks them - the camera opens the tour from
+    // its printed code - and says nothing is lost by waiting.
+    const locked =
+      "Point at your hung code: it opens your tour. You can place once it is open, so nothing is lost.";
+    expect(entryHint({ tourOpen: false, codeSeen: false })).toBe(locked);
+    // A code read while no tour is open is still only the way in: the
+    // line stays until the tour has opened.
+    expect(entryHint({ tourOpen: false, codeSeen: true })).toBe(locked);
   });
 });
 
@@ -609,6 +621,21 @@ describe("the finish saves the tour zip by itself (field test 2, F4)", () => {
     );
     // A save over the hosted file keeps the link and the printed code.
     expect(finishSaveStatus(true, "tour.zip", true)).toContain("stay the same");
+  });
+
+  // Why: a tour opened from a file on this phone has no hosted zip and no
+  // link (setup flow round 2, "start on this phone now"); telling its
+  // creator to replace a hosted zip, with a link and a code that "stay the
+  // same", describes things that do not exist yet.
+  it("points a tour opened from a file to making its code, not to a hosted zip", () => {
+    const line = finishSaveStatus(true, "tour.zip", false, true);
+    expect(line).toBe(FINISH_LABELS.savedHere("tour.zip"));
+    expect(line).toContain("tour.zip");
+    expect(line).toMatch(/make its code/i);
+    expect(line).not.toMatch(/hosted|stay the same/i);
+    expect(finishSaveStatus(false, "tour.zip", false, true)).toBe(
+      FINISH_LABELS.notSaved,
+    );
   });
 
   it("names the button to tap when nothing was saved", () => {

@@ -22,11 +22,23 @@ test.describe("a first visit", () => {
   // No stored host: the suite's default (playwright.config.js) is cleared.
   test.use({ storageState: { cookies: [], origins: [] } });
 
-  test("starts at the host tiles, and a chosen host carries on to the link @pr", async ({
+  test("starts at the question, and a new tour routes to the host tiles @pr", async ({
     page,
   }) => {
     await page.goto("/?nocache=1");
     await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+    await expect(
+      page.getByTestId("start-answers").getByRole("button"),
+    ).toHaveText([
+      "New tour - I want to share it now",
+      "I have my tour's link",
+      "The tour file is on this phone",
+      "Start on this phone now, share later",
+    ]);
+    await page.getByTestId("start-answer-new").click();
+    await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
+    await expect(page.getByTestId("start-host")).toBeVisible();
+    await expect(page.getByTestId("link-field")).toBeVisible();
     const tiles = page.getByTestId("host-tiles").getByRole("button");
     await expect(tiles).toHaveText([
       "Google Drive",
@@ -35,10 +47,9 @@ test.describe("a first visit", () => {
       "GitHub",
       "Your own server",
     ]);
-    // Nothing chosen yet: no steps, no starter zip, no Continue.
+    // Nothing chosen yet: no steps, no starter zip.
     await expect(page.getByTestId("host-steps")).toBeHidden();
     await expect(page.getByTestId("starter-zip")).toBeHidden();
-    await expect(page.getByTestId("host-continue")).toBeHidden();
 
     const unchosen = await tiles
       .filter({ hasText: "Dropbox" })
@@ -74,16 +85,37 @@ test.describe("a first visit", () => {
       "Access-Control-Allow-Origin",
     );
 
-    await page.getByTestId("host-continue").click();
-    await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
-    await expect(page.getByTestId("link-input")).toBeFocused();
-
-    // The choice survives a reload: the page opens at the link.
+    // The choice survives a reload: the page opens at the new-tour panel.
     await page.reload();
     await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
+    await expect(page.getByTestId("start-host")).toBeVisible();
     expect(
       await page.evaluate((key) => localStorage.getItem(key), HOST_KEY),
     ).toBe("own");
+  });
+
+  // Why: a tap on an answer only routes, and each answer shows its own one
+  // action; the link answer is the one place "the code already hangs"
+  // (scan-to-open) is offered, and the back link returns to the question.
+  test("each answer shows its own panel, and back returns to the question", async ({
+    page,
+  }) => {
+    await page.goto("/?nocache=1");
+    await page.getByTestId("start-answer-link").click();
+    await expect(page.getByTestId("link-field")).toBeVisible();
+    await expect(page.getByTestId("start-code-hangs")).toBeVisible();
+    await expect(page.getByTestId("start-host")).toBeHidden();
+    await page.getByTestId("start-back").click();
+    await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+
+    await page.getByTestId("start-answer-file").click();
+    await expect(page.getByTestId("start-file")).toBeVisible();
+    await expect(page.getByTestId("link-field")).toBeHidden();
+    await page.getByTestId("start-back").click();
+
+    await page.getByTestId("start-answer-link").click();
+    await page.getByTestId("code-hangs-button").click();
+    await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
   });
 });
 

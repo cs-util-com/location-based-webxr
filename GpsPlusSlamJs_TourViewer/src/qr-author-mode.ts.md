@@ -49,9 +49,13 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   less exact." (plan 2026-10-15-0348 M0: it used to name "the code you
   scanned to open this tour", false for a tour opened from a file or a
   link) while a tour is open and the code in
-  hand has not been seen stable in this visit; empty otherwise. It blocks
+  hand has not been seen stable in this visit; empty once it has. It blocks
   nothing: a later visit's notes are corrected through the code only when
   the code was seen (D10b), and the owner chose a hint over a rule.
+  - With no tour open it says "Point at your hung code: it opens your
+    tour. You can place once it is open, so nothing is lost." - there
+    placing IS locked (`creator-placement.ts`), and the line names the
+    reason and the move that unlocks it.
 - `correctionRefusedLine({ horizontalM, yawDeg, maxHorizontalM })` - the one
   line that says a code correction was refused (M2c review #2): "Code seen
   N m from its saved position" (or "turned N°" when only the yaw broke the
@@ -161,8 +165,11 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   existing file". With the save automatic, this check is the only guard
   against a repeat download's name (the warning that once came before the
   tap has no moment left to be read).
-- `finishSaveStatus(delivered, filename, drive)` - the status line after a
-  save: where it went, or that nothing was saved and which button saves it.
+- `finishSaveStatus(delivered, filename, drive, fromFile = false)` - the
+  status line after a save: where it went, or that nothing was saved and
+  which button saves it. A tour opened from a file (`fromFile`) has no
+  hosted zip, so its line (`savedHere`) leads to making its code instead of
+  replacing a hosted file.
 - `buildAuthorControllerConfig` wires `onError` too — a throwing detector
   must surface, not leave the panel saying "point the camera" forever.
 

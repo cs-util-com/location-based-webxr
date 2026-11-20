@@ -18,8 +18,8 @@ import { WIZARD_STEPS, type WizardStep } from "./wizard.js";
 
 /** Each step's name on its dot and its map station (provisional copy). */
 const STATION_NAMES: Readonly<Record<WizardStep, string>> = {
-  host: "Storage",
-  link: "Link",
+  host: "Start",
+  link: "Your file",
   print: "Print",
   hang: "Hang",
   measure: "Create",
@@ -110,6 +110,10 @@ export function wireSetupStage<T extends DotNode>(deps: {
   /** Whether the reader asked for reduced motion: the scroll is then
    *  instant. Read on each tap. */
   reducedMotion?: () => boolean;
+  /** Whether the open tour has a link (`wizard.hosted`): without one,
+   *  printing and hanging stay to do on the map. Read on each render;
+   *  absent reads as hosted. */
+  hosted?: () => boolean;
 }): SetupStage {
   const { dom, openStep } = deps;
 
@@ -136,7 +140,7 @@ export function wireSetupStage<T extends DotNode>(deps: {
   }
 
   function render(): void {
-    const view = stationView(openNow());
+    const view = stationView(openNow(), { hosted: deps.hosted?.() ?? true });
     dom.badge.textContent = String(view.number);
     dom.of.textContent = `Step ${String(view.number)} of ${String(view.total)}`;
     WIZARD_STEPS.forEach((_, i) => {

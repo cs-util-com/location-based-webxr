@@ -10,7 +10,7 @@ through `wizard.openStep`. Plan: polish-round plan, "M2b - the L5 look".
 
 ## Public API
 
-- `wireSetupStage<T>({ dom, openStep, createElement, map?, reducedMotion? }): SetupStage`
+- `wireSetupStage<T>({ dom, openStep, createElement, map?, reducedMotion?, hosted? }): SetupStage`
   - `dom.steps` - the six step `<details>` (their `toggle` re-renders);
     `dom.summaries` - their `<summary>`s, whose click is cancelled so a tap
     on the open step's heading cannot collapse it;
@@ -28,6 +28,9 @@ through `wizard.openStep`. Plan: polish-round plan, "M2b - the L5 look".
     flag at its end (positioned at the route's end, `data-on` at the last
     step). Drawn only where the browser can measure the route
     (`getTotalLength`, `getPointAtLength`).
+  - `hosted` (optional, `wizard.hosted`) - whether the open tour has a
+    link; without one printing and hanging stay `todo` on the map and the
+    poster stays down (`stationView`). Absent reads as hosted.
   - **The map shows the OPEN STEP's position, not progress** (PR #585
     review): `stationView` marks every step after the open one `todo`, so
     going back to step 1 shortens the drawn route and takes the poster down

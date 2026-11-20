@@ -769,6 +769,68 @@ describe("the visitor link carries ?debug=1", () => {
   });
 });
 
+describe("a tour opened from a file (setup round 2, the start question)", () => {
+  // Why this matters: "Start on this phone now, share later" opens the
+  // saved zip as the tour, which has no link. The map and the Done step
+  // read `hosted()` to tell a tour that can have a printed code from one
+  // that cannot yet; a file tour that kept the last link's state would
+  // mark printing done and offer a visitor link to another tour.
+  it("is not hosted, hides the launch link and opens the step it is given", () => {
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+    });
+    expect(wizard.hosted()).toBe(false);
+    wizard.presentTour("https://h/t.zip");
+    expect(wizard.hosted()).toBe(true);
+    expect(dom.visitorLink.hidden).toBe(false);
+    wizard.presentLocalTour("measure");
+    expect(wizard.hosted()).toBe(false);
+    expect(dom.visitorLink.hidden).toBe(true);
+    expect(dom.steps.measure?.open).toBe(true);
+    wizard.presentLocalTour("print");
+    expect(dom.steps.print?.open).toBe(true);
+  });
+
+  it("forgets the link when the tour closes, and remembers no step for a file tour", () => {
+    const { dom } = fakeDom();
+    const store = new Map<string, string>();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+      stepStore: {
+        getItem: (k) => store.get(k) ?? null,
+        setItem: (k, v) => {
+          store.set(k, v);
+        },
+      },
+    });
+    wizard.presentTour("https://h/t.zip");
+    wizard.presentNoTour();
+    expect(wizard.hosted()).toBe(false);
+    wizard.presentLocalTour("measure");
+    wizard.openStep("done");
+    expect(store.get(wizardStepKey("https://h/t.zip"))).toBe("print");
+  });
+
+  it("opens nothing on a visitor page", () => {
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "visitor",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+    });
+    wizard.presentLocalTour("measure");
+    expect(dom.steps.measure?.open).toBe(false);
+  });
+});
+
 describe("revealStep (M3 milestone review #2)", () => {
   it("opens a step without closing the one the creator is reading", () => {
     // Why this exists at all: AR refuses to start when the printed size is

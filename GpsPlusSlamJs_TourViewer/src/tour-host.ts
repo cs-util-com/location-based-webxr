@@ -31,35 +31,51 @@ const HOST_STEPS: Readonly<Record<TourHost, readonly string[]>> = {
     "Download the empty starter tour below (tour.zip).",
     'Upload it into a folder of its own in Google Drive (e.g. "My tour").',
     'Share the file: "Anyone with the link", then copy the link.',
-    "Continue and paste that link.",
+    "Paste that link below.",
   ],
   dropbox: [
     "Download the empty starter tour below (tour.zip).",
     'Upload it into a folder of its own in Dropbox (e.g. "My tour").',
     "Share the file so anyone with the link can view it, and copy the link.",
-    "Continue and paste that link.",
+    "Paste that link below.",
   ],
   onedrive: [
     "Download the empty starter tour below (tour.zip).",
     'Upload it into a folder of its own in OneDrive (e.g. "My tour").',
     'Share the file: "Anyone with the link can view", then copy the link.',
-    "Continue and paste that link.",
+    "Paste that link below.",
   ],
   github: [
     "Download the empty starter tour below (tour.zip).",
     'Add it to a public repository on GitHub ("Add file", "Upload files").',
     "Open the file on GitHub and copy its address from the browser.",
-    "Continue and paste that link.",
+    "Paste that link below.",
   ],
   own: [
     "Choose where tour.zip will live on your server - you can paste the link before the file exists, and upload it later.",
     "The server must let other sites read the file (Access-Control-Allow-Origin: *) and send parts of it (Accept-Ranges: bytes).",
-    "Continue and paste that link.",
+    "Paste that link below.",
   ],
 };
 
-export function hostSteps(host: TourHost): readonly string[] {
-  return HOST_STEPS[host];
+/** The first step of a cloud host when the zip already exists: the tour
+ *  this phone saved at Done (the setup's "share later" route). */
+const SAVED_ZIP_STEP = "Find the tour zip this phone saved at Done (tour.zip).";
+
+/** Which zip the steps start from: the empty starter (a new tour shared
+ *  now), or the one this phone saved at Done (a tour made first and
+ *  shared later). */
+export interface HostStepsOptions {
+  saved?: boolean;
+}
+
+export function hostSteps(
+  host: TourHost,
+  options: HostStepsOptions = {},
+): readonly string[] {
+  const steps = HOST_STEPS[host];
+  if (options.saved !== true || !needsStarterZip(host)) return steps;
+  return [SAVED_ZIP_STEP, ...steps.slice(1)];
 }
 
 /** Where each cloud host is opened to upload (r820 feedback R2). */
@@ -85,11 +101,12 @@ export interface HostStepPart {
  */
 export function hostStepParts(
   host: TourHost,
+  options: HostStepsOptions = {},
 ): readonly (readonly HostStepPart[])[] {
   const home = HOST_HOME[host];
   const label = TOUR_HOSTS.find((h) => h.id === host)?.label ?? "";
   let linked = false;
-  return HOST_STEPS[host].map((text) => {
+  return hostSteps(host, options).map((text) => {
     const at = home === null || linked ? -1 : text.indexOf(label);
     if (home === null || at < 0) return [{ text }];
     linked = true;

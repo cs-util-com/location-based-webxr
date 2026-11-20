@@ -64,6 +64,7 @@ import type { ScanOpen } from "./scan-open.js";
 import { meshCursorFromSearch, viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wireHostPicker } from "./host-picker.js";
+import { wireStartQuestion, type StartQuestion } from "./start-question.js";
 import { wireSetupStage } from "./setup-stage.js";
 import { mountLanding, watchArStarting } from "./landing/landing-mount.js";
 import { holdLandingSkip } from "./landing/landing-skip.js";
@@ -401,26 +402,27 @@ const wizard = wireWizard({
     status.hidden = false;
   }
 }
-// Step 1's host tiles (polish round M2, A6/A7): the choice is stored with
-// the wizard's other state, and Continue moves on to the link.
-if (mode === "creator") {
-  wireHostPicker<
-    HTMLButtonElement | HTMLLIElement | HTMLSpanElement | HTMLAnchorElement
-  >({
-    dom: {
-      tiles: element("host-tiles"),
-      steps: element("host-steps"),
-      starter: element("starter-zip"),
-      continueButton: element("host-continue"),
-    },
-    store: stepStore,
-    createElement: (tag) => document.createElement(tag),
-    onContinue: () => {
-      wizard.openStep("link");
-      element<HTMLInputElement>("link").focus();
-    },
-  });
-}
+// The start question (setup flow round 2) is wired once the archive's
+// file open exists, further down; the host tiles read its panel through
+// this reference, a wired component like the others here, not state.
+let startQuestion: StartQuestion | null = null;
+// Step 2's host tiles for "new tour" and "share" (polish round M2,
+// A6/A7): the choice is stored with the wizard's other state.
+const hostPicker =
+  mode === "creator"
+    ? wireHostPicker<
+        HTMLButtonElement | HTMLLIElement | HTMLSpanElement | HTMLAnchorElement
+      >({
+        dom: {
+          tiles: element("host-tiles"),
+          steps: element("host-steps"),
+          starter: element("starter-zip"),
+        },
+        store: stepStore,
+        createElement: (tag) => document.createElement(tag),
+        saved: () => startQuestion?.panel() === "share",
+      })
+    : null;
 hooks.presentTourForPrint = (url, origin) => {
   print.presentTour(url);
   // An open started from step 4 keeps the creator there (M3 review #1):
@@ -449,8 +451,7 @@ hooks.presentTourCodes = () => {
 
 hooks.presentLocalTour = (origin) => {
   print.presentNoTour();
-  if (mode !== "creator") return;
-  wizard.openStep(origin === "measure-step" ? "measure" : "print");
+  wizard.presentLocalTour(origin === "measure-step" ? "measure" : "print");
 };
 
 const visitor = wireVisitorScreen({
@@ -573,6 +574,7 @@ if (mode === "creator") {
       stage: element("setup-stage"),
     },
     reducedMotion,
+    hosted: () => wizard.hosted(),
     openStep: (step) => {
       wizard.openStep(step);
     },
@@ -775,6 +777,7 @@ hooks.selectInView = setup.selectInView;
 hooks.finishFromAr = () => setup.finishNow();
 hooks.presentNoTour = () => {
   print.presentNoTour();
+  wizard.presentNoTour();
 };
 hooks.presentDraftForTour = setup.presentDraftForTour;
 hooks.forgetRefusedDraft = setup.forgetRefusedDraft;
@@ -1372,6 +1375,51 @@ const archive = wireArchiveOpen({
   hooks,
 });
 scanOpen = archive.scanOpen;
+
+// Step 1's question and step 2's panels (setup flow round 2): a tap only
+// routes; "start on this phone" saves the starter and opens that file.
+if (mode === "creator") {
+  startQuestion = wireStartQuestion({
+    dom: {
+      answers: {
+        new: element("start-answer-new"),
+        link: element("start-answer-link"),
+        file: element("start-answer-file"),
+        later: element("start-answer-later"),
+      },
+      heading: element("link-heading"),
+      why: element("link-why"),
+      blocks: {
+        host: element("start-host"),
+        linkField: element("link-field"),
+        codeHangs: element("start-code-hangs"),
+        file: element("start-file"),
+        later: element("start-later"),
+      },
+      backs: Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".start-back-button"),
+      ),
+      codeHangsButton: element("code-hangs"),
+      startButton: element<HTMLButtonElement>("start-here"),
+      makeCode: element("make-code"),
+      makeCodeButton: element("make-code-start"),
+      doneStep: element<HTMLDetailsElement>("step-done"),
+    },
+    // A returning creator with a stored host lands on step 2 (the
+    // wizard's first step for them), so its panel is "new".
+    initial: readTourHost(stepStore) === null ? null : "new",
+    openStep: (step) => {
+      wizard.openStep(step);
+    },
+    hosted: () => wizard.hosted(),
+    onPanel: () => hostPicker?.render(),
+    start: {
+      pack: () => packNewTour(),
+      save: (blob, name) => seams.downloadZip(blob, name),
+      open: (file) => archive.openFile(file, "measure-step"),
+    },
+  });
+}
 
 // "You already have a tour?" below the steps (tour editor plan
 // 2026-10-17-1816, W1): a phone opens a tour through the page's one open

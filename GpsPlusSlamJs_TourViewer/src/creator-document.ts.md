@@ -123,15 +123,15 @@ generation, written, appliedDeletions, stationsAtStart })`,
   file without `tour.json` is NOT "no tour": the page opens it as an
   empty manifest of its own (a real, unnamed tour), whose stations the
   HUD, the settle and the write read from the first placement.
-- **`open` carries only that work.** Objects placed with no tour open come
-  into the opened tour as one restored step (their pictures and placements
-  with them), each seated again by the station rule against the opened
-  tour's stations (`rerun`): the stations they stood in were the empty
-  document's, and none of them comes along; anything of another tour was dropped at its `close`, side
-  tables included (M4 review #1: carried into another tour it would be
-  written into ITS zip).
+- **`open` carries nothing.** Placing is locked while no tour is open
+  (`creator-placement.ts`: only an open tour keeps a draft on this phone),
+  so the empty document holds no work when a tour opens; anything of
+  another tour was dropped at its `close`, side tables included (M4 review
+  #1: carried into another tour it would be written into ITS zip). The
+  document itself still takes a placement with no tour open (it does not
+  know the gate), which its tests use.
 - **A station's AR anchor is a side table too** (`stationPlacements()`,
-  `StationPlacement`): a station a placement, a move or carried work
+  `StationPlacement`): a station a placement or a move
   started for an object with an AR placement is anchored at that
   placement, with the object's id (`item`), whose moment the anchor
   settles at - the station rule anchors the frame where its first item
@@ -171,16 +171,14 @@ else void placed.backedUp.then((ok) => ok || draft.warnNoBackup());
 
 ## Tests
 
-- `creator-document.test.ts` - no tour and a tour opening (work carried,
-  carried work seated by the rule against the opened tour's stations,
-  a file without `tour.json`, a close dropping everything), the identities
+- `creator-document.test.ts` - no tour and a tour opening (a file without `tour.json`, a close dropping everything), the identities
   readers memoize on (a new manifest when only the tombstones change,
   driven through a store that serves that state, since no reducer makes
   it), the guards (a known id, a move beyond reach, an
   unknown station), the placement kept or replaced, undo (refused while a
   write runs, refused without a picture), a write taking an entry and its
   placement out, the stations' AR anchors (a placement's, a move's in AR
-  and by a settle, carried work's; none without an AR placement or for a
+  and by a settle; none without an AR placement or for a
   tour's station; kept through undo and redo; gone with the tour and for a
   written station), and the draft following (writes from the listener with
   the picture, a failure reported to its change, the station poses'

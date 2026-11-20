@@ -378,6 +378,13 @@ function wire(
   // live session, a reticle with a surface, and an aligned AR state.
   if (options.placeable === true) {
     ctx.reticle = fakeReticle() as never;
+    // Placing needs a tour open on the page (only an open tour keeps a
+    // draft): a hosted zip holding no codes, all a placement reads of it.
+    ctx.session = {
+      archive: { size: 0 },
+      entries: [],
+      loadEntryText: () => Promise.reject(new Error("no such entry")),
+    } as never;
   }
   const arStore = (pageStore ??
     (options.placeable === true
@@ -1195,6 +1202,37 @@ describe("a refused older tour's draft", () => {
   });
 });
 
+describe("placing is locked while no tour is open", () => {
+  it("keeps Pin, Photo and New station locked and places nothing, then unlocks once a tour opens", async () => {
+    // Why this test matters: only an open tour keeps a draft on this
+    // phone. Work placed with none lived in memory alone, so a reload, a
+    // tab kill or an AR crash lost it without a word. The camera opens the
+    // tour from its printed code; until then the panel locks placing and
+    // says so (`entryHint`), and nothing can be lost.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    const tour = ctx.session;
+    ctx.session = null;
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries(), "nothing placed").toEqual([]);
+    expect(dom.pinButton.disabled).toBe(true);
+    expect(dom.photoButton.disabled).toBe(true);
+    expect(dom.newStationButton.disabled).toBe(true);
+
+    ctx.session = tour;
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(dom.pinButton.disabled).toBe(false);
+    expect(ctx.tourDocument.entries()).toHaveLength(1);
+  });
+});
+
 describe("a placement reaches the draft", () => {
   it("writes the object file, not just the in-memory list", async () => {
     // Why this test matters: this is THE write the whole feature exists
@@ -1467,10 +1505,12 @@ describe("work made before the tour's draft opened reaches it", () => {
   });
 
   it("asks before leaving while no tour holds the placed work, and stops asking once its draft opens", async () => {
-    // Why: with no tour open a placement lives only in memory - the draft
-    // writes it when a tour opens. A reload, a closed tab or an AR crash
-    // in between lost it with no question asked, because the guard read
-    // "the draft persists" before any draft existed.
+    // Why: with no tour session a placement lives only in memory. Placing
+    // is locked then (`creator-placement.ts`), so this is the state a
+    // tour's session leaves while its work is still in the document (a
+    // teardown in flight). A reload, a closed tab or an AR crash there
+    // lost it with no question asked, because the guard read "the draft
+    // persists" before any draft existed.
     const { store } = memoryStore();
     expect(
       wire(store).setup.leaveNeedsConfirm(),
@@ -1480,15 +1520,18 @@ describe("work made before the tour's draft opened reaches it", () => {
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
+    ctx.session = null;
+    setup.renderAuthorReadout();
     expect(setup.leaveNeedsConfirm()).toBe(true);
     expect(setup.leaveQuestion()).toContain("holds no backup copy");
     // The live readout LEADS with a short form of why Done cannot save it:
     // in AR the line is clamped to two lines (about 52 characters on a
     // 360 px phone), so a sentence at its end, or a long one at its start,
     // hides everything else. The placement's note follows it, and the full
-    // sentence - where to open the tour - ends the line.
+    // sentence - where to open the tour - ends the line. With no tour
+    // open the locked-placing hint (`entryHint`) follows the lead.
     expect(dom.status.textContent).toMatch(
-      /^No tour open - nothing placed here is kept. · Pin "Gate" placed/,
+      /^No tour open - nothing placed here is kept. · Point at your hung code: it opens your tour. [^·]+ · Pin "Gate" placed/,
     );
     expect(
       dom.status.textContent.endsWith(
@@ -1646,6 +1689,8 @@ describe("work made before the tour's draft opened reaches it", () => {
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
+    // Placing needs a tour session; it goes while the work is still held.
+    ctx.session = null;
     arStatus.value = "idle";
     ctx.placementNote = null;
     setup.renderAuthorReadout();

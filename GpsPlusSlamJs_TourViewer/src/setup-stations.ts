@@ -34,12 +34,25 @@ export interface StationView {
   showNav: boolean;
 }
 
+/** The steps that only a tour with a link can have done: a code is
+ *  printed for a link and hung where the tour starts. */
+const NEEDS_LINK: ReadonlySet<WizardStep> = new Set(["print", "hang"]);
+
 /**
  * The view for the open step; null (nothing open) reads as the first.
  * No Back on the first step; no Next on the create step, whose action is
  * "Start creating" (verdict P8); no row on the completion step (P11).
+ *
+ * A step before the open one is done - except printing and hanging while
+ * the open tour has no link (`hosted: false`, a tour started on this phone
+ * and shared later): no code exists for it yet, and a map that ticked them
+ * would say the opposite.
  */
-export function stationView(open: WizardStep | null): StationView {
+export function stationView(
+  open: WizardStep | null,
+  options: { hosted?: boolean } = {},
+): StationView {
+  const hosted = options.hosted ?? true;
   const index = open === null ? 0 : WIZARD_STEPS.indexOf(open);
   const last = WIZARD_STEPS.length - 1;
   const step = WIZARD_STEPS[index] ?? "host";
@@ -47,8 +60,12 @@ export function stationView(open: WizardStep | null): StationView {
   return {
     number: index + 1,
     total: WIZARD_STEPS.length,
-    states: WIZARD_STEPS.map((_, i) =>
-      i < index ? "done" : i === index ? "current" : "todo",
+    states: WIZARD_STEPS.map((name, i) =>
+      i === index
+        ? "current"
+        : i < index && (hosted || !NEEDS_LINK.has(name))
+          ? "done"
+          : "todo",
     ),
     routeFraction: STATION_ROUTE_FRACTIONS[index] ?? 0,
     back: showNav && index > 0 ? (WIZARD_STEPS[index - 1] ?? null) : null,

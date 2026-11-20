@@ -365,6 +365,7 @@ async function indoorCreator(
     return dispatch(action as never);
   }) as typeof arStore.dispatch;
   const ctx = createTourViewerSession(arStore);
+  ctx.session = openTourWithNothingRead();
   const hooks = createUnwiredHooks();
   const dom = Object.fromEntries(DOM_KEYS.map((k) => [k, el()])) as Record<
     (typeof DOM_KEYS)[number],
@@ -664,6 +665,19 @@ function truthAt(
       truth,
     )!.position,
   );
+}
+
+/** A tour open on the page, as placing needs (only an open tour keeps a
+ *  draft on this phone): its zip holds no codes and nothing is read from
+ *  it. A test that needs the hosted file opens one over it. */
+function openTourWithNothingRead(): never {
+  return {
+    archive: { url: "https://example.test/tour.zip", size: 0 },
+    hostedFileName: () => null,
+    entries: [],
+    loadEntryText: () => Promise.reject(new Error("no such entry")),
+    readWholeArchive: () => Promise.reject(new Error("not read here")),
+  } as never;
 }
 
 describe(

@@ -129,9 +129,13 @@ export interface ArchiveOpen {
    *  printing (PR #637 review); the outcome, and the error box's words,
    *  are the box's to show. */
   openLink: (url: string) => Promise<OpenOutcome>;
-  /** The same box's file: opened as step 1's "Open it from this device"
-   *  opens one. */
-  openFile: (file: File) => Promise<OpenOutcome>;
+  /** The same box's file: opened as step 2's "Open the tour file" opens
+   *  one. `origin` "measure-step": the creator goes on in step 5 (the
+   *  start question's "start on this phone", whose zip was just saved). */
+  openFile: (
+    file: File,
+    origin?: "host-step" | "measure-step",
+  ) => Promise<OpenOutcome>;
 }
 
 export function wireArchiveOpen(deps: {
@@ -821,7 +825,7 @@ export function wireArchiveOpen(deps: {
       }
       return outcome;
     },
-    openFile: (file) => openTour({ kind: "file", file }),
+    openFile: (file, origin) => openTour({ kind: "file", file }, origin),
     boot: async () => {
       const payload = new URLSearchParams(location.search).get("qr");
       if (payload === null) return;
