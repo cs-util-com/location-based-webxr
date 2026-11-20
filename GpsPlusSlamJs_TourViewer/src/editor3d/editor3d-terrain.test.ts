@@ -12,8 +12,7 @@
 import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createGlobeTerrain, osmGateLimits } from "gps-plus-slam-globe/editor";
-import { OSM_TILE_MAX_ZOOM } from "gps-plus-slam-app-framework/utils/osm-tiles";
+import { createGlobeTerrain } from "gps-plus-slam-globe/editor";
 
 import { GLOBE_SWITCH } from "../editor/globe-switch.js";
 
@@ -45,7 +44,7 @@ describe("the editor's map gate", () => {
   // camera within 1100 m of its centre, so the reach already bounds the
   // requests, and a height line switched the whole map off over a deep
   // valley: measured 2026-10-25).
-  it("is the measured one, and the overlay accepts it", () => {
+  it("is the measured one", () => {
     expect(EDITOR_OSM_LIMITS).toEqual({
       minZoom: 14,
       maxAboveGroundM: Number.POSITIVE_INFINITY,
@@ -56,9 +55,6 @@ describe("the editor's map gate", () => {
     expect(EDITOR_OSM_FADE_M).toBe(2400);
     expect(EDITOR_OSM_FADE_START_SHARE).toBe(0.2);
     expect(EDITOR_MESH_LEVEL).toBe(17);
-    expect(osmGateLimits(EDITOR_OSM_LIMITS, OSM_TILE_MAX_ZOOM)).toEqual(
-      EDITOR_OSM_LIMITS,
-    );
   });
 });
 

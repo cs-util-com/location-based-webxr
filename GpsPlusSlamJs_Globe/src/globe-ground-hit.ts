@@ -94,10 +94,9 @@ export interface GroundHit extends GroundSamples {
  * - `above`: the ray was moving away from the ground at its end (the
  *   sky, or past the horizon): no pick.
  */
-export type GroundMissReason =
-  "not-loaded" | "below-start" | "out-of-reach" | "above";
+type GroundMissReason = "not-loaded" | "below-start" | "out-of-reach" | "above";
 
-export interface GroundMiss extends GroundSamples {
+interface GroundMiss extends GroundSamples {
   readonly miss: GroundMissReason;
 }
 
