@@ -128,12 +128,13 @@ export async function readSplatInputs(
   file: Blob,
   options: { readonly limits?: Partial<ArchiveLimits> } = {},
 ): Promise<SplatInputsRead> {
+  // Outside the refusals on purpose: the budget validates the overrides,
+  // and a cap of 0 or NaN is a configuration mistake that throws, not a
+  // bad file. One budget serves every read of this archive, bounding what
+  // it may inflate in total.
+  const budget = DecompressionBudget.forArchive(file.size, options.limits);
+  const limits = { ...DEFAULT_ARCHIVE_LIMITS, ...options.limits };
   try {
-    // The budget validates the overrides (a cap of 0 or NaN is a
-    // configuration mistake and throws); one budget serves every read of
-    // this archive, bounding what it may inflate in total.
-    const budget = DecompressionBudget.forArchive(file.size, options.limits);
-    const limits = { ...DEFAULT_ARCHIVE_LIMITS, ...options.limits };
     return { kind: "read", inputs: await readInputs(file, limits, budget) };
   } catch (err) {
     if (err instanceof Refusal || err instanceof ArchiveLimitError) {
@@ -230,10 +231,13 @@ async function readEntries(
       "This recording has no depth data, so the camera's lens is unknown. Record with depth on.",
     );
   }
-  const projectionSpread = Math.max(
-    ...depthSamples.map((s) =>
-      matrixSpread(reference, s.projectionMatrix ?? reference),
-    ),
+  const projectionSpread = depthSamples.reduce(
+    (spread, s) =>
+      Math.max(
+        spread,
+        matrixSpread(reference, s.projectionMatrix ?? reference),
+      ),
+    0,
   );
   if (projectionSpread > PROJ_TOL) {
     throw new Refusal(

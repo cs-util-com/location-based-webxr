@@ -463,6 +463,15 @@ describe("readSplatInputs holds the archive caps", () => {
     );
   });
 
+  it("rejects an invalid cap override as a programming mistake, not a refusal", async () => {
+    // Why: a cap of 0 or NaN would refuse everything or nothing; it is a
+    // caller's bug and must not read as a bad file.
+    const { file } = await buildSyntheticRecording({ frames: 1 });
+    await expect(
+      readSplatInputs(file, { limits: { maxEntries: 0 } }),
+    ).rejects.toThrow(RangeError);
+  });
+
   it("refuses an action file over the action size cap", async () => {
     const big = JSON.stringify({ type: "x", payload: "a".repeat(1_100_000) });
     const { file } = await buildSyntheticRecording({
