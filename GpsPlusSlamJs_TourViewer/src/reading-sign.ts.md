@@ -39,9 +39,11 @@ prototype's (`public/prototypes/station-blocks-1-narrated-text/`).
     `TRAVEL_PLATE.gapM` under the sign's lower edge and
     `TRAVEL_PLATE.frontM` in front of it; throws a RangeError on a size
     that is not positive. `detachWords()` takes it off.
-  - `update({ viewer })` - while words hang, sets `grow` to
+  - `update({ viewer, growth? })` - while words hang, sets `grow` to
+    `growth` when given (the caller's knob: 1 grows nothing), else to
     `signGrowth` of the horizontal distance in the root's parent frame
-    (so a scaled folder is accounted for); turns `turn` toward the
+    (so a scaled folder is accounted for); a growth that is not a
+    positive finite number grows nothing. Turns `turn` toward the
     viewer either way.
   - `dispose()`.
 - `mountReadingSign(block, open?)` - draws the canvas texture

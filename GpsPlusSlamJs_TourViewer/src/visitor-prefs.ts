@@ -185,6 +185,18 @@ export function preferredView(
   return preferredViews(stored, kind, placement)[0] ?? null;
 }
 
+/** How a travelling surface may move, from the visitor's one stored
+ *  pick: "screen" (it docks whenever its slot lets it) when the long
+ *  text's stored pick is captions, else "auto" (the travel rules decide).
+ *  A reading or lectern pick, none and anything unreadable are "auto". */
+export type TravelPick = "auto" | "screen";
+
+export function travelPick(stored: unknown): TravelPick {
+  return preferredView(stored, "longText", "world") === "captions"
+    ? "screen"
+    : "auto";
+}
+
 /** Every stored choice for the set of `kind` at `placement`, the more
  *  specific first (captions, then the world's view). */
 function preferredViews(

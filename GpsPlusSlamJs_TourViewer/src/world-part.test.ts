@@ -12,6 +12,7 @@
 import fc from "fast-check";
 import {
   Group,
+  LinearFilter,
   Mesh,
   Object3D,
   PerspectiveCamera,
@@ -84,6 +85,20 @@ describe("canvasTexture", () => {
       sharp.dispose();
     }
     plain.dispose();
+  });
+
+  // Why: a texture repainted many times a second (the travelling words)
+  // pays a mipmap chain on every upload; it is drawn near its painted
+  // size, so it asks for none, and samples linearly without them.
+  it("skips the mipmaps when asked", () => {
+    const page = canvas();
+    const plain = canvasTexture(page);
+    expect(plain.generateMipmaps).toBe(true);
+    const flat = canvasTexture(page, { mipmaps: false });
+    expect(flat.generateMipmaps).toBe(false);
+    expect(flat.minFilter).toBe(LinearFilter);
+    plain.dispose();
+    flat.dispose();
   });
 });
 
