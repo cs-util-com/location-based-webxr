@@ -1,0 +1,229 @@
+<!doctype html>
+<!-- Prototype: the sign speaks, round 6, variant 3 - minimal plate. Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Sign speaks 6.3 - Minimal plate</title>
+    <link rel="stylesheet" href="sign-speaks.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body class="visitor">
+    <main class="device" id="device">
+      <canvas
+        id="cam"
+        aria-label="Simulated camera view of a lane with a speaking sign"
+      ></canvas>
+
+      <div class="hud" id="hud">
+        <button class="exit" id="exitBtn" type="button" aria-label="Exit AR">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 3l10 10M13 3L3 13" />
+          </svg>
+        </button>
+        <button
+          class="viewpill"
+          id="viewPill"
+          type="button"
+          aria-haspopup="true"
+        >
+          Reading sign
+        </button>
+        <div class="viewmenu" id="viewMenu" hidden>
+          <button type="button" data-view="sign">
+            Reading sign<span>Words where the tour puts them</span>
+          </button>
+          <button type="button" data-view="captions">
+            Captions<span>Words always at the bottom</span>
+          </button>
+        </div>
+        <div class="coach" id="coach">
+          Tap the words to listen. Drag them up or down to go back or ahead.
+        </div>
+        <section class="sheet" id="sheet" hidden aria-label="The whole text">
+          <h2 id="sheetTitle"></h2>
+          <p class="sheet-who" id="sheetWho"></p>
+          <p id="sheetText"></p>
+          <button type="button" id="sheetClose">Close</button>
+        </section>
+      </div>
+
+      <div class="strip" id="strip">
+        <button
+          type="button"
+          data-beat="walk"
+          title="Start outside the station and walk up to the sign"
+        >
+          Walk up
+        </button>
+        <button type="button" data-beat="near" title="Stand 3 m from the sign">
+          3 m
+        </button>
+        <button type="button" data-beat="usual" title="Stand 7 m from the sign">
+          7 m
+        </button>
+        <button type="button" data-beat="far" title="Stand 16 m from the sign">
+          16 m
+        </button>
+        <button
+          type="button"
+          data-beat="side"
+          title="Stand 7 m away, 65 degrees to the side"
+        >
+          65°
+        </button>
+        <button
+          type="button"
+          data-beat="away"
+          title="Turn away from the sign, then back"
+        >
+          Turn away
+        </button>
+        <button
+          type="button"
+          data-beat="novoice"
+          aria-pressed="false"
+          title="The voice file is missing"
+        >
+          No voice
+        </button>
+        <button type="button" data-beat="end" title="Jump to the last sentence">
+          End
+        </button>
+        <button type="button" class="menu" id="menuBtn" aria-label="Settings">
+          &#9776;
+        </button>
+      </div>
+      <div class="readout" id="readout">
+        <div class="r1">-</div>
+        <div class="r2">-</div>
+      </div>
+    </main>
+
+    <aside
+      class="demo"
+      id="demo"
+      hidden
+      aria-label="About this page and settings"
+    >
+      <p>
+        <b>The sign is the speaker; the words stay near.</b> The sign says only
+        who speaks and whether the voice runs. The plate under it carries the
+        line being spoken while you can read it. When you cannot - too far, too
+        steep, turned away - the same words are in the box at the bottom. Never
+        in both places.
+      </p>
+      <p>
+        <a href="creator.html"
+          >The creator's side: choosing words on screen or on the sign &rarr;</a
+        >
+      </p>
+
+      <h4>Try</h4>
+      <ul>
+        <li>Tap the words on the plate to listen; tap again to pause.</li>
+        <li>
+          Drag the plate's words down to hear a line again, up to skip ahead -
+          the same gesture as in the box.
+        </li>
+        <li>
+          Step back to 16 m, or turn away: the words move to the box; come back
+          and they return to the plate.
+        </li>
+        <li>Tap the sign for the whole text.</li>
+        <li>
+          View (top right) &rarr; Captions: the box always, whatever the tour
+          chose.
+        </li>
+      </ul>
+
+      <h4>Settings</h4>
+      <div class="row">
+        <span>Legible from</span
+        ><button type="button" data-cfg="thr" data-v="10">10 px</button
+        ><button type="button" data-cfg="thr" data-v="12">12 px</button
+        ><button type="button" data-cfg="thr" data-v="14">14 px</button
+        ><button type="button" data-cfg="thr" data-v="16">16 px</button>
+      </div>
+      <div class="row">
+        <span>Box text</span
+        ><button type="button" data-cfg="fs" data-v="14">14 px</button
+        ><button type="button" data-cfg="fs" data-v="16">16 px</button
+        ><button type="button" data-cfg="fs" data-v="18">18 px</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Far sign grows</span
+        ><button type="button" data-cfg="grow" data-v="on">on</button
+        ><button type="button" data-cfg="grow" data-v="off">off</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Sign turns to you</span
+        ><button type="button" data-cfg="turn" data-v="on">on</button
+        ><button type="button" data-cfg="turn" data-v="off">off (wall)</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Phone</span
+        ><button type="button" data-cfg="orient" data-v="auto">window</button
+        ><button type="button" data-cfg="orient" data-v="portrait">
+          upright</button
+        ><button type="button" data-cfg="orient" data-v="landscape">
+          sideways</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Creator chose</span
+        ><button type="button" data-cfg="words" data-v="sign">
+          on the sign</button
+        ><button type="button" data-cfg="words" data-v="screen">
+          on screen</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Hand shake</span
+        ><button type="button" data-cfg="shake" data-v="still">still</button
+        ><button type="button" data-cfg="shake" data-v="hand">hand</button
+        ><button type="button" data-cfg="shake" data-v="walk">strong</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Sound</span
+        ><button type="button" data-cfg="sound" data-v="tone">tone</button
+        ><button type="button" data-cfg="sound" data-v="silent">silent</button
+        ><span></span><span></span>
+      </div>
+
+      <h4>Faked here</h4>
+      <ul>
+        <li>
+          No recording: a soft generated tone murmurs each word on times
+          invented from the letters. Nothing sounds before a tap.
+        </li>
+        <li>
+          The camera and the lane are simulated; nothing runs in AR. A sideways
+          drag on the view turns it.
+        </li>
+        <li>
+          The readout at the top says where the words are and why, and what a
+          frame costs.
+        </li>
+      </ul>
+      <button class="close" id="demoClose" type="button">Close</button>
+    </aside>
+
+    <script type="module" src="visitor.js"></script>
+  </body>
+</html>

@@ -1,0 +1,76 @@
+{
+  "name": "The early boats",
+  "words": "A free video whose player travels between its screen in the world and a corner of the phone's screen.",
+  "records": {
+    "normal": {
+      "kind": "video",
+      "view": "screen",
+      "title": "The early boats",
+      "widthM": 1.6,
+      "clip": {
+        "file": "clips/early-boats.mp4",
+        "aspect": 1.7778,
+        "duration": 40,
+        "scene": "harbour",
+        "captions": [
+          { "start": 0.5, "end": 4.5, "text": "Every morning the boats leave before the sun." },
+          { "start": 5, "end": 9.5, "text": "The first light comes up behind the headland." },
+          { "start": 10, "end": 14.5, "text": "The lamp on the point still turns." },
+          { "start": 15, "end": 19.5, "text": "Listen: the gulls know where the boats are going." },
+          { "start": 20, "end": 25, "text": "By the time the sky is blue, the nets are out." },
+          { "start": 25.5, "end": 30, "text": "The water is calm this close to the shore." },
+          { "start": 30.5, "end": 35, "text": "In the afternoon they come back, low in the water." },
+          { "start": 35.5, "end": 39.5, "text": "And the harbour fills with voices again." }
+        ]
+      }
+    },
+    "longest": {
+      "kind": "video",
+      "view": "screen",
+      "title": "The early boats, the late boats and the long argument over the harbour lamp",
+      "widthM": 1.6,
+      "clip": {
+        "file": "clips/early-boats-long.mp4",
+        "aspect": 1.7778,
+        "duration": 40,
+        "scene": "harbour",
+        "captions": [
+          { "start": 0.5, "end": 6, "text": "Every morning, long before the sun is up, the boats leave the harbour one after the other." },
+          { "start": 6.5, "end": 12.5, "text": "The first light comes up behind the headland, and the lamp on the point keeps turning until it is full day." },
+          { "start": 13, "end": 19.5, "text": "For many years the boat masters argued about who should pay for the oil that kept that lamp burning." },
+          { "start": 20, "end": 26.5, "text": "By the time the sky is blue, the nets are out, and the gulls follow the boats far beyond the point." },
+          { "start": 27, "end": 33, "text": "In the afternoon they come back low in the water, and the harbour fills with voices again." },
+          { "start": 33.5, "end": 39.5, "text": "Some say the lamp is lit only for the boats that are late; others say it is lit for everyone." }
+        ]
+      }
+    },
+    "missing": {
+      "kind": "video",
+      "view": "screen",
+      "title": "The early boats",
+      "widthM": 1.6,
+      "clip": { "file": "", "aspect": 1.7778, "duration": 40, "scene": "harbour" }
+    },
+    "second": {
+      "kind": "video",
+      "view": "porthole",
+      "title": "The mill",
+      "widthM": 1.6,
+      "clip": {
+        "file": "clips/the-mill.mp4",
+        "aspect": 1.7778,
+        "duration": 30,
+        "scene": "windmill",
+        "captions": [
+          { "start": 0.5, "end": 5, "text": "The mill turns when the wind comes from the sea." },
+          { "start": 5.5, "end": 10, "text": "Its sails were mended every spring." },
+          { "start": 10.5, "end": 15, "text": "The miller lived on the first floor." },
+          { "start": 15.5, "end": 20, "text": "Flour dust lay on everything, even the cat." },
+          { "start": 20.5, "end": 25, "text": "In the evening the sails were locked in a cross." },
+          { "start": 25.5, "end": 29.5, "text": "And the mill waited for the next wind." }
+        ]
+      }
+    }
+  },
+  "assets": []
+}
