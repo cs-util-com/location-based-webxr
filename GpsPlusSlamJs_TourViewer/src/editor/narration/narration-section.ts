@@ -126,7 +126,6 @@ const BUSY_WORDS: Record<Busy, string> = {
 /** Each section's credit field gets its own id, for its label. */
 let sections = 0;
 
-/** A voice file by its name: one of the tour's allowlisted sound types. */
 /** `bytes` as a person reads a size: "812 B", "1.5 KiB", "50.0 MiB". */
 function sizeWords(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return "an unknown size";
@@ -135,6 +134,7 @@ function sizeWords(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
+/** A voice file by its name: one of the tour's allowlisted sound types. */
 const VOICE_FILE = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)$/i;
 /** A timing file by its name. */
 const TIMING_FILE = /\.(vtt|json|txt)$/i;
