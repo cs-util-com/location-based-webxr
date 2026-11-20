@@ -85,6 +85,10 @@ function setup(initiallyOpen: WizardStep = "host", reducedMotion = false) {
     next: new FakeNode("button"),
     begins: [new FakeNode("button"), new FakeNode("button")],
     stage: new FakeNode("div"),
+    mapZoom: {
+      button: new FakeNode("button"),
+      sticker: new FakeNode("div"),
+    },
   };
   const opened: WizardStep[] = [];
   /** A wizard stand-in: one step open, as wizard.ts guarantees. */
@@ -184,5 +188,24 @@ describe("wireSetupStage", () => {
     expect(dom.stage.scrolls).toEqual([
       { block: "start", behavior: "instant" },
     ]);
+  });
+
+  // A small map sticker (a phone held upright) shows only the route and
+  // its stations; a tap shows it larger, with its labels, and a second tap
+  // puts it back. The button must say which state it is in, or a screen
+  // reader announces a control that seems to do nothing.
+  it("a tap on the map sticker shows it larger, and the next one puts it back", () => {
+    const { dom, opened } = setup("link");
+    const { button, sticker } = dom.mapZoom;
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(sticker.dataset.zoomed).toBe("false");
+    button.fire("click");
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+    expect(sticker.dataset.zoomed).toBe("true");
+    button.fire("click");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(sticker.dataset.zoomed).toBe("false");
+    // Only the map changes size: no step is opened by it.
+    expect(opened).toEqual([]);
   });
 });

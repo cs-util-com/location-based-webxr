@@ -572,6 +572,10 @@ if (mode === "creator") {
         document.querySelectorAll<HTMLButtonElement>(".landing-begin"),
       ),
       stage: element("setup-stage"),
+      mapZoom: {
+        button: element("setup-map-zoom"),
+        sticker: element("setup-map"),
+      },
     },
     reducedMotion,
     hosted: () => wizard.hosted(),

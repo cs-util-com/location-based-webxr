@@ -372,8 +372,8 @@ test.describe("the film's box on a short desktop window", () => {
 
 // On a wide screen the landing uses its width: the hero's text and film
 // side by side with the whole film on the first screen, larger reading
-// text and buttons, the six reasons in three columns, the setup stage on
-// the landing's own column with its card in view beside the map, and each
+// text and buttons, the six reasons in three columns, the setup card across
+// the landing's own column with the map a sticker on its corner, and each
 // step's picture starting at its kicker's line. Positions and gaps, not
 // presence: a layout that merely shows everything passes a presence test.
 // Also in a wide face: the headline beside the film wraps by its face's
@@ -388,7 +388,7 @@ for (const { viewport, wide } of [
   test.describe(`the landing on a wide screen, ${String(viewport.width)}x${String(viewport.height)}${wide ? ", in a wide face" : ""}`, () => {
     test.use({ viewport, storageState: FIRST_VISIT });
 
-    test("sets the hero side by side, the text larger, the reasons in three columns, the stage on the column and its card beside the map", async ({
+    test("sets the hero side by side, the text larger, the reasons in three columns, the card across the column with the map on its corner", async ({
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -495,54 +495,18 @@ for (const { viewport, wide } of [
         shownEnd = Math.max(cardText.y + cardText.height, fig.y + fig.height);
       }
 
-      // The setup stage on the same column: the map's title and the
-      // outer line of its frame on the column's left edge, the card's
-      // right edge on its right edge.
-      const title = await at(".setup-map-title");
-      const frame = await at(".setup-map-frame");
+      // The setup card across the same column, its edges on the column's
+      // edges, and the map a sticker on its top-right corner: over the
+      // card's top and right edges, inside the window, and never a column
+      // of its own (a third of the card at most, the rest is the step's).
       const card = await at("#setup-card");
-      near(title.x, column.left);
-      // the frame's outline sits 4 px outside it (1 px line, 3 px offset)
-      near(frame.x - 4, column.left);
+      const sticker = await at("#setup-map");
+      near(card.x, column.left);
       near(card.x + card.width, column.right);
-
-      // Scrolled into the stage, the step card stays in view beside the
-      // map while the map is. On this short first-visit page the page
-      // ends about where the stage does, so room is added below it first
-      // (a longer step, or a page that opened at the stage, has it).
-      // The card can travel as far as the map runs on below it (the
-      // stage ends with the map); half of that is scrolled, or, where the
-      // travel is short (a wide face makes the card taller), just enough
-      // to take the map's top out of view, and never past the travel. The
-      // card, left alone, would sit that far above the view's top + 16.
-      const { travel, scrolled } = await page
-        .getByTestId("setup-stage")
-        .evaluate((el) => {
-          const room = document.createElement("div");
-          room.style.height = "2000px";
-          document.body.append(room);
-          el.scrollIntoView({ block: "start", behavior: "instant" });
-          const cardEl = /** @type {HTMLElement} */ (
-            document.getElementById("setup-card")
-          );
-          const mapEl = /** @type {HTMLElement} */ (
-            document.querySelector(".setup-map-frame")
-          );
-          const below =
-            mapEl.getBoundingClientRect().bottom -
-            cardEl.getBoundingClientRect().bottom;
-          const by = Math.max(below / 2, mapEl.getBoundingClientRect().top + 4);
-          window.scrollBy({ top: by, behavior: "instant" });
-          return { travel: below, scrolled: by };
-        });
-      // No floor of its own on the travel: the scroll is at least 4 px
-      // past the map's top, so scrolled < travel already says it is room.
-      expect(scrolled).toBeLessThan(travel);
-      const mapNow = await at(".setup-map-frame");
-      const cardNow = await at("#setup-card");
-      expect(mapNow.y).toBeLessThan(0);
-      expect(mapNow.y + mapNow.height).toBeGreaterThan(cardNow.y);
-      near(cardNow.y, 16);
+      expect(sticker.y).toBeLessThan(card.y);
+      expect(sticker.x + sticker.width).toBeGreaterThan(card.x + card.width);
+      expect(sticker.x + sticker.width).toBeLessThanOrEqual(viewport.width);
+      expect(sticker.width).toBeLessThanOrEqual(card.width / 3);
     });
   });
 }
@@ -1160,14 +1124,22 @@ test.describe("a first visit", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await openLanding(page);
     await page.getByTestId("landing-begin-top").click();
+    // The stage at the top - or, where a first visit's page ends before
+    // it can get there (the step card across the width is short), the
+    // page scrolled to its end with the whole card in view.
     await expect
       .poll(() =>
-        page
-          .getByTestId("setup-stage")
+        page.getByTestId("setup-stage").evaluate((el) => {
           // "+ 0": a top just above the line rounds to -0 (see stageTop)
-          .evaluate((el) => Math.round(el.getBoundingClientRect().top) + 0),
+          const top = Math.round(el.getBoundingClientRect().top) + 0;
+          const atEnd =
+            Math.ceil(window.scrollY + window.innerHeight) >=
+            document.documentElement.scrollHeight - 1;
+          return top === 0 || (top > 0 && atEnd);
+        }),
       )
-      .toBe(0);
+      .toBe(true);
+    await expect(page.getByTestId("setup-card")).toBeInViewport({ ratio: 1 });
     await expect(
       page.getByTestId("step-host").locator("summary"),
     ).toBeFocused();

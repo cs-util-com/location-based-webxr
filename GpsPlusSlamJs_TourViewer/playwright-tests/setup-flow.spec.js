@@ -190,19 +190,98 @@ test.describe("a landscape phone", () => {
   test.use({ viewport: { width: 915, height: 412 } });
 
   test("uses the width, without scrolling sideways", async ({ page }) => {
-    // A14, then M2b: on a landscape phone the map and the step card share
-    // the screen side by side, rather than one narrow column.
+    // A14, then the creator setup layout round: on a landscape phone the
+    // step card takes the whole width, and the map is a sticker on its
+    // top-right corner, over its edges, rather than a column beside it
+    // that left an empty block under the map.
     await page.goto("/?nocache=1");
     const map = await page.getByTestId("setup-map").boundingBox();
     const card = await page.getByTestId("setup-card").boundingBox();
     if (map === null || card === null)
       throw new Error("map or card not laid out");
-    expect(card.x).toBeGreaterThanOrEqual(map.x + map.width - 1);
-    expect(map.width + card.width).toBeGreaterThan(800);
+    expect(card.width).toBeGreaterThan(860);
+    expect(map.y).toBeLessThan(card.y);
+    expect(map.x + map.width).toBeGreaterThan(card.x + card.width);
+    expect(map.width).toBeLessThanOrEqual(card.width / 3);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth,
     );
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+});
+
+test.describe("the map sticker on a phone held upright", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  // Why (creator setup layout round): the map sits on the card's corner
+  // and the step flows around it, so no line, answer or button may lie
+  // under it - it could be neither read nor tapped. A block's box runs
+  // under a float while its lines wrap beside it, so text is measured by
+  // its line boxes and controls by their own boxes.
+  test("covers no line, answer or button of the step", async ({ page }) => {
+    await page.goto("/?nocache=1");
+    const covered = () =>
+      page.evaluate(() => {
+        const map = document.getElementById("setup-map");
+        if (map === null) return ["no map"];
+        const s = map.getBoundingClientRect();
+        // The box of a slightly turned sticker is a little larger than
+        // the sticker itself.
+        const inset = 4;
+        /** @param {DOMRect} r */
+        const under = (r) =>
+          r.width > 0 &&
+          r.height > 0 &&
+          r.right > s.left + inset &&
+          r.left < s.right - inset &&
+          r.bottom > s.top + inset &&
+          r.top < s.bottom - inset;
+        const hits = [];
+        for (const el of document.querySelectorAll(
+          "#setup-card .setup-card-top > *, #setup-card .step[open] :is(button, input)",
+        )) {
+          if (under(el.getBoundingClientRect())) hits.push(el.outerHTML);
+        }
+        for (const el of document.querySelectorAll(
+          "#setup-card .step[open] :is(h2, p, a)",
+        )) {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          if ([...range.getClientRects()].some(under))
+            hits.push(el.textContent);
+        }
+        return hits;
+      });
+    await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
+    expect(await covered()).toEqual([]);
+    await page.getByTestId("station-host").click();
+    await expect(page.getByTestId("start-answers")).toBeVisible();
+    expect(await covered()).toEqual([]);
+    await page.getByTestId("start-answer-later").click();
+    await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
+    expect(await covered()).toEqual([]);
+  });
+
+  // Why: on a phone the sticker is small (the route and its numbered
+  // stations only), so a tap shows the whole map larger and the next one
+  // puts it back - without moving a step.
+  test("shows the map larger on a tap, and back on the next", async ({
+    page,
+  }) => {
+    await page.goto("/?nocache=1");
+    const zoom = page.getByTestId("setup-map-zoom");
+    const width = async () =>
+      (await page.getByTestId("setup-map").boundingBox())?.width ?? 0;
+    await expect(zoom).toBeVisible();
+    await expect(zoom).toHaveAttribute("aria-expanded", "false");
+    const small = await width();
+    await zoom.click();
+    await expect(zoom).toHaveAttribute("aria-expanded", "true");
+    expect(await width()).toBeGreaterThan(small * 2);
+    await zoom.click();
+    await expect(zoom).toHaveAttribute("aria-expanded", "false");
+    expect(Math.abs((await width()) - small)).toBeLessThanOrEqual(1);
+    await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
   });
 });
 
@@ -218,6 +297,9 @@ test.describe("the L5 look (polish round M2b)", () => {
     // The landing sits above the stage, on the same page.
     await expect(page.getByTestId("landing")).toBeVisible();
     await expect(page.getByTestId("map-station-host")).toBeVisible();
+    // A large sticker's stations are tapped themselves: the tap target
+    // that shows a small one larger must not lie over them.
+    await expect(page.getByTestId("setup-map-zoom")).toBeHidden();
     const openSteps = page.locator("#setup-card .step[open]");
     await expect(openSteps).toHaveCount(1);
     await expect(page.getByTestId("setup-of")).toHaveText("Step 2 of 6");

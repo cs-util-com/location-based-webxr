@@ -81,6 +81,12 @@ export interface SetupStageDom<T> {
   /** The landing's "Make your tour" buttons. */
   begins: readonly Listening[];
   stage: { scrollIntoView(options?: ScrollIntoViewOptions): void };
+  /** The map sticker's tap target (shown only while the sticker is
+   *  small) and the sticker: a tap shows it larger or puts it back. */
+  mapZoom?: {
+    button: Listening & { setAttribute(name: string, value: string): void };
+    sticker: { readonly dataset: Record<string, string | undefined> };
+  };
 }
 
 /** The map's live parts, where a browser can measure the route. */
@@ -191,6 +197,20 @@ export function wireSetupStage<T extends DotNode>(deps: {
         behavior: instant ? "instant" : "smooth",
       });
       dom.summaries[openNow() ?? "host"]?.focus({ preventScroll: true });
+    });
+  }
+
+  // The map sticker: larger on a tap, back on the next. Only its size
+  // changes; the step stays.
+  const zoom = dom.mapZoom;
+  if (zoom !== undefined) {
+    const show = (larger: boolean): void => {
+      zoom.sticker.dataset.zoomed = String(larger);
+      zoom.button.setAttribute("aria-expanded", String(larger));
+    };
+    show(false);
+    zoom.button.addEventListener("click", () => {
+      show(zoom.sticker.dataset.zoomed !== "true");
     });
   }
 

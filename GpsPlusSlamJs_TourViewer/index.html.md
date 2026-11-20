@@ -21,10 +21,22 @@ result or a shared link shows).
   **The L5 look since polish round M2b** (the owner's prototype verdict,
   D-P1): on the creator page the landing (`#landing`, see "The landing"
   below; it replaced the intro, `#setup-intro`, on 2026-10-26), then the stage
-  (`#setup-stage`): the illustrated map (`#setup-map`, an example route
-  with six stations drawn by `setup-stage.ts`; ids prefixed `map-`)
-  beside the step card (`#setup-card`) on a wide or landscape screen, above
-  it on a phone. The card shows ONE step - the open `<details>`; closed
+  (`#setup-stage`): the step card (`#setup-card`) across the width, and
+  in it the illustrated map (`#setup-map`, an example route with six
+  stations drawn by `setup-stage.ts`; ids prefixed `map-`) as a sticker
+  on the card's top-right corner (creator setup layout round, the "sticker"
+  direction): floated right, turned 2.5 degrees, over the card's top and
+  right edges, so the station row and the heading wrap beside it and the
+  rest of the step runs the card's full width. A float, so no line or
+  control can lie under it (each `.step` drops the design system's
+  `overflow: hidden` in the card, which would make it a column beside the
+  sticker). Its width is `min(clamp(7.5rem, 25vw, 16.5rem), 46svh)`: about
+  a third of a phone held upright, a quarter of a wide card, held down by
+  a short landscape screen. Below 11rem (a container query on the sticker
+  itself) it shows only the route and the numbered stations, drawn larger,
+  and `#setup-map-zoom` lies over it: a tap shows the whole map above the
+  step (`data-zoomed`, no longer floated), the next puts it back. From
+  900 px wide the four start answers sit two by two. The card shows ONE step - the open `<details>`; closed
   steps are hidden by CSS - under its station row (`#setup-badge`,
   `#setup-of`, `#setup-dots`) and over `#setup-nav` (Back/Next; none on
   step 6, no Next on step 5). The paper palette is set on the design
@@ -471,14 +483,10 @@ its chunk fails, the hero shows its last moment as a drawing).
     cards read as running together.
   - From 900 px wide and taller than 560 px the setup stage stands on the
     landing's column (`--landing-wide`, 1128 px, set on `body` so both the
-    landing and the stage read it, and its 16 px gutters): the map's title and
-    its frame's outer line on the column's left edge, the step card's right
-    edge on its right. The card is sticky (16 px from the top) beside the
-    map while the map is in view, except during AR, whose panel lives in
-    the card. Its travel is only as long as the map runs on below it
-    (about 100 px at 1280x720), and on a first visit the page ends about
-    where the stage does. "You already have a tour?" below it keeps its own
-    narrower centred column.
+    landing and the stage read it, and its 16 px gutters): the step card's
+    edges on the column's edges, the map sticker poking 18 px over its top
+    and 10 px past its right edge. "You already have a tour?" below it
+    keeps its own narrower centred column.
 - **Its moving parts** are mounted by `src/landing/landing-mount.ts`
   (dynamic imports, a creator only; see its sidecar): the cards' pictures
   (`landing-cards.ts`, which play by `card-play.ts`), the use cases
@@ -518,8 +526,8 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`
 `landing-way`, `landing-needs`, `landing-begin-top`, `landing-film` with
 `landing-still`, `landing-story`, `landing-cards` with five
 `landing-card`, `landing-make` with `setup-begin`, `landing-uses`),
-`setup-stage`, `setup-map` (owns `setup-map-svg` and the
-drawn `map-station-<step>`), `setup-card` (owns `setup-loading`, `setup-badge`, `setup-of`,
+`setup-stage`, `setup-card` (owns `setup-map` with `setup-map-svg`, the
+drawn `map-station-<step>` and `setup-map-zoom`, `setup-loading`, `setup-badge`, `setup-of`,
 `setup-dots` with `station-<step>`, `setup-nav`, `setup-back`,
 `setup-next`), `step-link` (owns `link-heading`, `link-why`,
 `start-host` with `host-tiles` and `host-steps`, `link-field`,

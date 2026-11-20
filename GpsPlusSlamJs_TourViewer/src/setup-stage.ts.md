@@ -37,6 +37,13 @@ through `wizard.openStep`. Plan: polish-round plan, "M2b - the L5 look".
     although the creator did hang it. `setup-stations.test.ts` pins that as
     intended - the map is a "you are here", and nothing on the page tracks
     what was done.
+  - `dom.mapZoom` (optional) - `{ button, sticker }`: the tap target
+    over the map sticker (`#setup-map-zoom`, shown by CSS only while the
+    sticker is small or shown larger) and the sticker (`#setup-map`). A
+    click flips `sticker.dataset.zoomed` (`"true"`/`"false"`, set to
+    `"false"` when wired) and the button's `aria-expanded` with it; the CSS
+    shows the map larger above the step. It opens no step. Transient view
+    state, so it lives on the element, not in a store.
 - `SetupStage.render()` - redraw from the steps' open state.
 - Dots carry `data-testid="station-<step>"`, map stations
   `data-testid="map-station-<step>"`; both open their step.
@@ -68,6 +75,8 @@ wireSetupStage<HTMLButtonElement>({
   and Back/Next opening steps through the wizard, the row's rules on steps
   1, 5 and 6, the heading that cannot collapse its step, a re-render when
   the wizard opens a step by itself, and every "Make your tour" button's
-  scroll (instant under reduced motion) and focus on the open step.
+  scroll (instant under reduced motion) and focus on the open step, and
+  the map sticker's tap that shows it larger and puts it back.
 - `playwright-tests/setup-flow.spec.js` - the page in a browser (the map's
-  stations, the one-step card, the widths).
+  stations, the one-step card, the widths, the sticker covering nothing
+  on a phone and its tap to show it larger).
