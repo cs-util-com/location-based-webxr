@@ -24,7 +24,7 @@ import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 // The hold is at 150 km, where these checks were written, not at the
-// landing's default 2 km (r790 city plan K4). "The shadow darkens somewhere" needs a
+// landing's default 2 km. "The shadow darkens somewhere" needs a
 // footprint wider than the clouds' texels: from 2 km the view spans a few
 // km, the shadow reads one patch of cloud about 4 km toward the sun and is
 // uniform and faint there (measured at the landing: at most 2.7 levels, 0
