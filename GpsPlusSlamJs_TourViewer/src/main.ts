@@ -753,6 +753,12 @@ const setup = wireCreatorSetup({
     // Editing placed objects (authoring plan 2026-09-28-0953 M4).
     objectList: createObjectListView(element("object-list"), document),
     stationChip: element("creator-station"),
+    scanCard: {
+      root: element("scan-card"),
+      title: element("scan-card-title"),
+      line: element("scan-card-line"),
+      close: element("scan-card-close"),
+    },
   },
   // Crash-safe authoring (F13), in this origin's private file system - the
   // desktop editor's draft opens through the same wrapper (M6 E2c).

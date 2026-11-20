@@ -2520,6 +2520,66 @@
           animation: none;
         }
       }
+      .scan-card-close {
+        display: none;
+      }
+      /* The creator's variant: the same card, the animation beside the
+         words, off the screen centre (where the placing ring aims) just
+         under the readout card, with a close that works at once. The top
+         offset is the readout's two clamped lines (12 px panel padding,
+         2 x 10 px border, 2 x 14 px x 1.35) plus a 10 px gap; an opened
+         readout is the creator's to read, so the card steps aside then. */
+      body[data-mode="creator"] #scan-card {
+        place-items: start center;
+        padding: calc(90px + env(safe-area-inset-top)) 12px 0;
+      }
+      body[data-mode="creator"]:has(#setup-status[data-clamped="false"])
+        #scan-card {
+        display: none;
+      }
+      body[data-mode="creator"] .scan-card-panel {
+        --scan-card-width: min(100%, 420px);
+
+        position: relative;
+        display: grid;
+        grid-template-columns: 64px 1fr;
+        column-gap: 12px;
+        align-items: center;
+        margin-top: 0;
+        padding: 8px 48px 8px 8px;
+        text-align: left;
+      }
+      body[data-mode="creator"] .scan-card-anim {
+        grid-row: 1 / 3;
+        width: 64px;
+        height: 48px;
+        margin: 0;
+      }
+      body[data-mode="creator"] #scan-card #scan-card-title {
+        font-size: 15px;
+      }
+      body[data-mode="creator"] #scan-card #scan-escape {
+        display: none;
+      }
+      body[data-mode="creator"] .scan-card-close {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        border-radius: 999px;
+        background: none;
+        color: #fff;
+        box-shadow: none;
+        font-size: 24px;
+        line-height: 1;
+        pointer-events: auto;
+      }
 
       /* ===== The visitor's walk in AR =====
          The prototype's look (public/prototypes/visitor-walk-4-radar-and-list/):
@@ -6296,10 +6356,22 @@
                       />
                     </g>
                   </svg>
-                  <h2 id="scan-card-title">
+                  <h2 id="scan-card-title" data-testid="scan-card-title">
                     Scan the code again so the tour can start
                   </h2>
                   <p id="scan-card-line" data-testid="scan-card-line"></p>
+                  <!-- The creator's variant closes at once
+                   (creator-setup.ts); the visitor's closes by itself on
+                   the lock, so it shows no close. -->
+                  <button
+                    type="button"
+                    id="scan-card-close"
+                    class="scan-card-close"
+                    data-testid="scan-card-close"
+                    aria-label="Hide this hint"
+                  >
+                    ×
+                  </button>
                 </div>
                 <button
                   type="button"
