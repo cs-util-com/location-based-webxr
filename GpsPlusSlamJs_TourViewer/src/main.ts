@@ -179,10 +179,14 @@ const cacheStore =
 // DEV Playwright run.
 const mode = viewerModeFromSearch(location.search);
 const seams = getSeams();
-/** Read on each use: the reader can change it while the page is open. */
-const reducedMotion = (): boolean =>
-  typeof matchMedia === "function" &&
-  matchMedia("(prefers-reduced-motion: reduce)").matches;
+/** The reader's reduced-motion setting: one query for the page's life,
+ *  read on each use (the reader can change it while the page is open; the
+ *  travelling words read it every frame). */
+const reducedMotionQuery =
+  typeof matchMedia === "function"
+    ? matchMedia("(prefers-reduced-motion: reduce)")
+    : null;
+const reducedMotion = (): boolean => reducedMotionQuery?.matches === true;
 // The landing's moving parts (src/landing/landing-mount.ts): dynamic
 // imports, for a creator only; its text and still are static markup.
 {
@@ -197,8 +201,8 @@ const reducedMotion = (): boolean =>
         : { film, cards, uses },
     reducedMotion: reducedMotion(),
     watchReducedMotion: (onChange) => {
-      if (typeof matchMedia !== "function") return () => undefined;
-      const query = matchMedia("(prefers-reduced-motion: reduce)");
+      const query = reducedMotionQuery;
+      if (query === null) return () => undefined;
       const changed = (): void => {
         onChange(query.matches);
       };
@@ -1247,8 +1251,7 @@ const captionsFollow =
               camera,
               knobs: TRAVELLING_BOX_DEFAULTS,
               now: () => performance.now(),
-              reduceMotion: () =>
-                window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+              reduceMotion: reducedMotion,
               viewRect: () => {
                 travelView.width = window.innerWidth;
                 travelView.height = window.innerHeight;

@@ -328,6 +328,12 @@ export function mountedWorldParts(): WorldPart[] {
   return [...mounted];
 }
 
+/** The mounted set itself, read-only and live: for a lookup run every
+ *  frame, which must not copy it. */
+export function mountedWorldPartSet(): ReadonlySet<WorldPart> {
+  return mounted;
+}
+
 const viewerLocal = new Vector3();
 const facingLocal = new Vector3();
 const parentTurn = new Quaternion();

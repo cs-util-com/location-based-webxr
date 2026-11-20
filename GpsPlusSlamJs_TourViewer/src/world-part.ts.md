@@ -94,7 +94,9 @@ the reading sign (`reading-sign.ts`) are world parts too.
   so its sounds keep their last level until it is left (and disposed).
 - `mountWorldPart(part)`, `unmountWorldPart(part)` (false when it was not
   mounted, so a second `dispose` is a no-op), `mountedWorldParts()` (oldest
-  first) - the one mounted set.
+  first, a copy) - the one mounted set; `mountedWorldPartSet()` is the set
+  itself, read-only and live, for a per-frame lookup that must not copy it
+  (`reading-sign.ts` `mountedReadingSign`).
 - `tapShownWorldPart(scene, pick, tap, parts = mountedWorldParts())` - the
   visitor's tap (`main.ts`, the `part` route of `visitor-stations.ts`
   `routeVisitorTap`): among the parts shown under a station's content group
