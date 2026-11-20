@@ -582,36 +582,34 @@ for (const [tier, use, cap] of /** @type {const} */ ([
   });
 }
 
-/** The page's origin, for the geolocation grant the pin's dive needs. */
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
-/** The equator under the equinox noon sun: the dive's target. */
+/** The equator under the equinox noon sun: the parked view's target. */
 const UNDER_THE_SUN = { latitude: 0, longitude: 1.86 };
 
 /**
- * Held after the pin's dive at `altKm` over the sub-solar point, with the
+ * Parked at the pin's landing pose `altKm` up over the sub-solar point, with the
  * camera pitched 110 degrees up from straight down (`pitchView`), so the
  * screen's centre looks 20 degrees above the level towards the north and
  * the upper half shows the sky. The rim's light is amplified (strength 4)
  * and the sun's disc, the stars and the clouds are off, so the pixels are
  * the air's own.
  */
-async function skyFromInside(page, context, altKm, thickness) {
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(UNDER_THE_SUN);
+async function skyFromInside(page, altKm, thickness) {
   // The shell's thickness pinned (atmoRamp=0): since F2b it thins to 1x on
   // the descent below 2,000 km, and this measures the shell at k itself.
   const errors = await bootGlobe(
     page,
-    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&atmoRamp=0&diveMs=1000&landKm=${altKm}`,
+    `at=0,1.86&spinMs=0&turnMs=0&time=2026-03-20T12:00:00Z&cloudDrift=0&cloudOpacity=0&stars=0&milkyWay=0&sky=0&atmoStrength=4&atmoThickness=${thickness}&atmoRamp=0`,
   );
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return s.phase === "landed" && s.pin.phase === "idle";
-    },
-    null,
-    { timeout: 60_000 },
+  await page.evaluate(
+    ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+    [UNDER_THE_SUN.latitude, UNDER_THE_SUN.longitude, altKm * 1000],
+  );
+  // pitchView turns the drawn camera: two frames put the parked pose on it.
+  await page.evaluate(
+    () =>
+      new Promise((done) =>
+        requestAnimationFrame(() => requestAnimationFrame(done)),
+      ),
   );
   await page.evaluate(() => window.__globeLab.pitchView(110));
   const fovY = await page.evaluate(() => window.__globeLab.state().fovY);
@@ -664,9 +662,9 @@ for (const { insideKm, k } of SKY_PAIRS) {
     .serial(`the sky from ${insideKm} km inside the k = ${k} shell`, () => {
     /** @type {{ e: number, lum: number, rgb: number[] }[]} */
     let thick = [];
-    test(`from ${insideKm} km at k = ${k}`, async ({ page, context }) => {
+    test(`from ${insideKm} km at k = ${k}`, async ({ page }) => {
       test.setTimeout(120_000);
-      const r = await skyFromInside(page, context, insideKm, k);
+      const r = await skyFromInside(page, insideKm, k);
       thick = r.rows;
       console.log(
         `sky from ${r.altitudeKm.toFixed(0)} km at k = ${k}: ${thick.map((row) => `${row.e} deg ${row.lum.toFixed(1)} (${row.rgb.map((v) => v.toFixed(0)).join("/")})`).join(", ")}`,
@@ -674,12 +672,9 @@ for (const { insideKm, k } of SKY_PAIRS) {
       expect(r.errors).toEqual([]);
     });
 
-    test(`matches the real air from ${realKm} km (k = 1)`, async ({
-      page,
-      context,
-    }) => {
+    test(`matches the real air from ${realKm} km (k = 1)`, async ({ page }) => {
       test.setTimeout(120_000);
-      const r = await skyFromInside(page, context, realKm, 1);
+      const r = await skyFromInside(page, realKm, 1);
       const ratios = r.rows.map(
         (row, i) => (thick[i]?.lum ?? 0) / Math.max(1, row.lum),
       );
