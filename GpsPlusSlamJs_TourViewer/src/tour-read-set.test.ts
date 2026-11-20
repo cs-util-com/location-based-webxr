@@ -9,6 +9,7 @@ import { tourOf } from "./test-support/tour-of.js";
 import {
   entriesForVisitor,
   recordingEntryNames,
+  recordingFolderOf,
   scanEntryNames,
   stopsVisitorDownload,
   visitorEntryNames,
@@ -310,5 +311,35 @@ describe("what a visitor's page shows and downloads", () => {
         false,
       );
     }
+  });
+});
+
+describe("recordingFolderOf", () => {
+  // Why: a capture's `imageFile` is relative to the recording, so a
+  // recording re-zipped from its folder ("compress this folder") puts every
+  // entry under that folder, and a reader that looked the file up by its
+  // bare name found none. The debug layer and the splat trainer's reader
+  // both take the folder from here.
+  it("is empty for a flat zip and the wrapping folder for a re-zipped one", () => {
+    expect(recordingFolderOf(["session.json", "actions/000001.json"])).toBe("");
+    expect(
+      recordingFolderOf(["mytour/session.json", "mytour/actions/000001.json"]),
+    ).toBe("mytour/");
+    expect(recordingFolderOf(["a/b/actions/000002.json"])).toBe("a/b/");
+  });
+
+  it("never cuts at a sibling folder whose name only ends in actions/", () => {
+    expect(
+      recordingFolderOf([
+        "mytour/aactions/000001.json",
+        "mytour/actions/000001.json",
+      ]),
+    ).toBe("mytour/");
+  });
+
+  it("is empty without an action entry", () => {
+    expect(recordingFolderOf(["mytour/session.json", "x/actions/a.txt"])).toBe(
+      "",
+    );
   });
 });
