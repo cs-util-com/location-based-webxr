@@ -40,8 +40,9 @@ can be replayed offline for any knob set.
     fontPx / box size. A clip-space midpoint is the projection of the
     world midpoint, so this is exact under perspective.
   - `letterPx = min(H, W)`.
-  - When any w is at or under 0.05, or any number is non-finite, the
-    result is invalid with every size 0.
+  - When any w is at or under 0.05, any number is non-finite, or a view,
+    box, font or line size is not positive, the result is invalid with
+    every size 0.
 - **`facingAngleDeg(normalXZ, toCameraXZ)`** gives degrees from 0 to 180,
   and 0 for a zero vector.
 - **`wantPlace(input, knobs)`** gives `{ place, why }`. It applies the
@@ -56,20 +57,24 @@ can be replayed offline for any knob set.
      ("too small");
   8. otherwise the plate ("readable").
 
-  The knob's metric picks `letterPx` or `letterPxH`.
+  The knob's metric picks `letterPx` or `letterPxH`. A NaN letter size
+  docks ("too small"): the rule reads "not at least the threshold".
 
 - **`settlePlace(state, want, dtS, { fingerDown, sinceReleaseS }, knobs)`**
   gives the next `SettleState { place, pending, pendingS }`.
 - **`stepToward(value, target, dtS, durationS, reduceMotion)`** is the one
-  step function for the flight's `u` and the words' presence. The plan
-  named these as `stepFlight` and `stepPresence`; one function does both.
+  step function for the flight's `u` and the words' presence; one
+  function does both.
 - **`easeInOutCubic(t)`**.
-- **`flightClip(srcClip, dockNdc, e, out?)`** gives clip corners for eased
-  progress `e`.
+- **`flightClip(srcClip, dockNdc, e, out)`** writes clip corners for eased
+  progress `e` into the caller's `out` (kept from frame to frame, so a
+  flight allocates nothing) and returns it.
 - **`signGrowth(d, from = 4.5, max = 1.6)`**.
 - **`quadOfClip(clip, viewW, viewH)`** gives screen px in polygon order
-  TL, TR, BR, BL.
-- **`inQuad(x, y, quad)`** answers for a convex quad, edge included.
+  TL, TR, BR, BL, or null when a corner's w is at or under 0.05 or not
+  finite (the flight interpolates w, so a corner can reach the eye).
+- **`inQuad(x, y, quad)`** answers for a convex quad, edge included; a
+  quad collapsed to a line or a point has no inside.
 
 ## Invariants and assumptions
 

@@ -788,6 +788,21 @@ describe("createNarrationBox in travel mode", () => {
     expect(col?.style.width).not.toBe("234px");
   });
 
+  // Why: a ghost is invisible and a box without pointer events takes no
+  // finger; a text shown natural again after travel mode must be seen and
+  // take its gestures, whoever set the ghost before.
+  it("drops the ghost and the pointer lock when it shows a text natural again", () => {
+    const { box, content } = make();
+    box.show(content, "travel");
+    box.setGhost(true);
+    box.setPointer(false);
+    expect(box.element.classList.contains("nb-ghost")).toBe(true);
+    expect(box.element.classList.contains("nb-nopointer")).toBe(true);
+    box.show(content, "natural");
+    expect(box.element.classList.contains("nb-ghost")).toBe(false);
+    expect(box.element.classList.contains("nb-nopointer")).toBe(false);
+  });
+
   it("has a head row with the hint only in travel mode", () => {
     const { box, clock, content } = make();
     box.show(content);
@@ -957,30 +972,41 @@ describe("the travel box's punctuation and late styles", () => {
   });
 
   // Why this test matters: in a page whose stylesheet a module injects
-  // after the box's first layout (the dev server, a late web font), the
-  // box measured itself without its padding and the plate painted every
-  // word 15 px off, for good. A change of the box's size must lay it out
-  // again.
-  it("lays itself out again when its size changes", () => {
+  // after the box's first layout (the dev server), the box measured itself
+  // without its padding and the plate painted every word 15 px off, for
+  // good. A change of the box's size must lay it out again; so must a
+  // change of the text column's alone (a font that arrives late keeps the
+  // fixed travel width but moves every line break), and a disposed box
+  // must stop watching.
+  it("lays itself out again when its size or its text column's changes", () => {
     const watched: (() => void)[] = [];
+    const observed: Element[] = [];
+    let disconnects = 0;
     const real = globalThis.ResizeObserver as unknown;
     globalThis.ResizeObserver = class {
       constructor(private readonly cb: () => void) {}
-      observe(): void {
+      observe(el: Element): void {
         watched.push(this.cb);
+        observed.push(el);
       }
       unobserve(): void {}
-      disconnect(): void {}
+      disconnect(): void {
+        disconnects += 1;
+      }
     } as unknown as typeof ResizeObserver;
     try {
       const { box, content } = make();
       box.show(content, "travel");
+      expect(observed).toContain(box.element);
+      expect(observed).toContain(box.element.querySelector(".nb-col"));
       const before = box.paintModel()?.layout;
       box.tick();
       expect(box.paintModel()?.layout).toBe(before);
       for (const cb of watched) cb();
       box.tick();
       expect(box.paintModel()?.layout).not.toBe(before);
+      box.dispose();
+      expect(disconnects).toBe(1);
     } finally {
       globalThis.ResizeObserver = real as typeof ResizeObserver;
     }

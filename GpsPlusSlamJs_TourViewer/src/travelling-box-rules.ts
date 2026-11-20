@@ -170,8 +170,9 @@ function midSpan(
  * CSS px whose type is `fontPx` with `lineHeightPx` lines, so one em is
  * the plate's drawn height x fontPx / boxCssH (and its width likewise);
  * `wantPlace` picks which of them the threshold reads.
- * A corner behind the eye, or any non-finite number, gives invalid
- * metrics with every size 0.
+ * A corner behind the eye, any non-finite number, or a view, box, font or
+ * line size that is not a positive finite number gives invalid metrics
+ * with every size 0.
  */
 export function plateMetrics(
   cornersClip: ArrayLike<number>,
@@ -184,6 +185,9 @@ export function plateMetrics(
   lineHeightPx: number,
 ): PlateMetrics {
   if (cornersClip.length < 16 || centreClip.length < 4) return INVALID;
+  for (const size of [viewW, viewH, boxCssW, boxCssH, fontPx, lineHeightPx]) {
+    if (!(Number.isFinite(size) && size > 0)) return INVALID;
+  }
   for (let i = 0; i < 16; i++) {
     if (!Number.isFinite(cornersClip[i])) return INVALID;
   }
@@ -260,7 +264,8 @@ export function wantPlace(
     return { place: "dock", why: "turned away" };
   }
   const letter = knobs.metric === "h" ? m.letterPxH : m.letterPx;
-  if (letter < knobs.thr * (input.onPlate ? knobs.keep : 1)) {
+  // Written so a NaN letter size docks: NaN >= thr is false.
+  if (!(letter >= knobs.thr * (input.onPlate ? knobs.keep : 1))) {
     return { place: "dock", why: "too small" };
   }
   return { place: "plate", why: "readable" };
@@ -350,14 +355,15 @@ export function easeInOutCubic(t: number): number {
  * order) times a reference w (the mean of the plate's), w moves to that
  * reference and z to 0. Interpolating in clip space keeps the plate's
  * perspective early in the flight and lands flat on the dock; each
- * corner's NDC stays between its start and its end.
+ * corner's NDC stays between its start and its end. Writes the 16 numbers
+ * into `out` (the caller's, kept from frame to frame) and returns it.
  */
-export function flightClip(
+export function flightClip<T extends { [i: number]: number }>(
   srcClip: ArrayLike<number>,
   dockNdc: ArrayLike<number>,
   e: number,
-  out: number[] = new Array<number>(16),
-): number[] {
+  out: T,
+): T {
   const wRef = (srcClip[3]! + srcClip[7]! + srcClip[11]! + srcClip[15]!) / 4;
   const a = 1 - e;
   for (let i = 0; i < 4; i++) {
@@ -378,19 +384,25 @@ export function signGrowth(d: number, from = 4.5, max = 1.6): number {
 }
 
 /** A quad's corners on screen (px), in polygon order: top-left, top-right,
- *  bottom-right, bottom-left, from clip corners in plane order. */
+ *  bottom-right, bottom-left, from clip corners in plane order; null when
+ *  a corner's w is at or under the eye's margin (or not finite), which has
+ *  no place on the screen. */
 export function quadOfClip(
   clip: ArrayLike<number>,
   viewW: number,
   viewH: number,
-): [number, number][] {
+): [number, number][] | null {
+  for (let i = 0; i < 4; i++) {
+    const w = clip[i * 4 + 3];
+    if (w === undefined || !(Number.isFinite(w) && w > MIN_W)) return null;
+  }
   return [0, 1, 3, 2].map((i) =>
     screenOf(clip[i * 4]!, clip[i * 4 + 1]!, clip[i * 4 + 3]!, viewW, viewH),
   );
 }
 
 /** Whether (x, y) lies inside a convex quad given in polygon order (its
- *  edge included). */
+ *  edge included); false for a quad collapsed to a line or a point. */
 export function inQuad(
   x: number,
   y: number,
@@ -406,5 +418,5 @@ export function inQuad(
     if (sign === 0) sign = s;
     else if (s !== sign) return false;
   }
-  return true;
+  return sign !== 0;
 }

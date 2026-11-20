@@ -298,6 +298,8 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   let content: NarrationBoxContent | null = null;
   let shown = false;
   let spans: HTMLSpanElement[] = [];
+  /** The same spans, for the punctuation measure's per-node test. */
+  let spanSet = new Set<Node>();
   let starts: number[] = [];
   let lineOf: number[] = [];
   let ls: number[] = [0, 0];
@@ -362,6 +364,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
       at = w.to;
     }
     parts.push(c.plain.slice(at));
+    spanSet = new Set(spans);
     col.replaceChildren(...parts);
     // The bold name and the disclosure too, so the width rule measures
     // what is drawn.
@@ -472,7 +475,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     for (const node of col.childNodes) {
       if (node.nodeType === 3) {
         out.push(...chunkRuns(node, seen, range, colRect));
-      } else if (spans.includes(node as HTMLSpanElement)) {
+      } else if (spanSet.has(node)) {
         seen += 1;
       }
     }
@@ -488,7 +491,8 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     colRect: DOMRect,
   ): WordsPaintRun[] {
     const text = node.textContent ?? "";
-    const beforeWord = spans.includes(node.nextSibling as HTMLSpanElement);
+    const next = node.nextSibling;
+    const beforeWord = next !== null && spanSet.has(next);
     const out: WordsPaintRun[] = [];
     for (const m of text.matchAll(/\S+/g)) {
       range.setStart(node, m.index);
@@ -507,8 +511,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     return out;
   }
 
-  /** The words as the browser laid them out, in the box's CSS px (offsets
-   *  ignore transforms, so a box that moves or scales measures the same). */
+  /** The words as the browser laid them out, in the box's CSS px. The
+   *  word spans are read by offsets, which ignore transforms; the gap runs
+   *  by client rectangles, which do not, taken relative to the text
+   *  column's own rectangle so a moved box (the ghost's centring) measures
+   *  the same. A scaled box would scale the gap runs alone: the box is
+   *  never scaled. */
   function measurePaint(
     c: NarrationBoxContent,
     textW: number,
@@ -818,12 +826,15 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   root.addEventListener("lostpointercapture", onUp);
   root.addEventListener("keydown", onKey);
   win?.addEventListener("resize", onResize);
-  // The box's own size changes when its styles or fonts arrive after the
-  // first layout (a stylesheet a module injects, a late web font): lay it
-  // out again, or the plate keeps painting the words where they were.
+  // The box's size changes when its styles arrive after the first layout
+  // (a stylesheet a module injects); the text column's alone when a font
+  // arrives late (the travel width stays, the line breaks move). Either
+  // way it is laid out again, or the plate keeps painting the words where
+  // they were.
   const sizeWatch =
     typeof ResizeObserver === "function" ? new ResizeObserver(onResize) : null;
   sizeWatch?.observe(root);
+  sizeWatch?.observe(col);
 
   /** A drag cut off (the box hides, another text comes): the voice keeps
    *  the dragged place but does not play on, and a voice the drag held is
@@ -850,6 +861,8 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
         if (mode !== "travel") {
           hint = "";
           headEl.textContent = "";
+          // A natural box is the one the visitor sees and touches.
+          root.classList.remove("nb-ghost", "nb-nopointer");
         }
         dirty = true;
       }

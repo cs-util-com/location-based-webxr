@@ -25,6 +25,7 @@ import {
   paintNarrationWords,
   wordsCanvasSize,
   wordsPaintKey,
+  wordsPaintScale,
   type WordsPaintLayout,
 } from "../narration-words-paint.js";
 import { mountReadingSign, READING_SIGN } from "../reading-sign.js";
@@ -51,12 +52,6 @@ export const TRAVELLING_BOX_CHECK_TEXT = {
 
 /** The visitor's eye height (m), as in the prototype. */
 const EYE_M = 1.6;
-
-/** The painted texture's scale: 2.5 to 3 device px a CSS px. */
-export function wordsPaintScale(devicePixelRatio: number): number {
-  const dpr = Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1;
-  return Math.min(3, Math.max(2.5, dpr));
-}
 
 /** A plane's four corners on the page (CSS px): TL, TR, BR, BL. */
 type Corners = [number, number][];
@@ -221,7 +216,7 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
       canvas.width = size.width;
       canvas.height = size.height;
       texture?.dispose();
-      texture = canvasTexture(canvas);
+      texture = canvasTexture(canvas, { mipmaps: false });
     }
     plateM = plateSizeM(l.width, l.height, l.fontPx);
     sign.attachWords(texture, plateM);

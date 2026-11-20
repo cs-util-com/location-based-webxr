@@ -21,8 +21,6 @@ moved.
 - `startTravellingBoxCheck(host)` - builds the renderer, the scene, the
   sign and the box, installs `window.__travellingBoxCheck` and draws
   every frame until `stop()`.
-- `wordsPaintScale(devicePixelRatio)` - the texture's scale, 2.5 to 3
-  device px a CSS px (2.5 for a ratio that is not a number).
 - `TRAVELLING_BOX_CHECK_TEXT` - the prototype's weighing house text.
 - The hook `window.__travellingBoxCheck`:
   - `standAt(distanceM, deg = 0)` - the eye 1.6 m up, `distanceM` from
@@ -54,9 +52,9 @@ moved.
 
 ## Tests
 
-- `travelling-box-check.test.ts` - the paint scale.
 - `playwright-tests/travelling-box-check.spec.js` - at three viewports,
   3 m away: the ghost's shape and opacity, the plate's size, its gap
   under the sign and its centre against values from the prototype's
-  numbers, the width ratio; and the painted ink against the ghost's
+  numbers, the width ratio against each edge's depth along the pitched
+  view (within 0.2 %); and the painted ink against the ghost's
   word rectangles.

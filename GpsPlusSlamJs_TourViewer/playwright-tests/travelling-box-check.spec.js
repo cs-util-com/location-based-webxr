@@ -67,6 +67,13 @@ function screenY(yM, depthM, s) {
   return viewH / 2 - f * Math.tan(Math.atan((yM - EYE_M) / depthM) - pitch);
 }
 
+/** The depth along the view of a point `yM` up and `distM` ahead of the
+ *  eye, for the page's pitched camera: what a width on screen falls by. */
+function depthOf(yM, distM, s) {
+  const p = s.camera.pitch;
+  return (yM - EYE_M) * Math.sin(p) + distM * Math.cos(p);
+}
+
 // A software-rendered WebGL page is slow on a busy machine.
 test.describe.configure({ timeout: 90_000 });
 
@@ -115,10 +122,17 @@ for (const viewport of VIEWPORTS) {
     const plateX = (pTL[0] + pTR[0]) / 2;
     expect(Math.abs(plateX - signX)).toBeLessThanOrEqual(1);
     expect(Math.abs(signX - viewport.width / 2)).toBeLessThanOrEqual(1);
-    // As wide, against the sign, as the world says (each at its depth).
+    // As wide, against the sign, as the world says: each top edge at its
+    // own depth along the pitched view, (y - eye) sin p + D cos p.
     const ratio = (pTR[0] - pTL[0]) / (sTR[0] - sTL[0]);
-    const want = plateW / (3 - PLATE.frontM) / (SIGN.widthM / 3);
-    expect(Math.abs(ratio - want) / want).toBeLessThan(0.01);
+    const signTopDepth = depthOf(SIGN.centreM + SIGN.heightM / 2, 3, s);
+    const plateTopDepth = depthOf(
+      signBottomM - PLATE.gapM,
+      3 - PLATE.frontM,
+      s,
+    );
+    const want = plateW / plateTopDepth / (SIGN.widthM / signTopDepth);
+    expect(Math.abs(ratio - want) / want).toBeLessThan(0.002);
     expect(errors).toEqual([]);
   });
 }
@@ -215,4 +229,18 @@ test("the painted words lie where the ghost box broke its lines", async ({
   expect(result.empty).toBe(0);
   expect(result.total).toBeGreaterThan(1000);
   expect(result.outside / result.total).toBeLessThan(0.01);
+});
+
+// Why: the painted plate's name does not breathe (the prototype paints it
+// still), and the ghost is unseen; a breathing name on the ghost ran a
+// style animation for the whole voice that nobody could see.
+test("the ghost runs no animation while the voice plays", async ({ page }) => {
+  await open(page, VIEWPORTS[0]);
+  await page.evaluate(() => window.__travellingBoxCheck?.play());
+  const box = page.getByTestId("narration-box");
+  await expect(box).toHaveAttribute("data-speaking", "yes");
+  const running = await box.evaluate(
+    (el) => el.getAnimations({ subtree: true }).length,
+  );
+  expect(running).toBe(0);
 });

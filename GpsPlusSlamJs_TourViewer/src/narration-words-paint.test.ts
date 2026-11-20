@@ -16,6 +16,7 @@ import {
   paintNarrationWords,
   wordsCanvasSize,
   wordsPaintKey,
+  wordsPaintScale,
   type WordsPaintContext,
   type WordsPaintFrame,
   type WordsPaintLayout,
@@ -27,6 +28,7 @@ interface Call {
   readonly fill: string;
   readonly font: string;
   readonly align: string;
+  readonly baseline: string;
 }
 
 /** A 2D context that records every call with the style it was made in. */
@@ -63,6 +65,7 @@ function recorder() {
         fill: typeof g.fillStyle === "string" ? g.fillStyle : "gradient",
         font: String(g.font),
         align: String(g.textAlign),
+        baseline: String(g.textBaseline),
       });
     };
   }
@@ -138,8 +141,10 @@ describe("paintNarrationWords", () => {
       "three",
     ]);
     const two = drawn.find((c) => c.args[0] === "two");
-    // x: window x + the word's x; y: the line's middle.
-    expect(two?.args.slice(1)).toEqual([15, 30 + 22 + 11]);
+    // x: window x + the word's x; y: the baseline, 0.35 em under the
+    // line's middle (the fallback without font metrics).
+    expect(two?.args[1]).toBe(15);
+    expect(two?.args[2]).toBeCloseTo(30 + 22 + 11 + 0.35 * 16, 9);
     expect(two?.font).toBe("500 16px sans-serif");
     expect(wordsCanvasSize(layout(), 2.5)).toEqual({ width: 680, height: 215 });
   });
@@ -153,8 +158,9 @@ describe("paintNarrationWords", () => {
     );
     const drawn = texts(calls).map((c) => c.args[0]);
     expect(drawn).toEqual(["two", "three", "four", "five"]);
-    expect(texts(calls).find((c) => c.args[0] === "four")?.args[2]).toBe(
-      30 + 22 + 11,
+    expect(texts(calls).find((c) => c.args[0] === "four")?.args[2]).toBeCloseTo(
+      30 + 22 + 11 + 0.35 * 16,
+      9,
     );
     const clip = calls.findIndex((c) => c.op === "clip");
     const rect = calls[clip - 1];
@@ -276,5 +282,75 @@ describe("wordsPaintKey", () => {
     expect(wordsPaintKey(l, frame({ voiceMs: 1300, lit: 1 }))).toBe(
       wordsPaintKey(l, frame({ voiceMs: 1310, lit: 1 })),
     );
+  });
+});
+
+// Why: the key is built every frame. Keyed on every said word it grew
+// with the text (a 400-word text built a 400-character string 60 times a
+// second); a word whose fade has ended can no longer change, and the
+// words before it ended theirs earlier, so the lit word and the fading
+// tail are all the key needs.
+describe("wordsPaintKey on a long text", () => {
+  const many = layout({
+    startsMs: Array.from({ length: 400 }, (_, i) => i * 300),
+  });
+
+  it("stays short however many words were said", () => {
+    const key = wordsPaintKey(many, frame({ voiceMs: 400 * 300, lit: 399 }));
+    expect(key.length).toBeLessThan(40);
+  });
+
+  it("still changes with a step of the fading tail", () => {
+    const at = (ms: number) =>
+      wordsPaintKey(many, frame({ voiceMs: ms, lit: 399 }));
+    // Word 399 starts at 119 700 ms; its fade runs 120 to 670 ms later.
+    expect(at(119_700 + 300)).not.toBe(at(119_700 + 500));
+    expect(at(119_700 + 700)).toBe(at(119_700 + 900));
+  });
+});
+
+// Why: in the box every run of a line sits on one baseline, the smaller
+// disclosure too. Painted centred on the line's middle, the 13 px
+// disclosure stood about 2 px higher than in the box the visitor taps.
+describe("paintNarrationWords on one line", () => {
+  it("paints the name, the disclosure and the words on one alphabetic baseline", () => {
+    const { g, calls } = recorder();
+    paintNarrationWords(g, { layout: layout(), frame: frame() }, 1);
+    const line0 = texts(calls).filter((c) =>
+      ["Narrator", "·", "synthetic", "one"].includes(String(c.args[0])),
+    );
+    expect(line0).toHaveLength(4);
+    const ys = new Set(line0.map((c) => c.args[2]));
+    expect(ys.size).toBe(1);
+    for (const c of line0) expect(c.baseline).toBe("alphabetic");
+    // The fallback drop with no font metrics: 0.35 em under the middle.
+    expect(line0[0]!.args[2]).toBeCloseTo(30 + 11 + 0.35 * 16, 9);
+  });
+
+  it("drops the baseline by half the word font's ascent less its descent", () => {
+    const { g, calls } = recorder();
+    let measuredIn = "";
+    (g as unknown as Record<string, unknown>)["measureText"] = () => {
+      measuredIn = String(g.font);
+      return { fontBoundingBoxAscent: 15, fontBoundingBoxDescent: 4 };
+    };
+    paintNarrationWords(g, { layout: layout(), frame: frame() }, 1);
+    expect(measuredIn).toBe("500 16px sans-serif");
+    const one = texts(calls).find((c) => c.args[0] === "one");
+    expect(one?.args[2]).toBeCloseTo(30 + 11 + (15 - 4) / 2, 9);
+  });
+});
+
+// Why: the words plate is painted at 2.5 to 3 device px a CSS px, so it
+// stays sharp when the sign grows 1.6 times and on a 3x phone, without
+// the texture outgrowing a weak GPU on a 4x screen. A scale under 2.5
+// blurs the grown plate; one over 3 wastes texture memory on every
+// repaint.
+describe("wordsPaintScale", () => {
+  it("keeps the scale between 2.5 and 3, and survives a broken ratio", () => {
+    expect(wordsPaintScale(1)).toBe(2.5);
+    expect(wordsPaintScale(2.75)).toBe(2.75);
+    expect(wordsPaintScale(4)).toBe(3);
+    expect(wordsPaintScale(Number.NaN)).toBe(2.5);
   });
 });
