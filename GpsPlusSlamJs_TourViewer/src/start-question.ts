@@ -19,7 +19,7 @@ import type { WizardStep } from "./wizard.js";
 
 /** The four answers of step 1, in the page's order. */
 export const START_ANSWERS = ["new", "link", "file", "later"] as const;
-export type StartAnswer = (typeof START_ANSWERS)[number];
+type StartAnswer = (typeof START_ANSWERS)[number];
 
 /** Step 2's panel: an answer, or "share" - a tour started on this phone
  *  being put online from Done. */

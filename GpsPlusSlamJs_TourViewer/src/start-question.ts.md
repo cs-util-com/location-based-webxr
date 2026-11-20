@@ -12,7 +12,7 @@ phone.
 ## Public API
 
 - `START_ANSWERS` - `new`, `link`, `file`, `later`, in the page's order;
-  `StartAnswer`; `StartPanel` adds `share`.
+  `StartPanel` adds `share`.
 - `START_BLOCKS` - step 2's blocks: `host` (the host tiles, their steps
   and the starter, `host-picker.ts`), `linkField` (the link form and its
   notes), `codeHangs` ("Your code already hangs?"), `file` (the file
