@@ -133,6 +133,54 @@ describe("planWindows", () => {
     expect(first?.tooFewHoldouts).toBe(false);
   });
 
+  it("borrows the hold-outs nearest its core along the walk, from either side", () => {
+    // Why: a window is scored on views of the place it modelled; a
+    // hold-out from the far end of the window before lies where it barely
+    // trained, and would push a good window towards "not good enough".
+    // Window 1 (core 10..19) holds 10, 14 and 18 and needs two more: 22 is
+    // 3 m past its core and 6 is 4 m before it, while 2 (the window
+    // before's far end) is 8 m away.
+    const plan = planWindows(straightWalk(40), { ...SMALL, minHoldouts: 5 });
+    expect(plan.windows[1]?.core).toEqual(
+      [...Array(10).keys()].map((i) => i + 10),
+    );
+    expect(plan.windows[1]?.holdouts).toEqual([6, 10, 14, 18, 22]);
+  });
+
+  it("gives every frame its distance along its segment's walk", () => {
+    // Why: ownership decides a revisit by this distance; it restarts at
+    // every jump, where distances stop being comparable.
+    const walk = [
+      ...straightWalk(3, 2),
+      ...straightWalk(2).map((f, i) => ({
+        position: [500 + i, 0, 0] as Vector3,
+        capturedAt: (f.capturedAt ?? 0) + 3000,
+      })),
+    ];
+    expect(planWindows(walk, SMALL).along).toEqual([0, 2, 4, 0, 1]);
+  });
+
+  it("drops a window with no frame to train on", () => {
+    // Why: a segment of a single held-out frame (a tracking glitch between
+    // two jumps) would give a window with nothing to train; the budgets
+    // cannot size it and the trainer cannot run it. Its frame stays a
+    // hold-out of no window.
+    const walk: WalkFrame[] = [
+      ...straightWalk(6),
+      { position: [105, 0, 0], capturedAt: 6000 },
+      ...straightWalk(10).map((f, i) => ({
+        position: [205 + i, 0, 0] as Vector3,
+        capturedAt: (f.capturedAt ?? 0) + 7000,
+      })),
+    ];
+    const plan = planWindows(walk, SMALL);
+    expect(plan.segments[1]).toEqual([6]);
+    expect(plan.holdouts).toContain(6);
+    expect(plan.windows.map((w) => w.segment)).toEqual([0, 2]);
+    expect(plan.windows.every((w) => w.train.length > 0)).toBe(true);
+    expect(plan.windows.some((w) => w.core.includes(6))).toBe(false);
+  });
+
   it("flags a window whose hold-outs stay too few after borrowing", () => {
     const plan = planWindows(straightWalk(10), { ...SMALL, minHoldouts: 4 });
     expect(plan.windows).toHaveLength(1);
@@ -174,6 +222,7 @@ describe("planWindows", () => {
     expect(planWindows([], SMALL)).toEqual({
       segments: [],
       holdouts: [],
+      along: [],
       windows: [],
     });
   });

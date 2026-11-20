@@ -10,6 +10,7 @@ import {
   initialTrainerPageState,
   trainerPageActions as A,
   trainerPageReducer,
+  type TrainerPageState,
 } from "../splat-trainer/trainer-page-slice.js";
 import type { PlannedWindow } from "../splat-trainer/window-plan.js";
 
@@ -50,7 +51,7 @@ export const judged = (
 
 export function storeAt(
   n = 4,
-  trainer: "practice" | "unavailable" = "practice",
+  trainer: TrainerPageState["trainer"] = "practice",
 ) {
   const store = configureStore({
     reducer: trainerPageReducer,

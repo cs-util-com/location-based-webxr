@@ -29,6 +29,7 @@ import {
   READING_SIGN_HEIGHT_M,
   READING_SIGN_HINT,
   readingSheetContent,
+  mountedReadingSign,
   mountReadingSign,
   readingSignOverLine,
   READING_SIGN_VOICE_WORDS,
@@ -224,6 +225,21 @@ describe("mountReadingSign", () => {
     sign.dispose();
     expect(mountedWorldParts()).not.toContain(sign);
     sign.dispose();
+  });
+
+  // Why: the page finds a narrated text's sign by its block id to start
+  // its words' travel and to set its voice chip; another part, or a sign
+  // already taken down, must never be handed back.
+  it("is found by its text's id while mounted, and only then", () => {
+    stubCanvas();
+    const sign = mountReadingSign(block);
+    const other = mountReadingSign({ ...block, id: "other" });
+    expect(mountedReadingSign("guild")).toBe(sign);
+    expect(mountedReadingSign("other")).toBe(other);
+    expect(mountedReadingSign("nothing")).toBeNull();
+    sign.dispose();
+    expect(mountedReadingSign("guild")).toBeNull();
+    other.dispose();
   });
 
   it("takes no tap on a page with no sheet", () => {

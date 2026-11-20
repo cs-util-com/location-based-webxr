@@ -217,11 +217,22 @@
         "src/checks/feature-match/feature-match-check.ts",
         "src/characters/maker-main.ts",
         "src/splat-trainer/splat-main.ts",
+        "src/checks/splat-scene/splat-scene.ts",
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],
+      "ignoreUnresolved": [
+        "/src/checks/splat-scene/splat-scene.ts",
+        "/src/checks/splat-scene/splat-scene-render.ts",
+        "/src/checks/splat-scene/splat-scene-zip.ts",
+        "/src/splat-trainer/recording-reader.ts",
+        "/src/splat-trainer/window-plan.ts",
+        "/src/splat-trainer/gpu-trainer.ts",
+        "/src/splat-trainer/trainer-worker-spawn.ts",
+        "/src/splat-trainer/ply-crop.ts"
+      ],
       "ignoreDependencies": [
         "@carlosjeurissen/stylelint-csstree-validator",
         "dependency-cruiser",

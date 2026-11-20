@@ -24,7 +24,9 @@ both; the DOM ghost is invisible and takes pointers only at u = 1.
   - optional: `createCanvas()` (default a new DOM canvas), `upload(texture)`
     (e.g. `renderer.initTexture`, so the upload is not in the draw),
     `onPlace(event)` (each settled change: `{ at, surface, place, why }`),
-    `slotFree()` (default true; the page decides who holds the slot).
+    `slotFree()` (default true; the page decides who holds the slot),
+    `registry` (the page's `travel-registry.ts`: the box joins it when
+    made and leaves it on `stop()`).
 - `TravellingBox`:
   - `frame()`: one step; call once per animation frame, after the camera
     and the scene are placed and before the render;
@@ -40,10 +42,11 @@ both; the DOM ghost is invisible and takes pointers only at u = 1.
     pointer, the plate's and the drawn quad's corners relative to the
     view in polygon order TL TR BR BL, the dock rect, both texture ids,
     paints), `cost()` (`TravellingBoxCost`);
-  - `stop()`: ends a press, disposes the quad and the texture, unhangs
-    the plate, gives the plate back at full opacity, and gives the ghost
-    its pointers and its visibility back. Idempotent; every later call is
-    a no-op.
+  - `stop()`: ends a press, leaves the registry, disposes the quad and
+    the texture (and takes it off the plate's material), unhangs the
+    plate, gives the plate back at full opacity, and gives the ghost its
+    pointers and its visibility back. Idempotent; every later call is a
+    no-op, and `hit` answers null from then on.
 
 ## One frame, in order
 
@@ -57,14 +60,21 @@ both; the DOM ghost is invisible and takes pointers only at u = 1.
    screen.
 4. The dock: the ghost's resting rect (`restingRect()`), in NDC of the
    view.
-5. `wantPlace` with the surface's gates and hide reason, then
-   `settlePlace` with the finger and the time since its release.
-6. Appearing (from hidden, or at zero presence) snaps u to its target;
-   otherwise u steps toward 0 (plate) or 1 (dock) over `knobs.fly`, and
-   not at all while a finger is down.
+5. `wantPlace` with the surface's gates and hide reason, on the plate's
+   side of the hysteresis while the settled place is the plate (a flight
+   home included), then `settlePlace` with the finger and the time
+   since its release. A fold (the slot taken, the surface able to fold)
+   is treated as hidden here: the mark is not drawn yet.
+6. Appearing (at zero presence) snaps u to its target; words still
+   fading out fly from where they are. Otherwise u steps toward 0
+   (plate) or 1 (dock) over `knobs.fly`, and not at all while a finger
+   is down.
 7. The presence fades in or out over 0.3 s; reduced motion snaps both.
 8. The plate shows at u = 0, the quad at u > 0 (with a dock), both at the
-   presence's opacity; the ghost takes pointers at u = 1.
+   presence's opacity; the ghost takes pointers at u = 1. The ghost and
+   its pointers are set only while the surface travels: a surface shown
+   at the bottom keeps its own box, and gets it back (visible, taking
+   pointers) on the frame its travel ends.
 9. A paint (and an upload) only while something shows and the paint key
    changed.
 
@@ -86,8 +96,14 @@ the last seen, else the dock's flat corners, flown by `flightClip` at
   registry (`travel-registry.ts`) puts it on top.
 - The ghost's resting rect is read at layout (the surface's job), never
   per frame from `getBoundingClientRect`.
-- No allocation per frame in the measuring path (the matrices, vectors
-  and clip arrays are kept).
+- No allocation per frame in the measuring path: the matrices, vectors,
+  clip arrays and both quads' corners are kept and written in place
+  (`quadOfClipInto`); `state()` copies them for its reader. The rules'
+  small result objects (`plateMetrics`, `wantPlace`, `settlePlace`)
+  are the one per-frame garbage left.
+- A corner counts as on screen only beyond the camera's near plane where
+  that is further than the rules' margin (`TRAVEL_MIN_W`): WebXR clips at
+  0.1 m, taken from the camera.
 - Cost counters: frames, gaps over 33, 50 and 100 ms, the frame's work
   (average and max) and the paints (count, average, max).
 
@@ -104,8 +120,9 @@ const travel = createTravellingBox({
   viewRect: () => view,
   upload: (t) => renderer.initTexture(t),
 });
-registry.add(travel);
 ```
+
+With `registry` in the deps the box joins it itself.
 
 ## Tests
 
@@ -116,7 +133,11 @@ registry.add(travel);
   the quad, the ghost's pointers only at u = 1; repaints on a key change
   only and never while hidden; the two frame guards; the render camera,
   not the frame's; no press at the dock or off the words; reduced motion;
-  the place events and the cost counters; `stop`.
+  the place events and the cost counters; `stop` (the quad, the
+  texture off the plate, the registry left so a press reaches the live
+  plate behind); a surface that does not travel is never ghosted; the
+  hysteresis held during the flight home; words shown again mid-fade fly;
+  a plate inside the camera's near plane is not seen.
 - `playwright-tests/travelling-box-check.spec.js` drives it on the check
   page in a browser: the beats, the flight against independent endpoints,
   the gestures and the layout pins.

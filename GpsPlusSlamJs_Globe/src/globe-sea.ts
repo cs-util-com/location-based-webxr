@@ -10,6 +10,8 @@
 import { ATMOSPHERE_COMMON_GLSL } from "gps-plus-slam-app-framework/visualization/atmosphere/atmosphere-glsl";
 import * as THREE from "three";
 
+import { smoothstep } from "./globe-ease.js";
+
 export const GLOBE_SEA = Object.freeze({
   /** The wind for the slope statistics (m/s). */
   windMps: 5,
@@ -95,8 +97,7 @@ export function createGlobeSeaUniforms(): GlobeSeaUniforms {
 export function globeSeaShareAt(altitudeKm: number): number {
   if (!Number.isFinite(altitudeKm)) return 0;
   const [low, high] = GLOBE_SEA.fadeKm;
-  const t = Math.min(1, Math.max(0, (altitudeKm - low) / (high - low)));
-  return 1 - t * t * (3 - 2 * t);
+  return 1 - smoothstep((altitudeKm - low) / (high - low));
 }
 
 /** Cox and Munk's slope variances along and across the wind. */

@@ -937,6 +937,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
         dropTour: (reason: string) => void;
+        deleteSelection: (id: string) => void;
       };
     }
   ).__tourEditor = {
@@ -975,6 +976,11 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     // What a late integrity failure does to the open tour (`openFile`'s
     // `onIntegrityFailure`), at the moment an e2e chooses.
     dropTour,
+    // The page's own Delete (its "Deleted ..." toast with Undo), for an
+    // e2e with no view to select from.
+    deleteSelection: (id) => {
+      deleteSelection(id);
+    },
   };
 }
 

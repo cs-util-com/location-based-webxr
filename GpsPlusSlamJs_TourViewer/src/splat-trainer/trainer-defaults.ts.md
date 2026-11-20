@@ -45,12 +45,37 @@ it has run.
   Within `minIterations` 4000 and `maxIterations` 30000 (provisional).
 - Measured trainer choices outside this block, for the training step that
   reads it: camera pose optimisation off, blur gate off.
-- `targetMemoryBytes` 700 MiB and `bytesPerPixel` 12: the photo memory
-  target before the adapter's own limits (`training-budget.ts`).
+- `targetMemoryBytes` 700e6 bytes (decimal, not 700 MiB) and
+  `bytesPerPixel` 12: the photo memory target before the adapter's own
+  limits (`training-budget.ts`). Both are Splat.js's own numbers, read
+  from its pinned source (`src/io/frames.js`): it shrinks its photos so
+  that `frames * width * height * 12` (three float32 channels) stays under
+  `TARGET_BUDGET_BYTES = 700e6`, caps the long side at 1600 px and never
+  shrinks it under 320 px. Planning with the same budget makes "native
+  size" here mean native size there. Its real photo buffer is smaller (4
+  bytes a pixel, checked against `maxStorageBufferBindingSize`), so the
+  12 is the trainer's planning rule, not its allocation.
 - `minShortSidePx` 128 (64 / 128 / 256): the smallest photo side a window
   may be scaled to before it is refused as too large. Usable splats at
   64 px would lower it; unusable ones at 128 would raise it.
 - `etaMinIterations` 200: steps measured before a time estimate shows.
+
+The GPU trainer's values below are provisional: they are set from the
+synthetic scene's acceptance run and await field recordings.
+
+- `depthMaxDtMs` 200: a depth sample seeds a photo only when it was taken
+  within this time of the photo. Larger pulls readings from a moved
+  camera; smaller loses readings on a slow recorder.
+- `seedVoxelM` 0.05: depth seeds sharing a 5 cm cube merge into one.
+- `shellDistanceM` 40, `shellGridPx` 48, `shellEveryPhoto` 4,
+  `shellVoxelM` 1: a background shell of one point per 48 px square at
+  40 m, on every 4th training photo, merged per 1 m cube; it gives sky
+  and far facades a start. The shell crop keeps `keepFraction` of
+  `shellDistanceM` around the training cameras.
+- `deadlineS` 1200: the longest a first try may train (a retry gets
+  `timeScale` times it); the run then ends as `deadline`.
+- `goodHeldOutDb` 20, `weakHeldOutDb` 16: the judge's held-out sharpness
+  for good and weak; below weak is poor.
 
 ## Invariants & assumptions
 

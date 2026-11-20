@@ -5,6 +5,10 @@
  * dialogs for stopping, saving and a closer look. It renders from the
  * page's store (`trainer-page-store.ts`) and dispatches what the person
  * does; it holds no state of the run itself, only which dialog is open.
+ * Every slow step shows itself from its first frame: the read of a
+ * recording with a bar of how much is read, and each stretch with its own
+ * stage (loading the trainer, preparing the graphics card, training,
+ * checking), percent, time left and newest look.
  *
  * @see trainer-page.ts.md
  */
@@ -21,8 +25,9 @@ import {
 } from "gps-plus-slam-app-framework/storage/save-target";
 import type { UnknownAction } from "@reduxjs/toolkit";
 
-import { seededRandom } from "./practice-prints.js";
-import type { Verdict } from "./trainer-adapter.js";
+import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
+
+import type { TrainStage, Verdict } from "./trainer-adapter.js";
 import { packageFileName } from "./save-package.js";
 import {
   canTrainAgain,
@@ -45,6 +50,9 @@ const VERDICT_WORD: Readonly<Record<Verdict, string>> = {
   poor: "Not good enough",
 };
 
+/** The class every rule of `trainer-page.css` is scoped under. */
+const PAGE_CLASS = "splat-page";
+
 const LOCK =
   '<svg viewBox="0 0 16 16" aria-hidden="true" class="icon"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5 7V5a3 3 0 0 1 6 0v2"/></svg>';
 
@@ -57,7 +65,7 @@ const ART = {
 } as const;
 
 const PAGE_HTML = `
-<div class="app">
+<div class="app" data-ref="app">
   <header class="top">
     <div class="top-title">
       <h1>Make a splat</h1>
@@ -75,12 +83,13 @@ const PAGE_HTML = `
         <p class="prose">The zip file the recorder app saved on your phone. It is read here, on this computer, and never uploaded.</p>
         <button type="button" class="btn btn--accent" data-ref="chooseBtn">Choose recording</button>
         <input type="file" accept=".zip,application/zip" data-ref="fileInput" hidden />
+        <progress class="read-bar" data-ref="readBar" max="1" aria-label="Recording read" hidden></progress>
         <p class="hint hint--dim" data-ref="readLine" role="status" hidden></p>
       </div>
     </section>
     <section class="census" data-ref="census" hidden>
       <div class="warn-card" data-ref="gpuWarn" hidden>
-        <h2 class="warn-head">This computer is using its built-in graphics</h2>
+        <h2 class="warn-head">This computer seems to use its built-in graphics</h2>
         <p class="prose">Built-in graphics are much slower for this. If the computer also has a graphics card, Windows can give it to the browser:</p>
         <ol class="prose steps">
           <li>Open <strong>Settings</strong>, then System, Display, Graphics.</li>
@@ -91,11 +100,11 @@ const PAGE_HTML = `
           <button type="button" class="btn" data-ref="gpuRecheck">Check again</button>
           <button type="button" class="btn btn--quiet" data-ref="gpuAnyway">Use the built-in graphics anyway</button>
         </div>
+        <p class="hint hint--dim" data-ref="gpuRecheckLine" role="status"></p>
       </div>
       <article class="census-card">
         <div data-ref="censusLead"></div>
         <p class="census-local">${LOCK} The recording is read here, on this computer. Nothing is uploaded.</p>
-        <p class="census-note prose" data-ref="unavailable" hidden><strong>The splat maker is not ready yet.</strong> This page can already read a recording and show how it would be made, but it cannot make the splat itself yet.</p>
         <div class="census-actions">
           <button type="button" class="btn btn--accent" data-ref="startBtn">Make the splat</button>
           <button type="button" class="btn btn--quiet" data-ref="otherBtn">Choose another recording</button>
@@ -164,7 +173,7 @@ function refusalOf(s: TrainerPageState): Refusal | null {
     };
   }
   const reason = r.reason ?? "The file could not be read as a recording.";
-  const noDepth = /depth/i.test(reason);
+  const noDepth = r.code === "no-depth";
   return {
     art: "file",
     head: noDepth
@@ -184,7 +193,10 @@ function refusalOf(s: TrainerPageState): Refusal | null {
 
 const metres = (m: number): string => String(Math.round(m));
 
+/** "about 12 min" or "about 2 hours"; empty for a time that is not a
+ *  finite, non-negative number of seconds. */
 export function minutesText(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
   const min = Math.max(1, Math.round(seconds / 60));
   return min >= 90 ? `about ${Math.round(min / 60)} hours` : `about ${min} min`;
 }
@@ -253,6 +265,44 @@ function actionsFor(w: WindowState): PrintAction[] {
   return canTrainAgain(w) ? [again] : [];
 }
 
+/** What a print says over its picture while its stretch trains. */
+const STAGE_WORDS: Readonly<Record<TrainStage, string>> = {
+  loading: "Loading the trainer",
+  preparing: "Preparing the graphics card",
+  training: "Training",
+  checking: "Checking the result",
+};
+
+/** The live line of a training print: its stage, with the percent while
+ *  it trains. */
+function liveText(w: WindowState): string {
+  const stage = w.stage ?? "training";
+  return stage === "training"
+    ? `Training ${Math.floor(w.progress * 100)} %`
+    : STAGE_WORDS[stage];
+}
+
+/** The second live line while it trains: time left and the next look,
+ *  each when known; empty in every other stage. */
+function liveNextText(w: WindowState): string {
+  if ((w.stage ?? "training") !== "training") return "";
+  const parts: string[] = [];
+  const left = w.secondsLeft === null ? "" : minutesText(w.secondsLeft);
+  if (left !== "") parts.push(`${left} left`);
+  if (w.nextPreviewInS !== null)
+    parts.push(`new look in ${Math.ceil(w.nextPreviewInS)} s`);
+  return parts.join(", ");
+}
+
+/** "Reading the recording on this computer", with the percent once the
+ *  reader knows its total. */
+function readText(s: TrainerPageState): string {
+  const r = s.read;
+  if (r === null || !(r.total > 0))
+    return "Reading the recording on this computer...";
+  return `Reading the recording on this computer: ${Math.floor((r.done / r.total) * 100)} %`;
+}
+
 /** Bar sentences for a phase; null hides the bar. */
 export function barText(s: TrainerPageState): [string, string] | null {
   const total = s.windows.length;
@@ -263,10 +313,14 @@ export function barText(s: TrainerPageState): [string, string] | null {
         ? "Training paused while you decide"
         : `Training stretch ${stretchNo(cur)}${cur.attempt > 1 ? " again" : ""} of ${total}`;
     const left = secondsLeftInRun(s);
+    const leftText = left === null ? "" : minutesText(left);
+    const stage = cur?.stage ?? "training";
     const est =
-      left === null
-        ? "Measuring how fast this computer is..."
-        : `${minutesText(left)} left.`;
+      stage !== "training"
+        ? `${STAGE_WORDS[stage]}...`
+        : leftText === ""
+          ? "Measuring how fast this computer is..."
+          : `${leftText} left.`;
     return [
       line,
       `${est} You can leave it running, or stop: finished stretches are kept.`,
@@ -275,11 +329,16 @@ export function barText(s: TrainerPageState): [string, string] | null {
   if (s.phase === "stopped") {
     const done = finishedWindows(s).length;
     const next = s.windows.find((w) => w.id === s.queue[0]);
-    return [
-      `Stopped. ${done} of ${total} stretches are finished and kept while this page stays open.`,
+    const cont =
       next === undefined
         ? ""
-        : `Continue starts at stretch ${stretchNo(next)}.`,
+        : `Continue starts at stretch ${stretchNo(next)}.`;
+    const saved = s.save.savedCount ?? 0;
+    return [
+      `Stopped. ${done} of ${total} stretches ${done === 1 ? "is" : "are"} finished and kept while this page stays open.`,
+      s.save.status === "saved"
+        ? `Saved: ${saved} ${saved === 1 ? "stretch is" : "stretches are"} in the file.${cont === "" ? "" : ` ${cont}`}`
+        : cont,
     ];
   }
   if (s.phase !== "done") return null;
@@ -367,7 +426,7 @@ function walkPath(a: number, b: number): string {
 }
 
 function ringPath(seed: number): string {
-  const r = seededRandom(seed * 31 + 3);
+  const r = mulberry32(seed * 31 + 3);
   const j = (): string => ((r() - 0.5) * 6).toFixed(2);
   const p = (x: number, y: number): string =>
     `${x + Number(j())} ${y + Number(j())}`;
@@ -411,6 +470,7 @@ export function mountSplatTrainerPage(
 ): MountedTrainerPage {
   const { store, sides } = controller;
   const doc = root.ownerDocument;
+  root.classList.add(PAGE_CLASS);
   root.innerHTML = PAGE_HTML;
   const ref = <T extends HTMLElement = HTMLElement>(name: string): T => {
     const el = root.querySelector<T>(`[data-ref="${name}"]`);
@@ -424,13 +484,14 @@ export function mountSplatTrainerPage(
     drop: ref("drop"),
     chooseBtn: ref<HTMLButtonElement>("chooseBtn"),
     fileInput: ref<HTMLInputElement>("fileInput"),
+    readBar: ref<HTMLProgressElement>("readBar"),
     readLine: ref("readLine"),
     census: ref("census"),
     gpuWarn: ref("gpuWarn"),
     gpuRecheck: ref<HTMLButtonElement>("gpuRecheck"),
+    gpuRecheckLine: ref("gpuRecheckLine"),
     gpuAnyway: ref<HTMLButtonElement>("gpuAnyway"),
     censusLead: ref("censusLead"),
-    unavailable: ref("unavailable"),
     startBtn: ref<HTMLButtonElement>("startBtn"),
     otherBtn: ref<HTMLButtonElement>("otherBtn"),
     banner: ref("banner"),
@@ -452,7 +513,11 @@ export function mountSplatTrainerPage(
     modal: ref("modal"),
   };
 
+  const app = ref("app");
   let modal: Modal | null = null;
+  /** Where the focus was before the open dialog; it goes back there. */
+  let returnFocus: HTMLElement | null = null;
+  let restoreFocus = false;
   let modalBuiltFor: string | null = null;
   let sheetBuiltFor: string | null = null;
   let refusalBuiltFor: string | null = null;
@@ -482,7 +547,7 @@ export function mountSplatTrainerPage(
   };
   const paper = (): string =>
     doc.defaultView
-      ?.getComputedStyle(doc.documentElement)
+      ?.getComputedStyle(root)
       .getPropertyValue("--print-paper")
       .trim() || "#2c3142";
 
@@ -586,7 +651,11 @@ export function mountSplatTrainerPage(
         <span class="print-reasons"></span>
         <span class="print-progress"><span></span></span>
         <span class="print-live"><span><span class="print-live-dot"></span><span class="live-pct"></span></span><span class="live-next"></span></span>
-        <span class="print-empty">Waiting</span>
+        <span class="print-empty">Waiting</span>${
+          s.trainer === "practice"
+            ? '<span class="print-practice">Practice: a drawing, not a splat</span>'
+            : ""
+        }
         <span class="print-stamp"><span></span></span>
       </button>
       <div class="print-cap">
@@ -620,6 +689,7 @@ export function mountSplatTrainerPage(
       w.status === "done" ? (w.judgement?.verdict ?? null) : null,
     );
     setData(el, "decision", w.decision);
+    setData(el, "stage", w.status === "training" ? (w.stage ?? null) : null);
     const mark = el.querySelector<HTMLElement>(".print-mark");
     if (mark !== null) {
       setText(
@@ -644,17 +714,9 @@ export function mountSplatTrainerPage(
     if (fill !== null)
       fill.style.width = `${(w.status === "training" ? w.progress * 100 : 0).toFixed(1)}%`;
     const pct = el.querySelector<HTMLElement>(".live-pct");
-    if (pct !== null)
-      setText(pct, `Training ${Math.floor(w.progress * 100)} %`);
+    if (pct !== null) setText(pct, liveText(w));
     const next = el.querySelector<HTMLElement>(".live-next");
-    if (next !== null) {
-      setText(
-        next,
-        w.nextPreviewInS === null
-          ? ""
-          : `new look in ${Math.ceil(w.nextPreviewInS)} s`,
-      );
-    }
+    if (next !== null) setText(next, liveNextText(w));
     const picture = sides.previews.get(w.id) ?? null;
     if (drawn.get(w.id) !== picture) {
       drawn.set(w.id, picture);
@@ -717,20 +779,93 @@ export function mountSplatTrainerPage(
 
   /* ----- dialogs ----- */
 
+  /** Not hidden by any ancestor: a place the focus can stay. */
+  const shown = (el: Element): boolean =>
+    root.contains(el) && el.closest("[hidden]") === null;
+
+  /** The current phase's main action, where the focus goes when the
+   *  element that had it is gone: the first visible, enabled one. */
+  function focusPhaseAction(): void {
+    const candidates: (HTMLElement | null)[] = [
+      els.stopBtn,
+      els.continueBtn,
+      els.saveBtn,
+      els.showBtn,
+      els.startBtn,
+      els.chooseBtn,
+      els.refusalActions.querySelector<HTMLElement>("button"),
+    ];
+    const target = candidates.find(
+      (el): el is HTMLElement =>
+        el !== null &&
+        shown(el) &&
+        !(el instanceof HTMLButtonElement && el.disabled),
+    );
+    if (target !== undefined) {
+      target.focus({ preventScroll: true });
+      return;
+    }
+    const head = root.querySelector<HTMLElement>("h1");
+    if (head !== null) {
+      head.tabIndex = -1;
+      head.focus({ preventScroll: true });
+    }
+  }
+
+  /** True while a save is being written: its dialog cannot be closed. */
+  const saveLocked = (): boolean =>
+    modal?.kind === "save" && store.getState().save.status === "saving";
+
   function openModal(next: Modal): void {
+    if (modal === null) {
+      const active = doc.activeElement;
+      returnFocus = active instanceof HTMLElement ? active : null;
+      app.setAttribute("inert", "");
+    }
     modal = next;
     modalBuiltFor = null;
     render();
   }
 
-  function closeModal(): void {
-    if (modal?.kind === "stop") store.dispatch(A.stopDismissed());
+  /** Takes the dialog down without rendering; the next render gives the
+   *  focus back to where it was before the dialog opened. */
+  function hideModal(): void {
     modal = null;
     modalBuiltFor = null;
     els.veil.hidden = true;
     els.modal.textContent = "";
     delete els.modal.dataset.wide;
+    app.removeAttribute("inert");
+    restoreFocus = true;
+  }
+
+  function closeModal(): void {
+    if (saveLocked()) return;
+    if (modal?.kind === "stop") store.dispatch(A.stopDismissed());
+    hideModal();
     render();
+  }
+
+  /** After a dialog closed, or when the focused element was hidden by a
+   *  phase change: never leave the focus on the body or on a hidden
+   *  button. */
+  function settleFocus(): void {
+    if (modal !== null) return;
+    if (restoreFocus) {
+      restoreFocus = false;
+      const back = returnFocus;
+      returnFocus = null;
+      if (back !== null && shown(back)) back.focus({ preventScroll: true });
+      else focusPhaseAction();
+      return;
+    }
+    const active = doc.activeElement;
+    if (
+      active instanceof HTMLElement &&
+      root.contains(active) &&
+      !shown(active)
+    )
+      focusPhaseAction();
   }
 
   function focusFirst(): void {
@@ -743,9 +878,7 @@ export function mountSplatTrainerPage(
   function renderStopModal(s: TrainerPageState): void {
     if (s.stopDialog === null) {
       // The dialog's stretch is gone (the run ended): nothing left to stop.
-      modal = null;
-      els.veil.hidden = true;
-      els.modal.textContent = "";
+      hideModal();
       return;
     }
     if (modalBuiltFor !== "stop") {
@@ -792,16 +925,20 @@ export function mountSplatTrainerPage(
     if (practice !== null) practice.hidden = s.trainer !== "practice";
     const err = els.modal.querySelector<HTMLElement>(".save-error");
     const btn = els.modal.querySelector<HTMLButtonElement>('[data-act="save"]');
+    const cancel =
+      els.modal.querySelector<HTMLButtonElement>('[data-act="close"]');
     if (err === null || btn === null) return;
     const failed = s.save.status === "failed";
     err.hidden = !failed;
+    const left = s.save.left === null ? "" : ` ${s.save.left}`;
     setText(
       err,
       failed
-        ? "Saving did not work: the disk may be full, or the folder cannot be written to. Nothing was lost. Try again, or pick another folder."
+        ? `Saving did not work: the disk may be full, or the folder cannot be written to.${left} Try again, or pick another folder.`
         : "",
     );
     const saving = s.save.status === "saving";
+    if (cancel !== null) cancel.disabled = saving;
     btn.disabled = saving;
     setData(btn, "busy", saving ? "true" : null);
     setText(btn, saving ? "Saving..." : failed ? "Try again" : "Save to disk");
@@ -951,19 +1088,34 @@ export function mountSplatTrainerPage(
     els.chooseBtn.disabled = reading;
     setData(els.chooseBtn, "busy", reading ? "true" : null);
     els.readLine.hidden = !reading;
-    setText(
-      els.readLine,
-      reading ? "Reading the recording on this computer..." : "",
-    );
+    setText(els.readLine, reading ? readText(s) : "");
+    els.readBar.hidden = !reading;
+    const read = s.read;
+    const readValue =
+      reading && read !== null && read.total > 0 ? read.done / read.total : 0;
+    // Always with a value: a progress without one is indeterminate.
+    const valueText = String(readValue);
+    if (els.readBar.getAttribute("value") !== valueText)
+      els.readBar.setAttribute("value", valueText);
 
     if (phase === "census") {
       const lead = censusLeadHtml(s);
       if (els.censusLead.innerHTML !== lead) els.censusLead.innerHTML = lead;
       const warn = integrated && !s.gpu.accepted;
-      els.gpuWarn.hidden = !warn || s.trainer !== "practice";
-      els.unavailable.hidden = s.trainer === "practice";
-      els.startBtn.hidden = s.trainer !== "practice";
+      els.gpuWarn.hidden = !warn;
       els.startBtn.disabled = warn || s.gpu.status === "probing";
+      const checking = s.gpu.recheck === "checking";
+      els.gpuRecheck.disabled = checking;
+      setData(els.gpuRecheck, "busy", checking ? "true" : null);
+      if (checking) els.gpuRecheck.setAttribute("aria-busy", "true");
+      else els.gpuRecheck.removeAttribute("aria-busy");
+      setText(els.gpuRecheck, checking ? "Checking..." : "Check again");
+      setText(
+        els.gpuRecheckLine,
+        s.gpu.recheck === "unchanged" && integrated
+          ? "Still the built-in graphics."
+          : "",
+      );
     }
 
     if (phase === "refused") renderRefusal(s);
@@ -1023,6 +1175,7 @@ export function mountSplatTrainerPage(
       if (s.save.status === "saved") closeModal();
       else renderSaveModal(s);
     } else if (modal?.kind === "loupe") renderLoupe(s, modal.id);
+    settleFocus();
   }
 
   /* ----- wiring ----- */
@@ -1054,6 +1207,8 @@ export function mountSplatTrainerPage(
   });
   on(els.continueBtn, "click", () => store.dispatch(A.continued()));
   on(els.saveBtn, "click", () => {
+    // A running save is never reset; its dialog is already open.
+    if (store.getState().save.status === "saving") return;
     store.dispatch(A.saveCancelled());
     openModal({ kind: "save" });
   });
@@ -1120,10 +1275,7 @@ export function mountSplatTrainerPage(
     if (act === "close") closeModal();
     else if (act === "stop") {
       const id = s.stopDialog;
-      modal = null;
-      modalBuiltFor = null;
-      els.veil.hidden = true;
-      els.modal.textContent = "";
+      hideModal();
       if (id !== null) store.dispatch(A.stopConfirmed({ id }));
       render();
     } else if (act === "save") {
@@ -1158,6 +1310,7 @@ export function mountSplatTrainerPage(
       for (const off of disposers) off();
       for (const t of flashTimers) env.win.clearTimeout(t);
       root.textContent = "";
+      root.classList.remove(PAGE_CLASS);
     },
   };
 }

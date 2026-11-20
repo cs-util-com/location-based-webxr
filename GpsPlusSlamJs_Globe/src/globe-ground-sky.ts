@@ -61,6 +61,11 @@ import {
   quantisedObserverKm,
   sunStepped,
 } from "./globe-sky-hand-over.js";
+import {
+  fitTarget,
+  fullScreenPass,
+  halfFloatTarget,
+} from "./globe-full-screen.js";
 
 const COMPOSITE_VERTEX = /* glsl */ `
 varying vec2 vUv;
@@ -182,10 +187,7 @@ export function createGlobeGroundSky(
 ): GlobeGroundSky {
   const scene = new THREE.Scene();
   const atmosphere = createSky(scene, renderer);
-  const target = new THREE.WebGLRenderTarget(1, 1, {
-    type: THREE.HalfFloatType,
-    depthBuffer: false,
-  });
+  const target = halfFloatTarget();
   const uniforms = {
     tSky: { value: target.texture },
     uWeight: { value: 0 },
@@ -198,16 +200,7 @@ export function createGlobeGroundSky(
     depthWrite: false,
     transparent: true,
   });
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3),
-  );
-  const triangle = new THREE.Mesh(geometry, material);
-  triangle.frustumCulled = false;
-  const compositeScene = new THREE.Scene();
-  compositeScene.add(triangle);
-  const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const composite = fullScreenPass(material);
   const size = new THREE.Vector2();
   let lastSun: [number, number, number] | null = null;
   let compensationEv = 0;
@@ -322,9 +315,7 @@ export function createGlobeGroundSky(
     render(camera) {
       if (atmosphere === null || weight <= 0) return;
       renderer.getDrawingBufferSize(size);
-      if (target.width !== size.x || target.height !== size.y) {
-        target.setSize(size.x, size.y);
-      }
+      fitTarget(target, size.x, size.y);
       const previous = renderer.getRenderTarget();
       // The cloud volume's slab, when there is one, draws after the Earth
       // (globe-cloud-volume-pass.ts), never with the sky behind it.
@@ -337,7 +328,7 @@ export function createGlobeGroundSky(
       renderer.setRenderTarget(previous);
       if (slab) slab.visible = slabShown;
       uniforms.uWeight.value = weight;
-      renderer.render(compositeScene, quadCamera);
+      composite.render(renderer);
     },
     state() {
       return {
@@ -355,7 +346,7 @@ export function createGlobeGroundSky(
       atmosphere?.dispose();
       target.dispose();
       material.dispose();
-      geometry.dispose();
+      composite.dispose();
     },
   };
 }

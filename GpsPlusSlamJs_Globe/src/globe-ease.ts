@@ -12,3 +12,13 @@ export function smoothstep(t: number): number {
   const x = Math.min(Math.max(t, 0), 1);
   return x * x * (3 - 2 * x);
 }
+
+/**
+ * A progress fraction held in [0, 1], with NaN read as 0 (where a plain
+ * clamp would pass NaN through): a clock or flight that is told nothing has not
+ * started.
+ */
+export function clampProgress(p: number): number {
+  if (!(p > 0)) return 0;
+  return p >= 1 ? 1 : p;
+}

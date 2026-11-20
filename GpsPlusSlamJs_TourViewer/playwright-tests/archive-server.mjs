@@ -87,6 +87,12 @@ import {
   ZipWriter,
 } from "@zip.js/zip.js";
 
+import {
+  parseTourMarkdown,
+  plainTextOf,
+  textHashOf,
+} from "gps-plus-slam-app-framework/ar/tour-markdown";
+
 import { e2eQrLevelEntryName } from "./qr-fixture.mjs";
 import {
   capturedPhoto,
@@ -203,6 +209,43 @@ async function buildZip({ withLevel = true, needsNoGps = false } = {}) {
   return writer.close();
 }
 
+/** How long the narrated fixture's voice lasts (ms): long enough that a
+ *  spec sees it play and pause before it ends. */
+const NARRATED_MS = 4000;
+
+/** `ms` of silence as a WAV file (8 kHz, mono, 16 bit): a voice the
+ *  browser really plays, so the page's playing state is the audio's. */
+function silentWav(ms) {
+  const data = Math.round((8000 * ms) / 1000) * 2;
+  const b = Buffer.alloc(44 + data);
+  b.write("RIFF", 0);
+  b.writeUInt32LE(36 + data, 4);
+  b.write("WAVE", 8);
+  b.write("fmt ", 12);
+  b.writeUInt32LE(16, 16);
+  b.writeUInt16LE(1, 20);
+  b.writeUInt16LE(1, 22);
+  b.writeUInt32LE(8000, 24);
+  b.writeUInt32LE(16000, 28);
+  b.writeUInt16LE(2, 32);
+  b.writeUInt16LE(16, 34);
+  b.write("data", 36);
+  b.writeUInt32LE(data, 40);
+  return new Uint8Array(b);
+}
+
+/** A read-along of `body` that fits it: one sentence-long segment over
+ *  its whole plain text, hashed as the viewer hashes it. */
+async function sentenceTiming(body) {
+  const plain = plainTextOf(parseTourMarkdown(body)).text;
+  return {
+    granularity: "sentence",
+    source: "file",
+    segments: [{ startMs: 0, endMs: NARRATED_MS, from: 0, to: plain.length }],
+    textHash: await textHashOf(plain),
+  };
+}
+
 /** The smallest valid binary glTF: one JSON chunk, an empty scene, no
  *  buffers, images or extensions - inert by K0's check. */
 function minimalGlb() {
@@ -243,6 +286,9 @@ const DEG_PER_M_LON = 1.32966e-5;
  * so nothing but walking gives the guide a heading.
  * `worldBlocks: true`: the gate also stands a captured photo, a picture
  * of the knight image and a placed arch in the world.
+ * `narrated: true` (with `longText`): the long text is narrated, with a
+ * voice that plays (four seconds of silence) and a read-along that fits,
+ * and a narration circle stands at the gate with the same voice.
  */
 async function buildStationsZip({
   withCode = true,
@@ -252,6 +298,7 @@ async function buildStationsZip({
   twoStories = false,
   storyCount = 0,
   longText = null,
+  narrated = false,
   title = "E2E castle",
 } = {}) {
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
@@ -286,6 +333,17 @@ async function buildStationsZip({
     new Uint8ArrayReader(new Uint8Array([0xff, 0xfb, 0x90, 0x00])),
   );
   await writer.add("content/arch.glb", new Uint8ArrayReader(minimalGlb()));
+  const longTextBody = "The gate was built in 1400.\n\nIt was rebuilt later.";
+  if (narrated && longText !== null) {
+    await writer.add(
+      "content/voice-wav.wav",
+      new Uint8ArrayReader(silentWav(NARRATED_MS)),
+    );
+    await writer.add(
+      `timing/${longText.id}.json`,
+      new TextReader(JSON.stringify(await sentenceTiming(longTextBody))),
+    );
+  }
   if (worldBlocks) {
     await writer.add(
       "content/gate-photo.png",
@@ -422,6 +480,9 @@ async function buildStationsZip({
             ? [imageAsset("gate-photo", "content/gate-photo.png", 1, 1)]
             : []),
           ...(storyBlocks ? [{ id: "clip", path: "content/clip.webm" }] : []),
+          ...(narrated
+            ? [{ id: "voice-wav", path: "content/voice-wav.wav" }]
+            : []),
         ],
         stations: [
           {
@@ -517,10 +578,35 @@ async function buildStationsZip({
                       kind: "longText",
                       view: "reading",
                       title: longText.title,
-                      body: "The gate was built in 1400.\n\nIt was rebuilt later.",
+                      body: longTextBody,
+                      ...(narrated
+                        ? {
+                            narration: {
+                              audio: "voice-wav",
+                              timing: `timing/${longText.id}.json`,
+                              synthetic: false,
+                              durationMs: NARRATED_MS,
+                            },
+                          }
+                        : {}),
                       pose: { position: [-2, 1.5, 1], rotation: [0, 0, 0, 1] },
                     },
                   ]),
+              // A narration circle around the gate (`narrated`).
+              ...(narrated
+                ? [
+                    {
+                      id: "gate-circle",
+                      kind: "audio",
+                      view: "spot",
+                      audio: "voice-wav",
+                      title: "The gate's voice",
+                      transcript: "The gate was built in 1400.",
+                      radiusM: 6,
+                      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                    },
+                  ]
+                : []),
             ],
           },
           {
@@ -981,8 +1067,13 @@ const storyBlocksZipBytes = await buildStationsZip({ storyBlocks: true });
 const storylessZipBytes = await buildStationsZip({ storyless: true });
 const twoStoriesZipBytes = await buildStationsZip({ twoStories: true });
 /** Two tours, each with a long text at its gate (the visitor's view
- *  preference holds across tours). */
+ *  preference holds across tours), and one whose gate's long text is
+ *  narrated beside a narration circle. */
 const longTextZips = {
+  "/ranges-ok/narrated-tour.zip": await buildStationsZip({
+    longText: { id: "gate-essay", title: "The gate's story" },
+    narrated: true,
+  }),
   "/ranges-ok/long-text-tour.zip": await buildStationsZip({
     longText: { id: "gate-essay", title: "The gate's story" },
   }),
