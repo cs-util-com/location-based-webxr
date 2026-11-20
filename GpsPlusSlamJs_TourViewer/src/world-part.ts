@@ -30,6 +30,7 @@ import {
   SRGBColorSpace,
   Vector3,
   type Camera,
+  type Material,
   type Object3D,
 } from "three";
 
@@ -297,6 +298,16 @@ export function worldEnv(
     ...(mode === "play" && say !== undefined ? { say } : {}),
     ...(reduceMotion === undefined ? {} : { reduceMotion }),
   };
+}
+
+/** Sets the opacity of a mesh's material, or of each of its materials. */
+export function setOpacity(
+  material: Material | readonly Material[],
+  opacity: number,
+): void {
+  if (Array.isArray(material)) {
+    for (const m of material as readonly Material[]) m.opacity = opacity;
+  } else (material as Material).opacity = opacity;
 }
 
 const mounted = new Set<WorldPart>();

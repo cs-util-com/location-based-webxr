@@ -187,9 +187,10 @@ function midSpan(
  * CSS px whose type is `fontPx` with `lineHeightPx` lines, so one em is
  * the plate's drawn height x fontPx / boxCssH (and its width likewise);
  * `wantPlace` picks which of them the threshold reads.
- * A corner behind the eye, any non-finite number, or a view, box, font or
- * line size that is not a positive finite number gives invalid metrics
- * with every size 0.
+ * A corner at or under `minW` (the eye's margin, or the camera's near
+ * plane where that is further), any non-finite number, or a view, box,
+ * font or line size that is not a positive finite number gives invalid
+ * metrics with every size 0.
  */
 export function plateMetrics(
   cornersClip: ArrayLike<number>,
@@ -200,6 +201,7 @@ export function plateMetrics(
   boxCssH: number,
   fontPx: number,
   lineHeightPx: number,
+  minW: number = TRAVEL_MIN_W,
 ): PlateMetrics {
   if (cornersClip.length < 16 || centreClip.length < 4) return INVALID;
   for (const size of [viewW, viewH, boxCssW, boxCssH, fontPx, lineHeightPx]) {
@@ -210,10 +212,10 @@ export function plateMetrics(
   }
   for (let i = 0; i < 4; i++) {
     if (!Number.isFinite(centreClip[i])) return INVALID;
-    if (cornersClip[i * 4 + 3]! <= TRAVEL_MIN_W) return INVALID;
+    if (cornersClip[i * 4 + 3]! <= minW) return INVALID;
   }
   const cw = centreClip[3]!;
-  if (cw <= TRAVEL_MIN_W) return INVALID;
+  if (cw <= minW) return INVALID;
   const ndcX = centreClip[0]! / cw;
   const ndcY = centreClip[1]! / cw;
   const letterPxH =
@@ -420,23 +422,50 @@ export function signGrowth(d: number, from = 4.5, max = 1.6): number {
   return Math.min(max, Math.max(1, d / from));
 }
 
+/** Plane order (TL TR BL BR) to polygon order (TL TR BR BL). */
+const POLYGON = [0, 1, 3, 2] as const;
+
 /** A quad's corners on screen (px), in polygon order: top-left, top-right,
  *  bottom-right, bottom-left, from clip corners in plane order; null when
- *  a corner's w is at or under the eye's margin (or not finite), which has
- *  no place on the screen. */
+ *  a corner's w is at or under `minW` (the eye's margin by default) or
+ *  not finite, which has no place on the screen. */
 export function quadOfClip(
   clip: ArrayLike<number>,
   viewW: number,
   viewH: number,
+  minW: number = TRAVEL_MIN_W,
 ): [number, number][] | null {
+  const out: [number, number][] = [
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [0, 0],
+  ];
+  return quadOfClipInto(clip, viewW, viewH, out, minW) ? out : null;
+}
+
+/** `quadOfClip` written into `out` (four pairs), allocating nothing: the
+ *  controller's per-frame form. False (and `out` untouched) where
+ *  `quadOfClip` gives null. */
+export function quadOfClipInto(
+  clip: ArrayLike<number>,
+  viewW: number,
+  viewH: number,
+  out: readonly [number, number][],
+  minW: number = TRAVEL_MIN_W,
+): boolean {
   for (let i = 0; i < 4; i++) {
     const w = clip[i * 4 + 3];
-    if (w === undefined || !(Number.isFinite(w) && w > TRAVEL_MIN_W))
-      return null;
+    if (w === undefined || !(Number.isFinite(w) && w > minW)) return false;
   }
-  return [0, 1, 3, 2].map((i) =>
-    screenOf(clip[i * 4]!, clip[i * 4 + 1]!, clip[i * 4 + 3]!, viewW, viewH),
-  );
+  for (let k = 0; k < 4; k++) {
+    const i = POLYGON[k]!;
+    const w = clip[i * 4 + 3]!;
+    const p = out[k]!;
+    p[0] = ((clip[i * 4]! / w + 1) / 2) * viewW;
+    p[1] = ((1 - clip[i * 4 + 1]! / w) / 2) * viewH;
+  }
+  return true;
 }
 
 /** Whether (x, y) lies inside a convex quad given in polygon order (its

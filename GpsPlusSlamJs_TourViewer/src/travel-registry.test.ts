@@ -15,6 +15,7 @@ function fake(name: string, hit: TravelHit | null, log: string[]) {
     ownsTap(): boolean {
       return this.owns;
     },
+    pressing: () => false,
   };
 }
 
@@ -68,6 +69,23 @@ describe("createTravelRegistry", () => {
     expect(reg.size()).toBe(1);
   });
 
+  // Why: the page cancels the XR select while a finger is on the words,
+  // so a drag over the world never also taps it.
+  it("is pressing while any box is", () => {
+    const reg = createTravelRegistry();
+    const a = {
+      ...fake("a", null, []),
+      down: false,
+      pressing(): boolean {
+        return this.down;
+      },
+    };
+    reg.add(a);
+    expect(reg.pressing()).toBe(false);
+    a.down = true;
+    expect(reg.pressing()).toBe(true);
+  });
+
   it("owns a tap while any box does", () => {
     const reg = createTravelRegistry();
     const a = fake("a", null, []);
@@ -77,5 +95,16 @@ describe("createTravelRegistry", () => {
     expect(reg.ownsTap()).toBe(false);
     b.owns = true;
     expect(reg.ownsTap()).toBe(true);
+  });
+
+  // Why: quads are drawn in the order they were added, so on a tie the
+  // later one is the one on top and the one the finger sees.
+  it("gives a tie between quads to the later one, as drawn", () => {
+    const log: string[] = [];
+    const reg = createTravelRegistry();
+    reg.add(fake("first", { quad: true, depth: 0, linePx: 5 }, log));
+    reg.add(fake("later", { quad: true, depth: 0, linePx: 5 }, log));
+    reg.pointerDown(E, TARGET);
+    expect(log).toEqual(["down later"]);
   });
 });

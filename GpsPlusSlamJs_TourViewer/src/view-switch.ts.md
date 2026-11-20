@@ -19,8 +19,10 @@ and offers "Use the creator's choice again" while a choice is stored.
   The FIRST block in a set describes the switch. `verdictOf(block)`
   gives a text's read-along verdict: the captions row is offered while a
   timing holds and greyed "needs a timing" otherwise, and the reading
-  row's line becomes "The whole text in a sheet, the voice highlighted"
-  for a text whose timing holds.
+  row's line becomes "The words on the sign while it can be read, else
+  at the bottom" for a text whose timing holds (the reading row decides
+  where a narrated text's words go, `captions-follow.ts`), and the
+  captions row's line is "The words always at the bottom".
 - `switchBlocks({ stations, presentId, contentPlaced })` - pure: the
   present station's free blocks once its content is set, else none (no
   station, an unknown id, content not set yet). `main.ts` passes
