@@ -321,6 +321,12 @@ export interface TourNarration {
   /** The voice's length (ms), when the creator's tool knew it: a track
    *  timed beyond it is stale. */
   readonly durationMs?: number;
+  /** Where the words show while the voice plays: `"sign"`, on a plate
+   *  under the reading sign that docks to the screen's foot when it is too
+   *  small to read; absent, in the on-screen box. The writer writes
+   *  `"sign"` or nothing; the reader leaves any other value out alone, at
+   *  every minor, so a later place never costs an older reader the voice. */
+  readonly words?: 'sign';
 }
 
 export interface TourLongTextBlock extends TourBlockEnvelope<
@@ -925,8 +931,27 @@ function narrationOf(v: TourBlockFields, ctx: TourBlockReadContext) {
     }),
     synthetic: value.synthetic === true,
     ...(durationMs === undefined ? {} : { durationMs }),
+    ...narrationWordsOf(value, ctx),
   };
   return { narration };
+}
+
+/** A narration's `words`: `"sign"` is kept; any other value is left out
+ *  alone and reported, at every minor (the over-long credit's rule). */
+function narrationWordsOf(
+  value: TourBlockFields,
+  ctx: TourBlockReadContext
+): { words?: 'sign' } {
+  const { words } = value;
+  if (words === undefined) return {};
+  if (words === 'sign') return { words };
+  ctx.onDropped?.({
+    kind: 'field',
+    block: ctx.id,
+    field: 'words',
+    reason: `"${ctx.at}.narration.words" must be "sign"`,
+  });
+  return {};
 }
 
 /** An asset a block names: its id, what it must be, and whether the format

@@ -111,6 +111,13 @@ rotation [x, y, z, w], hfovDeg 10-120, distanceM 1-500 }` in the
   view switch gives the picture a viewpoint). A broken viewpoint fails a
   file of this reader's own minor; a newer minor's drops just the
   viewpoint, reported, keeping the picture.
+- A long text's narration may say where its words show, `words: "sign"`
+  (on a plate under the reading sign; absent: the on-screen box). Any other
+  value is left out alone and reported through `onDropped` at every minor,
+  as an over-long credit is, so a later value never costs an older reader
+  the voice; the writer, which turns every drop into a failure, refuses it.
+  The field needs no minor of its own: an older reader drops it and plays
+  the voice. `tour-narration.test.ts` holds this.
 
 ## Examples
 
