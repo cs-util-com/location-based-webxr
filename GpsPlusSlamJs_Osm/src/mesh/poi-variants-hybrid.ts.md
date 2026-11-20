@@ -69,7 +69,7 @@ const mesh = scaledToHeight(
 
 ## Tests
 
-- `poi-models.test.ts` — the registry contract every adopted model meets, run
+- `poi-models.test.ts` - the registry contract every adopted model meets, run
   by iterating `POI_MODELS` (base at `y = 0`, finite positions and normals,
   outward winding, height matching the shipped model, plausible size, low
   polygon count, per-face painting aligned).
