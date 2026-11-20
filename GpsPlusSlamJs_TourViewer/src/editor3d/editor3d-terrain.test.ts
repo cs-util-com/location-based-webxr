@@ -175,7 +175,9 @@ describe("createEditorTerrain", () => {
   });
 
   // Why: the map must be on the relief from the start, enabled, under the
-  // editor's gate.
+  // editor's gate. `osm.limits` is the overlay's `osmGateLimits` of the
+  // editor's own limits, so its equality pins that the gate takes them
+  // unchanged (every key set, nothing filled from the flight's).
   it("attaches the map at once, enabled, under the editor's gate", () => {
     const ground = make();
     const plugins = (ground.terrain.tiles as unknown as { plugins: unknown[] })

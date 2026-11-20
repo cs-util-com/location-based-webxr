@@ -1,6 +1,7 @@
 /**
- * Why this file matters: every full-screen pass of the Globe draws through
- * this triangle. A wrong corner leaves a strip of the screen undrawn, a
+ * Why this file matters: the atmosphere's space pass and the ground sky's
+ * composite draw through this triangle (the cloud passes still build their
+ * own copy). A wrong corner leaves a strip of the screen undrawn, a
  * culled mesh draws nothing at all, and a target resized every frame
  * reallocates GPU memory sixty times a second.
  */
