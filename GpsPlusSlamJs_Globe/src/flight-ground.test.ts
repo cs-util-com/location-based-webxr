@@ -18,7 +18,7 @@ import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
-import { surfaceRadiusAlong } from "./globe-dive.js";
+import { surfaceRadiusAlong } from "./oblique-camera.js";
 import { flightAt, flightCamera, liftedEllipsoid } from "./flight-path.js";
 import { flightCameraAt } from "./flight-replan.js";
 import {

@@ -38,7 +38,7 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 
 import type { OrbitPose } from "./globe-camera.js";
 import { smoothstep } from "./globe-ease.js";
-import { surfaceRadiusAlong } from "./globe-dive.js";
+import { surfaceRadiusAlong } from "./oblique-camera.js";
 import { liftedEllipsoid, type FlightStart } from "./flight-path.js";
 import {
   flightCameraAt,

@@ -57,7 +57,8 @@ import {
   readGlobeClockSetting,
   sameGlobeClockSetting,
 } from "/globe/globe-clock.js";
-import { GLOBE_DIVE, obliqueCamera } from "/globe/globe-dive.js";
+import { GLOBE_DIVE } from "/globe/globe-dive.js";
+import { obliqueCamera } from "/globe/oblique-camera.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
 import { METEOR_PACE, pinFailed } from "/globe/pin-flight.js";
 import {

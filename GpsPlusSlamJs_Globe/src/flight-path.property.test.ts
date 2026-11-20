@@ -27,7 +27,7 @@ import type * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
-import { obliqueCamera } from "./globe-dive.js";
+import { obliqueCamera } from "./oblique-camera.js";
 import {
   FLIGHT_PATH,
   flightAt,

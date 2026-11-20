@@ -41,7 +41,7 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 
 import type { OrbitPose } from "./globe-camera.js";
 import { smoothstep } from "./globe-ease.js";
-import { obliqueCamera, surfaceRadiusAlong } from "./globe-dive.js";
+import { obliqueCamera, surfaceRadiusAlong } from "./oblique-camera.js";
 import { planTravel, travelLawDeg, type TravelCurve } from "./flight-travel.js";
 
 export const FLIGHT_PATH = Object.freeze({

@@ -26,11 +26,8 @@
       it by the same curve;
     - RangeError for a duration or an altitude that is not a positive number,
       or a `turnShare` outside (0, 1].
-  - `surfaceRadiusAlong(ellipsoid, direction)` - the distance from the
-    centre to the surface along a direction (the geocentric ray's surface
-    point, the one `orbitPose` centres).
-  - `orbitQuaternion(pose, target)` - the rotation of a camera on an orbit
-    pose looking at the centre (what `applyOrbitPose` sets).
+  - The camera geometry it uses (`surfaceRadiusAlong`, `orbitQuaternion`,
+    `obliqueCamera`) lives in `oblique-camera.ts`.
   - `planDive(ellipsoid, start, target, { durationMs, toAltitudeM,
 pitchLowDeg? })` ->
     `Dive`: `start` is `{ pose, distanceM, quaternion }` (the camera as it
@@ -46,12 +43,6 @@ done }`: since round-5 F1 the OBLIQUE approach (plan §3.5): the pose
     eased in from 90 over the first fifth so a start below 5,000 km begins
     exactly where the camera is; times the start's offset slerped from
     itself to identity over the same fifth (`1 - smoothstep(t / 0.2)`).
-  - `obliqueCamera(ellipsoid, pose, altitudeM, pitchDeg)` (exported for the
-    frame-hitch recorder's paths, which place the camera as the dive does) -> `{ position,
-quaternion }`: the camera at the ground point's surface radius plus the
-    altitude from the centre, moved back along the meridian (south) by the
-    angle the triangle centre-camera-ground gives for the depression, and
-    looking at the ground point with the pose's north as the screen's up.
 - Invariants & assumptions: the altitude is the height above the surface
   along the camera's own geocentric ray (not the geodetic normal; the
   difference is a fraction of a metre at these heights).
@@ -76,9 +67,7 @@ quaternion }`: the camera at the ground point's surface radius plus the
   altitudes and durations; the altitude monotone and within its ends, the
   turn forward only; the geometric mean at half way; the turn done at its
   share and eased; no jump (under 0.5 % of the altitude per millisecond on
-  a 10,000 km to 20 km dive); the refusals; `surfaceRadiusAlong` on the
-  equator, at a pole and anywhere (the point lies on the ellipsoid within a
-  millimetre); a camera 1 km over the north pole diving to the equator
+  a 10,000 km to 20 km dive); the refusals; a camera 1 km over the north pole diving to the equator
   starts exactly where it is and stays at least 1 km above the surface
   (fails with the target's radius, a checked mutant); an untilted start
   looks at the centre throughout; a tilted start begins at its own
