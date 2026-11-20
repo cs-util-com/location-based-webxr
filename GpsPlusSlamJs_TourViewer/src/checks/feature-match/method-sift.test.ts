@@ -60,6 +60,17 @@ describe("siftApi / siftFeatures", () => {
     ).toThrow(/too short/);
   });
 
+  // Why this test matters: sift.js caps detections, then adds one keypoint
+  // per extra dominant orientation, so it can return more than the cap
+  // past the cap; the budget must hold for a fair count.
+  it("keeps at most the given number of keypoints", () => {
+    const f = siftFeatures(fakeResult(), 1);
+    expect(f.count).toBe(1);
+    expect(f.descriptorBytes).toBe(128);
+    expect(Array.from(f.x)).toEqual([3]);
+    expect((f.payload as Uint8Array).length).toBe(128);
+  });
+
   it("turns a result into features with 128 bytes per keypoint", () => {
     const f = siftFeatures(fakeResult());
     expect(f.count).toBe(2);

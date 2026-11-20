@@ -9,7 +9,8 @@
 /** One downloaded file or group of files. */
 export interface DownloadRecord {
   readonly label: string;
-  /** Bytes over the wire (compressed, with headers), or the body size of a
+  /** From `fetchBytes`: the decoded body length. From resource timing:
+   *  bytes over the wire (compressed, with headers), or the body size of a
    *  cached file; null when the browser hides it. */
   readonly bytes: number | null;
   readonly ms: number;

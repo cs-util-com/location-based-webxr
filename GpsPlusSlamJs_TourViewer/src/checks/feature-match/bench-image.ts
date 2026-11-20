@@ -168,3 +168,85 @@ export function toGray(frame: Frame): Float32Array {
   }
   return g;
 }
+
+/** Brightness and contrast of a frame: Rec. 601 luma in 0..255. */
+export interface GreyStats {
+  readonly mean: number;
+  /** Population standard deviation. */
+  readonly sd: number;
+}
+
+/**
+ * The mean and standard deviation of a frame's grey values (0..255), so a
+ * dark or flat frame shows in the log next to its keypoint counts.
+ */
+export function greyStats(frame: Frame): GreyStats {
+  const g = toGray(frame);
+  let sum = 0;
+  for (const v of g) {
+    sum += v;
+  }
+  const mean = sum / g.length;
+  let sq = 0;
+  for (const v of g) {
+    sq += (v - mean) * (v - mean);
+  }
+  return { mean: mean * 255, sd: Math.sqrt(sq / g.length) * 255 };
+}
+
+/** e.g. "grey mean 107.3 sd 46.0 (0-255)". */
+export function describeGrey(s: GreyStats): string {
+  return `grey mean ${s.mean.toFixed(1)} sd ${s.sd.toFixed(1)} (0-255)`;
+}
+
+/**
+ * The frame turned a quarter turn clockwise: a W x H frame becomes H x W,
+ * its bottom-left pixel the new top-left. `fromQuarterTurn` maps a point
+ * back.
+ */
+export function turnQuarter(frame: Frame): Frame {
+  const { width: w, height: h, rgba: s } = frame;
+  const out = new Uint8ClampedArray(w * h * 4);
+  // Turned pixel (xr, yr) is source pixel (yr, h - 1 - xr); width is h.
+  for (let yr = 0; yr < w; yr++) {
+    for (let xr = 0; xr < h; xr++) {
+      const src = ((h - 1 - xr) * w + yr) * 4;
+      const dst = (yr * h + xr) * 4;
+      out[dst] = s[src]!;
+      out[dst + 1] = s[src + 1]!;
+      out[dst + 2] = s[src + 2]!;
+      out[dst + 3] = s[src + 3]!;
+    }
+  }
+  return { width: h, height: w, rgba: out };
+}
+
+/**
+ * A point of a frame turned by `turnQuarter` mapped back to the frame as
+ * it was (pixel centres at integers); `frameHeight` is the height before
+ * the turn.
+ */
+export function fromQuarterTurn(
+  xr: number,
+  yr: number,
+  frameHeight: number,
+): { x: number; y: number } {
+  return { x: yr, y: frameHeight - 1 - xr };
+}
+
+/**
+ * Whether a frame should be turned a quarter before it is fitted into a
+ * fixed box: only when one is portrait and the other landscape (a square
+ * frame or box never turns).
+ */
+export function quarterTurnFits(
+  width: number,
+  height: number,
+  boxWidth: number,
+  boxHeight: number,
+): boolean {
+  if (width === height || boxWidth === boxHeight) {
+    return false;
+  }
+  return width > height !== boxWidth > boxHeight;
+}

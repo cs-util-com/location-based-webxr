@@ -101,6 +101,43 @@ describe("runBenchmark", () => {
     expect(runner.disposed).toBe(true);
   });
 
+  // Why this test matters: the page draws each method and size as soon as
+  // it is done and saves its keypoints and matches; the sample must be the
+  // features of one timed round in the pixels of that size, and arrive
+  // through the hook before the whole run ends.
+  it("hands each finished size to the hook with one round's keypoints and matches", async () => {
+    const h = hooks();
+    const seen: string[] = [];
+    let call = 0;
+    const runner = fakeRunner(h.clock, {
+      extract: () => {
+        const isB = call++ % 2 === 1;
+        return Promise.resolve({
+          count: 2,
+          descriptorBytes: 0,
+          x: new Float32Array(isB ? [5, 6] : [1, 2]),
+          y: new Float32Array(isB ? [7, 8] : [3, 4]),
+          payload: null,
+        });
+      },
+      match: () => Promise.resolve(new Int32Array([1, 0])),
+    });
+    const [res] = await runBenchmark(
+      [method("m", () => Promise.resolve(runner))],
+      { a: frame(64, 48), b: frame(64, 48), warp: null },
+      { sizes: [32, 16], runs: 2 },
+      {
+        ...h,
+        onSize: (m, s) => seen.push(`${m.label} ${String(s.longEdge)}`),
+      },
+    );
+    expect(seen).toEqual(["m 32", "m 16"]);
+    const sample = res!.sizes[0]!.sample!;
+    expect(Array.from(sample.a.x)).toEqual([1, 2]);
+    expect(Array.from(sample.b.y)).toEqual([7, 8]);
+    expect(Array.from(sample.pairs)).toEqual([1, 0]);
+  });
+
   it("keeps a method that fails to load as an error and runs the next", async () => {
     const h = hooks();
     const ok = fakeRunner(h.clock);
@@ -136,7 +173,27 @@ describe("runBenchmark", () => {
       "RangeError: Array buffer allocation failed",
     ]);
     expect(res!.sizes[0]!.extract.median).toBeNaN();
+    expect(res!.sizes[0]!.sample).toBeNull();
     expect(runner.disposed).toBe(true);
+  });
+
+  // Why this test matters: a size the frame cannot be resized to must be
+  // one failed row, not an exception that ends the whole run.
+  it("keeps a size that cannot be computed as an error", async () => {
+    const h = hooks();
+    const method: BenchMethod = {
+      id: "m",
+      label: "M",
+      init: () => Promise.resolve(fakeRunner(h.clock)),
+    };
+    const [r] = await runBenchmark(
+      [method],
+      { a: frame(40, 30), b: frame(40, 30), warp: null },
+      { sizes: [0, 20], runs: 1 },
+      h,
+    );
+    expect(r!.sizes[0]!.error).toMatch(/RangeError/);
+    expect(r!.sizes[1]!.error).toBeNull();
   });
 
   it("counts correct matches against the known warp of a synthetic pair", async () => {

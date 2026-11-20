@@ -180,7 +180,11 @@ async function matchWith(
     ),
   });
   const m = out[pickName(matcher.outputNames, "matches0", 0)]!;
-  return pairsFromMatches(m.data as ArrayLike<number | bigint>, b.count);
+  return pairsFromMatches(
+    m.data as ArrayLike<number | bigint>,
+    a.count,
+    b.count,
+  );
 }
 
 /** ALIKED + LightGlue on one backend. */
