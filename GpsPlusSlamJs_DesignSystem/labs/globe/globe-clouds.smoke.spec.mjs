@@ -8,7 +8,7 @@
  * colour, so the relief's shading lit the cloud. With the shell the ground
  * keeps its own colour, the clouds float above it, and a soft shadow is the
  * only trace they leave on the ground. Measured at the hold over the relief,
- * all from one landed dive (the clouds' look switches apply live):
+ * all from one parked view (the clouds' look switches apply live):
  * - the ground under a hidden shell equals the cloud-free ground (no paint
  *   left), while the painted ground does not (the positive control);
  * - the shadow only ever darkens, and does darken somewhere;
@@ -22,10 +22,9 @@ import { expect, test } from "@playwright/test";
 
 import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
-// The hold is at 150 km, where these checks were written, not at the dive's
-// default 2 km (r790 city plan K4). "The shadow darkens somewhere" needs a
+// The hold is at 150 km, where these checks were written, not at the
+// landing's default 2 km (r790 city plan K4). "The shadow darkens somewhere" needs a
 // footprint wider than the clouds' texels: from 2 km the view spans a few
 // km, the shadow reads one patch of cloud about 4 km toward the sun and is
 // uniform and faint there (measured at the landing: at most 2.7 levels, 0
@@ -33,7 +32,9 @@ const TARGET = { latitude: 46.5, longitude: 9.0 };
 // 10.7 levels off the cloud-free ground (2 and 50 km: 0), not attributed
 // yet: filed in the r790 validation findings.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=150";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&relief=1&reliefHeights=synthetic&detail=0";
+/** The hold's altitude, km. */
+const HOLD_KM = 150;
 
 /** A 12 x 8 grid over the frame below the horizon at the hold. */
 function holdGrid() {
@@ -92,11 +93,8 @@ const CURVES = [
 for (const { name, query, shadowFloor } of CURVES)
   test(`the ground keeps its colour under the shell, the shadow only darkens, and the orbit look holds (${name} curve)`, async ({
     page,
-    context,
   }) => {
     test.setTimeout(900_000);
-    await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-    await context.setGeolocation(TARGET);
     const errors = await bootGlobe(page, BASE, { query });
     // From orbit first: the shell against the paint, the same frame.
     await page.waitForFunction(
@@ -120,7 +118,10 @@ for (const { name, query, shadowFloor } of CURVES)
       return rounds;
     });
     // Then the hold over the relief.
-    await page.locator("#globe-pin").click();
+    await page.evaluate(
+      ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+      [TARGET.latitude, TARGET.longitude, HOLD_KM * 1000],
+    );
     await page.waitForFunction(
       () => {
         const s = window.__globeLab.state();
