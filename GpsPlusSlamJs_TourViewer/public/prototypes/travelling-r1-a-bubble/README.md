@@ -100,8 +100,8 @@ upright phone (about 42 degrees across), 10.9 px sideways (50 degrees top to bot
 - **In flight the surface can pass over his face** for a moment, when he stands in the middle of the
   view (the straight path from the dock to the bubble crosses him). At rest the bubble never covers
   a face: the readout's face check and the "frames with a face covered" count say so.
-- **Sideways with the choices open**, the docked box is about two thirds of the screen's height and
-  covers a figure standing in the middle of the view. A corner dock would avoid it, but the dock is
+- **Sideways with the choices open**, the docked box takes more than half of the screen's height (56 %
+  with 48 px buttons, 65 % with 56 px) and covers a figure standing in the middle of the view. A corner dock would avoid it, but the dock is
   bottom centre by decision.
 - **With both figures in view**, the baker's bubble can hide part of the ferry keeper's name tag.
   Laying labels out around each other is not part of this prototype.
