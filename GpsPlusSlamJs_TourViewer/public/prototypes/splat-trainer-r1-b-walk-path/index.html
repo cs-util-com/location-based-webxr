@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Splat trainer B: the walk as a path - prototype</title>
+    <link rel="stylesheet" href="./walk-path.css" />
+  </head>
+  <body>
+    <!-- Prototype controls: not part of the page being designed. -->
+    <div class="proto-bar" role="region" aria-label="Prototype controls">
+      <b>Prototype B - the walk as a path</b>
+      <label
+        >State
+        <select id="proto-state">
+          <option value="start">Start (no file yet)</option>
+          <option value="census">Census (file read)</option>
+          <option value="training">Training</option>
+          <option value="not-good-enough">A "not good enough" stretch</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="resumed">Resumed</option>
+          <option value="done">Done</option>
+          <option value="refusal-phone">Refusal: phone</option>
+          <option value="refusal-no-webgpu">Refusal: no WebGPU</option>
+          <option value="refusal-integrated-gpu">
+            Warning: integrated graphics
+          </option>
+          <option value="refusal-broken">Refusal: old or broken file</option>
+          <option value="refusal-no-depth">Refusal: no depth data</option>
+        </select>
+      </label>
+      <label
+        >Speed
+        <select id="proto-speed">
+          <option value="1">1x (real time)</option>
+          <option value="10">10x</option>
+          <option value="60" selected>60x</option>
+          <option value="240">240x</option>
+        </select>
+      </label>
+      <button type="button" id="proto-play" aria-pressed="false">Pause</button>
+      <label
+        >Theme
+        <select id="proto-theme">
+          <option value="auto">Auto</option>
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="app" id="app">
+      <header class="head" id="head"></header>
+      <main class="main" id="main">
+        <section class="map" id="map" aria-label="The recorded walk">
+          <svg
+            id="walk"
+            viewBox="0 0 1000 640"
+            preserveAspectRatio="xMidYMid meet"
+            role="group"
+            aria-label="Drawing of the walk, cut into stretches"
+          ></svg>
+          <div class="map-overlay" id="map-overlay"></div>
+          <div class="legend" id="legend" aria-label="What the colours mean">
+            <span><i class="sw sw-waiting"></i>Waiting</span>
+            <span><i class="sw sw-training"></i>Training</span>
+            <span><i class="sw sw-good"></i>Good</span>
+            <span><i class="sw sw-weak"></i>Weak</span>
+            <span><i class="sw sw-bad"></i>Not good enough</span>
+            <span><i class="sw sw-discarded"></i>Left out</span>
+          </div>
+          <div class="map-hint" id="map-hint"></div>
+        </section>
+        <aside class="panel" id="panel" aria-live="polite"></aside>
+      </main>
+    </div>
+
+    <div class="phone-card" id="phone-card" hidden>
+      <svg viewBox="0 0 120 90" aria-hidden="true" class="phone-art">
+        <rect x="10" y="8" width="100" height="62" rx="6" />
+        <rect x="50" y="70" width="20" height="10" />
+        <rect x="34" y="80" width="52" height="5" rx="2" />
+      </svg>
+      <h1>Use a desktop computer</h1>
+      <p>
+        Making a splat trains on the graphics card of a desktop or laptop
+        computer for 30 to 60 minutes. A phone cannot do this.
+      </p>
+      <ol>
+        <li>Move your recording zip to the computer.</li>
+        <li>Open this page there, in Chrome or Edge.</li>
+      </ol>
+      <button type="button" class="btn btn-primary" id="copy-link">
+        Copy the link to this page
+      </button>
+      <p class="fine">Your recording stays on this phone until you move it.</p>
+    </div>
+
+    <dialog id="dlg-cancel" class="dlg">
+      <form method="dialog">
+        <h2>Stop training?</h2>
+        <p id="dlg-cancel-text"></p>
+        <div class="row-end">
+          <button value="keep" class="btn">Keep training</button>
+          <button value="stop" class="btn btn-danger">Stop</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="dlg-save" class="dlg">
+      <form method="dialog">
+        <h2>Save the splat package</h2>
+        <ul id="dlg-save-list" class="save-list"></ul>
+        <p class="place-note">
+          <strong>This file shows where it was recorded.</strong> It holds the
+          place on the map and the 3D view of it. Anyone you give the file to
+          can see that place.
+        </p>
+        <div class="row-end">
+          <button value="cancel" class="btn">Not now</button>
+          <button value="save" class="btn btn-primary">
+            Save to this computer
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <script type="module" src="./walk-path.js"></script>
+  </body>
+</html>

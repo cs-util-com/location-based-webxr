@@ -1,0 +1,231 @@
+<!doctype html>
+<!-- Prototype: splat trainer, round 1, variant C - darkroom. Throwaway; fully simulated, not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Splat trainer C - Darkroom</title>
+    <link rel="stylesheet" href="darkroom.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="top">
+        <div class="top-title">
+          <h1>Make a splat</h1>
+          <span class="chip" id="fileChip" hidden></span>
+          <span class="chip" id="gpuChip" hidden></span>
+        </div>
+        <p class="top-local">
+          <svg viewBox="0 0 16 16" aria-hidden="true" class="icon">
+            <rect x="3" y="7" width="10" height="7" rx="1.5" />
+            <path d="M5 7V5a3 3 0 0 1 6 0v2" />
+          </svg>
+          Everything happens on this computer. Nothing is uploaded.
+        </p>
+      </header>
+
+      <main class="main" id="main">
+        <!-- Start: an empty contact sheet that is also the drop area. -->
+        <section class="drop" id="drop" hidden>
+          <div class="drop-sheet" aria-hidden="true">
+            <span></span><span></span><span></span><span></span> <span></span
+            ><span></span><span></span><span></span>
+          </div>
+          <div class="drop-card">
+            <h2 class="drop-head">Drop a recording here</h2>
+            <p class="prose">
+              The zip file the recorder app saved on your phone. It is read
+              here, on this computer, and never uploaded.
+            </p>
+            <button type="button" class="btn btn--accent" id="chooseBtn">
+              Choose recording
+            </button>
+            <p class="hint hint--dim" id="readLine" hidden></p>
+          </div>
+        </section>
+
+        <!-- Census: a few plain sentences, then the start. -->
+        <section class="census" id="census" hidden>
+          <div class="warn-card" id="gpuWarn" hidden>
+            <h2 class="warn-head">
+              This computer is using its built-in graphics
+            </h2>
+            <p class="prose">
+              Built-in graphics are slow for this: about
+              <strong>5 hours</strong> instead of about 45 minutes. If the
+              computer also has a graphics card, Windows can give it to the
+              browser:
+            </p>
+            <ol class="prose steps">
+              <li>
+                Open <strong>Settings</strong>, then System, Display, Graphics.
+              </li>
+              <li>
+                Pick your browser in the list and choose
+                <strong>High performance</strong>.
+              </li>
+              <li>Close the browser completely and open this page again.</li>
+            </ol>
+            <div class="row">
+              <button type="button" class="btn" id="gpuRecheck">
+                Check again
+              </button>
+              <button type="button" class="btn btn--quiet" id="gpuAnyway">
+                Use the built-in graphics anyway
+              </button>
+            </div>
+          </div>
+          <article class="census-card">
+            <p class="census-lead">
+              This walk has <strong>412 photos</strong> over
+              <strong>236 m</strong>, about one every <strong>0.6 m</strong>.
+              Depth is there. <strong>23 blurry photos</strong> will be left
+              out, and you passed <strong>2 places</strong> twice.
+            </p>
+            <p class="census-lead">
+              It is made in <strong>8 stretches</strong> of about 30 m, one
+              after the other. On this computer that takes about
+              <strong id="censusTime">45 minutes</strong>. You can leave it
+              running, or stop and continue later: finished stretches are kept.
+            </p>
+            <p class="census-local">
+              <svg viewBox="0 0 16 16" aria-hidden="true" class="icon">
+                <rect x="3" y="7" width="10" height="7" rx="1.5" />
+                <path d="M5 7V5a3 3 0 0 1 6 0v2" />
+              </svg>
+              The recording is read here, on this computer. Nothing is uploaded.
+            </p>
+            <div class="census-actions">
+              <button type="button" class="btn btn--accent" id="startBtn">
+                Make the splat
+              </button>
+              <button type="button" class="btn btn--quiet" id="otherBtn">
+                Choose another recording
+              </button>
+            </div>
+          </article>
+        </section>
+
+        <!-- Banner line above the sheet (resumed, re-training). -->
+        <p class="banner" id="banner" role="status" hidden></p>
+
+        <!-- The contact sheet: one print per stretch. -->
+        <section
+          class="sheet"
+          id="sheet"
+          aria-label="Stretches of the walk"
+          hidden
+        ></section>
+
+        <!-- Refusals replace the page content. -->
+        <section class="refusal" id="refusal" hidden>
+          <div class="refusal-card">
+            <div class="refusal-art" id="refusalArt" aria-hidden="true"></div>
+            <h2 class="refusal-head" id="refusalHead"></h2>
+            <div class="refusal-body" id="refusalBody"></div>
+            <div class="refusal-actions" id="refusalActions"></div>
+          </div>
+        </section>
+      </main>
+
+      <!-- The quiet bottom bar: walk strip, one sentence, the actions. -->
+      <footer class="bar" id="bar" hidden>
+        <div class="bar-strip" id="strip" aria-hidden="true"></div>
+        <div class="bar-text">
+          <p class="bar-line" id="barLine" role="status" aria-live="polite"></p>
+          <p class="bar-sub hint hint--dim" id="barSub"></p>
+        </div>
+        <div class="bar-actions">
+          <button
+            type="button"
+            class="btn btn--quiet"
+            id="showBtn"
+            hidden
+          ></button>
+          <button type="button" class="btn btn--quiet" id="cancelBtn" hidden>
+            Stop
+          </button>
+          <button type="button" class="btn" id="resumeBtn" hidden>
+            Continue
+          </button>
+          <button type="button" class="btn" id="saveBtn" hidden>Save</button>
+        </div>
+      </footer>
+    </div>
+
+    <!-- Modal layer (stop, save, loupe). -->
+    <div class="veil" id="veil" hidden>
+      <div
+        class="modal"
+        id="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modalHead"
+      ></div>
+    </div>
+
+    <!-- Prototype controls: not part of the page being designed. -->
+    <aside class="proto" id="proto">
+      <button
+        type="button"
+        class="proto-toggle"
+        id="protoToggle"
+        aria-expanded="false"
+      >
+        Prototype
+      </button>
+      <div class="proto-panel" id="protoPanel" hidden>
+        <p class="proto-note">
+          Simulation only. Nothing here reads a file or uses the graphics card.
+        </p>
+        <label
+          >Jump to
+          <select id="protoState">
+            <option value="start">Start (no recording yet)</option>
+            <option value="census">Census before the start</option>
+            <option value="census-gpu">
+              Census with built-in graphics warning
+            </option>
+            <option value="training">Training, stretch 3 of 8</option>
+            <option value="poor">A stretch came out not good enough</option>
+            <option value="cancelled">Stopped by the user</option>
+            <option value="resumed">Continued after a stop</option>
+            <option value="done">Done</option>
+            <option value="saved">Done and saved</option>
+            <option value="no-webgpu">Refusal: no WebGPU</option>
+            <option value="phone">Refusal: a phone</option>
+            <option value="old">Refusal: old or broken recording</option>
+            <option value="no-depth">Refusal: no depth</option>
+          </select></label
+        >
+        <label
+          >Speed
+          <select id="protoSpeed">
+            <option value="1">1x (real time)</option>
+            <option value="10">10x</option>
+            <option value="60" selected>60x</option>
+            <option value="240">240x</option>
+          </select></label
+        >
+        <label
+          >Theme
+          <select id="protoTheme">
+            <option value="">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select></label
+        >
+        <label class="proto-check"
+          ><input type="checkbox" id="protoPause" /> Pause the clock</label
+        >
+        <label class="proto-check"
+          ><input type="checkbox" id="protoFail" /> Saving fails</label
+        >
+      </div>
+    </aside>
+
+    <script type="module" src="darkroom.js"></script>
+  </body>
+</html>

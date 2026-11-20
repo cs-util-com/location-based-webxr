@@ -192,4 +192,79 @@ describe('a narrated long text', () => {
     );
     expect(longText(kept)?.narration?.voiceCredit).toHaveLength(200);
   });
+
+  it('keeps words "sign" through a write and a read; absent stays absent', () => {
+    // Why: "sign" says the words travel with the sign (the reading sign's
+    // words plate) instead of the on-screen box. It must survive the
+    // round trip, and a narration without it must not gain it, since
+    // absence is what keeps today's tours in the box.
+    const signed = parseTourManifest(
+      tour([text({ narration: { ...NARRATION, words: 'sign' } })])
+    );
+    expect(longText(signed)?.narration).toEqual({
+      ...NARRATION,
+      words: 'sign',
+    });
+    const written = JSON.parse(serializeTourManifest(signed)) as unknown;
+    expect(parseTourManifest(written)).toEqual(signed);
+    expect(written).toMatchObject({ minor: 0 });
+    const plain = parseTourManifest(tour([text()]));
+    expect(longText(plain)?.narration).not.toHaveProperty('words');
+  });
+
+  it.each([
+    ['its own minor', 0],
+    ['a newer minor', TOUR_MANIFEST_MINOR + 1],
+  ])(
+    'leaves out an unknown words value alone at %s and keeps the voice',
+    (_label, minor) => {
+      // Why: a later format may name another place for the words; an
+      // older reader must still play the voice, so the field alone goes,
+      // at every minor, and the drop is reported, never silent.
+      const drops: unknown[] = [];
+      const read = parseTourManifest(
+        tour(
+          [text({ narration: { audio: 'voice', words: 'wall' } })],
+          [],
+          minor
+        ),
+        { onDropped: (d) => drops.push(d) }
+      );
+      expect(longText(read)?.narration).toEqual({
+        audio: 'voice',
+        synthetic: false,
+      });
+      expect(drops).toEqual([
+        expect.objectContaining({
+          kind: 'field',
+          block: 'text',
+          field: 'words',
+        }),
+      ]);
+    }
+  );
+
+  it('the writer refuses an unknown words value', () => {
+    // Why: "sign" or nothing is all this writer may write; a page handing
+    // it anything else is a bug to find when the tour is saved.
+    const read = parseTourManifest(tour([text()]));
+    const block = longText(read)!;
+    const bad = {
+      ...read,
+      stations: [
+        {
+          ...read.stations[0]!,
+          children: [
+            {
+              ...block,
+              narration: { ...block.narration!, words: 'wall' as 'sign' },
+            },
+          ],
+        },
+      ],
+    };
+    expect(() => serializeTourManifest(bad)).toThrow(
+      TourManifestValidationError
+    );
+  });
 });

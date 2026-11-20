@@ -767,3 +767,222 @@ describe("createNarrationBox", () => {
     expect(clock.on).toBe(true);
   });
 });
+
+// Why: in travel mode the box is no longer what the visitor sees. It is
+// the invisible layout the painted plate copies, so its width must not
+// depend on the text (the plate keeps its shape from sign to sign), its
+// head row must hold the hint without moving a line, and an invisible
+// (ghost) box must keep its layout and still take the gestures. The plate
+// forwards a finger with its own line height, so a drag on a small plate
+// moves the voice by the lines the visitor sees there.
+describe("createNarrationBox in travel mode", () => {
+  it("takes a fixed width of 17 em, not the text's", () => {
+    const { box, content } = make();
+    box.show(content, "travel");
+    const col = box.element.querySelector<HTMLElement>(".nb-col");
+    const mid = box.element.querySelector<HTMLElement>(".nb-mid");
+    // min(17 x 16, 0.8 x 1024, 720) = 272, less 38 of chrome.
+    expect(col?.style.width).toBe("234px");
+    expect(mid?.style.width).toBe("246px");
+    box.show(content, "natural");
+    expect(col?.style.width).not.toBe("234px");
+  });
+
+  it("has a head row with the hint only in travel mode", () => {
+    const { box, clock, content } = make();
+    box.show(content);
+    const head = box.element.querySelector<HTMLElement>(".nb-head");
+    expect(head?.hidden).toBe(true);
+    expect(box.state().hint).toBe("");
+    box.show(content, "travel");
+    expect(head?.hidden).toBe(false);
+    expect(head?.textContent).toBe("tap the words to listen");
+    clock.on = true;
+    box.tick();
+    expect(head?.textContent).toBe("");
+    clock.now = 5 * WORD_MS;
+    clock.on = false;
+    box.tick();
+    expect(box.state().hint).toBe("paused - tap to play");
+    clock.now = clock.dur;
+    box.tick();
+    expect(head?.textContent).toBe("the end - tap to hear it again");
+  });
+
+  it("changes the hint without laying the words out again", () => {
+    const { box, clock, content } = make();
+    box.show(content, "travel");
+    const before = box.paintModel();
+    clock.on = true;
+    box.tick();
+    const after = box.paintModel();
+    expect(after?.frame.hint).toBe("");
+    expect(before?.frame.hint).toBe("tap the words to listen");
+    expect(after?.layout).toBe(before?.layout);
+  });
+
+  it("gives the painter the words where the box put them", () => {
+    const { box, clock, content } = make();
+    expect(box.paintModel()).toBeNull();
+    box.show(content);
+    expect(box.paintModel()).toBeNull();
+    box.show(content, "travel");
+    clock.now = 5 * WORD_MS + 1;
+    box.tick();
+    const model = box.paintModel();
+    const runs = model?.layout.runs ?? [];
+    expect(runs.filter((r) => r.kind === "who").map((r) => r.text)).toEqual([
+      "Narrator",
+    ]);
+    expect(runs.filter((r) => r.kind === "disc").map((r) => r.text)).toEqual([
+      "·",
+      "synthetic",
+      "voice",
+    ]);
+    const words = runs.filter((r) => r.kind === "word");
+    expect(words).toHaveLength(16);
+    expect(words.map((r) => r.line)).toEqual(
+      words.map((_, i) => Math.floor(i / 4)),
+    );
+    expect(words.map((r) => r.word)).toEqual(words.map((_, i) => i));
+    expect(model?.layout.lines).toBe(4);
+    expect(model?.layout.rows).toBe(3);
+    expect(model?.layout.startsMs).toHaveLength(16);
+    expect(model?.layout.whoColor).toBe("#f9a8d4");
+    expect(model?.frame).toMatchObject({ lit: 5, scrubbing: false });
+    expect(model?.frame.voiceMs).toBe(5 * WORD_MS + 1);
+    box.hide();
+    expect(box.paintModel()).toBeNull();
+  });
+
+  it("keeps its layout and its gestures as an invisible ghost", () => {
+    const { box, clock, content } = make();
+    box.show(content, "travel");
+    const before = box.paintModel()?.layout;
+    box.setGhost(true);
+    expect(box.element.classList.contains("nb-ghost")).toBe(true);
+    expect(box.paintModel()?.layout).toBe(before);
+    box.element.dispatchEvent(pointer("pointerdown", 100, 700));
+    box.element.dispatchEvent(pointer("pointerup", 100, 700));
+    expect(clock.on).toBe(true);
+    box.setGhost(false);
+    expect(box.element.classList.contains("nb-ghost")).toBe(false);
+    box.setPointer(false);
+    expect(box.element.classList.contains("nb-nopointer")).toBe(true);
+    box.setPointer(true);
+    expect(box.element.classList.contains("nb-nopointer")).toBe(false);
+  });
+
+  it("scrubs a forwarded press by the line height it is given", () => {
+    const { box, clock, content } = make();
+    box.show(content, "travel");
+    expect(box.beginPress({ id: 7, x: 100, y: 700, linePx: 44 })).toBe(true);
+    expect(box.state().pressing).toBe(true);
+    // A second finger is not a second press.
+    expect(box.beginPress({ id: 8, x: 0, y: 0, linePx: 44 })).toBe(false);
+    box.movePress(100, 700 - 44);
+    expect(box.state().scrubbing).toBe(true);
+    box.movePress(100, 700 - 88);
+    box.endPress("up", 100, 612);
+    // 88 px at 44 px a line is two lines (the box's own 22 px would be four).
+    expect(clock.now).toBe(8 * WORD_MS);
+    expect(box.state().pressing).toBe(false);
+    expect(document.querySelector(".nb-tapfx")).toBeNull();
+  });
+
+  it("plays on a forwarded tap, and a cancelled one does nothing", () => {
+    const { box, clock, content } = make();
+    box.show(content, "travel");
+    box.beginPress({ id: 1, x: 50, y: 50, linePx: 30 });
+    box.endPress("cancel", 50, 50);
+    expect(clock.on).toBe(false);
+    box.beginPress({ id: 1, x: 50, y: 50, linePx: 30 });
+    box.endPress("up", 52, 51);
+    expect(clock.on).toBe(true);
+    expect(document.querySelector(".nb-tapfx")).not.toBeNull();
+  });
+});
+
+describe("the travel box's punctuation and late styles", () => {
+  // Why this test matters: the punctuation between the words lives in the
+  // text between the word spans, not in them. A painter fed only the spans
+  // drew "one job  weighing" for "one job: weighing" (found side by side
+  // with the prototype). jsdom measures no Range, so each chunk gets a
+  // rectangle from its place in the text; what is pinned is that every
+  // chunk becomes a run that fades with the right word.
+  it("paints the punctuation between the words, fading with its word", () => {
+    const plain = 'one two: "three four.';
+    const rect = Range.prototype.getBoundingClientRect as unknown;
+    Range.prototype.getBoundingClientRect = function (this: Range) {
+      const x = this.startOffset * 8;
+      return new DOMRect(x, 0, 8, 22);
+    };
+    try {
+      const { box, content } = make();
+      box.show(
+        {
+          ...content,
+          plain,
+          timing: {
+            segments: wordsOf(plain, 0, plain.length).map((w, i) => ({
+              startMs: i * WORD_MS,
+              endMs: (i + 1) * WORD_MS,
+              from: w.from,
+              to: w.to,
+            })),
+          },
+        },
+        "travel",
+      );
+      const runs = box.paintModel()?.layout.runs ?? [];
+      const marks = runs
+        .filter((r) => r.kind === "word" && !/\w/.test(r.text))
+        .map((r) => [r.text, r.word]);
+      // The colon after "two" (word 1); the quote glued to "three" (word 2)
+      // fades with it; the full stop after the last word with it.
+      expect(marks).toEqual([
+        [":", 1],
+        ['"', 2],
+        [".", 3],
+      ]);
+    } finally {
+      if (rect === undefined) {
+        delete (Range.prototype as { getBoundingClientRect?: unknown })
+          .getBoundingClientRect;
+      } else {
+        Range.prototype.getBoundingClientRect =
+          rect as Range["getBoundingClientRect"];
+      }
+    }
+  });
+
+  // Why this test matters: in a page whose stylesheet a module injects
+  // after the box's first layout (the dev server, a late web font), the
+  // box measured itself without its padding and the plate painted every
+  // word 15 px off, for good. A change of the box's size must lay it out
+  // again.
+  it("lays itself out again when its size changes", () => {
+    const watched: (() => void)[] = [];
+    const real = globalThis.ResizeObserver as unknown;
+    globalThis.ResizeObserver = class {
+      constructor(private readonly cb: () => void) {}
+      observe(): void {
+        watched.push(this.cb);
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      const { box, content } = make();
+      box.show(content, "travel");
+      const before = box.paintModel()?.layout;
+      box.tick();
+      expect(box.paintModel()?.layout).toBe(before);
+      for (const cb of watched) cb();
+      box.tick();
+      expect(box.paintModel()?.layout).not.toBe(before);
+    } finally {
+      globalThis.ResizeObserver = real as typeof ResizeObserver;
+    }
+  });
+});

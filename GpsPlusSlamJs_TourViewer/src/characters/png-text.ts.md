@@ -10,7 +10,7 @@
 - `readTextChunk(chunks, key)`: the text of the first `tEXt` chunk with that key, or `null`.
 - `withTextChunk(bytes, key, text)`: new bytes with one `tEXt` chunk for `key` placed before `IEND`; an earlier chunk with the same key is dropped. Key and text must be printable ASCII, else `RangeError`.
 - `asciiJson(value)`: `JSON.stringify` with every character from U+007F upwards written as a `\uXXXX` escape, so any name fits a `tEXt` chunk and reads back unchanged.
-- `crc32(bytes)`: the PNG checksum.
+- `crc32(bytes)`: the PNG checksum (the same CRC-32 a zip records per entry; the editor draft compares a held file with the opened file's entry by it).
 
 ## Invariants
 

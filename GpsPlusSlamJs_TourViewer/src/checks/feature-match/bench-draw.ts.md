@@ -7,7 +7,7 @@ The benchmark page's result picture: frames A and B side by side at one scale, e
 ## Public API
 
 - `PairLayout { width, height, scale, bx }`: the canvas size, the one scale both frames are drawn at, and the left edge of frame B.
-- `sideBySide(a, b, maxWidth, gap)`: the layout that fits both frames and the gap in `maxWidth`, never enlarged (scale at most 1). Both frames share one scale, so a line leans only as much as the scene moved.
+- `sideBySide(a, b, maxWidth, gap)`: the layout that fits both frames and the gap in `maxWidth`, never enlarged (scale at most 1). Both frames share one scale, so a line leans only as much as the scene moved. One pixel of the width is kept spare, so frame B, drawn at its rounded width, always ends inside the canvas even when both rounded widths round up.
 - `pickLines(n, cap)`: which of `n` match lines to draw: all of them when `n <= cap`, else `cap` indices spread evenly from the first (`floor(i * n / cap)`), distinct and in range. The lines shown are a cross-section, not only the strongest.
 - `DrawContext`: the subset of `CanvasRenderingContext2D` used, so a recording fake can stand in for it in tests.
 - `MatchPicture { layout, imageA, imageB, frameA, frameB, size, sample, lineCap }`.
@@ -37,4 +37,4 @@ const drawn = drawMatches(ctx, {
 
 ## Tests
 
-`bench-draw.test.ts`: layout fit and scale properties, the evenly spread line pick (property), and a recording context that checks image placement, dot and line positions and the cap.
+`bench-draw.test.ts`: layout fit and scale properties (frame B never clipped), the evenly spread line pick (property: neighbouring picks `floor(n / cap)` or `ceil(n / cap)` apart, the last within `ceil(n / cap)` of the end), and a recording context that checks image placement, dot and line positions and the cap, also with frames A and B of different sizes.

@@ -269,6 +269,7 @@ const narration = (id: string) =>
     voiceCredit: maybe(words),
     synthetic: fc.boolean(),
     durationMs: maybe(fc.integer({ min: 1, max: 14_400_000 })),
+    words: maybe(fc.constant("sign" as const)),
   });
 
 /** A block of every kind; `Record` makes a new kind a compile error. */

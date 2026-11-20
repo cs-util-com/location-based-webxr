@@ -10,7 +10,7 @@ The benchmark's image type and the resizing helpers every method shares.
 - `sizeForLongEdge(w, h, longEdge, multiple = 1)`: the size with that long edge, aspect kept, both sides rounded to the nearest `multiple` (at least one). Throws `RangeError` on a non-positive or non-finite argument.
 - `fitInside(w, h, maxW, maxH)`: the largest same-aspect size inside the box, never enlarged, with its `scale`.
 - `toFramePoint(v, fromSize, toSize)`: a coordinate mapped between two sizes of one image, pixel centres at integers.
-- `resizeFrame(frame, w, h)`: 2 x 2 box halving while the target is under half the size, then bilinear.
+- `resizeFrame(frame, w, h)`: halving (rounded down) while the target is under half the size, each output pixel the average of the source area it covers, then bilinear. On an even side a halving is exactly the 2 x 2 block average, rounded half up, as before; on an odd side the footprint is a little over 2 pixels, so the last column or row is spread over the others instead of dropped. Every step keeps the frame's edges in place, so `toFramePoint` maps a point between the sizes exactly, odd sizes included.
 - `toGray(frame)`: Rec. 601 luma as Float32 in 0..1.
 - `greyStats(frame)`: `{ mean, sd }` of the grey values in 0..255 (population standard deviation).
 - `describeGrey(stats)`: `grey mean 107.3 sd 46.0 (0-255)`.
@@ -21,6 +21,7 @@ The benchmark's image type and the resizing helpers every method shares.
 ## Invariants
 
 - Pure functions; no DOM.
+- `resizeFrame` and `toFramePoint` agree: the saved keypoints and the drawn lines are mapped with `toFramePoint`, so a resize that moved the image against it would move every saved point (a dropped odd column once did, by up to 1 px at the far edge).
 
 ## Example
 
@@ -30,4 +31,4 @@ sizeForLongEdge(640, 480, 320, 32); // { width: 320, height: 256 }
 
 ## Tests
 
-`bench-image.test.ts`.
+`bench-image.test.ts`: among others, a bright tent's centroid, shrunk and mapped back with `toFramePoint`, lands on its peak for odd and even widths and one to three halvings (property, within 0.35 px; a dropped odd column misses by up to about 1 px), and an even size still gives the exact 2 x 2 averages.

@@ -138,6 +138,39 @@ describe("runBenchmark", () => {
     expect(Array.from(sample.pairs)).toEqual([1, 0]);
   });
 
+  // Why this test matters: a method may hand back the same pairs buffer on
+  // every call; a sample kept by reference would then show the next size's
+  // matches under the earlier size, in the pictures and the saved file.
+  it("keeps each size's pairs even when the method reuses its buffer", async () => {
+    const h = hooks();
+    const shared = new Int32Array(2);
+    let longEdge = 0;
+    const runner = fakeRunner(h.clock, {
+      extract: (f) => {
+        longEdge = Math.max(f.width, f.height);
+        return Promise.resolve({
+          count: 1,
+          descriptorBytes: 0,
+          x: new Float32Array([0]),
+          y: new Float32Array([0]),
+          payload: null,
+        });
+      },
+      match: () => {
+        shared.fill(longEdge);
+        return Promise.resolve(shared);
+      },
+    });
+    const [res] = await runBenchmark(
+      [method("m", () => Promise.resolve(runner))],
+      { a: frame(64, 48), b: frame(64, 48), warp: null },
+      { sizes: [32, 16], runs: 1 },
+      h,
+    );
+    expect(Array.from(res!.sizes[0]!.sample!.pairs)).toEqual([32, 32]);
+    expect(Array.from(res!.sizes[1]!.sample!.pairs)).toEqual([16, 16]);
+  });
+
   it("keeps a method that fails to load as an error and runs the next", async () => {
     const h = hooks();
     const ok = fakeRunner(h.clock);

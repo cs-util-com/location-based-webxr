@@ -160,6 +160,7 @@ export const SPECS = {
   "sample-tour.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "setup-flow.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "splat-scene-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
+  "splat-trainer.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "stations.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "story-blocks-frame-time.spec.js": {
     project: "webgl",
@@ -171,6 +172,7 @@ export const SPECS = {
   "streaming.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "summary.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "then-now-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
+  "travelling-box-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "view-switch.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "visitor-start.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "visitor-walk-layout.spec.js": { project: "dom", area: "viewer", lane: 2 },

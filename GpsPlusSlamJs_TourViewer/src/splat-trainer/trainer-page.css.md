@@ -1,0 +1,29 @@
+# trainer-page.css
+
+## Purpose
+
+The look of the splat trainer page, taken from the chosen prototype's
+stylesheet (`public/prototypes/splat-trainer-r1-c-darkroom/darkroom.css`)
+with the prototype's own state switcher removed. Imported by
+`trainer-page.ts`.
+
+## Contents
+
+- Colour tokens on `:root` for dark (default) and light, through
+  `prefers-color-scheme`; `--print-paper` is the colour a print shows
+  before its first picture and is read by the practice pictures.
+- Page grid (header, main, bar), the drop area, census and warning cards,
+  the contact sheet (`.sheet`, `.print` and its frame, ring, mark,
+  reasons, progress, live line, stamp), the bar with its strip, the
+  dialogs (`.veil`, `.modal`, the closer look) and the refusal card.
+- States are driven by data attributes the view sets: `data-status`,
+  `data-verdict`, `data-decision` on a print, `data-v` on a strip
+  segment, `data-dim` on the sheet, `data-wide` on the dialog,
+  `data-over` on the drop area, `data-flash` on a print just shown.
+
+## Invariants
+
+- The sheet keeps 16 px gaps and its columns at 1024, 1280 and 1440 px
+  wide; the bar stays at the bottom of the viewport. The layout e2e
+  (`playwright-tests/splat-trainer.spec.js`) pins these.
+- Any change is checked side by side against the prototype.
