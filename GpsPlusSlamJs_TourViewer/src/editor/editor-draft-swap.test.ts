@@ -17,6 +17,8 @@ import type {
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { describe, expect, it } from "vitest";
 
+import { crc32 } from "../characters/png-text.js";
+
 import {
   freeDraftLocks,
   memoryDraftStores,
@@ -74,16 +76,32 @@ function opened(...assets: TourAsset[]): TourManifest {
   return { ...tourOf([PIN]), assets };
 }
 
+/** An entry of the opened file as the page passes it: size and CRC-32. */
+interface InFile {
+  readonly size: number;
+  readonly crc32: number;
+}
+
+/** The entry the opened file holds for `text`'s bytes at `path`. */
+const entryAt =
+  (path: string, text: string) =>
+  (at: string): InFile | undefined => {
+    const bytes = new TextEncoder().encode(text);
+    return at === path
+      ? { size: bytes.length, crc32: crc32(bytes) }
+      : undefined;
+  };
+
 /** What a reload offers for the id: each record with its bytes as text,
  *  and whether the original is offered too. */
 async function offeredAfterReload(
   stores: { open: MemoryDraftStores["open"] },
   manifest: TourManifest,
   key = K1,
-  sizeInFile?: (path: string) => number | undefined,
+  entryInFile?: (path: string) => InFile | undefined,
 ): Promise<{ path: string; text: string; original?: string }[]> {
   const again = draftOf(stores);
-  const { offer } = await again.open(key, manifest, sizeInFile);
+  const { offer } = await again.open(key, manifest, entryInFile);
   const files = offer?.files ?? [];
   const out = await Promise.all(
     files.map(async (f) => ({
@@ -333,16 +351,34 @@ describe("the draft of a smaller file", () => {
     const draft = await swapped(stores);
     draft.close();
     const downloaded = { ...tourOf([PIN, ESSAY]), assets: [OPUS] };
-    const sizes = (size: number) => (path: string) =>
-      path === OPUS.path ? size : undefined;
     expect(
-      await offeredAfterReload(stores, downloaded, K1, sizes(OGGS.size + 7)),
+      await offeredAfterReload(
+        stores,
+        downloaded,
+        K1,
+        entryAt(OPUS.path, "OggS-and-more"),
+      ),
     ).toEqual([{ path: OPUS.path, text: "OggS", original: "RIFF" }]);
     expect(await offeredAfterReload(stores, downloaded, K1)).toEqual([
       { path: OPUS.path, text: "OggS", original: "RIFF" },
     ]);
+    // Another smaller file of the same size (one made again after "use
+    // the original"): its size agrees, its bytes do not - kept.
     expect(
-      await offeredAfterReload(stores, downloaded, K1, sizes(OGGS.size)),
+      await offeredAfterReload(
+        stores,
+        downloaded,
+        K1,
+        entryAt(OPUS.path, "OggT"),
+      ),
+    ).toEqual([{ path: OPUS.path, text: "OggS", original: "RIFF" }]);
+    expect(
+      await offeredAfterReload(
+        stores,
+        downloaded,
+        K1,
+        entryAt(OPUS.path, "OggS"),
+      ),
     ).toEqual([]);
     // Let go for good: the next open finds nothing, sizes or not.
     expect(await offeredAfterReload(stores, downloaded, K1)).toEqual([]);
@@ -364,13 +400,16 @@ describe("the draft of a smaller file", () => {
     await draft.idle();
     draft.close();
     const saved = { ...tourOf([PIN, ESSAY]), assets: [WAV] };
-    const sizes = (size: number) => (path: string) =>
-      path === WAV.path ? size : undefined;
     expect(
-      await offeredAfterReload(stores, saved, K1, sizes(RIFF.size + 3)),
+      await offeredAfterReload(stores, saved, K1, entryAt(WAV.path, "RIFF-x")),
+    ).toEqual([{ path: WAV.path, text: "RIFF" }]);
+    // A WAV of the same length with other bytes: the size alone is no
+    // proof, the bytes are - kept.
+    expect(
+      await offeredAfterReload(stores, saved, K1, entryAt(WAV.path, "RIFX")),
     ).toEqual([{ path: WAV.path, text: "RIFF" }]);
     expect(
-      await offeredAfterReload(stores, saved, K1, sizes(RIFF.size)),
+      await offeredAfterReload(stores, saved, K1, entryAt(WAV.path, "RIFF")),
     ).toEqual([]);
   });
 
@@ -390,7 +429,7 @@ describe("the draft of a smaller file", () => {
     draft.close();
     const unread = async (
       manifest: TourManifest,
-      sizeInFile: (path: string) => number | undefined,
+      entryInFile: (path: string) => InFile | undefined,
     ): Promise<number> => {
       stores.spaces.get(SPACE)?.delete(`asset:${ID}`);
       let said = 0;
@@ -402,18 +441,14 @@ describe("the draft of a smaller file", () => {
           said += 1;
         },
       });
-      await again.open(K1, manifest, sizeInFile);
+      await again.open(K1, manifest, entryInFile);
       await again.idle();
       again.close();
       return said;
     };
     const saved = { ...tourOf([PIN, ESSAY]), assets: [WAV] };
     expect(await unread(saved, () => undefined)).toBe(1);
-    expect(
-      await unread(saved, (path) =>
-        path === WAV.path ? RIFF.size : undefined,
-      ),
-    ).toBe(0);
+    expect(await unread(saved, entryAt(WAV.path, "RIFF"))).toBe(0);
   });
 
   // Why: a tab closed between any two of the draft's writes must leave a
