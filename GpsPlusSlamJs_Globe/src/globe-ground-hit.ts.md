@@ -17,7 +17,8 @@
     where `aboveGround` goes from > 0 to <= 0 along the ray (normalised
     first), as a `GroundHitResult`: a hit
     `{ miss: null, t, point, samples, nulls }`, or a miss
-    `{ miss, samples, nulls }` whose `GroundMissReason` says why, in this
+    `{ miss, samples, nulls }` whose `miss` says why (`GroundMiss` and
+    `GroundMissReason` are the module's own types, not exported), in this
     order:
     - `not-loaded`: any sample found no heights (or the start's were
       missing and the first loaded sample is underground); the ground may

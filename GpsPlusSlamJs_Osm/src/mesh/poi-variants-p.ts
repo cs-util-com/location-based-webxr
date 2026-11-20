@@ -31,8 +31,8 @@ import { box, composed, sphere } from "./poi-primitives.js";
 
 /**
  * P's palette, under the source's own names, restricted to what these four
- * models paint with. Byte-identical to `D`'s where they overlap — the two files
- * share one palette — and pinned against it in `poi-variants.test.ts`.
+ * models paint with. Meant to match `D`'s where they overlap (the two files
+ * share one palette); no test compares them.
  */
 const P = {
   stoneLight: 0x8894a0,
