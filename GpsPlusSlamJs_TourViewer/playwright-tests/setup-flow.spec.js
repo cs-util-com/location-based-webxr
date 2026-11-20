@@ -379,12 +379,14 @@ for (const viewport of [
         if (m.toFooter !== null)
           expect(m.toFooter, at).toBeGreaterThanOrEqual(23);
         if (answer === null) {
-          // One line each, all as wide as the longest, which is about its
-          // words and padding - never the card's width.
+          // All as wide as the longest, which is about its words and
+          // padding - never the card's width. One line where the room beside
+          // the sticker allows; a wider font may wrap one to two lines
+          // rather than push the answers below the sticker.
           expect(m.answers).toHaveLength(4);
           const widest = Math.max(...m.answers.map((a) => a.words));
           for (const a of m.answers) {
-            expect(a.lines, at).toBe(1);
+            expect(a.lines, at).toBeLessThanOrEqual(2);
             expect(
               Math.abs(a.width - m.answers[0].width),
               at,
@@ -399,6 +401,37 @@ for (const viewport of [
     });
   });
 }
+
+// Why: the answers' width depends on the font, and a machine with wider
+// glyphs once had the two-column answers too wide for the room beside the
+// sticker, so the grid dropped below it whole and left a 160 px hole under
+// the why line. Widening the letters here makes that case reproducible on
+// any machine.
+test.describe("the start answers with a wider font", () => {
+  test.use({
+    viewport: { width: 1000, height: 880 },
+    storageState: { cookies: [], origins: [] },
+  });
+
+  test("stay beside the sticker and wrap rather than drop below it", async ({
+    page,
+  }) => {
+    await page.goto("/?nocache=1");
+    await expect(page.getByTestId("start-answers")).toBeVisible();
+    await page.addStyleTag({
+      content: ".start-answer { letter-spacing: 1.6px !important; }",
+    });
+    const m = await page.evaluate(measureCard);
+    expect(Math.abs((m.whyToNext ?? 0) - 16)).toBeLessThanOrEqual(1);
+    expect(m.covered).toEqual([]);
+    expect(m.outside).toEqual([]);
+    expect(m.overflow).toBeLessThanOrEqual(0);
+    for (const a of m.answers) {
+      expect(a.width - m.answers[0].width).toBeLessThanOrEqual(1);
+      expect(a.words).toBeLessThanOrEqual(a.width);
+    }
+  });
+});
 
 test.describe("the map sticker on a phone held upright", () => {
   test.use({ viewport: { width: 390, height: 844 } });

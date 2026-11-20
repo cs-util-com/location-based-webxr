@@ -118,7 +118,11 @@
         display: grid;
         grid-template-columns: minmax(0, 1fr);
         gap: var(--space-3);
-        width: max-content;
+        /* As wide as the longest answer, but never wider than the room
+           beside the map sticker: a grid is a box of its own, and a
+           max-content box too wide for that room drops below the sticker
+           whole. Where the room is short the words wrap instead. */
+        width: fit-content;
         max-width: 100%;
         margin: var(--space-3) 0 0;
       }
