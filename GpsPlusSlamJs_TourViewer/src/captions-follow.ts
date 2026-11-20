@@ -24,7 +24,7 @@ import { preferredView, shownView, viewNeedsFail } from "./visitor-prefs.js";
 
 /** Where a narrated text's words show: at the bottom, or travelling
  *  from its sign. */
-export type NarratedMode = "box" | "travel";
+type NarratedMode = "box" | "travel";
 
 export interface NarratedShown {
   readonly block: TourLongTextBlock;
