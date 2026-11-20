@@ -21,7 +21,8 @@ describe("sideBySide", () => {
       640,
       8,
     );
-    expect(l.scale).toBeCloseTo(632 / 1098, 9);
+    // 640 - gap 8 - 1 spare pixel.
+    expect(l.scale).toBeCloseTo(631 / 1098, 9);
     expect(l.width).toBeLessThanOrEqual(640);
     expect(l.bx).toBe(Math.round(549 * l.scale) + 8);
     expect(l.height).toBe(Math.round(1280 * l.scale));
@@ -53,9 +54,26 @@ describe("sideBySide", () => {
           expect(l.width).toBeLessThanOrEqual(max);
           expect(l.scale).toBeLessThanOrEqual(1);
           expect(l.height).toBeGreaterThanOrEqual(1);
+          // Frame B, drawn at its rounded width, ends inside the canvas.
+          const drawnB = Math.max(1, Math.round(bw * l.scale));
+          expect(l.bx + drawnB).toBeLessThanOrEqual(l.width);
         },
       ),
     );
+  });
+
+  // Why this test matters: both rounded widths can round up together, and
+  // a canvas cut to the width limit then clipped frame B's last column.
+  it("leaves room for frame B when both widths round up", () => {
+    // Without a margin: scale 0.5, widths 46.5 -> 47 and 45.5 -> 46.
+    const l = sideBySide(
+      { width: 93, height: 10 },
+      { width: 91, height: 10 },
+      100,
+      8,
+    );
+    expect(l.bx + Math.round(91 * l.scale)).toBeLessThanOrEqual(l.width);
+    expect(l.width).toBeLessThanOrEqual(100);
   });
 });
 
@@ -75,6 +93,20 @@ describe("pickLines", () => {
           expect(new Set(picked).size).toBe(picked.length);
           expect(picked.every((i) => i >= 0 && i < n)).toBe(true);
           expect(picked[0]).toBe(n > 0 ? 0 : undefined);
+          // Spread over all: neighbouring picks are n / cap apart (rounded
+          // either way), so the picks are not just the first, strongest ones.
+          const spread = n > cap;
+          const gaps = spread
+            ? picked.slice(1).map((v, i) => v - picked[i]!)
+            : [];
+          expect(
+            gaps.filter(
+              (g) => g < Math.floor(n / cap) || g > Math.ceil(n / cap),
+            ),
+          ).toEqual([]);
+          expect(!spread || picked.at(-1)! >= n - Math.ceil(n / cap)).toBe(
+            true,
+          );
         },
       ),
     );
@@ -145,5 +177,38 @@ describe("drawMatches", () => {
     // Match 0 is A's keypoint 1 (size 3,1 -> frame 6.5,2.5) to B's 0
     // (size 1.5,0.5 -> frame 3.5,1.5), drawn at pixel centres (+0.5).
     expect(ctx.lines).toEqual([[7, 3, 12 + 4, 2]]);
+  });
+
+  // Why this test matters: frames A and B may differ in size; B's points
+  // must be mapped with B's own size, not A's, or B's lines end in the
+  // wrong place while every same-size test still passes.
+  it("maps B's points with B's own frame size", () => {
+    const ctx = recorder();
+    const layout = sideBySide(
+      { width: 8, height: 4 },
+      { width: 16, height: 8 },
+      100,
+      4,
+    );
+    drawMatches(ctx, {
+      layout,
+      imageA: {},
+      imageB: {},
+      frameA: { width: 8, height: 4 },
+      frameB: { width: 16, height: 8 },
+      size: { width: 4, height: 2 },
+      sample: {
+        a: { x: new Float32Array([3]), y: new Float32Array([1]) },
+        b: { x: new Float32Array([1.5]), y: new Float32Array([0.5]) },
+        pairs: new Int32Array([0, 0]),
+      },
+      lineCap: 10,
+    });
+    expect(ctx.images).toEqual([
+      [0, 0, 8, 4],
+      [12, 0, 16, 8],
+    ]);
+    // B: size 1.5,0.5 -> frame (v + 0.5) * 4 - 0.5 = 7.5,3.5, centre +0.5.
+    expect(ctx.lines).toEqual([[7, 3, 12 + 8, 4]]);
   });
 });

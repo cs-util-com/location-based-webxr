@@ -1,10 +1,12 @@
 /**
  * Saving the benchmark's captured camera frames to the device: the file
  * names, a check that a PNG carries image chunks only (no EXIF, text or
- * time), and the JSON that travels with the frames.
+ * time), the JSON that travels with the frames, and one zip of them all.
  *
  * @see bench-export.ts.md
  */
+import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+
 import { greyStats, toFramePoint, type Frame } from "./bench-image";
 import type { DeviceInfo } from "./bench-report";
 import type { MethodResult, Points } from "./bench-run";
@@ -15,6 +17,9 @@ export const FRAME_FILES = {
   B: "feature-match-frame-b.png",
   info: "feature-match-frames.json",
   matches: "feature-match-matches.json",
+  log: "feature-match-log.txt",
+  report: "feature-match-report.txt",
+  all: "feature-match-all.zip",
 } as const;
 
 /** A captured frame and the camera size it was taken from. */
@@ -28,8 +33,10 @@ const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 
 /**
  * Chunks a PNG of plain pixels may hold: header, palette, transparency,
- * colour space, data and end. Anything else (`eXIf`, `tEXt`, `iTXt`,
- * `zTXt`, `tIME`, an unknown chunk) is refused.
+ * colour space, data and end, and the ancillary chunks that only describe
+ * the pixels (density, significant bits, background, colour coding and
+ * HDR levels), which another encoder may add. Anything else (`eXIf`,
+ * `tEXt`, `iTXt`, `zTXt`, `tIME`, an unknown chunk) is refused.
  */
 const IMAGE_CHUNKS = new Set([
   "IHDR",
@@ -39,6 +46,12 @@ const IMAGE_CHUNKS = new Set([
   "gAMA",
   "cHRM",
   "iCCP",
+  "pHYs",
+  "sBIT",
+  "bKGD",
+  "cICP",
+  "cLLI",
+  "mDCV",
   "IDAT",
   "IEND",
 ]);
@@ -186,4 +199,32 @@ export function framesInfo(
     null,
     2,
   )}\n`;
+}
+
+/** One prepared file: its name and its bytes. */
+export interface NamedBlob {
+  readonly name: string;
+  readonly blob: Blob;
+}
+
+/**
+ * Every prepared file plus the page log, and the report when there is
+ * one, as one uncompressed zip: a single download instead of one per
+ * file and a log copied out by hand. Each entry holds exactly the bytes
+ * offered on its own.
+ *
+ * @throws ZipPackagingError (from the framework writer) on a duplicate or
+ *   unsafe name, or when writing fails.
+ */
+export function allFilesZip(
+  files: readonly NamedBlob[],
+  texts: { readonly log: string; readonly report: string },
+): Promise<Blob> {
+  return packFilesAsZip([
+    ...files.map((f) => ({ path: f.name, data: f.blob })),
+    { path: FRAME_FILES.log, data: texts.log },
+    ...(texts.report === ""
+      ? []
+      : [{ path: FRAME_FILES.report, data: texts.report }]),
+  ]);
 }

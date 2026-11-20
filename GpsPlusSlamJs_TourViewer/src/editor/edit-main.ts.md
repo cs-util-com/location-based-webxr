@@ -527,8 +527,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     often.
 - **The draft (M6 E2c).** Read inside the open, before the tour shows
   (`draft.open` over the session's file key, with the opened archive's
-  entry sizes by path, so a file the draft holds that the file on disk
-  already carries at its path with its size is let go, and bytes an open's
+  entries by path (size and CRC-32), so a file the draft holds that the
+  file on disk already carries at its path with its bytes is let go, and bytes an open's
   tidy removed for such a file are not said lost). What an earlier visit left is
   offered in a toast that stays until answered (`.draft-offer`): Restore
   (`session.restore`, live edits winning; `editor-draft.ts` `restoredLine`:

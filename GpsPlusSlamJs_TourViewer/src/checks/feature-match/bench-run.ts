@@ -219,7 +219,8 @@ async function runSize(
       keypoints.push(ea.count, eb.count);
       bytes.push(ea.descriptorBytes, eb.descriptorBytes);
       matches.push(pairs.length / 2);
-      sample = { a: pointsOf(ea), b: pointsOf(eb), pairs };
+      // Copied, like the points: a method may reuse its buffers.
+      sample = { a: pointsOf(ea), b: pointsOf(eb), pairs: pairs.slice() };
       if (input.warp) {
         correct.push(
           countCorrect(

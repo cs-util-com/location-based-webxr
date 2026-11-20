@@ -92,6 +92,79 @@ describe("resizeFrame", () => {
     );
   });
 
+  // Why this test matters: keypoints found on the resized frame are mapped
+  // back to the captured frame with toFramePoint, for the saved JSON and the
+  // drawn lines. A shrink that dropped the last column or row of an odd
+  // size (549 px wide camera frames do occur) moved every point by up to a
+  // pixel at the far edge. A bright tent's centroid, mapped back, must land
+  // on the tent's peak for any size, odd or even, and any shrink. The tent
+  // is wide (radius r) against the shrink, so where its pixels fall inside
+  // a 2x2 block does not move the centroid.
+  const stripeAt = (w: number, h: number, c: number, r: number) => {
+    const rgba = new Uint8ClampedArray(w * h * 4);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const v = Math.round(255 * Math.max(0, 1 - Math.abs(x - c) / r));
+        rgba.set([v, v, v, 255], (y * w + x) * 4);
+      }
+    }
+    return makeFrame(w, h, rgba);
+  };
+  const centroidX = (f: ReturnType<typeof stripeAt>) => {
+    let sum = 0;
+    let mass = 0;
+    for (let y = 0; y < f.height; y++) {
+      for (let x = 0; x < f.width; x++) {
+        const v = f.rgba[(y * f.width + x) * 4]!;
+        sum += v * x;
+        mass += v;
+      }
+    }
+    return sum / mass;
+  };
+
+  it("keeps a stripe near the far edge of an odd-width frame where toFramePoint maps it", () => {
+    // 549 -> 137 halves twice; a shrink that drops the odd column puts
+    // this peak about 1 px off.
+    const out = resizeFrame(stripeAt(549, 8, 540, 8), 137, 2);
+    expect(Math.abs(toFramePoint(centroidX(out), 137, 549) - 540)).toBeLessThan(
+      0.25,
+    );
+  });
+
+  // Why this test matters: earlier phone runs were measured on frames
+  // shrunk by an exact 2x2 box; an even size must still give the same
+  // pixels, so their numbers stay comparable with new ones.
+  it("still averages each 2x2 block, rounded half up, on an even size", () => {
+    const rgba = new Uint8ClampedArray(4 * 2 * 4);
+    [0, 1, 2, 4, 10, 20, 30, 41].forEach((v, i) =>
+      rgba.set([v, v, v, v], i * 4),
+    );
+    const out = resizeFrame(makeFrame(4, 2, rgba), 2, 1);
+    // (0 + 1 + 10 + 20 + 2) >> 2 = 8; (2 + 4 + 30 + 41 + 2) >> 2 = 19.
+    expect(Array.from(out.rgba)).toEqual([8, 8, 8, 8, 19, 19, 19, 19]);
+  });
+
+  it("keeps any stripe where toFramePoint maps it, for odd and even sizes (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 6, max: 80 }),
+        fc.integer({ min: 1, max: 3 }),
+        fc.integer({ min: 0, max: 7 }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (dw, halvings, extra, u) => {
+          // Any width whose repeated halving (rounded down) gives dw.
+          const w = dw * 2 ** halvings + (extra % 2 ** halvings);
+          const r = 2 * 2 ** halvings;
+          const c = r + Math.round(u * (w - 1 - 2 * r));
+          const out = resizeFrame(stripeAt(w, 2 ** halvings, c, r), dw, 1);
+          const mapped = toFramePoint(centroidX(out), dw, w);
+          expect(Math.abs(mapped - c)).toBeLessThan(0.35);
+        },
+      ),
+    );
+  });
+
   it("averages a fine checkerboard to grey when it shrinks a lot", () => {
     const w = 64;
     const rgba = new Uint8ClampedArray(w * w * 4);

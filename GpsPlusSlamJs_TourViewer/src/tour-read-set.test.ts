@@ -9,6 +9,8 @@ import { tourOf } from "./test-support/tour-of.js";
 import {
   entriesForVisitor,
   recordingEntryNames,
+  recordingFolderOf,
+  recordingFoldersOf,
   scanEntryNames,
   stopsVisitorDownload,
   visitorEntryNames,
@@ -310,5 +312,63 @@ describe("what a visitor's page shows and downloads", () => {
         false,
       );
     }
+  });
+});
+
+describe("recordingFolderOf", () => {
+  // Why: a capture's `imageFile` is relative to the recording, so a
+  // recording re-zipped from its folder ("compress this folder") puts every
+  // entry under that folder, and a reader that looked the file up by its
+  // bare name found none. The debug layer and the splat trainer's reader
+  // both take the folder from here.
+  it("is empty for a flat zip and the wrapping folder for a re-zipped one", () => {
+    expect(recordingFolderOf(["session.json", "actions/000001.json"])).toBe("");
+    expect(
+      recordingFolderOf(["mytour/session.json", "mytour/actions/000001.json"]),
+    ).toBe("mytour/");
+    expect(recordingFolderOf(["a/b/actions/000002.json"])).toBe("a/b/");
+  });
+
+  it("never cuts at a sibling folder whose name only ends in actions/", () => {
+    expect(
+      recordingFolderOf([
+        "mytour/aactions/000001.json",
+        "mytour/actions/000001.json",
+      ]),
+    ).toBe("mytour/");
+  });
+
+  it("is empty without an action entry", () => {
+    expect(recordingFolderOf(["mytour/session.json", "x/actions/a.txt"])).toBe(
+      "",
+    );
+  });
+});
+
+describe("recordingFoldersOf", () => {
+  // Why: a zip can carry two recordings side by side; a reader that took
+  // only the first folder read the actions of both as one walk. Every
+  // folder holding an action stream must be named, so the caller can
+  // refuse.
+  it("names every folder that holds an action stream, once, in the parser's order", () => {
+    expect(
+      recordingFoldersOf([
+        "second/actions/000001.json",
+        "first/actions/000002.json",
+        "first/actions/000001.json",
+        "first/images/frame-000001.jpg",
+      ]),
+    ).toEqual(["first/", "second/"]);
+  });
+
+  it("names one folder for a single recording, flat or wrapped, and none without actions", () => {
+    expect(recordingFoldersOf(["actions/000001.json"])).toEqual([""]);
+    expect(recordingFoldersOf(["a/b/actions/000001.json"])).toEqual(["a/b/"]);
+    expect(recordingFoldersOf(["session.json"])).toEqual([]);
+  });
+
+  it("agrees with recordingFolderOf on the first folder", () => {
+    const names = ["z/actions/1.json", "y/actions/1.json"];
+    expect(recordingFoldersOf(names)[0]).toBe(recordingFolderOf(names));
   });
 });

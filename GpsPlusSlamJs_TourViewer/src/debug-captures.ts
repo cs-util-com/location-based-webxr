@@ -28,7 +28,7 @@ import {
   type ReplayedJoinState,
 } from "./capture-geo-join.js";
 import type { TourSession } from "./tour-session.js";
-import { ACTIONS_SEGMENT, isActionEntryName } from "./tour-read-set.js";
+import { recordingFolderOf } from "./tour-read-set.js";
 
 /** One debug camera capture: its picture's entry and where it stands. */
 export interface DebugCapture {
@@ -72,31 +72,6 @@ export interface DebugCaptureOptions {
   readonly extentOf?: (state: PickTrackerState) => number;
 }
 
-/**
- * The folder the recording's action stream sits under, with its trailing
- * slash (`""` for a flat zip, `"mytour/"` for a re-zipped folder). A
- * capture's `imageFile` is relative to the recording, so its entry is
- * this folder plus that name. The action entries are found by the same
- * rule as the framework's parser (an `actions/` path SEGMENT, ending
- * `.json`: `tour-read-set.ts` `isActionEntryName`), so this reads the
- * folder of exactly the stream that parser replays:
- * a sibling folder whose name ends in it (`mytour/myactions/`) never
- * gives the folder.
- */
-function recordingFolderOf(entries: DebugCaptureSource["entries"]): string {
-  const at = entries
-    .map((e) => e.filename)
-    // The framework parser's selection, in its order: the first entry's
-    // folder.
-    .filter(isActionEntryName)
-    .sort((a, b) => a.localeCompare(b))
-    .map((name) => ACTIONS_SEGMENT.exec(name))
-    .find((match) => match !== null);
-  return at === undefined
-    ? ""
-    : at.input.slice(0, at.index + (at[1] ?? "").length);
-}
-
 /** Replay the recording and place its camera captures, or say why not. */
 export async function debugCapturesOf(
   source: DebugCaptureSource,
@@ -133,7 +108,7 @@ export async function debugCapturesOf(
   if (stopped) return { kind: "declined", reason: "stopped" };
   // Only captures the zip carries as images: one naming no file would
   // show nothing. Each is looked up under the recording's own folder.
-  const folder = recordingFolderOf(source.entries);
+  const folder = recordingFolderOf(source.entries.map((e) => e.filename));
   const images = new Set(
     source.entries.filter((e) => e.isImage).map((e) => e.filename),
   );

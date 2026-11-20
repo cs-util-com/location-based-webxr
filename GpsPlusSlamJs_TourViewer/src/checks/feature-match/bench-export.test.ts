@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
+import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 import {
   FRAME_FILES,
+  allFilesZip,
   assertPlainPng,
   framesInfo,
   matchesInfo,
@@ -75,6 +77,22 @@ describe("assertPlainPng", () => {
       expect(() => assertPlainPng(png(...chunks), "frame A")).toThrow(
         `frame A: PNG carries a ${type} chunk`,
       );
+    },
+  );
+
+  // Why this test matters: another browser's encoder may add chunks that
+  // describe the pixels (density, significant bits, background, colour
+  // coding) and carry no device, time or place; refusing them would make
+  // Save fail on that browser for no privacy gain.
+  it.each(["pHYs", "sBIT", "bKGD", "cICP", "cLLI", "mDCV"])(
+    "accepts a PNG with a %s chunk",
+    (type) => {
+      const chunks: [string, number[]][] = [
+        PLAIN[0]!,
+        [type, [1, 2]],
+        ...PLAIN.slice(1),
+      ];
+      expect(() => assertPlainPng(png(...chunks), "frame A")).not.toThrow();
     },
   );
 
@@ -271,6 +289,24 @@ describe("matchesInfo", () => {
     });
   });
 
+  // Why this test matters: B is resized to A's computed size, so B's
+  // points must be mapped back with B's own frame size; with both frames
+  // the same size a mix-up of the two would pass unseen.
+  it("maps B's keypoints with B's own frame size", () => {
+    const m = read([method([size({})])], {
+      a: { width: 8, height: 4 },
+      b: { width: 16, height: 8 },
+    }).methods[0]!;
+    expect(m.sizes[0]).toMatchObject({
+      keypointsA: [
+        [0.5, 0.5],
+        [6.5, 2.5],
+      ],
+      // Size 4x2 to frame 16x8: (v + 0.5) * 4 - 0.5.
+      keypointsB: [[7.5, 3.5]],
+    });
+  });
+
   it("keeps a failed size and a failed method with their errors and no points", () => {
     const info = read([
       method([size({ error: "out of memory", sample: null })]),
@@ -319,5 +355,71 @@ describe("matchesInfo", () => {
         },
       ),
     );
+  });
+});
+
+/** Every entry of a zip, by name, as text. */
+async function zipTexts(blob: Blob): Promise<Map<string, string>> {
+  const reader = new ZipReader(new BlobReader(blob));
+  const out = new Map<string, string>();
+  for (const e of await reader.getEntries()) {
+    if (!e.directory) {
+      out.set(e.filename, await e.getData(new TextWriter()));
+    }
+  }
+  await reader.close();
+  return out;
+}
+
+describe("allFilesZip", () => {
+  const files = [
+    { name: FRAME_FILES.A, blob: new Blob(["png a"]) },
+    { name: FRAME_FILES.B, blob: new Blob(["png b"]) },
+    { name: FRAME_FILES.info, blob: new Blob(["{}"]) },
+    { name: FRAME_FILES.matches, blob: new Blob(["[]"]) },
+  ];
+
+  // Why this test matters: the tester wants one download holding
+  // everything a run left behind, so no file and no log line has to be
+  // copied out by hand. Each entry must be the very bytes offered alone.
+  it("holds every offered file, the log and the report, byte for byte", async () => {
+    const zip = await allFilesZip(files, {
+      log: "[0.1s] ready\n",
+      report: "report text\n",
+    });
+    expect(zip.type).toBe("application/zip");
+    const texts = await zipTexts(zip);
+    expect([...texts.keys()].sort()).toEqual(
+      [
+        FRAME_FILES.A,
+        FRAME_FILES.B,
+        FRAME_FILES.info,
+        FRAME_FILES.matches,
+        FRAME_FILES.log,
+        FRAME_FILES.report,
+      ].sort(),
+    );
+    expect(texts.get(FRAME_FILES.A)).toBe("png a");
+    expect(texts.get(FRAME_FILES.matches)).toBe("[]");
+    expect(texts.get(FRAME_FILES.log)).toBe("[0.1s] ready\n");
+    expect(texts.get(FRAME_FILES.report)).toBe("report text\n");
+  });
+
+  // Why this test matters: a run that measured nothing has no report; an
+  // empty report file would read as a report that lost its content.
+  it("leaves the report out when there is none", async () => {
+    const texts = await zipTexts(
+      await allFilesZip(files, { log: "x", report: "" }),
+    );
+    expect(texts.has(FRAME_FILES.report)).toBe(false);
+    expect(texts.get(FRAME_FILES.log)).toBe("x");
+  });
+
+  // Why this test matters: the zip sits beside the files it holds, so its
+  // own name must not clash with any of theirs.
+  it("is named apart from every file it holds", () => {
+    const names = Object.values(FRAME_FILES);
+    expect(new Set(names).size).toBe(names.length);
+    expect(FRAME_FILES.all.endsWith(".zip")).toBe(true);
   });
 });

@@ -4,6 +4,14 @@
 
 ### Added
 
+- **PINHOLE intrinsics from a projection matrix, shared**: moved here from
+  the Recorder's COLMAP export, so the export and the Tour Viewer's splat
+  trainer reader read a recording's lens through one implementation (the
+  continuous pixel convention, no half-pixel step).
+  - **`utils/pinhole-from-projection`** (deep import):
+    `pinholeFromProjection`, `PinholeIntrinsics`.
+  - **`test-utils/synthetic-qr-walk`** (deep import): now built, for the
+    Tour Viewer's synthetic recording builder.
 - **Veils blend by strength, and the sky balance joins `configure`**
   (`visualization/atmosphere`): `SkyAtmosphere.setHorizonVeil`,
   `AtmosphereHaze.setVeil` and `AtmosphereHaze.setRim` take a `strength`

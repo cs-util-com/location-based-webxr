@@ -33,12 +33,17 @@ export function sideBySide(
   maxWidth: number,
   gap: number,
 ): PairLayout {
-  const scale = Math.min(1, Math.max(1, maxWidth - gap) / (a.width + b.width));
+  // One pixel kept spare: both rounded widths may round up together, and
+  // the canvas must then still hold all of frame B.
+  const scale = Math.min(
+    1,
+    Math.max(1, maxWidth - gap - 1) / (a.width + b.width),
+  );
   const aw = Math.max(1, Math.round(a.width * scale));
   const bw = Math.max(1, Math.round(b.width * scale));
   const height = Math.max(1, Math.round(Math.max(a.height, b.height) * scale));
   return {
-    width: Math.min(maxWidth, aw + gap + bw),
+    width: aw + gap + bw,
     height,
     scale,
     bx: aw + gap,

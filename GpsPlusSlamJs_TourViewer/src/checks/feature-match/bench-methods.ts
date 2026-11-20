@@ -48,6 +48,25 @@ export function buildMethods(
   return out;
 }
 
+/**
+ * What a selection leaves out without saying so: a ticked method with no
+ * backend, or XFeat with no model file, gives no method in `buildMethods`.
+ * One sentence per gap; empty when every ticked method runs.
+ */
+export function selectionGaps(s: MethodSelection): string[] {
+  const gaps: string[] = [];
+  if (s.xfeat && s.backends.length === 0) {
+    gaps.push("XFeat is ticked but no backend is");
+  }
+  if (s.xfeat && s.precisions.length === 0) {
+    gaps.push("XFeat is ticked but no model file is");
+  }
+  if (s.aliked && s.backends.length === 0) {
+    gaps.push("ALIKED + LightGlue is ticked but no backend is");
+  }
+  return gaps;
+}
+
 const BACKENDS: readonly Backend[] = ["webgpu", "wasm"];
 const PRECISIONS: readonly XFeatPrecision[] = ["fp16", "fp32"];
 
