@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   easeInOutCubic,
   flightClip,
+  letterGate,
   plateMetrics,
   settlePlace,
   TRAVELLING_BOX_DEFAULTS,
@@ -88,6 +89,39 @@ describe("settlePlace for any input", () => {
     );
   });
 
+  // Why: with equal holds a swapped dock and plate hold passes unseen;
+  // unequal ones pin which hold each move waits for.
+  it("waits the dock's hold to dock and the plate's to leave the dock, when they differ", () => {
+    const knobs = { ...K, holdDock: 0.3, holdPlate: 0.6 };
+    fc.assert(
+      fc.property(
+        shown,
+        fc.array(dt, { minLength: 1, maxLength: 60 }),
+        (from, steps) => {
+          const to: TravelPlace = from === "plate" ? "dock" : "plate";
+          const hold = to === "dock" ? 0.3 : 0.6;
+          let s: SettleState = { place: from, pending: null, pendingS: 0 };
+          let held = 0;
+          let movedAt = -1;
+          let mayMoveAt = -1;
+          for (const [i, d] of steps.entries()) {
+            s = settlePlace(
+              s,
+              to,
+              d,
+              { fingerDown: false, sinceReleaseS: Infinity },
+              knobs,
+            );
+            if (i > 0) held += d;
+            if (movedAt < 0 && s.place === to) movedAt = i;
+            if (mayMoveAt < 0 && held >= hold) mayMoveAt = i;
+          }
+          expect(movedAt).toBe(mayMoveAt);
+        },
+      ),
+    );
+  });
+
   it("hides at once, whatever the finger, the lock or the hold", () => {
     fc.assert(
       fc.property(
@@ -137,12 +171,13 @@ describe("settlePlace for any input", () => {
             const w = wantPlace(
               {
                 travelling: true,
-                voice: true,
-                inStation: true,
-                sheetOpen: false,
+                hideWhy: null,
+                gates: [letterGate(metrics, K)],
                 metrics,
                 angleDeg: 0,
                 onPlate: s.place === "plate",
+                slotFree: true,
+                canFold: false,
               },
               K,
             );
@@ -183,7 +218,7 @@ describe("flightClip for any plate and dock", () => {
         fc.double({ min: 0, max: 1, noNaN: true }),
         (corners, dock, e) => {
           const src = corners.flat();
-          const out = flightClip(src, dock, e);
+          const out = flightClip(src, dock, e, new Array<number>(16));
           for (let i = 0; i < 4; i++) {
             const [sx, sy, , sw] = corners[i]!;
             const w = out[i * 4 + 3]!;

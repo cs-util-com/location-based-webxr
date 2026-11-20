@@ -3,16 +3,17 @@
  * narrated long text's reading sign in the reading stand's plain square
  * (`lectern-check.ts`), its words painted on the plate under the sign
  * from the invisible narration box at the bottom of the page (travel
- * mode, a ghost). Linked from nothing. The layout e2e and the side-by-side
+ * mode, a ghost), moved between the sign and the screen by the travelling
+ * box's controller. Linked from nothing. The layout e2e and the side-by-side
  * check drive it through `window.__travellingBoxCheck`, which is always
  * installed.
  *
  * Every part is the production one: the sign (`reading-sign.ts`), the box
- * (`narration-box.ts`), the painter (`narration-words-paint.ts`) and the
- * plate's size (`travelling-box-rules.ts`). The voice is the long text
- * check's stand-in clock, which stands still until it is moved, so a
- * screenshot sees one exact moment. The plate stays on the sign: the
- * controller that moves the words between sign and screen comes later.
+ * (`narration-box.ts`), the sign's words as a surface
+ * (`travelling-box-sign.ts`), the controller (`travelling-box.ts`) and
+ * its registry (`travel-registry.ts`). The voice is the long text check's
+ * stand-in clock, which stands still until it is moved, so a screenshot
+ * sees one exact moment.
  *
  * @see travelling-box-check.ts.md
  */
@@ -21,15 +22,27 @@ import * as THREE from "three";
 
 import { createNarrationBox } from "../narration-box.js";
 import { narrationBoxReducer } from "../narration-box-slice.js";
+import { wordsPaintScale } from "../narration-words-paint.js";
 import {
-  paintNarrationWords,
-  wordsCanvasSize,
-  wordsPaintKey,
-  type WordsPaintLayout,
-} from "../narration-words-paint.js";
-import { mountReadingSign, READING_SIGN } from "../reading-sign.js";
-import { plateSizeM, signGrowth } from "../travelling-box-rules.js";
-import { canvasTexture } from "../world-part.js";
+  mountReadingSign,
+  READING_SIGN,
+  type ReadingSignVoice,
+} from "../reading-sign.js";
+import { createTravelRegistry } from "../travel-registry.js";
+import {
+  createTravellingBox,
+  type TravelPlaceEvent,
+  type TravellingBox,
+  type TravellingBoxCost,
+  type TravellingBoxState,
+  type TravelViewRect,
+} from "../travelling-box.js";
+import {
+  plateSizeM,
+  signGrowth,
+  TRAVELLING_BOX_DEFAULTS,
+} from "../travelling-box-rules.js";
+import { signWordsGrowth, signWordsSurface } from "../travelling-box-sign.js";
 import { buildSquare, lecternCheckFovDeg } from "./lectern-check.js";
 import { checkSegments, createCheckClock } from "./long-text-check.js";
 
@@ -51,12 +64,6 @@ export const TRAVELLING_BOX_CHECK_TEXT = {
 
 /** The visitor's eye height (m), as in the prototype. */
 const EYE_M = 1.6;
-
-/** The painted texture's scale: 2.5 to 3 device px a CSS px. */
-export function wordsPaintScale(devicePixelRatio: number): number {
-  const dpr = Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1;
-  return Math.min(3, Math.max(2.5, dpr));
-}
 
 /** A plane's four corners on the page (CSS px): TL, TR, BR, BL. */
 type Corners = [number, number][];
@@ -98,7 +105,23 @@ interface TravellingBoxCheckState {
     readonly rows: number;
     readonly hint: string;
     readonly totalMs: number;
+    /** The voice's line as a float. */
+    readonly line: number;
+    readonly playing: boolean;
   };
+  /** The controller's state: place, why, u, presence, the plate's and the
+   *  quad's corners relative to the view, the dock, the metrics, which
+   *  mesh shows, the texture ids, the surface id. */
+  readonly travel: TravellingBoxState;
+  /** The words plate's own material map (independent of the travel
+   *  state's texture id). */
+  readonly plateMapId: number | null;
+  /** The ghost takes pointers itself. */
+  readonly ghostPointer: boolean;
+  /** The drawing area on the page. */
+  readonly view: TravelViewRect;
+  /** The settled changes so far. */
+  readonly events: readonly TravelPlaceEvent[];
 }
 
 /** The page's hook. */
@@ -111,6 +134,13 @@ interface TravellingBoxCheck {
   turn(rad: number): void;
   /** Moves the voice to `ms`. */
   at(ms: number): void;
+  /** Overrides both holds (s); null: the defaults. Starts the travel
+   *  afresh. */
+  hold(s: number | null): void;
+  openSheet(): void;
+  closeSheet(): void;
+  /** The travel's cost counters. */
+  cost(): TravellingBoxCost;
   play(): void;
   pause(): void;
   state(): TravellingBoxCheckState;
@@ -152,6 +182,12 @@ function cornersOf(
     ]);
   }
   return out;
+}
+
+function plateMapIdOf(plate: THREE.Object3D): number | null {
+  if (!(plate instanceof THREE.Mesh)) return null;
+  const m = plate.material as THREE.MeshBasicMaterial | THREE.Material[];
+  return Array.isArray(m) ? null : (m.map?.id ?? null);
 }
 
 export function startTravellingBoxCheck(host: HTMLElement): void {
@@ -197,51 +233,49 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
     },
     "travel",
   );
-  box.setGhost(true);
-
   const scale = wordsPaintScale(window.devicePixelRatio);
   const canvas = document.createElement("canvas");
-  const g = canvas.getContext("2d");
-  let texture: THREE.CanvasTexture | null = null;
-  let painted: WordsPaintLayout | null = null;
-  let key = "";
-  let paints = 0;
-  let plateM = { widthM: 0, heightM: 0 };
+  let sheetOpen = false;
+  const surface = signWordsSurface({
+    id: "check",
+    sign,
+    box,
+    scale,
+    travelling: () => true,
+    voice: () => true,
+    inStation: () => true,
+    sheetOpen: () => sheetOpen,
+  });
+  const registry = createTravelRegistry();
+  let view: TravelViewRect = { left: 0, top: 0, width: 1, height: 1 };
+  let knobs = TRAVELLING_BOX_DEFAULTS;
+  const events: TravelPlaceEvent[] = [];
+  let travel: TravellingBox | null = null;
 
-  /** Sizes the canvas for a new layout and hangs the plate at its shape;
-   *  false when the layout has no size yet. */
-  function hangPlate(l: WordsPaintLayout): boolean {
-    const size = wordsCanvasSize(l, scale);
-    if (size.width <= 0 || size.height <= 0) return false;
-    if (
-      texture === null ||
-      canvas.width !== size.width ||
-      canvas.height !== size.height
-    ) {
-      canvas.width = size.width;
-      canvas.height = size.height;
-      texture?.dispose();
-      texture = canvasTexture(canvas);
-    }
-    plateM = plateSizeM(l.width, l.height, l.fontPx);
-    sign.attachWords(texture, plateM);
-    painted = l;
-    return true;
+  /** A fresh controller for the current knobs. */
+  function startTravel(): void {
+    travel?.stop();
+    travel = createTravellingBox({
+      surface,
+      scene,
+      camera,
+      knobs,
+      now: () => performance.now(),
+      reduceMotion: () =>
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      viewRect: () => view,
+      createCanvas: () => canvas,
+      upload: (texture) => {
+        renderer.initTexture(texture);
+      },
+      onPlace: (event) => events.push(event),
+      registry,
+    });
   }
-
-  /** Repaints the words when they look different, and hangs the plate
-   *  anew when the box is laid out anew. */
-  function paintWords(): void {
-    const model = box.paintModel();
-    if (model === null || g === null) return;
-    const next = wordsPaintKey(model.layout, model.frame);
-    if (model.layout === painted && next === key) return;
-    if (model.layout !== painted && !hangPlate(model.layout)) return;
-    paintNarrationWords(g, model, scale);
-    if (texture !== null) texture.needsUpdate = true;
-    key = next;
-    paints += 1;
-  }
+  startTravel();
+  renderer.domElement.addEventListener("pointerdown", (e) => {
+    registry.pointerDown(e, renderer.domElement);
+  });
 
   let distanceM = 3;
   let deg = 0;
@@ -252,6 +286,8 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
   function resize(): void {
     const w = host.clientWidth || window.innerWidth;
     const h = host.clientHeight || window.innerHeight;
+    const r = host.getBoundingClientRect();
+    view = { left: r.left, top: r.top, width: w, height: h };
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.fov = lecternCheckFovDeg(w, h);
@@ -267,12 +303,14 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
       EYE_M,
       Math.cos(a) * distanceM,
     );
-    const growth = painted === null ? 1 : signGrowth(distanceM);
+    const hung = sign.wordsPlate.parent !== null;
+    const growth = hung
+      ? (signWordsGrowth(knobs.grow) ?? signGrowth(distanceM))
+      : 1;
     const wordsY = sign.wordsPlate.position.y;
-    const lookH =
-      painted === null
-        ? READING_SIGN.centreM * growth
-        : ((READING_SIGN.centreM + wordsY) / 2) * growth;
+    const lookH = hung
+      ? ((READING_SIGN.centreM + wordsY) / 2) * growth
+      : READING_SIGN.centreM * growth;
     const auto = Math.atan2(lookH - EYE_M, Math.max(0.5, distanceM));
     camera.rotation.set(
       pitchRad ?? auto,
@@ -282,13 +320,24 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
     camera.updateMatrixWorld();
   }
 
+  /** The sign chip follows the voice, as the prototype's sign does. */
+  function chipState(): ReadingSignVoice {
+    if (clock.playing()) return "playing";
+    const at = clock.nowMs();
+    if (at >= totalMs) return "ended";
+    return at > 0 ? "paused" : "idle";
+  }
+
   function frame(): void {
     box.tick();
-    paintWords();
+    sign.setVoiceState(chipState());
     placeEye();
     sign.update({
       viewer: [camera.position.x, camera.position.y, camera.position.z],
+      growth: signWordsGrowth(knobs.grow),
     });
+    camera.updateMatrixWorld();
+    registry.frame();
   }
 
   const hook: TravellingBoxCheck = {
@@ -312,6 +361,29 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
       clock.seek(ms);
       frame();
     },
+    hold(s) {
+      if (s !== null && !(Number.isFinite(s) && s >= 0)) {
+        throw new TypeError("hold needs a time >= 0 or null");
+      }
+      knobs =
+        s === null
+          ? TRAVELLING_BOX_DEFAULTS
+          : { ...TRAVELLING_BOX_DEFAULTS, holdDock: s, holdPlate: s };
+      startTravel();
+      frame();
+    },
+    openSheet() {
+      sheetOpen = true;
+      frame();
+    },
+    closeSheet() {
+      sheetOpen = false;
+      frame();
+    },
+    cost() {
+      if (travel === null) throw new Error("no travel");
+      return travel.cost();
+    },
     play() {
       clock.play();
       frame();
@@ -322,11 +394,17 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
     },
     state() {
       frame();
+      // Rendered here too, so the quad's corners (written before its draw)
+      // are this frame's.
+      renderer.render(scene, camera);
       scene.updateMatrixWorld(true);
       const rect = renderer.domElement.getBoundingClientRect();
       const boxRect = box.element.getBoundingClientRect();
       const v = box.state();
       const growth = sign.object.getObjectByName("reading-sign-grow")?.scale.x;
+      if (travel === null) throw new Error("no travel");
+      const t = travel.state();
+      const layout = box.paintModel()?.layout ?? null;
       return {
         distanceM,
         growth: growth ?? 1,
@@ -343,7 +421,10 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
           sign.wordsPlate.parent === null
             ? null
             : cornersOf(sign.wordsPlate as THREE.Mesh, camera, rect),
-        plateM,
+        plateM:
+          layout === null
+            ? { widthM: 0, heightM: 0 }
+            : plateSizeM(layout.width, layout.height, layout.fontPx),
         box: {
           left: boxRect.left,
           top: boxRect.top,
@@ -352,11 +433,11 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
           opacity: Number(getComputedStyle(box.element).opacity),
         },
         texture: {
-          id: texture?.id ?? null,
+          id: t.textureId,
           width: canvas.width,
           height: canvas.height,
           scale,
-          paints,
+          paints: t.paints,
         },
         voice: {
           lit: v.lit,
@@ -364,12 +445,20 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
           rows: v.rows,
           hint: v.hint,
           totalMs,
+          line: v.line,
+          playing: clock.playing(),
         },
+        travel: t,
+        plateMapId: plateMapIdOf(sign.wordsPlate),
+        ghostPointer: !box.element.classList.contains("nb-nopointer"),
+        view,
+        events: [...events],
       };
     },
     wordsCanvas: () => canvas,
     stop() {
       running = false;
+      travel?.stop();
     },
   };
   window.__travellingBoxCheck = hook;

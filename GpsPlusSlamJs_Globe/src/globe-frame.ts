@@ -15,7 +15,6 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 import { GLOBE_DETAIL } from "./globe-detail.js";
 import type { LatLng } from "./globe-target.js";
 
-const DEG = Math.PI / 180;
 const east = new THREE.Vector3();
 const north = new THREE.Vector3();
 const up = new THREE.Vector3();
@@ -67,14 +66,14 @@ export function frameRecentreTarget(
   }
   if (frame === null || altitudeM > GLOBE_FRAME.recentreBelowM) return null;
   ellipsoid.getCartographicToPosition(
-    frame.lat * DEG,
-    frame.lng * DEG,
+    frame.lat * THREE.MathUtils.DEG2RAD,
+    frame.lng * THREE.MathUtils.DEG2RAD,
     0,
     frameGround,
   );
   ellipsoid.getCartographicToPosition(
-    nadir.lat * DEG,
-    nadir.lng * DEG,
+    nadir.lat * THREE.MathUtils.DEG2RAD,
+    nadir.lng * THREE.MathUtils.DEG2RAD,
     0,
     cameraGround,
   );
@@ -101,8 +100,8 @@ export function worldFromEcefAt(
   }
   // Written out (the library's axes are NaN at a pole): east along the
   // parallel, up the geodetic normal, north = up x east, defined everywhere.
-  const phi = lat * DEG;
-  const lambda = lng * DEG;
+  const phi = lat * THREE.MathUtils.DEG2RAD;
+  const lambda = lng * THREE.MathUtils.DEG2RAD;
   east.set(-Math.sin(lambda), Math.cos(lambda), 0);
   up.set(
     Math.cos(phi) * Math.cos(lambda),
@@ -143,13 +142,17 @@ export function ecefFromCityAt(
   const a = ellipsoid.radius.x;
   const b = ellipsoid.radius.z;
   const e2 = 1 - (b * b) / (a * a);
-  const sin = Math.sin(target.lat * DEG);
+  const sin = Math.sin(target.lat * THREE.MathUtils.DEG2RAD);
   const w = 1 - e2 * sin * sin;
   // The true metres a degree north and (over cos(lat)) east, against the ruler.
   const northScale =
-    (DEG * a * (1 - e2)) / w ** 1.5 / GLOBE_DETAIL.metresPerDegLat;
+    (THREE.MathUtils.DEG2RAD * a * (1 - e2)) /
+    w ** 1.5 /
+    GLOBE_DETAIL.metresPerDegLat;
   const eastScale =
-    (DEG * a) / Math.sqrt(w) / GLOBE_DETAIL.metresPerDegLngEquator;
+    (THREE.MathUtils.DEG2RAD * a) /
+    Math.sqrt(w) /
+    GLOBE_DETAIL.metresPerDegLngEquator;
   return out.multiply(cityScale.makeScale(eastScale, 1, northScale));
 }
 

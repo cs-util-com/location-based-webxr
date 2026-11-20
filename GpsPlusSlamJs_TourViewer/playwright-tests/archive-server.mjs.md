@@ -42,6 +42,14 @@ the stations tour (minor 4) whose gate also holds a long text its creator
 stands as a reading sign; the second is another tour, its own title and
 block id, so `view-switch.spec.js` sees the visitor's view preference
 carried from one tour to the next.
+`/ranges-ok/narrated-tour.zip` is the first of them with the gate's long
+text narrated (`narrated: true`): a voice the browser really plays (four
+seconds of silence as a WAV, `silentWav`), a read-along of one segment
+over its whole plain text, hashed as the viewer hashes it
+(`sentenceTiming`, through the framework's `tour-markdown`), no
+creator's choice of where its words go (so they show in the box), and a
+narration circle around the gate with the same voice
+(`narration-stacking.spec.js`).
 `/ranges-ok/v4-tour.zip` is a tour in the earlier format 4, written
 literally: the app refuses it and deletes the draft it kept for it.
 

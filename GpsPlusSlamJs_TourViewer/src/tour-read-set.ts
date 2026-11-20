@@ -20,6 +20,7 @@ import {
 } from "gps-plus-slam-app-framework/storage/file-system-utils";
 
 import type { ViewerMode } from "./mode.js";
+import { isMacOsMetadataName } from "./tour-file-key.js";
 import { tourUnfinished } from "./tour-unfinished.js";
 
 /**
@@ -94,9 +95,13 @@ const RECORDED_FRAME = new RegExp(
 const ACTIONS_SEGMENT = /(^|\/)actions\//;
 
 /** An action entry the framework's parser replays: under an `actions/`
- *  segment, ending `.json`. */
+ *  segment, ending `.json`, and not macOS metadata. */
 export function isActionEntryName(name: string): boolean {
-  return ACTIONS_SEGMENT.test(name) && name.endsWith(".json");
+  return (
+    ACTIONS_SEGMENT.test(name) &&
+    name.endsWith(".json") &&
+    !isMacOsMetadataName(name)
+  );
 }
 
 /**
@@ -142,14 +147,15 @@ export function recordingFoldersOf(
  */
 const RECORDER_SCAN_FOLDER = /(^|\/)(sparse|refPoints)\//;
 
-/** An entry a recording writes: its `session.json`, its action stream,
+/** An entry a recording writes: its `session.json`, its action stream
+ *  (by `isActionEntryName`, the parser's rule),
  *  its frames, and the Recorder's scan folders. Depth samples travel
  *  inside the actions. */
 function isRecordingEntry(name: string): boolean {
   return (
     name === "session.json" ||
     name.endsWith("/session.json") ||
-    ACTIONS_SEGMENT.test(name) ||
+    isActionEntryName(name) ||
     RECORDED_FRAME.test(name) ||
     RECORDER_SCAN_FOLDER.test(name)
   );
@@ -164,7 +170,7 @@ function isRecordingEntry(name: string): boolean {
 export function recordingEntryNames(entryNames: readonly string[]): string[] {
   // No action stream, no walk: a session.json or frame-named image of the
   // tour's own is then just a file.
-  if (!entryNames.some((name) => ACTIONS_SEGMENT.test(name))) return [];
+  if (!entryNames.some(isActionEntryName)) return [];
   return entryNames.filter(isRecordingEntry);
 }
 

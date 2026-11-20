@@ -20,7 +20,6 @@ import {
   Group,
   Quaternion,
   Vector3,
-  type Material,
   type MeshBasicMaterial,
   type Object3D,
   type Texture,
@@ -29,6 +28,7 @@ import {
 import { smoothstep } from "../../smoothstep.js";
 import {
   canvasTexture,
+  setOpacity,
   type WorldEnv,
   type WorldPart,
 } from "../../world-part.js";
@@ -157,10 +157,6 @@ function feathered(
 
 const facingWorld = new Vector3();
 const parentTurn = new Quaternion();
-
-function setOpacity(materials: readonly Material[], opacity: number): void {
-  for (const m of materials) m.opacity = opacity;
-}
 
 /**
  * `block`'s part, or null for a view this file does not stand or a block

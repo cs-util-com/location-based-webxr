@@ -9,6 +9,7 @@ import {
   shownMember,
   shownView,
   storeVisitorChoice,
+  travelPick,
   VISITOR_PREFS_KEY,
   viewNeedsFail,
   viewSetOf,
@@ -443,5 +444,34 @@ describe("a choice stored on the device", () => {
     const none = storeVisitorChoice(undefined, null, "longText", "world", null);
     expect(none.kept).toBe(false);
     expect(preferredView(none.value, "longText", "world")).toBeNull();
+  });
+});
+
+describe("travelPick", () => {
+  // Why this test matters: every travelling surface reads the visitor's
+  // one stored long-text pick through this mapping, so a second reading
+  // of the preference never drifts from it. Captions mean "keep it on the
+  // screen"; every other pick, none and anything unreadable mean the
+  // rules decide.
+  it("maps captions to screen and every other pick to auto", () => {
+    const pick = (view: string | null): unknown =>
+      view === null
+        ? withPreferredView(null, "longText", "world", null)
+        : withPreferredView(null, "longText", "world", view);
+    expect(travelPick(pick("captions"))).toBe("screen");
+    expect(travelPick(pick("reading"))).toBe("auto");
+    expect(travelPick(pick("lectern"))).toBe("auto");
+    expect(travelPick(pick(null))).toBe("auto");
+    expect(travelPick(null)).toBe("auto");
+    expect(travelPick("captions")).toBe("auto");
+    expect(travelPick({ views: { longText: { world: "captions" } } })).toBe(
+      "auto",
+    );
+    // Captions stored beside a world pick are still the choice.
+    expect(
+      travelPick({
+        views: { longText: { world: "lectern", screen: "captions" } },
+      }),
+    ).toBe("screen");
   });
 });

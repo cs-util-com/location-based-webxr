@@ -25,6 +25,9 @@ const entryFiles = [
   // exports wildcard advertises the subpath, so it must be built per-file.
   'src/ar/ar-scene-hierarchy.ts',
   'src/ar/bresenham3d.ts',
+  // Packed integer cell keys - deep-imported by the Tour Viewer's splat
+  // ownership grid, so it must be built per-file.
+  'src/ar/cell-key.ts',
   'src/ar/camera-blit-capture.ts',
   'src/ar/captured-camera-frame.ts',
   'src/ar/capability-checker.ts',

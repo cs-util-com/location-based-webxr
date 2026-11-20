@@ -20,12 +20,20 @@ maxBufferSize)`, rounded down. RangeError for limits that are not
   - `{ kind: "too-large", neededBytes, budgetBytes }` when the shorter
     side would fall under `minShortSidePx` (or the photo's own, if
     smaller): the window must be cut smaller.
-  - RangeError for sizes that are not positive integers.
+  - RangeError for sizes that are not positive integers, or a
+    `bytesPerPixel` that is not positive (at 0 every window would fit at
+    full size in 0 bytes).
 - `iterationBudget(trainFrames, settings) -> number` -
   `itersPerFrame * trainFrames` within `[minIterations, maxIterations]`.
-- `liveEta({ done, total, elapsedMs }, settings) -> number | null` - ms
-  left at the measured rate; null before `etaMinIterations` steps (warm-up
-  and shader compilation) or for a measurement that makes no sense.
+  RangeError when `maxIterations < minIterations` (the clamp would
+  return less than the minimum).
+- `liveEta({ done, total, elapsedMs }, { etaMinIterations }) -> number | null` - ms
+  left at the measured rate. `done`, `total` and `elapsedMs` count from a
+  mark the caller takes after warm-up (shader compilation, first upload),
+  never from the start of training, or the one-off cost would skew the
+  rate. Null before `etaMinIterations` steps since that mark, before any
+  step at all (no rate yet, whatever the minimum), or for a measurement
+  that makes no sense.
 
 ## Invariants & assumptions
 
@@ -36,9 +44,13 @@ maxBufferSize)`, rounded down. RangeError for limits that are not
   rounding, and never upscales.
 - The estimate is monotonic in the remaining steps at a fixed measured
   rate.
-- `bytesPerPixel` 12 is the provisional working cost per pixel (see
-  `trainer-defaults.ts.md`); a trainer whose real cost differs changes
-  that value, not this code.
+- `bytesPerPixel` 12 and the 700e6-byte target are Splat.js's own
+  planning numbers (see `trainer-defaults.ts.md`); a trainer whose real
+  cost differs changes those values, not this code. Splat.js additionally
+  caps the long side at 1600 px and floors it at 320 px; this module's
+  floor is `minShortSidePx` on the short side.
+- Positive-number checks use the shared `requirePositive`
+  (`splat-math.ts`).
 
 ## Examples
 
@@ -60,5 +72,7 @@ const size = photoScale(
   and nonsense inputs.
 - `training-budget.property.test.ts` - over random limits, sizes and
   settings: the memory budget under each limit; photo bytes under the
-  budget, no upscale, the shape kept; steps within bounds; the estimate
+  budget, no upscale, the shape kept, and too-large exactly when the
+  smallest allowed size (worked out independently) would not fit; steps
+  within bounds; the estimate
   monotonic in the remaining steps.

@@ -76,10 +76,21 @@ listed in `index.html.md`. The concerns and their modules:
   hands the sheet its voice in `openLongText` (the block found by id in
   the open tour), and gives the viewer placement and the view switch its
   `verdictOf`. In visitor mode it builds the narration box under
-  `#ar-root` (writing `narrationBox` in the page's store) and its follower;
-  `hooks.tickStations` ticks the sheet's
-  marks and syncs the follower each frame, and `hooks.stopStations` stops
-  the follower and pauses every voice; `hooks.releaseTourMedia` (a
+  `#ar-root` (writing `narrationBox` in the page's store) and its follower,
+  with one travel registry (`travel-registry.ts`) for the words that
+  travel from a reading sign: the follower's `travel` builds the sign's
+  surface (`travelling-box-sign.ts`) and its controller
+  (`travelling-box.ts`, the default knobs, the texture uploaded through
+  `seams.uploadTexture`), or none while there is no scene or camera (the
+  words then stay at the bottom); `signOf` is `mountedReadingSign`,
+  `sheetOpen` the reading sheet's, `playing` the `narrationBox` slice's.
+  `hooks.tickStations` ticks the sheet's marks, syncs the follower and,
+  after the world parts, runs the registry's frame; a `pointerdown` on
+  `#ar-root` that is not an overlay's goes to the registry, a
+  `beforexrselect` is cancelled while a finger is on the words, and
+  `hooks.visitorTap` gives a select the words own to them alone.
+  `hooks.stopStations` stops the follower (and its travel) and pauses
+  every voice; `hooks.releaseTourMedia` (a
   tour's close) lets every voice go (`narration.reset()`).
 - `viewer-placement.ts` - the viewer pipeline and the photo placement
   (`createViewerPlacement`).
@@ -208,6 +219,10 @@ listed in `index.html.md`. The concerns and their modules:
   DOM-overlay root; `tests/repo-config/hud-overlay-nesting.test.js`).
 - The `?qr=` boot's rejection reaches the error box: a printed code is the
   one flow with no retry.
+- The completion card's "Make your own tour" (`#walk-own-tour`) opens the
+  start page through its own default action (inside the tap's activation)
+  and ends a live AR session with the same `disable()` as the X; a failed
+  end goes to the error box (`visitor-walk.spec.js`).
 
 ## Examples
 

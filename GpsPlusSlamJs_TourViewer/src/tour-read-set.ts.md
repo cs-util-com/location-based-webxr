@@ -30,7 +30,10 @@ which a visitor never sees.
     gone from the format).
 - `isActionEntryName(name)` - the recording's action stream as the
   framework's parser reads it (it does not export its rule): an `actions/`
-  path segment, ending `.json`. Used by `tour-session.ts` (`hasRecording`),
+  path segment, ending `.json`, and not the metadata a macOS re-zip adds
+  (a `__MACOSX/` folder, `._` resource-fork files; neither is JSON; the
+  rule is `isMacOsMetadataName` of `tour-file-key.ts`). The
+  framework's parser holds the same rule. Used by `tour-session.ts` (`hasRecording`),
   by the splat trainer's reader (`splat-trainer/recording-reader.ts`) and
   inside `recordingFoldersOf` here.
 - `recordingFolderOf(entryNames) -> string` - the folder the action stream
@@ -47,8 +50,8 @@ which a visitor never sees.
   recording, which the framework's parser would replay as one stream; the
   splat trainer's reader refuses such a zip.
 - `scanEntryNames(entryNames, manifest, wrap) -> string[]` - the walk, in
-  archive order: the entries a RECORDING writes (`session.json`, anything
-  under `actions/`, `frame-NNNNNN.<ext>` in `images/` or the legacy
+  archive order: the entries a RECORDING writes (`session.json`, its
+  action entries by `isActionEntryName`, `frame-NNNNNN.<ext>` in `images/` or the legacy
   `frames/`, the framework's `SESSION_IMAGES_DIR` and
   `LEGACY_SESSION_IMAGES_DIR`, and the Recorder's scan folders `sparse/`
   (COLMAP: the point cloud and every frame's pose) and `refPoints/`
@@ -92,7 +95,8 @@ which a visitor never sees.
   `session.json` of its own and no actions. Both the first version and the
   narrowed one dropped it from the Finish, and the milestone browser run
   failed on exactly that entry twice. A `session.json` or a frame-named
-  image counts as the walk only in an archive that has an `actions/` entry.
+  image counts as the walk only in an archive that has an action entry
+  (`isActionEntryName`: a `__MACOSX/` copy of one is no walk).
 - A filter over the archive: a name the manifest carries but the archive
   lacks is never returned.
 - Pure; the caller passes the manifest that will be WRITTEN (the Finish)

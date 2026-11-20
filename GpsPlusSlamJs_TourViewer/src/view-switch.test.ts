@@ -94,12 +94,11 @@ describe("the switch's model", () => {
       ["lectern", "", false, false],
       ["captions", "", false, true],
     ]);
+    // Reading and Captions say where a narrated text's words go.
     expect(live?.rows[0]?.line).toBe(
-      "The whole text in a sheet, the voice highlighted",
+      "The words on the sign while it can be read, else at the bottom",
     );
-    expect(live?.rows[2]?.line).toBe(
-      "A few lines at a time with the voice, eyes on the place",
-    );
+    expect(live?.rows[2]?.line).toBe("The words always at the bottom");
     const stale = viewSwitchModel([narrated], stored, () => "stale");
     expect(stale?.current).toBe("Reading");
     expect(stale?.rows[2]).toMatchObject({

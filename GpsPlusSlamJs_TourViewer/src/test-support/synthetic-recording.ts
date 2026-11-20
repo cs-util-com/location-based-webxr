@@ -24,6 +24,11 @@ import {
 import { packDepthAction } from "gps-plus-slam-app-framework/storage/depth-sample-codec";
 import { lookAtPose } from "gps-plus-slam-app-framework/test-utils/synthetic-qr-walk";
 
+import {
+  actionEntries,
+  photoEntryName,
+} from "../checks/splat-scene/splat-scene-zip.js";
+
 /** A JPEG's start and end markers: enough bytes to be a photo entry. */
 const PLACEHOLDER_PHOTO = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
 
@@ -52,6 +57,9 @@ export interface SyntheticRecordingOptions {
   /** The projection of the depth sample at `index`; null writes the
    *  sample without one (default `SYNTHETIC_PROJECTION` for every sample). */
   readonly projectionAt?: (index: number) => Matrix4 | null;
+  /** Depth samples written (unpacked) with camera positions that are not
+   *  numbers, their lens intact (default false). */
+  readonly brokenDepthPose?: boolean;
   /** Capture indices whose photo the zip does not carry. */
   readonly missingPhotos?: readonly number[];
   /** An action type written once in the middle of the walk. */
@@ -101,10 +109,6 @@ const SYNTHETIC_T0_MS = 1_700_000_000_000;
 /** The File's last-modified time. */
 export const SYNTHETIC_LAST_MODIFIED = 1_700_000_100_000;
 
-function pad6(n: number): string {
-  return String(n).padStart(6, "0");
-}
-
 /** A full g x g depth grid at the sampler's positions, float32 depths. */
 function gridPoints(g: number, frame: number): DepthPoint[] {
   const points: DepthPoint[] = [];
@@ -151,7 +155,10 @@ export async function buildSyntheticRecording(
           : options.projectionAt(i);
       const sample: DepthSample = {
         timestamp: time,
-        cameraPos: position,
+        cameraPos:
+          options.brokenDepthPose === true
+            ? (["x", "y", "z"] as unknown as Vector3)
+            : position,
         cameraRot: rotation,
         points: gridPoints(SYNTHETIC_DEPTH_GRID, i),
         ...(projection === null ? {} : { projectionMatrix: projection }),
@@ -159,7 +166,9 @@ export async function buildSyntheticRecording(
       depthSamples.push(sample);
       const action = { type: "recording/recordDepthSample", payload: sample };
       actions.push(
-        (options.packDepth ?? true) ? packDepthAction(action) : action,
+        (options.packDepth ?? true) && options.brokenDepthPose !== true
+          ? packDepthAction(action)
+          : action,
       );
     }
     if (
@@ -172,7 +181,7 @@ export async function buildSyntheticRecording(
       options.frameSizeAt === undefined
         ? SYNTHETIC_FRAME_SIZE
         : options.frameSizeAt(i);
-    const imageFile = `images/frame-${pad6(i + 1)}.jpg`;
+    const imageFile = photoEntryName(i);
     actions.push({
       type: "gpsData/add2dImage",
       payload: {
@@ -198,12 +207,7 @@ export async function buildSyntheticRecording(
       data: JSON.stringify(era === undefined ? {} : { odomCoordVersion: era }),
     });
   }
-  actions.forEach((action, index) => {
-    entries.push({
-      path: `${folder}actions/${pad6(index + 1)}.json`,
-      data: JSON.stringify(action),
-    });
-  });
+  entries.push(...actionEntries(actions, folder));
   entries.push(...(options.extraEntries ?? []));
 
   const blob = await packFilesAsZip(entries);

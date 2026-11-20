@@ -915,7 +915,9 @@ export function wirePortraitTap(
 }
 
 /**
- * The visitor's tap in AR, in its order: the story's character first,
+ * The visitor's tap in AR, in its order: a select the travelling words
+ * own (a finger on them, or just lifted: `travel-registry.ts`) is theirs
+ * and goes nowhere else; then the story's character,
  * then a model's card, then a world part (`world-part.ts`: a reading
  * stand's page turns, a reading sign's text opens in the reading sheet);
  * a tap any of them takes closes the pin sheet, and one none takes is the
@@ -924,6 +926,7 @@ export function wirePortraitTap(
 export function routeVisitorTap(
   tap: SelectTargetRay | null,
   to: {
+    words(tap: SelectTargetRay | null): boolean;
     character(tap: SelectTargetRay | null): boolean;
     model(tap: SelectTargetRay | null): boolean;
     part(tap: SelectTargetRay | null): boolean;
@@ -933,6 +936,7 @@ export function routeVisitorTap(
     };
   },
 ): void {
+  if (to.words(tap)) return;
   if (to.character(tap) || to.model(tap) || to.part(tap)) {
     to.pinSheet.close();
   } else to.pinSheet.tapped(tap);
