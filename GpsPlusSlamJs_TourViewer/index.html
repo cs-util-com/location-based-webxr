@@ -1602,15 +1602,12 @@
 
       /* The stage: the step card, with the map as a sticker on its corner. */
       /* Its top padding is the room for the map sticker's poke over the
-         card's edge, so a scroll to the stage shows the whole sticker; a
-         scroll to the card itself keeps the same room above it. */
+         card's edge, so a scroll to the stage shows the whole sticker (a
+         scroll to the card itself keeps the same room: its scroll margin). */
       body[data-mode="creator"] .setup-stage {
         max-width: 90rem;
         margin: 0 auto;
         padding-top: calc(var(--space-4) + var(--space-3));
-      }
-      body[data-mode="creator"] .setup-card {
-        scroll-margin-top: calc(var(--space-4) + var(--space-3));
       }
       /* At least a view tall on a page that skipped the landing: it is
          scrolled to the stage's top before the rest of the page is parsed
@@ -1879,6 +1876,7 @@
         box-shadow: 4px 4px 0 var(--map-paper-3);
         padding: var(--space-3);
         margin: 0 var(--space-3) var(--space-4);
+        scroll-margin-top: calc(var(--space-4) + var(--space-3));
       }
 
       /* On a wide screen the stage stands on the landing's centred column
